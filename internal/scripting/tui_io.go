@@ -11,7 +11,7 @@ import (
 
 // TerminalOps defines the interface for terminal operations.
 // This interface captures the minimal set of operations required by TUI libraries
-// (go-prompt, bubbletea, tview/tcell) to manage terminal state.
+// (go-prompt, bubbletea) to manage terminal state.
 //
 // All subsystems must use implementations of this interface rather than
 // accessing os.Stdin/os.Stdout directly, ensuring proper lifecycle management
@@ -46,12 +46,13 @@ type TerminalOps interface {
 //
 // Usage:
 //   - Production: NewTUIReader() creates a reader that lazily initializes to stdin
-//   - Testing: NewTestTUIReader(customReader) creates a reader with a pre-configured implementation
+//   - Testing: Use newTestTUIReader(customReader) from test files, or NewTUIReaderFromIO(r)
 type TUIReader struct {
 	reader  prompt.Reader
 	once    sync.Once
 	initFn  func() prompt.Reader
 	isStdin bool // true if this reader is backed by stdin (for correct Fd() behavior)
+	readMu  sync.Mutex
 }
 
 // NewTUIReader creates a TUIReader that lazily initializes to read from stdin.
@@ -62,14 +63,6 @@ func NewTUIReader() *TUIReader {
 			return prompt.NewStdinReader()
 		},
 		isStdin: true,
-	}
-}
-
-// NewTestTUIReader creates a TUIReader with a pre-configured Reader for testing.
-// This bypasses lazy initialization - the reader is immediately available.
-func NewTestTUIReader(r prompt.Reader) *TUIReader {
-	return &TUIReader{
-		reader: r,
 	}
 }
 
@@ -91,6 +84,9 @@ func (r *TUIReader) Read(p []byte) (n int, err error) {
 	if reader == nil {
 		return 0, io.EOF
 	}
+	r.readMu.Lock()
+	defer r.readMu.Unlock()
+
 	return reader.Read(p)
 }
 
@@ -197,6 +193,17 @@ func (r *TUIReader) GetSize() (width, height int, err error) {
 	return term.GetSize(int(fd))
 }
 
+// UnwrapFile returns the underlying *os.File if this reader is backed by one.
+// For stdin-backed readers, returns os.Stdin directly.  This allows consumers
+// like BubbleTea v2 (which require *os.File or term.File for raw mode) to
+// bypass the wrapper and access the real file descriptor.
+func (r *TUIReader) UnwrapFile() *os.File {
+	if r.isStdin {
+		return os.Stdin
+	}
+	return nil
+}
+
 // IsTerminal returns true if the underlying reader is a terminal.
 // This does NOT trigger lazy initialization - Fd() returns os.Stdin.Fd()
 // when lazy, which is correct since NewTUIReader() implies stdin.
@@ -215,7 +222,7 @@ func (r *TUIReader) IsTerminal() bool {
 //
 // Usage:
 //   - Production: NewTUIWriter() creates a writer that lazily initializes to stdout
-//   - Testing: NewTestTUIWriter(customWriter) creates a writer with a pre-configured implementation
+//   - Testing: Use newTestTUIWriter(customWriter) from test files, or NewTUIWriterFromIO(w)
 //   - Basic testing: NewTUIWriterFromIO(ioWriter) wraps an io.Writer for basic output capture
 type TUIWriter struct {
 	writer   prompt.Writer
@@ -233,24 +240,6 @@ func NewTUIWriter() *TUIWriter {
 			return prompt.NewStdoutWriter()
 		},
 		isStdout: true,
-	}
-}
-
-// NewTUIWriterStderr creates a TUIWriter that lazily initializes to write to stderr.
-func NewTUIWriterStderr() *TUIWriter {
-	return &TUIWriter{
-		initFn: func() prompt.Writer {
-			return prompt.NewStderrWriter()
-		},
-		isStdout: false,
-	}
-}
-
-// NewTestTUIWriter creates a TUIWriter with a pre-configured Writer for testing.
-// This bypasses lazy initialization - the writer is immediately available.
-func NewTestTUIWriter(w prompt.Writer) *TUIWriter {
-	return &TUIWriter{
-		writer: w,
 	}
 }
 
@@ -589,6 +578,17 @@ func (w *TUIWriter) IsTerminal() bool {
 	return term.IsTerminal(int(fd))
 }
 
+// UnwrapFile returns the underlying *os.File if this writer is backed by one.
+// For stdout-backed writers, returns os.Stdout directly.  This allows consumers
+// like BubbleTea v2 (which require *os.File or term.File for raw mode) to
+// bypass the wrapper and access the real file descriptor.
+func (w *TUIWriter) UnwrapFile() *os.File {
+	if w.isStdout {
+		return os.Stdout
+	}
+	return nil
+}
+
 // ioWriterAdapter wraps an io.Writer to implement prompt.Writer.
 // Terminal control methods are no-ops since the underlying writer
 // doesn't support them.
@@ -654,11 +654,11 @@ func NewTUIReaderFromIO(r io.Reader) *TUIReader {
 }
 
 // TerminalIO combines TUIReader and TUIWriter to implement the full TerminalOps interface.
-// This is the struct that should be passed to subsystems (bubbletea, tview) that need
+// This is the struct that should be passed to subsystems (e.g. bubbletea) that need
 // both read and write access to the terminal with proper lifecycle management.
 //
 // IMPORTANT: TerminalIO does NOT track terminal state (raw mode). Each subsystem
-// (go-prompt, tview, bubbletea) is responsible for its own MakeRaw/Restore calls.
+// (go-prompt, bubbletea) is responsible for its own MakeRaw/Restore calls.
 // This avoids double-restore issues when multiple subsystems share the same terminal.
 type TerminalIO struct {
 	*TUIReader
@@ -749,7 +749,7 @@ func (t *TerminalIO) IsTerminal() bool {
 // Close closes both the reader and writer.
 // This method is idempotent and thread-safe.
 // NOTE: TerminalIO does NOT restore terminal state on close. Each subsystem
-// (go-prompt, tview, bubbletea) is responsible for its own Restore() calls.
+// (go-prompt, bubbletea) is responsible for its own Restore() calls.
 func (t *TerminalIO) Close() error {
 	t.closeMu.Lock()
 	if t.closed {

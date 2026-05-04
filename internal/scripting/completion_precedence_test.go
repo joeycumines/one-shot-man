@@ -99,13 +99,13 @@ func TestCompletionPrecedence(t *testing.T) {
 		}
 
 		// Create a custom prompt and test its completion behavior
-		promptConfig := map[string]interface{}{
+		promptConfig := map[string]any{
 			"name":   "testPrompt",
 			"title":  "Test Prompt",
 			"prefix": "test> ",
 		}
 
-		promptName, err := tuiManager.jsCreateAdvancedPrompt(promptConfig)
+		promptName, err := tuiManager.jsCreatePrompt(promptConfig)
 		if err != nil {
 			t.Fatalf("Failed to create custom prompt: %v", err)
 		}
@@ -116,7 +116,7 @@ func TestCompletionPrecedence(t *testing.T) {
 			t.Fatalf("Failed to set completer: %v", err)
 		}
 
-		// Test the completer logic used by jsCreateAdvancedPrompt
+		// Test the completer logic used by jsCreatePrompt
 		tuiManager.mu.RLock()
 		jsCompleter := tuiManager.completers["helpCompleter"]
 		tuiManager.mu.RUnlock()

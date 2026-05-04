@@ -2,6 +2,7 @@ package scripting
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -129,8 +130,8 @@ func TestNewStateManager_LoadsExistingSession(t *testing.T) {
 		CreateTime:  time.Now().Add(-24 * time.Hour),
 		UpdateTime:  time.Now().Add(-1 * time.Hour),
 		History:     []storage.HistoryEntry{{EntryID: "1", Command: "test"}},
-		ScriptState: map[string]map[string]interface{}{"test-mode": {"key1": "value1"}},
-		SharedState: map[string]interface{}{},
+		ScriptState: map[string]map[string]any{"test-mode": {"key1": "value1"}},
+		SharedState: map[string]any{},
 	}
 	backend := &mockBackend{
 		session: existingSession,
@@ -158,8 +159,8 @@ func TestNewStateManager_RecoversFromVersionMismatch(t *testing.T) {
 		CreateTime:  time.Now().Add(-24 * time.Hour),
 		UpdateTime:  time.Now().Add(-1 * time.Hour),
 		History:     []storage.HistoryEntry{{EntryID: "1", Command: "test"}},
-		ScriptState: map[string]map[string]interface{}{"test-mode": {"key1": "value1"}},
-		SharedState: map[string]interface{}{},
+		ScriptState: map[string]map[string]any{"test-mode": {"key1": "value1"}},
+		SharedState: map[string]any{},
 	}
 	backend := &mockBackend{
 		session: oldSession,
@@ -314,8 +315,8 @@ func TestNewStateManager_ErrorCases(t *testing.T) {
 		if err == nil {
 			t.Error("expected error for empty sessionID, got nil")
 		}
-		if !strings.Contains(err.Error(), "sessionID cannot be empty") {
-			t.Errorf("unexpected error message: %v", err)
+		if !errors.Is(err, storage.ErrEmptySessionID) {
+			t.Errorf("unexpected error: got %v, want %v", err, storage.ErrEmptySessionID)
 		}
 	})
 
@@ -457,8 +458,8 @@ func TestHistory_TruncateOnLoad(t *testing.T) {
 		CreateTime:  time.Now(),
 		UpdateTime:  time.Now(),
 		History:     largeHistory,
-		ScriptState: make(map[string]map[string]interface{}),
-		SharedState: make(map[string]interface{}),
+		ScriptState: make(map[string]map[string]any),
+		SharedState: make(map[string]any),
 	}
 
 	backend := &mockBackend{

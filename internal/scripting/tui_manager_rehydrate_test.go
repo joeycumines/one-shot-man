@@ -3,6 +3,7 @@ package scripting
 import (
 	"bytes"
 	"context"
+	"log/slog"
 
 	// storage package intentionally not used to avoid clearing global store
 	"os"
@@ -35,7 +36,7 @@ func TestRehydrateNormalizesForwardSlashes(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	sessionID := testutil.NewTestSessionID("rehyd", t.Name())
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
@@ -52,8 +53,8 @@ func TestRehydrateNormalizesForwardSlashes(t *testing.T) {
 
 	// Simulate stored state containing a file label using forward slashes
 	// (e.g., from txtar or older snapshots).
-	item := map[string]interface{}{"type": "file", "label": filepath.ToSlash(filepath.Join("dir", "file.txt"))}
-	tm.stateManager.SetState("contextItems", []interface{}{item})
+	item := map[string]any{"type": "file", "label": filepath.ToSlash(filepath.Join("dir", "file.txt"))}
+	tm.stateManager.SetState("contextItems", []any{item})
 
 	total, restored := tm.rehydrateContextManager()
 	if restored != 1 {
@@ -88,12 +89,12 @@ func TestRehydrateNormalizesForwardSlashes(t *testing.T) {
 		t.Fatalf("expected contextItems to be present in state")
 	}
 
-	finalState, ok := finalStateRaw.([]interface{})
+	finalState, ok := finalStateRaw.([]any)
 	if !ok || len(finalState) != 1 {
 		t.Fatalf("expected 1 item in contextItems state, got: %#v", finalStateRaw)
 	}
 
-	itemMap, ok := finalState[0].(map[string]interface{})
+	itemMap, ok := finalState[0].(map[string]any)
 	if !ok {
 		t.Fatalf("expected context item to be a map, got: %#v", finalState[0])
 	}
@@ -125,7 +126,7 @@ func TestRehydrateNormalizesBackslashes(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	sessionID := testutil.NewTestSessionID("rehyd-bslash", t.Name())
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
@@ -141,8 +142,8 @@ func TestRehydrateNormalizesBackslashes(t *testing.T) {
 
 	// Simulate stored state containing a file label using backslashes
 	// (e.g., a Windows snapshot).
-	item := map[string]interface{}{"type": "file", "label": "dir\\file.txt"}
-	tm.stateManager.SetState("contextItems", []interface{}{item})
+	item := map[string]any{"type": "file", "label": "dir\\file.txt"}
+	tm.stateManager.SetState("contextItems", []any{item})
 
 	total, restored := tm.rehydrateContextManager()
 	if restored != 1 {
@@ -172,12 +173,12 @@ func TestRehydrateNormalizesBackslashes(t *testing.T) {
 		t.Fatalf("expected contextItems to be present in state")
 	}
 
-	finalState, ok := finalStateRaw.([]interface{})
+	finalState, ok := finalStateRaw.([]any)
 	if !ok || len(finalState) != 1 {
 		t.Fatalf("expected 1 item in contextItems state, got: %#v", finalStateRaw)
 	}
 
-	itemMap, ok := finalState[0].(map[string]interface{})
+	itemMap, ok := finalState[0].(map[string]any)
 	if !ok {
 		t.Fatalf("expected context item to be a map, got: %#v", finalState[0])
 	}
@@ -204,7 +205,7 @@ func TestRehydrateNormalizesDotPrefix(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	sessionID := testutil.NewTestSessionID("rehyd-dot", t.Name())
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
@@ -219,8 +220,8 @@ func TestRehydrateNormalizesDotPrefix(t *testing.T) {
 	tm := NewTUIManagerWithConfig(ctx, engine, nil, &stderr, sessionID, "memory")
 
 	// Simulate stored state containing a dot-prefixed label.
-	item := map[string]interface{}{"type": "file", "label": "./config.txt"}
-	tm.stateManager.SetState("contextItems", []interface{}{item})
+	item := map[string]any{"type": "file", "label": "./config.txt"}
+	tm.stateManager.SetState("contextItems", []any{item})
 
 	total, restored := tm.rehydrateContextManager()
 	if restored != 1 {
@@ -247,11 +248,11 @@ func TestRehydrateNormalizesDotPrefix(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected contextItems to be present in state")
 	}
-	finalState, ok := finalStateRaw.([]interface{})
+	finalState, ok := finalStateRaw.([]any)
 	if !ok || len(finalState) != 1 {
 		t.Fatalf("expected 1 item in contextItems state, got: %#v", finalStateRaw)
 	}
-	itemMap, ok := finalState[0].(map[string]interface{})
+	itemMap, ok := finalState[0].(map[string]any)
 	if !ok {
 		t.Fatalf("expected context item to be a map, got: %#v", finalState[0])
 	}

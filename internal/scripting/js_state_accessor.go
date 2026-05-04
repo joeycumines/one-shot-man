@@ -55,7 +55,7 @@ func (e *Engine) jsCreateState(call goja.FunctionCall) goja.Value {
 	// persistentKeyMap maps the runtime Symbol string representation to its persistent string key.
 	persistentKeyMap := make(map[string]string)
 	// defaultValues maps the runtime Symbol string representation to its default value.
-	defaultValues := make(map[string]interface{})
+	defaultValues := make(map[string]any)
 
 	// 1. Get Symbol keys from the definitions object and access their values
 	// Use JavaScript to handle Symbol-keyed properties

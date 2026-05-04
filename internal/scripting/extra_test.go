@@ -6,18 +6,18 @@ import "log/slog"
 
 // GetLogStats returns statistics about the log entries.
 func (l *TUILogger) GetLogStats() map[string]int {
-	l.handler.mutex.RLock()
-	defer l.handler.mutex.RUnlock()
+	l.handler.shared.mutex.RLock()
+	defer l.handler.shared.mutex.RUnlock()
 
 	stats := map[string]int{
-		"total": len(l.handler.entries),
+		"total": len(l.handler.shared.entries),
 		"debug": 0,
 		"info":  0,
 		"warn":  0,
 		"error": 0,
 	}
 
-	for _, entry := range l.handler.entries {
+	for _, entry := range l.handler.shared.entries {
 		switch entry.Level {
 		case slog.LevelDebug:
 			stats["debug"]++

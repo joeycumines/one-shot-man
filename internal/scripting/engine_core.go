@@ -2,21 +2,24 @@ package scripting
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
+	_ "github.com/dop251/goja_nodejs/console" // init() registers "console" core module
 	"github.com/dop251/goja_nodejs/require"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	gojaEventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/goroutineid"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
-	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview"
-	"github.com/joeycumines/one-shot-man/internal/goroutineid"
 )
 
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.
@@ -28,20 +31,20 @@ import (
 // The Engine now uses a shared Runtime with an event loop for all JavaScript execution,
 // enabling proper async/Promise support and safe integration with bt.
 
-// ScriptPanicError is a structured error type for script panics.
+// scriptPanicError is a structured error type for script panics.
 // It implements the error interface and provides structured access to panic details
 // for programmatic consumption by callers.
 //
 // Example usage:
 //
 //	if err := engine.ExecuteScript(script); err != nil {
-//	    var panicErr *ScriptPanicError
+//	    var panicErr *scriptPanicError
 //	    if errors.As(err, &panicErr) {
 //	        log.Printf("script %q panicked: %v", panicErr.ScriptName, panicErr.Value)
 //	        // panicErr.StackTrace contains the full stack trace
 //	    }
 //	}
-type ScriptPanicError struct {
+type scriptPanicError struct {
 	// Value is the value passed to panic() in the script
 	Value any
 	// StackTrace contains the Go runtime stack trace at the time of panic
@@ -51,14 +54,14 @@ type ScriptPanicError struct {
 }
 
 // Error returns a human-readable description of the panic error.
-func (e *ScriptPanicError) Error() string {
+func (e *scriptPanicError) Error() string {
 	return fmt.Sprintf("script %q panicked: %v", e.ScriptName, e.Value)
 }
 
 // Unwrap returns the underlying panic value for errors.Is/As compatibility.
 // Note: The panic value may not implement the error interface, so this returns
 // the value directly when it does, or wraps it in an error when it doesn't.
-func (e *ScriptPanicError) Unwrap() error {
+func (e *scriptPanicError) Unwrap() error {
 	if err, ok := e.Value.(error); ok {
 		return err
 	}
@@ -73,19 +76,19 @@ type Engine struct {
 	ctx                  context.Context
 	stdout               io.Writer
 	stderr               io.Writer
-	globals              map[string]interface{}
+	globals              map[string]any
 	globalsMu            sync.RWMutex // Protects globals map access (C5 fix)
 	testMode             bool
 	threadCheckMode      bool  // If true, SetGlobal/GetGlobal panic on wrong goroutine
 	eventLoopGoroutineID int64 // Captured at initialization for thread checking (atomic)
 	tuiManager           *TUIManager
-	tviewManager         *tviewmod.Manager
 	contextManager       *ContextManager
 	logger               *TUILogger
 	terminalIO           *TerminalIO               // Shared terminal I/O for all TUI subsystems
 	bubbleteaManager     builtin.BubbleteaManager  // For sending state refresh messages to running TUI
 	btBridge             *bt.Bridge                // Behavior tree bridge for JS integration
 	bubblezoneManager    builtin.BubblezoneManager // Zone-based mouse hit-testing for BubbleTea
+	requireModule        *require.RequireModule    // CommonJS require module for file-based script execution
 }
 
 // Script represents a JavaScript script with metadata.
@@ -96,27 +99,47 @@ type Script struct {
 	Description string
 }
 
-// NewEngine creates a new JavaScript scripting engine.
-// For test isolation and to avoid data races, use NewEngineWithConfig instead.
-func NewEngine(ctx context.Context, stdout, stderr io.Writer) (*Engine, error) {
-	return NewEngineWithConfig(ctx, stdout, stderr, "", "")
+// engineOptions holds optional configuration for engine creation.
+type engineOptions struct {
+	modulePaths []string
 }
 
-// NewEngineWithConfig creates a new JavaScript scripting engine with explicit session configuration.
-// sessionID and store parameters override environment-based discovery and avoid data races.
-func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionID, store string) (*Engine, error) {
-	return NewEngineDetailed(ctx, stdout, stderr, sessionID, store, nil, 0, slog.LevelInfo)
+// EngineOption configures optional Engine settings.
+type EngineOption func(*engineOptions)
+
+// WithModulePaths configures additional module search paths for require().
+// These paths are searched when a bare module name is used (e.g., require('mylib')),
+// similar to NODE_PATH in Node.js. Relative and absolute paths are supported.
+func WithModulePaths(paths ...string) EngineOption {
+	return func(o *engineOptions) {
+		o.modulePaths = append(o.modulePaths, paths...)
+	}
 }
 
-// NewEngineDetailed creates a new JavaScript scripting engine with full configuration options.
+// NewEngine creates a new JavaScript scripting engine with full configuration options.
 // logFile: optional writer for log output (JSON).
 // logBufferSize: size of the in-memory log buffer (default 1000 if <= 0).
 // logLevel: minimum log level to capture (e.g. slog.LevelDebug).
-func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID, store string, logFile io.Writer, logBufferSize int, logLevel slog.Level) (*Engine, error) {
+// opts: optional engine configuration (e.g., WithModulePaths).
+func NewEngine(
+	ctx context.Context,
+	stdout, stderr io.Writer,
+	sessionID, store string,
+	logFile io.Writer,
+	logBufferSize int,
+	logLevel slog.Level,
+	opts ...EngineOption) (*Engine, error) {
+	// Apply options
+	var eopts engineOptions
+	for _, o := range opts {
+		o(&eopts)
+	}
 	// Get current working directory for context manager
 	workingDir, err := os.Getwd()
 	if err != nil {
-		workingDir = "."
+		// Fallback to temp dir when CWD is unavailable (can happen in
+		// containers or when parallel tests delete their working directory).
+		workingDir = os.TempDir()
 	}
 
 	contextManager, err := NewContextManager(workingDir)
@@ -128,27 +151,49 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 	// This is the single source of truth for terminal state management.
 	terminalIO := NewTerminalIOStdio()
 
-	// Create the require registry first - it will be shared
-	registry := require.NewRegistry()
+	// Create a temporary slog.Logger for startup validation (the TUILogger isn't
+	// constructed yet). Warnings go to stderr so they're visible immediately.
+	startupLogger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	// Create the require registry first - it will be shared.
+	// If module paths are configured, they are registered as global folders
+	// for bare module name resolution (similar to NODE_PATH).
+	// A custom source loader strips shebang lines (#!/...) from scripts,
+	// matching Node.js behavior so scripts with shebangs work through require().
+	var registryOpts []require.Option
+
+	if len(eopts.modulePaths) > 0 {
+		// Validate paths at startup: drop invalid/missing/non-directory entries
+		// with a warning rather than failing hard.
+		validPaths := validateModulePaths(eopts.modulePaths, startupLogger)
+
+		// Use a hardened loader that adds symlink escape security and better
+		// error messages, and a hardened path resolver for path-traversal security.
+		registryOpts = append(registryOpts,
+			require.WithLoader(newHardenedSourceLoader(validPaths, eopts.modulePaths)),
+		)
+
+		if len(validPaths) > 0 {
+			registryOpts = append(registryOpts, require.WithGlobalFolders(validPaths...))
+			registryOpts = append(registryOpts,
+				require.WithPathResolver(newHardenedPathResolver(validPaths)),
+			)
+		}
+	} else {
+		registryOpts = append(registryOpts, require.WithLoader(shebangStrippingLoader))
+	}
+	registry := require.NewRegistry(registryOpts...)
 
 	// Create the shared Runtime with event loop
 	// The Runtime owns the event loop and provides thread-safe JS execution
-	runtime, err := NewRuntimeWithRegistry(ctx, registry)
+	runtime, err := NewRuntimeRegistry(ctx, registry)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create runtime: %w", err)
 	}
 
 	// Get a direct reference to the VM for sync operations
 	// Note: All script execution should still go through the event loop for async safety
-	var vm *goja.Runtime
-	err = runtime.RunOnLoopSync(func(r *goja.Runtime) error {
-		vm = r
-		return nil
-	})
-	if err != nil {
-		runtime.Close()
-		return nil, fmt.Errorf("failed to get VM reference: %w", err)
-	}
+	vm := runtime.VM()
 
 	engine := &Engine{
 		runtime:        runtime,
@@ -157,7 +202,7 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 		ctx:            ctx,
 		stdout:         stdout,
 		stderr:         stderr,
-		globals:        make(map[string]interface{}),
+		globals:        make(map[string]any),
 		contextManager: contextManager,
 		logger:         NewTUILogger(stdout, logFile, logBufferSize, logLevel),
 		terminalIO:     terminalIO,
@@ -166,28 +211,43 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 	// Capture event loop goroutine ID using atomic store for thread-safe access (C5 fix)
 	atomic.StoreInt64(&engine.eventLoopGoroutineID, runtime.eventLoopGoroutineID.Load())
 
-	// Create tview manager WITHOUT terminal ops - let tview/tcell manage its own TTY.
-	// Using TerminalIO here conflicts with go-prompt's reader which is already consuming
-	// stdin. tcell expects raw os.Stdin access, not go-prompt's buffered reader.
-	engine.tviewManager = tviewmod.NewManagerWithTerminal(ctx, nil, nil, nil, nil)
-
 	// Register native Go modules. These are all prefixed with "osm:".
 	// Pass through the engine's context and a TUI sink for modules that need them.
 	// Pass 'engine' as terminalProvider so bubbletea uses the unified TerminalIO
 	// instead of defaulting to raw os.Stdin (which would violate Single Source of Truth).
 	// Pass 'engine' as eventLoopProvider so bt shares the event loop.
-	registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine, engine)
+	registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine)
 	engine.bubbleteaManager = registerResult.BubbleteaManager
 	engine.btBridge = registerResult.BTBridge
 	engine.bubblezoneManager = registerResult.BubblezoneManager
 
-	// Enable the `require` function in the runtime (must be done on event loop)
+	// Enable the `require` function in the runtime (must be done on event loop).
+	// Store the RequireModule so we can use it for file-based script execution,
+	// which gives scripts proper __filename, __dirname, and relative require resolution.
 	err = runtime.RunOnLoopSync(func(r *goja.Runtime) error {
-		registry.Enable(r)
+		engine.requireModule = registry.Enable(r)
+
+		// Extend the console object (created by adapter.Bind() with timer methods)
+		// with console.log/warn/error/info/debug from goja_nodejs/console module.
+		// adapter.Bind() only provides console.time/timeEnd/timeLog/count/etc.
+		// The goja_nodejs/console module provides the standard logging methods.
+		// We load the module and copy its methods to the existing console object
+		// so both sets of methods coexist.
+		consoleModule := require.Require(r, "console").(*goja.Object)
+		existingConsole := r.Get("console").ToObject(r)
+		for _, method := range []string{"log", "warn", "error", "info", "debug"} {
+			existingConsole.Set(method, consoleModule.Get(method))
+		}
+
+		// Install circular dependency detection by wrapping the require function.
+		// This must happen after Enable() since it wraps the require function that
+		// Enable() installs. goja_nodejs caches modules before execution, so cycles
+		// cannot be detected at the SourceLoader level—they must be detected here.
+		installRequireCycleDetection(r, startupLogger)
 		return nil
 	})
 	if err != nil {
-		runtime.Close()
+		_ = runtime.Close()
 		return nil, fmt.Errorf("failed to enable require: %w", err)
 	}
 
@@ -213,11 +273,13 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 	// Set up the global context and APIs
 	engine.setupGlobals()
 
-	// Interrupt JS execution when context is canceled
+	// Interrupt JS execution when context is canceled.
+	// Capture vm locally to avoid racing with Close() which sets e.vm = nil.
+	// goja.Runtime.Interrupt is documented as safe to call from any goroutine.
+	vmForInterrupt := engine.vm
 	context.AfterFunc(ctx, func() {
-		if engine.vm != nil {
-			// N.B. It's safe to call Interrupt from another goroutine.
-			engine.vm.Interrupt(ctx.Err())
+		if vmForInterrupt != nil {
+			vmForInterrupt.Interrupt(ctx.Err())
 		}
 	})
 
@@ -239,10 +301,11 @@ func (e *Engine) SetTestMode(enabled bool) {
 // For testing/debugging, you can enable strict thread-checking mode which
 // will cause SetGlobal/GetGlobal to panic if called from the wrong goroutine.
 // See SetThreadCheckMode.
-func (e *Engine) QueueSetGlobal(name string, value interface{}) {
+func (e *Engine) QueueSetGlobal(name string, value any) {
 	// Queue the VM and local cache update to the event loop for thread safety
 	// Also acquire lock to synchronize with GetGlobal's Lock()
-	e.runtime.loop.RunOnLoop(func(vm *goja.Runtime) {
+	vm := e.vm
+	e.runtime.loop.Submit(func() {
 		e.globalsMu.Lock()
 		e.globals[name] = value
 		vm.Set(name, value)
@@ -256,14 +319,15 @@ func (e *Engine) QueueSetGlobal(name string, value interface{}) {
 // The operation is asynchronous - the callback is invoked with the result
 // once the operation completes on the event loop.
 // If you need synchronous access, use Runtime.GetGlobal instead.
-func (e *Engine) QueueGetGlobal(name string, callback func(value interface{})) {
+func (e *Engine) QueueGetGlobal(name string, callback func(value any)) {
 	// Queue the VM read to the event loop for thread safety
 	// Also acquire lock to synchronize with QueueSetGlobal's vm.Set() calls
-	e.runtime.loop.RunOnLoop(func(vm *goja.Runtime) {
+	vm := e.vm
+	e.runtime.loop.Submit(func() {
 		e.globalsMu.Lock()
 		val := vm.Get(name)
 		e.globalsMu.Unlock()
-		var result interface{}
+		var result any
 		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 			result = nil
 		} else {
@@ -310,7 +374,7 @@ func (e *Engine) checkEventLoopGoroutine(methodName string) {
 //
 // PANIC: In debug mode (when ThreadCheckMode is enabled), this will panic
 // if called from a goroutine other than the event loop goroutine.
-func (e *Engine) SetGlobal(name string, value interface{}) {
+func (e *Engine) SetGlobal(name string, value any) {
 	if e.threadCheckMode {
 		e.checkEventLoopGoroutine("SetGlobal")
 	}
@@ -334,7 +398,7 @@ func (e *Engine) SetGlobal(name string, value interface{}) {
 //
 // PANIC: In debug mode (when ThreadCheckMode is enabled), this will panic
 // if called from a goroutine other than the event loop goroutine.
-func (e *Engine) GetGlobal(name string) interface{} {
+func (e *Engine) GetGlobal(name string) any {
 	if e.threadCheckMode {
 		e.checkEventLoopGoroutine("GetGlobal")
 	}
@@ -376,6 +440,20 @@ func (e *Engine) LoadScript(name, path string) (*Script, error) {
 	return script, nil
 }
 
+// NewEngineWithConfig creates a new Engine with simplified configuration.
+// Deprecated: use NewEngine with EngineOptions instead.
+// This shim exists to maintain compatibility with code that hasn't been
+// migrated yet; it will be removed once all call sites use NewEngine.
+func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionID, store string) (*Engine, error) {
+	return NewEngine(ctx, stdout, stderr, sessionID, store, nil, 0, slog.LevelInfo)
+}
+
+// NewEngineDetailed creates a new Engine with full configuration.
+// Deprecated: use NewEngine with logFile, logBufferSize, logLevel parameters instead.
+func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID, store string, logFile io.Writer, logBufferSize int, logLevel slog.Level) (*Engine, error) {
+	return NewEngine(ctx, stdout, stderr, sessionID, store, logFile, logBufferSize, logLevel)
+}
+
 // LoadScriptFromString loads a JavaScript script from a string.
 func (e *Engine) LoadScriptFromString(name, content string) *Script {
 	script := &Script{
@@ -397,7 +475,22 @@ func (e *Engine) LoadScriptFromString(name, content string) *Script {
 //   - From within existing script execution context (already on event loop goroutine)
 //
 // For async-safe script loading, use Runtime.LoadScript instead.
-func (e *Engine) ExecuteScript(script *Script) (err error) {
+//
+// All Goja VM access is serialized on the event loop goroutine. This prevents
+// concurrent VM access when a script starts BubbleTea (whose goroutines also
+// use the VM via RunJSSync). Panic recovery and deferred function execution
+// also run on the event loop goroutine for the same reason.
+//
+// Uses executeOnLoop (no timeout) rather than RunOnLoopSync because scripts
+// may perform significant synchronous work (repeated exec.execv calls etc.)
+// that exceeds the 5-second RunOnLoopSync timeout.
+//
+// If the script starts a BubbleTea program via tea.run() (which is
+// non-blocking), ExecuteScript automatically blocks on WaitForProgram()
+// so the calling goroutine stays alive until the TUI exits. This wait
+// happens on the CALLING goroutine (not the event loop), so the event loop
+// remains free for BubbleTea's RunJSSync callbacks.
+func (e *Engine) ExecuteScript(script *Script) error {
 	// Create execution context for this script
 	ctx := &ExecutionContext{
 		engine: e,
@@ -405,44 +498,150 @@ func (e *Engine) ExecuteScript(script *Script) (err error) {
 		name:   script.Name,
 	}
 
-	// Set up the execution context in JavaScript
-	if err = e.setExecutionContext(ctx); err != nil {
-		return fmt.Errorf("failed to set script execution context: %w", err)
-	}
+	// Execute the script on the event loop
+	if err := e.executeOnLoop(func(vm *goja.Runtime) (execErr error) {
+		// Always run deferred functions on exit (even if a panic occurs).
+		// Runs ON the event loop goroutine so deferred JS callbacks do not
+		// race with any concurrent BubbleTea VM access.
+		defer func() {
+			if dErr := ctx.runDeferred(); dErr != nil {
+				if execErr != nil {
+					execErr = fmt.Errorf("execution error: %w; deferred error: %w", execErr, dErr)
+				} else {
+					execErr = dErr
+				}
+			}
+		}()
 
-	// Always run deferred functions on exit (even if a panic occurs)
-	defer func() {
-		if dErr := ctx.runDeferred(); dErr != nil {
-			if err != nil {
-				err = fmt.Errorf("execution error: %v; deferred error: %v", err, dErr)
-			} else {
-				err = dErr
+		// Recover from panics ON the event loop goroutine where script
+		// execution actually happens. A recover() on the calling goroutine
+		// cannot catch panics that occur here.
+		defer func() {
+			if r := recover(); r != nil {
+				stackTrace := string(debug.Stack())
+				panicErr := &scriptPanicError{
+					Value:      r,
+					StackTrace: stackTrace,
+					ScriptName: script.Name,
+				}
+				execErr = panicErr
+				_, _ = fmt.Fprintf(e.stderr, "\n[PANIC] Script execution panic in %q:\n  %v\n\nStack Trace:\n%s\n", script.Name, r, stackTrace)
+			}
+		}()
+
+		// Set up the execution context in JavaScript
+		if setErr := e.setExecutionContext(ctx); setErr != nil {
+			return fmt.Errorf("failed to set script execution context: %w", setErr)
+		}
+
+		// Execute the script. For file-based scripts, compile with the absolute file path
+		// as the source name. This makes goja_nodejs's getCurrentModulePath() resolve the
+		// correct directory for relative require() calls, while keeping the script in global
+		// scope (no module wrapper) so existing behavior is fully preserved.
+		// For inline/embedded scripts, use RunString as before.
+		if script.Path != "" && script.Path != "<string>" {
+			absPath, absErr := filepath.Abs(script.Path)
+			if absErr != nil {
+				return fmt.Errorf("failed to resolve script path: %w", absErr)
+			}
+			content := script.Content
+			if len(content) >= 2 && content[0] == '#' && content[1] == '!' {
+				content = "//" + content[2:]
+			}
+			prg, compileErr := goja.Compile(absPath, content, false)
+			if compileErr != nil {
+				return fmt.Errorf("script compilation failed: %w", compileErr)
+			}
+			if _, runErr := vm.RunProgram(prg); runErr != nil {
+				return fmt.Errorf("script execution failed: %w", runErr)
+			}
+		} else {
+			if _, runErr := vm.RunString(script.Content); runErr != nil {
+				return fmt.Errorf("script execution failed: %w", runErr)
 			}
 		}
-	}()
-
-	// Recover from top-level panics so scripts cannot crash the host
-	defer func() {
-		if r := recover(); r != nil {
-			stackTrace := string(debug.Stack())
-			// Create a structured panic error for programmatic consumption
-			panicErr := &ScriptPanicError{
-				Value:      r,
-				StackTrace: stackTrace,
-				ScriptName: script.Name,
-			}
-			err = panicErr
-			// Also print to stderr for visibility
-			_, _ = fmt.Fprintf(e.stderr, "\n[PANIC] Script execution panic in %q:\n  %v\n\nStack Trace:\n%s\n", script.Name, r, stackTrace)
-		}
-	}()
-
-	// Execute the script
-	if _, runErr := e.vm.RunString(script.Content); runErr != nil {
-		return fmt.Errorf("script execution failed: %w", runErr)
+		return nil
+	}); err != nil {
+		return err
 	}
 
-	return err
+	// If the script started a BubbleTea program (via non-blocking tea.run()),
+	// block the calling goroutine until it exits. This runs on the CALLING
+	// goroutine, NOT the event loop, so BubbleTea's RunJSSync callbacks
+	// can still be processed. Without this, the caller returns immediately
+	// and the BubbleTea TUI runs orphaned in the background.
+	if mgr := e.bubbleteaManager; mgr != nil {
+		if waitErr := mgr.WaitForProgram(); waitErr != nil {
+			return waitErr
+		}
+
+		// After BubbleTea exits, execute any registered post-exit callback
+		// on the event loop. This allows JS to defer exit/shell decisions
+		// until AFTER BubbleTea processes user input (e.g., 'q' to quit
+		// vs 's' to drop to shell). Without this, non-blocking tea.run()
+		// returns immediately and JS can't distinguish exit reasons.
+		if cbErr := e.executeOnLoop(func(vm *goja.Runtime) error {
+			cb := vm.Get("__postBubbleTeaExit")
+			if cb == nil || goja.IsUndefined(cb) || goja.IsNull(cb) {
+				return nil
+			}
+			// Clear before execution to prevent re-entry on next command.
+			vm.Set("__postBubbleTeaExit", goja.Undefined())
+			if fn, ok := goja.AssertFunction(cb); ok {
+				if _, err := fn(goja.Undefined()); err != nil {
+					return fmt.Errorf("post-BubbleTea exit callback failed: %w", err)
+				}
+			}
+			return nil
+		}); cbErr != nil {
+			return cbErr
+		}
+	}
+
+	return nil
+}
+
+// Wait blocks until the event loop naturally exits.
+func (e *Engine) Wait() {
+	if e.runtime != nil {
+		e.runtime.Wait()
+	}
+}
+
+// executeOnLoop submits a function to the event loop and blocks until it
+// completes. Unlike RunOnLoopSync this has NO timeout — scripts can take
+// arbitrarily long to execute.
+//
+// If the caller is already on the event loop goroutine, fn is executed
+// directly to prevent deadlock (Submit + blocking receive would deadlock
+// the single-threaded event loop).
+func (e *Engine) executeOnLoop(fn func(*goja.Runtime) error) error {
+	loop := e.Loop()
+	if loop == nil {
+		return errors.New("event loop not available")
+	}
+
+	// Deadlock prevention: if we are already on the event loop goroutine,
+	// run directly. Submitting work and blocking for the result would
+	// deadlock the single-threaded event loop.
+	eventLoopID := e.runtime.eventLoopGoroutineID.Load()
+	if eventLoopID > 0 && goroutineid.Get() == eventLoopID {
+		return fn(e.vm)
+	}
+
+	errCh := make(chan error, 1)
+	if submitErr := loop.Submit(func() {
+		errCh <- fn(e.vm)
+	}); submitErr != nil {
+		return fmt.Errorf("event loop not running: %w", submitErr)
+	}
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-e.runtime.Done():
+		return errors.New("runtime stopped before script completion")
+	}
 }
 
 // Logger returns the engine's logger.
@@ -455,9 +654,10 @@ func (e *Engine) GetTUIManager() *TUIManager {
 	return e.tuiManager
 }
 
-// GetTViewManager returns the TView manager for this engine.
-func (e *Engine) GetTViewManager() *tviewmod.Manager {
-	return e.tviewManager
+// BubbleteaManager returns the BubbleTea manager for this engine.
+// Used to call WaitForProgram() after starting a BubbleTea program.
+func (e *Engine) BubbleteaManager() builtin.BubbleteaManager {
+	return e.bubbleteaManager
 }
 
 // GetTerminalReader returns the shared terminal reader.
@@ -478,19 +678,46 @@ func (e *Engine) GetTerminalWriter() io.Writer {
 	return e.terminalIO.TUIWriter
 }
 
-// EventLoop returns the shared event loop.
+// Loop returns the shared event loop.
 // This implements builtin.EventLoopProvider.
-func (e *Engine) EventLoop() *eventloop.EventLoop {
+func (e *Engine) Loop() *goeventloop.Loop {
 	if e.runtime == nil {
 		return nil
 	}
-	return e.runtime.EventLoop()
+	return e.runtime.Loop()
+}
+
+// Runtime returns the goja.Runtime for JavaScript execution.
+// This implements builtin.EventLoopProvider.
+func (e *Engine) Runtime() *goja.Runtime {
+	return e.vm
 }
 
 // Registry returns the require.Registry for module registration.
 // This implements builtin.EventLoopProvider.
 func (e *Engine) Registry() *require.Registry {
 	return e.registry
+}
+
+// Adapter returns the goja-eventloop adapter for promise-based async operations.
+// This implements builtin.EventLoopProvider.
+func (e *Engine) Adapter() *gojaEventloop.Adapter {
+	if e.runtime == nil {
+		return nil
+	}
+	return e.runtime.Adapter()
+}
+
+// Promisify executes a function in a goroutine and returns a Promise.
+// This is the preferred way to keep the event loop alive during async operations.
+// The promise resolution/rejection happens on the event loop goroutine.
+// The returned promise is NOT exposed to JavaScript - it's for Go-level async coordination.
+// This implements builtin.EventLoopProvider.
+func (e *Engine) Promisify(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise {
+	if e.runtime == nil {
+		return nil
+	}
+	return e.runtime.Promisify(ctx, fn)
 }
 
 // GetScripts returns all loaded scripts.
@@ -524,15 +751,19 @@ func (e *Engine) Close() error {
 
 	// NOTE: We intentionally do NOT close terminalIO here.
 	// TerminalIO wraps stdin/stdout which are process-owned resources.
-	// Each subsystem (go-prompt, tview, bubbletea) manages its own terminal
+	// Each subsystem (go-prompt, bubbletea) manages its own terminal
 	// state lifecycle independently. Attempting to close terminalIO causes
 	// "bad file descriptor" errors because go-prompt's reader has already
 	// been closed when the prompt loop exits.
 
 	// Close the runtime (this stops the event loop).
-	// We do this after stopping btBridge so any pending JS operations complete.
+	// Runtime.Close() cancels the loop context and shuts down cleanly.
 	if e.runtime != nil {
-		e.runtime.Close()
+		if err := e.runtime.Close(); err != nil {
+			if e.stderr != nil {
+				_, _ = fmt.Fprintf(e.stderr, "Warning: failed to close runtime: %v\n", err)
+			}
+		}
 	}
 
 	// Clean up any resources
@@ -552,7 +783,7 @@ func (e *Engine) setExecutionContext(ctx *ExecutionContext) error {
 	if ctx == nil {
 		panic("execution context cannot be nil")
 	}
-	return e.vm.Set(jsGlobalContextName, map[string]interface{}{
+	return e.vm.Set(jsGlobalContextName, map[string]any{
 		"run":    ctx.Run,
 		"defer":  ctx.Defer,
 		"log":    ctx.Log,
@@ -569,7 +800,7 @@ func (e *Engine) setExecutionContext(ctx *ExecutionContext) error {
 // setupGlobals sets up the global JavaScript environment.
 func (e *Engine) setupGlobals() {
 	// Context management functions
-	_ = e.vm.Set("context", map[string]interface{}{
+	_ = e.vm.Set("context", map[string]any{
 		"addPath":       e.jsContextAddPath,
 		"removePath":    e.jsContextRemovePath,
 		"listPaths":     e.jsContextListPaths,
@@ -583,7 +814,7 @@ func (e *Engine) setupGlobals() {
 	})
 
 	// Logging functions (application logs)
-	_ = e.vm.Set("log", map[string]interface{}{
+	_ = e.vm.Set("log", map[string]any{
 		"debug":      e.jsLogDebug,
 		"info":       e.jsLogInfo,
 		"warn":       e.jsLogWarn,
@@ -595,24 +826,26 @@ func (e *Engine) setupGlobals() {
 	})
 
 	// Terminal output functions (separate from logs)
-	_ = e.vm.Set("output", map[string]interface{}{
-		"print":  e.jsOutputPrint,
-		"printf": e.jsOutputPrintf,
+	_ = e.vm.Set("output", map[string]any{
+		"print":         e.jsOutputPrint,
+		"printf":        e.jsOutputPrintf,
+		"toClipboard":   e.jsOutputToClipboard,
+		"fromClipboard": e.jsOutputFromClipboard,
 	})
 
 	// TUI and Mode management functions
-	_ = e.vm.Set("tui", map[string]interface{}{
-		"registerMode":         e.tuiManager.jsRegisterMode,
-		"switchMode":           e.tuiManager.jsSwitchMode,
-		"getCurrentMode":       e.tuiManager.jsGetCurrentMode,
-		"registerCommand":      e.tuiManager.jsRegisterCommand,
-		"listModes":            e.tuiManager.jsListModes,
-		"createState":          e.jsCreateState,
-		"createAdvancedPrompt": e.tuiManager.jsCreateAdvancedPrompt,
-		"runPrompt":            e.tuiManager.jsRunPrompt,
-		"registerCompleter":    e.tuiManager.jsRegisterCompleter,
-		"setCompleter":         e.tuiManager.jsSetCompleter,
-		"registerKeyBinding":   e.tuiManager.jsRegisterKeyBinding,
+	_ = e.vm.Set("tui", map[string]any{
+		"registerMode":       e.tuiManager.jsRegisterMode,
+		"switchMode":         e.tuiManager.jsSwitchMode,
+		"getCurrentMode":     e.tuiManager.jsGetCurrentMode,
+		"registerCommand":    e.tuiManager.jsRegisterCommand,
+		"listModes":          e.tuiManager.jsListModes,
+		"createState":        e.jsCreateState,
+		"createPrompt":       e.tuiManager.jsCreatePrompt,
+		"runPrompt":          e.tuiManager.jsRunPrompt,
+		"registerCompleter":  e.tuiManager.jsRegisterCompleter,
+		"setCompleter":       e.tuiManager.jsSetCompleter,
+		"registerKeyBinding": e.tuiManager.jsRegisterKeyBinding,
 		// requestExit signals that the shell loop should exit after the current command completes.
 		// This is checked by the exit checker configured on the prompt.
 		"requestExit": func() {
@@ -643,4 +876,21 @@ func readFile(path string) (string, error) {
 		return "", err
 	}
 	return string(content), nil
+}
+
+// shebangStrippingLoader is a SourceLoader that strips shebang lines from JavaScript files.
+// This matches Node.js behavior: if a file starts with "#!", the shebang is replaced with
+// a comment ("//") to preserve line numbers while making the source valid JavaScript.
+func shebangStrippingLoader(filename string) ([]byte, error) {
+	data, err := require.DefaultSourceLoader(filename)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) >= 2 && data[0] == '#' && data[1] == '!' {
+		// Replace "#!" with "//" to turn the shebang into a JS comment.
+		// This preserves the line so line numbers in error messages stay correct.
+		data[0] = '/'
+		data[1] = '/'
+	}
+	return data, nil
 }

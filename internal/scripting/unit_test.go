@@ -2,6 +2,7 @@ package scripting
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -236,14 +237,16 @@ func TestCommandExecution(t *testing.T) {
 			}
 		});
 
-		// Register a global command
+		// Register a global command that shares the closure-scoped state.
+		// Global commands can access mode-specific state through closure
+		// capture, which is the idiomatic approach when the command and
+		// state are defined in the same script scope.
 		tui.registerCommand({
 			name: "global-test",
 			description: "Global test command",
 			handler: function(args) {
-				// This is a hack for testing: global commands can't easily access mode state
-				// In a real scenario, you'd use shared state or handle this differently
-				output.print("Global test command executed");
+				state.set(stateKeys.global_executed, true);
+				state.set(stateKeys.global_args, args);
 			}
 		});
 	`)
@@ -266,7 +269,7 @@ func TestCommandExecution(t *testing.T) {
 	}
 
 	// Verify command was executed using test helper
-	test1Executed, err := tuiManager.GetStateViaJS("command-test-mode:test1_executed")
+	test1Executed, err := tuiManager.GetStateForTest("command-test-mode:test1_executed")
 	if err != nil {
 		t.Fatalf("Failed to get test1_executed state: %v", err)
 	}
@@ -279,8 +282,15 @@ func TestCommandExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Global command execution failed: %v", err)
 	}
-	// Note: Global commands don't have direct access to mode state,
-	// so we just verify the command executes without error
+
+	// Verify the global command was executed via shared closure state
+	globalExecuted, err := tuiManager.GetStateForTest("command-test-mode:global_executed")
+	if err != nil {
+		t.Fatalf("Failed to get global_executed state: %v", err)
+	}
+	if globalExecuted != true {
+		t.Fatal("global-test command was not executed")
+	}
 
 	// Test non-existent command
 	err = tuiManager.ExecuteCommand("nonexistent", []string{})
@@ -288,8 +298,8 @@ func TestCommandExecution(t *testing.T) {
 		t.Fatal("Expected error for non-existent command")
 	}
 
-	if !strings.Contains(err.Error(), "command nonexistent not found") {
-		t.Fatalf("Expected 'command not found' error, got: %v", err)
+	if !errors.Is(err, ErrCommandNotFound) {
+		t.Fatalf("Expected ErrCommandNotFound, got: %v", err)
 	}
 }
 

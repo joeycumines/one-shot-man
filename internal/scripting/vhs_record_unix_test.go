@@ -4,13 +4,14 @@ package scripting
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -162,6 +163,7 @@ type InputCaptureRecorder struct {
 	input    *bytes.Buffer
 	config   VHSRecordSettings
 	tapePath string
+	repoRoot string // absolute path to repository root, for path remapping
 	closed   bool
 
 	// The command that was typed - for documentation in tape
@@ -206,11 +208,19 @@ func NewInputCaptureRecorder(ctx context.Context, tapePath string, opts ...Recor
 		return nil, fmt.Errorf("failed to create console: %w", err)
 	}
 
+	// Compute repository root from source file location (internal/scripting/ → ../..)
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		return nil, fmt.Errorf("failed to determine source file for repo root computation")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
+
 	return &InputCaptureRecorder{
 		console:        console,
 		input:          &bytes.Buffer{},
 		config:         cfg.vhsSettings,
 		tapePath:       tapePath,
+		repoRoot:       repoRoot,
 		typedCommand:   cfg.command,
 		typedArgs:      cfg.args,
 		skipTapeOutput: cfg.skipTapeOutput,
@@ -251,30 +261,29 @@ func (r *InputCaptureRecorder) TypeCommand() error {
 		return nil
 	}
 
-	// Build the full command line
-	// WARNING: This filthy hack is CRITICAL for the recording of the .tape files, which need to resolve the script path correctly.
-	// TODO: Real solution for the remapping of paths, also quoting of args is likely completely wrong
+	// Build the full command line.
+	// Remap relative file paths so generated .tape files resolve correctly
+	// when VHS replays from the tape's output directory. For example, if the
+	// tape lives at docs/visuals/gifs/demo.tape and the script is at
+	// scripts/example.js (repo-root-relative), the tape needs the path
+	// ../../../scripts/example.js (relative from docs/visuals/gifs/ to repo root).
 	typedCommand := r.typedCommand
 	typedArgs := r.typedArgs
 	if typedCommand == "osm" {
 		var foundScript bool
-		// [FIX] Don't prepend "../../../" when running from repoRoot - scripts/* is already relative to repo
-		var scriptArgPrefix string
 		for i, arg := range typedArgs {
 			if foundScript {
-				// Only prepend "../../../" if NOT running from repoRoot (dir not set or different)
-				// When repoRoot is set via WithRecorderDir, we're already at correct path
-				if r.console != nil && !r.closed {
-					// Check if console dir matches what we expect (repoRoot at project level)
-					// This is heuristic - if typed command already has scripts/ it was already adjusted
-					// We'll only prepend "../../../" if the path looks like it came from docs/visuals/gifs/
-					if strings.HasPrefix(arg, "scripts/") && !strings.HasPrefix(typedArgs[i], "../../../") {
-						scriptArgPrefix = "../../../"
+				if !filepath.IsAbs(arg) {
+					absFile := filepath.Join(r.repoRoot, arg)
+					absTapeDir, err := filepath.Abs(filepath.Dir(r.tapePath))
+					if err == nil {
+						if rel, err := filepath.Rel(absTapeDir, absFile); err == nil {
+							typedArgs = slices.Clone(typedArgs)
+							typedArgs[i] = rel
+						}
 					}
-					typedArgs = slices.Clone(typedArgs)
-					typedArgs[i] = scriptArgPrefix + arg
-					break
 				}
+				break
 			} else if arg == "script" {
 				foundScript = true
 			} else if !strings.HasPrefix(arg, "-") {
@@ -284,9 +293,8 @@ func (r *InputCaptureRecorder) TypeCommand() error {
 	}
 	cmdLine := typedCommand
 	for _, arg := range typedArgs {
-		// Quote args with spaces
 		if strings.ContainsAny(arg, " \t") {
-			cmdLine += " " + fmt.Sprintf("%q", arg)
+			cmdLine += " " + quoteVHSString(arg)
 		} else {
 			cmdLine += " " + arg
 		}
@@ -328,6 +336,30 @@ func (r *InputCaptureRecorder) Snapshot() termtest.Snapshot {
 // Expect waits for the expected content in the console.
 func (r *InputCaptureRecorder) Expect(ctx context.Context, snap termtest.Snapshot, matcher termtest.Condition, desc string) error {
 	return r.console.Expect(ctx, snap, matcher, desc)
+}
+
+// ExpectFull polls the full console buffer every 100ms for the target string.
+// Unlike Expect (which uses a snapshot-relative offset), ExpectFull searches
+// the entire accumulated buffer. This is immune to PTY ring buffer wrapping
+// during long-running simulations where the buffer grows beyond the ring capacity
+// and overwrites early content (e.g., "WIN!" appears at offset 53,194 but the
+// snapshot-relative search starts from a later offset like 150,591).
+func (r *InputCaptureRecorder) ExpectFull(ctx context.Context, target string) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			if strings.Contains(r.console.String(), target) {
+				return nil
+			}
+			return ctx.Err()
+		case <-ticker.C:
+			if strings.Contains(r.console.String(), target) {
+				return nil
+			}
+		}
+	}
 }
 
 // WaitExit waits for the process to exit.
@@ -507,18 +539,15 @@ func (r *InputCaptureRecorder) inputToTape(input string) string {
 	// Process markers (sleep, comment, wait) and regular input
 	parts := strings.Split(input, "\x00")
 	for _, part := range parts {
-		if strings.HasPrefix(part, "SLEEP:") {
-			duration := strings.TrimPrefix(part, "SLEEP:")
+		if duration, ok := strings.CutPrefix(part, "SLEEP:"); ok {
 			result.WriteString(fmt.Sprintf("Sleep %s\n", duration))
 			continue
 		}
-		if strings.HasPrefix(part, "COMMENT:") {
-			text := strings.TrimPrefix(part, "COMMENT:")
+		if text, ok := strings.CutPrefix(part, "COMMENT:"); ok {
 			result.WriteString(fmt.Sprintf("# %s\n", text))
 			continue
 		}
-		if strings.HasPrefix(part, "WAIT:") {
-			rest := strings.TrimPrefix(part, "WAIT:")
+		if rest, ok := strings.CutPrefix(part, "WAIT:"); ok {
 			idx := strings.Index(rest, ":")
 			if idx > 0 {
 				timeout := rest[:idx]
@@ -535,7 +564,7 @@ func (r *InputCaptureRecorder) inputToTape(input string) string {
 		for seq := range EscapeSequences {
 			seqs = append(seqs, seq)
 		}
-		sort.Slice(seqs, func(i, j int) bool { return len(seqs[i]) > len(seqs[j]) })
+		slices.SortFunc(seqs, func(a, b string) int { return cmp.Compare(len(b), len(a)) })
 		for _, seq := range seqs {
 			cmd := EscapeSequences[seq]
 			s = strings.ReplaceAll(s, seq, "\n"+cmd+"\n")

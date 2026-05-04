@@ -19,6 +19,7 @@ var contextManagerScript string
 var (
 	runGitDiffFn            = runGitDiff
 	getDefaultGitDiffArgsFn = getDefaultGitDiffArgs
+	runExecFn               = runExec
 )
 
 // contentBlock holds the processed data for each distinct section before rendering.
@@ -43,6 +44,13 @@ func SetGetDefaultGitDiffArgsFn(fn func(context.Context) []string) func() {
 	return func() { getDefaultGitDiffArgsFn = old }
 }
 
+// SetRunExecFn sets the exec function for testing.
+func SetRunExecFn(fn func(context.Context, []string) (string, string, bool)) func() {
+	old := runExecFn
+	runExecFn = fn
+	return func() { runExecFn = old }
+}
+
 // calculateBacktickFence determines the required fence length based on content.
 // It scans all provided content strings for the longest consecutive run of backticks,
 // then returns a fence that is one character longer, with a minimum of 5 backticks.
@@ -62,10 +70,7 @@ func calculateBacktickFence(contents []string) string {
 		}
 	}
 
-	fenceLen := maxLength + 1
-	if fenceLen < 5 {
-		fenceLen = 5
-	}
+	fenceLen := max(maxLength+1, 5)
 	return strings.Repeat("`", fenceLen)
 }
 
@@ -78,7 +83,7 @@ func calculateBacktickFence(contents []string) string {
 //	const { buildContext, contextManager } = require('osm:ctxutil');
 //	const text = buildContext(itemsArray, { toTxtar: () => context.toTxtar() });
 //
-// itemsArray: Array<{ id?: number, type: 'note'|'diff'|'diff-error'|'lazy-diff', label?: string, payload?: any }>
+// itemsArray: Array<{ id?: number, type: 'note'|'diff'|'diff-error'|'lazy-diff'|'lazy-exec', label?: string, payload?: any }>
 // options.toTxtar: optional function returning string to append as fenced txtar block.
 //
 // Behavior:
@@ -86,6 +91,7 @@ func calculateBacktickFence(contents []string) string {
 // - diff: emits a markdown Diff section using payload string.
 // - diff-error: emits a markdown Diff Error section using payload string.
 // - lazy-diff: payload can be string (shell-like) or string[] (argv). Runs `git diff ...` and emits Diff or Diff Error.
+// - lazy-exec: payload can be string (shell-like) or string[] (argv). Executes the command and emits Exec or Exec Error.
 //
 // contextManager: Factory function for creating reusable context management patterns.
 // See contextManager.js for detailed documentation.
@@ -94,7 +100,7 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 		// Get or create exports object
 		exportsVal := module.Get("exports")
 		var exports *goja.Object
-		if goja.IsUndefined(exportsVal) || goja.IsNull(exportsVal) {
+		if exportsVal == nil || goja.IsUndefined(exportsVal) || goja.IsNull(exportsVal) {
 			exports = runtime.NewObject()
 			_ = module.Set("exports", exports)
 		} else {
@@ -122,12 +128,12 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 			if obj != nil && obj.ClassName() == "Array" {
 				l := int(obj.Get("length").ToInteger())
 				items = make([]goja.Value, 0, l)
-				for i := 0; i < l; i++ {
+				for i := range l {
 					items = append(items, obj.Get(fmt.Sprintf("%d", i)))
 				}
 			} else {
 				// Fall back to exporting into generic slice (e.g., Go slices exposed to JS)
-				var itemsGo []interface{}
+				var itemsGo []any
 				if err := runtime.ExportTo(itemsArg, &itemsGo); err != nil {
 					return runtime.ToValue("")
 				}
@@ -227,7 +233,7 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 					} else if arr != nil {
 						length := int(arr.Get("length").ToInteger())
 						tmp := make([]string, 0, length)
-						for i := 0; i < length; i++ {
+						for i := range length {
 							itemVal := valueOrUndefined(arr.Get(fmt.Sprintf("%d", i)))
 							if goja.IsUndefined(itemVal) || goja.IsNull(itemVal) {
 								hadErr = true
@@ -262,7 +268,7 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 						errMsg = fmt.Sprintf("Invalid payload: %v", err)
 					} else {
 						switch exported := exported.(type) {
-						case []interface{}:
+						case []any:
 							tmp := make([]string, 0, len(exported))
 							for i, item := range exported {
 								str, ok := item.(string)
@@ -334,6 +340,125 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 						})
 						codeContents = append(codeContents, out)
 					}
+
+				case "lazy-exec":
+					// Determine argv for the command
+					payloadVal := valueOrUndefined(obj.Get("payload"))
+					var execArgs []string
+					var hadErr bool
+					var errMsg string
+
+					if goja.IsUndefined(payloadVal) || goja.IsNull(payloadVal) {
+						// No payload → error
+						hadErr = true
+						errMsg = "exec: no command specified"
+					} else if arr, arrErr := toArrayObject(runtime, payloadVal); arrErr != nil {
+						hadErr = true
+						errMsg = fmt.Sprintf("Invalid payload: %v", arrErr)
+					} else if arr != nil {
+						length := int(arr.Get("length").ToInteger())
+						tmp := make([]string, 0, length)
+						for i := range length {
+							itemVal := valueOrUndefined(arr.Get(fmt.Sprintf("%d", i)))
+							if goja.IsUndefined(itemVal) || goja.IsNull(itemVal) {
+								hadErr = true
+								errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%v')", i, itemVal)
+								break
+							}
+							exported, err := exportGojaValue(runtime, itemVal)
+							if err != nil {
+								hadErr = true
+								errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, err)
+								break
+							}
+							str, ok := exported.(string)
+							if !ok {
+								typeName := ""
+								if exported != nil {
+									typeName = reflect.TypeOf(exported).String()
+								} else {
+									typeName = "undefined"
+								}
+								hadErr = true
+								errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, typeName)
+								break
+							}
+							tmp = append(tmp, str)
+						}
+						if !hadErr {
+							execArgs = tmp
+						}
+					} else if exported, err := exportGojaValue(runtime, payloadVal); err != nil {
+						hadErr = true
+						errMsg = fmt.Sprintf("Invalid payload: %v", err)
+					} else {
+						switch exported := exported.(type) {
+						case []any:
+							tmp := make([]string, 0, len(exported))
+							for i, item := range exported {
+								str, ok := item.(string)
+								if !ok {
+									typeName := "undefined"
+									if item != nil {
+										typeName = reflect.TypeOf(item).String()
+									}
+									hadErr = true
+									errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, typeName)
+									break
+								}
+								tmp = append(tmp, str)
+							}
+							if !hadErr {
+								execArgs = tmp
+							}
+						case []string:
+							execArgs = append(execArgs, exported...)
+						case string:
+							execArgs = gosmargv.ParseSlice(exported)
+						default:
+							typeName := ""
+							if exported != nil {
+								typeName = reflect.TypeOf(exported).String()
+							} else {
+								typeName = "undefined"
+							}
+							hadErr = true
+							errMsg = fmt.Sprintf("Invalid payload: expected a string or string array, but got type '%s'", typeName)
+						}
+					}
+
+					// Execute the command
+					var out string
+					if !hadErr {
+						var execErr bool
+						out, errMsg, execErr = runExecFn(baseCtx, execArgs)
+						hadErr = execErr
+					}
+
+					finalLabel := label
+					if finalLabel == "" {
+						finalLabel = strings.TrimSpace(strings.Join(execArgs, " "))
+					}
+
+					if hadErr {
+						title := "Exec Error: " + finalLabel
+						content := "Error executing command: " + errMsg
+						blocks = append(blocks, &contentBlock{
+							Title:   title,
+							Content: content,
+							Lang:    "",
+							IsError: true,
+						})
+					} else {
+						title := "Exec: " + finalLabel
+						blocks = append(blocks, &contentBlock{
+							Title:   title,
+							Content: out,
+							Lang:    "",
+							IsError: false,
+						})
+						codeContents = append(codeContents, out)
+					}
 				}
 			}
 
@@ -376,11 +501,53 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 				}
 			}
 
-			// Append txtar block if present
+			// Append txtar block if present.
+			// Extract metadata lines (context root, common path, tracked directories)
+			// and render them OUTSIDE the code fence for better readability.
 			if txtarContent != "" {
+				var metaLines []string
+				var bodyLines []string
+				inMeta := true
+				for line := range strings.SplitSeq(txtarContent, "\n") {
+					if inMeta {
+						trimmed := strings.TrimSpace(line)
+						if strings.HasPrefix(trimmed, "context root:") ||
+							strings.HasPrefix(trimmed, "common path:") ||
+							strings.HasPrefix(trimmed, "tracked directories:") {
+							metaLines = append(metaLines, line)
+							continue
+						}
+						// Empty lines before first file marker are still metadata region.
+						if trimmed == "" {
+							continue
+						}
+						inMeta = false
+					}
+					bodyLines = append(bodyLines, line)
+				}
+
+				// Render metadata above the fence, with paths in backticks.
+				for _, ml := range metaLines {
+					if before, after, ok := strings.Cut(ml, ": "); ok {
+						key := strings.TrimSpace(before)
+						val := strings.TrimSpace(after)
+						buf.WriteString(key)
+						buf.WriteString(": `")
+						buf.WriteString(val)
+						buf.WriteString("`\n")
+					} else {
+						buf.WriteString(ml)
+						buf.WriteString("\n")
+					}
+				}
+				if len(metaLines) > 0 {
+					buf.WriteString("\n")
+				}
+
+				body := strings.Join(bodyLines, "\n")
 				buf.WriteString(fence)
 				buf.WriteString("txtar\n")
-				buf.WriteString(txtarContent)
+				buf.WriteString(body)
 				buf.WriteString("\n")
 				buf.WriteString(fence)
 			}
@@ -445,9 +612,9 @@ func valueOrUndefined(val goja.Value) goja.Value {
 	return val
 }
 
-func exportGojaValue(runtime *goja.Runtime, value goja.Value) (interface{}, error) {
+func exportGojaValue(runtime *goja.Runtime, value goja.Value) (any, error) {
 	var (
-		result    interface{}
+		result    any
 		exportErr error
 	)
 
@@ -545,4 +712,24 @@ func getDefaultGitDiffArgs(ctx context.Context) []string {
 
 	// Fallback: empty tree vs HEAD
 	return []string{"4b825dc642cb6eb9a060e54bf8d69288fbee4904", "HEAD"}
+}
+
+// runExec executes an arbitrary command and returns its output.
+// The first element of args is the command name; subsequent elements are arguments.
+func runExec(ctx context.Context, args []string) (stdout string, message string, hadErr bool) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if len(args) == 0 {
+		return "", "exec: no command specified", true
+	}
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	err := cmd.Run()
+	if err != nil {
+		return "", strings.TrimSpace(errBuf.String() + " " + err.Error()), true
+	}
+	return outBuf.String(), "", false
 }

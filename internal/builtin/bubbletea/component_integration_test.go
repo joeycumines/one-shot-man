@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/require"
 )
@@ -39,7 +39,7 @@ func TestMixedComponents_BatchExecutesAll(t *testing.T) {
 	require.True(t, ok)
 
 	// Create two closure commands that record side-effects
-	calls := make([]string, 0)
+	var calls []string
 	var mu sync.Mutex
 	c1 := func() tea.Msg { mu.Lock(); defer mu.Unlock(); calls = append(calls, "textarea"); return nil }
 	c2 := func() tea.Msg { mu.Lock(); defer mu.Unlock(); calls = append(calls, "viewport"); return nil }

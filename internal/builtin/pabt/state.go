@@ -203,7 +203,7 @@ func (s *State) Variable(key any) (any, error) {
 
 	// Safety check: Blackboard is required (should never be nil if using NewState)
 	if s.Blackboard == nil {
-		return nil, fmt.Errorf("State.Blackboard is nil - use NewState() to construct")
+		return nil, fmt.Errorf("pabt: state blackboard is nil: use NewState() to construct")
 	}
 
 	// Get value from blackboard (returns nil if not found, which is correct pabt semantics)

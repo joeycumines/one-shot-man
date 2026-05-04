@@ -49,7 +49,7 @@ func TestExprCondition_ThirdArgumentInteger(t *testing.T) {
 		})()
 	`)
 
-	obj := res.Export().(map[string]interface{})
+	obj := res.Export().(map[string]any)
 	assert.True(t, obj["hasKey"].(bool), "Should have correct key")
 	assert.True(t, obj["hasMatch"].(bool), "Should have match function")
 	assert.True(t, obj["hasNative"].(bool), "Should have _native property")
@@ -71,7 +71,7 @@ func TestExprCondition_ThirdArgumentString(t *testing.T) {
 		})()
 	`)
 
-	obj := res.Export().(map[string]interface{})
+	obj := res.Export().(map[string]any)
 	assert.Equal(t, "status", obj["key"])
 	assert.Equal(t, "ready", obj["value"], "value should be 'ready'")
 }
@@ -90,7 +90,7 @@ func TestExprCondition_ThirdArgumentBooleanTrue(t *testing.T) {
 		})()
 	`)
 
-	obj := res.Export().(map[string]interface{})
+	obj := res.Export().(map[string]any)
 	assert.Equal(t, true, obj["value"], "Value should be true")
 }
 
@@ -108,7 +108,7 @@ func TestExprCondition_ThirdArgumentBooleanFalse(t *testing.T) {
 		})()
 	`)
 
-	obj := res.Export().(map[string]interface{})
+	obj := res.Export().(map[string]any)
 	assert.Equal(t, false, obj["value"], "Value should be false")
 }
 
@@ -126,7 +126,7 @@ func TestExprCondition_ThirdArgumentNegativeInteger(t *testing.T) {
 		})()
 	`)
 
-	obj := res.Export().(map[string]interface{})
+	obj := res.Export().(map[string]any)
 	assert.Equal(t, int64(-1), obj["value"], "Value should be -1")
 }
 
@@ -200,7 +200,7 @@ func TestExprCondition_NoThirdArgument(t *testing.T) {
 		})()
 	`)
 
-	obj := res.Export().(map[string]interface{})
+	obj := res.Export().(map[string]any)
 	assert.True(t, obj["hasKey"].(bool))
 	assert.True(t, obj["hasMatch"].(bool))
 	assert.True(t, obj["valueIsUndefined"].(bool), "Value should be undefined when third argument not provided")
@@ -222,7 +222,7 @@ func TestExprCondition_NativePropertyExists(t *testing.T) {
 		})()
 	`)
 
-	obj := res.Export().(map[string]interface{})
+	obj := res.Export().(map[string]any)
 	assert.True(t, obj["hasKey"].(bool))
 	assert.True(t, obj["hasMatch"].(bool))
 	assert.True(t, obj["hasNative"].(bool), "ExprCondition should have _native property")
@@ -263,7 +263,7 @@ func TestExprCondition_UsedInAction(t *testing.T) {
 		})()
 	`)
 
-	obj := res.Export().(map[string]interface{})
+	obj := res.Export().(map[string]any)
 	assert.True(t, obj["exprCondHasNative"].(bool), "ExprCondition should have _native property")
 	assert.True(t, obj["actionRegistered"].(bool), "Action should be registered successfully")
 }

@@ -14,6 +14,7 @@ import (
 )
 
 func setupConsistencyTestPair(t *testing.T) (*goja.Runtime, *goja.Object, *goja.Runtime, *goja.Object, *goja.Object) {
+	t.Helper()
 	// Setup manual mode
 	ctxManual := context.Background()
 	vmManual := goja.New()
@@ -76,6 +77,7 @@ func setupConsistencyTestPair(t *testing.T) (*goja.Runtime, *goja.Object, *goja.
 }
 
 func setupTestVM(t *testing.T, vm *goja.Runtime, manager *bubbletea.Manager) {
+	t.Helper()
 	modules := make(map[string]goja.Value)
 
 	vm.Set("require", func(call goja.FunctionCall) goja.Value {
@@ -160,6 +162,7 @@ func setupTestVM(t *testing.T, vm *goja.Runtime, manager *bubbletea.Manager) {
 }
 
 func setupTestState(t *testing.T, vm *goja.Runtime, state *goja.Object) {
+	t.Helper()
 	blackboard := vm.NewObject()
 	_ = blackboard.Set("get", func(call goja.FunctionCall) goja.Value {
 		return vm.ToValue(-1)
@@ -174,16 +177,16 @@ func setupTestState(t *testing.T, vm *goja.Runtime, state *goja.Object) {
 }
 
 // createKeyMsg creates a Key message
-func createKeyMsg(key string) map[string]interface{} {
-	return map[string]interface{}{
+func createKeyMsg(key string) map[string]any {
+	return map[string]any{
 		"type": "Key",
 		"key":  key,
 	}
 }
 
 // createTickMsg creates a Tick message
-func createTickMsg() map[string]interface{} {
-	return map[string]interface{}{
+func createTickMsg() map[string]any {
+	return map[string]any{
 		"type": "Tick",
 		"id":   "tick",
 	}
@@ -220,6 +223,9 @@ func callFindFirstBlocker(t *testing.T, vm *goja.Runtime, exports *goja.Object, 
 // ============================================================================
 
 func TestSimulationConsistency_Physics_T6(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping simulation consistency test in short mode")
+	}
 	// Test physics behavior using only exported script functions.
 	// Verifies: manual mode movement, diagonal movement, position accumulation, and held item exclusion.
 	vmManual, manualState, _, _, exports := setupConsistencyTestPair(t)
@@ -285,7 +291,7 @@ func TestSimulationConsistency_Physics_T6(t *testing.T) {
 		_ = manualActor.Set("y", 10)
 
 		// Move 5 ticks right
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			msgKey := createKeyMsg("d")
 			_, _ = updateFn(goja.Undefined(), manualState, vmManual.ToValue(msgKey))
 			msgTick := createTickMsg()
@@ -345,6 +351,9 @@ func TestSimulationConsistency_Physics_T6(t *testing.T) {
 // ============================================================================
 
 func TestSimulationConsistency_Collision_T7(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping simulation consistency test in short mode")
+	}
 	// Test collision detection using only exported script functions (getPathInfo, findFirstBlocker).
 	// Verifies: boundary detection, cube collision, and buildBlockedSet consistency.
 	vmManual, manualState, vmAuto, autoState, exports := setupConsistencyTestPair(t)
@@ -525,6 +534,9 @@ func TestSimulationConsistency_Collision_T7(t *testing.T) {
 // ============================================================================
 
 func TestSimulationConsistency_Pathfinding_T8(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping simulation consistency test in short mode")
+	}
 	// Test pathfinding using only exported functions (getPathInfo, findFirstBlocker).
 	vmManual, manualState, vmAuto, autoState, exports := setupConsistencyTestPair(t)
 

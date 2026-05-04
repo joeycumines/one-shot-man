@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 )
@@ -33,7 +33,7 @@ func TestJSModelLogic_Init(t *testing.T) {
 			initFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 				// return [state, quit]
 				newState := vm.NewObject()
-				quit := map[string]interface{}{"_cmdType": "quit"}
+				quit := map[string]any{"_cmdType": "quit"}
 				return vm.NewArray(newState, vm.ToValue(quit)), nil
 			},
 			state: vm.NewObject(),
@@ -82,14 +82,14 @@ func TestJSModelLogic_Update(t *testing.T) {
 			runtime: vm,
 			updateFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 				// args[0]=msg, args[1]=state
-				cmd := map[string]interface{}{"_cmdType": "quit"}
+				cmd := map[string]any{"_cmdType": "quit"}
 				return vm.NewArray(args[1], vm.ToValue(cmd)), nil
 			},
 			state: vm.NewObject(),
 		}
 		model.jsRunner = &SyncJSRunner{Runtime: vm}
 
-		newModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		newModel, cmd := model.Update(tea.KeyPressMsg{Text: "a"})
 		assert.NotNil(t, newModel)
 		assert.NotNil(t, cmd)
 	})
@@ -128,8 +128,8 @@ func TestJSModelLogic_View(t *testing.T) {
 		model.jsRunner = &SyncJSRunner{Runtime: vm}
 
 		output := model.View()
-		assert.Contains(t, output, "View error")
-		assert.Contains(t, output, "view failed")
+		assert.Contains(t, output.Content, "View error")
+		assert.Contains(t, output.Content, "view failed")
 	})
 
 	t.Run("Empty Return", func(t *testing.T) {
@@ -144,6 +144,6 @@ func TestJSModelLogic_View(t *testing.T) {
 		model.jsRunner = &SyncJSRunner{Runtime: vm}
 
 		output := model.View()
-		assert.Equal(t, "[BT] View returned empty string", output)
+		assert.Equal(t, "[BT] View returned empty string", output.Content)
 	})
 }

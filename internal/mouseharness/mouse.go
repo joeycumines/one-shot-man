@@ -104,24 +104,6 @@ func (c *Console) ClickWithButton(x, y int, button MouseButton) error {
 	return nil
 }
 
-// ScrollWheel sends a mouse wheel event at the specified viewport-relative coordinates.
-// Coordinates are 1-indexed. Use ScrollUp or ScrollDown for direction.
-// SGR mouse encoding: Button 64 = wheel up, Button 65 = wheel down.
-//
-// Deprecated: Use ScrollWheelWithDirection for type-safe direction.
-func (c *Console) ScrollWheel(x, y int, direction string) error {
-	var dir ScrollDirection
-	switch direction {
-	case "up":
-		dir = ScrollUp
-	case "down":
-		dir = ScrollDown
-	default:
-		return fmt.Errorf("unknown scroll direction: %s (use 'up' or 'down')", direction)
-	}
-	return c.ScrollWheelWithDirection(x, y, dir)
-}
-
 // ScrollWheelWithDirection sends a mouse wheel event with a type-safe direction.
 // Coordinates are 1-indexed. direction must be ScrollUp or ScrollDown.
 // SGR mouse encoding: Button 64 = wheel up, Button 65 = wheel down.
@@ -138,18 +120,6 @@ func (c *Console) ScrollWheelWithDirection(x, y int, direction ScrollDirection) 
 	}
 
 	return nil
-}
-
-// ScrollWheelOnElement finds an element and sends a scroll wheel event on it.
-// Deprecated: Use ScrollWheelOnElementWithDirection for type-safe direction.
-func (c *Console) ScrollWheelOnElement(content string, direction string) error {
-	loc := c.FindElement(content)
-	if loc == nil {
-		return fmt.Errorf("element %q not found for scroll", content)
-	}
-	centerX := loc.Col + loc.Width/2
-	viewportY := c.bufferRowToViewportRow(loc.Row)
-	return c.ScrollWheel(centerX, viewportY, direction)
 }
 
 // ScrollWheelOnElementWithDirection finds an element and sends a scroll wheel event on it.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -16,7 +17,7 @@ import (
 
 func newTestEngine(t *testing.T, ctx context.Context, stdout, stderr io.Writer) *Engine {
 	t.Helper()
-	engine, err := NewEngineWithConfig(ctx, stdout, stderr, testutil.NewTestSessionID("", t.Name()), "memory")
+	engine, err := NewEngine(ctx, stdout, stderr, testutil.NewTestSessionID("", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -227,7 +228,7 @@ func TestEngine_ComplexScenario(t *testing.T) {
 
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
-	engine.SetGlobal("config", map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{
 		"timeout": 1000,
 		"retries": 3,
 	})
@@ -312,7 +313,7 @@ func TestSetGlobal_QueueSafeFromGoroutine(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		resultsWG.Add(1)
 		idx := i // capture loop variable
-		engine.QueueGetGlobal(fmt.Sprintf("key%d", idx), func(value interface{}) {
+		engine.QueueGetGlobal(fmt.Sprintf("key%d", idx), func(value any) {
 			defer resultsWG.Done()
 			if v, ok := value.(int64); ok {
 				resultsMu.Lock()
@@ -384,10 +385,10 @@ func TestQueueSetGlobal_AsyncBehavior(t *testing.T) {
 
 	// Immediately trying to read might not see the value yet (async)
 	// But eventually the callback should receive it
-	var receivedValue interface{}
+	var receivedValue any
 	var wg sync.WaitGroup
 	wg.Add(1)
-	engine.QueueGetGlobal("asyncKey", func(value interface{}) {
+	engine.QueueGetGlobal("asyncKey", func(value any) {
 		receivedValue = value
 		wg.Done()
 	})
@@ -408,10 +409,10 @@ func TestQueueGetGlobal_NilHandling(t *testing.T) {
 	engine.SetTestMode(true)
 
 	// Test getting a non-existent key
-	var nilResult interface{}
+	var nilResult any
 	var nilWG sync.WaitGroup
 	nilWG.Add(1)
-	engine.QueueGetGlobal("nonExistentKey", func(value interface{}) {
+	engine.QueueGetGlobal("nonExistentKey", func(value any) {
 		nilResult = value
 		nilWG.Done()
 	})
@@ -423,10 +424,10 @@ func TestQueueGetGlobal_NilHandling(t *testing.T) {
 
 	// Set to nil explicitly and verify
 	engine.SetGlobal("explicitNil", nil)
-	var explicitNilResult interface{}
+	var explicitNilResult any
 	var explicitNilWG sync.WaitGroup
 	explicitNilWG.Add(1)
-	engine.QueueGetGlobal("explicitNil", func(value interface{}) {
+	engine.QueueGetGlobal("explicitNil", func(value any) {
 		explicitNilResult = value
 		explicitNilWG.Done()
 	})
@@ -489,7 +490,7 @@ func TestQueueSetGlobal_ConcurrentWrites(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		verifyWG.Add(1)
 		idx := i
-		engine.QueueGetGlobal(fmt.Sprintf("concurrentKey_%d", idx), func(value interface{}) {
+		engine.QueueGetGlobal(fmt.Sprintf("concurrentKey_%d", idx), func(value any) {
 			defer verifyWG.Done()
 			if v, ok := value.(int64); !ok || int(v) != idx*2 {
 				t.Errorf("Expected %d, got: %v", idx*2, value)
@@ -517,10 +518,10 @@ func TestQueueGetGlobal_ConcurrentReads(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			var result interface{}
+			var result any
 			var readWG sync.WaitGroup
 			readWG.Add(1)
-			engine.QueueGetGlobal("sharedKey", func(value interface{}) {
+			engine.QueueGetGlobal("sharedKey", func(value any) {
 				result = value
 				readWG.Done()
 			})
@@ -556,7 +557,7 @@ func TestSetGlobal_OverwriteValue(t *testing.T) {
 		t.Errorf("Expected 'string', got: %v", v)
 	}
 
-	engine.SetGlobal("overwriteKey", map[string]interface{}{"nested": true})
+	engine.SetGlobal("overwriteKey", map[string]any{"nested": true})
 	if v := engine.GetGlobal("overwriteKey"); v == nil {
 		t.Error("Expected map value, got nil")
 	}
@@ -573,7 +574,7 @@ func TestSetGlobal_VariousTypes(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		value interface{}
+		value any
 	}{
 		{"string", "hello"},
 		{"int", int64(42)},
@@ -611,7 +612,7 @@ func TestQueueSetGlobal_ValueTypes(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		value interface{}
+		value any
 	}{
 		{"string", "hello"},
 		{"int", int64(42)},
@@ -626,7 +627,7 @@ func TestQueueSetGlobal_ValueTypes(t *testing.T) {
 			var wg sync.WaitGroup
 			wg.Add(1)
 			engine.QueueSetGlobal("queueTestValue", tt.value)
-			engine.QueueGetGlobal("queueTestValue", func(value interface{}) {
+			engine.QueueGetGlobal("queueTestValue", func(value any) {
 				defer wg.Done()
 				if tt.value == nil {
 					if value != nil {
@@ -659,7 +660,7 @@ func TestThreadCheckMode_PanicDetection(t *testing.T) {
 	// Now verify that calling from a different goroutine would panic
 	// We use a subtest to catch the expected panic
 	t.Run("SetGlobal_panics_on_wrong_goroutine", func(t *testing.T) {
-		panicChan := make(chan interface{}, 1)
+		panicChan := make(chan any, 1)
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -682,7 +683,7 @@ func TestThreadCheckMode_PanicDetection(t *testing.T) {
 	})
 
 	t.Run("GetGlobal_panics_on_wrong_goroutine", func(t *testing.T) {
-		panicChan := make(chan interface{}, 1)
+		panicChan := make(chan any, 1)
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -724,10 +725,10 @@ func TestQueueSetGlobal_FromEventLoop(t *testing.T) {
 	}
 
 	// Verify the value was set
-	var result interface{}
+	var result any
 	var wg sync.WaitGroup
 	wg.Add(1)
-	engine.QueueGetGlobal("eventLoopKey", func(value interface{}) {
+	engine.QueueGetGlobal("eventLoopKey", func(value any) {
 		result = value
 		wg.Done()
 	})
@@ -751,7 +752,7 @@ func TestGetGlobal_FromEventLoop(t *testing.T) {
 	engine.SetGlobal("eventLoopGetKey", "eventLoopGetValue")
 
 	// GetGlobal from event loop context
-	var result interface{}
+	var result any
 	err := engine.runtime.RunOnLoopSync(func(r *goja.Runtime) error {
 		result = engine.GetGlobal("eventLoopGetKey")
 		return nil
@@ -818,7 +819,7 @@ func TestQueueSetGlobal_ManyValues(t *testing.T) {
 	for i := 0; i < numValues; i++ {
 		verifyWG.Add(1)
 		idx := i
-		engine.QueueGetGlobal(fmt.Sprintf("rapidKey_%d", idx), func(value interface{}) {
+		engine.QueueGetGlobal(fmt.Sprintf("rapidKey_%d", idx), func(value any) {
 			defer verifyWG.Done()
 			if v, ok := value.(int64); !ok || int(v) != idx {
 				t.Errorf("Expected %d, got: %v", idx, value)

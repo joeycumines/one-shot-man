@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -14,7 +15,7 @@ import (
 // It differentiates between application logs and terminal output.
 type TUILogger struct {
 	logger    *slog.Logger
-	handler   *TUILogHandler
+	handler   *tuiLogHandler
 	tuiWriter io.Writer
 	// Optional sink used by the interactive TUI to enqueue output and flush
 	// it at safe points in the render lifecycle. When set, PrintToTUI will
@@ -23,8 +24,8 @@ type TUILogger struct {
 	tuiSink func(string)
 }
 
-// LogEntry represents a single log entry with metadata.
-type LogEntry struct {
+// logEntry represents a single log entry with metadata.
+type logEntry struct {
 	Time    time.Time         `json:"time"`
 	Level   slog.Level        `json:"level"`
 	Message string            `json:"message"`
@@ -47,12 +48,13 @@ func NewTUILogger(tuiWriter io.Writer, logFile io.Writer, maxEntries int, level 
 		})
 	}
 
-	handler := &TUILogHandler{
-		entries:     make([]LogEntry, 0, maxEntries),
-		maxSize:     maxEntries,
-		mutex:       sync.RWMutex{},
+	handler := &tuiLogHandler{
+		shared: &tuiLogHandlerShared{
+			entries: make([]logEntry, 0, maxEntries),
+			maxSize: maxEntries,
+			level:   level,
+		},
 		fileHandler: jsonHandler,
-		level:       level,
 	}
 
 	logger := slog.New(handler)
@@ -64,13 +66,23 @@ func NewTUILogger(tuiWriter io.Writer, logFile io.Writer, maxEntries int, level 
 	}
 }
 
-// TUILogHandler implements slog.Handler for TUI-integrated logging.
-type TUILogHandler struct {
-	entries     []LogEntry
-	maxSize     int
-	mutex       sync.RWMutex
+// tuiLogHandlerShared holds the mutable state shared across all handlers
+// created by WithAttrs/WithGroup clones.
+type tuiLogHandlerShared struct {
+	entries []logEntry
+	maxSize int
+	mutex   sync.RWMutex
+	level   slog.Level // Minimum level to log
+}
+
+// tuiLogHandler implements slog.Handler for TUI-integrated logging.
+// Clones created by WithAttrs/WithGroup share the same tuiLogHandlerShared
+// so all entries go to the same ring buffer.
+type tuiLogHandler struct {
+	shared      *tuiLogHandlerShared
 	fileHandler slog.Handler // Optional handler for file logging (JSON)
-	level       slog.Level   // Minimum level to log
+	preAttrs    []slog.Attr  // Attrs prepended to every record
+	groupPrefix string       // Group prefix for attr keys
 }
 
 // Enabled implements slog.Handler.
@@ -79,21 +91,35 @@ type TUILogHandler struct {
 //
 // Thread Safety: This method only reads the immutable level field, so it requires
 // no locking. The level is set once at construction and never changed.
-func (h *TUILogHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return level >= h.level
+func (h *tuiLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= h.shared.level
 }
 
 // Handle implements slog.Handler.
-func (h *TUILogHandler) Handle(ctx context.Context, record slog.Record) error {
-	h.mutex.Lock()
+func (h *tuiLogHandler) Handle(ctx context.Context, record slog.Record) error {
+	h.shared.mutex.Lock()
 
 	attrs := make(map[string]string)
+
+	// Include pre-attached attrs from WithAttrs
+	for _, attr := range h.preAttrs {
+		key := attr.Key
+		if h.groupPrefix != "" {
+			key = h.groupPrefix + "." + key
+		}
+		attrs[key] = attr.Value.String()
+	}
+
 	record.Attrs(func(attr slog.Attr) bool {
-		attrs[attr.Key] = attr.Value.String()
+		key := attr.Key
+		if h.groupPrefix != "" {
+			key = h.groupPrefix + "." + key
+		}
+		attrs[key] = attr.Value.String()
 		return true
 	})
 
-	entry := LogEntry{
+	entry := logEntry{
 		Time:    record.Time,
 		Level:   record.Level,
 		Message: record.Message,
@@ -106,12 +132,12 @@ func (h *TUILogHandler) Handle(ctx context.Context, record slog.Record) error {
 		entry.Source = "scripting" // simplified for now
 	}
 
-	h.entries = append(h.entries, entry)
+	h.shared.entries = append(h.shared.entries, entry)
 
 	// Maintain max size by removing oldest entries
-	if len(h.entries) > h.maxSize {
-		h.entries[0] = LogEntry{} // Release strings/maps for GC
-		h.entries = h.entries[1:]
+	if len(h.shared.entries) > h.shared.maxSize {
+		h.shared.entries[0] = logEntry{} // Release strings/maps for GC
+		h.shared.entries = h.shared.entries[1:]
 	}
 
 	// Forward to file handler if configured
@@ -121,26 +147,61 @@ func (h *TUILogHandler) Handle(ctx context.Context, record slog.Record) error {
 		// Detailed logging to file is IO-bound.
 		// Standard slog handlers are thread-safe.
 		// So we can unlock before calling file handler.
-		h.mutex.Unlock()
+		h.shared.mutex.Unlock()
 		return h.fileHandler.Handle(ctx, record)
 	}
 
-	h.mutex.Unlock()
+	h.shared.mutex.Unlock()
 	return nil
 }
 
-// WithAttrs implements slog.Handler.
-func (h *TUILogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	// For simplicity, return the same handler
-	// In a full implementation, this would create a new handler with the attributes
-	return h
+// WithAttrs implements slog.Handler. Returns a new handler that includes
+// the given attributes in every record. The new handler shares the same
+// entry buffer and mutex as the original.
+func (h *tuiLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	if len(attrs) == 0 {
+		return h
+	}
+	newAttrs := make([]slog.Attr, len(h.preAttrs)+len(attrs))
+	copy(newAttrs, h.preAttrs)
+	copy(newAttrs[len(h.preAttrs):], attrs)
+
+	var fh slog.Handler
+	if h.fileHandler != nil {
+		fh = h.fileHandler.WithAttrs(attrs)
+	}
+
+	return &tuiLogHandler{
+		shared:      h.shared,
+		fileHandler: fh,
+		preAttrs:    newAttrs,
+		groupPrefix: h.groupPrefix,
+	}
 }
 
-// WithGroup implements slog.Handler.
-func (h *TUILogHandler) WithGroup(name string) slog.Handler {
-	// For simplicity, return the same handler
-	// In a full implementation, this would create a new handler with the group
-	return h
+// WithGroup implements slog.Handler. Returns a new handler that prefixes
+// all attribute keys with the given group name. The new handler shares
+// the same entry buffer and mutex as the original.
+func (h *tuiLogHandler) WithGroup(name string) slog.Handler {
+	if name == "" {
+		return h
+	}
+	prefix := name
+	if h.groupPrefix != "" {
+		prefix = h.groupPrefix + "." + name
+	}
+
+	var fh slog.Handler
+	if h.fileHandler != nil {
+		fh = h.fileHandler.WithGroup(name)
+	}
+
+	return &tuiLogHandler{
+		shared:      h.shared,
+		fileHandler: fh,
+		preAttrs:    h.preAttrs,
+		groupPrefix: prefix,
+	}
 }
 
 // Debug logs a debug message.
@@ -164,7 +225,7 @@ func (l *TUILogger) Error(msg string, attrs ...slog.Attr) {
 }
 
 // Printf logs a formatted message at info level.
-func (l *TUILogger) Printf(format string, args ...interface{}) {
+func (l *TUILogger) Printf(format string, args ...any) {
 	l.logger.Info(fmt.Sprintf(format, args...))
 }
 
@@ -202,7 +263,7 @@ func (l *TUILogger) PrintToTUI(msg string) {
 }
 
 // PrintfToTUI prints a formatted message directly to the terminal interface.
-func (l *TUILogger) PrintfToTUI(format string, args ...interface{}) {
+func (l *TUILogger) PrintfToTUI(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	l.PrintToTUI(msg)
 }
@@ -216,40 +277,36 @@ func (l *TUILogger) SetTUISink(sink func(string)) {
 }
 
 // GetLogs returns all log entries.
-func (l *TUILogger) GetLogs() []LogEntry {
-	l.handler.mutex.RLock()
-	defer l.handler.mutex.RUnlock()
+func (l *TUILogger) GetLogs() []logEntry {
+	l.handler.shared.mutex.RLock()
+	defer l.handler.shared.mutex.RUnlock()
 
 	// Return a copy to prevent race conditions
-	logs := make([]LogEntry, len(l.handler.entries))
-	copy(logs, l.handler.entries)
-	return logs
+	return slices.Clone(l.handler.shared.entries)
 }
 
 // GetRecentLogs returns the most recent N log entries.
-func (l *TUILogger) GetRecentLogs(count int) []LogEntry {
-	l.handler.mutex.RLock()
-	defer l.handler.mutex.RUnlock()
+func (l *TUILogger) GetRecentLogs(count int) []logEntry {
+	l.handler.shared.mutex.RLock()
+	defer l.handler.shared.mutex.RUnlock()
 
-	if count <= 0 || count > len(l.handler.entries) {
-		count = len(l.handler.entries)
+	if count <= 0 || count > len(l.handler.shared.entries) {
+		count = len(l.handler.shared.entries)
 	}
 
-	start := len(l.handler.entries) - count
-	logs := make([]LogEntry, count)
-	copy(logs, l.handler.entries[start:])
-	return logs
+	start := len(l.handler.shared.entries) - count
+	return slices.Clone(l.handler.shared.entries[start:])
 }
 
 // SearchLogs searches for log entries containing the given text.
-func (l *TUILogger) SearchLogs(query string) []LogEntry {
-	l.handler.mutex.RLock()
-	defer l.handler.mutex.RUnlock()
+func (l *TUILogger) SearchLogs(query string) []logEntry {
+	l.handler.shared.mutex.RLock()
+	defer l.handler.shared.mutex.RUnlock()
 
 	query = strings.ToLower(query)
-	var matches []LogEntry
+	var matches []logEntry
 
-	for _, entry := range l.handler.entries {
+	for _, entry := range l.handler.shared.entries {
 		if strings.Contains(strings.ToLower(entry.Message), query) {
 			matches = append(matches, entry)
 			continue
@@ -270,10 +327,10 @@ func (l *TUILogger) SearchLogs(query string) []LogEntry {
 
 // ClearLogs removes all log entries.
 func (l *TUILogger) ClearLogs() {
-	l.handler.mutex.Lock()
-	defer l.handler.mutex.Unlock()
+	l.handler.shared.mutex.Lock()
+	defer l.handler.shared.mutex.Unlock()
 
-	l.handler.entries = l.handler.entries[:0] // Clear slice while keeping capacity
+	l.handler.shared.entries = l.handler.shared.entries[:0] // Clear slice while keeping capacity
 }
 
 // Logger returns the underlying slog.Logger.

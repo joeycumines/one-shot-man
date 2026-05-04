@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
 	bt "github.com/joeycumines/go-behaviortree"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/stretchr/testify/require"
 )
 
@@ -679,14 +679,22 @@ func TestBridge_InitFailure_IsRunningFalse(t *testing.T) {
 	t.Parallel()
 
 	// Create a bridge with manual loop control
-	loop := eventloop.NewEventLoop()
-	loop.Start()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
+	defer func() {
+		loopCancel()
+		loop.Shutdown(context.Background())
+	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// Create bridge - this should succeed
-	bridge := NewBridgeWithEventLoop(ctx, loop, nil)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, nil)
 
 	// Verify bridge is running
 	require.True(t, bridge.IsRunning(), "Bridge should be running after creation")
@@ -707,7 +715,7 @@ func TestBridge_InitFailure_IsRunningFalse(t *testing.T) {
 	require.False(t, bridge.IsRunning(), "IsRunning() must return false after Stop()")
 
 	// Double-check: call IsRunning() multiple times to catch timing issues
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		require.False(t, bridge.IsRunning(), "IsRunning() must consistently return false after Stop()")
 	}
 }
@@ -717,30 +725,33 @@ func TestBridge_InitFailure_IsRunningFalse(t *testing.T) {
 func TestBridge_LifecycleInvariant_DoneClosedImpliesNotRunning(t *testing.T) {
 	t.Parallel()
 
-	loop := eventloop.NewEventLoop()
-	loop.Start()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
+	defer func() {
+		loopCancel()
+		loop.Shutdown(context.Background())
+	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
-	bridge := NewBridgeWithEventLoop(ctx, loop, nil)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, nil)
 
 	// Start multiple goroutines to stress-test the invariant
 	const numGoroutines = 20
 	doneCh := make(chan bool, numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			// Repeatedly check both IsRunning() and Done() channel state
-			for j := 0; j < 100; j++ {
-				isRunning := bridge.IsRunning()
-				doneClosed := false
-				select {
-				case <-bridge.Done():
-					doneClosed = true
-				default:
-					doneClosed = false
-				}
+			for range 100 {
+				// Use atomic snapshot to avoid TOCTOU race between
+				// checking IsRunning() and Done() separately
+				doneClosed, isRunning := bridge.GetLifecycleSnapshot()
 
 				// CRITICAL INVARIANT CHECK:
 				// If Done() is closed, IsRunning() MUST be false
@@ -760,7 +771,7 @@ func TestBridge_LifecycleInvariant_DoneClosedImpliesNotRunning(t *testing.T) {
 
 	// Collect results
 	allPassed := true
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		result := <-doneCh
 		if !result {
 			allPassed = false

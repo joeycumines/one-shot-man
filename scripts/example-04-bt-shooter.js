@@ -146,39 +146,6 @@ try {
         return particles;
     }
 
-// Seeded random number generator using sfc32 algorithm
-// DISABLED: process.env.SEED not available in osm scripting context
-    /*
-    function sfc32(seed) {
-        let a = parseInt(seed.toString());
-        let b = parseInt(seed.toString()) ^ 0x12345678;
-        let c = parseInt(seed.toString()) ^ 0xABCDEF01;
-        let d = parseInt(seed.toString()) ^ 0xFEDCBA09;
-
-        return function() {
-            a >>>= 0; b >>>= 0; c >>>= 0; d >>>= 0;
-            let t = (a + b) | 0;
-            a = b ^ b >>> 9;
-            b = c + (c << 3) | 0;
-            c = (c << 21 | c >>> 11);
-            d = d + 1 | 0;
-            t = t + d | 0;
-            c = c + t | 0;
-            return (t >>> 0) / 4294967296;
-        };
-    }
-
-    // Use SEED environment variable for reproducible random values
-    const seed = process.env.SEED;
-    let rng;
-    if (seed) {
-        rng = sfc32(seed);
-    } else {
-        rng = Math.random;
-    }
-    */
-
-// Always use Math.random for now
     let rng = Math.random;
 
 // ============================================================================
@@ -309,6 +276,28 @@ try {
         return enemy;
     }
 
+    function stopEnemyTicker(enemy, id, reason) {
+        if (!enemy || !enemy.ticker) {
+            return;
+        }
+        try {
+            enemy.ticker.stop();
+        } catch (e) {
+            console.error('Error stopping enemy #' + id + ' ticker during ' + reason + ': ' + e.message);
+        } finally {
+            enemy.ticker = null;
+        }
+    }
+
+    function stopAllEnemyTickers(state, reason) {
+        if (!state || !state.enemies) {
+            return;
+        }
+        state.enemies.forEach(function (enemy, id) {
+            stopEnemyTicker(enemy, id, reason);
+        });
+    }
+
     function createProjectile(id, owner, ownerId, x, y, vx, vy, damage, speed) {
         return {
             id: id,
@@ -324,17 +313,6 @@ try {
             maxAge: 3000,
             sprite: owner === 'player' ? '•' : '○',
             color: owner === 'player' ? '#00FFFF' : '#FF6600'
-        };
-    }
-
-    function createParticle(x, y) {
-        return {
-            x: x,
-            y: y,
-            char: ['*', '+', '×', '·'][Math.floor(rng() * 4)],
-            color: ['#FF0000', '#FFA500', '#FFFF00'][Math.floor(rng() * 3)],
-            age: 0,
-            maxAge: EXPLOSION_MAX_AGE + rng() * 200
         };
     }
 
@@ -1062,14 +1040,7 @@ try {
                 state.score += 100;
                 state.particles.push(...createExplosion(enemy.x, enemy.y, EXPLOSION_PARTICLE_COUNT));
 
-                // Stop ticker - ensure graceful cleanup on error
-                if (enemy.ticker) {
-                    try {
-                        enemy.ticker.stop();
-                    } catch (e) {
-                        console.error('Error stopping enemy #' + id + ' ticker during death handling: ' + e.message);
-                    }
-                }
+                stopEnemyTicker(enemy, id, 'death handling');
             }
         });
 
@@ -1238,8 +1209,8 @@ try {
             }
         });
 
-        // Render player
-        if (state.player && !state.player.invincible || Math.floor(Date.now() / 100) % 2 === 0) {
+        // Render player (flash when invincible, always show otherwise)
+        if (state.player && (!state.player.invincible || Math.floor(Date.now() / 100) % 2 === 0)) {
             const px = Math.floor(state.player.x);
             const py = Math.floor(state.player.y);
             if (py > 1 && py < height - 2 && px > 0 && px < width - 1) {
@@ -1403,16 +1374,31 @@ try {
     function view(state) {
         // Handle all menu-like modes where player may not be active
         if (state.gameMode === 'menu') {
-            return renderModal(state);
+            return {content: renderModal(state), altScreen: true};
         }
 
         // Defensive check: if player is not initialized, return modal
         if (!state || !state.player) {
-            return renderModal(state);
+            return {content: renderModal(state), altScreen: true};
+        }
+
+        // When debug mode is active, reduce the play area height to leave
+        // room for the overlay. BubbleTea v2 clips view output to the
+        // terminal height, so content beyond the last row is invisible.
+        const debugReservedRows = state.debugMode ? 15 : 0;
+        const savedHeight = state.terminalSize ? state.terminalSize.height : null;
+        if (debugReservedRows > 0 && state.terminalSize) {
+            state.terminalSize.height = Math.max(10, state.terminalSize.height - debugReservedRows);
         }
 
         const hud = renderHUD(state);
         const playArea = renderPlayArea(state);
+
+        // Restore terminal size so other logic sees the real dimensions
+        if (savedHeight !== null && state.terminalSize) {
+            state.terminalSize.height = savedHeight;
+        }
+
         const lines = playArea.split('\n');
 
         lines[0] = hud.header;
@@ -1421,8 +1407,8 @@ try {
         let output = lines.join('\n');
 
         if (state.gameMode !== 'playing') {
+            const modal = renderModal(state).split('\n');
             output = playArea.split('\n').map((line, y) => {
-                const modal = renderModal(state).split('\n');
                 if (y < modal.length) {
                     const terminalWidth = state.terminalSize && state.terminalSize.width ? state.terminalSize.width : SCREEN_WIDTH;
                     return line.substring(0, Math.floor((terminalWidth - modal[y].length) / 2)) + modal[y];
@@ -1435,19 +1421,23 @@ try {
             output += renderDebugInfo(state);
         }
 
-        return output;
+        return {content: output, altScreen: true};
     }
 
 // ============================================================================
 // Bubbletea Model (Lines 851-1000)
 // ============================================================================
 
+    let activeState = null;
+
     function init() {
         // Return [state, cmd] like update() does - the Go binding now supports this
-        return [initializeGame(), tea.tick(16, 'tick')];
+        activeState = initializeGame();
+        return [activeState, tea.tick(16, 'tick')];
     }
 
     function update(state, msg) {
+        activeState = state;
         if (msg.type === 'Tick' && msg.id === 'tick') {
             // Calculate delta time
             const now = Date.now();
@@ -1488,12 +1478,12 @@ try {
         if (msg.type === 'Key') {
             // Defensive check: ensure state is valid
             if (!state) {
-                return [state, tea.tick(16, 'tick')];
+                return [state, null];
             }
 
             switch (state.gameMode) {
                 case 'menu':
-                    if (msg.key === ' ') {
+                    if (msg.key === 'space') {
                         state.wave = 1;
                         spawnWave(state);
                         state.gameMode = 'playing';
@@ -1505,7 +1495,7 @@ try {
                 case 'playing':
                     // Ensure player exists before handling input
                     if (!state.player) {
-                        return [state, tea.tick(16, 'tick')];
+                        return [state, null];
                     }
 
                     // DIRECT POSITION MOVEMENT - terminals don't reliably send key-repeat
@@ -1535,7 +1525,7 @@ try {
                             state.player.facing = 'right';
                             state.player.sprite = getPlayerSprite('right');
                             break;
-                        case ' ':
+                        case 'space':
                             const now = Date.now();
                             if (now - state.player.lastShotTime >= state.player.shotCooldown) {
                                 // Get projectile velocity based on player's facing direction
@@ -1578,7 +1568,9 @@ try {
                 case 'gameOver':
                 case 'victory':
                     if (msg.key === 'r') {
-                        return initializeGame();
+                        stopAllEnemyTickers(state, 'game restart');
+                        activeState = initializeGame();
+                        return [activeState, null];
                     } else if (msg.key === 'q') {
                         return [state, tea.quit()];
                     }
@@ -1586,7 +1578,7 @@ try {
             }
         }
 
-        if (msg.type === 'Resize') {
+        if (msg.type === 'WindowSize') {
             state.terminalSize = {width: msg.width, height: msg.height};
             if (state.player) {
                 state.player.x = Math.min(state.player.x, msg.width - 2);
@@ -1594,27 +1586,12 @@ try {
             }
         }
 
-        return [state, tea.tick(16, 'tick')];
+        return [state, null];
     }
 
 // ============================================================================
 // Entry Point (Lines 1001-1020)
 // ============================================================================
-
-// Global cleanup function to ensure tickers are stopped on any error
-    function cleanupTickers(state) {
-        if (state && state.enemies) {
-            state.enemies.forEach(function (enemy, id) {
-                if (enemy.ticker) {
-                    try {
-                        enemy.ticker.stop();
-                    } catch (e) {
-                        console.error('Error stopping enemy #' + id + ' ticker: ' + e.message);
-                    }
-                }
-            });
-        }
-    }
 
     const program = tea.newModel({
         init: function () {
@@ -1639,6 +1616,11 @@ try {
 // Error tracking for exit code
     var gameError = null;
 
+    __postBubbleTeaExit = function () {
+        stopAllEnemyTickers(activeState, 'post-exit cleanup');
+        activeState = null;
+    };
+
 // Wrap game execution with try/catch for runtime error handling
     try {
         console.log('');
@@ -1650,14 +1632,14 @@ try {
         console.log('  WASD / Arrow Keys: Move player');
         console.log('  SPACE: Fire projectile');
         console.log('  P: Pause game');
-        console.log('  D: Toggle debug mode');
+        console.log('  ` / F3: Toggle debug mode');
         console.log('  Q: Quit game');
         console.log('');
         console.log('Press SPACE to begin!');
         console.log('');
 
         // Run the game
-        tea.run(program, {altScreen: true});
+        tea.run(program);
 
         // Log quit confirmation when game exits cleanly
         if (!gameError) {
@@ -1669,13 +1651,6 @@ try {
         console.error('');
         console.error('FATAL ERROR: ' + e.message);
         console.error('Stack trace: ' + e.stack);
-
-        // Attempt to clean up tickers before re-throwing
-        try {
-            cleanupTickers(program.init()[0]);
-        } catch (cleanupError) {
-            console.error('Error during cleanup: ' + cleanupError.message);
-        }
 
         // Re-throw to trigger Go-level error handling (non-zero exit code)
         throw e;

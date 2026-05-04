@@ -7,6 +7,7 @@
  *
  * Implementation of Planning and Acting using Behavior Trees (PA-BT).
  * The system functions as a dynamic planner that interleaves planning and execution.
+ * See also {@code ../docs/reference/planning-and-acting-using-behavior-trees.md}
  *
  * Precondition Ordering Strategy:
  * 1. Conflict Resolution (Inter-Task): The planner dynamically handles dependencies between
@@ -910,6 +911,9 @@ try {
                             if (ignoreId === TARGET_ID && isInGoalArea(clickX, clickY)) state.winConditionMet = true;
                         }
                     }
+                    // NOTE: When clicked cell is occupied, placement is intentionally
+                    // a no-op. The held item stays held until the player clicks on an
+                    // empty cell within range.
                 } else if (clickedCube && !clickedCube.isStatic && !clickedCube.deleted) {
                     clickedCube.deleted = true;
                     state.spatialGrid.remove(clickedCube.x, clickedCube.y, clickedCube.id); // Remove from grid with check
@@ -1567,7 +1571,7 @@ try {
 
         const goalConditions = [pabt.newExprCondition('cubeDeliveredAtGoal', 'value == true', true)];
         state.pabtPlan = pabt.newPlan(state.pabtState, goalConditions);
-        state.ticker = bt.newTicker(100, state.pabtPlan.Node());
+        state.ticker = bt.newTicker(100, state.pabtPlan.node());
 
         return [state, tea.tick(16, 'tick')];
     }
@@ -1589,7 +1593,7 @@ try {
         for (let i = 0; i < state.pendingInputs.length; i++) {
             const msg = state.pendingInputs[i];
 
-            if (msg.type === 'Mouse' && msg.action === 'press' && msg.button === 'left') {
+            if (msg.type === 'MouseClick' && msg.button === 'left') {
                 latestMouseMsg = msg; // Last writer wins
             } else if (msg.type === 'Key') {
                 switch (msg.key) {
@@ -1599,10 +1603,10 @@ try {
                     case 'm':
                         toggleMode = true;
                         break;
-                    case ' ':
+                    case 'space':
                         togglePause = true;
                         break;
-                    case 'escape':
+                    case 'esc':
                         escape = true;
                         break;
                     case 'w':
@@ -1743,7 +1747,7 @@ try {
             return [state, null];
         }
 
-        if (msg.type === 'Mouse' && msg.action === 'press' && msg.button === 'left') {
+        if (msg.type === 'MouseClick' && msg.button === 'left') {
             state.pendingInputs.push(msg);
             return [state, null];
         }
@@ -1779,12 +1783,7 @@ try {
             return [state, tea.tick(16, 'tick')];
         }
 
-        if (msg.type === 'Resize') {
-            state.width = msg.width;
-            state.height = msg.height;
-        }
-
-        return [state, tea.tick(16, 'tick')];
+        return [state, null];
     }
 
     function view(state) {
@@ -1825,9 +1824,22 @@ try {
                 iet: state.debugInteractEntry ? state.debugInteractEntry.hasTarget : -1,
                 iep: state.debugInteractEntry ? state.debugInteractEntry.pathLen : -1
             });
+            // Write full debug JSON directly to PTY via console.log every frame in test mode.
+            // Bubble Tea v2 UV renderer writes cell-level incremental ANSI diffs that corrupt
+            // the inline debug JSON in the PTY stream. console.log bypasses the renderer
+            // entirely, ensuring the test harness always gets clean, parseable state.
+            console.log(debugJSON);
+            // Also log to file every 10 ticks for the log-based fallback parser.
+            if (state.tickCount % 10 === 0) {
+                log.debug("[VIEW]" + debugJSON);
+            }
             output += '\n__place_debug_start__\n' + debugJSON + '\n__place_debug_end__';
         }
-        return output;
+        return {
+            content: output,
+            altScreen: true,
+            mouseMode: 'all',
+        };
     }
 
     program = tea.newModel({
@@ -1864,6 +1876,20 @@ try {
     throw e;
 }
 
+// Register __postBubbleTeaExit callback to stop the ticker when BubbleTea exits.
+// This prevents the process from hanging after 'q' is pressed because the bt ticker
+// holds a Promisify token that keeps the event loop alive until ticker.stop() is called.
+// See docs/q-key-autopsy-20260430/ for full root cause analysis.
+__postBubbleTeaExit = function() {
+    if (typeof state !== 'undefined' && state.ticker) {
+        state.ticker.stop();
+    }
+    // Skip the REPL after BubbleTea exits so the process exits cleanly.
+    // This is the expected behavior for non-interactive runs (test mode, CI, etc.).
+    // In interactive mode, users would set this to false to get a REPL after TUI exit.
+    __skipREPL = true;
+};
+
 {
     let shouldRun = true;
     if (typeof module !== 'undefined') {
@@ -1873,7 +1899,7 @@ try {
     }
     if (shouldRun) {
         try {
-            tea.run(program, {altScreen: true, mouse: true});
+            tea.run(program);
         } catch (e) {
             printFatalError(e);
             throw e;

@@ -39,6 +39,9 @@ func TestSuperDocument_ClickAfterAutoScrollPlacesCursorCorrectly(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 	env := newTestProcessEnv(t)
@@ -92,7 +95,7 @@ func TestSuperDocument_ClickAfterAutoScrollPlacesCursorCorrectly(t *testing.T) {
 		}
 		for _, ch := range line {
 			sendKey(t, cp, string(ch))
-			time.Sleep(10 * time.Millisecond) // Increased delay to prevent character drops
+			time.Sleep(ptyCharDelay)
 		}
 		sendKey(t, cp, "\r")
 		// Longer delay after each line to let the terminal fully process auto-scroll
@@ -123,7 +126,7 @@ func TestSuperDocument_ClickAfterAutoScrollPlacesCursorCorrectly(t *testing.T) {
 	insert := "-INSERTED-"
 	for _, ch := range insert {
 		sendKey(t, cp, string(ch))
-		time.Sleep(4 * time.Millisecond)
+		time.Sleep(ptyCharDelay)
 	}
 
 	// Tab to Submit and press Enter

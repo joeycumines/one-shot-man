@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,7 +34,7 @@ func TestContextManagerRehydration(t *testing.T) {
 	// Create engine and TUI manager
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := NewEngine(ctx, &stdout, &stderr)
+	engine, err := NewEngine(ctx, &stdout, &stderr, "", "", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -55,7 +56,7 @@ func TestContextManagerRehydration(t *testing.T) {
 	}
 
 	// Build the items array in the format expected by ctxutil
-	items := []map[string]interface{}{
+	items := []map[string]any{
 		{
 			"id":      float64(1),
 			"type":    "file",
@@ -152,7 +153,7 @@ func TestContextManagerRehydrationWithMissingFiles(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := NewEngine(ctx, &stdout, &stderr)
+	engine, err := NewEngine(ctx, &stdout, &stderr, "", "", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -173,7 +174,7 @@ func TestContextManagerRehydrationWithMissingFiles(t *testing.T) {
 		stateManager: stateManager,
 	}
 
-	items := []map[string]interface{}{
+	items := []map[string]any{
 		{
 			"id":      float64(1),
 			"type":    "file",
@@ -220,7 +221,7 @@ func TestContextManagerRehydrationNoItemsKey(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := NewEngine(ctx, &stdout, &stderr)
+	engine, err := NewEngine(ctx, &stdout, &stderr, "", "", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -272,7 +273,7 @@ func (o *testOutput) String() string {
 	return string(o.data)
 }
 
-func (o *testOutput) Printf(format string, args ...interface{}) {
+func (o *testOutput) Printf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	o.Write([]byte(msg))
 }

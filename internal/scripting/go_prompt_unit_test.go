@@ -19,7 +19,7 @@ func TestGoPromptIntegration(t *testing.T) {
 			ctx:     context.Background(),
 			stdout:  os.Stdout,
 			stderr:  os.Stderr,
-			globals: make(map[string]interface{}),
+			globals: make(map[string]any),
 		}
 
 		tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, testutil.NewTestSessionID("gopromptint1", t.Name()), "memory")
@@ -63,7 +63,7 @@ func TestGoPromptIntegration(t *testing.T) {
 			ctx:     context.Background(),
 			stdout:  os.Stdout,
 			stderr:  os.Stderr,
-			globals: make(map[string]interface{}),
+			globals: make(map[string]any),
 		}
 
 		tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, testutil.NewTestSessionID("gopromptint2", t.Name()), "memory")
@@ -95,7 +95,7 @@ func TestGoPromptIntegration(t *testing.T) {
 			ctx:     context.Background(),
 			stdout:  os.Stdout,
 			stderr:  os.Stderr,
-			globals: make(map[string]interface{}),
+			globals: make(map[string]any),
 		}
 
 		tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, testutil.NewTestSessionID("gopromptint3", t.Name()), "memory")
@@ -130,7 +130,7 @@ func TestFullGoPromptWorkflow(t *testing.T) {
 		ctx:     context.Background(),
 		stdout:  os.Stdout,
 		stderr:  os.Stderr,
-		globals: make(map[string]interface{}),
+		globals: make(map[string]any),
 	}
 
 	tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, testutil.NewTestSessionID("gopromptwflw", t.Name()), "memory")

@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/joeycumines/go-prompt/termtest"
 )
 
 // ElementLocation represents the location of a UI element in the terminal buffer.
@@ -87,40 +85,96 @@ func (c *Console) ClickElement(ctx context.Context, content string, timeout time
 	}
 
 found:
-	// Calculate center of element (viewport-relative coordinates)
-	// NOTE: Click expects viewport-relative coordinates, not buffer-absolute.
-	// We must convert buffer row to viewport row using bufferRowToViewportRow.
-	centerX := loc.Col + loc.Width/2
-	viewportY := c.bufferRowToViewportRow(loc.Row)
+	// IMPORTANT: Capture the buffer exactly once and derive ALL coordinates
+	// from it. Using multiple c.cp.String() calls creates a TOCTOU race
+	// where the buffer changes between reads, producing inconsistent
+	// viewport calculations and wrong click targets.
+	{
+		buffer := c.cp.String()
+		screen := parseTerminalBuffer(buffer)
 
-	// Check if row 0 is empty in the parsed buffer - this indicates a render issue
-	screen := parseTerminalBuffer(c.cp.String())
-	row0Empty := len(screen) > 0 && strings.TrimSpace(screen[0]) == ""
-	if row0Empty {
-		viewportY++ // Compensate for missing title line
-		c.tb.Logf("[CLICK DEBUG] Row 0 is empty, adjusting viewportY from %d to %d", viewportY-1, viewportY)
+		// Re-find the element in this specific buffer snapshot so the
+		// row/col are consistent with the viewport calculation below.
+		loc = c.FindElementInBuffer(buffer, content)
+		if loc == nil {
+			return fmt.Errorf("element %q disappeared between find and click; buffer: %q", content, buffer)
+		}
+
+		centerX := loc.Col + loc.Width/2
+
+		// Inline viewport calculation from the SAME screen snapshot.
+		totalRows := len(screen)
+		for totalRows > 0 && strings.TrimSpace(screen[totalRows-1]) == "" {
+			totalRows--
+		}
+		visibleTop := 1
+		if totalRows > c.height {
+			visibleTop = totalRows - c.height + 1
+		}
+		viewportY := min(max(loc.Row-(visibleTop-1), 1), c.height)
+
+		c.tb.Logf("[CLICK DEBUG] ClickElement %q: loc.Row=%d (buffer-absolute), viewportY=%d, centerX=%d, totalRows=%d, visibleTop=%d",
+			content, loc.Row, viewportY, centerX, totalRows, visibleTop)
+
+		// Send mouse click using viewport-relative coordinates
+		return c.Click(centerX, viewportY)
+	}
+}
+
+// WaitForContent polls the VT-parsed terminal screen for a substring.
+// BubbleTea v2 uses differential rendering (cursor movement + only changed
+// characters), so raw byte checking (termtest.Contains) fails for state
+// changes after the initial render. This method re-parses the full terminal
+// buffer on each poll to get the actual rendered screen content.
+func (c *Console) WaitForContent(ctx context.Context, content string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Immediate check
+	if c.screenContains(content) {
+		return nil
 	}
 
-	c.tb.Logf("[CLICK DEBUG] ClickElement %q: loc.Row=%d (buffer-absolute), viewportY=%d, centerX=%d", content, loc.Row, viewportY, centerX)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
 
-	// Send mouse click using viewport-relative coordinates
-	return c.Click(centerX, viewportY)
+	for {
+		select {
+		case <-ctx.Done():
+			buffer := c.cp.String()
+			screen := parseTerminalBuffer(buffer)
+			return fmt.Errorf("content %q not found on rendered screen within timeout\nScreen lines:\n%s",
+				content, strings.Join(screen, "\n"))
+		case <-ticker.C:
+			if c.screenContains(content) {
+				return nil
+			}
+		}
+	}
+}
+
+// screenContains checks whether the VT-parsed screen contains a substring.
+func (c *Console) screenContains(content string) bool {
+	buffer := c.cp.String()
+	screen := parseTerminalBuffer(buffer)
+	for _, line := range screen {
+		if strings.Contains(line, content) {
+			return true
+		}
+	}
+	return false
 }
 
 // ClickElementAndExpect clicks an element and waits for expected content to appear.
+// Uses VT-parsed screen polling (WaitForContent) instead of raw byte checking,
+// which is required for BubbleTea v2's differential rendering.
 func (c *Console) ClickElementAndExpect(ctx context.Context, clickTarget, expectContent string, timeout time.Duration) error {
-	snap := c.cp.Snapshot()
-
 	if err := c.ClickElement(ctx, clickTarget, timeout/2); err != nil {
 		return fmt.Errorf("failed to click %q: %w", clickTarget, err)
 	}
 
-	// Wait for expected content
-	expectCtx, cancel := context.WithTimeout(ctx, timeout/2)
-	defer cancel()
-
-	if err := c.cp.Expect(expectCtx, snap, termtest.Contains(expectContent), fmt.Sprintf("wait for %q after clicking %q", expectContent, clickTarget)); err != nil {
-		return fmt.Errorf("expected %q after clicking %q: %w\nBuffer: %q", expectContent, clickTarget, err, c.cp.String())
+	if err := c.WaitForContent(ctx, expectContent, timeout/2); err != nil {
+		return fmt.Errorf("expected %q after clicking %q: %w", expectContent, clickTarget, err)
 	}
 
 	return nil

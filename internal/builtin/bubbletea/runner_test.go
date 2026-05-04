@@ -9,30 +9,49 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
+	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
 	"github.com/dop251/goja_nodejs/require"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	"github.com/stretchr/testify/assert"
 	ttRequire "github.com/stretchr/testify/require"
 )
 
-// TestJSRunner_BlocksCaller verifies that RunJSSync blocks until the callback completes.
-func TestJSRunner_BlocksCaller(t *testing.T) {
-	t.Parallel()
+// setupRunnerTest creates a JSRunner (bt.Bridge) for testing with proper cleanup.
+func setupRunnerTest(t *testing.T) bubbletea.JSRunner {
+	t.Helper()
 
 	registry := require.NewRegistry()
-	loop := eventloop.NewEventLoop(eventloop.WithRegistry(registry))
-	loop.Start()
-	t.Cleanup(func() { loop.Stop() })
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	registry.Enable(vm)
+	gojanodejsconsole.Enable(vm)
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
+	t.Cleanup(func() {
+		loopCancel()
+		loop.Shutdown(context.Background())
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 
-	bridge := bt.NewBridgeWithEventLoop(ctx, loop, registry)
+	bridge := bt.NewBridgeWithEventLoop(ctx, loop, vm, registry)
 	t.Cleanup(bridge.Stop)
 
-	var jsRunner bubbletea.JSRunner = bridge
+	return bridge
+}
+
+// TestJSRunner_BlocksCaller verifies that RunJSSync blocks until the callback completes.
+func TestJSRunner_BlocksCaller(t *testing.T) {
+	t.Parallel()
+
+	var jsRunner bubbletea.JSRunner = setupRunnerTest(t)
 
 	// Use a channel to verify blocking behavior
 	started := make(chan struct{})
@@ -73,18 +92,7 @@ func TestJSRunner_BlocksCaller(t *testing.T) {
 func TestJSRunner_PropagatesErrors(t *testing.T) {
 	t.Parallel()
 
-	registry := require.NewRegistry()
-	loop := eventloop.NewEventLoop(eventloop.WithRegistry(registry))
-	loop.Start()
-	t.Cleanup(func() { loop.Stop() })
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	t.Cleanup(cancel)
-
-	bridge := bt.NewBridgeWithEventLoop(ctx, loop, registry)
-	t.Cleanup(bridge.Stop)
-
-	var jsRunner bubbletea.JSRunner = bridge
+	var jsRunner bubbletea.JSRunner = setupRunnerTest(t)
 
 	expectedError := errors.New("test error from callback")
 
@@ -100,18 +108,7 @@ func TestJSRunner_PropagatesErrors(t *testing.T) {
 func TestJSRunner_PropagatesNilError(t *testing.T) {
 	t.Parallel()
 
-	registry := require.NewRegistry()
-	loop := eventloop.NewEventLoop(eventloop.WithRegistry(registry))
-	loop.Start()
-	t.Cleanup(func() { loop.Stop() })
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	t.Cleanup(cancel)
-
-	bridge := bt.NewBridgeWithEventLoop(ctx, loop, registry)
-	t.Cleanup(bridge.Stop)
-
-	var jsRunner bubbletea.JSRunner = bridge
+	var jsRunner bubbletea.JSRunner = setupRunnerTest(t)
 
 	err := jsRunner.RunJSSync(func(vm *goja.Runtime) error {
 		return nil
@@ -124,18 +121,7 @@ func TestJSRunner_PropagatesNilError(t *testing.T) {
 func TestJSRunner_HandlesJSExecution(t *testing.T) {
 	t.Parallel()
 
-	registry := require.NewRegistry()
-	loop := eventloop.NewEventLoop(eventloop.WithRegistry(registry))
-	loop.Start()
-	t.Cleanup(func() { loop.Stop() })
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	t.Cleanup(cancel)
-
-	bridge := bt.NewBridgeWithEventLoop(ctx, loop, registry)
-	t.Cleanup(bridge.Stop)
-
-	var jsRunner bubbletea.JSRunner = bridge
+	var jsRunner bubbletea.JSRunner = setupRunnerTest(t)
 
 	var result int64
 
@@ -157,18 +143,7 @@ func TestJSRunner_HandlesJSExecution(t *testing.T) {
 func TestJSRunner_HighContention(t *testing.T) {
 	t.Parallel()
 
-	registry := require.NewRegistry()
-	loop := eventloop.NewEventLoop(eventloop.WithRegistry(registry))
-	loop.Start()
-	t.Cleanup(func() { loop.Stop() })
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	t.Cleanup(cancel)
-
-	bridge := bt.NewBridgeWithEventLoop(ctx, loop, registry)
-	t.Cleanup(bridge.Stop)
-
-	var jsRunner bubbletea.JSRunner = bridge
+	var jsRunner bubbletea.JSRunner = setupRunnerTest(t)
 
 	const numGoroutines = 50
 	const iterationsPerGoroutine = 20
@@ -178,11 +153,11 @@ func TestJSRunner_HighContention(t *testing.T) {
 	var errorCount int64
 
 	// Launch many goroutines that all call RunJSSync concurrently
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for j := 0; j < iterationsPerGoroutine; j++ {
+			for range iterationsPerGoroutine {
 				err := jsRunner.RunJSSync(func(vm *goja.Runtime) error {
 					// Access shared state safely (via event loop serialization)
 					atomic.AddInt64(&counter, 1)
@@ -215,18 +190,7 @@ func TestJSRunner_HighContention(t *testing.T) {
 func TestJSRunner_ConcurrentWithDifferentOperations(t *testing.T) {
 	t.Parallel()
 
-	registry := require.NewRegistry()
-	loop := eventloop.NewEventLoop(eventloop.WithRegistry(registry))
-	loop.Start()
-	t.Cleanup(func() { loop.Stop() })
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	t.Cleanup(cancel)
-
-	bridge := bt.NewBridgeWithEventLoop(ctx, loop, registry)
-	t.Cleanup(bridge.Stop)
-
-	var jsRunner bubbletea.JSRunner = bridge
+	var jsRunner bubbletea.JSRunner = setupRunnerTest(t)
 
 	// Initialize a global counter in JS
 	err := jsRunner.RunJSSync(func(vm *goja.Runtime) error {
@@ -244,11 +208,9 @@ func TestJSRunner_ConcurrentWithDifferentOperations(t *testing.T) {
 	var readCount int64
 
 	// Writers increment the counter
-	for i := 0; i < numWriters; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < operationsPerGoroutine; j++ {
+	for range numWriters {
+		wg.Go(func() {
+			for range operationsPerGoroutine {
 				err := jsRunner.RunJSSync(func(vm *goja.Runtime) error {
 					_, err := vm.RunString("globalThis.sharedCounter++;")
 					if err != nil {
@@ -261,15 +223,13 @@ func TestJSRunner_ConcurrentWithDifferentOperations(t *testing.T) {
 					t.Errorf("Write failed: %v", err)
 				}
 			}
-		}()
+		})
 	}
 
 	// Readers read the counter
-	for i := 0; i < numReaders; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < operationsPerGoroutine; j++ {
+	for range numReaders {
+		wg.Go(func() {
+			for range operationsPerGoroutine {
 				err := jsRunner.RunJSSync(func(vm *goja.Runtime) error {
 					val, err := vm.RunString("globalThis.sharedCounter")
 					if err != nil {
@@ -286,7 +246,7 @@ func TestJSRunner_ConcurrentWithDifferentOperations(t *testing.T) {
 					t.Errorf("Read failed: %v", err)
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -316,19 +276,36 @@ func TestJSRunner_StoppedBridgeReturnsError(t *testing.T) {
 	t.Parallel()
 
 	registry := require.NewRegistry()
-	loop := eventloop.NewEventLoop(eventloop.WithRegistry(registry))
-	loop.Start()
-	t.Cleanup(func() { loop.Stop() })
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	registry.Enable(vm)
+	gojanodejsconsole.Enable(vm)
+	adapter, adapterErr := gojaeventloop.New(loop, vm)
+	if adapterErr != nil {
+		t.Fatal(adapterErr)
+	}
+	if adapterErr = adapter.Bind(); adapterErr != nil {
+		t.Fatal(adapterErr)
+	}
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
+	t.Cleanup(func() {
+		loopCancel()
+		loop.Shutdown(context.Background())
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 
-	bridge := bt.NewBridgeWithEventLoop(ctx, loop, registry)
+	bridge := bt.NewBridgeWithEventLoop(ctx, loop, vm, registry)
 
 	var jsRunner bubbletea.JSRunner = bridge
 
 	// Verify it works before stopping
-	err := jsRunner.RunJSSync(func(vm *goja.Runtime) error {
+	err = jsRunner.RunJSSync(func(vm *goja.Runtime) error {
 		return nil
 	})
 	ttRequire.NoError(t, err)

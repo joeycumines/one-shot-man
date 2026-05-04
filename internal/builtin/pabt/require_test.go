@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
+	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
 	gojarequire "github.com/dop251/goja_nodejs/require"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,30 +20,42 @@ import (
 // Registers both osm:bt and osm:pabt modules.
 func testBridge(t *testing.T) *btmod.Bridge {
 	reg := gojarequire.NewRegistry()
-	loop := eventloop.NewEventLoop(
-		eventloop.WithRegistry(reg),
-		eventloop.EnableConsole(true),
-	)
-	loop.Start()
-
-	ctx := context.Background()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	reg.Enable(vm)
+	gojanodejsconsole.Enable(vm)
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
 	t.Cleanup(func() {
-		loop.Stop()
+		loopCancel()
+		loop.Shutdown(context.Background())
 	})
 
-	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, reg)
+	ctx := context.Background()
+	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, vm, reg)
 	t.Cleanup(func() {
 		bridge.Stop()
 	})
 
 	// Register osm:pabt module
-	reg.RegisterNativeModule("osm:pabt", ModuleLoader(ctx, bridge))
+	reg.RegisterNativeModule("osm:pabt", Require(ctx, bridge))
 
 	return bridge
 }
 
 // setupTestEnv initializes a Bridge and a JS environment with both osm:bt and osm:pabt modules.
 func setupTestEnv(t *testing.T) (*btmod.Bridge, *goja.Runtime, *goja.Object) {
+	t.Helper()
 	b := testBridge(t)
 
 	var vm *goja.Runtime
@@ -127,7 +141,7 @@ func TestNewState_Creation(t *testing.T) {
 				};
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.True(t, obj["hasVariable"].(bool))
 		assert.True(t, obj["hasGet"].(bool))
 		assert.True(t, obj["hasSet"].(bool))
@@ -301,7 +315,7 @@ func TestRequire_NewExprCondition(t *testing.T) {
 				};
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.True(t, obj["hasKey"].(bool))
 		assert.True(t, obj["match5"].(bool))
 		assert.False(t, obj["match10"].(bool))
@@ -329,7 +343,7 @@ func TestRequire_NewExprCondition(t *testing.T) {
 				};
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.True(t, obj["inRange"].(bool))
 		assert.False(t, obj["outOfRange"].(bool))
 	})
@@ -531,7 +545,7 @@ func TestJSCondition_ThreadSafety(t *testing.T) {
 				return { matchCalled, matchResult };
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.True(t, obj["matchCalled"].(bool))
 		assert.True(t, obj["matchResult"].(bool))
 	})

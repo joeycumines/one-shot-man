@@ -13,6 +13,7 @@ import (
 // setupTestEnv initializes a Bridge and a JS environment with the osm:bt module required.
 // It returns the bridge, the VM, and the 'bt' module object exposed in the JS global scope.
 func setupTestEnv(t *testing.T) (*Bridge, *goja.Runtime, *goja.Object) {
+	t.Helper()
 	b := testBridge(t)
 
 	var vm *goja.Runtime
@@ -409,7 +410,7 @@ func TestBlackboard(t *testing.T) {
 		({hasFoo, val, hasFooAfter})
 	`
 	res := executeJS(t, bridge, script)
-	obj := res.Export().(map[string]interface{})
+	obj := res.Export().(map[string]any)
 
 	assert.Equal(t, true, obj["hasFoo"])
 	assert.Equal(t, "bar", obj["val"])

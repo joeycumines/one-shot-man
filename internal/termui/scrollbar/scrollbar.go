@@ -4,7 +4,7 @@ package scrollbar
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // Model defines the state of the scrollbar.
@@ -48,43 +48,6 @@ func New(opts ...Option) Model {
 	return m
 }
 
-// WithContentHeight sets the total content height.
-func WithContentHeight(h int) Option {
-	return func(m *Model) {
-		m.ContentHeight = h
-	}
-}
-
-// WithViewportHeight sets the viewport height.
-func WithViewportHeight(h int) Option {
-	return func(m *Model) {
-		m.ViewportHeight = h
-	}
-}
-
-// WithYOffset sets the vertical scroll offset.
-func WithYOffset(y int) Option {
-	return func(m *Model) {
-		m.YOffset = y
-	}
-}
-
-// WithStyles sets the styles for the thumb and track.
-func WithStyles(thumb, track lipgloss.Style) Option {
-	return func(m *Model) {
-		m.ThumbStyle = thumb
-		m.TrackStyle = track
-	}
-}
-
-// WithChars sets the characters for the thumb and track.
-func WithChars(thumb, track string) Option {
-	return func(m *Model) {
-		m.ThumbChar = thumb
-		m.TrackChar = track
-	}
-}
-
 // View renders the scrollbar component strictly adhering to the calculated logic.
 // It returns a string exactly ViewportHeight tall.
 func (m Model) View() string {
@@ -94,10 +57,7 @@ func (m Model) View() string {
 
 	// Normalise / clamp inputs.
 	viewportHeight := m.ViewportHeight
-	contentHeight := m.ContentHeight
-	if contentHeight < 0 {
-		contentHeight = 0
-	}
+	contentHeight := max(m.ContentHeight, 0)
 
 	// When there is no scrollable range (content fits in the viewport), render
 	// a full-height thumb (a standard convention indicating "no scrolling").
@@ -106,26 +66,14 @@ func (m Model) View() string {
 	}
 
 	maxOffset := contentHeight - viewportHeight
-	yOffset := m.YOffset
-	if yOffset < 0 {
-		yOffset = 0
-	}
-	if yOffset > maxOffset {
-		yOffset = maxOffset
-	}
+	yOffset := min(max(m.YOffset, 0), maxOffset)
 
 	// Thumb height is proportional to how much content is visible.
 	// thumbHeight ~= viewportHeight^2 / contentHeight
 	windowHeightF := float64(viewportHeight)
 	contentHeightF := float64(contentHeight)
 	thumbHeightRaw := windowHeightF * (windowHeightF / contentHeightF)
-	thumbHeight := int(clamp(windowHeightF, 1, thumbHeightRaw))
-	if thumbHeight > viewportHeight {
-		thumbHeight = viewportHeight
-	}
-	if thumbHeight < 1 {
-		thumbHeight = 1
-	}
+	thumbHeight := max(min(int(clamp(windowHeightF, 1, thumbHeightRaw)), viewportHeight), 1)
 
 	// Thumb position maps the scroll offset onto the remaining track space.
 	maxTop := viewportHeight - thumbHeight
@@ -163,7 +111,7 @@ func render(viewportHeight, thumbTop, thumbHeight int, m Model) string {
 		renderTrackChar = "\u00A0"
 	}
 
-	for i := 0; i < viewportHeight; i++ {
+	for i := range viewportHeight {
 		isThumb := thumbTop <= i && i < thumbTop+thumbHeight
 
 		if isThumb {

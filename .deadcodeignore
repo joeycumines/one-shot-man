@@ -134,3 +134,34 @@ internal\storage\cleanup_scheduler.go:*: unreachable func: defaultNewTicker
 # filepathutil is new; will be wired up in later commits
 internal/filepathutil/*
 internal\filepathutil\*
+
+# New modules added in event loop / bubbletea v2 migration — called from
+# JavaScript runtime (goja) or will be wired in subsequent commits.
+internal/builtin/claudemux/*: unreachable func: *
+internal\builtin\claudemux\*: unreachable func: *
+internal/builtin/fetch/*: unreachable func: *
+internal\builtin\fetch\*: unreachable func: *
+internal/builtin/grpc/*: unreachable func: *
+internal\builtin\grpc\*: unreachable func: *
+internal/builtin/mcpcallbackmod/*: unreachable func: *
+internal\builtin\mcpcallbackmod\*: unreachable func: *
+internal/builtin/mcpmod/*: unreachable func: *
+internal\builtin\mcpmod\*: unreachable func: *
+internal/builtin/termmux/*: unreachable func: *
+internal\builtin\termmux\*: unreachable func: *
+
+# ctxutil: SetRunExecFn added for exec module wiring
+internal/builtin/ctxutil/ctxutil.go:*: unreachable func: SetRunExecFn
+internal\builtin\ctxutil\ctxutil.go:*: unreachable func: SetRunExecFn
+
+# gitops: new package, will be wired later
+internal/gitops/*: unreachable func: *
+internal\gitops\*: unreachable func: *
+
+# scripting: new utilities added during event loop migration
+internal/scripting/engine_core.go:*: unreachable func: WithModulePaths
+internal\scripting\engine_core.go:*: unreachable func: WithModulePaths
+internal/scripting/log_rotate.go:*: unreachable func: *
+internal\scripting\log_rotate.go:*: unreachable func: *
+internal/scripting/module_hardening.go:*: unreachable func: *
+internal\scripting\module_hardening.go:*: unreachable func: *

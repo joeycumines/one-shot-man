@@ -2,6 +2,8 @@ package scripting
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -31,7 +33,7 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 	ctx := context.Background()
 
 	// We don't need to set XDG_DATA_HOME because we used SetTestPaths.
-	engine, err := NewEngineWithConfig(ctx, os.Stdout, os.Stderr, sessionID, "fs")
+	engine, err := NewEngine(ctx, os.Stdout, os.Stderr, sessionID, "fs", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -64,7 +66,7 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 	// Note: session ID is namespaced according to the session package
 	expectedPath := filepath.Join(tmpDir, expectedSessionID+".session.json")
 
-	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+	if _, err := os.Stat(expectedPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Session file was not created at %s", expectedPath)
 	}
 

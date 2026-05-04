@@ -6,24 +6,8 @@ ctx.log("Initializing LLM Prompt Builder mode...");
 
 const MODE_NAME = "llm-prompt-builder";
 
-// Define state keys using Symbols
-const stateKeys = {
-    currentPrompt: Symbol("currentPrompt"),
-    prompts: Symbol("prompts")
-};
-
-// Define state using new API
-const state = tui.createState(MODE_NAME, {
-    [stateKeys.currentPrompt]: {
-        defaultValue: null
-    },
-    [stateKeys.prompts]: {
-        defaultValue: {}
-    }
-});
-
-// N.B. This was implemented in Go, but was removed due to its general lack of utility.
-// It was ported to JS largely to support existing integration tests.
+// PromptBuilder demonstrates mode state management with versioning.
+// Used in integration tests to validate state persistence across mode lifecycle.
 class PromptBuilder {
     constructor(title, description) {
         this.title = title;

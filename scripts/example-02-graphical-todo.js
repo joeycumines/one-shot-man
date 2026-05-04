@@ -62,7 +62,7 @@ const program = tea.newModel({
         // Initialize Textarea
         const ta = textareaLib.new();
         ta.setPlaceholder("What needs to be done?");
-        ta.focus(); // FIXED: Used focus() instead of setFocus(true)
+        ta.focus();
         ta.setHeight(1);
         ta.setShowLineNumbers(false);
 
@@ -104,9 +104,12 @@ const program = tea.newModel({
         // --- 2. Input Mode Handling ---
         if (model.mode === 'add') {
             if (msg.type === 'Key') {
+                if (msg.key === 'ctrl+c') {
+                    return [model, tea.quit()];
+                }
                 if (msg.key === 'esc') {
                     model.mode = 'list';
-                    model.textarea.setValue(""); // FIXED: Used setValue("") for safe reset
+                    model.textarea.setValue("");
                     return [model, null];
                 }
                 if (msg.key === 'enter') {
@@ -117,7 +120,7 @@ const program = tea.newModel({
                         ensureSelectionVisible(model);
                     }
                     model.mode = 'list';
-                    model.textarea.setValue(""); // FIXED: Used setValue("") for safe reset
+                    model.textarea.setValue("");
                     return [model, null];
                 }
 
@@ -149,7 +152,7 @@ const program = tea.newModel({
                         model.selectedIdx = Math.min(model.todos.length - 1, model.selectedIdx + 1);
                         ensureSelectionVisible(model);
                         break;
-                    case ' ':
+                    case 'space':
                     case 'enter':
                         if (model.todos[model.selectedIdx]) {
                             model.todos[model.selectedIdx].done = !model.todos[model.selectedIdx].done;
@@ -158,24 +161,24 @@ const program = tea.newModel({
                 }
             }
 
-            if (msg.type === 'Mouse') {
-                if (msg.action === 'press' && msg.button === 'left') {
-                    if (zone.inBounds("add-btn", msg)) {
-                        model.mode = 'add';
-                        model.textarea.focus();
-                        return [model, null];
-                    }
-
-                    const yRelative = msg.y - model.headerHeight;
-                    if (yRelative >= 0 && yRelative < model.viewport.height()) {
-                        const clickedRow = yRelative + model.viewport.yOffset();
-                        if (clickedRow >= 0 && clickedRow < model.todos.length) {
-                            model.selectedIdx = clickedRow;
-                            model.todos[model.selectedIdx].done = !model.todos[model.selectedIdx].done;
-                        }
-                    }
+            if (msg.type === 'MouseClick' && msg.button === 'left') {
+                if (zone.inBounds("add-btn", msg)) {
+                    model.mode = 'add';
+                    model.textarea.focus();
+                    return [model, null];
                 }
 
+                const yRelative = msg.y - model.headerHeight;
+                if (yRelative >= 0 && yRelative < model.viewport.height()) {
+                    const clickedRow = yRelative + model.viewport.yOffset();
+                    if (clickedRow >= 0 && clickedRow < model.todos.length) {
+                        model.selectedIdx = clickedRow;
+                        model.todos[model.selectedIdx].done = !model.todos[model.selectedIdx].done;
+                    }
+                }
+            }
+
+            if (msg.type === 'MouseWheel') {
                 if (msg.button === 'wheel up') {
                     model.viewport.lineUp(1);
                 } else if (msg.button === 'wheel down') {
@@ -198,7 +201,11 @@ const program = tea.newModel({
                 "",
                 lipgloss.newStyle().foreground("#666").render("Enter: Submit • Esc: Cancel")
             );
-            return lipgloss.joinVertical(lipgloss.Left, title, inputView);
+            return {
+                content: lipgloss.joinVertical(lipgloss.Left, title, inputView),
+                altScreen: true,
+                mouseMode: 'all'
+            };
         }
 
         const listContent = renderTodoList(model);
@@ -212,15 +219,16 @@ const program = tea.newModel({
             )
         );
 
-        return zone.scan(lipgloss.joinVertical(lipgloss.Left,
-            title,
-            model.viewport.view(),
-            helpBar
-        ));
+        return {
+            content: zone.scan(lipgloss.joinVertical(lipgloss.Left,
+                title,
+                model.viewport.view(),
+                helpBar
+            )),
+            altScreen: true,
+            mouseMode: 'all'
+        };
     }
 });
 
-tea.run(program, {
-    altScreen: true,
-    mouse: true
-});
+tea.run(program);

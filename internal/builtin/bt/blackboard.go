@@ -7,6 +7,7 @@
 package bt
 
 import (
+	"maps"
 	"sync"
 
 	"github.com/dop251/goja"
@@ -138,9 +139,7 @@ func (b *Blackboard) Snapshot() map[string]any {
 		return nil
 	}
 	result := make(map[string]any, len(b.data))
-	for k, v := range b.data {
-		result[k] = v
-	}
+	maps.Copy(result, b.data)
 	return result
 }
 

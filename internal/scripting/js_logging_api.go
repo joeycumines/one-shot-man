@@ -6,7 +6,7 @@ import (
 
 // JavaScript API functions for logging
 
-func mapToAttrs(maps []map[string]interface{}) []slog.Attr {
+func mapToAttrs(maps []map[string]any) []slog.Attr {
 	var attrs []slog.Attr
 	for _, m := range maps {
 		for k, v := range m {
@@ -17,32 +17,32 @@ func mapToAttrs(maps []map[string]interface{}) []slog.Attr {
 }
 
 // jsLogDebug logs a debug message.
-func (e *Engine) jsLogDebug(msg string, attrs ...map[string]interface{}) {
+func (e *Engine) jsLogDebug(msg string, attrs ...map[string]any) {
 	e.logger.Debug(msg, mapToAttrs(attrs)...)
 }
 
 // jsLogInfo logs an info message.
-func (e *Engine) jsLogInfo(msg string, attrs ...map[string]interface{}) {
+func (e *Engine) jsLogInfo(msg string, attrs ...map[string]any) {
 	e.logger.Info(msg, mapToAttrs(attrs)...)
 }
 
 // jsLogWarn logs a warning message.
-func (e *Engine) jsLogWarn(msg string, attrs ...map[string]interface{}) {
+func (e *Engine) jsLogWarn(msg string, attrs ...map[string]any) {
 	e.logger.Warn(msg, mapToAttrs(attrs)...)
 }
 
 // jsLogError logs an error message.
-func (e *Engine) jsLogError(msg string, attrs ...map[string]interface{}) {
+func (e *Engine) jsLogError(msg string, attrs ...map[string]any) {
 	e.logger.Error(msg, mapToAttrs(attrs)...)
 }
 
 // jsLogPrintf logs a formatted message.
-func (e *Engine) jsLogPrintf(format string, args ...interface{}) {
+func (e *Engine) jsLogPrintf(format string, args ...any) {
 	e.logger.Printf(format, args...)
 }
 
 // jsGetLogs returns log entries.
-func (e *Engine) jsGetLogs(count ...int) interface{} {
+func (e *Engine) jsGetLogs(count ...int) any {
 	if len(count) > 0 && count[0] > 0 {
 		return e.logger.GetRecentLogs(count[0])
 	}
@@ -55,6 +55,6 @@ func (e *Engine) jsLogClear() {
 }
 
 // jsLogSearch searches logs for a query.
-func (e *Engine) jsLogSearch(query string) interface{} {
+func (e *Engine) jsLogSearch(query string) any {
 	return e.logger.SearchLogs(query)
 }

@@ -17,7 +17,7 @@ func tokenizeCommandLine(line string) []string { return argv.ParseSlice(line) }
 
 // isUndefined returns true if val is a goja.Value that is undefined or if the Go value is nil.
 // Some JS 'undefined' values may be mapped to Go nil; treat nil as absent as well.
-func isUndefined(val interface{}) bool {
+func isUndefined(val any) bool {
 	if val == nil {
 		return true
 	}
@@ -28,7 +28,7 @@ func isUndefined(val interface{}) bool {
 }
 
 // getInt extracts an integer value from a JavaScript object map.
-func getInt(m map[string]interface{}, key string, defaultValue int) (int, error) {
+func getInt(m map[string]any, key string, defaultValue int) (int, error) {
 	if val, exists := m[key]; exists {
 		if isUndefined(val) {
 			return defaultValue, nil
@@ -53,7 +53,7 @@ func getInt(m map[string]interface{}, key string, defaultValue int) (int, error)
 
 // Helper functions for extracting values from JavaScript objects
 
-func getString(m map[string]interface{}, key, defaultValue string) (string, error) {
+func getString(m map[string]any, key, defaultValue string) (string, error) {
 	if val, exists := m[key]; exists {
 		if isUndefined(val) {
 			return defaultValue, nil
@@ -66,7 +66,7 @@ func getString(m map[string]interface{}, key, defaultValue string) (string, erro
 	return defaultValue, nil
 }
 
-func getBool(m map[string]interface{}, key string, defaultValue bool) (bool, error) {
+func getBool(m map[string]any, key string, defaultValue bool) (bool, error) {
 	if val, exists := m[key]; exists {
 		if isUndefined(val) {
 			return defaultValue, nil
@@ -79,12 +79,12 @@ func getBool(m map[string]interface{}, key string, defaultValue bool) (bool, err
 	return defaultValue, nil
 }
 
-func getStringSlice(m map[string]interface{}, key string) ([]string, error) {
+func getStringSlice(m map[string]any, key string) ([]string, error) {
 	if val, exists := m[key]; exists {
 		if isUndefined(val) {
 			return nil, nil
 		}
-		if arr, ok := val.([]interface{}); ok {
+		if arr, ok := val.([]any); ok {
 			result := make([]string, 0, len(arr))
 			for i, item := range arr {
 				str, ok := item.(string)
@@ -98,4 +98,34 @@ func getStringSlice(m map[string]interface{}, key string) ([]string, error) {
 		return nil, fmt.Errorf("value for key '%s' is not an array: got %T", key, val)
 	}
 	return nil, nil
+}
+
+// getFlagDefs extracts a []FlagDef from a map's key. Each element is expected
+// to be a map with "name" (required) and "description" (optional) fields.
+func getFlagDefs(m map[string]any, key string) ([]FlagDef, error) {
+	val, exists := m[key]
+	if !exists {
+		return nil, nil
+	}
+	if isUndefined(val) {
+		return nil, nil
+	}
+	arr, ok := val.([]any)
+	if !ok {
+		return nil, fmt.Errorf("value for key '%s' is not an array: got %T", key, val)
+	}
+	var result []FlagDef
+	for i, item := range arr {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("value for key '%s' at index %d is not an object: got %T", key, i, item)
+		}
+		name, _ := getString(obj, "name", "")
+		if name == "" {
+			continue // skip entries without a name
+		}
+		desc, _ := getString(obj, "description", "")
+		result = append(result, FlagDef{Name: name, Description: desc})
+	}
+	return result, nil
 }

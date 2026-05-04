@@ -9,7 +9,7 @@ import (
 )
 
 func TestGetInitialCommand_WithActiveMode(t *testing.T) {
-	engine := &Engine{vm: nil, ctx: context.Background(), stdout: nil, stderr: nil, globals: make(map[string]interface{})}
+	engine := &Engine{vm: nil, ctx: context.Background(), stdout: nil, stderr: nil, globals: make(map[string]any)}
 	var out bytes.Buffer
 	tm := NewTUIManagerWithConfig(context.Background(), engine, nil, &out, testutil.NewTestSessionID("scripting", t.Name()), "memory")
 
@@ -28,7 +28,7 @@ func TestGetInitialCommand_WithActiveMode(t *testing.T) {
 }
 
 func TestGetInitialCommand_NoActiveMode(t *testing.T) {
-	engine := &Engine{vm: nil, ctx: context.Background(), stdout: nil, stderr: nil, globals: make(map[string]interface{})}
+	engine := &Engine{vm: nil, ctx: context.Background(), stdout: nil, stderr: nil, globals: make(map[string]any)}
 	var out bytes.Buffer
 	tm := NewTUIManagerWithConfig(context.Background(), engine, nil, &out, testutil.NewTestSessionID("scripting", t.Name()), "memory")
 

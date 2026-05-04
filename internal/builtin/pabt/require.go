@@ -12,7 +12,7 @@ import (
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 )
 
-// ModuleLoader returns a require.ModuleLoader for "osm:pabt" module.
+// Require returns a require.ModuleLoader for "osm:pabt" module.
 // This loader exposes PA-BT planning functionality to JavaScript.
 //
 // The API surface includes:
@@ -25,7 +25,7 @@ import (
 // The bridge parameter is required for thread-safe goja.Runtime access.
 // JSCondition.Match is called from the bt.Ticker goroutine and must use
 // Bridge.RunOnLoopSync to marshal calls to the event loop goroutine.
-func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
+func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -197,7 +197,7 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 						}
 
 						length := int(resultObj.Get("length").ToInteger())
-						for i := 0; i < length; i++ {
+						for i := range length {
 							actionVal := resultObj.Get(fmt.Sprintf("%d", i))
 							if goja.IsUndefined(actionVal) || goja.IsNull(actionVal) {
 								continue
@@ -263,7 +263,7 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 			length := int(goalsArray.Get("length").ToInteger())
 			goals := make([]pabtpkg.IConditions, 0, length)
 
-			for i := 0; i < length; i++ {
+			for i := range length {
 				goalVal := goalsArray.Get(fmt.Sprintf("%d", i))
 				if goja.IsUndefined(goalVal) || goja.IsNull(goalVal) {
 					continue
@@ -350,7 +350,7 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 				length := int(conditionsArray.Get("length").ToInteger())
 				var conditionSlice []pabtpkg.Condition
 
-				for i := 0; i < length; i++ {
+				for i := range length {
 					condVal := conditionsArray.Get(fmt.Sprintf("%d", i))
 					if goja.IsUndefined(condVal) || goja.IsNull(condVal) {
 						continue
@@ -424,7 +424,7 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 
 				slog.Debug("[PA-BT EFFECT PARSE] Starting effect parsing", "action", name, "effectCount", length)
 
-				for i := 0; i < length; i++ {
+				for i := range length {
 					effectVal := effectsArray.Get(fmt.Sprintf("%d", i))
 					if goja.IsUndefined(effectVal) || goja.IsNull(effectVal) {
 						slog.Debug("[PA-BT EFFECT PARSE] Effect undefined/null", "action", name, "index", i)

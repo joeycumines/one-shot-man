@@ -30,7 +30,7 @@ func TestExprCondition_JSIntegration(t *testing.T) {
 				};
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.True(t, obj["hasKey"].(bool), "Should have key property")
 		assert.True(t, obj["hasMatch"].(bool), "Should have match function")
 		assert.True(t, obj["hasNative"].(bool), "Should have _native property for Go backend")
@@ -49,7 +49,7 @@ func TestExprCondition_JSIntegration(t *testing.T) {
 				};
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.True(t, obj["matchActive"].(bool))
 		assert.False(t, obj["matchInactive"].(bool))
 	})
@@ -66,7 +66,7 @@ func TestExprCondition_JSIntegration(t *testing.T) {
 				};
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.True(t, obj["match50"].(bool), "50 < 100")
 		assert.False(t, obj["match100"].(bool), "100 is not < 100")
 		assert.False(t, obj["match150"].(bool), "150 is not < 100")
@@ -84,7 +84,7 @@ func TestExprCondition_JSIntegration(t *testing.T) {
 				};
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.False(t, obj["match5"].(bool), "5 not in [10,20]")
 		assert.True(t, obj["match15"].(bool), "15 is in [10,20]")
 		assert.False(t, obj["match25"].(bool), "25 not in [10,20]")
@@ -102,7 +102,7 @@ func TestExprCondition_JSIntegration(t *testing.T) {
 				};
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.False(t, obj["matchNull"].(bool), "null == nil")
 		assert.False(t, obj["matchUndefined"].(bool), "undefined == nil")
 		assert.True(t, obj["matchValue"].(bool), "42 != nil")
@@ -173,7 +173,7 @@ func TestExprCondition_UsedInNewAction(t *testing.T) {
 				};
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.True(t, obj["hasNode"].(bool))
 		assert.True(t, obj["hasRunning"].(bool))
 		assert.True(t, obj["nodeIsFunction"].(bool))
@@ -219,11 +219,11 @@ func TestExprCondition_ConcurrentJSIntegration(t *testing.T) {
 	errors := make(chan error, 100)
 
 	// Hammer it from multiple goroutines
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for j := 0; j < 100; j++ {
+			for j := range 100 {
 				result := cond.Match(j)
 				expectedResult := j > 0
 				if result != expectedResult {
@@ -251,7 +251,7 @@ func TestExprCondition_ZeroGojaCallsGuarantee(t *testing.T) {
 	cond := NewExprCondition("pureGo", "value == 42")
 
 	// Call Match many times - none should touch Goja
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		_ = cond.Match(42)
 		_ = cond.Match(i)
 	}

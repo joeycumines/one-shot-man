@@ -20,6 +20,7 @@ package pabt
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -44,6 +45,7 @@ type graphState struct {
 
 // newGraphState initializes the graph from Example 7.3 (Fig. 7.6)
 func newGraphState(t *testing.T) *graphState {
+	t.Helper()
 	state := new(graphState)
 	state.t = t
 
@@ -218,11 +220,8 @@ func (a *graphAction) Node() bt.Node {
 
 		// Verify link exists
 		var ok bool
-		for _, link := range a.from.links {
-			if link == a.to {
-				ok = true
-				break
-			}
+		if slices.Contains(a.from.links, a.to) {
+			ok = true
 		}
 		if !ok {
 			a.state.t.Logf("action failed: no link from %s to %s", a.from.name, a.to.name)
@@ -277,7 +276,7 @@ func TestGraphPlanExecution(t *testing.T) {
 	// Execute plan until success or failure
 	var status bt.Status
 	maxIterations := 20 // Safety limit
-	for i := 0; i < maxIterations; i++ {
+	for i := range maxIterations {
 		status, err = node.Tick()
 		t.Logf("iteration = %d, status = %s, err = %v, actor = %s", i+1, status, err, state.actor.name)
 
@@ -318,7 +317,7 @@ func TestGraphPlanIdempotent(t *testing.T) {
 
 	// Execute to success
 	var status bt.Status
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		status, err = node.Tick()
 		if err != nil {
 			t.Fatalf("Plan execution error: %v", err)
@@ -359,7 +358,7 @@ func TestGraphPath(t *testing.T) {
 
 	// Execute
 	var status bt.Status
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		status, err = node.Tick()
 		if err != nil {
 			t.Fatalf("Plan execution error: %v", err)
@@ -400,13 +399,7 @@ func TestGraphPath(t *testing.T) {
 			continue
 		}
 
-		found := false
-		for _, link := range from.links {
-			if link == to {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(from.links, to)
 		if !found {
 			t.Errorf("Invalid step in path: no link from %s to %s", from.name, to.name)
 		}
@@ -444,7 +437,7 @@ func TestGraphUnreachable(t *testing.T) {
 
 	// Execute - should eventually fail or reach max iterations
 	var status bt.Status
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		status, err = node.Tick()
 		if err != nil {
 			t.Logf("Plan returned error at iteration %d: %v", i+1, err)
@@ -485,7 +478,7 @@ func TestGraphMultipleGoals(t *testing.T) {
 
 	// Execute
 	var status bt.Status
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		status, err = node.Tick()
 		if err != nil {
 			t.Fatalf("Plan execution error: %v", err)

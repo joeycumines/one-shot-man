@@ -2,169 +2,321 @@
 
 package bubbletea
 
-import tea "github.com/charmbracelet/bubbletea"
-
-// KeyDef represents metadata about a bubbletea key type.
+// KeyDef represents metadata about a bubbletea key.
 type KeyDef struct {
 	// Name is the Go constant name (e.g., "KeyEnter").
 	Name string
 	// String is the string representation from Key.String() (e.g., "enter").
 	String string
-	// Type is the actual tea.KeyType value.
-	Type tea.KeyType
+	// Code is the actual rune code value.
+	Code rune
 }
 
-// KeyDefs contains all bubbletea KeyType definitions.
+// KeyDefs contains all bubbletea key definitions.
 // The map is keyed by the String() representation for JS lookup efficiency.
-// When multiple KeyType constants produce the same string, a canonical name is chosen.
+// When multiple key constants produce the same string, a canonical name is chosen.
 var KeyDefs = map[string]KeyDef{
-	" ":                {Name: "KeySpace", String: " ", Type: tea.KeySpace},
-	"backspace":        {Name: "KeyBackspace", String: "backspace", Type: tea.KeyBackspace},
-	"ctrl+@":           {Name: "KeyCtrlAt", String: "ctrl+@", Type: tea.KeyCtrlAt},
-	"ctrl+\\":          {Name: "KeyCtrlBackslash", String: "ctrl+\\", Type: tea.KeyCtrlBackslash},
-	"ctrl+]":           {Name: "KeyCtrlCloseBracket", String: "ctrl+]", Type: tea.KeyCtrlCloseBracket},
-	"ctrl+^":           {Name: "KeyCtrlCaret", String: "ctrl+^", Type: tea.KeyCtrlCaret},
-	"ctrl+_":           {Name: "KeyCtrlUnderscore", String: "ctrl+_", Type: tea.KeyCtrlUnderscore},
-	"ctrl+a":           {Name: "KeyCtrlA", String: "ctrl+a", Type: tea.KeyCtrlA},
-	"ctrl+b":           {Name: "KeyCtrlB", String: "ctrl+b", Type: tea.KeyCtrlB},
-	"ctrl+c":           {Name: "KeyBreak", String: "ctrl+c", Type: tea.KeyBreak},
-	"ctrl+d":           {Name: "KeyCtrlD", String: "ctrl+d", Type: tea.KeyCtrlD},
-	"ctrl+down":        {Name: "KeyCtrlDown", String: "ctrl+down", Type: tea.KeyCtrlDown},
-	"ctrl+e":           {Name: "KeyCtrlE", String: "ctrl+e", Type: tea.KeyCtrlE},
-	"ctrl+end":         {Name: "KeyCtrlEnd", String: "ctrl+end", Type: tea.KeyCtrlEnd},
-	"ctrl+f":           {Name: "KeyCtrlF", String: "ctrl+f", Type: tea.KeyCtrlF},
-	"ctrl+g":           {Name: "KeyCtrlG", String: "ctrl+g", Type: tea.KeyCtrlG},
-	"ctrl+h":           {Name: "KeyCtrlH", String: "ctrl+h", Type: tea.KeyCtrlH},
-	"ctrl+home":        {Name: "KeyCtrlHome", String: "ctrl+home", Type: tea.KeyCtrlHome},
-	"ctrl+j":           {Name: "KeyCtrlJ", String: "ctrl+j", Type: tea.KeyCtrlJ},
-	"ctrl+k":           {Name: "KeyCtrlK", String: "ctrl+k", Type: tea.KeyCtrlK},
-	"ctrl+l":           {Name: "KeyCtrlL", String: "ctrl+l", Type: tea.KeyCtrlL},
-	"ctrl+left":        {Name: "KeyCtrlLeft", String: "ctrl+left", Type: tea.KeyCtrlLeft},
-	"ctrl+n":           {Name: "KeyCtrlN", String: "ctrl+n", Type: tea.KeyCtrlN},
-	"ctrl+o":           {Name: "KeyCtrlO", String: "ctrl+o", Type: tea.KeyCtrlO},
-	"ctrl+p":           {Name: "KeyCtrlP", String: "ctrl+p", Type: tea.KeyCtrlP},
-	"ctrl+pgdown":      {Name: "KeyCtrlPgDown", String: "ctrl+pgdown", Type: tea.KeyCtrlPgDown},
-	"ctrl+pgup":        {Name: "KeyCtrlPgUp", String: "ctrl+pgup", Type: tea.KeyCtrlPgUp},
-	"ctrl+q":           {Name: "KeyCtrlQ", String: "ctrl+q", Type: tea.KeyCtrlQ},
-	"ctrl+r":           {Name: "KeyCtrlR", String: "ctrl+r", Type: tea.KeyCtrlR},
-	"ctrl+right":       {Name: "KeyCtrlRight", String: "ctrl+right", Type: tea.KeyCtrlRight},
-	"ctrl+s":           {Name: "KeyCtrlS", String: "ctrl+s", Type: tea.KeyCtrlS},
-	"ctrl+shift+down":  {Name: "KeyCtrlShiftDown", String: "ctrl+shift+down", Type: tea.KeyCtrlShiftDown},
-	"ctrl+shift+end":   {Name: "KeyCtrlShiftEnd", String: "ctrl+shift+end", Type: tea.KeyCtrlShiftEnd},
-	"ctrl+shift+home":  {Name: "KeyCtrlShiftHome", String: "ctrl+shift+home", Type: tea.KeyCtrlShiftHome},
-	"ctrl+shift+left":  {Name: "KeyCtrlShiftLeft", String: "ctrl+shift+left", Type: tea.KeyCtrlShiftLeft},
-	"ctrl+shift+right": {Name: "KeyCtrlShiftRight", String: "ctrl+shift+right", Type: tea.KeyCtrlShiftRight},
-	"ctrl+shift+up":    {Name: "KeyCtrlShiftUp", String: "ctrl+shift+up", Type: tea.KeyCtrlShiftUp},
-	"ctrl+t":           {Name: "KeyCtrlT", String: "ctrl+t", Type: tea.KeyCtrlT},
-	"ctrl+u":           {Name: "KeyCtrlU", String: "ctrl+u", Type: tea.KeyCtrlU},
-	"ctrl+up":          {Name: "KeyCtrlUp", String: "ctrl+up", Type: tea.KeyCtrlUp},
-	"ctrl+v":           {Name: "KeyCtrlV", String: "ctrl+v", Type: tea.KeyCtrlV},
-	"ctrl+w":           {Name: "KeyCtrlW", String: "ctrl+w", Type: tea.KeyCtrlW},
-	"ctrl+x":           {Name: "KeyCtrlX", String: "ctrl+x", Type: tea.KeyCtrlX},
-	"ctrl+y":           {Name: "KeyCtrlY", String: "ctrl+y", Type: tea.KeyCtrlY},
-	"ctrl+z":           {Name: "KeyCtrlZ", String: "ctrl+z", Type: tea.KeyCtrlZ},
-	"delete":           {Name: "KeyDelete", String: "delete", Type: tea.KeyDelete},
-	"down":             {Name: "KeyDown", String: "down", Type: tea.KeyDown},
-	"end":              {Name: "KeyEnd", String: "end", Type: tea.KeyEnd},
-	"enter":            {Name: "KeyEnter", String: "enter", Type: tea.KeyEnter},
-	"esc":              {Name: "KeyEsc", String: "esc", Type: tea.KeyEsc},
-	"f1":               {Name: "KeyF1", String: "f1", Type: tea.KeyF1},
-	"f10":              {Name: "KeyF10", String: "f10", Type: tea.KeyF10},
-	"f11":              {Name: "KeyF11", String: "f11", Type: tea.KeyF11},
-	"f12":              {Name: "KeyF12", String: "f12", Type: tea.KeyF12},
-	"f13":              {Name: "KeyF13", String: "f13", Type: tea.KeyF13},
-	"f14":              {Name: "KeyF14", String: "f14", Type: tea.KeyF14},
-	"f15":              {Name: "KeyF15", String: "f15", Type: tea.KeyF15},
-	"f16":              {Name: "KeyF16", String: "f16", Type: tea.KeyF16},
-	"f17":              {Name: "KeyF17", String: "f17", Type: tea.KeyF17},
-	"f18":              {Name: "KeyF18", String: "f18", Type: tea.KeyF18},
-	"f19":              {Name: "KeyF19", String: "f19", Type: tea.KeyF19},
-	"f2":               {Name: "KeyF2", String: "f2", Type: tea.KeyF2},
-	"f20":              {Name: "KeyF20", String: "f20", Type: tea.KeyF20},
-	"f3":               {Name: "KeyF3", String: "f3", Type: tea.KeyF3},
-	"f4":               {Name: "KeyF4", String: "f4", Type: tea.KeyF4},
-	"f5":               {Name: "KeyF5", String: "f5", Type: tea.KeyF5},
-	"f6":               {Name: "KeyF6", String: "f6", Type: tea.KeyF6},
-	"f7":               {Name: "KeyF7", String: "f7", Type: tea.KeyF7},
-	"f8":               {Name: "KeyF8", String: "f8", Type: tea.KeyF8},
-	"f9":               {Name: "KeyF9", String: "f9", Type: tea.KeyF9},
-	"home":             {Name: "KeyHome", String: "home", Type: tea.KeyHome},
-	"insert":           {Name: "KeyInsert", String: "insert", Type: tea.KeyInsert},
-	"left":             {Name: "KeyLeft", String: "left", Type: tea.KeyLeft},
-	"pgdown":           {Name: "KeyPgDown", String: "pgdown", Type: tea.KeyPgDown},
-	"pgup":             {Name: "KeyPgUp", String: "pgup", Type: tea.KeyPgUp},
-	"right":            {Name: "KeyRight", String: "right", Type: tea.KeyRight},
-	"runes":            {Name: "KeyRunes", String: "runes", Type: tea.KeyRunes},
-	"shift+down":       {Name: "KeyShiftDown", String: "shift+down", Type: tea.KeyShiftDown},
-	"shift+end":        {Name: "KeyShiftEnd", String: "shift+end", Type: tea.KeyShiftEnd},
-	"shift+home":       {Name: "KeyShiftHome", String: "shift+home", Type: tea.KeyShiftHome},
-	"shift+left":       {Name: "KeyShiftLeft", String: "shift+left", Type: tea.KeyShiftLeft},
-	"shift+right":      {Name: "KeyShiftRight", String: "shift+right", Type: tea.KeyShiftRight},
-	"shift+tab":        {Name: "KeyShiftTab", String: "shift+tab", Type: tea.KeyShiftTab},
-	"shift+up":         {Name: "KeyShiftUp", String: "shift+up", Type: tea.KeyShiftUp},
-	"tab":              {Name: "KeyTab", String: "tab", Type: tea.KeyTab},
-	"up":               {Name: "KeyUp", String: "up", Type: tea.KeyUp},
+	"backspace":          {Name: "KeyBackspace", String: "backspace", Code: '\x7f'},
+	"begin":              {Name: "KeyBegin", String: "begin", Code: rune(0x110005)},
+	"caps lock":          {Name: "KeyCapsLock", String: "caps lock", Code: rune(0x11006b)},
+	"ctrl+\\":            {Name: "KeyCtrlBackslash", String: "ctrl+\\", Code: '\\'},
+	"ctrl+]":             {Name: "KeyCtrlCloseBracket", String: "ctrl+]", Code: ']'},
+	"ctrl+^":             {Name: "KeyCtrlCaret", String: "ctrl+^", Code: '^'},
+	"ctrl+_":             {Name: "KeyCtrlUnderscore", String: "ctrl+_", Code: '_'},
+	"ctrl+a":             {Name: "KeyCtrlA", String: "ctrl+a", Code: 'a'},
+	"ctrl+b":             {Name: "KeyCtrlB", String: "ctrl+b", Code: 'b'},
+	"ctrl+c":             {Name: "KeyCtrlC", String: "ctrl+c", Code: 'c'},
+	"ctrl+d":             {Name: "KeyCtrlD", String: "ctrl+d", Code: 'd'},
+	"ctrl+e":             {Name: "KeyCtrlE", String: "ctrl+e", Code: 'e'},
+	"ctrl+f":             {Name: "KeyCtrlF", String: "ctrl+f", Code: 'f'},
+	"ctrl+g":             {Name: "KeyCtrlG", String: "ctrl+g", Code: 'g'},
+	"ctrl+h":             {Name: "KeyCtrlH", String: "ctrl+h", Code: 'h'},
+	"ctrl+j":             {Name: "KeyCtrlJ", String: "ctrl+j", Code: 'j'},
+	"ctrl+k":             {Name: "KeyCtrlK", String: "ctrl+k", Code: 'k'},
+	"ctrl+l":             {Name: "KeyCtrlL", String: "ctrl+l", Code: 'l'},
+	"ctrl+n":             {Name: "KeyCtrlN", String: "ctrl+n", Code: 'n'},
+	"ctrl+o":             {Name: "KeyCtrlO", String: "ctrl+o", Code: 'o'},
+	"ctrl+p":             {Name: "KeyCtrlP", String: "ctrl+p", Code: 'p'},
+	"ctrl+q":             {Name: "KeyCtrlQ", String: "ctrl+q", Code: 'q'},
+	"ctrl+r":             {Name: "KeyCtrlR", String: "ctrl+r", Code: 'r'},
+	"ctrl+s":             {Name: "KeyCtrlS", String: "ctrl+s", Code: 's'},
+	"ctrl+t":             {Name: "KeyCtrlT", String: "ctrl+t", Code: 't'},
+	"ctrl+u":             {Name: "KeyCtrlU", String: "ctrl+u", Code: 'u'},
+	"ctrl+v":             {Name: "KeyCtrlV", String: "ctrl+v", Code: 'v'},
+	"ctrl+w":             {Name: "KeyCtrlW", String: "ctrl+w", Code: 'w'},
+	"ctrl+x":             {Name: "KeyCtrlX", String: "ctrl+x", Code: 'x'},
+	"ctrl+y":             {Name: "KeyCtrlY", String: "ctrl+y", Code: 'y'},
+	"ctrl+z":             {Name: "KeyCtrlZ", String: "ctrl+z", Code: 'z'},
+	"ctrl:@":             {Name: "KeyCtrlAt", String: "ctrl:@", Code: '@'},
+	"delete":             {Name: "KeyDelete", String: "delete", Code: rune(0x110008)},
+	"down":               {Name: "KeyDown", String: "down", Code: rune(0x110002)},
+	"end":                {Name: "KeyEnd", String: "end", Code: rune(0x11000d)},
+	"enter":              {Name: "KeyEnter", String: "enter", Code: '\r'},
+	"esc":                {Name: "KeyEscape", String: "esc", Code: '\x1b'},
+	"extended":           {Name: "KeyExtended", String: "extended", Code: rune(0x110000)},
+	"f1":                 {Name: "KeyF1", String: "f1", Code: rune(0x11002c)},
+	"f10":                {Name: "KeyF10", String: "f10", Code: rune(0x110035)},
+	"f11":                {Name: "KeyF11", String: "f11", Code: rune(0x110036)},
+	"f12":                {Name: "KeyF12", String: "f12", Code: rune(0x110037)},
+	"f13":                {Name: "KeyF13", String: "f13", Code: rune(0x110038)},
+	"f14":                {Name: "KeyF14", String: "f14", Code: rune(0x110039)},
+	"f15":                {Name: "KeyF15", String: "f15", Code: rune(0x11003a)},
+	"f16":                {Name: "KeyF16", String: "f16", Code: rune(0x11003b)},
+	"f17":                {Name: "KeyF17", String: "f17", Code: rune(0x11003c)},
+	"f18":                {Name: "KeyF18", String: "f18", Code: rune(0x11003d)},
+	"f19":                {Name: "KeyF19", String: "f19", Code: rune(0x11003e)},
+	"f2":                 {Name: "KeyF2", String: "f2", Code: rune(0x11002d)},
+	"f20":                {Name: "KeyF20", String: "f20", Code: rune(0x11003f)},
+	"f21":                {Name: "KeyF21", String: "f21", Code: rune(0x110040)},
+	"f22":                {Name: "KeyF22", String: "f22", Code: rune(0x110041)},
+	"f23":                {Name: "KeyF23", String: "f23", Code: rune(0x110042)},
+	"f24":                {Name: "KeyF24", String: "f24", Code: rune(0x110043)},
+	"f25":                {Name: "KeyF25", String: "f25", Code: rune(0x110044)},
+	"f26":                {Name: "KeyF26", String: "f26", Code: rune(0x110045)},
+	"f27":                {Name: "KeyF27", String: "f27", Code: rune(0x110046)},
+	"f28":                {Name: "KeyF28", String: "f28", Code: rune(0x110047)},
+	"f29":                {Name: "KeyF29", String: "f29", Code: rune(0x110048)},
+	"f3":                 {Name: "KeyF3", String: "f3", Code: rune(0x11002e)},
+	"f30":                {Name: "KeyF30", String: "f30", Code: rune(0x110049)},
+	"f31":                {Name: "KeyF31", String: "f31", Code: rune(0x11004a)},
+	"f32":                {Name: "KeyF32", String: "f32", Code: rune(0x11004b)},
+	"f33":                {Name: "KeyF33", String: "f33", Code: rune(0x11004c)},
+	"f34":                {Name: "KeyF34", String: "f34", Code: rune(0x11004d)},
+	"f35":                {Name: "KeyF35", String: "f35", Code: rune(0x11004e)},
+	"f36":                {Name: "KeyF36", String: "f36", Code: rune(0x11004f)},
+	"f37":                {Name: "KeyF37", String: "f37", Code: rune(0x110050)},
+	"f38":                {Name: "KeyF38", String: "f38", Code: rune(0x110051)},
+	"f39":                {Name: "KeyF39", String: "f39", Code: rune(0x110052)},
+	"f4":                 {Name: "KeyF4", String: "f4", Code: rune(0x11002f)},
+	"f40":                {Name: "KeyF40", String: "f40", Code: rune(0x110053)},
+	"f41":                {Name: "KeyF41", String: "f41", Code: rune(0x110054)},
+	"f42":                {Name: "KeyF42", String: "f42", Code: rune(0x110055)},
+	"f43":                {Name: "KeyF43", String: "f43", Code: rune(0x110056)},
+	"f44":                {Name: "KeyF44", String: "f44", Code: rune(0x110057)},
+	"f45":                {Name: "KeyF45", String: "f45", Code: rune(0x110058)},
+	"f46":                {Name: "KeyF46", String: "f46", Code: rune(0x110059)},
+	"f47":                {Name: "KeyF47", String: "f47", Code: rune(0x11005a)},
+	"f48":                {Name: "KeyF48", String: "f48", Code: rune(0x11005b)},
+	"f49":                {Name: "KeyF49", String: "f49", Code: rune(0x11005c)},
+	"f5":                 {Name: "KeyF5", String: "f5", Code: rune(0x110030)},
+	"f50":                {Name: "KeyF50", String: "f50", Code: rune(0x11005d)},
+	"f51":                {Name: "KeyF51", String: "f51", Code: rune(0x11005e)},
+	"f52":                {Name: "KeyF52", String: "f52", Code: rune(0x11005f)},
+	"f53":                {Name: "KeyF53", String: "f53", Code: rune(0x110060)},
+	"f54":                {Name: "KeyF54", String: "f54", Code: rune(0x110061)},
+	"f55":                {Name: "KeyF55", String: "f55", Code: rune(0x110062)},
+	"f56":                {Name: "KeyF56", String: "f56", Code: rune(0x110063)},
+	"f57":                {Name: "KeyF57", String: "f57", Code: rune(0x110064)},
+	"f58":                {Name: "KeyF58", String: "f58", Code: rune(0x110065)},
+	"f59":                {Name: "KeyF59", String: "f59", Code: rune(0x110066)},
+	"f6":                 {Name: "KeyF6", String: "f6", Code: rune(0x110031)},
+	"f60":                {Name: "KeyF60", String: "f60", Code: rune(0x110067)},
+	"f61":                {Name: "KeyF61", String: "f61", Code: rune(0x110068)},
+	"f62":                {Name: "KeyF62", String: "f62", Code: rune(0x110069)},
+	"f63":                {Name: "KeyF63", String: "f63", Code: rune(0x11006a)},
+	"f7":                 {Name: "KeyF7", String: "f7", Code: rune(0x110032)},
+	"f8":                 {Name: "KeyF8", String: "f8", Code: rune(0x110033)},
+	"f9":                 {Name: "KeyF9", String: "f9", Code: rune(0x110034)},
+	"find":               {Name: "KeyFind", String: "find", Code: rune(0x110006)},
+	"home":               {Name: "KeyHome", String: "home", Code: rune(0x11000c)},
+	"insert":             {Name: "KeyInsert", String: "insert", Code: rune(0x110007)},
+	"iso level 3 shift":  {Name: "KeyIsoLevel3Shift", String: "iso level 3 shift", Code: rune(0x11008a)},
+	"iso level 5 shift":  {Name: "KeyIsoLevel5Shift", String: "iso level 5 shift", Code: rune(0x11008b)},
+	"kp 0":               {Name: "KeyKp0", String: "kp 0", Code: rune(0x110016)},
+	"kp 1":               {Name: "KeyKp1", String: "kp 1", Code: rune(0x110017)},
+	"kp 2":               {Name: "KeyKp2", String: "kp 2", Code: rune(0x110018)},
+	"kp 3":               {Name: "KeyKp3", String: "kp 3", Code: rune(0x110019)},
+	"kp 4":               {Name: "KeyKp4", String: "kp 4", Code: rune(0x11001a)},
+	"kp 5":               {Name: "KeyKp5", String: "kp 5", Code: rune(0x11001b)},
+	"kp 6":               {Name: "KeyKp6", String: "kp 6", Code: rune(0x11001c)},
+	"kp 7":               {Name: "KeyKp7", String: "kp 7", Code: rune(0x11001d)},
+	"kp 8":               {Name: "KeyKp8", String: "kp 8", Code: rune(0x11001e)},
+	"kp 9":               {Name: "KeyKp9", String: "kp 9", Code: rune(0x11001f)},
+	"kp begin":           {Name: "KeyKpBegin", String: "kp begin", Code: rune(0x11002b)},
+	"kp comma":           {Name: "KeyKpComma", String: "kp comma", Code: rune(0x110012)},
+	"kp decimal":         {Name: "KeyKpDecimal", String: "kp decimal", Code: rune(0x110014)},
+	"kp delete":          {Name: "KeyKpDelete", String: "kp delete", Code: rune(0x11002a)},
+	"kp divide":          {Name: "KeyKpDivide", String: "kp divide", Code: rune(0x110015)},
+	"kp down":            {Name: "KeyKpDown", String: "kp down", Code: rune(0x110022)},
+	"kp end":             {Name: "KeyKpEnd", String: "kp end", Code: rune(0x110028)},
+	"kp enter":           {Name: "KeyKpEnter", String: "kp enter", Code: rune(0x11000e)},
+	"kp equal":           {Name: "KeyKpEqual", String: "kp equal", Code: rune(0x11000f)},
+	"kp home":            {Name: "KeyKpHome", String: "kp home", Code: rune(0x110027)},
+	"kp insert":          {Name: "KeyKpInsert", String: "kp insert", Code: rune(0x110029)},
+	"kp left":            {Name: "KeyKpLeft", String: "kp left", Code: rune(0x110023)},
+	"kp minus":           {Name: "KeyKpMinus", String: "kp minus", Code: rune(0x110013)},
+	"kp multiply":        {Name: "KeyKpMultiply", String: "kp multiply", Code: rune(0x110010)},
+	"kp pgdown":          {Name: "KeyKpPgDown", String: "kp pgdown", Code: rune(0x110026)},
+	"kp pgup":            {Name: "KeyKpPgUp", String: "kp pgup", Code: rune(0x110025)},
+	"kp plus":            {Name: "KeyKpPlus", String: "kp plus", Code: rune(0x110011)},
+	"kp right":           {Name: "KeyKpRight", String: "kp right", Code: rune(0x110024)},
+	"kp sep":             {Name: "KeyKpSep", String: "kp sep", Code: rune(0x110020)},
+	"kp up":              {Name: "KeyKpUp", String: "kp up", Code: rune(0x110021)},
+	"left":               {Name: "KeyLeft", String: "left", Code: rune(0x110004)},
+	"left alt":           {Name: "KeyLeftAlt", String: "left alt", Code: rune(0x11007f)},
+	"left ctrl":          {Name: "KeyLeftCtrl", String: "left ctrl", Code: rune(0x110080)},
+	"left hyper":         {Name: "KeyLeftHyper", String: "left hyper", Code: rune(0x110082)},
+	"left meta":          {Name: "KeyLeftMeta", String: "left meta", Code: rune(0x110083)},
+	"left shift":         {Name: "KeyLeftShift", String: "left shift", Code: rune(0x11007e)},
+	"left super":         {Name: "KeyLeftSuper", String: "left super", Code: rune(0x110081)},
+	"lower vol":          {Name: "KeyLowerVol", String: "lower vol", Code: rune(0x11007b)},
+	"media fast forward": {Name: "KeyMediaFastForward", String: "media fast forward", Code: rune(0x110076)},
+	"media next":         {Name: "KeyMediaNext", String: "media next", Code: rune(0x110078)},
+	"media pause":        {Name: "KeyMediaPause", String: "media pause", Code: rune(0x110072)},
+	"media play":         {Name: "KeyMediaPlay", String: "media play", Code: rune(0x110071)},
+	"media play pause":   {Name: "KeyMediaPlayPause", String: "media play pause", Code: rune(0x110073)},
+	"media prev":         {Name: "KeyMediaPrev", String: "media prev", Code: rune(0x110079)},
+	"media record":       {Name: "KeyMediaRecord", String: "media record", Code: rune(0x110079)},
+	"media reverse":      {Name: "KeyMediaReverse", String: "media reverse", Code: rune(0x110074)},
+	"media rewind":       {Name: "KeyMediaRewind", String: "media rewind", Code: rune(0x110077)},
+	"media stop":         {Name: "KeyMediaStop", String: "media stop", Code: rune(0x110075)},
+	"menu":               {Name: "KeyMenu", String: "menu", Code: rune(0x110070)},
+	"mute":               {Name: "KeyMute", String: "mute", Code: rune(0x11007d)},
+	"num lock":           {Name: "KeyNumLock", String: "num lock", Code: rune(0x11006d)},
+	"pause":              {Name: "KeyPause", String: "pause", Code: rune(0x11006f)},
+	"pgdown":             {Name: "KeyPgDown", String: "pgdown", Code: rune(0x11000b)},
+	"pgup":               {Name: "KeyPgUp", String: "pgup", Code: rune(0x11000a)},
+	"print screen":       {Name: "KeyPrintScreen", String: "print screen", Code: rune(0x11006e)},
+	"raise vol":          {Name: "KeyRaiseVol", String: "raise vol", Code: rune(0x11007c)},
+	"right":              {Name: "KeyRight", String: "right", Code: rune(0x110003)},
+	"right alt":          {Name: "KeyRightAlt", String: "right alt", Code: rune(0x110085)},
+	"right ctrl":         {Name: "KeyRightCtrl", String: "right ctrl", Code: rune(0x110086)},
+	"right hyper":        {Name: "KeyRightHyper", String: "right hyper", Code: rune(0x110088)},
+	"right meta":         {Name: "KeyRightMeta", String: "right meta", Code: rune(0x110089)},
+	"right shift":        {Name: "KeyRightShift", String: "right shift", Code: rune(0x110084)},
+	"right super":        {Name: "KeyRightSuper", String: "right super", Code: rune(0x110087)},
+	"scroll lock":        {Name: "KeyScrollLock", String: "scroll lock", Code: rune(0x11006c)},
+	"select":             {Name: "KeySelect", String: "select", Code: rune(0x110009)},
+	"space":              {Name: "KeySpace", String: "space", Code: ' '},
+	"tab":                {Name: "KeyTab", String: "tab", Code: '\t'},
+	"up":                 {Name: "KeyUp", String: "up", Code: rune(0x110001)},
 }
 
-// KeyDefsByName contains all bubbletea KeyType definitions keyed by constant name.
+// KeyDefsByName contains all bubbletea key definitions keyed by constant name.
 // Multiple constant names may map to the same key (e.g., KeyEsc and KeyEscape both map to "esc").
 var KeyDefsByName = map[string]KeyDef{
-	"KeyBackspace":        KeyDefs["backspace"],
-	"KeyBreak":            KeyDefs["ctrl+c"],
 	"KeyCtrlA":            KeyDefs["ctrl+a"],
-	"KeyCtrlAt":           KeyDefs["ctrl+@"],
 	"KeyCtrlB":            KeyDefs["ctrl+b"],
-	"KeyCtrlBackslash":    KeyDefs["ctrl+\\"],
 	"KeyCtrlC":            KeyDefs["ctrl+c"],
-	"KeyCtrlCaret":        KeyDefs["ctrl+^"],
-	"KeyCtrlCloseBracket": KeyDefs["ctrl+]"],
 	"KeyCtrlD":            KeyDefs["ctrl+d"],
-	"KeyCtrlDown":         KeyDefs["ctrl+down"],
 	"KeyCtrlE":            KeyDefs["ctrl+e"],
-	"KeyCtrlEnd":          KeyDefs["ctrl+end"],
 	"KeyCtrlF":            KeyDefs["ctrl+f"],
 	"KeyCtrlG":            KeyDefs["ctrl+g"],
 	"KeyCtrlH":            KeyDefs["ctrl+h"],
-	"KeyCtrlHome":         KeyDefs["ctrl+home"],
-	"KeyCtrlI":            KeyDefs["tab"],
 	"KeyCtrlJ":            KeyDefs["ctrl+j"],
 	"KeyCtrlK":            KeyDefs["ctrl+k"],
 	"KeyCtrlL":            KeyDefs["ctrl+l"],
-	"KeyCtrlLeft":         KeyDefs["ctrl+left"],
-	"KeyCtrlM":            KeyDefs["enter"],
 	"KeyCtrlN":            KeyDefs["ctrl+n"],
 	"KeyCtrlO":            KeyDefs["ctrl+o"],
-	"KeyCtrlOpenBracket":  KeyDefs["esc"],
 	"KeyCtrlP":            KeyDefs["ctrl+p"],
-	"KeyCtrlPgDown":       KeyDefs["ctrl+pgdown"],
-	"KeyCtrlPgUp":         KeyDefs["ctrl+pgup"],
 	"KeyCtrlQ":            KeyDefs["ctrl+q"],
-	"KeyCtrlQuestionMark": KeyDefs["backspace"],
 	"KeyCtrlR":            KeyDefs["ctrl+r"],
-	"KeyCtrlRight":        KeyDefs["ctrl+right"],
 	"KeyCtrlS":            KeyDefs["ctrl+s"],
-	"KeyCtrlShiftDown":    KeyDefs["ctrl+shift+down"],
-	"KeyCtrlShiftEnd":     KeyDefs["ctrl+shift+end"],
-	"KeyCtrlShiftHome":    KeyDefs["ctrl+shift+home"],
-	"KeyCtrlShiftLeft":    KeyDefs["ctrl+shift+left"],
-	"KeyCtrlShiftRight":   KeyDefs["ctrl+shift+right"],
-	"KeyCtrlShiftUp":      KeyDefs["ctrl+shift+up"],
 	"KeyCtrlT":            KeyDefs["ctrl+t"],
 	"KeyCtrlU":            KeyDefs["ctrl+u"],
-	"KeyCtrlUnderscore":   KeyDefs["ctrl+_"],
-	"KeyCtrlUp":           KeyDefs["ctrl+up"],
 	"KeyCtrlV":            KeyDefs["ctrl+v"],
 	"KeyCtrlW":            KeyDefs["ctrl+w"],
 	"KeyCtrlX":            KeyDefs["ctrl+x"],
 	"KeyCtrlY":            KeyDefs["ctrl+y"],
 	"KeyCtrlZ":            KeyDefs["ctrl+z"],
-	"KeyDelete":           KeyDefs["delete"],
+	"KeyCtrlAt":           KeyDefs["ctrl:@"],
+	"KeyCtrlBackslash":    KeyDefs["ctrl+\\"],
+	"KeyCtrlCloseBracket": KeyDefs["ctrl+]"],
+	"KeyCtrlCaret":        KeyDefs["ctrl+^"],
+	"KeyCtrlUnderscore":   KeyDefs["ctrl+_"],
+	"KeyExtended":         KeyDefs["extended"],
+	"KeyUp":               KeyDefs["up"],
 	"KeyDown":             KeyDefs["down"],
+	"KeyRight":            KeyDefs["right"],
+	"KeyLeft":             KeyDefs["left"],
+	"KeyBegin":            KeyDefs["begin"],
+	"KeyFind":             KeyDefs["find"],
+	"KeyInsert":           KeyDefs["insert"],
+	"KeyDelete":           KeyDefs["delete"],
+	"KeySelect":           KeyDefs["select"],
+	"KeyPgUp":             KeyDefs["pgup"],
+	"KeyPgDown":           KeyDefs["pgdown"],
+	"KeyHome":             KeyDefs["home"],
 	"KeyEnd":              KeyDefs["end"],
+	"KeyKpEnter":          KeyDefs["kp enter"],
+	"KeyKpEqual":          KeyDefs["kp equal"],
+	"KeyKpMultiply":       KeyDefs["kp multiply"],
+	"KeyKpPlus":           KeyDefs["kp plus"],
+	"KeyKpComma":          KeyDefs["kp comma"],
+	"KeyKpMinus":          KeyDefs["kp minus"],
+	"KeyKpDecimal":        KeyDefs["kp decimal"],
+	"KeyKpDivide":         KeyDefs["kp divide"],
+	"KeyKp0":              KeyDefs["kp 0"],
+	"KeyKp1":              KeyDefs["kp 1"],
+	"KeyKp2":              KeyDefs["kp 2"],
+	"KeyKp3":              KeyDefs["kp 3"],
+	"KeyKp4":              KeyDefs["kp 4"],
+	"KeyKp5":              KeyDefs["kp 5"],
+	"KeyKp6":              KeyDefs["kp 6"],
+	"KeyKp7":              KeyDefs["kp 7"],
+	"KeyKp8":              KeyDefs["kp 8"],
+	"KeyKp9":              KeyDefs["kp 9"],
+	"KeyKpSep":            KeyDefs["kp sep"],
+	"KeyKpUp":             KeyDefs["kp up"],
+	"KeyKpDown":           KeyDefs["kp down"],
+	"KeyKpLeft":           KeyDefs["kp left"],
+	"KeyKpRight":          KeyDefs["kp right"],
+	"KeyKpPgUp":           KeyDefs["kp pgup"],
+	"KeyKpPgDown":         KeyDefs["kp pgdown"],
+	"KeyKpHome":           KeyDefs["kp home"],
+	"KeyKpEnd":            KeyDefs["kp end"],
+	"KeyKpInsert":         KeyDefs["kp insert"],
+	"KeyKpDelete":         KeyDefs["kp delete"],
+	"KeyKpBegin":          KeyDefs["kp begin"],
+	"KeyCapsLock":         KeyDefs["caps lock"],
+	"KeyScrollLock":       KeyDefs["scroll lock"],
+	"KeyNumLock":          KeyDefs["num lock"],
+	"KeyPrintScreen":      KeyDefs["print screen"],
+	"KeyPause":            KeyDefs["pause"],
+	"KeyMenu":             KeyDefs["menu"],
+	"KeyMediaPlay":        KeyDefs["media play"],
+	"KeyMediaPause":       KeyDefs["media pause"],
+	"KeyMediaPlayPause":   KeyDefs["media play pause"],
+	"KeyMediaReverse":     KeyDefs["media reverse"],
+	"KeyMediaStop":        KeyDefs["media stop"],
+	"KeyMediaFastForward": KeyDefs["media fast forward"],
+	"KeyMediaRewind":      KeyDefs["media rewind"],
+	"KeyMediaNext":        KeyDefs["media next"],
+	"KeyMediaPrev":        KeyDefs["media prev"],
+	"KeyMediaRecord":      KeyDefs["media record"],
+	"KeyLowerVol":         KeyDefs["lower vol"],
+	"KeyRaiseVol":         KeyDefs["raise vol"],
+	"KeyMute":             KeyDefs["mute"],
+	"KeyLeftShift":        KeyDefs["left shift"],
+	"KeyLeftAlt":          KeyDefs["left alt"],
+	"KeyLeftCtrl":         KeyDefs["left ctrl"],
+	"KeyLeftSuper":        KeyDefs["left super"],
+	"KeyLeftHyper":        KeyDefs["left hyper"],
+	"KeyLeftMeta":         KeyDefs["left meta"],
+	"KeyRightShift":       KeyDefs["right shift"],
+	"KeyRightAlt":         KeyDefs["right alt"],
+	"KeyRightCtrl":        KeyDefs["right ctrl"],
+	"KeyRightSuper":       KeyDefs["right super"],
+	"KeyRightHyper":       KeyDefs["right hyper"],
+	"KeyRightMeta":        KeyDefs["right meta"],
+	"KeyIsoLevel3Shift":   KeyDefs["iso level 3 shift"],
+	"KeyIsoLevel5Shift":   KeyDefs["iso level 5 shift"],
+	"KeyBackspace":        KeyDefs["backspace"],
+	"KeyTab":              KeyDefs["tab"],
 	"KeyEnter":            KeyDefs["enter"],
-	"KeyEsc":              KeyDefs["esc"],
+	"KeyReturn":           KeyDefs["enter"],
 	"KeyEscape":           KeyDefs["esc"],
+	"KeyEsc":              KeyDefs["esc"],
+	"KeySpace":            KeyDefs["space"],
 	"KeyF1":               KeyDefs["f1"],
+	"KeyF2":               KeyDefs["f2"],
+	"KeyF3":               KeyDefs["f3"],
+	"KeyF4":               KeyDefs["f4"],
+	"KeyF5":               KeyDefs["f5"],
+	"KeyF6":               KeyDefs["f6"],
+	"KeyF7":               KeyDefs["f7"],
+	"KeyF8":               KeyDefs["f8"],
+	"KeyF9":               KeyDefs["f9"],
 	"KeyF10":              KeyDefs["f10"],
 	"KeyF11":              KeyDefs["f11"],
 	"KeyF12":              KeyDefs["f12"],
@@ -175,122 +327,227 @@ var KeyDefsByName = map[string]KeyDef{
 	"KeyF17":              KeyDefs["f17"],
 	"KeyF18":              KeyDefs["f18"],
 	"KeyF19":              KeyDefs["f19"],
-	"KeyF2":               KeyDefs["f2"],
 	"KeyF20":              KeyDefs["f20"],
-	"KeyF3":               KeyDefs["f3"],
-	"KeyF4":               KeyDefs["f4"],
-	"KeyF5":               KeyDefs["f5"],
-	"KeyF6":               KeyDefs["f6"],
-	"KeyF7":               KeyDefs["f7"],
-	"KeyF8":               KeyDefs["f8"],
-	"KeyF9":               KeyDefs["f9"],
-	"KeyHome":             KeyDefs["home"],
-	"KeyInsert":           KeyDefs["insert"],
-	"KeyLeft":             KeyDefs["left"],
-	"KeyNull":             KeyDefs["ctrl+@"],
-	"KeyPgDown":           KeyDefs["pgdown"],
-	"KeyPgUp":             KeyDefs["pgup"],
-	"KeyRight":            KeyDefs["right"],
-	"KeyRunes":            KeyDefs["runes"],
-	"KeyShiftDown":        KeyDefs["shift+down"],
-	"KeyShiftEnd":         KeyDefs["shift+end"],
-	"KeyShiftHome":        KeyDefs["shift+home"],
-	"KeyShiftLeft":        KeyDefs["shift+left"],
-	"KeyShiftRight":       KeyDefs["shift+right"],
-	"KeyShiftTab":         KeyDefs["shift+tab"],
-	"KeyShiftUp":          KeyDefs["shift+up"],
-	"KeySpace":            KeyDefs[" "],
-	"KeyTab":              KeyDefs["tab"],
-	"KeyUp":               KeyDefs["up"],
+	"KeyF21":              KeyDefs["f21"],
+	"KeyF22":              KeyDefs["f22"],
+	"KeyF23":              KeyDefs["f23"],
+	"KeyF24":              KeyDefs["f24"],
+	"KeyF25":              KeyDefs["f25"],
+	"KeyF26":              KeyDefs["f26"],
+	"KeyF27":              KeyDefs["f27"],
+	"KeyF28":              KeyDefs["f28"],
+	"KeyF29":              KeyDefs["f29"],
+	"KeyF30":              KeyDefs["f30"],
+	"KeyF31":              KeyDefs["f31"],
+	"KeyF32":              KeyDefs["f32"],
+	"KeyF33":              KeyDefs["f33"],
+	"KeyF34":              KeyDefs["f34"],
+	"KeyF35":              KeyDefs["f35"],
+	"KeyF36":              KeyDefs["f36"],
+	"KeyF37":              KeyDefs["f37"],
+	"KeyF38":              KeyDefs["f38"],
+	"KeyF39":              KeyDefs["f39"],
+	"KeyF40":              KeyDefs["f40"],
+	"KeyF41":              KeyDefs["f41"],
+	"KeyF42":              KeyDefs["f42"],
+	"KeyF43":              KeyDefs["f43"],
+	"KeyF44":              KeyDefs["f44"],
+	"KeyF45":              KeyDefs["f45"],
+	"KeyF46":              KeyDefs["f46"],
+	"KeyF47":              KeyDefs["f47"],
+	"KeyF48":              KeyDefs["f48"],
+	"KeyF49":              KeyDefs["f49"],
+	"KeyF50":              KeyDefs["f50"],
+	"KeyF51":              KeyDefs["f51"],
+	"KeyF52":              KeyDefs["f52"],
+	"KeyF53":              KeyDefs["f53"],
+	"KeyF54":              KeyDefs["f54"],
+	"KeyF55":              KeyDefs["f55"],
+	"KeyF56":              KeyDefs["f56"],
+	"KeyF57":              KeyDefs["f57"],
+	"KeyF58":              KeyDefs["f58"],
+	"KeyF59":              KeyDefs["f59"],
+	"KeyF60":              KeyDefs["f60"],
+	"KeyF61":              KeyDefs["f61"],
+	"KeyF62":              KeyDefs["f62"],
+	"KeyF63":              KeyDefs["f63"],
 }
 
-// AllKeyTypes returns all known tea.KeyType values that have string representations.
+// AllKeyCodes returns all known key rune values that have string representations.
 // Uses canonical constant names for deterministic output.
-var AllKeyTypes = []tea.KeyType{
-	tea.KeySpace,
-	tea.KeyBackspace,
-	tea.KeyCtrlAt,
-	tea.KeyCtrlBackslash,
-	tea.KeyCtrlCloseBracket,
-	tea.KeyCtrlCaret,
-	tea.KeyCtrlUnderscore,
-	tea.KeyCtrlA,
-	tea.KeyCtrlB,
-	tea.KeyBreak,
-	tea.KeyCtrlD,
-	tea.KeyCtrlDown,
-	tea.KeyCtrlE,
-	tea.KeyCtrlEnd,
-	tea.KeyCtrlF,
-	tea.KeyCtrlG,
-	tea.KeyCtrlH,
-	tea.KeyCtrlHome,
-	tea.KeyCtrlJ,
-	tea.KeyCtrlK,
-	tea.KeyCtrlL,
-	tea.KeyCtrlLeft,
-	tea.KeyCtrlN,
-	tea.KeyCtrlO,
-	tea.KeyCtrlP,
-	tea.KeyCtrlPgDown,
-	tea.KeyCtrlPgUp,
-	tea.KeyCtrlQ,
-	tea.KeyCtrlR,
-	tea.KeyCtrlRight,
-	tea.KeyCtrlS,
-	tea.KeyCtrlShiftDown,
-	tea.KeyCtrlShiftEnd,
-	tea.KeyCtrlShiftHome,
-	tea.KeyCtrlShiftLeft,
-	tea.KeyCtrlShiftRight,
-	tea.KeyCtrlShiftUp,
-	tea.KeyCtrlT,
-	tea.KeyCtrlU,
-	tea.KeyCtrlUp,
-	tea.KeyCtrlV,
-	tea.KeyCtrlW,
-	tea.KeyCtrlX,
-	tea.KeyCtrlY,
-	tea.KeyCtrlZ,
-	tea.KeyDelete,
-	tea.KeyDown,
-	tea.KeyEnd,
-	tea.KeyEnter,
-	tea.KeyEsc,
-	tea.KeyF1,
-	tea.KeyF10,
-	tea.KeyF11,
-	tea.KeyF12,
-	tea.KeyF13,
-	tea.KeyF14,
-	tea.KeyF15,
-	tea.KeyF16,
-	tea.KeyF17,
-	tea.KeyF18,
-	tea.KeyF19,
-	tea.KeyF2,
-	tea.KeyF20,
-	tea.KeyF3,
-	tea.KeyF4,
-	tea.KeyF5,
-	tea.KeyF6,
-	tea.KeyF7,
-	tea.KeyF8,
-	tea.KeyF9,
-	tea.KeyHome,
-	tea.KeyInsert,
-	tea.KeyLeft,
-	tea.KeyPgDown,
-	tea.KeyPgUp,
-	tea.KeyRight,
-	tea.KeyRunes,
-	tea.KeyShiftDown,
-	tea.KeyShiftEnd,
-	tea.KeyShiftHome,
-	tea.KeyShiftLeft,
-	tea.KeyShiftRight,
-	tea.KeyShiftTab,
-	tea.KeyShiftUp,
-	tea.KeyTab,
-	tea.KeyUp,
+var AllKeyCodes = []rune{
+	'\x7f',         // KeyBackspace
+	rune(0x110005), // KeyBegin
+	rune(0x11006b), // KeyCapsLock
+	'\\',           // KeyCtrlBackslash
+	']',            // KeyCtrlCloseBracket
+	'^',            // KeyCtrlCaret
+	'_',            // KeyCtrlUnderscore
+	'a',            // KeyCtrlA
+	'b',            // KeyCtrlB
+	'c',            // KeyCtrlC
+	'd',            // KeyCtrlD
+	'e',            // KeyCtrlE
+	'f',            // KeyCtrlF
+	'g',            // KeyCtrlG
+	'h',            // KeyCtrlH
+	'j',            // KeyCtrlJ
+	'k',            // KeyCtrlK
+	'l',            // KeyCtrlL
+	'n',            // KeyCtrlN
+	'o',            // KeyCtrlO
+	'p',            // KeyCtrlP
+	'q',            // KeyCtrlQ
+	'r',            // KeyCtrlR
+	's',            // KeyCtrlS
+	't',            // KeyCtrlT
+	'u',            // KeyCtrlU
+	'v',            // KeyCtrlV
+	'w',            // KeyCtrlW
+	'x',            // KeyCtrlX
+	'y',            // KeyCtrlY
+	'z',            // KeyCtrlZ
+	'@',            // KeyCtrlAt
+	rune(0x110008), // KeyDelete
+	rune(0x110002), // KeyDown
+	rune(0x11000d), // KeyEnd
+	'\r',           // KeyEnter
+	'\x1b',         // KeyEscape
+	rune(0x110000), // KeyExtended
+	rune(0x11002c), // KeyF1
+	rune(0x110035), // KeyF10
+	rune(0x110036), // KeyF11
+	rune(0x110037), // KeyF12
+	rune(0x110038), // KeyF13
+	rune(0x110039), // KeyF14
+	rune(0x11003a), // KeyF15
+	rune(0x11003b), // KeyF16
+	rune(0x11003c), // KeyF17
+	rune(0x11003d), // KeyF18
+	rune(0x11003e), // KeyF19
+	rune(0x11002d), // KeyF2
+	rune(0x11003f), // KeyF20
+	rune(0x110040), // KeyF21
+	rune(0x110041), // KeyF22
+	rune(0x110042), // KeyF23
+	rune(0x110043), // KeyF24
+	rune(0x110044), // KeyF25
+	rune(0x110045), // KeyF26
+	rune(0x110046), // KeyF27
+	rune(0x110047), // KeyF28
+	rune(0x110048), // KeyF29
+	rune(0x11002e), // KeyF3
+	rune(0x110049), // KeyF30
+	rune(0x11004a), // KeyF31
+	rune(0x11004b), // KeyF32
+	rune(0x11004c), // KeyF33
+	rune(0x11004d), // KeyF34
+	rune(0x11004e), // KeyF35
+	rune(0x11004f), // KeyF36
+	rune(0x110050), // KeyF37
+	rune(0x110051), // KeyF38
+	rune(0x110052), // KeyF39
+	rune(0x11002f), // KeyF4
+	rune(0x110053), // KeyF40
+	rune(0x110054), // KeyF41
+	rune(0x110055), // KeyF42
+	rune(0x110056), // KeyF43
+	rune(0x110057), // KeyF44
+	rune(0x110058), // KeyF45
+	rune(0x110059), // KeyF46
+	rune(0x11005a), // KeyF47
+	rune(0x11005b), // KeyF48
+	rune(0x11005c), // KeyF49
+	rune(0x110030), // KeyF5
+	rune(0x11005d), // KeyF50
+	rune(0x11005e), // KeyF51
+	rune(0x11005f), // KeyF52
+	rune(0x110060), // KeyF53
+	rune(0x110061), // KeyF54
+	rune(0x110062), // KeyF55
+	rune(0x110063), // KeyF56
+	rune(0x110064), // KeyF57
+	rune(0x110065), // KeyF58
+	rune(0x110066), // KeyF59
+	rune(0x110031), // KeyF6
+	rune(0x110067), // KeyF60
+	rune(0x110068), // KeyF61
+	rune(0x110069), // KeyF62
+	rune(0x11006a), // KeyF63
+	rune(0x110032), // KeyF7
+	rune(0x110033), // KeyF8
+	rune(0x110034), // KeyF9
+	rune(0x110006), // KeyFind
+	rune(0x11000c), // KeyHome
+	rune(0x110007), // KeyInsert
+	rune(0x11008a), // KeyIsoLevel3Shift
+	rune(0x11008b), // KeyIsoLevel5Shift
+	rune(0x110016), // KeyKp0
+	rune(0x110017), // KeyKp1
+	rune(0x110018), // KeyKp2
+	rune(0x110019), // KeyKp3
+	rune(0x11001a), // KeyKp4
+	rune(0x11001b), // KeyKp5
+	rune(0x11001c), // KeyKp6
+	rune(0x11001d), // KeyKp7
+	rune(0x11001e), // KeyKp8
+	rune(0x11001f), // KeyKp9
+	rune(0x11002b), // KeyKpBegin
+	rune(0x110012), // KeyKpComma
+	rune(0x110014), // KeyKpDecimal
+	rune(0x11002a), // KeyKpDelete
+	rune(0x110015), // KeyKpDivide
+	rune(0x110022), // KeyKpDown
+	rune(0x110028), // KeyKpEnd
+	rune(0x11000e), // KeyKpEnter
+	rune(0x11000f), // KeyKpEqual
+	rune(0x110027), // KeyKpHome
+	rune(0x110029), // KeyKpInsert
+	rune(0x110023), // KeyKpLeft
+	rune(0x110013), // KeyKpMinus
+	rune(0x110010), // KeyKpMultiply
+	rune(0x110026), // KeyKpPgDown
+	rune(0x110025), // KeyKpPgUp
+	rune(0x110011), // KeyKpPlus
+	rune(0x110024), // KeyKpRight
+	rune(0x110020), // KeyKpSep
+	rune(0x110021), // KeyKpUp
+	rune(0x110004), // KeyLeft
+	rune(0x11007f), // KeyLeftAlt
+	rune(0x110080), // KeyLeftCtrl
+	rune(0x110082), // KeyLeftHyper
+	rune(0x110083), // KeyLeftMeta
+	rune(0x11007e), // KeyLeftShift
+	rune(0x110081), // KeyLeftSuper
+	rune(0x11007b), // KeyLowerVol
+	rune(0x110076), // KeyMediaFastForward
+	rune(0x110078), // KeyMediaNext
+	rune(0x110072), // KeyMediaPause
+	rune(0x110071), // KeyMediaPlay
+	rune(0x110073), // KeyMediaPlayPause
+	rune(0x110079), // KeyMediaPrev
+	rune(0x110079), // KeyMediaRecord
+	rune(0x110074), // KeyMediaReverse
+	rune(0x110077), // KeyMediaRewind
+	rune(0x110075), // KeyMediaStop
+	rune(0x110070), // KeyMenu
+	rune(0x11007d), // KeyMute
+	rune(0x11006d), // KeyNumLock
+	rune(0x11006f), // KeyPause
+	rune(0x11000b), // KeyPgDown
+	rune(0x11000a), // KeyPgUp
+	rune(0x11006e), // KeyPrintScreen
+	rune(0x11007c), // KeyRaiseVol
+	rune(0x110003), // KeyRight
+	rune(0x110085), // KeyRightAlt
+	rune(0x110086), // KeyRightCtrl
+	rune(0x110088), // KeyRightHyper
+	rune(0x110089), // KeyRightMeta
+	rune(0x110084), // KeyRightShift
+	rune(0x110087), // KeyRightSuper
+	rune(0x11006c), // KeyScrollLock
+	rune(0x110009), // KeySelect
+	' ',            // KeySpace
+	'\t',           // KeyTab
+	rune(0x110001), // KeyUp
 }

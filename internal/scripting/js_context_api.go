@@ -18,7 +18,7 @@ func (e *Engine) jsContextListPaths() []string {
 }
 
 // jsContextGetPath returns information about a tracked path.
-func (e *Engine) jsContextGetPath(path string) interface{} {
+func (e *Engine) jsContextGetPath(path string) any {
 	contextPath, exists := e.contextManager.GetPath(path)
 	if !exists {
 		return nil
@@ -42,7 +42,7 @@ func (e *Engine) jsContextFromTxtar(data string) error {
 }
 
 // jsContextGetStats returns context statistics.
-func (e *Engine) jsContextGetStats() map[string]interface{} {
+func (e *Engine) jsContextGetStats() map[string]any {
 	return e.contextManager.GetStats()
 }
 

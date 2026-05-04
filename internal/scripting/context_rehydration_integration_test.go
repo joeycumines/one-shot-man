@@ -3,6 +3,7 @@ package scripting
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,7 +47,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
 
-		engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+		engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 		if err != nil {
 			t.Fatalf("Failed to create engine: %v", err)
 		}
@@ -55,7 +56,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		// Register the test mode with context manager
 		script := `
 			const {contextManager} = require('osm:ctxutil');
-			const nextIntegerId = require('osm:nextIntegerId');
+			const nextIntegerId = require('osm:nextIntegerID');
 			const sharedSymbols = require('osm:sharedStateSymbols');
 
 			const state = tui.createState("ctx-test", {
@@ -106,7 +107,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 			t.Fatalf("Failed to get items: %v", err)
 		}
 
-		itemsList, ok := items.([]interface{})
+		itemsList, ok := items.([]any)
 		if !ok {
 			t.Fatalf("Expected items to be array, got %T", items)
 		}
@@ -149,7 +150,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 
 		// Create new engine with same session ID - this will load persisted state
-		engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+		engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 		if err != nil {
 			t.Fatalf("Failed to create engine: %v", err)
 		}
@@ -159,7 +160,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		// This triggers the rehydration process
 		script := `
 			const {contextManager} = require('osm:ctxutil');
-			const nextIntegerId = require('osm:nextIntegerId');
+			const nextIntegerId = require('osm:nextIntegerID');
 			const shared = require('osm:sharedStateSymbols');
 
 			const state = tui.createState("ctx-test", {
@@ -198,7 +199,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 			t.Fatalf("Failed to get items: %v", err)
 		}
 
-		itemsList, ok := items.([]interface{})
+		itemsList, ok := items.([]any)
 		if !ok {
 			t.Fatalf("Expected items to be array, got %T", items)
 		}
@@ -232,7 +233,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 			t.Fatalf("Failed to get items after remove: %v", err)
 		}
 
-		itemsList, ok = items.([]interface{})
+		itemsList, ok = items.([]any)
 		if !ok {
 			t.Fatalf("Expected items to be array, got %T", items)
 		}
@@ -283,7 +284,7 @@ func TestContextRehydrationWithSharedState(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -292,7 +293,7 @@ func TestContextRehydrationWithSharedState(t *testing.T) {
 	// Register mode with shared state contract
 	script := `
 		const {contextManager} = require('osm:ctxutil');
-		const nextIntegerId = require('osm:nextIntegerId');
+		const nextIntegerId = require('osm:nextIntegerID');
 		const shared = require('osm:sharedStateSymbols');
 
 		const SharedStateKeys = {

@@ -2,13 +2,41 @@ package scripting
 
 import (
 	"bytes"
+	"errors"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/joeycumines/go-prompt"
 	"golang.org/x/term"
 )
+
+// newTestTUIReader creates a TUIReader with a pre-configured Reader for testing.
+// This bypasses lazy initialization - the reader is immediately available.
+func newTestTUIReader(r prompt.Reader) *TUIReader {
+	return &TUIReader{
+		reader: r,
+	}
+}
+
+// newTUIWriterStderr creates a TUIWriter that lazily initializes to write to stderr.
+func newTUIWriterStderr() *TUIWriter {
+	return &TUIWriter{
+		initFn: func() prompt.Writer {
+			return prompt.NewStderrWriter()
+		},
+		isStdout: false,
+	}
+}
+
+// newTestTUIWriter creates a TUIWriter with a pre-configured Writer for testing.
+// This bypasses lazy initialization - the writer is immediately available.
+func newTestTUIWriter(w prompt.Writer) *TUIWriter {
+	return &TUIWriter{
+		writer: w,
+	}
+}
 
 // TestTUIWriterFromIO verifies NewTUIWriterFromIO wraps io.Writer correctly.
 func TestTUIWriterFromIO(t *testing.T) {
@@ -36,7 +64,7 @@ func TestNewTUIWriter(t *testing.T) {
 
 // TestNewTUIWriterStderr verifies NewTUIWriterStderr creates a lazy stderr writer.
 func TestNewTUIWriterStderr(t *testing.T) {
-	w := NewTUIWriterStderr()
+	w := newTUIWriterStderr()
 	if w == nil {
 		t.Fatal("NewTUIWriterStderr returned nil")
 	}
@@ -90,7 +118,7 @@ func (m *mockPromptWriter) SetDisplayAttributes(fg, bg prompt.Color, attrs ...pr
 // TestNewTestTUIReader verifies the test helper works correctly.
 func TestNewTestTUIReader(t *testing.T) {
 	mock := &mockPromptReader{}
-	r := NewTestTUIReader(mock)
+	r := newTestTUIReader(mock)
 
 	if r.GetReader() != mock {
 		t.Error("Expected GetReader to return the mock reader")
@@ -100,7 +128,7 @@ func TestNewTestTUIReader(t *testing.T) {
 // TestNewTestTUIWriter verifies the test helper works correctly.
 func TestNewTestTUIWriter(t *testing.T) {
 	mock := &mockPromptWriter{}
-	w := NewTestTUIWriter(mock)
+	w := newTestTUIWriter(mock)
 
 	if w.GetWriter() != mock {
 		t.Error("Expected GetWriter to return the mock writer")
@@ -120,11 +148,25 @@ func TestTUIReaderFromIO(t *testing.T) {
 
 	buf := make([]byte, 10)
 	n, err := r.Read(buf)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		t.Errorf("Read failed: %v", err)
 	}
 	if string(buf[:n]) != "test input" {
 		t.Errorf("Expected 'test input', got %q", string(buf[:n]))
+	}
+}
+
+func TestTUIReader_ReadDoesNotSplitCRLFData(t *testing.T) {
+	input := "line1\r\nline2\r\n"
+	r := NewTUIReaderFromIO(strings.NewReader(input))
+	buf := make([]byte, 64)
+
+	n, err := r.Read(buf)
+	if err != nil {
+		t.Fatalf("read err: %v", err)
+	}
+	if got := string(buf[:n]); got != input {
+		t.Fatalf("read got %q, want %q", got, input)
 	}
 }
 
@@ -140,7 +182,7 @@ func TestNewTUIReader(t *testing.T) {
 // TestTUIWriterMethods verifies TUIWriter method delegation works.
 func TestTUIWriterMethods(t *testing.T) {
 	mock := &mockPromptWriter{}
-	w := NewTestTUIWriter(mock)
+	w := newTestTUIWriter(mock)
 
 	// Test WriteString
 	_, _ = w.WriteString("world")
@@ -193,7 +235,7 @@ func TestTUIWriterMethods(t *testing.T) {
 // TestTUIReaderMethods verifies TUIReader method delegation works.
 func TestTUIReaderMethods(t *testing.T) {
 	mock := &mockPromptReader{}
-	r := NewTestTUIReader(mock)
+	r := newTestTUIReader(mock)
 
 	// Test GetWinSize
 	ws := r.GetWinSize()
@@ -262,7 +304,7 @@ func TestNilReaderSafety(t *testing.T) {
 	// Read should return EOF
 	buf := make([]byte, 10)
 	_, err := r.Read(buf)
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("Read should return EOF, got: %v", err)
 	}
 
@@ -432,7 +474,7 @@ func TestTUIReader_GetSizeReturnsErrorForNonTerminal(t *testing.T) {
 	r := NewTUIReaderFromIO(bytes.NewReader(nil))
 	w, h, err := r.GetSize()
 
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("GetSize should return io.EOF for non-terminal, got: %v", err)
 	}
 	if w != 0 || h != 0 {
@@ -446,7 +488,7 @@ func TestTUIReader_MakeRawReturnsErrorForNonTerminal(t *testing.T) {
 	r := NewTUIReaderFromIO(bytes.NewReader(nil))
 	state, err := r.MakeRaw()
 
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("MakeRaw should return io.EOF for non-terminal, got: %v", err)
 	}
 	if state != nil {
@@ -511,7 +553,7 @@ func TestTerminalIO_ReadWriteDelegation(t *testing.T) {
 	// Test Read
 	buf := make([]byte, 10)
 	n, err = tio.Read(buf)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		t.Errorf("Read failed: %v", err)
 	}
 	if string(buf[:n]) != "hello" {

@@ -164,7 +164,7 @@ func TestNewTestSessionID_Uniqueness(t *testing.T) {
 
 	seen[firstID] = true
 
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		id := NewTestSessionID(prefix, tname)
 
 		// 1. Verify Uniqueness

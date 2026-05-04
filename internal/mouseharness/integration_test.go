@@ -13,6 +13,10 @@ import (
 )
 
 func TestConsole_Integration_New(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -40,6 +44,10 @@ func TestConsole_Integration_New(t *testing.T) {
 }
 
 func TestConsole_Integration_FindElement(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -76,6 +84,10 @@ func TestConsole_Integration_FindElement(t *testing.T) {
 }
 
 func TestConsole_Integration_ClickElement(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -100,11 +112,13 @@ func TestConsole_Integration_ClickElement(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the button changed to "Clicked!"
-	snap = cp.Snapshot()
 	err = console.ClickElement(ctx, "[Click Me]", 5*time.Second)
 	require.NoError(t, err)
 
-	err = cp.Expect(ctx, snap, termtest.Contains("Clicked!"), "wait for clicked state")
+	// BubbleTea v2 uses differential rendering, so raw byte checking
+	// (cp.Expect+Contains) won't find the full string in new output.
+	// Use VT-parsed screen polling instead.
+	err = console.WaitForContent(ctx, "Clicked!", 10*time.Second)
 	require.NoError(t, err)
 
 	// Send quit
@@ -113,6 +127,10 @@ func TestConsole_Integration_ClickElement(t *testing.T) {
 }
 
 func TestConsole_Integration_ScrollWheel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -137,22 +155,20 @@ func TestConsole_Integration_ScrollWheel(t *testing.T) {
 	require.NoError(t, err)
 
 	// Send scroll up events
-	snap = cp.Snapshot()
-	err = console.ScrollWheel(10, 5, "up")
+	err = console.ScrollWheelWithDirection(10, 5, ScrollUp)
 	require.NoError(t, err)
-	err = console.ScrollWheel(10, 5, "up")
+	err = console.ScrollWheelWithDirection(10, 5, ScrollUp)
 	require.NoError(t, err)
 
-	// Verify scroll counter increased
-	err = cp.Expect(ctx, snap, termtest.Contains("Scroll: 2"), "wait for scroll count")
+	// Verify scroll counter increased (VT-parsed screen polling)
+	err = console.WaitForContent(ctx, "Scroll: 2", 10*time.Second)
 	require.NoError(t, err)
 
 	// Send scroll down
-	snap = cp.Snapshot()
-	err = console.ScrollWheel(10, 5, "down")
+	err = console.ScrollWheelWithDirection(10, 5, ScrollDown)
 	require.NoError(t, err)
 
-	err = cp.Expect(ctx, snap, termtest.Contains("Scroll: 1"), "wait for scroll count decrease")
+	err = console.WaitForContent(ctx, "Scroll: 1", 10*time.Second)
 	require.NoError(t, err)
 
 	// Send quit
@@ -161,6 +177,10 @@ func TestConsole_Integration_ScrollWheel(t *testing.T) {
 }
 
 func TestConsole_Integration_ClickElementAndExpect(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -194,6 +214,10 @@ func TestConsole_Integration_ClickElementAndExpect(t *testing.T) {
 }
 
 func TestConsole_Integration_GetElementCenter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -233,6 +257,10 @@ func TestConsole_Integration_GetElementCenter(t *testing.T) {
 }
 
 func TestConsole_Integration_ClickWithButton(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -257,12 +285,13 @@ func TestConsole_Integration_ClickWithButton(t *testing.T) {
 	require.NoError(t, err)
 
 	// Click with left button (0)
-	snap = cp.Snapshot()
 	err = console.ClickWithButton(10, 3, 0)
 	require.NoError(t, err)
 
-	// Verify the click registered
-	err = cp.Expect(ctx, snap, termtest.Contains("Last: ("), "wait for position update")
+	// Verify the click registered — check for state change from
+	// "[Click Me]" to "[Clicked!]" which proves the left click was received.
+	// (Can't check "Last: (" since it exists from the initial render.)
+	err = console.WaitForContent(ctx, "Clicked!", 10*time.Second)
 	require.NoError(t, err)
 
 	// Send quit
@@ -271,6 +300,10 @@ func TestConsole_Integration_ClickWithButton(t *testing.T) {
 }
 
 func TestConsole_Integration_DebugBuffer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -303,6 +336,10 @@ func TestConsole_Integration_DebugBuffer(t *testing.T) {
 }
 
 func TestConsole_Integration_RequireClick(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

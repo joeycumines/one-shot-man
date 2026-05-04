@@ -4,9 +4,36 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+	"charm.land/lipgloss/v2"
 )
+
+// Test-only Option constructors (moved here to avoid deadcode flagging).
+
+func withContentHeight(h int) Option {
+	return func(m *Model) { m.ContentHeight = h }
+}
+
+func withViewportHeight(h int) Option {
+	return func(m *Model) { m.ViewportHeight = h }
+}
+
+func withYOffset(y int) Option {
+	return func(m *Model) { m.YOffset = y }
+}
+
+func withStyles(thumb, track lipgloss.Style) Option {
+	return func(m *Model) {
+		m.ThumbStyle = thumb
+		m.TrackStyle = track
+	}
+}
+
+func withChars(thumb, track string) Option {
+	return func(m *Model) {
+		m.ThumbChar = thumb
+		m.TrackChar = track
+	}
+}
 
 func TestScrollbarMath(t *testing.T) {
 	tests := []struct {
@@ -80,11 +107,11 @@ func TestScrollbarMath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			m := New(
-				WithContentHeight(tc.contentHeight),
-				WithViewportHeight(tc.viewportHeight),
-				WithYOffset(tc.yOffset),
-				WithChars("T", "."), // T for Thumb, . for Track
-				WithStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
+				withContentHeight(tc.contentHeight),
+				withViewportHeight(tc.viewportHeight),
+				withYOffset(tc.yOffset),
+				withChars("T", "."), // T for Thumb, . for Track
+				withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 			)
 
 			view := m.View()
@@ -119,11 +146,11 @@ func TestScrollbarMath(t *testing.T) {
 
 func TestScrollbarZeroViewportHeight(t *testing.T) {
 	m := New(
-		WithContentHeight(10),
-		WithViewportHeight(0),
-		WithYOffset(0),
-		WithChars("T", "."),
-		WithStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
+		withContentHeight(10),
+		withViewportHeight(0),
+		withYOffset(0),
+		withChars("T", "."),
+		withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 	)
 	if got := m.View(); got != "" {
 		t.Fatalf("expected empty view for zero viewport height, got %q", got)
@@ -131,32 +158,23 @@ func TestScrollbarZeroViewportHeight(t *testing.T) {
 }
 
 func TestScrollbarOutput(t *testing.T) {
-	{
-		colorProfile := lipgloss.ColorProfile()
-		t.Cleanup(func() {
-			lipgloss.SetColorProfile(colorProfile)
-		})
-	}
-
-	lipgloss.SetColorProfile(termenv.TrueColor)
-
 	// Test actual ANSI rendering structure
 	thumbStyle := lipgloss.NewStyle().Background(lipgloss.Color("#FF0000"))
 	trackStyle := lipgloss.NewStyle().Background(lipgloss.Color("#000000"))
 
 	m := New(
-		WithContentHeight(20),
-		WithViewportHeight(10),
-		WithYOffset(0),
-		WithChars(" ", " "),
-		WithStyles(thumbStyle, trackStyle),
+		withContentHeight(20),
+		withViewportHeight(10),
+		withYOffset(0),
+		withChars(" ", " "),
+		withStyles(thumbStyle, trackStyle),
 	)
 
 	view := m.View()
 	lines := strings.Split(view, "\n")
 
 	// Verify Top 5 lines are thumb (Red background)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if !strings.Contains(lines[i], "\x1b[48;2;255;0;0m") {
 			t.Errorf("Row %d should be thumb style (Red): %q", i, lines[i])
 		}

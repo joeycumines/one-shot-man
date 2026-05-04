@@ -130,10 +130,12 @@ func TestNewTUIManager_StateManagerErrorPath(t *testing.T) {
 			t.Fatal("NewTUIManager should not return nil even on state manager failure")
 		}
 
-		// Verify warning message was printed
+		// Verify warning message does NOT appear on stdout. After T12, the
+		// state-persistence-failure warning routes to os.Stderr so that stdout
+		// stays clean for MCP stdio transport.
 		outputStr := output.String()
-		if !strings.Contains(outputStr, "Warning: Failed to initialize state persistence") {
-			t.Errorf("Expected warning about state persistence failure, got: %s", outputStr)
+		if strings.Contains(outputStr, "Warning: Failed to initialize state persistence") {
+			t.Errorf("state persistence warning should NOT appear on stdout (should go to stderr), got: %s", outputStr)
 		}
 		// The manager should have fallen back to memory-backed state; don't
 		// assert on a specific "ephemeral mode" string as backends may emit
@@ -228,7 +230,7 @@ func TestNewTUIManager_LoadsHistoryFromSession(t *testing.T) {
 
 		// Create second TUI manager with same session ID - should load history
 		output.Reset()
-		tm2 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "")
+		tm2 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "memory")
 		if tm2 == nil {
 			t.Fatal("second NewTUIManager failed")
 		}
@@ -337,7 +339,7 @@ func TestNewTUIManager_StateManagerIntegration(t *testing.T) {
 
 		// Step 3: Create second TUI manager - should load persisted history
 		output.Reset()
-		tm2 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "")
+		tm2 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "memory")
 		if tm2 == nil {
 			t.Fatal("second NewTUIManager failed")
 		}
@@ -363,7 +365,7 @@ func TestNewTUIManager_StateManagerIntegration(t *testing.T) {
 		// Reload to confirm persistence
 		tm2.Close()
 		output.Reset()
-		tm3 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "")
+		tm3 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "memory")
 		if tm3 == nil {
 			t.Fatal("third NewTUIManager failed")
 		}

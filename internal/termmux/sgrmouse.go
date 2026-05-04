@@ -1,0 +1,261 @@
+package termmux
+
+// SGR mouse protocol parser. Parses the CSI < Ps ; Px ; Py [Mm] format
+// used by modern terminals for mouse tracking (also known as "mode 1006").
+//
+// Coordinates are 1-based (column 1, row 1 is the top-left cell).
+//
+// Reference: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+
+import "slices"
+
+// SGRMouseEvent holds a parsed SGR mouse escape sequence.
+type SGRMouseEvent struct {
+	Button  int  // Button parameter (includes modifiers).
+	X       int  // 1-based column.
+	Y       int  // 1-based row.
+	Release bool // true for release (m), false for press/motion (M).
+}
+
+// IsPress returns true for a button press (not motion, not release, not wheel).
+func (e SGRMouseEvent) IsPress() bool {
+	if e.Release {
+		return false
+	}
+	// Motion events have bit 5 (0x20) set in the button parameter.
+	if e.Button&0x20 != 0 {
+		return false
+	}
+	// Wheel events have bit 6 (0x40) set.
+	if e.Button&0x40 != 0 {
+		return false
+	}
+	return true
+}
+
+// IsLeftClick returns true for a left button press.
+func (e SGRMouseEvent) IsLeftClick() bool {
+	return e.IsPress() && e.Button&0x03 == 0
+}
+
+// parseSGRMouse attempts to parse an SGR mouse sequence starting at buf[start].
+// The sequence format is: ESC [ < Ps ; Px ; Py [Mm]
+//
+//	ESC = 0x1b, [ = 0x5b, < = 0x3c
+//	Ps  = button/modifier value (decimal)
+//	Px  = x coordinate (decimal, 1-based)
+//	Py  = y coordinate (decimal, 1-based)
+//	M   = press/motion,  m = release
+//
+// Returns the parsed event, the number of bytes consumed, and whether parsing
+// succeeded. If the prefix matches but the sequence is incomplete (truncated
+// at buffer boundary), consumed is 0 and ok is false — the caller should
+// buffer the bytes and retry after more data arrives.
+func parseSGRMouse(buf []byte, start int) (ev SGRMouseEvent, consumed int, ok bool) {
+	end := len(buf)
+	i := start
+
+	// Need at least the 3-byte prefix: ESC [ <
+	if i+3 > end {
+		return ev, 0, false
+	}
+	if buf[i] != 0x1b || buf[i+1] != '[' || buf[i+2] != '<' {
+		return ev, 0, false
+	}
+	i += 3
+
+	// Parse Ps (button).
+	btn, next, pOk := parseDecimal(buf, i, end)
+	if !pOk {
+		return ev, 0, false
+	}
+	i = next
+	if i >= end || buf[i] != ';' {
+		return ev, 0, false
+	}
+	i++ // skip ';'
+
+	// Parse Px (x).
+	px, next, pOk := parseDecimal(buf, i, end)
+	if !pOk {
+		return ev, 0, false
+	}
+	i = next
+	if i >= end || buf[i] != ';' {
+		return ev, 0, false
+	}
+	i++ // skip ';'
+
+	// Parse Py (y).
+	py, next, pOk := parseDecimal(buf, i, end)
+	if !pOk {
+		return ev, 0, false
+	}
+	i = next
+
+	// Final byte: 'M' (press/motion) or 'm' (release).
+	if i >= end {
+		return ev, 0, false // truncated; need more data
+	}
+	switch buf[i] {
+	case 'M':
+		ev.Release = false
+	case 'm':
+		ev.Release = true
+	default:
+		return ev, 0, false
+	}
+	i++
+
+	ev.Button = btn
+	ev.X = px
+	ev.Y = py
+	return ev, i - start, true
+}
+
+// parseDecimal reads a non-negative decimal integer from buf[start:end].
+// Returns the value, the position immediately after the last digit, and
+// whether at least one digit was consumed.
+func parseDecimal(buf []byte, start, end int) (val int, next int, ok bool) {
+	i := start
+	for i < end && buf[i] >= '0' && buf[i] <= '9' {
+		val = val*10 + int(buf[i]-'0')
+		i++
+	}
+	if i == start {
+		return 0, start, false
+	}
+	return val, i, true
+}
+
+// isTruncatedSGR reports whether the SGR mouse sequence starting at buf[i]
+// appears genuinely truncated (all bytes from i+3 onward are still within
+// the SGR numeric grammar: digits, semicolons). Returns true when the
+// sequence COULD become valid if more data arrives. Returns false when a
+// byte that breaks the SGR grammar (e.g., a non-terminator letter like
+// 'X') is found before the buffer ends — indicating a malformed sequence
+// that should not be buffered.
+func isTruncatedSGR(buf []byte, i int) bool {
+	// Need at least ESC [ < (3 bytes) to be an SGR candidate.
+	if i+3 > len(buf) {
+		// Not enough bytes for even the prefix — could become ESC [ < on
+		// the next read. Buffer it.
+		return true
+	}
+	// Scan from the first byte after the prefix (i+3) to the end of buf.
+	// All bytes must be within the SGR numeric grammar: digits or semicolons.
+	// If we find anything else, the sequence is malformed.
+	for j := i + 3; j < len(buf); j++ {
+		b := buf[j]
+		if !((b >= '0' && b <= '9') || b == ';') {
+			// Found a byte that breaks the SGR grammar. This could be:
+			// - 'M' or 'm': a valid terminator, but parseSGRMouse already
+			//   rejected it (shouldn't happen — parseSGRMouse accepts M/m).
+			// - Any other byte: malformed. Not truncated.
+			return false
+		}
+	}
+	// All bytes from i+3 to end are digits or semicolons — the sequence
+	// is genuinely truncated and could become valid on the next read.
+	return true
+}
+
+// filterMouseForStatusBar processes a buffer of stdin bytes, intercepting
+// SGR mouse press events whose y-coordinate targets the status bar row.
+//
+// Parameters:
+//   - buf: the raw bytes to process (buf[:n] is the valid data)
+//   - termRows: total terminal height in rows
+//   - statusBarLines: number of rows reserved for the status bar (0 or 1)
+//
+// Returns:
+//   - out: bytes to forward to the child (mouse events on the status bar removed)
+//   - partial: trailing bytes that form an incomplete SGR mouse prefix and must
+//     be prepended to the next buffer for correct parsing across read boundaries.
+//     The caller MUST buffer these bytes and prepend them to the next read's data
+//     before calling filterMouseForStatusBar again.
+//   - statusBarClicked: true if a left-click on the status bar was detected
+//
+// When statusBarLines is 0, the function simply returns buf unchanged.
+func filterMouseForStatusBar(buf []byte, termRows, statusBarLines int) (out, partial []byte, statusBarClicked bool) {
+	if statusBarLines == 0 || termRows == 0 {
+		return buf, nil, false
+	}
+
+	// Status bar occupies the last statusBarLines rows.
+	// SGR coordinates are 1-based, so the status bar row(s) are:
+	//   termRows - statusBarLines + 1 .. termRows
+	statusBarTop := termRows - statusBarLines + 1
+
+	// Fast path: no ESC in buffer means no mouse sequences to filter.
+	hasEsc := slices.Contains(buf, 0x1b)
+	if !hasEsc {
+		return buf, nil, false
+	}
+
+	// Slow path: scan for SGR mouse sequences.
+	result := make([]byte, 0, len(buf))
+	i := 0
+	for i < len(buf) {
+		// Look for ESC that could start an SGR mouse sequence.
+		if buf[i] == 0x1b {
+			// Check if this could be the start of an SGR mouse sequence.
+			// We need at least ESC [ < to identify it as a candidate.
+			if i+2 < len(buf) && buf[i+1] == '[' && buf[i+2] == '<' {
+				ev, consumed, ok := parseSGRMouse(buf, i)
+				if ok {
+					if ev.Y >= statusBarTop && ev.IsLeftClick() {
+						// Intercepted: status bar click. Don't forward.
+						statusBarClicked = true
+						i += consumed
+						continue
+					}
+					// Not on status bar — forward the sequence as-is.
+					result = append(result, buf[i:i+consumed]...)
+					i += consumed
+					continue
+				}
+				// parseSGRMouse failed. Distinguish incomplete (truncated at
+				// buffer boundary) from malformed (garbage after prefix).
+				//
+				// A sequence is genuinely truncated if ALL bytes from i+3
+				// to the end of buf look like they could be part of a valid
+				// SGR mouse sequence (digits, semicolons). If we find any
+				// byte that is NOT part of the SGR numeric grammar — e.g.,
+				// a non-terminator letter like 'X' — the sequence is
+				// malformed and we should forward the ESC byte rather than
+				// buffering indefinitely (which would swallow trailing data).
+				//
+				// This prevents stream poisoning: if a malformed SGR-like
+				// prefix is followed by valid data, we don't swallow that
+				// data into partial.
+				if isTruncatedSGR(buf, i) {
+					return result, buf[i:], statusBarClicked
+				}
+				// Malformed: not recognizable as an SGR mouse sequence.
+				// Forward the ESC byte rather than poisoning the stream.
+				result = append(result, buf[i])
+				i++
+				continue
+			}
+			// ESC followed by something other than '[ <' — could be:
+			// - Another CSI sequence (ESC [ ...)
+			// - A partial escape sequence at buffer boundary
+			// If the ESC is at the very end, or ESC [ is at the end,
+			// we need to buffer these too.
+			if i+1 >= len(buf) {
+				// Just ESC at end of buffer — buffer it.
+				return result, buf[i:], statusBarClicked
+			}
+			if buf[i+1] == '[' && i+2 >= len(buf) {
+				// ESC [ at end of buffer — could become ESC [ < on next read.
+				return result, buf[i:], statusBarClicked
+			}
+			// ESC followed by something that can't start SGR mouse —
+			// forward it as-is.
+		}
+		result = append(result, buf[i])
+		i++
+	}
+	return result, nil, statusBarClicked
+}

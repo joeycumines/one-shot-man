@@ -3,9 +3,11 @@ package scripting
 import (
 	"io"
 	"os"
-	"os/user"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -428,9 +430,15 @@ func TestCursorAwareCompletion(t *testing.T) {
 	// Arrange a temporary workspace
 	tmpDir := t.TempDir()
 	// Files and dirs
-	_ = os.MkdirAll(filepath.Join(tmpDir, "scripts"), 0o755)
-	_ = os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte(""), 0o644)
-	_ = os.WriteFile(filepath.Join(tmpDir, "config.mk"), []byte(""), 0o644)
+	if err := os.MkdirAll(filepath.Join(tmpDir, "scripts"), 0o755); err != nil {
+		t.Fatalf("setup: MkdirAll scripts: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: WriteFile README.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.mk"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: WriteFile config.mk: %v", err)
+	}
 
 	// Change CWD
 	origDir, _ := os.Getwd()
@@ -552,7 +560,7 @@ func TestCompletion_WithSpacesAndQuotes_Unit(t *testing.T) {
 }
 
 func TestCompletion_TildeInQuotes(t *testing.T) {
-	// Tilde-only case is special-cased to suggest "~/"
+	// Tilde-only case is special-cased to suggest "~/" ("~\" on Windows).
 	tm := &TUIManager{
 		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
@@ -564,15 +572,17 @@ func TestCompletion_TildeInQuotes(t *testing.T) {
 	full := "add \"~\""
 	before := full
 	sugg := tm.getDefaultCompletionSuggestionsFor(before, full)
+	tildeSlash := "~" + string(filepath.Separator)
+	addTildeSlash := "add " + tildeSlash
 	var has bool
 	for _, s := range sugg {
-		if s.Text == "~/" || s.Text == "add ~/" {
+		if s.Text == tildeSlash || s.Text == addTildeSlash {
 			has = true
 			break
 		}
 	}
 	if !has {
-		t.Fatalf("expected suggestion for '~/'; got %v", func() []string {
+		t.Fatalf("expected suggestion for %q; got %v", tildeSlash, func() []string {
 			r := make([]string, len(sugg))
 			for i, s := range sugg {
 				r[i] = s.Text
@@ -642,8 +652,12 @@ func TestCompletion_EscapedQuoteInToken(t *testing.T) {
 // until they press a space after it.
 func TestFallbackGuard_FirstSimpleArg_NoSpace_NoFallback(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "README.md"), []byte(""), 0o644)
-	_ = os.MkdirAll(filepath.Join(tmp, "scripts"), 0o755)
+	if err := os.WriteFile(filepath.Join(tmp, "README.md"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: WriteFile README.md: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmp, "scripts"), 0o755); err != nil {
+		t.Fatalf("setup: MkdirAll scripts: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -680,7 +694,9 @@ func TestFallbackGuard_FirstSimpleArg_NoSpace_NoFallback(t *testing.T) {
 
 func TestFallbackGuard_FirstSimpleArg_WithSpace_AllowsFallback(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "config.mk"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "config.mk"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -707,7 +723,9 @@ func TestFallbackGuard_FirstSimpleArg_WithSpace_AllowsFallback(t *testing.T) {
 
 func TestFallbackGuard_PathArg_WithoutSpace_AllowsFallback(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(tmp, "dir"), 0o755)
+	if err := os.MkdirAll(filepath.Join(tmp, "dir"), 0o755); err != nil {
+		t.Fatalf("setup: MkdirAll dir: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -737,7 +755,9 @@ func TestFallbackGuard_PathArg_WithoutSpace_AllowsFallback(t *testing.T) {
 
 func TestFallbackGuard_QuotedFirstArg_NoSpace_NoFallback(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "notes.txt"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "notes.txt"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -766,7 +786,9 @@ func TestFallbackGuard_QuotedFirstArg_NoSpace_NoFallback(t *testing.T) {
 
 func TestFallbackGuard_SecondArg_NoSpace_AllowsFallback(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "a.txt"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "a.txt"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -795,7 +817,9 @@ func TestFallbackGuard_SecondArg_NoSpace_AllowsFallback(t *testing.T) {
 // appear; this must not happen until a space is typed.
 func TestNoFileSuggestions_WhileTypingCommand_NoSpace(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "hello.txt"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "hello.txt"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -830,7 +854,9 @@ func TestNoFileSuggestions_WhileTypingCommand_NoSpace(t *testing.T) {
 // preemptively add file suggestions combined with the predicted command.
 func TestNoFileSuggestions_WhileTypingCommandPrefix_NoSpace(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "world.md"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "world.md"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -865,7 +891,9 @@ func TestNoFileSuggestions_WhileTypingCommandPrefix_NoSpace(t *testing.T) {
 // even if the first argument is currently empty.
 func TestCommand_TrailingSpace_ShowsFileSuggestions_FirstArg(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "file1.txt"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "file1.txt"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -894,7 +922,9 @@ func TestCommand_TrailingSpace_ShowsFileSuggestions_FirstArg(t *testing.T) {
 // we should not suggest files for the first argument automatically.
 func TestNonFileCommand_TrailingSpace_NoFileSuggestions(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "x.txt"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "x.txt"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -980,6 +1010,310 @@ func TestFilepathSuggestions_RootEdgeCase(t *testing.T) {
 	}
 }
 
+// === Flag completion tests ===
+
+// TestFlagCompletion_BasicFlagSuggestions verifies that a command with flagDefs and
+// a "flag" argCompleter suggests all flags when the user types "--".
+func TestFlagCompletion_BasicFlagSuggestions(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"build": {
+				Name:          "build",
+				Description:   "Build project",
+				ArgCompleters: []string{"flag"},
+				FlagDefs: []FlagDef{
+					{Name: "verbose", Description: "Show verbose output"},
+					{Name: "output", Description: "Output file path"},
+					{Name: "clean", Description: "Clean before build"},
+				},
+			},
+		},
+		commandOrder: []string{"build"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// Typing "build --" should suggest all three flags
+	sugg := tm.getDefaultCompletionSuggestionsFor("build --", "build --")
+	if len(sugg) != 3 {
+		t.Fatalf("expected 3 flag suggestions for 'build --', got %d: %v", len(sugg), func() []string {
+			r := make([]string, len(sugg))
+			for i, s := range sugg {
+				r[i] = s.Text
+			}
+			return r
+		}())
+	}
+
+	// Verify all expected flags are present
+	expected := map[string]string{
+		"--verbose": "Show verbose output",
+		"--output":  "Output file path",
+		"--clean":   "Clean before build",
+	}
+	for _, s := range sugg {
+		desc, ok := expected[s.Text]
+		if !ok {
+			t.Errorf("unexpected flag suggestion: %q", s.Text)
+			continue
+		}
+		if s.Description != desc {
+			t.Errorf("flag %q: expected description %q, got %q", s.Text, desc, s.Description)
+		}
+	}
+}
+
+// TestFlagCompletion_PrefixMatch verifies that typing a partial flag name
+// filters suggestions to only matching flags.
+func TestFlagCompletion_PrefixMatch(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"run": {
+				Name:          "run",
+				Description:   "Run command",
+				ArgCompleters: []string{"flag"},
+				FlagDefs: []FlagDef{
+					{Name: "verbose", Description: "Verbose mode"},
+					{Name: "version", Description: "Show version"},
+					{Name: "output", Description: "Output path"},
+				},
+			},
+		},
+		commandOrder: []string{"run"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// Typing "--ver" should only match --verbose and --version
+	sugg := tm.getDefaultCompletionSuggestionsFor("run --ver", "run --ver")
+	if len(sugg) != 2 {
+		t.Fatalf("expected 2 flag suggestions for 'run --ver', got %d: %v", len(sugg), func() []string {
+			r := make([]string, len(sugg))
+			for i, s := range sugg {
+				r[i] = s.Text
+			}
+			return r
+		}())
+	}
+	for _, s := range sugg {
+		if s.Text != "--verbose" && s.Text != "--version" {
+			t.Errorf("unexpected suggestion %q for prefix '--ver'", s.Text)
+		}
+	}
+
+	// Typing "--o" should only match --output
+	sugg = tm.getDefaultCompletionSuggestionsFor("run --o", "run --o")
+	if len(sugg) != 1 {
+		t.Fatalf("expected 1 flag suggestion for 'run --o', got %d", len(sugg))
+	}
+	if sugg[0].Text != "--output" {
+		t.Errorf("expected --output, got %q", sugg[0].Text)
+	}
+}
+
+// TestFlagCompletion_NoFlagDefs verifies that a command without flagDefs
+// produces no flag suggestions even when "flag" is in argCompleters.
+func TestFlagCompletion_NoFlagDefs(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"empty": {
+				Name:          "empty",
+				Description:   "Empty command",
+				ArgCompleters: []string{"flag"},
+				// No FlagDefs
+			},
+		},
+		commandOrder: []string{"empty"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	sugg := tm.getDefaultCompletionSuggestionsFor("empty --", "empty --")
+	if len(sugg) != 0 {
+		t.Fatalf("expected 0 flag suggestions for command with no FlagDefs, got %d: %v", len(sugg), func() []string {
+			r := make([]string, len(sugg))
+			for i, s := range sugg {
+				r[i] = s.Text
+			}
+			return r
+		}())
+	}
+}
+
+// TestFlagCompletion_MixedWithFile verifies that both "file" and "flag"
+// completers work together on the same command.
+func TestFlagCompletion_MixedWithFile(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "data.csv"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"load": {
+				Name:          "load",
+				Description:   "Load data",
+				ArgCompleters: []string{"file", "flag"},
+				FlagDefs: []FlagDef{
+					{Name: "from-diff", Description: "Load from diff"},
+					{Name: "dry-run", Description: "Dry run mode"},
+				},
+			},
+		},
+		commandOrder: []string{"load"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// Typing "load " (space after command) should show both file and flag suggestions
+	sugg := tm.getDefaultCompletionSuggestionsFor("load ", "load ")
+	hasFile := false
+	hasFlag := false
+	for _, s := range sugg {
+		if s.Text == "data.csv" {
+			hasFile = true
+		}
+		if strings.HasPrefix(s.Text, "--") {
+			hasFlag = true
+		}
+	}
+
+	if !hasFile {
+		t.Errorf("expected file suggestions in mixed mode, got none")
+	}
+	if !hasFlag {
+		t.Errorf("expected flag suggestions in mixed mode, got none")
+	}
+
+	// Typing "load --f" should only show matching flags, not files
+	sugg = tm.getDefaultCompletionSuggestionsFor("load --f", "load --f")
+	for _, s := range sugg {
+		if s.Text == "--from-diff" {
+			continue // expected
+		}
+		if !strings.HasPrefix(s.Text, "--") && s.Text != "data.csv" {
+			// Unexpected suggestion type - could be file fallback, which is OK
+			continue
+		}
+	}
+	foundFromDiff := false
+	for _, s := range sugg {
+		if s.Text == "--from-diff" {
+			foundFromDiff = true
+		}
+	}
+	if !foundFromDiff {
+		t.Errorf("expected --from-diff in suggestions for 'load --f', got: %v", func() []string {
+			r := make([]string, len(sugg))
+			for i, s := range sugg {
+				r[i] = s.Text
+			}
+			return r
+		}())
+	}
+}
+
+// TestFlagCompletion_CaseInsensitive verifies that flag prefix matching
+// is case-insensitive.
+func TestFlagCompletion_CaseInsensitive(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"cmd": {
+				Name:          "cmd",
+				Description:   "Test command",
+				ArgCompleters: []string{"flag"},
+				FlagDefs: []FlagDef{
+					{Name: "Verbose", Description: "Verbose mode"},
+				},
+			},
+		},
+		commandOrder: []string{"cmd"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// Typing "--v" (lowercase) should match "--Verbose" (mixed case name)
+	sugg := tm.getDefaultCompletionSuggestionsFor("cmd --v", "cmd --v")
+	if len(sugg) != 1 {
+		t.Fatalf("expected 1 case-insensitive flag match, got %d", len(sugg))
+	}
+	if sugg[0].Text != "--Verbose" {
+		t.Errorf("expected --Verbose, got %q", sugg[0].Text)
+	}
+}
+
+// TestFlagCompletion_EmptyCurrentWord verifies that flags are suggested even
+// when the current word is empty (cursor after a space).
+func TestFlagCompletion_EmptyCurrentWord(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"deploy": {
+				Name:          "deploy",
+				Description:   "Deploy app",
+				ArgCompleters: []string{"flag"},
+				FlagDefs: []FlagDef{
+					{Name: "env", Description: "Target environment"},
+					{Name: "force", Description: "Force deploy"},
+				},
+			},
+		},
+		commandOrder: []string{"deploy"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "deploy " -> empty current word should show all flags
+	sugg := tm.getDefaultCompletionSuggestionsFor("deploy ", "deploy ")
+	if len(sugg) != 2 {
+		t.Fatalf("expected 2 flag suggestions for empty current word, got %d: %v", len(sugg), func() []string {
+			r := make([]string, len(sugg))
+			for i, s := range sugg {
+				r[i] = s.Text
+			}
+			return r
+		}())
+	}
+}
+
+// TestFlagCompletion_ModeCommands verifies that flag completion works for
+// commands registered on a mode, not just global commands.
+func TestFlagCompletion_ModeCommands(t *testing.T) {
+	tm := &TUIManager{
+		writer:       NewTUIWriterFromIO(io.Discard),
+		commands:     make(map[string]Command),
+		commandOrder: []string{},
+		modes:        make(map[string]*ScriptMode),
+		currentMode: &ScriptMode{
+			Name: "test-mode",
+			Commands: map[string]Command{
+				"modecmd": {
+					Name:          "modecmd",
+					Description:   "Mode command",
+					ArgCompleters: []string{"flag"},
+					FlagDefs: []FlagDef{
+						{Name: "mode-flag", Description: "A mode-specific flag"},
+					},
+				},
+			},
+			CommandOrder: []string{"modecmd"},
+		},
+	}
+
+	sugg := tm.getDefaultCompletionSuggestionsFor("modecmd --", "modecmd --")
+	if len(sugg) != 1 {
+		t.Fatalf("expected 1 flag suggestion for mode command, got %d", len(sugg))
+	}
+	if sugg[0].Text != "--mode-flag" {
+		t.Errorf("expected --mode-flag, got %q", sugg[0].Text)
+	}
+}
+
 // TestFilepathSuggestions_TildeDoubleSlash verifies that input starting with "~//"
 // produces suggestions that strictly preserve the double slash prefix, avoiding
 // normalization to "~/".
@@ -988,13 +1322,13 @@ func TestFilepathSuggestions_TildeDoubleSlash(t *testing.T) {
 		t.Skip("Skipping ~// test on Windows")
 	}
 
-	usr, err := user.Current()
+	home, err := os.UserHomeDir()
 	if err != nil {
-		t.Skipf("Skipping: cannot get current user: %v", err)
+		t.Skipf("Skipping: cannot get home dir: %v", err)
 	}
 
 	// Read home dir to find a candidate
-	entries, err := os.ReadDir(usr.HomeDir)
+	entries, err := os.ReadDir(home)
 	if err != nil {
 		t.Skipf("Skipping: cannot read home dir: %v", err)
 	}
@@ -1043,5 +1377,1425 @@ func TestFilepathSuggestions_TildeDoubleSlash(t *testing.T) {
 		// We log this but don't fail hard if it's just that the specific entry wasn't found
 		// (e.g. race condition or sorting), but usually getFilepathSuggestions is consistent.
 		t.Logf("Did not find target %q in suggestions for input %q. Suggestions: %d", target, input, len(suggestions))
+	}
+}
+
+// === Gitref completion tests ===
+
+// TestGitRefCompletion_CommonRefsAlwaysAvailable verifies that common refs
+// (HEAD, HEAD~1, etc.) are always returned even outside a git repository.
+func TestGitRefCompletion_CommonRefsAlwaysAvailable(t *testing.T) {
+	// Use a temp dir that is definitely not a git repo
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	sugg := getGitRefSuggestions("")
+	// At minimum, the 4 common refs should be present
+	commonRefs := map[string]bool{
+		"HEAD":   false,
+		"HEAD~1": false,
+		"HEAD~2": false,
+		"HEAD~3": false,
+	}
+	for _, s := range sugg {
+		if _, ok := commonRefs[s.Text]; ok {
+			commonRefs[s.Text] = true
+		}
+	}
+	for ref, found := range commonRefs {
+		if !found {
+			t.Errorf("expected common ref %q in suggestions, not found", ref)
+		}
+	}
+}
+
+// TestGitRefCompletion_PrefixFilter verifies that suggestions are filtered
+// by the given prefix (case-insensitive).
+func TestGitRefCompletion_PrefixFilter(t *testing.T) {
+	// Use a temp dir that is not a git repo to isolate common refs
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// "HE" should match HEAD and HEAD~N
+	sugg := getGitRefSuggestions("HE")
+	if len(sugg) < 4 {
+		t.Fatalf("expected at least 4 suggestions for prefix 'HE', got %d", len(sugg))
+	}
+	for _, s := range sugg {
+		if !strings.HasPrefix(strings.ToLower(s.Text), "he") {
+			t.Errorf("suggestion %q does not match prefix 'HE'", s.Text)
+		}
+	}
+
+	// "HEAD~" should match HEAD~1, HEAD~2, HEAD~3 but not bare HEAD
+	sugg = getGitRefSuggestions("HEAD~")
+	if len(sugg) != 3 {
+		t.Fatalf("expected 3 suggestions for prefix 'HEAD~', got %d: %v", len(sugg), func() []string {
+			r := make([]string, len(sugg))
+			for i, s := range sugg {
+				r[i] = s.Text
+			}
+			return r
+		}())
+	}
+	for _, s := range sugg {
+		if !strings.HasPrefix(s.Text, "HEAD~") {
+			t.Errorf("suggestion %q does not match prefix 'HEAD~'", s.Text)
+		}
+	}
+
+	// "xyz" should not match any common refs
+	sugg = getGitRefSuggestions("xyz")
+	// May have 0 or more depending on whether git finds branches/tags named xyz*
+	for _, s := range sugg {
+		if s.Description == "current commit" || strings.HasPrefix(s.Text, "HEAD") {
+			t.Errorf("unexpected common ref suggestion %q for prefix 'xyz'", s.Text)
+		}
+	}
+}
+
+// TestGitRefCompletion_CaseInsensitiveFilter verifies case-insensitive matching.
+func TestGitRefCompletion_CaseInsensitiveFilter(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// "head" (lowercase) should still match HEAD refs
+	sugg := getGitRefSuggestions("head")
+	if len(sugg) < 4 {
+		t.Fatalf("expected at least 4 suggestions for prefix 'head' (case-insensitive), got %d", len(sugg))
+	}
+	foundHEAD := false
+	for _, s := range sugg {
+		if s.Text == "HEAD" {
+			foundHEAD = true
+		}
+	}
+	if !foundHEAD {
+		t.Errorf("expected HEAD in suggestions for lowercase prefix 'head'")
+	}
+}
+
+// TestGitRefCompletion_WithRealRepo verifies that branch and tag names are
+// returned when inside a real git repository.
+func TestGitRefCompletion_WithRealRepo(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// Initialize a git repo with a branch and tag
+	cmds := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "commit", "--allow-empty", "-m", "init"},
+		{"git", "branch", "feature-xyz"},
+		{"git", "tag", "v1.0.0"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmp
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git command %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	sugg := getGitRefSuggestions("")
+	// Should have common refs + branches + tags
+	foundBranch := false
+	foundTag := false
+	for _, s := range sugg {
+		if s.Text == "feature-xyz" && s.Description == "branch" {
+			foundBranch = true
+		}
+		if s.Text == "v1.0.0" && s.Description == "tag" {
+			foundTag = true
+		}
+	}
+	if !foundBranch {
+		t.Errorf("expected branch 'feature-xyz' in suggestions")
+	}
+	if !foundTag {
+		t.Errorf("expected tag 'v1.0.0' in suggestions")
+	}
+
+	// Filter by prefix "feat" should include the branch
+	sugg = getGitRefSuggestions("feat")
+	foundBranch = false
+	for _, s := range sugg {
+		if s.Text == "feature-xyz" {
+			foundBranch = true
+		}
+	}
+	if !foundBranch {
+		t.Errorf("expected branch 'feature-xyz' in suggestions for prefix 'feat'")
+	}
+
+	// Filter by prefix "v" should include the tag
+	sugg = getGitRefSuggestions("v")
+	foundTag = false
+	for _, s := range sugg {
+		if s.Text == "v1.0.0" {
+			foundTag = true
+		}
+	}
+	if !foundTag {
+		t.Errorf("expected tag 'v1.0.0' in suggestions for prefix 'v'")
+	}
+}
+
+// TestGitRefCompletion_IntegrationWithTUIManager verifies that the gitref
+// completer is properly wired into the TUI manager's completion logic.
+func TestGitRefCompletion_IntegrationWithTUIManager(t *testing.T) {
+	// Use a non-git temp dir so we only see common refs
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"diff": {
+				Name:          "diff",
+				Description:   "Add git diff",
+				ArgCompleters: []string{"gitref"},
+			},
+		},
+		commandOrder: []string{"diff"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "diff " should show common refs
+	sugg := tm.getDefaultCompletionSuggestionsFor("diff ", "diff ")
+	foundHEAD := false
+	for _, s := range sugg {
+		if s.Text == "HEAD" {
+			foundHEAD = true
+		}
+	}
+	if !foundHEAD {
+		t.Errorf("expected HEAD in gitref suggestions via TUI manager")
+	}
+
+	// "diff HE" should filter to HEAD refs
+	sugg = tm.getDefaultCompletionSuggestionsFor("diff HE", "diff HE")
+	if len(sugg) < 4 {
+		t.Fatalf("expected at least 4 suggestions for 'diff HE', got %d", len(sugg))
+	}
+	for _, s := range sugg {
+		if !strings.HasPrefix(s.Text, "HEAD") {
+			t.Errorf("unexpected suggestion %q for 'diff HE' (expected HEAD prefix)", s.Text)
+		}
+	}
+}
+
+// TestGitRefCompletion_Descriptions verifies that common refs have meaningful descriptions.
+func TestGitRefCompletion_Descriptions(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	sugg := getGitRefSuggestions("")
+	descMap := make(map[string]string)
+	for _, s := range sugg {
+		descMap[s.Text] = s.Description
+	}
+
+	if desc, ok := descMap["HEAD"]; !ok || desc != "current commit" {
+		t.Errorf("HEAD: expected description 'current commit', got %q (present: %v)", desc, ok)
+	}
+	if desc, ok := descMap["HEAD~1"]; !ok || desc != "1 commit before HEAD" {
+		t.Errorf("HEAD~1: expected description '1 commit before HEAD', got %q (present: %v)", desc, ok)
+	}
+}
+
+// TestGitRefCompletion_StagedNotInGitRef verifies that --staged is NOT included
+// in gitref common refs (it belongs in command-level flagDefs to avoid
+// duplication with the flag completer).
+func TestGitRefCompletion_StagedNotInGitRef(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	sugg := getGitRefSuggestions("")
+	for _, s := range sugg {
+		if s.Text == "--staged" {
+			t.Error("--staged should not be in gitref common refs; it belongs in diff command flagDefs")
+		}
+	}
+}
+
+// TestGitRefCompletion_DashDashPrefixNoMatches verifies that gitref returns
+// no suggestions for a "--" prefix since flags are handled by the flag completer.
+func TestGitRefCompletion_DashDashPrefixNoMatches(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	sugg := getGitRefSuggestions("--s")
+	for _, s := range sugg {
+		if strings.HasPrefix(s.Text, "--") {
+			t.Errorf("unexpected flag %q in gitref suggestions; flags belong in flagDefs", s.Text)
+		}
+	}
+}
+
+// TestGitRefCompletion_RemoteBranches verifies that remote branches are
+// returned when inside a git repo with remotes configured.
+func TestGitRefCompletion_RemoteBranches(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// Create a git repo and simulate a remote branch
+	cmds := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "commit", "--allow-empty", "-m", "init"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmp
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git command %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	// Create a second repo that acts as a "remote"
+	remoteDir := t.TempDir()
+	remoteCmds := [][]string{
+		{"git", "init", "--bare"},
+	}
+	for _, args := range remoteCmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = remoteDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git command %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	// Add remote and push
+	setupCmds := [][]string{
+		{"git", "remote", "add", "origin", remoteDir},
+		{"git", "push", "origin", "HEAD:refs/heads/main"},
+		{"git", "fetch", "origin"},
+	}
+	for _, args := range setupCmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmp
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git command %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	sugg := getGitRefSuggestions("")
+	foundRemote := false
+	for _, s := range sugg {
+		if s.Text == "origin/main" && s.Description == "remote branch" {
+			foundRemote = true
+		}
+	}
+	if !foundRemote {
+		t.Error("expected remote branch 'origin/main' in suggestions")
+	}
+
+	// Prefix "ori" should match the remote branch
+	sugg = getGitRefSuggestions("ori")
+	foundRemote = false
+	for _, s := range sugg {
+		if s.Text == "origin/main" {
+			foundRemote = true
+		}
+	}
+	if !foundRemote {
+		t.Error("expected remote branch 'origin/main' for prefix 'ori'")
+	}
+}
+
+// TestGitRefCompletion_RecentCommits verifies that recent commit SHAs
+// with subject lines are returned inside a git repo.
+func TestGitRefCompletion_RecentCommits(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// Create a git repo with some commits
+	cmds := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "commit", "--allow-empty", "-m", "first commit"},
+		{"git", "commit", "--allow-empty", "-m", "second commit"},
+		{"git", "commit", "--allow-empty", "-m", "third commit"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmp
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git command %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	sugg := getGitRefSuggestions("")
+	// Should have at least 3 commit SHAs
+	commitCount := 0
+	for _, s := range sugg {
+		// Commit SHAs are 7+ hex chars, descriptions should be subject lines
+		if len(s.Text) >= 7 && s.Description != "" &&
+			s.Description != "current commit" &&
+			s.Description != "branch" && s.Description != "tag" &&
+			s.Description != "remote branch" &&
+			!strings.HasPrefix(s.Text, "HEAD") &&
+			!strings.HasPrefix(s.Text, "--") {
+			commitCount++
+		}
+	}
+	if commitCount < 3 {
+		t.Errorf("expected at least 3 recent commit SHAs, got %d", commitCount)
+	}
+
+	// Verify that subject lines are present
+	foundSubject := false
+	for _, s := range sugg {
+		if strings.Contains(s.Description, "third commit") {
+			foundSubject = true
+		}
+	}
+	if !foundSubject {
+		names := make([]string, len(sugg))
+		for i, s := range sugg {
+			names[i] = s.Text + " (" + s.Description + ")"
+		}
+		t.Errorf("expected a suggestion with 'third commit' description, got: %v", names)
+	}
+}
+
+// TestGitRefCompletion_RecentCommitsLongSubjectTruncated verifies that
+// long commit subjects are truncated for display.
+func TestGitRefCompletion_RecentCommitsLongSubjectTruncated(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	longMsg := "This is a very long commit message that should be truncated for display in the completion suggestions"
+	cmds := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "commit", "--allow-empty", "-m", longMsg},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmp
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git command %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	sugg := getGitRefSuggestions("")
+	// Find the commit suggestion and verify truncation
+	for _, s := range sugg {
+		if strings.Contains(s.Description, "very long commit") {
+			if len(s.Description) > 50 {
+				t.Errorf("expected truncated description (max 50 chars), got %d chars: %q", len(s.Description), s.Description)
+			}
+			if !strings.HasSuffix(s.Description, "...") {
+				t.Errorf("expected truncated description to end with '...', got: %q", s.Description)
+			}
+			return
+		}
+	}
+	t.Error("expected a commit suggestion with truncated long subject")
+}
+
+// TestGitRefCompletion_SymbolicRefsSkipped verifies that symbolic refs
+// like HEAD -> origin/main are skipped in remote branch listing.
+func TestGitRefCompletion_SymbolicRefsSkipped(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// In a non-git dir, only common refs should appear — no symbolic refs
+	sugg := getGitRefSuggestions("")
+	for _, s := range sugg {
+		if strings.Contains(s.Text, "->") {
+			t.Errorf("unexpected symbolic ref in suggestions: %q", s.Text)
+		}
+	}
+}
+
+// === Executable completion tests ===
+
+// TestExecutableCompletion_EmptyPrefixReturnsCommon verifies that when no prefix
+// is given, getExecutableSuggestions returns curated common commands instead of
+// scanning the entire PATH (which would be slow and noisy).
+func TestExecutableCompletion_EmptyPrefixReturnsCommon(t *testing.T) {
+	sugg := getExecutableSuggestions("")
+	if len(sugg) == 0 {
+		t.Fatal("expected common command suggestions for empty prefix, got none")
+	}
+	// Verify curated commands are present
+	expected := map[string]bool{
+		"cat": false, "git": false, "grep": false, "ls": false, "make": false,
+	}
+	for _, s := range sugg {
+		if _, ok := expected[s.Text]; ok {
+			expected[s.Text] = true
+		}
+		// All common commands should have non-empty descriptions
+		if s.Description == "" {
+			t.Errorf("common command %q has empty description", s.Text)
+		}
+	}
+	for name, found := range expected {
+		if !found {
+			t.Errorf("expected common command %q in suggestions, not found", name)
+		}
+	}
+}
+
+// TestExecutableCompletion_CommonCommandsSorted verifies that the common command
+// suggestions returned for empty prefix are in sorted order (since they're hand-curated).
+func TestExecutableCompletion_CommonCommandsSorted(t *testing.T) {
+	sugg := getExecutableSuggestions("")
+	names := make([]string, len(sugg))
+	for i, s := range sugg {
+		names[i] = s.Text
+	}
+	if !sort.StringsAreSorted(names) {
+		t.Errorf("common commands not sorted: %v", names)
+	}
+}
+
+// TestExecutableCompletion_PrefixMatchFromPATH verifies that giving a non-empty
+// prefix triggers a PATH scan and returns matching executables.
+func TestExecutableCompletion_PrefixMatchFromPATH(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping Unix executable bit test on Windows")
+	}
+
+	// Create a temp dir with controlled executables
+	tmp := t.TempDir()
+	for _, name := range []string{"gitfoo", "gitbar", "notmatch"} {
+		f := filepath.Join(tmp, name)
+		if err := os.WriteFile(f, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	// Override PATH to only include our temp dir
+	t.Setenv("PATH", tmp)
+
+	sugg := getExecutableSuggestions("git")
+	if len(sugg) != 2 {
+		names := make([]string, len(sugg))
+		for i, s := range sugg {
+			names[i] = s.Text
+		}
+		t.Fatalf("expected 2 suggestions for prefix 'git', got %d: %v", len(sugg), names)
+	}
+	found := map[string]bool{}
+	for _, s := range sugg {
+		found[s.Text] = true
+		if s.Description != "executable" {
+			t.Errorf("expected description 'executable' for %q, got %q", s.Text, s.Description)
+		}
+	}
+	if !found["gitfoo"] || !found["gitbar"] {
+		t.Errorf("expected gitfoo and gitbar, got: %v", found)
+	}
+}
+
+// TestExecutableCompletion_CaseInsensitive verifies case-insensitive matching.
+func TestExecutableCompletion_CaseInsensitive(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping Unix executable bit test on Windows")
+	}
+
+	tmp := t.TempDir()
+	f := filepath.Join(tmp, "MyCommand")
+	if err := os.WriteFile(f, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	t.Setenv("PATH", tmp)
+
+	// Lowercase prefix should match uppercase name
+	sugg := getExecutableSuggestions("myc")
+	if len(sugg) != 1 {
+		t.Fatalf("expected 1 suggestion for prefix 'myc', got %d", len(sugg))
+	}
+	if sugg[0].Text != "MyCommand" {
+		t.Errorf("expected MyCommand, got %q", sugg[0].Text)
+	}
+}
+
+// TestExecutableCompletion_Deduplication verifies that executables appearing in
+// multiple PATH directories are only suggested once (first occurrence wins).
+func TestExecutableCompletion_Deduplication(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping Unix executable bit test on Windows")
+	}
+
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+
+	// Same executable name in both dirs
+	for _, dir := range []string{dir1, dir2} {
+		f := filepath.Join(dir, "dupexec")
+		if err := os.WriteFile(f, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("write in %s: %v", dir, err)
+		}
+	}
+
+	t.Setenv("PATH", dir1+string(os.PathListSeparator)+dir2)
+
+	sugg := getExecutableSuggestions("dup")
+	if len(sugg) != 1 {
+		t.Fatalf("expected 1 deduplicated suggestion, got %d", len(sugg))
+	}
+	if sugg[0].Text != "dupexec" {
+		t.Errorf("expected dupexec, got %q", sugg[0].Text)
+	}
+}
+
+// TestExecutableCompletion_NonExecutableFiltered verifies that non-executable
+// files are excluded from suggestions.
+func TestExecutableCompletion_NonExecutableFiltered(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping Unix executable bit test on Windows")
+	}
+
+	tmp := t.TempDir()
+	// Executable file
+	if err := os.WriteFile(filepath.Join(tmp, "execfile"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Non-executable file
+	if err := os.WriteFile(filepath.Join(tmp, "execdata"), []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Directory
+	if err := os.MkdirAll(filepath.Join(tmp, "execdir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", tmp)
+
+	sugg := getExecutableSuggestions("exec")
+	if len(sugg) != 1 {
+		names := make([]string, len(sugg))
+		for i, s := range sugg {
+			names[i] = s.Text
+		}
+		t.Fatalf("expected only 'execfile', got %d: %v", len(sugg), names)
+	}
+	if sugg[0].Text != "execfile" {
+		t.Errorf("expected execfile, got %q", sugg[0].Text)
+	}
+}
+
+// TestExecutableCompletion_PathSeparatorDelegatesToFilepath verifies that a prefix
+// containing a path separator delegates to file path completion instead of PATH scan.
+func TestExecutableCompletion_PathSeparatorDelegatesToFilepath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping path separator test on Windows")
+	}
+
+	tmp := t.TempDir()
+	// Create a file to verify filepath delegation
+	if err := os.WriteFile(filepath.Join(tmp, "runme.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// Using "./" prefix triggers filepath completion rather than PATH scan.
+	// getFilepathSuggestions returns basenames when scanning "." directory.
+	sugg := getExecutableSuggestions("./run")
+	found := false
+	for _, s := range sugg {
+		if s.Text == "runme.sh" || s.Text == "./runme.sh" {
+			found = true
+		}
+	}
+	if !found {
+		names := make([]string, len(sugg))
+		for i, s := range sugg {
+			names[i] = s.Text
+		}
+		t.Errorf("expected runme.sh in filepath completion, got: %v", names)
+	}
+}
+
+// TestExecutableCompletion_EmptyPATH verifies that an empty PATH returns nil.
+func TestExecutableCompletion_EmptyPATH(t *testing.T) {
+	t.Setenv("PATH", "")
+
+	sugg := getExecutableSuggestions("git")
+	if sugg != nil {
+		t.Errorf("expected nil for empty PATH, got %d suggestions", len(sugg))
+	}
+}
+
+// TestExecutableCompletion_NonexistentPATHDir verifies that non-existent
+// directories in PATH are silently skipped.
+func TestExecutableCompletion_NonexistentPATHDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping Unix executable bit test on Windows")
+	}
+
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "realcmd"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// PATH includes a non-existent directory before the valid one
+	t.Setenv("PATH", "/nonexistent/bogus/path"+string(os.PathListSeparator)+tmp)
+
+	sugg := getExecutableSuggestions("real")
+	if len(sugg) != 1 {
+		t.Fatalf("expected 1 suggestion, got %d", len(sugg))
+	}
+	if sugg[0].Text != "realcmd" {
+		t.Errorf("expected realcmd, got %q", sugg[0].Text)
+	}
+}
+
+// TestExecutableCompletion_IntegrationWithTUIManager verifies that the executable
+// completer is properly wired into the TUI manager's completion logic via the
+// "executable" argCompleter type.
+func TestExecutableCompletion_IntegrationWithTUIManager(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"exec": {
+				Name:          "exec",
+				Description:   "Execute command",
+				ArgCompleters: []string{"executable"},
+			},
+		},
+		commandOrder: []string{"exec"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "exec " with no prefix should return common commands
+	sugg := tm.getDefaultCompletionSuggestionsFor("exec ", "exec ")
+	if len(sugg) == 0 {
+		t.Fatal("expected common command suggestions for 'exec '")
+	}
+	// Verify at least one common command is present
+	foundCommon := false
+	for _, s := range sugg {
+		if s.Text == "git" || s.Text == "ls" || s.Text == "cat" {
+			foundCommon = true
+			break
+		}
+	}
+	if !foundCommon {
+		t.Error("expected common commands (git, ls, cat) in suggestions")
+	}
+}
+
+// TestExecutableCompletion_MixedWithFile verifies that a command with both
+// "executable" and "file" completers returns results from both.
+func TestExecutableCompletion_MixedWithFile(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "testfile.txt"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"run": {
+				Name:          "run",
+				Description:   "Run something",
+				ArgCompleters: []string{"executable", "file"},
+			},
+		},
+		commandOrder: []string{"run"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "run " should show both executable suggestions and file suggestions
+	sugg := tm.getDefaultCompletionSuggestionsFor("run ", "run ")
+	hasExec := false
+	hasFile := false
+	for _, s := range sugg {
+		if s.Text == "git" || s.Text == "ls" || s.Description == "executable" {
+			hasExec = true
+		}
+		if s.Text == "testfile.txt" {
+			hasFile = true
+		}
+	}
+	if !hasExec {
+		t.Error("expected executable suggestions in mixed mode")
+	}
+	if !hasFile {
+		t.Error("expected file suggestions in mixed mode")
+	}
+}
+
+// TestExecutableCompletion_PrefixWithPartialArg verifies that executable
+// completion works when the user has typed a partial argument.
+func TestExecutableCompletion_PrefixWithPartialArg(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping Unix executable bit test on Windows")
+	}
+
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "testexec"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", tmp)
+
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"exec": {
+				Name:          "exec",
+				Description:   "Execute command",
+				ArgCompleters: []string{"executable"},
+			},
+		},
+		commandOrder: []string{"exec"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "exec test" should match testexec from our PATH
+	sugg := tm.getDefaultCompletionSuggestionsFor("exec test", "exec test")
+	found := false
+	for _, s := range sugg {
+		if s.Text == "testexec" {
+			found = true
+		}
+	}
+	if !found {
+		names := make([]string, len(sugg))
+		for i, s := range sugg {
+			names[i] = s.Text
+		}
+		t.Errorf("expected testexec in suggestions, got: %v", names)
+	}
+}
+
+// === Flag completion for diff command (T071) ===
+
+// TestDiffFlagCompletion_StagedViaFlagDefs verifies that --staged is available
+// as a flag definition on the diff command (not via gitref common refs).
+func TestDiffFlagCompletion_StagedViaFlagDefs(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"diff": {
+				Name:          "diff",
+				Description:   "Add git diff",
+				ArgCompleters: []string{"gitref", "flag"},
+				FlagDefs: []FlagDef{
+					{Name: "staged", Description: "Staged changes (index vs HEAD)"},
+					{Name: "stat", Description: "Show diffstat summary"},
+					{Name: "name-only", Description: "Show only names of changed files"},
+				},
+			},
+		},
+		commandOrder: []string{"diff"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "diff --" should show all three flags
+	sugg := tm.getDefaultCompletionSuggestionsFor("diff --", "diff --")
+	flagTexts := make(map[string]string) // text -> description
+	for _, s := range sugg {
+		if strings.HasPrefix(s.Text, "--") {
+			flagTexts[s.Text] = s.Description
+		}
+	}
+
+	expectedFlags := map[string]string{
+		"--staged":    "Staged changes (index vs HEAD)",
+		"--stat":      "Show diffstat summary",
+		"--name-only": "Show only names of changed files",
+	}
+	for flag, desc := range expectedFlags {
+		if got, ok := flagTexts[flag]; !ok {
+			t.Errorf("expected flag %q in suggestions", flag)
+		} else if got != desc {
+			t.Errorf("flag %q: expected description %q, got %q", flag, desc, got)
+		}
+	}
+}
+
+// TestDiffFlagCompletion_PrefixFilter verifies that flag suggestions are
+// filtered by the current prefix.
+func TestDiffFlagCompletion_PrefixFilter(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"diff": {
+				Name:          "diff",
+				Description:   "Add git diff",
+				ArgCompleters: []string{"gitref", "flag"},
+				FlagDefs: []FlagDef{
+					{Name: "staged", Description: "Staged changes"},
+					{Name: "stat", Description: "Show diffstat"},
+					{Name: "name-only", Description: "Names only"},
+				},
+			},
+		},
+		commandOrder: []string{"diff"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "--sta" should match --staged and --stat but not --name-only
+	sugg := tm.getDefaultCompletionSuggestionsFor("diff --sta", "diff --sta")
+	var flagTexts []string
+	for _, s := range sugg {
+		if strings.HasPrefix(s.Text, "--") {
+			flagTexts = append(flagTexts, s.Text)
+		}
+	}
+
+	slices.Sort(flagTexts)
+	if len(flagTexts) != 2 {
+		t.Fatalf("expected 2 flags matching '--sta', got %d: %v", len(flagTexts), flagTexts)
+	}
+	if flagTexts[0] != "--staged" || flagTexts[1] != "--stat" {
+		t.Errorf("expected [--staged, --stat], got %v", flagTexts)
+	}
+}
+
+// TestDiffFlagCompletion_GitrefAndFlagCombined verifies that the diff command
+// returns both gitref suggestions and flag suggestions simultaneously.
+func TestDiffFlagCompletion_GitrefAndFlagCombined(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"diff": {
+				Name:          "diff",
+				Description:   "Add git diff",
+				ArgCompleters: []string{"gitref", "flag"},
+				FlagDefs: []FlagDef{
+					{Name: "staged", Description: "Staged changes"},
+				},
+			},
+		},
+		commandOrder: []string{"diff"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "diff " with empty prefix should return both gitref and flag suggestions
+	sugg := tm.getDefaultCompletionSuggestionsFor("diff ", "diff ")
+	hasGitRef := false
+	hasFlag := false
+	for _, s := range sugg {
+		if s.Text == "HEAD" {
+			hasGitRef = true
+		}
+		if s.Text == "--staged" {
+			hasFlag = true
+		}
+	}
+	if !hasGitRef {
+		t.Error("expected gitref suggestion (HEAD) for diff command")
+	}
+	if !hasFlag {
+		t.Error("expected flag suggestion (--staged) for diff command")
+	}
+}
+
+// TestDiffFlagCompletion_NoDuplicateStaged verifies that --staged does not
+// appear twice (once from gitref, once from flagDefs).
+func TestDiffFlagCompletion_NoDuplicateStaged(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"diff": {
+				Name:          "diff",
+				Description:   "Add git diff",
+				ArgCompleters: []string{"gitref", "flag"},
+				FlagDefs: []FlagDef{
+					{Name: "staged", Description: "Staged changes"},
+				},
+			},
+		},
+		commandOrder: []string{"diff"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	sugg := tm.getDefaultCompletionSuggestionsFor("diff ", "diff ")
+	count := 0
+	for _, s := range sugg {
+		if s.Text == "--staged" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 --staged suggestion, got %d", count)
+	}
+}
+
+// TestFlagCompletion_GoalFlagDefsPassthrough verifies that the FlagDefs field
+// propagates correctly through the command registration pipeline (simulating
+// what goal.js does when passing flagDefs to custom commands).
+func TestFlagCompletion_GoalFlagDefsPassthrough(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"deploy": {
+				Name:          "deploy",
+				Description:   "Deploy to environment",
+				ArgCompleters: []string{"flag"},
+				FlagDefs: []FlagDef{
+					{Name: "env", Description: "Target environment"},
+					{Name: "dry-run", Description: "Simulate without changes"},
+					{Name: "force", Description: "Skip confirmation"},
+				},
+			},
+		},
+		commandOrder: []string{"deploy"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "deploy --" should show all three flags
+	sugg := tm.getDefaultCompletionSuggestionsFor("deploy --", "deploy --")
+	flagTexts := make(map[string]bool)
+	for _, s := range sugg {
+		if strings.HasPrefix(s.Text, "--") {
+			flagTexts[s.Text] = true
+		}
+	}
+
+	for _, expected := range []string{"--env", "--dry-run", "--force"} {
+		if !flagTexts[expected] {
+			t.Errorf("expected flag %q in suggestions", expected)
+		}
+	}
+}
+
+// TestFlagCompletion_EmptyFlagDefsSlice verifies that an empty flagDefs slice
+// produces no flag suggestions.
+func TestFlagCompletion_EmptyFlagDefsSlice(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"test": {
+				Name:          "test",
+				Description:   "Test command",
+				ArgCompleters: []string{"flag"},
+				FlagDefs:      []FlagDef{}, // empty
+			},
+		},
+		commandOrder: []string{"test"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	sugg := tm.getDefaultCompletionSuggestionsFor("test --", "test --")
+	for _, s := range sugg {
+		if strings.HasPrefix(s.Text, "--") {
+			t.Errorf("unexpected flag suggestion %q for command with empty flagDefs", s.Text)
+		}
+	}
+}
+
+// TestUnknownCompleter_DoesNotPanic verifies that an unknown arg completer type
+// does not crash and produces no suggestions (it only logs a warning).
+func TestUnknownCompleter_DoesNotPanic(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"custom": {
+				Name:          "custom",
+				Description:   "Command with unknown completer",
+				ArgCompleters: []string{"unicorn"},
+			},
+		},
+		commandOrder: []string{"custom"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// Should not panic and should produce no suggestions for unknown type
+	sugg := tm.getDefaultCompletionSuggestionsFor("custom ", "custom ")
+	if len(sugg) != 0 {
+		t.Errorf("expected 0 suggestions for unknown completer type, got %d", len(sugg))
+	}
+}
+
+// TestUnknownCompleter_MixedWithKnown verifies that unknown completer types
+// are silently skipped while known types still produce suggestions.
+func TestUnknownCompleter_MixedWithKnown(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "test.txt"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"hybrid": {
+				Name:          "hybrid",
+				Description:   "Mixed completers",
+				ArgCompleters: []string{"unicorn", "file", "dragon"},
+			},
+		},
+		commandOrder: []string{"hybrid"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	sugg := tm.getDefaultCompletionSuggestionsFor("hybrid ", "hybrid ")
+	hasFile := false
+	for _, s := range sugg {
+		if s.Text == "test.txt" {
+			hasFile = true
+		}
+	}
+	if !hasFile {
+		t.Error("expected file suggestion 'test.txt' despite unknown completers in mix")
+	}
+}
+
+func TestGetFilepathSuggestionsWindowsTildeBackslash(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only test")
+	}
+
+	// Set up a fake home directory
+	fakeHome := t.TempDir()
+	t.Setenv("USERPROFILE", fakeHome)
+	t.Setenv("HOME", fakeHome)
+
+	// Verify os.UserHomeDir returns our fake home
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir failed: %v", err)
+	}
+	if home != fakeHome {
+		t.Fatalf("os.UserHomeDir returned %q, want %q", home, fakeHome)
+	}
+
+	// Create test files and directories
+	docsDir := filepath.Join(fakeHome, "Documents")
+	if err := os.MkdirAll(docsDir, 0o755); err != nil {
+		t.Fatalf("failed to create Documents dir: %v", err)
+	}
+	docsFile := filepath.Join(docsDir, "readme.txt")
+	if err := os.WriteFile(docsFile, []byte("readme"), 0o644); err != nil {
+		t.Fatalf("failed to write readme.txt: %v", err)
+	}
+
+	homeFile := filepath.Join(fakeHome, "config.json")
+	if err := os.WriteFile(homeFile, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("failed to write config.json: %v", err)
+	}
+
+	t.Run("tilde backslash preserves separator style", func(t *testing.T) {
+		// Test that ~\ preserves the backslash style in suggestions
+		suggestions := getFilepathSuggestions("~\\")
+		if len(suggestions) == 0 {
+			t.Fatal("expected at least one suggestion for ~\\, got none")
+		}
+
+		// Verify that the backslash style is preserved in suggestions
+		foundBackslash := false
+		for _, sugg := range suggestions {
+			if strings.Contains(sugg.Text, "\\") {
+				foundBackslash = true
+				break
+			}
+		}
+		if !foundBackslash {
+			t.Errorf("expected suggestions to preserve backslash style, got: %v", suggestions)
+		}
+	})
+
+	t.Run("tilde backslash directory triggers scan", func(t *testing.T) {
+		// Test that ~\Documents\ correctly triggers directory scanning
+		// (the suffix check should recognize the backslash)
+		suggestions := getFilepathSuggestions("~\\Documents\\")
+		if len(suggestions) == 0 {
+			t.Fatal("expected at least one suggestion for ~\\Documents\\, got none")
+		}
+
+		// Should find readme.txt in the Documents directory
+		foundReadme := false
+		for _, sugg := range suggestions {
+			if strings.Contains(sugg.Text, "readme.txt") {
+				foundReadme = true
+				// Verify that the backslash style is preserved
+				if !strings.Contains(sugg.Text, "\\") {
+					t.Errorf("expected suggestion to preserve backslash style, got: %q", sugg.Text)
+				}
+				break
+			}
+		}
+		if !foundReadme {
+			t.Errorf("expected to find readme.txt in suggestions, got: %v", suggestions)
+		}
+	})
+
+	t.Run("tilde backslash partial path completion", func(t *testing.T) {
+		// Test that ~\Doc completes to ~\Documents\
+		suggestions := getFilepathSuggestions("~\\Doc")
+		if len(suggestions) == 0 {
+			t.Fatal("expected at least one suggestion for ~\\Doc, got none")
+		}
+
+		// Should find Documents directory
+		foundDocs := false
+		for _, sugg := range suggestions {
+			if strings.Contains(sugg.Text, "Documents") {
+				foundDocs = true
+				// Verify that the backslash style is preserved
+				if !strings.Contains(sugg.Text, "\\") {
+					t.Errorf("expected suggestion to preserve backslash style, got: %q", sugg.Text)
+				}
+				break
+			}
+		}
+		if !foundDocs {
+			t.Errorf("expected to find Documents in suggestions, got: %v", suggestions)
+		}
+	})
+
+	t.Run("tilde backslash lists home directory contents", func(t *testing.T) {
+		// Test that ~\ lists files in the home directory
+		suggestions := getFilepathSuggestions("~\\")
+		if len(suggestions) == 0 {
+			t.Fatal("expected at least one suggestion for ~\\, got none")
+		}
+
+		// Should find config.json and Documents directory
+		foundConfig := false
+		foundDocs := false
+		for _, sugg := range suggestions {
+			if strings.Contains(sugg.Text, "config.json") {
+				foundConfig = true
+			}
+			if strings.Contains(sugg.Text, "Documents") {
+				foundDocs = true
+				// Directories should have trailing separator
+				if !strings.HasSuffix(sugg.Text, "\\") && !strings.HasSuffix(sugg.Text, "/") {
+					t.Errorf("expected directory suggestion to have trailing separator, got: %q", sugg.Text)
+				}
+			}
+		}
+		if !foundConfig {
+			t.Errorf("expected to find config.json in suggestions, got: %v", suggestions)
+		}
+		if !foundDocs {
+			t.Errorf("expected to find Documents in suggestions, got: %v", suggestions)
+		}
+	})
+
+	t.Run("bare tilde suggests backslash-terminated path", func(t *testing.T) {
+		// Test that bare ~ suggests ~\ (backslash-terminated on Windows)
+		suggestions := getFilepathSuggestions("~")
+		if len(suggestions) == 0 {
+			t.Fatal("expected at least one suggestion for ~, got none")
+		}
+
+		// The first suggestion should be ~\ (backslash-terminated)
+		firstSugg := suggestions[0]
+		if firstSugg.Text != "~\\" {
+			t.Errorf("expected bare ~ to suggest ~\\ on Windows, got: %q", firstSugg.Text)
+		}
+	})
+
+	t.Run("empty string suggests backslash-terminated directories", func(t *testing.T) {
+		// Create a test directory in current working directory
+		testDir := t.TempDir()
+		originalWd, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("failed to get working directory: %v", err)
+		}
+		defer os.Chdir(originalWd)
+
+		if err := os.Chdir(testDir); err != nil {
+			t.Fatalf("failed to chdir: %v", err)
+		}
+
+		// Create a test directory
+		if err := os.Mkdir("testdir", 0o755); err != nil {
+			t.Fatalf("failed to create testdir: %v", err)
+		}
+
+		// Test that empty string suggests directories with backslash terminator
+		suggestions := getFilepathSuggestions("")
+		if len(suggestions) == 0 {
+			t.Fatal("expected at least one suggestion for empty string, got none")
+		}
+
+		// Find the testdir suggestion
+		foundTestDir := false
+		for _, sugg := range suggestions {
+			if strings.Contains(sugg.Text, "testdir") {
+				foundTestDir = true
+				// Verify that directories are backslash-terminated on Windows
+				if !strings.HasSuffix(sugg.Text, "\\") {
+					t.Errorf("expected directory suggestion to have trailing backslash on Windows, got: %q", sugg.Text)
+				}
+				break
+			}
+		}
+		if !foundTestDir {
+			t.Errorf("expected to find testdir in suggestions, got: %v", suggestions)
+		}
+	})
+}
+
+// =============================================================================
+// REGRESSION TESTS FOR CRITICAL BUG FIXES
+// =============================================================================
+
+// TestIssue002_DetectPathSeparator_POSIX_BackslashIsFilenameChar verifies that
+// on POSIX systems, backslash is NOT treated as a path separator (it's a valid
+// filename character). The current logic incorrectly treats \ as a separator on
+// all platforms, which can corrupt user input on Linux/macOS.
+func TestIssue002_DetectPathSeparator_POSIX_BackslashIsFilenameChar(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping POSIX-specific test on Windows")
+	}
+
+	// On POSIX, backslash is a valid filename character, not a separator.
+	// If a user types a path like "foo\bar" (literally backslash in filename),
+	// the completion engine should detect "/" as the separator if present,
+	// or default to the OS separator, NOT detect \ as a separator.
+
+	testCases := []struct {
+		name     string
+		path     string
+		expected string // expected separator on POSIX
+	}{
+		{
+			name:     "forward slash path",
+			path:     "usr/local/bin",
+			expected: "/",
+		},
+		{
+			name:     "backslash in filename (POSIX valid)",
+			path:     "foo\\bar", // literal backslash is valid filename char on POSIX
+			expected: "/",        // should NOT detect \ as separator
+		},
+		{
+			name:     "mixed with backslash later in string",
+			path:     "path/to/file\\with\\backslash",
+			expected: "/", // should still use / since it's POSIX
+		},
+		{
+			name:     "no separator - default to OS",
+			path:     "filename",
+			expected: string("/"), // POSIX default
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := detectPathSeparator(tc.path)
+			if result != tc.expected {
+				t.Errorf("DetectPathSeparator(%q) = %q, want %q", tc.path, result, tc.expected)
+			}
+		})
+	}
+}
+
+// TestIssue002_DetectPathSeparator_Windows_HonorsBackslash verifies that on
+// Windows, backslash IS a separator and should be detected.
+func TestIssue002_DetectPathSeparator_Windows_HonorsBackslash(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("skipping Windows-specific test on POSIX")
+	}
+
+	// On Windows, backslash IS a separator and should be detected.
+	testCases := []struct {
+		name     string
+		path     string
+		expected string
+	}{
+		{
+			name:     "backslash path",
+			path:     `Users\John\Documents`,
+			expected: "\\",
+		},
+		{
+			name:     "forward slash path",
+			path:     "Users/John/Documents",
+			expected: "/",
+		},
+		{
+			name:     "mixed - backslash last wins",
+			path:     `folder/sub\file`,
+			expected: "\\",
+		},
+		{
+			name:     "mixed - forward slash last wins",
+			path:     `folder\sub/file`,
+			expected: "/",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := detectPathSeparator(tc.path)
+			if result != tc.expected {
+				t.Errorf("DetectPathSeparator(%q) = %q, want %q", tc.path, result, tc.expected)
+			}
+		})
 	}
 }

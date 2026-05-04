@@ -4,34 +4,44 @@ import (
 	"context"
 	"io"
 
-	"github.com/dop251/goja_nodejs/eventloop"
+	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	inprocgrpc "github.com/joeycumines/go-inprocgrpc"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	gojaprotobuf "github.com/joeycumines/goja-protobuf"
 	"github.com/joeycumines/one-shot-man/internal/builtin/argv"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	textareamod "github.com/joeycumines/one-shot-man/internal/builtin/bubbles/textarea"
 	viewportmod "github.com/joeycumines/one-shot-man/internal/builtin/bubbles/viewport"
 	bubbleteamod "github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	bubblezonemod "github.com/joeycumines/one-shot-man/internal/builtin/bubblezone"
+	claudemuxmod "github.com/joeycumines/one-shot-man/internal/builtin/claudemux"
+	cryptomod "github.com/joeycumines/one-shot-man/internal/builtin/crypto"
 	ctxutils "github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
+	encodingmod "github.com/joeycumines/one-shot-man/internal/builtin/encoding"
 	execmod "github.com/joeycumines/one-shot-man/internal/builtin/exec"
+	fetchmod "github.com/joeycumines/one-shot-man/internal/builtin/fetch"
+	flagmod "github.com/joeycumines/one-shot-man/internal/builtin/flag"
+	grpcmod "github.com/joeycumines/one-shot-man/internal/builtin/grpc"
+	jsonmod "github.com/joeycumines/one-shot-man/internal/builtin/json"
 	lipglossmod "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
+	mcpcallbackmod "github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
+	mcpmod "github.com/joeycumines/one-shot-man/internal/builtin/mcpmod"
 	"github.com/joeycumines/one-shot-man/internal/builtin/nextintegerid"
 	osmod "github.com/joeycumines/one-shot-man/internal/builtin/os"
 	pabtmod "github.com/joeycumines/one-shot-man/internal/builtin/pabt"
+	pathmod "github.com/joeycumines/one-shot-man/internal/builtin/path"
+	regexpmod "github.com/joeycumines/one-shot-man/internal/builtin/regexp"
 	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
+	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
 	scrollbarmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/scrollbar"
 	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
-	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview"
 	unicodetextmod "github.com/joeycumines/one-shot-man/internal/builtin/unicodetext"
 )
 
-// TViewManagerProvider provides access to a tview manager instance.
-type TViewManagerProvider interface {
-	GetTViewManager() *tviewmod.Manager
-}
-
 // TerminalOpsProvider provides access to terminal I/O with proper lifecycle management.
-// This interface allows subsystems (bubbletea, tview) to share a single terminal
+// This interface allows subsystems (e.g. bubbletea) to share a single terminal
 // state manager instead of each creating their own, preventing conflicts.
 type TerminalOpsProvider interface {
 	// GetTerminalReader returns the terminal reader (implements io.Reader and provides Fd/IsTerminal)
@@ -47,19 +57,22 @@ type TerminalOpsProvider interface {
 // CRITICAL: This is REQUIRED for Register(). Without an event loop, thread-safe
 // JavaScript execution is impossible, and BubbleTea programs would cause data races.
 type EventLoopProvider interface {
-	// EventLoop returns the shared event loop. The loop must already be started.
-	EventLoop() *eventloop.EventLoop
+	// Loop returns the shared event loop. The loop must already be started.
+	Loop() *goeventloop.Loop
+	// Runtime returns the goja.Runtime for JavaScript execution.
+	Runtime() *goja.Runtime
 	// Registry returns the require.Registry for module registration.
 	Registry() *require.Registry
+	// Adapter returns the goja-eventloop adapter for promise and timer support.
+	Adapter() *gojaeventloop.Adapter
+	// Promisify executes a function in a goroutine and returns a Promise.
+	// This is used to keep the event loop alive during async operations.
+	Promisify(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 }
 
 // BubbleteaManager returns the bubbletea manager from RegisterResult.
 // This can be used to send external messages (e.g., state refresh) to a running program.
 type BubbleteaManager = *bubbleteamod.Manager
-
-// BTBridge returns the bt.Bridge from RegisterResult.
-// This provides access to the behavior tree bridge for JS integration.
-type BTBridge = *bt.Bridge
 
 // BubblezoneManager returns -> *bubblezonemod.Manager from RegisterResult.
 // This provides zone-based mouse hit-testing for BubbleTea applications.
@@ -69,13 +82,12 @@ type BubblezoneManager = *bubblezonemod.Manager
 // All returned managers should be stored and cleaned up appropriately.
 type RegisterResult struct {
 	BubbleteaManager  BubbleteaManager
-	BTBridge          BTBridge
+	BTBridge          *bt.Bridge
 	BubblezoneManager BubblezoneManager
 }
 
 // Register registers all native Go modules with the provided registry, wiring
 // modules that need host context or TUI output with the provided values.
-// The tviewProvider parameter is optional and can be nil if tview functionality is not needed.
 // The terminalProvider parameter is optional; if nil, bubbletea will use os.Stdin/os.Stdout.
 //
 // CRITICAL: eventLoopProvider is REQUIRED. Panics if nil.
@@ -83,27 +95,46 @@ type RegisterResult struct {
 // BubbleTea programs would cause data races when calling JS from their goroutine.
 //
 // Returns a RegisterResult containing references to created managers for further wiring.
-func Register(ctx context.Context, tuiSink func(string), registry *require.Registry, tviewProvider TViewManagerProvider, terminalProvider TerminalOpsProvider, eventLoopProvider EventLoopProvider) RegisterResult {
+func Register(ctx context.Context, tuiSink func(string), registry *require.Registry, terminalProvider TerminalOpsProvider, eventLoopProvider EventLoopProvider) RegisterResult {
 	if eventLoopProvider == nil {
 		panic("builtin.Register: eventLoopProvider is REQUIRED - cannot be nil; thread-safe JS execution requires an event loop")
 	}
 	const prefix = "osm:"
 	registry.RegisterNativeModule(prefix+"argv", argv.Require)
-	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require)
-	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx))
+	registry.RegisterNativeModule(prefix+"crypto", cryptomod.Require)
+	registry.RegisterNativeModule(prefix+"encoding", encodingmod.Require)
+	registry.RegisterNativeModule(prefix+"json", jsonmod.Require)
+	registry.RegisterNativeModule(prefix+"nextIntegerID", nextintegerid.Require)
+	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require) // Deprecated: use osm:nextIntegerID
+	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"flag", flagmod.Require)
+	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"mcpcallback", mcpcallbackmod.Require(eventLoopProvider.Adapter()))
+
+	// Create shared protobuf module for gRPC and osm:protobuf.
+	// The SAME Module instance is used by both so descriptors loaded via
+	// require('osm:protobuf').loadDescriptorSet(...) are visible to the
+	// gRPC client created via require('osm:grpc').createClient(...).
+	pbMod, pbErr := gojaprotobuf.New(eventLoopProvider.Runtime())
+	if pbErr != nil {
+		panic("builtin.Register: failed to create protobuf module: " + pbErr.Error())
+	}
+	ch := inprocgrpc.NewChannel(inprocgrpc.WithLoop(eventLoopProvider.Loop()))
+	registry.RegisterNativeModule(prefix+"protobuf", func(runtime *goja.Runtime, module *goja.Object) {
+		exports := module.Get("exports").(*goja.Object)
+		pbMod.SetupExports(exports)
+	})
+	registry.RegisterNativeModule(prefix+"grpc", grpcmod.Require(ch, pbMod, eventLoopProvider.Adapter()))
+
+	registry.RegisterNativeModule(prefix+"claudemux", claudemuxmod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
+	registry.RegisterNativeModule(prefix+"path", pathmod.Require)
+	registry.RegisterNativeModule(prefix+"regexp", regexpmod.Require)
 	registry.RegisterNativeModule(prefix+"time", timemod.Require)
 	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.Require(ctx))
 	registry.RegisterNativeModule(prefix+"text/template", templatemod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"unicodetext", unicodetextmod.Require(ctx))
-
-	// Register tview module if provider is available
-	if tviewProvider != nil {
-		tviewMgr := tviewProvider.GetTViewManager()
-		if tviewMgr != nil {
-			registry.RegisterNativeModule(prefix+"tview", tviewmod.Require(ctx, tviewMgr))
-		}
-	}
 
 	// Register lipgloss module - always available as it's stateless
 	lipglossMgr := lipglossmod.NewManager()
@@ -112,11 +143,11 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	// Register bt module FIRST for behavior tree integration with JavaScript.
 	// This must happen before bubbletea so we can wire the JSRunner for thread-safe JS calls.
 	// NewBridgeWithEventLoop registers the osm:bt module automatically.
-	btBridge := bt.NewBridgeWithEventLoop(ctx, eventLoopProvider.EventLoop(), eventLoopProvider.Registry())
+	btBridge := bt.NewBridgeWithEventLoop(ctx, eventLoopProvider.Loop(), eventLoopProvider.Runtime(), eventLoopProvider.Registry())
 
 	// Register osm:pabt module for Planning-Augmented Behavior Trees.
 	// This depends on btBridge for thread-safe goja.Runtime access.
-	registry.RegisterNativeModule(prefix+"pabt", pabtmod.ModuleLoader(ctx, btBridge))
+	registry.RegisterNativeModule(prefix+"pabt", pabtmod.Require(ctx, btBridge))
 
 	// Register bubbletea module with terminal ops if available.
 	// Bridge implements JSRunner directly - no adapter needed.
@@ -128,6 +159,11 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	}
 
 	bubbleteaMgr := bubbleteamod.NewManager(ctx, bubbleInput, bubbleOutput, btBridge, nil, nil)
+
+	// Wire up Promisify so BubbleTea programs keep the event loop alive during
+	// execution via promisifyCount. The Promisify is provided by the event loop
+	// provider (Runtime via Engine).
+	bubbleteaMgr.SetPromisify(eventLoopProvider.Promisify)
 
 	registry.RegisterNativeModule(prefix+"bubbletea", bubbleteamod.Require(ctx, bubbleteaMgr))
 
@@ -143,6 +179,15 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 
 	// Register termui/scrollbar module for thin vertical scrollbars
 	registry.RegisterNativeModule(prefix+"termui/scrollbar", scrollbarmod.Require())
+
+	// Register termmux module for terminal multiplexer JS bindings
+	var muxInput io.Reader
+	var muxOutput io.Writer
+	if terminalProvider != nil {
+		muxInput = terminalProvider.GetTerminalReader()
+		muxOutput = terminalProvider.GetTerminalWriter()
+	}
+	registry.RegisterNativeModule(prefix+"termmux", termmuxmod.Require(ctx, muxInput, muxOutput))
 
 	return RegisterResult{
 		BubbleteaManager:  bubbleteaMgr,

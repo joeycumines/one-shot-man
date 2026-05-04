@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,17 +58,16 @@ func newTestProcessEnv(tb testing.TB) []string {
 
 func mustNewEngine(tb testing.TB, ctx context.Context, stdout, stderr io.Writer) *Engine {
 	tb.Helper()
-	// Set memory storage backend to prevent session lock warnings in tests
-	tb.Setenv("OSM_STORE", "memory")
-	tb.Setenv("OSM_SESSION", testutil.NewTestSessionID("test", tb.Name()))
 
 	// Create a context that will be cancelled when the test ends to prevent goroutine leaks
 	ctx, cancel := context.WithCancel(ctx)
 	tb.Cleanup(cancel)
 
-	engine, err := NewEngine(ctx, stdout, stderr)
+	// Use explicit session configuration to prevent data races from env var mutation.
+	sessionID := testutil.NewTestSessionID("test", tb.Name())
+	engine, err := NewEngine(ctx, stdout, stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		tb.Fatalf("NewEngine failed: %v", err)
+		tb.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	tb.Cleanup(func() {
 		_ = engine.Close()
@@ -874,14 +874,14 @@ func TestConcurrentAccess(t *testing.T) {
 
 			for j := 0; j < 100; j++ {
 				valueToSet := int64(id*100 + j)
-				if err := tuiManager.SetStateViaJS("concurrent-test:counter", valueToSet); err != nil {
-					errors <- fmt.Errorf("goroutine %d: failed to set state at iteration %d: %v", id, j, err)
+				if err := tuiManager.SetStateForTest("concurrent-test:counter", valueToSet); err != nil {
+					errors <- fmt.Errorf("goroutine %d: failed to set state at iteration %d: %w", id, j, err)
 					return
 				}
 
-				val, err := tuiManager.GetStateViaJS("concurrent-test:counter")
+				val, err := tuiManager.GetStateForTest("concurrent-test:counter")
 				if err != nil {
-					errors <- fmt.Errorf("goroutine %d: failed to get state at iteration %d: %v", id, j, err)
+					errors <- fmt.Errorf("goroutine %d: failed to get state at iteration %d: %w", id, j, err)
 					return
 				}
 
@@ -921,7 +921,7 @@ func TestConcurrentAccess(t *testing.T) {
 	default:
 	}
 
-	finalVal, err := tuiManager.GetStateViaJS("concurrent-test:counter")
+	finalVal, err := tuiManager.GetStateForTest("concurrent-test:counter")
 	if err != nil {
 		t.Fatalf("Failed to retrieve final counter value: %v", err)
 	}
@@ -1016,7 +1016,7 @@ func TestJavaScriptInteroperability(t *testing.T) {
 	}
 
 	// Verify state was set correctly using test helper
-	configValue, err := tuiManager.GetStateViaJS("complex-mode:config")
+	configValue, err := tuiManager.GetStateForTest("complex-mode:config")
 	if err != nil {
 		t.Fatalf("Failed to get config state: %v", err)
 	}
@@ -1024,8 +1024,8 @@ func TestJavaScriptInteroperability(t *testing.T) {
 		t.Error("Expected config to be set, but got nil")
 	}
 	// Verify it's an object with nested.value = 42
-	if configMap, ok := configValue.(map[string]interface{}); ok {
-		if nested, ok := configMap["nested"].(map[string]interface{}); ok {
+	if configMap, ok := configValue.(map[string]any); ok {
+		if nested, ok := configMap["nested"].(map[string]any); ok {
 			if value, ok := nested["value"].(int64); !ok || value != 42 {
 				t.Errorf("Expected nested.value to be 42, got %v", nested["value"])
 			}
@@ -1284,7 +1284,7 @@ func TestTUIModeSystem(t *testing.T) {
 	}
 
 	// Verify state was set correctly using test helper
-	testValue, err := tuiManager.GetStateViaJS("test-mode:testValue")
+	testValue, err := tuiManager.GetStateForTest("test-mode:testValue")
 	if err != nil {
 		t.Fatalf("Failed to get testValue: %v", err)
 	}
@@ -1292,7 +1292,7 @@ func TestTUIModeSystem(t *testing.T) {
 		t.Errorf("Expected testValue to be 'initialized', got %v", testValue)
 	}
 
-	lastCommand, err := tuiManager.GetStateViaJS("test-mode:lastCommand")
+	lastCommand, err := tuiManager.GetStateForTest("test-mode:lastCommand")
 	if err != nil {
 		t.Fatalf("Failed to get lastCommand: %v", err)
 	}
@@ -1808,7 +1808,7 @@ func TestScriptStateVerification(t *testing.T) {
 	}
 
 	// Verify state using test helpers
-	counterValue, err := tuiManager.GetStateViaJS("state-test:counter")
+	counterValue, err := tuiManager.GetStateForTest("state-test:counter")
 	if err != nil {
 		t.Fatalf("Failed to get counter state: %v", err)
 	}
@@ -1816,23 +1816,23 @@ func TestScriptStateVerification(t *testing.T) {
 		t.Errorf("Expected counter to be 5, got %v (type %T)", counterValue, counterValue)
 	}
 
-	messagesValue, err := tuiManager.GetStateViaJS("state-test:messages")
+	messagesValue, err := tuiManager.GetStateForTest("state-test:messages")
 	if err != nil {
 		t.Fatalf("Failed to get messages state: %v", err)
 	}
-	if messages, ok := messagesValue.([]interface{}); !ok || len(messages) != 3 {
+	if messages, ok := messagesValue.([]any); !ok || len(messages) != 3 {
 		t.Errorf("Expected 3 messages, got %v (type %T)", messagesValue, messagesValue)
 	}
 
-	configValue, err := tuiManager.GetStateViaJS("state-test:config")
+	configValue, err := tuiManager.GetStateForTest("state-test:config")
 	if err != nil {
 		t.Fatalf("Failed to get config state: %v", err)
 	}
-	if configMap, ok := configValue.(map[string]interface{}); ok {
+	if configMap, ok := configValue.(map[string]any); ok {
 		if version, exists := configMap["version"]; !exists || version != "1.0" {
 			t.Errorf("Expected config.version to be '1.0', got %v", configMap["version"])
 		}
-		if settings, ok := configMap["settings"].(map[string]interface{}); ok {
+		if settings, ok := configMap["settings"].(map[string]any); ok {
 			if debug, ok := settings["debug"].(string); !ok || debug != "false" {
 				t.Errorf("Expected config.settings.debug to be 'false', got %v", settings["debug"])
 			}

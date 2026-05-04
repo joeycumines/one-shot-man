@@ -94,7 +94,7 @@ func TestFormatArgvQuoting(t *testing.T) {
 		t.Fatalf("failed to export formatArgv result: %v", exportErr)
 	}
 
-	expected := `cmd "arg with space" plain`
+	expected := `cmd 'arg with space' plain`
 	if formatted != expected {
 		t.Fatalf("expected %q, got %q", expected, formatted)
 	}

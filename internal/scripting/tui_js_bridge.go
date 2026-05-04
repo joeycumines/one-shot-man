@@ -15,24 +15,23 @@ import (
 // jsRegisterMode allows JavaScript to register a new mode.
 // IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
 // See TUIManager documentation for the locking strategy.
-func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
+func (tm *TUIManager) jsRegisterMode(modeConfig any) error {
 	// Convert the config object to a Go struct
-	if configMap, ok := modeConfig.(map[string]interface{}); ok {
+	if configMap, ok := modeConfig.(map[string]any); ok {
 		name, err := getString(configMap, "name", "")
 		if err != nil {
 			return err
 		}
 		mode := &ScriptMode{
-			Name:         name,
-			Commands:     make(map[string]Command),
-			CommandOrder: make([]string, 0),
+			Name:     name,
+			Commands: make(map[string]Command),
 		}
 
 		// N.B. JavaScript manages its own state via tui.createState() which talks directly to StateManager.
 
 		// Process TUI configuration
 		if tuiConfig, exists := configMap["tui"]; exists {
-			if tuiMap, ok := tuiConfig.(map[string]interface{}); ok {
+			if tuiMap, ok := tuiConfig.(map[string]any); ok {
 				mode.TUIConfig = &TUIConfig{}
 				var err error
 				mode.TUIConfig.Title, err = getString(tuiMap, "title", "")
@@ -49,9 +48,16 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 		// This allows modes to specify a command to run automatically after entering.
 		if cmdStr, err := getString(configMap, "initialCommand", ""); err != nil {
 			_, _ = fmt.Fprintf(tm.writer, "%#v\n", configMap)
-			return fmt.Errorf("initialCommand: %v", err)
+			return fmt.Errorf("initialCommand: %w", err)
 		} else {
 			mode.InitialCommand = cmdStr
+		}
+
+		// Parse multiline option for the mode's prompt.
+		if multiline, err := getBool(configMap, "multiline", false); err != nil {
+			return fmt.Errorf("multiline: %w", err)
+		} else {
+			mode.Multiline = multiline
 		}
 
 		// Process onEnter and onExit lifecycle callbacks
@@ -80,15 +86,16 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 			}
 
 			// If it's a plain object (map) provided inline, convert it into mode.Commands
-			if objMap, ok := commandsBuilder.(map[string]interface{}); ok {
+			if objMap, ok := commandsBuilder.(map[string]any); ok {
 				for key, raw := range objMap {
 					if raw == nil {
 						continue
 					}
-					if cmdObj, ok := raw.(map[string]interface{}); ok {
+					if cmdObj, ok := raw.(map[string]any); ok {
 						desc, _ := getString(cmdObj, "description", "")
 						usage, _ := getString(cmdObj, "usage", "")
 						argCompleters, _ := getStringSlice(cmdObj, "argCompleters")
+						flagDefs, _ := getFlagDefs(cmdObj, "flagDefs")
 
 						cmd := Command{
 							Name:          key,
@@ -96,6 +103,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 							Usage:         usage,
 							IsGoCommand:   false,
 							ArgCompleters: argCompleters,
+							FlagDefs:      flagDefs,
 						}
 
 						if handler, exists := cmdObj["handler"]; exists {
@@ -140,8 +148,8 @@ func (tm *TUIManager) jsGetCurrentMode() string {
 // jsRegisterCommand allows JavaScript to register global commands.
 // IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
 // See TUIManager documentation for the locking strategy.
-func (tm *TUIManager) jsRegisterCommand(cmdConfig interface{}) error {
-	if configMap, ok := cmdConfig.(map[string]interface{}); ok {
+func (tm *TUIManager) jsRegisterCommand(cmdConfig any) error {
+	if configMap, ok := cmdConfig.(map[string]any); ok {
 		name, err := getString(configMap, "name", "")
 		if err != nil {
 			return err
@@ -158,12 +166,17 @@ func (tm *TUIManager) jsRegisterCommand(cmdConfig interface{}) error {
 		if err != nil {
 			return err
 		}
+		flagDefs, err := getFlagDefs(configMap, "flagDefs")
+		if err != nil {
+			return err
+		}
 		cmd := Command{
 			Name:          name,
 			Description:   desc,
 			Usage:         usage,
 			IsGoCommand:   false,
 			ArgCompleters: argCompleters,
+			FlagDefs:      flagDefs,
 		}
 
 		if handler, exists := configMap["handler"]; exists {
@@ -193,11 +206,14 @@ func (tm *TUIManager) jsListModes() []string {
 	return tm.ListModes()
 }
 
-// jsCreateAdvancedPrompt creates a new go-prompt instance with given configuration.
+// jsCreatePrompt creates a new go-prompt instance with given configuration.
+// This is the low-level prompt API (formerly createAdvancedPrompt). For most use cases,
+// prefer registerMode which provides richer integration (mode switching, state management, etc.).
+//
 // IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
 // See TUIManager documentation for the locking strategy.
-func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error) {
-	configMap, ok := config.(map[string]interface{})
+func (tm *TUIManager) jsCreatePrompt(config any) (string, error) {
+	configMap, ok := config.(map[string]any)
 	if !ok {
 		return "", fmt.Errorf("invalid prompt configuration")
 	}
@@ -219,7 +235,7 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 	// Parse colors configuration, starting from manager defaults, then applying overrides
 	colors := tm.defaultColors
 	if colorsRaw, exists := configMap["colors"]; exists {
-		if colorMap, ok := colorsRaw.(map[string]interface{}); ok {
+		if colorMap, ok := colorsRaw.(map[string]any); ok {
 			colors.ApplyFromInterfaceMap(colorMap)
 		}
 	}
@@ -230,21 +246,50 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 		return "", err
 	}
 
-	// Create the executor function for this prompt.
-	// The executor runs the command; if it returns false, we set exitRequested
-	// so the ExitChecker (below) will cause the prompt to exit cleanly.
-	// We do NOT call os.Exit here - exit happens at the shell loop level.
-	executor := func(line string) {
-		if !tm.executor(line) {
-			// Signal the prompt to exit via ExitChecker mechanism
-			tm.RequestExit()
-		}
+	// Parse prompt behavior options (overriding defaults)
+	maxSuggestionInt, err := getInt(configMap, "maxSuggestion", 10)
+	if err != nil {
+		return "", err
 	}
-
-	// Create the exit checker that allows the prompt to exit when requested.
-	// This is called by go-prompt after each input to determine if Run() should return.
-	exitChecker := func(_ string, _ bool) bool {
-		return tm.IsExitRequested()
+	dynamicCompletion, err := getBool(configMap, "dynamicCompletion", true)
+	if err != nil {
+		return "", err
+	}
+	executeHidesCompletions, err := getBool(configMap, "executeHidesCompletions", true)
+	if err != nil {
+		return "", err
+	}
+	escapeToggle, err := getBool(configMap, "escapeToggle", true)
+	if err != nil {
+		return "", err
+	}
+	initialText, err := getString(configMap, "initialText", "")
+	if err != nil {
+		return "", err
+	}
+	showCompletionAtStart, err := getBool(configMap, "showCompletionAtStart", false)
+	if err != nil {
+		return "", err
+	}
+	completionOnDown, err := getBool(configMap, "completionOnDown", false)
+	if err != nil {
+		return "", err
+	}
+	keyBindMode, err := getString(configMap, "keyBindMode", "")
+	if err != nil {
+		return "", err
+	}
+	multiline, err := getBool(configMap, "multiline", false)
+	if err != nil {
+		return "", err
+	}
+	completionWordSeparator, err := getString(configMap, "completionWordSeparator", "")
+	if err != nil {
+		return "", err
+	}
+	indentSizeInt, err := getInt(configMap, "indentSize", 0)
+	if err != nil {
+		return "", err
 	}
 
 	// Create the completer function as a dispatcher that can call a JS completer
@@ -276,47 +321,42 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 		return suggestions, istrings.RuneNumber(start), istrings.RuneNumber(end)
 	}
 
-	// Configure prompt options
-	options := []prompt.Option{
-		prompt.WithTitle(title),
-		prompt.WithPrefix(prefix),
-		prompt.WithInputTextColor(colors.InputText),
-		prompt.WithPrefixTextColor(colors.PrefixText),
-		prompt.WithSuggestionTextColor(colors.SuggestionText),
-		prompt.WithSelectedSuggestionBGColor(colors.SelectedSuggestionBG),
-		prompt.WithSuggestionBGColor(colors.SuggestionBG),
-		prompt.WithSelectedSuggestionTextColor(colors.SelectedSuggestionText),
-		prompt.WithDescriptionBGColor(colors.DescriptionBG),
-		prompt.WithDescriptionTextColor(colors.DescriptionText),
-		prompt.WithSelectedDescriptionBGColor(colors.SelectedDescriptionBG),
-		prompt.WithSelectedDescriptionTextColor(colors.SelectedDescriptionText),
-		prompt.WithScrollbarThumbColor(colors.ScrollbarThumb),
-		prompt.WithScrollbarBGColor(colors.ScrollbarBG),
-		prompt.WithCompleter(completer),
-		prompt.WithExitChecker(exitChecker), // Allow graceful exit via RequestExit()
-	}
-
-	// this enables the sync protocol when built with the `integration` build tag
-	options = append(options, staticGoPromptOptions...)
-
-	// Add history if configured
+	// Build history from file if configured
+	var history []string
 	if historyConfig.Enabled && historyConfig.File != "" {
-		options = append(options, prompt.WithHistory(loadHistory(historyConfig.File)))
+		history = loadHistory(historyConfig.File)
 	}
 
-	// Add any registered key bindings
-	if keyBinds := tm.buildKeyBinds(); len(keyBinds) > 0 {
-		options = append(options, prompt.WithKeyBind(keyBinds...))
-	}
-
-	// Create the prompt instance
-	p := prompt.New(executor, options...)
+	// Use the shared builder with consistent feature support
+	p := tm.buildGoPrompt(promptBuildConfig{
+		prefix:                  prefix,
+		title:                   title,
+		colors:                  colors,
+		completer:               completer,
+		history:                 history,
+		historySize:             historyConfig.Size,
+		maxSuggestion:           uint16(maxSuggestionInt),
+		dynamicCompletion:       dynamicCompletion,
+		executeHidesCompletions: executeHidesCompletions,
+		escapeToggle:            escapeToggle,
+		initialText:             initialText,
+		showCompletionAtStart:   showCompletionAtStart,
+		completionOnDown:        completionOnDown,
+		keyBindMode:             keyBindMode,
+		multiline:               multiline,
+		completionWordSeparator: completionWordSeparator,
+		indentSize:              indentSizeInt,
+	})
 
 	// Store the prompt via the writer queue to avoid deadlocks.
 	// JS callbacks run without holding locks, so we must not acquire
 	// tm.mu.Lock() directly here.
 	err = tm.scheduleWriteAndWait(func() error {
 		tm.prompts[name] = p
+		// Store history config for persistence on prompt exit
+		if historyConfig.Enabled && historyConfig.File != "" {
+			tm.promptHistoryConfigs[name] = historyConfig
+		}
 		return nil
 	})
 	if err != nil {
@@ -330,6 +370,7 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 func (tm *TUIManager) jsRunPrompt(name string) error {
 	tm.mu.RLock()
 	p, exists := tm.prompts[name]
+	histCfg, hasHistCfg := tm.promptHistoryConfigs[name]
 	tm.mu.RUnlock()
 
 	if !exists {
@@ -340,8 +381,17 @@ func (tm *TUIManager) jsRunPrompt(name string) error {
 	tm.activePrompt = p
 	tm.mu.Unlock()
 
-	// Start the prompt (this will block until exit)
-	p.Run()
+	// Start the prompt (this will block until exit).
+	// Use RunNoExit to prevent go-prompt from calling os.Exit on SIGTERM.
+	p.RunNoExit()
+
+	// Persist history to file if configured
+	if hasHistCfg && histCfg.File != "" {
+		entries := p.History().Entries()
+		if err := saveHistory(histCfg.File, entries, histCfg.Size); err != nil {
+			_, _ = fmt.Fprintf(tm.writer, "Warning: failed to save history to %s: %v\n", histCfg.File, err)
+		}
+	}
 
 	tm.mu.Lock()
 	tm.activePrompt = nil
@@ -507,6 +557,78 @@ func parseKeyString(keyStr string) prompt.Key {
 		return prompt.F11
 	case "f12":
 		return prompt.F12
+	case "f13":
+		return prompt.F13
+	case "f14":
+		return prompt.F14
+	case "f15":
+		return prompt.F15
+	case "f16":
+		return prompt.F16
+	case "f17":
+		return prompt.F17
+	case "f18":
+		return prompt.F18
+	case "f19":
+		return prompt.F19
+	case "f20":
+		return prompt.F20
+	case "f21":
+		return prompt.F21
+	case "f22":
+		return prompt.F22
+	case "f23":
+		return prompt.F23
+	case "f24":
+		return prompt.F24
+	case "ctrl-space", "control-space", "ctrl+space", "control+space":
+		return prompt.ControlSpace
+	case "ctrl-\\", "control-\\", "ctrl+\\", "control+\\":
+		return prompt.ControlBackslash
+	case "ctrl-]", "control-]", "ctrl+]", "control+]":
+		return prompt.ControlSquareClose
+	case "ctrl-^", "control-^", "ctrl+^", "control+^":
+		return prompt.ControlCircumflex
+	case "ctrl-_", "control-_", "ctrl+_", "control+_":
+		return prompt.ControlUnderscore
+	case "ctrl-left", "control-left", "ctrl+left", "control+left":
+		return prompt.ControlLeft
+	case "ctrl-right", "control-right", "ctrl+right", "control+right":
+		return prompt.ControlRight
+	case "ctrl-up", "control-up", "ctrl+up", "control+up":
+		return prompt.ControlUp
+	case "ctrl-down", "control-down", "ctrl+down", "control+down":
+		return prompt.ControlDown
+	case "alt-left", "alt+left":
+		return prompt.AltLeft
+	case "alt-right", "alt+right":
+		return prompt.AltRight
+	case "alt-backspace", "alt+backspace":
+		return prompt.AltBackspace
+	case "shift-left", "shift+left":
+		return prompt.ShiftLeft
+	case "shift-right", "shift+right":
+		return prompt.ShiftRight
+	case "shift-up", "shift+up":
+		return prompt.ShiftUp
+	case "shift-down", "shift+down":
+		return prompt.ShiftDown
+	case "shift-delete", "shift-del", "shift+delete", "shift+del":
+		return prompt.ShiftDelete
+	case "ctrl-delete", "ctrl-del", "control-delete", "control-del", "ctrl+delete", "ctrl+del", "control+delete", "control+del":
+		return prompt.ControlDelete
+	case "backtab", "shift-tab", "shift+tab":
+		return prompt.BackTab
+	case "insert", "ins":
+		return prompt.Insert
+	case "pageup", "page-up", "page+up":
+		return prompt.PageUp
+	case "pagedown", "page-down", "page+down":
+		return prompt.PageDown
+	case "any":
+		return prompt.Any
+	case "bracketed-paste", "bracketedpaste":
+		return prompt.BracketedPaste
 	default:
 		return prompt.NotDefined
 	}
@@ -526,8 +648,11 @@ func (tm *TUIManager) buildKeyBinds() []prompt.KeyBind {
 			keyBinds = append(keyBinds, prompt.KeyBind{
 				Key: key,
 				Fn: func(p *prompt.Prompt) bool {
-					// Call the JavaScript handler
-					result, err := jsHandler(goja.Undefined())
+					// Build a JS wrapper exposing prompt editing methods
+					promptObj := tm.buildPromptJSObject(p)
+
+					// Call the JavaScript handler with the prompt object
+					result, err := jsHandler(goja.Undefined(), promptObj)
 					if err != nil {
 						_, _ = fmt.Fprintf(tm.writer, "Key binding error: %v\n", err)
 						return false
@@ -544,4 +669,51 @@ func (tm *TUIManager) buildKeyBinds() []prompt.KeyBind {
 	}
 
 	return keyBinds
+}
+
+// buildPromptJSObject creates a goja object that wraps a *prompt.Prompt,
+// exposing editing and cursor methods to JavaScript key-binding handlers.
+func (tm *TUIManager) buildPromptJSObject(p *prompt.Prompt) goja.Value {
+	vm := tm.engine.vm
+	obj := vm.NewObject()
+	_ = obj.Set("insertText", func(text string) {
+		p.InsertText(text, false)
+	})
+	_ = obj.Set("insertTextMoveCursor", func(text string) {
+		p.InsertTextMoveCursor(text, false)
+	})
+	_ = obj.Set("deleteBeforeCursor", func(count int) string {
+		return p.DeleteBeforeCursor(istrings.GraphemeNumber(count))
+	})
+	_ = obj.Set("delete", func(count int) string {
+		return p.Delete(istrings.GraphemeNumber(count))
+	})
+	_ = obj.Set("cursorLeft", func(count int) bool {
+		return p.CursorLeft(istrings.GraphemeNumber(count))
+	})
+	_ = obj.Set("cursorRight", func(count int) bool {
+		return p.CursorRight(istrings.GraphemeNumber(count))
+	})
+	_ = obj.Set("cursorUp", func(count int) bool {
+		return p.CursorUp(count)
+	})
+	_ = obj.Set("cursorDown", func(count int) bool {
+		return p.CursorDown(count)
+	})
+	_ = obj.Set("getText", func() string {
+		return p.Buffer().Text()
+	})
+	_ = obj.Set("terminalColumns", func() int {
+		return int(p.TerminalColumns())
+	})
+	_ = obj.Set("terminalRows", func() int {
+		return p.TerminalRows()
+	})
+	_ = obj.Set("userInputColumns", func() int {
+		return int(p.UserInputColumns())
+	})
+	_ = obj.Set("newLine", func() {
+		p.Buffer().NewLine(p.TerminalColumns(), p.TerminalRows(), false)
+	})
+	return obj
 }

@@ -27,9 +27,9 @@ func TestConfigLoadingPlatformSpecific(t *testing.T) {
 
 		// Test Windows-style paths
 		paths := []string{
-			`C:\Users\test\.one-shot-man\config`,
-			`D:\AppData\one-shot-man\config`,
-			`%USERPROFILE%\.one-shot-man\config`,
+			`C:\Users\test\.osm\config`,
+			`D:\AppData\osm\config`,
+			`%USERPROFILE%\.osm\config`,
 		}
 
 		for _, path := range paths {
@@ -52,7 +52,7 @@ func TestConfigLoadingPlatformSpecific(t *testing.T) {
 			t.Fatalf("Failed to get home directory: %v", err)
 		}
 
-		expectedPath := filepath.Join(homeDir, ".one-shot-man", "config")
+		expectedPath := filepath.Join(homeDir, ".osm", "config")
 
 		// Verify forward slash is used (filepath.Join on Unix)
 		if !strings.HasPrefix(expectedPath, "/") {
@@ -81,8 +81,8 @@ func TestConfigLoadingPlatformSpecific(t *testing.T) {
 		}
 
 		// macOS typically uses ~/Library/Application Support for app data
-		// but this project uses ~/.one-shot-man for consistency with Unix
-		expectedPath := filepath.Join(homeDir, ".one-shot-man", "config")
+		// but this project uses ~/.osm for consistency with Unix
+		expectedPath := filepath.Join(homeDir, ".osm", "config")
 
 		if !strings.HasPrefix(expectedPath, "/") {
 			t.Errorf("Expected Unix-style path, got: %s", expectedPath)
@@ -91,7 +91,7 @@ func TestConfigLoadingPlatformSpecific(t *testing.T) {
 
 	t.Run("PathSeparatorHandling", func(t *testing.T) {
 		// Test that path separators are handled correctly
-		mixedPath := "home/user/.one-shot-man/config"
+		mixedPath := "home/user/.osm/config"
 
 		// On Unix, forward slashes should be preserved
 		if platform.IsUnix {
@@ -102,7 +102,7 @@ func TestConfigLoadingPlatformSpecific(t *testing.T) {
 
 		// On Windows, filepath.Join should convert to backslashes
 		if platform.IsWindows {
-			joined := filepath.Join("home", "user", ".one-shot-man", "config")
+			joined := filepath.Join("home", "user", ".osm", "config")
 			if !strings.Contains(joined, "\\") {
 				t.Error("Expected backslashes in path on Windows")
 			}
@@ -297,7 +297,7 @@ func TestFilePathHandlingPlatformSpecific(t *testing.T) {
 		}
 
 		// Test home directory expansion
-		tildePath := "~/.one-shot-man"
+		tildePath := "~/.osm"
 		expandedPath := strings.ReplaceAll(tildePath, "~", homeDir)
 
 		if !strings.HasPrefix(expandedPath, homeDir) {

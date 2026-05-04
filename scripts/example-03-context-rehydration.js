@@ -6,7 +6,7 @@
 ctx.log("Testing ContextManager re-hydration...");
 
 const {contextManager} = require('osm:ctxutil');
-const nextIntegerId = require('osm:nextIntegerId');
+const nextIntegerId = require('osm:nextIntegerID');
 
 const MODE_NAME = "context-test";
 const sharedSymbols = require('osm:sharedStateSymbols');

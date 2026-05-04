@@ -30,19 +30,19 @@ func TestNewRuntime(t *testing.T) {
 		t.Error("registry should not be nil")
 	}
 
-	if rt.EventLoop() == nil {
+	if rt.Loop() == nil {
 		t.Error("event loop should not be nil")
 	}
 }
 
-func TestNewRuntimeWithRegistry(t *testing.T) {
+func TestNewRuntimeRegistry(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	registry := require.NewRegistry()
-	rt, err := NewRuntimeWithRegistry(ctx, registry)
+	rt, err := NewRuntimeRegistry(ctx, registry)
 	if err != nil {
-		t.Fatalf("NewRuntimeWithRegistry failed: %v", err)
+		t.Fatalf("NewRuntimeRegistry failed: %v", err)
 	}
 	defer rt.Close()
 
@@ -459,8 +459,8 @@ func TestRuntime_SetTimeout(t *testing.T) {
 	defer rt.Close()
 
 	// Default timeout
-	if rt.GetTimeout() != DefaultSyncTimeout {
-		t.Errorf("expected default timeout %v, got %v", DefaultSyncTimeout, rt.GetTimeout())
+	if rt.GetTimeout() != defaultSyncTimeout {
+		t.Errorf("expected default timeout %v, got %v", defaultSyncTimeout, rt.GetTimeout())
 	}
 
 	// Set custom timeout

@@ -37,10 +37,7 @@ func NewTestSessionID(prefix, tname string) string {
 		}
 
 		// Take the last `keep` bytes of safeName.
-		start := len(safeName) - keep
-		if start < 0 {
-			start = 0
-		}
+		start := max(len(safeName)-keep, 0)
 		safeName = safeName[start:] + hashSuffix
 	}
 

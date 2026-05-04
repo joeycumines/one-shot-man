@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
+	"log/slog"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -20,23 +22,42 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
-// Performance thresholds (in microseconds) for regression detection
+// Performance thresholds (in microseconds) for regression detection.
+// Thresholds set generously to avoid intermittent failures due to system load variations
+// in CI/CD environments across different platforms.
+//
+// Cross-platform verification (T061, Feb 2026):
+//
+//	macOS (Apple M-series, 3 runs):
+//	  SessionIDGeneration:    0-1 μs   (threshold: 10,000 μs, headroom: >10,000x)
+//	  SessionPersistenceWrite: 6-7 μs  (threshold: 10,000 μs, headroom: ~1,400x)
+//	  SessionPersistenceRead:  2 μs    (threshold: 5,000 μs,  headroom: ~2,500x)
+//	  RuntimeCreation:        81-97 μs (threshold: 100,000 μs, headroom: ~1,000x)
+//	  ScriptExecution:        13-16 μs (threshold: 10,000 μs, headroom: ~625x)
+//	  ConcurrentAccess:       1 μs     (threshold: 20,000 μs, headroom: ~20,000x)
+//
+//	Linux (Docker golang:1.25.7, 1 run):
+//	  SessionIDGeneration:    25 μs    (threshold: 10,000 μs, headroom: ~400x)
+//	  SessionPersistenceWrite: 3 μs    (threshold: 10,000 μs, headroom: ~3,333x)
+//	  SessionPersistenceRead:  2 μs    (threshold: 5,000 μs,  headroom: ~2,500x)
+//	  RuntimeCreation:        144 μs   (threshold: 100,000 μs, headroom: ~694x)
+//	  ScriptExecution:        10 μs    (threshold: 10,000 μs, headroom: ~1,000x)
+//	  ConcurrentAccess:       2 μs     (threshold: 20,000 μs, headroom: ~10,000x)
+//
+//	Benchmark variance (macOS, count=5): <10% for most operations,
+//	highest observed ~30% (VMCreation single outlier, sub-μs operation).
+//	No platform-specific multipliers needed — minimum headroom is 400x.
 const (
 	// Session operation thresholds
-	// Thresholds set generously to avoid intermittent failures due to system load variations
-	// in CI/CD environments across different platforms
 	thresholdSessionIDGenerationUnix    = 10000
 	thresholdSessionIDGenerationWindows = 50000
-	thresholdSessionCreation            = 5000
 	thresholdSessionPersistenceWrite    = 10000
 	thresholdSessionPersistenceRead     = 5000
 	thresholdConcurrentSessionAccess    = 20000
 
 	// Scripting engine thresholds
-	thresholdRuntimeCreation    = 100000
-	thresholdGlobalRegistration = 1000
-	thresholdSimpleScriptExec   = 10000
-	thresholdVMCreation         = 20000
+	thresholdRuntimeCreation  = 100000
+	thresholdSimpleScriptExec = 10000
 )
 
 // BenchmarkSessionOperations benchmarks session operations.
@@ -85,7 +106,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 			if err := backend.SaveSession(sess); err != nil {
 				b.Fatalf("failed to save session: %v", err)
 			}
-			backend.Close()
+			_ = backend.Close()
 		}
 	})
 
@@ -99,8 +120,8 @@ func BenchmarkSessionOperations(b *testing.B) {
 			SharedState: make(map[string]any),
 		}
 		backend, _ := storage.NewInMemoryBackend(sess.ID)
-		backend.SaveSession(sess)
-		backend.Close()
+		_ = backend.SaveSession(sess)
+		_ = backend.Close()
 
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -116,7 +137,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 			if loaded == nil {
 				b.Fatal("session not found")
 			}
-			backend.Close()
+			_ = backend.Close()
 		}
 	})
 
@@ -130,8 +151,8 @@ func BenchmarkSessionOperations(b *testing.B) {
 			SharedState: make(map[string]any),
 		}
 		backend, _ := storage.NewInMemoryBackend(sess.ID)
-		backend.SaveSession(sess)
-		backend.Close()
+		_ = backend.SaveSession(sess)
+		_ = backend.Close()
 
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
@@ -147,7 +168,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 				if loaded == nil {
 					b.Fatal("session not found")
 				}
-				backend.Close()
+				_ = backend.Close()
 			}
 		})
 	})
@@ -160,7 +181,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 			ScriptState: make(map[string]map[string]any),
 			SharedState: make(map[string]any),
 		}
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			sess.History[i] = storage.HistoryEntry{
 				EntryID:    "entry",
 				ModeID:     "test-mode",
@@ -189,7 +210,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 			ScriptState: make(map[string]map[string]any),
 			SharedState: make(map[string]any),
 		}
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			sess.History[i] = storage.HistoryEntry{
 				EntryID:    "entry",
 				ModeID:     "test-mode",
@@ -209,6 +230,178 @@ func BenchmarkSessionOperations(b *testing.B) {
 			}
 			_ = loaded
 		}
+	})
+}
+
+// BenchmarkFileSystemIO benchmarks filesystem-based session I/O operations.
+// This covers the full FileSystemBackend path: flock acquisition, JSON
+// serialization (MarshalIndent), AtomicWriteFile (CreateTemp → Write →
+// Sync → Close → Chmod → Rename), file read, JSON deserialization, and
+// lock release + cleanup.
+func BenchmarkFileSystemIO(b *testing.B) {
+	// Helper to create a session with n history entries for benchmarking.
+	makeSession := func(id string, nEntries int) *storage.Session {
+		sess := &storage.Session{
+			ID:          id,
+			Version:     storage.CurrentSchemaVersion,
+			History:     make([]storage.HistoryEntry, nEntries),
+			ScriptState: make(map[string]map[string]any),
+			SharedState: make(map[string]any),
+		}
+		for i := range sess.History {
+			sess.History[i] = storage.HistoryEntry{
+				EntryID:    "entry",
+				ModeID:     "test-mode",
+				Command:    "echo 'test'",
+				ReadTime:   time.Now(),
+				FinalState: json.RawMessage(`{"state":"test"}`),
+			}
+		}
+		return sess
+	}
+
+	b.Run("FullCycle", func(b *testing.B) {
+		// Full FileSystem backend cycle: create → save → load → close.
+		// Measures combined cost of flock + JSON serialize + AtomicWriteFile
+		// + file read + JSON deserialize + lock release.
+		//
+		// Profiling notes (pprof CPU profile, 2s benchtime):
+		//   FullCycle: ~5.4ms/op, ~16KB, 104 allocs (10 history entries).
+		//   WriteOnly: ~5.4ms/op — write path dominates the full cycle.
+		//   ReadOnly: ~115μs/op — reads are ~47x faster than writes.
+		//   AtomicWriteFile: ~5.7ms/op — >99% of write cost.
+		//     Dominated by fsync (tempFile.Sync), required for crash safety.
+		//   MarshalIndent vs Marshal: 2.6x overhead (116μs vs 45μs, 100 entries)
+		//     but only ~2% of total write cost — not worth switching.
+		//   CPU profile: app code = 1.54% (10ms json.Unmarshal). Remaining
+		//     ~98.5% is OS syscalls (fsync, flock, file I/O).
+		//   Conclusion: no application-level optimization targets. The
+		//   dominant cost (fsync ~5ms) is required for crash-safe atomic
+		//   writes. MarshalIndent→Marshal saves ~1.3% of write time at
+		//   the cost of human-readable session files. Read path is already
+		//   fast (115μs = flock + ReadFile + Unmarshal).
+		dir := b.TempDir()
+		storage.SetTestPaths(dir)
+		b.Cleanup(storage.ResetPaths)
+
+		sess := makeSession("bench-fs-full", 10)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			backend, err := storage.NewFileSystemBackend(sess.ID)
+			if err != nil {
+				b.Fatalf("failed to create backend: %v", err)
+			}
+			if err := backend.SaveSession(sess); err != nil {
+				b.Fatalf("failed to save: %v", err)
+			}
+			loaded, err := backend.LoadSession(sess.ID)
+			if err != nil {
+				b.Fatalf("failed to load: %v", err)
+			}
+			if loaded == nil {
+				b.Fatal("session not found")
+			}
+			_ = backend.Close()
+		}
+	})
+
+	b.Run("WriteOnly", func(b *testing.B) {
+		// Isolates write path: flock + MarshalIndent + AtomicWriteFile + unlock.
+		dir := b.TempDir()
+		storage.SetTestPaths(dir)
+		b.Cleanup(storage.ResetPaths)
+
+		sess := makeSession("bench-fs-write", 10)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			backend, err := storage.NewFileSystemBackend(sess.ID)
+			if err != nil {
+				b.Fatalf("failed to create backend: %v", err)
+			}
+			if err := backend.SaveSession(sess); err != nil {
+				b.Fatalf("failed to save: %v", err)
+			}
+			_ = backend.Close()
+		}
+	})
+
+	b.Run("ReadOnly", func(b *testing.B) {
+		// Isolates read path: flock + ReadFile + Unmarshal + unlock.
+		dir := b.TempDir()
+		storage.SetTestPaths(dir)
+		b.Cleanup(storage.ResetPaths)
+
+		sess := makeSession("bench-fs-read", 10)
+		// Pre-write the session so reads find it.
+		backend, err := storage.NewFileSystemBackend(sess.ID)
+		if err != nil {
+			b.Fatalf("setup: %v", err)
+		}
+		if err := backend.SaveSession(sess); err != nil {
+			b.Fatalf("setup: %v", err)
+		}
+		_ = backend.Close()
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			backend, err := storage.NewFileSystemBackend(sess.ID)
+			if err != nil {
+				b.Fatalf("failed to create backend: %v", err)
+			}
+			loaded, err := backend.LoadSession(sess.ID)
+			if err != nil {
+				b.Fatalf("failed to load: %v", err)
+			}
+			if loaded == nil {
+				b.Fatal("session not found")
+			}
+			_ = backend.Close()
+		}
+	})
+
+	b.Run("AtomicWriteFile", func(b *testing.B) {
+		// Isolates AtomicWriteFile: CreateTemp → Write → Sync → Close → Chmod → Rename.
+		// Measures raw filesystem write overhead without JSON or locking.
+		dir := b.TempDir()
+		data := []byte(`{"test":"data","values":[1,2,3,4,5]}`)
+		target := filepath.Join(dir, "atomic-bench.json")
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := storage.AtomicWriteFile(target, data, 0644); err != nil {
+				b.Fatalf("failed: %v", err)
+			}
+		}
+	})
+
+	b.Run("MarshalIndentVsMarshal", func(b *testing.B) {
+		// Compares json.MarshalIndent (used by SaveSession) with json.Marshal.
+		// SaveSession uses MarshalIndent for human-readable session files.
+		sess := makeSession("marshal-cmp", 100)
+
+		b.Run("MarshalIndent", func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if _, err := json.MarshalIndent(sess, "", "  "); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		b.Run("Marshal", func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if _, err := json.Marshal(sess); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	})
 }
 
@@ -306,7 +499,7 @@ func BenchmarkScriptingEngine(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to create runtime: %v", err)
 			}
-			rt.Close()
+			_ = rt.Close()
 		}
 	})
 
@@ -372,6 +565,31 @@ func BenchmarkScriptingEngine(b *testing.B) {
 			}
 		}
 	})
+
+	b.Run("FullEngineCreation", func(b *testing.B) {
+		// Profiling notes (pprof CPU profile, 2s benchtime):
+		//   ~134μs/op, ~161KB/op, ~862 allocs/op.
+		//   Application code accounts for <0.3% of CPU time. The dominant costs
+		//   are runtime scheduling (goroutine start/stop for eventloop) and GC
+		//   (161KB allocated per iteration). No single function is a hotspot.
+		//   Breakdown: VMCreation ~480ns, RuntimeCreation ~18μs, remaining
+		//   ~116μs spread across ContextManager, TerminalIO, TUIManager,
+		//   builtin.Register (20 modules), require.Enable, setupGlobals,
+		//   and Engine.Close. All are negligible individually.
+		//   Conclusion: no optimization targets exist — startup is already
+		//   sub-millisecond with no lazy init or caching opportunities that
+		//   would produce measurable improvement.
+		ctx := context.Background()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			engine, err := scripting.NewEngine(ctx, io.Discard, io.Discard, "", "memory", nil, 0, slog.LevelInfo)
+			if err != nil {
+				b.Fatalf("failed to create engine: %v", err)
+			}
+			_ = engine.Close()
+		}
+	})
 }
 
 // BenchmarkCommandExecution benchmarks command execution operations.
@@ -402,7 +620,7 @@ func TestPerformanceRegression(t *testing.T) {
 
 		start := time.Now()
 		const iterations = 100
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			_, _, err := session.GetSessionID("")
 			if err != nil {
 				t.Fatalf("failed to generate session ID: %v", err)
@@ -435,10 +653,10 @@ func TestPerformanceRegression(t *testing.T) {
 			ScriptState: make(map[string]map[string]any),
 			SharedState: make(map[string]any),
 		}
-		for i := 0; i < writeIter; i++ {
+		for range writeIter {
 			backend, _ := storage.NewInMemoryBackend(sess.ID)
-			backend.SaveSession(sess)
-			backend.Close()
+			_ = backend.SaveSession(sess)
+			_ = backend.Close()
 		}
 		writeElapsed := time.Since(writeStart)
 		avgWriteUs := writeElapsed.Microseconds() / writeIter
@@ -450,13 +668,13 @@ func TestPerformanceRegression(t *testing.T) {
 		// Read benchmark
 		readStart := time.Now()
 		const readIter = 50
-		for i := 0; i < readIter; i++ {
+		for range readIter {
 			backend, _ := storage.NewInMemoryBackend(sess.ID)
 			loaded, _ := backend.LoadSession(sess.ID)
 			if loaded == nil {
 				t.Fatal("session not found")
 			}
-			backend.Close()
+			_ = backend.Close()
 		}
 		readElapsed := time.Since(readStart)
 		avgReadUs := readElapsed.Microseconds() / readIter
@@ -476,12 +694,12 @@ func TestPerformanceRegression(t *testing.T) {
 		ctx := context.Background()
 		start := time.Now()
 		const iterations = 10
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			rt, err := scripting.NewRuntime(ctx)
 			if err != nil {
 				t.Fatalf("failed to create runtime: %v", err)
 			}
-			rt.Close()
+			_ = rt.Close()
 		}
 
 		elapsed := time.Since(start)
@@ -508,7 +726,7 @@ func TestPerformanceRegression(t *testing.T) {
 		script := `var x = 42; var y = 58; var z = x + y;`
 		start := time.Now()
 		const iterations = 50
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			if err := rt.LoadScript("test.js", script); err != nil {
 				t.Fatalf("failed to load script: %v", err)
 			}
@@ -537,8 +755,8 @@ func TestPerformanceRegression(t *testing.T) {
 			SharedState: make(map[string]any),
 		}
 		backend, _ := storage.NewInMemoryBackend(sess.ID)
-		backend.SaveSession(sess)
-		backend.Close()
+		_ = backend.SaveSession(sess)
+		_ = backend.Close()
 
 		const numGoroutines = 10
 		const iterPerGoroutine = 20
@@ -546,11 +764,9 @@ func TestPerformanceRegression(t *testing.T) {
 		var wg sync.WaitGroup
 		start := time.Now()
 
-		for g := 0; g < numGoroutines; g++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := 0; i < iterPerGoroutine; i++ {
+		for range numGoroutines {
+			wg.Go(func() {
+				for range iterPerGoroutine {
 					backend, err := storage.NewInMemoryBackend(sess.ID)
 					if err != nil {
 						t.Errorf("failed to create backend: %v", err)
@@ -559,17 +775,17 @@ func TestPerformanceRegression(t *testing.T) {
 					loaded, err := backend.LoadSession(sess.ID)
 					if err != nil {
 						t.Errorf("failed to load session: %v", err)
-						backend.Close()
+						_ = backend.Close()
 						return
 					}
 					if loaded == nil {
 						t.Error("session not found")
-						backend.Close()
+						_ = backend.Close()
 						return
 					}
-					backend.Close()
+					_ = backend.Close()
 				}
-			}()
+			})
 		}
 		wg.Wait()
 		elapsed := time.Since(start)
@@ -597,18 +813,18 @@ func TestMemoryUsageRegression(t *testing.T) {
 		runtime.ReadMemStats(&m1)
 
 		const iterations = 100
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			rt, err := scripting.NewRuntime(ctx)
 			if err != nil {
 				t.Fatalf("failed to create runtime: %v", err)
 			}
-			rt.Close()
+			_ = rt.Close()
 		}
 
 		runtime.GC()
 		runtime.ReadMemStats(&m2)
 
-		const maxMemoryIncrease = 100 * 1024 * 1024
+		const maxMemoryIncrease = 200 * 1024 * 1024 // Increased for goja-eventloop adapter (binds Web Platform APIs)
 		memoryIncrease := m2.TotalAlloc - m1.TotalAlloc
 
 		if memoryIncrease > maxMemoryIncrease {
@@ -628,7 +844,7 @@ func TestMemoryUsageRegression(t *testing.T) {
 		runtime.ReadMemStats(&m1)
 
 		const iterations = 100
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			sess := &storage.Session{
 				ID:          "test-session",
 				Version:     storage.CurrentSchemaVersion,
@@ -640,8 +856,8 @@ func TestMemoryUsageRegression(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create backend: %v", err)
 			}
-			backend.SaveSession(sess)
-			backend.Close()
+			_ = backend.SaveSession(sess)
+			_ = backend.Close()
 		}
 
 		runtime.GC()

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -52,7 +52,7 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 		return nil, fmt.Errorf("backend cannot be nil")
 	}
 	if sessionID == "" {
-		return nil, fmt.Errorf("sessionID cannot be empty")
+		return nil, storage.ErrEmptySessionID
 	}
 
 	// Try to load existing session
@@ -72,33 +72,33 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 			CreateTime:  now,
 			UpdateTime:  now,
 			History:     []storage.HistoryEntry{},
-			ScriptState: make(map[string]map[string]interface{}),
-			SharedState: make(map[string]interface{}),
+			ScriptState: make(map[string]map[string]any),
+			SharedState: make(map[string]any),
 		}
 	} else {
 		// Handle schema migration if needed
 		if session.Version != storage.CurrentSchemaVersion {
-			log.Printf("WARNING: Session schema version mismatch. Expected %s, got %s. Starting fresh session.",
-				storage.CurrentSchemaVersion,
-				session.Version)
+			slog.Warn("session schema version mismatch, starting fresh session",
+				"expectedVersion", storage.CurrentSchemaVersion,
+				"gotVersion", session.Version)
 			session = &storage.Session{
 				Version:     storage.CurrentSchemaVersion,
 				ID:          sessionID,
 				CreateTime:  now,
 				UpdateTime:  now,
 				History:     []storage.HistoryEntry{},
-				ScriptState: make(map[string]map[string]interface{}),
-				SharedState: make(map[string]interface{}),
+				ScriptState: make(map[string]map[string]any),
+				SharedState: make(map[string]any),
 			}
 			reinitialized = true
 		}
 
 		// Ensure ScriptState and SharedState are initialized
 		if session.ScriptState == nil {
-			session.ScriptState = make(map[string]map[string]interface{})
+			session.ScriptState = make(map[string]map[string]any)
 		}
 		if session.SharedState == nil {
-			session.SharedState = make(map[string]interface{})
+			session.SharedState = make(map[string]any)
 		}
 	}
 
@@ -205,16 +205,16 @@ func (sm *StateManager) IsSharedSymbol(symbol goja.Value) (string, bool) {
 
 // GetState retrieves a value from the unified state map.
 // Key format: "commandID:localKey" for command-specific, or shared symbol name for shared state.
-func (sm *StateManager) GetState(persistentKey string) (interface{}, bool) {
+func (sm *StateManager) GetState(persistentKey string) (any, bool) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
 	// Ensure maps are initialized
 	if sm.session.ScriptState == nil {
-		sm.session.ScriptState = make(map[string]map[string]interface{})
+		sm.session.ScriptState = make(map[string]map[string]any)
 	}
 	if sm.session.SharedState == nil {
-		sm.session.SharedState = make(map[string]interface{})
+		sm.session.SharedState = make(map[string]any)
 	}
 
 	// Check if this is a shared symbol (no colon prefix)
@@ -245,15 +245,15 @@ func (sm *StateManager) GetState(persistentKey string) (interface{}, bool) {
 // SetState sets a value in the unified state map.
 // Key format: "commandID:localKey" for command-specific, or shared symbol name for shared state.
 // After updating the state, all registered listeners are notified with the changed key.
-func (sm *StateManager) SetState(persistentKey string, value interface{}) {
+func (sm *StateManager) SetState(persistentKey string, value any) {
 	sm.mu.Lock()
 
 	// Ensure maps are initialized
 	if sm.session.ScriptState == nil {
-		sm.session.ScriptState = make(map[string]map[string]interface{})
+		sm.session.ScriptState = make(map[string]map[string]any)
 	}
 	if sm.session.SharedState == nil {
-		sm.session.SharedState = make(map[string]interface{})
+		sm.session.SharedState = make(map[string]any)
 	}
 
 	// Check if this is a shared symbol (no colon prefix)
@@ -279,7 +279,7 @@ func (sm *StateManager) SetState(persistentKey string, value interface{}) {
 	// Get or create command's state map
 	commandState, exists := sm.session.ScriptState[commandID]
 	if !exists {
-		commandState = make(map[string]interface{})
+		commandState = make(map[string]any)
 		sm.session.ScriptState[commandID] = commandState
 	}
 
@@ -299,14 +299,14 @@ func (sm *StateManager) SerializeCompleteState() (json.RawMessage, error) {
 
 	// Ensure maps are initialized
 	if sm.session.ScriptState == nil {
-		sm.session.ScriptState = make(map[string]map[string]interface{})
+		sm.session.ScriptState = make(map[string]map[string]any)
 	}
 	if sm.session.SharedState == nil {
-		sm.session.SharedState = make(map[string]interface{})
+		sm.session.SharedState = make(map[string]any)
 	}
 
 	// Create a wrapper object containing both state zones
-	completeState := map[string]interface{}{
+	completeState := map[string]any{
 		"script": sm.session.ScriptState,
 		"shared": sm.session.SharedState,
 	}
@@ -396,8 +396,8 @@ func (sm *StateManager) ClearAllState() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	sm.session.ScriptState = make(map[string]map[string]interface{})
-	sm.session.SharedState = make(map[string]interface{})
+	sm.session.ScriptState = make(map[string]map[string]any)
+	sm.session.SharedState = make(map[string]any)
 	sm.session.UpdateTime = time.Now()
 }
 
@@ -468,8 +468,8 @@ func (sm *StateManager) ArchiveAndReset() (string, error) {
 	}
 
 	// Step 3: Clear state and reinitialize session
-	sm.session.ScriptState = make(map[string]map[string]interface{})
-	sm.session.SharedState = make(map[string]interface{})
+	sm.session.ScriptState = make(map[string]map[string]any)
+	sm.session.SharedState = make(map[string]any)
 	sm.session.CreateTime = time.Now()
 	sm.session.UpdateTime = time.Now()
 	sm.session.History = []storage.HistoryEntry{}
@@ -500,7 +500,7 @@ func (sm *StateManager) Close() error {
 	// 1. Persist the session before closing
 	if sm.backend != nil {
 		if err := sm.persistSessionInternal(); err != nil {
-			log.Printf("WARNING: Failed to persist session during close: %v", err)
+			slog.Warn("failed to persist session during close", "error", err)
 			persistErr = err // Record error but continue
 		}
 	}

@@ -8,50 +8,128 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/joeycumines/one-shot-man/internal/filepathutil"
 )
 
 const (
 	clipboardTimeout = time.Second * 10
 )
 
+// expandTilde is the underlying function used for tilde expansion.
+// Same-package tests may override this directly for deterministic behavior
+// without relying on os.UserHomeDir's OS-level fallbacks (e.g., getpwuid
+// on Unix) that can succeed even when HOME is blank, causing tests to
+// write to the operator's real home directory.
+var expandTilde = filepathutil.ExpandTilde
+
+// expandTildeOnly expands ~ to the user's home directory but does NOT
+// absolutize non-tilde paths. Tilde-expanded paths are inherently absolute
+// since they resolve to $HOME. Non-tilde paths are returned unchanged.
+// This allows relative paths to be passed directly to os.ReadFile/os.Stat,
+// enabling proper kernel-level path resolution including physical ".."
+// traversal through symlinks.
+// Returns an error if tilde expansion fails.
+func expandTildeOnly(path string) (string, error) {
+	expanded, err := expandTilde(path)
+	if err != nil {
+		return "", fmt.Errorf("tilde expansion failed: %w", err)
+	}
+	return expanded, nil
+}
+
 // Require returns a module loader for `osm:os` that uses the provided base context
 // and a TUI sink for fallback messaging (may be nil).
-func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runtime, module *goja.Object) {
-	return func(runtime *goja.Runtime, module *goja.Object) {
+func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, module *goja.Object) {
+	return func(vm *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
 		// readFile(path: string): { content: string, error: bool, message: string }
+		// Automatically expands ~ to the user's home directory before reading.
 		_ = exports.Set("readFile", func(call goja.FunctionCall) goja.Value {
 			var path string
 			if len(call.Arguments) > 0 {
 				path = call.Argument(0).String()
 			}
 			if path == "" {
-				return runtime.ToValue(map[string]interface{}{"error": true, "message": "empty path", "content": ""})
+				return vm.ToValue(map[string]any{"error": true, "message": "empty path", "content": ""})
 			}
-			data, err := os.ReadFile(path)
+
+			expanded, err := expandTildeOnly(path)
 			if err != nil {
-				return runtime.ToValue(map[string]interface{}{"error": true, "message": err.Error(), "content": ""})
+				return vm.ToValue(map[string]any{"error": true, "message": err.Error(), "content": ""})
 			}
-			return runtime.ToValue(map[string]interface{}{"error": false, "message": "", "content": string(data)})
+
+			data, err := os.ReadFile(expanded)
+			if err != nil {
+				return vm.ToValue(map[string]any{"error": true, "message": err.Error(), "content": ""})
+			}
+			return vm.ToValue(map[string]any{"error": false, "message": "", "content": string(data)})
 		})
 
 		// fileExists(path: string): boolean
+		// Automatically expands ~ to the user's home directory before checking.
 		_ = exports.Set("fileExists", func(call goja.FunctionCall) goja.Value {
 			var path string
 			if len(call.Arguments) > 0 {
 				path = call.Argument(0).String()
 			}
 			if path == "" {
-				return runtime.ToValue(false)
+				return vm.ToValue(false)
 			}
-			_, err := os.Stat(path)
-			return runtime.ToValue(err == nil)
+
+			expanded, err := expandTildeOnly(path)
+			if err != nil {
+				// Tilde expansion failure is NOT "file not found" — it's a
+				// system-level error (corrupted $HOME, missing env vars).
+				// Panicking makes the error explicit and consistent with
+				// isAbsolute's error handling.
+				panic(vm.NewGoError(fmt.Errorf("fileExists: %w", err)))
+			}
+
+			_, err = os.Stat(expanded)
+			return vm.ToValue(err == nil)
+		})
+
+		// isAbsolute(path: string): boolean
+		// Expands ~ to the user's home directory before checking.
+		// Panics on tilde expansion failure to make error handling explicit.
+		_ = exports.Set("isAbsolute", func(call goja.FunctionCall) goja.Value {
+			var path string
+			if len(call.Arguments) > 0 {
+				path = call.Argument(0).String()
+			}
+			if path == "" {
+				return vm.ToValue(false)
+			}
+			// Expand tilde so that ~/foo is treated as absolute (expanded form is absolute).
+			// If expansion fails, panic to make the error explicit instead of silently returning false.
+			// Uses expandTildeOnly for API consistency with writeFile, appendFile, fileExists.
+			expanded, err := expandTildeOnly(path)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("isAbsolute: %w", err)))
+			}
+			return vm.ToValue(filepath.IsAbs(expanded))
+		})
+
+		// join(...paths: string[]): string
+		_ = exports.Set("join", func(call goja.FunctionCall) goja.Value {
+			paths := make([]string, len(call.Arguments))
+			for i, arg := range call.Arguments {
+				if !goja.IsUndefined(arg) && !goja.IsNull(arg) {
+					paths[i] = arg.String()
+				}
+			}
+			return vm.ToValue(filepath.Join(paths...))
+		})
+
+		// platform(): string - returns the operating system (darwin, linux, windows, etc.)
+		_ = exports.Set("platform", func(call goja.FunctionCall) goja.Value {
+			return vm.ToValue(goruntime.GOOS)
 		})
 
 		// openEditor(title, initialContent)
@@ -65,7 +143,7 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 			}
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			return runtime.ToValue(openEditor(ctx, nameHint, initialContent))
+			return vm.ToValue(openEditor(ctx, nameHint, initialContent))
 		})
 
 		// clipboardCopy(text)
@@ -76,27 +154,117 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 			}
 			ctx, cancel := context.WithTimeout(ctx, clipboardTimeout)
 			defer cancel()
-			if err := clipboardCopy(ctx, tuiSink, text); err != nil {
-				panic(runtime.NewGoError(err))
+			if err := ClipboardCopy(ctx, tuiSink, text); err != nil {
+				panic(vm.NewGoError(err))
 			}
 			return goja.Undefined()
+		})
+
+		// clipboardPaste(): string
+		_ = exports.Set("clipboardPaste", func(call goja.FunctionCall) goja.Value {
+			ctx, cancel := context.WithTimeout(ctx, clipboardTimeout)
+			defer cancel()
+			text, err := ClipboardPaste(ctx)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			return vm.ToValue(text)
 		})
 
 		// getenv(key: string): string
 		_ = exports.Set("getenv", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
-				return runtime.ToValue("")
+				return vm.ToValue("")
 			}
-			return runtime.ToValue(os.Getenv(call.Argument(0).String()))
+			return vm.ToValue(os.Getenv(call.Argument(0).String()))
+		})
+
+		// writeFile(path, content, options?): undefined
+		// options: { mode?: number (default 0644), createDirs?: boolean (default false) }
+		// Automatically expands ~ to the user's home directory before writing.
+		// Panics on tilde expansion failure to prevent data loss from silent fallback.
+		_ = exports.Set("writeFile", func(call goja.FunctionCall) goja.Value {
+			path, content, mode, createDirs := parseWriteArgs(vm, call)
+			if path == "" {
+				panic(vm.NewGoError(fmt.Errorf("writeFile: path is required")))
+			}
+			expanded, err := expandTildeOnly(path)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("writeFile: %w", err)))
+			}
+			path = expanded
+			if createDirs {
+				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					panic(vm.NewGoError(fmt.Errorf("writeFile: %w", err)))
+				}
+			}
+			if err := os.WriteFile(path, []byte(content), mode); err != nil {
+				panic(vm.NewGoError(fmt.Errorf("writeFile: %w", err)))
+			}
+			return goja.Undefined()
+		})
+
+		// appendFile(path, content, options?): undefined
+		// options: { mode?: number (default 0644), createDirs?: boolean (default false) }
+		// Automatically expands ~ to the user's home directory before appending.
+		// Panics on tilde expansion failure to prevent data corruption from silent fallback.
+		_ = exports.Set("appendFile", func(call goja.FunctionCall) goja.Value {
+			path, content, mode, createDirs := parseWriteArgs(vm, call)
+			if path == "" {
+				panic(vm.NewGoError(fmt.Errorf("appendFile: path is required")))
+			}
+			resolved, err := expandTildeOnly(path)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
+			}
+			path = resolved
+			if createDirs {
+				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
+				}
+			}
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, mode)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
+			}
+			defer f.Close()
+			if _, err := f.WriteString(content); err != nil {
+				panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
+			}
+			return goja.Undefined()
 		})
 	}
+}
+
+// parseWriteArgs extracts (path, content, mode, createDirs) from writeFile/appendFile calls.
+func parseWriteArgs(vm *goja.Runtime, call goja.FunctionCall) (string, string, os.FileMode, bool) {
+	var path, content string
+	mode := os.FileMode(0644)
+	createDirs := false
+
+	if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+		path = call.Argument(0).String()
+	}
+	if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+		content = call.Argument(1).String()
+	}
+	if len(call.Arguments) > 2 && !goja.IsUndefined(call.Argument(2)) && !goja.IsNull(call.Argument(2)) {
+		opts := call.Argument(2).ToObject(vm)
+		if modeVal := opts.Get("mode"); modeVal != nil && !goja.IsUndefined(modeVal) && !goja.IsNull(modeVal) {
+			mode = os.FileMode(modeVal.ToInteger())
+		}
+		if cdVal := opts.Get("createDirs"); cdVal != nil && !goja.IsUndefined(cdVal) && !goja.IsNull(cdVal) {
+			createDirs = cdVal.ToBoolean()
+		}
+	}
+	return path, content, mode, createDirs
 }
 
 func openEditor(ctx context.Context, nameHint string, initialContent string) string {
 	if nameHint == "" {
 		nameHint = "oneshot"
 	}
-	dir, err := os.MkdirTemp("", "one-shot-man-editor-*")
+	dir, err := os.MkdirTemp("", "osm-editor-*")
 	if err != nil {
 		return initialContent
 	}
@@ -115,7 +283,7 @@ func openEditor(ctx context.Context, nameHint string, initialContent string) str
 		editor = os.Getenv("EDITOR")
 	}
 	var cmd *exec.Cmd
-	switch runtime.GOOS {
+	switch goruntime.GOOS {
 	case "windows":
 		if editor != "" {
 			cmd = exec.CommandContext(ctx, editor, path)
@@ -154,11 +322,15 @@ func openEditor(ctx context.Context, nameHint string, initialContent string) str
 	return string(data)
 }
 
-func clipboardCopy(ctx context.Context, tuiSink func(string), text string) error {
+// ClipboardCopy copies text to the system clipboard using platform-specific
+// utilities (pbcopy on macOS, clip on Windows, xclip/xsel/wl-copy on Linux).
+// If OSM_CLIPBOARD is set, it is used as a custom clipboard command.
+// Falls back to printing via tuiSink if no clipboard tool is available.
+func ClipboardCopy(ctx context.Context, tuiSink func(string), text string) error {
 	// override via OSM_CLIPBOARD
 	if cmdStr := os.Getenv("OSM_CLIPBOARD"); cmdStr != "" {
 		var c *exec.Cmd
-		if runtime.GOOS == "windows" {
+		if goruntime.GOOS == "windows" {
 			c = exec.CommandContext(ctx, "cmd", "/c", cmdStr)
 		} else {
 			c = exec.CommandContext(ctx, "/bin/sh", "-c", cmdStr)
@@ -172,7 +344,7 @@ func clipboardCopy(ctx context.Context, tuiSink func(string), text string) error
 	// platform specific utilities
 	var cmd *exec.Cmd
 
-	switch runtime.GOOS {
+	switch goruntime.GOOS {
 	case "darwin":
 		if _, err := exec.LookPath("pbcopy"); err == nil {
 			cmd = exec.CommandContext(ctx, "pbcopy")
@@ -222,6 +394,68 @@ func clipboardCopy(ctx context.Context, tuiSink func(string), text string) error
 		return nil
 	}
 	return fmt.Errorf("no system clipboard available")
+}
+
+// ClipboardPaste reads text from the system clipboard using platform-specific
+// utilities (pbpaste on macOS, PowerShell on Windows, xclip/xsel/wl-paste on Linux).
+// If OSM_CLIPBOARD_PASTE is set, it is used as a custom clipboard read command.
+func ClipboardPaste(ctx context.Context) (string, error) {
+	// override via OSM_CLIPBOARD_PASTE
+	if cmdStr := os.Getenv("OSM_CLIPBOARD_PASTE"); cmdStr != "" {
+		var c *exec.Cmd
+		if goruntime.GOOS == "windows" {
+			c = exec.CommandContext(ctx, "cmd", "/c", cmdStr)
+		} else {
+			c = exec.CommandContext(ctx, "/bin/sh", "-c", cmdStr)
+		}
+		out, err := c.Output()
+		if err == nil {
+			return string(out), nil
+		}
+	}
+
+	var cmd *exec.Cmd
+
+	switch goruntime.GOOS {
+	case "darwin":
+		if _, err := exec.LookPath("pbpaste"); err == nil {
+			cmd = exec.CommandContext(ctx, "pbpaste")
+		}
+	case "windows":
+		if _, err := exec.LookPath("powershell"); err == nil {
+			cmd = exec.CommandContext(ctx, "powershell", "-command", "Get-Clipboard")
+		}
+	default:
+		if os.Getenv("WAYLAND_DISPLAY") != "" {
+			if _, err := exec.LookPath("wl-paste"); err == nil {
+				cmd = exec.CommandContext(ctx, "wl-paste", "--no-newline")
+			}
+		}
+		if cmd == nil {
+			if _, err := exec.LookPath("termux-clipboard-get"); err == nil {
+				cmd = exec.CommandContext(ctx, "termux-clipboard-get")
+			}
+		}
+		if cmd == nil {
+			if _, err := exec.LookPath("xclip"); err == nil {
+				cmd = exec.CommandContext(ctx, "xclip", "-selection", "clipboard", "-o")
+			}
+		}
+		if cmd == nil {
+			if _, err := exec.LookPath("xsel"); err == nil {
+				cmd = exec.CommandContext(ctx, "xsel", "--clipboard", "--output")
+			}
+		}
+	}
+
+	if cmd != nil {
+		out, err := cmd.Output()
+		if err == nil {
+			return string(out), nil
+		}
+	}
+
+	return "", fmt.Errorf("no system clipboard available for reading")
 }
 
 // sanitizeFilename produces a filesystem-safe portion for temp filenames

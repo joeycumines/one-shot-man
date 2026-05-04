@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/dop251/goja"
@@ -20,6 +21,17 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/argv"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/storage"
+)
+
+const (
+	// writerShutdownTimeout is the maximum time to wait for the writer
+	// goroutine to drain and exit cleanly during TUIManager shutdown.
+	// If exceeded, a goroutine stack trace is dumped to stderr.
+	writerShutdownTimeout = 5 * time.Second
+
+	// goroutineStackBufSize is the buffer size for capturing all goroutine
+	// stacks when diagnosing a stuck writer goroutine.
+	goroutineStackBufSize = 256 * 1024
 )
 
 // extractCommandHistory converts storage.HistoryEntry slice into []string for go-prompt.
@@ -67,20 +79,20 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 	}
 
 	manager := &TUIManager{
-		engine:           engine,
-		ctx:              ctx,
-		modes:            make(map[string]*ScriptMode),
-		commands:         make(map[string]Command),
-		commandOrder:     make([]string, 0),
-		reader:           reader,
-		writer:           writer,
-		prompts:          make(map[string]*prompt.Prompt),
-		completers:       make(map[string]goja.Callable),
-		keyBindings:      make(map[string]goja.Callable),
-		promptCompleters: make(map[string]string),
-		writerQueue:      make(chan writeTask, 64),
-		writerStop:       make(chan struct{}),
-		writerDone:       make(chan struct{}),
+		engine:               engine,
+		ctx:                  ctx,
+		modes:                make(map[string]*ScriptMode),
+		commands:             make(map[string]Command),
+		reader:               reader,
+		writer:               writer,
+		prompts:              make(map[string]*prompt.Prompt),
+		completers:           make(map[string]goja.Callable),
+		keyBindings:          make(map[string]goja.Callable),
+		promptCompleters:     make(map[string]string),
+		promptHistoryConfigs: make(map[string]historyConfig),
+		writerQueue:          make(chan writeTask, 64),
+		writerStop:           make(chan struct{}),
+		writerDone:           make(chan struct{}),
 		defaultColors: PromptColors{
 			// Choose a readable default for input that is not yellow/white-adjacent
 			InputText:               prompt.Green,
@@ -110,7 +122,7 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 		if store == memoryBackend {
 			panic(err)
 		}
-		_, _ = fmt.Fprintf(output, "Warning: Failed to initialize state persistence (session %q): %v\n", actualSessionID, err)
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: Failed to initialize state persistence (session %q): %v\n", actualSessionID, err)
 		stateManager, err = initializeStateManager(actualSessionID, memoryBackend)
 		if err != nil {
 			panic(err)
@@ -173,36 +185,6 @@ func (tm *TUIManager) runWriter() {
 	}
 }
 
-// scheduleWrite queues a mutation task to be executed by the writer goroutine.
-// The task runs under tm.mu.Lock(). This method returns immediately without waiting
-// for the task to complete (fire-and-forget semantics).
-//
-// Use this for mutations where the caller does not need to know the result.
-// For mutations that must complete before proceeding, use scheduleWriteAndWait.
-//
-// IMPORTANT: This is the ONLY safe way for JS callbacks to perform mutations.
-// Never acquire tm.mu.Lock() directly from code called by JS.
-//
-// Uses queueMu to prevent the "check-then-send" race condition during shutdown.
-// CRITICAL: We unlock BEFORE the select to prevent deadlock when queue is full.
-func (tm *TUIManager) scheduleWrite(fn func() error) {
-	tm.queueMu.Lock()
-	if tm.writerShutdown.IsSet() {
-		tm.queueMu.Unlock()
-		return
-	}
-	tm.queueMu.Unlock() // Unlock BEFORE select to prevent deadlock
-
-	// We can safely send because writerQueue is never closed.
-	// The select on writerStop handles the race where shutdown happens after unlock.
-	task := writeTask{fn: fn, resultCh: nil}
-	select {
-	case tm.writerQueue <- task:
-	case <-tm.writerStop:
-		// Writer has shut down, drop the task safely
-	}
-}
-
 // scheduleWriteAndWait queues a mutation task and waits for it to complete.
 // The task runs under tm.mu.Lock(). This method blocks until the task finishes.
 //
@@ -262,8 +244,22 @@ func (tm *TUIManager) stopWriter() {
 	}
 	tm.queueMu.Unlock()
 
-	// 3. Wait for writer to finish current task and cleanup
-	<-tm.writerDone
+	// 3. Wait for writer to finish current task and cleanup, with timeout.
+	// If the writer goroutine is stuck (e.g., in a blocking task), waiting
+	// indefinitely would hang the entire process on exit. A 5-second timeout
+	// ensures the process always terminates, logging a diagnostic stack trace
+	// so the root cause can be investigated.
+	timer := time.NewTimer(writerShutdownTimeout)
+	defer timer.Stop()
+	select {
+	case <-tm.writerDone:
+		// Writer exited cleanly.
+	case <-timer.C:
+		// Writer goroutine is stuck. Dump all goroutine stacks for diagnosis.
+		buf := make([]byte, goroutineStackBufSize)
+		n := runtime.Stack(buf, true)
+		_, _ = fmt.Fprintf(os.Stderr, "WARNING: stopWriter timed out after %s waiting for writer goroutine.\nGoroutine dump:\n%s\n", writerShutdownTimeout, buf[:n])
+	}
 }
 
 // RegisterMode registers a new script mode.
@@ -390,7 +386,8 @@ func (tm *TUIManager) RegisterCommand(cmd Command) {
 	tm.commands[cmd.Name] = cmd
 }
 
-// ExecuteCommand executes a command by name.
+// ExecuteCommand executes a command by name. Returns
+// [ErrCommandNotFound] when no command matches `name`.
 func (tm *TUIManager) ExecuteCommand(name string, args []string) error {
 	tm.mu.RLock()
 
@@ -410,7 +407,7 @@ func (tm *TUIManager) ExecuteCommand(name string, args []string) error {
 	tm.mu.RUnlock()
 
 	if !exists {
-		return fmt.Errorf("command %s not found", name)
+		return fmt.Errorf("%w: %s", ErrCommandNotFound, name)
 	}
 
 	return tm.executeCommand(cmd, args)
@@ -473,12 +470,35 @@ func (tm *TUIManager) buildModeCommands(mode *ScriptMode) error {
 			}
 		}
 
+		var flagDefs []FlagDef
+		if fdVal := cmdObj.Get("flagDefs"); fdVal != nil && !goja.IsUndefined(fdVal) {
+			if fdObj := fdVal.ToObject(tm.engine.vm); fdObj != nil {
+				for _, k := range fdObj.Keys() {
+					if v := fdObj.Get(k); v != nil && !goja.IsUndefined(v) {
+						if itemObj := v.ToObject(tm.engine.vm); itemObj != nil {
+							var fd FlagDef
+							if nameVal := itemObj.Get("name"); nameVal != nil && !goja.IsUndefined(nameVal) {
+								fd.Name = nameVal.String()
+							}
+							if descVal := itemObj.Get("description"); descVal != nil && !goja.IsUndefined(descVal) {
+								fd.Description = descVal.String()
+							}
+							if fd.Name != "" {
+								flagDefs = append(flagDefs, fd)
+							}
+						}
+					}
+				}
+			}
+		}
+
 		cmd := Command{
 			Name:          key,
 			Description:   desc,
 			Usage:         usage,
 			IsGoCommand:   false,
 			ArgCompleters: argCompleters,
+			FlagDefs:      flagDefs,
 		}
 
 		if handlerVal := cmdObj.Get("handler"); handlerVal != nil && !goja.IsUndefined(handlerVal) {
@@ -494,9 +514,14 @@ func (tm *TUIManager) buildModeCommands(mode *ScriptMode) error {
 }
 
 // executeCommand handles the actual command execution.
-func (tm *TUIManager) executeCommand(cmd Command, args []string) error {
+func (tm *TUIManager) executeCommand(cmd Command, args []string) (execErr error) {
 	if cmd.IsGoCommand {
-		// Handle Go function
+		// Handle Go function with panic protection.
+		defer func() {
+			if r := recover(); r != nil {
+				execErr = fmt.Errorf("command panicked: %v", r)
+			}
+		}()
 		if fn, ok := cmd.Handler.(func([]string) error); ok {
 			return fn(args)
 		} else if fn, ok := cmd.Handler.(func(*TUIManager, []string) error); ok {
@@ -504,88 +529,171 @@ func (tm *TUIManager) executeCommand(cmd Command, args []string) error {
 		}
 		return fmt.Errorf("invalid Go command handler for %s", cmd.Name)
 	} else {
-		// Handle JavaScript function; temporarily expose a minimal ctx.
-		//
-		// Ensure we restore the previous context object after execution...
-		parentCtxObj := tm.engine.vm.Get(jsGlobalContextName)
-		defer tm.engine.vm.Set(jsGlobalContextName, parentCtxObj)
-		// ... then set up a new execution context for this command.
-		execCtx := &ExecutionContext{engine: tm.engine, name: "cmd:" + cmd.Name}
-		if err := tm.engine.setExecutionContext(execCtx); err != nil {
-			// Treat as fatal: we cannot safely execute the command without ctx
-			panic(fmt.Sprintf("unrecoverable error setting command execution context: %v", err))
+		if tm.engine == nil || tm.engine.Loop() == nil {
+			return fmt.Errorf("javascript runtime unavailable for %s", cmd.Name)
 		}
 
-		// Convert args to JavaScript array
-		argsJS := tm.engine.vm.NewArray()
-		for i, arg := range args {
-			_ = argsJS.Set(strconv.Itoa(i), arg)
-		}
+		done := make(chan error, 1)
+		submitErr := tm.engine.Loop().Submit(func() {
+			vm := tm.engine.Runtime()
+			if vm == nil {
+				done <- fmt.Errorf("javascript runtime unavailable for %s", cmd.Name)
+				return
+			}
 
-		// Execute the command handler with panic protection, then run defers.
-		// Note: State is accessed via closure from the commands builder function,
-		// so we don't inject it here (removing redundant code).
-		var execErr error
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					execErr = fmt.Errorf("command panicked: %v", r)
-				}
-			}()
+			// Temporarily expose a command-scoped ctx and restore it after completion.
+			parentCtxObj := vm.Get(jsGlobalContextName)
+			defer vm.Set(jsGlobalContextName, parentCtxObj)
+
+			execCtx := &ExecutionContext{engine: tm.engine, name: "cmd:" + cmd.Name}
+			if err := tm.engine.setExecutionContext(execCtx); err != nil {
+				done <- fmt.Errorf("unrecoverable error setting command execution context: %w", err)
+				return
+			}
+
+			// Convert args to JavaScript array.
+			argsJS := vm.NewArray()
+			for i, arg := range args {
+				_ = argsJS.Set(strconv.Itoa(i), arg)
+			}
+
+			var handlerCallable goja.Callable
 			switch handler := cmd.Handler.(type) {
 			case goja.Callable:
-				_, execErr = handler(goja.Undefined(), argsJS)
+				handlerCallable = handler
 			case func(goja.FunctionCall) goja.Value:
-				// Create a function call with the arguments
-				call := goja.FunctionCall{
-					This:      goja.Undefined(),
-					Arguments: []goja.Value{argsJS},
+				handlerCallable = func(this goja.Value, argv ...goja.Value) (goja.Value, error) {
+					call := goja.FunctionCall{This: this, Arguments: argv}
+					return handler(call), nil
 				}
-				handler(call)
 			default:
-				// Try to call it as a general function
-				if tm.engine != nil && tm.engine.vm != nil {
-					val := tm.engine.vm.ToValue(handler)
-					if callable, ok := goja.AssertFunction(val); ok {
-						_, execErr = callable(goja.Undefined(), argsJS)
-						return
+				val := vm.ToValue(handler)
+				if callable, ok := goja.AssertFunction(val); ok {
+					handlerCallable = callable
+				} else {
+					done <- fmt.Errorf("invalid JavaScript command handler for %s: %T", cmd.Name, handler)
+					return
+				}
+			}
+
+			finalized := false
+			finalize := func(execErr error) {
+				if finalized {
+					return
+				}
+				finalized = true
+
+				dErr := func() (err error) {
+					defer func() {
+						if r := recover(); r != nil {
+							err = fmt.Errorf("deferred panic: %v", r)
+						}
+					}()
+					return execCtx.runDeferred()
+				}()
+				if dErr != nil {
+					if execErr != nil {
+						execErr = fmt.Errorf("%w; deferred error: %w", execErr, dErr)
+					} else {
+						execErr = dErr
 					}
 				}
-				execErr = fmt.Errorf("invalid JavaScript command handler for %s: %T", cmd.Name, handler)
-			}
-		}()
 
-		// Always run deferred functions collected by execCtx
-		// runDeferred is expected to recover its deferred panics, but guard
-		// again at this callsite so any unexpected panic is converted into
-		// an error rather than bringing down the whole TUI manager.
-		dErr := func() (err error) {
-			defer func() {
-				if r := recover(); r != nil {
-					err = fmt.Errorf("deferred panic: %v", r)
+				if execErr == nil {
+					tm.captureHistorySnapshot(cmd.Name, args)
 				}
+				done <- execErr
+			}
+
+			var (
+				result  goja.Value
+				callErr error
+			)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						callErr = fmt.Errorf("command panicked: %v", r)
+					}
+				}()
+				result, callErr = handlerCallable(goja.Undefined(), argsJS)
 			}()
-			return execCtx.runDeferred()
-		}()
-		if dErr != nil {
-			if execErr != nil {
-				execErr = fmt.Errorf("%v; deferred error: %v", execErr, dErr)
-			} else {
-				execErr = dErr
+			if callErr != nil {
+				finalize(callErr)
+				return
+			}
+
+			if result == nil || goja.IsUndefined(result) || goja.IsNull(result) {
+				finalize(nil)
+				return
+			}
+			obj := result.ToObject(vm)
+			if obj == nil {
+				finalize(nil)
+				return
+			}
+			thenProp := obj.Get("then")
+			thenFn, ok := goja.AssertFunction(thenProp)
+			if !ok {
+				finalize(nil)
+				return
+			}
+
+			// Promise-like return value: wait for settlement before completing
+			// command execution so async handlers don't stop after the first await.
+			onFulfilled := vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				finalize(nil)
+				return goja.Undefined()
+			})
+			onRejected := vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				reason := call.Argument(0)
+				finalize(fmt.Errorf("promise rejected: %v", reason.Export()))
+				return goja.Undefined()
+			})
+			if _, err := thenFn(result, onFulfilled, onRejected); err != nil {
+				finalize(err)
+			}
+		})
+		if submitErr != nil {
+			return submitErr
+		}
+
+		if err := <-done; err != nil {
+			return err
+		}
+
+		// If the command started a BubbleTea program (via non-blocking
+		// tea.run()), block the REPL goroutine until it exits. Without
+		// this, the go-prompt REPL resumes immediately while BubbleTea
+		// is still running, fighting for terminal input.
+		if mgr := tm.engine.BubbleteaManager(); mgr != nil {
+			if waitErr := mgr.WaitForProgram(); waitErr != nil {
+				return waitErr
+			}
+
+			// Execute post-BubbleTea exit callback (same mechanism as
+			// engine_core.go — deferred exit/shell decisions). This is
+			// needed because REPL commands go through executeCommand,
+			// not ExecuteScript.
+			if cbErr := tm.engine.executeOnLoop(func(vm *goja.Runtime) error {
+				cb := vm.Get("__postBubbleTeaExit")
+				if cb == nil || goja.IsUndefined(cb) || goja.IsNull(cb) {
+					return nil
+				}
+				vm.Set("__postBubbleTeaExit", goja.Undefined())
+				if fn, ok := goja.AssertFunction(cb); ok {
+					if _, err := fn(goja.Undefined()); err != nil {
+						return fmt.Errorf("post-BubbleTea exit callback failed: %w", err)
+					}
+				}
+				return nil
+			}); cbErr != nil {
+				return cbErr
 			}
 		}
 
-		// Capture history snapshot after successful command execution
-		if execErr == nil {
-			tm.captureHistorySnapshot(cmd.Name, args)
-		}
-
-		return execErr
+		return nil
 	}
 }
-
-// OLD API - REMOVED: GetState and SetState are replaced by StateAccessor
-// Use the { state } injection pattern in command handlers instead
 
 // ListModes returns a list of all registered modes.
 func (tm *TUIManager) ListModes() []string {
@@ -637,7 +745,27 @@ func (tm *TUIManager) Run() {
 	})
 	// Flush any pending output (e.g., from onEnter) before starting prompt
 	tm.flushQueuedOutput()
-	tm.runAdvancedPrompt()
+
+	// Check if script wants to skip the REPL (e.g., after BubbleTea TUI exits in non-interactive mode).
+	// Scripts can set globalThis.__skipREPL = true in __postBubbleTeaExit to prevent REPL launch.
+	skipREPL := false
+	if tm.engine.vm != nil {
+		if skipVal := tm.engine.vm.Get("__skipREPL"); skipVal != nil && !goja.IsUndefined(skipVal) {
+			skipREPL = skipVal.ToBoolean()
+		}
+	}
+
+	// Use Promisify to keep the event loop alive while the shell is active.
+	// This ensures that WithAutoExit(true) won't terminate the loop while
+	// the user is interacting with the prompt.
+	tm.engine.Promisify(context.Background(), func(_ context.Context) (any, error) {
+		if skipREPL {
+			// Script requested REPL skip - just return without launching prompt.
+			return nil, nil
+		}
+		tm.runAdvancedPrompt()
+		return nil, nil
+	})
 }
 
 // runAdvancedPrompt runs a go-prompt instance with default configuration.
@@ -651,18 +779,78 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		return suggestions, istrings.RuneNumber(start), istrings.RuneNumber(end)
 	}
 
+	// Read multiline setting from the current mode (if any)
+	var multiline bool
+	if tm.currentMode != nil {
+		tm.currentMode.mu.RLock()
+		multiline = tm.currentMode.Multiline
+		tm.currentMode.mu.RUnlock()
+	}
+
+	p := tm.buildGoPrompt(promptBuildConfig{
+		prefixCallback:          func() string { return tm.getPromptString() },
+		colors:                  tm.defaultColors,
+		completer:               completer,
+		initialCommand:          tm.getInitialCommand(),
+		history:                 tm.commandHistory,
+		flushOutput:             true,
+		maxSuggestion:           10,
+		dynamicCompletion:       true,
+		executeHidesCompletions: true,
+		escapeToggle:            true,
+		multiline:               multiline,
+	})
+
+	// Store as active prompt
+	tm.mu.Lock()
+	tm.activePrompt = p
+	tm.mu.Unlock()
+
+	// Run the prompt (this will block until exit).
+	// Use RunNoExit to prevent go-prompt from calling os.Exit on SIGTERM.
+	p.RunNoExit()
+
+	// Clear active prompt when done
+	tm.mu.Lock()
+	tm.activePrompt = nil
+	tm.mu.Unlock()
+}
+
+// buildGoPrompt constructs a go-prompt instance from a promptBuildConfig.
+// This is the shared builder used by both runAdvancedPrompt (registerMode path)
+// and jsCreatePrompt (low-level JS API path) to ensure consistent feature support.
+func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 	// Create the executor function.
 	// When executor returns false, signal the exit checker to terminate the prompt.
 	// We do NOT call os.Exit here - exit is handled gracefully via ExitChecker.
 	executor := func(line string) {
-		// Drain any pending output before executing the command
-		tm.flushQueuedOutput()
+		if cfg.flushOutput {
+			tm.flushQueuedOutput()
+		}
+
+		// During command execution, bypass the output queue and write
+		// directly to the terminal. go-prompt is not rendering while the
+		// executor is running, so direct writes are safe and ensure the
+		// user sees output immediately (critical for long-running async
+		// pipeline commands like auto-split). This also ensures ANSI
+		// escape codes reach the terminal unmangled.
+		tm.engine.logger.SetTUISink(nil)
+
 		if !tm.executor(line) {
 			// Signal the prompt to exit via ExitChecker mechanism
 			tm.RequestExit()
 		}
-		// Flush any queued output synchronously after executing a line
-		tm.flushQueuedOutput()
+
+		// Restore output queuing for the prompt rendering cycle.
+		tm.engine.logger.SetTUISink(func(msg string) {
+			tm.outputMu.Lock()
+			tm.outputQueue = append(tm.outputQueue, msg)
+			tm.outputMu.Unlock()
+		})
+
+		if cfg.flushOutput {
+			tm.flushQueuedOutput()
+		}
 	}
 
 	// Create the exit checker that allows the prompt to exit when requested.
@@ -671,16 +859,16 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		return tm.IsExitRequested()
 	}
 
-	// Configure prompt options - full configuration for go-prompt
-	colors := tm.defaultColors
+	colors := cfg.colors
+
+	// Configure prompt options
 	options := []prompt.Option{
-		// Use a callback so the prompt prefix is evaluated at render time.
-		// This ensures the prefix reflects any changes made by an `initialCommand`.
-		prompt.WithPrefixCallback(func() string { return tm.getPromptString() }),
-		prompt.WithCompleter(completer),
-		prompt.WithExitChecker(exitChecker), // Allow graceful exit via RequestExit()
+		prompt.WithCompleter(cfg.completer),
+		prompt.WithExitChecker(exitChecker),
 		prompt.WithInputTextColor(colors.InputText),
+		prompt.WithInputBGColor(colors.InputBG),
 		prompt.WithPrefixTextColor(colors.PrefixText),
+		prompt.WithPrefixBackgroundColor(colors.PrefixBG),
 		prompt.WithSuggestionTextColor(colors.SuggestionText),
 		prompt.WithSuggestionBGColor(colors.SuggestionBG),
 		prompt.WithSelectedSuggestionTextColor(colors.SelectedSuggestionText),
@@ -689,16 +877,43 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		prompt.WithDescriptionBGColor(colors.DescriptionBG),
 		prompt.WithSelectedDescriptionTextColor(colors.SelectedDescriptionText),
 		prompt.WithSelectedDescriptionBGColor(colors.SelectedDescriptionBG),
-		prompt.WithMaxSuggestion(10),
-		prompt.WithDynamicCompletion(true),
-		// Enable auto-hiding completions when submitting input
-		prompt.WithExecuteHidesCompletions(true),
-		// Bind Escape key to toggle completion visibility
-		prompt.WithKeyBindings(
+		prompt.WithScrollbarThumbColor(colors.ScrollbarThumb),
+		prompt.WithScrollbarBGColor(colors.ScrollbarBG),
+	}
+
+	// Prefix: prefer callback over static
+	if cfg.prefixCallback != nil {
+		options = append(options, prompt.WithPrefixCallback(cfg.prefixCallback))
+	} else {
+		options = append(options, prompt.WithPrefix(cfg.prefix))
+	}
+
+	// Title (optional - only set when non-empty)
+	if cfg.title != "" {
+		options = append(options, prompt.WithTitle(cfg.title))
+	}
+
+	// MaxSuggestion (0 uses go-prompt default)
+	if cfg.maxSuggestion > 0 {
+		options = append(options, prompt.WithMaxSuggestion(cfg.maxSuggestion))
+	}
+
+	// Dynamic completion
+	if cfg.dynamicCompletion {
+		options = append(options, prompt.WithDynamicCompletion(true))
+	}
+
+	// Auto-hiding completions when submitting input
+	if cfg.executeHidesCompletions {
+		options = append(options, prompt.WithExecuteHidesCompletions(true))
+	}
+
+	// Bind Escape key to toggle completion visibility
+	if cfg.escapeToggle {
+		options = append(options, prompt.WithKeyBindings(
 			prompt.KeyBind{
 				Key: prompt.Escape,
 				Fn: func(p *prompt.Prompt) bool {
-					// Toggle: if hidden, show; if visible, hide
 					if p.Completion().IsHidden() {
 						p.Completion().Show()
 					} else {
@@ -707,27 +922,78 @@ func (tm *TUIManager) runAdvancedPrompt() {
 					return true
 				},
 			},
-		),
+		))
 	}
 
-	if initialCommand := tm.getInitialCommand(); initialCommand != "" {
-		options = append(options, prompt.WithInitialCommand(initialCommand, false))
+	// Initial command (optional)
+	if cfg.initialCommand != "" {
+		options = append(options, prompt.WithInitialCommand(cfg.initialCommand, false))
 	}
 
-	// this enables the sync protocol when built with the `integration` build tag
-	options = append(options, staticGoPromptOptions...)
+	// Initial text pre-fills the input buffer (optional)
+	if cfg.initialText != "" {
+		options = append(options, prompt.WithInitialText(cfg.initialText))
+	}
+
+	// Show completion dropdown immediately on prompt start
+	if cfg.showCompletionAtStart {
+		options = append(options, prompt.WithShowCompletionAtStart())
+	}
+
+	// Allow Down arrow to trigger completion dropdown
+	if cfg.completionOnDown {
+		options = append(options, prompt.WithCompletionOnDown())
+	}
+
+	// Key binding mode (emacs or common)
+	switch strings.ToLower(cfg.keyBindMode) {
+	case "emacs":
+		options = append(options, prompt.WithKeyBindMode(prompt.EmacsKeyBind))
+	case "common":
+		options = append(options, prompt.WithKeyBindMode(prompt.CommonKeyBind))
+	}
+
+	// Completion word separator (empty uses go-prompt default: space only)
+	if cfg.completionWordSeparator != "" {
+		options = append(options, prompt.WithCompletionWordSeparator(cfg.completionWordSeparator))
+	}
+
+	// Indent size for multiline input (0 uses go-prompt default: 2)
+	if cfg.indentSize > 0 {
+		options = append(options, prompt.WithIndentSize(cfg.indentSize))
+	}
+
+	// Enable the sync protocol when OSM_SYNC_PROTOCOL=1 (for E2E test builds).
+	options = append(options, goPromptSyncOptions()...)
 
 	// CRITICAL: Inject the shared reader/writer into go-prompt.
-	// This ensures go-prompt uses the same terminal I/O as bubbletea and tview,
+	// This ensures go-prompt uses the same terminal I/O as bubbletea,
 	// preventing conflicts over stdin and ensuring proper terminal state cleanup.
 	options = append(options,
 		prompt.WithReader(tm.reader),
 		prompt.WithWriter(tm.writer),
 	)
 
-	// Add command history from persistent session
-	if len(tm.commandHistory) > 0 {
-		options = append(options, prompt.WithHistory(tm.commandHistory))
+	// Add command history
+	if len(cfg.history) > 0 {
+		options = append(options, prompt.WithHistory(cfg.history))
+	}
+	if cfg.historySize > 0 {
+		options = append(options, prompt.WithHistorySize(cfg.historySize))
+	}
+
+	// Multiline support: Alt+Enter inserts a newline into the buffer
+	if cfg.multiline {
+		altEnterNewLine := func(p *prompt.Prompt) bool {
+			p.Buffer().NewLine(p.TerminalColumns(), p.TerminalRows(), false)
+			return true
+		}
+		options = append(options, prompt.WithASCIICodeBind(
+			// ESC + CR: most POSIX terminals
+			prompt.ASCIICodeBind{ASCIICode: []byte{0x1b, 0x0d}, Fn: altEnterNewLine},
+			// ESC + LF: some terminals
+			prompt.ASCIICodeBind{ASCIICode: []byte{0x1b, 0x0a}, Fn: altEnterNewLine},
+		))
 	}
 
 	// Add any registered key bindings
@@ -735,21 +1001,7 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		options = append(options, prompt.WithKeyBind(keyBinds...))
 	}
 
-	// Create and run the prompt
-	p := prompt.New(executor, options...)
-
-	// Store as active prompt
-	tm.mu.Lock()
-	tm.activePrompt = p
-	tm.mu.Unlock()
-
-	// Run the prompt (this will block until exit)
-	p.Run()
-
-	// Clear active prompt when done
-	tm.mu.Lock()
-	tm.activePrompt = nil
-	tm.mu.Unlock()
+	return prompt.New(executor, options...)
 }
 
 // flushQueuedOutput writes any buffered output messages to the terminal
@@ -776,7 +1028,7 @@ func (tm *TUIManager) flushQueuedOutput() {
 // They bridge the gap between Go tests and the Symbol-based state system.
 
 // SetStateForTest sets a state value using a persistent string key (for testing only).
-func (tm *TUIManager) SetStateForTest(persistentKey string, value interface{}) error {
+func (tm *TUIManager) SetStateForTest(persistentKey string, value any) error {
 	if tm.stateManager == nil {
 		return fmt.Errorf("state manager not initialized")
 	}
@@ -785,7 +1037,7 @@ func (tm *TUIManager) SetStateForTest(persistentKey string, value interface{}) e
 }
 
 // GetStateForTest retrieves a state value using a persistent string key (for testing only).
-func (tm *TUIManager) GetStateForTest(persistentKey string) (interface{}, error) {
+func (tm *TUIManager) GetStateForTest(persistentKey string) (any, error) {
 	if tm.stateManager == nil {
 		return nil, fmt.Errorf("state manager not initialized")
 	}
@@ -819,7 +1071,7 @@ func (tm *TUIManager) captureHistorySnapshot(commandName string, commandArgs []s
 	// Serialize the complete state (both script and shared zones)
 	stateJSON, err := tm.stateManager.SerializeCompleteState()
 	if err != nil {
-		log.Printf("WARNING: Failed to serialize state for snapshot: %v", err)
+		slog.Warn("failed to serialize state for snapshot", "error", err)
 		stateJSON = json.RawMessage("{}")
 	}
 
@@ -834,15 +1086,6 @@ func (tm *TUIManager) captureHistorySnapshot(commandName string, commandArgs []s
 // These methods provide test-only access to state through the Symbol registry.
 // Unlike the removed tui.getState/setState production APIs, these are explicitly
 // test-only and use the same Symbol lookup mechanism that production code uses.
-
-// GetStateViaJS and SetStateViaJS - DEPRECATED aliases for backward compatibility with old tests
-func (tm *TUIManager) GetStateViaJS(persistentKey string) (interface{}, error) {
-	return tm.GetStateForTest(persistentKey)
-}
-
-func (tm *TUIManager) SetStateViaJS(persistentKey string, value interface{}) error {
-	return tm.SetStateForTest(persistentKey, value)
-}
 
 // TriggerExit programmatically stops the prompt for graceful shutdown.
 func (tm *TUIManager) TriggerExit() {
@@ -956,16 +1199,16 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 	}
 
 	// Convert to the expected format
-	var items []map[string]interface{}
+	var items []map[string]any
 
 	// Handle different possible types
 	switch v := contextItemsRaw.(type) {
-	case []map[string]interface{}:
+	case []map[string]any:
 		items = v
-	case []interface{}:
+	case []any:
 		// Convert each element
 		for _, item := range v {
-			if itemMap, ok := item.(map[string]interface{}); ok {
+			if itemMap, ok := item.(map[string]any); ok {
 				items = append(items, itemMap)
 			}
 		}
@@ -975,7 +1218,7 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 	}
 
 	// Iterate through items and re-populate ContextManager with file-type entries
-	var validItems []interface{}
+	var validItems []any
 	stateChanged := false
 	var restoredFiles int
 
@@ -984,7 +1227,7 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 		// structure returned from the StateManager. Modifying the original
 		// can leave the in-memory store in a partially-modified state when
 		// early returns or errors occur.
-		item := make(map[string]interface{}, len(srcItem))
+		item := make(map[string]any, len(srcItem))
 		for k, v := range srcItem {
 			item[k] = v
 		}
@@ -1004,8 +1247,9 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 			// POSIX filenames that include backslashes ("foo\bar.txt") which
 			// are legal on Linux/macOS and must not be silently converted to
 			// directory separators.
-			// Attempt to re-add using the stored label. AddRelativePath now
-			// returns the canonical owner key used by the backend so we can
+			// Attempt to re-add using the stored label. AddRelativePath
+			// returns a display label (the original tilde form for tilde
+			// inputs, or the normalized owner key otherwise) so we can
 			// update the in-memory TUI state to keep labels in sync.
 			owner, err := tm.engine.contextManager.AddRelativePath(label)
 
@@ -1039,7 +1283,7 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 			// Only attempt normalization if the original error indicates the
 			// file truly does not exist. Do not mask permission/IO errors.
 			// Note: err is guaranteed non-nil here since we returned early above on success.
-			if (os.IsNotExist(err) || errors.Is(err, os.ErrNotExist)) && runtime.GOOS != "windows" && strings.Contains(label, "\\") {
+			if errors.Is(err, os.ErrNotExist) && runtime.GOOS != "windows" && strings.Contains(label, "\\") {
 				normalizedLabel := strings.ReplaceAll(label, "\\", "/")
 				normalized := filepath.Clean(filepath.FromSlash(normalizedLabel))
 				owner2, err2 := tm.engine.contextManager.AddRelativePath(normalized)
@@ -1061,7 +1305,7 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 
 			// Handle error (err is guaranteed non-nil here since we returned early on success)
 			// If the file no longer exists, log it and remove from state
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				_, _ = fmt.Fprintf(tm.writer, "Info: file from previous session not found, removing: %s\n", label)
 				stateChanged = true
 				continue

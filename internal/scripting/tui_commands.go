@@ -1,11 +1,17 @@
 package scripting
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/dop251/goja"
 )
+
+// ErrCommandNotFound is returned by [TUIManager.ExecuteCommand] when no
+// command with the given name exists in either the active mode or the
+// global command registry.
+var ErrCommandNotFound = errors.New("command not found")
 
 // executor handles command execution.
 func (tm *TUIManager) executor(input string) bool {
@@ -39,12 +45,17 @@ func (tm *TUIManager) executor(input string) bool {
 
 	// Try to execute command
 	if err := tm.ExecuteCommand(cmdName, args); err != nil {
-		// If not a command, try to execute as JavaScript in current mode
-		if tm.currentMode != nil {
-			tm.executeJavaScript(input)
+		if errors.Is(err, ErrCommandNotFound) {
+			// Command not found — try JavaScript execution in current mode
+			if tm.currentMode != nil {
+				tm.executeJavaScript(input)
+			} else {
+				_, _ = fmt.Fprintf(tm.writer, "Command not found: %s\n", cmdName)
+				_, _ = fmt.Fprintln(tm.writer, "Type 'help' for available commands or switch to a mode to execute JavaScript")
+			}
 		} else {
-			_, _ = fmt.Fprintf(tm.writer, "Command not found: %s\n", cmdName)
-			_, _ = fmt.Fprintln(tm.writer, "Type 'help' for available commands or switch to a mode to execute JavaScript")
+			// Command was found but the handler itself returned an error
+			_, _ = fmt.Fprintf(tm.writer, "Error: %v\n", err)
 		}
 	}
 	return true

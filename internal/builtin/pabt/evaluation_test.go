@@ -221,7 +221,7 @@ func TestExprCondition_ThreadSafety(t *testing.T) {
 	var wg sync.WaitGroup
 	var trueCount, falseCount atomic.Int64
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(val int) {
 			defer wg.Done()
@@ -497,7 +497,7 @@ func TestJSCondition_Match_ErrorCases_H8(t *testing.T) {
 		}
 
 		// Run multiple times to ensure consistency
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			result := cond.Match("test")
 			require.False(t, result, "Iteration %d: nil matcher should return false", i)
 		}

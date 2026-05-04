@@ -8,6 +8,351 @@ import (
 	"testing"
 )
 
+func TestAddRelativePath_BackslashTildeHomeFallbackCanonicalizesToAbsoluteOwnerOnPOSIX(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	homeDir := filepath.Join(fakeHome, "docs")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	homeFile := filepath.Join(homeDir, "notes.txt")
+	if err := os.WriteFile(homeFile, []byte("home-notes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const origLabel = `~\docs\notes.txt`
+
+	returnedLabel, err := cm.AddRelativePath(origLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", origLabel, err)
+	}
+
+	if returnedLabel != origLabel {
+		t.Fatalf("AddRelativePath(%q) returned %q, want orig", origLabel, returnedLabel)
+	}
+
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false; paths: %v", returnedLabel, cm.ListPaths())
+	}
+	if cp.Type != "file" {
+		t.Fatalf("GetPath(%q) type = %q, want %q", returnedLabel, cp.Type, "file")
+	}
+	if cp.Content != "home-notes" {
+		t.Fatalf("GetPath(%q) content = %q, want %q", returnedLabel, cp.Content, "home-notes")
+	}
+}
+
+func TestAddRelativePath_BackslashTildeNormalizedBaseProbeCanonicalizesOnPOSIX(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+
+	targetDir := filepath.Join(base, "~", "docs")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	targetFile := filepath.Join(targetDir, "notes.txt")
+	if err := os.WriteFile(targetFile, []byte("base-notes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const origLabel = `~\docs\notes.txt`
+
+	returnedLabel, err := cm.AddRelativePath(origLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", origLabel, err)
+	}
+
+	if returnedLabel != origLabel {
+		t.Fatalf("AddRelativePath(%q) returned %q, want orig", origLabel, returnedLabel)
+	}
+
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false; paths: %v", returnedLabel, cm.ListPaths())
+	}
+	if cp.Type != "file" {
+		t.Fatalf("GetPath(%q) type = %q, want %q", returnedLabel, cp.Type, "file")
+	}
+	if cp.Content != "base-notes" {
+		t.Fatalf("GetPath(%q) content = %q, want %q", returnedLabel, cp.Content, "base-notes")
+	}
+}
+
+func TestGetPath_BackslashChildPathUnderTrackedDirectoryOnPOSIX(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+
+	targetDir := filepath.Join(base, "~", "docs")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	targetFile := filepath.Join(targetDir, "notes.txt")
+	if err := os.WriteFile(targetFile, []byte("directory-child"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	returnedLabel, err := cm.AddRelativePath(`~\docs`)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", `~\docs`, err)
+	}
+
+	// PR behavior correctly preserves the original backslash label here
+	wantOwner := `~\docs`
+	if returnedLabel != wantOwner {
+		t.Fatalf("AddRelativePath(%q) returned %q, want original label %q", `~\docs`, returnedLabel, wantOwner)
+	}
+
+	cp, ok := cm.GetPath(`~\docs\notes.txt`)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false; paths: %v", `~\docs\notes.txt`, cm.ListPaths())
+	}
+	if cp.Type != "file" {
+		t.Fatalf("GetPath(%q) type = %q, want %q", `~\docs\notes.txt`, cp.Type, "file")
+	}
+	if cp.Path != filepath.ToSlash(filepath.Join("~", "docs", "notes.txt")) {
+		t.Fatalf("GetPath(%q) path = %q, want %q", `~\docs\notes.txt`, cp.Path, filepath.ToSlash(filepath.Join("~", "docs", "notes.txt")))
+	}
+	if cp.Content != "directory-child" {
+		t.Fatalf("GetPath(%q) content = %q, want %q", `~\docs\notes.txt`, cp.Content, "directory-child")
+	}
+}
+
+func TestAddRelativePath_ForwardSlashTildeRootCanonicalizesOnPOSIX(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	// Create a literal "~" directory under base so AddRelativePath("~/")
+	// resolves via the POSIX literal-first owner-label probe.
+	literalDir := filepath.Join(base, "~")
+	if err := os.MkdirAll(literalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	returnedLabel, err := cm.AddRelativePath("~/")
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", "~/", err)
+	}
+
+	// Current buggy behavior returns "~/" which is not a stable owner label.
+	// The returned label must be canonicalized to "~" so it round-trips.
+	if returnedLabel != "~" {
+		t.Fatalf("AddRelativePath(%q) returned %q, want %q", "~/", returnedLabel, "~")
+	}
+
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false; paths: %v", returnedLabel, cm.ListPaths())
+	}
+	if cp.Type != "directory" {
+		t.Fatalf("GetPath(%q) type = %q, want %q", returnedLabel, cp.Type, "directory")
+	}
+
+	if err := cm.RemovePath(returnedLabel); err != nil {
+		t.Fatalf("RemovePath(%q): %v", returnedLabel, err)
+	}
+	if _, ok := cm.GetPath(returnedLabel); ok {
+		t.Fatalf("GetPath(%q) still true after RemovePath", returnedLabel)
+	}
+}
+
+func TestAddRelativePath_ForwardSlashTildeDotDotCanonicalLabelRoundTrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	// Base-relative literal "~" target.
+	literalDir := filepath.Join(base, "~")
+	if err := os.MkdirAll(literalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	literalFile := filepath.Join(literalDir, "notes.txt")
+	if err := os.WriteFile(literalFile, []byte("base content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Distinct home-backed file to prove we are NOT targeting $HOME.
+	homeFile := filepath.Join(fakeHome, "notes.txt")
+	if err := os.WriteFile(homeFile, []byte("home content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inputLabel := "~/docs/../notes.txt"
+	wantLabel := "~/notes.txt"
+
+	returnedLabel, err := cm.AddRelativePath(inputLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", inputLabel, err)
+	}
+
+	// Current buggy behavior returns the raw non-canonical label, which does not
+	// round-trip through GetPath / RefreshPath / RemovePath.
+	if returnedLabel != wantLabel {
+		t.Fatalf("AddRelativePath(%q) returned %q, want %q", inputLabel, returnedLabel, wantLabel)
+	}
+
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false; paths: %v", returnedLabel, cm.ListPaths())
+	}
+	if cp.Content != "base content" {
+		t.Fatalf("GetPath(%q) content = %q, want %q", returnedLabel, cp.Content, "base content")
+	}
+
+	if err := os.WriteFile(literalFile, []byte("refreshed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cm.RefreshPath(returnedLabel); err != nil {
+		t.Fatalf("RefreshPath(%q): %v", returnedLabel, err)
+	}
+
+	cp, ok = cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false after RefreshPath", returnedLabel)
+	}
+	if cp.Content != "refreshed" {
+		t.Fatalf("GetPath(%q) after refresh content = %q, want %q", returnedLabel, cp.Content, "refreshed")
+	}
+
+	if err := cm.RemovePath(returnedLabel); err != nil {
+		t.Fatalf("RemovePath(%q): %v", returnedLabel, err)
+	}
+	if _, ok := cm.GetPath(returnedLabel); ok {
+		t.Fatalf("GetPath(%q) still true after RemovePath", returnedLabel)
+	}
+}
+
+func TestAddRelativePath_ForwardSlashTildeDuplicateSeparatorCanonicalLabelRoundTrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	literalDir := filepath.Join(base, "~", "docs")
+	if err := os.MkdirAll(literalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	literalFile := filepath.Join(literalDir, "notes.txt")
+	if err := os.WriteFile(literalFile, []byte("base content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	homeDir := filepath.Join(fakeHome, "docs")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	homeFile := filepath.Join(homeDir, "notes.txt")
+	if err := os.WriteFile(homeFile, []byte("home content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inputLabel := "~//docs///notes.txt"
+	wantLabel := "~/docs/notes.txt"
+
+	returnedLabel, err := cm.AddRelativePath(inputLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", inputLabel, err)
+	}
+	if returnedLabel != wantLabel {
+		t.Fatalf("AddRelativePath(%q) returned %q, want %q", inputLabel, returnedLabel, wantLabel)
+	}
+
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false; paths: %v", returnedLabel, cm.ListPaths())
+	}
+	if cp.Content != "base content" {
+		t.Fatalf("GetPath(%q) content = %q, want %q", returnedLabel, cp.Content, "base content")
+	}
+
+	if err := os.WriteFile(literalFile, []byte("refreshed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cm.RefreshPath(returnedLabel); err != nil {
+		t.Fatalf("RefreshPath(%q): %v", returnedLabel, err)
+	}
+
+	cp, ok = cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false after RefreshPath", returnedLabel)
+	}
+	if cp.Content != "refreshed" {
+		t.Fatalf("GetPath(%q) after refresh content = %q, want %q", returnedLabel, cp.Content, "refreshed")
+	}
+
+	if err := cm.RemovePath(returnedLabel); err != nil {
+		t.Fatalf("RemovePath(%q): %v", returnedLabel, err)
+	}
+	if _, ok := cm.GetPath(returnedLabel); ok {
+		t.Fatalf("GetPath(%q) still true after RemovePath", returnedLabel)
+	}
+}
+
 // TestContextPathsInTxtarHeaders tests that file paths are meaningfully preserved
 // in txtar file headers as requested in the issue.
 func TestContextPathsInTxtarHeaders(t *testing.T) {
@@ -604,6 +949,94 @@ func TestContextManagerRefreshPath(t *testing.T) {
 			t.Fatalf("expected error mentioning tracked owner, got: %v", got)
 		}
 	})
+
+	t.Run("DirectoryTrailingSlashNormalized", func(t *testing.T) {
+		// When a directory is added via AddPath("root"), the canonical
+		// owner key is "root". RefreshPath should accept "root/" (with
+		// trailing separator) and normalize it to match.
+		base := t.TempDir()
+		root := filepath.Join(base, "root")
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatalf("failed to create root directory: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a"), 0o644); err != nil {
+			t.Fatalf("failed to write initial file: %v", err)
+		}
+
+		cm, err := NewContextManager(base)
+		if err != nil {
+			t.Fatalf("NewContextManager failed: %v", err)
+		}
+		if err := cm.AddPath(root); err != nil {
+			t.Fatalf("AddPath(directory) failed: %v", err)
+		}
+
+		// Add a new file on disk after the initial scan.
+		if err := os.WriteFile(filepath.Join(root, "b.txt"), []byte("b"), 0o644); err != nil {
+			t.Fatalf("failed to write new file: %v", err)
+		}
+
+		// Refresh with trailing separator — this is the variant the JS
+		// layer passes when the user types "add root/".
+		if err := cm.RefreshPath("root" + string(filepath.Separator)); err != nil {
+			t.Fatalf("RefreshPath(root/) failed: %v", err)
+		}
+
+		logicalNew := filepath.Join("root", "b.txt")
+		if _, ok := cm.GetPath(logicalNew); !ok {
+			t.Fatalf("expected %q to be tracked after refresh with trailing slash", logicalNew)
+		}
+	})
+
+	t.Run("DotSlashPrefixNormalized", func(t *testing.T) {
+		// When AddPath is called with an absolute path, the owner key
+		// is the relative form (e.g. "note.txt"). RefreshPath should
+		// accept "./note.txt" and normalize it to "note.txt".
+		base := t.TempDir()
+		filePath := filepath.Join(base, "note.txt")
+		if err := os.WriteFile(filePath, []byte("initial"), 0o644); err != nil {
+			t.Fatalf("failed to write initial file: %v", err)
+		}
+
+		cm, err := NewContextManager(base)
+		if err != nil {
+			t.Fatalf("NewContextManager failed: %v", err)
+		}
+		if err := cm.AddPath(filePath); err != nil {
+			t.Fatalf("AddPath(file) failed: %v", err)
+		}
+
+		// Update content on disk.
+		if err := os.WriteFile(filePath, []byte("updated"), 0o644); err != nil {
+			t.Fatalf("failed to update file: %v", err)
+		}
+
+		// Refresh with "./" prefix variant.
+		if err := cm.RefreshPath("." + string(filepath.Separator) + "note.txt"); err != nil {
+			t.Fatalf("RefreshPath(./note.txt) failed: %v", err)
+		}
+
+		cp, ok := cm.GetPath("note.txt")
+		if !ok {
+			t.Fatalf("expected note.txt to remain tracked after refresh")
+		}
+		if cp.Content != "updated" {
+			t.Fatalf("expected refreshed content to be 'updated', got: %q", cp.Content)
+		}
+	})
+
+	t.Run("UnknownPathStillFails", func(t *testing.T) {
+		// Even with normalization, a genuinely untracked path must
+		// still return an error.
+		base := t.TempDir()
+		cm, err := NewContextManager(base)
+		if err != nil {
+			t.Fatalf("NewContextManager failed: %v", err)
+		}
+		if err := cm.RefreshPath("does-not-exist"); err == nil {
+			t.Fatalf("expected error for untracked path")
+		}
+	})
 }
 
 func TestContextManagerSymlinkHandling(t *testing.T) {
@@ -711,4 +1144,1597 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// ---------------------------------------------------------------------------
+// tilde expansion integration tests for ContextManager
+// ---------------------------------------------------------------------------
+
+// TestAddPathExpandsTilde verifies that ContextManager.AddPath correctly
+// expands tilde paths and tracks files with their expanded absolute paths.
+// This is an integration test that verifies the end-to-end behavior of
+// tilde expansion in the context of path management.
+func TestAddPathExpandsTilde(t *testing.T) {
+	// Set up a fake HOME directory for hermetic test execution
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	// Verify that os.UserHomeDir returns our fake home
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir failed: %v", err)
+	}
+	if home != fakeHome {
+		t.Fatalf("os.UserHomeDir returned %q, want %q", home, fakeHome)
+	}
+
+	// Create a test file in the fake home directory
+	testDir := filepath.Join(fakeHome, "testsub")
+	if err := os.MkdirAll(testDir, 0o755); err != nil {
+		t.Fatalf("failed to create fake home subdir: %v", err)
+	}
+	tildeFile := filepath.Join(testDir, "tilde_file.txt")
+	if err := os.WriteFile(tildeFile, []byte("tilde content"), 0o644); err != nil {
+		t.Fatalf("failed to write tilde test file: %v", err)
+	}
+
+	cm, err := NewContextManager(fakeHome)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
+
+	// Add path using tilde notation
+	// The ContextManager should expand this to the fake home directory
+	if err := cm.AddPath("~/testsub/tilde_file.txt"); err != nil {
+		t.Fatalf("AddPath with tilde path failed: %v", err)
+	}
+
+	// The file should be tracked with its relative logical path
+	logical := filepath.Join("testsub", "tilde_file.txt")
+	cp, ok := cm.GetPath(logical)
+	if !ok {
+		t.Fatalf("expected %q to be tracked after AddPath with tilde, paths: %v", logical, cm.ListPaths())
+	}
+	if cp.Content != "tilde content" {
+		t.Errorf("expected content %q, got %q", "tilde content", cp.Content)
+	}
+
+	// Verify the logical path is stored (not absolute path - this is by design)
+	// ContextManager stores relative paths for portability
+	if cp.Path != logical {
+		t.Errorf("expected logical path %q, got: %q", logical, cp.Path)
+	}
+}
+
+// TestRefreshPathExpandsTilde verifies that ContextManager.RefreshPath
+// correctly handles tilde paths and updates the content from the expanded path.
+// Uses an actual ~/tilde path (not a bare relative path) as the test name implies.
+func TestRefreshPathExpandsTilde(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	// Create a test file
+	testDir := filepath.Join(fakeHome, "refresh_test")
+	if err := os.MkdirAll(testDir, 0o755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
+	testFile := filepath.Join(testDir, "refresh.txt")
+	if err := os.WriteFile(testFile, []byte("initial content"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	cm, err := NewContextManager(fakeHome)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
+
+	// Add the file with its absolute path first
+	if err := cm.AddPath(testFile); err != nil {
+		t.Fatalf("AddPath failed: %v", err)
+	}
+
+	// Update the file on disk
+	if err := os.WriteFile(testFile, []byte("updated content"), 0o644); err != nil {
+		t.Fatalf("failed to update test file: %v", err)
+	}
+
+	// Refresh using an ACTUAL tilde path — the test name says "ExpandsTilde"
+	tildePath := "~/refresh_test/refresh.txt"
+	if err := cm.RefreshPath(tildePath); err != nil {
+		t.Fatalf("RefreshPath(%q) failed: %v", tildePath, err)
+	}
+
+	// Verify content was updated (logical path is relative to basePath)
+	logical := filepath.Join("refresh_test", "refresh.txt")
+	cp, ok := cm.GetPath(logical)
+	if !ok {
+		t.Fatalf("expected path %q to be tracked after refresh", logical)
+	}
+	if cp.Content != "updated content" {
+		t.Errorf("expected updated content, got: %q", cp.Content)
+	}
+}
+
+// TestRemovePathExpandsTilde verifies that ContextManager.RemovePath
+// correctly normalizes and removes paths specified with tilde notation.
+// Uses an actual ~/tilde path (not a bare basename) as the test name implies.
+func TestRemovePathExpandsTilde(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	// Create a test file
+	testFile := filepath.Join(fakeHome, "remove_test.txt")
+	if err := os.WriteFile(testFile, []byte("content"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	cm, err := NewContextManager(fakeHome)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
+
+	// Add with absolute path
+	if err := cm.AddPath(testFile); err != nil {
+		t.Fatalf("AddPath failed: %v", err)
+	}
+
+	// Verify it was added
+	logical := "remove_test.txt"
+	if _, ok := cm.GetPath(logical); !ok {
+		t.Fatalf("expected file to be tracked before removal")
+	}
+
+	// Remove using an ACTUAL tilde path — the test name says "ExpandsTilde"
+	tildePath := "~/remove_test.txt"
+	if err := cm.RemovePath(tildePath); err != nil {
+		t.Fatalf("RemovePath(%q) failed: %v", tildePath, err)
+	}
+
+	// Verify it was removed
+	if _, ok := cm.GetPath(logical); ok {
+		t.Errorf("expected file to be removed after RemovePath(%q)", tildePath)
+	}
+}
+
+// TestTildePathRoundTrip verifies the complete round-trip behavior:
+// Add with tilde → retrieve → verify content matches.
+func TestTildePathRoundTrip(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	// Create a test file with nested directories
+	nestedDir := filepath.Join(fakeHome, "level1", "level2", "level3")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatalf("failed to create nested dirs: %v", err)
+	}
+	testFile := filepath.Join(nestedDir, "roundtrip.txt")
+	expectedContent := "round-trip test content with unicode: ñ, é, 中文"
+	if err := os.WriteFile(testFile, []byte(expectedContent), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	cm, err := NewContextManager(fakeHome)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
+
+	// Add using tilde path with nested directories
+	if err := cm.AddPath("~/level1/level2/level3/roundtrip.txt"); err != nil {
+		t.Fatalf("AddPath with nested tilde path failed: %v", err)
+	}
+
+	// Retrieve the file
+	logical := filepath.Join("level1", "level2", "level3", "roundtrip.txt")
+	cp, ok := cm.GetPath(logical)
+	if !ok {
+		t.Fatalf("expected file to be tracked, got paths: %v", cm.ListPaths())
+	}
+
+	// Verify round-trip: content should match exactly
+	if cp.Content != expectedContent {
+		t.Errorf("round-trip content mismatch: got %q, want %q", cp.Content, expectedContent)
+	}
+
+	// Verify the logical path is stored (ContextManager stores relative paths)
+	if cp.Path != logical {
+		t.Errorf("expected logical path %q, got: %q", logical, cp.Path)
+	}
+
+	// Verify txtar round-trip
+	txtarString := cm.GetTxtarString()
+	if !strings.Contains(txtarString, expectedContent) {
+		t.Errorf("expected txtar to contain content, got: %s", txtarString)
+	}
+	if !strings.Contains(txtarString, "-- level1/level2/level3/roundtrip.txt --") {
+		t.Errorf("expected txtar header to contain logical path, got: %s", txtarString)
+	}
+}
+
+// TestGetPath_ResolvesTildeLabelFromAddRelativePath verifies that GetPath
+// resolves tilde-form labels returned by AddRelativePath. This is a TDD
+// regression test for a critical API disconnect: AddRelativePath("~/foo.txt")
+// returns "~/foo.txt" as the TUI label, but GetPath("~/foo.txt") did a raw
+// cm.paths["~/foo.txt"] lookup which always failed because the internal owner
+// key is a normalized relative/absolute path — never the tilde form.
+//
+// A TUI calling GetPath("~/foo.txt") would silently fail. The fix is for
+// GetPath to use findOwnerFromUserPath, which expands tildes during lookup.
+func TestGetPath_ResolvesTildeLabelFromAddRelativePath(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	// Create a file under the fake home
+	testFile := filepath.Join(fakeHome, "tracked_file.txt")
+	if err := os.WriteFile(testFile, []byte("hello from tilde"), 0o644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	cm, err := NewContextManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewContextManager: %v", err)
+	}
+
+	// AddRelativePath with a tilde label
+	tildeLabel := "~/tracked_file.txt"
+	returnedLabel, err := cm.AddRelativePath(tildeLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", tildeLabel, err)
+	}
+	if returnedLabel != tildeLabel {
+		t.Fatalf("AddRelativePath returned %q, want %q", returnedLabel, tildeLabel)
+	}
+
+	// THE BUG: GetPath(tildeLabel) does raw map lookup and fails.
+	// After the fix, it should resolve through findOwnerFromUserPath.
+	cp, ok := cm.GetPath(tildeLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false — TUI cannot retrieve paths added via AddRelativePath tilde label", tildeLabel)
+	}
+	if cp.Content != "hello from tilde" {
+		t.Errorf("content mismatch: got %q, want %q", cp.Content, "hello from tilde")
+	}
+
+	// Also verify GetPath returns false for genuinely unknown paths
+	_, ok = cm.GetPath("~/completely_unknown.txt")
+	if ok {
+		t.Error("GetPath should return false for untracked paths")
+	}
+}
+
+// TestGetPath_ResolvesTildeLabelNestedPath tests GetPath with a more deeply
+// nested tilde label to ensure the resolution pipeline works for multi-level
+// relative paths under the home directory.
+func TestGetPath_ResolvesTildeLabelNestedPath(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	nestedDir := filepath.Join(fakeHome, ".config", "osm")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	testFile := filepath.Join(nestedDir, "config.yaml")
+	if err := os.WriteFile(testFile, []byte("key: value"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cm, err := NewContextManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewContextManager: %v", err)
+	}
+
+	tildeLabel := "~/.config/osm/config.yaml"
+	returnedLabel, err := cm.AddRelativePath(tildeLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", tildeLabel, err)
+	}
+	if returnedLabel != tildeLabel {
+		t.Fatalf("returned label %q, want %q", returnedLabel, tildeLabel)
+	}
+
+	cp, ok := cm.GetPath(tildeLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false for nested tilde label", tildeLabel)
+	}
+	if cp.Content != "key: value" {
+		t.Errorf("content: got %q, want %q", cp.Content, "key: value")
+	}
+}
+
+// TestCrossPlatformTildeRehydrationRoundTrip verifies that backslash tilde
+// labels (e.g., "~\docs\notes.txt") round-trip correctly through
+// AddRelativePath → RemovePath → AddRelativePath → RefreshPath on POSIX.
+//
+// The findOwnerFromUserPath function (step 3) uses expandTildeOwnerLabel
+// (cross-platform) so that Windows-style backslash tilde forms are correctly
+// expanded on all hosts during RemovePath/RefreshPath. canonicalizeUserPath
+// uses host-specific tilde expansion (filepathutil.ExpandTilde) which is
+// correct for AddPath but too narrow for session rehydration flows. Without
+// cross-platform expansion in findOwnerFromUserPath, RemovePath and RefreshPath
+// with backslash tilde labels would fail on POSIX hosts.
+func TestCrossPlatformTildeRehydrationRoundTrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test; verifies backslash-tilde expansion on non-Windows hosts")
+	}
+
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	// Create file at ~/docs/notes.txt
+	docsDir := filepath.Join(fakeHome, "docs")
+	if err := os.MkdirAll(docsDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	testFile := filepath.Join(docsDir, "notes.txt")
+	if err := os.WriteFile(testFile, []byte("original content"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cm, err := NewContextManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewContextManager: %v", err)
+	}
+
+	// Step 1: Add using Windows-style backslash tilde label
+	backslashLabel := `~\docs\notes.txt`
+	returnedLabel, err := cm.AddRelativePath(backslashLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", backslashLabel, err)
+	}
+	if returnedLabel != backslashLabel {
+		t.Errorf("AddRelativePath returned %q, want %q (backslash form preserved)", returnedLabel, backslashLabel)
+	}
+
+	// Step 2: Verify it's tracked via GetPath with forward-slash tilde label
+	// (findOwnerFromUserPath should resolve either form)
+	cp, ok := cm.GetPath("~/docs/notes.txt")
+	if !ok {
+		t.Fatalf("GetPath(\"~/docs/notes.txt\") returned false after AddRelativePath with backslash label")
+	}
+	if cp.Content != "original content" {
+		t.Errorf("content: got %q, want %q", cp.Content, "original content")
+	}
+
+	// Step 3: RemovePath with the same backslash label
+	err = cm.RemovePath(backslashLabel)
+	if err != nil {
+		t.Fatalf("RemovePath(%q): %v — backslash tilde label must be removable on POSIX", backslashLabel, err)
+	}
+	_, ok = cm.GetPath("~/docs/notes.txt")
+	if ok {
+		t.Error("path should be removed after RemovePath")
+	}
+
+	// Step 4: Re-add and RefreshPath with backslash label
+	_, err = cm.AddRelativePath(backslashLabel)
+	if err != nil {
+		t.Fatalf("re-AddRelativePath(%q): %v", backslashLabel, err)
+	}
+
+	// Modify file on disk
+	if err := os.WriteFile(testFile, []byte("refreshed content"), 0o644); err != nil {
+		t.Fatalf("write updated: %v", err)
+	}
+
+	err = cm.RefreshPath(backslashLabel)
+	if err != nil {
+		t.Fatalf("RefreshPath(%q): %v — backslash tilde label must be refreshable on POSIX", backslashLabel, err)
+	}
+
+	cp, ok = cm.GetPath("~/docs/notes.txt")
+	if !ok {
+		t.Fatalf("GetPath after refresh failed")
+	}
+	if cp.Content != "refreshed content" {
+		t.Errorf("content after refresh: got %q, want %q", cp.Content, "refreshed content")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests for review issues (scratch/review.md)
+// ---------------------------------------------------------------------------
+
+// TestGetPath_TrackedChildUnderTrackedDirectory verifies that GetPath resolves
+// child files under tracked directories. This is the core regression from Issue 1:
+// GetPath was changed to use findOwnerFromUserPath (which only checks ownerFiles),
+// but child files are stored in cm.paths, NOT cm.ownerFiles. After AddPath("root")
+// where root is a directory, GetPath("root/sub/child.txt") must return the tracked
+// child — not (nil, false).
+func TestGetPath_TrackedChildUnderTrackedDirectory(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(root, "sub", "child.txt")
+	if err := os.WriteFile(child, []byte("child content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cm.AddPath(root); err != nil {
+		t.Fatalf("AddPath(root): %v", err)
+	}
+
+	// THE REGRESSION: GetPath must resolve tracked child paths, not just owners.
+	logical := filepath.Join("root", "sub", "child.txt")
+	cp, ok := cm.GetPath(logical)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false for tracked child under directory; paths: %v", logical, cm.ListPaths())
+	}
+	if cp.Content != "child content" {
+		t.Errorf("content: got %q, want %q", cp.Content, "child content")
+	}
+	if cp.Type != "file" {
+		t.Errorf("type: got %q, want %q", cp.Type, "file")
+	}
+
+	// Also verify the directory owner itself is still retrievable
+	dirCP, dirOK := cm.GetPath("root")
+	if !dirOK {
+		t.Fatalf("GetPath(\"root\") returned false for directory owner; paths: %v", cm.ListPaths())
+	}
+	if dirCP.Type != "directory" {
+		t.Errorf("directory type: got %q, want %q", dirCP.Type, "directory")
+	}
+}
+
+// TestGetPath_DeeplyNestedChildUnderDirectory verifies that GetPath resolves
+// deeply nested child paths (e.g., root/a/b/c/deep.txt) after tracking a directory.
+// Multi-level nesting stress test for the tracked-path resolver.
+func TestGetPath_DeeplyNestedChildUnderDirectory(t *testing.T) {
+	base := t.TempDir()
+	nested := filepath.Join(base, "root", "a", "b", "c")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	deepFile := filepath.Join(nested, "deep.txt")
+	if err := os.WriteFile(deepFile, []byte("deep content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cm.AddPath(filepath.Join(base, "root")); err != nil {
+		t.Fatalf("AddPath(root): %v", err)
+	}
+
+	logical := filepath.Join("root", "a", "b", "c", "deep.txt")
+	cp, ok := cm.GetPath(logical)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false; paths: %v", logical, cm.ListPaths())
+	}
+	if cp.Content != "deep content" {
+		t.Errorf("content: got %q, want %q", cp.Content, "deep content")
+	}
+}
+
+// TestCanonicalizeUserPath_PosixBackslashNotExpanded verifies that on POSIX,
+// canonicalizeUserPath does NOT expand ~\foo to $HOME/foo. The tilde expansion
+// must be host-specific (filepathutil.ExpandTilde), not cross-platform
+// (expandTildeOwnerLabel). On POSIX, ~\foo is a literal relative path, not a
+// tilde expansion form.
+func TestCanonicalizeUserPath_PosixBackslashNotExpanded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// On POSIX, ~\foo should NOT be expanded as a tilde path.
+	// It should be treated as a literal relative path.
+	owner, absPath, err := cm.canonicalizeUserPath(`~\foo`)
+	if err != nil {
+		t.Fatalf("canonicalizeUserPath(`~\\foo`): %v", err)
+	}
+
+	// The absolute path must NOT be $HOME/foo (tilde expansion).
+	// On POSIX, filepathutil.ExpandTilde does NOT treat ~\foo as a tilde
+	// form, so it should resolve relative to CWD, not via tilde expansion.
+	home, _ := os.UserHomeDir()
+	expectedTildeExpansion := filepath.Join(home, "foo")
+	if absPath == expectedTildeExpansion {
+		t.Errorf("canonicalizeUserPath(`~\\foo`) resolved to %q via tilde expansion; should be CWD-relative literal on POSIX", absPath)
+	}
+
+	// The owner should NOT be "foo" (which would indicate tilde expansion
+	// stripped the ~ prefix and resolved relative to basePath root).
+	if owner == "foo" {
+		t.Errorf("owner is %q, indicating ~\\foo was tilde-expanded; should preserve literal ~\\foo characters", owner)
+	}
+}
+
+// IMPORTANT: This test mutates the process-global CWD via os.Chdir.
+// Do NOT add t.Parallel() — it would race with parallel tests in this package.
+//
+// TestAddPath_LiteralBackslashTildeOnPOSIX verifies that on POSIX, AddPath
+// with a relative ~\ input (e.g., ~\docs/notes.txt from cwd) tracks it as a
+// literal path, not as $HOME/... . This is the end-to-end test for Issue 2:
+// AddPath uses canonicalizeUserPath which must use host-specific tilde
+// expansion, so ~\foo on POSIX is treated as a literal relative path.
+func TestAddPath_LiteralBackslashTildeOnPOSIX(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	cwd := t.TempDir()
+
+	// Create a literal directory "~\docs" under cwd (not base).
+	literalDir := cwd + string(filepath.Separator) + `~\docs`
+	if err := os.MkdirAll(literalDir, 0o755); err != nil {
+		t.Skipf("filesystem does not support backslash in directory name: %v", err)
+	}
+	testFile := filepath.Join(literalDir, "notes.txt")
+	if err := os.WriteFile(testFile, []byte("literal notes"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Save and restore original CWD.
+	origCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origCWD) }()
+
+	// Change CWD to cwd so that AddPath resolves ~\docs relative to it.
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// AddPath with the RELATIVE ~\docs/notes.txt input (not absolute).
+	// On POSIX, canonicalizeUserPath uses host-specific ExpandTilde which
+	// does NOT treat ~\ as tilde expansion, so it resolves as a literal
+	// path relative to CWD.
+	relInput := filepath.Join(`~\docs`, "notes.txt")
+	if err := cm.AddPath(relInput); err != nil {
+		t.Fatalf("AddPath(%q): %v", relInput, err)
+	}
+
+	// Verify the file is tracked under the literal-backslash path.
+	cp, ok := cm.GetPath(relInput)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false after AddPath; paths: %v", relInput, cm.ListPaths())
+	}
+	if cp.Content != "literal notes" {
+		t.Errorf("content: got %q, want %q", cp.Content, "literal notes")
+	}
+
+	// Verify the logical path contains the literal ~\docs prefix.
+	paths := cm.ListPaths()
+	var found bool
+	for _, p := range paths {
+		if filepath.Base(p) == "notes.txt" {
+			found = true
+			if !strings.Contains(p, `~\docs`) {
+				t.Errorf("logical path %q should contain literal ~\\docs prefix", p)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("notes.txt not found in tracked paths: %v", paths)
+	}
+}
+
+// TestGetPath_StillResolvesTildeLabels ensures the GetPath fix (multi-step
+// resolution against cm.paths) doesn't break the existing tilde-label
+// resolution that was added for AddRelativePath. After AddRelativePath("~/foo.txt"),
+// GetPath("~/foo.txt") must still work via the owner fallback step.
+func TestGetPath_StillResolvesTildeLabels(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	testFile := filepath.Join(fakeHome, "tilde_test.txt")
+	if err := os.WriteFile(testFile, []byte("tilde hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Add via AddRelativePath with tilde label (TUI rehydration scenario)
+	label, err := cm.AddRelativePath("~/tilde_test.txt")
+	if err != nil {
+		t.Fatalf("AddRelativePath: %v", err)
+	}
+	if label != "~/tilde_test.txt" {
+		t.Fatalf("label: got %q, want ~/tilde_test.txt", label)
+	}
+
+	// GetPath with tilde label must resolve through owner fallback
+	cp, ok := cm.GetPath("~/tilde_test.txt")
+	if !ok {
+		t.Fatalf("GetPath(\"~/tilde_test.txt\") returned false; paths: %v", cm.ListPaths())
+	}
+	if cp.Content != "tilde hello" {
+		t.Errorf("content: got %q, want %q", cp.Content, "tilde hello")
+	}
+
+	// Also verify GetPath returns false for genuinely unknown tilde paths
+	_, unknownOK := cm.GetPath("~/nonexistent.txt")
+	if unknownOK {
+		t.Error("GetPath should return false for untracked tilde paths")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests for AddPath/RemovePath/RefreshPath symmetry with ~\ paths
+// on POSIX, and AddRelativePath literal-first resolution.
+// ---------------------------------------------------------------------------
+
+// TestRemovePath_LiteralBackslashTildeRelativeOnPOSIX verifies that on POSIX,
+// RemovePath with a relative ~\ input is symmetric with AddPath. When a file
+// is added via AddPath with a relative ~\ path (e.g., ~\docs/notes.txt from
+// cwd), RemovePath with the same input must remove the same tracked owner —
+// not misinterpret ~\ as a home-relative path.
+//
+// This test MUST fail against current code because findOwnerFromUserPath
+// step 3 uses expandTildeOwnerLabel which reinterprets ~\docs as $HOME/docs,
+// producing a different owner key than what AddPath stored.
+func TestRemovePath_LiteralBackslashTildeRelativeOnPOSIX(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	cwd := t.TempDir()
+
+	// Create a literal directory "~\docs" under cwd (not base).
+	literalDir := cwd + string(filepath.Separator) + `~\docs`
+	if err := os.MkdirAll(literalDir, 0o755); err != nil {
+		t.Skipf("filesystem does not support backslash in directory name: %v", err)
+	}
+	testFile := filepath.Join(literalDir, "notes.txt")
+	if err := os.WriteFile(testFile, []byte("literal notes"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Save and restore original CWD.
+	origCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origCWD) }()
+
+	// Change CWD to cwd so that AddPath resolves ~\docs relative to it.
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// AddPath with the relative ~\docs/notes.txt input.
+	// On POSIX, canonicalizeUserPath uses host-specific ExpandTilde which
+	// does NOT treat ~\ as tilde expansion, so it resolves as a literal
+	// path relative to CWD.
+	relInput := filepath.Join(`~\docs`, "notes.txt")
+	if err := cm.AddPath(relInput); err != nil {
+		t.Fatalf("AddPath(%q): %v", relInput, err)
+	}
+
+	// Verify the file is tracked.
+	cp, ok := cm.GetPath(relInput)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false after AddPath; paths: %v", relInput, cm.ListPaths())
+	}
+	if cp.Content != "literal notes" {
+		t.Errorf("content: got %q, want %q", cp.Content, "literal notes")
+	}
+
+	// NOW: RemovePath with the SAME relative input.
+	// This MUST find the same owner and remove it.
+	// BUG: findOwnerFromUserPath step 3 uses expandTildeOwnerLabel which
+	// reinterprets ~\docs as $HOME/docs, finding no match (or worse,
+	// matching a different owner if one exists).
+	if err := cm.RemovePath(relInput); err != nil {
+		t.Fatalf("RemovePath(%q): %v", relInput, err)
+	}
+
+	// Verify the file is no longer tracked.
+	_, ok = cm.GetPath(relInput)
+	if ok {
+		t.Fatalf("GetPath(%q) still returns true after RemovePath — RemovePath targeted the wrong owner", relInput)
+	}
+}
+
+// TestRefreshPath_LiteralBackslashTildeRelativeOnPOSIX verifies that on POSIX,
+// RefreshPath with a relative ~\ input is symmetric with AddPath. Same setup
+// as TestRemovePath_LiteralBackslashTildeRelativeOnPOSIX but tests RefreshPath.
+//
+// This test MUST fail against current code for the same reason:
+// findOwnerFromUserPath step 3 misinterprets the literal ~\ path.
+func TestRefreshPath_LiteralBackslashTildeRelativeOnPOSIX(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	cwd := t.TempDir()
+
+	// Create a literal directory "~\docs" under cwd.
+	literalDir := cwd + string(filepath.Separator) + `~\docs`
+	if err := os.MkdirAll(literalDir, 0o755); err != nil {
+		t.Skipf("filesystem does not support backslash in directory name: %v", err)
+	}
+	testFile := filepath.Join(literalDir, "notes.txt")
+	if err := os.WriteFile(testFile, []byte("original content"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Save and restore original CWD.
+	origCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origCWD) }()
+
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	relInput := filepath.Join(`~\docs`, "notes.txt")
+	if err := cm.AddPath(relInput); err != nil {
+		t.Fatalf("AddPath(%q): %v", relInput, err)
+	}
+
+	// Modify the file on disk.
+	if err := os.WriteFile(testFile, []byte("updated content"), 0o644); err != nil {
+		t.Fatalf("write updated: %v", err)
+	}
+
+	// RefreshPath with the same relative input.
+	// BUG: findOwnerFromUserPath step 3 misinterprets ~\docs as $HOME/docs.
+	if err := cm.RefreshPath(relInput); err != nil {
+		t.Fatalf("RefreshPath(%q): %v", relInput, err)
+	}
+
+	// Verify content was updated.
+	cp, ok := cm.GetPath(relInput)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false after RefreshPath; paths: %v", relInput, cm.ListPaths())
+	}
+	if cp.Content != "updated content" {
+		t.Errorf("content after refresh: got %q, want %q", cp.Content, "updated content")
+	}
+}
+
+// TestRemovePath_LiteralVsHomeBackslashTildeNoCollision verifies that on POSIX,
+// when both a literal ~\ entry (added via AddPath from cwd) and a home-backed
+// ~\ entry (added via AddRelativePath with HOME set to a fake home) exist,
+// RemovePath with the ~\ input targets the literal entry, NOT the home-backed one.
+//
+// This test MUST fail against current code because findOwnerFromUserPath
+// step 3 may resolve to the home-backed owner instead of the literal one.
+func TestRemovePath_LiteralVsHomeBackslashTildeNoCollision(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	fakeHome := t.TempDir()
+	base := t.TempDir()
+	cwd := t.TempDir()
+
+	// Create a file at <fakeHome>/docs/notes.txt (home-backed).
+	homeDocsDir := filepath.Join(fakeHome, "docs")
+	if err := os.MkdirAll(homeDocsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	homeFile := filepath.Join(homeDocsDir, "notes.txt")
+	if err := os.WriteFile(homeFile, []byte("home-backed content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a literal directory "~\docs" under cwd.
+	literalDir := cwd + string(filepath.Separator) + `~\docs`
+	if err := os.MkdirAll(literalDir, 0o755); err != nil {
+		t.Skipf("filesystem does not support backslash in directory name: %v", err)
+	}
+	literalFile := filepath.Join(literalDir, "notes.txt")
+	if err := os.WriteFile(literalFile, []byte("literal content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Save and restore original CWD.
+	origCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origCWD) }()
+
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set HOME to fakeHome for the AddRelativePath call.
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Step 1: AddPath with the relative ~\docs/notes.txt input.
+	// On POSIX, this resolves to the literal path under cwd.
+	relInput := filepath.Join(`~\docs`, "notes.txt")
+	if err := cm.AddPath(relInput); err != nil {
+		t.Fatalf("AddPath(%q): %v", relInput, err)
+	}
+
+	// Step 2: AddRelativePath with ~\docs\notes.txt.
+	// This uses cross-platform tilde expansion, resolves to <fakeHome>/docs/notes.txt.
+	backslashLabel := `~\docs\notes.txt`
+	returnedLabel, err := cm.AddRelativePath(backslashLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", backslashLabel, err)
+	}
+	if returnedLabel != backslashLabel {
+		t.Errorf("AddRelativePath returned %q, want %q", returnedLabel, backslashLabel)
+	}
+
+	// Both should be tracked as separate entries.
+	paths := cm.ListPaths()
+	if len(paths) < 2 {
+		t.Fatalf("expected at least 2 tracked paths, got %d: %v", len(paths), paths)
+	}
+
+	// Step 3: RemovePath with the ~\docs/notes.txt input (forward-slash form).
+	// This MUST remove the literal one (the AddPath entry), NOT the home-backed one.
+	if err := cm.RemovePath(relInput); err != nil {
+		t.Fatalf("RemovePath(%q): %v", relInput, err)
+	}
+
+	// Step 4: Verify the home-backed entry is still tracked.
+	homeLabel := "~/docs/notes.txt"
+	cp, ok := cm.GetPath(homeLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false — home-backed entry was incorrectly removed", homeLabel)
+	}
+	if cp.Content != "home-backed content" {
+		t.Errorf("home-backed content: got %q, want %q", cp.Content, "home-backed content")
+	}
+
+	// Step 5: Verify the literal entry is no longer tracked.
+	// Note: GetPath(relInput) may still return true because findOwnerFromUserPath
+	// step 3 (cross-platform tilde fallback) resolves ~\docs/notes.txt to the
+	// home-backed entry. Instead, verify the literal path is not in ListPaths.
+	paths = cm.ListPaths()
+	for _, p := range paths {
+		if strings.Contains(p, `~\docs`) {
+			t.Fatalf("literal path %q still in tracked paths after RemovePath: %v", p, paths)
+		}
+	}
+}
+
+func TestAddRelativePath_RelativeHomeErrors(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	relativeHome := "relative-home"
+	t.Setenv("HOME", relativeHome)
+	t.Setenv("USERPROFILE", relativeHome)
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// With no matching literal <base>/~/... target present, a tilde owner label
+	// must fail expansion when HOME is relative.
+	_, err = cm.AddRelativePath("~/x.txt")
+	if err == nil {
+		t.Fatal(`AddRelativePath("~/x.txt") with relative HOME succeeded — should have returned an error`)
+	}
+	if !strings.Contains(err.Error(), "home directory") && !strings.Contains(err.Error(), "not absolute") {
+		t.Fatalf("expected error about relative home directory, got: %v", err)
+	}
+}
+
+// TestAddRelativePath_LiteralBackslashTildeOnPOSIX verifies that on POSIX,
+// when a real file exists at <basePath>/~\docs/notes.txt (literal backslash
+// in the directory name), AddRelativePath with the Windows-style label
+// "~\docs\notes.txt" tracks the literal file under basePath, NOT
+// $HOME/docs/notes.txt.
+//
+// Crucially, the returned label must round-trip: GetPath(label),
+// RefreshPath(label), and RemovePath(label) must all function correctly
+// using the returned label.
+func TestAddRelativePath_LiteralBackslashTildeOnPOSIX(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test; windows does not allow backslash in filenames")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	// Create a literal directory "~\docs" under base.
+	// On POSIX, backslash is a valid character in filenames.
+	literalDir := base + string(filepath.Separator) + `~\docs`
+	if err := os.MkdirAll(literalDir, 0o755); err != nil {
+		t.Skipf("filesystem does not support backslash in directory name: %v", err)
+	}
+	literalFile := filepath.Join(literalDir, "notes.txt")
+	if err := os.WriteFile(literalFile, []byte("literal backslash-dir content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set HOME to fakeHome (different from base).
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	// Also create a file at <fakeHome>/docs/notes.txt to prove we're NOT
+	// targeting the home-backed file.
+	homeDocsDir := filepath.Join(fakeHome, "docs")
+	if err := os.MkdirAll(homeDocsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	homeFile := filepath.Join(homeDocsDir, "notes.txt")
+	if err := os.WriteFile(homeFile, []byte("home-backed content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// AddRelativePath with the backslash-tilde label.
+	// The input "~\docs/notes.txt" uses forward slashes as path separators
+	// (POSIX convention) while preserving the literal backslash in the
+	// directory name "~\docs". On POSIX, filepath.Join splits on forward
+	// slashes, producing <base>/~\docs/notes.txt — which matches the
+	// actual file on disk.
+	backslashLabel := `~\docs/notes.txt`
+	returnedLabel, err := cm.AddRelativePath(backslashLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", backslashLabel, err)
+	}
+	if returnedLabel != backslashLabel {
+		t.Errorf("AddRelativePath returned %q, want %q", returnedLabel, backslashLabel)
+	}
+
+	// Also add the home-backed file to prove we're NOT targeting it.
+	homeLabel := "~/docs/notes.txt"
+	_, err = cm.AddRelativePath(homeLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", homeLabel, err)
+	}
+
+	// === ROUND-TRIP VERIFICATION ===
+	// The returned label must work with GetPath, RefreshPath, and RemovePath.
+
+	// 1. GetPath must retrieve the literal file's content.
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false — returned label is dead; paths: %v", returnedLabel, cm.ListPaths())
+	}
+	if cp.Content != "literal backslash-dir content" {
+		t.Errorf("GetPath content: got %q, want %q (should be literal file, not home-backed)", cp.Content, "literal backslash-dir content")
+	}
+
+	// 2. RefreshPath must update content from disk.
+	if err := os.WriteFile(literalFile, []byte("refreshed content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cm.RefreshPath(returnedLabel); err != nil {
+		t.Fatalf("RefreshPath(%q): %v — returned label must support refresh", returnedLabel, err)
+	}
+	cp, ok = cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false after RefreshPath", returnedLabel)
+	}
+	if cp.Content != "refreshed content" {
+		t.Errorf("GetPath after refresh: got %q, want %q", cp.Content, "refreshed content")
+	}
+
+	// 3. RemovePath must remove the correct entry.
+	if err := cm.RemovePath(returnedLabel); err != nil {
+		t.Fatalf("RemovePath(%q): %v — returned label must support removal", returnedLabel, err)
+	}
+	// Verify the literal entry is no longer tracked. Note: GetPath(returnedLabel)
+	// may still return true because findOwnerFromUserPath step 3 (cross-platform
+	// tilde fallback) resolves "~\docs/notes.txt" to the home-backed entry
+	// "~/docs/notes.txt". Instead, verify the literal owner key is absent
+	// from ListPaths.
+	paths := cm.ListPaths()
+	for _, p := range paths {
+		if strings.Contains(p, `~\docs`) {
+			t.Fatalf("literal path %q still in tracked paths after RemovePath: %v", p, paths)
+		}
+	}
+
+	// 4. The home-backed file must still be tracked (was not accidentally removed).
+	cp, ok = cm.GetPath(homeLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false — home-backed entry was incorrectly removed", homeLabel)
+	}
+	if cp.Content != "home-backed content" {
+		t.Errorf("home-backed content: got %q, want %q", cp.Content, "home-backed content")
+	}
+}
+
+// TestAddRelativePath_NormalizedProbeRoundTrip verifies the Step 2 fallback
+// path: when no literal backslash directory exists but a forward-slash
+// equivalent does (e.g. <basePath>/~/docs/notes.txt), AddRelativePath with
+// "~\docs\notes.txt" falls through to the normalized probe, preserves the
+// original backslash label, and that label round-trips correctly via
+// GetPath/RefreshPath/RemovePath.
+//
+// The returned label MUST be the original backslash form ("~\docs\notes.txt"),
+// NOT the forward-slash form ("~/docs/notes.txt"). Returning the forward-slash
+// form would collide with genuine tilde expansion labels and break
+// rehydration (see TestAddRelativePath_NormalizedProbeLabelRehydratesToSameFile).
+func TestAddRelativePath_NormalizedProbeRoundTrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test; windows does not allow backslash in filenames")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	// Create a forward-slash directory structure: <base>/~/docs/notes.txt
+	// (where "~" is a literal directory name, not tilde expansion).
+	normalizedDir := filepath.Join(base, "~", "docs")
+	if err := os.MkdirAll(normalizedDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	normalizedFile := filepath.Join(normalizedDir, "notes.txt")
+	if err := os.WriteFile(normalizedFile, []byte("normalized content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set HOME to fakeHome (different from base).
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// AddRelativePath with backslash tilde label. No literal backslash
+	// directory exists, so Step 1 fails. Step 2 (normalized probe) finds
+	// <base>/~/docs/notes.txt and uses it.
+	backslashLabel := `~\docs\notes.txt`
+	returnedLabel, err := cm.AddRelativePath(backslashLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", backslashLabel, err)
+	}
+	// The returned label MUST preserve the original backslash form.
+	// Returning ~/docs/notes.txt would collide with genuine tilde labels
+	// and break rehydration (see TestAddRelativePath_NormalizedProbeLabelRehydratesToSameFile).
+	if returnedLabel != backslashLabel {
+		t.Errorf("AddRelativePath returned %q, want %q (original backslash label preserved)", returnedLabel, backslashLabel)
+	}
+
+	// Round-trip: GetPath, RefreshPath, RemovePath must work with the returned label.
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false; paths: %v", returnedLabel, cm.ListPaths())
+	}
+	if cp.Content != "normalized content" {
+		t.Errorf("content: got %q, want %q", cp.Content, "normalized content")
+	}
+
+	// RefreshPath
+	if err := os.WriteFile(normalizedFile, []byte("refreshed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cm.RefreshPath(returnedLabel); err != nil {
+		t.Fatalf("RefreshPath(%q): %v", returnedLabel, err)
+	}
+	cp, ok = cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) after refresh: false", returnedLabel)
+	}
+	if cp.Content != "refreshed" {
+		t.Errorf("refreshed content: got %q, want %q", cp.Content, "refreshed")
+	}
+
+	// RemovePath
+	if err := cm.RemovePath(returnedLabel); err != nil {
+		t.Fatalf("RemovePath(%q): %v", returnedLabel, err)
+	}
+	_, ok = cm.GetPath(returnedLabel)
+	if ok {
+		t.Fatalf("GetPath(%q) still true after RemovePath", returnedLabel)
+	}
+}
+
+// TestAddRelativePath_NormalizedProbeLabelRehydratesToSameFile proves that the
+// label returned by AddRelativePath's normalized-probe path (POSIX Step 2) is
+// safe to persist and rehydrate. The label must resolve to the SAME base-relative
+// file when fed back through a fresh ContextManager — NOT to $HOME/...
+//
+// Regression test for the persistence/rehydration blocker identified in review:
+// the normalized-probe branch was returning "~/docs/notes.txt" (forward-slash),
+// which on rehydration expands via tilde to $HOME/docs/notes.txt instead of the
+// original <base>/~/docs/notes.txt.
+func TestAddRelativePath_NormalizedProbeLabelRehydratesToSameFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	// Base-relative literal "~" directory (forward-slash on filesystem).
+	baseDir := filepath.Join(base, "~", "docs")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseFile := filepath.Join(baseDir, "notes.txt")
+	if err := os.WriteFile(baseFile, []byte("base content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Distinct home-backed file.
+	homeDir := filepath.Join(fakeHome, "docs")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	homeFile := filepath.Join(homeDir, "notes.txt")
+	if err := os.WriteFile(homeFile, []byte("home content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	cm1, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	label, err := cm1.AddRelativePath(`~\docs\notes.txt`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Rehydrate the label through a FRESH ContextManager.
+	// If the label is "~/docs/notes.txt" (forward-slash), rehydration would
+	// expand via tilde to $HOME/docs/notes.txt — WRONG target.
+	// The label MUST be "~\docs\notes.txt" (backslash) so rehydration
+	// follows the same POSIX flow and resolves to the base-relative file.
+	cm2, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = cm2.AddRelativePath(label)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cp, ok := cm2.GetPath(label)
+	if !ok {
+		t.Fatal("rehydrated label not found")
+	}
+	if cp.Content != "base content" {
+		t.Fatalf("rehydration targeted the WRONG file: got %q, want %q — the returned label %q is not safe to persist", cp.Content, "base content", label)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests for findOwnerFromUserPath and AddRelativePath bugs
+// identified by 5 independent reviewers (Issues 1-4).
+// ---------------------------------------------------------------------------
+
+// TestFindOwnerFromUserPath_NonTildeBackslashNotMatched proves that Step 2.7's
+// guard must be restricted to tilde-prefixed labels only. Currently,
+// strings.Contains(path, "\\") matches arbitrary POSIX paths containing
+// backslashes (e.g. "some\dir\file.txt"), not just ~\ rehydration labels.
+// Step 2.7 normalizes to "some/dir/file.txt" and incorrectly removes a
+// tracked forward-slash entry.
+func TestFindOwnerFromUserPath_NonTildeBackslashNotMatched(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test; backslash is separator on Windows")
+	}
+
+	base := t.TempDir()
+	dir := filepath.Join(base, "some", "dir")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	forwardFile := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(forwardFile, []byte("forward-slash"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cm.AddPath(forwardFile); err != nil {
+		t.Fatal(err)
+	}
+
+	logical := filepath.Join("some", "dir", "file.txt")
+	if _, ok := cm.GetPath(logical); !ok {
+		t.Fatalf("expected %s to be tracked", logical)
+	}
+
+	// RemovePath with a DIFFERENT path (backslashes, not forward-slash).
+	// On POSIX, `some\dir\file.txt` is a single relative component.
+	// Must NOT match the tracked "some/dir/file.txt".
+	_ = cm.RemovePath(`some\dir\file.txt`)
+
+	// BUG: Step 2.7 uses strings.Contains(path, "\\") which matches ANY
+	// backslash, normalizes to "some/dir/file.txt", and removes the WRONG entry.
+	if _, ok := cm.GetPath(logical); !ok {
+		t.Fatalf("BUG: RemovePath(%q) removed the forward-slash entry %s — "+
+			"Step 2.7 matched non-tilde backslash path", `some\dir\file.txt`, logical)
+	}
+}
+
+// TestFindOwnerFromUserPath_Step25BeatsStep27 proves that when both Step 2.5
+// (host-canonicalized) and Step 2.7 (backslash->forward-slash) would match
+// DIFFERENT owners, Step 2.5 must win because it represents the
+// AddPath-user-input semantics.
+//
+// This test mutates the process-global CWD via os.Chdir.
+// Do NOT add t.Parallel() — it would race with parallel tests in this package.
+func TestFindOwnerFromUserPath_Step25BeatsStep27(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	cwd := t.TempDir()
+
+	// Create <base>/~/docs/notes.txt (literal ~ directory, forward-slash owner)
+	baseDir := filepath.Join(base, "~", "docs")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseFile := filepath.Join(baseDir, "notes.txt")
+	if err := os.WriteFile(baseFile, []byte("base-relative"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create <cwd>/~\docs/notes.txt (literal ~\docs directory, backslash in name)
+	literalDir := cwd + string(filepath.Separator) + `~\docs`
+	if err := os.MkdirAll(literalDir, 0o755); err != nil {
+		t.Skipf("filesystem does not support backslash in directory name: %v", err)
+	}
+	literalFile := filepath.Join(literalDir, "notes.txt")
+	if err := os.WriteFile(literalFile, []byte("cwd-literal"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origCWD) })
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Track base-relative entry: owner = "~/docs/notes.txt"
+	if err := cm.AddPath(baseFile); err != nil {
+		t.Fatalf("AddPath(base file): %v", err)
+	}
+	// Track CWD-resolved entry: owner = absolute "/<cwd>/~\docs/notes.txt"
+	relInput := filepath.Join(`~\docs`, "notes.txt") // = "~\\docs/notes.txt"
+	if err := cm.AddPath(relInput); err != nil {
+		t.Fatalf("AddPath(%q): %v", relInput, err)
+	}
+
+	// Both should be tracked
+	baseLogical := filepath.Join("~", "docs", "notes.txt")
+	if _, ok := cm.GetPath(baseLogical); !ok {
+		t.Fatalf("base-relative %s not tracked", baseLogical)
+	}
+
+	// RemovePath with the same input used for AddPath.
+	// Step 2.5 canonicalizes to the CWD-resolved absolute owner.
+	// Step 2.7 normalizes to "~/docs/notes.txt" (the base-relative owner).
+	// Step 2.5 MUST win — it represents the user's AddPath intent.
+	if err := cm.RemovePath(relInput); err != nil {
+		t.Fatalf("RemovePath(%q): %v", relInput, err)
+	}
+
+	// BUG: With current code, Step 2.7 runs first and removes the base entry.
+	if _, ok := cm.GetPath(baseLogical); !ok {
+		t.Fatalf("BUG: RemovePath(%q) removed the base-relative entry — "+
+			"Step 2.7 stole the lookup from Step 2.5", relInput)
+	}
+
+	// Verify the CWD-literal entry was removed (not the base entry)
+	paths := cm.ListPaths()
+	for _, p := range paths {
+		if strings.Contains(p, `~\docs`) {
+			t.Fatalf("CWD-literal path %q still tracked after RemovePath — "+
+				"wrong entry was removed", p)
+		}
+	}
+}
+
+// TestFindOwnerFromUserPath_DotDotBackslashRoundTrip proves that labels
+// with . or .. components (e.g. "~\docs\..\notes.txt") round-trip correctly.
+// Step 2.7's raw strings.ReplaceAll produces "~/docs/../notes.txt" but the
+// stored owner is "~/notes.txt" (cleaned by filepath.Join during
+// AddRelativePath). The lookup must use filepath.Clean to match.
+func TestFindOwnerFromUserPath_DotDotBackslashRoundTrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	// Create <base>/~/notes.txt (literal ~ directory with notes.txt)
+	tildeDir := filepath.Join(base, "~")
+	if err := os.MkdirAll(tildeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseFile := filepath.Join(tildeDir, "notes.txt")
+	if err := os.WriteFile(baseFile, []byte("base content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create $HOME/notes.txt to prove we DON'T target it
+	homeFile := filepath.Join(fakeHome, "notes.txt")
+	if err := os.WriteFile(homeFile, []byte("home content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// AddRelativePath stores owner = "~/notes.txt" (cleaned by filepath.Join)
+	// but returns label = "~\docs\..\notes.txt" (original, with ..)
+	label := `~\docs\..\notes.txt`
+	returnedLabel, err := cm.AddRelativePath(label)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", label, err)
+	}
+	if returnedLabel != label {
+		t.Fatalf("label: got %q, want %q", returnedLabel, label)
+	}
+
+	// GetPath MUST resolve the returned label
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("BUG: GetPath(%q) returned false — label does not round-trip. "+
+			"Step 2.7 probes '~/docs/../notes.txt' (raw) but owner is "+
+			"'~/notes.txt' (cleaned)", returnedLabel)
+	}
+	if cp.Content != "base content" {
+		t.Fatalf("content: got %q, want %q — targeted wrong file",
+			cp.Content, "base content")
+	}
+
+	// RefreshPath MUST work with the returned label
+	if err := os.WriteFile(baseFile, []byte("refreshed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cm.RefreshPath(returnedLabel); err != nil {
+		t.Fatalf("BUG: RefreshPath(%q): %v — label does not round-trip", returnedLabel, err)
+	}
+	cp, ok = cm.GetPath(returnedLabel)
+	if !ok || cp.Content != "refreshed" {
+		t.Fatalf("BUG: RefreshPath did not update content via label")
+	}
+
+	// RemovePath MUST work with the returned label
+	if err := cm.RemovePath(returnedLabel); err != nil {
+		t.Fatalf("BUG: RemovePath(%q): %v — label does not round-trip", returnedLabel, err)
+	}
+	if _, ok := cm.GetPath(returnedLabel); ok {
+		t.Fatal("entry still tracked after RemovePath")
+	}
+}
+
+// TestFindOwnerFromUserPath_DuplicateSeparatorBackslashRoundTrip proves that
+// labels with duplicate separators (e.g. "~\docs\\notes.txt") also fail to
+// round-trip with raw strings.ReplaceAll, which produces "~/docs//notes.txt"
+// instead of the cleaned "~/docs/notes.txt".
+func TestFindOwnerFromUserPath_DuplicateSeparatorBackslashRoundTrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	// Create <base>/~/docs/notes.txt
+	baseDir := filepath.Join(base, "~", "docs")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseFile := filepath.Join(baseDir, "notes.txt")
+	if err := os.WriteFile(baseFile, []byte("base content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// AddRelativePath with double-backslash: ~\docs\\notes.txt
+	label := `~\docs\\notes.txt`
+	returnedLabel, err := cm.AddRelativePath(label)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", label, err)
+	}
+
+	// GetPath MUST resolve it
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("BUG: GetPath(%q) returned false — duplicate separator not handled", returnedLabel)
+	}
+	if cp.Content != "base content" {
+		t.Fatalf("content: got %q, want %q", cp.Content, "base content")
+	}
+}
+
+// TestAddRelativePath_ForwardSlashTildeLiteralFirstOnPOSIX proves that
+// AddRelativePath("~/docs/file.txt") on POSIX checks if
+// <base>/~/docs/file.txt exists (literal ~ directory) BEFORE expanding
+// ~/ to $HOME. Currently, only ~\ gets the literal-first probe.
+func TestAddRelativePath_ForwardSlashTildeLiteralFirstOnPOSIX(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	// Create <base>/~/docs/file.txt (literal ~ directory under base)
+	baseDir := filepath.Join(base, "~", "docs")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseFile := filepath.Join(baseDir, "file.txt")
+	if err := os.WriteFile(baseFile, []byte("base-tilde"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create $HOME/docs/file.txt (distinct from base-relative)
+	homeDir := filepath.Join(fakeHome, "docs")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	homeFile := filepath.Join(homeDir, "file.txt")
+	if err := os.WriteFile(homeFile, []byte("home-backed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// AddRelativePath with ~/ label should find base-relative file FIRST
+	label := "~/docs/file.txt"
+	returnedLabel, err := cm.AddRelativePath(label)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", label, err)
+	}
+
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatal("GetPath returned false")
+	}
+	if cp.Content != "base-tilde" {
+		t.Fatalf("BUG: content = %q, want %q — AddRelativePath expanded ~/ to "+
+			"$HOME instead of checking base-relative literal first",
+			cp.Content, "base-tilde")
+	}
+}
+
+// TestAddRelativePath_ForwardSlashTildeRoundTrip exercises RefreshPath and
+// RemovePath with the label returned by AddRelativePath for a ~/ base-relative
+// literal entry, proving the full round-trip works.
+func TestAddRelativePath_ForwardSlashTildeRoundTrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	baseDir := filepath.Join(base, "~", "docs")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseFile := filepath.Join(baseDir, "file.txt")
+	if err := os.WriteFile(baseFile, []byte("base-tilde"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	homeDir := filepath.Join(fakeHome, "docs")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(homeDir, "file.txt"), []byte("home"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	label := "~/docs/file.txt"
+	returnedLabel, err := cm.AddRelativePath(label)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// RefreshPath
+	if err := os.WriteFile(baseFile, []byte("refreshed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := cm.RefreshPath(returnedLabel); err != nil {
+		t.Fatalf("BUG: RefreshPath(%q): %v", returnedLabel, err)
+	}
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok || cp.Content != "refreshed" {
+		t.Fatalf("RefreshPath failed: content=%q", cp.Content)
+	}
+
+	// RemovePath
+	if err := cm.RemovePath(returnedLabel); err != nil {
+		t.Fatalf("BUG: RemovePath(%q): %v", returnedLabel, err)
+	}
+	if _, ok := cm.GetPath(returnedLabel); ok {
+		t.Fatal("entry still tracked after RemovePath")
+	}
 }

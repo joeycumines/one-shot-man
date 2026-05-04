@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,7 +172,7 @@ func TestEndToEndLifecycle(t *testing.T) {
 	// First session: Create engine, switch mode, modify state, persist
 	ctx := context.Background()
 	// Use io.Discard to suppress TUI initialization messages during tests
-	engine1, err := scripting.NewEngineWithConfig(ctx, io.Discard, io.Discard, sessionID, "memory")
+	engine1, err := scripting.NewEngine(ctx, io.Discard, io.Discard, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create first engine: %v", err)
 	}
@@ -232,7 +233,7 @@ func TestEndToEndLifecycle(t *testing.T) {
 
 	// Second session: Create new engine with same session ID, verify state restoration
 	// Use io.Discard to suppress TUI initialization messages during tests
-	engine2, err := scripting.NewEngineWithConfig(ctx, io.Discard, io.Discard, sessionID, "memory")
+	engine2, err := scripting.NewEngine(ctx, io.Discard, io.Discard, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create second engine: %v", err)
 	}
@@ -357,7 +358,6 @@ func TestStaleLockRecovery(t *testing.T) {
 
 		// Exit without calling backend.Close() to simulate crash
 		os.Exit(1)
-		return
 	}
 
 	// Parent test process
@@ -405,7 +405,7 @@ func TestSigintPersistence(t *testing.T) {
 
 	ctx := context.Background()
 	// Create engine with explicit config
-	engine, err := scripting.NewEngineWithConfig(ctx, io.Discard, io.Discard, sessionID, "fs")
+	engine, err := scripting.NewEngine(ctx, io.Discard, io.Discard, sessionID, "fs", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

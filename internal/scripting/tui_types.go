@@ -7,6 +7,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
+	istrings "github.com/joeycumines/go-prompt/strings"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 )
 
@@ -41,20 +42,21 @@ func (b *atomicBool) IsSet() bool {
 //     (RLock) are safe but must not perform mutations. Schedule mutations via the
 //     writer queue.
 type TUIManager struct {
-	engine           *Engine
-	ctx              context.Context
-	currentMode      *ScriptMode
-	modes            map[string]*ScriptMode
-	commands         map[string]Command
-	commandOrder     []string // maintains insertion order of commands
-	mu               sync.RWMutex
-	reader           *TUIReader                // Concrete reader type with lazy initialization
-	writer           *TUIWriter                // Concrete writer type with lazy initialization
-	prompts          map[string]*prompt.Prompt // Manages named prompt instances
-	activePrompt     *prompt.Prompt            // Pointer to the currently active prompt
-	completers       map[string]goja.Callable  // JavaScript completion functions
-	keyBindings      map[string]goja.Callable  // JavaScript key binding handlers
-	promptCompleters map[string]string         // Maps prompt names to completer names
+	engine               *Engine
+	ctx                  context.Context
+	currentMode          *ScriptMode
+	modes                map[string]*ScriptMode
+	commands             map[string]Command
+	commandOrder         []string // maintains insertion order of commands
+	mu                   sync.RWMutex
+	reader               *TUIReader                // Concrete reader type with lazy initialization
+	writer               *TUIWriter                // Concrete writer type with lazy initialization
+	prompts              map[string]*prompt.Prompt // Manages named prompt instances
+	activePrompt         *prompt.Prompt            // Pointer to the currently active prompt
+	completers           map[string]goja.Callable  // JavaScript completion functions
+	keyBindings          map[string]goja.Callable  // JavaScript key binding handlers
+	promptCompleters     map[string]string         // Maps prompt names to completer names
+	promptHistoryConfigs map[string]historyConfig  // History config per named prompt for persistence
 	// defaultColors controls the default color scheme used when running prompts
 	// without explicit color configuration. It is initialized with sensible
 	// defaults and can be overridden by configuration (e.g., config file).
@@ -127,7 +129,9 @@ type ScriptMode struct {
 	// InitialCommand is an optional command string  to execute when starting the prompt.
 	// Basically, it defers _visibly_ starting the prompt, until after the initial command is run.
 	InitialCommand string
-	mu             sync.RWMutex
+	// Multiline enables multiline input support for this mode's prompt.
+	Multiline bool
+	mu        sync.RWMutex
 }
 
 // TUIConfig defines the configuration for a rich TUI interface.
@@ -138,20 +142,29 @@ type TUIConfig struct {
 	ValidatorFn  goja.Callable
 }
 
+// FlagDef describes a flag available for a command, used for tab-completion.
+type FlagDef struct {
+	Name        string // flag name without leading dashes
+	Description string // short description for completion hint
+}
+
 // Command represents a command that can be executed in the terminal.
 type Command struct {
 	Name          string
 	Description   string
 	Usage         string
-	Handler       interface{} // Can be goja.Callable or Go function
+	Handler       any // Can be goja.Callable or Go function
 	IsGoCommand   bool
 	ArgCompleters []string
+	FlagDefs      []FlagDef
 }
 
 // PromptColors represents color configuration for a prompt.
 type PromptColors struct {
 	InputText               prompt.Color
+	InputBG                 prompt.Color
 	PrefixText              prompt.Color
+	PrefixBG                prompt.Color
 	SuggestionText          prompt.Color
 	SuggestionBG            prompt.Color
 	SelectedSuggestionText  prompt.Color
@@ -164,9 +177,61 @@ type PromptColors struct {
 	ScrollbarBG             prompt.Color
 }
 
-// HistoryConfig represents history configuration for a prompt.
-type HistoryConfig struct {
+// historyConfig represents history configuration for a prompt.
+type historyConfig struct {
 	Enabled bool
 	File    string
 	Size    int
+}
+
+// promptBuildConfig captures all variance points between the two prompt builders
+// (runAdvancedPrompt for registerMode, and jsCreatePrompt for the low-level API).
+// This struct is passed to buildGoPrompt to construct a go-prompt instance with
+// consistent feature support.
+type promptBuildConfig struct {
+	// prefix is used as a static prompt prefix when prefixCallback is nil.
+	prefix string
+	// prefixCallback, if set, provides a dynamic prefix evaluated at render time.
+	// Takes priority over prefix.
+	prefixCallback func() string
+	// title sets the terminal title via go-prompt.
+	title string
+	// colors controls the prompt color scheme.
+	colors PromptColors
+	// completer is the go-prompt completer function.
+	completer func(prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber)
+	// initialCommand is an optional command string to execute when starting the prompt.
+	initialCommand string
+	// history provides command history entries for up-arrow recall.
+	history []string
+	// flushOutput wraps the executor to flush queued output before/after execution.
+	flushOutput bool
+	// maxSuggestion sets the maximum number of completion suggestions shown.
+	// A value of 0 uses go-prompt's default.
+	maxSuggestion uint16
+	// dynamicCompletion enables recomputing completions on each keystroke.
+	dynamicCompletion bool
+	// executeHidesCompletions auto-hides completions when submitting input.
+	executeHidesCompletions bool
+	// escapeToggle binds the Escape key to toggle completion visibility.
+	escapeToggle bool
+	// historySize limits the number of history entries. 0 uses go-prompt default.
+	historySize int
+	// initialText pre-fills the prompt buffer with text for the user to edit.
+	initialText string
+	// showCompletionAtStart shows the completion dropdown immediately on prompt start.
+	showCompletionAtStart bool
+	// completionOnDown allows the Down arrow key to trigger the completion dropdown.
+	completionOnDown bool
+	// keyBindMode selects the key binding preset: "emacs" or "common" (default).
+	keyBindMode string
+	// multiline enables multiline input support. When true, Alt+Enter inserts
+	// a newline into the buffer instead of submitting. Enter always submits.
+	multiline bool
+	// completionWordSeparator overrides the default word separator used for
+	// completion boundary detection. Empty string uses go-prompt's default (space only).
+	completionWordSeparator string
+	// indentSize sets the number of spaces per indent level for multiline input.
+	// 0 uses go-prompt's default (2).
+	indentSize int
 }

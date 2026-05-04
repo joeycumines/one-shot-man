@@ -141,10 +141,10 @@ func TestBlackboard_ThreadSafety(t *testing.T) {
 	done := make(chan struct{}, numWriters+numDeleters+numReaders+numKeysOps+numSnapshotters+numClearers)
 
 	// Concurrent writers - set random keys with various value types
-	for g := 0; g < numWriters; g++ {
+	for g := range numWriters {
 		go func(id int) {
 			defer func() { done <- struct{}{} }()
-			for i := 0; i < iterations; i++ {
+			for i := range iterations {
 				key := fmt.Sprintf("key-%d-%d", id, i)
 				switch i % 5 {
 				case 0:
@@ -165,10 +165,10 @@ func TestBlackboard_ThreadSafety(t *testing.T) {
 	}
 
 	// Concurrent deleters - delete random keys
-	for g := 0; g < numDeleters; g++ {
+	for g := range numDeleters {
 		go func(id int) {
 			defer func() { done <- struct{}{} }()
-			for i := 0; i < iterations; i++ {
+			for i := range iterations {
 				// Try to delete keys that might exist from writers
 				key := fmt.Sprintf("key-%d-%d", (id+i)%numWriters, i)
 				bb.Delete(key)
@@ -179,10 +179,10 @@ func TestBlackboard_ThreadSafety(t *testing.T) {
 	}
 
 	// Concurrent readers - get/has on various keys (read operations)
-	for g := 0; g < numReaders; g++ {
+	for g := range numReaders {
 		go func(id int) {
 			defer func() { done <- struct{}{} }()
-			for i := 0; i < iterations; i++ {
+			for i := range iterations {
 				key := fmt.Sprintf("key-%d-%d", (id+i)%numWriters, i)
 				bb.Get(key)
 				bb.Has(key)
@@ -193,10 +193,10 @@ func TestBlackboard_ThreadSafety(t *testing.T) {
 	}
 
 	// Concurrent Keys() calls - enumerate keys during writes/deletes
-	for g := 0; g < numKeysOps; g++ {
+	for g := range numKeysOps {
 		go func(id int) {
 			defer func() { done <- struct{}{} }()
-			for i := 0; i < iterations; i++ {
+			for range iterations {
 				keys := bb.Keys()
 				// Verify keys slice can be safely used (no panic)
 				_ = len(keys)
@@ -211,10 +211,10 @@ func TestBlackboard_ThreadSafety(t *testing.T) {
 	}
 
 	// Concurrent Snapshot() calls - take snapshots during concurrent modifications
-	for g := 0; g < numSnapshotters; g++ {
+	for g := range numSnapshotters {
 		go func(id int) {
 			defer func() { done <- struct{}{} }()
-			for i := 0; i < iterations; i++ {
+			for range iterations {
 				snapshot := bb.Snapshot()
 				// Verify snapshot is a valid map (no panic, no nil dereference)
 				_ = len(snapshot)
@@ -229,7 +229,7 @@ func TestBlackboard_ThreadSafety(t *testing.T) {
 	}
 
 	// Concurrent Clear() calls - periodically clear the blackboard
-	for g := 0; g < numClearers; g++ {
+	for g := range numClearers {
 		go func(id int) {
 			defer func() { done <- struct{}{} }()
 			// Call Clear less frequently (every 10 iterations)
@@ -240,7 +240,7 @@ func TestBlackboard_ThreadSafety(t *testing.T) {
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < numWriters+numDeleters+numReaders+numKeysOps+numSnapshotters+numClearers; i++ {
+	for range numWriters + numDeleters + numReaders + numKeysOps + numSnapshotters + numClearers {
 		<-done
 	}
 

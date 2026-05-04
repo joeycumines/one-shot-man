@@ -2,6 +2,7 @@ package pabt
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -222,7 +223,7 @@ func TestStateActions_IsCalled(t *testing.T) {
 	// Wait for completion
 	select {
 	case <-ticker.Done():
-		if err := ticker.Err(); err != nil && err != context.Canceled && err != context.DeadlineExceeded {
+		if err := ticker.Err(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("Ticker error: %v", err)
 		}
 	case <-ctx.Done():

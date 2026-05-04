@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/cursor"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -128,24 +128,27 @@ func TestTeaKeysByName_ContainsCoreKeys(t *testing.T) {
 	requireFn(vm, module)
 
 	exports := module.Get("exports").ToObject(vm)
-	keysByNameObj := exports.Get("keysByName").ToObject(vm)
+	keysByNameVal := exports.Get("keysByName")
+	require.False(t, goja.IsUndefined(keysByNameVal), "keysByName should be exported")
+	require.False(t, goja.IsNull(keysByNameVal), "keysByName should not be null")
+	keysByNameObj := keysByNameVal.ToObject(vm)
+	require.NotNil(t, keysByNameObj, "keysByName should be an object")
 
 	// Verify core keys are present by Go constant name
-	// Note: Use actual constant names from keys_gen.go, not intuitive names
-	// - "KeyEsc" not "KeyEscape"
-	// - "KeyCtrlQuestionMark" represents backspace
-	coreKeyNames := []string{"KeyEnter", "KeyEsc", "KeyUp", "KeyDown", "KeyLeft", "KeyRight"}
+	coreKeyNames := []string{"KeyEnter", "KeyEscape", "KeyUp", "KeyDown", "KeyLeft", "KeyRight"}
 	for _, name := range coreKeyNames {
 		val := keysByNameObj.Get(name)
 		assert.False(t, goja.IsUndefined(val), "keysByName[%q] should be defined", name)
-		if !goja.IsUndefined(val) && !goja.IsNull(val) {
-			keyDef := val.ToObject(vm)
-			if keyDef != nil {
-				keyName := keyDef.Get("name")
-				if !goja.IsUndefined(keyName) && !goja.IsNull(keyName) {
-					assert.Equal(t, name, keyName.String(), "keysByName[%q].name should match", name)
-				}
-			}
+		if goja.IsUndefined(val) || goja.IsNull(val) {
+			continue
+		}
+		keyDefObj := val.ToObject(vm)
+		if keyDefObj == nil {
+			continue
+		}
+		keyName := keyDefObj.Get("name")
+		if !goja.IsUndefined(keyName) && !goja.IsNull(keyName) {
+			assert.Equal(t, name, keyName.String(), "keysByName[%q].name should match", name)
 		}
 	}
 }
@@ -468,7 +471,129 @@ func TestJsModel_View(t *testing.T) {
 
 	// Test View
 	view := model.View()
-	assert.Equal(t, "Message: Hello World", view)
+	assert.Equal(t, "Message: Hello World", view.Content)
+}
+
+func TestJsModel_View_ModeFields(t *testing.T) {
+	// In v2, terminal features are set via the JS view() return object,
+	// not via jsModel struct fields. The old fields (altScreen, mouseMode,
+	// reportFocus, windowTitle) no longer exist on jsModel.
+	ctx := context.Background()
+	vm := goja.New()
+	manager := newTestManager(ctx, vm)
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+	_ = vm.Set("tea", module.Get("exports"))
+
+	t.Run("String Return Content Only", func(t *testing.T) {
+		result, err := vm.RunString(`
+			tea.newModel({
+				init: function() { return {}; },
+				update: function(msg, model) { return [model, null]; },
+				view: function(model) { return 'test'; }
+			});
+		`)
+		require.NoError(t, err)
+
+		modelWrapper := result.ToObject(vm)
+		getModelFn, _ := goja.AssertFunction(modelWrapper.Get("_getModel"))
+		modelVal, _ := getModelFn(goja.Undefined())
+		model, _ := modelVal.Export().(*jsModel)
+
+		// Plain string view: all mode fields should be zero
+		view := model.View()
+		assert.Equal(t, "test", view.Content)
+		assert.False(t, view.AltScreen, "AltScreen should be false for plain string")
+		assert.Equal(t, tea.MouseModeNone, view.MouseMode, "MouseMode should be None for plain string")
+		assert.False(t, view.ReportFocus, "ReportFocus should be false for plain string")
+		assert.Equal(t, "", view.WindowTitle, "WindowTitle should be empty for plain string")
+	})
+
+	t.Run("Declarative Object Return", func(t *testing.T) {
+		result, err := vm.RunString(`
+			tea.newModel({
+				init: function() { return {}; },
+				update: function(msg, model) { return [model, null]; },
+				view: function(model) {
+					return {
+						content: 'Hello!',
+						altScreen: true,
+						mouseMode: 'allMotion',
+						reportFocus: true,
+						windowTitle: 'My App'
+					};
+				}
+			});
+		`)
+		require.NoError(t, err)
+
+		modelWrapper := result.ToObject(vm)
+		getModelFn, _ := goja.AssertFunction(modelWrapper.Get("_getModel"))
+		modelVal, _ := getModelFn(goja.Undefined())
+		model, _ := modelVal.Export().(*jsModel)
+
+		view := model.View()
+		assert.Equal(t, "Hello!", view.Content)
+		assert.True(t, view.AltScreen, "AltScreen should be true from object")
+		assert.Equal(t, tea.MouseModeAllMotion, view.MouseMode, "MouseMode should be AllMotion from object")
+		assert.True(t, view.ReportFocus, "ReportFocus should be true from object")
+		assert.Equal(t, "My App", view.WindowTitle, "WindowTitle should be set from object")
+	})
+
+	t.Run("Declarative CellMotion", func(t *testing.T) {
+		result, err := vm.RunString(`
+			tea.newModel({
+				init: function() { return {}; },
+				update: function(msg, model) { return [model, null]; },
+				view: function(model) {
+					return {
+						content: 'Mouse!',
+						mouseMode: 'cellMotion'
+					};
+				}
+			});
+		`)
+		require.NoError(t, err)
+
+		modelWrapper := result.ToObject(vm)
+		getModelFn, _ := goja.AssertFunction(modelWrapper.Get("_getModel"))
+		modelVal, _ := getModelFn(goja.Undefined())
+		model, _ := modelVal.Export().(*jsModel)
+
+		view := model.View()
+		assert.Equal(t, "Mouse!", view.Content)
+		assert.Equal(t, tea.MouseModeCellMotion, view.MouseMode, "MouseMode should be CellMotion")
+	})
+
+	t.Run("Declarative Only AltScreen", func(t *testing.T) {
+		result, err := vm.RunString(`
+			tea.newModel({
+				init: function() { return {}; },
+				update: function(msg, model) { return [model, null]; },
+				view: function(model) {
+					return {
+						content: 'Alt!',
+						altScreen: true
+					};
+				}
+			});
+		`)
+		require.NoError(t, err)
+
+		modelWrapper := result.ToObject(vm)
+		getModelFn, _ := goja.AssertFunction(modelWrapper.Get("_getModel"))
+		modelVal, _ := getModelFn(goja.Undefined())
+		model, _ := modelVal.Export().(*jsModel)
+
+		view := model.View()
+		assert.Equal(t, "Alt!", view.Content)
+		assert.True(t, view.AltScreen)
+		assert.Equal(t, tea.MouseModeNone, view.MouseMode)
+		assert.False(t, view.ReportFocus)
+	})
 }
 
 func TestJsModel_Update_QuitCommand(t *testing.T) {
@@ -510,7 +635,7 @@ func TestJsModel_Update_QuitCommand(t *testing.T) {
 	model.Init()
 
 	// Simulate 'q' key press
-	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	keyMsg := tea.KeyPressMsg{Text: "q"}
 	_, cmd := model.Update(keyMsg)
 
 	// Verify that cmd is tea.Quit
@@ -605,144 +730,18 @@ func TestTickCommand_InvalidDuration(t *testing.T) {
 	assert.Contains(t, resultObj.Get("error").String(), "BT001")
 }
 
-func TestSetWindowTitle(t *testing.T) {
-	ctx := context.Background()
-	vm := goja.New()
-	manager := newTestManager(ctx, vm)
-	module := vm.NewObject()
-	require.NoError(t, module.Set("exports", vm.NewObject()))
-
-	requireFn := Require(ctx, manager)
-	requireFn(vm, module)
-
-	_ = vm.Set("tea", module.Get("exports"))
-
-	result, err := vm.RunString(`tea.setWindowTitle('My App')`)
-	require.NoError(t, err)
-
-	resultObj := result.ToObject(vm)
-	assert.Equal(t, "setWindowTitle", resultObj.Get("_cmdType").String())
-	assert.Equal(t, "My App", resultObj.Get("title").String())
-}
-
-func TestCursorCommands(t *testing.T) {
-	ctx := context.Background()
-	vm := goja.New()
-	manager := newTestManager(ctx, vm)
-	module := vm.NewObject()
-	require.NoError(t, module.Set("exports", vm.NewObject()))
-
-	requireFn := Require(ctx, manager)
-	requireFn(vm, module)
-
-	_ = vm.Set("tea", module.Get("exports"))
-
-	// Test hideCursor
-	result, err := vm.RunString(`tea.hideCursor()`)
-	require.NoError(t, err)
-	resultObj := result.ToObject(vm)
-	assert.Equal(t, "hideCursor", resultObj.Get("_cmdType").String())
-
-	// Test showCursor
-	result, err = vm.RunString(`tea.showCursor()`)
-	require.NoError(t, err)
-	resultObj = result.ToObject(vm)
-	assert.Equal(t, "showCursor", resultObj.Get("_cmdType").String())
-}
-
-func TestAltScreenCommands(t *testing.T) {
-	ctx := context.Background()
-	vm := goja.New()
-	manager := newTestManager(ctx, vm)
-	module := vm.NewObject()
-	require.NoError(t, module.Set("exports", vm.NewObject()))
-
-	requireFn := Require(ctx, manager)
-	requireFn(vm, module)
-
-	_ = vm.Set("tea", module.Get("exports"))
-
-	// Test enterAltScreen
-	result, err := vm.RunString(`tea.enterAltScreen()`)
-	require.NoError(t, err)
-	resultObj := result.ToObject(vm)
-	assert.Equal(t, "enterAltScreen", resultObj.Get("_cmdType").String())
-
-	// Test exitAltScreen
-	result, err = vm.RunString(`tea.exitAltScreen()`)
-	require.NoError(t, err)
-	resultObj = result.ToObject(vm)
-	assert.Equal(t, "exitAltScreen", resultObj.Get("_cmdType").String())
-}
-
-func TestBracketedPasteCommands(t *testing.T) {
-	ctx := context.Background()
-	vm := goja.New()
-	manager := newTestManager(ctx, vm)
-	module := vm.NewObject()
-	require.NoError(t, module.Set("exports", vm.NewObject()))
-
-	requireFn := Require(ctx, manager)
-	requireFn(vm, module)
-
-	_ = vm.Set("tea", module.Get("exports"))
-
-	// Test enableBracketedPaste
-	result, err := vm.RunString(`tea.enableBracketedPaste()`)
-	require.NoError(t, err)
-	resultObj := result.ToObject(vm)
-	assert.Equal(t, "enableBracketedPaste", resultObj.Get("_cmdType").String())
-
-	// Test disableBracketedPaste
-	result, err = vm.RunString(`tea.disableBracketedPaste()`)
-	require.NoError(t, err)
-	resultObj = result.ToObject(vm)
-	assert.Equal(t, "disableBracketedPaste", resultObj.Get("_cmdType").String())
-}
-
-func TestReportFocusCommands(t *testing.T) {
-	ctx := context.Background()
-	vm := goja.New()
-	manager := newTestManager(ctx, vm)
-	module := vm.NewObject()
-	require.NoError(t, module.Set("exports", vm.NewObject()))
-
-	requireFn := Require(ctx, manager)
-	requireFn(vm, module)
-
-	_ = vm.Set("tea", module.Get("exports"))
-
-	// Test enableReportFocus
-	result, err := vm.RunString(`tea.enableReportFocus()`)
-	require.NoError(t, err)
-	resultObj := result.ToObject(vm)
-	assert.Equal(t, "enableReportFocus", resultObj.Get("_cmdType").String())
-
-	// Test disableReportFocus
-	result, err = vm.RunString(`tea.disableReportFocus()`)
-	require.NoError(t, err)
-	resultObj = result.ToObject(vm)
-	assert.Equal(t, "disableReportFocus", resultObj.Get("_cmdType").String())
-}
-
-func TestWindowSizeCommand(t *testing.T) {
-	ctx := context.Background()
-	vm := goja.New()
-	manager := newTestManager(ctx, vm)
-	module := vm.NewObject()
-	require.NoError(t, module.Set("exports", vm.NewObject()))
-
-	requireFn := Require(ctx, manager)
-	requireFn(vm, module)
-
-	_ = vm.Set("tea", module.Get("exports"))
-
-	result, err := vm.RunString(`tea.windowSize()`)
-	require.NoError(t, err)
-
-	resultObj := result.ToObject(vm)
-	assert.Equal(t, "windowSize", resultObj.Get("_cmdType").String())
-}
+// NOTE: The following v1 imperative commands are FULLY REMOVED (not just disabled).
+// setWindowTitle, hideCursor, showCursor, enterAltScreen, exitAltScreen,
+// enableReportFocus, disableReportFocus, windowSize no longer exist in the JS API.
+// Terminal features are now controlled declaratively via tea.View fields:
+// - altScreen → View.AltScreen (set via tea.run options)
+// - mouse/mouseCellMotion → View.MouseMode (set via tea.run options)
+// - reportFocus → View.ReportFocus (set via tea.run options)
+// - windowTitle → View.WindowTitle (set via tea.run options)
+// Calling any removed command produces a JavaScript TypeError (undefined function).
+//
+// Tests for the above were removed per the No-Shim directive in CLAUDE.md.
+// The only window-size command remaining is tea.requestWindowSize() (returns a command).
 
 func TestIsTTY(t *testing.T) {
 	ctx := context.Background()
@@ -776,18 +775,12 @@ func TestRequire_AllNewFunctionsExported(t *testing.T) {
 	require.NotNil(t, exports)
 
 	// Check all new functions are exported
+	// Note: setWindowTitle, hideCursor, showCursor, enterAltScreen, exitAltScreen,
+	// enableReportFocus, disableReportFocus, windowSize are REMOVED in v2
+	// (replaced by tea.View declarative fields).
 	newFunctions := []string{
 		"tick",
-		"setWindowTitle",
-		"hideCursor",
-		"showCursor",
-		"enterAltScreen",
-		"exitAltScreen",
-		"enableBracketedPaste",
-		"disableBracketedPaste",
-		"enableReportFocus",
-		"disableReportFocus",
-		"windowSize",
+		"requestWindowSize",
 		"isTTY",
 	}
 
@@ -978,7 +971,7 @@ func TestValueToCmd_DescriptorBatch(t *testing.T) {
 	require.True(t, ok)
 
 	// Descriptor batch containing wrapped Go commands - verify both are executed
-	calls := make([]int, 0)
+	var calls []int
 	var callsMu sync.Mutex
 	c1 := func() tea.Msg { callsMu.Lock(); defer callsMu.Unlock(); calls = append(calls, 1); return nil }
 	c2 := func() tea.Msg { callsMu.Lock(); defer callsMu.Unlock(); calls = append(calls, 2); return nil }
@@ -1039,7 +1032,7 @@ func TestValueToCmd_DescriptorSequence(t *testing.T) {
 	m, ok := modelVal.Export().(*jsModel)
 	require.True(t, ok)
 
-	calls := make([]int, 0)
+	var calls []int
 	var callsMu sync.Mutex
 	c1 := func() tea.Msg { callsMu.Lock(); calls = append(calls, 1); callsMu.Unlock(); return nil }
 	c2 := func() tea.Msg { callsMu.Lock(); calls = append(calls, 2); callsMu.Unlock(); return nil }

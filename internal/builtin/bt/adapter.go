@@ -8,7 +8,7 @@ import (
 
 	"github.com/dop251/goja"
 	bt "github.com/joeycumines/go-behaviortree"
-	"github.com/joeycumines/one-shot-man/internal/goroutineid"
+	"github.com/joeycumines/goroutineid"
 )
 
 // JS status string constants - single source of truth for status string values.
@@ -70,7 +70,7 @@ type JSLeafAdapter struct {
 	lastError  error
 
 	// Cancellation support
-	// FIXED: Use parent context directly to prevent memory leak (CRITICAL #2)
+	// Uses parent context directly (no child derivation) to prevent memory leak.
 	ctx context.Context
 }
 
@@ -275,7 +275,7 @@ func (a *JSLeafAdapter) dispatchJSWithGen(gen uint64) {
 			statusStr := call.Argument(0).String()
 			var err error
 			if !goja.IsNull(call.Argument(1)) && !goja.IsUndefined(call.Argument(1)) {
-				err = fmt.Errorf("%s", call.Argument(1).String())
+				err = errors.New(call.Argument(1).String())
 			}
 			a.finalize(gen, mapJSStatus(statusStr), err)
 			return goja.Undefined()
@@ -392,7 +392,7 @@ func BlockingJSLeaf(ctx context.Context, bridge *Bridge, vm *goja.Runtime, tick 
 					statusStr := call.Argument(0).String()
 					var err error
 					if arg1 := call.Argument(1); !goja.IsNull(arg1) && !goja.IsUndefined(arg1) {
-						err = fmt.Errorf("%s", arg1.String())
+						err = errors.New(arg1.String())
 					}
 					res = result{mapJSStatus(statusStr), err}
 					called = true
@@ -477,7 +477,7 @@ func BlockingJSLeaf(ctx context.Context, bridge *Bridge, vm *goja.Runtime, tick 
 					statusStr := call.Argument(0).String()
 					var err error
 					if arg1 := call.Argument(1); !goja.IsNull(arg1) && !goja.IsUndefined(arg1) {
-						err = fmt.Errorf("%s", arg1.String())
+						err = errors.New(arg1.String())
 					}
 					send(result{mapJSStatus(statusStr), err})
 					return goja.Undefined()

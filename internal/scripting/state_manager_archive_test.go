@@ -2,7 +2,6 @@ package scripting
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -29,7 +28,7 @@ type flakyBackend struct {
 func (f *flakyBackend) LoadSession(sessionID string) (*storage.Session, error) {
 	if f.saved == nil {
 		// return a simple session so StateManager initializes properly
-		f.saved = &storage.Session{Version: storage.CurrentSchemaVersion, ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []storage.HistoryEntry{}}
+		f.saved = &storage.Session{Version: storage.CurrentSchemaVersion, ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]any{}, SharedState: map[string]any{}, History: []storage.HistoryEntry{}}
 	}
 	return f.saved, nil
 }
@@ -71,7 +70,7 @@ func TestArchiveAndReset_RetriesOnCollision(t *testing.T) {
 	fb := &flakyBackend{sessionID: "sid"}
 
 	// Create a state manager that uses our flaky backend
-	sm := &StateManager{backend: fb, sessionID: "sid", session: &storage.Session{Version: storage.CurrentSchemaVersion, ID: "sid", CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []storage.HistoryEntry{}}}
+	sm := &StateManager{backend: fb, sessionID: "sid", session: &storage.Session{Version: storage.CurrentSchemaVersion, ID: "sid", CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]any{}, SharedState: map[string]any{}, History: []storage.HistoryEntry{}}}
 
 	archivePath, err := sm.ArchiveAndReset()
 	if err != nil {
@@ -104,13 +103,14 @@ func TestArchiveAndReset_RetriesOnCollision(t *testing.T) {
 
 // backendAlwaysExists simulates a backend that always returns os.ErrExist for ArchiveSession
 type backendAlwaysExists struct {
+	t         *testing.T
 	sessionID string
 	saved     *storage.Session
 }
 
 func (b *backendAlwaysExists) LoadSession(sessionID string) (*storage.Session, error) {
 	if b.saved == nil {
-		b.saved = &storage.Session{Version: storage.CurrentSchemaVersion, ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]interface{}{"x": {}}, SharedState: map[string]interface{}{"k": "v"}, History: []storage.HistoryEntry{{EntryID: "1"}}}
+		b.saved = &storage.Session{Version: storage.CurrentSchemaVersion, ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]any{"x": {}}, SharedState: map[string]any{"k": "v"}, History: []storage.HistoryEntry{{EntryID: "1"}}}
 	}
 	return b.saved, nil
 }
@@ -120,7 +120,7 @@ func (b *backendAlwaysExists) SaveSession(session *storage.Session) error {
 }
 func (b *backendAlwaysExists) ArchiveSession(sessionID string, destPath string) error {
 	atomic.AddInt32(&backendAlwaysExistsCalls, 1)
-	fmt.Printf("backendAlwaysExists.ArchiveSession called #%d session=%s dest=%s\n", atomic.LoadInt32(&backendAlwaysExistsCalls), sessionID, destPath)
+	b.t.Logf("backendAlwaysExists.ArchiveSession called #%d session=%s dest=%s", atomic.LoadInt32(&backendAlwaysExistsCalls), sessionID, destPath)
 	return os.ErrExist
 }
 func (b *backendAlwaysExists) Close() error { return nil }
@@ -130,7 +130,7 @@ func TestArchiveAndReset_ExhaustsAndAborts(t *testing.T) {
 	storage.SetTestPaths(dir)
 	defer storage.ResetPaths()
 
-	fb := &backendAlwaysExists{sessionID: "sid"}
+	fb := &backendAlwaysExists{t: t, sessionID: "sid"}
 
 	// Create a real backend and state manager so internal ring-buffer state
 	// is initialized properly, then swap the backend for our failing stub.

@@ -28,7 +28,7 @@ func TestStateNoCircularReferences(t *testing.T) {
 	state := NewState(bb)
 
 	// Register actions with pure Go types
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		cond := &SimpleCond{key: "test", match: func(v any) bool { return v == "value" }}
 		effect := &SimpleEffect{key: "test", value: "value"}
 		node := bt.New(func(children []bt.Node) (bt.Status, error) { return bt.Success, nil })
@@ -65,11 +65,11 @@ func TestActionRegistryConcurrentAccess(t *testing.T) {
 	registry := NewActionRegistry()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			for j := 0; j < 100; j++ {
+			for range 100 {
 				// Concurrent register
 				node := bt.New(func(children []bt.Node) (bt.Status, error) { return bt.Success, nil })
 				action := NewAction("test", nil, nil, node)
@@ -113,7 +113,7 @@ func TestNewAction_NilNodePanic(t *testing.T) {
 func TestFuncConditionNoLeak(t *testing.T) {
 	// Create many FuncConditions
 	var conditions []pabtpkg.Condition
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		captured := i // Capture loop variable
 		cond := NewFuncCondition("key", func(v any) bool {
 			return v == captured
@@ -142,7 +142,7 @@ func TestFuncConditionNoLeak(t *testing.T) {
 // TestSimpleTypesNoLeak verifies SimpleCond/SimpleEffect/SimpleAction don't leak
 func TestSimpleTypesNoLeak(t *testing.T) {
 	// Create many simple types
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		cond := &SimpleCond{key: i, match: func(v any) bool { return true }}
 		effect := &SimpleEffect{key: i, value: "value"}
 		node := bt.New(func(children []bt.Node) (bt.Status, error) { return bt.Success, nil })
@@ -171,7 +171,7 @@ func TestStateActionsFilteringNoLeak(t *testing.T) {
 	state := NewState(bb)
 
 	// Register many actions
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		key := i
 		cond := &SimpleCond{key: key, match: func(v any) bool { return true }}
 		effect := &SimpleEffect{key: key, value: true}
@@ -186,7 +186,7 @@ func TestStateActionsFilteringNoLeak(t *testing.T) {
 	}
 
 	// Query with different failed conditions many times
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		failed := &SimpleCond{key: i, match: func(v any) bool { return true }}
 		_, _ = state.Actions(failed)
 	}

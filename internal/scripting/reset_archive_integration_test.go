@@ -48,12 +48,12 @@ func TestResetArchiveIntegration_FileSystemBackend(t *testing.T) {
 		ID:         sessionID,
 		CreateTime: time.Now(),
 		UpdateTime: time.Now(),
-		SharedState: map[string]interface{}{
+		SharedState: map[string]any{
 			"contextItems": []string{"file1.txt", "file2.go"},
 			"customData":   "important value",
 		},
-		ScriptState: map[string]map[string]interface{}{
-			"code-review": map[string]interface{}{
+		ScriptState: map[string]map[string]any{
+			"code-review": map[string]any{
 				"reviewed": 5,
 				"notes":    "good code",
 			},
@@ -124,7 +124,7 @@ func TestResetArchiveIntegration_FileSystemBackend(t *testing.T) {
 	}
 
 	if contextItems, ok := archivedSession.SharedState["contextItems"]; ok {
-		if items, ok := contextItems.([]interface{}); ok {
+		if items, ok := contextItems.([]any); ok {
 			if len(items) != 2 {
 				t.Errorf("Archived session lost contextItems: got %d, want 2", len(items))
 			}
@@ -250,8 +250,8 @@ func TestMultipleResets_ArchiveCounter(t *testing.T) {
 			ID:          sessionID,
 			CreateTime:  time.Now(),
 			UpdateTime:  time.Now(),
-			SharedState: map[string]interface{}{"value": fmt.Sprintf("cycle-%d", i)},
-			ScriptState: make(map[string]map[string]interface{}),
+			SharedState: map[string]any{"value": fmt.Sprintf("cycle-%d", i)},
+			ScriptState: make(map[string]map[string]any),
 		}
 
 		if err := backend.SaveSession(session); err != nil {

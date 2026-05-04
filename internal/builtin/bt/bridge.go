@@ -9,11 +9,15 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/dop251/goja_nodejs/require"
 	bt "github.com/joeycumines/go-behaviortree"
-	"github.com/joeycumines/one-shot-man/internal/goroutineid"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goroutineid"
 )
+
+// PromisifyFunc is the signature for the event loop's Promisify method.
+// Stored in Bridge for easier mocking in tests.
+type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 
 // Bridge manages the behavior tree integration between Go and JavaScript.
 // It provides a safe interface for Go code to interact with JavaScript, ensuring
@@ -30,8 +34,10 @@ import (
 type Bridge struct {
 	// timeout is the maximum duration to wait for RunOnLoopSync operations.
 	// Default is 5 seconds. Set to 0 to disable timeout (not recommended for production).
-	timeout time.Duration
-	loop    *eventloop.EventLoop
+	timeout   time.Duration
+	loop      *goeventloop.Loop
+	vm        *goja.Runtime
+	promisify PromisifyFunc
 
 	// Event loop goroutine ID (MANDATORY - fixes GAP #2)
 	// We extract the goroutine ID from runtime.Stack() during initialization.
@@ -50,15 +56,14 @@ type Bridge struct {
 	// manager aggregates all Tickers created via newTicker.
 	// It is stopped when the Bridge is stopped.
 	manager bt.Manager
+
+	// stopParentCtx keeps the context.AfterFunc stop handle alive
+	// to prevent GC from collecting it before parent context cancellation.
+	stopParentCtx func() bool
 }
 
 // DefaultTimeout is the maximum duration to wait for RunOnLoopSync operations.
 const DefaultTimeout = 5 * time.Second
-
-// getGoroutineID returns the current goroutine ID using the shared utility.
-func getGoroutineID() int64 {
-	return goroutineid.Get()
-}
 
 // NewBridgeWithEventLoop creates a Bridge that uses an external event loop.
 // The event loop must be started and managed by the caller.
@@ -70,21 +75,25 @@ func getGoroutineID() int64 {
 // Parameters:
 //   - ctx: Context for cancellation support
 //   - loop: The event loop (must already be started)
+//   - vm: The goja.Runtime
 //   - registry: The require.Registry for module registration (can be nil)
 //
 // The Bridge will:
 //   - Register the osm:bt module with the registry
 //   - Initialize JavaScript helpers on the event loop
 //   - Create an internal bt.Manager for ticker aggregation
-func NewBridgeWithEventLoop(ctx context.Context, loop *eventloop.EventLoop, registry *require.Registry) *Bridge {
+func NewBridgeWithEventLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Runtime, registry *require.Registry) *Bridge {
 	if loop == nil {
 		panic("event loop must not be nil")
 	}
-	return newBridgeWithLoop(ctx, loop, registry)
+	if vm == nil {
+		panic("goja runtime must not be nil")
+	}
+	return newBridgeWithLoop(ctx, loop, vm, registry, loop.Promisify)
 }
 
 // newBridgeWithLoop is the internal constructor for Bridge.
-func newBridgeWithLoop(ctx context.Context, loop *eventloop.EventLoop, reg *require.Registry) *Bridge {
+func newBridgeWithLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Runtime, reg *require.Registry, promisify PromisifyFunc) *Bridge {
 	// NOTE ON CONTEXT DERIVATION (addressing CRIT-2 from review-1.md):
 	// Bridge's internal lifecycle context (childCtx) is NOT derived from parent ctx.
 	// This is intentional to maintain the critical invariant:
@@ -107,11 +116,13 @@ func newBridgeWithLoop(ctx context.Context, loop *eventloop.EventLoop, reg *requ
 	childCtx, cancel := context.WithCancel(context.Background())
 
 	b := &Bridge{
-		loop:    loop,
-		ctx:     childCtx,
-		cancel:  cancel,
-		timeout: DefaultTimeout,
-		manager: bt.NewManager(),
+		loop:      loop,
+		vm:        vm,
+		ctx:       childCtx,
+		cancel:    cancel,
+		timeout:   DefaultTimeout,
+		manager:   bt.NewManager(),
+		promisify: promisify,
 	}
 
 	// Mark as started (event loop should already be running)
@@ -131,13 +142,13 @@ func newBridgeWithLoop(ctx context.Context, loop *eventloop.EventLoop, reg *requ
 
 	// Initialize the VM within the event loop FIRST
 	errCh := make(chan error, 1)
-	ok := loop.RunOnLoop(func(vm *goja.Runtime) {
-		errCh <- b.initializeJS(vm)
+	submitErr := loop.Submit(func() {
+		errCh <- b.initializeJS()
 	})
-	if !ok {
+	if submitErr != nil {
 		cancel()
 		b.manager.Stop()
-		panic("failed to initialize: event loop not running")
+		panic(fmt.Sprintf("failed to initialize: %v", submitErr))
 	}
 
 	if err := <-errCh; err != nil {
@@ -162,26 +173,24 @@ func newBridgeWithLoop(ctx context.Context, loop *eventloop.EventLoop, reg *requ
 	//   2. Stop() cancels childCtx (closes Done() channel)
 	// This maintains invariant: Done() closed ⇒ IsRunning() = false
 	if ctx.Done() != nil {
-		stop := context.AfterFunc(ctx, func() {
+		b.stopParentCtx = context.AfterFunc(ctx, func() {
 			b.Stop()
 		})
-		_ = stop // keep stop handle to prevent GC collection
 	}
 
 	return b
 }
 
 // initializeJS sets up the JavaScript environment with behavior tree helpers.
-func (b *Bridge) initializeJS(vm *goja.Runtime) error {
+func (b *Bridge) initializeJS() error {
 	// MANDATORY STEP #1: Capture event loop goroutine ID (fixes GAP #2)
 	// We extract the goroutine ID from the stack trace. This parsing happens
 	// ONCE at initialization, so the overhead is acceptable.
-	id := getGoroutineID()
-	b.eventLoopGoroutineID.Store(id)
+	b.eventLoopGoroutineID.Store(goroutineid.Get())
 
 	// Set up the runLeaf helper which bridges async JS functions to callbacks
 	// Note: The status strings in jsHelpers MUST match JSStatusRunning, JSStatusSuccess, JSStatusFailure
-	_, err := vm.RunString(jsHelpers)
+	_, err := b.vm.RunString(jsHelpers)
 	return err
 }
 
@@ -343,7 +352,11 @@ func (b *Bridge) RunOnLoop(fn func(*goja.Runtime)) bool {
 	}
 	b.mu.RUnlock()
 
-	return b.loop.RunOnLoop(fn)
+	vm := b.vm
+	err := b.loop.Submit(func() {
+		fn(vm)
+	})
+	return err == nil
 }
 
 // RunOnLoopSync schedules a function on the event loop and waits for completion.
@@ -358,11 +371,12 @@ func (b *Bridge) RunOnLoopSync(fn func(*goja.Runtime) error) error {
 	timeout := b.timeout
 	b.mu.RUnlock()
 
+	vm := b.vm
 	errCh := make(chan error, 1)
-	ok := b.loop.RunOnLoop(func(vm *goja.Runtime) {
+	submitErr := b.loop.Submit(func() {
 		errCh <- fn(vm)
 	})
-	if !ok {
+	if submitErr != nil {
 		return errors.New("event loop not running")
 	}
 

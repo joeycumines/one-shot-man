@@ -12,8 +12,14 @@ func (pc *PromptColors) applyFromGetter(get func(string) (string, bool)) {
 	if v, ok := get("input"); ok && v != "" {
 		pc.InputText = parseColor(v)
 	}
+	if v, ok := get("inputBackground"); ok && v != "" {
+		pc.InputBG = parseColor(v)
+	}
 	if v, ok := get("prefix"); ok && v != "" {
 		pc.PrefixText = parseColor(v)
+	}
+	if v, ok := get("prefixBackground"); ok && v != "" {
+		pc.PrefixBG = parseColor(v)
 	}
 	if v, ok := get("suggestionText"); ok && v != "" {
 		pc.SuggestionText = parseColor(v)
@@ -47,8 +53,8 @@ func (pc *PromptColors) applyFromGetter(get func(string) (string, bool)) {
 	}
 }
 
-// ApplyFromInterfaceMap applies overrides where values come from a JS map (map[string]interface{}).
-func (pc *PromptColors) ApplyFromInterfaceMap(m map[string]interface{}) {
+// ApplyFromInterfaceMap applies overrides where values come from a JS map (map[string]any).
+func (pc *PromptColors) ApplyFromInterfaceMap(m map[string]any) {
 	if m == nil {
 		return
 	}
@@ -123,7 +129,9 @@ func parseColor(colorStr string) prompt.Color {
 		return prompt.Turquoise
 	case "white":
 		return prompt.White
+	case "default":
+		return prompt.DefaultColor
 	default:
-		return prompt.White
+		return prompt.DefaultColor
 	}
 }

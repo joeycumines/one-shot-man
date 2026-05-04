@@ -619,3 +619,51 @@ func TestRealWorldPromptFlowScenario(t *testing.T) {
 		t.Errorf("expected context, got: %s", result)
 	}
 }
+
+// TestConvertFuncMap_NullFuncMap tests convertFuncMap with undefined/null argument.
+func TestConvertFuncMap_NullFuncMap(t *testing.T) {
+	runtime, _ := setupModule(t)
+
+	// Passing null to funcs() should not crash — convertFuncMap returns empty map.
+	script := `
+		const tmpl = exports.new("null-fm");
+		tmpl.funcs(null);
+		tmpl.parse("Hello {{.name}}!");
+		tmpl.execute({name: "World"});
+	`
+	val, err := runtime.RunString(script)
+	if err != nil {
+		t.Fatalf("script failed: %v", err)
+	}
+	if val.String() != "Hello World!" {
+		t.Errorf("expected 'Hello World!', got %q", val.String())
+	}
+}
+
+// TestWrapJSFunction_ThrowsNonError tests wrapJSFunction panic recovery for non-error throws.
+func TestWrapJSFunction_ThrowsNonError(t *testing.T) {
+	runtime, _ := setupModule(t)
+
+	// In goja, throwing a string creates a *goja.Exception which implements error.
+	// However, we can test the recovery pathway by throwing from within a funcMap function.
+	script := `
+		const tmpl = exports.new("throw-str");
+		tmpl.funcs({
+			throwStr: function() { throw "just a string"; }
+		});
+		tmpl.parse("{{throwStr}}");
+		try {
+			tmpl.execute({});
+			"no error";
+		} catch (e) {
+			"caught: " + e.message;
+		}
+	`
+	val, err := runtime.RunString(script)
+	if err != nil {
+		t.Fatalf("script failed: %v", err)
+	}
+	if !strings.Contains(val.String(), "caught:") {
+		t.Errorf("expected error to be caught, got: %s", val.String())
+	}
+}

@@ -534,6 +534,55 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		}
 	})
 
+	// T60: Direct symlink attack tests — verify LoadFromPath() rejects
+	// config files that are themselves symlinks (not just intermediary dirs).
+	t.Run("DirectSymlink_Rejected", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		// Create a real config file, then a symlink pointing to it.
+		realFile := filepath.Join(dir, "real-config")
+		if err := os.WriteFile(realFile, []byte("test secret"), 0600); err != nil {
+			t.Fatalf("write real config: %v", err)
+		}
+		symlinkPath := filepath.Join(dir, "symlinked-config")
+		if err := os.Symlink(realFile, symlinkPath); err != nil {
+			t.Skip("symlinks not supported on this platform")
+		}
+
+		_, err := LoadFromPath(symlinkPath)
+		if err == nil {
+			t.Fatal("expected error for direct symlink config, got nil")
+		}
+		if !strings.Contains(err.Error(), "symlink") {
+			t.Fatalf("expected error to mention 'symlink', got: %v", err)
+		}
+	})
+
+	t.Run("DirectSymlink_ToSensitiveFile", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		// Symlink pointing to /etc/passwd (or any existing file).
+		// LoadFromPath must reject before opening.
+		target := "/etc/passwd"
+		if _, err := os.Stat(target); err != nil {
+			t.Skip("target file not available on this platform")
+		}
+		symlinkPath := filepath.Join(dir, "evil-config")
+		if err := os.Symlink(target, symlinkPath); err != nil {
+			t.Skip("symlinks not supported on this platform")
+		}
+
+		_, err := LoadFromPath(symlinkPath)
+		if err == nil {
+			t.Fatal("expected error for symlink to sensitive file, got nil")
+		}
+		if !strings.Contains(err.Error(), "symlink") {
+			t.Fatalf("expected error to mention 'symlink', got: %v", err)
+		}
+	})
+
 	t.Run("PathWithSpecialCharacters", func(t *testing.T) {
 		dir := t.TempDir()
 		// Note: Some characters may not be allowed in filenames on some platforms
@@ -1037,6 +1086,669 @@ weirdoption value`
 		}
 		if !cfg2.HasWarnings() {
 			t.Error("expected warnings after loading config with unknown options")
+		}
+	})
+}
+
+// TestLoadFromReader_TypeValidation verifies that LoadFromReader produces type
+// mismatch warnings (not just unknown-option warnings) via the post-parse
+// ValidateConfig integration.
+func TestLoadFromReader_TypeValidation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("InvalidBool", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("verbose notabool"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.HasWarnings() {
+			t.Fatal("expected type warning for invalid bool")
+		}
+		found := false
+		for _, w := range cfg.GetWarnings() {
+			if strings.Contains(w, "expected bool") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected 'expected bool' warning, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("InvalidInt", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("script.max-traversal-depth abc"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.HasWarnings() {
+			t.Fatal("expected type warning for invalid int")
+		}
+		found := false
+		for _, w := range cfg.GetWarnings() {
+			if strings.Contains(w, "expected int") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected 'expected int' warning, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("InvalidDuration", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("timeout notaduration"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.HasWarnings() {
+			t.Fatal("expected type warning for invalid duration")
+		}
+		found := false
+		for _, w := range cfg.GetWarnings() {
+			if strings.Contains(w, "expected duration") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected 'expected duration' warning, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("ValidTypes", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("verbose true\nscript.max-traversal-depth 5\ntimeout 30s"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.HasWarnings() {
+			t.Errorf("expected no warnings for valid types, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("MixedUnknownAndTypeMismatch", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("unknownkey hello\nverbose maybe"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		warnings := cfg.GetWarnings()
+		if len(warnings) < 2 {
+			t.Fatalf("expected at least 2 warnings (unknown + type), got %d: %v", len(warnings), warnings)
+		}
+		warningText := strings.Join(warnings, " ")
+		if !strings.Contains(warningText, "unknown") {
+			t.Error("expected unknown option warning")
+		}
+		if !strings.Contains(warningText, "expected bool") {
+			t.Error("expected type mismatch warning")
+		}
+	})
+}
+
+func TestHotSnippetConfigParsing(t *testing.T) {
+	t.Run("BasicSnippet", func(t *testing.T) {
+		input := "[hot-snippets]\nfollowup Continue with the same context."
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
+		}
+		s := cfg.HotSnippets[0]
+		if s.Name != "followup" {
+			t.Errorf("name = %q, want %q", s.Name, "followup")
+		}
+		if s.Text != "Continue with the same context." {
+			t.Errorf("text = %q, want %q", s.Text, "Continue with the same context.")
+		}
+		if s.Description != "" {
+			t.Errorf("description = %q, want empty", s.Description)
+		}
+	})
+
+	t.Run("SnippetWithDescription", func(t *testing.T) {
+		input := "[hot-snippets]\nfollowup Continue with the same context.\nfollowup.description Follow-up prompt"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
+		}
+		s := cfg.HotSnippets[0]
+		if s.Name != "followup" {
+			t.Errorf("name = %q, want %q", s.Name, "followup")
+		}
+		if s.Text != "Continue with the same context." {
+			t.Errorf("text = %q, want %q", s.Text, "Continue with the same context.")
+		}
+		if s.Description != "Follow-up prompt" {
+			t.Errorf("description = %q, want %q", s.Description, "Follow-up prompt")
+		}
+	})
+
+	t.Run("MultipleSnippets", func(t *testing.T) {
+		input := "[hot-snippets]\nfollowup Continue with the same context.\nkickoff You are an expert software engineer.\nkickoff.description Kickoff prompt"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 2 {
+			t.Fatalf("expected 2 snippets, got %d", len(cfg.HotSnippets))
+		}
+		if cfg.HotSnippets[0].Name != "followup" {
+			t.Errorf("snippet 0 name = %q, want %q", cfg.HotSnippets[0].Name, "followup")
+		}
+		if cfg.HotSnippets[1].Name != "kickoff" {
+			t.Errorf("snippet 1 name = %q, want %q", cfg.HotSnippets[1].Name, "kickoff")
+		}
+		if cfg.HotSnippets[1].Description != "Kickoff prompt" {
+			t.Errorf("snippet 1 description = %q, want %q", cfg.HotSnippets[1].Description, "Kickoff prompt")
+		}
+	})
+
+	t.Run("EscapedNewlines", func(t *testing.T) {
+		input := "[hot-snippets]\nmultiline First line\\nSecond line\\nThird line"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
+		}
+		want := "First line\nSecond line\nThird line"
+		if cfg.HotSnippets[0].Text != want {
+			t.Errorf("text = %q, want %q", cfg.HotSnippets[0].Text, want)
+		}
+	})
+
+	t.Run("EmptySection", func(t *testing.T) {
+		input := "[hot-snippets]\n\n[prompt-flow]\ntemplate default"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 0 {
+			t.Errorf("expected 0 snippets, got %d", len(cfg.HotSnippets))
+		}
+	})
+
+	t.Run("DescriptionWithoutSnippet", func(t *testing.T) {
+		input := "[hot-snippets]\nnonexistent.description This should fail"
+		_, err := LoadFromReader(strings.NewReader(input))
+		if err == nil {
+			t.Fatal("expected error for description targeting nonexistent snippet")
+		}
+		if !strings.Contains(err.Error(), "not found") {
+			t.Errorf("error = %q, want to contain 'not found'", err.Error())
+		}
+	})
+
+	t.Run("SnippetNameOnly", func(t *testing.T) {
+		// A snippet with a name but no text
+		input := "[hot-snippets]\nemptytext"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
+		}
+		if cfg.HotSnippets[0].Text != "" {
+			t.Errorf("text = %q, want empty", cfg.HotSnippets[0].Text)
+		}
+	})
+
+	t.Run("MixedWithOtherSections", func(t *testing.T) {
+		input := "verbose true\n\n[hot-snippets]\nsnip1 hello world\n\n[sessions]\nmaxAgeDays 30\n\n[prompt-flow]\ntemplate default"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
+		}
+		if cfg.HotSnippets[0].Name != "snip1" {
+			t.Errorf("name = %q, want %q", cfg.HotSnippets[0].Name, "snip1")
+		}
+		if cfg.HotSnippets[0].Text != "hello world" {
+			t.Errorf("text = %q, want %q", cfg.HotSnippets[0].Text, "hello world")
+		}
+		// Verify other sections still work
+		if cfg.Sessions.MaxAgeDays != 30 {
+			t.Errorf("maxAgeDays = %d, want 30", cfg.Sessions.MaxAgeDays)
+		}
+		if cfg.GetString("verbose") != "true" {
+			t.Errorf("verbose = %q, want %q", cfg.GetString("verbose"), "true")
+		}
+	})
+
+	t.Run("SnippetsNotInCommands", func(t *testing.T) {
+		// Verify [hot-snippets] section is NOT stored in Commands map
+		input := "[hot-snippets]\nsnip1 text"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, exists := cfg.Commands["hot-snippets"]; exists {
+			t.Error("hot-snippets should not appear in Commands map")
+		}
+	})
+
+	t.Run("NewConfigInitializesHotSnippets", func(t *testing.T) {
+		cfg := NewConfig()
+		if cfg.HotSnippets == nil {
+			t.Error("HotSnippets should be initialized, not nil")
+		}
+		if len(cfg.HotSnippets) != 0 {
+			t.Errorf("expected empty HotSnippets, got %d", len(cfg.HotSnippets))
+		}
+	})
+
+	t.Run("DuplicateSnippetNames", func(t *testing.T) {
+		// Duplicate names are allowed — both are added (contextManager handles dedup if needed)
+		input := "[hot-snippets]\ndup First text\ndup Second text"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 2 {
+			t.Fatalf("expected 2 snippets, got %d", len(cfg.HotSnippets))
+		}
+		if cfg.HotSnippets[0].Text != "First text" {
+			t.Errorf("snippet 0 text = %q, want %q", cfg.HotSnippets[0].Text, "First text")
+		}
+		if cfg.HotSnippets[1].Text != "Second text" {
+			t.Errorf("snippet 1 text = %q, want %q", cfg.HotSnippets[1].Text, "Second text")
+		}
+	})
+
+	t.Run("DescriptionAppliesToLastMatch", func(t *testing.T) {
+		// When there are duplicates, .description applies to the last one with that name
+		input := "[hot-snippets]\ndup First\ndup Second\ndup.description Applies to second"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.HotSnippets[0].Description != "" {
+			t.Errorf("first dup should have no description, got %q", cfg.HotSnippets[0].Description)
+		}
+		if cfg.HotSnippets[1].Description != "Applies to second" {
+			t.Errorf("second dup description = %q, want %q", cfg.HotSnippets[1].Description, "Applies to second")
+		}
+	})
+
+	t.Run("CommentsInHotSnippetsSection", func(t *testing.T) {
+		input := "[hot-snippets]\n# This is a comment\nsnip1 text\n# Another comment"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
+		}
+	})
+}
+
+func TestClaudeMuxConfigParsing(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ValidClaudeMuxConfig", func(t *testing.T) {
+		t.Parallel()
+		configContent := `[claude-mux]
+provider claude-code
+model claude-sonnet-4-20250514
+work-dir /tmp/agents
+env-inherit false
+env API_KEY=secret123
+env REGION=us-west-2
+env-profile production
+pre-spawn-hook /path/to/hook.js
+permission-policy ask
+rate-limit-backoff-sec 60
+max-agents 8
+pty-rows 40
+pty-cols 120
+provider-command /usr/local/bin/claude
+mcp-servers mcp-server-github,mcp-server-filesystem`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		oc := cfg.ClaudeMux
+		if oc.Provider != "claude-code" {
+			t.Errorf("Provider = %q, want %q", oc.Provider, "claude-code")
+		}
+		if oc.Model != "claude-sonnet-4-20250514" {
+			t.Errorf("Model = %q, want %q", oc.Model, "claude-sonnet-4-20250514")
+		}
+		if oc.WorkDir != "/tmp/agents" {
+			t.Errorf("WorkDir = %q, want %q", oc.WorkDir, "/tmp/agents")
+		}
+		if oc.EnvInherit != false {
+			t.Errorf("EnvInherit = %v, want false", oc.EnvInherit)
+		}
+		if len(oc.EnvVars) != 2 {
+			t.Fatalf("EnvVars length = %d, want 2", len(oc.EnvVars))
+		}
+		if oc.EnvVars["API_KEY"] != "secret123" {
+			t.Errorf("EnvVars[API_KEY] = %q, want %q", oc.EnvVars["API_KEY"], "secret123")
+		}
+		if oc.EnvVars["REGION"] != "us-west-2" {
+			t.Errorf("EnvVars[REGION] = %q, want %q", oc.EnvVars["REGION"], "us-west-2")
+		}
+		if oc.EnvProfile != "production" {
+			t.Errorf("EnvProfile = %q, want %q", oc.EnvProfile, "production")
+		}
+		if oc.PreSpawnHook != "/path/to/hook.js" {
+			t.Errorf("PreSpawnHook = %q, want %q", oc.PreSpawnHook, "/path/to/hook.js")
+		}
+		if oc.PermissionPolicy != "ask" {
+			t.Errorf("PermissionPolicy = %q, want %q", oc.PermissionPolicy, "ask")
+		}
+		if oc.RateLimitBackoffSec != 60 {
+			t.Errorf("RateLimitBackoffSec = %d, want 60", oc.RateLimitBackoffSec)
+		}
+		if oc.MaxAgents != 8 {
+			t.Errorf("MaxAgents = %d, want 8", oc.MaxAgents)
+		}
+		if oc.PTYRows != 40 {
+			t.Errorf("PTYRows = %d, want 40", oc.PTYRows)
+		}
+		if oc.PTYCols != 120 {
+			t.Errorf("PTYCols = %d, want 120", oc.PTYCols)
+		}
+		if oc.ProviderCommand != "/usr/local/bin/claude" {
+			t.Errorf("ProviderCommand = %q, want %q", oc.ProviderCommand, "/usr/local/bin/claude")
+		}
+		if oc.MCPServers != "mcp-server-github,mcp-server-filesystem" {
+			t.Errorf("MCPServers = %q, want %q", oc.MCPServers, "mcp-server-github,mcp-server-filesystem")
+		}
+	})
+
+	t.Run("ClaudeMuxDefaults", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		oc := cfg.ClaudeMux
+
+		if oc.Provider != "claude-code" {
+			t.Errorf("default Provider = %q, want %q", oc.Provider, "claude-code")
+		}
+		if oc.Model != "" {
+			t.Errorf("default Model = %q, want empty", oc.Model)
+		}
+		if oc.WorkDir != "" {
+			t.Errorf("default WorkDir = %q, want empty", oc.WorkDir)
+		}
+		if oc.EnvInherit != true {
+			t.Errorf("default EnvInherit = %v, want true", oc.EnvInherit)
+		}
+		if oc.EnvVars == nil {
+			t.Error("default EnvVars should not be nil")
+		}
+		if len(oc.EnvVars) != 0 {
+			t.Errorf("default EnvVars should be empty, got %d entries", len(oc.EnvVars))
+		}
+		if oc.EnvProfile != "" {
+			t.Errorf("default EnvProfile = %q, want empty", oc.EnvProfile)
+		}
+		if oc.PreSpawnHook != "" {
+			t.Errorf("default PreSpawnHook = %q, want empty", oc.PreSpawnHook)
+		}
+		if oc.PermissionPolicy != "reject" {
+			t.Errorf("default PermissionPolicy = %q, want %q", oc.PermissionPolicy, "reject")
+		}
+		if oc.RateLimitBackoffSec != 30 {
+			t.Errorf("default RateLimitBackoffSec = %d, want 30", oc.RateLimitBackoffSec)
+		}
+		if oc.MaxAgents != 4 {
+			t.Errorf("default MaxAgents = %d, want 4", oc.MaxAgents)
+		}
+		if oc.PTYRows != 24 {
+			t.Errorf("default PTYRows = %d, want 24", oc.PTYRows)
+		}
+		if oc.PTYCols != 80 {
+			t.Errorf("default PTYCols = %d, want 80", oc.PTYCols)
+		}
+		if oc.ProviderCommand != "" {
+			t.Errorf("default ProviderCommand = %q, want empty", oc.ProviderCommand)
+		}
+		if oc.MCPServers != "" {
+			t.Errorf("default MCPServers = %q, want empty", oc.MCPServers)
+		}
+	})
+
+	t.Run("ClaudeMuxEnvVars", func(t *testing.T) {
+		t.Parallel()
+		configContent := `[claude-mux]
+env FOO=bar
+env BAZ=qux=quux
+env EMPTY=`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		oc := cfg.ClaudeMux
+		if len(oc.EnvVars) != 3 {
+			t.Fatalf("EnvVars length = %d, want 3", len(oc.EnvVars))
+		}
+		if oc.EnvVars["FOO"] != "bar" {
+			t.Errorf("EnvVars[FOO] = %q, want %q", oc.EnvVars["FOO"], "bar")
+		}
+		// Second = is part of the value
+		if oc.EnvVars["BAZ"] != "qux=quux" {
+			t.Errorf("EnvVars[BAZ] = %q, want %q", oc.EnvVars["BAZ"], "qux=quux")
+		}
+		// Empty value after =
+		if oc.EnvVars["EMPTY"] != "" {
+			t.Errorf("EnvVars[EMPTY] = %q, want empty", oc.EnvVars["EMPTY"])
+		}
+	})
+
+	t.Run("ClaudeMuxEnvVarInvalid", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[claude-mux]\nenv NOEQUALSSIGN"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Fatal("expected error for env without = sign")
+		}
+		if !strings.Contains(err.Error(), "KEY=VALUE") {
+			t.Errorf("error = %q, want to contain 'KEY=VALUE'", err.Error())
+		}
+	})
+
+	t.Run("ClaudeMuxInvalidPermissionPolicy", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[claude-mux]\npermission-policy allow"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Fatal("expected error for invalid permission-policy")
+		}
+		if !strings.Contains(err.Error(), "reject") || !strings.Contains(err.Error(), "ask") {
+			t.Errorf("error = %q, want to mention 'reject' and 'ask'", err.Error())
+		}
+	})
+
+	t.Run("ClaudeMuxInvalidIntOptions", func(t *testing.T) {
+		t.Parallel()
+		intOptions := []struct {
+			name  string
+			input string
+		}{
+			{"invalidRateLimitBackoff", "rate-limit-backoff-sec abc"},
+			{"invalidMaxAgents", "max-agents notanumber"},
+			{"invalidPtyRows", "pty-rows 12.5"},
+			{"invalidPtyCols", "pty-cols xyz"},
+		}
+
+		for _, tc := range intOptions {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				configContent := "[claude-mux]\n" + tc.input
+				_, err := LoadFromReader(strings.NewReader(configContent))
+				if err == nil {
+					t.Errorf("expected error for invalid value %q", tc.input)
+				}
+			})
+		}
+	})
+
+	t.Run("ClaudeMuxPartialConfig", func(t *testing.T) {
+		t.Parallel()
+		configContent := `[claude-mux]
+model gpt-4o
+max-agents 2`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		oc := cfg.ClaudeMux
+		// Specified values
+		if oc.Model != "gpt-4o" {
+			t.Errorf("Model = %q, want %q", oc.Model, "gpt-4o")
+		}
+		if oc.MaxAgents != 2 {
+			t.Errorf("MaxAgents = %d, want 2", oc.MaxAgents)
+		}
+
+		// Default values for unspecified options
+		if oc.Provider != "claude-code" {
+			t.Errorf("default Provider = %q, want %q", oc.Provider, "claude-code")
+		}
+		if oc.EnvInherit != true {
+			t.Errorf("default EnvInherit = %v, want true", oc.EnvInherit)
+		}
+		if oc.PermissionPolicy != "reject" {
+			t.Errorf("default PermissionPolicy = %q, want %q", oc.PermissionPolicy, "reject")
+		}
+		if oc.RateLimitBackoffSec != 30 {
+			t.Errorf("default RateLimitBackoffSec = %d, want 30", oc.RateLimitBackoffSec)
+		}
+		if oc.PTYRows != 24 {
+			t.Errorf("default PTYRows = %d, want 24", oc.PTYRows)
+		}
+		if oc.PTYCols != 80 {
+			t.Errorf("default PTYCols = %d, want 80", oc.PTYCols)
+		}
+	})
+
+	t.Run("ClaudeMuxWithOtherSections", func(t *testing.T) {
+		t.Parallel()
+		configContent := `verbose true
+
+[claude-mux]
+provider openai
+max-agents 6
+
+[sessions]
+maxAgeDays 45
+
+[help]
+pager less`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		// Check claude-mux
+		if cfg.ClaudeMux.Provider != "openai" {
+			t.Errorf("ClaudeMux.Provider = %q, want %q", cfg.ClaudeMux.Provider, "openai")
+		}
+		if cfg.ClaudeMux.MaxAgents != 6 {
+			t.Errorf("ClaudeMux.MaxAgents = %d, want 6", cfg.ClaudeMux.MaxAgents)
+		}
+
+		// Check other sections still work
+		if cfg.Sessions.MaxAgeDays != 45 {
+			t.Errorf("Sessions.MaxAgeDays = %d, want 45", cfg.Sessions.MaxAgeDays)
+		}
+		if cfg.GetString("verbose") != "true" {
+			t.Errorf("verbose = %q, want %q", cfg.GetString("verbose"), "true")
+		}
+		if v, ok := cfg.GetCommandOption("help", "pager"); !ok || v != "less" {
+			t.Errorf("help.pager = %q, want %q", v, "less")
+		}
+	})
+
+	t.Run("ClaudeMuxNotInCommands", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[claude-mux]\nprovider test-provider"
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if _, exists := cfg.Commands["claude-mux"]; exists {
+			t.Error("claude-mux should not appear in Commands map")
+		}
+	})
+
+	t.Run("ClaudeMuxUnknownOption", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[claude-mux]\nunknown-option value"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Fatal("expected error for unknown claude-mux option")
+		}
+		if !strings.Contains(err.Error(), "unknown claude-mux option") {
+			t.Errorf("error = %q, want to contain 'unknown claude-mux option'", err.Error())
+		}
+	})
+
+	t.Run("ClaudeMuxPermissionPolicyReject", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[claude-mux]\npermission-policy reject"
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if cfg.ClaudeMux.PermissionPolicy != "reject" {
+			t.Errorf("PermissionPolicy = %q, want %q", cfg.ClaudeMux.PermissionPolicy, "reject")
+		}
+	})
+
+	t.Run("ClaudeMuxBooleanVariations", func(t *testing.T) {
+		t.Parallel()
+		trueValues := []string{"true", "1", "yes", "on", "TRUE", "Yes", "ON"}
+		for _, val := range trueValues {
+			configContent := "[claude-mux]\nenv-inherit " + val
+			cfg, err := LoadFromReader(strings.NewReader(configContent))
+			if err != nil {
+				t.Errorf("expected no error for %q, got: %v", val, err)
+				continue
+			}
+			if !cfg.ClaudeMux.EnvInherit {
+				t.Errorf("expected EnvInherit=true for value %q", val)
+			}
+		}
+
+		falseValues := []string{"false", "0", "no", "off", "FALSE", "No", "OFF"}
+		for _, val := range falseValues {
+			configContent := "[claude-mux]\nenv-inherit " + val
+			cfg, err := LoadFromReader(strings.NewReader(configContent))
+			if err != nil {
+				t.Errorf("expected no error for %q, got: %v", val, err)
+				continue
+			}
+			if cfg.ClaudeMux.EnvInherit {
+				t.Errorf("expected EnvInherit=false for value %q", val)
+			}
+		}
+	})
+
+	t.Run("ClaudeMuxInvalidBooleanValue", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[claude-mux]\nenv-inherit maybe"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Fatal("expected error for invalid boolean value")
 		}
 	})
 }

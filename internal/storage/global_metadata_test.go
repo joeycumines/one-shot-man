@@ -2,6 +2,7 @@ package storage
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,7 +17,7 @@ type globalMetadata struct {
 // globalMetadataPathTest returns the metadata.json path adjacent to the sessions dir.
 // This helper is only needed in tests so it lives in a _test.go file.
 func globalMetadataPathTest() (string, error) {
-	sessionsDir, err := sessionDirectory()
+	sessionsDir, err := getSessionDirectory()
 	if err != nil {
 		return "", err
 	}
@@ -34,7 +35,7 @@ func loadGlobalMetadataTest() (*globalMetadata, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return &globalMetadata{}, nil
 		}
 		return nil, fmt.Errorf("failed to read metadata file: %w", err)

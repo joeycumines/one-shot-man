@@ -1,8 +1,11 @@
 package storage
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -20,14 +23,20 @@ type SessionInfo struct {
 // ScanSessions inspects the configured sessions directory and returns a slice
 // of SessionInfo describing each session it finds.
 func ScanSessions() ([]SessionInfo, error) {
-	dir, err := sessionDirectory()
+	dir, err := getSessionDirectory()
 	if err != nil {
 		return nil, err
 	}
 
+	// On some platforms (notably Windows), os.ReadDir on a non-directory path
+	// may not return an error. Explicitly verify the path is a directory.
+	if info, statErr := os.Stat(dir); statErr == nil && !info.IsDir() {
+		return nil, fmt.Errorf("sessions path is not a directory: %s", dir)
+	}
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return []SessionInfo{}, nil
 		}
 		return nil, err
@@ -39,12 +48,12 @@ func ScanSessions() ([]SessionInfo, error) {
 			continue
 		}
 		name := e.Name()
-		if filepath.Ext(name) != ".json" {
+		const suffix = ".session.json"
+		if !strings.HasSuffix(name, suffix) {
 			continue
 		}
 
-		// Expect name format: {id}.session.json
-		base := name[:len(name)-len(".session.json")]
+		base := name[:len(name)-len(suffix)]
 		path := filepath.Join(dir, name)
 
 		fi, err := os.Stat(path)
@@ -52,7 +61,7 @@ func ScanSessions() ([]SessionInfo, error) {
 			continue
 		}
 
-		lockPath, _ := sessionLockFilePath(base)
+		lockPath, _ := getSessionLockFilePath(base)
 
 		// Try to acquire lock non-blocking. If we succeed, close the
 		// descriptor and mark Active=false. Crucially, do NOT remove the

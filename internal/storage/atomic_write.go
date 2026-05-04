@@ -18,15 +18,26 @@ func SetTestHookCrashBeforeRename(hook func()) {
 	testHookCrashBeforeRename = hook
 }
 
-// RenameError wraps a rename error with the temporary file path for testing purposes.
-type RenameError struct {
+// atomicFileWriter abstracts *os.File for test error injection.
+type atomicFileWriter interface {
+	Write([]byte) (int, error)
+	Sync() error
+	Close() error
+}
+
+// testHookAtomicFileWrapper, if non-nil, wraps the *os.File from CreateTemp
+// so tests can inject errors for write/sync/close paths.
+var testHookAtomicFileWrapper func(*os.File) atomicFileWriter
+
+// renameError wraps a rename error with the temporary file path for testing purposes.
+type renameError struct {
 	Err      error
 	tempPath string
 }
 
-func (e RenameError) Error() string    { return e.Err.Error() }
-func (e RenameError) TempPath() string { return e.tempPath }
-func (e RenameError) Unwrap() error    { return e.Err }
+func (e renameError) Error() string    { return e.Err.Error() }
+func (e renameError) TempPath() string { return e.tempPath }
+func (e renameError) Unwrap() error    { return e.Err }
 
 // AtomicWriteFile safely writes data by using a temporary file and an atomic rename.
 func AtomicWriteFile(filename string, data []byte, perm os.FileMode) error {
@@ -40,6 +51,12 @@ func AtomicWriteFile(filename string, data []byte, perm os.FileMode) error {
 	tempFile, err := os.CreateTemp(dir, ".tmp-session-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	// Optionally wrap the file for test error injection.
+	var writer atomicFileWriter = tempFile
+	if testHookAtomicFileWrapper != nil {
+		writer = testHookAtomicFileWrapper(tempFile)
 	}
 
 	// Capture the temp path immediately and ensure the temp file is removed
@@ -57,15 +74,15 @@ func AtomicWriteFile(filename string, data []byte, perm os.FileMode) error {
 		}
 	}()
 
-	if _, err := tempFile.Write(data); err != nil {
-		tempFile.Close()
+	if _, err := writer.Write(data); err != nil {
+		writer.Close()
 		return fmt.Errorf("failed to write to temp file: %w", err)
 	}
-	if err := tempFile.Sync(); err != nil { // Ensure data is on disk.
-		tempFile.Close()
+	if err := writer.Sync(); err != nil { // Ensure data is on disk.
+		writer.Close()
 		return fmt.Errorf("failed to sync temp file: %w", err)
 	}
-	if err := tempFile.Close(); err != nil {
+	if err := writer.Close(); err != nil {
 		return fmt.Errorf("failed to close temporary file %q: %w", tempFile.Name(), err)
 	}
 	if err := os.Chmod(tempFile.Name(), perm); err != nil {
@@ -89,7 +106,7 @@ func AtomicWriteFile(filename string, data []byte, perm os.FileMode) error {
 		success = true
 	}
 	if renameErr != nil {
-		return RenameError{Err: renameErr, tempPath: tempFile.Name()}
+		return renameError{Err: renameErr, tempPath: tempFile.Name()}
 	}
 	return nil
 }

@@ -40,7 +40,7 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 		// Get or create exports object
 		exportsVal := module.Get("exports")
 		var exports *goja.Object
-		if goja.IsUndefined(exportsVal) || goja.IsNull(exportsVal) {
+		if exportsVal == nil || goja.IsUndefined(exportsVal) || goja.IsNull(exportsVal) {
 			exports = runtime.NewObject()
 			_ = module.Set("exports", exports)
 		} else {
@@ -64,7 +64,7 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 			}
 
 			text := call.Argument(0).String()
-			var data interface{}
+			var data any
 			if len(call.Arguments) > 1 {
 				data = call.Argument(1).Export()
 			}
@@ -92,13 +92,13 @@ type templateWrapper struct {
 }
 
 // newTemplateWrapper creates a new template wrapper
-func newTemplateWrapper(runtime *goja.Runtime, name string) map[string]interface{} {
+func newTemplateWrapper(runtime *goja.Runtime, name string) map[string]any {
 	tw := &templateWrapper{
 		runtime: runtime,
 		tmpl:    template.New(name),
 	}
 
-	result := make(map[string]interface{})
+	result := make(map[string]any)
 
 	// parse(text: string): Template
 	result["parse"] = func(call goja.FunctionCall) goja.Value {
@@ -116,7 +116,7 @@ func newTemplateWrapper(runtime *goja.Runtime, name string) map[string]interface
 
 	// execute(data: any): string
 	result["execute"] = func(call goja.FunctionCall) goja.Value {
-		var data interface{}
+		var data any
 		if len(call.Arguments) > 0 {
 			data = call.Argument(0).Export()
 		}
@@ -155,13 +155,13 @@ func newTemplateWrapper(runtime *goja.Runtime, name string) map[string]interface
 	}
 
 	// option(...opts: string[]): Template
-	result["option"] = func(call goja.FunctionCall) map[string]interface{} {
+	result["option"] = func(call goja.FunctionCall) goja.Value {
 		opts := make([]string, len(call.Arguments))
 		for i, arg := range call.Arguments {
 			opts[i] = arg.String()
 		}
 		tw.tmpl = tw.tmpl.Option(opts...)
-		return result
+		return runtime.ToValue(result)
 	}
 
 	return result
@@ -171,6 +171,10 @@ func newTemplateWrapper(runtime *goja.Runtime, name string) map[string]interface
 // This handles JavaScript functions and makes them callable from templates
 func (tw *templateWrapper) convertFuncMap(funcMapJS goja.Value) template.FuncMap {
 	funcMap := make(template.FuncMap)
+
+	if funcMapJS == nil || goja.IsUndefined(funcMapJS) || goja.IsNull(funcMapJS) {
+		return funcMap
+	}
 
 	obj := funcMapJS.ToObject(tw.runtime)
 	if obj == nil {
@@ -196,10 +200,10 @@ func (tw *templateWrapper) convertFuncMap(funcMapJS goja.Value) template.FuncMap
 
 // wrapJSFunction wraps a JavaScript function to be callable from Go template execution
 // It returns a function that matches the template.FuncMap signature
-func (tw *templateWrapper) wrapJSFunction(fn goja.Callable) interface{} {
+func (tw *templateWrapper) wrapJSFunction(fn goja.Callable) any {
 	// Return a variadic function that can accept any arguments
-	// This function will be called by Go's text/template with arguments as []interface{}
-	return func(args ...interface{}) (interface{}, error) {
+	// This function will be called by Go's text/template with arguments as []any
+	return func(args ...any) (any, error) {
 		// Convert Go args to goja.Value
 		gojaArgs := make([]goja.Value, len(args))
 		for i, arg := range args {

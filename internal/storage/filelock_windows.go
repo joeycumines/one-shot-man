@@ -30,6 +30,11 @@ var acquireFileLock = func(path string) (*os.File, error) {
 }
 
 // releaseFileLock releases the lock and removes the lock file.
+// The removal is best-effort: if another process has the file open (which can
+// happen under concurrent contention), the error is silently ignored because
+// the lock itself has already been released, which is the correctness-critical
+// operation.  Windows does not allow deleting a file that is currently open by
+// any process, so a "file in use" error here indicates a benign race.
 func releaseFileLock(lockFile *os.File) error {
 	if lockFile == nil {
 		return nil
@@ -41,11 +46,16 @@ func releaseFileLock(lockFile *os.File) error {
 	err2 := lockFile.Close()
 	err3 := os.Remove(path)
 
-	// Ignore "file does not exist" for the final removal, as it's a success condition
-	if err3 != nil && !os.IsNotExist(err3) {
-		// keep the error
-	} else {
-		err3 = nil
+	// Ignore "file does not exist" — a concurrent releaser already cleaned up.
+	// Ignore "access denied" / "being used by another process" — a concurrent
+	// acquirer has the file open; the lock was already released above, so the
+	// caller's session is correctly unlocked.
+	if err3 != nil {
+		if errors.Is(err3, os.ErrNotExist) {
+			err3 = nil
+		} else if isWindowsFileBusy(err3) {
+			err3 = nil
+		}
 	}
 
 	return errors.Join(err1, err2, err3)
@@ -70,7 +80,7 @@ func lockFileWindows(f *os.File) error {
 	)
 	if err != nil {
 		if errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
-			return ErrWouldBlock
+			return errWouldBlock
 		}
 		return fmt.Errorf("LockFileEx failed: %w", err)
 	}
@@ -86,4 +96,18 @@ func unlockFileWindows(f *os.File) error {
 		return fmt.Errorf("UnlockFileEx failed: %w", err)
 	}
 	return nil
+}
+
+// isWindowsFileBusy reports whether the error indicates the file is in use by
+// another process and therefore cannot be deleted.  This covers:
+//   - ERROR_SHARING_VIOLATION (0x20): "The process cannot access the file
+//     because it is being used by another process."
+//   - ERROR_ACCESS_DENIED (0x5): returned by some overlayfs/NTFS combinations
+//     when a file handle is still open.
+func isWindowsFileBusy(err error) bool {
+	var errno windows.Errno
+	if errors.As(err, &errno) {
+		return errno == windows.ERROR_SHARING_VIOLATION || errno == windows.ERROR_ACCESS_DENIED
+	}
+	return false
 }

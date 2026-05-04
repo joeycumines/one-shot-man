@@ -114,6 +114,23 @@ internal\builtin\path\*: unreachable func: *
 internal/builtin/regexp/*: unreachable func: *
 internal\builtin\regexp\*: unreachable func: *
 
+# argv utilities — will be wired up in later commits
+internal/argv/*: unreachable func: *
+internal\argv\*: unreachable func: *
+
+# Config migration, schema validation, and write support — new API not yet called from production code
+# Functions are fully tested and will be wired in subsequent commits.
+internal/config/*: unreachable func: *
+internal\config\*: unreachable func: *
+
+# CleanupScheduler — new storage feature, not yet wired into production code
+internal/storage/cleanup_scheduler.go:*: unreachable func: CleanupScheduler.Run
+internal\storage\cleanup_scheduler.go:*: unreachable func: CleanupScheduler.Run
+internal/storage/cleanup_scheduler.go:*: unreachable func: CleanupScheduler.runOnce
+internal\storage\cleanup_scheduler.go:*: unreachable func: CleanupScheduler.runOnce
+internal/storage/cleanup_scheduler.go:*: unreachable func: defaultNewTicker
+internal\storage\cleanup_scheduler.go:*: unreachable func: defaultNewTicker
+
 # filepathutil is new; will be wired up in later commits
 internal/filepathutil/*
 internal\filepathutil\*

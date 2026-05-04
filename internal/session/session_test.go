@@ -629,7 +629,7 @@ func TestGenerateUUID(t *testing.T) {
 // TestGenerateUUID_UniqueAcrossMultipleCalls verifies UUID uniqueness.
 func TestGenerateUUID_UniqueAcrossMultipleCalls(t *testing.T) {
 	seen := make(map[string]bool)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		uuid, err := generateUUID()
 		if err != nil {
 			t.Fatalf("unexpected error on iteration %d: %v", i, err)
@@ -1444,5 +1444,213 @@ func TestIsTrustedHexNamespace(t *testing.T) {
 				t.Errorf("isTrustedHexNamespace(%q) = %v, want %v", tt.ns, got, tt.want)
 			}
 		})
+	}
+}
+
+// =============================================================================
+// isInternalShortHex Tests
+// =============================================================================
+
+func TestIsInternalShortHex(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		// True cases: exactly 16 lowercase hex chars
+		{"valid all digits", "0123456789012345", true},
+		{"valid all lowercase hex", "abcdefabcdefabcd", true},
+		{"valid mixed", "a1b2c3d4e5f67890", true},
+
+		// False: wrong length
+		{"too short", "abcdef0123456789a", false}, // 17 chars
+		{"too long", "abcdef012345678", false},    // 15 chars
+		{"empty", "", false},
+		{"single char", "a", false},
+
+		// False: non-hex characters
+		{"uppercase hex", "ABCDEF0123456789", false},
+		{"mixed case", "aBcDeF0123456789", false},
+		{"with g", "abcdefg012345678", false},
+		{"with space", "abcdef 012345678", false},
+		{"with dash", "abcdef-012345678", false},
+		{"with underscore", "abcdef_012345678", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isInternalShortHex(tt.input); got != tt.want {
+				t.Errorf("isInternalShortHex(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// getTmuxSessionID Invalid Format Tests
+// =============================================================================
+
+// TestGetTmuxSessionID_InvalidPaneFormat verifies error for invalid TMUX_PANE values.
+func TestGetTmuxSessionID_InvalidPaneFormat(t *testing.T) {
+	tests := []struct {
+		name string
+		pane string
+	}{
+		{"bare percent", "%"},
+		{"non-numeric pane", "%abc"},
+		{"pane with spaces", "% 1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Clearenv()
+			defer func() {
+				os.Unsetenv("TMUX_PANE")
+				os.Unsetenv("TMUX")
+			}()
+
+			os.Setenv("TMUX_PANE", tt.pane)
+			os.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
+
+			_, err := getTmuxSessionID()
+			if err == nil {
+				t.Errorf("expected error for TMUX_PANE=%q, got nil", tt.pane)
+			}
+			if err != nil && !strings.Contains(err.Error(), "invalid TMUX_PANE format") {
+				t.Errorf("expected 'invalid TMUX_PANE format' error, got: %v", err)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// Coverage Gap Tests
+// =============================================================================
+
+// TestContainsAnyNonDigit_Direct exercises the helper directly.
+func TestContainsAnyNonDigit_Direct(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"123", false},
+		{"", false},
+		{"0", false},
+		{"12a3", true},
+		{"abc", true},
+		{" ", true},
+		{"1 2", true},
+		{"1_2", true},
+		{"123\n", true},
+	}
+	for _, tt := range tests {
+		if got := containsAnyNonDigit(tt.input); got != tt.want {
+			t.Errorf("containsAnyNonDigit(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+// TestFormatSessionID_SanitizeAndTruncate exercises the case where both
+// sanitization (slashes) AND truncation are needed.
+func TestFormatSessionID_SanitizeAndTruncate(t *testing.T) {
+	t.Parallel()
+	// Build a long payload with slashes requiring sanitization.
+	payload := strings.Repeat("x/y", 50) // 150 chars, has slashes
+	id := formatSessionID(NamespaceExplicit, payload)
+
+	if len(id) > MaxSessionIDLength {
+		t.Errorf("id exceeds max length: %d > %d", len(id), MaxSessionIDLength)
+	}
+	if !strings.HasPrefix(id, NamespaceExplicit+NamespaceDelimiter) {
+		t.Errorf("id missing namespace prefix: %q", id)
+	}
+	// Should not contain any raw slashes.
+	if strings.Contains(id, "/") {
+		t.Errorf("id still contains slashes: %q", id)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// formatExplicitID and formatTerminalID — direct unit tests
+// ---------------------------------------------------------------------------
+
+func TestFormatExplicitID_PlainString(t *testing.T) {
+	t.Parallel()
+	id := formatExplicitID("my-session")
+	if !strings.HasPrefix(id, NamespaceExplicit+NamespaceDelimiter) {
+		t.Errorf("expected 'explicit--' prefix, got %q", id)
+	}
+	if !strings.Contains(id, "my-session") {
+		t.Errorf("expected payload 'my-session' in id, got %q", id)
+	}
+}
+
+func TestFormatExplicitID_AlreadyNamespaced(t *testing.T) {
+	t.Parallel()
+	// When the explicit ID already contains "--", the function should
+	// extract namespace and payload.
+	id := formatExplicitID("custom--payload123")
+	if !strings.HasPrefix(id, "custom"+NamespaceDelimiter) {
+		t.Errorf("expected 'custom--' prefix for pre-namespaced input, got %q", id)
+	}
+	if !strings.Contains(id, "payload123") {
+		t.Errorf("expected 'payload123' in id, got %q", id)
+	}
+}
+
+func TestFormatExplicitID_Deterministic(t *testing.T) {
+	t.Parallel()
+	id1 := formatExplicitID("test-session")
+	id2 := formatExplicitID("test-session")
+	if id1 != id2 {
+		t.Errorf("formatExplicitID is not deterministic: %q != %q", id1, id2)
+	}
+}
+
+func TestFormatExplicitID_DifferentInputsDifferentOutput(t *testing.T) {
+	t.Parallel()
+	id1 := formatExplicitID("session-a")
+	id2 := formatExplicitID("session-b")
+	if id1 == id2 {
+		t.Errorf("different inputs produced same id: %q", id1)
+	}
+}
+
+func TestFormatTerminalID_Deterministic(t *testing.T) {
+	t.Parallel()
+	id1 := formatTerminalID("ABCDEF-1234-5678")
+	id2 := formatTerminalID("ABCDEF-1234-5678")
+	if id1 != id2 {
+		t.Errorf("formatTerminalID is not deterministic: %q != %q", id1, id2)
+	}
+}
+
+func TestFormatTerminalID_DifferentInputsDifferentOutput(t *testing.T) {
+	t.Parallel()
+	id1 := formatTerminalID("session-A")
+	id2 := formatTerminalID("session-B")
+	if id1 == id2 {
+		t.Errorf("different terminal IDs produced same session id: %q", id1)
+	}
+}
+
+func TestFormatTerminalID_HasCorrectNamespace(t *testing.T) {
+	t.Parallel()
+	id := formatTerminalID("some-term-id")
+	if !strings.HasPrefix(id, NamespaceTerminal+NamespaceDelimiter) {
+		t.Errorf("expected 'terminal--' prefix, got %q", id)
+	}
+}
+
+func TestFormatTerminalID_OutputIsShortHash(t *testing.T) {
+	t.Parallel()
+	id := formatTerminalID("some-term-id")
+	// After "terminal--" prefix, the payload should be a 16-character hex hash.
+	prefix := NamespaceTerminal + NamespaceDelimiter
+	payload := strings.TrimPrefix(id, prefix)
+	if len(payload) != ShortHashLength {
+		t.Errorf("terminal payload length = %d, want %d (ShortHashLength); full id = %q",
+			len(payload), ShortHashLength, id)
 	}
 }

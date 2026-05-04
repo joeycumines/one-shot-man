@@ -1,10 +1,11 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -39,8 +40,8 @@ type CleanupReport struct {
 // excludeID is a session id to never delete (e.g., current session).
 func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 	// Acquire a global cleanup lock to avoid concurrent cleaners.
-	// Place lock at {UserConfigDir}/one-shot-man/cleanup.lock
-	sessionsDir, err := sessionDirectory()
+	// Place lock at {UserConfigDir}/osm/cleanup.lock
+	sessionsDir, err := getSessionDirectory()
 	if err != nil {
 		return nil, err
 	}
@@ -103,8 +104,8 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 	// Count-based pruning: keep newest MaxCount
 	if c.MaxCount > 0 {
 		// Sort candidates by UpdateTime descending (newest first)
-		sort.SliceStable(candidates, func(i, j int) bool {
-			return candidates[i].UpdateTime.After(candidates[j].UpdateTime)
+		slices.SortStableFunc(candidates, func(a, b SessionInfo) int {
+			return b.UpdateTime.Compare(a.UpdateTime)
 		})
 		if len(candidates) > c.MaxCount {
 			for _, s := range candidates[c.MaxCount:] {
@@ -123,8 +124,8 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 		if total > maxBytes {
 			// Remove oldest until under limit
 			// Sort ascending (oldest first)
-			sort.SliceStable(candidates, func(i, j int) bool {
-				return candidates[i].UpdateTime.Before(candidates[j].UpdateTime)
+			slices.SortStableFunc(candidates, func(a, b SessionInfo) int {
+				return a.UpdateTime.Compare(b.UpdateTime)
 			})
 			for _, s := range candidates {
 				if total <= maxBytes {
@@ -165,7 +166,7 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 		}
 
 		// We hold the lock. Attempt to remove the session file.
-		if err := os.Remove(s.Path); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(s.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			// Failed to remove session file; Close handle to release lock
 			// but DO NOT remove the lock file.
 			_ = f.Close()
@@ -190,7 +191,7 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		// If the sessions directory doesn't exist, there is nothing to clean.
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return &report, nil
 		}
 		return nil, fmt.Errorf("failed to read sessions directory %q: %w", dir, err)
@@ -225,13 +226,10 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 		// artifact — leave it in place. Only attempt to acquire the lock and
 		// remove the artifact when the session file does not exist (an orphan).
 		if _, err := os.Stat(sessionPath); err == nil {
-			// Log for debugging to ensure we don't remove artifacts for
-			// sessions that still have a session file present.
-			fmt.Printf("cleanup: session exists - skipping lock removal for %s\n", lockPath)
 			// Session file exists — do not remove the lock artifact.
 			report.Skipped = append(report.Skipped, base)
 			continue
-		} else if !os.IsNotExist(err) {
+		} else if !errors.Is(err, os.ErrNotExist) {
 			// Unexpected stat error - skip conservative.
 			report.Skipped = append(report.Skipped, base)
 			continue
@@ -275,7 +273,6 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 
 		if f, ok, err := AcquireLockHandle(lockPath); err == nil && ok {
 			if rerr := ReleaseLockHandle(f); rerr == nil {
-				fmt.Printf("cleanup: removed orphan lock %s\n", lockPath)
 				report.Removed = append(report.Removed, base)
 			} else {
 				report.Skipped = append(report.Skipped, base)

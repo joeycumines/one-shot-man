@@ -16,7 +16,18 @@ var (
 	fallbackOnce sync.Once
 	fallbackDir  string
 	fallbackErr  error
+
+	// Pre-compiled regexes for sanitizeFilename (compiled once, used per call).
+	unsafePattern   = regexp.MustCompile(`[/\\:*?"<>|\x00]`)
+	collapsePattern = regexp.MustCompile(`_+`)
+	reservedPattern = regexp.MustCompile(`(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$`)
 )
+
+// pathsMu guards the function-variable overrides below against concurrent
+// reads (from cleanup/inspector goroutines) and writes (from SetTestPaths /
+// ResetPaths in tests). Every access to the three function variables MUST go
+// through the get* accessors or the Set/Reset helpers.
+var pathsMu sync.RWMutex
 
 // To enable testing without polluting the user's home directory,
 // these functions are defined as variables. The test suite can then
@@ -27,28 +38,50 @@ var (
 	sessionLockFilePath = SessionLockFilePath
 )
 
+// getSessionDirectory returns the session directory via the (possibly
+// overridden) function variable, under a read-lock.
+func getSessionDirectory() (string, error) {
+	pathsMu.RLock()
+	fn := sessionDirectory
+	pathsMu.RUnlock()
+	return fn()
+}
+
+// getSessionLockFilePath returns the session lock file path via the (possibly
+// overridden) function variable, under a read-lock.
+func getSessionLockFilePath(id string) (string, error) {
+	pathsMu.RLock()
+	fn := sessionLockFilePath
+	pathsMu.RUnlock()
+	return fn(id)
+}
+
 // SetTestPaths overrides the path functions for testing.
 // This should only be used in tests.
 func SetTestPaths(dir string) {
+	pathsMu.Lock()
+	defer pathsMu.Unlock()
 	sessionDirectory = func() (string, error) { return dir, nil }
 	sessionFilePath = func(id string) (string, error) {
-		return filepath.Join(dir, id+".session.json"), nil
+		return filepath.Join(dir, sanitizeFilename(id)+".session.json"), nil
 	}
 	sessionLockFilePath = func(id string) (string, error) {
-		return filepath.Join(dir, id+".session.lock"), nil
+		return filepath.Join(dir, sanitizeFilename(id)+".session.lock"), nil
 	}
 }
 
 // ResetPaths resets the path functions to their defaults.
 // This should only be used in tests.
 func ResetPaths() {
+	pathsMu.Lock()
+	defer pathsMu.Unlock()
 	sessionDirectory = SessionDirectory
 	sessionFilePath = SessionFilePath
 	sessionLockFilePath = SessionLockFilePath
 }
 
 // SessionDirectory returns the directory where session files are stored.
-// Uses os.UserConfigDir() to resolve to {UserConfigDir}/one-shot-man/sessions/
+// Uses os.UserConfigDir() to resolve to {UserConfigDir}/osm/sessions/
 //
 // In test environments where UserConfigDir() fails, this will create an isolated,
 // unpredictable temporary directory using os.MkdirTemp(). The fallback directory
@@ -61,7 +94,7 @@ func ResetPaths() {
 func SessionDirectory() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err == nil {
-		return filepath.Join(configDir, "one-shot-man", "sessions"), nil
+		return filepath.Join(configDir, "osm", "sessions"), nil
 	}
 
 	// Fallback for environments where UserConfigDir fails (e.g., CI with no $HOME).
@@ -76,28 +109,34 @@ func SessionDirectory() (string, error) {
 
 // SessionFilePath returns the absolute path to a session file.
 // File naming: {session_id}.session.json
+//
+// SECURITY: The session ID is sanitized via sanitizeFilename() to prevent
+// path traversal attacks (e.g., "../../../etc/passwd" as a session ID).
 func SessionFilePath(sessionID string) (string, error) {
-	dir, err := sessionDirectory()
+	dir, err := getSessionDirectory()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, sessionID+".session.json"), nil
+	return filepath.Join(dir, sanitizeFilename(sessionID)+".session.json"), nil
 }
 
 // SessionLockFilePath returns the absolute path to a session lock file.
 // File naming: {session_id}.session.lock
+//
+// SECURITY: The session ID is sanitized via sanitizeFilename() to prevent
+// path traversal attacks.
 func SessionLockFilePath(sessionID string) (string, error) {
-	dir, err := sessionDirectory()
+	dir, err := getSessionDirectory()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, sessionID+".session.lock"), nil
+	return filepath.Join(dir, sanitizeFilename(sessionID)+".session.lock"), nil
 }
 
-// SessionArchiveDir returns the directory where archived session files are stored.
+// sessionArchiveDir returns the directory where archived session files are stored.
 // Creates the archive subdirectory if it doesn't exist.
-func SessionArchiveDir() (string, error) {
-	dir, err := sessionDirectory()
+func sessionArchiveDir() (string, error) {
+	dir, err := getSessionDirectory()
 	if err != nil {
 		return "", err
 	}
@@ -108,18 +147,16 @@ func SessionArchiveDir() (string, error) {
 	return archiveDir, nil
 }
 
-// SanitizeFilename replaces filesystem-unsafe characters with underscores.
+// sanitizeFilename replaces filesystem-unsafe characters with underscores.
 // This prevents path traversal and cross-platform filename issues.
-func SanitizeFilename(input string) string {
+func sanitizeFilename(input string) string {
 	// Normalize Unicode to NFKC to prevent Unicode normalization-based
 	// path traversal / bypass attacks where visually equivalent strings use
 	// different combining/compatibility forms.
 	input = norm.NFKC.String(input)
 	// Replace problematic characters: /, \, :, *, ?, ", <, >, |, null, etc.
-	unsafePattern := regexp.MustCompile(`[/\\:*?"<>|\x00]`)
 	sanitized := unsafePattern.ReplaceAllString(input, "_")
 	// Also collapse multiple underscores into one for cleanliness
-	collapsePattern := regexp.MustCompile(`_+`)
 	sanitized = collapsePattern.ReplaceAllString(sanitized, "_")
 
 	// Trim trailing dots/spaces which are problematic on Windows.
@@ -142,7 +179,6 @@ func SanitizeFilename(input string) string {
 
 	// COM[1-9] and LPT[1-9] - these are reserved even when followed by an extension
 	// e.g. COM1, COM1.txt are reserved names on Windows.
-	reservedPattern := regexp.MustCompile(`(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$`)
 	if reservedPattern.MatchString(sanitized) {
 		return "_" + sanitized
 	}
@@ -152,11 +188,11 @@ func SanitizeFilename(input string) string {
 // ArchiveSessionFilePath returns the path where a session should be archived.
 // Filename format: {sessionDir}/archive/{sanitizedSessionID}--reset--{UTC-ISO8601}--{counter}.session.json
 func ArchiveSessionFilePath(sessionID string, ts time.Time, counter int) (string, error) {
-	archiveDir, err := SessionArchiveDir()
+	archiveDir, err := sessionArchiveDir()
 	if err != nil {
 		return "", err
 	}
-	sanitizedID := SanitizeFilename(sessionID)
+	sanitizedID := sanitizeFilename(sessionID)
 	// Format timestamp: 2025-11-26T14-03-00Z (hyphens instead of colons for cross-platform)
 	timestampStr := ts.UTC().Format("2006-01-02T15-04-05Z")
 	archiveFilename := filepath.Join(archiveDir,

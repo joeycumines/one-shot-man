@@ -37,7 +37,7 @@ func TestDeleteWhileHandleOpenFailsOnWindows(t *testing.T) {
 
 	// The underlying error is commonly ERROR_SHARING_VIOLATION. Ensure the
 	// returned error either maps to that or is a permission-like error.
-	if !errors.Is(err, windows.ERROR_SHARING_VIOLATION) && !os.IsPermission(err) {
+	if !errors.Is(err, windows.ERROR_SHARING_VIOLATION) && !errors.Is(err, os.ErrPermission) {
 		t.Fatalf("expected sharing violation or permission denied, got: %v", err)
 	}
 }

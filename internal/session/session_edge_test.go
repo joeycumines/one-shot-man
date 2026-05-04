@@ -33,14 +33,14 @@ func TestConcurrentSessionAccess_MultipleGoroutines(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make(chan error, numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(goroutineID int) {
 			defer wg.Done()
-			for j := 0; j < 20; j++ {
+			for range 20 {
 				id, source, err := GetSessionID("")
 				if err != nil {
-					errors <- fmt.Errorf("goroutine %d: error getting session ID: %v", goroutineID, err)
+					errors <- fmt.Errorf("goroutine %d: error getting session ID: %w", goroutineID, err)
 					return
 				}
 				if id == "" {
@@ -72,11 +72,11 @@ func TestConcurrentSessionAccess_ReadWriteWithExplicitOverride(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make(chan error, numGoroutines*numOpsPerGoroutine)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(goroutineID int) {
 			defer wg.Done()
-			for j := 0; j < numOpsPerGoroutine; j++ {
+			for j := range numOpsPerGoroutine {
 				// Alternate between empty and explicit override
 				explicit := ""
 				if j%2 == 0 {
@@ -116,7 +116,7 @@ func TestConcurrentSessionAccess_RapidSessionIDCalls(t *testing.T) {
 	os.Setenv("SSH_CONNECTION", "192.168.1.100 12345 192.168.1.1 22")
 
 	// Rapid sequential calls
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		id, source, err := GetSessionID("")
 		if err != nil {
 			t.Fatalf("iteration %d: unexpected error: %v", i, err)
@@ -215,7 +215,7 @@ func TestSessionIDGenerationEdgeCases_IDUniqueness(t *testing.T) {
 	seen := make(map[string]bool)
 	const numIDs = 1000
 
-	for i := 0; i < numIDs; i++ {
+	for i := range numIDs {
 		// Vary environment slightly each time to generate different IDs
 		os.Setenv("SSH_CONNECTION", fmt.Sprintf("192.168.1.%d %d 192.168.1.1 22", i%256, 10000+i))
 
@@ -594,7 +594,7 @@ func TestHashFunctionEdgeCases_CollisionResistance(t *testing.T) {
 	base := "session-data"
 	seen := make(map[string]bool)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		input := base + fmt.Sprintf("%d", i)
 		hash := hashString(input)
 
@@ -602,6 +602,28 @@ func TestHashFunctionEdgeCases_CollisionResistance(t *testing.T) {
 			t.Errorf("collision detected for input %q", input)
 		}
 		seen[hash] = true
+	}
+}
+
+// TestFormatUUIDID tests the UUID session ID formatting function.
+func TestFormatUUIDID(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name     string
+		uuid     string
+		expected string
+	}{
+		{"standard UUID", "550e8400-e29b-41d4-a716-446655440000", "uuid--550e8400-e29b-41d4-a716-446655440000"},
+		{"short string", "abc", "uuid--abc"},
+		{"empty string", "", "uuid--"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := formatUUIDID(tc.uuid)
+			if result != tc.expected {
+				t.Errorf("formatUUIDID(%q) = %q, want %q", tc.uuid, result, tc.expected)
+			}
+		})
 	}
 }
 
@@ -626,5 +648,65 @@ func TestHashFunctionEdgeCases_UnicodeInput(t *testing.T) {
 			t.Errorf("collision for %q", input)
 		}
 		seen[hash] = true
+	}
+}
+
+// =============================================================================
+// formatSessionID — Constrained namespace edge cases
+// =============================================================================
+
+// TestFormatSessionID_ExtremelyConstrainedNamespace exercises the path where
+// namespace is so long that availForSanitized becomes negative, triggering
+// the "hash-only payload" fallback.
+func TestFormatSessionID_ExtremelyConstrainedNamespace(t *testing.T) {
+	t.Parallel()
+	// MaxSessionIDLength=80, NamespaceDelimiter="--" (len 2)
+	// Namespace len 70: maxPayload = 80 - 70 - 2 = 8
+	// fullSuffixLen = 1 + 16 = 17
+	// maxPayload (8) < fullSuffixLen (17) → triggers extremely constrained path
+	// allowedNS = 80 - 2 - 17 = 61, so ns truncated from 70 to 61
+	// new maxPayload = 80 - 61 - 2 = 17
+	// availForSanitized = 17 - 17 = 0 → still no room!
+	// Falls through to availForSanitized <= 0 → hash-only payload
+	longNS := strings.Repeat("n", 70)
+	id := formatSessionID(longNS, "some/payload/with/special")
+
+	if len(id) > MaxSessionIDLength {
+		t.Errorf("id exceeds max: %d > %d: %q", len(id), MaxSessionIDLength, id)
+	}
+	// Should still contain the namespace delimiter
+	if !strings.Contains(id, NamespaceDelimiter) {
+		t.Errorf("missing namespace delimiter in %q", id)
+	}
+}
+
+// TestFormatSessionID_MaxPayloadZero exercises the path where maxPayload
+// becomes zero or negative, triggering an empty finalPayload.
+func TestFormatSessionID_MaxPayloadZero(t *testing.T) {
+	t.Parallel()
+	// namespace len 78: maxPayload = 80 - 78 - 2 = 0
+	// This means maxPayload <= 0 → finalPayload = ""
+	longNS := strings.Repeat("x", 78)
+	id := formatSessionID(longNS, "payload")
+
+	if len(id) > MaxSessionIDLength {
+		t.Errorf("id exceeds max: %d > %d: %q", len(id), MaxSessionIDLength, id)
+	}
+}
+
+// TestFormatSessionID_NeedsOnlyTruncation exercises the path where sanitization
+// is NOT needed but payload is too long, requiring truncation + full suffix.
+func TestFormatSessionID_NeedsOnlyTruncation(t *testing.T) {
+	t.Parallel()
+	// Safe payload (no special chars) that's very long → needs truncation
+	longPayload := strings.Repeat("a", 100)
+	id := formatSessionID("test", longPayload)
+
+	if len(id) > MaxSessionIDLength {
+		t.Errorf("id exceeds max: %d > %d: %q", len(id), MaxSessionIDLength, id)
+	}
+	// Should contain full suffix (underscore + 16 hex chars)
+	if !strings.Contains(id, SuffixDelimiter) {
+		t.Errorf("expected suffix delimiter in %q", id)
 	}
 }

@@ -2,9 +2,11 @@ package storage
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -12,17 +14,18 @@ import (
 type FileSystemBackend struct {
 	sessionID string
 	lockFile  *os.File
+	mu        sync.Mutex // guards file operations that modify session state
 }
 
 // NewFileSystemBackend creates a new file system storage backend.
 // It acquires an exclusive lock on the session to prevent concurrent access.
 func NewFileSystemBackend(sessionID string) (*FileSystemBackend, error) {
 	if sessionID == "" {
-		return nil, fmt.Errorf("sessionID cannot be empty")
+		return nil, ErrEmptySessionID
 	}
 
 	// Ensure the session directory exists
-	sessionDir, err := SessionDirectory()
+	sessionDir, err := getSessionDirectory()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session directory: %w", err)
 	}
@@ -31,7 +34,7 @@ func NewFileSystemBackend(sessionID string) (*FileSystemBackend, error) {
 	}
 
 	// Acquire exclusive lock on the session
-	lockPath, err := SessionLockFilePath(sessionID)
+	lockPath, err := getSessionLockFilePath(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get lock file path: %w", err)
 	}
@@ -64,7 +67,7 @@ func (b *FileSystemBackend) LoadSession(sessionID string) (*Session, error) {
 	// Check if the session file exists
 	data, err := os.ReadFile(sessionPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to read session file: %w", err)
@@ -114,6 +117,9 @@ func (b *FileSystemBackend) SaveSession(session *Session) error {
 // Uses atomic os.Rename when both files are on the same filesystem.
 // If the source session file doesn't exist, returns nil (no-op).
 func (b *FileSystemBackend) ArchiveSession(sessionID string, destPath string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	if sessionID != b.sessionID {
 		return fmt.Errorf("session ID mismatch: backend is locked for %q, archive requested for %q", b.sessionID, sessionID)
 	}
@@ -129,8 +135,13 @@ func (b *FileSystemBackend) ArchiveSession(sessionID string, destPath string) er
 
 	// Check if source session file exists
 	if _, err := os.Stat(sessionPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil // No-op: session doesn't exist
+		if errors.Is(err, os.ErrNotExist) {
+			// Source is gone. If another caller already archived to destPath,
+			// report the conflict so the caller can retry with a different counter.
+			if _, dstErr := os.Stat(destPath); dstErr == nil {
+				return os.ErrExist
+			}
+			return nil // No-op: session doesn't exist and no competing archive
 		}
 		return fmt.Errorf("failed to stat session file: %w", err)
 	}
@@ -148,7 +159,7 @@ func (b *FileSystemBackend) ArchiveSession(sessionID string, destPath string) er
 	// the kernel enforces atomically.
 	if _, err := os.Stat(destPath); err == nil {
 		return os.ErrExist
-	} else if !os.IsNotExist(err) {
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to stat destination: %w", err)
 	}
 
@@ -164,7 +175,7 @@ func (b *FileSystemBackend) ArchiveSession(sessionID string, destPath string) er
 	// can retry with a different counter.
 	dstFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
-		if os.IsExist(err) {
+		if errors.Is(err, os.ErrExist) {
 			return os.ErrExist
 		}
 		return fmt.Errorf("failed to create archive destination: %w", err)

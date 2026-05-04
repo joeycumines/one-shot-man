@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +19,12 @@ type Config struct {
 	Commands map[string]map[string]string
 	// Sessions configuration controls automatic session cleanup and retention.
 	Sessions SessionConfig
+	// ClaudeMux controls Claude-Mux (agent orchestration, PTY, MCP) behavior.
+	ClaudeMux ClaudeMuxConfig
+	// HotSnippets are user-configured text snippets that can be copied to
+	// clipboard from interactive modes. Parsed from the [hot-snippets]
+	// config section.
+	HotSnippets []HotSnippet
 	// Warnings contains any warnings generated during config loading
 	Warnings []string
 }
@@ -34,8 +41,60 @@ func NewConfig() *Config {
 			AutoCleanupEnabled:   true,
 			CleanupIntervalHours: 24,
 		},
-		Warnings: make([]string, 0),
+		ClaudeMux: ClaudeMuxConfig{
+			Provider:            "claude-code",
+			EnvInherit:          true,
+			PermissionPolicy:    "reject",
+			RateLimitBackoffSec: 30,
+			MaxAgents:           4,
+			PTYRows:             24,
+			PTYCols:             80,
+			EnvVars:             make(map[string]string),
+		},
+		HotSnippets: make([]HotSnippet, 0),
 	}
+}
+
+// HotSnippet represents a named text snippet that users can quickly copy
+// to the clipboard from interactive modes.
+type HotSnippet struct {
+	Name        string `json:"name"`
+	Text        string `json:"text"`
+	Description string `json:"description,omitempty"`
+}
+
+// ClaudeMuxConfig controls Claude-Mux (claude-code orchestration) behavior.
+type ClaudeMuxConfig struct {
+	// Provider is the default AI provider name (e.g., "claude-code").
+	Provider string `json:"provider" default:"claude-code"`
+	// Model is the default model identifier.
+	Model string `json:"model"`
+	// WorkDir is the default working directory for agents (empty = CWD).
+	WorkDir string `json:"workDir"`
+	// EnvInherit controls whether agents inherit the parent environment.
+	EnvInherit bool `json:"envInherit" default:"true"`
+	// EnvVars are additional environment variables for all agents.
+	// Parsed from KEY=VALUE entries in the [claude-mux] config section.
+	EnvVars map[string]string `json:"envVars"`
+	// EnvProfile is the active environment variable profile name.
+	EnvProfile string `json:"envProfile"`
+	// PreSpawnHook is a path to a JS file executed before agent spawn.
+	// Used for credential injection (e.g., op plugin, aws-vault wrappers).
+	PreSpawnHook string `json:"preSpawnHook"`
+	// PermissionPolicy is the default permission handling: "reject" (default) or "ask".
+	PermissionPolicy string `json:"permissionPolicy" default:"reject"`
+	// RateLimitBackoffSec is the initial rate limit backoff in seconds.
+	RateLimitBackoffSec int `json:"rateLimitBackoffSec" default:"30"`
+	// MaxAgents is the maximum number of concurrent agents.
+	MaxAgents int `json:"maxAgents" default:"4"`
+	// PTYRows is the default PTY row count.
+	PTYRows int `json:"ptyRows" default:"24"`
+	// PTYCols is the default PTY column count.
+	PTYCols int `json:"ptyCols" default:"80"`
+	// ProviderCommand overrides the provider's default executable path.
+	ProviderCommand string `json:"providerCommand"`
+	// MCPServers is a comma-separated list of MCP server commands to attach.
+	MCPServers string `json:"mcpServers"`
 }
 
 // SessionConfig controls session lifecycle and cleanup behavior.
@@ -43,11 +102,13 @@ type SessionConfig struct {
 	MaxAgeDays int `json:"maxAgeDays" default:"90"`
 	MaxCount   int `json:"maxCount" default:"100"`
 	MaxSizeMB  int `json:"maxSizeMb" default:"500"`
-	// TODO: AutoCleanupEnabled is parsed and validated but no automatic cleanup
-	// scheduler exists yet. Reserved for future auto-cleanup scheduler implementation.
+	// AutoCleanupEnabled controls whether commands that create sessions
+	// start a background cleanup scheduler. When true (the default),
+	// session cleanup runs on command startup and then at the configured
+	// interval (CleanupIntervalHours).
 	AutoCleanupEnabled bool `json:"autoCleanupEnabled" default:"true"`
-	// TODO: CleanupIntervalHours is parsed and validated but no automatic cleanup
-	// scheduler exists yet. Reserved for future auto-cleanup scheduler implementation.
+	// CleanupIntervalHours is the number of hours between automatic
+	// cleanup runs. Only used when AutoCleanupEnabled is true.
 	CleanupIntervalHours int `json:"cleanupIntervalHours" default:"24"`
 }
 
@@ -73,7 +134,7 @@ func LoadFromPath(path string) (*Config, error) {
 	// the threat model targets direct file symlink substitution.
 	fi, err := os.Lstat(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// Return empty config if file doesn't exist
 			return NewConfig(), nil
 		}
@@ -102,6 +163,8 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 
 	var currentCommand string
 	var inSessionsSection bool
+	var inHotSnippetsSection bool
+	var inClaudeMuxSection bool
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -114,11 +177,26 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 		// Check for section header [section_name]
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			sectionName := strings.Trim(line, "[]")
-			if sectionName == "sessions" {
+			switch sectionName {
+			case "sessions":
 				inSessionsSection = true
+				inHotSnippetsSection = false
+				inClaudeMuxSection = false
 				currentCommand = ""
-			} else {
+			case "hot-snippets":
+				inHotSnippetsSection = true
 				inSessionsSection = false
+				inClaudeMuxSection = false
+				currentCommand = ""
+			case "claude-mux":
+				inClaudeMuxSection = true
+				inSessionsSection = false
+				inHotSnippetsSection = false
+				currentCommand = ""
+			default:
+				inSessionsSection = false
+				inHotSnippetsSection = false
+				inClaudeMuxSection = false
 				currentCommand = sectionName
 				if config.Commands[currentCommand] == nil {
 					config.Commands[currentCommand] = make(map[string]string)
@@ -145,20 +223,22 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 			if err := parseSessionOption(&config.Sessions, optionName, value); err != nil {
 				return nil, fmt.Errorf("invalid session option %q: %w", optionName, err)
 			}
+		} else if inHotSnippetsSection {
+			// Hot-snippet definition
+			if err := parseHotSnippetLine(&config.HotSnippets, optionName, value); err != nil {
+				return nil, fmt.Errorf("invalid hot-snippet %q: %w", optionName, err)
+			}
+		} else if inClaudeMuxSection {
+			// Claude-Mux configuration option
+			if err := parseClaudeMuxOption(&config.ClaudeMux, optionName, value); err != nil {
+				return nil, fmt.Errorf("invalid claude-mux option %q: %w", optionName, err)
+			}
 		} else if currentCommand == "" {
 			// Global option
 			config.Global[optionName] = value
-			// Validate global option name
-			if !isKnownGlobalOption(optionName) {
-				config.addWarning("unknown global option: %q (value: %q)", optionName, value)
-			}
 		} else {
 			// Command-specific option
 			config.Commands[currentCommand][optionName] = value
-			// Validate command option name
-			if !isKnownCommandOption(currentCommand, optionName) {
-				config.addWarning("unknown option for command %q: %q (value: %q)", currentCommand, optionName, value)
-			}
 		}
 	}
 
@@ -166,71 +246,19 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 		return nil, fmt.Errorf("error reading config: %w", err)
 	}
 
+	// Validate config against schema: detect unknown options and type mismatches.
+	for _, issue := range ValidateConfig(config, DefaultSchema()) {
+		config.addWarning("%s", issue)
+	}
+
 	return config, nil
-}
-
-// Known global and command-specific configuration options.
-// This is used for schema validation to detect typos and unknown options.
-var knownGlobalOptions = map[string]bool{
-	"verbose":    true,
-	"color":      true,
-	"pager":      true,
-	"format":     true,
-	"timeout":    true,
-	"session.id": true,
-	"output":     true,
-	"editor":     true,
-	"debug":      true,
-	"quiet":      true,
-}
-
-// Known options per command.
-var knownCommandOptions = map[string]map[string]bool{
-	"help": {
-		"pager":  true,
-		"format": true,
-		"output": true,
-	},
-	"version": {
-		"format": true,
-		"output": true,
-	},
-	"prompt": {
-		"template":    true,
-		"output":      true,
-		"editor":      true,
-		"add-context": true,
-	},
-	"session": {
-		"list":   true,
-		"delete": true,
-		"export": true,
-		"import": true,
-	},
-}
-
-// isKnownGlobalOption checks if an option is a known global option.
-func isKnownGlobalOption(name string) bool {
-	return knownGlobalOptions[name]
-}
-
-// isKnownCommandOption checks if an option is known for a specific command.
-func isKnownCommandOption(command, name string) bool {
-	// Also check global options as they can be used in command sections
-	if knownGlobalOptions[name] {
-		return true
-	}
-	if cmdOpts, ok := knownCommandOptions[command]; ok {
-		return cmdOpts[name]
-	}
-	return false
 }
 
 // addWarning adds a warning to the config's warnings list.
 func (c *Config) addWarning(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	c.Warnings = append(c.Warnings, msg)
-	slog.Warn("[Config] " + msg)
+	slog.Warn(msg, "source", "config")
 }
 
 // parseSessionOption parses a session configuration option and updates the SessionConfig.
@@ -292,6 +320,141 @@ func parseSessionOption(sc *SessionConfig, name, value string) error {
 	default:
 		return fmt.Errorf("unknown session option: %s", name)
 	}
+	return nil
+}
+
+// parseClaudeMuxOption parses a claude-mux configuration option and
+// updates the ClaudeMuxConfig. Supported options:
+//   - provider <string>: Default AI provider name (default: "claude-code")
+//   - model <string>: Default model identifier
+//   - work-dir <string>: Default working directory for agents
+//   - env-inherit <bool>: Agents inherit parent environment (default: true)
+//   - env <KEY=VALUE>: Additional environment variable (can appear multiple times)
+//   - env-profile <string>: Active environment variable profile name
+//   - pre-spawn-hook <string>: JS file path executed before agent spawn
+//   - permission-policy <string>: "reject" (default) or "ask"
+//   - rate-limit-backoff-sec <int>: Initial rate limit backoff in seconds (default: 30)
+//   - max-agents <int>: Maximum concurrent agents (default: 4)
+//   - pty-rows <int>: Default PTY row count (default: 24)
+//   - pty-cols <int>: Default PTY column count (default: 80)
+//   - provider-command <string>: Override provider executable path
+//   - mcp-servers <string>: Comma-separated MCP server commands
+func parseClaudeMuxOption(oc *ClaudeMuxConfig, name, value string) error {
+	switch name {
+	case "provider":
+		oc.Provider = value
+
+	case "model":
+		oc.Model = value
+
+	case "work-dir":
+		oc.WorkDir = value
+
+	case "env-inherit":
+		enabled, err := parseBool(value)
+		if err != nil {
+			return fmt.Errorf("invalid boolean value %q: %w", value, err)
+		}
+		oc.EnvInherit = enabled
+
+	case "env":
+		idx := strings.Index(value, "=")
+		if idx < 0 {
+			return fmt.Errorf("env requires KEY=VALUE format, got %q", value)
+		}
+		key := value[:idx]
+		val := value[idx+1:]
+		if oc.EnvVars == nil {
+			oc.EnvVars = make(map[string]string)
+		}
+		oc.EnvVars[key] = val
+
+	case "env-profile":
+		oc.EnvProfile = value
+
+	case "pre-spawn-hook":
+		oc.PreSpawnHook = value
+
+	case "permission-policy":
+		switch value {
+		case "reject", "ask":
+			oc.PermissionPolicy = value
+		default:
+			return fmt.Errorf("permission-policy must be \"reject\" or \"ask\", got %q", value)
+		}
+
+	case "rate-limit-backoff-sec":
+		sec, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		oc.RateLimitBackoffSec = sec
+
+	case "max-agents":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		oc.MaxAgents = n
+
+	case "pty-rows":
+		rows, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		oc.PTYRows = rows
+
+	case "pty-cols":
+		cols, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		oc.PTYCols = cols
+
+	case "provider-command":
+		oc.ProviderCommand = value
+
+	case "mcp-servers":
+		oc.MCPServers = value
+
+	default:
+		return fmt.Errorf("unknown claude-mux option: %s", name)
+	}
+	return nil
+}
+
+// parseHotSnippetLine parses a single line from the [hot-snippets] config
+// section. Two formats are supported:
+//
+//	snippetName text of the snippet     → defines a snippet (literal \n → newline)
+//	snippetName.description Help text   → sets description on the last snippet named snippetName
+//
+// The name must not be empty. If a .description suffix targets a name that
+// has not yet been defined, an error is returned.
+func parseHotSnippetLine(snippets *[]HotSnippet, name, value string) error {
+	if name == "" {
+		return fmt.Errorf("empty snippet name")
+	}
+
+	// Check for .description suffix
+	if dotIdx := strings.LastIndex(name, "."); dotIdx > 0 {
+		baseName := name[:dotIdx]
+		suffix := name[dotIdx+1:]
+		if suffix == "description" {
+			// Set description on the last snippet with baseName
+			for i := len(*snippets) - 1; i >= 0; i-- {
+				if (*snippets)[i].Name == baseName {
+					(*snippets)[i].Description = value
+					return nil
+				}
+			}
+			return fmt.Errorf("snippet %q not found for .description", baseName)
+		}
+	}
+
+	// Convert literal \n sequences to actual newlines
+	text := strings.ReplaceAll(value, `\n`, "\n")
+	*snippets = append(*snippets, HotSnippet{Name: name, Text: text})
 	return nil
 }
 

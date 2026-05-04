@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +23,7 @@ func TestPaths(t *testing.T) {
 		// If os.UserConfigDir succeeds we expect the standard suffix. Otherwise
 		// the code falls back to a temp directory and we assert that pattern.
 		if _, err := os.UserConfigDir(); err == nil {
-			expectedSuffix := filepath.Join("one-shot-man", "sessions")
+			expectedSuffix := filepath.Join("osm", "sessions")
 			if !strings.HasSuffix(dir, expectedSuffix) {
 				t.Errorf("Expected path to end with %q, but got %q", expectedSuffix, dir)
 			}
@@ -123,7 +125,7 @@ func TestPaths(t *testing.T) {
 		}
 
 		// Verify the directory actually exists
-		if _, err := os.Stat(dir1); os.IsNotExist(err) {
+		if _, err := os.Stat(dir1); errors.Is(err, os.ErrNotExist) {
 			t.Errorf("SessionDirectory returned path that doesn't exist: %q", dir1)
 		}
 
@@ -155,15 +157,16 @@ func TestSanitizeFilename(t *testing.T) {
 		{"reserved con with ext", "Con.Txt", "_Con.Txt"},
 		{"reserved nul dot", "NUL.", "_NUL"},
 		{"dot only", ".", "_"},
+		{"dot-dot", "..", "_"},
 		{"leading dot preserved", ".config", ".config"},
 		{"empty string", "", "_"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := SanitizeFilename(tt.input)
+			got := sanitizeFilename(tt.input)
 			if got != tt.expected {
-				t.Errorf("SanitizeFilename(%q) = %q, want %q", tt.input, got, tt.expected)
+				t.Errorf("sanitizeFilename(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}
@@ -171,8 +174,8 @@ func TestSanitizeFilename(t *testing.T) {
 
 func TestSanitizeFilename_PreserveLeadingDot(t *testing.T) {
 	// Ensure leading dots are preserved and do not collide with non-dot names
-	a := SanitizeFilename(".config")
-	b := SanitizeFilename("config")
+	a := sanitizeFilename(".config")
+	b := sanitizeFilename("config")
 	if a == b {
 		t.Fatalf("expected leading dot to be preserved; got equal sanitized values %q", a)
 	}
@@ -183,8 +186,8 @@ func TestSanitizeFilename_UnicodeNormalization(t *testing.T) {
 	decomposed := "e\u0301-session"
 	precomposed := "é-session"
 
-	d := SanitizeFilename(decomposed)
-	p := SanitizeFilename(precomposed)
+	d := sanitizeFilename(decomposed)
+	p := sanitizeFilename(precomposed)
 
 	if d != p {
 		t.Fatalf("expected decomposed and precomposed forms to sanitize equally; got %q vs %q", d, p)
@@ -272,9 +275,9 @@ func TestSessionArchiveDir(t *testing.T) {
 	defer ResetPaths()
 
 	// First call should create the directory
-	dir1, err := SessionArchiveDir()
+	dir1, err := sessionArchiveDir()
 	if err != nil {
-		t.Fatalf("SessionArchiveDir failed: %v", err)
+		t.Fatalf("sessionArchiveDir failed: %v", err)
 	}
 
 	if !strings.Contains(dir1, "archive") {
@@ -286,12 +289,172 @@ func TestSessionArchiveDir(t *testing.T) {
 	}
 
 	// Second call should return the same path and not error
-	dir2, err := SessionArchiveDir()
+	dir2, err := sessionArchiveDir()
 	if err != nil {
-		t.Fatalf("Second SessionArchiveDir failed: %v", err)
+		t.Fatalf("Second sessionArchiveDir failed: %v", err)
 	}
 
 	if dir1 != dir2 {
-		t.Errorf("SessionArchiveDir should return same path consistently: %s vs %s", dir1, dir2)
+		t.Errorf("sessionArchiveDir should return same path consistently: %s vs %s", dir1, dir2)
+	}
+}
+
+// Verify that public path functions propagate sessionDirectory errors.
+func TestSessionFilePath_SessionDirError(t *testing.T) {
+	orig := sessionDirectory
+	defer func() { sessionDirectory = orig }()
+	sessionDirectory = func() (string, error) { return "", fmt.Errorf("no home dir") }
+
+	_, err := SessionFilePath("test")
+	if err == nil {
+		t.Fatal("expected error from SessionFilePath when sessionDirectory fails")
+	}
+}
+
+func TestSessionLockFilePath_SessionDirError(t *testing.T) {
+	orig := sessionDirectory
+	defer func() { sessionDirectory = orig }()
+	sessionDirectory = func() (string, error) { return "", fmt.Errorf("no home dir") }
+
+	_, err := SessionLockFilePath("test")
+	if err == nil {
+		t.Fatal("expected error from SessionLockFilePath when sessionDirectory fails")
+	}
+}
+
+func TestSessionArchiveDir_SessionDirError(t *testing.T) {
+	orig := sessionDirectory
+	defer func() { sessionDirectory = orig }()
+	sessionDirectory = func() (string, error) { return "", fmt.Errorf("no home dir") }
+
+	_, err := sessionArchiveDir()
+	if err == nil {
+		t.Fatal("expected error from sessionArchiveDir when sessionDirectory fails")
+	}
+}
+
+func TestArchiveSessionFilePath_ArchiveDirError(t *testing.T) {
+	orig := sessionDirectory
+	defer func() { sessionDirectory = orig }()
+	sessionDirectory = func() (string, error) { return "", fmt.Errorf("no home dir") }
+
+	_, err := ArchiveSessionFilePath("test", time.Now(), 0)
+	if err == nil {
+		t.Fatal("expected error from ArchiveSessionFilePath when sessionDirectory fails")
+	}
+}
+
+func TestSessionArchiveDir_MkdirAllError(t *testing.T) {
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "archive")
+
+	// Create a regular file where the archive subdirectory needs to be.
+	if err := os.WriteFile(archivePath, []byte("blocker"), 0644); err != nil {
+		t.Fatalf("write blocker: %v", err)
+	}
+
+	orig := sessionDirectory
+	defer func() { sessionDirectory = orig }()
+	sessionDirectory = func() (string, error) { return tmpDir, nil }
+
+	_, err := sessionArchiveDir()
+	if err == nil {
+		t.Fatal("expected error when MkdirAll fails for archive directory")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T61: Session path traversal attack tests
+// ---------------------------------------------------------------------------
+
+func TestSessionFilePath_TraversalAttempt_Rejected(t *testing.T) {
+	// NOT parallel — mutates global path functions via SetTestPaths.
+	sessionDir := t.TempDir()
+	SetTestPaths(sessionDir)
+	defer ResetPaths()
+
+	maliciousIDs := []struct {
+		name string
+		id   string
+	}{
+		{"unix traversal", "../../../etc/passwd"},
+		{"windows traversal", "..\\..\\windows\\system32"},
+		{"semicolon injection", "./;../../etc"},
+		{"double-dot chain", ".../.../../root/.ssh"},
+		{"relative current dir", "./current"},
+		{"null byte", "session\x00evil"},
+	}
+
+	for _, tc := range maliciousIDs {
+		t.Run(tc.name, func(t *testing.T) {
+			path, err := SessionFilePath(tc.id)
+			if err != nil {
+				t.Fatalf("SessionFilePath(%q) unexpected error: %v", tc.id, err)
+			}
+
+			// The resolved path MUST be under the session directory.
+			cleaned := filepath.Clean(path)
+			if !strings.HasPrefix(cleaned, sessionDir) {
+				t.Errorf("SessionFilePath(%q) escaped session dir:\n  got:  %s\n  want prefix: %s", tc.id, cleaned, sessionDir)
+			}
+
+			// The path must not contain raw path separator sequences.
+			base := filepath.Base(path)
+			if strings.ContainsAny(base, "/\\") {
+				t.Errorf("SessionFilePath(%q) base contains path separators: %s", tc.id, base)
+			}
+		})
+	}
+}
+
+func TestSessionLockFilePath_TraversalAttempt_Rejected(t *testing.T) {
+	// NOT parallel — mutates global path functions via SetTestPaths.
+	sessionDir := t.TempDir()
+	SetTestPaths(sessionDir)
+	defer ResetPaths()
+
+	maliciousIDs := []string{
+		"../../../etc/passwd",
+		"..\\..\\AppData\\Roaming",
+		"./;../../etc",
+	}
+
+	for _, id := range maliciousIDs {
+		t.Run(id, func(t *testing.T) {
+			path, err := SessionLockFilePath(id)
+			if err != nil {
+				t.Fatalf("SessionLockFilePath(%q) unexpected error: %v", id, err)
+			}
+			cleaned := filepath.Clean(path)
+			if !strings.HasPrefix(cleaned, sessionDir) {
+				t.Errorf("SessionLockFilePath(%q) escaped session dir:\n  got:  %s\n  want prefix: %s", id, cleaned, sessionDir)
+			}
+		})
+	}
+}
+
+func TestArchiveSessionFilePath_TraversalAttempt_Rejected(t *testing.T) {
+	// NOT parallel — mutates global path functions via SetTestPaths.
+	sessionDir := t.TempDir()
+	SetTestPaths(sessionDir)
+	defer ResetPaths()
+
+	ts := time.Date(2025, 11, 26, 14, 3, 0, 0, time.UTC)
+	maliciousIDs := []string{
+		"../../../etc/passwd",
+		"..\\..\\windows",
+	}
+
+	for _, id := range maliciousIDs {
+		t.Run(id, func(t *testing.T) {
+			path, err := ArchiveSessionFilePath(id, ts, 0)
+			if err != nil {
+				t.Fatalf("ArchiveSessionFilePath(%q) unexpected error: %v", id, err)
+			}
+			cleaned := filepath.Clean(path)
+			if !strings.HasPrefix(cleaned, sessionDir) {
+				t.Errorf("ArchiveSessionFilePath(%q) escaped session dir:\n  got:  %s\n  want prefix: %s", id, cleaned, sessionDir)
+			}
+		})
 	}
 }

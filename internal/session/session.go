@@ -125,9 +125,9 @@ func GetSessionID(explicitOverride string) (string, string, error) {
 // Otherwise, adds the explicit namespace prefix.
 func formatExplicitID(id string) string {
 	// If already namespaced, extract namespace and payload, sanitize payload
-	if idx := strings.Index(id, NamespaceDelimiter); idx != -1 {
-		namespace := id[:idx]
-		payload := id[idx+len(NamespaceDelimiter):]
+	if before, after, ok := strings.Cut(id, NamespaceDelimiter); ok {
+		namespace := before
+		payload := after
 		// Sanitize namespace too (it's user-provided)
 		namespace = sanitizePayload(namespace)
 		// formatSessionID will sanitize payload and handle truncation with hash suffix
@@ -312,7 +312,7 @@ func isTmuxPayload(s string) bool {
 	// State machine: true = parsing left side, false = parsing right side.
 	parsingLeft := true
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		b := s[i]
 		// Check for digits.
 		if b >= '0' && b <= '9' {

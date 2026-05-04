@@ -1,9 +1,13 @@
 package storage
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -55,7 +59,7 @@ func TestCleaner_DoesNotRemoveLockForActiveSession(t *testing.T) {
 	}
 
 	// The lockfile should still exist and the session should be skipped.
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to still exist for active session")
 	}
 	for _, id := range report.Removed {
@@ -112,17 +116,11 @@ func TestCleaner_RemovesOrphanLock(t *testing.T) {
 	}
 
 	// The lockfile should no longer exist and the id should be in Removed.
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to be removed for orphan session")
 	}
 
-	found := false
-	for _, id := range report.Removed {
-		if id == sessionID {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Removed, sessionID)
 	if !found {
 		t.Fatalf("expected orphan session id in report.Removed")
 	}
@@ -155,18 +153,12 @@ func TestCleaner_SkipsYoungOrphanLock(t *testing.T) {
 	}
 
 	// Lock should still exist
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected young orphan lock file to remain")
 	}
 
 	// Should be reported as skipped
-	found := false
-	for _, id := range report.Skipped {
-		if id == sessionID {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Skipped, sessionID)
 	if !found {
 		t.Fatalf("expected young orphan session id in report.Skipped")
 	}
@@ -199,16 +191,10 @@ func TestCleaner_CustomMinOrphanAge_RemovesWhenSmaller(t *testing.T) {
 		t.Fatalf("cleanup failed: %v", err)
 	}
 
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to be removed for custom-age-remove")
 	}
-	found := false
-	for _, id := range report.Removed {
-		if id == sessionID {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Removed, sessionID)
 	if !found {
 		t.Fatalf("expected custom-age-remove id in report.Removed")
 	}
@@ -242,17 +228,11 @@ func TestCleaner_CustomMinOrphanAge_SkipsWhenLarger(t *testing.T) {
 	}
 
 	// Lock should still exist
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to remain for custom-age-skip")
 	}
 
-	found := false
-	for _, id := range report.Skipped {
-		if id == sessionID {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Skipped, sessionID)
 	if !found {
 		t.Fatalf("expected custom-age-skip id in report.Skipped")
 	}
@@ -294,7 +274,7 @@ func TestCleaner_DoesNotRemoveLockWhenAcquirableAndSessionExists(t *testing.T) {
 		t.Fatalf("cleanup failed: %v", err)
 	}
 
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to still exist for session even if acquirable")
 	}
 
@@ -425,7 +405,7 @@ func TestAcquireLockHandle_CloseLeavesFile(t *testing.T) {
 	}
 
 	// File should still exist on disk
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock artifact to remain after Close, but it was removed")
 	}
 }
@@ -504,7 +484,7 @@ func TestCleanup_IgnoresNonSessionLockFilesAndRemovesOrphans(t *testing.T) {
 	}
 
 	// orphan.session.lock should have been removed
-	if _, err := os.Stat(orphanLock); !os.IsNotExist(err) {
+	if _, err := os.Stat(orphanLock); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected orphan.session.lock to be removed, stat error: %v", err)
 	}
 }
@@ -543,13 +523,7 @@ func TestCleaner_DryRunReportsButDoesNotDelete(t *testing.T) {
 	// No lock file was created for this session so nothing else to verify.
 
 	// But report should contain the id(s) the cleaner would remove.
-	found := false
-	for _, id := range report.Removed {
-		if id == sessionID {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Removed, sessionID)
 	if !found {
 		t.Fatalf("expected dry-run report to include %s, got %v", sessionID, report.Removed)
 	}
@@ -601,12 +575,12 @@ func TestCleaner_PreservesLockWhenRemoveFails(t *testing.T) {
 	}
 
 	// The session file removal should have failed, so session directory (now replacing file) should still exist
-	if _, err := os.Stat(sessionPath); os.IsNotExist(err) {
+	if _, err := os.Stat(sessionPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session directory (simulating file removal failure) to exist after a failed remove")
 	}
 
 	// The lock file should still exist (we should NOT have unlinked it on failure)
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to remain after failed session removal")
 	}
 
@@ -614,14 +588,236 @@ func TestCleaner_PreservesLockWhenRemoveFails(t *testing.T) {
 	// Note: We replaced the session file with a directory to simulate
 	// removal failure, so the cleaner will attempt to remove the directory.
 	// The key is that it should be listed in report.Skipped, not Removed.
-	found := false
-	for _, id := range report.Skipped {
-		if id == "delete-fails" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Skipped, "delete-fails")
 	if !found {
 		t.Fatalf("expected session id in report.Skipped when remove (simulation) fails")
+	}
+}
+
+// Purge mode removes all non-active, non-excluded sessions regardless of
+// age or count retention policies.
+func TestCleaner_PurgeMode(t *testing.T) {
+	dir := t.TempDir()
+	SetTestPaths(dir)
+	defer ResetPaths()
+
+	// Create 3 recent sessions (would NOT be removed by age policies alone).
+	for _, id := range []string{"purge-a", "purge-b", "purge-c"} {
+		p, _ := sessionFilePath(id)
+		if err := os.WriteFile(p, []byte("{}"), 0644); err != nil {
+			t.Fatalf("write session: %v", err)
+		}
+	}
+
+	cleaner := &Cleaner{Purge: true}
+	report, err := cleaner.ExecuteCleanup("purge-b") // exclude purge-b
+	if err != nil {
+		t.Fatalf("ExecuteCleanup failed: %v", err)
+	}
+
+	// purge-b should be excluded (skipped); others removed.
+	if len(report.Removed) != 2 {
+		t.Fatalf("expected 2 removed, got %d: %v", len(report.Removed), report.Removed)
+	}
+	excluded := false
+	for _, id := range report.Skipped {
+		if id == "purge-b" {
+			excluded = true
+		}
+	}
+	if !excluded {
+		t.Fatal("expected purge-b in Skipped")
+	}
+}
+
+// Size-based pruning removes oldest sessions until total size is under the limit.
+func TestCleaner_SizeBasedPruning(t *testing.T) {
+	dir := t.TempDir()
+	SetTestPaths(dir)
+	defer ResetPaths()
+
+	// Create sessions with enough data to exceed 1 MB total.
+	// 3 files of ~400 KB each = ~1.2 MB > 1 MB limit.
+	now := time.Now()
+	chunk := strings.Repeat("x", 400*1024) // 400 KB
+	for i, id := range []string{"size-a", "size-b", "size-c"} {
+		p, _ := sessionFilePath(id)
+		if err := os.WriteFile(p, []byte(chunk), 0644); err != nil {
+			t.Fatalf("write session: %v", err)
+		}
+		// Stagger modification times: a is oldest, c is newest.
+		mt := now.Add(-time.Duration(3-i) * time.Hour)
+		if err := os.Chtimes(p, mt, mt); err != nil {
+			t.Fatalf("chtimes: %v", err)
+		}
+	}
+
+	cleaner := &Cleaner{MaxSizeMB: 1} // 1 MB limit
+	report, err := cleaner.ExecuteCleanup("")
+	if err != nil {
+		t.Fatalf("ExecuteCleanup failed: %v", err)
+	}
+
+	// At least the oldest session should be removed to bring total under 1 MB.
+	if len(report.Removed) == 0 {
+		t.Fatal("expected at least one session removed by size-based pruning")
+	}
+
+	// Verify remaining total is under 1 MB.
+	remaining, err := ScanSessions()
+	if err != nil {
+		t.Fatalf("ScanSessions: %v", err)
+	}
+	var totalSize int64
+	for _, s := range remaining {
+		totalSize += s.Size
+	}
+	if totalSize > 1*1024*1024 {
+		t.Errorf("expected remaining total < 1 MB, got %d bytes", totalSize)
+	}
+}
+
+// DryRun for orphan lock files should report them as removed without modifying
+// the filesystem.
+func TestCleaner_DryRunOrphanLock(t *testing.T) {
+	dir := t.TempDir()
+	SetTestPaths(dir)
+	defer ResetPaths()
+
+	sessionID := "dryrun-orphan"
+	_, _ = sessionFilePath(sessionID)
+	lockPath, _ := sessionLockFilePath(sessionID)
+
+	// Create only the lock file (no session file) and age it past the grace period.
+	if err := os.WriteFile(lockPath, []byte("l"), 0644); err != nil {
+		t.Fatalf("write lock: %v", err)
+	}
+	old := time.Now().Add(-10 * time.Second)
+	if err := os.Chtimes(lockPath, old, old); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	cleaner := &Cleaner{DryRun: true}
+	report, err := cleaner.ExecuteCleanup("")
+	if err != nil {
+		t.Fatalf("ExecuteCleanup failed: %v", err)
+	}
+
+	// Lock file should still exist (dry-run: no mutations).
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
+		t.Fatal("expected lock file to remain in dry-run mode")
+	}
+
+	// Report should list the orphan as removed (would-be-removed).
+	found := slices.Contains(report.Removed, sessionID)
+	if !found {
+		t.Fatalf("expected orphan lock in dry-run Removed, got: %v", report.Removed)
+	}
+}
+
+// ScanSessions should return an empty slice when the sessions directory does
+// not exist (rather than an error).
+func TestScanSessions_NonExistentDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nope", "does-not-exist")
+	SetTestPaths(dir)
+	defer ResetPaths()
+
+	infos, err := ScanSessions()
+	if err != nil {
+		t.Fatalf("ScanSessions should not error for non-existent dir: %v", err)
+	}
+	if len(infos) != 0 {
+		t.Fatalf("expected empty slice, got %d entries", len(infos))
+	}
+}
+
+// ScanSessions should skip directories and non-.json files.
+func TestScanSessions_SkipsNonSessionFiles(t *testing.T) {
+	dir := t.TempDir()
+	SetTestPaths(dir)
+	defer ResetPaths()
+
+	// Create a subdirectory — should be ignored.
+	if err := os.Mkdir(filepath.Join(dir, "subdir"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Create a non-json file — should be ignored.
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("hi"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// Create a lock file (not .json) — should be ignored.
+	if err := os.WriteFile(filepath.Join(dir, "test.session.lock"), []byte("l"), 0644); err != nil {
+		t.Fatalf("write lock: %v", err)
+	}
+	// Create a valid session file — should be included.
+	if err := os.WriteFile(filepath.Join(dir, "real.session.json"), []byte("{}"), 0644); err != nil {
+		t.Fatalf("write session: %v", err)
+	}
+
+	infos, err := ScanSessions()
+	if err != nil {
+		t.Fatalf("ScanSessions: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(infos))
+	}
+	if infos[0].ID != "real" {
+		t.Errorf("expected ID 'real', got %q", infos[0].ID)
+	}
+}
+
+// SessionDirectory errors should propagate from ExecuteCleanup.
+func TestCleaner_SessionDirError(t *testing.T) {
+	orig := sessionDirectory
+	defer func() { sessionDirectory = orig }()
+	sessionDirectory = func() (string, error) { return "", fmt.Errorf("no home dir") }
+
+	c := &Cleaner{}
+	_, err := c.ExecuteCleanup("")
+	if err == nil {
+		t.Fatal("expected error when sessionDirectory fails in ExecuteCleanup")
+	}
+}
+
+// ScanSessions should report Active=false (not crash) when AcquireLockHandle
+// encounters an unexpected error (not errWouldBlock).
+func TestScanSessions_AcquireLockError(t *testing.T) {
+	dir := t.TempDir()
+	SetTestPaths(dir)
+	defer ResetPaths()
+
+	// Create a valid session file.
+	if err := os.WriteFile(filepath.Join(dir, "err-sess.session.json"), []byte("{}"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Stub acquireFileLock to return a non-errWouldBlock error.
+	origLock := acquireFileLock
+	defer func() { acquireFileLock = origLock }()
+	acquireFileLock = func(path string) (*os.File, error) {
+		return nil, fmt.Errorf("injected lock error")
+	}
+
+	infos, err := ScanSessions()
+	if err != nil {
+		t.Fatalf("ScanSessions should not propagate AcquireLockHandle error: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(infos))
+	}
+	if infos[0].Active {
+		t.Error("expected Active=false when AcquireLockHandle returns error")
+	}
+}
+
+// ScanSessions should propagate sessionDirectory() errors.
+func TestScanSessions_SessionDirError(t *testing.T) {
+	orig := sessionDirectory
+	defer func() { sessionDirectory = orig }()
+	sessionDirectory = func() (string, error) { return "", fmt.Errorf("no session dir") }
+
+	_, err := ScanSessions()
+	if err == nil {
+		t.Fatal("expected error when sessionDirectory fails in ScanSessions")
 	}
 }

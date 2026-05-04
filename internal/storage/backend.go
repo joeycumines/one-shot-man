@@ -1,5 +1,11 @@
 package storage
 
+import "errors"
+
+// ErrEmptySessionID is returned when a session operation is attempted
+// with an empty session ID.
+var ErrEmptySessionID = errors.New("sessionID cannot be empty")
+
 // StorageBackend defines the contract for all persistence mechanisms.
 type StorageBackend interface {
 	// LoadSession retrieves a session by its unique ID.

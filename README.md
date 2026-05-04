@@ -163,6 +163,25 @@ These are the builtin commands to generate prompts from your codebase.
 
 **Why use it:** To improve quality and reliability. By aggregating multiple AI outputs and forcing them through a consistency template, you produce a higher-fidelity result than any single shot could achieve.
 
+### PR Splitting
+
+**`osm pr-split`**: **Interactive & Automated Modes**
+
+**Summary:** Splits a large feature branch into a sequence of small, reviewable PRs.
+
+**The Workflow:** Point it at a branch and a base. The tool analyzes the diff, groups files by directory/extension/dependency, generates a split plan, and can execute the plan — creating branches, cherry-picking changes, running verification, and optionally invoking Claude Code to resolve conflicts.
+
+**Modes:**
+
+- **Interactive TUI (`-interactive=true`, default):** Full-screen wizard with config, plan review, execution monitoring, verification panes, and Claude conversation support. Navigate with keyboard or mouse.
+- **Automated (`-interactive=false`):** Headless pipeline that analyzes, plans, executes, and verifies without user interaction. Suitable for CI or scripted workflows.
+
+**Strategies:** `directory` (group by top-level directory), `directory-deep` (group by full directory path), `extension` (group by file type), `chunks` (fixed-size file chunks), `dependency` (Go import graph), `auto` (AI-assisted classification via Claude).
+
+**Key flags:** `-base` (target branch), `-strategy`, `-max` (max files per PR), `-claude-command` (path to Claude CLI), `-verify` (run verification after each split), `-resume` (continue from a saved plan).
+
+See [docs/architecture-pr-split-chunks.md](docs/architecture-pr-split-chunks.md) for the internal chunk architecture.
+
 ### Session Persistence
 
 State persists locally to your terminal session.
@@ -177,7 +196,32 @@ Command `osm` is a scripting engine.
 
 - **Powered by Goja:** An embedded JavaScript runtime powers the core workflows.
 - **Native Bindings:** Includes native bindings for **Go Prompt** (Shell TUI), **Bubble Tea** (Arbitrary TUI), **Lipgloss** (styling), and the system clipboard.
+- **Native Modules:** `osm:fetch` (browser-compatible Fetch API with AbortController), `osm:grpc` (Promise-based gRPC), `osm:exec` (child processes), `osm:os` (filesystem), `osm:bt` (behavior trees), `osm:pabt` (planning acting).
 - **Customizable:** You can write your own interactive workflows in JavaScript that run natively in `osm`. The built-in commands (`code-review`, `goal`, etc) are actually scripts that you can inspect and modify.
+
+**Philosophy:** Go code exposes reusable primitives (accessible via `osm script`), while all application-specific logic lives in JavaScript. Exposing the building blocks to build your own, custom implementations.
+
+### Commands
+
+| Command | Description |
+|---|---|
+| `help` | List available commands and usage |
+| `version` | Print the osm version |
+| `config` | Show or edit configuration |
+| `init` | Initialize a new osm project |
+| `script` | Run a JavaScript file or expression |
+| `session` | Manage sessions (list, clean, purge, delete, info, path, id) |
+| `prompt-flow` | Two-step prompt builder (meta-prompt → final prompt) |
+| `code-review` | Interactive code review prompt builder |
+| `super-document` | Assemble a single document from multiple sources (TUI + shell) |
+| `completion` | Generate shell completions (bash, zsh, fish, powershell) |
+| `goal` | Run curated prompt templates and workflows |
+| `sync` | Notebook save/list and git-backed sync |
+| `log` | View and manage session logs |
+| `pr-split` | Split large PRs into reviewable chunks |
+| `mcp-bridge` | Internal MCP bridge for agent-tool communication |
+
+See [docs/reference/command.md](docs/reference/command.md) for full details.
 
 Future functionality based on merits.
 Fair warning: This may include features* which expand the scope of functionality.
@@ -271,12 +315,15 @@ N.B. The `osm` tool includes a scripting environment as a core component.
 ## Docs
 
 - [docs/README.md](docs/README.md)
+- [docs/architecture.md](docs/architecture.md) — high-level architecture
 - [docs/shell-completion.md](docs/shell-completion.md)
 - [docs/reference/command.md](docs/reference/command.md)
 - [docs/reference/goal.md](docs/reference/goal.md)
 - [docs/configuration.md](docs/configuration.md) (deep: [docs/reference/config.md](docs/reference/config.md))
 - [docs/session.md](docs/session.md)
 - [docs/scripting.md](docs/scripting.md)
+- [docs/security.md](docs/security.md)
+- [CHANGELOG.md](CHANGELOG.md)
 
 ## Visuals
 
@@ -288,6 +335,26 @@ N.B. The `osm` tool includes a scripting environment as a core component.
 ```sh
 make help # note: gmake on macOS (brew install make)
 ```
+
+Build, lint, and test everything:
+
+```sh
+make         # default: build + lint + test
+make test    # tests only (add GO_TEST_FLAGS=-race for race detection)
+make lint    # vet + staticcheck + deadcode
+make cover   # coverage report
+```
+
+Cross-platform testing (requires targets from `example.config.mk`):
+
+```sh
+make make-all-in-container   # Linux (Docker)
+make make-all-run-windows    # Windows (remote host)
+```
+
+## Contributing
+
+Contributions welcome. Please ensure `make` passes with zero failures on all three platforms (macOS, Linux, Windows) before submitting a PR. See [AGENTS.md](AGENTS.md) for detailed development guidance.
 
 ## License
 

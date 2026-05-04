@@ -2,45 +2,69 @@
 
 This is not an actual TODO list. Consider it as much a TODO list as your Product Manager's project roadmap.
 
-- Built-in first-class Git synchronisation support (optional, configurable)
-    - Add support to synchronise configuration including goals to a Git repository
-    - A _structured_ Git repository format that can also act as a notebook (largely chronological) for prompts and notes - including multi-file prompts similar to GitHub gists (or even using GitHub gists as a backend?) sounds good to me tbh
+- Built-in first-class Git synchronisation support (optional, configurable) **DONE (T104-T106)**
+    - Add support to synchronise configuration including goals to a Git repository **DONE (T106)** — sync repo `goals/` and `scripts/` auto-discovered at startup
+    - A _structured_ Git repository format that can also act as a notebook (largely chronological) for prompts and notes - including multi-file prompts similar to GitHub gists (or even using GitHub gists as a backend?) sounds good to me tbh **DONE (T104-T105)** — `osm sync save/list/load/init/push/pull` implemented with dated Markdown + YAML frontmatter format
     - This requires some proper designing - don't want to half-bake this one (I have a clear use case for it personally, so I will probably just align with that)
-- Add `hot-<shortname>` aliases to copy snippets, activating them based on the name of the... mode? Seems reasonable - that'd cover the fairly coupled/integrated variants of custom scripts, and the builtins which all use it. Integrated nicely, it could be configurable, and there could be a command to output the embedded ones. Examples of intended use case include situational follow-up prompts, e.g. "critical next steps: prove the issue exists and that it is fixed" prompt. Will be important to disclaimer that they are subject to arbitrary change as I tweak it. Maybe a warning if you use it w/o overriding it? Would need another config option to disable the warning lol.
+    - Consider adding a sub-feature for syncing "common" config (system prompts, personal preferences, etc.) to a common repo structure, with intelligent conflict handling:
+        - Prompt for override when file exists and state is unknown
+        - Auto-override for files that exist and are in a known state (tracked via commit SHA)
+        - Handle gitignored files specially - personal preference files may need manual updates (since they're typically gitignored and therefore won't receive auto-updates from pulls)
+        - Consider special-case handling for resolving compatibility concerns (e.g., schema version mismatches, deprecated fields, etc.)
+    - Replace shell-out to system `git` binary with github.com/go-git/go-git/v6 library for core sync operations
+        - Current implementation shells out to `git` binary (exec.Command) in sync.go and sync_startup.go. This adds a system dependency and complicates testing.
+        - Replace with go-git for: clone, add, commit, push, pull operations
+        - Exception: diff commands (`osm ctx add --from-diff`, etc.) continue using CLI git — no change needed there
+        - Design constraints for go-git usage:
+            - Prefer streaming file reads/writes directly from git objects — avoid temp files, avoid buffering entire files to disk unnecessarily
+            - Use case is syncing configuration files — should be small, shouldn't need streaming-large-file support, but don't add unnecessary disk I/O
+            - go-git API is "fucky" (their words, not mine) — use pragmatically, don't force it where it fights you
+            - Particularly problematic areas to watch: tree traversal, blob reading, working directory management
+        - Key current behaviors to preserve:
+            - pull uses --rebase strategy (not merge)
+            - push commits with timestamp message: "osm sync: <RFC3339>"
+            - Conflict detection from stderr output ("CONFLICT" or "could not apply")
+            - sync.local-path config key for custom sync root
+            - sync.auto-pull runs non-blocking pull on osm startup
+        - Implementation files: internal/command/sync.go, internal/command/sync_startup.go
+    - ~~Remove unused sync.enabled config key from internal/config/schema.go (line 495). It is defined but never read or used anywhere in the codebase. Also clean up any test or documentation references.~~ **DONE (T131)**
+- Add `hot-<shortname>` aliases to copy snippets, activating them based on the name of the... mode? Seems reasonable - that'd cover the fairly coupled/integrated variants of custom scripts, and the builtins which all use it. Integrated nicely, it could be configurable, and there could be a command to output the embedded ones. Examples of intended use case include situational follow-up prompts, e.g. "critical next steps: prove the issue exists and that it is fixed" prompt. Will be important to disclaimer that they are subject to arbitrary change as I tweak it. Maybe a warning if you use it w/o overriding it? Would need another config option to disable the warning lol. **DONE (T072)**
     - I'd personally use this for variants of agentic session kickoff prompts, which I tend to use when I have a populated blueprint.json
-- Fix behavior when you use `copy` to copy context using `osm:ctxutil`/`contextManager` - all the current built-in scripts use this implementation in some capacity. It is desirable to support "refreshing" on demand in a just-in-time fashion, just prior to copy. To pick up new files added to a directory, specifically.
-- Goal list should probably also show SUMMARIZED params. Might need to consolidate custom list logic. Provide means to avoid the custom logic? Maybe just expose or ensure it is possible to get the context manager list? Should be fine to just require and get the thing, I thought, but maybe I made it a factory function? The state is on the TUIManager or whatever the context type was hmmmmmm.
+- Fix behavior when you use `copy` to copy context using `osm:ctxutil`/`contextManager` - all the current built-in scripts use this implementation in some capacity. It is desirable to support "refreshing" on demand in a just-in-time fashion, just prior to copy. To pick up new files added to a directory, specifically. **DONE (T067)**
+- Goal list should probably also show SUMMARIZED params. Might need to consolidate custom list logic. Provide means to avoid the custom logic? Maybe just expose or ensure it is possible to get the context manager list? Should be fine to just require and get the thing, I thought, but maybe I made it a factory function? The state is on the TUIManager or whatever the context type was hmmmmmm. **DONE (T068)**
 - `osm goal morale-improver` command should print after `copy`: [Hint: Try a follow-up]       Double the length, and include key specifics from the context that are likely to otherwise fail to be identified - consider this the only context, beyond the codebase.
-  OR: Double the length, and include key specifics from the context that are likely to otherwise fail to be identified - consider this the only context, beyond the codebase. **Explicitly** demand use of the todo tool to track exhaustively all known requirements. Reference tools like "#todo" - literal #todo without any quotes (") or backticks (`) etc. Do not use terms that would lead the AI to thinking it is AI - worse outcomes that way.
-- ~~Consider consolidating the two prompt variants~~ Ensure the two useful prompt variants,
+  OR: Double the length, and include key specifics from the context that are likely to otherwise fail to be identified - consider this the only context, beyond the codebase. **Explicitly** demand use of the todo tool to track exhaustively all known requirements. Reference tools like "#todo" - literal #todo without any quotes (") or backticks (`) etc. Do not use terms that would lead the AI to thinking it is AI - worse outcomes that way. **DONE (T074)**
+- ~~Consider consolidating the two prompt variants~~ ~~Ensure the two useful prompt variants,
   (tui.registerMode, and tui.createAdvancedPrompt) are well documented, and are equivalent in
-  terms of supported go-prompt features. They're pretty involved, and the former has drifted
-  significantly, as it is what is used by the built-in commands - the code is also hard to follow,
-  mostly AI's fault but yeah, it's a bit shit. Consolidating the _implementation_ would be nice.
-  The API surfaces are fairly likely to remain mostly the same.
-    - Rename the "advanced" prompt to something less dumb - it is actually the _least_ advanced of the two go-prompt wrappers
-        - It is more like, it is a lower level API - it doesn't wire up to the session state etc
-- Add option to the osm:ctxutil add context command to add files from a diff (`git diff <what> --name-only`)
-- Expose the Go `flag` package as a JS module `osm:flag` for script authors to use
+  terms of supported go-prompt features.~~ **DONE**: Consolidated via shared `buildGoPrompt` builder.
+  Both `runAdvancedPrompt` (registerMode path) and `jsCreatePrompt` now use the same builder,
+  ensuring feature parity (colors, reader/writer injection, maxSuggestion, dynamicCompletion,
+  executeHidesCompletions, escapeToggle, key bindings).
+    - ~~Rename the "advanced" prompt to something less dumb~~ **DONE**: Renamed to `tui.createPrompt`.
+      ~~`tui.createAdvancedPrompt` kept as deprecated alias with warning.~~ **DONE (T075)**: Deprecated alias removed.
+- Add option to the osm:ctxutil add context command to add files from a diff (`git diff <what> --name-only`) **DONE (T094) — `add --from-diff [commit-spec]` with gitref completion, 6 tests**
+- Expose the Go `flag` package as a JS module `osm:flag` for script authors to use **DONE (T029 — verified via coverage audit)**
     - Probably need to take a look at how arguments are passed down to the `osm script` command, as well
     - _COULD_ Leverage the "lazy init" pattern I originally intended for declarative-style scripts - buuuuut I've since moved to more imperative style ones, so perhaps not
-- Add support for completion for arguments for REPL commands within `osm:ctxutil` module using the `osm:flag` module
+- Add support for completion for arguments for REPL commands within `osm:ctxutil` module using the `osm:flag` module **DONE (T071)**
     - N.B. Unlike the other builtins, a portion of `osm:ctxutil` is partially implemented in JavaScript, as I ported it from a prototype script
     - This is basically extending support to subcommands - this item is just a quality of life improvement
-- QoL improvements to prompt-flow, e.g. allow `use` without `goal` or `generate` (i.e. add one-step mode), add `footer` support for the second prompt
+- QoL improvements to prompt-flow, e.g. allow `use` without `goal` or `generate` (i.e. add one-step mode), add `footer` support for the second prompt **DONE (T066, T092, T093) — auto-generate on first copy (T066), one-step mode (T092), footer in prompt-flow CLI and goal system (T093)**
+    - **Refinement**: Make the first `copy` command (and ONLY the first copy) automatically perform `generate` prior to copying. Currently, if you forget to run `generate` and just use `copy`, it copies what appears to be just a newline. Since the "meta-prompt" (what gets generated) is editable and `generate` overwrites it, only the first copy should trigger this automatic generate - subsequent copies should work as-is so the user can edit the meta-prompt without it being blown away.
+        - Note: Any `generate` operation likewise clears the "can trigger auto-generate" state from the first copy - after a generate, the next `copy` will NOT auto-generate (because the user has now explicitly generated, so they know what they're copying). Only the very first copy before any generate should auto-generate. **DONE (T066)**
 - Add `exec` context builder command as part of `contextManager`
     - To clarify, this is intended to mean "add scaffolding to the `osm:ctxutil` module to allow executing arbitrary shell commands and capturing their output as context, inclusive of providing means to aid wiring up the REPL commands to interact with it"
     - Essentially a generalization of the existing `diff` command - consider what would be necessary to retain the EXACT existing behavior for the `diff` command, when porting it to use the same implementation under the hood
-    - INCLUDE completion support (see the below item - might be tricky / seems like it might require piggybacking off of shell completion logic? Alternatives exist though. Explore all of them.)
-- Consider integrating git diff completion support into the diff `contextManager` command
+    - INCLUDE completion support (see the below item - might be tricky / seems like it might require piggybacking off of shell completion logic? Alternatives exist though. Explore all of them.) **DONE (T069)**
+- Consider integrating git diff completion support into the diff `contextManager` command **DONE (T070)**
     - Unlike the generalised `exec` command, this is specifically for the existing `diff` command - should be feasible to implement specifically. Probably want to use Go directly. Honestly, could remove the dependency on native Git. Might regret, the sole viable Go implementation is a pain to work with.
 - Command and option tightening and validation across the board
-    - Need to revalidate how the logging API is wired up - the option for log level and output path was added to `osm script`, but should be configurable for _all_ script-like commands, that exercise the scripting engine, could probably use some additional means to configure them, and probably need refactor to wire up more sane (I was using it for debugging / as a means to implement integration tests w/o depending on scraping PTYs - I didn't properly validate it)
-    - Consider making commands and subcommands correctly fail upon receiving unexpected arguments or options
-- Investigate/fix/implement `osm config <key> <value>` to persist config changes to disk
-- Add ability to include JS modules directly
+    - Need to revalidate how the logging API is wired up - the option for log level and output path was added to `osm script`, but should be configurable for _all_ script-like commands, that exercise the scripting engine, could probably use some additional means to configure them, and probably need refactor to wire up more sane (I was using it for debugging / as a means to implement integration tests w/o depending on scraping PTYs - I didn't properly validate it) **DONE (T047, T111) — All 5 script commands share `scriptCommandBase.PrepareEngine()` with unified log.level/log.file/log.buffer flags. Config fallback via `resolveLogConfig()`. Log API stabilized: removed \"undercooked\" label, expanded documentation.**
+    - Consider making commands and subcommands correctly fail upon receiving unexpected arguments or options **DONE (T073)**
+- Investigate/fix/implement `osm config <key> <value>` to persist config changes to disk **DONE (T065)**
+- Add ability to include JS modules directly **PARTIAL — Module resolution implemented via `script.module-paths` config key and `require()` in Goja runtime; standards-compliant ESM not pursued**
     - Need to pick the module resolution / loader strategy. Need to revalidate my understanding of the current standards in the JS ecosystem. Almost certainly want to pick a "sane" subset, tailored for the specific intended use cases. Standards compliance is ideal, however-want to avoid ruling out future interoperability.
-- Implement partially-compliant fetch API backed by the Go http client
+- Implement partially-compliant fetch API backed by the Go http client **DONE (T028 — verified via coverage audit)**
     - If no streaming is required, this is actually quite straightforward: https://gist.github.com/joeycumines/c7da3dbb786428dcaf45f5884cd99798
     - There _is_ nuance in the allowed headers and wiring up of options such as host (nuance not reflected in that gist), but still, fairly straightforward
     - Streaming support is... er, involved.
@@ -50,14 +74,21 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
         - Explore alternative: An eventloop-native in-process gRPC channel implementation, that exposes a Goja JS API _and_ a Go-compatible API <--- This is the sexiest option, but various challenges exist. Seriously attractive to be able to avoid serializing messages at all, though - this can support by far the lowest overhead e.g. allocation implementation.
 - Evaluate potential integration with `github.com/joeycumines/MacosUseSDK`
     - The in-process gRPC channel implementation idea would allow for exposing gRPC APIs to JS code - strongly consider implementing that then using a gRPC proxy mechanism to expose MacOSUseSDK functionality to JS code
-- Add support for https://code.visualstudio.com/docs/copilot/customization/prompt-files ?
+- Add support for https://code.visualstudio.com/docs/copilot/customization/prompt-files ? **PARTIAL — `.prompt.md` file discovery implemented via `prompt.file-paths` config key and goal system; VS Code-specific integration not pursued**
 - Code review splitter - prompts seem particularly LLM dependent, stalled
     - This would be far easier as a proper workflow engine lol
-- Refine "goal" and "script" autodiscovery mechanisms (currently prototype status/needs attention)
-- Investigate implementing Anthropic prompt library (https://platform.claude.com/docs/en/resources/prompt-library/library)
-- Iterate on configuration model for better extensibility and consistency (feels undercooked)
+- Refine "goal" and "script" autodiscovery mechanisms (currently prototype status/needs attention) **PARTIAL (T109) — added `osm goal paths` and `osm script paths` subcommands with source annotations, existence status, config validation warnings, and shell completions. Debug logging already existed via goal.debug-discovery and script.debug-discovery config keys.**
+- Investigate implementing Anthropic prompt library (https://platform.claude.com/docs/en/resources/prompt-library/library) **PARTIAL (T074, T107) — morale-improver, bug-buster, code-optimizer, code-explainer, meeting-notes adapted from Anthropic Prompt Library; pii-scrubber and prose-polisher added as Tier 2 goals**
+- Iterate on configuration model for better extensibility and consistency (feels undercooked) **PARTIAL (T065, T082) — schema-aware validation, persistence, and comprehensive documentation added**
 - Enhance definitions and integration with `github.com/joeycumines/go-prompt` implementation
-- Review `tview`/`tcell` support for refinement or removal (probably just leave it as-is for now, remove eventually - bubbletea is the winner of this one)
-- Plan system-style logging (file output, tailing) - likely deferred
-- Fix duplicate log lines for purged sessions etc?
-- Implement automatic session cleanup scheduler using SessionConfig (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB)
+- Review `tview`/`tcell` support for refinement or removal (probably just leave it as-is for now, remove eventually - bubbletea is the winner of this one) **DONE (T103) — Full audit (T097), then executed removal: deleted 6 tview files (~2,100 lines), removed TViewManagerProvider, go mod tidy removed tview/tcell deps, updated all docs.**
+- Plan system-style logging (file output, tailing) - likely deferred **DONE (T111) — `osm log` command with `tail`/`follow` subcommands, `-f`/`-follow` flags, rotation detection, `log.file`/`log.level`/`log.buffer-size`/`log.max-size-mb`/`log.max-files` config keys. JS `log` API stabilized with 8 methods documented.**
+- Fix duplicate log lines for purged sessions etc? **DONE (T095) — Already fixed: cleanup.go returns CleanupReport, session.go writes through io.Writer. Regression test `TestSessionsPurge_NoDuplicateLogLines` confirms no duplication.**
+- Implement automatic session cleanup scheduler using SessionConfig (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB) **DONE (T096) — CleanupScheduler wired via cleanup_helper.go into scriptCommandBase. 7+3 tests. All 5 SessionConfig fields respected.**
+- Breaking change / migration while the going is good: align on `~/.osm` as the config directory **DONE (T126) — Default config directory migrated from `~/.one-shot-man/` to `~/.osm/` with backward-compatible fallback. Session storage migrated from `{UserConfigDir}/one-shot-man/sessions/` to `{UserConfigDir}/osm/sessions/`. Sync default from `~/.one-shot-man/sync` to `~/.osm/sync`. All docs updated.**
+- Add "which one is better" builtin goal to internal/command/goal_builtin.go **DONE (T127)**
+    - Implement exhaustive options analysis, tailored for a wide range of use cases **DONE (T127)** — 5 comparison types (general/technology/architecture/strategy/design), weighted scoring matrices, 6-phase analysis methodology
+    - Needs specific use case variants, much like many of the existing goals (morale-improver, bug-buster, code-optimizer, etc.) **DONE (T127)**
+    - Leverage the same patterns already established in goal_builtin.go (stateVars, hotSnippets, flagDefs, promptOptions) **DONE (T127)** — comparisonType stateVar, comparisonTypeInstructions promptOptions, set-type command, deeper-analysis and devils-advocate hot-snippets
+    - Target maximizing utility and general usefulness across different decision-making scenarios **DONE (T127)**
+    - MUST be integration tested properly **DONE (T127)** — 8 tests covering metadata, stateVars, promptOptions, commands, hotSnippets, postCopyHint, uniqueness, JSON roundtrip, list output

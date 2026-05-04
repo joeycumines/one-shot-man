@@ -79,6 +79,12 @@ TUI-specific fields:
 - `tuiTitle` (string): title for the TUI mode banner. Defaults to `name` if not provided.
 - `tuiPrompt` (string): prompt string (e.g., `(doc-gen) > `).
 
+UI text fields:
+
+- `bannerTemplate` (string, optional): custom banner printed on entry to the goal mode. Overrides the default auto-generated banner that prints the goal name, description, and notable variables. Use this when you want full control over the initial message shown to users.
+
+- `usageTemplate` (string, optional): custom text appended after the default help output when the user types `help`. Useful for documenting goal-specific commands and conventions without replacing the built-in help entirely.
+
 State & prompt building:
 
 - `stateVars` (`object`): initial state for named keys used by goal templates. These are injected into `tui.createState` as default values.
@@ -93,6 +99,21 @@ State & prompt building:
 
 - `promptOptions` (`object`): further directives used to influence prompt generation, and especially dynamic templates keyed to state values (like `typeInstructions` mapping state `type` -> instruction string).
 
+- `promptFooter` (string, optional): footer text appended after context in the final prompt. This string is itself rendered as a template (like `promptInstructions`), so it can reference state variables (e.g., `{{index .stateKeys "outputFormat"}}`). The rendered result is available as `{{.promptFooter}}` in the `promptTemplate`. Useful for adding reminders, constraints, or follow-up instructions that should appear at the end of the generated prompt.
+
+- `postCopyHint` (string, optional): if set, this text is printed to the terminal after the user successfully copies the prompt to clipboard. Useful for suggesting follow-up actions (e.g., "Try pasting into Claude and asking it to review the output.").
+
+Hot-snippets:
+
+- `hotSnippets` (array of GoalHotSnippet, optional): embedded hot-snippets for the goal. Each entry defines a reusable text snippet that is registered as a `hot-<name>` command in the goal's interactive mode.
+
+    Each `GoalHotSnippet` has:
+    - `name` (string, required): the snippet name. Registered as the command `hot-<name>`.
+    - `text` (string, required): the text that is copied to clipboard when the command runs.
+    - `description` (string, optional): shown in help output.
+
+    **Merge behavior:** Goal-defined hot-snippets are merged with hot-snippets defined in the config file (`[hot-snippets]` section). When both sources define a snippet with the same name, the **goal-defined snippet takes precedence** — this allows goals to provide specialized overrides for shared snippets.
+
 Commands:
 
 - `commands` (array of CommandConfig): each command is described by an object with:
@@ -100,6 +121,7 @@ Commands:
     - `type` (string): `contextManager` | `custom` | `help`
     - `description` / `usage` (strings)
     - `argCompleters` (array[string]): completer keys (e.g. `file`) provided to the TUI.
+    - `flagDefs` (array of `CommandFlagDef`, optional): flag definitions for tab-completion in the interactive TUI. Each entry has `name` (string) and `description` (string). These are used by the REPL completer to suggest flags (e.g., `-format`, `-sort`) when the user presses Tab after a command name. The `osm:flag` module can also consume these definitions.
     - `handler` (string): for `custom` commands, a JS function body (or `function (...) { ... }`) provided as source string. This is lazily converted into a function and executed in the interpreter.
 
 Example:
@@ -111,6 +133,9 @@ Example:
   "category": "documentation",
   "tuiTitle": "Document Generator",
   "tuiPrompt": "(doc-gen) > ",
+  "bannerTemplate": "Welcome to Doc Generator\nType 'help' for commands.",
+  "usageTemplate": "  type <kind>   Set documentation kind (api, readme, tutorial)",
+  "postCopyHint": "[Hint] Paste into your LLM and ask for inline code examples.",
   "stateVars": {
     "type": "comprehensive"
   },
@@ -118,13 +143,21 @@ Example:
     "type"
   ],
   "promptInstructions": "Create {{.stateKeys.type}} documentation for the codebase.",
-  "promptTemplate": "**{{.description | upper}}**\n\n{{.promptInstructions}}\n\n## {{.contextHeader}}\n\n{{.contextTxtar}}",
+  "promptFooter": "Remember: all code examples must be runnable.",
+  "promptTemplate": "**{{.description | upper}}**\n\n{{.promptInstructions}}\n\n## {{.contextHeader}}\n\n{{.contextTxtar}}{{if .promptFooter}}\n\n---\n{{.promptFooter}}{{end}}",
   "promptOptions": {
     "typeInstructions": {
       "comprehensive": "Generate comprehensive documentation including...",
       "api": "Focus on API surface and examples"
     }
   },
+  "hotSnippets": [
+    {
+      "name": "review-docs",
+      "text": "Review the generated documentation for accuracy and completeness.",
+      "description": "Follow-up: review generated docs"
+    }
+  ],
   "commands": [
     {
       "name": "add",
@@ -137,13 +170,17 @@ Example:
     {
       "name": "publish",
       "type": "custom",
+      "description": "Publish generated docs",
+      "flagDefs": [
+        { "name": "format", "description": "Output format (html, pdf)" }
+      ],
       "handler": "function (args) { output.print('Publishing docs...'); }"
     }
   ]
 }
 ```
 
-The above sample mirrors the built-in `doc-generator` goal. See the built-in goals defined in: [internal/command/goal_builtin.go](../../internal/command/goal_builtin.go).
+The above sample mirrors the built-in `doc-generator` goal (with added illustration of new fields). See the built-in goals defined in: [internal/command/goal_builtin.go](../../internal/command/goal_builtin.go).
 
 ---
 
@@ -167,7 +204,7 @@ The above sample mirrors the built-in `doc-generator` goal. See the built-in goa
     - `goal.max-traversal-depth` default is `10`.
 
 - Standard paths (unless `goal.disable-standard-paths` is set):
-    1. The `goals/` directory next to the config file (e.g., `~/.one-shot-man/goals/`)
+    1. The `goals/` directory next to the config file (e.g., `~/.osm/goals/`)
     2. The `goals/` directory next to the executable directory (e.g., `/usr/local/bin/goals/`)
     3. `./osm-goals/` in the current working directory
 
@@ -182,11 +219,31 @@ The above sample mirrors the built-in `doc-generator` goal. See the built-in goa
 - `DiscoverGoalPaths` returns paths sorted by priority (closest to CWD first), computed using `computePathScore` which classifies paths as:
     - Class 0: CWD descendants (closest priority)
     - Class 1: Ancestor directories matching configured patterns
-    - Class 2: Config directory `~/.one-shot-man/goals`
+    - Class 2: Config directory `~/.osm/goals`
     - Class 3: Executable directory `goals/` next to executable
     - Class 4: Other paths
 
 See [internal/command/goal_discovery.go](../../internal/command/goal_discovery.go) for the full algorithm and sorting details.
+
+**Inspecting discovery paths**
+
+Use `osm goal paths` to display all resolved goal discovery paths with source annotations and existence status:
+
+```
+$ osm goal paths
+Goal Discovery Paths:
+
+  ✓ [standard]       /Users/alice/.osm/goals
+  ✗ [custom]         /opt/team-goals
+  ✓ [autodiscovered] /home/alice/project/osm-goals
+
+3 path(s) total
+
+Warning: 1 configured goal path(s) do not exist on disk.
+Check the goal.paths option in your config file.
+```
+
+Similarly, `osm script paths` displays script discovery paths.
 
 ---
 
@@ -199,6 +256,131 @@ See [internal/command/goal_discovery.go](../../internal/command/goal_discovery.g
 - `Reload()` re-discover and re-merge. This allows hot-reload in long-running processes or tests where config changes.
 
 See [`internal/command/goal_registry.go`](../../internal/command/goal_registry.go) and associated tests in [internal/command/goal_registry_test.go](../../internal/command/goal_registry_test.go).
+
+---
+
+**Prompt file (`.prompt.md`) discovery**
+
+In addition to JSON goal files, `osm` can discover and load `.prompt.md` files — the same format used by VS Code's prompt file feature. This allows sharing prompt files across tools.
+
+How it works:
+
+1. **Discovery locations.** `.prompt.md` files are scanned in two sets of directories:
+    - **Goal directories** (the same directories that contain `.json` goal files). `.prompt.md` files found here are loaded alongside JSON goals (non-recursive).
+    - **Dedicated prompt file paths.** By default this includes `.github/prompts` relative to the current working directory (the VS Code standard location). Additional paths can be configured via `prompt.file-paths` in the config file. These are scanned **recursively** by default (matching VS Code behavior), controllable via `prompt.recursive`.
+
+2. **File format.** A `.prompt.md` file consists of optional YAML frontmatter and a Markdown body:
+
+    ```markdown
+    ---
+    name: my-prompt
+    description: A shared prompt for code review
+    mode: ask
+    model: gpt-4
+    tools: [codebase, terminal]
+    ---
+
+    Review the provided code for correctness and style issues.
+    Focus on error handling and edge cases.
+    ```
+
+    Supported frontmatter keys:
+    - `name` (string): goal name. Falls back to the filename stem if omitted (e.g., `review.prompt.md` → `review`).
+    - `description` (string): goal description. Falls back to `"Imported from <filename>"`.
+    - `mode` (string): stored in `promptOptions["mode"]` (VS Code mode: `ask`, `edit`, `agent`, etc.).
+    - `model` (string): stored in `promptOptions["model"]` (informational; `osm` does not call APIs).
+    - `tools` (list of strings): stored in `promptOptions["tools"]` (informational).
+
+3. **Conversion to Goals.** Each `.prompt.md` file is converted to a `Goal` with:
+    - `category` set to `"prompt-file"`
+    - The Markdown body becomes `promptInstructions`
+    - Standard `contextManager` commands (`add`, `note`, `list`, `edit`, `remove`, `show`, `copy`) plus `help`
+    - The default `promptTemplate` and embedded `goalScript` interpreter
+
+4. **File reference expansion.** Markdown links of the form `[text](relative/path.ext)` where the target file exists on disk are expanded inline — the linked file's content is embedded as a fenced code block. This matches VS Code's behavior for prompt file references. Security hardening:
+    - Resolved file paths must be under the prompt file's parent directory (no directory traversal)
+    - Individual expanded files are limited to 256 KiB
+    - Maximum 50 file references are expanded per prompt file
+
+5. **Recursive scanning.** When `prompt.recursive` is enabled (default: `true`), dedicated prompt file directories are scanned recursively up to 10 levels deep. Hidden directories (starting with `.`) are skipped, and symlink cycles are detected and avoided. This allows organizing prompts in subdirectories: `.github/prompts/frontend/`, `.github/prompts/backend/`, etc.
+
+6. **Name sanitization.** The filename is sanitized to a valid goal name: non-alphanumeric characters become hyphens, consecutive hyphens are collapsed, and leading/trailing hyphens are trimmed. Example: `My Cool Prompt.prompt.md` → `My-Cool-Prompt`.
+
+7. **Precedence.** `.prompt.md` goals participate in the same precedence rules as JSON goals:
+    - User-discovered goals (JSON or `.prompt.md`) override built-in goals on name collision.
+    - Among discovered goals, the first occurrence (from the highest-priority path) wins.
+    - Within a single directory, JSON goals are scanned before `.prompt.md` files.
+
+Configuration keys:
+- `prompt.file-paths` (list): additional directories to search for `.prompt.md` files.
+- `prompt.recursive` (bool, default `true`): scan prompt directories recursively.
+- `goal.disable-standard-paths` (bool): when true, also skips `.github/prompts`.
+
+See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [internal/command/goal_registry.go](../../internal/command/goal_registry.go).
+
+---
+
+**Built-in goals (complete catalog)**
+
+`osm` ships with 19 built-in goals across 17 categories. All use the standard `goalScript` interpreter and provide `contextManager` commands for managing context items.
+
+| Name | Category | Description | State Variables | Custom Commands |
+|------|----------|-------------|-----------------|-----------------|
+| `comment-stripper` | code-refactoring | Remove useless comments and refactor useful ones | — | — |
+| `doc-generator` | documentation | Generate comprehensive documentation for code structures | `type` (comprehensive) | `type` |
+| `test-generator` | testing | Generate comprehensive test suites for existing code | `type` (unit), `framework` (auto) | `type`, `framework` |
+| `commit-message` | git-workflow | Generate Kubernetes-style commit messages from diffs and context | — | — |
+| `morale-improver` | meta-prompting | Generate a derisive prompt to force task completion | `originalInstructions`, `failedPlan`, `specificFailures` | `set-original`, `set-plan`, `set-failures` |
+| `implementation-plan` | planning | Prepare a detailed, explicit implementation plan | `goalText` | `goal` |
+| `bug-buster` | code-quality | Detect and fix bugs in code | — | — |
+| `code-optimizer` | code-quality | Suggest performance optimizations for code | — | — |
+| `code-explainer` | code-understanding | Explain code in plain language for onboarding | `depth` (detailed) | `depth` |
+| `meeting-notes` | productivity | Generate structured meeting summaries with action items | — | — |
+| `pii-scrubber` | data-privacy | Redact PII from code, logs, and data | `level` (strict) | `level` |
+| `prose-polisher` | writing | Seven-step copyediting pipeline for prose | `style` (technical) | `style` |
+| `data-to-json` | data-transformation | Extract structured JSON from unstructured text | `mode` (auto) | `mode` |
+| `cite-sources` | research | Answer questions with numbered inline citations | `format` (numbered) | `format` |
+| `which-one-is-better` | decision-making | Exhaustive comparative analysis of options, designs, or approaches | `comparisonType` (general) | `set-type` |
+| `sql-generator` | data-engineering | Generate SQL queries from natural language descriptions | `dialect` (auto) | `dialect` |
+| `report-analyzer` | business-analysis | Extract insights, risks, and key information from long documents | `focus` (general) | `focus` |
+| `review-classifier` | product-analysis | Categorize feedback and reviews with sentiment analysis | `outputFormat` (detailed) | `output-format` |
+| `adaptive-editor` | writing | Rewrite text following specific instructions for tone/audience/style | `instruction` ("") | `instruct` |
+
+**Goals with hot-snippets:**
+
+- `commit-message`: `hot-review-response` — "Review the commit message you generated…"
+- `morale-improver`: `hot-review-plan` — "Now review each section of your plan…"; `hot-prove-it` — "Prove the issue exists by reproducing it…"
+- `prose-polisher`: `hot-expand-section` — "The section I highlighted is too thin. Expand it…"
+- `cite-sources`: `hot-challenge-claims` — "Review your answer critically. For each claim, verify the citation…"
+- `which-one-is-better`: `hot-deeper-analysis` — "Go deeper on the winning option: enumerate concrete implementation steps…"; `hot-devils-advocate` — "Now argue the opposite position: find the strongest case for the runner-up…"
+- `sql-generator`: `hot-explain-plan` — "Add an EXPLAIN ANALYZE prefixed version of the query and interpret the execution plan…"
+- `adaptive-editor`: `hot-compare-versions` — "Show the original and rewritten text side-by-side with change annotations…"
+
+**Goals with PostCopyHint:**
+
+- `morale-improver`: suggests a follow-up review prompt after copying.
+- `which-one-is-better`: suggests deeper-analysis or devils-advocate follow-ups.
+
+**Goals with BannerTemplate / UsageTemplate:**
+
+- `implementation-plan`: uses custom `bannerTemplate` ("Implementation Plan Generator…") and `usageTemplate` (lists all available commands).
+
+**Goals with NotableVariables (printed in banner):**
+
+- `test-generator`: `type`, `framework`
+- `code-explainer`: `depth`
+- `morale-improver`: `originalInstructions`, `failedPlan`, `specificFailures`
+- `pii-scrubber`: `level`
+- `prose-polisher`: `style`
+- `data-to-json`: `mode`
+- `cite-sources`: `format`
+- `which-one-is-better`: `comparisonType`
+- `sql-generator`: `dialect`
+- `report-analyzer`: `focus`
+- `review-classifier`: `outputFormat`
+- `adaptive-editor`: `instruction`
+
+See: [internal/command/goal_builtin.go](../../internal/command/goal_builtin.go) for the full definitions.
 
 ---
 
@@ -262,7 +444,7 @@ Note: custom handlers are created from user-supplied source strings (via `new Fu
 
 **Authoring goals (practical guidance)**
 
-- Create a JSON file with at least `name` and `description` and put it in one of the discovered goal paths (e.g., `~/.one-shot-man/goals`, `./osm-goals/`, or a configured custom path via `goal.paths`).
+- Create a JSON file with at least `name` and `description` and put it in one of the discovered goal paths (e.g., `~/.osm/goals`, `./osm-goals/`, or a configured custom path via `goal.paths`).
 - Start with a minimal skeleton and incrementally add `commands` and `stateVars`.
 - Use `contextManager` commands for file and diff management unless you need custom behavior.
 - Keep `Script` empty unless you need a completely custom JS handler/per-mode implementation; otherwise rely on the default interpreter.
@@ -291,6 +473,8 @@ Example (minimal):
 
 A complete example demonstrating all available features is available at:
 [custom-goal-example.json](../../custom-goal-example.json)
+
+Additional examples demonstrating specific schema features (stateVars, hotSnippets, flagDefs, etc.) are available in the [goals/](../../goals/) directory.
 
 Authoring tip: Start with a `custom` handler only when you need custom runtime logic not provided by `contextManager`.
 

@@ -16,6 +16,14 @@ osm script -e 'output.print("hello")'
 osm script ./scripts/my-workflow.js
 ```
 
+Scripts can receive arguments after the script filename:
+
+```sh
+osm script ./scripts/my-workflow.js --verbose --name hello extra-arg
+```
+
+The arguments after the script filename are available in the `args` global (see below).
+
 ### Interactive scripting terminal
 
 ```sh
@@ -23,6 +31,27 @@ osm script -i
 ```
 
 ## Globals (available in every script)
+
+### `args` (script arguments)
+
+A string array containing the command-line arguments passed after the script filename.
+
+```sh
+osm script myscript.js --name hello extra
+# In JS: args = ["--name", "hello", "extra"]
+```
+
+For inline scripts (`-e`), `args` is an empty array. Use `osm:flag` (see Modules below) to parse structured flags from the args array:
+
+```js
+var flag = require('osm:flag');
+var fs = flag.newFlagSet('mycommand');
+fs.string('name', 'default', 'a name');
+fs.bool('verbose', false, 'verbose mode');
+var result = fs.parse(args);
+if (result.error !== null) throw new Error('parse failed: ' + result.error);
+output.print('name=' + fs.get('name'));
+```
 
 ### `ctx` (execution context)
 
@@ -65,11 +94,20 @@ osm script -e 'context.addPath("go.mod"); output.print(context.toTxtar())'
 
 ### `log` (application logging)
 
-- `log.debug/info/warn/error(...)`
-- `log.printf(...)`
-- `log.getLogs()`, `log.searchLogs(q)`, `log.clearLogs()`
+- `log.debug(msg)` — log at DEBUG level (only recorded when log.level ≤ debug)
+- `log.info(msg)` — log at INFO level (default threshold)
+- `log.warn(msg)` — log at WARN level
+- `log.error(msg)` — log at ERROR level
+- `log.printf(format, ...)` — log a formatted message at INFO level
+- `log.getLogs()` — return all in-memory log entries (array of `{time, level, message, attrs}`)
+- `log.searchLogs(query)` — search log entries by message or attribute content (case-insensitive)
+- `log.clearLogs()` — clear all in-memory log entries
 
-Note: the logging API is functional, but currently considered undercooked (see docs/todo.md).
+Logs are written to:
+1. **In-memory ring buffer** (configurable size via `log.buffer-size`, default 1000) — accessible via `getLogs()`/`searchLogs()`
+2. **JSON file** (when `log.file` is configured) — with size-based rotation (`log.max-size-mb`, `log.max-files`)
+
+View logs externally with `osm log` (last N lines) or `osm log follow` / `osm log tail` (continuous tail).
 
 ### `tui` (modes, prompts, and terminal UI)
 
@@ -77,11 +115,11 @@ The `tui` object lets scripts register modes, commands, completions, and run pro
 
 High-level calls:
 
-- `tui.registerMode({...})`
+- `tui.registerMode({...})` — supports `multiline: true` for Alt+Enter newline insertion
 - `tui.switchMode(name)` / `tui.getCurrentMode()`
 - `tui.registerCommand({...})`
 - `tui.createState(commandName, definitions)`
-- `tui.createAdvancedPrompt({...})` + `tui.runPrompt(name)`
+- `tui.createPrompt({...})` + `tui.runPrompt(name)` — `createPrompt` supports `multiline: true` for Alt+Enter newline insertion
 - `tui.requestExit()` / `tui.isExitRequested()` / `tui.clearExitRequest()`
 - `tui.registerCompleter(name, fn)` + `tui.setCompleter(promptName, completerName)`
 - `tui.registerKeyBinding(key, fn)`
@@ -133,50 +171,148 @@ const sharedState = tui.createState("__shared__", {
 
 ## Native modules (`require("osm:...")`)
 
-### Overview
+### Module reference
 
-TODO: These should get their own (brief) summaries / sections.
+All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 
-`osm` registers a handful of Go-native modules:
+#### Core utilities
 
-- `require("osm:os")`
-    - `readFile(path) -> { content, error, message }`
-    - `fileExists(path) -> boolean`
-    - `openEditor(nameHint, initialContent) -> string`
-    - `clipboardCopy(text) -> void` (supports `OSM_CLIPBOARD` override)
-    - `getenv(key) -> string`
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:os` | OS interactions (files, clipboard, editor, environment) | `readFile(path) → {content, error, message}`, `fileExists(path) → bool`, `writeFile(path, content, options?) → undefined` (options: `{mode?: number, createDirs?: boolean}`), `appendFile(path, content, options?) → undefined` (same options), `openEditor(nameHint, initialContent) → string`, `clipboardCopy(text)` (supports `OSM_CLIPBOARD` override), `getenv(key) → string` |
+| `osm:exec` | Process execution | `exec(cmd, ...args) → {stdout, stderr, code, error, message}`, `execv(argv[]) → {stdout, stderr, code, error, message}` |
+| `osm:flag` | Go `flag` package wrapper for argument parsing | `newFlagSet(name?) → FlagSet`; FlagSet methods: `.string(name, default, usage)`, `.int(…)`, `.bool(…)`, `.float64(…)`, `.parse(argv) → {error}`, `.get(name)`, `.args()`, `.nArg()`, `.nFlag()`, `.lookup(name)`, `.defaults()`, `.visit(fn)`, `.visitAll(fn)` |
+| `osm:path` | Go `path/filepath` wrapper for path manipulation | `join(...args) → string`, `dir(path) → string`, `base(path) → string`, `ext(path) → string`, `abs(path) → {result, error}`, `rel(basepath, targpath) → {result, error}`, `clean(path) → string`, `isAbs(path) → bool`, `match(pattern, name) → {matched, error}`, `glob(pattern) → {matches, error}`, `separator`, `listSeparator` |
+| `osm:regexp` | Go RE2 regular expressions | `match(pattern, str) → bool`, `find(pattern, str) → string\|null`, `findAll(pattern, str, n?) → string[]`, `findSubmatch(pattern, str) → string[]\|null`, `findAllSubmatch(pattern, str, n?) → string[][]`, `replace(pattern, str, repl) → string`, `replaceAll(pattern, str, repl) → string`, `split(pattern, str, n?) → string[]`, `compile(pattern) → RegexpObject` (with same methods bound). [Reference →](reference/regexp.md) |
+| `osm:crypto` | Cryptographic hash functions | `sha256(input) → string`, `sha1(input) → string`, `md5(input) → string`, `hmacSHA256(key, message) → string`, `hmacSHA1(key, message) → string` — all return hex-encoded lowercase strings; input accepts strings or byte arrays |
+| `osm:encoding` | Base64 and hex encoding/decoding | `base64Encode(input) → string`, `base64Decode(encoded) → string`, `base64URLEncode(input) → string`, `base64URLDecode(encoded) → string`, `hexEncode(input) → string`, `hexDecode(encoded) → string` — decode errors throw JS errors; input accepts strings or byte arrays. [Reference →](reference/encoding.md) |
+| `osm:json` | JSON utilities | `parse(str) → any`, `stringify(value, indent?) → string`, `query(obj, path) → any` (dot-notation, `[n]`, `[*]` wildcard), `mergePatch(target, patch) → any` (RFC 7386), `diff(a, b) → [{op, path, value?, oldValue?}]` (JSON Pointer paths), `flatten(obj, sep?) → object`, `unflatten(obj, sep?) → object` |
+| `osm:time` | Time utilities | `sleep(ms)` — synchronous sleep (milliseconds). [Reference →](reference/time.md) |
+| `osm:argv` | Command-line string parsing | `parseArgv(cmdline) → string[]`, `formatArgv(argv[]) → string` |
 
-- `require("osm:exec")`
-    - `exec(cmd, ...args) -> { stdout, stderr, code, error, message }`
-    - `execv(argvArray) -> { stdout, stderr, code, error, message }`
+#### Data & text processing
 
-- `require("osm:text/template")` (Go `text/template` wrapper)
-- `require("osm:time")`
-- `require("osm:argv")`
-- `require("osm:nextIntegerId")`
-- `require("osm:ctxutil")` (workflow helpers used by built-ins)
-- `require("osm:unicodetext")` — unicode helpers
-- `require("osm:sharedStateSymbols")` — shared symbol helpers
-- Bubbletea-related modules for building your own TUI components (experimental, introduced for `osm super-document`):
-    - `require("osm:bubbletea")` — Bubbletea bindings (Charm JS API, WIP)
-    - `require("osm:lipgloss")` — Lipgloss styling helpers
-    - `require("osm:bubbles/viewport")`, `require("osm:bubbles/textarea")` — bubble components
-    - `require("osm:bubblezone")` — zone/mouse helpers
-    - `require("osm:termui/scrollbar")` — scrollbar helper
-- `require("osm:tview")` — TUI helpers (proof-of-concept, overlaps with bubbletea)
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:text/template` | Go `text/template` wrapper | `new(name) → Template`, `execute(text, data) → string`; Template methods: `.parse(text)`, `.execute(data) → string`, `.funcs(funcMap)`, `.name()`, `.delims(left, right)`, `.option(...opts)` |
+| `osm:unicodetext` | Unicode text utilities | `width(s) → number` (monospace display width), `truncate(s, maxWidth, tail?) → string`. [Reference →](reference/unicodetext.md) |
+| `osm:fetch` | Promise-based HTTP client (browser Fetch API) | `fetch(url, opts?) → Promise<Response>`; Options: `method`, `headers`, `body`, `timeout`, `signal`; Response: `.status`, `.ok`, `.statusText`, `.url`, `.headers` (Headers object with `.get()`, `.has()`, `.entries()`, `.keys()`, `.values()`, `.forEach()`), `.text() → Promise<string>`, `.json() → Promise<any>` |
+| `osm:grpc` | Promise-based gRPC client and server (via [goja-grpc](https://github.com/joeycumines/goja-grpc)) | `createClient(service) → Client` (methods return `Promise`), `createServer(service, handler) → Server`, `dial(target, opts?) → Channel`, `status` (code constants: `OK`, `CANCELLED`, `NOT_FOUND`, etc.), `metadata`, `enableReflection(server)`, `createReflectionClient(channel)` |
+| `osm:protobuf` | Protocol Buffers for goja (via [goja-protobuf](https://github.com/joeycumines/goja-protobuf)) | `loadDescriptorSet(bytes)` — loads binary `FileDescriptorSet` for use with `osm:grpc` |
 
-Note: Better documentation for these modules is pending; see package comments in `./internal/builtin` and the root `README.md` for stability status.
+#### Workflow & state
+
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:ctxutil` | Context building helpers (used by built-ins) | `buildContext(items, options?) → string`, `contextManager` (factory for reusable context management patterns) |
+| `osm:mcpcallback` | Go-native MCP IPC channel for sub-process tool callbacks | `MCPCallback(opts) → callbackObj`; Methods: `.addTool(name, desc?, schema?)`, `.initSync()`, `.init() → Promise`, `.waitFor(toolName, timeoutMs?, opts?) → {data, error}`, `.resetWaiter(toolName)`, `.closeSync()`, `.close() → Promise`; Properties (after init): `.address`, `.scriptPath`, `.transport`, `.mcpConfigPath` |
+| `osm:nextIntegerID` | Simple ID generator | Default export is a function: `nextId(list) → number` — finds max `.id` in array and returns max+1. _(Deprecated alias: `osm:nextIntegerId`)_ [Reference →](reference/nextintegerid.md) |
+| `osm:sharedStateSymbols` | Cross-mode shared state symbols | Exports Symbol properties (e.g., `contextItems`) for use with `tui.createState("__shared__", …)` |
+
+#### TUI framework (Charm/BubbleTea stack)
+
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:bubbletea` | BubbleTea v2 TUI framework bindings | `newModel(config) → Model`, `run(model, opts?)`; `isTTY() → bool`; Commands: `quit()`, `clearScreen()`, `batch(…cmds)`, `sequence(…cmds)`, `tick(ms, id?)`, `requestWindowSize()`; Metadata: `keys`, `keysByName`, `mouseButtons`; Validation: `isValidTextareaInput(key)`, `isValidLabelInput(key)` |
+| `osm:lipgloss` | Lipgloss terminal styling | `newStyle() → Style` (chainable, immutable); Style methods: `.bold()`, `.italic()`, `.foreground(color)`, `.background(color)`, `.padding(…)`, `.margin(…)`, `.width(n)`, `.height(n)`, `.border(type)`, `.align(pos)`, `.render(…strs) → string`, `.copy()`, `.inherit(other)`; Layout: `joinHorizontal(pos, …strs)`, `joinVertical(pos, …strs)`, `place(w, h, hPos, vPos, str)`, `width(str)`, `height(str)`, `size(str)`; Borders: `normalBorder()`, `roundedBorder()`, `doubleBorder()`, etc.; Constants: `Left`, `Center`, `Right`, `Top`, `Bottom` |
+| `osm:bubblezone` | Zone-based mouse hit-testing | `mark(id, content) → string`, `scan(renderedView) → string`, `inBounds(id, mouseMsg) → bool`, `get(id) → {startX, startY, endX, endY, width, height}`, `newPrefix() → string`, `close()` |
+| `osm:bubbles/viewport` | Scrollable viewport component | `new(width?, height?) → Viewport`; Viewport: `.setContent(s)`, `.setWidth(n)`, `.setHeight(n)`, `.scrollDown(n)`, `.scrollUp(n)`, `.gotoTop()`, `.gotoBottom()`, `.pageUp()`, `.pageDown()`, `.setYOffset(n)`, `.yOffset()`, `.scrollPercent()`, `.atTop()`, `.atBottom()`, `.totalLineCount()`, `.visibleLineCount()`, `.setStyle(lipglossStyle)`, `.update(msg)`, `.view()` |
+| `osm:bubbles/textarea` | Multi-line text input component | `new() → Textarea`; Textarea: `.setValue(s)`, `.value()`, `.setWidth(n)`, `.setHeight(n)`, `.focus()`, `.blur()`, `.focused()`, `.insertString(s)`, `.setCursor(col)`, `.setPosition(row, col)`, `.lineCount()`, `.lineInfo()`, `.cursorVisualLine()`, `.visualLineCount()`, `.performHitTest(x, y)`, `.handleClickAtScreenCoords(x, y)`, `.getScrollSyncInfo()`, `.update(msg)`, `.view()` |
+| `osm:termui/scrollbar` | Thin vertical scrollbar | `new(viewportHeight?) → Scrollbar`; Scrollbar: `.setViewportHeight(n)`, `.setContentHeight(n)`, `.setYOffset(n)`, `.viewportHeight()`, `.contentHeight()`, `.yOffset()`, `.setChars(thumb, track)`, `.setThumbForeground(color)`, `.setThumbBackground(color)`, `.setTrackForeground(color)`, `.setTrackBackground(color)`, `.view()`. [Reference →](reference/scrollbar.md) |
+
+#### Behavior trees & planning
+
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:bt` | Behavior tree primitives ([go-behaviortree](https://github.com/joeycumines/go-behaviortree)) | Status: `success`, `failure`, `running`; Nodes: `node(tick, ...children)`, `createLeafNode(fn)`, `createBlockingLeafNode(fn)`; Composites: `sequence(children)`, `fallback(children)` / `selector(children)`, `fork()`; Decorators: `memorize(tick)`, `async(tick)`, `not(tick)`, `interval(ms)`; Execution: `tick(node)`, `newTicker(ms, node, opts?)`, `newManager()`; State: `new Blackboard()`, `exposeBlackboard(bb)` |
+| `osm:pabt` | Planning-Augmented Behavior Trees ([go-pabt](https://github.com/joeycumines/go-pabt)) | `newState(blackboard) → State`, `newAction(name, conditions, effects, node) → Action`, `newPlan(state, goals) → Plan`, `newExprCondition(key, expr, value?) → Condition`; State: `.variable(key)`, `.get(key)`, `.set(key, value)`, `.registerAction(name, action)`, `.getAction(name)`, `.setActionGenerator(fn)`; Plan: `.node()`, `.running()` |
+
+#### Claude Code orchestration
+
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:claudemux` | Claude Code orchestration building blocks | Parser: `newParser()`, `eventTypeName(type)`, `KEY_*` constants; Guard: `newGuard(config)`, `defaultGuardConfig()`, `guardActionName(action)`, `GUARD_ACTION_*`/`PERMISSION_POLICY_*` constants; MCPGuard: `newMCPGuard(config)`, `defaultMCPGuardConfig()`; Supervisor: `newSupervisor(config)`, `defaultSupervisorConfig()`, error/action/state constants; Pool: `newPool(config)`, `defaultPoolConfig()`; Panel: `newPanel(config)`, `defaultPanelConfig()`; Session: `createSession(id, config?)`, `defaultManagedSessionConfig()`, `managedSessionStateName(state)`, `SESSION_*` constants; Safety: `newSafetyValidator(config)`, `defaultSafetyConfig()`, `newCompositeValidator()`, intent/scope/risk/policy constants; Choice: `newChoiceResolver(config)`, `defaultChoiceConfig()`; Instance: `newInstanceRegistry(baseDir)`; ModelNav: `parseModelMenu(lines)`, `navigateToModel(menu, target)`, `isLauncherMenu(menu)`, `dismissLauncherKeys(menu)` |
+| `osm:mcp` | Promise-based MCP (Model Context Protocol) server | `createServer(name, version?) → server`; Server methods: `.addTool(toolDef, handler)` where toolDef = `{name, description?, inputSchema?}`, `.run(transport?)` (default: "stdio"), `.close()` |
+| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, opts?)`, `.unregister(id)`, `.activate(id)`, `.attach(handle) → id`, `.detach()`, `.hasChild()`, `.passthrough(opts?)` (blocking — enters passthrough, returns `{reason, error?}`), `.switchTo()` (blocking, returns `{reason, error?}`), `.activeSide()`, `.activeID()`, `.sessions()`, `.snapshot(id)`, `.eventsDropped()`, `.input(data)`, `.resize(rows, cols)`, `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe(bufSize?)`, `.unsubscribe(id)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.snapshot(id)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `.activate(id)` + `.input(data)` for writes; `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_CLAUDE`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (9 event names). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
 
 ### osm:bt (Behavior Trees)
 
-Core behavior tree primitives:
+Core behavior tree primitives from [go-behaviortree](https://github.com/joeycumines/go-behaviortree).
 
-- `bt.Blackboard` - Thread-safe key-value store for BT nodes
-- `bt.newTicker(interval, node)` - Periodic BT execution
-- `bt.createLeafNode(fn)` - Create leaf nodes from JavaScript functions
-- Status constants: `bt.success`, `bt.failure`, `bt.running`
+**Status constants**: `bt.success`, `bt.failure`, `bt.running`
+
+**Node creation**:
+- `bt.node(tick, ...children)` — Create a node from a tick function and optional children
+- `bt.createLeafNode(fn)` — Create a leaf node from a JS function (executed on event loop)
+- `bt.createBlockingLeafNode(fn)` — Create a blocking leaf node (for already-on-loop contexts)
+
+**Composites** (Go-native, children passed as arrays):
+- `bt.sequence(children)` — Tick children in order until one fails
+- `bt.fallback(children)` / `bt.selector(children)` — Tick children until one succeeds
+- `bt.fork()` — Returns a tick that runs all children in parallel
+
+**Decorators**:
+- `bt.memorize(tick)` — Cache non-running status per execution
+- `bt.async(tick)` — Wrap tick to run asynchronously
+- `bt.not(tick)` — Invert tick result (success ↔ failure)
+- `bt.interval(ms)` — Rate-limit tick to at most once per interval
+
+**Execution**:
+- `bt.tick(node) → status` — Tick a node and return status string
+- `bt.newTicker(ms, node, opts?) → Ticker` — Create periodic ticker (opts: `{stopOnFailure: bool}`)
+- `bt.newManager() → Manager` — Create a ticker manager for lifecycle grouping
+
+**State**: `new bt.Blackboard()` — Thread-safe key-value store with `.get(key)`, `.set(key, val)`, `.has(key)`, `.delete(key)`, `.keys()`, `.clear()`, `.snapshot()`
+
+**Architecture constraint**: Composite nodes (sequence, selector, fork) MUST use the Go primitives. JavaScript is used ONLY for leaf behaviors. This prevents deadlocks with the event loop.
 
 See: [bt-blackboard-usage.md](reference/bt-blackboard-usage.md)
+
+### osm:fetch (HTTP Client)
+
+Promise-based HTTP client following the browser Fetch API. HTTP requests run asynchronously in a goroutine and resolve on the event loop.
+
+#### `fetch(url, options?)` → `Promise<Response>`
+
+Returns a Promise that resolves with a Response object once the HTTP request completes.
+
+```js
+const f = require('osm:fetch');
+
+// Simple GET
+const resp = await f.fetch('https://api.example.com/data');
+const data = await resp.json();
+
+// POST with headers
+const resp = await f.fetch('https://api.example.com/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: 'value' }),
+    timeout: 10  // seconds
+});
+if (resp.ok) {
+    output.print('Status: ' + resp.status);
+    output.print('Body: ' + await resp.text());
+}
+```
+
+**Options**: `method` (string, default `"GET"`), `headers` (object), `body` (string), `timeout` (number in seconds, default `30`), `signal` (AbortSignal for cancelling the request).
+
+**Cancellation with AbortController**:
+```js
+const ac = new AbortController();
+setTimeout(() => ac.abort(), 5000); // abort after 5s
+const resp = await f.fetch(url, { signal: ac.signal });
+
+// Or use AbortSignal.timeout() for a simpler timeout:
+const resp = await f.fetch(url, { signal: AbortSignal.timeout(5000) });
+```
+
+**Response properties**: `.status` (number), `.ok` (boolean, true if 200-299), `.statusText` (string), `.url` (string, final URL after redirects).
+
+**Response.headers** (Headers object): `.get(name) → string|null`, `.has(name) → boolean`, `.entries() → Array<[name, value]>`, `.keys() → Array<string>`, `.values() → Array<string>`, `.forEach(callback)`.
+
+**Response methods**: `.text() → Promise<string>` (body as string), `.json() → Promise<any>` (parsed JSON, rejects on parse error).
 
 ### osm:pabt (Planning-Augmented Behavior Trees)
 
@@ -193,20 +329,577 @@ See: [planning-and-acting-using-behavior-trees.md](reference/planning-and-acting
 
 ### osm:bubbletea (TUI Framework)
 
-Terminal UI framework integration:
+Terminal UI framework based on [Charm BubbleTea v2](https://github.com/charmbracelet/bubbletea).
 
-- `tea.newModel(config)` - Create Elm-architecture model
-- `tea.run(model, opts)` - Run TUI application
-- Message types: `Tick`, `Key`, `Resize`
+**Program lifecycle**:
+- `tea.newModel(config)` — Create an Elm-architecture model (`config`: `{init, update, view}` functions; optional `renderThrottle` config)
+- `tea.run(model, opts?)` — Run TUI program (returns immediately, runs asynchronously). Options: `{toggleKey, onToggle}` for termmux passthrough integration. Terminal features (`altScreen`, `mouseMode`, `reportFocus`, `windowTitle`) are NO-OP as run() options in v2 — set them via the declarative `view()` return object instead.
+- `tea.isTTY() → bool` — Check if terminal is a TTY
+
+**View return contract**: The `view()` function can return a string or a declarative object:
+
+```javascript
+// String return — basic content only
+view: function(model) { return 'Hello, world!'; }
+
+// Object return — declarative terminal control
+view: function(model) {
+    return {
+        content: 'Hello, world!',
+        altScreen: true,
+        mouseMode: 'allMotion',  // 'cellMotion', 'none'
+        reportFocus: true,
+        windowTitle: 'My App',
+        cursor: { x: 10, y: 5, shape: 'bar', blink: true, color: '#ff0000' },
+        foregroundColor: '#ffffff',    // hex or ANSI 256 index ("196")
+        backgroundColor: '#000000',
+        keyboardEnhancements: { reportEventTypes: true }, // or just true
+        disableBracketedPasteMode: true,
+        progressBar: { state: 'default', value: 42 }
+    };
+}
+```
+
+**Declarative view fields** (all optional, only effective when returning an object from `view()`):
+
+| Field | Type | Description |
+|---|---|---|
+| `content` | string | Rendered content string (required). |
+| `altScreen` | bool | Enable alternate screen buffer (full-window mode). |
+| `mouseMode` | string | `"allMotion"`, `"cellMotion"`, or `"none"`. |
+| `reportFocus` | bool | Enable Focus/Blur events. |
+| `windowTitle` | string | Terminal window title. |
+| `cursor` | object | Show cursor: `{x, y, shape?, blink?, color?}`. Shape: `"block"` (default), `"underline"`, `"bar"`. Blink defaults to `true`. Color: hex or ANSI 256. |
+| `foregroundColor` | string | Terminal foreground color (hex `"#rrggbb"` or ANSI 256 index `"196"`). |
+| `backgroundColor` | string | Terminal background color (same format). |
+| `keyboardEnhancements` | object\|bool | `{reportEventTypes: true}` or just `true`. Enables key repeat/release events. |
+| `disableBracketedPasteMode` | bool | Disable bracketed paste mode. |
+| `progressBar` | object | `{state, value}`. State: `"default"`, `"error"`, `"indeterminate"`, `"warning"`, `"none"`. Value: 0–100. |
+
+**Commands** (returned from update as second element of `[model, cmd]`):
+- `tea.quit()`, `tea.clearScreen()`
+- `tea.batch(...cmds)`, `tea.sequence(...cmds)` — Combine commands
+- `tea.tick(ms, id?)` — Timer command (delivers `{type: 'Tick', id, time}` message)
+- `tea.requestWindowSize()` — Query current terminal size (delivers `{type: 'WindowSize', width, height}`)
+
+**Message types** (received in `update(msg, model)`):
+- `Key` — `{type: 'Key', key, text, mod, code, shiftedCode, baseCode, isRepeat}`
+  - `key` — Logical key name (`"a"`, `"enter"`, `"up"`, `"ctrl+c"`). Always present.
+  - `text` — Printable text the key produces (`"a"`, `"A"`, `" "`). Empty string for special/control keys.
+  - `mod` — Modifier array (e.g., `["shift"]`, `["ctrl", "alt"]`). Empty array when no modifiers.
+  - `code`, `shiftedCode`, `baseCode` — Rune codes for the key. `code` is the unmodified key, `shiftedCode` includes shift, `baseCode` is the physical key.
+  - `isRepeat` — Boolean, true when the key is auto-repeating from being held down.
+  - **Key resolution pattern**: For printable character matching, use `text`; for named key matching (navigation, function keys), use `key`:
+    ```javascript
+    // Printable-ASCII guard: resolve to text for typeable chars, key for specials
+    const k = (msg.text && msg.text.length === 1 &&
+               msg.text.charCodeAt(0) >= 0x20 &&
+               msg.text.charCodeAt(0) <= 0x7E) ? msg.text : msg.key;
+    ```
+- `MouseClick` — `{type: 'MouseClick', x, y, button, mod}` (left/right/middle click)
+- `MouseRelease` — `{type: 'MouseRelease', x, y, button, mod}`
+- `MouseMotion` — `{type: 'MouseMotion', x, y, mod}` (only when mouse mode is enabled)
+- `MouseWheel` — `{type: 'MouseWheel', x, y, button, mod}`
+- `Paste` — `{type: 'Paste', content}` (bracketed paste content, separate from Key events)
+- `PasteStart` / `PasteEnd` — paste sequence markers
+- `WindowSize` — `{type: 'WindowSize', width, height}`
+- `Focus` / `Blur` — `{type: 'Focus'}` / `{type: 'Blur'}` (requires `reportFocus` option)
+- `Tick` — `{type: 'Tick', id, time}` (from `tea.tick()` command)
+
+**Metadata objects**: `tea.keys`, `tea.keysByName`, `tea.mouseButtons` — lookup tables for key/mouse definitions.
+
+**Input validation**: `tea.isValidTextareaInput(key)`, `tea.isValidLabelInput(key)` — whitelist-based input validators.
 
 ### osm:time
 
 Time utilities:
 
-- `time.sleep(ms)` - Synchronous sleep
-- `time.now()` - Current timestamp
+- `time.sleep(ms)` — Synchronous sleep (milliseconds)
+
+### osm:mcpcallback (MCP Callback IPC)
+
+Go-native MCP tool callback channel. Creates a local socket server (UDS on Unix, loopback TCP on Windows) that wraps an `osm:mcp` server, enabling sub-processes to call registered tools over a socket connection. The core IPC mechanism for the `pr-split` pipeline.
+
+**Constructor:**
+
+```js
+const mcpMod = require('osm:mcp');
+const { MCPCallback } = require('osm:mcpcallback');
+
+const srv = mcpMod.createServer('my-callback', '1.0.0');
+const cb = MCPCallback({ server: srv });
+```
+
+The `server` must be created via `createServer()` and must **not** have `.run()` called on it yet.
+
+**Registering tools** (must be called before `init`/`initSync`):
+
+- `cb.addTool(name, description?, inputSchema?)` — Register a Go-native tool. The handler stores incoming call arguments in a buffered channel (capacity 1, last-write-wins). Handler runs on the MCP transport goroutine, not the JS event loop, so it is safe even when JS is blocked on `waitFor()`.
+
+**Initialization:**
+
+- `cb.initSync()` — Synchronous. Starts the listener, generates bootstrap files in a temp directory, begins accepting MCP connections. Blocks until ready.
+- `cb.init() → Promise<void>` — Async version.
+
+**Properties** (available after initialization):
+
+| Property | Type | Description |
+|---|---|---|
+| `cb.address` | `string` | Listener address. UDS: socket path. TCP: `127.0.0.1:<port>`. |
+| `cb.scriptPath` | `string` | Path to generated `bootstrap.js` (`module.exports = { transport, address }`). |
+| `cb.transport` | `string` | `"unix"` (Linux/macOS) or `"tcp"` (Windows). |
+| `cb.mcpConfigPath` | `string` | Path to generated `mcp-config.json` for Claude Code MCP server config. |
+
+**Waiting for tool calls:**
+
+- `cb.waitFor(toolName, timeoutMs?, opts?) → {data, error}` — Blocking. Waits for the named tool to receive a call via the MCP transport, or timeout. Default timeout: `600000` ms (10 min, minimum 100 ms).
+  - `opts.aliveCheck: () → bool` — Called periodically; return `false` to abort early (e.g., sub-process died).
+  - `opts.onProgress: (elapsedMs, totalMs) → void` — Called periodically for TUI updates.
+  - `opts.checkIntervalMs: number` — Polling interval for callbacks. Default: `5000`. Min: `100`.
+  - Returns `{data: <parsed JSON args>, error: null}` on success, or `{data: null, error: "..."}` on timeout/abort.
+- `cb.resetWaiter(toolName)` — Drain any pending (unconsumed) data for this tool. Call before re-waiting across pipeline cycles.
+
+**Cleanup:**
+
+- `cb.closeSync()` — Synchronous teardown: stops listener, removes temp directory. Idempotent.
+- `cb.close() → Promise<void>` — Async version. Idempotent.
+
+**Typical lifecycle** (from `pr-split`):
+
+```js
+cb.addTool('reportClassification', 'Report file classification.', schema);
+cb.addTool('reportSplitPlan', ...);
+cb.initSync();
+// spawn sub-process pointing at cb.mcpConfigPath
+var result = cb.waitFor('reportClassification', 300000, { aliveCheck, onProgress });
+if (result.error) { throw new Error(result.error); }
+var categories = result.data.categories;
+// ... later ...
+cb.resetWaiter('reportResolution');
+result = cb.waitFor('reportResolution', 600000, { aliveCheck });
+cb.closeSync();
+```
+
+### osm:claudemux (Claude Code Orchestration)
+
+Building blocks for multi-instance Claude Code management. Used by `osm pr-split` for communicating with Claude Code instances.
+
+**Parser** — PTY output classification:
+- `cm.newParser()` — Create a parser with built-in Claude Code output patterns
+- `parser.parse(line)` — Classify a line → `{type, line, fields, pattern}`
+- `parser.addPattern(name, regex, eventType, extractFn?)` — Register custom patterns
+- `parser.patterns()` — List registered patterns
+- `cm.eventTypeName(type)` — Human-readable event type name
+- Constants: `cm.EVENT_TEXT`, `cm.EVENT_RATE_LIMIT`, `cm.EVENT_PERMISSION`, `cm.EVENT_MODEL_SELECT`, `cm.EVENT_SSO_LOGIN`, `cm.EVENT_COMPLETION`, `cm.EVENT_TOOL_USE`, `cm.EVENT_ERROR`, `cm.EVENT_THINKING`
+- Key constants: `cm.KEY_UP`, `cm.KEY_DOWN`, `cm.KEY_ENTER`, `cm.KEY_Y`, `cm.KEY_N`
+
+**Guard** — PTY output monitors:
+- `cm.newGuard(config)` — Create a guard with rate-limit, permission, crash, and timeout monitors
+- `guard.processEvent(event, now)` — Evaluate an output event → `{action, reason, details}` or null
+- `guard.processCrash(exitCode, now)` — Report a crash → guard event
+- `guard.checkTimeout(now)` — Check for output timeout → guard event or null
+- `cm.defaultGuardConfig()` — Production defaults
+- `cm.guardActionName(action)` — Human-readable action name
+- Constants: `cm.GUARD_ACTION_NONE`, `cm.GUARD_ACTION_PAUSE`, `cm.GUARD_ACTION_REJECT`, `cm.GUARD_ACTION_RESTART`, `cm.GUARD_ACTION_ESCALATE`, `cm.GUARD_ACTION_TIMEOUT`; `cm.PERMISSION_POLICY_DENY`, `cm.PERMISSION_POLICY_ALLOW`
+
+**MCPGuard** — MCP call monitors:
+- `cm.newMCPGuard(config)` — Create an MCP guard with frequency, repeat, allowlist, and timeout monitors
+- `mcpGuard.processToolCall(call)` — Evaluate a tool call → `{action, reason, details}` or null
+- `mcpGuard.checkNoCallTimeout(now)` — Check for no-call timeout
+- `cm.defaultMCPGuardConfig()` — Production defaults
+
+**Supervisor** — Error recovery:
+- `cm.newSupervisor(config)` — Create a supervisor state machine
+- `supervisor.start()` — Transition to Running
+- `supervisor.handleError(msg, errorClass)` — Get recovery decision
+- `supervisor.shutdown()` — Initiate graceful drain
+- `cm.defaultSupervisorConfig()` — Production defaults
+- Error class constants: `cm.ERROR_CLASS_*`; Recovery action constants: `cm.RECOVERY_*`
+
+**Pool** — Concurrent instance management:
+- `cm.newPool(config)` — Create a pool with acquire/release dispatch
+- `pool.start()`, `pool.addWorker(worker)`, `pool.acquire()`, `pool.tryAcquire()`, `pool.release(worker, err, now)`, `pool.drain()`, `pool.close()`, `pool.stats()`
+- `cm.defaultPoolConfig()` — Default max size 4
+
+**Panel** — TUI multi-instance display:
+- `cm.newPanel(config)` — Create a panel with Alt+1..9 switching
+- `panel.start()`, `panel.addPane(id, title)`, `panel.routeInput(key)`, `panel.appendOutput(id, text)`, `panel.updateHealth(id, health)`, `panel.statusBar()`, `panel.getVisibleLines(id, height)`, `panel.snapshot()`, `panel.close()`
+- `cm.defaultPanelConfig()` — Default 9 panes, 10000 scrollback
+
+**ManagedSession** — Unified monitoring pipeline:
+- `cm.createSession(id, config?)` — Create a session composing Parser+Guard+MCPGuard+Supervisor
+- `session.processLine(line, now)` → `{event, guardEvent, action}`
+- `session.processCrash(exitCode, now)` → `{guardEvent, recoveryDecision}`
+- `session.processToolCall(call)` → tool call result
+- `session.shutdown()`, `session.close()`
+- `session.onEvent(fn)`, `session.onGuardAction(fn)`, `session.onRecoveryDecision(fn)` — Callbacks
+- `cm.defaultManagedSessionConfig()`, `cm.managedSessionStateName(state)`
+- Constants: `cm.SESSION_IDLE`, `cm.SESSION_ACTIVE`, `cm.SESSION_PAUSED`, `cm.SESSION_FAILED`, `cm.SESSION_CLOSED`
+
+**Safety** — Intent/scope/risk classification:
+- `cm.newSafetyValidator(config)` — Create a rule-based safety validator
+- `validator.validate(toolName, args)` → `{intent, scope, risk, riskLevel, action, reason}`
+- `cm.defaultSafetyConfig()`, `cm.newCompositeValidator()`
+- Constants: `cm.INTENT_*`, `cm.SCOPE_*`, `cm.RISK_*`, `cm.POLICY_*`
+
+**Choice** — Multi-criteria decision analysis:
+- `cm.newChoiceResolver(config)` — Create a resolver with configurable criteria
+- `resolver.analyze(candidates, criteria?)` → `{recommendedID, rankings, justification, needsConfirm}`
+- `cm.defaultChoiceConfig()` — Default 4 criteria (complexity/risk/maintainability/performance)
+
+**Instance** — Session isolation:
+- `cm.newInstanceRegistry(baseDir)` — Create a registry for isolated instance state
+- `registry.create(id)`, `registry.get(id)`, `registry.close(id)`, `registry.closeAll()`, `registry.list()`, `registry.len()`, `registry.baseDir()`
+
+### osm:termmux CaptureSession
+
+`newCaptureSession(command, args?, opts?)` creates a non-blocking PTY-backed
+process. CaptureSession runs in the background and provides `reader()` /
+`readAvailable()` for streaming output and `write()` for stdin input.
+When registered with a SessionManager, screen output is available via
+`mgr.snapshot(id)`.
+
+**Methods (17 total):**
+
+- `start()` — Start the process (throws on error)
+- `write(str)` — Write string to process stdin (throws on error)
+- `isDone()` — Check if process has exited (non-blocking)
+- `exitCode()` — Get exit code (only valid after `isDone()`)
+- `resize(rows, cols)` — Resize the PTY (throws on error)
+- `close()` — Close the session and kill the process
+- `pause()` / `resume()` — Suspend/resume process (SIGSTOP/SIGCONT)
+- `isPaused()` — Check if paused
+- `interrupt()` — Send SIGINT
+- `kill()` — Send SIGKILL
+- `sendEOF()` — Send EOF (Ctrl+D)
+- `pid()` — Get process PID
+- `wait()` — Block until process exits, returns `{exitCode, error?}`
+- `reader()` — Get next output chunk (blocking), returns `string | null`
+- `readAvailable()` — Drain buffered chunks (non-blocking), returns `string | null`
+- `passthrough(opts?)` — Enter passthrough mode, returns `{reason, error?}`
+
+See [termmux JS API reference](reference/termmux-js-api.md) for full details.
+
+**Example:**
+
+```js
+var tm = require('osm:termmux');
+var session = tm.newCaptureSession('/bin/bash', ['-i'], {
+    dir: '/path/to/workdir',
+    rows: 24,
+    cols: 80
+});
+session.start();
+session.write('echo hello\n');
+// stream output via reader() or readAvailable()
+var chunk = session.readAvailable();
+// ... poll session.isDone()
+session.kill(); // cleanup
+```
+
+**Platform:** Unix only (Linux/macOS). Uses real PTY; not available on Windows.
 
 ## Where to look for examples
 
 - The `scripts/` directory contains small demos and test drivers.
 - Built-in workflows are implemented as embedded scripts/templates under `internal/command/`.
+
+## PR-Split JS API (`globalThis.prSplit`)
+
+When the pr-split command is active, `globalThis.prSplit` exposes the full
+splitting pipeline as callable functions. Advanced users can invoke these from
+custom scripts. The API is also available via `require()` in the pr-split module
+context.
+
+### Analysis
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `analyzeDiff` | `(config?) → {files, fileStatuses, baseBranch, currentBranch}` | Analyze git diff against base branch |
+| `analyzeDiffStats` | `(config?) → {stats}` | Get per-file addition/deletion counts |
+
+### Grouping
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `groupByDirectory` | `(files, depth?) → [{name, files}]` | Group by top-level directory |
+| `groupByExtension` | `(files) → [{name, files}]` | Group by file extension |
+| `groupByPattern` | `(files, patterns) → [{name, files}]` | Group by named regex patterns |
+| `groupByChunks` | `(files, maxPerGroup) → [{name, files}]` | Fixed-size groups |
+| `groupByDependency` | `(files, opts?) → [{name, files}]` | Go import graph analysis |
+| `parseGoImports` | `(content) → [importPath]` | Parse Go import statements from file content |
+| `detectGoModulePath` | `() → string` | Detect Go module path from go.mod (empty string if not found) |
+| `applyStrategy` | `(files, strategy, options?) → [{name, files}]` | Apply named strategy |
+| `selectStrategy` | `(files, options?) → {strategy, groups, reason, needsConfirm, scored}` | Auto-select best strategy |
+
+### Planning
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `createSplitPlan` | `(groups, opts) → plan` | Create plan from groups |
+| `validatePlan` | `(plan) → {valid, errors}` | Validate plan completeness |
+| `savePlan` | `(path?) → {error?}` | Save current plan to JSON file (uses internal plan cache) |
+| `loadPlan` | `(path?) → plan` | Load plan from JSON file |
+
+### Execution & Verification
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `executeSplit` | `(plan) → {results, error?}` | Create stacked branches |
+| `verifySplit` | `(branchName, config) → {name, passed, output, error}` | Verify a single split branch |
+| `verifySplits` | `(plan) → {results, allPassed}` | Run verify command on each split |
+| `verifyEquivalence` | `(plan) → {equivalent, splitTree, sourceTree}` | Tree hash comparison |
+| `verifyEquivalenceDetailed` | `(plan) → {equivalent, details}` | Detailed tree comparison with file-level diff |
+| `cleanupBranches` | `(plan) → void` | Delete split branches |
+| `createPRs` | `(plan, opts?) → {results, error?}` | Push and create GitHub PRs |
+
+### Conflict Resolution
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `resolveConflicts` | `(plan, opts?) → {fixed, errors, totalRetries, reSplitNeeded}` | Apply auto-fix strategies |
+| `AUTO_FIX_STRATEGIES` | constant array | Available fix strategies with detect/fix functions |
+
+### Automated Pipeline
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `automatedSplit` | `(config?) → {report, error?}` | Full 10-step Claude-assisted pipeline |
+| `heuristicFallback` | `(analysis, config, report) → {error?, report}` | Local-only splitting fallback |
+| `assessIndependence` | `(plan, classification?) → [[name, name]]` | Detect independent split pairs |
+| `classificationToGroups` | `(classification) → [{name, files}]` | Convert file→group map to groups array |
+
+### Prompt Rendering
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `renderClassificationPrompt` | `(analysis, opts?) → {text, error?}` | Build Claude classification prompt |
+| `renderSplitPlanPrompt` | `(classification, config) → {text, error?}` | Build split plan prompt from classification |
+| `renderConflictPrompt` | `(conflict) → {text, error?}` | Build conflict resolution prompt |
+| `detectLanguage` | `(files) → string` | Detect primary language from file extensions |
+
+### Prompt Templates (Constants)
+
+| Symbol | Type | Description |
+|--------|------|-------------|
+| `CLASSIFICATION_PROMPT_TEMPLATE` | string | Template for classification prompts |
+| `SPLIT_PLAN_PROMPT_TEMPLATE` | string | Template for split plan prompts |
+| `CONFLICT_RESOLUTION_PROMPT_TEMPLATE` | string | Template for conflict resolution prompts |
+
+### Claude Executor
+
+| Symbol | Type | Description |
+|--------|------|-------------|
+| `ClaudeCodeExecutor` | constructor | `new ClaudeCodeExecutor(config)` — manages Claude Code lifecycle |
+
+### BT Node Factories
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `createAnalyzeNode` | `(bb, config) → bt.Node` | Analyze diff BT node |
+| `createGroupNode` | `(bb, strategy, options) → bt.Node` | Group files BT node |
+| `createPlanNode` | `(bb, config) → bt.Node` | Create plan BT node |
+| `createSplitNode` | `(bb) → bt.Node` | Execute split BT node |
+| `createVerifyNode` | `(bb) → bt.Node` | Verify splits BT node |
+| `createEquivalenceNode` | `(bb) → bt.Node` | Tree equivalence BT node |
+| `createSelectStrategyNode` | `(bb, options) → bt.Node` | Auto-select strategy BT node |
+| `createWorkflowTree` | `(bb, config) → bt.Node` | Full workflow tree (all nodes) |
+
+### BT Template Leaves
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `btVerifyOutput` | `(bb, command) → bt.Node` | Run command, check exit code |
+| `btRunTests` | `(bb, command) → bt.Node` | Run test command |
+| `btCommitChanges` | `(bb, message) → bt.Node` | `git add -A && git commit` |
+| `btSplitBranch` | `(bb, branchName) → bt.Node` | `git checkout -b` |
+| `verifyAndCommit` | `(bb, opts) → void` | Composite: tests → verify → commit |
+
+### Metadata
+
+| Symbol | Type | Description |
+|--------|------|-------------|
+| `VERSION` | string | Current API version (e.g., `'5.0.0'`) |
+| `runtime` | object | Runtime config access (`runtime.maxFiles`, `runtime.branchPrefix`, etc.) |
+
+### Example: Custom script using prSplit API
+
+```js
+// my-split.js — custom splitting with dependency grouping
+var ps = globalThis.prSplit;
+
+var analysis = ps.analyzeDiff({ base: 'develop' });
+var groups = ps.groupByDependency(analysis.files, { modulePath: 'github.com/my/repo' });
+var plan = ps.createSplitPlan(groups, {
+    baseBranch: 'develop',
+    sourceBranch: analysis.currentBranch,
+    branchPrefix: 'review/',
+    maxFiles: 15
+});
+
+ps.executeSplit(plan);
+var equiv = ps.verifyEquivalence(plan);
+log.printf('Equivalence: %s', equiv.equivalent ? 'PASS' : 'FAIL');
+```
+
+## Module Resolution
+
+`osm` uses the [goja_nodejs](https://github.com/nicois/goja_nodejs) CommonJS module system.
+The global `require()` function resolves modules in the following order:
+
+### 1. Native Go modules (`osm:` prefix)
+
+Modules with the `osm:` prefix are Go-backed and registered at engine startup.
+They are always available, regardless of working directory or script location.
+
+```js
+var exec = require('osm:exec');
+var flag = require('osm:flag');
+```
+
+See the [Native modules](#native-modules-requireosm) section above for the full list.
+
+### 2. Relative paths (`./` or `../`)
+
+Relative paths are resolved from the **calling module's directory**.
+For the top-level script, this is the directory containing the script file.
+
+```js
+// In /project/scripts/main.js:
+var helpers = require('./lib/helpers');   // loads /project/scripts/lib/helpers.js
+var common  = require('../shared/util');  // loads /project/shared/util.js
+```
+
+Resolution tries the following, in order:
+
+1. Exact path (e.g. `./lib/helpers.js`)
+2. Path with `.js` appended (e.g. `./lib/helpers` → `./lib/helpers.js`)
+3. Path with `.json` appended (loads and parses as JSON)
+4. Directory with `index.js` (e.g. `./mylib` → `./mylib/index.js`)
+
+**How it works internally**: File-based scripts are compiled with their absolute file path
+as the source name. When `require()` is called, the runtime walks the JavaScript call stack
+to find the caller's source file name, then resolves relative paths from that directory.
+This means relative `require()` calls work correctly from any depth of the module tree.
+
+### 3. Absolute paths
+
+Absolute paths bypass all search logic and load the file directly:
+
+```js
+var config = require('/etc/osm/shared-config.js');
+```
+
+### 4. Bare module names (configurable search paths)
+
+A bare name—one without `./`, `../`, `/`, or the `osm:` prefix—is searched
+through configured **module search paths**, similar to `NODE_PATH` in Node.js.
+
+```js
+var mylib = require('mylib');  // searches configured paths for mylib.js or mylib/index.js
+```
+
+Configure search paths via the `script.module-paths` setting in `~/.osm/config`:
+
+```
+script.module-paths=/home/user/osm-libs,/opt/shared-scripts
+```
+
+Or via environment variable:
+
+```sh
+export OSM_SCRIPT_MODULE_PATHS=/home/user/osm-libs:/opt/shared-scripts
+```
+
+Both comma-separated and OS path-separator-delimited values are supported.
+Each directory is searched for the module name using the same resolution rules
+(exact, `.js`, `.json`, `index.js`).
+
+### Module features
+
+**Caching**: Modules are cached by resolved path. Requiring the same file twice
+returns the same `exports` object—the module code only executes once.
+
+**JSON loading**: `require('./data.json')` parses the file as JSON and returns it directly.
+
+**Shebang support**: Scripts starting with `#!` (e.g. `#!/usr/bin/env osm script`)
+have the shebang line automatically commented out, preserving line numbers in
+error messages while keeping the source valid JavaScript. This applies to both
+top-level scripts and modules loaded via `require()`.
+
+**Circular dependencies**: Partially supported (as in Node.js CommonJS). If module A
+requires module B, and B requires A, B will see A's `exports` as they were at the
+point where execution left A. Avoid relying on this.
+
+### Module security (path-traversal protection)
+
+The `osm` scripting engine enforces two layers of protection against path-traversal
+attacks within bare module name resolution (global folder lookups only):
+
+**1. Path resolver check (pre-read)**
+
+Before the file is read, the path resolver verifies that the candidate file path stays
+within the configured module search directories. If a bare module name like
+`require('../../etc/passwd')` somehow resolves to a path outside the allowed directories,
+the resolver returns a sentinel path (`.osm-blocked-traversal`) that will never exist,
+causing `require()` to fail with a "module not found" error.
+
+> Note: This check applies _only_ to bare module names looked up through global search
+> folders. Relative requires (`./`, `../`) from within a script's own directory are
+> **not** subject to this check, because the calling script's directory is trusted.
+
+**2. Symlink escape check (post-read)**
+
+Symlinks can bypass the pre-read check: a symlink inside an allowed directory might
+point to a target outside it. After goja resolves the file path and just before reading
+the file, the hardened source loader resolves the final path through `filepath.EvalSymlinks`
+and verifies the real path is still within an allowed directory. If the real path has
+escaped, the read is blocked with an explicit error:
+
+```
+path traversal blocked: "../../etc/passwd" resolves via symlink outside allowed module paths [/home/user/osm-libs]
+```
+
+**3. Path validation at startup**
+
+All configured `script.module-paths` entries are validated at engine startup via
+`os.Stat` + `filepath.EvalSymlinks`. Invalid entries (nonexistent, not a directory,
+permission denied, unresolvable symlinks) are skipped with a warning rather than
+failing hard. Only successfully validated paths are registered as global search folders.
+
+**Scope**: Path-traversal protection applies to the global-folder (bare name) resolution
+path only. Absolute `require('/path/to/script.js')` calls bypass all containment checks.
+Users with `script.module-paths` configured should therefore not grant write access to
+those directories to untrusted code.
+
+### ES module syntax (ESM) limitations
+
+The `osm` scripting runtime uses [Goja](https://github.com/dop251/goja), which
+implements a CommonJS module system via [goja_nodejs](https://github.com/nicois/goja_nodejs).
+
+**ESM is not supported.** The following ES module syntax will cause a parse error:
+
+```js
+// NOT SUPPORTED — will throw a SyntaxError at load time
+import { exec } from 'osm:exec';
+export function helper() { return 42; }
+export default { key: 'value' };
+```
+
+Use CommonJS `require()` and `module.exports` instead:
+
+```js
+// SUPPORTED — CommonJS require/exports
+var exec = require('osm:exec');
+module.exports = { helper: function() { return 42; } };
+module.exports = { key: 'value' };
+```
+
+**Note on `import()` expressions**: Dynamic `import()` expressions are also not
+supported. Use `require()` for all module loading, including conditional or lazy loads.
+
+**Why not ESM?** Goja implements the ES5.1 spec with many ES2015+ extensions, but its
+module system predates WHATWG ESM and uses the CommonJS `require`/`module.exports`
+conventions. ESM support (static `import`/`export` declarations) is tracked upstream
+in goja but is not yet implemented. If ESM support is added to goja in a future
+release, `osm` will evaluate adopting it.

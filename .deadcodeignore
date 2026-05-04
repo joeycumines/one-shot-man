@@ -98,3 +98,7 @@ internal\builtin\pabt\*: unreachable func: *
 # Mouseharness is a test-only package
 internal/mouseharness/*
 internal\mouseharness\*
+
+# filepathutil is new; will be wired up in later commits
+internal/filepathutil/*
+internal\filepathutil\*

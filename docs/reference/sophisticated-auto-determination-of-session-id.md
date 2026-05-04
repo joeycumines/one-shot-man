@@ -906,6 +906,63 @@ func getNamespaceID() (string, error) {
 }
 ```
 
+### 3b\. macOS (Darwin) Support
+
+macOS lacks `/proc` so the Deep Anchor strategy uses `sysctl` via
+`golang.org/x/sys/unix.SysctlKinfoProc` to read per-process information.
+
+#### A. Boot Session UUID
+
+```go
+//go:build darwin
+
+func getBootSessionUUID() (string, error) {
+    uuid, err := unix.Sysctl("kern.bootsessionuuid")
+    // ...
+}
+```
+
+`kern.bootsessionuuid` changes on every reboot, equivalent to Linux's
+`/proc/sys/kernel/random/boot_id`.
+
+#### B. Process Info via sysctl
+
+```go
+func getDarwinProcInfo(pid int) (*DarwinProcInfo, error) {
+    kp, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+    // Extract: P_pid, P_comm, Eproc.Ppid, P_starttime, Eproc.Tdev
+}
+```
+
+Fields extracted from `KinfoProc`:
+- `Proc.P_pid` — process ID
+- `Proc.P_comm` — process name (17-byte null-terminated)
+- `Proc.P_starttime` — start time (`Timeval` with Sec and Usec)
+- `Eproc.Ppid` — parent PID
+- `Eproc.Tdev` — terminal device number
+
+#### C. Deep Anchor Walk (macOS)
+
+The walk follows the same strategy as Linux with macOS-specific lists:
+
+**Skip list** (ephemeral wrappers): `sudo`, `su`, `doas`, `setsid`,
+`time`, `timeout`, `xargs`, `env`, `osm`, `nohup`, plus macOS-specific:
+`open`, `caffeinate`, `arch`.
+
+**Stable shells**: Same as Linux (`bash`, `zsh`, `fish`, `sh`, etc.)
+
+**Root boundaries**: `launchd`, `login`, `sshd`, `windowserver` (all lowercase; lookup is case-insensitive).
+
+**Additional heuristic**: If the parent process has a different terminal
+device (`Tdev`) than the current process, the walk stops — the current
+process is the outermost in the terminal session.
+
+#### D. TTY Resolution
+
+TTY names are resolved via `/dev/fd/N` symlinks (macOS provides these
+analogously to Linux's `/proc/self/fd/N`). Recognized prefixes:
+`/dev/tty*`, `/dev/pts/*`.
+
 ### 4\. Windows Support
 
 #### A. Boot ID (Registry-Based)
@@ -1339,12 +1396,12 @@ When running as a standard user, the process ancestry walk may be unable to reac
 * **Impact:** This is acceptable for session identification purposes, as different user sessions will still have distinct anchors.
 * **Workaround:** Run `osm` with elevated privileges (Administrator) to reach system-level roots.
 
-### macOS: Non-Terminal.app Degradation
+### macOS: Terminal Without TERM_SESSION_ID
 
-Some third-party macOS terminal emulators (for example Alacritty, Kitty, WezTerm) do not populate the `TERM_SESSION_ID` environment variable. Because Deep Anchor is not implemented on macOS in this version, the discovery falls back to `TERM_SESSION_ID` when available and ultimately to a UUID fallback when it isn't. The practical effect:
+Some third-party macOS terminal emulators (for example Alacritty, Kitty, WezTerm) do not populate the `TERM_SESSION_ID` environment variable. In this case the discovery chain skips Priority 4 (macOS GUI terminal) and falls through to Priority 5 (Deep Anchor), which walks the process tree via `sysctl` to find a stable shell ancestor.
 
-    * **Impact:** For terminals that do not set `TERM_SESSION_ID`, `osm` will typically return a random `uuid--...` session ID that does not persist across new terminal instances — i.e., no automatic session persistence.
-    * **Workarounds:** Use Terminal.app or iTerm2 (they provide `TERM_SESSION_ID`), run a multiplexer (`tmux`/`screen`) that survives reconnects, or set an explicit session via `--session` or `OSM_SESSION`.
+    * **Impact:** Session persistence is maintained through the Deep Anchor strategy. The session ID will be `anchor--{hash16}` based on the stable parent process.
+    * **Note:** The Deep Anchor approach works well for long-lived shells. If the terminal emulator spawns a new shell process for each tab/window, each will get a distinct anchor — which is the desired behavior.
 
 ### Windows: Memory Safety
 
@@ -1358,7 +1415,7 @@ The `getFileNameByHandle` function uses `encoding/binary` for safe memory access
 |--------------|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Linux        | ✅ Complete        | Verified robust against renaming/aliasing. Handles TASK_COMM_LEN truncation.                                                                                                            |
 | Windows      | ✅ Complete        | Verified robust against renaming/aliasing. User-rooted when unprivileged.                                                                                                               |
-| macOS/Darwin | ⚠️ Partial        | Deep Anchor not implemented; relies on `TERM_SESSION_ID`. Terminals that do not set `TERM_SESSION_ID` (e.g., Alacritty) will fall back to UUID IDs that do not persist across restarts. |
+| macOS/Darwin | ✅ Complete        | Deep Anchor via `sysctl`/`KinfoProc`. Terminal device (`Tdev`) boundary detection. Falls back from `TERM_SESSION_ID` to Deep Anchor for third-party terminals. |
 | BSD          | ❌ Not Implemented | Stubs provided.                                                                                                                                                                         |
 
 ### Summary of Conflict Resolutions

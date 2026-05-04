@@ -1,0 +1,358 @@
+{
+  "meta": {
+    "fileName": "blueprint.json",
+    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE DESIGN. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE. CRITICAL: PREVENT DATA LOSS BY NEVER DELETING REQUIREMENTS OR CONTEXT WITHOUT PRESERVING THE RAW EXACT DETAILS IN THIS FILE.",
+    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND."
+  },
+  "globalAlerts": [
+    {
+      "warning": "CRITICAL DATA PRESERVATION DIRECTIVE: NEVER truncate, over-summarize, or delete requirements, historical context, or design decisions from documentation (like WIP.md). If migrating information, you MUST preserve the raw, exhaustive details within blueprint.json. Loss of granular context destroys the conceptual tether across sessions. Do NOT remove existing alerts, directives, tasks, or documentation."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (CORE CONCEPT): Exhaustive extraction of value from 1-N divergent branches. Flow: Changes flow FROM source branches INTO a user-chosen trunk/base branch (NOT necessarily common base). Exhaustive: Every hunk from every branch diff must be explicitly considered. Agent Support: Must support claude + other agents via ACP (Agent Communication Protocol). External Sort Analogy: Like an external sort algorithm for changes."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (TERMINOLOGY): Chunk = A group of 1-N hunks from any/all source branches, reviewable as ONE UNIT by the human-in-the-loop. Patch = The diff/patch that is the mergable payload of a chunk (term TBD — Hana-san said I need to decide). The agent may REIMPLEMENT the patch — chunks are NOT just 'apply hunks verbatim'. Even chunks where ALL hunks are discarded must still flow through human-in-the-loop review. A chunk is NEVER silently skipped — this is the core guarantee of 'exhaustive'."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (INTEGRATION): New osm subcommand (`osm slop-funnel` or similar). Lives in one-shot-man repo. Uses osm's Go framework, scripting runtime, and session management. Session state: All slop-funnel state tracked via osm sessions (`osm session id` etc). TUI reads/writes session state."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (LAUNCH FLOW): Branches selected entirely WITHIN the TUI — not CLI args. May also support go-prompt terminal mode bootstrapped like `osm super-document`. Seamless transition between 'terminal-style TUI' and 'advanced interactive user interface TUI'. The entire experience is interactive."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (CHUNK LIFECYCLE): Chunks are STAGED UP by a workflow-style orchestration (internal, with backpressure). Chunks can be REJECTED with a reason. The orchestrator stages an appropriate number of chunks while the user works on earlier ones. One chunk = one commit. Agent integration details TBD (to be refined over time)."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (AGENT INTERACTION): There MUST be feedback and interaction. Higher-level than osm pr-split (less direct). May need to surface agent's train of thought for debugging/guidance. Details TBD — dependent on agentic tool capabilities, requiring exploration and research."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (DESIGN DECISIONS): Screen1 structure is roughly right — refine, don't redesign from scratch. Discovery phase — need proper requirements elicitation, not abstract questions. Hana-san wants me to 'throw shit at the wall' and learn through specific questions."
+    },
+    {
+      "warning": "DESIGN PHASE: This blueprint tracks UI/UX design work for the slop-funnel TUI in OpenPencil MCP. All design changes are made in the Figma/OpenPencil document via MCP tools, not in code files."
+    },
+    {
+      "warning": "PRODUCT CONTEXT: slop-funnel performs EXHAUSTIVE extraction of value from 1-N divergent git branches. Every hunk from every branch diff must be explicitly considered (merged, discarded, or marked with notes). Like an external sort — changes grouped by agentic AI, staged in a workflow loop with backpressure. Must support claude and other agents via ACP (https://www.ibm.com/think/topics/agent-communication-protocol)."
+    },
+    {
+      "warning": "TERMINOLOGY (CONFIRMED): 'Chunk' = a group of 1-N hunks from any/all source branches, reviewable as one unit by the human-in-the-loop. A chunk's 'Patch' is the diff/patch that is the mergable payload. The agent may REIMPLEMENT the patch — chunks are NOT just 'apply hunks verbatim'. Even chunks where ALL hunks are discarded must still flow through human-in-the-loop review. A chunk is never silently skipped. This is the core guarantee of 'exhaustive'."
+    },
+    {
+      "warning": "INTEGRATION (CONFIRMED): slop-funnel will be a new osm subcommand (e.g. `osm slop-funnel`), living in the one-shot-man repo, using osm's Go framework, scripting runtime, and session management."
+    },
+    {
+      "warning": "SESSION STATE (CONFIRMED): All slop-funnel state is tracked in osm sessions (`osm session id` etc). The TUI reads/writes session state. This includes: branch selections, chunk status, commit history, agent interactions, and user decisions."
+    },
+    {
+      "warning": "LAUNCH FLOW (CONFIRMED): Branches are selected entirely within the TUI — not via CLI args. May also support a go-prompt terminal mode bootstrapped like `osm super-document`, with seamless transition between 'terminal-style TUI' and 'advanced interactive user interface TUI'. The entire experience is interactive."
+    },
+    {
+      "warning": "CHUNK LIFECYCLE (CONFIRMED): Chunks are staged up by a workflow-style orchestration with backpressure. Chunks can be rejected with a reason. The orchestrator stages an appropriate number of chunks while the user works. One chunk = one commit. Agent integration details TBD (to be refined over time)."
+    },
+    {
+      "warning": "AGENT INTERACTION (CONFIRMED): There MUST be feedback and interaction. Higher-level than osm pr-split. May need to surface agent's train of thought for debugging/guidance. Details TBD — dependent on agentic tool capabilities, requiring exploration and research."
+    },
+    {
+      "warning": "CHUNK REVIEW FLOW (CONFIRMED): Default behavior stages the diff on top of the current checked-out branch (trunk) using `git add` via go-git. User views diff in their OWN tooling (like interactive rebasing). The TUI does NOT embed a diff viewer — it orchestrates the staging, the user reviews externally."
+    },
+    {
+      "warning": "CHUNK REJECTION MODEL (CONFIRMED — COMPLEX): Rejection is NOT simple accept/reject. It means: (1) 'AI did a bad job — restructure this chunk' with specific reasons. (2) If the chunk BOUNDARY is sensible, it should never need rejection. (3) May need to expose RAW hunks to the user or other AI tools. (4) Can reject SPECIFIC HUNKS within a chunk — 'this hunk should be with X'. (5) Multiple rejection reasons for different subsets/hunks within a single chunk. (6) Some hunks may not be rejected while others are. (7) Rejected hunks are put BACK INTO THE POOL to be re-grouped and re-prepared for human-in-the-loop processing. This is a core UX challenge."
+    },
+    {
+      "warning": "TRUNK/COMMIT MODEL (CONFIRMED): Commits go directly to the trunk branch. Typical flow: trunk checked out, potentially in a worktree. User's checked-out branch state should be as STABLE and SAFE as possible."
+    },
+    {
+      "warning": "BRANCH PICKING (CONFIRMED): For Takumi to explore and propose. Ultimately just a way to derive a set of hunks. Recording the LINEAGE/SOURCE of hunks with contextual structure is CRITICAL — may require special handling for future features. Takumi must prove competence through discovery."
+    },
+    {
+      "warning": "COMPLETION MODEL (CONFIRMED): Exhaustive + resumable. ALL hunks from ALL source branches must be resolved (committed or explicitly discarded with notes) before session is 'done'. User can PAUSE and resume later via session. 100% exhaustive completion is the guarantee."
+    },
+    {
+      "warning": "CONFLICT MODEL (CONFIRMED): Chunks that conflict with trunk are NOT ready for human-in-the-loop. Both the UI and agent must be AWARE of conflicts. Agent addresses conflicts and may reject chunks at its own discretion (e.g. based on user-implemented pivots). Conflicts are an internal orchestration concern, not a user-facing blocking issue."
+    },
+    {
+      "warning": "UNDO/REVERT (CONFIRMED — LATER FEATURE): User can revert a committed chunk. Revert is orchestrated by slop-funnel and includes returning hunks from that chunk BACK TO THE POOL. This is a feature for later, not MVP."
+    },
+    {
+      "warning": "SESSION PERSISTENCE (CONFIRMED — TWO TIERS): (1) 'Exit then reopen' = ephemeral but robust, provided by core osm session store. (2) 'Resume' = later feature, handles source branch changes, robust enough to transport between machines/OS/AI tools. These are distinct features."
+    },
+    {
+      "warning": "APPROVE FLOW (CONFIRMED): Simple — 'yes, that chunk has been handled'. Chunk doesn't surface again in pool or chunk list. User stages up the commit externally, then confirms in TUI."
+    },
+    {
+      "warning": "CHUNK DEPENDENCIES (CONFIRMED): Chunks may have dependencies. Agent indicates dependencies. Dependencies are used for queuing logic (queuing for processing)."
+    },
+    {
+      "warning": "AGENT SECTION (CONFIRMED): Collapsible section. Default collapsed, just shows a status badge. Expand for detail on what agent is doing."
+    },
+    {
+      "warning": "PRODUCT NAME (CONFIRMED): 'slop-funnel' is the FINAL name. Descriptive — 'literally how it works, and also what it alleviates — dumbasses pouring AI down our proverbial throats.'"
+    },
+    {
+      "warning": "CHUNK LIST DESIGN (CONFIRMED): Split list + detail view. Top section = scrollable chunk queue. Bottom section = selected chunk detail (branches, files, deps, agent notes, hunk breakdown). Split on click or select. Both mouse AND keyboard navigation. Viewport and lists have scrollbars. Existing TUI examples in the project (pr-split, super-document) should inform the design."
+    },
+    {
+      "warning": "DIRECTIVE: Any information Hana-san gives via answers MUST be accumulated in this blueprint immediately. Do not lose context."
+    },
+    {
+      "warning": "HANA-SAN IS THE PRODUCT MANAGER. Takumi is the designer/engineer. Product direction questions MUST be asked of Hana-san before proceeding. Do not assume product direction — ask."
+    },
+    {
+      "warning": "SCREEN1 IS IN OPENPENCIL MCP: Page 'Page 1', node ID '0:6' (720x375). It is the main dashboard view. There is also a 'Components' page (currently empty)."
+    },
+    {
+      "warning": "SESSION 4 DATA LOSS EVENT (2026-04-19): Verified that ALL work from Sessions 2-3 was LOST from the OpenPencil document. The document reverts to Session 1 state: Content (0:20) with original IA, no design tokens (zero collections), contrast errors still present (10+ instances), structural issues (BottomSpacer orphan, generic Frame names, overflow in ProgressSection), header says 'git-branch-merge' not 'slop-funnel'. ALL tasks claiming Done status for Sessions 2-3 work are reset to Not Started. Only Task 4 (product Q&A) retains Done status as it represents knowledge, not design artifacts."
+    },
+    {
+      "warning": "NINE-HOUR MANDATE (2026-04-19): Session start recorded at epoch 1776528618 (2026-04-19 02:10:18). Deadline: 2026-04-19 11:10:18. Takumi must not stop before the full nine hours. Work prioritizes: (1) rebuild Screen1 to the state described in WIP.md, (2) design multiple additional screens with exhaustive detail, (3) create component library, (4) document interaction patterns. Must continuously expand scope towards True Perfection."
+    },
+    {
+      "warning": "ACP REFERENCE: slop-funnel must support claude and other agents via ACP (Agent Communication Protocol). Reference: https://www.ibm.com/think/topics/agent-communication-protocol. This is a confirmed requirement that must be reflected in the design — particularly in agent status/interaction screens and the agent collapsible section."
+    },
+    {
+      "warning": "TUI FONT CONSTRAINT (CONFIRMED BY HANA-SAN): ALL text across ALL screens MUST use a SINGLE monospace font (Courier New) at a SINGLE uniform size (10px). No font family variation. No size variation whatsoever. This is a TERMINAL user interface — text rendering is constrained to a monospace grid where every character occupies the same cell. The previous design used 6 different sizes (7, 8, 9, 10, 11, 12, 14px) and 2 font families (Inter + Courier New) — a complete violation of TUI principles. Bold weight may be used for emphasis (terminals support bold) but SIZE must be absolutely uniform at 10px. ALL 367 text nodes must be corrected."
+    },
+    {
+      "warning": "SCREEN RELATIONSHIPS (CONFIRMED BY HANA-SAN): Screens MUST be laid out in a way that makes sense. Screens need clearly defined relationships indicated VISUALLY — arrows, labels, and notes connecting related screens. The design document must show navigation flow between screens with visual connectors, not just isolated frames scattered on a canvas. Each screen's purpose and relationship to others must be immediately readable from the layout."
+    },
+    {
+      "warning": "DESIGN NOTES IN DOCUMENT (CONFIRMED BY HANA-SAN): Put notes IN the designs — show thinking. Each screen must include annotation text explaining design rationale, what the screen does, why elements are placed where they are, and what interaction patterns apply. These notes are part of the design, not external documentation. They help developers understand intent without guessing."
+    },
+    {
+      "warning": "HIERARCHY & STRUCTURE (CONFIRMED BY HANA-SAN): Leverage hierarchies and structures to reason about logical structure more easily. Frame nesting, layer naming, and grouping must reflect the actual logical structure of the UI. Don't flatten everything — use proper frame hierarchies that map to component structure. This makes the design navigable, reviewable, and translatable to code."
+    },
+    {
+      "warning": "ZAI MCP TOOLS FOR VISUAL VERIFICATION (CONFIRMED BY HANA-SAN): The zai-mcp-server MCP tools (analyze_image, ui_to_artifact, extract_text_from_screenshot, diagnose_error_screenshot, understand_technical_diagram, analyze_data_visualization, analyze_video, ui_diff_check) are available and MUST be used for visual verification of designs. After creating or modifying screens, export PNGs via export_image and feed them to zai analyze_image for visual QA. Do not rely solely on describe() — use actual vision analysis to catch issues the structure tools miss."
+    },
+    {
+      "warning": "TERMINAL VISUAL CONSTRAINTS (CONFIRMED BY HANA-SAN — CRITICAL): The design MUST FULLY align with the behavior of terminals. This means: (1) ZERO rounded corners — terminals use sharp 90-degree rectangular regions only. Every frame, badge, button, card, container must have cornerRadius=0. (2) NO bold text weight — OpenPencil renders Courier New Bold as 'visually obese' which does NOT match terminal bold rendering. Use regular weight exclusively; use COLOR for emphasis, not weight. (3) NO visual effects — no shadows, blur, gradients, anti-aliasing tricks. (4) NO strokes/borders with thickness — terminal regions are defined by background color changes, not borders. (5) SOLID fills only — terminal cells are solid color blocks. (6) The design must look like it could actually render in a terminal emulator — if it looks like a web app, it's wrong."
+    },
+    {
+      "warning": "TERMINAL RENDERING REALITY CHECK (AUDIT RESULTS 2026-04-19): Full audit found: 71 nodes with cornerRadius>0 (ALL badges, buttons, cards, containers across ALL 9 screens), 40 nodes with bold font weight, 0 shadows/blur, 0 strokes, 0 gradients. All 71 rounded corners and all 40 bold weights MUST be stripped to achieve terminal fidelity."
+    },
+    {
+      "warning": "TERMINAL RESIZE + ARBITRARY SHAPES (CONFIRMED BY HANA-SAN): Terminals can be trivially resized by the user. Terminal windows may be arbitrary shapes (not just wide rectangles). The TUI MUST implement appropriately reactive behavior — all layouts must adapt to terminal size changes gracefully. This means: (1) Fixed pixel widths (720px) are NOT realistic for all terminal sizes — the design must show how layouts respond to both WIDER and NARROWER viewports. (2) The chunk list/detail split must handle narrow terminals (stack vertically instead of side-by-side). (3) Long text must truncate or wrap appropriately. (4) Critical elements (status bar, actions) must remain visible at minimum terminal sizes. (5) The design should document MINIMUM supported terminal size and responsive breakpoints. This is a MANDATORY requirement that affects every screen design."
+    }
+  ],
+  "mandatoryDirectives": {
+    "dataPreservation": "EXCEPTIONALLY CLEAR GUIDANCE: To prevent future data loss, you must NEVER delete, discard, or over-summarize requirements, product context, or historical design decisions from files like WIP.md. If information must be migrated or restructured, it MUST be preserved in its raw, exhaustive form within blueprint.json. Do not modify or remove any existing alerts, directives, tasks, or documentation.",
+    "contextManagement": "This is a collaborative design session with Hana-san. Ask questions using AskUserQuestion tool. Iterate on Screen1 in the MCP. Update WIP.md with findings and decisions. Do not proceed past ambiguities — surface them as questions.",
+    "workingDirectory": "docs/projects/slop-funnel/ — blueprint.json and WIP.md live HERE, not in the project root.",
+    "mcpLocation": "OpenPencil MCP. Page 1 has Screen1 (node 0:6). Components page is empty and reserved for the component library.",
+    "sessionTimer": "Nine-hour session. Start: epoch 1776528618. Deadline: epoch 1776561018 (2026-04-19 11:10:18). File: docs/projects/slop-funnel/.session-start. Verify with shell math. If file missing, assume session just started (extending the mandate).",
+    "foreverReminders": "On EVERY task commencement, re-read the following skills: blueprint-json, strict-review-gate, openpencil-figma-design, frontend-design:frontend-design"
+  },
+  "statusSection": {
+    "currentState": "SESSION 5 — PRODUCT FLOW MAPPING + USE CASE DESIGN. 9 screens in 3x3 flow layout on Page 1 with flow annotations. Screen1-Staged variant created (approve flow intermediate state). Screen-Analyzing (loading) and Screen-ConfirmQuit (modal) created. RejectFlowUseCase annotation showing complete user journey. DesignRationale annotation with 10 design decisions. All 279+ text nodes Courier New 10px Regular. 71 rounded corners stripped, 43 bold weights stripped. ACTIVE: product flow exploration, use case scenarios, identifying UX gaps. TODO: design tokens, component library, edge cases, interaction states.",
+    "goalState": "ALL screens for the slop-funnel TUI designed with exhaustive detail: (1) Screen1 — main dashboard with chunk list + detail split view, fully tokenized, zero errors. (2) Screen2+ — additional screens covering: branch selection/setup, chunk rejection with per-hunk granularity, agent activity/interaction, session resume/pause, conflict resolution (internal), completion/summary view. (3) Component library on Components page with reusable TUI elements. (4) Interaction patterns and keyboard navigation fully documented. (5) State transition diagrams annotated. (6) Design ready for implementation handoff.",
+    "replanLog": [
+      {
+        "trigger": "Session 4 data loss discovery — verified ALL Sessions 2-3 artifacts missing from OpenPencil document",
+        "affectedTasks": "Tasks 1-3, 5-6, 9 (all previously marked Done or In Progress, now Not Started)",
+        "changes": "Reset 6 tasks to Not Started. Retained Task 4 (product Q&A knowledge). Added 14 new expansion tasks for multi-screen design, component library, interaction patterns, state diagrams, and implementation notes. Added Tasks 17-20 for additional screens: branch selection, rejection flow, agent monitor, session summary."
+      }
+    ]
+  },
+  "sequentialTasks": [
+    {
+      "task": "Rebuild Screen1: fix contrast errors across SessionBar, Menu, StatusBar, Actions, ProgressSection (10+ dark-on-dark instances)",
+      "description": "The describe tool identified contrast errors on: MenuHelp (#888 on #0D0D0D), SessionSep (#444 on #1A1A2E), SessionTime (#888 on #1A1A2E), StatusHint (#666 on #1E1E1E), StatusChunks (#888 on #1E1E1E), StatusSep (#444 on #1E1E1E), StatusWorktree (#888 on #1E1E1E), ActionCommitText (#888 on #333), ActionPauseText (#888 on #333), ActionQuitText (#888 on #333), ProgressLabel (#888 on #000), ProgressFiles (#666 on #000). Fix each by raising text color to minimum #AAAAAA for secondary/muted and #BBBBBB for readable text. Node IDs: 0:19, 0:25, 0:29, 0:60, 0:61, 0:84, 0:88, 0:95, 0:97, 0:99, 0:101, 0:102, 0:103, 0:104.",
+      "acceptance": "Re-running describe on Screen1 (0:6) produces ZERO color contrast 'error' severity issues. All text legible against backgrounds — secondary/muted at minimum #AAAAAA, primary at minimum #BBBBBB.",
+      "status": "Done"
+    },
+    {
+      "task": "Rebuild Screen1: fix structural issues — BottomSpacer orphan, generic Frame names, overflow in ProgressSection, inconsistent gaps, HeaderTitle text",
+      "description": "Fix: (1) Delete BottomSpacer (0:105) — empty 100x0 orphan frame. (2) Rename all generic 'Frame' siblings: Content>SessionBar>Frame→SessionInfo/RepoInfo, BranchSummary>Frame→BranchRow, Content>ProgressSection>Frame→ProgressHeader/ProgressDetail, ChunkStatus>StatusRows>Row*>'Frame'→ReviewProgress/StagedProgress/CommittedProgress. (3) Fix overflow in StatusRows: RowReview/RowStaged/RowCommitted contain 100px-tall Frame children in 24px rows — resize to 8px. (4) Standardize Content gap to 8px (currently mixed 16/6/8). (5) Standardize BranchSummary gap from 6px to 8px. (6) Change HeaderTitle (0:13) from 'git-branch-merge' to 'slop-funnel'. (7) Set ChunkHeader, ProgressHeader, ProgressDetail to FILL horizontal. (8) Fix Menu padding (add px=8 py=4).",
+      "acceptance": "Re-running describe on Screen1 (0:6) produces ZERO structural 'warning' or 'info' severity issues. All frames semantically named. All gaps on 8px grid. No overflow. BottomSpacer deleted. Header says 'slop-funnel'.",
+      "status": "Done"
+    },
+    {
+      "task": "Rebuild Screen1: replace ChunkStatus + ProgressSection with chunk list + detail split view (ChunkPane)",
+      "description": "Remove the old ChunkStatus (0:55, with StatusRows showing review/staged/committed counts) and ProgressSection (0:82, with progress bar). Replace with ChunkPane containing: (1) ChunkPaneHeader — 'CHUNKS' title + stats (total, ready, blocked counts) + hunks processed progress indicator. (2) ChunkQueue — scrollable list of 5 chunk rows, each showing: status dot (●/◌/✗ color-coded), chunk ID (#N), description title, status badge (READY/BLOCKED/REJECTED), dependency indicator, branch source color tag. Selected row gets green-tinted background (#002200). Scroll indicator at bottom ('↓ 2 more ↓'). (3) ChunkDivider — 1px separator line. (4) ChunkDetail — selected chunk detail panel with: header (status dot + ID + title + status badge), meta (source branch + dependency info), file list, hunk breakdown (line ranges + check marks), agent section (collapsible, default collapsed with status badge). This is the core interactive view for the slop-funnel workflow.",
+      "acceptance": "ChunkPane exists as the main content area of Screen1 with visible chunk list and detail split. Describe tool shows no errors. The layout matches the WIP.md node map: ChunkPaneHeader, ChunkQueue with 5 chunk rows in different states (ready/blocked/rejected/selected), ChunkDivider, ChunkDetail with all subsections. Visual export confirms legible, well-structured design.",
+      "status": "Done"
+    },
+    {
+      "task": "Rebuild Screen1: redesign BranchSummary with color-coded trunk + source branch cards",
+      "description": "Replace the current BranchSummary (0:30) with: (1) TrunkDisplay — shows trunk branch name 'main' with green 'TRUNK' badge, commit count '142 commits', dark green background (#001100). (2) FlowArrow — '←+' indicator showing flow direction (source→trunk). (3) Three BranchCards — each showing: branch name with color-coded indicator, stats (hunks/changes count), distinct background colors: Branch1 'feature/ai-refactor' purple (#110022), Branch2 'feature/llm-cleanup' pink (#220011), Branch3 'feature/exploration-v3' blue (#001122). Layout: horizontal row with 8px gaps.",
+      "acceptance": "BranchSummary shows trunk + 3 source branches as distinct color-coded cards. Trunk has green badge. Each branch has unique color identity that matches chunk source indicators. Describe shows no errors. Cards are well-proportioned within the 720px width.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Rebuild Screen1: redesign Actions bar with chunk workflow controls",
+      "description": "Replace current Actions (0:91) with two grouped action sets: (1) Left group (chunk actions): [Enter] APPROVE — primary action, green button (#00FF00 bg, #000000 text); [X] REJECT — secondary; [E] EXT DIFF — open external diff viewer. (2) Right group (session actions): [P] PAUSE — pause orchestration; [Q] QUIT — exit session. Groups separated by visual divider. All actions show keybinding in brackets. Background: #0D0D0D.",
+      "acceptance": "Actions bar clearly shows two grouped action sets with keybinding labels. Approve is visually primary (green). All text has proper contrast (#CCCCCC minimum on #0D0D0D). Layout fits within 720px width.",
+      "status": "Done"
+    },
+    {
+      "task": "Rebuild Screen1: redesign StatusBar with key hints, pending count, worktree info",
+      "description": "Replace current StatusBar (0:100) with: (1) KeyHints — contextual key hints for current mode (e.g., 'j/k navigate • Enter approve • ? help'). (2) PendingCount — '5 pending' chunk count. (3) Separator — '│' divider. (4) WorktreeInfo — worktree path or 'no worktree'. Background: #1E1E1E. All text must be #AAAAAA minimum for contrast. Layout: horizontal, items centered, 16px gap, 8px horizontal padding.",
+      "acceptance": "StatusBar shows key hints, pending count, separator, and worktree info. All text meets contrast requirements (#AAAAAA+ on #1E1E1E). Describe shows zero errors. Layout fits within 720px width.",
+      "status": "Done"
+    },
+    {
+      "task": "Rebuild Screen1: update Header and Menu for slop-funnel branding",
+      "description": "Update Header (0:7): change HeaderTitle (0:13) text from 'git-branch-merge' to 'slop-funnel', update color to #AAAAAA minimum. Update Menu (0:14): ensure all menu items ([File] [Session] [Chunks] [View] [?] Help) have proper contrast. Change MenuHelp (0:19) from #888888 to #AAAAAA minimum. Add proper padding to Menu (px=8).",
+      "acceptance": "Header shows 'slop-funnel' title. All menu items legible. Describe shows zero contrast errors on Header and Menu.",
+      "status": "Done"
+    },
+    {
+      "task": "Create design token system: `slop-funnel` variable collection with semantic COLOR tokens",
+      "description": "Create `slop-funnel` variable collection with 37+ COLOR variables organized into semantic categories: (1) Background tokens (16): bg-screen, bg-header, bg-menu, bg-session, bg-pane, bg-pane-header, bg-queue, bg-detail, bg-selected, bg-button, bg-button-primary, bg-trunk, bg-trunk-badge, bg-branch-1, bg-branch-2, bg-branch-3. (2) Text tokens (18+): text-primary, text-highlight, text-body, text-secondary, text-muted, text-accent, text-button, text-ready, text-hunk, text-blocked, text-rejected, text-warning, text-branch-1, text-branch-2, text-branch-3, text-button-primary. (3) Structural tokens (4): dot-close, dot-minimize, dot-maximize, border-default. After creating tokens, bind ALL colored nodes in Screen1 to these tokens — zero hardcoded colors.",
+      "acceptance": "Variable collection `slop-funnel` exists with 37+ COLOR tokens. ALL colored nodes in Screen1 are bound to tokens (zero hardcoded). Changing a token value updates all bound nodes. Tokens exported via design_to_tokens and documented in WIP.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Validate Screen1 rebuild: run describe, export PNG, verify zero errors",
+      "description": "After completing all Screen1 rebuild tasks (Tasks 1-8): (1) Run describe on Screen1 (0:6) — verify zero error-severity issues. (2) Export Screen1 as PNG at 2x scale — visually verify all elements legible and well-structured. (3) Run analyze_spacing — verify all spacing on 8px grid. (4) Run analyze_colors — verify palette discipline. (5) Run analyze_typography — verify font consistency. (6) Export design tokens via design_to_tokens. (7) Update WIP.md with final Screen1 node map and token table.",
+      "acceptance": "Describe shows zero errors on Screen1. PNG export shows clean, professional TUI design. All spacing on 8px grid. All colors tokenized. Typography consistent (Courier New). WIP.md updated with complete documentation.",
+      "status": "Done"
+    },
+    {
+      "task": "Design Screen2: Branch Selection / Session Setup screen",
+      "description": "Create a new screen (720x375) for the INITIAL user flow — selecting trunk and source branches. This is the FIRST screen a user sees when launching slop-funnel. Must include: (1) Header — 'slop-funnel' title + 'SETUP' mode indicator. (2) Trunk Selection — shows current git branch context, input/search for trunk branch, recent branches list. (3) Source Branch Selection — multi-select list of branches, showing: branch name, ahead/behind stats vs trunk, hunk count, last commit info. Selected branches highlighted with distinct colors (purple/pink/blue). Select/deselect with space/enter. (4) Preview — summary of selected branches + total estimated hunk count. (5) Actions — [Enter] START SESSION, [Q] CANCEL. (6) StatusBar — navigation hints. This screen MUST feel like a natural terminal workflow — minimal, efficient, keyboard-first.",
+      "acceptance": "Screen2 exists as a 720x375 frame on Page 1. Shows complete branch selection UI with trunk picker, multi-select source branches, preview summary, and action buttons. Describe shows zero errors. Uses same design tokens as Screen1. Visually coherent with Screen1's dark TUI aesthetic.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design Screen3: Chunk Rejection / Restructure screen",
+      "description": "Create a new screen (720x375) for the complex rejection flow. This is what appears when user hits [X] REJECT on a chunk. Must reflect confirmed rejection model: per-hunk granularity, multiple rejection reasons, hunks return to pool. Include: (1) Header — chunk ID + title + 'REJECT' mode. (2) Hunk List — each hunk shown individually with: checkbox (select which hunks to reject vs keep), file path, line range, content preview snippet. (3) Rejection Reasons — per-hunk or batch: 'wrong grouping' (specify which chunk it should be with), 'bad implementation' (agent should redo), 'discard entirely' (with mandatory note). (4) Preview — shows outcome: which hunks return to pool, which stay in current chunk. (5) Actions — [Enter] CONFIRM REJECTION, [Esc] CANCEL. (6) StatusBar — context hints. This is the most complex UX challenge in slop-funnel.",
+      "acceptance": "Screen3 exists as a 720x375 frame on Page 1. Shows per-hunk rejection interface with checkboxes, rejection reason selectors, and outcome preview. Describe shows zero errors. Uses same design tokens. The rejection flow is visually clear — user can see exactly what happens to each hunk.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design Screen4: Agent Activity Monitor screen",
+      "description": "Create a new screen (720x375) for monitoring agent activity. This is the expanded view of the collapsible agent section — what happens when user wants to see agent's train of thought. Must include: (1) Header — 'AGENT' mode + agent name (claude/other) + status badge (WORKING/IDLE/WAITING). (2) Current Task — what the agent is working on right now (chunk ID, description). (3) Activity Log — scrollable log of agent actions with timestamps: chunk grouping decisions, conflict resolutions, dependency analysis, patch implementations. Each log entry has: timestamp, action type icon, description, expandable detail. (4) Agent Controls — [P] PAUSE AGENT, [R] RESUME, [I] INTERRUPT (send message to agent), [Esc] BACK TO DASHBOARD. (5) Agent Communication — ACP message interface: send instructions, view agent's questions to user. (6) StatusBar — agent-specific hints. Must support ACP integration visual language.",
+      "acceptance": "Screen4 exists as a 720x375 frame on Page 1. Shows agent activity log, current task, controls, and ACP communication interface. Describe shows zero errors. Uses same design tokens. The agent's thought process is visible and interactive.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design Screen5: Session Summary / Completion screen",
+      "description": "Create a new screen (720x375) for when the session reaches completion (all hunks resolved). Must include: (1) Header — 'slop-funnel' + 'COMPLETE' badge. (2) Session Stats — total chunks processed, commits made, hunks merged vs discarded, branches fully extracted, time elapsed. (3) Commit History — scrollable list of all commits made during session: chunk ID, commit message, files changed. (4) Discard Summary — list of explicitly discarded hunks with reasons (for audit trail). (5) Branch Status — per-source-branch summary: hunks from this branch, % merged, % discarded. (6) Actions — [E] EXPORT REPORT, [N] NEW SESSION, [Q] QUIT. (7) StatusBar — completion confirmation.",
+      "acceptance": "Screen5 exists as a 720x375 frame on Page 1. Shows comprehensive session summary with stats, commit history, discard audit, and branch breakdown. Describe shows zero errors. Uses same design tokens. The 'exhaustive completion' guarantee is visually verifiable.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design Screen6: Pause / Session Interrupt screen",
+      "description": "Create a new screen (720x375) shown when user pauses the session. Must include: (1) Header — 'slop-funnel' + 'PAUSED' badge (yellow). (2) Current State Snapshot — where we were: current chunk being reviewed, chunks remaining, agent status. (3) Resume Options — [R] RESUME (continue where left off), [S] SAVE & EXIT (persist session for later resume). (4) Session Info — session ID, elapsed time, progress percentage. (5) Warning — 'X hunks still unresolved — session is NOT exhaustive until all hunks are processed.' (6) StatusBar — pause-specific hints.",
+      "acceptance": "Screen6 exists as a 720x375 frame on Page 1. Shows pause state with clear resume/save options and progress snapshot. Describe shows zero errors. Uses same design tokens. The incomplete state is clearly communicated — user knows exactly what's left.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design state transition diagram: annotate screen flow with navigation paths on a dedicated page",
+      "description": "Create a new OpenPencil page called 'Flow Diagram'. On it, create a visual state machine showing all screens and their transitions: Screen2 (Setup) → Screen1 (Dashboard) ←→ Screen3 (Reject) ←→ Screen4 (Agent Monitor) → Screen6 (Pause) → Screen1 (Dashboard) → Screen5 (Complete). Each transition annotated with: trigger action, keybinding, state change. Use arrows (vectors or lines with labels). Include: (1) Normal flow: Setup → Dashboard → (review chunks) → Complete. (2) Rejection branch: Dashboard → Reject → (hunks return to pool) → Dashboard. (3) Agent interaction: Dashboard → Agent Monitor → (send instructions) → Dashboard. (4) Pause/resume: Dashboard → Pause → Dashboard. (5) Error states: what happens on agent failure, merge conflicts. Use consistent colors matching the design system.",
+      "acceptance": "Flow Diagram page exists with visual state machine showing all screens and transitions. Every transition has trigger, keybinding, and state change annotated. All flows (normal, rejection, agent, pause, error) are documented. Diagram is exported as PNG and referenced in WIP.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Create component library on Components page with reusable TUI elements",
+      "description": "On the Components page (0:106), create proper COMPONENT nodes for: (1) Header — slop-funnel header with dots, divider, title. (2) MenuBar — menu items with active/hover states. (3) SessionBar — session ID, repo path, time display. (4) BranchCard — trunk variant (green badge) and source variant (color-coded), each as component with instances. (5) ChunkRow — with variants: ready (green dot), blocked (orange), rejected (red), selected (highlighted bg), processing (animated indicator). (6) ChunkDetail — the detail panel with subsections. (7) ActionButton — primary (green), secondary (gray), danger (red) variants. (8) StatusBar — key hints + pending count + worktree info. (9) Badge/Pill — status badges: READY, BLOCKED, REJECTED, COMPLETE, PAUSED, PROCESSING. (10) ScrollIndicator — '↓ N more ↓' pattern. (11) Divider — 1px separator. All components must use design tokens and follow 8px grid. Each component as proper COMPONENT node (not just frames).",
+      "acceptance": "Components page contains 11+ reusable TUI components as proper COMPONENT nodes. Each has clear naming, variants where applicable, and consistent styling. Components use design tokens (zero hardcoded colors). Can be instantiated across screens. Typography and spacing consistent.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Document keyboard navigation and interaction model",
+      "description": "In WIP.md, document the complete interaction model: (1) Global keybindings: j/k or ↑/↓ navigate chunks, Enter select/approve, X reject, E external diff, P pause, Q quit, ? help, Esc back/cancel, Tab switch focus between list and detail, a agent monitor. (2) Screen-specific keys: Screen2 (Setup) — Tab between trunk/source, Space toggle branch selection. Screen3 (Reject) — Tab between hunks, Space toggle hunk, R select reason. Screen4 (Agent) — I send instruction, R resume, P pause agent. (3) Focus indicators: green highlight on selected chunk row, blue border on focused section. (4) Mode transitions: how the TUI shifts between screens (not tabs — actual screen transitions like vim buffers). (5) Mouse support: click to select chunk, click detail sections to focus, scroll in lists.",
+      "acceptance": "WIP.md contains complete interaction model covering all screens, all keybindings, focus indicators, workflow transitions, and mouse interactions. The visual design on all screens reflects these patterns (key hints in StatusBars, focus states, navigation indicators).",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design Screen7: Hunk Detail / Raw Hunk Viewer screen",
+      "description": "Create a new screen (720x375) for viewing raw hunk content — needed when user wants to see exactly what a hunk changes before deciding on rejection or grouping. Must include: (1) Header — file path + line range + chunk context. (2) Diff View — color-coded diff display: green for additions (+), red for removals (-), context lines in neutral gray. Line numbers on both sides. Syntax highlighting hints for common languages. (3) Hunk Metadata — source branch, original file path, change type (add/modify/delete/rename). (4) Navigation — [↑/↓] scroll diff, [N] next hunk in chunk, [P] previous hunk, [Esc] back to chunk detail. (5) Actions — [A] APPROVE HUNK, [R] REJECT HUNK (with reason), [G] REASSIGN to different chunk. (6) StatusBar — position indicator 'hunk 3/5 in chunk #7'. NOTE: This is NOT the primary review flow (user reviews externally). This is for the rejection/restructure flow where the user needs to see raw content.",
+      "acceptance": "Screen7 exists as a 720x375 frame on Page 1. Shows raw diff content with color-coded additions/removals, hunk metadata, navigation, and action controls. Describe shows zero errors. Uses same design tokens. The diff view is readable and functional within the TUI constraints.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design Screen8: Session Resume / History screen",
+      "description": "Create a new screen (720x375) for resuming a previously saved session. This is the LATER FEATURE (not MVP) but needs design exploration. Must include: (1) Header — 'slop-funnel' + 'RESUME' mode. (2) Session List — list of saved sessions: session ID, repo path, source branches, progress (% complete), last active time, hunk counts (resolved/total). (3) Session Detail — expanded view of selected session: commit history, remaining chunks, branch state. (4) Actions — [Enter] RESUME SESSION, [D] DELETE SESSION, [N] NEW SESSION. (5) Warning indicators — if source branches have new commits since save, show warning icon + 'branches have changed since last session'. (6) StatusBar — resume-specific hints.",
+      "acceptance": "Screen8 exists as a 720x375 frame on Page 1. Shows session list with progress indicators, session detail, and resume/delete actions. Describe shows zero errors. Uses same design tokens. The 'resumable' guarantee is visually clear.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design keyboard-focused states and micro-interactions: annotate on a dedicated page",
+      "description": "Create a new OpenPencil page called 'Interaction States'. On it, design: (1) Chunk row states: default, focused (blue left border), selected (green bg), hover (subtle highlight), processing (animated pulse indicator). (2) Button states: default, focused (underline), pressed (inverted colors), disabled (dimmed). (3) Focus flow indicators: show how Tab moves focus between chunk list → detail sections → actions. (4) Modal overlays: confirmation dialog for destructive actions (reject all hunks, quit with pending work), reject reason selector dropdown. (5) Loading/processing states: agent working indicator, chunk being prepared animation, progress during large branch analysis. Each state shown as a separate frame variant with annotations explaining the visual treatment and trigger.",
+      "acceptance": "Interaction States page exists with visual state variants for all interactive elements. Each state annotated with trigger, visual treatment, and accessibility notes. All states use design tokens. States are consistent with the interaction model documented in WIP.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design Screen9: Help / Keybindings Reference screen",
+      "description": "Create a new screen (720x375) accessible via [?] from any screen. Must include: (1) Header — 'slop-funnel' + 'HELP' mode. (2) Global Keybindings — table of all global keys with descriptions, organized by category: Navigation, Actions, Session, View. (3) Screen-Specific Keys — context-aware section showing keys for current screen mode. (4) Workflow Overview — brief text description of the slop-funnel workflow: branch selection → chunk review → commit → completion. (5) Terminology — definitions of key terms: chunk, hunk, patch, trunk, source, agent, ACP. (6) Navigation — [Esc] or [?] close help, [↑/↓] scroll. (7) StatusBar — 'press any key to close'.",
+      "acceptance": "Screen9 exists as a 720x375 frame on Page 1. Shows comprehensive keybinding reference organized by category, workflow overview, and terminology. Describe shows zero errors. Uses same design tokens. Information is scannable and well-organized within the TUI constraints.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Validate ALL screens: run describe on each, export PNGs, verify cross-screen consistency",
+      "description": "After all screens are designed: (1) Run describe on each screen (Screen1-9) — verify zero error-severity issues on all. (2) Export each screen as PNG at 2x scale. (3) Run analyze_spacing on each screen — verify 8px grid compliance. (4) Run analyze_colors on full document — verify all screens use same token palette. (5) Run analyze_typography on full document — verify consistent font usage. (6) Cross-reference Flow Diagram with actual screen navigation — verify all transitions have screens. (7) Verify Interaction States page covers all interactive elements across all screens. (8) Update WIP.md with final documentation including all screen node maps and the complete interaction model.",
+      "acceptance": "All 9 screens pass describe with zero errors. All PNGs exported and visually verified. All spacing on 8px grid. All colors tokenized across all screens. Typography consistent. Flow diagram matches actual screen navigation. WIP.md contains complete documentation for all screens.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Implementation handoff documentation: annotate each screen with component decomposition and data requirements",
+      "description": "For each screen (Screen1-9), add annotation frames (off to the side) documenting: (1) Component decomposition — which Components page elements are used and how they're composed. (2) Data model — what data each screen reads/writes from session state (branch list, chunk list, hunk details, agent status, etc.). (3) Event handling — what user inputs trigger what state transitions. (4) Agent integration points — where ACP communication happens, what messages are sent/received. (5) Session state mutations — what session state changes on each screen interaction. This is the bridge between design and the Go implementation that will use osm's session management, scripting runtime, and Bubble Tea TUI framework.",
+      "acceptance": "Each screen has companion annotation frames with component decomposition, data model, event handling, ACP integration points, and session state mutations. Annotations are detailed enough that a Go developer could implement each screen's logic without guessing. WIP.md references these annotations.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Final design expansion: identify and design remaining edge cases and error states",
+      "description": "Based on the complete design, identify missing states and screens: (1) What happens when NO branches are available (empty repo)? (2) What happens when agent crashes or becomes unresponsive? (3) What happens when trunk has uncommitted changes (dirty working tree)? (4) What happens when a source branch was deleted/force-pushed mid-session? (5) What happens when git merge conflicts occur that the agent can't resolve? (6) What is the first-run experience (no previous sessions, fresh install)? (7) What happens when the user tries to quit with unresolved hunks? Design error/edge-case states as overlays or variant screens, add them to the Flow Diagram, and document in WIP.md.",
+      "acceptance": "All identified edge cases have designed states (either as overlays, modal dialogs, or screen variants). Flow Diagram updated with error transitions. WIP.md documents all edge cases and their visual treatment. No user-facing scenario is left unaddressed.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design intermediate states: Screen1-Staged (post-approve, pre-confirm), Screen-Analyzing (loading), Screen-ConfirmQuit (modal overlay)",
+      "description": "Three critical UX moments that were missing from the initial screen set: (1) Screen1-Staged — AFTER user presses Enter to approve a chunk, BEFORE they confirm the commit. TUI stages diff on trunk via go-git. Dashboard transitions to show: green StagingBanner ('Chunk #1 staged on main — awaiting external review'), staged chunk detail (files, hunks, agent notes), instruction to review externally. Actions change to: [Y] CONFIRM COMMIT, [N] UNSTAGE. StatusBar shows 'staged | 1 pending commit'. (2) Screen-Analyzing — loading state during initial branch analysis. Shows agent progress: scanning each branch (with hunk counts), grouping hunks into chunks, analyzing dependencies, resolving conflicts. Progress bar. Agent notes about cross-branch hunks. (3) Screen-ConfirmQuit — modal overlay when user presses [Q] with unresolved hunks. Dimmed background. Red warning: '12 unresolved hunks across 3 branches'. Options: [S] Save + Exit, [Q] Force Quit (lose progress), [Esc] Cancel. CREATED: Screen1-Staged (0:6763), Screen-Analyzing (0:6681), Screen-ConfirmQuit (0:6739). Annotation: ApproveFlowAnnotation (0:6826) explaining the staging UX.",
+      "acceptance": "Three new screens exist on Page 1 with proper content. Screen1-Staged shows the staging state with green banner, changed actions, and external review instruction. Screen-Analyzing shows agent progress through phases with hunk counts. Screen-ConfirmQuit shows modal warning with save/quit/cancel options. All use Courier New 10px Regular, no rounded corners, terminal-faithful rendering.",
+      "status": "Done"
+    },
+    {
+      "task": "Design use case scenarios as annotation frames showing complete user journeys through complex flows",
+      "description": "Create detailed USE CASE annotations that walk through the actual user journey step by step. These are NOT screen designs — they are PRODUCT THINKING artifacts that explain WHY screens are designed the way they are. Each use case shows: what the user sees, what they do, what data changes, what the agent does in response. Priority scenarios: (1) REJECT FLOW USE CASE — Alice rejects specific hunks from Chunk #2 with per-hunk reasons, hunks return to pool, agent re-groups. Created as RejectFlowUseCase (0:7914). (2) APPROVE FLOW USE CASE — Alice approves Chunk #1, diff is staged, she reviews externally, confirms commit, dependency resolves. Created as ApproveFlowAnnotation (0:6826). (3) CROSS-BRANCH CHUNK USE CASE — how chunks containing hunks from multiple branches are visualized and reviewed. (4) AGENT FEEDBACK LOOP USE CASE — how human rejection reasons feed back into agent's re-grouping decisions. (5) FIRST-RUN EXPERIENCE — new user launches slop-funnel for the first time, no saved sessions.",
+      "acceptance": "Use case annotation frames exist on Page 1 showing complete user journeys. Each scenario is detailed enough that a developer understands the interaction sequence without ambiguity. The reject flow use case covers per-hunk selection, reasons, outcome preview, and pool return. The approve flow covers staging, external review, and confirmation. Edge cases are identified.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Explore and design cross-branch chunk handling — chunks containing hunks from multiple source branches",
+      "description": "Per the confirmed requirements, agent may group hunks from DIFFERENT branches into a single chunk. This creates a unique UX challenge: the chunk detail must show MULTIPLE branch origins. Design decisions needed: (1) How does the ChunkQueue row show multi-branch origin? (multiple color indicators?) (2) How does ChunkDetail show branch breakdown? (3) What does the reject flow look like for cross-branch chunks? (hunks from different branches may have different rejection logic) (4) How does the BranchSummary show cross-branch chunk relationships? Explore multiple approaches, show thinking in annotations, propose recommendation for Hana-san review.",
+      "acceptance": "Cross-branch chunk handling is designed with clear visual treatment. ChunkQueue rows show multi-branch origin. ChunkDetail breaks down hunks by source branch. Reject flow handles per-hunk branch attribution. Design rationale annotation explains the approach and alternatives considered.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Explore and design the agent feedback loop — how human rejection reasons improve agent re-grouping",
+      "description": "The reject flow creates a feedback loop: human rejects hunks with reasons ('wrong grouping — should be with #4', 'bad implementation — redo'). Agent receives these reasons as INPUT for re-grouping. Design how this feedback is communicated: (1) What does the agent see when hunks return to pool? (2) How does the agent status reflect 're-processing rejected hunks'? (3) What visual feedback does the user get that their rejection was acted on? (4) How are NEW chunks from re-grouped hunks presented? (marked as 'regrouped'?) (5) Can the user see the agent's reasoning for re-grouping decisions? This connects to ACP integration — the agent communication protocol must support structured rejection feedback.",
+      "acceptance": "Agent feedback loop is designed with visual treatment on DASHBOARD and AGENT screens. User can see when agent is re-processing rejected hunks. New chunks from re-grouping are visually distinct. Agent's re-grouping reasoning is accessible. ACP message structure for rejection feedback is documented.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design chunk dependency visualization — how dependencies between chunks are shown and resolved",
+      "description": "Per confirmed requirements, chunks may have dependencies. Agent indicates dependencies. BLOCKED chunks are not shown to user until dependency resolved. Design: (1) How does the ChunkQueue show dependency status? (arrow/chain icon linking related chunks?) (2) What happens visually when a dependency resolves? (animation? status change? notification?) (3) How does ChunkDetail show dependency info? ('Depends on chunk #1 — APPROVED' or 'Blocks chunk #3') (4) Can user view the full dependency graph? (separate view or overlay?) (5) What happens to dependent chunks when a chunk is rejected? (cascade block? re-evaluation?)",
+      "acceptance": "Dependency visualization designed for ChunkQueue (status indicators), ChunkDetail (dependency info section), and potentially a dependency graph view. Resolution feedback is clear — user sees blocked chunks become ready. Rejection cascade behavior is specified.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design responsive behavior — show how screens adapt to terminal resize and arbitrary shapes",
+      "description": "Per Hana-san's requirement: terminals can be resized trivially and may be arbitrary shapes. Currently all screens are fixed 720x375 which does NOT reflect this reality. Design responsive variants showing: (1) WIDE terminal (120+ columns) — how does the layout expand? (more chunk detail visible? wider branch cards? side-by-side panes?) (2) NARROW terminal (40-60 columns) — what collapses? (chunk detail stacks below list? branch cards wrap? actions truncate?) (3) VERY NARROW (phone-width terminal over SSH) — minimum viable layout. (4) TALL terminal (many rows, few columns) — vertical scrolling behavior. (5) Define MINIMUM supported terminal size. (6) Show responsive breakpoints. Create Screen1 variants at different sizes (e.g., Screen1-Narrow at 480px wide, Screen1-Wide at 960px wide). Document the responsive rules as annotations. The actual TUI implementation uses Bubble Tea which supports terminal resize events natively.",
+      "acceptance": "Screen1 variants exist at multiple sizes showing responsive behavior. Minimum terminal size defined. Responsive breakpoints documented. Narrow variant shows stacked layout (list above detail). Wide variant shows expanded detail. Annotations explain which elements collapse, wrap, or truncate at each breakpoint. All variants use Courier New 10px Regular, terminal-faithful rendering.",
+      "status": "Not Started"
+    }
+  ], {
+    "task": "Validate design changes after EVERY modification to any screen or component",
+    "description": "After each design change in OpenPencil MCP: (1) Re-run describe on the modified node to check for errors. (2) Export the modified screen as PNG to visually verify. (3) Check spacing against 8px grid. (4) Verify color contrast. (5) Update WIP.md with what was changed and why.",
+    "failPolicy": "If describe shows any 'error' severity issues, STOP and fix before proceeding. Zero tolerance for contrast failures, overflow, or broken layouts.",
+    "testCoverage": "N/A — design phase. Coverage means: every design element has a purpose, every color is tokenized, every component is reusable."
+  },
+  "finalEnforcementProtocol": [
+    {
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "DESIGN PHASE: All changes are in OpenPencil MCP. Do not create code files. Ask Hana-san before assuming product direction. Update blueprint.json after every task."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING_REPEATED",
+      "alert": "HANA-SAN IS THE PRODUCT MANAGER. You are the designer. Ask questions. Do not assume. The blueprint must reflect confirmed decisions only."
+    },
+    {
+      "type": "SESSION_TIMER_CHECK",
+      "alert": "Verify session timer: cat docs/projects/slop-funnel/.session-start, calculate remaining time. If less than 1 hour remains, prioritize documentation. If file missing, assume session just started."
+    }
+  ]
+}

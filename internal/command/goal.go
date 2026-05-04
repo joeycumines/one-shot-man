@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"golang.org/x/text/cases"
@@ -42,13 +42,14 @@ type Goal struct {
 	TUIPrompt string `json:"tuiPrompt"`
 
 	// State management
-	StateVars map[string]interface{} `json:"stateVars"` // Initial state values
+	StateVars map[string]any `json:"stateVars"` // Initial state values
 
 	// Prompt building
-	PromptInstructions string                 `json:"promptInstructions"` // Main goal instructions
-	PromptTemplate     string                 `json:"promptTemplate"`     // Template for final prompt
-	PromptOptions      map[string]interface{} `json:"promptOptions"`      // Additional options for prompt building
-	ContextHeader      string                 `json:"contextHeader"`      // Header for context section
+	PromptInstructions string         `json:"promptInstructions"` // Main goal instructions
+	PromptTemplate     string         `json:"promptTemplate"`     // Template for final prompt
+	PromptFooter       string         `json:"promptFooter"`       // Footer text appended after context (template-interpolated)
+	PromptOptions      map[string]any `json:"promptOptions"`      // Additional options for prompt building
+	ContextHeader      string         `json:"contextHeader"`      // Header for context section
 
 	// UI text
 	BannerTemplate string `json:"bannerTemplate"` // printed on entry to goal, overrides default
@@ -57,34 +58,51 @@ type Goal struct {
 	// Printed in the default banner
 	NotableVariables []string `json:"notableVariables"`
 
+	// Post-copy hint: if set, printed after successful copy
+	PostCopyHint string `json:"postCopyHint,omitempty"`
+
+	// Hot-snippets embedded in this goal. These are merged with
+	// config-file hot-snippets; goal-defined ones take precedence.
+	HotSnippets []GoalHotSnippet `json:"hotSnippets,omitempty"`
+
 	// Commands configuration
 	Commands []CommandConfig `json:"commands"`
 }
 
+// CommandFlagDef describes a flag available for a command, used for tab-completion.
+type CommandFlagDef struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// GoalHotSnippet describes an embedded hot-snippet for a goal.
+// These are registered as hot-<name> commands in the goal's mode.
+type GoalHotSnippet struct {
+	Name        string `json:"name"`
+	Text        string `json:"text"`
+	Description string `json:"description,omitempty"`
+}
+
 // CommandConfig defines a command available in a goal mode
 type CommandConfig struct {
-	Name          string   `json:"name"`
-	Type          string   `json:"type"` // "contextManager", "custom", "help"
-	Description   string   `json:"description,omitempty"`
-	Usage         string   `json:"usage,omitempty"`
-	ArgCompleters []string `json:"argCompleters,omitempty"`
-	Handler       string   `json:"handler,omitempty"` // JavaScript handler code for custom commands
+	Name          string           `json:"name"`
+	Type          string           `json:"type"` // "contextManager", "custom", "help"
+	Description   string           `json:"description,omitempty"`
+	Usage         string           `json:"usage,omitempty"`
+	ArgCompleters []string         `json:"argCompleters,omitempty"`
+	FlagDefs      []CommandFlagDef `json:"flagDefs,omitempty"`
+	Handler       string           `json:"handler,omitempty"` // JavaScript handler code for custom commands
 }
 
 // GoalCommand provides access to pre-written goals
 type GoalCommand struct {
 	*BaseCommand
+	scriptCommandBase
 	interactive bool
 	list        bool
 	category    string
 	run         string
-	config      *config.Config
 	registry    GoalRegistry
-	// testMode prevents launching the interactive TUI during tests while
-	// still executing JS (so onEnter hooks can print to stdout).
-	testMode bool
-	session  string
-	store    string
 }
 
 // NewGoalCommand creates a new goal command
@@ -95,8 +113,8 @@ func NewGoalCommand(cfg *config.Config, registry GoalRegistry) *GoalCommand {
 			description: "Access pre-written goals for common development tasks",
 			usage:       "goal [options] [goal-name]",
 		},
-		config:   cfg,
-		registry: registry,
+		scriptCommandBase: scriptCommandBase{config: cfg},
+		registry:          registry,
 	}
 }
 
@@ -106,15 +124,27 @@ func (c *GoalCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.list, "l", false, "List available goals")
 	fs.StringVar(&c.category, "c", "", "Filter goals by category")
 	fs.StringVar(&c.run, "r", "", "Run specific goal directly")
-	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
-	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory'")
+	c.RegisterFlags(fs)
 }
 
 // Execute runs the goal command
 func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
+	// Handle "paths" subcommand: show annotated discovery paths
+	if len(args) > 0 && args[0] == "paths" {
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments with paths: %v\n", args[1:])
+			return &SilentError{Err: ErrUnexpectedArguments}
+		}
+		return c.showGoalPaths(stdout, stderr)
+	}
+
 	goals := c.registry.GetAllGoals()
 
 	if c.list {
+		if len(args) > 0 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments with -l: %v\n", args)
+			return &SilentError{Err: ErrUnexpectedArguments}
+		}
 		return c.listGoals(goals, stdout)
 	}
 
@@ -123,10 +153,18 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	shouldInteractive := false
 	switch {
 	case c.run != "":
+		if len(args) > 0 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments with -r: %v\n", args)
+			return &SilentError{Err: ErrUnexpectedArguments}
+		}
 		goalName = c.run
 		// -r implies non-interactive by default, unless -i explicitly set
 		shouldInteractive = c.interactive
 	case len(args) > 0:
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
+			return &SilentError{Err: ErrUnexpectedArguments}
+		}
 		goalName = args[0]
 		// Positional goal defaults to interactive, per README
 		shouldInteractive = true
@@ -138,20 +176,17 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	selectedGoal, err := c.registry.Get(goalName)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Goal '%s' not found. Use 'osm goal -l' to list available goals.\n", goalName)
-		return fmt.Errorf("goal not found: %s", goalName)
+		return &SilentError{Err: fmt.Errorf("goal not found: %s", goalName)}
 	}
 
 	// Create a scripting engine to run the goal (allow explicit session/backend)
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.store)
-	if err != nil {
-		return fmt.Errorf("failed to create scripting engine: %w", err)
-	}
-	defer engine.Close()
 
-	if c.testMode {
-		engine.SetTestMode(true)
+	engine, cleanup, err := c.PrepareEngine(ctx, stdout, stderr)
+	if err != nil {
+		return err
 	}
+	defer cleanup()
 
 	// Marshal goal configuration to JSON for the JavaScript interpreter
 	goalConfigJSON, err := json.Marshal(selectedGoal)
@@ -191,11 +226,8 @@ var GOAL_CONFIG = %s;
 			if c.config != nil {
 				colorMap := make(map[string]string)
 				for k, v := range c.config.Global {
-					if strings.HasPrefix(k, "prompt.color.") {
-						key := strings.TrimPrefix(k, "prompt.color.")
-						if key != "" {
-							colorMap[key] = v
-						}
+					if key, ok := strings.CutPrefix(k, "prompt.color."); ok && key != "" {
+						colorMap[key] = v
 					}
 				}
 				if len(colorMap) > 0 {
@@ -204,8 +236,13 @@ var GOAL_CONFIG = %s;
 			}
 			terminal := scripting.NewTerminal(ctx, engine)
 			terminal.Run()
+			return nil
 		}
 	}
+
+	// Wait for any asynchronous work (timers, fetch, etc.) to complete naturally.
+	// This uses the WithAutoExit(true) feature of the event loop.
+	engine.Wait()
 
 	return nil
 }
@@ -244,12 +281,12 @@ func (c *GoalCommand) listGoals(goals []Goal, stdout io.Writer) error {
 	for category := range categories {
 		sortedCategories = append(sortedCategories, category)
 	}
-	sort.Strings(sortedCategories)
+	slices.Sort(sortedCategories)
 
 	for _, category := range sortedCategories {
 		_, _ = fmt.Fprintf(stdout, "%s:\n", cases.Title(language.Und).String(strings.ToLower(strings.ReplaceAll(category, "-", " "))))
 		for _, goal := range categories[category] {
-			_, _ = fmt.Fprintf(stdout, "  %-20s %s\n", goal.Name, goal.Description)
+			_, _ = fmt.Fprintln(stdout, formatGoalLine(goal))
 		}
 		_, _ = fmt.Fprintf(stdout, "\n")
 	}
@@ -260,4 +297,82 @@ func (c *GoalCommand) listGoals(goals []Goal, stdout io.Writer) error {
 	_, _ = fmt.Fprintf(stdout, "  osm goal -c <category>         List goals by category\n")
 
 	return nil
+}
+
+// showGoalPaths displays annotated goal discovery paths with source and existence status.
+func (c *GoalCommand) showGoalPaths(stdout, stderr io.Writer) error {
+	discovery := NewGoalDiscovery(c.config)
+	paths := discovery.DiscoverAnnotatedGoalPaths()
+
+	if len(paths) == 0 {
+		_, _ = fmt.Fprintln(stdout, "No goal paths discovered.")
+		return nil
+	}
+
+	_, _ = fmt.Fprintln(stdout, "Goal Discovery Paths:")
+	_, _ = fmt.Fprintln(stdout)
+
+	var missingCustom int
+	for _, ap := range paths {
+		status := "✓"
+		if !ap.Exists {
+			status = "✗"
+			if ap.Source == "custom" {
+				missingCustom++
+			}
+		}
+		_, _ = fmt.Fprintf(stdout, "  %s %-14s %s\n", status, "["+ap.Source+"]", ap.Path)
+	}
+
+	_, _ = fmt.Fprintln(stdout)
+	_, _ = fmt.Fprintf(stdout, "%d path(s) total\n", len(paths))
+
+	// Emit config validation warnings for missing custom paths
+	if missingCustom > 0 {
+		_, _ = fmt.Fprintln(stderr)
+		_, _ = fmt.Fprintf(stderr, "Warning: %d configured goal path(s) do not exist on disk.\n", missingCustom)
+		_, _ = fmt.Fprintln(stderr, "Check the goal.paths option in your config file.")
+	}
+
+	return nil
+}
+
+// formatGoalLine produces a single display line for a goal in the list output.
+// Format: "  <name>  <description>  [vars: k=v, ...]  [cmds: a, b, ...]"
+func formatGoalLine(goal Goal) string {
+	line := fmt.Sprintf("  %-20s %s", goal.Name, goal.Description)
+
+	// Summarize non-nil state variables with their default values.
+	var varParts []string
+	for key, val := range goal.StateVars {
+		if val == nil {
+			continue
+		}
+		s := fmt.Sprintf("%v", val)
+		if s == "" {
+			continue
+		}
+		const maxValLen = 30
+		if len(s) > maxValLen {
+			s = s[:maxValLen-3] + "..."
+		}
+		varParts = append(varParts, key+"="+s)
+	}
+	if len(varParts) > 0 {
+		slices.Sort(varParts) // deterministic order
+		line += "  [vars: " + strings.Join(varParts, ", ") + "]"
+	}
+
+	// Summarize custom commands.
+	var customCmds []string
+	for _, cmd := range goal.Commands {
+		if cmd.Type == "custom" {
+			customCmds = append(customCmds, cmd.Name)
+		}
+	}
+	if len(customCmds) > 0 {
+		line += "  [cmds: " + strings.Join(customCmds, ", ") + "]"
+	}
+
+	return line
 }

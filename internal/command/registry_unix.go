@@ -9,14 +9,14 @@ import (
 )
 
 // setupSysProcAttr configures Unix-specific process attributes.
-func (c *ScriptCommand) setupSysProcAttr(cmd *exec.Cmd) {
+func (c *scriptCommand) setupSysProcAttr(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true, // Create new process group
 	}
 }
 
 // killProcessGroup kills the entire process group for a command on Unix.
-func (c *ScriptCommand) killProcessGroup(cmd *exec.Cmd) {
+func (c *scriptCommand) killProcessGroup(cmd *exec.Cmd) {
 	if cmd.Process == nil {
 		return
 	}

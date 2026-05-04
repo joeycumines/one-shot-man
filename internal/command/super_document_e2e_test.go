@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
@@ -12,16 +13,18 @@ import (
 // TestSuperDocumentE2E_FullWorkflow simulates a user going: List -> Add(Form) -> Submit -> List -> Edit -> Submit
 // and verifies that commands (clearScreen on submit) are returned and document content is persisted.
 func TestSuperDocumentE2E_FullWorkflow(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document-e2e", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document-e2e", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -85,7 +88,7 @@ __res = (function(){
 	if res == nil {
 		t.Fatalf("E2E returned nil")
 	}
-	m, ok := res.(map[string]interface{})
+	m, ok := res.(map[string]any)
 	if !ok {
 		t.Fatalf("unexpected E2E return type: %T", res)
 	}

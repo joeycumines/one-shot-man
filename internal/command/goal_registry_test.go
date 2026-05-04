@@ -3,6 +3,7 @@ package command
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -21,7 +22,7 @@ func TestDynamicGoalRegistry_List(t *testing.T) {
 	}
 
 	// Create a mock discovery that returns no paths
-	cfg := config.NewConfig()
+	cfg := newIsolatedGoalConfig()
 	discovery := NewGoalDiscovery(cfg)
 
 	registry := NewDynamicGoalRegistry(builtIn, discovery)
@@ -33,13 +34,7 @@ func TestDynamicGoalRegistry_List(t *testing.T) {
 		t.Fatal("Expected at least one goal, got none")
 	}
 
-	found := false
-	for _, name := range goals {
-		if name == "builtin-goal" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(goals, "builtin-goal")
 
 	if !found {
 		t.Error("Expected to find 'builtin-goal' in list")
@@ -57,7 +52,7 @@ func TestDynamicGoalRegistry_Get(t *testing.T) {
 		},
 	}
 
-	cfg := config.NewConfig()
+	cfg := newIsolatedGoalConfig()
 	discovery := NewGoalDiscovery(cfg)
 	registry := NewDynamicGoalRegistry(builtIn, discovery)
 
@@ -72,7 +67,7 @@ func TestDynamicGoalRegistry_Get(t *testing.T) {
 }
 
 func TestDynamicGoalRegistry_GetNonExistent(t *testing.T) {
-	cfg := config.NewConfig()
+	cfg := newIsolatedGoalConfig()
 	discovery := NewGoalDiscovery(cfg)
 	registry := NewDynamicGoalRegistry([]Goal{}, discovery)
 
@@ -152,14 +147,14 @@ func TestDynamicGoalRegistry_GetAllGoals(t *testing.T) {
 		},
 	}
 
-	cfg := config.NewConfig()
+	cfg := newIsolatedGoalConfig()
 	discovery := NewGoalDiscovery(cfg)
 	registry := NewDynamicGoalRegistry(builtIn, discovery)
 
 	goals := registry.GetAllGoals()
 
-	if len(goals) < 2 {
-		t.Fatalf("Expected at least 2 goals, got %d", len(goals))
+	if len(goals) != 2 {
+		t.Fatalf("Expected exactly 2 goals, got %d", len(goals))
 	}
 
 	// Verify goals are sorted by name

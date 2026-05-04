@@ -4,6 +4,8 @@ package internal_test
 import (
 	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -48,18 +50,22 @@ func TestPathTraversalPrevention_ConfigLoading(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.valid {
 				cfg, err := config.LoadFromPath(tc.path)
-				if err != nil && !os.IsNotExist(err) {
+				if err != nil && !errors.Is(err, os.ErrNotExist) {
 					t.Errorf("Unexpected error for valid path %s: %v", tc.path, err)
 				}
 				_ = cfg
 			} else {
+				// For traversal paths, verify that loading does not
+				// produce the specific test config content we created.
+				// The loader does not block traversal (it reads any
+				// valid path), but it should not accidentally resolve
+				// to a different config in the test directory.
 				cfg, err := config.LoadFromPath(tc.path)
 				if err == nil && len(cfg.Global) > 0 {
 					if _, hasTest := cfg.Global["test"]; hasTest {
-						t.Error("Config loading with parent directory traversal may have escaped the intended directory")
+						t.Errorf("Traversal path %q loaded config containing test key — may have escaped the intended directory", tc.path)
 					}
 				}
-				_ = cfg
 			}
 		})
 	}
@@ -166,11 +172,10 @@ func TestCommandInjectionPrevention_ShellMetacharacters(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineWithConfig(
+			engine, err := scripting.NewEngine(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
-				"memory",
-			)
+				"memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				t.Fatalf("Failed to create engine: %v", err)
 			}
@@ -224,11 +229,10 @@ func TestCommandInjectionPrevention_CommandChaining(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineWithConfig(
+			engine, err := scripting.NewEngine(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
-				"memory",
-			)
+				"memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				t.Fatalf("Failed to create engine: %v", err)
 			}
@@ -274,11 +278,10 @@ func TestCommandInjectionPrevention_SubshellInjection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineWithConfig(
+			engine, err := scripting.NewEngine(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
-				"memory",
-			)
+				"memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				t.Fatalf("Failed to create engine: %v", err)
 			}
@@ -457,7 +460,7 @@ func TestFilePermissionHandling_ReadPermissions(t *testing.T) {
 		if len(cfg.Global) > 0 {
 			t.Error("Successfully read file with no read permissions")
 		}
-	} else if os.IsPermission(err) {
+	} else if errors.Is(err, os.ErrPermission) {
 		t.Log("Permission error as expected")
 	} else {
 		t.Logf("Other error: %v", err)
@@ -547,11 +550,10 @@ func TestInputValidation_DangerousScriptInputs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineWithConfig(
+			engine, err := scripting.NewEngine(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
-				"memory",
-			)
+				"memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				t.Fatalf("Failed to create engine: %v", err)
 			}
@@ -603,11 +605,10 @@ func TestInputValidation_TemplateInjection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineWithConfig(
+			engine, err := scripting.NewEngine(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
-				"memory",
-			)
+				"memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				t.Fatalf("Failed to create engine: %v", err)
 			}
@@ -644,11 +645,10 @@ func TestInputValidation_ANSIEscapeSequences(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	engine, err := scripting.NewEngineWithConfig(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security", t.Name()),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -700,21 +700,19 @@ func TestSessionDataIsolation_NotLeakedBetweenSessions(t *testing.T) {
 	session1 := "session-one"
 	session2 := "session-two"
 
-	engine1, err := scripting.NewEngineWithConfig(
+	engine1, err := scripting.NewEngine(
 		ctx, &bytes.Buffer{}, &bytes.Buffer{},
 		testutil.NewTestSessionID("security", session1),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine 1: %v", err)
 	}
 	defer engine1.Close()
 
-	engine2, err := scripting.NewEngineWithConfig(
+	engine2, err := scripting.NewEngine(
 		ctx, &bytes.Buffer{}, &bytes.Buffer{},
 		testutil.NewTestSessionID("security", session2),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine 2: %v", err)
 	}
@@ -744,15 +742,14 @@ func TestSessionDataIsolation_ConcurrentAccess(t *testing.T) {
 	numSessions := 10
 	done := make(chan bool, numSessions)
 
-	for i := 0; i < numSessions; i++ {
+	for i := range numSessions {
 		go func(idx int) {
 			defer func() { done <- true }()
 
-			engine, err := scripting.NewEngineWithConfig(
+			engine, err := scripting.NewEngine(
 				ctx, &bytes.Buffer{}, &bytes.Buffer{},
 				testutil.NewTestSessionID("security", "concurrent-test-"+string(rune('a'+idx))),
-				"memory",
-			)
+				"memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				t.Errorf("Engine %d creation failed: %v", idx, err)
 				return
@@ -768,7 +765,7 @@ func TestSessionDataIsolation_ConcurrentAccess(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < numSessions; i++ {
+	for range numSessions {
 		<-done
 	}
 
@@ -918,7 +915,7 @@ func TestResourceLimits_ManyConfigOptions(t *testing.T) {
 	cfg := config.NewConfig()
 
 	numOptions := 100
-	for i := 0; i < numOptions; i++ {
+	for i := range numOptions {
 		key := "key" + string(rune(i%256))
 		value := "value" + string(rune(i%256))
 		cfg.SetGlobalOption(key, value)
@@ -1141,11 +1138,10 @@ func TestTUIInputSecurity_EscapeSequences(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	engine, err := scripting.NewEngineWithConfig(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security", t.Name()),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

@@ -1,0 +1,1301 @@
+package command
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/joeycumines/one-shot-man/internal/config"
+	"github.com/joeycumines/one-shot-man/internal/gitops"
+)
+
+// requireGit skips the test if git is not available.
+func requireGit(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+}
+
+// setupBareRepo creates a bare git repo and returns its path.
+func setupBareRepo(t *testing.T) string {
+	t.Helper()
+	bare := filepath.Join(t.TempDir(), "remote.git")
+	cmd := exec.Command("git", "init", "--bare", bare)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to create bare repo: %v", err)
+	}
+	return bare
+}
+
+// setupCloneWithCommit clones the bare repo, creates an initial commit, and
+// pushes it. Returns the clone path.
+func setupCloneWithCommit(t *testing.T, bareURL string) string {
+	t.Helper()
+	clone := filepath.Join(t.TempDir(), "clone")
+	cmds := [][]string{
+		{"git", "clone", bareURL, clone},
+		{"git", "-C", clone, "config", "user.email", "test@test.com"},
+		{"git", "-C", clone, "config", "user.name", "Test"},
+	}
+	for _, c := range cmds {
+		if err := exec.Command(c[0], c[1:]...).Run(); err != nil {
+			t.Fatalf("setup cmd %v failed: %v", c, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(clone, "README.md"), []byte("# test\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	addCommitPush := [][]string{
+		{"git", "-C", clone, "add", "-A"},
+		{"git", "-C", clone, "commit", "-m", "init"},
+		{"git", "-C", clone, "push", "origin", "HEAD"},
+	}
+	for _, c := range addCommitPush {
+		if err := exec.Command(c[0], c[1:]...).Run(); err != nil {
+			t.Fatalf("setup cmd %v failed: %v", c, err)
+		}
+	}
+	return clone
+}
+
+func TestSyncCommand_NoSubcommand(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil, t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute(nil, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for no subcommand")
+	}
+	if !strings.Contains(err.Error(), "no subcommand specified") {
+		t.Fatalf("expected 'no subcommand' error, got %q", err.Error())
+	}
+	if !strings.Contains(stderr.String(), "save") {
+		t.Fatalf("expected stderr to mention subcommands, got %q", stderr.String())
+	}
+}
+
+func TestSyncCommand_UnknownSubcommand(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil, t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"nope"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for unknown subcommand")
+	}
+	if !strings.Contains(err.Error(), "unknown sync subcommand: nope") {
+		t.Fatalf("expected 'unknown sync subcommand' error, got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_SaveRequiresTitle(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil, t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"save", "--body", "hello"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for missing title")
+	}
+	if !strings.Contains(err.Error(), "--title is required") {
+		t.Fatalf("expected '--title is required' error, got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_SaveRequiresBody(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil, t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"save", "--title", "hello"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for missing body")
+	}
+	if !strings.Contains(err.Error(), "--body is required") {
+		t.Fatalf("expected '--body is required' error, got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_SaveCreatesEntry(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	// Fix time so filenames are deterministic.
+	fixedTime := time.Date(2025, 3, 15, 10, 30, 0, 0, time.UTC)
+	cmd.TimeNow = func() time.Time { return fixedTime }
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{
+		"save",
+		"--title", "My Code Review",
+		"--tags", "review,go",
+		"--body", "Review the auth module changes.",
+	}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("save returned error: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Saved notebook entry:") {
+		t.Fatalf("expected confirmation message, got %q", output)
+	}
+
+	// Verify the file was created.
+	expectedPath := filepath.Join(dir, "2025", "03", "2025-03-15-my-code-review.md")
+	data, err := os.ReadFile(expectedPath)
+	if err != nil {
+		t.Fatalf("failed to read saved entry: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "---") {
+		t.Fatal("expected YAML frontmatter delimiters")
+	}
+	if !strings.Contains(content, "date: 2025-03-15T10:30:00Z") {
+		t.Fatalf("expected date in frontmatter, got %q", content)
+	}
+	if !strings.Contains(content, "tags: [review, go]") {
+		t.Fatalf("expected tags in frontmatter, got %q", content)
+	}
+	if !strings.Contains(content, `title: "My Code Review"`) {
+		t.Fatalf("expected title in frontmatter, got %q", content)
+	}
+	if !strings.Contains(content, "# My Code Review") {
+		t.Fatalf("expected markdown heading, got %q", content)
+	}
+	if !strings.Contains(content, "Review the auth module changes.") {
+		t.Fatalf("expected body text, got %q", content)
+	}
+}
+
+func TestSyncCommand_SaveDeduplicates(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	fixedTime := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+	cmd.TimeNow = func() time.Time { return fixedTime }
+
+	// Save first entry.
+	var stdout1, stderr1 bytes.Buffer
+	err := cmd.Execute([]string{"save", "--title", "Duplicate", "--body", "first"}, &stdout1, &stderr1)
+	if err != nil {
+		t.Fatalf("first save failed: %v", err)
+	}
+
+	// Save second entry with same title.
+	var stdout2, stderr2 bytes.Buffer
+	err = cmd.Execute([]string{"save", "--title", "Duplicate", "--body", "second"}, &stdout2, &stderr2)
+	if err != nil {
+		t.Fatalf("second save failed: %v", err)
+	}
+
+	// Verify both files exist.
+	first := filepath.Join(dir, "2025", "06", "2025-06-01-duplicate.md")
+	second := filepath.Join(dir, "2025", "06", "2025-06-01-duplicate-2.md")
+	if _, err := os.Stat(first); err != nil {
+		t.Fatalf("first entry missing: %v", err)
+	}
+	if _, err := os.Stat(second); err != nil {
+		t.Fatalf("second entry missing: %v", err)
+	}
+
+	// Verify contents differ.
+	d1, _ := os.ReadFile(first)
+	d2, _ := os.ReadFile(second)
+	if !strings.Contains(string(d1), "first") {
+		t.Fatalf("first file should contain 'first', got %q", string(d1))
+	}
+	if !strings.Contains(string(d2), "second") {
+		t.Fatalf("second file should contain 'second', got %q", string(d2))
+	}
+}
+
+func TestSyncCommand_ListEmpty(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"list"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("list returned error: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "No notebook entries found.") {
+		t.Fatalf("expected empty message, got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_ListNonexistentDir(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "nonexistent")
+	cmd := NewSyncCommand(nil, dir)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"list"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("list returned error: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "No notebook entries found.") {
+		t.Fatalf("expected empty message for nonexistent dir, got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_ListShowsEntries(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	// Create entries manually.
+	jan := filepath.Join(dir, "2025", "01")
+	feb := filepath.Join(dir, "2025", "02")
+	if err := os.MkdirAll(jan, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(feb, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jan, "2025-01-10-first.md"), []byte("---\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(feb, "2025-02-20-second.md"), []byte("---\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Non-md files should be ignored.
+	if err := os.WriteFile(filepath.Join(jan, "readme.txt"), []byte("ignore"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"list"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("list returned error: %v", err)
+	}
+
+	output := stdout.String()
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 entries, got %d: %q", len(lines), output)
+	}
+	// Reverse chronological — second entry first.
+	if !strings.Contains(lines[0], "2025-02-20") {
+		t.Fatalf("expected newest entry first, got %q", lines[0])
+	}
+	if !strings.Contains(lines[0], "second") {
+		t.Fatalf("expected 'second' slug, got %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "2025-01-10") {
+		t.Fatalf("expected older entry second, got %q", lines[1])
+	}
+}
+
+func TestSyncCommand_ListWithLimit(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	// Create 3 entries.
+	month := filepath.Join(dir, "2025", "01")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"2025-01-01-aaa.md", "2025-01-02-bbb.md", "2025-01-03-ccc.md"} {
+		if err := os.WriteFile(filepath.Join(month, name), []byte("---\n---\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"list", "--limit", "2"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("list returned error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 entries with limit, got %d: %q", len(lines), stdout.String())
+	}
+}
+
+func TestSyncCommand_SaveAndList(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	fixedTime := time.Date(2025, 7, 4, 9, 0, 0, 0, time.UTC)
+	cmd.TimeNow = func() time.Time { return fixedTime }
+
+	// Save an entry.
+	var stdout1, stderr1 bytes.Buffer
+	if err := cmd.Execute([]string{"save", "--title", "Integration Test", "--body", "Testing save+list."}, &stdout1, &stderr1); err != nil {
+		t.Fatalf("save failed: %v", err)
+	}
+
+	// List and verify it appears.
+	var stdout2, stderr2 bytes.Buffer
+	if err := cmd.Execute([]string{"list"}, &stdout2, &stderr2); err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+
+	output := stdout2.String()
+	if !strings.Contains(output, "2025-07-04") {
+		t.Fatalf("expected date in list output, got %q", output)
+	}
+	if !strings.Contains(output, "integration-test") {
+		t.Fatalf("expected slug in list output, got %q", output)
+	}
+}
+
+func TestSyncCommand_Metadata(t *testing.T) {
+	t.Parallel()
+	if got := NewSyncCommand(nil).Name(); got != "sync" {
+		t.Fatalf("expected name 'sync', got %q", got)
+	}
+	if got := NewSyncCommand(nil).Description(); got == "" {
+		t.Fatal("expected non-empty description")
+	}
+	if got := NewSyncCommand(nil).Usage(); got == "" {
+		t.Fatal("expected non-empty usage")
+	}
+}
+
+// --- Git operations tests ---
+
+func TestSyncCommand_InitFromArg(t *testing.T) {
+	t.Parallel()
+	requireGit(t)
+
+	bare := setupBareRepo(t)
+	setupCloneWithCommit(t, bare) // need at least one commit in the bare repo
+
+	localPath := filepath.Join(t.TempDir(), "sync-root")
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("sync.local-path", localPath)
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"init", bare}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("init failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Sync repository initialized:") {
+		t.Fatalf("expected init confirmation, got %q", stdout.String())
+	}
+	if !gitops.IsRepo(localPath) {
+		t.Fatalf("expected .git directory in %s", localPath)
+	}
+}
+
+func TestSyncCommand_InitFromConfig(t *testing.T) {
+	t.Parallel()
+	requireGit(t)
+
+	bare := setupBareRepo(t)
+	setupCloneWithCommit(t, bare)
+
+	localPath := filepath.Join(t.TempDir(), "sync-root")
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("sync.repository", bare)
+	cfg.SetGlobalOption("sync.local-path", localPath)
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"init"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("init from config failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if !gitops.IsRepo(localPath) {
+		t.Fatalf("expected .git directory in %s", localPath)
+	}
+}
+
+func TestSyncCommand_InitNoURL(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"init"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for missing repository URL")
+	}
+	if !strings.Contains(err.Error(), "repository URL required") {
+		t.Fatalf("expected 'repository URL required', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_InitAlreadyInitialized(t *testing.T) {
+	t.Parallel()
+	requireGit(t)
+
+	bare := setupBareRepo(t)
+	setupCloneWithCommit(t, bare)
+
+	localPath := filepath.Join(t.TempDir(), "sync-root")
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("sync.local-path", localPath)
+	cmd := NewSyncCommand(cfg)
+
+	// First init succeeds.
+	var stdout1, stderr1 bytes.Buffer
+	if err := cmd.Execute([]string{"init", bare}, &stdout1, &stderr1); err != nil {
+		t.Fatalf("first init failed: %v", err)
+	}
+
+	// Second init fails.
+	var stdout2, stderr2 bytes.Buffer
+	err := cmd.Execute([]string{"init", bare}, &stdout2, &stderr2)
+	if err == nil {
+		t.Fatal("expected error for already initialized")
+	}
+	if !strings.Contains(err.Error(), "already initialized") {
+		t.Fatalf("expected 'already initialized', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_PushNoChanges(t *testing.T) {
+	t.Parallel()
+	requireGit(t)
+
+	bare := setupBareRepo(t)
+	clone := setupCloneWithCommit(t, bare)
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("sync.local-path", clone)
+	cmd := NewSyncCommand(cfg)
+	cmd.TimeNow = func() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"push"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("push failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Nothing to push") {
+		t.Fatalf("expected 'Nothing to push', got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_PushWithChanges(t *testing.T) {
+	t.Parallel()
+	requireGit(t)
+
+	bare := setupBareRepo(t)
+	clone := setupCloneWithCommit(t, bare)
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("sync.local-path", clone)
+	cmd := NewSyncCommand(cfg)
+	cmd.TimeNow = func() time.Time { return time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC) }
+
+	// Create a new file in the clone.
+	if err := os.WriteFile(filepath.Join(clone, "new-file.txt"), []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"push"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("push failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Sync push complete.") {
+		t.Fatalf("expected push confirmation, got %q", stdout.String())
+	}
+
+	// Verify the commit exists by checking log.
+	logCmd := exec.Command("git", "-C", clone, "log", "--oneline", "-1")
+	logOut, _ := logCmd.Output()
+	if !strings.Contains(string(logOut), "osm sync:") {
+		t.Fatalf("expected 'osm sync:' in commit log, got %q", string(logOut))
+	}
+}
+
+func TestSyncCommand_PushNotInitialized(t *testing.T) {
+	t.Parallel()
+
+	localPath := filepath.Join(t.TempDir(), "empty")
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("sync.local-path", localPath)
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"push"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for uninitialized directory")
+	}
+	if !strings.Contains(err.Error(), "not initialized") {
+		t.Fatalf("expected 'not initialized', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_PullExisting(t *testing.T) {
+	t.Parallel()
+	requireGit(t)
+
+	bare := setupBareRepo(t)
+	clone := setupCloneWithCommit(t, bare)
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("sync.local-path", clone)
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"pull"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("pull failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Sync pull complete.") {
+		t.Fatalf("expected pull confirmation, got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_PullCloneFromConfig(t *testing.T) {
+	t.Parallel()
+	requireGit(t)
+
+	bare := setupBareRepo(t)
+	setupCloneWithCommit(t, bare) // need commits in the bare repo
+
+	localPath := filepath.Join(t.TempDir(), "fresh-clone")
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("sync.repository", bare)
+	cfg.SetGlobalOption("sync.local-path", localPath)
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"pull"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("pull/clone failed: %v\nstderr: %s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Sync repository cloned:") {
+		t.Fatalf("expected clone confirmation, got %q", stdout.String())
+	}
+	if !gitops.IsRepo(localPath) {
+		t.Fatalf("expected .git directory in %s", localPath)
+	}
+}
+
+func TestSyncCommand_PullNotInitializedNoConfig(t *testing.T) {
+	t.Parallel()
+
+	localPath := filepath.Join(t.TempDir(), "empty")
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("sync.local-path", localPath)
+	// No sync.repository configured.
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"pull"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for no config and not initialized")
+	}
+	if !strings.Contains(err.Error(), "not initialized") {
+		t.Fatalf("expected 'not initialized', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_PushPullRoundTrip(t *testing.T) {
+	t.Parallel()
+	requireGit(t)
+
+	bare := setupBareRepo(t)
+	clone1 := setupCloneWithCommit(t, bare)
+
+	// Create second clone.
+	clone2 := filepath.Join(t.TempDir(), "clone2")
+	cmds := [][]string{
+		{"git", "clone", bare, clone2},
+		{"git", "-C", clone2, "config", "user.email", "test@test.com"},
+		{"git", "-C", clone2, "config", "user.name", "Test"},
+	}
+	for _, c := range cmds {
+		if err := exec.Command(c[0], c[1:]...).Run(); err != nil {
+			t.Fatalf("setup cmd %v failed: %v", c, err)
+		}
+	}
+
+	// Push a file from clone1.
+	if err := os.WriteFile(filepath.Join(clone1, "shared.txt"), []byte("from clone1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg1 := config.NewConfig()
+	cfg1.SetGlobalOption("sync.local-path", clone1)
+	cmd1 := NewSyncCommand(cfg1)
+	cmd1.TimeNow = func() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }
+
+	var out1, err1 bytes.Buffer
+	if err := cmd1.Execute([]string{"push"}, &out1, &err1); err != nil {
+		t.Fatalf("push from clone1 failed: %v", err)
+	}
+
+	// Pull into clone2.
+	cfg2 := config.NewConfig()
+	cfg2.SetGlobalOption("sync.local-path", clone2)
+	cmd2 := NewSyncCommand(cfg2)
+
+	var out2, err2 bytes.Buffer
+	if err := cmd2.Execute([]string{"pull"}, &out2, &err2); err != nil {
+		t.Fatalf("pull into clone2 failed: %v\nstderr: %s", err, err2.String())
+	}
+
+	// Verify shared.txt arrived.
+	data, err := os.ReadFile(filepath.Join(clone2, "shared.txt"))
+	if err != nil {
+		t.Fatalf("shared.txt not found in clone2: %v", err)
+	}
+	if string(data) != "from clone1" {
+		t.Fatalf("expected 'from clone1', got %q", string(data))
+	}
+}
+
+func TestSyncCommand_SyncRootFromConfig(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "custom-sync")
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("sync.local-path", path)
+	cmd := NewSyncCommand(cfg)
+
+	root, err := cmd.syncRoot()
+	if err != nil {
+		t.Fatalf("syncRoot failed: %v", err)
+	}
+	if root != path {
+		t.Fatalf("expected %q, got %q", path, root)
+	}
+}
+
+func TestSyncCommand_SyncRootDefault(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil)
+
+	root, err := cmd.syncRoot()
+	if err != nil {
+		t.Fatalf("syncRoot failed: %v", err)
+	}
+	if !strings.HasSuffix(root, filepath.Join(".osm", "sync")) {
+		t.Fatalf("expected path ending in .osm/sync, got %q", root)
+	}
+}
+
+func TestSyncCommand_NotebooksDirDerivedFromSyncRoot(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "custom-sync")
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("sync.local-path", path)
+	cmd := NewSyncCommand(cfg)
+
+	nbDir, err := cmd.notebooksDir()
+	if err != nil {
+		t.Fatalf("notebooksDir failed: %v", err)
+	}
+	expected := filepath.Join(path, "notebooks")
+	if nbDir != expected {
+		t.Fatalf("expected %q, got %q", expected, nbDir)
+	}
+}
+
+// --- Slugify unit tests ---
+
+func TestSlugify(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"My Code Review", "my-code-review"},
+		{"Hello, World!", "hello-world"},
+		{"---dashes---", "dashes"},
+		{"UPPER CASE", "upper-case"},
+		{"a  b  c", "a-b-c"},
+		{"", "untitled"},
+		{strings.Repeat("a", 100), strings.Repeat("a", 50)},
+		{"café résumé", "caf-rsum"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+			got := slugify(tc.input)
+			if got != tc.want {
+				t.Fatalf("slugify(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseTags(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"a,b,c", []string{"a", "b", "c"}},
+		{" a , b , c ", []string{"a", "b", "c"}},
+		{"single", []string{"single"}},
+		{",,empty,,", []string{"empty"}},
+		{"", nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+			got := parseTags(tc.input)
+			if len(got) != len(tc.want) {
+				t.Fatalf("parseTags(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("parseTags(%q)[%d] = %q, want %q", tc.input, i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// --- Load subcommand tests ---
+
+func TestSyncCommand_LoadExactDateSlug(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	// Create an entry manually.
+	month := filepath.Join(dir, "2025", "03")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ndate: 2025-03-15T10:30:00Z\ntitle: \"My Review\"\n---\n\n# My Review\n\nReview the auth module.\n"
+	if err := os.WriteFile(filepath.Join(month, "2025-03-15-my-review.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "2025-03-15-my-review"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("load failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "# My Review") {
+		t.Fatalf("expected heading in output, got %q", output)
+	}
+	if !strings.Contains(output, "Review the auth module.") {
+		t.Fatalf("expected body text, got %q", output)
+	}
+	// Frontmatter should be stripped.
+	if strings.Contains(output, "date: 2025-03-15") {
+		t.Fatalf("expected frontmatter to be stripped, got %q", output)
+	}
+}
+
+func TestSyncCommand_LoadBySlugOnly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	month := filepath.Join(dir, "2025", "06")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ntitle: \"API Design\"\n---\n\n# API Design\n\nDesign the new API.\n"
+	if err := os.WriteFile(filepath.Join(month, "2025-06-01-api-design.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "api-design"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("load by slug failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Design the new API.") {
+		t.Fatalf("expected body text, got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_LoadByDateOnly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	month := filepath.Join(dir, "2025", "01")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ntitle: \"First Entry\"\n---\n\n# First Entry\n\nHello world.\n"
+	if err := os.WriteFile(filepath.Join(month, "2025-01-10-first-entry.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "2025-01-10"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("load by date failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Hello world.") {
+		t.Fatalf("expected body text, got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_LoadByPartialSlug(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	month := filepath.Join(dir, "2025", "04")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ntitle: \"Code Review Auth\"\n---\n\n# Code Review Auth\n\nReview auth changes.\n"
+	if err := os.WriteFile(filepath.Join(month, "2025-04-20-code-review-auth.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "review-auth"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("load by partial slug failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Review auth changes.") {
+		t.Fatalf("expected body text, got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_LoadNoMatch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	month := filepath.Join(dir, "2025", "01")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(month, "2025-01-01-aaa.md"), []byte("---\n---\n\nbody\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "nonexistent"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for no match")
+	}
+	if !strings.Contains(err.Error(), "no entry matching") {
+		t.Fatalf("expected 'no entry matching' error, got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_LoadNoEntries(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "anything"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for empty dir")
+	}
+	if !strings.Contains(err.Error(), "no notebook entries found") {
+		t.Fatalf("expected 'no notebook entries found', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_LoadNoArgs(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil, t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for no args")
+	}
+	if !strings.Contains(err.Error(), "load requires exactly one argument") {
+		t.Fatalf("expected argument error, got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_LoadEmptyQuery(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	// Create an entry.
+	month := filepath.Join(dir, "2025", "01")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(month, "2025-01-01-aaa.md"), []byte("---\n---\n\nbody\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", ""}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for empty query")
+	}
+	if !strings.Contains(err.Error(), "no entry matching") {
+		t.Fatalf("expected 'no entry matching' error, got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_LoadTooManyArgs(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil, t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "a", "b"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for too many args")
+	}
+	if !strings.Contains(err.Error(), "load requires exactly one argument") {
+		t.Fatalf("expected argument error, got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_LoadMostRecentSlugMatch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	// Create two entries with the same slug in different months.
+	for _, m := range []struct{ month, date, body string }{
+		{"01", "2025-01-01", "old content"},
+		{"06", "2025-06-15", "new content"},
+	} {
+		mDir := filepath.Join(dir, "2025", m.month)
+		if err := os.MkdirAll(mDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		content := "---\ntitle: \"Dup\"\n---\n\n" + m.body + "\n"
+		if err := os.WriteFile(filepath.Join(mDir, m.date+"-same-slug.md"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "same-slug"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+	// Should return the most recent (June) entry.
+	if !strings.Contains(stdout.String(), "new content") {
+		t.Fatalf("expected most recent entry, got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_SaveThenLoad(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+	cmd.TimeNow = func() time.Time { return time.Date(2025, 8, 1, 14, 0, 0, 0, time.UTC) }
+
+	// Save.
+	var sOut, sErr bytes.Buffer
+	if err := cmd.Execute([]string{"save", "--title", "Round Trip", "--body", "This is a round-trip test."}, &sOut, &sErr); err != nil {
+		t.Fatalf("save failed: %v", err)
+	}
+
+	// Load.
+	var lOut, lErr bytes.Buffer
+	if err := cmd.Execute([]string{"load", "round-trip"}, &lOut, &lErr); err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+	if !strings.Contains(lOut.String(), "This is a round-trip test.") {
+		t.Fatalf("expected body, got %q", lOut.String())
+	}
+}
+
+// --- stripFrontmatter unit tests ---
+
+func TestStripFrontmatter(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "with frontmatter",
+			input: "---\ntitle: \"Test\"\ndate: 2025-01-01\n---\n\n# Heading\n\nBody text.\n",
+			want:  "# Heading\n\nBody text.\n",
+		},
+		{
+			name:  "no frontmatter",
+			input: "Just plain text.\n",
+			want:  "Just plain text.\n",
+		},
+		{
+			name:  "unclosed frontmatter",
+			input: "---\ntitle: \"Test\"\nno closing delimiter\n",
+			want:  "---\ntitle: \"Test\"\nno closing delimiter\n",
+		},
+		{
+			name:  "empty frontmatter",
+			input: "---\n---\n\nBody.\n",
+			want:  "Body.\n",
+		},
+		{
+			name:  "frontmatter with tags",
+			input: "---\ntags: [a, b]\n---\n\n# Title\n",
+			want:  "# Title\n",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := stripFrontmatter(tc.input)
+			if got != tc.want {
+				t.Fatalf("stripFrontmatter(...) = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// --- matchEntry unit tests ---
+
+func TestMatchEntry(t *testing.T) {
+	t.Parallel()
+
+	entries := []notebookEntry{
+		{path: "2025/01/2025-01-10-alpha.md", date: "2025-01-10", slug: "alpha"},
+		{path: "2025/01/2025-01-15-beta.md", date: "2025-01-15", slug: "beta"},
+		{path: "2025/02/2025-02-01-beta.md", date: "2025-02-01", slug: "beta"},
+		{path: "2025/02/2025-02-10-my-code-review.md", date: "2025-02-10", slug: "my-code-review"},
+	}
+
+	tests := []struct {
+		name     string
+		query    string
+		wantPath string // empty means expect nil
+	}{
+		{
+			name:     "empty_query",
+			query:    "",
+			wantPath: "",
+		},
+		{
+			name:     "exact_date_slug",
+			query:    "2025-01-10-alpha",
+			wantPath: "2025/01/2025-01-10-alpha.md",
+		},
+		{
+			name:     "exact_date_slug_second",
+			query:    "2025-02-10-my-code-review",
+			wantPath: "2025/02/2025-02-10-my-code-review.md",
+		},
+		{
+			name:     "slug_only_unique",
+			query:    "alpha",
+			wantPath: "2025/01/2025-01-10-alpha.md",
+		},
+		{
+			name: "slug_only_ambiguous_returns_most_recent",
+			// Two entries with slug "beta": 2025-01-15 and 2025-02-01.
+			// matchEntry sorts reverse chronological → returns 2025-02-01.
+			query:    "beta",
+			wantPath: "2025/02/2025-02-01-beta.md",
+		},
+		{
+			name:     "date_prefix_match",
+			query:    "2025-01-15",
+			wantPath: "2025/01/2025-01-15-beta.md",
+		},
+		{
+			name:     "partial_slug_match",
+			query:    "code-review",
+			wantPath: "2025/02/2025-02-10-my-code-review.md",
+		},
+		{
+			name:     "partial_slug_substring",
+			query:    "review",
+			wantPath: "2025/02/2025-02-10-my-code-review.md",
+		},
+		{
+			name:     "no_match",
+			query:    "nonexistent",
+			wantPath: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := matchEntry(entries, tc.query)
+			if tc.wantPath == "" {
+				if got != nil {
+					t.Fatalf("matchEntry(%q) = %+v, want nil", tc.query, got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("matchEntry(%q) = nil, want path=%q", tc.query, tc.wantPath)
+			}
+			if got.path != tc.wantPath {
+				t.Fatalf("matchEntry(%q).path = %q, want %q", tc.query, got.path, tc.wantPath)
+			}
+		})
+	}
+}
+
+func TestMatchEntry_EmptyEntries(t *testing.T) {
+	t.Parallel()
+	got := matchEntry(nil, "anything")
+	if got != nil {
+		t.Fatalf("matchEntry(nil, %q) = %+v, want nil", "anything", got)
+	}
+}
+
+// --- deduplicatePath unit tests ---
+
+func TestDeduplicatePath_NoCollision(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "entry.md")
+
+	got, err := deduplicatePath(p)
+	if err != nil {
+		t.Fatalf("deduplicatePath: %v", err)
+	}
+	if got != p {
+		t.Fatalf("deduplicatePath = %q, want %q (unchanged)", got, p)
+	}
+}
+
+func TestDeduplicatePath_FirstCollision(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "entry.md")
+
+	// Create the original file to trigger dedup.
+	if err := os.WriteFile(p, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := deduplicatePath(p)
+	if err != nil {
+		t.Fatalf("deduplicatePath: %v", err)
+	}
+	want := filepath.Join(dir, "entry-2.md")
+	if got != want {
+		t.Fatalf("deduplicatePath = %q, want %q", got, want)
+	}
+}
+
+func TestDeduplicatePath_MultipleCollisions(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "entry.md")
+
+	// Create original + -2 + -3 to force suffix -4.
+	for _, name := range []string{"entry.md", "entry-2.md", "entry-3.md"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := deduplicatePath(p)
+	if err != nil {
+		t.Fatalf("deduplicatePath: %v", err)
+	}
+	want := filepath.Join(dir, "entry-4.md")
+	if got != want {
+		t.Fatalf("deduplicatePath = %q, want %q", got, want)
+	}
+}
+
+// --- discoverEntries unit tests ---
+
+func TestDiscoverEntries_Basic(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create valid entries.
+	sub := filepath.Join(dir, "2025", "01")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		"2025-01-10-alpha.md",
+		"2025-01-15-beta.md",
+	} {
+		if err := os.WriteFile(filepath.Join(sub, name), []byte("# test\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	entries, err := discoverEntries(dir)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	// Verify dates and slugs.
+	found := map[string]bool{}
+	for _, e := range entries {
+		found[e.slug] = true
+		if e.date != "2025-01-10" && e.date != "2025-01-15" {
+			t.Errorf("unexpected date: %q", e.date)
+		}
+	}
+	if !found["alpha"] || !found["beta"] {
+		t.Errorf("expected alpha and beta slugs, got %v", found)
+	}
+}
+
+func TestDiscoverEntries_SkipsNonMD(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create a .txt file and a .md file without date prefix.
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "no-date.md"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Create a .md file with invalid date prefix.
+	if err := os.WriteFile(filepath.Join(dir, "20xx-99-99-bad.md"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := discoverEntries(dir)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected 0 entries (all should be skipped), got %d: %+v", len(entries), entries)
+	}
+}
+
+func TestDiscoverEntries_EmptySlug(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// A file with just a date and hyphen (minimal slug case).
+	if err := os.WriteFile(filepath.Join(dir, "2025-03-01-.md"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := discoverEntries(dir)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].date != "2025-03-01" {
+		t.Errorf("date = %q, want %q", entries[0].date, "2025-03-01")
+	}
+}
+
+func TestDiscoverEntries_NonexistentDir(t *testing.T) {
+	t.Parallel()
+	_, err := discoverEntries(filepath.Join(t.TempDir(), "nonexistent"))
+	if err == nil {
+		t.Fatal("expected error for nonexistent directory")
+	}
+}

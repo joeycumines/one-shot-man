@@ -27,8 +27,7 @@ func TestPromptFlow_GoalCommandOpensEditor(t *testing.T) {
 	// Create fake editor script that writes a known goal
 	editorScript := createGoalEditorScript(t, workspace)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	cp, err := termtest.NewConsole(ctx,
 		termtest.WithCommand(binaryPath, "prompt-flow", "-i"),
@@ -39,6 +38,7 @@ func TestPromptFlow_GoalCommandOpensEditor(t *testing.T) {
 			"EDITOR=" + editorScript,
 			"VISUAL=",
 			"OSM_CLIPBOARD=cat > /dev/null",
+			"OSM_SYNC_PROTOCOL=1",
 		}),
 	)
 	if err != nil {
@@ -46,8 +46,8 @@ func TestPromptFlow_GoalCommandOpensEditor(t *testing.T) {
 	}
 	defer cp.Close()
 
-	// Wait for startup
-	requirePromptFlowExpect(t, ctx, cp, "(prompt-flow) > ", 10*time.Second)
+	// Wait for startup (use long timeout for CI environments)
+	requirePromptFlowExpect(t, ctx, cp, "(prompt-flow) > ", 30*time.Second)
 
 	// Call goal with no arguments - should trigger editor
 	snap := cp.Snapshot()
@@ -80,8 +80,7 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 	// Create fake editor script that writes a known task prompt
 	editorScript := createUseEditorScript(t, workspace)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	cp, err := termtest.NewConsole(ctx,
 		termtest.WithCommand(binaryPath, "prompt-flow", "-i"),
@@ -92,6 +91,7 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 			"EDITOR=" + editorScript,
 			"VISUAL=",
 			"OSM_CLIPBOARD=cat > /dev/null",
+			"OSM_SYNC_PROTOCOL=1",
 		}),
 	)
 	if err != nil {
@@ -99,8 +99,8 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 	}
 	defer cp.Close()
 
-	// Wait for startup
-	requirePromptFlowExpect(t, ctx, cp, "(prompt-flow) > ", 10*time.Second)
+	// Wait for startup (use long timeout for CI environments)
+	requirePromptFlowExpect(t, ctx, cp, "(prompt-flow) > ", 30*time.Second)
 
 	// Set a goal first
 	snap := cp.Snapshot()
@@ -141,6 +141,7 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 
 func buildPromptFlowTestBinary(t *testing.T) string {
 	t.Helper()
+	skipSlow(t)
 	// Get the working directory and compute project root
 	wd, err := os.Getwd()
 	if err != nil {
@@ -149,7 +150,7 @@ func buildPromptFlowTestBinary(t *testing.T) string {
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
 
 	binaryPath := filepath.Join(t.TempDir(), "osm-test")
-	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
+	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/osm")
 	cmd.Dir = projectDir // Critical: set working directory to project root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

@@ -1,0 +1,76 @@
+{
+  "name": "code-style-guide",
+  "description": "Review code against a specific style guide and suggest fixes",
+  "category": "code-quality",
+  "usage": "Add source files and set the target style guide, then copy the prompt",
+  "tuiTitle": "Code Style Guide Reviewer",
+  "tuiPrompt": "(style) > ",
+  "stateVars": {
+    "style": "google",
+    "language": "auto"
+  },
+  "notableVariables": ["style", "language"],
+  "promptInstructions": "Review all provided code for compliance with the **{{.stateKeys.style}}** style guide.\n\n{{.styleInstructions}}\n\nTarget language: {{.stateKeys.language}} (if \"auto\", infer from file extensions).\n\nFor each violation found:\n1. Quote the offending line(s)\n2. Cite the specific style rule being violated\n3. Provide the corrected version\n4. Rate severity: error (must fix), warning (should fix), or info (nitpick)",
+  "promptTemplate": "**{{.description | upper}}**\n\n{{.promptInstructions}}\n\n## {{.contextHeader}}\n\n{{.contextTxtar}}",
+  "promptOptions": {
+    "styleInstructions": {
+      "google": "Follow the Google style guide conventions. Prioritize readability, consistency, and the principle of least surprise. Pay special attention to naming conventions, comment quality, and function length.",
+      "airbnb": "Follow the Airbnb style guide conventions. Enforce destructuring, arrow functions, template literals, and module import/export patterns. Flag any use of var or loose equality.",
+      "standard": "Follow the Standard JS style conventions. No semicolons, 2-space indentation, single quotes. Flag any deviations from the no-configuration rule set.",
+      "pep8": "Follow PEP 8 conventions for Python. Enforce 4-space indentation, snake_case naming, line length limits (79 for code, 72 for docstrings), and proper import ordering.",
+      "effective-go": "Follow Effective Go and the Go Code Review Comments guide. Enforce gofmt formatting, MixedCaps naming, error handling patterns, and idiomatic Go constructs."
+    }
+  },
+  "contextHeader": "CODE TO REVIEW",
+  "commands": [
+    {
+      "name": "add",
+      "type": "contextManager",
+      "description": "Add source files to review",
+      "argCompleters": ["file"]
+    },
+    {
+      "name": "note",
+      "type": "contextManager",
+      "description": "Add a note about specific concerns"
+    },
+    {
+      "name": "list",
+      "type": "contextManager",
+      "description": "List all context items"
+    },
+    {
+      "name": "remove",
+      "type": "contextManager",
+      "description": "Remove a context item"
+    },
+    {
+      "name": "show",
+      "type": "contextManager",
+      "description": "Preview the prompt"
+    },
+    {
+      "name": "copy",
+      "type": "contextManager",
+      "description": "Copy prompt to clipboard"
+    },
+    {
+      "name": "set-style",
+      "type": "custom",
+      "description": "Set the target style guide (google, airbnb, standard, pep8, effective-go)",
+      "usage": "set-style <style-name>",
+      "handler": "function (args) {\n  var valid = ['google', 'airbnb', 'standard', 'pep8', 'effective-go'];\n  if (!args || args.length === 0) {\n    output.print('Current style: ' + state.get(stateKeys.style));\n    output.print('Available: ' + valid.join(', '));\n    return;\n  }\n  var s = args[0].toLowerCase();\n  if (valid.indexOf(s) === -1) {\n    output.print('Unknown style: ' + s);\n    output.print('Available: ' + valid.join(', '));\n    return;\n  }\n  state.set(stateKeys.style, s);\n  output.print('Style set to: ' + s);\n}"
+    },
+    {
+      "name": "set-language",
+      "type": "custom",
+      "description": "Set the target language (auto, javascript, python, go, java, etc.)",
+      "usage": "set-language <lang>",
+      "handler": "function (args) {\n  if (!args || args.length === 0) {\n    output.print('Current language: ' + state.get(stateKeys.language));\n    return;\n  }\n  state.set(stateKeys.language, args[0].toLowerCase());\n  output.print('Language set to: ' + args[0].toLowerCase());\n}"
+    },
+    {
+      "name": "help",
+      "type": "help"
+    }
+  ]
+}

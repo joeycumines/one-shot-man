@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,7 +198,7 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 	t.Parallel()
 
 	t.Run("NonExistentGoalFile", func(t *testing.T) {
-		cfg := config.NewConfig()
+		cfg := newIsolatedGoalConfig()
 		discovery := NewGoalDiscovery(cfg)
 		registry := NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
 
@@ -211,7 +212,7 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 	})
 
 	t.Run("GoalFileIsDirectory", func(t *testing.T) {
-		cfg := config.NewConfig()
+		cfg := newIsolatedGoalConfig()
 		discovery := NewGoalDiscovery(cfg)
 		_ = NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
 
@@ -261,7 +262,7 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 	})
 
 	t.Run("EmptyGoalArray", func(t *testing.T) {
-		cfg := config.NewConfig()
+		cfg := newIsolatedGoalConfig()
 		discovery := NewGoalDiscovery(cfg)
 
 		// Create registry with no built-in goals
@@ -269,7 +270,7 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 
 		goals := registry.List()
 		if len(goals) != 0 {
-			t.Logf("Registry has %d goals (may have discovered goals)", len(goals))
+			t.Errorf("expected 0 goals with empty array and no discovery, got %d", len(goals))
 		}
 
 		// Should return empty list without error
@@ -312,16 +313,16 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 	})
 
 	t.Run("GoalCommandWithNoArgsAndNoInteractive", func(t *testing.T) {
-		cfg := config.NewConfig()
+		cfg := newIsolatedGoalConfig()
 		discovery := NewGoalDiscovery(cfg)
 		registry := NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
 
 		cmd := &GoalCommand{
-			BaseCommand: NewBaseCommand("goal", "Test goal command", "goal [options]"),
-			config:      cfg,
-			registry:    registry,
-			interactive: false,
-			list:        false,
+			BaseCommand:       NewBaseCommand("goal", "Test goal command", "goal [options]"),
+			scriptCommandBase: scriptCommandBase{config: cfg},
+			registry:          registry,
+			interactive:       false,
+			list:              false,
 		}
 
 		var stdout bytes.Buffer
@@ -341,16 +342,16 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 	})
 
 	t.Run("GoalCommandInvalidFlagCombination", func(t *testing.T) {
-		cfg := config.NewConfig()
+		cfg := newIsolatedGoalConfig()
 		discovery := NewGoalDiscovery(cfg)
 		registry := NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
 
 		cmd := &GoalCommand{
-			BaseCommand: NewBaseCommand("goal", "Test goal command", "goal [options]"),
-			config:      cfg,
-			registry:    registry,
-			list:        true,
-			category:    "nonexistent-category",
+			BaseCommand:       NewBaseCommand("goal", "Test goal command", "goal [options]"),
+			scriptCommandBase: scriptCommandBase{config: cfg},
+			registry:          registry,
+			list:              true,
+			category:          "nonexistent-category",
 		}
 
 		var stdout bytes.Buffer
@@ -502,14 +503,14 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 	t.Run("EmptyInput", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -522,14 +523,14 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 	t.Run("InputContainingOnlyWhitespace", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{"   \t\n  "})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -542,14 +543,14 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 	t.Run("InputIsNonExistentFilePath", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{"/nonexistent/path/to/file.txt"})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -562,9 +563,9 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 	t.Run("InputIsDirectory", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
@@ -572,7 +573,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		// Use temp directory as input
 		tmpDir := t.TempDir()
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{tmpDir})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -585,9 +586,9 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 	t.Run("ExtremelyLongInput", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
@@ -595,7 +596,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		// Create extremely long input
 		longInput := strings.Repeat("x", 100000)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{longInput})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -611,14 +612,14 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 
 		ctx := context.Background()
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -781,7 +782,7 @@ func TestGoalCommandGoalLoadingEdgeCases(t *testing.T) {
 			Description: "A test goal",
 			Category:    "testing",
 			Usage:       "Test usage",
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"key1": "value1",
 				"key2": float64(42),
 			},
@@ -906,14 +907,14 @@ func TestSuperDocumentCommandWithVariousFlags(t *testing.T) {
 	t.Run("ShellModeFlag", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "shellMode": true, "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "shellMode": true, "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{"--shell"})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -926,14 +927,14 @@ func TestSuperDocumentCommandWithVariousFlags(t *testing.T) {
 	t.Run("InteractiveFalseWithArgs", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "interactive": false, "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "interactive": false, "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{"--test"})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 

@@ -165,3 +165,5 @@ internal/scripting/log_rotate.go:*: unreachable func: *
 internal\scripting\log_rotate.go:*: unreachable func: *
 internal/scripting/module_hardening.go:*: unreachable func: *
 internal\scripting\module_hardening.go:*: unreachable func: *
+internal/command/prsplittest/*: unreachable func: *
+internal\command\prsplittest\*: unreachable func: *

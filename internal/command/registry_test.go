@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -52,14 +53,8 @@ func TestRegistry(t *testing.T) {
 	}
 
 	// Test listing commands
-	commands := registry.ListBuiltin()
-	found := false
-	for _, name := range commands {
-		if name == "test" {
-			found = true
-			break
-		}
-	}
+	commands := registry.listBuiltin()
+	found := slices.Contains(commands, "test")
 	if !found {
 		t.Error("Expected 'test' command in builtin list")
 	}
@@ -99,8 +94,18 @@ func TestScriptPathDuplication(t *testing.T) {
 		counts[path]++
 	}
 
-	if count := counts[scriptsDir]; count != 1 {
-		t.Errorf("Expected scripts directory %s to be deduplicated, found %d entries", scriptsDir, count)
+	// Resolve the scripts dir through symlinks for comparison (on macOS,
+	// /var/folders is a symlink to /private/var/folders)
+	resolvedScriptsDir, resolveErr := filepath.EvalSymlinks(scriptsDir)
+	if resolveErr != nil {
+		resolvedScriptsDir = scriptsDir
+	}
+	if count := counts[resolvedScriptsDir]; count != 1 {
+		// Fallback: check the unresolved path too (for platforms without symlink prefixes)
+		if count2 := counts[scriptsDir]; count2 != 1 {
+			t.Errorf("Expected scripts directory %s (or resolved %s) to be deduplicated, found %d/%d entries in %v",
+				scriptsDir, resolvedScriptsDir, count2, count, registry.scriptPaths)
+		}
 	}
 
 	for path, count := range counts {
@@ -128,7 +133,7 @@ echo "Test script output"
 	}
 
 	// Test script command creation
-	scriptCmd := NewScriptCommand("testscript", scriptPath)
+	scriptCmd := newScriptCommand("testscript", scriptPath)
 
 	if scriptCmd.Name() != "testscript" {
 		t.Errorf("Expected script name 'testscript', got '%s'", scriptCmd.Name())

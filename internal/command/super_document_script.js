@@ -139,7 +139,6 @@
 // - [A]dd (a): Clears input buffers, opens Input View.
 // - [L]oad (l): Triggers file loading dialog (Context dependant).
 // - [E]dit (e): Opens the currently selected document for editing.
-// - [V]iew (v): Opens the currently selected document in read-only view / Preview.
 // - [D]elete (d): Triggers delete confirmation for selected document.
 // - [C]opy (c): **Purple Style**. Copies the prompt content to clipboard.
 // - [S]hell (s): **Orange Style**. Leaves the GUI mode and "drops" to a shell-style mode.
@@ -153,7 +152,7 @@
 // ============================================================================
 
 const {buildContext, contextManager} = require('osm:ctxutil');
-const nextIntegerId = require('osm:nextIntegerId');
+const nextIntegerId = require('osm:nextIntegerID');
 const template = require('osm:text/template');
 const tea = require('osm:bubbletea');
 const lipgloss = require('osm:lipgloss');
@@ -722,7 +721,6 @@ function runVisualTui() {
         confirmDocId: null,
         statusMsg: '',
         hasError: false,
-        clipboard: '',
         width: 80,
         height: 24,
         layout: {buttons: [], docBoxes: []},
@@ -774,8 +772,18 @@ function runVisualTui() {
                 }
             } else if (msg.type === 'Key') {
                 return handleKeys(msg, tuiState);
-            } else if (msg.type === 'Mouse' && msg.action === 'press') {
+            } else if (msg.type === 'MouseClick' && msg.button === 'left') {
                 return handleMouse(msg, tuiState);
+            } else if (msg.type === 'MouseWheel') {
+                return handleMouse(msg, tuiState);
+            } else if (msg.type === 'Paste' && tuiState.inputFocus === FOCUS_CONTENT && tuiState.contentTextarea) {
+                // Paste events from bracketed paste mode arrive as tea.PasteMsg
+                // (converted to {type:"Paste", content:"..."} by msgToJS).
+                // Forward to the textarea's update so JsToTeaMsg converts it back
+                // to tea.PasteMsg and the textarea inserts the content.
+                const [newTa, taCmd] = tuiState.contentTextarea.update(msg);
+                tuiState.contentTextarea = newTa;
+                return [tuiState, taCmd];
             }
             return [tuiState, null];
         }, view: function (tuiState) {
@@ -783,7 +791,7 @@ function runVisualTui() {
         }
     });
 
-    return tea.run(model, {altScreen: true, mouse: true});
+    return tea.run(model);
 }
 
 function configureTextarea(ta, width) {
@@ -853,7 +861,23 @@ function configureTextarea(ta, width) {
 }
 
 function handleKeys(msg, s) {
-    const k = msg.key;
+    // Resolve the effective key string for dispatch.
+    //
+    // msg.text carries the literal character for printable keys (e.g. " " for
+    // space) while msg.key carries the BubbleTea v2 named form (e.g. "space").
+    // Textarea validation expects the printable character, so we prefer
+    // msg.text when it contains exactly one printable ASCII character (0x20–
+    // 0x7E).  Everything else — special keys like enter, backspace, arrows,
+    // function keys, and control sequences — falls through to msg.key.
+    //
+    // DEFENSIVE RATIONALE: BubbleTea v2 currently sets Key.Text="" for special
+    // keys (ultraviolet decoder.go:1139–1144, bubbletea key.go:297–300).  The
+    // printable-ASCII guard protects against future changes that might populate
+    // Key.Text with control characters (e.g. "\r" for Enter, "\t" for Tab).
+    const k = (msg.text && msg.text.length === 1
+        && msg.text.charCodeAt(0) >= 0x20
+        && msg.text.charCodeAt(0) <= 0x7E)
+        ? msg.text : msg.key;
     const prevMode = s.mode; // Track mode before processing
     // Global quit from any mode if ctrl+c
     if (k === 'ctrl+c') {
@@ -967,9 +991,6 @@ function handleKeys(msg, s) {
         if (k === 'enter' && s.focusedButtonIdx >= 0) {
             const btn = BUTTONS[s.focusedButtonIdx];
             if (btn) {
-                // Simulate the key press for the button action
-                // Re-dispatch as the button's key
-                // (use the same handling code below)
                 if (btn.key === 'q') {
                     _userRequestedShell = false;
                     return [s, tea.quit()];
@@ -978,12 +999,6 @@ function handleKeys(msg, s) {
                     _userRequestedShell = true;
                     return [s, tea.quit()];
                 }
-                // For other buttons, set k to the button's key and fall through
-                // We need to handle them specially to avoid code duplication
-                // Note: a, l, c, r are handled below, so let's just set a marker
-                // Actually, simpler: just set k and let it fall through
-                // But k is a const! Need to refactor...
-                // For now, handle inline:
                 if (btn.key === 'a') {
                     s.mode = MODE_INPUT;
                     s.inputOperation = INPUT_ADD;
@@ -991,20 +1006,21 @@ function handleKeys(msg, s) {
                     s.labelBuffer = '';
                     s.contentTextarea = textareaLib.new();
                     configureTextarea(s.contentTextarea, s.width);
-                    s.focusedButtonIdx = -1; // Clear button focus when entering input mode
-                    s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
+                    s.focusedButtonIdx = -1;
+                    s.inputViewportUnlocked = false;
+                    return [s, null];
                 }
                 if (btn.key === 'l') {
                     s.mode = MODE_INPUT;
                     s.inputOperation = INPUT_LOAD;
                     s.inputFocus = FOCUS_LABEL;
                     s.labelBuffer = '';
-                    s.contentTextarea = null; // No textarea for load mode
-                    s.focusedButtonIdx = -1; // Clear button focus
-                    s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
+                    s.contentTextarea = null;
+                    s.focusedButtonIdx = -1;
+                    s.inputViewportUnlocked = false;
+                    return [s, null];
                 }
                 if (btn.key === 'c') {
-                    // Copy final prompt (includes documents + other context)
                     const prompt = buildFinalPrompt();
                     try {
                         os.clipboardCopy(prompt);
@@ -1015,13 +1031,14 @@ function handleKeys(msg, s) {
                         s.hasError = true;
                     }
                     s.focusedButtonIdx = -1;
+                    return [s, null];
                 }
                 if (btn.key === 'r') {
-                    // Reset (archive + clear session state) - show confirmation regardless of documents
                     s.mode = MODE_CONFIRM;
                     s.confirmPrompt = 'Reset the session (archive current state and clear all persisted state)? This cannot be undone. (y/n)';
-                    s.confirmDocId = -1; // -1 means "reset all"
+                    s.confirmDocId = -1;
                     s.focusedButtonIdx = -1;
+                    return [s, null];
                 }
             }
         }
@@ -1170,7 +1187,6 @@ function handleKeys(msg, s) {
         }
         if (k === 'c') {
             const prompt = buildFinalPrompt();
-            s.clipboard = prompt;
             try {
                 // Call the system clipboard via osm:os module
                 os.clipboardCopy(prompt);
@@ -1257,7 +1273,7 @@ function handleKeys(msg, s) {
             } else if (s.inputOperation === INPUT_LOAD) {
                 const res = os.readFile(s.labelBuffer.trim());
                 if (res.error) {
-                    s.statusMsg = 'Error: ' + res.error;
+                    s.statusMsg = 'Error: ' + res.message;
                     s.hasError = true;
                     return [s, null];
                 }
@@ -1271,25 +1287,13 @@ function handleKeys(msg, s) {
             s.inputViewportUnlocked = false; // Reset on mode exit
         } else {
             // Field input handling
-            // Extract paste flag from message (bracketed paste mode)
-            const isPaste = msg.paste === true;
 
             if (s.inputFocus === FOCUS_LABEL) {
                 // Use Go-based validation for label input
-                const validation = tea.isValidLabelInput(k, isPaste);
+                const validation = tea.isValidLabelInput(k);
                 if (validation.valid) {
                     if (k === 'backspace') {
                         s.labelBuffer = s.labelBuffer.slice(0, -1);
-                    } else if (isPaste) {
-                        // Paste event - extract content from bracketed format [content]
-                        // and append to label (stripping brackets if present)
-                        let pasteContent = k;
-                        if (k.startsWith('[') && k.endsWith(']') && k.length > 2) {
-                            pasteContent = k.slice(1, -1);
-                        }
-                        // For labels, only take first line and strip newlines
-                        pasteContent = pasteContent.split('\n')[0].replace(/\r/g, '');
-                        s.labelBuffer += pasteContent;
                     } else {
                         // Single printable character - add to label
                         s.labelBuffer += k;
@@ -1333,7 +1337,7 @@ function handleKeys(msg, s) {
 
                 // Ctrl+End: Go to end of document
                 if (k === 'ctrl+end') {
-                    s.contentTextarea.selectAll(); // Moves to absolute end
+                    s.contentTextarea.selectAll(); // JS binding name; moves cursor to absolute end
                     s.inputViewportUnlocked = false;
                     return [s, null];
                 }
@@ -1341,7 +1345,7 @@ function handleKeys(msg, s) {
                 // Use Go-based validation for textarea input
                 // This prevents garbage (fragmented escape sequences from rapid scroll)
                 // from being inserted into the document content.
-                const validation = tea.isValidTextareaInput(k, isPaste);
+                const validation = tea.isValidTextareaInput(k);
                 if (msg.type === 'Key' && validation.valid) {
                     // Delegate to native textarea component and capture returned command
                     const [newTa, taCmd] = s.contentTextarea.update(msg);
@@ -1399,12 +1403,9 @@ function handleMouse(msg, s) {
     // Guard: Only process left-button clicks for button/document activation
     // Wheel events should not trigger actions (they'll be handled as scroll if needed)
     const isLeftClick = msg.button === 'left';
-    // Use msg.isWheel property from MouseEventToJS for proper wheel detection
-    // This aligns with tea.MouseEvent.IsWheel() and handles all wheel button types
-    const isWheelEvent = msg.isWheel === true;
 
     // Handle wheel events for scrolling in list mode via viewport
-    if (isWheelEvent && s.mode === MODE_LIST && s.documents.length > 0 && s.vp) {
+    if (msg.type === 'MouseWheel' && s.mode === MODE_LIST && s.documents.length > 0 && s.vp) {
         // Mouse button strings now match tea.MouseEvent.String(): "wheel up", "wheel down", etc.
         if (msg.button === 'wheel up') {
             s.vp.scrollUp(3); // Scroll viewport up by 3 lines
@@ -1416,7 +1417,7 @@ function handleMouse(msg, s) {
     }
 
     // Handle wheel events for scrolling in input mode via inputVp
-    if (isWheelEvent && s.mode === MODE_INPUT && s.inputVp) {
+    if (msg.type === 'MouseWheel' && s.mode === MODE_INPUT && s.inputVp) {
         // PRECISE MOUSE SCROLL PROPAGATION
         // CHANGE: Removed scroll capture in textarea. Events now always bubble to outer viewport.
 
@@ -1619,7 +1620,7 @@ function handleMouse(msg, s) {
             // Uses handleClickAtScreenCoords() which does ALL coordinate translation in Go.
             // This replaces manual JS coordinate math for PERFORMANCE and CORRECTNESS.
             // The Go method handles: screen→viewport→content→textarea→visual→logical mapping.
-            if (s.contentTextarea && isLeftClick && !isWheelEvent) {
+            if (s.contentTextarea && isLeftClick) {
                 // Defensive: refresh viewport context right before asking Go to hit-test.
                 if (s.contentTextarea.setViewportContext && s.textareaBounds) {
                     s.contentTextarea.setViewportContext({
@@ -1777,7 +1778,11 @@ function renderView(s) {
     else if (s.mode === MODE_CONFIRM) content = renderConfirm(s); else content = renderList(s);
 
     // Wrap with zone.scan() to register zones and strip markers
-    return zone.scan(content);
+    return {
+        content: zone.scan(content),
+        altScreen: true,
+        mouseMode: 'all'
+    };
 }
 
 // Minimal Render Helpers (inlining logic for single-file)
@@ -2297,12 +2302,13 @@ function renderConfirm(s) {
 
 function buildCommands() {
     // Context Manager with injected state
-    const ctxmgr = contextManager({
+    const ctxmgrOpts = {
         getItems: () => state.get(shared.contextItems) || [],
         setItems: (v) => state.set(shared.contextItems, v),
         nextIntegerId: nextIntegerId,
         buildPrompt: buildFinalPrompt
-    });
+    };
+    const ctxmgr = contextManager(ctxmgrOpts);
 
     return {
         // Base context commands (add, list, remove, etc.)
@@ -2347,7 +2353,7 @@ function buildCommands() {
                     const path = args[1];
                     const res = os.readFile(path);
                     if (res.error) {
-                        output.print("Error: " + res.error);
+                        output.print("Error: " + res.message);
                         return;
                     }
                     const doc = addDocument(path, res.content);
@@ -2400,28 +2406,30 @@ function buildCommands() {
                 // Clear any previous shell request (module-level, NOT persistent)
                 _userRequestedShell = false;
 
-                try {
-                    // Launch the embedded Bubble Tea app
-                    const res = runVisualTui();
-                    if (res && res.error) {
-                        output.print("TUI Error: " + res.error);
-                    }
-                } finally {
-                    // Check if user explicitly requested shell mode (module-level flag)
+                // Register a post-BubbleTea exit callback. Since tea.run() is
+                // non-blocking, the exit/shell decision MUST be deferred until
+                // AFTER BubbleTea exits (when the user has actually pressed 'q'
+                // or 's'). The Go engine executes __postBubbleTeaExit on the
+                // event loop after WaitForProgram() returns.
+                globalThis.__postBubbleTeaExit = function () {
                     const wantedShell = _userRequestedShell;
-
-                    // Clear the flag for next time
                     _userRequestedShell = false;
 
-                    // If user pressed 'q' (not 's'), signal the shell loop to exit
-                    // The shell loop's exit checker will see this and terminate gracefully
-                    // This does NOT call os.Exit - the shell loop handles exit at the top level
                     if (!wantedShell) {
+                        // User pressed 'q' — signal REPL to exit gracefully
                         tui.requestExit();
                     } else {
-                        // Inform the user they're now in shell mode and how to get back
+                        // User pressed 's' — stay in REPL shell mode
                         output.print("Dropped to shell. Use the 'tui' command to return to the visual UI.");
                     }
+                };
+
+                // Launch the embedded Bubble Tea app (non-blocking)
+                const res = runVisualTui();
+                if (res && res.error) {
+                    output.print("TUI Error: " + res.error);
+                    // Clear callback if TUI failed to launch
+                    globalThis.__postBubbleTeaExit = undefined;
                 }
             }
         }

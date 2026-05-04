@@ -5,7 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -33,7 +35,7 @@ func NewHelpCommand(registry *Registry) *HelpCommand {
 func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		// Show general help and list all commands
-		_, _ = fmt.Fprintln(stdout, "one-shot-man - refine reproducible one-shot prompts from your terminal")
+		_, _ = fmt.Fprintln(stdout, "osm - refine reproducible one-shot prompts from your terminal")
 		_, _ = fmt.Fprintln(stdout, "")
 		_, _ = fmt.Fprintln(stdout, "Usage: osm <command> [options] [args...]")
 		_, _ = fmt.Fprintln(stdout, "")
@@ -42,7 +44,7 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		w := tabwriter.NewWriter(stdout, 0, 8, 2, ' ', 0)
 
 		// List built-in commands
-		builtins := c.registry.ListBuiltin()
+		builtins := c.registry.listBuiltin()
 		if len(builtins) > 0 {
 			_, _ = fmt.Fprintln(w, "")
 			_, _ = fmt.Fprintln(w, "Built-in commands:")
@@ -54,7 +56,7 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		}
 
 		// List script commands
-		scripts := c.registry.ListScript()
+		scripts := c.registry.listScript()
 		if len(scripts) > 0 {
 			_, _ = fmt.Fprintln(w, "")
 			_, _ = fmt.Fprintln(w, "Script commands:")
@@ -63,7 +65,9 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 			}
 		}
 
-		_ = w.Flush()
+		if err := w.Flush(); err != nil {
+			return fmt.Errorf("failed to flush help output: %w", err)
+		}
 
 		_, _ = fmt.Fprintln(stdout, "")
 		_, _ = fmt.Fprintln(stdout, "Use 'osm help <command>' for more information about a specific command (includes flags).")
@@ -71,11 +75,14 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	}
 
 	// Show help for a specific command
+	if len(args) > 1 {
+		return fmt.Errorf("%w: %v", ErrUnexpectedArguments, args[1:])
+	}
 	cmdName := args[0]
 	cmd, err := c.registry.Get(cmdName)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Unknown command: %s\n", cmdName)
-		return err
+		return &SilentError{Err: err}
 	}
 
 	_, _ = fmt.Fprintf(stdout, "Command: %s\n", cmd.Name())
@@ -95,7 +102,7 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		_, _ = fmt.Fprint(stdout, buf.String())
 	} else {
 		// If this is a script command, hint to run the script with -h
-		if _, isScript := cmd.(*ScriptCommand); isScript {
+		if _, isScript := cmd.(*scriptCommand); isScript {
 			_, _ = fmt.Fprintln(stdout, "")
 			_, _ = fmt.Fprintf(stdout, "Note: this is a script command; run 'osm %s -h' for its help (if supported).\n", cmd.Name())
 		}
@@ -124,7 +131,11 @@ func NewVersionCommand(version string) *VersionCommand {
 
 // Execute displays version information.
 func (c *VersionCommand) Execute(args []string, stdout, stderr io.Writer) error {
-	_, _ = fmt.Fprintf(stdout, "one-shot-man version %s\n", c.version)
+	if len(args) > 0 {
+		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
+		return &SilentError{Err: fmt.Errorf("%w: %v", ErrUnexpectedArguments, args)}
+	}
+	_, _ = fmt.Fprintf(stdout, "osm version %s\n", c.version)
 	return nil
 }
 
@@ -132,19 +143,27 @@ func (c *VersionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 type ConfigCommand struct {
 	*BaseCommand
 	config     *config.Config
+	configPath string
 	showGlobal bool
 	showAll    bool
 }
 
 // NewConfigCommand creates a new config command.
-func NewConfigCommand(cfg *config.Config) *ConfigCommand {
+// If configPath is empty, persistence to disk is skipped (useful for tests
+// and when the resolved path isn't known at construction time).
+func NewConfigCommand(cfg *config.Config, configPath ...string) *ConfigCommand {
+	var path string
+	if len(configPath) > 0 {
+		path = configPath[0]
+	}
 	return &ConfigCommand{
 		BaseCommand: NewBaseCommand(
 			"config",
 			"Manage configuration settings",
 			"config [options] [key] [value]",
 		),
-		config: cfg,
+		config:     cfg,
+		configPath: path,
 	}
 }
 
@@ -185,15 +204,68 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 			_, _ = fmt.Fprintln(stdout, "  config <key> <value>  - Set configuration value")
 			_, _ = fmt.Fprintln(stdout, "  config --global       - Show global configuration")
 			_, _ = fmt.Fprintln(stdout, "  config --all          - Show all configuration")
+			_, _ = fmt.Fprintln(stdout, "  config validate       - Validate configuration")
+			_, _ = fmt.Fprintln(stdout, "  config schema         - Show configuration schema")
+			_, _ = fmt.Fprintln(stdout, "  config list           - List all values with sources")
+			_, _ = fmt.Fprintln(stdout, "  config diff           - Show non-default values")
+			_, _ = fmt.Fprintln(stdout, "  config reset <key>    - Reset key to schema default")
+			_, _ = fmt.Fprintln(stdout, "  config reset --all    - Reset all keys (requires --force)")
 			return nil
 		}
 	}
 
+	// Handle subcommands.
+	switch args[0] {
+	case "validate":
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
+			return &SilentError{Err: ErrUnexpectedArguments}
+		}
+		return c.executeValidate(stdout)
+	case "schema":
+		if len(args) > 1 && args[1] == "--json" {
+			if len(args) > 2 {
+				_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[2:])
+				return &SilentError{Err: ErrUnexpectedArguments}
+			}
+			data, err := config.DefaultSchema().FormatSchemaJSON()
+			if err != nil {
+				return fmt.Errorf("failed to format schema as JSON: %w", err)
+			}
+			_, _ = fmt.Fprintln(stdout, string(data))
+			return nil
+		}
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
+			return &SilentError{Err: ErrUnexpectedArguments}
+		}
+		_, _ = fmt.Fprint(stdout, config.DefaultSchema().FormatHelp())
+		return nil
+	case "list":
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
+			return &SilentError{Err: ErrUnexpectedArguments}
+		}
+		return c.executeList(stdout)
+	case "diff":
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
+			return &SilentError{Err: ErrUnexpectedArguments}
+		}
+		return c.executeDiff(stdout)
+	case "reset":
+		return c.executeReset(args[1:], stdout, stderr)
+	}
+
 	if len(args) == 1 {
-		// Get configuration value
+		// Get configuration value (schema-aware: checks env → config → default).
 		key := args[0]
-		if value, exists := c.config.GetGlobalOption(key); exists {
+		value := config.DefaultSchema().Resolve(c.config, key)
+		if value != "" {
 			_, _ = fmt.Fprintf(stdout, "%s: %s\n", key, value)
+		} else if _, exists := c.config.GetGlobalOption(key); exists {
+			// Value exists but is empty string.
+			_, _ = fmt.Fprintf(stdout, "%s: \n", key)
 		} else {
 			_, _ = fmt.Fprintf(stdout, "Configuration key '%s' not found\n", key)
 		}
@@ -203,16 +275,204 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 2 {
 		// Set configuration value
 		key, value := args[0], args[1]
+
+		// Schema-aware validation before setting.
+		schema := config.DefaultSchema()
+		opt := schema.Lookup("", key)
+		if opt == nil {
+			_, _ = fmt.Fprintf(stderr, "Warning: %q is not a known configuration key (use 'config schema' to list known keys)\n", key)
+		} else if err := config.ValidateOptionValue(opt.Type, value); err != nil {
+			_, _ = fmt.Fprintf(stderr, "Error: invalid value for %q: %v\n", key, err)
+			return &SilentError{Err: fmt.Errorf("invalid value for %q: %w", key, err)}
+		}
+
 		c.config.SetGlobalOption(key, value)
+
+		// Persist to disk if a config path is available
+		configPath := c.configPath
+		if configPath == "" {
+			var err error
+			configPath, err = config.GetConfigPath()
+			if err != nil {
+				slog.Warn("config path resolution failed, skipping disk write", "error", err)
+			}
+		}
+		if configPath != "" {
+			if err := config.SetKeyInFile(configPath, key, value); err != nil {
+				_, _ = fmt.Fprintf(stderr, "Warning: failed to persist config to disk: %v\n", err)
+			}
+		}
+
 		_, _ = fmt.Fprintf(stdout, "Set configuration: %s = %s\n", key, value)
 		return nil
 	}
 
-	_, _ = fmt.Fprintln(stderr, "Invalid number of arguments")
-	return fmt.Errorf("invalid arguments")
+	_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
+	return &SilentError{Err: ErrUnexpectedArguments}
 }
 
-// InitCommand initializes the one-shot-man environment.
+// executeValidate validates the current config against the schema.
+func (c *ConfigCommand) executeValidate(stdout io.Writer) error {
+	issues := config.ValidateConfig(c.config, config.DefaultSchema())
+
+	// Check schema version.
+	issues = append(issues, config.CheckSchemaVersion(c.config)...)
+
+	if len(issues) == 0 {
+		_, _ = fmt.Fprintln(stdout, "Configuration is valid.")
+		return nil
+	}
+	_, _ = fmt.Fprintf(stdout, "Configuration has %d issue(s):\n", len(issues))
+	for _, issue := range issues {
+		_, _ = fmt.Fprintf(stdout, "  - %s\n", issue)
+	}
+	return nil
+}
+
+// executeList shows all configuration values with their sources.
+func (c *ConfigCommand) executeList(stdout io.Writer) error {
+	schema := config.DefaultSchema()
+	resolved := schema.ResolveAll(c.config)
+	return writeResolvedTable(stdout, resolved)
+}
+
+// executeDiff shows only non-default configuration values.
+func (c *ConfigCommand) executeDiff(stdout io.Writer) error {
+	schema := config.DefaultSchema()
+	diff := schema.ResolveDiff(c.config)
+	if len(diff) == 0 {
+		_, _ = fmt.Fprintln(stdout, "All values are at their defaults.")
+		return nil
+	}
+	return writeResolvedTable(stdout, diff)
+}
+
+// writeResolvedTable writes a formatted table of ResolvedOptions.
+func writeResolvedTable(w io.Writer, resolved []config.ResolvedOption) error {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "KEY\tVALUE\tSOURCE")
+	for _, ro := range resolved {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", ro.Key, ro.Value, ro.Source)
+	}
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("failed to flush config table: %w", err)
+	}
+	return nil
+}
+
+// executeReset handles the "config reset" subcommand.
+// Syntax:
+//
+//	config reset <key>              — reset a single key to its schema default
+//	config reset --all [--force]    — reset all keys (requires --force)
+func (c *ConfigCommand) executeReset(args []string, stdout, stderr io.Writer) error {
+	var resetAll, force bool
+	var key string
+
+	for _, a := range args {
+		switch a {
+		case "--all":
+			resetAll = true
+		case "--force":
+			force = true
+		default:
+			if strings.HasPrefix(a, "-") {
+				_, _ = fmt.Fprintf(stderr, "unknown flag: %s\n", a)
+				return &SilentError{Err: fmt.Errorf("unknown flag: %s", a)}
+			}
+			if key != "" {
+				_, _ = fmt.Fprintf(stderr, "unexpected arguments: %s\n", a)
+				return &SilentError{Err: fmt.Errorf("%w: %s", ErrUnexpectedArguments, a)}
+			}
+			key = a
+		}
+	}
+
+	if resetAll && key != "" {
+		_, _ = fmt.Fprintln(stderr, "Error: cannot specify both --all and a key name")
+		return &SilentError{Err: fmt.Errorf("cannot specify both --all and a key name")}
+	}
+
+	if !resetAll && key == "" {
+		_, _ = fmt.Fprintln(stdout, "Usage:")
+		_, _ = fmt.Fprintln(stdout, "  config reset <key>              - Reset key to schema default")
+		_, _ = fmt.Fprintln(stdout, "  config reset --all [--force]    - Reset all keys to defaults")
+		return nil
+	}
+
+	if resetAll {
+		if !force {
+			_, _ = fmt.Fprintln(stderr, "Error: reset --all requires --force to confirm")
+			return &SilentError{Err: fmt.Errorf("reset --all requires --force")}
+		}
+		return c.executeResetAll(stdout, stderr)
+	}
+
+	return c.executeResetKey(key, stdout, stderr)
+}
+
+// executeResetKey resets a single global key to its schema default.
+func (c *ConfigCommand) executeResetKey(key string, stdout, stderr io.Writer) error {
+	schema := config.DefaultSchema()
+	opt := schema.Lookup("", key)
+	if opt == nil {
+		_, _ = fmt.Fprintf(stderr, "Error: %q is not a known configuration key (use 'config schema' to list known keys)\n", key)
+		return &SilentError{Err: fmt.Errorf("unknown configuration key: %q", key)}
+	}
+
+	// Remove from in-memory config.
+	delete(c.config.Global, key)
+
+	// Remove from disk.
+	configPath := c.configPath
+	if configPath == "" {
+		var err error
+		configPath, err = config.GetConfigPath()
+		if err != nil {
+			slog.Warn("config path resolution failed, skipping disk write", "error", err)
+		}
+	}
+	if configPath != "" {
+		if err := config.DeleteKeyInFile(configPath, key); err != nil {
+			_, _ = fmt.Fprintf(stderr, "Warning: failed to persist reset to disk: %v\n", err)
+		}
+	}
+
+	_, _ = fmt.Fprintf(stdout, "Reset %s to default: %s\n", key, opt.Default)
+	return nil
+}
+
+// executeResetAll resets all global keys to their schema defaults.
+func (c *ConfigCommand) executeResetAll(stdout, stderr io.Writer) error {
+	// Clear all global keys from in-memory config.
+	count := len(c.config.Global)
+	c.config.Global = make(map[string]string)
+
+	// Remove all global keys from disk.
+	configPath := c.configPath
+	if configPath == "" {
+		var err error
+		configPath, err = config.GetConfigPath()
+		if err != nil {
+			slog.Warn("config path resolution failed, skipping disk write", "error", err)
+		}
+	}
+	if configPath != "" {
+		diskCount, err := config.DeleteAllGlobalKeysInFile(configPath)
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "Warning: failed to persist reset to disk: %v\n", err)
+		}
+		// Use disk count if larger (some keys may only exist on disk).
+		if diskCount > count {
+			count = diskCount
+		}
+	}
+
+	_, _ = fmt.Fprintf(stdout, "Reset %d key(s) to defaults.\n", count)
+	return nil
+}
+
+// InitCommand initializes the osm environment.
 type InitCommand struct {
 	*BaseCommand
 	force bool
@@ -223,7 +483,7 @@ func NewInitCommand() *InitCommand {
 	return &InitCommand{
 		BaseCommand: NewBaseCommand(
 			"init",
-			"Initialize one-shot-man environment",
+			"Initialize osm environment",
 			"init [options]",
 		),
 	}
@@ -236,6 +496,10 @@ func (c *InitCommand) SetupFlags(fs *flag.FlagSet) {
 
 // Execute initializes the environment.
 func (c *InitCommand) Execute(args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 {
+		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
+		return &SilentError{Err: ErrUnexpectedArguments}
+	}
 	// Get config path and ensure directory exists
 	configPath, err := config.GetConfigPath()
 	if err != nil {
@@ -255,7 +519,7 @@ func (c *InitCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	}
 
 	// Create default configuration
-	defaultConfig := `# one-shot-man configuration file
+	defaultConfig := `# osm configuration file
 # Format: optionName remainingLineIsTheValue
 # Use [command_name] sections for command-specific options
 
@@ -306,6 +570,6 @@ format full
 		}
 	}
 
-	_, _ = fmt.Fprintf(stdout, "Initialized one-shot-man configuration at: %s\n", configPath)
+	_, _ = fmt.Fprintf(stdout, "Initialized osm configuration at: %s\n", configPath)
 	return nil
 }

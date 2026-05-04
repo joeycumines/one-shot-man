@@ -102,7 +102,7 @@ func listTests(pkg string) ([]string, error) {
 		return nil, fmt.Errorf("failed to list tests: %w", err)
 	}
 	var tests []string
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" && !strings.HasPrefix(line, "ok") && !strings.HasPrefix(line, "?") {
 			tests = append(tests, line)
@@ -210,10 +210,7 @@ func main() {
 				}
 				if (failed || corrupted) && *showOutput {
 					lines := strings.Split(output, "\n")
-					start := len(lines) - 30
-					if start < 0 {
-						start = 0
-					}
+					start := max(len(lines)-30, 0)
 					for _, line := range lines[start:] {
 						fmt.Printf("       %q\n", line)
 					}
@@ -256,10 +253,7 @@ func main() {
 			if failed {
 				fmt.Printf("❌ TEST FAILED\n")
 				// Print last 50 lines of output
-				start := len(lines) - 50
-				if start < 0 {
-					start = 0
-				}
+				start := max(len(lines)-50, 0)
 				for _, line := range lines[start:] {
 					fmt.Printf("  %q\n", line) // Use %q to show escape sequences
 				}
@@ -269,10 +263,7 @@ func main() {
 			} else {
 				fmt.Printf("⚠️  UNKNOWN STATUS\n")
 				// Print output with escapes visible
-				start := len(lines) - 20
-				if start < 0 {
-					start = 0
-				}
+				start := max(len(lines)-20, 0)
 				for _, line := range lines[start:] {
 					fmt.Printf("  %q\n", line)
 				}

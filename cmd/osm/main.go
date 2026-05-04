@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -14,7 +15,9 @@ const version = "0.1.0"
 
 func main() {
 	if err := run(); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if !command.IsSilent(err) {
+			_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 		os.Exit(1)
 	}
 }
@@ -23,22 +26,35 @@ func run() error {
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		// If config doesn't exist, create a new empty one
+		// LoadFromPath already returns NewConfig() for os.IsNotExist,
+		// so any error here is a real problem (permissions, parse,
+		// symlink attack). Warn but continue with empty config.
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to load config: %v\n", err)
 		cfg = config.NewConfig()
 	}
 
 	// Create command registry with configuration
 	registry := command.NewRegistryWithConfig(cfg)
 
+	// Sync startup: auto-pull if configured, then inject discovery paths.
+	command.SyncAutoPull(cfg, os.Stderr)
+	command.ApplySyncDiscoveryPaths(cfg)
+
 	// Create goal registry
 	goalDiscovery := command.NewGoalDiscovery(cfg)
 	goalRegistry := command.NewDynamicGoalRegistry(command.GetBuiltInGoals(), goalDiscovery)
+
+	// Resolve config path for commands that need it
+	configPath, configPathErr := config.GetConfigPath()
+	if configPathErr != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: unable to resolve config path: %v\n", configPathErr)
+	}
 
 	// Register built-in commands
 	helpCmd := command.NewHelpCommand(registry)
 	registry.Register(helpCmd)
 	registry.Register(command.NewVersionCommand(version))
-	registry.Register(command.NewConfigCommand(cfg))
+	registry.Register(command.NewConfigCommand(cfg, configPath))
 	registry.Register(command.NewInitCommand())
 	registry.Register(command.NewScriptingCommand(cfg))
 	registry.Register(command.NewSessionCommand(cfg))
@@ -47,6 +63,10 @@ func run() error {
 	registry.Register(command.NewSuperDocumentCommand(cfg))
 	registry.Register(command.NewCompletionCommand(registry, goalRegistry))
 	registry.Register(command.NewGoalCommand(cfg, goalRegistry))
+	registry.Register(command.NewSyncCommand(cfg))
+	registry.Register(command.NewLogCommand(cfg))
+	registry.Register(command.NewPrSplitCommand(cfg))
+	registry.Register(command.NewMcpBridgeCommand())
 
 	// Parse global flags and command. Avoid manual inspection of args for
 	// help tokens; instead rely on the flag package so we consistently
@@ -60,7 +80,7 @@ func run() error {
 	// we can safely parse top-level help flags without consuming subcommand
 	// args.
 	if err := globalFS.Parse(os.Args[1:]); err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			return helpCmd.Execute([]string{}, os.Stdout, os.Stderr)
 		}
 		return err
@@ -80,7 +100,7 @@ func run() error {
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmdName)
 		_, _ = fmt.Fprintln(os.Stderr, "Use 'osm help' to see available commands; use 'osm help <command>' for details (includes flags).")
-		return err
+		return &command.SilentError{Err: err}
 	}
 
 	// Create flag set for this command
@@ -90,17 +110,24 @@ func run() error {
 	// consistent for scripting and tests.
 	fs := flag.NewFlagSet(cmd.Name(), flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	fs.Usage = func() {
+
+	// fullUsage prints the complete command help (Usage, Description,
+	// flag defaults). Used only for explicit --help requests.
+	fullUsage := func() {
 		_, _ = fmt.Fprintf(os.Stderr, "Usage: %s\n", cmd.Usage())
 		_, _ = fmt.Fprintf(os.Stderr, "\n%s\n\n", cmd.Description())
 		_, _ = fmt.Fprintln(os.Stderr, "Options:")
-		// PrintDefaults writes to the FlagSet output. When parsing we set the
-		// output to io.Discard to suppress library output; temporarily route
-		// defaults to stderr so users see the available flags.
 		fs.SetOutput(os.Stderr)
 		fs.PrintDefaults()
 		fs.SetOutput(io.Discard)
 	}
+
+	// T392: Suppress the automatic full-usage dump on parse errors.
+	// Go's flag package calls fs.Usage() from failf() before returning
+	// errors. Setting it to a no-op during parsing prevents the wall of
+	// text that obscures the actual error message. We restore it only
+	// for explicit --help requests.
+	fs.Usage = func() {} // no-op during parse
 
 	// Let the command setup its flags
 	cmd.SetupFlags(fs)
@@ -114,12 +141,17 @@ func run() error {
 	// the command name in the global flagset's remaining args).
 	cmdArgs := gargs[1:]
 	if err := fs.Parse(cmdArgs); err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			// flag.ErrHelp indicates usage/help was requested; treat as
 			// non-error so the program can exit successfully and uniformly.
+			fullUsage()
 			return nil
 		}
-		return err
+		// Parse error: show a concise 1-line error + hint instead of the
+		// full flag listing that Go's flag package would normally dump.
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Use 'osm %s --help' for usage.\n", cmd.Name())
+		return &command.SilentError{Err: err}
 	}
 
 	// Execute the command with the arguments remaining after parsing

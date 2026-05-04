@@ -4,7 +4,7 @@ package command
 
 import (
 	"bytes"
-	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +19,7 @@ import (
 // buildTestBinary builds the osm test binary for command package tests
 func buildTestBinary(t *testing.T) string {
 	t.Helper()
+	skipSlow(t)
 	// Get the working directory and compute project root
 	wd, err := os.Getwd()
 	if err != nil {
@@ -27,7 +28,7 @@ func buildTestBinary(t *testing.T) string {
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
 
 	binaryPath := filepath.Join(t.TempDir(), "osm-test")
-	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
+	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/osm")
 	cmd.Dir = projectDir // Critical: set working directory to project root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -46,6 +47,7 @@ func newTestProcessEnv(tb testing.TB) []string {
 		"OSM_SESSION=" + sessionID,
 		"OSM_STORE=memory",
 		"OSM_CLIPBOARD=cat > " + clipboardFile,
+		"OSM_SYNC_PROTOCOL=1",
 	}
 }
 
@@ -64,7 +66,7 @@ func getScriptPath(t *testing.T) string {
 // script via the osm CLI and verifies it can be started and quit gracefully.
 func TestShooterGame_E2E(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found at scripts/example-04-bt-shooter.js")
 		return
 	}
@@ -75,8 +77,7 @@ func TestShooterGame_E2E(t *testing.T) {
 	env := newTestProcessEnv(t)
 	defaultTimeout := 30 * time.Second
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	cp, err := termtest.NewConsole(ctx,
 		termtest.WithCommand(binaryPath, "script", "-i", scriptPath),
@@ -143,7 +144,7 @@ func TestShooterGame_E2E(t *testing.T) {
 // TestShooterE2E_StartAndQuit verifies the basic game lifecycle
 func TestShooterE2E_StartAndQuit(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
 		return
 	}
@@ -169,7 +170,7 @@ func TestShooterE2E_StartAndQuit(t *testing.T) {
 // This is a simpler test that doesn't require gameplay
 func TestShooterE2E_DebugOverlay(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
 		return
 	}
@@ -182,25 +183,19 @@ func TestShooterE2E_DebugOverlay(t *testing.T) {
 		t.Fatalf("Failed to start game: %v", err)
 	}
 
-	// Take a snapshot before pressing space
-	snap := h.console.Snapshot()
-
 	// Press Space to start the game (use WriteString for raw character, NOT SendLine!)
 	t.Log("Pressing Space to start game...")
 	if _, err := h.console.WriteString(" "); err != nil {
 		t.Fatalf("Failed to send space: %v", err)
 	}
 
-	// Use Expect to wait for playing mode indicators
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("WASD"), "playing mode"); err != nil {
+	// Use VT-parsed screen polling (v2 differential rendering)
+	if err := h.WaitForScreenContent("WASD", 10*time.Second); err != nil {
 		t.Logf("Game did not transition to playing mode: %v", err)
 		t.Skip("Could not verify game start")
 		return
 	}
 	t.Log("✓ Game transitioned to playing mode")
-
-	// Take a snapshot before enabling debug mode
-	snap = h.console.Snapshot()
 
 	// Now enable debug mode (use WriteString for raw character)
 	t.Log("Pressing backtick to enable debug mode...")
@@ -208,15 +203,14 @@ func TestShooterE2E_DebugOverlay(t *testing.T) {
 		t.Fatalf("Failed to send backtick: %v", err)
 	}
 
-	// Use Expect to wait for debug mode indicators
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("DEBUG MODE"), "debug mode"); err != nil {
+	// Wait for debug mode (VT-parsed screen)
+	if err := h.WaitForScreenContent("DEBUG MODE", 10*time.Second); err != nil {
 		t.Logf("Debug mode did not activate: %v", err)
 		// Try F3 as alternative
-		snap = h.console.Snapshot()
 		if err := h.console.Send("f3"); err != nil {
 			t.Fatalf("Failed to send f3: %v", err)
 		}
-		if err := h.console.Expect(h.ctx, snap, termtest.Contains("DEBUG MODE"), "debug mode via f3"); err != nil {
+		if err := h.WaitForScreenContent("DEBUG MODE", 10*time.Second); err != nil {
 			t.Logf("Debug mode did not activate with f3 either: %v", err)
 			t.Skip("Debug mode not working")
 			return
@@ -251,7 +245,7 @@ func TestShooterE2E_DebugOverlay(t *testing.T) {
 // This test checks both state AND visual output.
 func TestShooterE2E_PlayerShoots(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
 		return
 	}
@@ -264,32 +258,21 @@ func TestShooterE2E_PlayerShoots(t *testing.T) {
 		t.Fatalf("Failed to start game: %v", err)
 	}
 
-	// Take a snapshot before starting
-	snap := h.console.Snapshot()
-
 	// Start game
 	if err := h.SendKey(" "); err != nil {
 		t.Fatalf("Failed to press start: %v", err)
 	}
 
-	// Use Expect to wait for playing mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("WASD"), "playing mode"); err != nil {
+	// Use VT-parsed screen polling (v2 differential rendering)
+	if err := h.WaitForScreenContent("WASD", 10*time.Second); err != nil {
 		t.Logf("Game did not transition to playing mode: %v", err)
 		t.Skip("Could not start game")
 		return
 	}
 	t.Log("✓ Game in playing mode")
 
-	// Take snapshot before enabling debug mode
-	snap = h.console.Snapshot()
-
-	// Enable debug mode with backtick
-	if err := h.SendKey("`"); err != nil {
-		t.Fatalf("Failed to enable debug mode: %v", err)
-	}
-
-	// Wait for debug mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("DEBUG MODE"), "debug mode"); err != nil {
+	// Enable debug mode with retry logic (backtick may be dropped under load)
+	if err := h.EnableDebugMode(); err != nil {
 		t.Logf("Debug mode did not activate: %v", err)
 		t.Skip("Debug mode not working")
 		return
@@ -330,8 +313,8 @@ func TestShooterE2E_PlayerShoots(t *testing.T) {
 	if strings.Contains(spawnBuffer, "spawnWave") {
 		t.Log("Found spawnWave log messages in buffer")
 		// Find lines containing spawnWave
-		lines := strings.Split(spawnBuffer, "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(spawnBuffer, "\n")
+		for line := range lines {
 			if strings.Contains(line, "spawnWave") || strings.Contains(line, "Creating enemy") || strings.Contains(line, "Error spawning") {
 				t.Logf("SPAWN LOG: %s", strings.TrimSpace(line))
 			}
@@ -399,7 +382,7 @@ func TestShooterE2E_PlayerShoots(t *testing.T) {
 // This is the CRITICAL test that was missing - enemies must not stand still!
 func TestShooterE2E_EnemyMovement(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
 		return
 	}
@@ -412,30 +395,19 @@ func TestShooterE2E_EnemyMovement(t *testing.T) {
 		t.Fatalf("Failed to start game: %v", err)
 	}
 
-	// Take a snapshot before starting
-	snap := h.console.Snapshot()
-
 	// Start game
 	if err := h.SendKey(" "); err != nil {
 		t.Fatalf("Failed to press start: %v", err)
 	}
 
-	// Use Expect to wait for playing mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("WASD"), "playing mode"); err != nil {
+	// Use VT-parsed screen polling (v2 differential rendering)
+	if err := h.WaitForScreenContent("WASD", 10*time.Second); err != nil {
 		t.Fatalf("Game did not transition to playing mode: %v", err)
 	}
 	t.Log("✓ Game in playing mode")
 
-	// Take snapshot before enabling debug mode
-	snap = h.console.Snapshot()
-
-	// Enable debug mode with backtick
-	if err := h.SendKey("`"); err != nil {
-		t.Fatalf("Failed to enable debug mode: %v", err)
-	}
-
-	// Wait for debug mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("DEBUG MODE"), "debug mode"); err != nil {
+	// Enable debug mode with retry logic (backtick may be dropped under load)
+	if err := h.EnableDebugMode(); err != nil {
 		t.Fatalf("Debug mode did not activate: %v", err)
 	}
 	t.Log("✓ Debug mode enabled")
@@ -451,8 +423,8 @@ func TestShooterE2E_EnemyMovement(t *testing.T) {
 
 	// DIAGNOSTIC: Dump buffer to look for DIAG logs
 	buf := h.GetScreenBuffer()
-	lines := strings.Split(buf, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(buf, "\n")
+	for line := range lines {
 		if strings.Contains(line, "DIAG") || strings.Contains(line, "spawn") || strings.Contains(line, "Creating") || strings.Contains(line, "MoveToward") || strings.Contains(line, "CheckAlive") {
 			t.Logf("LOG: %s", strings.TrimSpace(line))
 		}
@@ -539,7 +511,7 @@ func TestShooterE2E_EnemyMovement(t *testing.T) {
 // Requirement: Player must move within 2-3 frames of key press (< 50ms).
 func TestShooterE2E_PlayerMovesImmediately(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
 		return
 	}
@@ -552,30 +524,19 @@ func TestShooterE2E_PlayerMovesImmediately(t *testing.T) {
 		t.Fatalf("Failed to start game: %v", err)
 	}
 
-	// Take snapshot before starting
-	snap := h.console.Snapshot()
-
 	// Start game
 	if err := h.SendKey(" "); err != nil {
 		t.Fatalf("Failed to press start: %v", err)
 	}
 
-	// Wait for playing mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("WASD"), "playing mode"); err != nil {
+	// Wait for playing mode (VT-parsed screen)
+	if err := h.WaitForScreenContent("WASD", 10*time.Second); err != nil {
 		t.Fatalf("Game did not transition to playing mode: %v", err)
 	}
 	t.Log("✓ Game in playing mode")
 
-	// Take snapshot before enabling debug mode
-	snap = h.console.Snapshot()
-
-	// Enable debug mode
-	if err := h.SendKey("`"); err != nil {
-		t.Fatalf("Failed to enable debug mode: %v", err)
-	}
-
-	// Wait for debug mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("DEBUG MODE"), "debug mode"); err != nil {
+	// Enable debug mode with retry logic (backtick may be dropped under load)
+	if err := h.EnableDebugMode(); err != nil {
 		t.Fatalf("Debug mode did not activate: %v", err)
 	}
 	t.Log("✓ Debug mode enabled")
@@ -603,7 +564,7 @@ func TestShooterE2E_PlayerMovesImmediately(t *testing.T) {
 	moved := false
 	var finalState *ShooterDebugState
 
-	for i := 0; i < maxWaitFrames; i++ {
+	for range maxWaitFrames {
 		time.Sleep(pollInterval)
 		state, err := h.GetDebugState()
 		if err != nil {
@@ -640,7 +601,7 @@ func TestShooterE2E_PlayerMovesImmediately(t *testing.T) {
 // This test validates the speed fix from sluggish to responsive movement.
 func TestShooterE2E_PlayerVelocityMatchesExpected(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
 		return
 	}
@@ -653,30 +614,19 @@ func TestShooterE2E_PlayerVelocityMatchesExpected(t *testing.T) {
 		t.Fatalf("Failed to start game: %v", err)
 	}
 
-	// Take snapshot before starting
-	snap := h.console.Snapshot()
-
 	// Start game
 	if err := h.SendKey(" "); err != nil {
 		t.Fatalf("Failed to press start: %v", err)
 	}
 
-	// Wait for playing mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("WASD"), "playing mode"); err != nil {
+	// Wait for playing mode (VT-parsed screen)
+	if err := h.WaitForScreenContent("WASD", 10*time.Second); err != nil {
 		t.Fatalf("Game did not transition to playing mode: %v", err)
 	}
 	t.Log("✓ Game in playing mode")
 
-	// Take snapshot before enabling debug mode
-	snap = h.console.Snapshot()
-
-	// Enable debug mode
-	if err := h.SendKey("`"); err != nil {
-		t.Fatalf("Failed to enable debug mode: %v", err)
-	}
-
-	// Wait for debug mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("DEBUG MODE"), "debug mode"); err != nil {
+	// Enable debug mode with retry logic (backtick may be dropped under load)
+	if err := h.EnableDebugMode(); err != nil {
 		t.Fatalf("Debug mode did not activate: %v", err)
 	}
 	t.Log("✓ Debug mode enabled")
@@ -695,7 +645,7 @@ func TestShooterE2E_PlayerVelocityMatchesExpected(t *testing.T) {
 
 	// Send movement key and hold by sending multiple times
 	// Simulate holding 'd' for movement
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if err := h.SendKey("d"); err != nil {
 			t.Fatalf("Failed to send movement key: %v", err)
 		}

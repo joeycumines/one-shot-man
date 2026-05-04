@@ -1,17 +1,28 @@
 package command
 
 import (
+	"cmp"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
+
+// AnnotatedPath represents a discovery path with source annotation and existence status.
+// Used by "osm goal paths" and "osm script paths" subcommands.
+type AnnotatedPath struct {
+	Path   string // Resolved absolute path
+	Source string // "standard", "custom", "autodiscovered"
+	Exists bool   // Whether the path exists on disk
+}
 
 // GoalDiscoveryConfig holds configuration for goal path discovery
 type GoalDiscoveryConfig struct {
@@ -21,20 +32,40 @@ type GoalDiscoveryConfig struct {
 	// CustomPaths are user-defined goal paths
 	CustomPaths []string
 
+	// PromptFilePaths are additional directories to search for .prompt.md files
+	// (in addition to .github/prompts which is always searched).
+	PromptFilePaths []string
+
+	// PromptRecursive enables recursive scanning of prompt file directories
+	// for .prompt.md files (default: true, matching VS Code behavior).
+	PromptRecursive bool
+
 	// MaxTraversalDepth limits how many directories to traverse upward (default: 10)
 	MaxTraversalDepth int
 
 	// GoalPathPatterns are patterns for goal directories (default: ["osm-goals", "goals"])
 	GoalPathPatterns []string
 
-	// DisableStandardPaths disables standard goal paths like ~/.one-shot-man/goals,
+	// DisableStandardPaths disables standard goal paths like ~/.osm/goals,
 	// $exe/goals, and ./osm-goals. Useful for tests to ensure determinism.
 	DisableStandardPaths bool
+
+	// DebugLogFunc is called with debug messages during discovery.
+	// If nil, debug logging is suppressed. Useful for troubleshooting
+	// why specific goal directories are or aren't discovered.
+	DebugLogFunc func(format string, args ...any)
 }
 
 // GoalDiscovery manages goal path discovery with configurable rules
 type GoalDiscovery struct {
 	config *GoalDiscoveryConfig
+}
+
+// debugf logs a debug message if DebugLogFunc is configured.
+func (gd *GoalDiscovery) debugf(format string, args ...any) {
+	if gd.config.DebugLogFunc != nil {
+		gd.config.DebugLogFunc(format, args...)
+	}
 }
 
 // NewGoalDiscovery creates a new goal discovery instance
@@ -76,6 +107,30 @@ func NewGoalDiscovery(cfg *config.Config) *GoalDiscovery {
 		}
 	}
 
+	// Load prompt file paths
+	if val, exists := cfg.GetGlobalOption("prompt.file-paths"); exists {
+		if paths := parsePathList(val); len(paths) > 0 {
+			discoveryConfig.PromptFilePaths = paths
+		}
+	}
+
+	// Prompt recursive scanning (default: true, matching VS Code behavior)
+	discoveryConfig.PromptRecursive = true
+	if val, exists := cfg.GetGlobalOption("prompt.recursive"); exists {
+		if parsed, err := strconv.ParseBool(val); err == nil {
+			discoveryConfig.PromptRecursive = parsed
+		}
+	}
+
+	// Enable debug logging via config option
+	if val, exists := cfg.GetGlobalOption("goal.debug-discovery"); exists {
+		if parsed, _ := strconv.ParseBool(val); parsed {
+			discoveryConfig.DebugLogFunc = func(format string, args ...any) {
+				slog.Debug("goal-discovery: "+format, "args", args)
+			}
+		}
+	}
+
 	// Environment overrides (primarily for tests/CI)
 	if v, _ := strconv.ParseBool(os.Getenv("OSM_DISABLE_GOAL_AUTODISCOVERY")); v {
 		discoveryConfig.EnableAutodiscovery = false
@@ -86,18 +141,26 @@ func NewGoalDiscovery(cfg *config.Config) *GoalDiscovery {
 
 // DiscoverGoalPaths returns all goal paths based on configuration
 func (gd *GoalDiscovery) DiscoverGoalPaths() []string {
+	discoveryStart := time.Now()
+
 	var paths []string
 	seenPaths := make(map[string]bool)
+
+	gd.debugf("starting goal path discovery (autodiscovery=%v, standardPaths=%v, patterns=%v, maxDepth=%d)",
+		gd.config.EnableAutodiscovery, !gd.config.DisableStandardPaths,
+		gd.config.GoalPathPatterns, gd.config.MaxTraversalDepth)
 
 	// Add standard paths
 	standardPaths := gd.getStandardPaths()
 	for _, path := range standardPaths {
+		gd.debugf("adding standard path candidate: %s", path)
 		gd.addPath(&paths, seenPaths, path)
 	}
 
 	// Add custom paths from configuration
 	for _, path := range gd.config.CustomPaths {
 		expandedPath := gd.expandPath(path)
+		gd.debugf("adding custom path candidate: %s (expanded from %s)", expandedPath, path)
 		gd.addPath(&paths, seenPaths, expandedPath)
 	}
 
@@ -105,6 +168,7 @@ func (gd *GoalDiscovery) DiscoverGoalPaths() []string {
 	if gd.config.EnableAutodiscovery {
 		autoPaths := gd.autodiscoverPaths()
 		for _, path := range autoPaths {
+			gd.debugf("adding autodiscovered path candidate: %s", path)
 			gd.addPath(&paths, seenPaths, path)
 		}
 	}
@@ -122,26 +186,124 @@ func (gd *GoalDiscovery) DiscoverGoalPaths() []string {
 		execDir = filepath.Dir(execPath)
 	}
 
-	sort.Slice(paths, func(i, j int) bool {
-		pi := gd.computePathScore(paths[i], cwd, configDir, execDir)
-		pj := gd.computePathScore(paths[j], cwd, configDir, execDir)
+	slices.SortFunc(paths, func(a, b string) int {
+		pa := gd.computePathScore(a, cwd, configDir, execDir)
+		pb := gd.computePathScore(b, cwd, configDir, execDir)
 
-		if pi.class != pj.class {
-			return pi.class < pj.class
+		if c := cmp.Compare(pa.class, pb.class); c != 0 {
+			return c
 		}
 
-		if pi.distance != pj.distance {
-			return pi.distance < pj.distance
+		if c := cmp.Compare(pa.distance, pb.distance); c != 0 {
+			return c
 		}
 
-		if pi.depth != pj.depth {
-			return pi.depth < pj.depth
+		if c := cmp.Compare(pa.depth, pb.depth); c != 0 {
+			return c
 		}
 
-		return paths[i] < paths[j]
+		return cmp.Compare(a, b)
 	})
 
+	gd.debugf("discovery complete: %d paths found in %s", len(paths), time.Since(discoveryStart))
+	for i, p := range paths {
+		gd.debugf("  [%d] %s", i, p)
+	}
+
 	return paths
+}
+
+// DiscoverAnnotatedGoalPaths returns all goal paths with source annotations
+// and existence status. This is used by the "osm goal paths" subcommand to
+// show users exactly which paths are discovered, where they come from, and
+// whether they exist on disk.
+func (gd *GoalDiscovery) DiscoverAnnotatedGoalPaths() []AnnotatedPath {
+	annotatedStart := time.Now()
+	defer func() {
+		gd.debugf("annotated discovery complete in %s", time.Since(annotatedStart))
+	}()
+
+	type candidate struct {
+		path   string
+		source string
+	}
+
+	var candidates []candidate
+	seenPaths := make(map[string]bool)
+
+	addCandidate := func(raw, source string) {
+		if strings.TrimSpace(raw) == "" {
+			return
+		}
+		normalized, err := gd.normalizePath(raw)
+		if err != nil {
+			return
+		}
+		if seenPaths[normalized] {
+			return
+		}
+		candidates = append(candidates, candidate{path: normalized, source: source})
+		seenPaths[normalized] = true
+	}
+
+	// Standard paths
+	for _, p := range gd.getStandardPaths() {
+		addCandidate(p, "standard")
+	}
+
+	// Custom paths from configuration
+	for _, p := range gd.config.CustomPaths {
+		addCandidate(gd.expandPath(p), "custom")
+	}
+
+	// Autodiscovered paths
+	if gd.config.EnableAutodiscovery {
+		for _, p := range gd.autodiscoverPaths() {
+			addCandidate(p, "autodiscovered")
+		}
+	}
+
+	// Sort using same logic as DiscoverGoalPaths
+	cwd, _ := os.Getwd()
+
+	var configDir string
+	if configPath, err := config.GetConfigPath(); err == nil {
+		configDir = filepath.Dir(configPath)
+	}
+
+	var execDir string
+	if execPath, err := os.Executable(); err == nil {
+		execDir = filepath.Dir(execPath)
+	}
+
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		pa := gd.computePathScore(a.path, cwd, configDir, execDir)
+		pb := gd.computePathScore(b.path, cwd, configDir, execDir)
+
+		if c := cmp.Compare(pa.class, pb.class); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(pa.distance, pb.distance); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(pa.depth, pb.depth); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.path, b.path)
+	})
+
+	// Build result with existence check
+	result := make([]AnnotatedPath, len(candidates))
+	for i, c := range candidates {
+		_, statErr := os.Stat(c.path)
+		result[i] = AnnotatedPath{
+			Path:   c.path,
+			Source: c.source,
+			Exists: statErr == nil,
+		}
+	}
+
+	return result
 }
 
 // getStandardPaths returns the standard goal discovery paths
@@ -150,24 +312,37 @@ func (gd *GoalDiscovery) getStandardPaths() []string {
 
 	// Allow disabling standard goal paths via config/env (useful for tests)
 	if gd.config.DisableStandardPaths {
+		gd.debugf("standard paths disabled by configuration")
 		return paths
 	}
 
-	// 1. ~/.one-shot-man/goals/ (user goals)
+	// 1. ~/.osm/goals/ (user goals)
 	if configPath, err := config.GetConfigPath(); err == nil {
 		configDir := filepath.Dir(configPath)
-		paths = append(paths, filepath.Join(configDir, "goals"))
+		p := filepath.Join(configDir, "goals")
+		paths = append(paths, p)
+		gd.debugf("standard path [config]: %s", p)
+	} else {
+		gd.debugf("standard path [config]: skipped (config path unavailable: %v)", err)
 	}
 
 	// 2. goals/ directory relative to the executable
 	if execPath, err := os.Executable(); err == nil {
 		execDir := filepath.Dir(execPath)
-		paths = append(paths, filepath.Join(execDir, "goals"))
+		p := filepath.Join(execDir, "goals")
+		paths = append(paths, p)
+		gd.debugf("standard path [exec]: %s", p)
+	} else {
+		gd.debugf("standard path [exec]: skipped (executable path unavailable: %v)", err)
 	}
 
 	// 3. ./osm-goals/ (current directory goals - primary pattern)
 	if cwd, err := os.Getwd(); err == nil {
-		paths = append(paths, filepath.Join(cwd, "osm-goals"))
+		p := filepath.Join(cwd, "osm-goals")
+		paths = append(paths, p)
+		gd.debugf("standard path [cwd]: %s", p)
+	} else {
+		gd.debugf("standard path [cwd]: skipped (getwd failed: %v)", err)
 	}
 
 	return paths
@@ -175,30 +350,76 @@ func (gd *GoalDiscovery) getStandardPaths() []string {
 
 // autodiscoverPaths discovers goal paths using advanced rules
 func (gd *GoalDiscovery) autodiscoverPaths() []string {
+	autodiscoverStart := time.Now()
+
 	var paths []string
 
 	// Start from current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
+		gd.debugf("autodiscover: skipped (getwd failed: %v)", err)
 		return paths
 	}
+
+	gd.debugf("autodiscover: starting upward traversal from %s", cwd)
 
 	// Look for goal directories in current path and parent directories
 	paths = append(paths, gd.traverseForGoalDirs(cwd)...)
 
+	gd.debugf("autodiscover complete: %d paths in %s", len(paths), time.Since(autodiscoverStart))
+
 	return paths
 }
 
-// traverseForGoalDirs traverses up from the given directory looking for goal directories
+// traverseForGoalDirs traverses up from the given directory looking for goal directories.
+// It tracks resolved real paths to detect symlink cycles that could cause infinite traversal.
 func (gd *GoalDiscovery) traverseForGoalDirs(startDir string) []string {
+	traversalStart := time.Now()
+
 	var paths []string
+	var dirCount int
+
+	// Track resolved real paths to detect symlink cycles in the upward traversal.
+	// A cycle can occur if a directory component is a symlink pointing to a descendant.
+	visitedReal := make(map[string]bool)
 
 	dir := startDir
 	for i := 0; i < gd.config.MaxTraversalDepth; i++ {
+		dirCount++
+		// Resolve the real path for cycle detection
+		realDir, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			// If we can't resolve symlinks (e.g., permission denied), log and stop traversal
+			if errors.Is(err, os.ErrPermission) {
+				slog.Warn("permission denied resolving symlinks, stopping upward traversal", "directory", dir)
+				gd.debugf("traversal: permission denied at %s: %v", dir, err)
+			} else {
+				gd.debugf("traversal: symlink resolution failed at %s: %v", dir, err)
+			}
+			break
+		}
+
+		if visitedReal[realDir] {
+			gd.debugf("traversal: symlink cycle detected at %s (real: %s), stopping", dir, realDir)
+			break
+		}
+		visitedReal[realDir] = true
+
 		// Check for goal directories using configured patterns
 		for _, pattern := range gd.config.GoalPathPatterns {
 			goalPath := filepath.Join(dir, pattern)
-			if gd.directoryExists(goalPath) {
+			exists, checkErr := gd.checkDirectory(goalPath)
+			if checkErr != nil {
+				if errors.Is(checkErr, os.ErrPermission) {
+					slog.Warn("permission denied checking goal directory", "path", goalPath)
+					gd.debugf("traversal: permission denied for %s", goalPath)
+				} else {
+					gd.debugf("traversal: error checking %s: %v", goalPath, checkErr)
+				}
+				continue
+			}
+			if exists {
+				gd.debugf("traversal: found goal directory %s", goalPath)
 				paths = append(paths, goalPath)
 			}
 		}
@@ -206,18 +427,34 @@ func (gd *GoalDiscovery) traverseForGoalDirs(startDir string) []string {
 		// Move up one directory
 		parent := filepath.Dir(dir)
 		if parent == dir {
+			gd.debugf("traversal: reached filesystem root at %s", dir)
 			break // Reached filesystem root
 		}
 		dir = parent
 	}
 
+	if len(paths) == 0 {
+		gd.debugf("traversal: no goal directories found in %d levels from %s", gd.config.MaxTraversalDepth, startDir)
+	}
+
+	gd.debugf("traversal complete: checked %d directories, found %d goal paths in %s", dirCount, len(paths), time.Since(traversalStart))
+
 	return paths
 }
 
-// directoryExists checks if a directory exists
-func (gd *GoalDiscovery) directoryExists(path string) bool {
+// checkDirectory checks if a path is an existing directory.
+// Returns (exists, error) to allow callers to distinguish permission errors
+// from simple non-existence.
+func (gd *GoalDiscovery) checkDirectory(path string) (bool, error) {
 	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		// Return the error (permission denied, I/O error, etc.) for the caller to handle
+		return false, err
+	}
+	return info.IsDir(), nil
 }
 
 // expandPath expands tilde and environment variables in paths
@@ -277,19 +514,25 @@ func (gd *GoalDiscovery) normalizePath(path string) (string, error) {
 
 func (gd *GoalDiscovery) addPath(paths *[]string, seenPaths map[string]bool, candidate string) {
 	if strings.TrimSpace(candidate) == "" {
+		gd.debugf("addPath: skipping empty candidate")
 		return
 	}
 
 	normalized, err := gd.normalizePath(candidate)
 	if err != nil {
-		log.Printf("warning: skipping goal path %q: %v", candidate, err)
+		slog.Warn("skipping goal path", "candidate", candidate, "error", err)
+		gd.debugf("addPath: normalization failed for %q: %v", candidate, err)
 		return
 	}
 
-	if !seenPaths[normalized] {
-		*paths = append(*paths, normalized)
-		seenPaths[normalized] = true
+	if seenPaths[normalized] {
+		gd.debugf("addPath: deduplicating %s (normalized: %s)", candidate, normalized)
+		return
 	}
+
+	*paths = append(*paths, normalized)
+	seenPaths[normalized] = true
+	gd.debugf("addPath: accepted %s (normalized: %s)", candidate, normalized)
 }
 
 type goalPathScore struct {
@@ -367,4 +610,85 @@ func (gd *GoalDiscovery) matchesAncestorPattern(segments []string) bool {
 	}
 
 	return false
+}
+
+// DiscoverPromptFilePaths returns directories to search for .prompt.md files.
+// This always includes .github/prompts relative to the current working
+// directory (the VS Code standard location) plus any paths configured via
+// the prompt.file-paths option.
+//
+// Configured paths support glob patterns (e.g., ~/prompts/*/). Each
+// expanded glob result is validated and non-directory results are skipped.
+// Missing or unreadable configured paths emit a warning log.
+func (gd *GoalDiscovery) DiscoverPromptFilePaths() []string {
+	var paths []string
+	seenPaths := make(map[string]bool)
+
+	if !gd.config.DisableStandardPaths {
+		// VS Code standard: .github/prompts relative to CWD.
+		if cwd, err := os.Getwd(); err == nil {
+			ghPrompts := filepath.Join(cwd, ".github", "prompts")
+			gd.addPath(&paths, seenPaths, ghPrompts)
+		}
+	}
+
+	// User-configured prompt file paths (may contain glob patterns).
+	for _, p := range gd.config.PromptFilePaths {
+		expanded := gd.expandPath(p)
+
+		// Check if the path contains glob metacharacters.
+		if containsGlobMeta(expanded) {
+			matches, err := filepath.Glob(expanded)
+			if err != nil {
+				slog.Warn("invalid glob pattern in prompt.file-paths", "pattern", p, "error", err)
+				gd.debugf("prompt paths: invalid glob %q: %v", expanded, err)
+				continue
+			}
+			if len(matches) == 0 {
+				gd.debugf("prompt paths: glob %q matched no paths", expanded)
+			}
+			for _, m := range matches {
+				info, err := os.Stat(m)
+				if err != nil {
+					gd.debugf("prompt paths: glob match %q unreadable: %v", m, err)
+					continue
+				}
+				if !info.IsDir() {
+					gd.debugf("prompt paths: glob match %q is not a directory, skipping", m)
+					continue
+				}
+				gd.addPath(&paths, seenPaths, m)
+			}
+			continue
+		}
+
+		// Non-glob path: validate and report missing/unreadable.
+		info, err := os.Stat(expanded)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				slog.Warn("configured prompt path does not exist", "path", expanded)
+				gd.debugf("prompt paths: configured path %q does not exist", expanded)
+			} else if errors.Is(err, os.ErrPermission) {
+				slog.Warn("configured prompt path is not readable", "path", expanded)
+				gd.debugf("prompt paths: configured path %q permission denied", expanded)
+			} else {
+				slog.Warn("cannot access configured prompt path", "path", expanded, "error", err)
+				gd.debugf("prompt paths: configured path %q error: %v", expanded, err)
+			}
+			continue
+		}
+		if !info.IsDir() {
+			slog.Warn("configured prompt path is not a directory", "path", expanded)
+			gd.debugf("prompt paths: configured path %q is not a directory", expanded)
+			continue
+		}
+		gd.addPath(&paths, seenPaths, expanded)
+	}
+
+	return paths
+}
+
+// containsGlobMeta reports whether the path contains glob metacharacters.
+func containsGlobMeta(path string) bool {
+	return strings.ContainsAny(path, "*?[")
 }

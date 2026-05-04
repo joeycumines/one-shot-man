@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 
 // shooterGetFloat64 converts a goja value to float64, handling both float64 and int64 types.
 // This is used throughout shooter game tests for extracting numeric values from JavaScript.
-func shooterGetFloat64(val interface{}) float64 {
+func shooterGetFloat64(val any) float64 {
 	switch v := val.(type) {
 	case float64:
 		return v
@@ -26,11 +27,13 @@ func shooterGetFloat64(val interface{}) float64 {
 
 // TestShooterGame_Distance tests the Euclidean distance calculation utility function
 func TestShooterGame_Distance(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -120,11 +123,13 @@ func TestShooterGame_Distance(t *testing.T) {
 
 // TestShooterGame_Clamp tests the clamp utility function
 func TestShooterGame_Clamp(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -215,11 +220,13 @@ func TestShooterGame_Clamp(t *testing.T) {
 
 // TestShooterGame_CreateExplosion tests the explosion particle creation utility function
 func TestShooterGame_CreateExplosion(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -291,7 +298,7 @@ func TestShooterGame_CreateExplosion(t *testing.T) {
 			}
 
 			// Result should be an array
-			resultArray, ok := result.([]interface{})
+			resultArray, ok := result.([]any)
 			if !ok {
 				t.Fatalf("Expected array, got %T", result)
 			}
@@ -303,7 +310,7 @@ func TestShooterGame_CreateExplosion(t *testing.T) {
 
 			// Verify each particle has the expected structure
 			for i, particle := range resultArray {
-				particleMap, ok := particle.(map[string]interface{})
+				particleMap, ok := particle.(map[string]any)
 				if !ok {
 					t.Errorf("Particle %d: expected map, got %T (value: %v)", i, particle, particle)
 					continue
@@ -348,11 +355,13 @@ func TestShooterGame_CreateExplosion(t *testing.T) {
 
 // TestShooterGame_InitialState tests game state initialization and entity constructors
 func TestShooterGame_InitialState(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -558,7 +567,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 		}
 
 		player := engine.GetGlobal("lastResult")
-		playerMap, ok := player.(map[string]interface{})
+		playerMap, ok := player.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected player to be a map, got %T", player)
 		}
@@ -636,7 +645,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 			}
 
 			enemy := engine.GetGlobal("lastResult")
-			enemyMap, ok := enemy.(map[string]interface{})
+			enemyMap, ok := enemy.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected enemy to be a map, got %T", enemy)
 			}
@@ -694,7 +703,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 		}
 
 		projectile := engine.GetGlobal("lastResult")
-		projectileMap, ok := projectile.(map[string]interface{})
+		projectileMap, ok := projectile.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected projectile to be a map, got %T", projectile)
 		}
@@ -779,7 +788,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 		}
 
 		particle := engine.GetGlobal("lastResult")
-		particleMap, ok := particle.(map[string]interface{})
+		particleMap, ok := particle.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected particle to be a map, got %T", particle)
 		}
@@ -834,11 +843,13 @@ func TestShooterGame_InitialState(t *testing.T) {
 
 // TestShooterGame_CollisionDetection tests collision detection between game entities
 func TestShooterGame_CollisionDetection(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -1003,7 +1014,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -1095,7 +1106,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -1159,7 +1170,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -1236,7 +1247,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -1318,7 +1329,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 				}
 
 				result := engine.GetGlobal("lastResult")
-				resultMap, ok := result.(map[string]interface{})
+				resultMap, ok := result.(map[string]any)
 				if !ok {
 					t.Fatalf("Expected result to be a map, got %T", result)
 				}
@@ -1369,7 +1380,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 				}
 
 				result := engine.GetGlobal("lastResult")
-				resultMap, ok := result.(map[string]interface{})
+				resultMap, ok := result.(map[string]any)
 				if !ok {
 					t.Fatalf("Expected result to be a map, got %T", result)
 				}
@@ -1395,11 +1406,13 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 
 // TestShooterGame_WaveManagement tests wave spawning, completion, and victory conditions
 func TestShooterGame_WaveManagement(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -1593,7 +1606,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 				}
 
 				result := engine.GetGlobal("lastResult")
-				resultMap, ok := result.(map[string]interface{})
+				resultMap, ok := result.(map[string]any)
 				if !ok {
 					t.Fatalf("Expected result to be a map, got %T", result)
 				}
@@ -1602,7 +1615,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 					t.Errorf("Expected successful spawn for wave %d", wt.wave)
 				}
 
-				enemies, ok := resultMap["enemies"].([]interface{})
+				enemies, ok := resultMap["enemies"].([]any)
 				if !ok {
 					t.Fatalf("Expected enemies to be array, got %T", resultMap["enemies"])
 				}
@@ -1614,7 +1627,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 				// Count by type
 				actualTypeCounts := make(map[string]int)
 				for _, enemy := range enemies {
-					enemyMap, ok := enemy.(map[string]interface{})
+					enemyMap, ok := enemy.(map[string]any)
 					if !ok {
 						continue
 					}
@@ -1659,7 +1672,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 
 		// Get enemy IDs
 		idResult := engine.GetGlobal("lastResult")
-		idArray, ok := idResult.([]interface{})
+		idArray, ok := idResult.([]any)
 		if !ok {
 			t.Fatalf("Expected enemy ID array, got %T", idResult)
 		}
@@ -1686,7 +1699,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -1722,7 +1735,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -1785,7 +1798,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 			}
 
 			idResult := engine.GetGlobal("lastResult")
-			idArray, ok := idResult.([]interface{})
+			idArray, ok := idResult.([]any)
 			if !ok {
 				t.Fatalf("Expected enemy ID array, got %T", idResult)
 			}
@@ -1816,7 +1829,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -1840,7 +1853,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 		}
 
 		result = engine.GetGlobal("lastResult")
-		resultMap, ok = result.(map[string]interface{})
+		resultMap, ok = result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -1899,7 +1912,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -1946,11 +1959,13 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 
 // TestShooterGame_BehaviorTreeLeaves tests all behavior tree leaf functions in isolation
 func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -2019,7 +2034,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2068,7 +2083,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2107,7 +2122,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2156,7 +2171,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2214,7 +2229,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2280,7 +2295,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2363,7 +2378,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2410,7 +2425,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2459,7 +2474,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2517,7 +2532,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2572,7 +2587,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2623,7 +2638,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2674,7 +2689,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2738,7 +2753,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2782,7 +2797,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2818,7 +2833,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2887,7 +2902,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -2981,7 +2996,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -3024,7 +3039,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -3090,7 +3105,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -3143,7 +3158,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -3179,7 +3194,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -3252,7 +3267,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -3291,11 +3306,13 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 // TestShooterGame_InputHandling tests keyboard input handling for player controls
 // CRITICAL per blueprint (TEST-010)
 func TestShooterGame_InputHandling(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -3501,7 +3518,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 				}
 
 				result := engine.GetGlobal("lastResult")
-				resultMap, ok := result.(map[string]interface{})
+				resultMap, ok := result.(map[string]any)
 				if !ok {
 					t.Fatalf("Expected result to be a map, got %T", result)
 				}
@@ -3583,7 +3600,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 				}
 
 				result := engine.GetGlobal("lastResult")
-				resultMap, ok := result.(map[string]interface{})
+				resultMap, ok := result.(map[string]any)
 				if !ok {
 					t.Fatalf("Expected result to be a map, got %T", result)
 				}
@@ -3653,7 +3670,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -3733,7 +3750,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -3808,7 +3825,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -3840,7 +3857,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 		}
 
 		result = engine.GetGlobal("lastResult")
-		resultMap, ok = result.(map[string]interface{})
+		resultMap, ok = result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -3883,7 +3900,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -3924,7 +3941,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -3966,7 +3983,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -3987,11 +4004,13 @@ func TestShooterGame_InputHandling(t *testing.T) {
 // TestShooterGame_GameModeStateMachine tests game mode state transitions
 // CRITICAL per blueprint (TEST-011)
 func TestShooterGame_GameModeStateMachine(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -4151,7 +4170,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4160,7 +4179,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 			t.Errorf("Expected initial gameMode 'menu', got %v", resultMap["gameMode"])
 		}
 
-		transResult, ok := resultMap["transitionResult"].(map[string]interface{})
+		transResult, ok := resultMap["transitionResult"].(map[string]any)
 		if !ok {
 			t.Fatalf("Expected transitionResult to be a map, got %T", transResult)
 		}
@@ -4206,7 +4225,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4246,7 +4265,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4295,7 +4314,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4330,7 +4349,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 		}
 
 		result2 := engine.GetGlobal("lastResult")
-		resultMap2, ok := result2.(map[string]interface{})
+		resultMap2, ok := result2.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4383,7 +4402,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4436,7 +4455,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4490,7 +4509,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 				}
 
 				result := engine.GetGlobal("lastResult")
-				resultMap, ok := result.(map[string]interface{})
+				resultMap, ok := result.(map[string]any)
 				if !ok {
 					t.Fatalf("Expected result to be a map, got %T", result)
 				}
@@ -4521,11 +4540,12 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 // TestShooterGame_TickerLifecycle tests behavior tree ticker lifecycle management
 // CRITICAL per blueprint (TEST-012)
 func TestShooterGame_TickerLifecycle(t *testing.T) {
+	skipSlow(t)
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -4655,7 +4675,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4706,7 +4726,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4763,7 +4783,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4816,7 +4836,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4853,7 +4873,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4914,7 +4934,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -4983,7 +5003,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -5020,11 +5040,13 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 // TestShooterGame_GameLoopIntegration tests full tick flow and game loop integration
 // TEST-007: Critical for ensuring game updates correctly over time
 func TestShooterGame_GameLoopIntegration(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -5214,7 +5236,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -5259,7 +5281,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -5300,7 +5322,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 		}
 
 		// Execute 3 ticks
-		for tickNum := 0; tickNum < 3; tickNum++ {
+		for tickNum := range 3 {
 			tickScript := engine.LoadScriptFromString(fmt.Sprintf("ai-tick-%d", tickNum), fmt.Sprintf(`
 				(() => {
 					const now = Date.now();
@@ -5318,7 +5340,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -5328,14 +5350,14 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 			}
 
 			// Verify all enemies have tickCount incremented
-			counts, ok := resultMap["enemyTickCounts"].([]interface{})
+			counts, ok := resultMap["enemyTickCounts"].([]any)
 			if !ok {
 				t.Fatalf("Expected enemyTickCounts to be array, got %T", resultMap["enemyTickCounts"])
 			}
 
 			expectedTickCount := float64(tickNum + 1)
 			for i, countMap := range counts {
-				count, ok := countMap.(map[string]interface{})
+				count, ok := countMap.(map[string]any)
 				if !ok {
 					continue
 				}
@@ -5378,7 +5400,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -5402,7 +5424,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 		}
 
 		result = engine.GetGlobal("lastResult")
-		resultMap, ok = result.(map[string]interface{})
+		resultMap, ok = result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -5428,7 +5450,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 		}
 
 		result = engine.GetGlobal("lastResult")
-		resultMap, ok = result.(map[string]interface{})
+		resultMap, ok = result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -5442,11 +5464,13 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 // TestShooterGame_EdgeCases tests edge cases and boundary conditions
 // TEST-013: Critical for robustness under unusual conditions
 func TestShooterGame_EdgeCases(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -5571,7 +5595,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 				}
 
 				result := engine.GetGlobal("lastResult")
-				resultMap, ok := result.(map[string]interface{})
+				resultMap, ok := result.(map[string]any)
 				if !ok {
 					t.Fatalf("Expected result to be a map, got %T", result)
 				}
@@ -5608,7 +5632,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -5650,7 +5674,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -5682,7 +5706,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 		}
 
 		result = engine.GetGlobal("lastResult")
-		resultMap, ok = result.(map[string]interface{})
+		resultMap, ok = result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -5719,7 +5743,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 				}
 
 				result := engine.GetGlobal("lastResult")
-				resultMap, ok := result.(map[string]interface{})
+				resultMap, ok := result.(map[string]any)
 				if !ok {
 					t.Fatalf("Expected result to be a map, got %T", result)
 				}
@@ -5770,7 +5794,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -5814,7 +5838,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 			}
 
 			result := engine.GetGlobal("lastResult")
-			resultMap, ok := result.(map[string]interface{})
+			resultMap, ok := result.(map[string]any)
 			if !ok {
 				t.Fatalf("Expected result to be a map, got %T", result)
 			}
@@ -5841,7 +5865,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -5860,11 +5884,13 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 // TestShooterGame_BlackboardThreadSafety tests concurrent read/write operations
 // TEST-014: Simplified test for basic thread-safety verification
 func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -5932,7 +5958,7 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -5962,7 +5988,7 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -6002,7 +6028,7 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -6059,7 +6085,7 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 		}
 
 		result := engine.GetGlobal("lastResult")
-		resultMap, ok := result.(map[string]interface{})
+		resultMap, ok := result.(map[string]any)
 		if !ok {
 			t.Fatalf("Expected result to be a map, got %T", result)
 		}
@@ -6085,7 +6111,7 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 		}
 
 		// Verify final values exist (no null/undefined from corruption)
-		finalValues, ok := resultMap["finalValues"].(map[string]interface{})
+		finalValues, ok := resultMap["finalValues"].(map[string]any)
 		if !ok {
 			t.Fatalf("Expected finalValues to be a map, got %T", resultMap["finalValues"])
 		}

@@ -1,0 +1,86 @@
+{
+  "name": "file-analyzer",
+  "description": "Analyze files for complexity, structure, and quality metrics",
+  "category": "code-quality",
+  "usage": "Add files, optionally set analysis depth and output format, then copy",
+  "tuiTitle": "File Analyzer",
+  "tuiPrompt": "(analyze) > ",
+  "stateVars": {
+    "depth": "standard",
+    "format": "prose"
+  },
+  "notableVariables": ["depth", "format"],
+  "promptInstructions": "Analyze the provided files and produce a {{.stateKeys.depth}} analysis.\n\n{{.depthInstructions}}\n\n{{.formatInstructions}}",
+  "promptTemplate": "**{{.description | upper}}**\n\n{{.promptInstructions}}\n\n## {{.contextHeader}}\n\n{{.contextTxtar}}",
+  "promptOptions": {
+    "depthInstructions": {
+      "quick": "Provide a high-level overview only. Focus on: file purpose, main exports/entry points, and any obvious red flags. Keep each file analysis to 3-5 bullet points.",
+      "standard": "Provide a thorough analysis covering: file purpose, structure and organization, key functions/classes, complexity assessment, dependency analysis, and improvement suggestions.",
+      "deep": "Provide an exhaustive analysis including: file purpose and design rationale, complete structure breakdown, cyclomatic complexity estimates per function, coupling analysis, SOLID principle adherence, design pattern identification, test coverage implications, refactoring opportunities with effort estimates, and security surface area."
+    },
+    "formatInstructions": {
+      "prose": "Present the analysis as narrative prose with section headers. Use paragraphs for explanations and inline code references.",
+      "structured": "Present the analysis in a structured format with: a metrics summary table, bullet-point findings organized by category, and a scored report card (A-F) for each quality dimension.",
+      "json": "Present the analysis as a JSON object with keys: {fileName, purpose, metrics: {complexity, coupling, cohesion}, findings: [{category, severity, description}], score, suggestions: [string]}."
+    }
+  },
+  "contextHeader": "FILES TO ANALYZE",
+  "usageTemplate": "  analyze            Run analysis with current settings\n  set-depth <level>  Set depth: quick, standard, deep\n  set-format <fmt>   Set output: prose, structured, json",
+  "commands": [
+    {
+      "name": "add",
+      "type": "contextManager",
+      "description": "Add files to analyze",
+      "argCompleters": ["file"]
+    },
+    {
+      "name": "list",
+      "type": "contextManager",
+      "description": "List context items"
+    },
+    {
+      "name": "remove",
+      "type": "contextManager",
+      "description": "Remove a context item"
+    },
+    {
+      "name": "show",
+      "type": "contextManager",
+      "description": "Preview the prompt"
+    },
+    {
+      "name": "copy",
+      "type": "contextManager",
+      "description": "Copy prompt to clipboard"
+    },
+    {
+      "name": "analyze",
+      "type": "custom",
+      "description": "Show current analysis settings and preview",
+      "usage": "analyze [-depth <level>] [-format <fmt>]",
+      "flagDefs": [
+        { "name": "depth", "description": "Analysis depth: quick, standard, or deep" },
+        { "name": "format", "description": "Output format: prose, structured, or json" }
+      ],
+      "handler": "function (args) {\n  var depth = state.get(stateKeys.depth);\n  var format = state.get(stateKeys.format);\n  var i = 0;\n  while (i < args.length) {\n    if (args[i] === '-depth' && i + 1 < args.length) {\n      var validDepths = ['quick', 'standard', 'deep'];\n      if (validDepths.indexOf(args[i + 1]) !== -1) {\n        depth = args[i + 1];\n        state.set(stateKeys.depth, depth);\n      } else {\n        output.print('Invalid depth: ' + args[i + 1] + '. Use: ' + validDepths.join(', '));\n        return;\n      }\n      i += 2;\n    } else if (args[i] === '-format' && i + 1 < args.length) {\n      var validFormats = ['prose', 'structured', 'json'];\n      if (validFormats.indexOf(args[i + 1]) !== -1) {\n        format = args[i + 1];\n        state.set(stateKeys.format, format);\n      } else {\n        output.print('Invalid format: ' + args[i + 1] + '. Use: ' + validFormats.join(', '));\n        return;\n      }\n      i += 2;\n    } else {\n      i++;\n    }\n  }\n  output.print('Analysis settings:');\n  output.print('  Depth:  ' + depth);\n  output.print('  Format: ' + format);\n  output.print('');\n  output.print('Use \"copy\" to generate the analysis prompt.');\n}"
+    },
+    {
+      "name": "set-depth",
+      "type": "custom",
+      "description": "Set analysis depth (quick, standard, deep)",
+      "usage": "set-depth <level>",
+      "handler": "function (args) {\n  var valid = ['quick', 'standard', 'deep'];\n  if (!args || args.length === 0) {\n    output.print('Current depth: ' + state.get(stateKeys.depth));\n    output.print('Available: ' + valid.join(', '));\n    return;\n  }\n  if (valid.indexOf(args[0]) === -1) {\n    output.print('Invalid depth: ' + args[0] + '. Use: ' + valid.join(', '));\n    return;\n  }\n  state.set(stateKeys.depth, args[0]);\n  output.print('Depth set to: ' + args[0]);\n}"
+    },
+    {
+      "name": "set-format",
+      "type": "custom",
+      "description": "Set output format (prose, structured, json)",
+      "usage": "set-format <fmt>",
+      "handler": "function (args) {\n  var valid = ['prose', 'structured', 'json'];\n  if (!args || args.length === 0) {\n    output.print('Current format: ' + state.get(stateKeys.format));\n    output.print('Available: ' + valid.join(', '));\n    return;\n  }\n  if (valid.indexOf(args[0]) === -1) {\n    output.print('Invalid format: ' + args[0] + '. Use: ' + valid.join(', '));\n    return;\n  }\n  state.set(stateKeys.format, args[0]);\n  output.print('Format set to: ' + args[0]);\n}"
+    },
+    {
+      "name": "help",
+      "type": "help"
+    }
+  ]
+}

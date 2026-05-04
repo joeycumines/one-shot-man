@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"testing"
@@ -12,6 +13,8 @@ import (
 )
 
 func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
+	skipSlow(t)
+
 	// Only run this test if we're in a git repository
 	if !isGitRepository() {
 		t.Skip("Skipping git diff test - not in a git repository")
@@ -21,7 +24,7 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	// Use an in-memory storage backend with unique session ID for test isolation
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("git-exec", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("git-exec", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -31,7 +34,7 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("codeReviewTemplate", codeReviewTemplate)
 	// Inject config object with name field
-	engine.SetGlobal("config", map[string]interface{}{"name": "code-review"})
+	engine.SetGlobal("config", map[string]any{"name": "code-review"})
 
 	// Load the script
 	script := engine.LoadScriptFromString("code-review", codeReviewScript)

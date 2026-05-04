@@ -1,0 +1,129 @@
+{
+  "name": "migration-planner",
+  "description": "Plan and execute codebase migrations with structured analysis and tracking",
+  "category": "code-refactoring",
+  "usage": "Add source/target files, configure migration type and risk tolerance, generate migration plan",
+  "tuiTitle": "Migration Planner",
+  "tuiPrompt": "(migrate) > ",
+  "stateVars": {
+    "migrationType": "api",
+    "riskTolerance": "moderate",
+    "targetVersion": ""
+  },
+  "notableVariables": ["migrationType", "riskTolerance", "targetVersion"],
+  "promptInstructions": "You are a migration planning assistant. Analyze the provided code and create a detailed migration plan.\n\n**Migration type**: {{.stateKeys.migrationType}}\n{{.migrationTypeInstructions}}\n\n**Risk tolerance**: {{.stateKeys.riskTolerance}}\n{{.riskToleranceInstructions}}\n\n{{if index .stateKeys \"targetVersion\"}}**Target version**: {{index .stateKeys \"targetVersion\"}}\n{{end}}\nFor each file or component that needs migration:\n1. Identify all breaking changes and deprecations\n2. Map old patterns to new patterns with before/after examples\n3. Flag any data loss risks or behavioral changes\n4. Estimate effort and identify dependencies between migration steps\n5. Suggest an ordering that minimizes risk of partial migration states",
+  "promptTemplate": "**{{.description | upper}}**\n\n{{.promptInstructions}}\n\n## {{.contextHeader}}\n\n{{.contextTxtar}}{{if .promptFooter}}\n\n---\n{{.promptFooter}}{{end}}",
+  "promptFooter": "## CONSTRAINTS\n- All migration steps must be independently verifiable\n- Each step must leave the codebase in a working state\n- Include rollback instructions for each non-trivial change\n- Flag any steps that require coordinated deployment (database + code)",
+  "promptOptions": {
+    "migrationTypeInstructions": {
+      "api": "Focus on API surface changes: endpoint modifications, request/response schema changes, authentication updates, versioning headers, and client library compatibility. Identify all consumers that need updates.",
+      "database": "Focus on schema migrations: table alterations, index changes, data type modifications, constraint updates, and data backfill requirements. Generate reversible migration scripts where possible.",
+      "framework": "Focus on framework upgrade paths: deprecated API replacements, configuration format changes, plugin/middleware compatibility, build system updates, and dependency resolution conflicts.",
+      "language": "Focus on language version migration: syntax changes, removed features, new required patterns, standard library changes, and toolchain updates (linters, formatters, type checkers)."
+    },
+    "riskToleranceInstructions": {
+      "conservative": "Minimize risk at all costs. Prefer incremental changes over big-bang migrations. Each step must be independently deployable and reversible. Add feature flags for behavioral changes. Plan for parallel running of old and new systems.",
+      "moderate": "Balance speed with safety. Group related changes into logical phases. Require rollback plans for each phase but allow multi-step changes within a phase. Accept temporary duplication if it aids migration safety.",
+      "aggressive": "Optimize for speed of completion. Allow larger atomic changes. Accept temporary breakage in non-production environments. Minimize parallel running periods. Prioritize removing old code quickly after migration."
+    }
+  },
+  "contextHeader": "CODEBASE CONTEXT",
+  "bannerTemplate": "┌─────────────────────────────────────────┐\n│         MIGRATION PLANNER               │\n├─────────────────────────────────────────┤\n│  Commands:                              │\n│    add <file>      Add source files     │\n│    set-type <t>    Migration type       │\n│    set-risk <r>    Risk tolerance       │\n│    set-target <v>  Target version       │\n│    copy            Generate plan        │\n│    help            Full command list    │\n└─────────────────────────────────────────┘",
+  "usageTemplate": "  set-type <type>      Set migration type: api, database, framework, language\n  set-risk <level>     Set risk tolerance: conservative, moderate, aggressive\n  set-target <version> Set target version string (e.g., v2.0, Python 3.12)\n  checklist            Show pre-migration checklist",
+  "postCopyHint": "[Hint] After receiving the plan, use 'hot-migration-checklist' for a pre-flight checklist or 'hot-dependency-map' for a visual dependency analysis.",
+  "hotSnippets": [
+    {
+      "name": "migration-checklist",
+      "text": "Based on the migration plan above, create a pre-flight checklist.\n\nFormat as a markdown checklist (- [ ] items) organized by phase:\n\n**Before Migration**\n- [ ] Backup verification\n- [ ] Dependency audit\n- [ ] Test coverage check\n- [ ] Rollback procedure tested\n\n**During Migration (per phase)**\n- [ ] Apply changes\n- [ ] Run test suite\n- [ ] Verify functionality\n- [ ] Check performance\n\n**After Migration**\n- [ ] Remove deprecated code\n- [ ] Update documentation\n- [ ] Notify consumers\n- [ ] Monitor for regressions\n\nCustomize each section based on the specific migration plan. Add phase-specific items where needed.",
+      "description": "Generate a pre-flight checklist from the migration plan"
+    },
+    {
+      "name": "dependency-map",
+      "text": "Based on the migration plan above, create a dependency map.\n\nFor each component being migrated:\n1. List its upstream dependencies (what it imports/uses)\n2. List its downstream dependents (what uses it)\n3. Identify the migration order constraints\n4. Flag circular dependencies that need special handling\n\nPresent as:\n- A textual dependency graph (ASCII art or indented tree)\n- A recommended migration sequence with justification\n- Critical path analysis: which chain of dependencies determines the minimum migration time",
+      "description": "Generate a dependency analysis for migration ordering"
+    },
+    {
+      "name": "rollback-plan",
+      "text": "Based on the migration plan above, create detailed rollback procedures.\n\nFor each migration phase:\n1. **Trigger conditions**: When to initiate rollback (error rates, test failures, etc.)\n2. **Rollback steps**: Exact commands/changes to revert\n3. **Data considerations**: Any data created during migration that needs handling\n4. **Verification**: How to confirm rollback succeeded\n5. **Communication**: Who to notify and what to tell them\n\nInclude a decision tree for partial rollback scenarios where some phases succeeded.",
+      "description": "Generate detailed rollback procedures for each migration phase"
+    }
+  ],
+  "commands": [
+    {
+      "name": "add",
+      "type": "contextManager",
+      "description": "Add source files for migration analysis",
+      "argCompleters": ["file"]
+    },
+    {
+      "name": "diff",
+      "type": "contextManager",
+      "description": "Add a diff showing intended changes"
+    },
+    {
+      "name": "note",
+      "type": "contextManager",
+      "description": "Add migration notes or constraints"
+    },
+    {
+      "name": "list",
+      "type": "contextManager",
+      "description": "List all context items"
+    },
+    {
+      "name": "edit",
+      "type": "contextManager",
+      "description": "Edit a context item"
+    },
+    {
+      "name": "remove",
+      "type": "contextManager",
+      "description": "Remove a context item"
+    },
+    {
+      "name": "show",
+      "type": "contextManager",
+      "description": "Preview the migration prompt"
+    },
+    {
+      "name": "copy",
+      "type": "contextManager",
+      "description": "Copy migration prompt to clipboard"
+    },
+    {
+      "name": "set-type",
+      "type": "custom",
+      "description": "Set migration type (api, database, framework, language)",
+      "usage": "set-type <type>",
+      "handler": "function (args) {\n  var valid = ['api', 'database', 'framework', 'language'];\n  if (!args || args.length === 0) {\n    output.print('Current migration type: ' + state.get(stateKeys.migrationType));\n    output.print('Available: ' + valid.join(', '));\n    return;\n  }\n  var t = args[0].toLowerCase();\n  if (valid.indexOf(t) === -1) {\n    output.print('Unknown type: ' + t + '. Available: ' + valid.join(', '));\n    return;\n  }\n  state.set(stateKeys.migrationType, t);\n  output.print('Migration type set to: ' + t);\n}"
+    },
+    {
+      "name": "set-risk",
+      "type": "custom",
+      "description": "Set risk tolerance (conservative, moderate, aggressive)",
+      "usage": "set-risk <level>",
+      "handler": "function (args) {\n  var valid = ['conservative', 'moderate', 'aggressive'];\n  if (!args || args.length === 0) {\n    output.print('Current risk tolerance: ' + state.get(stateKeys.riskTolerance));\n    output.print('Available: ' + valid.join(', '));\n    return;\n  }\n  var r = args[0].toLowerCase();\n  if (valid.indexOf(r) === -1) {\n    output.print('Unknown risk level: ' + r + '. Available: ' + valid.join(', '));\n    return;\n  }\n  state.set(stateKeys.riskTolerance, r);\n  output.print('Risk tolerance set to: ' + r);\n}"
+    },
+    {
+      "name": "set-target",
+      "type": "custom",
+      "description": "Set the target version for the migration",
+      "usage": "set-target <version>",
+      "handler": "function (args) {\n  if (!args || args.length === 0) {\n    var current = state.get(stateKeys.targetVersion);\n    output.print('Current target version: ' + (current || '(not set)'));\n    return;\n  }\n  var version = args.join(' ');\n  state.set(stateKeys.targetVersion, version);\n  output.print('Target version set to: ' + version);\n}"
+    },
+    {
+      "name": "checklist",
+      "type": "custom",
+      "description": "Show pre-migration checklist based on current settings",
+      "usage": "checklist",
+      "flagDefs": [
+        { "name": "verbose", "description": "Show detailed checklist with explanations" }
+      ],
+      "handler": "function (args) {\n  var mtype = state.get(stateKeys.migrationType);\n  var risk = state.get(stateKeys.riskTolerance);\n  var target = state.get(stateKeys.targetVersion);\n  output.print('Pre-Migration Checklist');\n  output.print('=======================');\n  output.print('');\n  output.print('Configuration:');\n  output.print('  Migration type:   ' + mtype);\n  output.print('  Risk tolerance:   ' + risk);\n  output.print('  Target version:   ' + (target || '(not set)'));\n  output.print('');\n  output.print('Checklist:');\n  output.print('  [ ] Source files added to context');\n  output.print('  [ ] Target version specified');\n  output.print('  [ ] Migration type confirmed');\n  if (risk === 'conservative') {\n    output.print('  [ ] Rollback procedures documented');\n    output.print('  [ ] Feature flags prepared');\n  }\n  if (mtype === 'database') {\n    output.print('  [ ] Database backup verified');\n    output.print('  [ ] Migration script tested on staging');\n  }\n  output.print('');\n  output.print('Ready? Use \"copy\" to generate the migration plan.');\n}"
+    },
+    {
+      "name": "help",
+      "type": "help"
+    }
+  ]
+}

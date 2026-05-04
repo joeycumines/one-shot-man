@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command"
 )
 
 func TestRunNoArgsShowsHelp(t *testing.T) {
@@ -60,6 +62,10 @@ func TestRunUnknownCommand(t *testing.T) {
 		t.Fatalf("expected error for unknown command")
 	}
 
+	if !command.IsSilent(err) {
+		t.Fatalf("expected SilentError, got %T: %v", err, err)
+	}
+
 	if stdout != "" {
 		t.Fatalf("expected no stdout output, got %q", stdout)
 	}
@@ -75,7 +81,7 @@ func TestRunVersionCommand(t *testing.T) {
 		t.Fatalf("run returned error: %v", err)
 	}
 
-	if !strings.Contains(stdout, "one-shot-man version") {
+	if !strings.Contains(stdout, "osm version") {
 		t.Fatalf("expected version output, got %q", stdout)
 	}
 
@@ -294,7 +300,7 @@ func TestVersionCommandVariations(t *testing.T) {
 				if err != nil {
 					t.Fatalf("version command returned error: %v", err)
 				}
-				if !strings.Contains(stdout, "one-shot-man version") {
+				if !strings.Contains(stdout, "osm version") {
 					t.Fatalf("expected version output, got stdout=%q stderr=%q", stdout, stderr)
 				}
 			}
@@ -312,6 +318,12 @@ func TestVersionCommandVariations(t *testing.T) {
 	}
 }
 
+// runWithCapturedIO invokes run() with the given os.Args, capturing stdout
+// and stderr to temporary files. It returns the captured output and the error.
+//
+// WARNING: This function mutates process-global state (os.Args, os.Stdout,
+// os.Stderr). Tests that call this function MUST NOT use t.Parallel().
+// Adding t.Parallel() to any caller will cause data races under -race.
 func runWithCapturedIO(t *testing.T, args []string) (string, string, error) {
 	t.Helper()
 
@@ -422,5 +434,119 @@ func TestMainInvokesRun(t *testing.T) {
 	}
 	if stderr != "" {
 		t.Fatalf("expected stderr to be empty, got %q", stderr)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T392: Clean flag-parse error output tests
+//
+// Validates that parse errors show a concise 1-line error + hint to use
+// --help, instead of dumping the full flag listing.
+// ---------------------------------------------------------------------------
+
+func TestFlagParseError_CleanOutput(t *testing.T) {
+	testCases := []struct {
+		name       string
+		args       []string
+		wantErr    string // substring in stderr
+		wantHint   string // must appear in stderr
+		rejectText string // must NOT appear in stderr
+	}{
+		{
+			name:       "bad_timeout_value",
+			args:       []string{"osm", "pr-split", "--timeout=abc"},
+			wantErr:    "invalid value",
+			wantHint:   "Use 'osm pr-split --help' for usage.",
+			rejectText: "Options:",
+		},
+		{
+			name:       "unknown_flag",
+			args:       []string{"osm", "pr-split", "--nonexistent"},
+			wantErr:    "flag provided but not defined",
+			wantHint:   "Use 'osm pr-split --help' for usage.",
+			rejectText: "-base",
+		},
+		{
+			name:       "bad_max_value",
+			args:       []string{"osm", "pr-split", "--max=notanumber"},
+			wantErr:    "invalid value",
+			wantHint:   "Use 'osm pr-split --help' for usage.",
+			rejectText: "PrintDefaults",
+		},
+		{
+			name:       "script_unknown_flag",
+			args:       []string{"osm", "script", "--bogus"},
+			wantErr:    "flag provided but not defined",
+			wantHint:   "Use 'osm script --help' for usage.",
+			rejectText: "Options:",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, stderr, err := runWithCapturedIO(t, tc.args)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			// Check it's a SilentError (not double-printed by main).
+			if _, ok := err.(*command.SilentError); !ok {
+				t.Errorf("expected *command.SilentError, got %T: %v", err, err)
+			}
+
+			// Stderr should contain the error description.
+			if !strings.Contains(stderr, tc.wantErr) {
+				t.Errorf("expected stderr to contain %q, got:\n%s", tc.wantErr, stderr)
+			}
+
+			// Stderr should contain the hint.
+			if !strings.Contains(stderr, tc.wantHint) {
+				t.Errorf("expected stderr to contain hint %q, got:\n%s", tc.wantHint, stderr)
+			}
+
+			// Stderr should NOT contain the full flag listing.
+			if strings.Contains(stderr, tc.rejectText) {
+				t.Errorf("stderr should NOT contain %q (full usage dump), got:\n%s", tc.rejectText, stderr)
+			}
+		})
+	}
+}
+
+// TestCommandHelpStillWorks verifies that --help on a command still
+// produces the full usage output (regression check for T392).
+func TestCommandHelpStillWorks(t *testing.T) {
+	testCases := []struct {
+		name string
+		args []string
+		want string // must appear in stderr
+	}{
+		{
+			name: "pr-split_help_long",
+			args: []string{"osm", "pr-split", "--help"},
+			want: "Options:",
+		},
+		{
+			name: "pr-split_help_short",
+			args: []string{"osm", "pr-split", "-h"},
+			want: "Options:",
+		},
+		{
+			name: "script_help",
+			args: []string{"osm", "script", "--help"},
+			want: "Options:",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, stderr, err := runWithCapturedIO(t, tc.args)
+			if err != nil {
+				t.Fatalf("expected no error for --help, got: %v", err)
+			}
+
+			if !strings.Contains(stderr, tc.want) {
+				t.Errorf("expected stderr to contain %q for --help, got:\n%s", tc.want, stderr)
+			}
+		})
 	}
 }

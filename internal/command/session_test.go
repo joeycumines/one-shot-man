@@ -3,8 +3,10 @@ package command
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -21,6 +23,22 @@ func (errReader) Read(p []byte) (int, error) { return 0, fmt.Errorf("boom") }
 
 func TestSessionsListAndClean(t *testing.T) {
 	dir := t.TempDir()
+	// Clean up any remaining files before t.TempDir() cleanup (runs first in LIFO)
+	defer func() {
+		_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err == nil && path != dir && !d.IsDir() {
+				_ = os.Remove(path)
+			}
+			return nil
+		})
+		// Remove any remaining subdirectories
+		_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err == nil && path != dir && d.IsDir() {
+				_ = os.RemoveAll(path)
+			}
+			return nil
+		})
+	}()
 	storage.SetTestPaths(dir)
 	defer storage.ResetPaths()
 
@@ -63,10 +81,10 @@ func TestSessionsListAndClean(t *testing.T) {
 		t.Fatalf("clean failed: %v", err)
 	}
 
-	if _, err := os.Stat(s1); !os.IsNotExist(err) {
+	if _, err := os.Stat(s1); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("expected old_session to be removed")
 	}
-	if _, err := os.Stat(s2); os.IsNotExist(err) {
+	if _, err := os.Stat(s2); errors.Is(err, os.ErrNotExist) {
 		t.Errorf("expected new_session to persist")
 	}
 }
@@ -197,12 +215,12 @@ func TestSessionsDeleteRemovesLockAndFile(t *testing.T) {
 	}
 
 	// session file removed
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
+	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session file removed, stat error: %v", err)
 	}
 
 	// lock file should not remain
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file removed, stat error: %v", err)
 	}
 }
@@ -228,13 +246,13 @@ func TestSessionsDeleteAcceptsFlagBeforeID(t *testing.T) {
 	}
 
 	// session file removed
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
+	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session file removed, stat error: %v", err)
 	}
 
 	// lock file should not remain
 	lockPath, _ := storage.SessionLockFilePath(id)
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file removed, stat error: %v", err)
 	}
 }
@@ -261,7 +279,7 @@ func TestSessionsDeleteAcceptsFlagAfterID(t *testing.T) {
 	}
 
 	// session file removed
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
+	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session file removed, stat error: %v", err)
 	}
 }
@@ -291,10 +309,10 @@ func TestSessionsDeleteMultipleIDsDeletesAll(t *testing.T) {
 		t.Fatalf("delete failed: %v", err)
 	}
 
-	if _, err := os.Stat(p1); !os.IsNotExist(err) {
+	if _, err := os.Stat(p1); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session file 1 removed, stat error: %v", err)
 	}
-	if _, err := os.Stat(p2); !os.IsNotExist(err) {
+	if _, err := os.Stat(p2); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session file 2 removed, stat error: %v", err)
 	}
 }
@@ -346,10 +364,10 @@ func TestSessionsPurge_RemovesAllNonActive(t *testing.T) {
 		t.Fatalf("purge failed: %v", err)
 	}
 
-	if _, err := os.Stat(p1); !os.IsNotExist(err) {
+	if _, err := os.Stat(p1); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session p1 to be removed by purge")
 	}
-	if _, err := os.Stat(p2); !os.IsNotExist(err) {
+	if _, err := os.Stat(p2); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session p2 to be removed by purge")
 	}
 }
@@ -368,6 +386,46 @@ func TestSessionsPurge_AcceptsDryRunFlag(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Dry-run") {
 		t.Fatalf("expected dry-run output for purge, got: %q", out.String())
+	}
+}
+
+// TestSessionsPurge_NoDuplicateLogLines verifies that each purged session
+// produces exactly one output line. Previously cleanup.go used fmt.Printf
+// (writing to OS stdout) while session.go also reported via the writer,
+// causing duplicate entries.
+func TestSessionsPurge_NoDuplicateLogLines(t *testing.T) {
+	dir := t.TempDir()
+	storage.SetTestPaths(dir)
+	defer storage.ResetPaths()
+
+	// Create 3 non-active sessions.
+	ids := []string{"dup-test-a", "dup-test-b", "dup-test-c"}
+	for _, id := range ids {
+		p, _ := storage.SessionFilePath(id)
+		if err := os.WriteFile(p, []byte("{}"), 0644); err != nil {
+			t.Fatalf("write session %s: %v", id, err)
+		}
+	}
+
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"purge", "-y"}, &stdout, &stderr); err != nil {
+		t.Fatalf("purge failed: %v", err)
+	}
+
+	output := stdout.String()
+	for _, id := range ids {
+		count := strings.Count(output, id)
+		if count != 1 {
+			t.Errorf("expected session %q to appear exactly once in output, got %d times.\nFull output:\n%s", id, count, output)
+		}
+	}
+
+	// Verify no stray output on stderr (previous fmt.Printf leak).
+	if stderr.Len() != 0 {
+		t.Errorf("expected no stderr output during purge, got: %q", stderr.String())
 	}
 }
 
@@ -434,13 +492,13 @@ func TestSessionsDeleteAcceptsIDThatLooksLikeFlagWithTerminator(t *testing.T) {
 	}
 
 	// session file removed
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
+	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session file removed, stat error: %v", err)
 	}
 
 	// lock file should not remain
 	lockPath, _ := storage.SessionLockFilePath(id)
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file removed, stat error: %v", err)
 	}
 }
@@ -726,7 +784,7 @@ func TestSessionsDeletePreservesLockOnRemoveFailure(t *testing.T) {
 	// Either way, the lock file behavior should be consistent
 	if err != nil {
 		// Delete failed as expected - lock file should still exist
-		if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("expected lock file to remain after failed deletion")
 		}
 	} else {

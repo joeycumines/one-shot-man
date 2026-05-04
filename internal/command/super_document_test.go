@@ -3,6 +3,8 @@ package command
 import (
 	"bytes"
 	"context"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
@@ -12,15 +14,15 @@ import (
 func TestSuperDocument_FormMode_TextareaCommandPropagation(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
 
 	// Provide minimal globals the script expects
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -71,8 +73,8 @@ __result = res;
 		t.Fatalf("expected __result to be set by test script")
 	}
 
-	// The result is a JS array -> []interface{}
-	arr, ok := val.([]interface{})
+	// The result is a JS array -> []any
+	arr, ok := val.([]any)
 	if !ok {
 		t.Fatalf("unexpected __result type: %T", val)
 	}
@@ -80,7 +82,7 @@ __result = res;
 		t.Fatalf("expected returned array to have at least 2 elements, got %d", len(arr))
 	}
 	cmdVal := arr[1]
-	cmdObj, ok := cmdVal.(map[string]interface{})
+	cmdObj, ok := cmdVal.(map[string]any)
 	if !ok {
 		t.Fatalf("expected cmd object to be a map, got %T", cmdVal)
 	}
@@ -92,14 +94,14 @@ __result = res;
 func TestSuperDocument_ListMode_NoCommandOnKeyNav(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -139,7 +141,7 @@ __s = s;
 		t.Fatalf("test script execution failed: %v", err)
 	}
 	val := engine.GetGlobal("__resArr")
-	arr, ok := val.([]interface{})
+	arr, ok := val.([]any)
 	if !ok {
 		t.Fatalf("unexpected result type: %T", val)
 	}
@@ -151,7 +153,7 @@ __s = s;
 	}
 	// Verify selection moved down
 	sval := engine.GetGlobal("__s")
-	sm, ok := sval.(map[string]interface{})
+	sm, ok := sval.(map[string]any)
 	if !ok {
 		t.Fatalf("unexpected s type: %T", sval)
 	}
@@ -163,14 +165,14 @@ __s = s;
 func TestSuperDocument_ListMode_ViewportCommandPropagation(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -207,7 +209,7 @@ __result = res;
 		t.Fatalf("test script execution failed: %v", err)
 	}
 	val := engine.GetGlobal("__result")
-	m, ok := val.(map[string]interface{})
+	m, ok := val.(map[string]any)
 	if !ok {
 		t.Fatalf("expected result to be object, got %T", val)
 	}
@@ -219,14 +221,14 @@ __result = res;
 func TestSuperDocument_ModeTransition_TextareaToList(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -261,14 +263,14 @@ __res = res;
 		t.Fatalf("test script execution failed: %v", err)
 	}
 	val := engine.GetGlobal("__res")
-	arr, ok := val.([]interface{})
+	arr, ok := val.([]any)
 	if !ok || len(arr) < 2 {
 		t.Fatalf("unexpected submit result: %T %#v", val, val)
 	}
 	if arr[1] == nil {
 		t.Fatalf("expected a command (clearScreen) on submit, got nil")
 	}
-	cmdObj, ok := arr[1].(map[string]interface{})
+	cmdObj, ok := arr[1].(map[string]any)
 	if !ok {
 		t.Fatalf("expected cmd to be object, got %T", arr[1])
 	}
@@ -280,14 +282,14 @@ __res = res;
 func TestSuperDocument_ModeTransition_ListToForm(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -322,7 +324,7 @@ __res = res;
 		t.Fatalf("test script execution failed: %v", err)
 	}
 	val := engine.GetGlobal("__s")
-	sm, ok := val.(map[string]interface{})
+	sm, ok := val.(map[string]any)
 	if !ok {
 		t.Fatalf("unexpected s type: %T", val)
 	}
@@ -337,14 +339,14 @@ __res = res;
 func TestSuperDocument_ModeTransition_PreservesState(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -391,7 +393,7 @@ __s = s;
 		t.Fatalf("test script execution failed: %v", err)
 	}
 	docVal := engine.GetGlobal("__doc")
-	m, ok := docVal.(map[string]interface{})
+	m, ok := docVal.(map[string]any)
 	if !ok {
 		t.Fatalf("unexpected doc type: %T", docVal)
 	}
@@ -400,11 +402,148 @@ __s = s;
 	}
 	// Verify selection preserved
 	sVal := engine.GetGlobal("__s")
-	sm, ok := sVal.(map[string]interface{})
+	sm, ok := sVal.(map[string]any)
 	if !ok {
 		t.Fatalf("unexpected s type: %T", sVal)
 	}
 	if sm["selectedIdx"].(int64) != 0 {
 		t.Fatalf("expected selectedIdx to remain 0, got %v", sm["selectedIdx"])
+	}
+}
+
+func TestSuperDocument_FocusedButtonEnterDoesNotFallIntoEdit(t *testing.T) {
+	ctx := context.Background()
+	var stdout, stderr bytes.Buffer
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
+	if err != nil {
+		t.Fatalf("NewEngineConfig failed: %v", err)
+	}
+	defer engine.Close()
+	engine.SetTestMode(true)
+
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
+		"textPrimary":    "#7f5fcf",
+		"textSecondary":  "#efefef",
+		"textTertiary":   "#888888",
+		"textInverted":   "#ffffff",
+		"accentPrimary":  "#7f5fcf",
+		"accentSubtle":   "#efefef",
+		"accentSuccess":  "#1a7f37",
+		"accentError":    "#ff0000",
+		"accentWarning":  "#ffaa00",
+		"uiBorder":       "#444444",
+		"uiActiveBorder": "#7f5fcf",
+		"uiBg":           "#000000",
+		"uiBgSubtle":     "#111111",
+	}})
+	engine.SetGlobal("args", []string{})
+	engine.SetGlobal("superDocumentTemplate", "dummy template")
+
+	script := engine.LoadScriptFromString("super-document", superDocumentScript)
+	if err := engine.ExecuteScript(script); err != nil {
+		t.Fatalf("failed to execute super-document script: %v", err)
+	}
+
+	testScript := `
+buildFinalPrompt = function () { return 'prompt body'; };
+os.clipboardCopy = function (txt) { globalThis.__copiedPrompt = txt; };
+
+function baseState(idx) {
+    return {
+        mode: MODE_LIST,
+        documents: [{id: 1, label: 'one', content: 'body'}],
+        selectedIdx: 0,
+        focusedButtonIdx: idx,
+        width: 80,
+        vp: {
+            setYOffset: function () {},
+            yOffset: function () { return 0; },
+            height: function () { return 10; }
+        }
+    };
+}
+
+var addState = baseState(BUTTONS.findIndex(function (btn) { return btn.key === 'a'; }));
+var addRes = handleKeys({ type: 'Key', key: 'enter' }, addState);
+
+var loadState = baseState(BUTTONS.findIndex(function (btn) { return btn.key === 'l'; }));
+var loadRes = handleKeys({ type: 'Key', key: 'enter' }, loadState);
+
+var copyState = baseState(BUTTONS.findIndex(function (btn) { return btn.key === 'c'; }));
+var copyRes = handleKeys({ type: 'Key', key: 'enter' }, copyState);
+
+var resetState = baseState(BUTTONS.findIndex(function (btn) { return btn.key === 'r'; }));
+var resetRes = handleKeys({ type: 'Key', key: 'enter' }, resetState);
+
+__result = {
+    addMode: addState.mode,
+    addOperation: addState.inputOperation,
+    addCmdType: addRes[1] && addRes[1]._cmdType || null,
+    loadMode: loadState.mode,
+    loadOperation: loadState.inputOperation,
+    loadCmdType: loadRes[1] && loadRes[1]._cmdType || null,
+    copyMode: copyState.mode,
+    copyStatusMsg: copyState.statusMsg,
+    copyCmdType: copyRes[1] && copyRes[1]._cmdType || null,
+    copiedPrompt: globalThis.__copiedPrompt || null,
+    resetMode: resetState.mode,
+    resetConfirmDocId: resetState.confirmDocId,
+    resetCmdType: resetRes[1] && resetRes[1]._cmdType || null
+};
+`
+
+	testObj := engine.LoadScriptFromString("super-doc-focused-button-enter", testScript)
+	if err := engine.ExecuteScript(testObj); err != nil {
+		t.Fatalf("test script execution failed: %v", err)
+	}
+
+	val := engine.GetGlobal("__result")
+	result, ok := val.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected __result type: %T", val)
+	}
+
+	if got := result["addMode"]; got != "input" {
+		t.Fatalf("expected add button enter to stay in input mode, got %v", got)
+	}
+	if got := result["addOperation"]; got != "add" {
+		t.Fatalf("expected add button enter to set inputOperation=add, got %v", got)
+	}
+	if got := result["addCmdType"]; got != nil {
+		t.Fatalf("expected add button enter to return no command, got %v", got)
+	}
+
+	if got := result["loadMode"]; got != "input" {
+		t.Fatalf("expected load button enter to stay in input mode, got %v", got)
+	}
+	if got := result["loadOperation"]; got != "load" {
+		t.Fatalf("expected load button enter to set inputOperation=load, got %v", got)
+	}
+	if got := result["loadCmdType"]; got != nil {
+		t.Fatalf("expected load button enter to return no command, got %v", got)
+	}
+
+	if got := result["copyMode"]; got != "list" {
+		t.Fatalf("expected copy button enter to remain in list mode, got %v", got)
+	}
+	statusMsg, _ := result["copyStatusMsg"].(string)
+	if !strings.Contains(statusMsg, "Copied prompt") {
+		t.Fatalf("expected copy button enter to set copied status, got %q", statusMsg)
+	}
+	if got := result["copyCmdType"]; got != nil {
+		t.Fatalf("expected copy button enter to return no command, got %v", got)
+	}
+	if got := result["copiedPrompt"]; got != "prompt body" {
+		t.Fatalf("expected copy button enter to copy prompt body, got %v", got)
+	}
+
+	if got := result["resetMode"]; got != "confirm" {
+		t.Fatalf("expected reset button enter to switch to confirm mode, got %v", got)
+	}
+	if got := result["resetConfirmDocId"]; got != int64(-1) {
+		t.Fatalf("expected reset button enter to target confirmDocId=-1, got %v", got)
+	}
+	if got := result["resetCmdType"]; got != nil {
+		t.Fatalf("expected reset button enter to return no command, got %v", got)
 	}
 }

@@ -14,7 +14,7 @@
     const config = GOAL_CONFIG;
     const tuiTitle = config.tuiTitle || config.name;
 
-    const nextIntegerId = require('osm:nextIntegerId');
+    const nextIntegerId = require('osm:nextIntegerID');
     const {buildContext, contextManager} = require('osm:ctxutil');
     const template = require('osm:text/template');
     const shared = require('osm:sharedStateSymbols');
@@ -121,6 +121,12 @@
         instructionsTmpl.parse(config.promptInstructions || "");
         templateData.promptInstructions = instructionsTmpl.execute(templateData);
 
+        // Process promptFooter as a template (same as promptInstructions)
+        const footerTmpl = template.new("footer");
+        footerTmpl.funcs(templateFuncs);
+        footerTmpl.parse(config.promptFooter || "");
+        templateData.promptFooter = footerTmpl.execute(templateData);
+
         // Create template with custom functions
         const tmpl = template.new("goal");
         tmpl.funcs(templateFuncs);
@@ -130,12 +136,46 @@
     }
 
     // Create context manager
-    const ctxmgr = contextManager({
+    const ctxmgrOpts = {
         getItems: () => state.get(shared.contextItems) || [],
         setItems: (v) => state.set(shared.contextItems, v),
         nextIntegerId,
         buildPrompt,
-    });
+    };
+    if (config.postCopyHint) {
+        ctxmgrOpts.postCopyHint = config.postCopyHint;
+    }
+    // Merge config-defined hot-snippets with any goal-defined ones.
+    // Goal-defined snippets (from GOAL_CONFIG.hotSnippets) take precedence
+    // over config file snippets (CONFIG_HOT_SNIPPETS) on name conflicts.
+    // Goal-defined snippets are marked as builtin for the warning system.
+    var configSnippets = (typeof CONFIG_HOT_SNIPPETS !== 'undefined' && Array.isArray(CONFIG_HOT_SNIPPETS)) ? CONFIG_HOT_SNIPPETS : [];
+    var goalSnippets = Array.isArray(config.hotSnippets) ? config.hotSnippets : [];
+    if (configSnippets.length > 0 || goalSnippets.length > 0) {
+        var merged = [];
+        var seen = {};
+        for (var si = 0; si < goalSnippets.length; si++) {
+            var gs = goalSnippets[si];
+            // Mark goal-defined snippets as builtin so the warning fires
+            // unless the user overrides them in their config.
+            if (!('builtin' in gs)) {
+                gs.builtin = true;
+            }
+            seen[gs.name] = true;
+            merged.push(gs);
+        }
+        for (var si = 0; si < configSnippets.length; si++) {
+            if (!seen[configSnippets[si].name]) {
+                merged.push(configSnippets[si]);
+            }
+        }
+        ctxmgrOpts.hotSnippets = merged;
+    }
+    // Pass through no-warning config if set.
+    if (typeof CONFIG_HOT_SNIPPETS_NO_WARNING !== 'undefined' && CONFIG_HOT_SNIPPETS_NO_WARNING) {
+        ctxmgrOpts.noSnippetWarning = true;
+    }
+    const ctxmgr = contextManager(ctxmgrOpts);
 
     function buildBaseTemplateData() {
         // Prepare template data
@@ -278,11 +318,23 @@
                         description: cmdConfig.description || "",
                         usage: cmdConfig.usage || "",
                         argCompleters: cmdConfig.argCompleters || [],
+                        flagDefs: cmdConfig.flagDefs || [],
                         handler: wrappedHandler
                     };
                 } catch (e) {
                     output.print("Error creating handler for command " + cmdConfig.name + ": " + e);
                     continue;
+                }
+            }
+        }
+
+        // Include dynamic commands from contextManager that aren't in config.commands:
+        // - hot-snippet commands (hot-<name>)
+        // - the snippets listing command
+        for (var key in ctxmgr.commands) {
+            if (Object.prototype.hasOwnProperty.call(ctxmgr.commands, key) && !commands[key]) {
+                if (key.indexOf("hot-") === 0 || key === "snippets") {
+                    commands[key] = ctxmgr.commands[key];
                 }
             }
         }

@@ -21,12 +21,9 @@ var superDocumentScript string
 // SuperDocumentCommand provides the super-document TUI for document merging.
 type SuperDocumentCommand struct {
 	*BaseCommand
+	scriptCommandBase
 	interactive bool
 	shellMode   bool // Use shell mode instead of visual TUI
-	testMode    bool
-	config      *config.Config
-	session     string
-	store       string
 }
 
 // NewSuperDocumentCommand creates a new super-document command.
@@ -37,7 +34,7 @@ func NewSuperDocumentCommand(cfg *config.Config) *SuperDocumentCommand {
 			"TUI for merging documents into a single internally consistent super-document",
 			"super-document [options]",
 		),
-		config: cfg,
+		scriptCommandBase: scriptCommandBase{config: cfg},
 	}
 }
 
@@ -46,25 +43,18 @@ func (c *SuperDocumentCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.interactive, "interactive", true, "Start interactive TUI mode (default)")
 	fs.BoolVar(&c.interactive, "i", true, "Start interactive TUI mode (short form, default)")
 	fs.BoolVar(&c.shellMode, "shell", false, "Use shell mode instead of visual TUI")
-	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
-	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
-	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory'")
+	c.RegisterFlags(fs)
 }
 
 // Execute runs the super-document command.
 func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	ctx := context.Background()
 
-	// Create scripting engine with explicit session/storage configuration
-	engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.store)
+	engine, cleanup, err := c.PrepareEngine(ctx, stdout, stderr)
 	if err != nil {
-		return fmt.Errorf("failed to create scripting engine: %w", err)
+		return err
 	}
-	defer engine.Close()
-
-	if c.testMode {
-		engine.SetTestMode(true)
-	}
+	defer cleanup()
 
 	// Build theme colors from config, with sensible adaptive defaults.
 	// Uses AdaptiveColor format: {light: "...", dark: "..."} for automatic
@@ -74,7 +64,7 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 	// - "Off-Black" and "Off-White" to reduce eye strain
 	// - Primary accent (Indigo/Blue) looks good on both backgrounds
 	// - Semantic colors for success, error, warning states
-	themeColors := map[string]interface{}{
+	themeColors := map[string]any{
 		// Text colors - primary content, secondary labels, tertiary/muted hints
 		"textPrimary":   map[string]string{"light": "#24292f", "dark": "#e6edf3"},
 		"textSecondary": map[string]string{"light": "#57606a", "dark": "#8b949e"},
@@ -96,21 +86,15 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 	}
 	if c.config != nil {
 		for k, v := range c.config.Global {
-			if strings.HasPrefix(k, "theme.") {
-				key := strings.TrimPrefix(k, "theme.")
-				if key != "" {
-					themeColors[key] = v
-				}
+			if key, ok := strings.CutPrefix(k, "theme."); ok && key != "" {
+				themeColors[key] = v
 			}
 		}
 		// Also check command-specific theme overrides
 		if cmdOpts, ok := c.config.Commands["super-document"]; ok {
 			for k, v := range cmdOpts {
-				if strings.HasPrefix(k, "theme.") {
-					key := strings.TrimPrefix(k, "theme.")
-					if key != "" {
-						themeColors[key] = v
-					}
+				if key, ok := strings.CutPrefix(k, "theme."); ok && key != "" {
+					themeColors[key] = v
 				}
 			}
 		}
@@ -119,7 +103,7 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 	// Inject command name and configuration for state namespacing
 	// The shellMode flag controls whether to start in shell or TUI mode
 	const commandName = "super-document"
-	engine.SetGlobal("config", map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{
 		"name":      commandName,
 		"shellMode": c.shellMode, // Wire --shell flag to JS state
 		"theme":     themeColors, // Wire theme colors to JS
@@ -141,11 +125,8 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 		if c.config != nil {
 			colorMap := make(map[string]string)
 			for k, v := range c.config.Global {
-				if strings.HasPrefix(k, "prompt.color.") {
-					key := strings.TrimPrefix(k, "prompt.color.")
-					if key != "" {
-						colorMap[key] = v
-					}
+				if key, ok := strings.CutPrefix(k, "prompt.color."); ok && key != "" {
+					colorMap[key] = v
 				}
 			}
 			if len(colorMap) > 0 {

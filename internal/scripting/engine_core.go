@@ -440,20 +440,6 @@ func (e *Engine) LoadScript(name, path string) (*Script, error) {
 	return script, nil
 }
 
-// NewEngineWithConfig creates a new Engine with simplified configuration.
-// Deprecated: use NewEngine with EngineOptions instead.
-// This shim exists to maintain compatibility with code that hasn't been
-// migrated yet; it will be removed once all call sites use NewEngine.
-func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionID, store string) (*Engine, error) {
-	return NewEngine(ctx, stdout, stderr, sessionID, store, nil, 0, slog.LevelInfo)
-}
-
-// NewEngineDetailed creates a new Engine with full configuration.
-// Deprecated: use NewEngine with logFile, logBufferSize, logLevel parameters instead.
-func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID, store string, logFile io.Writer, logBufferSize int, logLevel slog.Level) (*Engine, error) {
-	return NewEngine(ctx, stdout, stderr, sessionID, store, logFile, logBufferSize, logLevel)
-}
-
 // LoadScriptFromString loads a JavaScript script from a string.
 func (e *Engine) LoadScriptFromString(name, content string) *Script {
 	script := &Script{

@@ -2,7 +2,7 @@
 // This is the built-in version of the prompt-flow script with embedded template
 
 const {buildContext, contextManager} = require('osm:ctxutil');
-const nextIntegerId = require('osm:nextIntegerId');
+const nextIntegerId = require('osm:nextIntegerID');
 const template = require('osm:text/template');
 
 // Import shared symbols
@@ -18,6 +18,8 @@ const stateKeys = {
     template: Symbol("template"),
     metaPrompt: Symbol("metaPrompt"),
     taskPrompt: Symbol("taskPrompt"),
+    footer: Symbol("footer"),
+    autoGenerateOnCopy: Symbol("autoGenerateOnCopy"),
 };
 
 // Create the single state accessor
@@ -31,6 +33,8 @@ const state = tui.createState(COMMAND_NAME, {
     [stateKeys.template]: {defaultValue: null},
     [stateKeys.metaPrompt]: {defaultValue: ""},
     [stateKeys.taskPrompt]: {defaultValue: ""},
+    [stateKeys.footer]: {defaultValue: ""},
+    [stateKeys.autoGenerateOnCopy]: {defaultValue: true},
 });
 
 // Expose limited state hooks for automated tests (no-op for regular users)
@@ -117,6 +121,22 @@ function buildCommands(state) {
         state.set(stateKeys.taskPrompt, v);
     }
 
+    function getFooter() {
+        return state.get(stateKeys.footer);
+    }
+
+    function setFooter(v) {
+        state.set(stateKeys.footer, v);
+    }
+
+    function getAutoGenerateOnCopy() {
+        return state.get(stateKeys.autoGenerateOnCopy);
+    }
+
+    function setAutoGenerateOnCopy(v) {
+        state.set(stateKeys.autoGenerateOnCopy, v);
+    }
+
     function buildContextTxtar() {
         return buildContext(state.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
     }
@@ -135,11 +155,16 @@ function buildCommands(state) {
         if (p) parts.push(p.trim());
         parts.push("\n---\n## IMPLEMENTATIONS/CONTEXT\n---\n");
         parts.push(buildContextTxtar());
+        const f = getFooter();
+        if (f) {
+            parts.push("\n---\n");
+            parts.push(f.trim());
+        }
         return parts.join("\n");
     }
 
     // Create context manager with the injected state accessor (shared contextItems)
-    const ctxmgr = contextManager({
+    const ctxmgrOpts = {
         getItems: () => state.get(shared.contextItems) || [],
         setItems: (v) => state.set(shared.contextItems, v),
         nextIntegerId: nextIntegerId,
@@ -147,11 +172,15 @@ function buildCommands(state) {
             // Phase-dependent prompt building
             if (getPhase() === 'TASK_PROMPT_SET') {
                 return assembleFinal();
+            } else if (!getGoal().trim()) {
+                // One-step mode: no goal set, return raw context
+                return buildContextTxtar();
             } else {
                 return getMetaPrompt();
             }
         }
-    });
+    };
+    const ctxmgr = contextManager(ctxmgrOpts);
 
     // Export for test access
     addItem = ctxmgr.addItem;
@@ -246,18 +275,16 @@ function buildCommands(state) {
                 setMetaPrompt(metaPrompt);
                 setTaskPrompt("");
                 setPhase("META_GENERATED");
+                setAutoGenerateOnCopy(false);
                 output.print("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.");
             }
         },
         use: {
-            description: "Set the task prompt (phase: META_GENERATED -> TASK_PROMPT_SET)",
+            description: "Set the task prompt directly (or from LLM-generated output)",
             usage: "use [text...]",
             handler: function (args) {
-                const phase = getPhase();
-                if (phase !== "META_GENERATED" && phase !== "TASK_PROMPT_SET") {
-                    output.print("Please generate the meta-prompt first using 'generate'.");
-                    return;
-                }
+                // Allow 'use' from any phase - enables one-step mode
+                // (no need to go through goal → generate first)
                 let prompt;
                 if (args.length === 0) {
                     // No arguments: open editor to edit/set task prompt
@@ -294,6 +321,8 @@ function buildCommands(state) {
                     const tp = getTaskPrompt();
                     if (tp) output.print("[prompt] " + tp.substring(0, 80) + (tp.length > 80 ? "..." : ""));
                 }
+                const footer = getFooter();
+                if (footer) output.print("[footer] " + footer.substring(0, 80) + (footer.length > 80 ? "..." : ""));
 
                 output.print("");
                 // Delegate to base list command for context items
@@ -301,64 +330,10 @@ function buildCommands(state) {
             }
         },
         view: {
-            description: "View context items in an interactive table (TUI)",
+            description: "View context items (use 'list' instead)",
             usage: "view",
             handler: function (args) {
-                // Try to load tview module
-                let tview;
-                try {
-                    tview = require('osm:tview');
-                } catch (e) {
-                    output.print("Error: TUI view not available. Use 'list' for text output.");
-                    return;
-                }
-
-                const items = state.get(shared.contextItems);
-                if (items.length === 0) {
-                    output.print("No context items to view.");
-                    return;
-                }
-
-                // Build table data
-                const headers = ["ID", "Type", "Label", "Status"];
-                const rows = [];
-
-                for (const it of items) {
-                    let label = it.label || "";
-                    let status = "";
-
-                    if (it.type === 'file' && it.label && !ctxmgr.fileExists(it.label)) {
-                        status = "missing";
-                    } else {
-                        status = "ok";
-                    }
-
-                    rows.push([
-                        String(it.id),
-                        it.type || "",
-                        label,
-                        status
-                    ]);
-                }
-
-                // Show the interactive table and surface any error to the user
-                var _tviewErr = tview.interactiveTable({
-                    title: "Context Items (" + items.length + " items) - Press Enter to edit, Escape/q to close",
-                    headers: headers,
-                    rows: rows,
-                    footer: "Use arrow keys to navigate | Press Enter to edit selected item | Press Escape or 'q' to close",
-                    onSelect: function (rowIndex) {
-                        // When user selects a row, edit that item
-                        const item = items[rowIndex];
-                        if (item) {
-                            // Call the edit command with the item's ID
-                            baseCommands.edit.handler([String(item.id)]);
-                        }
-                    }
-                });
-                if (_tviewErr) {
-                    output.print("TUI view error: " + _tviewErr);
-                }
+                output.print("The 'view' command has been removed. Use 'list' for context item output.");
             }
         },
         edit: {
@@ -454,6 +429,24 @@ function buildCommands(state) {
                 let text;
                 let label;
 
+                // Auto-generate on first copy: when the copy would produce
+                // meta-prompt content and no explicit generate has been run yet,
+                // automatically generate so the user doesn't copy an empty string.
+                // Clearing conditions: any copy invocation, any explicit generate.
+                if (getAutoGenerateOnCopy()) {
+                    const wouldCopyMeta = (target === 'meta' ||
+                        (target !== 'prompt' && getPhase() !== 'TASK_PROMPT_SET'));
+                    if (wouldCopyMeta && getGoal().trim() && !getMetaPrompt().trim()) {
+                        setPhase("CONTEXT_BUILDING");
+                        const metaPrompt = buildMetaPrompt();
+                        setMetaPrompt(metaPrompt);
+                        setTaskPrompt("");
+                        setPhase("META_GENERATED");
+                        output.print("(Auto-generated meta-prompt)");
+                    }
+                    setAutoGenerateOnCopy(false);
+                }
+
                 if (target === 'meta') {
                     text = getMetaPrompt();
                     label = "Meta prompt";
@@ -465,6 +458,10 @@ function buildCommands(state) {
                     if (getPhase() === 'TASK_PROMPT_SET') {
                         text = assembleFinal();
                         label = "Final output";
+                    } else if (!getGoal().trim()) {
+                        // One-step mode: no goal set, copy raw context
+                        text = buildContextTxtar();
+                        label = "Context";
                     } else {
                         text = getMetaPrompt();
                         label = "Meta prompt";
@@ -477,6 +474,22 @@ function buildCommands(state) {
                 } catch (e) {
                     output.print("Clipboard error: " + (e && e.message ? e.message : e));
                 }
+            }
+        },
+        footer: {
+            description: "Set footer text (appended after context in final output)",
+            usage: "footer [text...]",
+            handler: function (args) {
+                let text = args.join(" ");
+                if (!text) text = ctxmgr.openEditor("footer", getFooter() || "");
+                const trimmed = (text || "").trim();
+                if (!trimmed) {
+                    setFooter("");
+                    output.print("Footer cleared.");
+                    return;
+                }
+                setFooter(trimmed);
+                output.print("Footer set. Will be appended after context in final output.");
             }
         },
         // N.B. Gets the description from elsewhere, and runs after the built-in help.
@@ -507,9 +520,9 @@ ctx.run("register-mode", function () {
 });
 
 function help() {
-    output.print("\nCommands: goal, add, diff, note, list, view, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit\n"
+    output.print("\nCommands: goal, add, diff, note, list, edit, remove, template, generate, use, footer, show [meta|prompt], copy [meta|prompt], help, exit\n"
         + "Tip: Use 'goal --prewritten' to see available pre-written goals\n"
-        + "Tip: Use 'view' for an interactive TUI table of context items");
+        + "Tip: Use 'list' to see current context items");
 }
 
 // Auto-switch into flow mode when this script loads

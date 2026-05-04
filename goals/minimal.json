@@ -1,0 +1,34 @@
+{
+  "name": "quick-question",
+  "description": "Ask a focused question about code with minimal context",
+  "category": "examples",
+  "promptInstructions": "Answer the following question about the provided code. Be concise and direct. If the answer requires assumptions, state them explicitly.",
+  "promptTemplate": "**{{.description | upper}}**\n\n{{.promptInstructions}}\n\n## {{.contextHeader}}\n\n{{.contextTxtar}}",
+  "contextHeader": "RELEVANT CODE",
+  "commands": [
+    {
+      "name": "add",
+      "type": "contextManager",
+      "description": "Add files to context"
+    },
+    {
+      "name": "note",
+      "type": "contextManager",
+      "description": "Add a question or note"
+    },
+    {
+      "name": "show",
+      "type": "contextManager",
+      "description": "Show the current prompt"
+    },
+    {
+      "name": "copy",
+      "type": "contextManager",
+      "description": "Copy prompt to clipboard"
+    },
+    {
+      "name": "help",
+      "type": "help"
+    }
+  ]
+}

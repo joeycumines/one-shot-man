@@ -3,6 +3,8 @@ package command
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -234,5 +236,168 @@ func TestFindGoalFiles_NonExistentDir(t *testing.T) {
 	}
 	if len(candidates) != 0 {
 		t.Errorf("Expected 0 candidates, got %d", len(candidates))
+	}
+}
+
+func TestLoadGoalFromFile_TooLarge(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	goalFile := filepath.Join(tmpDir, "large-goal.json")
+
+	// Create a file that exceeds maxGoalFileSize (1 MiB)
+	data := make([]byte, maxGoalFileSize+1)
+	for i := range data {
+		data[i] = ' '
+	}
+	if err := os.WriteFile(goalFile, data, 0o644); err != nil {
+		t.Fatalf("Failed to write large file: %v", err)
+	}
+
+	_, err := LoadGoalFromFile(goalFile)
+	if err == nil {
+		t.Fatal("Expected error for oversized goal file, got nil")
+	}
+	if !strings.Contains(err.Error(), "too large") {
+		t.Errorf("Expected 'too large' error, got: %v", err)
+	}
+}
+
+func TestLoadGoalFromFile_ErrorContainsPath(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name    string
+		file    string
+		content string
+		pattern string
+	}{
+		{
+			name:    "invalid JSON includes path",
+			file:    "bad.json",
+			content: "{not json}",
+			pattern: "bad.json",
+		},
+		{
+			name:    "missing name includes path",
+			file:    "noname.json",
+			content: `{"description": "test"}`,
+			pattern: "noname.json",
+		},
+		{
+			name:    "invalid name includes path",
+			file:    "badname.json",
+			content: `{"name": "has spaces", "description": "test"}`,
+			pattern: "badname.json",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			goalFile := filepath.Join(tmpDir, tt.file)
+			if err := os.WriteFile(goalFile, []byte(tt.content), 0o644); err != nil {
+				t.Fatalf("Failed to write file: %v", err)
+			}
+
+			_, err := LoadGoalFromFile(goalFile)
+			if err == nil {
+				t.Fatal("Expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.pattern) {
+				t.Errorf("Expected error to contain %q, got: %v", tt.pattern, err)
+			}
+		})
+	}
+}
+
+func TestFindGoalFiles_PermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Permission tests not reliable on Windows")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("Skipping permission test when running as root")
+	}
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	unreadableDir := filepath.Join(tmpDir, "unreadable")
+	if err := os.MkdirAll(unreadableDir, 0o000); err != nil {
+		t.Fatalf("Failed to create unreadable dir: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(unreadableDir, 0o755) })
+
+	// Should return nil, nil (graceful skip) rather than an error
+	candidates, err := FindGoalFiles(unreadableDir)
+	if err != nil {
+		t.Errorf("Expected nil error for permission denied, got: %v", err)
+	}
+	if len(candidates) != 0 {
+		t.Errorf("Expected 0 candidates, got %d", len(candidates))
+	}
+}
+
+func TestFindGoalFiles_SymlinkToFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Symlink tests may not work on Windows")
+	}
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	goalDir := filepath.Join(tmpDir, "goals")
+	if err := os.MkdirAll(goalDir, 0o755); err != nil {
+		t.Fatalf("Failed to create goal dir: %v", err)
+	}
+
+	// Create a real goal file elsewhere
+	realFile := filepath.Join(tmpDir, "real-goal.json")
+	if err := os.WriteFile(realFile, []byte(`{"name":"linked","description":"A linked goal"}`), 0o644); err != nil {
+		t.Fatalf("Failed to create real file: %v", err)
+	}
+
+	// Create a symlink to the real file inside the goal dir
+	linkPath := filepath.Join(goalDir, "linked.json")
+	if err := os.Symlink(realFile, linkPath); err != nil {
+		t.Skip("Symlinks not supported")
+	}
+
+	// Also create a regular file
+	regularFile := filepath.Join(goalDir, "regular.json")
+	if err := os.WriteFile(regularFile, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("Failed to create regular file: %v", err)
+	}
+
+	// Create a symlink to a directory (should be skipped)
+	dirLink := filepath.Join(goalDir, "dirlink.json")
+	subDir := filepath.Join(tmpDir, "subdir")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatalf("Failed to create subdir: %v", err)
+	}
+	_ = os.Symlink(subDir, dirLink) // Ignore error, non-critical
+
+	candidates, err := FindGoalFiles(goalDir)
+	if err != nil {
+		t.Fatalf("FindGoalFiles failed: %v", err)
+	}
+
+	// Should find the symlink-to-file and the regular file, but not the symlink-to-dir
+	if len(candidates) != 2 {
+		names := make([]string, len(candidates))
+		for i, c := range candidates {
+			names[i] = c.Name
+		}
+		t.Errorf("Expected 2 candidates (linked + regular), got %d: %v", len(candidates), names)
+	}
+}
+
+func TestLoadGoalFromFile_StatFailure(t *testing.T) {
+	t.Parallel()
+
+	// Test what happens when the file path is completely invalid
+	_, err := LoadGoalFromFile("")
+	if err == nil {
+		t.Fatal("Expected error for empty path, got nil")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 // buildMockEditor compiles and returns the path to a cross-platform mock editor executable.
 // The editor appends the provided content to the target file, simulating user editing.
 func buildMockEditor(t *testing.T, tempDir string, content string) string {
+	t.Helper()
 	// Create a small Go program that writes content to the file passed as $1
 	editorSource := fmt.Sprintf(`package main
 
@@ -65,6 +67,7 @@ func main() {
 // Integration tests exercising the JS interpreter end-to-end for built-in goals
 func TestGoalScript_DocGenerator_PromptContainsTypeInstructions(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("doc-generator")
@@ -74,7 +77,7 @@ func TestGoalScript_DocGenerator_PromptContainsTypeInstructions(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -112,6 +115,7 @@ func TestGoalScript_DocGenerator_PromptContainsTypeInstructions(t *testing.T) {
 
 func TestGoalScript_TestGenerator_PromptContainsTypeInstructions(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("test-generator")
@@ -121,7 +125,7 @@ func TestGoalScript_TestGenerator_PromptContainsTypeInstructions(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -159,6 +163,7 @@ func TestGoalScript_TestGenerator_PromptContainsTypeInstructions(t *testing.T) {
 
 func TestGoalScript_MoraleImprover_LoadsAndInitializes(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
@@ -188,7 +193,7 @@ func TestGoalScript_MoraleImprover_LoadsAndInitializes(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -218,6 +223,7 @@ func TestGoalScript_MoraleImprover_LoadsAndInitializes(t *testing.T) {
 
 func TestGoalScript_MoraleImprover_ContextManagerCommands(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
@@ -227,7 +233,7 @@ func TestGoalScript_MoraleImprover_ContextManagerCommands(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -290,6 +296,7 @@ func TestGoalScript_MoraleImprover_ContextManagerCommands(t *testing.T) {
 
 func TestGoalScript_MoraleImprover_StateVariableCommands(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
@@ -299,7 +306,7 @@ func TestGoalScript_MoraleImprover_StateVariableCommands(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -366,6 +373,7 @@ func TestGoalScript_MoraleImprover_StateVariableCommands(t *testing.T) {
 
 func TestGoalScript_MoraleImprover_PromptTemplateRendering(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
@@ -375,7 +383,7 @@ func TestGoalScript_MoraleImprover_PromptTemplateRendering(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -443,6 +451,8 @@ func TestGoalScript_MoraleImprover_PromptTemplateRendering(t *testing.T) {
 }
 
 func TestGoalScript_MoraleImprover_ErrorHandling(t *testing.T) {
+	skipSlow(t)
+
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
 	if err != nil {
@@ -451,7 +461,7 @@ func TestGoalScript_MoraleImprover_ErrorHandling(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -509,6 +519,7 @@ func TestGoalScript_MoraleImprover_ErrorHandling(t *testing.T) {
 
 func TestGoalScript_MoraleImprover_TUIElements(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
@@ -526,7 +537,7 @@ func TestGoalScript_MoraleImprover_TUIElements(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -545,5 +556,108 @@ func TestGoalScript_MoraleImprover_TUIElements(t *testing.T) {
 
 	if err := engine.GetTUIManager().SwitchMode(g.Name); err != nil {
 		t.Fatalf("failed to switch mode: %v", err)
+	}
+}
+
+func TestGoalScript_MoraleImprover_EmbeddedHotSnippets(t *testing.T) {
+	t.Parallel()
+	skipSlow(t)
+
+	goalRegistry := newTestGoalRegistryForGoal()
+	g, err := goalRegistry.Get("morale-improver")
+	if err != nil {
+		t.Fatalf("failed to find morale-improver goal: %v", err)
+	}
+
+	// Verify goal has HotSnippets defined in Go
+	if len(g.HotSnippets) == 0 {
+		t.Fatal("expected morale-improver to have embedded HotSnippets")
+	}
+
+	expectedSnippets := map[string]string{
+		"review-plan": "Follow-up: review plan sections against failures",
+		"prove-it":    "Follow-up: demand proof of issue and fix",
+	}
+	for _, hs := range g.HotSnippets {
+		if desc, ok := expectedSnippets[hs.Name]; ok {
+			if hs.Description != desc {
+				t.Errorf("snippet %q expected description %q, got %q", hs.Name, desc, hs.Description)
+			}
+			if hs.Text == "" {
+				t.Errorf("snippet %q has empty text", hs.Name)
+			}
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	ctx := context.Background()
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory", nil, 0, slog.LevelInfo)
+	if err != nil {
+		t.Fatalf("NewEngine failed: %v", err)
+	}
+	defer engine.Close()
+	engine.SetTestMode(true)
+
+	cfgjson, err := json.Marshal(g)
+	if err != nil {
+		t.Fatalf("failed to marshal goal config: %v", err)
+	}
+
+	script := engine.LoadScriptFromString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
+	if err := engine.ExecuteScript(script); err != nil {
+		t.Fatalf("failed to execute goal script: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
+	}
+
+	if err := engine.GetTUIManager().SwitchMode(g.Name); err != nil {
+		t.Fatalf("failed to switch mode: %v", err)
+	}
+
+	// Verify hot-snippet commands are registered with hot- prefix
+	for name := range expectedSnippets {
+		cmdName := "hot-" + name
+		found := false
+		for _, cmd := range engine.GetTUIManager().ListCommands() {
+			if cmd.Name == cmdName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected hot-%s command to be registered", name)
+		}
+	}
+
+	// Verify snippets listing includes the hot-snippet names
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("snippets", []string{}); err != nil {
+		t.Fatalf("snippets command failed: %v", err)
+	}
+	snippetsOut := stdout.String()
+	for name := range expectedSnippets {
+		if !strings.Contains(snippetsOut, "hot-"+name) {
+			t.Errorf("expected snippets listing to contain 'hot-%s', got:\n%s", name, snippetsOut)
+		}
+	}
+	// Embedded snippets should show [embedded] marker
+	if !strings.Contains(snippetsOut, "[embedded]") {
+		t.Errorf("expected snippets listing to contain '[embedded]' marker, got:\n%s", snippetsOut)
+	}
+}
+
+func TestGoalScript_CommitMessage_EmbeddedHotSnippet(t *testing.T) {
+	t.Parallel()
+	skipSlow(t)
+
+	goalRegistry := newTestGoalRegistryForGoal()
+	g, err := goalRegistry.Get("commit-message")
+	if err != nil {
+		t.Fatalf("failed to find commit-message goal: %v", err)
+	}
+
+	if len(g.HotSnippets) != 1 {
+		t.Fatalf("expected commit-message to have 1 HotSnippet, got %d", len(g.HotSnippets))
+	}
+	if g.HotSnippets[0].Name != "review-response" {
+		t.Errorf("expected snippet name 'review-response', got %q", g.HotSnippets[0].Name)
 	}
 }

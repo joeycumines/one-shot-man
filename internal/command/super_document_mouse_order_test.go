@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
@@ -15,17 +16,18 @@ import (
 // deterministic, single-threaded unit test implemented by injecting spy
 // functions into a synthetic `s` object and invoking the real `handleMouse`.
 func TestHandleMouse_CallsSetViewportContextBeforeHandleClickAtScreenCoords(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
 
 	// Provide minimal globals the script expects
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -71,7 +73,7 @@ func TestHandleMouse_CallsSetViewportContextBeforeHandleClickAtScreenCoords(t *t
 		width: 80
 	};
 
-	var msg = { type: "Mouse", action: "press", button: "left", x: 1, y: 2 };
+	var msg = { type: "MouseClick", button: "left", x: 1, y: 2, mod: [] };
 
 	// Invoke the real, embedded handleMouse implementation
 	handleMouse(msg, s);

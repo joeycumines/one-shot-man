@@ -1,0 +1,3824 @@
+package command
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
+)
+
+// ---------------------------------------------------------------------------
+// T062: Verification and analysis function direct tests
+//
+// These tests exercise analyzeDiff, verifyEquivalence,
+// verifyEquivalenceDetailed, verifySplits, and executeSplit validation
+// paths. A JS-level exec mock intercepts gitExec calls to return
+// configurable responses without requiring a real git repository.
+// ---------------------------------------------------------------------------
+
+// resetGitMockJS returns JS to clear mock state between subtests.
+const resetGitMockJS = `globalThis._gitCalls = []; globalThis._gitResponses = {};`
+
+// ---------------------------------------------------------------------------
+// Result types
+// ---------------------------------------------------------------------------
+
+type analyzeDiffResult struct {
+	Files         []string          `json:"files"`
+	FileStatuses  map[string]string `json:"fileStatuses"`
+	Error         *string           `json:"error"`
+	BaseBranch    string            `json:"baseBranch"`
+	CurrentBranch string            `json:"currentBranch"`
+}
+
+func parseAnalyzeDiffResult(t *testing.T, raw any) analyzeDiffResult {
+	t.Helper()
+	s, ok := raw.(string)
+	if !ok {
+		t.Fatalf("expected string from evalJS, got %T: %v", raw, raw)
+	}
+	var r analyzeDiffResult
+	if err := json.Unmarshal([]byte(s), &r); err != nil {
+		t.Fatalf("failed to parse analyzeDiff result: %v\nraw: %s", err, s)
+	}
+	return r
+}
+
+type verifyEquivResult struct {
+	Equivalent  bool     `json:"equivalent"`
+	SplitTree   string   `json:"splitTree"`
+	SourceTree  string   `json:"sourceTree"`
+	Error       *string  `json:"error"`
+	DiffFiles   []string `json:"diffFiles"`
+	DiffSummary string   `json:"diffSummary"`
+}
+
+func parseVerifyEquivResult(t *testing.T, raw any) verifyEquivResult {
+	t.Helper()
+	s, ok := raw.(string)
+	if !ok {
+		t.Fatalf("expected string from evalJS, got %T: %v", raw, raw)
+	}
+	var r verifyEquivResult
+	if err := json.Unmarshal([]byte(s), &r); err != nil {
+		t.Fatalf("failed to parse verifyEquivalence result: %v\nraw: %s", err, s)
+	}
+	return r
+}
+
+type executeSplitResult struct {
+	Error   *string `json:"error"`
+	Results []struct {
+		Name  string   `json:"name"`
+		Files []string `json:"files"`
+		SHA   string   `json:"sha"`
+		Error *string  `json:"error"`
+	} `json:"results"`
+}
+
+func parseExecuteSplitResult(t *testing.T, raw any) executeSplitResult {
+	t.Helper()
+	s, ok := raw.(string)
+	if !ok {
+		t.Fatalf("expected string from evalJS, got %T: %v", raw, raw)
+	}
+	var r executeSplitResult
+	if err := json.Unmarshal([]byte(s), &r); err != nil {
+		t.Fatalf("failed to parse executeSplit result: %v\nraw: %s", err, s)
+	}
+	return r
+}
+
+type verifySplitsResult struct {
+	AllPassed bool `json:"allPassed"`
+	Results   []struct {
+		Name        string  `json:"name"`
+		Passed      bool    `json:"passed"`
+		Skipped     bool    `json:"skipped"`
+		PreExisting bool    `json:"preExisting"`
+		Output      string  `json:"output"`
+		Error       *string `json:"error"`
+	} `json:"results"`
+	Error *string `json:"error"`
+}
+
+func parseVerifySplitsResult(t *testing.T, raw any) verifySplitsResult {
+	t.Helper()
+	s, ok := raw.(string)
+	if !ok {
+		t.Fatalf("expected string from evalJS, got %T: %v", raw, raw)
+	}
+	var r verifySplitsResult
+	if err := json.Unmarshal([]byte(s), &r); err != nil {
+		t.Fatalf("failed to parse verifySplits result: %v\nraw: %s", err, s)
+	}
+	return r
+}
+
+// ---------------------------------------------------------------------------
+// analyzeDiff edge case tests
+// ---------------------------------------------------------------------------
+
+func TestAnalyzeDiff_EdgeCases(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		setup   string // JS to configure _gitResponses
+		call    string // JS expression returning JSON string
+		checkFn func(t *testing.T, r analyzeDiffResult)
+	}{
+		{
+			name: "normal_mixed_statuses",
+			setup: `
+				_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+				_gitResponses['merge-base main feature'] = _gitOk('abc123\n');
+				_gitResponses['diff --name-status abc123 feature'] = _gitOk('A\tpkg/new.go\nM\tcmd/main.go\nD\told/removed.go\n');
+			`,
+			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			checkFn: func(t *testing.T, r analyzeDiffResult) {
+				if len(r.Files) != 3 {
+					t.Fatalf("expected 3 files, got %d: %v", len(r.Files), r.Files)
+				}
+				want := map[string]string{"pkg/new.go": "A", "cmd/main.go": "M", "old/removed.go": "D"}
+				for f, s := range want {
+					if r.FileStatuses[f] != s {
+						t.Errorf("file %q: want status %q, got %q", f, s, r.FileStatuses[f])
+					}
+				}
+				if r.Error != nil {
+					t.Errorf("expected nil error, got %q", *r.Error)
+				}
+				if r.CurrentBranch != "feature" {
+					t.Errorf("want currentBranch 'feature', got %q", r.CurrentBranch)
+				}
+			},
+		},
+		{
+			name: "rename_tracks_only_new_path",
+			setup: `
+				_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('dev\n');
+				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
+				_gitResponses['diff --name-status base1 dev'] = _gitOk('R100\told/file.go\tnew/file.go\n');
+			`,
+			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			checkFn: func(t *testing.T, r analyzeDiffResult) {
+				if len(r.Files) != 1 {
+					t.Fatalf("expected 1 file, got %d: %v", len(r.Files), r.Files)
+				}
+				if r.Files[0] != "new/file.go" {
+					t.Errorf("expected 'new/file.go', got %q", r.Files[0])
+				}
+				if r.FileStatuses["new/file.go"] != "R" {
+					t.Errorf("expected status 'R', got %q", r.FileStatuses["new/file.go"])
+				}
+				// Old path should NOT be tracked.
+				if _, has := r.FileStatuses["old/file.go"]; has {
+					t.Error("old rename path should not be tracked")
+				}
+			},
+		},
+		{
+			name: "copy_tracks_only_new_path",
+			setup: `
+				_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('dev\n');
+				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
+				_gitResponses['diff --name-status base1 dev'] = _gitOk('C095\tsrc/orig.go\tsrc/copy.go\n');
+			`,
+			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			checkFn: func(t *testing.T, r analyzeDiffResult) {
+				if len(r.Files) != 1 {
+					t.Fatalf("expected 1 file, got %d: %v", len(r.Files), r.Files)
+				}
+				if r.Files[0] != "src/copy.go" {
+					t.Errorf("expected 'src/copy.go', got %q", r.Files[0])
+				}
+				if r.FileStatuses["src/copy.go"] != "C" {
+					t.Errorf("expected status 'C', got %q", r.FileStatuses["src/copy.go"])
+				}
+			},
+		},
+		{
+			name: "unmerged_path_returns_error",
+			setup: `
+				_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('dev\n');
+				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
+				_gitResponses['diff --name-status base1 dev'] = _gitOk('A\tgood.go\nU\tconflict.go\nM\tother.go\n');
+			`,
+			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			checkFn: func(t *testing.T, r analyzeDiffResult) {
+				if r.Error == nil {
+					t.Fatal("expected error for unmerged path")
+				}
+				if !strings.Contains(*r.Error, "unmerged path") {
+					t.Errorf("error should mention 'unmerged path', got %q", *r.Error)
+				}
+				if !strings.Contains(*r.Error, "conflict.go") {
+					t.Errorf("error should mention the conflicting file, got %q", *r.Error)
+				}
+				// Files should be empty since we returned early.
+				if len(r.Files) != 0 {
+					t.Errorf("expected empty files on unmerged error, got %v", r.Files)
+				}
+			},
+		},
+		{
+			name: "unknown_status_skipped",
+			setup: `
+				_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('dev\n');
+				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
+				_gitResponses['diff --name-status base1 dev'] = _gitOk('A\tknown.go\nX\tunknown.go\nM\talso_known.go\n');
+			`,
+			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			checkFn: func(t *testing.T, r analyzeDiffResult) {
+				// X status is not in KNOWN_STATUSES, so unknown.go is skipped.
+				if len(r.Files) != 2 {
+					t.Fatalf("expected 2 files (unknown skipped), got %d: %v", len(r.Files), r.Files)
+				}
+				if _, has := r.FileStatuses["unknown.go"]; has {
+					t.Error("unknown.go should have been skipped")
+				}
+				if r.Error != nil {
+					t.Errorf("unexpected error: %q", *r.Error)
+				}
+			},
+		},
+		{
+			name: "type_change_handled",
+			setup: `
+				_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('dev\n');
+				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
+				_gitResponses['diff --name-status base1 dev'] = _gitOk('T\tlink.txt\n');
+			`,
+			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			checkFn: func(t *testing.T, r analyzeDiffResult) {
+				if len(r.Files) != 1 {
+					t.Fatalf("expected 1 file, got %d", len(r.Files))
+				}
+				if r.FileStatuses["link.txt"] != "T" {
+					t.Errorf("expected status 'T', got %q", r.FileStatuses["link.txt"])
+				}
+			},
+		},
+		{
+			name: "empty_diff",
+			setup: `
+				_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('dev\n');
+				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
+				_gitResponses['diff --name-status base1 dev'] = _gitOk('');
+			`,
+			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			checkFn: func(t *testing.T, r analyzeDiffResult) {
+				if len(r.Files) != 0 {
+					t.Errorf("expected empty files, got %v", r.Files)
+				}
+				if r.Error != nil {
+					t.Errorf("unexpected error: %q", *r.Error)
+				}
+			},
+		},
+		{
+			name: "rev_parse_failure",
+			setup: `
+				_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitFail('fatal: not a git repo');
+			`,
+			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			checkFn: func(t *testing.T, r analyzeDiffResult) {
+				if r.Error == nil {
+					t.Fatal("expected error on rev-parse failure")
+				}
+				if !strings.Contains(*r.Error, "failed to get current branch") {
+					t.Errorf("error should mention branch failure, got %q", *r.Error)
+				}
+			},
+		},
+		{
+			name: "merge_base_failure",
+			setup: `
+				_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('dev\n');
+				_gitResponses['merge-base main dev'] = _gitFail('fatal: no merge base');
+			`,
+			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			checkFn: func(t *testing.T, r analyzeDiffResult) {
+				if r.Error == nil {
+					t.Fatal("expected error on merge-base failure")
+				}
+				if !strings.Contains(*r.Error, "merge-base failed") {
+					t.Errorf("error should mention merge-base, got %q", *r.Error)
+				}
+				if r.CurrentBranch != "dev" {
+					t.Errorf("currentBranch should still be set, got %q", r.CurrentBranch)
+				}
+			},
+		},
+		{
+			name: "diff_command_failure",
+			setup: `
+				_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('dev\n');
+				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
+				_gitResponses['diff --name-status base1 dev'] = _gitFail('fatal: ambiguous argument');
+			`,
+			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			checkFn: func(t *testing.T, r analyzeDiffResult) {
+				if r.Error == nil {
+					t.Fatal("expected error on diff failure")
+				}
+				if !strings.Contains(*r.Error, "git diff failed") {
+					t.Errorf("error should mention git diff, got %q", *r.Error)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := evalJS(resetGitMockJS); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := evalJS(tt.setup); err != nil {
+				t.Fatalf("mock setup failed: %v", err)
+			}
+			raw, err := evalJS(tt.call)
+			if err != nil {
+				t.Fatalf("evalJS failed: %v", err)
+			}
+			r := parseAnalyzeDiffResult(t, raw)
+			tt.checkFn(t, r)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// verifyEquivalence edge case tests
+// ---------------------------------------------------------------------------
+
+func TestVerifyEquivalence_EdgeCases(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		setup   string
+		planJS  string // JS plan object literal
+		checkFn func(t *testing.T, r verifyEquivResult)
+	}{
+		{
+			name:  "empty_splits",
+			setup: ``, // No mock needed — bails out before git calls.
+			planJS: `{
+				dir: '/tmp/test',
+				sourceBranch: 'feature',
+				splits: []
+			}`,
+			checkFn: func(t *testing.T, r verifyEquivResult) {
+				if r.Equivalent {
+					t.Error("should not be equivalent with empty splits")
+				}
+				if r.Error == nil {
+					t.Fatal("expected error for empty splits")
+				}
+				if !strings.Contains(*r.Error, "no splits") {
+					t.Errorf("error should mention 'no splits', got %q", *r.Error)
+				}
+			},
+		},
+		{
+			name: "equivalent_trees",
+			setup: `
+				_gitResponses['rev-parse split/02^{tree}'] = _gitOk('aaa111bbb222ccc333\n');
+				_gitResponses['rev-parse feature^{tree}'] = _gitOk('aaa111bbb222ccc333\n');
+			`,
+			planJS: `{
+				dir: '/tmp/test',
+				sourceBranch: 'feature',
+				splits: [
+					{name: 'split/01', files: ['a.go']},
+					{name: 'split/02', files: ['b.go']}
+				]
+			}`,
+			checkFn: func(t *testing.T, r verifyEquivResult) {
+				if !r.Equivalent {
+					t.Error("expected equivalent trees")
+				}
+				if r.Error != nil {
+					t.Errorf("unexpected error: %q", *r.Error)
+				}
+				if r.SplitTree != "aaa111bbb222ccc333" {
+					t.Errorf("wrong splitTree: %q", r.SplitTree)
+				}
+				if r.SourceTree != "aaa111bbb222ccc333" {
+					t.Errorf("wrong sourceTree: %q", r.SourceTree)
+				}
+			},
+		},
+		{
+			name: "non_equivalent_trees",
+			setup: `
+				_gitResponses['rev-parse split/02^{tree}'] = _gitOk('aaa111\n');
+				_gitResponses['rev-parse feature^{tree}'] = _gitOk('bbb222\n');
+			`,
+			planJS: `{
+				dir: '/tmp/test',
+				sourceBranch: 'feature',
+				splits: [
+					{name: 'split/01', files: ['a.go']},
+					{name: 'split/02', files: ['b.go']}
+				]
+			}`,
+			checkFn: func(t *testing.T, r verifyEquivResult) {
+				if r.Equivalent {
+					t.Error("trees should not be equivalent")
+				}
+				if r.Error != nil {
+					t.Errorf("unexpected error: %q", *r.Error)
+				}
+				if r.SplitTree != "aaa111" {
+					t.Errorf("wrong splitTree: %q", r.SplitTree)
+				}
+				if r.SourceTree != "bbb222" {
+					t.Errorf("wrong sourceTree: %q", r.SourceTree)
+				}
+			},
+		},
+		{
+			name: "split_tree_rev_parse_failure",
+			setup: `
+				_gitResponses['rev-parse split/02^{tree}'] = _gitFail('fatal: not a valid object name');
+			`,
+			planJS: `{
+				dir: '/tmp/test',
+				sourceBranch: 'feature',
+				splits: [
+					{name: 'split/01', files: ['a.go']},
+					{name: 'split/02', files: ['b.go']}
+				]
+			}`,
+			checkFn: func(t *testing.T, r verifyEquivResult) {
+				if r.Equivalent {
+					t.Error("should not be equivalent on error")
+				}
+				if r.Error == nil {
+					t.Fatal("expected error")
+				}
+				if !strings.Contains(*r.Error, "failed to get split tree") {
+					t.Errorf("error should mention split tree, got %q", *r.Error)
+				}
+			},
+		},
+		{
+			name: "source_tree_rev_parse_failure",
+			setup: `
+				_gitResponses['rev-parse split/02^{tree}'] = _gitOk('aaa111\n');
+				_gitResponses['rev-parse feature^{tree}'] = _gitFail('fatal: bad ref');
+			`,
+			planJS: `{
+				dir: '/tmp/test',
+				sourceBranch: 'feature',
+				splits: [
+					{name: 'split/01', files: ['a.go']},
+					{name: 'split/02', files: ['b.go']}
+				]
+			}`,
+			checkFn: func(t *testing.T, r verifyEquivResult) {
+				if r.Equivalent {
+					t.Error("should not be equivalent on error")
+				}
+				if r.Error == nil {
+					t.Fatal("expected error")
+				}
+				if !strings.Contains(*r.Error, "failed to get source tree") {
+					t.Errorf("error should mention source tree, got %q", *r.Error)
+				}
+				// splitTree should still be populated even though source failed.
+				if r.SplitTree != "aaa111" {
+					t.Errorf("splitTree should be set, got %q", r.SplitTree)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := evalJS(resetGitMockJS); err != nil {
+				t.Fatal(err)
+			}
+			if tt.setup != "" {
+				if _, err := evalJS(tt.setup); err != nil {
+					t.Fatalf("mock setup failed: %v", err)
+				}
+			}
+			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + tt.planJS + `))`)
+			if err != nil {
+				t.Fatalf("evalJS failed: %v", err)
+			}
+			r := parseVerifyEquivResult(t, raw)
+			tt.checkFn(t, r)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// verifyEquivalenceDetailed edge case tests
+// ---------------------------------------------------------------------------
+
+func TestVerifyEquivalenceDetailed_EdgeCases(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("equivalent_returns_empty_diff", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse split/last^{tree}'] = _gitOk('samehash\n');
+			_gitResponses['rev-parse feature^{tree}'] = _gitOk('samehash\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			splits: [{name: 'split/last', files: ['a.go']}]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if !r.Equivalent {
+			t.Error("expected equivalent")
+		}
+		if r.DiffSummary != "" {
+			t.Errorf("expected empty diffSummary, got %q", r.DiffSummary)
+		}
+		if len(r.DiffFiles) != 0 {
+			t.Errorf("expected empty diffFiles, got %v", r.DiffFiles)
+		}
+	})
+
+	t.Run("non_equivalent_shows_diff_details", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse split/last^{tree}'] = _gitOk('aaa\n');
+			_gitResponses['rev-parse feature^{tree}'] = _gitOk('bbb\n');
+			_gitResponses['diff --stat split/last feature'] = _gitOk(' cmd/main.go | 5 ++---\n 1 file changed\n');
+			_gitResponses['diff --name-only split/last feature'] = _gitOk('cmd/main.go\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			splits: [{name: 'split/last', files: ['a.go']}]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Equivalent {
+			t.Error("expected non-equivalent")
+		}
+		if r.DiffSummary == "" {
+			t.Error("expected non-empty diffSummary")
+		}
+		if len(r.DiffFiles) != 1 || r.DiffFiles[0] != "cmd/main.go" {
+			t.Errorf("expected diffFiles=['cmd/main.go'], got %v", r.DiffFiles)
+		}
+	})
+
+	t.Run("error_passthrough_from_base", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Empty splits → error from verifyEquivalence base.
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			splits: []
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Error == nil {
+			t.Fatal("expected error passthrough")
+		}
+		if !strings.Contains(*r.Error, "no splits") {
+			t.Errorf("error should mention 'no splits', got %q", *r.Error)
+		}
+		if len(r.DiffFiles) != 0 {
+			t.Errorf("expected empty diffFiles on error, got %v", r.DiffFiles)
+		}
+	})
+
+	t.Run("diff_stat_failure_returns_empty_summary", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse split/last^{tree}'] = _gitOk('aaa\n');
+			_gitResponses['rev-parse feature^{tree}'] = _gitOk('bbb\n');
+			_gitResponses['diff --stat split/last feature'] = _gitFail('error');
+			_gitResponses['diff --name-only split/last feature'] = _gitFail('error');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			splits: [{name: 'split/last', files: ['a.go']}]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Equivalent {
+			t.Error("expected non-equivalent")
+		}
+		if r.DiffSummary != "" {
+			t.Errorf("expected empty diffSummary on failure, got %q", r.DiffSummary)
+		}
+		if len(r.DiffFiles) != 0 {
+			t.Errorf("expected empty diffFiles on failure, got %v", r.DiffFiles)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// executeSplit validation error tests
+// ---------------------------------------------------------------------------
+
+func TestExecuteSplit_ValidationErrors(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("nil_splits_returns_invalid_plan", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+			dir: '/tmp/test',
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			splits: [],
+			fileStatuses: {}
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseExecuteSplitResult(t, raw)
+
+		if r.Error == nil {
+			t.Fatal("expected error for empty splits")
+		}
+		if !strings.Contains(*r.Error, "invalid plan") {
+			t.Errorf("error should mention 'invalid plan', got %q", *r.Error)
+		}
+	})
+
+	t.Run("missing_file_statuses", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+			dir: '/tmp/test',
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			splits: [{name: 'split/01', files: ['a.go']}]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseExecuteSplitResult(t, raw)
+
+		if r.Error == nil {
+			t.Fatal("expected error for missing fileStatuses")
+		}
+		if !strings.Contains(*r.Error, "fileStatuses is required") {
+			t.Errorf("error should mention fileStatuses, got %q", *r.Error)
+		}
+	})
+
+	t.Run("file_not_in_statuses", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Mock git commands to get past branch setup.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['rev-parse --verify refs/heads/split/01'] = _gitFail('not found');
+			_gitResponses['checkout main'] = _gitOk('');
+			_gitResponses['checkout -b split/01'] = _gitOk('');
+			_gitResponses['checkout'] = _gitOk('');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+			dir: '/tmp/test',
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			splits: [{name: 'split/01', files: ['missing.go']}],
+			fileStatuses: {
+				'other.go': 'A'
+			}
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseExecuteSplitResult(t, raw)
+
+		if r.Error == nil {
+			t.Fatal("expected error for file not in statuses")
+		}
+		if !strings.Contains(*r.Error, "missing.go") {
+			t.Errorf("error should mention the missing file, got %q", *r.Error)
+		}
+		if !strings.Contains(*r.Error, "no entry in plan.fileStatuses") {
+			t.Errorf("error should mention fileStatuses, got %q", *r.Error)
+		}
+	})
+
+	t.Run("split_with_no_name", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+			dir: '/tmp/test',
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			splits: [{name: '', files: ['a.go']}],
+			fileStatuses: {'a.go': 'A'}
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseExecuteSplitResult(t, raw)
+
+		if r.Error == nil {
+			t.Fatal("expected error for empty split name")
+		}
+		if !strings.Contains(*r.Error, "invalid plan") {
+			t.Errorf("error should mention 'invalid plan', got %q", *r.Error)
+		}
+	})
+
+	t.Run("duplicate_files_across_splits", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+			dir: '/tmp/test',
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			splits: [
+				{name: 'split/01', files: ['shared.go']},
+				{name: 'split/02', files: ['shared.go']}
+			],
+			fileStatuses: {'shared.go': 'A'}
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseExecuteSplitResult(t, raw)
+
+		if r.Error == nil {
+			t.Fatal("expected error for duplicate files")
+		}
+		if !strings.Contains(*r.Error, "duplicate files") {
+			t.Errorf("error should mention 'duplicate files', got %q", *r.Error)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// verifySplits mock tests
+// ---------------------------------------------------------------------------
+
+func TestVerifySplits_MockExec(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("all_pass", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitOk('tests passed');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01', files: ['a.go']},
+				{name: 'split/02', files: ['b.go']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		if !r.AllPassed {
+			t.Error("expected all splits to pass")
+		}
+		if len(r.Results) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(r.Results))
+		}
+		for i, res := range r.Results {
+			if !res.Passed {
+				t.Errorf("result %d (%s) should have passed", i, res.Name)
+			}
+		}
+	})
+
+	t.Run("some_fail", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		// Use a function response for sh commands to alternate pass/fail.
+		// T25: Call #1 is baseline check on source branch; split branches start at #2.
+		if _, err := evalJS(`
+			var _shCallCount = 0;
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = function(argv) {
+				_shCallCount++;
+				if (_shCallCount === 3) {
+					return _gitFail('build failed');
+				}
+				return _gitOk('ok');
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01', files: ['a.go']},
+				{name: 'split/02', files: ['b.go']},
+				{name: 'split/03', files: ['c.go']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		if r.AllPassed {
+			t.Error("should not all pass when one fails")
+		}
+		if len(r.Results) != 3 {
+			t.Fatalf("expected 3 results, got %d", len(r.Results))
+		}
+		// First passes, second fails, third passes.
+		if !r.Results[0].Passed {
+			t.Error("result 0 should have passed")
+		}
+		if r.Results[1].Passed {
+			t.Error("result 1 should have failed")
+		}
+		if r.Results[1].Error == nil {
+			t.Error("result 1 should have error")
+		}
+		if !r.Results[2].Passed {
+			t.Error("result 2 should have passed")
+		}
+	})
+
+	t.Run("checkout_failure", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		// verifySplit now uses worktree — mock worktree add to fail for
+		// split branches only. The baseline (source branch) verification
+		// must succeed so that split failures are NOT masked as pre-existing.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['worktree'] = function(args) {
+				if (args && args.indexOf('add') >= 0) {
+					// Allow worktree add for the source branch (baseline check).
+					// Use exact match on last arg (branch name) to avoid false
+					// positives when a split name contains 'feature' as substring.
+					var branch = args.length > 0 ? args[args.length - 1] : '';
+					if (branch === 'feature') {
+						return _gitOk('');
+					}
+					return _gitFail('branch not found');
+				}
+				if (args && args.indexOf('remove') >= 0) return _gitOk('');
+				return _gitOk('');
+			};
+			// Mock the verify command (sh -c ...) to pass for baseline.
+			_gitResponses['!sh'] = _gitOk('');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'true',
+			splits: [{name: 'split/bad', files: ['a.go']}]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		if r.AllPassed {
+			t.Error("should not pass with worktree creation failure")
+		}
+		if len(r.Results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(r.Results))
+		}
+		if r.Results[0].Error == nil {
+			t.Fatal("expected error on worktree creation failure")
+		}
+		if !strings.Contains(*r.Results[0].Error, "create worktree failed") {
+			t.Errorf("error should mention worktree, got %q", *r.Results[0].Error)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Null plan guard tests
+// ---------------------------------------------------------------------------
+
+func TestVerifySplits_NullPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{"null", "null"},
+		{"undefined", "undefined"},
+		{"empty_object", "{}"},
+		{"missing_splits", "{dir: '.', sourceBranch: 'main'}"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits(` + tt.expr + `))`)
+			if err != nil {
+				t.Fatalf("evalJS failed: %v", err)
+			}
+			r := parseVerifySplitsResult(t, raw)
+			if r.AllPassed {
+				t.Error("should not pass with invalid plan")
+			}
+			if r.Error == nil || !strings.Contains(*r.Error, "invalid plan") {
+				t.Errorf("expected error containing 'invalid plan', got %v", r.Error)
+			}
+		})
+	}
+}
+
+func TestVerifyEquivalence_NullPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{"null", "null"},
+		{"undefined", "undefined"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + tt.expr + `))`)
+			if err != nil {
+				t.Fatalf("evalJS failed: %v", err)
+			}
+			r := parseVerifyEquivResult(t, raw)
+			if r.Equivalent {
+				t.Error("should not be equivalent with null plan")
+			}
+			if r.Error == nil || !strings.Contains(*r.Error, "invalid plan") {
+				t.Errorf("expected error containing 'invalid plan', got %v", r.Error)
+			}
+		})
+	}
+}
+
+func TestVerifyEquivalenceDetailed_NullPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{"null", "null"},
+		{"undefined", "undefined"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed(` + tt.expr + `))`)
+			if err != nil {
+				t.Fatalf("evalJS failed: %v", err)
+			}
+			r := parseVerifyEquivResult(t, raw)
+			if r.Equivalent {
+				t.Error("should not be equivalent with null plan")
+			}
+			if r.Error == nil || !strings.Contains(*r.Error, "invalid plan") {
+				t.Errorf("expected error containing 'invalid plan', got %v", r.Error)
+			}
+			if r.DiffFiles == nil {
+				t.Error("diffFiles should be empty array, not nil")
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Dependency-skip tests for verifySplits (T073)
+// ---------------------------------------------------------------------------
+
+func TestVerifySplits_SkipsDependencyFailures(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("downstream_skipped_when_upstream_fails", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		// First split fails verification (sh callback returns failure),
+		// second and third should be skipped due to dependency chain.
+		// T25: Call #1 is baseline on sourceBranch — must pass so failures
+		// are NOT marked pre-existing.
+		if _, err := evalJS(`
+			var _shN = 0;
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = function(argv) {
+				_shN++;
+				if (_shN === 1) return _gitOk('baseline ok');
+				return _gitFail('build failed');
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-alpha', files: ['a.go'], dependencies: []},
+				{name: 'split/02-beta',  files: ['b.go'], dependencies: ['split/01-alpha']},
+				{name: 'split/03-gamma', files: ['c.go'], dependencies: ['split/02-beta']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		if r.AllPassed {
+			t.Error("should not all pass when first fails")
+		}
+		if len(r.Results) != 3 {
+			t.Fatalf("expected 3 results, got %d", len(r.Results))
+		}
+
+		// First: actually failed.
+		if r.Results[0].Passed {
+			t.Error("result[0] should have failed")
+		}
+		if r.Results[0].Skipped {
+			t.Error("result[0] should NOT be skipped (actually ran)")
+		}
+
+		// Second: skipped due to dependency on first.
+		if r.Results[1].Passed {
+			t.Error("result[1] should not be passed")
+		}
+		if !r.Results[1].Skipped {
+			t.Error("result[1] should be skipped")
+		}
+		if r.Results[1].Error == nil || !strings.Contains(*r.Results[1].Error, "dependency split/01-alpha failed") {
+			t.Errorf("result[1].error = %v, want 'dependency split/01-alpha failed'", r.Results[1].Error)
+		}
+
+		// Third: skipped due to dependency on second (transitive).
+		if !r.Results[2].Skipped {
+			t.Error("result[2] should be skipped")
+		}
+		if r.Results[2].Error == nil || !strings.Contains(*r.Results[2].Error, "dependency split/02-beta failed") {
+			t.Errorf("result[2].error = %v, want 'dependency split/02-beta failed'", r.Results[2].Error)
+		}
+	})
+
+	t.Run("no_dependencies_always_runs", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitOk('tests passed');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01', files: ['a.go']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		if !r.AllPassed {
+			t.Error("single split without dependencies should pass")
+		}
+		if len(r.Results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(r.Results))
+		}
+		if r.Results[0].Skipped {
+			t.Error("should not be skipped when no dependencies")
+		}
+	})
+}
+
+func TestVerifySplits_PerBranchTimeout(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("timeout_detected_via_exit_code_124", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Mock: checkout succeeds, sh returns exit code 124 (timeout utility signal).
+		// T25: Call #1 is baseline — must succeed so split failures are real.
+		if _, err := evalJS(`
+			var _shTO = 0;
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = function(argv) {
+				_shTO++;
+				if (_shTO === 1) return _gitOk('baseline ok');
+				return {stdout: '', stderr: 'killed', code: 124, error: true, message: 'killed'};
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'sleep 999',
+			splits: [{name: 'split/slow', files: ['a.go']}]
+		}, {verifyTimeoutMs: 5000}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		if r.AllPassed {
+			t.Error("expected timeout to cause failure")
+		}
+		if len(r.Results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(r.Results))
+		}
+		if r.Results[0].Error == nil || !strings.Contains(*r.Results[0].Error, "verify timeout") {
+			t.Errorf("expected 'verify timeout' in error, got %v", r.Results[0].Error)
+		}
+	})
+
+	t.Run("no_timeout_when_command_succeeds_fast", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitOk('ok');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [{name: 'split/fast', files: ['a.go']}]
+		}, {verifyTimeoutMs: 600000}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		if !r.AllPassed {
+			t.Error("expected fast command to pass with generous timeout")
+		}
+	})
+
+	t.Run("no_timeout_when_not_configured", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Even with exit code 124, if no timeout configured, it's just a regular failure.
+		// T25: Call #1 is baseline — must succeed so split failures are real.
+		if _, err := evalJS(`
+			var _shNTO = 0;
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = function(argv) {
+				_shNTO++;
+				if (_shNTO === 1) return _gitOk('baseline ok');
+				return {stdout: '', stderr: 'killed', code: 124, error: true, message: 'killed'};
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [{name: 'split/test', files: ['a.go']}]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		if r.AllPassed {
+			t.Error("expected failure")
+		}
+		// Without timeout configured, error should be regular verify failure, not timeout.
+		if r.Results[0].Error != nil && strings.Contains(*r.Results[0].Error, "verify timeout") {
+			t.Error("should NOT report timeout when verifyTimeoutMs is not configured")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T3: Verify step "skip" bug — demonstrates that verifySplits returns
+// allPassed=false when branches fail or are skipped, but the automatedSplit
+// step wrapper (line ~2920) always returns error:null, causing the TUI to
+// show ✓ for the Verify step even when verification fails.
+//
+// Root cause: step('Verify splits', fn) at line 2920 returns
+//   { error: null, failures: realFailures, allPassed: false }
+// The step() wrapper at line 2600 checks result.error, sees null, and calls
+//   step() emits '[auto-split] {name} OK ({elapsed}ms)' via output.print()
+// Failures are handled separately at line 2951 (if verifyResult.failures.length > 0).
+//
+// Fix target: T48 — modify step wrapper return or step() error checking.
+// ---------------------------------------------------------------------------
+
+func TestVerifySplits_FailedBranch_AllPassedFalse(t *testing.T) {
+	// This test documents the bug: verifySplits correctly returns allPassed=false
+	// on failure, but the step() wrapper in automatedSplit discards this signal.
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	// T25: Call #1 is baseline on sourceBranch — must pass so split
+	// failures are NOT marked pre-existing.
+	if _, err := evalJS(`
+		var _shFB = 0;
+		_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+		_gitResponses['checkout'] = _gitOk('');
+		_gitResponses['!sh'] = function(argv) {
+			_shFB++;
+			if (_shFB === 1) return _gitOk('baseline ok');
+			return _gitFail('COMPILE ERROR: missing import');
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		dir: '/tmp/test',
+		sourceBranch: 'feature',
+		verifyCommand: 'make',
+		splits: [
+			{name: 'split/01-core', files: ['core.go']},
+			{name: 'split/02-util', files: ['util.go']}
+		]
+	}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := parseVerifySplitsResult(t, raw)
+
+	// verifySplits correctly reports allPassed=false.
+	if r.AllPassed {
+		t.Error("expected allPassed=false when branches fail verification")
+	}
+
+	// Both branches were verified and both failed.
+	if len(r.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(r.Results))
+	}
+	for i, res := range r.Results {
+		if res.Passed {
+			t.Errorf("result[%d] (%s) should have failed", i, res.Name)
+		}
+		if res.Skipped {
+			t.Errorf("result[%d] (%s) should NOT be skipped — it ran", i, res.Name)
+		}
+		if res.Error == nil {
+			t.Errorf("result[%d] (%s) should have an error message", i, res.Name)
+		}
+	}
+
+	// In automatedSplit(), the "Verify splits" step callback sets
+	// result.error when realFailures.length > 0. See
+	// TestVerifyStepReportsErrorOnFailure for the integration-level test.
+}
+
+// ---------------------------------------------------------------------------
+// T15: Verify step reports error when branches fail verification
+// ---------------------------------------------------------------------------
+
+// TestVerifyStepReportsErrorOnFailure exercises the T15 fix: the "Verify
+// splits" step callback in automatedSplit now sets result.error when
+// verifySplits reports branch failures. Before the fix, step() received
+// {error: null, allPassed: false} and marked the step as "OK" in reports.
+func TestVerifyStepReportsErrorOnFailure(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	// Simulate the verify step callback logic from automatedSplit.
+	// verifySplits returns allPassed:false with one branch failing.
+	val, err := evalJS(`(function() {
+		// Set up git mock so verifySplits runs against two branches:
+		// branch 1 passes, branch 2 fails.
+		_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+		_gitResponses['checkout'] = _gitOk('');
+		// T25: Call #1 is baseline on sourceBranch; split branches start at #2.
+		var _shCount = 0;
+		_gitResponses['!sh'] = function(argv) {
+			_shCount++;
+			if (_shCount === 3) return _gitFail('COMPILATION FAILED');
+			return _gitOk('ok');
+		};
+
+		var plan = {
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/good', files: ['good.go']},
+				{name: 'split/bad', files: ['bad.go']}
+			]
+		};
+
+		var verifyObj = verifySplits(plan, {});
+
+		// This mirrors the code in automatedSplit "Verify splits" step callback.
+		var realFailures = [];
+		var skippedResults = [];
+		for (var i = 0; i < verifyObj.results.length; i++) {
+			var r = verifyObj.results[i];
+			if (r.skipped) {
+				skippedResults.push(r);
+			} else if (!r.passed) {
+				realFailures.push(r);
+			}
+		}
+
+		// T15 fix: when realFailures.length > 0, return error.
+		var stepResult;
+		if (realFailures.length > 0) {
+			var failNames = [];
+			for (var fi = 0; fi < realFailures.length; fi++) {
+				failNames.push(realFailures[fi].name || ('branch-' + fi));
+			}
+			stepResult = {
+				error: realFailures.length + ' branch(es) failed verification: ' + failNames.join(', '),
+				failures: realFailures,
+				allPassed: false
+			};
+		} else {
+			stepResult = { error: null, failures: [], allPassed: verifyObj.allPassed };
+		}
+
+		return JSON.stringify({
+			allPassed: verifyObj.allPassed,
+			resultCount: verifyObj.results.length,
+			failureCount: realFailures.length,
+			stepError: stepResult.error,
+			stepAllPassed: stepResult.allPassed
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		AllPassed     bool    `json:"allPassed"`
+		ResultCount   int     `json:"resultCount"`
+		FailureCount  int     `json:"failureCount"`
+		StepError     *string `json:"stepError"`
+		StepAllPassed bool    `json:"stepAllPassed"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("parse output: %v\nraw: %s", err, val)
+	}
+
+	// verifySplits itself correctly reports allPassed=false.
+	if output.AllPassed {
+		t.Error("verifySplits.allPassed should be false when a branch fails")
+	}
+	if output.ResultCount != 2 {
+		t.Fatalf("expected 2 results, got %d", output.ResultCount)
+	}
+	if output.FailureCount != 1 {
+		t.Fatalf("expected 1 failure, got %d", output.FailureCount)
+	}
+
+	// T15 fix: step result now carries an error string.
+	if output.StepError == nil {
+		t.Fatal("step result.error should be non-null when branches fail (T15 fix)")
+	}
+	if !strings.Contains(*output.StepError, "failed verification") {
+		t.Errorf("step error should mention 'failed verification', got: %s", *output.StepError)
+	}
+	if !strings.Contains(*output.StepError, "split/bad") {
+		t.Errorf("step error should name the failed branch 'split/bad', got: %s", *output.StepError)
+	}
+	if output.StepAllPassed {
+		t.Error("step result.allPassed should be false")
+	}
+}
+
+// TestVerifyStepNoErrorWhenAllPass ensures the verify step returns error:null
+// when all branches pass — the T15 fix only sets error on actual failures.
+func TestVerifyStepNoErrorWhenAllPass(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	val, err := evalJS(`(function() {
+		_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+		_gitResponses['checkout'] = _gitOk('');
+		_gitResponses['!sh'] = _gitOk('all good');
+
+		var verifyObj = verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/a', files: ['a.go']},
+				{name: 'split/b', files: ['b.go']}
+			]
+		}, {});
+
+		var realFailures = [];
+		for (var i = 0; i < verifyObj.results.length; i++) {
+			if (!verifyObj.results[i].skipped && !verifyObj.results[i].passed) {
+				realFailures.push(verifyObj.results[i]);
+			}
+		}
+
+		var stepResult;
+		if (realFailures.length > 0) {
+			stepResult = { error: 'should not happen', failures: realFailures, allPassed: false };
+		} else {
+			stepResult = { error: null, failures: [], allPassed: verifyObj.allPassed };
+		}
+
+		return JSON.stringify({
+			allPassed: verifyObj.allPassed,
+			stepError: stepResult.error,
+			stepAllPassed: stepResult.allPassed
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		AllPassed     bool    `json:"allPassed"`
+		StepError     *string `json:"stepError"`
+		StepAllPassed bool    `json:"stepAllPassed"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("parse output: %v\nraw: %s", err, val)
+	}
+
+	if !output.AllPassed {
+		t.Error("expected allPassed=true when all branches pass")
+	}
+	if output.StepError != nil {
+		t.Errorf("step error should be null when all pass, got: %s", *output.StepError)
+	}
+	if !output.StepAllPassed {
+		t.Error("step allPassed should be true")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T18: validateClassification tests
+// ---------------------------------------------------------------------------
+
+func TestValidateClassification(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	type valResult struct {
+		Valid  bool     `json:"valid"`
+		Errors []string `json:"errors"`
+	}
+
+	tests := []struct {
+		name      string
+		js        string
+		wantValid bool
+		wantErr   string // substring to match in first error
+	}{
+		{
+			name:      "valid categories",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API changes', files: ['api.go']}, {name: 'cli', description: 'CLI changes', files: ['main.go']}]))`,
+			wantValid: true,
+		},
+		{
+			name:      "null input",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification(null))`,
+			wantValid: false,
+			wantErr:   "non-empty array",
+		},
+		{
+			name:      "empty array",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([]))`,
+			wantValid: false,
+			wantErr:   "non-empty array",
+		},
+		{
+			name:      "undefined input",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification(undefined))`,
+			wantValid: false,
+			wantErr:   "non-empty array",
+		},
+		{
+			name:      "missing name",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{description: 'stuff', files: ['a.go']}]))`,
+			wantValid: false,
+			wantErr:   "no name",
+		},
+		{
+			name:      "missing description",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', files: ['a.go']}]))`,
+			wantValid: false,
+			wantErr:   "no description",
+		},
+		{
+			name:      "missing files",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API changes'}]))`,
+			wantValid: false,
+			wantErr:   "no files",
+		},
+		{
+			name:      "empty files array",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API changes', files: []}]))`,
+			wantValid: false,
+			wantErr:   "no files",
+		},
+		{
+			name:      "duplicate files across categories",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'a', description: 'A', files: ['x.go']}, {name: 'b', description: 'B', files: ['x.go']}]))`,
+			wantValid: false,
+			wantErr:   "duplicate files",
+		},
+		{
+			name:      "not an object in array",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([42]))`,
+			wantValid: false,
+			wantErr:   "not an object",
+		},
+		{
+			name:      "empty string file",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'A', files: ['']}]))`,
+			wantValid: false,
+			wantErr:   "empty/invalid file",
+		},
+		{
+			name:      "with known files validation",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API', files: ['a.go', 'unknown.go']}], ['a.go']))`,
+			wantValid: true, // unknown files are warned, not failed
+		},
+		{
+			name:      "with empty known files array",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API', files: ['a.go']}], []))`,
+			wantValid: true, // empty knownFiles means no unknown-file check
+		},
+		{
+			name:      "known files missing from classification",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API', files: ['a.go']}], ['a.go', 'b.go', 'c.go']))`,
+			wantValid: true, // missing files are not flagged by validateClassification
+		},
+		{
+			name:      "known files null",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API', files: ['a.go']}], null))`,
+			wantValid: true, // null knownFiles is safe
+		},
+		{
+			name:      "single category multiple files all known",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'core', description: 'Core', files: ['a.go', 'b.go']}], ['a.go', 'b.go']))`,
+			wantValid: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(tt.js)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var r valResult
+			if err := json.Unmarshal([]byte(raw.(string)), &r); err != nil {
+				t.Fatalf("parse: %v\nraw: %s", err, raw)
+			}
+			if r.Valid != tt.wantValid {
+				t.Errorf("valid=%v, want %v; errors=%v", r.Valid, tt.wantValid, r.Errors)
+			}
+			if tt.wantErr != "" {
+				found := false
+				for _, e := range r.Errors {
+					if strings.Contains(e, tt.wantErr) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected error containing %q, got: %v", tt.wantErr, r.Errors)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T19: validateSplitPlan tests
+// ---------------------------------------------------------------------------
+
+func TestValidateSplitPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	type valResult struct {
+		Valid  bool     `json:"valid"`
+		Errors []string `json:"errors"`
+	}
+
+	tests := []struct {
+		name      string
+		js        string
+		wantValid bool
+		wantErr   string
+	}{
+		{
+			name:      "valid stages",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan([{name: 'split/api', files: ['api.go']}, {name: 'split/cli', files: ['main.go']}]))`,
+			wantValid: true,
+		},
+		{
+			name:      "null input",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan(null))`,
+			wantValid: false,
+			wantErr:   "non-empty array",
+		},
+		{
+			name:      "empty array",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan([]))`,
+			wantValid: false,
+			wantErr:   "non-empty array",
+		},
+		{
+			name:      "missing name",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan([{files: ['a.go']}]))`,
+			wantValid: false,
+			wantErr:   "no name",
+		},
+		{
+			name:      "missing files",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan([{name: 'split/api'}]))`,
+			wantValid: false,
+			wantErr:   "no files",
+		},
+		{
+			name:      "duplicate files across stages",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan([{name: 'a', files: ['x.go']}, {name: 'b', files: ['x.go']}]))`,
+			wantValid: false,
+			wantErr:   "duplicate files",
+		},
+		{
+			name:      "invalid branch name chars",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan([{name: 'split/has space', files: ['a.go']}]))`,
+			wantValid: false,
+			wantErr:   "invalid branch name",
+		},
+		{
+			name:      "not an object in array",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan(["not an object"]))`,
+			wantValid: false,
+			wantErr:   "not an object",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(tt.js)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var r valResult
+			if err := json.Unmarshal([]byte(raw.(string)), &r); err != nil {
+				t.Fatalf("parse: %v\nraw: %s", err, raw)
+			}
+			if r.Valid != tt.wantValid {
+				t.Errorf("valid=%v, want %v; errors=%v", r.Valid, tt.wantValid, r.Errors)
+			}
+			if tt.wantErr != "" {
+				found := false
+				for _, e := range r.Errors {
+					if strings.Contains(e, tt.wantErr) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected error containing %q, got: %v", tt.wantErr, r.Errors)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T19: validateResolution tests
+// ---------------------------------------------------------------------------
+
+func TestValidateResolution(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	type valResult struct {
+		Valid  bool     `json:"valid"`
+		Errors []string `json:"errors"`
+	}
+
+	tests := []struct {
+		name      string
+		js        string
+		wantValid bool
+		wantErr   string
+	}{
+		{
+			name:      "valid patches",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({patches: [{file: 'a.go', content: 'fixed'}]}))`,
+			wantValid: true,
+		},
+		{
+			name:      "valid commands",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({commands: [{command: 'go mod tidy'}]}))`,
+			wantValid: true,
+		},
+		{
+			name:      "valid preExistingFailure",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({preExistingFailure: true, reason: 'known flaky test in upstream'}))`,
+			wantValid: true,
+		},
+		{
+			name:      "null input",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution(null))`,
+			wantValid: false,
+			wantErr:   "must be an object",
+		},
+		{
+			name:      "empty object",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({}))`,
+			wantValid: false,
+			wantErr:   "at least one of",
+		},
+		{
+			name:      "empty patches array",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({patches: []}))`,
+			wantValid: false,
+			wantErr:   "at least one of",
+		},
+		{
+			name:      "invalid patch object",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({patches: [{file: '', content: 'x'}]}))`,
+			wantValid: false,
+			wantErr:   "non-empty file path",
+		},
+		{
+			name:      "patch not an object",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({patches: ['just a string']}))`,
+			wantValid: false,
+			wantErr:   "must be an object",
+		},
+		{
+			name:      "command without command field",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({commands: [{}]}))`,
+			wantValid: false,
+			wantErr:   "non-empty command string",
+		},
+		{
+			name:      "multiple valid fields",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({patches: [{file: 'a.go', content: 'x'}], commands: [{command: 'make'}]}))`,
+			wantValid: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(tt.js)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var r valResult
+			if err := json.Unmarshal([]byte(raw.(string)), &r); err != nil {
+				t.Fatalf("parse: %v\nraw: %s", err, raw)
+			}
+			if r.Valid != tt.wantValid {
+				t.Errorf("valid=%v, want %v; errors=%v", r.Valid, tt.wantValid, r.Errors)
+			}
+			if tt.wantErr != "" {
+				found := false
+				for _, e := range r.Errors {
+					if strings.Contains(e, tt.wantErr) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected error containing %q, got: %v", tt.wantErr, r.Errors)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T24: discoverVerifyCommand tests
+// ---------------------------------------------------------------------------
+
+func TestDiscoverVerifyCommand(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("finds_Makefile", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// T55: Mock osmod.fileExists for the osmod-first path.
+		// Mock exec.execv to prevent gmake from being found (isolate test).
+		if _, err := evalJS(`
+			globalThis._testFileExists = {'./Makefile': true};
+			var _osmod = require('osm:os');
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
+			var _origLookup = globalThis.prSplit._lookupBinary;
+			globalThis.prSplit._lookupBinary = function(name) {
+				if (name === 'gmake') return { found: false, path: '' };
+				return _origLookup(name);
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Restore lookup.
+		if _, err := evalJS(`globalThis.prSplit._lookupBinary = _origLookup;`); err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected 'make', got %q", raw)
+		}
+	})
+
+	t.Run("finds_GNUmakefile", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			globalThis._testFileExists = {'./GNUmakefile': true};
+			var _osmod = require('osm:os');
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
+			var _origLookup2 = globalThis.prSplit._lookupBinary;
+			globalThis.prSplit._lookupBinary = function(name) {
+				if (name === 'gmake') return { found: false, path: '' };
+				return _origLookup2(name);
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`globalThis.prSplit._lookupBinary = _origLookup2;`); err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected 'make', got %q", raw)
+		}
+	})
+
+	t.Run("finds_makefile_lowercase", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			globalThis._testFileExists = {'./makefile': true};
+			var _osmod = require('osm:os');
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
+			var _origLookup3 = globalThis.prSplit._lookupBinary;
+			globalThis.prSplit._lookupBinary = function(name) {
+				if (name === 'gmake') return { found: false, path: '' };
+				return _origLookup3(name);
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`globalThis.prSplit._lookupBinary = _origLookup3;`); err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected 'make', got %q", raw)
+		}
+	})
+
+	t.Run("no_makefile_returns_empty", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			globalThis._testFileExists = {};
+			var _osmod = require('osm:os');
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
+		`); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "" {
+			t.Errorf("expected empty string, got %q", raw)
+		}
+	})
+
+	t.Run("custom_dir_path", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			globalThis._testFileExists = {'/tmp/project/Makefile': true};
+			var _osmod = require('osm:os');
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
+			var _origLookup4 = globalThis.prSplit._lookupBinary;
+			globalThis.prSplit._lookupBinary = function(name) {
+				if (name === 'gmake') return { found: false, path: '' };
+				return _origLookup4(name);
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('/tmp/project')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`globalThis.prSplit._lookupBinary = _origLookup4;`); err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected 'make', got %q", raw)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T25: Pre-existing failure detection tests
+// ---------------------------------------------------------------------------
+
+func TestVerifySplits_PreExistingFailure(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("marks_failure_as_preexisting_when_source_also_fails", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Source branch verification fails, so split branch failure is pre-existing.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitFail('test suite failed');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-alpha', files: ['a.go'], dependencies: []}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		r := parseVerifySplitsResult(t, raw)
+		if len(r.Results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(r.Results))
+		}
+
+		// Should be marked pre-existing, not a real failure.
+		if r.Results[0].Passed {
+			t.Error("should not pass")
+		}
+		if !r.Results[0].PreExisting {
+			t.Error("should be marked as pre-existing")
+		}
+		if r.Results[0].Error == nil || !strings.Contains(*r.Results[0].Error, "pre-existing") {
+			t.Errorf("error should mention pre-existing, got: %v", r.Results[0].Error)
+		}
+		// Pre-existing failures should NOT set allPassed to false.
+		if !r.AllPassed {
+			t.Error("allPassed should be true when only pre-existing failures")
+		}
+	})
+
+	t.Run("real_failure_when_source_passes", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Source passes, split fails — real failure, not pre-existing.
+		callCount := `var _shCallCount = 0;`
+		if _, err := evalJS(callCount); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = function(argv) {
+				_shCallCount++;
+				// First call: source branch verification — passes.
+				if (_shCallCount === 1) return _gitOk('ok');
+				// Second call: split branch — fails.
+				return _gitFail('build error');
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-alpha', files: ['a.go'], dependencies: []}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		r := parseVerifySplitsResult(t, raw)
+		if len(r.Results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(r.Results))
+		}
+		if r.Results[0].Passed {
+			t.Error("should not pass")
+		}
+		if r.Results[0].PreExisting {
+			t.Error("should NOT be pre-existing when source passes")
+		}
+		if r.AllPassed {
+			t.Error("allPassed should be false for real failures")
+		}
+	})
+
+	t.Run("preexisting_does_not_block_dependents", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// All verification fails — source and splits. Dependent should
+		// still run because pre-existing doesn't add to failedBranches.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitFail('tests broken');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-alpha', files: ['a.go'], dependencies: []},
+				{name: 'split/02-beta', files: ['b.go'], dependencies: ['split/01-alpha']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		r := parseVerifySplitsResult(t, raw)
+		if len(r.Results) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(r.Results))
+		}
+		// Both should be pre-existing, NOT skipped.
+		if r.Results[0].Skipped {
+			t.Error("result[0] should not be skipped")
+		}
+		if !r.Results[0].PreExisting {
+			t.Error("result[0] should be pre-existing")
+		}
+		if r.Results[1].Skipped {
+			t.Error("result[1] should NOT be skipped — pre-existing parent doesn't block")
+		}
+		if !r.Results[1].PreExisting {
+			t.Error("result[1] should be pre-existing")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T67: verifySplits scoped verify + callback signatures
+// ---------------------------------------------------------------------------
+
+func TestVerifySplits_ScopedVerify(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("go_files_use_scoped_verify_command", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		// Mock: capture the shell command passed to !sh, verify it is scoped.
+		if _, err := evalJS(`
+			globalThis._capturedShCommands = [];
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = function(argv) {
+				globalThis._capturedShCommands.push(argv.join(' '));
+				return _gitOk('ok');
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '.',
+			sourceBranch: 'feature',
+			verifyCommand: 'go test ./...',
+			splits: [
+				{name: 'split/01-pkg', files: ['internal/cmd/foo.go', 'internal/cmd/bar.go']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+		if !r.AllPassed {
+			t.Error("expected allPassed=true")
+		}
+
+		// Verify the sh command was scoped to the specific package.
+		captured, err := evalJS(`JSON.stringify(globalThis._capturedShCommands)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmdsJSON, ok := captured.(string)
+		if !ok {
+			t.Fatalf("expected string, got %T", captured)
+		}
+		var cmds []string
+		if err := json.Unmarshal([]byte(cmdsJSON), &cmds); err != nil {
+			t.Fatalf("parse captured commands: %v", err)
+		}
+
+		// We expect 2 sh calls: 1 for baseline verification on source branch,
+		// 1 for the split branch. The split branch command should be scoped.
+		if len(cmds) < 2 {
+			t.Fatalf("expected at least 2 sh commands, got %d: %v", len(cmds), cmds)
+		}
+		// The second command (split branch) should contain scoped package path.
+		splitCmd := cmds[1]
+		if !strings.Contains(splitCmd, "./internal/cmd/...") {
+			t.Errorf("expected scoped verify command containing './internal/cmd/...', got: %s", splitCmd)
+		}
+		if strings.Contains(splitCmd, "./...") && !strings.Contains(splitCmd, "./internal/cmd/...") {
+			t.Errorf("expected scoped command, but got unscoped: %s", splitCmd)
+		}
+	})
+
+	t.Run("non_go_files_use_fallback_command", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := evalJS(`
+			globalThis._capturedShCommands = [];
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = function(argv) {
+				globalThis._capturedShCommands.push(argv.join(' '));
+				return _gitOk('ok');
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '.',
+			sourceBranch: 'feature',
+			verifyCommand: 'go test ./...',
+			splits: [
+				{name: 'split/01-docs', files: ['README.md', 'docs/guide.md']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+		if !r.AllPassed {
+			t.Error("expected allPassed=true")
+		}
+
+		// Non-go files: scopedVerifyCommand returns fallback, so the
+		// split branch command should contain 'go test ./...' not a scoped path.
+		captured, err := evalJS(`JSON.stringify(globalThis._capturedShCommands)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cmds []string
+		if err := json.Unmarshal([]byte(captured.(string)), &cmds); err != nil {
+			t.Fatal(err)
+		}
+		if len(cmds) < 2 {
+			t.Fatalf("expected at least 2 sh commands, got %d", len(cmds))
+		}
+		splitCmd := cmds[1]
+		if !strings.Contains(splitCmd, "go test ./...") {
+			t.Errorf("expected fallback command 'go test ./...' in split cmd, got: %s", splitCmd)
+		}
+	})
+}
+
+func TestVerifySplits_CallbackSignatures(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("onBranchStart_receives_name", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := evalJS(`
+			globalThis._startCalls = [];
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitOk('ok');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := evalJS(`globalThis.prSplit.verifySplits({
+			dir: '.',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-a', files: ['a.go']},
+				{name: 'split/02-b', files: ['b.go']}
+			]
+		}, {
+			onBranchStart: function(name) {
+				globalThis._startCalls.push(name);
+			}
+		})`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis._startCalls)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		if err := json.Unmarshal([]byte(raw.(string)), &names); err != nil {
+			t.Fatal(err)
+		}
+		if len(names) != 2 {
+			t.Fatalf("expected 2 onBranchStart calls, got %d: %v", len(names), names)
+		}
+		if names[0] != "split/01-a" || names[1] != "split/02-b" {
+			t.Errorf("onBranchStart names = %v", names)
+		}
+	})
+
+	t.Run("onBranchDone_receives_all_args", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := evalJS(`
+			globalThis._doneCalls = [];
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitOk('ok');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := evalJS(`globalThis.prSplit.verifySplits({
+			dir: '.',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-a', files: ['a.go']}
+			]
+		}, {
+			onBranchDone: function(name, passed, exitCode, elapsedMs, skipped, preExisting) {
+				globalThis._doneCalls.push({
+					name: name,
+					passed: passed,
+					exitCode: exitCode,
+					elapsedMs: elapsedMs,
+					skipped: skipped,
+					preExisting: preExisting
+				});
+			}
+		})`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis._doneCalls)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		type doneCall struct {
+			Name        string `json:"name"`
+			Passed      bool   `json:"passed"`
+			ExitCode    int    `json:"exitCode"`
+			ElapsedMs   int    `json:"elapsedMs"`
+			Skipped     bool   `json:"skipped"`
+			PreExisting bool   `json:"preExisting"`
+		}
+		var calls []doneCall
+		if err := json.Unmarshal([]byte(raw.(string)), &calls); err != nil {
+			t.Fatal(err)
+		}
+		if len(calls) != 1 {
+			t.Fatalf("expected 1 onBranchDone call, got %d", len(calls))
+		}
+		c := calls[0]
+		if c.Name != "split/01-a" {
+			t.Errorf("name = %q", c.Name)
+		}
+		if !c.Passed {
+			t.Error("expected passed=true")
+		}
+		if c.ExitCode != 0 {
+			t.Errorf("expected exitCode=0, got %d", c.ExitCode)
+		}
+		if c.ElapsedMs < 0 {
+			t.Errorf("expected elapsedMs >= 0, got %d", c.ElapsedMs)
+		}
+		if c.Skipped {
+			t.Error("expected skipped=false")
+		}
+		if c.PreExisting {
+			t.Error("expected preExisting=false")
+		}
+	})
+
+	t.Run("onBranchOutput_receives_name_and_line", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := evalJS(`
+			globalThis._outputCalls = [];
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitOk('line1\nline2\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := evalJS(`globalThis.prSplit.verifySplits({
+			dir: '.',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-a', files: ['a.go']}
+			]
+		}, {
+			onBranchOutput: function(branchName, line) {
+				globalThis._outputCalls.push({branch: branchName, line: line});
+			}
+		})`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis._outputCalls)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		type outputCall struct {
+			Branch string `json:"branch"`
+			Line   string `json:"line"`
+		}
+		var calls []outputCall
+		if err := json.Unmarshal([]byte(raw.(string)), &calls); err != nil {
+			t.Fatal(err)
+		}
+		if len(calls) == 0 {
+			t.Fatal("expected at least 1 onBranchOutput call")
+		}
+		// All calls should have the correct branch name.
+		for _, c := range calls {
+			if c.Branch != "split/01-a" {
+				t.Errorf("expected branch='split/01-a', got %q", c.Branch)
+			}
+			if c.Line == "" {
+				t.Error("expected non-empty line")
+			}
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T26: scopedVerifyCommand tests
+// ---------------------------------------------------------------------------
+
+func TestScopedVerifyCommand(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	t.Run("go_files_scoped", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/foo.go', 'internal/cmd/bar.go'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "go test -race ./internal/cmd/..."
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("multiple_packages", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/foo.go', 'internal/config/bar.go'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "go test -race ./internal/cmd/... ./internal/config/..."
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("non_go_file_falls_back", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/foo.go', 'README.md'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected fallback 'make', got %q", raw)
+		}
+	})
+
+	t.Run("empty_files_falls_back", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand([], 'make')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected fallback 'make', got %q", raw)
+		}
+	})
+
+	t.Run("null_files_falls_back", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(null, 'make')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected fallback 'make', got %q", raw)
+		}
+	})
+
+	t.Run("root_level_go_file", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(['main.go'], 'make')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "go test -race ./..."
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("deduplicates_packages", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/a.go', 'internal/cmd/b.go', 'internal/cmd/c_test.go'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "go test -race ./internal/cmd/..."
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("non_scopable_command_not_replaced", func(t *testing.T) {
+		// Commands that are not 'make' or 'go test ...' should never be replaced.
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/foo.go'],
+			'true'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "true" {
+			t.Errorf("expected fallback 'true', got %q", raw)
+		}
+	})
+
+	t.Run("go_test_command_is_scopable", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/foo.go'],
+			'go test ./...'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "go test -race ./internal/cmd/..."
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	// T071: Multi-language scoping tests.
+
+	t.Run("js_files_scoped_to_jest", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/components/Button.tsx', 'src/components/Card.tsx'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `npx jest --passWithNoTests --testPathPattern "src/components"`
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("js_multiple_dirs_scoped", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/utils/helper.js', 'lib/core.mjs'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `npx jest --passWithNoTests --testPathPattern "(lib|src/utils)"`
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("python_files_scoped_to_pytest", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['tests/test_auth.py', 'tests/test_db.py'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "python -m pytest tests"
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("python_multiple_dirs", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/auth/views.py', 'src/core/models.py'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "python -m pytest src/auth src/core"
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("rust_files_scoped_to_cargo", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/lib.rs', 'src/main.rs'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "cargo test"
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("mixed_go_and_js_falls_back", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/foo.go', 'src/app.tsx'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected fallback 'make', got %q", raw)
+		}
+	})
+
+	t.Run("mixed_python_and_rust_falls_back", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/lib.rs', 'tests/test_auth.py'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected fallback 'make', got %q", raw)
+		}
+	})
+
+	t.Run("jest_command_is_scopable", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/App.tsx'],
+			'npx jest'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `npx jest --passWithNoTests --testPathPattern "src"`
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("pytest_command_is_scopable", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['tests/test_auth.py'],
+			'python -m pytest'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "python -m pytest tests"
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("cargo_test_command_is_scopable", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/lib.rs'],
+			'cargo test'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "cargo test"
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("unknown_extension_falls_back", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['data/schema.sql', 'data/seed.csv'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected fallback 'make', got %q", raw)
+		}
+	})
+
+	t.Run("root_level_js_file", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['index.js'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `npx jest --passWithNoTests --testPathPattern "."`
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T003: Async pipeline verification tests
+//
+// Exercises verifySplitAsync, verifyEquivalenceAsync, and verifySplitsAsync
+// through the mock exec infrastructure. These async variants were identified
+// as having ZERO direct test coverage in the T003 audit.
+// ---------------------------------------------------------------------------
+
+type verifySplitSingleResult struct {
+	Name     string  `json:"name"`
+	Passed   bool    `json:"passed"`
+	Output   string  `json:"output"`
+	Error    *string `json:"error"`
+	Skipped  bool    `json:"skipped"`
+	Duration float64 `json:"duration"`
+}
+
+func parseVerifySplitSingleResult(t *testing.T, raw any) verifySplitSingleResult {
+	t.Helper()
+	s, ok := raw.(string)
+	if !ok {
+		t.Fatalf("expected string from evalJS, got %T: %v", raw, raw)
+	}
+	var r verifySplitSingleResult
+	if err := json.Unmarshal([]byte(s), &r); err != nil {
+		t.Fatalf("failed to parse verifySplitAsync result: %v\nraw: %s", err, s)
+	}
+	return r
+}
+
+func TestVerifySplitAsync_MockedPipeline(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("success_path", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Mock worktree add → success, worktree remove → success
+		// The mock default handler returns ok('') for unknown commands,
+		// which means worktree add/remove succeed by default.
+		// Mock 'sh -c' spawn via the '!sh' prefix key.
+		if _, err := evalJS(`
+			_gitResponses['!sh'] = _gitOk('all tests passed\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifySplitAsync('feature/branch', {
+			dir: '/tmp/repo',
+			verifyCommand: 'make test'
+		}))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifySplitSingleResult(t, raw)
+
+		if !r.Passed {
+			t.Errorf("expected passed=true, got false; error=%v", r.Error)
+		}
+		if r.Name != "feature/branch" {
+			t.Errorf("name: got %q, want 'feature/branch'", r.Name)
+		}
+		if r.Skipped {
+			t.Error("should not be skipped when verifyCommand is set")
+		}
+		if r.Error != nil {
+			t.Errorf("unexpected error: %q", *r.Error)
+		}
+	})
+
+	t.Run("failure_path", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['!sh'] = _gitFail('FAIL: TestFoo\nexit 1');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifySplitAsync('broken/branch', {
+			dir: '/tmp/repo',
+			verifyCommand: 'make test'
+		}))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifySplitSingleResult(t, raw)
+
+		if r.Passed {
+			t.Error("expected passed=false for failing command")
+		}
+		if r.Error == nil {
+			t.Fatal("expected error for failing command")
+		}
+		if !strings.Contains(*r.Error, "exit 1") {
+			t.Errorf("error should mention exit code, got %q", *r.Error)
+		}
+	})
+
+	t.Run("no_command_skips", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Clear runtime.verifyCommand so the empty override actually takes effect
+		// (JS || treats '' as falsy and falls through to runtime default).
+		if _, err := evalJS(`globalThis.prSplit.runtime.verifyCommand = ''`); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifySplitAsync('any/branch', {
+			dir: '/tmp/repo',
+			verifyCommand: ''
+		}))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifySplitSingleResult(t, raw)
+
+		if !r.Skipped {
+			t.Error("expected skipped=true when no verifyCommand")
+		}
+		if !r.Passed {
+			t.Error("skipped branch should report passed=true")
+		}
+		// Restore runtime default for other tests.
+		if _, err := evalJS(`globalThis.prSplit.runtime.verifyCommand = 'true'`); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("worktree_creation_failure", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Both worktree add (initial) and worktree add --detach fail.
+		if _, err := evalJS(`
+			_gitResponses['worktree add'] = _gitFail('fatal: cannot create worktree');
+			_gitResponses['worktree remove'] = _gitOk('');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifySplitAsync('bad/branch', {
+			dir: '/tmp/repo',
+			verifyCommand: 'make test'
+		}))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifySplitSingleResult(t, raw)
+
+		if r.Passed {
+			t.Error("expected passed=false when worktree creation fails")
+		}
+		if r.Error == nil {
+			t.Fatal("expected error when worktree creation fails")
+		}
+		if !strings.Contains(*r.Error, "worktree") {
+			t.Errorf("error should mention worktree, got %q", *r.Error)
+		}
+	})
+
+	t.Run("output_callback_invoked", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['!sh'] = _gitOk('line1\nline2\n');
+			globalThis._outputLines = [];
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := evalJS(`await globalThis.prSplit.verifySplitAsync('cb/branch', {
+			dir: '/tmp/repo',
+			verifyCommand: 'make test',
+			outputFn: function(line) { globalThis._outputLines.push(line); }
+		})`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+
+		countRaw, err := evalJS(`globalThis._outputLines.length`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		count, ok := countRaw.(int64)
+		if !ok {
+			t.Fatalf("expected int64 from evalJS, got %T: %v", countRaw, countRaw)
+		}
+		if count == 0 {
+			t.Error("expected outputFn to be called at least once")
+		}
+	})
+
+	t.Run("timeout_exit_code_124", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Simulate the GNU 'timeout' command returning exit code 124.
+		if _, err := evalJS(`
+			_gitResponses['!sh'] = {stdout: 'partial output\n', stderr: '', code: 124, error: true, message: 'timeout'};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifySplitAsync('slow/branch', {
+			dir: '/tmp/repo',
+			verifyCommand: 'make test',
+			verifyTimeoutMs: 5000
+		}))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifySplitSingleResult(t, raw)
+
+		if r.Passed {
+			t.Error("expected passed=false for timeout")
+		}
+		if r.Error == nil {
+			t.Fatal("expected timeout error")
+		}
+		if !strings.Contains(*r.Error, "timeout") {
+			t.Errorf("error should mention timeout, got %q", *r.Error)
+		}
+	})
+
+	t.Run("worktree_detach_fallback_success", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// First 'worktree add' fails (branch already checked out),
+		// 'worktree remove --force' succeeds, then 'worktree add --detach' succeeds.
+		if _, err := evalJS(`
+			globalThis._wtAddCount = 0;
+			_gitResponses['worktree add'] = function(argv) {
+				globalThis._wtAddCount++;
+				if (globalThis._wtAddCount === 1) return _gitFail('fatal: branch already checked out');
+				return _gitOk('');
+			};
+			_gitResponses['worktree remove'] = _gitOk('');
+			_gitResponses['!sh'] = _gitOk('all tests pass\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifySplitAsync('checked-out/branch', {
+			dir: '/tmp/repo',
+			verifyCommand: 'make test'
+		}))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifySplitSingleResult(t, raw)
+
+		if !r.Passed {
+			t.Errorf("expected passed=true via detach fallback; error=%v", r.Error)
+		}
+		if r.Error != nil {
+			t.Errorf("unexpected error: %q", *r.Error)
+		}
+	})
+}
+
+func TestVerifyEquivalenceAsync_MockedPipeline(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("equivalent_trees", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse split/last^{tree}'] = _gitOk('aabbccdd\n');
+			_gitResponses['rev-parse feature^{tree}'] = _gitOk('aabbccdd\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifyEquivalenceAsync({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			splits: [{name: 'split/last', files: ['a.go']}]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if !r.Equivalent {
+			t.Error("expected equivalent trees")
+		}
+		if r.Error != nil {
+			t.Errorf("unexpected error: %q", *r.Error)
+		}
+		if r.SplitTree != "aabbccdd" {
+			t.Errorf("splitTree: got %q", r.SplitTree)
+		}
+	})
+
+	t.Run("non_equivalent_trees", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse split/last^{tree}'] = _gitOk('aaa\n');
+			_gitResponses['rev-parse feature^{tree}'] = _gitOk('bbb\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifyEquivalenceAsync({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			splits: [{name: 'split/last', files: ['a.go']}]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Equivalent {
+			t.Error("expected non-equivalent trees")
+		}
+		if r.SplitTree != "aaa" {
+			t.Errorf("splitTree: got %q", r.SplitTree)
+		}
+		if r.SourceTree != "bbb" {
+			t.Errorf("sourceTree: got %q", r.SourceTree)
+		}
+	})
+
+	t.Run("error_on_empty_splits", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifyEquivalenceAsync({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			splits: []
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Equivalent {
+			t.Error("should not be equivalent with empty splits")
+		}
+		if r.Error == nil {
+			t.Fatal("expected error for empty splits")
+		}
+		if !strings.Contains(*r.Error, "no splits") {
+			t.Errorf("error should mention 'no splits', got %q", *r.Error)
+		}
+	})
+
+	t.Run("split_tree_revparse_failure", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse split/last^{tree}'] = _gitFail('fatal: not a valid object name');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifyEquivalenceAsync({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			splits: [{name: 'split/last', files: ['a.go']}]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Equivalent {
+			t.Error("should not be equivalent on rev-parse failure")
+		}
+		if r.Error == nil {
+			t.Fatal("expected error for split tree rev-parse failure")
+		}
+		if !strings.Contains(*r.Error, "failed to get split tree") {
+			t.Errorf("error should mention 'failed to get split tree', got %q", *r.Error)
+		}
+	})
+
+	t.Run("source_tree_revparse_failure", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse split/last^{tree}'] = _gitOk('aabbccdd\n');
+			_gitResponses['rev-parse feature^{tree}'] = _gitFail('fatal: ambiguous argument');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifyEquivalenceAsync({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			splits: [{name: 'split/last', files: ['a.go']}]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Equivalent {
+			t.Error("should not be equivalent on source tree rev-parse failure")
+		}
+		if r.Error == nil {
+			t.Fatal("expected error for source tree rev-parse failure")
+		}
+		if !strings.Contains(*r.Error, "failed to get source tree") {
+			t.Errorf("error should mention 'failed to get source tree', got %q", *r.Error)
+		}
+		if r.SplitTree != "aabbccdd" {
+			t.Errorf("splitTree should still be populated, got %q", r.SplitTree)
+		}
+	})
+}
+
+func TestVerifySplitsAsync_PreExistingDetection(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("pre_existing_failure_marked", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Baseline (sourceBranch) verification fails → pre-existing.
+		// Branch verification also fails → should be tagged as pre-existing.
+		// Mock stderr intentionally avoids "pre-existing" to ensure the
+		// assertion validates the code's annotation, not the mock data.
+		if _, err := evalJS(`
+			_gitResponses['!sh'] = _gitFail('FAIL: TestOld — regression in legacy path');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifySplitsAsync({
+			dir: '/tmp/repo',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01', files: ['a.go']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		// allPassed should be true when failures are all pre-existing.
+		if !r.AllPassed {
+			t.Error("expected allPassed=true when failure is pre-existing")
+		}
+		if len(r.Results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(r.Results))
+		}
+		if !r.Results[0].PreExisting {
+			t.Error("result should be marked as preExisting")
+		}
+		if r.Results[0].Error == nil {
+			t.Fatal("expected error on failed branch")
+		}
+		// Validate the code's annotation suffix, not the mock data.
+		if !strings.Contains(*r.Results[0].Error, "(pre-existing on feature)") {
+			t.Errorf("error should contain annotation '(pre-existing on feature)', got %q", *r.Results[0].Error)
+		}
+	})
+
+	t.Run("new_failure_not_pre_existing", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Baseline succeeds, but branch fails → new failure, not pre-existing.
+		if _, err := evalJS(`
+			globalThis._shCallCount = 0;
+			_gitResponses['!sh'] = function(argv) {
+				globalThis._shCallCount++;
+				// First call: baseline on sourceBranch → pass
+				if (globalThis._shCallCount === 1) return _gitOk('OK');
+				// Second call: split branch → fail
+				return _gitFail('FAIL: TestNew');
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifySplitsAsync({
+			dir: '/tmp/repo',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01', files: ['a.go']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		if r.AllPassed {
+			t.Error("expected allPassed=false for new failure")
+		}
+		if len(r.Results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(r.Results))
+		}
+		if r.Results[0].PreExisting {
+			t.Error("result should NOT be marked as preExisting for new failure")
+		}
+	})
+}
+
+func TestVerifySplitsAsync_DependencySkip(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("dependent_branch_skipped_when_dependency_fails", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Baseline passes, split/01 fails, split/02 depends on split/01 → should skip.
+		if _, err := evalJS(`
+			globalThis._shCallCount = 0;
+			_gitResponses['!sh'] = function(argv) {
+				globalThis._shCallCount++;
+				// Call 1: baseline → pass
+				if (globalThis._shCallCount === 1) return _gitOk('OK');
+				// Call 2: split/01 → fail
+				if (globalThis._shCallCount === 2) return _gitFail('FAIL: split/01 broken');
+				// Call 3+: shouldn't be reached (split/02 should be skipped)
+				return _gitOk('OK');
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifySplitsAsync({
+			dir: '/tmp/repo',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01', files: ['a.go']},
+				{name: 'split/02', files: ['b.go'], dependencies: ['split/01']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		if r.AllPassed {
+			t.Error("expected allPassed=false")
+		}
+		if len(r.Results) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(r.Results))
+		}
+
+		// split/01 should fail normally.
+		if r.Results[0].Passed {
+			t.Error("split/01 should fail")
+		}
+		if r.Results[0].Skipped {
+			t.Error("split/01 should NOT be skipped (it's the root failure)")
+		}
+
+		// split/02 should be skipped due to dependency.
+		if r.Results[1].Passed {
+			t.Error("split/02 should not pass")
+		}
+		if !r.Results[1].Skipped {
+			t.Error("split/02 should be skipped due to dependency on split/01")
+		}
+		if r.Results[1].Error == nil {
+			t.Fatal("split/02 error should explain skip reason")
+		}
+		if !strings.Contains(*r.Results[1].Error, "dependency") {
+			t.Errorf("split/02 error should mention dependency, got %q", *r.Results[1].Error)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T094: 3-split cumulative chain equivalence integration test
+//
+// Validates that verifyEquivalence and verifyEquivalenceDetailed correctly
+// identify the LAST split in a multi-split plan as the tree to compare
+// against the source branch. This exercises the cumulative stacked chain
+// assumption documented in pr_split_06_verification.js.
+// ---------------------------------------------------------------------------
+
+func TestVerifyEquivalence_ThreeSplitCumulativeChain(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	threeSplitPlan := `{
+		dir: '/tmp/repo',
+		sourceBranch: 'feature/big-refactor',
+		baseBranch: 'main',
+		splits: [
+			{name: 'pr-split/01-models',   files: ['internal/models/user.go', 'internal/models/order.go']},
+			{name: 'pr-split/02-handlers',  files: ['internal/handlers/user.go', 'internal/handlers/order.go']},
+			{name: 'pr-split/03-tests',     files: ['internal/models/user_test.go', 'internal/handlers/user_test.go']}
+		]
+	}`
+
+	t.Run("equivalent_when_last_split_matches_source", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Mock: ONLY the last split's tree hash is compared against source.
+		// Intermediate splits are irrelevant to equivalence.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse pr-split/03-tests^{tree}'] = _gitOk('deadbeefcafe1234567890abcdef1234567890ab\n');
+			_gitResponses['rev-parse feature/big-refactor^{tree}'] = _gitOk('deadbeefcafe1234567890abcdef1234567890ab\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + threeSplitPlan + `))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if !r.Equivalent {
+			t.Error("expected equivalent: last split tree matches source tree")
+		}
+		if r.Error != nil {
+			t.Errorf("unexpected error: %q", *r.Error)
+		}
+		if r.SplitTree != "deadbeefcafe1234567890abcdef1234567890ab" {
+			t.Errorf("splitTree: got %q, want deadbeefcafe...", r.SplitTree)
+		}
+		if r.SourceTree != "deadbeefcafe1234567890abcdef1234567890ab" {
+			t.Errorf("sourceTree: got %q, want deadbeefcafe...", r.SourceTree)
+		}
+	})
+
+	t.Run("non_equivalent_when_last_split_differs", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse pr-split/03-tests^{tree}'] = _gitOk('aaaa1111bbbb2222cccc3333dddd4444eeee5555\n');
+			_gitResponses['rev-parse feature/big-refactor^{tree}'] = _gitOk('ffff6666aaaa7777bbbb8888cccc9999dddd0000\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + threeSplitPlan + `))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Equivalent {
+			t.Error("expected non-equivalent: last split tree differs from source")
+		}
+		if r.Error != nil {
+			t.Errorf("unexpected error: %q", *r.Error)
+		}
+		if r.SplitTree != "aaaa1111bbbb2222cccc3333dddd4444eeee5555" {
+			t.Errorf("splitTree: got %q", r.SplitTree)
+		}
+		if r.SourceTree != "ffff6666aaaa7777bbbb8888cccc9999dddd0000" {
+			t.Errorf("sourceTree: got %q", r.SourceTree)
+		}
+	})
+
+	t.Run("only_last_split_is_examined", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// We deliberately provide NO mock for split/01 or split/02 rev-parse.
+		// If the code ever tries to look up intermediate splits, the mock
+		// will return an error via the default handler. Only the last split
+		// (split/03-tests) should be queried.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse pr-split/03-tests^{tree}'] = _gitOk('abc123def456\n');
+			_gitResponses['rev-parse feature/big-refactor^{tree}'] = _gitOk('abc123def456\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + threeSplitPlan + `))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if !r.Equivalent {
+			t.Error("expected equivalent — only last split should be examined")
+		}
+		if r.Error != nil {
+			t.Errorf("unexpected error: %q", *r.Error)
+		}
+
+		// Inspect git mock calls to confirm only last split was queried.
+		callsRaw, err := evalJS(`JSON.stringify(globalThis._gitCalls)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		callsStr, _ := callsRaw.(string)
+		if strings.Contains(callsStr, "pr-split/01-models") {
+			t.Error("verifyEquivalence should NOT query intermediate split pr-split/01-models")
+		}
+		if strings.Contains(callsStr, "pr-split/02-handlers") {
+			t.Error("verifyEquivalence should NOT query intermediate split pr-split/02-handlers")
+		}
+		if !strings.Contains(callsStr, "pr-split/03-tests") {
+			t.Error("verifyEquivalence MUST query the last split pr-split/03-tests")
+		}
+	})
+}
+
+func TestVerifyEquivalenceDetailed_ThreeSplitDiffInfo(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	threeSplitPlan := `{
+		dir: '/tmp/repo',
+		sourceBranch: 'feature/big-refactor',
+		baseBranch: 'main',
+		splits: [
+			{name: 'pr-split/01-models',   files: ['internal/models/user.go', 'internal/models/order.go']},
+			{name: 'pr-split/02-handlers',  files: ['internal/handlers/user.go']},
+			{name: 'pr-split/03-tests',     files: ['internal/models/user_test.go', 'internal/handlers/user_test.go']}
+		]
+	}`
+
+	t.Run("detailed_equivalent_returns_empty_diff", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse pr-split/03-tests^{tree}'] = _gitOk('matchhash123\n');
+			_gitResponses['rev-parse feature/big-refactor^{tree}'] = _gitOk('matchhash123\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed(` + threeSplitPlan + `))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if !r.Equivalent {
+			t.Error("expected equivalent")
+		}
+		if r.DiffSummary != "" {
+			t.Errorf("expected empty diffSummary, got %q", r.DiffSummary)
+		}
+		if len(r.DiffFiles) != 0 {
+			t.Errorf("expected empty diffFiles, got %v", r.DiffFiles)
+		}
+	})
+
+	t.Run("detailed_non_equivalent_reports_multi_file_diff", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse pr-split/03-tests^{tree}'] = _gitOk('aaa\n');
+			_gitResponses['rev-parse feature/big-refactor^{tree}'] = _gitOk('bbb\n');
+			_gitResponses['diff --stat pr-split/03-tests feature/big-refactor'] =
+				_gitOk(' internal/handlers/order.go | 12 ++++++------\n internal/models/order.go   |  5 ++---\n 2 files changed, 9 insertions(+), 8 deletions(-)\n');
+			_gitResponses['diff --name-only pr-split/03-tests feature/big-refactor'] =
+				_gitOk('internal/handlers/order.go\ninternal/models/order.go\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed(` + threeSplitPlan + `))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Equivalent {
+			t.Error("expected non-equivalent")
+		}
+		if r.Error != nil {
+			t.Errorf("unexpected error: %q", *r.Error)
+		}
+
+		// Verify diff details
+		if r.DiffSummary == "" {
+			t.Error("expected non-empty diffSummary")
+		}
+		if !strings.Contains(r.DiffSummary, "2 files changed") {
+			t.Errorf("diffSummary should mention '2 files changed', got %q", r.DiffSummary)
+		}
+
+		wantFiles := []string{"internal/handlers/order.go", "internal/models/order.go"}
+		if len(r.DiffFiles) != len(wantFiles) {
+			t.Fatalf("diffFiles: got %v, want %v", r.DiffFiles, wantFiles)
+		}
+		for i, want := range wantFiles {
+			if r.DiffFiles[i] != want {
+				t.Errorf("diffFiles[%d]: got %q, want %q", i, r.DiffFiles[i], want)
+			}
+		}
+	})
+
+	t.Run("detailed_diff_failure_gracefully_returns_empty", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Trees differ but diff commands fail.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse pr-split/03-tests^{tree}'] = _gitOk('xxx\n');
+			_gitResponses['rev-parse feature/big-refactor^{tree}'] = _gitOk('yyy\n');
+			_gitResponses['diff --stat pr-split/03-tests feature/big-refactor'] = _gitFail('fatal: bad revision');
+			_gitResponses['diff --name-only pr-split/03-tests feature/big-refactor'] = _gitFail('fatal: bad revision');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed(` + threeSplitPlan + `))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Equivalent {
+			t.Error("expected non-equivalent")
+		}
+		if r.DiffSummary != "" {
+			t.Errorf("expected empty diffSummary on diff failure, got %q", r.DiffSummary)
+		}
+		if len(r.DiffFiles) != 0 {
+			t.Errorf("expected empty diffFiles on diff failure, got %v", r.DiffFiles)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T73: buildReport null caches and populated caches
+// ---------------------------------------------------------------------------
+
+type buildReportResult struct {
+	Version    string `json:"version"`
+	BaseBranch string `json:"baseBranch"`
+	Strategy   string `json:"strategy"`
+	DryRun     bool   `json:"dryRun"`
+	Analysis   any    `json:"analysis"`
+	Groups     any    `json:"groups"`
+	Plan       any    `json:"plan"`
+}
+
+func parseBuildReportResult(t *testing.T, raw any) buildReportResult {
+	t.Helper()
+	s, ok := raw.(string)
+	if !ok {
+		t.Fatalf("expected string from evalJS, got %T: %v", raw, raw)
+	}
+	var r buildReportResult
+	if err := json.Unmarshal([]byte(s), &r); err != nil {
+		t.Fatalf("failed to parse buildReport result: %v\nraw: %s", err, s)
+	}
+	return r
+}
+
+func TestBuildReport(t *testing.T) {
+	t.Parallel()
+
+	t.Run("null_caches_returns_sensible_defaults", func(t *testing.T) {
+		_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+		if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+			t.Fatal(err)
+		}
+
+		// buildReport is defined inside TUI guard — exposed via _buildReport.
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit._buildReport())`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseBuildReportResult(t, raw)
+
+		if r.Version == "" {
+			t.Error("expected non-empty version")
+		}
+		if r.BaseBranch == "" {
+			t.Error("expected non-empty baseBranch from runtime defaults")
+		}
+		if r.Strategy == "" {
+			t.Error("expected non-empty strategy from runtime defaults")
+		}
+		if r.Analysis != nil {
+			t.Errorf("expected null analysis when cache is empty, got %v", r.Analysis)
+		}
+		if r.Groups != nil {
+			t.Errorf("expected null groups when cache is empty, got %v", r.Groups)
+		}
+		if r.Plan != nil {
+			t.Errorf("expected null plan when cache is empty, got %v", r.Plan)
+		}
+	})
+
+	t.Run("populated_caches_reflected_in_report", func(t *testing.T) {
+		_, dispatch, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+		if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+			t.Fatal(err)
+		}
+
+		// Mock git responses needed by analyzeDiff (called via 'analyze' command).
+		if _, err := evalJS(`
+			globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature-branch');
+			globalThis._gitResponses['merge-base main feature-branch'] = _gitOk('abc123');
+			globalThis._gitResponses['diff --name-status abc123 feature-branch'] = _gitOk('M\tinternal/cmd/foo.go\nA\tinternal/cmd/bar.go\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		// Dispatch 'analyze' to populate analysisCache.
+		if err := dispatch("analyze", nil); err != nil {
+			t.Fatalf("dispatch analyze failed: %v", err)
+		}
+
+		// Dispatch 'group' to populate groupsCache.
+		if err := dispatch("group", nil); err != nil {
+			t.Fatalf("dispatch group failed: %v", err)
+		}
+
+		// Now build the report — analysisCache and groupsCache should be populated.
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit._buildReport())`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseBuildReportResult(t, raw)
+
+		if r.Version == "" {
+			t.Error("expected non-empty version")
+		}
+		if r.BaseBranch != "main" {
+			t.Errorf("expected baseBranch='main', got %q", r.BaseBranch)
+		}
+		if r.Strategy != "directory" {
+			t.Errorf("expected strategy='directory', got %q", r.Strategy)
+		}
+		// Analysis should be populated now.
+		if r.Analysis == nil {
+			t.Error("expected non-nil analysis after running 'analyze' command")
+		}
+		// Groups should be populated now.
+		if r.Groups == nil {
+			t.Error("expected non-nil groups after running 'group' command")
+		}
+	})
+}

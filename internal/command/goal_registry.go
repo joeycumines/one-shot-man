@@ -1,9 +1,11 @@
 package command
 
 import (
+	"cmp"
 	"fmt"
-	"log"
-	"sort"
+	"log/slog"
+	"maps"
+	"slices"
 )
 
 // GoalRegistry manages available goals (built-in and discovered)
@@ -41,7 +43,7 @@ func NewDynamicGoalRegistry(builtInGoals []Goal, discovery *GoalDiscovery) *Dyna
 
 	// Perform initial load
 	if err := registry.Reload(); err != nil {
-		log.Printf("warning: failed to load discovered goals: %v", err)
+		slog.Warn("failed to load discovered goals", "error", err)
 	}
 
 	return registry
@@ -72,20 +74,65 @@ func (r *DynamicGoalRegistry) Reload() error {
 	// Load goals from each discovered path
 	// Paths are pre-sorted by priority (highest first), so only keep first occurrence
 	for _, path := range paths {
+		// Scan for .json goal files.
 		candidates, err := FindGoalFiles(path)
 		if err != nil {
-			log.Printf("warning: failed to scan goal directory %s: %v", path, err)
+			slog.Warn("failed to scan goal directory", "path", path, "error", err)
 			continue
 		}
 
 		for _, candidate := range candidates {
 			goal, err := LoadGoalFromFile(candidate.Path)
 			if err != nil {
-				log.Printf("warning: failed to load goal from %s: %v", candidate.Path, err)
+				slog.Warn("failed to load goal", "path", candidate.Path, "error", err)
 				continue
 			}
 
 			// Only add if not already present (first path wins = highest priority)
+			if _, exists := r.discoveredGoals[goal.Name]; !exists {
+				r.discoveredGoals[goal.Name] = goal
+			}
+		}
+
+		// Scan for .prompt.md files (VS Code prompt files).
+		// Goal directories are not scanned recursively — they have their own
+		// traversal logic. Recursive scanning applies to dedicated prompt paths.
+		promptCandidates, err := FindPromptFiles(path, false)
+		if err != nil {
+			slog.Warn("failed to scan prompt files", "path", path, "error", err)
+			continue
+		}
+		for _, candidate := range promptCandidates {
+			pf, err := LoadPromptFile(candidate.Path)
+			if err != nil {
+				slog.Warn("failed to load prompt file", "path", candidate.Path, "error", err)
+				continue
+			}
+			goal := PromptFileToGoal(pf)
+			if _, exists := r.discoveredGoals[goal.Name]; !exists {
+				r.discoveredGoals[goal.Name] = goal
+			}
+		}
+	}
+
+	// Also scan dedicated prompt file paths (.github/prompts, configured paths).
+	// These are scanned recursively when prompt.recursive is enabled (default true),
+	// matching VS Code's behavior of searching subdirectories under .github/prompts.
+	promptRecursive := r.goalDiscovery.config.PromptRecursive
+	promptPaths := r.goalDiscovery.DiscoverPromptFilePaths()
+	for _, path := range promptPaths {
+		promptCandidates, err := FindPromptFiles(path, promptRecursive)
+		if err != nil {
+			slog.Warn("failed to scan prompt files", "path", path, "error", err)
+			continue
+		}
+		for _, candidate := range promptCandidates {
+			pf, err := LoadPromptFile(candidate.Path)
+			if err != nil {
+				slog.Warn("failed to load prompt file", "path", candidate.Path, "error", err)
+				continue
+			}
+			goal := PromptFileToGoal(pf)
 			if _, exists := r.discoveredGoals[goal.Name]; !exists {
 				r.discoveredGoals[goal.Name] = goal
 			}
@@ -103,16 +150,14 @@ func (r *DynamicGoalRegistry) Reload() error {
 	}
 
 	// Override with discovered goals (user goals win)
-	for name, goal := range r.discoveredGoals {
-		r.mergedGoals[name] = goal
-	}
+	maps.Copy(r.mergedGoals, r.discoveredGoals)
 
 	// Create sorted list of goal names
 	r.orderedGoalNames = make([]string, 0, len(r.mergedGoals))
 	for name := range r.mergedGoals {
 		r.orderedGoalNames = append(r.orderedGoalNames, name)
 	}
-	sort.Strings(r.orderedGoalNames)
+	slices.Sort(r.orderedGoalNames)
 
 	return nil
 }
@@ -125,8 +170,8 @@ func (r *DynamicGoalRegistry) GetAllGoals() []Goal {
 	}
 
 	// Sort by name for consistent ordering
-	sort.Slice(goals, func(i, j int) bool {
-		return goals[i].Name < goals[j].Name
+	slices.SortFunc(goals, func(a, b Goal) int {
+		return cmp.Compare(a.Name, b.Name)
 	})
 
 	return goals

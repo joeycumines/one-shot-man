@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/go-prompt/termtest"
+	"github.com/joeycumines/one-shot-man/internal/mouseharness"
 )
 
 // ============================================================================
@@ -23,7 +24,7 @@ import (
 // - Keystroke injection (WASD, Space, etc.)
 // - Terminal buffer scraping
 // - Debug overlay JSON parsing for state verification
-// - Frame-based synchronization (NO time.Sleep)
+// - Frame-based synchronization (primary mechanism, with sleep-based polling as fallback)
 //
 // The design follows the pattern from prompt_flow_editor_test.go but adds
 // structured state verification capabilities.
@@ -82,10 +83,16 @@ func NewTestShooterHarness(t *testing.T, binaryPath, scriptPath string) *TestSho
 
 // StartGame launches the shooter game via osm script command
 func (h *TestShooterHarness) StartGame() error {
+	// The game area is SCREEN_HEIGHT=25 rows. Debug info appends ~10 more rows below.
+	// BubbleTea v2 clips output to terminal height, so the PTY must be tall enough
+	// to fit the full game area PLUS the debug overlay (which includes the JSON markers
+	// we need for state verification). Default PTY is 24×80 which is too small.
+	const ptyRows, ptyCols = 50, 100
 	cp, err := termtest.NewConsole(h.ctx,
 		termtest.WithCommand(h.binaryPath, "script", "-i", h.scriptPath),
 		termtest.WithDefaultTimeout(h.timeout),
 		termtest.WithEnv(h.env),
+		termtest.WithSize(ptyRows, ptyCols),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create termtest console: %w", err)
@@ -120,27 +127,56 @@ func (h *TestShooterHarness) Quit() error {
 
 // PressStart presses Space to start the game from menu
 func (h *TestShooterHarness) PressStart() error {
-	snap := h.console.Snapshot()
 	if err := h.SendKey(" "); err != nil {
 		return fmt.Errorf("failed to send space: %w", err)
 	}
 	// Wait a moment for game to transition
 	time.Sleep(100 * time.Millisecond)
 
-	// Verify transition by checking for gameplay indicators
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("Wave"), "game started"); err != nil {
-		// Try alternative indicators
-		if err2 := h.console.Expect(h.ctx, snap, termtest.Contains("Score"), "game started"); err2 != nil {
-			h.t.Logf("Could not verify game start. Buffer:\n%s", h.console.String())
+	// Verify transition using VT-parsed screen (v2 differential rendering)
+	if err := h.WaitForScreenContent("Wave", 5*time.Second); err != nil {
+		if err2 := h.WaitForScreenContent("Score", 5*time.Second); err2 != nil {
+			h.t.Logf("Could not verify game start via VT-parsed screen")
 		}
 	}
 	return nil
 }
 
-// EnableDebugMode presses backtick '`' to toggle debug mode
-// Note: Originally 'd' but that conflicts with right movement
+// EnableDebugMode presses backtick '`' to toggle debug mode.
+// Uses retry logic with F3 fallback because BubbleTea v2's input processing
+// may not handle the backtick key under heavy load. The game accepts both
+// '`' (backtick) and F3 for debug toggle.
 func (h *TestShooterHarness) EnableDebugMode() error {
-	return h.SendKey("`")
+	// Stabilize — ensures the game is fully in playing mode before sending keys
+	time.Sleep(500 * time.Millisecond)
+
+	const maxRetries = 5
+	for i := range maxRetries {
+		// Alternate between backtick, F3 SS3, and F3 CSI encoding
+		switch i % 3 {
+		case 0:
+			if _, err := h.console.WriteString("`"); err != nil {
+				return err
+			}
+		case 1:
+			// F3 = ESC O R (SS3 encoding)
+			if _, err := h.console.WriteString("\x1bOR"); err != nil {
+				return err
+			}
+		case 2:
+			// F3 = ESC [ 1 3 ~ (CSI encoding)
+			if _, err := h.console.WriteString("\x1b[13~"); err != nil {
+				return err
+			}
+		}
+		// Check if debug mode activated within 2 seconds
+		if err := h.WaitForScreenContent("DEBUG MODE", 2*time.Second); err == nil {
+			return nil
+		}
+		h.t.Logf("EnableDebugMode: attempt %d/%d — retrying", i+1, maxRetries)
+		time.Sleep(300 * time.Millisecond)
+	}
+	return h.WaitForScreenContent("DEBUG MODE", 5*time.Second)
 }
 
 // SendKey sends a single key to the game using WriteString (raw character)
@@ -185,67 +221,36 @@ func (h *TestShooterHarness) ShootProjectile() error {
 	return h.SendKey(" ")
 }
 
-// GetScreenBuffer returns the current terminal buffer content
+// GetScreenBuffer returns the current terminal buffer content (raw PTY bytes).
 func (h *TestShooterHarness) GetScreenBuffer() string {
 	return h.console.String()
 }
 
-// parseDebugJSON extracts and parses the debug JSON from the screen buffer.
-// The game outputs:
-//
-//	__JSON_START__
-//	{json}
-//	__JSON_END__
-//
-// Note: Use (?s) to make . match newlines, as output spans multiple lines
-var debugJSONRegex = regexp.MustCompile(`(?s)__JSON_START__\s*(.+?)\s*__JSON_END__`)
+// GetRenderedScreen returns the VT-parsed rendered screen as a single string.
+// CRITICAL: BubbleTea v2 uses differential rendering — it only sends cursor
+// movements and changed characters instead of re-rendering the full view.
+// The raw PTY buffer is therefore NOT a reliable source for extracting state
+// (e.g. JSON overlays) because partial updates don't form complete strings.
+// The VT parser maintains the actual screen state correctly.
+func (h *TestShooterHarness) GetRenderedScreen() string {
+	buffer := h.GetScreenBuffer()
+	screen := mouseharness.ParseTerminalBuffer(buffer)
+	return strings.Join(screen, "\n")
+}
 
-// rawJSONRegex matches the debug JSON directly (fallback if markers are fragmented)
+// rawJSONRegex matches the debug JSON directly.
 // Matches {"m":"...",... up to the closing brace, being careful about nesting
 var rawJSONRegex = regexp.MustCompile(`\{"m":"[^"]+","t":\d+[^}]*\}`)
 
-func (h *TestShooterHarness) parseDebugJSON(buffer string) (*ShooterDebugState, error) {
-	// Strip ANSI codes first to improve matching
-	cleanBuffer := ansiRegex.ReplaceAllString(buffer, "")
-
-	// CRITICAL: Remove all newlines/carriage returns BEFORE attempting to match JSON
-	// Terminal line-wrapping inserts newlines that break the JSON structure
-	normalizedBuffer := strings.ReplaceAll(cleanBuffer, "\r\n", "")
-	normalizedBuffer = strings.ReplaceAll(normalizedBuffer, "\r", "")
-	normalizedBuffer = strings.ReplaceAll(normalizedBuffer, "\n", "")
-
-	// Try raw JSON matching first (more reliable than markers)
-	rawMatches := rawJSONRegex.FindAllString(normalizedBuffer, -1)
-	h.t.Logf("Found %d raw JSON matches in normalized buffer", len(rawMatches))
-
-	var jsonStr string
-	if len(rawMatches) > 0 {
-		jsonStr = rawMatches[len(rawMatches)-1]
+func (h *TestShooterHarness) parseDebugJSON(renderedScreen string) (*ShooterDebugState, error) {
+	// Search for JSON in the VT-parsed rendered screen.
+	// The rendered screen has clean text (no ANSI codes, no differential fragments).
+	rawMatches := rawJSONRegex.FindAllString(renderedScreen, -1)
+	if len(rawMatches) == 0 {
+		return nil, fmt.Errorf("debug JSON not found in rendered screen")
 	}
-
-	// If raw didn't work, try with markers on original buffer (handles multi-line markers)
-	if jsonStr == "" {
-		allMatches := debugJSONRegex.FindAllStringSubmatch(cleanBuffer, -1)
-		h.t.Logf("Found %d JSON matches with markers", len(allMatches))
-		if len(allMatches) > 0 {
-			lastMatch := allMatches[len(allMatches)-1]
-			if len(lastMatch) >= 2 {
-				jsonStr = lastMatch[1]
-				// Strip embedded newlines from marker-extracted content
-				jsonStr = strings.ReplaceAll(jsonStr, "\r\n", "")
-				jsonStr = strings.ReplaceAll(jsonStr, "\r", "")
-				jsonStr = strings.ReplaceAll(jsonStr, "\n", "")
-			}
-		}
-	}
-
-	if jsonStr == "" {
-		return nil, fmt.Errorf("debug JSON not found in buffer")
-	}
-
-	// Strip any remaining ANSI codes and whitespace
-	jsonStr = ansiRegex.ReplaceAllString(jsonStr, "")
-	jsonStr = strings.TrimSpace(jsonStr)
+	// Use the last match (most recent if there are multiple)
+	jsonStr := rawMatches[len(rawMatches)-1]
 
 	var state ShooterDebugState
 	if err := json.Unmarshal([]byte(jsonStr), &state); err != nil {
@@ -255,11 +260,12 @@ func (h *TestShooterHarness) parseDebugJSON(buffer string) (*ShooterDebugState, 
 	return &state, nil
 }
 
-// GetDebugState parses and returns the current debug state from the screen buffer.
+// GetDebugState parses and returns the current debug state from the VT-parsed screen.
+// Uses VT-parsed rendering to correctly handle BubbleTea v2's differential output.
 // Requires debug mode to be enabled.
 func (h *TestShooterHarness) GetDebugState() (*ShooterDebugState, error) {
-	buffer := h.GetScreenBuffer()
-	state, err := h.parseDebugJSON(buffer)
+	screen := h.GetRenderedScreen()
+	state, err := h.parseDebugJSON(screen)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +280,7 @@ func (h *TestShooterHarness) RefreshDebugState() (*ShooterDebugState, error) {
 }
 
 // WaitForFrames waits until the tick counter has advanced by at least n frames.
-// This is the PRIMARY synchronization mechanism - NOT time.Sleep.
+// This is the primary synchronization mechanism, using sleep-based polling internally.
 func (h *TestShooterHarness) WaitForFrames(n int) error {
 	startState, err := h.GetDebugState()
 	if err != nil {
@@ -330,31 +336,27 @@ func (h *TestShooterHarness) WaitForNewProjectile() error {
 	return fmt.Errorf("timeout waiting for projectile to appear")
 }
 
-// ExpectPatternInBuffer checks if the pattern exists in the terminal buffer
-func (h *TestShooterHarness) ExpectPatternInBuffer(pattern string) error {
-	buffer := h.GetScreenBuffer()
-	if !strings.Contains(buffer, pattern) {
-		return fmt.Errorf("pattern %q not found in buffer", pattern)
+// WaitForScreenContent polls the VT-parsed terminal screen for a substring.
+// BubbleTea v2 uses differential rendering (cursor movement + only changed
+// characters), so raw byte checking (termtest.Contains) fails for state
+// changes after the initial render. This uses the mouseharness VT parser
+// to process the full raw buffer into rendered screen lines.
+func (h *TestShooterHarness) WaitForScreenContent(content string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		buffer := h.GetScreenBuffer()
+		screen := mouseharness.ParseTerminalBuffer(buffer)
+		for _, line := range screen {
+			if strings.Contains(line, content) {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("content %q not found on rendered screen within %v\nScreen lines:\n%s",
+				content, timeout, strings.Join(screen, "\n"))
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	return nil
-}
-
-// ExpectCharacterAt checks if a specific character appears at a rough position.
-// Note: Terminal buffer parsing is tricky due to escape codes. This is best-effort.
-func (h *TestShooterHarness) ExpectCharacterAt(char string, x, y int) error {
-	buffer := h.GetScreenBuffer()
-	lines := strings.Split(buffer, "\n")
-	if y >= len(lines) {
-		return fmt.Errorf("y=%d out of range (only %d lines)", y, len(lines))
-	}
-	line := lines[y]
-	if x >= len(line) {
-		return fmt.Errorf("x=%d out of range (line has %d chars)", x, len(line))
-	}
-	if !strings.Contains(line, char) {
-		return fmt.Errorf("character %q not found on line %d", char, y)
-	}
-	return nil
 }
 
 // AssertPlayerPosition verifies player is at approximate position via debug state

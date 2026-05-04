@@ -8,6 +8,7 @@ import (
 )
 
 func TestCodeReviewCommand_DiffDefaultBehavior(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewCodeReviewCommand(cfg)
 

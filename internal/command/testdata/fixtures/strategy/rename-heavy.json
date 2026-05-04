@@ -1,0 +1,19 @@
+{
+  "description": "Rename-heavy diff: large-scale package reorganization where files moved between directories. All files live under a single top-level directory after rename — directory strategy collapses to 1 group (bad). Extension produces 2-3 groups (.go, .md — unbalanced). Chunks strategy should win for balanced splitting.",
+  "files": [
+    "pkg/newpkg/handler.go",
+    "pkg/newpkg/handler_test.go",
+    "pkg/newpkg/types.go",
+    "pkg/newpkg/types_test.go",
+    "pkg/newpkg/middleware.go",
+    "pkg/newpkg/middleware_test.go",
+    "pkg/newpkg/client.go",
+    "pkg/newpkg/client_test.go",
+    "pkg/newpkg/server.go",
+    "pkg/newpkg/server_test.go",
+    "pkg/newpkg/config.go",
+    "pkg/newpkg/README.md"
+  ],
+  "expectedStrategy": "chunks",
+  "rationale": "All 12 files land in a single directory (pkg/newpkg). Directory strategy produces 1 group (splitScore = 0.33). Extension strategy produces 2 groups (.go=11, .md=1 — poor balance). Chunks strategy with default maxPerGroup divides into balanced groups scoring high on split and balance. This represents a rename/reorganization where the original directory structure is gone."
+}

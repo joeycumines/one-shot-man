@@ -1,16 +1,23 @@
 package command
 
 import (
+	"bytes"
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
 func TestGoalDiscovery_DiscoverGoalPaths(t *testing.T) {
-	t.Parallel()
+	// NOT parallel — subtests use os.Chdir (process-global).
 
 	t.Run("default configuration", func(t *testing.T) {
 		t.Parallel()
@@ -168,7 +175,7 @@ func TestGoalDiscovery_DiscoverGoalPaths(t *testing.T) {
 		// Create a deep directory structure
 		tmpDir := t.TempDir()
 		deepPath := tmpDir
-		for i := 0; i < 15; i++ {
+		for range 15 {
 			deepPath = filepath.Join(deepPath, "level")
 		}
 		if err := os.MkdirAll(deepPath, 0o755); err != nil {
@@ -199,13 +206,7 @@ func TestGoalDiscovery_DiscoverGoalPaths(t *testing.T) {
 		discovery := NewGoalDiscovery(cfg)
 		paths := discovery.DiscoverGoalPaths()
 
-		found := false
-		for _, path := range paths {
-			if path == goalDir {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(paths, goalDir)
 		// Should NOT find it because it's beyond the traversal depth
 		if found {
 			t.Errorf("Should not have discovered goal directory %s beyond max traversal depth", goalDir)
@@ -390,25 +391,6 @@ func TestGoalDiscovery_PathExpansion(t *testing.T) {
 		}
 	})
 
-	t.Run("environment variable expansion", func(t *testing.T) {
-		t.Parallel()
-
-		// Set a test environment variable
-		testVar := "TEST_GOAL_PATH_VAR"
-		testValue := "/test/value"
-		os.Setenv(testVar, testValue)
-		defer os.Unsetenv(testVar)
-
-		path := "$" + testVar + "/goals"
-		expanded := discovery.expandPath(path)
-
-		expected := testValue + "/goals"
-
-		if expanded != expected {
-			t.Errorf("Expected %s, got %s", expected, expanded)
-		}
-	})
-
 	t.Run("no expansion needed", func(t *testing.T) {
 		t.Parallel()
 		path := "/absolute/path/to/goals"
@@ -418,6 +400,27 @@ func TestGoalDiscovery_PathExpansion(t *testing.T) {
 			t.Errorf("Expected %s, got %s", path, expanded)
 		}
 	})
+}
+
+// TestGoalDiscovery_PathExpansion_EnvVar tests environment variable expansion
+// in goal paths. This is a standalone test (not a subtest of PathExpansion)
+// because t.Setenv cannot be used in parallel tests or subtests of parallel
+// tests (Go 1.24+ panics).
+func TestGoalDiscovery_PathExpansion_EnvVar(t *testing.T) {
+	testVar := "TEST_GOAL_PATH_VAR"
+	testValue := "/test/value"
+	t.Setenv(testVar, testValue)
+
+	cfg := config.NewConfig()
+	discovery := NewGoalDiscovery(cfg)
+
+	path := "$" + testVar + "/goals"
+	expanded := discovery.expandPath(path)
+
+	expected := testValue + "/goals"
+	if expanded != expected {
+		t.Errorf("Expected %s, got %s", expected, expanded)
+	}
 }
 
 func TestGoalDiscovery_DirectoryTraversal(t *testing.T) {
@@ -667,13 +670,7 @@ func TestGoalDiscovery_StandardPaths(t *testing.T) {
 		configDir := filepath.Dir(configPath)
 		expectedPath := filepath.Join(configDir, "goals")
 
-		found := false
-		for _, path := range standardPaths {
-			if path == expectedPath {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(standardPaths, expectedPath)
 		if !found {
 			t.Errorf("Expected standard paths to include config goals path: %s", expectedPath)
 		}
@@ -777,4 +774,546 @@ func pathsEqual(path1, path2 string) bool {
 
 	// Fallback to cleaned path comparison
 	return filepath.Clean(path1) == filepath.Clean(path2)
+}
+
+func TestGoalDiscovery_DebugLogging(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	goalDir := filepath.Join(tmpDir, "osm-goals")
+	if err := os.MkdirAll(goalDir, 0o755); err != nil {
+		t.Fatalf("Failed to create goal directory: %v", err)
+	}
+
+	var mu sync.Mutex
+	var messages []string
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
+	cfg.SetGlobalOption("goal.paths", goalDir)
+
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		messages = append(messages, fmt.Sprintf(format, args...))
+	}
+
+	_ = discovery.DiscoverGoalPaths()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(messages) == 0 {
+		t.Error("Expected debug log messages, got none")
+	}
+
+	// Check for expected log message patterns
+	foundStarting := false
+	foundComplete := false
+	foundAccepted := false
+	for _, msg := range messages {
+		if strings.Contains(msg, "starting goal path discovery") {
+			foundStarting = true
+		}
+		if strings.Contains(msg, "discovery complete") {
+			foundComplete = true
+		}
+		if strings.Contains(msg, "addPath: accepted") {
+			foundAccepted = true
+		}
+	}
+
+	if !foundStarting {
+		t.Error("Expected 'starting goal path discovery' message")
+	}
+	if !foundComplete {
+		t.Error("Expected 'discovery complete' message")
+	}
+	if !foundAccepted {
+		t.Error("Expected 'addPath: accepted' message")
+	}
+}
+
+func TestGoalDiscovery_DebugLogging_Dedup(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	goalDir := filepath.Join(tmpDir, "goals")
+	if err := os.MkdirAll(goalDir, 0o755); err != nil {
+		t.Fatalf("Failed to create goal directory: %v", err)
+	}
+
+	var mu sync.Mutex
+	var messages []string
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
+	// Set the same path twice
+	cfg.SetGlobalOption("goal.paths", goalDir+string(filepath.ListSeparator)+goalDir)
+
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		messages = append(messages, fmt.Sprintf(format, args...))
+	}
+
+	paths := discovery.DiscoverGoalPaths()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Should only have one path despite duplicate input
+	if len(paths) != 1 {
+		t.Errorf("Expected 1 path, got %d: %v", len(paths), paths)
+	}
+
+	// Should have a dedup message
+	foundDedup := false
+	for _, msg := range messages {
+		if strings.Contains(msg, "deduplicating") {
+			foundDedup = true
+			break
+		}
+	}
+	if !foundDedup {
+		t.Error("Expected deduplication debug message")
+	}
+}
+
+func TestGoalDiscovery_PermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Permission tests not reliable on Windows")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("Skipping permission test when running as root")
+	}
+	// Note: Cannot use t.Parallel() because this test changes working directory
+
+	tmpDir := t.TempDir()
+
+	// Create a deep structure: tmpDir/level1/level2/level3
+	// Make level1 have a "goals" directory that is unreadable
+	level1 := filepath.Join(tmpDir, "level1")
+	level2 := filepath.Join(level1, "level2")
+	level3 := filepath.Join(level2, "level3")
+
+	for _, d := range []string{level1, level2, level3} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("Failed to create directory %s: %v", d, err)
+		}
+	}
+
+	// Create a goals directory with no read permission
+	unreadableGoals := filepath.Join(level1, "osm-goals")
+	if err := os.MkdirAll(unreadableGoals, 0o000); err != nil {
+		t.Fatalf("Failed to create unreadable directory: %v", err)
+	}
+	// Ensure cleanup can remove it
+	t.Cleanup(func() { os.Chmod(unreadableGoals, 0o755) })
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer os.Chdir(origWd)
+
+	if err := os.Chdir(level3); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	var mu sync.Mutex
+	var messages []string
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "true")
+	cfg.SetGlobalOption("goal.path-patterns", "osm-goals")
+
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		messages = append(messages, fmt.Sprintf(format, args...))
+	}
+
+	// Should not panic or crash - permission errors should be handled gracefully
+	paths := discovery.DiscoverGoalPaths()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// The unreadable directory may or may not appear (os.Stat may or may not succeed
+	// depending on directory permissions vs stat permissions). The key assertion is
+	// that we don't crash and traversal continues past the error.
+	_ = paths
+	_ = messages
+}
+
+func TestGoalDiscovery_CheckDirectory(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewConfig()
+	discovery := NewGoalDiscovery(cfg)
+
+	t.Run("existing directory", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		exists, err := discovery.checkDirectory(tmpDir)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if !exists {
+			t.Error("Expected directory to exist")
+		}
+	})
+
+	t.Run("non-existent path", func(t *testing.T) {
+		t.Parallel()
+		exists, err := discovery.checkDirectory("/nonexistent/path/that/does/not/exist")
+		if err != nil {
+			t.Fatalf("Expected no error for non-existent path, got: %v", err)
+		}
+		if exists {
+			t.Error("Expected directory to not exist")
+		}
+	})
+
+	t.Run("file not directory", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "not-a-dir")
+		if err := os.WriteFile(filePath, []byte("content"), 0o644); err != nil {
+			t.Fatalf("Failed to create file: %v", err)
+		}
+		exists, err := discovery.checkDirectory(filePath)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if exists {
+			t.Error("Expected file to not be reported as directory")
+		}
+	})
+}
+
+func TestGoalDiscovery_SymlinkCycleDetection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Symlink tests not reliable on Windows")
+	}
+	// Note: Cannot use t.Parallel() because this test changes working directory
+
+	// Create a structure where symlinks could cause a cycle in upward traversal.
+	// dir/real/ is the real directory tree
+	// dir/link -> dir/real/sub (symlink pointing into the tree)
+	// When traversing from dir/link upward, after resolving symlinks, we'd see
+	// dir/real/sub → dir/real → dir, but if we craft the path to go through link again
+	// the cycle would be detected.
+	tmpDir := t.TempDir()
+
+	realDir := filepath.Join(tmpDir, "real")
+	subDir := filepath.Join(realDir, "sub")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatalf("Failed to create directories: %v", err)
+	}
+
+	// Create a goal directory that would be found during traversal
+	goalDir := filepath.Join(realDir, "osm-goals")
+	if err := os.Mkdir(goalDir, 0o755); err != nil {
+		t.Fatalf("Failed to create goal directory: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer os.Chdir(origWd)
+
+	if err := os.Chdir(subDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	var mu sync.Mutex
+	var messages []string
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "true")
+	cfg.SetGlobalOption("goal.path-patterns", "osm-goals")
+
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		messages = append(messages, fmt.Sprintf(format, args...))
+	}
+
+	paths := discovery.DiscoverGoalPaths()
+
+	// Should discover the goal directory via upward traversal
+	found := false
+	for _, path := range paths {
+		if pathsEqual(path, goalDir) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected to discover goal directory %s, found: %v", goalDir, paths)
+	}
+
+	// Verify no cycle was detected (because the upward traversal from a real dir doesn't cycle)
+	mu.Lock()
+	defer mu.Unlock()
+	for _, msg := range messages {
+		if strings.Contains(msg, "symlink cycle detected") {
+			t.Errorf("Unexpected cycle detection in simple upward traversal: %s", msg)
+		}
+	}
+}
+
+func TestGoalDiscovery_DisableStandardPathsIsolation(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	customGoals := filepath.Join(tmpDir, "my-goals")
+	if err := os.MkdirAll(customGoals, 0o755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
+	cfg.SetGlobalOption("goal.paths", customGoals)
+
+	discovery := NewGoalDiscovery(cfg)
+	paths := discovery.DiscoverGoalPaths()
+
+	// With standard paths disabled and autodiscovery off, should only have custom path
+	if len(paths) != 1 {
+		t.Errorf("Expected exactly 1 path, got %d: %v", len(paths), paths)
+	}
+
+	if len(paths) == 1 && !pathsEqual(paths[0], customGoals) {
+		t.Errorf("Expected custom goals path %s, got %s", customGoals, paths[0])
+	}
+}
+
+func TestGoalDiscovery_DebugDiscoveryConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.debug-discovery", "true")
+
+	discovery := NewGoalDiscovery(cfg)
+
+	if discovery.config.DebugLogFunc == nil {
+		t.Error("Expected DebugLogFunc to be set when goal.debug-discovery=true")
+	}
+}
+
+func TestGoalDiscovery_TraversalReachesRoot(t *testing.T) {
+	// Note: Cannot use t.Parallel() because this test changes working directory
+
+	tmpDir := t.TempDir()
+	deepPath := tmpDir
+	for range 3 {
+		deepPath = filepath.Join(deepPath, "d")
+	}
+	if err := os.MkdirAll(deepPath, 0o755); err != nil {
+		t.Fatalf("Failed to create deep path: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer os.Chdir(origWd)
+
+	if err := os.Chdir(deepPath); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	var mu sync.Mutex
+	var messages []string
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "true")
+	cfg.SetGlobalOption("goal.max-traversal-depth", "100") // High enough to reach root
+	cfg.SetGlobalOption("goal.path-patterns", "nonexistent-pattern-xyzzy")
+
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		messages = append(messages, fmt.Sprintf(format, args...))
+	}
+
+	_ = discovery.DiscoverGoalPaths()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Should have logged reaching the filesystem root
+	foundRoot := false
+	for _, msg := range messages {
+		if strings.Contains(msg, "reached filesystem root") {
+			foundRoot = true
+			break
+		}
+	}
+	if !foundRoot {
+		t.Error("Expected 'reached filesystem root' debug message")
+	}
+}
+
+func TestDiscoverPromptFilePaths_GlobExpansion(t *testing.T) {
+	// Note: Cannot use t.Parallel() because glob patterns depend on filesystem state
+
+	tmpDir := t.TempDir()
+
+	// Create two directories matching the glob pattern.
+	dir1 := filepath.Join(tmpDir, "prompts-a")
+	dir2 := filepath.Join(tmpDir, "prompts-b")
+	// Also create a file (should be skipped by glob validation).
+	fileNotDir := filepath.Join(tmpDir, "prompts-c")
+
+	for _, d := range []string{dir1, dir2} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("Failed to create directory %s: %v", d, err)
+		}
+	}
+	if err := os.WriteFile(fileNotDir, []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
+
+	// Use a glob pattern that matches our directories.
+	globPattern := filepath.Join(tmpDir, "prompts-*")
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.PromptFilePaths = []string{globPattern}
+
+	paths := discovery.DiscoverPromptFilePaths()
+
+	// Should find exactly 2 directories (not the file).
+	if len(paths) != 2 {
+		t.Errorf("expected 2 paths from glob, got %d: %v", len(paths), paths)
+	}
+
+	// Verify both directories are present.
+	found := make(map[string]bool)
+	for _, p := range paths {
+		for _, d := range []string{dir1, dir2} {
+			if pathsEqual(p, d) {
+				found[d] = true
+			}
+		}
+	}
+	if !found[dir1] {
+		t.Errorf("expected glob to expand to %s", dir1)
+	}
+	if !found[dir2] {
+		t.Errorf("expected glob to expand to %s", dir2)
+	}
+}
+
+func TestDiscoverPromptFilePaths_MissingConfiguredPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	missingPath := filepath.Join(tmpDir, "does-not-exist")
+
+	// Capture log output to check for warning.
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
+
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.PromptFilePaths = []string{missingPath}
+
+	paths := discovery.DiscoverPromptFilePaths()
+
+	// Should return no paths.
+	if len(paths) != 0 {
+		t.Errorf("expected 0 paths for missing configured path, got %d: %v", len(paths), paths)
+	}
+
+	// Should have logged a warning.
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, "does not exist") {
+		t.Errorf("expected warning log about missing path, got: %q", logOutput)
+	}
+}
+
+func TestDiscoverPromptFilePaths_NotADirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "a-file")
+	if err := os.WriteFile(filePath, []byte("content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Capture log output.
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
+
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.PromptFilePaths = []string{filePath}
+
+	paths := discovery.DiscoverPromptFilePaths()
+
+	// Should return no paths.
+	if len(paths) != 0 {
+		t.Errorf("expected 0 paths when configured path is a file, got %d: %v", len(paths), paths)
+	}
+
+	// Should have logged a warning about not being a directory.
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, "not a directory") {
+		t.Errorf("expected warning log about not-a-directory, got: %q", logOutput)
+	}
+}
+
+func TestDiscoverPromptFilePaths_Deduplication(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink tests not reliable on Windows")
+	}
+
+	tmpDir := t.TempDir()
+	realDir := filepath.Join(tmpDir, "prompts")
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a symlink to the same directory.
+	linkDir := filepath.Join(tmpDir, "prompts-link")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatalf("failed to create symlink: %v", err)
+	}
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
+
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.PromptFilePaths = []string{realDir, linkDir}
+
+	paths := discovery.DiscoverPromptFilePaths()
+
+	// Both resolve to the same real directory, so should be deduped to 1.
+	if len(paths) != 1 {
+		t.Errorf("expected 1 path after dedup, got %d: %v", len(paths), paths)
+	}
 }

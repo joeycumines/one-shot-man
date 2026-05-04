@@ -21,11 +21,8 @@ var promptFlowScript string
 // PromptFlowCommand provides the baked-in prompt-flow script functionality.
 type PromptFlowCommand struct {
 	*BaseCommand
+	scriptCommandBase
 	interactive bool
-	testMode    bool
-	config      *config.Config
-	session     string
-	store       string
 }
 
 // NewPromptFlowCommand creates a new prompt-flow command.
@@ -36,7 +33,7 @@ func NewPromptFlowCommand(cfg *config.Config) *PromptFlowCommand {
 			"Interactive prompt builder: goal/context/template -> generate -> assemble",
 			"prompt-flow [options]",
 		),
-		config: cfg,
+		scriptCommandBase: scriptCommandBase{config: cfg},
 	}
 }
 
@@ -44,29 +41,22 @@ func NewPromptFlowCommand(cfg *config.Config) *PromptFlowCommand {
 func (c *PromptFlowCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.interactive, "interactive", true, "Start interactive prompt flow mode (default)")
 	fs.BoolVar(&c.interactive, "i", true, "Start interactive prompt flow mode (short form, default)")
-	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
-	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
-	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory'")
+	c.RegisterFlags(fs)
 }
 
 // Execute runs the prompt-flow command.
 func (c *PromptFlowCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	ctx := context.Background()
 
-	// Create scripting engine with explicit session/storage configuration
-	engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.store)
+	engine, cleanup, err := c.PrepareEngine(ctx, stdout, stderr)
 	if err != nil {
-		return fmt.Errorf("failed to create scripting engine: %w", err)
+		return err
 	}
-	defer engine.Close()
-
-	if c.testMode {
-		engine.SetTestMode(true)
-	}
+	defer cleanup()
 
 	// Inject command name for state namespacing
 	const commandName = "prompt-flow"
-	engine.SetGlobal("config", map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{
 		"name": commandName,
 	})
 
@@ -86,11 +76,8 @@ func (c *PromptFlowCommand) Execute(args []string, stdout, stderr io.Writer) err
 		if c.config != nil {
 			colorMap := make(map[string]string)
 			for k, v := range c.config.Global {
-				if strings.HasPrefix(k, "prompt.color.") {
-					key := strings.TrimPrefix(k, "prompt.color.")
-					if key != "" {
-						colorMap[key] = v
-					}
+				if key, ok := strings.CutPrefix(k, "prompt.color."); ok && key != "" {
+					colorMap[key] = v
 				}
 			}
 			if len(colorMap) > 0 {
@@ -99,7 +86,12 @@ func (c *PromptFlowCommand) Execute(args []string, stdout, stderr io.Writer) err
 		}
 		terminal := scripting.NewTerminal(ctx, engine)
 		terminal.Run()
+		return nil
 	}
+
+	// Wait for any asynchronous work (timers, fetch, etc.) to complete naturally.
+	// This uses the WithAutoExit(true) feature of the event loop.
+	engine.Wait()
 
 	return nil
 }

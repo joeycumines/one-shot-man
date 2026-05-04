@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -8,7 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,14 +21,15 @@ type Registry struct {
 	commands        map[string]Command
 	scriptPaths     []string
 	scriptDiscovery *ScriptDiscovery
+	config          *config.Config
 }
 
 // NewRegistryWithConfig creates a new command registry with configuration support.
 func NewRegistryWithConfig(cfg *config.Config) *Registry {
 	registry := &Registry{
 		commands:        make(map[string]Command),
-		scriptPaths:     make([]string, 0),
 		scriptDiscovery: NewScriptDiscovery(cfg),
+		config:          cfg,
 	}
 
 	// Discover and add script paths
@@ -46,10 +48,8 @@ func (r *Registry) Register(cmd Command) {
 // Duplicates are ignored.
 func (r *Registry) AddScriptPath(path string) {
 	// Check if path already exists
-	for _, existing := range r.scriptPaths {
-		if existing == path {
-			return
-		}
+	if slices.Contains(r.scriptPaths, path) {
+		return
 	}
 	r.scriptPaths = append(r.scriptPaths, path)
 }
@@ -84,37 +84,57 @@ func (r *Registry) List() []string {
 	names = append(names, scriptNames...)
 
 	// Sort and deduplicate
-	sort.Strings(names)
+	slices.Sort(names)
 	return removeDuplicates(names)
 }
 
-// ListBuiltin returns only built-in commands.
-func (r *Registry) ListBuiltin() []string {
+// listBuiltin returns only built-in commands.
+func (r *Registry) listBuiltin() []string {
 	var names []string
 	for name := range r.commands {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 
-// ListScript returns only script commands.
-func (r *Registry) ListScript() []string {
+// listScript returns only script commands.
+func (r *Registry) listScript() []string {
 	names := r.findScriptCommands()
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 
 // findScriptCommand looks for a script command by name.
+// JS files (.js extension or "osm script" shebang) are executed in-process
+// via the Goja engine. All other executable files use external process execution.
 func (r *Registry) findScriptCommand(name string) (Command, error) {
 	for _, dir := range r.scriptPaths {
 		scriptPath := filepath.Join(dir, name)
 
-		// Check if the file exists and is executable
-		if info, err := os.Stat(scriptPath); err == nil && !info.IsDir() {
-			if isExecutable(info) {
-				return NewScriptCommand(name, scriptPath), nil
-			}
+		info, err := os.Stat(scriptPath)
+		if err != nil || info.IsDir() {
+			continue
+		}
+
+		isExec := isExecutable(info)
+		isJS := strings.EqualFold(filepath.Ext(name), ".js")
+
+		// On Unix: script must have exec bits OR be a .js file.
+		// On Windows: .js files are discovered by extension (no exec bits).
+		if !isExec && !isJS {
+			continue
+		}
+
+		// Peek at the file to determine execution strategy.
+		peek := peekScriptFile(scriptPath)
+		if peek.kind == scriptKindJS {
+			return newJSScriptCommand(name, scriptPath, r.config, peek), nil
+		}
+
+		// Non-JS or unrecognized: fall through to external execution.
+		if isExec {
+			return newScriptCommand(name, scriptPath), nil
 		}
 	}
 
@@ -122,6 +142,8 @@ func (r *Registry) findScriptCommand(name string) (Command, error) {
 }
 
 // findScriptCommands returns all available script command names.
+// JS files (.js extension) are included on all platforms, even on Windows
+// where they lack execute bits.
 func (r *Registry) findScriptCommands() []string {
 	var names []string
 
@@ -134,7 +156,10 @@ func (r *Registry) findScriptCommands() []string {
 		for _, entry := range entries {
 			if !entry.IsDir() {
 				info, err := entry.Info()
-				if err == nil && isExecutable(info) {
+				if err != nil {
+					continue
+				}
+				if isExecutable(info) || strings.EqualFold(filepath.Ext(entry.Name()), ".js") {
 					names = append(names, entry.Name())
 				}
 			}
@@ -183,15 +208,99 @@ func removeDuplicates(sorted []string) []string {
 	return result
 }
 
-// ScriptCommand represents a script-based command.
-type ScriptCommand struct {
+// scriptKind determines how a discovered script file is executed.
+type scriptKind int
+
+const (
+	// scriptKindExternal means the script runs as an external process.
+	scriptKindExternal scriptKind = iota
+	// scriptKindJS means the script runs in-process via the Goja engine.
+	scriptKindJS
+)
+
+// scriptPeekInfo holds the result of peeking at a script file to determine
+// its execution strategy and any shebang-derived flags.
+type scriptPeekInfo struct {
+	kind        scriptKind
+	interactive bool // from shebang -i flag
+	testMode    bool // from shebang --test flag
+}
+
+// peekScriptFile examines a file to determine how it should be executed.
+// Extension-based detection (.js) is tried first (cheap, cross-platform).
+// If the extension doesn't indicate JS, the shebang line is checked for
+// "osm script". Shebang flags (-i, --test) are extracted for JS files.
+func peekScriptFile(path string) scriptPeekInfo {
+	// Fast path: check extension first.
+	if strings.EqualFold(filepath.Ext(path), ".js") {
+		info := scriptPeekInfo{kind: scriptKindJS}
+		info.parseShebangFlags(path)
+		return info
+	}
+
+	// Slow path: read first line for shebang.
+	f, err := os.Open(path)
+	if err != nil {
+		return scriptPeekInfo{kind: scriptKindExternal}
+	}
+	defer f.Close()
+
+	var firstLine string
+	scanner := bufio.NewScanner(f)
+	if scanner.Scan() {
+		firstLine = scanner.Text()
+	}
+
+	if !strings.Contains(firstLine, "osm script") {
+		return scriptPeekInfo{kind: scriptKindExternal}
+	}
+
+	info := scriptPeekInfo{kind: scriptKindJS}
+	info.parseShebangFlagsFromLine(firstLine)
+	return info
+}
+
+// parseShebangFlags reads the first line of the file and extracts osm script flags.
+func (info *scriptPeekInfo) parseShebangFlags(path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	if !scanner.Scan() {
+		return
+	}
+	info.parseShebangFlagsFromLine(scanner.Text())
+}
+
+// parseShebangFlagsFromLine extracts flags from a shebang line containing "osm script".
+func (info *scriptPeekInfo) parseShebangFlagsFromLine(line string) {
+	_, rest, found := strings.Cut(line, "osm script")
+	if !found {
+		return
+	}
+	rest = strings.TrimSpace(rest)
+	for _, token := range strings.Fields(rest) {
+		switch token {
+		case "-i", "-interactive", "--interactive":
+			info.interactive = true
+		case "--test":
+			info.testMode = true
+		}
+	}
+}
+
+// scriptCommand represents a script-based command.
+type scriptCommand struct {
 	*BaseCommand
 	scriptPath string
 }
 
-// NewScriptCommand creates a new script command.
-func NewScriptCommand(name, scriptPath string) *ScriptCommand {
-	return &ScriptCommand{
+// newScriptCommand creates a new script command.
+func newScriptCommand(name, scriptPath string) *scriptCommand {
+	return &scriptCommand{
 		BaseCommand: NewBaseCommand(
 			name,
 			fmt.Sprintf("Script command: %s", name),
@@ -202,14 +311,14 @@ func NewScriptCommand(name, scriptPath string) *ScriptCommand {
 }
 
 // Execute runs the script command.
-func (c *ScriptCommand) Execute(args []string, stdout, stderr io.Writer) error {
+func (c *scriptCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	// Use background context for Execute without explicit context
 	return c.ExecuteWithContext(context.Background(), args, stdout, stderr)
 }
 
 // ExecuteWithContext runs the script command with context support.
 // When the context is cancelled, the command and its child processes are terminated.
-func (c *ScriptCommand) ExecuteWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func (c *scriptCommand) ExecuteWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	var cmd *exec.Cmd
 
 	// Windows: some script file types (like .bat/.cmd) must be launched

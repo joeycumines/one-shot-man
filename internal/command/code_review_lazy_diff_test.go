@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,7 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
-func SkipTestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
+func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 	// Create a temporary git repository for testing
 	tempDir := t.TempDir()
 	origDir, err := os.Getwd()
@@ -41,7 +42,7 @@ func SkipTestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 
 	ctx := context.Background()
 	// Use explicit memory-backed engine with unique session ID for test isolation
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("lazy-diff", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("lazy-diff", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -51,7 +52,7 @@ func SkipTestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("codeReviewTemplate", codeReviewTemplate)
 	// Inject config object with name field
-	engine.SetGlobal("config", map[string]interface{}{"name": "code-review"})
+	engine.SetGlobal("config", map[string]any{"name": "code-review"})
 
 	// Load the script
 	script := engine.LoadScriptFromString("code-review", codeReviewScript)
@@ -191,29 +192,29 @@ func SkipTestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 
 		// Test 6: Test formatArgv function
 		const formatTest1 =  formatArgv(["git", "diff", "feature/my feature"]);
-		if (formatTest1 !== 'git diff "feature/my feature"') {
-			throw new Error("formatArgv failed to quote spaces, expected 'git diff \"feature/my feature\"', got: " + formatTest1);
+		if (formatTest1 !== "git diff 'feature/my feature'") {
+			throw new Error("formatArgv failed to quote spaces, expected \"git diff 'feature/my feature'\", got: " + formatTest1);
 		}
 
 		const formatTest2 =  formatArgv(["git", "log", "--grep", ""]);
-		if (formatTest2 !== 'git log --grep ""') {
-			throw new Error("formatArgv failed with empty string, expected 'git log --grep \"\"', got: " + formatTest2);
+		if (formatTest2 !== "git log --grep ''") {
+			throw new Error("formatArgv failed with empty string, expected \"git log --grep ''\", got: " + formatTest2);
 		}
 
 		const formatTest3 =  formatArgv(["git", "diff", 'He said "hello"']);
-		if (formatTest3 !== 'git diff "He said \\"hello\\""') {
-			throw new Error("formatArgv failed to escape quotes, expected 'git diff \"He said \\\"hello\\\"\"', got: " + formatTest3);
+		if (formatTest3 !== "git diff 'He said \"hello\"'") {
+			throw new Error("formatArgv failed to escape quotes, expected \"git diff 'He said \\\"hello\\\"'\", got: " + formatTest3);
 		}
 
 		// NBSP regression: should be quoted
 		const formatTest4 =  formatArgv(["git", "diff", "arg\u00A0with\u00A0nbsp"]);
-		if (formatTest4 !== 'git diff "arg\u00A0with\u00A0nbsp"') {
+		if (formatTest4 !== "git diff 'arg\u00A0with\u00A0nbsp'") {
 			throw new Error("formatArgv failed NBSP quoting, got: " + formatTest4);
 		}
 
 		// Vertical tab regression: should be quoted
 		const formatTest5 =  formatArgv(["git", "diff", "arg with \u000Bvertical tab"]);
-		if (formatTest5 !== 'git diff "arg with \u000Bvertical tab"') {
+		if (formatTest5 !== "git diff 'arg with \u000Bvertical tab'") {
 			throw new Error("formatArgv failed vertical tab quoting, got: " + formatTest5);
 		}
 
@@ -273,6 +274,7 @@ func SkipTestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 }
 
 func setupTestRepo(t *testing.T, dir string) {
+	t.Helper()
 	// Initialize git repo
 	runGitCommand(t, dir, "-c", "advice.defaultBranchName=false", "-c", "init.defaultBranch=main", "init", "-q")
 	runGitCommand(t, dir, "config", "user.name", "Test User")
@@ -304,6 +306,7 @@ func setupTestRepo(t *testing.T, dir string) {
 }
 
 func runGitCommand(t *testing.T, dir string, args ...string) {
+	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	var stdout, stderr strings.Builder

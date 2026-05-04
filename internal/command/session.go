@@ -2,13 +2,15 @@ package command
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -44,6 +46,8 @@ func (c *SessionCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.yes, "y", false, "Assume yes to confirmation prompts")
 }
 
+// Execute runs the session subcommand specified by args (list, clean, purge,
+// delete, info, path, id). Defaults to list when no subcommand is given.
 func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return c.list(stdout, "text", "default")
@@ -62,26 +66,29 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		fs.StringVar(&localSession, "session", "", "Session ID for state persistence (overrides auto-discovery)")
 		fs.Usage = func() {
 			_, _ = fmt.Fprintf(stderr, "Usage: %s id\n\n", c.Name())
-			fmt.Fprintln(stderr, "Resolve and print the session id that would be used for this terminal.")
+			_, _ = fmt.Fprintln(stderr, "Resolve and print the session id that would be used for this terminal.")
 			// Only show the Options block if this FlagSet actually defines flags
 			var hasFlags bool
 			fs.VisitAll(func(_ *flag.Flag) { hasFlags = true })
 			if hasFlags {
-				fmt.Fprintln(stderr, "Options:")
+				_, _ = fmt.Fprintln(stderr, "Options:")
 				fs.SetOutput(stderr)
 				fs.PrintDefaults()
 				fs.SetOutput(io.Discard)
 			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
 		}
+		if rem := fs.Args(); len(rem) > 0 {
+			return fmt.Errorf("session id: %w: %v", ErrUnexpectedArguments, rem)
+		}
 		// Resolve session id using scripting package
 		id := scripting.GetSessionID(localSession)
-		fmt.Fprintln(stdout, id)
+		_, _ = fmt.Fprintln(stdout, id)
 		return nil
 	case "list":
 		fs := flag.NewFlagSet("session-list", flag.ContinueOnError)
@@ -92,19 +99,22 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		fs.StringVar(&sortLocal, "sort", "default", "sorting: default|active")
 		fs.Usage = func() {
 			_, _ = fmt.Fprintf(stderr, "Usage: %s list\n\n", c.Name())
-			fmt.Fprintln(stderr, "Show all existing sessions with metadata.")
-			fmt.Fprintln(stderr, "\nOptions:")
-			fmt.Fprintln(stderr, "  -format <text|json>   Output format (default: text).\n    'text' prints tab-separated lines; 'json' prints a pretty JSON array of session objects.")
-			fmt.Fprintln(stderr, "  -sort <default|active>  Sorting behavior (default: filesystem discovery order).\n    'active' surfaces active sessions first, then orders by update time (newest first).")
+			_, _ = fmt.Fprintln(stderr, "Show all existing sessions with metadata.")
+			_, _ = fmt.Fprintln(stderr, "\nOptions:")
+			_, _ = fmt.Fprintln(stderr, "  -format <text|json>   Output format (default: text).\n    'text' prints tab-separated lines; 'json' prints a pretty JSON array of session objects.")
+			_, _ = fmt.Fprintln(stderr, "  -sort <default|active>  Sorting behavior (default: filesystem discovery order).\n    'active' surfaces active sessions first, then orders by update time (newest first).")
 			fs.SetOutput(stderr)
 			fs.PrintDefaults()
 			fs.SetOutput(io.Discard)
 		}
 		if err := fs.Parse(args[1:]); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
+		}
+		if rem := fs.Args(); len(rem) > 0 {
+			return fmt.Errorf("session list: %w: %v", ErrUnexpectedArguments, rem)
 		}
 		return c.list(stdout, formatLocal, sortLocal)
 	case "clean":
@@ -118,33 +128,36 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		fs.BoolVar(&c.dry, "dry-run", c.dry, "Don't actually delete; show what would be deleted")
 		fs.Usage = func() {
 			_, _ = fmt.Fprintf(stderr, "Usage: %s clean\n\n", c.Name())
-			fmt.Fprintln(stderr, "Run automatic cleanup based on configured policies.")
+			_, _ = fmt.Fprintln(stderr, "Run automatic cleanup based on configured policies.")
 			var hasFlags bool
 			fs.VisitAll(func(_ *flag.Flag) { hasFlags = true })
 			if hasFlags {
-				fmt.Fprintln(stderr, "\nOptions:")
+				_, _ = fmt.Fprintln(stderr, "\nOptions:")
 				fs.SetOutput(stderr)
 				fs.PrintDefaults()
 				fs.SetOutput(io.Discard)
 			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
 		}
+		if rem := fs.Args(); len(rem) > 0 {
+			return fmt.Errorf("session clean: %w: %v", ErrUnexpectedArguments, rem)
+		}
 		// confirmation
 		if !c.dry && !c.yes && !yesLocal {
 			br := bufio.NewReader(c.stdin)
-			fmt.Fprint(stdout, "This will permanently remove sessions according to your configured policies. Proceed? (y/N): ")
+			_, _ = fmt.Fprint(stdout, "This will permanently remove sessions according to your configured policies. Proceed? (y/N): ")
 			t, err := br.ReadString('\n')
-			if err != nil && err != io.EOF {
+			if err != nil && !errors.Is(err, io.EOF) {
 				return fmt.Errorf("failed to read confirmation: %w", err)
 			}
 			t = strings.TrimSpace(t)
 			if !strings.EqualFold(t, "y") && !strings.EqualFold(t, "yes") {
-				fmt.Fprintln(stdout, "aborted")
+				_, _ = fmt.Fprintln(stdout, "aborted")
 				return nil
 			}
 		}
@@ -159,33 +172,36 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		fs.BoolVar(&c.dry, "dry-run", c.dry, "Don't actually delete; show what would be deleted")
 		fs.Usage = func() {
 			_, _ = fmt.Fprintf(stderr, "Usage: %s purge\n\n", c.Name())
-			fmt.Fprintln(stderr, "Permanently purge sessions (ignores configured retention policies).")
+			_, _ = fmt.Fprintln(stderr, "Permanently purge sessions (ignores configured retention policies).")
 			var hasFlags bool
 			fs.VisitAll(func(_ *flag.Flag) { hasFlags = true })
 			if hasFlags {
-				fmt.Fprintln(stderr, "\nOptions:")
+				_, _ = fmt.Fprintln(stderr, "\nOptions:")
 				fs.SetOutput(stderr)
 				fs.PrintDefaults()
 				fs.SetOutput(io.Discard)
 			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
 		}
+		if rem := fs.Args(); len(rem) > 0 {
+			return fmt.Errorf("session purge: %w: %v", ErrUnexpectedArguments, rem)
+		}
 		// confirmation
 		if !c.dry && !c.yes && !yesLocal {
 			br := bufio.NewReader(c.stdin)
-			fmt.Fprint(stdout, "This will permanently purge sessions (ignoring retention). Proceed? (y/N): ")
+			_, _ = fmt.Fprint(stdout, "This will permanently purge sessions (ignoring retention). Proceed? (y/N): ")
 			t, err := br.ReadString('\n')
-			if err != nil && err != io.EOF {
+			if err != nil && !errors.Is(err, io.EOF) {
 				return fmt.Errorf("failed to read confirmation: %w", err)
 			}
 			t = strings.TrimSpace(t)
 			if !strings.EqualFold(t, "y") && !strings.EqualFold(t, "yes") {
-				fmt.Fprintln(stdout, "aborted")
+				_, _ = fmt.Fprintln(stdout, "aborted")
 				return nil
 			}
 		}
@@ -254,11 +270,11 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 
 		fs.Usage = func() {
 			_, _ = fmt.Fprintf(stderr, "Usage: %s delete <session-id>...\n\n", c.Name())
-			fmt.Fprintln(stderr, "Remove a specific session from storage. This is irreversible.")
+			_, _ = fmt.Fprintln(stderr, "Remove a specific session from storage. This is irreversible.")
 			var hasFlags bool
 			fs.VisitAll(func(_ *flag.Flag) { hasFlags = true })
 			if hasFlags {
-				fmt.Fprintln(stderr, "Options:")
+				_, _ = fmt.Fprintln(stderr, "Options:")
 				fs.SetOutput(stderr)
 				fs.PrintDefaults()
 				fs.SetOutput(io.Discard)
@@ -267,7 +283,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		// Parse the args that were before '--' and weren't stripped.
 		// This handles help (-h) and any other flags.
 		if err := fs.Parse(flagParsableArgs); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
@@ -293,12 +309,12 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 				_, _ = fmt.Fprintf(stdout, "Are you sure you want to delete session '%s'? This is irreversible. (y/N): ", id)
 			}
 			t, err := br.ReadString('\n')
-			if err != nil && err != io.EOF {
+			if err != nil && !errors.Is(err, io.EOF) {
 				return fmt.Errorf("failed to read confirmation: %w", err)
 			}
 			t = strings.TrimSpace(t)
 			if !strings.EqualFold(t, "y") && !strings.EqualFold(t, "yes") {
-				fmt.Fprintln(stdout, "aborted")
+				_, _ = fmt.Fprintln(stdout, "aborted")
 				return nil
 			}
 		}
@@ -318,18 +334,18 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		fs.SetOutput(io.Discard)
 		fs.Usage = func() {
 			_, _ = fmt.Fprintf(stderr, "Usage: %s info <session-id>\n\n", c.Name())
-			fmt.Fprintln(stderr, "Show the raw data for a specific session.")
+			_, _ = fmt.Fprintln(stderr, "Show the raw data for a specific session.")
 			var hasFlags bool
 			fs.VisitAll(func(_ *flag.Flag) { hasFlags = true })
 			if hasFlags {
-				fmt.Fprintln(stderr, "Options:")
+				_, _ = fmt.Fprintln(stderr, "Options:")
 				fs.SetOutput(stderr)
 				fs.PrintDefaults()
 				fs.SetOutput(io.Discard)
 			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
@@ -338,29 +354,35 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		if len(rem) < 1 {
 			return fmt.Errorf("info requires a session id")
 		}
+		if len(rem) > 1 {
+			return fmt.Errorf("%w after session id: %v", ErrUnexpectedArguments, rem[1:])
+		}
 		return c.info(stdout, rem[0])
 	case "path":
 		fs := flag.NewFlagSet("session-path", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
 		fs.Usage = func() {
 			_, _ = fmt.Fprintf(stderr, "Usage: %s path [session-id]\n\n", c.Name())
-			fmt.Fprintln(stderr, "Show the sessions directory or a specific session file path.")
+			_, _ = fmt.Fprintln(stderr, "Show the sessions directory or a specific session file path.")
 			var hasFlags bool
 			fs.VisitAll(func(_ *flag.Flag) { hasFlags = true })
 			if hasFlags {
-				fmt.Fprintln(stderr, "Options:")
+				_, _ = fmt.Fprintln(stderr, "Options:")
 				fs.SetOutput(stderr)
 				fs.PrintDefaults()
 				fs.SetOutput(io.Discard)
 			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
 		}
 		rem := fs.Args()
+		if len(rem) > 1 {
+			return fmt.Errorf("%w for path: %v", ErrUnexpectedArguments, rem[1:])
+		}
 		if len(rem) == 0 {
 			// Use SessionFilePath to derive a directory using the package-local
 			// sessionDirectory helper (tests override this via SetTestPaths).
@@ -368,7 +390,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(stdout, filepath.Dir(p))
+			_, _ = fmt.Fprintln(stdout, filepath.Dir(p))
 			return nil
 		}
 		// If an ID is provided print the full session file path
@@ -376,7 +398,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(stdout, p)
+		_, _ = fmt.Fprintln(stdout, p)
 		return nil
 	default:
 		return fmt.Errorf("unknown subcommand: %s", args[0])
@@ -401,19 +423,20 @@ func (c *SessionCommand) list(w io.Writer, format, sortMode string) error {
 
 	// Apply 'active' sorting: active sessions first, then idle; within groups sort by UpdateTime (desc), then ID asc
 	if sortMode == "active" {
-		sort.SliceStable(infos, func(i, j int) bool {
-			a := infos[i]
-			b := infos[j]
+		slices.SortStableFunc(infos, func(a, b storage.SessionInfo) int {
 			// Active sessions first
 			if a.Active != b.Active {
-				return a.Active && !b.Active
+				if a.Active {
+					return -1
+				}
+				return 1
 			}
 			// Most recently updated first
-			if !a.UpdateTime.Equal(b.UpdateTime) {
-				return a.UpdateTime.After(b.UpdateTime)
+			if c := b.UpdateTime.Compare(a.UpdateTime); c != 0 {
+				return c
 			}
 			// Tiebreaker: ID ascending
-			return a.ID < b.ID
+			return cmp.Compare(a.ID, b.ID)
 		})
 	}
 
@@ -431,7 +454,7 @@ func (c *SessionCommand) list(w io.Writer, format, sortMode string) error {
 
 	// text format: if no sessions, show friendly message
 	if len(infos) == 0 {
-		fmt.Fprintln(w, "No sessions found")
+		_, _ = fmt.Fprintln(w, "No sessions found")
 		return nil
 	}
 
@@ -460,16 +483,16 @@ func (c *SessionCommand) runCleanup(w io.Writer, purge bool) error {
 
 	if c.dry {
 		if purge {
-			fmt.Fprintln(w, "Dry-run: the following would be purged:")
+			_, _ = fmt.Fprintln(w, "Dry-run: the following would be purged:")
 		} else {
-			fmt.Fprintln(w, "Dry-run: the following would be removed:")
+			_, _ = fmt.Fprintln(w, "Dry-run: the following would be removed:")
 		}
 		report, err := cleaner.ExecuteCleanup("")
 		if err != nil {
 			return err
 		}
 		for _, id := range report.Removed {
-			fmt.Fprintln(w, id)
+			_, _ = fmt.Fprintln(w, id)
 		}
 		return nil
 	}
@@ -480,13 +503,13 @@ func (c *SessionCommand) runCleanup(w io.Writer, purge bool) error {
 	}
 	for _, id := range report.Removed {
 		if purge {
-			fmt.Fprintln(w, "purged:", id)
+			_, _ = fmt.Fprintln(w, "purged:", id)
 		} else {
-			fmt.Fprintln(w, "removed:", id)
+			_, _ = fmt.Fprintln(w, "removed:", id)
 		}
 	}
 	for _, id := range report.Skipped {
-		fmt.Fprintln(w, "skipped:", id)
+		_, _ = fmt.Fprintln(w, "skipped:", id)
 	}
 	return nil
 }
@@ -541,7 +564,7 @@ func (c *SessionCommand) delete(w io.Writer, id string) error {
 		_, _ = fmt.Fprintf(w, "deleted %s (warning: failed to remove lock: %v)\n", id, rerr)
 		return nil
 	}
-	fmt.Fprintln(w, "deleted", id)
+	_, _ = fmt.Fprintln(w, "deleted", id)
 	return nil
 }
 
@@ -554,6 +577,6 @@ func (c *SessionCommand) info(w io.Writer, id string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(w, string(data))
+	_, _ = fmt.Fprintln(w, string(data))
 	return nil
 }

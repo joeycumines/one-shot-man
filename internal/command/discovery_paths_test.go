@@ -277,8 +277,9 @@ func TestGoalCommand_Paths_ShowsAnnotatedPaths(t *testing.T) {
 	if !strings.Contains(output, "[custom]") {
 		t.Error("Expected '[custom]' annotation in output")
 	}
-	if !strings.Contains(output, goalDir) {
-		t.Errorf("Expected path %s in output", goalDir)
+	// Normalize path separators for cross-platform comparison
+	if !strings.Contains(output, filepath.ToSlash(goalDir)) && !strings.Contains(output, goalDir) {
+		t.Errorf("Expected path %s (or normalized form) in output", goalDir)
 	}
 	if !strings.Contains(output, "✓") {
 		t.Error("Expected ✓ for existing path")
@@ -384,8 +385,9 @@ func TestScriptingCommand_Paths_ShowsAnnotatedPaths(t *testing.T) {
 	if !strings.Contains(output, "[custom]") {
 		t.Error("Expected '[custom]' annotation in output")
 	}
-	if !strings.Contains(output, scriptDir) {
-		t.Errorf("Expected path %s in output", scriptDir)
+	// Normalize path separators for cross-platform comparison
+	if !strings.Contains(output, filepath.ToSlash(scriptDir)) && !strings.Contains(output, scriptDir) {
+		t.Errorf("Expected path %s (or normalized form) in output", scriptDir)
 	}
 	if !strings.Contains(output, "✓") {
 		t.Error("Expected ✓ for existing path")

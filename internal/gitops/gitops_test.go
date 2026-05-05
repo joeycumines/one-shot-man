@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -470,7 +472,12 @@ func TestPullRebase_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new.txt not found: %v", err)
 	}
-	if string(data) != "new content\n" {
+	// Normalize line endings for cross-platform comparison (Windows may use CRLF).
+	content := string(data)
+	if runtime.GOOS == "windows" {
+		content = strings.ReplaceAll(content, "\r\n", "\n")
+	}
+	if content != "new content\n" {
 		t.Fatalf("unexpected content: %q", string(data))
 	}
 }

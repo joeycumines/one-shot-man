@@ -277,9 +277,15 @@ func TestGoalCommand_Paths_ShowsAnnotatedPaths(t *testing.T) {
 	if !strings.Contains(output, "[custom]") {
 		t.Error("Expected '[custom]' annotation in output")
 	}
-	// Normalize path separators for cross-platform comparison
-	if !strings.Contains(output, filepath.ToSlash(goalDir)) && !strings.Contains(output, goalDir) {
-		t.Errorf("Expected path %s (or normalized form) in output", goalDir)
+	// Normalize path separators and resolve 8.3 short names for
+	// cross-platform comparison (Windows t.TempDir() may return
+	// RUNNER~1 while output contains RUNNERADMIN).
+	resolvedGoalDir := goalDir
+	if ev, err := filepath.EvalSymlinks(goalDir); err == nil {
+		resolvedGoalDir = ev
+	}
+	if !strings.Contains(output, filepath.ToSlash(resolvedGoalDir)) && !strings.Contains(output, resolvedGoalDir) {
+		t.Errorf("Expected path %s (or normalized form) in output", resolvedGoalDir)
 	}
 	if !strings.Contains(output, "✓") {
 		t.Error("Expected ✓ for existing path")
@@ -385,9 +391,15 @@ func TestScriptingCommand_Paths_ShowsAnnotatedPaths(t *testing.T) {
 	if !strings.Contains(output, "[custom]") {
 		t.Error("Expected '[custom]' annotation in output")
 	}
-	// Normalize path separators for cross-platform comparison
-	if !strings.Contains(output, filepath.ToSlash(scriptDir)) && !strings.Contains(output, scriptDir) {
-		t.Errorf("Expected path %s (or normalized form) in output", scriptDir)
+	// Normalize path separators and resolve 8.3 short names for
+	// cross-platform comparison (Windows t.TempDir() may return
+	// RUNNER~1 while output contains RUNNERADMIN).
+	resolvedScriptDir := scriptDir
+	if ev, err := filepath.EvalSymlinks(scriptDir); err == nil {
+		resolvedScriptDir = ev
+	}
+	if !strings.Contains(output, filepath.ToSlash(resolvedScriptDir)) && !strings.Contains(output, resolvedScriptDir) {
+		t.Errorf("Expected path %s (or normalized form) in output", resolvedScriptDir)
 	}
 	if !strings.Contains(output, "✓") {
 		t.Error("Expected ✓ for existing path")

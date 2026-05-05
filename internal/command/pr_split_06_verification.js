@@ -69,7 +69,11 @@
 
         if (timeoutMs > 0 && !isWindows()) {
             var timeoutSec = Math.ceil(timeoutMs / 1000);
-            shellCmd = 'timeout ' + timeoutSec + ' sh -c ' + shellQuote(shellCmd);
+            // Portable shell timeout: works on macOS (no GNU coreutils) and Linux.
+            // Runs the command in a background subshell, sleeps for the timeout
+            // duration, then kills the subshell. If the command finishes first,
+            // the kill is a no-op (process already exited).
+            shellCmd = '( ' + shellCmd + ' ) & _pid=$!; sleep ' + timeoutSec + '; kill ' + '$_pid 2>/dev/null; wait $_pid';
         }
         // Note: Windows timeout is an interactive command; timeout handling
         // for Windows relies on the Go-level deadline in shellSpawnSync.
@@ -102,7 +106,7 @@
 
         cleanupWorktree();
 
-        if (timeoutMs > 0 && (result.code === 124 || elapsedMs >= timeoutMs)) {
+        if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
                 passed: false,
@@ -533,7 +537,8 @@
 
         if (timeoutMs > 0 && !isWindows()) {
             var timeoutSec = Math.ceil(timeoutMs / 1000);
-            shellCmd = 'timeout ' + timeoutSec + ' sh -c ' + shellQuote(shellCmd);
+            // Portable shell timeout: works on macOS (no GNU coreutils) and Linux.
+            shellCmd = '( ' + shellCmd + ' ) & _pid=$!; sleep ' + timeoutSec + '; kill ' + '$_pid 2>/dev/null; wait $_pid';
         }
 
         var stdoutBuf = '';
@@ -587,7 +592,7 @@
 
         await cleanupWorktreeAsync();
 
-        if (timeoutMs > 0 && (exitCode === 124 || elapsedMs >= timeoutMs)) {
+        if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
                 passed: false,

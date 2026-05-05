@@ -56,9 +56,9 @@ const (
 	thresholdConcurrentSessionAccess    = 20000
 
 	// Scripting engine thresholds
-	thresholdRuntimeCreation       = 100000
+	thresholdRuntimeCreation        = 100000
 	thresholdRuntimeCreationWindows = 200000 // Windows: ~155ms observed on CI
-	thresholdSimpleScriptExec      = 10000
+	thresholdSimpleScriptExec       = 10000
 )
 
 // BenchmarkSessionOperations benchmarks session operations.

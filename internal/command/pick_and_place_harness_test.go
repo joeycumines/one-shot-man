@@ -864,6 +864,35 @@ func (h *PickAndPlaceHarness) NavigateToGrid(x, y int, maxWait time.Duration, th
 	return false
 }
 
+// NavigateToGridWithKeys moves the actor to the target grid position using
+// WASD keystrokes with position feedback. It is a fallback for platforms
+// where click-based pathfinding (NavigateToGrid) is unreliable.
+func (h *PickAndPlaceHarness) NavigateToGridWithKeys(x, y int, maxWait time.Duration, threshold float64) bool {
+	deadline := time.Now().Add(maxWait)
+	for time.Now().Before(deadline) {
+		state := h.GetDebugState()
+		dx := float64(x) - state.ActorX
+		dy := float64(y) - state.ActorY
+		if dx*dx+dy*dy <= threshold*threshold {
+			return true
+		}
+		// Send directional keystrokes
+		if dx > 0.5 {
+			h.SendKey("d")
+		} else if dx < -0.5 {
+			h.SendKey("a")
+		}
+		if dy > 0.5 {
+			h.SendKey("s")
+		} else if dy < -0.5 {
+			h.SendKey("w")
+		}
+		time.Sleep(100 * time.Millisecond)
+		h.WaitForFrames(2)
+	}
+	return false
+}
+
 // ClickAtBufferPosition sends a mouse click at the specified buffer-absolute
 // coordinates (1-indexed). The buffer row is converted to viewport-relative
 // coordinates before sending the SGR mouse event.

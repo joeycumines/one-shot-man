@@ -461,16 +461,20 @@ try {
 
     const manualModeCache = {
         openHeap: new MinHeap(1024), // Pre-allocated Fixed Size
-        // Index = y * width + x.
-        gScore: new Int32Array(ENV_WIDTH * ENV_HEIGHT),
-        // Stores the Generation ID of the search that visited this node
-        visited: new Int32Array(ENV_WIDTH * ENV_HEIGHT),
-        searchId: 1, // Increments per search
+        // Map-based gScore/visited (dynamically sized) to handle variable terminal dimensions.
+        // key = y * spaceWidth + x, stored as Map<string, number> for sparse access.
+        gScore: null, // Set per-search
+        visited: null, // Set<number> for current search visited keys
+        searchId: 1,   // Increments per search
+        nodeBudget: MANUAL_PATH_NODE_BUDGET, // Default budget
 
-        reset: function () {
+        reset: function (spaceWidth, height) {
             this.searchId++; // Instant "clear"
             this.openHeap.clear();
-            // No need to clear gScore/visited arrays
+            // Lazy-init gScore map per search
+            if (!this.gScore) {
+                this.gScore = new Map();
+            }
         }
     };
 
@@ -495,28 +499,30 @@ try {
     function findPathManual(state, startX, startY, targetX, targetY, ignoreCubeId) {
         // Reset pool for this search
         nodeArenaIdx = 0;
-        manualModeCache.reset();
+        manualModeCache.reset(state.spaceWidth, state.height);
+        // Init gScore Map (or clear it). gScore stores: key → number, visited: key → void (presence check).
+        // We reuse a single Map per search to avoid allocation churn.
+        const gScore = manualModeCache.gScore;
+        gScore.clear();
 
         const iStartX = Math.round(startX), iStartY = Math.round(startY);
         const iTargetX = Math.round(targetX), iTargetY = Math.round(targetY);
 
         if (iStartX === iTargetX && iStartY === iTargetY) return [];
 
-        const keyInt = (x, y) => (y * state.width + x);
+        // Use spaceWidth for key derivation (maps 1:1 to spatial grid dimensions).
+        const spaceW = state.spaceWidth;
+        const keyInt = (x, y) => (y * spaceW + x);
         const h = (x, y) => Math.abs(x - iTargetX) + Math.abs(y - iTargetY);
 
         // Reuse persistent structures
         const open = manualModeCache.openHeap;
-        const gScore = manualModeCache.gScore;
-        const visited = manualModeCache.visited;
-        const currentSearchId = manualModeCache.searchId;
 
         const startNode = allocNode(iStartX, iStartY, 0, h(iStartX, iStartY), null);
         open.push(startNode);
 
         const startKey = keyInt(iStartX, iStartY);
-        gScore[startKey] = 0;
-        visited[startKey] = currentSearchId;
+        gScore.set(startKey, 0);
 
         let expanded = 0;
         let bestNode = startNode;
@@ -528,9 +534,6 @@ try {
         while (open.size() > 0 && expanded < MANUAL_PATH_NODE_BUDGET) {
             const cur = open.pop();
             const curKey = keyInt(cur.x, cur.y);
-
-            // Lazy cleanup check if needed, but generation ID on 'visited' handles closed set logic mostly.
-            // A* typically needs re-expansion if new path is better, but simple visited check is ok for this.
 
             if (cur.x === iTargetX && cur.y === iTargetY) {
                 return reconstructManualPath(cur);
@@ -549,8 +552,9 @@ try {
 
                 if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
 
-                // If visited in this search and gScore is better/equal, skip
-                if (visited[nKey] === currentSearchId && gScore[nKey] <= cur.g + 1) continue;
+                // Check if we already visited this node with a better or equal gScore.
+                const prevG = gScore.get(nKey);
+                if (prevG !== undefined && prevG <= cur.g + 1) continue;
 
                 // Spatial Grid Check
                 const blockId = state.spatialGrid.get(nx, ny);
@@ -566,8 +570,7 @@ try {
                 const ng = cur.g + 1;
 
                 // Update or First Visit
-                gScore[nKey] = ng;
-                visited[nKey] = currentSearchId;
+                gScore.set(nKey, ng);
                 open.push(allocNode(nx, ny, ng, ng + h(nx, ny), cur));
             }
         }

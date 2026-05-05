@@ -70,10 +70,9 @@
         if (timeoutMs > 0 && !isWindows()) {
             var timeoutSec = Math.ceil(timeoutMs / 1000);
             // Portable shell timeout: works on macOS (no GNU coreutils) and Linux.
-            // Runs the command in a background subshell, sleeps for the timeout
-            // duration, then kills the subshell. If the command finishes first,
-            // the kill is a no-op (process already exited).
-            shellCmd = '( ' + shellCmd + ' ) & _pid=$!; sleep ' + timeoutSec + '; kill ' + '$_pid 2>/dev/null; wait $_pid';
+            // Spawns a watchdog that kills the command after timeoutSec. If the
+            // command finishes first, the watchdog is killed immediately.
+            shellCmd = '( ' + shellCmd + ' ) & _pid=$!; ( sleep ' + timeoutSec + '; kill $_pid 2>/dev/null ) & _watch=$!; wait $_pid; _rc=$?; kill $_watch 2>/dev/null; wait $_watch 2>/dev/null; exit $_rc';
         }
         // Note: Windows timeout is an interactive command; timeout handling
         // for Windows relies on the Go-level deadline in shellSpawnSync.
@@ -538,7 +537,7 @@
         if (timeoutMs > 0 && !isWindows()) {
             var timeoutSec = Math.ceil(timeoutMs / 1000);
             // Portable shell timeout: works on macOS (no GNU coreutils) and Linux.
-            shellCmd = '( ' + shellCmd + ' ) & _pid=$!; sleep ' + timeoutSec + '; kill ' + '$_pid 2>/dev/null; wait $_pid';
+            shellCmd = '( ' + shellCmd + ' ) & _pid=$!; ( sleep ' + timeoutSec + '; kill $_pid 2>/dev/null ) & _watch=$!; wait $_pid; _rc=$?; kill $_watch 2>/dev/null; wait $_watch 2>/dev/null; exit $_rc';
         }
 
         var stdoutBuf = '';

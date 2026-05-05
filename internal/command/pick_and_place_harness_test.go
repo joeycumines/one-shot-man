@@ -839,29 +839,39 @@ func (h *PickAndPlaceHarness) ClickGrid(x, y int) error {
 }
 
 // NavigateToGrid uses pathfinding to move the actor to the specified grid
-// coordinates. It clicks on the target cell, which triggers the game's
-// pathfinding system. This is more reliable than SendKey-based movement
-// on resource-constrained CI runners where keypress processing can lag.
+// coordinates. It first tries click-based pathfinding, then falls back to
+// WASD keystroke navigation with position feedback if clicks are unreliable
+// (as on some CI runners).
 // It waits up to maxWait for the actor to arrive within threshold distance.
 func (h *PickAndPlaceHarness) NavigateToGrid(x, y int, maxWait time.Duration, threshold float64) bool {
+	// Check if already at target.
+	state := h.GetDebugState()
+	dx := state.ActorX - float64(x)
+	dy := state.ActorY - float64(y)
+	if dx*dx+dy*dy <= threshold*threshold {
+		return true
+	}
+
+	// Try click-based pathfinding first (works well on macOS).
 	deadline := time.Now().Add(maxWait)
 	for time.Now().Before(deadline) {
 		state := h.GetDebugState()
 		dx := state.ActorX - float64(x)
 		dy := state.ActorY - float64(y)
-		dist := dx*dx + dy*dy
-		if dist <= threshold*threshold {
+		if dx*dx+dy*dy <= threshold*threshold {
 			return true
 		}
-		// Click on target cell to trigger pathfinding
 		if err := h.ClickGrid(x, y); err != nil {
 			h.t.Logf("NavigateToGrid: click error: %v", err)
-			return false
+			break // Fall through to keystroke fallback
 		}
 		h.WaitForFrames(10)
 		time.Sleep(500 * time.Millisecond)
 	}
-	return false
+
+	// Fallback: use keystroke navigation (works on all platforms).
+	h.t.Logf("NavigateToGrid: click-based pathfinding timed out, falling back to keystrokes (target (%d,%d))", x, y)
+	return h.NavigateToGridWithKeys(x, y, maxWait, threshold)
 }
 
 // NavigateToGridWithKeys moves the actor to the target grid position using

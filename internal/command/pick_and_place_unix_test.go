@@ -1130,15 +1130,13 @@ func TestPickAndPlace_MousePick_MultipleCubes(t *testing.T) {
 		t.Fatalf("Not in manual mode, got '%s'", state.Mode)
 	}
 
-	// Navigate actor to (3, 15) using click-based pathfinding if available,
-	// falling back to position-aware keystroke navigation on slow CI runners.
-	// Actor starts at ~(5, 11), target is (3, 15).
-	if !h.NavigateToGrid(3, 15, 10*time.Second, 1.5) {
-		h.t.Logf("Click-based pathfinding failed, falling back to position-aware keystrokes")
-		if !h.NavigateToGridWithKeys(3, 15, 15*time.Second, 1.5) {
-			state := h.GetDebugState()
-			h.t.Fatalf("Failed to navigate to (3, 15), actor at (%.1f, %.1f)", state.ActorX, state.ActorY)
-		}
+	// Navigate actor to (3, 15) — far enough from blockade cubes that
+	// all cubes exceed PICK_THRESHOLD (5.0).
+	// NavigateToGrid tries click-based pathfinding first, then falls back
+	// to position-aware keystroke navigation on slower CI runners.
+	if !h.NavigateToGrid(3, 15, 15*time.Second, 1.5) {
+		state := h.GetDebugState()
+		h.t.Fatalf("Failed to navigate to (3, 15), actor at (%.1f, %.1f)", state.ActorX, state.ActorY)
 	}
 	stateBeforeClick := h.GetDebugState()
 	actorBeforeX := stateBeforeClick.ActorX

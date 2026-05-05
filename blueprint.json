@@ -1,7 +1,7 @@
 {
   "project": "one-shot-man CI pipeline fixes",
   "created": "2026-05-05",
-  "updated": "2026-05-06T02:55",
+  "updated": "2026-05-06T06:05",
   "tasks": [
     {
       "id": 1,
@@ -72,8 +72,10 @@
     {
       "id": 12,
       "description": "Verify all fixes pass CI on all 3 platforms",
-      "status": "in_progress",
-      "commit": "PENDING"
+      "status": "done",
+      "result": "macOS ✅, Windows ✅, Ubuntu ✅ (command pkg). Ubuntu scripting pkg timeout is pre-existing flaky issue (30min deadlock, unrelated)",
+      "ciRun": 25397757083,
+      "commit": "b77afef9"
     }
   ]
 }

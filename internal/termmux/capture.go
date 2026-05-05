@@ -163,7 +163,7 @@ func (cs *CaptureSession) Start(ctx context.Context) error {
 	cs.mu.Lock()
 	cs.reader = ptyio.NewBufferedReader(proc.File(), 16)
 	cs.readerCancel = readerCancel
-	cs.outputCh = make(chan []byte, 16)
+	cs.outputCh = make(chan []byte, 64)
 	cs.mu.Unlock()
 	go cs.reader.ReadLoop(readerCtx)
 

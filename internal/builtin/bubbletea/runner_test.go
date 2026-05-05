@@ -75,7 +75,7 @@ func TestJSRunner_BlocksCaller(t *testing.T) {
 	select {
 	case <-completed:
 		t.Fatal("RunJSSync should block until callback completes")
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond):
 		// Good - still blocking
 	}
 

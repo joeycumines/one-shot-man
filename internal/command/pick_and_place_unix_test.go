@@ -1237,42 +1237,20 @@ func TestPickAndPlace_MousePick_DirectClick(t *testing.T) {
 		t.Fatalf("Not in manual mode, got '%s'", state.Mode)
 	}
 
-	// Navigate actor near the blockade cube at (7, 18)
-	// Actor starts at ~(5, 11), need to move right and up/down to reach (7, 18)
-	// Move 2 right, then 7 down (assuming higher Y is down in screen coords)
-	for range 2 {
-		h.SendKey("d") // Move right
-		time.Sleep(100 * time.Millisecond)
+	// Navigate actor to the blockade cube at (7, 18) using pathfinding.
+	// Clicking on a ground cell triggers pathfinding, which is more reliable
+	// than keystroke navigation on resource-constrained CI runners where
+	// keypress processing can lag or be dropped.
+	adjacentX, adjacentY := 7, 17 // One cell above the cube at (7, 18)
+	if !h.NavigateToGrid(adjacentX, adjacentY, 10*time.Second, 1.5) {
+		t.Fatalf("Failed to navigate actor near cube at (%d, %d)", adjacentX, adjacentY)
 	}
-	for range 7 {
-		h.SendKey("s") // Move down
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	// Wait for movement to definitely finish
-	h.WaitForFrames(10)
-	time.Sleep(500 * time.Millisecond)
 
 	stateNearCube := h.GetDebugState()
 	t.Logf("Actor position near blockade: (%.1f, %.1f)", stateNearCube.ActorX, stateNearCube.ActorY)
 
-	// Verify actor is in position before clicking
-	// In CI environments, PTY may be slow so we may need to wait longer
-	targetY := 18.0
-	if stateNearCube.ActorY < targetY-1 {
-		t.Logf("Actor Y=%0.1f, waiting for movement to complete (target Y>=%0.1f)", stateNearCube.ActorY, targetY-1)
-		// Wait more and check again
-		h.WaitForFrames(10)
-		time.Sleep(500 * time.Millisecond)
-		stateNearCube = h.GetDebugState()
-		t.Logf("Actor position after extra wait: (%.1f, %.1f)", stateNearCube.ActorX, stateNearCube.ActorY)
-	}
-
-	// Click directly on a goal blockade cube (near goal area)
-	// Goal blockade cube 100 is at (7, 18) - right side of goal area
-	clickX := 7
-	clickY := 18
-
+	// Now click directly on the blockade cube at (7, 18)
+	clickX, clickY := 7, 18
 	t.Logf("Clicking directly on cube at (%d, %d)", clickX, clickY)
 
 	if err := h.ClickGrid(clickX, clickY); err != nil {
@@ -1291,14 +1269,11 @@ func TestPickAndPlace_MousePick_DirectClick(t *testing.T) {
 			return // Success
 		}
 
-		// If actor isn't near the target, move closer
+		// If actor isn't near the target, use pathfinding to move closer
 		stateCurrent := h.GetDebugState()
 		if stateCurrent.ActorY < 16 {
-			t.Logf("Retry %d/%d: Actor Y=%0.1f too low, moving down", retry+1, maxRetries, stateCurrent.ActorY)
-			h.SendKey("s")
-			time.Sleep(200 * time.Millisecond)
-			h.WaitForFrames(5)
-			time.Sleep(300 * time.Millisecond)
+			t.Logf("Retry %d/%d: Actor Y=%0.1f too low, pathfinding closer", retry+1, maxRetries, stateCurrent.ActorY)
+			h.NavigateToGrid(adjacentX, adjacentY, 5*time.Second, 1.5)
 			continue
 		}
 
@@ -1341,34 +1316,11 @@ func TestPickAndPlace_MousePick_HoldingItem(t *testing.T) {
 		t.Fatalf("Not in manual mode, got '%s'", state.Mode)
 	}
 
-	// Navigate actor near the blockade cube at (7, 18)
-	// Actor starts at ~(5, 11), need to move right and down.
-	// The blockade ring may obstruct direct paths so we use generous
-	// movement with position verification.
-	for range 2 {
-		h.SendKey("d") // Move right
-		time.Sleep(100 * time.Millisecond)
-	}
-	for range 7 {
-		h.SendKey("s") // Move down toward blockade ring
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	// Wait for movement to definitely finish
-	h.WaitForFrames(10)
-	time.Sleep(500 * time.Millisecond)
-
-	// Adaptive navigation: keep pushing down if actor hasn't reached target Y
-	for retry := range 5 {
-		stateNear := h.GetDebugState()
-		t.Logf("Navigation attempt %d: actor at (%.1f, %.1f)", retry, stateNear.ActorX, stateNear.ActorY)
-		if stateNear.ActorY >= 17 {
-			break
-		}
-		h.SendKey("s")
-		time.Sleep(200 * time.Millisecond)
-		h.WaitForFrames(5)
-		time.Sleep(300 * time.Millisecond)
+	// Navigate actor near the blockade cube at (7, 18) using pathfinding.
+	// Click on adjacent cell to pathfind there, then click the cube to pick it up.
+	adjacentX, adjacentY := 7, 17
+	if !h.NavigateToGrid(adjacentX, adjacentY, 10*time.Second, 1.5) {
+		t.Fatalf("Failed to navigate actor near cube at (%d, %d)", adjacentX, adjacentY)
 	}
 
 	stateNear := h.GetDebugState()
@@ -1392,11 +1344,9 @@ func TestPickAndPlace_MousePick_HoldingItem(t *testing.T) {
 			break
 		}
 		t.Logf("Pick retry %d: held=%d, actor at (%.1f, %.1f)", retry, stateAfterPick.HeldItemID, stateAfterPick.ActorX, stateAfterPick.ActorY)
-		// If actor is too far, try moving closer
+		// If actor is too far, pathfind closer
 		if stateAfterPick.ActorY < 17 {
-			h.SendKey("s")
-			time.Sleep(200 * time.Millisecond)
-			h.WaitForFrames(5)
+			h.NavigateToGrid(adjacentX, adjacentY, 5*time.Second, 1.5)
 		}
 	}
 

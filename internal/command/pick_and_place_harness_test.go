@@ -838,6 +838,32 @@ func (h *PickAndPlaceHarness) ClickGrid(x, y int) error {
 	return h.Click(x+spaceX+2, y+1)
 }
 
+// NavigateToGrid uses pathfinding to move the actor to the specified grid
+// coordinates. It clicks on the target cell, which triggers the game's
+// pathfinding system. This is more reliable than SendKey-based movement
+// on resource-constrained CI runners where keypress processing can lag.
+// It waits up to maxWait for the actor to arrive within threshold distance.
+func (h *PickAndPlaceHarness) NavigateToGrid(x, y int, maxWait time.Duration, threshold float64) bool {
+	deadline := time.Now().Add(maxWait)
+	for time.Now().Before(deadline) {
+		state := h.GetDebugState()
+		dx := state.ActorX - float64(x)
+		dy := state.ActorY - float64(y)
+		dist := dx*dx + dy*dy
+		if dist <= threshold*threshold {
+			return true
+		}
+		// Click on target cell to trigger pathfinding
+		if err := h.ClickGrid(x, y); err != nil {
+			h.t.Logf("NavigateToGrid: click error: %v", err)
+			return false
+		}
+		h.WaitForFrames(10)
+		time.Sleep(500 * time.Millisecond)
+	}
+	return false
+}
+
 // ClickAtBufferPosition sends a mouse click at the specified buffer-absolute
 // coordinates (1-indexed). The buffer row is converted to viewport-relative
 // coordinates before sending the SGR mouse event.

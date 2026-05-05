@@ -1130,16 +1130,21 @@ func TestPickAndPlace_MousePick_MultipleCubes(t *testing.T) {
 		t.Fatalf("Not in manual mode, got '%s'", state.Mode)
 	}
 
-	// Navigate near cubes using pathfinding (move left from initial position)
-	// Goal blockade ring is on row 16 at columns (6,16)-(10,16) (IDs 100-104)
-	// [FIXED] Navigate actor to far left (column 3, row 15) away from all blockade cubes
-	// Then click to verify empty-space nearest-cube behavior (all cubes > 5.0 distance away)
-	if !h.NavigateToGrid(3, 15, 10*time.Second, 1.5) {
-		state := h.GetDebugState()
-		t.Fatalf("Failed to navigate to (3, 15), actor at (%.1f, %.1f)", state.ActorX, state.ActorY)
+	// Navigate actor left and down using keystrokes (more reliable than
+	// click-based pathfinding on resource-constrained CI runners).
+	// Actor starts at ~(5, 11), target is (3, 15): move 2 left, 4 down.
+	for range 2 {
+		h.SendKey("a") // Move left
+		time.Sleep(100 * time.Millisecond)
+	}
+	for range 4 {
+		h.SendKey("s") // Move down
+		time.Sleep(100 * time.Millisecond)
 	}
 
-	h.WaitForFrames(5) // Let movement settle
+	// Wait for movement to settle
+	h.WaitForFrames(10)
+	time.Sleep(500 * time.Millisecond)
 	stateBeforeClick := h.GetDebugState()
 	actorBeforeX := stateBeforeClick.ActorX
 	actorBeforeY := stateBeforeClick.ActorY

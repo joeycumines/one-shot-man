@@ -60,8 +60,10 @@ func TestJSRunner_BlocksCaller(t *testing.T) {
 	go func() {
 		close(started)
 		err := jsRunner.RunJSSync(func(vm *goja.Runtime) error {
-			// Simulate some work
-			time.Sleep(50 * time.Millisecond)
+			// Simulate some work — must be significantly longer than the
+			// blocking check window to avoid races on CI runners with
+			// coarse goroutine scheduling.
+			time.Sleep(200 * time.Millisecond)
 			return nil
 		})
 		assert.NoError(t, err)
@@ -71,7 +73,9 @@ func TestJSRunner_BlocksCaller(t *testing.T) {
 	// Wait for goroutine to start
 	<-started
 
-	// The goroutine should be blocked - completed should not be closed yet
+	// The goroutine should be blocked - completed should not be closed yet.
+	// The 50ms window is well within the 200ms callback, but generous
+	// enough to survive CI scheduling jitter.
 	select {
 	case <-completed:
 		t.Fatal("RunJSSync should block until callback completes")
@@ -83,7 +87,7 @@ func TestJSRunner_BlocksCaller(t *testing.T) {
 	select {
 	case <-completed:
 		// Good - callback completed
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(1 * time.Second):
 		t.Fatal("RunJSSync should eventually complete")
 	}
 }

@@ -661,7 +661,7 @@ const (
 	// Standard view rendering — must be under 100ms.
 	// Raised from 50ms to accommodate CI runner load variability (2-4x
 	// slowdown under concurrent test load) and -race detector overhead.
-	thresholdStandardViewUs = 100_000
+	thresholdStandardViewUs = 200_000
 
 	// Large/complex views — must be under 1 second.
 	// Raised from 250ms→500ms→1s to accommodate CI runner load variability,

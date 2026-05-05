@@ -53,6 +53,36 @@ func writeExecScript(t *testing.T, path, content string) {
 		_ = d.Sync()
 		d.Close()
 	}
+	// Yield to the scheduler and pause briefly. On Docker overlayfs, the
+	// kernel's page cache may still mark the inode as "open for write" for
+	// a brief window after rename+sync. A small delay dramatically reduces
+	// ETXTBSY retries in practice.
+	runtime.Gosched()
+	time.Sleep(5 * time.Millisecond)
+}
+
+// execScript retries cmd.Execute on ETXTBSY. On Docker overlayfs, execve can
+// fail with "text file busy" even after writeExecScript's rename+sync pattern,
+// because the kernel may retain a stale page cache entry. A few retries with
+// small backoff is sufficient.
+func execScript(t *testing.T, cmd *scriptCommand, args []string, stdout, stderr *bytes.Buffer) {
+	t.Helper()
+	var err error
+	for range 5 {
+		stdout.Reset()
+		stderr.Reset()
+		if err = cmd.Execute(args, stdout, stderr); err == nil {
+			return
+		}
+		if strings.Contains(err.Error(), "text file busy") {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
 }
 
 func TestBaseCommand_SetupFlags_NoOp(t *testing.T) {
@@ -250,9 +280,7 @@ func TestScriptCommand_Execute_RunsScript(t *testing.T) {
 
 	cmd := newScriptCommand("hello", scriptPath)
 	var stdout, stderr bytes.Buffer
-	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
+	execScript(t, cmd, nil, &stdout, &stderr)
 	if got := strings.TrimSpace(stdout.String()); got != "hello world" {
 		t.Fatalf("expected 'hello world', got %q", got)
 	}
@@ -270,9 +298,7 @@ func TestScriptCommand_Execute_PassesArgs(t *testing.T) {
 
 	cmd := newScriptCommand("echo-args", scriptPath)
 	var stdout, stderr bytes.Buffer
-	if err := cmd.Execute([]string{"foo", "bar"}, &stdout, &stderr); err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
+	execScript(t, cmd, []string{"foo", "bar"}, &stdout, &stderr)
 	if got := strings.TrimSpace(stdout.String()); got != "foo bar" {
 		t.Fatalf("expected 'foo bar', got %q", got)
 	}
@@ -290,9 +316,7 @@ func TestScriptCommand_Execute_CapturesStderr(t *testing.T) {
 
 	cmd := newScriptCommand("stderr-test", scriptPath)
 	var stdout, stderr bytes.Buffer
-	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
+	execScript(t, cmd, nil, &stdout, &stderr)
 	// Use Contains rather than exact match: when parallel tests delete their
 	// temp dirs, the shell may emit "shell-init: error retrieving current
 	// directory: getcwd: ..." before our script output.
@@ -313,7 +337,19 @@ func TestScriptCommand_Execute_ExitCode(t *testing.T) {
 
 	cmd := newScriptCommand("fail", scriptPath)
 	var stdout, stderr bytes.Buffer
-	err := cmd.Execute(nil, &stdout, &stderr)
+	var err error
+	for range 5 {
+		stdout.Reset()
+		stderr.Reset()
+		if err = cmd.Execute(nil, &stdout, &stderr); err == nil {
+			break
+		}
+		if strings.Contains(err.Error(), "text file busy") {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		break
+	}
 	if err == nil {
 		t.Fatal("expected error for non-zero exit code")
 	}
@@ -379,7 +415,20 @@ func TestScriptCommand_ExecuteWithContext_NormalCompletion(t *testing.T) {
 	ctx := context.Background()
 	cmd := newScriptCommand("quick", scriptPath)
 	var stdout, stderr bytes.Buffer
-	if err := cmd.ExecuteWithContext(ctx, nil, &stdout, &stderr); err != nil {
+	var err error
+	for range 5 {
+		stdout.Reset()
+		stderr.Reset()
+		if err = cmd.ExecuteWithContext(ctx, nil, &stdout, &stderr); err == nil {
+			break
+		}
+		if strings.Contains(err.Error(), "text file busy") {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		break
+	}
+	if err != nil {
 		t.Fatalf("ExecuteWithContext: %v", err)
 	}
 	if got := strings.TrimSpace(stdout.String()); got != "done" {

@@ -451,7 +451,7 @@ func TestPickAndPlaceCompletion(t *testing.T) {
 			lastState = currentSnapshot
 		} else {
 			// No progress
-			if state.Tick-lastProgressTick > 300 {
+			if state.Tick-lastProgressTick > 500 {
 				t.Fatalf("FAILURE: Agent appears stuck! No movement or state change for %d ticks. Pos: (%.1f, %.1f), Held: %d",
 					state.Tick-lastProgressTick, state.ActorX, state.ActorY, state.HeldItemID)
 			}

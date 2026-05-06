@@ -2114,7 +2114,7 @@ func TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	env := newTestProcessEnv(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	cp, err := termtest.NewConsole(ctx,
@@ -2149,15 +2149,16 @@ func TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping(t *testing.T) {
 	sendKey(t, cp, "\t")
 	time.Sleep(50 * time.Millisecond)
 
-	// Type 30 lines of content - use shorter content to speed up test
+	// Type 30 lines of content - use shorter content to speed up test.
+	// Use ptyCharDelay (25ms) instead of 3ms to avoid garbled input on CI.
 	for i := 0; i < 30; i++ {
 		line := fmt.Sprintf("TL%03d", i+1)
 		for _, ch := range line {
 			sendKey(t, cp, string(ch))
-			time.Sleep(3 * time.Millisecond)
+			time.Sleep(ptyCharDelay)
 		}
 		sendKey(t, cp, "\r") // Enter for newline
-		time.Sleep(3 * time.Millisecond)
+		time.Sleep(ptyCharDelay)
 	}
 
 	// Type a marker at the end (cursor is here after typing all lines)

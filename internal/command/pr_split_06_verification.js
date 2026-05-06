@@ -69,7 +69,13 @@
 
         if (timeoutMs > 0 && !isWindows()) {
             var timeoutSec = Math.ceil(timeoutMs / 1000);
-            shellCmd = 'timeout ' + timeoutSec + ' sh -c ' + shellQuote(shellCmd);
+            // Portable shell timeout: works on macOS (no GNU coreutils) and Linux.
+            // Spawns a watchdog that kills the command after timeoutSec. If the
+            // command finishes first, the watchdog is killed immediately.
+            // The watchdog's stdout/stderr are redirected to /dev/null to prevent
+            // FD inheritance from keeping Go's cmd.Wait() alive after the main
+            // command exits.
+            shellCmd = '( ' + shellCmd + ' ) & _pid=$!; ( sleep ' + timeoutSec + '; kill $_pid 2>/dev/null ) >/dev/null 2>&1 & _watch=$!; wait $_pid; _rc=$?; kill $_watch 2>/dev/null; wait $_watch 2>/dev/null; exit $_rc';
         }
         // Note: Windows timeout is an interactive command; timeout handling
         // for Windows relies on the Go-level deadline in shellSpawnSync.
@@ -102,7 +108,7 @@
 
         cleanupWorktree();
 
-        if (timeoutMs > 0 && (result.code === 124 || elapsedMs >= timeoutMs)) {
+        if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
                 passed: false,
@@ -533,7 +539,8 @@
 
         if (timeoutMs > 0 && !isWindows()) {
             var timeoutSec = Math.ceil(timeoutMs / 1000);
-            shellCmd = 'timeout ' + timeoutSec + ' sh -c ' + shellQuote(shellCmd);
+            // Portable shell timeout: works on macOS (no GNU coreutils) and Linux.
+            shellCmd = '( ' + shellCmd + ' ) & _pid=$!; ( sleep ' + timeoutSec + '; kill $_pid 2>/dev/null ) >/dev/null 2>&1 & _watch=$!; wait $_pid; _rc=$?; kill $_watch 2>/dev/null; wait $_watch 2>/dev/null; exit $_rc';
         }
 
         var stdoutBuf = '';
@@ -587,7 +594,7 @@
 
         await cleanupWorktreeAsync();
 
-        if (timeoutMs > 0 && (exitCode === 124 || elapsedMs >= timeoutMs)) {
+        if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
                 passed: false,

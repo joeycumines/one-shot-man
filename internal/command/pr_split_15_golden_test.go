@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
@@ -14,6 +15,15 @@ import (
 // ---------------------------------------------------------------------------
 
 var updateGolden = flag.Bool("update-golden", false, "update golden files")
+
+// skipGoldenWindows skips golden tests on Windows as lipgloss rendering
+// may differ slightly across platforms (ANSI handling, etc.).
+func skipGoldenWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping golden test on Windows (platform-specific rendering)")
+	}
+}
 
 func testGolden(t *testing.T, name string, got string) {
 	t.Helper()
@@ -47,6 +57,7 @@ func testGolden(t *testing.T, name string, got string) {
 // TestGolden_VerifyPane_Running renders the verify pane with an active
 // session in running state and compares against the stored golden file.
 func TestGolden_VerifyPane_Running(t *testing.T) {
+	skipGoldenWindows(t)
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
@@ -70,6 +81,7 @@ func TestGolden_VerifyPane_Running(t *testing.T) {
 // TestGolden_VerifyPane_Paused renders the verify pane in paused state
 // and compares against the stored golden file.
 func TestGolden_VerifyPane_Paused(t *testing.T) {
+	skipGoldenWindows(t)
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 

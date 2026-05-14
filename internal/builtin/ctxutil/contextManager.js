@@ -33,6 +33,8 @@
         const {openEditor: _openEditor, clipboardCopy: _clipboardCopy, fileExists: _fileExists} = require('osm:os');
         const {formatArgv: _formatArgv, parseArgv: _parseArgv} = require('osm:argv');
         const {execv: _execv} = require('osm:exec');
+        const {count: _tokenCount, byteCount: _byteCount, lineCount: _lineCount} = require('osm:tokenizer');
+        const _fmt = require('osm:format');
 
         options = options || {};
 
@@ -67,6 +69,8 @@
         const parseArgv = options.parseArgv || _parseArgv;
 
         const execv = options.execv || _execv;
+
+        // ---- copy notification uses osm:format module ----
 
         // Refresh all file-type context items to pick up new files in directories
         // and updated content. Errors are silently ignored (e.g., deleted files).
@@ -336,7 +340,14 @@
                         const text = buildPrompt();
                         try {
                             clipboardCopy(text);
-                            output.print("Prompt copied to clipboard.");
+                            const tokCnt = _tokenCount(text);
+                            const lineCnt = _lineCount(text);
+                            const byteCnt = _byteCount(text);
+                            const byteStr = _fmt.formatBytes(byteCnt);
+                            output.print(
+                                "Copied \u2502 " + _fmt.formatNum(tokCnt) + " tokens \u00b7 " +
+                                lineCnt + " lines \u00b7 " + byteStr + " \u2502"
+                            );
                             if (postCopyHint) {
                                 output.print(postCopyHint);
                             }

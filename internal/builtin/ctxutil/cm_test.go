@@ -1500,8 +1500,8 @@ func TestContextManagerPostCopyHint(t *testing.T) {
 	if len(outputs) != 2 {
 		t.Fatalf("expected 2 output calls (copy confirmation + hint), got %d: %v", len(outputs), outputs)
 	}
-	if !strings.Contains(outputs[0].(string), "Prompt copied to clipboard.") {
-		t.Errorf("expected copy confirmation, got %q", outputs[0])
+	if !strings.Contains(outputs[0].(string), "\u2502") {
+		t.Errorf("expected copy summary (│), got %q", outputs[0])
 	}
 	if !strings.Contains(outputs[1].(string), "[Hint]") {
 		t.Errorf("expected hint message, got %q", outputs[1])
@@ -1546,8 +1546,8 @@ func TestContextManagerPostCopyHintNotShownWhenEmpty(t *testing.T) {
 	if len(outputs) != 1 {
 		t.Fatalf("expected 1 output call (copy confirmation only, no hint), got %d: %v", len(outputs), outputs)
 	}
-	if !strings.Contains(outputs[0].(string), "Prompt copied to clipboard.") {
-		t.Errorf("expected copy confirmation, got %q", outputs[0])
+	if !strings.Contains(outputs[0].(string), "\u2502") {
+		t.Errorf("expected copy summary (│), got %q", outputs[0])
 	}
 }
 
@@ -2392,7 +2392,7 @@ func TestContextManagerRefreshWithoutContextGlobal(t *testing.T) {
 		t.Errorf("expected clipboard content, got %q", got)
 	}
 	outputs := runtime.Get("__outputCalls").Export().([]any)
-	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Prompt copied to clipboard") {
+	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "\u2502") {
 		t.Errorf("expected copy success message, got %v", outputs)
 	}
 }

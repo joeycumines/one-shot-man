@@ -4,6 +4,8 @@
 const {buildContext, contextManager} = require('osm:ctxutil');
 const nextIntegerId = require('osm:nextIntegerID');
 const template = require('osm:text/template');
+const {count: _tokenCount, byteCount: _byteCount, lineCount: _lineCount} = require('osm:tokenizer');
+const _fmt = require('osm:format');
 
 // Import shared symbols
 const shared = require('osm:sharedStateSymbols');
@@ -470,7 +472,13 @@ function buildCommands(state) {
 
                 try {
                     ctxmgr.clipboardCopy(text);
-                    output.print(label + " copied to clipboard.");
+                    const tokCnt = _tokenCount(text);
+                    const lineCnt = _lineCount(text);
+                    const byteCnt = _byteCount(text);
+                    output.print(
+                        "\u2502 " + _fmt.formatNum(tokCnt) + " tokens \u00b7 " +
+                        lineCnt + " lines \u00b7 " + _fmt.formatBytes(byteCnt) + " \u2502"
+                    );
                 } catch (e) {
                     output.print("Clipboard error: " + (e && e.message ? e.message : e));
                 }

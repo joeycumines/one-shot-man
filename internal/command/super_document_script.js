@@ -161,6 +161,8 @@ const zone = require('osm:bubblezone');
 const textareaLib = require('osm:bubbles/textarea');
 const viewportLib = require('osm:bubbles/viewport'); // MUST be used: integrate the viewport instance into list rendering (see SCROLLING section below). Do NOT leave this import unused.
 const scrollbarLib = require('osm:termui/scrollbar');
+const {count: _tokenCount, byteCount: _byteCount, lineCount: _lineCount} = require('osm:tokenizer');
+const _fmt = require('osm:format');
 
 // Import shared symbols
 const shared = require('osm:sharedStateSymbols');
@@ -1024,7 +1026,10 @@ function handleKeys(msg, s) {
                     const prompt = buildFinalPrompt();
                     try {
                         os.clipboardCopy(prompt);
-                        s.statusMsg = `Copied prompt (${prompt.length} chars)`;
+                        const tc = _tokenCount(prompt);
+                        const lc = _lineCount(prompt);
+                        const bc = _byteCount(prompt);
+                        s.statusMsg = "\u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
                         s.hasError = false;
                     } catch (e) {
                         s.statusMsg = 'Clipboard error: ' + e;
@@ -1190,7 +1195,10 @@ function handleKeys(msg, s) {
             try {
                 // Call the system clipboard via osm:os module
                 os.clipboardCopy(prompt);
-                s.statusMsg = `Copied prompt (${prompt.length} chars)`;
+                const tc2 = _tokenCount(prompt);
+                const lc2 = _lineCount(prompt);
+                const bc2 = _byteCount(prompt);
+                s.statusMsg = "\u2502 " + _fmt.formatNum(tc2) + " tokens \u00b7 " + lc2 + " lines \u00b7 " + _fmt.formatBytes(bc2) + " \u2502";
                 s.hasError = false;
             } catch (e) {
                 s.statusMsg = 'Clipboard error: ' + e;
@@ -1315,7 +1323,10 @@ function handleKeys(msg, s) {
                     if (allContent) {
                         try {
                             os.clipboardCopy(allContent);
-                            s.statusMsg = 'All content copied to clipboard (' + allContent.length + ' chars)';
+                            const tc3 = _tokenCount(allContent);
+                            const lc3 = _lineCount(allContent);
+                            const bc3 = _byteCount(allContent);
+                            s.statusMsg = 'All content copied \u2502 ' + _fmt.formatNum(tc3) + ' tokens \u00b7 ' + lc3 + ' lines \u00b7 ' + _fmt.formatBytes(bc3) + ' \u2502';
                             s.hasError = false;
                         } catch (e) {
                             s.statusMsg = 'Clipboard error: ' + e;
@@ -2396,7 +2407,10 @@ function buildCommands() {
                 const txt = buildFinalPrompt();
                 try {
                     ctxmgr.clipboardCopy(txt);
-                    output.print(`Copied ${txt.length} chars to clipboard.`);
+                    const tc4 = _tokenCount(txt);
+                    const lc4 = _lineCount(txt);
+                    const bc4 = _byteCount(txt);
+                    output.print("\u2502 " + _fmt.formatNum(tc4) + " tokens \u00b7 " + lc4 + " lines \u00b7 " + _fmt.formatBytes(bc4) + " \u2502");
                 } catch (e) {
                     output.print("Clipboard error: " + e);
                 }

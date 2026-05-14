@@ -23,6 +23,7 @@ import (
 	execmod "github.com/joeycumines/one-shot-man/internal/builtin/exec"
 	fetchmod "github.com/joeycumines/one-shot-man/internal/builtin/fetch"
 	flagmod "github.com/joeycumines/one-shot-man/internal/builtin/flag"
+	formatmod "github.com/joeycumines/one-shot-man/internal/builtin/format"
 	grpcmod "github.com/joeycumines/one-shot-man/internal/builtin/grpc"
 	jsonmod "github.com/joeycumines/one-shot-man/internal/builtin/json"
 	lipglossmod "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
@@ -37,6 +38,7 @@ import (
 	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
 	scrollbarmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/scrollbar"
 	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
+	tokenizermod "github.com/joeycumines/one-shot-man/internal/builtin/tokenizer"
 	unicodetextmod "github.com/joeycumines/one-shot-man/internal/builtin/unicodetext"
 )
 
@@ -135,6 +137,8 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.Require(ctx))
 	registry.RegisterNativeModule(prefix+"text/template", templatemod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"unicodetext", unicodetextmod.Require(ctx))
+	registry.RegisterNativeModule(prefix+"tokenizer", tokenizermod.Require)
+	registry.RegisterNativeModule(prefix+"format", formatmod.Require)
 
 	// Register lipgloss module - always available as it's stateless
 	lipglossMgr := lipglossmod.NewManager()

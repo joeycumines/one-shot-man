@@ -527,8 +527,8 @@ __result = {
 		t.Fatalf("expected copy button enter to remain in list mode, got %v", got)
 	}
 	statusMsg, _ := result["copyStatusMsg"].(string)
-	if !strings.Contains(statusMsg, "Copied prompt") {
-		t.Fatalf("expected copy button enter to set copied status, got %q", statusMsg)
+	if !strings.Contains(statusMsg, "\u2502") {
+		t.Fatalf("expected copy button enter to set copy summary, got %q", statusMsg)
 	}
 	if got := result["copyCmdType"]; got != nil {
 		t.Fatalf("expected copy button enter to return no command, got %v", got)

@@ -70,7 +70,5 @@ DIRECTIVE.txt
 /.claude/skills/skill-database-go
 /.claude/skills/slopless-researcher
 /.claude/skills/takumi-prompting
-/WIP.md
-/.agents
 .mcp.json
 __pycache__

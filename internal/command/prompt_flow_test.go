@@ -917,9 +917,9 @@ func TestPromptFlowCommand_OneStepCopyRawContext(t *testing.T) {
 		t.Fatalf("copy failed: %v", err)
 	}
 	copyOut := stdout.String()
-	// Should label as "Context" not "Meta prompt"
-	if !strings.Contains(copyOut, "Context") {
-		t.Fatalf("expected 'Context' label in copy output, got:\n%s", copyOut)
+	// Should show copy summary (│ token/line/byte counts)
+	if !strings.Contains(copyOut, "\u2502") {
+		t.Fatalf("expected copy summary, got:\n%s", copyOut)
 	}
 	if strings.Contains(copyOut, "Meta prompt") {
 		t.Fatalf("should NOT show 'Meta prompt' label in one-step mode, got:\n%s", copyOut)
@@ -969,9 +969,9 @@ func TestPromptFlowCommand_OneStepBackwardCompat(t *testing.T) {
 	if !strings.Contains(copyOut, "(Auto-generated meta-prompt)") {
 		t.Fatalf("expected auto-generate with goal set, got:\n%s", copyOut)
 	}
-	// Should label as "Meta prompt" not "Context"
-	if !strings.Contains(copyOut, "Meta prompt") {
-		t.Fatalf("expected 'Meta prompt' label with goal set, got:\n%s", copyOut)
+	// Should show copy summary with token/line/byte counts
+	if !strings.Contains(copyOut, "\u2502") {
+		t.Fatalf("expected copy summary with goal set, got:\n%s", copyOut)
 	}
 }
 
@@ -990,8 +990,8 @@ func TestPromptFlowCommand_OneStepEmptyContext(t *testing.T) {
 	if strings.Contains(copyOut, "(Auto-generated meta-prompt)") {
 		t.Fatalf("expected NO auto-generate with no goal, got:\n%s", copyOut)
 	}
-	// Should use "Context" label even when empty
-	if !strings.Contains(copyOut, "Context") {
-		t.Fatalf("expected 'Context' label for empty one-step mode, got:\n%s", copyOut)
+	// Should show copy summary even when empty
+	if !strings.Contains(copyOut, "\u2502") {
+		t.Fatalf("expected copy summary for empty one-step mode, got:\n%s", copyOut)
 	}
 }

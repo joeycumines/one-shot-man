@@ -28,6 +28,10 @@ import (
 func prSplitTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	t.Helper()
 
+	if testing.Short() {
+		t.Skip("skipping PR-split test in -short mode")
+	}
+
 	if runtime.GOOS == "windows" {
 		t.Skip("PR split uses sh -c; skipping on Windows")
 	}

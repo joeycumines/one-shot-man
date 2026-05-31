@@ -23,6 +23,10 @@ import (
 func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	t.Helper()
 
+	if testing.Short() {
+		t.Skip("skipping templates test in -short mode")
+	}
+
 	if runtime.GOOS == "windows" {
 		t.Skip("claudemux templates use sh -c; skipping on Windows")
 	}

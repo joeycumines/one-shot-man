@@ -232,7 +232,8 @@ func TestMultiAgent_PanelWithAgents(t *testing.T) {
 	}
 
 	// Subscribe to agent output via the bus.
-	outputCh := mpanel.SubscribeToAgent("planner-1")
+	outputCh, cancelSub := mpanel.SubscribeToAgent("planner-1")
+	defer cancelSub()
 	done := make(chan struct{})
 	go func() {
 		<-outputCh
@@ -340,7 +341,7 @@ func TestMultiAgent_FullPipeline(t *testing.T) {
 	done := make(chan struct{}, len(agents))
 
 	for _, a := range agents {
-		ch := mpanel.SubscribeToAgent(a.id)
+		ch, _ := mpanel.SubscribeToAgent(a.id)
 		go func(agentID, output string) {
 			for msg := range ch {
 				if msg.AgentID == agentID {

@@ -28,6 +28,23 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 		_ = exports.Set("EVENT_ERROR", int(EventError))
 		_ = exports.Set("EVENT_THINKING", int(EventThinking))
 
+		// TUI state constants.
+		_ = exports.Set("TUI_STATE_INITIALIZING", int(StateInitializing))
+		_ = exports.Set("TUI_STATE_READY", int(StateReady))
+		_ = exports.Set("TUI_STATE_PROCESSING", int(StateProcessing))
+		_ = exports.Set("TUI_STATE_RESPONDING", int(StateResponding))
+		_ = exports.Set("TUI_STATE_ERROR", int(StateError))
+		_ = exports.Set("TUI_STATE_RATE_LIMITED", int(StateRateLimited))
+		_ = exports.Set("TUI_STATE_PERMISSION_PROMPT", int(StatePermissionPrompt))
+
+		// tuiStateName(state: number): string
+		_ = exports.Set("tuiStateName", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("tuiStateName: state argument is required"))
+			}
+			return runtime.ToValue(TUIStateName(TUIState(call.Argument(0).ToInteger())))
+		})
+
 		// newParser(): creates a new Parser and returns a wrapped JS object.
 		_ = exports.Set("newParser", func(call goja.FunctionCall) goja.Value {
 			p := NewParser()
@@ -80,10 +97,30 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			return wrapProvider(runtime, p)
 		})
 
+		// mockClaude(opts?): creates a MockClaudeProvider for integration testing.
+		_ = exports.Set("mockClaude", func(call goja.FunctionCall) goja.Value {
+			p := &MockClaudeProvider{}
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				opts := call.Argument(0).ToObject(runtime)
+				if v := opts.Get("processingMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					p.ProcessingMs = int(v.ToInteger())
+				}
+				if v := opts.Get("path"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					p.Path = v.String()
+				}
+			}
+			return wrapProvider(runtime, p)
+		})
+
 		// Keystroke constants for TUI navigation.
 		_ = exports.Set("KEY_ARROW_UP", KeyArrowUp)
 		_ = exports.Set("KEY_ARROW_DOWN", KeyArrowDown)
 		_ = exports.Set("KEY_ENTER", KeyEnter)
+
+		// Spawn mode constants.
+		_ = exports.Set("MODE_TUI", int(ModeTUI))
+		_ = exports.Set("MODE_PROTOCOL", int(ModeProtocol))
+		_ = exports.Set("MODE_PRINT", int(ModePrint))
 
 		// parseModelMenu(lines: string[]): { models: string[], selectedIndex: number }
 		// Parses model selection TUI output into a structured ModelMenu.
@@ -248,6 +285,35 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 				panic(runtime.NewTypeError("recoveryActionName: action argument is required"))
 			}
 			return runtime.ToValue(RecoveryActionName(RecoveryAction(call.Argument(0).ToInteger())))
+		})
+
+		// Detect mode constants.
+		_ = exports.Set("DETECT_MODE_PROTOCOL", int(DetectModeProtocol))
+		_ = exports.Set("DETECT_MODE_TUI", int(DetectModeTUI))
+
+		// detectModeName(mode: number): string
+		_ = exports.Set("detectModeName", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("detectModeName: mode argument is required"))
+			}
+			return runtime.ToValue(DetectModeName(DetectMode(call.Argument(0).ToInteger())))
+		})
+
+		// newComposedDetector(mode, config?): creates a ComposedDetector.
+		_ = exports.Set("newComposedDetector", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("newComposedDetector: mode argument is required"))
+			}
+			mode := DetectMode(call.Argument(0).ToInteger())
+			config := DefaultClaudeCodeTUIStateConfig()
+			if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+				config = jsToTUIStateMachineConfig(runtime, call.Argument(1))
+			}
+			d, err := NewComposedDetector(mode, config)
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return wrapComposedDetector(runtime, d)
 		})
 
 		// defaultSupervisorConfig(): object
@@ -826,6 +892,247 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 		_ = exports.Set("ACK_EXECUTING", string(AckExecuting))
 		_ = exports.Set("ACK_COMPLETED", string(AckCompleted))
 		_ = exports.Set("ACK_REJECTED", string(AckRejected))
+
+		// --- TUI State Machine ---
+
+		// newTUIStateMachine(config?): creates a TUIStateMachine.
+		_ = exports.Set("newTUIStateMachine", func(call goja.FunctionCall) goja.Value {
+			config := DefaultClaudeCodeTUIStateConfig()
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				config = jsToTUIStateMachineConfig(runtime, call.Argument(0))
+			}
+			sm, err := NewTUIStateMachine(config)
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return wrapTUIStateMachine(runtime, sm)
+		})
+
+		// --- VT State Detector ---
+
+		// newVTStateDetector(config?): creates a VTStateDetector.
+		_ = exports.Set("newVTStateDetector", func(call goja.FunctionCall) goja.Value {
+			config := DefaultClaudeCodeTUIStateConfig()
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				config = jsToTUIStateMachineConfig(runtime, call.Argument(0))
+			}
+			det, err := NewVTStateDetector(config)
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return wrapVTStateDetector(runtime, det)
+		})
+
+		// --- Settle Detection ---
+
+		// defaultSettleConfig(): object
+		_ = exports.Set("defaultSettleConfig", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultSettleConfig()
+			obj := runtime.NewObject()
+			_ = obj.Set("stableDurationMs", cfg.StableDuration.Milliseconds())
+			_ = obj.Set("pollIntervalMs", cfg.PollInterval.Milliseconds())
+			_ = obj.Set("targetState", int(cfg.TargetState))
+			return obj
+		})
+
+		// waitSettle(handle, detector, config?): {state, durationMs, error}
+		_ = exports.Set("waitSettle", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(runtime.NewTypeError("waitSettle: handle and detector arguments required"))
+			}
+			h, ok := extractAgentHandle(runtime, call.Argument(0))
+			if !ok {
+				panic(runtime.NewTypeError("waitSettle: first argument must be an agent handle"))
+			}
+			ptyReader, ok := h.(PTYReader)
+			if !ok {
+				panic(runtime.NewTypeError("waitSettle: handle does not implement PTYReader"))
+			}
+			detVal := call.Argument(1).ToObject(runtime)
+			goDet := detVal.Get("_goVTStateDetector")
+			if goDet == nil || goja.IsUndefined(goDet) {
+				panic(runtime.NewTypeError("waitSettle: second argument must be a VT state detector"))
+			}
+			det, ok := goDet.Export().(*VTStateDetector)
+			if !ok {
+				panic(runtime.NewTypeError("waitSettle: second argument must be a VT state detector"))
+			}
+			config := DefaultSettleConfig()
+			if len(call.Arguments) > 2 && !goja.IsUndefined(call.Argument(2)) && !goja.IsNull(call.Argument(2)) {
+				cfgObj := call.Argument(2).ToObject(runtime)
+				if v := cfgObj.Get("stableDurationMs"); v != nil && !goja.IsUndefined(v) {
+					config.StableDuration = time.Duration(v.ToInteger()) * time.Millisecond
+				}
+				if v := cfgObj.Get("pollIntervalMs"); v != nil && !goja.IsUndefined(v) {
+					config.PollInterval = time.Duration(v.ToInteger()) * time.Millisecond
+				}
+				if v := cfgObj.Get("targetState"); v != nil && !goja.IsUndefined(v) {
+					config.TargetState = TUIState(v.ToInteger())
+				}
+			}
+			state, duration, err := WaitSettle(ctx, ptyReader, det, config)
+			if err != nil {
+				panic(runtime.NewGoError(fmt.Errorf("waitSettle: %w", err)))
+			}
+			result := runtime.NewObject()
+			_ = result.Set("state", int(state))
+			_ = result.Set("stateName", tuiStateName(state))
+			_ = result.Set("durationMs", duration.Milliseconds())
+			return result
+		})
+
+		// --- Reliable Prompter ---
+
+		// newReliablePrompter(handle, provider, config?): creates a ReliablePrompter.
+		_ = exports.Set("newReliablePrompter", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(runtime.NewTypeError("newReliablePrompter: handle and provider arguments are required"))
+			}
+			handleObj := call.Argument(0).ToObject(runtime)
+			goHandle := handleObj.Get("_goHandle")
+			if goHandle == nil || goja.IsUndefined(goHandle) || goja.IsNull(goHandle) {
+				panic(runtime.NewTypeError("newReliablePrompter: first argument must be an agent handle"))
+			}
+			h, ok := goHandle.Export().(AgentHandle)
+			if !ok {
+				panic(runtime.NewTypeError("newReliablePrompter: first argument must be an agent handle"))
+			}
+
+			prov := unwrapProvider(runtime, call.Argument(1))
+
+			opts := PromptOpts{}
+			if len(call.Arguments) > 2 && !goja.IsUndefined(call.Argument(2)) && !goja.IsNull(call.Argument(2)) {
+				opts = jsToPromptOpts(runtime, call.Argument(2))
+			}
+
+			rp := NewReliablePrompter(h, prov, opts)
+			return wrapReliablePrompter(runtime, rp, ctx)
+		})
+
+		// --- Multi-Agent ---
+
+		// Role constants.
+		_ = exports.Set("ROLE_PLANNER", RolePlanner)
+		_ = exports.Set("ROLE_CODER", RoleCoder)
+		_ = exports.Set("ROLE_REVIEWER", RoleReviewer)
+		_ = exports.Set("ROLE_TESTER", RoleTester)
+		_ = exports.Set("ROLE_DEBUGGER", RoleDebugger)
+		_ = exports.Set("ROLE_DOCUMENTER", RoleDocumenter)
+
+		// Overflow constants.
+		_ = exports.Set("OVERFLOW_DROP_OLDEST", int(OverflowDropOldest))
+		_ = exports.Set("OVERFLOW_DROP_NEWEST", int(OverflowDropNewest))
+		_ = exports.Set("OVERFLOW_BLOCK", int(OverflowBlock))
+
+		// newAgentRegistry(): creates an AgentRegistry.
+		_ = exports.Set("newAgentRegistry", func(call goja.FunctionCall) goja.Value {
+			return wrapAgentRegistry(runtime, NewAgentRegistry())
+		})
+
+		// newRoleRegistry(): creates a RoleRegistry pre-loaded with default roles.
+		_ = exports.Set("newRoleRegistry", func(call goja.FunctionCall) goja.Value {
+			return wrapRoleRegistry(runtime, NewRoleRegistry())
+		})
+
+		// createRole(config): creates an AgentRole from a RoleConfig.
+		_ = exports.Set("createRole", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("createRole: config argument is required"))
+			}
+			config := jsToRoleConfig(runtime, call.Argument(0))
+			role := CreateRole(config)
+			return agentRoleToJS(runtime, role)
+		})
+
+		// newCoordinationBus(config?): creates a CoordinationBus.
+		_ = exports.Set("newCoordinationBus", func(call goja.FunctionCall) goja.Value {
+			config := DefaultConfig()
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				config = jsToBusConfig(runtime, call.Argument(0))
+			}
+			return wrapCoordinationBus(runtime, NewCoordinationBus(config))
+		})
+
+		// delegateTask(req, registry): delegates a task.
+		_ = exports.Set("delegateTask", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(runtime.NewTypeError("delegateTask: task request and agent registry arguments required"))
+			}
+			req := jsToTaskRequest(runtime, call.Argument(0))
+			regVal := call.Argument(1).ToObject(runtime)
+			goReg := regVal.Get("_goAgentRegistry")
+			if goReg == nil || goja.IsUndefined(goReg) || goja.IsNull(goReg) {
+				panic(runtime.NewTypeError("delegateTask: second argument must be an agent registry"))
+			}
+			reg, ok := goReg.Export().(*AgentRegistry)
+			if !ok {
+				panic(runtime.NewTypeError("delegateTask: second argument must be an agent registry"))
+			}
+			result, err := DelegateTask(req, reg)
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return taskResultToJS(runtime, result)
+		})
+
+		// newMultiAgentPanel(panel, bus, registry): creates a MultiAgentPanel.
+		_ = exports.Set("newMultiAgentPanel", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 3 {
+				panic(runtime.NewTypeError("newMultiAgentPanel: panel, bus, and registry arguments required"))
+			}
+			panelVal := call.Argument(0).ToObject(runtime)
+			goPanel := panelVal.Get("_goPanel")
+			if goPanel == nil || goja.IsUndefined(goPanel) {
+				panic(runtime.NewTypeError("newMultiAgentPanel: first argument must be a panel"))
+			}
+			panel, ok := goPanel.Export().(*Panel)
+			if !ok {
+				panic(runtime.NewTypeError("newMultiAgentPanel: first argument must be a panel"))
+			}
+
+			busVal := call.Argument(1).ToObject(runtime)
+			goBus := busVal.Get("_goCoordinationBus")
+			if goBus == nil || goja.IsUndefined(goBus) {
+				panic(runtime.NewTypeError("newMultiAgentPanel: second argument must be a coordination bus"))
+			}
+			bus, ok := goBus.Export().(*CoordinationBus)
+			if !ok {
+				panic(runtime.NewTypeError("newMultiAgentPanel: second argument must be a coordination bus"))
+			}
+
+			regVal := call.Argument(2).ToObject(runtime)
+			goReg := regVal.Get("_goAgentRegistry")
+			if goReg == nil || goja.IsUndefined(goReg) {
+				panic(runtime.NewTypeError("newMultiAgentPanel: third argument must be an agent registry"))
+			}
+			reg, ok := goReg.Export().(*AgentRegistry)
+			if !ok {
+				panic(runtime.NewTypeError("newMultiAgentPanel: third argument must be an agent registry"))
+			}
+
+			m := NewMultiAgentPanel(panel, bus, reg)
+			return wrapMultiAgentPanel(runtime, m)
+		})
+
+		// newAgentToolUI(detector, width, height): creates an AgentToolUI.
+		_ = exports.Set("newAgentToolUI", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 3 {
+				panic(runtime.NewTypeError("newAgentToolUI: detector, width, and height arguments required"))
+			}
+			detVal := call.Argument(0).ToObject(runtime)
+			goDet := detVal.Get("_goVTStateDetector")
+			if goDet == nil || goja.IsUndefined(goDet) {
+				panic(runtime.NewTypeError("newAgentToolUI: first argument must be a VT state detector"))
+			}
+			det, ok := goDet.Export().(*VTStateDetector)
+			if !ok {
+				panic(runtime.NewTypeError("newAgentToolUI: first argument must be a VT state detector"))
+			}
+			width := int(call.Argument(1).ToInteger())
+			height := int(call.Argument(2).ToInteger())
+			ui := NewAgentToolUI(det, width, height)
+			return wrapAgentToolUI(runtime, ui)
+		})
 	}
 }
 
@@ -1067,7 +1374,7 @@ func wrapRegistry(runtime *goja.Runtime, r *Registry, ctx context.Context) goja.
 		if err != nil {
 			panic(runtime.NewGoError(err))
 		}
-		return wrapAgentHandle(runtime, handle)
+		return wrapAgentHandle(runtime, handle, ctx)
 	})
 
 	return obj
@@ -1104,11 +1411,21 @@ func unwrapProvider(runtime *goja.Runtime, val goja.Value) Provider {
 	return p
 }
 
+func extractAgentHandle(runtime *goja.Runtime, val goja.Value) (AgentHandle, bool) {
+	obj := val.ToObject(runtime)
+	goH := obj.Get("_goHandle")
+	if goH == nil || goja.IsUndefined(goH) || goja.IsNull(goH) {
+		return nil, false
+	}
+	h, ok := goH.Export().(AgentHandle)
+	return h, ok
+}
+
 // wrapAgentHandle creates a JS object wrapping an AgentHandle with methods.
 // The original Go handle is stored as _goHandle so callers on the Go side
 // (e.g., tuiMux.attach) can extract it via Export and assert interface
 // compatibility without relying on Goja proxy objects.
-func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle) goja.Value {
+func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle, ctx context.Context) goja.Value {
 	obj := runtime.NewObject()
 
 	// Store the original Go handle for extraction on the Go side.
@@ -1166,6 +1483,20 @@ func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle) goja.Value {
 		rows := int(call.Argument(0).ToInteger())
 		cols := int(call.Argument(1).ToInteger())
 		if err := h.Resize(rows, cols); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// waitReady(timeoutMs: number): void — blocks until agent is ready or timeout
+	_ = obj.Set("waitReady", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("waitReady: timeoutMs argument is required"))
+		}
+		timeoutMs := call.Argument(0).ToInteger()
+		readyCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+		defer cancel()
+		if err := h.WaitReady(readyCtx); err != nil {
 			panic(runtime.NewGoError(err))
 		}
 		return goja.Undefined()
@@ -1250,6 +1581,9 @@ func parseSpawnOpts(runtime *goja.Runtime, obj *goja.Object, opts *SpawnOpts) {
 			panic(runtime.NewTypeError("spawn: args must be an array of strings"))
 		}
 		opts.Args = args
+	}
+	if v := obj.Get("mode"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		opts.Mode = SpawnMode(v.ToInteger())
 	}
 }
 
@@ -1896,8 +2230,8 @@ func workerStatsToJS(runtime *goja.Runtime, ws WorkerStats) goja.Value {
 	_ = obj.Set("id", ws.ID)
 	_ = obj.Set("state", int(ws.State))
 	_ = obj.Set("stateName", ws.StateName)
-	_ = obj.Set("taskCount", ws.TaskCount)
-	_ = obj.Set("errorCount", ws.ErrorCount)
+	_ = obj.Set("taskCount", int(ws.TaskCount))
+	_ = obj.Set("errorCount", int(ws.ErrorCount))
 	if !ws.LastTaskAt.IsZero() {
 		_ = obj.Set("lastTaskAt", ws.LastTaskAt.UnixMilli())
 	}
@@ -2054,6 +2388,38 @@ func wrapPool(runtime *goja.Runtime, p *Pool) goja.Value {
 		return poolConfigToJS(runtime, p.Config())
 	})
 
+	// acquireCapacity(): object
+	_ = obj.Set("acquireCapacity", func(call goja.FunctionCall) goja.Value {
+		w, err := p.AcquireCapacity()
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return wrapPoolWorker(runtime, w)
+	})
+
+	// routeTo(agentID: string): object
+	_ = obj.Set("routeTo", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("routeTo: agentID argument is required"))
+		}
+		w, err := p.RouteTo(call.Argument(0).String())
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return wrapPoolWorker(runtime, w)
+	})
+
+	// updateWorkerCapacity(id: string, capacity: number): void
+	_ = obj.Set("updateWorkerCapacity", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("updateWorkerCapacity: id and capacity arguments required"))
+		}
+		if err := p.UpdateWorkerCapacity(call.Argument(0).String(), int(call.Argument(1).ToInteger())); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
 	return obj
 }
 
@@ -2100,8 +2466,8 @@ func paneSnapshotToJS(runtime *goja.Runtime, ps PaneSnapshot) goja.Value {
 
 	health := runtime.NewObject()
 	_ = health.Set("state", ps.Health.State)
-	_ = health.Set("errorCount", ps.Health.ErrorCount)
-	_ = health.Set("taskCount", ps.Health.TaskCount)
+	_ = health.Set("errorCount", int(ps.Health.ErrorCount))
+	_ = health.Set("taskCount", int(ps.Health.TaskCount))
 	if !ps.Health.LastUpdate.IsZero() {
 		_ = health.Set("lastUpdate", ps.Health.LastUpdate.UnixMilli())
 	}
@@ -2128,6 +2494,9 @@ func panelSnapshotToJS(runtime *goja.Runtime, snap PanelSnapshot) goja.Value {
 // wrapPanel creates a JS object wrapping a *Panel with methods.
 func wrapPanel(runtime *goja.Runtime, panel *Panel) goja.Value {
 	obj := runtime.NewObject()
+
+	// Store Go reference for MultiAgentPanel extraction.
+	_ = obj.Set("_goPanel", panel)
 
 	// start(): void
 	_ = obj.Set("start", func() goja.Value {
@@ -2200,8 +2569,8 @@ func wrapPanel(runtime *goja.Runtime, panel *Panel) goja.Value {
 		_ = obj.Set("lines", len(pane.Scrollback))
 		health := runtime.NewObject()
 		_ = health.Set("state", pane.Health.State)
-		_ = health.Set("errorCount", pane.Health.ErrorCount)
-		_ = health.Set("taskCount", pane.Health.TaskCount)
+		_ = health.Set("errorCount", int(pane.Health.ErrorCount))
+		_ = health.Set("taskCount", int(pane.Health.TaskCount))
 		_ = obj.Set("health", health)
 		return obj
 	})
@@ -2977,6 +3346,843 @@ func wrapChoiceResolver(runtime *goja.Runtime, cr *ChoiceResolver) goja.Value {
 	// config(): object
 	_ = obj.Set("config", func() goja.Value {
 		return choiceConfigToJS(runtime, cr.Config())
+	})
+
+	return obj
+}
+
+// --- TUI State Machine Helpers ---
+
+// jsToTUIStateMachineConfig converts a JS object to a TUIStateMachineConfig.
+func jsToTUIStateMachineConfig(runtime *goja.Runtime, val goja.Value) TUIStateMachineConfig {
+	obj := val.ToObject(runtime)
+	config := DefaultClaudeCodeTUIStateConfig()
+	if v := obj.Get("readyPatterns"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		var patterns []string
+		if err := runtime.ExportTo(v, &patterns); err == nil {
+			config.ReadyPatterns = patterns
+		}
+	}
+	if v := obj.Get("processingPatterns"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		var patterns []string
+		if err := runtime.ExportTo(v, &patterns); err == nil {
+			config.ProcessingPatterns = patterns
+		}
+	}
+	if v := obj.Get("errorPatterns"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		var patterns []string
+		if err := runtime.ExportTo(v, &patterns); err == nil {
+			config.ErrorPatterns = patterns
+		}
+	}
+	if v := obj.Get("rateLimitPatterns"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		var patterns []string
+		if err := runtime.ExportTo(v, &patterns); err == nil {
+			config.RateLimitPatterns = patterns
+		}
+	}
+	if v := obj.Get("permissionPatterns"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		var patterns []string
+		if err := runtime.ExportTo(v, &patterns); err == nil {
+			config.PermissionPatterns = patterns
+		}
+	}
+	if v := obj.Get("startupTimeoutMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		config.StartupTimeout = time.Duration(v.ToInteger()) * time.Millisecond
+	}
+	if v := obj.Get("processingTimeoutMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		config.ProcessingTimeout = time.Duration(v.ToInteger()) * time.Millisecond
+	}
+	return config
+}
+
+// tuiStateUpdateToJS converts a TUIStateUpdate to a JS object.
+func tuiStateUpdateToJS(runtime *goja.Runtime, u TUIStateUpdate) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("from", int(u.From))
+	_ = obj.Set("to", int(u.To))
+	_ = obj.Set("state", int(u.State))
+	_ = obj.Set("stateName", u.StateName)
+	_ = obj.Set("pattern", u.Pattern)
+	_ = obj.Set("changed", u.Changed)
+	if !u.Timestamp.IsZero() {
+		_ = obj.Set("timestamp", u.Timestamp.UnixMilli())
+	}
+	if u.Fields != nil {
+		fields := runtime.NewObject()
+		for k, v := range u.Fields {
+			_ = fields.Set(k, v)
+		}
+		_ = obj.Set("fields", fields)
+	} else {
+		_ = obj.Set("fields", runtime.NewObject())
+	}
+	return obj
+}
+
+// wrapTUIStateMachine creates a JS object wrapping a *TUIStateMachine.
+func wrapTUIStateMachine(runtime *goja.Runtime, sm *TUIStateMachine) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("processOutput", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("processOutput: line argument is required"))
+		}
+		line := call.Argument(0).String()
+		update := sm.ProcessOutput(line, time.Now())
+		return tuiStateUpdateToJS(runtime, update)
+	})
+
+	_ = obj.Set("state", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(int(sm.State()))
+	})
+
+	_ = obj.Set("stateName", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(tuiStateName(sm.State()))
+	})
+
+	_ = obj.Set("reset", func(call goja.FunctionCall) goja.Value {
+		sm.Reset()
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("checkTimeout", func(call goja.FunctionCall) goja.Value {
+		now := time.Now()
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) {
+			now = time.UnixMilli(call.Argument(0).ToInteger())
+		}
+		update := sm.CheckTimeout(now)
+		return tuiStateUpdateToJS(runtime, update)
+	})
+
+	return obj
+}
+
+// --- VT State Detector Helpers ---
+
+// wrapVTStateDetector creates a JS object wrapping a *VTStateDetector.
+func wrapVTStateDetector(runtime *goja.Runtime, det *VTStateDetector) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("_goVTStateDetector", det)
+
+	_ = obj.Set("processRaw", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("processRaw: data argument is required"))
+		}
+		data := call.Argument(0).String()
+		updates := det.ProcessRaw([]byte(data), time.Now())
+		if len(updates) > 0 {
+			return tuiStateUpdateToJS(runtime, updates[len(updates)-1])
+		}
+		current := det.State()
+		return tuiStateUpdateToJS(runtime, TUIStateUpdate{
+			From:      current,
+			To:        current,
+			State:     current,
+			StateName: tuiStateName(current),
+			Changed:   false,
+		})
+	})
+
+	_ = obj.Set("state", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(int(det.State()))
+	})
+
+	_ = obj.Set("stateName", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(tuiStateName(det.State()))
+	})
+
+	_ = obj.Set("screenText", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(det.ScreenText())
+	})
+
+	_ = obj.Set("cursorPosition", func(call goja.FunctionCall) goja.Value {
+		row, col := det.CursorPosition()
+		result := runtime.NewObject()
+		_ = result.Set("row", row)
+		_ = result.Set("col", col)
+		return result
+	})
+
+	_ = obj.Set("lastNLines", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("lastNLines: n argument is required"))
+		}
+		n := int(call.Argument(0).ToInteger())
+		lines := det.LastNLines(n)
+		arr := runtime.NewArray()
+		for i, line := range lines {
+			_ = arr.Set(fmt.Sprintf("%d", i), line)
+		}
+		return arr
+	})
+
+	_ = obj.Set("reset", func(call goja.FunctionCall) goja.Value {
+		det.Reset()
+		return goja.Undefined()
+	})
+
+	return obj
+}
+
+// --- Reliable Prompter Helpers ---
+
+// jsToPromptOpts converts a JS object to a PromptOpts.
+func jsToPromptOpts(runtime *goja.Runtime, val goja.Value) PromptOpts {
+	obj := val.ToObject(runtime)
+	opts := PromptOpts{}
+	if v := obj.Get("readyTimeout"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		opts.ReadyTimeout = time.Duration(v.ToInteger()) * time.Millisecond
+	}
+	if v := obj.Get("acceptTimeout"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		opts.AcceptTimeout = time.Duration(v.ToInteger()) * time.Millisecond
+	}
+	if v := obj.Get("responseTimeout"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		opts.ResponseTimeout = time.Duration(v.ToInteger()) * time.Millisecond
+	}
+	if v := obj.Get("maxRetries"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		opts.MaxRetries = int(v.ToInteger())
+	}
+	if v := obj.Get("permissionPolicy"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		opts.PermissionPolicy = PermissionPolicy(v.ToInteger())
+	}
+	if v := obj.Get("detector"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		detObj := v.ToObject(runtime)
+		goDet := detObj.Get("_goVTStateDetector")
+		if goDet != nil && !goja.IsUndefined(goDet) {
+			det, ok := goDet.Export().(*VTStateDetector)
+			if ok {
+				opts.Detector = det
+			}
+		}
+	}
+	if v := obj.Get("chunkSize"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		opts.ChunkSize = int(v.ToInteger())
+	}
+	if v := obj.Get("chunkDelayMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		opts.ChunkDelay = time.Duration(v.ToInteger()) * time.Millisecond
+	}
+	return opts
+}
+
+// promptResultToJS converts a PromptResult to a JS object.
+func promptResultToJS(runtime *goja.Runtime, r *PromptResult) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("responseText", r.ResponseText)
+	_ = obj.Set("duration", int(r.Duration.Milliseconds()))
+
+	transitions := runtime.NewArray()
+	for i, st := range r.StateTransitions {
+		_ = transitions.Set(fmt.Sprintf("%d", i), tuiStateUpdateToJS(runtime, st))
+	}
+	_ = obj.Set("stateTransitions", transitions)
+
+	events := runtime.NewArray()
+	for i, ev := range r.Events {
+		_ = events.Set(fmt.Sprintf("%d", i), eventToJS(runtime, ev))
+	}
+	_ = obj.Set("events", events)
+
+	return obj
+}
+
+// wrapReliablePrompter creates a JS object wrapping a *ReliablePrompter.
+func wrapReliablePrompter(runtime *goja.Runtime, rp *ReliablePrompter, ctx context.Context) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("sendPrompt", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("sendPrompt: text argument is required"))
+		}
+		text := call.Argument(0).String()
+		result, err := rp.SendPrompt(ctx, text)
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return promptResultToJS(runtime, result)
+	})
+
+	_ = obj.Set("close", func(call goja.FunctionCall) goja.Value {
+		rp.Close()
+		return goja.Undefined()
+	})
+
+	return obj
+}
+
+// --- Multi-Agent Helpers ---
+
+// jsToAgentCapabilities converts a JS object to AgentCapabilities.
+func jsToAgentCapabilities(runtime *goja.Runtime, obj *goja.Object) AgentCapabilities {
+	var caps AgentCapabilities
+	if v := obj.Get("tools"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		_ = runtime.ExportTo(v, &caps.Tools)
+	}
+	if v := obj.Get("models"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		_ = runtime.ExportTo(v, &caps.Models)
+	}
+	if v := obj.Get("specialties"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		_ = runtime.ExportTo(v, &caps.Specialties)
+	}
+	if v := obj.Get("streaming"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		caps.Streaming = v.ToBoolean()
+	}
+	if v := obj.Get("multiTurn"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		caps.MultiTurn = v.ToBoolean()
+	}
+	return caps
+}
+
+// jsToCapabilityRequest converts a JS value to a CapabilityRequest.
+func jsToCapabilityRequest(runtime *goja.Runtime, val goja.Value) CapabilityRequest {
+	obj := val.ToObject(runtime)
+	var req CapabilityRequest
+	if v := obj.Get("requiredTools"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		_ = runtime.ExportTo(v, &req.RequiredTools)
+	}
+	if v := obj.Get("requiredModels"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		_ = runtime.ExportTo(v, &req.RequiredModels)
+	}
+	if v := obj.Get("requiredSpecialties"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		_ = runtime.ExportTo(v, &req.RequiredSpecialties)
+	}
+	if v := obj.Get("needStreaming"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		req.NeedStreaming = v.ToBoolean()
+	}
+	if v := obj.Get("needMultiTurn"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		req.NeedMultiTurn = v.ToBoolean()
+	}
+	return req
+}
+
+// jsToPaneHealth converts a JS value to a PaneHealth.
+func jsToPaneHealth(runtime *goja.Runtime, val goja.Value) PaneHealth {
+	obj := val.ToObject(runtime)
+	var health PaneHealth
+	if v := obj.Get("state"); v != nil && !goja.IsUndefined(v) {
+		health.State = v.String()
+	}
+	if v := obj.Get("errorCount"); v != nil && !goja.IsUndefined(v) {
+		health.ErrorCount = v.ToInteger()
+	}
+	if v := obj.Get("taskCount"); v != nil && !goja.IsUndefined(v) {
+		health.TaskCount = v.ToInteger()
+	}
+	return health
+}
+
+// wrapRegisteredAgent creates a JS object wrapping a *RegisteredAgent.
+func wrapRegisteredAgent(runtime *goja.Runtime, a *RegisteredAgent) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("id", a.ID)
+	_ = obj.Set("role", a.GetRole())
+	health := a.GetHealth()
+	hObj := runtime.NewObject()
+	_ = hObj.Set("state", health.State)
+	_ = hObj.Set("errorCount", int(health.ErrorCount))
+	_ = hObj.Set("taskCount", int(health.TaskCount))
+	_ = obj.Set("health", hObj)
+	return obj
+}
+
+// wrapAgentRegistry creates a JS object wrapping an *AgentRegistry.
+func wrapAgentRegistry(runtime *goja.Runtime, r *AgentRegistry) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("_goAgentRegistry", r)
+
+	_ = obj.Set("register", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("register: id and capabilities arguments required"))
+		}
+		id := call.Argument(0).String()
+		capsObj := call.Argument(1).ToObject(runtime)
+		caps := jsToAgentCapabilities(runtime, capsObj)
+		if err := r.Register(id, nil, caps); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("unregister", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("unregister: id argument required"))
+		}
+		if err := r.Unregister(call.Argument(0).String()); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("query", func(call goja.FunctionCall) goja.Value {
+		var req CapabilityRequest
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+			req = jsToCapabilityRequest(runtime, call.Argument(0))
+		}
+		ids := r.Query(req)
+		arr := runtime.NewArray()
+		for i, id := range ids {
+			_ = arr.Set(fmt.Sprintf("%d", i), id)
+		}
+		return arr
+	})
+
+	_ = obj.Set("select", func(call goja.FunctionCall) goja.Value {
+		var req CapabilityRequest
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+			req = jsToCapabilityRequest(runtime, call.Argument(0))
+		}
+		agent, err := r.Select(req)
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return wrapRegisteredAgent(runtime, agent)
+	})
+
+	_ = obj.Set("assignRole", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("assignRole: agentID and roleName arguments required"))
+		}
+		if err := r.AssignRole(call.Argument(0).String(), call.Argument(1).String()); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("getByRole", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("getByRole: roleName argument required"))
+		}
+		ids := r.GetByRole(call.Argument(0).String())
+		arr := runtime.NewArray()
+		for i, id := range ids {
+			_ = arr.Set(fmt.Sprintf("%d", i), id)
+		}
+		return arr
+	})
+
+	_ = obj.Set("updateHealth", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("updateHealth: agentID and health arguments required"))
+		}
+		health := jsToPaneHealth(runtime, call.Argument(1))
+		if err := r.UpdateHealth(call.Argument(0).String(), health); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("list", func(call goja.FunctionCall) goja.Value {
+		ids := r.List()
+		arr := runtime.NewArray()
+		for i, id := range ids {
+			_ = arr.Set(fmt.Sprintf("%d", i), id)
+		}
+		return arr
+	})
+
+	return obj
+}
+
+// jsToBusConfig converts a JS value to a BusConfig.
+func jsToBusConfig(runtime *goja.Runtime, val goja.Value) BusConfig {
+	obj := val.ToObject(runtime)
+	config := DefaultConfig()
+	if v := obj.Get("bufferSize"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		config.BufferSize = int(v.ToInteger())
+	}
+	if v := obj.Get("overflowPolicy"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		config.OverflowPolicy = OverflowPolicy(v.ToInteger())
+	}
+	return config
+}
+
+// jsToCoordinationMessage converts a JS object to a CoordinationMessage.
+func jsToCoordinationMessage(runtime *goja.Runtime, obj *goja.Object) CoordinationMessage {
+	var msg CoordinationMessage
+	if v := obj.Get("from"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		msg.From = v.String()
+	}
+	if v := obj.Get("to"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		msg.To = v.String()
+	}
+	if v := obj.Get("topic"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		msg.Topic = v.String()
+	}
+	if v := obj.Get("payload"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		msg.Payload = []byte(v.String())
+	}
+	return msg
+}
+
+// coordinationMessageToJS converts a CoordinationMessage to a JS object.
+func coordinationMessageToJS(runtime *goja.Runtime, msg CoordinationMessage) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("id", msg.ID)
+	_ = obj.Set("from", msg.From)
+	_ = obj.Set("to", msg.To)
+	_ = obj.Set("topic", msg.Topic)
+	_ = obj.Set("payload", string(msg.Payload))
+	if !msg.Timestamp.IsZero() {
+		_ = obj.Set("timestamp", msg.Timestamp.UnixMilli())
+	}
+	return obj
+}
+
+// wrapCoordinationBus creates a JS object wrapping a *CoordinationBus.
+func wrapCoordinationBus(runtime *goja.Runtime, bus *CoordinationBus) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("_goCoordinationBus", bus)
+
+	_ = obj.Set("publish", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("publish: message argument required"))
+		}
+		msgObj := call.Argument(0).ToObject(runtime)
+		msg := jsToCoordinationMessage(runtime, msgObj)
+		if err := bus.Publish(msg); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("subscribe", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("subscribe: agentID and handler arguments required"))
+		}
+		agentID := call.Argument(0).String()
+		fn, ok := goja.AssertFunction(call.Argument(1))
+		if !ok {
+			panic(runtime.NewTypeError("subscribe: handler must be a function"))
+		}
+		bus.Subscribe(agentID, func(msg CoordinationMessage) {
+			_, _ = fn(goja.Undefined(), coordinationMessageToJS(runtime, msg))
+		})
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("unsubscribe", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("unsubscribe: agentID argument required"))
+		}
+		bus.Unsubscribe(call.Argument(0).String())
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("close", func(call goja.FunctionCall) goja.Value {
+		bus.Close()
+		return goja.Undefined()
+	})
+
+	return obj
+}
+
+// jsToTaskRequest converts a JS value to a TaskRequest.
+func jsToTaskRequest(runtime *goja.Runtime, val goja.Value) TaskRequest {
+	obj := val.ToObject(runtime)
+	var req TaskRequest
+	if v := obj.Get("taskId"); v != nil && !goja.IsUndefined(v) {
+		req.TaskID = v.String()
+	}
+	if v := obj.Get("role"); v != nil && !goja.IsUndefined(v) {
+		req.Role = v.String()
+	}
+	if v := obj.Get("description"); v != nil && !goja.IsUndefined(v) {
+		req.Description = v.String()
+	}
+	return req
+}
+
+// taskResultToJS converts a TaskResult to a JS object.
+func taskResultToJS(runtime *goja.Runtime, r *TaskResult) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("taskId", r.TaskID)
+	_ = obj.Set("agentId", r.AgentID)
+	_ = obj.Set("status", r.Status)
+	_ = obj.Set("output", r.Output)
+	_ = obj.Set("error", r.Error)
+	_ = obj.Set("duration", int(r.Duration.Milliseconds()))
+	return obj
+}
+
+// wrapMultiAgentPanel creates a JS object wrapping a *MultiAgentPanel.
+func wrapMultiAgentPanel(runtime *goja.Runtime, m *MultiAgentPanel) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("addAgent", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 3 {
+			panic(runtime.NewTypeError("addAgent: agentID, title, and role arguments required"))
+		}
+		if err := m.AddAgent(call.Argument(0).String(), call.Argument(1).String(), call.Argument(2).String()); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("removeAgent", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("removeAgent: agentID argument required"))
+		}
+		if err := m.RemoveAgent(call.Argument(0).String()); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("setSize", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("setSize: width and height arguments required"))
+		}
+		m.SetSize(int(call.Argument(0).ToInteger()), int(call.Argument(1).ToInteger()))
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("toggleDashboard", func(call goja.FunctionCall) goja.Value {
+		m.ToggleDashboard()
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("snapshot", func(call goja.FunctionCall) goja.Value {
+		return panelSnapshotToJS(runtime, m.Snapshot())
+	})
+
+	_ = obj.Set("subscribeToAgent", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("subscribeToAgent: agentID and callback arguments required"))
+		}
+		agentID := call.Argument(0).String()
+		fn, ok := goja.AssertFunction(call.Argument(1))
+		if !ok {
+			panic(runtime.NewTypeError("subscribeToAgent: second argument must be a function"))
+		}
+		ch, cancel := m.SubscribeToAgent(agentID)
+		done := make(chan struct{})
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				case msg, ok := <-ch:
+					if !ok {
+						return
+					}
+					msgObj := runtime.NewObject()
+					_ = msgObj.Set("agentID", msg.AgentID)
+					_ = msgObj.Set("line", msg.Line)
+					_, _ = fn(goja.Undefined(), msgObj)
+				}
+			}
+		}()
+		unsubscribe := func(call goja.FunctionCall) goja.Value {
+			cancel()
+			close(done)
+			return goja.Undefined()
+		}
+		result := runtime.NewObject()
+		_ = result.Set("unsubscribe", unsubscribe)
+		return result
+	})
+
+	return obj
+}
+
+// wrapAgentToolUI creates a JS object wrapping an *AgentToolUI.
+func wrapAgentToolUI(runtime *goja.Runtime, a *AgentToolUI) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("processRaw", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("processRaw: data argument required"))
+		}
+		a.ProcessRaw([]byte(call.Argument(0).String()))
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("render", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(a.Render())
+	})
+
+	_ = obj.Set("renderStyled", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(a.RenderStyled())
+	})
+
+	_ = obj.Set("resize", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("resize: width and height arguments required"))
+		}
+		a.Resize(int(call.Argument(0).ToInteger()), int(call.Argument(1).ToInteger()))
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("getCursor", func(call goja.FunctionCall) goja.Value {
+		row, col := a.GetCursor()
+		result := runtime.NewObject()
+		_ = result.Set("row", row)
+		_ = result.Set("col", col)
+		return result
+	})
+
+	_ = obj.Set("clear", func(call goja.FunctionCall) goja.Value {
+		a.Clear()
+		return goja.Undefined()
+	})
+
+	return obj
+}
+
+func wrapComposedDetector(runtime *goja.Runtime, d *ComposedDetector) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("processEvent", func(call goja.FunctionCall) goja.Value {
+		if d.Mode() != DetectModeProtocol {
+			panic(runtime.NewTypeError("processEvent: detector is not in protocol mode; use processRaw for TUI mode"))
+		}
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("processEvent: event argument is required"))
+		}
+		evObj := call.Argument(0).ToObject(runtime)
+		var ev OutputEvent
+		if t := evObj.Get("type"); t != nil && !goja.IsUndefined(t) {
+			ev.Type = EventType(t.ToInteger())
+		}
+		if l := evObj.Get("line"); l != nil && !goja.IsUndefined(l) {
+			ev.Line = l.String()
+		}
+		if p := evObj.Get("pattern"); p != nil && !goja.IsUndefined(p) {
+			ev.Pattern = p.String()
+		}
+		if f := evObj.Get("fields"); f != nil && !goja.IsUndefined(f) && !goja.IsNull(f) {
+			fields := make(map[string]string)
+			if err := runtime.ExportTo(f, &fields); err == nil {
+				ev.Fields = fields
+			}
+		}
+		now := time.Now()
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) {
+			now = time.UnixMilli(call.Argument(1).ToInteger())
+		}
+		update := d.ProcessEvent(ev, now)
+		return tuiStateUpdateToJS(runtime, update)
+	})
+
+	_ = obj.Set("processRaw", func(call goja.FunctionCall) goja.Value {
+		if d.Mode() != DetectModeTUI {
+			panic(runtime.NewTypeError("processRaw: detector is not in TUI mode; use processEvent for protocol mode"))
+		}
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("processRaw: data argument is required"))
+		}
+		data := call.Argument(0).String()
+		updates := d.ProcessRaw([]byte(data), time.Now())
+		if len(updates) > 0 {
+			return tuiStateUpdateToJS(runtime, updates[len(updates)-1])
+		}
+		current := d.State()
+		return tuiStateUpdateToJS(runtime, TUIStateUpdate{
+			From:      current,
+			To:        current,
+			State:     current,
+			StateName: tuiStateName(current),
+			Changed:   false,
+		})
+	})
+
+	_ = obj.Set("state", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(int(d.State()))
+	})
+
+	_ = obj.Set("stateName", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(tuiStateName(d.State()))
+	})
+
+	_ = obj.Set("mode", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(int(d.Mode()))
+	})
+
+	_ = obj.Set("lastEvents", func(call goja.FunctionCall) goja.Value {
+		events := d.LastEvents()
+		arr := runtime.NewArray()
+		for i, ev := range events {
+			_ = arr.Set(fmt.Sprintf("%d", i), eventToJS(runtime, ev))
+		}
+		return arr
+	})
+
+	_ = obj.Set("reset", func(call goja.FunctionCall) goja.Value {
+		d.Reset()
+		return goja.Undefined()
+	})
+
+	return obj
+}
+
+func jsToRoleConfig(runtime *goja.Runtime, val goja.Value) RoleConfig {
+	obj := val.ToObject(runtime)
+	var config RoleConfig
+	if v := obj.Get("name"); v != nil && !goja.IsUndefined(v) {
+		config.Name = v.String()
+	}
+	if v := obj.Get("systemPrompt"); v != nil && !goja.IsUndefined(v) {
+		config.SystemPrompt = v.String()
+	}
+	if v := obj.Get("allowedTools"); v != nil && !goja.IsUndefined(v) {
+		_ = runtime.ExportTo(v, &config.AllowedTools)
+	}
+	if v := obj.Get("forbiddenTools"); v != nil && !goja.IsUndefined(v) {
+		_ = runtime.ExportTo(v, &config.ForbiddenTools)
+	}
+	if v := obj.Get("outputFormat"); v != nil && !goja.IsUndefined(v) {
+		config.OutputFormat = v.String()
+	}
+	if v := obj.Get("maxTurns"); v != nil && !goja.IsUndefined(v) {
+		config.MaxTurns = int(v.ToInteger())
+	}
+	return config
+}
+
+func agentRoleToJS(runtime *goja.Runtime, role *AgentRole) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("name", role.Name)
+	_ = obj.Set("systemPrompt", role.SystemPrompt)
+	allowedTools := runtime.NewArray()
+	for i, t := range role.AllowedTools {
+		_ = allowedTools.Set(fmt.Sprintf("%d", i), t)
+	}
+	_ = obj.Set("allowedTools", allowedTools)
+	forbiddenTools := runtime.NewArray()
+	for i, t := range role.ForbiddenTools {
+		_ = forbiddenTools.Set(fmt.Sprintf("%d", i), t)
+	}
+	_ = obj.Set("forbiddenTools", forbiddenTools)
+	_ = obj.Set("outputFormat", role.OutputFormat)
+	_ = obj.Set("maxTurns", role.MaxTurns)
+	return obj
+}
+
+func wrapRoleRegistry(runtime *goja.Runtime, r *RoleRegistry) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("getRole", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("getRole: name argument is required"))
+		}
+		role, err := r.GetRole(call.Argument(0).String())
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return agentRoleToJS(runtime, role)
+	})
+
+	_ = obj.Set("registerRole", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("registerRole: role argument is required"))
+		}
+		config := jsToRoleConfig(runtime, call.Argument(0))
+		role := CreateRole(config)
+		r.RegisterRole(role)
+		return goja.Undefined()
 	})
 
 	return obj

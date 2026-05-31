@@ -129,9 +129,9 @@ func (m *MultiAgentPanel) Snapshot() PanelSnapshot {
 
 // SubscribeToAgent subscribes to agent output via the CoordinationBus.
 // Incoming messages for the given agent are forwarded as AgentOutputMsg
-// values through the returned channel. The caller is responsible for
-// feeding those messages into the Bubble Tea Update loop.
-func (m *MultiAgentPanel) SubscribeToAgent(agentID string) <-chan AgentOutputMsg {
+// values through the returned channel. The returned cancel function
+// unsubscribes from the bus and closes the channel, stopping the consumer goroutine.
+func (m *MultiAgentPanel) SubscribeToAgent(agentID string) (<-chan AgentOutputMsg, func()) {
 	ch := make(chan AgentOutputMsg, 64)
 	m.bus.Subscribe(agentID, func(msg CoordinationMessage) {
 		ch <- AgentOutputMsg{
@@ -139,7 +139,11 @@ func (m *MultiAgentPanel) SubscribeToAgent(agentID string) <-chan AgentOutputMsg
 			Line:    string(msg.Payload),
 		}
 	})
-	return ch
+	cancel := func() {
+		m.bus.Unsubscribe(agentID)
+		close(ch)
+	}
+	return ch, cancel
 }
 
 // Init implements tea.Model. Returns nil (no initial command).

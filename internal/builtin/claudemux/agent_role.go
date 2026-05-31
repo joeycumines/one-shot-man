@@ -20,22 +20,22 @@ const (
 // AgentRole defines a role that agents can assume, including its system
 // prompt, tool restrictions, output format, and turn limit.
 type AgentRole struct {
-	Name          string
-	SystemPrompt  string
-	AllowedTools  []string
+	Name           string
+	SystemPrompt   string
+	AllowedTools   []string
 	ForbiddenTools []string
-	OutputFormat  string
-	MaxTurns      int
+	OutputFormat   string
+	MaxTurns       int
 }
 
 // RoleConfig holds configuration for creating an AgentRole.
 type RoleConfig struct {
-	Name          string
-	SystemPrompt  string
-	AllowedTools  []string
+	Name           string
+	SystemPrompt   string
+	AllowedTools   []string
 	ForbiddenTools []string
-	OutputFormat  string
-	MaxTurns      int
+	OutputFormat   string
+	MaxTurns       int
 }
 
 // TaskRequest describes a task to be delegated to an agent with a specific role.
@@ -105,12 +105,12 @@ func (r *RoleRegistry) GetRole(name string) (*AgentRole, error) {
 // CreateRole constructs an AgentRole from a RoleConfig.
 func CreateRole(config RoleConfig) *AgentRole {
 	return &AgentRole{
-		Name:          config.Name,
-		SystemPrompt:  config.SystemPrompt,
-		AllowedTools:  config.AllowedTools,
+		Name:           config.Name,
+		SystemPrompt:   config.SystemPrompt,
+		AllowedTools:   config.AllowedTools,
 		ForbiddenTools: config.ForbiddenTools,
-		OutputFormat:  config.OutputFormat,
-		MaxTurns:      config.MaxTurns,
+		OutputFormat:   config.OutputFormat,
+		MaxTurns:       config.MaxTurns,
 	}
 }
 

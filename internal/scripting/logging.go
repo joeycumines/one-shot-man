@@ -226,7 +226,7 @@ func (l *TUILogger) Error(msg string, attrs ...slog.Attr) {
 
 // Printf logs a formatted message at info level.
 func (l *TUILogger) Printf(format string, args ...any) {
-	l.logger.Info(fmt.Sprintf(format, args...))
+	l.logger.Info(fmt.Sprintf(jsNormalizePrintfFormat(format), args...))
 }
 
 // PrintToTUI prints a message directly to the terminal interface.
@@ -264,7 +264,7 @@ func (l *TUILogger) PrintToTUI(msg string) {
 
 // PrintfToTUI prints a formatted message directly to the terminal interface.
 func (l *TUILogger) PrintfToTUI(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
+	msg := fmt.Sprintf(jsNormalizePrintfFormat(format), args...)
 	l.PrintToTUI(msg)
 }
 
@@ -337,4 +337,61 @@ func (l *TUILogger) ClearLogs() {
 // This can be used to set the global slog default via slog.SetDefault().
 func (l *TUILogger) Logger() *slog.Logger {
 	return l.logger
+}
+
+// jsNormalizePrintfFormat replaces %s format verbs with %v in the format
+// string. Go's fmt.Sprintf("%s", ...) cannot format bool, int64, float64, and
+// other non-string types, producing errors like %!s(bool=true) or
+// %!s(int64=0). The %v verb produces identical output for strings but handles
+// all Go types correctly. This normalization is applied at the JS→Go boundary
+// so that JS printf calls work naturally with values originating from Go
+// structs (e.g., claudemux module fields).
+func jsNormalizePrintfFormat(format string) string {
+	var b strings.Builder
+	b.Grow(len(format))
+	i := 0
+	for i < len(format) {
+		if format[i] == '%' {
+			if i+1 < len(format) && format[i+1] == '%' {
+				b.WriteString("%%")
+				i += 2
+				continue
+			}
+			// Scan past format components to find the verb character.
+			j := i + 1
+			// Skip argument index [n]
+			if j < len(format) && format[j] == '[' {
+				for j < len(format) && format[j] != ']' {
+					j++
+				}
+				if j < len(format) {
+					j++ // skip ']'
+				}
+			}
+			// Skip flags [#0+- ']
+			for j < len(format) && (format[j] == '#' || format[j] == '0' || format[j] == '+' || format[j] == '-' || format[j] == ' ' || format[j] == '\'') {
+				j++
+			}
+			// Skip width (digits or *)
+			for j < len(format) && ((format[j] >= '0' && format[j] <= '9') || format[j] == '*') {
+				j++
+			}
+			// Skip precision (.digits or .*)
+			if j < len(format) && format[j] == '.' {
+				j++
+				for j < len(format) && ((format[j] >= '0' && format[j] <= '9') || format[j] == '*') {
+					j++
+				}
+			}
+			if j < len(format) && format[j] == 's' {
+				b.WriteString(format[i:j])
+				b.WriteByte('v')
+				i = j + 1
+				continue
+			}
+		}
+		b.WriteByte(format[i])
+		i++
+	}
+	return b.String()
 }

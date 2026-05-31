@@ -641,7 +641,7 @@ func TestWrapAgentHandle_Send(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	send, _ := goja.AssertFunction(jsObj.Get("send"))
 	_, err := send(goja.Undefined(), rt.ToValue("hello"))
@@ -657,7 +657,7 @@ func TestWrapAgentHandle_SendError(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{sendErr: errors.New("network down")}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	send, _ := goja.AssertFunction(jsObj.Get("send"))
 	_, err := send(goja.Undefined(), rt.ToValue("hello"))
@@ -670,7 +670,7 @@ func TestWrapAgentHandle_SendNoArgs(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	send, _ := goja.AssertFunction(jsObj.Get("send"))
 	_, err := send(goja.Undefined()) // no arguments
@@ -683,7 +683,7 @@ func TestWrapAgentHandle_ReceiveEOF(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{recvData: "", recvErr: io.EOF}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	recv, _ := goja.AssertFunction(jsObj.Get("receive"))
 	val, err := recv(goja.Undefined())
@@ -699,7 +699,7 @@ func TestWrapAgentHandle_ReceiveErrorWithData(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{recvData: "partial data", recvErr: errors.New("interrupted")}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	recv, _ := goja.AssertFunction(jsObj.Get("receive"))
 	val, err := recv(goja.Undefined())
@@ -716,7 +716,7 @@ func TestWrapAgentHandle_ReceiveErrorNoData(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{recvData: "", recvErr: errors.New("interrupted")}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	recv, _ := goja.AssertFunction(jsObj.Get("receive"))
 	val, err := recv(goja.Undefined())
@@ -732,7 +732,7 @@ func TestWrapAgentHandle_Close(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	cl, _ := goja.AssertFunction(jsObj.Get("close"))
 	_, err := cl(goja.Undefined())
@@ -748,7 +748,7 @@ func TestWrapAgentHandle_CloseError(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{closeErr: errors.New("already closed")}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	cl, _ := goja.AssertFunction(jsObj.Get("close"))
 	_, err := cl(goja.Undefined())
@@ -761,7 +761,7 @@ func TestWrapAgentHandle_IsAlive(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{alive: true}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	isAlive, _ := goja.AssertFunction(jsObj.Get("isAlive"))
 	val, err := isAlive(goja.Undefined())
@@ -777,7 +777,7 @@ func TestWrapAgentHandle_Wait(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{waitCode: 0, waitErr: nil}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	wait, _ := goja.AssertFunction(jsObj.Get("wait"))
 	val, err := wait(goja.Undefined())
@@ -799,7 +799,7 @@ func TestWrapAgentHandle_WaitWithError(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{waitCode: 1, waitErr: errors.New("exit status 1")}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	wait, _ := goja.AssertFunction(jsObj.Get("wait"))
 	val, err := wait(goja.Undefined())
@@ -821,7 +821,7 @@ func TestWrapAgentHandle_Resize(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubResizableAgentHandle{}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	resize, _ := goja.AssertFunction(jsObj.Get("resize"))
 	_, err := resize(goja.Undefined(), rt.ToValue(50), rt.ToValue(120))
@@ -837,7 +837,7 @@ func TestWrapAgentHandle_ResizeNoArgs(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubResizableAgentHandle{}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	resize, _ := goja.AssertFunction(jsObj.Get("resize"))
 	_, err := resize(goja.Undefined())
@@ -850,7 +850,7 @@ func TestWrapAgentHandle_ResizeError(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubResizableAgentHandle{resizeErr: errors.New("pty closed")}
-	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
 
 	resize, _ := goja.AssertFunction(jsObj.Get("resize"))
 	_, err := resize(goja.Undefined(), rt.ToValue(50), rt.ToValue(120))

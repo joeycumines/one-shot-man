@@ -19,12 +19,12 @@ type AgentCapabilities struct {
 
 // RegisteredAgent tracks a registered agent with its capabilities and health.
 type RegisteredAgent struct {
-	ID          string
-	Instance    *Instance
+	ID           string
+	Instance     *Instance
 	Capabilities AgentCapabilities
-	Role        string
-	Health      PaneHealth
-	LastUsed    time.Time
+	Role         string
+	Health       PaneHealth
+	LastUsed     time.Time
 
 	mu sync.RWMutex
 }
@@ -105,8 +105,8 @@ func (r *AgentRegistry) Register(id string, inst *Instance, caps AgentCapabiliti
 	}
 
 	r.agents[id] = &RegisteredAgent{
-		ID:          id,
-		Instance:    inst,
+		ID:           id,
+		Instance:     inst,
 		Capabilities: caps,
 		Health: PaneHealth{
 			State: "idle",

@@ -36,13 +36,15 @@ var handleCount = 3;
 var handles = [];
 
 for (var i = 0; i < handleCount; i++) {
-    var name = "mock-pool-" + i;
-    var handle = reg.spawn(name, { mode: cm.MODE_PROTOCOL });
+    // Spawn from the registered provider name "mock-claude".
+    // Each handle is a separate process instance of the same provider.
+    var handle = reg.spawn("mock-claude", { mode: cm.MODE_PROTOCOL });
+    var id = "mock-pool-" + i;
     handles.push({
-        id: name,
+        id: id,
         handle: handle
     });
-    output.printf("  [%s] spawned, isAlive: %s", name, handle.isAlive());
+    output.printf("  [%s] spawned, isAlive: %s", id, handle.isAlive());
 }
 
 output.print("");

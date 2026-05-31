@@ -116,7 +116,7 @@ func TestAgentRegistry_Query(t *testing.T) {
 	// Query: need "security" specialty and streaming.
 	matches = reg.Query(CapabilityRequest{
 		RequiredSpecialties: []string{"security"},
-		NeedStreaming:        true,
+		NeedStreaming:       true,
 	})
 	if len(matches) != 1 || matches[0] != "gamma" {
 		t.Errorf("Query(security+streaming) = %v, want [gamma]", matches)

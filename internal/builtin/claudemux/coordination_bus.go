@@ -29,14 +29,14 @@ const (
 
 // BusConfig holds coordination bus configuration.
 type BusConfig struct {
-	BufferSize    int
+	BufferSize     int
 	OverflowPolicy OverflowPolicy
 }
 
 // DefaultConfig returns a BusConfig with sane defaults.
 func DefaultConfig() BusConfig {
 	return BusConfig{
-		BufferSize:    1024,
+		BufferSize:     1024,
 		OverflowPolicy: OverflowDropOldest,
 	}
 }

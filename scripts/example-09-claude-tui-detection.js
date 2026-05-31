@@ -15,7 +15,7 @@ var cm = require('osm:claudemux');
 output.print("=== 1. TUI State Machine ===");
 
 var sm = cm.newTUIStateMachine();
-output.printf("Initial state: %d (%s)", sm.state, sm.stateName);
+output.printf("Initial state: %d (%s)", sm.state(), sm.stateName());
 
 // Feed a series of output lines that simulate Claude Code TUI output.
 var testLines = [
@@ -54,7 +54,7 @@ for (var i = 0; i < testLines.length; i++) {
 }
 
 // Show final state
-output.printf("\nFinal state: %d (%s)", sm.state, sm.stateName);
+output.printf("\nFinal state: %d (%s)", sm.state(), sm.stateName());
 
 output.print("\n=== 2. TUI State Constants ===");
 output.printf("TUI_STATE_INITIALIZING = %d (%s)",
@@ -77,7 +77,7 @@ output.print("");
 output.print("=== 3. VT State Detector ===");
 
 var det = cm.newVTStateDetector();
-output.printf("Initial state: %d (%s)", det.state, det.stateName);
+output.printf("Initial state: %d (%s)", det.state(), det.stateName());
 
 // Feed raw terminal output with ANSI escape sequences embedded.
 // This simulates what a PTY would produce.
@@ -133,14 +133,14 @@ for (var i = 0; i < lastLines.length; i++) {
 
 output.print("\n=== 6. Reset Demo ===");
 
-output.printf("Before reset: state=%d (%s)", det.state, det.stateName);
+output.printf("Before reset: state=%d (%s)", det.state(), det.stateName());
 det.reset();
-output.printf("After reset:  state=%d (%s)", det.state, det.stateName);
+output.printf("After reset:  state=%d (%s)", det.state(), det.stateName());
 
 // Verify reset TUIStateMachine too
-output.printf("SM before reset: state=%d (%s)", sm.state, sm.stateName);
+output.printf("SM before reset: state=%d (%s)", sm.state(), sm.stateName());
 sm.reset();
-output.printf("SM after reset:  state=%d (%s)", sm.state, sm.stateName);
+output.printf("SM after reset:  state=%d (%s)", sm.state(), sm.stateName());
 
 output.print("\n=== 7. Event Type Constants ===");
 output.printf("EVENT_TEXT       = %d (%s)",

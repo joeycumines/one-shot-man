@@ -236,8 +236,8 @@ func TestAgentToolUI_SGRDiff(t *testing.T) {
 			},
 		},
 		{
-			name:  "underline",
-			attr:  vt.Attr{Under: true},
+			name: "underline",
+			attr: vt.Attr{Under: true},
 			check: func(t *testing.T, sgr string) {
 				if !strings.Contains(sgr, "\x1b[") {
 					t.Errorf("SGR() = %q, want non-empty SGR for underline", sgr)

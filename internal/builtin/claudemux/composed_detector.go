@@ -180,6 +180,13 @@ func (d *ComposedDetector) State() TUIState {
 	return d.state
 }
 
+// Mode returns the detection mode (Protocol or TUI).
+func (d *ComposedDetector) Mode() DetectMode {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.mode
+}
+
 // LastEvents returns the supplementary event classifications from the most
 // recent ProcessRaw call. Only populated in TUI mode.
 func (d *ComposedDetector) LastEvents() []OutputEvent {

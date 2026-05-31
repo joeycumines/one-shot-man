@@ -48,7 +48,9 @@ try {
     handle.send("hello world");
     output.print("  [sent: 'hello world']");
 
-    // Receive lines until we get a completion signal
+    // Receive lines from the protocol stream. The mock sends 5 lines:
+    // system/init, assistant/text (ready), assistant/text (thinking),
+    // assistant/text (response), result/success.
     var responseParts = [];
     var linesReceived = 0;
     var maxLines = 20;
@@ -62,9 +64,9 @@ try {
         output.printf("  [recv %d] %s", linesReceived, line);
         responseParts.push(line);
 
-        // Check for completion or rate limit signal
-        if (line.indexOf("result-success") !== -1 ||
-            line.indexOf("mock_complete") !== -1) {
+        // The result/success event signals the turn is complete.
+        // In NDJSON format this appears as {"type":"result","subtype":"success",...}
+        if (line.indexOf('"result"') !== -1 && line.indexOf('"success"') !== -1) {
             output.print("  --> Completion detected");
             break;
         }
@@ -112,6 +114,12 @@ try {
 
         output.print("\n=== 6. Handle State ===");
     output.printf("isAlive: %s", handle.isAlive());
+
+    // Close the handle first so the mock process exits cleanly.
+    // Without close(), wait() would block forever because the
+    // mockclaude process stays alive waiting for more stdin input.
+    handle.close();
+    output.print("  Handle closed.");
 
     var waitResult = handle.wait();
     output.printf("wait result: code=%s, error=%s",

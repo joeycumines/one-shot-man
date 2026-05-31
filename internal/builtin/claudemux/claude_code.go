@@ -3,7 +3,9 @@ package claudemux
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/pty"
 )
@@ -58,8 +60,8 @@ func (p *ClaudeCodeProvider) Spawn(ctx context.Context, opts SpawnOpts) (AgentHa
 
 // ptyAgentHandle wraps a pty.Process as an AgentHandle.
 type ptyAgentHandle struct {
-	proc      *pty.Process
-	detector  *VTStateDetector
+	proc     *pty.Process
+	detector *VTStateDetector
 }
 
 func (h *ptyAgentHandle) Send(input string) error {
@@ -102,5 +104,27 @@ func (h *ptyAgentHandle) DrainOutput(sink io.Writer) {
 }
 
 func (h *ptyAgentHandle) WaitReady(ctx context.Context) error {
-	return nil
+	if h.detector == nil {
+		return nil
+	}
+	for {
+		if h.detector.State() == StateReady {
+			return nil
+		}
+		chunk, err := h.proc.Read()
+		if err != nil {
+			return fmt.Errorf("waitReady: read: %w", err)
+		}
+		if chunk != "" {
+			h.detector.ProcessRaw([]byte(chunk), time.Now())
+			if h.detector.State() == StateReady {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+	}
 }

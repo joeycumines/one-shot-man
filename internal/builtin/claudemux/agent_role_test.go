@@ -13,12 +13,12 @@ func TestRoleRegistry_RegisterAndGet(t *testing.T) {
 	reg := NewRoleRegistry()
 
 	role := &AgentRole{
-		Name:          "custom-role",
-		SystemPrompt:  "You are a custom agent.",
-		AllowedTools:  []string{"search", "read"},
+		Name:           "custom-role",
+		SystemPrompt:   "You are a custom agent.",
+		AllowedTools:   []string{"search", "read"},
 		ForbiddenTools: []string{"write"},
-		OutputFormat:  "json",
-		MaxTurns:      10,
+		OutputFormat:   "json",
+		MaxTurns:       10,
 	}
 	reg.RegisterRole(role)
 
@@ -197,12 +197,12 @@ func TestCreateRole(t *testing.T) {
 	t.Parallel()
 
 	config := RoleConfig{
-		Name:          "custom",
-		SystemPrompt:  "You are custom.",
-		AllowedTools:  []string{"read"},
+		Name:           "custom",
+		SystemPrompt:   "You are custom.",
+		AllowedTools:   []string{"read"},
 		ForbiddenTools: []string{"write"},
-		OutputFormat:  "text",
-		MaxTurns:      7,
+		OutputFormat:   "text",
+		MaxTurns:       7,
 	}
 
 	role := CreateRole(config)

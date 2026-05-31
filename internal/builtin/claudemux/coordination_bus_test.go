@@ -128,7 +128,7 @@ func TestCoordinationBus_Overflow(t *testing.T) {
 	t.Parallel()
 
 	cfg := BusConfig{
-		BufferSize:    2,
+		BufferSize:     2,
 		OverflowPolicy: OverflowDropOldest,
 	}
 	bus := NewCoordinationBus(cfg)

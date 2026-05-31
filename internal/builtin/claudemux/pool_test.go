@@ -357,7 +357,7 @@ func TestPool_TryAcquire_AllBusy(t *testing.T) {
 	_, _ = p.Acquire()
 	_, err := p.TryAcquire()
 	if err == nil {
-		t.Error("expected ErrPoolEmpty when all busy")
+		t.Error("expected ErrPoolBusy when all busy")
 	}
 }
 
@@ -742,5 +742,279 @@ func TestPool_RoundRobin_AfterRemove(t *testing.T) {
 		if id != "w0" && id != "w2" {
 			t.Errorf("unexpected worker ID %q (w1 was removed)", id)
 		}
+	}
+}
+
+// --- Strategy: least-connections ---
+
+func TestPool_LeastConnections(t *testing.T) {
+	t.Parallel()
+	p := NewPool(PoolConfig{MaxSize: 3, Strategy: "least-connections"})
+	_ = p.Start()
+	_, _ = p.AddWorker("w0", nil)
+	_, _ = p.AddWorker("w1", nil)
+	_, _ = p.AddWorker("w2", nil)
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Manually set ActiveTasks to simulate different loads.
+	p.mu.Lock()
+	p.workers[0].ActiveTasks = 5
+	p.workers[1].ActiveTasks = 2
+	p.workers[2].ActiveTasks = 3
+	p.mu.Unlock()
+
+	// Acquire should prefer w1 (fewest ActiveTasks).
+	w, err := p.Acquire()
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if w.ID != "w1" {
+		t.Errorf("Acquire with least-connections = %q, want w1", w.ID)
+	}
+	p.Release(w, nil, now)
+}
+
+// --- Strategy: health-aware ---
+
+func TestPool_HealthAware(t *testing.T) {
+	t.Parallel()
+	p := NewPool(PoolConfig{MaxSize: 3, Strategy: "health-aware"})
+	_ = p.Start()
+	_, _ = p.AddWorker("w0", nil)
+	_, _ = p.AddWorker("w1", nil)
+	_, _ = p.AddWorker("w2", nil)
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Simulate different error ratios.
+	p.mu.Lock()
+	p.workers[0].TaskCount = 10
+	p.workers[0].ErrorCount = 5 // 50% error rate
+	p.workers[1].TaskCount = 10
+	p.workers[1].ErrorCount = 1 // 10% error rate
+	p.workers[2].TaskCount = 10
+	p.workers[2].ErrorCount = 3 // 30% error rate
+	p.mu.Unlock()
+
+	// Acquire should prefer w1 (lowest error ratio).
+	w, err := p.Acquire()
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if w.ID != "w1" {
+		t.Errorf("Acquire with health-aware = %q, want w1", w.ID)
+	}
+	p.Release(w, nil, now)
+}
+
+func TestPool_HealthAware_ZeroTasks(t *testing.T) {
+	t.Parallel()
+	p := NewPool(PoolConfig{MaxSize: 2, Strategy: "health-aware"})
+	_ = p.Start()
+	_, _ = p.AddWorker("w0", nil)
+	_, _ = p.AddWorker("w1", nil)
+
+	// w0 has zero tasks (0% error rate), w1 has tasks with errors.
+	p.mu.Lock()
+	p.workers[1].TaskCount = 5
+	p.workers[1].ErrorCount = 2
+	p.mu.Unlock()
+
+	w, err := p.Acquire()
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if w.ID != "w0" {
+		t.Errorf("Acquire with health-aware (zero tasks) = %q, want w0", w.ID)
+	}
+}
+
+// --- AcquireCapacity ---
+
+func TestPool_AcquireCapacity(t *testing.T) {
+	t.Parallel()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	_ = p.Start()
+	_, _ = p.AddWorker("w0", nil)
+	_, _ = p.AddWorker("w1", nil)
+
+	// Set capacity on w0 to 3, leave w1 at 0 (unlimited).
+	_ = p.UpdateWorkerCapacity("w0", 3)
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Acquire capacity multiple times on w0.
+	var workers []*PoolWorker
+	for range 3 {
+		w, err := p.AcquireCapacity()
+		if err != nil {
+			t.Fatalf("AcquireCapacity: %v", err)
+		}
+		workers = append(workers, w)
+	}
+
+	// w0 should have 3 active tasks and be Busy.
+	if workers[0].ID != "w0" {
+		t.Fatalf("first AcquireCapacity = %q, want w0", workers[0].ID)
+	}
+	if workers[0].ActiveTasks != 3 {
+		t.Errorf("w0 ActiveTasks = %d, want 3", workers[0].ActiveTasks)
+	}
+
+	// Release all.
+	for _, w := range workers {
+		p.Release(w, nil, now)
+	}
+
+	if workers[0].ActiveTasks != 0 {
+		t.Errorf("after release: w0 ActiveTasks = %d, want 0", workers[0].ActiveTasks)
+	}
+}
+
+func TestPool_AcquireCapacity_RespectsLimit(t *testing.T) {
+	t.Parallel()
+	p := NewPool(PoolConfig{MaxSize: 1})
+	_ = p.Start()
+	_, _ = p.AddWorker("w0", nil)
+
+	_ = p.UpdateWorkerCapacity("w0", 2)
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Acquire up to capacity.
+	w1, err := p.AcquireCapacity()
+	if err != nil {
+		t.Fatalf("AcquireCapacity 1: %v", err)
+	}
+	w2, err := p.AcquireCapacity()
+	if err != nil {
+		t.Fatalf("AcquireCapacity 2: %v", err)
+	}
+
+	// Third acquire should block (capacity full). Release in background.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		p.Release(w1, nil, now)
+	}()
+
+	w3, err := p.AcquireCapacity()
+	if err != nil {
+		t.Fatalf("AcquireCapacity 3: %v", err)
+	}
+	p.Release(w2, nil, now)
+	p.Release(w3, nil, now)
+}
+
+// --- RouteTo (sticky sessions) ---
+
+func TestPool_RouteTo(t *testing.T) {
+	t.Parallel()
+	p := NewPool(PoolConfig{MaxSize: 3, StickySessions: true})
+	_ = p.Start()
+	_, _ = p.AddWorker("w0", nil)
+	_, _ = p.AddWorker("w1", nil)
+	_, _ = p.AddWorker("w2", nil)
+
+	w, err := p.RouteTo("w1")
+	if err != nil {
+		t.Fatalf("RouteTo: %v", err)
+	}
+	if w.ID != "w1" {
+		t.Errorf("RouteTo(w1) = %q, want w1", w.ID)
+	}
+}
+
+func TestPool_RouteTo_NotFound(t *testing.T) {
+	t.Parallel()
+	p := NewPool(PoolConfig{MaxSize: 2, StickySessions: true})
+	_ = p.Start()
+	_, _ = p.AddWorker("w0", nil)
+
+	_, err := p.RouteTo("nonexistent")
+	if err == nil {
+		t.Error("expected ErrWorkerNotFound")
+	}
+}
+
+func TestPool_RouteTo_NotRunning(t *testing.T) {
+	t.Parallel()
+	p := NewPool(PoolConfig{MaxSize: 1, StickySessions: true})
+
+	_, err := p.RouteTo("w0")
+	if err == nil {
+		t.Error("expected ErrPoolNotRunning")
+	}
+}
+
+// --- UpdateWorkerCapacity ---
+
+func TestPool_UpdateWorkerCapacity(t *testing.T) {
+	t.Parallel()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	_ = p.Start()
+	_, _ = p.AddWorker("w0", nil)
+	_, _ = p.AddWorker("w1", nil)
+
+	if err := p.UpdateWorkerCapacity("w0", 5); err != nil {
+		t.Fatalf("UpdateWorkerCapacity: %v", err)
+	}
+
+	w := p.FindWorker("w0")
+	if w == nil {
+		t.Fatal("FindWorker(w0) = nil")
+	}
+	if w.Capacity != 5 {
+		t.Errorf("Capacity = %d, want 5", w.Capacity)
+	}
+
+	// Update existing.
+	if err := p.UpdateWorkerCapacity("w0", 10); err != nil {
+		t.Fatalf("UpdateWorkerCapacity (update): %v", err)
+	}
+	if w.Capacity != 10 {
+		t.Errorf("Capacity after update = %d, want 10", w.Capacity)
+	}
+}
+
+func TestPool_UpdateWorkerCapacity_NotFound(t *testing.T) {
+	t.Parallel()
+	p := NewPool(PoolConfig{MaxSize: 1})
+	_ = p.Start()
+
+	err := p.UpdateWorkerCapacity("nonexistent", 5)
+	if err == nil {
+		t.Error("expected ErrWorkerNotFound")
+	}
+}
+
+// --- DefaultPoolConfig includes Strategy ---
+
+func TestDefaultPoolConfig_Strategy(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultPoolConfig()
+	if cfg.Strategy != "round-robin" {
+		t.Errorf("Strategy = %q, want round-robin", cfg.Strategy)
+	}
+}
+
+// --- Stats includes Capacity and ActiveTasks ---
+
+func TestPool_Stats_CapacityAndActiveTasks(t *testing.T) {
+	t.Parallel()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	_ = p.Start()
+	_, _ = p.AddWorker("w0", nil)
+	_ = p.UpdateWorkerCapacity("w0", 5)
+
+	stats := p.Stats()
+	if len(stats.Workers) != 1 {
+		t.Fatalf("len(Workers) = %d, want 1", len(stats.Workers))
+	}
+	if stats.Workers[0].Capacity != 5 {
+		t.Errorf("Capacity = %d, want 5", stats.Workers[0].Capacity)
+	}
+	if stats.Workers[0].ActiveTasks != 0 {
+		t.Errorf("ActiveTasks = %d, want 0", stats.Workers[0].ActiveTasks)
 	}
 }

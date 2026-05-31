@@ -11,7 +11,6 @@ import (
 // ClaudeCodeProvider implements Provider for Claude Code via PTY.
 type ClaudeCodeProvider struct {
 	// Command is the path to the claude executable.
-	// Default: "claude"
 	Command string
 }
 
@@ -59,7 +58,8 @@ func (p *ClaudeCodeProvider) Spawn(ctx context.Context, opts SpawnOpts) (AgentHa
 
 // ptyAgentHandle wraps a pty.Process as an AgentHandle.
 type ptyAgentHandle struct {
-	proc *pty.Process
+	proc      *pty.Process
+	detector  *VTStateDetector
 }
 
 func (h *ptyAgentHandle) Send(input string) error {
@@ -99,4 +99,8 @@ func (h *ptyAgentHandle) Signal(sig string) error {
 
 func (h *ptyAgentHandle) DrainOutput(sink io.Writer) {
 	h.proc.DrainOutput(sink)
+}
+
+func (h *ptyAgentHandle) WaitReady(ctx context.Context) error {
+	return nil
 }

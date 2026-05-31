@@ -21,7 +21,6 @@ type OllamaProvider struct {
 	ExtraArgs []string
 }
 
-// Name returns "ollama".
 func (p *OllamaProvider) Name() string { return "ollama" }
 
 // Capabilities returns capabilities. Once the Ollama launcher menu is
@@ -46,18 +45,14 @@ func (p *OllamaProvider) Spawn(ctx context.Context, opts SpawnOpts) (AgentHandle
 		cmd = "ollama"
 	}
 
-	// Base args: launch claude
 	args := []string{"launch", "claude"}
 
-	// Model via --model flag (not TUI navigation).
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
 	}
 
-	// ExtraArgs from provider config.
 	args = append(args, p.ExtraArgs...)
 
-	// Additional args from spawn opts.
 	args = append(args, opts.Args...)
 
 	cfg := pty.SpawnConfig{

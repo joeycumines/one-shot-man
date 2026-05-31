@@ -81,7 +81,6 @@ func TestOllamaProvider_SpawnEcho_LaunchClaude(t *testing.T) {
 	}
 	t.Parallel()
 
-	// Use echo to verify the args are: launch claude <extra>
 	p := &OllamaProvider{Command: "/bin/echo"}
 	handle, err := p.Spawn(context.Background(), SpawnOpts{
 		Args: []string{"--extra"},
@@ -103,7 +102,6 @@ func TestOllamaProvider_SpawnEcho_LaunchClaude(t *testing.T) {
 	}
 
 	out := output.String()
-	// echo should print: "launch claude --extra"
 	if !strings.Contains(out, "launch") {
 		t.Errorf("output = %q, want to contain %q", out, "launch")
 	}
@@ -143,7 +141,6 @@ func TestOllamaProvider_SpawnWithModel(t *testing.T) {
 	}
 
 	out := output.String()
-	// echo should print: "launch claude --model gpt-oss:20b-cloud"
 	if !strings.Contains(out, "launch") {
 		t.Errorf("output = %q, want to contain %q", out, "launch")
 	}
@@ -263,7 +260,6 @@ func TestOllamaProvider_SpawnNoModel(t *testing.T) {
 	}
 
 	out := output.String()
-	// Should print: "launch claude" (no --model)
 	if !strings.Contains(out, "launch") {
 		t.Errorf("output = %q, want to contain %q", out, "launch")
 	}

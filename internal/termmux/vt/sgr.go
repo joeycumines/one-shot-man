@@ -40,6 +40,10 @@ func (a Attr) IsZero() bool {
 	return a == Attr{}
 }
 
+func (a Attr) SGR() string {
+	return SGRDiff(Attr{}, a)
+}
+
 // ParseSGR processes a slice of CSI 'm' parameters and returns the
 // updated attribute. It handles SGR codes 0-9, 21-29, 30-37, 38, 39,
 // 40-47, 48, 49, 90-97, 100-107 including 256-color and truecolor

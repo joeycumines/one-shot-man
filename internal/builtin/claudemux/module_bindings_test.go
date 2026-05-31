@@ -39,10 +39,7 @@ func moduleTestEnv(t *testing.T) func(string) goja.Value {
 	return runJS
 }
 
-// ---------------------------------------------------------------------------
 // eventToJS — via newParser().parse()
-// ---------------------------------------------------------------------------
-
 func TestBinding_EventToJS(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -63,10 +60,7 @@ func TestBinding_EventToJS(t *testing.T) {
 	assert.Equal(t, "hello world", runJS(`textEv.line`).String())
 }
 
-// ---------------------------------------------------------------------------
 // wrapParser — parse, addPattern, patterns
-// ---------------------------------------------------------------------------
-
 func TestBinding_WrapParser(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -87,10 +81,7 @@ func TestBinding_WrapParser(t *testing.T) {
 	assert.Equal(t, int64(int(EventError)), runJS(`customEv.type`).ToInteger())
 }
 
-// ---------------------------------------------------------------------------
 // modelMenuToJS / jsToModelMenu — via parseModelMenu + navigateToModel
-// ---------------------------------------------------------------------------
-
 func TestBinding_ModelMenuToJS(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -119,10 +110,7 @@ func TestBinding_JsToModelMenu(t *testing.T) {
 	assert.NotEmpty(t, keys, "expected keystroke sequence")
 }
 
-// ---------------------------------------------------------------------------
 // wrapProvider — name, capabilities, _goProvider
-// ---------------------------------------------------------------------------
-
 func TestBinding_WrapProvider(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -130,8 +118,7 @@ func TestBinding_WrapProvider(t *testing.T) {
 	// claudeCode() factory.
 	assert.Equal(t, "claude-code", runJS(`cm.claudeCode().name()`).String())
 
-	caps := runJS(`var p = cm.claudeCode(); p.capabilities();`)
-	_ = caps
+	_ = runJS(`var p = cm.claudeCode(); p.capabilities();`)
 	assert.True(t, runJS(`p.capabilities().mcp`).ToBoolean())
 	assert.True(t, runJS(`p.capabilities().streaming`).ToBoolean())
 	assert.True(t, runJS(`p.capabilities().multiTurn`).ToBoolean())
@@ -142,10 +129,7 @@ func TestBinding_WrapProvider(t *testing.T) {
 	assert.True(t, runJS(`op.capabilities().mcp`).ToBoolean())
 }
 
-// ---------------------------------------------------------------------------
 // wrapRegistry — register, get, list
-// ---------------------------------------------------------------------------
-
 func TestBinding_WrapRegistry(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -159,10 +143,7 @@ func TestBinding_WrapRegistry(t *testing.T) {
 	assert.Equal(t, "claude-code", runJS(`reg.get("claude-code").name()`).String())
 }
 
-// ---------------------------------------------------------------------------
 // wrapInstanceRegistry + wrapInstance — create, get, list, close
-// ---------------------------------------------------------------------------
-
 func TestBinding_WrapInstanceRegistry(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -198,10 +179,7 @@ func TestBinding_WrapInstanceRegistry(t *testing.T) {
 	assert.Equal(t, int64(0), runJS(`ireg.len()`).ToInteger())
 }
 
-// ---------------------------------------------------------------------------
 // guardConfigToJS / jsToGuardConfig — via defaultGuardConfig + newGuard
-// ---------------------------------------------------------------------------
-
 func TestBinding_GuardConfigToJS(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -238,10 +216,7 @@ func TestBinding_JsToGuardConfig(t *testing.T) {
 	assert.Equal(t, int64(5), runJS(`g.config().crash.maxRestarts`).ToInteger())
 }
 
-// ---------------------------------------------------------------------------
 // wrapGuard — processEvent, processCrash, checkTimeout, state, config
-// ---------------------------------------------------------------------------
-
 func TestBinding_WrapGuard(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -284,11 +259,8 @@ func TestBinding_WrapGuard(t *testing.T) {
 	assert.Equal(t, int64(0), runJS(`g.state().crashCount`).ToInteger())
 }
 
-// ---------------------------------------------------------------------------
 // guardEventToJS — verified through wrapGuard processEvent above, additional
 // coverage for details field.
-// ---------------------------------------------------------------------------
-
 func TestBinding_GuardEventToJS_Details(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -307,10 +279,7 @@ func TestBinding_GuardEventToJS_Details(t *testing.T) {
 	assert.True(t, runJS(`typeof ev.details === 'object'`).ToBoolean())
 }
 
-// ---------------------------------------------------------------------------
 // mcpGuardConfigToJS / jsToMCPGuardConfig / wrapMCPGuard
-// ---------------------------------------------------------------------------
-
 func TestBinding_MCPGuardConfigRoundtrip(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -362,10 +331,7 @@ func TestBinding_WrapMCPGuard(t *testing.T) {
 	assert.True(t, runJS(`mgs.started`).ToBoolean())
 }
 
-// ---------------------------------------------------------------------------
 // supervisorConfigToJS / jsToSupervisorConfig / wrapSupervisor
-// ---------------------------------------------------------------------------
-
 func TestBinding_SupervisorConfigRoundtrip(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -424,11 +390,8 @@ func TestBinding_WrapSupervisor(t *testing.T) {
 	assert.False(t, runJS(`sup.cancelled()`).ToBoolean())
 }
 
-// ---------------------------------------------------------------------------
 // recoveryDecisionToJS — verified through wrapSupervisor above.
 // Additional detail checks.
-// ---------------------------------------------------------------------------
-
 func TestBinding_RecoveryDecisionToJS_Details(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -441,10 +404,7 @@ func TestBinding_RecoveryDecisionToJS_Details(t *testing.T) {
 	assert.True(t, runJS(`typeof rd.reason === 'string'`).ToBoolean())
 }
 
-// ---------------------------------------------------------------------------
 // poolConfigToJS / jsToPoolConfig / wrapPool + wrapPoolWorker
-// ---------------------------------------------------------------------------
-
 func TestBinding_PoolConfigRoundtrip(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -495,10 +455,7 @@ func TestBinding_WrapPool(t *testing.T) {
 	assert.True(t, runJS(`Array.isArray(closed)`).ToBoolean())
 }
 
-// ---------------------------------------------------------------------------
 // workerStatsToJS / poolStatsToJS — verified through wrapPool stats() above.
-// ---------------------------------------------------------------------------
-
 func TestBinding_PoolStatsToJS(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -521,10 +478,7 @@ func TestBinding_PoolStatsToJS(t *testing.T) {
 	runJS(`pool.close();`)
 }
 
-// ---------------------------------------------------------------------------
 // panelConfigToJS / jsToPanelConfig / wrapPanel
-// ---------------------------------------------------------------------------
-
 func TestBinding_PanelConfigRoundtrip(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -590,8 +544,7 @@ func TestBinding_WrapPanel(t *testing.T) {
 	assert.NotEmpty(t, runJS(`snap.stateName`).String())
 	assert.True(t, runJS(`snap.panes.length > 0`).ToBoolean())
 
-	pane := runJS(`snap.panes[0]`)
-	_ = pane
+	_ = runJS(`snap.panes[0]`)
 	assert.Equal(t, "pane-1", runJS(`snap.panes[0].id`).String())
 	assert.True(t, runJS(`typeof snap.panes[0].lines === 'number'`).ToBoolean())
 	assert.True(t, runJS(`typeof snap.panes[0].health === 'object'`).ToBoolean())
@@ -601,10 +554,7 @@ func TestBinding_WrapPanel(t *testing.T) {
 	runJS(`panel.close();`)
 }
 
-// ---------------------------------------------------------------------------
 // managedSessionConfigToJS / jsToManagedSessionConfig / wrapManagedSession
-// ---------------------------------------------------------------------------
-
 func TestBinding_ManagedSessionConfigRoundtrip(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -691,10 +641,7 @@ func TestBinding_WrapManagedSession(t *testing.T) {
 	assert.Equal(t, int64(int(SessionClosed)), runJS(`sess.state()`).ToInteger())
 }
 
-// ---------------------------------------------------------------------------
 // ManagedSession event callbacks — onEvent, onGuardAction, onRecoveryDecision
-// ---------------------------------------------------------------------------
-
 func TestBinding_ManagedSession_Callbacks(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -735,10 +682,7 @@ func TestBinding_ManagedSession_Callbacks(t *testing.T) {
 	runJS(`sess.close();`)
 }
 
-// ---------------------------------------------------------------------------
 // safetyConfigToJS / jsToSafetyConfig / wrapSafetyValidator
-// ---------------------------------------------------------------------------
-
 func TestBinding_SafetyConfigRoundtrip(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -811,10 +755,7 @@ func TestBinding_WrapSafetyValidator(t *testing.T) {
 	assert.True(t, runJS(`typeof stats.scopeCounts === 'object'`).ToBoolean())
 }
 
-// ---------------------------------------------------------------------------
 // wrapCompositeValidator
-// ---------------------------------------------------------------------------
-
 func TestBinding_WrapCompositeValidator(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -833,10 +774,7 @@ func TestBinding_WrapCompositeValidator(t *testing.T) {
 	assert.NotEmpty(t, runJS(`result.actionName`).String())
 }
 
-// ---------------------------------------------------------------------------
 // choiceConfigToJS / jsToChoiceConfig / wrapChoiceResolver
-// ---------------------------------------------------------------------------
-
 func TestBinding_ChoiceConfigRoundtrip(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -916,10 +854,7 @@ func TestBinding_ChoiceResolver_CustomScoreFn(t *testing.T) {
 	assert.Equal(t, "x", runJS(`result.recommendedID`).String())
 }
 
-// ---------------------------------------------------------------------------
 // Name helper function constants — exercise the JS-exposed name functions.
-// ---------------------------------------------------------------------------
-
 func TestBinding_NameHelpers(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -965,11 +900,8 @@ func TestBinding_NameHelpers(t *testing.T) {
 	assert.Equal(t, "Block", runJS(`cm.policyActionName(cm.POLICY_BLOCK)`).String())
 }
 
-// ---------------------------------------------------------------------------
 // parseSpawnOpts — via registry.spawn (but requires a real provider with PTY).
 // Instead, test the factory options parsing for claudeCode and ollama.
-// ---------------------------------------------------------------------------
-
 func TestBinding_ClaudeCodeFactory_WithOptions(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -986,10 +918,7 @@ func TestBinding_OllamaFactory_AllOptions(t *testing.T) {
 	assert.Equal(t, "ollama", runJS(`p.name()`).String())
 }
 
-// ---------------------------------------------------------------------------
 // Keystroke constants.
-// ---------------------------------------------------------------------------
-
 func TestBinding_KeystrokeConstants(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
@@ -999,10 +928,7 @@ func TestBinding_KeystrokeConstants(t *testing.T) {
 	assert.NotEmpty(t, runJS(`cm.KEY_ENTER`).String())
 }
 
-// ---------------------------------------------------------------------------
 // Split protocol factory bindings.
-// ---------------------------------------------------------------------------
-
 func TestBinding_NewClassificationRequest(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)

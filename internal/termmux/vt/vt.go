@@ -262,3 +262,9 @@ func (v *VTerm) CursorPosition() (row, col int) {
 	defer v.mu.Unlock()
 	return v.active.CurRow, v.active.CurCol
 }
+
+func (v *VTerm) ActiveScreen() *Screen {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active
+}

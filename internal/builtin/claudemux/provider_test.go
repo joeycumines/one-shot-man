@@ -65,6 +65,7 @@ func (h *mockHandle) Wait() (int, error) {
 	return 0, nil
 }
 func (h *mockHandle) Resize(_, _ int) error { return nil }
+func (h *mockHandle) WaitReady(_ context.Context) error { return nil }
 
 // --- Registry Tests ---
 

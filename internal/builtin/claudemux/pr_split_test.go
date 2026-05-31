@@ -197,10 +197,6 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
-// ---------------------------------------------------------------------------
-//  Module loading
-// ---------------------------------------------------------------------------
-
 func TestPRSplit_ModuleLoads(t *testing.T) {
 	t.Parallel()
 	_, runJS := prSplitTestEnv(t)
@@ -231,10 +227,6 @@ func TestPRSplit_ExportedFunctions(t *testing.T) {
 		assert.Equal(t, "function", val.String(), "%s should be a function", fn)
 	}
 }
-
-// ---------------------------------------------------------------------------
-//  Pure function tests (no git repo needed)
-// ---------------------------------------------------------------------------
 
 func TestPRSplit_GroupByDirectory(t *testing.T) {
 	t.Parallel()
@@ -389,10 +381,6 @@ func TestPRSplit_CreateSplitPlan(t *testing.T) {
 	assert.Contains(t, s, `"baseBranch":"main"`)
 	assert.Contains(t, s, `"sourceBranch":"feat"`)
 }
-
-// ---------------------------------------------------------------------------
-//  Git-dependent tests
-// ---------------------------------------------------------------------------
 
 func TestPRSplit_AnalyzeDiff(t *testing.T) {
 	t.Parallel()
@@ -647,10 +635,6 @@ func TestPRSplit_ExecuteSplit_InvalidPlan(t *testing.T) {
 	assert.Contains(t, errVal.String(), "invalid plan")
 }
 
-// ---------------------------------------------------------------------------
-//  Strategy selection tests (claudemux integration)
-// ---------------------------------------------------------------------------
-
 func TestPRSplit_SelectStrategy(t *testing.T) {
 	t.Parallel()
 	_, runJS := prSplitTestEnv(t)
@@ -692,10 +676,6 @@ func TestPRSplit_SelectStrategy_Scored(t *testing.T) {
 	assert.Equal(t, int64(5), scoredLen.ToInteger(), "should score 5 strategies")
 }
 
-// ---------------------------------------------------------------------------
-//  Enhanced equivalence verification tests
-// ---------------------------------------------------------------------------
-
 func TestPRSplit_VerifyEquivalenceDetailed_Equivalent(t *testing.T) {
 	t.Parallel()
 	_, runJS := prSplitTestEnv(t)
@@ -730,10 +710,6 @@ func TestPRSplit_VerifyEquivalenceDetailed_Equivalent(t *testing.T) {
 	diffSummary := runJS(`equiv.diffSummary`)
 	assert.Equal(t, "", diffSummary.String())
 }
-
-// ---------------------------------------------------------------------------
-//  Conflict handling tests
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 //  T209: End-to-end PR split with real compilation verification
@@ -934,10 +910,6 @@ func TestPRSplit_ExecuteSplit_MissingFile(t *testing.T) {
 	assert.Contains(t, errVal.String(), "checkout file")
 	assert.Contains(t, errVal.String(), "does-not-exist.go")
 }
-
-// ---------------------------------------------------------------------------
-//  Deleted files + re-run tests
-// ---------------------------------------------------------------------------
 
 // addFeatureFilesWithDeletions creates a feature branch that adds new files
 // AND deletes an existing file from the initial commit.

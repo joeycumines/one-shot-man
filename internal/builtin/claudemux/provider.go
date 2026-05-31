@@ -34,7 +34,22 @@ type AgentHandle interface {
 	// Resize changes the PTY window dimensions, delivering SIGWINCH
 	// to the child process.
 	Resize(rows, cols int) error
+	// WaitReady blocks until the agent signals readiness or the context
+	// is cancelled. Returns ErrNotReady on timeout.
+	WaitReady(ctx context.Context) error
 }
+
+// SpawnMode selects the interaction mode for agent spawning.
+type SpawnMode int
+
+const (
+	// ModeTUI uses PTY + VT screen analysis for terminal-based agents.
+	ModeTUI SpawnMode = iota
+	// ModeProtocol uses stdin/stdout pipes with structured NDJSON protocol.
+	ModeProtocol
+	// ModePrint uses single-shot headless execution (claude -p style).
+	ModePrint
+)
 
 // SpawnOpts configures agent spawning.
 type SpawnOpts struct {
@@ -50,7 +65,12 @@ type SpawnOpts struct {
 	Cols uint16
 	// Args are additional CLI arguments for the provider command.
 	Args []string
+	// Mode selects the interaction mode (default: ModeTUI).
+	Mode SpawnMode
 }
+
+// ErrNotReady is returned when an agent is not ready within the timeout.
+var ErrNotReady = errors.New("claudemux: agent not ready")
 
 // ProviderCapabilities declares supported features.
 type ProviderCapabilities struct {

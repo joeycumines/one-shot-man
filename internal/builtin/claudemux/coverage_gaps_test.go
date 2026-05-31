@@ -82,8 +82,8 @@ func TestPool_TryAcquire_AllBusy_Coverage(t *testing.T) {
 
 	// Second attempt — all busy.
 	_, err = p.TryAcquire()
-	if !errors.Is(err, ErrPoolEmpty) {
-		t.Errorf("TryAcquire all busy: got %v, want ErrPoolEmpty", err)
+	if !errors.Is(err, ErrPoolBusy) {
+		t.Errorf("TryAcquire all busy: got %v, want ErrPoolBusy", err)
 	}
 	p.Close()
 }
@@ -389,7 +389,6 @@ func TestGuard_ComputeBackoff_Overflow(t *testing.T) {
 
 func TestPanel_ScrollbackTrimming(t *testing.T) {
 	t.Parallel()
-	// Use a small scrollback so the test runs fast.
 	cfg := PanelConfig{MaxPanes: 9, ScrollbackSize: 100}
 	panel := NewPanel(cfg)
 	if err := panel.Start(); err != nil {
@@ -409,8 +408,6 @@ func TestPanel_ScrollbackTrimming(t *testing.T) {
 		}
 	}
 
-	// Use GetVisibleLines to verify lines are present and trimmed.
-	// Request a full view — height = ScrollbackSize.
 	lines, err := panel.GetVisibleLines("test", cfg.ScrollbackSize)
 	if err != nil {
 		t.Fatalf("GetVisibleLines: %v", err)
@@ -445,7 +442,6 @@ func TestNavigateToModel_ArrowUp(t *testing.T) {
 		t.Fatalf("NavigateToModel: %v", err)
 	}
 
-	// Should contain 2 ArrowUp keystrokes + Enter.
 	arrowUpCount := 0
 	for i := 0; i < len(keys); i++ {
 		if keys[i] == '\x1b' && i+2 < len(keys) && keys[i+1] == '[' && keys[i+2] == 'A' {
@@ -640,10 +636,6 @@ func TestUnwrapProvider_Valid(t *testing.T) {
 		t.Errorf("Name() = %q, want %q", p.Name(), "test-provider")
 	}
 }
-
-// ============================================================================
-// wrapAgentHandle — JS wrapper for AgentHandle
-// ============================================================================
 
 func TestWrapAgentHandle_Send(t *testing.T) {
 	t.Parallel()
@@ -870,10 +862,6 @@ func TestWrapAgentHandle_ResizeError(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// jsToModelMenu — JS object to ModelMenu conversion
-// ============================================================================
-
 func TestJsToModelMenu_NullPanics(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
@@ -931,10 +919,6 @@ func TestJsToModelMenu_BadModelsArray(t *testing.T) {
 	jsToModelMenu(rt, rt.ToValue(obj))
 }
 
-// ============================================================================
-// modelMenuToJS — ModelMenu to JS object conversion
-// ============================================================================
-
 func TestModelMenuToJS_RoundTrip(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
@@ -959,10 +943,6 @@ func TestModelMenuToJS_RoundTrip(t *testing.T) {
 		t.Errorf("selectedIndex = %d, want 0", idx)
 	}
 }
-
-// ============================================================================
-// Mock types for module binding tests
-// ============================================================================
 
 // stubProvider implements Provider for testing unwrapProvider.
 type stubProvider struct {
@@ -1010,6 +990,8 @@ func (s *stubAgentHandle) Wait() (int, error) {
 
 func (s *stubAgentHandle) Resize(_, _ int) error { return nil }
 
+func (s *stubAgentHandle) WaitReady(_ context.Context) error { return nil }
+
 // stubResizableAgentHandle extends stubAgentHandle to track resize calls.
 type stubResizableAgentHandle struct {
 	stubAgentHandle
@@ -1026,10 +1008,6 @@ func (s *stubResizableAgentHandle) Resize(rows, cols int) error {
 	s.resizeCols = cols
 	return nil
 }
-
-// ============================================================================
-// eventToJS — OutputEvent to JS object conversion
-// ============================================================================
 
 func TestEventToJS_WithFields(t *testing.T) {
 	t.Parallel()
@@ -1068,22 +1046,17 @@ func TestEventToJS_NilFields(t *testing.T) {
 	ev := OutputEvent{
 		Type:   EventText,
 		Line:   "Hello",
-		Fields: nil, // nil → empty object
+		Fields: nil,
 	}
 
 	val := eventToJS(rt, ev)
 	obj := val.ToObject(rt)
 
-	// Fields should be an empty object, not null.
 	fields := obj.Get("fields")
 	if goja.IsNull(fields) || goja.IsUndefined(fields) {
 		t.Error("fields should be a non-null object when Fields is nil")
 	}
 }
-
-// ============================================================================
-// wrapInstance — JS wrapper for Instance
-// ============================================================================
 
 func TestWrapInstance_Properties(t *testing.T) {
 	t.Parallel()
@@ -1125,7 +1098,6 @@ func TestWrapInstance_IsClosedAndClose(t *testing.T) {
 	jsVal := wrapInstance(rt, inst)
 	obj := jsVal.ToObject(rt)
 
-	// isClosed() should be false initially.
 	isClosed, _ := goja.AssertFunction(obj.Get("isClosed"))
 	val, err := isClosed(goja.Undefined())
 	if err != nil {
@@ -1135,14 +1107,12 @@ func TestWrapInstance_IsClosedAndClose(t *testing.T) {
 		t.Error("isClosed should be false initially")
 	}
 
-	// close() should succeed.
 	closeFn, _ := goja.AssertFunction(obj.Get("close"))
 	_, err = closeFn(goja.Undefined())
 	if err != nil {
 		t.Fatalf("close() threw: %v", err)
 	}
 
-	// isClosed() should be true after close.
 	val, err = isClosed(goja.Undefined())
 	if err != nil {
 		t.Fatalf("isClosed() after close threw: %v", err)
@@ -1151,10 +1121,6 @@ func TestWrapInstance_IsClosedAndClose(t *testing.T) {
 		t.Error("isClosed should be true after close")
 	}
 }
-
-// ============================================================================
-// wrapInstanceRegistry — JS wrapper for InstanceRegistry
-// ============================================================================
 
 func TestWrapInstanceRegistry_CreateGetCloseList(t *testing.T) {
 	t.Parallel()
@@ -1170,7 +1136,6 @@ func TestWrapInstanceRegistry_CreateGetCloseList(t *testing.T) {
 	jsVal := wrapInstanceRegistry(rt, reg)
 	obj := jsVal.ToObject(rt)
 
-	// len() should be 0 initially.
 	lenFn, _ := goja.AssertFunction(obj.Get("len"))
 	val, callErr := lenFn(goja.Undefined())
 	if callErr != nil {
@@ -1180,7 +1145,6 @@ func TestWrapInstanceRegistry_CreateGetCloseList(t *testing.T) {
 		t.Errorf("len() = %d, want 0", val.ToInteger())
 	}
 
-	// create() an instance.
 	createFn, _ := goja.AssertFunction(obj.Get("create"))
 	instVal, callErr := createFn(goja.Undefined(), rt.ToValue("sess-001"))
 	if callErr != nil {
@@ -1191,13 +1155,11 @@ func TestWrapInstanceRegistry_CreateGetCloseList(t *testing.T) {
 		t.Errorf("created instance id = %q, want %q", instObj.Get("id").String(), "sess-001")
 	}
 
-	// len() should now be 1.
 	val, _ = lenFn(goja.Undefined())
 	if val.ToInteger() != 1 {
 		t.Errorf("len() = %d, want 1", val.ToInteger())
 	}
 
-	// get() the instance.
 	getFn, _ := goja.AssertFunction(obj.Get("get"))
 	gotVal, callErr := getFn(goja.Undefined(), rt.ToValue("sess-001"))
 	if callErr != nil {
@@ -1208,7 +1170,6 @@ func TestWrapInstanceRegistry_CreateGetCloseList(t *testing.T) {
 		t.Errorf("get() id = %q, want %q", gotObj.Get("id").String(), "sess-001")
 	}
 
-	// get() non-existent — should return null.
 	gotVal, callErr = getFn(goja.Undefined(), rt.ToValue("no-such"))
 	if callErr != nil {
 		t.Fatalf("get(no-such) threw: %v", callErr)
@@ -1217,7 +1178,6 @@ func TestWrapInstanceRegistry_CreateGetCloseList(t *testing.T) {
 		t.Errorf("get(no-such) = %v, want null", gotVal)
 	}
 
-	// list() should contain sess-001.
 	listFn, _ := goja.AssertFunction(obj.Get("list"))
 	listVal, callErr := listFn(goja.Undefined())
 	if callErr != nil {
@@ -1241,14 +1201,12 @@ func TestWrapInstanceRegistry_CreateGetCloseList(t *testing.T) {
 		t.Errorf("baseDir() = %q, want %q", bdVal.String(), dir)
 	}
 
-	// close() specific instance.
 	closeFn, _ := goja.AssertFunction(obj.Get("close"))
 	_, callErr = closeFn(goja.Undefined(), rt.ToValue("sess-001"))
 	if callErr != nil {
 		t.Fatalf("close(sess-001) threw: %v", callErr)
 	}
 
-	// len() should be 0.
 	val, _ = lenFn(goja.Undefined())
 	if val.ToInteger() != 0 {
 		t.Errorf("len() after close = %d, want 0", val.ToInteger())
@@ -1297,24 +1255,18 @@ func TestWrapInstanceRegistry_CloseAll(t *testing.T) {
 	jsVal := wrapInstanceRegistry(rt, reg)
 	obj := jsVal.ToObject(rt)
 
-	// closeAll()
 	closeAllFn, _ := goja.AssertFunction(obj.Get("closeAll"))
 	_, callErr := closeAllFn(goja.Undefined())
 	if callErr != nil {
 		t.Fatalf("closeAll() threw: %v", callErr)
 	}
 
-	// len() should be 0.
 	lenFn, _ := goja.AssertFunction(obj.Get("len"))
 	val, _ := lenFn(goja.Undefined())
 	if val.ToInteger() != 0 {
 		t.Errorf("len() after closeAll = %d, want 0", val.ToInteger())
 	}
 }
-
-// ============================================================================
-// wrapPool — coverage for JS Pool binding
-// ============================================================================
 
 func TestWrapPool_StartDrainClose(t *testing.T) {
 	t.Parallel()
@@ -1324,14 +1276,12 @@ func TestWrapPool_StartDrainClose(t *testing.T) {
 	jsVal := wrapPool(rt, p)
 	obj := jsVal.ToObject(rt)
 
-	// start()
 	startFn, _ := goja.AssertFunction(obj.Get("start"))
 	_, err := startFn(goja.Undefined())
 	if err != nil {
 		t.Fatalf("start() threw: %v", err)
 	}
 
-	// stats() — verifies pool is running
 	statsFn, _ := goja.AssertFunction(obj.Get("stats"))
 	statsVal, err := statsFn(goja.Undefined())
 	if err != nil {
@@ -1343,31 +1293,24 @@ func TestWrapPool_StartDrainClose(t *testing.T) {
 		t.Errorf("stats.state = %d, want 1 (running)", statsObj.Get("state").ToInteger())
 	}
 
-	// config()
 	cfgFn, _ := goja.AssertFunction(obj.Get("config"))
 	_, err = cfgFn(goja.Undefined())
 	if err != nil {
 		t.Fatalf("config() threw: %v", err)
 	}
 
-	// drain()
 	drainFn, _ := goja.AssertFunction(obj.Get("drain"))
 	_, err = drainFn(goja.Undefined())
 	if err != nil {
 		t.Fatalf("drain() threw: %v", err)
 	}
 
-	// close()
 	closeFn, _ := goja.AssertFunction(obj.Get("close"))
 	_, err = closeFn(goja.Undefined())
 	if err != nil {
 		t.Fatalf("close() threw: %v", err)
 	}
 }
-
-// ---------------------------------------------------------------------------
-// wrapPoolWorker — state, stateName, taskCount, errorCount getters
-// ---------------------------------------------------------------------------
 
 func TestWrapPoolWorker_Getters(t *testing.T) {
 	t.Parallel()
@@ -1410,10 +1353,6 @@ func TestWrapPoolWorker_Getters(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// wrapPool — addWorker, removeWorker, release, tryAcquire, waitDrained
-// ---------------------------------------------------------------------------
-
 func TestWrapPool_AddWorker_NoArgs(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
@@ -1442,7 +1381,6 @@ func TestWrapPool_AddWorker_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("addWorker threw: %v", err)
 	}
-	// Should return a wrapped PoolWorker object
 	wObj := workerVal.ToObject(rt)
 	if wObj.Get("id").String() != "worker-1" {
 		t.Errorf("worker.id = %q, want worker-1", wObj.Get("id").String())
@@ -1547,7 +1485,6 @@ func TestWrapPool_TryAcquire_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tryAcquire threw: %v", err)
 	}
-	// Should return a wrapped worker
 	wObj := val.ToObject(rt)
 	if wObj.Get("id").String() != "w1" {
 		t.Errorf("tryAcquire worker.id = %q, want w1", wObj.Get("id").String())
@@ -1592,17 +1529,12 @@ func TestWrapPool_ReleaseWithError(t *testing.T) {
 	p.Close()
 }
 
-// ---------------------------------------------------------------------------
-// wrapRegistry — register, get, list, spawn
-// ---------------------------------------------------------------------------
-
 func TestWrapRegistry_RegisterAndList(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	r := NewRegistry()
 	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
 
-	// list() should start empty
 	listFn, _ := goja.AssertFunction(obj.Get("list"))
 	listVal, _ := listFn(goja.Undefined())
 	arr := listVal.Export()
@@ -1620,7 +1552,6 @@ func TestWrapRegistry_RegisterAndList(t *testing.T) {
 		t.Fatalf("register threw: %v", err)
 	}
 
-	// list() should have 1 provider now
 	listVal2, _ := listFn(goja.Undefined())
 	exported := listVal2.Export()
 	switch items := exported.(type) {
@@ -1709,24 +1640,18 @@ func TestWrapRegistry_SpawnNoArgs(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// wrapPanel — full lifecycle
-// ---------------------------------------------------------------------------
-
 func TestWrapPanel_FullLifecycle(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	panel := NewPanel(PanelConfig{MaxPanes: 4, ScrollbackSize: 50})
 	obj := wrapPanel(rt, panel).ToObject(rt)
 
-	// start()
 	startFn, _ := goja.AssertFunction(obj.Get("start"))
 	_, err := startFn(goja.Undefined())
 	if err != nil {
 		t.Fatalf("start() threw: %v", err)
 	}
 
-	// addPane(id, title)
 	addFn, _ := goja.AssertFunction(obj.Get("addPane"))
 	idxVal, err := addFn(goja.Undefined(), rt.ToValue("p1"), rt.ToValue("Pane 1"))
 	if err != nil {
@@ -1736,34 +1661,29 @@ func TestWrapPanel_FullLifecycle(t *testing.T) {
 		t.Errorf("addPane returned index %d, want 0", idxVal.ToInteger())
 	}
 
-	// addPane second pane
 	_, err = addFn(goja.Undefined(), rt.ToValue("p2"), rt.ToValue("Pane 2"))
 	if err != nil {
 		t.Fatalf("addPane #2 threw: %v", err)
 	}
 
-	// paneCount()
 	countFn, _ := goja.AssertFunction(obj.Get("paneCount"))
 	countVal, _ := countFn(goja.Undefined())
 	if countVal.ToInteger() != 2 {
 		t.Errorf("paneCount() = %d, want 2", countVal.ToInteger())
 	}
 
-	// activeIndex()
 	actIdxFn, _ := goja.AssertFunction(obj.Get("activeIndex"))
 	actVal, _ := actIdxFn(goja.Undefined())
 	if actVal.ToInteger() != 0 {
 		t.Errorf("activeIndex() = %d, want 0", actVal.ToInteger())
 	}
 
-	// setActive(1)
 	setActFn, _ := goja.AssertFunction(obj.Get("setActive"))
 	_, err = setActFn(goja.Undefined(), rt.ToValue(1))
 	if err != nil {
 		t.Fatalf("setActive(1) threw: %v", err)
 	}
 
-	// activePane() — should be pane 2
 	actPaneFn, _ := goja.AssertFunction(obj.Get("activePane"))
 	paneVal, _ := actPaneFn(goja.Undefined())
 	paneObj := paneVal.ToObject(rt)
@@ -1771,14 +1691,12 @@ func TestWrapPanel_FullLifecycle(t *testing.T) {
 		t.Errorf("activePane().id = %q, want p2", paneObj.Get("id").String())
 	}
 
-	// appendOutput(paneID, line)
 	appendFn, _ := goja.AssertFunction(obj.Get("appendOutput"))
 	_, err = appendFn(goja.Undefined(), rt.ToValue("p1"), rt.ToValue("hello world"))
 	if err != nil {
 		t.Fatalf("appendOutput threw: %v", err)
 	}
 
-	// updateHealth(paneID, health)
 	healthFn, _ := goja.AssertFunction(obj.Get("updateHealth"))
 	healthObj := rt.NewObject()
 	_ = healthObj.Set("state", "running")
@@ -1789,7 +1707,6 @@ func TestWrapPanel_FullLifecycle(t *testing.T) {
 		t.Fatalf("updateHealth threw: %v", err)
 	}
 
-	// routeInput(key)
 	routeFn, _ := goja.AssertFunction(obj.Get("routeInput"))
 	routeVal, err := routeFn(goja.Undefined(), rt.ToValue("a"))
 	if err != nil {
@@ -1800,25 +1717,21 @@ func TestWrapPanel_FullLifecycle(t *testing.T) {
 		t.Error("routeInput result should have consumed field")
 	}
 
-	// getVisibleLines(paneID, height)
 	visFn, _ := goja.AssertFunction(obj.Get("getVisibleLines"))
 	visVal, err := visFn(goja.Undefined(), rt.ToValue("p1"), rt.ToValue(10))
 	if err != nil {
 		t.Fatalf("getVisibleLines threw: %v", err)
 	}
-	// Should be an array
 	if visVal == nil || goja.IsUndefined(visVal) {
 		t.Error("getVisibleLines returned nil/undefined")
 	}
 
-	// statusBar()
 	statusFn, _ := goja.AssertFunction(obj.Get("statusBar"))
 	_, err = statusFn(goja.Undefined())
 	if err != nil {
 		t.Fatalf("statusBar threw: %v", err)
 	}
 
-	// snapshot()
 	snapFn, _ := goja.AssertFunction(obj.Get("snapshot"))
 	snapVal, err := snapFn(goja.Undefined())
 	if err != nil {
@@ -1828,7 +1741,6 @@ func TestWrapPanel_FullLifecycle(t *testing.T) {
 		t.Error("snapshot returned nil/undefined")
 	}
 
-	// config()
 	cfgFn, _ := goja.AssertFunction(obj.Get("config"))
 	cfgVal, err := cfgFn(goja.Undefined())
 	if err != nil {
@@ -1839,14 +1751,12 @@ func TestWrapPanel_FullLifecycle(t *testing.T) {
 		t.Errorf("config().maxPanes = %d, want 4", cfgObj.Get("maxPanes").ToInteger())
 	}
 
-	// removePane(id)
 	rmFn, _ := goja.AssertFunction(obj.Get("removePane"))
 	_, err = rmFn(goja.Undefined(), rt.ToValue("p2"))
 	if err != nil {
 		t.Fatalf("removePane threw: %v", err)
 	}
 
-	// close()
 	closeFn, _ := goja.AssertFunction(obj.Get("close"))
 	_, err = closeFn(goja.Undefined())
 	if err != nil {
@@ -1860,56 +1770,48 @@ func TestWrapPanel_ErrorPaths(t *testing.T) {
 	panel := NewPanel(PanelConfig{MaxPanes: 4, ScrollbackSize: 50})
 	obj := wrapPanel(rt, panel).ToObject(rt)
 
-	// addPane no args
 	addFn, _ := goja.AssertFunction(obj.Get("addPane"))
 	_, err := addFn(goja.Undefined())
 	if err == nil {
 		t.Fatal("expected TypeError for addPane with no args")
 	}
 
-	// removePane no args
 	rmFn, _ := goja.AssertFunction(obj.Get("removePane"))
 	_, err = rmFn(goja.Undefined())
 	if err == nil {
 		t.Fatal("expected TypeError for removePane with no args")
 	}
 
-	// routeInput no args
 	routeFn, _ := goja.AssertFunction(obj.Get("routeInput"))
 	_, err = routeFn(goja.Undefined())
 	if err == nil {
 		t.Fatal("expected TypeError for routeInput with no args")
 	}
 
-	// setActive no args
 	setFn, _ := goja.AssertFunction(obj.Get("setActive"))
 	_, err = setFn(goja.Undefined())
 	if err == nil {
 		t.Fatal("expected TypeError for setActive with no args")
 	}
 
-	// appendOutput no args
 	appendFn, _ := goja.AssertFunction(obj.Get("appendOutput"))
 	_, err = appendFn(goja.Undefined())
 	if err == nil {
 		t.Fatal("expected TypeError for appendOutput with no args")
 	}
 
-	// updateHealth no args
 	healthFn, _ := goja.AssertFunction(obj.Get("updateHealth"))
 	_, err = healthFn(goja.Undefined())
 	if err == nil {
 		t.Fatal("expected TypeError for updateHealth with no args")
 	}
 
-	// getVisibleLines no args
 	visFn, _ := goja.AssertFunction(obj.Get("getVisibleLines"))
 	_, err = visFn(goja.Undefined())
 	if err == nil {
 		t.Fatal("expected TypeError for getVisibleLines with no args")
 	}
 
-	// start() on already-started panel
 	_ = panel.Start()
 	startFn, _ := goja.AssertFunction(obj.Get("start"))
 	_, err = startFn(goja.Undefined())
@@ -1917,7 +1819,6 @@ func TestWrapPanel_ErrorPaths(t *testing.T) {
 		t.Fatal("expected error for double start()")
 	}
 
-	// setActive out of bounds
 	_, err = setFn(goja.Undefined(), rt.ToValue(999))
 	if err == nil {
 		t.Fatal("expected error for setActive with invalid index")
@@ -1930,7 +1831,6 @@ func TestWrapPanel_ActivePaneEmpty(t *testing.T) {
 	panel := NewPanel(DefaultPanelConfig())
 	obj := wrapPanel(rt, panel).ToObject(rt)
 
-	// activePane() on empty panel should return null
 	actPaneFn, _ := goja.AssertFunction(obj.Get("activePane"))
 	val, err := actPaneFn(goja.Undefined())
 	if err != nil {
@@ -1999,10 +1899,6 @@ func TestWrapPanel_RemovePaneError(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// wrapGuard — processEvent, processCrash, checkTimeout, state, config
-// ---------------------------------------------------------------------------
-
 func TestWrapGuard_FullLifecycle(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
@@ -2061,14 +1957,12 @@ func TestWrapGuard_FullLifecycle(t *testing.T) {
 		t.Fatalf("checkTimeout threw: %v", err)
 	}
 
-	// resetCrashCount()
 	resetFn, _ := goja.AssertFunction(obj.Get("resetCrashCount"))
 	_, err = resetFn(goja.Undefined())
 	if err != nil {
 		t.Fatalf("resetCrashCount threw: %v", err)
 	}
 
-	// state()
 	stateFn, _ := goja.AssertFunction(obj.Get("state"))
 	stateVal, err := stateFn(goja.Undefined())
 	if err != nil {
@@ -2082,7 +1976,6 @@ func TestWrapGuard_FullLifecycle(t *testing.T) {
 		t.Error("state() should have started field")
 	}
 
-	// config()
 	cfgFn, _ := goja.AssertFunction(obj.Get("config"))
 	cfgVal, err := cfgFn(goja.Undefined())
 	if err != nil {
@@ -2159,15 +2052,10 @@ func TestWrapGuard_CheckTimeout_Fires(t *testing.T) {
 	if err != nil {
 		t.Fatalf("checkTimeout threw: %v", err)
 	}
-	// Should fire timeout event
-	if val == nil || goja.IsNull(val) || goja.IsUndefined(val) {
+	if goja.IsNull(val) || goja.IsUndefined(val) {
 		t.Error("checkTimeout should have fired a timeout guard event")
 	}
 }
-
-// ---------------------------------------------------------------------------
-// wrapMCPGuard — processToolCall, checkNoCallTimeout, state, config
-// ---------------------------------------------------------------------------
 
 func TestWrapMCPGuard_FullLifecycle(t *testing.T) {
 	t.Parallel()
@@ -2211,7 +2099,6 @@ func TestWrapMCPGuard_FullLifecycle(t *testing.T) {
 		t.Fatalf("checkNoCallTimeout threw: %v", err)
 	}
 
-	// state()
 	stateFn, _ := goja.AssertFunction(obj.Get("state"))
 	stateVal, err := stateFn(goja.Undefined())
 	if err != nil {
@@ -2222,7 +2109,6 @@ func TestWrapMCPGuard_FullLifecycle(t *testing.T) {
 		t.Errorf("state().totalCalls = %d, want 1", stateObj.Get("totalCalls").ToInteger())
 	}
 
-	// config()
 	cfgFn, _ := goja.AssertFunction(obj.Get("config"))
 	cfgVal, err := cfgFn(goja.Undefined())
 	if err != nil {
@@ -2261,14 +2147,10 @@ func TestWrapMCPGuard_CheckNoCallTimeout_Fires(t *testing.T) {
 	if err != nil {
 		t.Fatalf("checkNoCallTimeout threw: %v", err)
 	}
-	if val == nil || goja.IsNull(val) || goja.IsUndefined(val) {
+	if goja.IsNull(val) || goja.IsUndefined(val) {
 		t.Error("checkNoCallTimeout should have fired a guard event")
 	}
 }
-
-// ============================================================================
-// MCPGuard — additional coverage for uncovered paths
-// ============================================================================
 
 func TestMCPGuard_CheckNoCallTimeout_AlreadyFired(t *testing.T) {
 	t.Parallel()
@@ -2370,10 +2252,6 @@ func TestMCPGuard_Frequency_Exceeded_Coverage(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// Panel — additional health indicator coverage
-// ============================================================================
-
 func TestPanel_HealthIndicator_StoppedAndDefault(t *testing.T) {
 	t.Parallel()
 	// Test the "stopped" and default cases.
@@ -2387,13 +2265,8 @@ func TestPanel_HealthIndicator_StoppedAndDefault(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// Safety — negative risk clamp
-// ============================================================================
-
 func TestSafety_CalculateRisk_NegativeClamp(t *testing.T) {
 	t.Parallel()
-	// A SafetyValidator with extremely permissive settings.
 	sv := NewSafetyValidator(SafetyConfig{
 		BlockThreshold:   0.9,
 		ConfirmThreshold: 0.5,
@@ -2411,15 +2284,9 @@ func TestSafety_CalculateRisk_NegativeClamp(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// Parser — field extractor nil submatch paths
-// ============================================================================
-
 func TestParser_FieldExtractor_EmptyMatch(t *testing.T) {
 	t.Parallel()
 	p := NewParser()
-	// Lines that match patterns but have empty submatch groups.
-	// Rate limit with no numeric value:
 	ev := p.Parse("⏳ Waiting for rate limit...")
 	if ev.Type != EventRateLimit {
 		t.Fatalf("expected EventRateLimit, got %d", ev.Type)
@@ -2439,10 +2306,6 @@ func TestParser_FieldExtractor_EmptyMatch(t *testing.T) {
 		t.Fatalf("expected EventError, got %d", ev3.Type)
 	}
 }
-
-// ============================================================================
-// Supervisor — decision edge cases
-// ============================================================================
 
 func TestSupervisor_RetryThresholdBoundary(t *testing.T) {
 	t.Parallel()
@@ -2467,10 +2330,6 @@ func TestSupervisor_RetryThresholdBoundary(t *testing.T) {
 		t.Fatalf("second error: expected Escalate or Retry, got %s", RecoveryActionName(d2.Action))
 	}
 }
-
-// ============================================================================
-// ManagedSession — callback coverage
-// ============================================================================
 
 func TestManagedSession_ProcessCrash_Escalation_Coverage(t *testing.T) {
 	t.Parallel()

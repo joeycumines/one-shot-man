@@ -58,13 +58,16 @@ func WorkerStateName(s WorkerState) string {
 
 // PoolConfig configures pool behavior.
 type PoolConfig struct {
-	MaxSize int // Maximum number of workers (required, >= 1)
+	MaxSize        int    // Maximum number of workers (required, >= 1)
+	Strategy       string // Routing strategy: "round-robin" (default), "least-connections", "health-aware"
+	StickySessions bool   // When true, RouteTo enables sticky routing by agent ID
 }
 
 // DefaultPoolConfig returns production-ready pool configuration.
 func DefaultPoolConfig() PoolConfig {
 	return PoolConfig{
-		MaxSize: 4,
+		MaxSize:  4,
+		Strategy: "round-robin",
 	}
 }
 
@@ -88,6 +91,13 @@ type PoolWorker struct {
 
 	// State is the current worker state.
 	State WorkerState
+
+	// Capacity is the maximum concurrent tasks this worker can handle.
+	// A value of 0 means unlimited (single-task semantics).
+	Capacity int
+
+	// ActiveTasks is the number of currently executing tasks on this worker.
+	ActiveTasks int
 }
 
 // Pool manages a fixed set of workers with round-robin dispatch,
@@ -121,6 +131,9 @@ var (
 
 	// ErrPoolEmpty is returned when acquiring from a pool with no workers.
 	ErrPoolEmpty = errors.New("claudemux: pool has no workers")
+
+	// ErrPoolBusy is returned when all workers are busy.
+	ErrPoolBusy = errors.New("claudemux: all workers are busy")
 
 	// ErrPoolNotRunning is returned when the pool is not in Running state.
 	ErrPoolNotRunning = errors.New("claudemux: pool is not running")
@@ -215,9 +228,14 @@ func (p *Pool) RemoveWorker(id string) (*PoolWorker, error) {
 	return nil, fmt.Errorf("%w: %s", ErrWorkerNotFound, id)
 }
 
-// Acquire selects the next available worker via round-robin. If all
-// workers are busy, Acquire blocks until one is released. Returns error
-// if the pool is not running, draining, or empty.
+// Acquire selects the next available worker based on the configured
+// strategy. If all workers are busy, Acquire blocks until one is released.
+// Returns error if the pool is not running, draining, or empty.
+//
+// Strategy behavior:
+//   - "round-robin": cycle through workers in order (default)
+//   - "least-connections": prefer workers with fewer ActiveTasks
+//   - "health-aware": prefer workers with lower ErrorCount/TaskCount ratio
 func (p *Pool) Acquire() (*PoolWorker, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -237,16 +255,11 @@ func (p *Pool) Acquire() (*PoolWorker, error) {
 			return nil, ErrPoolEmpty
 		}
 
-		// Round-robin: find the next idle worker starting from nextIdx.
-		for range p.workers {
-			idx := p.nextIdx % len(p.workers)
-			p.nextIdx = (p.nextIdx + 1) % len(p.workers)
-			w := p.workers[idx]
-			if w.State == WorkerIdle {
-				w.State = WorkerBusy
-				p.inflight++
-				return w, nil
-			}
+		if w := p.selectWorker(); w != nil {
+			w.ActiveTasks++
+			w.State = WorkerBusy
+			p.inflight++
+			return w, nil
 		}
 
 		// All workers busy — wait for a release.
@@ -274,19 +287,14 @@ func (p *Pool) TryAcquire() (*PoolWorker, error) {
 		return nil, ErrPoolEmpty
 	}
 
-	// Round-robin: find the next idle worker.
-	for range p.workers {
-		idx := p.nextIdx % len(p.workers)
-		p.nextIdx = (p.nextIdx + 1) % len(p.workers)
-		w := p.workers[idx]
-		if w.State == WorkerIdle {
-			w.State = WorkerBusy
-			p.inflight++
-			return w, nil
-		}
+	if w := p.selectWorker(); w != nil {
+		w.ActiveTasks++
+		w.State = WorkerBusy
+		p.inflight++
+		return w, nil
 	}
 
-	return nil, ErrPoolEmpty
+	return nil, ErrPoolBusy
 }
 
 // Release returns a worker to the pool after task completion. The error
@@ -304,8 +312,13 @@ func (p *Pool) Release(w *PoolWorker, taskErr error, now time.Time) {
 		w.ErrorCount++
 	}
 
-	// Only transition if still Busy (not Closed by concurrent removal).
-	if w.State == WorkerBusy {
+	if w.ActiveTasks > 0 {
+		w.ActiveTasks--
+	}
+
+	// Only transition if still Busy (not Closed by concurrent removal)
+	// and no more active tasks.
+	if w.State == WorkerBusy && w.ActiveTasks == 0 {
 		w.State = WorkerIdle
 	}
 
@@ -372,12 +385,14 @@ type PoolStats struct {
 
 // WorkerStats holds observable worker statistics.
 type WorkerStats struct {
-	ID         string      `json:"id"`
-	State      WorkerState `json:"state"`
-	StateName  string      `json:"stateName"`
-	TaskCount  int64       `json:"taskCount"`
-	ErrorCount int64       `json:"errorCount"`
-	LastTaskAt time.Time   `json:"lastTaskAt"`
+	ID          string      `json:"id"`
+	State       WorkerState `json:"state"`
+	StateName   string      `json:"stateName"`
+	TaskCount   int64       `json:"taskCount"`
+	ErrorCount  int64       `json:"errorCount"`
+	LastTaskAt  time.Time   `json:"lastTaskAt"`
+	Capacity    int         `json:"capacity"`
+	ActiveTasks int         `json:"activeTasks"`
 }
 
 // Stats returns current pool statistics.
@@ -396,12 +411,14 @@ func (p *Pool) Stats() PoolStats {
 
 	for i, w := range p.workers {
 		stats.Workers[i] = WorkerStats{
-			ID:         w.ID,
-			State:      w.State,
-			StateName:  WorkerStateName(w.State),
-			TaskCount:  w.TaskCount,
-			ErrorCount: w.ErrorCount,
-			LastTaskAt: w.LastTaskAt,
+			ID:          w.ID,
+			State:       w.State,
+			StateName:   WorkerStateName(w.State),
+			TaskCount:   w.TaskCount,
+			ErrorCount:  w.ErrorCount,
+			LastTaskAt:  w.LastTaskAt,
+			Capacity:    w.Capacity,
+			ActiveTasks: w.ActiveTasks,
 		}
 	}
 
@@ -411,6 +428,154 @@ func (p *Pool) Stats() PoolStats {
 // Config returns a copy of the pool configuration.
 func (p *Pool) Config() PoolConfig {
 	return p.config
+}
+
+// selectWorker picks an idle worker based on the configured strategy.
+// Must be called with p.mu held. Returns nil if no idle worker is available.
+func (p *Pool) selectWorker() *PoolWorker {
+	strategy := p.config.Strategy
+	if strategy == "" {
+		strategy = "round-robin"
+	}
+
+	switch strategy {
+	case "least-connections":
+		return p.selectLeastConnections()
+	case "health-aware":
+		return p.selectHealthAware()
+	default:
+		return p.selectRoundRobin()
+	}
+}
+
+// selectRoundRobin implements round-robin worker selection.
+func (p *Pool) selectRoundRobin() *PoolWorker {
+	for range p.workers {
+		idx := p.nextIdx % len(p.workers)
+		p.nextIdx = (p.nextIdx + 1) % len(p.workers)
+		w := p.workers[idx]
+		if w.State == WorkerIdle {
+			return w
+		}
+	}
+	return nil
+}
+
+// selectLeastConnections selects the idle worker with the fewest ActiveTasks.
+func (p *Pool) selectLeastConnections() *PoolWorker {
+	var best *PoolWorker
+	for _, w := range p.workers {
+		if w.State != WorkerIdle {
+			continue
+		}
+		if best == nil || w.ActiveTasks < best.ActiveTasks {
+			best = w
+		}
+	}
+	return best
+}
+
+// selectHealthAware selects the idle worker with the best error ratio.
+// Prefers workers with lower ErrorCount/TaskCount ratio. Workers with
+// zero tasks are preferred over workers with errors.
+func (p *Pool) selectHealthAware() *PoolWorker {
+	var best *PoolWorker
+	var bestRatio float64
+	for _, w := range p.workers {
+		if w.State != WorkerIdle {
+			continue
+		}
+		var ratio float64
+		if w.TaskCount > 0 {
+			ratio = float64(w.ErrorCount) / float64(w.TaskCount)
+		}
+		if best == nil || ratio < bestRatio {
+			best = w
+			bestRatio = ratio
+		}
+	}
+	return best
+}
+
+// AcquireCapacity acquires a worker that has available capacity (ActiveTasks
+// < Capacity, or Capacity == 0 meaning unlimited). The worker remains in
+// Busy state only when ActiveTasks first goes above 0. For capacity-based
+// workers, the state stays Idle as long as there is remaining capacity.
+func (p *Pool) AcquireCapacity() (*PoolWorker, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for {
+		if p.state == PoolClosed {
+			return nil, ErrPoolClosed
+		}
+		if p.state == PoolDraining {
+			return nil, ErrPoolDraining
+		}
+		if p.state != PoolRunning {
+			return nil, ErrPoolNotRunning
+		}
+
+		if len(p.workers) == 0 {
+			return nil, ErrPoolEmpty
+		}
+
+		for _, w := range p.workers {
+			if w.State == WorkerClosed {
+				continue
+			}
+			if w.Capacity > 0 && w.ActiveTasks >= w.Capacity {
+				continue
+			}
+			if w.Capacity == 0 && w.State == WorkerBusy {
+				continue
+			}
+			w.ActiveTasks++
+			if w.ActiveTasks == 1 {
+				w.State = WorkerBusy
+			}
+			p.inflight++
+			return w, nil
+		}
+
+		p.cond.Wait()
+	}
+}
+
+// RouteTo returns a specific worker by ID for sticky session routing.
+// Returns ErrWorkerNotFound if the worker does not exist. Returns
+// ErrPoolNotRunning if the pool is not running.
+func (p *Pool) RouteTo(agentID string) (*PoolWorker, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.state != PoolRunning {
+		return nil, ErrPoolNotRunning
+	}
+
+	for _, w := range p.workers {
+		if w.ID == agentID {
+			return w, nil
+		}
+	}
+
+	return nil, fmt.Errorf("%w: %s", ErrWorkerNotFound, agentID)
+}
+
+// UpdateWorkerCapacity updates the capacity for a worker by ID.
+// Returns ErrWorkerNotFound if the worker does not exist.
+func (p *Pool) UpdateWorkerCapacity(id string, capacity int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, w := range p.workers {
+		if w.ID == id {
+			w.Capacity = capacity
+			return nil
+		}
+	}
+
+	return fmt.Errorf("%w: %s", ErrWorkerNotFound, id)
 }
 
 // FindWorker returns a worker by ID, or nil if not found.

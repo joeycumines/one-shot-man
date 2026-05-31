@@ -829,10 +829,6 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 	}
 }
 
-// ---------------------------------------------------------------------------
-//  Split-protocol Go→JS conversion helpers
-// ---------------------------------------------------------------------------
-
 // classificationRequestToJS converts a ClassificationRequest to a JS object.
 func classificationRequestToJS(runtime *goja.Runtime, r *ClassificationRequest) goja.Value {
 	obj := runtime.NewObject()
@@ -1871,6 +1867,8 @@ func wrapSupervisor(ctx context.Context, runtime *goja.Runtime, s *Supervisor) g
 func poolConfigToJS(runtime *goja.Runtime, cfg PoolConfig) goja.Value {
 	obj := runtime.NewObject()
 	_ = obj.Set("maxSize", cfg.MaxSize)
+	_ = obj.Set("strategy", cfg.Strategy)
+	_ = obj.Set("stickySessions", cfg.StickySessions)
 	return obj
 }
 
@@ -1881,6 +1879,12 @@ func jsToPoolConfig(runtime *goja.Runtime, val goja.Value) PoolConfig {
 
 	if v := obj.Get("maxSize"); v != nil && !goja.IsUndefined(v) {
 		cfg.MaxSize = int(v.ToInteger())
+	}
+	if v := obj.Get("strategy"); v != nil && !goja.IsUndefined(v) {
+		cfg.Strategy = v.String()
+	}
+	if v := obj.Get("stickySessions"); v != nil && !goja.IsUndefined(v) {
+		cfg.StickySessions = v.ToBoolean()
 	}
 
 	return cfg
@@ -1897,6 +1901,8 @@ func workerStatsToJS(runtime *goja.Runtime, ws WorkerStats) goja.Value {
 	if !ws.LastTaskAt.IsZero() {
 		_ = obj.Set("lastTaskAt", ws.LastTaskAt.UnixMilli())
 	}
+	_ = obj.Set("capacity", ws.Capacity)
+	_ = obj.Set("activeTasks", ws.ActiveTasks)
 	return obj
 }
 

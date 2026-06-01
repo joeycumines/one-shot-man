@@ -237,11 +237,11 @@ func (m *Model) forwardMouse(msg tea.MouseMsg) {
 	m.mu.Unlock()
 
 	evt := termmux.MouseEvent{
-		X:      mouse.X,
-		Y:      mouse.Y,
-		Shift:  mouse.Mod.Contains(tea.ModShift),
-		Alt:    mouse.Mod.Contains(tea.ModAlt),
-		Ctrl:   mouse.Mod.Contains(tea.ModCtrl),
+		X:     mouse.X,
+		Y:     mouse.Y,
+		Shift: mouse.Mod.Contains(tea.ModShift),
+		Alt:   mouse.Mod.Contains(tea.ModAlt),
+		Ctrl:  mouse.Mod.Contains(tea.ModCtrl),
 	}
 
 	// Determine button and event type from the concrete message type.

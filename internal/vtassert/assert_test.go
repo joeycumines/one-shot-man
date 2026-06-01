@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 	"github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 	"github.com/joeycumines/one-shot-man/internal/termui/layout"
-	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
 
 func TestAssertCell(t *testing.T) {
@@ -112,5 +112,3 @@ func TestAssertRegion(t *testing.T) {
 		return nil
 	})
 }
-
-

@@ -230,7 +230,6 @@ func extractRect(runtime *goja.Runtime, val goja.Value) coordinate.Rect {
 	}
 }
 
-
 // jsToBorder converts a JS value to a lipgloss.Border.
 // Accepts a plain JS object with border character properties.
 func jsToBorder(runtime *goja.Runtime, val goja.Value) lipgloss.Border {

@@ -991,7 +991,7 @@ func TestCaptureSession_DrainTimeout_Custom(t *testing.T) {
 	// The drain timeout fires only if the done channel doesn't close first.
 	// With "sleep 60" the process close is clean, so done may close quickly.
 	// Either way, Close must not hang longer than timeout + generous margin.
-  if elapsed > timeout+2*time.Second {
+	if elapsed > timeout+2*time.Second {
 		t.Fatalf("Close took %v, expected at most ~%v", elapsed, timeout+2*time.Second)
 	}
 }

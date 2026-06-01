@@ -32,8 +32,8 @@ func newControllableSession() *controllableSession {
 	}
 }
 
-func (s *controllableSession) Done() <-chan struct{}     { return s.doneCh }
-func (s *controllableSession) Reader() <-chan []byte     { return s.readerCh }
+func (s *controllableSession) Done() <-chan struct{} { return s.doneCh }
+func (s *controllableSession) Reader() <-chan []byte { return s.readerCh }
 func (s *controllableSession) Close() error {
 	s.closeCalled = true
 	select {

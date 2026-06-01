@@ -99,10 +99,10 @@ func TestFocusGroup_HitTest(t *testing.T) {
 	fg := NewFocusGroup(a, b)
 
 	tests := []struct {
-		name     string
-		x, y     int
-		wantID   string
-		wantOK   bool
+		name   string
+		x, y   int
+		wantID string
+		wantOK bool
 	}{
 		{"inside a", 5, 2, "a", true},
 		{"inside b", 15, 3, "b", true},

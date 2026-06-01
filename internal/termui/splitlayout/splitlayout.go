@@ -46,15 +46,15 @@ type SplitLayout struct {
 	direction layout.Direction
 	bounds    coordinate.Rect
 
-	manager  *termmux.SessionManager
-	comp     *compositor.Compositor
-	focus    *focus.FocusGroup
+	manager *termmux.SessionManager
+	comp    *compositor.Compositor
+	focus   *focus.FocusGroup
 
-	subID   int
-	eventCh <-chan termmux.Event
+	subID    int
+	eventCh  <-chan termmux.Event
 	outputCh chan termmux.Event
-	done    chan struct{}
-	wg      sync.WaitGroup
+	done     chan struct{}
+	wg       sync.WaitGroup
 
 	closed bool
 }

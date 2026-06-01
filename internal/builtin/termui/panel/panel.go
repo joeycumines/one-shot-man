@@ -217,4 +217,3 @@ func jsToBorder(runtime *goja.Runtime, val goja.Value) lipgloss.Border {
 		MiddleBottom: getString("middleBottom"),
 	}
 }
-

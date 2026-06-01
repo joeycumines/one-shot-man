@@ -65,9 +65,9 @@ func TestVHSConfig_LightDefaults(t *testing.T) {
 
 func TestEscapeVHSString(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		want    string
+		name      string
+		input     string
+		want      string
 		wantPanic bool
 	}{
 		{name: "simple", input: "hello", want: `"hello"`},

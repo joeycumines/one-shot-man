@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 	"github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 	"github.com/joeycumines/one-shot-man/internal/termui/layout"
-	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
 
 // Color represents a terminal color for visual regression assertions.

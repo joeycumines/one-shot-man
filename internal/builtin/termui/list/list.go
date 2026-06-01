@@ -185,7 +185,6 @@ func extractRect(runtime *goja.Runtime, val goja.Value) coordinate.Rect {
 	}
 }
 
-
 // indexStr converts an int to a string for JS array index access.
 func indexStr(i int) string {
 	return fmt.Sprintf("%d", i)

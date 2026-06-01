@@ -58,7 +58,7 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	t.Cleanup(func() { bridge.Stop() })
 
 	// Register additional modules.
-	reg.RegisterNativeModule("osm:claudemux", Require(ctx))
+	reg.RegisterNativeModule("osm:claudemux", Require(ctx, nil))
 	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx, nil))
 	reg.RegisterNativeModule("osm:pabt", pabtmod.Require(ctx, bridge))
 

@@ -129,7 +129,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	})
 	registry.RegisterNativeModule(prefix+"grpc", grpcmod.Require(ch, pbMod, eventLoopProvider.Adapter()))
 
-	registry.RegisterNativeModule(prefix+"claudemux", claudemuxmod.Require(ctx))
+	registry.RegisterNativeModule(prefix+"claudemux", claudemuxmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
 	registry.RegisterNativeModule(prefix+"path", pathmod.Require)
 	registry.RegisterNativeModule(prefix+"regexp", regexpmod.Require)

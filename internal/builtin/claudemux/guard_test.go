@@ -241,6 +241,33 @@ func TestGuard_RateLimit_RetryAfterShorterIgnored(t *testing.T) {
 	}
 }
 
+func TestGuard_RateLimit_RetryAfterMs(t *testing.T) {
+	t.Parallel()
+	g := NewGuard(GuardConfig{
+		RateLimit: RateLimitGuardConfig{
+			Enabled:      true,
+			InitialDelay: 1 * time.Second,
+			MaxDelay:     5 * time.Minute,
+			Multiplier:   2.0,
+		},
+	})
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	ev := OutputEvent{
+		Type:   EventRateLimit,
+		Line:   "rate limit",
+		Fields: map[string]string{"retryAfterMs": "5000"},
+	}
+	ge := g.ProcessEvent(ev, now)
+
+	if ge == nil {
+		t.Fatal("expected guard event")
+	}
+	if ge.Details["delay"] != "5s" {
+		t.Errorf("delay = %q, want 5s (from retryAfterMs)", ge.Details["delay"])
+	}
+}
+
 func TestGuard_RateLimit_ResetAfterIdle(t *testing.T) {
 	t.Parallel()
 	g := NewGuard(GuardConfig{

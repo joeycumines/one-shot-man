@@ -64,7 +64,6 @@ type CoordinationBus struct {
 	mu         sync.RWMutex
 	config     BusConfig
 	closed     bool
-	cond       *sync.Cond
 }
 
 // NewCoordinationBus creates a new CoordinationBus with the given config.
@@ -76,7 +75,6 @@ func NewCoordinationBus(config BusConfig) *CoordinationBus {
 	if bus.config.BufferSize <= 0 {
 		bus.config = DefaultConfig()
 	}
-	bus.cond = sync.NewCond(&bus.mu)
 	return bus
 }
 
@@ -137,31 +135,11 @@ func (b *CoordinationBus) Unsubscribe(agentID string) {
 	b.broadcasts = filterSubs(b.broadcasts, agentID)
 }
 
-// SubscribeBroadcast registers a handler that receives all messages.
-func (b *CoordinationBus) SubscribeBroadcast(agentID string, handler func(CoordinationMessage)) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	sub := &Subscription{
-		AgentID:   agentID,
-		Handler:   handler,
-		createdAt: time.Now(),
-	}
-	b.broadcasts = append(b.broadcasts, sub)
-}
-
-// UnsubscribeBroadcast removes the handler for an agent from the broadcast channel.
-func (b *CoordinationBus) UnsubscribeBroadcast(agentID string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.broadcasts = filterSubs(b.broadcasts, agentID)
-}
-
 // Close shuts down the bus, preventing further publishes.
 func (b *CoordinationBus) Close() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.closed = true
-	b.cond.Broadcast()
 }
 
 func filterSubs(subs []*Subscription, agentID string) []*Subscription {

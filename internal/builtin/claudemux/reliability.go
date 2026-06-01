@@ -511,10 +511,17 @@ func (p *ReliablePrompter) recoverHandle(ctx context.Context) error {
 }
 
 // Close closes the underlying handle. Must be called to prevent goroutine leaks.
+// Safe to call multiple times; no-ops if the handle is nil (e.g. after a failed
+// recovery).
 func (p *ReliablePrompter) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.handle.Close()
+	if p.handle == nil {
+		return nil
+	}
+	err := p.handle.Close()
+	p.handle = nil
+	return err
 }
 
 // classifyLine parses a raw NDJSON line and classifies it into an

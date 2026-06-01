@@ -66,7 +66,7 @@ func prSplitTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx, nil))
 
 	// Register claudemux module for strategy selection.
-	reg.RegisterNativeModule("osm:claudemux", Require(ctx))
+	reg.RegisterNativeModule("osm:claudemux", Require(ctx, nil))
 
 	runJS := func(script string) goja.Value {
 		t.Helper()

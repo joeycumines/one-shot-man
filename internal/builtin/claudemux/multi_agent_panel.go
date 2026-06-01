@@ -247,13 +247,13 @@ func (m *MultiAgentPanel) renderDashboard() string {
 		}
 	}
 
+	snap := m.panel.Snapshot()
+
 	for _, id := range agentIDs {
 		info, ok := m.agents[id]
 		if !ok {
 			continue
 		}
-		_ = info // info is used below
-		snap := m.panel.Snapshot()
 		var ph PaneHealth
 		for _, ps := range snap.Panes {
 			if ps.ID == id {

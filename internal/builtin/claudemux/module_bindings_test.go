@@ -24,7 +24,7 @@ func moduleTestEnv(t *testing.T) func(string) goja.Value {
 	gojanodejsconsole.Enable(vm)
 
 	ctx := context.Background()
-	reg.RegisterNativeModule("osm:claudemux", Require(ctx))
+	reg.RegisterNativeModule("osm:claudemux", Require(ctx, nil))
 
 	runJS := func(script string) goja.Value {
 		t.Helper()

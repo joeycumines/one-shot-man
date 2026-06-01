@@ -284,11 +284,20 @@ func (g *Guard) handleRateLimit(ev OutputEvent, now time.Time) *GuardEvent {
 	// Compute delay using exponential backoff.
 	delay := g.computeBackoff()
 
-	// If the event provides a retryAfter hint, use it if it's longer.
+	// If the event provides a retry hint, use it if it's longer.
+	// PTY parser sets "retryAfter" (seconds); protocol mode sets "retryAfterMs" (milliseconds).
 	if ev.Fields != nil {
 		if retryStr, ok := ev.Fields["retryAfter"]; ok {
 			if retrySec, err := strconv.ParseFloat(retryStr, 64); err == nil {
 				hint := time.Duration(retrySec * float64(time.Second))
+				if hint > delay {
+					delay = hint
+				}
+			}
+		}
+		if retryStr, ok := ev.Fields["retryAfterMs"]; ok {
+			if retryMs, err := strconv.ParseFloat(retryStr, 64); err == nil {
+				hint := time.Duration(retryMs * float64(time.Millisecond))
 				if hint > delay {
 					delay = hint
 				}

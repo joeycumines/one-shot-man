@@ -66,9 +66,9 @@ func TestCoordinationBus_Broadcast(t *testing.T) {
 		}
 	}
 
-	bus.SubscribeBroadcast("a", h)
-	bus.SubscribeBroadcast("b", h)
-	bus.SubscribeBroadcast("c", h)
+	bus.Subscribe("a", h)
+	bus.Subscribe("b", h)
+	bus.Subscribe("c", h)
 
 	err := bus.Publish(CoordinationMessage{
 		From:    "publisher",
@@ -230,7 +230,7 @@ func TestCoordinationBus_Concurrent(t *testing.T) {
 	iterations := 100
 
 	done := make(chan struct{})
-	bus.SubscribeBroadcast("concurrent-agent", func(msg CoordinationMessage) {
+	bus.Subscribe("concurrent-agent", func(msg CoordinationMessage) {
 		mu.Lock()
 		count++
 		if count == iterations {

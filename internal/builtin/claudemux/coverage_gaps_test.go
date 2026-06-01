@@ -641,7 +641,7 @@ func TestWrapAgentHandle_Send(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	send, _ := goja.AssertFunction(jsObj.Get("send"))
 	_, err := send(goja.Undefined(), rt.ToValue("hello"))
@@ -657,7 +657,7 @@ func TestWrapAgentHandle_SendError(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{sendErr: errors.New("network down")}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	send, _ := goja.AssertFunction(jsObj.Get("send"))
 	_, err := send(goja.Undefined(), rt.ToValue("hello"))
@@ -670,7 +670,7 @@ func TestWrapAgentHandle_SendNoArgs(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	send, _ := goja.AssertFunction(jsObj.Get("send"))
 	_, err := send(goja.Undefined()) // no arguments
@@ -683,15 +683,16 @@ func TestWrapAgentHandle_ReceiveEOF(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{recvData: "", recvErr: io.EOF}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	recv, _ := goja.AssertFunction(jsObj.Get("receive"))
 	val, err := recv(goja.Undefined())
 	if err != nil {
 		t.Fatalf("receive threw: %v", err)
 	}
-	if val.String() != "" {
-		t.Errorf("receive on EOF = %q, want empty", val.String())
+	obj := val.ToObject(rt)
+	if obj.Get("done").ToBoolean() != true {
+		t.Errorf("receive on EOF: done = %v, want true", obj.Get("done").ToBoolean())
 	}
 }
 
@@ -699,16 +700,19 @@ func TestWrapAgentHandle_ReceiveErrorWithData(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{recvData: "partial data", recvErr: errors.New("interrupted")}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	recv, _ := goja.AssertFunction(jsObj.Get("receive"))
 	val, err := recv(goja.Undefined())
 	if err != nil {
 		t.Fatalf("receive threw: %v", err)
 	}
-	// When error has data, it returns the data.
-	if val.String() != "partial data" {
-		t.Errorf("receive = %q, want %q", val.String(), "partial data")
+	obj := val.ToObject(rt)
+	if obj.Get("value").String() != "partial data" {
+		t.Errorf("receive value = %q, want %q", obj.Get("value").String(), "partial data")
+	}
+	if obj.Get("done").ToBoolean() != false {
+		t.Errorf("receive done = %v, want false", obj.Get("done").ToBoolean())
 	}
 }
 
@@ -716,15 +720,12 @@ func TestWrapAgentHandle_ReceiveErrorNoData(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{recvData: "", recvErr: errors.New("interrupted")}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	recv, _ := goja.AssertFunction(jsObj.Get("receive"))
-	val, err := recv(goja.Undefined())
-	if err != nil {
-		t.Fatalf("receive threw: %v", err)
-	}
-	if val.String() != "" {
-		t.Errorf("receive = %q, want empty for error-no-data", val.String())
+	_, err := recv(goja.Undefined())
+	if err == nil {
+		t.Fatal("receive should throw on error with no data")
 	}
 }
 
@@ -732,7 +733,7 @@ func TestWrapAgentHandle_Close(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	cl, _ := goja.AssertFunction(jsObj.Get("close"))
 	_, err := cl(goja.Undefined())
@@ -748,7 +749,7 @@ func TestWrapAgentHandle_CloseError(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{closeErr: errors.New("already closed")}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	cl, _ := goja.AssertFunction(jsObj.Get("close"))
 	_, err := cl(goja.Undefined())
@@ -761,7 +762,7 @@ func TestWrapAgentHandle_IsAlive(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{alive: true}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	isAlive, _ := goja.AssertFunction(jsObj.Get("isAlive"))
 	val, err := isAlive(goja.Undefined())
@@ -777,7 +778,7 @@ func TestWrapAgentHandle_Wait(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{waitCode: 0, waitErr: nil}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	wait, _ := goja.AssertFunction(jsObj.Get("wait"))
 	val, err := wait(goja.Undefined())
@@ -799,7 +800,7 @@ func TestWrapAgentHandle_WaitWithError(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubAgentHandle{waitCode: 1, waitErr: errors.New("exit status 1")}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	wait, _ := goja.AssertFunction(jsObj.Get("wait"))
 	val, err := wait(goja.Undefined())
@@ -821,7 +822,7 @@ func TestWrapAgentHandle_Resize(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubResizableAgentHandle{}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	resize, _ := goja.AssertFunction(jsObj.Get("resize"))
 	_, err := resize(goja.Undefined(), rt.ToValue(50), rt.ToValue(120))
@@ -837,7 +838,7 @@ func TestWrapAgentHandle_ResizeNoArgs(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubResizableAgentHandle{}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	resize, _ := goja.AssertFunction(jsObj.Get("resize"))
 	_, err := resize(goja.Undefined())
@@ -850,7 +851,7 @@ func TestWrapAgentHandle_ResizeError(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	h := &stubResizableAgentHandle{resizeErr: errors.New("pty closed")}
-	jsObj := wrapAgentHandle(rt, h, context.Background()).ToObject(rt)
+	jsObj := wrapAgentHandle(rt, h, context.Background(), nil, nil).ToObject(rt)
 
 	resize, _ := goja.AssertFunction(jsObj.Get("resize"))
 	_, err := resize(goja.Undefined(), rt.ToValue(50), rt.ToValue(120))
@@ -1273,7 +1274,7 @@ func TestWrapPool_StartDrainClose(t *testing.T) {
 	rt := goja.New()
 
 	p := NewPool(DefaultPoolConfig())
-	jsVal := wrapPool(rt, p)
+	jsVal := wrapPool(rt, p, nil, nil)
 	obj := jsVal.ToObject(rt)
 
 	startFn, _ := goja.AssertFunction(obj.Get("start"))
@@ -1357,7 +1358,7 @@ func TestWrapPool_AddWorker_NoArgs(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	p := NewPool(PoolConfig{MaxSize: 2})
-	obj := wrapPool(rt, p).ToObject(rt)
+	obj := wrapPool(rt, p, nil, nil).ToObject(rt)
 
 	addFn, _ := goja.AssertFunction(obj.Get("addWorker"))
 	_, err := addFn(goja.Undefined())
@@ -1374,7 +1375,7 @@ func TestWrapPool_AddWorker_Success(t *testing.T) {
 	rt := goja.New()
 	p := NewPool(PoolConfig{MaxSize: 2})
 	_ = p.Start()
-	obj := wrapPool(rt, p).ToObject(rt)
+	obj := wrapPool(rt, p, nil, nil).ToObject(rt)
 
 	addFn, _ := goja.AssertFunction(obj.Get("addWorker"))
 	workerVal, err := addFn(goja.Undefined(), rt.ToValue("worker-1"))
@@ -1392,7 +1393,7 @@ func TestWrapPool_RemoveWorker_NoArgs(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	p := NewPool(PoolConfig{MaxSize: 2})
-	obj := wrapPool(rt, p).ToObject(rt)
+	obj := wrapPool(rt, p, nil, nil).ToObject(rt)
 
 	rmFn, _ := goja.AssertFunction(obj.Get("removeWorker"))
 	_, err := rmFn(goja.Undefined())
@@ -1409,7 +1410,7 @@ func TestWrapPool_RemoveWorker_Error(t *testing.T) {
 	rt := goja.New()
 	p := NewPool(PoolConfig{MaxSize: 2})
 	_ = p.Start()
-	obj := wrapPool(rt, p).ToObject(rt)
+	obj := wrapPool(rt, p, nil, nil).ToObject(rt)
 
 	rmFn, _ := goja.AssertFunction(obj.Get("removeWorker"))
 	_, err := rmFn(goja.Undefined(), rt.ToValue("nonexistent"))
@@ -1423,7 +1424,7 @@ func TestWrapPool_Release_NoArgs(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	p := NewPool(PoolConfig{MaxSize: 2})
-	obj := wrapPool(rt, p).ToObject(rt)
+	obj := wrapPool(rt, p, nil, nil).ToObject(rt)
 
 	relFn, _ := goja.AssertFunction(obj.Get("release"))
 	_, err := relFn(goja.Undefined())
@@ -1440,7 +1441,7 @@ func TestWrapPool_Release_WorkerNotFound(t *testing.T) {
 	rt := goja.New()
 	p := NewPool(PoolConfig{MaxSize: 2})
 	_ = p.Start()
-	obj := wrapPool(rt, p).ToObject(rt)
+	obj := wrapPool(rt, p, nil, nil).ToObject(rt)
 
 	relFn, _ := goja.AssertFunction(obj.Get("release"))
 	workerObj := rt.NewObject()
@@ -1459,7 +1460,7 @@ func TestWrapPool_Release_MissingID(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	p := NewPool(PoolConfig{MaxSize: 2})
-	obj := wrapPool(rt, p).ToObject(rt)
+	obj := wrapPool(rt, p, nil, nil).ToObject(rt)
 
 	relFn, _ := goja.AssertFunction(obj.Get("release"))
 	workerObj := rt.NewObject()
@@ -1478,7 +1479,7 @@ func TestWrapPool_TryAcquire_Success(t *testing.T) {
 	p := NewPool(PoolConfig{MaxSize: 2})
 	_ = p.Start()
 	p.AddWorker("w1", nil)
-	obj := wrapPool(rt, p).ToObject(rt)
+	obj := wrapPool(rt, p, nil, nil).ToObject(rt)
 
 	tryFn, _ := goja.AssertFunction(obj.Get("tryAcquire"))
 	val, err := tryFn(goja.Undefined())
@@ -1498,7 +1499,7 @@ func TestWrapPool_WaitDrained(t *testing.T) {
 	p := NewPool(PoolConfig{MaxSize: 2})
 	_ = p.Start()
 	p.Drain()
-	obj := wrapPool(rt, p).ToObject(rt)
+	obj := wrapPool(rt, p, nil, nil).ToObject(rt)
 
 	waitFn, _ := goja.AssertFunction(obj.Get("waitDrained"))
 	_, err := waitFn(goja.Undefined())
@@ -1514,7 +1515,7 @@ func TestWrapPool_ReleaseWithError(t *testing.T) {
 	p := NewPool(PoolConfig{MaxSize: 2})
 	_ = p.Start()
 	p.AddWorker("w1", nil)
-	obj := wrapPool(rt, p).ToObject(rt)
+	obj := wrapPool(rt, p, nil, nil).ToObject(rt)
 
 	// Acquire the worker first
 	tryFn, _ := goja.AssertFunction(obj.Get("tryAcquire"))
@@ -1533,7 +1534,7 @@ func TestWrapRegistry_RegisterAndList(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	r := NewRegistry()
-	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
+	obj := wrapRegistry(rt, r, context.Background(), nil, nil).ToObject(rt)
 
 	listFn, _ := goja.AssertFunction(obj.Get("list"))
 	listVal, _ := listFn(goja.Undefined())
@@ -1572,7 +1573,7 @@ func TestWrapRegistry_RegisterNoArgs(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	r := NewRegistry()
-	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
+	obj := wrapRegistry(rt, r, context.Background(), nil, nil).ToObject(rt)
 
 	regFn, _ := goja.AssertFunction(obj.Get("register"))
 	_, err := regFn(goja.Undefined())
@@ -1586,7 +1587,7 @@ func TestWrapRegistry_GetSuccess(t *testing.T) {
 	rt := goja.New()
 	r := NewRegistry()
 	_ = r.Register(&stubProvider{providerName: "my-prov"})
-	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
+	obj := wrapRegistry(rt, r, context.Background(), nil, nil).ToObject(rt)
 
 	getFn, _ := goja.AssertFunction(obj.Get("get"))
 	val, err := getFn(goja.Undefined(), rt.ToValue("my-prov"))
@@ -1605,7 +1606,7 @@ func TestWrapRegistry_GetNotFound(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	r := NewRegistry()
-	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
+	obj := wrapRegistry(rt, r, context.Background(), nil, nil).ToObject(rt)
 
 	getFn, _ := goja.AssertFunction(obj.Get("get"))
 	_, err := getFn(goja.Undefined(), rt.ToValue("no-such"))
@@ -1618,7 +1619,7 @@ func TestWrapRegistry_GetNoArgs(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	r := NewRegistry()
-	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
+	obj := wrapRegistry(rt, r, context.Background(), nil, nil).ToObject(rt)
 
 	getFn, _ := goja.AssertFunction(obj.Get("get"))
 	_, err := getFn(goja.Undefined())
@@ -1631,7 +1632,7 @@ func TestWrapRegistry_SpawnNoArgs(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	r := NewRegistry()
-	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
+	obj := wrapRegistry(rt, r, context.Background(), nil, nil).ToObject(rt)
 
 	spawnFn, _ := goja.AssertFunction(obj.Get("spawn"))
 	_, err := spawnFn(goja.Undefined())

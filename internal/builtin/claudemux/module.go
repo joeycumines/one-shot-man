@@ -6,14 +6,29 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/dop251/goja"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
+
+// PromisifyFunc is the signature for the event loop's Promisify method.
+// Stored in internal data structures for easier mocking in tests.
+type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 
 // Require returns a module loader for `osm:claudemux` that exposes the
 // PTY output parser and provider registry to JavaScript scripts.
-func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Object) {
+// The adapter parameter enables Promise-based async operations for blocking
+// calls. If adapter is nil (e.g., in tests), blocking operations fall back
+// to synchronous behavior.
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
+	var promisify PromisifyFunc
+	if adapter != nil {
+		promisify = adapter.Loop().Promisify
+	}
+
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -63,7 +78,7 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 		// newRegistry(): creates a new provider Registry.
 		_ = exports.Set("newRegistry", func(call goja.FunctionCall) goja.Value {
 			r := NewRegistry()
-			return wrapRegistry(runtime, r, ctx)
+			return wrapRegistry(runtime, r, ctx, adapter, promisify)
 		})
 
 		// claudeCode(opts?): creates a ClaudeCodeProvider.
@@ -345,7 +360,7 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 				cfg = jsToPoolConfig(runtime, call.Argument(0))
 			}
 			p := NewPool(cfg)
-			return wrapPool(runtime, p)
+			return wrapPool(runtime, p, adapter, promisify)
 		})
 
 		// defaultPanelConfig(): object
@@ -935,7 +950,7 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			return obj
 		})
 
-		// waitSettle(handle, detector, config?): {state, durationMs, error}
+		// waitSettle(handle, detector, config?): Promise<{state, durationMs, error}> | {state, durationMs, error}
 		_ = exports.Set("waitSettle", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 2 {
 				panic(runtime.NewTypeError("waitSettle: handle and detector arguments required"))
@@ -970,15 +985,38 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 					config.TargetState = TUIState(v.ToInteger())
 				}
 			}
-			state, duration, err := WaitSettle(ctx, ptyReader, det, config)
-			if err != nil {
-				panic(runtime.NewGoError(fmt.Errorf("waitSettle: %w", err)))
+
+			if promisify == nil {
+				state, duration, err := WaitSettle(ctx, ptyReader, det, config)
+				if err != nil {
+					panic(runtime.NewGoError(fmt.Errorf("waitSettle: %w", err)))
+				}
+				result := runtime.NewObject()
+				_ = result.Set("state", int(state))
+				_ = result.Set("stateName", tuiStateName(state))
+				_ = result.Set("durationMs", duration.Milliseconds())
+				return result
 			}
-			result := runtime.NewObject()
-			_ = result.Set("state", int(state))
-			_ = result.Set("stateName", tuiStateName(state))
-			_ = result.Set("durationMs", duration.Milliseconds())
-			return result
+
+			promise, resolve, reject := adapter.JS().NewChainedPromise()
+			promisify(context.Background(), func(_ context.Context) (any, error) {
+				state, duration, err := WaitSettle(ctx, ptyReader, det, config)
+				if err != nil {
+					_ = adapter.Loop().Submit(func() {
+						reject(fmt.Errorf("waitSettle: %w", err))
+					})
+					return nil, err
+				}
+				_ = adapter.Loop().Submit(func() {
+					result := runtime.NewObject()
+					_ = result.Set("state", int(state))
+					_ = result.Set("stateName", tuiStateName(state))
+					_ = result.Set("durationMs", duration.Milliseconds())
+					resolve(result)
+				})
+				return nil, nil
+			})
+			return adapter.GojaWrapPromise(promise)
 		})
 
 		// --- Reliable Prompter ---
@@ -1006,7 +1044,7 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			}
 
 			rp := NewReliablePrompter(h, prov, opts)
-			return wrapReliablePrompter(runtime, rp, ctx)
+			return wrapReliablePrompter(runtime, rp, ctx, adapter, promisify)
 		})
 
 		// --- Multi-Agent ---
@@ -1111,7 +1149,7 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			}
 
 			m := NewMultiAgentPanel(panel, bus, reg)
-			return wrapMultiAgentPanel(runtime, m)
+			return wrapMultiAgentPanel(runtime, m, adapter)
 		})
 
 		// newAgentToolUI(detector, width, height): creates an AgentToolUI.
@@ -1331,7 +1369,7 @@ func eventToJS(runtime *goja.Runtime, ev OutputEvent) goja.Value {
 }
 
 // wrapRegistry creates a JS object wrapping a *Registry with methods.
-func wrapRegistry(runtime *goja.Runtime, r *Registry, ctx context.Context) goja.Value {
+func wrapRegistry(runtime *goja.Runtime, r *Registry, ctx context.Context, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) goja.Value {
 	obj := runtime.NewObject()
 
 	_ = obj.Set("register", func(call goja.FunctionCall) goja.Value {
@@ -1374,7 +1412,7 @@ func wrapRegistry(runtime *goja.Runtime, r *Registry, ctx context.Context) goja.
 		if err != nil {
 			panic(runtime.NewGoError(err))
 		}
-		return wrapAgentHandle(runtime, handle, ctx)
+		return wrapAgentHandle(runtime, handle, ctx, adapter, promisify)
 	})
 
 	return obj
@@ -1425,7 +1463,7 @@ func extractAgentHandle(runtime *goja.Runtime, val goja.Value) (AgentHandle, boo
 // The original Go handle is stored as _goHandle so callers on the Go side
 // (e.g., tuiMux.attach) can extract it via Export and assert interface
 // compatibility without relying on Goja proxy objects.
-func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle, ctx context.Context) goja.Value {
+func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle, ctx context.Context, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) goja.Value {
 	obj := runtime.NewObject()
 
 	// Store the original Go handle for extraction on the Go side.
@@ -1442,17 +1480,112 @@ func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle, ctx context.Context) 
 	})
 
 	_ = obj.Set("receive", func(call goja.FunctionCall) goja.Value {
-		data, err := h.Receive()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return runtime.ToValue("")
+		if promisify == nil {
+			data, err := h.Receive()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					result := runtime.NewObject()
+					_ = result.Set("value", goja.Undefined())
+					_ = result.Set("done", true)
+					return result
+				}
+				if data != "" {
+					result := runtime.NewObject()
+					_ = result.Set("value", data)
+					_ = result.Set("done", false)
+					return result
+				}
+				panic(runtime.NewGoError(err))
 			}
-			if data != "" {
-				return runtime.ToValue(data)
-			}
-			return runtime.ToValue("")
+			result := runtime.NewObject()
+			_ = result.Set("value", data)
+			_ = result.Set("done", false)
+			return result
 		}
-		return runtime.ToValue(data)
+
+		promise, resolve, reject := adapter.JS().NewChainedPromise()
+		promisify(context.Background(), func(_ context.Context) (any, error) {
+			data, err := h.Receive()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					_ = adapter.Loop().Submit(func() {
+						result := runtime.NewObject()
+						_ = result.Set("value", goja.Undefined())
+						_ = result.Set("done", true)
+						resolve(result)
+					})
+					return nil, nil
+				}
+				if data != "" {
+					_ = adapter.Loop().Submit(func() {
+						result := runtime.NewObject()
+						_ = result.Set("value", data)
+						_ = result.Set("done", false)
+						resolve(result)
+					})
+					return nil, nil
+				}
+				_ = adapter.Loop().Submit(func() {
+					reject(err)
+				})
+				return nil, err
+			}
+			_ = adapter.Loop().Submit(func() {
+				result := runtime.NewObject()
+				_ = result.Set("value", data)
+				_ = result.Set("done", false)
+				resolve(result)
+			})
+			return nil, nil
+		})
+		return adapter.GojaWrapPromise(promise)
+	})
+
+	_ = obj.Set("read", func(call goja.FunctionCall) goja.Value {
+		if promisify == nil {
+			data, err := h.Receive()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					result := runtime.NewObject()
+					_ = result.Set("value", goja.Undefined())
+					_ = result.Set("done", true)
+					return result
+				}
+				panic(runtime.NewGoError(err))
+			}
+			result := runtime.NewObject()
+			_ = result.Set("value", data)
+			_ = result.Set("done", false)
+			return result
+		}
+
+		promise, resolve, reject := adapter.JS().NewChainedPromise()
+		promisify(context.Background(), func(_ context.Context) (any, error) {
+			data, err := h.Receive()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					_ = adapter.Loop().Submit(func() {
+						result := runtime.NewObject()
+						_ = result.Set("value", goja.Undefined())
+						_ = result.Set("done", true)
+						resolve(result)
+					})
+					return nil, nil
+				}
+				_ = adapter.Loop().Submit(func() {
+					reject(err)
+				})
+				return nil, err
+			}
+			_ = adapter.Loop().Submit(func() {
+				result := runtime.NewObject()
+				_ = result.Set("value", data)
+				_ = result.Set("done", false)
+				resolve(result)
+			})
+			return nil, nil
+		})
+		return adapter.GojaWrapPromise(promise)
 	})
 
 	_ = obj.Set("close", func(call goja.FunctionCall) goja.Value {
@@ -1467,12 +1600,31 @@ func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle, ctx context.Context) 
 	})
 
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
-		code, err := h.Wait()
-		result := map[string]any{"code": code, "error": nil}
-		if err != nil {
-			result["error"] = err.Error()
+		if promisify == nil {
+			code, err := h.Wait()
+			result := map[string]any{"code": code, "error": nil}
+			if err != nil {
+				result["error"] = err.Error()
+			}
+			return runtime.ToValue(result)
 		}
-		return runtime.ToValue(result)
+
+		promise, resolve, _ := adapter.JS().NewChainedPromise()
+		promisify(context.Background(), func(_ context.Context) (any, error) {
+			code, waitErr := h.Wait()
+			_ = adapter.Loop().Submit(func() {
+				result := runtime.NewObject()
+				_ = result.Set("code", code)
+				if waitErr != nil {
+					_ = result.Set("error", waitErr.Error())
+				} else {
+					_ = result.Set("error", goja.Null())
+				}
+				resolve(result)
+			})
+			return nil, nil
+		})
+		return adapter.GojaWrapPromise(promise)
 	})
 
 	// resize(rows, cols) changes the PTY window dimensions.
@@ -1488,18 +1640,39 @@ func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle, ctx context.Context) 
 		return goja.Undefined()
 	})
 
-	// waitReady(timeoutMs: number): void — blocks until agent is ready or timeout
+	// waitReady(timeoutMs: number): Promise<void> | void — blocks until agent is ready or timeout
 	_ = obj.Set("waitReady", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 {
 			panic(runtime.NewTypeError("waitReady: timeoutMs argument is required"))
 		}
 		timeoutMs := call.Argument(0).ToInteger()
-		readyCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
-		defer cancel()
-		if err := h.WaitReady(readyCtx); err != nil {
-			panic(runtime.NewGoError(err))
+
+		if promisify == nil {
+			readyCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+			defer cancel()
+			if err := h.WaitReady(readyCtx); err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return goja.Undefined()
 		}
-		return goja.Undefined()
+
+		promise, resolve, reject := adapter.JS().NewChainedPromise()
+		promisify(context.Background(), func(_ context.Context) (any, error) {
+			readyCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+			defer cancel()
+			err := h.WaitReady(readyCtx)
+			if err != nil {
+				_ = adapter.Loop().Submit(func() {
+					reject(err)
+				})
+				return nil, err
+			}
+			_ = adapter.Loop().Submit(func() {
+				resolve(goja.Undefined())
+			})
+			return nil, nil
+		})
+		return adapter.GojaWrapPromise(promise)
 	})
 
 	// Optionally expose signal() for handles that support it (e.g., PTY-based).
@@ -2277,7 +2450,7 @@ func wrapPoolWorker(runtime *goja.Runtime, w *PoolWorker) goja.Value {
 }
 
 // wrapPool creates a JS object wrapping a *Pool with methods.
-func wrapPool(runtime *goja.Runtime, p *Pool) goja.Value {
+func wrapPool(runtime *goja.Runtime, p *Pool, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) goja.Value {
 	obj := runtime.NewObject()
 
 	// start(): void
@@ -2314,13 +2487,31 @@ func wrapPool(runtime *goja.Runtime, p *Pool) goja.Value {
 		return goja.Undefined()
 	})
 
-	// acquire(): object — blocks until worker available
+	// acquire(): Promise<object> | object — blocks until worker available
 	_ = obj.Set("acquire", func() goja.Value {
-		w, err := p.Acquire()
-		if err != nil {
-			panic(runtime.NewGoError(err))
+		if promisify == nil {
+			w, err := p.Acquire()
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return wrapPoolWorker(runtime, w)
 		}
-		return wrapPoolWorker(runtime, w)
+
+		promise, resolve, reject := adapter.JS().NewChainedPromise()
+		promisify(context.Background(), func(_ context.Context) (any, error) {
+			w, err := p.Acquire()
+			if err != nil {
+				_ = adapter.Loop().Submit(func() {
+					reject(err)
+				})
+				return nil, err
+			}
+			_ = adapter.Loop().Submit(func() {
+				resolve(wrapPoolWorker(runtime, w))
+			})
+			return nil, nil
+		})
+		return adapter.GojaWrapPromise(promise)
 	})
 
 	// tryAcquire(): object | null — non-blocking
@@ -2362,10 +2553,22 @@ func wrapPool(runtime *goja.Runtime, p *Pool) goja.Value {
 		return goja.Undefined()
 	})
 
-	// waitDrained(): void — blocks until all in-flight tasks are released
+	// waitDrained(): Promise<void> | void — blocks until all in-flight tasks are released
 	_ = obj.Set("waitDrained", func() goja.Value {
-		p.WaitDrained()
-		return goja.Undefined()
+		if promisify == nil {
+			p.WaitDrained()
+			return goja.Undefined()
+		}
+
+		promise, resolve, _ := adapter.JS().NewChainedPromise()
+		promisify(context.Background(), func(_ context.Context) (any, error) {
+			p.WaitDrained()
+			_ = adapter.Loop().Submit(func() {
+				resolve(goja.Undefined())
+			})
+			return nil, nil
+		})
+		return adapter.GojaWrapPromise(promise)
 	})
 
 	// close(): object[] — returns closed workers
@@ -2388,13 +2591,31 @@ func wrapPool(runtime *goja.Runtime, p *Pool) goja.Value {
 		return poolConfigToJS(runtime, p.Config())
 	})
 
-	// acquireCapacity(): object
+	// acquireCapacity(): Promise<object> | object
 	_ = obj.Set("acquireCapacity", func(call goja.FunctionCall) goja.Value {
-		w, err := p.AcquireCapacity()
-		if err != nil {
-			panic(runtime.NewGoError(err))
+		if promisify == nil {
+			w, err := p.AcquireCapacity()
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return wrapPoolWorker(runtime, w)
 		}
-		return wrapPoolWorker(runtime, w)
+
+		promise, resolve, reject := adapter.JS().NewChainedPromise()
+		promisify(context.Background(), func(_ context.Context) (any, error) {
+			w, err := p.AcquireCapacity()
+			if err != nil {
+				_ = adapter.Loop().Submit(func() {
+					reject(err)
+				})
+				return nil, err
+			}
+			_ = adapter.Loop().Submit(func() {
+				resolve(wrapPoolWorker(runtime, w))
+			})
+			return nil, nil
+		})
+		return adapter.GojaWrapPromise(promise)
 	})
 
 	// routeTo(agentID: string): object
@@ -3588,7 +3809,7 @@ func promptResultToJS(runtime *goja.Runtime, r *PromptResult) goja.Value {
 }
 
 // wrapReliablePrompter creates a JS object wrapping a *ReliablePrompter.
-func wrapReliablePrompter(runtime *goja.Runtime, rp *ReliablePrompter, ctx context.Context) goja.Value {
+func wrapReliablePrompter(runtime *goja.Runtime, rp *ReliablePrompter, ctx context.Context, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) goja.Value {
 	obj := runtime.NewObject()
 
 	_ = obj.Set("sendPrompt", func(call goja.FunctionCall) goja.Value {
@@ -3596,11 +3817,30 @@ func wrapReliablePrompter(runtime *goja.Runtime, rp *ReliablePrompter, ctx conte
 			panic(runtime.NewTypeError("sendPrompt: text argument is required"))
 		}
 		text := call.Argument(0).String()
-		result, err := rp.SendPrompt(ctx, text)
-		if err != nil {
-			panic(runtime.NewGoError(err))
+
+		if promisify == nil {
+			result, err := rp.SendPrompt(ctx, text)
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return promptResultToJS(runtime, result)
 		}
-		return promptResultToJS(runtime, result)
+
+		promise, resolve, reject := adapter.JS().NewChainedPromise()
+		promisify(context.Background(), func(_ context.Context) (any, error) {
+			result, err := rp.SendPrompt(ctx, text)
+			if err != nil {
+				_ = adapter.Loop().Submit(func() {
+					reject(err)
+				})
+				return nil, err
+			}
+			_ = adapter.Loop().Submit(func() {
+				resolve(promptResultToJS(runtime, result))
+			})
+			return nil, nil
+		})
+		return adapter.GojaWrapPromise(promise)
 	})
 
 	_ = obj.Set("close", func(call goja.FunctionCall) goja.Value {
@@ -3908,7 +4148,7 @@ func taskResultToJS(runtime *goja.Runtime, r *TaskResult) goja.Value {
 }
 
 // wrapMultiAgentPanel creates a JS object wrapping a *MultiAgentPanel.
-func wrapMultiAgentPanel(runtime *goja.Runtime, m *MultiAgentPanel) goja.Value {
+func wrapMultiAgentPanel(runtime *goja.Runtime, m *MultiAgentPanel, adapter *gojaeventloop.Adapter) goja.Value {
 	obj := runtime.NewObject()
 
 	_ = obj.Set("addAgent", func(call goja.FunctionCall) goja.Value {
@@ -3957,8 +4197,9 @@ func wrapMultiAgentPanel(runtime *goja.Runtime, m *MultiAgentPanel) goja.Value {
 		if !ok {
 			panic(runtime.NewTypeError("subscribeToAgent: second argument must be a function"))
 		}
-		ch, cancel := m.SubscribeToAgent(agentID)
+		ch, cancelSub := m.SubscribeToAgent(agentID)
 		done := make(chan struct{})
+		var closeOnce sync.Once
 		go func() {
 			for {
 				select {
@@ -3968,16 +4209,31 @@ func wrapMultiAgentPanel(runtime *goja.Runtime, m *MultiAgentPanel) goja.Value {
 					if !ok {
 						return
 					}
-					msgObj := runtime.NewObject()
-					_ = msgObj.Set("agentID", msg.AgentID)
-					_ = msgObj.Set("line", msg.Line)
-					_, _ = fn(goja.Undefined(), msgObj)
+					if adapter != nil {
+						msg := msg
+						_ = adapter.Loop().Submit(func() {
+							msgObj := runtime.NewObject()
+							_ = msgObj.Set("agentID", msg.AgentID)
+							_ = msgObj.Set("line", msg.Line)
+							_, _ = fn(goja.Undefined(), msgObj)
+						})
+					} else {
+						// Note: calling JS from a background goroutine is unsafe
+						// (Goja is not thread-safe). This nil-adapter path exists
+						// only for tests that don't exercise concurrent callbacks.
+						msgObj := runtime.NewObject()
+						_ = msgObj.Set("agentID", msg.AgentID)
+						_ = msgObj.Set("line", msg.Line)
+						_, _ = fn(goja.Undefined(), msgObj)
+					}
 				}
 			}
 		}()
 		unsubscribe := func(call goja.FunctionCall) goja.Value {
-			cancel()
-			close(done)
+			closeOnce.Do(func() {
+				cancelSub()
+				close(done)
+			})
 			return goja.Undefined()
 		}
 		result := runtime.NewObject()

@@ -37,10 +37,14 @@ func NewAgentToolUI(detector *VTStateDetector, width, height int) *AgentToolUI {
 }
 
 // ProcessRaw feeds raw PTY data through the detector, then reconstructs the
-// screen from the VTerm's current state.
+// screen from the VTerm's current state. The detector call is unprotected
+// (it manages its own synchronization), but the screen sync is serialized
+// under the write lock to prevent races with Render/GetCursor readers.
 func (a *AgentToolUI) ProcessRaw(data []byte) {
 	a.detector.ProcessRaw(data, time.Now())
+	a.mu.Lock()
 	a.syncScreen()
+	a.mu.Unlock()
 }
 
 // Render returns a plain-text representation of the screen with no ANSI codes.
@@ -146,6 +150,7 @@ func (a *AgentToolUI) Clear() {
 }
 
 // syncScreen copies the VTerm's cell data into the AgentToolUI's screen buffer.
+// Caller must hold a.mu (write lock).
 func (a *AgentToolUI) syncScreen() {
 	vterm := a.detector.VTerm()
 	row, col := vterm.CursorPosition()

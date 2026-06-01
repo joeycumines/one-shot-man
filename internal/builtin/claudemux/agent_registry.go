@@ -127,8 +127,11 @@ func (r *AgentRegistry) Unregister(id string) error {
 	}
 
 	// Remove role assignment if present.
-	if agent.Role != "" {
-		delete(r.roles, agent.Role)
+	agent.mu.RLock()
+	role := agent.Role
+	agent.mu.RUnlock()
+	if role != "" {
+		delete(r.roles, role)
 	}
 
 	delete(r.agents, id)
@@ -232,18 +235,25 @@ func (r *AgentRegistry) AssignRole(agentID, roleName string) error {
 	}
 
 	// Remove old role assignment if the agent had one.
-	if agent.Role != "" {
-		delete(r.roles, agent.Role)
+	agent.mu.RLock()
+	oldRole := agent.Role
+	agent.mu.RUnlock()
+	if oldRole != "" {
+		delete(r.roles, oldRole)
 	}
 
 	// Remove old agent from this role if one was assigned.
 	if existing, ok := r.roles[roleName]; ok {
 		if oldAgent, ok := r.agents[existing.AgentID]; ok {
+			oldAgent.mu.Lock()
 			oldAgent.Role = ""
+			oldAgent.mu.Unlock()
 		}
 	}
 
+	agent.mu.Lock()
 	agent.Role = roleName
+	agent.mu.Unlock()
 	r.roles[roleName] = &RoleAssignment{
 		Name:    roleName,
 		AgentID: agentID,

@@ -1,6 +1,4 @@
-//go:build unix
-
-package scripting
+package vhs
 
 import (
 	"bytes"
@@ -69,6 +67,12 @@ type VHSConfig struct {
 	// Height is the terminal height in characters.
 	Height int
 
+	// PixelWidth is the terminal width in pixels (used by VHS Set Width).
+	PixelWidth int
+
+	// PixelHeight is the terminal height in pixels (used by VHS Set Height).
+	PixelHeight int
+
 	// FontSize is the font size in pixels.
 	FontSize int
 
@@ -104,6 +108,9 @@ type VHSConfig struct {
 
 	// CursorBlink controls whether the cursor blinks.
 	CursorBlink bool
+
+	// OutputGIF is the output GIF file path.
+	OutputGIF string
 }
 
 // DefaultVHSConfig returns a default VHS recording configuration.
@@ -134,7 +141,6 @@ func DefaultVHSLightConfig() VHSConfig {
 }
 
 // VHSTapeBuilder builds a VHS tape file from recorded actions.
-// It is used by integration tests to generate VHS recordings as a side effect.
 type VHSTapeBuilder struct {
 	config  VHSConfig
 	actions []string
@@ -200,7 +206,6 @@ func (b *VHSTapeBuilder) Ctrl(key string) *VHSTapeBuilder {
 }
 
 // Sleep adds a pause to the tape.
-// Note: Use sparingly! Prefer WaitForText for determinism.
 func (b *VHSTapeBuilder) Sleep(duration string) *VHSTapeBuilder {
 	b.actions = append(b.actions, fmt.Sprintf("Sleep %s", duration))
 	return b
@@ -214,10 +219,7 @@ func (b *VHSTapeBuilder) Wait(pattern string, timeout string) *VHSTapeBuilder {
 }
 
 // Click adds a mouse click at specific coordinates.
-// Note: Coordinates should be calculated dynamically from buffer state!
 func (b *VHSTapeBuilder) Click(x, y int) *VHSTapeBuilder {
-	// VHS doesn't have native mouse support, but we can simulate via escape sequences
-	// For now, we'll add a comment noting the intended click location
 	b.actions = append(b.actions, fmt.Sprintf("# Click at (%d, %d) - simulated via key equivalent", x, y))
 	return b
 }
@@ -316,14 +318,14 @@ func (b *VHSTapeBuilder) GenerateTape() string {
 		cfg.Theme.Magenta,
 		cfg.Theme.Cyan,
 		cfg.Theme.White,
-		cfg.Theme.Black,   // brightBlack
-		cfg.Theme.Red,     // brightRed
-		cfg.Theme.Green,   // brightGreen
-		cfg.Theme.Yellow,  // brightYellow
-		cfg.Theme.Blue,    // brightBlue
-		cfg.Theme.Magenta, // brightMagenta
-		cfg.Theme.Cyan,    // brightCyan
-		cfg.Theme.White,   // brightWhite
+		cfg.Theme.Black,
+		cfg.Theme.Red,
+		cfg.Theme.Green,
+		cfg.Theme.Yellow,
+		cfg.Theme.Blue,
+		cfg.Theme.Magenta,
+		cfg.Theme.Cyan,
+		cfg.Theme.White,
 		cfg.Theme.Foreground,
 	))
 	buf.WriteString("\n")
@@ -355,7 +357,6 @@ func (b *VHSTapeBuilder) SaveTape(path string) error {
 }
 
 // ExecuteVHS runs VHS on the tape file to generate the GIF.
-// Returns an error if VHS is not available or execution fails.
 func (b *VHSTapeBuilder) ExecuteVHS(ctx context.Context, tapePath string) error {
 	if !VHSAvailable() {
 		return fmt.Errorf("vhs not found in PATH")
@@ -366,7 +367,6 @@ func (b *VHSTapeBuilder) ExecuteVHS(ctx context.Context, tapePath string) error 
 		return fmt.Errorf("vhs not found: %w", err)
 	}
 
-	// Ensure output directory exists
 	if err := os.MkdirAll(b.config.Output, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
@@ -374,7 +374,6 @@ func (b *VHSTapeBuilder) ExecuteVHS(ctx context.Context, tapePath string) error 
 	cmd := exec.CommandContext(ctx, vhsPath, tapePath)
 	cmd.Dir = filepath.Dir(tapePath)
 
-	// Set up environment
 	cmd.Env = os.Environ()
 	for k, v := range b.env {
 		cmd.Env = append(cmd.Env, k+"="+v)
@@ -411,34 +410,37 @@ func VHSAvailable() bool {
 //
 // Permalink: https://github.com/charmbracelet/vhs/blob/cdd370832a90bea0ccedc9cffc941c7b06452df8/lexer/lexer.go#L137-L147
 func escapeVHSString(s string) string {
-	// Constraint 1: The lexer breaks on newlines (`\n` or `\r`).
-	// Since there is no escape mechanism (e.g. `\n`), we cannot represent multi-line strings.
 	if strings.ContainsAny(s, "\n\r") {
 		panic(fmt.Sprintf("cannot quote string: input contains newlines which are not supported by the VHS lexer: %q", s))
 	}
 
-	// Constraint 2: The lexer does not support escaping the delimiter.
-	// We must iterate through available delimiters to find one that is NOT present in the string.
-
-	// Strategy A: Double Quotes
 	if !strings.ContainsRune(s, '"') {
 		return `"` + s + `"`
 	}
 
-	// Strategy B: Single Quotes
 	if !strings.ContainsRune(s, '\'') {
 		return "'" + s + "'"
 	}
 
-	// Strategy C: Backticks
 	if !strings.ContainsRune(s, '`') {
 		return "`" + s + "`"
 	}
 
-	// Failure: The string contains ", ', AND `.
-	// Since the lexer interprets content literally and supports no escapes,
-	// there is no way to represent this string.
 	panic(fmt.Sprintf("cannot quote string: input contains all possible delimiters (\", ', `): %q", s))
+}
+
+// quoteVHSString quotes a string for VHS tape format.
+func quoteVHSString(s string) string {
+	if !strings.ContainsRune(s, '"') {
+		return `"` + s + `"`
+	}
+	if !strings.ContainsRune(s, '\'') {
+		return "'" + s + "'"
+	}
+	if !strings.ContainsRune(s, '`') {
+		return "`" + s + "`"
+	}
+	return `"` + strings.ReplaceAll(s, `"`, `'`) + `"`
 }
 
 // RecordingContext wraps a VHS tape builder with convenience methods
@@ -467,13 +469,10 @@ func (r *RecordingContext) IsEnabled() bool {
 }
 
 // RecordType records a Type action if enabled.
-// If the text contains newlines, it splits into multiple Type commands
-// with Enter commands between them to work around VHS lexer limitations.
 func (r *RecordingContext) RecordType(text string) {
 	if !r.enabled {
 		return
 	}
-	// VHS lexer doesn't support newlines in strings, so split and insert Enter
 	if strings.ContainsAny(text, "\n\r") {
 		lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 		for i, line := range lines {
@@ -549,7 +548,6 @@ func (r *RecordingContext) RecordComment(text string) {
 }
 
 // RecordSleep records a sleep action if enabled.
-// Use sparingly - prefer RecordWait for determinism.
 func (r *RecordingContext) RecordSleep(duration string) {
 	if !r.enabled {
 		return
@@ -566,6 +564,7 @@ func (r *RecordingContext) SetEnv(key, value string) {
 	r.tape.SetEnv(key, value)
 }
 
+// Output adds an output file for the recording.
 func (r *RecordingContext) Output(path string) {
 	if !r.enabled {
 		return
@@ -582,7 +581,6 @@ func (r *RecordingContext) Require(program string) {
 }
 
 // Finalize saves the tape and optionally executes VHS.
-// If executeVHS is true and VHS is available, generates the GIF.
 func (r *RecordingContext) Finalize(ctx context.Context, executeVHS bool) error {
 	if !r.enabled {
 		return nil
@@ -594,7 +592,6 @@ func (r *RecordingContext) Finalize(ctx context.Context, executeVHS bool) error 
 
 	if executeVHS {
 		if !VHSAvailable() {
-			// Skip VHS execution if not available
 			return nil
 		}
 		return r.tape.ExecuteVHS(ctx, r.tapePath)

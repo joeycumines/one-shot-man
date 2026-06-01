@@ -14,6 +14,7 @@ import (
 
 	"github.com/joeycumines/go-prompt/termtest"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
+	"github.com/joeycumines/one-shot-man/internal/vhs"
 )
 
 // getExpectedShellPrompt returns the expected shell prompt character based on the user ID.
@@ -59,7 +60,7 @@ func executeVHSOnTape(ctx context.Context, tapePath string) error {
 // shell prompt (it must be the last significant character on the line and
 // not followed by other non-whitespace text). If not present, it waits for a
 // real prompt to appear within the timeout.
-func ensurePrompt(ctx context.Context, t *testing.T, r *InputCaptureRecorder, timeout time.Duration) {
+func ensurePrompt(ctx context.Context, t *testing.T, r *vhs.InputCaptureRecorder, timeout time.Duration) {
 	t.Helper()
 
 	// 1. Capture state ONCE.
@@ -106,7 +107,7 @@ func ensurePrompt(ctx context.Context, t *testing.T, r *InputCaptureRecorder, ti
 // the recorder buffer in the error to aid debugging in case of timeout/failure.
 // The timeout context is derived from the parent test context to ensure
 // cancellation propagates.
-func waitForProcessExit(ctx context.Context, t *testing.T, cp *termtest.Console, r *InputCaptureRecorder) {
+func waitForProcessExit(ctx context.Context, t *testing.T, cp *termtest.Console, r *vhs.InputCaptureRecorder) {
 	t.Helper()
 	exitCtx, exitCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer exitCancel()
@@ -115,18 +116,18 @@ func waitForProcessExit(ctx context.Context, t *testing.T, cp *termtest.Console,
 	}
 }
 
-// buildRecorderOpts returns recorder options, including WithRecorderSkipTapeOutput()
+// buildRecorderOpts returns recorder options, including vhs.WithRecorderSkipTapeOutput()
 // if recordingEnabled is false. This ensures tests always run but only write
 // tape files when -record flag is set.
-func buildRecorderOpts(baseOpts ...RecorderOption) []RecorderOption {
+func buildRecorderOpts(baseOpts ...vhs.RecorderOption) []vhs.RecorderOption {
 	if !recordingEnabled {
-		return append(baseOpts, WithRecorderSkipTapeOutput())
+		return append(baseOpts, vhs.WithRecorderSkipTapeOutput())
 	}
 	return baseOpts
 }
 
 // typeString types a string character-by-character with a small delay.
-func typeString(t *testing.T, recorder *InputCaptureRecorder, s string) {
+func typeString(t *testing.T, recorder *vhs.InputCaptureRecorder, s string) {
 	t.Helper()
 	for _, ch := range s {
 		if err := recorder.SendKey(string(ch)); err != nil {
@@ -137,7 +138,7 @@ func typeString(t *testing.T, recorder *InputCaptureRecorder, s string) {
 }
 
 // typeStringFast types a string with minimal delay.
-func typeStringFast(t *testing.T, recorder *InputCaptureRecorder, s string) {
+func typeStringFast(t *testing.T, recorder *vhs.InputCaptureRecorder, s string) {
 	t.Helper()
 	for _, ch := range s {
 		var key string
@@ -183,21 +184,21 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	settings := DefaultVHSRecordSettings()
+	settings := vhs.DefaultVHSConfig()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
-		WithRecorderShell("bash"),
-		WithRecorderCommand("osm", "super-document"),
-		WithRecorderTimeout(30*time.Second),
-		WithRecorderEnv(
+	recorder, err := vhs.NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		vhs.WithRecorderShell("bash"),
+		vhs.WithRecorderCommand("osm", "super-document"),
+		vhs.WithRecorderTimeout(30*time.Second),
+		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
 			"TERM=xterm-256color",
 		),
-		WithRecorderVHSSettings(settings),
+		vhs.WithRecorderVHSConfig(settings),
 	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
@@ -379,21 +380,21 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	settings := DefaultVHSRecordSettings()
+	settings := vhs.DefaultVHSConfig()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
-		WithRecorderShell("bash"),
-		WithRecorderCommand("osm", "super-document", "--shell"),
-		WithRecorderTimeout(30*time.Second),
-		WithRecorderEnv(
+	recorder, err := vhs.NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		vhs.WithRecorderShell("bash"),
+		vhs.WithRecorderCommand("osm", "super-document", "--shell"),
+		vhs.WithRecorderTimeout(30*time.Second),
+		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
 			"TERM=xterm-256color",
 		),
-		WithRecorderVHSSettings(settings),
+		vhs.WithRecorderVHSConfig(settings),
 	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
@@ -545,21 +546,21 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	settings := DefaultVHSRecordSettings()
+	settings := vhs.DefaultVHSConfig()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
-		WithRecorderShell("bash"),
-		WithRecorderCommand("osm", "super-document"),
-		WithRecorderTimeout(30*time.Second),
-		WithRecorderEnv(
+	recorder, err := vhs.NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		vhs.WithRecorderShell("bash"),
+		vhs.WithRecorderCommand("osm", "super-document"),
+		vhs.WithRecorderTimeout(30*time.Second),
+		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
 			"TERM=xterm-256color",
 		),
-		WithRecorderVHSSettings(settings),
+		vhs.WithRecorderVHSConfig(settings),
 	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
@@ -739,22 +740,22 @@ func TestRecording_CodeReview(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	settings := DefaultVHSRecordSettings()
+	settings := vhs.DefaultVHSConfig()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
-		WithRecorderShell("bash"),
-		WithRecorderCommand("osm", "code-review"),
-		WithRecorderTimeout(30*time.Second),
-		WithRecorderDir(outputDir),
-		WithRecorderEnv(
+	recorder, err := vhs.NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		vhs.WithRecorderShell("bash"),
+		vhs.WithRecorderCommand("osm", "code-review"),
+		vhs.WithRecorderTimeout(30*time.Second),
+		vhs.WithRecorderDir(outputDir),
+		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
 			"TERM=xterm-256color",
 		),
-		WithRecorderVHSSettings(settings),
+		vhs.WithRecorderVHSConfig(settings),
 	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
@@ -917,21 +918,21 @@ func TestRecording_PromptFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	settings := DefaultVHSRecordSettings()
+	settings := vhs.DefaultVHSConfig()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
-		WithRecorderShell("bash"),
-		WithRecorderCommand("osm", "prompt-flow"),
-		WithRecorderTimeout(30*time.Second),
-		WithRecorderEnv(
+	recorder, err := vhs.NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		vhs.WithRecorderShell("bash"),
+		vhs.WithRecorderCommand("osm", "prompt-flow"),
+		vhs.WithRecorderTimeout(30*time.Second),
+		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
 			"TERM=xterm-256color",
 		),
-		WithRecorderVHSSettings(settings),
+		vhs.WithRecorderVHSConfig(settings),
 	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
@@ -1103,21 +1104,21 @@ func TestRecording_Goal(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	settings := DefaultVHSRecordSettings()
+	settings := vhs.DefaultVHSConfig()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
-		WithRecorderShell("bash"),
-		WithRecorderCommand("osm", "goal", "test-generator"),
-		WithRecorderTimeout(30*time.Second),
-		WithRecorderEnv(
+	recorder, err := vhs.NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		vhs.WithRecorderShell("bash"),
+		vhs.WithRecorderCommand("osm", "goal", "test-generator"),
+		vhs.WithRecorderTimeout(30*time.Second),
+		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
 			"TERM=xterm-256color",
 		),
-		WithRecorderVHSSettings(settings),
+		vhs.WithRecorderVHSConfig(settings),
 	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
@@ -1245,21 +1246,21 @@ func TestRecording_Quickstart(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	settings := DefaultVHSRecordSettings()
+	settings := vhs.DefaultVHSConfig()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
-		WithRecorderShell("bash"),
-		WithRecorderCommand("osm", "help"),
-		WithRecorderTimeout(10*time.Second),
-		WithRecorderEnv(
+	recorder, err := vhs.NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		vhs.WithRecorderShell("bash"),
+		vhs.WithRecorderCommand("osm", "help"),
+		vhs.WithRecorderTimeout(10*time.Second),
+		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
 			"TERM=xterm-256color",
 		),
-		WithRecorderVHSSettings(settings),
+		vhs.WithRecorderVHSConfig(settings),
 	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
@@ -1351,23 +1352,23 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	settings := DefaultVHSRecordSettings()
+	settings := vhs.DefaultVHSConfig()
 	settings.OutputGIF = filepath.Base(gifPath)
-	settings.Theme = VHSLightTheme
+	settings.Theme = vhs.VHSLightTheme
 	settings.MarginFill = "#f8f8f2"
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
-		WithRecorderShell("bash"),
-		WithRecorderCommand("osm", "super-document"),
-		WithRecorderTimeout(30*time.Second),
-		WithRecorderEnv(
+	recorder, err := vhs.NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		vhs.WithRecorderShell("bash"),
+		vhs.WithRecorderCommand("osm", "super-document"),
+		vhs.WithRecorderTimeout(30*time.Second),
+		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
 			"TERM=xterm-256color",
 		),
-		WithRecorderVHSSettings(settings),
+		vhs.WithRecorderVHSConfig(settings),
 	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
@@ -1504,21 +1505,21 @@ func TestRecording_Script_BT_Shooter(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	settings := DefaultVHSRecordSettings()
+	settings := vhs.DefaultVHSConfig()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
-		WithRecorderShell("bash"),
-		WithRecorderCommand("osm", "script", "scripts/example-04-bt-shooter.js"),
-		WithRecorderTimeout(90*time.Second),
-		WithRecorderEnv(
+	recorder, err := vhs.NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		vhs.WithRecorderShell("bash"),
+		vhs.WithRecorderCommand("osm", "script", "scripts/example-04-bt-shooter.js"),
+		vhs.WithRecorderTimeout(90*time.Second),
+		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
 			"TERM=xterm-256color",
 		),
-		WithRecorderVHSSettings(settings),
+		vhs.WithRecorderVHSConfig(settings),
 	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
@@ -1703,21 +1704,21 @@ func TestRecording_Script_PickAndPlace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	settings := DefaultVHSRecordSettings()
+	settings := vhs.DefaultVHSConfig()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
-		WithRecorderShell("bash"),
-		WithRecorderCommand("osm", "script", "scripts/example-05-pick-and-place.js"),
-		WithRecorderTimeout(90*time.Second),
-		WithRecorderEnv(
+	recorder, err := vhs.NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		vhs.WithRecorderShell("bash"),
+		vhs.WithRecorderCommand("osm", "script", "scripts/example-05-pick-and-place.js"),
+		vhs.WithRecorderTimeout(90*time.Second),
+		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
 			"TERM=xterm-256color",
 		),
-		WithRecorderVHSSettings(settings),
+		vhs.WithRecorderVHSConfig(settings),
 	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)

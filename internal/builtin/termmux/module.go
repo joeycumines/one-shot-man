@@ -869,6 +869,13 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		}
 	})
 
+	// resizeSession(id, rows, cols) → void
+	_ = obj.Set("resizeSession", func(id uint64, rows, cols int) {
+		if err := mgr.ResizeSession(parent.SessionID(id), rows, cols); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
 	// termSize() → {rows, cols}
 	_ = obj.Set("termSize", func() goja.Value {
 		rows, cols := mgr.TermSize()

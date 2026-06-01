@@ -36,7 +36,19 @@ import (
 	regexpmod "github.com/joeycumines/one-shot-man/internal/builtin/regexp"
 	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
 	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
+	boxmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/box"
+	coordinatemod "github.com/joeycumines/one-shot-man/internal/builtin/termui/coordinate"
+	dividermod "github.com/joeycumines/one-shot-man/internal/builtin/termui/divider"
+	labelmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/label"
+	layoutmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/layout"
+	listmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/list"
+	panelmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/panel"
+	tablemod "github.com/joeycumines/one-shot-man/internal/builtin/termui/table"
+	modalmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/modal"
+	splitviewmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/splitview"
+	toastmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/toast"
 	scrollbarmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/scrollbar"
+	termpanemod "github.com/joeycumines/one-shot-man/internal/builtin/termui/termpane"
 	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
 	tokenizermod "github.com/joeycumines/one-shot-man/internal/builtin/tokenizer"
 	unicodetextmod "github.com/joeycumines/one-shot-man/internal/builtin/unicodetext"
@@ -183,6 +195,20 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 
 	// Register termui/scrollbar module for thin vertical scrollbars
 	registry.RegisterNativeModule(prefix+"termui/scrollbar", scrollbarmod.Require())
+
+	// Register termui component ecosystem modules
+	registry.RegisterNativeModule(prefix+"termui/coordinate", coordinatemod.Require())
+	registry.RegisterNativeModule(prefix+"termui/layout", layoutmod.Require())
+	registry.RegisterNativeModule(prefix+"termui/termpane", termpanemod.Require(nil))
+	registry.RegisterNativeModule(prefix+"termui/label", labelmod.Require())
+	registry.RegisterNativeModule(prefix+"termui/divider", dividermod.Require())
+	registry.RegisterNativeModule(prefix+"termui/box", boxmod.Require())
+	registry.RegisterNativeModule(prefix+"termui/panel", panelmod.Require())
+	registry.RegisterNativeModule(prefix+"termui/list", listmod.Require())
+	registry.RegisterNativeModule(prefix+"termui/table", tablemod.Require())
+	registry.RegisterNativeModule(prefix+"termui/splitview", splitviewmod.Require())
+	registry.RegisterNativeModule(prefix+"termui/modal", modalmod.Require())
+	registry.RegisterNativeModule(prefix+"termui/toast", toastmod.Require())
 
 	// Register termmux module for terminal multiplexer JS bindings
 	var muxInput io.Reader

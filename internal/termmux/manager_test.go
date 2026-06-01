@@ -2,6 +2,7 @@ package termmux
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -388,6 +389,7 @@ func TestRequestKind_AllValues(t *testing.T) {
 		reqActiveWriter,
 		reqEnablePassthroughTee,
 		reqDisablePassthroughTee,
+		reqResizeSession,
 	}
 
 	seen := make(map[requestKind]bool)
@@ -398,8 +400,8 @@ func TestRequestKind_AllValues(t *testing.T) {
 		seen[k] = true
 	}
 
-	if len(kinds) != 12 {
-		t.Errorf("expected 12 request kinds, got %d", len(kinds))
+	if len(kinds) != 13 {
+		t.Errorf("expected 13 request kinds, got %d", len(kinds))
 	}
 }
 
@@ -908,6 +910,52 @@ func TestSessionManager_Resize(t *testing.T) {
 		if resizes[0].rows != 50 || resizes[0].cols != 120 {
 			t.Errorf("resize = %dx%d, want 50x120", resizes[0].rows, resizes[0].cols)
 		}
+	}
+}
+
+func TestSessionManager_ResizeSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+	id1, _ := m.Register(s1, SessionTarget{Name: "a"})
+	_, _ = m.Register(s2, SessionTarget{Name: "b"})
+
+	if err := m.ResizeSession(id1, 50, 120); err != nil {
+		t.Fatalf("ResizeSession error: %v", err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+
+	resizes1 := s1.Resizes()
+	if len(resizes1) != 1 {
+		t.Fatalf("session 1 resize calls = %d, want 1", len(resizes1))
+	}
+	if resizes1[0].rows != 50 || resizes1[0].cols != 120 {
+		t.Errorf("session 1 resize = %dx%d, want 50x120", resizes1[0].rows, resizes1[0].cols)
+	}
+
+	resizes2 := s2.Resizes()
+	if len(resizes2) != 0 {
+		t.Fatalf("session 2 resize calls = %d, want 0 (should not be affected)", len(resizes2))
+	}
+}
+
+func TestSessionManager_ResizeSession_InvalidID(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	err := m.ResizeSession(999, 50, 120)
+	if err == nil {
+		t.Fatal("expected error for non-existent session ID")
+	}
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("error = %v, want ErrSessionNotFound", err)
 	}
 }
 

@@ -23,7 +23,7 @@ func Require() func(runtime *goja.Runtime, module *goja.Object) {
 			if len(call.Arguments) >= 1 {
 				m.ViewportHeight = int(call.Argument(0).ToInteger())
 			}
-			return createScrollbarObject(runtime, &m)
+			return createScrollbarObject(runtime, m)
 		})
 	}
 }

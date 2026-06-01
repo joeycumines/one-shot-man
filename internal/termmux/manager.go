@@ -211,6 +211,10 @@ const (
 	// persisted state snapshot. Payload: *restoreStatePayload.
 	// Reply value: *RestoreResult.
 	reqRestoreState
+
+	// reqResizeSession asks the worker to resize a single session's
+	// VTerm and PTY. Payload: *resizeSessionPayload. Reply value: nil.
+	reqResizeSession
 )
 
 // registerPayload carries the arguments for a reqRegister request.
@@ -221,6 +225,14 @@ type registerPayload struct {
 
 // resizePayload carries the new terminal dimensions for a reqResize request.
 type resizePayload struct {
+	rows int
+	cols int
+}
+
+// resizeSessionPayload carries the target session ID and new dimensions for a
+// reqResizeSession request.
+type resizeSessionPayload struct {
+	id   SessionID
 	rows int
 	cols int
 }
@@ -574,6 +586,12 @@ func (m *SessionManager) Resize(rows, cols int) error {
 	return m.sendRequest(reqResize, &resizePayload{rows: rows, cols: cols}).err
 }
 
+// ResizeSession resizes a single session's VTerm and PTY to the given
+// dimensions. Returns ErrSessionNotFound if the session does not exist.
+func (m *SessionManager) ResizeSession(id SessionID, rows, cols int) error {
+	return m.sendRequest(reqResizeSession, &resizeSessionPayload{id: id, rows: rows, cols: cols}).err
+}
+
 // TermSize returns the current terminal dimensions known to the manager.
 func (m *SessionManager) TermSize() (rows, cols int) {
 	resp := m.sendRequest(reqTermSize, nil)
@@ -628,6 +646,8 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleInput(req.payload.([]byte))
 	case reqResize:
 		resp = m.handleResize(req.payload.(*resizePayload))
+	case reqResizeSession:
+		resp = m.handleResizeSession(req.payload.(*resizeSessionPayload))
 	case reqSnapshot:
 		resp = m.handleSnapshot(req.payload.(SessionID))
 	case reqActiveID:
@@ -775,6 +795,23 @@ func (m *SessionManager) handleResize(p *resizePayload) response {
 		}
 	}
 	m.eventBus.emitData(EventResize, 0, [2]int{p.rows, p.cols})
+	return response{}
+}
+
+// handleResizeSession resizes a single session's VTerm and PTY.
+func (m *SessionManager) handleResizeSession(p *resizeSessionPayload) response {
+	ms, ok := m.sessions[p.id]
+	if !ok {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.id)}
+	}
+	if ms.state == SessionClosed {
+		return response{err: fmt.Errorf("%w: session %d is closed", ErrInvalidTransition, p.id)}
+	}
+	ms.vterm.Resize(p.rows, p.cols)
+	if err := ms.session.Resize(p.rows, p.cols); err != nil {
+		slog.Warn("session resize failed", "sessionID", p.id, "rows", p.rows, "cols", p.cols, "error", err)
+	}
+	m.eventBus.emitData(EventResize, p.id, [2]int{p.rows, p.cols})
 	return response{}
 }
 

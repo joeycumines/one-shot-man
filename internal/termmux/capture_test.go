@@ -3,6 +3,7 @@ package termmux
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"runtime"
@@ -990,7 +991,31 @@ func TestCaptureSession_DrainTimeout_Custom(t *testing.T) {
 	// The drain timeout fires only if the done channel doesn't close first.
 	// With "sleep 60" the process close is clean, so done may close quickly.
 	// Either way, Close must not hang longer than timeout + generous margin.
-	if elapsed > timeout+2*time.Second {
+  if elapsed > timeout+2*time.Second {
 		t.Fatalf("Close took %v, expected at most ~%v", elapsed, timeout+2*time.Second)
+	}
+}
+
+// T060: On Windows, Pause/Resume return platform-specific errors because
+// ConPTY does not support process suspension/resumption.
+func TestCaptureSession_PauseResume_Windows(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "windows" {
+		t.Skip("test only runs on Windows")
+	}
+	cs := NewCaptureSession(CaptureConfig{Command: "echo", Args: []string{"x"}})
+
+	if err := cs.Pause(); !errors.Is(err, ErrPauseNotSupported) {
+		t.Fatalf("Pause on Windows should return ErrPauseNotSupported, got: %v", err)
+	}
+	if err := cs.Resume(); !errors.Is(err, ErrResumeNotSupported) {
+		t.Fatalf("Resume on Windows should return ErrResumeNotSupported, got: %v", err)
+	}
+	// Not-started: idempotent no-ops.
+	if err := cs.Pause(); !errors.Is(err, ErrPauseNotSupported) {
+		t.Fatalf("second Pause on Windows should still return ErrPauseNotSupported, got: %v", err)
+	}
+	if err := cs.Resume(); !errors.Is(err, ErrResumeNotSupported) {
+		t.Fatalf("second Resume on Windows should still return ErrResumeNotSupported, got: %v", err)
 	}
 }

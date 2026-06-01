@@ -64,7 +64,7 @@ func TestCreateScrollbarObject_GoInterop(t *testing.T) {
 	rt := goja.New()
 
 	m := termuisb.New()
-	objVal := createScrollbarObject(rt, &m)
+	objVal := 	createScrollbarObject(rt, m)
 	obj := objVal.ToObject(rt)
 
 	setVp, _ := goja.AssertFunction(obj.Get("setViewportHeight"))
@@ -113,7 +113,7 @@ func TestCreateScrollbarObject_GoInterop(t *testing.T) {
 func TestNoArgsReturnUndefined(t *testing.T) {
 	rt := goja.New()
 	m := termuisb.New()
-	obj := createScrollbarObject(rt, &m).ToObject(rt)
+	obj := 	createScrollbarObject(rt, m).ToObject(rt)
 
 	setVp, _ := goja.AssertFunction(obj.Get("setViewportHeight"))
 	res, err := setVp(goja.Undefined())
@@ -130,7 +130,7 @@ func TestNoArgsReturnUndefined(t *testing.T) {
 func TestNoArgsReturnUndefined_AllSetters(t *testing.T) {
 	rt := goja.New()
 	m := termuisb.New()
-	obj := createScrollbarObject(rt, &m).ToObject(rt)
+	obj := 	createScrollbarObject(rt, m).ToObject(rt)
 
 	noArgMethods := []string{
 		"setContentHeight",
@@ -163,7 +163,7 @@ func TestStyleSetters_WithArgs(t *testing.T) {
 	rt := goja.New()
 
 	m := termuisb.New()
-	obj := createScrollbarObject(rt, &m).ToObject(rt)
+	obj := 	createScrollbarObject(rt, m).ToObject(rt)
 
 	// setThumbForeground.
 	fn, _ := goja.AssertFunction(obj.Get("setThumbForeground"))
@@ -189,7 +189,7 @@ func TestViewportHeightGetter(t *testing.T) {
 	rt := goja.New()
 	m := termuisb.New()
 	m.ViewportHeight = 42
-	obj := createScrollbarObject(rt, &m).ToObject(rt)
+	obj := 	createScrollbarObject(rt, m).ToObject(rt)
 
 	fn, ok := goja.AssertFunction(obj.Get("viewportHeight"))
 	require.True(t, ok)
@@ -203,7 +203,7 @@ func TestSetContentHeight_NegativeClamp(t *testing.T) {
 	rt := goja.New()
 	m := termuisb.New()
 	m.ContentHeight = 10
-	obj := createScrollbarObject(rt, &m).ToObject(rt)
+	obj := 	createScrollbarObject(rt, m).ToObject(rt)
 
 	fn, _ := goja.AssertFunction(obj.Get("setContentHeight"))
 	_, err := fn(goja.Undefined(), rt.ToValue(-5))

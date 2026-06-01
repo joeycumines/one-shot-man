@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -266,6 +267,10 @@ func (cs *CaptureSession) Pause() error {
 	if proc == nil {
 		return errors.New("capture: not started")
 	}
+	// ConPTY on Windows does not support process suspension.
+	if runtime.GOOS == "windows" {
+		return ErrPauseNotSupported
+	}
 	if err := proc.Signal("SIGSTOP"); err != nil {
 		return err
 	}
@@ -287,6 +292,10 @@ func (cs *CaptureSession) Resume() error {
 	cs.mu.Unlock()
 	if proc == nil {
 		return errors.New("capture: not started")
+	}
+	// ConPTY on Windows does not support process resumption.
+	if runtime.GOOS == "windows" {
+		return ErrResumeNotSupported
 	}
 	if err := proc.Signal("SIGCONT"); err != nil {
 		return err

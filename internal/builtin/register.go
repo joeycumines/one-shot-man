@@ -201,7 +201,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	// Register termui component ecosystem modules
 	registry.RegisterNativeModule(prefix+"termui/coordinate", coordinatemod.Require())
 	registry.RegisterNativeModule(prefix+"termui/layout", layoutmod.Require())
-	registry.RegisterNativeModule(prefix+"termui/termpane", termpanemod.Require(nil))
+	registry.RegisterNativeModule(prefix+"termui/termpane", termpanemod.Require)
 	registry.RegisterNativeModule(prefix+"termui/label", labelmod.Require())
 	registry.RegisterNativeModule(prefix+"termui/divider", dividermod.Require())
 	registry.RegisterNativeModule(prefix+"termui/box", boxmod.Require())
@@ -212,7 +212,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"termui/modal", modalmod.Require())
 	registry.RegisterNativeModule(prefix+"termui/toast", toastmod.Require())
 	registry.RegisterNativeModule(prefix+"termui/compositor", compositormod.Require)
-	registry.RegisterNativeModule(prefix+"termui/splitlayout", splitlayoutmod.Require(nil))
+	registry.RegisterNativeModule(prefix+"termui/splitlayout", splitlayoutmod.Require)
 
 	// Register termmux module for terminal multiplexer JS bindings
 	var muxInput io.Reader

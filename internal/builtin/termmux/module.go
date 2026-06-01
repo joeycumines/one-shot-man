@@ -624,6 +624,20 @@ func unwrapInteractiveSession(obj *goja.Object) parent.InteractiveSession {
 	return session
 }
 
+// UnwrapSessionManager retrieves the Go *SessionManager stored on a JS
+// wrapper object by WrapSessionManager. Returns nil if the object does
+// not contain a _goSessionManager property. Exported so other builtin
+// modules (e.g., termui/splitlayout, termui/termpane) can extract the
+// Go pointer from a JS-passed manager object.
+func UnwrapSessionManager(obj *goja.Object) *parent.SessionManager {
+	v := obj.Get("_goSessionManager")
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return nil
+	}
+	mgr, _ := v.Export().(*parent.SessionManager)
+	return mgr
+}
+
 // newSessionManager creates a [parent.SessionManager] from an optional JS
 // options object and returns a wrapped JS object.
 //
@@ -667,6 +681,12 @@ func newSessionManager(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 // mode. Pass os.Stdin, os.Stdout, and -1 (or int(os.Stdin.Fd())) as defaults.
 func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int) goja.Value {
 	obj := runtime.NewObject()
+
+	// Store the Go SessionManager for later retrieval by
+	// unwrapSessionManager (e.g., when passing the manager to
+	// osm:termui/splitlayout or osm:termui/termpane).
+	_ = obj.DefineDataProperty("_goSessionManager", runtime.ToValue(mgr),
+		goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
 
 	// ── Closure state for Mux-equivalent convenience methods ──
 	events := newMuxEvents()

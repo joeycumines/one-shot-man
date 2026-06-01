@@ -7,40 +7,28 @@
 //
 // # JavaScript API
 //
+//	const termmux = require('osm:termmux');
 //	const sl = require('osm:termui/splitlayout');
 //
-//	// Create a SplitLayout with direction, ratios, and terminal size
-//	const layout = sl.splitlayout({
+//	const mgr = termmux.newSessionManager();
+//	const layout = sl.splitLayout({
+//	  manager: mgr,
 //	  direction: 'horizontal',
 //	  ratios: [0.5, 0.5],
 //	  width: 80,
 //	  height: 24
 //	});
 //
-//	// Chainable methods
 //	layout.addPane({sessionId: 1})
-//	      .addPane({sessionId: 2})
-//	      .direction('vertical')
-//	      .ratios(0.3, 0.7);
+//	      .addPane({sessionId: 2});
 //
-//	// Non-chainable accessors
-//	const ids = layout.panes();                     // [1, 2]
-//	const bounds = layout.paneBounds(1);            // {x, y, width, height}
-//	layout.focus(1);                                // set focus programmatically
-//
-//	// Bubbletea integration
-//	const model = layout.asBubbleteaModel();        // opaque Go model for tea.run()
-//
-// # SessionManager
-//
-// The Require function accepts a *termmux.SessionManager which is required
-// to create SplitLayout instances. If nil, the factory will throw a
-// TypeError at runtime.
+//	const model = layout.asBubbleteaModel();
 package splitlayout
 
 import (
 	"github.com/dop251/goja"
 
+	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
 	"github.com/joeycumines/one-shot-man/internal/termmux"
 	"github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 	"github.com/joeycumines/one-shot-man/internal/termui/layout"
@@ -48,69 +36,65 @@ import (
 )
 
 // Require returns a CommonJS native module under "osm:termui/splitlayout".
-// The manager parameter provides the termmux SessionManager needed to create
-// SplitLayout instances. If manager is nil, the factory will throw a TypeError
-// when called.
-func Require(manager *termmux.SessionManager) func(runtime *goja.Runtime, module *goja.Object) {
-	return func(runtime *goja.Runtime, module *goja.Object) {
-		exports := runtime.NewObject()
-		_ = module.Set("exports", exports)
+func Require(runtime *goja.Runtime, module *goja.Object) {
+	exports := runtime.NewObject()
+	_ = module.Set("exports", exports)
 
-		// splitlayout({direction, ratios, width, height}) — creates a SplitLayout
-		_ = exports.Set("splitLayout", func(call goja.FunctionCall) goja.Value {
-			if manager == nil {
-				panic(runtime.NewTypeError(
-					"splitlayout: SessionManager is not available; the osm:termui/splitlayout module was initialized without a SessionManager",
-				))
-			}
+	// splitLayout({manager, direction, ratios, width, height}) — creates a SplitLayout
+	_ = exports.Set("splitLayout", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+			panic(runtime.NewTypeError("splitlayout requires a config object {manager, direction, ratios, width, height}"))
+		}
 
-			if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
-				panic(runtime.NewTypeError("splitlayout requires a config object {direction, ratios, width, height}"))
-			}
+		config := call.Argument(0).ToObject(runtime)
+		if config == nil {
+			panic(runtime.NewTypeError("splitlayout: config must be an object"))
+		}
 
-			config := call.Argument(0).ToObject(runtime)
-			if config == nil {
-				panic(runtime.NewTypeError("splitlayout: config must be an object"))
-			}
+		managerVal := config.Get("manager")
+		if managerVal == nil || goja.IsUndefined(managerVal) || goja.IsNull(managerVal) {
+			panic(runtime.NewTypeError("splitlayout: manager is required (pass a termmux SessionManager)"))
+		}
+		managerObj := managerVal.ToObject(runtime)
+		manager := termmuxmod.UnwrapSessionManager(managerObj)
+		if manager == nil {
+			panic(runtime.NewTypeError("splitlayout: manager must be a termmux SessionManager object"))
+		}
 
-			// Parse direction (optional, defaults to horizontal).
-			var d layout.Direction
-			if v := config.Get("direction"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-				d = parseDirection(runtime, v)
-			} else {
-				d = layout.Horizontal
-			}
+		var d layout.Direction
+		if v := config.Get("direction"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			d = parseDirection(runtime, v)
+		} else {
+			d = layout.Horizontal
+		}
 
-			// Parse ratios (optional).
-			var ratios []float64
-			if v := config.Get("ratios"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-				ratios = extractRatios(runtime, v)
-			}
+		var ratios []float64
+		if v := config.Get("ratios"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			ratios = extractRatios(runtime, v)
+		}
 
-			// Parse width and height from bounds object.
-			bounds := coordinate.Rect{}
-			if v := config.Get("width"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-				bounds.Size.Width = int(v.ToInteger())
-			}
-			if v := config.Get("height"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-				bounds.Size.Height = int(v.ToInteger())
-			}
-			if v := config.Get("bounds"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-				bounds = extractRect(runtime, v)
-			}
+		bounds := coordinate.Rect{}
+		if v := config.Get("width"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			bounds.Size.Width = int(v.ToInteger())
+		}
+		if v := config.Get("height"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			bounds.Size.Height = int(v.ToInteger())
+		}
+		if v := config.Get("bounds"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			bounds = extractRect(runtime, v)
+		}
 
-			opts := []splitlayout.SplitLayoutOption{
-				splitlayout.WithDirection(d),
-			}
-			if ratios != nil {
-				opts = append(opts, splitlayout.WithRatios(ratios))
-			}
+		opts := []splitlayout.SplitLayoutOption{
+			splitlayout.WithDirection(d),
+		}
+		if ratios != nil {
+			opts = append(opts, splitlayout.WithRatios(ratios))
+		}
 
-			sl := splitlayout.NewSplitLayout(manager, bounds, opts...)
+		sl := splitlayout.NewSplitLayout(manager, bounds, opts...)
 
-			return createSplitLayoutObject(runtime, sl)
-		})
-	}
+		return createSplitLayoutObject(runtime, sl)
+	})
 }
 
 // createSplitLayoutObject wraps a *splitlayout.SplitLayout as a Goja Object

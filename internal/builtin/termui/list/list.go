@@ -16,11 +16,9 @@ package list
 import (
 	"fmt"
 
-	"charm.land/lipgloss/v2"
 	"github.com/dop251/goja"
 
 	lipglossjs "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
-	"github.com/joeycumines/one-shot-man/internal/termui/component"
 	"github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 	"github.com/joeycumines/one-shot-man/internal/termui/list"
 )
@@ -187,59 +185,6 @@ func extractRect(runtime *goja.Runtime, val goja.Value) coordinate.Rect {
 	}
 }
 
-// extractComponent extracts a component.Component from a Goja value.
-// Supports any JS object with a _goComp field that implements
-// component.Component (duck typing across Panel, List, Table, and atom types).
-func extractComponent(runtime *goja.Runtime, val goja.Value) component.Component {
-	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
-		return nil
-	}
-	obj := val.ToObject(runtime)
-	if obj == nil {
-		return nil
-	}
-	goComp := obj.Get("_goComp")
-	if goComp == nil || goja.IsUndefined(goComp) || goja.IsNull(goComp) {
-		return nil
-	}
-	exported := goComp.Export()
-	comp, ok := exported.(component.Component)
-	if !ok {
-		return nil
-	}
-	return comp
-}
-
-// jsToBorder converts a JS value to a lipgloss.Border.
-// Accepts a plain JS object with border character properties.
-func jsToBorder(runtime *goja.Runtime, val goja.Value) lipgloss.Border {
-	if goja.IsUndefined(val) || goja.IsNull(val) {
-		return lipgloss.Border{}
-	}
-	obj := val.ToObject(runtime)
-	getString := func(key string) string {
-		v := obj.Get(key)
-		if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
-			return ""
-		}
-		return v.String()
-	}
-	return lipgloss.Border{
-		Top:          getString("top"),
-		Bottom:       getString("bottom"),
-		Left:         getString("left"),
-		Right:        getString("right"),
-		TopLeft:      getString("topLeft"),
-		TopRight:     getString("topRight"),
-		BottomLeft:   getString("bottomLeft"),
-		BottomRight:  getString("bottomRight"),
-		MiddleLeft:   getString("middleLeft"),
-		MiddleRight:  getString("middleRight"),
-		Middle:       getString("middle"),
-		MiddleTop:    getString("middleTop"),
-		MiddleBottom: getString("middleBottom"),
-	}
-}
 
 // indexStr converts an int to a string for JS array index access.
 func indexStr(i int) string {

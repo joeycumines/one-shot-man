@@ -14,8 +14,6 @@
 package panel
 
 import (
-	"fmt"
-
 	"charm.land/lipgloss/v2"
 	"github.com/dop251/goja"
 
@@ -220,7 +218,3 @@ func jsToBorder(runtime *goja.Runtime, val goja.Value) lipgloss.Border {
 	}
 }
 
-// indexStr converts an int to a string for JS array index access.
-func indexStr(i int) string {
-	return fmt.Sprintf("%d", i)
-}

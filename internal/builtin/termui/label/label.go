@@ -18,7 +18,6 @@ import (
 	"github.com/dop251/goja"
 
 	lipglossjs "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
-	"github.com/joeycumines/one-shot-man/internal/termui/component"
 	"github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 	"github.com/joeycumines/one-shot-man/internal/termui/label"
 )
@@ -121,29 +120,6 @@ func extractRect(runtime *goja.Runtime, val goja.Value) coordinate.Rect {
 			Height: int(obj.Get("height").ToInteger()),
 		},
 	}
-}
-
-// extractComponent extracts a component.Component from a Goja value.
-// Supports any JS object with a _goComp field that implements component.Component
-// (duck typing across Label, Divider, Box, and future component types).
-func extractComponent(runtime *goja.Runtime, val goja.Value) component.Component {
-	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
-		return nil
-	}
-	obj := val.ToObject(runtime)
-	if obj == nil {
-		return nil
-	}
-	goComp := obj.Get("_goComp")
-	if goComp == nil || goja.IsUndefined(goComp) || goja.IsNull(goComp) {
-		return nil
-	}
-	exported := goComp.Export()
-	comp, ok := exported.(component.Component)
-	if !ok {
-		return nil
-	}
-	return comp
 }
 
 // extractLabelOptions parses an optional JS object into label.LabelOption values.

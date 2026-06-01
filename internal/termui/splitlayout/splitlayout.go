@@ -268,6 +268,10 @@ func (sl *SplitLayout) generateBordersLocked() {
 
 	height := sl.bounds.Size.Height
 	width := sl.bounds.Size.Width
+	focusedIdx := sl.focus.ActiveIndex()
+
+	focusedBorderColor := lipgloss.Color("12") // bright blue
+	dimBorderColor := lipgloss.Color("8")      // grey
 
 	switch sl.direction {
 	case layout.Horizontal:
@@ -280,13 +284,17 @@ func (sl *SplitLayout) generateBordersLocked() {
 				continue
 			}
 			content := strings.Repeat("│\n", height)
-			// Trim trailing newline.
 			content = strings.TrimSuffix(content, "\n")
 			bounds := coordinate.Rect{
 				Position: coordinate.Position{X: borderX, Y: sl.bounds.Position.Y},
 				Size:     coordinate.Size{Width: 1, Height: height},
 			}
-			styled := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(content)
+			// Highlight border if adjacent to focused pane.
+			color := dimBorderColor
+			if i == focusedIdx || i+1 == focusedIdx {
+				color = focusedBorderColor
+			}
+			styled := lipgloss.NewStyle().Foreground(color).Render(content)
 			sl.comp.AddChrome(borderChromeID(i), styled, bounds, 1)
 		}
 	case layout.Vertical:
@@ -301,7 +309,11 @@ func (sl *SplitLayout) generateBordersLocked() {
 				Position: coordinate.Position{X: sl.bounds.Position.X, Y: borderY},
 				Size:     coordinate.Size{Width: width, Height: 1},
 			}
-			styled := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(content)
+			color := dimBorderColor
+			if i == focusedIdx || i+1 == focusedIdx {
+				color = focusedBorderColor
+			}
+			styled := lipgloss.NewStyle().Foreground(color).Render(content)
 			sl.comp.AddChrome(borderChromeID(i), styled, bounds, 1)
 		}
 	}

@@ -47,7 +47,9 @@ import (
 	modalmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/modal"
 	splitviewmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/splitview"
 	toastmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/toast"
+	compositormod "github.com/joeycumines/one-shot-man/internal/builtin/termui/compositor"
 	scrollbarmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/scrollbar"
+	splitlayoutmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/splitlayout"
 	termpanemod "github.com/joeycumines/one-shot-man/internal/builtin/termui/termpane"
 	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
 	tokenizermod "github.com/joeycumines/one-shot-man/internal/builtin/tokenizer"
@@ -209,6 +211,8 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"termui/splitview", splitviewmod.Require())
 	registry.RegisterNativeModule(prefix+"termui/modal", modalmod.Require())
 	registry.RegisterNativeModule(prefix+"termui/toast", toastmod.Require())
+	registry.RegisterNativeModule(prefix+"termui/compositor", compositormod.Require)
+	registry.RegisterNativeModule(prefix+"termui/splitlayout", splitlayoutmod.Require(nil))
 
 	// Register termmux module for terminal multiplexer JS bindings
 	var muxInput io.Reader

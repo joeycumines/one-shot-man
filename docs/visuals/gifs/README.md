@@ -12,6 +12,7 @@ Interactive terminal recordings are auto-generated using [VHS](https://github.co
 | `prompt-flow.gif`                 | Two-step prompt builder        |
 | `goal.gif`                        | Goal-based workflows           |
 | `super-document-visual-light.gif` | Light theme variant            |
+| `script-example-13-split-pane.gif` | Terminal compositor: split panes, focus cycling, animated content |
 
 ### Regenerating Recordings
 

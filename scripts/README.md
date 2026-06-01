@@ -21,6 +21,7 @@ They are not intended to be useful on their own — see the builtin commands for
 | `example-10-claude-pool.js` | Multi-instance pool: registry, multiple handles, ReliablePrompter, pool worker management | Non-interactive |
 | `example-11-multi-agent-team.js` | Multi-agent team: role registry, coordination bus, agent panel, dispatch system | Non-interactive |
 | `example-12-agent-panel.js` | Agent panel: pane management, keyboard routing, health tracking, dynamic add/remove | Non-interactive |
+| `example-13-split-pane.js` | Terminal compositor: split panes, focus cycling, animated content, lipgloss styling | Interactive (BubbleTea) |
 
 ## Tests & Benchmarks
 

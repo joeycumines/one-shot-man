@@ -61,7 +61,7 @@ func loadExampleProgram(t *testing.T, engine *Engine, scriptName string) {
 	switch scriptName {
 	case "minimal-bubbletea-test.js":
 		runMarker = "const result = tea.run(program);"
-	case "example-02-graphical-todo.js", "benchmark-input-latency.js":
+	case "example-02-graphical-todo.js", "benchmark-input-latency.js", "example-13-split-pane.js":
 	default:
 		t.Fatalf("unsupported script %q", scriptName)
 	}
@@ -222,6 +222,97 @@ __result = {
 	}
 	if playerX < 2 || playerX > 17 {
 		t.Fatalf("expected playerX clamped into visible compact play area, got %d", playerX)
+	}
+}
+
+func TestExample13SplitPane_InitCreatesCompositorAndStartsTick(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test")
+	}
+	engine := newExampleScriptEngine(t)
+	loadExampleProgram(t, engine, "example-13-split-pane.js")
+
+	result := runResultScript(t, engine, "example-13-regression", `
+var initRes = __programConfig.init();
+var model = initRes[0];
+var cmd = initRes[1];
+
+var viewRes = __programConfig.view(model);
+
+__result = {
+    initIsArray: Array.isArray(initRes),
+    initCmdType: cmd && cmd._cmdType || null,
+    modelHasTick: model.tick === 0,
+    modelHasFocusIdx: model.focusIdx === 0,
+    viewHasContent: typeof viewRes.content === 'string' && viewRes.content.length > 0,
+    viewAltScreen: viewRes.altScreen === true
+};
+`)
+
+	if got := result["initIsArray"]; got != true {
+		t.Fatalf("expected init to return [state, cmd], got %v", got)
+	}
+	if got := result["initCmdType"]; got != "tick" {
+		t.Fatalf("expected init to schedule tick, got %v", got)
+	}
+	if got := result["modelHasTick"]; got != true {
+		t.Fatalf("expected initial model.tick === 0, got %v", got)
+	}
+	if got := result["modelHasFocusIdx"]; got != true {
+		t.Fatalf("expected initial model.focusIdx === 0, got %v", got)
+	}
+	if got := result["viewHasContent"]; got != true {
+		t.Fatalf("expected view to produce non-empty content, got %v", got)
+	}
+	if got := result["viewAltScreen"]; got != true {
+		t.Fatalf("expected view altScreen=true, got %v", got)
+	}
+}
+
+func TestExample13SplitPane_TabCyclesFocusAndQuitExits(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test")
+	}
+	engine := newExampleScriptEngine(t)
+	loadExampleProgram(t, engine, "example-13-split-pane.js")
+
+	result := runResultScript(t, engine, "example-13-regression-tab", `
+var initRes = __programConfig.init();
+var model = initRes[0];
+
+var tickRes = __programConfig.update({ type: 'Tick' }, model);
+model = tickRes[0];
+
+var tabRes = __programConfig.update({ type: 'Key', key: 'tab' }, model);
+var tabModel = tabRes[0];
+
+var secondTabRes = __programConfig.update({ type: 'Key', key: 'tab' }, tabModel);
+
+var quitRes = __programConfig.update({ type: 'Key', key: 'q' }, tabModel);
+
+__result = {
+    tickIncrements: tickRes[0].tick === 1,
+    tabSwitchesFocus: tabModel.focusIdx === 1,
+    secondTabSwitchesBack: secondTabRes[0].focusIdx === 0,
+    quitCmdType: quitRes[1] && quitRes[1]._cmdType || null,
+    tickReschedulesTick: tickRes[1] && tickRes[1]._cmdType || null
+};
+`)
+
+	if got := result["tickIncrements"]; got != true {
+		t.Fatalf("expected tick to increment counter, got %v", got)
+	}
+	if got := result["tabSwitchesFocus"]; got != true {
+		t.Fatalf("expected tab to switch focus from 0 to 1, got %v", got)
+	}
+	if got := result["secondTabSwitchesBack"]; got != true {
+		t.Fatalf("expected second tab to switch focus back to 0, got %v", got)
+	}
+	if got := result["quitCmdType"]; got != "quit" {
+		t.Fatalf("expected q key to produce quit cmd, got %v", got)
+	}
+	if got := result["tickReschedulesTick"]; got != "tick" {
+		t.Fatalf("expected tick to reschedule tick, got %v", got)
 	}
 }
 

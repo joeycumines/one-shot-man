@@ -6,42 +6,29 @@
 // in a split layout. Uses bubbletea's event loop to animate pane content
 // and cycle focus between panes with Tab.
 //
+// This demo uses the compositor directly (no termmux SessionManager).
+// For live PTY sessions, see example-live-panes.js.
+//
 // Run: osm script scripts/example-split-pane.js
 
 const tea = require('osm:bubbletea');
 const comp = require('osm:termui/compositor');
 const lipgloss = require('osm:lipgloss');
 
-// --- Configuration ---
 const WIDTH = 80;
 const HEIGHT = 24;
 const HALF_W = Math.floor(WIDTH / 2);
 const TICK_MS = 100;
 
-// --- Styles ---
 const borderStyle = lipgloss.newStyle().foreground('#7D56F4');
 const focusedLabel = lipgloss.newStyle().foreground('#EE6FF8').bold(true);
 const unfocusedLabel = lipgloss.newStyle().foreground('#666');
 const contentStyle = lipgloss.newStyle().foreground('#AAA');
 const helpStyle = lipgloss.newStyle().foreground('#555');
 
-// --- State ---
-let focusIdx = 0; // which pane is focused (0 or 1)
+let focusIdx = 0;
 let tick = 0;
-let c = null; // compositor instance
-
-function buildBorderChrome(width, height, focused) {
-    const ch = focused ? '█' : '░';
-    const top = ch.repeat(width);
-    const bottom = ch.repeat(width);
-    const midLine = ch + ' '.repeat(width - 2) + ch;
-    const lines = [top];
-    for (let i = 0; i < height - 2; i++) {
-        lines.push(midLine);
-    }
-    lines.push(bottom);
-    return lines.join('\n');
-}
+let c = null;
 
 function buildPaneContent(paneIdx, focused, t) {
     const label = focused
@@ -64,58 +51,54 @@ function buildPaneContent(paneIdx, focused, t) {
     return lines.join('\n');
 }
 
-// --- Bubbletea Model ---
+function buildBorderBar(width, focused) {
+    const ch = focused ? '█' : '░';
+    return ch.repeat(width);
+}
+
 const program = tea.newModel({
     init: function() {
-        // Create compositor with canvas size
         c = comp.compositor({ width: WIDTH, height: HEIGHT });
 
-        // Add two panes side by side
         c.addPane({
             id: 'left',
             content: buildPaneContent(0, true, 0),
-            bounds: { x: 0, y: 0, width: HALF_W - 1, height: HEIGHT - 2 },
+            bounds: { x: 0, y: 1, width: HALF_W - 1, height: HEIGHT - 3 },
             z: 0
         });
         c.addPane({
             id: 'right',
             content: buildPaneContent(1, false, 0),
-            bounds: { x: HALF_W + 1, y: 0, width: HALF_W - 1, height: HEIGHT - 2 },
+            bounds: { x: HALF_W + 1, y: 1, width: HALF_W - 1, height: HEIGHT - 3 },
             z: 0
         });
 
-        // Add vertical divider chrome
-        const divLine = '│'.repeat(HEIGHT - 2);
         c.addChrome({
-            id: 'divider',
-            content: divLine,
-            bounds: { x: HALF_W, y: 0, width: 1, height: HEIGHT - 2 },
-            z: 10
-        });
-
-        // Add help bar at bottom
-        const helpText = helpStyle.render(' Tab: switch focus │ q: quit ');
-        c.addChrome({
-            id: 'helpbar',
-            content: helpText,
-            bounds: { x: 0, y: HEIGHT - 2, width: WIDTH, height: 1 },
-            z: 20
-        });
-
-        // Add top border chrome for focused pane
-        const borderL = buildBorderChrome(HALF_W - 1, 1, true);
-        c.addChrome({
-            id: 'border-left',
-            content: borderStyle.render(borderL),
+            id: 'top-left',
+            content: borderStyle.render(buildBorderBar(HALF_W - 1, true)),
             bounds: { x: 0, y: 0, width: HALF_W - 1, height: 1 },
             z: 15
         });
-        const borderR = buildBorderChrome(HALF_W - 1, 1, false);
         c.addChrome({
-            id: 'border-right',
-            content: borderStyle.render(borderR),
+            id: 'top-right',
+            content: borderStyle.render(buildBorderBar(HALF_W - 1, false)),
             bounds: { x: HALF_W + 1, y: 0, width: HALF_W - 1, height: 1 },
             z: 15
+        });
+
+        const divLine = '│'.repeat(HEIGHT - 3);
+        c.addChrome({
+            id: 'divider',
+            content: divLine,
+            bounds: { x: HALF_W, y: 1, width: 1, height: HEIGHT - 3 },
+            z: 10
+        });
+
+        c.addChrome({
+            id: 'helpbar',
+            content: helpStyle.render(' Tab: switch focus │ q: quit '),
+            bounds: { x: 0, y: HEIGHT - 2, width: WIDTH, height: 1 },
+            z: 20
         });
 
         return [{ tick: 0, focusIdx: 0 }, tea.tick(TICK_MS, 'tick')];
@@ -124,11 +107,8 @@ const program = tea.newModel({
     update: function(msg, model) {
         if (msg.type === 'Tick') {
             tick = (model.tick || 0) + 1;
-
-            // Update pane contents with new tick
             c.updatePane({ id: 'left', content: buildPaneContent(0, model.focusIdx === 0, tick) });
             c.updatePane({ id: 'right', content: buildPaneContent(1, model.focusIdx === 1, tick) });
-
             return [{ tick: tick, focusIdx: model.focusIdx }, tea.tick(TICK_MS, 'tick')];
         }
 
@@ -138,10 +118,8 @@ const program = tea.newModel({
             }
             if (msg.key === 'tab') {
                 const newFocus = model.focusIdx === 0 ? 1 : 0;
-                const borderL = buildBorderChrome(HALF_W - 1, 1, newFocus === 0);
-                const borderR = buildBorderChrome(HALF_W - 1, 1, newFocus === 1);
-                c.updateChrome({ id: 'border-left', content: borderStyle.render(borderL) });
-                c.updateChrome({ id: 'border-right', content: borderStyle.render(borderR) });
+                c.updateChrome({ id: 'top-left', content: borderStyle.render(buildBorderBar(HALF_W - 1, newFocus === 0)) });
+                c.updateChrome({ id: 'top-right', content: borderStyle.render(buildBorderBar(HALF_W - 1, newFocus === 1)) });
                 c.updatePane({ id: 'left', content: buildPaneContent(0, newFocus === 0, model.tick || 0) });
                 c.updatePane({ id: 'right', content: buildPaneContent(1, newFocus === 1, model.tick || 0) });
                 return [{ tick: model.tick || 0, focusIdx: newFocus }, null];

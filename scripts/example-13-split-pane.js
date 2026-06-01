@@ -1,15 +1,12 @@
 #!/usr/bin/env osm script
 
-// example-split-pane.js — Terminal multiplexer compositing demo
+// example-13-split-pane.js — Terminal multiplexer compositing demo
 //
-// Demonstrates the osm:termui/compositor module rendering two live panes
-// in a split layout. Uses bubbletea's event loop to animate pane content
-// and cycle focus between panes with Tab.
+// Demonstrates the osm:termui/compositor module rendering two panes
+// in a split layout with Tab focus cycling. Uses the compositor
+// directly (no termmux SessionManager needed).
 //
-// This demo uses the compositor directly (no termmux SessionManager).
-// For live PTY sessions, see example-live-panes.js.
-//
-// Run: osm script scripts/example-split-pane.js
+// Run: osm script scripts/example-13-split-pane.js
 
 const tea = require('osm:bubbletea');
 const comp = require('osm:termui/compositor');
@@ -17,10 +14,14 @@ const lipgloss = require('osm:lipgloss');
 
 const WIDTH = 80;
 const HEIGHT = 24;
-const HALF_W = Math.floor(WIDTH / 2);
+const HALF_W = WIDTH / 2;
+const LEFT_W = Math.floor(HALF_W);
+const RIGHT_W = WIDTH - LEFT_W;
+const PANE_H = HEIGHT - 2;
 const TICK_MS = 100;
 
-const borderStyle = lipgloss.newStyle().foreground('#7D56F4');
+const borderFg = lipgloss.newStyle().foreground('#7D56F4');
+const borderBg = lipgloss.newStyle().foreground('#555');
 const focusedLabel = lipgloss.newStyle().foreground('#EE6FF8').bold(true);
 const unfocusedLabel = lipgloss.newStyle().foreground('#666');
 const contentStyle = lipgloss.newStyle().foreground('#AAA');
@@ -30,7 +31,7 @@ let focusIdx = 0;
 let tick = 0;
 let c = null;
 
-function buildPaneContent(paneIdx, focused, t) {
+function buildPaneContent(paneIdx, focused, t, w, h) {
     const label = focused
         ? focusedLabel.render(` Pane ${paneIdx + 1} [FOCUSED] `)
         : unfocusedLabel.render(` Pane ${paneIdx + 1} `);
@@ -42,7 +43,7 @@ function buildPaneContent(paneIdx, focused, t) {
         label,
         '',
         contentStyle.render(`  ${s} Tick: ${t}`),
-        contentStyle.render(`  Size: ${HALF_W - 2}x${HEIGHT - 6}`),
+        contentStyle.render(`  Size: ${w}x${h}`),
         '',
         contentStyle.render('  This pane will receive input'),
         contentStyle.render('  when focused (Tab to switch)'),
@@ -51,9 +52,9 @@ function buildPaneContent(paneIdx, focused, t) {
     return lines.join('\n');
 }
 
-function buildBorderBar(width, focused) {
-    const ch = focused ? '█' : '░';
-    return ch.repeat(width);
+function buildTopBar(w, focused) {
+    const ch = focused ? '▄' : '▀';
+    return ch.repeat(w);
 }
 
 const program = tea.newModel({
@@ -62,42 +63,42 @@ const program = tea.newModel({
 
         c.addPane({
             id: 'left',
-            content: buildPaneContent(0, true, 0),
-            bounds: { x: 0, y: 1, width: HALF_W - 1, height: HEIGHT - 3 },
+            content: buildPaneContent(0, true, 0, LEFT_W, PANE_H),
+            bounds: { x: 0, y: 1, width: LEFT_W, height: PANE_H },
             z: 0
         });
         c.addPane({
             id: 'right',
-            content: buildPaneContent(1, false, 0),
-            bounds: { x: HALF_W + 1, y: 1, width: HALF_W - 1, height: HEIGHT - 3 },
+            content: buildPaneContent(1, false, 0, RIGHT_W, PANE_H),
+            bounds: { x: LEFT_W, y: 1, width: RIGHT_W, height: PANE_H },
             z: 0
         });
 
         c.addChrome({
             id: 'top-left',
-            content: borderStyle.render(buildBorderBar(HALF_W - 1, true)),
-            bounds: { x: 0, y: 0, width: HALF_W - 1, height: 1 },
+            content: borderFg.render(buildTopBar(LEFT_W, true)),
+            bounds: { x: 0, y: 0, width: LEFT_W, height: 1 },
             z: 15
         });
         c.addChrome({
             id: 'top-right',
-            content: borderStyle.render(buildBorderBar(HALF_W - 1, false)),
-            bounds: { x: HALF_W + 1, y: 0, width: HALF_W - 1, height: 1 },
+            content: borderBg.render(buildTopBar(RIGHT_W, false)),
+            bounds: { x: LEFT_W, y: 0, width: RIGHT_W, height: 1 },
             z: 15
         });
 
-        const divLine = '│'.repeat(HEIGHT - 3);
+        const divLine = borderBg.render('│'.repeat(PANE_H));
         c.addChrome({
             id: 'divider',
             content: divLine,
-            bounds: { x: HALF_W, y: 1, width: 1, height: HEIGHT - 3 },
+            bounds: { x: LEFT_W, y: 1, width: 1, height: PANE_H },
             z: 10
         });
 
         c.addChrome({
             id: 'helpbar',
             content: helpStyle.render(' Tab: switch focus │ q: quit '),
-            bounds: { x: 0, y: HEIGHT - 2, width: WIDTH, height: 1 },
+            bounds: { x: 0, y: HEIGHT - 1, width: WIDTH, height: 1 },
             z: 20
         });
 
@@ -107,8 +108,8 @@ const program = tea.newModel({
     update: function(msg, model) {
         if (msg.type === 'Tick') {
             tick = (model.tick || 0) + 1;
-            c.updatePane({ id: 'left', content: buildPaneContent(0, model.focusIdx === 0, tick) });
-            c.updatePane({ id: 'right', content: buildPaneContent(1, model.focusIdx === 1, tick) });
+            c.updatePane({ id: 'left', content: buildPaneContent(0, model.focusIdx === 0, tick, LEFT_W, PANE_H) });
+            c.updatePane({ id: 'right', content: buildPaneContent(1, model.focusIdx === 1, tick, RIGHT_W, PANE_H) });
             return [{ tick: tick, focusIdx: model.focusIdx }, tea.tick(TICK_MS, 'tick')];
         }
 
@@ -118,10 +119,10 @@ const program = tea.newModel({
             }
             if (msg.key === 'tab') {
                 const newFocus = model.focusIdx === 0 ? 1 : 0;
-                c.updateChrome({ id: 'top-left', content: borderStyle.render(buildBorderBar(HALF_W - 1, newFocus === 0)) });
-                c.updateChrome({ id: 'top-right', content: borderStyle.render(buildBorderBar(HALF_W - 1, newFocus === 1)) });
-                c.updatePane({ id: 'left', content: buildPaneContent(0, newFocus === 0, model.tick || 0) });
-                c.updatePane({ id: 'right', content: buildPaneContent(1, newFocus === 1, model.tick || 0) });
+                c.updateChrome({ id: 'top-left', content: (newFocus === 0 ? borderFg : borderBg).render(buildTopBar(LEFT_W, newFocus === 0)) });
+                c.updateChrome({ id: 'top-right', content: (newFocus === 1 ? borderFg : borderBg).render(buildTopBar(RIGHT_W, newFocus === 1)) });
+                c.updatePane({ id: 'left', content: buildPaneContent(0, newFocus === 0, model.tick || 0, LEFT_W, PANE_H) });
+                c.updatePane({ id: 'right', content: buildPaneContent(1, newFocus === 1, model.tick || 0, RIGHT_W, PANE_H) });
                 return [{ tick: model.tick || 0, focusIdx: newFocus }, null];
             }
         }

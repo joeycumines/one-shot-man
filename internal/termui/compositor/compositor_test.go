@@ -398,3 +398,68 @@ func TestCompositor_CanvasReuse(t *testing.T) {
 	_ = c.Render()
 	assert.Same(t, canvasBefore, c.canvas)
 }
+
+// TestCompositor_Render_PreservesZeroWidthANSI verifies that zero-width ANSI
+// escape sequences (like bubblezone markers) survive the compositor's canvas
+// rendering pipeline. This is critical for bubblezone integration: zone.mark()
+// wraps content with private CSI sequences that must be preserved through
+// compositor.render() so that zone.scan() can strip them and register zones.
+func TestCompositor_Render_PreservesZeroWidthANSI(t *testing.T) {
+	skipSlow(t)
+
+	// Bubblezone v2 uses private CSI sequences like \x1b[<num>z as markers.
+	// These are zero-width ANSI sequences that should pass through the canvas.
+	marker := "\x1b[1001z"
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{"plain markers", marker + "Click" + marker},
+		{"styled + markers", lipgloss.NewStyle().Bold(true).Render(marker + "Click" + marker)},
+		{"markers around styled", marker + lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render("Click") + marker},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewCompositor(40, 3)
+			bounds := coordinate.Rect{
+				Position: coordinate.Position{X: 0, Y: 0},
+				Size:     coordinate.Size{Width: 40, Height: 1},
+			}
+			c.AddPane("p1", tt.content, bounds, 0)
+
+			rendered := c.Render()
+			assert.Contains(t, rendered, "Click", "rendered output should contain the text content")
+			assert.Contains(t, rendered, marker, "rendered output should preserve zero-width marker sequences")
+		})
+	}
+}
+
+// TestCompositor_Render_PreservesZeroWidthANSI_Chrome verifies that zero-width
+// markers survive when placed in chrome layers (the typical use case for
+// bubblezone-marked buttons in a dashboard overlay).
+func TestCompositor_Render_PreservesZeroWidthANSI_Chrome(t *testing.T) {
+	skipSlow(t)
+
+	marker := "\x1b[1001z"
+	c := NewCompositor(40, 5)
+	paneBounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 40, Height: 4},
+	}
+	chromeBounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 4},
+		Size:     coordinate.Size{Width: 40, Height: 1},
+	}
+
+	c.AddPane("main", "content", paneBounds, 0)
+	markedButton := marker + "[Toggle]" + marker + "  " + marker + "[Kick]" + marker
+	c.AddChrome("controls", markedButton, chromeBounds, 10)
+
+	rendered := c.Render()
+	assert.Contains(t, rendered, "content", "pane content should be present")
+	assert.Contains(t, rendered, "[Toggle]", "button text should be present")
+	assert.Contains(t, rendered, "[Kick]", "button text should be present")
+	assert.Contains(t, rendered, marker, "zero-width markers should survive chrome rendering")
+}

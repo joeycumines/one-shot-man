@@ -52,7 +52,7 @@ func TestJS_MockClaudeProvider(t *testing.T) {
 	runJS(`handle.send(JSON.stringify({ type: "user", content: "hello" }));`)
 
 	require.Eventually(t, func() bool {
-		data := runJS(`handle.receive()`).String()
+		data := runJS(`handle.receive().value`).String()
 		return strings.Contains(data, "Response to: hello")
 	}, 10*time.Second, 50*time.Millisecond, "expected response containing 'Response to: hello'")
 

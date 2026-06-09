@@ -22,6 +22,8 @@ They are not intended to be useful on their own — see the builtin commands for
 | `example-11-multi-agent-team.js` | Multi-agent team: role registry, coordination bus, agent panel, dispatch system | Non-interactive |
 | `example-12-agent-panel.js` | Agent panel: pane management, keyboard routing, health tracking, dynamic add/remove | Non-interactive |
 | `example-13-split-pane.js` | Terminal compositor: split panes, focus cycling, animated content, lipgloss styling | Interactive (BubbleTea) |
+| `example-14-comprehensive-demo.js` | Full API walkthrough: all TermUI components, compositor, coordinate/layout, TUI state machine, VT detector, parser, provider registry, pool, multi-agent panel, role registry, coordination bus, supervisor, guards, safety validation, managed session, TermMux events/capture | Non-interactive |
+| `example-15-claude-autopilot.js` | PTY monitor with autopilot: snapshot-based idle/network-error detection, automated keystroke injection, managing agent kick, live PTY preview, input forwarding | Interactive (BubbleTea) |
 
 ## Tests & Benchmarks
 

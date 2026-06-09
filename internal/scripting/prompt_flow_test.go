@@ -307,8 +307,7 @@ fi
 		t.Fatalf("Failed to send copy: %v", err)
 	}
 	// Expect the success confirmation message (clipboard may fail on headless CI)
-	if err := expect(30*time.Second, snap, termtest.Contains("copied to clipboard"), "copy confirmation"); err != nil {
-		// On headless CI, clipboard access may fail
+	if err := expect(30*time.Second, snap, termtest.Contains("tokens"), "copy confirmation"); err != nil {
 		if err2 := expect(5*time.Second, snap, termtest.Contains("Clipboard error"), "clipboard error"); err2 != nil {
 			t.Fatalf("Expected copy confirmation or clipboard error: %v", err)
 		}

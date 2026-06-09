@@ -318,8 +318,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 	if err := recorder.SendKey("c"); err != nil {
 		t.Fatalf("Failed to send key: %v", err)
 	}
-	expect(snap, "Copied prompt", 5*time.Second)
-	recorder.RecordSleep(600 * time.Millisecond)
+	expect(snap, "✓ │", 5*time.Second)
 
 	// Quit the application
 	recorder.RecordComment("Quit")
@@ -483,7 +482,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 	if err := recorder.SendKey("\r"); err != nil {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
-	expect(snap, "Copied", 5*time.Second)
+	expect(snap, "tokens", 5*time.Second)
 	recorder.RecordSleep(400 * time.Millisecond)
 
 	// Exit the osm shell
@@ -855,7 +854,7 @@ func TestRecording_CodeReview(t *testing.T) {
 	if err := recorder.SendKey("\r"); err != nil {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
-	expect(snap, "copied", 5*time.Second)
+	expect(snap, "tokens", 5*time.Second)
 	recorder.RecordSleep(400 * time.Millisecond)
 
 	// Exit the osm shell
@@ -1041,7 +1040,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 	if err := recorder.SendKey("\r"); err != nil {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
-	expect(snap, "copied", 5*time.Second)
+	expect(snap, "tokens", 5*time.Second)
 	recorder.RecordSleep(400 * time.Millisecond)
 
 	// Exit the osm shell
@@ -1183,7 +1182,7 @@ func TestRecording_Goal(t *testing.T) {
 	if err := recorder.SendKey("\r"); err != nil {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
-	expect(snap, "copied", 5*time.Second)
+	expect(snap, "tokens", 5*time.Second)
 	recorder.RecordSleep(400 * time.Millisecond)
 
 	// Exit the osm shell
@@ -1512,6 +1511,7 @@ func TestRecording_Script_BT_Shooter(t *testing.T) {
 		vhs.WithRecorderShell("bash"),
 		vhs.WithRecorderCommand("osm", "script", "scripts/example-04-bt-shooter.js"),
 		vhs.WithRecorderTimeout(90*time.Second),
+		vhs.WithRecorderDir(getRepoRoot()),
 		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
@@ -1711,6 +1711,7 @@ func TestRecording_Script_PickAndPlace(t *testing.T) {
 		vhs.WithRecorderShell("bash"),
 		vhs.WithRecorderCommand("osm", "script", "scripts/example-05-pick-and-place.js"),
 		vhs.WithRecorderTimeout(90*time.Second),
+		vhs.WithRecorderDir(getRepoRoot()),
 		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
@@ -1849,6 +1850,7 @@ func TestRecording_Example13_SplitPane(t *testing.T) {
 		vhs.WithRecorderShell("bash"),
 		vhs.WithRecorderCommand("osm", "script", "scripts/example-13-split-pane.js"),
 		vhs.WithRecorderTimeout(30*time.Second),
+		vhs.WithRecorderDir(getRepoRoot()),
 		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",

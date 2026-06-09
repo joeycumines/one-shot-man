@@ -30,6 +30,7 @@
 //	const rendered = c.render();          // string
 //	const hit = c.hit(5, 5);             // { id: string, hit: bool }
 //	const ids = c.paneIds();             // string[]
+//	const chromeIds = c.chromeIds();    // string[]
 package compositor
 
 import (
@@ -238,6 +239,16 @@ func createCompositorObject(runtime *goja.Runtime, c *compositor.Compositor) goj
 	// paneIds() — returns string array (non-chainable)
 	_ = obj.Set("paneIds", func(call goja.FunctionCall) goja.Value {
 		ids := c.PaneIDs()
+		values := make([]any, len(ids))
+		for i, id := range ids {
+			values[i] = runtime.ToValue(id)
+		}
+		return runtime.NewArray(values...)
+	})
+
+	// chromeIds() — returns string array (non-chainable)
+	_ = obj.Set("chromeIds", func(call goja.FunctionCall) goja.Value {
+		ids := c.ChromeIDs()
 		values := make([]any, len(ids))
 		for i, id := range ids {
 			values[i] = runtime.ToValue(id)

@@ -126,13 +126,15 @@ func buildTestBinary(tb testing.TB) string {
 //
 //lint:ignore U1000 Unused depending on env.
 func getRecordingOutputDir() string {
+	return filepath.Join(getRepoRoot(), "docs", "visuals", "gifs")
+}
+
+func getRepoRoot() string {
 	_, source, _, ok := runtime.Caller(0)
 	if !ok {
 		panic("failed to find caller source")
 	}
-	// Clean, absolute path to docs/visuals/gifs
-	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
-	return filepath.Join(repoRoot, "docs", "visuals", "gifs")
+	return filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
 }
 
 // ============================================================================

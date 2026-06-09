@@ -68,4 +68,20 @@ internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: Handle.Injec
 internal/builtin/mcpcallbackmod/mcpcallback.go:*: unreachable func: Handle.Address
 internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: Handle.Address
 internal/builtin/mcpcallbackmod/mcpcallback.go:*: unreachable func: mcpCallback.injectToolResult
+
+# vtassert — visual regression helpers used from *_vtassert_test.go in other packages.
+internal/vtassert/*: unreachable func: *
+internal\vtassert\*: unreachable func: *
+
+# VHS tape builder, RecordingContext, InputCaptureRecorder — test helpers used from recording_demos_unix_test.go and vhs_record_test.go (external packages).
+internal/vhs/*: unreachable func: *
+internal\vhsh\*: unreachable func: *
+
+# termui scrollbar — Go API methods called from JS binding layer via Goja runtime (not visible to deadcode).
+internal/termui/scrollbar/scrollbar.go:*: unreachable func: Model.*
+internal\termui\scrollbar\scrollbar.go:*: unreachable func: Model.*
+
+# termui coordinate — Go API methods called from JS binding layer via Goja runtime.
+internal/termui/coordinate/coordinate.go:*: unreachable func: FromPaneGeometry
+internal\termui\coordinate\coordinate.go:*: unreachable func: FromPaneGeometry
 internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: mcpCallback.injectToolResult

@@ -23,6 +23,7 @@
 //	      .addPane({sessionId: 2});
 //
 //	const model = layout.asBubbleteaModel();
+//	layout.close();  // release resources
 package splitlayout
 
 import (
@@ -198,6 +199,12 @@ func createSplitLayoutObject(runtime *goja.Runtime, sl *splitlayout.SplitLayout)
 		_ = wrapper.DefineDataProperty("_goModel", runtime.ToValue(sl),
 			goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
 		return wrapper
+	})
+
+	// close() — releases resources held by the layout, non-chainable
+	_ = obj.Set("close", func(call goja.FunctionCall) goja.Value {
+		sl.Close()
+		return goja.Undefined()
 	})
 
 	return obj

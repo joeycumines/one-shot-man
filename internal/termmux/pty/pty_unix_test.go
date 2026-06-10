@@ -48,13 +48,13 @@ func TestPTYSpawn_ForceKill_OrphanSurvival(t *testing.T) {
 		default:
 		}
 		data, readErr := proc.Read()
-		if data != "" {
-			output.WriteString(data)
+		if len(data) > 0 {
+			output.Write(data)
 		}
 		if strings.Contains(output.String(), "CHILD_PID=") {
 			break
 		}
-		if readErr != nil && data == "" {
+		if readErr != nil && len(data) == 0 {
 			t.Fatalf("read error before CHILD_PID: %v, output so far: %q", readErr, output.String())
 		}
 	}

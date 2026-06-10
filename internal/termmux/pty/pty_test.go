@@ -74,8 +74,8 @@ func TestSpawn_EchoHello(t *testing.T) {
 		default:
 		}
 		data, readErr := proc.Read()
-		if data != "" {
-			output.WriteString(data)
+		if len(data) > 0 {
+			output.Write(data)
 		}
 		if strings.Contains(output.String(), "hello") {
 			break
@@ -148,8 +148,8 @@ func TestSpawn_EnvVars(t *testing.T) {
 		default:
 		}
 		data, readErr := proc.Read()
-		if data != "" {
-			output.WriteString(data)
+		if len(data) > 0 {
+			output.Write(data)
 		}
 		if strings.Contains(output.String(), "test_value_42") {
 			break
@@ -187,8 +187,8 @@ func TestSpawn_WorkingDirectory(t *testing.T) {
 		default:
 		}
 		data, readErr := proc.Read()
-		if data != "" {
-			output.WriteString(data)
+		if len(data) > 0 {
+			output.Write(data)
 		}
 		// Accept any non-empty output as pwd completes quickly.
 		if output.Len() > 0 && readErr != nil {
@@ -454,8 +454,8 @@ func TestProcess_WriteAndReadCat(t *testing.T) {
 		default:
 		}
 		data, readErr := proc.Read()
-		if data != "" {
-			output.WriteString(data)
+		if len(data) > 0 {
+			output.Write(data)
 		}
 		if strings.Contains(output.String(), "hello from pty") {
 			break
@@ -568,8 +568,8 @@ func TestSpawn_CommandWithSpaces(t *testing.T) {
 		default:
 		}
 		data, readErr := proc.Read()
-		if data != "" {
-			output.WriteString(data)
+		if len(data) > 0 {
+			output.Write(data)
 		}
 		if strings.Contains(output.String(), "hello_from_split") {
 			break
@@ -608,8 +608,8 @@ func TestSpawn_CommandWithSpacesAndExplicitArgs(t *testing.T) {
 		default:
 		}
 		data, readErr := proc.Read()
-		if data != "" {
-			output.WriteString(data)
+		if len(data) > 0 {
+			output.Write(data)
 		}
 		if strings.Contains(output.String(), "explicit_args") {
 			break
@@ -932,13 +932,13 @@ func TestConPTY_Smoke(t *testing.T) {
 	done := false
 	for !done {
 		readCh := make(chan struct {
-			data string
+			data []byte
 			err  error
 		}, 1)
 		go func() {
 			data, readErr := proc.Read()
 			readCh <- struct {
-				data string
+				data []byte
 				err  error
 			}{data: data, err: readErr}
 		}()
@@ -948,8 +948,8 @@ func TestConPTY_Smoke(t *testing.T) {
 			_ = proc.Close()
 			t.Fatalf("timed out waiting for conpty smoke output, got so far: %q", output.String())
 		case readResult := <-readCh:
-			if readResult.data != "" {
-				output.WriteString(readResult.data)
+			if len(readResult.data) > 0 {
+				output.Write(readResult.data)
 			}
 			if strings.Contains(output.String(), "conpty-smoke-test") {
 				done = true

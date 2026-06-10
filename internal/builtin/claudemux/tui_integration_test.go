@@ -50,11 +50,11 @@ func readUntilState(t *testing.T, proc *pty.Process, det *VTStateDetector, targe
 		if err != nil {
 			t.Fatalf("PTY read: %v", err)
 		}
-		if chunk == "" {
+		if len(chunk) == 0 {
 			time.Sleep(10 * time.Millisecond)
 			continue
 		}
-		updates := det.ProcessRaw([]byte(chunk), time.Now())
+		updates := det.ProcessRaw(chunk, time.Now())
 		for _, u := range updates {
 			if u.State == target {
 				return u

@@ -9,9 +9,9 @@ import (
 
 // PTYReader abstracts reading from a PTY process for settle detection.
 type PTYReader interface {
-	// Read returns the next chunk of output from the PTY. Returns ("", io.EOF)
+	// Read returns the next chunk of output from the PTY. Returns (nil, io.EOF)
 	// when the process has exited. May block until data is available.
-	Read() (string, error)
+	Read() ([]byte, error)
 }
 
 // SettleConfig configures settle detection behavior.
@@ -30,7 +30,7 @@ func DefaultSettleConfig() SettleConfig {
 }
 
 type readResult struct {
-	chunk string
+	chunk []byte
 	err   error
 }
 
@@ -97,8 +97,8 @@ func WaitSettle(ctx context.Context, proc PTYReader, det *VTStateDetector, confi
 				}
 				return det.State(), time.Since(start), fmt.Errorf("claudemux: settle read error: %w", res.err)
 			}
-			if res.chunk != "" {
-				det.ProcessRaw([]byte(res.chunk), time.Now())
+			if len(res.chunk) > 0 {
+				det.ProcessRaw(res.chunk, time.Now())
 			}
 		}
 	}

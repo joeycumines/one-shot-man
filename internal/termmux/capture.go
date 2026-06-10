@@ -158,8 +158,8 @@ func (cs *CaptureSession) Start(ctx context.Context) error {
 	// This provides a channel-based output stream that the readerLoop
 	// consumes, allowing passthrough to route output to stdout without
 	// racing on the PTY file descriptor. Uses the raw PTY fd (proc.File())
-	// rather than proc itself because BufferedReader requires io.Reader
-	// (Read([]byte)) while Process.Read returns (string, error).
+	// rather than proc.Read for higher throughput via BufferedReader's
+	// buffered channel-based architecture.
 	readerCtx, readerCancel := context.WithCancel(childCtx)
 	cs.mu.Lock()
 	cs.reader = ptyio.NewBufferedReader(proc.File(), 16)

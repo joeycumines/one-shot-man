@@ -165,13 +165,13 @@ func (p *Process) writeWithGoroutineTimeout(f *os.File, data []byte, timeout tim
 
 // Read reads available output from the PTY (the child process's stdout).
 // It reads up to 4096 bytes and returns immediately with whatever is available.
-// Returns ("", io.EOF) when the PTY is closed or the process exits.
-func (p *Process) Read() (string, error) {
+// Returns (nil, io.EOF) when the PTY is closed or the process exits.
+func (p *Process) Read() ([]byte, error) {
 	// Don't hold lock during blocking read — just check closed state.
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
-		return "", ErrClosed
+		return nil, ErrClosed
 	}
 	f := p.ptyFile
 	p.mu.Unlock()
@@ -179,9 +179,13 @@ func (p *Process) Read() (string, error) {
 	buf := make([]byte, 4096)
 	n, err := f.Read(buf)
 	if n > 0 {
-		return string(buf[:n]), err
+		// Return a right-sized copy to avoid retaining the full 4096-byte
+		// backing array when the caller holds onto the result.
+		cp := make([]byte, n)
+		copy(cp, buf[:n])
+		return cp, err
 	}
-	return "", err
+	return nil, err
 }
 
 // DrainOutput starts a background goroutine that continuously reads and

@@ -90,21 +90,21 @@ func TestWaitSettle_ContextCancellation(t *testing.T) {
 
 type idleReader struct{}
 
-func (r *idleReader) Read() (string, error) { return "", nil }
+func (r *idleReader) Read() ([]byte, error) { return nil, nil }
 
 type blockingReader struct {
 	mu     sync.Mutex
 	cancel context.CancelFunc
 }
 
-func (r *blockingReader) Read() (string, error) {
+func (r *blockingReader) Read() ([]byte, error) {
 	r.mu.Lock()
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
 	r.mu.Unlock()
 
 	<-ctx.Done()
-	return "", ctx.Err()
+	return nil, ctx.Err()
 }
 
 func (r *blockingReader) Unblock() {

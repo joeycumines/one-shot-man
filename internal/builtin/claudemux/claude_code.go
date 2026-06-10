@@ -70,7 +70,11 @@ func (h *ptyAgentHandle) Send(input string) error {
 }
 
 func (h *ptyAgentHandle) Receive() (string, error) {
-	return h.proc.Read()
+	data, err := h.proc.Read()
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func (h *ptyAgentHandle) Close() error {
@@ -115,8 +119,8 @@ func (h *ptyAgentHandle) WaitReady(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("waitReady: read: %w", err)
 		}
-		if chunk != "" {
-			h.detector.ProcessRaw([]byte(chunk), time.Now())
+		if len(chunk) > 0 {
+			h.detector.ProcessRaw(chunk, time.Now())
 			if h.detector.State() == StateReady {
 				return nil
 			}

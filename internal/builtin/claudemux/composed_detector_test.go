@@ -104,11 +104,11 @@ func TestComposedDetector_TUIMode_ProcessRaw(t *testing.T) {
 		if readErr != nil {
 			t.Fatalf("PTY read: %v", readErr)
 		}
-		if chunk == "" {
+		if len(chunk) == 0 {
 			time.Sleep(10 * time.Millisecond)
 			continue
 		}
-		det.ProcessRaw([]byte(chunk), time.Now())
+		det.ProcessRaw(chunk, time.Now())
 	}
 
 	if det.State() != StateReady {

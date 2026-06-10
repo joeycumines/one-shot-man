@@ -230,9 +230,11 @@ function repositionPtyPane(m) {
     try {
         m.compObj.removePane('pty');
     } catch (_) {}
-    var innerW = m.paneW - 2 * BORDER_WIDTH;
-    var innerH = m.paneH - 2 * BORDER_WIDTH;
-    var bordered = borderStyle.width(innerW).height(innerH).render(m.snapshotAnsi || '');
+    // lipgloss .width(N) includes borders in N, so content area = N - borderSize.
+    // The VT is sized to (paneW - 2, paneH - 2) = (innerW, innerH).
+    // To make the content area match the VT, we pass the full pane dimensions
+    // so lipgloss subtracts its 2-char border and produces paneW-2 cols of content.
+    var bordered = borderStyle.width(m.paneW).height(m.paneH).render(m.snapshotAnsi || '');
     m.compObj.addPane({
         id: 'pty',
         content: bordered,

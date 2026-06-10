@@ -227,12 +227,12 @@ func (s *Screen) scrollRegionDown(top, bot, n int) {
 // pushScrollback adds a row to the scrollback ring buffer. The row is copied
 // so that subsequent mutations to Cells do not affect scrollback content.
 func (s *Screen) pushScrollback(row []Cell) {
+	if s.MaxScrollback <= 0 {
+		return // no scrollback when max is 0 or unlimited (not yet supported)
+	}
+
 	copied := make([]Cell, len(row))
 	copy(copied, row)
-
-	if s.MaxScrollback <= 0 {
-		return // unlimited not yet supported; treat as no scrollback
-	}
 
 	// Grow the ring buffer if not yet at capacity.
 	if s.ScrollbackLen < s.MaxScrollback {
@@ -311,14 +311,13 @@ func (s *Screen) EraseDisplay(mode int) {
 			s.Cells[r] = makeAttrLine(s.Cols, s.CurAttr)
 		}
 	case 3:
-		// ED mode 3: erase scrollback (xterm extension).
+		// ED mode 3: erase scrollback only (xterm extension).
+		// Per xterm spec, CSI 3J clears saved lines (scrollback)
+		// but does NOT clear the visible display.
 		s.Scrollback = nil
 		s.ScrollbackLen = 0
 		s.ScrollbackHead = 0
 		s.ScrollOffset = 0
-		for r := 0; r < s.Rows; r++ {
-			s.Cells[r] = makeAttrLine(s.Cols, s.CurAttr)
-		}
 }
 }
 

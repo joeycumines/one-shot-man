@@ -409,13 +409,18 @@ func TestScreen_EraseDisplay_Mode3_Scrollback(t *testing.T) {
 			s.Cells[r][c].Ch = 'X'
 		}
 	}
-	s.EraseDisplay(3) // mode 3 treated same as mode 2
+	s.EraseDisplay(3) // mode 3: erase scrollback only (not visible display)
+	// Per xterm spec, ED mode 3 does NOT clear the visible screen.
 	for r := range 3 {
 		for c := range 5 {
-			if s.Cells[r][c].Ch != ' ' {
-				t.Fatalf("ED mode 3: cell[%d][%d] = %c, want space", r, c, s.Cells[r][c].Ch)
+			if s.Cells[r][c].Ch != 'X' {
+				t.Fatalf("ED mode 3: cell[%d][%d] = %c, want X (visible display preserved)", r, c, s.Cells[r][c].Ch)
 			}
 		}
+	}
+	// Scrollback should be cleared.
+	if s.ScrollbackLines() != 0 {
+		t.Fatalf("ED mode 3: ScrollbackLines = %d, want 0", s.ScrollbackLines())
 	}
 }
 

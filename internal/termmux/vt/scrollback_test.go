@@ -73,8 +73,11 @@ func TestScrollback_MaxEnforcedLarge(t *testing.T) {
 }
 
 func TestScrollback_EraseDisplay3(t *testing.T) {
-	// ED mode 3 should clear scrollback.
+	// ED mode 3 should clear scrollback but NOT clear the visible screen.
 	scr := NewScreen(5, 20)
+
+	// Write content to the screen first.
+	scr.PutChar('Z')
 
 	// Generate some scrollback.
 	for i := 0; i < 10; i++ {
@@ -94,6 +97,24 @@ func TestScrollback_EraseDisplay3(t *testing.T) {
 	}
 	if scr.ScrollOffset != 0 {
 		t.Errorf("ScrollOffset after ED 3 = %d, want 0", scr.ScrollOffset)
+	}
+
+	// Verify visible display is NOT cleared.
+	// After ED mode 3, the visible cells should still have content.
+	found := false
+	for r := 0; r < scr.Rows; r++ {
+		for c := 0; c < scr.Cols; c++ {
+			if scr.Cells[r][c].Ch != ' ' && scr.Cells[r][c].Ch != 0 {
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		t.Error("ED mode 3 should NOT clear the visible display")
 	}
 }
 
@@ -425,5 +446,101 @@ func TestVTerm_Scrollback_ResizePreserves(t *testing.T) {
 
 	if got := v.ScrollbackLines(); got != before {
 		t.Errorf("ScrollbackLines after resize = %d, want %d", got, before)
+	}
+}
+
+func TestVTerm_SetScrollback_Zero(t *testing.T) {
+	// SetScrollback(0) should clear all scrollback data and disable it.
+	v := NewVTerm(5, 20)
+
+	for i := 0; i < 10; i++ {
+		v.Write([]byte("Data\n"))
+	}
+
+	if v.ScrollbackLines() == 0 {
+		t.Fatal("expected scrollback before SetScrollback(0)")
+	}
+
+	v.SetScrollback(0)
+
+	if got := v.ScrollbackLines(); got != 0 {
+		t.Errorf("ScrollbackLines after SetScrollback(0) = %d, want 0", got)
+	}
+
+	// Further writes should not accumulate scrollback.
+	for i := 0; i < 10; i++ {
+		v.Write([]byte("More\n"))
+	}
+
+	if got := v.ScrollbackLines(); got != 0 {
+		t.Errorf("ScrollbackLines after more writes = %d, want 0 (scrollback disabled)", got)
+	}
+}
+
+func TestVTerm_SetScrollback_Increase(t *testing.T) {
+	// Increasing MaxScrollback should work correctly — ring buffer
+	// must be rebuilt to avoid head-position corruption.
+	v := NewVTerm(5, 20)
+	v.SetScrollback(3)
+
+	// Generate scrollback that fills the ring.
+	for i := 0; i < 20; i++ {
+		v.Write([]byte(string(rune('A'+i%26)) + "\n"))
+	}
+
+	if v.ScrollbackLines() != 3 {
+		t.Fatalf("ScrollbackLines = %d, want 3", v.ScrollbackLines())
+	}
+
+	// Increase max — ring buffer must be rebuilt correctly.
+	v.SetScrollback(5)
+
+	if got := v.ScrollbackLines(); got > 5 {
+		t.Errorf("ScrollbackLines after increase = %d, want <= 5", got)
+	}
+
+	// Write more lines — they should be added to scrollback correctly.
+	for i := 0; i < 5; i++ {
+		v.Write([]byte(string(rune('a'+i)) + "\n"))
+	}
+
+	// Scrollback should have grown up to the new max.
+	if v.ScrollbackLines() > 5 {
+		t.Errorf("ScrollbackLines after more writes = %d, want <= 5", v.ScrollbackLines())
+	}
+
+	// Verify ordering: oldest scrollback entry should be from before the increase.
+	row0 := v.ScrollbackRow(0)
+	if row0 == nil {
+		t.Fatal("ScrollbackRow(0) = nil after increase")
+	}
+}
+
+func TestVTerm_AlternateScreen_NoScrollback(t *testing.T) {
+	// Alternate screen should not accumulate scrollback.
+	v := NewVTerm(5, 20)
+
+	// Switch to alternate screen.
+	v.Write([]byte("\x1b[?1049h"))
+
+	// Write enough lines to trigger scrolling.
+	for i := 0; i < 10; i++ {
+		v.Write([]byte("AltLine\n"))
+	}
+
+	// Active screen is alternate — should have no scrollback.
+	snap := v.ActiveScreen()
+	if got := snap.ScrollbackLines(); got != 0 {
+		t.Errorf("Alternate screen ScrollbackLines = %d, want 0", got)
+	}
+
+	// Switch back to primary.
+	v.Write([]byte("\x1b[?1049l"))
+
+	// Primary should still have its own (empty) scrollback since we
+	// didn't write to it before switching.
+	snap = v.ActiveScreen()
+	if snap.MaxScrollback != 10000 {
+		t.Errorf("Primary MaxScrollback = %d, want 10000", snap.MaxScrollback)
 	}
 }

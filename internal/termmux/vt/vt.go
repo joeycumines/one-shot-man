@@ -39,6 +39,9 @@ func NewVTerm(rows, cols int) *VTerm {
 		rows:      rows,
 		cols:      cols,
 	}
+	// Alternate screen should never accumulate scrollback.
+	// Real terminals discard lines that scroll off the alternate screen.
+	v.alternate.MaxScrollback = 0
 	v.active = v.primary
 	// Wire CSI alt-screen callback.
 	v.csi.AltScreenFn = func(toAlt bool) {
@@ -306,23 +309,40 @@ func (v *VTerm) ScrollbackRow(i int) []Cell {
 }
 
 // SetScrollback sets the maximum scrollback buffer size for the primary screen.
-// A value of 0 means unlimited (not yet supported; will use 0 = no scrollback).
-// The existing scrollback is trimmed if it exceeds the new maximum.
-// Thread-safe.
+// A value of 0 disables scrollback entirely. The existing scrollback is trimmed
+// if it exceeds the new maximum, or cleared if n==0. Thread-safe.
 func (v *VTerm) SetScrollback(n int) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+
+	if n <= 0 {
+		// Disable scrollback entirely.
+		v.primary.Scrollback = nil
+		v.primary.ScrollbackLen = 0
+		v.primary.ScrollbackHead = 0
+		v.primary.MaxScrollback = 0
+		return
+	}
+
 	v.primary.MaxScrollback = n
-	// Trim if current scrollback exceeds new max.
-	if n > 0 && v.primary.ScrollbackLen > n {
-		// Rebuild scrollback to keep only the most recent n lines.
-		newBuf := make([][]Cell, n)
-		for i := 0; i < n; i++ {
-			logicalIdx := v.primary.ScrollbackLen - n + i
-			newBuf[i] = v.primary.ScrollbackRow(logicalIdx)
+
+	// Rebuild scrollback into a fresh linear buffer when the max changes.
+	// This avoids ring-buffer corruption when growing (head position becomes
+	// invalid relative to the new capacity).
+	if v.primary.ScrollbackLen > 0 {
+		// Determine how many lines to keep.
+		keep := v.primary.ScrollbackLen
+		if keep > n {
+			keep = n
+		}
+		// Copy the most recent 'keep' lines in logical order.
+		newBuf := make([][]Cell, keep)
+		start := v.primary.ScrollbackLen - keep
+		for i := range keep {
+			newBuf[i] = v.primary.ScrollbackRow(start + i)
 		}
 		v.primary.Scrollback = newBuf
-		v.primary.ScrollbackLen = n
-		v.primary.ScrollbackHead = 0
+		v.primary.ScrollbackLen = keep
+		v.primary.ScrollbackHead = keep % n // next write position
 	}
 }

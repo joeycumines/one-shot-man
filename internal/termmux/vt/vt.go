@@ -185,10 +185,11 @@ func (v *VTerm) switchToPrimary() {
 		return
 	}
 	v.active = v.primary
-	// Restore cursor on primary (per DECRST 1049 spec).
-	v.primary.CurRow = v.primary.SavedRow
-	v.primary.CurCol = v.primary.SavedCol
+	// Restore cursor on primary (per DECRST 1049 spec), clamped to screen bounds.
+	v.primary.CurRow = max(0, min(v.primary.SavedRow, v.primary.Rows-1))
+	v.primary.CurCol = max(0, min(v.primary.SavedCol, v.primary.Cols-1))
 	v.primary.CurAttr = v.primary.SavedAttr
+	v.primary.PendingWrap = false
 }
 
 func (v *VTerm) reset() {
@@ -275,8 +276,15 @@ func (v *VTerm) MouseSGR() bool {
 	return v.active.MouseSGR
 }
 
+// ActiveScreen returns a snapshot copy of the active screen's state.
+// The returned Screen is a value copy — mutations to it do not affect the
+// VTerm's internal state, and no data races are possible regardless of
+// which goroutine calls this method.
+//
+// The copy includes Cells, cursor position, saved cursor, scroll region,
+// dimensions, tab stops, mouse tracking state, and visibility flags.
 func (v *VTerm) ActiveScreen() *Screen {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	return v.active
+	return v.active.Snapshot()
 }

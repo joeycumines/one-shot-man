@@ -137,10 +137,12 @@ function buttonIdToKey(chromeId) {
     return null;
 }
 
-// mapMouseButton passes BubbleTea's button name through unchanged.
-// BubbleTea uses the same naming as Go's MouseButton constants
-// ("left", "middle", "right", "wheel up", "wheel down", "none"),
-// so no transformation is needed.
+// mapMouseButton converts BubbleTea's mouse button name to the format
+// expected by Go's termmux.MouseToSGR. BubbleTea and Go share the same
+// naming for standard buttons ("left", "middle", "right", "wheel up",
+// "wheel down", "none"), so recognized names pass through unchanged.
+// Exotic names like "button 10" or "button 11" (from extended mouse
+// protocols) are not supported by Go's MouseToSGR and map to "none".
 function mapMouseButton(btn) {
     if (btn === 'left' || btn === 'middle' || btn === 'right' ||
         btn === 'wheel up' || btn === 'wheel down' ||
@@ -529,7 +531,8 @@ function bouncingUpdate(msg, model) {
             if (ck === 's' || ck === 'ctrl+s') { return handleControlKey(m, 'ctrl+s'); }
             if (ck === 'b' || ck === 'ctrl+b') { return handleControlKey(m, 'ctrl+b'); }
             if (ck === 'p' || ck === 'ctrl+p') { return handleControlKey(m, 'ctrl+p'); }
-            if (ck === 'q' || ck === 'ctrl+c') { return [m, tea.quit()]; }
+            if (ck === 'q' || ck === 'ctrl+q') { return handleControlKey(m, 'ctrl+q'); }
+            if (ck === 'ctrl+c') { return handleControlKey(m, 'ctrl+c'); }
             if (ck === 'esc' || ck === 'ctrl+x') { return [m, null]; }
             // Unrecognized chord key: fall through to normal handling
         }

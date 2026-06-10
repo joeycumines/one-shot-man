@@ -14,14 +14,18 @@ func (h *ESCHandler) Dispatch(scr *Screen, final byte) {
 		scr.SavedCol = scr.CurCol
 		scr.SavedAttr = scr.CurAttr
 	case '8': // DECRC — restore cursor
-		scr.CurRow = scr.SavedRow
-		scr.CurCol = scr.SavedCol
+		scr.PendingWrap = false
+		scr.CurRow = max(0, min(scr.SavedRow, scr.Rows-1))
+		scr.CurCol = max(0, min(scr.SavedCol, scr.Cols-1))
 		scr.CurAttr = scr.SavedAttr
 	case 'M': // RI — reverse index (cursor up; scroll down if at top)
+		scr.PendingWrap = false
 		scr.ReverseIndex()
 	case 'D': // IND — index (line feed)
+		scr.PendingWrap = false
 		scr.LineFeed()
 	case 'E': // NEL — next line
+		scr.PendingWrap = false
 		scr.CurCol = 0
 		scr.LineFeed()
 	case 'c': // RIS — full reset

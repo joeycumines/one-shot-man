@@ -137,6 +137,7 @@ func (s *Screen) Resize(rows, cols int) {
 	}
 	s.ScrollTop = 0
 	s.ScrollBot = 0
+	s.PendingWrap = false
 	if cols > len(s.TabStops) {
 		prev := len(s.TabStops)
 		ext := make([]bool, cols-prev)
@@ -329,6 +330,38 @@ func (s *Screen) repairWideBoundary(row, start, end int) {
 	}
 	if end > 0 && end < s.Cols && cells[end].SecondHalf {
 		cells[end] = blank
+	}
+}
+
+// Snapshot returns an independent deep copy of the screen. The returned
+// Screen shares no mutable state with the original — callers can read or
+// modify it without synchronization. This is the safe way to expose screen
+// state outside the VTerm's mutex.
+func (s *Screen) Snapshot() *Screen {
+	cells := make([][]Cell, s.Rows)
+	for r := range cells {
+		cells[r] = make([]Cell, s.Cols)
+		copy(cells[r], s.Cells[r])
+	}
+	tabStops := make([]bool, len(s.TabStops))
+	copy(tabStops, s.TabStops)
+	return &Screen{
+		Cells:         cells,
+		CurRow:        s.CurRow,
+		CurCol:        s.CurCol,
+		CurAttr:       s.CurAttr,
+		ScrollTop:     s.ScrollTop,
+		ScrollBot:     s.ScrollBot,
+		SavedRow:      s.SavedRow,
+		SavedCol:      s.SavedCol,
+		SavedAttr:     s.SavedAttr,
+		PendingWrap:   s.PendingWrap,
+		CursorVisible: s.CursorVisible,
+		TabStops:      tabStops,
+		Rows:          s.Rows,
+		Cols:          s.Cols,
+		MouseTracking: s.MouseTracking,
+		MouseSGR:      s.MouseSGR,
 	}
 }
 

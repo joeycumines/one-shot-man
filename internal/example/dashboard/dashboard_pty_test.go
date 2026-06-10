@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/go-prompt/termtest"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -48,22 +49,8 @@ func newTestProcessEnv(tb testing.TB) []string {
 	}
 }
 
-func repoRoot() string {
-	dir, _ := os.Getwd()
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "cmd", "osm", "main.go")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return dir
-		}
-		dir = parent
-	}
-}
-
 func resolveScriptPath(binaryPath string) string {
-	root := repoRoot()
+	root := testutil.RepoRootFromWD()
 	candidate := filepath.Join(root, "scripts", "example-14-comprehensive-demo.js")
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate
@@ -609,7 +596,7 @@ func TestDashboard_NoErrorsAfterFullCycle(t *testing.T) {
 
 func TestDashboard_ScriptPath(t *testing.T) {
 	t.Parallel()
-	root := repoRoot()
+	root := testutil.RepoRootFromWD()
 	p := filepath.Join(root, "scripts", "example-14-comprehensive-demo.js")
 	_, err := os.Stat(p)
 	assert.NoError(t, err, "script must exist at %s", p)

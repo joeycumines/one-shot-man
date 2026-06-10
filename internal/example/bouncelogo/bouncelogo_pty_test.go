@@ -11,32 +11,19 @@ import (
 	"time"
 
 	"github.com/joeycumines/go-prompt/termtest"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func repoRoot() string {
-	dir, _ := os.Getwd()
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "cmd", "osm", "main.go")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return dir
-		}
-		dir = parent
-	}
-}
-
 func resolveScriptPath(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(repoRoot(), "scripts", "example-15-bouncing-logo.js")
+	return filepath.Join(testutil.RepoRootFromWD(), "scripts", "example-15-bouncing-logo.js")
 }
 
 func resolveMockPath(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(repoRoot(), "internal", "example", "bouncelogo", "mock_shell.sh")
+	return filepath.Join(testutil.RepoRootFromWD(), "internal", "example", "bouncelogo", "mock_shell.sh")
 }
 
 func newTestProcessEnv(tb testing.TB) []string {
@@ -94,7 +81,7 @@ func launchBouncingLogo(t *testing.T, ctx context.Context, timeout time.Duration
 		termtest.WithCommand(binaryPath, args...),
 		termtest.WithDefaultTimeout(timeout),
 		termtest.WithEnv(env),
-		termtest.WithDir(repoRoot()),
+		termtest.WithDir(testutil.RepoRootFromWD()),
 		termtest.WithSize(ptyRows, ptyCols),
 	)
 	require.NoError(t, err, "Failed to create termtest console")
@@ -319,7 +306,7 @@ func TestBouncingLogo_ResizePane(t *testing.T) {
 // TestBouncingLogo_ScriptPath verifies the script file exists at the expected path.
 func TestBouncingLogo_ScriptPath(t *testing.T) {
 	t.Parallel()
-	root := repoRoot()
+	root := testutil.RepoRootFromWD()
 	p := filepath.Join(root, "scripts", "example-15-bouncing-logo.js")
 	_, err := os.Stat(p)
 	assert.NoError(t, err, "script must exist at %s", p)

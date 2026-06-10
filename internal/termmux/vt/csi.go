@@ -14,30 +14,35 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 	switch final {
 	case 'A': // CUU — cursor up
 		n := paramDefault(params, 0, 1)
+		scr.PendingWrap = false
 		scr.CurRow -= n
 		if scr.CurRow < 0 {
 			scr.CurRow = 0
 		}
 	case 'B': // CUD — cursor down
 		n := paramDefault(params, 0, 1)
+		scr.PendingWrap = false
 		scr.CurRow += n
 		if scr.CurRow >= scr.Rows {
 			scr.CurRow = scr.Rows - 1
 		}
 	case 'C': // CUF — cursor forward
 		n := paramDefault(params, 0, 1)
+		scr.PendingWrap = false
 		scr.CurCol += n
 		if scr.CurCol >= scr.Cols {
 			scr.CurCol = scr.Cols - 1
 		}
 	case 'D': // CUB — cursor backward
 		n := paramDefault(params, 0, 1)
+		scr.PendingWrap = false
 		scr.CurCol -= n
 		if scr.CurCol < 0 {
 			scr.CurCol = 0
 		}
 	case 'E': // CNL — cursor next line
 		n := paramDefault(params, 0, 1)
+		scr.PendingWrap = false
 		scr.CurRow += n
 		if scr.CurRow >= scr.Rows {
 			scr.CurRow = scr.Rows - 1
@@ -45,6 +50,7 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.CurCol = 0
 	case 'F': // CPL — cursor previous line
 		n := paramDefault(params, 0, 1)
+		scr.PendingWrap = false
 		scr.CurRow -= n
 		if scr.CurRow < 0 {
 			scr.CurRow = 0
@@ -55,6 +61,7 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		if col >= scr.Cols {
 			col = scr.Cols - 1
 		}
+		scr.PendingWrap = false
 		scr.CurCol = col
 	case 'H', 'f': // CUP — cursor position (row;col, 1-indexed)
 		row := paramDefault(params, 0, 1) - 1
@@ -71,6 +78,7 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		if col >= scr.Cols {
 			col = scr.Cols - 1
 		}
+		scr.PendingWrap = false
 		scr.CurRow = row
 		scr.CurCol = col
 	case 'J': // ED — erase display
@@ -81,9 +89,11 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.EraseLine(mode)
 	case 'L': // IL — insert lines
 		n := paramDefault(params, 0, 1)
+		scr.PendingWrap = false
 		scr.InsertLines(n)
 	case 'M': // DL — delete lines
 		n := paramDefault(params, 0, 1)
+		scr.PendingWrap = false
 		scr.DeleteLines(n)
 	case 'P': // DCH — delete characters
 		n := paramDefault(params, 0, 1)
@@ -105,6 +115,7 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		if row >= scr.Rows {
 			row = scr.Rows - 1
 		}
+		scr.PendingWrap = false
 		scr.CurRow = row
 	case 'g': // TBC — tab clear
 		mode := paramDefault(params, 0, 0)
@@ -136,6 +147,7 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 			scr.ScrollTop = top
 			scr.ScrollBot = bot
 		}
+		scr.PendingWrap = false
 		scr.CurRow = 0
 		scr.CurCol = 0
 	case 'h': // SM / DECSET
@@ -151,8 +163,9 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.SavedCol = scr.CurCol
 		scr.SavedAttr = scr.CurAttr
 	case 'u': // RCP — restore cursor position
-		scr.CurRow = scr.SavedRow
-		scr.CurCol = scr.SavedCol
+		scr.PendingWrap = false
+		scr.CurRow = max(0, min(scr.SavedRow, scr.Rows-1))
+		scr.CurCol = max(0, min(scr.SavedCol, scr.Cols-1))
 		scr.CurAttr = scr.SavedAttr
 	}
 }

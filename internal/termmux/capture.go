@@ -214,11 +214,17 @@ func (cs *CaptureSession) readerLoop() {
 		}
 
 		// During passthrough, also forward raw output to stdout.
+		// Read passthrough state under the lock, then release before
+		// writing to avoid blocking Resize/Close/Pause/Resume while
+		// the passthrough write completes. One extra write after
+		// deactivation is harmless.
 		cs.mu.Lock()
-		if cs.passthroughActive && cs.passthroughOutput != nil {
-			writeOrLog(cs.passthroughOutput, chunk, "capture-passthrough-output")
-		}
+		active := cs.passthroughActive
+		output := cs.passthroughOutput
 		cs.mu.Unlock()
+		if active && output != nil {
+			writeOrLog(output, chunk, "capture-passthrough-output")
+		}
 	}
 
 	// Capture exit status. proc.Wait() returns immediately here because

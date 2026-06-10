@@ -976,3 +976,85 @@ func TestCaptureSession_PauseResume_Windows(t *testing.T) {
 		t.Fatalf("second Resume on Windows should still return ErrResumeNotSupported, got: %v", err)
 	}
 }
+
+func TestCaptureSession_Passthrough_ResizeNotBlockedByOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	skipIfWindows(t)
+	t.Parallel()
+
+	// Start a session that produces continuous output.
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "sh",
+		Args:    []string{"-c", "for i in $(seq 1 100); do echo \"line $i\"; done; sleep 60"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	// Use a slow writer to simulate a congested stdout (e.g., piped to
+	// a reader that isn't draining). This is the scenario where the old
+	// code would deadlock: readerLoop holds cs.mu while calling
+	// writeOrLog on the slow writer, blocking Resize.
+	slowStdout := &slowWriter{delay: 5 * time.Millisecond}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Run passthrough in a goroutine; it reads from stdin and writes
+	// child output to slowStdout.
+	resultCh := make(chan struct {
+		reason ExitReason
+		err    error
+	}, 1)
+	go func() {
+		reason, err := cs.Passthrough(ctx, PassthroughConfig{
+			Stdin:  strings.NewReader(""), // empty stdin — let child output flow
+			Stdout: slowStdout,
+			TermFd: -1,
+		})
+		resultCh <- struct {
+			reason ExitReason
+			err    error
+		}{reason, err}
+	}()
+
+	// Wait briefly for passthrough to start and output to begin flowing.
+	time.Sleep(200 * time.Millisecond)
+
+	// The key test: Resize must NOT block even while the readerLoop is
+	// writing to the slow stdout. The old code held cs.mu during
+	// writeOrLog, so this Resize would deadlock. The fix reads
+	// passthrough state under the lock and releases before writing.
+	resizeDone := make(chan error, 1)
+	go func() {
+		resizeDone <- cs.Resize(30, 120)
+	}()
+
+	select {
+	case err := <-resizeDone:
+		if err != nil {
+			t.Fatalf("Resize failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Resize timed out — readerLoop may be holding cs.mu during passthrough write")
+	}
+
+	// Verify Resize took effect.
+	if rows := cs.Rows(); rows != 30 {
+		t.Errorf("Rows = %d, want 30", rows)
+	}
+}
+
+// slowWriter wraps an io.Writer with an artificial delay per Write call,
+// simulating a congested output pipe.
+type slowWriter struct {
+	delay time.Duration
+}
+
+func (w *slowWriter) Write(p []byte) (int, error) {
+	time.Sleep(w.delay)
+	return len(p), nil
+}

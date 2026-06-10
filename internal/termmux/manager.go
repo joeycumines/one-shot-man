@@ -704,6 +704,19 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 		lastActive: time.Now(),
 	}
 
+	// Wire DA/DSR response callback so VT responses are routed back to
+	// the child process via the session's stdin. This enables programs
+	// like vim, htop, and less to query terminal capabilities and
+	// cursor position. Must be after ms creation since the closure
+	// captures ms.
+	v.ResponseWriter = func(data []byte) {
+		if ms.session != nil {
+			if _, err := ms.session.Write(data); err != nil {
+				slog.Debug("response write failed", "sessionID", id, "error", err)
+			}
+		}
+	}
+
 	snap := &ScreenSnapshot{
 		Gen:       m.snapshotGen,
 		Rows:      m.termRows,

@@ -1,10 +1,17 @@
 package vt
 
+import "strconv"
+
 // CSIHandler processes a parsed CSI sequence on a screen.
 // The AltScreenFn callback handles DECSET/DECRST mode 1049 (alt screen
 // toggle). It is optional; if nil the mode is silently ignored.
+// The ResponseWriter callback sends response sequences back to the child
+// process (e.g., DA1, DA2, DSR-CPR). It is optional; if nil, responses
+// are silently discarded.
 type CSIHandler struct {
-	AltScreenFn func(toAlt bool)
+	AltScreenFn    func(toAlt bool)
+	ResponseWriter func([]byte)
+	HasInterGt     func() bool // reports whether '>' intermediate was present
 }
 
 // Dispatch processes a CSI sequence identified by the given final byte.
@@ -167,6 +174,32 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.CurRow = max(0, min(scr.SavedRow, scr.Rows-1))
 		scr.CurCol = max(0, min(scr.SavedCol, scr.Cols-1))
 		scr.CurAttr = scr.SavedAttr
+	case 'c': // DA — device attributes
+		if h.HasInterGt != nil && h.HasInterGt() {
+			// DA2 — secondary device attributes.
+			// Response: ESC[>1;0;0c (VT220, firmware version 0, ROM version 0)
+			h.respond("\x1b[>1;0;0c")
+		} else if !isPrivate {
+			// DA1 — primary device attributes.
+			// Response: VT220-class with these capabilities:
+			// 64 = VT220, 1 = 132-columns, 2 = printer,
+			// 6 = selective erase, 9 = national replacement charsets,
+			// 15 = technical char set, 16 = locator port,
+			// 17 = terminal state interworking, 18 = user windows,
+			// 21 = horizontal scrolling, 22 = ANSI color
+			h.respond("\x1b[?64;1;2;6;9;15;16;17;18;21;22c")
+		}
+	case 'n': // DSR — device status report
+		if len(params) > 0 {
+			switch params[0] {
+			case 5: // DSR-OK
+				h.respond("\x1b[0n")
+			case 6: // DSR-CPR — cursor position report
+				row := scr.CurRow + 1 // 1-indexed
+				col := scr.CurCol + 1
+				h.respond("\x1b[" + itoa(row) + ";" + itoa(col) + "R")
+			}
+		}
 	}
 }
 
@@ -226,4 +259,17 @@ func paramDefault(params []int, idx, def int) int {
 		return params[idx]
 	}
 	return def
+}
+
+// respond sends a response sequence via the ResponseWriter callback.
+// If ResponseWriter is nil, the response is silently discarded.
+func (h *CSIHandler) respond(s string) {
+	if h.ResponseWriter != nil {
+		h.ResponseWriter([]byte(s))
+	}
+}
+
+// itoa converts an integer to its decimal string representation.
+func itoa(n int) string {
+	return strconv.Itoa(n)
 }

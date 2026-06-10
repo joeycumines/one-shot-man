@@ -22,6 +22,12 @@ type VTerm struct {
 
 	// BellFn is called when BEL (0x07) is processed. Optional; if nil, bell is silently ignored.
 	BellFn func()
+
+	// ResponseWriter is called when the VT emulator needs to send a response
+	// sequence back to the child process (e.g., DA1, DA2, DSR-CPR). The
+	// callback receives the raw bytes of the response. Optional; if nil,
+	// responses are silently discarded.
+	ResponseWriter func([]byte)
 }
 
 // NewVTerm creates a new virtual terminal with the given dimensions.
@@ -50,6 +56,16 @@ func NewVTerm(rows, cols int) *VTerm {
 		} else {
 			v.switchToPrimary()
 		}
+	}
+	// Wire CSI response callback — DA/DSR responses go through ResponseWriter.
+	v.csi.ResponseWriter = func(data []byte) {
+		if v.ResponseWriter != nil {
+			v.ResponseWriter(data)
+		}
+	}
+	// Wire intermediate '>' detector for DA2.
+	v.csi.HasInterGt = func() bool {
+		return v.parser.HasIntermediate('>')
 	}
 	// Wire ESC reset callback.
 	v.esc.ResetFn = func() {

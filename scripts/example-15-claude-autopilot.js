@@ -667,7 +667,7 @@ function dashboardUpdate(msg, model) {
         var hitMotion = m.compObj.hit(msg.x, msg.y);
         if (hitMotion.hit && hitMotion.id === 'pty') {
             var sgrMotion = termmux.mouseToSGR(
-                { type: 'MouseMotion', button: 'none', x: msg.x, y: msg.y },
+                { type: 'MouseMotion', button: mapMouseButton(msg.button), x: msg.x, y: msg.y },
                 0, 0
             );
             if (sgrMotion) { try { m.mgr.input(sgrMotion); } catch (e) {} }
@@ -680,7 +680,7 @@ function dashboardUpdate(msg, model) {
         var hitRelease = m.compObj.hit(msg.x, msg.y);
         if (hitRelease.hit && hitRelease.id === 'pty') {
             var sgrRelease = termmux.mouseToSGR(
-                { type: 'MouseRelease', button: 'left', x: msg.x, y: msg.y },
+                { type: 'MouseRelease', button: mapMouseButton(msg.button), x: msg.x, y: msg.y },
                 0, 0
             );
             if (sgrRelease) { try { m.mgr.input(sgrRelease); } catch (e) {} }

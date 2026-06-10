@@ -475,7 +475,7 @@ function bouncingUpdate(msg, model) {
                 var relXM = msg.x - m.paneX - BORDER_WIDTH;
                 var relYM = msg.y - m.paneY - BORDER_WIDTH;
                 var sgrMotion = termmux.mouseToSGR(
-                    { type: 'MouseMotion', button: 'none', x: relXM, y: relYM },
+                    { type: 'MouseMotion', button: mapMouseButton(msg.button), x: relXM, y: relYM },
                     0, 0
                 );
                 if (sgrMotion) { try { m.mgr.input(sgrMotion); } catch (e) { logCatch('mouse-motion-sgr', e); } }
@@ -492,7 +492,7 @@ function bouncingUpdate(msg, model) {
                 var relXR = msg.x - m.paneX - BORDER_WIDTH;
                 var relYR = msg.y - m.paneY - BORDER_WIDTH;
                 var sgrRelease = termmux.mouseToSGR(
-                    { type: 'MouseRelease', button: 'none', x: relXR, y: relYR },
+                    { type: 'MouseRelease', button: mapMouseButton(msg.button), x: relXR, y: relYR },
                     0, 0
                 );
                 if (sgrRelease) { try { m.mgr.input(sgrRelease); } catch (e) { logCatch('mouse-release-sgr', e); } }

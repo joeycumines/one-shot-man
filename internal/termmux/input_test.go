@@ -274,16 +274,33 @@ func TestMouseToSGR_UnknownButton(t *testing.T) {
 }
 
 func TestMouseToSGR_ReleaseButton(t *testing.T) {
-	// Per the SGR mouse protocol, release events use button code 3 (MouseNone),
-	// not the button that was originally pressed. This test verifies that
-	// MouseToSGR with Button=MouseNone on a MouseRelease event produces
-	// the correct SGR sequence with button code 3.
+	// Per the SGR mouse protocol, release events preserve the original
+	// button code (unlike legacy X10 mode which overwrites with code 3).
+	// The SGR protocol uses the lowercase 'm' suffix to distinguish
+	// release from press (uppercase 'M'). This test verifies that a
+	// left-button release produces button code 0 with 'm' suffix.
+	ev := MouseEvent{Type: MouseRelease, Button: MouseLeft, X: 10, Y: 5}
+	got, ok := MouseToSGR(ev, 0, 0)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	// Button code 0 (left), 1-based: cx=11, cy=6, lowercase 'm' for release
+	want := "\x1b[<0;11;6m"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestMouseToSGR_ReleaseButtonNone(t *testing.T) {
+	// When BubbleTea reports no specific button on release (e.g., the
+	// button field is "none"), MouseToSGR maps MouseNone to button code 3.
+	// This is the fallback for cases where the released button is unknown.
 	ev := MouseEvent{Type: MouseRelease, Button: MouseNone, X: 10, Y: 5}
 	got, ok := MouseToSGR(ev, 0, 0)
 	if !ok {
 		t.Fatal("expected ok")
 	}
-	// Button code 3, 1-based: cx=11, cy=6, lowercase 'm' for release
+	// Button code 3 (none), 1-based: cx=11, cy=6, lowercase 'm' for release
 	want := "\x1b[<3;11;6m"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)

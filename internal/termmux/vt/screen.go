@@ -58,6 +58,15 @@ type Screen struct {
 	// When true, the child expects mouse events in SGR format (\x1b[<...).
 	// When false, the child expects X11-style format (not supported for forwarding).
 	MouseSGR bool
+
+	// Scrollback holds lines that have scrolled off the top of the visible
+	// screen. It is a ring buffer: Scrollback[0] is the oldest line when
+	// ScrollbackHead == 0, otherwise the oldest line is at ScrollbackHead.
+	Scrollback      [][]Cell
+	ScrollbackLen   int // current number of lines in scrollback
+	ScrollbackHead  int // ring buffer head (next write position)
+	MaxScrollback   int // maximum scrollback lines (0 = unlimited, default 10000)
+	ScrollOffset    int // lines scrolled back from bottom (0 = normal view)
 }
 
 // NewScreen creates a new screen buffer with the given dimensions.
@@ -72,6 +81,7 @@ func NewScreen(rows, cols int) *Screen {
 		Rows:          rows,
 		Cols:          cols,
 		CursorVisible: true,
+		MaxScrollback: 10000,
 	}
 	s.Cells = make([][]Cell, rows)
 	for i := range s.Cells {
@@ -188,6 +198,13 @@ func (s *Screen) scrollRegionUp(top, bot, n int) {
 	if n > bot-top {
 		n = bot - top
 	}
+	// Push evicted rows into scrollback (only for the primary screen's
+	// top-level scroll region — top == 0 means scrolling the full screen).
+	if top == 0 && s.MaxScrollback != 0 {
+		for i := 0; i < n; i++ {
+			s.pushScrollback(s.Cells[i])
+		}
+	}
 	copy(s.Cells[top:], s.Cells[top+n:bot])
 	for i := bot - n; i < bot; i++ {
 		s.Cells[i] = makeAttrLine(s.Cols, s.CurAttr)
@@ -207,6 +224,52 @@ func (s *Screen) scrollRegionDown(top, bot, n int) {
 	}
 }
 
+// pushScrollback adds a row to the scrollback ring buffer. The row is copied
+// so that subsequent mutations to Cells do not affect scrollback content.
+func (s *Screen) pushScrollback(row []Cell) {
+	copied := make([]Cell, len(row))
+	copy(copied, row)
+
+	if s.MaxScrollback <= 0 {
+		return // unlimited not yet supported; treat as no scrollback
+	}
+
+	// Grow the ring buffer if not yet at capacity.
+	if s.ScrollbackLen < s.MaxScrollback {
+		s.Scrollback = append(s.Scrollback, nil)
+		s.ScrollbackLen++
+	}
+
+	// Write at head position and advance.
+	s.Scrollback[s.ScrollbackHead] = copied
+	s.ScrollbackHead = (s.ScrollbackHead + 1) % s.MaxScrollback
+}
+
+// ScrollbackLines returns the number of lines in the scrollback buffer.
+func (s *Screen) ScrollbackLines() int {
+	return s.ScrollbackLen
+}
+
+// ScrollbackRow returns the i-th line from the scrollback buffer (0 = oldest).
+// Returns nil if i is out of range. The returned slice is a copy — callers
+// can modify it without affecting the scrollback.
+func (s *Screen) ScrollbackRow(i int) []Cell {
+	if i < 0 || i >= s.ScrollbackLen {
+		return nil
+	}
+	// Map logical index to physical ring buffer position.
+	// If the buffer isn't full yet, head == len, so oldest is at 0.
+	// If it's full, oldest is at head (which wraps around).
+	idx := i
+	if s.ScrollbackLen == s.MaxScrollback {
+		idx = (s.ScrollbackHead + i) % s.MaxScrollback
+	}
+	row := s.Scrollback[idx]
+	copied := make([]Cell, len(row))
+	copy(copied, row)
+	return copied
+}
+
 // LineFeed moves the cursor down one line, scrolling if at the bottom
 // of the scroll region.
 func (s *Screen) LineFeed() {
@@ -219,7 +282,7 @@ func (s *Screen) LineFeed() {
 }
 
 // EraseDisplay erases part or all of the display. Mode: 0=cursor to end,
-// 1=start to cursor, 2=entire display, 3=scrollback (treated as 2).
+// 1=start to cursor, 2=entire display, 3=erase scrollback.
 func (s *Screen) EraseDisplay(mode int) {
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
 	switch mode {
@@ -243,11 +306,20 @@ func (s *Screen) EraseDisplay(mode int) {
 		for c := 0; c < end; c++ {
 			s.Cells[s.CurRow][c] = blank
 		}
-	case 2, 3:
+	case 2:
 		for r := 0; r < s.Rows; r++ {
 			s.Cells[r] = makeAttrLine(s.Cols, s.CurAttr)
 		}
-	}
+	case 3:
+		// ED mode 3: erase scrollback (xterm extension).
+		s.Scrollback = nil
+		s.ScrollbackLen = 0
+		s.ScrollbackHead = 0
+		s.ScrollOffset = 0
+		for r := 0; r < s.Rows; r++ {
+			s.Cells[r] = makeAttrLine(s.Cols, s.CurAttr)
+		}
+}
 }
 
 // EraseLine erases part or all of the current line. Mode: 0=cursor to end,
@@ -345,6 +417,14 @@ func (s *Screen) Snapshot() *Screen {
 	}
 	tabStops := make([]bool, len(s.TabStops))
 	copy(tabStops, s.TabStops)
+	// Deep copy scrollback ring buffer.
+	scrollback := make([][]Cell, len(s.Scrollback))
+	for i, row := range s.Scrollback {
+		if row != nil {
+			scrollback[i] = make([]Cell, len(row))
+			copy(scrollback[i], row)
+		}
+	}
 	return &Screen{
 		Cells:         cells,
 		CurRow:        s.CurRow,
@@ -362,6 +442,12 @@ func (s *Screen) Snapshot() *Screen {
 		Cols:          s.Cols,
 		MouseTracking: s.MouseTracking,
 		MouseSGR:      s.MouseSGR,
+
+		Scrollback:     scrollback,
+		ScrollbackLen:  s.ScrollbackLen,
+		ScrollbackHead: s.ScrollbackHead,
+		MaxScrollback:  s.MaxScrollback,
+		ScrollOffset:   s.ScrollOffset,
 	}
 }
 

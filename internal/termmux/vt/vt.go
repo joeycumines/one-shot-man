@@ -282,9 +282,47 @@ func (v *VTerm) MouseSGR() bool {
 // which goroutine calls this method.
 //
 // The copy includes Cells, cursor position, saved cursor, scroll region,
-// dimensions, tab stops, mouse tracking state, and visibility flags.
+// dimensions, tab stops, mouse tracking state, visibility flags, and scrollback.
 func (v *VTerm) ActiveScreen() *Screen {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.active.Snapshot()
+}
+
+// ScrollbackLines returns the number of lines in the primary screen's
+// scrollback buffer. Thread-safe.
+func (v *VTerm) ScrollbackLines() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.primary.ScrollbackLines()
+}
+
+// ScrollbackRow returns the i-th line from the primary screen's scrollback
+// buffer (0 = oldest). Returns nil if i is out of range. Thread-safe.
+func (v *VTerm) ScrollbackRow(i int) []Cell {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.primary.ScrollbackRow(i)
+}
+
+// SetScrollback sets the maximum scrollback buffer size for the primary screen.
+// A value of 0 means unlimited (not yet supported; will use 0 = no scrollback).
+// The existing scrollback is trimmed if it exceeds the new maximum.
+// Thread-safe.
+func (v *VTerm) SetScrollback(n int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.primary.MaxScrollback = n
+	// Trim if current scrollback exceeds new max.
+	if n > 0 && v.primary.ScrollbackLen > n {
+		// Rebuild scrollback to keep only the most recent n lines.
+		newBuf := make([][]Cell, n)
+		for i := 0; i < n; i++ {
+			logicalIdx := v.primary.ScrollbackLen - n + i
+			newBuf[i] = v.primary.ScrollbackRow(logicalIdx)
+		}
+		v.primary.Scrollback = newBuf
+		v.primary.ScrollbackLen = n
+		v.primary.ScrollbackHead = 0
+	}
 }

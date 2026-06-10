@@ -5,115 +5,11 @@ import (
 	"context"
 	"io"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
-	"golang.org/x/term"
 )
-
-// syncBuffer is a goroutine-safe bytes.Buffer for concurrent test writes
-// and reads.
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
-// ptTestTermState implements ptyio.TermState for passthrough testing.
-type ptTestTermState struct {
-	rawCalled     bool
-	restoreCalled bool
-	width, height int
-}
-
-func (m *ptTestTermState) MakeRaw(fd int) (*term.State, error) {
-	m.rawCalled = true
-	return nil, nil // nil state is fine for tests
-}
-
-func (m *ptTestTermState) Restore(fd int, state *term.State) error {
-	m.restoreCalled = true
-	return nil
-}
-
-func (m *ptTestTermState) GetSize(fd int) (width, height int, err error) {
-	w, h := m.width, m.height
-	if w == 0 {
-		w = 80
-	}
-	if h == 0 {
-		h = 24
-	}
-	return w, h, nil
-}
-
-// ptTestBlockingGuard implements ptyio.BlockingGuard for passthrough testing.
-type ptTestBlockingGuard struct {
-	ensureCalled  bool
-	restoreCalled bool
-}
-
-func (m *ptTestBlockingGuard) EnsureBlocking(fd int) (origFlags int, err error) {
-	m.ensureCalled = true
-	return 0, nil
-}
-
-func (m *ptTestBlockingGuard) Restore(fd int, origFlags int) {
-	m.restoreCalled = true
-}
-
-// passthroughTestManager creates a SessionManager with a registered
-// controllable session and returns everything needed for passthrough testing.
-func passthroughTestManager(t *testing.T) (*SessionManager, *controllableSession, SessionID) {
-	t.Helper()
-	m := NewSessionManager(WithTermSize(24, 80))
-	ctx, cancel := context.WithCancel(context.Background())
-	errCh := make(chan error, 1)
-	go func() { errCh <- m.Run(ctx) }()
-	<-m.Started()
-
-	session := newControllableSession()
-	id, err := m.Register(session, SessionTarget{Name: "test-pt", Kind: SessionKindPTY})
-	if err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-
-	// Pump some output to transition to Running state.
-	session.readerCh <- []byte("ready")
-	// Wait for the output to be processed.
-	deadline := time.After(2 * time.Second)
-	for {
-		snap := m.Snapshot(id)
-		if snap != nil && strings.Contains(snap.PlainText, "ready") {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for session to reach Running state")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
-
-	t.Cleanup(func() {
-		cancel()
-		<-errCh
-	})
-
-	return m, session, id
-}
 
 func TestSessionManager_Passthrough_ToggleKey(t *testing.T) {
 	if testing.Short() {

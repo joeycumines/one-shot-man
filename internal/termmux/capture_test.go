@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -18,48 +17,6 @@ func skipIfWindows(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test uses Unix-specific commands (sh, cat, sleep, echo, pwd)")
 	}
-}
-
-// testOutputCollector reads all output from a CaptureSession's Reader() channel
-// in a background goroutine. Call startCollector(cs) immediately after cs.Start().
-//
-//   - current() returns accumulated output so far (non-blocking).
-//   - wait() blocks until Reader() closes and returns all output.
-type testOutputCollector struct {
-	mu   sync.Mutex
-	buf  bytes.Buffer
-	done chan struct{}
-}
-
-func startCollector(cs *CaptureSession) *testOutputCollector {
-	tc := &testOutputCollector{done: make(chan struct{})}
-	ch := cs.Reader()
-	if ch == nil {
-		close(tc.done)
-		return tc
-	}
-	go func() {
-		defer close(tc.done)
-		for chunk := range ch {
-			tc.mu.Lock()
-			tc.buf.Write(chunk)
-			tc.mu.Unlock()
-		}
-	}()
-	return tc
-}
-
-func (tc *testOutputCollector) current() string {
-	tc.mu.Lock()
-	defer tc.mu.Unlock()
-	return tc.buf.String()
-}
-
-func (tc *testOutputCollector) wait() string {
-	<-tc.done
-	tc.mu.Lock()
-	defer tc.mu.Unlock()
-	return tc.buf.String()
 }
 
 func TestCaptureSession_EchoHello(t *testing.T) {

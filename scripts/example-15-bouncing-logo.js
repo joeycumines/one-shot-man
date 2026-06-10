@@ -492,7 +492,7 @@ function bouncingUpdate(msg, model) {
                 var relXR = msg.x - m.paneX - BORDER_WIDTH;
                 var relYR = msg.y - m.paneY - BORDER_WIDTH;
                 var sgrRelease = termmux.mouseToSGR(
-                    { type: 'MouseRelease', button: 'left', x: relXR, y: relYR },
+                    { type: 'MouseRelease', button: 'none', x: relXR, y: relYR },
                     0, 0
                 );
                 if (sgrRelease) { try { m.mgr.input(sgrRelease); } catch (e) { logCatch('mouse-release-sgr', e); } }

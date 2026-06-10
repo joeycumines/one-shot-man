@@ -273,6 +273,23 @@ func TestMouseToSGR_UnknownButton(t *testing.T) {
 	}
 }
 
+func TestMouseToSGR_ReleaseButton(t *testing.T) {
+	// Per the SGR mouse protocol, release events use button code 3 (MouseNone),
+	// not the button that was originally pressed. This test verifies that
+	// MouseToSGR with Button=MouseNone on a MouseRelease event produces
+	// the correct SGR sequence with button code 3.
+	ev := MouseEvent{Type: MouseRelease, Button: MouseNone, X: 10, Y: 5}
+	got, ok := MouseToSGR(ev, 0, 0)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	// Button code 3, 1-based: cx=11, cy=6, lowercase 'm' for release
+	want := "\x1b[<3;11;6m"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestMouseToSGR_AllButtons(t *testing.T) {
 	buttons := []struct {
 		btn  MouseButton

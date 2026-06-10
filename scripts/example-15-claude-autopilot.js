@@ -293,11 +293,12 @@ function buttonIdToKey(chromeId) {
 
 // Map bubbletea mouse button string to termmux mouse button string.
 function mapMouseButton(btn) {
-    if (btn === 'left') return 'left';
-    if (btn === 'right') return 'right';
-    if (btn === 'middle') return 'middle';
-    if (btn === 'up' || btn === 'wheel up') return 'wheelUp';
-    if (btn === 'down' || btn === 'wheel down') return 'wheelDown';
+    if (btn === 'left' || btn === 'middle' || btn === 'right' ||
+        btn === 'wheel up' || btn === 'wheel down' ||
+        btn === 'wheel left' || btn === 'wheel right' ||
+        btn === 'backward' || btn === 'forward' || btn === 'none') {
+        return btn;
+    }
     return 'none';
 }
 

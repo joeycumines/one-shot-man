@@ -742,7 +742,12 @@ function runVisualTui() {
 
         // Flag to force a full screen clear on first render
         // This ensures the title line is rendered correctly when re-entering TUI from shell
-        needsInitClear: true
+        needsInitClear: true,
+
+        // Ctrl+X prefix state: when true, the next key press will be treated
+        // as an action hotkey (a/l/e/d/c/r/R/q/s). Set by pressing Ctrl+X,
+        // cleared after a follow-up key or after 1 second timeout.
+        ctrlXPrefix: false
     };
 
     const model = tea.newModel({
@@ -772,6 +777,9 @@ function runVisualTui() {
                     tuiState.needsInitClear = false;
                     return [tuiState, tea.clearScreen()];
                 }
+            } else if (msg.type === 'Tick' && msg.id === 'ctrlx-timeout') {
+                tuiState.ctrlXPrefix = false;
+                return [tuiState, null];
             } else if (msg.type === 'Key') {
                 return handleKeys(msg, tuiState);
             } else if (msg.type === 'MouseClick' && msg.button === 'left') {
@@ -880,6 +888,11 @@ function handleKeys(msg, s) {
         && msg.text.charCodeAt(0) >= 0x20
         && msg.text.charCodeAt(0) <= 0x7E)
         ? msg.text : msg.key;
+    // Fallback for space key: when msg.text is empty/missing, k resolves to
+    // the named key "space" instead of the literal " " character. For input
+    // fields (label, textarea), we need the literal space character. This
+    // fallback ensures space always works regardless of msg.text state.
+    const kForInput = (k === 'space') ? ' ' : k;
     const prevMode = s.mode; // Track mode before processing
     // Global quit from any mode if ctrl+c
     if (k === 'ctrl+c') {
@@ -887,37 +900,128 @@ function handleKeys(msg, s) {
     }
 
     if (s.mode === MODE_LIST) {
-        if (k === 'q') {
-            // User wants to exit completely - use module-level flag (NOT persistent state)
-            _userRequestedShell = false;
-            return [s, tea.quit()];
-        }
-        if (k === 's') {
-            // User explicitly requested to drop into shell - use module-level flag
-            _userRequestedShell = true;
-            return [s, tea.quit()];
+        // Ctrl+X prefix handler: activates prefix mode for action hotkeys
+        if (k === 'ctrl+x') {
+            s.ctrlXPrefix = true;
+            return [s, tea.tick(1000, 'ctrlx-timeout')];
         }
 
-        // Arrow key navigation with auto-scroll (documents + buttons)
+        // If prefix is active, check for action hotkey (then consume the prefix)
+        if (s.ctrlXPrefix) {
+            s.ctrlXPrefix = false;
+            if (k === 'q') {
+                _userRequestedShell = false;
+                return [s, tea.quit()];
+            }
+            if (k === 's') {
+                _userRequestedShell = true;
+                return [s, tea.quit()];
+            }
+            if (k === 'a') {
+                s.mode = MODE_INPUT;
+                s.inputOperation = INPUT_ADD;
+                s.inputFocus = FOCUS_LABEL;
+                s.labelBuffer = '';
+                s.contentTextarea = textareaLib.new();
+                configureTextarea(s.contentTextarea, s.width);
+                s.focusedButtonIdx = -1;
+                s.inputViewportUnlocked = false;
+                return [s, null];
+            }
+            if (k === 'l') {
+                s.mode = MODE_INPUT;
+                s.inputOperation = INPUT_LOAD;
+                s.inputFocus = FOCUS_LABEL;
+                s.labelBuffer = '';
+                s.contentTextarea = null;
+                s.focusedButtonIdx = -1;
+                s.inputViewportUnlocked = false;
+                return [s, null];
+            }
+            if (k === 'e') {
+                const doc = s.documents[s.selectedIdx];
+                if (doc) {
+                    s.mode = MODE_INPUT;
+                    s.inputOperation = INPUT_EDIT;
+                    s.inputFocus = FOCUS_CONTENT;
+                    s.labelBuffer = doc.label;
+                    s.contentTextarea = textareaLib.new();
+                    configureTextarea(s.contentTextarea, s.width);
+                    s.contentTextarea.setValue(doc.content);
+                    s.contentTextarea.focus();
+                    s.editingDocId = doc.id;
+                    s.focusedButtonIdx = -1;
+                    s.inputViewportUnlocked = false;
+                }
+                return [s, null];
+            }
+            if (k === 'r') {
+                s.mode = MODE_CONFIRM;
+                s.confirmPrompt = 'Reset the session (archive current state and clear all persisted state)? This cannot be undone. (y/n)';
+                s.confirmDocId = -1;
+                s.focusedButtonIdx = -1;
+                return [s, null];
+            }
+            if (k === 'R') {
+                const doc = s.documents[s.selectedIdx];
+                if (doc) {
+                    s.mode = MODE_INPUT;
+                    s.inputOperation = INPUT_RENAME;
+                    s.inputFocus = FOCUS_LABEL;
+                    s.labelBuffer = doc.label;
+                    s.contentTextarea = null;
+                    s.editingDocId = doc.id;
+                    s.inputViewportUnlocked = false;
+                }
+                s.focusedButtonIdx = -1;
+                return [s, null];
+            }
+            if (k === 'd') {
+                const doc = s.documents[s.selectedIdx];
+                if (doc) {
+                    s.mode = MODE_CONFIRM;
+                    s.confirmPrompt = `Delete document #${doc.id} "${doc.label}"? (y/n)`;
+                    s.confirmDocId = doc.id;
+                }
+                s.focusedButtonIdx = -1;
+                return [s, null];
+            }
+            if (k === 'c') {
+                const prompt = buildFinalPrompt();
+                try {
+                    os.clipboardCopy(prompt);
+                    const tc = _tokenCount(prompt);
+                    const lc = _lineCount(prompt);
+                    const bc = _byteCount(prompt);
+                    s.statusMsg = "\u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
+                    s.hasError = false;
+                } catch (e) {
+                    s.statusMsg = 'Clipboard error: ' + e;
+                    s.hasError = true;
+                }
+                s.focusedButtonIdx = -1;
+                return [s, null];
+            }
+            // Unrecognized follow-up key: prefix consumed, no action
+            return [s, null];
+        }
+
+        // Navigation keys (no prefix required):
+
         if (k === 'up' || k === 'k') {
             if (s.focusedButtonIdx >= 0) {
-                // Currently on buttons - up goes back to last document
                 s.focusedButtonIdx = -1;
                 if (s.documents.length > 0) {
                     s.selectedIdx = s.documents.length - 1;
                     ensureSelectionVisible(s);
                 }
             } else if (s.selectedIdx > 0) {
-                // In document list - move up normally
                 s.selectedIdx = s.selectedIdx - 1;
                 ensureSelectionVisible(s);
             } else if (s.selectedIdx === 0) {
-                // At first document - deselect and scroll to top
-                // This enables "de-highlight everything" to reach the document count area
-                s.selectedIdx = -1; // No document selected
-                if (s.vp) s.vp.setYOffset(0); // Scroll viewport to absolute top
+                s.selectedIdx = -1;
+                if (s.vp) s.vp.setYOffset(0);
             } else if (s.selectedIdx < 0 && s.vp && s.vp.yOffset() > 0) {
-                // Already deselected - just ensure we're at the absolute top
                 s.vp.setYOffset(0);
             }
         }
@@ -925,26 +1029,21 @@ function handleKeys(msg, s) {
             if (s.focusedButtonIdx >= 0) {
                 // Already on buttons - down doesn't do anything (buttons are at bottom)
             } else if (s.selectedIdx < 0) {
-                // No document selected - select first document
                 if (s.documents.length > 0) {
                     s.selectedIdx = 0;
                     ensureSelectionVisible(s);
                 } else {
-                    // No documents - go to buttons
                     s.focusedButtonIdx = 0;
                     ensureSelectionVisible(s);
                 }
             } else if (s.selectedIdx >= s.documents.length - 1) {
-                // At bottom of document list - move to first button
                 s.focusedButtonIdx = 0;
-                ensureSelectionVisible(s); // Holistic fix: ensure buttons are visible
+                ensureSelectionVisible(s);
             } else {
-                // In document list - move down normally
                 s.selectedIdx = Math.min(s.documents.length - 1, s.selectedIdx + 1);
                 ensureSelectionVisible(s);
             }
         }
-        // Left/Right for button navigation
         if (k === 'left' || k === 'h') {
             if (s.focusedButtonIdx > 0) {
                 s.focusedButtonIdx--;
@@ -955,194 +1054,42 @@ function handleKeys(msg, s) {
                 s.focusedButtonIdx++;
             }
         }
-        // Tab cycles: docs -> buttons (forward)
         if (k === 'tab') {
             if (s.focusedButtonIdx < 0) {
-                // From docs, go to first button
                 s.focusedButtonIdx = 0;
-                ensureSelectionVisible(s); // Ensure buttons visible
+                ensureSelectionVisible(s);
             } else if (s.focusedButtonIdx < BUTTONS.length - 1) {
-                // Move to next button
                 s.focusedButtonIdx++;
             } else {
-                // From last button, wrap to docs
                 s.focusedButtonIdx = -1;
                 s.selectedIdx = 0;
                 if (s.vp) s.vp.setYOffset(0);
             }
         }
-        // Shift+Tab cycles: buttons -> docs (backward)
         if (k === 'shift+tab') {
             if (s.focusedButtonIdx > 0) {
-                // Move to previous button
                 s.focusedButtonIdx--;
             } else if (s.focusedButtonIdx === 0) {
-                // From first button, go to last doc
                 s.focusedButtonIdx = -1;
                 if (s.documents.length > 0) {
                     s.selectedIdx = s.documents.length - 1;
-                    ensureSelectionVisible(s); // Scroll back to doc
+                    ensureSelectionVisible(s);
                 }
             } else {
-                // From docs, go to last button
                 s.focusedButtonIdx = BUTTONS.length - 1;
-                ensureSelectionVisible(s); // Ensure buttons visible
+                ensureSelectionVisible(s);
             }
         }
         // Enter on focused button activates it
         if (k === 'enter' && s.focusedButtonIdx >= 0) {
             const btn = BUTTONS[s.focusedButtonIdx];
             if (btn) {
-                if (btn.key === 'q') {
-                    _userRequestedShell = false;
-                    return [s, tea.quit()];
-                }
-                if (btn.key === 's') {
-                    _userRequestedShell = true;
-                    return [s, tea.quit()];
-                }
-                if (btn.key === 'a') {
-                    s.mode = MODE_INPUT;
-                    s.inputOperation = INPUT_ADD;
-                    s.inputFocus = FOCUS_LABEL;
-                    s.labelBuffer = '';
-                    s.contentTextarea = textareaLib.new();
-                    configureTextarea(s.contentTextarea, s.width);
-                    s.focusedButtonIdx = -1;
-                    s.inputViewportUnlocked = false;
-                    return [s, null];
-                }
-                if (btn.key === 'l') {
-                    s.mode = MODE_INPUT;
-                    s.inputOperation = INPUT_LOAD;
-                    s.inputFocus = FOCUS_LABEL;
-                    s.labelBuffer = '';
-                    s.contentTextarea = null;
-                    s.focusedButtonIdx = -1;
-                    s.inputViewportUnlocked = false;
-                    return [s, null];
-                }
-                if (btn.key === 'c') {
-                    const prompt = buildFinalPrompt();
-                    try {
-                        os.clipboardCopy(prompt);
-                        const tc = _tokenCount(prompt);
-                        const lc = _lineCount(prompt);
-                        const bc = _byteCount(prompt);
-                        s.statusMsg = "\u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
-                        s.hasError = false;
-                    } catch (e) {
-                        s.statusMsg = 'Clipboard error: ' + e;
-                        s.hasError = true;
-                    }
-                    s.focusedButtonIdx = -1;
-                    return [s, null];
-                }
-                if (btn.key === 'r') {
-                    s.mode = MODE_CONFIRM;
-                    s.confirmPrompt = 'Reset the session (archive current state and clear all persisted state)? This cannot be undone. (y/n)';
-                    s.confirmDocId = -1;
-                    s.focusedButtonIdx = -1;
-                    return [s, null];
-                }
+                s.ctrlXPrefix = true;
+                return handleKeys({key: btn.key}, s);
             }
         }
-
-        // MANUAL PAGE KEY HANDLING - DO NOT forward to vp.update()!
-        // PgDown: Move selection down by approximately a page worth of documents
-        // If already at last document, move focus to buttons
-        if (k === 'pgdown') {
-            if (s.focusedButtonIdx >= 0) {
-                // Already on buttons - no further down to go
-            } else if (s.documents.length > 0 && s.vp) {
-                const vpHeight = s.vp.height();
-                // Estimate ~5 lines per document box
-                const pageSize = Math.max(1, Math.floor(vpHeight / 5));
-                const newIdx = Math.min(s.documents.length - 1, s.selectedIdx + pageSize);
-                if (newIdx === s.selectedIdx && s.selectedIdx >= s.documents.length - 1) {
-                    // At last document and trying to go further - move to buttons
-                    s.focusedButtonIdx = 0;
-                } else {
-                    s.selectedIdx = newIdx;
-                }
-                ensureSelectionVisible(s);
-            } else if (s.documents.length === 0) {
-                // No documents - jump to buttons
-                s.focusedButtonIdx = 0;
-                ensureSelectionVisible(s);
-            }
-        }
-
-        // PgUp: Move selection up by approximately a page worth of documents
-        // If on buttons, return to document list
-        if (k === 'pgup') {
-            if (s.focusedButtonIdx >= 0) {
-                // On buttons - go back to last document
-                s.focusedButtonIdx = -1;
-                if (s.documents.length > 0) {
-                    s.selectedIdx = s.documents.length - 1;
-                    ensureSelectionVisible(s);
-                }
-            } else if (s.selectedIdx < 0) {
-                // Already deselected - just ensure we're at absolute top
-                if (s.vp) s.vp.setYOffset(0);
-            } else if (s.documents.length > 0 && s.vp) {
-                const vpHeight = s.vp.height();
-                const pageSize = Math.max(1, Math.floor(vpHeight / 5));
-                const newIdx = Math.max(0, s.selectedIdx - pageSize);
-                if (newIdx === 0 && s.selectedIdx === 0) {
-                    // Already at first document - deselect and scroll to top
-                    s.selectedIdx = -1;
-                    s.vp.setYOffset(0);
-                } else {
-                    s.selectedIdx = newIdx;
-                    ensureSelectionVisible(s);
-                }
-            } else if (s.documents.length === 0 && s.vp && s.vp.yOffset() > 0) {
-                // No documents but viewport scrolled - scroll to top
-                s.vp.setYOffset(0);
-            }
-        }
-
-        // Home: Go to first document and clear button focus
-        if (k === 'home') {
-            s.focusedButtonIdx = -1;
-            if (s.documents.length > 0) {
-                s.selectedIdx = 0;
-                if (s.vp) s.vp.setYOffset(0);
-            }
-        }
-
-        // End: Go to last button (truly the end of the page)
-        if (k === 'end') {
-            s.focusedButtonIdx = BUTTONS.length - 1;
-            ensureSelectionVisible(s); // Holistic fix ensures scroll to bottom
-        }
-
-        // Persist selection after any navigation
-        state.set(stateKeys.selectedIndex, s.selectedIdx);
-
-        if (k === 'a') {
-            s.mode = MODE_INPUT;
-            s.inputOperation = INPUT_ADD;
-            s.inputFocus = FOCUS_LABEL;
-            s.labelBuffer = '';
-            s.contentTextarea = textareaLib.new();
-            configureTextarea(s.contentTextarea, s.width);
-            s.focusedButtonIdx = -1; // Clear button focus
-            s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
-        }
-        if (k === 'l') {
-            s.mode = MODE_INPUT;
-            s.inputOperation = INPUT_LOAD;
-            s.inputFocus = FOCUS_LABEL;
-            s.labelBuffer = '';
-            s.contentTextarea = null; // No textarea for load mode
-            s.focusedButtonIdx = -1; // Clear button focus
-            s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
-        }
-        if (k === 'e' || (k === 'enter' && s.focusedButtonIdx < 0)) {
-            // Edit document (only if no button is focused - 'enter' on button is handled above)
+        // Enter on document = edit (same as ⌃X e)
+        if (k === 'enter' && s.focusedButtonIdx < 0) {
             const doc = s.documents[s.selectedIdx];
             if (doc) {
                 s.mode = MODE_INPUT;
@@ -1151,62 +1098,81 @@ function handleKeys(msg, s) {
                 s.labelBuffer = doc.label;
                 s.contentTextarea = textareaLib.new();
                 configureTextarea(s.contentTextarea, s.width);
-
                 s.contentTextarea.setValue(doc.content);
                 s.contentTextarea.focus();
                 s.editingDocId = doc.id;
-                s.focusedButtonIdx = -1; // Clear button focus
-                s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
+                s.focusedButtonIdx = -1;
+                s.inputViewportUnlocked = false;
+                return [s, null];
             }
         }
-        // 'r' = Reset (clear all documents) per ASCII design
-        if (k === 'r') {
-            // Reset (archive + clear session state) - show confirmation regardless of documents
-            s.mode = MODE_CONFIRM;
-            s.confirmPrompt = 'Reset the session (archive current state and clear all persisted state)? This cannot be undone. (y/n)';
-            s.confirmDocId = -1; // Special ID for reset-all
-            s.focusedButtonIdx = -1; // Clear button focus
-        }
-        // 'R' (uppercase) = Rename selected document title
-        if (k === 'R') {
-            const doc = s.documents[s.selectedIdx];
-            if (doc) {
-                s.mode = MODE_INPUT;
-                s.inputOperation = INPUT_RENAME;
-                s.inputFocus = FOCUS_LABEL;
-                s.labelBuffer = doc.label;
-                s.contentTextarea = null; // No textarea for rename mode
-                s.editingDocId = doc.id;
-                s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
-            }
-            s.focusedButtonIdx = -1; // Clear button focus
-        }
-        if (k === 'd' || k === 'backspace') {
+        // Backspace on document = delete confirm (same as ⌃X d)
+        if (k === 'backspace') {
             const doc = s.documents[s.selectedIdx];
             if (doc) {
                 s.mode = MODE_CONFIRM;
                 s.confirmPrompt = `Delete document #${doc.id} "${doc.label}"? (y/n)`;
                 s.confirmDocId = doc.id;
             }
-            s.focusedButtonIdx = -1; // Clear button focus
+            s.focusedButtonIdx = -1;
         }
-        if (k === 'c') {
-            const prompt = buildFinalPrompt();
-            try {
-                // Call the system clipboard via osm:os module
-                os.clipboardCopy(prompt);
-                const tc2 = _tokenCount(prompt);
-                const lc2 = _lineCount(prompt);
-                const bc2 = _byteCount(prompt);
-                s.statusMsg = "\u2502 " + _fmt.formatNum(tc2) + " tokens \u00b7 " + lc2 + " lines \u00b7 " + _fmt.formatBytes(bc2) + " \u2502";
-                s.hasError = false;
-            } catch (e) {
-                s.statusMsg = 'Clipboard error: ' + e;
-                s.hasError = true;
+        if (k === 'pgdown') {
+            if (s.focusedButtonIdx >= 0) {
+                // Already on buttons - no further down to go
+            } else if (s.documents.length > 0 && s.vp) {
+                const vpHeight = s.vp.height();
+                const pageSize = Math.max(1, Math.floor(vpHeight / 5));
+                const newIdx = Math.min(s.documents.length - 1, s.selectedIdx + pageSize);
+                if (newIdx === s.selectedIdx && s.selectedIdx >= s.documents.length - 1) {
+                    s.focusedButtonIdx = 0;
+                } else {
+                    s.selectedIdx = newIdx;
+                }
+                ensureSelectionVisible(s);
+            } else if (s.documents.length === 0) {
+                s.focusedButtonIdx = 0;
+                ensureSelectionVisible(s);
             }
-            s.focusedButtonIdx = -1; // Clear button focus
         }
-        if (k === '?') s.statusMsg = 'a:add l:load e:edit R:rename d:del c:copy s:shell r:reset q:quit';
+        if (k === 'pgup') {
+            if (s.focusedButtonIdx >= 0) {
+                s.focusedButtonIdx = -1;
+                if (s.documents.length > 0) {
+                    s.selectedIdx = s.documents.length - 1;
+                    ensureSelectionVisible(s);
+                }
+            } else if (s.selectedIdx < 0) {
+                if (s.vp) s.vp.setYOffset(0);
+            } else if (s.documents.length > 0 && s.vp) {
+                const vpHeight = s.vp.height();
+                const pageSize = Math.max(1, Math.floor(vpHeight / 5));
+                const newIdx = Math.max(0, s.selectedIdx - pageSize);
+                if (newIdx === 0 && s.selectedIdx === 0) {
+                    s.selectedIdx = -1;
+                    s.vp.setYOffset(0);
+                } else {
+                    s.selectedIdx = newIdx;
+                    ensureSelectionVisible(s);
+                }
+            } else if (s.documents.length === 0 && s.vp && s.vp.yOffset() > 0) {
+                s.vp.setYOffset(0);
+            }
+        }
+        if (k === 'home') {
+            s.focusedButtonIdx = -1;
+            if (s.documents.length > 0) {
+                s.selectedIdx = 0;
+                if (s.vp) s.vp.setYOffset(0);
+            }
+        }
+        if (k === 'end') {
+            s.focusedButtonIdx = BUTTONS.length - 1;
+            ensureSelectionVisible(s);
+        }
+
+        state.set(stateKeys.selectedIndex, s.selectedIdx);
+
+        if (k === '?') s.statusMsg = '\u2303X+a:add \u2303X+l:load \u2303X+e:edit \u2303X+R:rename \u2303X+d:del \u2303X+c:copy \u2303X+s:shell \u2303X+r:reset \u2303X+q:quit';
     } else if (s.mode === MODE_INPUT) {
         // PRECISE SCROLL & EVENT PROPAGATION FOR INPUT MODE
 
@@ -1297,14 +1263,12 @@ function handleKeys(msg, s) {
             // Field input handling
 
             if (s.inputFocus === FOCUS_LABEL) {
-                // Use Go-based validation for label input
-                const validation = tea.isValidLabelInput(k);
+                const validation = tea.isValidLabelInput(kForInput);
                 if (validation.valid) {
-                    if (k === 'backspace') {
+                    if (kForInput === 'backspace') {
                         s.labelBuffer = s.labelBuffer.slice(0, -1);
                     } else {
-                        // Single printable character - add to label
-                        s.labelBuffer += k;
+                        s.labelBuffer += kForInput;
                     }
                 }
                 // Silently discard ALL invalid input (garbage escape sequences, etc.)
@@ -1952,14 +1916,14 @@ function renderList(s) {
 
     // Build help strip with styled key/desc pairs
     const helpPairs = [
-        {key: 'a', desc: 'add'},
-        {key: 'l', desc: 'load'},
-        {key: 'e', desc: 'edit'},
-        {key: 'd', desc: 'del'},
-        {key: 'c', desc: 'copy'},
-        {key: 's', desc: 'shell'},
-        {key: 'r', desc: 'reset'},
-        {key: 'q', desc: 'quit'},
+        {key: '⌃X a', desc: 'add'},
+        {key: '⌃X l', desc: 'load'},
+        {key: '⌃X e', desc: 'edit'},
+        {key: '⌃X d', desc: 'del'},
+        {key: '⌃X c', desc: 'copy'},
+        {key: '⌃X s', desc: 'shell'},
+        {key: '⌃X r', desc: 'reset'},
+        {key: '⌃X q', desc: 'quit'},
         {key: '↑↓', desc: 'nav'},
     ];
 
@@ -1970,7 +1934,11 @@ function renderList(s) {
         i < helpItems.length - 1 ? item + '  ' : item
     ));
 
-    const footer = lipgloss.joinVertical(lipgloss.Left, separator, helpText);
+    const prefixIndicator = s.ctrlXPrefix
+        ? lipgloss.newStyle().foreground(lipgloss.color('#ffdd57')).bold(true).render(' ⌃X… ') + ' '
+        : '';
+
+    const footer = lipgloss.joinVertical(lipgloss.Left, separator, prefixIndicator + helpText);
 
     // ------------------------------------------------------------------------
     // DYNAMIC VIEWPORT HEIGHT CALCULATION

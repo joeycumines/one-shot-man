@@ -167,6 +167,14 @@ func (h *CSIHandler) decset(scr *Screen, params []int) {
 			if h.AltScreenFn != nil {
 				h.AltScreenFn(true)
 			}
+		case 1000: // XT_MOUSE — basic mouse tracking
+			scr.MouseTracking = MouseTrackingBasic
+		case 1002: // XT_MOUSE_GRID — button-event tracking
+			scr.MouseTracking = MouseTrackingButtonEvent
+		case 1003: // XT_MOUSE_ANY — any-event tracking
+			scr.MouseTracking = MouseTrackingAnyEvent
+		case 1006: // XT_SGR_MOUSE — SGR mouse encoding
+			scr.MouseSGR = true
 		}
 	}
 }
@@ -181,6 +189,20 @@ func (h *CSIHandler) decrst(scr *Screen, params []int) {
 			if h.AltScreenFn != nil {
 				h.AltScreenFn(false)
 			}
+		case 1000: // XT_MOUSE — disable basic mouse tracking
+			if scr.MouseTracking == MouseTrackingBasic {
+				scr.MouseTracking = MouseTrackingNone
+			}
+		case 1002: // XT_MOUSE_GRID — disable button-event tracking
+			if scr.MouseTracking == MouseTrackingButtonEvent {
+				scr.MouseTracking = MouseTrackingNone
+			}
+		case 1003: // XT_MOUSE_ANY — disable any-event tracking
+			if scr.MouseTracking == MouseTrackingAnyEvent {
+				scr.MouseTracking = MouseTrackingNone
+			}
+		case 1006: // XT_SGR_MOUSE — disable SGR mouse encoding
+			scr.MouseSGR = false
 		}
 	}
 }

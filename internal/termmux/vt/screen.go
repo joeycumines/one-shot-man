@@ -17,6 +17,24 @@ type Cell struct {
 // DefaultCell is a blank cell with default attributes.
 var DefaultCell = Cell{Ch: ' '}
 
+// MouseTrackingMode represents the active mouse tracking protocol level,
+// controlled by DECSET/DECRST private modes 1000, 1002, and 1003.
+type MouseTrackingMode int
+
+const (
+	// MouseTrackingNone means no mouse tracking is active.
+	MouseTrackingNone MouseTrackingMode = iota
+	// MouseTrackingBasic means basic mouse tracking (DECSET ?1000h).
+	// Reports button press and release only.
+	MouseTrackingBasic
+	// MouseTrackingButtonEvent means button-event tracking (DECSET ?1002h).
+	// Reports button press, release, and motion while a button is held.
+	MouseTrackingButtonEvent
+	// MouseTrackingAnyEvent means any-event tracking (DECSET ?1003h).
+	// Reports all mouse events including motion with no buttons.
+	MouseTrackingAnyEvent
+)
+
 // Screen represents a terminal screen buffer.
 type Screen struct {
 	Cells          [][]Cell
@@ -31,6 +49,15 @@ type Screen struct {
 	CursorVisible  bool
 	TabStops       []bool
 	Rows, Cols     int
+
+	// MouseTracking indicates the current mouse tracking level.
+	// Set by DECSET ?1000h/?1002h/?1003h, cleared by the corresponding DECRST.
+	MouseTracking MouseTrackingMode
+
+	// MouseSGR indicates SGR-style mouse encoding is active (DECSET ?1006h).
+	// When true, the child expects mouse events in SGR format (\x1b[<...).
+	// When false, the child expects X11-style format (not supported for forwarding).
+	MouseSGR bool
 }
 
 // NewScreen creates a new screen buffer with the given dimensions.

@@ -225,6 +225,7 @@ func TestAutopilot_CleanExit(t *testing.T) {
 	buffer := cp.String()
 	assert.NotContains(t, buffer, "panic")
 	assert.NotContains(t, buffer, "runtime error")
+	assert.NotContains(t, buffer, "[object Object]")
 }
 
 // TestAutopilot_ANSIPreview verifies the PTY snapshot preview contains ANSI

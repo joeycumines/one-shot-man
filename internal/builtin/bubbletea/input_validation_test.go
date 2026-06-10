@@ -103,6 +103,7 @@ func TestValidateLabelInput(t *testing.T) {
 
 		// Garbage REJECTED
 		{name: "garbage", keyStr: "[<65;33;12M", wantOK: false},
+		{name: "named space key", keyStr: "space", wantOK: false},
 	}
 
 	for _, tt := range tests {

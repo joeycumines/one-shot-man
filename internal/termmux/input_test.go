@@ -154,6 +154,28 @@ func TestKeyToTermBytes_Unknown(t *testing.T) {
 	}
 }
 
+func TestKeyToTermBytes_SpaceKey(t *testing.T) {
+	got, ok := KeyToTermBytes("space")
+	if !ok {
+		t.Fatal("expected ok for space key name")
+	}
+	if got != " " {
+		t.Errorf("KeyToTermBytes(%q) = %q, want %q", "space", got, " ")
+	}
+}
+
+func TestKeyToTermBytes_UnrecognizedKeyNames(t *testing.T) {
+	tests := []string{"capslock", "numlock", "scrolllock", "num0", "num1", "printscreen"}
+	for _, key := range tests {
+		t.Run(key, func(t *testing.T) {
+			_, ok := KeyToTermBytes(key)
+			if ok {
+				t.Errorf("KeyToTermBytes(%q): expected !ok for unrecognized key name", key)
+			}
+		})
+	}
+}
+
 // ── MouseToSGR tests ──────────────────────────────────────────────
 
 func TestMouseToSGR_LeftClick(t *testing.T) {

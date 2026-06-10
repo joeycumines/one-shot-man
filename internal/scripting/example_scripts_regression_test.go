@@ -54,7 +54,7 @@ func loadExampleProgram(t *testing.T, engine *Engine, scriptName string) {
 	// Script-specific modelStart patterns (variable name and declaration keyword vary).
 	modelStarts := map[string]string{
 		"example-14-comprehensive-demo.js": "var program = tea.newModel({",
-		"example-15-claude-autopilot.js":   "var dashboardProgram = tea.newModel({",
+		"example-15-bouncing-logo.js":   "var bouncingProgram = tea.newModel({",
 	}
 	modelStart, ok := modelStarts[scriptName]
 	if !ok {
@@ -67,13 +67,13 @@ func loadExampleProgram(t *testing.T, engine *Engine, scriptName string) {
 
 	// Script-specific source pre-processing before runMarker handling.
 	switch scriptName {
-	case "example-15-claude-autopilot.js":
+	case "example-15-bouncing-logo.js":
 		// Stub flag.parse(args) — args is not available in test engine.
 		source = strings.Replace(source, "fs.parse(args)", "fs.parse([])", 1)
 		// Stub termmux session creation — PTY operations fail in test environment.
 		const termmuxBlock = `var session;
 try {
-    session = termmux.newCaptureSession(CMD, targetArgs, { rows: 24, cols: 80 });
+    session = termmux.newCaptureSession(CMD, targetArgs, { rows: DEFAULT_PANE_HEIGHT - 2 * BORDER_WIDTH, cols: DEFAULT_PANE_WIDTH - 2 * BORDER_WIDTH });
     session.start();
 } catch (e) {
     output.print('Failed to start capture session: ' + e.message);
@@ -83,15 +83,16 @@ try {
 var mgr;
 var sid;
 try {
-    mgr = termmux.newSessionManager({ rows: 24, cols: 80 });
+    mgr = termmux.newSessionManager({ rows: DEFAULT_PANE_HEIGHT - 2 * BORDER_WIDTH, cols: DEFAULT_PANE_WIDTH - 2 * BORDER_WIDTH });
     mgr.run();
     mgr.started();
 
-    sid = mgr.register(session, { name: 'claude', kind: 'capture' });
+    sid = mgr.register(session, { name: 'bouncing', kind: 'capture' });
     mgr.activate(sid);
 } catch (e) {
     output.print('Failed to register session: ' + e.message);
-    session.close();
+    try { if (sid) mgr.deactivate(sid); } catch (_) {}
+    try { session.close(); } catch (_) {}
     throw e;
 }`
 		const termmuxStub = `var session = { start: function() {}, close: function() {} };
@@ -107,8 +108,8 @@ var sid = 'test-sid';`
 	switch scriptName {
 	case "minimal-bubbletea-test.js":
 		runMarker = "const result = tea.run(program);"
-	case "example-15-claude-autopilot.js":
-		runMarker = "tea.run(dashboardProgram);"
+	case "example-15-bouncing-logo.js":
+		runMarker = "tea.run(bouncingProgram);"
 	case "example-02-graphical-todo.js", "benchmark-input-latency.js", "example-13-split-pane.js", "example-14-comprehensive-demo.js":
 	default:
 		t.Fatalf("unsupported script %q", scriptName)
@@ -437,12 +438,12 @@ __result = {
 	}
 }
 
-func TestExample15Autopilot_InitStartsTick(t *testing.T) {
+func TestExample15BouncingLogo_InitStartsTick(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test")
 	}
 	engine := newExampleScriptEngine(t)
-	loadExampleProgram(t, engine, "example-15-claude-autopilot.js")
+	loadExampleProgram(t, engine, "example-15-bouncing-logo.js")
 
 	result := runResultScript(t, engine, "example-15-regression", `
 var initRes = __programConfig.init();
@@ -454,8 +455,9 @@ __result = {
     initCmdType: cmd && cmd._cmdType || null,
     modelHasWidth: model.width === 80,
     modelHasHeight: model.height === 24,
-    modelHasDetectedState: model.detectedState === 'EMPTY',
-    modelHasTickCount: model.tickCount === 0
+    modelHasBounceCount: model.bounceCount === 0,
+    modelHasTickCount: model.tickCount === 0,
+    modelHasPaused: model.paused === false
 };
 `)
 
@@ -471,11 +473,14 @@ __result = {
 	if got := result["modelHasHeight"]; got != true {
 		t.Fatalf("expected initial model.height === 24, got %v", got)
 	}
-	if got := result["modelHasDetectedState"]; got != true {
-		t.Fatalf("expected initial model.detectedState === 'EMPTY', got %v", got)
+	if got := result["modelHasBounceCount"]; got != true {
+		t.Fatalf("expected initial model.bounceCount === 0, got %v", got)
 	}
 	if got := result["modelHasTickCount"]; got != true {
 		t.Fatalf("expected initial model.tickCount === 0, got %v", got)
+	}
+	if got := result["modelHasPaused"]; got != true {
+		t.Fatalf("expected initial model.paused === false, got %v", got)
 	}
 }
 

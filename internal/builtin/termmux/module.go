@@ -920,6 +920,8 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		_ = result.Set("cols", snap.Cols)
 		_ = result.Set("cursorRow", snap.CursorRow)
 		_ = result.Set("cursorCol", snap.CursorCol)
+		_ = result.Set("mouseTracking", snap.MouseTracking)
+		_ = result.Set("mouseSGR", snap.MouseSGR)
 		_ = result.Set("timestamp", snap.Timestamp.UnixMilli())
 		return result
 	})

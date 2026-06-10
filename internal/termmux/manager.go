@@ -119,6 +119,13 @@ type ScreenSnapshot struct {
 	// CursorCol is the cursor's column position (0-indexed) at capture time.
 	CursorCol int
 
+	// MouseTracking indicates the child's active mouse tracking level.
+	// Values: 0=none, 1=basic (1000), 2=button-event (1002), 3=any-event (1003).
+	MouseTracking int
+
+	// MouseSGR is true when the child has enabled SGR mouse encoding (1006).
+	MouseSGR bool
+
 	// Timestamp records when this snapshot was created.
 	Timestamp time.Time
 }
@@ -889,15 +896,17 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 	m.snapshotGen++
 	curRow, curCol := ms.vterm.CursorPosition()
 	snap := &ScreenSnapshot{
-		Gen:        m.snapshotGen,
-		PlainText:  ms.vterm.String(),
-		ANSI:       ms.vterm.ContentANSI(),
-		FullScreen: ms.vterm.RenderFullScreen(),
-		Rows:       m.termRows,
-		Cols:       m.termCols,
-		CursorRow:  curRow,
-		CursorCol:  curCol,
-		Timestamp:  time.Now(),
+		Gen:           m.snapshotGen,
+		PlainText:     ms.vterm.String(),
+		ANSI:          ms.vterm.ContentANSI(),
+		FullScreen:    ms.vterm.RenderFullScreen(),
+		Rows:          m.termRows,
+		Cols:          m.termCols,
+		CursorRow:     curRow,
+		CursorCol:     curCol,
+		MouseTracking: int(ms.vterm.MouseTracking()),
+		MouseSGR:      ms.vterm.MouseSGR(),
+		Timestamp:     time.Now(),
 	}
 	ms.snapshot.Store(snap)
 	m.eventBus.emitData(EventSessionOutput, so.id, so.data)

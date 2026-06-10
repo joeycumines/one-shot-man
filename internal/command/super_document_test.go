@@ -313,7 +313,7 @@ func TestSuperDocument_ModeTransition_ListToForm(t *testing.T) {
 	}
 
 	testScript := `
-var s = { mode: MODE_LIST, documents: [{id:1,label:'one'}], selectedIdx: 0 };
+var s = { mode: MODE_LIST, documents: [{id:1,label:'one'}], selectedIdx: 0, ctrlXPrefix: true };
 var res = handleKeys({ key: 'a' }, s);
 __s = s;
 __res = res;
@@ -374,8 +374,8 @@ func TestSuperDocument_ModeTransition_PreservesState(t *testing.T) {
 addDocument('lbl','orig');
 var docs = getDocuments();
 var docId = docs[0].id;
-var s = { mode: MODE_LIST, documents: getDocuments(), selectedIdx: 0 };
-handleKeys({ key: 'e' }, s);
+	var s = { mode: MODE_LIST, documents: getDocuments(), selectedIdx: 0, ctrlXPrefix: true };
+	handleKeys({ key: 'e' }, s);
 // Now s should be in input mode with editingDocId set
 if (s.mode !== MODE_INPUT) throw new Error('expected input mode');
 var id = s.editingDocId;

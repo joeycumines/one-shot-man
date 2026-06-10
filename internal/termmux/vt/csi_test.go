@@ -374,3 +374,175 @@ func TestESC_HTS_SetTabStop(t *testing.T) {
 		t.Fatal("HTS: col 5 should be a tab stop")
 	}
 }
+
+// -- Mouse tracking mode tests -------------------------------------------------
+
+func TestCSI_DECSET_MouseTrackingBasic(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := &CSIHandler{}
+	h.Dispatch(scr, 'h', []int{1000}, true)
+	if scr.MouseTracking != MouseTrackingBasic {
+		t.Fatalf("DECSET ?1000h: want MouseTrackingBasic, got %d", scr.MouseTracking)
+	}
+}
+
+func TestCSI_DECSET_MouseTrackingButtonEvent(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := &CSIHandler{}
+	h.Dispatch(scr, 'h', []int{1002}, true)
+	if scr.MouseTracking != MouseTrackingButtonEvent {
+		t.Fatalf("DECSET ?1002h: want MouseTrackingButtonEvent, got %d", scr.MouseTracking)
+	}
+}
+
+func TestCSI_DECSET_MouseTrackingAnyEvent(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := &CSIHandler{}
+	h.Dispatch(scr, 'h', []int{1003}, true)
+	if scr.MouseTracking != MouseTrackingAnyEvent {
+		t.Fatalf("DECSET ?1003h: want MouseTrackingAnyEvent, got %d", scr.MouseTracking)
+	}
+}
+
+func TestCSI_DECSET_MouseSGR(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := &CSIHandler{}
+	h.Dispatch(scr, 'h', []int{1006}, true)
+	if !scr.MouseSGR {
+		t.Fatal("DECSET ?1006h: expected MouseSGR=true")
+	}
+}
+
+func TestCSI_DECRST_MouseTrackingBasic_ClearsOnlyBasic(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := &CSIHandler{}
+	// Enable button-event tracking first
+	h.Dispatch(scr, 'h', []int{1002}, true)
+	if scr.MouseTracking != MouseTrackingButtonEvent {
+		t.Fatalf("precondition: want ButtonEvent, got %d", scr.MouseTracking)
+	}
+	// DECRST ?1000l should NOT clear ButtonEvent (only clears Basic)
+	h.Dispatch(scr, 'l', []int{1000}, true)
+	if scr.MouseTracking != MouseTrackingButtonEvent {
+		t.Fatalf("DECRST ?1000l with ButtonEvent: should remain ButtonEvent, got %d", scr.MouseTracking)
+	}
+	// DECRST ?1002l should clear ButtonEvent
+	h.Dispatch(scr, 'l', []int{1002}, true)
+	if scr.MouseTracking != MouseTrackingNone {
+		t.Fatalf("DECRST ?1002l: want None, got %d", scr.MouseTracking)
+	}
+}
+
+func TestCSI_DECRST_MouseTrackingAnyEvent_ClearsOnlyAny(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := &CSIHandler{}
+	// Enable any-event tracking
+	h.Dispatch(scr, 'h', []int{1003}, true)
+	if scr.MouseTracking != MouseTrackingAnyEvent {
+		t.Fatalf("precondition: want AnyEvent, got %d", scr.MouseTracking)
+	}
+	// DECRST ?1000l should NOT clear AnyEvent
+	h.Dispatch(scr, 'l', []int{1000}, true)
+	if scr.MouseTracking != MouseTrackingAnyEvent {
+		t.Fatalf("DECRST ?1000l with AnyEvent: should remain AnyEvent, got %d", scr.MouseTracking)
+	}
+	// DECRST ?1003l should clear AnyEvent
+	h.Dispatch(scr, 'l', []int{1003}, true)
+	if scr.MouseTracking != MouseTrackingNone {
+		t.Fatalf("DECRST ?1003l: want None, got %d", scr.MouseTracking)
+	}
+}
+
+func TestCSI_DECRST_MouseSGR(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := &CSIHandler{}
+	// Enable SGR
+	h.Dispatch(scr, 'h', []int{1006}, true)
+	if !scr.MouseSGR {
+		t.Fatal("precondition: expected MouseSGR=true")
+	}
+	// Disable SGR
+	h.Dispatch(scr, 'l', []int{1006}, true)
+	if scr.MouseSGR {
+		t.Fatal("DECRST ?1006l: expected MouseSGR=false")
+	}
+}
+
+func TestCSI_DECRST_MouseTrackingBasic_ClearsBasic(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := &CSIHandler{}
+	// Enable basic tracking
+	h.Dispatch(scr, 'h', []int{1000}, true)
+	if scr.MouseTracking != MouseTrackingBasic {
+		t.Fatalf("precondition: want Basic, got %d", scr.MouseTracking)
+	}
+	// DECRST ?1000l should clear Basic
+	h.Dispatch(scr, 'l', []int{1000}, true)
+	if scr.MouseTracking != MouseTrackingNone {
+		t.Fatalf("DECRST ?1000l: want None, got %d", scr.MouseTracking)
+	}
+}
+
+func TestVTerm_MouseTrackingAccessor(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Initially no tracking
+	if mode := v.MouseTracking(); mode != MouseTrackingNone {
+		t.Fatalf("initial: want None, got %d", mode)
+	}
+	// Write DECSET ?1002h
+	v.Write([]byte("\x1b[?1002h"))
+	if mode := v.MouseTracking(); mode != MouseTrackingButtonEvent {
+		t.Fatalf("after DECSET ?1002h: want ButtonEvent, got %d", mode)
+	}
+	// Write DECRST ?1002l
+	v.Write([]byte("\x1b[?1002l"))
+	if mode := v.MouseTracking(); mode != MouseTrackingNone {
+		t.Fatalf("after DECRST ?1002l: want None, got %d", mode)
+	}
+}
+
+func TestVTerm_MouseSGRAccessor(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Initially no SGR
+	if v.MouseSGR() {
+		t.Fatal("initial: expected MouseSGR=false")
+	}
+	// Write DECSET ?1006h
+	v.Write([]byte("\x1b[?1006h"))
+	if !v.MouseSGR() {
+		t.Fatal("after DECSET ?1006h: expected MouseSGR=true")
+	}
+	// Write DECRST ?1006l
+	v.Write([]byte("\x1b[?1006l"))
+	if v.MouseSGR() {
+		t.Fatal("after DECRST ?1006l: expected MouseSGR=false")
+	}
+}
+
+func TestVTerm_MouseTrackingModeUpgrade(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Upgrade: Basic → ButtonEvent
+	v.Write([]byte("\x1b[?1000h"))
+	if mode := v.MouseTracking(); mode != MouseTrackingBasic {
+		t.Fatalf("after DECSET ?1000h: want Basic, got %d", mode)
+	}
+	v.Write([]byte("\x1b[?1002h"))
+	if mode := v.MouseTracking(); mode != MouseTrackingButtonEvent {
+		t.Fatalf("after DECSET ?1002h upgrade: want ButtonEvent, got %d", mode)
+	}
+	// Upgrade: ButtonEvent → AnyEvent
+	v.Write([]byte("\x1b[?1003h"))
+	if mode := v.MouseTracking(); mode != MouseTrackingAnyEvent {
+		t.Fatalf("after DECSET ?1003h upgrade: want AnyEvent, got %d", mode)
+	}
+	// Downgrade: DECRST ?1002l should NOT clear AnyEvent
+	v.Write([]byte("\x1b[?1002l"))
+	if mode := v.MouseTracking(); mode != MouseTrackingAnyEvent {
+		t.Fatalf("after DECRST ?1002l with AnyEvent: should remain AnyEvent, got %d", mode)
+	}
+	// Only DECRST ?1003l clears AnyEvent
+	v.Write([]byte("\x1b[?1003l"))
+	if mode := v.MouseTracking(); mode != MouseTrackingNone {
+		t.Fatalf("after DECRST ?1003l: want None, got %d", mode)
+	}
+}

@@ -263,6 +263,18 @@ func (v *VTerm) CursorPosition() (row, col int) {
 	return v.active.CurRow, v.active.CurCol
 }
 
+func (v *VTerm) MouseTracking() MouseTrackingMode {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.MouseTracking
+}
+
+func (v *VTerm) MouseSGR() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.MouseSGR
+}
+
 func (v *VTerm) ActiveScreen() *Screen {
 	v.mu.Lock()
 	defer v.mu.Unlock()

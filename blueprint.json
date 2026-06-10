@@ -1,0 +1,118 @@
+{
+  "meta": {
+    "fileName": "blueprint.json",
+    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
+    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST. NEVER SPECIFY ANY PRIORITY OF ANY KIND."
+  },
+  "globalAlerts": [
+    {"warning": "BUILD FIRST: Always run `make build` before running scripts. The osm binary must be up-to-date."},
+    {"warning": "TEST AFTER EVERY CHANGE: Run `go test -short -count=1 -timeout=5m ./...` after each significant change to catch regressions early."},
+    {"warning": "ZERO TOLERANCE: Tests must be isolated — no host state mutation, no external dependencies, no flaky timing-dependent tests."},
+    {"warning": "PLATFORM COMPATIBILITY: All code must work identically on Linux, macOS, and Windows."},
+    {"warning": "JAVASCRIPT SCRIPTS: All app-specific functionality MUST be modeled as JavaScript scripts using the osm runtime."},
+    {"warning": "PTY TESTS: All PTY tests use termtest.NewConsole and must respect unix build tag. Slow tests must use testing.Short() skip guards."},
+    {"warning": "EXISTING GO FIXES: GAP-001 (KeyToTermBytes space case) and GAP-002 (Unicode fallback tightening) are already in unstaged changes. Do NOT re-do this work. Verify it is correct and build on top of it."}
+  ],
+  "mandatoryDirectives": {
+    "contextManagement": "Tasks are grouped to be manageable units. Do not attempt to solve all tasks in a single turn. Break work into sessions as appropriate to prevent context window exhaustion.",
+    "verificationBeforeProceeding": "After every code change, run the full test suite with `go test -short -count=1 -timeout=5m ./...` before marking the task done."
+  },
+  "statusSection": {
+    "currentState": "IN PROGRESS. Tasks 1-11 Done (Go fixes, JS refactor, tests, README, first review gate + fixes). First review gate found CRITICAL chord mode bug (bare letter passed instead of ctrl+letter) and HIGH test timing issue — both FIXED. Full suite passes with -short. Next: second review gate (task 12), then expanded scope for termmux/vt production readiness.",
+    "goalState": "A production-quality `scripts/example-15-bouncing-logo.js` where: (1) all printable characters including space are correctly forwarded to the nested PTY child, (2) control actions use ONLY ctrl+letter shortcuts (ctrl+p, ctrl+b, ctrl+s, ctrl+q) or chord mode (ctrl+x followed by action key), (3) bare letters (a-z) are NEVER intercepted as control actions, (4) all PTY integration tests in internal/example/bouncelogo/ pass on all platforms, (5) the script's controls bar visually reflects the new key bindings, (6) two independent review-gate subagents confirm correctness before commit.",
+    "replanLog": [
+      "2026-06-10: Initial blueprint created for bouncing-logo input fix. Building on prior autopsy findings. GAP-001/GAP-002 already fixed in unstaged changes — verifying and building on top.",
+      "2026-06-10: First review gate found CRITICAL bug (chord mode bare letter) and HIGH bug (test timing). Both fixed. Updating statuses to reflect actual state."
+    ]
+  },
+  "sequentialTasks": [
+    {
+      "task": "Verify GAP-001 and GAP-002 fixes in unstaged changes are correct",
+      "description": "Read the current unstaged diff in internal/termmux/input.go and internal/termmux/input_test.go. Verify: (1) KeyToTermBytes has case \"space\": return \" \", true at line 23-24, (2) the Unicode fallback at lines 105-117 now returns (\"\", false) for ASCII-only multi-character strings (key names like capslock, numlock), (3) TestKeyToTermBytes_SpaceKey tests KeyToTermBytes(\"space\") not KeyToTermBytes(\" \"), (4) TestKeyToTermBytes_UnrecognizedKeyNames tests that capslock/numlock/scrolllock/num0/num1/printscreen all return false. Run go test ./internal/termmux/... to confirm.",
+      "acceptance": "KeyToTermBytes(\"space\") returns (\" \", true). KeyToTermBytes(\"capslock\") returns (\"\", false). All tests in internal/termmux/input_test.go pass. The Go-layer key forwarding is correct for both spacebar and unrecognized key names.",
+      "status": "Done"
+    },
+    {
+      "task": "Refactor handleControlKey in example-15-bouncing-logo.js to remove bare letter interception",
+      "description": "In scripts/example-15-bouncing-logo.js, the function handleControlKey (lines 553-590) currently matches bare letters: key === 'p' (pause), key === 'b' (bigger), key === 's' (smaller), key === 'q' (quit). These MUST be removed because they intercept letters that should be forwarded to the nested PTY for typing. The fix: (1) Change each condition to ONLY match the ctrl+letter variant: key === 'ctrl+p' for pause, key === 'ctrl+b' for bigger, key === 'ctrl+s' for smaller, key === 'ctrl+c' OR key === 'ctrl+q' for quit. (2) Remove the bare letter OR conditions (|| key === 'p', etc). (3) Keep ctrl+x chord mode entry as-is. (4) The chord mode branch (lines 516-525) already handles both bare letters and ctrl+letter in chord context — leave those as-is since in chord mode the letters ARE control actions.",
+      "acceptance": "handleControlKey returns null for bare letters 'p', 'b', 's', 'q' (they fall through to PTY forwarding). handleControlKey returns [m, null] for 'ctrl+p', 'ctrl+b', 'ctrl+s' and returns [m, tea.quit()] for 'ctrl+c' and 'ctrl+q'. Typing 'ls' in the nested terminal forwards both 'l' and 's' to the PTY — 's' is NOT intercepted as a resize command.",
+      "status": "Done"
+    },
+    {
+      "task": "Update controls bar rendering to reflect new key bindings",
+      "description": "In scripts/example-15-bouncing-logo.js, the renderControls function (lines 239-274) renders button labels like '[P] Pause', '[B] Bigger', '[S] Smaller', '[Q] Quit'. These labels imply bare letter shortcuts which no longer work. Update to: '[^P] Pause' or '[Ctrl+P] Pause', '[^B] Bigger', '[^S] Smaller', '[^Q] Quit' (using a concise notation that fits the controls bar). Also update the chord mode prefix indicator to show 'C-x-' when active. The button helpers (buttonIdToKey at lines 132-138) map button clicks to key actions — update these to return 'ctrl+p', 'ctrl+b', 'ctrl+s', 'ctrl+q' instead of bare letters, so button clicks still work correctly.",
+      "acceptance": "Controls bar shows control-key notation for all actions (e.g., '[^P] Pause' not '[P] Pause'). Button clicks via bubblezone still trigger correct actions (ctrl+p for pause, etc.). Chord mode prefix shows 'C-x-' when active. No visual regression — controls bar fits within terminal width.",
+      "status": "Done"
+    },
+    {
+      "task": "Enhance mock_shell.sh to support space-separated input echo",
+      "description": "The current mock_shell.sh at internal/example/bouncelogo/mock_shell.sh reads lines with IFS= read -r line and echoes them as 'Echo: $line'. This works for basic text but we need to verify it handles spaces correctly. The mock reads full lines (including spaces) via IFS= read -r. Enhancement: add a 'space' command test path — if the input contains spaces, the mock should echo them faithfully. No changes needed if the existing mock already handles this correctly (IFS= read -r preserves spaces). Verify by tracing the read path.",
+      "acceptance": "Mock shell faithfully echoes input containing spaces (e.g., 'echo hello' → 'Echo: echo hello'). The IFS= read -r pattern preserves leading/trailing/internal spaces. No change needed if already correct — document the verification.",
+      "status": "Done"
+    },
+    {
+      "task": "Update existing PTY tests for new key bindings",
+      "description": "In internal/example/bouncelogo/bouncelogo_pty_test.go, three tests send bare letters as control actions and must be updated: (1) TestBouncingLogo_PauseResume (line 178) sends 'p' — change to send ctrl+p which is the byte '\\x10' (ctrl+p = 0x10). Wait — actually ctrl+p in terminal bytes is 0x10 but BubbleTea receives it as a key event with key='ctrl+p'. The test sends raw bytes to the PTY, so we need to send the correct raw byte that BubbleTea interprets as ctrl+p. For the test console, sending '\\x10' might work but BubbleTea may interpret it differently. Alternative: use the chord mode by sending ctrl+x followed by p. OR: the test should verify that sending bare 'p' now DOES forward to the PTY (echoed back), and use a different mechanism for pause. This requires understanding how the test console sends keys. The sendKey helper at line 53 uses cp.WriteString(key) which sends raw bytes. To send ctrl+p via raw bytes: send '\\x10'. To send ctrl+x: send '\\x18'. Verify these byte mappings against BubbleTea v2's key code constants in keys_gen.go — ctrl+p code is 'p' with ModCtrl, ctrl+x code is 'x' with ModCtrl. The raw terminal byte for ctrl+letter is (letter - 'a' + 1), so ctrl+p = 0x10, ctrl+x = 0x18. Test changes: (1) TestBouncingLogo_PauseResume: send '\\x10' (ctrl+p) instead of 'p'. (2) TestBouncingLogo_ResizePane: send '\\x02' (ctrl+b) and '\\x13' (ctrl+s) instead of 'b' and 's'. (3) TestBouncingLogo_CleanExit: send '\\x03' (ctrl+c) instead of 'q' — already uses ctrl+c which is correct, but also test ctrl+q '\\x11'.",
+      "acceptance": "All bouncelogo PTY tests pass with the new ctrl+letter key bindings. TestBouncingLogo_PauseResume successfully toggles pause via ctrl+p. TestBouncingLogo_ResizePane successfully resizes via ctrl+b and ctrl+s. TestBouncingLogo_CleanExit exits via ctrl+c or ctrl+q. No test sends bare letters as control actions.",
+      "status": "Done"
+    },
+    {
+      "task": "Add PTY test: bare letters forward to nested PTY",
+      "description": "Add TestBouncingLogo_BareLettersForward to internal/example/bouncelogo/bouncelogo_pty_test.go. This test verifies the core fix: typing 's', 'b', 'p', 'q' as bare letters is forwarded to the nested PTY and NOT intercepted as control actions. Steps: (1) Launch bouncing logo, wait for mock shell prompt. (2) Send 's' — verify 'Echo: s' appears in the PTY output (the mock shell echoes it back). (3) Send 'b' — verify 'Echo: b' appears. (4) Send 'hello sbpq' — verify 'Echo: hello sbpq' appears with all letters echoed. This proves bare letters reach the PTY child.",
+      "acceptance": "TestBouncingLogo_BareLettersForward passes: typing 's', 'b', 'p', 'q' as bare letters produces echo output from the mock shell, proving these letters are forwarded to the PTY and not intercepted by the control key handler. The test uses testing.Short() skip guard.",
+      "status": "Done"
+    },
+    {
+      "task": "Add PTY test: spacebar forwards correctly to nested PTY",
+      "description": "Add TestBouncingLogo_SpacebarForward to internal/example/bouncelogo/bouncelogo_pty_test.go. This test verifies the GAP-001 fix end-to-end: pressing spacebar sends a space character to the nested PTY, not the literal string 'space'. Steps: (1) Launch bouncing logo, wait for mock shell prompt. (2) Send 'echo hello world\\r' (contains spaces). (3) Verify 'Echo: echo hello world' appears with the space preserved. This proves the full pipeline: BubbleTea → msgToJS (key='space', text=' ') → keyToTermBytes('space') → ' ' → mgr.input(' ') → PTY child receives space.",
+      "acceptance": "TestBouncingLogo_SpacebarForward passes: typing 'echo hello world' with spaces produces correct echo output from the mock shell with spaces preserved. The space character is forwarded to the PTY, not the literal string 'space'.",
+      "status": "Done"
+    },
+    {
+      "task": "Add PTY test: chord mode ctrl+x followed by action key",
+      "description": "Add TestBouncingLogo_ChordMode to internal/example/bouncelogo/bouncelogo_pty_test.go. This test verifies GAP-004: the chord mode (ctrl+x prefix followed by action key) works correctly. Steps: (1) Launch bouncing logo, wait for mock shell prompt. (2) Send '\\x18' (ctrl+x) to enter chord mode. (3) Send 'b' — verify the pane gets bigger (bounce count still present, no error). (4) Send '\\x18' again. (5) Send 's' — verify the pane gets smaller. (6) Send '\\x18' again. (7) Send 'p' — verify pause toggles. This proves the chord mode path works and the visual indicator 'C-x-' appears.",
+      "acceptance": "TestBouncingLogo_ChordMode passes: ctrl+x followed by 'b'/'s'/'p' triggers the correct control action. The controls bar shows 'C-x-' prefix during chord mode. Chord mode resets after the action key is pressed. No errors or panics.",
+      "status": "Done"
+    },
+    {
+      "task": "Run full test suite and verify zero regressions",
+      "description": "Run `go test -short -count=1 -timeout=5m ./...` to verify all existing tests still pass after the changes. Pay special attention to: internal/termmux (input tests), internal/builtin/bubbletea (key pipeline tests), internal/example/bouncelogo (new PTY tests), internal/scripting (example_scripts_regression_test.go which may exercise the bouncing-logo script).",
+      "acceptance": "All packages pass with zero failures. Build succeeds. No new test failures introduced by the refactoring.",
+      "status": "Done"
+    },
+    {
+      "task": "Update scripts/README.md controls description",
+      "description": "The scripts/README.md table entry for example-15 currently says: 'Bouncing terminal: nested PTY session bouncing around the screen, compositor rendering, termmux session management, mouse/keyboard forwarding, cross-platform'. Update the description to mention the key binding scheme: 'Bouncing terminal: nested PTY session with ctrl+letter controls (ctrl+p pause, ctrl+b bigger, ctrl+s smaller, ctrl+q quit) and chord mode (ctrl+x prefix). Full keyboard/mouse forwarding to PTY child.'",
+      "acceptance": "README.md table entry for example-15 mentions the control key scheme. Description is concise and accurate.",
+      "status": "Done"
+    },
+    {
+      "task": "Apply Rule of Two review — first pass",
+      "description": "Invoke a subagent with the strict-review-gate skill prompt to review ALL changes: (1) internal/termmux/input.go (space case + Unicode fallback fix), (2) internal/termmux/input_test.go (space key test + unrecognized key names test), (3) scripts/example-15-bouncing-logo.js (handleControlKey refactor, controls bar labels, button helpers), (4) internal/example/bouncelogo/bouncelogo_pty_test.go (updated tests + new tests), (5) internal/example/bouncelogo/mock_shell.sh (verification), (6) scripts/README.md. The reviewer must check: correctness of key forwarding, no regressions, test coverage adequacy, no AI slop.",
+      "acceptance": "First review completed with actionable findings. All critical issues identified and documented.",
+      "status": "Done"
+    },
+    {
+      "task": "Address first review findings and apply fixes",
+      "description": "First review found: F-001 (CRITICAL: chord mode passed bare 's'/'b'/'p' to handleControlKey which only matches ctrl+letter — chord actions silently did nothing) and F-002 (HIGH: TestBouncingLogo_ChordMode used delta-based expect after Snapshot, but chord text was in full buffer not delta). Fixed: chord mode now passes 'ctrl+s'/'ctrl+b'/'ctrl+p' to handleControlKey. Chord test uses buffer.Contains instead of delta-based expect. Full suite passes.",
+      "acceptance": "All findings from the first review are addressed. Test suite passes after fixes.",
+      "status": "Done"
+    },
+    {
+      "task": "Apply Rule of Two review — second pass",
+      "description": "Invoke a NEW subagent (different from the first reviewer) with the strict-review-gate skill prompt. This reviewer sees the code after first-review fixes. They must verify: (1) all first-review issues are resolved, (2) no new issues introduced, (3) the code is at the local maximum of quality. Only proceed if this second review confirms correctness.",
+      "acceptance": "Second review confirms no blocking issues remain. Both wolves fed. Code is ready for commit.",
+      "status": "Not Started"
+    }
+  ],
+  "continuousVerification": {
+    "task": "Run make build && go test -short -count=1 -timeout=5m ./... after EVERY significant change",
+    "description": "Execute the project's build/test pipeline after each code change.",
+    "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix the issue before proceeding."
+  },
+  "finalEnforcementProtocol": [
+    {"type": "POST_EXECUTION_WARNING", "alert": "BUILD FIRST: Always rebuild osm before running scripts."},
+    {"type": "POST_EXECUTION_WARNING_REPEATED", "alert": "TEST AFTER EVERY CHANGE: `go test -short -count=1 -timeout=5m ./...`"},
+    {"type": "POST_EXECUTION_WARNING_THIRD", "alert": "ZERO TOLERANCE FOR FAILURES: If tests fail, fix them before proceeding."}
+  ]
+}

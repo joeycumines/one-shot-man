@@ -20,6 +20,8 @@ func KeyToTermBytes(key string) (string, bool) {
 		return "\x1b[Z", true
 	case "backspace":
 		return "\x7f", true
+	case "space":
+		return " ", true
 	case "esc":
 		return "\x1b", true
 	case "delete":
@@ -101,9 +103,17 @@ func KeyToTermBytes(key string) (string, bool) {
 		return key, true
 	}
 
-	// Multi-character unknown keys (e.g., Unicode) → send as-is.
+	// Multi-character unknown keys containing non-ASCII runes (e.g., Unicode
+	// text) → send as-is. ASCII-only multi-character strings that didn't match
+	// any known key name are unrecognized → return false so the caller can
+	// fall back to msg.text or other handling.
 	if len(key) > 1 && !strings.Contains(key, "+") {
-		return key, true
+		for _, r := range key {
+			if r > 0x7F {
+				return key, true
+			}
+		}
+		return "", false
 	}
 
 	return "", false

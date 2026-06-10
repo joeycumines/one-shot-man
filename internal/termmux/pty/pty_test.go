@@ -13,6 +13,11 @@ import (
 	"time"
 )
 
+// writerFunc adapts a function to io.Writer for test use.
+type writerFunc func([]byte) (int, error)
+
+func (w writerFunc) Write(p []byte) (int, error) { return w(p) }
+
 func skipIfWindows(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -1045,4 +1050,131 @@ func TestConPTY_Resize(t *testing.T) {
 	if err := proc.Resize(40, 120); err != nil {
 		t.Fatalf("Resize failed: %v", err)
 	}
+}
+
+func TestProcess_File(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	skipIfWindows(t)
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	proc, err := Spawn(ctx, SpawnConfig{
+		Command: "echo",
+		Args:    []string{"file-test"},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	defer proc.Close()
+
+	f := proc.File()
+	if f == nil {
+		t.Fatal("File() returned nil for running process")
+	}
+
+	// File should return the same fd on repeated calls.
+	f2 := proc.File()
+	if f2 != f {
+		t.Error("File() returned different fd on second call")
+	}
+}
+
+func TestProcess_File_AfterClose(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	skipIfWindows(t)
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	proc, err := Spawn(ctx, SpawnConfig{
+		Command: "echo",
+		Args:    []string{"close-test"},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	proc.Close()
+
+	f := proc.File()
+	if f != nil {
+		t.Error("File() should return nil after Close")
+	}
+}
+
+func TestProcess_DrainOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	skipIfWindows(t)
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	proc, err := Spawn(ctx, SpawnConfig{
+		Command: "sh",
+		Args:    []string{"-c", "echo drain-test; sleep 60"},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	defer proc.Close()
+
+	// Start draining with a channel-based collector to avoid
+	// data races with bytes.Buffer (DrainOutput writes from
+	// a background goroutine).
+	drainCh := make(chan string, 64)
+	proc.DrainOutput(writerFunc(func(p []byte) (int, error) {
+		select {
+		case drainCh <- string(p):
+		default:
+		}
+		return len(p), nil
+	}))
+
+	// Wait for the output to appear in the drain channel.
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case chunk := <-drainCh:
+			if strings.Contains(chunk, "drain-test") {
+				goto found
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for drain output")
+		}
+	}
+found:
+}
+
+func TestProcess_DrainOutput_Idempotent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	skipIfWindows(t)
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	proc, err := Spawn(ctx, SpawnConfig{
+		Command: "echo",
+		Args:    []string{"idempotent"},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	defer proc.Close()
+
+	// Calling DrainOutput twice should be a no-op on the second call.
+	proc.DrainOutput(nil)
+	proc.DrainOutput(nil) // no panic or error
 }

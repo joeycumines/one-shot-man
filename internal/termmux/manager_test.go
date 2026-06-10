@@ -1,9 +1,11 @@
 package termmux
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -2053,4 +2055,220 @@ func FuzzSessionRouter(f *testing.F) {
 
 		wg.Wait()
 	})
+}
+
+// ---------------------------------------------------------------------------
+// activeWriter tests
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_ActiveWriter(t *testing.T) {
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "aw-test", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Pump output to transition to Running.
+	session.readerCh <- []byte("hello")
+	waitForSnapshotContains(t, m, id, "hello", 2*time.Second)
+
+	w, err := m.activeWriter()
+	if err != nil {
+		t.Fatalf("activeWriter: %v", err)
+	}
+	if w == nil {
+		t.Fatal("activeWriter returned nil writer")
+	}
+
+	// Writing to the active writer should send data to the session.
+	n, err := w.Write([]byte("test-input"))
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if n != len("test-input") {
+		t.Errorf("Write returned %d, want %d", n, len("test-input"))
+	}
+	got := string(session.Written())
+	if !strings.Contains(got, "test-input") {
+		t.Errorf("session received %q, want it to contain %q", got, "test-input")
+	}
+}
+
+func TestSessionManager_ActiveWriter_NoActiveSession(t *testing.T) {
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	_, err := m.activeWriter()
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// passthroughTee tests
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_EnablePassthroughTee(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "tee-test", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Pump output to transition to Running.
+	session.readerCh <- []byte("ready")
+	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
+
+	// Enable tee with a buffer to capture output.
+	var teeBuf syncBuffer
+	if err := m.enablePassthroughTee(id, &teeBuf); err != nil {
+		t.Fatalf("enablePassthroughTee: %v", err)
+	}
+
+	// Send output and verify tee captures it.
+	session.readerCh <- []byte("tee-data")
+
+	// Wait for the output to be processed and teed.
+	deadline := time.After(2 * time.Second)
+	for {
+		if strings.Contains(teeBuf.String(), "tee-data") {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for tee data; teeBuf=%q", teeBuf.String())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Disable tee.
+	if err := m.disablePassthroughTee(); err != nil {
+		t.Fatalf("disablePassthroughTee: %v", err)
+	}
+
+	// Output after disable should not appear in tee.
+	session.readerCh <- []byte("after-disable")
+	// Wait for the snapshot to update.
+	waitForSnapshotContains(t, m, id, "after-disable", 2*time.Second)
+
+	// The tee buffer should not contain "after-disable" because the tee was disabled.
+	if strings.Contains(teeBuf.String(), "after-disable") {
+		t.Error("tee captured data after being disabled")
+	}
+}
+
+func TestSessionManager_EnablePassthroughTee_AlreadyActive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "tee-dup", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	session.readerCh <- []byte("ready")
+	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
+
+	var buf bytes.Buffer
+	if err := m.enablePassthroughTee(id, &buf); err != nil {
+		t.Fatalf("first enablePassthroughTee: %v", err)
+	}
+
+	// Second enable should fail with ErrPassthroughActive.
+	err = m.enablePassthroughTee(id, &buf)
+	if err == nil {
+		t.Error("expected error on duplicate enable, got nil")
+	}
+	if !errors.Is(err, ErrPassthroughActive) {
+		t.Errorf("error = %v, want ErrPassthroughActive", err)
+	}
+
+	// Clean up.
+	_ = m.disablePassthroughTee()
+}
+
+func TestSessionManager_EnablePassthroughTee_InvalidSession(t *testing.T) {
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	var buf bytes.Buffer
+	err := m.enablePassthroughTee(99999, &buf)
+	if err == nil {
+		t.Error("expected error for invalid session, got nil")
+	}
+}
+
+func TestSessionManager_DisablePassthroughTee_Idempotent(t *testing.T) {
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	// Disable when nothing is active should be a no-op.
+	if err := m.disablePassthroughTee(); err != nil {
+		t.Errorf("disablePassthroughTee no-op: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CaptureSession.Rows/Cols tests
+// ---------------------------------------------------------------------------
+
+func TestCaptureSession_RowsCols(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "echo",
+		Args:    []string{"test"},
+		Rows:    30,
+		Cols:    120,
+	})
+
+	if got := cs.Rows(); got != 30 {
+		t.Errorf("Rows before start = %d, want 30", got)
+	}
+	if got := cs.Cols(); got != 120 {
+		t.Errorf("Cols before start = %d, want 120", got)
+	}
+
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer cs.Close()
+
+	if got := cs.Rows(); got != 30 {
+		t.Errorf("Rows after start = %d, want 30", got)
+	}
+	if got := cs.Cols(); got != 120 {
+		t.Errorf("Cols after start = %d, want 120", got)
+	}
+
+	if err := cs.Resize(40, 160); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+	if got := cs.Rows(); got != 40 {
+		t.Errorf("Rows after resize = %d, want 40", got)
+	}
+	if got := cs.Cols(); got != 160 {
+		t.Errorf("Cols after resize = %d, want 160", got)
+	}
 }

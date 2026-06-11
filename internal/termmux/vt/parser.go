@@ -38,7 +38,9 @@ type Parser struct {
 	paramBuf  []byte
 	intermBuf []byte
 	oscBuf    []byte
+	dcsBuf    []byte
 	maxOSCLen int
+	maxDCSLen int
 	lastByte  byte // for two-byte terminators (ESC \)
 	charsetSlot byte // '(' = G0, ')' = G1 — set when entering StateCharset
 }
@@ -48,6 +50,7 @@ func NewParser() *Parser {
 	return &Parser{
 		cur:       StateGround,
 		maxOSCLen: 4096,
+		maxDCSLen: 4096,
 	}
 }
 
@@ -96,6 +99,7 @@ func (p *Parser) enterEscape() {
 	p.paramBuf = p.paramBuf[:0]
 	p.intermBuf = p.intermBuf[:0]
 	p.oscBuf = p.oscBuf[:0]
+	p.dcsBuf = p.dcsBuf[:0]
 }
 
 func (p *Parser) feedEscape(b byte) (Action, byte) {
@@ -202,10 +206,14 @@ func (p *Parser) feedDCS(b byte) (Action, byte) {
 		p.cur = StateGround
 		return ActionDCSEnd, b
 	case b == 0x07: // BEL also terminates DCS in many terminals
+		p.lastByte = 0
 		p.cur = StateGround
 		return ActionDCSEnd, b
 	default:
 		p.lastByte = 0
+		if len(p.dcsBuf) < p.maxDCSLen {
+			p.dcsBuf = append(p.dcsBuf, b)
+		}
 		return ActionNone, b
 	}
 }
@@ -284,12 +292,24 @@ func (p *Parser) OSCData() (code int, data string) {
 	return v, after
 }
 
+// DCSData returns a copy of the accumulated DCS payload data. The caller
+// may safely modify the returned slice.
+func (p *Parser) DCSData() []byte {
+	if len(p.dcsBuf) == 0 {
+		return nil
+	}
+	out := make([]byte, len(p.dcsBuf))
+	copy(out, p.dcsBuf)
+	return out
+}
+
 // Reset returns the parser to ground state and clears all buffers.
 func (p *Parser) Reset() {
 	p.cur = StateGround
 	p.paramBuf = p.paramBuf[:0]
 	p.intermBuf = p.intermBuf[:0]
 	p.oscBuf = p.oscBuf[:0]
+	p.dcsBuf = p.dcsBuf[:0]
 	p.lastByte = 0
 	p.charsetSlot = 0
 }

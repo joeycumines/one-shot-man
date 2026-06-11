@@ -35,6 +35,12 @@ type VTerm struct {
 	// the string payload after the semicolon. Optional; if nil, OSC
 	// sequences are silently discarded.
 	OSCHandler func(code int, data string)
+
+	// DCSHandler is called when a complete DCS sequence is received. The
+	// data parameter contains the raw payload bytes accumulated during
+	// the DCS sequence. Optional; if nil, DCS sequences are silently
+	// discarded.
+	DCSHandler func(data []byte)
 }
 
 // NewVTerm creates a new virtual terminal with the given dimensions.
@@ -163,7 +169,9 @@ func (v *VTerm) processByte(b byte) {
 			v.OSCHandler(code, data)
 		}
 	case ActionDCSEnd:
-		// DCS consumed and discarded.
+		if v.DCSHandler != nil {
+			v.DCSHandler(v.parser.DCSData())
+		}
 	case ActionCharsetDesignation:
 		v.handleCharsetDesignation(final)
 	}

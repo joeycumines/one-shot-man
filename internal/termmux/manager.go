@@ -737,6 +737,17 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 		}
 	}
 
+	// Wire DCS handler. During passthrough, DCS sequences are
+	// forwarded to the real terminal via the passthrough output
+	// writer. In embedded mode, DCS is silently discarded.
+	// Future: handle DECRQSS to respond with current SGR/DECSTBM state.
+	v.DCSHandler = func(data []byte) {
+		// DCS passthrough forwarding is handled by the
+		// passthrough tee mechanism — DCS data is included
+		// in the raw output stream forwarded to the terminal.
+		// For embedded mode, DCS is discarded for now.
+	}
+
 	snap := &ScreenSnapshot{
 		Gen:       m.snapshotGen,
 		Rows:      m.termRows,

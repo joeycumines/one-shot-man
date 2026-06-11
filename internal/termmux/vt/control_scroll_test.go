@@ -362,7 +362,7 @@ func TestSwitchToAlt_SavesCursor(t *testing.T) {
 	v.active.CurRow = 2
 	v.active.CurCol = 7
 	v.active.CurAttr = Attr{Bold: true}
-	v.switchToAlt()
+	v.switchToAlt(1049)
 
 	if v.active != v.alternate {
 		t.Error("active should be alternate after switchToAlt")
@@ -381,12 +381,12 @@ func TestSwitchToAlt_Idempotent(t *testing.T) {
 	v := NewVTerm(4, 10)
 	v.active.CurRow = 2
 	v.active.CurCol = 7
-	v.switchToAlt()
+	v.switchToAlt(1049)
 	// Move cursor on alt screen.
 	v.active.CurRow = 0
 	v.active.CurCol = 0
 	// Switch to alt again — should be no-op (already on alt).
-	v.switchToAlt()
+	v.switchToAlt(1049)
 	if v.active != v.alternate {
 		t.Error("should still be on alternate")
 	}
@@ -402,9 +402,9 @@ func TestSwitchToPrimary_RestoresCursor(t *testing.T) {
 	v.active.CurRow = 2
 	v.active.CurCol = 7
 	v.active.CurAttr = Attr{Italic: true}
-	v.switchToAlt()
+	v.switchToAlt(1049)
 	// Switch back to primary.
-	v.switchToPrimary()
+	v.switchToPrimary(1049)
 	if v.active != v.primary {
 		t.Error("active should be primary after switchToPrimary")
 	}
@@ -420,7 +420,7 @@ func TestSwitchToPrimary_RestoresCursor(t *testing.T) {
 func TestSwitchToPrimary_Idempotent(t *testing.T) {
 	v := NewVTerm(4, 10)
 	// Already on primary. Should be no-op.
-	v.switchToPrimary()
+	v.switchToPrimary(1049)
 	if v.active != v.primary {
 		t.Error("should still be on primary")
 	}

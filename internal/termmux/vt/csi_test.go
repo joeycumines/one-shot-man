@@ -104,7 +104,7 @@ func TestCSI_DECSET_AltScreen(t *testing.T) {
 	scr := NewScreen(24, 80)
 	var gotAlt *bool
 	h := &CSIHandler{
-		AltScreenFn: func(toAlt bool) {
+		AltScreenFn: func(toAlt bool, mode int) {
 			gotAlt = &toAlt
 		},
 	}
@@ -127,6 +127,188 @@ func TestCSI_DECSET_NilCallback(t *testing.T) {
 	// Must not panic
 	h.Dispatch(scr, 'h', []int{1049}, true)
 	h.Dispatch(scr, 'l', []int{1049}, true)
+}
+
+func TestCSI_AltScreen_Mode47_NoCursorSave(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Move cursor to a known position
+	v.Write([]byte("\x1b[10;30H")) // row 10, col 30
+
+	// Switch to alt screen with mode 47
+	v.Write([]byte("\x1b[?47h"))
+
+	// Move cursor on alt screen
+	v.Write([]byte("\x1b[20;60H"))
+
+	// Switch back to primary with mode 47
+	v.Write([]byte("\x1b[?47l"))
+
+	// Mode 47 does NOT restore cursor — the primary screen's cursor should
+	// still be at its original position since switchToPrimary(47) doesn't
+	// modify cursor. The primary screen cursor was at (9,29) when we left.
+	row, col := v.CursorPosition()
+	if row != 9 || col != 29 {
+		t.Fatalf("cursor after mode 47 round-trip: row=%d col=%d; want 9,29 (no restore, stays where it was)", row, col)
+	}
+}
+
+func TestCSI_AltScreen_Mode1047_ClearOnExit(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Write content to alt screen
+	v.Write([]byte("\x1b[?1047h"))
+	v.Write([]byte("AltScreen content"))
+
+	// Switch back to primary with mode 1047 — should clear the alt screen on exit
+	v.Write([]byte("\x1b[?1047l"))
+
+	// Switch to alt again — content should be gone (cleared on exit)
+	v.Write([]byte("\x1b[?1047h"))
+	s := v.String()
+	if s != "" {
+		t.Fatalf("alt screen not cleared on mode 1047 exit: %q", s)
+	}
+}
+
+func TestCSI_AltScreen_Mode1047_NoClearOnEntry(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Write content to alt screen
+	v.Write([]byte("\x1b[?1047h"))
+	v.Write([]byte("Preserved content"))
+	v.Write([]byte("\x1b[?47l")) // exit with mode 47 (no clear)
+
+	// Re-enter with mode 1047 — should NOT clear on entry
+	v.Write([]byte("\x1b[?1047h"))
+	s := v.String()
+	if s != "Preserved content" {
+		t.Fatalf("mode 1047 cleared alt screen on entry: %q; want %q", s, "Preserved content")
+	}
+}
+
+func TestCSI_AltScreen_Mode1047_NoCursorRestore(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Move cursor to known position
+	v.Write([]byte("\x1b[10;30H"))
+
+	// Switch to alt with mode 1047
+	v.Write([]byte("\x1b[?1047h"))
+	// Move cursor on alt screen
+	v.Write([]byte("\x1b[20;60H"))
+	// Switch back with mode 1047 — no cursor restore
+	v.Write([]byte("\x1b[?1047l"))
+
+	// Mode 1047 does NOT restore cursor — primary cursor stays where it was (9,29)
+	row, col := v.CursorPosition()
+	if row != 9 || col != 29 {
+		t.Fatalf("cursor after mode 1047 round-trip: row=%d col=%d; want 9,29 (no restore)", row, col)
+	}
+}
+
+func TestCSI_AltScreen_Mode1049_SaveAndRestore(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Move cursor to known position
+	v.Write([]byte("\x1b[10;30H"))
+	row, col := v.CursorPosition()
+	if row != 9 || col != 29 {
+		t.Fatalf("cursor before alt: row=%d col=%d; want 9,29", row, col)
+	}
+
+	// Switch to alt with mode 1049 — should save cursor
+	v.Write([]byte("\x1b[?1049h"))
+
+	// Move cursor on alt screen
+	v.Write([]byte("\x1b[20;60H"))
+
+	// Switch back with mode 1049 — should restore cursor
+	v.Write([]byte("\x1b[?1049l"))
+	row, col = v.CursorPosition()
+	if row != 9 || col != 29 {
+		t.Fatalf("cursor after restore: row=%d col=%d; want 9,29", row, col)
+	}
+}
+
+func TestCSI_AltScreen_Mode1049_ClearOnEntry(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Write to alt screen
+	v.Write([]byte("\x1b[?1049h"))
+	v.Write([]byte("Previous content"))
+	v.Write([]byte("\x1b[?1049l"))
+
+	// Switch again — alt screen should be cleared on entry
+	v.Write([]byte("\x1b[?1049h"))
+	s := v.String()
+	if s != "" {
+		t.Fatalf("alt screen not cleared on mode 1049 entry: %q", s)
+	}
+}
+
+func TestCSI_AltScreen_Mode1049_SavesCharsetState(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Set charset state
+	v.Write([]byte("\x1b(0")) // line-drawing
+	snap := v.ActiveScreen()
+	if snap.G0Charset != 1 {
+		t.Fatalf("G0Charset = %d; want 1 (line-drawing)", snap.G0Charset)
+	}
+
+	// Switch to alt screen with mode 1049
+	v.Write([]byte("\x1b[?1049h"))
+
+	// Switch back — charset should be restored
+	v.Write([]byte("\x1b[?1049l"))
+	snap = v.ActiveScreen()
+	if snap.G0Charset != 1 {
+		t.Fatalf("G0Charset after restore = %d; want 1 (line-drawing)", snap.G0Charset)
+	}
+}
+
+func TestCSI_AltScreen_Mode1049_CursorHomesOnEntry(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Move cursor to known position
+	v.Write([]byte("\x1b[10;30H"))
+
+	// Switch to alt with mode 1049 — cursor should home to (0,0) on alt screen
+	v.Write([]byte("\x1b[?1049h"))
+	row, col := v.CursorPosition()
+	if row != 0 || col != 0 {
+		t.Fatalf("cursor on alt screen: row=%d col=%d; want 0,0", row, col)
+	}
+}
+
+func TestCSI_AltScreen_MultiParam(t *testing.T) {
+	v := NewVTerm(24, 80)
+	var gotMode int
+	// Test that multi-param DECSET works with alt screen mode
+	// This tests the `p` variable being passed to AltScreenFn
+	origHandler := v.csi.AltScreenFn
+	v.csi.AltScreenFn = func(toAlt bool, mode int) {
+		gotMode = mode
+		origHandler(toAlt, mode)
+	}
+
+	// DECSET ?47;1049h — each mode should be processed separately
+	// Note: in multi-param, p iterates through params, so both 47 and 1049
+	// get dispatched. The last one wins for the switchToAlt call.
+	v.Write([]byte("\x1b[?47;1049h"))
+
+	// The last mode processed should be 1049
+	if gotMode != 1049 {
+		t.Fatalf("gotMode = %d; want 1049", gotMode)
+	}
+}
+
+func TestCSI_AltScreen_Mode47_SwitchWithoutClear(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Write content to alt screen
+	v.Write([]byte("\x1b[?1049h"))
+	v.Write([]byte("Preserved content"))
+	v.Write([]byte("\x1b[?1049l"))
+
+	// Switch to alt with mode 47 — should NOT clear the alt screen
+	v.Write([]byte("\x1b[?47h"))
+	s := v.String()
+	if s != "Preserved content" {
+		t.Fatalf("mode 47 cleared alt screen: %q; want %q", s, "Preserved content")
+	}
 }
 
 func TestCSI_ED_EraseDisplay(t *testing.T) {

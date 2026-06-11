@@ -63,11 +63,11 @@ func NewVTerm(rows, cols int) *VTerm {
 	v.alternate.MaxScrollback = 0
 	v.active = v.primary
 	// Wire CSI alt-screen callback.
-	v.csi.AltScreenFn = func(toAlt bool) {
+	v.csi.AltScreenFn = func(toAlt bool, mode int) {
 		if toAlt {
-			v.switchToAlt()
+			v.switchToAlt(mode)
 		} else {
-			v.switchToPrimary()
+			v.switchToPrimary(mode)
 		}
 	}
 	// Wire CSI response callback — DA/DSR responses go through ResponseWriter.
@@ -233,27 +233,65 @@ func (v *VTerm) handleCharsetDesignation(designator byte) {
 		scr.G1Charset = charset
 	}
 }
-func (v *VTerm) switchToAlt() {
+func (v *VTerm) switchToAlt(mode int) {
 	if v.active == v.alternate {
 		return
 	}
-	// Save cursor on primary (per DECSET 1049 spec).
-	v.primary.SavedRow = v.primary.CurRow
-	v.primary.SavedCol = v.primary.CurCol
-	v.primary.SavedAttr = v.primary.CurAttr
-	v.active = v.alternate
+	switch mode {
+	case 1049:
+		// Save cursor on primary (per DECSET 1049 spec).
+		v.primary.SavedRow = v.primary.CurRow
+		v.primary.SavedCol = v.primary.CurCol
+		v.primary.SavedAttr = v.primary.CurAttr
+		v.primary.SavedG0Charset = v.primary.G0Charset
+		v.primary.SavedG1Charset = v.primary.G1Charset
+		v.primary.SavedGL = v.primary.GL
+		v.primary.SavedOriginMode = v.primary.OriginMode
+		// Clear alternate screen on entry.
+		v.alternate.EraseDisplay(2)
+		v.active = v.alternate
+		v.active.CurRow = 0
+		v.active.CurCol = 0
+		v.active.PendingWrap = false
+	case 1047:
+		// Switch to alternate screen, no cursor save, no clear on entry.
+		// Per xterm spec, mode 1047 clears the alternate screen on EXIT only.
+		v.active = v.alternate
+	default: // mode 47
+		// Switch without saving cursor or clearing.
+		v.active = v.alternate
+	}
 }
 
-func (v *VTerm) switchToPrimary() {
+func (v *VTerm) switchToPrimary(mode int) {
 	if v.active == v.primary {
 		return
 	}
 	v.active = v.primary
-	// Restore cursor on primary (per DECRST 1049 spec), clamped to screen bounds.
-	v.primary.CurRow = max(0, min(v.primary.SavedRow, v.primary.Rows-1))
-	v.primary.CurCol = max(0, min(v.primary.SavedCol, v.primary.Cols-1))
-	v.primary.CurAttr = v.primary.SavedAttr
-	v.primary.PendingWrap = false
+	switch mode {
+	case 1049:
+		// Restore cursor on primary (per DECRST 1049 spec), clamped to screen bounds.
+		// Restore mode state first so cursor clamping respects origin mode.
+		v.primary.CurAttr = v.primary.SavedAttr
+		v.primary.G0Charset = v.primary.SavedG0Charset
+		v.primary.G1Charset = v.primary.SavedG1Charset
+		v.primary.GL = v.primary.SavedGL
+		v.primary.OriginMode = v.primary.SavedOriginMode
+		if v.primary.OriginMode {
+			scrollTop, scrollBot := v.primary.ScrollRegion()
+			v.primary.CurRow = max(scrollTop, min(v.primary.SavedRow, scrollBot-1))
+		} else {
+			v.primary.CurRow = max(0, min(v.primary.SavedRow, v.primary.Rows-1))
+		}
+		v.primary.CurCol = max(0, min(v.primary.SavedCol, v.primary.Cols-1))
+		v.primary.PendingWrap = false
+	case 1047:
+		// Clear alternate screen on exit, no cursor restore.
+		v.alternate.EraseDisplay(2)
+		// No cursor restore — cursor stays at current position on primary.
+	default: // mode 47
+		// No cursor restore, no clear.
+	}
 }
 
 func (v *VTerm) reset() {

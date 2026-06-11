@@ -443,7 +443,7 @@ func TestCSI_DECRST_AltScreen(t *testing.T) {
 	scr := NewScreen(24, 80)
 	var gotAlt *bool
 	h := &CSIHandler{
-		AltScreenFn: func(toAlt bool) {
+		AltScreenFn: func(toAlt bool, mode int) {
 			gotAlt = &toAlt
 		},
 	}

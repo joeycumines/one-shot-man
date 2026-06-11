@@ -3,13 +3,16 @@ package vt
 import "strconv"
 
 // CSIHandler processes a parsed CSI sequence on a screen.
-// The AltScreenFn callback handles DECSET/DECRST mode 1049 (alt screen
-// toggle). It is optional; if nil the mode is silently ignored.
+// The AltScreenFn callback handles DECSET/DECRST modes 47/1047/1049 (alt
+// screen toggle). The mode parameter indicates which mode triggered the
+// switch: 47 (no cursor save/clear), 1047 (clear on exit, no cursor
+// save), or 1049 (cursor save + clear on entry, cursor restore on exit).
+// It is optional; if nil the mode is silently ignored.
 // The ResponseWriter callback sends response sequences back to the child
 // process (e.g., DA1, DA2, DSR-CPR). It is optional; if nil, responses
 // are silently discarded.
 type CSIHandler struct {
-	AltScreenFn    func(toAlt bool)
+	AltScreenFn    func(toAlt bool, mode int)
 	ResponseWriter func([]byte)
 	HasInterGt     func() bool // reports whether '>' intermediate was present
 }
@@ -274,7 +277,7 @@ func (h *CSIHandler) decset(scr *Screen, params []int) {
 			scr.CursorVisible = true
 		case 47, 1047, 1049: // alternate screen buffer
 			if h.AltScreenFn != nil {
-				h.AltScreenFn(true)
+				h.AltScreenFn(true, p)
 			}
 		case 1000: // XT_MOUSE — basic mouse tracking
 			scr.MouseTracking = MouseTrackingBasic
@@ -302,7 +305,7 @@ func (h *CSIHandler) decrst(scr *Screen, params []int) {
 			scr.CursorVisible = false
 		case 47, 1047, 1049: // normal screen buffer
 			if h.AltScreenFn != nil {
-				h.AltScreenFn(false)
+				h.AltScreenFn(false, p)
 			}
 		case 1000: // XT_MOUSE — disable basic mouse tracking
 			if scr.MouseTracking == MouseTrackingBasic {

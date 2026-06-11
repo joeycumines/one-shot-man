@@ -494,6 +494,9 @@ func TestEventKind_AllStrings(t *testing.T) {
 		{EventSessionClosed, "session-closed"},
 		{EventResize, "resize"},
 		{EventBell, "bell"},
+		{EventTitle, "title"},
+		{EventWorkingDirectory, "working-directory"},
+		{EventClipboard, "clipboard"},
 		{EventKind(99), "unknown"},
 	}
 	for _, tc := range cases {

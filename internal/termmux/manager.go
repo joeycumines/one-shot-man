@@ -723,6 +723,20 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 		}
 	}
 
+	// Wire OSC handler to emit typed events on the EventBus.
+	// OSC 0/2 → EventTitle, OSC 7 → EventWorkingDirectory,
+	// OSC 52 → EventClipboard.
+	v.OSCHandler = func(code int, data string) {
+		switch code {
+		case 0, 2:
+			m.eventBus.emitData(EventTitle, id, data)
+		case 7:
+			m.eventBus.emitData(EventWorkingDirectory, id, data)
+		case 52:
+			m.eventBus.emitData(EventClipboard, id, data)
+		}
+	}
+
 	snap := &ScreenSnapshot{
 		Gen:       m.snapshotGen,
 		Rows:      m.termRows,

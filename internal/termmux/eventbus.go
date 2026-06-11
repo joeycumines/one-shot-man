@@ -31,6 +31,19 @@ const (
 
 	// EventBell is published when a BEL character (0x07) is processed.
 	EventBell
+
+	// EventTitle is published when OSC 0 or OSC 2 sets the window title.
+	// Data is the title string.
+	EventTitle
+
+	// EventWorkingDirectory is published when OSC 7 sets the working directory.
+	// Data is the directory URI string.
+	EventWorkingDirectory
+
+	// EventClipboard is published when OSC 52 accesses the clipboard.
+	// Data is the clipboard payload string (base64-encoded content after the
+	// semicolon within the OSC data, e.g., "c;base64data").
+	EventClipboard
 )
 
 // String returns a human-readable name for the event kind.
@@ -50,6 +63,12 @@ func (k EventKind) String() string {
 		return "resize"
 	case EventBell:
 		return "bell"
+	case EventTitle:
+		return "title"
+	case EventWorkingDirectory:
+		return "working-directory"
+	case EventClipboard:
+		return "clipboard"
 	default:
 		return "unknown"
 	}
@@ -67,8 +86,11 @@ type Event struct {
 	SessionID SessionID
 
 	// Data carries kind-specific payload. The concrete type depends on Kind:
-	//   EventSessionOutput  → []byte (raw output chunk)
-	//   EventResize         → [2]int{rows, cols}
+	//   EventSessionOutput     → []byte (raw output chunk)
+	//   EventResize            → [2]int{rows, cols}
+	//   EventTitle             → string (window title)
+	//   EventWorkingDirectory  → string (directory URI)
+	//   EventClipboard         → string (clipboard payload)
 	// Other kinds carry nil.
 	Data any
 

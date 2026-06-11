@@ -263,6 +263,27 @@ func (p *Parser) HasIntermediate(b byte) bool {
 	return slices.Contains(p.intermBuf, b)
 }
 
+// OSCData parses the accumulated OSC buffer into a numeric code and string
+// data. The OSC format is: code;data — the code is the integer before the
+// first semicolon, and the data is everything after it. If there is no
+// semicolon, the entire buffer is treated as the data with code 0.
+// Malformed codes (non-numeric before semicolon) return code 0 with the
+// full buffer as data.
+func (p *Parser) OSCData() (code int, data string) {
+	raw := string(p.oscBuf)
+	before, after, found := strings.Cut(raw, ";")
+	if !found {
+		// No semicolon — entire payload is data with code 0.
+		return 0, raw
+	}
+	v, err := strconv.Atoi(before)
+	if err != nil {
+		// Malformed code — treat entire payload as data.
+		return 0, raw
+	}
+	return v, after
+}
+
 // Reset returns the parser to ground state and clears all buffers.
 func (p *Parser) Reset() {
 	p.cur = StateGround

@@ -28,6 +28,13 @@ type VTerm struct {
 	// callback receives the raw bytes of the response. Optional; if nil,
 	// responses are silently discarded.
 	ResponseWriter func([]byte)
+
+	// OSCHandler is called when a complete OSC sequence is received. The
+	// code parameter is the numeric OSC code (e.g., 0 for window title,
+	// 7 for working directory, 52 for clipboard). The data parameter is
+	// the string payload after the semicolon. Optional; if nil, OSC
+	// sequences are silently discarded.
+	OSCHandler func(code int, data string)
 }
 
 // NewVTerm creates a new virtual terminal with the given dimensions.
@@ -151,7 +158,10 @@ func (v *VTerm) processByte(b byte) {
 	case ActionEscDispatch:
 		v.esc.Dispatch(scr, final)
 	case ActionOSCEnd:
-		// OSC consumed and discarded.
+		if v.OSCHandler != nil {
+			code, data := v.parser.OSCData()
+			v.OSCHandler(code, data)
+		}
 	case ActionDCSEnd:
 		// DCS consumed and discarded.
 	case ActionCharsetDesignation:

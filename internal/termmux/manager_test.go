@@ -1715,6 +1715,210 @@ done:
 	}
 }
 
+func TestSessionManager_Pipeline_OSCTitleEvent(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "osc-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Send OSC 0 (set window title) through the Reader channel.
+	session.readerCh <- []byte("\x1b]0;My Title\x07")
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify EventTitle was published with correct data.
+	var foundTitle bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventTitle && evt.SessionID == 1 {
+				foundTitle = true
+				if data, ok := evt.Data.(string); !ok || data != "My Title" {
+					t.Errorf("EventTitle data = %q; want %q", data, "My Title")
+				}
+			}
+		default:
+			goto doneTitle
+		}
+	}
+doneTitle:
+	if !foundTitle {
+		t.Error("EventTitle not received after OSC 0 sequence")
+	}
+}
+
+func TestSessionManager_Pipeline_OSCWorkingDirectoryEvent(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "osc-cwd-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Send OSC 7 (set working directory) through the Reader channel.
+	session.readerCh <- []byte("\x1b]7;file:///home/user\x07")
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify EventWorkingDirectory was published.
+	var foundCwd bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventWorkingDirectory && evt.SessionID == 1 {
+				foundCwd = true
+				if data, ok := evt.Data.(string); !ok || data != "file:///home/user" {
+					t.Errorf("EventWorkingDirectory data = %q; want %q", data, "file:///home/user")
+				}
+			}
+		default:
+			goto doneCwd
+		}
+	}
+doneCwd:
+	if !foundCwd {
+		t.Error("EventWorkingDirectory not received after OSC 7 sequence")
+	}
+}
+
+func TestSessionManager_Pipeline_OSCClipboardEvent(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "osc-clip-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Send OSC 52 (clipboard) through the Reader channel.
+	session.readerCh <- []byte("\x1b]52;c;SGVsbG8=\x07")
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify EventClipboard was published.
+	var foundClip bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventClipboard && evt.SessionID == 1 {
+				foundClip = true
+				if data, ok := evt.Data.(string); !ok || data != "c;SGVsbG8=" {
+					t.Errorf("EventClipboard data = %q; want %q", data, "c;SGVsbG8=")
+				}
+			}
+		default:
+			goto doneClip
+		}
+	}
+doneClip:
+	if !foundClip {
+		t.Error("EventClipboard not received after OSC 52 sequence")
+	}
+}
+
+func TestSessionManager_Pipeline_OSC2TitleEvent(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "osc2-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Send OSC 2 (set window title) through the Reader channel.
+	session.readerCh <- []byte("\x1b]2;XTerm Title\x07")
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify EventTitle was published.
+	var foundTitle bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventTitle && evt.SessionID == 1 {
+				foundTitle = true
+				if data, ok := evt.Data.(string); !ok || data != "XTerm Title" {
+					t.Errorf("EventTitle data = %q; want %q", data, "XTerm Title")
+				}
+			}
+		default:
+			goto doneOsc2
+		}
+	}
+doneOsc2:
+	if !foundTitle {
+		t.Error("EventTitle not received after OSC 2 sequence")
+	}
+}
+
+func TestSessionManager_Pipeline_OSCUnrecognizedNoEvent(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "osc-unknown-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Send OSC 4 (set color palette — not one we handle) through the Reader channel.
+	session.readerCh <- []byte("\x1b]4;0;#ff0000\x07")
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify no EventTitle/EventWorkingDirectory/EventClipboard was published.
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventTitle || evt.Kind == EventWorkingDirectory || evt.Kind == EventClipboard {
+				t.Errorf("unexpected event kind %v for unrecognized OSC code", evt.Kind)
+			}
+		default:
+			goto doneUnrecognized
+		}
+	}
+doneUnrecognized:
+	// Test passes if no unrecognized events were emitted.
+}
+
 func TestSessionManager_Pipeline_MultipleSessionsIndependent(t *testing.T) {
 	t.Parallel()
 

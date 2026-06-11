@@ -15,6 +15,7 @@ const (
 	StateCSI                 // received ESC [
 	StateOSC                 // received ESC ]
 	StateDCS                 // received ESC P
+	StateCharset             // received ESC ( or ESC ) — waiting for designator
 )
 
 // Action indicates what the caller should do after feeding a byte.
@@ -28,6 +29,7 @@ const (
 	ActionEscDispatch               // complete simple ESC sequence ready
 	ActionOSCEnd                    // OSC string terminated
 	ActionDCSEnd                    // DCS string terminated
+	ActionCharsetDesignation        // charset designation sequence complete (ESC ( or ESC ) + designator)
 )
 
 // Parser is a table-driven ANSI escape sequence parser.
@@ -38,6 +40,7 @@ type Parser struct {
 	oscBuf    []byte
 	maxOSCLen int
 	lastByte  byte // for two-byte terminators (ESC \)
+	charsetSlot byte // '(' = G0, ')' = G1 — set when entering StateCharset
 }
 
 // NewParser returns a parser in the ground state.
@@ -64,6 +67,8 @@ func (p *Parser) Feed(b byte) (Action, byte) {
 		return p.feedOSC(b)
 	case StateDCS:
 		return p.feedDCS(b)
+	case StateCharset:
+		return p.feedCharset(b)
 	}
 	return ActionNone, b
 }
@@ -103,6 +108,11 @@ func (p *Parser) feedEscape(b byte) (Action, byte) {
 		return ActionNone, b
 	case b == 'P':
 		p.cur = StateDCS
+		return ActionNone, b
+	case b == '(' || b == ')':
+		// Charset designation: ESC ( or ESC ) followed by designator byte.
+		p.cur = StateCharset
+		p.charsetSlot = b
 		return ActionNone, b
 	case b >= 0x30 && b <= 0x7E:
 		// Final byte → dispatch ESC sequence, return to ground.
@@ -200,6 +210,35 @@ func (p *Parser) feedDCS(b byte) (Action, byte) {
 	}
 }
 
+// --- charset designation ---------------------------------------------------
+
+func (p *Parser) feedCharset(b byte) (Action, byte) {
+	switch {
+	case b >= 0x30 && b <= 0x7E:
+		// Valid designator byte (e.g., '0' for line-drawing, 'B' for ASCII).
+		p.cur = StateGround
+		return ActionCharsetDesignation, b
+	case b == 0x1B:
+		// Another ESC restarts escape state.
+		p.enterEscape()
+		return ActionNone, b
+	case b <= 0x1F:
+		// Control character: execute and abort.
+		p.cur = StateGround
+		return ActionExecute, b
+	default:
+		// Unrecognised; drop back to ground.
+		p.cur = StateGround
+		return ActionNone, b
+	}
+}
+
+// CharsetSlot returns the charset slot indicator from the most recent charset
+// designation sequence: '(' means G0, ')' means G1.
+func (p *Parser) CharsetSlot() byte {
+	return p.charsetSlot
+}
+
 // --- accessors ------------------------------------------------------------
 
 // Params parses the accumulated CSI parameter buffer as a semicolon-
@@ -231,6 +270,7 @@ func (p *Parser) Reset() {
 	p.intermBuf = p.intermBuf[:0]
 	p.oscBuf = p.oscBuf[:0]
 	p.lastByte = 0
+	p.charsetSlot = 0
 }
 
 // CurState returns the current parser state.

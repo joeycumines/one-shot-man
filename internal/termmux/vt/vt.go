@@ -154,6 +154,8 @@ func (v *VTerm) processByte(b byte) {
 		// OSC consumed and discarded.
 	case ActionDCSEnd:
 		// DCS consumed and discarded.
+	case ActionCharsetDesignation:
+		v.handleCharsetDesignation(final)
 	}
 }
 
@@ -184,10 +186,35 @@ func (v *VTerm) handleControl(b byte) {
 	case 0x0D: // CR — carriage return
 		scr.PendingWrap = false
 		scr.CurCol = 0
+	case 0x0E: // SO — shift out (activate G1)
+		scr.GL = 1
+	case 0x0F: // SI — shift in (activate G0)
+		scr.GL = 0
 	}
 	// All other control chars silently ignored.
 }
 
+// handleCharsetDesignation processes a charset designation sequence
+// (ESC ( or ESC ) followed by a designator byte).
+// slot '(' designates G0, slot ')' designates G1.
+// Designator 'B' or '@' selects ASCII (0), '0' selects VT100 line-drawing (1).
+func (v *VTerm) handleCharsetDesignation(designator byte) {
+	scr := v.active
+	slot := v.parser.CharsetSlot()
+	charset := 0 // default: ASCII
+	switch designator {
+	case '0': // VT100 Special Graphics (line-drawing)
+		charset = 1
+	case 'B', '@': // ASCII
+		charset = 0
+	}
+	switch slot {
+	case '(':
+		scr.G0Charset = charset
+	case ')':
+		scr.G1Charset = charset
+	}
+}
 func (v *VTerm) switchToAlt() {
 	if v.active == v.alternate {
 		return

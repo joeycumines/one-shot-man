@@ -721,3 +721,174 @@ func TestVTerm_MouseTrackingModeUpgrade(t *testing.T) {
 		t.Fatalf("after DECRST ?1003l: want None, got %d", mode)
 	}
 }
+
+// -- Character Set (VT100 line-drawing) tests -----------------------------------
+
+func TestVTerm_CharsetDesignation_G0_LineDrawing(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.Write([]byte("\x1b(0"))
+	snap := v.ActiveScreen()
+	if snap.G0Charset != 1 {
+		t.Fatalf("after ESC(0: want G0Charset=1 (line-drawing), got %d", snap.G0Charset)
+	}
+	if snap.GL != 0 {
+		t.Fatalf("after ESC(0: want GL=0, got %d", snap.GL)
+	}
+}
+
+func TestVTerm_CharsetDesignation_G0_ASCII(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.Write([]byte("\x1b(0"))
+	v.Write([]byte("\x1b(B"))
+	snap := v.ActiveScreen()
+	if snap.G0Charset != 0 {
+		t.Fatalf("after ESC(B: want G0Charset=0 (ASCII), got %d", snap.G0Charset)
+	}
+}
+
+func TestVTerm_CharsetDesignation_G1_LineDrawing(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.Write([]byte("\x1b)0"))
+	snap := v.ActiveScreen()
+	if snap.G1Charset != 1 {
+		t.Fatalf("after ESC)0: want G1Charset=1 (line-drawing), got %d", snap.G1Charset)
+	}
+	if snap.G0Charset != 0 {
+		t.Fatalf("after ESC)0: want G0Charset=0 (ASCII), got %d", snap.G0Charset)
+	}
+}
+
+func TestVTerm_LineDrawing_PutChar(t *testing.T) {
+	v := NewVTerm(1, 40)
+	v.Write([]byte("\x1b(0"))
+	v.Write([]byte("qx"))
+	snap := v.ActiveScreen()
+	if snap.Cells[0][0].Ch != '─' {
+		t.Fatalf("line-drawing 'q': want '─', got %q", snap.Cells[0][0].Ch)
+	}
+	if snap.Cells[0][1].Ch != '│' {
+		t.Fatalf("line-drawing 'x': want '│', got %q", snap.Cells[0][1].Ch)
+	}
+}
+
+func TestVTerm_LineDrawing_RestoreASCII(t *testing.T) {
+	v := NewVTerm(1, 40)
+	v.Write([]byte("\x1b(0q\x1b(Bq"))
+	snap := v.ActiveScreen()
+	if snap.Cells[0][0].Ch != '─' {
+		t.Fatalf("first 'q' in line-drawing: want '─', got %q", snap.Cells[0][0].Ch)
+	}
+	if snap.Cells[0][1].Ch != 'q' {
+		t.Fatalf("second 'q' in ASCII: want 'q', got %q", snap.Cells[0][1].Ch)
+	}
+}
+
+func TestVTerm_ShiftOut_ShiftIn(t *testing.T) {
+	v := NewVTerm(1, 40)
+	v.Write([]byte("\x1b(B\x1b)0"))
+	v.Write([]byte{0x0E}) // SO → GL=1
+	snap := v.ActiveScreen()
+	if snap.GL != 1 {
+		t.Fatalf("after SO: want GL=1, got %d", snap.GL)
+	}
+	v.Write([]byte("q"))
+	if v.ActiveScreen().Cells[0][0].Ch != '─' {
+		t.Fatalf("G1 line-drawing 'q': want '─', got %q", v.ActiveScreen().Cells[0][0].Ch)
+	}
+	v.Write([]byte{0x0F}) // SI → GL=0
+	snap = v.ActiveScreen()
+	if snap.GL != 0 {
+		t.Fatalf("after SI: want GL=0, got %d", snap.GL)
+	}
+	v.Write([]byte("q"))
+	if v.ActiveScreen().Cells[0][1].Ch != 'q' {
+		t.Fatalf("G0 ASCII 'q': want 'q', got %q", v.ActiveScreen().Cells[0][1].Ch)
+	}
+}
+
+func TestVTerm_LineDrawing_AllMappings(t *testing.T) {
+	v := NewVTerm(1, 80)
+	v.Write([]byte("\x1b(0"))
+	tests := []struct {
+		input  byte
+		expect rune
+	}{
+		{'q', '─'}, {'x', '│'}, {'l', '┌'}, {'m', '└'},
+		{'k', '┐'}, {'j', '┘'}, {'t', '├'}, {'u', '┤'},
+		{'w', '┬'}, {'v', '┴'}, {'n', '┼'},
+	}
+	for i, tc := range tests {
+		v.Write([]byte{tc.input})
+		got := v.ActiveScreen().Cells[0][i].Ch
+		if got != tc.expect {
+			t.Fatalf("line-drawing %c: want %q, got %q", tc.input, tc.expect, got)
+		}
+	}
+}
+
+func TestVTerm_CharsetDesignation_RISReset(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.Write([]byte("\x1b(0"))
+	if v.ActiveScreen().G0Charset != 1 {
+		t.Fatal("after ESC(0: expected G0Charset=1")
+	}
+	v.Write([]byte("\x1bc"))
+	snap := v.ActiveScreen()
+	if snap.G0Charset != 0 {
+		t.Fatalf("after RIS: want G0Charset=0, got %d", snap.G0Charset)
+	}
+	if snap.G1Charset != 0 {
+		t.Fatalf("after RIS: want G1Charset=0, got %d", snap.G1Charset)
+	}
+	if snap.GL != 0 {
+		t.Fatalf("after RIS: want GL=0, got %d", snap.GL)
+	}
+}
+
+func TestVTerm_Charset_SnapshotIsolation(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.Write([]byte("\x1b(0"))
+	snap := v.ActiveScreen()
+	if snap.G0Charset != 1 {
+		t.Fatal("snapshot: expected G0Charset=1")
+	}
+	snap.G0Charset = 99
+	if v.ActiveScreen().G0Charset != 1 {
+		t.Fatal("snapshot isolation: VTerm G0Charset should still be 1")
+	}
+}
+
+func TestVTerm_Charset_LineDrawingUnknownCharPassthrough(t *testing.T) {
+	v := NewVTerm(1, 40)
+	v.Write([]byte("\x1b(0"))
+	v.Write([]byte("A"))
+	if v.ActiveScreen().Cells[0][0].Ch != 'A' {
+		t.Fatalf("unknown line-drawing char: want 'A', got %q", v.ActiveScreen().Cells[0][0].Ch)
+	}
+}
+
+func TestVTerm_LineDrawing_ControlPictureChars(t *testing.T) {
+	// Verify that control-picture characters produce visible symbols, not
+	// literal control characters. These are the most commonly broken entries.
+	v := NewVTerm(1, 40)
+	v.Write([]byte("\x1b(0"))
+	tests := []struct {
+		input  byte
+		expect rune
+	}{
+		{'b', '␉'}, // HT symbol, not \t
+		{'c', '␌'}, // FF symbol, not \x0c
+		{'d', '␍'}, // CR symbol, not \r
+		{'e', '␊'}, // LF symbol, not \n
+		{'h', '␤'}, // NL symbol, not \n
+		{'i', '␋'}, // VT symbol, not \x0b
+	}
+	for i, tc := range tests {
+		v.Write([]byte{tc.input})
+		got := v.ActiveScreen().Cells[0][i].Ch
+		if got != tc.expect {
+			t.Fatalf("control-picture %c: want %q (U+%04X), got %q (U+%04X)",
+				tc.input, tc.expect, tc.expect, got, got)
+		}
+	}
+}

@@ -17,6 +17,37 @@ type Cell struct {
 // DefaultCell is a blank cell with default attributes.
 var DefaultCell = Cell{Ch: ' '}
 
+// lineDrawingMap maps ASCII characters to their VT100 Special Graphics
+// (line-drawing) equivalents. Characters not in the map pass through
+// unchanged. See VT100 User Guide, Table 3-9 "Special Graphics Character Set".
+// Note: positions 0x60-0x69 map to control-picture symbols (visible
+// representations of control characters), NOT the literal control characters.
+var lineDrawingMap = map[rune]rune{
+	'`': '◆', 'a': '▒', 'b': '␉', 'c': '␌', 'd': '␍',
+	'e': '␊', 'f': '°', 'g': '±', 'h': '␤', 'i': '␋',
+	'j': '┘', 'k': '┐', 'l': '┌', 'm': '└', 'n': '┼',
+	'o': '⎺', 'p': '⎻', 'q': '─', 'r': '⎼', 's': '⎽',
+	't': '├', 'u': '┤', 'v': '┴', 'w': '┬', 'x': '│',
+	'y': '≤', 'z': '≥', '{': 'π', '|': '≠', '}': '£', '~': '·',
+}
+
+// mapCharset applies the current GL character set mapping to a rune.
+// If GL is G0 and G0Charset is line-drawing, or GL is G1 and G1Charset is
+// line-drawing, the rune is mapped through lineDrawingMap. Otherwise it
+// passes through unchanged.
+func (s *Screen) mapCharset(ch rune) rune {
+	charset := s.G0Charset
+	if s.GL == 1 {
+		charset = s.G1Charset
+	}
+	if charset == 1 { // line-drawing
+		if mapped, ok := lineDrawingMap[ch]; ok {
+			return mapped
+		}
+	}
+	return ch
+}
+
 // MouseTrackingMode represents the active mouse tracking protocol level,
 // controlled by DECSET/DECRST private modes 1000, 1002, and 1003.
 type MouseTrackingMode int
@@ -73,6 +104,15 @@ type Screen struct {
 	// or overwrite the character at the cursor. Set by CSI 4h, cleared by
 	// CSI 4l. Default is false (overwrite mode).
 	InsertMode bool
+
+	// G0Charset and G1Charset are the character set designations for G0 and G1.
+	// 0 = ASCII (default), 1 = VT100 line-drawing (Special Graphics).
+	G0Charset int
+	G1Charset int
+
+	// GL indicates which character set is currently active for GL (left).
+	// 0 = G0 is active, 1 = G1 is active. Shifted by SO (0x0E) and SI (0x0F).
+	GL int
 }
 
 // NewScreen creates a new screen buffer with the given dimensions.
@@ -454,6 +494,9 @@ func (s *Screen) Snapshot() *Screen {
 		MaxScrollback:  s.MaxScrollback,
 		ScrollOffset:   s.ScrollOffset,
 		InsertMode:     s.InsertMode,
+		G0Charset:      s.G0Charset,
+		G1Charset:      s.G1Charset,
+		GL:             s.GL,
 	}
 }
 
@@ -461,6 +504,9 @@ func (s *Screen) Snapshot() *Screen {
 // advancing the cursor. Wide characters (width 2) occupy two cells.
 // Uses github.com/rivo/uniseg for width calculation.
 func (s *Screen) PutChar(ch rune) {
+	// Apply charset mapping before width calculation and placement.
+	ch = s.mapCharset(ch)
+
 	width := uniseg.StringWidth(string(ch))
 	if width <= 0 {
 		width = 1 // control chars and zero-width: treat as 1 column

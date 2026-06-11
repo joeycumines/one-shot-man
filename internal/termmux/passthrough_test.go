@@ -69,9 +69,10 @@ func TestSessionManager_Passthrough_ChildExit(t *testing.T) {
 		}{reason, err}
 	}()
 
-	// Wait briefly to ensure passthrough is running, then close session.
+	// Wait briefly to ensure passthrough is running, then simulate session exit.
 	time.Sleep(100 * time.Millisecond)
 	close(session.readerCh) // EOF on reader → session exits
+	close(session.doneCh)   // Signal session Done channel
 
 	select {
 	case r := <-resultCh:
@@ -255,17 +256,29 @@ func TestSessionManager_Passthrough_TerminalRestore(t *testing.T) {
 	}
 
 	// Verify terminal state was saved and restored.
-	if !ts.rawCalled {
+	if !ts.isRawCalled() {
 		t.Error("MakeRaw was not called")
 	}
-	if !ts.restoreCalled {
+	if ts.getRawFd() != 999 {
+		t.Errorf("MakeRaw fd = %d, want 999", ts.getRawFd())
+	}
+	if !ts.isRestoreCalled() {
 		t.Error("Restore was not called")
 	}
-	if !bg.ensureCalled {
+	if ts.getRestoreFd() != 999 {
+		t.Errorf("Restore fd = %d, want 999", ts.getRestoreFd())
+	}
+	if !bg.isEnsureCalled() {
 		t.Error("EnsureBlocking was not called")
 	}
-	if !bg.restoreCalled {
+	if bg.getEnsureFd() != 999 {
+		t.Errorf("EnsureBlocking fd = %d, want 999", bg.getEnsureFd())
+	}
+	if !bg.isRestoreCalled() {
 		t.Error("BlockingGuard.Restore was not called")
+	}
+	if bg.getRestoreFd() != 999 {
+		t.Errorf("BlockingGuard.Restore fd = %d, want 999", bg.getRestoreFd())
 	}
 }
 
@@ -372,7 +385,7 @@ func TestPassthroughStatusBar_ScrollRegionSetup(t *testing.T) {
 	}
 
 	// Verify TermState.MakeRaw was called (proves TermFd was used).
-	if !ts.rawCalled {
+	if !ts.isRawCalled() {
 		t.Error("MakeRaw not called")
 	}
 
@@ -502,7 +515,7 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 	}
 }
 
-func TestPassthrough_ResizeDuringPassthrough(t *testing.T) {
+func TestPassthrough_InitialResizeOnSetup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
@@ -598,5 +611,202 @@ func TestPassthrough_ResizeFnCallback(t *testing.T) {
 	}
 	if resizeFnCols != 80 {
 		t.Errorf("ResizeFn cols = %d, want 80", resizeFnCols)
+	}
+}
+
+func TestSessionManager_Passthrough_SessionClosedEvent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, _, id := passthroughTestManager(t)
+
+	// Use blocking stdin so passthrough stays running.
+	stdinR, stdinW := io.Pipe()
+	stdout := &syncBuffer{}
+
+	// Subscribe to events so we can verify the EventSessionClosed event
+	// was actually received.
+	subID, evtCh := m.Subscribe(16)
+	defer m.Unsubscribe(subID)
+
+	resultCh := make(chan struct {
+		reason ExitReason
+		err    error
+	}, 1)
+	go func() {
+		reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+			Stdin:     stdinR,
+			Stdout:    stdout,
+			TermFd:    -1,
+			ToggleKey: 0x1D,
+		})
+		resultCh <- struct {
+			reason ExitReason
+			err    error
+		}{reason, err}
+	}()
+
+	// Wait for passthrough to start.
+	time.Sleep(200 * time.Millisecond)
+
+	// Unregister the session — this should trigger EventSessionClosed
+	// which passthrough should detect and exit with ExitChildExit.
+	m.Unregister(id)
+
+	select {
+	case r := <-resultCh:
+		if r.reason != ExitChildExit {
+			t.Errorf("reason = %v, want ExitChildExit", r.reason)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for passthrough to return after session closed")
+	}
+
+	// Verify that the EventSessionClosed event was actually emitted
+	// (not some other event that happened to unblock passthrough).
+	// The event may not have been buffered yet, so poll with a timeout.
+	var sawClosed bool
+	drainDeadline := time.After(2 * time.Second)
+	for !sawClosed {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventSessionClosed && evt.SessionID == id {
+				sawClosed = true
+			}
+		case <-drainDeadline:
+			goto done
+		}
+	}
+done:
+	if !sawClosed {
+		t.Error("EventSessionClosed event was not received for the unregistered session")
+	}
+
+	// Close stdinW to prevent goroutine leak (Pipe read-side in passthrough
+	// is now done, but the write-side goroutine inside io.Pipe is still
+	// waiting if we don't close it).
+	stdinW.Close()
+}
+
+func TestSessionManager_Passthrough_ContextCancel_RestoresTerminal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, _, _ := passthroughTestManager(t)
+
+	stdinR, stdinW := io.Pipe()
+	defer stdinW.Close()
+	stdout := &syncBuffer{}
+
+	ts := &ptTestTermState{width: 80, height: 24}
+	bg := &ptTestBlockingGuard{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	resultCh := make(chan struct {
+		reason ExitReason
+		err    error
+	}, 1)
+	go func() {
+		reason, err := m.Passthrough(ctx, PassthroughConfig{
+			Stdin:         stdinR,
+			Stdout:        stdout,
+			TermFd:        999,
+			ToggleKey:     0x1D,
+			TermState:     ts,
+			BlockingGuard: bg,
+		})
+		resultCh <- struct {
+			reason ExitReason
+			err    error
+		}{reason, err}
+	}()
+
+	// Wait for passthrough to enter raw mode (poll instead of fixed sleep
+	// to avoid flakiness under load).
+	rawDeadline := time.After(5 * time.Second)
+	for !ts.isRawCalled() {
+		select {
+		case <-rawDeadline:
+			t.Fatal("timed out waiting for MakeRaw to be called")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Cancel the context — passthrough must restore terminal state even on
+	// context cancellation (deferred Restore in passthrough.go).
+	cancel()
+
+	select {
+	case r := <-resultCh:
+		if r.reason != ExitContext {
+			t.Errorf("reason = %v, want ExitContext", r.reason)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for passthrough to return after context cancel")
+	}
+
+	// Verify terminal state was restored even though exit was via context.
+	if !ts.isRestoreCalled() {
+		t.Error("Restore was not called after context cancellation")
+	}
+	if !bg.isRestoreCalled() {
+		t.Error("BlockingGuard.Restore was not called after context cancellation")
+	}
+}
+
+func TestCaptureSession_Passthrough_WithTerminalState(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	skipIfWindows(t)
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "echo",
+		Args:    []string{"capture-pt-term"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer cs.Close()
+
+	ts := &ptTestTermState{width: 80, height: 24}
+	bg := &ptTestBlockingGuard{}
+	toggleKey := byte(0x1D)
+	stdin := bytes.NewReader([]byte{toggleKey})
+	stdout := &syncBuffer{}
+
+	reason, err := cs.Passthrough(context.Background(), PassthroughConfig{
+		Stdin:         stdin,
+		Stdout:        stdout,
+		TermFd:        3,
+		ToggleKey:     toggleKey,
+		TermState:     ts,
+		BlockingGuard: bg,
+	})
+	if err != nil {
+		t.Fatalf("Passthrough error: %v", err)
+	}
+	if reason != ExitToggle {
+		t.Errorf("reason = %v, want ExitToggle", reason)
+	}
+
+	// Verify terminal state was set and restored.
+	if !ts.isRawCalled() {
+		t.Error("MakeRaw was not called")
+	}
+	if !ts.isRestoreCalled() {
+		t.Error("Restore was not called")
+	}
+	if !bg.isEnsureCalled() {
+		t.Error("EnsureBlocking was not called")
+	}
+	if !bg.isRestoreCalled() {
+		t.Error("BlockingGuard.Restore was not called")
 	}
 }

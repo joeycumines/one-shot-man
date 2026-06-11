@@ -160,21 +160,37 @@ func (b *syncBuffer) String() string {
 }
 
 // ptTestTermState implements ptyio.TermState for passthrough testing.
+// All fields are accessed atomically or under a mutex so tests can read
+// them concurrently from a different goroutine.
 type ptTestTermState struct {
+	mu            sync.Mutex
 	rawCalled     bool
 	restoreCalled bool
+	rawFd         int
+	restoreFd     int
 	width, height int
 }
 
 func (m *ptTestTermState) MakeRaw(fd int) (*term.State, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.rawCalled = true
+	m.rawFd = fd
 	return nil, nil
 }
 
 func (m *ptTestTermState) Restore(fd int, state *term.State) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.restoreCalled = true
+	m.restoreFd = fd
 	return nil
 }
+
+func (m *ptTestTermState) isRawCalled() bool    { m.mu.Lock(); defer m.mu.Unlock(); return m.rawCalled }
+func (m *ptTestTermState) isRestoreCalled() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.restoreCalled }
+func (m *ptTestTermState) getRawFd() int        { m.mu.Lock(); defer m.mu.Unlock(); return m.rawFd }
+func (m *ptTestTermState) getRestoreFd() int     { m.mu.Lock(); defer m.mu.Unlock(); return m.restoreFd }
 
 func (m *ptTestTermState) GetSize(fd int) (width, height int, err error) {
 	w, h := m.width, m.height
@@ -188,19 +204,34 @@ func (m *ptTestTermState) GetSize(fd int) (width, height int, err error) {
 }
 
 // ptTestBlockingGuard implements ptyio.BlockingGuard for passthrough testing.
+// All fields are accessed under a mutex so tests can read them concurrently.
 type ptTestBlockingGuard struct {
+	mu            sync.Mutex
 	ensureCalled  bool
 	restoreCalled bool
+	ensureFd      int
+	restoreFd     int
 }
 
 func (m *ptTestBlockingGuard) EnsureBlocking(fd int) (origFlags int, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.ensureCalled = true
+	m.ensureFd = fd
 	return 0, nil
 }
 
 func (m *ptTestBlockingGuard) Restore(fd int, origFlags int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.restoreCalled = true
+	m.restoreFd = fd
 }
+
+func (m *ptTestBlockingGuard) isEnsureCalled() bool  { m.mu.Lock(); defer m.mu.Unlock(); return m.ensureCalled }
+func (m *ptTestBlockingGuard) isRestoreCalled() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.restoreCalled }
+func (m *ptTestBlockingGuard) getEnsureFd() int      { m.mu.Lock(); defer m.mu.Unlock(); return m.ensureFd }
+func (m *ptTestBlockingGuard) getRestoreFd() int     { m.mu.Lock(); defer m.mu.Unlock(); return m.restoreFd }
 
 // passthroughTestManager creates a SessionManager with a registered
 // controllable session and returns everything needed for passthrough testing.

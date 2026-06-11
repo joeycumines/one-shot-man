@@ -352,6 +352,14 @@ func TestSessionManager_Passthrough_RestoreScreen(t *testing.T) {
 	if !strings.Contains(got, "screen-content") {
 		t.Errorf("stdout did not contain restored screen content; got %q", got)
 	}
+
+	// Verify that the erase-below sequence is emitted after FullScreen.
+	// This clears rows beyond the VTerm's height to prevent ghost content.
+	// The manager was created with WithTermSize(24, 80), so snap.Rows=24.
+	// The erase sequence is: CUP(row 25, col 1) + ED(0).
+	if !strings.Contains(got, "\x1b[25;1H\x1b[0J") {
+		t.Errorf("stdout missing erase-below sequence (ghost row clear); got %q", got)
+	}
 }
 
 func TestPassthroughStatusBar_ScrollRegionSetup(t *testing.T) {
@@ -499,6 +507,14 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 	// Verify VTerm screen was restored (FullScreen contains the content).
 	if !strings.Contains(got, "restore-me") {
 		t.Errorf("stdout missing restored screen content; got %q", got)
+	}
+
+	// Verify erase-below sequence is emitted. With status bar (1 line)
+	// on a 24-row terminal, the VTerm is resized to 23 rows, so erase
+	// starts at row 24 (the row after VTerm content). This clears any
+	// ghost rows below the restored VTerm screen.
+	if !strings.Contains(got, "\x1b[24;1H\x1b[0J") {
+		t.Errorf("stdout missing erase-below sequence (ghost row clear with status bar); got %q", got)
 	}
 
 	// After RestoreScreen, the status bar should be re-rendered

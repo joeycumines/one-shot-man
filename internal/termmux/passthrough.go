@@ -2,6 +2,7 @@ package termmux
 
 import (
 	"context"
+	"fmt"
 )
 
 // Passthrough enters direct terminal I/O mode for the active session.
@@ -46,6 +47,7 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 
 	// ── Status bar setup ────────────────────────────────────────────
 	var statusBarLines int
+	var vtermRows int // actual VTerm row count after resize
 	if cfg.StatusBar != nil && cfg.TermFd >= 0 && cfg.TermState != nil {
 		w2, h, sizeErr := cfg.TermState.GetSize(cfg.TermFd)
 		if sizeErr == nil && h > 1 {
@@ -60,6 +62,7 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 			// Resize all sessions' VTerms to account for the status bar.
 			childRows := h - statusBarLines
 			_ = m.Resize(childRows, w2)
+			vtermRows = childRows
 		}
 	}
 
@@ -67,6 +70,7 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 	if statusBarLines == 0 && cfg.TermFd >= 0 && cfg.TermState != nil {
 		if w2, h, sizeErr := cfg.TermState.GetSize(cfg.TermFd); sizeErr == nil {
 			_ = m.Resize(h, w2)
+			vtermRows = h
 		}
 	}
 
@@ -77,6 +81,19 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 		snap := m.Snapshot(activeID)
 		if snap != nil && snap.FullScreen != "" {
 			writeOrLog(cfg.Stdout, []byte(snap.FullScreen), "vterm-restore")
+		}
+		// Erase rows beyond the VTerm's height to prevent ghost
+		// content from a previous session persisting below the
+		// restored screen. Move cursor to row after VTerm content
+		// and erase to end of screen (ED mode 0).
+		// Use the actual VTerm row count, not snap.Rows, which may
+		// be stale if the resize hasn't produced a new snapshot yet.
+		eraseRow := vtermRows
+		if eraseRow == 0 && snap != nil {
+			eraseRow = snap.Rows
+		}
+		if eraseRow > 0 {
+			writeOrLog(cfg.Stdout, fmt.Appendf(nil, "\x1b[%d;1H\x1b[0J", eraseRow+1), "vterm-erase-below")
 		}
 		// Re-render status bar after VTerm restore.
 		if cfg.StatusBar != nil && statusBarLines > 0 {

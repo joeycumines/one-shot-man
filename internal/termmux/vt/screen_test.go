@@ -80,13 +80,13 @@ func TestScreen_Resize_grow(t *testing.T) {
 	}
 }
 
-func TestScreen_Resize_resetsScrollRegion(t *testing.T) {
+func TestScreen_Resize_preservesScrollRegion(t *testing.T) {
 	s := NewScreen(24, 80)
 	s.ScrollTop = 5
 	s.ScrollBot = 20
 	s.Resize(24, 80)
-	if s.ScrollTop != 0 || s.ScrollBot != 0 {
-		t.Errorf("scroll region = %d-%d, want 0-0 (reset)", s.ScrollTop, s.ScrollBot)
+	if s.ScrollTop != 5 || s.ScrollBot != 20 {
+		t.Errorf("scroll region = %d-%d, want 5-20 (preserved)", s.ScrollTop, s.ScrollBot)
 	}
 }
 
@@ -385,12 +385,80 @@ func TestScreen_ReverseIndex_AtTopOfRegion(t *testing.T) {
 
 // ── T122: Render idempotent (already tested, add consecutive test) ──
 
-func TestScreen_Resize_ResetsScrollRegion(t *testing.T) {
+func TestScreen_Resize_ClampsScrollBotOnShrink(t *testing.T) {
 	s := NewScreen(10, 40)
 	s.ScrollTop = 3
 	s.ScrollBot = 8
-	s.Resize(10, 40)
+	// Shrink to 5 rows — ScrollBot clamps to 5, ScrollTop=3 < 5, so region
+	// is preserved as 3-5.
+	s.Resize(5, 40)
+	if s.ScrollTop != 3 || s.ScrollBot != 5 {
+		t.Errorf("after shrink: scroll=%d-%d, want 3-5 (clamped bot)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+func TestScreen_Resize_ClampsScrollBot(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ScrollTop = 5
+	s.ScrollBot = 20
+	// Shrink to 15 rows — ScrollBot should be clamped to 15.
+	s.Resize(15, 80)
+	if s.ScrollTop != 5 || s.ScrollBot != 15 {
+		t.Errorf("scroll region = %d-%d, want 5-15 (clamped bot)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+func TestScreen_Resize_PreservesOnGrow(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ScrollTop = 5
+	s.ScrollBot = 20
+	// Grow to 48 rows — scroll region should be unchanged.
+	s.Resize(48, 80)
+	if s.ScrollTop != 5 || s.ScrollBot != 20 {
+		t.Errorf("scroll region = %d-%d, want 5-20 (preserved on grow)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+func TestScreen_Resize_ResetsWhenRegionInverted(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ScrollTop = 15
+	s.ScrollBot = 10
+	// Region is already inverted — resize should reset to defaults.
+	s.Resize(24, 80)
 	if s.ScrollTop != 0 || s.ScrollBot != 0 {
-		t.Errorf("after resize: scroll=%d-%d, want 0-0", s.ScrollTop, s.ScrollBot)
+		t.Errorf("scroll region = %d-%d, want 0-0 (inverted)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+func TestScreen_Resize_ResetsWhenTopExceedsBotAfterClamp(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ScrollTop = 20
+	s.ScrollBot = 22
+	// Shrink to 15 rows — ScrollBot clamps to 15, but ScrollTop=20 > 15, so reset.
+	s.Resize(15, 80)
+	if s.ScrollTop != 0 || s.ScrollBot != 0 {
+		t.Errorf("scroll region = %d-%d, want 0-0 (top > clamped bot)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+func TestScreen_Resize_ScrollRegionAtBottomEdge(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ScrollTop = 5
+	s.ScrollBot = 24 // exactly at bottom edge
+	// Shrink to 20 rows — ScrollBot clamps to 20, ScrollTop=5 < 20, preserved.
+	s.Resize(20, 80)
+	if s.ScrollTop != 5 || s.ScrollBot != 20 {
+		t.Errorf("scroll region = %d-%d, want 5-20 (clamped to edge)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+func TestScreen_Resize_ScrollRegionCollapseToZero(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ScrollTop = 5
+	s.ScrollBot = 6 // very small region
+	// Shrink to 3 rows — ScrollBot clamps to 3, ScrollTop=5 > 3, reset.
+	s.Resize(3, 80)
+	if s.ScrollTop != 0 || s.ScrollBot != 0 {
+		t.Errorf("scroll region = %d-%d, want 0-0 (region collapsed)", s.ScrollTop, s.ScrollBot)
 	}
 }

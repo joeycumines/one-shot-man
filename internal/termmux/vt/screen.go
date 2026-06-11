@@ -201,8 +201,19 @@ func (s *Screen) Resize(rows, cols int) {
 	if s.SavedCol >= cols {
 		s.SavedCol = cols - 1
 	}
-	s.ScrollTop = 0
-	s.ScrollBot = 0
+	// Preserve scroll region if it fits within new dimensions.
+	// If the region no longer fits, reset to defaults (full screen).
+	if s.ScrollTop > 0 || s.ScrollBot > 0 {
+		// Clamp ScrollBot to new row count.
+		if s.ScrollBot > rows {
+			s.ScrollBot = rows
+		}
+		// If the region is inverted or collapsed, reset.
+		if s.ScrollTop >= s.ScrollBot || s.ScrollTop < 1 {
+			s.ScrollTop = 0
+			s.ScrollBot = 0
+		}
+	}
 	s.PendingWrap = false
 	if cols > len(s.TabStops) {
 		prev := len(s.TabStops)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -557,5 +558,288 @@ func TestRestoreFromState_ExportRoundTrip(t *testing.T) {
 	}
 	if activeTarget.Name != "beta" {
 		t.Errorf("active session target name: got %q, want %q", activeTarget.Name, "beta")
+	}
+}
+
+func TestExportState_WithConfigProvider(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	mgr, cleanup := startManager(t)
+	defer cleanup()
+
+	// Register a CaptureSession which implements SessionConfigProvider.
+	cs := NewCaptureSession(CaptureConfig{
+		Name:    "echo-session",
+		Kind:    SessionKindCapture,
+		Command: "echo",
+		Args:    []string{"hello"},
+		Dir:     "/tmp",
+		Env:     map[string]string{"FOO": "bar"},
+		Rows:    24,
+		Cols:    80,
+	})
+	id, err := mgr.Register(cs, SessionTarget{Name: "echo-session", Kind: SessionKindCapture})
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	state, err := mgr.ExportState()
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	if len(state.Sessions) != 1 {
+		t.Fatalf("sessions: got %d, want 1", len(state.Sessions))
+	}
+
+	ps := state.Sessions[0]
+	if ps.SessionID != uint64(id) {
+		t.Errorf("session.id: got %d, want %d", ps.SessionID, uint64(id))
+	}
+	// Verify SessionConfigProvider fields were exported.
+	if ps.Command != "echo" {
+		t.Errorf("command: got %q, want %q", ps.Command, "echo")
+	}
+	if len(ps.Args) != 1 || ps.Args[0] != "hello" {
+		t.Errorf("args: got %v, want [hello]", ps.Args)
+	}
+	if ps.Dir != "/tmp" {
+		t.Errorf("dir: got %q, want %q", ps.Dir, "/tmp")
+	}
+	if ps.Env["FOO"] != "bar" {
+		t.Errorf("env: got %v, want FOO=bar", ps.Env)
+	}
+}
+
+func TestRestoreFromState_ActiveAlreadySet(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	mgr, cleanup := startManager(t)
+	defer cleanup()
+
+	// Register an existing session and activate it.
+	existingSess := newControllableSession()
+	existingID, err := mgr.Register(existingSess, SessionTarget{Name: "existing", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("register existing: %v", err)
+	}
+	if err := mgr.Activate(existingID); err != nil {
+		t.Fatalf("activate existing: %v", err)
+	}
+
+	// Restore from state with a different active ID.
+	state := &PersistedManagerState{
+		Version:  persistenceVersion,
+		ActiveID: 1, // persisted active session
+		Sessions: []PersistedSession{
+			{
+				SessionID: 1,
+				Target:    SessionTarget{Name: "restored", Kind: SessionKindCapture},
+				Command:   "ls",
+			},
+		},
+	}
+
+	result, err := mgr.RestoreFromState(state, func(ps PersistedSession) (InteractiveSession, error) {
+		return newControllableSession(), nil
+	})
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if len(result.Restored) != 1 {
+		t.Fatalf("restored: got %d, want 1", len(result.Restored))
+	}
+
+	// The active session should NOT change — the existing session stays active
+	// because the code only sets activeID when m.activeID == 0.
+	activeID := mgr.ActiveID()
+	if activeID != existingID {
+		t.Errorf("active ID: got %d, want %d (existing session should remain active)", activeID, existingID)
+	}
+}
+
+func TestRestoreFromState_MultipleSessionsActiveMapping(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	mgr, cleanup := startManager(t)
+	defer cleanup()
+
+	state := &PersistedManagerState{
+		Version:  persistenceVersion,
+		ActiveID: 2, // "second" was active
+		Sessions: []PersistedSession{
+			{SessionID: 1, Target: SessionTarget{Name: "first", Kind: SessionKindPTY}, Command: "bash"},
+			{SessionID: 2, Target: SessionTarget{Name: "second", Kind: SessionKindCapture}, Command: "echo"},
+			{SessionID: 3, Target: SessionTarget{Name: "third", Kind: SessionKindPTY}, Command: "ls"},
+		},
+	}
+
+	result, err := mgr.RestoreFromState(state, func(ps PersistedSession) (InteractiveSession, error) {
+		return newControllableSession(), nil
+	})
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	if len(result.Restored) != 3 {
+		t.Fatalf("restored: got %d, want 3", len(result.Restored))
+	}
+	if len(result.Failed) != 0 {
+		t.Fatalf("failed: got %d, want 0", len(result.Failed))
+	}
+
+	// The active session should be the one mapped from persisted ID 2 ("second").
+	activeID := mgr.ActiveID()
+	if activeID == 0 {
+		t.Fatal("expected active session to be set")
+	}
+	sessions := mgr.Sessions()
+	var activeName string
+	for _, s := range sessions {
+		if s.ID == activeID {
+			activeName = s.Target.Name
+		}
+	}
+	if activeName != "second" {
+		t.Errorf("active session name: got %q, want %q", activeName, "second")
+	}
+
+	// All three sessions should be registered.
+	if len(sessions) != 3 {
+		t.Errorf("sessions: got %d, want 3", len(sessions))
+	}
+}
+
+func TestExportState_JSONFieldNames(t *testing.T) {
+	// Verify JSON field names match expectations by marshaling and checking keys.
+	state := &PersistedManagerState{
+		Version:  persistenceVersion,
+		ActiveID: 1,
+		TermRows: 24,
+		TermCols: 80,
+		SavedAt:  time.Now().Truncate(time.Second),
+		Sessions: []PersistedSession{
+			{
+				SessionID:  1,
+				Target:     SessionTarget{Name: "test", Kind: SessionKindPTY},
+				State:      SessionRunning,
+				PID:        123,
+				Rows:       24,
+				Cols:       80,
+				LastActive: time.Now().Truncate(time.Second),
+				Command:    "bash",
+				Args:       []string{"-i"},
+				Dir:        "/tmp",
+				Env:        map[string]string{"KEY": "val"},
+			},
+		},
+	}
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	raw := string(data)
+
+	// Top-level fields.
+	for _, key := range []string{"\"version\"", "\"activeId\"", "\"termRows\"", "\"termCols\"", "\"savedAt\"", "\"sessions\""} {
+		if !strings.Contains(raw, key) {
+			t.Errorf("missing JSON key %s in output", key)
+		}
+	}
+
+	// Session-level fields.
+	for _, key := range []string{"\"sessionId\"", "\"target\"", "\"state\"", "\"pid\"", "\"rows\"", "\"cols\"", "\"lastActive\"", "\"command\"", "\"args\"", "\"dir\"", "\"env\""} {
+		if !strings.Contains(raw, key) {
+			t.Errorf("missing JSON key %s in session output", key)
+		}
+	}
+}
+
+func TestSaveLoadManagerState_FullRoundTrip(t *testing.T) {
+	// End-to-end: export state from a running manager, save to file,
+	// load from file, restore to a new manager.
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+
+	// Phase 1: Create manager, register sessions, export and save.
+	mgr1, cleanup1 := startManager(t)
+
+	sess1 := newControllableSession()
+	sess2 := newControllableSession()
+	id1, _ := mgr1.Register(sess1, SessionTarget{Name: "alpha", Kind: SessionKindPTY})
+	id2, _ := mgr1.Register(sess2, SessionTarget{Name: "beta", Kind: SessionKindCapture})
+	mgr1.Activate(id2)
+
+	// Pump output so sessions transition to Running.
+	sess1.readerCh <- []byte("alpha-output")
+	sess2.readerCh <- []byte("beta-output")
+	waitForSnapshotContains(t, mgr1, id1, "alpha-output", 2*time.Second)
+	waitForSnapshotContains(t, mgr1, id2, "beta-output", 2*time.Second)
+
+	state, err := mgr1.ExportState()
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	cleanup1()
+
+	if err := SaveManagerState(path, state); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	// Phase 2: Load from file and restore to new manager.
+	loaded, err := LoadManagerState(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	mgr2, cleanup2 := startManager(t)
+	defer cleanup2()
+
+	result, err := mgr2.RestoreFromState(loaded, func(ps PersistedSession) (InteractiveSession, error) {
+		return newControllableSession(), nil
+	})
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	if len(result.Restored) != 2 {
+		t.Fatalf("restored: got %d, want 2", len(result.Restored))
+	}
+	if len(result.Failed) != 0 {
+		t.Fatalf("failed: got %d, want 0", len(result.Failed))
+	}
+
+	// Verify sessions exist in new manager.
+	sessions := mgr2.Sessions()
+	if len(sessions) != 2 {
+		t.Errorf("sessions: got %d, want 2", len(sessions))
+	}
+
+	// Verify the previously-active session ("beta") is active.
+	activeID := mgr2.ActiveID()
+	if activeID == 0 {
+		t.Error("expected active session after restore")
+	}
+	sessions = mgr2.Sessions()
+	var activeName string
+	for _, s := range sessions {
+		if s.ID == activeID {
+			activeName = s.Target.Name
+		}
+	}
+	if activeName != "beta" {
+		t.Errorf("active session name: got %q, want %q", activeName, "beta")
 	}
 }

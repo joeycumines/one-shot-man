@@ -295,6 +295,14 @@ func (v *VTerm) MouseSGR() bool {
 	return v.active.MouseSGR
 }
 
+// InsertMode reports whether insert/replace mode (IRM, ANSI mode 4) is
+// active on the current screen.
+func (v *VTerm) InsertMode() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.InsertMode
+}
+
 // ActiveScreen returns a snapshot copy of the active screen's state.
 // The returned Screen is a value copy — mutations to it do not affect the
 // VTerm's internal state, and no data races are possible regardless of

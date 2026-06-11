@@ -519,6 +519,181 @@ func TestVTerm_MouseSGRAccessor(t *testing.T) {
 	}
 }
 
+// -- Insert Mode (IRM, ANSI mode 4) tests ----------------------------------------
+
+func TestCSI_SM_IRM_Enable(t *testing.T) {
+	scr := NewScreen(24, 80)
+	if scr.InsertMode {
+		t.Fatal("precondition: InsertMode should be false")
+	}
+	h := &CSIHandler{}
+	// CSI 4h = SM (set mode) with mode 4 (IRM)
+	h.Dispatch(scr, 'h', []int{4}, false)
+	if !scr.InsertMode {
+		t.Fatal("SM 4h: expected InsertMode=true")
+	}
+}
+
+func TestCSI_RM_IRM_Disable(t *testing.T) {
+	scr := NewScreen(24, 80)
+	scr.InsertMode = true
+	h := &CSIHandler{}
+	// CSI 4l = RM (reset mode) with mode 4 (IRM)
+	h.Dispatch(scr, 'l', []int{4}, false)
+	if scr.InsertMode {
+		t.Fatal("RM 4l: expected InsertMode=false")
+	}
+}
+
+func TestCSI_SM_IRM_PrivateModeNotAffected(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := &CSIHandler{}
+	// CSI ?4h (private mode 4) should NOT set InsertMode
+	h.Dispatch(scr, 'h', []int{4}, true)
+	if scr.InsertMode {
+		t.Fatal("private ?4h: should not set InsertMode (IRM is non-private mode 4)")
+	}
+}
+
+func TestCSI_SM_IRM_MultipleParams(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := &CSIHandler{}
+	// CSI 4;7h — mode 4 should be set, mode 7 (unknown) silently ignored
+	h.Dispatch(scr, 'h', []int{4, 7}, false)
+	if !scr.InsertMode {
+		t.Fatal("SM 4;7h: expected InsertMode=true (mode 4 set)")
+	}
+}
+
+func TestCSI_PutChar_InsertMode_ShiftsRight(t *testing.T) {
+	scr := NewScreen(1, 10)
+	// Pre-fill: "ABCDE     "
+	for i, ch := range "ABCDE" {
+		scr.Cells[0][i].Ch = ch
+	}
+	scr.CurCol = 2 // cursor at 'C'
+	scr.InsertMode = true
+	scr.PutChar('X')
+	got := rowString(scr, 0)
+	// 'X' inserted at col 2, shifting C/D/E right; 'E' pushed off
+	if got != "ABXCDE    " {
+		t.Fatalf("insert mode PutChar: want 'ABXCDE    ', got %q", got)
+	}
+}
+
+func TestCSI_PutChar_InsertMode_OverwriteWhenOff(t *testing.T) {
+	scr := NewScreen(1, 10)
+	for i, ch := range "ABCDE" {
+		scr.Cells[0][i].Ch = ch
+	}
+	scr.CurCol = 2
+	scr.InsertMode = false
+	scr.PutChar('X')
+	got := rowString(scr, 0)
+	// Overwrite mode: 'X' replaces 'C'
+	if got != "ABXDE     " {
+		t.Fatalf("overwrite PutChar: want 'ABXDE     ', got %q", got)
+	}
+}
+
+func TestCSI_PutChar_InsertMode_WideChar(t *testing.T) {
+	scr := NewScreen(1, 10)
+	for i, ch := range "ABCDE" {
+		scr.Cells[0][i].Ch = ch
+	}
+	scr.CurCol = 1
+	scr.InsertMode = true
+	// Wide char (width=2) in insert mode should insert 2 cells (shift right by 2)
+	scr.PutChar('世')
+	// After insert: '世' at col 1, SecondHalf placeholder at col 2 (Ch=0),
+	// then B/C/D/E shifted right by 2 (cols 3-6), E was at col 4 before,
+	// now at col 6 — still fits in 10-col line.
+	row := scr.Cells[0]
+	if row[0].Ch != 'A' {
+		t.Fatalf("col 0: want 'A', got %q", row[0].Ch)
+	}
+	if row[1].Ch != '世' {
+		t.Fatalf("col 1: want '世', got %q", row[1].Ch)
+	}
+	if !row[2].SecondHalf {
+		t.Fatal("col 2: expected SecondHalf placeholder")
+	}
+	if row[3].Ch != 'B' {
+		t.Fatalf("col 3: want 'B', got %q", row[3].Ch)
+	}
+	if row[4].Ch != 'C' {
+		t.Fatalf("col 4: want 'C', got %q", row[4].Ch)
+	}
+	if row[5].Ch != 'D' {
+		t.Fatalf("col 5: want 'D', got %q", row[5].Ch)
+	}
+	if row[6].Ch != 'E' {
+		t.Fatalf("col 6: want 'E', got %q", row[6].Ch)
+	}
+}
+
+func TestVTerm_InsertModeAccessor(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Initially insert mode is off
+	if v.InsertMode() {
+		t.Fatal("initial: expected InsertMode=false")
+	}
+	// Enable via CSI 4h
+	v.Write([]byte("\x1b[4h"))
+	if !v.InsertMode() {
+		t.Fatal("after CSI 4h: expected InsertMode=true")
+	}
+	// Disable via CSI 4l
+	v.Write([]byte("\x1b[4l"))
+	if v.InsertMode() {
+		t.Fatal("after CSI 4l: expected InsertMode=false")
+	}
+}
+
+func TestVTerm_InsertMode_PutCharViaWrite(t *testing.T) {
+	v := NewVTerm(1, 10)
+	// Write "ABCDE" first
+	v.Write([]byte("ABCDE"))
+	// Move cursor to column 2 (0-indexed)
+	v.Write([]byte("\x1b[1;3H"))
+	// Enable insert mode
+	v.Write([]byte("\x1b[4h"))
+	// Write 'X' — should insert, not overwrite
+	v.Write([]byte("X"))
+	snap := v.ActiveScreen()
+	got := rowString(snap, 0)
+	if got != "ABXCDE    " {
+		t.Fatalf("insert mode via Write: want 'ABXCDE    ', got %q", got)
+	}
+}
+
+func TestVTerm_InsertMode_RISResets(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.Write([]byte("\x1b[4h"))
+	if !v.InsertMode() {
+		t.Fatal("after CSI 4h: expected InsertMode=true")
+	}
+	// RIS (ESC c) should reset insert mode
+	v.Write([]byte("\x1bc"))
+	if v.InsertMode() {
+		t.Fatal("after RIS: expected InsertMode=false")
+	}
+}
+
+func TestScreen_Snapshot_InsertMode(t *testing.T) {
+	scr := NewScreen(24, 80)
+	scr.InsertMode = true
+	snap := scr.Snapshot()
+	if !snap.InsertMode {
+		t.Fatal("snapshot: expected InsertMode=true")
+	}
+	// Mutating snapshot should not affect original
+	snap.InsertMode = false
+	if !scr.InsertMode {
+		t.Fatal("snapshot isolation: original InsertMode should still be true")
+	}
+}
+
 func TestVTerm_MouseTrackingModeUpgrade(t *testing.T) {
 	v := NewVTerm(24, 80)
 	// Upgrade: Basic → ButtonEvent

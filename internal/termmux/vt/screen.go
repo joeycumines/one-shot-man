@@ -67,6 +67,12 @@ type Screen struct {
 	ScrollbackHead  int // ring buffer head (next write position)
 	MaxScrollback   int // maximum scrollback lines (0 = unlimited, default 10000)
 	ScrollOffset    int // lines scrolled back from bottom (0 = normal view)
+
+	// InsertMode (IRM, ANSI mode 4) controls whether printable characters
+	// are inserted at the cursor position, shifting existing text right,
+	// or overwrite the character at the cursor. Set by CSI 4h, cleared by
+	// CSI 4l. Default is false (overwrite mode).
+	InsertMode bool
 }
 
 // NewScreen creates a new screen buffer with the given dimensions.
@@ -447,6 +453,7 @@ func (s *Screen) Snapshot() *Screen {
 		ScrollbackHead: s.ScrollbackHead,
 		MaxScrollback:  s.MaxScrollback,
 		ScrollOffset:   s.ScrollOffset,
+		InsertMode:     s.InsertMode,
 	}
 }
 
@@ -482,6 +489,11 @@ func (s *Screen) PutChar(ch rune) {
 		end = s.Cols
 	}
 	s.repairWideBoundary(s.CurRow, s.CurCol, end)
+
+	// In insert mode (IRM), shift existing characters right before writing.
+	if s.InsertMode {
+		s.InsertChars(width)
+	}
 
 	// Write the character.
 	if s.CurRow >= 0 && s.CurRow < s.Rows &&

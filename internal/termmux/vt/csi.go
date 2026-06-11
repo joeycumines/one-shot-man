@@ -160,10 +160,14 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 	case 'h': // SM / DECSET
 		if isPrivate {
 			h.decset(scr, params)
+		} else {
+			h.sm(scr, params)
 		}
 	case 'l': // RM / DECRST
 		if isPrivate {
 			h.decrst(scr, params)
+		} else {
+			h.rm(scr, params)
 		}
 	case 's': // SCP — save cursor position
 		scr.SavedRow = scr.CurRow
@@ -249,6 +253,26 @@ func (h *CSIHandler) decrst(scr *Screen, params []int) {
 			}
 		case 1006: // XT_SGR_MOUSE — disable SGR mouse encoding
 			scr.MouseSGR = false
+		}
+	}
+}
+
+// sm handles SM (set mode) for ANSI (non-private) modes.
+func (h *CSIHandler) sm(scr *Screen, params []int) {
+	for _, p := range params {
+		switch p {
+		case 4: // IRM — insert/replace mode
+			scr.InsertMode = true
+		}
+	}
+}
+
+// rm handles RM (reset mode) for ANSI (non-private) modes.
+func (h *CSIHandler) rm(scr *Screen, params []int) {
+	for _, p := range params {
+		switch p {
+		case 4: // IRM — insert/replace mode
+			scr.InsertMode = false
 		}
 	}
 }

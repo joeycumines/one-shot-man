@@ -126,6 +126,12 @@ type ScreenSnapshot struct {
 	// MouseSGR is true when the child has enabled SGR mouse encoding (1006).
 	MouseSGR bool
 
+	// InsertMode is true when the child has enabled insert/replace mode (IRM,
+	// ANSI mode 4). In insert mode, printable characters are inserted at the
+	// cursor position, shifting existing text right. In replace mode (default),
+	// characters overwrite the existing character at the cursor.
+	InsertMode bool
+
 	// Timestamp records when this snapshot was created.
 	Timestamp time.Time
 }
@@ -919,6 +925,7 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 		CursorCol:     curCol,
 		MouseTracking: int(ms.vterm.MouseTracking()),
 		MouseSGR:      ms.vterm.MouseSGR(),
+		InsertMode:    ms.vterm.InsertMode(),
 		Timestamp:     time.Now(),
 	}
 	ms.snapshot.Store(snap)

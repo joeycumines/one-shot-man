@@ -16,14 +16,23 @@ func (h *ESCHandler) Dispatch(scr *Screen, final byte) {
 		scr.SavedG0Charset = scr.G0Charset
 		scr.SavedG1Charset = scr.G1Charset
 		scr.SavedGL = scr.GL
+		scr.SavedOriginMode = scr.OriginMode
 	case '8': // DECRC — restore cursor
 		scr.PendingWrap = false
-		scr.CurRow = max(0, min(scr.SavedRow, scr.Rows-1))
-		scr.CurCol = max(0, min(scr.SavedCol, scr.Cols-1))
+		// Restore mode state first so cursor clamping respects origin mode.
 		scr.CurAttr = scr.SavedAttr
 		scr.G0Charset = scr.SavedG0Charset
 		scr.G1Charset = scr.SavedG1Charset
 		scr.GL = scr.SavedGL
+		scr.OriginMode = scr.SavedOriginMode
+		// Clamp cursor to valid range.
+		if scr.OriginMode {
+			scrollTop, scrollBot := scr.ScrollRegion()
+			scr.CurRow = max(scrollTop, min(scr.SavedRow, scrollBot-1))
+		} else {
+			scr.CurRow = max(0, min(scr.SavedRow, scr.Rows-1))
+		}
+		scr.CurCol = max(0, min(scr.SavedCol, scr.Cols-1))
 	case 'M': // RI — reverse index (cursor up; scroll down if at top)
 		scr.PendingWrap = false
 		scr.ReverseIndex()

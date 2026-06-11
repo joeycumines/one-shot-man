@@ -961,3 +961,166 @@ func TestCSI_SaveRestoreCursor_CharsetState(t *testing.T) {
 		t.Fatalf("after CSI u: want G0Charset=1 (line-drawing restored), got %d", v.ActiveScreen().G0Charset)
 	}
 }
+
+func TestCSI_DECSET_OriginMode(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Enable origin mode
+	v.Write([]byte("\x1b[?6h"))
+	if !v.ActiveScreen().OriginMode {
+		t.Fatal("after DECSET ?6h: expected OriginMode=true")
+	}
+	// Disable origin mode
+	v.Write([]byte("\x1b[?6l"))
+	if v.ActiveScreen().OriginMode {
+		t.Fatal("after DECRST ?6l: expected OriginMode=false")
+	}
+}
+
+func TestCSI_CUP_OriginMode_RelativeToScrollRegion(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Set scroll region rows 5-15
+	v.Write([]byte("\x1b[5;15r"))
+	// Enable origin mode
+	v.Write([]byte("\x1b[?6h"))
+	// CUP row 1, col 1 — should go to scroll region top (row 4, 0-indexed)
+	v.Write([]byte("\x1b[1;1H"))
+	row, col := v.CursorPosition()
+	if row != 4 || col != 0 {
+		t.Fatalf("CUP in origin mode: want (4,0), got (%d,%d)", row, col)
+	}
+	// CUP row 3, col 5 — should be scroll region top + 2 (row 6), col 4
+	v.Write([]byte("\x1b[3;5H"))
+	row, col = v.CursorPosition()
+	if row != 6 || col != 4 {
+		t.Fatalf("CUP in origin mode: want (6,4), got (%d,%d)", row, col)
+	}
+}
+
+func TestCSI_CUP_OriginMode_ClampedToScrollRegion(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Set scroll region rows 5-15
+	v.Write([]byte("\x1b[5;15r"))
+	// Enable origin mode
+	v.Write([]byte("\x1b[?6h"))
+	// CUP row 100 — should clamp to scroll region bottom (row 14, 0-indexed)
+	v.Write([]byte("\x1b[100;1H"))
+	row, _ := v.CursorPosition()
+	if row != 14 {
+		t.Fatalf("CUP clamped in origin mode: want row 14, got %d", row)
+	}
+}
+
+func TestCSI_CUP_NoOriginMode_Absolute(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Set scroll region rows 5-15
+	v.Write([]byte("\x1b[5;15r"))
+	// Without origin mode, CUP should be absolute
+	v.Write([]byte("\x1b[1;1H"))
+	row, col := v.CursorPosition()
+	if row != 0 || col != 0 {
+		t.Fatalf("CUP no origin mode: want (0,0), got (%d,%d)", row, col)
+	}
+}
+
+func TestCSI_VPA_OriginMode(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Set scroll region rows 5-15
+	v.Write([]byte("\x1b[5;15r"))
+	// Enable origin mode
+	v.Write([]byte("\x1b[?6h"))
+	// VPA row 1 — should go to scroll region top (row 4)
+	v.Write([]byte("\x1b[1d"))
+	row, _ := v.CursorPosition()
+	if row != 4 {
+		t.Fatalf("VPA in origin mode: want row 4, got %d", row)
+	}
+}
+
+func TestCSI_DECSET_OriginMode_RISReset(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.Write([]byte("\x1b[?6h"))
+	if !v.ActiveScreen().OriginMode {
+		t.Fatal("after DECSET ?6h: expected OriginMode=true")
+	}
+	// RIS resets origin mode
+	v.Write([]byte("\x1bc"))
+	if v.ActiveScreen().OriginMode {
+		t.Fatal("after RIS: expected OriginMode=false")
+	}
+}
+
+func TestCSI_DECSET_OriginMode_HomesCursor(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Set scroll region rows 5-15
+	v.Write([]byte("\x1b[5;15r"))
+	// Move cursor somewhere
+	v.Write([]byte("\x1b[10;30H"))
+	// Enable origin mode — should home cursor to scroll region top
+	v.Write([]byte("\x1b[?6h"))
+	row, col := v.CursorPosition()
+	if row != 4 || col != 0 {
+		t.Fatalf("after DECSET ?6h: want cursor at (4,0), got (%d,%d)", row, col)
+	}
+	// Disable origin mode — should home cursor to screen top
+	v.Write([]byte("\x1b[?6l"))
+	row, col = v.CursorPosition()
+	if row != 0 || col != 0 {
+		t.Fatalf("after DECRST ?6l: want cursor at (0,0), got (%d,%d)", row, col)
+	}
+}
+
+func TestCSI_DECSTBM_OriginMode_HomesToScrollRegion(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Enable origin mode first
+	v.Write([]byte("\x1b[?6h"))
+	// Set scroll region — should home cursor to scroll region top
+	v.Write([]byte("\x1b[3;20r"))
+	row, _ := v.CursorPosition()
+	if row != 2 {
+		t.Fatalf("after DECSTBM with origin mode: want cursor at row 2, got %d", row)
+	}
+}
+
+func TestCSI_DSR_CPR_OriginMode(t *testing.T) {
+	var resp []byte
+	v := NewVTerm(24, 80)
+	v.ResponseWriter = func(data []byte) { resp = append(resp, data...) }
+	// Set scroll region rows 5-15
+	v.Write([]byte("\x1b[5;15r"))
+	// Enable origin mode
+	v.Write([]byte("\x1b[?6h"))
+	// Move cursor to scroll region row 3 (absolute row 6)
+	v.Write([]byte("\x1b[3;1H"))
+	// Request CPR
+	v.Write([]byte("\x1b[6n"))
+	// In origin mode, CPR should report row 3 (relative to scroll region top)
+	got := string(resp)
+	if got != "\x1b[3;1R" {
+		t.Fatalf("DSR-CPR in origin mode: want %q, got %q", "\x1b[3;1R", got)
+	}
+}
+
+func TestESC_DECSC_DECRC_OriginModeRestore(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// Set scroll region rows 5-15
+	v.Write([]byte("\x1b[5;15r"))
+	// Enable origin mode
+	v.Write([]byte("\x1b[?6h"))
+	// Save cursor (with origin mode on, cursor at scroll region top)
+	v.Write([]byte("\x1b7"))
+	// Disable origin mode
+	v.Write([]byte("\x1b[?6l"))
+	if v.ActiveScreen().OriginMode {
+		t.Fatal("after DECRST ?6l: OriginMode should be false")
+	}
+	// Restore cursor — should restore origin mode
+	v.Write([]byte("\x1b8"))
+	if !v.ActiveScreen().OriginMode {
+		t.Fatal("after DECRC: OriginMode should be restored to true")
+	}
+	// Cursor should be clamped to scroll region (not absolute row 0)
+	row, _ := v.CursorPosition()
+	if row < 4 {
+		t.Fatalf("after DECRC with origin mode: cursor should be in scroll region, got row %d", row)
+	}
+}

@@ -76,14 +76,26 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		if row < 0 {
 			row = 0
 		}
-		if row >= scr.Rows {
-			row = scr.Rows - 1
-		}
 		if col < 0 {
 			col = 0
 		}
 		if col >= scr.Cols {
 			col = scr.Cols - 1
+		}
+		if scr.OriginMode {
+			// In origin mode, row is relative to the scroll region top.
+			scrollTop, scrollBot := scr.ScrollRegion()
+			row += scrollTop
+			if row < scrollTop {
+				row = scrollTop
+			}
+			if row >= scrollBot {
+				row = scrollBot - 1
+			}
+		} else {
+			if row >= scr.Rows {
+				row = scr.Rows - 1
+			}
 		}
 		scr.PendingWrap = false
 		scr.CurRow = row
@@ -119,8 +131,19 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.ScrollDown(n)
 	case 'd': // VPA — vertical position absolute (1-indexed)
 		row := max(paramDefault(params, 0, 1)-1, 0)
-		if row >= scr.Rows {
-			row = scr.Rows - 1
+		if scr.OriginMode {
+			scrollTop, scrollBot := scr.ScrollRegion()
+			row += scrollTop
+			if row < scrollTop {
+				row = scrollTop
+			}
+			if row >= scrollBot {
+				row = scrollBot - 1
+			}
+		} else {
+			if row >= scr.Rows {
+				row = scr.Rows - 1
+			}
 		}
 		scr.PendingWrap = false
 		scr.CurRow = row
@@ -155,7 +178,13 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 			scr.ScrollBot = bot
 		}
 		scr.PendingWrap = false
-		scr.CurRow = 0
+		if scr.OriginMode {
+			// Per spec, DECSTBM in origin mode homes to scroll region top.
+			scrollTop, _ := scr.ScrollRegion()
+			scr.CurRow = scrollTop
+		} else {
+			scr.CurRow = 0
+		}
 		scr.CurCol = 0
 	case 'h': // SM / DECSET
 		if isPrivate {
@@ -176,14 +205,23 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.SavedG0Charset = scr.G0Charset
 		scr.SavedG1Charset = scr.G1Charset
 		scr.SavedGL = scr.GL
+		scr.SavedOriginMode = scr.OriginMode
 	case 'u': // RCP — restore cursor position
 		scr.PendingWrap = false
-		scr.CurRow = max(0, min(scr.SavedRow, scr.Rows-1))
-		scr.CurCol = max(0, min(scr.SavedCol, scr.Cols-1))
+		// Restore mode state first so cursor clamping respects origin mode.
 		scr.CurAttr = scr.SavedAttr
 		scr.G0Charset = scr.SavedG0Charset
 		scr.G1Charset = scr.SavedG1Charset
 		scr.GL = scr.SavedGL
+		scr.OriginMode = scr.SavedOriginMode
+		// Clamp cursor to valid range.
+		if scr.OriginMode {
+			scrollTop, scrollBot := scr.ScrollRegion()
+			scr.CurRow = max(scrollTop, min(scr.SavedRow, scrollBot-1))
+		} else {
+			scr.CurRow = max(0, min(scr.SavedRow, scr.Rows-1))
+		}
+		scr.CurCol = max(0, min(scr.SavedCol, scr.Cols-1))
 	case 'c': // DA — device attributes
 		if h.HasInterGt != nil && h.HasInterGt() {
 			// DA2 — secondary device attributes.
@@ -207,6 +245,14 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 			case 6: // DSR-CPR — cursor position report
 				row := scr.CurRow + 1 // 1-indexed
 				col := scr.CurCol + 1
+				if scr.OriginMode {
+					// In origin mode, report relative to scroll region top.
+					scrollTop, _ := scr.ScrollRegion()
+					row = scr.CurRow - scrollTop + 1
+					if row < 1 {
+						row = 1
+					}
+				}
 				h.respond("\x1b[" + itoa(row) + ";" + itoa(col) + "R")
 			}
 		}
@@ -217,6 +263,13 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 func (h *CSIHandler) decset(scr *Screen, params []int) {
 	for _, p := range params {
 		switch p {
+		case 6: // DECOM — origin mode
+			scr.OriginMode = true
+			// Per spec, DECSET ?6h homes cursor to scroll region top-left.
+			scrollTop, _ := scr.ScrollRegion()
+			scr.CurRow = scrollTop
+			scr.CurCol = 0
+			scr.PendingWrap = false
 		case 25: // DECTCEM — show cursor
 			scr.CursorVisible = true
 		case 47, 1047, 1049: // alternate screen buffer
@@ -239,6 +292,12 @@ func (h *CSIHandler) decset(scr *Screen, params []int) {
 func (h *CSIHandler) decrst(scr *Screen, params []int) {
 	for _, p := range params {
 		switch p {
+		case 6: // DECOM — origin mode off
+			scr.OriginMode = false
+			// Per spec, DECRST ?6l homes cursor to screen top-left.
+			scr.CurRow = 0
+			scr.CurCol = 0
+			scr.PendingWrap = false
 		case 25: // DECTCEM — hide cursor
 			scr.CursorVisible = false
 		case 47, 1047, 1049: // normal screen buffer

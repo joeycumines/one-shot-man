@@ -79,6 +79,7 @@ type Screen struct {
 	SavedG0Charset int
 	SavedG1Charset int
 	SavedGL        int
+	SavedOriginMode bool
 	PendingWrap    bool
 	CursorVisible  bool
 	TabStops       []bool
@@ -116,6 +117,12 @@ type Screen struct {
 	// GL indicates which character set is currently active for GL (left).
 	// 0 = G0 is active, 1 = G1 is active. Shifted by SO (0x0E) and SI (0x0F).
 	GL int
+
+	// OriginMode (DECOM, DECSET mode 6) controls whether cursor positioning
+	// commands (CUP, HVP, VPA) are relative to the scroll region's top-left
+	// corner (true) or the screen's top-left corner (false, default).
+	// When true, the cursor is clamped to the scroll region bounds.
+	OriginMode bool
 }
 
 // NewScreen creates a new screen buffer with the given dimensions.
@@ -503,6 +510,8 @@ func (s *Screen) Snapshot() *Screen {
 		G0Charset:      s.G0Charset,
 		G1Charset:      s.G1Charset,
 		GL:             s.GL,
+		OriginMode:     s.OriginMode,
+		SavedOriginMode: s.SavedOriginMode,
 	}
 }
 

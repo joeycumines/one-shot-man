@@ -892,3 +892,72 @@ func TestVTerm_LineDrawing_ControlPictureChars(t *testing.T) {
 		}
 	}
 }
+
+func TestESC_DECSC_DECRC_CharsetSaveRestore(t *testing.T) {
+	v := NewVTerm(1, 40)
+	// Set G0 to line-drawing and GL to G0
+	v.Write([]byte("\x1b(0"))
+	// Save cursor
+	v.Write([]byte("\x1b7"))
+	// Switch back to ASCII
+	v.Write([]byte("\x1b(B"))
+	// Verify G0 is now ASCII
+	if v.ActiveScreen().G0Charset != 0 {
+		t.Fatalf("after ESC(B: want G0Charset=0, got %d", v.ActiveScreen().G0Charset)
+	}
+	// Restore cursor — should restore charset state
+	v.Write([]byte("\x1b8"))
+	snap := v.ActiveScreen()
+	if snap.G0Charset != 1 {
+		t.Fatalf("after DECRC: want G0Charset=1 (line-drawing restored), got %d", snap.G0Charset)
+	}
+	if snap.G1Charset != 0 {
+		t.Fatalf("after DECRC: want G1Charset=0, got %d", snap.G1Charset)
+	}
+	if snap.GL != 0 {
+		t.Fatalf("after DECRC: want GL=0, got %d", snap.GL)
+	}
+}
+
+func TestESC_DECSC_DECRC_CharsetWithGL1(t *testing.T) {
+	v := NewVTerm(1, 40)
+	// G0=ASCII, G1=line-drawing, GL=G1
+	v.Write([]byte("\x1b(B\x1b)0\x0e")) // SO shifts to G1
+	if v.ActiveScreen().GL != 1 {
+		t.Fatal("precondition: GL should be 1")
+	}
+	// Save cursor
+	v.Write([]byte("\x1b7"))
+	// Shift back to G0
+	v.Write([]byte("\x0f")) // SI
+	if v.ActiveScreen().GL != 0 {
+		t.Fatal("after SI: GL should be 0")
+	}
+	// Restore cursor — should restore GL to 1
+	v.Write([]byte("\x1b8"))
+	snap := v.ActiveScreen()
+	if snap.GL != 1 {
+		t.Fatalf("after DECRC: want GL=1, got %d", snap.GL)
+	}
+	if snap.G1Charset != 1 {
+		t.Fatalf("after DECRC: want G1Charset=1, got %d", snap.G1Charset)
+	}
+}
+
+func TestCSI_SaveRestoreCursor_CharsetState(t *testing.T) {
+	v := NewVTerm(1, 40)
+	// Set G0 to line-drawing
+	v.Write([]byte("\x1b(0"))
+	// Save cursor via CSI s
+	v.Write([]byte("\x1b[s"))
+	// Switch G0 to ASCII
+	v.Write([]byte("\x1b(B"))
+	if v.ActiveScreen().G0Charset != 0 {
+		t.Fatal("after ESC(B: G0 should be ASCII")
+	}
+	// Restore cursor via CSI u
+	v.Write([]byte("\x1b[u"))
+	if v.ActiveScreen().G0Charset != 1 {
+		t.Fatalf("after CSI u: want G0Charset=1 (line-drawing restored), got %d", v.ActiveScreen().G0Charset)
+	}
+}

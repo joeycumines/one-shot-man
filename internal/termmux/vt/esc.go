@@ -13,11 +13,17 @@ func (h *ESCHandler) Dispatch(scr *Screen, final byte) {
 		scr.SavedRow = scr.CurRow
 		scr.SavedCol = scr.CurCol
 		scr.SavedAttr = scr.CurAttr
+		scr.SavedG0Charset = scr.G0Charset
+		scr.SavedG1Charset = scr.G1Charset
+		scr.SavedGL = scr.GL
 	case '8': // DECRC — restore cursor
 		scr.PendingWrap = false
 		scr.CurRow = max(0, min(scr.SavedRow, scr.Rows-1))
 		scr.CurCol = max(0, min(scr.SavedCol, scr.Cols-1))
 		scr.CurAttr = scr.SavedAttr
+		scr.G0Charset = scr.SavedG0Charset
+		scr.G1Charset = scr.SavedG1Charset
+		scr.GL = scr.SavedGL
 	case 'M': // RI — reverse index (cursor up; scroll down if at top)
 		scr.PendingWrap = false
 		scr.ReverseIndex()

@@ -173,11 +173,17 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.SavedRow = scr.CurRow
 		scr.SavedCol = scr.CurCol
 		scr.SavedAttr = scr.CurAttr
+		scr.SavedG0Charset = scr.G0Charset
+		scr.SavedG1Charset = scr.G1Charset
+		scr.SavedGL = scr.GL
 	case 'u': // RCP — restore cursor position
 		scr.PendingWrap = false
 		scr.CurRow = max(0, min(scr.SavedRow, scr.Rows-1))
 		scr.CurCol = max(0, min(scr.SavedCol, scr.Cols-1))
 		scr.CurAttr = scr.SavedAttr
+		scr.G0Charset = scr.SavedG0Charset
+		scr.G1Charset = scr.SavedG1Charset
+		scr.GL = scr.SavedGL
 	case 'c': // DA — device attributes
 		if h.HasInterGt != nil && h.HasInterGt() {
 			// DA2 — secondary device attributes.

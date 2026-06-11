@@ -76,6 +76,9 @@ type Screen struct {
 	SavedRow       int
 	SavedCol       int
 	SavedAttr      Attr
+	SavedG0Charset int
+	SavedG1Charset int
+	SavedGL        int
 	PendingWrap    bool
 	CursorVisible  bool
 	TabStops       []bool
@@ -480,6 +483,9 @@ func (s *Screen) Snapshot() *Screen {
 		SavedRow:      s.SavedRow,
 		SavedCol:      s.SavedCol,
 		SavedAttr:     s.SavedAttr,
+		SavedG0Charset: s.SavedG0Charset,
+		SavedG1Charset: s.SavedG1Charset,
+		SavedGL:        s.SavedGL,
 		PendingWrap:   s.PendingWrap,
 		CursorVisible: s.CursorVisible,
 		TabStops:      tabStops,

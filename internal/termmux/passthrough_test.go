@@ -305,6 +305,66 @@ func TestSessionManager_Passthrough_BeforeRun(t *testing.T) {
 	}
 }
 
+func TestSessionManager_Passthrough_NoActiveSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	t.Cleanup(cleanup)
+
+	// Manager is running but has no registered sessions.
+	stdin := bytes.NewReader([]byte("hello"))
+	stdout := &bytes.Buffer{}
+
+	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    -1,
+		ToggleKey: 0x1D,
+	})
+	if reason != ExitError {
+		t.Errorf("reason = %v, want ExitError", reason)
+	}
+	if err == nil {
+		t.Error("expected error when no active session exists, got nil")
+	}
+}
+
+func TestSessionManager_Passthrough_UnregisteredDuringPassthrough(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, session, id := passthroughTestManager(t)
+
+	// Unregister the session so ActiveID() returns 0.
+	m.Unregister(id)
+
+	// Verify the session is gone.
+	session.writeMu.Lock()
+	closed := session.closeCalled.Load()
+	session.writeMu.Unlock()
+	if !closed {
+		t.Fatal("session should have been closed by Unregister")
+	}
+
+	stdin := bytes.NewReader([]byte("hello"))
+	stdout := &bytes.Buffer{}
+
+	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    -1,
+		ToggleKey: 0x1D,
+	})
+	if reason != ExitError {
+		t.Errorf("reason = %v, want ExitError", reason)
+	}
+	if err == nil {
+		t.Error("expected error when active session was unregistered, got nil")
+	}
+}
+
 func TestSessionManager_Passthrough_RestoreScreen(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")

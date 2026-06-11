@@ -76,6 +76,9 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 
 	// ── Screen display: clear or restore ────────────────────────────
 	activeID := m.ActiveID()
+	if activeID == 0 {
+		return ExitError, ErrSessionNotFound
+	}
 	if cfg.RestoreScreen {
 		// Restore the active session's VTerm screen in-place.
 		snap := m.Snapshot(activeID)

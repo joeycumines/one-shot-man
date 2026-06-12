@@ -420,6 +420,15 @@ func (v *VTerm) FocusReporting() bool {
 	return v.active.FocusReporting
 }
 
+// ApplicationCursor reports whether application cursor mode (DECSET ?1h,
+// DECCKM) is active on the current screen. When true, arrow keys and
+// home/end use SS3 sequences instead of CSI sequences. Thread-safe.
+func (v *VTerm) ApplicationCursor() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.ApplicationCursor
+}
+
 // FocusIn sends a focus-in event (ESC[I) to the child process via
 // ResponseWriter if focus reporting (DECSET ?1004h) is active on the
 // current screen. If focus reporting is off or ResponseWriter is nil,

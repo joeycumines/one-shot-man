@@ -7,9 +7,11 @@ import (
 
 // KeyToTermBytes converts a BubbleTea-style key name to terminal byte
 // sequence for PTY forwarding. Key names match BubbleTea's KeyMsg.String()
-// output (keys_gen.go). Returns the byte sequence and true if the key was
+// output (keys_gen.go). When appCursor is true, arrow keys and home/end
+// use application cursor mode (SS3 sequences: ESC O{A-D/H/F instead of
+// CSI A/B/C/D/H/F). Returns the byte sequence and true if the key was
 // recognized, or an empty string and false otherwise.
-func KeyToTermBytes(key string) (string, bool) {
+func KeyToTermBytes(key string, appCursor bool) (string, bool) {
 	// Named special keys → terminal escape sequences.
 	switch key {
 	case "enter":
@@ -27,16 +29,34 @@ func KeyToTermBytes(key string) (string, bool) {
 	case "delete":
 		return "\x1b[3~", true
 	case "up":
+		if appCursor {
+			return "\x1bOA", true
+		}
 		return "\x1b[A", true
 	case "down":
+		if appCursor {
+			return "\x1bOB", true
+		}
 		return "\x1b[B", true
 	case "right":
+		if appCursor {
+			return "\x1bOC", true
+		}
 		return "\x1b[C", true
 	case "left":
+		if appCursor {
+			return "\x1bOD", true
+		}
 		return "\x1b[D", true
 	case "home":
+		if appCursor {
+			return "\x1bOH", true
+		}
 		return "\x1b[H", true
 	case "end":
+		if appCursor {
+			return "\x1bOF", true
+		}
 		return "\x1b[F", true
 	case "pgup":
 		return "\x1b[5~", true
@@ -88,7 +108,7 @@ func KeyToTermBytes(key string) (string, bool) {
 
 	// Alt+key → ESC prefix + inner key bytes.
 	if rest, ok := strings.CutPrefix(key, "alt+"); ok {
-		if inner, ok := KeyToTermBytes(rest); ok {
+		if inner, ok := KeyToTermBytes(rest, appCursor); ok {
 			return "\x1b" + inner, true
 		}
 	}

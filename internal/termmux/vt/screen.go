@@ -110,6 +110,12 @@ type Screen struct {
 	// writes ESC[I and VTerm.FocusOut() writes ESC[O. Set by DECSET ?1004h.
 	FocusReporting bool
 
+	// ApplicationCursor controls whether cursor keys send application mode
+	// sequences. When true (DECSET ?1h, DECCKM), arrow keys send SS3 sequences
+	// (ESC O{A-D}) and home/end send ESC OH/ESC OF instead of CSI sequences.
+	// When false (default, normal mode), cursor keys send CSI sequences.
+	ApplicationCursor bool
+
 	// Scrollback holds lines that have scrolled off the top of the visible
 	// screen. It is a ring buffer: Scrollback[0] is the oldest line when
 	// ScrollbackHead == 0, otherwise the oldest line is at ScrollbackHead.
@@ -803,7 +809,8 @@ func (s *Screen) Snapshot() *Screen {
 		MouseSGR:      s.MouseSGR,
 		BracketedPaste: s.BracketedPaste,
 		CursorShape:    s.CursorShape,
-		FocusReporting: s.FocusReporting,
+		FocusReporting:     s.FocusReporting,
+		ApplicationCursor:  s.ApplicationCursor,
 
 		Scrollback:     scrollback,
 		ScrollbackLen:  s.ScrollbackLen,

@@ -181,9 +181,13 @@ func Require(ctx context.Context, input io.Reader, output io.Writer) func(*goja.
 		})
 
 		// ── Input encoding utilities ────────────────────────
-		// keyToTermBytes(key) → string | null
-		_ = exports.Set("keyToTermBytes", func(key string) goja.Value {
-			if s, ok := parent.KeyToTermBytes(key); ok {
+		// keyToTermBytes(key, appCursor?) → string | null
+		// When appCursor is true, arrow/home/end keys use application mode
+		// sequences (SS3: ESC O{A-D/H/F) instead of CSI sequences.
+		_ = exports.Set("keyToTermBytes", func(call goja.FunctionCall) goja.Value {
+			key := call.Argument(0).String()
+			appCursor := len(call.Arguments) > 1 && call.Argument(1).ToBoolean()
+			if s, ok := parent.KeyToTermBytes(key, appCursor); ok {
 				return runtime.ToValue(s)
 			}
 			return goja.Null()

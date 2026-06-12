@@ -76,6 +76,12 @@ type Model struct {
 
 	// closed tracks whether Close has been called (idempotent guard).
 	closed bool
+
+	// appCursor mirrors the active screen's ApplicationCursor mode flag.
+	// When true, arrow keys and home/end are encoded using SS3 sequences
+	// (ESC O{A-D/H/F) instead of CSI sequences, matching the application
+	// cursor mode set by DECSET ?1h (DECCKM).
+	appCursor bool
 }
 
 // NewModel creates a Model that renders the given termmux session within
@@ -104,6 +110,9 @@ func NewModel(sessionID termmux.SessionID, manager *termmux.SessionManager, boun
 
 	// Get initial snapshot.
 	m.snap = manager.Snapshot(sessionID)
+	if m.snap != nil {
+		m.appCursor = m.snap.ApplicationCursor
+	}
 
 	return m
 }
@@ -171,6 +180,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Refresh snapshot from the manager (authoritative source).
 		m.mu.Lock()
 		m.snap = m.manager.Snapshot(m.sessionID)
+		if m.snap != nil {
+			m.appCursor = m.snap.ApplicationCursor
+		}
 		m.mu.Unlock()
 		// Re-subscribe for the next event.
 		return m, m.waitForOutput
@@ -210,7 +222,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // them to the session's PTY via the manager.
 func (m *Model) forwardKey(msg tea.KeyPressMsg) {
 	keyStr := msg.String()
-	seq, ok := termmux.KeyToTermBytes(keyStr)
+	seq, ok := termmux.KeyToTermBytes(keyStr, m.appCursor)
 	if !ok {
 		// Unrecognized key — try the text field for printable characters.
 		if msg.Key().Text != "" {

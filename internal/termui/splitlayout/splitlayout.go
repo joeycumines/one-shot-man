@@ -454,7 +454,11 @@ func (sl *SplitLayout) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 
 	// Convert key to terminal bytes.
 	keyStr := msg.String()
-	seq, ok := termmux.KeyToTermBytes(keyStr)
+	appCursor := false
+	if snap := sl.manager.Snapshot(sessionID); snap != nil {
+		appCursor = snap.ApplicationCursor
+	}
+	seq, ok := termmux.KeyToTermBytes(keyStr, appCursor)
 	if !ok {
 		if key.Text != "" {
 			seq = key.Text

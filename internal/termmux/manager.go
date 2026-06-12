@@ -132,6 +132,26 @@ type ScreenSnapshot struct {
 	// characters overwrite the existing character at the cursor.
 	InsertMode bool
 
+	// BracketedPaste is true when the child has enabled bracketed paste mode
+	// (DECSET ?2004h). When true, pasted content should be wrapped with
+	// ESC[200~ and ESC[201~ delimiters.
+	BracketedPaste bool
+
+	// ApplicationCursor is true when the child has enabled application cursor
+	// mode (DECSET ?1h, DECCKM). When true, arrow keys and home/end use SS3
+	// sequences (ESC O{A-D/H/F) instead of CSI sequences.
+	ApplicationCursor bool
+
+	// CursorShape is the current cursor shape (DECSCUSR). Values: 0=default,
+	// 1=blink-block, 2=steady-block, 3=blink-underline, 4=steady-underline,
+	// 5=blink-bar, 6=steady-bar.
+	CursorShape int
+
+	// FocusReporting is true when the child has enabled focus event reporting
+	// (DECSET ?1004h). When true, focus-in/focus-out events should be sent as
+	// ESC[I and ESC[O via ResponseWriter.
+	FocusReporting bool
+
 	// Timestamp records when this snapshot was created.
 	Timestamp time.Time
 }
@@ -940,18 +960,22 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 	m.snapshotGen++
 	curRow, curCol := ms.vterm.CursorPosition()
 	snap := &ScreenSnapshot{
-		Gen:           m.snapshotGen,
-		PlainText:     ms.vterm.String(),
-		ANSI:          ms.vterm.ContentANSI(),
-		FullScreen:    ms.vterm.RenderFullScreen(),
-		Rows:          m.termRows,
-		Cols:          m.termCols,
-		CursorRow:     curRow,
-		CursorCol:     curCol,
-		MouseTracking: int(ms.vterm.MouseTracking()),
-		MouseSGR:      ms.vterm.MouseSGR(),
-		InsertMode:    ms.vterm.InsertMode(),
-		Timestamp:     time.Now(),
+		Gen:               m.snapshotGen,
+		PlainText:         ms.vterm.String(),
+		ANSI:              ms.vterm.ContentANSI(),
+		FullScreen:        ms.vterm.RenderFullScreen(),
+		Rows:              m.termRows,
+		Cols:              m.termCols,
+		CursorRow:         curRow,
+		CursorCol:         curCol,
+		MouseTracking:     int(ms.vterm.MouseTracking()),
+		MouseSGR:          ms.vterm.MouseSGR(),
+		InsertMode:        ms.vterm.InsertMode(),
+		BracketedPaste:    ms.vterm.BracketedPaste(),
+		ApplicationCursor: ms.vterm.ApplicationCursor(),
+		CursorShape:       ms.vterm.CursorShape(),
+		FocusReporting:    ms.vterm.FocusReporting(),
+		Timestamp:         time.Now(),
 	}
 	ms.snapshot.Store(snap)
 	m.eventBus.emitData(EventSessionOutput, so.id, so.data)

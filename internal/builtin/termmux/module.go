@@ -964,34 +964,9 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		if cellW <= 0 || cellH <= 0 {
 			panic(runtime.NewTypeError("renderRaster: cell dimensions must be positive"))
 		}
-		snap := mgr.Snapshot(id)
-		if snap == nil {
+		scr := mgr.Screen(id)
+		if scr == nil {
 			return goja.Null()
-		}
-		// Reconstruct a VTerm screen from the snapshot dimensions.
-		scr := vt.NewScreen(snap.Rows, snap.Cols)
-		// Feed the plain text into the screen to populate cells.
-		// PlainText uses \n as row separator. \r resets column without
-		// advancing the row (handles \r\n sequences correctly).
-		row := 0
-		col := 0
-		for _, ch := range snap.PlainText {
-			if ch == '\n' {
-				row++
-				col = 0
-				continue
-			}
-			if ch == '\r' {
-				col = 0
-				continue
-			}
-			if row >= snap.Rows {
-				break
-			}
-			if col < snap.Cols {
-				scr.Cells[row][col].Ch = ch
-				col++
-			}
 		}
 		var img *image.RGBA
 		if cellW == 8 && cellH == 16 {

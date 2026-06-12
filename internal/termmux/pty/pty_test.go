@@ -398,6 +398,12 @@ func TestSpawn_DefaultConfig(t *testing.T) {
 	if cfg.WriteTimeout != DefaultWriteTimeout {
 		t.Fatalf("expected default write timeout %v, got %v", DefaultWriteTimeout, cfg.WriteTimeout)
 	}
+	if cfg.CloseGracePeriod != DefaultCloseGracePeriod {
+		t.Fatalf("expected default close grace period %v, got %v", DefaultCloseGracePeriod, cfg.CloseGracePeriod)
+	}
+	if cfg.CloseForceWait != DefaultCloseForceWait {
+		t.Fatalf("expected default close force wait %v, got %v", DefaultCloseForceWait, cfg.CloseForceWait)
+	}
 }
 
 func TestProcess_ContextCancel(t *testing.T) {
@@ -805,11 +811,13 @@ func TestProcess_Close_ForceKillWaitTimeout(t *testing.T) {
 
 	handle := &stuckHandle{}
 	proc := &Process{
-		ptyFile:  r,
-		ttyFile:  w,
-		done:     make(chan struct{}), // never closed => process appears alive forever
-		exitCode: -1,
-		cmd:      handle,
+		ptyFile:           r,
+		ttyFile:           w,
+		done:              make(chan struct{}), // never closed => process appears alive forever
+		exitCode:          -1,
+		cmd:               handle,
+		closeGracefulWait: DefaultCloseGracePeriod,
+		closeForceWait:    DefaultCloseForceWait,
 	}
 
 	start := time.Now()
@@ -818,21 +826,121 @@ func TestProcess_Close_ForceKillWaitTimeout(t *testing.T) {
 
 	// Leave wider slack for busy CI runners; this test validates bounded
 	// shutdown semantics, not tight wall-clock precision.
-	maxExpected := closeGracefulWait + closeForceWait + 5*time.Second
+	maxExpected := DefaultCloseGracePeriod + DefaultCloseForceWait + 5*time.Second
 	if elapsed > maxExpected {
 		t.Fatalf("Close took too long: %v (max expected ~%v)", elapsed, maxExpected)
 	}
 	if closeErr == nil {
 		t.Fatal("expected timeout error when process never exits after SIGKILL")
 	}
-	if !strings.Contains(closeErr.Error(), "force-kill wait timed out") {
-		t.Fatalf("unexpected error: %v", closeErr)
+	var timeoutErr *ErrForceKillTimeout
+	if !errors.As(closeErr, &timeoutErr) {
+		t.Fatalf("expected ErrForceKillTimeout, got: %v", closeErr)
+	}
+	if timeoutErr.Wait != DefaultCloseForceWait {
+		t.Fatalf("expected Wait=%v, got %v", DefaultCloseForceWait, timeoutErr.Wait)
 	}
 	if handle.SignalCount(syscall.SIGTERM) != 1 {
 		t.Fatalf("expected exactly one SIGTERM, got %d", handle.SignalCount(syscall.SIGTERM))
 	}
 	if handle.SignalCount(syscall.SIGKILL) != 1 {
 		t.Fatalf("expected exactly one SIGKILL, got %d", handle.SignalCount(syscall.SIGKILL))
+	}
+}
+
+// TestProcess_Close_CustomGracePeriod verifies that Close uses the configured
+// grace period and force wait durations from SpawnConfig.
+func TestProcess_Close_CustomGracePeriod(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
+	t.Parallel()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+
+	handle := &stuckHandle{}
+	gracePeriod := 500 * time.Millisecond
+	forceWait := 300 * time.Millisecond
+	proc := &Process{
+		ptyFile:           r,
+		ttyFile:           w,
+		done:              make(chan struct{}),
+		exitCode:          -1,
+		cmd:               handle,
+		closeGracefulWait: gracePeriod,
+		closeForceWait:    forceWait,
+	}
+
+	start := time.Now()
+	closeErr := proc.Close()
+	elapsed := time.Since(start)
+
+	var timeoutErr *ErrForceKillTimeout
+	if !errors.As(closeErr, &timeoutErr) {
+		t.Fatalf("expected ErrForceKillTimeout, got: %v", closeErr)
+	}
+	if timeoutErr.Wait != forceWait {
+		t.Fatalf("expected Wait=%v, got %v", forceWait, timeoutErr.Wait)
+	}
+
+	// Elapsed time should be approximately gracePeriod + forceWait.
+	minExpected := gracePeriod + forceWait
+	maxExpected := minExpected + 2*time.Second
+	if elapsed < minExpected {
+		t.Fatalf("Close returned too quickly: %v (min expected ~%v)", elapsed, minExpected)
+	}
+	if elapsed > maxExpected {
+		t.Fatalf("Close took too long: %v (max expected ~%v)", elapsed, maxExpected)
+	}
+}
+
+// TestProcess_Close_CustomGracePeriod_QuickExit verifies that Close returns
+// promptly when the process exits before the grace period elapses.
+func TestProcess_Close_CustomGracePeriod_QuickExit(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	proc, err := Spawn(context.Background(), SpawnConfig{
+		Command:           "echo",
+		Args:              []string{"fast-exit"},
+		CloseGracePeriod:  10 * time.Second,
+		CloseForceWait:    10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+
+	start := time.Now()
+	closeErr := proc.Close()
+	elapsed := time.Since(start)
+
+	if closeErr != nil {
+		t.Fatalf("Close returned error: %v", closeErr)
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("Close took too long for fast-exiting process: %v", elapsed)
+	}
+}
+
+// TestErrForceKillTimeout_Error verifies the error message and errors.As behavior.
+func TestErrForceKillTimeout_Error(t *testing.T) {
+	t.Parallel()
+
+	err := &ErrForceKillTimeout{Wait: 2 * time.Second}
+	if !strings.Contains(err.Error(), "2s") {
+		t.Fatalf("expected error to contain duration, got: %v", err.Error())
+	}
+
+	var target *ErrForceKillTimeout
+	if !errors.As(err, &target) {
+		t.Fatal("errors.As should match ErrForceKillTimeout")
+	}
+	if target.Wait != 2*time.Second {
+		t.Fatalf("expected Wait=2s, got %v", target.Wait)
 	}
 }
 

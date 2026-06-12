@@ -374,15 +374,11 @@ func (v *VTerm) switchToPrimary(mode int) {
 }
 
 func (v *VTerm) reset() {
-	v.primary = NewScreen(v.rows, v.cols)
-	v.alternate = NewScreen(v.rows, v.cols)
-	// Restore NewVTerm defaults: primary reflows, alternate never scrolls back.
-	v.primary.ReflowOnResize = true
-	v.alternate.MaxScrollback = 0
+	v.primary.Clear()
+	v.alternate.Clear()
 	v.active = v.primary
 	v.parser.Reset()
 	v.utf8 = UTF8Accum{}
-	// Callbacks close over v, so they still reference the correct VTerm.
 }
 
 // RenderFullScreen returns ANSI output that overwrites every row in-place

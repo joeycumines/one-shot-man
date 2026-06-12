@@ -7,7 +7,7 @@ package termmux
 //
 // Reference: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
 
-import "slices"
+
 
 // MaxCoord is the maximum reasonable terminal dimension (columns or rows).
 // Terminal emulators typically cap at a few thousand; 10000 is 100× a
@@ -113,7 +113,7 @@ func parseSGRMouse(buf []byte, start int) (ev SGRMouseEvent, consumed int, ok bo
 	i++
 
 	// Reject values that exceed reasonable terminal dimensions.
-	// SGR coordinates and button parameters should never exceed ~10000.
+	// SGR coordinates and button parameters should never exceed ~MaxCoord.
 	if btn > MaxCoord || px > MaxCoord || py > MaxCoord {
 		return ev, 0, false
 	}
@@ -201,13 +201,6 @@ func filterMouseForStatusBar(buf []byte, termRows, statusBarLines int) (out, par
 	//   termRows - statusBarLines + 1 .. termRows
 	statusBarTop := termRows - statusBarLines + 1
 
-	// Fast path: no ESC in buffer means no mouse sequences to filter.
-	hasEsc := slices.Contains(buf, 0x1b)
-	if !hasEsc {
-		return buf, nil, false
-	}
-
-	// Slow path: scan for SGR mouse sequences.
 	result := make([]byte, 0, len(buf))
 	i := 0
 	for i < len(buf) {

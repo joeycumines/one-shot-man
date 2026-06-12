@@ -433,3 +433,145 @@ func TestParserHugeNumericParams(t *testing.T) {
 	// The value may overflow int, but it shouldn't panic
 	_ = params[0]
 }
+
+func TestSubParamsColonParsing(t *testing.T) {
+	tests := []struct {
+		name       string
+		raw        string
+		wantParams []int
+		wantSubs   [][]int
+	}{
+		{
+			name:       "single param no colons",
+			raw:        "42",
+			wantParams: []int{42},
+			wantSubs:   [][]int{{42}},
+		},
+		{
+			name:       "single param with colons",
+			raw:        "38:2::255:100:0",
+			wantParams: []int{38},
+			wantSubs:   [][]int{{38, 2, 0, 255, 100, 0}},
+		},
+		{
+			name:       "two params second has no colons",
+			raw:        "38:2::255:100:0;1",
+			wantParams: []int{38, 1},
+			wantSubs:   [][]int{{38, 2, 0, 255, 100, 0}, {1}},
+		},
+		{
+			name:       "two params both with colons",
+			raw:        "38:2::255:100:0;48:5:200",
+			wantParams: []int{38, 48},
+			wantSubs:   [][]int{{38, 2, 0, 255, 100, 0}, {48, 5, 200}},
+		},
+		{
+			name:       "consecutive colons produce zeros",
+			raw:        "1::3",
+			wantParams: []int{1},
+			wantSubs:   [][]int{{1, 0, 3}},
+		},
+		{
+			name:       "trailing colon",
+			raw:        "1:2:",
+			wantParams: []int{1},
+			wantSubs:   [][]int{{1, 2, 0}},
+		},
+		{
+			name:       "leading colon",
+			raw:        ":2:3",
+			wantParams: []int{0},
+			wantSubs:   [][]int{{0, 2, 3}},
+		},
+		{
+			name:       "semicolon only unchanged",
+			raw:        "1;2;3",
+			wantParams: []int{1, 2, 3},
+			wantSubs:   [][]int{{1}, {2}, {3}},
+		},
+		{
+			name:       "missing middle semicolon",
+			raw:        "1;;3",
+			wantParams: []int{1, 0, 3},
+			wantSubs:   [][]int{{1}, {0}, {3}},
+		},
+		{
+			name:       "trailing semicolon",
+			raw:        "5;",
+			wantParams: []int{5, 0},
+			wantSubs:   [][]int{{5}, {0}},
+		},
+		{
+			name:       "leading semicolon",
+			raw:        ";5",
+			wantParams: []int{0, 5},
+			wantSubs:   [][]int{{0}, {5}},
+		},
+		{
+			name:       "empty buffer",
+			raw:        "",
+			wantParams: nil,
+			wantSubs:   nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser()
+			p.paramBuf = []byte(tt.raw)
+			gotParams := p.Params()
+			if !reflect.DeepEqual(gotParams, tt.wantParams) {
+				t.Fatalf("Params(%q) = %v; want %v", tt.raw, gotParams, tt.wantParams)
+			}
+			for i, wantSub := range tt.wantSubs {
+				gotSub := p.SubParams(i)
+				if !reflect.DeepEqual(gotSub, wantSub) {
+					t.Fatalf("SubParams(%d) of %q = %v; want %v", i, tt.raw, gotSub, wantSub)
+				}
+			}
+		})
+	}
+}
+
+func TestSubParamsOutOfRange(t *testing.T) {
+	p := NewParser()
+	p.paramBuf = []byte("1;2")
+	p.Params()
+	if got := p.SubParams(-1); got != nil {
+		t.Fatalf("SubParams(-1) = %v; want nil", got)
+	}
+	if got := p.SubParams(2); got != nil {
+		t.Fatalf("SubParams(2) = %v; want nil", got)
+	}
+	if got := p.SubParams(100); got != nil {
+		t.Fatalf("SubParams(100) = %v; want nil", got)
+	}
+}
+
+func TestSubParamsBeforeParamsCall(t *testing.T) {
+	p := NewParser()
+	p.paramBuf = []byte("38:2")
+	if got := p.SubParams(0); got != nil {
+		t.Fatalf("SubParams(0) before Params() = %v; want nil", got)
+	}
+}
+
+func TestSubParamsViaFeed(t *testing.T) {
+	p := NewParser()
+	// ESC [ 38 : 2 : : 255 : 100 : 0 ; 1 m
+	for _, b := range []byte{0x1B, '[', '3', '8', ':', '2', ':', ':', '2', '5', '5', ':', '1', '0', '0', ':', '0', ';', '1', 'm'} {
+		p.Feed(b)
+	}
+	wantParams := []int{38, 1}
+	gotParams := p.Params()
+	if !reflect.DeepEqual(gotParams, wantParams) {
+		t.Fatalf("Params() = %v; want %v", gotParams, wantParams)
+	}
+	wantSub0 := []int{38, 2, 0, 255, 100, 0}
+	if gotSub0 := p.SubParams(0); !reflect.DeepEqual(gotSub0, wantSub0) {
+		t.Fatalf("SubParams(0) = %v; want %v", gotSub0, wantSub0)
+	}
+	wantSub1 := []int{1}
+	if gotSub1 := p.SubParams(1); !reflect.DeepEqual(gotSub1, wantSub1) {
+		t.Fatalf("SubParams(1) = %v; want %v", gotSub1, wantSub1)
+	}
+}

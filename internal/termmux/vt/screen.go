@@ -18,8 +18,10 @@ type Cell struct {
 	SecondHalf bool
 }
 
-// DefaultCell is a blank cell with default attributes.
-var DefaultCell = Cell{Ch: ' '}
+// DefaultCell returns a blank cell with default attributes.
+func DefaultCell() Cell {
+	return Cell{Ch: ' '}
+}
 
 func (s *Screen) FillScreen(ch rune) {
 	attr := Attr{}
@@ -249,7 +251,7 @@ func NewScreen(rows, cols int) *Screen {
 		Rows:          rows,
 		Cols:          cols,
 		CursorVisible: true,
-		MaxScrollback: 10000,
+		MaxScrollback: MaxScrollback,
 		RowWrapped:    make([]bool, rows),
 		AutoWrap:      true,
 	}
@@ -1104,6 +1106,96 @@ func (s *Screen) ReverseIndex() {
 		s.ScrollDown(1)
 	} else if s.CurRow > 0 {
 		s.CurRow--
+	}
+}
+
+// Clear resets the screen to a blank state in-place, reusing the allocated
+// cell grid to avoid GC pressure. It is equivalent to replacing the Screen
+// with a fresh NewScreen of the same dimensions, but without allocating new
+// backing arrays for Cells, TabStops, or RowWrapped.
+func (s *Screen) Clear() {
+	blank := Cell{Ch: ' ', Attr: Attr{}}
+	for r := range s.Cells {
+		for c := range s.Cells[r] {
+			s.Cells[r][c] = blank
+		}
+	}
+
+	s.CurRow = 0
+	s.CurCol = 0
+	s.CurAttr = Attr{}
+	s.PendingWrap = false
+
+	s.SavedRow = 0
+	s.SavedCol = 0
+	s.SavedAttr = Attr{}
+	s.SavedG0Charset = 0
+	s.SavedG1Charset = 0
+	s.SavedGL = 0
+	s.SavedOriginMode = false
+	s.SavedPendingWrap = false
+	s.SavedApplicationCursor = false
+	s.SavedBracketedPaste = false
+	s.SavedCursorShape = 0
+	s.SavedFocusReporting = false
+	s.SavedAutoWrap = false
+	s.SavedSynchronizedOutput = false
+	s.SavedInsertMode = false
+	s.SavedKeypadApplication = false
+	s.SavedLineFeedNewLine = false
+	s.SavedHighlightTracking = false
+
+	s.Saved1049Row = 0
+	s.Saved1049Col = 0
+	s.Saved1049Attr = Attr{}
+	s.Saved1049G0Charset = 0
+	s.Saved1049G1Charset = 0
+	s.Saved1049GL = 0
+	s.Saved1049OriginMode = false
+	s.Saved1049PendingWrap = false
+	s.Saved1049ApplicationCursor = false
+	s.Saved1049BracketedPaste = false
+	s.Saved1049CursorShape = 0
+	s.Saved1049FocusReporting = false
+	s.Saved1049AutoWrap = false
+	s.Saved1049SynchronizedOutput = false
+	s.Saved1049InsertMode = false
+	s.Saved1049KeypadApplication = false
+	s.Saved1049LineFeedNewLine = false
+	s.Saved1049HighlightTracking = false
+
+	s.ScrollTop = 0
+	s.ScrollBot = 0
+
+	s.CursorVisible = true
+	s.AutoWrap = true
+	s.InsertMode = false
+	s.OriginMode = false
+	s.BracketedPaste = false
+	s.ApplicationCursor = false
+	s.KeypadApplication = false
+	s.SynchronizedOutput = false
+	s.FocusReporting = false
+	s.LineFeedNewLine = false
+	s.CursorShape = 0
+	s.MouseTracking = MouseTrackingNone
+	s.MouseSGR = false
+	s.HighlightTracking = false
+	s.G0Charset = 0
+	s.G1Charset = 0
+	s.GL = 0
+
+	s.Scrollback = nil
+	s.ScrollbackLen = 0
+	s.ScrollbackHead = 0
+	s.ScrollOffset = 0
+
+	for i := range s.TabStops {
+		s.TabStops[i] = i%8 == 0
+	}
+
+	for i := range s.RowWrapped {
+		s.RowWrapped[i] = false
 	}
 }
 

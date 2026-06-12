@@ -31,22 +31,31 @@ type SpawnConfig struct {
 	// WriteTimeout is the maximum duration for a single PTY write.
 	// If zero, DefaultWriteTimeout is used. Set to a negative value to disable.
 	WriteTimeout time.Duration
+	// CloseGracePeriod is the duration Close waits after SIGTERM before
+	// escalating to SIGKILL. If zero, DefaultCloseGracePeriod is used.
+	CloseGracePeriod time.Duration
+	// CloseForceWait is the duration Close waits after SIGKILL before
+	// giving up and returning ErrForceKillTimeout. If zero,
+	// DefaultCloseForceWait is used.
+	CloseForceWait time.Duration
 }
 
 // Process represents a running process attached to a pseudo-terminal.
 // All methods are safe for concurrent use unless otherwise noted.
 type Process struct {
-	mu           sync.Mutex
-	ptyFile      *os.File // Platform-specific: PTY master (Unix) or ConPTY output pipe (Windows).
-	writeFile    *os.File // Separate write pipe for ConPTY (Windows); nil on Unix where ptyFile is bidirectional.
-	ttyFile      *os.File // Slave PTY fd, kept alive to prevent macOS EIO data loss. May be nil.
-	closed       bool
-	draining     bool
-	done         chan struct{}
-	exitCode     int
-	exitErr      error
-	cmd          processHandle // Platform-specific process handle.
-	writeTimeout time.Duration // From SpawnConfig; <=0 means no deadline.
+	mu                sync.Mutex
+	ptyFile           *os.File // Platform-specific: PTY master (Unix) or ConPTY output pipe (Windows).
+	writeFile         *os.File // Separate write pipe for ConPTY (Windows); nil on Unix where ptyFile is bidirectional.
+	ttyFile           *os.File // Slave PTY fd, kept alive to prevent macOS EIO data loss. May be nil.
+	closed            bool
+	draining          bool
+	done              chan struct{}
+	exitCode          int
+	exitErr           error
+	cmd               processHandle // Platform-specific process handle.
+	writeTimeout      time.Duration // From SpawnConfig; <=0 means no deadline.
+	closeGracefulWait time.Duration // From SpawnConfig; duration to wait after SIGTERM.
+	closeForceWait    time.Duration // From SpawnConfig; duration to wait after SIGKILL.
 }
 
 // processHandle is implemented per-platform (pty_unix.go, pty_windows.go).
@@ -63,14 +72,27 @@ var ErrNotSupported = errors.New("pty: not supported on this platform")
 // ErrClosed is returned when operating on a closed Process.
 var ErrClosed = errors.New("pty: process is closed")
 
+// ErrForceKillTimeout is returned by Close when the process does not exit
+// within the configured CloseForceWait duration after receiving SIGKILL.
+type ErrForceKillTimeout struct {
+	Wait time.Duration
+}
+
+func (e *ErrForceKillTimeout) Error() string {
+	return fmt.Sprintf("pty: force-kill wait timed out after %s", e.Wait)
+}
+
+func (e *ErrForceKillTimeout) Unwrap() error { return nil }
+
 // Defaults for SpawnConfig.
 const (
-	DefaultRows         uint16        = 24
-	DefaultCols         uint16        = 80
-	DefaultTerm         string        = "xterm-256color"
-	DefaultWriteTimeout time.Duration = 30 * time.Second
-	closeGracefulWait                 = 5 * time.Second
-	closeForceWait                    = 2 * time.Second
+	DefaultRows            uint16        = 24
+	DefaultCols            uint16        = 80
+	DefaultTerm            string        = "xterm-256color"
+	DefaultWriteTimeout    time.Duration = 30 * time.Second
+	DefaultCloseGracePeriod time.Duration = 5 * time.Second
+	DefaultCloseForceWait  time.Duration = 2 * time.Second
+	DefaultReadBufferSize                   = 4096
 )
 
 // applyDefaults fills in zero values with defaults.
@@ -86,6 +108,12 @@ func (c *SpawnConfig) applyDefaults() {
 	}
 	if c.WriteTimeout == 0 {
 		c.WriteTimeout = DefaultWriteTimeout
+	}
+	if c.CloseGracePeriod == 0 {
+		c.CloseGracePeriod = DefaultCloseGracePeriod
+	}
+	if c.CloseForceWait == 0 {
+		c.CloseForceWait = DefaultCloseForceWait
 	}
 }
 
@@ -164,7 +192,7 @@ func (p *Process) writeWithGoroutineTimeout(f *os.File, data []byte, timeout tim
 }
 
 // Read reads available output from the PTY (the child process's stdout).
-// It reads up to 4096 bytes and returns immediately with whatever is available.
+// DefaultReadBufferSize is the read buffer size for PTY read operations.
 // Returns (nil, io.EOF) when the PTY is closed or the process exits.
 func (p *Process) Read() ([]byte, error) {
 	// Don't hold lock during blocking read — just check closed state.
@@ -176,10 +204,10 @@ func (p *Process) Read() ([]byte, error) {
 	f := p.ptyFile
 	p.mu.Unlock()
 
-	buf := make([]byte, 4096)
+	buf := make([]byte, DefaultReadBufferSize)
 	n, err := f.Read(buf)
 	if n > 0 {
-		// Return a right-sized copy to avoid retaining the full 4096-byte
+		// Return a right-sized copy to avoid retaining the full DefaultReadBufferSize-byte
 		// backing array when the caller holds onto the result.
 		cp := make([]byte, n)
 		copy(cp, buf[:n])
@@ -225,7 +253,7 @@ func (p *Process) DrainOutput(sink io.Writer) {
 	}
 
 	go func() {
-		buf := make([]byte, 4096)
+		buf := make([]byte, DefaultReadBufferSize)
 		for {
 			n, err := f.Read(buf)
 			if n > 0 {
@@ -306,7 +334,8 @@ func (p *Process) File() *os.File {
 }
 
 // Close terminates the child process and releases the PTY.
-// It sends SIGTERM, waits up to 5 seconds, then sends SIGKILL.
+// It sends SIGTERM, waits up to CloseGracePeriod, then sends SIGKILL.
+// If the process survives SIGKILL for CloseForceWait, ErrForceKillTimeout is returned.
 // Close is idempotent — subsequent calls return nil.
 func (p *Process) Close() error {
 	p.mu.Lock()
@@ -319,6 +348,8 @@ func (p *Process) Close() error {
 	f := p.ptyFile
 	tty := p.ttyFile
 	wf := p.writeFile
+	graceWait := p.closeGracefulWait
+	forceWait := p.closeForceWait
 	p.ttyFile = nil   // prevent double-close with Wait goroutine
 	p.writeFile = nil // prevent double-close
 	p.mu.Unlock()
@@ -328,16 +359,15 @@ func (p *Process) Close() error {
 	if p.IsAlive() {
 		_ = cmd.Signal(syscall.SIGTERM)
 
-		// Wait up to 5 seconds.
 		select {
 		case <-p.done:
 			// Process exited gracefully.
-		case <-time.After(closeGracefulWait):
+		case <-time.After(graceWait):
 			// Force kill.
 			_ = cmd.Signal(syscall.SIGKILL)
 			select {
 			case <-p.done:
-			case <-time.After(closeForceWait):
+			case <-time.After(forceWait):
 				// Do not block forever — the process may be wedged
 				// in an unreapable state on some platforms.
 				forceKillTimedOut = true
@@ -357,10 +387,11 @@ func (p *Process) Close() error {
 	}
 	closeErr := f.Close()
 	if forceKillTimedOut {
+		timeoutErr := &ErrForceKillTimeout{Wait: forceWait}
 		if closeErr != nil {
-			return fmt.Errorf("pty: force-kill wait timed out after %s: %w", closeForceWait, closeErr)
+			return fmt.Errorf("%w: %v", timeoutErr, closeErr)
 		}
-		return fmt.Errorf("pty: force-kill wait timed out after %s", closeForceWait)
+		return timeoutErr
 	}
 	return closeErr
 }

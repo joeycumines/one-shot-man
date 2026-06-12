@@ -46,7 +46,7 @@ type forwardResult struct {
 // The result is sent to resultCh. If resultCh is nil, the goroutine runs
 // without reporting results (useful for fire-and-forget scenarios).
 func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg forwardConfig) {
-	buf := make([]byte, 4096)
+	buf := make([]byte, PassthroughReadBufferSize)
 	var carry []byte // carry-over for partial SGR mouse prefixes
 
 	for {

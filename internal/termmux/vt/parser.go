@@ -41,11 +41,12 @@ type Parser struct {
 	intermBuf   []byte
 	oscBuf      []byte
 	dcsBuf      []byte
-	params      []int // pre-allocated slice reused by Params()
+	params      []int     // pre-allocated slice reused by Params()
+	subParams   [][]int   // colon-separated sub-params per semicolon group
 	maxOSCLen   int
 	maxDCSLen   int
-	lastByte    byte // for two-byte terminators (ESC \)
-	charsetSlot byte // '(' = G0, ')' = G1 — set when entering StateCharset
+	lastByte    byte      // for two-byte terminators (ESC \)
+	charsetSlot byte      // '(' = G0, ')' = G1 — set when entering StateCharset
 }
 
 // NewParser returns a parser in the ground state.
@@ -53,8 +54,8 @@ func NewParser() *Parser {
 	return &Parser{
 		cur:       StateGround,
 		params:    make([]int, 0, 16),
-		maxOSCLen: 4096,
-		maxDCSLen: 4096,
+		maxOSCLen: MaxProtocolLength,
+		maxDCSLen: MaxProtocolLength,
 	}
 }
 
@@ -280,39 +281,84 @@ func (p *Parser) CharsetSlot() byte {
 // --- accessors ------------------------------------------------------------
 
 // Params parses the accumulated CSI parameter buffer as a semicolon-
-// separated list of integers.  Missing parameters are returned as 0.
+// separated list of integers.  Within each semicolon-separated group,
+// colons separate sub-parameters; Params returns only the first
+// sub-parameter value per group.  Use SubParams to access all
+// colon-separated sub-parameters for a given parameter index.
+// Missing parameters are returned as 0.
 func (p *Parser) Params() []int {
 	if len(p.paramBuf) == 0 {
 		return nil
 	}
 	p.params = p.params[:0]
-	start := 0
+	p.subParams = p.subParams[:0]
+
+	groupStart := 0
 	for i, b := range p.paramBuf {
 		if b == ';' {
-			if i > start {
-				val := 0
-				for _, d := range p.paramBuf[start:i] {
-					val = val*10 + int(d-'0')
-				}
-				p.params = append(p.params, val)
-			} else {
-				p.params = append(p.params, 0)
-			}
-			start = i + 1
+			p.appendParamGroup(groupStart, i)
+			groupStart = i + 1
 		}
 	}
-	// Last param after the final semicolon (or the only param if no semicolons).
-	if start < len(p.paramBuf) {
-		val := 0
-		for _, d := range p.paramBuf[start:] {
-			val = val*10 + int(d-'0')
-		}
-		p.params = append(p.params, val)
-	} else if start > 0 {
+	// Last group after the final semicolon.
+	if groupStart < len(p.paramBuf) {
+		p.appendParamGroup(groupStart, len(p.paramBuf))
+	} else if groupStart > 0 {
 		// Trailing semicolon → implicit 0.
 		p.params = append(p.params, 0)
+		p.subParams = append(p.subParams, []int{0})
 	}
 	return p.params
+}
+
+// appendParamGroup parses paramBuf[start:end] as a colon-separated list
+// of sub-parameters, appends the first sub-param value to params, and
+// stores all sub-params in subParams.
+func (p *Parser) appendParamGroup(start, end int) {
+	subs := make([]int, 0, 4)
+	subStart := start
+	for i := start; i < end; i++ {
+		if p.paramBuf[i] == ':' {
+			if i > subStart {
+				val := 0
+				for _, d := range p.paramBuf[subStart:i] {
+					val = val*10 + int(d-'0')
+				}
+				subs = append(subs, val)
+			} else {
+				subs = append(subs, 0)
+			}
+			subStart = i + 1
+		}
+	}
+	// Last sub-param after the final colon (or the only sub-param if no colons).
+	if subStart < end {
+		val := 0
+		for _, d := range p.paramBuf[subStart:end] {
+			val = val*10 + int(d-'0')
+		}
+		subs = append(subs, val)
+	} else if subStart > start {
+		// Trailing colon → implicit 0.
+		subs = append(subs, 0)
+	}
+	if len(subs) == 0 {
+		subs = []int{0}
+	}
+	p.params = append(p.params, subs[0])
+	p.subParams = append(p.subParams, subs)
+}
+
+// SubParams returns the colon-separated sub-parameters for the parameter
+// at the given semicolon-separated index.  If the parameter has no colon
+// sub-parameters, it returns a single-element slice with the parameter
+// value.  Returns nil if idx is out of range or if Params() has not been
+// called.
+func (p *Parser) SubParams(idx int) []int {
+	if idx < 0 || idx >= len(p.subParams) {
+		return nil
+	}
+	return p.subParams[idx]
 }
 
 // HasIntermediate reports whether b appears in the intermediate buffer.
@@ -359,6 +405,7 @@ func (p *Parser) Reset() {
 	p.intermBuf = p.intermBuf[:0]
 	p.oscBuf = p.oscBuf[:0]
 	p.dcsBuf = p.dcsBuf[:0]
+	p.subParams = p.subParams[:0]
 	p.lastByte = 0
 	p.charsetSlot = 0
 }

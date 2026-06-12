@@ -17,13 +17,13 @@ func TestNewEventBus(t *testing.T) {
 	if bus == nil {
 		t.Fatal("NewEventBus returned nil")
 	}
-	if bus.subscribers == nil {
+	if snap := bus.subscribers.Load(); snap == nil || snap.m == nil {
 		t.Error("subscribers map is nil")
 	}
 	if bus.nextID != 1 {
 		t.Errorf("nextID = %d, want 1", bus.nextID)
 	}
-	if bus.closed {
+	if bus.closed.Load() {
 		t.Error("closed should be false initially")
 	}
 }

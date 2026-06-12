@@ -15,7 +15,7 @@ func TestNewScreen(t *testing.T) {
 			t.Fatalf("row %d len = %d, want 80", r, len(row))
 		}
 		for c, cell := range row {
-			if cell != DefaultCell {
+			if cell != DefaultCell() {
 				t.Fatalf("cell[%d][%d] not default", r, c)
 			}
 		}

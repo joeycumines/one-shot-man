@@ -196,12 +196,14 @@ func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite,
 	done := make(chan struct{})
 
 	proc := &Process{
-		ptyFile:      outputFile,
-		writeFile:    inputFile,
-		done:         done,
-		cmd:          handle,
-		exitCode:     -1,
-		writeTimeout: cfg.WriteTimeout,
+		ptyFile:           outputFile,
+		writeFile:         inputFile,
+		done:              done,
+		cmd:               handle,
+		exitCode:          -1,
+		writeTimeout:      cfg.WriteTimeout,
+		closeGracefulWait: cfg.CloseGracePeriod,
+		closeForceWait:    cfg.CloseForceWait,
 	}
 
 	// Background goroutine: wait for process exit and extract exit code.

@@ -29,9 +29,9 @@ type CaptureConfig struct {
 	Dir string
 	// Env contains additional environment variables merged with os.Environ().
 	Env map[string]string
-	// Rows is the virtual terminal row count (default: 24).
+	// Rows is the virtual terminal row count (default: DefaultRows).
 	Rows int
-	// Cols is the virtual terminal column count (default: 80).
+	// Cols is the virtual terminal column count (default: DefaultCols).
 	Cols int
 	// DrainTimeout is the maximum time Close() waits for the reader loop
 	// to finish after the PTY is closed. Defaults to 5 seconds.
@@ -99,11 +99,11 @@ type CaptureSession struct {
 func NewCaptureSession(cfg CaptureConfig) *CaptureSession {
 	rows := cfg.Rows
 	if rows <= 0 {
-		rows = 24
+		rows = DefaultRows
 	}
 	cols := cfg.Cols
 	if cols <= 0 {
-		cols = 80
+		cols = DefaultCols
 	}
 	if cfg.DrainTimeout <= 0 {
 		cfg.DrainTimeout = 5 * time.Second
@@ -165,7 +165,7 @@ func (cs *CaptureSession) Start(ctx context.Context) error {
 	cs.mu.Lock()
 	cs.reader = ptyio.NewBufferedReader(proc.File(), 16)
 	cs.readerCancel = readerCancel
-	cs.outputCh = make(chan []byte, 64)
+	cs.outputCh = make(chan []byte, DefaultChannelBuffer)
 	cs.mu.Unlock()
 	go cs.reader.ReadLoop(readerCtx)
 

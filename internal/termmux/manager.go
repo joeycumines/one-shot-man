@@ -266,6 +266,11 @@ const (
 	// reqResizeSession asks the worker to resize a single session's
 	// VTerm and PTY. Payload: *resizeSessionPayload. Reply value: nil.
 	reqResizeSession
+
+	// reqScreen asks the worker to return a deep copy of the session's
+	// VTerm screen (with Cells and Attr). Payload: SessionID.
+	// Reply value: *vt.Screen.
+	reqScreen
 )
 
 // registerPayload carries the arguments for a reqRegister request.
@@ -438,7 +443,7 @@ type SessionManager struct {
 // ManagerOption configures a SessionManager. Pass options to NewSessionManager.
 type ManagerOption func(*SessionManager)
 
-// WithTermSize sets the initial terminal dimensions. Defaults to 24 rows, 80 cols.
+// WithTermSize sets the initial terminal dimensions. Defaults to DefaultRows rows, DefaultCols cols.
 func WithTermSize(rows, cols int) ManagerOption {
 	return func(m *SessionManager) {
 		m.termRows = rows
@@ -446,14 +451,14 @@ func WithTermSize(rows, cols int) ManagerOption {
 	}
 }
 
-// WithRequestBuffer sets the capacity of the request channel. Defaults to 64.
+// WithRequestBuffer sets the capacity of the request channel. Defaults to DefaultChannelBuffer.
 func WithRequestBuffer(cap int) ManagerOption {
 	return func(m *SessionManager) {
 		m.reqChan = make(chan request, cap)
 	}
 }
 
-// WithMergedOutputBuffer sets the capacity of the merged output channel. Defaults to 64.
+// WithMergedOutputBuffer sets the capacity of the merged output channel. Defaults to DefaultChannelBuffer.
 func WithMergedOutputBuffer(cap int) ManagerOption {
 	return func(m *SessionManager) {
 		m.mergedOutput = make(chan sessionOutput, cap)
@@ -464,15 +469,15 @@ func WithMergedOutputBuffer(cap int) ManagerOption {
 // Call Run to start the worker goroutine.
 func NewSessionManager(opts ...ManagerOption) *SessionManager {
 	m := &SessionManager{
-		reqChan:      make(chan request, 64),
-		mergedOutput: make(chan sessionOutput, 64),
+		reqChan:      make(chan request, DefaultChannelBuffer),
+		mergedOutput: make(chan sessionOutput, DefaultChannelBuffer),
 		eventBus:     NewEventBus(),
 		done:         make(chan struct{}),
 		started:      make(chan struct{}),
 		sessions:     make(map[SessionID]*managedSession),
 		nextID:       1,
-		termRows:     24,
-		termCols:     80,
+		termRows:     DefaultRows,
+		termCols:     DefaultCols,
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -556,7 +561,7 @@ func (m *SessionManager) closeReqChan() {
 // Subscribe registers a subscriber for events produced by this manager.
 // The returned channel receives events; it is closed when Unsubscribe is
 // called or the manager shuts down. bufSize controls the channel buffer
-// (defaults to 64 if < 1). Events are delivered via non-blocking sends —
+// (defaults to EventBusBufferSize if < 1). Events are delivered via non-blocking sends —
 // a slow subscriber's events are silently dropped.
 func (m *SessionManager) Subscribe(bufSize int) (int, <-chan Event) {
 	return m.eventBus.Subscribe(bufSize)
@@ -664,6 +669,18 @@ func (m *SessionManager) Snapshot(id SessionID) *ScreenSnapshot {
 	return snap
 }
 
+// Screen returns a deep copy of the VTerm screen for the given session,
+// including Cells with Attr (colors, bold, italic, etc.). Returns nil
+// if the session does not exist.
+func (m *SessionManager) Screen(id SessionID) *vt.Screen {
+	resp := m.sendRequest(reqScreen, id)
+	if resp.value == nil {
+		return nil
+	}
+	scr, _ := resp.value.(*vt.Screen)
+	return scr
+}
+
 // ActiveID returns the active session's ID, or 0 if no session is active.
 func (m *SessionManager) ActiveID() SessionID {
 	resp := m.sendRequest(reqActiveID, nil)
@@ -720,6 +737,8 @@ func (m *SessionManager) dispatch(req request) {
 		resp = response{value: [2]int{m.termRows, m.termCols}}
 	case reqRestoreState:
 		resp = m.handleRestoreState(req.payload.(*restoreStatePayload))
+	case reqScreen:
+		resp = m.handleScreen(req.payload.(SessionID))
 	default:
 		resp = response{err: fmt.Errorf("termmux: unknown request kind %d", req.kind)}
 	}
@@ -911,6 +930,16 @@ func (m *SessionManager) handleSnapshot(id SessionID) response {
 		return response{}
 	}
 	return response{value: ms.snapshot.Load()}
+}
+
+// handleScreen returns a deep copy of the session's VTerm screen with
+// Cells and Attr preserved. Returns nil if the session does not exist.
+func (m *SessionManager) handleScreen(id SessionID) response {
+	ms, ok := m.sessions[id]
+	if !ok {
+		return response{}
+	}
+	return response{value: ms.vterm.ActiveScreen()}
 }
 
 // handleSessions builds a list of SessionInfo values from the sessions map.

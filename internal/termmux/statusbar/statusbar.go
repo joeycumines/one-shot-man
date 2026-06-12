@@ -16,13 +16,17 @@ type StatusBar struct {
 	mu            sync.Mutex
 }
 
+// DefaultTerminalHeight is the default terminal height used when no height
+// is explicitly provided.
+const DefaultTerminalHeight = 24
+
 // New creates a new StatusBar writing to w.
 func New(w io.Writer) *StatusBar {
 	return &StatusBar{
 		w:             w,
 		status:        "ready",
 		toggleKeyName: "Ctrl+]",
-		height:        24,
+		height:        DefaultTerminalHeight,
 	}
 }
 

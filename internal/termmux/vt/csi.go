@@ -316,8 +316,8 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		subcmd := paramDefault(params, 0, 0)
 		switch subcmd {
 		case 8: // CSI 8 ; rows ; cols t — resize terminal
-			rows := paramDefault(params, 1, 24)
-			cols := paramDefault(params, 2, 80)
+			rows := paramDefault(params, 1, DefaultRows)
+			cols := paramDefault(params, 2, DefaultCols)
 			scr.Resize(rows, cols)
 		case 18: // CSI 18 t — report terminal size in pixels
 			// Character cell size approximation: 10 wide x 20 tall (xterm default).

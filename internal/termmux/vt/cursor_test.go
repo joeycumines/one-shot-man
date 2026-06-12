@@ -137,13 +137,15 @@ func TestPendingWrap_ClearedByCursorMovement(t *testing.T) {
 		v.Write([]byte("0123456789"))
 		v.Resize(10, 20)
 		row, col := v.CursorPosition()
-		if row != 0 || col != 9 {
-			t.Fatalf("after resize: (%d,%d), want (0,9)", row, col)
+		// With reflow, PendingWrap is accounted for: cursor is at
+		// col 10 (one past the last char), valid on a 20-col screen.
+		if row != 0 || col != 10 {
+			t.Fatalf("after resize: (%d,%d), want (0,10)", row, col)
 		}
 		v.Write([]byte("R"))
 		row, col = v.CursorPosition()
-		if row != 0 || col != 10 {
-			t.Fatalf("after write: (%d,%d), want (0,10) not wrapped", row, col)
+		if row != 0 || col != 11 {
+			t.Fatalf("after write: (%d,%d), want (0,11) not wrapped", row, col)
 		}
 	})
 

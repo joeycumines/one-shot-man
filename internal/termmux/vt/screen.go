@@ -123,6 +123,17 @@ type Screen struct {
 	// corner (true) or the screen's top-left corner (false, default).
 	// When true, the cursor is clamped to the scroll region bounds.
 	OriginMode bool
+
+	// RowWrapped tracks per-row wrap state. RowWrapped[r] is true when row r
+	// is a wrapped continuation of row r-1 (the content spilled over from the
+	// previous row due to auto-wrap). Used by Resize to reflow logical lines.
+	RowWrapped []bool
+
+	// ReflowOnResize controls whether Resize reconstructs logical lines by
+	// joining wrapped rows and re-breaking at the new width (true, primary
+	// screen) or simply truncates/extends rows without reflow (false,
+	// alternate screen). Per tmux convention, alternate screen never reflows.
+	ReflowOnResize bool
 }
 
 // NewScreen creates a new screen buffer with the given dimensions.
@@ -138,6 +149,7 @@ func NewScreen(rows, cols int) *Screen {
 		Cols:          cols,
 		CursorVisible: true,
 		MaxScrollback: 10000,
+		RowWrapped:    make([]bool, rows),
 	}
 	s.Cells = make([][]Cell, rows)
 	for i := range s.Cells {
@@ -163,8 +175,11 @@ func makeDefaultTabStops(cols int) []bool {
 	return ts
 }
 
-// Resize changes the screen dimensions. Content is preserved up to the
-// intersection of old and new sizes.
+// Resize changes the screen dimensions. When ReflowOnResize is true (primary
+// screen), logical lines are reconstructed by joining wrapped rows and
+// re-broken at the new width — excess lines go to scrollback. When false
+// (alternate screen), rows are simply truncated or extended without reflow,
+// matching tmux convention.
 func (s *Screen) Resize(rows, cols int) {
 	if rows < 1 {
 		rows = 1
@@ -172,6 +187,61 @@ func (s *Screen) Resize(rows, cols int) {
 	if cols < 1 {
 		cols = 1
 	}
+	oldRows := s.Rows
+	oldCols := s.Cols
+
+	if s.ReflowOnResize && len(s.RowWrapped) >= oldRows {
+		s.resizeReflow(rows, cols, oldRows, oldCols)
+	} else {
+		s.resizeSimple(rows, cols)
+	}
+
+	// Clamp cursor and saved cursor to new bounds.
+	if s.CurRow >= rows {
+		s.CurRow = rows - 1
+	}
+	if s.CurCol >= cols {
+		s.CurCol = cols - 1
+	}
+	if s.SavedRow >= rows {
+		s.SavedRow = rows - 1
+	}
+	if s.SavedCol >= cols {
+		s.SavedCol = cols - 1
+	}
+	// Preserve scroll region if it fits within new dimensions.
+	if s.ScrollTop > 0 || s.ScrollBot > 0 {
+		if s.ScrollBot > rows {
+			s.ScrollBot = rows
+		}
+		if s.ScrollTop >= s.ScrollBot || s.ScrollTop < 1 {
+			s.ScrollTop = 0
+			s.ScrollBot = 0
+		}
+	}
+	// PendingWrap is cleared by resize unless the cursor ended up at the
+	// last column (which means the next character should wrap).
+	if s.CurCol >= cols-1 {
+		s.PendingWrap = true
+	} else {
+		s.PendingWrap = false
+	}
+	if cols > len(s.TabStops) {
+		prev := len(s.TabStops)
+		ext := make([]bool, cols-prev)
+		for i := range ext {
+			if (prev+i)%8 == 0 {
+				ext[i] = true
+			}
+		}
+		s.TabStops = append(s.TabStops, ext...)
+	} else if cols < len(s.TabStops) {
+		s.TabStops = s.TabStops[:cols]
+	}
+}
+
+// resizeSimple truncates or extends rows without reflow (alternate screen).
+func (s *Screen) resizeSimple(rows, cols int) {
 	s.Rows = rows
 	s.Cols = cols
 	for len(s.Cells) < rows {
@@ -189,44 +259,190 @@ func (s *Screen) Resize(rows, cols int) {
 			s.Cells[i] = s.Cells[i][:cols]
 		}
 	}
-	if s.CurRow >= rows {
-		s.CurRow = rows - 1
+	// Adjust RowWrapped to match new row count.
+	for len(s.RowWrapped) < rows {
+		s.RowWrapped = append(s.RowWrapped, false)
 	}
-	if s.CurCol >= cols {
-		s.CurCol = cols - 1
+	s.RowWrapped = s.RowWrapped[:rows]
+}
+
+// trimRightCells returns a subslice of cells with trailing whitespace removed.
+// A row of all spaces becomes an empty slice. This prevents blank rows from
+// being re-broken into multiple blank rows during reflow.
+func trimRightCells(cells []Cell) []Cell {
+	last := len(cells) - 1
+	for last >= 0 && cells[last].Ch == ' ' && cells[last].Ch != 0 && !cells[last].SecondHalf {
+		last--
 	}
-	if s.SavedRow >= rows {
-		s.SavedRow = rows - 1
+	return cells[:last+1]
+}
+
+// resizeReflow reconstructs logical lines by joining wrapped rows, then
+// re-breaks them at the new column width. Lines that overflow the screen
+// are pushed into scrollback.
+func (s *Screen) resizeReflow(rows, cols, oldRows, oldCols int) {
+	// Step 1: Reconstruct logical lines from visible rows.
+	type logicalLine struct {
+		cells        []Cell
+		cursorOffset int // -1 if cursor not in this line
 	}
-	if s.SavedCol >= cols {
-		s.SavedCol = cols - 1
-	}
-	// Preserve scroll region if it fits within new dimensions.
-	// If the region no longer fits, reset to defaults (full screen).
-	if s.ScrollTop > 0 || s.ScrollBot > 0 {
-		// Clamp ScrollBot to new row count.
-		if s.ScrollBot > rows {
-			s.ScrollBot = rows
-		}
-		// If the region is inverted or collapsed, reset.
-		if s.ScrollTop >= s.ScrollBot || s.ScrollTop < 1 {
-			s.ScrollTop = 0
-			s.ScrollBot = 0
-		}
-	}
-	s.PendingWrap = false
-	if cols > len(s.TabStops) {
-		prev := len(s.TabStops)
-		ext := make([]bool, cols-prev)
-		for i := range ext {
-			if (prev+i)%8 == 0 {
-				ext[i] = true
+	var lines []logicalLine
+	current := logicalLine{cursorOffset: -1}
+
+	for r := 0; r < oldRows; r++ {
+		isContinuation := r > 0 && s.RowWrapped[r]
+		var rowCells []Cell // trimmed cells from this row
+		if isContinuation {
+			rowCells = trimRightCells(s.Cells[r])
+			current.cells = append(current.cells, rowCells...)
+		} else {
+			if r > 0 {
+				lines = append(lines, current)
 			}
+			current = logicalLine{cursorOffset: -1}
+			rowCells = trimRightCells(s.Cells[r])
+			current.cells = make([]Cell, len(rowCells))
+			copy(current.cells, rowCells)
 		}
-		s.TabStops = append(s.TabStops, ext...)
-	} else if cols < len(s.TabStops) {
-		s.TabStops = s.TabStops[:cols]
+		// Track cursor position within the logical line.
+		// The cursor column (CurCol) is relative to the full row width,
+		// but we only appended len(rowCells) trimmed cells. The cursor
+		// offset is: position after previous rows + min(CurCol, len(rowCells)).
+		if r == s.CurRow {
+			prevLen := len(current.cells) - len(rowCells)
+			col := s.CurCol
+			if col > len(rowCells) {
+				col = len(rowCells)
+			}
+			offset := prevLen + col
+			// When PendingWrap is true, the cursor is logically past the
+			// last column (it would wrap on the next char). Account for
+			// this by advancing the offset by 1.
+			if s.PendingWrap && r == s.CurRow {
+				offset++
+			}
+			// Clamp to end of content if cursor is past trailing whitespace.
+			if offset > len(current.cells) {
+				offset = len(current.cells)
+			}
+			current.cursorOffset = offset
+		}
 	}
+	lines = append(lines, current)
+
+	// Step 2: Re-break each logical line at the new width.
+	var newCells [][]Cell
+	var newWrapped []bool
+	newCurRow, newCurCol := 0, 0
+	cursorFound := false
+
+	for _, line := range lines {
+		offset := 0
+		firstRowOfLine := true
+		for offset < len(line.cells) || (firstRowOfLine && (len(line.cells) > 0 || line.cursorOffset >= 0)) {
+			end := offset + cols
+			if end > len(line.cells) {
+				end = len(line.cells)
+			}
+			rowStart := offset // save for cursor tracking before repair
+			row := makeAttrLine(cols, Attr{})
+			copy(row, line.cells[offset:end])
+			// Repair wide-char boundaries: if the last cell in this row is
+			// the first half of a wide char whose second half falls in the next
+			// row, blank the first half and back up offset so the wide char
+			// starts the next row instead. Skip when cols < 2 (wide char
+			// cannot fit on any row — just blank both halves below).
+			if cols >= 2 && end > offset && end < len(line.cells) &&
+				line.cells[end-1].Ch != 0 && !line.cells[end-1].SecondHalf &&
+				line.cells[end].SecondHalf {
+				row[cols-1] = Cell{Ch: ' ', Attr: line.cells[end-1].Attr}
+				offset-- // re-include the wide char in the next row
+			}
+			// When cols==1, wide chars cannot fit. Blank any SecondHalf at
+			// the start of this row and the first half on the previous row.
+			if cols < 2 && offset < len(line.cells) && line.cells[offset].SecondHalf {
+				row[0] = Cell{Ch: ' ', Attr: row[0].Attr}
+			}
+			// Also repair: if this row starts with an orphaned SecondHalf,
+			// blank it and the preceding first half (on previous row).
+			if offset > 0 && offset < len(line.cells) && line.cells[offset].SecondHalf {
+				// The first half is on the previous row — blank it there.
+				if len(newCells) > 0 {
+					prevRow := newCells[len(newCells)-1]
+					if len(prevRow) > 0 && prevRow[cols-1].Ch != 0 &&
+						!prevRow[cols-1].SecondHalf {
+						prevRow[cols-1] = Cell{Ch: ' ', Attr: prevRow[cols-1].Attr}
+					}
+				}
+				row[0] = Cell{Ch: ' ', Attr: line.cells[offset].Attr}
+			}
+
+			newCells = append(newCells, row)
+			// The first row of a re-broken logical line has RowWrapped=false;
+			// subsequent rows within the same logical line have RowWrapped=true
+			// (they are continuations of the previous row).
+			newWrapped = append(newWrapped, !firstRowOfLine)
+
+			// Track cursor. Uses rowStart (pre-repair offset) so the cursor
+			// column is relative to the visual row, not the modified offset.
+			if !cursorFound && line.cursorOffset >= 0 {
+				if line.cursorOffset >= rowStart && line.cursorOffset < rowStart+cols {
+					newCurRow = len(newCells) - 1
+					newCurCol = line.cursorOffset - rowStart
+					cursorFound = true
+				} else if line.cursorOffset == rowStart+cols {
+					// Cursor at exact row boundary — it belongs at the
+					// start of the next row. Mark it for the next iteration
+					// by noting the offset; the next row will claim it.
+					// If this is the last row of the logical line, place at
+					// end of current row.
+					nextOffset := offset + cols
+					if nextOffset >= len(line.cells) {
+						// Last row — clamp to end of content.
+						newCurRow = len(newCells) - 1
+						newCurCol = len(line.cells) - rowStart
+						if newCurCol < 0 {
+							newCurCol = 0
+						}
+						if newCurCol >= cols {
+							newCurCol = cols - 1
+						}
+						cursorFound = true
+					}
+				}
+			}
+
+			offset += cols
+			firstRowOfLine = false
+		}
+	}
+
+	// Step 3: Push excess rows to scrollback.
+	for len(newCells) > rows {
+		s.pushScrollback(newCells[0])
+		newCells = newCells[1:]
+		newWrapped = newWrapped[1:]
+		if newCurRow > 0 {
+			newCurRow--
+		} else {
+			// Cursor was in an overflowed line — clamp to top of screen.
+			newCurCol = 0
+		}
+	}
+
+	// Step 4: Pad with blank rows if needed.
+	for len(newCells) < rows {
+		newCells = append(newCells, makeAttrLine(cols, Attr{}))
+		newWrapped = append(newWrapped, false)
+	}
+
+	// Step 5: Apply new state.
+	s.Cells = newCells
+	s.RowWrapped = newWrapped
+	s.Rows = rows
+	s.Cols = cols
+	s.CurRow = newCurRow
+	s.CurCol = newCurCol
 }
 
 // ScrollRegion returns the effective scroll region as a half-open range [top, bot).
@@ -276,6 +492,13 @@ func (s *Screen) scrollRegionUp(top, bot, n int) {
 	for i := bot - n; i < bot; i++ {
 		s.Cells[i] = makeAttrLine(s.Cols, s.CurAttr)
 	}
+	// Shift RowWrapped flags with the scroll.
+	if len(s.RowWrapped) >= bot {
+		copy(s.RowWrapped[top:], s.RowWrapped[top+n:bot])
+		for i := bot - n; i < bot; i++ {
+			s.RowWrapped[i] = false
+		}
+	}
 }
 
 func (s *Screen) scrollRegionDown(top, bot, n int) {
@@ -288,6 +511,13 @@ func (s *Screen) scrollRegionDown(top, bot, n int) {
 	copy(s.Cells[top+n:bot], s.Cells[top:])
 	for i := top; i < top+n; i++ {
 		s.Cells[i] = makeAttrLine(s.Cols, s.CurAttr)
+	}
+	// Shift RowWrapped flags with the scroll.
+	if len(s.RowWrapped) >= bot {
+		copy(s.RowWrapped[top+n:bot], s.RowWrapped[top:bot-n])
+		for i := top; i < top+n; i++ {
+			s.RowWrapped[i] = false
+		}
 	}
 }
 
@@ -361,9 +591,24 @@ func (s *Screen) EraseDisplay(mode int) {
 		for r := s.CurRow + 1; r < s.Rows; r++ {
 			s.Cells[r] = makeAttrLine(s.Cols, s.CurAttr)
 		}
+		// Clear wrap flags for fully-erased rows below cursor.
+		// The current row is partially erased; its wrap status as a
+		// continuation of the previous row is still valid.
+		for r := s.CurRow + 1; r < len(s.RowWrapped) && r < s.Rows; r++ {
+			s.RowWrapped[r] = false
+		}
 	case 1:
 		for r := 0; r < s.CurRow; r++ {
 			s.Cells[r] = makeAttrLine(s.Cols, s.CurAttr)
+		}
+		// Clear wrap flags for fully-erased rows above cursor.
+		for r := 0; r < s.CurRow && r < len(s.RowWrapped); r++ {
+			s.RowWrapped[r] = false
+		}
+		// Current row is partially erased; its continuation status
+		// is still valid, but its wrap into the next row may be broken.
+		if s.CurRow+1 < len(s.RowWrapped) && s.RowWrapped[s.CurRow+1] {
+			s.RowWrapped[s.CurRow+1] = false
 		}
 		end := s.CurCol + 1
 		if end > s.Cols {
@@ -376,6 +621,10 @@ func (s *Screen) EraseDisplay(mode int) {
 	case 2:
 		for r := 0; r < s.Rows; r++ {
 			s.Cells[r] = makeAttrLine(s.Cols, s.CurAttr)
+		}
+		// Clear all wrap flags.
+		for i := range s.RowWrapped {
+			s.RowWrapped[i] = false
 		}
 	case 3:
 		// ED mode 3: erase scrollback only (xterm extension).
@@ -413,6 +662,17 @@ func (s *Screen) EraseLine(mode int) {
 	case 2:
 		s.Cells[s.CurRow] = makeAttrLine(s.Cols, s.CurAttr)
 	}
+	// Clear wrap flag for current row - only clear on full-line erase (mode 2).
+	// Partial erases (modes 0, 1) do not change whether this row
+	// is a continuation of the previous row.
+	if mode == 2 && s.CurRow < len(s.RowWrapped) {
+		s.RowWrapped[s.CurRow] = false
+		// Erasing the entire row also breaks any continuation from
+		// this row into the next row.
+		if s.CurRow+1 < len(s.RowWrapped) && s.RowWrapped[s.CurRow+1] {
+			s.RowWrapped[s.CurRow+1] = false
+		}
+	}
 }
 
 // InsertLines inserts n blank lines at the cursor row within the scroll region.
@@ -427,6 +687,13 @@ func (s *Screen) InsertLines(n int) {
 	copy(s.Cells[s.CurRow+n:bot], s.Cells[s.CurRow:bot-n])
 	for i := s.CurRow; i < s.CurRow+n; i++ {
 		s.Cells[i] = makeAttrLine(s.Cols, s.CurAttr)
+	}
+	// Shift RowWrapped flags with the line insert.
+	if len(s.RowWrapped) >= bot {
+		copy(s.RowWrapped[s.CurRow+n:bot], s.RowWrapped[s.CurRow:bot-n])
+		for i := s.CurRow; i < s.CurRow+n; i++ {
+			s.RowWrapped[i] = false
+		}
 	}
 	s.CurCol = 0
 }
@@ -443,6 +710,13 @@ func (s *Screen) DeleteLines(n int) {
 	copy(s.Cells[s.CurRow:], s.Cells[s.CurRow+n:bot])
 	for i := bot - n; i < bot; i++ {
 		s.Cells[i] = makeAttrLine(s.Cols, s.CurAttr)
+	}
+	// Shift RowWrapped flags with the line delete.
+	if len(s.RowWrapped) >= bot {
+		copy(s.RowWrapped[s.CurRow:], s.RowWrapped[s.CurRow+n:bot])
+		for i := bot - n; i < bot; i++ {
+			s.RowWrapped[i] = false
+		}
 	}
 	s.CurCol = 0
 }
@@ -523,6 +797,8 @@ func (s *Screen) Snapshot() *Screen {
 		GL:             s.GL,
 		OriginMode:     s.OriginMode,
 		SavedOriginMode: s.SavedOriginMode,
+		RowWrapped:     append([]bool(nil), s.RowWrapped...),
+		ReflowOnResize: s.ReflowOnResize,
 	}
 }
 
@@ -542,6 +818,10 @@ func (s *Screen) PutChar(ch rune) {
 		s.CurCol = 0
 		s.LineFeed()
 		s.PendingWrap = false
+		// The new row is a wrapped continuation of the previous row.
+		if s.CurRow >= 0 && s.CurRow < len(s.RowWrapped) {
+			s.RowWrapped[s.CurRow] = true
+		}
 	}
 
 	// For wide characters, if we're at cols-1 (only 1 column left),
@@ -553,6 +833,10 @@ func (s *Screen) PutChar(ch rune) {
 		}
 		s.CurCol = 0
 		s.LineFeed()
+		// The new row is a wrapped continuation.
+		if s.CurRow >= 0 && s.CurRow < len(s.RowWrapped) {
+			s.RowWrapped[s.CurRow] = true
+		}
 	}
 
 	// Repair wide-char pairs that this write would split.

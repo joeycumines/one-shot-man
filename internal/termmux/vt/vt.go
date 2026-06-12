@@ -61,6 +61,8 @@ func NewVTerm(rows, cols int) *VTerm {
 	// Alternate screen should never accumulate scrollback.
 	// Real terminals discard lines that scroll off the alternate screen.
 	v.alternate.MaxScrollback = 0
+	// Primary screen reflows on resize; alternate screen does not.
+	v.primary.ReflowOnResize = true
 	v.active = v.primary
 	// Wire CSI alt-screen callback.
 	v.csi.AltScreenFn = func(toAlt bool, mode int) {
@@ -297,6 +299,9 @@ func (v *VTerm) switchToPrimary(mode int) {
 func (v *VTerm) reset() {
 	v.primary = NewScreen(v.rows, v.cols)
 	v.alternate = NewScreen(v.rows, v.cols)
+	// Restore NewVTerm defaults: primary reflows, alternate never scrolls back.
+	v.primary.ReflowOnResize = true
+	v.alternate.MaxScrollback = 0
 	v.active = v.primary
 	v.parser.Reset()
 	v.utf8 = UTF8Accum{}

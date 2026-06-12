@@ -170,7 +170,7 @@ func (v *VTerm) processByte(b byte) {
 	case ActionEscDispatch:
 		v.esc.Dispatch(scr, final)
 	case ActionEscInterDispatch:
-		v.esc.InterDispatch(scr, final)
+		v.esc.InterDispatch(scr, final, v.parser.HasIntermediate('#'))
 	case ActionOSCEnd:
 		if v.OSCHandler != nil {
 			code, data := v.parser.OSCData()
@@ -543,10 +543,7 @@ func (v *VTerm) SetScrollback(n int) {
 	// invalid relative to the new capacity).
 	if v.primary.ScrollbackLen > 0 {
 		// Determine how many lines to keep.
-		keep := v.primary.ScrollbackLen
-		if keep > n {
-			keep = n
-		}
+		keep := min(v.primary.ScrollbackLen, n)
 		// Copy the most recent 'keep' lines in logical order.
 		newBuf := make([][]Cell, keep)
 		start := v.primary.ScrollbackLen - keep

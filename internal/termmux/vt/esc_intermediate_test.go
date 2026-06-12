@@ -29,8 +29,8 @@ func TestParser_ESCIntermediate_Hash(t *testing.T) {
 
 func TestParser_ESCIntermediate_Space(t *testing.T) {
 	p := NewParser()
-	p.Feed(0x1B)    // ESC
-	p.Feed(0x20)    // SP (intermediate byte)
+	p.Feed(0x1B) // ESC
+	p.Feed(0x20) // SP (intermediate byte)
 	act, final := p.Feed('F')
 	if act != ActionEscInterDispatch {
 		t.Fatalf("action=%d, want ActionEscInterDispatch", act)
@@ -48,8 +48,8 @@ func TestParser_ESCIntermediate_Space(t *testing.T) {
 
 func TestParser_ESCIntermediate_AbortOnCtrl(t *testing.T) {
 	p := NewParser()
-	p.Feed(0x1B) // ESC
-	p.Feed('#')  // intermediate
+	p.Feed(0x1B)           // ESC
+	p.Feed('#')            // intermediate
 	act, b := p.Feed(0x07) // BEL
 	if act != ActionExecute {
 		t.Fatalf("action=%d, want ActionExecute", act)
@@ -104,8 +104,8 @@ func TestParser_EscDispatch_Unchanged(t *testing.T) {
 
 func TestParser_ESCIntermediate_ESCRestarts(t *testing.T) {
 	p := NewParser()
-	p.Feed(0x1B) // ESC
-	p.Feed('#')  // intermediate
+	p.Feed(0x1B)           // ESC
+	p.Feed('#')            // intermediate
 	act, _ := p.Feed(0x1B) // another ESC
 	if act != ActionNone {
 		t.Fatalf("ESC in intermediate: action=%d, want ActionNone", act)
@@ -125,8 +125,8 @@ func TestParser_ESCIntermediate_ESCRestarts(t *testing.T) {
 
 func TestParser_ESCIntermediate_HighByteDropsToGround(t *testing.T) {
 	p := NewParser()
-	p.Feed(0x1B) // ESC
-	p.Feed('#')  // intermediate
+	p.Feed(0x1B)           // ESC
+	p.Feed('#')            // intermediate
 	act, _ := p.Feed(0x80) // high byte — not valid
 	if act != ActionNone {
 		t.Fatalf("action=%d, want ActionNone", act)
@@ -143,7 +143,6 @@ func TestVTerm_ESCIntermediate_Dispatch(t *testing.T) {
 	v := NewVTerm(24, 80)
 	// Feed ESC # 8 through VTerm.Write — should not panic or drop to ground silently.
 	v.Write([]byte{0x1B, '#', '8'})
-	// InterDispatch is currently a no-op, so just verify no panic and parser returns to ground.
 	if v.parser.CurState() != StateGround {
 		t.Fatalf("parser state=%d, want StateGround after ESC # 8", v.parser.CurState())
 	}

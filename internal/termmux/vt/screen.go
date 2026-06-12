@@ -17,6 +17,18 @@ type Cell struct {
 // DefaultCell is a blank cell with default attributes.
 var DefaultCell = Cell{Ch: ' '}
 
+func (s *Screen) FillScreen(ch rune) {
+	attr := Attr{}
+	for i := range s.Cells {
+		for j := range s.Cells[i] {
+			s.Cells[i][j] = Cell{Ch: ch, Attr: attr}
+		}
+	}
+	for i := range s.RowWrapped {
+		s.RowWrapped[i] = false
+	}
+}
+
 // lineDrawingMap maps ASCII characters to their VT100 Special Graphics
 // (line-drawing) equivalents. Characters not in the map pass through
 // unchanged. See VT100 User Guide, Table 3-9 "Special Graphics Character Set".
@@ -68,45 +80,45 @@ const (
 
 // Screen represents a terminal screen buffer.
 type Screen struct {
-	Cells          [][]Cell
-	CurRow, CurCol int
-	CurAttr        Attr
-	ScrollTop      int // 1-indexed, inclusive; 0 = default
-	ScrollBot      int // 1-indexed, inclusive; 0 = default
-	SavedRow              int
-	SavedCol              int
-	SavedAttr             Attr
-	SavedG0Charset        int
-	SavedG1Charset        int
-	SavedGL               int
-	SavedOriginMode       bool
-	SavedPendingWrap      bool
-	SavedApplicationCursor bool
-	SavedBracketedPaste   bool
-	SavedCursorShape      int
-	SavedFocusReporting   bool
-	SavedAutoWrap         bool
-	SavedSynchronizedOutput bool
-	SavedInsertMode       bool
-	Saved1049Row              int
-	Saved1049Col              int
-	Saved1049Attr             Attr
-	Saved1049G0Charset        int
-	Saved1049G1Charset        int
-	Saved1049GL               int
-	Saved1049OriginMode       bool
-	Saved1049PendingWrap      bool
-	Saved1049ApplicationCursor bool
-	Saved1049BracketedPaste   bool
-	Saved1049CursorShape      int
-	Saved1049FocusReporting   bool
-	Saved1049AutoWrap         bool
+	Cells                       [][]Cell
+	CurRow, CurCol              int
+	CurAttr                     Attr
+	ScrollTop                   int // 1-indexed, inclusive; 0 = default
+	ScrollBot                   int // 1-indexed, inclusive; 0 = default
+	SavedRow                    int
+	SavedCol                    int
+	SavedAttr                   Attr
+	SavedG0Charset              int
+	SavedG1Charset              int
+	SavedGL                     int
+	SavedOriginMode             bool
+	SavedPendingWrap            bool
+	SavedApplicationCursor      bool
+	SavedBracketedPaste         bool
+	SavedCursorShape            int
+	SavedFocusReporting         bool
+	SavedAutoWrap               bool
+	SavedSynchronizedOutput     bool
+	SavedInsertMode             bool
+	Saved1049Row                int
+	Saved1049Col                int
+	Saved1049Attr               Attr
+	Saved1049G0Charset          int
+	Saved1049G1Charset          int
+	Saved1049GL                 int
+	Saved1049OriginMode         bool
+	Saved1049PendingWrap        bool
+	Saved1049ApplicationCursor  bool
+	Saved1049BracketedPaste     bool
+	Saved1049CursorShape        int
+	Saved1049FocusReporting     bool
+	Saved1049AutoWrap           bool
 	Saved1049SynchronizedOutput bool
-	Saved1049InsertMode       bool
-	PendingWrap    bool
-	CursorVisible  bool
-	TabStops       []bool
-	Rows, Cols     int
+	Saved1049InsertMode         bool
+	PendingWrap                 bool
+	CursorVisible               bool
+	TabStops                    []bool
+	Rows, Cols                  int
 
 	// MouseTracking indicates the current mouse tracking level.
 	// Set by DECSET ?1000h/?1002h/?1003h, cleared by the corresponding DECRST.
@@ -156,11 +168,11 @@ type Screen struct {
 	// Scrollback holds lines that have scrolled off the top of the visible
 	// screen. It is a ring buffer: Scrollback[0] is the oldest line when
 	// ScrollbackHead == 0, otherwise the oldest line is at ScrollbackHead.
-	Scrollback      [][]Cell
-	ScrollbackLen   int // current number of lines in scrollback
-	ScrollbackHead  int // ring buffer head (next write position)
-	MaxScrollback   int // maximum scrollback lines (0 = unlimited, default 10000)
-	ScrollOffset    int // lines scrolled back from bottom (0 = normal view)
+	Scrollback     [][]Cell
+	ScrollbackLen  int // current number of lines in scrollback
+	ScrollbackHead int // ring buffer head (next write position)
+	MaxScrollback  int // maximum scrollback lines (0 = unlimited, default 10000)
+	ScrollOffset   int // lines scrolled back from bottom (0 = normal view)
 
 	// InsertMode (IRM, ANSI mode 4) controls whether printable characters
 	// are inserted at the cursor position, shifting existing text right,
@@ -355,7 +367,7 @@ func (s *Screen) resizeReflow(rows, cols, oldRows, oldCols int) {
 	var lines []logicalLine
 	current := logicalLine{cursorOffset: -1}
 
-	for r := 0; r < oldRows; r++ {
+	for r := range oldRows {
 		isContinuation := r > 0 && s.RowWrapped[r]
 		var rowCells []Cell // trimmed cells from this row
 		if isContinuation {
@@ -376,10 +388,7 @@ func (s *Screen) resizeReflow(rows, cols, oldRows, oldCols int) {
 		// offset is: position after previous rows + min(CurCol, len(rowCells)).
 		if r == s.CurRow {
 			prevLen := len(current.cells) - len(rowCells)
-			col := s.CurCol
-			if col > len(rowCells) {
-				col = len(rowCells)
-			}
+			col := min(s.CurCol, len(rowCells))
 			offset := prevLen + col
 			// When PendingWrap is true, the cursor is logically past the
 			// last column (it would wrap on the next char). Account for
@@ -406,10 +415,7 @@ func (s *Screen) resizeReflow(rows, cols, oldRows, oldCols int) {
 		offset := 0
 		firstRowOfLine := true
 		for offset < len(line.cells) || (firstRowOfLine && (len(line.cells) > 0 || line.cursorOffset >= 0)) {
-			end := offset + cols
-			if end > len(line.cells) {
-				end = len(line.cells)
-			}
+			end := min(offset+cols, len(line.cells))
 			rowStart := offset // save for cursor tracking before repair
 			row := makeAttrLine(cols, Attr{})
 			copy(row, line.cells[offset:end])
@@ -466,10 +472,7 @@ func (s *Screen) resizeReflow(rows, cols, oldRows, oldCols int) {
 					if nextOffset >= len(line.cells) {
 						// Last row — clamp to end of content.
 						newCurRow = len(newCells) - 1
-						newCurCol = len(line.cells) - rowStart
-						if newCurCol < 0 {
-							newCurCol = 0
-						}
+						newCurCol = max(len(line.cells)-rowStart, 0)
 						if newCurCol >= cols {
 							newCurCol = cols - 1
 						}
@@ -676,12 +679,9 @@ func (s *Screen) EraseDisplay(mode int) {
 		if s.CurRow+1 < len(s.RowWrapped) && s.RowWrapped[s.CurRow+1] {
 			s.RowWrapped[s.CurRow+1] = false
 		}
-		end := s.CurCol + 1
-		if end > s.Cols {
-			end = s.Cols
-		}
+		end := min(s.CurCol+1, s.Cols)
 		s.repairWideBoundary(s.CurRow, 0, end)
-		for c := 0; c < end; c++ {
+		for c := range end {
 			s.Cells[s.CurRow][c] = blank
 		}
 	case 2:
@@ -700,7 +700,7 @@ func (s *Screen) EraseDisplay(mode int) {
 		s.ScrollbackLen = 0
 		s.ScrollbackHead = 0
 		s.ScrollOffset = 0
-}
+	}
 }
 
 // EraseLine erases part or all of the current line. Mode: 0=cursor to end,
@@ -717,12 +717,9 @@ func (s *Screen) EraseLine(mode int) {
 			s.Cells[s.CurRow][c] = blank
 		}
 	case 1:
-		end := s.CurCol + 1
-		if end > s.Cols {
-			end = s.Cols
-		}
+		end := min(s.CurCol+1, s.Cols)
 		s.repairWideBoundary(s.CurRow, 0, end)
-		for c := 0; c < end; c++ {
+		for c := range end {
 			s.Cells[s.CurRow][c] = blank
 		}
 	case 2:
@@ -832,68 +829,68 @@ func (s *Screen) Snapshot() *Screen {
 		}
 	}
 	return &Screen{
-		Cells:         cells,
-		CurRow:        s.CurRow,
-		CurCol:        s.CurCol,
-		CurAttr:       s.CurAttr,
-		ScrollTop:     s.ScrollTop,
-		ScrollBot:     s.ScrollBot,
-		SavedRow:      s.SavedRow,
-		SavedCol:      s.SavedCol,
-		SavedAttr:     s.SavedAttr,
-		SavedG0Charset: s.SavedG0Charset,
-		SavedG1Charset: s.SavedG1Charset,
-		SavedGL:        s.SavedGL,
-		PendingWrap:   s.PendingWrap,
-		CursorVisible: s.CursorVisible,
-		TabStops:      tabStops,
-		Rows:          s.Rows,
-		Cols:          s.Cols,
-		MouseTracking: s.MouseTracking,
-		MouseSGR:      s.MouseSGR,
-		BracketedPaste: s.BracketedPaste,
-		CursorShape:    s.CursorShape,
+		Cells:              cells,
+		CurRow:             s.CurRow,
+		CurCol:             s.CurCol,
+		CurAttr:            s.CurAttr,
+		ScrollTop:          s.ScrollTop,
+		ScrollBot:          s.ScrollBot,
+		SavedRow:           s.SavedRow,
+		SavedCol:           s.SavedCol,
+		SavedAttr:          s.SavedAttr,
+		SavedG0Charset:     s.SavedG0Charset,
+		SavedG1Charset:     s.SavedG1Charset,
+		SavedGL:            s.SavedGL,
+		PendingWrap:        s.PendingWrap,
+		CursorVisible:      s.CursorVisible,
+		TabStops:           tabStops,
+		Rows:               s.Rows,
+		Cols:               s.Cols,
+		MouseTracking:      s.MouseTracking,
+		MouseSGR:           s.MouseSGR,
+		BracketedPaste:     s.BracketedPaste,
+		CursorShape:        s.CursorShape,
 		FocusReporting:     s.FocusReporting,
 		ApplicationCursor:  s.ApplicationCursor,
 		AutoWrap:           s.AutoWrap,
 		SynchronizedOutput: s.SynchronizedOutput,
 
-		Scrollback:     scrollback,
-		ScrollbackLen:  s.ScrollbackLen,
-		ScrollbackHead: s.ScrollbackHead,
-		MaxScrollback:  s.MaxScrollback,
-		ScrollOffset:   s.ScrollOffset,
-		InsertMode:     s.InsertMode,
-		G0Charset:      s.G0Charset,
-		G1Charset:      s.G1Charset,
-		GL:             s.GL,
-		OriginMode:     s.OriginMode,
-		SavedOriginMode: s.SavedOriginMode,
-		SavedPendingWrap: s.SavedPendingWrap,
-		SavedApplicationCursor: s.SavedApplicationCursor,
-		SavedBracketedPaste: s.SavedBracketedPaste,
-		SavedCursorShape: s.SavedCursorShape,
-		SavedFocusReporting: s.SavedFocusReporting,
-		SavedAutoWrap: s.SavedAutoWrap,
-		SavedSynchronizedOutput: s.SavedSynchronizedOutput,
-		SavedInsertMode: s.SavedInsertMode,
-		Saved1049Row:              s.Saved1049Row,
-		Saved1049Col:              s.Saved1049Col,
-		Saved1049Attr:             s.Saved1049Attr,
-		Saved1049G0Charset:        s.Saved1049G0Charset,
-		Saved1049G1Charset:        s.Saved1049G1Charset,
-		Saved1049GL:               s.Saved1049GL,
-		Saved1049OriginMode:       s.Saved1049OriginMode,
-		Saved1049PendingWrap:      s.Saved1049PendingWrap,
-		Saved1049ApplicationCursor: s.Saved1049ApplicationCursor,
-		Saved1049BracketedPaste:   s.Saved1049BracketedPaste,
-		Saved1049CursorShape:      s.Saved1049CursorShape,
-		Saved1049FocusReporting:   s.Saved1049FocusReporting,
-		Saved1049AutoWrap:         s.Saved1049AutoWrap,
+		Scrollback:                  scrollback,
+		ScrollbackLen:               s.ScrollbackLen,
+		ScrollbackHead:              s.ScrollbackHead,
+		MaxScrollback:               s.MaxScrollback,
+		ScrollOffset:                s.ScrollOffset,
+		InsertMode:                  s.InsertMode,
+		G0Charset:                   s.G0Charset,
+		G1Charset:                   s.G1Charset,
+		GL:                          s.GL,
+		OriginMode:                  s.OriginMode,
+		SavedOriginMode:             s.SavedOriginMode,
+		SavedPendingWrap:            s.SavedPendingWrap,
+		SavedApplicationCursor:      s.SavedApplicationCursor,
+		SavedBracketedPaste:         s.SavedBracketedPaste,
+		SavedCursorShape:            s.SavedCursorShape,
+		SavedFocusReporting:         s.SavedFocusReporting,
+		SavedAutoWrap:               s.SavedAutoWrap,
+		SavedSynchronizedOutput:     s.SavedSynchronizedOutput,
+		SavedInsertMode:             s.SavedInsertMode,
+		Saved1049Row:                s.Saved1049Row,
+		Saved1049Col:                s.Saved1049Col,
+		Saved1049Attr:               s.Saved1049Attr,
+		Saved1049G0Charset:          s.Saved1049G0Charset,
+		Saved1049G1Charset:          s.Saved1049G1Charset,
+		Saved1049GL:                 s.Saved1049GL,
+		Saved1049OriginMode:         s.Saved1049OriginMode,
+		Saved1049PendingWrap:        s.Saved1049PendingWrap,
+		Saved1049ApplicationCursor:  s.Saved1049ApplicationCursor,
+		Saved1049BracketedPaste:     s.Saved1049BracketedPaste,
+		Saved1049CursorShape:        s.Saved1049CursorShape,
+		Saved1049FocusReporting:     s.Saved1049FocusReporting,
+		Saved1049AutoWrap:           s.Saved1049AutoWrap,
 		Saved1049SynchronizedOutput: s.Saved1049SynchronizedOutput,
-		Saved1049InsertMode:       s.Saved1049InsertMode,
-		RowWrapped:     append([]bool(nil), s.RowWrapped...),
-		ReflowOnResize: s.ReflowOnResize,
+		Saved1049InsertMode:         s.Saved1049InsertMode,
+		RowWrapped:                  append([]bool(nil), s.RowWrapped...),
+		ReflowOnResize:              s.ReflowOnResize,
 	}
 }
 
@@ -935,10 +932,7 @@ func (s *Screen) PutChar(ch rune) {
 	}
 
 	// Repair wide-char pairs that this write would split.
-	end := s.CurCol + width
-	if end > s.Cols {
-		end = s.Cols
-	}
+	end := min(s.CurCol+width, s.Cols)
 	s.repairWideBoundary(s.CurRow, s.CurCol, end)
 
 	// In insert mode (IRM), shift existing characters right before writing.
@@ -989,10 +983,7 @@ func (s *Screen) EraseChars(n int) {
 	if s.CurRow < 0 || s.CurRow >= s.Rows || n <= 0 {
 		return
 	}
-	end := s.CurCol + n
-	if end > s.Cols {
-		end = s.Cols
-	}
+	end := min(s.CurCol+n, s.Cols)
 	s.repairWideBoundary(s.CurRow, s.CurCol, end)
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
 	for i := s.CurCol; i < end; i++ {

@@ -116,6 +116,13 @@ type Screen struct {
 	// When false (default, normal mode), cursor keys send CSI sequences.
 	ApplicationCursor bool
 
+	// AutoWrap controls whether characters at the right margin wrap to the
+	// next line. When true (default, DECAWM), reaching the right margin
+	// sets PendingWrap; the next printable character wraps to column 0 of
+	// the next row. When false (DECSET ?7l), characters at the right margin
+	// overwrite the last column without advancing the cursor or wrapping.
+	AutoWrap bool
+
 	// Scrollback holds lines that have scrolled off the top of the visible
 	// screen. It is a ring buffer: Scrollback[0] is the oldest line when
 	// ScrollbackHead == 0, otherwise the oldest line is at ScrollbackHead.
@@ -172,6 +179,7 @@ func NewScreen(rows, cols int) *Screen {
 		CursorVisible: true,
 		MaxScrollback: 10000,
 		RowWrapped:    make([]bool, rows),
+		AutoWrap:      true,
 	}
 	s.Cells = make([][]Cell, rows)
 	for i := range s.Cells {
@@ -811,6 +819,7 @@ func (s *Screen) Snapshot() *Screen {
 		CursorShape:    s.CursorShape,
 		FocusReporting:     s.FocusReporting,
 		ApplicationCursor:  s.ApplicationCursor,
+		AutoWrap:           s.AutoWrap,
 
 		Scrollback:     scrollback,
 		ScrollbackLen:  s.ScrollbackLen,
@@ -840,7 +849,7 @@ func (s *Screen) PutChar(ch rune) {
 		width = 1 // control chars and zero-width: treat as 1 column
 	}
 
-	if s.PendingWrap {
+	if s.PendingWrap && s.AutoWrap {
 		s.CurCol = 0
 		s.LineFeed()
 		s.PendingWrap = false
@@ -852,7 +861,7 @@ func (s *Screen) PutChar(ch rune) {
 
 	// For wide characters, if we're at cols-1 (only 1 column left),
 	// we need to wrap first since the char needs 2 columns.
-	if width == 2 && s.CurCol == s.Cols-1 {
+	if s.AutoWrap && width == 2 && s.CurCol == s.Cols-1 {
 		// Pad with space at the margin and wrap.
 		if s.CurRow >= 0 && s.CurRow < s.Rows {
 			s.Cells[s.CurRow][s.CurCol] = Cell{Ch: ' ', Attr: s.CurAttr}
@@ -893,11 +902,11 @@ func (s *Screen) PutChar(ch rune) {
 	// Advance cursor by the character's display width.
 	newCol := s.CurCol + width
 	if newCol >= s.Cols {
-		s.PendingWrap = true
-		// Keep curCol at the last column the char occupies.
-		if width == 2 {
-			s.CurCol = s.Cols - 1
+		if s.AutoWrap {
+			s.PendingWrap = true
 		}
+		// Keep curCol at the last column the char occupies.
+		s.CurCol = s.Cols - 1
 	} else {
 		s.CurCol = newCol
 	}

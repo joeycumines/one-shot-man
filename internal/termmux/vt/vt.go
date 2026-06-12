@@ -429,6 +429,16 @@ func (v *VTerm) ApplicationCursor() bool {
 	return v.active.ApplicationCursor
 }
 
+// AutoWrap reports whether auto-wrap mode (DECAWM, DECSET ?7h) is active
+// on the current screen. When true (default), characters at the right
+// margin wrap to the next line. When false, characters at the right
+// margin overwrite the last column without wrapping. Thread-safe.
+func (v *VTerm) AutoWrap() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.AutoWrap
+}
+
 // FocusIn sends a focus-in event (ESC[I) to the child process via
 // ResponseWriter if focus reporting (DECSET ?1004h) is active on the
 // current screen. If focus reporting is off or ResponseWriter is nil,

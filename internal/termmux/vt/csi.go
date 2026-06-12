@@ -284,6 +284,8 @@ func (h *CSIHandler) decset(scr *Screen, params []int) {
 			scr.PendingWrap = false
 		case 1: // DECCKM — application cursor mode
 			scr.ApplicationCursor = true
+		case 7: // DECAWM
+			scr.AutoWrap = true
 		case 25: // DECTCEM — show cursor
 			scr.CursorVisible = true
 		case 47, 1047, 1049: // alternate screen buffer
@@ -318,6 +320,9 @@ func (h *CSIHandler) decrst(scr *Screen, params []int) {
 			scr.PendingWrap = false
 		case 1: // DECCKM — application cursor mode off
 			scr.ApplicationCursor = false
+		case 7: // DECAWM off
+			scr.AutoWrap = false
+			scr.PendingWrap = false
 		case 25: // DECTCEM — hide cursor
 			scr.CursorVisible = false
 		case 47, 1047, 1049: // normal screen buffer

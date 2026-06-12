@@ -44,6 +44,46 @@ func (a Attr) SGR() string {
 	return SGRDiff(Attr{}, a)
 }
 
+// SGRString returns the SGR parameter string representing the attribute
+// state from default. The returned string contains only numeric parameters
+// (e.g., "0", "1", "1;31"), without the ESC[ prefix or m suffix.
+func (a Attr) SGRString() string {
+	if a == (Attr{}) {
+		return "0"
+	}
+	var parts []string
+	if a.Bold {
+		parts = append(parts, "1")
+	}
+	if a.Dim {
+		parts = append(parts, "2")
+	}
+	if a.Italic {
+		parts = append(parts, "3")
+	}
+	if a.Under {
+		parts = append(parts, "4")
+	}
+	if a.Blink {
+		parts = append(parts, "5")
+	}
+	if a.Inverse {
+		parts = append(parts, "7")
+	}
+	if a.Hidden {
+		parts = append(parts, "8")
+	}
+	if a.Strike {
+		parts = append(parts, "9")
+	}
+	parts = append(parts, colorSGR(a.FG, false)...)
+	parts = append(parts, colorSGR(a.BG, true)...)
+	if len(parts) == 0 {
+		return "0"
+	}
+	return strings.Join(parts, ";")
+}
+
 // ParseSGR processes a slice of CSI 'm' parameters and returns the
 // updated attribute. It handles SGR codes 0-9, 21-29, 30-37, 38, 39,
 // 40-47, 48, 49, 90-97, 100-107 including 256-color and truecolor

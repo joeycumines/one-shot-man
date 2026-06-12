@@ -1,6 +1,9 @@
 package vt
 
-import "strconv"
+import (
+	"fmt"
+	"strconv"
+)
 
 // CSIHandler processes a parsed CSI sequence on a screen.
 // The AltScreenFn callback handles DECSET/DECRST modes 47/1047/1049 (alt
@@ -17,6 +20,7 @@ type CSIHandler struct {
 	HasInterGt     func() bool // reports whether '>' intermediate was present
 	HasInterSp     func() bool // reports whether ' ' intermediate was present
 	HasInterBang   func() bool // reports whether '!' intermediate was present
+	HasInterDollar func() bool // reports whether '$' intermediate was present
 }
 
 // Dispatch processes a CSI sequence identified by the given final byte.
@@ -246,6 +250,7 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.SavedInsertMode = scr.InsertMode
 		scr.SavedKeypadApplication = scr.KeypadApplication
 		scr.SavedLineFeedNewLine = scr.LineFeedNewLine
+		scr.SavedHighlightTracking = scr.HighlightTracking
 	case 'u': // RCP — restore cursor position
 		scr.PendingWrap = scr.SavedPendingWrap
 		// Restore mode state first so cursor clamping respects origin mode.
@@ -263,6 +268,7 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.InsertMode = scr.SavedInsertMode
 		scr.KeypadApplication = scr.SavedKeypadApplication
 		scr.LineFeedNewLine = scr.SavedLineFeedNewLine
+		scr.HighlightTracking = scr.SavedHighlightTracking
 		// Clamp cursor to valid range.
 		if scr.OriginMode {
 			scrollTop, scrollBot := scr.ScrollRegion()
@@ -306,9 +312,100 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 			}
 			scr.CursorShape = p
 		}
-	case 'p': // DECSTR — soft terminal reset (CSI ! p)
+	case 't': // XTWINOPS — window manipulation
+		subcmd := paramDefault(params, 0, 0)
+		switch subcmd {
+		case 8: // CSI 8 ; rows ; cols t — resize terminal
+			rows := paramDefault(params, 1, 24)
+			cols := paramDefault(params, 2, 80)
+			scr.Resize(rows, cols)
+		case 18: // CSI 18 t — report terminal size in pixels
+			// Character cell size approximation: 10 wide x 20 tall (xterm default).
+			pixelHeight := scr.Rows * 20
+			pixelWidth := scr.Cols * 10
+			h.respond("\x1b[8;" + itoa(pixelHeight) + ";" + itoa(pixelWidth) + "t")
+		default:
+			// Unknown/unimplemented XTWINOPS — ignore silently
+		}
+	case 'p': // DECSTR — soft terminal reset (CSI ! p) / DECRQM — request mode (CSI ? Pn $ p)
 		if h.HasInterBang != nil && h.HasInterBang() {
 			scr.SoftReset()
+		} else if h.HasInterDollar != nil && h.HasInterDollar() && isPrivate {
+			mode := paramDefault(params, 0, 0)
+			var status int
+			switch mode {
+			case 1: // DECCKM
+				if scr.ApplicationCursor {
+					status = 2
+				} else {
+					status = 3
+				}
+			case 6: // DECOM
+				if scr.OriginMode {
+					status = 2
+				} else {
+					status = 3
+				}
+			case 7: // DECAWM
+				if scr.AutoWrap {
+					status = 2
+				} else {
+					status = 3
+				}
+			case 25: // DECTCEM
+				if scr.CursorVisible {
+					status = 2
+				} else {
+					status = 3
+				}
+			case 66: // DECNKM
+				if scr.KeypadApplication {
+					status = 2
+				} else {
+					status = 3
+				}
+			case 1000: // Mouse normal
+				if scr.MouseTracking == MouseTrackingBasic {
+					status = 2
+				} else {
+					status = 3
+				}
+			case 1002: // Mouse button event
+				if scr.MouseTracking == MouseTrackingButtonEvent {
+					status = 2
+				} else {
+					status = 3
+				}
+			case 1004: // Focus reporting
+				if scr.FocusReporting {
+					status = 2
+				} else {
+					status = 3
+				}
+			case 1006: // Mouse SGR
+				if scr.MouseSGR {
+					status = 2
+				} else {
+					status = 3
+				}
+			case 1049: // Alt screen
+				status = 3
+			case 2004: // Bracketed paste
+				if scr.BracketedPaste {
+					status = 2
+				} else {
+					status = 3
+				}
+			case 2026: // Synchronized output
+				if scr.SynchronizedOutput {
+					status = 2
+				} else {
+					status = 3
+				}
+			default:
+				status = 1
+			}
+			h.respond(fmt.Sprintf("\x1b[?%d;%d$y", mode, status))
 		}
 	}
 }
@@ -338,6 +435,8 @@ func (h *CSIHandler) decset(scr *Screen, params []int) {
 			}
 		case 1000: // XT_MOUSE — basic mouse tracking
 			scr.MouseTracking = MouseTrackingBasic
+		case 1001: // highlight tracking
+			scr.HighlightTracking = true
 		case 1002: // XT_MOUSE_GRID — button-event tracking
 			scr.MouseTracking = MouseTrackingButtonEvent
 		case 1003: // XT_MOUSE_ANY — any-event tracking
@@ -381,6 +480,8 @@ func (h *CSIHandler) decrst(scr *Screen, params []int) {
 			if scr.MouseTracking == MouseTrackingBasic {
 				scr.MouseTracking = MouseTrackingNone
 			}
+		case 1001: // disable highlight tracking
+			scr.HighlightTracking = false
 		case 1002: // XT_MOUSE_GRID — disable button-event tracking
 			if scr.MouseTracking == MouseTrackingButtonEvent {
 				scr.MouseTracking = MouseTrackingNone

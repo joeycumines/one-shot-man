@@ -1,6 +1,10 @@
 package vt
 
-import "github.com/rivo/uniseg"
+import (
+	"strconv"
+
+	"github.com/rivo/uniseg"
+)
 
 // Cell represents a single terminal cell with a character and attributes.
 // SecondHalf is true when this cell is the right half of a double-width
@@ -102,6 +106,7 @@ type Screen struct {
 	SavedInsertMode             bool
 	SavedKeypadApplication      bool
 	SavedLineFeedNewLine        bool
+	SavedHighlightTracking      bool
 	Saved1049Row                int
 	Saved1049Col                int
 	Saved1049Attr               Attr
@@ -119,6 +124,7 @@ type Screen struct {
 	Saved1049InsertMode         bool
 	Saved1049KeypadApplication  bool
 	Saved1049LineFeedNewLine    bool
+	Saved1049HighlightTracking  bool
 	PendingWrap                 bool
 	CursorVisible               bool
 	TabStops                    []bool
@@ -132,6 +138,12 @@ type Screen struct {
 	// When true, the child expects mouse events in SGR format (\x1b[<...).
 	// When false, the child expects X11-style format (not supported for forwarding).
 	MouseSGR bool
+
+	// HighlightTracking indicates highlight tracking mode is active (DECSET ?1001h).
+	// When true, button press and release events are reported but motion events
+	// are NOT reported (unlike mode 1002). This mode can coexist with other
+	// mouse tracking modes.
+	HighlightTracking bool
 
 	// BracketedPaste indicates bracketed paste mode is active (DECSET ?2004h).
 	// When true, pasted content should be wrapped with \x1b[200~ and \x1b[201~.
@@ -870,6 +882,7 @@ func (s *Screen) Snapshot() *Screen {
 		Cols:               s.Cols,
 		MouseTracking:      s.MouseTracking,
 		MouseSGR:           s.MouseSGR,
+		HighlightTracking:  s.HighlightTracking,
 		BracketedPaste:     s.BracketedPaste,
 		CursorShape:        s.CursorShape,
 		FocusReporting:     s.FocusReporting,
@@ -915,8 +928,10 @@ func (s *Screen) Snapshot() *Screen {
 		Saved1049InsertMode:         s.Saved1049InsertMode,
 		Saved1049KeypadApplication:  s.Saved1049KeypadApplication,
 		Saved1049LineFeedNewLine:    s.Saved1049LineFeedNewLine,
+		Saved1049HighlightTracking:  s.Saved1049HighlightTracking,
 		SavedKeypadApplication:      s.SavedKeypadApplication,
 		SavedLineFeedNewLine:        s.SavedLineFeedNewLine,
+		SavedHighlightTracking:      s.SavedHighlightTracking,
 		RowWrapped:                  append([]bool(nil), s.RowWrapped...),
 		ReflowOnResize:              s.ReflowOnResize,
 	}
@@ -1028,6 +1043,28 @@ func (s *Screen) SoftReset() {
 	s.GL = 0
 	s.ScrollTop = 0
 	s.ScrollBot = 0
+}
+
+// CurrentSGR returns the SGR parameter string representing the current
+// cursor attributes. The returned string contains only numeric parameters
+// (e.g., "0", "1;31"), suitable for a DECRQSS response.
+func (s *Screen) CurrentSGR() string {
+	return s.CurAttr.SGRString()
+}
+
+// CurrentScrollRegion returns the DECSTBM parameter string representing
+// the current scroll region. The returned string is "top;bottom"
+// (1-indexed), suitable for a DECRQSS response.
+func (s *Screen) CurrentScrollRegion() string {
+	top := s.ScrollTop
+	bot := s.ScrollBot
+	if top == 0 {
+		top = 1
+	}
+	if bot == 0 {
+		bot = s.Rows
+	}
+	return strconv.Itoa(top) + ";" + strconv.Itoa(bot)
 }
 
 // EraseChars fills n cells starting at the cursor with blanks, without

@@ -90,6 +90,10 @@ func NewVTerm(rows, cols int) *VTerm {
 	v.csi.HasInterBang = func() bool {
 		return v.parser.HasIntermediate('!')
 	}
+	// Wire intermediate '$' detector for DECRQM/DECRQSS.
+	v.csi.HasInterDollar = func() bool {
+		return v.parser.HasIntermediate('$')
+	}
 	// Wire ESC reset callback.
 	v.esc.ResetFn = func() {
 		v.reset()
@@ -181,8 +185,12 @@ func (v *VTerm) processByte(b byte) {
 			v.OSCHandler(code, data)
 		}
 	case ActionDCSEnd:
+		data := v.parser.DCSData()
+		if len(data) >= 2 && data[0] == '$' && data[1] == 'q' {
+			v.handleDECRQSS(data[2:])
+		}
 		if v.DCSHandler != nil {
-			v.DCSHandler(v.parser.DCSData())
+			v.DCSHandler(data)
 		}
 	case ActionCharsetDesignation:
 		v.handleCharsetDesignation(final)
@@ -245,6 +253,23 @@ func (v *VTerm) handleCharsetDesignation(designator byte) {
 		scr.G1Charset = charset
 	}
 }
+
+func (v *VTerm) handleDECRQSS(query []byte) {
+	scr := v.active
+	var resp string
+	switch string(query) {
+	case "m":
+		resp = "1$r" + scr.CurrentSGR() + "m"
+	case "r":
+		resp = "1$r" + scr.CurrentScrollRegion() + "r"
+	default:
+		resp = "0$r"
+	}
+	if v.ResponseWriter != nil {
+		v.ResponseWriter([]byte("\x1bP" + resp + "\x1b\\"))
+	}
+}
+
 func (v *VTerm) switchToAlt(mode int) {
 	if v.active == v.alternate {
 		return
@@ -271,6 +296,7 @@ func (v *VTerm) switchToAlt(mode int) {
 		v.primary.Saved1049InsertMode = v.primary.InsertMode
 		v.primary.Saved1049KeypadApplication = v.primary.KeypadApplication
 		v.primary.Saved1049LineFeedNewLine = v.primary.LineFeedNewLine
+		v.primary.Saved1049HighlightTracking = v.primary.HighlightTracking
 		// Clear alternate screen on entry.
 		v.alternate.EraseDisplay(2)
 		v.active = v.alternate
@@ -311,6 +337,7 @@ func (v *VTerm) switchToPrimary(mode int) {
 		v.primary.InsertMode = v.primary.Saved1049InsertMode
 		v.primary.KeypadApplication = v.primary.Saved1049KeypadApplication
 		v.primary.LineFeedNewLine = v.primary.Saved1049LineFeedNewLine
+		v.primary.HighlightTracking = v.primary.Saved1049HighlightTracking
 		if v.primary.OriginMode {
 			scrollTop, scrollBot := v.primary.ScrollRegion()
 			v.primary.CurRow = max(scrollTop, min(v.primary.Saved1049Row, scrollBot-1))
@@ -412,6 +439,12 @@ func (v *VTerm) MouseSGR() bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.active.MouseSGR
+}
+
+func (v *VTerm) HighlightTracking() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.HighlightTracking
 }
 
 // InsertMode reports whether insert/replace mode (IRM, ANSI mode 4) is

@@ -16,6 +16,7 @@ const (
 	StateOSC                 // received ESC ]
 	StateDCS                 // received ESC P
 	StateCharset             // received ESC ( or ESC ) — waiting for designator
+	StateESCIntermediate     // received intermediate byte in ESC sequence (0x20-0x2F)
 )
 
 // Action indicates what the caller should do after feeding a byte.
@@ -30,6 +31,7 @@ const (
 	ActionOSCEnd                    // OSC string terminated
 	ActionDCSEnd                    // DCS string terminated
 	ActionCharsetDesignation        // charset designation sequence complete (ESC ( or ESC ) + designator)
+	ActionEscInterDispatch          // ESC sequence with intermediate byte(s) ready
 )
 
 // Parser is a table-driven ANSI escape sequence parser.
@@ -72,6 +74,8 @@ func (p *Parser) Feed(b byte) (Action, byte) {
 		return p.feedDCS(b)
 	case StateCharset:
 		return p.feedCharset(b)
+	case StateESCIntermediate:
+		return p.feedESCIntermediate(b)
 	}
 	return ActionNone, b
 }
@@ -118,6 +122,11 @@ func (p *Parser) feedEscape(b byte) (Action, byte) {
 		p.cur = StateCharset
 		p.charsetSlot = b
 		return ActionNone, b
+	case b >= 0x20 && b <= 0x2F:
+		// Intermediate byte — accumulate and stay in ESC intermediate state.
+		p.intermBuf = append(p.intermBuf, b)
+		p.cur = StateESCIntermediate
+		return ActionNone, b
 	case b >= 0x30 && b <= 0x7E:
 		// Final byte → dispatch ESC sequence, return to ground.
 		p.cur = StateGround
@@ -132,6 +141,25 @@ func (p *Parser) feedEscape(b byte) (Action, byte) {
 		return ActionExecute, b
 	}
 	// Unrecognised; drop back to ground.
+	p.cur = StateGround
+	return ActionNone, b
+}
+
+func (p *Parser) feedESCIntermediate(b byte) (Action, byte) {
+	switch {
+	case b >= 0x20 && b <= 0x2F:
+		p.intermBuf = append(p.intermBuf, b)
+		return ActionNone, b
+	case b >= 0x30 && b <= 0x7E:
+		p.cur = StateGround
+		return ActionEscInterDispatch, b
+	case b == 0x1B:
+		p.enterEscape()
+		return ActionNone, b
+	case b <= 0x1F:
+		p.cur = StateGround
+		return ActionExecute, b
+	}
 	p.cur = StateGround
 	return ActionNone, b
 }

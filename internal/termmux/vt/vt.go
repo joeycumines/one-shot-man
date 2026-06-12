@@ -169,6 +169,8 @@ func (v *VTerm) processByte(b byte) {
 		v.csi.Dispatch(scr, final, params, isPrivate)
 	case ActionEscDispatch:
 		v.esc.Dispatch(scr, final)
+	case ActionEscInterDispatch:
+		v.esc.InterDispatch(scr, final)
 	case ActionOSCEnd:
 		if v.OSCHandler != nil {
 			code, data := v.parser.OSCData()

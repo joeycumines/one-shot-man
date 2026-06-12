@@ -68,3 +68,7 @@ func (h *ESCHandler) Dispatch(scr *Screen, final byte) {
 		}
 	}
 }
+
+// InterDispatch processes an ESC sequence with intermediate byte(s).
+func (h *ESCHandler) InterDispatch(scr *Screen, final byte) {
+}

@@ -16,6 +16,7 @@ type CSIHandler struct {
 	ResponseWriter func([]byte)
 	HasInterGt     func() bool // reports whether '>' intermediate was present
 	HasInterSp     func() bool // reports whether ' ' intermediate was present
+	HasInterBang   func() bool // reports whether '!' intermediate was present
 }
 
 // Dispatch processes a CSI sequence identified by the given final byte.
@@ -283,6 +284,10 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 				p = 0
 			}
 			scr.CursorShape = p
+		}
+	case 'p': // DECSTR — soft terminal reset (CSI ! p)
+		if h.HasInterBang != nil && h.HasInterBang() {
+			scr.SoftReset()
 		}
 	}
 }

@@ -1005,6 +1005,31 @@ func (s *Screen) ReverseIndex() {
 	}
 }
 
+// SoftReset performs DECSTR (soft terminal reset).
+// Resets modes and cursor but preserves screen content and scrollback.
+func (s *Screen) SoftReset() {
+	s.InsertMode = false
+	s.OriginMode = false
+	s.BracketedPaste = false
+	s.ApplicationCursor = false
+	s.KeypadApplication = false
+	s.AutoWrap = true
+	s.SynchronizedOutput = false
+	s.FocusReporting = false
+	s.LineFeedNewLine = false
+	s.CursorShape = 0
+	s.PendingWrap = false
+	s.CursorVisible = true
+	s.CurRow = 0
+	s.CurCol = 0
+	s.CurAttr = Attr{}
+	s.G0Charset = 0
+	s.G1Charset = 0
+	s.GL = 0
+	s.ScrollTop = 0
+	s.ScrollBot = 0
+}
+
 // EraseChars fills n cells starting at the cursor with blanks, without
 // moving the cursor. (ECH — CSI Pn X)
 func (s *Screen) EraseChars(n int) {

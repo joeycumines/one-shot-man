@@ -86,6 +86,10 @@ func NewVTerm(rows, cols int) *VTerm {
 	v.csi.HasInterGt = func() bool {
 		return v.parser.HasIntermediate('>')
 	}
+	// Wire intermediate '!' detector for DECSTR.
+	v.csi.HasInterBang = func() bool {
+		return v.parser.HasIntermediate('!')
+	}
 	// Wire ESC reset callback.
 	v.esc.ResetFn = func() {
 		v.reset()

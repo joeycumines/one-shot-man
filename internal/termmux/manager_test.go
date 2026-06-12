@@ -2476,3 +2476,540 @@ func TestCaptureSession_RowsCols(t *testing.T) {
 		t.Errorf("Cols after resize = %d, want 160", got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Session lifecycle edge case tests
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Pipeline_CreatedToClosedOnEOF(t *testing.T) {
+	t.Parallel()
+
+	// When a process exits immediately without producing any output,
+	// the session transitions from Created directly to Closed (skipping
+	// Exited) and is removed from the sessions map.
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "immediate-exit"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Close the reader channel immediately — simulates process that exits
+	// before producing any output.
+	close(session.readerCh)
+	time.Sleep(200 * time.Millisecond)
+
+	// Session should have been removed from the map (Created -> Closed
+	// path deletes it). Sessions() should not list it.
+	for _, info := range m.Sessions() {
+		if info.ID == id {
+			t.Errorf("session %d still in Sessions() after immediate exit, state=%s", id, info.State)
+		}
+	}
+
+	// Verify EventSessionClosed was emitted (not EventSessionExited,
+	// since the Created -> Closed path skips Exited).
+	var foundClosed bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventSessionClosed && evt.SessionID == id {
+				foundClosed = true
+			}
+		default:
+			goto doneCreatedClosed
+		}
+	}
+doneCreatedClosed:
+	if !foundClosed {
+		t.Error("EventSessionClosed not received for immediate-exit session")
+	}
+
+	// Verify session.Close() was called.
+	if !session.closeCalled.Load() {
+		t.Error("session.Close() was not called on immediate exit")
+	}
+}
+
+func TestSessionManager_Pipeline_SessionSwitchingOutputRouted(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+	id1, _ := m.Register(s1, SessionTarget{Name: "session-a"})
+	id2, _ := m.Register(s2, SessionTarget{Name: "session-b"})
+
+	// Send output to session A.
+	s1.readerCh <- []byte("output-a")
+	waitForSnapshotContains(t, m, id1, "output-a", 2*time.Second)
+
+	// Activate session B (first session is active by default).
+	if err := m.Activate(id2); err != nil {
+		t.Fatalf("Activate(%d): %v", id2, err)
+	}
+
+	// Send output to session B.
+	s2.readerCh <- []byte("output-b")
+	waitForSnapshotContains(t, m, id2, "output-b", 2*time.Second)
+
+	// Verify both sessions have independent content.
+	snap1 := m.Snapshot(id1)
+	snap2 := m.Snapshot(id2)
+	if snap1 == nil || !strings.Contains(snap1.PlainText, "output-a") {
+		t.Errorf("session 1 PlainText = %q, want containing %q", snap1.PlainText, "output-a")
+	}
+	if snap2 == nil || !strings.Contains(snap2.PlainText, "output-b") {
+		t.Errorf("session 2 PlainText = %q, want containing %q", snap2.PlainText, "output-b")
+	}
+
+	// Verify session B is now active.
+	infos := m.Sessions()
+	for _, info := range infos {
+		if info.ID == id2 && !info.IsActive {
+			t.Error("session B should be active after Activate")
+		}
+		if info.ID == id1 && info.IsActive {
+			t.Error("session A should not be active after Activate(B)")
+		}
+	}
+}
+
+func TestSessionManager_Pipeline_OutputAfterUnregisterDiscarded(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "unregister-test"})
+
+	// Send initial output to transition to Running.
+	session.readerCh <- []byte("before-unregister")
+	waitForSnapshotContains(t, m, id, "before-unregister", 2*time.Second)
+
+	// Unregister the session.
+	if err := m.Unregister(id); err != nil {
+		t.Fatalf("Unregister(%d): %v", id, err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	// Send more output — should be silently discarded (no panic, no error).
+	session.readerCh <- []byte("after-unregister")
+	time.Sleep(100 * time.Millisecond)
+
+	// Snapshot for the unregistered session should be nil.
+	if snap := m.Snapshot(id); snap != nil {
+		t.Errorf("Snapshot(%d) = %v, want nil after unregister", id, snap)
+	}
+}
+
+func TestSessionManager_Pipeline_MultiParamDECSET(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "multi-param"})
+
+	// Send a multi-param DECSET: enable both bracketed paste (2004) and
+	// application cursor mode (1) in a single escape sequence.
+	session.readerCh <- []byte("\x1b[?2004;1h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if !snap.BracketedPaste {
+		t.Error("BracketedPaste = false, want true after CSI ?2004;1h")
+	}
+	if !snap.ApplicationCursor {
+		t.Error("ApplicationCursor = false, want true after CSI ?2004;1h")
+	}
+
+	// Now disable both with multi-param DECRST.
+	session.readerCh <- []byte("\x1b[?2004;1l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after DECRST")
+	}
+	if snap.BracketedPaste {
+		t.Error("BracketedPaste = true, want false after CSI ?2004;1l")
+	}
+	if snap.ApplicationCursor {
+		t.Error("ApplicationCursor = true, want false after CSI ?2004;1l")
+	}
+}
+
+func TestSessionManager_Pipeline_SecondRegisterDoesNotChangeActive(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+	id1, _ := m.Register(s1, SessionTarget{Name: "first"})
+	id2, _ := m.Register(s2, SessionTarget{Name: "second"})
+
+	// First registered session should be active.
+	infos := m.Sessions()
+	for _, info := range infos {
+		if info.ID == id1 && !info.IsActive {
+			t.Error("first registered session should be active by default")
+		}
+		if info.ID == id2 && info.IsActive {
+			t.Error("second registered session should NOT be active by default")
+		}
+	}
+
+	// Verify the first session is still the active one via Sessions().
+	activeID := SessionID(0)
+	for _, info := range infos {
+		if info.IsActive {
+			activeID = info.ID
+		}
+	}
+	if activeID != id1 {
+		t.Errorf("active session = %d, want %d", activeID, id1)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// VT mode flag integration tests
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Pipeline_BracketedPasteMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "bp-test"})
+
+	// Default: BracketedPaste should be false.
+	snap := m.Snapshot(id)
+	if snap != nil && snap.BracketedPaste {
+		t.Error("BracketedPaste should be false by default")
+	}
+
+	// Enable bracketed paste.
+	session.readerCh <- []byte("\x1b[?2004h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if !snap.BracketedPaste {
+		t.Error("BracketedPaste = false, want true after CSI ?2004h")
+	}
+
+	// Disable bracketed paste.
+	session.readerCh <- []byte("\x1b[?2004l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after disable")
+	}
+	if snap.BracketedPaste {
+		t.Error("BracketedPaste = true, want false after CSI ?2004l")
+	}
+}
+
+func TestSessionManager_Pipeline_ApplicationCursorMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "appcursor-test"})
+
+	// Enable application cursor mode.
+	session.readerCh <- []byte("\x1b[?1h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if !snap.ApplicationCursor {
+		t.Error("ApplicationCursor = false, want true after CSI ?1h")
+	}
+
+	// Disable.
+	session.readerCh <- []byte("\x1b[?1l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after disable")
+	}
+	if snap.ApplicationCursor {
+		t.Error("ApplicationCursor = true, want false after CSI ?1l")
+	}
+}
+
+func TestSessionManager_Pipeline_CursorShape(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "cursorshape-test"})
+
+	// Default cursor shape should be 0.
+	snap := m.Snapshot(id)
+	if snap != nil && snap.CursorShape != 0 {
+		t.Errorf("CursorShape = %d, want 0 by default", snap.CursorShape)
+	}
+
+	// Set cursor to blink-bar (5).
+	session.readerCh <- []byte("\x1b[5 q")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if snap.CursorShape != 5 {
+		t.Errorf("CursorShape = %d, want 5 after CSI 5 SP q", snap.CursorShape)
+	}
+
+	// Reset to default (0).
+	session.readerCh <- []byte("\x1b[0 q")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after reset")
+	}
+	if snap.CursorShape != 0 {
+		t.Errorf("CursorShape = %d, want 0 after CSI 0 SP q", snap.CursorShape)
+	}
+}
+
+func TestSessionManager_Pipeline_FocusReportingMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "focus-test"})
+
+	// Enable focus reporting.
+	session.readerCh <- []byte("\x1b[?1004h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if !snap.FocusReporting {
+		t.Error("FocusReporting = false, want true after CSI ?1004h")
+	}
+
+	// Disable.
+	session.readerCh <- []byte("\x1b[?1004l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after disable")
+	}
+	if snap.FocusReporting {
+		t.Error("FocusReporting = true, want false after CSI ?1004l")
+	}
+}
+
+func TestSessionManager_Pipeline_AutoWrapMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "autowrap-test"})
+
+	// Send some plain text first to transition to Running and get an
+	// initial snapshot. AutoWrap should be true by default.
+	session.readerCh <- []byte("initial")
+	waitForSnapshotContains(t, m, id, "initial", 2*time.Second)
+
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after initial output")
+	}
+	if !snap.AutoWrap {
+		t.Error("AutoWrap = false, want true by default")
+	}
+
+	// Disable auto-wrap.
+	session.readerCh <- []byte("\x1b[?7l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if snap.AutoWrap {
+		t.Error("AutoWrap = true, want false after CSI ?7l")
+	}
+
+	// Re-enable.
+	session.readerCh <- []byte("\x1b[?7h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after enable")
+	}
+	if !snap.AutoWrap {
+		t.Error("AutoWrap = false, want true after CSI ?7h")
+	}
+}
+
+func TestSessionManager_Pipeline_InsertMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "insertmode-test"})
+
+	// Default: InsertMode should be false.
+	snap := m.Snapshot(id)
+	if snap != nil && snap.InsertMode {
+		t.Error("InsertMode = true, want false by default")
+	}
+
+	// Enable insert mode (non-private SM).
+	session.readerCh <- []byte("\x1b[4h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if !snap.InsertMode {
+		t.Error("InsertMode = false, want true after CSI 4h")
+	}
+
+	// Disable.
+	session.readerCh <- []byte("\x1b[4l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after disable")
+	}
+	if snap.InsertMode {
+		t.Error("InsertMode = true, want false after CSI 4l")
+	}
+}
+
+func TestSessionManager_Pipeline_MouseTrackingMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "mouse-test"})
+
+	// Default: no mouse tracking.
+	snap := m.Snapshot(id)
+	if snap != nil && snap.MouseTracking != 0 {
+		t.Errorf("MouseTracking = %d, want 0 by default", snap.MouseTracking)
+	}
+
+	// Enable basic mouse tracking (mode 1000).
+	session.readerCh <- []byte("\x1b[?1000h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if snap.MouseTracking != 1 {
+		t.Errorf("MouseTracking = %d, want 1 after CSI ?1000h", snap.MouseTracking)
+	}
+
+	// Enable button-event tracking (mode 1002) — upgrades from basic.
+	session.readerCh <- []byte("\x1b[?1002h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after 1002h")
+	}
+	if snap.MouseTracking != 2 {
+		t.Errorf("MouseTracking = %d, want 2 after CSI ?1002h", snap.MouseTracking)
+	}
+
+	// Enable SGR mouse encoding (mode 1006).
+	session.readerCh <- []byte("\x1b[?1006h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after 1006h")
+	}
+	if !snap.MouseSGR {
+		t.Error("MouseSGR = false, want true after CSI ?1006h")
+	}
+}
+
+func TestSessionManager_Pipeline_SynchronizedOutputMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "sync-output-test"})
+
+	// Enable synchronized output.
+	session.readerCh <- []byte("\x1b[?2026h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if !snap.SynchronizedOutput {
+		t.Error("SynchronizedOutput = false, want true after CSI ?2026h")
+	}
+
+	// Disable synchronized output.
+	session.readerCh <- []byte("\x1b[?2026l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after disable")
+	}
+	if snap.SynchronizedOutput {
+		t.Error("SynchronizedOutput = true, want false after CSI ?2026l")
+	}
+}
+

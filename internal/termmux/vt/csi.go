@@ -377,6 +377,8 @@ func (h *CSIHandler) sm(scr *Screen, params []int) {
 		switch p {
 		case 4: // IRM — insert/replace mode
 			scr.InsertMode = true
+		case 20: // LNM — line feed new line
+			scr.LineFeedNewLine = true
 		}
 	}
 }
@@ -387,6 +389,8 @@ func (h *CSIHandler) rm(scr *Screen, params []int) {
 		switch p {
 		case 4: // IRM — insert/replace mode
 			scr.InsertMode = false
+		case 20: // LNM — line feed new line
+			scr.LineFeedNewLine = false
 		}
 	}
 }

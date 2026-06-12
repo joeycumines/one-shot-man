@@ -166,6 +166,10 @@ type ScreenSnapshot struct {
 	// When true (default), characters at the right margin wrap to the next line.
 	AutoWrap bool
 
+	// LineFeedNewLine is true when line feed new line mode (LNM, ANSI mode 20)
+	// is active. When true, LF also performs a carriage return.
+	LineFeedNewLine bool
+
 	// Timestamp records when this snapshot was created.
 	Timestamp time.Time
 }
@@ -998,6 +1002,7 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 		FocusReporting:     ms.vterm.FocusReporting(),
 		SynchronizedOutput: ms.vterm.SynchronizedOutput(),
 		AutoWrap:           ms.vterm.AutoWrap(),
+		LineFeedNewLine:    ms.vterm.LineFeedNewLine(),
 		Timestamp:          time.Now(),
 	}
 	ms.snapshot.Store(snap)

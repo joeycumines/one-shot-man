@@ -467,6 +467,15 @@ func (v *VTerm) AutoWrap() bool {
 	return v.active.AutoWrap
 }
 
+// LineFeedNewLine reports whether line feed new line mode (LNM,
+// ANSI mode 20) is active on the current screen. When true, LF
+// also performs a carriage return. Thread-safe.
+func (v *VTerm) LineFeedNewLine() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.LineFeedNewLine
+}
+
 // SynchronizedOutput reports whether synchronized output mode (DECSET ?2026h)
 // is active on the current screen. When true, snapshot publication should be
 // deferred until the mode is disabled. Thread-safe.

@@ -187,6 +187,13 @@ type Screen struct {
 	// CSI 4l. Default is false (overwrite mode).
 	InsertMode bool
 
+	// LineFeedNewLine (LNM, ANSI mode 20) controls the behavior of the
+	// LineFeed (LF, VT, FF) control characters. When true (CSI 20h), LF
+	// also performs a carriage return, moving the cursor to column 0
+	// before moving down. When false (default, CSI 20l), LF only moves
+	// the cursor down one row without changing the column.
+	LineFeedNewLine bool
+
 	// G0Charset and G1Charset are the character set designations for G0 and G1.
 	// 0 = ASCII (default), 1 = VT100 line-drawing (Special Graphics).
 	G0Charset int
@@ -644,8 +651,12 @@ func (s *Screen) ScrollbackRow(i int) []Cell {
 }
 
 // LineFeed moves the cursor down one line, scrolling if at the bottom
-// of the scroll region.
+// of the scroll region. When s.LineFeedNewLine is true, the cursor also
+// returns to column 0 before moving down (ANSI mode 20, LNM).
 func (s *Screen) LineFeed() {
+	if s.LineFeedNewLine {
+		s.CurCol = 0
+	}
 	top, bot := s.ScrollRegion()
 	if s.CurRow == bot-1 {
 		s.scrollRegionUp(top, bot, 1)
@@ -869,6 +880,7 @@ func (s *Screen) Snapshot() *Screen {
 		MaxScrollback:               s.MaxScrollback,
 		ScrollOffset:                s.ScrollOffset,
 		InsertMode:                  s.InsertMode,
+		LineFeedNewLine:             s.LineFeedNewLine,
 		G0Charset:                   s.G0Charset,
 		G1Charset:                   s.G1Charset,
 		GL:                          s.GL,

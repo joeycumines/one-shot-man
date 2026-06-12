@@ -317,3 +317,130 @@ func TestDECSC_DECRC_AltScreen1049_AllModeFlags(t *testing.T) {
 		t.Error("PendingWrap not restored after DECRST ?1049l")
 	}
 }
+
+// TestDECSC_And_1049_Independence verifies that DECSC and mode 1049 use
+// separate save slots. A DECSC on the primary screen must NOT be overwritten
+// by a subsequent 1049 alt-screen transition, and DECRC must still restore
+// the DECSC-saved state after the 1049 round-trip.
+func TestDECSC_And_1049_Independence(t *testing.T) {
+	v := NewVTerm(24, 80)
+
+	// Set multiple mode flags to non-defaults on primary before DECSC.
+	v.primary.CurRow = 3
+	v.primary.CurCol = 5
+	v.primary.ApplicationCursor = true
+	v.primary.OriginMode = true
+	v.primary.BracketedPaste = true
+	v.primary.CursorShape = 2
+	v.primary.FocusReporting = true
+	v.primary.PendingWrap = false
+
+	// DECSC saves to Saved* fields.
+	v.esc.Dispatch(v.primary, '7')
+
+	// Verify DECSC saved all the non-default values.
+	if v.primary.SavedRow != 3 || v.primary.SavedCol != 5 {
+		t.Fatalf("DECSC saved cursor: SavedRow=%d SavedCol=%d, want (3,5)", v.primary.SavedRow, v.primary.SavedCol)
+	}
+	if !v.primary.SavedApplicationCursor {
+		t.Error("DECSC did not save ApplicationCursor=true")
+	}
+	if !v.primary.SavedOriginMode {
+		t.Error("DECSC did not save OriginMode=true")
+	}
+	if !v.primary.SavedBracketedPaste {
+		t.Error("DECSC did not save BracketedPaste=true")
+	}
+	if v.primary.SavedCursorShape != 2 {
+		t.Errorf("DECSC saved CursorShape=%d, want 2", v.primary.SavedCursorShape)
+	}
+	if !v.primary.SavedFocusReporting {
+		t.Error("DECSC did not save FocusReporting=true")
+	}
+
+	// Change cursor position and all mode flags on primary before 1049.
+	v.primary.CurRow = 10
+	v.primary.CurCol = 20
+	v.primary.ApplicationCursor = false
+	v.primary.OriginMode = false
+	v.primary.BracketedPaste = false
+	v.primary.CursorShape = 0
+	v.primary.FocusReporting = false
+
+	// DECSET 1049: should save to Saved1049* fields, NOT overwrite Saved*.
+	v.csi.Dispatch(v.active, 'h', []int{1049}, true)
+
+	if v.active != v.alternate {
+		t.Fatal("should be on alternate screen after DECSET ?1049h")
+	}
+
+	// Verify Saved* fields still hold the DECSC values (not overwritten by 1049).
+	if v.primary.SavedRow != 3 || v.primary.SavedCol != 5 {
+		t.Errorf("Saved* overwritten by 1049: SavedRow=%d SavedCol=%d, want (3,5)", v.primary.SavedRow, v.primary.SavedCol)
+	}
+	if !v.primary.SavedApplicationCursor {
+		t.Error("SavedApplicationCursor overwritten by 1049, want true (DECSC value)")
+	}
+	if !v.primary.SavedOriginMode {
+		t.Error("SavedOriginMode overwritten by 1049, want true (DECSC value)")
+	}
+
+	// Work on alternate screen (irrelevant to the test).
+	v.alternate.CurRow = 7
+	v.alternate.CurCol = 15
+
+	// DECRST 1049: should restore from Saved1049* fields to pre-1049 state.
+	v.csi.Dispatch(v.active, 'l', []int{1049}, true)
+
+	if v.active != v.primary {
+		t.Fatal("should be on primary screen after DECRST ?1049l")
+	}
+
+	// Verify primary cursor restored to pre-1049 state (NOT the DECSC state).
+	if v.primary.CurRow != 10 {
+		t.Errorf("CurRow = %d, want 10 (pre-1049 position)", v.primary.CurRow)
+	}
+	if v.primary.CurCol != 20 {
+		t.Errorf("CurCol = %d, want 20 (pre-1049 position)", v.primary.CurCol)
+	}
+	if v.primary.ApplicationCursor {
+		t.Error("ApplicationCursor = true, want false (pre-1049 state)")
+	}
+	if v.primary.OriginMode {
+		t.Error("OriginMode = true, want false (pre-1049 state)")
+	}
+	if v.primary.BracketedPaste {
+		t.Error("BracketedPaste = true, want false (pre-1049 state)")
+	}
+	if v.primary.CursorShape != 0 {
+		t.Errorf("CursorShape = %d, want 0 (pre-1049 state)", v.primary.CursorShape)
+	}
+	if v.primary.FocusReporting {
+		t.Error("FocusReporting = true, want false (pre-1049 state)")
+	}
+
+	// DECRC: should restore from Saved* fields to DECSC state.
+	v.esc.Dispatch(v.primary, '8')
+
+	if v.primary.CurRow != 3 {
+		t.Errorf("CurRow = %d after DECRC, want 3 (DECSC position)", v.primary.CurRow)
+	}
+	if v.primary.CurCol != 5 {
+		t.Errorf("CurCol = %d after DECRC, want 5 (DECSC position)", v.primary.CurCol)
+	}
+	if !v.primary.ApplicationCursor {
+		t.Error("ApplicationCursor = false after DECRC, want true (DECSC state)")
+	}
+	if !v.primary.OriginMode {
+		t.Error("OriginMode = false after DECRC, want true (DECSC state)")
+	}
+	if !v.primary.BracketedPaste {
+		t.Error("BracketedPaste = false after DECRC, want true (DECSC state)")
+	}
+	if v.primary.CursorShape != 2 {
+		t.Errorf("CursorShape = %d after DECRC, want 2 (DECSC state)", v.primary.CursorShape)
+	}
+	if !v.primary.FocusReporting {
+		t.Error("FocusReporting = false after DECRC, want true (DECSC state)")
+	}
+}

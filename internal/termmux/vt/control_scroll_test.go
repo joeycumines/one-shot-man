@@ -367,12 +367,12 @@ func TestSwitchToAlt_SavesCursor(t *testing.T) {
 	if v.active != v.alternate {
 		t.Error("active should be alternate after switchToAlt")
 	}
-	// Primary should have saved cursor.
-	if v.primary.SavedRow != 2 || v.primary.SavedCol != 7 {
+	// Primary should have saved cursor to Saved1049* fields.
+	if v.primary.Saved1049Row != 2 || v.primary.Saved1049Col != 7 {
 		t.Errorf("saved cursor: row=%d col=%d, want 2,7",
-			v.primary.SavedRow, v.primary.SavedCol)
+			v.primary.Saved1049Row, v.primary.Saved1049Col)
 	}
-	if !v.primary.SavedAttr.Bold {
+	if !v.primary.Saved1049Attr.Bold {
 		t.Error("saved attr should have Bold")
 	}
 }
@@ -391,9 +391,9 @@ func TestSwitchToAlt_Idempotent(t *testing.T) {
 		t.Error("should still be on alternate")
 	}
 	// Cursor should NOT be re-saved (it was already on alt).
-	if v.primary.SavedRow != 2 || v.primary.SavedCol != 7 {
+	if v.primary.Saved1049Row != 2 || v.primary.Saved1049Col != 7 {
 		t.Errorf("second switchToAlt should not re-save: row=%d col=%d",
-			v.primary.SavedRow, v.primary.SavedCol)
+			v.primary.Saved1049Row, v.primary.Saved1049Col)
 	}
 }
 

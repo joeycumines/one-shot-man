@@ -88,6 +88,21 @@ type Screen struct {
 	SavedAutoWrap         bool
 	SavedSynchronizedOutput bool
 	SavedInsertMode       bool
+	Saved1049Row              int
+	Saved1049Col              int
+	Saved1049Attr             Attr
+	Saved1049G0Charset        int
+	Saved1049G1Charset        int
+	Saved1049GL               int
+	Saved1049OriginMode       bool
+	Saved1049PendingWrap      bool
+	Saved1049ApplicationCursor bool
+	Saved1049BracketedPaste   bool
+	Saved1049CursorShape      int
+	Saved1049FocusReporting   bool
+	Saved1049AutoWrap         bool
+	Saved1049SynchronizedOutput bool
+	Saved1049InsertMode       bool
 	PendingWrap    bool
 	CursorVisible  bool
 	TabStops       []bool
@@ -253,6 +268,12 @@ func (s *Screen) Resize(rows, cols int) {
 	}
 	if s.SavedCol >= cols {
 		s.SavedCol = cols - 1
+	}
+	if s.Saved1049Row >= rows {
+		s.Saved1049Row = rows - 1
+	}
+	if s.Saved1049Col >= cols {
+		s.Saved1049Col = cols - 1
 	}
 	// Preserve scroll region if it fits within new dimensions.
 	if s.ScrollTop > 0 || s.ScrollBot > 0 {
@@ -856,6 +877,21 @@ func (s *Screen) Snapshot() *Screen {
 		SavedAutoWrap: s.SavedAutoWrap,
 		SavedSynchronizedOutput: s.SavedSynchronizedOutput,
 		SavedInsertMode: s.SavedInsertMode,
+		Saved1049Row:              s.Saved1049Row,
+		Saved1049Col:              s.Saved1049Col,
+		Saved1049Attr:             s.Saved1049Attr,
+		Saved1049G0Charset:        s.Saved1049G0Charset,
+		Saved1049G1Charset:        s.Saved1049G1Charset,
+		Saved1049GL:               s.Saved1049GL,
+		Saved1049OriginMode:       s.Saved1049OriginMode,
+		Saved1049PendingWrap:      s.Saved1049PendingWrap,
+		Saved1049ApplicationCursor: s.Saved1049ApplicationCursor,
+		Saved1049BracketedPaste:   s.Saved1049BracketedPaste,
+		Saved1049CursorShape:      s.Saved1049CursorShape,
+		Saved1049FocusReporting:   s.Saved1049FocusReporting,
+		Saved1049AutoWrap:         s.Saved1049AutoWrap,
+		Saved1049SynchronizedOutput: s.Saved1049SynchronizedOutput,
+		Saved1049InsertMode:       s.Saved1049InsertMode,
 		RowWrapped:     append([]bool(nil), s.RowWrapped...),
 		ReflowOnResize: s.ReflowOnResize,
 	}

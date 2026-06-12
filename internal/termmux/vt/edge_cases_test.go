@@ -541,3 +541,16 @@ func TestScreen_Resize_SavedCursor_Clamped(t *testing.T) {
 		t.Errorf("SavedCol = %d, want 19 (clamped)", s.SavedCol)
 	}
 }
+
+func TestScreen_Resize_Saved1049Cursor_Clamped(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.Saved1049Row = 20
+	s.Saved1049Col = 70
+	s.Resize(10, 20)
+	if s.Saved1049Row != 9 {
+		t.Errorf("Saved1049Row = %d, want 9 (clamped)", s.Saved1049Row)
+	}
+	if s.Saved1049Col != 19 {
+		t.Errorf("Saved1049Col = %d, want 19 (clamped)", s.Saved1049Col)
+	}
+}

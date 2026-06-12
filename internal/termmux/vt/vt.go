@@ -245,22 +245,24 @@ func (v *VTerm) switchToAlt(mode int) {
 	}
 	switch mode {
 	case 1049:
-		// Save cursor on primary (per DECSET 1049 spec).
-		v.primary.SavedRow = v.primary.CurRow
-		v.primary.SavedCol = v.primary.CurCol
-		v.primary.SavedAttr = v.primary.CurAttr
-		v.primary.SavedG0Charset = v.primary.G0Charset
-		v.primary.SavedG1Charset = v.primary.G1Charset
-		v.primary.SavedGL = v.primary.GL
-		v.primary.SavedOriginMode = v.primary.OriginMode
-		v.primary.SavedPendingWrap = v.primary.PendingWrap
-		v.primary.SavedApplicationCursor = v.primary.ApplicationCursor
-		v.primary.SavedBracketedPaste = v.primary.BracketedPaste
-		v.primary.SavedCursorShape = v.primary.CursorShape
-		v.primary.SavedFocusReporting = v.primary.FocusReporting
-		v.primary.SavedAutoWrap = v.primary.AutoWrap
-		v.primary.SavedSynchronizedOutput = v.primary.SynchronizedOutput
-		v.primary.SavedInsertMode = v.primary.InsertMode
+		// Save cursor on primary to Saved1049* fields (per DECSET 1049 spec).
+		// These are separate from the Saved* fields used by DECSC, so that
+		// a prior DECSC save is not overwritten by the 1049 transition.
+		v.primary.Saved1049Row = v.primary.CurRow
+		v.primary.Saved1049Col = v.primary.CurCol
+		v.primary.Saved1049Attr = v.primary.CurAttr
+		v.primary.Saved1049G0Charset = v.primary.G0Charset
+		v.primary.Saved1049G1Charset = v.primary.G1Charset
+		v.primary.Saved1049GL = v.primary.GL
+		v.primary.Saved1049OriginMode = v.primary.OriginMode
+		v.primary.Saved1049PendingWrap = v.primary.PendingWrap
+		v.primary.Saved1049ApplicationCursor = v.primary.ApplicationCursor
+		v.primary.Saved1049BracketedPaste = v.primary.BracketedPaste
+		v.primary.Saved1049CursorShape = v.primary.CursorShape
+		v.primary.Saved1049FocusReporting = v.primary.FocusReporting
+		v.primary.Saved1049AutoWrap = v.primary.AutoWrap
+		v.primary.Saved1049SynchronizedOutput = v.primary.SynchronizedOutput
+		v.primary.Saved1049InsertMode = v.primary.InsertMode
 		// Clear alternate screen on entry.
 		v.alternate.EraseDisplay(2)
 		v.active = v.alternate
@@ -284,28 +286,28 @@ func (v *VTerm) switchToPrimary(mode int) {
 	v.active = v.primary
 	switch mode {
 	case 1049:
-		// Restore cursor on primary (per DECRST 1049 spec), clamped to screen bounds.
+		// Restore cursor on primary from Saved1049* fields, clamped to screen bounds.
 		// Restore mode state first so cursor clamping respects origin mode.
-		v.primary.CurAttr = v.primary.SavedAttr
-		v.primary.G0Charset = v.primary.SavedG0Charset
-		v.primary.G1Charset = v.primary.SavedG1Charset
-		v.primary.GL = v.primary.SavedGL
-		v.primary.OriginMode = v.primary.SavedOriginMode
-		v.primary.PendingWrap = v.primary.SavedPendingWrap
-		v.primary.ApplicationCursor = v.primary.SavedApplicationCursor
-		v.primary.BracketedPaste = v.primary.SavedBracketedPaste
-		v.primary.CursorShape = v.primary.SavedCursorShape
-		v.primary.FocusReporting = v.primary.SavedFocusReporting
-		v.primary.AutoWrap = v.primary.SavedAutoWrap
-		v.primary.SynchronizedOutput = v.primary.SavedSynchronizedOutput
-		v.primary.InsertMode = v.primary.SavedInsertMode
+		v.primary.CurAttr = v.primary.Saved1049Attr
+		v.primary.G0Charset = v.primary.Saved1049G0Charset
+		v.primary.G1Charset = v.primary.Saved1049G1Charset
+		v.primary.GL = v.primary.Saved1049GL
+		v.primary.OriginMode = v.primary.Saved1049OriginMode
+		v.primary.PendingWrap = v.primary.Saved1049PendingWrap
+		v.primary.ApplicationCursor = v.primary.Saved1049ApplicationCursor
+		v.primary.BracketedPaste = v.primary.Saved1049BracketedPaste
+		v.primary.CursorShape = v.primary.Saved1049CursorShape
+		v.primary.FocusReporting = v.primary.Saved1049FocusReporting
+		v.primary.AutoWrap = v.primary.Saved1049AutoWrap
+		v.primary.SynchronizedOutput = v.primary.Saved1049SynchronizedOutput
+		v.primary.InsertMode = v.primary.Saved1049InsertMode
 		if v.primary.OriginMode {
 			scrollTop, scrollBot := v.primary.ScrollRegion()
-			v.primary.CurRow = max(scrollTop, min(v.primary.SavedRow, scrollBot-1))
+			v.primary.CurRow = max(scrollTop, min(v.primary.Saved1049Row, scrollBot-1))
 		} else {
-			v.primary.CurRow = max(0, min(v.primary.SavedRow, v.primary.Rows-1))
+			v.primary.CurRow = max(0, min(v.primary.Saved1049Row, v.primary.Rows-1))
 		}
-		v.primary.CurCol = max(0, min(v.primary.SavedCol, v.primary.Cols-1))
+		v.primary.CurCol = max(0, min(v.primary.Saved1049Col, v.primary.Cols-1))
 	case 1047:
 		// Clear alternate screen on exit, no cursor restore.
 		v.alternate.EraseDisplay(2)

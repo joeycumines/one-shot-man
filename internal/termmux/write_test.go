@@ -15,9 +15,22 @@ func (fw failWriter) Write([]byte) (int, error) { return 0, fw.err }
 func TestWriteOrLog_Success(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	writeOrLog(&buf, []byte("hello"), "test-ctx")
+	err := writeOrLog(&buf, []byte("hello"), "test-ctx")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if buf.String() != "hello" {
 		t.Fatalf("buf = %q; want %q", buf.String(), "hello")
+	}
+}
+
+func TestWriteOrLog_Error_Returned(t *testing.T) {
+	t.Parallel()
+	wantErr := bytes.ErrTooLarge
+	fw := failWriter{err: wantErr}
+	gotErr := writeOrLog(fw, []byte("data"), "bell")
+	if gotErr != wantErr {
+		t.Fatalf("writeOrLog error = %v; want %v", gotErr, wantErr)
 	}
 }
 
@@ -29,7 +42,7 @@ func TestWriteOrLog_Error_Logged(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(old) })
 
 	fw := failWriter{err: bytes.ErrTooLarge}
-	writeOrLog(fw, []byte("data"), "bell")
+	_ = writeOrLog(fw, []byte("data"), "bell")
 
 	got := logBuf.String()
 	for _, want := range []string{"terminal write failed", "too large", "bell"} {

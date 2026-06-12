@@ -9,6 +9,11 @@ package termmux
 
 import "slices"
 
+// MaxCoord is the maximum reasonable terminal dimension (columns or rows).
+// Terminal emulators typically cap at a few thousand; 10000 is 100× a
+// typical maximum screen size and safely above any realistic coordinate.
+const MaxCoord = 10000
+
 // SGRMouseEvent holds a parsed SGR mouse escape sequence.
 type SGRMouseEvent struct {
 	Button  int  // Button parameter (includes modifiers).
@@ -107,6 +112,11 @@ func parseSGRMouse(buf []byte, start int) (ev SGRMouseEvent, consumed int, ok bo
 	}
 	i++
 
+	// Reject values that exceed reasonable terminal dimensions.
+	// SGR coordinates and button parameters should never exceed ~10000.
+	if btn > MaxCoord || px > MaxCoord || py > MaxCoord {
+		return ev, 0, false
+	}
 	ev.Button = btn
 	ev.X = px
 	ev.Y = py
@@ -119,6 +129,10 @@ func parseSGRMouse(buf []byte, start int) (ev SGRMouseEvent, consumed int, ok bo
 func parseDecimal(buf []byte, start, end int) (val int, next int, ok bool) {
 	i := start
 	for i < end && buf[i] >= '0' && buf[i] <= '9' {
+		// Overflow guard: prevent silent wrap-around on 32-bit platforms.
+		if val > (1<<31-1)/10 || (val == (1<<31-1)/10 && int(buf[i]-'0') > 7) {
+			return 0, start, false
+		}
 		val = val*10 + int(buf[i]-'0')
 		i++
 	}

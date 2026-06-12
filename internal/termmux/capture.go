@@ -224,7 +224,7 @@ func (cs *CaptureSession) readerLoop() {
 		output := cs.passthroughOutput
 		cs.mu.Unlock()
 		if active && output != nil {
-			writeOrLog(output, chunk, "capture-passthrough-output")
+			_ = writeOrLog(output, chunk, "capture-passthrough-output")
 		}
 	}
 
@@ -541,7 +541,7 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 
 	// Clear screen and resize child to full terminal dimensions.
 	if cfg.Stdout != nil {
-		writeOrLog(cfg.Stdout, []byte("\x1b[2J\x1b[H"), "capture-passthrough-clear")
+		_ = writeOrLog(cfg.Stdout, []byte("\x1b[2J\x1b[H"), "capture-passthrough-clear")
 	}
 	if cfg.TermFd >= 0 && cfg.TermState != nil {
 		if w, h, err := cfg.TermState.GetSize(cfg.TermFd); err == nil {

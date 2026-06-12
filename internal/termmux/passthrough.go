@@ -83,7 +83,9 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 		// Restore the active session's VTerm screen in-place.
 		snap := m.Snapshot(activeID)
 		if snap != nil && snap.FullScreen != "" {
-			writeOrLog(cfg.Stdout, []byte(snap.FullScreen), "vterm-restore")
+			if err := writeOrLog(cfg.Stdout, []byte(snap.FullScreen), "vterm-restore"); err != nil {
+				return ExitError, err
+			}
 		}
 		// Erase rows beyond the VTerm's height to prevent ghost
 		// content from a previous session persisting below the
@@ -96,7 +98,9 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 			eraseRow = snap.Rows
 		}
 		if eraseRow > 0 {
-			writeOrLog(cfg.Stdout, fmt.Appendf(nil, "\x1b[%d;1H\x1b[0J", eraseRow+1), "vterm-erase-below")
+			if err := writeOrLog(cfg.Stdout, fmt.Appendf(nil, "\x1b[%d;1H\x1b[0J", eraseRow+1), "vterm-erase-below"); err != nil {
+				return ExitError, err
+			}
 		}
 		// Re-render status bar after VTerm restore.
 		if cfg.StatusBar != nil && statusBarLines > 0 {
@@ -104,7 +108,9 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 		}
 	} else {
 		// First swap: clear screen + home cursor.
-		writeOrLog(cfg.Stdout, []byte("\x1b[2J\x1b[H"), "first-swap-clear")
+		if err := writeOrLog(cfg.Stdout, []byte("\x1b[2J\x1b[H"), "first-swap-clear"); err != nil {
+			return ExitError, err
+		}
 	}
 
 	// Nudge the child with a resize so it redraws at the correct

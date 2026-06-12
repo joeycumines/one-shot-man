@@ -412,6 +412,38 @@ func (v *VTerm) CursorShape() int {
 	return v.active.CursorShape
 }
 
+// FocusReporting reports whether focus event reporting (DECSET ?1004h) is
+// active on the current screen. Thread-safe.
+func (v *VTerm) FocusReporting() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.FocusReporting
+}
+
+// FocusIn sends a focus-in event (ESC[I) to the child process via
+// ResponseWriter if focus reporting (DECSET ?1004h) is active on the
+// current screen. If focus reporting is off or ResponseWriter is nil,
+// the call is a no-op. Thread-safe.
+func (v *VTerm) FocusIn() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.active.FocusReporting && v.ResponseWriter != nil {
+		v.ResponseWriter([]byte("\x1b[I"))
+	}
+}
+
+// FocusOut sends a focus-out event (ESC[O) to the child process via
+// ResponseWriter if focus reporting (DECSET ?1004h) is active on the
+// current screen. If focus reporting is off or ResponseWriter is nil,
+// the call is a no-op. Thread-safe.
+func (v *VTerm) FocusOut() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.active.FocusReporting && v.ResponseWriter != nil {
+		v.ResponseWriter([]byte("\x1b[O"))
+	}
+}
+
 // ActiveScreen returns a snapshot copy of the active screen's state.
 // The returned Screen is a value copy — mutations to it do not affect the
 // VTerm's internal state, and no data races are possible regardless of

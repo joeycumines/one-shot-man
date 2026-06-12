@@ -105,6 +105,11 @@ type Screen struct {
 	// 6=steady-bar.
 	CursorShape int
 
+	// FocusReporting controls whether focus-in/focus-out events are sent
+	// to the child process via ResponseWriter. When true, VTerm.FocusIn()
+	// writes ESC[I and VTerm.FocusOut() writes ESC[O. Set by DECSET ?1004h.
+	FocusReporting bool
+
 	// Scrollback holds lines that have scrolled off the top of the visible
 	// screen. It is a ring buffer: Scrollback[0] is the oldest line when
 	// ScrollbackHead == 0, otherwise the oldest line is at ScrollbackHead.
@@ -797,7 +802,8 @@ func (s *Screen) Snapshot() *Screen {
 		MouseTracking: s.MouseTracking,
 		MouseSGR:      s.MouseSGR,
 		BracketedPaste: s.BracketedPaste,
-		CursorShape:   s.CursorShape,
+		CursorShape:    s.CursorShape,
+		FocusReporting: s.FocusReporting,
 
 		Scrollback:     scrollback,
 		ScrollbackLen:  s.ScrollbackLen,

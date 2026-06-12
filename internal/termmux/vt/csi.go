@@ -15,6 +15,7 @@ type CSIHandler struct {
 	AltScreenFn    func(toAlt bool, mode int)
 	ResponseWriter func([]byte)
 	HasInterGt     func() bool // reports whether '>' intermediate was present
+	HasInterSp     func() bool // reports whether ' ' intermediate was present
 }
 
 // Dispatch processes a CSI sequence identified by the given final byte.
@@ -258,6 +259,14 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 				}
 				h.respond("\x1b[" + itoa(row) + ";" + itoa(col) + "R")
 			}
+		}
+	case 'q': // DECSCUSR — cursor style
+		if h.HasInterSp != nil && h.HasInterSp() {
+			p := paramDefault(params, 0, 0)
+			if p < 0 || p > 6 {
+				p = 0
+			}
+			scr.CursorShape = p
 		}
 	}
 }

@@ -99,6 +99,12 @@ type Screen struct {
 	// When false, paste events are sent without delimiters.
 	BracketedPaste bool
 
+	// CursorShape controls the cursor appearance.
+	// Set by DECSCUSR (CSI Ps SP q). Values: 0=default, 1=blink-block,
+	// 2=steady-block, 3=blink-underline, 4=steady-underline, 5=blink-bar,
+	// 6=steady-bar.
+	CursorShape int
+
 	// Scrollback holds lines that have scrolled off the top of the visible
 	// screen. It is a ring buffer: Scrollback[0] is the oldest line when
 	// ScrollbackHead == 0, otherwise the oldest line is at ScrollbackHead.
@@ -791,6 +797,7 @@ func (s *Screen) Snapshot() *Screen {
 		MouseTracking: s.MouseTracking,
 		MouseSGR:      s.MouseSGR,
 		BracketedPaste: s.BracketedPaste,
+		CursorShape:   s.CursorShape,
 
 		Scrollback:     scrollback,
 		ScrollbackLen:  s.ScrollbackLen,

@@ -72,6 +72,10 @@ func NewVTerm(rows, cols int) *VTerm {
 			v.switchToPrimary(mode)
 		}
 	}
+	// Wire intermediate ' ' detector for DECSCUSR.
+	v.csi.HasInterSp = func() bool {
+		return v.parser.HasIntermediate(' ')
+	}
 	// Wire CSI response callback — DA/DSR responses go through ResponseWriter.
 	v.csi.ResponseWriter = func(data []byte) {
 		if v.ResponseWriter != nil {
@@ -397,6 +401,15 @@ func (v *VTerm) BracketedPaste() bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.active.BracketedPaste
+}
+
+// CursorShape returns the active screen's cursor shape (DECSCUSR).
+// Values: 0=default, 1=blink-block, 2=steady-block, 3=blink-underline,
+// 4=steady-underline, 5=blink-bar, 6=steady-bar. Thread-safe.
+func (v *VTerm) CursorShape() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.CursorShape
 }
 
 // ActiveScreen returns a snapshot copy of the active screen's state.

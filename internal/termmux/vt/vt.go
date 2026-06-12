@@ -439,6 +439,15 @@ func (v *VTerm) AutoWrap() bool {
 	return v.active.AutoWrap
 }
 
+// SynchronizedOutput reports whether synchronized output mode (DECSET ?2026h)
+// is active on the current screen. When true, snapshot publication should be
+// deferred until the mode is disabled. Thread-safe.
+func (v *VTerm) SynchronizedOutput() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.SynchronizedOutput
+}
+
 // FocusIn sends a focus-in event (ESC[I) to the child process via
 // ResponseWriter if focus reporting (DECSET ?1004h) is active on the
 // current screen. If focus reporting is off or ResponseWriter is nil,

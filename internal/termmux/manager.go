@@ -152,6 +152,15 @@ type ScreenSnapshot struct {
 	// ESC[I and ESC[O via ResponseWriter.
 	FocusReporting bool
 
+	// SynchronizedOutput is true when the child has enabled synchronized output
+	// mode (DECSET ?2026h). When true, rapid updates are batched and the
+	// consumer should defer rendering until SynchronizedOutput becomes false.
+	SynchronizedOutput bool
+
+	// AutoWrap is true when auto-wrap mode (DECAWM, DECSET ?7h) is active.
+	// When true (default), characters at the right margin wrap to the next line.
+	AutoWrap bool
+
 	// Timestamp records when this snapshot was created.
 	Timestamp time.Time
 }
@@ -920,6 +929,12 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 	// EOF sentinel: transition to Exited (from Running) or directly to
 	// Closed (from Created — process exited without producing output).
 	if so.data == nil {
+		// If synchronized output mode was active, the consumer may not
+		// have received the final event. Emit one now so the last
+		// snapshot is rendered.
+		if ms.vterm.SynchronizedOutput() {
+			m.eventBus.emitData(EventSessionOutput, so.id, nil)
+		}
 		if ms.state.validTransition(SessionExited) {
 			ms.state = SessionExited
 			m.eventBus.emit(EventSessionExited, so.id)
@@ -974,11 +989,22 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 		BracketedPaste:    ms.vterm.BracketedPaste(),
 		ApplicationCursor: ms.vterm.ApplicationCursor(),
 		CursorShape:       ms.vterm.CursorShape(),
-		FocusReporting:    ms.vterm.FocusReporting(),
-		Timestamp:         time.Now(),
+		FocusReporting:     ms.vterm.FocusReporting(),
+		SynchronizedOutput: ms.vterm.SynchronizedOutput(),
+		AutoWrap:           ms.vterm.AutoWrap(),
+		Timestamp:          time.Now(),
 	}
 	ms.snapshot.Store(snap)
-	m.eventBus.emitData(EventSessionOutput, so.id, so.data)
+
+	// When synchronized output mode is active, skip event emission to
+	// reduce flicker. The snapshot is still stored (so Snapshot() returns
+	// current state), but consumers won't be notified until the mode is
+	// disabled. The next output chunk that turns off synchronized output
+	// will naturally emit the event since SynchronizedOutput() returns
+	// false after the VTerm processes the DECRST ?2026l.
+	if !ms.vterm.SynchronizedOutput() {
+		m.eventBus.emitData(EventSessionOutput, so.id, so.data)
+	}
 }
 
 // startReaderGoroutine spawns a goroutine that reads from a session's

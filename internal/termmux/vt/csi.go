@@ -302,6 +302,8 @@ func (h *CSIHandler) decset(scr *Screen, params []int) {
 			scr.MouseSGR = true
 		case 2004: // Bracketed paste mode
 			scr.BracketedPaste = true
+		case 2026: // Synchronized output
+			scr.SynchronizedOutput = true
 		case 1004: // Focus event reporting
 			scr.FocusReporting = true
 		}
@@ -345,6 +347,8 @@ func (h *CSIHandler) decrst(scr *Screen, params []int) {
 			scr.MouseSGR = false
 		case 2004: // Bracketed paste mode off
 			scr.BracketedPaste = false
+		case 2026: // Synchronized output off
+			scr.SynchronizedOutput = false
 		case 1004: // Focus event reporting off
 			scr.FocusReporting = false
 		}

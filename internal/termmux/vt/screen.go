@@ -123,6 +123,13 @@ type Screen struct {
 	// overwrite the last column without advancing the cursor or wrapping.
 	AutoWrap bool
 
+	// SynchronizedOutput controls whether the manager batches snapshot
+	// updates. When true (DECSET ?2026h), output is fed to VTerm but
+	// snapshot publication is deferred until the mode is disabled.
+	// This reduces flicker during rapid screen updates (e.g., full redraws).
+	// When false (default), snapshots are published on every output chunk.
+	SynchronizedOutput bool
+
 	// Scrollback holds lines that have scrolled off the top of the visible
 	// screen. It is a ring buffer: Scrollback[0] is the oldest line when
 	// ScrollbackHead == 0, otherwise the oldest line is at ScrollbackHead.
@@ -820,6 +827,7 @@ func (s *Screen) Snapshot() *Screen {
 		FocusReporting:     s.FocusReporting,
 		ApplicationCursor:  s.ApplicationCursor,
 		AutoWrap:           s.AutoWrap,
+		SynchronizedOutput: s.SynchronizedOutput,
 
 		Scrollback:     scrollback,
 		ScrollbackLen:  s.ScrollbackLen,

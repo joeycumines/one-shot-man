@@ -142,6 +142,11 @@ type ScreenSnapshot struct {
 	// sequences (ESC O{A-D/H/F) instead of CSI sequences.
 	ApplicationCursor bool
 
+	// KeypadApplication is true when the child has enabled keypad application
+	// mode (DECSET ?66h, DECKPAM). When true, keypad keys send SS3 sequences
+	// (ESC O p–y for digits, ESC O M for enter, etc.) instead of ASCII.
+	KeypadApplication bool
+
 	// CursorShape is the current cursor shape (DECSCUSR). Values: 0=default,
 	// 1=blink-block, 2=steady-block, 3=blink-underline, 4=steady-underline,
 	// 5=blink-bar, 6=steady-bar.
@@ -988,6 +993,7 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 		InsertMode:         ms.vterm.InsertMode(),
 		BracketedPaste:     ms.vterm.BracketedPaste(),
 		ApplicationCursor:  ms.vterm.ApplicationCursor(),
+		KeypadApplication:  ms.vterm.KeypadApplication(),
 		CursorShape:        ms.vterm.CursorShape(),
 		FocusReporting:     ms.vterm.FocusReporting(),
 		SynchronizedOutput: ms.vterm.SynchronizedOutput(),

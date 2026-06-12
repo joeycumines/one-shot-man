@@ -9,9 +9,11 @@ import (
 // sequence for PTY forwarding. Key names match BubbleTea's KeyMsg.String()
 // output (keys_gen.go). When appCursor is true, arrow keys and home/end
 // use application cursor mode (SS3 sequences: ESC O{A-D/H/F instead of
-// CSI A/B/C/D/H/F). Returns the byte sequence and true if the key was
-// recognized, or an empty string and false otherwise.
-func KeyToTermBytes(key string, appCursor bool) (string, bool) {
+// CSI A/B/C/D/H/F). When appKeypad is true, keypad keys use application
+// mode (SS3 sequences: ESC O p–y for digits, ESC O M for enter, etc.)
+// instead of their ASCII equivalents. Returns the byte sequence and true
+// if the key was recognized, or an empty string and false otherwise.
+func KeyToTermBytes(key string, appCursor bool, appKeypad bool) (string, bool) {
 	// Named special keys → terminal escape sequences.
 	switch key {
 	case "enter":
@@ -90,6 +92,100 @@ func KeyToTermBytes(key string, appCursor bool) (string, bool) {
 		return "\x1b[24~", true
 	}
 
+	// Keypad keys: application mode sends SS3 sequences, normal mode sends ASCII.
+	switch key {
+	case "kp0":
+		if appKeypad {
+			return "\x1bOp", true
+		}
+		return "0", true
+	case "kp1":
+		if appKeypad {
+			return "\x1bOq", true
+		}
+		return "1", true
+	case "kp2":
+		if appKeypad {
+			return "\x1bOr", true
+		}
+		return "2", true
+	case "kp3":
+		if appKeypad {
+			return "\x1bOs", true
+		}
+		return "3", true
+	case "kp4":
+		if appKeypad {
+			return "\x1bOt", true
+		}
+		return "4", true
+	case "kp5":
+		if appKeypad {
+			return "\x1bOu", true
+		}
+		return "5", true
+	case "kp6":
+		if appKeypad {
+			return "\x1bOv", true
+		}
+		return "6", true
+	case "kp7":
+		if appKeypad {
+			return "\x1bOw", true
+		}
+		return "7", true
+	case "kp8":
+		if appKeypad {
+			return "\x1bOx", true
+		}
+		return "8", true
+	case "kp9":
+		if appKeypad {
+			return "\x1bOy", true
+		}
+		return "9", true
+	case "kp_enter":
+		if appKeypad {
+			return "\x1bOM", true
+		}
+		return "\r", true
+	case "kp_plus":
+		if appKeypad {
+			return "\x1bOk", true
+		}
+		return "+", true
+	case "kp_minus":
+		if appKeypad {
+			return "\x1bOm", true
+		}
+		return "-", true
+	case "kp_asterisk", "kp_star":
+		if appKeypad {
+			return "\x1bOj", true
+		}
+		return "*", true
+	case "kp_slash":
+		if appKeypad {
+			return "\x1bOo", true
+		}
+		return "/", true
+	case "kp_dot", "kp_period":
+		if appKeypad {
+			return "\x1bOn", true
+		}
+		return ".", true
+	case "kp_comma":
+		if appKeypad {
+			return "\x1bOl", true
+		}
+		return ",", true
+	case "kp_equal":
+		if appKeypad {
+			return "\x1bOX", true
+		}
+		return "=", true
+	}
+
 	// Ctrl+letter → control character (0x01–0x1A for a-z).
 	if rest, ok := strings.CutPrefix(key, "ctrl+"); ok && len(rest) == 1 {
 		ch := rest[0]
@@ -108,7 +204,7 @@ func KeyToTermBytes(key string, appCursor bool) (string, bool) {
 
 	// Alt+key → ESC prefix + inner key bytes.
 	if rest, ok := strings.CutPrefix(key, "alt+"); ok {
-		if inner, ok := KeyToTermBytes(rest, appCursor); ok {
+		if inner, ok := KeyToTermBytes(rest, appCursor, appKeypad); ok {
 			return "\x1b" + inner, true
 		}
 	}

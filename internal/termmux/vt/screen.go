@@ -151,6 +151,13 @@ type Screen struct {
 	// When false (default, normal mode), cursor keys send CSI sequences.
 	ApplicationCursor bool
 
+	// KeypadApplication controls whether keypad keys send application mode
+	// sequences. When true (DECSET ?66h, DECKPAM), keypad keys send SS3
+	// sequences (ESC O p through ESC O y for digits, etc.). When false
+	// (default, normal mode, DECRST ?66l, DECKPNM), keypad keys send their
+	// ASCII equivalents.
+	KeypadApplication bool
+
 	// AutoWrap controls whether characters at the right margin wrap to the
 	// next line. When true (default, DECAWM), reaching the right margin
 	// sets PendingWrap; the next printable character wraps to column 0 of
@@ -852,6 +859,7 @@ func (s *Screen) Snapshot() *Screen {
 		CursorShape:        s.CursorShape,
 		FocusReporting:     s.FocusReporting,
 		ApplicationCursor:  s.ApplicationCursor,
+		KeypadApplication:  s.KeypadApplication,
 		AutoWrap:           s.AutoWrap,
 		SynchronizedOutput: s.SynchronizedOutput,
 

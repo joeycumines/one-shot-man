@@ -82,6 +82,12 @@ type Model struct {
 	// (ESC O{A-D/H/F) instead of CSI sequences, matching the application
 	// cursor mode set by DECSET ?1h (DECCKM).
 	appCursor bool
+
+	// appKeypad mirrors the active screen's KeypadApplication mode flag.
+	// When true, keypad keys are encoded using SS3 sequences (ESC O p–y
+	// for digits, ESC O M for enter, etc.) instead of ASCII equivalents,
+	// matching the keypad application mode set by DECSET ?66h (DECKPAM).
+	appKeypad bool
 }
 
 // NewModel creates a Model that renders the given termmux session within
@@ -112,6 +118,7 @@ func NewModel(sessionID termmux.SessionID, manager *termmux.SessionManager, boun
 	m.snap = manager.Snapshot(sessionID)
 	if m.snap != nil {
 		m.appCursor = m.snap.ApplicationCursor
+		m.appKeypad = m.snap.KeypadApplication
 	}
 
 	return m
@@ -182,6 +189,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.snap = m.manager.Snapshot(m.sessionID)
 		if m.snap != nil {
 			m.appCursor = m.snap.ApplicationCursor
+			m.appKeypad = m.snap.KeypadApplication
 		}
 		m.mu.Unlock()
 		// Re-subscribe for the next event.
@@ -222,7 +230,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // them to the session's PTY via the manager.
 func (m *Model) forwardKey(msg tea.KeyPressMsg) {
 	keyStr := msg.String()
-	seq, ok := termmux.KeyToTermBytes(keyStr, m.appCursor)
+	seq, ok := termmux.KeyToTermBytes(keyStr, m.appCursor, m.appKeypad)
 	if !ok {
 		// Unrecognized key — try the text field for printable characters.
 		if msg.Key().Text != "" {

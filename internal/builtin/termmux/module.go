@@ -181,13 +181,17 @@ func Require(ctx context.Context, input io.Reader, output io.Writer) func(*goja.
 		})
 
 		// ── Input encoding utilities ────────────────────────
-		// keyToTermBytes(key, appCursor?) → string | null
+		// keyToTermBytes(key, appCursor?, appKeypad?) → string | null
 		// When appCursor is true, arrow/home/end keys use application mode
 		// sequences (SS3: ESC O{A-D/H/F) instead of CSI sequences.
+		// When appKeypad is true, keypad keys use application mode sequences
+		// (SS3: ESC O p–y for digits, ESC O M for enter, etc.) instead of
+		// their ASCII equivalents.
 		_ = exports.Set("keyToTermBytes", func(call goja.FunctionCall) goja.Value {
 			key := call.Argument(0).String()
 			appCursor := len(call.Arguments) > 1 && call.Argument(1).ToBoolean()
-			if s, ok := parent.KeyToTermBytes(key, appCursor); ok {
+			appKeypad := len(call.Arguments) > 2 && call.Argument(2).ToBoolean()
+			if s, ok := parent.KeyToTermBytes(key, appCursor, appKeypad); ok {
 				return runtime.ToValue(s)
 			}
 			return goja.Null()

@@ -448,6 +448,15 @@ func (v *VTerm) ApplicationCursor() bool {
 	return v.active.ApplicationCursor
 }
 
+// KeypadApplication reports whether keypad application mode (DECSET ?66h,
+// DECKPAM) is active on the current screen. When true, keypad keys send
+// SS3 sequences instead of their ASCII equivalents. Thread-safe.
+func (v *VTerm) KeypadApplication() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.KeypadApplication
+}
+
 // AutoWrap reports whether auto-wrap mode (DECAWM, DECSET ?7h) is active
 // on the current screen. When true (default), characters at the right
 // margin wrap to the next line. When false, characters at the right

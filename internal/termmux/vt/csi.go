@@ -296,6 +296,8 @@ func (h *CSIHandler) decset(scr *Screen, params []int) {
 			scr.PendingWrap = false
 		case 1: // DECCKM — application cursor mode
 			scr.ApplicationCursor = true
+		case 66: // DECKPAM — keypad application mode
+			scr.KeypadApplication = true
 		case 7: // DECAWM
 			scr.AutoWrap = true
 		case 25: // DECTCEM — show cursor
@@ -334,6 +336,8 @@ func (h *CSIHandler) decrst(scr *Screen, params []int) {
 			scr.PendingWrap = false
 		case 1: // DECCKM — application cursor mode off
 			scr.ApplicationCursor = false
+		case 66: // DECKPNM — keypad normal mode
+			scr.KeypadApplication = false
 		case 7: // DECAWM off
 			scr.AutoWrap = false
 			scr.PendingWrap = false

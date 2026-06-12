@@ -41,7 +41,7 @@ func TestKeyToTermBytes_SpecialKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
-			got, ok := KeyToTermBytes(tt.key, false)
+			got, ok := KeyToTermBytes(tt.key, false, false)
 			if !ok {
 				t.Fatalf("KeyToTermBytes(%q, false): expected ok", tt.key)
 			}
@@ -54,20 +54,20 @@ func TestKeyToTermBytes_SpecialKeys(t *testing.T) {
 
 func TestKeyToTermBytes_CtrlLetters(t *testing.T) {
 	// ctrl+a → 0x01, ctrl+z → 0x1A
-	got, ok := KeyToTermBytes("ctrl+a", false)
+	got, ok := KeyToTermBytes("ctrl+a", false, false)
 	if !ok || got != "\x01" {
 		t.Errorf("ctrl+a: got %q ok=%v", got, ok)
 	}
-	got, ok = KeyToTermBytes("ctrl+z", false)
+	got, ok = KeyToTermBytes("ctrl+z", false, false)
 	if !ok || got != "\x1a" {
 		t.Errorf("ctrl+z: got %q ok=%v", got, ok)
 	}
-	got, ok = KeyToTermBytes("ctrl+c", false)
+	got, ok = KeyToTermBytes("ctrl+c", false, false)
 	if !ok || got != "\x03" {
 		t.Errorf("ctrl+c: got %q ok=%v", got, ok)
 	}
 	// Uppercase should also work.
-	got, ok = KeyToTermBytes("ctrl+A", false)
+	got, ok = KeyToTermBytes("ctrl+A", false, false)
 	if !ok || got != "\x01" {
 		t.Errorf("ctrl+A: got %q ok=%v", got, ok)
 	}
@@ -98,7 +98,7 @@ func TestKeyToTermBytes_ModNav(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
-			got, ok := KeyToTermBytes(tt.key, false)
+			got, ok := KeyToTermBytes(tt.key, false, false)
 			if !ok {
 				t.Fatalf("KeyToTermBytes(%q, false): expected ok", tt.key)
 			}
@@ -111,51 +111,51 @@ func TestKeyToTermBytes_ModNav(t *testing.T) {
 
 func TestKeyToTermBytes_Alt(t *testing.T) {
 	// alt+a → ESC + 'a'
-	got, ok := KeyToTermBytes("alt+a", false)
+	got, ok := KeyToTermBytes("alt+a", false, false)
 	if !ok || got != "\x1ba" {
 		t.Errorf("alt+a: got %q ok=%v", got, ok)
 	}
 	// alt+up → ESC + ESC[A
-	got, ok = KeyToTermBytes("alt+up", false)
+	got, ok = KeyToTermBytes("alt+up", false, false)
 	if !ok || got != "\x1b\x1b[A" {
 		t.Errorf("alt+up: got %q ok=%v", got, ok)
 	}
 }
 
 func TestKeyToTermBytes_Paste(t *testing.T) {
-	got, ok := KeyToTermBytes("[hello world]", false)
+	got, ok := KeyToTermBytes("[hello world]", false, false)
 	if !ok || got != "hello world" {
 		t.Errorf("paste: got %q ok=%v", got, ok)
 	}
 }
 
 func TestKeyToTermBytes_SingleChar(t *testing.T) {
-	got, ok := KeyToTermBytes("a", false)
+	got, ok := KeyToTermBytes("a", false, false)
 	if !ok || got != "a" {
 		t.Errorf("single char: got %q ok=%v", got, ok)
 	}
-	got, ok = KeyToTermBytes(" ", false)
+	got, ok = KeyToTermBytes(" ", false, false)
 	if !ok || got != " " {
 		t.Errorf("space: got %q ok=%v", got, ok)
 	}
 }
 
 func TestKeyToTermBytes_Unicode(t *testing.T) {
-	got, ok := KeyToTermBytes("日本語", false)
+	got, ok := KeyToTermBytes("日本語", false, false)
 	if !ok || got != "日本語" {
 		t.Errorf("unicode: got %q ok=%v", got, ok)
 	}
 }
 
 func TestKeyToTermBytes_Unknown(t *testing.T) {
-	_, ok := KeyToTermBytes("ctrl+shift+alt+x", false)
+	_, ok := KeyToTermBytes("ctrl+shift+alt+x", false, false)
 	if ok {
 		t.Error("expected !ok for unrecognized combo")
 	}
 }
 
 func TestKeyToTermBytes_SpaceKey(t *testing.T) {
-	got, ok := KeyToTermBytes("space", false)
+	got, ok := KeyToTermBytes("space", false, false)
 	if !ok {
 		t.Fatal("expected ok for space key name")
 	}
@@ -168,7 +168,7 @@ func TestKeyToTermBytes_UnrecognizedKeyNames(t *testing.T) {
 	tests := []string{"capslock", "numlock", "scrolllock", "num0", "num1", "printscreen"}
 	for _, key := range tests {
 		t.Run(key, func(t *testing.T) {
-			_, ok := KeyToTermBytes(key, false)
+			_, ok := KeyToTermBytes(key, false, false)
 			if ok {
 				t.Errorf("KeyToTermBytes(%q, false): expected !ok for unrecognized key name", key)
 			}
@@ -402,7 +402,7 @@ func TestKeyToTermBytes_ApplicationCursor(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
 			// Normal mode (appCursor=false)
-			got, ok := KeyToTermBytes(tt.key, false)
+			got, ok := KeyToTermBytes(tt.key, false, false)
 			if !ok {
 				t.Fatalf("KeyToTermBytes(%q, false): expected ok", tt.key)
 			}
@@ -411,7 +411,7 @@ func TestKeyToTermBytes_ApplicationCursor(t *testing.T) {
 			}
 
 			// Application cursor mode (appCursor=true)
-			got, ok = KeyToTermBytes(tt.key, true)
+			got, ok = KeyToTermBytes(tt.key, true, false)
 			if !ok {
 				t.Fatalf("KeyToTermBytes(%q, true): expected ok", tt.key)
 			}
@@ -438,8 +438,8 @@ func TestKeyToTermBytes_ApplicationCursor_UnaffectedKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
-			gotFalse, _ := KeyToTermBytes(tt.key, false)
-			gotTrue, _ := KeyToTermBytes(tt.key, true)
+			gotFalse, _ := KeyToTermBytes(tt.key, false, false)
+			gotTrue, _ := KeyToTermBytes(tt.key, true, false)
 			if gotFalse != gotTrue {
 				t.Errorf("appCursor affected %q: false=%q, true=%q (should be same)", tt.key, gotFalse, gotTrue)
 			}

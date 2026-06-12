@@ -25,7 +25,7 @@ func TestRenderRaster_BasicText(t *testing.T) {
 
 	// Verify that the first 5 cells have content (non-background pixels).
 	// Content cells should have white foreground in the upper 75% of the cell.
-	for col := 0; col < 5; col++ {
+	for col := range 5 {
 		px := col*8 + 3 // center-x of the cell
 		py := 8         // middle-y of the cell (within the upper 75%)
 		r, g, b, _ := img.At(px, py).RGBA()

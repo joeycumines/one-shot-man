@@ -1,6 +1,7 @@
 package vt
 
 import (
+	"strings"
 	"sync"
 	"testing"
 )
@@ -278,13 +279,13 @@ func TestDCSHandler_LongPayload(t *testing.T) {
 	v.DCSHandler = func(data []byte) {
 		gotData = data
 	}
-	var payload string
-	for i := 0; i < 200; i++ {
-		payload += "A"
+	var payload strings.Builder
+	for range 200 {
+		payload.WriteString("A")
 	}
-	v.Write([]byte("\x1bP" + payload + "\x07"))
-	if string(gotData) != payload {
-		t.Fatalf("DCSHandler data length = %d; want %d", len(gotData), len(payload))
+	v.Write([]byte("\x1bP" + payload.String() + "\x07"))
+	if string(gotData) != payload.String() {
+		t.Fatalf("DCSHandler data length = %d; want %d", len(gotData), len(payload.String()))
 	}
 }
 
@@ -295,11 +296,11 @@ func TestDCSHandler_TruncatedAtMaxDCSLen(t *testing.T) {
 		gotData = data
 	}
 	// Default maxDCSLen is 4096
-	var payload string
-	for i := 0; i < 5000; i++ {
-		payload += "X"
+	var payload strings.Builder
+	for range 5000 {
+		payload.WriteString("X")
 	}
-	v.Write([]byte("\x1bP" + payload + "\x07"))
+	v.Write([]byte("\x1bP" + payload.String() + "\x07"))
 	if len(gotData) != 4096 {
 		t.Fatalf("DCSHandler data length = %d; want 4096 (maxDCSLen)", len(gotData))
 	}

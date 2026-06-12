@@ -60,12 +60,9 @@ func (l List) Render(bounds coordinate.Rect) string {
 	if w <= 0 || h <= 0 || len(l.items) == 0 {
 		return ""
 	}
-	maxItems := h
-	if len(l.items) < maxItems {
-		maxItems = len(l.items)
-	}
+	maxItems := min(len(l.items), h)
 	var lines []string
-	for i := 0; i < maxItems; i++ {
+	for i := range maxItems {
 		style := l.items[i].Style
 		if i == l.selectedIndex {
 			style = l.selectedStyle

@@ -9,7 +9,7 @@ func TestScrollback_LinesPreserved(t *testing.T) {
 	// Write enough lines to a 5-row terminal to generate scrollback.
 	// Using VTerm.Write which handles line feed properly.
 	scr := NewScreen(5, 40)
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		// Write a line and then CR+LF.
 		line := strings.Repeat("A", i+1) // unique line lengths
 		for _, ch := range line {
@@ -29,7 +29,7 @@ func TestScrollback_LinesPreserved(t *testing.T) {
 	}
 
 	// Verify scrollback rows are accessible and have content.
-	for i := 0; i < got; i++ {
+	for i := range got {
 		row := scr.ScrollbackRow(i)
 		if row == nil {
 			t.Fatalf("ScrollbackRow(%d) = nil", i)
@@ -43,7 +43,7 @@ func TestScrollback_MaxEnforced(t *testing.T) {
 	scr := NewScreen(10, 20)
 	scr.MaxScrollback = 50
 
-	for i := 0; i < 60; i++ {
+	for i := range 60 {
 		// Write a unique marker: row number as a single digit in col 0.
 		scr.PutChar(rune('0' + i%10))
 		scr.LineFeed()
@@ -61,7 +61,7 @@ func TestScrollback_MaxEnforcedLarge(t *testing.T) {
 	scr := NewScreen(10, 20)
 	scr.MaxScrollback = 10000
 
-	for i := 0; i < 15000; i++ {
+	for range 15000 {
 		scr.PutChar('X')
 		scr.LineFeed()
 		scr.CurCol = 0
@@ -80,7 +80,7 @@ func TestScrollback_EraseDisplay3(t *testing.T) {
 	scr.PutChar('Z')
 
 	// Generate some scrollback.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		scr.PutChar('A')
 		scr.LineFeed()
 		scr.CurCol = 0
@@ -122,7 +122,7 @@ func TestScrollback_EraseDisplay2_PreservesScrollback(t *testing.T) {
 	// ED mode 2 should NOT clear scrollback (only clears visible display).
 	scr := NewScreen(5, 20)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		scr.PutChar('A')
 		scr.LineFeed()
 		scr.CurCol = 0
@@ -144,7 +144,7 @@ func TestScrollback_ResizePreserves(t *testing.T) {
 	// Resize terminal — scrollback should be preserved.
 	scr := NewScreen(5, 20)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		scr.PutChar('A')
 		scr.LineFeed()
 		scr.CurCol = 0
@@ -175,7 +175,7 @@ func TestScrollback_ScrollRegion(t *testing.T) {
 	scr.CurRow = 7 // 0-indexed, row 7 = 1-indexed row 8
 	scr.CurCol = 0
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		scr.PutChar('B')
 		scr.LineFeed()
 		scr.CurCol = 0
@@ -201,7 +201,7 @@ func TestScrollback_ScrollRegionNotFromTop_NoScrollback(t *testing.T) {
 	scr.CurRow = 7
 	scr.CurCol = 0
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		scr.PutChar('C')
 		scr.LineFeed()
 		scr.CurCol = 0
@@ -217,7 +217,7 @@ func TestScrollback_SnapshotCopies(t *testing.T) {
 	// Snapshot should include an independent copy of scrollback.
 	scr := NewScreen(5, 20)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		scr.PutChar('D')
 		scr.LineFeed()
 		scr.CurCol = 0
@@ -254,7 +254,7 @@ func TestScrollback_RingBuffer(t *testing.T) {
 	// Write enough lines to fill the screen and generate scrollback overflow.
 	// After the screen is full (5 lines), each subsequent line pushes the
 	// top visible row into scrollback.
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		// Use two-char markers to distinguish lines: "AA", "BB", etc.
 		marker := string(rune('A'+i/26)) + string(rune('A'+i%26))
 		v.Write([]byte(marker + "\n"))
@@ -268,7 +268,7 @@ func TestScrollback_RingBuffer(t *testing.T) {
 	// With 20 lines written to a 5-row terminal and MaxScrollback=3,
 	// we should have exactly 3 lines in scrollback. The scrollback
 	// should contain rows that were visible at some point (not blank).
-	for i := 0; i < got; i++ {
+	for i := range got {
 		row := v.ScrollbackRow(i)
 		if row == nil {
 			t.Fatalf("ScrollbackRow(%d) = nil", i)
@@ -300,7 +300,7 @@ func TestScrollback_NoScrollbackWhenMaxZero(t *testing.T) {
 	scr := NewScreen(5, 20)
 	scr.MaxScrollback = 0
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		scr.PutChar('Z')
 		scr.LineFeed()
 		scr.CurCol = 0
@@ -313,7 +313,7 @@ func TestScrollback_NoScrollbackWhenMaxZero(t *testing.T) {
 
 func TestScrollbackRow_OutOfRange(t *testing.T) {
 	scr := NewScreen(5, 20)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		scr.PutChar('A')
 		scr.LineFeed()
 		scr.CurCol = 0
@@ -332,7 +332,7 @@ func TestScrollbackRow_OutOfRange(t *testing.T) {
 func TestVTerm_ScrollbackLines(t *testing.T) {
 	v := NewVTerm(5, 20)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		v.Write([]byte("Hello\n"))
 	}
 
@@ -344,7 +344,7 @@ func TestVTerm_ScrollbackLines(t *testing.T) {
 func TestVTerm_ScrollbackRow(t *testing.T) {
 	v := NewVTerm(5, 20)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		v.Write([]byte("World\n"))
 	}
 
@@ -362,7 +362,7 @@ func TestVTerm_SetScrollback(t *testing.T) {
 	v := NewVTerm(5, 20)
 
 	// Generate scrollback.
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		v.Write([]byte("Line\n"))
 	}
 
@@ -382,7 +382,7 @@ func TestVTerm_SetScrollback(t *testing.T) {
 func TestVTerm_ActiveScreen_ScrollbackInSnapshot(t *testing.T) {
 	v := NewVTerm(5, 20)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		v.Write([]byte("Test\n"))
 	}
 
@@ -395,7 +395,7 @@ func TestVTerm_ActiveScreen_ScrollbackInSnapshot(t *testing.T) {
 func TestVTerm_Scrollback_Reset(t *testing.T) {
 	v := NewVTerm(5, 20)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		v.Write([]byte("Data\n"))
 	}
 
@@ -414,7 +414,7 @@ func TestVTerm_Scrollback_Reset(t *testing.T) {
 func TestVTerm_Scrollback_ED3(t *testing.T) {
 	v := NewVTerm(5, 20)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		v.Write([]byte("X\n"))
 	}
 
@@ -433,7 +433,7 @@ func TestVTerm_Scrollback_ED3(t *testing.T) {
 func TestVTerm_Scrollback_ResizePreserves(t *testing.T) {
 	v := NewVTerm(5, 20)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		v.Write([]byte("Y\n"))
 	}
 
@@ -453,7 +453,7 @@ func TestVTerm_SetScrollback_Zero(t *testing.T) {
 	// SetScrollback(0) should clear all scrollback data and disable it.
 	v := NewVTerm(5, 20)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		v.Write([]byte("Data\n"))
 	}
 
@@ -468,7 +468,7 @@ func TestVTerm_SetScrollback_Zero(t *testing.T) {
 	}
 
 	// Further writes should not accumulate scrollback.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		v.Write([]byte("More\n"))
 	}
 
@@ -484,7 +484,7 @@ func TestVTerm_SetScrollback_Increase(t *testing.T) {
 	v.SetScrollback(3)
 
 	// Generate scrollback that fills the ring.
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		v.Write([]byte(string(rune('A'+i%26)) + "\n"))
 	}
 
@@ -500,7 +500,7 @@ func TestVTerm_SetScrollback_Increase(t *testing.T) {
 	}
 
 	// Write more lines — they should be added to scrollback correctly.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		v.Write([]byte(string(rune('a'+i)) + "\n"))
 	}
 
@@ -524,7 +524,7 @@ func TestVTerm_AlternateScreen_NoScrollback(t *testing.T) {
 	v.Write([]byte("\x1b[?1049h"))
 
 	// Write enough lines to trigger scrolling.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		v.Write([]byte("AltLine\n"))
 	}
 

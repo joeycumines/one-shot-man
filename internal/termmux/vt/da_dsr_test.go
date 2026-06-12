@@ -173,10 +173,10 @@ func TestCSI_DA_NoResponseWithoutWriter(t *testing.T) {
 	v := NewVTerm(24, 80)
 	// ResponseWriter is nil by default — should not panic.
 
-	v.Write([]byte("\x1b[c"))   // DA1
-	v.Write([]byte("\x1b[>c"))  // DA2
-	v.Write([]byte("\x1b[6n"))  // DSR-CPR
-	v.Write([]byte("\x1b[5n"))  // DSR-OK
+	v.Write([]byte("\x1b[c"))  // DA1
+	v.Write([]byte("\x1b[>c")) // DA2
+	v.Write([]byte("\x1b[6n")) // DSR-CPR
+	v.Write([]byte("\x1b[5n")) // DSR-OK
 	// If we get here without panicking, test passes.
 }
 
@@ -190,10 +190,10 @@ func TestCSI_DSR_MultipleResponses(t *testing.T) {
 	}
 
 	// Send multiple requests.
-	v.Write([]byte("\x1b[c"))    // DA1
-	v.Write([]byte("\x1b[>c"))   // DA2
-	v.Write([]byte("\x1b[6n"))   // CPR
-	v.Write([]byte("\x1b[5n"))   // DSR-OK
+	v.Write([]byte("\x1b[c"))  // DA1
+	v.Write([]byte("\x1b[>c")) // DA2
+	v.Write([]byte("\x1b[6n")) // CPR
+	v.Write([]byte("\x1b[5n")) // DSR-OK
 
 	if len(responses) != 4 {
 		t.Fatalf("expected 4 responses, got %d", len(responses))

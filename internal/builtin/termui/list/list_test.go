@@ -75,9 +75,9 @@ func TestCreateListObject_GoInterop(t *testing.T) {
 
 	// items setter — chainable
 	itemsFn, _ := goja.AssertFunction(obj.Get("items"))
-	itemsArg := rt.ToValue([]interface{}{
-		map[string]interface{}{"text": "Alpha"},
-		map[string]interface{}{"text": "Beta"},
+	itemsArg := rt.ToValue([]any{
+		map[string]any{"text": "Alpha"},
+		map[string]any{"text": "Beta"},
 	})
 	res, err := itemsFn(goja.Undefined(), itemsArg)
 	require.NoError(t, err)

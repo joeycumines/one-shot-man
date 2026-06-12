@@ -419,21 +419,17 @@ func TestEventBus_ConcurrentPublishClose(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Publisher goroutine.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i := range 1000 {
 			bus.Publish(Event{Kind: EventBell, SessionID: SessionID(i), Time: time.Now()})
 		}
-	}()
+	})
 
 	// Closer goroutine.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		time.Sleep(time.Microsecond) // Let some publishes happen.
 		bus.Close()
-	}()
+	})
 
 	wg.Wait()
 

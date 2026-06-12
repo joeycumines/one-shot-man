@@ -130,7 +130,7 @@ func TestDECSC_DECRC_PendingWrapAtRightMargin(t *testing.T) {
 	scr := v.active
 
 	// Write enough characters to reach the right margin and set PendingWrap.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		scr.PutChar('X')
 	}
 	if !scr.PendingWrap {
@@ -163,58 +163,58 @@ func TestDECSC_DECRC_PendingWrapAtRightMargin(t *testing.T) {
 // to isolate potential save/restore failures.
 func TestDECSC_DECRC_IndividualModeFlags(t *testing.T) {
 	tests := []struct {
-		name   string
-		set    func(*Screen)
-		reset  func(*Screen)
-		check  func(*Screen) bool
+		name  string
+		set   func(*Screen)
+		reset func(*Screen)
+		check func(*Screen) bool
 	}{
 		{
-			name:   "ApplicationCursor",
-			set:    func(s *Screen) { s.ApplicationCursor = true },
-			reset:  func(s *Screen) { s.ApplicationCursor = false },
-			check:  func(s *Screen) bool { return s.ApplicationCursor },
+			name:  "ApplicationCursor",
+			set:   func(s *Screen) { s.ApplicationCursor = true },
+			reset: func(s *Screen) { s.ApplicationCursor = false },
+			check: func(s *Screen) bool { return s.ApplicationCursor },
 		},
 		{
-			name:   "BracketedPaste",
-			set:    func(s *Screen) { s.BracketedPaste = true },
-			reset:  func(s *Screen) { s.BracketedPaste = false },
-			check:  func(s *Screen) bool { return s.BracketedPaste },
+			name:  "BracketedPaste",
+			set:   func(s *Screen) { s.BracketedPaste = true },
+			reset: func(s *Screen) { s.BracketedPaste = false },
+			check: func(s *Screen) bool { return s.BracketedPaste },
 		},
 		{
-			name:   "CursorShape",
-			set:    func(s *Screen) { s.CursorShape = 5 },
-			reset:  func(s *Screen) { s.CursorShape = 0 },
-			check:  func(s *Screen) bool { return s.CursorShape == 5 },
+			name:  "CursorShape",
+			set:   func(s *Screen) { s.CursorShape = 5 },
+			reset: func(s *Screen) { s.CursorShape = 0 },
+			check: func(s *Screen) bool { return s.CursorShape == 5 },
 		},
 		{
-			name:   "FocusReporting",
-			set:    func(s *Screen) { s.FocusReporting = true },
-			reset:  func(s *Screen) { s.FocusReporting = false },
-			check:  func(s *Screen) bool { return s.FocusReporting },
+			name:  "FocusReporting",
+			set:   func(s *Screen) { s.FocusReporting = true },
+			reset: func(s *Screen) { s.FocusReporting = false },
+			check: func(s *Screen) bool { return s.FocusReporting },
 		},
 		{
-			name:   "AutoWrap_off",
-			set:    func(s *Screen) { s.AutoWrap = false },
-			reset:  func(s *Screen) { s.AutoWrap = true },
-			check:  func(s *Screen) bool { return !s.AutoWrap },
+			name:  "AutoWrap_off",
+			set:   func(s *Screen) { s.AutoWrap = false },
+			reset: func(s *Screen) { s.AutoWrap = true },
+			check: func(s *Screen) bool { return !s.AutoWrap },
 		},
 		{
-			name:   "SynchronizedOutput",
-			set:    func(s *Screen) { s.SynchronizedOutput = true },
-			reset:  func(s *Screen) { s.SynchronizedOutput = false },
-			check:  func(s *Screen) bool { return s.SynchronizedOutput },
+			name:  "SynchronizedOutput",
+			set:   func(s *Screen) { s.SynchronizedOutput = true },
+			reset: func(s *Screen) { s.SynchronizedOutput = false },
+			check: func(s *Screen) bool { return s.SynchronizedOutput },
 		},
 		{
-			name:   "InsertMode",
-			set:    func(s *Screen) { s.InsertMode = true },
-			reset:  func(s *Screen) { s.InsertMode = false },
-			check:  func(s *Screen) bool { return s.InsertMode },
+			name:  "InsertMode",
+			set:   func(s *Screen) { s.InsertMode = true },
+			reset: func(s *Screen) { s.InsertMode = false },
+			check: func(s *Screen) bool { return s.InsertMode },
 		},
 		{
-			name:   "PendingWrap",
-			set:    func(s *Screen) { s.PendingWrap = true },
-			reset:  func(s *Screen) { s.PendingWrap = false },
-			check:  func(s *Screen) bool { return s.PendingWrap },
+			name:  "PendingWrap",
+			set:   func(s *Screen) { s.PendingWrap = true },
+			reset: func(s *Screen) { s.PendingWrap = false },
+			check: func(s *Screen) bool { return s.PendingWrap },
 		},
 	}
 

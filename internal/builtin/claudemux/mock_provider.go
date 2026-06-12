@@ -3,6 +3,7 @@ package claudemux
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,9 +90,7 @@ func (p *MockClaudeProvider) Spawn(ctx context.Context, opts SpawnOpts) (AgentHa
 	}
 
 	env := make(map[string]string, len(opts.Env)+1)
-	for k, v := range opts.Env {
-		env[k] = v
-	}
+	maps.Copy(env, opts.Env)
 	if p.ProcessingMs > 0 {
 		env["MOCK_PROCESSING_MS"] = fmt.Sprintf("%d", p.ProcessingMs)
 	}

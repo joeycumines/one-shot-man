@@ -267,10 +267,7 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 				if scr.OriginMode {
 					// In origin mode, report relative to scroll region top.
 					scrollTop, _ := scr.ScrollRegion()
-					row = scr.CurRow - scrollTop + 1
-					if row < 1 {
-						row = 1
-					}
+					row = max(scr.CurRow-scrollTop+1, 1)
 				}
 				h.respond("\x1b[" + itoa(row) + ";" + itoa(col) + "R")
 			}

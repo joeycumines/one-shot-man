@@ -1,6 +1,7 @@
 package tokenizer
 
 import (
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -37,13 +38,7 @@ var (
 
 		n := rune(0)
 		for b := 0; b <= 255; b++ {
-			found := false
-			for _, x := range bs {
-				if x == byte(b) {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(bs, byte(b))
 			if !found {
 				bs = append(bs, byte(b))
 				cs = append(cs, 256+n)

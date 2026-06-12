@@ -10,40 +10,40 @@ import (
 type State uint8
 
 const (
-	StateGround State = iota // default state; printing text
-	StateEscape              // received ESC (0x1B)
-	StateCSI                 // received ESC [
-	StateOSC                 // received ESC ]
-	StateDCS                 // received ESC P
-	StateCharset             // received ESC ( or ESC ) — waiting for designator
-	StateESCIntermediate     // received intermediate byte in ESC sequence (0x20-0x2F)
+	StateGround          State = iota // default state; printing text
+	StateEscape                       // received ESC (0x1B)
+	StateCSI                          // received ESC [
+	StateOSC                          // received ESC ]
+	StateDCS                          // received ESC P
+	StateCharset                      // received ESC ( or ESC ) — waiting for designator
+	StateESCIntermediate              // received intermediate byte in ESC sequence (0x20-0x2F)
 )
 
 // Action indicates what the caller should do after feeding a byte.
 type Action uint8
 
 const (
-	ActionNone        Action = iota // no action; byte consumed internally
-	ActionPrint                     // printable character
-	ActionExecute                   // C0 control character (BEL, BS, HT, LF, CR …)
-	ActionCSIDispatch               // complete CSI sequence ready
-	ActionEscDispatch               // complete simple ESC sequence ready
-	ActionOSCEnd                    // OSC string terminated
-	ActionDCSEnd                    // DCS string terminated
-	ActionCharsetDesignation        // charset designation sequence complete (ESC ( or ESC ) + designator)
-	ActionEscInterDispatch          // ESC sequence with intermediate byte(s) ready
+	ActionNone               Action = iota // no action; byte consumed internally
+	ActionPrint                            // printable character
+	ActionExecute                          // C0 control character (BEL, BS, HT, LF, CR …)
+	ActionCSIDispatch                      // complete CSI sequence ready
+	ActionEscDispatch                      // complete simple ESC sequence ready
+	ActionOSCEnd                           // OSC string terminated
+	ActionDCSEnd                           // DCS string terminated
+	ActionCharsetDesignation               // charset designation sequence complete (ESC ( or ESC ) + designator)
+	ActionEscInterDispatch                 // ESC sequence with intermediate byte(s) ready
 )
 
 // Parser is a table-driven ANSI escape sequence parser.
 type Parser struct {
-	cur       State
-	paramBuf  []byte
-	intermBuf []byte
-	oscBuf    []byte
-	dcsBuf    []byte
-	maxOSCLen int
-	maxDCSLen int
-	lastByte  byte // for two-byte terminators (ESC \)
+	cur         State
+	paramBuf    []byte
+	intermBuf   []byte
+	oscBuf      []byte
+	dcsBuf      []byte
+	maxOSCLen   int
+	maxDCSLen   int
+	lastByte    byte // for two-byte terminators (ESC \)
 	charsetSlot byte // '(' = G0, ')' = G1 — set when entering StateCharset
 }
 

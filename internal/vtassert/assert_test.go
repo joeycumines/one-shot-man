@@ -78,7 +78,7 @@ func TestAssertBorderVertical(t *testing.T) {
 
 func TestAssertBorderWithBold(t *testing.T) {
 	screen := vt.NewScreen(5, 20)
-	for c := 0; c < 5; c++ {
+	for c := range 5 {
 		screen.Cells[0][c] = vt.Cell{Ch: '━', Attr: vt.Attr{Bold: true}}
 	}
 

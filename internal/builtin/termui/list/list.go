@@ -136,7 +136,7 @@ func extractListItems(runtime *goja.Runtime, val goja.Value) []list.ListItem {
 	}
 	length := int(arr.Get("length").ToInteger())
 	items := make([]list.ListItem, 0, length)
-	for i := 0; i < length; i++ {
+	for i := range length {
 		elem := arr.Get(indexStr(i))
 		if elem == nil || goja.IsUndefined(elem) || goja.IsNull(elem) {
 			continue

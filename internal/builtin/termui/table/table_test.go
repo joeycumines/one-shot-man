@@ -79,16 +79,16 @@ func TestCreateTableObject_GoInterop(t *testing.T) {
 
 	// headers setter — chainable
 	headersFn, _ := goja.AssertFunction(obj.Get("headers"))
-	headersArg := rt.ToValue([]interface{}{"A", "B"})
+	headersArg := rt.ToValue([]any{"A", "B"})
 	res, err := headersFn(goja.Undefined(), headersArg)
 	require.NoError(t, err)
 	require.False(t, goja.IsUndefined(res), "headers() should return obj (chainable)")
 
 	// rows setter — chainable
 	rowsFn, _ := goja.AssertFunction(obj.Get("rows"))
-	rowsArg := rt.ToValue([]interface{}{
-		[]interface{}{"1", "2"},
-		[]interface{}{"3", "4"},
+	rowsArg := rt.ToValue([]any{
+		[]any{"1", "2"},
+		[]any{"3", "4"},
 	})
 	res, err = rowsFn(goja.Undefined(), rowsArg)
 	require.NoError(t, err)

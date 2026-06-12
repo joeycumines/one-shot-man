@@ -54,7 +54,7 @@ func loadExampleProgram(t *testing.T, engine *Engine, scriptName string) {
 	// Script-specific modelStart patterns (variable name and declaration keyword vary).
 	modelStarts := map[string]string{
 		"example-14-comprehensive-demo.js": "var program = tea.newModel({",
-		"example-15-bouncing-logo.js":   "var bouncingProgram = tea.newModel({",
+		"example-15-bouncing-logo.js":      "var bouncingProgram = tea.newModel({",
 	}
 	modelStart, ok := modelStarts[scriptName]
 	if !ok {

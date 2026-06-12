@@ -160,7 +160,7 @@ func extractFloat64Slice(runtime *goja.Runtime, val goja.Value) []float64 {
 	}
 	n := int(length.ToInteger())
 	result := make([]float64, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		result[i] = obj.Get(indexStr(i)).ToFloat()
 	}
 	return result
@@ -182,7 +182,7 @@ func extractSizeSlice(runtime *goja.Runtime, val goja.Value) []coord.Size {
 	}
 	n := int(length.ToInteger())
 	result := make([]coord.Size, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		elem := obj.Get(indexStr(i))
 		result[i] = extractSize(runtime, elem)
 	}
@@ -192,7 +192,7 @@ func extractSizeSlice(runtime *goja.Runtime, val goja.Value) []coord.Size {
 // rectSliceToArray converts a []coord.Rect to a Goja Array of Rect JS objects.
 // Uses the same wrapping pattern as osm:termui/coordinate's createRectObject.
 func rectSliceToArray(runtime *goja.Runtime, rects []coord.Rect) goja.Value {
-	values := make([]interface{}, len(rects))
+	values := make([]any, len(rects))
 	for i := range rects {
 		values[i] = createRectObject(runtime, &rects[i])
 	}

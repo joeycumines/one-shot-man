@@ -102,7 +102,7 @@ func stripANSI(s string) string {
 	return string(result)
 }
 
-func assertContains(t *testing.T, buf string, substr string, msgAndArgs ...interface{}) {
+func assertContains(t *testing.T, buf string, substr string, msgAndArgs ...any) {
 	t.Helper()
 	if termtest.Contains(substr)(buf) {
 		return
@@ -124,7 +124,7 @@ var viewMarkers = map[string]string{
 func switchTab(t *testing.T, ctx context.Context, cp *termtest.Console, viewName string) {
 	t.Helper()
 	marker := viewMarkers[viewName]
-	for i := 0; i < 12; i++ {
+	for range 12 {
 		if termtest.Contains(marker)(cp.String()) {
 			return
 		}
@@ -143,8 +143,7 @@ func switchTab(t *testing.T, ctx context.Context, cp *termtest.Console, viewName
 
 func TestDashboard_InitialRender(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -161,8 +160,7 @@ func TestDashboard_InitialRender(t *testing.T) {
 
 func TestDashboard_OverviewMetrics(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -182,8 +180,7 @@ func TestDashboard_OverviewMetrics(t *testing.T) {
 
 func TestDashboard_ShowcaseNavigation(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -200,11 +197,11 @@ func TestDashboard_ShowcaseNavigation(t *testing.T) {
 	assertContains(t, buf, "Viewport")
 	assertContains(t, buf, "Textarea")
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		sendKey(t, cp, "\x1b[B")
 		time.Sleep(150 * time.Millisecond)
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		sendKey(t, cp, "\x1b[A")
 		time.Sleep(150 * time.Millisecond)
 	}
@@ -215,8 +212,7 @@ func TestDashboard_ShowcaseNavigation(t *testing.T) {
 
 func TestDashboard_TabSwitching(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -248,8 +244,7 @@ func TestDashboard_TabSwitching(t *testing.T) {
 
 func TestDashboard_ComposeInteract(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -285,8 +280,7 @@ func TestDashboard_ComposeInteract(t *testing.T) {
 
 func TestDashboard_AgentsInteract(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -317,8 +311,7 @@ func TestDashboard_AgentsInteract(t *testing.T) {
 
 func TestDashboard_BuilderInteract(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -367,8 +360,7 @@ func TestDashboard_BuilderInteract(t *testing.T) {
 
 func TestDashboard_LogViewer(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -396,8 +388,7 @@ func TestDashboard_LogViewer(t *testing.T) {
 
 func TestDashboard_EditorInteract(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -430,8 +421,7 @@ func TestDashboard_EditorInteract(t *testing.T) {
 
 func TestDashboard_HelpView(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -451,8 +441,7 @@ func TestDashboard_HelpView(t *testing.T) {
 
 func TestDashboard_ModalDemo(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -461,7 +450,7 @@ func TestDashboard_ModalDemo(t *testing.T) {
 	switchTab(t, ctx, cp, "Showcase")
 	time.Sleep(300 * time.Millisecond)
 
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		sendKey(t, cp, "\x1b[B")
 		time.Sleep(150 * time.Millisecond)
 	}
@@ -480,8 +469,7 @@ func TestDashboard_ModalDemo(t *testing.T) {
 
 func TestDashboard_ToastDemo(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -501,8 +489,7 @@ func TestDashboard_ToastDemo(t *testing.T) {
 
 func TestDashboard_CtrlCQuit(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -513,8 +500,7 @@ func TestDashboard_CtrlCQuit(t *testing.T) {
 
 func TestDashboard_NoErrorsAfterFullCycle(t *testing.T) {
 	skipIfNotUnix(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cp := newDashboardConsole(t, ctx)
 	defer cp.Close()
 
@@ -524,11 +510,11 @@ func TestDashboard_NoErrorsAfterFullCycle(t *testing.T) {
 
 	switchTab(t, ctx, cp, "Showcase")
 	time.Sleep(200 * time.Millisecond)
-	for i := 0; i < 15; i++ {
+	for range 15 {
 		sendKey(t, cp, "\x1b[B")
 		time.Sleep(80 * time.Millisecond)
 	}
-	for i := 0; i < 15; i++ {
+	for range 15 {
 		sendKey(t, cp, "\x1b[A")
 		time.Sleep(80 * time.Millisecond)
 	}

@@ -168,7 +168,7 @@ func createSplitLayoutObject(runtime *goja.Runtime, sl *splitlayout.SplitLayout)
 	// panes() — returns an array of session IDs
 	_ = obj.Set("panes", func(call goja.FunctionCall) goja.Value {
 		ids := sl.Panes()
-		vals := make([]interface{}, len(ids))
+		vals := make([]any, len(ids))
 		for i, id := range ids {
 			vals[i] = uint64(id)
 		}
@@ -225,7 +225,7 @@ func parseDirection(runtime *goja.Runtime, val goja.Value) layout.Direction {
 
 // extractRatios extracts a slice of float64 from a JS array value.
 func extractRatios(runtime *goja.Runtime, val goja.Value) []float64 {
-	arr, ok := val.Export().([]interface{})
+	arr, ok := val.Export().([]any)
 	if !ok {
 		return nil
 	}

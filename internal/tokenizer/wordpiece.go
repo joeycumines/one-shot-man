@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"unicode/utf8"
 )
 
@@ -182,9 +183,7 @@ func (wp *WordPiece) IDToToken(id uint32) (string, bool) {
 // GetVocab implements Model.
 func (wp *WordPiece) GetVocab() map[string]uint32 {
 	result := make(map[string]uint32, len(wp.vocab))
-	for k, v := range wp.vocab {
-		result[k] = v
-	}
+	maps.Copy(result, wp.vocab)
 	return result
 }
 

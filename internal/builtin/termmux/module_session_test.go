@@ -84,8 +84,7 @@ func TestSessionManager_RunViaJS(t *testing.T) {
 	}
 
 	mgr := parent.NewSessionManager()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	runtime := goja.New()
 	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1)
@@ -1153,8 +1152,7 @@ func TestSessionManager_AttachReturnsSessionID(t *testing.T) {
 	}
 
 	mgr := parent.NewSessionManager()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- mgr.Run(ctx) }()

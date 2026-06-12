@@ -86,7 +86,7 @@ func TestAutoWrap_OverwriteMultipleChars(t *testing.T) {
 	// All characters after the 10th should overwrite column 9.
 	v := NewVTerm(1, 10)
 	v.Write([]byte("\x1b[?7l"))
-	v.Write([]byte("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))  // 26 chars
+	v.Write([]byte("ABCDEFGHIJKLMNOPQRSTUVWXYZ")) // 26 chars
 	// Cursor should be at column 9 (last column)
 	if v.primary.CurCol != 9 {
 		t.Fatalf("cursor at col %d, want 9", v.primary.CurCol)
@@ -106,11 +106,11 @@ func TestAutoWrap_OverwriteMultipleChars(t *testing.T) {
 func TestAutoWrap_WrapWhenEnabled(t *testing.T) {
 	// Verify that AutoWrap=true (default) still wraps correctly.
 	v := NewVTerm(2, 5)
-	v.Write([]byte("ABCDE"))    // fills row 0, sets PendingWrap
+	v.Write([]byte("ABCDE")) // fills row 0, sets PendingWrap
 	if !v.primary.PendingWrap {
 		t.Fatal("after filling row: PendingWrap = false, want true")
 	}
-	v.Write([]byte("F"))        // triggers wrap to row 1
+	v.Write([]byte("F")) // triggers wrap to row 1
 	if v.primary.CurRow != 1 {
 		t.Fatalf("after wrap: CurRow = %d, want 1", v.primary.CurRow)
 	}
@@ -136,8 +136,8 @@ func TestAutoWrap_NoWideCharWrapWhenOff(t *testing.T) {
 	// When AutoWrap is off, wide characters at the margin should not wrap.
 	v := NewVTerm(1, 5)
 	v.Write([]byte("\x1b[?7l"))
-	v.Write([]byte("AB"))       // cursor at col 2
-	v.Write([]byte("世"))       // wide char, needs 2 cols, but only cols 3-4 available
+	v.Write([]byte("AB")) // cursor at col 2
+	v.Write([]byte("世"))  // wide char, needs 2 cols, but only cols 3-4 available
 	// The wide char should be written starting at col 3
 	if v.primary.CurCol != 4 {
 		t.Fatalf("cursor at col %d, want 4", v.primary.CurCol)

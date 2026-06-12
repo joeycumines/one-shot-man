@@ -1240,7 +1240,7 @@ func jsModToKeyMod(obj *goja.Object) tea.KeyMod {
 	}
 	// Export array to Go []interface{} and iterate elements
 	arr := modArr.Export()
-	arrSlice, ok := arr.([]interface{})
+	arrSlice, ok := arr.([]any)
 	if !ok {
 		return 0
 	}

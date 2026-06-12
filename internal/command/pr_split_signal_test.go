@@ -19,8 +19,7 @@ func TestForceCloseSessionManager_Nil(t *testing.T) {
 func TestForceCloseSessionManager_RunningManager(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	mgr := termmux.NewSessionManager(termmux.WithTermSize(24, 80))
 	errCh := make(chan error, 1)

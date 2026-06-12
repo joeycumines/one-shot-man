@@ -126,10 +126,7 @@ func (t Table) renderContent(bounds coordinate.Rect) string {
 		alloc := 0
 		for i := range colWidths {
 			if i == len(colWidths)-1 {
-				colWidths[i] = w - alloc
-				if colWidths[i] < 0 {
-					colWidths[i] = 0
-				}
+				colWidths[i] = max(w-alloc, 0)
 			} else {
 				colWidths[i] = int(float64(colWidths[i]) * scale)
 				alloc += colWidths[i]

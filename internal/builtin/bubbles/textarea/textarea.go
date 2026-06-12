@@ -105,7 +105,7 @@ func findColumnInSegment(chars []rune, visualX int) int {
 	}
 
 	col := 0
-	for i := 0; i < len(chars); i++ {
+	for i := range chars {
 		charW := runeWidth(chars[i], col)
 		// Check if visualX is within this character's visual range.
 		// A character at 'col' occupies cells [col, col+charW).
@@ -124,10 +124,7 @@ func findColumnInSegment(chars []rune, visualX int) int {
 // This is a helper function to properly navigate wrapped content.
 func setPositionInternal(model *textarea.Model, targetRow, targetCol int) {
 	// Clamp targetRow to valid range
-	maxRow := model.LineCount() - 1
-	if maxRow < 0 {
-		maxRow = 0
-	}
+	maxRow := max(model.LineCount()-1, 0)
 	if targetRow > maxRow {
 		targetRow = maxRow
 	}
@@ -400,10 +397,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 				break
 			}
 		}
-		col := charOffset - lineStart
-		if col < 0 {
-			col = 0
-		}
+		col := max(charOffset-lineStart, 0)
 		// Navigate to the target row
 		currentRow := model.Line()
 		for currentRow > row {
@@ -424,10 +418,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		row := int(call.Argument(0).ToInteger())
 		col := int(call.Argument(1).ToInteger())
 		// Clamp row to valid range
-		maxRow := model.LineCount() - 1
-		if maxRow < 0 {
-			maxRow = 0
-		}
+		maxRow := max(model.LineCount()-1, 0)
 		if row > maxRow {
 			row = maxRow
 		}
@@ -463,10 +454,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 	_ = obj.Set("setRow", func(call goja.FunctionCall) goja.Value {
 		row := int(call.Argument(0).ToInteger())
 		// Clamp row to valid range
-		maxRow := model.LineCount() - 1
-		if maxRow < 0 {
-			maxRow = 0
-		}
+		maxRow := max(model.LineCount()-1, 0)
 		if row > maxRow {
 			row = maxRow
 		}
@@ -503,10 +491,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		}
 
 		// Calculate target visual line
-		targetVisualY := y + yOffset
-		if targetVisualY < 0 {
-			targetVisualY = 0
-		}
+		targetVisualY := max(y+yOffset, 0)
 
 		// Clamp x to non-negative before hit testing
 		if x < 0 {
@@ -574,10 +559,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 
 		// If not found (beyond content), clamp to last position
 		if !found {
-			targetRow = len(rawLines) - 1
-			if targetRow < 0 {
-				targetRow = 0
-			}
+			targetRow = max(len(rawLines)-1, 0)
 			targetCol = clamp(x, 0, len(rawLines[targetRow]))
 		}
 
@@ -644,8 +626,8 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		lines := model.LineCount()
 		totalVisualLines := 0
 		if width > 0 && lines > 0 {
-			rawLines := strings.Split(value, "\n")
-			for _, lineContent := range rawLines {
+			rawLines := strings.SplitSeq(value, "\n")
+			for lineContent := range rawLines {
 				if len(lineContent) == 0 {
 					totalVisualLines++
 					continue
@@ -734,7 +716,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 
 					// Calculate charOffset
 					totalOffset := 0
-					for i := 0; i < rowIdx; i++ {
+					for i := range rowIdx {
 						totalOffset += len(rawLines[i]) + 1
 					}
 					totalOffset += hitCol
@@ -845,14 +827,14 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		// plus the row offset within the current logical line
 		li := model.LineInfo()
 		cursorVisualLine = 0
-		for i := 0; i < cursorLine; i++ {
+		for i := range cursorLine {
 			cursorVisualLine += calcVisualLinesForLine(i)
 		}
 		cursorVisualLine += li.RowOffset
 
 		// Calculate totalVisualLines
 		totalVisualLines = 0
-		for i := 0; i < lines; i++ {
+		for i := range lines {
 			totalVisualLines += calcVisualLinesForLine(i)
 		}
 		if totalVisualLines < 1 {
@@ -865,10 +847,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		// by JS callers for scroll-sync: comparing against yOffset and setting
 		// yOffset directly. It must NOT include textareaContentTop (a screen
 		// layout offset), because yOffset is content-space, not screen-space.
-		preContentHeight := vpCtx.preContentHeight
-		if preContentHeight < 0 {
-			preContentHeight = 0
-		}
+		preContentHeight := max(vpCtx.preContentHeight, 0)
 		cursorAbsY := preContentHeight + cursorVisualLine
 		suggestedYOffset := yOffset
 		if cursorAbsY < vpCtx.outerYOffset {
@@ -965,7 +944,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 
 					// Calculate total charOffset: sum of all previous lines + current line offset + segment offset + hitCol
 					totalOffset := 0
-					for i := 0; i < rowIdx; i++ {
+					for i := range rowIdx {
 						totalOffset += len(rawLines[i]) + 1 // +1 for newline
 					}
 					totalOffset += segmentStart + hitCol
@@ -1032,8 +1011,8 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		lines := model.LineCount()
 		totalVisualLines := 0
 		if width > 0 && lines > 0 {
-			rawLines := strings.Split(value, "\n")
-			for _, lineContent := range rawLines {
+			rawLines := strings.SplitSeq(value, "\n")
+			for lineContent := range rawLines {
 				if len(lineContent) == 0 {
 					totalVisualLines++
 					continue

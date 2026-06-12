@@ -102,8 +102,8 @@ func TestPanel_ContentLargerThanBounds(t *testing.T) {
 		t.Error("expected non-empty output")
 	}
 	// The inner area of a 10x3 box is 8x1, so content should be truncated.
-	lines := strings.Split(got, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(got, "\n")
+	for line := range lines {
 		visible := stripANSI(line)
 		if utf8.RuneCountInString(visible) > 10 {
 			t.Errorf("line exceeds bounds width: %q (visible runes: %d)", visible, utf8.RuneCountInString(visible))

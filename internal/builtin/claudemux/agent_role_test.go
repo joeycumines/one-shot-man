@@ -130,16 +130,14 @@ func TestRoleRegistry_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for i := range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			role := &AgentRole{
 				Name:         "concurrent-role",
 				SystemPrompt: "concurrent",
 				MaxTurns:     i + 1,
 			}
 			reg.RegisterRole(role)
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -152,13 +150,11 @@ func TestRoleRegistry_Concurrent(t *testing.T) {
 	}
 
 	for i := range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, _ = reg.GetRole(RoleCoder)
 			_, _ = reg.GetRole(RoleReviewer)
 			_ = i
-		}()
+		})
 	}
 	wg.Wait()
 }

@@ -261,16 +261,17 @@ func (r *InputCaptureRecorder) TypeCommand() error {
 			}
 		}
 	}
-	cmdLine := typedCommand
+	var cmdLine strings.Builder
+	cmdLine.WriteString(typedCommand)
 	for _, arg := range typedArgs {
 		if strings.ContainsAny(arg, " \t") {
-			cmdLine += " " + quoteVHSString(arg)
+			cmdLine.WriteString(" " + quoteVHSString(arg))
 		} else {
-			cmdLine += " " + arg
+			cmdLine.WriteString(" " + arg)
 		}
 	}
 
-	for _, ch := range cmdLine {
+	for _, ch := range cmdLine.String() {
 		if err := r.SendKey(string(ch)); err != nil {
 			return err
 		}
@@ -487,8 +488,8 @@ var EscapeSequences = map[string]string{
 func (r *InputCaptureRecorder) inputToTape(input string) string {
 	var result strings.Builder
 
-	parts := strings.Split(input, "\x00")
-	for _, part := range parts {
+	parts := strings.SplitSeq(input, "\x00")
+	for part := range parts {
 		if duration, ok := strings.CutPrefix(part, "SLEEP:"); ok {
 			result.WriteString(fmt.Sprintf("Sleep %s\n", duration))
 			continue

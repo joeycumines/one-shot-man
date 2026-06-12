@@ -23,7 +23,7 @@ func newBenchSession(lines int) *benchSession {
 		readerCh: make(chan []byte, lines),
 	}
 	for i := range lines {
-		s.readerCh <- []byte(fmt.Sprintf("output line %04d: benchmark session data payload\r\n", i))
+		s.readerCh <- fmt.Appendf(nil, "output line %04d: benchmark session data payload\r\n", i)
 	}
 	return s
 }

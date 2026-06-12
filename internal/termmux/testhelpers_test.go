@@ -187,10 +187,14 @@ func (m *ptTestTermState) Restore(fd int, state *term.State) error {
 	return nil
 }
 
-func (m *ptTestTermState) isRawCalled() bool    { m.mu.Lock(); defer m.mu.Unlock(); return m.rawCalled }
-func (m *ptTestTermState) isRestoreCalled() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.restoreCalled }
-func (m *ptTestTermState) getRawFd() int        { m.mu.Lock(); defer m.mu.Unlock(); return m.rawFd }
-func (m *ptTestTermState) getRestoreFd() int     { m.mu.Lock(); defer m.mu.Unlock(); return m.restoreFd }
+func (m *ptTestTermState) isRawCalled() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.rawCalled }
+func (m *ptTestTermState) isRestoreCalled() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.restoreCalled
+}
+func (m *ptTestTermState) getRawFd() int     { m.mu.Lock(); defer m.mu.Unlock(); return m.rawFd }
+func (m *ptTestTermState) getRestoreFd() int { m.mu.Lock(); defer m.mu.Unlock(); return m.restoreFd }
 
 func (m *ptTestTermState) GetSize(fd int) (width, height int, err error) {
 	w, h := m.width, m.height
@@ -228,10 +232,22 @@ func (m *ptTestBlockingGuard) Restore(fd int, origFlags int) {
 	m.restoreFd = fd
 }
 
-func (m *ptTestBlockingGuard) isEnsureCalled() bool  { m.mu.Lock(); defer m.mu.Unlock(); return m.ensureCalled }
-func (m *ptTestBlockingGuard) isRestoreCalled() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.restoreCalled }
-func (m *ptTestBlockingGuard) getEnsureFd() int      { m.mu.Lock(); defer m.mu.Unlock(); return m.ensureFd }
-func (m *ptTestBlockingGuard) getRestoreFd() int     { m.mu.Lock(); defer m.mu.Unlock(); return m.restoreFd }
+func (m *ptTestBlockingGuard) isEnsureCalled() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ensureCalled
+}
+func (m *ptTestBlockingGuard) isRestoreCalled() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.restoreCalled
+}
+func (m *ptTestBlockingGuard) getEnsureFd() int { m.mu.Lock(); defer m.mu.Unlock(); return m.ensureFd }
+func (m *ptTestBlockingGuard) getRestoreFd() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.restoreFd
+}
 
 // passthroughTestManager creates a SessionManager with a registered
 // controllable session and returns everything needed for passthrough testing.

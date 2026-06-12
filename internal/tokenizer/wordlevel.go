@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 )
 
 // WordLevel implements a simple word-level tokenizer that maps entire
@@ -107,9 +108,7 @@ func (w *WordLevel) IDToToken(id uint32) (string, bool) {
 // GetVocab implements Model.
 func (w *WordLevel) GetVocab() map[string]uint32 {
 	result := make(map[string]uint32, len(w.vocab))
-	for k, v := range w.vocab {
-		result[k] = v
-	}
+	maps.Copy(result, w.vocab)
 	return result
 }
 

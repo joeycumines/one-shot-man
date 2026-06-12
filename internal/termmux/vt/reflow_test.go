@@ -24,7 +24,7 @@ func TestRowWrapped_PutCharWrap(t *testing.T) {
 	// PendingWrap. Then write 1 more to resolve the wrap, setting
 	// RowWrapped on the new row.
 	s := NewScreen(5, 20)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		s.PutChar('A')
 	}
 	if !s.PendingWrap {
@@ -64,7 +64,7 @@ func TestRowWrapped_ScrollUp(t *testing.T) {
 		s.RowWrapped[r] = true
 	}
 	s.ScrollUp(1)
-	for r := 0; r < 4; r++ {
+	for r := range 4 {
 		if !s.RowWrapped[r] {
 			t.Fatalf("RowWrapped[%d] = false after ScrollUp, want true (shifted)", r)
 		}
@@ -162,7 +162,7 @@ func TestRowWrapped_Snapshot(t *testing.T) {
 
 // helper: write n characters to a screen
 func fillChars(s *Screen, ch rune, n int) {
-	for i := 0; i < n; i++ {
+	for range n {
 		s.PutChar(ch)
 	}
 }
@@ -189,7 +189,7 @@ func TestReflow_WiderUnwrap(t *testing.T) {
 	// Then resize to 15 cols — should unwrap to 2 rows.
 	s := NewScreen(5, 10)
 	s.ReflowOnResize = true
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		s.PutChar(rune('A' + i%26))
 	}
 	// Before resize: rows 1,2 are wrapped (RowWrapped=true).
@@ -213,7 +213,7 @@ func TestReflow_WiderFullUnwrap(t *testing.T) {
 	// All 15 chars should fit on a single row.
 	s := NewScreen(5, 10)
 	s.ReflowOnResize = true
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		s.PutChar(rune('A' + i))
 	}
 	s.Resize(5, 20)
@@ -235,7 +235,7 @@ func TestReflow_Narrower(t *testing.T) {
 	// the visible screen starts with KLMNO (continuation row).
 	s := NewScreen(3, 20)
 	s.ReflowOnResize = true
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		s.PutChar(rune('A' + i))
 	}
 	s.Resize(3, 10)
@@ -264,7 +264,7 @@ func TestReflow_Narrower(t *testing.T) {
 func TestReflow_SameWidth(t *testing.T) {
 	s := NewScreen(5, 20)
 	s.ReflowOnResize = true
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		s.PutChar(rune('A' + i))
 	}
 	s.Resize(5, 20)
@@ -276,7 +276,7 @@ func TestReflow_SameWidth(t *testing.T) {
 func TestReflow_AlternateScreenNoReflow(t *testing.T) {
 	s := NewScreen(5, 20)
 	s.ReflowOnResize = false
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		s.PutChar(rune('A' + i%26))
 	}
 	if !s.RowWrapped[1] {
@@ -296,8 +296,8 @@ func TestReflow_ScrollbackOverflow(t *testing.T) {
 	s := NewScreen(5, 20)
 	s.ReflowOnResize = true
 	// Write 3 independent 20-char lines.
-	for line := 0; line < 3; line++ {
-		for i := 0; i < 20; i++ {
+	for line := range 3 {
+		for range 20 {
 			s.PutChar(rune('A' + line))
 		}
 		s.CurCol = 0
@@ -319,7 +319,7 @@ func TestReflow_CursorTrackingWider(t *testing.T) {
 	// resize to 20 cols. Cursor should track to col 14 row 0.
 	s := NewScreen(5, 10)
 	s.ReflowOnResize = true
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		s.PutChar(rune('A' + i))
 	}
 	// Cursor at (1, 4) — the 'E' (0-indexed: A=0, B=1, ..., E=4, but
@@ -343,7 +343,7 @@ func TestReflow_CursorTrackingNarrower(t *testing.T) {
 	// visible row 0 = "FG" (continuation), cursor at col 1.
 	s := NewScreen(3, 20)
 	s.ReflowOnResize = true
-	for i := 0; i < 7; i++ {
+	for i := range 7 {
 		s.PutChar(rune('A' + i))
 	}
 	// Cursor at (0, 7) — one past 'G'. Offset in logical line = 7.
@@ -414,7 +414,7 @@ func TestReflow_PadWithBlankRows(t *testing.T) {
 
 func TestReflow_VTermPrimaryReflows(t *testing.T) {
 	v := NewVTerm(5, 20)
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		v.Write([]byte{byte('A' + i%26)})
 	}
 	v.Resize(5, 10)
@@ -477,7 +477,7 @@ func TestReflow_BlankRowsDontMultiply(t *testing.T) {
 	s := NewScreen(5, 20)
 	s.ReflowOnResize = true
 	// Write 10 chars on row 0 only; rows 1-4 are blank.
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		s.PutChar(rune('A' + i))
 	}
 	s.Resize(5, 10)

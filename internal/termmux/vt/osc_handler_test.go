@@ -1,6 +1,7 @@
 package vt
 
 import (
+	"strings"
 	"sync"
 	"testing"
 )
@@ -208,10 +209,16 @@ func TestOSCHandler_Clipboard(t *testing.T) {
 func TestOSCHandler_MultipleSequences(t *testing.T) {
 	v := NewVTerm(24, 80)
 	var mu sync.Mutex
-	calls := []struct{ code int; data string }{}
+	calls := []struct {
+		code int
+		data string
+	}{}
 	v.OSCHandler = func(code int, data string) {
 		mu.Lock()
-		calls = append(calls, struct{ code int; data string }{code, data})
+		calls = append(calls, struct {
+			code int
+			data string
+		}{code, data})
 		mu.Unlock()
 	}
 
@@ -348,17 +355,18 @@ func TestOSCHandler_LongPayload(t *testing.T) {
 		gotData = data
 	}
 	// Build a long OSC 7 payload.
-	longPath := "file:///home/user/"
-	for i := 0; i < 200; i++ {
-		longPath += "subdir/"
+	var longPath strings.Builder
+	longPath.WriteString("file:///home/user/")
+	for range 200 {
+		longPath.WriteString("subdir/")
 	}
-	v.Write([]byte("\x1b]7;" + longPath + "\x07"))
+	v.Write([]byte("\x1b]7;" + longPath.String() + "\x07"))
 
 	if gotCode != 7 {
 		t.Fatalf("code = %d; want 7", gotCode)
 	}
-	if gotData != longPath {
-		t.Fatalf("data length = %d; want %d", len(gotData), len(longPath))
+	if gotData != longPath.String() {
+		t.Fatalf("data length = %d; want %d", len(gotData), len(longPath.String()))
 	}
 }
 
@@ -371,11 +379,11 @@ func TestOSCHandler_TruncatedAtMaxOSCLen(t *testing.T) {
 		gotData = data
 	}
 	// Build a payload that exceeds the default maxOSCLen (4096).
-	var payload string
-	for i := 0; i < 5000; i++ {
-		payload += "X"
+	var payload strings.Builder
+	for range 5000 {
+		payload.WriteString("X")
 	}
-	v.Write([]byte("\x1b]0;" + payload + "\x07"))
+	v.Write([]byte("\x1b]0;" + payload.String() + "\x07"))
 
 	// The data should be truncated at maxOSCLen minus the "0;" prefix.
 	if gotCode != 0 {
@@ -401,7 +409,7 @@ func TestOSCHandler_ConcurrentWrites(t *testing.T) {
 
 	// Multiple goroutines writing OSC sequences concurrently.
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()

@@ -52,12 +52,12 @@ func TestCursorPosition_ThreadSafe(t *testing.T) {
 	v := NewVTerm(24, 80)
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			v.Write([]byte("x"))
 		}
 		close(done)
 	}()
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		r, c := v.CursorPosition()
 		_ = r
 		_ = c

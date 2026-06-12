@@ -2,6 +2,7 @@ package format
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dop251/goja"
 )
@@ -55,14 +56,14 @@ func formatNum(n int64) string {
 		if len(s) <= 3 {
 			return s
 		}
-		var result string
+		var result strings.Builder
 		for i := range len(s) {
 			if i > 0 && (len(s)-i)%3 == 0 {
-				result += ","
+				result.WriteString(",")
 			}
-			result += string(s[i])
+			result.WriteString(string(s[i]))
 		}
-		return result
+		return result.String()
 	}
 	if n < 1_000_000 {
 		return fmt.Sprintf("%.1fk", float64(n)/1_000)

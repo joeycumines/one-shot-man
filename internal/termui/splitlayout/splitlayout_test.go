@@ -95,7 +95,7 @@ func startTestManager(t *testing.T, sessionCount int) (*termmux.SessionManager, 
 	sessions := make([]*controllableSession, sessionCount)
 	ids := make([]termmux.SessionID, sessionCount)
 
-	for i := 0; i < sessionCount; i++ {
+	for i := range sessionCount {
 		session := newControllableSession()
 		id, err := m.Register(session, termmux.SessionTarget{
 			Name: fmt.Sprintf("test-%d", i),

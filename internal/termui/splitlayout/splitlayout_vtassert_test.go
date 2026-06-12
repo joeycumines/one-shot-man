@@ -26,7 +26,7 @@ func TestVtAssert_FocusedPaneHasHighlightedBorder(t *testing.T) {
 
 	// Focused border: bright blue vertical line at col 40.
 	focusedFG := vt.ParseSGR([]int{38, 5, 12}, vt.Attr{})
-	for r := 0; r < 24; r++ {
+	for r := range 24 {
 		screen.Cells[r][40] = vt.Cell{Ch: '│', Attr: focusedFG}
 	}
 
@@ -40,7 +40,7 @@ func TestVtAssert_FocusedPaneHasHighlightedBorder(t *testing.T) {
 	// Now create a second screen with dim border (grey, color 8).
 	dimScreen := vt.NewScreen(24, 80)
 	dimFG := vt.ParseSGR([]int{38, 5, 8}, vt.Attr{})
-	for r := 0; r < 24; r++ {
+	for r := range 24 {
 		dimScreen.Cells[r][40] = vt.Cell{Ch: '│', Attr: dimFG}
 	}
 
@@ -89,7 +89,7 @@ func TestVtAssert_VerticalDividerPresent(t *testing.T) {
 	screen := vt.NewScreen(24, 80)
 
 	// Place a vertical divider at col 40, rows 0-23.
-	for r := 0; r < 24; r++ {
+	for r := range 24 {
 		screen.Cells[r][40] = vt.Cell{Ch: '│'}
 	}
 
@@ -110,7 +110,7 @@ func TestVtAssert_HorizontalDividerPresent(t *testing.T) {
 	screen := vt.NewScreen(24, 80)
 
 	// Place a horizontal divider at row 12, cols 0-79.
-	for c := 0; c < 80; c++ {
+	for c := range 80 {
 		screen.Cells[12][c] = vt.Cell{Ch: '─'}
 	}
 
@@ -163,7 +163,7 @@ func TestVtAssert_BoldBorder(t *testing.T) {
 	screen := vt.NewScreen(5, 20)
 
 	// Bold horizontal border at row 0.
-	for c := 0; c < 20; c++ {
+	for c := range 20 {
 		screen.Cells[0][c] = vt.Cell{Ch: '━', Attr: vt.Attr{Bold: true}}
 	}
 

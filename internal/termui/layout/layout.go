@@ -97,8 +97,8 @@ func Grid(rect coordinate.Rect, columns, rows int) []coordinate.Rect {
 
 	result := make([]coordinate.Rect, 0, columns*rows)
 
-	for r := 0; r < rows; r++ {
-		for c := 0; c < columns; c++ {
+	for r := range rows {
+		for c := range columns {
 			x := rect.Position.X + c*cellW
 			y := rect.Position.Y + r*cellH
 
@@ -146,20 +146,8 @@ func Stack(rect coordinate.Rect, direction Direction, sizes []coordinate.Size) [
 		remaining := rect.Size.Width
 		offset := 0
 		for i, sz := range sizes {
-			w := sz.Width
-			if w > remaining {
-				w = remaining
-			}
-			if w < 0 {
-				w = 0
-			}
-			h := sz.Height
-			if h > rect.Size.Height {
-				h = rect.Size.Height
-			}
-			if h < 0 {
-				h = 0
-			}
+			w := max(min(sz.Width, remaining), 0)
+			h := max(min(sz.Height, rect.Size.Height), 0)
 			result[i] = coordinate.Rect{
 				Position: coordinate.Position{X: rect.Position.X + offset, Y: rect.Position.Y},
 				Size:     coordinate.Size{Width: w, Height: h},
@@ -171,20 +159,8 @@ func Stack(rect coordinate.Rect, direction Direction, sizes []coordinate.Size) [
 		remaining := rect.Size.Height
 		offset := 0
 		for i, sz := range sizes {
-			h := sz.Height
-			if h > remaining {
-				h = remaining
-			}
-			if h < 0 {
-				h = 0
-			}
-			w := sz.Width
-			if w > rect.Size.Width {
-				w = rect.Size.Width
-			}
-			if w < 0 {
-				w = 0
-			}
+			h := max(min(sz.Height, remaining), 0)
+			w := max(min(sz.Width, rect.Size.Width), 0)
 			result[i] = coordinate.Rect{
 				Position: coordinate.Position{X: rect.Position.X, Y: rect.Position.Y + offset},
 				Size:     coordinate.Size{Width: w, Height: h},

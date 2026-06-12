@@ -285,11 +285,9 @@ func TestAgentRegistry_Concurrent(t *testing.T) {
 
 	// Concurrent registrations.
 	for i := range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = reg.Register(fmt.Sprintf("agent-%d", i), inst, caps)
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -300,22 +298,18 @@ func TestAgentRegistry_Concurrent(t *testing.T) {
 
 	// Concurrent queries and selects.
 	for range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = reg.Query(CapabilityRequest{RequiredTools: []string{"search"}})
 			_, _ = reg.Select(CapabilityRequest{RequiredTools: []string{"search"}})
-		}()
+		})
 	}
 	wg.Wait()
 
 	// Concurrent unregistrations.
 	for i := range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = reg.Unregister(fmt.Sprintf("agent-%d", i))
-		}()
+		})
 	}
 	wg.Wait()
 

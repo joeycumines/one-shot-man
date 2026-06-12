@@ -104,7 +104,7 @@ func BenchmarkMultiSessionOutput(b *testing.B) {
 	// Pre-load output for all sessions so VTerms have content.
 	for i, sp := range sessions {
 		for j := range preloadLines {
-			sp.sess.enqueue([]byte(fmt.Sprintf("session %d line %04d: benchmark payload data\r\n", i, j)))
+			sp.sess.enqueue(fmt.Appendf(nil, "session %d line %04d: benchmark payload data\r\n", i, j))
 		}
 	}
 
@@ -121,8 +121,6 @@ func BenchmarkMultiSessionOutput(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	for i, sp := range sessions {
-		sp := sp
-		i := i
 		go func() {
 			line := 0
 			for {
@@ -130,7 +128,7 @@ func BenchmarkMultiSessionOutput(b *testing.B) {
 				case <-ctx.Done():
 					return
 				default:
-					sp.sess.enqueue([]byte(fmt.Sprintf("session %d live %06d: streaming payload\r\n", i, line)))
+					sp.sess.enqueue(fmt.Appendf(nil, "session %d live %06d: streaming payload\r\n", i, line))
 					line++
 				}
 			}
@@ -174,9 +172,7 @@ func TestStressConcurrentRegistration(t *testing.T) {
 	var panicCount atomic.Int64
 
 	for w := range numWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer func() {
 				if r := recover(); r != nil {
 					panicCount.Add(1)
@@ -199,7 +195,7 @@ func TestStressConcurrentRegistration(t *testing.T) {
 
 				// Activate, do a small operation, then unregister.
 				_ = m.Activate(id)
-				_ = m.Input([]byte(fmt.Sprintf("w%d-c%d", w, c)))
+				_ = m.Input(fmt.Appendf(nil, "w%d-c%d", w, c))
 				_ = m.Snapshot(id)
 
 				if err := m.Unregister(id); err != nil {
@@ -209,7 +205,7 @@ func TestStressConcurrentRegistration(t *testing.T) {
 				}
 				allIDs.Store(id, false) // mark as unregistered
 			}
-		}()
+		})
 	}
 
 	// Deadline to catch deadlocks.
@@ -282,7 +278,7 @@ func BenchmarkSnapshotReadDuringWrite(b *testing.B) {
 
 	// Pre-load content so VTerm is populated.
 	for i := range 500 {
-		sess.enqueue([]byte(fmt.Sprintf("preload line %04d: initial vterm content\r\n", i)))
+		sess.enqueue(fmt.Appendf(nil, "preload line %04d: initial vterm content\r\n", i))
 	}
 
 	// Wait for content to appear in snapshots.
@@ -307,7 +303,7 @@ func BenchmarkSnapshotReadDuringWrite(b *testing.B) {
 				case <-ctx.Done():
 					return
 				default:
-					sess.enqueue([]byte(fmt.Sprintf("writer %d line %06d: active concurrent output\r\n", w, line)))
+					sess.enqueue(fmt.Appendf(nil, "writer %d line %06d: active concurrent output\r\n", w, line))
 					line++
 				}
 			}
@@ -381,13 +377,11 @@ func TestStressEventDeliveryUnderLoad(t *testing.T) {
 	)
 	var hammerWG sync.WaitGroup
 	for w := range numHammerWorkers {
-		hammerWG.Add(1)
-		go func() {
-			defer hammerWG.Done()
+		hammerWG.Go(func() {
 			for c := range hammerOps {
 				sess := newControllableSession()
 				// Feed some output so EventSessionOutput fires.
-				sess.readerCh <- []byte(fmt.Sprintf("w%d op%d output\r\n", w, c))
+				sess.readerCh <- fmt.Appendf(nil, "w%d op%d output\r\n", w, c)
 
 				id, err := m.Register(sess, SessionTarget{
 					Name: fmt.Sprintf("hammer-%d-%d", w, c),
@@ -402,7 +396,7 @@ func TestStressEventDeliveryUnderLoad(t *testing.T) {
 				_ = m.Snapshot(id)
 				_ = m.Unregister(id)
 			}
-		}()
+		})
 	}
 
 	// Wait for hammering to complete.
@@ -466,7 +460,7 @@ func TestStressBoundedMemoryGrowth(t *testing.T) {
 	for i := range cycles {
 		sess := newControllableSession()
 		// Feed output to exercise the reader goroutine path.
-		sess.readerCh <- []byte(fmt.Sprintf("cycle %d output\r\n", i))
+		sess.readerCh <- fmt.Appendf(nil, "cycle %d output\r\n", i)
 
 		id, err := m.Register(sess, SessionTarget{
 			Name: fmt.Sprintf("mem-test-%d", i),

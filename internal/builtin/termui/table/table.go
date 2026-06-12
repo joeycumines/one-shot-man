@@ -173,7 +173,7 @@ func extractStringSlice(runtime *goja.Runtime, val goja.Value) []string {
 	}
 	length := int(arr.Get("length").ToInteger())
 	result := make([]string, 0, length)
-	for i := 0; i < length; i++ {
+	for i := range length {
 		elem := arr.Get(indexStr(i))
 		if elem == nil || goja.IsUndefined(elem) || goja.IsNull(elem) {
 			result = append(result, "")
@@ -196,7 +196,7 @@ func extractTableRows(runtime *goja.Runtime, val goja.Value) []table.TableRow {
 	}
 	length := int(arr.Get("length").ToInteger())
 	rows := make([]table.TableRow, 0, length)
-	for i := 0; i < length; i++ {
+	for i := range length {
 		elem := arr.Get(indexStr(i))
 		if elem == nil || goja.IsUndefined(elem) || goja.IsNull(elem) {
 			continue

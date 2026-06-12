@@ -2,6 +2,7 @@ package tokenizer
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"unicode/utf8"
 )
@@ -475,9 +476,7 @@ func (u *Unigram) IDToToken(id uint32) (string, bool) {
 // GetVocab implements Model.
 func (u *Unigram) GetVocab() map[string]uint32 {
 	result := make(map[string]uint32, len(u.vocab))
-	for token, id := range u.tokenToIDs {
-		result[token] = id
-	}
+	maps.Copy(result, u.tokenToIDs)
 	return result
 }
 

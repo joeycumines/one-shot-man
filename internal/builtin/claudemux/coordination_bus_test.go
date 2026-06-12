@@ -145,7 +145,7 @@ func TestCoordinationBus_Overflow(t *testing.T) {
 	})
 
 	// Send more messages than buffer size.
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		payload := []byte{byte('0' + i)}
 		_ = bus.Publish(CoordinationMessage{
 			From:    "overflow-tester",
@@ -189,7 +189,7 @@ func TestCoordinationBus_Unsubscribe(t *testing.T) {
 	bus.Subscribe("unsub-agent", h)
 
 	// Send 3 messages before unsubscribe.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		_ = bus.Publish(CoordinationMessage{
 			From:    "sender",
 			Topic:   "_broadcast_",
@@ -200,7 +200,7 @@ func TestCoordinationBus_Unsubscribe(t *testing.T) {
 	bus.Unsubscribe("unsub-agent")
 
 	// Send 3 messages after unsubscribe.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		_ = bus.Publish(CoordinationMessage{
 			From:    "sender",
 			Topic:   "_broadcast_",
@@ -240,16 +240,14 @@ func TestCoordinationBus_Concurrent(t *testing.T) {
 	})
 
 	var wg sync.WaitGroup
-	for i := 0; i < iterations; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range iterations {
+		wg.Go(func() {
 			_ = bus.Publish(CoordinationMessage{
 				From:    "concurrent",
 				Topic:   "events",
 				Payload: []byte("boom"),
 			})
-		}()
+		})
 	}
 
 	wg.Wait()

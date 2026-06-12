@@ -115,18 +115,14 @@ func TestChannelHandle_ConcurrentIO(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Concurrent output writer (simulates agent producing output).
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i := range numWrites {
 			h.WriteOutput(strings.Repeat("x", i+1))
 		}
-	}()
+	})
 
 	// Concurrent output reader (simulates consumer reading output).
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		received := 0
 		for received < numWrites {
 			_, err := h.Receive()
@@ -135,7 +131,7 @@ func TestChannelHandle_ConcurrentIO(t *testing.T) {
 			}
 			received++
 		}
-	}()
+	})
 
 	wg.Wait()
 }
@@ -260,7 +256,7 @@ func TestScriptedHandle_Replay(t *testing.T) {
 
 	// Receive all initial chunks in order.
 	var received strings.Builder
-	for i := 0; i < len(chunks); i++ {
+	for i := range chunks {
 		out, err := h.Receive()
 		if err != nil {
 			t.Fatalf("Receive %d: %v", i, err)

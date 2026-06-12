@@ -282,7 +282,7 @@ func (info *scriptPeekInfo) parseShebangFlagsFromLine(line string) {
 		return
 	}
 	rest = strings.TrimSpace(rest)
-	for _, token := range strings.Fields(rest) {
+	for token := range strings.FieldsSeq(rest) {
 		switch token {
 		case "-i", "-interactive", "--interactive":
 			info.interactive = true

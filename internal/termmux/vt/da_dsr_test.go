@@ -20,7 +20,7 @@ func TestCSI_DA1_Primary(t *testing.T) {
 	if response == nil {
 		t.Fatal("expected DA1 response, got nil")
 	}
-	want := "\x1b[?64;1;2;6;9;15;16;17;18;21;22c"
+	want := "\x1b[?64;22c"
 	if string(response) != want {
 		t.Errorf("DA1 response = %q, want %q", response, want)
 	}
@@ -39,9 +39,9 @@ func TestCSI_DA1_WithParam(t *testing.T) {
 	if response == nil {
 		t.Fatal("expected DA1 response with param 0")
 	}
-	want := "\x1b[?64;1;2;6;9;15;16;17;18;21;22c"
+	want := "\x1b[?64;22c"
 	if string(response) != want {
-		t.Errorf("DA1 response = %q, want %q", response, want)
+		t.Errorf("DA1 response with param = %q, want %q", response, want)
 	}
 }
 
@@ -198,7 +198,7 @@ func TestCSI_DSR_MultipleResponses(t *testing.T) {
 	if len(responses) != 4 {
 		t.Fatalf("expected 4 responses, got %d", len(responses))
 	}
-	if responses[0] != "\x1b[?64;1;2;6;9;15;16;17;18;21;22c" {
+	if responses[0] != "\x1b[?64;22c" {
 		t.Errorf("response[0] = %q, want DA1", responses[0])
 	}
 	if responses[1] != "\x1b[>1;0;0c" {
@@ -248,6 +248,38 @@ func TestCSI_DSR_BatchWrite(t *testing.T) {
 
 // ── DA1 response after content written ───────────────────────────────
 
+func TestDA1_ResponseNoFalseCapabilities(t *testing.T) {
+	// DA1 must NOT claim capabilities the terminal doesn't implement.
+	// False claims: 1(132-col), 2(printer), 6(selective erase),
+	// 9(NRCS), 15(tech charset), 16(locator), 17(state interworking),
+	// 18(user windows), 21(horizontal scroll).
+	// True claims: 64(VT220), 22(ANSI color).
+	v := NewVTerm(24, 80)
+	var response []byte
+	v.ResponseWriter = func(data []byte) {
+		response = data
+	}
+
+	v.Write([]byte("\x1b[c"))
+
+	if response == nil {
+		t.Fatal("expected DA1 response, got nil")
+	}
+	got := string(response)
+	want := "\x1b[?64;22c"
+	if got != want {
+		t.Errorf("DA1 response = %q, want %q", got, want)
+	}
+
+	// Verify no false capability digits appear in the response.
+	falseCaps := []string{"1;", "2;", "6;", "9;", "15;", "16;", "17;", "18;", "21;"}
+	for _, cap := range falseCaps {
+		if strings.Contains(got, cap) {
+			t.Errorf("DA1 response contains false capability %q", cap)
+		}
+	}
+}
+
 func TestCSI_DA1_AfterContent(t *testing.T) {
 	v := NewVTerm(24, 80)
 	var response []byte
@@ -262,7 +294,7 @@ func TestCSI_DA1_AfterContent(t *testing.T) {
 	if response == nil {
 		t.Fatal("expected DA1 response after content")
 	}
-	want := "\x1b[?64;1;2;6;9;15;16;17;18;21;22c"
+	want := "\x1b[?64;22c"
 	if string(response) != want {
 		t.Errorf("DA1 response = %q, want %q", response, want)
 	}

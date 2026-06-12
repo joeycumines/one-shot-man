@@ -152,6 +152,31 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		}
 		scr.PendingWrap = false
 		scr.CurRow = row
+	case 'I': // CHT — cursor horizontal tabulation (CSI Ps I)
+		ps := paramDefault(params, 0, 1)
+		col := scr.CurCol
+		maxCol := scr.Cols - 1
+		for i := 0; i < ps && col < maxCol; i++ {
+			nextTab := ((col / 8) + 1) * 8
+			if nextTab > maxCol {
+				col = maxCol
+			} else {
+				col = nextTab
+			}
+		}
+		scr.CurCol = col
+		scr.PendingWrap = false
+	case 'Z': // CBT — cursor backward tabulation (CSI Ps Z)
+		ps := paramDefault(params, 0, 1)
+		col := scr.CurCol
+		for i := 0; i < ps && col > 0; i++ {
+			col--
+			for col > 0 && col%8 != 0 {
+				col--
+			}
+		}
+		scr.CurCol = col
+		scr.PendingWrap = false
 	case 'g': // TBC — tab clear
 		mode := paramDefault(params, 0, 0)
 		switch mode {
@@ -253,13 +278,9 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 			h.respond("\x1b[>1;0;0c")
 		} else if !isPrivate {
 			// DA1 — primary device attributes.
-			// Response: VT220-class with these capabilities:
-			// 64 = VT220, 1 = 132-columns, 2 = printer,
-			// 6 = selective erase, 9 = national replacement charsets,
-			// 15 = technical char set, 16 = locator port,
-			// 17 = terminal state interworking, 18 = user windows,
-			// 21 = horizontal scrolling, 22 = ANSI color
-			h.respond("\x1b[?64;1;2;6;9;15;16;17;18;21;22c")
+			// Response: VT220-class with ANSI color.
+			// 64 = VT220, 22 = ANSI color
+			h.respond("\x1b[?64;22c")
 		}
 	case 'n': // DSR — device status report
 		if len(params) > 0 {

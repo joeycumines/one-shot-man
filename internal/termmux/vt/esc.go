@@ -25,6 +25,8 @@ func (h *ESCHandler) Dispatch(scr *Screen, final byte) {
 		scr.SavedAutoWrap = scr.AutoWrap
 		scr.SavedSynchronizedOutput = scr.SynchronizedOutput
 		scr.SavedInsertMode = scr.InsertMode
+		scr.SavedKeypadApplication = scr.KeypadApplication
+		scr.SavedLineFeedNewLine = scr.LineFeedNewLine
 	case '8': // DECRC — restore cursor
 		scr.PendingWrap = scr.SavedPendingWrap
 		// Restore mode state first so cursor clamping respects origin mode.
@@ -40,6 +42,8 @@ func (h *ESCHandler) Dispatch(scr *Screen, final byte) {
 		scr.AutoWrap = scr.SavedAutoWrap
 		scr.SynchronizedOutput = scr.SavedSynchronizedOutput
 		scr.InsertMode = scr.SavedInsertMode
+		scr.KeypadApplication = scr.SavedKeypadApplication
+		scr.LineFeedNewLine = scr.SavedLineFeedNewLine
 		// Clamp cursor to valid range.
 		if scr.OriginMode {
 			scrollTop, scrollBot := scr.ScrollRegion()

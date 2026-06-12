@@ -265,6 +265,8 @@ func (v *VTerm) switchToAlt(mode int) {
 		v.primary.Saved1049AutoWrap = v.primary.AutoWrap
 		v.primary.Saved1049SynchronizedOutput = v.primary.SynchronizedOutput
 		v.primary.Saved1049InsertMode = v.primary.InsertMode
+		v.primary.Saved1049KeypadApplication = v.primary.KeypadApplication
+		v.primary.Saved1049LineFeedNewLine = v.primary.LineFeedNewLine
 		// Clear alternate screen on entry.
 		v.alternate.EraseDisplay(2)
 		v.active = v.alternate
@@ -303,6 +305,8 @@ func (v *VTerm) switchToPrimary(mode int) {
 		v.primary.AutoWrap = v.primary.Saved1049AutoWrap
 		v.primary.SynchronizedOutput = v.primary.Saved1049SynchronizedOutput
 		v.primary.InsertMode = v.primary.Saved1049InsertMode
+		v.primary.KeypadApplication = v.primary.Saved1049KeypadApplication
+		v.primary.LineFeedNewLine = v.primary.Saved1049LineFeedNewLine
 		if v.primary.OriginMode {
 			scrollTop, scrollBot := v.primary.ScrollRegion()
 			v.primary.CurRow = max(scrollTop, min(v.primary.Saved1049Row, scrollBot-1))

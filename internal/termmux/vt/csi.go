@@ -218,6 +218,8 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.SavedAutoWrap = scr.AutoWrap
 		scr.SavedSynchronizedOutput = scr.SynchronizedOutput
 		scr.SavedInsertMode = scr.InsertMode
+		scr.SavedKeypadApplication = scr.KeypadApplication
+		scr.SavedLineFeedNewLine = scr.LineFeedNewLine
 	case 'u': // RCP — restore cursor position
 		scr.PendingWrap = scr.SavedPendingWrap
 		// Restore mode state first so cursor clamping respects origin mode.
@@ -233,6 +235,8 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.AutoWrap = scr.SavedAutoWrap
 		scr.SynchronizedOutput = scr.SavedSynchronizedOutput
 		scr.InsertMode = scr.SavedInsertMode
+		scr.KeypadApplication = scr.SavedKeypadApplication
+		scr.LineFeedNewLine = scr.SavedLineFeedNewLine
 		// Clamp cursor to valid range.
 		if scr.OriginMode {
 			scrollTop, scrollBot := scr.ScrollRegion()

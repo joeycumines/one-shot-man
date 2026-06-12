@@ -100,6 +100,8 @@ type Screen struct {
 	SavedAutoWrap               bool
 	SavedSynchronizedOutput     bool
 	SavedInsertMode             bool
+	SavedKeypadApplication      bool
+	SavedLineFeedNewLine        bool
 	Saved1049Row                int
 	Saved1049Col                int
 	Saved1049Attr               Attr
@@ -115,6 +117,8 @@ type Screen struct {
 	Saved1049AutoWrap           bool
 	Saved1049SynchronizedOutput bool
 	Saved1049InsertMode         bool
+	Saved1049KeypadApplication  bool
+	Saved1049LineFeedNewLine    bool
 	PendingWrap                 bool
 	CursorVisible               bool
 	TabStops                    []bool
@@ -909,6 +913,10 @@ func (s *Screen) Snapshot() *Screen {
 		Saved1049AutoWrap:           s.Saved1049AutoWrap,
 		Saved1049SynchronizedOutput: s.Saved1049SynchronizedOutput,
 		Saved1049InsertMode:         s.Saved1049InsertMode,
+		Saved1049KeypadApplication:  s.Saved1049KeypadApplication,
+		Saved1049LineFeedNewLine:    s.Saved1049LineFeedNewLine,
+		SavedKeypadApplication:      s.SavedKeypadApplication,
+		SavedLineFeedNewLine:        s.SavedLineFeedNewLine,
 		RowWrapped:                  append([]bool(nil), s.RowWrapped...),
 		ReflowOnResize:              s.ReflowOnResize,
 	}

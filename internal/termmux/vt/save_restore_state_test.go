@@ -216,6 +216,18 @@ func TestDECSC_DECRC_IndividualModeFlags(t *testing.T) {
 			reset: func(s *Screen) { s.PendingWrap = false },
 			check: func(s *Screen) bool { return s.PendingWrap },
 		},
+		{
+			name:  "KeypadApplication",
+			set:   func(s *Screen) { s.KeypadApplication = true },
+			reset: func(s *Screen) { s.KeypadApplication = false },
+			check: func(s *Screen) bool { return s.KeypadApplication },
+		},
+		{
+			name:  "LineFeedNewLine",
+			set:   func(s *Screen) { s.LineFeedNewLine = true },
+			reset: func(s *Screen) { s.LineFeedNewLine = false },
+			check: func(s *Screen) bool { return s.LineFeedNewLine },
+		},
 	}
 
 	for _, tt := range tests {
@@ -442,5 +454,143 @@ func TestDECSC_And_1049_Independence(t *testing.T) {
 	}
 	if !v.primary.FocusReporting {
 		t.Error("FocusReporting = false after DECRC, want true (DECSC state)")
+	}
+}
+
+// TestDECSC_DECRC_KeypadApplication verifies that DECSC/DECRC
+// save and restore KeypadApplication.
+func TestDECSC_DECRC_KeypadApplication(t *testing.T) {
+	v := NewVTerm(24, 80)
+	scr := v.active
+
+	scr.KeypadApplication = true
+	v.esc.Dispatch(scr, '7')
+	scr.KeypadApplication = false
+	v.esc.Dispatch(scr, '8')
+	if !scr.KeypadApplication {
+		t.Error("KeypadApplication not restored after DECRC")
+	}
+}
+
+// TestDECSC_DECRC_LineFeedNewLine verifies that DECSC/DECRC
+// save and restore LineFeedNewLine.
+func TestDECSC_DECRC_LineFeedNewLine(t *testing.T) {
+	v := NewVTerm(24, 80)
+	scr := v.active
+
+	scr.LineFeedNewLine = true
+	v.esc.Dispatch(scr, '7')
+	scr.LineFeedNewLine = false
+	v.esc.Dispatch(scr, '8')
+	if !scr.LineFeedNewLine {
+		t.Error("LineFeedNewLine not restored after DECRC")
+	}
+}
+
+// TestMode1049_KeypadApplication verifies that mode 1049
+// saves and restores KeypadApplication when switching to/from alternate screen.
+func TestMode1049_KeypadApplication(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.primary.KeypadApplication = true
+
+	// Switch to alternate (mode 1049).
+	v.csi.Dispatch(v.active, 'h', []int{1049}, true)
+	if v.active != v.alternate {
+		t.Fatal("should be on alternate screen")
+	}
+
+	// Set different value on alternate.
+	v.alternate.KeypadApplication = false
+
+	// Switch back.
+	v.csi.Dispatch(v.active, 'l', []int{1049}, true)
+	if v.active != v.primary {
+		t.Fatal("should be on primary screen")
+	}
+	if !v.primary.KeypadApplication {
+		t.Error("KeypadApplication not restored after DECRST ?1049l")
+	}
+}
+
+// TestMode1049_LineFeedNewLine verifies that mode 1049
+// saves and restores LineFeedNewLine when switching to/from alternate screen.
+func TestMode1049_LineFeedNewLine(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.primary.LineFeedNewLine = true
+
+	v.csi.Dispatch(v.active, 'h', []int{1049}, true)
+	if v.active != v.alternate {
+		t.Fatal("should be on alternate screen")
+	}
+	v.alternate.LineFeedNewLine = false
+
+	v.csi.Dispatch(v.active, 'l', []int{1049}, true)
+	if v.active != v.primary {
+		t.Fatal("should be on primary screen")
+	}
+	if !v.primary.LineFeedNewLine {
+		t.Error("LineFeedNewLine not restored after DECRST ?1049l")
+	}
+}
+
+// Test1049_KeypadLineFeedNewLine_Independence verifies that mode 1049
+// does not overwrite DECSC's Saved* fields for KeypadApplication and
+// LineFeedNewLine, and that DECRC restores them independently.
+func Test1049_KeypadLineFeedNewLine_Independence(t *testing.T) {
+	v := NewVTerm(24, 80)
+
+	// Set KeypadApplication=true, LineFeedNewLine=true on primary.
+	v.primary.KeypadApplication = true
+	v.primary.LineFeedNewLine = true
+
+	// DECSC save.
+	v.esc.Dispatch(v.primary, '7')
+
+	// Verify DECSC saved them.
+	if !v.primary.SavedKeypadApplication {
+		t.Error("DECSC did not save KeypadApplication=true")
+	}
+	if !v.primary.SavedLineFeedNewLine {
+		t.Error("DECSC did not save LineFeedNewLine=true")
+	}
+
+	// Change both to false, then switch to alternate via mode 1049.
+	v.primary.KeypadApplication = false
+	v.primary.LineFeedNewLine = false
+
+	v.csi.Dispatch(v.active, 'h', []int{1049}, true)
+	if v.active != v.alternate {
+		t.Fatal("should be on alternate screen")
+	}
+
+	// Verify Saved* are still DECSC values (not overwritten by 1049).
+	if !v.primary.SavedKeypadApplication {
+		t.Error("SavedKeypadApplication overwritten by 1049")
+	}
+	if !v.primary.SavedLineFeedNewLine {
+		t.Error("SavedLineFeedNewLine overwritten by 1049")
+	}
+
+	// Switch back.
+	v.csi.Dispatch(v.active, 'l', []int{1049}, true)
+	if v.active != v.primary {
+		t.Fatal("should be on primary screen")
+	}
+
+	// After 1049 restore, fields should be pre-1049 (false).
+	if v.primary.KeypadApplication {
+		t.Error("KeypadApplication = true after 1049 restore, want false")
+	}
+	if v.primary.LineFeedNewLine {
+		t.Error("LineFeedNewLine = true after 1049 restore, want false")
+	}
+
+	// DECRC should restore DECSC values (true).
+	v.esc.Dispatch(v.primary, '8')
+	if !v.primary.KeypadApplication {
+		t.Error("KeypadApplication not restored by DECRC, want true")
+	}
+	if !v.primary.LineFeedNewLine {
+		t.Error("LineFeedNewLine not restored by DECRC, want true")
 	}
 }

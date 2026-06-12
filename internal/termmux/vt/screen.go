@@ -94,6 +94,11 @@ type Screen struct {
 	// When false, the child expects X11-style format (not supported for forwarding).
 	MouseSGR bool
 
+	// BracketedPaste indicates bracketed paste mode is active (DECSET ?2004h).
+	// When true, pasted content should be wrapped with \x1b[200~ and \x1b[201~.
+	// When false, paste events are sent without delimiters.
+	BracketedPaste bool
+
 	// Scrollback holds lines that have scrolled off the top of the visible
 	// screen. It is a ring buffer: Scrollback[0] is the oldest line when
 	// ScrollbackHead == 0, otherwise the oldest line is at ScrollbackHead.
@@ -785,6 +790,7 @@ func (s *Screen) Snapshot() *Screen {
 		Cols:          s.Cols,
 		MouseTracking: s.MouseTracking,
 		MouseSGR:      s.MouseSGR,
+		BracketedPaste: s.BracketedPaste,
 
 		Scrollback:     scrollback,
 		ScrollbackLen:  s.ScrollbackLen,

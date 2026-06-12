@@ -391,6 +391,14 @@ func (v *VTerm) InsertMode() bool {
 	return v.active.InsertMode
 }
 
+// BracketedPaste reports whether bracketed paste mode (DECSET ?2004h) is
+// active on the current screen. Thread-safe.
+func (v *VTerm) BracketedPaste() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.BracketedPaste
+}
+
 // ActiveScreen returns a snapshot copy of the active screen's state.
 // The returned Screen is a value copy — mutations to it do not affect the
 // VTerm's internal state, and no data races are possible regardless of

@@ -287,6 +287,8 @@ func (h *CSIHandler) decset(scr *Screen, params []int) {
 			scr.MouseTracking = MouseTrackingAnyEvent
 		case 1006: // XT_SGR_MOUSE — SGR mouse encoding
 			scr.MouseSGR = true
+		case 2004: // Bracketed paste mode
+			scr.BracketedPaste = true
 		}
 	}
 }
@@ -321,6 +323,8 @@ func (h *CSIHandler) decrst(scr *Screen, params []int) {
 			}
 		case 1006: // XT_SGR_MOUSE — disable SGR mouse encoding
 			scr.MouseSGR = false
+		case 2004: // Bracketed paste mode off
+			scr.BracketedPaste = false
 		}
 	}
 }

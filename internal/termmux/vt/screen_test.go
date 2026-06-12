@@ -202,6 +202,172 @@ func TestScreen_DeleteLines(t *testing.T) {
 	}
 }
 
+func TestScreen_InsertLines_OutsideScrollRegion(t *testing.T) {
+	// Use VTerm + CSI handler for proper scroll region setup.
+	v := NewVTerm(6, 3)
+	scr := v.active
+	for r := range 6 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+	// Set scroll region to rows 3-5 (1-indexed: CSI 3;5 r).
+	// ScrollRegion() converts to 0-indexed: top=2, bot=5.
+	v.csi.Dispatch(scr, 'r', []int{3, 5}, false)
+	top, bot := scr.ScrollRegion()
+	if top != 2 || bot != 5 {
+		t.Fatalf("scroll region = (%d,%d), want (2,5)", top, bot)
+	}
+
+	// Fill again (DECSTBM homes cursor and may clear).
+	for r := range 6 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+
+	// Cursor at row 0 (above scroll region which starts at row 2).
+	scr.CurRow = 0
+	scr.InsertLines(1)
+	// Should be a no-op — nothing changes.
+	for r := range 6 {
+		if scr.Cells[r][0].Ch != rune('A'+r) {
+			t.Errorf("row %d = %c, want %c (IL above scroll region should be no-op)", r, scr.Cells[r][0].Ch, rune('A'+r))
+		}
+	}
+	// Cursor at row 5 (at bot, which is exclusive boundary).
+	scr.CurRow = 5
+	scr.InsertLines(1)
+	for r := range 6 {
+		if scr.Cells[r][0].Ch != rune('A'+r) {
+			t.Errorf("row %d = %c, want %c (IL at ScrollBot should be no-op)", r, scr.Cells[r][0].Ch, rune('A'+r))
+		}
+	}
+}
+
+func TestScreen_DeleteLines_OutsideScrollRegion(t *testing.T) {
+	// Use VTerm + CSI handler for proper scroll region setup.
+	v := NewVTerm(6, 3)
+	scr := v.active
+	for r := range 6 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+	// Set scroll region to rows 3-5 (1-indexed).
+	v.csi.Dispatch(scr, 'r', []int{3, 5}, false)
+	top, bot := scr.ScrollRegion()
+	if top != 2 || bot != 5 {
+		t.Fatalf("scroll region = (%d,%d), want (2,5)", top, bot)
+	}
+
+	// Fill again (DECSTBM homes cursor and may clear).
+	for r := range 6 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+
+	// Cursor at row 0 (above scroll region).
+	scr.CurRow = 0
+	scr.DeleteLines(1)
+	// Should be a no-op.
+	for r := range 6 {
+		if scr.Cells[r][0].Ch != rune('A'+r) {
+			t.Errorf("row %d = %c, want %c (DL above scroll region should be no-op)", r, scr.Cells[r][0].Ch, rune('A'+r))
+		}
+	}
+	// Cursor at row 5 (at ScrollBot, which is exclusive).
+	scr.CurRow = 5
+	scr.DeleteLines(1)
+	for r := range 6 {
+		if scr.Cells[r][0].Ch != rune('A'+r) {
+			t.Errorf("row %d = %c, want %c (DL at ScrollBot should be no-op)", r, scr.Cells[r][0].Ch, rune('A'+r))
+		}
+	}
+}
+
+func TestScreen_InsertLines_WithScrollRegion(t *testing.T) {
+	// 8-row screen with scroll region rows 3-6 (1-indexed), i.e. rows 2-6 (0-indexed).
+	v := NewVTerm(8, 3)
+	scr := v.active
+	for r := range 8 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+	// Set scroll region: CSI 3;6 r => 0-indexed top=2, bot=6.
+	v.csi.Dispatch(scr, 'r', []int{3, 6}, false)
+	top, bot := scr.ScrollRegion()
+	if top != 2 || bot != 6 {
+		t.Fatalf("scroll region = (%d,%d), want (2,6)", top, bot)
+	}
+
+	// Fill again and set cursor inside scroll region.
+	for r := range 8 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+	scr.CurRow = 3
+
+	scr.InsertLines(1)
+
+	// Row 0-1: unchanged (A, B).
+	if scr.Cells[0][0].Ch != 'A' || scr.Cells[1][0].Ch != 'B' {
+		t.Error("rows above scroll region should be unchanged")
+	}
+	// Row 3: blank (inserted).
+	if scr.Cells[3][0].Ch != ' ' {
+		t.Errorf("inserted row = %c, want blank", scr.Cells[3][0].Ch)
+	}
+	// Row 4: old row 3 (D).
+	if scr.Cells[4][0].Ch != 'D' {
+		t.Errorf("shifted row 4 = %c, want D", scr.Cells[4][0].Ch)
+	}
+	// Row 5: old row 4 (E). Row 5 is the last in the scroll region.
+	if scr.Cells[5][0].Ch != 'E' {
+		t.Errorf("shifted row 5 = %c, want E", scr.Cells[5][0].Ch)
+	}
+	// Row 6-7: unchanged (G, H) — outside scroll region.
+	if scr.Cells[6][0].Ch != 'G' || scr.Cells[7][0].Ch != 'H' {
+		t.Error("rows below scroll region should be unchanged")
+	}
+	// Old row 5 (F) was pushed out of the scroll region (scrolled off).
+}
+
+func TestScreen_DeleteLines_WithScrollRegion(t *testing.T) {
+	// 8-row screen with scroll region rows 3-6 (1-indexed), i.e. rows 2-6 (0-indexed).
+	v := NewVTerm(8, 3)
+	scr := v.active
+	for r := range 8 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+	// Set scroll region: CSI 3;6 r => 0-indexed top=2, bot=6.
+	v.csi.Dispatch(scr, 'r', []int{3, 6}, false)
+	top, bot := scr.ScrollRegion()
+	if top != 2 || bot != 6 {
+		t.Fatalf("scroll region = (%d,%d), want (2,6)", top, bot)
+	}
+
+	// Fill again and set cursor inside scroll region.
+	for r := range 8 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+	scr.CurRow = 3
+
+	scr.DeleteLines(1)
+
+	// Row 0-1: unchanged.
+	if scr.Cells[0][0].Ch != 'A' || scr.Cells[1][0].Ch != 'B' {
+		t.Error("rows above scroll region should be unchanged")
+	}
+	// Row 3: old row 4 (E).
+	if scr.Cells[3][0].Ch != 'E' {
+		t.Errorf("after delete, row 3 = %c, want E", scr.Cells[3][0].Ch)
+	}
+	// Row 4: old row 5 (F).
+	if scr.Cells[4][0].Ch != 'F' {
+		t.Errorf("after delete, row 4 = %c, want F", scr.Cells[4][0].Ch)
+	}
+	// Row 5: blank (bottom of scroll region fills with blank).
+	if scr.Cells[5][0].Ch != ' ' {
+		t.Errorf("bottom row = %c, want blank", scr.Cells[5][0].Ch)
+	}
+	// Row 6-7: unchanged.
+	if scr.Cells[6][0].Ch != 'G' || scr.Cells[7][0].Ch != 'H' {
+		t.Error("rows below scroll region should be unchanged")
+	}
+}
+
 func TestScreen_PutChar_ascii(t *testing.T) {
 	s := NewScreen(3, 5)
 	s.PutChar('A')

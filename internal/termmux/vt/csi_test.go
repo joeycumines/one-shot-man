@@ -85,6 +85,26 @@ func TestCSI_DECSTBM_SetsScrollRegion(t *testing.T) {
 	}
 }
 
+func TestCSI_DECSTBM_InvertedRegion(t *testing.T) {
+	// DECSTBM with top >= bot should be silently ignored.
+	scr := NewScreen(24, 80)
+	h := &CSIHandler{}
+	// Inverted: top=20, bot=5 (top >= bot).
+	h.Dispatch(scr, 'r', []int{20, 5}, false)
+	// Scroll region should remain at defaults — check via ScrollRegion()
+	// which returns (0, Rows) when no region is set.
+	top, bot := scr.ScrollRegion()
+	if top != 0 || bot != 24 {
+		t.Errorf("DECSTBM with inverted region: want defaults (0,24), got (%d,%d)", top, bot)
+	}
+	// Equal top and bot should also be ignored.
+	h.Dispatch(scr, 'r', []int{10, 10}, false)
+	top, bot = scr.ScrollRegion()
+	if top != 0 || bot != 24 {
+		t.Errorf("DECSTBM with equal top/bot: want defaults (0,24), got (%d,%d)", top, bot)
+	}
+}
+
 func TestCSI_DECSET_CursorVisible(t *testing.T) {
 	scr := NewScreen(24, 80)
 	h := &CSIHandler{}

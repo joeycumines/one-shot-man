@@ -253,6 +253,14 @@ func (v *VTerm) switchToAlt(mode int) {
 		v.primary.SavedG1Charset = v.primary.G1Charset
 		v.primary.SavedGL = v.primary.GL
 		v.primary.SavedOriginMode = v.primary.OriginMode
+		v.primary.SavedPendingWrap = v.primary.PendingWrap
+		v.primary.SavedApplicationCursor = v.primary.ApplicationCursor
+		v.primary.SavedBracketedPaste = v.primary.BracketedPaste
+		v.primary.SavedCursorShape = v.primary.CursorShape
+		v.primary.SavedFocusReporting = v.primary.FocusReporting
+		v.primary.SavedAutoWrap = v.primary.AutoWrap
+		v.primary.SavedSynchronizedOutput = v.primary.SynchronizedOutput
+		v.primary.SavedInsertMode = v.primary.InsertMode
 		// Clear alternate screen on entry.
 		v.alternate.EraseDisplay(2)
 		v.active = v.alternate
@@ -283,6 +291,14 @@ func (v *VTerm) switchToPrimary(mode int) {
 		v.primary.G1Charset = v.primary.SavedG1Charset
 		v.primary.GL = v.primary.SavedGL
 		v.primary.OriginMode = v.primary.SavedOriginMode
+		v.primary.PendingWrap = v.primary.SavedPendingWrap
+		v.primary.ApplicationCursor = v.primary.SavedApplicationCursor
+		v.primary.BracketedPaste = v.primary.SavedBracketedPaste
+		v.primary.CursorShape = v.primary.SavedCursorShape
+		v.primary.FocusReporting = v.primary.SavedFocusReporting
+		v.primary.AutoWrap = v.primary.SavedAutoWrap
+		v.primary.SynchronizedOutput = v.primary.SavedSynchronizedOutput
+		v.primary.InsertMode = v.primary.SavedInsertMode
 		if v.primary.OriginMode {
 			scrollTop, scrollBot := v.primary.ScrollRegion()
 			v.primary.CurRow = max(scrollTop, min(v.primary.SavedRow, scrollBot-1))
@@ -290,7 +306,6 @@ func (v *VTerm) switchToPrimary(mode int) {
 			v.primary.CurRow = max(0, min(v.primary.SavedRow, v.primary.Rows-1))
 		}
 		v.primary.CurCol = max(0, min(v.primary.SavedCol, v.primary.Cols-1))
-		v.primary.PendingWrap = false
 	case 1047:
 		// Clear alternate screen on exit, no cursor restore.
 		v.alternate.EraseDisplay(2)

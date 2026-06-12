@@ -17,14 +17,29 @@ func (h *ESCHandler) Dispatch(scr *Screen, final byte) {
 		scr.SavedG1Charset = scr.G1Charset
 		scr.SavedGL = scr.GL
 		scr.SavedOriginMode = scr.OriginMode
+		scr.SavedPendingWrap = scr.PendingWrap
+		scr.SavedApplicationCursor = scr.ApplicationCursor
+		scr.SavedBracketedPaste = scr.BracketedPaste
+		scr.SavedCursorShape = scr.CursorShape
+		scr.SavedFocusReporting = scr.FocusReporting
+		scr.SavedAutoWrap = scr.AutoWrap
+		scr.SavedSynchronizedOutput = scr.SynchronizedOutput
+		scr.SavedInsertMode = scr.InsertMode
 	case '8': // DECRC — restore cursor
-		scr.PendingWrap = false
+		scr.PendingWrap = scr.SavedPendingWrap
 		// Restore mode state first so cursor clamping respects origin mode.
 		scr.CurAttr = scr.SavedAttr
 		scr.G0Charset = scr.SavedG0Charset
 		scr.G1Charset = scr.SavedG1Charset
 		scr.GL = scr.SavedGL
 		scr.OriginMode = scr.SavedOriginMode
+		scr.ApplicationCursor = scr.SavedApplicationCursor
+		scr.BracketedPaste = scr.SavedBracketedPaste
+		scr.CursorShape = scr.SavedCursorShape
+		scr.FocusReporting = scr.SavedFocusReporting
+		scr.AutoWrap = scr.SavedAutoWrap
+		scr.SynchronizedOutput = scr.SavedSynchronizedOutput
+		scr.InsertMode = scr.SavedInsertMode
 		// Clamp cursor to valid range.
 		if scr.OriginMode {
 			scrollTop, scrollBot := scr.ScrollRegion()

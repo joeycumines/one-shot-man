@@ -73,13 +73,21 @@ type Screen struct {
 	CurAttr        Attr
 	ScrollTop      int // 1-indexed, inclusive; 0 = default
 	ScrollBot      int // 1-indexed, inclusive; 0 = default
-	SavedRow       int
-	SavedCol       int
-	SavedAttr      Attr
-	SavedG0Charset int
-	SavedG1Charset int
-	SavedGL        int
-	SavedOriginMode bool
+	SavedRow              int
+	SavedCol              int
+	SavedAttr             Attr
+	SavedG0Charset        int
+	SavedG1Charset        int
+	SavedGL               int
+	SavedOriginMode       bool
+	SavedPendingWrap      bool
+	SavedApplicationCursor bool
+	SavedBracketedPaste   bool
+	SavedCursorShape      int
+	SavedFocusReporting   bool
+	SavedAutoWrap         bool
+	SavedSynchronizedOutput bool
+	SavedInsertMode       bool
 	PendingWrap    bool
 	CursorVisible  bool
 	TabStops       []bool
@@ -840,6 +848,14 @@ func (s *Screen) Snapshot() *Screen {
 		GL:             s.GL,
 		OriginMode:     s.OriginMode,
 		SavedOriginMode: s.SavedOriginMode,
+		SavedPendingWrap: s.SavedPendingWrap,
+		SavedApplicationCursor: s.SavedApplicationCursor,
+		SavedBracketedPaste: s.SavedBracketedPaste,
+		SavedCursorShape: s.SavedCursorShape,
+		SavedFocusReporting: s.SavedFocusReporting,
+		SavedAutoWrap: s.SavedAutoWrap,
+		SavedSynchronizedOutput: s.SavedSynchronizedOutput,
+		SavedInsertMode: s.SavedInsertMode,
 		RowWrapped:     append([]bool(nil), s.RowWrapped...),
 		ReflowOnResize: s.ReflowOnResize,
 	}

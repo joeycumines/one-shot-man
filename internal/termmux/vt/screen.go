@@ -937,6 +937,45 @@ func (s *Screen) Snapshot() *Screen {
 	}
 }
 
+// runeWidth returns the display width of a rune without allocating for
+// common Unicode ranges. ASCII and well-known CJK/wide ranges are
+// handled inline; everything else falls back to uniseg.StringWidth.
+func runeWidth(r rune) int {
+	// Fast path: printable ASCII.
+	if r >= 0x20 && r <= 0x7E {
+		return 1
+	}
+	// Control characters (C0 + DEL).
+	if r < 0x80 {
+		return 0
+	}
+	// Fast path: known double-width ranges.
+	if r >= 0x1100 && r <= 0x115F || // Hangul Jamo
+		r >= 0x2329 && r <= 0x232A || // Angle brackets
+		r >= 0x2E80 && r <= 0x303E || // CJK misc
+		r >= 0x3040 && r <= 0x33FF || // Hiragana, Katakana, CJK symbols
+		r >= 0x3400 && r <= 0x4DBF || // CJK Extension A
+		r >= 0x4E00 && r <= 0x9FFF || // CJK Unified Ideographs
+		r >= 0xA000 && r <= 0xA4CF || // Yi syllables/radicals
+		r >= 0xAC00 && r <= 0xD7AF || // Hangul Syllables
+		r >= 0xF900 && r <= 0xFAFF || // CJK Compatibility Ideographs
+		r >= 0xFE10 && r <= 0xFE19 || // Vertical forms
+		r >= 0xFE30 && r <= 0xFE6F || // CJK Compatibility Forms
+		r >= 0xFF01 && r <= 0xFF60 || // Fullwidth forms
+		r >= 0xFFE0 && r <= 0xFFE6 || // Fullwidth signs
+		r >= 0x1F300 && r <= 0x1F9FF || // Emoji
+		r >= 0x20000 && r <= 0x2FFEF { // CJK Extension B-I, Compatibility
+		return 2
+	}
+	// Fast path: known single-width ranges outside ASCII.
+	if r >= 0xFF61 && r <= 0xFFDC || // Halfwidth forms
+		r >= 0xFFE8 && r <= 0xFFEE { // Halfwidth forms
+		return 1
+	}
+	// Fallback for rare/special characters.
+	return uniseg.StringWidth(string(r))
+}
+
 // PutChar places a rune at the cursor position with the current attributes,
 // advancing the cursor. Wide characters (width 2) occupy two cells.
 // Uses github.com/rivo/uniseg for width calculation.
@@ -944,7 +983,7 @@ func (s *Screen) PutChar(ch rune) {
 	// Apply charset mapping before width calculation and placement.
 	ch = s.mapCharset(ch)
 
-	width := uniseg.StringWidth(string(ch))
+	width := runeWidth(ch)
 	if width <= 0 {
 		width = 1 // control chars and zero-width: treat as 1 column
 	}
@@ -1006,6 +1045,54 @@ func (s *Screen) PutChar(ch rune) {
 		s.CurCol = s.Cols - 1
 	} else {
 		s.CurCol = newCol
+	}
+}
+
+// PutASCII writes a slice of printable ASCII bytes (0x20-0x7E) directly
+// into the cell buffer, advancing the cursor. It is a batch-optimized
+// fast path for the common case of sequential ground-state text that
+// bypasses charset mapping, width calculation, and per-char wrap checks.
+// The caller MUST ensure: GL==0, G0Charset==0, InsertMode==false, and
+// all bytes are in [0x20, 0x7E].
+func (s *Screen) PutASCII(data []byte) {
+	attr := s.CurAttr
+	i := 0
+	for i < len(data) {
+		// Handle pending wrap once per row.
+		if s.PendingWrap && s.AutoWrap {
+			s.CurCol = 0
+			s.LineFeed()
+			s.PendingWrap = false
+			if s.CurRow >= 0 && s.CurRow < len(s.RowWrapped) {
+				s.RowWrapped[s.CurRow] = true
+			}
+		}
+
+		// Write as many chars as fit on the current row.
+		row := s.CurRow
+		col := s.CurCol
+		avail := s.Cols - col
+		n := len(data) - i
+		if n > avail {
+			n = avail
+		}
+		if row >= 0 && row < s.Rows {
+			cells := s.Cells[row]
+			for j := 0; j < n; j++ {
+				cells[col+j] = Cell{Ch: rune(data[i+j]), Attr: attr}
+			}
+		}
+		i += n
+		col += n
+
+		if col >= s.Cols {
+			if s.AutoWrap {
+				s.PendingWrap = true
+			}
+			s.CurCol = s.Cols - 1
+		} else {
+			s.CurCol = col
+		}
 	}
 }
 

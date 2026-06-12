@@ -26,7 +26,7 @@ func setupMgr(t *testing.T, withSession bool) (*goja.Runtime, func()) {
 	<-mgr.Started()
 
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1)
+	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
 	if withSession {
@@ -87,7 +87,7 @@ func TestSessionManager_RunViaJS(t *testing.T) {
 	ctx := t.Context()
 
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1)
+	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
 	// Call run() from JS — this starts the worker goroutine.
@@ -134,7 +134,7 @@ func TestSessionManager_RegisterUnregister(t *testing.T) {
 	}
 
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1)
+	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 	_ = runtime.Set("sessionID", uint64(id))
 
@@ -1159,7 +1159,7 @@ func TestSessionManager_AttachReturnsSessionID(t *testing.T) {
 	<-mgr.Started()
 
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1)
+	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
 	// Create a StringIO and expose it as a Go value for attach.
@@ -1225,5 +1225,48 @@ func TestSessionManager_IsDone(t *testing.T) {
 	}
 	if !v.ToBoolean() {
 		t.Fatal("isDone should be true for a non-existent session")
+	}
+}
+
+// ── newSessionManager title option ──────────────────────
+
+func TestNewSessionManager_TitleOption(t *testing.T) {
+	runtime, exports := testRequire(t)
+	_ = runtime.Set("tm", exports)
+
+	// newSessionManager() with no args should return a valid object.
+	v, err := runtime.RunString(`tm.newSessionManager()`)
+	if err != nil {
+		t.Fatalf("newSessionManager(): %v", err)
+	}
+	if v == nil || v.Export() == nil {
+		t.Fatal("newSessionManager() should return an object")
+	}
+
+	// newSessionManager() with title option should also work.
+	v, err = runtime.RunString(`tm.newSessionManager({ title: 'My Title' })`)
+	if err != nil {
+		t.Fatalf("newSessionManager({title}): %v", err)
+	}
+	if v == nil || v.Export() == nil {
+		t.Fatal("newSessionManager({title}) should return an object")
+	}
+
+	// newSessionManager() with mixed options should work.
+	v, err = runtime.RunString(`tm.newSessionManager({ rows: 30, cols: 100, title: 'Custom' })`)
+	if err != nil {
+		t.Fatalf("newSessionManager({rows, cols, title}): %v", err)
+	}
+	if v == nil || v.Export() == nil {
+		t.Fatal("newSessionManager({rows, cols, title}) should return an object")
+	}
+
+	// newSessionManager() with empty title should work.
+	v, err = runtime.RunString(`tm.newSessionManager({ title: '' })`)
+	if err != nil {
+		t.Fatalf("newSessionManager({title: ''}): %v", err)
+	}
+	if v == nil || v.Export() == nil {
+		t.Fatal("newSessionManager({title: ''}) should return an object")
 	}
 }

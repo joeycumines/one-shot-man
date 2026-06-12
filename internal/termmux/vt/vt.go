@@ -121,8 +121,27 @@ func (v *VTerm) Resize(rows, cols int) {
 func (v *VTerm) Write(p []byte) (int, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	for _, b := range p {
-		v.processByte(b)
+	for i := 0; i < len(p); i++ {
+		// Fast path: batch printable ASCII in ground state when no
+		// special screen modes are active. This avoids per-byte
+		// parser dispatch, UTF-8 checks, and charset mapping for
+		// the common case of sequential printable text.
+		if v.parser.cur == StateGround && !v.utf8.Pending() {
+			scr := v.active
+			if scr.GL == 0 && scr.G0Charset == 0 && !scr.InsertMode {
+				// Find end of printable ASCII run (0x20-0x7E).
+				end := i
+				for end < len(p) && p[end] >= 0x20 && p[end] <= 0x7E {
+					end++
+				}
+				if end > i {
+					scr.PutASCII(p[i:end])
+					i = end - 1 // loop will i++
+					continue
+				}
+			}
+		}
+		v.processByte(p[i])
 	}
 	return len(p), nil
 }

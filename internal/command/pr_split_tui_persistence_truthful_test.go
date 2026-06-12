@@ -62,6 +62,7 @@ func newPersistenceIntegrationEval(t *testing.T, state *termmux.PersistedManager
 		nil,
 		io.Discard,
 		-1,
+		"",
 	))
 	eng.LoadChunks(t, prsplittest.ChunkNamesAfter("12")...)
 	if _, err := eng.EvalJS(t)(prsplittest.Chunk16Helpers); err != nil {

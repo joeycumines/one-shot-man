@@ -508,7 +508,7 @@ func TestSessionWrapper_WriteResize(t *testing.T) {
 
 	// 3. Wrap the SessionManager for JS access.
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1)
+	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
 	// 4. Verify session().write exists and is callable.

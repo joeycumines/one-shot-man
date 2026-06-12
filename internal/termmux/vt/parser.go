@@ -41,6 +41,7 @@ type Parser struct {
 	intermBuf   []byte
 	oscBuf      []byte
 	dcsBuf      []byte
+	params      []int // pre-allocated slice reused by Params()
 	maxOSCLen   int
 	maxDCSLen   int
 	lastByte    byte // for two-byte terminators (ESC \)
@@ -51,6 +52,7 @@ type Parser struct {
 func NewParser() *Parser {
 	return &Parser{
 		cur:       StateGround,
+		params:    make([]int, 0, 16),
 		maxOSCLen: 4096,
 		maxDCSLen: 4096,
 	}
@@ -280,18 +282,37 @@ func (p *Parser) CharsetSlot() byte {
 // Params parses the accumulated CSI parameter buffer as a semicolon-
 // separated list of integers.  Missing parameters are returned as 0.
 func (p *Parser) Params() []int {
-	s := string(p.paramBuf)
-	if s == "" {
+	if len(p.paramBuf) == 0 {
 		return nil
 	}
-	parts := strings.Split(s, ";")
-	out := make([]int, len(parts))
-	for i, part := range parts {
-		// Ignore parse errors — malformed params become 0.
-		v, _ := strconv.Atoi(part)
-		out[i] = v
+	p.params = p.params[:0]
+	start := 0
+	for i, b := range p.paramBuf {
+		if b == ';' {
+			if i > start {
+				val := 0
+				for _, d := range p.paramBuf[start:i] {
+					val = val*10 + int(d-'0')
+				}
+				p.params = append(p.params, val)
+			} else {
+				p.params = append(p.params, 0)
+			}
+			start = i + 1
+		}
 	}
-	return out
+	// Last param after the final semicolon (or the only param if no semicolons).
+	if start < len(p.paramBuf) {
+		val := 0
+		for _, d := range p.paramBuf[start:] {
+			val = val*10 + int(d-'0')
+		}
+		p.params = append(p.params, val)
+	} else if start > 0 {
+		// Trailing semicolon → implicit 0.
+		p.params = append(p.params, 0)
+	}
+	return p.params
 }
 
 // HasIntermediate reports whether b appears in the intermediate buffer.

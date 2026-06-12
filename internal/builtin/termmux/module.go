@@ -651,9 +651,10 @@ func UnwrapSessionManager(obj *goja.Object) *parent.SessionManager {
 //
 // JS signature:
 //
-//	termmux.newSessionManager({ rows?: number, cols?: number, requestBuffer?: number })
+//	termmux.newSessionManager({ rows?: number, cols?: number, requestBuffer?: number, outputBuffer?: number, title?: string })
 func newSessionManager(ctx context.Context, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	var opts []parent.ManagerOption
+	var title string
 
 	if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
 		cfgObj := call.Argument(0).ToObject(runtime)
@@ -674,11 +675,14 @@ func newSessionManager(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 			if v := cfgObj.Get("outputBuffer"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 				opts = append(opts, parent.WithMergedOutputBuffer(int(v.ToInteger())))
 			}
+			if v := cfgObj.Get("title"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				title = v.String()
+			}
 		}
 	}
 
 	mgr := parent.NewSessionManager(opts...)
-	return WrapSessionManager(ctx, runtime, mgr, os.Stdin, os.Stdout, -1)
+	return WrapSessionManager(ctx, runtime, mgr, os.Stdin, os.Stdout, -1, title)
 }
 
 // WrapSessionManager wraps a [parent.SessionManager] into a Goja object with
@@ -687,7 +691,7 @@ func newSessionManager(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 //
 // The stdin/stdout/termFd parameters provide terminal I/O for passthrough
 // mode. Pass os.Stdin, os.Stdout, and -1 (or int(os.Stdin.Fd())) as defaults.
-func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int) goja.Value {
+func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int, title string) goja.Value {
 	obj := runtime.NewObject()
 
 	// Store the Go SessionManager for later retrieval by
@@ -701,7 +705,9 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 	sb := statusbar.New(stdout)
 	var toggleKey byte = parent.DefaultToggleKey
 	sb.SetToggleKey(toggleKey)
-	sb.SetTitle("Claude")
+	if title != "" {
+		sb.SetTitle(title)
+	}
 	var statusEnabled bool
 	var resizeFn func(rows, cols uint16) error
 	var activeSessionTarget parent.SessionTarget

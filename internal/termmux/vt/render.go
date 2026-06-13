@@ -11,18 +11,23 @@ import (
 // ones. This avoids the flash-to-black caused by ESC[2J (erase display)
 // when restoring screen content, because the previous screen's content is
 // overwritten line by line instead of cleared first.
+// When ScrollOffset > 0, visible lines include scrollback content.
 func RenderFullScreen(scr *Screen) string {
 	var b strings.Builder
 	var prevAttr Attr
+
+	lines := scr.VisibleLines()
 
 	for r := 0; r < scr.Rows; r++ {
 		// CUP to row start (1-indexed).
 		fmt.Fprintf(&b, "\x1b[%d;1H", r+1)
 
+		row := lines[r]
+
 		// Find last non-default cell in this row.
 		last := -1
 		for c := scr.Cols - 1; c >= 0; c-- {
-			cell := scr.Cells[r][c]
+			cell := row[c]
 			if cell.Ch != ' ' || !cell.Attr.IsZero() {
 				last = c
 				break
@@ -31,7 +36,7 @@ func RenderFullScreen(scr *Screen) string {
 
 		if last >= 0 {
 			for c := 0; c <= last; c++ {
-				cell := scr.Cells[r][c]
+				cell := row[c]
 				if cell.SecondHalf {
 					continue // wide-char placeholder
 				}
@@ -67,19 +72,24 @@ func RenderFullScreen(scr *Screen) string {
 // (EL), or cursor visibility sequences. Each row is rendered with SGR color/style
 // attributes, trailing blank cells are stripped, and rows are joined by newlines.
 // An SGR reset (\x1b[0m) is inserted at the end of each non-empty row.
+// When ScrollOffset > 0, visible lines include scrollback content.
 func RenderContentANSI(scr *Screen) string {
 	var b strings.Builder
 	var prevAttr Attr
+
+	lines := scr.VisibleLines()
 
 	for r := 0; r < scr.Rows; r++ {
 		if r > 0 {
 			b.WriteByte('\n')
 		}
 
+		row := lines[r]
+
 		// Find last non-default cell in this row (same logic as RenderFullScreen).
 		last := -1
 		for c := scr.Cols - 1; c >= 0; c-- {
-			cell := scr.Cells[r][c]
+			cell := row[c]
 			if cell.Ch != ' ' || !cell.Attr.IsZero() {
 				last = c
 				break
@@ -88,7 +98,7 @@ func RenderContentANSI(scr *Screen) string {
 
 		if last >= 0 {
 			for c := 0; c <= last; c++ {
-				cell := scr.Cells[r][c]
+				cell := row[c]
 				if cell.SecondHalf {
 					continue // wide-char placeholder
 				}
@@ -131,6 +141,8 @@ func RenderContentANSIDirty(scr *Screen, dirtyMin, dirtyMax int) string {
 	var b strings.Builder
 	var prevAttr Attr
 
+	lines := scr.VisibleLines()
+
 	// Emit empty lines for rows before the dirty range to preserve alignment.
 	for r := 0; r < dirtyMin; r++ {
 		if r > 0 {
@@ -143,9 +155,11 @@ func RenderContentANSIDirty(scr *Screen, dirtyMin, dirtyMax int) string {
 			b.WriteByte('\n')
 		}
 
+		row := lines[r]
+
 		last := -1
 		for c := scr.Cols - 1; c >= 0; c-- {
-			cell := scr.Cells[r][c]
+			cell := row[c]
 			if cell.Ch != ' ' || !cell.Attr.IsZero() {
 				last = c
 				break
@@ -154,7 +168,7 @@ func RenderContentANSIDirty(scr *Screen, dirtyMin, dirtyMax int) string {
 
 		if last >= 0 {
 			for c := 0; c <= last; c++ {
-				cell := scr.Cells[r][c]
+				cell := row[c]
 				if cell.SecondHalf {
 					continue
 				}
@@ -177,6 +191,7 @@ func RenderContentANSIDirty(scr *Screen, dirtyMin, dirtyMax int) string {
 // traversal: plain text, ANSI-styled content, and full-screen CUP+EL output.
 // This avoids the 3× cell-grid walk of calling String(), RenderContentANSI(),
 // and RenderFullScreen() separately.
+// When ScrollOffset > 0, visible lines include scrollback content.
 func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 	var pb []byte          // plain text
 	var ab strings.Builder // ANSI
@@ -185,8 +200,10 @@ func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 	var ansiPrev Attr
 	var fsPrev Attr
 
+	lines := scr.VisibleLines()
+
 	for r := 0; r < scr.Rows; r++ {
-		row := scr.Cells[r]
+		row := lines[r]
 
 		// Find last non-default cell (for ANSI and full screen).
 		last := -1

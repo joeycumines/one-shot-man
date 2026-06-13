@@ -172,7 +172,7 @@ func RenderRaster(scr *Screen, cellW, cellH int) *image.RGBA {
 
 	for row := 0; row < scr.Rows; row++ {
 		for col := 0; col < scr.Cols; col++ {
-			cell := scr.Cells[row][col]
+			cell := scr.CellAt(row, col)
 
 			// Skip placeholder cells (second half of wide char).
 			// Uses SecondHalf flag to avoid conflating literal NUL bytes
@@ -194,7 +194,7 @@ func RenderRaster(scr *Screen, cellW, cellH int) *image.RGBA {
 			// Determine cell width in columns.
 			cellCols := 1
 			// Check if next cell is a wide-char placeholder.
-			if col+1 < scr.Cols && scr.Cells[row][col+1].SecondHalf {
+			if col+1 < scr.Cols && scr.CellAt(row, col+1).SecondHalf {
 				cellCols = 2
 			}
 

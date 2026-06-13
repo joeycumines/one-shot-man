@@ -463,3 +463,117 @@ func BenchmarkDirtyRender_ByteReduction(b *testing.B) {
 		_ = RenderContentANSIDirty(scr, dirtyMin, dirtyMax)
 	}
 }
+
+// ── Incremental snapshot benchmarks ──────────────────────────────────
+
+// BenchmarkSnapshotIncremental_SingleCharEdit measures Screen.SnapshotIncremental
+// when only 1 row is dirty (single-character edit). This is the optimized path.
+func BenchmarkSnapshotIncremental_SingleCharEdit(b *testing.B) {
+	scr := NewScreen(24, 80)
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	prev := scr.Snapshot()
+	scr.ClearDirty()
+	scr.PutChar('Z')
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = scr.SnapshotIncremental(prev)
+		scr.ClearDirty()
+	}
+}
+
+// BenchmarkSnapshotFull_SingleCharEdit measures the old full deep-copy
+// path for comparison (same scenario: single-character edit).
+func BenchmarkSnapshotFull_SingleCharEdit(b *testing.B) {
+	scr := NewScreen(24, 80)
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	scr.ClearDirty()
+	scr.PutChar('Z')
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = scr.Snapshot()
+		scr.ClearDirty()
+	}
+}
+
+// BenchmarkSnapshotIncremental_FullDirty measures SnapshotIncremental when
+// all rows are dirty (worst case — no reuse possible).
+func BenchmarkSnapshotIncremental_FullDirty(b *testing.B) {
+	scr := NewScreen(24, 80)
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	prev := scr.Snapshot()
+	scr.ClearDirty()
+	scr.FillScreen('X')
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = scr.SnapshotIncremental(prev)
+		scr.ClearDirty()
+	}
+}
+
+// BenchmarkSnapshotIncremental_NoChange measures SnapshotIncremental when
+// nothing has changed since the last snapshot (best case — all rows reused).
+func BenchmarkSnapshotIncremental_NoChange(b *testing.B) {
+	scr := NewScreen(24, 80)
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	prev := scr.Snapshot()
+	scr.ClearDirty()
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = scr.SnapshotIncremental(prev)
+	}
+}
+
+// BenchmarkVTerm_ActiveScreen_Incremental measures VTerm.ActiveScreen()
+// with the incremental optimization (single-char edit between snapshots).
+func BenchmarkVTerm_ActiveScreen_Incremental(b *testing.B) {
+	v := NewVTerm(24, 80)
+	v.Write(benchInputANSI)
+	_ = v.ActiveScreen()
+
+	b.ResetTimer()
+	for b.Loop() {
+		v.mu.Lock()
+		v.active.PutChar('Z')
+		v.mu.Unlock()
+		_ = v.ActiveScreen()
+	}
+}
+
+// BenchmarkVTerm_ActiveScreen_FullCopy measures VTerm.ActiveScreen()
+// without incremental optimization (every snapshot is a full deep-copy).
+func BenchmarkVTerm_ActiveScreen_FullCopy(b *testing.B) {
+	scr := NewScreen(24, 80)
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	scr.ClearDirty()
+	scr.PutChar('Z')
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = scr.Snapshot()
+		scr.ClearDirty()
+	}
+}

@@ -6,6 +6,9 @@ import (
 	"github.com/rivo/uniseg"
 )
 
+// CellRow is a row of terminal cells.
+type CellRow []Cell
+
 // Cell represents a single terminal cell with a character and attributes.
 // SecondHalf is true when this cell is the right half of a double-width
 // (CJK) character. The actual character lives in the preceding cell and
@@ -692,6 +695,57 @@ func (s *Screen) ScrollbackLines() int {
 	return s.ScrollbackLen
 }
 
+// MaxScrollOffset returns the maximum valid ScrollOffset value, which is the
+// total number of scrollback lines plus the number of visible rows.
+func (s *Screen) MaxScrollOffset() int {
+	return s.ScrollbackLen + s.Rows
+}
+
+// ClampScrollOffset clamps ScrollOffset to [0, ScrollbackLines+Rows].
+func (s *Screen) ClampScrollOffset() {
+	max := s.MaxScrollOffset()
+	if s.ScrollOffset < 0 {
+		s.ScrollOffset = 0
+	}
+	if s.ScrollOffset > max {
+		s.ScrollOffset = max
+	}
+}
+
+// VisibleLines returns the visible content based on ScrollOffset. When
+// ScrollOffset is 0, only the active screen rows are returned. When
+// ScrollOffset > 0, scrollback lines replace the top of the visible area.
+// The returned slice has exactly Rows elements.
+func (s *Screen) VisibleLines() []CellRow {
+	result := make([]CellRow, s.Rows)
+	total := s.ScrollbackLen + s.Rows
+
+	for r := 0; r < s.Rows; r++ {
+		srcIdx := r + s.ScrollOffset
+		if srcIdx < s.ScrollbackLen {
+			result[r] = s.ScrollbackRow(srcIdx)
+		} else if srcIdx < total {
+			screenRow := srcIdx - s.ScrollbackLen
+			if screenRow >= 0 && screenRow < s.Rows {
+				row := make([]Cell, s.Cols)
+				copy(row, s.Cells[screenRow])
+				result[r] = row
+			} else {
+				result[r] = make([]Cell, s.Cols)
+				for i := range result[r] {
+					result[r][i] = Cell{Ch: ' '}
+				}
+			}
+		} else {
+			result[r] = make([]Cell, s.Cols)
+			for i := range result[r] {
+				result[r][i] = Cell{Ch: ' '}
+			}
+		}
+	}
+	return result
+}
+
 // ScrollbackRow returns the i-th line from the scrollback buffer (0 = oldest).
 // Returns nil if i is out of range. The returned slice is a copy — callers
 // can modify it without affecting the scrollback.
@@ -899,21 +953,59 @@ func (s *Screen) repairWideBoundary(row, start, end int) {
 // modify it without synchronization. This is the safe way to expose screen
 // state outside the VTerm's mutex.
 func (s *Screen) Snapshot() *Screen {
+	return s.SnapshotIncremental(nil)
+}
+
+// SnapshotIncremental returns an independent copy of the screen, reusing
+// row data from prev for rows that have not changed since the last
+// ClearDirty() call. When prev is nil or dimensions differ, a full
+// deep-copy is performed (identical to Snapshot).
+//
+// For clean rows (outside the dirty range), the returned Screen shares
+// the underlying []Cell slice with prev. This is safe because prev is a
+// prior snapshot (already independent of the live screen) and clean rows
+// are identical between the two. The caller must not modify the returned
+// Screen's Cells if prev is still in use, as shared rows would be
+// mutated in both — but the documented contract only guarantees
+// independence from VTerm's internal state, not between snapshots.
+func (s *Screen) SnapshotIncremental(prev *Screen) *Screen {
+	canReuse := prev != nil &&
+		prev.Rows == s.Rows &&
+		prev.Cols == s.Cols
+
+	dirtyMin, dirtyMax := s.DirtyRange()
+
 	cells := make([][]Cell, s.Rows)
 	for r := range cells {
-		cells[r] = make([]Cell, s.Cols)
-		copy(cells[r], s.Cells[r])
-	}
-	tabStops := make([]bool, len(s.TabStops))
-	copy(tabStops, s.TabStops)
-	// Deep copy scrollback ring buffer.
-	scrollback := make([][]Cell, len(s.Scrollback))
-	for i, row := range s.Scrollback {
-		if row != nil {
-			scrollback[i] = make([]Cell, len(row))
-			copy(scrollback[i], row)
+		if canReuse && (dirtyMin < 0 || r < dirtyMin || r > dirtyMax) {
+			cells[r] = prev.Cells[r]
+		} else {
+			cells[r] = make([]Cell, s.Cols)
+			copy(cells[r], s.Cells[r])
 		}
 	}
+
+	// TabStops are small; always copy.
+	tabStops := make([]bool, len(s.TabStops))
+	copy(tabStops, s.TabStops)
+
+	scrollbackDirty := !canReuse ||
+		prev.ScrollbackLen != s.ScrollbackLen ||
+		prev.ScrollbackHead != s.ScrollbackHead
+	var scrollback [][]Cell
+	if !scrollbackDirty && len(s.Scrollback) == len(prev.Scrollback) {
+		scrollback = make([][]Cell, len(s.Scrollback))
+		copy(scrollback, prev.Scrollback)
+	} else {
+		scrollback = make([][]Cell, len(s.Scrollback))
+		for i, row := range s.Scrollback {
+			if row != nil {
+				scrollback[i] = make([]Cell, len(row))
+				copy(scrollback[i], row)
+			}
+		}
+	}
+
 	return &Screen{
 		Cells:              cells,
 		CurRow:             s.CurRow,
@@ -1352,6 +1444,110 @@ func (s *Screen) InsertChars(n int) {
 		row[s.CurCol+i] = blank
 	}
 	s.markDirty(s.CurRow)
+}
+
+// --- Accessor methods ---
+//
+// These methods provide encapsulation for Screen fields, enforcing invariants
+// (bounds checking, clamping, validation). Callers should prefer these
+// accessors over direct field access. Fields remain exported for backward
+// compatibility during the transition; new code should use accessors.
+
+// RowCount returns the number of rows in the screen buffer.
+// Prefer this over reading s.Rows directly.
+func (s *Screen) RowCount() int { return s.Rows }
+
+// ColCount returns the number of columns in the screen buffer.
+// Prefer this over reading s.Cols directly.
+func (s *Screen) ColCount() int { return s.Cols }
+
+// CursorPosition returns the current cursor row and column (0-indexed).
+// Prefer this over reading s.CurRow and s.CurCol directly.
+func (s *Screen) CursorPosition() (row, col int) { return s.CurRow, s.CurCol }
+
+// SetCursor sets the cursor position, clamping to valid screen bounds.
+// Negative values are clamped to 0; values exceeding dimensions are clamped
+// to Rows-1 or Cols-1. PendingWrap is cleared.
+func (s *Screen) SetCursor(row, col int) {
+	if row < 0 {
+		row = 0
+	}
+	if row >= s.Rows {
+		row = s.Rows - 1
+	}
+	if col < 0 {
+		col = 0
+	}
+	if col >= s.Cols {
+		col = s.Cols - 1
+	}
+	s.CurRow = row
+	s.CurCol = col
+	s.PendingWrap = false
+}
+
+// SetScrollRegion sets the scroll region boundaries (1-indexed, inclusive).
+// If top >= bottom, top < 1, or bottom > Rows, the scroll region is reset
+// (both set to 0, meaning the full screen is the scroll region).
+func (s *Screen) SetScrollRegion(top, bottom int) {
+	if top < 1 || bottom > s.Rows || top >= bottom {
+		s.ScrollTop = 0
+		s.ScrollBot = 0
+		return
+	}
+	s.ScrollTop = top
+	s.ScrollBot = bottom
+}
+
+// MouseTrackingMode returns the current mouse tracking level.
+// Prefer this over reading s.MouseTracking directly.
+func (s *Screen) MouseTrackingMode() MouseTrackingMode { return s.MouseTracking }
+
+// SetMouseTracking sets the mouse tracking level. Values outside the
+// valid range [0, 3] are clamped to the nearest valid value.
+func (s *Screen) SetMouseTracking(m MouseTrackingMode) {
+	if m < 0 {
+		m = 0
+	}
+	if m > MouseTrackingAnyEvent {
+		m = MouseTrackingAnyEvent
+	}
+	s.MouseTracking = m
+}
+
+// InScrollRegion reports whether the given row (0-indexed) falls within
+// the effective scroll region.
+func (s *Screen) InScrollRegion(row int) bool {
+	top, bot := s.ScrollRegion()
+	return row >= top && row < bot
+}
+
+// CellAt returns the cell at the given row and column (0-indexed).
+// If row or col is out of bounds, a default blank cell is returned.
+func (s *Screen) CellAt(row, col int) Cell {
+	if row < 0 || row >= s.Rows || col < 0 || col >= s.Cols {
+		return DefaultCell()
+	}
+	return s.Cells[row][col]
+}
+
+// SetCell sets the cell at the given row and column (0-indexed).
+// If row or col is out of bounds, the call is silently ignored.
+func (s *Screen) SetCell(row, col int, c Cell) {
+	if row < 0 || row >= s.Rows || col < 0 || col >= s.Cols {
+		return
+	}
+	s.Cells[row][col] = c
+	s.markDirty(row)
+}
+
+// TabStopAt reports whether a tab stop is set at the given column (0-indexed).
+// Returns false if col is out of bounds.
+func (s *Screen) TabStopAt(col int) bool {
+	if col < 0 || col >= len(s.TabStops) {
+		return false
+	}
+	return s.TabStops[col]
 }
 
 // DeleteChars deletes n characters at the cursor, shifting remaining

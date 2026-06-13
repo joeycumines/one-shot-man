@@ -20,6 +20,10 @@ type VTerm struct {
 	rows, cols int
 	mu         sync.Mutex
 
+	lastSnapshot *Screen
+
+	copyMode copyModeState
+
 	// BellFn is called when BEL (0x07) is processed. Optional; if nil, bell is silently ignored.
 	BellFn func()
 
@@ -110,6 +114,7 @@ func (v *VTerm) Resize(rows, cols int) {
 	}
 	v.rows = rows
 	v.cols = cols
+	v.lastSnapshot = nil
 	v.primary.Resize(rows, cols)
 	v.alternate.Resize(rows, cols)
 }
@@ -228,7 +233,7 @@ func (v *VTerm) handleControl(b byte) {
 	case 0x09: // TAB — horizontal tab
 		scr.PendingWrap = false
 		for i := scr.CurCol + 1; i < scr.Cols; i++ {
-			if i < len(scr.TabStops) && scr.TabStops[i] {
+			if scr.TabStopAt(i) {
 				scr.CurCol = i
 				return
 			}
@@ -290,6 +295,7 @@ func (v *VTerm) switchToAlt(mode int) {
 	if v.active == v.alternate {
 		return
 	}
+	v.lastSnapshot = nil
 	switch mode {
 	case 1049:
 		// Save cursor on primary to Saved1049* fields (per DECSET 1049 spec).
@@ -333,6 +339,7 @@ func (v *VTerm) switchToPrimary(mode int) {
 	if v.active == v.primary {
 		return
 	}
+	v.lastSnapshot = nil
 	v.active = v.primary
 	switch mode {
 	case 1049:
@@ -371,6 +378,7 @@ func (v *VTerm) switchToPrimary(mode int) {
 }
 
 func (v *VTerm) reset() {
+	v.lastSnapshot = nil
 	v.primary.Clear()
 	v.alternate.Clear()
 	v.active = v.primary
@@ -644,7 +652,10 @@ func (v *VTerm) FocusOut() {
 func (v *VTerm) ActiveScreen() *Screen {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	return v.active.Snapshot()
+	snap := v.active.SnapshotIncremental(v.lastSnapshot)
+	v.lastSnapshot = snap
+	v.active.ClearDirty()
+	return snap
 }
 
 // ScrollbackLines returns the number of lines in the primary screen's
@@ -697,4 +708,191 @@ func (v *VTerm) SetScrollback(n int) {
 		v.primary.ScrollbackLen = keep
 		v.primary.ScrollbackHead = keep % n // next write position
 	}
+}
+
+// ScrollUp moves the viewport up by n lines in the scrollback buffer,
+// increasing ScrollOffset. Clamped to [0, ScrollbackLines+Rows]. Thread-safe.
+func (v *VTerm) ScrollUp(n int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.primary.ScrollOffset += n
+	v.primary.ClampScrollOffset()
+}
+
+// ScrollDown moves the viewport down by n lines in the scrollback buffer,
+// decreasing ScrollOffset. Clamped to [0, ScrollbackLines+Rows]. Thread-safe.
+func (v *VTerm) ScrollDown(n int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.primary.ScrollOffset -= n
+	v.primary.ClampScrollOffset()
+}
+
+// copyModeState holds state for copy/scroll mode.
+type copyModeState struct {
+	active    bool
+	savedRow  int
+	savedCol  int
+	selStart  int // absolute row in [0, ScrollbackLines+Rows)
+	selEnd    int // absolute row in [0, ScrollbackLines+Rows)
+	selStartC int // column of selection start
+	selEndC   int // column of selection end
+	hasStart  bool
+	hasEnd    bool
+}
+
+// EnterCopyMode enters copy/scroll mode: saves the cursor position and
+// sets ScrollOffset to 0 (top of scrollback). Thread-safe.
+func (v *VTerm) EnterCopyMode() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.copyMode.active {
+		return
+	}
+	v.copyMode = copyModeState{
+		active:   true,
+		savedRow: v.active.CurRow,
+		savedCol: v.active.CurCol,
+	}
+	v.primary.ScrollOffset = 0
+}
+
+// ExitCopyMode exits copy/scroll mode: resets ScrollOffset to 0 and
+// restores the cursor position. Thread-safe.
+func (v *VTerm) ExitCopyMode() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.copyMode.active {
+		return
+	}
+	v.primary.ScrollOffset = 0
+	v.active.CurRow = v.copyMode.savedRow
+	v.active.CurCol = v.copyMode.savedCol
+	v.copyMode = copyModeState{}
+}
+
+// InCopyMode reports whether copy/scroll mode is active. Thread-safe.
+func (v *VTerm) InCopyMode() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.copyMode.active
+}
+
+// SelectStart sets the start position of a text selection within copy mode.
+// Row and col are in the visible viewport coordinate system (0-indexed).
+// Thread-safe.
+func (v *VTerm) SelectStart(row, col int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	absRow := v.primary.ScrollOffset + row
+	v.copyMode.selStart = absRow
+	v.copyMode.selStartC = col
+	v.copyMode.hasStart = true
+}
+
+// SelectEnd sets the end position of a text selection within copy mode.
+// Row and col are in the visible viewport coordinate system (0-indexed).
+// Thread-safe.
+func (v *VTerm) SelectEnd(row, col int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	absRow := v.primary.ScrollOffset + row
+	v.copyMode.selEnd = absRow
+	v.copyMode.selEndC = col
+	v.copyMode.hasEnd = true
+}
+
+// SelectedText returns the text within the current selection as a string.
+// Returns empty string if no selection is active. Thread-safe.
+func (v *VTerm) SelectedText() string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.selectedTextLocked()
+}
+
+// CopySelection sends the selected text via the OSCHandler as an OSC 52
+// clipboard sequence. If no selection is active or OSCHandler is nil, it
+// is a no-op. Thread-safe.
+func (v *VTerm) CopySelection() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.OSCHandler == nil {
+		return
+	}
+	text := v.selectedTextLocked()
+	if text == "" {
+		return
+	}
+	v.OSCHandler(52, text)
+}
+
+func (v *VTerm) selectedTextLocked() string {
+	if !v.copyMode.hasStart || !v.copyMode.hasEnd {
+		return ""
+	}
+
+	startRow, startCol := v.copyMode.selStart, v.copyMode.selStartC
+	endRow, endCol := v.copyMode.selEnd, v.copyMode.selEndC
+	if startRow > endRow || (startRow == endRow && startCol > endCol) {
+		startRow, startCol, endRow, endCol = endRow, endCol, startRow, startCol
+	}
+
+	var b []byte
+	sbLen := v.primary.ScrollbackLen
+	for absRow := startRow; absRow <= endRow; absRow++ {
+		var row []Cell
+		if absRow < sbLen {
+			row = v.primary.ScrollbackRow(absRow)
+		} else {
+			screenRow := absRow - sbLen
+			if screenRow >= 0 && screenRow < v.primary.Rows {
+				row = v.primary.Cells[screenRow]
+			}
+		}
+		if row == nil {
+			if absRow < endRow {
+				b = append(b, '\n')
+			}
+			continue
+		}
+
+		colStart := 0
+		colEnd := len(row)
+		if absRow == startRow {
+			colStart = startCol
+		}
+		if absRow == endRow {
+			colEnd = endCol + 1
+		}
+		if colStart < 0 {
+			colStart = 0
+		}
+		if colEnd > len(row) {
+			colEnd = len(row)
+		}
+
+		rowEnd := colEnd
+		for rowEnd > colStart {
+			c := row[rowEnd-1]
+			if c.Ch != ' ' && c.Ch != 0 && !c.SecondHalf {
+				break
+			}
+			rowEnd--
+		}
+
+		for c := colStart; c < rowEnd; c++ {
+			if row[c].SecondHalf {
+				continue
+			}
+			ch := row[c].Ch
+			if ch == 0 {
+				ch = ' '
+			}
+			b = utf8.AppendRune(b, ch)
+		}
+		if absRow < endRow {
+			b = append(b, '\n')
+		}
+	}
+	return string(b)
 }

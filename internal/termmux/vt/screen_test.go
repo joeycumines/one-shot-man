@@ -876,3 +876,123 @@ func TestRenderContentANSIDirty_ByteReduction(t *testing.T) {
 		t.Errorf("byte reduction = %.1f%%, want >= 80%% (full=%d, dirty=%d)", reduction, len(full), len(dirty))
 	}
 }
+
+func TestScreen_SnapshotIncremental_SingleDirtyRow(t *testing.T) {
+	scr := NewScreen(24, 80)
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	prev := scr.Snapshot()
+	scr.ClearDirty()
+
+	scr.Cells[5][10].Ch = 'Z'
+	scr.markDirty(5)
+
+	snap := scr.SnapshotIncremental(prev)
+
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			want := rune('A' + (r+c)%26)
+			if r == 5 && c == 10 {
+				want = 'Z'
+			}
+			if snap.Cells[r][c].Ch != want {
+				t.Errorf("snap.Cells[%d][%d].Ch = %q, want %q", r, c, snap.Cells[r][c].Ch, want)
+			}
+		}
+	}
+}
+
+func TestScreen_SnapshotIncremental_CleanRowsShared(t *testing.T) {
+	scr := NewScreen(24, 80)
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	prev := scr.Snapshot()
+	scr.ClearDirty()
+
+	scr.Cells[5][10].Ch = 'Z'
+	scr.markDirty(5)
+
+	snap := scr.SnapshotIncremental(prev)
+
+	for r := 0; r < 24; r++ {
+		if r == 5 {
+			if &snap.Cells[r][0] == &prev.Cells[r][0] {
+				t.Errorf("dirty row %d should NOT be shared with prev", r)
+			}
+		} else {
+			if &snap.Cells[r][0] != &prev.Cells[r][0] {
+				t.Errorf("clean row %d should be shared with prev", r)
+			}
+		}
+	}
+}
+
+func TestScreen_SnapshotIncremental_NilPrev(t *testing.T) {
+	scr := NewScreen(24, 80)
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	snap := scr.SnapshotIncremental(nil)
+	full := scr.Snapshot()
+
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			if snap.Cells[r][c] != full.Cells[r][c] {
+				t.Errorf("nil prev: snap.Cells[%d][%d] = %v, want %v", r, c, snap.Cells[r][c], full.Cells[r][c])
+			}
+		}
+	}
+}
+
+func TestScreen_SnapshotIncremental_DimensionMismatch(t *testing.T) {
+	scr := NewScreen(24, 80)
+	prev := NewScreen(24, 80)
+	scr.Cells[0][0].Ch = 'X'
+	scr.markDirty(0)
+
+	wrongRows := NewScreen(12, 80)
+	snap := scr.SnapshotIncremental(wrongRows)
+	if snap.Cells[0][0].Ch != 'X' {
+		t.Errorf("dimension mismatch: should fall back to full copy, got %q", snap.Cells[0][0].Ch)
+	}
+
+	wrongCols := NewScreen(24, 40)
+	snap = scr.SnapshotIncremental(wrongCols)
+	if snap.Cells[0][0].Ch != 'X' {
+		t.Errorf("dimension mismatch: should fall back to full copy, got %q", snap.Cells[0][0].Ch)
+	}
+
+	_ = prev
+}
+
+func TestVTerm_ActiveScreen_IncrementalOptimization(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.Write([]byte("Hello World"))
+	snap1 := v.ActiveScreen()
+
+	v.Write([]byte("X"))
+	snap2 := v.ActiveScreen()
+
+	if snap2.Cells[0][0].Ch != 'H' {
+		t.Errorf("snap2 content incorrect: Cells[0][0] = %q", snap2.Cells[0][0].Ch)
+	}
+
+	for r := 0; r < 24; r++ {
+		dirtyMin, dirtyMax := v.active.DirtyRange()
+		_ = dirtyMin
+		_ = dirtyMax
+		if r != 0 {
+			if &snap2.Cells[r][0] != &snap1.Cells[r][0] {
+				t.Errorf("clean row %d should be shared between snapshots", r)
+			}
+		}
+	}
+}

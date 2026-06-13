@@ -253,16 +253,7 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 	case 'r': // DECSTBM — set scrolling region (top;bottom, 1-indexed)
 		top := paramDefault(params, 0, 1)
 		bot := paramDefault(params, 1, scr.Rows)
-		if top < 1 {
-			top = 1
-		}
-		if bot > scr.Rows {
-			bot = scr.Rows
-		}
-		if top < bot {
-			scr.ScrollTop = top
-			scr.ScrollBot = bot
-		}
+		scr.SetScrollRegion(top, bot)
 		scr.PendingWrap = false
 		if scr.OriginMode {
 			scrollTop, _ := scr.ScrollRegion()
@@ -473,13 +464,13 @@ func (h *csiHandlerImpl) decset(scr *Screen, params []int) {
 				h.AltScreenFn(true, p)
 			}
 		case 1000:
-			scr.MouseTracking = MouseTrackingBasic
+			scr.SetMouseTracking(MouseTrackingBasic)
 		case 1001:
 			scr.HighlightTracking = true
 		case 1002:
-			scr.MouseTracking = MouseTrackingButtonEvent
+			scr.SetMouseTracking(MouseTrackingButtonEvent)
 		case 1003:
-			scr.MouseTracking = MouseTrackingAnyEvent
+			scr.SetMouseTracking(MouseTrackingAnyEvent)
 		case 1006:
 			scr.MouseSGR = true
 		case 2004:
@@ -515,17 +506,17 @@ func (h *csiHandlerImpl) decrst(scr *Screen, params []int) {
 			}
 		case 1000:
 			if scr.MouseTracking == MouseTrackingBasic {
-				scr.MouseTracking = MouseTrackingNone
+				scr.SetMouseTracking(MouseTrackingNone)
 			}
 		case 1001:
 			scr.HighlightTracking = false
 		case 1002:
 			if scr.MouseTracking == MouseTrackingButtonEvent {
-				scr.MouseTracking = MouseTrackingNone
+				scr.SetMouseTracking(MouseTrackingNone)
 			}
 		case 1003:
 			if scr.MouseTracking == MouseTrackingAnyEvent {
-				scr.MouseTracking = MouseTrackingNone
+				scr.SetMouseTracking(MouseTrackingNone)
 			}
 		case 1006:
 			scr.MouseSGR = false

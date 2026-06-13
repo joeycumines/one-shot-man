@@ -7,7 +7,7 @@ import "testing"
 func TestCSI_CUD_CursorDown(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CurRow = 5
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'B', []int{3}, false)
 	if scr.CurRow != 8 {
 		t.Fatalf("CUD: want row 8, got %d", scr.CurRow)
@@ -17,7 +17,7 @@ func TestCSI_CUD_CursorDown(t *testing.T) {
 func TestCSI_CUD_DefaultParam(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CurRow = 5
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'B', nil, false) // default = 1
 	if scr.CurRow != 6 {
 		t.Fatalf("CUD default: want row 6, got %d", scr.CurRow)
@@ -27,7 +27,7 @@ func TestCSI_CUD_DefaultParam(t *testing.T) {
 func TestCSI_CUD_ClampsToBottom(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CurRow = 20
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'B', []int{100}, false)
 	if scr.CurRow != 23 {
 		t.Fatalf("CUD clamp: want row 23, got %d", scr.CurRow)
@@ -40,7 +40,7 @@ func TestCSI_CNL_CursorNextLine(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CurRow = 5
 	scr.CurCol = 40
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'E', []int{3}, false)
 	if scr.CurRow != 8 {
 		t.Fatalf("CNL: want row 8, got %d", scr.CurRow)
@@ -54,7 +54,7 @@ func TestCSI_CNL_ClampsToBottom(t *testing.T) {
 	scr := NewScreen(10, 80)
 	scr.CurRow = 7
 	scr.CurCol = 50
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'E', []int{100}, false)
 	if scr.CurRow != 9 {
 		t.Fatalf("CNL clamp: want row 9, got %d", scr.CurRow)
@@ -70,7 +70,7 @@ func TestCSI_CPL_CursorPrevLine(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CurRow = 10
 	scr.CurCol = 40
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'F', []int{3}, false)
 	if scr.CurRow != 7 {
 		t.Fatalf("CPL: want row 7, got %d", scr.CurRow)
@@ -84,7 +84,7 @@ func TestCSI_CPL_ClampsToTop(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CurRow = 3
 	scr.CurCol = 20
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'F', []int{100}, false)
 	if scr.CurRow != 0 {
 		t.Fatalf("CPL clamp: want row 0, got %d", scr.CurRow)
@@ -102,7 +102,7 @@ func TestCSI_EL_Mode0_CursorToEnd(t *testing.T) {
 		scr.Cells[0][i].Ch = ch
 	}
 	scr.CurCol = 2
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'K', []int{0}, false)
 	// Cols 0-1 untouched, cols 2-4 erased
 	if scr.Cells[0][0].Ch != 'A' || scr.Cells[0][1].Ch != 'B' {
@@ -121,7 +121,7 @@ func TestCSI_EL_Mode1_StartToCursor(t *testing.T) {
 		scr.Cells[0][i].Ch = ch
 	}
 	scr.CurCol = 2
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'K', []int{1}, false)
 	// Cols 0-2 erased, cols 3-4 untouched
 	for c := 0; c <= 2; c++ {
@@ -140,7 +140,7 @@ func TestCSI_EL_DefaultMode(t *testing.T) {
 		scr.Cells[0][i].Ch = ch
 	}
 	scr.CurCol = 3
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'K', nil, false) // default mode = 0
 	if scr.Cells[0][2].Ch != 'C' {
 		t.Fatal("EL default: cell before cursor should be untouched")
@@ -158,7 +158,7 @@ func TestCSI_IL_InsertLines(t *testing.T) {
 		scr.Cells[r][0].Ch = rune('A' + r)
 	}
 	scr.CurRow = 2
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'L', []int{1}, false)
 	// Row 2 should be blank, row 3 should have what was row 2 ('C')
 	if scr.Cells[2][0].Ch != ' ' {
@@ -177,7 +177,7 @@ func TestCSI_DL_DeleteLines(t *testing.T) {
 		scr.Cells[r][0].Ch = rune('A' + r)
 	}
 	scr.CurRow = 1
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'M', []int{2}, false)
 	// Rows 1-2 deleted → row 1 should now have 'D', bottom rows blank
 	if scr.Cells[1][0].Ch != 'D' {
@@ -195,7 +195,7 @@ func TestCSI_SU_ScrollUp(t *testing.T) {
 	for r := range 5 {
 		scr.Cells[r][0].Ch = rune('A' + r)
 	}
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'S', []int{2}, false)
 	// Scrolled up 2: row 0 should now have 'C', bottom 2 rows blank
 	if scr.Cells[0][0].Ch != 'C' {
@@ -213,7 +213,7 @@ func TestCSI_SD_ScrollDown(t *testing.T) {
 	for r := range 5 {
 		scr.Cells[r][0].Ch = rune('A' + r)
 	}
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'T', []int{2}, false)
 	// Scrolled down 2: top 2 rows blank, row 2 should have 'A'
 	if scr.Cells[0][0].Ch != ' ' || scr.Cells[1][0].Ch != ' ' {
@@ -228,7 +228,7 @@ func TestCSI_SD_ScrollDown(t *testing.T) {
 
 func TestCSI_CUP_AliasF(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// 'f' is an alias for 'H' (CUP)
 	h.Dispatch(scr, 'f', []int{10, 20}, false)
 	if scr.CurRow != 9 || scr.CurCol != 19 {
@@ -241,7 +241,7 @@ func TestCSI_CUP_AliasF(t *testing.T) {
 func TestCSI_SM_RM_NonPrivate_NoOp(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CursorVisible = true
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// SM/RM without '?' prefix should be no-op for mode 25
 	h.Dispatch(scr, 'l', []int{25}, false)
 	if !scr.CursorVisible {
@@ -258,7 +258,7 @@ func TestCSI_SM_RM_NonPrivate_NoOp(t *testing.T) {
 func TestESC_IND_LineFeed(t *testing.T) {
 	scr := NewScreen(5, 5)
 	scr.CurRow = 2
-	h := &ESCHandler{}
+	h := NewESCHandler()
 	h.Dispatch(scr, 'D') // IND = LineFeed
 	if scr.CurRow != 3 {
 		t.Fatalf("IND: want row 3, got %d", scr.CurRow)
@@ -269,7 +269,7 @@ func TestESC_IND_AtBottomScrolls(t *testing.T) {
 	scr := NewScreen(3, 5)
 	scr.Cells[0][0].Ch = 'X'
 	scr.CurRow = 2 // at bottom
-	h := &ESCHandler{}
+	h := NewESCHandler()
 	h.Dispatch(scr, 'D')
 	// Should have scrolled: row 0 content pushed up (lost), row 0 now has old row 1
 	if scr.CurRow != 2 {
@@ -287,7 +287,7 @@ func TestESC_NEL_NextLine(t *testing.T) {
 	scr := NewScreen(5, 5)
 	scr.CurRow = 2
 	scr.CurCol = 3
-	h := &ESCHandler{}
+	h := NewESCHandler()
 	h.Dispatch(scr, 'E') // NEL = col=0 + LineFeed
 	if scr.CurRow != 3 {
 		t.Fatalf("NEL: want row 3, got %d", scr.CurRow)
@@ -302,7 +302,7 @@ func TestESC_NEL_AtBottomScrolls(t *testing.T) {
 	scr.Cells[0][0].Ch = 'Y'
 	scr.CurRow = 2
 	scr.CurCol = 4
-	h := &ESCHandler{}
+	h := NewESCHandler()
 	h.Dispatch(scr, 'E')
 	if scr.CurRow != 2 {
 		t.Fatalf("NEL scroll: want row 2, got %d", scr.CurRow)
@@ -428,7 +428,7 @@ func TestScreen_EraseDisplay_Mode3_Scrollback(t *testing.T) {
 
 func TestCSI_DECRST_CursorHide(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// Cursor visible by default
 	if !scr.CursorVisible {
 		t.Fatal("precondition: CursorVisible should be true")
@@ -442,11 +442,11 @@ func TestCSI_DECRST_CursorHide(t *testing.T) {
 func TestCSI_DECRST_AltScreen(t *testing.T) {
 	scr := NewScreen(24, 80)
 	var gotAlt *bool
-	h := &CSIHandler{
-		AltScreenFn: func(toAlt bool, mode int) {
+	h := NewCSIHandler(
+		WithAltScreenFn(func(toAlt bool, mode int) {
 			gotAlt = &toAlt
-		},
-	}
+		}),
+	)
 	h.Dispatch(scr, 'l', []int{1049}, true) // DECRST ?1049l
 	if gotAlt == nil || *gotAlt {
 		t.Fatal("DECRST ?1049l: expected AltScreenFn(false)")

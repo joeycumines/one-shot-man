@@ -20,7 +20,7 @@ func TestPutChar_AutoWrapFalse_OverwriteWideCharPlaceholder(t *testing.T) {
 	}
 
 	// Turn off AutoWrap and move cursor onto the placeholder at Cols-1 (= col 9).
-	v.Write([]byte("\x1b[?7l")) // DECRST ?7l → AutoWrap=false
+	v.Write([]byte("\x1b[?7l"))   // DECRST ?7l → AutoWrap=false
 	v.Write([]byte("\x1b[1;10H")) // HVP row=1 col=10 (1-indexed) → 0-indexed col 9
 
 	// Write a narrow char 'X' — it lands on the placeholder at col 9.

@@ -64,40 +64,37 @@ func NewVTerm(rows, cols int) *VTerm {
 	// Primary screen reflows on resize; alternate screen does not.
 	v.primary.ReflowOnResize = true
 	v.active = v.primary
-	// Wire CSI alt-screen callback.
-	v.csi.AltScreenFn = func(toAlt bool, mode int) {
-		if toAlt {
-			v.switchToAlt(mode)
-		} else {
-			v.switchToPrimary(mode)
-		}
-	}
-	// Wire intermediate ' ' detector for DECSCUSR.
-	v.csi.HasInterSp = func() bool {
-		return v.parser.HasIntermediate(' ')
-	}
-	// Wire CSI response callback — DA/DSR responses go through ResponseWriter.
-	v.csi.ResponseWriter = func(data []byte) {
-		if v.ResponseWriter != nil {
-			v.ResponseWriter(data)
-		}
-	}
-	// Wire intermediate '>' detector for DA2.
-	v.csi.HasInterGt = func() bool {
-		return v.parser.HasIntermediate('>')
-	}
-	// Wire intermediate '!' detector for DECSTR.
-	v.csi.HasInterBang = func() bool {
-		return v.parser.HasIntermediate('!')
-	}
-	// Wire intermediate '$' detector for DECRQM/DECRQSS.
-	v.csi.HasInterDollar = func() bool {
-		return v.parser.HasIntermediate('$')
-	}
-	// Wire ESC reset callback.
-	v.esc.ResetFn = func() {
-		v.reset()
-	}
+	v.csi = NewCSIHandler(
+		WithAltScreenFn(func(toAlt bool, mode int) {
+			if toAlt {
+				v.switchToAlt(mode)
+			} else {
+				v.switchToPrimary(mode)
+			}
+		}),
+		WithHasInterSp(func() bool {
+			return v.parser.HasIntermediate(' ')
+		}),
+		WithCSIResponseWriter(func(data []byte) {
+			if v.ResponseWriter != nil {
+				v.ResponseWriter(data)
+			}
+		}),
+		WithHasInterGt(func() bool {
+			return v.parser.HasIntermediate('>')
+		}),
+		WithHasInterBang(func() bool {
+			return v.parser.HasIntermediate('!')
+		}),
+		WithHasInterDollar(func() bool {
+			return v.parser.HasIntermediate('$')
+		}),
+	)
+	v.esc = NewESCHandler(
+		WithResetFn(func() {
+			v.reset()
+		}),
+	)
 	return v
 }
 

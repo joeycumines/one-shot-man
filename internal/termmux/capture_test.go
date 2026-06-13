@@ -754,9 +754,11 @@ func TestCaptureSession_Passthrough_ChildExit(t *testing.T) {
 	// TermFd < 0 means no raw mode is attempted — safe for CI.
 	var stdout bytes.Buffer
 	reason, err := cs.Passthrough(ctx, PassthroughConfig{
-		Stdin:  strings.NewReader(""), // empty stdin — child will exit on its own
-		Stdout: &stdout,
-		TermFd: -1, // no real TTY
+		TerminalIO: TerminalIO{
+			Stdin:  strings.NewReader(""), // empty stdin — child will exit on its own
+			Stdout: &stdout,
+			TermFd: -1, // no real TTY
+		},
 	})
 	if err != nil {
 		t.Fatalf("Passthrough returned error: %v", err)
@@ -796,9 +798,11 @@ func TestCaptureSession_Passthrough_ContextCancel(t *testing.T) {
 	}()
 
 	reason, err := cs.Passthrough(ctx, PassthroughConfig{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		TermFd: -1,
+		TerminalIO: TerminalIO{
+			Stdin:  strings.NewReader(""),
+			Stdout: io.Discard,
+			TermFd: -1,
+		},
 	})
 	if reason != ExitContext {
 		t.Fatalf("expected ExitContext, got %v (err=%v)", reason, err)
@@ -1011,9 +1015,11 @@ func TestCaptureSession_Passthrough_ResizeNotBlockedByOutput(t *testing.T) {
 	}, 1)
 	go func() {
 		reason, err := cs.Passthrough(ctx, PassthroughConfig{
-			Stdin:  strings.NewReader(""), // empty stdin — let child output flow
-			Stdout: slowStdout,
-			TermFd: -1,
+			TerminalIO: TerminalIO{
+				Stdin:  strings.NewReader(""), // empty stdin — let child output flow
+				Stdout: slowStdout,
+				TermFd: -1,
+			},
 		})
 		resultCh <- struct {
 			reason ExitReason
@@ -1057,4 +1063,71 @@ type slowWriter struct {
 func (w *slowWriter) Write(p []byte) (int, error) {
 	time.Sleep(w.delay)
 	return len(p), nil
+}
+
+func TestCaptureSession_DrainTimeout_NegativeUsesDefault(t *testing.T) {
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command:      "echo",
+		Args:         []string{"test"},
+		DrainTimeout: -1 * time.Second,
+	})
+	if cs.cfg.DrainTimeout != 5*time.Second {
+		t.Fatalf("expected negative DrainTimeout to resolve to default 5s, got %v", cs.cfg.DrainTimeout)
+	}
+}
+
+func TestCaptureSession_DrainTimeout_ZeroUsesDefault(t *testing.T) {
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command:      "echo",
+		Args:         []string{"test"},
+		DrainTimeout: 0,
+	})
+	if cs.cfg.DrainTimeout != 5*time.Second {
+		t.Fatalf("expected zero DrainTimeout to resolve to default 5s, got %v", cs.cfg.DrainTimeout)
+	}
+}
+
+func TestCaptureSession_SkipDrain_ReturnsImmediately(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	// Use a long-running process so the drain timeout would matter
+	// if SkipDrain didn't work.
+	cs := NewCaptureSession(CaptureConfig{
+		Command:   "sleep",
+		Args:      []string{"60"},
+		SkipDrain: true,
+		// Set an absurdly short drain timeout as a red herring.
+		DrainTimeout: 1 * time.Millisecond,
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Kill the process and immediately Close — should not block.
+	_ = cs.Kill()
+	start := time.Now()
+	if err := cs.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+	elapsed := time.Since(start)
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("Close with SkipDrain took %v, expected ~instant", elapsed)
+	}
+}
+
+func TestCaptureSession_SkipDrain_DefaultIsFalse(t *testing.T) {
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "echo",
+		Args:    []string{"test"},
+	})
+	if cs.cfg.SkipDrain {
+		t.Fatal("expected SkipDrain to be false by default")
+	}
 }

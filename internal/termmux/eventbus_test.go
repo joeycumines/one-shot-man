@@ -599,3 +599,85 @@ func TestEventBus_DroppedCount_NoDropsWithLargeBuffer(t *testing.T) {
 		t.Errorf("DroppedCount() = %d, want 0 (large buffer, no drops)", got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Event data accessors
+// ---------------------------------------------------------------------------
+
+func TestEvent_DataAsBytes_OutputEvent(t *testing.T) {
+	t.Parallel()
+
+	evt := Event{Kind: EventSessionOutput, Data: []byte("hello")}
+	data, ok := evt.DataAsBytes()
+	if !ok {
+		t.Fatal("expected ok for EventSessionOutput")
+	}
+	if string(data) != "hello" {
+		t.Errorf("data = %q, want %q", string(data), "hello")
+	}
+}
+
+func TestEvent_DataAsBytes_NonOutputEvent(t *testing.T) {
+	t.Parallel()
+
+	evt := Event{Kind: EventBell}
+	data, ok := evt.DataAsBytes()
+	if ok {
+		t.Fatal("expected !ok for non-output event")
+	}
+	if data != nil {
+		t.Errorf("data = %v, want nil", data)
+	}
+}
+
+func TestEvent_DataAsBytes_NilData(t *testing.T) {
+	t.Parallel()
+
+	evt := Event{Kind: EventSessionOutput, Data: nil}
+	data, ok := evt.DataAsBytes()
+	if !ok {
+		t.Fatal("expected ok even when Data is nil")
+	}
+	if data != nil {
+		t.Errorf("data = %v, want nil", data)
+	}
+}
+
+func TestEvent_DataAsDims_ResizeEvent(t *testing.T) {
+	t.Parallel()
+
+	evt := Event{Kind: EventResize, Data: [2]int{24, 80}}
+	dims, ok := evt.DataAsDims()
+	if !ok {
+		t.Fatal("expected ok for EventResize")
+	}
+	if dims[0] != 24 || dims[1] != 80 {
+		t.Errorf("dims = [%d,%d], want [24,80]", dims[0], dims[1])
+	}
+}
+
+func TestEvent_DataAsDims_NonResizeEvent(t *testing.T) {
+	t.Parallel()
+
+	evt := Event{Kind: EventBell}
+	dims, ok := evt.DataAsDims()
+	if ok {
+		t.Fatal("expected !ok for non-resize event")
+	}
+	if dims != [2]int{0, 0} {
+		t.Errorf("dims = %v, want [0,0]", dims)
+	}
+}
+
+func TestEvent_DataAsDims_NilData(t *testing.T) {
+	t.Parallel()
+
+	evt := Event{Kind: EventResize, Data: nil}
+	dims, ok := evt.DataAsDims()
+	if ok {
+		t.Fatal("expected !ok when Data is nil")
+	}
+	if dims != [2]int{0, 0} {
+		t.Errorf("dims = %v, want [0,0]", dims)
+	}
+}

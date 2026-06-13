@@ -423,7 +423,7 @@ func TestEvent_Construction(t *testing.T) {
 	if evt.SessionID != 3 {
 		t.Errorf("SessionID = %d, want 3", evt.SessionID)
 	}
-	data, ok := evt.Data.([]byte)
+	data, ok := evt.DataAsBytes()
 	if !ok || string(data) != "output data" {
 		t.Errorf("Data = %v, want []byte(\"output data\")", evt.Data)
 	}

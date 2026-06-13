@@ -35,7 +35,12 @@ type CaptureConfig struct {
 	Cols int
 	// DrainTimeout is the maximum time Close() waits for the reader loop
 	// to finish after the PTY is closed. Defaults to 5 seconds.
+	// A negative value means "use default" (disables the override).
 	DrainTimeout time.Duration
+	// SkipDrain, when true, causes Close() to return immediately without
+	// waiting for the reader loop to finish. This is useful when the caller
+	// does not need to capture remaining output (e.g., after Kill()).
+	SkipDrain bool
 }
 
 // CaptureSession manages a PTY-attached command with real-time output capture.
@@ -399,14 +404,16 @@ func (cs *CaptureSession) Close() error {
 	}
 	if proc != nil {
 		err := proc.Close()
-		// Wait for reader loop to finish so all output is captured.
-		// proc.Close() closes the PTY fd, which causes the BufferedReader's
-		// ReadLoop to exit, which closes the output channel, which causes
-		// readerLoop to exit. The timeout is a safety net for edge cases
-		// where fd closure doesn't unblock immediately.
-		select {
-		case <-cs.done:
-		case <-time.After(cs.cfg.DrainTimeout):
+		if !cs.cfg.SkipDrain {
+			// Wait for reader loop to finish so all output is captured.
+			// proc.Close() closes the PTY fd, which causes the BufferedReader's
+			// ReadLoop to exit, which closes the output channel, which causes
+			// readerLoop to exit. The timeout is a safety net for edge cases
+			// where fd closure doesn't unblock immediately.
+			select {
+			case <-cs.done:
+			case <-time.After(cs.cfg.DrainTimeout):
+			}
 		}
 		return err
 	}

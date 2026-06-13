@@ -4,7 +4,7 @@ import "testing"
 
 func TestCSI_CUP_MoveCursor(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// CUP row=5 col=10 (1-indexed) → 0-indexed 4,9
 	h.Dispatch(scr, 'H', []int{5, 10}, false)
 	if scr.CurRow != 4 || scr.CurCol != 9 {
@@ -16,7 +16,7 @@ func TestCSI_CUP_DefaultHomePosition(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CurRow = 10
 	scr.CurCol = 40
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// CUP with no params defaults to (1,1) → 0-indexed (0,0)
 	h.Dispatch(scr, 'H', nil, false)
 	if scr.CurRow != 0 || scr.CurCol != 0 {
@@ -27,7 +27,7 @@ func TestCSI_CUP_DefaultHomePosition(t *testing.T) {
 func TestCSI_CUU_CursorUp(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CurRow = 10
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'A', []int{3}, false)
 	if scr.CurRow != 7 {
 		t.Fatalf("CUU: want row 7, got %d", scr.CurRow)
@@ -37,7 +37,7 @@ func TestCSI_CUU_CursorUp(t *testing.T) {
 func TestCSI_CUU_ClampsToZero(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CurRow = 2
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'A', []int{100}, false)
 	if scr.CurRow != 0 {
 		t.Fatalf("CUU clamp: want row 0, got %d", scr.CurRow)
@@ -46,7 +46,7 @@ func TestCSI_CUU_ClampsToZero(t *testing.T) {
 
 func TestCSI_SGR_ChangesAttributes(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// SGR bold
 	h.Dispatch(scr, 'm', []int{1}, false)
 	if !scr.CurAttr.Bold {
@@ -62,7 +62,7 @@ func TestCSI_SGR_ChangesAttributes(t *testing.T) {
 func TestCSI_SGR_NoParams_Resets(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CurAttr.Bold = true
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// CSI m with empty params resets (our Dispatch injects [0])
 	h.Dispatch(scr, 'm', nil, false)
 	if scr.CurAttr.Bold {
@@ -74,7 +74,7 @@ func TestCSI_DECSTBM_SetsScrollRegion(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CurRow = 10
 	scr.CurCol = 5
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'r', []int{5, 20}, false)
 	if scr.ScrollTop != 5 || scr.ScrollBot != 20 {
 		t.Fatalf("DECSTBM: want (5,20), got (%d,%d)", scr.ScrollTop, scr.ScrollBot)
@@ -88,7 +88,7 @@ func TestCSI_DECSTBM_SetsScrollRegion(t *testing.T) {
 func TestCSI_DECSTBM_InvertedRegion(t *testing.T) {
 	// DECSTBM with top >= bot should be silently ignored.
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// Inverted: top=20, bot=5 (top >= bot).
 	h.Dispatch(scr, 'r', []int{20, 5}, false)
 	// Scroll region should remain at defaults — check via ScrollRegion()
@@ -107,7 +107,7 @@ func TestCSI_DECSTBM_InvertedRegion(t *testing.T) {
 
 func TestCSI_DECSET_CursorVisible(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// ?25l hides cursor
 	h.Dispatch(scr, 'l', []int{25}, true)
 	if scr.CursorVisible {
@@ -123,11 +123,11 @@ func TestCSI_DECSET_CursorVisible(t *testing.T) {
 func TestCSI_DECSET_AltScreen(t *testing.T) {
 	scr := NewScreen(24, 80)
 	var gotAlt *bool
-	h := &CSIHandler{
-		AltScreenFn: func(toAlt bool, mode int) {
+	h := NewCSIHandler(
+		WithAltScreenFn(func(toAlt bool, mode int) {
 			gotAlt = &toAlt
-		},
-	}
+		}),
+	)
 	// ?1049h activates alt screen
 	h.Dispatch(scr, 'h', []int{1049}, true)
 	if gotAlt == nil || !*gotAlt {
@@ -143,7 +143,7 @@ func TestCSI_DECSET_AltScreen(t *testing.T) {
 
 func TestCSI_DECSET_NilCallback(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{} // no AltScreenFn
+	h := NewCSIHandler() // no AltScreenFn
 	// Must not panic
 	h.Dispatch(scr, 'h', []int{1049}, true)
 	h.Dispatch(scr, 'l', []int{1049}, true)
@@ -299,8 +299,8 @@ func TestCSI_AltScreen_MultiParam(t *testing.T) {
 	var gotMode int
 	// Test that multi-param DECSET works with alt screen mode
 	// This tests the `p` variable being passed to AltScreenFn
-	origHandler := v.csi.AltScreenFn
-	v.csi.AltScreenFn = func(toAlt bool, mode int) {
+	origHandler := v.csi.(*csiHandlerImpl).AltScreenFn
+	v.csi.(*csiHandlerImpl).AltScreenFn = func(toAlt bool, mode int) {
 		gotMode = mode
 		origHandler(toAlt, mode)
 	}
@@ -340,7 +340,7 @@ func TestCSI_ED_EraseDisplay(t *testing.T) {
 	}
 	scr.CurRow = 2
 	scr.CurCol = 0
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// ED mode 0 = cursor to end
 	h.Dispatch(scr, 'J', []int{0}, false)
 	// Row 0-1 should be untouched
@@ -358,7 +358,7 @@ func TestCSI_SaveRestore_Cursor(t *testing.T) {
 	scr.CurRow = 5
 	scr.CurCol = 10
 	scr.CurAttr.Bold = true
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// Save
 	h.Dispatch(scr, 's', nil, false)
 	// Move somewhere else
@@ -375,7 +375,7 @@ func TestCSI_SaveRestore_Cursor(t *testing.T) {
 
 func TestCSI_UnknownFinal_NoPanic(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// Must not panic on unrecognised byte
 	h.Dispatch(scr, '~', []int{42}, false)
 	h.Dispatch(scr, 'Z', nil, false)
@@ -407,7 +407,7 @@ func TestParamDefault(t *testing.T) {
 
 func TestCSI_CUF_CursorForward(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'C', []int{5}, false)
 	if scr.CurCol != 5 {
 		t.Fatalf("CUF: want col 5, got %d", scr.CurCol)
@@ -417,7 +417,7 @@ func TestCSI_CUF_CursorForward(t *testing.T) {
 func TestCSI_CUB_CursorBackward(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.CurCol = 10
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'D', []int{3}, false)
 	if scr.CurCol != 7 {
 		t.Fatalf("CUB: want col 7, got %d", scr.CurCol)
@@ -426,7 +426,7 @@ func TestCSI_CUB_CursorBackward(t *testing.T) {
 
 func TestCSI_VPA_VerticalPositionAbsolute(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'd', []int{12}, false)
 	if scr.CurRow != 11 { // 1-indexed → 0-indexed
 		t.Fatalf("VPA: want row 11, got %d", scr.CurRow)
@@ -435,7 +435,7 @@ func TestCSI_VPA_VerticalPositionAbsolute(t *testing.T) {
 
 func TestCSI_CHA_CursorToColumn(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'G', []int{20}, false)
 	if scr.CurCol != 19 { // 1-indexed → 0-indexed
 		t.Fatalf("CHA: want col 19, got %d", scr.CurCol)
@@ -444,7 +444,7 @@ func TestCSI_CHA_CursorToColumn(t *testing.T) {
 
 func TestCSI_TBC_ClearTabStop(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// Default tabs at 0, 8, 16...
 	if !scr.TabStops[8] {
 		t.Fatal("precondition: tab at col 8")
@@ -469,7 +469,7 @@ func TestCSI_DCH_DeleteChars(t *testing.T) {
 		scr.Cells[0][i].Ch = ch
 	}
 	scr.CurCol = 1
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'P', []int{2}, false) // delete 2 chars at col 1
 	got := rowString(scr, 0)
 	if got != "ADE  " {
@@ -483,7 +483,7 @@ func TestCSI_ICH_InsertChars(t *testing.T) {
 		scr.Cells[0][i].Ch = ch
 	}
 	scr.CurCol = 1
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, '@', []int{2}, false) // insert 2 blanks at col 1
 	got := rowString(scr, 0)
 	if got != "A  BC" {
@@ -497,7 +497,7 @@ func TestCSI_ECH_EraseChars(t *testing.T) {
 		scr.Cells[0][i].Ch = ch
 	}
 	scr.CurCol = 1
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'X', []int{2}, false)
 	got := rowString(scr, 0)
 	if got != "A  DE" {
@@ -519,7 +519,7 @@ func TestESC_DECSC_DECRC(t *testing.T) {
 	scr.CurRow = 5
 	scr.CurCol = 10
 	scr.CurAttr.Italic = true
-	h := &ESCHandler{}
+	h := NewESCHandler()
 	h.Dispatch(scr, '7') // save
 	scr.CurRow = 20
 	scr.CurCol = 70
@@ -534,7 +534,7 @@ func TestESC_DECSC_DECRC(t *testing.T) {
 func TestESC_RI_ReverseIndex(t *testing.T) {
 	scr := NewScreen(5, 5)
 	scr.CurRow = 0 // already at top
-	h := &ESCHandler{}
+	h := NewESCHandler()
 	// Put content in row 0 to verify scroll
 	scr.Cells[0][0].Ch = 'X'
 	h.Dispatch(scr, 'M') // reverse index at top → scroll down
@@ -550,7 +550,7 @@ func TestESC_RI_ReverseIndex(t *testing.T) {
 func TestESC_RIS_CallsResetFn(t *testing.T) {
 	scr := NewScreen(24, 80)
 	called := false
-	h := &ESCHandler{ResetFn: func() { called = true }}
+	h := NewESCHandler(WithResetFn(func() { called = true }))
 	h.Dispatch(scr, 'c')
 	if !called {
 		t.Fatal("RIS: expected ResetFn to be called")
@@ -559,13 +559,13 @@ func TestESC_RIS_CallsResetFn(t *testing.T) {
 
 func TestESC_RIS_NilFn_NoPanic(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &ESCHandler{}
+	h := NewESCHandler()
 	h.Dispatch(scr, 'c') // must not panic
 }
 
 func TestESC_HTS_SetTabStop(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &ESCHandler{}
+	h := NewESCHandler()
 	scr.CurCol = 5
 	// Col 5 is not a default tab stop
 	if scr.TabStops[5] {
@@ -581,7 +581,7 @@ func TestESC_HTS_SetTabStop(t *testing.T) {
 
 func TestCSI_DECSET_MouseTrackingBasic(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'h', []int{1000}, true)
 	if scr.MouseTracking != MouseTrackingBasic {
 		t.Fatalf("DECSET ?1000h: want MouseTrackingBasic, got %d", scr.MouseTracking)
@@ -590,7 +590,7 @@ func TestCSI_DECSET_MouseTrackingBasic(t *testing.T) {
 
 func TestCSI_DECSET_MouseTrackingButtonEvent(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'h', []int{1002}, true)
 	if scr.MouseTracking != MouseTrackingButtonEvent {
 		t.Fatalf("DECSET ?1002h: want MouseTrackingButtonEvent, got %d", scr.MouseTracking)
@@ -599,7 +599,7 @@ func TestCSI_DECSET_MouseTrackingButtonEvent(t *testing.T) {
 
 func TestCSI_DECSET_MouseTrackingAnyEvent(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'h', []int{1003}, true)
 	if scr.MouseTracking != MouseTrackingAnyEvent {
 		t.Fatalf("DECSET ?1003h: want MouseTrackingAnyEvent, got %d", scr.MouseTracking)
@@ -608,7 +608,7 @@ func TestCSI_DECSET_MouseTrackingAnyEvent(t *testing.T) {
 
 func TestCSI_DECSET_MouseSGR(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	h.Dispatch(scr, 'h', []int{1006}, true)
 	if !scr.MouseSGR {
 		t.Fatal("DECSET ?1006h: expected MouseSGR=true")
@@ -617,7 +617,7 @@ func TestCSI_DECSET_MouseSGR(t *testing.T) {
 
 func TestCSI_DECRST_MouseTrackingBasic_ClearsOnlyBasic(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// Enable button-event tracking first
 	h.Dispatch(scr, 'h', []int{1002}, true)
 	if scr.MouseTracking != MouseTrackingButtonEvent {
@@ -637,7 +637,7 @@ func TestCSI_DECRST_MouseTrackingBasic_ClearsOnlyBasic(t *testing.T) {
 
 func TestCSI_DECRST_MouseTrackingAnyEvent_ClearsOnlyAny(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// Enable any-event tracking
 	h.Dispatch(scr, 'h', []int{1003}, true)
 	if scr.MouseTracking != MouseTrackingAnyEvent {
@@ -657,7 +657,7 @@ func TestCSI_DECRST_MouseTrackingAnyEvent_ClearsOnlyAny(t *testing.T) {
 
 func TestCSI_DECRST_MouseSGR(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// Enable SGR
 	h.Dispatch(scr, 'h', []int{1006}, true)
 	if !scr.MouseSGR {
@@ -672,7 +672,7 @@ func TestCSI_DECRST_MouseSGR(t *testing.T) {
 
 func TestCSI_DECRST_MouseTrackingBasic_ClearsBasic(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// Enable basic tracking
 	h.Dispatch(scr, 'h', []int{1000}, true)
 	if scr.MouseTracking != MouseTrackingBasic {
@@ -728,7 +728,7 @@ func TestCSI_SM_IRM_Enable(t *testing.T) {
 	if scr.InsertMode {
 		t.Fatal("precondition: InsertMode should be false")
 	}
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// CSI 4h = SM (set mode) with mode 4 (IRM)
 	h.Dispatch(scr, 'h', []int{4}, false)
 	if !scr.InsertMode {
@@ -739,7 +739,7 @@ func TestCSI_SM_IRM_Enable(t *testing.T) {
 func TestCSI_RM_IRM_Disable(t *testing.T) {
 	scr := NewScreen(24, 80)
 	scr.InsertMode = true
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// CSI 4l = RM (reset mode) with mode 4 (IRM)
 	h.Dispatch(scr, 'l', []int{4}, false)
 	if scr.InsertMode {
@@ -749,7 +749,7 @@ func TestCSI_RM_IRM_Disable(t *testing.T) {
 
 func TestCSI_SM_IRM_PrivateModeNotAffected(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// CSI ?4h (private mode 4) should NOT set InsertMode
 	h.Dispatch(scr, 'h', []int{4}, true)
 	if scr.InsertMode {
@@ -759,7 +759,7 @@ func TestCSI_SM_IRM_PrivateModeNotAffected(t *testing.T) {
 
 func TestCSI_SM_IRM_MultipleParams(t *testing.T) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// CSI 4;7h — mode 4 should be set, mode 7 (unknown) silently ignored
 	h.Dispatch(scr, 'h', []int{4, 7}, false)
 	if !scr.InsertMode {

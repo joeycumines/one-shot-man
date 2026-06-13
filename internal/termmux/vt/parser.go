@@ -41,12 +41,12 @@ type Parser struct {
 	intermBuf   []byte
 	oscBuf      []byte
 	dcsBuf      []byte
-	params      []int     // pre-allocated slice reused by Params()
-	subParams   [][]int   // colon-separated sub-params per semicolon group
+	params      []int   // pre-allocated slice reused by Params()
+	subParams   [][]int // colon-separated sub-params per semicolon group
 	maxOSCLen   int
 	maxDCSLen   int
-	lastByte    byte      // for two-byte terminators (ESC \)
-	charsetSlot byte      // '(' = G0, ')' = G1 — set when entering StateCharset
+	lastByte    byte // for two-byte terminators (ESC \)
+	charsetSlot byte // '(' = G0, ')' = G1 — set when entering StateCharset
 }
 
 // NewParser returns a parser in the ground state.

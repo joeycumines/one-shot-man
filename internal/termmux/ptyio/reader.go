@@ -24,10 +24,10 @@ func NewBufferedReader(r io.Reader, chanCap int) *BufferedReader {
 		chanCap = 1
 	}
 	return &BufferedReader{
-		r:     r,
-		buf:   make([]byte, defaultBufSize),
-		out:   make(chan []byte, chanCap),
-		done:  make(chan struct{}),
+		r:    r,
+		buf:  make([]byte, defaultBufSize),
+		out:  make(chan []byte, chanCap),
+		done: make(chan struct{}),
 	}
 }
 

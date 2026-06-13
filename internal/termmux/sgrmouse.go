@@ -7,8 +7,6 @@ package termmux
 //
 // Reference: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
 
-
-
 // MaxCoord is the maximum reasonable terminal dimension (columns or rows).
 // Terminal emulators typically cap at a few thousand; 10000 is 100× a
 // typical maximum screen size and safely above any realistic coordinate.

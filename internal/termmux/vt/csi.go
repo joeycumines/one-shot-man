@@ -6,6 +6,19 @@ import (
 )
 
 // CSIHandler processes a parsed CSI sequence on a screen.
+type CSIHandler interface {
+	// Dispatch processes a CSI sequence identified by the given final byte.
+	// params holds parsed numeric parameters (0 = default/missing).
+	// isPrivate is true when a '?' prefix was present (DECSET/DECRST).
+	Dispatch(scr *Screen, final byte, params []int, isPrivate bool)
+}
+
+// NopCSIHandler is a nil-safe CSIHandler that discards all sequences.
+type NopCSIHandler struct{}
+
+func (NopCSIHandler) Dispatch(*Screen, byte, []int, bool) {}
+
+// csiHandlerImpl is the concrete CSIHandler implementation.
 // The AltScreenFn callback handles DECSET/DECRST modes 47/1047/1049 (alt
 // screen toggle). The mode parameter indicates which mode triggered the
 // switch: 47 (no cursor save/clear), 1047 (clear on exit, no cursor
@@ -14,19 +27,59 @@ import (
 // The ResponseWriter callback sends response sequences back to the child
 // process (e.g., DA1, DA2, DSR-CPR). It is optional; if nil, responses
 // are silently discarded.
-type CSIHandler struct {
+type csiHandlerImpl struct {
 	AltScreenFn    func(toAlt bool, mode int)
 	ResponseWriter func([]byte)
-	HasInterGt     func() bool // reports whether '>' intermediate was present
-	HasInterSp     func() bool // reports whether ' ' intermediate was present
-	HasInterBang   func() bool // reports whether '!' intermediate was present
-	HasInterDollar func() bool // reports whether '$' intermediate was present
+	HasInterGt     func() bool
+	HasInterSp     func() bool
+	HasInterBang   func() bool
+	HasInterDollar func() bool
 }
 
-// Dispatch processes a CSI sequence identified by the given final byte.
-// params holds parsed numeric parameters (0 = default/missing).
-// isPrivate is true when a '?' prefix was present (DECSET/DECRST).
-func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate bool) {
+// NewCSIHandler returns a CSIHandler with the given callbacks.
+// All callbacks are optional; nil callbacks are silently ignored.
+func NewCSIHandler(opts ...CSIHandlerOption) CSIHandler {
+	h := &csiHandlerImpl{}
+	for _, o := range opts {
+		o.apply(h)
+	}
+	return h
+}
+
+// CSIHandlerOption configures a csiHandlerImpl.
+type CSIHandlerOption interface {
+	apply(*csiHandlerImpl)
+}
+
+type csiHandlerOptionFunc func(*csiHandlerImpl)
+
+func (f csiHandlerOptionFunc) apply(h *csiHandlerImpl) { f(h) }
+
+func WithAltScreenFn(fn func(toAlt bool, mode int)) CSIHandlerOption {
+	return csiHandlerOptionFunc(func(h *csiHandlerImpl) { h.AltScreenFn = fn })
+}
+
+func WithCSIResponseWriter(fn func([]byte)) CSIHandlerOption {
+	return csiHandlerOptionFunc(func(h *csiHandlerImpl) { h.ResponseWriter = fn })
+}
+
+func WithHasInterGt(fn func() bool) CSIHandlerOption {
+	return csiHandlerOptionFunc(func(h *csiHandlerImpl) { h.HasInterGt = fn })
+}
+
+func WithHasInterSp(fn func() bool) CSIHandlerOption {
+	return csiHandlerOptionFunc(func(h *csiHandlerImpl) { h.HasInterSp = fn })
+}
+
+func WithHasInterBang(fn func() bool) CSIHandlerOption {
+	return csiHandlerOptionFunc(func(h *csiHandlerImpl) { h.HasInterBang = fn })
+}
+
+func WithHasInterDollar(fn func() bool) CSIHandlerOption {
+	return csiHandlerOptionFunc(func(h *csiHandlerImpl) { h.HasInterDollar = fn })
+}
+
+func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPrivate bool) {
 	switch final {
 	case 'A': // CUU — cursor up
 		n := paramDefault(params, 0, 1)
@@ -92,7 +145,6 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 			col = scr.Cols - 1
 		}
 		if scr.OriginMode {
-			// In origin mode, row is relative to the scroll region top.
 			scrollTop, scrollBot := scr.ScrollRegion()
 			row += scrollTop
 			if row < scrollTop {
@@ -184,11 +236,11 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 	case 'g': // TBC — tab clear
 		mode := paramDefault(params, 0, 0)
 		switch mode {
-		case 0: // clear tab stop at current column
+		case 0:
 			if scr.CurCol >= 0 && scr.CurCol < len(scr.TabStops) {
 				scr.TabStops[scr.CurCol] = false
 			}
-		case 3: // clear all tab stops
+		case 3:
 			for i := range scr.TabStops {
 				scr.TabStops[i] = false
 			}
@@ -213,7 +265,6 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		}
 		scr.PendingWrap = false
 		if scr.OriginMode {
-			// Per spec, DECSTBM in origin mode homes to scroll region top.
 			scrollTop, _ := scr.ScrollRegion()
 			scr.CurRow = scrollTop
 		} else {
@@ -253,7 +304,6 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.SavedHighlightTracking = scr.HighlightTracking
 	case 'u': // RCP — restore cursor position
 		scr.PendingWrap = scr.SavedPendingWrap
-		// Restore mode state first so cursor clamping respects origin mode.
 		scr.CurAttr = scr.SavedAttr
 		scr.G0Charset = scr.SavedG0Charset
 		scr.G1Charset = scr.SavedG1Charset
@@ -269,7 +319,6 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.KeypadApplication = scr.SavedKeypadApplication
 		scr.LineFeedNewLine = scr.SavedLineFeedNewLine
 		scr.HighlightTracking = scr.SavedHighlightTracking
-		// Clamp cursor to valid range.
 		if scr.OriginMode {
 			scrollTop, scrollBot := scr.ScrollRegion()
 			scr.CurRow = max(scrollTop, min(scr.SavedRow, scrollBot-1))
@@ -279,25 +328,19 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		scr.CurCol = max(0, min(scr.SavedCol, scr.Cols-1))
 	case 'c': // DA — device attributes
 		if h.HasInterGt != nil && h.HasInterGt() {
-			// DA2 — secondary device attributes.
-			// Response: ESC[>1;0;0c (VT220, firmware version 0, ROM version 0)
 			h.respond("\x1b[>1;0;0c")
 		} else if !isPrivate {
-			// DA1 — primary device attributes.
-			// Response: VT220-class with ANSI color.
-			// 64 = VT220, 22 = ANSI color
 			h.respond("\x1b[?64;22c")
 		}
 	case 'n': // DSR — device status report
 		if len(params) > 0 {
 			switch params[0] {
-			case 5: // DSR-OK
+			case 5:
 				h.respond("\x1b[0n")
-			case 6: // DSR-CPR — cursor position report
-				row := scr.CurRow + 1 // 1-indexed
+			case 6:
+				row := scr.CurRow + 1
 				col := scr.CurCol + 1
 				if scr.OriginMode {
-					// In origin mode, report relative to scroll region top.
 					scrollTop, _ := scr.ScrollRegion()
 					row = max(scr.CurRow-scrollTop+1, 1)
 				}
@@ -315,88 +358,86 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 	case 't': // XTWINOPS — window manipulation
 		subcmd := paramDefault(params, 0, 0)
 		switch subcmd {
-		case 8: // CSI 8 ; rows ; cols t — resize terminal
+		case 8:
 			rows := paramDefault(params, 1, DefaultRows)
 			cols := paramDefault(params, 2, DefaultCols)
 			scr.Resize(rows, cols)
-		case 18: // CSI 18 t — report terminal size in pixels
-			// Character cell size approximation: 10 wide x 20 tall (xterm default).
+		case 18:
 			pixelHeight := scr.Rows * 20
 			pixelWidth := scr.Cols * 10
 			h.respond("\x1b[8;" + itoa(pixelHeight) + ";" + itoa(pixelWidth) + "t")
 		default:
-			// Unknown/unimplemented XTWINOPS — ignore silently
 		}
-	case 'p': // DECSTR — soft terminal reset (CSI ! p) / DECRQM — request mode (CSI ? Pn $ p)
+	case 'p': // DECSTR / DECRQM
 		if h.HasInterBang != nil && h.HasInterBang() {
 			scr.SoftReset()
 		} else if h.HasInterDollar != nil && h.HasInterDollar() && isPrivate {
 			mode := paramDefault(params, 0, 0)
 			var status int
 			switch mode {
-			case 1: // DECCKM
+			case 1:
 				if scr.ApplicationCursor {
 					status = 2
 				} else {
 					status = 3
 				}
-			case 6: // DECOM
+			case 6:
 				if scr.OriginMode {
 					status = 2
 				} else {
 					status = 3
 				}
-			case 7: // DECAWM
+			case 7:
 				if scr.AutoWrap {
 					status = 2
 				} else {
 					status = 3
 				}
-			case 25: // DECTCEM
+			case 25:
 				if scr.CursorVisible {
 					status = 2
 				} else {
 					status = 3
 				}
-			case 66: // DECNKM
+			case 66:
 				if scr.KeypadApplication {
 					status = 2
 				} else {
 					status = 3
 				}
-			case 1000: // Mouse normal
+			case 1000:
 				if scr.MouseTracking == MouseTrackingBasic {
 					status = 2
 				} else {
 					status = 3
 				}
-			case 1002: // Mouse button event
+			case 1002:
 				if scr.MouseTracking == MouseTrackingButtonEvent {
 					status = 2
 				} else {
 					status = 3
 				}
-			case 1004: // Focus reporting
+			case 1004:
 				if scr.FocusReporting {
 					status = 2
 				} else {
 					status = 3
 				}
-			case 1006: // Mouse SGR
+			case 1006:
 				if scr.MouseSGR {
 					status = 2
 				} else {
 					status = 3
 				}
-			case 1049: // Alt screen
+			case 1049:
 				status = 3
-			case 2004: // Bracketed paste
+			case 2004:
 				if scr.BracketedPaste {
 					status = 2
 				} else {
 					status = 3
 				}
-			case 2026: // Synchronized output
+			case 2026:
 				if scr.SynchronizedOutput {
 					status = 2
 				} else {
@@ -410,123 +451,116 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 	}
 }
 
-// decset handles DECSET (?h) private modes.
-func (h *CSIHandler) decset(scr *Screen, params []int) {
+func (h *csiHandlerImpl) decset(scr *Screen, params []int) {
 	for _, p := range params {
 		switch p {
-		case 6: // DECOM — origin mode
+		case 6:
 			scr.OriginMode = true
-			// Per spec, DECSET ?6h homes cursor to scroll region top-left.
 			scrollTop, _ := scr.ScrollRegion()
 			scr.CurRow = scrollTop
 			scr.CurCol = 0
 			scr.PendingWrap = false
-		case 1: // DECCKM — application cursor mode
+		case 1:
 			scr.ApplicationCursor = true
-		case 66: // DECKPAM — keypad application mode
+		case 66:
 			scr.KeypadApplication = true
-		case 7: // DECAWM
+		case 7:
 			scr.AutoWrap = true
-		case 25: // DECTCEM — show cursor
+		case 25:
 			scr.CursorVisible = true
-		case 47, 1047, 1049: // alternate screen buffer
+		case 47, 1047, 1049:
 			if h.AltScreenFn != nil {
 				h.AltScreenFn(true, p)
 			}
-		case 1000: // XT_MOUSE — basic mouse tracking
+		case 1000:
 			scr.MouseTracking = MouseTrackingBasic
-		case 1001: // highlight tracking
+		case 1001:
 			scr.HighlightTracking = true
-		case 1002: // XT_MOUSE_GRID — button-event tracking
+		case 1002:
 			scr.MouseTracking = MouseTrackingButtonEvent
-		case 1003: // XT_MOUSE_ANY — any-event tracking
+		case 1003:
 			scr.MouseTracking = MouseTrackingAnyEvent
-		case 1006: // XT_SGR_MOUSE — SGR mouse encoding
+		case 1006:
 			scr.MouseSGR = true
-		case 2004: // Bracketed paste mode
+		case 2004:
 			scr.BracketedPaste = true
-		case 2026: // Synchronized output
+		case 2026:
 			scr.SynchronizedOutput = true
-		case 1004: // Focus event reporting
+		case 1004:
 			scr.FocusReporting = true
 		}
 	}
 }
 
-// decrst handles DECRST (?l) private modes.
-func (h *CSIHandler) decrst(scr *Screen, params []int) {
+func (h *csiHandlerImpl) decrst(scr *Screen, params []int) {
 	for _, p := range params {
 		switch p {
-		case 6: // DECOM — origin mode off
+		case 6:
 			scr.OriginMode = false
-			// Per spec, DECRST ?6l homes cursor to screen top-left.
 			scr.CurRow = 0
 			scr.CurCol = 0
 			scr.PendingWrap = false
-		case 1: // DECCKM — application cursor mode off
+		case 1:
 			scr.ApplicationCursor = false
-		case 66: // DECKPNM — keypad normal mode
+		case 66:
 			scr.KeypadApplication = false
-		case 7: // DECAWM off
+		case 7:
 			scr.AutoWrap = false
 			scr.PendingWrap = false
-		case 25: // DECTCEM — hide cursor
+		case 25:
 			scr.CursorVisible = false
-		case 47, 1047, 1049: // normal screen buffer
+		case 47, 1047, 1049:
 			if h.AltScreenFn != nil {
 				h.AltScreenFn(false, p)
 			}
-		case 1000: // XT_MOUSE — disable basic mouse tracking
+		case 1000:
 			if scr.MouseTracking == MouseTrackingBasic {
 				scr.MouseTracking = MouseTrackingNone
 			}
-		case 1001: // disable highlight tracking
+		case 1001:
 			scr.HighlightTracking = false
-		case 1002: // XT_MOUSE_GRID — disable button-event tracking
+		case 1002:
 			if scr.MouseTracking == MouseTrackingButtonEvent {
 				scr.MouseTracking = MouseTrackingNone
 			}
-		case 1003: // XT_MOUSE_ANY — disable any-event tracking
+		case 1003:
 			if scr.MouseTracking == MouseTrackingAnyEvent {
 				scr.MouseTracking = MouseTrackingNone
 			}
-		case 1006: // XT_SGR_MOUSE — disable SGR mouse encoding
+		case 1006:
 			scr.MouseSGR = false
-		case 2004: // Bracketed paste mode off
+		case 2004:
 			scr.BracketedPaste = false
-		case 2026: // Synchronized output off
+		case 2026:
 			scr.SynchronizedOutput = false
-		case 1004: // Focus event reporting off
+		case 1004:
 			scr.FocusReporting = false
 		}
 	}
 }
 
-// sm handles SM (set mode) for ANSI (non-private) modes.
-func (h *CSIHandler) sm(scr *Screen, params []int) {
+func (h *csiHandlerImpl) sm(scr *Screen, params []int) {
 	for _, p := range params {
 		switch p {
-		case 4: // IRM — insert/replace mode
+		case 4:
 			scr.InsertMode = true
-		case 20: // LNM — line feed new line
+		case 20:
 			scr.LineFeedNewLine = true
 		}
 	}
 }
 
-// rm handles RM (reset mode) for ANSI (non-private) modes.
-func (h *CSIHandler) rm(scr *Screen, params []int) {
+func (h *csiHandlerImpl) rm(scr *Screen, params []int) {
 	for _, p := range params {
 		switch p {
-		case 4: // IRM — insert/replace mode
+		case 4:
 			scr.InsertMode = false
-		case 20: // LNM — line feed new line
+		case 20:
 			scr.LineFeedNewLine = false
 		}
 	}
 }
 
-// paramDefault returns params[idx] if it exists and is > 0, otherwise def.
 func paramDefault(params []int, idx, def int) int {
 	if idx < len(params) && params[idx] > 0 {
 		return params[idx]
@@ -534,15 +568,12 @@ func paramDefault(params []int, idx, def int) int {
 	return def
 }
 
-// respond sends a response sequence via the ResponseWriter callback.
-// If ResponseWriter is nil, the response is silently discarded.
-func (h *CSIHandler) respond(s string) {
+func (h *csiHandlerImpl) respond(s string) {
 	if h.ResponseWriter != nil {
 		h.ResponseWriter([]byte(s))
 	}
 }
 
-// itoa converts an integer to its decimal string representation.
 func itoa(n int) string {
 	return strconv.Itoa(n)
 }

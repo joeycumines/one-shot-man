@@ -86,13 +86,13 @@ func (e *ErrForceKillTimeout) Unwrap() error { return nil }
 
 // Defaults for SpawnConfig.
 const (
-	DefaultRows            uint16        = 24
-	DefaultCols            uint16        = 80
-	DefaultTerm            string        = "xterm-256color"
-	DefaultWriteTimeout    time.Duration = 30 * time.Second
+	DefaultRows             uint16        = 24
+	DefaultCols             uint16        = 80
+	DefaultTerm             string        = "xterm-256color"
+	DefaultWriteTimeout     time.Duration = 30 * time.Second
 	DefaultCloseGracePeriod time.Duration = 5 * time.Second
-	DefaultCloseForceWait  time.Duration = 2 * time.Second
-	DefaultReadBufferSize                   = 4096
+	DefaultCloseForceWait   time.Duration = 2 * time.Second
+	DefaultReadBufferSize                 = 4096
 )
 
 // applyDefaults fills in zero values with defaults.

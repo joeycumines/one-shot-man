@@ -905,10 +905,10 @@ func TestProcess_Close_CustomGracePeriod_QuickExit(t *testing.T) {
 	skipIfWindows(t)
 
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command:           "echo",
-		Args:              []string{"fast-exit"},
-		CloseGracePeriod:  10 * time.Second,
-		CloseForceWait:    10 * time.Second,
+		Command:          "echo",
+		Args:             []string{"fast-exit"},
+		CloseGracePeriod: 10 * time.Second,
+		CloseForceWait:   10 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("Spawn failed: %v", err)

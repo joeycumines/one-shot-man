@@ -127,12 +127,12 @@ func BenchmarkParseSGR_Simple(b *testing.B) {
 // ── T018: VTerm Throughput Benchmarks ──────────────────────────────
 
 var (
-	benchPlainASCII     []byte
-	benchMixedTextCSI   []byte
-	benchFullScreenRed  []byte
-	benchRapidSingle    []byte
-	benchUTF8MultiByte  []byte
-	benchParserOnly     []byte
+	benchPlainASCII    []byte
+	benchMixedTextCSI  []byte
+	benchFullScreenRed []byte
+	benchRapidSingle   []byte
+	benchUTF8MultiByte []byte
+	benchParserOnly    []byte
 )
 
 func init() {
@@ -148,9 +148,9 @@ func init() {
 	//    Pattern: CSI A n + "hello" repeated.
 	var sb strings.Builder
 	for range 100 {
-		sb.WriteString("\x1b[A")   // CUU
-		sb.WriteString("\x1b[B")   // CDD
-		sb.WriteString("\x1b[1;1H") // CUP home
+		sb.WriteString("\x1b[A")      // CUU
+		sb.WriteString("\x1b[B")      // CDD
+		sb.WriteString("\x1b[1;1H")   // CUP home
 		sb.WriteString("hello\x1b[K") // text + EL
 		sb.WriteByte('X')
 	}
@@ -199,11 +199,11 @@ func init() {
 	sb.Reset()
 	// Lots of small CSI sequences.
 	for range 500 {
-		sb.WriteString("\x1b[0m")  // SGR reset
-		sb.WriteString("\x1b[1m")  // bold
-		sb.WriteString("\x1b[K")   // erase line
-		sb.WriteString("\x1b[J")   // erase display
-		sb.WriteString("\x1b[H")   // cursor home
+		sb.WriteString("\x1b[0m") // SGR reset
+		sb.WriteString("\x1b[1m") // bold
+		sb.WriteString("\x1b[K")  // erase line
+		sb.WriteString("\x1b[J")  // erase display
+		sb.WriteString("\x1b[H")  // cursor home
 	}
 	benchParserOnly = []byte(sb.String())
 }
@@ -338,7 +338,7 @@ func BenchmarkAlloc_WriteGround(b *testing.B) {
 // BenchmarkAlloc_CSIDispatch measures CSI dispatch overhead.
 func BenchmarkAlloc_CSIDispatch(b *testing.B) {
 	scr := NewScreen(24, 80)
-	h := &CSIHandler{}
+	h := NewCSIHandler()
 	// SGR: bold + underline
 	params := []int{1, 4}
 	b.ResetTimer()

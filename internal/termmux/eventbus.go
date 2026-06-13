@@ -262,6 +262,29 @@ func (b *EventBus) DroppedCount() int64 {
 	return b.droppedEvents.Load()
 }
 
+// DataAsBytes returns the Data field as []byte if the event kind is
+// EventSessionOutput; otherwise it returns nil, false.
+func (e Event) DataAsBytes() ([]byte, bool) {
+	if e.Kind != EventSessionOutput {
+		return nil, false
+	}
+	if e.Data == nil {
+		return nil, true
+	}
+	data, ok := e.Data.([]byte)
+	return data, ok
+}
+
+// DataAsDims returns the Data field as [2]int{rows, cols} if the event kind
+// is EventResize; otherwise it returns [2]int{0, 0}, false.
+func (e Event) DataAsDims() ([2]int, bool) {
+	if e.Kind != EventResize {
+		return [2]int{0, 0}, false
+	}
+	data, ok := e.Data.([2]int)
+	return data, ok
+}
+
 // emit is the internal publish path used by the SessionManager worker
 // goroutine. It constructs an Event and publishes it through the bus.
 func (b *EventBus) emit(kind EventKind, sessionID SessionID) {

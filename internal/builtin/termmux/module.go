@@ -510,12 +510,16 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 
 		termFd := int(os.Stdin.Fd())
 		reason, err := cs.Passthrough(ctx, parent.PassthroughConfig{
-			Stdin:         os.Stdin,
-			Stdout:        os.Stdout,
-			TermFd:        termFd,
-			ToggleKey:     toggleKey,
-			TermState:     ptyio.RealTermState{},
-			BlockingGuard: parent.DefaultBlockingGuard(),
+			TerminalIO: parent.TerminalIO{
+				Stdin:         os.Stdin,
+				Stdout:        os.Stdout,
+				TermFd:        termFd,
+				BlockingGuard: parent.DefaultBlockingGuard(),
+			},
+			PassthroughOptions: parent.PassthroughOptions{
+				ToggleKey: toggleKey,
+				TermState: ptyio.RealTermState{},
+			},
 		})
 
 		result := map[string]any{
@@ -1046,10 +1050,14 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 	// context is cancelled.
 	_ = obj.Set("passthrough", func(call goja.FunctionCall) goja.Value {
 		cfg := parent.PassthroughConfig{
-			TermFd:        -1,
-			ToggleKey:     0x1D, // Ctrl+]
-			TermState:     ptyio.RealTermState{},
-			BlockingGuard: parent.DefaultBlockingGuard(),
+			TerminalIO: parent.TerminalIO{
+				TermFd:        -1,
+				BlockingGuard: parent.DefaultBlockingGuard(),
+			},
+			PassthroughOptions: parent.PassthroughOptions{
+				ToggleKey: 0x1D, // Ctrl+]
+				TermState: ptyio.RealTermState{},
+			},
 		}
 
 		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
@@ -1212,13 +1220,19 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 
 		// Build PassthroughConfig from stored state.
 		cfg := parent.PassthroughConfig{
-			Stdin:         stdin,
-			Stdout:        stdout,
-			TermFd:        termFd,
-			ToggleKey:     toggleKey,
-			TermState:     ptyio.RealTermState{},
-			BlockingGuard: parent.DefaultBlockingGuard(),
-			RestoreScreen: swappedOnce,
+			TerminalIO: parent.TerminalIO{
+				Stdin:         stdin,
+				Stdout:        stdout,
+				TermFd:        termFd,
+				BlockingGuard: parent.DefaultBlockingGuard(),
+			},
+			PassthroughOptions: parent.PassthroughOptions{
+				ToggleKey: toggleKey,
+				TermState: ptyio.RealTermState{},
+			},
+			ResizeConfig: parent.ResizeConfig{
+				RestoreScreen: swappedOnce,
+			},
 		}
 		if statusEnabled {
 			cfg.StatusBar = sb
@@ -1535,13 +1549,19 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 
 			// Build PassthroughConfig from stored state.
 			cfg := parent.PassthroughConfig{
-				Stdin:         stdin,
-				Stdout:        stdout,
-				TermFd:        termFd,
-				ToggleKey:     byte(toggleKeyByte),
-				TermState:     ptyio.RealTermState{},
-				BlockingGuard: parent.DefaultBlockingGuard(),
-				RestoreScreen: swappedOnce,
+				TerminalIO: parent.TerminalIO{
+					Stdin:         stdin,
+					Stdout:        stdout,
+					TermFd:        termFd,
+					BlockingGuard: parent.DefaultBlockingGuard(),
+				},
+				PassthroughOptions: parent.PassthroughOptions{
+					ToggleKey: byte(toggleKeyByte),
+					TermState: ptyio.RealTermState{},
+				},
+				ResizeConfig: parent.ResizeConfig{
+					RestoreScreen: swappedOnce,
+				},
 			}
 			if statusEnabled {
 				cfg.StatusBar = sb

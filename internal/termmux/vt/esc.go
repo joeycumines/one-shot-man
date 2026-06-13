@@ -2,12 +2,44 @@ package vt
 
 // ESCHandler processes simple ESC sequences (two-byte sequences beginning
 // with 0x1B).
-type ESCHandler struct {
-	ResetFn func() // called on RIS (ESC c); may be nil
+type ESCHandler interface {
+	Dispatch(scr *Screen, final byte)
+	InterDispatch(scr *Screen, final byte, hasHash bool)
 }
 
-// Dispatch processes an ESC final byte on the given screen.
-func (h *ESCHandler) Dispatch(scr *Screen, final byte) {
+// NopESCHandler is a nil-safe ESCHandler that discards all sequences.
+type NopESCHandler struct{}
+
+func (NopESCHandler) Dispatch(*Screen, byte)          {}
+func (NopESCHandler) InterDispatch(*Screen, byte, bool) {}
+
+type escHandlerImpl struct {
+	ResetFn func()
+}
+
+// NewESCHandler returns an ESCHandler with the given callbacks.
+func NewESCHandler(opts ...ESCHandlerOption) ESCHandler {
+	h := &escHandlerImpl{}
+	for _, o := range opts {
+		o.apply(h)
+	}
+	return h
+}
+
+// ESCHandlerOption configures an escHandlerImpl.
+type ESCHandlerOption interface {
+	apply(*escHandlerImpl)
+}
+
+type escHandlerOptionFunc func(*escHandlerImpl)
+
+func (f escHandlerOptionFunc) apply(h *escHandlerImpl) { f(h) }
+
+func WithResetFn(fn func()) ESCHandlerOption {
+	return escHandlerOptionFunc(func(h *escHandlerImpl) { h.ResetFn = fn })
+}
+
+func (h *escHandlerImpl) Dispatch(scr *Screen, final byte) {
 	switch final {
 	case '7': // DECSC — save cursor
 		scr.SavedRow = scr.CurRow
@@ -30,7 +62,6 @@ func (h *ESCHandler) Dispatch(scr *Screen, final byte) {
 		scr.SavedHighlightTracking = scr.HighlightTracking
 	case '8': // DECRC — restore cursor
 		scr.PendingWrap = scr.SavedPendingWrap
-		// Restore mode state first so cursor clamping respects origin mode.
 		scr.CurAttr = scr.SavedAttr
 		scr.G0Charset = scr.SavedG0Charset
 		scr.G1Charset = scr.SavedG1Charset
@@ -46,7 +77,6 @@ func (h *ESCHandler) Dispatch(scr *Screen, final byte) {
 		scr.KeypadApplication = scr.SavedKeypadApplication
 		scr.LineFeedNewLine = scr.SavedLineFeedNewLine
 		scr.HighlightTracking = scr.SavedHighlightTracking
-		// Clamp cursor to valid range.
 		if scr.OriginMode {
 			scrollTop, scrollBot := scr.ScrollRegion()
 			scr.CurRow = max(scrollTop, min(scr.SavedRow, scrollBot-1))
@@ -54,7 +84,7 @@ func (h *ESCHandler) Dispatch(scr *Screen, final byte) {
 			scr.CurRow = max(0, min(scr.SavedRow, scr.Rows-1))
 		}
 		scr.CurCol = max(0, min(scr.SavedCol, scr.Cols-1))
-	case 'M': // RI — reverse index (cursor up; scroll down if at top)
+	case 'M': // RI — reverse index
 		scr.PendingWrap = false
 		scr.ReverseIndex()
 	case 'D': // IND — index (line feed)
@@ -75,8 +105,7 @@ func (h *ESCHandler) Dispatch(scr *Screen, final byte) {
 	}
 }
 
-// InterDispatch processes an ESC sequence with intermediate byte(s).
-func (h *ESCHandler) InterDispatch(scr *Screen, final byte, hasHash bool) {
+func (h *escHandlerImpl) InterDispatch(scr *Screen, final byte, hasHash bool) {
 	switch final {
 	case '8':
 		if hasHash {

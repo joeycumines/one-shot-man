@@ -591,6 +591,11 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 		ToggleKey: cfg.ToggleKey,
 	})
 
+	// Signal forwarding (SIGINT, SIGQUIT, SIGTSTP).
+	sigResultCh := make(chan signalResult, 1)
+	sigCancel := watchSignals(ctx, sigResultCh, cfg.SignalChild)
+	defer sigCancel()
+
 	// Wait for any goroutine to signal completion. Context cancellation
 	// takes priority: when the parent context is cancelled, the child
 	// process is killed and cs.done closes, so resultCh may fire
@@ -599,12 +604,18 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 	select {
 	case r := <-resultCh:
 		cancel()
+		sigCancel()
 		if ctx.Err() != nil {
 			return ExitContext, ctx.Err()
 		}
 		return r.reason, r.err
+	case sr := <-sigResultCh:
+		cancel()
+		sigCancel()
+		return sr.reason, sr.err
 	case <-ctx.Done():
 		cancel()
+		sigCancel()
 		return ExitContext, ctx.Err()
 	}
 }

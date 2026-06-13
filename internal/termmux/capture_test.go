@@ -981,6 +981,92 @@ func TestCaptureSession_PauseResume_Windows(t *testing.T) {
 	}
 }
 
+// T_CONPTY_PASSTHROUGH: Test passthrough via CaptureSession on Windows
+// using ConPTY. Verifies that child output is forwarded through the
+// passthrough Tee to stdout, even when there is no real TTY (TermFd < 0).
+func TestCaptureSession_Passthrough_ConPTY_ChildExit(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("ConPTY passthrough test requires Windows")
+	}
+	if testing.Short() {
+		t.Skip("skipping ConPTY passthrough test in short mode")
+	}
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "powershell.exe",
+		Args:    []string{"-NoProfile", "-Command", "Write-Output 'conpty-passthrough-test'; exit 0"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var stdout bytes.Buffer
+	reason, err := cs.Passthrough(ctx, PassthroughConfig{
+		TerminalIO: TerminalIO{
+			Stdin:  strings.NewReader(""),
+			Stdout: &stdout,
+			TermFd: -1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Passthrough returned error: %v", err)
+	}
+	if reason != ExitChildExit {
+		t.Fatalf("expected ExitChildExit, got %v", reason)
+	}
+
+	if !strings.Contains(stdout.String(), "conpty-passthrough-test") {
+		t.Fatalf("expected stdout to contain child output, got %q", stdout.String())
+	}
+}
+
+// T_CONPTY_PASSTHROUGH: Test passthrough via CaptureSession on Windows
+// where context cancellation exits passthrough before child completes.
+func TestCaptureSession_Passthrough_ConPTY_ContextCancel(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("ConPTY passthrough test requires Windows")
+	}
+	if testing.Short() {
+		t.Skip("skipping ConPTY passthrough test in short mode")
+	}
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "cmd.exe",
+		Args:    []string{"/c", "timeout", "/t", "60"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel context after a short delay.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+	}()
+
+	reason, err := cs.Passthrough(ctx, PassthroughConfig{
+		TerminalIO: TerminalIO{
+			Stdin:  strings.NewReader(""),
+			Stdout: io.Discard,
+			TermFd: -1,
+		},
+	})
+	if reason != ExitContext {
+		t.Fatalf("expected ExitContext, got %v (err=%v)", reason, err)
+	}
+}
+
 func TestCaptureSession_Passthrough_ResizeNotBlockedByOutput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")

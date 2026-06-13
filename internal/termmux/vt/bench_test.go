@@ -361,3 +361,41 @@ func BenchmarkAlloc_ScrollUp(b *testing.B) {
 		scr.ScrollUp(1)
 	}
 }
+
+// ── Snapshot benchmarks: old (triple-call) vs new (Snapshot()) ─────
+
+// BenchmarkVTerm_Snapshot_Old measures the cost of the old pattern:
+// String() + ContentANSI() + RenderFullScreen() + individual mode queries,
+// each acquiring the mutex independently.
+func BenchmarkVTerm_Snapshot_Old(b *testing.B) {
+	v := NewVTerm(24, 80)
+	v.Write(benchInputANSI)
+	b.ResetTimer()
+	for b.Loop() {
+		_ = v.String()
+		_ = v.ContentANSI()
+		_ = v.RenderFullScreen()
+		_, _ = v.CursorPosition()
+		_ = v.MouseTracking()
+		_ = v.MouseSGR()
+		_ = v.InsertMode()
+		_ = v.BracketedPaste()
+		_ = v.CursorShape()
+		_ = v.FocusReporting()
+		_ = v.AutoWrap()
+		_ = v.LineFeedNewLine()
+		_ = v.SynchronizedOutput()
+	}
+}
+
+// BenchmarkVTerm_Snapshot_New measures the cost of the new Snapshot()
+// method: single lock, single cell-grid traversal, all mode state read
+// under the same lock.
+func BenchmarkVTerm_Snapshot_New(b *testing.B) {
+	v := NewVTerm(24, 80)
+	v.Write(benchInputANSI)
+	b.ResetTimer()
+	for b.Loop() {
+		_ = v.Snapshot()
+	}
+}

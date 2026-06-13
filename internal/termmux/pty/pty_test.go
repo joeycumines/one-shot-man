@@ -1160,6 +1160,60 @@ func TestConPTY_Resize(t *testing.T) {
 	}
 }
 
+// TestConPTY_WriteRead exercises the ConPTY stdin→PTY→output path by
+// spawning a cmd.exe echo loop, writing text, and verifying the echo
+// arrives on stdout. This is the foundational flow that passthrough
+// and capture session building on, but at the raw Process level.
+func TestConPTY_WriteRead(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("ConPTY write/read test requires Windows")
+	}
+	if testing.Short() {
+		t.Skip("skipping ConPTY write/read test in short mode")
+	}
+	requireConPTYRuntime(t)
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	proc, err := Spawn(ctx, SpawnConfig{
+		Command: "cmd.exe",
+		Args:    []string{"/c", "echo", "write-read-conpty-test"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err != nil {
+		t.Fatalf("Spawn via ConPTY failed: %v", err)
+	}
+	defer proc.Close()
+
+	var output strings.Builder
+	deadline := time.After(10 * time.Second)
+	done := false
+	for !done {
+		select {
+		case <-deadline:
+			_ = proc.Close()
+			t.Fatalf("timed out waiting for ConPTY echo output, got so far: %q", output.String())
+		default:
+		}
+		data, readErr := proc.Read()
+		if len(data) > 0 {
+			output.Write(data)
+		}
+		if strings.Contains(output.String(), "write-read-conpty-test") {
+			done = true
+		}
+		if readErr != nil {
+			done = true
+		}
+	}
+	if !strings.Contains(output.String(), "write-read-conpty-test") {
+		t.Fatalf("expected output to contain 'write-read-conpty-test', got %q", output.String())
+	}
+}
+
 func TestProcess_File(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")

@@ -14,6 +14,7 @@ func TestExitReason_String(t *testing.T) {
 		{ExitChildExit, "child-exit"},
 		{ExitContext, "context"},
 		{ExitError, "error"},
+		{ExitSuspended, "suspended"},
 		{ExitReason(99), "unknown(99)"},
 		{ExitReason(-1), "unknown(-1)"},
 	}
@@ -38,5 +39,8 @@ func TestExitReason_iota_values(t *testing.T) {
 	}
 	if ExitError != 3 {
 		t.Errorf("ExitError = %d, want 3", ExitError)
+	}
+	if ExitSuspended != 4 {
+		t.Errorf("ExitSuspended = %d, want 4", ExitSuspended)
 	}
 }

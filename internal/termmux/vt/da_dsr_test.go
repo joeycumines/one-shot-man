@@ -250,9 +250,11 @@ func TestCSI_DSR_BatchWrite(t *testing.T) {
 
 func TestDA1_ResponseNoFalseCapabilities(t *testing.T) {
 	// DA1 must NOT claim capabilities the terminal doesn't implement.
-	// False claims: 1(132-col), 2(printer), 6(selective erase),
-	// 9(NRCS), 15(tech charset), 16(locator), 17(state interworking),
-	// 18(user windows), 21(horizontal scroll).
+	// False claims: 1(132-col), 2(printer), 6(selective erase — no
+	// DECSCA protection attribute, no isPrivate handling for J/K),
+	// 7(soft fonts), 9(NRCS), 12(SCS), 15(tech charset), 16(locator),
+	// 17(state interworking), 18(user windows), 21(horizontal scroll),
+	// 28(rectangular area ops).
 	// True claims: 64(VT220), 22(ANSI color).
 	v := NewVTerm(24, 80)
 	var response []byte
@@ -272,12 +274,153 @@ func TestDA1_ResponseNoFalseCapabilities(t *testing.T) {
 	}
 
 	// Verify no false capability digits appear in the response.
-	falseCaps := []string{"1;", "2;", "6;", "9;", "15;", "16;", "17;", "18;", "21;"}
+	falseCaps := []string{"1;", "2;", "6;", "7;", "9;", "12;", "15;", "16;", "17;", "18;", "21;", "28;"}
 	for _, cap := range falseCaps {
 		if strings.Contains(got, cap) {
 			t.Errorf("DA1 response contains false capability %q", cap)
 		}
 	}
+}
+
+// TestDA1_Attribute64_VT220Base verifies attribute 64 (VT220 base)
+// is backed by working VT220-level features.
+func TestDA1_Attribute64_VT220Base(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := NewCSIHandler()
+
+	// CUP — cursor positioning
+	h.Dispatch(scr, 'H', []int{5, 10}, false)
+	if scr.CurRow != 4 || scr.CurCol != 9 {
+		t.Fatalf("CUP: want (4,9), got (%d,%d)", scr.CurRow, scr.CurCol)
+	}
+
+	// DECSTBM — set scrolling region
+	h.Dispatch(scr, 'r', []int{3, 20}, false)
+	if scr.ScrollTop != 3 || scr.ScrollBot != 20 {
+		t.Fatalf("DECSTBM: want (3,20), got (%d,%d)", scr.ScrollTop, scr.ScrollBot)
+	}
+
+	// DECOM — origin mode
+	h.Dispatch(scr, 'h', []int{6}, true)
+	if !scr.OriginMode {
+		t.Fatal("DECOM: expected OriginMode=true")
+	}
+	h.Dispatch(scr, 'l', []int{6}, true)
+	if scr.OriginMode {
+		t.Fatal("DECOM reset: expected OriginMode=false")
+	}
+
+	// IL/DL — insert/delete lines
+	scr.CurRow = 5
+	scr.CurCol = 0
+	h.Dispatch(scr, 'L', []int{1}, false)
+	h.Dispatch(scr, 'M', []int{1}, false)
+
+	// ICH/DCH — insert/delete characters
+	h.Dispatch(scr, '@', []int{1}, false)
+	h.Dispatch(scr, 'P', []int{1}, false)
+
+	// ED/EL — erase display/line
+	h.Dispatch(scr, 'J', []int{2}, false)
+	h.Dispatch(scr, 'K', []int{2}, false)
+
+	// SGR — set graphic rendition
+	h.Dispatch(scr, 'm', []int{1}, false)
+	if !scr.CurAttr.Bold {
+		t.Fatal("SGR bold: expected Bold=true")
+	}
+	h.Dispatch(scr, 'm', []int{0}, false)
+	if scr.CurAttr.Bold {
+		t.Fatal("SGR reset: expected Bold=false")
+	}
+
+	// DECAWM — auto-wrap mode
+	h.Dispatch(scr, 'h', []int{7}, true)
+	if !scr.AutoWrap {
+		t.Fatal("DECAWM: expected AutoWrap=true")
+	}
+	h.Dispatch(scr, 'l', []int{7}, true)
+	if scr.AutoWrap {
+		t.Fatal("DECAWM reset: expected AutoWrap=false")
+	}
+
+	// DECSC/DECRC — save/restore cursor (CSI s/u)
+	h.Dispatch(scr, 'H', []int{3, 7}, false)
+	h.Dispatch(scr, 's', nil, false)
+	h.Dispatch(scr, 'H', []int{1, 1}, false)
+	h.Dispatch(scr, 'u', nil, false)
+	if scr.CurRow != 2 || scr.CurCol != 6 {
+		t.Fatalf("DECSC/DECRC: want (2,6), got (%d,%d)", scr.CurRow, scr.CurCol)
+	}
+}
+
+// TestDA1_Attribute22_ANSIColor verifies attribute 22 (ANSI color)
+// is backed by working color support.
+func TestDA1_Attribute22_ANSIColor(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := NewCSIHandler()
+
+	// SGR 30-37: 8-color foreground
+	h.Dispatch(scr, 'm', []int{31}, false)
+	if scr.CurAttr.FG.kind != kind8 || scr.CurAttr.FG.value != 1 {
+		t.Fatalf("FG 8-color: want kind8 value=1, got kind=%d value=%d", scr.CurAttr.FG.kind, scr.CurAttr.FG.value)
+	}
+
+	// SGR 40-47: 8-color background
+	h.Dispatch(scr, 'm', []int{44}, false)
+	if scr.CurAttr.BG.kind != kind8 || scr.CurAttr.BG.value != 4 {
+		t.Fatalf("BG 8-color: want kind8 value=4, got kind=%d value=%d", scr.CurAttr.BG.kind, scr.CurAttr.BG.value)
+	}
+
+	// SGR 90-97: bright foreground
+	h.Dispatch(scr, 'm', []int{0}, false)
+	h.Dispatch(scr, 'm', []int{91}, false)
+	if scr.CurAttr.FG.kind != kind8 || scr.CurAttr.FG.value != 9 {
+		t.Fatalf("FG bright: want kind8 value=9, got kind=%d value=%d", scr.CurAttr.FG.kind, scr.CurAttr.FG.value)
+	}
+
+	// SGR 38;5;n: 256-color foreground
+	h.Dispatch(scr, 'm', []int{0}, false)
+	h.Dispatch(scr, 'm', []int{38, 5, 123}, false)
+	if scr.CurAttr.FG.kind != kind256 || scr.CurAttr.FG.value != 123 {
+		t.Fatalf("FG 256-color: want kind256 value=123, got kind=%d value=%d", scr.CurAttr.FG.kind, scr.CurAttr.FG.value)
+	}
+
+	// SGR 38;2;r;g;b: truecolor foreground
+	h.Dispatch(scr, 'm', []int{0}, false)
+	h.Dispatch(scr, 'm', []int{38, 2, 255, 100, 0}, false)
+	if scr.CurAttr.FG.kind != kindRGB {
+		t.Fatalf("FG truecolor: want kindRGB, got kind=%d", scr.CurAttr.FG.kind)
+	}
+
+	// Color attributes are applied to cells on write
+	h.Dispatch(scr, 'm', []int{32}, false)
+	scr.PutChar('X')
+	if scr.Cells[0][0].Attr.FG.kind != kind8 || scr.Cells[0][0].Attr.FG.value != 2 {
+		t.Fatalf("cell color: want kind8 value=2, got kind=%d value=%d", scr.Cells[0][0].Attr.FG.kind, scr.Cells[0][0].Attr.FG.value)
+	}
+}
+
+// TestDA1_SelectiveEraseNotImplemented confirms attribute 6 (selective
+// erase) must not be claimed: CSI ?J/?K fall through to regular ED/EL
+// (no isPrivate check), and there is no DECSCA protection attribute.
+func TestDA1_SelectiveEraseNotImplemented(t *testing.T) {
+	scr := NewScreen(24, 80)
+	h := NewCSIHandler()
+
+	scr.PutChar('A')
+	scr.CurRow = 0
+	scr.CurCol = 0
+
+	// DECSED (CSI ?J) — isPrivate=true but J handler ignores it,
+	// dispatching regular ED instead of selective erase.
+	h.Dispatch(scr, 'J', []int{0}, true)
+
+	// DECSEL (CSI ?K) — same: isPrivate ignored, regular EL runs.
+	scr.Cells[0][0] = Cell{Ch: 'B'}
+	scr.CurRow = 0
+	scr.CurCol = 0
+	h.Dispatch(scr, 'K', []int{0}, true)
 }
 
 func TestCSI_DA1_AfterContent(t *testing.T) {

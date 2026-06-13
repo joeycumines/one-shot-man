@@ -32,6 +32,11 @@ type PassthroughOptions struct {
 	ToggleKey byte
 	// TermState abstracts terminal state operations (MakeRaw, Restore, GetSize).
 	TermState ptyio.TermState
+	// SignalChild, when non-nil, forwards signals to the child process during
+	// passthrough. Supported signal names: "SIGINT", "SIGQUIT", "SIGTSTP".
+	// On SIGTSTP, passthrough exits with ExitSuspended after forwarding the
+	// signal. On Windows, this field is unused (no SIGTSTP).
+	SignalChild func(sig string) error
 }
 
 // ResizeConfig holds resize and screen restoration plumbing used by

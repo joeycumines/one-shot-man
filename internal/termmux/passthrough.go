@@ -179,6 +179,11 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 		PreProcess: preProcess,
 	})
 
+	// ── Signal forwarding (SIGINT, SIGQUIT, SIGTSTP) ────────────────
+	sigResultCh := make(chan signalResult, 1)
+	sigCancel := watchSignals(ctx, sigResultCh, cfg.SignalChild)
+	defer sigCancel()
+
 	// ── Wait for exit signal ────────────────────────────────────────
 	for {
 		select {
@@ -201,6 +206,10 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 				fwdCancel()
 				return ExitChildExit, nil
 			}
+		case sr := <-sigResultCh:
+			sigCancel()
+			fwdCancel()
+			return sr.reason, sr.err
 		case <-ctx.Done():
 			fwdCancel()
 			return ExitContext, ctx.Err()

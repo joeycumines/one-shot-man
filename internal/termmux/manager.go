@@ -1011,27 +1011,27 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 
 	// Publish a new immutable snapshot.
 	m.snapshotGen++
-	curRow, curCol := ms.vterm.CursorPosition()
+	vs := ms.vterm.Snapshot()
 	snap := &ScreenSnapshot{
 		Gen:                m.snapshotGen,
-		PlainText:          ms.vterm.String(),
-		ANSI:               ms.vterm.ContentANSI(),
-		FullScreen:         ms.vterm.RenderFullScreen(),
+		PlainText:          vs.PlainText,
+		ANSI:               vs.ANSI,
+		FullScreen:         vs.FullScreen,
 		Rows:               m.termRows,
 		Cols:               m.termCols,
-		CursorRow:          curRow,
-		CursorCol:          curCol,
-		MouseTracking:      int(ms.vterm.MouseTracking()),
-		MouseSGR:           ms.vterm.MouseSGR(),
-		InsertMode:         ms.vterm.InsertMode(),
-		BracketedPaste:     ms.vterm.BracketedPaste(),
-		ApplicationCursor:  ms.vterm.ApplicationCursor(),
-		KeypadApplication:  ms.vterm.KeypadApplication(),
-		CursorShape:        ms.vterm.CursorShape(),
-		FocusReporting:     ms.vterm.FocusReporting(),
-		SynchronizedOutput: ms.vterm.SynchronizedOutput(),
-		AutoWrap:           ms.vterm.AutoWrap(),
-		LineFeedNewLine:    ms.vterm.LineFeedNewLine(),
+		CursorRow:          vs.CurRow,
+		CursorCol:          vs.CurCol,
+		MouseTracking:      int(vs.MouseTracking),
+		MouseSGR:           vs.MouseSGR,
+		InsertMode:         vs.InsertMode,
+		BracketedPaste:     vs.BracketedPaste,
+		ApplicationCursor:  vs.ApplicationCursor,
+		KeypadApplication:  vs.KeypadApplication,
+		CursorShape:        vs.CursorShape,
+		FocusReporting:     vs.FocusReporting,
+		SynchronizedOutput: vs.SynchronizedOutput,
+		AutoWrap:           vs.AutoWrap,
+		LineFeedNewLine:    vs.LineFeedNewLine,
 		Timestamp:          time.Now(),
 	}
 	ms.snapshot.Store(snap)
@@ -1042,7 +1042,7 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 	// disabled. The next output chunk that turns off synchronized output
 	// will naturally emit the event since SynchronizedOutput() returns
 	// false after the VTerm processes the DECRST ?2026l.
-	if !ms.vterm.SynchronizedOutput() {
+	if !vs.SynchronizedOutput {
 		m.eventBus.emitData(EventSessionOutput, so.id, so.data)
 	}
 }

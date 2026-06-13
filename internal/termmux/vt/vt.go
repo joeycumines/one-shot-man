@@ -378,6 +378,66 @@ func (v *VTerm) reset() {
 	v.utf8 = UTF8Accum{}
 }
 
+// VTermSnapshot holds a point-in-time capture of all VTerm state produced
+// by a single lock acquisition and cell-grid traversal. It replaces the
+// pattern of calling String(), ContentANSI(), RenderFullScreen(), and
+// individual mode queries — each of which acquires the mutex independently.
+type VTermSnapshot struct {
+	PlainText  string // plain-text content (no ANSI sequences)
+	ANSI       string // SGR-styled content (no positioning/erase sequences)
+	FullScreen string // full CUP+EL+SGR output for flicker-free restoration
+	Rows       int
+	Cols       int
+	CurRow     int
+	CurCol     int
+
+	// Mode state captured under the same lock.
+	MouseTracking      MouseTrackingMode
+	MouseSGR           bool
+	HighlightTracking  bool
+	InsertMode         bool
+	BracketedPaste     bool
+	CursorShape        int
+	FocusReporting     bool
+	ApplicationCursor  bool
+	KeypadApplication  bool
+	AutoWrap           bool
+	LineFeedNewLine    bool
+	SynchronizedOutput bool
+}
+
+// Snapshot acquires v.mu once, walks the cell grid once (producing plain
+// text, ANSI, and full-screen representations in a single pass), and reads
+// all mode state under the same lock. This eliminates the 14+ independent
+// mutex acquisitions that result from calling String(), ContentANSI(),
+// RenderFullScreen(), and individual mode queries separately.
+func (v *VTerm) Snapshot() *VTermSnapshot {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	snap := &VTermSnapshot{
+		Rows:               v.active.Rows,
+		Cols:               v.active.Cols,
+		CurRow:             v.active.CurRow,
+		CurCol:             v.active.CurCol,
+		MouseTracking:      v.active.MouseTracking,
+		MouseSGR:           v.active.MouseSGR,
+		HighlightTracking:  v.active.HighlightTracking,
+		InsertMode:         v.active.InsertMode,
+		BracketedPaste:     v.active.BracketedPaste,
+		CursorShape:        v.active.CursorShape,
+		FocusReporting:     v.active.FocusReporting,
+		ApplicationCursor:  v.active.ApplicationCursor,
+		KeypadApplication:  v.active.KeypadApplication,
+		AutoWrap:           v.active.AutoWrap,
+		LineFeedNewLine:    v.active.LineFeedNewLine,
+		SynchronizedOutput: v.active.SynchronizedOutput,
+	}
+
+	snap.PlainText, snap.ANSI, snap.FullScreen = RenderAll(v.active)
+	return snap
+}
+
 // RenderFullScreen returns ANSI output that overwrites every row in-place
 // without first clearing the screen. This is the flicker-free path for
 // restoring a VTerm buffer to the terminal during panel/mode toggle.

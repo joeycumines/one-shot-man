@@ -332,10 +332,10 @@ func (m *Model) View() tea.View {
 	}
 
 	// Render the full screen content.
-	content := m.snap.FullScreen
+	content := m.snap.GetFullScreen()
 	if content == "" {
 		// Fallback to ANSI if FullScreen is empty.
-		content = m.snap.ANSI
+		content = m.snap.GetANSI()
 	}
 
 	// Build cursor position offset by bounds.

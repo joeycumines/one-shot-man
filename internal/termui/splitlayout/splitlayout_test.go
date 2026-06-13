@@ -110,7 +110,7 @@ func startTestManager(t *testing.T, sessionCount int) (*termmux.SessionManager, 
 		deadline := time.After(2 * time.Second)
 		for {
 			snap := m.Snapshot(id)
-			if snap != nil && strings.Contains(snap.PlainText, "ready") {
+			if snap != nil && strings.Contains(snap.GetPlainText(), "ready") {
 				break
 			}
 			select {
@@ -471,7 +471,7 @@ func TestSplitLayout_View_WithPanes(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := mgr.Snapshot(ids[0])
-		if snap != nil && strings.Contains(snap.PlainText, "hello") {
+		if snap != nil && strings.Contains(snap.GetPlainText(), "hello") {
 			break
 		}
 		select {

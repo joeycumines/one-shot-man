@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 
@@ -770,4 +771,348 @@ func TestModule_SplitLayout_OffsetMouse(t *testing.T) {
 	if !goja.IsNull(v) {
 		t.Errorf("outside: expected null, got %v", v)
 	}
+}
+
+// ── UnwrapSessionManager tests ──────────────────────────
+
+func TestUnwrapSessionManager_ValidWrapper(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runtime := goja.New()
+	mgr := parent.NewSessionManager()
+	wrapper := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	obj := wrapper.(*goja.Object)
+
+	got := UnwrapSessionManager(obj)
+	if got == nil {
+		t.Fatal("UnwrapSessionManager returned nil for valid wrapper")
+	}
+	if got != mgr {
+		t.Error("UnwrapSessionManager returned different *SessionManager pointer")
+	}
+}
+
+func TestUnwrapSessionManager_MissingKey(t *testing.T) {
+	t.Parallel()
+
+	runtime := goja.New()
+	obj := runtime.NewObject()
+
+	got := UnwrapSessionManager(obj)
+	if got != nil {
+		t.Errorf("UnwrapSessionManager returned %v for object without _goSessionManager, want nil", got)
+	}
+}
+
+func TestUnwrapSessionManager_WrongType(t *testing.T) {
+	t.Parallel()
+
+	runtime := goja.New()
+	obj := runtime.NewObject()
+	_ = obj.Set("_goSessionManager", "not-a-session-manager")
+
+	got := UnwrapSessionManager(obj)
+	if got != nil {
+		t.Errorf("UnwrapSessionManager returned %v for wrong-type key, want nil", got)
+	}
+}
+
+// ── _goSessionManager property protection tests ─────────
+
+func TestSessionManager_NonEnumerableKey(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runtime := goja.New()
+	mgr := parent.NewSessionManager()
+	wrapper := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	_ = runtime.Set("mux", wrapper)
+
+	v, err := runtime.RunString(`Object.keys(mux).indexOf('_goSessionManager')`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if v.ToInteger() >= 0 {
+		t.Error("_goSessionManager should not appear in Object.keys()")
+	}
+}
+
+func TestSessionManager_NonWritableKey(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runtime := goja.New()
+	mgr := parent.NewSessionManager()
+	wrapper := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	_ = runtime.Set("mux", wrapper)
+
+	_, err := runtime.RunString(`mux._goSessionManager = 'overwritten'`)
+	if err == nil {
+		v := wrapper.(*goja.Object).Get("_goSessionManager")
+		if v == nil || goja.IsUndefined(v) || v.Export() == "overwritten" {
+			t.Error("_goSessionManager should not be overwritable from JS")
+		}
+	}
+}
+
+// ── newSessionManager JS binding tests ───────────────────
+
+func TestNewSessionManager_CreatesManager(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns Goja runtime")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runtime, exports := testRequireCtx(t, ctx)
+	_ = runtime.Set("tm", exports)
+
+	v, err := runtime.RunString(`tm.newSessionManager()`)
+	if err != nil {
+		t.Fatalf("newSessionManager(): %v", err)
+	}
+	obj, ok := v.(*goja.Object)
+	if !ok {
+		t.Fatalf("newSessionManager() returned %T, want *goja.Object", v)
+	}
+
+	methods := []string{
+		"run", "close", "started",
+		"register", "unregister", "activate",
+		"input", "resize", "termSize",
+		"activeID", "sessions",
+		"on", "off", "pollEvents",
+		"session", "attach", "detach", "hasChild",
+	}
+	for _, m := range methods {
+		prop := obj.Get(m)
+		if prop == nil || goja.IsUndefined(prop) {
+			t.Errorf("missing method %q on SessionManager wrapper", m)
+		}
+	}
+}
+
+func TestNewSessionManager_WithOptions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns Goja runtime and SessionManager")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runtime, exports := testRequireCtx(t, ctx)
+	_ = runtime.Set("tm", exports)
+
+	v, err := runtime.RunString(`tm.newSessionManager({rows: 40, cols: 120})`)
+	if err != nil {
+		t.Fatalf("newSessionManager({rows:40,cols:120}): %v", err)
+	}
+	_ = runtime.Set("mux", v)
+
+	_, err = runtime.RunString(`mux.run()`)
+	if err != nil {
+		t.Fatalf("run(): %v", err)
+	}
+	started, err := runtime.RunString(`mux.started()`)
+	if err != nil {
+		t.Fatalf("started(): %v", err)
+	}
+	if !started.ToBoolean() {
+		t.Fatal("manager did not start")
+	}
+
+	ts, err := runtime.RunString(`mux.termSize()`)
+	if err != nil {
+		t.Fatalf("termSize(): %v", err)
+	}
+	tsObj := ts.ToObject(runtime)
+	rows := tsObj.Get("rows").ToInteger()
+	cols := tsObj.Get("cols").ToInteger()
+	if rows != 40 || cols != 120 {
+		t.Errorf("termSize = (%d, %d), want (40, 120)", rows, cols)
+	}
+}
+
+func TestNewSessionManager_NoArgs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns Goja runtime and SessionManager")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runtime, exports := testRequireCtx(t, ctx)
+	_ = runtime.Set("tm", exports)
+
+	v, err := runtime.RunString(`tm.newSessionManager()`)
+	if err != nil {
+		t.Fatalf("newSessionManager(): %v", err)
+	}
+	_ = runtime.Set("mux", v)
+
+	_, err = runtime.RunString(`mux.run()`)
+	if err != nil {
+		t.Fatalf("run(): %v", err)
+	}
+	started, err := runtime.RunString(`mux.started()`)
+	if err != nil {
+		t.Fatalf("started(): %v", err)
+	}
+	if !started.ToBoolean() {
+		t.Fatal("manager did not start")
+	}
+
+	ts, err := runtime.RunString(`mux.termSize()`)
+	if err != nil {
+		t.Fatalf("termSize(): %v", err)
+	}
+	tsObj := ts.ToObject(runtime)
+	rows := tsObj.Get("rows").ToInteger()
+	cols := tsObj.Get("cols").ToInteger()
+	if rows == 0 || cols == 0 {
+		t.Errorf("default termSize = (%d, %d), expected non-zero defaults", rows, cols)
+	}
+}
+
+// ── Event bridge tests ──────────────────────────────────
+
+func TestEventBridge_GoEventsToJSCallbacks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mgr := parent.NewSessionManager()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+
+	runtime := goja.New()
+	wrapper := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	_ = runtime.Set("mux", wrapper)
+
+	_, err := runtime.RunString(`
+		var registeredEvents = [];
+		mux.on('registered', function(data) {
+			registeredEvents.push(data);
+		});
+	`)
+	if err != nil {
+		t.Fatalf("setup on(): %v", err)
+	}
+
+	rec := newRecordingStringIO()
+	sio := parent.NewStringIOSession(rec)
+	sio.Start()
+	id, err := mgr.Register(sio, parent.SessionTarget{Name: "test", Kind: "pty"})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_, _ = runtime.RunString(`mux.pollEvents()`)
+		v, checkErr := runtime.RunString(`registeredEvents.length`)
+		if checkErr != nil {
+			t.Fatalf("check length: %v", checkErr)
+		}
+		if v.ToInteger() >= 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for registered event")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	v, err := runtime.RunString(`registeredEvents[0].sessionId`)
+	if err != nil {
+		t.Fatalf("check sessionId: %v", err)
+	}
+	if v.ToInteger() != int64(id) {
+		t.Errorf("sessionId = %d, want %d", v.ToInteger(), id)
+	}
+
+	cancel()
+	<-errCh
+}
+
+// ── Session lifecycle through JS ─────────────────────────
+
+func TestSessionManager_BasicLifecycle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mgr := parent.NewSessionManager()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+
+	runtime := goja.New()
+	wrapper := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	_ = runtime.Set("mux", wrapper)
+
+	rec := newRecordingStringIO()
+	sio := parent.NewStringIOSession(rec)
+	sio.Start()
+	sessionWrapper := wrapInteractiveSession(runtime, sio, parent.SessionKindCapture)
+	_ = runtime.Set("session", sessionWrapper)
+
+	v, err := runtime.RunString(`mux.register(session, {name: 'test', kind: 'pty'})`)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	sessionID := v.ToInteger()
+	if sessionID == 0 {
+		t.Fatal("register returned 0")
+	}
+
+	_, err = runtime.RunString(fmt.Sprintf(`mux.activate(%d)`, sessionID))
+	if err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+
+	_, err = runtime.RunString(`session.write('hello world')`)
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if len(rec.sent) != 1 || rec.sent[0] != "hello world" {
+		t.Errorf("expected sent=['hello world'], got %v", rec.sent)
+	}
+
+	_, err = runtime.RunString(`mux.resize(50, 120)`)
+	if err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+
+	ts, err := runtime.RunString(`mux.termSize()`)
+	if err != nil {
+		t.Fatalf("termSize: %v", err)
+	}
+	tsObj := ts.ToObject(runtime)
+	if tsObj.Get("rows").ToInteger() != 50 || tsObj.Get("cols").ToInteger() != 120 {
+		t.Errorf("termSize = (%d, %d), want (50, 120)", tsObj.Get("rows").ToInteger(), tsObj.Get("cols").ToInteger())
+	}
+
+	_, err = runtime.RunString(`session.close()`)
+	if err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	cancel()
+	<-errCh
 }

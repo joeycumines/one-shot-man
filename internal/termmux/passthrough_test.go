@@ -416,7 +416,7 @@ func TestSessionManager_Passthrough_RestoreScreen(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && strings.Contains(snap.PlainText, "screen-content") {
+		if snap != nil && strings.Contains(snap.GetPlainText(), "screen-content") {
 			break
 		}
 		select {
@@ -585,7 +585,7 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && strings.Contains(snap.PlainText, "restore-me") {
+		if snap != nil && strings.Contains(snap.GetPlainText(), "restore-me") {
 			break
 		}
 		select {

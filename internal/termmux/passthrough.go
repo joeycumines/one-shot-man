@@ -82,8 +82,8 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 	if cfg.RestoreScreen {
 		// Restore the active session's VTerm screen in-place.
 		snap := m.Snapshot(activeID)
-		if snap != nil && snap.FullScreen != "" {
-			if err := writeOrLog(cfg.Stdout, []byte(snap.FullScreen), "vterm-restore"); err != nil {
+		if snap != nil && snap.GetFullScreen() != "" {
+			if err := writeOrLog(cfg.Stdout, []byte(snap.GetFullScreen()), "vterm-restore"); err != nil {
 				return ExitError, err
 			}
 		}

@@ -391,6 +391,11 @@ type VTermSnapshot struct {
 	CurRow     int
 	CurCol     int
 
+	// DirtyMin and DirtyMax are the inclusive range of rows that changed
+	// since the previous snapshot, or -1,-1 if nothing changed.
+	DirtyMin int
+	DirtyMax int
+
 	// Mode state captured under the same lock.
 	MouseTracking      MouseTrackingMode
 	MouseSGR           bool
@@ -415,26 +420,33 @@ func (v *VTerm) Snapshot() *VTermSnapshot {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
+	scr := v.active
+	dirtyMin, dirtyMax := scr.DirtyRange()
+
 	snap := &VTermSnapshot{
-		Rows:               v.active.Rows,
-		Cols:               v.active.Cols,
-		CurRow:             v.active.CurRow,
-		CurCol:             v.active.CurCol,
-		MouseTracking:      v.active.MouseTracking,
-		MouseSGR:           v.active.MouseSGR,
-		HighlightTracking:  v.active.HighlightTracking,
-		InsertMode:         v.active.InsertMode,
-		BracketedPaste:     v.active.BracketedPaste,
-		CursorShape:        v.active.CursorShape,
-		FocusReporting:     v.active.FocusReporting,
-		ApplicationCursor:  v.active.ApplicationCursor,
-		KeypadApplication:  v.active.KeypadApplication,
-		AutoWrap:           v.active.AutoWrap,
-		LineFeedNewLine:    v.active.LineFeedNewLine,
-		SynchronizedOutput: v.active.SynchronizedOutput,
+		Rows:               scr.Rows,
+		Cols:               scr.Cols,
+		CurRow:             scr.CurRow,
+		CurCol:             scr.CurCol,
+		DirtyMin:           dirtyMin,
+		DirtyMax:           dirtyMax,
+		MouseTracking:      scr.MouseTracking,
+		MouseSGR:           scr.MouseSGR,
+		HighlightTracking:  scr.HighlightTracking,
+		InsertMode:         scr.InsertMode,
+		BracketedPaste:     scr.BracketedPaste,
+		CursorShape:        scr.CursorShape,
+		FocusReporting:     scr.FocusReporting,
+		ApplicationCursor:  scr.ApplicationCursor,
+		KeypadApplication:  scr.KeypadApplication,
+		AutoWrap:           scr.AutoWrap,
+		LineFeedNewLine:    scr.LineFeedNewLine,
+		SynchronizedOutput: scr.SynchronizedOutput,
 	}
 
-	snap.PlainText, snap.ANSI, snap.FullScreen = RenderAll(v.active)
+	snap.PlainText, snap.ANSI, snap.FullScreen = RenderAll(scr)
+
+	scr.ClearDirty()
 	return snap
 }
 

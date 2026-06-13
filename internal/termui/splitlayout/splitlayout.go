@@ -3,7 +3,7 @@
 // and FocusGroup packages. Each pane is a lightweight struct tracking a
 // session ID, bounds, and last generation — NOT a full termpane.Model.
 //
-// Pane content uses snap.ANSI (NOT FullScreen) to avoid CUP sequences that
+// Pane content uses snap.GetANSI() (NOT GetFullScreen()) to avoid CUP sequences that
 // break compositing. Only the focused pane's cursor is rendered as a
 // tea.Cursor; unfocused pane cursors are rendered as dim block characters
 // within the cell content.
@@ -554,7 +554,7 @@ func (sl *SplitLayout) refreshPanes() {
 			continue
 		}
 		// Use ANSI (NOT FullScreen) — FullScreen has CUP sequences that break compositing.
-		sl.comp.UpdatePaneIfNew(sessionIDStr(sl.panes[i].ID), snap.ANSI, snap.Gen)
+		sl.comp.UpdatePaneIfNew(sessionIDStr(sl.panes[i].ID), snap.GetANSI(), snap.Gen)
 		sl.panes[i].LastGen = snap.Gen
 	}
 }
@@ -571,7 +571,7 @@ func (sl *SplitLayout) View() tea.View {
 		if snap == nil {
 			continue
 		}
-		sl.comp.UpdatePaneIfNew(sessionIDStr(sl.panes[i].ID), snap.ANSI, snap.Gen)
+		sl.comp.UpdatePaneIfNew(sessionIDStr(sl.panes[i].ID), snap.GetANSI(), snap.Gen)
 		sl.panes[i].LastGen = snap.Gen
 	}
 

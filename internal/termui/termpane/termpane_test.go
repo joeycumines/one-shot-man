@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux"
+	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 	"github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 )
 
@@ -100,7 +101,7 @@ func startTestManager(t *testing.T) (*termmux.SessionManager, *controllableSessi
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && strings.Contains(snap.PlainText, "ready") {
+		if snap != nil && strings.Contains(snap.GetPlainText(), "ready") {
 			break
 		}
 		select {
@@ -220,7 +221,7 @@ func TestView_UpdatedContent(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := mgr.Snapshot(sid)
-		if snap != nil && strings.Contains(snap.PlainText, "updated") {
+		if snap != nil && strings.Contains(snap.GetPlainText(), "updated") {
 			break
 		}
 		select {
@@ -262,15 +263,11 @@ func TestView_CursorPosition(t *testing.T) {
 	defer model.Close()
 
 	// Manually set a snapshot with known cursor position.
+	scr := vt.NewScreen(10, 40)
+	scr.CurRow = 2
+	scr.CurCol = 10
 	model.mu.Lock()
-	model.snap = &termmux.ScreenSnapshot{
-		Gen:        999,
-		FullScreen: "test content",
-		Rows:       10,
-		Cols:       40,
-		CursorRow:  2,
-		CursorCol:  10,
-	}
+	model.snap = termmux.NewScreenSnapshot(999, scr, 10, 40, time.Now())
 	model.cachedGen = 0 // Force re-render.
 	model.mu.Unlock()
 
@@ -306,15 +303,11 @@ func TestView_CursorOutsideBounds(t *testing.T) {
 	defer model.Close()
 
 	// Cursor at row 50 — outside the 10-row pane.
+	scr := vt.NewScreen(24, 80)
+	scr.CurRow = 50
+	scr.CurCol = 0
 	model.mu.Lock()
-	model.snap = &termmux.ScreenSnapshot{
-		Gen:        998,
-		FullScreen: "test",
-		Rows:       24,
-		Cols:       80,
-		CursorRow:  50,
-		CursorCol:  0,
-	}
+	model.snap = termmux.NewScreenSnapshot(998, scr, 24, 80, time.Now())
 	model.cachedGen = 0
 	model.mu.Unlock()
 

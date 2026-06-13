@@ -12,10 +12,17 @@ import (
 // (using nil TerminalOPSProvider so it falls back to os.Stdin/os.Stdout).
 func testRequire(t *testing.T) (*goja.Runtime, *goja.Object) {
 	t.Helper()
+	return testRequireCtx(t, context.Background())
+}
+
+// testRequireCtx is like testRequire but accepts a context for cleanup.
+// Use a cancellable context when creating SessionManagers to avoid goroutine leaks.
+func testRequireCtx(t *testing.T, ctx context.Context) (*goja.Runtime, *goja.Object) {
+	t.Helper()
 	runtime := goja.New()
 	registry := require.NewRegistry()
 
-	registry.RegisterNativeModule("osm:termmux", Require(context.Background(), nil, nil))
+	registry.RegisterNativeModule("osm:termmux", Require(ctx, nil, nil))
 	registry.Enable(runtime)
 
 	v, err := runtime.RunString(`require('osm:termmux')`)

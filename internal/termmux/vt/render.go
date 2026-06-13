@@ -108,6 +108,71 @@ func RenderContentANSI(scr *Screen) string {
 	return b.String()
 }
 
+// RenderContentANSIDirty produces ANSI-styled content for only the rows in
+// the dirty range [dirtyMin, dirtyMax] (inclusive). Rows before dirtyMin are
+// emitted as empty lines (just a newline) to preserve line alignment. Rows
+// after dirtyMax are omitted entirely. When dirtyMin == -1 (clean screen),
+// it returns an empty string.
+//
+// This is the incremental counterpart to RenderContentANSI — callers can
+// replace the corresponding lines in a cached full render with the output
+// of this function, avoiding a full cell-grid walk for small edits.
+func RenderContentANSIDirty(scr *Screen, dirtyMin, dirtyMax int) string {
+	if dirtyMin < 0 || dirtyMax < 0 {
+		return ""
+	}
+	if dirtyMin >= scr.Rows {
+		return ""
+	}
+	if dirtyMax >= scr.Rows {
+		dirtyMax = scr.Rows - 1
+	}
+
+	var b strings.Builder
+	var prevAttr Attr
+
+	// Emit empty lines for rows before the dirty range to preserve alignment.
+	for r := 0; r < dirtyMin; r++ {
+		if r > 0 {
+			b.WriteByte('\n')
+		}
+	}
+
+	for r := dirtyMin; r <= dirtyMax; r++ {
+		if r > 0 {
+			b.WriteByte('\n')
+		}
+
+		last := -1
+		for c := scr.Cols - 1; c >= 0; c-- {
+			cell := scr.Cells[r][c]
+			if cell.Ch != ' ' || !cell.Attr.IsZero() {
+				last = c
+				break
+			}
+		}
+
+		if last >= 0 {
+			for c := 0; c <= last; c++ {
+				cell := scr.Cells[r][c]
+				if cell.SecondHalf {
+					continue
+				}
+				diff := SGRDiff(prevAttr, cell.Attr)
+				if diff != "" {
+					b.WriteString(diff)
+				}
+				prevAttr = cell.Attr
+				b.WriteRune(cell.Ch)
+			}
+			b.WriteString("\x1b[0m")
+			prevAttr = Attr{}
+		}
+	}
+
+	return b.String()
+}
+
 // RenderAll produces all three screen representations in a single cell-grid
 // traversal: plain text, ANSI-styled content, and full-screen CUP+EL output.
 // This avoids the 3× cell-grid walk of calling String(), RenderContentANSI(),

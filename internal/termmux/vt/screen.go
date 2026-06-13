@@ -33,6 +33,7 @@ func (s *Screen) FillScreen(ch rune) {
 	for i := range s.RowWrapped {
 		s.RowWrapped[i] = false
 	}
+	s.markDirtyRange(0, s.Rows-1)
 }
 
 // lineDrawingMap maps ASCII characters to their VT100 Special Graphics
@@ -237,6 +238,14 @@ type Screen struct {
 	// screen) or simply truncates/extends rows without reflow (false,
 	// alternate screen). Per tmux convention, alternate screen never reflows.
 	ReflowOnResize bool
+
+	// dirtyRowMin and dirtyRowMax track the range of rows that have been
+	// modified since the last ClearDirty() call. A value of -1 means the
+	// screen is clean (no rows modified). markDirty(row) expands the range
+	// to include row. DirtyRange() returns the current range. ClearDirty()
+	// resets both to -1.
+	dirtyRowMin int
+	dirtyRowMax int
 }
 
 // NewScreen creates a new screen buffer with the given dimensions.
@@ -254,6 +263,8 @@ func NewScreen(rows, cols int) *Screen {
 		MaxScrollback: MaxScrollback,
 		RowWrapped:    make([]bool, rows),
 		AutoWrap:      true,
+		dirtyRowMin:   -1,
+		dirtyRowMax:   -1,
 	}
 	s.Cells = make([][]Cell, rows)
 	for i := range s.Cells {
@@ -261,6 +272,36 @@ func NewScreen(rows, cols int) *Screen {
 	}
 	s.TabStops = makeDefaultTabStops(cols)
 	return s
+}
+
+func (s *Screen) markDirty(row int) {
+	if row < 0 || row >= s.Rows {
+		return
+	}
+	if s.dirtyRowMin < 0 || row < s.dirtyRowMin {
+		s.dirtyRowMin = row
+	}
+	if s.dirtyRowMax < 0 || row > s.dirtyRowMax {
+		s.dirtyRowMax = row
+	}
+}
+
+func (s *Screen) markDirtyRange(lo, hi int) {
+	for r := lo; r <= hi; r++ {
+		s.markDirty(r)
+	}
+}
+
+// DirtyRange returns the inclusive range of rows modified since the last
+// ClearDirty() call. Returns -1, -1 when the screen is clean.
+func (s *Screen) DirtyRange() (min, max int) {
+	return s.dirtyRowMin, s.dirtyRowMax
+}
+
+// ClearDirty resets the dirty range so that DirtyRange() returns -1, -1.
+func (s *Screen) ClearDirty() {
+	s.dirtyRowMin = -1
+	s.dirtyRowMax = -1
 }
 
 func makeAttrLine(cols int, a Attr) []Cell {
@@ -345,9 +386,10 @@ func (s *Screen) Resize(rows, cols int) {
 			}
 		}
 		s.TabStops = append(s.TabStops, ext...)
-	} else if cols < len(s.TabStops) {
+	} else 	if cols < len(s.TabStops) {
 		s.TabStops = s.TabStops[:cols]
 	}
+	s.markDirtyRange(0, rows-1)
 }
 
 // resizeSimple truncates or extends rows without reflow (alternate screen).
@@ -600,6 +642,7 @@ func (s *Screen) scrollRegionUp(top, bot, n int) {
 			s.RowWrapped[i] = false
 		}
 	}
+	s.markDirtyRange(top, bot-1)
 }
 
 func (s *Screen) scrollRegionDown(top, bot, n int) {
@@ -620,6 +663,7 @@ func (s *Screen) scrollRegionDown(top, bot, n int) {
 			s.RowWrapped[i] = false
 		}
 	}
+	s.markDirtyRange(top, bot-1)
 }
 
 // pushScrollback adds a row to the scrollback ring buffer. The row is copied
@@ -680,6 +724,7 @@ func (s *Screen) LineFeed() {
 		s.scrollRegionUp(top, bot, 1)
 	} else if s.CurRow < s.Rows-1 {
 		s.CurRow++
+		s.markDirty(s.CurRow)
 	}
 }
 
@@ -736,7 +781,9 @@ func (s *Screen) EraseDisplay(mode int) {
 		s.ScrollbackLen = 0
 		s.ScrollbackHead = 0
 		s.ScrollOffset = 0
+		return
 	}
+	s.markDirtyRange(0, s.Rows-1)
 }
 
 // EraseLine erases part or all of the current line. Mode: 0=cursor to end,
@@ -772,9 +819,10 @@ func (s *Screen) EraseLine(mode int) {
 			s.RowWrapped[s.CurRow+1] = false
 		}
 	}
+	s.markDirty(s.CurRow)
 }
 
-// InsertLines inserts n blank lines at the cursor row within the scroll region.
+// InsertLines inserts n blank lines at the cursor row within the scroll region. inserts n blank lines at the cursor row within the scroll region.
 func (s *Screen) InsertLines(n int) {
 	top, bot := s.ScrollRegion()
 	if s.CurRow < top || s.CurRow >= bot {
@@ -795,6 +843,7 @@ func (s *Screen) InsertLines(n int) {
 		}
 	}
 	s.CurCol = 0
+	s.markDirtyRange(s.CurRow, bot-1)
 }
 
 // DeleteLines deletes n lines at the cursor row within the scroll region.
@@ -818,6 +867,7 @@ func (s *Screen) DeleteLines(n int) {
 		}
 	}
 	s.CurCol = 0
+	s.markDirtyRange(s.CurRow, bot-1)
 }
 
 // repairWideBoundary clears orphaned wide-character halves at the edges of
@@ -936,6 +986,8 @@ func (s *Screen) Snapshot() *Screen {
 		SavedHighlightTracking:      s.SavedHighlightTracking,
 		RowWrapped:                  append([]bool(nil), s.RowWrapped...),
 		ReflowOnResize:              s.ReflowOnResize,
+		dirtyRowMin:                 -1,
+		dirtyRowMax:                 -1,
 	}
 }
 
@@ -998,6 +1050,7 @@ func (s *Screen) PutChar(ch rune) {
 		if s.CurRow >= 0 && s.CurRow < len(s.RowWrapped) {
 			s.RowWrapped[s.CurRow] = true
 		}
+		s.markDirty(s.CurRow)
 	}
 
 	// For wide characters, if we're at cols-1 (only 1 column left),
@@ -1013,6 +1066,7 @@ func (s *Screen) PutChar(ch rune) {
 		if s.CurRow >= 0 && s.CurRow < len(s.RowWrapped) {
 			s.RowWrapped[s.CurRow] = true
 		}
+		s.markDirty(s.CurRow)
 	}
 
 	// Repair wide-char pairs that this write would split.
@@ -1048,6 +1102,7 @@ func (s *Screen) PutChar(ch rune) {
 	} else {
 		s.CurCol = newCol
 	}
+	s.markDirty(s.CurRow)
 }
 
 // PutASCII writes a slice of printable ASCII bytes (0x20-0x7E) directly
@@ -1068,6 +1123,7 @@ func (s *Screen) PutASCII(data []byte) {
 			if s.CurRow >= 0 && s.CurRow < len(s.RowWrapped) {
 				s.RowWrapped[s.CurRow] = true
 			}
+			s.markDirty(s.CurRow)
 		}
 
 		// Write as many chars as fit on the current row.
@@ -1096,6 +1152,7 @@ func (s *Screen) PutASCII(data []byte) {
 		} else {
 			s.CurCol = col
 		}
+		s.markDirty(row)
 	}
 }
 
@@ -1107,6 +1164,7 @@ func (s *Screen) ReverseIndex() {
 		s.ScrollDown(1)
 	} else if s.CurRow > 0 {
 		s.CurRow--
+		s.markDirty(s.CurRow)
 	}
 }
 
@@ -1198,6 +1256,7 @@ func (s *Screen) Clear() {
 	for i := range s.RowWrapped {
 		s.RowWrapped[i] = false
 	}
+	s.markDirtyRange(0, s.Rows-1)
 }
 
 // SoftReset performs DECSTR (soft terminal reset).
@@ -1259,6 +1318,7 @@ func (s *Screen) EraseChars(n int) {
 	for i := s.CurCol; i < end; i++ {
 		s.Cells[s.CurRow][i] = blank
 	}
+	s.markDirty(s.CurRow)
 }
 
 // InsertChars inserts n blank characters at the cursor, shifting existing
@@ -1291,6 +1351,7 @@ func (s *Screen) InsertChars(n int) {
 	for i := 0; i < n; i++ {
 		row[s.CurCol+i] = blank
 	}
+	s.markDirty(s.CurRow)
 }
 
 // DeleteChars deletes n characters at the cursor, shifting remaining
@@ -1318,4 +1379,5 @@ func (s *Screen) DeleteChars(n int) {
 	for i := s.Cols - n; i < s.Cols; i++ {
 		row[i] = blank
 	}
+	s.markDirty(s.CurRow)
 }

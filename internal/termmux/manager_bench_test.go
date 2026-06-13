@@ -95,7 +95,7 @@ func BenchmarkPaneSwitching(b *testing.B) {
 	// Wait for output to be processed by reading a snapshot with content.
 	for {
 		snap := m.Snapshot(id1)
-		if snap != nil && snap.PlainText != "" {
+		if snap != nil && snap.GetPlainText() != "" {
 			break
 		}
 	}
@@ -135,7 +135,7 @@ func BenchmarkSnapshot(b *testing.B) {
 	// Wait for output to be processed.
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && snap.PlainText != "" {
+		if snap != nil && snap.GetPlainText() != "" {
 			break
 		}
 	}

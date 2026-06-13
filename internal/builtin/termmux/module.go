@@ -931,9 +931,9 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		}
 		result := runtime.NewObject()
 		_ = result.Set("gen", snap.Gen)
-		_ = result.Set("plainText", snap.PlainText)
-		_ = result.Set("ansi", snap.ANSI)
-		_ = result.Set("fullScreen", snap.FullScreen)
+		_ = result.Set("plainText", snap.GetPlainText())
+		_ = result.Set("ansi", snap.GetANSI())
+		_ = result.Set("fullScreen", snap.GetFullScreen())
 		_ = result.Set("rows", snap.Rows)
 		_ = result.Set("cols", snap.Cols)
 		_ = result.Set("cursorRow", snap.CursorRow)
@@ -1259,7 +1259,7 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		// Include childOutput (plain text snapshot) on exit.
 		if id := mgr.ActiveID(); id != 0 {
 			if snap := mgr.Snapshot(id); snap != nil {
-				result["childOutput"] = snap.PlainText
+				result["childOutput"] = snap.GetPlainText()
 			}
 		}
 
@@ -1286,7 +1286,7 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		if snap == nil {
 			return ""
 		}
-		return snap.PlainText
+		return snap.GetPlainText()
 	})
 
 	// ── childScreen() → string ───────────────────────────
@@ -1302,7 +1302,7 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		if snap == nil {
 			return ""
 		}
-		return snap.ANSI
+		return snap.GetANSI()
 	})
 
 	// ── writeToChild(data) → number ──────────────────────
@@ -1357,7 +1357,7 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 			if snap == nil {
 				return ""
 			}
-			return snap.PlainText
+			return snap.GetPlainText()
 		})
 
 		_ = sessionObj.Set("screen", func() string {
@@ -1369,7 +1369,7 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 			if snap == nil {
 				return ""
 			}
-			return snap.ANSI
+			return snap.GetANSI()
 		})
 
 		_ = sessionObj.Set("target", func() goja.Value {

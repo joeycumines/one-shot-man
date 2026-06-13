@@ -399,3 +399,67 @@ func BenchmarkVTerm_Snapshot_New(b *testing.B) {
 		_ = v.Snapshot()
 	}
 }
+
+// ── Dirty-region tracking benchmarks ────────────────────────────────
+
+// BenchmarkDirtyRender_SingleCharEdit measures RenderContentANSIDirty
+// output size for a single-character edit (only 1 row dirty).
+func BenchmarkDirtyRender_SingleCharEdit(b *testing.B) {
+	scr := NewScreen(24, 80)
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	scr.ClearDirty()
+
+	scr.PutChar('Z')
+	dirtyMin, dirtyMax := scr.DirtyRange()
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = RenderContentANSIDirty(scr, dirtyMin, dirtyMax)
+	}
+}
+
+// BenchmarkDirtyRender_FullRender measures RenderContentANSI for the
+// same screen (full walk) to compare against the dirty path.
+func BenchmarkDirtyRender_FullRender(b *testing.B) {
+	scr := NewScreen(24, 80)
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		_ = RenderContentANSI(scr)
+	}
+}
+
+// BenchmarkDirtyRender_ByteReduction compares output byte counts between
+// full and dirty renders for a single-character edit.
+func BenchmarkDirtyRender_ByteReduction(b *testing.B) {
+	scr := NewScreen(24, 80)
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	scr.ClearDirty()
+	scr.PutChar('Z')
+	dirtyMin, dirtyMax := scr.DirtyRange()
+
+	fullBytes := len(RenderContentANSI(scr))
+	dirtyBytes := len(RenderContentANSIDirty(scr, dirtyMin, dirtyMax))
+	reduction := float64(fullBytes-dirtyBytes) / float64(fullBytes) * 100
+
+	b.ReportMetric(float64(fullBytes), "full_bytes")
+	b.ReportMetric(float64(dirtyBytes), "dirty_bytes")
+	b.ReportMetric(reduction, "reduction_pct")
+
+	b.ResetTimer()
+	for b.Loop() {
+		_ = RenderContentANSIDirty(scr, dirtyMin, dirtyMax)
+	}
+}

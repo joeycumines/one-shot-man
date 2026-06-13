@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -86,26 +87,30 @@ func (s SessionState) validTransition(next SessionState) bool {
 // goroutine and may be read concurrently by any number of goroutines without
 // synchronization.
 //
-// All fields are value types (string, int, time.Time) — there is no shared
-// mutable state. Callers receive a pointer to an immutable struct.
+// The cell grid is stored as a *vt.Screen and rendered representations
+// (plain text, ANSI, full screen) are computed lazily on first access via
+// GetPlainText, GetANSI, and GetFullScreen. This avoids rendering work on
+// output chunks where no consumer reads the snapshot, reducing memory
+// footprint for unconsumed snapshots to cell-grid size only.
 type ScreenSnapshot struct {
 	// Gen is a monotonically increasing generation counter, incremented
 	// each time the worker publishes a new snapshot for this session.
 	// Consumers can compare generations to detect changes.
 	Gen uint64
 
-	// PlainText is the screen content without ANSI escape sequences.
-	// Suitable for text search, clipboard copy, and plain-text capture.
-	PlainText string
+	// screen holds the cell grid captured from the VTerm. Rendering methods
+	// traverse this grid lazily on first access.
+	screen *vt.Screen
 
-	// ANSI is the screen content with SGR escape sequences preserved.
-	// Suitable for embedding in a TUI component (e.g., lipgloss pane).
-	ANSI string
+	// Cached render outputs, guarded by sync.Once for thread-safe lazy init.
+	plainTextOnce  sync.Once
+	plainTextCache string
 
-	// FullScreen is the screen content with CUP (cursor position)
-	// escape sequences for full terminal restoration. Used during
-	// passthrough re-entry for flicker-free screen redraw.
-	FullScreen string
+	ansiOnce  sync.Once
+	ansiCache string
+
+	fullScreenOnce  sync.Once
+	fullScreenCache string
 
 	// Rows is the terminal height at the time of capture.
 	Rows int
@@ -172,6 +177,58 @@ type ScreenSnapshot struct {
 
 	// Timestamp records when this snapshot was created.
 	Timestamp time.Time
+}
+
+// GetPlainText lazily computes and returns the screen content without ANSI
+// escape sequences. Suitable for text search, clipboard copy, and plain-text
+// capture. The result is cached after the first call.
+func (s *ScreenSnapshot) GetPlainText() string {
+	s.plainTextOnce.Do(func() {
+		if s.screen != nil {
+			s.plainTextCache, _, _ = vt.RenderAll(s.screen)
+		}
+	})
+	return s.plainTextCache
+}
+
+// GetANSI lazily computes and returns the screen content with SGR escape
+// sequences preserved. Suitable for embedding in a TUI component (e.g.,
+// lipgloss pane). The result is cached after the first call.
+func (s *ScreenSnapshot) GetANSI() string {
+	s.ansiOnce.Do(func() {
+		if s.screen != nil {
+			_, s.ansiCache, _ = vt.RenderAll(s.screen)
+		}
+	})
+	return s.ansiCache
+}
+
+// GetFullScreen lazily computes and returns the screen content with CUP
+// (cursor position) escape sequences for full terminal restoration. Used
+// during passthrough re-entry for flicker-free screen redraw. The result
+// is cached after the first call.
+func (s *ScreenSnapshot) GetFullScreen() string {
+	s.fullScreenOnce.Do(func() {
+		if s.screen != nil {
+			_, _, s.fullScreenCache = vt.RenderAll(s.screen)
+		}
+	})
+	return s.fullScreenCache
+}
+
+// NewScreenSnapshot creates a ScreenSnapshot backed by the given cell grid.
+// Rendering is deferred until GetPlainText, GetANSI, or GetFullScreen is
+// called. This is the primary constructor for production snapshots.
+func NewScreenSnapshot(gen uint64, scr *vt.Screen, rows, cols int, ts time.Time) *ScreenSnapshot {
+	return &ScreenSnapshot{
+		Gen:       gen,
+		screen:    scr,
+		Rows:      rows,
+		Cols:      cols,
+		CursorRow: scr.CurRow,
+		CursorCol: scr.CurCol,
+		Timestamp: ts,
+	}
 }
 
 // SessionInfo is an immutable summary of a managed session, safe for
@@ -1011,27 +1068,25 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 
 	// Publish a new immutable snapshot.
 	m.snapshotGen++
-	vs := ms.vterm.Snapshot()
+	scr := ms.vterm.ActiveScreen()
 	snap := &ScreenSnapshot{
 		Gen:                m.snapshotGen,
-		PlainText:          vs.PlainText,
-		ANSI:               vs.ANSI,
-		FullScreen:         vs.FullScreen,
+		screen:             scr,
 		Rows:               m.termRows,
 		Cols:               m.termCols,
-		CursorRow:          vs.CurRow,
-		CursorCol:          vs.CurCol,
-		MouseTracking:      int(vs.MouseTracking),
-		MouseSGR:           vs.MouseSGR,
-		InsertMode:         vs.InsertMode,
-		BracketedPaste:     vs.BracketedPaste,
-		ApplicationCursor:  vs.ApplicationCursor,
-		KeypadApplication:  vs.KeypadApplication,
-		CursorShape:        vs.CursorShape,
-		FocusReporting:     vs.FocusReporting,
-		SynchronizedOutput: vs.SynchronizedOutput,
-		AutoWrap:           vs.AutoWrap,
-		LineFeedNewLine:    vs.LineFeedNewLine,
+		CursorRow:          scr.CurRow,
+		CursorCol:          scr.CurCol,
+		MouseTracking:      int(scr.MouseTracking),
+		MouseSGR:           scr.MouseSGR,
+		InsertMode:         scr.InsertMode,
+		BracketedPaste:     scr.BracketedPaste,
+		ApplicationCursor:  scr.ApplicationCursor,
+		KeypadApplication:  scr.KeypadApplication,
+		CursorShape:        scr.CursorShape,
+		FocusReporting:     scr.FocusReporting,
+		SynchronizedOutput: scr.SynchronizedOutput,
+		AutoWrap:           scr.AutoWrap,
+		LineFeedNewLine:    scr.LineFeedNewLine,
 		Timestamp:          time.Now(),
 	}
 	ms.snapshot.Store(snap)
@@ -1042,7 +1097,7 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 	// disabled. The next output chunk that turns off synchronized output
 	// will naturally emit the event since SynchronizedOutput() returns
 	// false after the VTerm processes the DECRST ?2026l.
-	if !vs.SynchronizedOutput {
+	if !scr.SynchronizedOutput {
 		m.eventBus.emitData(EventSessionOutput, so.id, so.data)
 	}
 }

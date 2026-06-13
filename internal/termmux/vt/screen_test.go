@@ -1,6 +1,9 @@
 package vt
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNewScreen(t *testing.T) {
 	s := NewScreen(24, 80)
@@ -626,5 +629,250 @@ func TestScreen_Resize_ScrollRegionCollapseToZero(t *testing.T) {
 	s.Resize(3, 80)
 	if s.ScrollTop != 0 || s.ScrollBot != 0 {
 		t.Errorf("scroll region = %d-%d, want 0-0 (region collapsed)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+// ── Dirty-region tracking tests ─────────────────────────────────────
+
+func TestScreen_DirtyRange_InitialClean(t *testing.T) {
+	s := NewScreen(24, 80)
+	min, max := s.DirtyRange()
+	if min != -1 || max != -1 {
+		t.Errorf("new screen dirty range = (%d,%d), want (-1,-1)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_PutChar(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.PutChar('A')
+	min, max := s.DirtyRange()
+	if min != 0 || max != 0 {
+		t.Errorf("after PutChar at row 0: dirty range = (%d,%d), want (0,0)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_PutCharSecondRow(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 5
+	s.PutChar('X')
+	min, max := s.DirtyRange()
+	if min != 5 || max != 5 {
+		t.Errorf("after PutChar at row 5: dirty range = (%d,%d), want (5,5)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_ClearDirty(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.PutChar('A')
+	s.ClearDirty()
+	min, max := s.DirtyRange()
+	if min != -1 || max != -1 {
+		t.Errorf("after ClearDirty: dirty range = (%d,%d), want (-1,-1)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_MultipleEdits(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 3
+	s.PutChar('A')
+	s.CurRow = 10
+	s.PutChar('B')
+	min, max := s.DirtyRange()
+	if min != 3 || max != 10 {
+		t.Errorf("after edits at rows 3 and 10: dirty range = (%d,%d), want (3,10)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_EraseDisplay(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.EraseDisplay(2)
+	min, max := s.DirtyRange()
+	if min != 0 || max != 23 {
+		t.Errorf("after EraseDisplay(2): dirty range = (%d,%d), want (0,23)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_EraseLine(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 7
+	s.ClearDirty()
+	s.EraseLine(2)
+	min, max := s.DirtyRange()
+	if min != 7 || max != 7 {
+		t.Errorf("after EraseLine at row 7: dirty range = (%d,%d), want (7,7)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_EraseDisplay_Mode3(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.EraseDisplay(3)
+	min, max := s.DirtyRange()
+	if min != -1 || max != -1 {
+		t.Errorf("after EraseDisplay(3): dirty range = (%d,%d), want (-1,-1)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_ScrollUp(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.ScrollUp(1)
+	min, max := s.DirtyRange()
+	if min != 0 || max != 23 {
+		t.Errorf("after ScrollUp: dirty range = (%d,%d), want (0,23)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_InsertLines(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 5
+	s.ClearDirty()
+	s.InsertLines(2)
+	min, _ := s.DirtyRange()
+	if min != 5 {
+		t.Errorf("after InsertLines at row 5: dirty min = %d, want 5", min)
+	}
+}
+
+func TestScreen_DirtyRange_DeleteChars(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 3
+	s.ClearDirty()
+	s.DeleteChars(1)
+	min, max := s.DirtyRange()
+	if min != 3 || max != 3 {
+		t.Errorf("after DeleteChars at row 3: dirty range = (%d,%d), want (3,3)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_InsertChars(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 3
+	s.ClearDirty()
+	s.InsertChars(1)
+	min, max := s.DirtyRange()
+	if min != 3 || max != 3 {
+		t.Errorf("after InsertChars at row 3: dirty range = (%d,%d), want (3,3)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_EraseChars(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 3
+	s.ClearDirty()
+	s.EraseChars(5)
+	min, max := s.DirtyRange()
+	if min != 3 || max != 3 {
+		t.Errorf("after EraseChars at row 3: dirty range = (%d,%d), want (3,3)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_FillScreen(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.FillScreen('X')
+	min, max := s.DirtyRange()
+	if min != 0 || max != 23 {
+		t.Errorf("after FillScreen: dirty range = (%d,%d), want (0,23)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_Clear(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.Clear()
+	min, max := s.DirtyRange()
+	if min != 0 || max != 23 {
+		t.Errorf("after Clear: dirty range = (%d,%d), want (0,23)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_Resize(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.Resize(12, 40)
+	min, max := s.DirtyRange()
+	if min != 0 || max != 11 {
+		t.Errorf("after Resize(12,40): dirty range = (%d,%d), want (0,11)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_PutASCII(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.PutASCII([]byte("Hello"))
+	min, max := s.DirtyRange()
+	if min != 0 || max != 0 {
+		t.Errorf("after PutASCII on row 0: dirty range = (%d,%d), want (0,0)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_ReverseIndex(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 5
+	s.ClearDirty()
+	s.ReverseIndex()
+	min, max := s.DirtyRange()
+	if min != 4 || max != 4 {
+		t.Errorf("after ReverseIndex from row 5: dirty range = (%d,%d), want (4,4)", min, max)
+	}
+}
+
+func TestVTerm_Snapshot_DirtyRange(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.Write([]byte("Hello"))
+	snap := v.Snapshot()
+	if snap.DirtyMin < 0 || snap.DirtyMax < 0 {
+		t.Errorf("snapshot after Write: dirty range = (%d,%d), expected some rows dirty", snap.DirtyMin, snap.DirtyMax)
+	}
+	snap2 := v.Snapshot()
+	if snap2.DirtyMin != -1 || snap2.DirtyMax != -1 {
+		t.Errorf("snapshot after no changes: dirty range = (%d,%d), want (-1,-1)", snap2.DirtyMin, snap2.DirtyMax)
+	}
+	v.Write([]byte("X"))
+	snap3 := v.Snapshot()
+	if snap3.DirtyMin < 0 || snap3.DirtyMax < 0 {
+		t.Errorf("snapshot after single char: dirty range = (%d,%d), expected dirty", snap3.DirtyMin, snap3.DirtyMax)
+	}
+}
+
+func TestRenderContentANSIDirty_CleanScreen(t *testing.T) {
+	scr := NewScreen(24, 80)
+	out := RenderContentANSIDirty(scr, -1, -1)
+	if out != "" {
+		t.Errorf("clean screen should produce empty output, got %q", out)
+	}
+}
+
+func TestRenderContentANSIDirty_SingleRow(t *testing.T) {
+	scr := NewScreen(24, 80)
+	scr.PutChar('A')
+	out := RenderContentANSIDirty(scr, 0, 0)
+	if !strings.ContainsRune(out, 'A') {
+		t.Errorf("dirty render should contain 'A', got %q", out)
+	}
+	full := RenderContentANSI(scr)
+	if len(out) > len(full) {
+		t.Errorf("dirty render (%d bytes) should not exceed full render (%d bytes)", len(out), len(full))
+	}
+}
+
+func TestRenderContentANSIDirty_ByteReduction(t *testing.T) {
+	scr := NewScreen(24, 80)
+	for r := 0; r < 24; r++ {
+		for c := 0; c < 80; c++ {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	scr.ClearDirty()
+	scr.PutChar('Z')
+	dirtyMin, dirtyMax := scr.DirtyRange()
+
+	full := RenderContentANSI(scr)
+	dirty := RenderContentANSIDirty(scr, dirtyMin, dirtyMax)
+	reduction := float64(len(full)-len(dirty)) / float64(len(full)) * 100
+	if reduction < 80 {
+		t.Errorf("byte reduction = %.1f%%, want >= 80%% (full=%d, dirty=%d)", reduction, len(full), len(dirty))
 	}
 }

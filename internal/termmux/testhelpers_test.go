@@ -46,7 +46,7 @@ func waitForSnapshotContains(t *testing.T, m *SessionManager, id SessionID, subs
 	deadline := time.After(timeout)
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && strings.Contains(snap.PlainText, substr) {
+		if snap != nil && strings.Contains(snap.GetPlainText(), substr) {
 			return
 		}
 		select {

@@ -1,10 +1,20 @@
 package vt
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
+
+// appendCUP appends a CSI cursor-position sequence (1-indexed) to buf.
+func appendCUP(buf []byte, row, col int) []byte {
+	buf = append(buf, "\x1b["...)
+	buf = strconv.AppendInt(buf, int64(row), 10)
+	buf = append(buf, ';')
+	buf = strconv.AppendInt(buf, int64(col), 10)
+	buf = append(buf, 'H')
+	return buf
+}
 
 // RenderFullScreen produces ANSI output that overwrites every row in-place.
 // It emits CUP + content + EL (erase-to-EOL) for ALL rows, including blank
@@ -13,14 +23,13 @@ import (
 // overwritten line by line instead of cleared first.
 // When ScrollOffset > 0, visible lines include scrollback content.
 func RenderFullScreen(scr *Screen) string {
-	var b strings.Builder
+	var buf []byte
 	var prevAttr Attr
 
 	lines := scr.VisibleLines()
 
 	for r := 0; r < scr.Rows; r++ {
-		// CUP to row start (1-indexed).
-		fmt.Fprintf(&b, "\x1b[%d;1H", r+1)
+		buf = appendCUP(buf, r+1, 1)
 
 		row := lines[r]
 
@@ -38,32 +47,28 @@ func RenderFullScreen(scr *Screen) string {
 			for c := 0; c <= last; c++ {
 				cell := row[c]
 				if cell.SecondHalf {
-					continue // wide-char placeholder
+					continue
 				}
 				diff := SGRDiff(prevAttr, cell.Attr)
 				if diff != "" {
-					b.WriteString(diff)
+					buf = append(buf, diff...)
 				}
 				prevAttr = cell.Attr
-				b.WriteRune(cell.Ch)
+				buf = utf8.AppendRune(buf, cell.Ch)
 			}
 		}
 
-		// Reset attributes before clearing and clear to end of line.
-		// This prevents color bleeding into the cleared area.
-		b.WriteString("\x1b[0m\x1b[K")
-		prevAttr = Attr{} // reset tracking since we emitted SGR reset
+		buf = append(buf, "\x1b[0m\x1b[K"...)
+		prevAttr = Attr{}
 	}
 
-	// Position cursor.
-	fmt.Fprintf(&b, "\x1b[%d;%dH", scr.CurRow+1, scr.CurCol+1)
-	// Cursor visibility.
+	buf = appendCUP(buf, scr.CurRow+1, scr.CurCol+1)
 	if scr.CursorVisible {
-		b.WriteString("\x1b[?25h")
+		buf = append(buf, "\x1b[?25h"...)
 	} else {
-		b.WriteString("\x1b[?25l")
+		buf = append(buf, "\x1b[?25l"...)
 	}
-	return b.String()
+	return string(buf)
 }
 
 // RenderContentANSI produces ANSI-styled content suitable for embedding inside
@@ -118,75 +123,6 @@ func RenderContentANSI(scr *Screen) string {
 	return b.String()
 }
 
-// RenderContentANSIDirty produces ANSI-styled content for only the rows in
-// the dirty range [dirtyMin, dirtyMax] (inclusive). Rows before dirtyMin are
-// emitted as empty lines (just a newline) to preserve line alignment. Rows
-// after dirtyMax are omitted entirely. When dirtyMin == -1 (clean screen),
-// it returns an empty string.
-//
-// This is the incremental counterpart to RenderContentANSI — callers can
-// replace the corresponding lines in a cached full render with the output
-// of this function, avoiding a full cell-grid walk for small edits.
-func RenderContentANSIDirty(scr *Screen, dirtyMin, dirtyMax int) string {
-	if dirtyMin < 0 || dirtyMax < 0 {
-		return ""
-	}
-	if dirtyMin >= scr.Rows {
-		return ""
-	}
-	if dirtyMax >= scr.Rows {
-		dirtyMax = scr.Rows - 1
-	}
-
-	var b strings.Builder
-	var prevAttr Attr
-
-	lines := scr.VisibleLines()
-
-	// Emit empty lines for rows before the dirty range to preserve alignment.
-	for r := 0; r < dirtyMin; r++ {
-		if r > 0 {
-			b.WriteByte('\n')
-		}
-	}
-
-	for r := dirtyMin; r <= dirtyMax; r++ {
-		if r > 0 {
-			b.WriteByte('\n')
-		}
-
-		row := lines[r]
-
-		last := -1
-		for c := scr.Cols - 1; c >= 0; c-- {
-			cell := row[c]
-			if cell.Ch != ' ' || !cell.Attr.IsZero() {
-				last = c
-				break
-			}
-		}
-
-		if last >= 0 {
-			for c := 0; c <= last; c++ {
-				cell := row[c]
-				if cell.SecondHalf {
-					continue
-				}
-				diff := SGRDiff(prevAttr, cell.Attr)
-				if diff != "" {
-					b.WriteString(diff)
-				}
-				prevAttr = cell.Attr
-				b.WriteRune(cell.Ch)
-			}
-			b.WriteString("\x1b[0m")
-			prevAttr = Attr{}
-		}
-	}
-
-	return b.String()
-}
-
 // RenderAll produces all three screen representations in a single cell-grid
 // traversal: plain text, ANSI-styled content, and full-screen CUP+EL output.
 // This avoids the 3× cell-grid walk of calling String(), RenderContentANSI(),
@@ -195,7 +131,7 @@ func RenderContentANSIDirty(scr *Screen, dirtyMin, dirtyMax int) string {
 func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 	var pb []byte          // plain text
 	var ab strings.Builder // ANSI
-	var fb strings.Builder // full screen
+	var fbb []byte         // full screen
 
 	var ansiPrev Attr
 	var fsPrev Attr
@@ -225,7 +161,7 @@ func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 		}
 
 		// Full screen: CUP to row start (1-indexed).
-		fmt.Fprintf(&fb, "\x1b[%d;1H", r+1)
+		fbb = appendCUP(fbb, r+1, 1)
 
 		// ANSI: newline between rows.
 		if r > 0 {
@@ -263,20 +199,18 @@ func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 					ab.WriteRune(cell.Ch)
 				}
 
-				// Full screen (only up to last styled cell).
 				if c <= last {
 					diff := SGRDiff(fsPrev, cell.Attr)
 					if diff != "" {
-						fb.WriteString(diff)
+						fbb = append(fbb, diff...)
 					}
 					fsPrev = cell.Attr
-					fb.WriteRune(cell.Ch)
+					fbb = utf8.AppendRune(fbb, cell.Ch)
 				}
 			}
 		}
 
-		// Full screen: reset + clear-to-EOL.
-		fb.WriteString("\x1b[0m\x1b[K")
+		fbb = append(fbb, "\x1b[0m\x1b[K"...)
 		fsPrev = Attr{}
 
 		// ANSI: reset at end of non-empty row.
@@ -296,13 +230,12 @@ func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 		pb = pb[:len(pb)-1]
 	}
 
-	// Full screen: position cursor and set visibility.
-	fmt.Fprintf(&fb, "\x1b[%d;%dH", scr.CurRow+1, scr.CurCol+1)
+	fbb = appendCUP(fbb, scr.CurRow+1, scr.CurCol+1)
 	if scr.CursorVisible {
-		fb.WriteString("\x1b[?25h")
+		fbb = append(fbb, "\x1b[?25h"...)
 	} else {
-		fb.WriteString("\x1b[?25l")
+		fbb = append(fbb, "\x1b[?25l"...)
 	}
 
-	return string(pb), ab.String(), fb.String()
+	return string(pb), ab.String(), string(fbb)
 }

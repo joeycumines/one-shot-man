@@ -778,6 +778,21 @@ func (v *VTerm) InCopyMode() bool {
 	return v.copyMode.active
 }
 
+// ScrollCopyMode scrolls the viewport by delta lines when copy mode is active.
+// A positive delta scrolls up (into scrollback history); a negative delta
+// scrolls down (towards the present). Returns false if copy mode is not active.
+// Thread-safe.
+func (v *VTerm) ScrollCopyMode(delta int) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.copyMode.active {
+		return false
+	}
+	v.primary.ScrollOffset += delta
+	v.primary.ClampScrollOffset()
+	return true
+}
+
 // SelectStart sets the start position of a text selection within copy mode.
 // Row and col are in the visible viewport coordinate system (0-indexed).
 // Thread-safe.

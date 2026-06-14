@@ -81,8 +81,8 @@ func TestPendingWrap_ClearedByCursorMovement(t *testing.T) {
 		}
 		v.Write([]byte("X"))
 		row, col = v.CursorPosition()
-		if col != 5 {
-			t.Fatalf("after write: col=%d, want 5 (not wrapped)", col)
+		if row != 0 || col != 5 {
+			t.Fatalf("after write: (%d,%d), want (0,5) (not wrapped)", row, col)
 		}
 	})
 

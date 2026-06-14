@@ -59,21 +59,16 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 				tail = call.Argument(2).String()
 			}
 
-			// 1. Check if the whole string fits
 			if uniseg.StringWidth(s) <= maxWidth {
 				return runtime.ToValue(s)
 			}
 
-			// 2. Calculate available space for content
 			tailWidth := uniseg.StringWidth(tail)
 			if tailWidth > maxWidth {
-				// Edge case: tail is wider than allowed width.
-				// Return tail as best effort (or possibly empty).
 				return runtime.ToValue(tail)
 			}
 			targetWidth := maxWidth - tailWidth
 
-			// 3. Iterate grapheme clusters to fill targetWidth
 			var sb strings.Builder
 			var currentWidth int
 			state := -1
@@ -92,6 +87,48 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 
 			sb.WriteString(tail)
 			return runtime.ToValue(sb.String())
+		})
+
+		_ = exports.Set("padRight", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(runtime.NewGoError(fmt.Errorf("padRight requires 2 arguments (string, width)")))
+			}
+			s := call.Argument(0).String()
+			w := int(call.Argument(1).ToInteger())
+			sw := uniseg.StringWidth(s)
+			if sw >= w {
+				return runtime.ToValue(s)
+			}
+			return runtime.ToValue(s + strings.Repeat(" ", w-sw))
+		})
+
+		_ = exports.Set("padLeft", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(runtime.NewGoError(fmt.Errorf("padLeft requires 2 arguments (string, width)")))
+			}
+			s := call.Argument(0).String()
+			w := int(call.Argument(1).ToInteger())
+			sw := uniseg.StringWidth(s)
+			if sw >= w {
+				return runtime.ToValue(s)
+			}
+			return runtime.ToValue(strings.Repeat(" ", w-sw) + s)
+		})
+
+		_ = exports.Set("padCenter", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(runtime.NewGoError(fmt.Errorf("padCenter requires 2 arguments (string, width)")))
+			}
+			s := call.Argument(0).String()
+			w := int(call.Argument(1).ToInteger())
+			sw := uniseg.StringWidth(s)
+			if sw >= w {
+				return runtime.ToValue(s)
+			}
+			total := w - sw
+			left := total / 2
+			right := total - left
+			return runtime.ToValue(strings.Repeat(" ", left) + s + strings.Repeat(" ", right))
 		})
 	}
 }

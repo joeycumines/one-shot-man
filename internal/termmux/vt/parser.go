@@ -36,17 +36,19 @@ const (
 
 // Parser is a table-driven ANSI escape sequence parser.
 type Parser struct {
-	cur         State
-	paramBuf    []byte
-	intermBuf   []byte
-	oscBuf      []byte
-	dcsBuf      []byte
-	params      []int   // pre-allocated slice reused by Params()
-	subParams   [][]int // colon-separated sub-params per semicolon group
-	maxOSCLen   int
-	maxDCSLen   int
-	lastByte    byte // for two-byte terminators (ESC \)
-	charsetSlot byte // '(' = G0, ')' = G1 — set when entering StateCharset
+	cur          State
+	paramBuf     []byte
+	intermBuf    []byte
+	oscBuf       []byte
+	dcsBuf       []byte
+	params       []int   // pre-allocated slice reused by Params()
+	subParams    [][]int // colon-separated sub-params per semicolon group
+	maxOSCLen    int
+	maxDCSLen    int
+	lastByte     byte // for two-byte terminators (ESC \)
+	charsetSlot  byte // '(' = G0, ')' = G1 — set when entering StateCharset
+	OSCOverflow  int  // bytes dropped because oscBuf exceeded maxOSCLen
+	DCSOverflow  int  // bytes dropped because dcsBuf exceeded maxDCSLen
 }
 
 // NewParser returns a parser in the ground state.
@@ -220,6 +222,8 @@ func (p *Parser) feedOSC(b byte) (Action, byte) {
 		p.lastByte = 0
 		if len(p.oscBuf) < p.maxOSCLen {
 			p.oscBuf = append(p.oscBuf, b)
+		} else {
+			p.OSCOverflow++
 		}
 		return ActionNone, b
 	}
@@ -244,6 +248,8 @@ func (p *Parser) feedDCS(b byte) (Action, byte) {
 		p.lastByte = 0
 		if len(p.dcsBuf) < p.maxDCSLen {
 			p.dcsBuf = append(p.dcsBuf, b)
+		} else {
+			p.DCSOverflow++
 		}
 		return ActionNone, b
 	}

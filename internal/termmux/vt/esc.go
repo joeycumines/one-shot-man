@@ -7,12 +7,6 @@ type ESCHandler interface {
 	InterDispatch(scr *Screen, final byte, hasHash bool)
 }
 
-// NopESCHandler is a nil-safe ESCHandler that discards all sequences.
-type NopESCHandler struct{}
-
-func (NopESCHandler) Dispatch(*Screen, byte)          {}
-func (NopESCHandler) InterDispatch(*Screen, byte, bool) {}
-
 type escHandlerImpl struct {
 	ResetFn func()
 }

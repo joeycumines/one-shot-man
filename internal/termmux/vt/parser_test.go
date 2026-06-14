@@ -575,3 +575,71 @@ func TestSubParamsViaFeed(t *testing.T) {
 		t.Fatalf("SubParams(1) = %v; want %v", gotSub1, wantSub1)
 	}
 }
+
+func TestParser_OSCOverflow(t *testing.T) {
+	p := NewParser()
+	p.maxOSCLen = 8
+
+	p.Feed(0x1B)
+	p.Feed(']')
+	for i := 0; i < 20; i++ {
+		p.Feed('A')
+	}
+	p.Feed(0x07)
+
+	if p.OSCOverflow != 12 {
+		t.Errorf("OSCOverflow = %d; want 12 (20 bytes - 8 max)", p.OSCOverflow)
+	}
+	if len(p.oscBuf) != 8 {
+		t.Errorf("oscBuf length = %d; want 8", len(p.oscBuf))
+	}
+}
+
+func TestParser_DCSOverflow(t *testing.T) {
+	p := NewParser()
+	p.maxDCSLen = 8
+
+	p.Feed(0x1B)
+	p.Feed('P')
+	for i := 0; i < 20; i++ {
+		p.Feed('B')
+	}
+	p.Feed(0x1B)
+	p.Feed('\\')
+
+	if p.DCSOverflow != 12 {
+		t.Errorf("DCSOverflow = %d; want 12 (20 bytes - 8 max)", p.DCSOverflow)
+	}
+	if len(p.dcsBuf) != 8 {
+		t.Errorf("dcsBuf length = %d; want 8", len(p.dcsBuf))
+	}
+}
+
+func TestParser_NoOverflowWhenUnderLimit(t *testing.T) {
+	p := NewParser()
+	p.maxOSCLen = 100
+	p.maxDCSLen = 100
+
+	p.Feed(0x1B)
+	p.Feed(']')
+	for i := 0; i < 10; i++ {
+		p.Feed('X')
+	}
+	p.Feed(0x07)
+
+	if p.OSCOverflow != 0 {
+		t.Errorf("OSCOverflow = %d; want 0", p.OSCOverflow)
+	}
+
+	p.Feed(0x1B)
+	p.Feed('P')
+	for i := 0; i < 10; i++ {
+		p.Feed('Y')
+	}
+	p.Feed(0x1B)
+	p.Feed('\\')
+
+	if p.DCSOverflow != 0 {
+		t.Errorf("DCSOverflow = %d; want 0", p.DCSOverflow)
+	}
+}

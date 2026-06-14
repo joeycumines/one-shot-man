@@ -795,8 +795,8 @@ func TestInteractiveSession_CaptureSession_RegisteredWithManager(t *testing.T) {
 	defer cleanup()
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "echo",
-		Args:    []string{"registered"},
+		Command: "sh",
+		Args:    []string{"-c", "echo registered; sleep 0.1"},
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)

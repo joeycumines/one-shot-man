@@ -43,12 +43,11 @@
 // CSI DEVICE ATTRIBUTES & REPORTS
 //
 //	DA1   CSI c        Device attributes              Supported (primary + private)
-//	DA2   CSI > c      Secondary device attrs         Not yet
+//	DA2   CSI > c      Secondary device attrs         Supported (CSI >c with intermediate byte)
 //	DA3   CSI # c      Tertiary device attrs          Not yet
 //	DSR5  CSI ?5 n     Status report                  Supported
 //	DSR6  CSI 6 n      Cursor position report         Supported (respects DECOM)
 //	DSR CPR CSI 6 n    Cursor position report         Supported (respects DECOM)
-//	DA2>  CSI >1;0;0c  Extended DA                   Supported (> prefix)
 //
 // ESCAPE SEQUENCES
 //
@@ -118,7 +117,7 @@
 //	MouseTracking 1003  Any-event tracking         Supported
 //	MouseSGR  1006  SGR mouse encoding             Supported
 //	FocusReporting 1004  Focus in/out events       Supported (ESC [I / ESC [O)
-//	BracketedPaste 2004  Bracketed paste mode       Supported (mode flag only)
+//	BracketedPaste 2004  Bracketed paste mode       Supported (mode flag only; paste delimiters not emitted by VTerm)
 //	SynchronizedOutput 2026  Coalesced output       Supported
 //
 // NOTE: Mode 1015 (xterm URXVT mouse) is NOT supported.
@@ -158,13 +157,32 @@
 //	RenderAll                       Supported (plain text + ANSI + full screen in one pass)
 //	Screen snapshot                 Supported (deep copy under single mutex lock)
 //
+// COPY MODE & NAVIGATION
+//
+//	EnterCopyMode / ExitCopyMode    Supported (VTerm-level scroll offset management)
+//	ScrollCopyMode(delta)           Supported (scrolls viewport, clamped to scrollback range)
+//	SelectStart / SelectEnd         Supported (row/col-based selection with highlight)
+//	SelectedText                    Supported (plain text extraction from selection)
+//	CopySelection                   Supported (copies selected text, clears highlights)
+//	PageUp / PageDown               Supported (scroll by screen height)
+//	HalfPageUp / HalfPageDown       Supported (scroll by half screen height)
+//	ScrollToTop / ScrollToBottom    Supported (jump to scrollback extremes)
+//
+// SEARCH
+//
+//	SearchForward(pattern, row, col)  Supported (incremental forward search with match highlighting)
+//	SearchBackward(pattern, row, col) Supported (incremental backward search)
+//	SearchMatch attribute             Supported (SGR-ignored highlight for search results)
+//	ClearSearchHighlights             Supported (removes all search match markers)
+//	ScrollToMatch(row)                Supported (scrolls viewport to make match visible)
+//
 // NOT YET IMPLEMENTED
 //
 //	DECSED (CSI ?J) / DECSEL (CSI ?K)   Selective erase          Not yet
 //	DECCOLM (CSI ?3l/4l)   132-column mode                         Not yet
 //	Mode 1015   xterm URXVT mouse encoding                         Not yet
 //	Mode 1048   Cursor save/restore on alt screen switch           Not yet (1049 handles this)
-//	Bracketed paste delimiters   \x1b[200~ / \x1b[201~             Not yet (mode flag only)
+//	Bracketed paste delimiters   \x1b[200~ / \x1b[201~             Not yet (mode flag works; delimiters not emitted)
 //	Sixel rendering              Raster image display              Not yet (DCS passthrough only)
 //	DECERA / DECSERA             Rectangular erase                 Not yet
 //	VT52 mode                     VT52 escape sequences              Not yet

@@ -13,11 +13,6 @@ type CSIHandler interface {
 	Dispatch(scr *Screen, final byte, params []int, isPrivate bool)
 }
 
-// NopCSIHandler is a nil-safe CSIHandler that discards all sequences.
-type NopCSIHandler struct{}
-
-func (NopCSIHandler) Dispatch(*Screen, byte, []int, bool) {}
-
 // csiHandlerImpl is the concrete CSIHandler implementation.
 // The AltScreenFn callback handles DECSET/DECRST modes 47/1047/1049 (alt
 // screen toggle). The mode parameter indicates which mode triggered the
@@ -373,11 +368,11 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 					status = 3
 				}
 			case 6:
-				if scr.OriginMode {
-					status = 2
-				} else {
-					status = 3
-				}
+			if scr.OriginMode {
+				status = 2
+			} else {
+				status = 3
+			}
 			case 7:
 				if scr.AutoWrap {
 					status = 2
@@ -402,12 +397,24 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 				} else {
 					status = 3
 				}
-			case 1002:
-				if scr.MouseTracking == MouseTrackingButtonEvent {
-					status = 2
-				} else {
-					status = 3
-				}
+		case 1002:
+			if scr.MouseTracking == MouseTrackingButtonEvent {
+				status = 2
+			} else {
+				status = 3
+			}
+		case 1001:
+			if scr.HighlightTracking {
+				status = 2
+			} else {
+				status = 3
+			}
+		case 1003:
+			if scr.MouseTracking == MouseTrackingAnyEvent {
+				status = 2
+			} else {
+				status = 3
+			}
 			case 1004:
 				if scr.FocusReporting {
 					status = 2
@@ -438,6 +445,20 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 				status = 1
 			}
 			h.respond(fmt.Sprintf("\x1b[?%d;%d$y", mode, status))
+		} else if h.HasInterDollar != nil && h.HasInterDollar() && !isPrivate {
+			mode := paramDefault(params, 0, 0)
+			var status int
+			switch mode {
+			case 4:
+				if scr.InsertMode {
+					status = 2
+				} else {
+					status = 3
+				}
+			default:
+				status = 1
+			}
+			h.respond(fmt.Sprintf("\x1b[%d;%d$y", mode, status))
 		}
 	}
 }

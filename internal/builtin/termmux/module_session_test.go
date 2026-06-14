@@ -1270,3 +1270,53 @@ func TestNewSessionManager_TitleOption(t *testing.T) {
 		t.Fatal("newSessionManager({title: ''}) should return an object")
 	}
 }
+
+func TestNewBoundedSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns child process and SessionManager")
+	}
+
+	runtime, exp := testRequire(t)
+	_ = runtime.Set("exports", exp)
+
+	v, err := runtime.RunString(`
+		var result = exports.newBoundedSession({ cmd: '/bin/echo', args: ['hello'], rows: 10, cols: 30, name: 'test', kind: 'capture' });
+		JSON.stringify({ hasSession: typeof result.session === 'object', hasMgr: typeof result.mgr === 'object', hasSid: result.sid > 0 });
+	`)
+	if err != nil {
+		t.Fatalf("newBoundedSession: %v", err)
+	}
+
+	got := v.String()
+	if got != `{"hasSession":true,"hasMgr":true,"hasSid":true}` {
+		t.Errorf("newBoundedSession result = %s, want all true", got)
+	}
+}
+
+func TestNewBoundedSession_MissingCmd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns Goja runtime")
+	}
+
+	runtime, exp := testRequire(t)
+	_ = runtime.Set("exports", exp)
+
+	_, err := runtime.RunString(`exports.newBoundedSession({})`)
+	if err == nil {
+		t.Fatal("expected error for missing cmd")
+	}
+}
+
+func TestNewBoundedSession_NoArgs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns Goja runtime")
+	}
+
+	runtime, exp := testRequire(t)
+	_ = runtime.Set("exports", exp)
+
+	_, err := runtime.RunString(`exports.newBoundedSession()`)
+	if err == nil {
+		t.Fatal("expected error for no arguments")
+	}
+}

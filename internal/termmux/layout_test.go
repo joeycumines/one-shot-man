@@ -386,3 +386,136 @@ func TestPaneGeometry_OffsetMouse(t *testing.T) {
 		t.Error("expected !ok for right of pane")
 	}
 }
+
+func TestLayoutEngine_MainHorizontal_2Panes(t *testing.T) {
+	e := NewLayoutEngine(LayoutMainHorizontal, 100, 50)
+	p1, p2 := e.Split(0, SplitDown), e.Split(0, SplitDown)
+	geoms := e.Compute([]Pane{{ID: p1}, {ID: p2}})
+
+	if geoms[0].Rows != 30 {
+		t.Errorf("main pane rows = %d, want 30 (60%% of 50)", geoms[0].Rows)
+	}
+	if geoms[1].Rows != 20 {
+		t.Errorf("secondary pane rows = %d, want 20", geoms[1].Rows)
+	}
+}
+
+func TestLayoutEngine_MainHorizontal_3Panes(t *testing.T) {
+	e := NewLayoutEngine(LayoutMainHorizontal, 100, 60)
+	p1 := e.Split(0, SplitDown)
+	p2 := e.Split(p1, SplitDown)
+	p3 := e.Split(p2, SplitDown)
+	geoms := e.Compute([]Pane{{ID: p1}, {ID: p2}, {ID: p3}})
+
+	if geoms[0].Rows != 36 {
+		t.Errorf("main pane rows = %d, want 36", geoms[0].Rows)
+	}
+	if geoms[1].Row != 36 {
+		t.Errorf("pane 2 row = %d, want 36", geoms[1].Row)
+	}
+}
+
+func TestLayoutEngine_MainVertical_2Panes(t *testing.T) {
+	e := NewLayoutEngine(LayoutMainVertical, 100, 50)
+	p1, p2 := e.Split(0, SplitRight), e.Split(0, SplitRight)
+	geoms := e.Compute([]Pane{{ID: p1}, {ID: p2}})
+
+	if geoms[0].Cols != 60 {
+		t.Errorf("main pane cols = %d, want 60 (60%% of 100)", geoms[0].Cols)
+	}
+	if geoms[1].Cols != 40 {
+		t.Errorf("secondary pane cols = %d, want 40", geoms[1].Cols)
+	}
+}
+
+func TestLayoutEngine_MainVertical_5Panes(t *testing.T) {
+	e := NewLayoutEngine(LayoutMainVertical, 100, 50)
+	p1 := e.Split(0, SplitRight)
+	p2 := e.Split(p1, SplitRight)
+	p3 := e.Split(p2, SplitRight)
+	p4 := e.Split(p3, SplitRight)
+	p5 := e.Split(p4, SplitRight)
+	geoms := e.Compute([]Pane{{ID: p1}, {ID: p2}, {ID: p3}, {ID: p4}, {ID: p5}})
+
+	if geoms[0].Cols != 60 {
+		t.Errorf("main pane cols = %d, want 60", geoms[0].Cols)
+	}
+	if geoms[1].Col != 60 {
+		t.Errorf("pane 2 col = %d, want 60", geoms[1].Col)
+	}
+	totalSecondary := 0
+	for i := 1; i < 5; i++ {
+		totalSecondary += geoms[i].Cols
+	}
+	if totalSecondary != 40 {
+		t.Errorf("total secondary cols = %d, want 40", totalSecondary)
+	}
+}
+
+func TestLayoutEngine_MainHorizontal_CustomRatio(t *testing.T) {
+	e := NewLayoutEngine(LayoutMainHorizontal, 100, 50)
+	e.SetMainRatio(0.8)
+	p1, p2 := e.Split(0, SplitDown), e.Split(0, SplitDown)
+	geoms := e.Compute([]Pane{{ID: p1}, {ID: p2}})
+
+	if geoms[0].Rows != 40 {
+		t.Errorf("main pane rows = %d, want 40 (80%% of 50)", geoms[0].Rows)
+	}
+}
+
+func TestLayoutEngine_MainVertical_CustomRatio(t *testing.T) {
+	e := NewLayoutEngine(LayoutMainVertical, 100, 50)
+	e.SetMainRatio(0.4)
+	p1, p2 := e.Split(0, SplitRight), e.Split(0, SplitRight)
+	geoms := e.Compute([]Pane{{ID: p1}, {ID: p2}})
+
+	if geoms[0].Cols != 40 {
+		t.Errorf("main pane cols = %d, want 40 (40%% of 100)", geoms[0].Cols)
+	}
+}
+
+func TestLayoutEngine_MainHorizontal_SinglePane(t *testing.T) {
+	e := NewLayoutEngine(LayoutMainHorizontal, 100, 50)
+	p1 := e.Split(0, SplitDown)
+	geoms := e.Compute([]Pane{{ID: p1}})
+
+	if geoms[0].Rows != 30 {
+		t.Errorf("single pane rows = %d, want 30", geoms[0].Rows)
+	}
+	if geoms[0].Cols != 100 {
+		t.Errorf("single pane cols = %d, want 100", geoms[0].Cols)
+	}
+}
+
+func TestLayoutEngine_MainVertical_8Panes(t *testing.T) {
+	e := NewLayoutEngine(LayoutMainVertical, 120, 50)
+	p1 := e.Split(0, SplitRight)
+	ids := []PaneID{p1}
+	for i := 0; i < 7; i++ {
+		ids = append(ids, e.Split(ids[len(ids)-1], SplitRight))
+	}
+	panes := make([]Pane, len(ids))
+	for i, id := range ids {
+		panes[i] = Pane{ID: id}
+	}
+	geoms := e.Compute(panes)
+
+	if geoms[0].Cols != 72 {
+		t.Errorf("main pane cols = %d, want 72 (60%% of 120)", geoms[0].Cols)
+	}
+	if geoms[1].Col != 72 {
+		t.Errorf("pane 2 col = %d, want 72", geoms[1].Col)
+	}
+}
+
+func TestLayoutEngine_SetMainRatio_Clamped(t *testing.T) {
+	e := NewLayoutEngine(LayoutMainHorizontal, 100, 50)
+	e.SetMainRatio(0.05)
+	if e.MainRatio() != 0.1 {
+		t.Errorf("ratio below min = %f, want 0.1", e.MainRatio())
+	}
+	e.SetMainRatio(0.99)
+	if e.MainRatio() != 0.9 {
+		t.Errorf("ratio above max = %f, want 0.9", e.MainRatio())
+	}
+}

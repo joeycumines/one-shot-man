@@ -361,3 +361,102 @@ func TestCompositor_RemovePaneNonExistent(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "ok", res.Export())
 }
+
+func TestRenderBordered_RoundedBorder(t *testing.T) {
+	rt := setupRuntime(t)
+
+	v, err := rt.RunString(`
+		var comp = require('osm:termui/compositor');
+		var result = comp.renderBordered('hello', comp.roundedBorder(), 10, 3);
+		result.length > 0;
+	`)
+	require.NoError(t, err)
+	require.True(t, v.ToBoolean(), "renderBordered should produce output")
+}
+
+func TestRenderBordered_NormalBorder(t *testing.T) {
+	rt := setupRuntime(t)
+
+	v, err := rt.RunString(`
+		var comp = require('osm:termui/compositor');
+		var result = comp.renderBordered('world', comp.normalBorder(), 8, 2);
+		result.length > 0;
+	`)
+	require.NoError(t, err)
+	require.True(t, v.ToBoolean(), "renderBordered with normal border should produce output")
+}
+
+func TestRenderBordered_ContainsContent(t *testing.T) {
+	rt := setupRuntime(t)
+
+	v, err := rt.RunString(`
+		var comp = require('osm:termui/compositor');
+		var result = comp.renderBordered('test', comp.roundedBorder(), 20, 5);
+		result.indexOf('test') >= 0;
+	`)
+	require.NoError(t, err)
+	require.True(t, v.ToBoolean(), "renderBordered output should contain the content")
+}
+
+func TestRenderBordered_InvalidArgs(t *testing.T) {
+	rt := setupRuntime(t)
+
+	_, err := rt.RunString(`require('osm:termui/compositor').renderBordered('a')`)
+	require.Error(t, err, "expected error with insufficient args")
+}
+
+func TestAddBoundedPane_WithContent(t *testing.T) {
+	rt := setupRuntime(t)
+
+	v, err := rt.RunString(`
+		var comp = require('osm:termui/compositor');
+		var c = comp.compositor({width: 80, height: 24});
+		c.addBoundedPane({id: 'test', content: 'hello', bounds: {x: 0, y: 0, width: 20, height: 10}});
+		var ids = c.paneIds();
+		ids.length === 1 && ids[0] === 'test';
+	`)
+	require.NoError(t, err)
+	require.True(t, v.ToBoolean(), "addBoundedPane with content should create pane")
+}
+
+func TestAddBoundedPane_WithContentFn(t *testing.T) {
+	rt := setupRuntime(t)
+
+	v, err := rt.RunString(`
+		var comp = require('osm:termui/compositor');
+		var c = comp.compositor({width: 80, height: 24});
+		c.addBoundedPane({id: 'test', contentFn: function() { return 'dynamic'; }, bounds: {x: 0, y: 0, width: 20, height: 10}});
+		var ids = c.paneIds();
+		ids.length === 1;
+	`)
+	require.NoError(t, err)
+	require.True(t, v.ToBoolean(), "addBoundedPane with contentFn should create pane")
+}
+
+func TestAddBoundedPane_Chainable(t *testing.T) {
+	rt := setupRuntime(t)
+
+	v, err := rt.RunString(`
+		var comp = require('osm:termui/compositor');
+		var c = comp.compositor({width: 80, height: 24});
+		var result = c.addBoundedPane({id: 'a', content: 'x', bounds: {x: 0, y: 0, width: 20, height: 10}})
+		              .addBoundedPane({id: 'b', content: 'y', bounds: {x: 20, y: 0, width: 20, height: 10}});
+		var ids = result.paneIds();
+		ids.length === 2;
+	`)
+	require.NoError(t, err)
+	require.True(t, v.ToBoolean(), "addBoundedPane should be chainable")
+}
+
+func TestAddBoundedPane_WithZ(t *testing.T) {
+	rt := setupRuntime(t)
+
+	v, err := rt.RunString(`
+		var comp = require('osm:termui/compositor');
+		var c = comp.compositor({width: 80, height: 24});
+		c.addBoundedPane({id: 'test', content: 'hello', bounds: {x: 0, y: 0, width: 20, height: 10}, z: 5});
+		c.paneIds().length === 1;
+	`)
+	require.NoError(t, err)
+	require.True(t, v.ToBoolean(), "addBoundedPane with z should work")
+}

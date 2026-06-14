@@ -132,3 +132,86 @@ func TestTruncateFunction(t *testing.T) {
 		t.Errorf("exports.truncate failures:\n%s", result)
 	}
 }
+
+func TestPadRightFunction(t *testing.T) {
+	runtime, _ := setupModule(t)
+
+	script := `
+		var errors = [];
+		var r = exports.padRight("hello", 10);
+		if (r !== "hello     ") errors.push("padRight('hello',10) = '" + r + "'");
+		if (exports.padRight("hello", 5) !== "hello") errors.push("padRight no-op failed");
+		if (exports.padRight("hello", 3) !== "hello") errors.push("padRight shorter failed");
+		errors.join("\\n");
+	`
+
+	val, err := runtime.RunString(script)
+	if err != nil {
+		t.Fatalf("script execution failed: %v", err)
+	}
+	if result := val.String(); result != "" {
+		t.Errorf("padRight failures:\n%s", result)
+	}
+}
+
+func TestPadLeftFunction(t *testing.T) {
+	runtime, _ := setupModule(t)
+
+	script := `
+		var errors = [];
+		var r = exports.padLeft("hello", 10);
+		if (r !== "     hello") errors.push("padLeft('hello',10) = '" + r + "'");
+		if (exports.padLeft("hello", 5) !== "hello") errors.push("padLeft no-op failed");
+		errors.join("\\n");
+	`
+
+	val, err := runtime.RunString(script)
+	if err != nil {
+		t.Fatalf("script execution failed: %v", err)
+	}
+	if result := val.String(); result != "" {
+		t.Errorf("padLeft failures:\n%s", result)
+	}
+}
+
+func TestPadCenterFunction(t *testing.T) {
+	runtime, _ := setupModule(t)
+
+	script := `
+		var errors = [];
+		var r = exports.padCenter("hello", 10);
+		if (r !== "  hello   ") errors.push("padCenter('hello',10) = '" + r + "'");
+		if (exports.padCenter("hi", 10) !== "    hi    ") errors.push("padCenter('hi',10) = '" + exports.padCenter("hi", 10) + "'");
+		if (exports.padCenter("hello", 5) !== "hello") errors.push("padCenter no-op failed");
+		errors.join("\\n");
+	`
+
+	val, err := runtime.RunString(script)
+	if err != nil {
+		t.Fatalf("script execution failed: %v", err)
+	}
+	if result := val.String(); result != "" {
+		t.Errorf("padCenter failures:\n%s", result)
+	}
+}
+
+func TestPadUnicodeAware(t *testing.T) {
+	runtime, _ := setupModule(t)
+
+	script := `
+		var errors = [];
+		var r = exports.padRight("\u4e16\u754c", 6);
+		if (r !== "\u4e16\u754c  ") errors.push("CJK padRight = '" + r + "'");
+		var l = exports.padLeft("\u4e16\u754c", 6);
+		if (l !== "  \u4e16\u754c") errors.push("CJK padLeft = '" + l + "'");
+		errors.join("\\n");
+	`
+
+	val, err := runtime.RunString(script)
+	if err != nil {
+		t.Fatalf("script execution failed: %v", err)
+	}
+	if result := val.String(); result != "" {
+		t.Errorf("unicode pad failures:\n%s", result)
+	}
+}

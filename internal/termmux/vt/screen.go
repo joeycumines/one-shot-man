@@ -712,6 +712,36 @@ func (s *Screen) ClampScrollOffset() {
 	}
 }
 
+func (s *Screen) PageUp() {
+	s.ScrollOffset += s.Rows
+	s.ClampScrollOffset()
+}
+
+func (s *Screen) PageDown() {
+	s.ScrollOffset -= s.Rows
+	s.ClampScrollOffset()
+}
+
+func (s *Screen) HalfPageUp() {
+	s.ScrollOffset += s.Rows / 2
+	s.ClampScrollOffset()
+}
+
+func (s *Screen) HalfPageDown() {
+	s.ScrollOffset -= s.Rows / 2
+	s.ClampScrollOffset()
+}
+
+func (s *Screen) ScrollToTop() {
+	s.ScrollOffset = s.MaxScrollOffset()
+	s.ClampScrollOffset()
+}
+
+func (s *Screen) ScrollToBottom() {
+	s.ScrollOffset = 0
+	s.ClampScrollOffset()
+}
+
 // VisibleLines returns the visible content based on ScrollOffset. When
 // ScrollOffset is 0, only the active screen rows are returned. When
 // ScrollOffset > 0, scrollback lines replace the top of the visible area.
@@ -764,6 +794,141 @@ func (s *Screen) ScrollbackRow(i int) []Cell {
 	copied := make([]Cell, len(row))
 	copy(copied, row)
 	return copied
+}
+
+// SearchMatch represents a single match location in the scrollback+screen buffer.
+type SearchMatch struct {
+	Row int
+	Col int
+}
+
+func cellText(row []Cell) string {
+	var buf []rune
+	for _, c := range row {
+		buf = append(buf, c.Ch)
+	}
+	return string(buf)
+}
+
+// SearchForward searches for pattern starting after (startRow, startCol),
+// going forward through scrollback and visible screen. Returns the first
+// match location or nil if not found. Search is case-sensitive.
+func (s *Screen) SearchForward(pattern string, startRow, startCol int) *SearchMatch {
+	if pattern == "" {
+		return nil
+	}
+	total := s.ScrollbackLen + s.Rows
+
+	for row := startRow; row < total; row++ {
+		var line []Cell
+		if row < s.ScrollbackLen {
+			line = s.ScrollbackRow(row)
+		} else {
+			sr := row - s.ScrollbackLen
+			if sr >= 0 && sr < s.Rows {
+				line = s.Cells[sr]
+			}
+		}
+		text := cellText(line)
+		col := 0
+		if row == startRow {
+			col = startCol
+		}
+		idx := indexOf(text[col:], pattern)
+		if idx >= 0 {
+			return &SearchMatch{Row: row, Col: col + idx}
+		}
+	}
+	return nil
+}
+
+// SearchBackward searches for pattern before (startRow, startCol),
+// going backward through scrollback and visible screen. Returns the
+// last match at or before the start position, or nil if not found.
+func (s *Screen) SearchBackward(pattern string, startRow, startCol int) *SearchMatch {
+	if pattern == "" {
+		return nil
+	}
+	for row := startRow; row >= 0; row-- {
+		var line []Cell
+		if row < s.ScrollbackLen {
+			line = s.ScrollbackRow(row)
+		} else {
+			sr := row - s.ScrollbackLen
+			if sr >= 0 && sr < s.Rows {
+				line = s.Cells[sr]
+			}
+		}
+		text := cellText(line)
+		if row == startRow && startCol < len(text) {
+			text = text[:startCol]
+		}
+		idx := lastIndexOf(text, pattern)
+		if idx >= 0 {
+			return &SearchMatch{Row: row, Col: idx}
+		}
+	}
+	return nil
+}
+
+// ClearSearchHighlights removes SearchMatch from all visible cells.
+func (s *Screen) ClearSearchHighlights() {
+	for r := 0; r < s.Rows; r++ {
+		for c := 0; c < s.Cols; c++ {
+			s.Cells[r][c].Attr.SearchMatch = false
+		}
+	}
+}
+
+// HighlightMatch sets SearchMatch=true on cells covered by the match starting
+// at (row, col) with the given pattern length. Handles scrollback offset
+// mapping: row is in scrollback+screen coordinates.
+func (s *Screen) HighlightMatch(row, col, patLen int) {
+	screenRow := row - s.ScrollbackLen
+	if screenRow < 0 || screenRow >= s.Rows {
+		return
+	}
+	for i := 0; i < patLen && col+i < s.Cols; i++ {
+		s.Cells[screenRow][col+i].Attr.SearchMatch = true
+	}
+}
+
+// ScrollToMatch adjusts ScrollOffset so that the given match row is visible.
+// Returns true if the scroll position changed.
+func (s *Screen) ScrollToMatch(matchRow int) bool {
+	screenRow := matchRow - s.ScrollbackLen
+	targetOffset := s.ScrollbackLen - matchRow
+	if targetOffset < 0 {
+		targetOffset = 0
+	}
+	maxOff := s.MaxScrollOffset()
+	if targetOffset > maxOff {
+		targetOffset = maxOff
+	}
+	if targetOffset == s.ScrollOffset && screenRow >= 0 && screenRow < s.Rows {
+		return false
+	}
+	s.ScrollOffset = targetOffset
+	s.ClampScrollOffset()
+	return true
+}
+
+func indexOf(s, substr string) int {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
+}
+
+func lastIndexOf(s, substr string) int {
+	for i := len(s) - len(substr); i >= 0; i-- {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
 }
 
 // LineFeed moves the cursor down one line, scrolling if at the bottom
@@ -876,7 +1041,7 @@ func (s *Screen) EraseLine(mode int) {
 	s.markDirty(s.CurRow)
 }
 
-// InsertLines inserts n blank lines at the cursor row within the scroll region. inserts n blank lines at the cursor row within the scroll region.
+// InsertLines inserts n blank lines at the cursor row within the scroll region.
 func (s *Screen) InsertLines(n int) {
 	top, bot := s.ScrollRegion()
 	if s.CurRow < top || s.CurRow >= bot {

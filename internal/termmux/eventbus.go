@@ -44,6 +44,14 @@ const (
 	// Data is the clipboard payload string (base64-encoded content after the
 	// semicolon within the OSC data, e.g., "c;base64data").
 	EventClipboard
+
+	// EventActivity is published when a background session produces output
+	// after being idle for a configurable duration.
+	EventActivity
+
+	// EventSilence is published when a session produces no output for a
+	// configurable duration.
+	EventSilence
 )
 
 // String returns a human-readable name for the event kind.
@@ -69,6 +77,10 @@ func (k EventKind) String() string {
 		return "working-directory"
 	case EventClipboard:
 		return "clipboard"
+	case EventActivity:
+		return "activity"
+	case EventSilence:
+		return "silence"
 	default:
 		return "unknown"
 	}

@@ -438,3 +438,66 @@ func TestRaster_CellH1_BlankBackground(t *testing.T) {
 			r>>8, g>>8, b>>8)
 	}
 }
+
+func TestColor256_StandardColors(t *testing.T) {
+	c := getColor256(0)
+	if c.A != 255 {
+		t.Errorf("color 0 alpha = %d, want 255", c.A)
+	}
+	c = getColor256(7)
+	if c.A != 255 {
+		t.Errorf("color 7 alpha = %d, want 255", c.A)
+	}
+	c = getColor256(15)
+	if c.A != 255 {
+		t.Errorf("color 15 alpha = %d, want 255", c.A)
+	}
+}
+
+func TestColor256_ColorCube(t *testing.T) {
+	cases := []struct {
+		idx    int
+		wantR  uint8
+		wantG  uint8
+		wantB  uint8
+	}{
+		{16, 0, 0, 0},         // cube start: (0,0,0)
+		{21, 0, 0, 255},       // (0,0,5)
+		{196, 255, 0, 0},      // (5,0,0)
+		{231, 255, 255, 255},  // cube end: (5,5,5)
+		{127, 175, 0, 175},    // (3,0,3)
+	}
+	for _, tc := range cases {
+		c := getColor256(tc.idx)
+		if c.R != tc.wantR || c.G != tc.wantG || c.B != tc.wantB {
+			t.Errorf("color %d: got (%d,%d,%d), want (%d,%d,%d)",
+				tc.idx, c.R, c.G, c.B, tc.wantR, tc.wantG, tc.wantB)
+		}
+	}
+}
+
+func TestColor256_GreyRamp(t *testing.T) {
+	c := getColor256(232)
+	if c.R != 8 || c.G != 8 || c.B != 8 {
+		t.Errorf("grey ramp start (232): got (%d,%d,%d), want (8,8,8)", c.R, c.G, c.B)
+	}
+	c = getColor256(255)
+	if c.R != 238 || c.G != 238 || c.B != 238 {
+		t.Errorf("grey ramp end (255): got (%d,%d,%d), want (238,238,238)", c.R, c.G, c.B)
+	}
+	c = getColor256(243)
+	if c.R != 118 || c.G != 118 || c.B != 118 {
+		t.Errorf("grey ramp mid (243): got (%d,%d,%d), want (118,118,118)", c.R, c.G, c.B)
+	}
+}
+
+func TestColor256_OutOfRange(t *testing.T) {
+	c := getColor256(-1)
+	if c != standardColors[0] {
+		t.Errorf("negative index should return standardColors[0]")
+	}
+	c = getColor256(256)
+	if c != standardColors[0] {
+		t.Errorf("index 256 should return standardColors[0]")
+	}
+}

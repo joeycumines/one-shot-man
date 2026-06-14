@@ -12,4 +12,10 @@ var (
 	ErrResumeNotSupported = errors.New("termmux: resume not supported on Windows: ConPTY does not support process resumption (SIGCONT)")
 
 	ErrPaneNotFound = errors.New("termmux: pane not found")
+
+	ErrWindowNotFound = errors.New("termmux: window not found")
+
+	ErrWindowNotClosable = errors.New("termmux: window not closable")
+
+	ErrInvalidPayload = errors.New("termmux: invalid request payload")
 )

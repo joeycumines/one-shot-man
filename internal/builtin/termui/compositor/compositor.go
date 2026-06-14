@@ -34,6 +34,7 @@
 package compositor
 
 import (
+	"charm.land/lipgloss/v2"
 	"github.com/dop251/goja"
 
 	"github.com/joeycumines/one-shot-man/internal/termui/compositor"
@@ -71,6 +72,23 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 
 		return createCompositorObject(runtime, c)
 	})
+
+	_ = exports.Set("renderBordered", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 4 {
+			panic(runtime.NewTypeError("renderBordered requires (content, borderStyle, width, height)"))
+		}
+		content := call.Argument(0).String()
+		borderStyleVal := call.Argument(1)
+		width := int(call.Argument(2).ToInteger())
+		height := int(call.Argument(3).ToInteger())
+
+		border := jsToBorder(runtime, borderStyleVal)
+		styled := lipgloss.NewStyle().Border(border).Width(width).Height(height).Render(content)
+		return runtime.ToValue(styled)
+	})
+
+	_ = exports.Set("normalBorder", func() map[string]any { return borderToJS(lipgloss.NormalBorder()) })
+	_ = exports.Set("roundedBorder", func() map[string]any { return borderToJS(lipgloss.RoundedBorder()) })
 }
 
 // createCompositorObject wraps a *compositor.Compositor as a Goja Object
@@ -256,5 +274,83 @@ func createCompositorObject(runtime *goja.Runtime, c *compositor.Compositor) goj
 		return runtime.NewArray(values...)
 	})
 
+	_ = obj.Set("addBoundedPane", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("addBoundedPane requires an object argument {id, contentFn, bounds, z}"))
+		}
+		cfg := call.Argument(0).ToObject(runtime)
+		id := cfg.Get("id").String()
+		bounds := extractBounds(cfg.Get("bounds"))
+		z := 0
+		if zVal := cfg.Get("z"); zVal != nil && !goja.IsUndefined(zVal) && !goja.IsNull(zVal) {
+			z = int(zVal.ToInteger())
+		}
+
+		contentFnVal := cfg.Get("contentFn")
+		var content string
+		if contentFnVal != nil && !goja.IsUndefined(contentFnVal) && !goja.IsNull(contentFnVal) {
+			if fn, ok := goja.AssertFunction(contentFnVal); ok {
+				ret, err := fn(goja.Undefined())
+				if err == nil && ret != nil && !goja.IsUndefined(ret) && !goja.IsNull(ret) {
+					content = ret.String()
+				}
+			}
+		} else {
+			if cv := cfg.Get("content"); cv != nil && !goja.IsUndefined(cv) && !goja.IsNull(cv) {
+				content = cv.String()
+			}
+		}
+
+		c.AddPane(id, content, bounds, z)
+		return obj
+	})
+
 	return obj
+}
+
+func jsToBorder(runtime *goja.Runtime, val goja.Value) lipgloss.Border {
+	if goja.IsUndefined(val) || goja.IsNull(val) {
+		return lipgloss.Border{}
+	}
+	obj := val.ToObject(runtime)
+	getString := func(key string) string {
+		v := obj.Get(key)
+		if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+			return ""
+		}
+		return v.String()
+	}
+	return lipgloss.Border{
+		Top:         getString("top"),
+		Bottom:      getString("bottom"),
+		Left:        getString("left"),
+		Right:       getString("right"),
+		TopLeft:     getString("topLeft"),
+		TopRight:    getString("topRight"),
+		BottomLeft:  getString("bottomLeft"),
+		BottomRight: getString("bottomRight"),
+		MiddleLeft:  getString("middleLeft"),
+		MiddleRight: getString("middleRight"),
+		Middle:      getString("middle"),
+		MiddleTop:   getString("middleTop"),
+		MiddleBottom: getString("middleBottom"),
+	}
+}
+
+func borderToJS(b lipgloss.Border) map[string]any {
+	return map[string]any{
+		"top":          b.Top,
+		"bottom":       b.Bottom,
+		"left":         b.Left,
+		"right":        b.Right,
+		"topLeft":      b.TopLeft,
+		"topRight":     b.TopRight,
+		"bottomLeft":   b.BottomLeft,
+		"bottomRight":  b.BottomRight,
+		"middleLeft":   b.MiddleLeft,
+		"middleRight":  b.MiddleRight,
+		"middle":       b.Middle,
+		"middleTop":    b.MiddleTop,
+		"middleBottom": b.MiddleBottom,
+	}
 }

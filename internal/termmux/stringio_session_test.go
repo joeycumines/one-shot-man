@@ -2,12 +2,14 @@ package termmux
 
 import (
 	"io"
+	"sync"
 	"testing"
 	"time"
 )
 
 // testStringIO is a fake StringIO for unit testing StringIOSession.
 type testStringIO struct {
+	mu       sync.Mutex
 	recvData []string
 	recvIdx  int
 	sent     []string
@@ -15,6 +17,8 @@ type testStringIO struct {
 }
 
 func (s *testStringIO) Send(input string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.closed {
 		return io.ErrClosedPipe
 	}
@@ -23,6 +27,8 @@ func (s *testStringIO) Send(input string) error {
 }
 
 func (s *testStringIO) Receive() (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.recvIdx >= len(s.recvData) {
 		return "", io.EOF
 	}
@@ -32,6 +38,8 @@ func (s *testStringIO) Receive() (string, error) {
 }
 
 func (s *testStringIO) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.closed = true
 	return nil
 }

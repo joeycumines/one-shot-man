@@ -3,17 +3,27 @@ package statusbar
 import (
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 )
 
 // StatusBar renders a persistent status line on the last terminal row.
 type StatusBar struct {
 	status        string
-	title         string // configurable title prefix; empty means no title
+	title         string
 	toggleKeyName string
+	leftSegments  []Segment
+	rightSegments []Segment
+	windowName    string
+	windowIndex   int
 	w             io.Writer
-	height        int // total terminal height
+	height        int
 	mu            sync.Mutex
+}
+
+type Segment struct {
+	Text  string
+	Color string
 }
 
 // DefaultTerminalHeight is the default terminal height used when no height
@@ -55,6 +65,30 @@ func (sb *StatusBar) SetStatus(s string) {
 	sb.status = s
 }
 
+func (sb *StatusBar) SetLeftSegments(segs []Segment) {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	sb.leftSegments = segs
+}
+
+func (sb *StatusBar) SetRightSegments(segs []Segment) {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	sb.rightSegments = segs
+}
+
+func (sb *StatusBar) SetWindowName(name string) {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	sb.windowName = name
+}
+
+func (sb *StatusBar) SetWindowIndex(idx int) {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	sb.windowIndex = idx
+}
+
 // SetToggleKey sets the displayed toggle key name from a raw byte.
 func (sb *StatusBar) SetToggleKey(key byte) {
 	sb.mu.Lock()
@@ -72,24 +106,66 @@ func (sb *StatusBar) Render() {
 }
 
 func (sb *StatusBar) render() {
-	// Save cursor.
 	fmt.Fprint(sb.w, "\x1b7")
-	// Move to last row, column 1.
 	fmt.Fprintf(sb.w, "\x1b[%d;1H", sb.height)
-	// Clear line.
 	fmt.Fprint(sb.w, "\x1b[2K")
-	// Reverse video.
 	fmt.Fprint(sb.w, "\x1b[7m")
-	// Status text.
-	if sb.title != "" {
-		fmt.Fprintf(sb.w, " [%s] %s │ %s to switch ", sb.title, sb.status, sb.toggleKeyName)
+
+	var left, right string
+
+	if len(sb.leftSegments) > 0 {
+		var parts []string
+		for _, seg := range sb.leftSegments {
+			parts = append(parts, seg.Text)
+		}
+		left = joinSegments(parts)
+	} else if sb.title != "" {
+		left = fmt.Sprintf(" [%s] %s", sb.title, sb.status)
 	} else {
-		fmt.Fprintf(sb.w, " %s │ %s to switch ", sb.status, sb.toggleKeyName)
+		left = fmt.Sprintf(" %s", sb.status)
 	}
-	// Reset SGR.
+
+	if len(sb.rightSegments) > 0 {
+		var parts []string
+		for _, seg := range sb.rightSegments {
+			parts = append(parts, seg.Text)
+		}
+		right = joinSegments(parts)
+	} else {
+		right = fmt.Sprintf("│ %s to switch ", sb.toggleKeyName)
+	}
+
+	if sb.windowName != "" {
+		right = fmt.Sprintf("%d:%s %s", sb.windowIndex, sb.windowName, right)
+	}
+
+	line := padLine(left, right, 0)
+	fmt.Fprint(sb.w, line)
+
 	fmt.Fprint(sb.w, "\x1b[0m")
-	// Restore cursor.
 	fmt.Fprint(sb.w, "\x1b8")
+}
+
+func joinSegments(parts []string) string {
+	result := ""
+	for i, p := range parts {
+		if i > 0 {
+			result += " │ "
+		}
+		result += p
+	}
+	return result
+}
+
+func padLine(left, right string, width int) string {
+	if width <= 0 {
+		return left + " " + right
+	}
+	gap := width - len(left) - len(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + right
 }
 
 // SetScrollRegion restricts terminal scrolling to rows 1..(height-1),

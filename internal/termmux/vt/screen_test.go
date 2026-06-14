@@ -1,7 +1,6 @@
 package vt
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -834,46 +833,6 @@ func TestVTerm_Snapshot_DirtyRange(t *testing.T) {
 	snap3 := v.Snapshot()
 	if snap3.DirtyMin < 0 || snap3.DirtyMax < 0 {
 		t.Errorf("snapshot after single char: dirty range = (%d,%d), expected dirty", snap3.DirtyMin, snap3.DirtyMax)
-	}
-}
-
-func TestRenderContentANSIDirty_CleanScreen(t *testing.T) {
-	scr := NewScreen(24, 80)
-	out := RenderContentANSIDirty(scr, -1, -1)
-	if out != "" {
-		t.Errorf("clean screen should produce empty output, got %q", out)
-	}
-}
-
-func TestRenderContentANSIDirty_SingleRow(t *testing.T) {
-	scr := NewScreen(24, 80)
-	scr.PutChar('A')
-	out := RenderContentANSIDirty(scr, 0, 0)
-	if !strings.ContainsRune(out, 'A') {
-		t.Errorf("dirty render should contain 'A', got %q", out)
-	}
-	full := RenderContentANSI(scr)
-	if len(out) > len(full) {
-		t.Errorf("dirty render (%d bytes) should not exceed full render (%d bytes)", len(out), len(full))
-	}
-}
-
-func TestRenderContentANSIDirty_ByteReduction(t *testing.T) {
-	scr := NewScreen(24, 80)
-	for r := 0; r < 24; r++ {
-		for c := 0; c < 80; c++ {
-			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
-		}
-	}
-	scr.ClearDirty()
-	scr.PutChar('Z')
-	dirtyMin, dirtyMax := scr.DirtyRange()
-
-	full := RenderContentANSI(scr)
-	dirty := RenderContentANSIDirty(scr, dirtyMin, dirtyMax)
-	reduction := float64(len(full)-len(dirty)) / float64(len(full)) * 100
-	if reduction < 80 {
-		t.Errorf("byte reduction = %.1f%%, want >= 80%% (full=%d, dirty=%d)", reduction, len(full), len(dirty))
 	}
 }
 

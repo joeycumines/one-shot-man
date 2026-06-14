@@ -143,9 +143,7 @@ func RunPTYSuite(m *testing.M, cfg PTYSuiteConfig) {
 		"OSM_PTYSUBPROCESS=1",
 		"OSM_TEST_BINARY="+binPath,
 	)
-	for _, e := range cfg.ExtraEnv {
-		env = append(env, e)
-	}
+	env = append(env, cfg.ExtraEnv...)
 
 	// Re-execute the test binary with the modified environment.
 	cmd := exec.Command(os.Args[0], os.Args[1:]...)

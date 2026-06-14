@@ -21,6 +21,47 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
 
+// copyModeSearchAdapter lets a JS function satisfy parent.ScreenSearcher.
+type copyModeSearchAdapter struct {
+	searchFn func(pattern string, row, col int) map[string]any
+}
+
+func (a copyModeSearchAdapter) SearchForward(pattern string, startRow, startCol int) *vt.SearchMatch {
+	return a.search(pattern, startRow, startCol, true)
+}
+
+func (a copyModeSearchAdapter) SearchBackward(pattern string, startRow, startCol int) *vt.SearchMatch {
+	return a.search(pattern, startRow, startCol, false)
+}
+
+func (a copyModeSearchAdapter) search(pattern string, startRow, startCol int, forward bool) *vt.SearchMatch {
+	m := a.searchFn(pattern, startRow, startCol)
+	if m == nil {
+		return nil
+	}
+	found, _ := m["found"].(bool)
+	if !found {
+		return nil
+	}
+	row, _ := m["row"].(int)
+	col, _ := m["col"].(int)
+	return &vt.SearchMatch{
+		Row: row,
+		Col: col,
+	}
+}
+
+func wrapSearchMatch(match *vt.SearchMatch) map[string]any {
+	if match == nil {
+		return map[string]any{"found": false}
+	}
+	return map[string]any{
+		"found": true,
+		"row":   match.Row,
+		"col":   match.Col,
+	}
+}
+
 // Event name constants exposed to JS.
 const (
 	EventExit           = "exit"
@@ -212,6 +253,61 @@ func Require(ctx context.Context, input io.Reader, output io.Writer) func(*goja.
 		// ── SessionManager factory (experimental) ────────────
 		_ = exports.Set("newSessionManager", func(call goja.FunctionCall) goja.Value {
 			return newSessionManager(ctx, runtime, call)
+		})
+
+		_ = exports.Set("newBoundedSession", func(call goja.FunctionCall) goja.Value {
+			return newBoundedSession(ctx, runtime, call)
+		})
+
+		_ = exports.Set("newBounceController", func(call goja.FunctionCall) goja.Value {
+			return newBounceController(runtime, call)
+		})
+
+		_ = exports.Set("enableMouseForward", func(call goja.FunctionCall) goja.Value {
+			return enableMouseForward(runtime, call)
+		})
+
+		_ = exports.Set("newControlRouter", func(call goja.FunctionCall) goja.Value {
+			return newControlRouter(runtime, call)
+		})
+
+		_ = exports.Set("newBouncePresenter", func(call goja.FunctionCall) goja.Value {
+			return newBouncePresenter(ctx, runtime, call)
+		})
+
+		_ = exports.Set("newPrefixKeyHandler", func(call goja.FunctionCall) goja.Value {
+			prefix := ""
+			if len(call.Arguments) > 0 && call.Argument(0) != goja.Undefined() && !goja.IsNull(call.Argument(0)) {
+				prefix = call.Argument(0).String()
+			}
+			h := parent.NewPrefixKeyHandler(prefix)
+
+			obj := runtime.NewObject()
+			_ = obj.Set("handleKey", func(key string) goja.Value {
+				handled, action := h.HandleKey(key)
+				result := runtime.NewObject()
+				_ = result.Set("handled", handled)
+				_ = result.Set("action", action.String())
+				return result
+			})
+			_ = obj.Set("awaiting", func() bool { return h.Awaiting() })
+			_ = obj.Set("reset", func() { h.Reset() })
+			_ = obj.Set("prefix", func() string { return h.Prefix() })
+			_ = obj.Set("setPrefix", func(p string) { h.SetPrefix(p) })
+			_ = obj.Set("setCommand", func(key string, actionName string) {
+				kind := prefixActionKindFromName(actionName)
+				h.SetCommand(key, kind)
+			})
+			_ = obj.Set("removeCommand", func(key string) { h.RemoveCommand(key) })
+			_ = obj.Set("commands", func() goja.Value {
+				cmds := h.Commands()
+				result := runtime.NewObject()
+				for k, v := range cmds {
+					_ = result.Set(k, parent.PrefixAction{Kind: v}.String())
+				}
+				return result
+			})
+			return obj
 		})
 
 		// ── Input encoding utilities ────────────────────────
@@ -723,6 +819,111 @@ func newSessionManager(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 	return WrapSessionManager(ctx, runtime, mgr, os.Stdin, os.Stdout, -1, title)
 }
 
+// newBoundedSession creates a CaptureSession and a SessionManager in one call,
+// starts the session, runs the manager, registers and activates the session.
+// This replaces the common 20+ line setup pattern in JS scripts.
+//
+// JS signature:
+//
+//	termmux.newBoundedSession({ cmd, args?, dir?, rows?, cols?, env?, name?, kind? })
+//
+// Returns { session, mgr, sid } where session is the wrapped CaptureSession,
+// mgr is the wrapped SessionManager, and sid is the session ID.
+func newBoundedSession(ctx context.Context, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+		panic(runtime.NewTypeError("newBoundedSession: options object is required"))
+	}
+
+	cfgObj := call.Argument(0).ToObject(runtime)
+
+	cmd := ""
+	if v := cfgObj.Get("cmd"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		cmd = v.String()
+	}
+	if cmd == "" {
+		panic(runtime.NewTypeError("newBoundedSession: cmd is required"))
+	}
+
+	var args []string
+	if v := cfgObj.Get("args"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		argsObj := v.ToObject(runtime)
+		if lenVal := argsObj.Get("length"); lenVal != nil && !goja.IsUndefined(lenVal) {
+			arrLen := lenVal.ToInteger()
+			for i := range arrLen {
+				av := argsObj.Get(fmt.Sprintf("%d", i))
+				if av != nil && !goja.IsUndefined(av) {
+					args = append(args, av.String())
+				}
+			}
+		}
+	}
+
+	rows := 24
+	if v := cfgObj.Get("rows"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		rows = int(v.ToInteger())
+	}
+	cols := 80
+	if v := cfgObj.Get("cols"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		cols = int(v.ToInteger())
+	}
+
+	captureCfg := parent.CaptureConfig{
+		Command: cmd,
+		Args:    args,
+		Rows:    rows,
+		Cols:    cols,
+	}
+	if v := cfgObj.Get("dir"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		captureCfg.Dir = v.String()
+	}
+	if v := cfgObj.Get("env"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		envObj := v.ToObject(runtime)
+		captureCfg.Env = make(map[string]string)
+		for _, key := range envObj.Keys() {
+			val := envObj.Get(key)
+			if val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
+				captureCfg.Env[key] = val.String()
+			}
+		}
+	}
+
+	var name string
+	if v := cfgObj.Get("name"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		name = v.String()
+	}
+	var kind parent.SessionKind
+	if v := cfgObj.Get("kind"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		kind = parent.SessionKind(v.String())
+	}
+
+	cs := parent.NewCaptureSession(captureCfg)
+	if err := cs.Start(ctx); err != nil {
+		panic(runtime.NewGoError(fmt.Errorf("newBoundedSession: start failed: %w", err)))
+	}
+
+	mgr := parent.NewSessionManager(parent.WithTermSize(rows, cols))
+	go mgr.Run(ctx)
+	<-mgr.Started()
+
+	sid, err := mgr.Register(cs, parent.SessionTarget{
+		Name: name,
+		Kind: kind,
+	})
+	if err != nil {
+		panic(runtime.NewGoError(fmt.Errorf("newBoundedSession: register failed: %w", err)))
+	}
+
+	sessionVal := WrapCaptureSession(ctx, runtime, cs)
+	mgrVal := WrapSessionManager(ctx, runtime, mgr, os.Stdin, os.Stdout, -1, "")
+
+	result := runtime.NewObject()
+	_ = result.Set("session", sessionVal)
+	_ = result.Set("mgr", mgrVal)
+	_ = result.Set("sid", runtime.ToValue(sid))
+
+	return result
+}
+
 // WrapSessionManager wraps a [parent.SessionManager] into a Goja object with
 // JavaScript-callable methods. Exported so callers can create a Go-side
 // SessionManager and expose it through the same interface.
@@ -927,6 +1128,277 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 	_ = obj.Set("resizeSession", func(id uint64, rows, cols int) {
 		if err := s.mgr.ResizeSession(parent.SessionID(id), rows, cols); err != nil {
 			panic(s.runtime.NewGoError(err))
+		}
+	})
+
+	_ = obj.Set("isCopyModeActive", func(id uint64) bool {
+		return s.mgr.IsCopyModeActive(parent.SessionID(id))
+	})
+
+	_ = obj.Set("scrollCopyMode", func(id uint64, delta int) bool {
+		return s.mgr.ScrollCopyMode(parent.SessionID(id), delta)
+	})
+
+	_ = obj.Set("enterCopyMode", func(id uint64) {
+		_ = s.mgr.EnterCopyMode(parent.SessionID(id))
+	})
+
+	_ = obj.Set("exitCopyMode", func(id uint64) {
+		_ = s.mgr.ExitCopyMode(parent.SessionID(id))
+	})
+
+	_ = obj.Set("newWindow", func(call goja.FunctionCall) goja.Value {
+		name := ""
+		if len(call.Arguments) > 0 && call.Argument(0) != goja.Undefined() {
+			name = call.Argument(0).String()
+		}
+		id, err := s.mgr.NewWindow(name)
+		if err != nil {
+			panic(s.runtime.NewGoError(err))
+		}
+		return s.runtime.ToValue(uint64(id))
+	})
+
+	_ = obj.Set("nextWindow", func() goja.Value {
+		id := s.mgr.NextWindow()
+		return s.runtime.ToValue(uint64(id))
+	})
+
+	_ = obj.Set("prevWindow", func() goja.Value {
+		id := s.mgr.PrevWindow()
+		return s.runtime.ToValue(uint64(id))
+	})
+
+	_ = obj.Set("renameWindow", func(id uint64, name string) {
+		if err := s.mgr.RenameWindow(parent.WindowID(id), name); err != nil {
+			panic(s.runtime.NewGoError(err))
+		}
+	})
+
+	_ = obj.Set("closeWindow", func(id uint64) {
+		if err := s.mgr.CloseWindow(parent.WindowID(id)); err != nil {
+			panic(s.runtime.NewGoError(err))
+		}
+	})
+
+	_ = obj.Set("activeWindowID", func() goja.Value {
+		id := s.mgr.ActiveWindowID()
+		return s.runtime.ToValue(uint64(id))
+	})
+
+	_ = obj.Set("windows", func() goja.Value {
+		ws := s.mgr.Windows()
+		items := make([]goja.Value, len(ws))
+		for i, w := range ws {
+			obj := s.runtime.NewObject()
+			_ = obj.Set("id", uint64(w.ID))
+			_ = obj.Set("name", w.Name)
+			_ = obj.Set("layout", int(w.Layout))
+			_ = obj.Set("active", w.ID == s.mgr.ActiveWindowID())
+			items[i] = obj
+		}
+		return s.runtime.ToValue(items)
+	})
+
+	_ = obj.Set("setSynchronizePanes", func(v bool) {
+		s.mgr.SetSynchronizePanes(v)
+	})
+
+	_ = obj.Set("synchronizePanes", func() bool {
+		return s.mgr.SynchronizePanes()
+	})
+
+	_ = obj.Set("setMonitorConfig", func(sessionID uint64, cfg goja.Value) {
+		var mc parent.MonitorConfig
+		if cfg != nil && !goja.IsUndefined(cfg) {
+			o := cfg.ToObject(s.runtime)
+			if v := o.Get("bell"); v != nil && !goja.IsUndefined(v) {
+				mc.Bell = v.ToBoolean()
+			}
+			if v := o.Get("activity"); v != nil && !goja.IsUndefined(v) {
+				mc.Activity = v.ToBoolean()
+			}
+			if v := o.Get("activityThreshold"); v != nil && !goja.IsUndefined(v) {
+				mc.ActivityThreshold = time.Duration(v.ToFloat() * float64(time.Second))
+			}
+			if v := o.Get("silence"); v != nil && !goja.IsUndefined(v) {
+				mc.Silence = v.ToBoolean()
+			}
+			if v := o.Get("silenceThreshold"); v != nil && !goja.IsUndefined(v) {
+				mc.SilenceThreshold = time.Duration(v.ToFloat() * float64(time.Second))
+			}
+		}
+		_ = s.mgr.SetMonitorConfig(parent.SessionID(sessionID), mc)
+	})
+
+	_ = obj.Set("monitorConfig", func(sessionID uint64) goja.Value {
+		cfg, err := s.mgr.MonitorConfig(parent.SessionID(sessionID))
+		if err != nil {
+			panic(s.runtime.NewTypeError(err.Error()))
+		}
+		result := s.runtime.NewObject()
+		_ = result.Set("bell", cfg.Bell)
+		_ = result.Set("activity", cfg.Activity)
+		_ = result.Set("activityThreshold", cfg.ActivityThreshold.Seconds())
+		_ = result.Set("silence", cfg.Silence)
+		_ = result.Set("silenceThreshold", cfg.SilenceThreshold.Seconds())
+		return result
+	})
+
+	_ = obj.Set("visualBellActive", func(sessionID uint64) bool {
+		active, err := s.mgr.VisualBellActive(parent.SessionID(sessionID))
+		if err != nil {
+			return false
+		}
+		return active
+	})
+
+	_ = obj.Set("checkSilenceMonitors", func() int {
+		return s.mgr.CheckSilenceMonitors()
+	})
+
+	_ = obj.Set("setRemainOnExit", func(v bool) {
+		s.mgr.SetRemainOnExit(v)
+	})
+
+	_ = obj.Set("remainOnExit", func() bool {
+		return s.mgr.RemainOnExit()
+	})
+
+	_ = obj.Set("setPaneRemainOnExit", func(paneID uint64, v bool) {
+		_ = s.mgr.SetPaneRemainOnExit(parent.PaneID(paneID), v)
+	})
+
+	_ = obj.Set("paneRemainOnExit", func(paneID uint64) bool {
+		v, _ := s.mgr.PaneRemainOnExit(parent.PaneID(paneID))
+		return v
+	})
+
+	_ = obj.Set("paneExited", func(paneID uint64) bool {
+		return s.mgr.PaneExited(parent.PaneID(paneID))
+	})
+
+	_ = obj.Set("respawnSession", func(sessionID uint64) uint64 {
+		id, _ := s.mgr.RespawnSession(parent.SessionID(sessionID))
+		return uint64(id)
+	})
+
+	_ = obj.Set("swapPanes", func(a, b uint64) {
+		_ = s.mgr.SwapPanes(parent.PaneID(a), parent.PaneID(b))
+	})
+
+	_ = obj.Set("zoomPane", func(paneID uint64) {
+		s.mgr.ZoomPane(parent.PaneID(paneID))
+	})
+
+	_ = obj.Set("zoomedPane", func() uint64 {
+		return uint64(s.mgr.ZoomedPane())
+	})
+
+	_ = obj.Set("setPipeFile", func(sessionID uint64, path string) {
+		_ = s.mgr.SetPipeFile(parent.SessionID(sessionID), path)
+	})
+
+	_ = obj.Set("clearPipe", func(sessionID uint64) {
+		_ = s.mgr.ClearPipe(parent.SessionID(sessionID))
+	})
+
+	_ = obj.Set("displayMessage", func(sessionID uint64, text string, durationMs ...int) {
+		dur := 3 * time.Second
+		if len(durationMs) > 0 && durationMs[0] > 0 {
+			dur = time.Duration(durationMs[0]) * time.Millisecond
+		}
+		_ = s.mgr.DisplayMessage(parent.SessionID(sessionID), text, dur)
+	})
+
+	_ = obj.Set("activeMessage", func(sessionID uint64) string {
+		return s.mgr.ActiveMessage(parent.SessionID(sessionID))
+	})
+
+	_ = obj.Set("capturePane", func(sessionID uint64, startLine, endLine int) string {
+		return s.mgr.CapturePane(parent.SessionID(sessionID), startLine, endLine)
+	})
+
+	_ = obj.Set("copyPaneToClipboard", func(sessionID uint64) string {
+		return s.mgr.CopyPaneToClipboard(parent.SessionID(sessionID))
+	})
+
+	_ = obj.Set("lockSession", func(sessionID uint64, password string) error {
+		return s.mgr.LockSession(parent.SessionID(sessionID), password)
+	})
+
+	_ = obj.Set("unlockSession", func(sessionID uint64, password string) bool {
+		return s.mgr.UnlockSession(parent.SessionID(sessionID), password)
+	})
+
+	_ = obj.Set("isLocked", func(sessionID uint64) bool {
+		return s.mgr.IsLocked(parent.SessionID(sessionID))
+	})
+
+	_ = obj.Set("newCopyModeKeyHandler", func(halfPageRows int) map[string]any {
+		h := parent.NewCopyModeKeyHandler(halfPageRows)
+		return map[string]any{
+			"handleKey": func(key string) map[string]any {
+				action := h.HandleKey(key)
+				return map[string]any{
+					"kind":   int(action.Kind),
+					"n":      action.N,
+					"string": action.String(),
+				}
+			},
+		}
+	})
+
+	_ = obj.Set("newCopyModeSearcher", func() map[string]any {
+		cs := parent.NewCopyModeSearcher()
+		return map[string]any{
+			"startSearch": func(direction int, cursorRow, cursorCol int) {
+				cs.StartSearch(parent.CopyModeSearchDirection(direction), cursorRow, cursorCol)
+			},
+			"direction": func() int { return int(cs.Direction()) },
+			"pattern":   cs.Pattern,
+			"appendChar": func(ch string) {
+				if len(ch) > 0 {
+					cs.AppendChar(rune(ch[0]))
+				}
+			},
+			"backspace": cs.Backspace,
+			"execute": func(searchFn func(string, int, int) map[string]any) map[string]any {
+				match := cs.Execute(copyModeSearchAdapter{searchFn: searchFn})
+				return wrapSearchMatch(match)
+			},
+			"nextMatch": func(currentRow, currentCol int, searchFn func(string, int, int) map[string]any) map[string]any {
+				match := cs.NextMatch(copyModeSearchAdapter{searchFn: searchFn}, currentRow, currentCol)
+				return wrapSearchMatch(match)
+			},
+			"prevMatch": func(currentRow, currentCol int, searchFn func(string, int, int) map[string]any) map[string]any {
+				match := cs.PrevMatch(copyModeSearchAdapter{searchFn: searchFn}, currentRow, currentCol)
+				return wrapSearchMatch(match)
+			},
+		}
+	})
+
+	_ = obj.Set("newChooser", func(activeSessionID uint64) map[string]any {
+		c := s.mgr.NewChooser(parent.SessionID(activeSessionID))
+		return map[string]any{
+			"show":     func() { c.Show() },
+			"hide":     func() { c.Hide() },
+			"visible":  func() bool { return c.Visible() },
+			"up":       func() { c.Up() },
+			"down":     func() { c.Down() },
+			"selected": func() map[string]any {
+				item, ok := c.Selected()
+				if !ok {
+					return nil
+				}
+				return map[string]any{
+					"id":    uint64(item.ID),
+					"name":  item.Name,
+					"kind":  string(item.Kind),
+					"index": item.Index,
+				}
+			},
+			"render": func(width int) string { return c.Render(width) },
 		}
 	})
 }
@@ -1907,4 +2379,35 @@ func registerPaneMethods(obj *goja.Object, s *muxState) {
 		}
 		return goja.Undefined()
 	})
+}
+
+func prefixActionKindFromName(name string) parent.PrefixActionKind {
+	switch name {
+	case "NewWindow":
+		return parent.PrefixActionNewWindow
+	case "NextWindow":
+		return parent.PrefixActionNextWindow
+	case "PrevWindow":
+		return parent.PrefixActionPrevWindow
+	case "Detach":
+		return parent.PrefixActionDetach
+	case "ZoomPane":
+		return parent.PrefixActionZoomPane
+	case "ClosePane":
+		return parent.PrefixActionClosePane
+	case "SplitHorizontal":
+		return parent.PrefixActionSplitHorizontal
+	case "SplitVertical":
+		return parent.PrefixActionSplitVertical
+	case "CopyMode":
+		return parent.PrefixActionCopyMode
+	case "ListKeys":
+		return parent.PrefixActionListKeys
+	case "RenameWindow":
+		return parent.PrefixActionRenameWindow
+	case "Cancel":
+		return parent.PrefixActionCancel
+	default:
+		return parent.PrefixActionNone
+	}
 }

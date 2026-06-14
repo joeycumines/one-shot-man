@@ -555,3 +555,74 @@ func TestSelectedText_ScrollbackContent(t *testing.T) {
 		t.Errorf("SelectedText = %q, want 5 chars", got)
 	}
 }
+
+func TestScrollCopyMode_WhenActive(t *testing.T) {
+	v := NewVTerm(5, 20)
+	v.SetScrollback(100)
+	writeLines(v, 20)
+
+	v.EnterCopyMode()
+	if !v.InCopyMode() {
+		t.Fatal("InCopyMode = false, want true")
+	}
+
+	ok := v.ScrollCopyMode(3)
+	if !ok {
+		t.Error("ScrollCopyMode returned false, want true when copy mode active")
+	}
+	snap := v.ActiveScreen()
+	if snap.ScrollOffset != 3 {
+		t.Errorf("ScrollOffset = %d, want 3 after ScrollCopyMode(3)", snap.ScrollOffset)
+	}
+
+	ok = v.ScrollCopyMode(-2)
+	if !ok {
+		t.Error("ScrollCopyMode returned false, want true")
+	}
+	snap = v.ActiveScreen()
+	if snap.ScrollOffset != 1 {
+		t.Errorf("ScrollOffset = %d, want 1 after ScrollCopyMode(-2)", snap.ScrollOffset)
+	}
+}
+
+func TestScrollCopyMode_WhenNotActive(t *testing.T) {
+	v := NewVTerm(5, 20)
+	v.SetScrollback(100)
+	writeLines(v, 20)
+
+	ok := v.ScrollCopyMode(3)
+	if ok {
+		t.Error("ScrollCopyMode returned true, want false when copy mode not active")
+	}
+	snap := v.ActiveScreen()
+	if snap.ScrollOffset != 0 {
+		t.Errorf("ScrollOffset = %d, want 0 (no scroll when not in copy mode)", snap.ScrollOffset)
+	}
+}
+
+func TestScrollCopyMode_Clamped(t *testing.T) {
+	v := NewVTerm(5, 20)
+	v.SetScrollback(100)
+	writeLines(v, 20)
+
+	v.EnterCopyMode()
+
+	ok := v.ScrollCopyMode(9999)
+	if !ok {
+		t.Error("ScrollCopyMode returned false")
+	}
+	snap := v.ActiveScreen()
+	maxOff := v.ScrollbackLines() + 5
+	if snap.ScrollOffset > maxOff {
+		t.Errorf("ScrollOffset = %d, exceeds max %d", snap.ScrollOffset, maxOff)
+	}
+
+	ok = v.ScrollCopyMode(-9999)
+	if !ok {
+		t.Error("ScrollCopyMode returned false")
+	}
+	snap = v.ActiveScreen()
+	if snap.ScrollOffset != 0 {
+		t.Errorf("ScrollOffset = %d, want 0 after negative over-scroll", snap.ScrollOffset)
+	}
+}

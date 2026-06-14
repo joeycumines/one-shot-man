@@ -3,11 +3,14 @@ package termmux
 import (
 	"cmp"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -356,12 +359,197 @@ const (
 	// reqActivePaneID asks the worker to return the active pane's ID.
 	// Payload: nil. Reply value: PaneID.
 	reqActivePaneID
+
+	// reqIsCopyModeActive asks whether copy mode is active for a session.
+	// Payload: SessionID. Reply value: bool.
+	reqIsCopyModeActive
+
+	// reqScrollCopyMode asks the worker to scroll in copy mode.
+	// Payload: *scrollCopyModePayload. Reply value: bool.
+	reqScrollCopyMode
+
+	// reqEnterCopyMode asks the worker to enter copy mode for a session.
+	// Payload: SessionID. Reply value: none.
+	reqEnterCopyMode
+
+	// reqExitCopyMode asks the worker to exit copy mode for a session.
+	// Payload: SessionID. Reply value: none.
+	reqExitCopyMode
+
+	// reqNewWindow asks the worker to create a new window.
+	// Payload: *newWindowPayload. Reply value: WindowID.
+	reqNewWindow
+
+	// reqNextWindow asks the worker to switch to the next window.
+	// Payload: none. Reply value: WindowID.
+	reqNextWindow
+
+	// reqPrevWindow asks the worker to switch to the previous window.
+	// Payload: none. Reply value: WindowID.
+	reqPrevWindow
+
+	// reqRenameWindow asks the worker to rename a window.
+	// Payload: *renameWindowPayload. Reply value: none.
+	reqRenameWindow
+
+	// reqCloseWindow asks the worker to close a window.
+	// Payload: WindowID. Reply value: none.
+	reqCloseWindow
+
+	// reqActiveWindowID asks the worker to return the active window's ID.
+	// Payload: none. Reply value: WindowID.
+	reqActiveWindowID
+
+	// reqWindows asks the worker to return a list of all windows.
+	// Payload: none. Reply value: []*Window.
+	reqWindows
+
+	// reqSetSynchronizePanes asks the worker to toggle synchronized panes.
+	// Payload: bool. Reply value: none.
+	reqSetSynchronizePanes
+
+	// reqSynchronizePanes asks the worker to return the synchronize state.
+	// Payload: none. Reply value: bool.
+	reqSynchronizePanes
+
+	// reqSetMonitorConfig sets the monitoring configuration for a session.
+	// Payload: monitorConfigPayload. Reply value: none.
+	reqSetMonitorConfig
+
+	// reqMonitorConfig returns the monitoring configuration for a session.
+	// Payload: SessionID. Reply value: MonitorConfig.
+	reqMonitorConfig
+
+	// reqVisualBellActive returns whether a visual bell flash is active.
+	// Payload: SessionID. Reply value: bool.
+	reqVisualBellActive
+
+	// reqCheckSilenceMonitors checks all sessions for silence threshold
+	// violations and emits events. Payload: none. Reply value: int.
+	reqCheckSilenceMonitors
+
+	// reqSetRemainOnExit sets the global remain-on-exit default.
+	// Payload: bool. Reply value: none.
+	reqSetRemainOnExit
+
+	// reqRemainOnExit returns the global remain-on-exit default.
+	// Payload: none. Reply value: bool.
+	reqRemainOnExit
+
+	// reqSetPaneRemainOnExit sets remain-on-exit for a specific pane.
+	// Payload: paneRemainOnExitPayload. Reply value: none.
+	reqSetPaneRemainOnExit
+
+	// reqPaneRemainOnExit returns remain-on-exit for a specific pane.
+	// Payload: PaneID. Reply value: bool.
+	reqPaneRemainOnExit
+
+	// reqPaneExited returns whether a pane has exited.
+	// Payload: PaneID. Reply value: bool.
+	reqPaneExited
+
+	// reqRespawnSession respawns a session that is in Exited state.
+	// Payload: SessionID. Reply value: SessionID.
+	reqRespawnSession
+
+	// reqSwapPanes swaps two panes' positions.
+	// Payload: swapPanesPayload. Reply value: none.
+	reqSwapPanes
+
+	// reqZoomPane toggles zoom on a pane.
+	// Payload: PaneID. Reply value: none.
+	reqZoomPane
+
+	// reqZoomedPane returns the currently zoomed pane ID.
+	// Payload: none. Reply value: PaneID.
+	reqZoomedPane
+
+	// reqSetPipeFile sets a file path for piping pane output.
+	// Payload: pipeFilePayload. Reply value: none.
+	reqSetPipeFile
+
+	// reqClearPipe clears the pipe writer for a session.
+	// Payload: SessionID. Reply value: none.
+	reqClearPipe
+
+	// reqDisplayMessage sets a transient message on a session.
+	// Payload: displayMessagePayload. Reply value: none.
+	reqDisplayMessage
+
+	// reqActiveMessage returns the active message text for a session.
+	// Payload: SessionID. Reply value: string.
+	reqActiveMessage
+
+	// reqCapturePane returns region text from a session's snapshot.
+	// Payload: capturePanePayload. Reply value: string.
+	reqCapturePane
+
+	// reqLockSession locks a session with a password.
+	// Payload: lockPayload. Reply value: none.
+	reqLockSession
+
+	// reqUnlockSession attempts to unlock a session.
+	// Payload: lockPayload. Reply value: bool.
+	reqUnlockSession
+
+	// reqIsLocked returns whether a session is locked.
+	// Payload: SessionID. Reply value: bool.
+	reqIsLocked
 )
 
 // registerPayload carries the arguments for a reqRegister request.
 type registerPayload struct {
 	session InteractiveSession
 	target  SessionTarget
+}
+
+// monitorConfigPayload carries the session ID and new monitor config.
+type monitorConfigPayload struct {
+	sessionID SessionID
+	config    MonitorConfig
+}
+
+// paneRemainOnExitPayload carries the pane ID and remain-on-exit value.
+type paneRemainOnExitPayload struct {
+	paneID PaneID
+	value  bool
+}
+
+// swapPanesPayload carries two pane IDs to swap.
+type swapPanesPayload struct {
+	a, b PaneID
+}
+
+// pipeFilePayload carries the session ID and file path for pipe-pane.
+type pipeFilePayload struct {
+	sessionID SessionID
+	path      string
+}
+
+// displayMessage is a transient message shown as an overlay.
+type displayMessage struct {
+	text      string
+	expiresAt time.Time
+}
+
+// displayMessagePayload carries the session ID, text, and duration.
+type displayMessagePayload struct {
+	sessionID SessionID
+	text      string
+	duration  time.Duration
+}
+
+// capturePanePayload carries the session ID and row range.
+type capturePanePayload struct {
+	sessionID SessionID
+	startLine int
+	endLine   int
+}
+
+// lockPayload carries the session ID and plaintext password.
+type lockPayload struct {
+	sessionID SessionID
+	password  string
 }
 
 // resizePayload carries the new terminal dimensions for a reqResize request.
@@ -395,6 +583,23 @@ type newPanePayload struct {
 type resizePanePayload struct {
 	id    PaneID
 	ratio float64
+}
+
+// scrollCopyModePayload carries the session ID and scroll delta.
+type scrollCopyModePayload struct {
+	id    SessionID
+	delta int
+}
+
+// newWindowPayload carries the name for a new window.
+type newWindowPayload struct {
+	name string
+}
+
+// renameWindowPayload carries the window ID and new name.
+type renameWindowPayload struct {
+	id   WindowID
+	name string
 }
 
 // RestoreResult describes the outcome of a [SessionManager.RestoreFromState]
@@ -469,6 +674,14 @@ type managedSession struct {
 	// chunk before VTerm processing. Used during passthrough for
 	// low-latency stdout forwarding.
 	passthroughWriter atomic.Pointer[io.Writer]
+
+	remainOnExit bool
+
+	pipeWriter atomic.Pointer[io.Writer]
+
+	message atomic.Pointer[displayMessage]
+
+	lock SessionLock
 }
 
 // SessionManager coordinates multiple interactive terminal sessions using a
@@ -538,6 +751,15 @@ type SessionManager struct {
 	passthroughSessionID SessionID
 
 	paneMgr *paneManager
+
+	// windowMgr manages windows, each with its own pane layout.
+	windowMgr *WindowManager
+
+	// monitors tracks per-pane monitoring state keyed by SessionID.
+	monitors map[SessionID]*MonitorState
+
+	// visualBellDuration is how long a visual bell flash lasts.
+	visualBellDuration time.Duration
 }
 
 // ManagerOption configures a SessionManager. Pass options to NewSessionManager.
@@ -578,7 +800,10 @@ func NewSessionManager(opts ...ManagerOption) *SessionManager {
 		nextID:       1,
 		termRows:     DefaultRows,
 		termCols:     DefaultCols,
-		paneMgr:      newPaneManager(LayoutVertical, DefaultCols, DefaultRows),
+		paneMgr:             newPaneManager(LayoutVertical, DefaultCols, DefaultRows),
+		windowMgr:           NewWindowManager(LayoutVertical, DefaultCols, DefaultRows),
+		monitors:            make(map[SessionID]*MonitorState),
+		visualBellDuration:  200 * time.Millisecond,
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -848,6 +1073,286 @@ func (m *SessionManager) ActivePaneID() PaneID {
 	return m.paneMgr.ActivePaneID()
 }
 
+// IsCopyModeActive reports whether copy mode is active for the given session.
+func (m *SessionManager) IsCopyModeActive(id SessionID) bool {
+	resp := m.sendRequest(reqIsCopyModeActive, id)
+	if resp.value == nil {
+		return false
+	}
+	return resp.value.(bool)
+}
+
+// ScrollCopyMode scrolls the viewport by delta lines in copy mode for the given
+// session. Returns false if copy mode is not active or the session does not exist.
+func (m *SessionManager) ScrollCopyMode(id SessionID, delta int) bool {
+	resp := m.sendRequest(reqScrollCopyMode, &scrollCopyModePayload{id: id, delta: delta})
+	if resp.value == nil {
+		return false
+	}
+	return resp.value.(bool)
+}
+
+// EnterCopyMode enters copy mode for the given session.
+func (m *SessionManager) EnterCopyMode(id SessionID) error {
+	return m.sendRequest(reqEnterCopyMode, id).err
+}
+
+// ExitCopyMode exits copy mode for the given session.
+func (m *SessionManager) ExitCopyMode(id SessionID) error {
+	return m.sendRequest(reqExitCopyMode, id).err
+}
+
+// NewWindow creates a new window with the given name and returns its ID.
+func (m *SessionManager) NewWindow(name string) (WindowID, error) {
+	resp := m.sendRequest(reqNewWindow, &newWindowPayload{name: name})
+	if resp.err != nil {
+		return 0, resp.err
+	}
+	return resp.value.(WindowID), nil
+}
+
+// NextWindow switches to the next window. Returns the new active WindowID.
+func (m *SessionManager) NextWindow() WindowID {
+	resp := m.sendRequest(reqNextWindow, nil)
+	if resp.value == nil {
+		return 0
+	}
+	return resp.value.(WindowID)
+}
+
+// PrevWindow switches to the previous window. Returns the new active WindowID.
+func (m *SessionManager) PrevWindow() WindowID {
+	resp := m.sendRequest(reqPrevWindow, nil)
+	if resp.value == nil {
+		return 0
+	}
+	return resp.value.(WindowID)
+}
+
+// RenameWindow changes the name of the window with the given ID.
+func (m *SessionManager) RenameWindow(id WindowID, name string) error {
+	return m.sendRequest(reqRenameWindow, &renameWindowPayload{id: id, name: name}).err
+}
+
+// CloseWindow closes the window with the given ID.
+func (m *SessionManager) CloseWindow(id WindowID) error {
+	return m.sendRequest(reqCloseWindow, id).err
+}
+
+// ActiveWindowID returns the currently active window ID, or 0 if no windows exist.
+func (m *SessionManager) ActiveWindowID() WindowID {
+	resp := m.sendRequest(reqActiveWindowID, nil)
+	if resp.value == nil {
+		return 0
+	}
+	return resp.value.(WindowID)
+}
+
+// Windows returns a snapshot of all windows in order.
+func (m *SessionManager) Windows() []*Window {
+	resp := m.sendRequest(reqWindows, nil)
+	if resp.value == nil {
+		return nil
+	}
+	return resp.value.([]*Window)
+}
+
+// SetSynchronizePanes enables or disables synchronized pane input.
+func (m *SessionManager) SetSynchronizePanes(v bool) {
+	_ = m.sendRequest(reqSetSynchronizePanes, v)
+}
+
+// SynchronizePanes reports whether synchronized pane input is enabled.
+func (m *SessionManager) SynchronizePanes() bool {
+	resp := m.sendRequest(reqSynchronizePanes, nil)
+	if resp.value == nil {
+		return false
+	}
+	return resp.value.(bool)
+}
+
+// SetMonitorConfig sets the monitoring configuration for the given session.
+func (m *SessionManager) SetMonitorConfig(id SessionID, cfg MonitorConfig) error {
+	resp := m.sendRequest(reqSetMonitorConfig, monitorConfigPayload{sessionID: id, config: cfg})
+	return resp.err
+}
+
+// MonitorConfig returns the monitoring configuration for the given session.
+func (m *SessionManager) MonitorConfig(id SessionID) (MonitorConfig, error) {
+	resp := m.sendRequest(reqMonitorConfig, id)
+	if resp.err != nil {
+		return MonitorConfig{}, resp.err
+	}
+	if resp.value == nil {
+		return MonitorConfig{}, nil
+	}
+	return resp.value.(MonitorConfig), nil
+}
+
+// VisualBellActive reports whether a visual bell flash is currently displayed
+// for the given session. The flash expires after the configured duration.
+func (m *SessionManager) VisualBellActive(id SessionID) (bool, error) {
+	resp := m.sendRequest(reqVisualBellActive, id)
+	if resp.err != nil {
+		return false, resp.err
+	}
+	if resp.value == nil {
+		return false, nil
+	}
+	return resp.value.(bool), nil
+}
+
+// CheckSilenceMonitors checks all sessions with silence monitoring enabled
+// and emits EventSilence for any that have exceeded their threshold.
+// Returns the number of silence events emitted. Intended to be called
+// periodically from an external timer.
+func (m *SessionManager) CheckSilenceMonitors() int {
+	resp := m.sendRequest(reqCheckSilenceMonitors, nil)
+	if resp.value == nil {
+		return 0
+	}
+	return resp.value.(int)
+}
+
+func (m *SessionManager) SetRemainOnExit(v bool) {
+	_ = m.sendRequest(reqSetRemainOnExit, v)
+}
+
+func (m *SessionManager) RemainOnExit() bool {
+	resp := m.sendRequest(reqRemainOnExit, nil)
+	if resp.value == nil {
+		return false
+	}
+	return resp.value.(bool)
+}
+
+func (m *SessionManager) SetPaneRemainOnExit(id PaneID, v bool) error {
+	resp := m.sendRequest(reqSetPaneRemainOnExit, paneRemainOnExitPayload{paneID: id, value: v})
+	return resp.err
+}
+
+func (m *SessionManager) PaneRemainOnExit(id PaneID) (bool, error) {
+	resp := m.sendRequest(reqPaneRemainOnExit, id)
+	if resp.err != nil {
+		return false, resp.err
+	}
+	if resp.value == nil {
+		return false, nil
+	}
+	return resp.value.(bool), nil
+}
+
+func (m *SessionManager) PaneExited(id PaneID) bool {
+	resp := m.sendRequest(reqPaneExited, id)
+	if resp.value == nil {
+		return false
+	}
+	return resp.value.(bool)
+}
+
+func (m *SessionManager) RespawnSession(id SessionID) (SessionID, error) {
+	resp := m.sendRequest(reqRespawnSession, id)
+	if resp.err != nil {
+		return 0, resp.err
+	}
+	if resp.value == nil {
+		return 0, nil
+	}
+	return resp.value.(SessionID), nil
+}
+
+func (m *SessionManager) SwapPanes(a, b PaneID) error {
+	resp := m.sendRequest(reqSwapPanes, swapPanesPayload{a: a, b: b})
+	return resp.err
+}
+
+func (m *SessionManager) ZoomPane(id PaneID) {
+	_ = m.sendRequest(reqZoomPane, id)
+}
+
+func (m *SessionManager) ZoomedPane() PaneID {
+	resp := m.sendRequest(reqZoomedPane, nil)
+	if resp.value == nil {
+		return 0
+	}
+	return resp.value.(PaneID)
+}
+
+func (m *SessionManager) SetPipeFile(id SessionID, path string) error {
+	resp := m.sendRequest(reqSetPipeFile, pipeFilePayload{sessionID: id, path: path})
+	return resp.err
+}
+
+func (m *SessionManager) ClearPipe(id SessionID) error {
+	resp := m.sendRequest(reqClearPipe, id)
+	return resp.err
+}
+
+func (m *SessionManager) DisplayMessage(id SessionID, text string, duration time.Duration) error {
+	resp := m.sendRequest(reqDisplayMessage, displayMessagePayload{sessionID: id, text: text, duration: duration})
+	return resp.err
+}
+
+func (m *SessionManager) ActiveMessage(id SessionID) string {
+	resp := m.sendRequest(reqActiveMessage, id)
+	if resp.err != nil {
+		return ""
+	}
+	return resp.value.(string)
+}
+
+func (m *SessionManager) CapturePane(id SessionID, startLine, endLine int) string {
+	resp := m.sendRequest(reqCapturePane, capturePanePayload{sessionID: id, startLine: startLine, endLine: endLine})
+	if resp.err != nil {
+		return ""
+	}
+	return resp.value.(string)
+}
+
+func (m *SessionManager) CopyPaneToClipboard(id SessionID) string {
+	text := m.CapturePane(id, 0, -1)
+	if text == "" {
+		return ""
+	}
+	encoded := base64.StdEncoding.EncodeToString([]byte(text))
+	return fmt.Sprintf("\x1b]52;c;%s\x1b\\", encoded)
+}
+
+func (m *SessionManager) LockSession(id SessionID, password string) error {
+	resp := m.sendRequest(reqLockSession, lockPayload{sessionID: id, password: password})
+	return resp.err
+}
+
+func (m *SessionManager) UnlockSession(id SessionID, password string) bool {
+	resp := m.sendRequest(reqUnlockSession, lockPayload{sessionID: id, password: password})
+	if resp.err != nil {
+		return false
+	}
+	return resp.value.(bool)
+}
+
+func (m *SessionManager) IsLocked(id SessionID) bool {
+	resp := m.sendRequest(reqIsLocked, id)
+	if resp.err != nil {
+		return false
+	}
+	return resp.value.(bool)
+}
+
+func (m *SessionManager) NewChooser(active SessionID) *Chooser {
+	sessions := m.Sessions()
+	items := make([]ChooserItem, 0, len(sessions))
+	for i, s := range sessions {
+		items = append(items, ChooserItem{
+			ID:    s.ID,
+			Name:  s.Target.Name,
+			Kind:  s.Target.Kind,
+			Index: i,
+		})
+	}
+	return NewChooser(items, active)
+}
+
 // dispatch routes a request to the appropriate handler. This method runs
 // exclusively within the worker goroutine started by Run.
 func (m *SessionManager) dispatch(req request) {
@@ -902,6 +1407,74 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleFocusNextPane(req.payload.(NavigationDirection))
 	case reqActivePaneID:
 		resp = m.handleActivePaneID()
+	case reqIsCopyModeActive:
+		resp = m.handleIsCopyModeActive(req.payload.(SessionID))
+	case reqScrollCopyMode:
+		resp = m.handleScrollCopyMode(req.payload.(*scrollCopyModePayload))
+	case reqEnterCopyMode:
+		resp = m.handleEnterCopyMode(req.payload.(SessionID))
+	case reqExitCopyMode:
+		resp = m.handleExitCopyMode(req.payload.(SessionID))
+	case reqNewWindow:
+		resp = m.handleNewWindow(req.payload.(*newWindowPayload))
+	case reqNextWindow:
+		resp = m.handleNextWindow()
+	case reqPrevWindow:
+		resp = m.handlePrevWindow()
+	case reqRenameWindow:
+		resp = m.handleRenameWindow(req.payload.(*renameWindowPayload))
+	case reqCloseWindow:
+		resp = m.handleCloseWindow(req.payload.(WindowID))
+	case reqActiveWindowID:
+		resp = m.handleActiveWindowID()
+	case reqWindows:
+		resp = m.handleWindows()
+	case reqSetSynchronizePanes:
+		resp = m.handleSetSynchronizePanes(req.payload.(bool))
+	case reqSynchronizePanes:
+		resp = m.handleSynchronizePanes()
+	case reqSetMonitorConfig:
+		resp = m.handleSetMonitorConfig(req.payload)
+	case reqMonitorConfig:
+		resp = m.handleMonitorConfig(req.payload)
+	case reqVisualBellActive:
+		resp = m.handleVisualBellActive(req.payload)
+	case reqCheckSilenceMonitors:
+		resp = m.handleCheckSilenceMonitors()
+	case reqSetRemainOnExit:
+		resp = m.handleSetRemainOnExit(req.payload)
+	case reqRemainOnExit:
+		resp = m.handleRemainOnExit()
+	case reqSetPaneRemainOnExit:
+		resp = m.handleSetPaneRemainOnExit(req.payload)
+	case reqPaneRemainOnExit:
+		resp = m.handlePaneRemainOnExit(req.payload)
+	case reqPaneExited:
+		resp = m.handlePaneExited(req.payload)
+	case reqRespawnSession:
+		resp = m.handleRespawnSession(req.payload)
+	case reqSwapPanes:
+		resp = m.handleSwapPanes(req.payload)
+	case reqZoomPane:
+		resp = m.handleZoomPane(req.payload)
+	case reqZoomedPane:
+		resp = m.handleZoomedPane()
+	case reqSetPipeFile:
+		resp = m.handleSetPipeFile(req.payload)
+	case reqClearPipe:
+		resp = m.handleClearPipe(req.payload)
+	case reqDisplayMessage:
+		resp = m.handleDisplayMessage(req.payload)
+	case reqActiveMessage:
+		resp = m.handleActiveMessage(req.payload)
+	case reqCapturePane:
+		resp = m.handleCapturePane(req.payload)
+	case reqLockSession:
+		resp = m.handleLockSession(req.payload)
+	case reqUnlockSession:
+		resp = m.handleUnlockSession(req.payload)
+	case reqIsLocked:
+		resp = m.handleIsLocked(req.payload)
 	default:
 		resp = response{err: fmt.Errorf("termmux: unknown request kind %d", req.kind)}
 	}
@@ -920,14 +1493,21 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 	v := vt.NewVTerm(m.termRows, m.termCols)
 	v.BellFn = func() {
 		m.eventBus.emit(EventBell, id)
+		if mon, ok := m.monitors[id]; ok && mon.Config.Bell {
+			mon.VisualBell = VisualBellState{
+				Active:    true,
+				StartedAt: time.Now(),
+			}
+		}
 	}
 
 	ms := &managedSession{
-		session:    p.session,
-		vterm:      v,
-		state:      SessionCreated,
-		target:     p.target,
-		lastActive: time.Now(),
+		session:     p.session,
+		vterm:       v,
+		state:       SessionCreated,
+		target:      p.target,
+		lastActive:  time.Now(),
+		remainOnExit: m.paneMgr.RemainOnExit(),
 	}
 
 	// Wire DA/DSR response callback so VT responses are routed back to
@@ -968,15 +1548,11 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 		// For embedded mode, DCS is discarded for now.
 	}
 
-	snap := &ScreenSnapshot{
-		Gen:       m.snapshotGen,
-		Rows:      m.termRows,
-		Cols:      m.termCols,
-		Timestamp: time.Now(),
-	}
+	snap := NewScreenSnapshot(m.snapshotGen, &vt.Screen{}, m.termRows, m.termCols, time.Now())
 	// Initial snapshot has cursor at origin (0,0).
 	ms.snapshot.Store(snap)
 	m.sessions[id] = ms
+	m.monitors[id] = NewMonitorState(MonitorConfig{})
 
 	if m.activeID == 0 {
 		m.activeID = id
@@ -1039,6 +1615,20 @@ func (m *SessionManager) handleInput(data []byte) response {
 	if m.activeID == 0 {
 		return response{err: ErrSessionNotFound}
 	}
+
+	if m.paneMgr.Synchronize() {
+		var firstErr error
+		for _, ms := range m.sessions {
+			if ms.state != SessionRunning && ms.state != SessionCreated {
+				continue
+			}
+			if _, err := ms.session.Write(data); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		return response{err: firstErr}
+	}
+
 	ms, ok := m.sessions[m.activeID]
 	if !ok {
 		return response{err: fmt.Errorf("%w: active session %d disappeared",
@@ -1202,6 +1792,441 @@ func (m *SessionManager) handleActivePaneID() response {
 	return response{value: m.paneMgr.ActivePaneID()}
 }
 
+func (m *SessionManager) handleIsCopyModeActive(id SessionID) response {
+	ms, ok := m.sessions[id]
+	if !ok {
+		return response{value: false}
+	}
+	return response{value: ms.vterm.InCopyMode()}
+}
+
+func (m *SessionManager) handleScrollCopyMode(p *scrollCopyModePayload) response {
+	ms, ok := m.sessions[p.id]
+	if !ok {
+		return response{value: false}
+	}
+	return response{value: ms.vterm.ScrollCopyMode(p.delta)}
+}
+
+func (m *SessionManager) handleEnterCopyMode(id SessionID) response {
+	ms, ok := m.sessions[id]
+	if !ok {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
+	}
+	ms.vterm.EnterCopyMode()
+	return response{}
+}
+
+func (m *SessionManager) handleExitCopyMode(id SessionID) response {
+	ms, ok := m.sessions[id]
+	if !ok {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
+	}
+	ms.vterm.ExitCopyMode()
+	return response{}
+}
+
+func (m *SessionManager) handleNewWindow(p *newWindowPayload) response {
+	id := m.windowMgr.NewWindow(p.name)
+	return response{value: id}
+}
+
+func (m *SessionManager) handleNextWindow() response {
+	id := m.windowMgr.NextWindow()
+	return response{value: id}
+}
+
+func (m *SessionManager) handlePrevWindow() response {
+	id := m.windowMgr.PrevWindow()
+	return response{value: id}
+}
+
+func (m *SessionManager) handleRenameWindow(p *renameWindowPayload) response {
+	if err := m.windowMgr.RenameWindow(p.id, p.name); err != nil {
+		return response{err: err}
+	}
+	return response{}
+}
+
+func (m *SessionManager) handleCloseWindow(id WindowID) response {
+	if err := m.windowMgr.CloseWindow(id); err != nil {
+		return response{err: err}
+	}
+	return response{}
+}
+
+func (m *SessionManager) handleActiveWindowID() response {
+	return response{value: m.windowMgr.ActiveWindowID()}
+}
+
+func (m *SessionManager) handleWindows() response {
+	return response{value: m.windowMgr.Windows()}
+}
+
+func (m *SessionManager) handleSetSynchronizePanes(v bool) response {
+	m.paneMgr.SetSynchronize(v)
+	return response{}
+}
+
+func (m *SessionManager) handleSynchronizePanes() response {
+	return response{value: m.paneMgr.Synchronize()}
+}
+
+func (m *SessionManager) handleSetMonitorConfig(payload any) response {
+	p, ok := payload.(monitorConfigPayload)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	if _, exists := m.sessions[p.sessionID]; !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.sessionID)}
+	}
+	mon, exists := m.monitors[p.sessionID]
+	if !exists {
+		mon = NewMonitorState(p.config)
+		m.monitors[p.sessionID] = mon
+	} else {
+		mon.Config = p.config
+	}
+	return response{}
+}
+
+func (m *SessionManager) handleMonitorConfig(payload any) response {
+	id, ok := payload.(SessionID)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	mon, exists := m.monitors[id]
+	if !exists {
+		return response{value: MonitorConfig{}}
+	}
+	return response{value: mon.Config}
+}
+
+func (m *SessionManager) handleVisualBellActive(payload any) response {
+	id, ok := payload.(SessionID)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	mon, exists := m.monitors[id]
+	if !exists || !mon.VisualBell.Active {
+		return response{value: false}
+	}
+	if time.Since(mon.VisualBell.StartedAt) >= m.visualBellDuration {
+		mon.VisualBell.Active = false
+		return response{value: false}
+	}
+	return response{value: true}
+}
+
+func (m *SessionManager) handleCheckSilenceMonitors() response {
+	now := time.Now()
+	count := 0
+	for id, mon := range m.monitors {
+		if !mon.Config.Silence || mon.Config.SilenceThreshold <= 0 || mon.SilenceFired {
+			continue
+		}
+		if ms, exists := m.sessions[id]; exists && ms.state != SessionRunning && ms.state != SessionCreated {
+			continue
+		}
+		if now.Sub(mon.LastOutputAt) >= mon.Config.SilenceThreshold {
+			mon.SilenceFired = true
+			m.eventBus.emit(EventSilence, id)
+			count++
+		}
+	}
+	return response{value: count}
+}
+
+func (m *SessionManager) handleSetRemainOnExit(payload any) response {
+	v, ok := payload.(bool)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	m.paneMgr.SetRemainOnExit(v)
+	return response{}
+}
+
+func (m *SessionManager) handleRemainOnExit() response {
+	return response{value: m.paneMgr.RemainOnExit()}
+}
+
+func (m *SessionManager) handleSetPaneRemainOnExit(payload any) response {
+	p, ok := payload.(paneRemainOnExitPayload)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	return response{err: m.paneMgr.SetPaneRemainOnExit(p.paneID, p.value)}
+}
+
+func (m *SessionManager) handlePaneRemainOnExit(payload any) response {
+	id, ok := payload.(PaneID)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	v, err := m.paneMgr.PaneRemainOnExit(id)
+	if err != nil {
+		return response{err: err}
+	}
+	return response{value: v}
+}
+
+func (m *SessionManager) handlePaneExited(payload any) response {
+	id, ok := payload.(PaneID)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	return response{value: m.paneMgr.PaneExited(id)}
+}
+
+func (m *SessionManager) handleRespawnSession(payload any) response {
+	oldID, ok := payload.(SessionID)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	ms, exists := m.sessions[oldID]
+	if !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, oldID)}
+	}
+	if ms.state != SessionExited {
+		return response{err: fmt.Errorf("termmux: session %d has not exited (state=%v)", oldID, ms.state)}
+	}
+
+	_ = ms.session.Close()
+
+	newSession := NewCaptureSession(CaptureConfig{})
+	newID := m.nextID
+	m.nextID++
+
+	v := vt.NewVTerm(m.termRows, m.termCols)
+	v.BellFn = func() {
+		m.eventBus.emit(EventBell, newID)
+		if mon, ok := m.monitors[newID]; ok && mon.Config.Bell {
+			mon.VisualBell = VisualBellState{Active: true, StartedAt: time.Now()}
+		}
+	}
+
+	newMS := &managedSession{
+		session:      newSession,
+		vterm:        v,
+		state:        SessionCreated,
+		target:       ms.target,
+		lastActive:   time.Now(),
+		remainOnExit: m.paneMgr.RemainOnExit(),
+	}
+
+	v.ResponseWriter = func(data []byte) {
+		if newMS.session != nil {
+			if _, err := newMS.session.Write(data); err != nil {
+				slog.Debug("response write failed", "sessionID", newID, "error", err)
+			}
+		}
+	}
+
+	v.OSCHandler = func(code int, data string) {
+		switch code {
+		case 0, 2:
+			m.eventBus.emitData(EventTitle, newID, data)
+		case 7:
+			m.eventBus.emitData(EventWorkingDirectory, newID, data)
+		case 52:
+			m.eventBus.emitData(EventClipboard, newID, data)
+		}
+	}
+
+	v.DCSHandler = func(data []byte) {}
+
+	snap := NewScreenSnapshot(m.snapshotGen, &vt.Screen{}, m.termRows, m.termCols, time.Now())
+	newMS.snapshot.Store(snap)
+	m.sessions[newID] = newMS
+	m.monitors[newID] = NewMonitorState(MonitorConfig{})
+
+	m.snapshotGen++
+
+	if m.activeID == oldID {
+		m.activeID = newID
+	}
+
+	delete(m.sessions, oldID)
+
+	m.eventBus.emit(EventSessionRegistered, newID)
+	m.startReaderGoroutine(newID, newSession)
+
+	return response{value: newID}
+}
+
+func (m *SessionManager) handleSwapPanes(payload any) response {
+	p, ok := payload.(swapPanesPayload)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	if !m.paneMgr.engine.Swap(p.a, p.b) {
+		return response{err: fmt.Errorf("termmux: swap failed: one or both panes not found")}
+	}
+	return response{}
+}
+
+func (m *SessionManager) handleZoomPane(payload any) response {
+	id, ok := payload.(PaneID)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	if m.paneMgr.engine.ZoomedPane() == id {
+		m.paneMgr.engine.Unzoom()
+	} else {
+		m.paneMgr.engine.Zoom(id)
+	}
+	return response{}
+}
+
+func (m *SessionManager) handleZoomedPane() response {
+	return response{value: m.paneMgr.engine.ZoomedPane()}
+}
+
+func (m *SessionManager) handleSetPipeFile(payload any) response {
+	p, ok := payload.(pipeFilePayload)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	ms, exists := m.sessions[p.sessionID]
+	if !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.sessionID)}
+	}
+	f, err := os.OpenFile(p.path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return response{err: fmt.Errorf("termmux: pipe-pane open: %w", err)}
+	}
+	var w io.Writer = f
+	ms.pipeWriter.Store(&w)
+	return response{}
+}
+
+func (m *SessionManager) handleClearPipe(payload any) response {
+	id, ok := payload.(SessionID)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	ms, exists := m.sessions[id]
+	if !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
+	}
+	if old := ms.pipeWriter.Swap(nil); old != nil {
+		if c, ok := (*old).(io.Closer); ok {
+			_ = c.Close()
+		}
+	}
+	return response{}
+}
+
+func (m *SessionManager) handleDisplayMessage(payload any) response {
+	p, ok := payload.(displayMessagePayload)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	ms, exists := m.sessions[p.sessionID]
+	if !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.sessionID)}
+	}
+	dur := p.duration
+	if dur <= 0 {
+		dur = 3 * time.Second
+	}
+	ms.message.Store(&displayMessage{
+		text:      p.text,
+		expiresAt: time.Now().Add(dur),
+	})
+	return response{}
+}
+
+func (m *SessionManager) handleActiveMessage(payload any) response {
+	id, ok := payload.(SessionID)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	ms, exists := m.sessions[id]
+	if !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
+	}
+	msg := ms.message.Load()
+	if msg == nil || time.Now().After(msg.expiresAt) {
+		if msg != nil {
+			ms.message.Store(nil)
+		}
+		return response{value: ""}
+	}
+	return response{value: msg.text}
+}
+
+func (m *SessionManager) handleCapturePane(payload any) response {
+	p, ok := payload.(capturePanePayload)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	ms, exists := m.sessions[p.sessionID]
+	if !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.sessionID)}
+	}
+	snap := ms.snapshot.Load()
+	if snap == nil {
+		return response{value: ""}
+	}
+	text := snap.GetPlainText()
+	if text == "" {
+		return response{value: ""}
+	}
+	lines := strings.Split(text, "\n")
+	start := p.startLine
+	if start < 0 {
+		start = 0
+	}
+	end := p.endLine
+	if end < 0 || end > len(lines) {
+		end = len(lines)
+	}
+	if start >= end {
+		return response{value: ""}
+	}
+	return response{value: strings.Join(lines[start:end], "\n")}
+}
+
+func (m *SessionManager) handleLockSession(payload any) response {
+	p, ok := payload.(lockPayload)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	ms, exists := m.sessions[p.sessionID]
+	if !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.sessionID)}
+	}
+	if err := ms.lock.Lock(p.password); err != nil {
+		return response{err: err}
+	}
+	return response{}
+}
+
+func (m *SessionManager) handleUnlockSession(payload any) response {
+	p, ok := payload.(lockPayload)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	ms, exists := m.sessions[p.sessionID]
+	if !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.sessionID)}
+	}
+	return response{value: ms.lock.Unlock(p.password)}
+}
+
+func (m *SessionManager) handleIsLocked(payload any) response {
+	id, ok := payload.(SessionID)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	ms, exists := m.sessions[id]
+	if !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
+	}
+	return response{value: ms.lock.IsLocked()}
+}
+
 // handleSessions builds a list of SessionInfo values from the sessions map.
 func (m *SessionManager) handleSessions() response {
 	infos := make([]SessionInfo, 0, len(m.sessions))
@@ -1227,18 +2252,25 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 	// EOF sentinel: transition to Exited (from Running) or directly to
 	// Closed (from Created — process exited without producing output).
 	if so.data == nil {
-		// If synchronized output mode was active, the consumer may not
-		// have received the final event. Emit one now so the last
-		// snapshot is rendered.
 		if ms.vterm.SynchronizedOutput() {
 			m.eventBus.emitData(EventSessionOutput, so.id, nil)
 		}
 		if ms.state.validTransition(SessionExited) {
 			ms.state = SessionExited
 			m.eventBus.emit(EventSessionExited, so.id)
+			if ms.remainOnExit {
+				return
+			}
+			if err := ms.session.Close(); err != nil {
+				slog.Warn("session close failed on exit", "sessionID", so.id, "error", err)
+			}
+			ms.state = SessionClosed
+			if m.activeID == so.id {
+				m.activeID = 0
+			}
+			delete(m.sessions, so.id)
+			m.eventBus.emit(EventSessionClosed, so.id)
 		} else if ms.state == SessionCreated {
-			// Process exited immediately without output (e.g., /bin/true).
-			// Skip Exited and go directly to Closed.
 			if err := ms.session.Close(); err != nil {
 				slog.Warn("session close failed during immediate exit", "sessionID", so.id, "error", err)
 			}
@@ -1261,6 +2293,12 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 	if w := ms.passthroughWriter.Load(); w != nil {
 		if _, err := (*w).Write(so.data); err != nil {
 			slog.Warn("passthrough tee write failed", "sessionID", so.id, "error", err)
+		}
+	}
+
+	if w := ms.pipeWriter.Load(); w != nil {
+		if _, err := (*w).Write(so.data); err != nil {
+			slog.Warn("pipe-pane write failed", "sessionID", so.id, "error", err)
 		}
 	}
 
@@ -1302,6 +2340,22 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 	// false after the VTerm processes the DECRST ?2026l.
 	if !scr.SynchronizedOutput {
 		m.eventBus.emitData(EventSessionOutput, so.id, so.data)
+	}
+
+	// Monitoring: update LastOutputAt and check activity/silence.
+	if mon, ok := m.monitors[so.id]; ok {
+		now := time.Now()
+		wasIdle := now.Sub(mon.LastOutputAt)
+		mon.LastOutputAt = now
+		mon.SilenceFired = false
+
+		// Activity: background pane produced output after being idle.
+		if mon.Config.Activity && !mon.ActivityFired && so.id != m.activeID {
+			if mon.Config.ActivityThreshold <= 0 || wasIdle >= mon.Config.ActivityThreshold {
+				mon.ActivityFired = true
+				m.eventBus.emit(EventActivity, so.id)
+			}
+		}
 	}
 }
 

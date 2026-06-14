@@ -409,3 +409,73 @@ func (b *safeBuffer) Len() int {
 	defer b.mu.Unlock()
 	return b.buf.Len()
 }
+
+func TestStatusBar_LeftSegments(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.SetLeftSegments([]Segment{{Text: "session:main"}, {Text: "2 windows"}})
+	sb.Render()
+	got := buf.String()
+	if !strings.Contains(got, "session:main │ 2 windows") {
+		t.Errorf("left segments not rendered; got %q", got)
+	}
+}
+
+func TestStatusBar_RightSegments(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.SetRightSegments([]Segment{{Text: "host:local"}, {Text: "2024-01-01"}})
+	sb.Render()
+	got := buf.String()
+	if !strings.Contains(got, "host:local │ 2024-01-01") {
+		t.Errorf("right segments not rendered; got %q", got)
+	}
+}
+
+func TestStatusBar_WindowName(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.SetWindowName("editor")
+	sb.SetWindowIndex(0)
+	sb.Render()
+	got := buf.String()
+	if !strings.Contains(got, "0:editor") {
+		t.Errorf("window name not rendered; got %q", got)
+	}
+}
+
+func TestStatusBar_SegmentsOverrideDefaults(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.SetStatus("working")
+	sb.SetLeftSegments([]Segment{{Text: "custom-left"}})
+	sb.Render()
+	got := buf.String()
+	if !strings.Contains(got, "custom-left") {
+		t.Errorf("custom left segment missing; got %q", got)
+	}
+	if strings.Contains(got, "working") {
+		t.Errorf("status text should be overridden by segments; got %q", got)
+	}
+}
+
+func TestStatusBar_PadLine(t *testing.T) {
+	got := padLine("left", "right", 20)
+	if len(got) != 20 {
+		t.Errorf("padLine length = %d, want 20; got %q", len(got), got)
+	}
+}
+
+func TestStatusBar_JoinSegments(t *testing.T) {
+	got := joinSegments([]string{"a", "b", "c"})
+	if got != "a │ b │ c" {
+		t.Errorf("joinSegments = %q, want %q", got, "a │ b │ c")
+	}
+}
+
+func TestStatusBar_Segment_Color(t *testing.T) {
+	seg := Segment{Text: "hello", Color: "#ff0000"}
+	if seg.Text != "hello" || seg.Color != "#ff0000" {
+		t.Errorf("Segment fields wrong: %+v", seg)
+	}
+}

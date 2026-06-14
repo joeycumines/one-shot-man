@@ -285,11 +285,6 @@ func TestBPETokenizeWithAndWithoutDropout(t *testing.T) {
 	}
 }
 
-//go:fix inline
-func ptr[T any](v T) *T {
-	return new(v)
-}
-
 func TestBPEWithDropout0(t *testing.T) {
 	bpe, err := NewBpeBuilder().WithDropout(0.0).Build()
 	if err != nil {

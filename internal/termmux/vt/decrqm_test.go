@@ -120,3 +120,93 @@ func TestDECRQM_KeypadApplication_Reset(t *testing.T) {
 		t.Errorf("DECRQM mode 66 reset = %q, want %q", response, "\x1b[?66;3$y")
 	}
 }
+
+func TestDECRQM_InsertMode_Reset(t *testing.T) {
+	v := NewVTerm(24, 80)
+	var response []byte
+	v.ResponseWriter = func(data []byte) {
+		response = data
+	}
+
+	// IRM is reset by default.
+	v.Write([]byte("\x1b[4$p"))
+
+	if string(response) != "\x1b[4;3$y" {
+		t.Errorf("DECRQM mode 4 reset = %q, want %q", response, "\x1b[4;3$y")
+	}
+}
+
+func TestDECRQM_InsertMode_Set(t *testing.T) {
+	v := NewVTerm(24, 80)
+	var response []byte
+	v.ResponseWriter = func(data []byte) {
+		response = data
+	}
+
+	v.Write([]byte("\x1b[4h")) // IRM set (non-private)
+	v.Write([]byte("\x1b[4$p"))
+
+	if string(response) != "\x1b[4;2$y" {
+		t.Errorf("DECRQM mode 4 set = %q, want %q", response, "\x1b[4;2$y")
+	}
+}
+
+func TestDECRQM_HighlightTracking_Reset(t *testing.T) {
+	v := NewVTerm(24, 80)
+	var response []byte
+	v.ResponseWriter = func(data []byte) {
+		response = data
+	}
+
+	// Highlight tracking is reset by default.
+	v.Write([]byte("\x1b[?1001$p"))
+
+	if string(response) != "\x1b[?1001;3$y" {
+		t.Errorf("DECRQM mode 1001 reset = %q, want %q", response, "\x1b[?1001;3$y")
+	}
+}
+
+func TestDECRQM_HighlightTracking_Set(t *testing.T) {
+	v := NewVTerm(24, 80)
+	var response []byte
+	v.ResponseWriter = func(data []byte) {
+		response = data
+	}
+
+	v.Write([]byte("\x1b[?1001h")) // highlight tracking set
+	v.Write([]byte("\x1b[?1001$p"))
+
+	if string(response) != "\x1b[?1001;2$y" {
+		t.Errorf("DECRQM mode 1001 set = %q, want %q", response, "\x1b[?1001;2$y")
+	}
+}
+
+func TestDECRQM_MouseAnyEvent_Reset(t *testing.T) {
+	v := NewVTerm(24, 80)
+	var response []byte
+	v.ResponseWriter = func(data []byte) {
+		response = data
+	}
+
+	// Any-event mouse tracking is reset by default.
+	v.Write([]byte("\x1b[?1003$p"))
+
+	if string(response) != "\x1b[?1003;3$y" {
+		t.Errorf("DECRQM mode 1003 reset = %q, want %q", response, "\x1b[?1003;3$y")
+	}
+}
+
+func TestDECRQM_MouseAnyEvent_Set(t *testing.T) {
+	v := NewVTerm(24, 80)
+	var response []byte
+	v.ResponseWriter = func(data []byte) {
+		response = data
+	}
+
+	v.Write([]byte("\x1b[?1003h")) // any-event mouse tracking set
+	v.Write([]byte("\x1b[?1003$p"))
+
+	if string(response) != "\x1b[?1003;2$y" {
+		t.Errorf("DECRQM mode 1003 set = %q, want %q", response, "\x1b[?1003;2$y")
+	}
+}

@@ -160,13 +160,6 @@ func TestRowWrapped_Snapshot(t *testing.T) {
 
 // --- Reflow on resize tests --------------------------------------------------
 
-// helper: write n characters to a screen
-func fillChars(s *Screen, ch rune, n int) {
-	for range n {
-		s.PutChar(ch)
-	}
-}
-
 // cellRowStr returns the non-placeholder, non-NUL rune content of a row.
 func cellRowStr(s *Screen, r int) string {
 	if r < 0 || r >= s.Rows {

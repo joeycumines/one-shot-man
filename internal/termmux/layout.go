@@ -118,14 +118,12 @@ type PaneID uint64
 type LayoutMode int
 
 const (
-	// LayoutTiled arranges panes in a grid that approximates a square.
 	LayoutTiled LayoutMode = iota
-	// LayoutStacked arranges panes in a vertical stack (alias for LayoutVertical).
 	LayoutStacked
-	// LayoutHorizontal arranges panes side by side.
 	LayoutHorizontal
-	// LayoutVertical arranges panes stacked top to bottom (default).
 	LayoutVertical
+	LayoutMainHorizontal
+	LayoutMainVertical
 )
 
 // SplitDirection indicates the direction in which a new pane is inserted
@@ -195,9 +193,6 @@ type PaneManager interface {
 	FocusRight()
 	FocusDown()
 	FocusUp()
-	SplitHorizontalAction()
-	SplitVerticalAction()
-	CloseActivePane()
 	Close() error
 }
 
@@ -211,6 +206,8 @@ type LayoutEngine struct {
 	width      int
 	height     int
 	nextID     PaneID
+	mainRatio  float64
+	zoomedPane PaneID
 }
 
 // NewLayoutEngine creates a LayoutEngine with the given mode and screen
@@ -224,6 +221,7 @@ func NewLayoutEngine(mode LayoutMode, width, height int) *LayoutEngine {
 		splits:     make(map[PaneID]SplitGroup),
 		chromeRows: 0,
 		nextID:     1,
+		mainRatio:  0.6,
 	}
 }
 
@@ -244,6 +242,14 @@ func (e *LayoutEngine) SetSize(width, height int) {
 // pane geometries.
 func (e *LayoutEngine) SetChromeRows(rows int) {
 	e.chromeRows = rows
+}
+
+func (e *LayoutEngine) SetMainRatio(ratio float64) {
+	e.mainRatio = clamp(ratio, 0.1, 0.9)
+}
+
+func (e *LayoutEngine) MainRatio() float64 {
+	return e.mainRatio
 }
 
 // ChromeRows returns the current chrome rows setting.
@@ -398,6 +404,34 @@ func (e *LayoutEngine) FocusNext(current PaneID, direction NavigationDirection) 
 	}
 }
 
+func (e *LayoutEngine) Swap(a, b PaneID) bool {
+	idxA, idxB := -1, -1
+	for i, id := range e.panes {
+		if id == a {
+			idxA = i
+		} else if id == b {
+			idxB = i
+		}
+	}
+	if idxA < 0 || idxB < 0 {
+		return false
+	}
+	e.panes[idxA], e.panes[idxB] = e.panes[idxB], e.panes[idxA]
+	return true
+}
+
+func (e *LayoutEngine) Zoom(id PaneID) {
+	e.zoomedPane = id
+}
+
+func (e *LayoutEngine) Unzoom() {
+	e.zoomedPane = 0
+}
+
+func (e *LayoutEngine) ZoomedPane() PaneID {
+	return e.zoomedPane
+}
+
 // Compute returns the PaneGeometry for each pane in the engine's current
 // configuration. The returned slice is ordered the same as PaneIDs().
 // Chrome rows are deducted from the available height before computing.
@@ -412,6 +446,17 @@ func (e *LayoutEngine) Compute(panes []Pane) []PaneGeometry {
 
 	geoms := make([]PaneGeometry, n)
 
+	if e.zoomedPane != 0 {
+		for i, p := range panes {
+			if p.ID == e.zoomedPane {
+				geoms[i] = PaneGeometry{Row: 0, Col: 0, Rows: availH, Cols: availW}
+			} else {
+				geoms[i] = PaneGeometry{Row: 0, Col: 0, Rows: 0, Cols: 0}
+			}
+		}
+		return geoms
+	}
+
 	switch e.mode {
 	case LayoutVertical, LayoutStacked:
 		e.computeVertical(geoms, availW, availH)
@@ -419,6 +464,10 @@ func (e *LayoutEngine) Compute(panes []Pane) []PaneGeometry {
 		e.computeHorizontal(geoms, availW, availH)
 	case LayoutTiled:
 		e.computeTiled(geoms, availW, availH)
+	case LayoutMainHorizontal:
+		e.computeMainHorizontal(geoms, availW, availH)
+	case LayoutMainVertical:
+		e.computeMainVertical(geoms, availW, availH)
 	default:
 		e.computeVertical(geoms, availW, availH)
 	}
@@ -520,6 +569,58 @@ func (e *LayoutEngine) computeTiled(geoms []PaneGeometry, availW, availH int) {
 }
 
 // ceilSqrt returns ceil(sqrt(n)).
+func (e *LayoutEngine) computeMainHorizontal(geoms []PaneGeometry, availW, availH int) {
+	n := len(geoms)
+	mainH := max(int(float64(availH)*e.mainRatio), 1)
+	geoms[0] = PaneGeometry{Row: 0, Col: 0, Rows: mainH, Cols: availW}
+
+	if n == 1 {
+		return
+	}
+
+	remaining := max(availH-mainH, 1)
+	baseH := remaining / (n - 1)
+	allocated := 0
+
+	for i := 1; i < n; i++ {
+		h := baseH
+		if i == n-1 {
+			h = remaining - allocated
+		}
+		if h < 1 {
+			h = 1
+		}
+		geoms[i] = PaneGeometry{Row: mainH + allocated, Col: 0, Rows: h, Cols: availW}
+		allocated += h
+	}
+}
+
+func (e *LayoutEngine) computeMainVertical(geoms []PaneGeometry, availW, availH int) {
+	n := len(geoms)
+	mainW := max(int(float64(availW)*e.mainRatio), 1)
+	geoms[0] = PaneGeometry{Row: 0, Col: 0, Rows: availH, Cols: mainW}
+
+	if n == 1 {
+		return
+	}
+
+	remaining := max(availW-mainW, 1)
+	baseW := remaining / (n - 1)
+	allocated := 0
+
+	for i := 1; i < n; i++ {
+		w := baseW
+		if i == n-1 {
+			w = remaining - allocated
+		}
+		if w < 1 {
+			w = 1
+		}
+		geoms[i] = PaneGeometry{Row: 0, Col: mainW + allocated, Rows: availH, Cols: w}
+		allocated += w
+	}
+}
+
 func ceilSqrt(n int) int {
 	if n <= 0 {
 		return 1

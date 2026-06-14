@@ -93,7 +93,6 @@ func TestScreenSnapshot_ConcurrentReadSafe(t *testing.T) {
 	ms := &managedSession{}
 
 	// Simulate the worker publishing snapshots while readers consume them.
-	const writers = 1
 	const readers = 10
 	const iterations = 1000
 
@@ -3001,5 +3000,219 @@ func TestSessionManager_Pipeline_SynchronizedOutputMode(t *testing.T) {
 	}
 	if snap.SynchronizedOutput {
 		t.Error("SynchronizedOutput = true, want false after CSI ?2026l")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Copy mode: SessionManager integration
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_IsCopyModeActive(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	id, _ := m.Register(newControllableSession(), SessionTarget{Name: "test"})
+
+	if m.IsCopyModeActive(id) {
+		t.Error("IsCopyModeActive = true, want false before entering copy mode")
+	}
+
+	if err := m.EnterCopyMode(id); err != nil {
+		t.Fatalf("EnterCopyMode error: %v", err)
+	}
+
+	if !m.IsCopyModeActive(id) {
+		t.Error("IsCopyModeActive = false, want true after entering copy mode")
+	}
+
+	if err := m.ExitCopyMode(id); err != nil {
+		t.Fatalf("ExitCopyMode error: %v", err)
+	}
+
+	if m.IsCopyModeActive(id) {
+		t.Error("IsCopyModeActive = true, want false after exiting copy mode")
+	}
+}
+
+func TestSessionManager_IsCopyModeActive_UnknownSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	if m.IsCopyModeActive(999) {
+		t.Error("IsCopyModeActive = true for unknown session, want false")
+	}
+}
+
+func TestSessionManager_ScrollCopyMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(5, 20))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "test"})
+
+	// Generate scrollback
+	for i := 0; i < 20; i++ {
+		session.readerCh <- []byte(string(rune('A'+i%26)) + "\n")
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	// Scroll without copy mode → should return false
+	if m.ScrollCopyMode(id, 3) {
+		t.Error("ScrollCopyMode returned true when copy mode not active")
+	}
+
+	// Enter copy mode and scroll
+	if err := m.EnterCopyMode(id); err != nil {
+		t.Fatalf("EnterCopyMode error: %v", err)
+	}
+
+	if !m.ScrollCopyMode(id, 3) {
+		t.Error("ScrollCopyMode returned false when copy mode active")
+	}
+
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if snap.CursorRow < 0 || snap.CursorCol < 0 {
+		t.Errorf("cursor = (%d,%d), want non-negative", snap.CursorRow, snap.CursorCol)
+	}
+}
+
+func TestSessionManager_ScrollCopyMode_UnknownSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	if m.ScrollCopyMode(999, 3) {
+		t.Error("ScrollCopyMode returned true for unknown session")
+	}
+}
+
+func TestSessionManager_EnterCopyMode_UnknownSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	if err := m.EnterCopyMode(999); err == nil {
+		t.Error("EnterCopyMode should return error for unknown session")
+	}
+}
+
+func TestSessionManager_ExitCopyMode_UnknownSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	if err := m.ExitCopyMode(999); err == nil {
+		t.Error("ExitCopyMode should return error for unknown session")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Synchronized panes
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_SynchronizePanes_DefaultOff(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	if m.SynchronizePanes() {
+		t.Error("SynchronizePanes = true, want false by default")
+	}
+}
+
+func TestSessionManager_SetSynchronizePanes(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	m.SetSynchronizePanes(true)
+	if !m.SynchronizePanes() {
+		t.Error("SynchronizePanes = false, want true after SetSynchronizePanes(true)")
+	}
+
+	m.SetSynchronizePanes(false)
+	if m.SynchronizePanes() {
+		t.Error("SynchronizePanes = true, want false after SetSynchronizePanes(false)")
+	}
+}
+
+func TestSessionManager_SynchronizePanes_InputBroadcast(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+
+	id1, _ := m.Register(s1, SessionTarget{Name: "pane1"})
+	id2, _ := m.Register(s2, SessionTarget{Name: "pane2"})
+	_ = id2
+
+	_ = id1
+	s1.readerCh <- []byte("ready1\n")
+	s2.readerCh <- []byte("ready2\n")
+	time.Sleep(200 * time.Millisecond)
+
+	m.SetSynchronizePanes(true)
+
+	if err := m.Input([]byte("test")); err != nil {
+		t.Fatalf("Input error: %v", err)
+	}
+
+	w1 := s1.Written()
+	w2 := s2.Written()
+
+	if string(w1) != "test" {
+		t.Errorf("s1.Written = %q, want %q", string(w1), "test")
+	}
+	if string(w2) != "test" {
+		t.Errorf("s2.Written = %q, want %q", string(w2), "test")
+	}
+}
+
+func TestSessionManager_SynchronizePanes_Off_OnlyActive(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+
+	id1, _ := m.Register(s1, SessionTarget{Name: "pane1"})
+	_, _ = m.Register(s2, SessionTarget{Name: "pane2"})
+
+	_ = id1
+	s1.readerCh <- []byte("ready1\n")
+	s2.readerCh <- []byte("ready2\n")
+	time.Sleep(200 * time.Millisecond)
+
+	if err := m.Input([]byte("test")); err != nil {
+		t.Fatalf("Input error: %v", err)
+	}
+
+	w1 := s1.Written()
+	w2 := s2.Written()
+
+	if string(w1) != "test" {
+		t.Errorf("s1.Written = %q, want %q", string(w1), "test")
+	}
+	if len(w2) != 0 {
+		t.Errorf("s2.Written = %q, want empty (not active)", string(w2))
 	}
 }

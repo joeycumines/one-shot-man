@@ -11,11 +11,13 @@ import (
 // PaneBinding associates a PaneID with its SessionID and VTerm.
 // It is the internal bookkeeping record used by paneManager.
 type PaneBinding struct {
-	PaneID    PaneID
-	SessionID SessionID
-	VTerm     *vt.VTerm
-	Title     string
-	LastActive time.Time
+	PaneID       PaneID
+	SessionID    SessionID
+	VTerm        *vt.VTerm
+	Title        string
+	LastActive   time.Time
+	Exited       bool
+	RemainOnExit bool
 }
 
 // paneManager implements the PaneManager interface. It uses a LayoutEngine
@@ -27,7 +29,9 @@ type paneManager struct {
 	paneOrder   []PaneID // insertion order for layout
 	activePaneID PaneID
 	nextPaneID  PaneID
-	mu          sync.Mutex // protects concurrent reads for Panes() snapshot
+	synchronize    bool // when true, input is sent to all panes
+	remainOnExit   bool // default for new panes
+	mu             sync.Mutex // protects concurrent reads for Panes() snapshot
 }
 
 // newPaneManager creates a paneManager with the given layout mode and
@@ -59,10 +63,11 @@ func (pm *paneManager) Create(sessionID SessionID, direction SplitDirection) (Pa
 	pm.engine.Split(pm.activePaneID, direction)
 
 	pm.panes[id] = &PaneBinding{
-		PaneID:     id,
-		SessionID:  sessionID,
-		Title:      fmt.Sprintf("pane-%d", id),
-		LastActive: time.Now(),
+		PaneID:       id,
+		SessionID:    sessionID,
+		Title:        fmt.Sprintf("pane-%d", id),
+		LastActive:   time.Now(),
+		RemainOnExit: pm.remainOnExit,
 	}
 	pm.paneOrder = append(pm.paneOrder, id)
 
@@ -221,25 +226,6 @@ func (pm *paneManager) FocusDown() { pm.FocusNext(NavDown) }
 // FocusUp moves focus to the pane above.
 func (pm *paneManager) FocusUp() { pm.FocusNext(NavUp) }
 
-// SplitHorizontalAction splits the active pane horizontally (left/right).
-func (pm *paneManager) SplitHorizontalAction() {
-	// This is a UI action placeholder — actual split requires a session,
-	// which is handled by SessionManager.NewPane.
-}
-
-// SplitVerticalAction splits the active pane vertically (top/bottom).
-func (pm *paneManager) SplitVerticalAction() {
-	// This is a UI action placeholder — actual split requires a session,
-	// which is handled by SessionManager.NewPane.
-}
-
-// CloseActivePane removes the active pane. This is a UI action that
-// delegates to SessionManager.ClosePane.
-func (pm *paneManager) CloseActivePane() {
-	// This is a UI action placeholder — actual close is handled by
-	// SessionManager.ClosePane.
-}
-
 // Close shuts down the pane manager, releasing all resources.
 func (pm *paneManager) Close() error {
 	pm.mu.Lock()
@@ -297,3 +283,95 @@ func (pm *paneManager) removeSessionID(id PaneID) SessionID {
 }
 
 var _ PaneManager = (*paneManager)(nil)
+
+func (pm *paneManager) SetSynchronize(v bool) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.synchronize = v
+}
+
+func (pm *paneManager) Synchronize() bool {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	return pm.synchronize
+}
+
+func (pm *paneManager) AllSessionIDs() []SessionID {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	ids := make([]SessionID, 0, len(pm.panes))
+	for _, pid := range pm.paneOrder {
+		if binding, ok := pm.panes[pid]; ok {
+			ids = append(ids, binding.SessionID)
+		}
+	}
+	return ids
+}
+
+func (pm *paneManager) SetRemainOnExit(v bool) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.remainOnExit = v
+}
+
+func (pm *paneManager) RemainOnExit() bool {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	return pm.remainOnExit
+}
+
+func (pm *paneManager) SetPaneRemainOnExit(id PaneID, v bool) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	binding, ok := pm.panes[id]
+	if !ok {
+		return fmt.Errorf("%w: %d", ErrPaneNotFound, id)
+	}
+	binding.RemainOnExit = v
+	return nil
+}
+
+func (pm *paneManager) PaneRemainOnExit(id PaneID) (bool, error) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	binding, ok := pm.panes[id]
+	if !ok {
+		return false, fmt.Errorf("%w: %d", ErrPaneNotFound, id)
+	}
+	return binding.RemainOnExit, nil
+}
+
+func (pm *paneManager) PaneExited(id PaneID) bool {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	binding, ok := pm.panes[id]
+	if !ok {
+		return false
+	}
+	return binding.Exited
+}
+
+func (pm *paneManager) MarkPaneExited(id PaneID) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	if binding, ok := pm.panes[id]; ok {
+		binding.Exited = true
+	}
+}
+
+func (pm *paneManager) PaneIDForSession(sid SessionID) PaneID {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	for _, pid := range pm.paneOrder {
+		if binding, ok := pm.panes[pid]; ok && binding.SessionID == sid {
+			return pid
+		}
+	}
+	return 0
+}
+
+func (pm *paneManager) Binding(id PaneID) *PaneBinding {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	return pm.panes[id]
+}

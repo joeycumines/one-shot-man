@@ -38,7 +38,7 @@ func (h *escHandlerImpl) Dispatch(scr *Screen, final byte) {
 	case '7': // DECSC — save cursor
 		scr.SavedRow = scr.CurRow
 		scr.SavedCol = scr.CurCol
-		scr.SavedAttr = scr.CurAttr
+		scr.SavedAttr = scr.CurAttr.sgr()
 		scr.SavedG0Charset = scr.G0Charset
 		scr.SavedG1Charset = scr.G1Charset
 		scr.SavedGL = scr.GL
@@ -56,7 +56,7 @@ func (h *escHandlerImpl) Dispatch(scr *Screen, final byte) {
 		scr.SavedHighlightTracking = scr.HighlightTracking
 	case '8': // DECRC — restore cursor
 		scr.PendingWrap = scr.SavedPendingWrap
-		scr.CurAttr = scr.SavedAttr
+		scr.CurAttr = scr.SavedAttr.sgr()
 		scr.G0Charset = scr.SavedG0Charset
 		scr.G1Charset = scr.SavedG1Charset
 		scr.GL = scr.SavedGL

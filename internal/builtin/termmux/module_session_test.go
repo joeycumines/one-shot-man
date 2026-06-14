@@ -1320,3 +1320,336 @@ func TestNewBoundedSession_NoArgs(t *testing.T) {
 		t.Fatal("expected error for no arguments")
 	}
 }
+
+// ── Chooser ──────────────────────────────────────────────
+
+func TestChooser_Creation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	runtime, cleanup := setupMgr(t, true)
+	defer cleanup()
+
+	// Get active session ID to pass to newChooser.
+	v, err := runtime.RunString(`tuiMux.activeID()`)
+	if err != nil {
+		t.Fatalf("activeID: %v", err)
+	}
+	activeID := v.ToInteger()
+	_ = runtime.Set("activeID", activeID)
+
+	// newChooser should return an object with the expected methods.
+	v, err = runtime.RunString(`
+		var c = tuiMux.newChooser(activeID);
+		typeof c.show === 'function' &&
+			typeof c.hide === 'function' &&
+			typeof c.visible === 'function' &&
+			typeof c.up === 'function' &&
+			typeof c.down === 'function' &&
+			typeof c.selected === 'function' &&
+			typeof c.render === 'function';
+	`)
+	if err != nil {
+		t.Fatalf("newChooser method check: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("newChooser() should return an object with show, hide, visible, up, down, selected, render methods")
+	}
+}
+
+func TestChooser_Visibility(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	runtime, cleanup := setupMgr(t, true)
+	defer cleanup()
+
+	v, err := runtime.RunString(`tuiMux.activeID()`)
+	if err != nil {
+		t.Fatalf("activeID: %v", err)
+	}
+	_ = runtime.Set("activeID", v.ToInteger())
+
+	// After show(), visible() should be true.
+	v, err = runtime.RunString(`
+		var c = tuiMux.newChooser(activeID);
+		c.show();
+		c.visible();
+	`)
+	if err != nil {
+		t.Fatalf("visible after show: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("visible() should be true after show()")
+	}
+
+	// After hide(), visible() should be false.
+	v, err = runtime.RunString(`
+		var c = tuiMux.newChooser(activeID);
+		c.hide();
+		c.visible();
+	`)
+	if err != nil {
+		t.Fatalf("visible after hide: %v", err)
+	}
+	if v.ToBoolean() {
+		t.Fatal("visible() should be false after hide()")
+	}
+}
+
+func TestChooser_Navigation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	// Create a manager with 3 sessions so the chooser has multiple items.
+	mgr := parent.NewSessionManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+
+	// Register 3 sessions with distinct names/kinds.
+	names := []string{"alpha", "beta", "gamma"}
+	kinds := []parent.SessionKind{"pty", "capture", "tty"}
+	ids := make([]uint64, 3)
+	for i := range 3 {
+		rec := newRecordingStringIO()
+		sio := parent.NewStringIOSession(rec)
+		sio.Start()
+		id, err := mgr.Register(sio, parent.SessionTarget{Name: names[i], Kind: kinds[i]})
+		if err != nil {
+			t.Fatalf("Register session %d: %v", i, err)
+		}
+		ids[i] = uint64(id)
+	}
+
+	// Activate the second session so it becomes the active ID.
+	if err := mgr.Activate(parent.SessionID(ids[1])); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+
+	runtime := goja.New()
+	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	_ = runtime.Set("tuiMux", tuiMux)
+
+	// newChooser(activeID) should default to cursor at active session.
+	v, err := runtime.RunString(`
+		var active = tuiMux.activeID();
+		var c = tuiMux.newChooser(active);
+		var sel = c.selected();
+		// Selected should have id, name, kind, index fields.
+		typeof sel.id === 'number' &&
+			typeof sel.name === 'string' &&
+			typeof sel.kind === 'string' &&
+			typeof sel.index === 'number' &&
+			sel.name === 'beta';
+	`)
+	if err != nil {
+		t.Fatalf("selected initial: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("selected() initial item should be 'beta' (the active one)")
+	}
+
+	// down() should move cursor to gamma.
+	v, err = runtime.RunString(`
+		var c = tuiMux.newChooser(tuiMux.activeID());
+		c.down();
+		var sel = c.selected();
+		sel.name === 'gamma';
+	`)
+	if err != nil {
+		t.Fatalf("selected after down: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("selected after down() should be 'gamma'")
+	}
+
+	// up() should move cursor back to beta.
+	v, err = runtime.RunString(`
+		var c = tuiMux.newChooser(tuiMux.activeID());
+		c.down();
+		c.up();
+		var sel = c.selected();
+		sel.name === 'beta';
+	`)
+	if err != nil {
+		t.Fatalf("selected after down+up: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("selected after down+up() should be 'beta'")
+	}
+
+	// At bottom, down() should stay on gamma.
+	v, err = runtime.RunString(`
+		var c = tuiMux.newChooser(tuiMux.activeID());
+		c.down();
+		c.down();
+		c.down();
+		var sel = c.selected();
+		sel.name === 'gamma';
+	`)
+	if err != nil {
+		t.Fatalf("selected after extra down: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("selected at boundary should stay on 'gamma'")
+	}
+
+	// At top, up() should stay on alpha.
+	v, err = runtime.RunString(`
+		var c = tuiMux.newChooser(tuiMux.activeID());
+		c.down();
+		c.down();
+		c.up();
+		c.up();
+		c.up();
+		var sel = c.selected();
+		sel.name === 'alpha';
+	`)
+	if err != nil {
+		t.Fatalf("selected after extra up: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("selected at top boundary should stay on 'alpha'")
+	}
+
+	cancel()
+	<-errCh
+}
+
+func TestChooser_Render(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	runtime, cleanup := setupMgr(t, true)
+	defer cleanup()
+
+	v, err := runtime.RunString(`
+		var id = tuiMux.activeID();
+		var c = tuiMux.newChooser(id);
+		c.show();
+		var out = c.render(60);
+		typeof out === 'string' && out.length > 0;
+	`)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("render(60) should return a non-empty string when visible")
+	}
+
+	// Render when hidden should return empty string.
+	v, err = runtime.RunString(`
+		var c = tuiMux.newChooser(tuiMux.activeID());
+		c.hide();
+		c.render(60) === '';
+	`)
+	if err != nil {
+		t.Fatalf("render hidden: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("render(60) should return empty string when hidden")
+	}
+}
+
+// ── Lock / Unlock ────────────────────────────────────────
+
+func TestLockSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	runtime, cleanup := setupMgr(t, true)
+	defer cleanup()
+
+	v, err := runtime.RunString(`tuiMux.activeID()`)
+	if err != nil {
+		t.Fatalf("activeID: %v", err)
+	}
+	_ = runtime.Set("sid", v.ToInteger())
+
+	// lockSession should not throw and should succeed.
+	_, err = runtime.RunString(`tuiMux.lockSession(sid, 'testpass')`)
+	if err != nil {
+		t.Fatalf("lockSession: %v", err)
+	}
+
+	// isLocked should return true.
+	v, err = runtime.RunString(`tuiMux.isLocked(sid)`)
+	if err != nil {
+		t.Fatalf("isLocked: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("isLocked should be true after lockSession")
+	}
+}
+
+func TestUnlockSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	runtime, cleanup := setupMgr(t, true)
+	defer cleanup()
+
+	v, err := runtime.RunString(`tuiMux.activeID()`)
+	if err != nil {
+		t.Fatalf("activeID: %v", err)
+	}
+	_ = runtime.Set("sid", v.ToInteger())
+
+	// Lock with password.
+	_, err = runtime.RunString(`tuiMux.lockSession(sid, 'correctpass')`)
+	if err != nil {
+		t.Fatalf("lockSession: %v", err)
+	}
+
+	// Unlock with correct password should return true.
+	v, err = runtime.RunString(`tuiMux.unlockSession(sid, 'correctpass')`)
+	if err != nil {
+		t.Fatalf("unlockSession correct: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("unlockSession with correct password should return true")
+	}
+
+	// isLocked should now be false.
+	v, err = runtime.RunString(`tuiMux.isLocked(sid)`)
+	if err != nil {
+		t.Fatalf("isLocked after correct unlock: %v", err)
+	}
+	if v.ToBoolean() {
+		t.Fatal("isLocked should be false after unlock with correct password")
+	}
+
+	// Lock again.
+	_, err = runtime.RunString(`tuiMux.lockSession(sid, 'otherpass')`)
+	if err != nil {
+		t.Fatalf("lockSession: %v", err)
+	}
+
+	// Unlock with wrong password should return false.
+	v, err = runtime.RunString(`tuiMux.unlockSession(sid, 'wrongpass')`)
+	if err != nil {
+		t.Fatalf("unlockSession wrong: %v", err)
+	}
+	if v.ToBoolean() {
+		t.Fatal("unlockSession with wrong password should return false")
+	}
+
+	// isLocked should still be true.
+	v, err = runtime.RunString(`tuiMux.isLocked(sid)`)
+	if err != nil {
+		t.Fatalf("isLocked after wrong unlock: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("isLocked should still be true after wrong password")
+	}
+}

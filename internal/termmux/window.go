@@ -224,6 +224,102 @@ func (wm *WindowManager) windowIndex(id WindowID) int {
 	return -1
 }
 
+// WindowPanes returns the list of panes in the window with the given ID.
+func (wm *WindowManager) WindowPanes(id WindowID) []Pane {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+
+	w, ok := wm.windows[id]
+	if !ok {
+		return nil
+	}
+	return w.paneMgr.Panes()
+}
+
+// WindowPaneMgr returns the paneManager for the window with the given ID,
+// or nil if the window does not exist.
+func (wm *WindowManager) WindowPaneMgr(id WindowID) *paneManager {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+
+	w, ok := wm.windows[id]
+	if !ok {
+		return nil
+	}
+	return w.paneMgr
+}
+
+// BreakPane removes the active pane from the source window and moves it
+// to a brand new window with the same screen dimensions. The new window
+// is created with a default name and automatically becomes the target
+// for the moved pane. Returns the new WindowID.
+//
+// The source window is NOT deleted even if it becomes empty.
+func (wm *WindowManager) BreakPane(sourceID WindowID) (WindowID, error) {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+
+	source, ok := wm.windows[sourceID]
+	if !ok {
+		return 0, fmt.Errorf("%w: %d", ErrWindowNotFound, sourceID)
+	}
+
+	// Create a new window with the same dimensions.
+	newID := wm.nextID
+	wm.nextID++
+	name := fmt.Sprintf("window-%d", newID)
+	newWindow := &Window{
+		ID:      newID,
+		Name:    name,
+		Layout:  wm.layoutMode,
+		paneMgr: newPaneManager(wm.layoutMode, wm.width, wm.height),
+		created: time.Now(),
+	}
+	wm.windows[newID] = newWindow
+	wm.order = append(wm.order, newID)
+
+	// Transfer the active pane from source to the new window.
+	newPaneID := source.paneMgr.transferPaneToWindow(newWindow.paneMgr, SplitRight)
+	if newPaneID == 0 {
+		// Transfer failed — remove the just-created window.
+		delete(wm.windows, newID)
+		for i, wid := range wm.order {
+			if wid == newID {
+				wm.order = append(wm.order[:i], wm.order[i+1:]...)
+				break
+			}
+		}
+		return 0, fmt.Errorf("%w: no active pane in window %d", ErrPaneNotFound, sourceID)
+	}
+
+	return newID, nil
+}
+
+// JoinPane removes the active pane from the source window and moves it
+// into the target window. The target window must exist and be different
+// from the source. The pane keeps its original SessionID, VTerm, Title, etc.
+func (wm *WindowManager) JoinPane(sourceID, targetID WindowID) error {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+
+	source, ok := wm.windows[sourceID]
+	if !ok {
+		return fmt.Errorf("%w: %d", ErrWindowNotFound, sourceID)
+	}
+	target, ok := wm.windows[targetID]
+	if !ok {
+		return fmt.Errorf("%w: %d", ErrWindowNotFound, targetID)
+	}
+	if sourceID == targetID {
+		return fmt.Errorf("termmux: cannot join pane into the same window")
+	}
+
+	// Transfer the active pane from source to target.
+	source.paneMgr.transferPaneToWindow(target.paneMgr, SplitRight)
+
+	return nil
+}
+
 // WindowInfo is a read-only snapshot of a window's state for external consumers.
 type WindowInfo struct {
 	ID        WindowID

@@ -15,10 +15,11 @@ import (
 // Resize(rows, cols int) error method (e.g., PTY-backed agent handles).
 // Plain string-based handles without a Resize method are silently ignored.
 type StringIOSession struct {
-	sio       StringIO
-	done      chan struct{}
-	readerCh  chan []byte
-	startOnce sync.Once
+	sio        StringIO
+	done       chan struct{}
+	readerCh   chan []byte
+	startOnce  sync.Once
+	closeOnce  sync.Once
 }
 
 // NewStringIOSession creates a session adapter from a [StringIO] handle.
@@ -60,11 +61,7 @@ func (s *StringIOSession) Resize(rows, cols int) error {
 // Close closes the underlying StringIO and signals done.
 func (s *StringIOSession) Close() error {
 	err := s.sio.Close()
-	select {
-	case <-s.done:
-	default:
-		close(s.done)
-	}
+	s.closeOnce.Do(func() { close(s.done) })
 	return err
 }
 

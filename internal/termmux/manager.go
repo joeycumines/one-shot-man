@@ -376,6 +376,14 @@ const (
 	// Payload: SessionID. Reply value: none.
 	reqExitCopyMode
 
+	// reqSelectStart sets the copy-mode selection start position.
+	// Payload: selectPayload. Reply value: none.
+	reqSelectStart
+
+	// reqSelectEnd sets the copy-mode selection end position.
+	// Payload: selectPayload. Reply value: none.
+	reqSelectEnd
+
 	// reqNewWindow asks the worker to create a new window.
 	// Payload: *newWindowPayload. Reply value: WindowID.
 	reqNewWindow
@@ -484,6 +492,11 @@ const (
 	// Payload: capturePanePayload. Reply value: string.
 	reqCapturePane
 
+	// reqCopySelection returns the current copy-mode selection as an OSC 52
+	// clipboard sequence for the given session.
+	// Payload: SessionID. Reply value: string.
+	reqCopySelection
+
 	// reqLockSession locks a session with a password.
 	// Payload: lockPayload. Reply value: none.
 	reqLockSession
@@ -495,6 +508,18 @@ const (
 	// reqIsLocked returns whether a session is locked.
 	// Payload: SessionID. Reply value: bool.
 	reqIsLocked
+
+	// reqBreakPane breaks the active pane out of its window into a new one.
+	// Payload: WindowID. Reply value: WindowID.
+	reqBreakPane
+
+	// reqJoinPane joins the active pane from one window into another.
+	// Payload: joinPanePayload. Reply value: none.
+	reqJoinPane
+
+	// reqAddPaneToWindow adds a session as a pane to a specific window.
+	// Payload: *addPaneToWindowPayload. Reply value: PaneID.
+	reqAddPaneToWindow
 )
 
 // registerPayload carries the arguments for a reqRegister request.
@@ -544,6 +569,13 @@ type capturePanePayload struct {
 	sessionID SessionID
 	startLine int
 	endLine   int
+}
+
+// selectPayload carries the session ID and selection coordinates.
+type selectPayload struct {
+	sessionID SessionID
+	row       int
+	col       int
 }
 
 // lockPayload carries the session ID and plaintext password.
@@ -600,6 +632,25 @@ type newWindowPayload struct {
 type renameWindowPayload struct {
 	id   WindowID
 	name string
+}
+
+// breakPanePayload carries the source window ID for a reqBreakPane request.
+type breakPanePayload struct {
+	windowID WindowID
+}
+
+// joinPanePayload carries source and target window IDs for a reqJoinPane request.
+type joinPanePayload struct {
+	sourceWindowID WindowID
+	targetWindowID WindowID
+}
+
+// addPaneToWindowPayload carries arguments for reqAddPaneToWindow.
+type addPaneToWindowPayload struct {
+	session   InteractiveSession
+	target    SessionTarget
+	windowID  WindowID
+	direction SplitDirection
 }
 
 // RestoreResult describes the outcome of a [SessionManager.RestoreFromState]
@@ -1102,6 +1153,16 @@ func (m *SessionManager) ExitCopyMode(id SessionID) error {
 	return m.sendRequest(reqExitCopyMode, id).err
 }
 
+// SelectStart sets the copy-mode selection start position for the given session.
+func (m *SessionManager) SelectStart(id SessionID, row, col int) error {
+	return m.sendRequest(reqSelectStart, selectPayload{sessionID: id, row: row, col: col}).err
+}
+
+// SelectEnd sets the copy-mode selection end position for the given session.
+func (m *SessionManager) SelectEnd(id SessionID, row, col int) error {
+	return m.sendRequest(reqSelectEnd, selectPayload{sessionID: id, row: row, col: col}).err
+}
+
 // NewWindow creates a new window with the given name and returns its ID.
 func (m *SessionManager) NewWindow(name string) (WindowID, error) {
 	resp := m.sendRequest(reqNewWindow, &newWindowPayload{name: name})
@@ -1155,6 +1216,15 @@ func (m *SessionManager) Windows() []*Window {
 		return nil
 	}
 	return resp.value.([]*Window)
+}
+
+// WindowPanes returns a map of WindowID → panes for all windows.
+func (m *SessionManager) WindowPanes() map[WindowID][]Pane {
+	result := make(map[WindowID][]Pane)
+	for _, w := range m.windowMgr.Windows() {
+		result[w.ID] = w.paneMgr.Panes()
+	}
+	return result
 }
 
 // SetSynchronizePanes enables or disables synchronized pane input.
@@ -1314,8 +1384,23 @@ func (m *SessionManager) CopyPaneToClipboard(id SessionID) string {
 	if text == "" {
 		return ""
 	}
+	return encodeOSC52(text)
+}
+
+func encodeOSC52(text string) string {
 	encoded := base64.StdEncoding.EncodeToString([]byte(text))
 	return fmt.Sprintf("\x1b]52;c;%s\x1b\\", encoded)
+}
+
+func (m *SessionManager) CopySelection(id SessionID) string {
+	resp := m.sendRequest(reqCopySelection, id)
+	if resp.err != nil {
+		return ""
+	}
+	if resp.value == nil {
+		return ""
+	}
+	return resp.value.(string)
 }
 
 func (m *SessionManager) LockSession(id SessionID, password string) error {
@@ -1337,6 +1422,35 @@ func (m *SessionManager) IsLocked(id SessionID) bool {
 		return false
 	}
 	return resp.value.(bool)
+}
+
+// BreakPane removes the active pane from the given window and moves it
+// into a brand new window. Returns the new WindowID.
+func (m *SessionManager) BreakPane(windowID WindowID) (WindowID, error) {
+	resp := m.sendRequest(reqBreakPane, &breakPanePayload{windowID: windowID})
+	if resp.err != nil {
+		return 0, resp.err
+	}
+	return resp.value.(WindowID), nil
+}
+
+// JoinPane moves the active pane from sourceWindowID into targetWindowID.
+func (m *SessionManager) JoinPane(sourceWindowID, targetWindowID WindowID) error {
+	return m.sendRequest(reqJoinPane, &joinPanePayload{
+		sourceWindowID: sourceWindowID,
+		targetWindowID: targetWindowID,
+	}).err
+}
+
+// AddPaneToWindow creates a new pane from a session in the specified window.
+func (m *SessionManager) AddPaneToWindow(session InteractiveSession, target SessionTarget, windowID WindowID, direction SplitDirection) (PaneID, error) {
+	resp := m.sendRequest(reqAddPaneToWindow, &addPaneToWindowPayload{
+		session: session, target: target, windowID: windowID, direction: direction,
+	})
+	if resp.err != nil {
+		return 0, resp.err
+	}
+	return resp.value.(PaneID), nil
 }
 
 func (m *SessionManager) NewChooser(active SessionID) *Chooser {
@@ -1415,6 +1529,10 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleEnterCopyMode(req.payload.(SessionID))
 	case reqExitCopyMode:
 		resp = m.handleExitCopyMode(req.payload.(SessionID))
+	case reqSelectStart:
+		resp = m.handleSelectStart(req.payload.(selectPayload))
+	case reqSelectEnd:
+		resp = m.handleSelectEnd(req.payload.(selectPayload))
 	case reqNewWindow:
 		resp = m.handleNewWindow(req.payload.(*newWindowPayload))
 	case reqNextWindow:
@@ -1469,12 +1587,20 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleActiveMessage(req.payload)
 	case reqCapturePane:
 		resp = m.handleCapturePane(req.payload)
+	case reqCopySelection:
+		resp = m.handleCopySelection(req.payload)
 	case reqLockSession:
 		resp = m.handleLockSession(req.payload)
 	case reqUnlockSession:
 		resp = m.handleUnlockSession(req.payload)
 	case reqIsLocked:
 		resp = m.handleIsLocked(req.payload)
+	case reqBreakPane:
+		resp = m.handleBreakPane(req.payload)
+	case reqJoinPane:
+		resp = m.handleJoinPane(req.payload)
+	case reqAddPaneToWindow:
+		resp = m.handleAddPaneToWindow(req.payload)
 	default:
 		resp = response{err: fmt.Errorf("termmux: unknown request kind %d", req.kind)}
 	}
@@ -1823,6 +1949,24 @@ func (m *SessionManager) handleExitCopyMode(id SessionID) response {
 		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
 	}
 	ms.vterm.ExitCopyMode()
+	return response{}
+}
+
+func (m *SessionManager) handleSelectStart(p selectPayload) response {
+	ms, ok := m.sessions[p.sessionID]
+	if !ok {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.sessionID)}
+	}
+	ms.vterm.SelectStart(p.row, p.col)
+	return response{}
+}
+
+func (m *SessionManager) handleSelectEnd(p selectPayload) response {
+	ms, ok := m.sessions[p.sessionID]
+	if !ok {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.sessionID)}
+	}
+	ms.vterm.SelectEnd(p.row, p.col)
 	return response{}
 }
 
@@ -2188,6 +2332,22 @@ func (m *SessionManager) handleCapturePane(payload any) response {
 	return response{value: strings.Join(lines[start:end], "\n")}
 }
 
+func (m *SessionManager) handleCopySelection(payload any) response {
+	id, ok := payload.(SessionID)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	ms, exists := m.sessions[id]
+	if !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
+	}
+	text := ms.vterm.SelectedText()
+	if text == "" {
+		return response{value: ""}
+	}
+	return response{value: encodeOSC52(text)}
+}
+
 func (m *SessionManager) handleLockSession(payload any) response {
 	p, ok := payload.(lockPayload)
 	if !ok {
@@ -2225,6 +2385,141 @@ func (m *SessionManager) handleIsLocked(payload any) response {
 		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
 	}
 	return response{value: ms.lock.IsLocked()}
+}
+
+func (m *SessionManager) handleBreakPane(payload any) response {
+	p, ok := payload.(*breakPanePayload)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	// If windowID is 0, check the SessionManager's own paneMgr first.
+	if p.windowID == 0 {
+		if m.paneMgr.Binding(m.paneMgr.ActivePaneID()) != nil {
+			newID, err := m.breakPaneFromSessionMgr()
+			return response{value: newID, err: err}
+		}
+		return response{err: fmt.Errorf("%w: no active pane", ErrPaneNotFound)}
+	}
+	newID, err := m.windowMgr.BreakPane(p.windowID)
+	return response{value: newID, err: err}
+}
+
+// breakPaneFromSessionMgr breaks the active pane from the SessionManager's
+// own paneMgr into a new window. Used when panes haven't been assigned
+// to any window yet.
+func (m *SessionManager) breakPaneFromSessionMgr() (WindowID, error) {
+	activePaneID := m.paneMgr.ActivePaneID()
+	if activePaneID == 0 {
+		return 0, fmt.Errorf("%w: no active pane", ErrPaneNotFound)
+	}
+
+	// Get the binding from SessionManager's paneMgr.
+	binding := m.paneMgr.Binding(activePaneID)
+	if binding == nil {
+		return 0, fmt.Errorf("%w: %d", ErrPaneNotFound, activePaneID)
+	}
+
+	// Create a new window.
+	newWindowID := m.windowMgr.NewWindow("")
+	newWindow := m.windowMgr.Window(newWindowID)
+	if newWindow == nil {
+		return 0, fmt.Errorf("termmux: failed to create new window")
+	}
+
+	// Remove the pane from SessionManager's paneMgr.
+	if err := m.paneMgr.Remove(activePaneID); err != nil {
+		return 0, fmt.Errorf("%w: %d", ErrPaneNotFound, activePaneID)
+	}
+
+	// Add the pane to the new window.
+	newPaneID, err := newWindow.paneMgr.Create(binding.SessionID, SplitRight)
+	if err != nil {
+		return 0, fmt.Errorf("termmux: failed to create pane in new window")
+	}
+	newWindow.paneMgr.setVTerm(newPaneID, binding.VTerm)
+	newWindow.paneMgr.panes[newPaneID].Title = binding.Title
+	newWindow.paneMgr.panes[newPaneID].LastActive = binding.LastActive
+
+	return newWindowID, nil
+}
+
+func (m *SessionManager) handleJoinPane(payload any) response {
+	p, ok := payload.(*joinPanePayload)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	// Source windowID of 0 means pane is in SessionManager's own paneMgr.
+	if p.sourceWindowID == 0 {
+		if m.paneMgr.Binding(m.paneMgr.ActivePaneID()) == nil {
+			return response{err: fmt.Errorf("%w: no active pane to join", ErrPaneNotFound)}
+		}
+		if err := m.joinPaneFromSessionMgr(p.targetWindowID); err != nil {
+			return response{err: err}
+		}
+		return response{}
+	}
+	return response{err: m.windowMgr.JoinPane(p.sourceWindowID, p.targetWindowID)}
+}
+
+// joinPaneFromSessionMgr joins the active pane from the SessionManager's
+// own paneMgr into the target window.
+func (m *SessionManager) joinPaneFromSessionMgr(targetWindowID WindowID) error {
+	activePaneID := m.paneMgr.ActivePaneID()
+	if activePaneID == 0 {
+		return fmt.Errorf("%w: no active pane", ErrPaneNotFound)
+	}
+	binding := m.paneMgr.Binding(activePaneID)
+	if binding == nil {
+		return fmt.Errorf("%w: %d", ErrPaneNotFound, activePaneID)
+	}
+	targetWindow := m.windowMgr.Window(targetWindowID)
+	if targetWindow == nil {
+		return fmt.Errorf("%w: %d", ErrWindowNotFound, targetWindowID)
+	}
+	// Remove from SessionManager's paneMgr.
+	if err := m.paneMgr.Remove(activePaneID); err != nil {
+		return fmt.Errorf("%w: %d", ErrPaneNotFound, activePaneID)
+	}
+	// Add to target window.
+	newPaneID, err := targetWindow.paneMgr.Create(binding.SessionID, SplitRight)
+	if err != nil {
+		return fmt.Errorf("termmux: failed to create pane in target window")
+	}
+	targetWindow.paneMgr.setVTerm(newPaneID, binding.VTerm)
+	targetWindow.paneMgr.panes[newPaneID].Title = binding.Title
+	targetWindow.paneMgr.panes[newPaneID].LastActive = binding.LastActive
+	return nil
+}
+
+func (m *SessionManager) handleAddPaneToWindow(payload any) response {
+	p, ok := payload.(*addPaneToWindowPayload)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	regResp := m.handleRegister(&registerPayload{session: p.session, target: p.target})
+	if regResp.err != nil {
+		return regResp
+	}
+	sessionID := regResp.value.(SessionID)
+
+	w := m.windowMgr.Window(p.windowID)
+	if w == nil {
+		m.handleUnregister(sessionID)
+		return response{err: fmt.Errorf("%w: %d", ErrWindowNotFound, p.windowID)}
+	}
+
+	paneID, err := w.paneMgr.Create(sessionID, p.direction)
+	if err != nil {
+		m.handleUnregister(sessionID)
+		return response{err: err}
+	}
+
+	ms, ok := m.sessions[sessionID]
+	if ok {
+		w.paneMgr.setVTerm(paneID, ms.vterm)
+	}
+
+	return response{value: paneID}
 }
 
 // handleSessions builds a list of SessionInfo values from the sessions map.

@@ -94,3 +94,64 @@ func TestSessionManager_CopyPaneToClipboard_Empty(t *testing.T) {
 		t.Errorf("CopyPaneToClipboard nonexistent = %q, want empty", osc)
 	}
 }
+
+func TestSessionManager_CopySelection(t *testing.T) {
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "test", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	session.readerCh <- []byte("copy me please")
+	waitForSnapshotContains(t, m, id, "copy me", 2*time.Second)
+
+	m.EnterCopyMode(id)
+	m.SelectStart(id, 0, 0)
+	m.SelectEnd(id, 0, 7)
+
+	osc := m.CopySelection(id)
+	if !strings.HasPrefix(osc, "\x1b]52;c;") {
+		t.Errorf("CopySelection = %q, want OSC 52 prefix", osc)
+	}
+	encoded := osc[len("\x1b]52;c;") : len(osc)-2]
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatalf("base64 decode: %v", err)
+	}
+	if string(decoded) != "copy me" {
+		t.Errorf("decoded selection = %q, want 'copy me'", string(decoded))
+	}
+}
+
+func TestSessionManager_CopySelection_Empty(t *testing.T) {
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	osc := m.CopySelection(999)
+	if osc != "" {
+		t.Errorf("CopySelection nonexistent = %q, want empty", osc)
+	}
+}
+
+func TestSessionManager_CopySelection_NoSelection(t *testing.T) {
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "test", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	session.readerCh <- []byte("no selection")
+	waitForSnapshotContains(t, m, id, "no selection", 2*time.Second)
+
+	m.EnterCopyMode(id)
+	osc := m.CopySelection(id)
+	if osc != "" {
+		t.Errorf("CopySelection without selection = %q, want empty", osc)
+	}
+}

@@ -1147,6 +1147,14 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 		_ = s.mgr.ExitCopyMode(parent.SessionID(id))
 	})
 
+	_ = obj.Set("selectStart", func(id uint64, row, col int) {
+		_ = s.mgr.SelectStart(parent.SessionID(id), row, col)
+	})
+
+	_ = obj.Set("selectEnd", func(id uint64, row, col int) {
+		_ = s.mgr.SelectEnd(parent.SessionID(id), row, col)
+	})
+
 	_ = obj.Set("newWindow", func(call goja.FunctionCall) goja.Value {
 		name := ""
 		if len(call.Arguments) > 0 && call.Argument(0) != goja.Undefined() {
@@ -1198,6 +1206,41 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 			items[i] = obj
 		}
 		return s.runtime.ToValue(items)
+	})
+
+	_ = obj.Set("windowPanes", func() goja.Value {
+		wp := s.mgr.WindowPanes()
+		windows := s.mgr.Windows()
+		windowNames := make(map[parent.WindowID]string, len(windows))
+		for _, w := range windows {
+			windowNames[w.ID] = w.Name
+		}
+		result := make([]map[string]any, 0)
+		for wid, panes := range wp {
+			pList := make([]map[string]any, len(panes))
+			for i, p := range panes {
+				pList[i] = map[string]any{
+					"id":        uint64(p.ID),
+					"sessionId": uint64(p.SessionID),
+					"title":     p.Title,
+					"focus":     p.Focus,
+					"geometry": map[string]any{
+						"row":  p.Geometry.Row,
+						"col":  p.Geometry.Col,
+						"rows": p.Geometry.Rows,
+						"cols": p.Geometry.Cols,
+					},
+				}
+			}
+			wObj := map[string]any{
+				"id":     uint64(wid),
+				"name":   windowNames[wid],
+				"panes":  pList,
+				"active": wid == s.mgr.ActiveWindowID(),
+			}
+			result = append(result, wObj)
+		}
+		return s.runtime.ToValue(result)
 	})
 
 	_ = obj.Set("setSynchronizePanes", func(v bool) {
@@ -1295,6 +1338,46 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 		return uint64(s.mgr.ZoomedPane())
 	})
 
+	_ = obj.Set("breakPane", func(paneID uint64) uint64 {
+		wp := s.mgr.WindowPanes()
+		for wid, panes := range wp {
+			for _, p := range panes {
+				if p.ID == parent.PaneID(paneID) {
+					newID, err := s.mgr.BreakPane(wid)
+					if err != nil {
+						panic(s.runtime.NewGoError(err))
+					}
+					return uint64(newID)
+				}
+			}
+		}
+		// Pane not in any window — try SessionManager's own paneMgr.
+		if s.mgr.ActivePaneID() == parent.PaneID(paneID) {
+			newID, err := s.mgr.BreakPane(0)
+			if err != nil {
+				panic(s.runtime.NewGoError(err))
+			}
+			return uint64(newID)
+		}
+		panic(s.runtime.NewTypeError(fmt.Sprintf("termmux: pane %d not found", paneID)))
+	})
+
+	_ = obj.Set("joinPane", func(paneID uint64, targetWindowID uint64) error {
+		wp := s.mgr.WindowPanes()
+		for wid, panes := range wp {
+			for _, p := range panes {
+				if p.ID == parent.PaneID(paneID) {
+					return s.mgr.JoinPane(wid, parent.WindowID(targetWindowID))
+				}
+			}
+		}
+		// Pane not in any window — try SessionManager's own paneMgr.
+		if s.mgr.ActivePaneID() == parent.PaneID(paneID) {
+			return s.mgr.JoinPane(0, parent.WindowID(targetWindowID))
+		}
+		return fmt.Errorf("termmux: pane %d not found", paneID)
+	})
+
 	_ = obj.Set("setPipeFile", func(sessionID uint64, path string) {
 		_ = s.mgr.SetPipeFile(parent.SessionID(sessionID), path)
 	})
@@ -1321,6 +1404,10 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 
 	_ = obj.Set("copyPaneToClipboard", func(sessionID uint64) string {
 		return s.mgr.CopyPaneToClipboard(parent.SessionID(sessionID))
+	})
+
+	_ = obj.Set("copySelection", func(sessionID uint64) string {
+		return s.mgr.CopySelection(parent.SessionID(sessionID))
 	})
 
 	_ = obj.Set("lockSession", func(sessionID uint64, password string) error {
@@ -2321,6 +2408,43 @@ func registerPaneMethods(obj *goja.Object, s *muxState) {
 			panic(s.runtime.NewGoError(err))
 		}
 		return goja.Undefined()
+	})
+
+	_ = obj.Set("addPaneToWindow", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(s.runtime.NewTypeError("addPaneToWindow requires at least 1 argument (session)"))
+		}
+		sessionObj := call.Argument(0).ToObject(s.runtime)
+		session := unwrapInteractiveSession(sessionObj)
+		if session == nil {
+			panic(s.runtime.NewTypeError("addPaneToWindow: first argument must be an InteractiveSession wrapper"))
+		}
+		var target parent.SessionTarget
+		var windowID uint64
+		var dir int = 0 // SplitRight
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+			optsObj := call.Argument(1).ToObject(s.runtime)
+			if v := optsObj.Get("target"); v != nil && !goja.IsUndefined(v) {
+				tObj := v.ToObject(s.runtime)
+				if v := tObj.Get("name"); v != nil && !goja.IsUndefined(v) {
+					target.Name = v.String()
+				}
+				if v := tObj.Get("kind"); v != nil && !goja.IsUndefined(v) {
+					target.Kind = parent.SessionKind(v.String())
+				}
+			}
+			if v := optsObj.Get("windowId"); v != nil && !goja.IsUndefined(v) {
+				windowID = uint64(v.ToInteger())
+			}
+			if v := optsObj.Get("direction"); v != nil && !goja.IsUndefined(v) {
+				dir = int(v.ToInteger())
+			}
+		}
+		paneID, err := s.mgr.AddPaneToWindow(session, target, parent.WindowID(windowID), parent.SplitDirection(dir))
+		if err != nil {
+			panic(s.runtime.NewGoError(err))
+		}
+		return s.runtime.ToValue(uint64(paneID))
 	})
 
 	_ = obj.Set("focusPaneUp", func() goja.Value {

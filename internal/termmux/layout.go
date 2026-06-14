@@ -281,6 +281,15 @@ func (e *LayoutEngine) allocID() PaneID {
 	return id
 }
 
+// AllocID returns the next available PaneID and advances the counter.
+// This is the package-private allocID, exposed for use by external
+// types in the same package (e.g., WindowManager methods).
+func (e *LayoutEngine) AllocID() PaneID {
+	id := e.nextID
+	e.nextID++
+	return id
+}
+
 // Split inserts a new pane adjacent to the pivot pane in the given direction.
 // The new pane takes half of the pivot's current space. Returns the new pane's
 // ID. If pivot is 0 or not found, the pane is appended.

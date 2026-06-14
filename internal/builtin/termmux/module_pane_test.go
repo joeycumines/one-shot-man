@@ -33,6 +33,39 @@ func setupPaneMgr(t *testing.T) (*goja.Runtime, func()) {
 	}
 }
 
+func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	mgr := parent.NewSessionManager()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+
+	runtime := goja.New()
+	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+
+	// Set up the termmux module namespace so newBoundedSession etc. are available.
+	exports := runtime.NewObject()
+	_ = exports.Set("newSessionManager", func(call goja.FunctionCall) goja.Value {
+		return newSessionManager(ctx, runtime, call)
+	})
+	_ = exports.Set("newBoundedSession", func(call goja.FunctionCall) goja.Value {
+		return newBoundedSession(ctx, runtime, call)
+	})
+	_ = runtime.Set("termmux", exports)
+	_ = runtime.Set("tuiMux", tuiMux)
+
+	return runtime, func() {
+		cancel()
+		<-errCh
+	}
+}
+
 func TestPaneMethods_PanesEmpty(t *testing.T) {
 	runtime, cleanup := setupPaneMgr(t)
 	defer cleanup()
@@ -173,5 +206,202 @@ func TestPaneMethods_ClosePaneArgCount(t *testing.T) {
 	`)
 	if err != nil {
 		t.Fatalf("closePane(): %v", err)
+	}
+}
+
+func TestBreakPane_CreatesNewWindow(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	_, err := runtime.RunString(`
+		var sess = termmux.newBoundedSession({ cmd: "sh" });
+		tuiMux.register(sess.session, { name: "test" });
+		var winId = tuiMux.newWindow("win1");
+		tuiMux.addPaneToWindow(sess.session, { name: "test", windowId: winId });
+	`)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	_, err = runtime.RunString(`
+		var newWin = tuiMux.breakPane(1);
+		if (newWin <= 0) {
+			throw new Error("breakPane should return new window ID > 0, got " + newWin);
+		}
+	`)
+	if err != nil {
+		t.Fatalf("breakPane: %v", err)
+	}
+
+	_, err = runtime.RunString(`
+		var wins = tuiMux.windows();
+		if (wins.length !== 2) {
+			throw new Error("expected 2 windows, got " + wins.length);
+		}
+	`)
+	if err != nil {
+		t.Fatalf("window count: %v", err)
+	}
+}
+
+func TestJoinPane_MovesPaneBetweenWindows(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	_, err := runtime.RunString(`
+		var sess1 = termmux.newBoundedSession({ cmd: "sh" });
+		tuiMux.register(sess1.session, { name: "test" });
+	`)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	_, err = runtime.RunString(`
+		var winId = tuiMux.newWindow("win1");
+		tuiMux.addPaneToWindow(sess1.session, { name: "test", windowId: winId });
+	`)
+	if err != nil {
+		t.Fatalf("addPaneToWindow: %v", err)
+	}
+
+	_, err = runtime.RunString(`
+		var newWin = tuiMux.breakPane(1);
+		if (newWin !== 2) {
+			throw new Error("expected window 2, got " + newWin);
+		}
+	`)
+	if err != nil {
+		t.Fatalf("breakPane: %v", err)
+	}
+
+	_, err = runtime.RunString(`
+		var err = tuiMux.joinPane(1, 1);
+		if (err) {
+			throw new Error("joinPane failed: " + err.message);
+		}
+	`)
+	if err != nil {
+		t.Fatalf("joinPane: %v", err)
+	}
+}
+
+func TestBreakPane_InvalidPaneId(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	// Break with a non-existent pane ID should error.
+	_, err := runtime.RunString(`
+		try {
+			tuiMux.breakPane(999);
+			throw new Error("expected error");
+		} catch (e) {
+			if (e.message === "expected error") throw e;
+		}
+	`)
+	if err != nil {
+		t.Fatalf("breakPane(999): %v", err)
+	}
+}
+
+func TestJoinPane_InvalidPaneId(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	// Join with a non-existent pane ID should error.
+	_, err := runtime.RunString(`
+		try {
+			tuiMux.joinPane(999, 1);
+			throw new Error("expected error");
+		} catch (e) {
+			if (e.message === "expected error") throw e;
+		}
+	`)
+	if err != nil {
+		t.Fatalf("joinPane(999, 1): %v", err)
+	}
+}
+
+func TestJoinPane_InvalidTargetWindow(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	// Register a session and split to create panes.
+	_, err := runtime.RunString(`
+		var sess = termmux.newBoundedSession({ cmd: "sh" });
+		tuiMux.register(sess.session, { name: "test" });
+		var sess2 = termmux.newBoundedSession({ cmd: "sh" });
+		tuiMux.register(sess2.session, { name: "test2" });
+		tuiMux.splitVertical({ session: sess2.session, target: { name: "test2" } });
+	`)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Join to a non-existent window should error.
+	_, err = runtime.RunString(`
+		try {
+			tuiMux.joinPane(1, 999);
+			throw new Error("expected error");
+		} catch (e) {
+			if (e.message === "expected error") throw e;
+		}
+	`)
+	if err != nil {
+		t.Fatalf("joinPane(1, 999): %v", err)
+	}
+}
+
+func TestZoomSwap_StillWork(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	// Register a session and split to create a second pane.
+	_, err := runtime.RunString(`
+		var sess = termmux.newBoundedSession({ cmd: "sh" });
+		tuiMux.register(sess.session, { name: "test" });
+		var sess2 = termmux.newBoundedSession({ cmd: "sh" });
+		tuiMux.register(sess2.session, { name: "test2" });
+		tuiMux.splitVertical({ session: sess2.session, target: { name: "test2" } });
+	`)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Zoom should not error.
+	_, err = runtime.RunString(`
+		tuiMux.zoomPane(1);
+	`)
+	if err != nil {
+		t.Fatalf("zoomPane: %v", err)
+	}
+
+	// Swap panes should not error.
+	_, err = runtime.RunString(`
+		tuiMux.swapPanes(1, 2);
+	`)
+	if err != nil {
+		t.Fatalf("swapPanes: %v", err)
+	}
+}
+
+func TestRespawnSession_StillWorks(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	// Register a session.
+	_, err := runtime.RunString(`
+		var sess = termmux.newBoundedSession({ cmd: "sh" });
+		tuiMux.register(sess.session, { name: "test" });
+	`)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Respawn should not error.
+	_, err = runtime.RunString(`
+		var newSid = tuiMux.respawnSession(1);
+	`)
+	if err != nil {
+		t.Fatalf("respawnSession: %v", err)
 	}
 }

@@ -282,6 +282,59 @@ func (pm *paneManager) removeSessionID(id PaneID) SessionID {
 	return binding.SessionID
 }
 
+// transferPaneToWindow removes a pane binding from this paneManager's
+// layout engine and adds it to the target paneManager. The target
+// receives a fresh PaneID via target.nextPaneID. The original binding's
+// SessionID, VTerm, Title, LastActive, Exited, and RemainOnExit are
+// copied to the new binding. Returns the new PaneID or zero on failure.
+func (pm *paneManager) transferPaneToWindow(target *paneManager, dir SplitDirection) PaneID {
+	pm.mu.Lock()
+	target.mu.Lock()
+	defer pm.mu.Unlock()
+	defer target.mu.Unlock()
+
+	binding, ok := pm.panes[pm.activePaneID]
+	if !ok {
+		return 0
+	}
+
+	delete(pm.engine.splits, pm.activePaneID)
+
+	srcIdx := -1
+	for i, pid := range pm.paneOrder {
+		if pid == pm.activePaneID {
+			srcIdx = i
+			break
+		}
+	}
+	if srcIdx < 0 {
+		return 0
+	}
+	pm.paneOrder = append(pm.paneOrder[:srcIdx], pm.paneOrder[srcIdx+1:]...)
+	delete(pm.panes, pm.activePaneID)
+
+	newID := target.nextPaneID
+	target.nextPaneID++
+
+	target.engine.splits[newID] = SplitGroup{Direction: dir, Ratio: 1.0}
+	target.engine.panes = append(target.engine.panes, newID)
+
+	target.paneOrder = append(target.paneOrder, newID)
+	target.panes[newID] = &PaneBinding{
+		PaneID:       newID,
+		SessionID:    binding.SessionID,
+		VTerm:        binding.VTerm,
+		Title:        binding.Title,
+		LastActive:   binding.LastActive,
+		Exited:       binding.Exited,
+		RemainOnExit: binding.RemainOnExit,
+	}
+
+	target.activePaneID = newID
+
+	return newID
+}
+
 var _ PaneManager = (*paneManager)(nil)
 
 func (pm *paneManager) SetSynchronize(v bool) {

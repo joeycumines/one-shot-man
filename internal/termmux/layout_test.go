@@ -109,6 +109,244 @@ func TestSplitLayout_MatchesPrSplitOriginal(t *testing.T) {
 	}
 }
 
+func makePanes(n int) []Pane {
+	panes := make([]Pane, n)
+	for i := range panes {
+		panes[i] = Pane{ID: PaneID(i + 1)}
+	}
+	return panes
+}
+
+func TestLayoutEngine_Vertical2Panes(t *testing.T) {
+	e := NewLayoutEngine(LayoutVertical, 80, 24)
+	geoms := e.Compute(makePanes(2))
+	if len(geoms) != 2 {
+		t.Fatalf("expected 2 geometries, got %d", len(geoms))
+	}
+	if geoms[0].Row != 0 || geoms[0].Rows != 12 || geoms[0].Cols != 80 {
+		t.Errorf("pane[0] = %+v, want Row=0 Rows=12 Cols=80", geoms[0])
+	}
+	if geoms[1].Row != 12 || geoms[1].Rows != 12 || geoms[1].Cols != 80 {
+		t.Errorf("pane[1] = %+v, want Row=12 Rows=12 Cols=80", geoms[1])
+	}
+}
+
+func TestLayoutEngine_Vertical3Panes(t *testing.T) {
+	e := NewLayoutEngine(LayoutVertical, 80, 24)
+	geoms := e.Compute(makePanes(3))
+	if len(geoms) != 3 {
+		t.Fatalf("expected 3 geometries, got %d", len(geoms))
+	}
+	totalRows := 0
+	for _, g := range geoms {
+		totalRows += g.Rows
+		if g.Cols != 80 {
+			t.Errorf("Cols=%d, want 80", g.Cols)
+		}
+	}
+	if totalRows != 24 {
+		t.Errorf("total Rows=%d, want 24", totalRows)
+	}
+}
+
+func TestLayoutEngine_Horizontal5Panes(t *testing.T) {
+	e := NewLayoutEngine(LayoutHorizontal, 100, 24)
+	geoms := e.Compute(makePanes(5))
+	if len(geoms) != 5 {
+		t.Fatalf("expected 5 geometries, got %d", len(geoms))
+	}
+	totalCols := 0
+	for _, g := range geoms {
+		totalCols += g.Cols
+		if g.Rows != 24 {
+			t.Errorf("Rows=%d, want 24", g.Rows)
+		}
+	}
+	if totalCols != 100 {
+		t.Errorf("total Cols=%d, want 100", totalCols)
+	}
+}
+
+func TestLayoutEngine_Tiled8Panes(t *testing.T) {
+	e := NewLayoutEngine(LayoutTiled, 120, 40)
+	geoms := e.Compute(makePanes(8))
+	if len(geoms) != 8 {
+		t.Fatalf("expected 8 geometries, got %d", len(geoms))
+	}
+	// ceilSqrt(8) = 3 cols, rows = ceil(8/3) = 3
+	for i, g := range geoms {
+		if g.Rows < 1 || g.Cols < 1 {
+			t.Errorf("pane[%d] has zero dimension: %+v", i, g)
+		}
+	}
+	seen := make(map[[2]int]bool)
+	for _, g := range geoms {
+		for r := g.Row; r < g.Row+g.Rows; r++ {
+			for c := g.Col; c < g.Col+g.Cols; c++ {
+				key := [2]int{r, c}
+				if seen[key] {
+					t.Errorf("cell (%d,%d) covered by multiple panes", r, c)
+				}
+				seen[key] = true
+			}
+		}
+	}
+}
+
+func TestLayoutEngine_StackedSameAsVertical(t *testing.T) {
+	ev := NewLayoutEngine(LayoutVertical, 80, 24)
+	es := NewLayoutEngine(LayoutStacked, 80, 24)
+	panes := makePanes(3)
+	gv := ev.Compute(panes)
+	gs := es.Compute(panes)
+	for i := range gv {
+		if gv[i] != gs[i] {
+			t.Errorf("pane[%d]: vertical=%+v stacked=%+v", i, gv[i], gs[i])
+		}
+	}
+}
+
+func TestLayoutEngine_ChromeRows(t *testing.T) {
+	e := NewLayoutEngine(LayoutVertical, 80, 24)
+	e.SetChromeRows(4)
+	geoms := e.Compute(makePanes(2))
+	totalRows := 0
+	for _, g := range geoms {
+		totalRows += g.Rows
+	}
+	if totalRows != 20 {
+		t.Errorf("total Rows=%d, want 20 (24-4 chrome)", totalRows)
+	}
+}
+
+func TestLayoutEngine_SplitAndRemove(t *testing.T) {
+	e := NewLayoutEngine(LayoutVertical, 80, 24)
+	p1 := PaneID(1)
+	e.panes = []PaneID{p1}
+
+	p2 := e.Split(p1, SplitDown)
+	if len(e.panes) != 2 {
+		t.Fatalf("expected 2 panes after split, got %d", len(e.panes))
+	}
+	if e.panes[0] != p1 || e.panes[1] != p2 {
+		t.Errorf("pane order: %v, want [%d, %d]", e.panes, p1, p2)
+	}
+
+	e.Remove(p1)
+	if len(e.panes) != 1 {
+		t.Fatalf("expected 1 pane after remove, got %d", len(e.panes))
+	}
+	if e.panes[0] != p2 {
+		t.Errorf("remaining pane=%d, want %d", e.panes[0], p2)
+	}
+}
+
+func TestLayoutEngine_SplitLeft(t *testing.T) {
+	e := NewLayoutEngine(LayoutHorizontal, 80, 24)
+	p1 := PaneID(1)
+	e.panes = []PaneID{p1}
+
+	p2 := e.Split(p1, SplitLeft)
+	if len(e.panes) != 2 {
+		t.Fatalf("expected 2 panes, got %d", len(e.panes))
+	}
+	if e.panes[0] != p2 {
+		t.Errorf("left split: pane[0]=%d, want %d (new pane before pivot)", e.panes[0], p2)
+	}
+	if e.panes[1] != p1 {
+		t.Errorf("left split: pane[1]=%d, want %d (pivot)", e.panes[1], p1)
+	}
+}
+
+func TestLayoutEngine_Resize(t *testing.T) {
+	e := NewLayoutEngine(LayoutVertical, 80, 24)
+	p1 := PaneID(1)
+	e.panes = []PaneID{p1}
+	e.splits[p1] = SplitGroup{Direction: SplitDown, Ratio: 0.5}
+
+	if !e.Resize(p1, 0.7) {
+		t.Error("Resize returned false, want true")
+	}
+	if e.splits[p1].Ratio != 0.7 {
+		t.Errorf("ratio=%f, want 0.7", e.splits[p1].Ratio)
+	}
+
+	e.Resize(p1, 0.05)
+	if e.splits[p1].Ratio != 0.1 {
+		t.Errorf("clamped ratio=%f, want 0.1", e.splits[p1].Ratio)
+	}
+
+	e.Resize(p1, 0.99)
+	if e.splits[p1].Ratio != 0.9 {
+		t.Errorf("clamped ratio=%f, want 0.9", e.splits[p1].Ratio)
+	}
+}
+
+func TestLayoutEngine_FocusNext(t *testing.T) {
+	e := NewLayoutEngine(LayoutVertical, 80, 24)
+	e.panes = []PaneID{1, 2, 3}
+
+	if next := e.FocusNext(1, NavNext); next != 2 {
+		t.Errorf("NavNext from 1 = %d, want 2", next)
+	}
+	if next := e.FocusNext(2, NavNext); next != 3 {
+		t.Errorf("NavNext from 2 = %d, want 3", next)
+	}
+	if next := e.FocusNext(3, NavNext); next != 1 {
+		t.Errorf("NavNext from 3 (wrap) = %d, want 1", next)
+	}
+	if next := e.FocusNext(1, NavPrev); next != 3 {
+		t.Errorf("NavPrev from 1 (wrap) = %d, want 3", next)
+	}
+	if next := e.FocusNext(2, NavLeft); next != 1 {
+		t.Errorf("NavLeft from 2 = %d, want 1", next)
+	}
+	if next := e.FocusNext(1, NavLeft); next != 1 {
+		t.Errorf("NavLeft from 1 (edge) = %d, want 1", next)
+	}
+	if next := e.FocusNext(3, NavRight); next != 3 {
+		t.Errorf("NavRight from 3 (edge) = %d, want 3", next)
+	}
+	if next := e.FocusNext(99, NavNext); next != 0 {
+		t.Errorf("NavNext from missing = %d, want 0", next)
+	}
+}
+
+func TestLayoutEngine_SetModeAndSize(t *testing.T) {
+	e := NewLayoutEngine(LayoutVertical, 80, 24)
+	geoms := e.Compute(makePanes(2))
+	if geoms[0].Rows != 12 {
+		t.Errorf("vertical: Rows=%d, want 12", geoms[0].Rows)
+	}
+
+	e.SetMode(LayoutHorizontal)
+	geoms = e.Compute(makePanes(2))
+	if geoms[0].Cols != 40 {
+		t.Errorf("horizontal: Cols=%d, want 40", geoms[0].Cols)
+	}
+
+	e.SetSize(160, 48)
+	geoms = e.Compute(makePanes(2))
+	if geoms[0].Cols != 80 {
+		t.Errorf("horizontal 160w: Cols=%d, want 80", geoms[0].Cols)
+	}
+}
+
+func TestLayoutEngine_Tiled2Panes(t *testing.T) {
+	e := NewLayoutEngine(LayoutTiled, 80, 24)
+	geoms := e.Compute(makePanes(2))
+	if len(geoms) != 2 {
+		t.Fatalf("expected 2, got %d", len(geoms))
+	}
+	// ceilSqrt(2) = 2 cols, 1 row → 2 cells side by side
+	if geoms[0].Col != 0 || geoms[0].Cols != 40 {
+		t.Errorf("pane[0] = %+v, want Col=0 Cols=40", geoms[0])
+	}
+	if geoms[1].Col != 40 || geoms[1].Cols != 40 {
+		t.Errorf("pane[1] = %+v, want Col=40 Cols=40", geoms[1])
+	}
+}
+
 func TestPaneGeometry_OffsetMouse(t *testing.T) {
 	g := PaneGeometry{Row: 10, Col: 5, Rows: 20, Cols: 70}
 

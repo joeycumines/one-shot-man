@@ -1,5 +1,11 @@
 package termmux
 
+import (
+	"time"
+
+	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
+)
+
 // PaneGeometry describes a rectangular region within a terminal screen.
 type PaneGeometry struct {
 	Row  int // 0-based top row of content area
@@ -103,4 +109,440 @@ func (l SplitLayout) Compute(totalRows, totalCols int, topRatio float64) (top, b
 	}
 
 	return top, bottom
+}
+
+// PaneID uniquely identifies a pane within a LayoutEngine.
+type PaneID uint64
+
+// LayoutMode determines how panes are arranged within the available space.
+type LayoutMode int
+
+const (
+	// LayoutTiled arranges panes in a grid that approximates a square.
+	LayoutTiled LayoutMode = iota
+	// LayoutStacked arranges panes in a vertical stack (alias for LayoutVertical).
+	LayoutStacked
+	// LayoutHorizontal arranges panes side by side.
+	LayoutHorizontal
+	// LayoutVertical arranges panes stacked top to bottom (default).
+	LayoutVertical
+)
+
+// SplitDirection indicates the direction in which a new pane is inserted
+// relative to the pivot pane.
+type SplitDirection int
+
+const (
+	SplitRight SplitDirection = iota
+	SplitDown
+	SplitLeft
+	SplitUp
+)
+
+// NavigationDirection indicates the direction of focus movement.
+type NavigationDirection int
+
+const (
+	NavNext NavigationDirection = iota
+	NavPrev
+	NavUp
+	NavDown
+	NavLeft
+	NavRight
+)
+
+// SplitGroup tracks the split relationship for a pane: which group it belongs
+// to and its ratio within that group. Panes in the same group share the same
+// parent space and are split along the group's direction.
+type SplitGroup struct {
+	Direction SplitDirection
+	Ratio     float64 // this pane's share of the parent space (0.0–1.0)
+}
+
+// Pane represents a single terminal pane within a termmux session. It holds
+// the virtual terminal, layout geometry, and visual metadata. A zero-value
+// Pane is invalid — callers should check IsValid() before use.
+type Pane struct {
+	ID          PaneID
+	SessionID   SessionID
+	Geometry    PaneGeometry
+	Title       string
+	Focus       bool
+	BorderStyle string
+	VTerm       *vt.VTerm
+	LastActive  time.Time
+}
+
+// IsValid reports whether the Pane represents a valid, allocated pane.
+// A zero-value Pane (with ID 0) is not valid.
+func (p Pane) IsValid() bool {
+	return p.ID != 0
+}
+
+// PaneManager manages the lifecycle and layout of panes within a termmux
+// session. Implementations handle pane creation, removal, focus management,
+// resizing, and keyboard-driven navigation.
+type PaneManager interface {
+	Create(sessionID SessionID, direction SplitDirection) (PaneID, error)
+	Remove(id PaneID) error
+	Focus(id PaneID) error
+	Resize(id PaneID, ratio float64) error
+	Panes() []Pane
+	ActivePaneID() PaneID
+	FocusNext(direction NavigationDirection) PaneID
+	HasPanes() bool
+	FocusLeft()
+	FocusRight()
+	FocusDown()
+	FocusUp()
+	SplitHorizontalAction()
+	SplitVerticalAction()
+	CloseActivePane()
+	Close() error
+}
+
+// LayoutEngine computes PaneGeometry for N panes across four layout modes.
+// It supports dynamic splitting, removal, resizing, and focus navigation.
+type LayoutEngine struct {
+	panes      []PaneID
+	mode       LayoutMode
+	splits     map[PaneID]SplitGroup
+	chromeRows int
+	width      int
+	height     int
+	nextID     PaneID
+}
+
+// NewLayoutEngine creates a LayoutEngine with the given mode and screen
+// dimensions. Chrome rows are deducted from the available height before
+// computing pane geometries.
+func NewLayoutEngine(mode LayoutMode, width, height int) *LayoutEngine {
+	return &LayoutEngine{
+		mode:       mode,
+		width:      width,
+		height:     height,
+		splits:     make(map[PaneID]SplitGroup),
+		chromeRows: 0,
+		nextID:     1,
+	}
+}
+
+// SetMode changes the layout mode. Pane geometries will reflect the new mode
+// on the next Compute call.
+func (e *LayoutEngine) SetMode(mode LayoutMode) {
+	e.mode = mode
+}
+
+// SetSize updates the screen dimensions used for geometry computation.
+func (e *LayoutEngine) SetSize(width, height int) {
+	e.width = width
+	e.height = height
+}
+
+// SetChromeRows sets the number of rows consumed by chrome (status bars,
+// borders, etc.) that are deducted from available height before computing
+// pane geometries.
+func (e *LayoutEngine) SetChromeRows(rows int) {
+	e.chromeRows = rows
+}
+
+// ChromeRows returns the current chrome rows setting.
+func (e *LayoutEngine) ChromeRows() int {
+	return e.chromeRows
+}
+
+// Mode returns the current layout mode.
+func (e *LayoutEngine) Mode() LayoutMode {
+	return e.mode
+}
+
+// Size returns the current screen dimensions (width, height).
+func (e *LayoutEngine) Size() (int, int) {
+	return e.width, e.height
+}
+
+// PaneIDs returns the ordered list of pane IDs.
+func (e *LayoutEngine) PaneIDs() []PaneID {
+	out := make([]PaneID, len(e.panes))
+	copy(out, e.panes)
+	return out
+}
+
+// allocID returns the next available PaneID and advances the counter.
+func (e *LayoutEngine) allocID() PaneID {
+	id := e.nextID
+	e.nextID++
+	return id
+}
+
+// Split inserts a new pane adjacent to the pivot pane in the given direction.
+// The new pane takes half of the pivot's current space. Returns the new pane's
+// ID. If pivot is 0 or not found, the pane is appended.
+func (e *LayoutEngine) Split(pivot PaneID, direction SplitDirection) PaneID {
+	newID := e.allocID()
+
+	idx := -1
+	for i, id := range e.panes {
+		if id == pivot {
+			idx = i
+			break
+		}
+	}
+
+	if idx < 0 {
+		e.panes = append(e.panes, newID)
+		e.splits[newID] = SplitGroup{Direction: direction, Ratio: 1.0}
+		return newID
+	}
+
+	insertIdx := idx + 1
+	if direction == SplitLeft || direction == SplitUp {
+		insertIdx = idx
+	}
+
+	e.panes = append(e.panes, 0)
+	copy(e.panes[insertIdx+1:], e.panes[insertIdx:])
+	e.panes[insertIdx] = newID
+
+	e.splits[newID] = SplitGroup{Direction: direction, Ratio: 0.5}
+
+	return newID
+}
+
+// Remove removes the pane with the given ID and redistributes its space
+// equally among remaining panes. If the ID is not found, Remove is a no-op.
+func (e *LayoutEngine) Remove(id PaneID) {
+	idx := -1
+	for i, pid := range e.panes {
+		if pid == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return
+	}
+
+	e.panes = append(e.panes[:idx], e.panes[idx+1:]...)
+	delete(e.splits, id)
+}
+
+// Resize adjusts the split ratio for the given pane. The ratio is clamped to
+// [0.1, 0.9] to prevent panes from becoming too small. Returns false if the
+// pane ID is not found.
+func (e *LayoutEngine) Resize(id PaneID, ratio float64) bool {
+	if _, ok := e.splits[id]; !ok {
+		found := false
+		for _, pid := range e.panes {
+			if pid == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	ratio = clamp(ratio, 0.1, 0.9)
+	e.splits[id] = SplitGroup{
+		Direction: e.splits[id].Direction,
+		Ratio:     ratio,
+	}
+	return true
+}
+
+// FocusNext returns the PaneID of the adjacent pane in the given navigation
+// direction. If no adjacent pane exists (e.g., at the edge), the current
+// PaneID is returned. If current is not found, 0 is returned.
+func (e *LayoutEngine) FocusNext(current PaneID, direction NavigationDirection) PaneID {
+	idx := -1
+	for i, id := range e.panes {
+		if id == current {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return 0
+	}
+
+	n := len(e.panes)
+	if n == 0 {
+		return current
+	}
+
+	switch direction {
+	case NavNext:
+		if idx+1 < n {
+			return e.panes[idx+1]
+		}
+		return e.panes[0]
+	case NavPrev:
+		if idx-1 >= 0 {
+			return e.panes[idx-1]
+		}
+		return e.panes[n-1]
+	case NavRight, NavDown:
+		if idx+1 < n {
+			return e.panes[idx+1]
+		}
+		return current
+	case NavLeft, NavUp:
+		if idx-1 >= 0 {
+			return e.panes[idx-1]
+		}
+		return current
+	default:
+		return current
+	}
+}
+
+// Compute returns the PaneGeometry for each pane in the engine's current
+// configuration. The returned slice is ordered the same as PaneIDs().
+// Chrome rows are deducted from the available height before computing.
+func (e *LayoutEngine) Compute(panes []Pane) []PaneGeometry {
+	n := len(panes)
+	if n == 0 {
+		return nil
+	}
+
+	availW := e.width
+	availH := max(e.height-e.chromeRows, 1)
+
+	geoms := make([]PaneGeometry, n)
+
+	switch e.mode {
+	case LayoutVertical, LayoutStacked:
+		e.computeVertical(geoms, availW, availH)
+	case LayoutHorizontal:
+		e.computeHorizontal(geoms, availW, availH)
+	case LayoutTiled:
+		e.computeTiled(geoms, availW, availH)
+	default:
+		e.computeVertical(geoms, availW, availH)
+	}
+
+	return geoms
+}
+
+// computeVertical stacks panes top to bottom, each getting an equal share
+// of the available height. Remainder rows go to the last pane.
+func (e *LayoutEngine) computeVertical(geoms []PaneGeometry, availW, availH int) {
+	n := len(geoms)
+	baseH := availH / n
+	allocated := 0
+
+	for i := range geoms {
+		h := baseH
+		if i == n-1 {
+			h = availH - allocated
+		}
+		if h < 1 {
+			h = 1
+		}
+		geoms[i] = PaneGeometry{
+			Row:  allocated,
+			Col:  0,
+			Rows: h,
+			Cols: availW,
+		}
+		allocated += h
+	}
+}
+
+// computeHorizontal arranges panes side by side, each getting an equal share
+// of the available width. Remainder columns go to the last pane.
+func (e *LayoutEngine) computeHorizontal(geoms []PaneGeometry, availW, availH int) {
+	n := len(geoms)
+	baseW := availW / n
+	allocated := 0
+
+	for i := range geoms {
+		w := baseW
+		if i == n-1 {
+			w = availW - allocated
+		}
+		if w < 1 {
+			w = 1
+		}
+		geoms[i] = PaneGeometry{
+			Row:  0,
+			Col:  allocated,
+			Rows: availH,
+			Cols: w,
+		}
+		allocated += w
+	}
+}
+
+// computeTiled arranges panes in a grid that approximates a square.
+// For N panes, it chooses cols = ceil(sqrt(N)) and rows = ceil(N/cols).
+// Remainder cells in the last row are distributed evenly.
+func (e *LayoutEngine) computeTiled(geoms []PaneGeometry, availW, availH int) {
+	n := len(geoms)
+	cols := ceilSqrt(n)
+	rows := (n + cols - 1) / cols
+
+	cellW := availW / cols
+	cellH := availH / rows
+
+	for i := range geoms {
+		r := i / cols
+		c := i % cols
+
+		x := c * cellW
+		y := r * cellH
+
+		w := cellW
+		if c == cols-1 {
+			w = availW - x
+		}
+		if w < 1 {
+			w = 1
+		}
+
+		h := cellH
+		if r == rows-1 {
+			h = availH - y
+		}
+		if h < 1 {
+			h = 1
+		}
+
+		geoms[i] = PaneGeometry{
+			Row:  y,
+			Col:  x,
+			Rows: h,
+			Cols: w,
+		}
+	}
+}
+
+// ceilSqrt returns ceil(sqrt(n)).
+func ceilSqrt(n int) int {
+	if n <= 0 {
+		return 1
+	}
+	x := n
+	y := (x + 1) / 2
+	for y < x {
+		x = y
+		y = (x + n/x) / 2
+	}
+	if x*x == n {
+		return x
+	}
+	return x + 1
+}
+
+// clamp restricts v to [lo, hi].
+func clamp(v, lo, hi float64) float64 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }

@@ -799,6 +799,7 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 	registerPassthroughMethods(obj, s)
 	registerStatusMethods(obj, s)
 	registerPersistenceMethods(obj, s)
+	registerPaneMethods(obj, s)
 
 	return obj
 }
@@ -1769,4 +1770,141 @@ func persistedStateToJS(state *parent.PersistedManagerState) map[string]any {
 		"savedAt":  state.SavedAt.UnixMilli(),
 		"sessions": sessions,
 	}
+}
+
+// registerPaneMethods registers pane management methods: splitHorizontal,
+// splitVertical, closePane, focusPaneUp, focusPaneDown, focusPaneLeft,
+// focusPaneRight, panes, activePaneId, resizePane.
+func registerPaneMethods(obj *goja.Object, s *muxState) {
+	_ = obj.Set("splitHorizontal", func(call goja.FunctionCall) goja.Value {
+		direction := parent.SplitDown
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+			opts := call.Argument(0).ToObject(s.runtime)
+			if v := opts.Get("session"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				session := unwrapInteractiveSession(v.ToObject(s.runtime))
+				if session == nil {
+					panic(s.runtime.NewTypeError("splitHorizontal: session must be an InteractiveSession wrapper"))
+				}
+				var target parent.SessionTarget
+				if v := opts.Get("target"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					tObj := v.ToObject(s.runtime)
+					if v := tObj.Get("name"); v != nil && !goja.IsUndefined(v) {
+						target.Name = v.String()
+					}
+					if v := tObj.Get("kind"); v != nil && !goja.IsUndefined(v) {
+						target.Kind = parent.SessionKind(v.String())
+					}
+					if v := tObj.Get("id"); v != nil && !goja.IsUndefined(v) {
+						target.ID = v.String()
+					}
+				}
+				id, err := s.mgr.NewPane(session, target, direction)
+				if err != nil {
+					panic(s.runtime.NewGoError(err))
+				}
+				return s.runtime.ToValue(uint64(id))
+			}
+		}
+		panic(s.runtime.NewTypeError("splitHorizontal: options with session are required"))
+	})
+
+	_ = obj.Set("splitVertical", func(call goja.FunctionCall) goja.Value {
+		direction := parent.SplitRight
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+			opts := call.Argument(0).ToObject(s.runtime)
+			if v := opts.Get("session"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				session := unwrapInteractiveSession(v.ToObject(s.runtime))
+				if session == nil {
+					panic(s.runtime.NewTypeError("splitVertical: session must be an InteractiveSession wrapper"))
+				}
+				var target parent.SessionTarget
+				if v := opts.Get("target"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					tObj := v.ToObject(s.runtime)
+					if v := tObj.Get("name"); v != nil && !goja.IsUndefined(v) {
+						target.Name = v.String()
+					}
+					if v := tObj.Get("kind"); v != nil && !goja.IsUndefined(v) {
+						target.Kind = parent.SessionKind(v.String())
+					}
+					if v := tObj.Get("id"); v != nil && !goja.IsUndefined(v) {
+						target.ID = v.String()
+					}
+				}
+				id, err := s.mgr.NewPane(session, target, direction)
+				if err != nil {
+					panic(s.runtime.NewGoError(err))
+				}
+				return s.runtime.ToValue(uint64(id))
+			}
+		}
+		panic(s.runtime.NewTypeError("splitVertical: options with session are required"))
+	})
+
+	_ = obj.Set("closePane", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(s.runtime.NewTypeError("closePane: pane ID argument is required"))
+		}
+		id := parent.PaneID(call.Argument(0).ToInteger())
+		if err := s.mgr.ClosePane(id); err != nil {
+			panic(s.runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("focusPaneUp", func() goja.Value {
+		nextID := s.mgr.FocusNextPane(parent.NavUp)
+		return s.runtime.ToValue(uint64(nextID))
+	})
+
+	_ = obj.Set("focusPaneDown", func() goja.Value {
+		nextID := s.mgr.FocusNextPane(parent.NavDown)
+		return s.runtime.ToValue(uint64(nextID))
+	})
+
+	_ = obj.Set("focusPaneLeft", func() goja.Value {
+		nextID := s.mgr.FocusNextPane(parent.NavLeft)
+		return s.runtime.ToValue(uint64(nextID))
+	})
+
+	_ = obj.Set("focusPaneRight", func() goja.Value {
+		nextID := s.mgr.FocusNextPane(parent.NavRight)
+		return s.runtime.ToValue(uint64(nextID))
+	})
+
+	_ = obj.Set("panes", func() goja.Value {
+		panes := s.mgr.Panes()
+		result := make([]map[string]any, len(panes))
+		for i, p := range panes {
+			result[i] = map[string]any{
+				"id":        uint64(p.ID),
+				"sessionId": uint64(p.SessionID),
+				"title":     p.Title,
+				"focus":     p.Focus,
+				"geometry": map[string]any{
+					"row":  p.Geometry.Row,
+					"col":  p.Geometry.Col,
+					"rows": p.Geometry.Rows,
+					"cols": p.Geometry.Cols,
+				},
+			}
+		}
+		return s.runtime.ToValue(result)
+	})
+
+	_ = obj.Set("activePaneId", func() goja.Value {
+		id := s.mgr.ActivePaneID()
+		return s.runtime.ToValue(uint64(id))
+	})
+
+	_ = obj.Set("resizePane", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(s.runtime.NewTypeError("resizePane: requires (paneId, ratio) arguments"))
+		}
+		id := parent.PaneID(call.Argument(0).ToInteger())
+		ratio := call.Argument(1).ToFloat()
+		if err := s.mgr.ResizePane(id, ratio); err != nil {
+			panic(s.runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
 }

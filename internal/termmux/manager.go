@@ -328,6 +328,34 @@ const (
 	// VTerm screen (with Cells and Attr). Payload: SessionID.
 	// Reply value: *vt.Screen.
 	reqScreen
+
+	// reqNewPane asks the worker to create a new pane with a session.
+	// Payload: *newPanePayload. Reply value: PaneID.
+	reqNewPane
+
+	// reqClosePane asks the worker to close a pane and its session.
+	// Payload: PaneID. Reply value: nil.
+	reqClosePane
+
+	// reqFocusPane asks the worker to switch focus to a pane.
+	// Payload: PaneID. Reply value: nil.
+	reqFocusPane
+
+	// reqResizePane asks the worker to resize a pane's split ratio.
+	// Payload: *resizePanePayload. Reply value: nil.
+	reqResizePane
+
+	// reqPanes asks the worker to return the current pane list.
+	// Payload: nil. Reply value: []Pane.
+	reqPanes
+
+	// reqFocusNextPane asks the worker to move focus to an adjacent pane.
+	// Payload: NavigationDirection. Reply value: PaneID.
+	reqFocusNextPane
+
+	// reqActivePaneID asks the worker to return the active pane's ID.
+	// Payload: nil. Reply value: PaneID.
+	reqActivePaneID
 )
 
 // registerPayload carries the arguments for a reqRegister request.
@@ -354,6 +382,19 @@ type resizeSessionPayload struct {
 type restoreStatePayload struct {
 	state   *PersistedManagerState
 	factory func(PersistedSession) (InteractiveSession, error)
+}
+
+// newPanePayload carries the arguments for a reqNewPane request.
+type newPanePayload struct {
+	session   InteractiveSession
+	target    SessionTarget
+	direction SplitDirection
+}
+
+// resizePanePayload carries the pane ID and ratio for a reqResizePane request.
+type resizePanePayload struct {
+	id    PaneID
+	ratio float64
 }
 
 // RestoreResult describes the outcome of a [SessionManager.RestoreFromState]
@@ -495,6 +536,8 @@ type SessionManager struct {
 	// It prevents concurrent passthrough calls and ensures tee
 	// enable/disable operates on the correct session.
 	passthroughSessionID SessionID
+
+	paneMgr *paneManager
 }
 
 // ManagerOption configures a SessionManager. Pass options to NewSessionManager.
@@ -535,6 +578,7 @@ func NewSessionManager(opts ...ManagerOption) *SessionManager {
 		nextID:       1,
 		termRows:     DefaultRows,
 		termCols:     DefaultCols,
+		paneMgr:      newPaneManager(LayoutVertical, DefaultCols, DefaultRows),
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -756,6 +800,54 @@ func (m *SessionManager) Sessions() []SessionInfo {
 	return resp.value.([]SessionInfo)
 }
 
+// NewPane creates a new pane by registering a session and adding it to
+// the pane layout. The pane is split from the active pane in the given
+// direction. Returns the new PaneID.
+func (m *SessionManager) NewPane(session InteractiveSession, target SessionTarget, direction SplitDirection) (PaneID, error) {
+	resp := m.sendRequest(reqNewPane, &newPanePayload{session: session, target: target, direction: direction})
+	if resp.err != nil {
+		return 0, resp.err
+	}
+	return resp.value.(PaneID), nil
+}
+
+// ClosePane removes the pane and its associated session. The session is
+// unregistered and its resources are released.
+func (m *SessionManager) ClosePane(id PaneID) error {
+	return m.sendRequest(reqClosePane, id).err
+}
+
+// FocusPane switches the active pane to the one with the given ID.
+// The associated session becomes the active input target.
+func (m *SessionManager) FocusPane(id PaneID) error {
+	return m.sendRequest(reqFocusPane, id).err
+}
+
+// ResizePane adjusts the split ratio for the given pane.
+func (m *SessionManager) ResizePane(id PaneID, ratio float64) error {
+	return m.sendRequest(reqResizePane, &resizePanePayload{id: id, ratio: ratio}).err
+}
+
+// Panes returns a snapshot of all panes with their computed geometries.
+func (m *SessionManager) Panes() []Pane {
+	resp := m.sendRequest(reqPanes, nil)
+	if resp.err != nil {
+		return nil
+	}
+	return resp.value.([]Pane)
+}
+
+// FocusNextPane moves focus to the adjacent pane in the given direction.
+// Returns the new active PaneID.
+func (m *SessionManager) FocusNextPane(direction NavigationDirection) PaneID {
+	return m.paneMgr.FocusNext(direction)
+}
+
+// ActivePaneID returns the currently focused pane ID, or 0 if no panes exist.
+func (m *SessionManager) ActivePaneID() PaneID {
+	return m.paneMgr.ActivePaneID()
+}
+
 // dispatch routes a request to the appropriate handler. This method runs
 // exclusively within the worker goroutine started by Run.
 func (m *SessionManager) dispatch(req request) {
@@ -796,6 +888,20 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleRestoreState(req.payload.(*restoreStatePayload))
 	case reqScreen:
 		resp = m.handleScreen(req.payload.(SessionID))
+	case reqNewPane:
+		resp = m.handleNewPane(req.payload.(*newPanePayload))
+	case reqClosePane:
+		resp = m.handleClosePane(req.payload.(PaneID))
+	case reqFocusPane:
+		resp = m.handleFocusPane(req.payload.(PaneID))
+	case reqResizePane:
+		resp = m.handleResizePane(req.payload.(*resizePanePayload))
+	case reqPanes:
+		resp = m.handlePanes()
+	case reqFocusNextPane:
+		resp = m.handleFocusNextPane(req.payload.(NavigationDirection))
+	case reqActivePaneID:
+		resp = m.handleActivePaneID()
 	default:
 		resp = response{err: fmt.Errorf("termmux: unknown request kind %d", req.kind)}
 	}
@@ -950,6 +1056,7 @@ func (m *SessionManager) handleInput(data []byte) response {
 func (m *SessionManager) handleResize(p *resizePayload) response {
 	m.termRows = p.rows
 	m.termCols = p.cols
+	m.paneMgr.setSize(p.cols, p.rows)
 	for id, ms := range m.sessions {
 		if ms.state == SessionClosed {
 			continue
@@ -997,6 +1104,102 @@ func (m *SessionManager) handleScreen(id SessionID) response {
 		return response{}
 	}
 	return response{value: ms.vterm.ActiveScreen()}
+}
+
+func (m *SessionManager) handleNewPane(p *newPanePayload) response {
+	regResp := m.handleRegister(&registerPayload{session: p.session, target: p.target})
+	if regResp.err != nil {
+		return regResp
+	}
+	sessionID := regResp.value.(SessionID)
+
+	paneID, err := m.paneMgr.Create(sessionID, p.direction)
+	if err != nil {
+		m.handleUnregister(sessionID)
+		return response{err: err}
+	}
+
+	ms, ok := m.sessions[sessionID]
+	if ok {
+		m.paneMgr.setVTerm(paneID, ms.vterm)
+	}
+
+	m.activeID = sessionID
+
+	return response{value: paneID}
+}
+
+func (m *SessionManager) handleClosePane(id PaneID) response {
+	sessionID := m.paneMgr.removeSessionID(id)
+
+	if err := m.paneMgr.Remove(id); err != nil {
+		return response{err: err}
+	}
+
+	if sessionID != 0 {
+		unregResp := m.handleUnregister(sessionID)
+		if unregResp.err != nil {
+			slog.Warn("session unregister failed during pane close", "sessionID", sessionID, "error", unregResp.err)
+		}
+	}
+
+	if activeSessionID := m.paneMgr.activeSessionID(); activeSessionID != 0 {
+		m.activeID = activeSessionID
+	} else {
+		m.activeID = 0
+	}
+
+	return response{}
+}
+
+func (m *SessionManager) handleFocusPane(id PaneID) response {
+	if err := m.paneMgr.Focus(id); err != nil {
+		return response{err: err}
+	}
+
+	sessionID := m.paneMgr.activeSessionID()
+	if sessionID != 0 {
+		m.activeID = sessionID
+		ms, ok := m.sessions[sessionID]
+		if ok {
+			ms.lastActive = time.Now()
+		}
+	}
+
+	return response{}
+}
+
+func (m *SessionManager) handleResizePane(p *resizePanePayload) response {
+	if err := m.paneMgr.Resize(p.id, p.ratio); err != nil {
+		return response{err: err}
+	}
+
+	panes := m.paneMgr.Panes()
+	for _, pane := range panes {
+		ms, ok := m.sessions[pane.SessionID]
+		if !ok || ms.state == SessionClosed {
+			continue
+		}
+		ms.vterm.Resize(pane.Geometry.Rows, pane.Geometry.Cols)
+		if err := ms.session.Resize(pane.Geometry.Rows, pane.Geometry.Cols); err != nil {
+			slog.Warn("session resize failed during pane resize", "sessionID", pane.SessionID, "error", err)
+		}
+	}
+
+	return response{}
+}
+
+func (m *SessionManager) handlePanes() response {
+	return response{value: m.paneMgr.Panes()}
+}
+
+func (m *SessionManager) handleFocusNextPane(direction NavigationDirection) response {
+	nextID := m.paneMgr.FocusNext(direction)
+	return response{value: nextID}
+}
+
+func (m *SessionManager) handleActivePaneID() response {
+	return response{value: m.paneMgr.ActivePaneID()}
 }
 
 // handleSessions builds a list of SessionInfo values from the sessions map.
@@ -1283,6 +1486,7 @@ func (m *SessionManager) shutdownSessions() {
 		delete(m.sessions, id)
 	}
 	m.activeID = 0
+	m.paneMgr.Close()
 }
 
 // sortSessionIDs sorts a slice of SessionIDs in descending order.

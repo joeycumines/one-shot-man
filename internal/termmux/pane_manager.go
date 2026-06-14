@@ -1,0 +1,299 @@
+package termmux
+
+import (
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
+)
+
+// PaneBinding associates a PaneID with its SessionID and VTerm.
+// It is the internal bookkeeping record used by paneManager.
+type PaneBinding struct {
+	PaneID    PaneID
+	SessionID SessionID
+	VTerm     *vt.VTerm
+	Title     string
+	LastActive time.Time
+}
+
+// paneManager implements the PaneManager interface. It uses a LayoutEngine
+// for geometry computation and maintains a map of PaneID → PaneBinding.
+// All mutations must happen on the SessionManager worker goroutine.
+type paneManager struct {
+	engine      *LayoutEngine
+	panes       map[PaneID]*PaneBinding
+	paneOrder   []PaneID // insertion order for layout
+	activePaneID PaneID
+	nextPaneID  PaneID
+	mu          sync.Mutex // protects concurrent reads for Panes() snapshot
+}
+
+// newPaneManager creates a paneManager with the given layout mode and
+// screen dimensions.
+func newPaneManager(mode LayoutMode, width, height int) *paneManager {
+	return &paneManager{
+		engine:     NewLayoutEngine(mode, width, height),
+		panes:      make(map[PaneID]*PaneBinding),
+		nextPaneID: 1, // 0 is the sentinel "no pane" value
+	}
+}
+
+// allocID returns the next available PaneID and advances the counter.
+func (pm *paneManager) allocID() PaneID {
+	id := pm.nextPaneID
+	pm.nextPaneID++
+	return id
+}
+
+// Create adds a new pane associated with the given sessionID, splitting
+// from the active pane in the given direction. Returns the new PaneID.
+func (pm *paneManager) Create(sessionID SessionID, direction SplitDirection) (PaneID, error) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	id := pm.allocID()
+
+	// Split in the layout engine relative to the active pane.
+	pm.engine.Split(pm.activePaneID, direction)
+
+	pm.panes[id] = &PaneBinding{
+		PaneID:     id,
+		SessionID:  sessionID,
+		Title:      fmt.Sprintf("pane-%d", id),
+		LastActive: time.Now(),
+	}
+	pm.paneOrder = append(pm.paneOrder, id)
+
+	// First pane becomes active automatically.
+	if pm.activePaneID == 0 {
+		pm.activePaneID = id
+	}
+
+	return id, nil
+}
+
+func (pm *paneManager) Remove(id PaneID) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	binding, ok := pm.panes[id]
+	if !ok {
+		return fmt.Errorf("%w: %d", ErrPaneNotFound, id)
+	}
+
+	_ = binding.SessionID
+
+	pm.engine.Remove(id)
+
+	delete(pm.panes, id)
+	for i, pid := range pm.paneOrder {
+		if pid == id {
+			pm.paneOrder = append(pm.paneOrder[:i], pm.paneOrder[i+1:]...)
+			break
+		}
+	}
+
+	if pm.activePaneID == id {
+		pm.activePaneID = 0
+		if len(pm.paneOrder) > 0 {
+			pm.activePaneID = pm.paneOrder[0]
+		}
+	}
+
+	return nil
+}
+
+// Focus switches the active pane to the given ID.
+func (pm *paneManager) Focus(id PaneID) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if _, ok := pm.panes[id]; !ok {
+		return fmt.Errorf("%w: %d", ErrPaneNotFound, id)
+	}
+
+	pm.activePaneID = id
+	if binding, ok := pm.panes[id]; ok {
+		binding.LastActive = time.Now()
+	}
+
+	return nil
+}
+
+// Resize adjusts the split ratio for the given pane.
+func (pm *paneManager) Resize(id PaneID, ratio float64) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if _, ok := pm.panes[id]; !ok {
+		return fmt.Errorf("%w: %d", ErrPaneNotFound, id)
+	}
+
+	if !pm.engine.Resize(id, ratio) {
+		return fmt.Errorf("%w: %d", ErrPaneNotFound, id)
+	}
+
+	return nil
+}
+
+// Panes returns a snapshot of all panes with their computed geometries.
+func (pm *paneManager) Panes() []Pane {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if len(pm.paneOrder) == 0 {
+		return nil
+	}
+
+	// Build ordered Pane slice for geometry computation.
+	paneSlice := make([]Pane, 0, len(pm.paneOrder))
+	for _, pid := range pm.paneOrder {
+		binding := pm.panes[pid]
+		paneSlice = append(paneSlice, Pane{
+			ID:         binding.PaneID,
+			SessionID:  binding.SessionID,
+			Title:      binding.Title,
+			Focus:      binding.PaneID == pm.activePaneID,
+			VTerm:      binding.VTerm,
+			LastActive: binding.LastActive,
+		})
+	}
+
+	// Compute geometries.
+	geoms := pm.engine.Compute(paneSlice)
+
+	// Merge geometries back.
+	result := make([]Pane, len(paneSlice))
+	for i := range paneSlice {
+		result[i] = paneSlice[i]
+		result[i].Geometry = geoms[i]
+	}
+
+	return result
+}
+
+// ActivePaneID returns the currently focused pane ID, or 0 if no panes exist.
+func (pm *paneManager) ActivePaneID() PaneID {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	return pm.activePaneID
+}
+
+// FocusNext moves focus to the adjacent pane in the given direction.
+// Returns the new active PaneID.
+func (pm *paneManager) FocusNext(direction NavigationDirection) PaneID {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if pm.activePaneID == 0 {
+		return 0
+	}
+
+	nextID := pm.engine.FocusNext(pm.activePaneID, direction)
+	if nextID != 0 && nextID != pm.activePaneID {
+		pm.activePaneID = nextID
+		if binding, ok := pm.panes[nextID]; ok {
+			binding.LastActive = time.Now()
+		}
+	}
+
+	return pm.activePaneID
+}
+
+// HasPanes reports whether any panes exist.
+func (pm *paneManager) HasPanes() bool {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	return len(pm.panes) > 0
+}
+
+// FocusLeft moves focus to the pane on the left.
+func (pm *paneManager) FocusLeft() { pm.FocusNext(NavLeft) }
+
+// FocusRight moves focus to the pane on the right.
+func (pm *paneManager) FocusRight() { pm.FocusNext(NavRight) }
+
+// FocusDown moves focus to the pane below.
+func (pm *paneManager) FocusDown() { pm.FocusNext(NavDown) }
+
+// FocusUp moves focus to the pane above.
+func (pm *paneManager) FocusUp() { pm.FocusNext(NavUp) }
+
+// SplitHorizontalAction splits the active pane horizontally (left/right).
+func (pm *paneManager) SplitHorizontalAction() {
+	// This is a UI action placeholder — actual split requires a session,
+	// which is handled by SessionManager.NewPane.
+}
+
+// SplitVerticalAction splits the active pane vertically (top/bottom).
+func (pm *paneManager) SplitVerticalAction() {
+	// This is a UI action placeholder — actual split requires a session,
+	// which is handled by SessionManager.NewPane.
+}
+
+// CloseActivePane removes the active pane. This is a UI action that
+// delegates to SessionManager.ClosePane.
+func (pm *paneManager) CloseActivePane() {
+	// This is a UI action placeholder — actual close is handled by
+	// SessionManager.ClosePane.
+}
+
+// Close shuts down the pane manager, releasing all resources.
+func (pm *paneManager) Close() error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	pm.panes = make(map[PaneID]*PaneBinding)
+	pm.paneOrder = nil
+	pm.activePaneID = 0
+	return nil
+}
+
+// setVTerm sets the VTerm for a pane binding. Called after the worker
+// creates the VTerm during session registration.
+func (pm *paneManager) setVTerm(id PaneID, v *vt.VTerm) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if binding, ok := pm.panes[id]; ok {
+		binding.VTerm = v
+	}
+}
+
+// setSize updates the layout engine's screen dimensions.
+func (pm *paneManager) setSize(width, height int) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	pm.engine.SetSize(width, height)
+}
+
+// activeSessionID returns the SessionID of the active pane, or 0 if none.
+func (pm *paneManager) activeSessionID() SessionID {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if pm.activePaneID == 0 {
+		return 0
+	}
+	if binding, ok := pm.panes[pm.activePaneID]; ok {
+		return binding.SessionID
+	}
+	return 0
+}
+
+// Verify paneManager implements PaneManager at compile time.
+func (pm *paneManager) removeSessionID(id PaneID) SessionID {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	binding, ok := pm.panes[id]
+	if !ok {
+		return 0
+	}
+	return binding.SessionID
+}
+
+var _ PaneManager = (*paneManager)(nil)

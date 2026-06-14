@@ -158,17 +158,38 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 
 	resultCh := make(chan forwardResult, 1)
 
-	// Build pre-processor for SGR mouse filtering (status bar click interception).
+	// Build pre-processor chain: pane key interception → SGR mouse filtering.
 	var preProcess func(data []byte, carry []byte) (filtered []byte, newCarry []byte, clicked bool)
-	if statusBarLines > 0 && cfg.TermFd >= 0 && cfg.TermState != nil {
+	if cfg.Handler != nil || (statusBarLines > 0 && cfg.TermFd >= 0 && cfg.TermState != nil) {
 		preProcess = func(data []byte, carry []byte) ([]byte, []byte, bool) {
-			// Prepend carry-over bytes from a previous partial SGR prefix.
+			// Prepend carry-over bytes from a previous partial prefix.
 			if len(carry) > 0 {
 				data = append(carry, data...)
 			}
-			_, th, _ := cfg.TermState.GetSize(cfg.TermFd)
-			filtered, partial, clicked := filterMouseForStatusBar(data, th, statusBarLines)
-			return filtered, partial, clicked
+
+			// Pane key interception takes priority.
+			if cfg.Handler != nil {
+				prefixLen, action, remaining := cfg.Handler.HandleKeyInBuffer(data)
+				if prefixLen > 0 {
+					if cfg.OnAction != nil {
+						cfg.OnAction(action)
+					}
+					data = remaining
+					// If the pane key consumed the entire buffer, return empty.
+					if len(data) == 0 {
+						return nil, nil, false
+					}
+					// Fall through to SGR mouse filtering with remaining data.
+				}
+			}
+
+			if statusBarLines > 0 && cfg.TermFd >= 0 && cfg.TermState != nil {
+				_, th, _ := cfg.TermState.GetSize(cfg.TermFd)
+				filtered, partial, clicked := filterMouseForStatusBar(data, th, statusBarLines)
+				return filtered, partial, clicked
+			}
+
+			return data, nil, false
 		}
 	}
 

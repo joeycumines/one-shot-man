@@ -63,6 +63,18 @@ type UIConfig struct {
 	StatusBar *statusbar.StatusBar
 }
 
+// PaneKeyConfig holds pane navigation key binding configuration for passthrough mode.
+type PaneKeyConfig struct {
+	// Handler detects pane navigation key sequences in stdin data.
+	// When nil, pane key bindings are disabled and all input passes through.
+	Handler *PaneKeyHandler
+
+	// OnAction is called when a pane key is intercepted. The action
+	// parameter indicates which pane operation was triggered. This
+	// callback runs in the passthrough goroutine — it must not block.
+	OnAction func(action PaneAction)
+}
+
 // PassthroughConfig configures a passthrough session.
 // Used by both CaptureSession.Passthrough() and SessionManager.Passthrough().
 // It composes focused sub-types for each concern area.
@@ -71,4 +83,5 @@ type PassthroughConfig struct {
 	PassthroughOptions
 	ResizeConfig
 	UIConfig
+	PaneKeyConfig
 }

@@ -157,7 +157,7 @@ func TestParseSGRMouse_ZeroCoords(t *testing.T) {
 }
 
 func TestParseSGRMouse_MaxCoordBoundary(t *testing.T) {
-	buf := []byte(fmt.Sprintf("\x1b[<0;%d;%dM", MaxCoord, MaxCoord))
+	buf := fmt.Appendf(nil, "\x1b[<0;%d;%dM", MaxCoord, MaxCoord)
 	ev, _, ok := parseSGRMouse(buf, 0)
 	if !ok {
 		t.Fatal("expected ok at MaxCoord boundary")
@@ -168,7 +168,7 @@ func TestParseSGRMouse_MaxCoordBoundary(t *testing.T) {
 }
 
 func TestParseSGRMouse_ExceedsMaxCoord(t *testing.T) {
-	buf := []byte(fmt.Sprintf("\x1b[<0;%d;%dM", MaxCoord+1, MaxCoord+1))
+	buf := fmt.Appendf(nil, "\x1b[<0;%d;%dM", MaxCoord+1, MaxCoord+1)
 	_, _, ok := parseSGRMouse(buf, 0)
 	if ok {
 		t.Error("expected !ok for coords exceeding MaxCoord")
@@ -176,7 +176,7 @@ func TestParseSGRMouse_ExceedsMaxCoord(t *testing.T) {
 }
 
 func TestParseSGRMouse_ExceedsMaxCoordX(t *testing.T) {
-	buf := []byte(fmt.Sprintf("\x1b[<0;%d;%dM", MaxCoord+100, 5))
+	buf := fmt.Appendf(nil, "\x1b[<0;%d;%dM", MaxCoord+100, 5)
 	_, _, ok := parseSGRMouse(buf, 0)
 	if ok {
 		t.Error("expected !ok for x exceeding MaxCoord")
@@ -184,7 +184,7 @@ func TestParseSGRMouse_ExceedsMaxCoordX(t *testing.T) {
 }
 
 func TestParseSGRMouse_ExceedsMaxCoordY(t *testing.T) {
-	buf := []byte(fmt.Sprintf("\x1b[<0;%d;%dM", 5, MaxCoord+100))
+	buf := fmt.Appendf(nil, "\x1b[<0;%d;%dM", 5, MaxCoord+100)
 	_, _, ok := parseSGRMouse(buf, 0)
 	if ok {
 		t.Error("expected !ok for y exceeding MaxCoord")
@@ -192,7 +192,7 @@ func TestParseSGRMouse_ExceedsMaxCoordY(t *testing.T) {
 }
 
 func TestParseSGRMouse_ExceedsMaxCoordButton(t *testing.T) {
-	buf := []byte(fmt.Sprintf("\x1b[<%d;5;10M", MaxCoord+1))
+	buf := fmt.Appendf(nil, "\x1b[<%d;5;10M", MaxCoord+1)
 	_, _, ok := parseSGRMouse(buf, 0)
 	if ok {
 		t.Error("expected !ok for button exceeding MaxCoord")

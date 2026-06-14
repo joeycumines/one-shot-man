@@ -1896,7 +1896,7 @@ func TestCompliance_VTerm_EL_Mode2(t *testing.T) {
 	v.Write([]byte("\x1b[2K"))
 	snap := v.ActiveScreen()
 	// Entire line erased — all cells should be spaces
-	for c := 0; c < 10; c++ {
+	for c := range 10 {
 		if snap.Cells[0][c].Ch != ' ' {
 			t.Fatalf("VTerm EL 2: col %d should be blank, got %q", c, snap.Cells[0][c].Ch)
 		}

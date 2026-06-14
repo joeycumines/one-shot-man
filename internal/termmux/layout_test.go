@@ -491,7 +491,7 @@ func TestLayoutEngine_MainVertical_8Panes(t *testing.T) {
 	e := NewLayoutEngine(LayoutMainVertical, 120, 50)
 	p1 := e.Split(0, SplitRight)
 	ids := []PaneID{p1}
-	for i := 0; i < 7; i++ {
+	for range 7 {
 		ids = append(ids, e.Split(ids[len(ids)-1], SplitRight))
 	}
 	panes := make([]Pane, len(ids))
@@ -517,5 +517,93 @@ func TestLayoutEngine_SetMainRatio_Clamped(t *testing.T) {
 	e.SetMainRatio(0.99)
 	if e.MainRatio() != 0.9 {
 		t.Errorf("ratio above max = %f, want 0.9", e.MainRatio())
+	}
+}
+
+func TestLayoutEngine_Mode(t *testing.T) {
+	e := NewLayoutEngine(LayoutTiled, 80, 24)
+	if e.Mode() != LayoutTiled {
+		t.Errorf("Mode() = %v, want LayoutTiled", e.Mode())
+	}
+	e.SetMode(LayoutMainVertical)
+	if e.Mode() != LayoutMainVertical {
+		t.Errorf("Mode() = %v, want LayoutMainVertical after SetMode", e.Mode())
+	}
+}
+
+func TestLayoutEngine_Size(t *testing.T) {
+	e := NewLayoutEngine(LayoutTiled, 80, 24)
+	w, h := e.Size()
+	if w != 80 || h != 24 {
+		t.Errorf("Size() = %d,%d, want 80,24", w, h)
+	}
+	e.SetSize(120, 40)
+	w, h = e.Size()
+	if w != 120 || h != 40 {
+		t.Errorf("Size() after SetSize = %d,%d, want 120,40", w, h)
+	}
+}
+
+func TestLayoutEngine_AllocID(t *testing.T) {
+	e := NewLayoutEngine(LayoutTiled, 80, 24)
+
+	ids := make(map[PaneID]bool)
+	for i := range 10 {
+		id := e.AllocID()
+		if ids[id] {
+			t.Errorf("AllocID() returned duplicate ID %d on iteration %d", id, i)
+		}
+		ids[id] = true
+	}
+
+	if e.AllocID() != PaneID(len(ids)+1) {
+		t.Errorf("AllocID() sequence broken after %d allocations", len(ids))
+	}
+}
+
+func TestLayoutEngine_Resize_Clamped(t *testing.T) {
+	e := NewLayoutEngine(LayoutTiled, 80, 24)
+	p1 := e.Split(0, SplitRight)
+
+	if ok := e.Resize(p1, 0.05); !ok {
+		t.Error("Resize should succeed for existing pane")
+	}
+	sg := e.splits[p1]
+	if sg.Ratio < 0.1 {
+		t.Errorf("Resize ratio = %f, should be clamped to >= 0.1", sg.Ratio)
+	}
+
+	if ok := e.Resize(p1, 0.95); !ok {
+		t.Error("Resize should succeed for existing pane")
+	}
+	sg = e.splits[p1]
+	if sg.Ratio > 0.9 {
+		t.Errorf("Resize ratio = %f, should be clamped to <= 0.9", sg.Ratio)
+	}
+}
+
+func TestLayoutEngine_Resize_NotFound(t *testing.T) {
+	e := NewLayoutEngine(LayoutTiled, 80, 24)
+	if ok := e.Resize(999, 0.5); ok {
+		t.Error("Resize should return false for non-existent pane")
+	}
+}
+
+func TestLayoutEngine_PaneIDs(t *testing.T) {
+	e := NewLayoutEngine(LayoutTiled, 80, 24)
+	p1 := e.Split(0, SplitRight)
+	p2 := e.Split(p1, SplitRight)
+
+	ids := e.PaneIDs()
+	if len(ids) != 2 {
+		t.Errorf("PaneIDs() len = %d, want 2", len(ids))
+	}
+
+	found := map[PaneID]bool{}
+	for _, id := range ids {
+		found[id] = true
+	}
+	if !found[p1] || !found[p2] {
+		t.Errorf("PaneIDs() = %v, expected to contain %d and %d", ids, p1, p2)
 	}
 }

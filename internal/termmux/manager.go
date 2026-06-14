@@ -842,19 +842,19 @@ func WithMergedOutputBuffer(cap int) ManagerOption {
 // Call Run to start the worker goroutine.
 func NewSessionManager(opts ...ManagerOption) *SessionManager {
 	m := &SessionManager{
-		reqChan:      make(chan request, DefaultChannelBuffer),
-		mergedOutput: make(chan sessionOutput, DefaultChannelBuffer),
-		eventBus:     NewEventBus(),
-		done:         make(chan struct{}),
-		started:      make(chan struct{}),
-		sessions:     make(map[SessionID]*managedSession),
-		nextID:       1,
-		termRows:     DefaultRows,
-		termCols:     DefaultCols,
-		paneMgr:             newPaneManager(LayoutVertical, DefaultCols, DefaultRows),
-		windowMgr:           NewWindowManager(LayoutVertical, DefaultCols, DefaultRows),
-		monitors:            make(map[SessionID]*MonitorState),
-		visualBellDuration:  200 * time.Millisecond,
+		reqChan:            make(chan request, DefaultChannelBuffer),
+		mergedOutput:       make(chan sessionOutput, DefaultChannelBuffer),
+		eventBus:           NewEventBus(),
+		done:               make(chan struct{}),
+		started:            make(chan struct{}),
+		sessions:           make(map[SessionID]*managedSession),
+		nextID:             1,
+		termRows:           DefaultRows,
+		termCols:           DefaultCols,
+		paneMgr:            newPaneManager(LayoutVertical, DefaultCols, DefaultRows),
+		windowMgr:          NewWindowManager(LayoutVertical, DefaultCols, DefaultRows),
+		monitors:           make(map[SessionID]*MonitorState),
+		visualBellDuration: 200 * time.Millisecond,
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -1628,11 +1628,11 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 	}
 
 	ms := &managedSession{
-		session:     p.session,
-		vterm:       v,
-		state:       SessionCreated,
-		target:      p.target,
-		lastActive:  time.Now(),
+		session:      p.session,
+		vterm:        v,
+		state:        SessionCreated,
+		target:       p.target,
+		lastActive:   time.Now(),
 		remainOnExit: m.paneMgr.RemainOnExit(),
 	}
 
@@ -2318,10 +2318,7 @@ func (m *SessionManager) handleCapturePane(payload any) response {
 		return response{value: ""}
 	}
 	lines := strings.Split(text, "\n")
-	start := p.startLine
-	if start < 0 {
-		start = 0
-	}
+	start := max(p.startLine, 0)
 	end := p.endLine
 	if end < 0 || end > len(lines) {
 		end = len(lines)

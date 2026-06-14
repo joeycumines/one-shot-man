@@ -698,11 +698,9 @@ func TestInteractiveSession_ConcurrentClose(t *testing.T) {
 
 			var wg sync.WaitGroup
 			for range goroutines {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					sess.Close() // should not panic
-				}()
+				})
 			}
 
 			wg.Wait()
@@ -731,27 +729,21 @@ func TestInteractiveSession_ConcurrentReadWriteClose(t *testing.T) {
 			var wg sync.WaitGroup
 
 			// Writer goroutine.
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for i := range iterations {
 					sess.Write([]byte{byte(i)})
 				}
-			}()
+			})
 
 			// Resizer goroutine.
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for i := range iterations {
 					sess.Resize(24+i%10, 80+i%20)
 				}
-			}()
+			})
 
 			// Reader goroutine — drain output without blocking.
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				ch := sess.Reader()
 				if ch != nil {
 					for {
@@ -765,15 +757,13 @@ func TestInteractiveSession_ConcurrentReadWriteClose(t *testing.T) {
 						}
 					}
 				}
-			}()
+			})
 
 			// Closer goroutine — close after a short delay.
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				time.Sleep(10 * time.Millisecond)
 				sess.Close()
-			}()
+			})
 
 			wg.Wait()
 		})
@@ -1256,9 +1246,9 @@ func TestInteractiveSession_CaptureSession_SkipDrain(t *testing.T) {
 	t.Parallel()
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command:     "echo",
-		Args:        []string{"skip drain"},
-		SkipDrain:   true,
+		Command:      "echo",
+		Args:         []string{"skip drain"},
+		SkipDrain:    true,
 		DrainTimeout: 1 * time.Second,
 	})
 	if err := cs.Start(context.Background()); err != nil {

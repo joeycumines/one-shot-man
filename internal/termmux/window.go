@@ -14,11 +14,11 @@ type WindowID uint64
 // Only one window is visible at a time. Windows are displayed in the
 // status bar as tabs.
 type Window struct {
-	ID       WindowID
-	Name     string
-	Layout   LayoutMode
-	paneMgr  *paneManager
-	created  time.Time
+	ID      WindowID
+	Name    string
+	Layout  LayoutMode
+	paneMgr *paneManager
+	created time.Time
 }
 
 // WindowManager manages a list of windows within a session. Each window

@@ -209,11 +209,7 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 		maxCol := scr.Cols - 1
 		for i := 0; i < ps && col < maxCol; i++ {
 			nextTab := ((col / 8) + 1) * 8
-			if nextTab > maxCol {
-				col = maxCol
-			} else {
-				col = nextTab
-			}
+			col = min(nextTab, maxCol)
 		}
 		scr.CurCol = col
 		scr.PendingWrap = false
@@ -368,11 +364,11 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 					status = 3
 				}
 			case 6:
-			if scr.OriginMode {
-				status = 2
-			} else {
-				status = 3
-			}
+				if scr.OriginMode {
+					status = 2
+				} else {
+					status = 3
+				}
 			case 7:
 				if scr.AutoWrap {
 					status = 2
@@ -397,24 +393,24 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 				} else {
 					status = 3
 				}
-		case 1002:
-			if scr.MouseTracking == MouseTrackingButtonEvent {
-				status = 2
-			} else {
-				status = 3
-			}
-		case 1001:
-			if scr.HighlightTracking {
-				status = 2
-			} else {
-				status = 3
-			}
-		case 1003:
-			if scr.MouseTracking == MouseTrackingAnyEvent {
-				status = 2
-			} else {
-				status = 3
-			}
+			case 1002:
+				if scr.MouseTracking == MouseTrackingButtonEvent {
+					status = 2
+				} else {
+					status = 3
+				}
+			case 1001:
+				if scr.HighlightTracking {
+					status = 2
+				} else {
+					status = 3
+				}
+			case 1003:
+				if scr.MouseTracking == MouseTrackingAnyEvent {
+					status = 2
+				} else {
+					status = 3
+				}
 			case 1004:
 				if scr.FocusReporting {
 					status = 2

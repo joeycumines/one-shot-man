@@ -424,3 +424,36 @@ func TestPaneManagerShutdownClosesAllPanes(t *testing.T) {
 		t.Error("session 2 was not closed during shutdown")
 	}
 }
+
+func TestPaneManager_NoDuplicatePaneIDs(t *testing.T) {
+	pm := newPaneManager(LayoutTiled, 80, 24)
+
+	seen := make(map[PaneID]bool)
+	for i := range 20 {
+		id := pm.engine.AllocID()
+		if seen[id] {
+			t.Errorf("AllocID() returned duplicate PaneID %d on iteration %d", id, i)
+		}
+		seen[id] = true
+	}
+
+	for i := PaneID(1); i <= 20; i++ {
+		if !seen[i] {
+			t.Errorf("expected PaneID %d to be allocated, but it wasn't", i)
+		}
+	}
+}
+
+func TestPaneManager_AllocIDConsistentWithSplit(t *testing.T) {
+	pm := newPaneManager(LayoutTiled, 80, 24)
+
+	p1 := pm.engine.Split(0, SplitRight)
+	p2 := pm.engine.Split(p1, SplitDown)
+
+	if p1 == p2 {
+		t.Errorf("Split returned same PaneID %d twice", p1)
+	}
+	if p1 != 1 || p2 != 2 {
+		t.Errorf("expected sequential IDs 1,2 got %d,%d", p1, p2)
+	}
+}

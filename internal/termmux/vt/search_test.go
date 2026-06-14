@@ -166,7 +166,7 @@ func TestScreen_HighlightMatch_OutOfRange(t *testing.T) {
 
 func TestScreen_ScrollToMatch(t *testing.T) {
 	s := newTestScreen(5, 20, 100)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		for j, ch := range "line" {
 			s.Cells[0][j].Ch = ch
 		}
@@ -247,7 +247,7 @@ func TestAttr_SearchMatch_SGRIgnored(t *testing.T) {
 
 func TestScreen_PageUp(t *testing.T) {
 	s := newTestScreen(5, 20, 100)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		for j, ch := range "line" {
 			s.Cells[0][j].Ch = ch
 		}
@@ -262,7 +262,7 @@ func TestScreen_PageUp(t *testing.T) {
 
 func TestScreen_PageDown(t *testing.T) {
 	s := newTestScreen(5, 20, 100)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		for j, ch := range "line" {
 			s.Cells[0][j].Ch = ch
 		}
@@ -277,7 +277,7 @@ func TestScreen_PageDown(t *testing.T) {
 
 func TestScreen_HalfPageUp(t *testing.T) {
 	s := newTestScreen(5, 20, 100)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		for j, ch := range "line" {
 			s.Cells[0][j].Ch = ch
 		}
@@ -292,7 +292,7 @@ func TestScreen_HalfPageUp(t *testing.T) {
 
 func TestScreen_HalfPageDown(t *testing.T) {
 	s := newTestScreen(5, 20, 100)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		for j, ch := range "line" {
 			s.Cells[0][j].Ch = ch
 		}
@@ -307,7 +307,7 @@ func TestScreen_HalfPageDown(t *testing.T) {
 
 func TestScreen_ScrollToTop(t *testing.T) {
 	s := newTestScreen(5, 20, 100)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		for j, ch := range "line" {
 			s.Cells[0][j].Ch = ch
 		}
@@ -322,7 +322,7 @@ func TestScreen_ScrollToTop(t *testing.T) {
 
 func TestScreen_ScrollToBottom(t *testing.T) {
 	s := newTestScreen(5, 20, 100)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		for j, ch := range "line" {
 			s.Cells[0][j].Ch = ch
 		}

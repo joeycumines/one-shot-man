@@ -24,8 +24,7 @@ func TestWatchSignals_SIGTSTP(t *testing.T) {
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	resultCh := make(chan signalResult, 1)
 	sigCancel := watchSignals(ctx, resultCh, signalChild)
@@ -65,8 +64,7 @@ func TestWatchSignals_SIGINT(t *testing.T) {
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	resultCh := make(chan signalResult, 1)
 	sigCancel := watchSignals(ctx, resultCh, signalChild)
@@ -102,8 +100,7 @@ func TestWatchSignals_SIGQUIT(t *testing.T) {
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	resultCh := make(chan signalResult, 1)
 	sigCancel := watchSignals(ctx, resultCh, signalChild)
@@ -162,8 +159,7 @@ func TestWatchSignals_NilSignalChild(t *testing.T) {
 		t.Skip("skipping slow test in -short mode")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	resultCh := make(chan signalResult, 1)
 	sigCancel := watchSignals(ctx, resultCh, nil)

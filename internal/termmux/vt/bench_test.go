@@ -303,8 +303,8 @@ func BenchmarkAlloc_ParserParams(b *testing.B) {
 func BenchmarkAlloc_Snapshot(b *testing.B) {
 	scr := NewScreen(24, 80)
 	// Fill with some content so snapshot copies data.
-	for r := 0; r < 24; r++ {
-		for c := 0; c < 80; c++ {
+	for r := range 24 {
+		for c := range 80 {
 			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
 		}
 	}
@@ -351,8 +351,8 @@ func BenchmarkAlloc_CSIDispatch(b *testing.B) {
 func BenchmarkAlloc_ScrollUp(b *testing.B) {
 	scr := NewScreen(24, 80)
 	// Pre-fill the screen with content so scroll has data to move.
-	for r := 0; r < 24; r++ {
-		for c := 0; c < 80; c++ {
+	for r := range 24 {
+		for c := range 80 {
 			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
 		}
 	}
@@ -406,8 +406,8 @@ func BenchmarkVTerm_Snapshot_New(b *testing.B) {
 // when only 1 row is dirty (single-character edit). This is the optimized path.
 func BenchmarkSnapshotIncremental_SingleCharEdit(b *testing.B) {
 	scr := NewScreen(24, 80)
-	for r := 0; r < 24; r++ {
-		for c := 0; c < 80; c++ {
+	for r := range 24 {
+		for c := range 80 {
 			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
 		}
 	}
@@ -426,8 +426,8 @@ func BenchmarkSnapshotIncremental_SingleCharEdit(b *testing.B) {
 // path for comparison (same scenario: single-character edit).
 func BenchmarkSnapshotFull_SingleCharEdit(b *testing.B) {
 	scr := NewScreen(24, 80)
-	for r := 0; r < 24; r++ {
-		for c := 0; c < 80; c++ {
+	for r := range 24 {
+		for c := range 80 {
 			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
 		}
 	}
@@ -445,8 +445,8 @@ func BenchmarkSnapshotFull_SingleCharEdit(b *testing.B) {
 // all rows are dirty (worst case — no reuse possible).
 func BenchmarkSnapshotIncremental_FullDirty(b *testing.B) {
 	scr := NewScreen(24, 80)
-	for r := 0; r < 24; r++ {
-		for c := 0; c < 80; c++ {
+	for r := range 24 {
+		for c := range 80 {
 			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
 		}
 	}
@@ -465,8 +465,8 @@ func BenchmarkSnapshotIncremental_FullDirty(b *testing.B) {
 // nothing has changed since the last snapshot (best case — all rows reused).
 func BenchmarkSnapshotIncremental_NoChange(b *testing.B) {
 	scr := NewScreen(24, 80)
-	for r := 0; r < 24; r++ {
-		for c := 0; c < 80; c++ {
+	for r := range 24 {
+		for c := range 80 {
 			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
 		}
 	}
@@ -499,8 +499,8 @@ func BenchmarkVTerm_ActiveScreen_Incremental(b *testing.B) {
 // without incremental optimization (every snapshot is a full deep-copy).
 func BenchmarkVTerm_ActiveScreen_FullCopy(b *testing.B) {
 	scr := NewScreen(24, 80)
-	for r := 0; r < 24; r++ {
-		for c := 0; c < 80; c++ {
+	for r := range 24 {
+		for c := range 80 {
 			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
 		}
 	}

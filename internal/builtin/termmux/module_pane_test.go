@@ -405,3 +405,38 @@ func TestRespawnSession_StillWorks(t *testing.T) {
 		t.Fatalf("respawnSession: %v", err)
 	}
 }
+
+func TestPaneMethodBindings(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	_, err := runtime.RunString(`
+		function mkSession(name) {
+			var s = termmux.newBoundedSession({ cmd: "sh" });
+			tuiMux.register(s.session, { name: name });
+			return s.session;
+		}
+		mkSession("test");
+		var pid = tuiMux.splitHorizontal({ session: mkSession("sp"), target: { name: "sp" } });
+		if (typeof pid !== "bigint" && typeof pid !== "number") { throw new Error("splitHorizontal returned non-numeric"); }
+		pid = tuiMux.splitVertical({ session: mkSession("sv"), target: { name: "sv" } });
+		if (typeof pid !== "bigint" && typeof pid !== "number") { throw new Error("splitVertical returned non-numeric"); }
+		tuiMux.focusPaneUp();
+		tuiMux.focusPaneDown();
+		tuiMux.focusPaneLeft();
+		tuiMux.focusPaneRight();
+		var activeId = tuiMux.activePaneId();
+		var paneList = tuiMux.panes();
+		if (paneList.length === 0) { throw new Error("expected panes"); }
+		tuiMux.resizePane(1, 0.7);
+		var winId = tuiMux.newWindow("winAdded");
+		tuiMux.addPaneToWindow(mkSession("added"), { target: { name: "added" }, windowId: winId });
+		tuiMux.zoomPane(1);
+		tuiMux.zoomPane(1);
+		tuiMux.swapPanes(1, 2);
+		tuiMux.closePane(2);
+	`)
+	if err != nil {
+		t.Fatalf("pane method binding test: %v", err)
+	}
+}

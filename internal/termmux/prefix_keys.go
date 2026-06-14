@@ -1,5 +1,7 @@
 package termmux
 
+import "maps"
+
 import "fmt"
 
 // PrefixActionKind classifies the result of a prefix key dispatch.
@@ -61,9 +63,9 @@ func (a PrefixAction) String() string {
 // the next key is intercepted and dispatched as a command (not forwarded
 // to the child). Default prefix: Ctrl+B (configurable).
 type PrefixKeyHandler struct {
-	prefix    string
-	awaiting  bool
-	commands  map[string]PrefixActionKind
+	prefix   string
+	awaiting bool
+	commands map[string]PrefixActionKind
 }
 
 // NewPrefixKeyHandler creates a PrefixKeyHandler with the given prefix key
@@ -132,9 +134,7 @@ func (h *PrefixKeyHandler) Awaiting() bool {
 // Commands returns a copy of the current command table.
 func (h *PrefixKeyHandler) Commands() map[string]PrefixActionKind {
 	cp := make(map[string]PrefixActionKind, len(h.commands))
-	for k, v := range h.commands {
-		cp[k] = v
-	}
+	maps.Copy(cp, h.commands)
 	return cp
 }
 
@@ -145,18 +145,18 @@ func (h *PrefixKeyHandler) Reset() {
 
 func defaultPrefixCommands() map[string]PrefixActionKind {
 	return map[string]PrefixActionKind{
-		"c":     PrefixActionNewWindow,
-		"n":     PrefixActionNextWindow,
-		"p":     PrefixActionPrevWindow,
-		"d":     PrefixActionDetach,
-		"z":     PrefixActionZoomPane,
-		"x":     PrefixActionClosePane,
-		"%":     PrefixActionSplitHorizontal,
-		"\"":    PrefixActionSplitVertical,
-		"[":     PrefixActionCopyMode,
-		"?":     PrefixActionListKeys,
-		",":     PrefixActionRenameWindow,
-		"esc":   PrefixActionCancel,
+		"c":   PrefixActionNewWindow,
+		"n":   PrefixActionNextWindow,
+		"p":   PrefixActionPrevWindow,
+		"d":   PrefixActionDetach,
+		"z":   PrefixActionZoomPane,
+		"x":   PrefixActionClosePane,
+		"%":   PrefixActionSplitHorizontal,
+		"\"":  PrefixActionSplitVertical,
+		"[":   PrefixActionCopyMode,
+		"?":   PrefixActionListKeys,
+		",":   PrefixActionRenameWindow,
+		"esc": PrefixActionCancel,
 	}
 }
 

@@ -131,7 +131,7 @@ func TestChooser_RenderTruncation(t *testing.T) {
 	c.Show()
 
 	out := c.Render(20)
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if len(line) > 20 {
 			t.Errorf("line too long (%d): %q", len(line), line)
 		}

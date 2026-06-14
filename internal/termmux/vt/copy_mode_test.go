@@ -7,7 +7,7 @@ import (
 
 // helper: write n lines to a VTerm to generate scrollback
 func writeLines(v *VTerm, n int) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		v.Write([]byte(string(rune('A'+i%26)) + "\n"))
 	}
 }
@@ -95,7 +95,7 @@ func TestVisibleLines_WithScrollOffset(t *testing.T) {
 	scr.MaxScrollback = 10
 
 	// Write 6 lines to a 3-row screen → 3 scrollback + 3 visible
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		scr.PutChar(rune('0' + i))
 		scr.CurCol = 0
 		scr.LineFeed()
@@ -250,7 +250,7 @@ func TestSelectedText_WithScrollback(t *testing.T) {
 	v.SetScrollback(100)
 
 	// Write 6 lines: 3 scrollback + 3 visible
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		v.Write([]byte(string(rune('A'+i)) + string(rune('A'+i)) + string(rune('A'+i))))
 		v.Write([]byte("\n"))
 	}
@@ -341,7 +341,7 @@ func TestMaxScrollOffset(t *testing.T) {
 	}
 
 	// Add some scrollback
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		scr.PutChar('X')
 		scr.CurCol = 0
 		scr.LineFeed()
@@ -359,7 +359,7 @@ func TestRenderRespectsScrollOffset(t *testing.T) {
 	scr.MaxScrollback = 50
 
 	// Write 6 lines to get 3 scrollback + 3 visible
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		scr.Cells[scr.CurRow][0].Ch = rune('0' + i)
 		scr.CurCol = 0
 		scr.LineFeed()
@@ -387,7 +387,7 @@ func TestRenderContentANSI_RespectsScrollOffset(t *testing.T) {
 	scr := NewScreen(3, 10)
 	scr.MaxScrollback = 50
 
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		scr.Cells[scr.CurRow][0].Ch = rune('A' + i)
 		scr.CurCol = 0
 		scr.LineFeed()
@@ -414,7 +414,7 @@ func TestRenderFullScreen_RespectsScrollOffset(t *testing.T) {
 	scr := NewScreen(3, 10)
 	scr.MaxScrollback = 50
 
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		scr.Cells[scr.CurRow][0].Ch = rune('X' + i)
 		scr.CurCol = 0
 		scr.LineFeed()
@@ -435,7 +435,7 @@ func TestVisibleLines_ReturnsCorrectRowCount(t *testing.T) {
 	scr := NewScreen(5, 10)
 	scr.MaxScrollback = 20
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		scr.PutChar(rune('a' + i%26))
 		scr.CurCol = 0
 		scr.LineFeed()
@@ -514,7 +514,7 @@ func TestVisibleLines_ScrollOffsetBeyondContent(t *testing.T) {
 	scr.MaxScrollback = 5
 
 	// Write 4 lines → 1 scrollback + 3 visible
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		scr.PutChar(rune('A' + i))
 		scr.CurCol = 0
 		scr.LineFeed()
@@ -534,7 +534,7 @@ func TestSelectedText_ScrollbackContent(t *testing.T) {
 	v.SetScrollback(100)
 
 	// Write lines with unique content
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		v.Write([]byte(strings.Repeat(string(rune('A'+i)), 5) + "\n"))
 	}
 

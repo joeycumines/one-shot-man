@@ -1468,11 +1468,11 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 	_ = obj.Set("newChooser", func(activeSessionID uint64) map[string]any {
 		c := s.mgr.NewChooser(parent.SessionID(activeSessionID))
 		return map[string]any{
-			"show":     func() { c.Show() },
-			"hide":     func() { c.Hide() },
-			"visible":  func() bool { return c.Visible() },
-			"up":       func() { c.Up() },
-			"down":     func() { c.Down() },
+			"show":    func() { c.Show() },
+			"hide":    func() { c.Hide() },
+			"visible": func() bool { return c.Visible() },
+			"up":      func() { c.Up() },
+			"down":    func() { c.Down() },
 			"selected": func() map[string]any {
 				item, ok := c.Selected()
 				if !ok {

@@ -147,24 +147,21 @@ func (sb *StatusBar) render() {
 }
 
 func joinSegments(parts []string) string {
-	result := ""
+	var result strings.Builder
 	for i, p := range parts {
 		if i > 0 {
-			result += " │ "
+			result.WriteString(" │ ")
 		}
-		result += p
+		result.WriteString(p)
 	}
-	return result
+	return result.String()
 }
 
 func padLine(left, right string, width int) string {
 	if width <= 0 {
 		return left + " " + right
 	}
-	gap := width - len(left) - len(right)
-	if gap < 1 {
-		gap = 1
-	}
+	gap := max(width-len(left)-len(right), 1)
 	return left + strings.Repeat(" ", gap) + right
 }
 

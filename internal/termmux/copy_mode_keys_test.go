@@ -178,29 +178,67 @@ func TestCopyModeKeyHandler_AllViKeys(t *testing.T) {
 	h := NewCopyModeKeyHandler(20)
 
 	keys := map[string]CopyModeActionKind{
-		"h":       CopyModeActionMoveLeft,
-		"l":       CopyModeActionMoveRight,
-		"j":       CopyModeActionMoveDown,
-		"k":       CopyModeActionMoveUp,
-		"ctrl+u":  CopyModeActionHalfPageUp,
-		"ctrl+d":  CopyModeActionHalfPageDown,
-		"g":       CopyModeActionTopOfScrollback,
-		"G":       CopyModeActionBottomOfScrollback,
-		"0":       CopyModeActionBeginningOfLine,
-		"$":       CopyModeActionEndOfLine,
-		"w":       CopyModeActionNextWord,
-		"b":       CopyModeActionPrevWord,
-		"q":       CopyModeActionExitCopyMode,
-		" ":       CopyModeActionSelectStart,
-		"enter":   CopyModeActionCopyAndExit,
-		"ctrl+b":  CopyModeActionScrollUpOne,
-		"ctrl+f":  CopyModeActionScrollDownOne,
+		"h":      CopyModeActionMoveLeft,
+		"l":      CopyModeActionMoveRight,
+		"j":      CopyModeActionMoveDown,
+		"k":      CopyModeActionMoveUp,
+		"ctrl+u": CopyModeActionHalfPageUp,
+		"ctrl+d": CopyModeActionHalfPageDown,
+		"g":      CopyModeActionTopOfScrollback,
+		"G":      CopyModeActionBottomOfScrollback,
+		"0":      CopyModeActionBeginningOfLine,
+		"$":      CopyModeActionEndOfLine,
+		"w":      CopyModeActionNextWord,
+		"b":      CopyModeActionPrevWord,
+		"q":      CopyModeActionExitCopyMode,
+		" ":      CopyModeActionSelectStart,
+		"enter":  CopyModeActionCopyAndExit,
+		"ctrl+b": CopyModeActionScrollUpOne,
+		"ctrl+f": CopyModeActionScrollDownOne,
 	}
 
 	for key, wantKind := range keys {
 		a := h.HandleKey(key)
 		if a.Kind != wantKind {
 			t.Errorf("HandleKey(%q) = %v, want %v", key, a.Kind, wantKind)
+		}
+	}
+}
+
+func TestCopyModeAction_String_AllKinds(t *testing.T) {
+	allKinds := []struct {
+		kind CopyModeActionKind
+		want string
+	}{
+		{CopyModeActionMoveLeft, "MoveLeft(1)"},
+		{CopyModeActionMoveRight, "MoveRight(1)"},
+		{CopyModeActionMoveUp, "MoveUp(1)"},
+		{CopyModeActionMoveDown, "MoveDown(1)"},
+		{CopyModeActionHalfPageUp, "HalfPageUp(1)"},
+		{CopyModeActionHalfPageDown, "HalfPageDown(1)"},
+		{CopyModeActionTopOfScrollback, "TopOfScrollback"},
+		{CopyModeActionBottomOfScrollback, "BottomOfScrollback"},
+		{CopyModeActionBeginningOfLine, "BeginningOfLine"},
+		{CopyModeActionEndOfLine, "EndOfLine"},
+		{CopyModeActionNextWord, "NextWord(1)"},
+		{CopyModeActionPrevWord, "PrevWord(1)"},
+		{CopyModeActionExitCopyMode, "ExitCopyMode"},
+		{CopyModeActionSelectStart, "SelectStart"},
+		{CopyModeActionCopyAndExit, "CopyAndExit"},
+		{CopyModeActionScrollUpOne, "ScrollUp(1)"},
+		{CopyModeActionScrollDownOne, "ScrollDown(1)"},
+		{CopyModeActionSearchForward, "SearchForward"},
+		{CopyModeActionSearchBackward, "SearchBackward"},
+		{CopyModeActionNextMatch, "NextMatch"},
+		{CopyModeActionPrevMatch, "PrevMatch"},
+		{CopyModeActionNone, "None"},
+	}
+
+	for _, tc := range allKinds {
+		a := CopyModeAction{Kind: tc.kind, N: 1}
+		got := a.String()
+		if got != tc.want {
+			t.Errorf("String(kind=%v) = %q, want %q", tc.kind, got, tc.want)
 		}
 	}
 }

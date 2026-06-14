@@ -456,16 +456,16 @@ func TestColor256_StandardColors(t *testing.T) {
 
 func TestColor256_ColorCube(t *testing.T) {
 	cases := []struct {
-		idx    int
-		wantR  uint8
-		wantG  uint8
-		wantB  uint8
+		idx   int
+		wantR uint8
+		wantG uint8
+		wantB uint8
 	}{
-		{16, 0, 0, 0},         // cube start: (0,0,0)
-		{21, 0, 0, 255},       // (0,0,5)
-		{196, 255, 0, 0},      // (5,0,0)
-		{231, 255, 255, 255},  // cube end: (5,5,5)
-		{127, 175, 0, 175},    // (3,0,3)
+		{16, 0, 0, 0},        // cube start: (0,0,0)
+		{21, 0, 0, 255},      // (0,0,5)
+		{196, 255, 0, 0},     // (5,0,0)
+		{231, 255, 255, 255}, // cube end: (5,5,5)
+		{127, 175, 0, 175},   // (3,0,3)
 	}
 	for _, tc := range cases {
 		c := getColor256(tc.idx)

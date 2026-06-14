@@ -1653,3 +1653,70 @@ func TestUnlockSession(t *testing.T) {
 		t.Fatal("isLocked should still be true after wrong password")
 	}
 }
+
+func TestSessionStatusMethodBindings(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	_, err := runtime.RunString(`
+		function mkSession(name) {
+			var s = termmux.newBoundedSession({ cmd: "sh" });
+			tuiMux.register(s.session, { name: name });
+			return s;
+		}
+		var base = mkSession("base");
+		tuiMux.setStatus("left");
+		tuiMux.setToggleKey(29);
+		tuiMux.setStatusEnabled(true);
+		tuiMux.setResizeFunc(function(rows, cols) {});
+		var tid = tuiMux.on("exit", function() {});
+		tuiMux.off(tid);
+		tuiMux.pollEvents();
+		var w1 = tuiMux.newWindow("w1");
+		var w2 = tuiMux.newWindow("w2");
+		tuiMux.nextWindow();
+		tuiMux.renameWindow(w1, "renamed");
+		tuiMux.setSynchronizePanes(true);
+		var sync = tuiMux.synchronizePanes();
+		tuiMux.setRemainOnExit(true);
+		var roe = tuiMux.remainOnExit();
+		tuiMux.setMonitorConfig(base.id, { bell: true });
+		var mc = tuiMux.monitorConfig(base.id);
+		tuiMux.setPaneRemainOnExit(1, true);
+		var proe = tuiMux.paneRemainOnExit(1);
+		tuiMux.checkSilenceMonitors();
+		var windows = tuiMux.windows();
+		var winpanes = tuiMux.windowPanes();
+		var activeWin = tuiMux.activeWindowID();
+		tuiMux.closeWindow(w1);
+	`)
+	if err != nil {
+		t.Fatalf("session/status binding test: %v", err)
+	}
+}
+
+func TestSearchForwardBackwardBindings(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	_, err := runtime.RunString(`
+		var s = termmux.newBoundedSession({ cmd: "cat" });
+		tuiMux.register(s.session, { name: "search" });
+		function mySearch(pattern, row, col) {
+			if (pattern === "hello") {
+				return { found: true, row: 0, col: 0 };
+			}
+			return { found: false };
+		}
+		var searcher = tuiMux.newCopyModeSearcher();
+		searcher.startSearch(0, 0, 0);
+		searcher.appendChar("h");
+		searcher.appendChar("i");
+		var match = searcher.execute(mySearch);
+		var next = searcher.nextMatch(0, 0, mySearch);
+		var prev = searcher.prevMatch(0, 0, mySearch);
+	`)
+	if err != nil {
+		t.Fatalf("search binding test: %v", err)
+	}
+}

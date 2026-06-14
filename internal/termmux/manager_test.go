@@ -450,11 +450,11 @@ func TestManagedSession_SnapshotLoadStore(t *testing.T) {
 
 	// Publish a snapshot.
 	snap1 := &ScreenSnapshot{
-		Gen:             1,
-		plainTextCache:  "gen1",
-		Rows:            24,
-		Cols:            80,
-		Timestamp:       time.Now(),
+		Gen:            1,
+		plainTextCache: "gen1",
+		Rows:           24,
+		Cols:           80,
+		Timestamp:      time.Now(),
 	}
 	ms.snapshot.Store(snap1)
 
@@ -3057,7 +3057,7 @@ func TestSessionManager_ScrollCopyMode(t *testing.T) {
 	id, _ := m.Register(session, SessionTarget{Name: "test"})
 
 	// Generate scrollback
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		session.readerCh <- []byte(string(rune('A'+i%26)) + "\n")
 	}
 	time.Sleep(200 * time.Millisecond)

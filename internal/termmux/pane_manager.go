@@ -24,31 +24,22 @@ type PaneBinding struct {
 // for geometry computation and maintains a map of PaneID → PaneBinding.
 // All mutations must happen on the SessionManager worker goroutine.
 type paneManager struct {
-	engine      *LayoutEngine
-	panes       map[PaneID]*PaneBinding
-	paneOrder   []PaneID // insertion order for layout
+	engine       *LayoutEngine
+	panes        map[PaneID]*PaneBinding
+	paneOrder    []PaneID // insertion order for layout
 	activePaneID PaneID
-	nextPaneID  PaneID
-	synchronize    bool // when true, input is sent to all panes
-	remainOnExit   bool // default for new panes
-	mu             sync.Mutex // protects concurrent reads for Panes() snapshot
+	synchronize  bool       // when true, input is sent to all panes
+	remainOnExit bool       // default for new panes
+	mu           sync.Mutex // protects concurrent reads for Panes() snapshot
 }
 
 // newPaneManager creates a paneManager with the given layout mode and
 // screen dimensions.
 func newPaneManager(mode LayoutMode, width, height int) *paneManager {
 	return &paneManager{
-		engine:     NewLayoutEngine(mode, width, height),
-		panes:      make(map[PaneID]*PaneBinding),
-		nextPaneID: 1, // 0 is the sentinel "no pane" value
+		engine: NewLayoutEngine(mode, width, height),
+		panes:  make(map[PaneID]*PaneBinding),
 	}
-}
-
-// allocID returns the next available PaneID and advances the counter.
-func (pm *paneManager) allocID() PaneID {
-	id := pm.nextPaneID
-	pm.nextPaneID++
-	return id
 }
 
 // Create adds a new pane associated with the given sessionID, splitting
@@ -57,10 +48,8 @@ func (pm *paneManager) Create(sessionID SessionID, direction SplitDirection) (Pa
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	id := pm.allocID()
-
-	// Split in the layout engine relative to the active pane.
-	pm.engine.Split(pm.activePaneID, direction)
+	// Split in the layout engine — it allocates and returns the new PaneID.
+	id := pm.engine.Split(pm.activePaneID, direction)
 
 	pm.panes[id] = &PaneBinding{
 		PaneID:       id,
@@ -284,7 +273,7 @@ func (pm *paneManager) removeSessionID(id PaneID) SessionID {
 
 // transferPaneToWindow removes a pane binding from this paneManager's
 // layout engine and adds it to the target paneManager. The target
-// receives a fresh PaneID via target.nextPaneID. The original binding's
+// receives a fresh PaneID via target.engine.AllocID(). The original binding's
 // SessionID, VTerm, Title, LastActive, Exited, and RemainOnExit are
 // copied to the new binding. Returns the new PaneID or zero on failure.
 func (pm *paneManager) transferPaneToWindow(target *paneManager, dir SplitDirection) PaneID {
@@ -313,8 +302,7 @@ func (pm *paneManager) transferPaneToWindow(target *paneManager, dir SplitDirect
 	pm.paneOrder = append(pm.paneOrder[:srcIdx], pm.paneOrder[srcIdx+1:]...)
 	delete(pm.panes, pm.activePaneID)
 
-	newID := target.nextPaneID
-	target.nextPaneID++
+	newID := target.engine.AllocID()
 
 	target.engine.splits[newID] = SplitGroup{Direction: dir, Ratio: 1.0}
 	target.engine.panes = append(target.engine.panes, newID)

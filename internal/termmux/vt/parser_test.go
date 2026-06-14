@@ -582,7 +582,7 @@ func TestParser_OSCOverflow(t *testing.T) {
 
 	p.Feed(0x1B)
 	p.Feed(']')
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		p.Feed('A')
 	}
 	p.Feed(0x07)
@@ -601,7 +601,7 @@ func TestParser_DCSOverflow(t *testing.T) {
 
 	p.Feed(0x1B)
 	p.Feed('P')
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		p.Feed('B')
 	}
 	p.Feed(0x1B)
@@ -622,7 +622,7 @@ func TestParser_NoOverflowWhenUnderLimit(t *testing.T) {
 
 	p.Feed(0x1B)
 	p.Feed(']')
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		p.Feed('X')
 	}
 	p.Feed(0x07)
@@ -633,7 +633,7 @@ func TestParser_NoOverflowWhenUnderLimit(t *testing.T) {
 
 	p.Feed(0x1B)
 	p.Feed('P')
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		p.Feed('Y')
 	}
 	p.Feed(0x1B)

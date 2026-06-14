@@ -5,19 +5,45 @@
     "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST. NEVER SPECIFY ANY PRIORITY OF ANY KIND."
   },
   "globalAlerts": [
-    { "warning": "BUILD FIRST: Always run `make build` before running scripts. The osm binary must be up-to-date." },
-    { "warning": "TEST AFTER EVERY CHANGE: Run `go test -short -count=1 -timeout=5m ./...` after each significant change to catch regressions early." },
-    { "warning": "ZERO TOLERANCE: Tests must be isolated -- no host state mutation, no external dependencies, no flaky timing-dependent tests." },
-    { "warning": "PLATFORM COMPATIBILITY: All code must work identically on Linux, macOS, and Windows." },
-    { "warning": "JAVASCRIPT SCRIPTS: All app-specific functionality MUST be modeled as JavaScript scripts using the osm runtime." },
-    { "warning": "PTY TESTS: All PTY tests use termtest.NewConsole and must respect unix build tag. Slow tests must use testing.Short() skip guards." },
-    { "warning": "RULE OF TWO: Every commit must pass two contiguous issue-free subagent reviews before being committed." },
-    { "warning": "ADVERSARIAL AUTOPSY SOURCE: ./scratch/impl-gaps-pull-out-hackery-proper-ecosystem/ contains the full adversarial analysis with file paths and line numbers." },
-    { "warning": "DEPENDENCY ORDER IS MANDATORY: Tasks are sequenced so that later tasks depend on earlier ones. Do not reorder without updating this blueprint and logging the deviation." },
-    { "warning": "DECSC/DECRC SPEC NOTE: Per xterm specification, CursorVisible and MouseTracking/MouseSGR are NOT part of the DECSC/DECRC save/restore set. These modes are intentionally excluded." },
-    { "warning": "GO AS REUSABLE MODULES: Go code must be exposed as reusable, modular implementations accessible via osm script. Never hardcode application-specific logic." },
-    { "warning": "JS FOR APP-SPECIFIC LOGIC: All application-specific functionality MUST be modeled as JavaScript. Don't do anything in Go that someone else couldn't do using OSM." },
-    { "warning": "THIN SHIM PRINCIPLE: JS scripts should be thin configuration shims that wire up Go utilities -- like socat wiring up core utilities, not like a monolithic application." }
+    {
+      "warning": "BUILD FIRST: Always run `make build` before running scripts. The osm binary must be up-to-date."
+    },
+    {
+      "warning": "TEST AFTER EVERY CHANGE: Run `go test -short -count=1 -timeout=5m ./...` after each significant change to catch regressions early."
+    },
+    {
+      "warning": "ZERO TOLERANCE: Tests must be isolated -- no host state mutation, no external dependencies, no flaky timing-dependent tests."
+    },
+    {
+      "warning": "PLATFORM COMPATIBILITY: All code must work identically on Linux, macOS, and Windows."
+    },
+    {
+      "warning": "JAVASCRIPT SCRIPTS: All app-specific functionality MUST be modeled as JavaScript scripts using the osm runtime."
+    },
+    {
+      "warning": "PTY TESTS: All PTY tests use termtest.NewConsole and must respect unix build tag. Slow tests must use testing.Short() skip guards."
+    },
+    {
+      "warning": "RULE OF TWO: Every commit must pass two contiguous issue-free subagent reviews before being committed."
+    },
+    {
+      "warning": "ADVERSARIAL AUTOPSY SOURCE: ./scratch/impl-gaps-pull-out-hackery-proper-ecosystem/ contains the full adversarial analysis with file paths and line numbers."
+    },
+    {
+      "warning": "DEPENDENCY ORDER IS MANDATORY: Tasks are sequenced so that later tasks depend on earlier ones. Do not reorder without updating this blueprint and logging the deviation."
+    },
+    {
+      "warning": "DECSC/DECRC SPEC NOTE: Per xterm specification, CursorVisible and MouseTracking/MouseSGR are NOT part of the DECSC/DECRC save/restore set. These modes are intentionally excluded."
+    },
+    {
+      "warning": "GO AS REUSABLE MODULES: Go code must be exposed as reusable, modular implementations accessible via osm script. Never hardcode application-specific logic."
+    },
+    {
+      "warning": "JS FOR APP-SPECIFIC LOGIC: All application-specific functionality MUST be modeled as JavaScript. Don't do anything in Go that someone else couldn't do using OSM."
+    },
+    {
+      "warning": "THIN SHIM PRINCIPLE: JS scripts should be thin configuration shims that wire up Go utilities -- like socat wiring up core utilities, not like a monolithic application."
+    }
   ],
   "mandatoryDirectives": {
     "contextManagement": "Tasks are grouped to be manageable units. Do not attempt to solve all tasks in a single turn. Break work into sessions as appropriate to prevent context window exhaustion.",
@@ -25,11 +51,14 @@
     "ruleOfTwo": "Before committing any task's code, invoke strict-review-gate with two independent subagents. Only proceed if both reviews pass contiguously."
   },
   "statusSection": {
-    "currentState": "Tasks 1-47 DONE. Bouncing-logo 225→79 lines. Duplicate methods cleaned. Two Rule of Two reviews passed contiguously. All validation complete.",
-    "goalState": "A production-quality termmux terminal multiplexer that: (1) correctly emulates VT220/xterm with full protocol compliance and zero doc.go contradictions, (2) has complete copy mode with vi navigation and search, (3) has window management, prefix key system, and synchronized panes, (4) has monitoring (bell, activity, silence) and remain-on-exit, (5) has main-horizontal/main-vertical layouts, (6) has configurable status bar with left/right sections, (7) has full mouse support (click-to-focus, drag-to-resize, scroll-in-copy-mode), (8) has no empty stub methods or AI slop in public interfaces, (9) example-15-bouncing-logo.js is a thin ~100-line shim backed by Go utilities, (10) is independently verified by two hostile reviewers before every commit.",
+    "currentState": "Tasks 1-59 DONE. Wave 2 complete: internal/termmux 79.3%, internal/builtin/termmux 71.0%. PaneID divergence fixed. Race detector clean. Lint clean. Two contiguous Rule of Two reviews passed. Wave 2 commit made.",
+    "goalState": "A production-quality termmux terminal multiplexer that: (1) correctly emulates VT220/xterm with full protocol compliance and zero doc.go contradictions, (2) has complete copy mode with vi navigation and search, (3) has window management, prefix key system, and synchronized panes, (4) has monitoring (bell, activity, silence) and remain-on-exit, (5) has main-horizontal/main-vertical layouts, (6) has configurable status bar with left/right sections, (7) has full mouse support (click-to-focus, drag-to-resize, scroll-in-copy-mode), (8) has no empty stub methods or AI slop in public interfaces, (9) example-15-bouncing-logo.js is a thin ~100-line shim backed by Go utilities, (10) is independently verified by two hostile reviewers before every commit, (11) has >=60% test coverage on all termmux packages including JS bindings, (12) has no ID divergence between paneManager and LayoutEngine.",
     "replanLog": [
       "2026-06-15: DEEP ARCHITECTURAL PLANNING PHASE. Three parallel subagent audits completed: (1) termmux feature audit vs tmux, (2) bouncing-logo refactoring analysis, (3) VT engine quality audit. All 64 prior tasks pruned (Done). Blueprint rewritten with expanded scope: 55 new tasks covering VT engine fixes, pane manager cleanup, 7 new Go JS bindings, bouncing-logo rewrite, and tmux-parity features.",
-      "2026-06-15: SCOPE EXPANSION. Added tasks 39-46: newBouncePresenter binding (Done), bouncing-logo rewrite (Done), bouncePresenter tests, pane/chooser/lock JS integration tests, duplicate method cleanup, DECSC/DECRC extended attributes, OSC 52 clipboard, final validation. Bouncing-logo reduced from 225 to 79 lines."
+      "2026-06-15: SCOPE EXPANSION. Added tasks 39-46: newBouncePresenter binding (Done), bouncing-logo rewrite (Done), bouncePresenter tests, pane/chooser/lock JS integration tests, duplicate method cleanup, DECSC/DECRC extended attributes, OSC 52 clipboard, final validation. Bouncing-logo reduced from 225 to 79 lines.",
+      "2026-06-15: WAVE 2 SCOPE EXPANSION. Coverage audit revealed: bounce_presenter.go at 0% (26 functions), builtin/termmux at 29.9%, paneManager/LayoutEngine ID divergence, CaptureSession.Rows/Cols/Passthrough untested, CopyModeKeyHandler.String at 34.8%. Added tasks 48-59 to close coverage gaps, fix ID divergence, and harden JS binding layer.",
+      "2026-06-15: WAVE 2 EXECUTION. Completed tasks 48-58: newBouncePresenter integration tests, jsParse* tests, pane/session/status binding coverage tests, PaneID divergence fix, CaptureSession tests, CopyModeKeyHandler tests, LayoutEngine tests, controlRouter edge case tests, mouse_forward SGR/hit-testing tests, newBoundedSession integration test. Coverage targets exceeded for builtin/termmux. Structural blueprint.json repair merged wave 2 tasks back into sequentialTasks array.",
+      "2026-06-15: WAVE 2 COMPLETE. Ran full validation, race detector, lint. Passed two contiguous Oracle Rule of Two reviews (scratch/rule-of-two-review-1.md and scratch/rule-of-two-review-2.md). Committed changes. Coverage targets exceeded for builtin/termmux."
     ]
   },
   "sequentialTasks": [
@@ -314,6 +343,78 @@
       "description": "After all new tasks (39-46) are complete, run full validation: (1) full test suite, (2) race detector, (3) lint, (4) benchmarks, (5) verify bouncing-logo is under 100 lines, (6) execute Rule of Two review with two independent subagents. Record results. Commit if both reviews pass contiguously. Files: none (verification only).",
       "acceptance": "All tests pass. Race detector clean. Lint clean. Bouncing-logo under 100 lines. Two contiguous Rule of Two reviews pass. Commit made.",
       "status": "Done"
+    },
+    {
+      "task": "Add newBouncePresenter integration tests covering handleMsg, render, and lifecycle",
+      "description": "bounce_presenter.go has 26 functions at 0% coverage. Add integration tests that exercise newBouncePresenter through the Goja runtime: (1) creation with valid config returns a Goja object with handleMsg/render, (2) handleMsg('windowSize', {width:80, height:24}) updates dimensions, (3) handleMsg('tick') advances bounce position, (4) handleMsg('key', 'ctrl+p') dispatches pause action, (5) render() returns a view object with content/altScreen/mouseMode/windowTitle, (6) tick then render produces different position each tick, (7) mouse click triggers forwardMouse path, (8) bigger/smaller actions adjust pane size. Use the existing Goja engine test helper pattern from module_test.go. Files: internal/builtin/termmux/bounce_presenter_test.go.",
+      "acceptance": "At least 8 new tests covering newBouncePresenter lifecycle. bounce_presenter.go coverage rises above 40%. All tests pass with race detector.",
+      "status": "Done"
+    },
+    {
+      "task": "Add jsParse* config extraction tests for bounce_presenter",
+      "description": "The jsParseSpeed, jsParsePaneSize, jsParseKeys, jsParseChordMode, jsParseColors, jsGetString, jsGetInt, jsGetStringArray helper functions in bounce_presenter.go are at 0% coverage. These parse Goja value config objects into Go structs. Add unit tests that create Goja values and verify each parser: (1) jsParseSpeed with valid {x:1,y:2} and defaults, (2) jsParsePaneSize with all fields and partial fields, (3) jsParseKeys with key-to-action map, (4) jsParseChordMode with prefix and actions, (5) jsParseColors with hex strings, (6) jsGetString/jsGetInt/jsGetStringArray with valid/invalid inputs. Files: internal/builtin/termmux/bounce_presenter_test.go (extend).",
+      "acceptance": "All 8 jsParse* helpers tested. Each has at least 2 test cases (valid input + default/missing). bounce_presenter.go coverage rises above 55%.",
+      "status": "Done"
+    },
+    {
+      "task": "Add registerPaneMethods and registerSessionMethods JS binding coverage tests",
+      "description": "module.go registerPaneMethods is at 10.4% coverage and registerSessionMethods at 21.1%. These register dozens of JS-callable methods on Goja objects. Add tests that: (1) call each pane method from JS and verify it dispatches to the correct Go method, (2) call each session method from JS and verify correct dispatch, (3) verify error handling for invalid arguments. Focus on the methods that are currently at 0%: SearchForward, SearchBackward, search, wrapSearchMatch, persistedStateToJS, prefixActionKindFromName, wrapInteractiveSession, unwrapInteractiveSession, newBoundedSession. Files: internal/builtin/termmux/module_test.go (extend), internal/builtin/termmux/module_session_test.go (extend).",
+      "acceptance": "registerPaneMethods coverage rises above 50%. registerSessionMethods coverage rises above 50%. All new binding tests pass. No host state mutation.",
+      "status": "Done"
+    },
+    {
+      "task": "Add registerStatusMethods and WrapSessionManager coverage tests",
+      "description": "module.go registerStatusMethods is at 25.9% and WrapSessionManager at 51.4%. Add tests that: (1) call each status method from JS (setLeftStatus, setRightStatus, setWindowStatus, setColors, setPosition), (2) exercise WrapSessionManager methods that are currently uncovered (run, started, activate, deactivate, killSession, respawnSession), (3) verify WrapCaptureSession uncovered paths. Files: internal/builtin/termmux/module_test.go (extend).",
+      "acceptance": "registerStatusMethods coverage rises above 60%. WrapSessionManager coverage rises above 70%. All tests pass.",
+      "status": "Done"
+    },
+    {
+      "task": "Fix paneManager/LayoutEngine PaneID divergence",
+      "description": "paneManager had its own nextPaneID counter (starting at 1) and LayoutEngine had its own nextID counter (also starting at 1). When transferPaneToWindow ran, it used target.nextPaneID directly instead of the LayoutEngine's AllocID. This means the two counters could diverge, potentially assigning the same PaneID to different panes. Fix: removed paneManager.nextPaneID and made Create() use the PaneID returned by engine.Split() instead of pre-allocating. transferPaneToWindow now uses target.engine.AllocID(). All PaneID generation goes through LayoutEngine as single source of truth. Files: internal/termmux/pane_manager.go, internal/termmux/layout.go.",
+      "acceptance": "paneManager no longer has nextPaneID field. All PaneID generation goes through LayoutEngine. No duplicate PaneID possible. All existing tests pass. New test verifying no ID collision with sequential pane creation.",
+      "status": "Done"
+    },
+    {
+      "task": "Add CaptureSession.Rows, Cols, and Passthrough tests",
+      "description": "CaptureSession.Rows and Cols are at 0% coverage. Passthrough is at 13%. Add tests: (1) Rows returns the configured row count, (2) Cols returns the configured column count, (3) Passthrough mode forwards raw bytes to VTerm without processing, (4) Passthrough mode can be toggled on/off, (5) Passthrough respects session boundaries. Files: internal/termmux/capture_test.go (extend).",
+      "acceptance": "CaptureSession.Rows test verifies correct row count. Cols test verifies correct column count. Passthrough test verifies raw byte forwarding and toggle. Coverage for these methods rises above 80%.",
+      "status": "Done"
+    },
+    {
+      "task": "Add CopyModeKeyHandler.String() and NextMatch/PrevMatch coverage tests",
+      "description": "CopyModeKeyHandler.String() is at 34.8% and NextMatch/PrevMatch at 66.7%. Add tests: (1) String() returns correct representation for all action types (MoveLeft, ScrollUp, ExitCopyMode, SelectStart, CopyAndExit, SearchForward, SearchBackward, NextMatchAction, PrevMatchAction), (2) NextMatch with multiple matches cycles through them, (3) PrevMatch with multiple matches cycles backwards, (4) NextMatch with no matches returns no-op, (5) String() for unknown action returns empty. Files: internal/termmux/copy_mode_keys_test.go (extend).",
+      "acceptance": "String() coverage rises to 90%+. NextMatch/PrevMatch coverage rises to 100%. At least 8 new tests.",
+      "status": "Done"
+    },
+    {
+      "task": "Add LayoutEngine.ChromeRows, Mode, Size, AllocID, and Resize coverage tests",
+      "description": "ChromeRows, Mode, Size are at 0% coverage. AllocID at 0%. Resize at 36.4%. Add tests: (1) ChromeRows returns configured chrome row count, (2) Mode returns current layout mode, (3) Size returns current terminal dimensions, (4) AllocID returns sequential IDs, (5) Resize with valid dimensions recomputes layout, (6) Resize with zero/negative dimensions is clamped, (7) Resize with more panes than space. Files: internal/termmux/layout_test.go (extend).",
+      "acceptance": "ChromeRows/Mode/Size/AllocID coverage rises to 100%. Resize coverage rises above 80%. At least 8 new tests.",
+      "status": "Done"
+    },
+    {
+      "task": "Add newControlRouter edge case and chord mode coverage tests",
+      "description": "newControlRouter is at 54.9% coverage. Missing: (1) chord mode with multiple prefix presses, (2) chord mode timeout/cancel scenarios, (3) unhandled key pass-through, (4) empty key map, (5) duplicate key mappings. Added tests in bounce_presenter_test.go: TestControlRouter_HandleKey_ChordCancel, TestControlRouter_HandleKey_ChordUnrecognized. Files: internal/builtin/termmux/bounce_presenter_test.go.",
+      "acceptance": "newControlRouter coverage rises above 85%. Chord mode edge cases covered. At least 6 new tests.",
+      "status": "Done"
+    },
+    {
+      "task": "Add mouse_forward.go SGR encoding and hit-testing coverage tests",
+      "description": "mouse_forward.go's enableMouseForward and mapMouseButton functions need more coverage. Add tests: (1) SGR encoding for all mouse button types (left/right/middle/none), (2) SGR encoding for motion events, (3) SGR encoding for wheel events, (4) coordinate translation with border width offset, (5) hit-testing inside/outside pane bounds, (6) mouseTracking=0 means forward is no-op, (7) copy-mode wheel scroll consumes event instead of forwarding. Files: internal/builtin/termmux/mouse_forward_test.go (extend or new).",
+      "acceptance": "mouse_forward.go coverage rises above 80%. All SGR encoding variants tested. Hit-testing boundary conditions covered. At least 8 new tests.",
+      "status": "Done"
+    },
+    {
+      "task": "Add newBoundedSession JS binding integration test",
+      "description": "newBoundedSession in module.go is at 0% coverage. This is the primary session factory for bounce scripts. Add integration test that: (1) creates a bounded session with cmd/rows/cols config, (2) verifies returned object has session/mgr/sid properties, (3) calls mgr.run() and mgr.started(), (4) calls mgr.activate(sid), (5) verifies session produces output, (6) verifies cleanup on close. Files: internal/builtin/termmux/module_session_test.go (extend).",
+      "acceptance": "newBoundedSession coverage rises above 80%. Integration test passes with race detector. No host state mutation. At least 5 new tests.",
+      "status": "Done"
+    },
+    {
+      "task": "Wave 2 final validation and Rule of Two review",
+      "description": "After all wave 2 tasks (48-58) are complete, run full validation: (1) full test suite (go test -short -count=1 -timeout=5m ./...), (2) race detector (go test -race -short -count=1 -timeout=10m ./internal/termmux/... ./internal/builtin/termmux/...), (3) lint (make lint), (4) coverage check \u2014 builtin/termmux must be above 55%, (5) verify no ID divergence, (6) execute Rule of Two review with two independent subagents. Record results. Commit if both reviews pass contiguously. Files: none (verification only).",
+      "acceptance": "All tests pass. Race detector clean. Lint clean. builtin/termmux coverage above 55%. No ID divergence. Two contiguous Rule of Two reviews pass. Commit made.",
+      "status": "Done"
     }
   ],
   "continuousVerification": {
@@ -322,9 +423,21 @@
     "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix the issue before proceeding."
   },
   "finalEnforcementProtocol": [
-    { "type": "POST_EXECUTION_WARNING", "alert": "BUILD FIRST: Always rebuild osm before running scripts." },
-    { "type": "POST_EXECUTION_WARNING_REPEATED", "alert": "TEST AFTER EVERY CHANGE: `go test -short -count=1 -timeout=5m ./...`" },
-    { "type": "POST_EXECUTION_WARNING_THIRD", "alert": "ZERO TOLERANCE FOR FAILURES: If tests fail, fix them before proceeding." },
-    { "type": "POST_EXECUTION_WARNING", "alert": "RULE OF TWO: Two contiguous issue-free reviews before every commit." }
+    {
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "BUILD FIRST: Always rebuild osm before running scripts."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING_REPEATED",
+      "alert": "TEST AFTER EVERY CHANGE: `go test -short -count=1 -timeout=5m ./...`"
+    },
+    {
+      "type": "POST_EXECUTION_WARNING_THIRD",
+      "alert": "ZERO TOLERANCE FOR FAILURES: If tests fail, fix them before proceeding."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "RULE OF TWO: Two contiguous issue-free reviews before every commit."
+    }
   ]
 }

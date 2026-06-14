@@ -15,9 +15,9 @@ func TestMouseToSGR_AllButtons(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	tests := []struct {
-		name   string
-		js     string
-		want   string
+		name string
+		js   string
+		want string
 	}{
 		{
 			"left_click",

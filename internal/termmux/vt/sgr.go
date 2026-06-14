@@ -23,15 +23,15 @@ type color struct {
 
 // Attr holds text attributes (colors, flags) for a terminal cell.
 type Attr struct {
-	FG      color
-	BG      color
-	Bold    bool
-	Dim     bool
-	Italic  bool
-	Under   bool
-	Blink   bool
-	Inverse bool
-	Hidden  bool
+	FG          color
+	BG          color
+	Bold        bool
+	Dim         bool
+	Italic      bool
+	Under       bool
+	Blink       bool
+	Inverse     bool
+	Hidden      bool
 	Strike      bool
 	SearchMatch bool
 }

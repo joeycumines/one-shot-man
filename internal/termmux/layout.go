@@ -1,6 +1,7 @@
 package termmux
 
 import (
+	"slices"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
@@ -347,13 +348,7 @@ func (e *LayoutEngine) Remove(id PaneID) {
 // pane ID is not found.
 func (e *LayoutEngine) Resize(id PaneID, ratio float64) bool {
 	if _, ok := e.splits[id]; !ok {
-		found := false
-		for _, pid := range e.panes {
-			if pid == id {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(e.panes, id)
 		if !found {
 			return false
 		}

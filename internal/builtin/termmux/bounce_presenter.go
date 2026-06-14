@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dop251/goja"
 	"charm.land/lipgloss/v2"
+	"github.com/dop251/goja"
 	"github.com/rivo/uniseg"
 
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
@@ -567,9 +567,9 @@ func (p *bounceModel) render() goja.Value {
 
 	// Build padding for zone.scan() alignment
 	controlsY := p.height - 2
-	pad := ""
-	for i := 0; i < controlsY; i++ {
-		pad += "\n"
+	var pad strings.Builder
+	for range controlsY {
+		pad.WriteString("\n")
 	}
 
 	result := p.runtime.NewObject()
@@ -581,7 +581,7 @@ func (p *bounceModel) render() goja.Value {
 	_ = result.Set("foregroundColor", p.colors["text"])
 	_ = result.Set("backgroundColor", p.colors["bg"])
 	_ = result.Set("_controlsLine", p.controlsLine)
-	_ = result.Set("_pad", pad)
+	_ = result.Set("_pad", pad.String())
 	return result
 }
 
@@ -765,10 +765,7 @@ func (bc *bounceController) tick(width, height int) {
 		bc.velX = abs(bc.velX)
 		bc.bounces++
 	} else if bc.paneX+bc.paneW >= width {
-		bc.paneX = width - bc.paneW
-		if bc.paneX < 0 {
-			bc.paneX = 0
-		}
+		bc.paneX = max(width-bc.paneW, 0)
 		bc.velX = -abs(bc.velX)
 		bc.bounces++
 	}
@@ -778,10 +775,7 @@ func (bc *bounceController) tick(width, height int) {
 		bc.velY = abs(bc.velY)
 		bc.bounces++
 	} else if bc.paneY+bc.paneH+bc.controlsHeight >= height {
-		bc.paneY = height - bc.paneH - bc.controlsHeight
-		if bc.paneY < 0 {
-			bc.paneY = 0
-		}
+		bc.paneY = max(height-bc.paneH-bc.controlsHeight, 0)
 		bc.velY = -abs(bc.velY)
 		bc.bounces++
 	}

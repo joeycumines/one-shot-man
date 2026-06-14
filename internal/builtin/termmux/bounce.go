@@ -28,15 +28,15 @@ type bounceController struct {
 
 func newBounceController(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	bc := &bounceController{
-		velX: 1,
-		velY: 1,
-		paneW: 32,
-		paneH: 12,
-		minW:  12,
-		maxW:  62,
-		minH:  7,
-		maxH:  32,
-		step:  2,
+		velX:           1,
+		velY:           1,
+		paneW:          32,
+		paneH:          12,
+		minW:           12,
+		maxW:           62,
+		minH:           7,
+		maxH:           32,
+		step:           2,
 		controlsHeight: 2,
 	}
 

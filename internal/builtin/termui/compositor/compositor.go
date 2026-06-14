@@ -321,18 +321,18 @@ func jsToBorder(runtime *goja.Runtime, val goja.Value) lipgloss.Border {
 		return v.String()
 	}
 	return lipgloss.Border{
-		Top:         getString("top"),
-		Bottom:      getString("bottom"),
-		Left:        getString("left"),
-		Right:       getString("right"),
-		TopLeft:     getString("topLeft"),
-		TopRight:    getString("topRight"),
-		BottomLeft:  getString("bottomLeft"),
-		BottomRight: getString("bottomRight"),
-		MiddleLeft:  getString("middleLeft"),
-		MiddleRight: getString("middleRight"),
-		Middle:      getString("middle"),
-		MiddleTop:   getString("middleTop"),
+		Top:          getString("top"),
+		Bottom:       getString("bottom"),
+		Left:         getString("left"),
+		Right:        getString("right"),
+		TopLeft:      getString("topLeft"),
+		TopRight:     getString("topRight"),
+		BottomLeft:   getString("bottomLeft"),
+		BottomRight:  getString("bottomRight"),
+		MiddleLeft:   getString("middleLeft"),
+		MiddleRight:  getString("middleRight"),
+		Middle:       getString("middle"),
+		MiddleTop:    getString("middleTop"),
 		MiddleBottom: getString("middleBottom"),
 	}
 }

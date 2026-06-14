@@ -170,10 +170,7 @@ func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 
 		// Walk cells for this row.
 		if last >= 0 || plainLast >= 0 {
-			maxCol := last
-			if plainLast > maxCol {
-				maxCol = plainLast
-			}
+			maxCol := max(plainLast, last)
 			for c := 0; c <= maxCol; c++ {
 				cell := row[c]
 				if cell.SecondHalf {

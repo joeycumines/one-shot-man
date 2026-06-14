@@ -389,7 +389,7 @@ func (s *Screen) Resize(rows, cols int) {
 			}
 		}
 		s.TabStops = append(s.TabStops, ext...)
-	} else 	if cols < len(s.TabStops) {
+	} else if cols < len(s.TabStops) {
 		s.TabStops = s.TabStops[:cols]
 	}
 	s.markDirtyRange(0, rows-1)
@@ -897,10 +897,7 @@ func (s *Screen) HighlightMatch(row, col, patLen int) {
 // Returns true if the scroll position changed.
 func (s *Screen) ScrollToMatch(matchRow int) bool {
 	screenRow := matchRow - s.ScrollbackLen
-	targetOffset := s.ScrollbackLen - matchRow
-	if targetOffset < 0 {
-		targetOffset = 0
-	}
+	targetOffset := max(s.ScrollbackLen-matchRow, 0)
 	maxOff := s.MaxScrollOffset()
 	if targetOffset > maxOff {
 		targetOffset = maxOff
@@ -1387,10 +1384,7 @@ func (s *Screen) PutASCII(data []byte) {
 		row := s.CurRow
 		col := s.CurCol
 		avail := s.Cols - col
-		n := len(data) - i
-		if n > avail {
-			n = avail
-		}
+		n := min(len(data)-i, avail)
 		if row >= 0 && row < s.Rows {
 			s.repairWideBoundary(row, col, col+n)
 			cells := s.Cells[row]

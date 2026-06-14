@@ -178,7 +178,7 @@ func (cs *CopyModeSearcher) StartSearch(direction CopyModeSearchDirection, curso
 }
 
 func (cs *CopyModeSearcher) Direction() CopyModeSearchDirection { return cs.direction }
-func (cs *CopyModeSearcher) Pattern() string                   { return cs.pattern }
+func (cs *CopyModeSearcher) Pattern() string                    { return cs.pattern }
 
 func (cs *CopyModeSearcher) AppendChar(ch rune) {
 	cs.pattern += string(ch)

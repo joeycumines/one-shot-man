@@ -778,8 +778,7 @@ func TestModule_SplitLayout_OffsetMouse(t *testing.T) {
 func TestUnwrapSessionManager_ValidWrapper(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	runtime := goja.New()
 	mgr := parent.NewSessionManager()
@@ -825,8 +824,7 @@ func TestUnwrapSessionManager_WrongType(t *testing.T) {
 func TestSessionManager_NonEnumerableKey(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	runtime := goja.New()
 	mgr := parent.NewSessionManager()
@@ -845,8 +843,7 @@ func TestSessionManager_NonEnumerableKey(t *testing.T) {
 func TestSessionManager_NonWritableKey(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	runtime := goja.New()
 	mgr := parent.NewSessionManager()
@@ -869,8 +866,7 @@ func TestNewSessionManager_CreatesManager(t *testing.T) {
 		t.Skip("slow: spawns Goja runtime")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	runtime, exports := testRequireCtx(t, ctx)
 	_ = runtime.Set("tm", exports)
@@ -905,8 +901,7 @@ func TestNewSessionManager_WithOptions(t *testing.T) {
 		t.Skip("slow: spawns Goja runtime and SessionManager")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	runtime, exports := testRequireCtx(t, ctx)
 	_ = runtime.Set("tm", exports)
@@ -946,8 +941,7 @@ func TestNewSessionManager_NoArgs(t *testing.T) {
 		t.Skip("slow: spawns Goja runtime and SessionManager")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	runtime, exports := testRequireCtx(t, ctx)
 	_ = runtime.Set("tm", exports)

@@ -283,3 +283,58 @@ func TestMouseForward_MissingConfig(t *testing.T) {
 		t.Error("expected error for missing config")
 	}
 }
+
+func TestMouseForward_CopyModeWheel(t *testing.T) {
+	runtime := setupMouseForwardEnv(t)
+
+	v, err := runtime.RunString(`
+		var inputCalls = [];
+		var scrollCalls = [];
+		var mockMgr = {
+			snapshot: function(id) { return { mouseTracking: 0, mouseSGR: false, gen: 1 }; },
+			input: function(data) { inputCalls.push(data); },
+			mouseToSGR: exports.mouseToSGR,
+			isCopyModeActive: function(id) { return true; },
+			scrollCopyMode: function(id, delta) { scrollCalls.push(delta); },
+		};
+		var mockComp = { hit: function(x, y) { return { hit: true, id: 'pty' }; } };
+		var forward = exports.enableMouseForward({
+			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
+			paneId: 'pty', paneX: 0, paneY: 0, borderWidth: 0
+		});
+		forward({type: 'MouseWheel', button: 'wheeldown', x: 5, y: 5});
+		inputCalls.length === 0 && scrollCalls.length === 1 && scrollCalls[0] === -3;
+	`)
+	if err != nil {
+		t.Fatalf("copy-mode wheel: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Error("expected scrollCopyMode(-3) call, no input forwarding")
+	}
+}
+
+func TestMouseForward_UnknownButton(t *testing.T) {
+	runtime := setupMouseForwardEnv(t)
+
+	v, err := runtime.RunString(`
+		var inputCalls = [];
+		var mockMgr = {
+			snapshot: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
+			input: function(data) { inputCalls.push(data); },
+			mouseToSGR: exports.mouseToSGR
+		};
+		var mockComp = { hit: function(x, y) { return { hit: true, id: 'pty' }; } };
+		var forward = exports.enableMouseForward({
+			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
+			paneId: 'pty', paneX: 0, paneY: 0, borderWidth: 0
+		});
+		forward({type: 'MouseClick', button: 'somethingodd', x: 5, y: 5});
+		inputCalls.length > 0;
+	`)
+	if err != nil {
+		t.Fatalf("unknown button: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Error("expected input call even for unknown button (mapped to none)")
+	}
+}

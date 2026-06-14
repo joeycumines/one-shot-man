@@ -2,6 +2,7 @@ package termmux
 
 import (
 	"log/slog"
+	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -178,9 +179,7 @@ func (b *EventBus) Subscribe(bufSize int) (int, <-chan Event) {
 
 	cur := b.subscribers.Load()
 	newSnap := &subscriberMap{m: make(map[int]chan<- Event, len(cur.m)+1)}
-	for k, v := range cur.m {
-		newSnap.m[k] = v
-	}
+	maps.Copy(newSnap.m, cur.m)
 	newSnap.m[id] = ch
 	b.subscribers.Store(newSnap)
 

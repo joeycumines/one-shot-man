@@ -12,6 +12,7 @@ const (
 	PaneSplitH
 	PaneSplitV
 	PaneClose
+	PaneCloseConfirm
 )
 
 // PaneKeyHandler detects pane navigation key sequences in stdin data and
@@ -30,13 +31,14 @@ type PaneKeyHandler struct {
 //
 // Key bindings:
 //
-//	Ctrl+H (0x08): Focus pane left
-//	Ctrl+L (0x0C): Focus pane right
-//	Ctrl+J (0x0A): Focus pane below
-//	Ctrl+K (0x0B): Focus pane above
+//	Ctrl+H / Ctrl+B: Focus pane left
+//	Ctrl+L / Ctrl+F: Focus pane right
+//	Ctrl+J / Ctrl+N: Focus pane below
+//	Ctrl+K / Ctrl+P: Focus pane above
 //	Alt+H  (0x1B 'h'): Split horizontal
 //	Alt+V  (0x1B 'v'): Split vertical
-//	Ctrl+X (0x18): Close current pane
+//	Ctrl+X: Close current pane
+//	Ctrl+D: Close current pane (with confirmation)
 //
 // When HasPanes returns false, all keys pass through (consumed=false).
 func (h *PaneKeyHandler) HandleKey(data []byte) (consumed bool, action PaneAction) {
@@ -61,16 +63,18 @@ func (h *PaneKeyHandler) HandleKey(data []byte) (consumed bool, action PaneActio
 
 	// Single-byte control characters.
 	switch data[0] {
-	case 0x08: // Ctrl+H (BS)
+	case 0x08, 0x02: // Ctrl+H (BS), Ctrl+B (STX)
 		return true, PaneFocusLeft
-	case 0x0C: // Ctrl+L (FF)
+	case 0x0C, 0x06: // Ctrl+L (FF), Ctrl+F (ACK)
 		return true, PaneFocusRight
-	case 0x0A: // Ctrl+J (LF)
+	case 0x0A, 0x0E: // Ctrl+J (LF), Ctrl+N (SO)
 		return true, PaneFocusDown
-	case 0x0B: // Ctrl+K (VT)
+	case 0x0B, 0x10: // Ctrl+K (VT), Ctrl+P (DLE)
 		return true, PaneFocusUp
 	case 0x18: // Ctrl+X (CAN)
 		return true, PaneClose
+	case 0x04: // Ctrl+D (EOT)
+		return true, PaneCloseConfirm
 	}
 
 	return false, PaneActionNone

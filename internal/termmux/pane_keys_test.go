@@ -92,12 +92,17 @@ func TestPaneKeyHandler_HandleKey_NoPanes(t *testing.T) {
 	h := withPanes(false)
 	for _, input := range [][]byte{
 		{0x08},
+		{0x02},
 		{0x0C},
+		{0x06},
 		{0x0A},
+		{0x0E},
 		{0x0B},
+		{0x10},
 		{0x1B, 'h'},
 		{0x1B, 'v'},
 		{0x18},
+		{0x04},
 	} {
 		consumed, action := h.HandleKey(input)
 		if consumed {
@@ -268,12 +273,17 @@ func TestPaneKeyHandler_AllActions(t *testing.T) {
 		action PaneAction
 	}{
 		{[]byte{0x08}, PaneFocusLeft},
+		{[]byte{0x02}, PaneFocusLeft},
 		{[]byte{0x0C}, PaneFocusRight},
+		{[]byte{0x06}, PaneFocusRight},
 		{[]byte{0x0A}, PaneFocusDown},
+		{[]byte{0x0E}, PaneFocusDown},
 		{[]byte{0x0B}, PaneFocusUp},
+		{[]byte{0x10}, PaneFocusUp},
 		{[]byte{0x1B, 'h'}, PaneSplitH},
 		{[]byte{0x1B, 'v'}, PaneSplitV},
 		{[]byte{0x18}, PaneClose},
+		{[]byte{0x04}, PaneCloseConfirm},
 	}
 	for _, tt := range tests {
 		h := withPanes(true)
@@ -294,12 +304,17 @@ func TestPaneKeyHandler_HandleKeyInBuffer_AllActionsWithTrailing(t *testing.T) {
 		consumed int
 	}{
 		{[]byte{0x08, 'Z'}, PaneFocusLeft, 1},
+		{[]byte{0x02, 'Z'}, PaneFocusLeft, 1},
 		{[]byte{0x0C, 'Z'}, PaneFocusRight, 1},
+		{[]byte{0x06, 'Z'}, PaneFocusRight, 1},
 		{[]byte{0x0A, 'Z'}, PaneFocusDown, 1},
+		{[]byte{0x0E, 'Z'}, PaneFocusDown, 1},
 		{[]byte{0x0B, 'Z'}, PaneFocusUp, 1},
+		{[]byte{0x10, 'Z'}, PaneFocusUp, 1},
 		{[]byte{0x1B, 'h', 'Z'}, PaneSplitH, 2},
 		{[]byte{0x1B, 'v', 'Z'}, PaneSplitV, 2},
 		{[]byte{0x18, 'Z'}, PaneClose, 1},
+		{[]byte{0x04, 'Z'}, PaneCloseConfirm, 1},
 	}
 	for _, tt := range tests {
 		h := withPanes(true)

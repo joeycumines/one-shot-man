@@ -2,9 +2,15 @@ package termmux
 
 import (
 	"context"
+	"io"
+	"runtime"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
+	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 )
 
 func TestBouncePresenter_Creation(t *testing.T) {
@@ -1009,6 +1015,197 @@ func TestJsParseColors_Defaults(t *testing.T) {
 	}
 	if colors["fg"] != "#fff" {
 		t.Errorf("colors[fg] = %q, want #fff", colors["fg"])
+	}
+}
+
+func TestBouncePresenter_ForwardMouse_ActiveTracking(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping bounce presenter test in short mode")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping PTY-based test on windows")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runtime := goja.New()
+
+	mgr := parent.NewSessionManager(parent.WithTermSize(24, 80))
+	go mgr.Run(ctx)
+	<-mgr.Started()
+
+	sio := &mouseForwardStringIO{doneCh: make(chan struct{})}
+	sess := parent.NewStringIOSession(sio)
+	sess.Start()
+
+	sid, err := mgr.Register(sess, parent.SessionTarget{})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if err := mgr.Activate(sid); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+
+
+	var snap *parent.ScreenSnapshot
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		snap = mgr.Snapshot(sid)
+		if snap != nil && snap.MouseTracking > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if snap == nil || snap.MouseTracking == 0 {
+		t.Fatal("mouse tracking was not enabled after DECSET")
+	}
+
+	compMod := mockCompositor(runtime)
+	compFn, ok := goja.AssertFunction(compMod.Get("compositor"))
+	if !ok {
+		t.Fatal("compositor is not callable")
+	}
+	compRet, err := compFn(compMod)
+	if err != nil {
+		t.Fatalf("compositor() error: %v", err)
+	}
+
+	p := &bounceModel{
+		runtime:     runtime,
+		ctx:         ctx,
+		mgr:         mgr,
+		sid:         sid,
+		compObj:     compRet.ToObject(runtime),
+		borderWidth: 1,
+		bounce:      &bounceController{paneX: 0, paneY: 0, paneW: 20, paneH: 10},
+	}
+
+	msg := runtime.NewObject()
+	_ = msg.Set("type", "MouseClick")
+	_ = msg.Set("button", "left")
+	_ = msg.Set("x", 5)
+	_ = msg.Set("y", 5)
+
+	p.onMouseClick(msg)
+
+	if len(sio.inputs) == 0 {
+		t.Fatal("expected mouse event to be forwarded to child input, got none")
+	}
+	last := sio.inputs[len(sio.inputs)-1]
+	if !strings.HasPrefix(last, "\x1b[<") {
+		t.Errorf("forwarded input %q does not look like an SGR mouse sequence", last)
+	}
+}
+
+type mouseForwardStringIO struct {
+	mu      sync.Mutex
+	inputs  []string
+	emitSet bool
+	doneCh  chan struct{}
+	closed  bool
+}
+
+func (r *mouseForwardStringIO) Send(input string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.inputs = append(r.inputs, input)
+	return nil
+}
+
+func (r *mouseForwardStringIO) Receive() (string, error) {
+	if !r.emitSet {
+		r.emitSet = true
+		return "\x1b[?1000h", nil
+	}
+	<-r.doneCh
+	return "", io.EOF
+}
+
+func (r *mouseForwardStringIO) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.closed {
+		r.closed = true
+		close(r.doneCh)
+	}
+	return nil
+}
+
+func TestBouncePresenter_RegisterEvents(t *testing.T) {
+	runtime := goja.New()
+	mgrObj := runtime.NewObject()
+	var registered []string
+	var callbacks []goja.Callable
+	_ = mgrObj.Set("on", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) >= 2 {
+			registered = append(registered, call.Argument(0).String())
+			if fn, ok := goja.AssertFunction(call.Argument(1)); ok {
+				callbacks = append(callbacks, fn)
+			}
+		}
+		return goja.Undefined()
+	})
+
+	p := &bounceModel{runtime: runtime, mgrObj: mgrObj}
+	p.registerEvents()
+
+	if len(registered) != 2 || registered[0] != "exit" || registered[1] != "bell" {
+		t.Errorf("registered events = %v, want [exit bell]", registered)
+	}
+	if len(callbacks) != 2 {
+		t.Fatalf("expected 2 callbacks, got %d", len(callbacks))
+	}
+
+	callbacks[0](goja.Undefined())
+	if !p.childExited {
+		t.Error("exit callback did not set childExited")
+	}
+
+	callbacks[1](goja.Undefined())
+	if p.bellCount != 1 {
+		t.Errorf("bellCount = %d, want 1", p.bellCount)
+	}
+}
+
+func TestBouncePresenter_RegisterEvents_NoOn(t *testing.T) {
+	runtime := goja.New()
+	p := &bounceModel{runtime: runtime, mgrObj: runtime.NewObject()}
+	p.registerEvents()
+}
+
+func TestBouncePresenter_RegisterEvents_NonCallableOn(t *testing.T) {
+	runtime := goja.New()
+	mgrObj := runtime.NewObject()
+	_ = mgrObj.Set("on", "not-a-function")
+	p := &bounceModel{runtime: runtime, mgrObj: mgrObj}
+	p.registerEvents()
+}
+
+func TestBouncePresenter_QuitCmd(t *testing.T) {
+	runtime := goja.New()
+	p := &bounceModel{runtime: runtime, teaObj: mockTea(runtime)}
+	cmd := p.quitCmd()
+	if cmd == nil || goja.IsNull(cmd) || goja.IsUndefined(cmd) {
+		t.Fatal("expected quit command")
+	}
+}
+
+func TestBouncePresenter_QuitCmd_NoTea(t *testing.T) {
+	runtime := goja.New()
+	p := &bounceModel{runtime: runtime}
+	cmd := p.quitCmd()
+	if cmd != nil && !goja.IsNull(cmd) {
+		t.Error("expected null when tea module is absent")
+	}
+}
+
+func TestBouncePresenter_DispatchAction_Quit(t *testing.T) {
+	runtime := goja.New()
+	p := &bounceModel{runtime: runtime, teaObj: mockTea(runtime)}
+	cmd := p.dispatchAction("quit")
+	if cmd == nil || goja.IsNull(cmd) || goja.IsUndefined(cmd) {
+		t.Fatal("expected quit command from dispatchAction")
 	}
 }
 

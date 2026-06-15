@@ -2503,6 +2503,32 @@ func registerPaneMethods(obj *goja.Object, s *muxState) {
 		}
 		return goja.Undefined()
 	})
+
+	_ = obj.Set("focusPaneAt", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(s.runtime.NewTypeError("focusPaneAt: requires (row, col) arguments"))
+		}
+		row := int(call.Argument(0).ToInteger())
+		col := int(call.Argument(1).ToInteger())
+		id, err := s.mgr.FocusAt(row, col)
+		if err != nil {
+			panic(s.runtime.NewGoError(err))
+		}
+		return s.runtime.ToValue(uint64(id))
+	})
+
+	_ = obj.Set("resizePaneAt", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 3 {
+			panic(s.runtime.NewTypeError("resizePaneAt: requires (row, col, ratio) arguments"))
+		}
+		row := int(call.Argument(0).ToInteger())
+		col := int(call.Argument(1).ToInteger())
+		ratio := call.Argument(2).ToFloat()
+		if err := s.mgr.ResizePaneAt(row, col, ratio); err != nil {
+			panic(s.runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
 }
 
 func prefixActionKindFromName(name string) parent.PrefixActionKind {

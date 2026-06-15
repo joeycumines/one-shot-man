@@ -253,6 +253,13 @@ func (e *LayoutEngine) MainRatio() float64 {
 	return e.mainRatio
 }
 
+func (e *LayoutEngine) paneWeight(id PaneID) float64 {
+	if sg, ok := e.splits[id]; ok {
+		return sg.Ratio
+	}
+	return 0.5
+}
+
 // ChromeRows returns the current chrome rows setting.
 func (e *LayoutEngine) ChromeRows() int {
 	return e.chromeRows
@@ -307,7 +314,7 @@ func (e *LayoutEngine) Split(pivot PaneID, direction SplitDirection) PaneID {
 
 	if idx < 0 {
 		e.panes = append(e.panes, newID)
-		e.splits[newID] = SplitGroup{Direction: direction, Ratio: 1.0}
+		e.splits[newID] = SplitGroup{Direction: direction, Ratio: 0.5}
 		return newID
 	}
 
@@ -463,33 +470,77 @@ func (e *LayoutEngine) Compute(panes []Pane) []PaneGeometry {
 
 	switch e.mode {
 	case LayoutVertical, LayoutStacked:
-		e.computeVertical(geoms, availW, availH)
+		e.computeVertical(geoms, panes, availW, availH)
 	case LayoutHorizontal:
-		e.computeHorizontal(geoms, availW, availH)
+		e.computeHorizontal(geoms, panes, availW, availH)
 	case LayoutTiled:
-		e.computeTiled(geoms, availW, availH)
+		e.computeTiled(geoms, panes, availW, availH)
 	case LayoutMainHorizontal:
-		e.computeMainHorizontal(geoms, availW, availH)
+		e.computeMainHorizontal(geoms, panes, availW, availH)
 	case LayoutMainVertical:
-		e.computeMainVertical(geoms, availW, availH)
+		e.computeMainVertical(geoms, panes, availW, availH)
 	default:
-		e.computeVertical(geoms, availW, availH)
+		e.computeVertical(geoms, panes, availW, availH)
 	}
 
 	return geoms
 }
 
-// computeVertical stacks panes top to bottom, each getting an equal share
-// of the available height. Remainder rows go to the last pane.
-func (e *LayoutEngine) computeVertical(geoms []PaneGeometry, availW, availH int) {
-	n := len(geoms)
-	baseH := availH / n
-	allocated := 0
+func (e *LayoutEngine) PaneAt(panes []Pane, row, col int) (PaneID, bool) {
+	geoms := e.Compute(panes)
+	for i, g := range geoms {
+		if _, _, inside := g.OffsetMouse(row, col); inside {
+			return panes[i].ID, true
+		}
+	}
+	return 0, false
+}
 
+// DividerAt reports whether the given coordinate lies on the divider between
+// two panes for simple split layouts. It currently supports LayoutVertical,
+// LayoutStacked, and LayoutHorizontal. Tiled and main-pane layouts do not
+// advertise draggable dividers via this method.
+func (e *LayoutEngine) DividerAt(panes []Pane, row, col int) (PaneID, bool) {
+	if len(panes) < 2 {
+		return 0, false
+	}
+	geoms := e.Compute(panes)
+	availH := max(e.height-e.chromeRows, 1)
+	switch e.mode {
+	case LayoutVertical, LayoutStacked:
+		for i := 0; i < len(geoms)-1; i++ {
+			if row == geoms[i].Row+geoms[i].Rows && row >= 0 && row < availH && col >= 0 && col < e.width {
+				return panes[i+1].ID, true
+			}
+		}
+	case LayoutHorizontal:
+		for i := 0; i < len(geoms)-1; i++ {
+			if col == geoms[i].Col+geoms[i].Cols && row >= 0 && row < availH {
+				return panes[i+1].ID, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func (e *LayoutEngine) computeVertical(geoms []PaneGeometry, panes []Pane, availW, availH int) {
+	n := len(geoms)
+	if n == 0 {
+		return
+	}
+
+	totalWeight := 0.0
 	for i := range geoms {
-		h := baseH
+		totalWeight += e.paneWeight(panes[i].ID)
+	}
+
+	allocated := 0
+	for i := 0; i < n; i++ {
+		var h int
 		if i == n-1 {
 			h = availH - allocated
+		} else {
+			h = int(float64(availH) * e.paneWeight(panes[i].ID) / totalWeight)
 		}
 		if h < 1 {
 			h = 1
@@ -504,17 +555,24 @@ func (e *LayoutEngine) computeVertical(geoms []PaneGeometry, availW, availH int)
 	}
 }
 
-// computeHorizontal arranges panes side by side, each getting an equal share
-// of the available width. Remainder columns go to the last pane.
-func (e *LayoutEngine) computeHorizontal(geoms []PaneGeometry, availW, availH int) {
+func (e *LayoutEngine) computeHorizontal(geoms []PaneGeometry, panes []Pane, availW, availH int) {
 	n := len(geoms)
-	baseW := availW / n
-	allocated := 0
+	if n == 0 {
+		return
+	}
 
+	totalWeight := 0.0
 	for i := range geoms {
-		w := baseW
+		totalWeight += e.paneWeight(panes[i].ID)
+	}
+
+	allocated := 0
+	for i := 0; i < n; i++ {
+		var w int
 		if i == n-1 {
 			w = availW - allocated
+		} else {
+			w = int(float64(availW) * e.paneWeight(panes[i].ID) / totalWeight)
 		}
 		if w < 1 {
 			w = 1
@@ -532,7 +590,7 @@ func (e *LayoutEngine) computeHorizontal(geoms []PaneGeometry, availW, availH in
 // computeTiled arranges panes in a grid that approximates a square.
 // For N panes, it chooses cols = ceil(sqrt(N)) and rows = ceil(N/cols).
 // Remainder cells in the last row are distributed evenly.
-func (e *LayoutEngine) computeTiled(geoms []PaneGeometry, availW, availH int) {
+func (e *LayoutEngine) computeTiled(geoms []PaneGeometry, panes []Pane, availW, availH int) {
 	n := len(geoms)
 	cols := ceilSqrt(n)
 	rows := (n + cols - 1) / cols
@@ -573,7 +631,7 @@ func (e *LayoutEngine) computeTiled(geoms []PaneGeometry, availW, availH int) {
 }
 
 // ceilSqrt returns ceil(sqrt(n)).
-func (e *LayoutEngine) computeMainHorizontal(geoms []PaneGeometry, availW, availH int) {
+func (e *LayoutEngine) computeMainHorizontal(geoms []PaneGeometry, panes []Pane, availW, availH int) {
 	n := len(geoms)
 	mainH := max(int(float64(availH)*e.mainRatio), 1)
 	geoms[0] = PaneGeometry{Row: 0, Col: 0, Rows: mainH, Cols: availW}
@@ -599,7 +657,7 @@ func (e *LayoutEngine) computeMainHorizontal(geoms []PaneGeometry, availW, avail
 	}
 }
 
-func (e *LayoutEngine) computeMainVertical(geoms []PaneGeometry, availW, availH int) {
+func (e *LayoutEngine) computeMainVertical(geoms []PaneGeometry, panes []Pane, availW, availH int) {
 	n := len(geoms)
 	mainW := max(int(float64(availW)*e.mainRatio), 1)
 	geoms[0] = PaneGeometry{Row: 0, Col: 0, Rows: availH, Cols: mainW}

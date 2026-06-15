@@ -3,6 +3,8 @@ package termmux
 import (
 	"context"
 	"fmt"
+	"io"
+	"sync"
 	"testing"
 
 	"github.com/dop251/goja"
@@ -206,6 +208,50 @@ func TestPaneMethods_ClosePaneArgCount(t *testing.T) {
 	`)
 	if err != nil {
 		t.Fatalf("closePane(): %v", err)
+	}
+}
+
+func TestPaneMethods_FocusPaneAtAndResizePaneAt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	mgr := parent.NewSessionManager(parent.WithTermSize(80, 24))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+	defer func() {
+		cancel()
+		<-errCh
+	}()
+
+	sess := newTestSession(t, ctx)
+	sess2 := newTestSession(t, ctx)
+
+	if _, err := mgr.NewPane(sess, parent.SessionTarget{Kind: parent.SessionKindPTY}, parent.SplitDown); err != nil {
+		t.Fatalf("first NewPane: %v", err)
+	}
+	if _, err := mgr.NewPane(sess2, parent.SessionTarget{Kind: parent.SessionKindPTY}, parent.SplitDown); err != nil {
+		t.Fatalf("second NewPane: %v", err)
+	}
+
+	if id, err := mgr.FocusAt(15, 10); err != nil {
+		t.Fatalf("FocusAt: %v", err)
+	} else if id == 0 {
+		t.Fatal("FocusAt returned zero pane")
+	}
+
+	geoms := mgr.Panes()
+	if len(geoms) < 2 {
+		t.Fatal("expected at least 2 panes")
+	}
+	dividerRow := geoms[0].Geometry.Row + geoms[0].Geometry.Rows
+
+	if err := mgr.ResizePaneAt(dividerRow, 10, 0.7); err != nil {
+		t.Fatalf("ResizePaneAt: %v", err)
 	}
 }
 
@@ -439,4 +485,36 @@ func TestPaneMethodBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pane method binding test: %v", err)
 	}
+}
+
+func newTestSession(t *testing.T, ctx context.Context) *parent.StringIOSession {
+	t.Helper()
+	sio := &dummyStringIO{doneCh: make(chan struct{})}
+	sess := parent.NewStringIOSession(sio)
+	sess.Start()
+	t.Cleanup(func() { _ = sess.Close() })
+	return sess
+}
+
+type dummyStringIO struct {
+	mu     sync.Mutex
+	doneCh chan struct{}
+	closed bool
+}
+
+func (d *dummyStringIO) Send(string) error { return nil }
+
+func (d *dummyStringIO) Receive() (string, error) {
+	<-d.doneCh
+	return "", io.EOF
+}
+
+func (d *dummyStringIO) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.closed {
+		d.closed = true
+		close(d.doneCh)
+	}
+	return nil
 }

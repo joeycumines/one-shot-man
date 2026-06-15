@@ -348,6 +348,14 @@ const (
 	// Payload: *resizePanePayload. Reply value: nil.
 	reqResizePane
 
+	// reqFocusAt asks the worker to focus the pane at the given coordinates.
+	// Payload: *focusAtPayload. Reply value: PaneID.
+	reqFocusAt
+
+	// reqResizePaneAt asks the worker to resize the pane adjacent to the
+	// divider at the given coordinates. Payload: *resizePaneAtPayload. Reply value: nil.
+	reqResizePaneAt
+
 	// reqPanes asks the worker to return the current pane list.
 	// Payload: nil. Reply value: []Pane.
 	reqPanes
@@ -614,6 +622,20 @@ type newPanePayload struct {
 // resizePanePayload carries the pane ID and ratio for a reqResizePane request.
 type resizePanePayload struct {
 	id    PaneID
+	ratio float64
+}
+
+// focusAtPayload carries the row and column for a reqFocusAt request.
+type focusAtPayload struct {
+	row int
+	col int
+}
+
+// resizePaneAtPayload carries the row, column, and ratio for a
+// reqResizePaneAt request.
+type resizePaneAtPayload struct {
+	row   int
+	col   int
 	ratio float64
 }
 
@@ -1119,6 +1141,24 @@ func (m *SessionManager) FocusNextPane(direction NavigationDirection) PaneID {
 	return m.paneMgr.FocusNext(direction)
 }
 
+// FocusAt focuses the pane at the given screen coordinates and updates the
+// active session to that pane's session. Returns the focused PaneID or an
+// error if no pane is at the coordinate.
+func (m *SessionManager) FocusAt(row, col int) (PaneID, error) {
+	resp := m.sendRequest(reqFocusAt, &focusAtPayload{row: row, col: col})
+	if resp.err != nil {
+		return 0, resp.err
+	}
+	return resp.value.(PaneID), nil
+}
+
+// ResizePaneAt resizes the pane adjacent to the divider at the given screen
+// coordinates and propagates the new geometry to the affected sessions.
+// Returns an error if no divider is at the coordinate.
+func (m *SessionManager) ResizePaneAt(row, col int, ratio float64) error {
+	return m.sendRequest(reqResizePaneAt, &resizePaneAtPayload{row: row, col: col, ratio: ratio}).err
+}
+
 // ActivePaneID returns the currently focused pane ID, or 0 if no panes exist.
 func (m *SessionManager) ActivePaneID() PaneID {
 	return m.paneMgr.ActivePaneID()
@@ -1455,6 +1495,9 @@ func (m *SessionManager) AddPaneToWindow(session InteractiveSession, target Sess
 
 func (m *SessionManager) NewChooser(active SessionID) *Chooser {
 	sessions := m.Sessions()
+	slices.SortFunc(sessions, func(a, b SessionInfo) int {
+		return cmp.Compare(a.ID, b.ID)
+	})
 	items := make([]ChooserItem, 0, len(sessions))
 	for i, s := range sessions {
 		items = append(items, ChooserItem{
@@ -1515,6 +1558,10 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleFocusPane(req.payload.(PaneID))
 	case reqResizePane:
 		resp = m.handleResizePane(req.payload.(*resizePanePayload))
+	case reqFocusAt:
+		resp = m.handleFocusAt(req.payload.(*focusAtPayload))
+	case reqResizePaneAt:
+		resp = m.handleResizePaneAt(req.payload.(*resizePaneAtPayload))
 	case reqPanes:
 		resp = m.handlePanes()
 	case reqFocusNextPane:
@@ -1899,6 +1946,43 @@ func (m *SessionManager) handleResizePane(p *resizePanePayload) response {
 		ms.vterm.Resize(pane.Geometry.Rows, pane.Geometry.Cols)
 		if err := ms.session.Resize(pane.Geometry.Rows, pane.Geometry.Cols); err != nil {
 			slog.Warn("session resize failed during pane resize", "sessionID", pane.SessionID, "error", err)
+		}
+	}
+
+	return response{}
+}
+
+func (m *SessionManager) handleFocusAt(p *focusAtPayload) response {
+	id, err := m.paneMgr.FocusAt(p.row, p.col)
+	if err != nil {
+		return response{err: err}
+	}
+
+	sessionID := m.paneMgr.activeSessionID()
+	if sessionID != 0 {
+		m.activeID = sessionID
+		if ms, ok := m.sessions[sessionID]; ok {
+			ms.lastActive = time.Now()
+		}
+	}
+
+	return response{value: id}
+}
+
+func (m *SessionManager) handleResizePaneAt(p *resizePaneAtPayload) response {
+	if err := m.paneMgr.ResizePaneAt(p.row, p.col, p.ratio); err != nil {
+		return response{err: err}
+	}
+
+	panes := m.paneMgr.Panes()
+	for _, pane := range panes {
+		ms, ok := m.sessions[pane.SessionID]
+		if !ok || ms.state == SessionClosed {
+			continue
+		}
+		ms.vterm.Resize(pane.Geometry.Rows, pane.Geometry.Cols)
+		if err := ms.session.Resize(pane.Geometry.Rows, pane.Geometry.Cols); err != nil {
+			slog.Warn("session resize failed during pane resize at coordinate", "sessionID", pane.SessionID, "error", err)
 		}
 	}
 

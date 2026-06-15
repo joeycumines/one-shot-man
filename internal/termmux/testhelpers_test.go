@@ -79,6 +79,7 @@ type controllableSession struct {
 	writeErr    error
 	resizeCalls []resizePayload
 	closeCalled atomic.Bool
+	closeOnce   sync.Once
 	doneCh      chan struct{}
 	readerCh    chan []byte
 }
@@ -111,12 +112,14 @@ func (s *controllableSession) Resize(rows, cols int) error {
 }
 
 func (s *controllableSession) Close() error {
-	s.closeCalled.Store(true)
-	select {
-	case <-s.doneCh:
-	default:
-		close(s.doneCh)
-	}
+	s.closeOnce.Do(func() {
+		s.closeCalled.Store(true)
+		select {
+		case <-s.doneCh:
+		default:
+			close(s.doneCh)
+		}
+	})
 	return nil
 }
 

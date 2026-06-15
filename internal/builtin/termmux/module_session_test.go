@@ -2,7 +2,10 @@ package termmux
 
 import (
 	"context"
+	"errors"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 
@@ -1718,5 +1721,316 @@ func TestSearchForwardBackwardBindings(t *testing.T) {
 	`)
 	if err != nil {
 		t.Fatalf("search binding test: %v", err)
+	}
+}
+
+type mockInteractiveSession struct {
+	done                           chan struct{}
+	readerCh                       chan []byte
+	writes                         []string
+	resizes                        [][2]int
+	writeErr, resizeErr, closeErr  error
+}
+
+func (m *mockInteractiveSession) Write(p []byte) (int, error) {
+	if m.writeErr != nil {
+		return 0, m.writeErr
+	}
+	m.writes = append(m.writes, string(p))
+	return len(p), nil
+}
+
+func (m *mockInteractiveSession) Resize(rows, cols int) error {
+	if m.resizeErr != nil {
+		return m.resizeErr
+	}
+	m.resizes = append(m.resizes, [2]int{rows, cols})
+	return nil
+}
+
+func (m *mockInteractiveSession) Close() error {
+	if m.closeErr != nil {
+		return m.closeErr
+	}
+	close(m.done)
+	return nil
+}
+
+func (m *mockInteractiveSession) Done() <-chan struct{} { return m.done }
+func (m *mockInteractiveSession) Reader() <-chan []byte { return m.readerCh }
+
+func TestWrapInteractiveSession_HappyPath(t *testing.T) {
+	runtime := goja.New()
+	sess := &mockInteractiveSession{
+		done:     make(chan struct{}),
+		readerCh: make(chan []byte, 2),
+	}
+	sess.readerCh <- []byte("alpha")
+	sess.readerCh <- []byte("beta")
+
+	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
+	_ = runtime.Set("s", wrapped)
+
+	_, err := runtime.RunString(`
+		s.resize(25, 100);
+		s.write("hello");
+		s.isDone();
+		var r1 = s.reader();
+		var r2 = s.readAvailable();
+	`)
+	if err != nil {
+		t.Fatalf("happy path: %v", err)
+	}
+
+	if len(sess.resizes) != 1 || sess.resizes[0][0] != 25 || sess.resizes[0][1] != 100 {
+		t.Errorf("resizes = %v", sess.resizes)
+	}
+	if len(sess.writes) != 1 || sess.writes[0] != "hello" {
+		t.Errorf("writes = %v", sess.writes)
+	}
+}
+
+func TestWrapInteractiveSession_Close(t *testing.T) {
+	runtime := goja.New()
+	sess := &mockInteractiveSession{done: make(chan struct{})}
+	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
+	_ = runtime.Set("s", wrapped)
+
+	_, err := runtime.RunString(`s.close()`)
+	if err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	select {
+	case <-sess.Done():
+	default:
+		t.Error("expected Done to be closed")
+	}
+}
+
+func TestWrapInteractiveSession_ResizeError(t *testing.T) {
+	runtime := goja.New()
+	sess := &mockInteractiveSession{resizeErr: errors.New("resize fail")}
+	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
+	_ = runtime.Set("s", wrapped)
+
+	_, err := runtime.RunString(`s.resize(10, 20)`)
+	if err == nil {
+		t.Error("expected error from resize failure")
+	}
+}
+
+func TestWrapInteractiveSession_WriteError(t *testing.T) {
+	runtime := goja.New()
+	sess := &mockInteractiveSession{writeErr: errors.New("write fail")}
+	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
+	_ = runtime.Set("s", wrapped)
+
+	_, err := runtime.RunString(`s.write("x")`)
+	if err == nil {
+		t.Error("expected error from write failure")
+	}
+}
+
+func TestWrapInteractiveSession_CloseError(t *testing.T) {
+	runtime := goja.New()
+	sess := &mockInteractiveSession{closeErr: errors.New("close fail")}
+	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
+	_ = runtime.Set("s", wrapped)
+
+	_, err := runtime.RunString(`s.close()`)
+	if err == nil {
+		t.Error("expected error from close failure")
+	}
+}
+
+func TestCopyModeSearchAdapter_SearchNil(t *testing.T) {
+	a := copyModeSearchAdapter{searchFn: func(string, int, int) map[string]any { return nil }}
+	if a.search("x", 0, 0, true) != nil {
+		t.Error("expected nil when searchFn returns nil")
+	}
+}
+
+func TestCopyModeSearchAdapter_SearchNotFound(t *testing.T) {
+	a := copyModeSearchAdapter{searchFn: func(string, int, int) map[string]any {
+		return map[string]any{"found": false}
+	}}
+	if a.search("x", 0, 0, true) != nil {
+		t.Error("expected nil when found=false")
+	}
+}
+
+func TestCopyModeSearchAdapter_SearchFound(t *testing.T) {
+	a := copyModeSearchAdapter{searchFn: func(string, int, int) map[string]any {
+		return map[string]any{"found": true, "row": 3, "col": 7}
+	}}
+	m := a.search("x", 0, 0, true)
+	if m == nil || m.Row != 3 || m.Col != 7 {
+		t.Errorf("match = %v, want row=3 col=7", m)
+	}
+}
+
+func TestCopyModeSearchAdapter_SearchMissingFields(t *testing.T) {
+	a := copyModeSearchAdapter{searchFn: func(string, int, int) map[string]any {
+		return map[string]any{"found": true}
+	}}
+	m := a.search("x", 0, 0, true)
+	if m == nil || m.Row != 0 || m.Col != 0 {
+		t.Errorf("match = %v, want zero values", m)
+	}
+}
+
+func TestSnapshotMethods(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	runtime, cleanup := setupMgr(t, true)
+	defer cleanup()
+
+	var rasterPath string
+	_ = runtime.Set("recordRasterPath", func(p string) { rasterPath = p })
+	_ = runtime.Set("removeFile", func(p string) error {
+		return os.Remove(p)
+	})
+
+	_, err := runtime.RunString(`
+		var ts = tuiMux.termSize();
+		var list = tuiMux.sessions();
+		var id = list[0].id;
+		var snap = tuiMux.snapshot(id);
+		var none = tuiMux.snapshot(999999);
+		var aid = tuiMux.activeID();
+		var done = tuiMux.isDone(id);
+		var missingDone = tuiMux.isDone(999999);
+		var dropped = tuiMux.eventsDropped();
+		var last = tuiMux.lastActivityMs(id);
+		var raster = tuiMux.renderRaster(id);
+		recordRasterPath(raster.path);
+		var raster2 = tuiMux.renderRaster(id, {cellW: 10, cellH: 20});
+		removeFile(raster2.path);
+		try { tuiMux.renderRaster(); } catch (e) {}
+		try { tuiMux.renderRaster(id, {cellW: 0}); } catch (e) {}
+		var nullRaster = tuiMux.renderRaster(999999);
+		var ok = typeof ts === 'object' &&
+			snap !== null &&
+			typeof aid === 'number' &&
+			typeof done === 'boolean' &&
+			typeof missingDone === 'boolean' &&
+			Array.isArray(list) &&
+			typeof dropped === 'number' &&
+			typeof last === 'number' &&
+			raster !== null &&
+			raster2 !== null &&
+			nullRaster === null;
+	`)
+	if err != nil {
+		t.Fatalf("snapshot methods: %v", err)
+	}
+	if rasterPath != "" {
+		_ = os.Remove(rasterPath)
+	}
+}
+
+func TestPersistenceMethods(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	runtime, cleanup := setupMgr(t, true)
+	defer cleanup()
+
+	path := t.TempDir() + "/state.json"
+	missingPath := t.TempDir() + "/missing.json"
+	_ = runtime.Set("statePath", path)
+	_ = runtime.Set("missingPath", missingPath)
+
+	_, err := runtime.RunString(`
+		var state = tuiMux.exportState();
+		tuiMux.saveState(statePath);
+		var loaded = tuiMux.loadState(statePath);
+		var alive = tuiMux.processAlive(0);
+		var restored = tuiMux.restoreState(loaded);
+		tuiMux.removeState(statePath);
+		try { tuiMux.saveState(''); } catch (e) {}
+		try { tuiMux.loadState(missingPath); } catch (e) {}
+		try { tuiMux.restoreState(null); } catch (e) {}
+		try { tuiMux.processAlive(); } catch (e) {}
+	`)
+	if err != nil {
+		t.Fatalf("persistence methods: %v", err)
+	}
+}
+
+func TestPersistedStateToJS(t *testing.T) {
+	state := &parent.PersistedManagerState{
+		Version:  "1",
+		ActiveID: 2,
+		TermRows: 24,
+		TermCols: 80,
+		SavedAt:  time.Now(),
+		Sessions: []parent.PersistedSession{{
+			SessionID:  7,
+			State:      parent.SessionRunning,
+			PID:        42,
+			Rows:       10,
+			Cols:       30,
+			Command:    "sh",
+			Args:       []string{"-c", "echo hi"},
+			Dir:        "/tmp",
+			Env:        map[string]string{"X": "y"},
+			LastActive: time.Now(),
+			Target: parent.SessionTarget{
+				ID:   "target-id",
+				Name: "target-name",
+				Kind: parent.SessionKindPTY,
+			},
+		}},
+	}
+
+	m := persistedStateToJS(state)
+	if m["version"] != state.Version || m["activeId"] != state.ActiveID {
+		t.Errorf("version/activeID mismatch: got %+v", m)
+	}
+	sessions := m["sessions"].([]any)
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %d, want 1", len(sessions))
+	}
+	s := sessions[0].(map[string]any)
+	if s["sessionId"] != state.Sessions[0].SessionID || s["command"] != "sh" {
+		t.Errorf("session mismatch: got %+v", s)
+	}
+	args := s["args"].([]string)
+	if len(args) != 2 || args[1] != "echo hi" {
+		t.Errorf("args = %v, want [-c echo hi]", args)
+	}
+	env := s["env"].(map[string]string)
+	if env["X"] != "y" {
+		t.Errorf("env = %v, want X=y", env)
+	}
+}
+
+func TestPrefixActionKindFromName(t *testing.T) {
+	cases := map[string]parent.PrefixActionKind{
+		"NewWindow":       parent.PrefixActionNewWindow,
+		"NextWindow":      parent.PrefixActionNextWindow,
+		"PrevWindow":      parent.PrefixActionPrevWindow,
+		"Detach":          parent.PrefixActionDetach,
+		"ZoomPane":        parent.PrefixActionZoomPane,
+		"ClosePane":       parent.PrefixActionClosePane,
+		"SplitHorizontal": parent.PrefixActionSplitHorizontal,
+		"SplitVertical":   parent.PrefixActionSplitVertical,
+		"CopyMode":        parent.PrefixActionCopyMode,
+		"ListKeys":        parent.PrefixActionListKeys,
+		"RenameWindow":    parent.PrefixActionRenameWindow,
+		"Cancel":          parent.PrefixActionCancel,
+	}
+	for name, want := range cases {
+		if got := prefixActionKindFromName(name); got != want {
+			t.Errorf("prefixActionKindFromName(%q) = %v, want %v", name, got, want)
+		}
+	}
+	if got := prefixActionKindFromName("NotARealAction"); got != parent.PrefixActionNone {
+		t.Errorf("prefixActionKindFromName(unknown) = %v, want None", got)
 	}
 }

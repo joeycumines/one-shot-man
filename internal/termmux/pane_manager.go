@@ -132,6 +132,45 @@ func (pm *paneManager) Resize(id PaneID, ratio float64) error {
 	return nil
 }
 
+func (pm *paneManager) paneSlice() []Pane {
+	panes := make([]Pane, 0, len(pm.paneOrder))
+	for _, pid := range pm.paneOrder {
+		panes = append(panes, Pane{ID: pid})
+	}
+	return panes
+}
+
+func (pm *paneManager) FocusAt(row, col int) (PaneID, error) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	id, ok := pm.engine.PaneAt(pm.paneSlice(), row, col)
+	if !ok {
+		return 0, fmt.Errorf("%w: no pane at row %d col %d", ErrPaneNotFound, row, col)
+	}
+
+	pm.activePaneID = id
+	if binding, ok := pm.panes[id]; ok {
+		binding.LastActive = time.Now()
+	}
+	return id, nil
+}
+
+func (pm *paneManager) ResizePaneAt(row, col int, ratio float64) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	id, ok := pm.engine.DividerAt(pm.paneSlice(), row, col)
+	if !ok {
+		return fmt.Errorf("%w: no divider at row %d col %d", ErrPaneNotFound, row, col)
+	}
+
+	if !pm.engine.Resize(id, ratio) {
+		return fmt.Errorf("%w: %d", ErrPaneNotFound, id)
+	}
+	return nil
+}
+
 // Panes returns a snapshot of all panes with their computed geometries.
 func (pm *paneManager) Panes() []Pane {
 	pm.mu.Lock()

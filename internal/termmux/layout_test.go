@@ -607,3 +607,100 @@ func TestLayoutEngine_PaneIDs(t *testing.T) {
 		t.Errorf("PaneIDs() = %v, expected to contain %d and %d", ids, p1, p2)
 	}
 }
+
+func TestLayoutEngine_PaneAt(t *testing.T) {
+	e := NewLayoutEngine(LayoutVertical, 80, 24)
+	p1 := e.Split(0, SplitDown)
+	p2 := e.Split(p1, SplitDown)
+	panes := []Pane{{ID: p1}, {ID: p2}}
+
+	if id, ok := e.PaneAt(panes, 5, 10); !ok || id != p1 {
+		t.Errorf("PaneAt(5,10) = %d,%v, want %d,true", id, ok, p1)
+	}
+	if id, ok := e.PaneAt(panes, 15, 10); !ok || id != p2 {
+		t.Errorf("PaneAt(15,10) = %d,%v, want %d,true", id, ok, p2)
+	}
+	if _, ok := e.PaneAt(panes, 50, 10); ok {
+		t.Error("PaneAt(50,10) should be outside")
+	}
+}
+
+func TestLayoutEngine_DividerAt_Vertical(t *testing.T) {
+	e := NewLayoutEngine(LayoutVertical, 80, 24)
+	p1 := e.Split(0, SplitDown)
+	p2 := e.Split(p1, SplitDown)
+	panes := []Pane{{ID: p1}, {ID: p2}}
+
+	geoms := e.Compute(panes)
+	dividerRow := geoms[0].Row + geoms[0].Rows
+
+	if id, ok := e.DividerAt(panes, dividerRow, 10); !ok || id != p2 {
+		t.Errorf("DividerAt(divider) = %d,%v, want %d,true", id, ok, p2)
+	}
+	if _, ok := e.DividerAt(panes, dividerRow+2, 10); ok {
+		t.Error("DividerAt(non-divider row) should fail")
+	}
+}
+
+func TestLayoutEngine_DividerAt_Horizontal(t *testing.T) {
+	e := NewLayoutEngine(LayoutHorizontal, 80, 24)
+	p1 := e.Split(0, SplitRight)
+	p2 := e.Split(p1, SplitRight)
+	panes := []Pane{{ID: p1}, {ID: p2}}
+
+	geoms := e.Compute(panes)
+	dividerCol := geoms[0].Col + geoms[0].Cols
+
+	if id, ok := e.DividerAt(panes, 5, dividerCol); !ok || id != p2 {
+		t.Errorf("DividerAt(divider) = %d,%v, want %d,true", id, ok, p2)
+	}
+	if _, ok := e.DividerAt(panes, 5, dividerCol+2); ok {
+		t.Error("DividerAt(non-divider col) should fail")
+	}
+}
+
+func TestLayoutEngine_DividerAt_Horizontal_OutsideContent(t *testing.T) {
+	e := NewLayoutEngine(LayoutHorizontal, 80, 24)
+	e.SetChromeRows(4)
+	p1 := e.Split(0, SplitRight)
+	p2 := e.Split(p1, SplitRight)
+	panes := []Pane{{ID: p1}, {ID: p2}}
+
+	geoms := e.Compute(panes)
+	contentH := max(e.height-e.chromeRows, 1)
+	dividerCol := geoms[0].Col + geoms[0].Cols
+
+	if id, ok := e.DividerAt(panes, 5, dividerCol); !ok || id != p2 {
+		t.Errorf("DividerAt(content area) = %d,%v, want %d,true", id, ok, p2)
+	}
+	if _, ok := e.DividerAt(panes, contentH, dividerCol); ok {
+		t.Error("DividerAt should not report a divider outside the content area")
+	}
+}
+
+func TestLayoutEngine_ResizeGeometry(t *testing.T) {
+	e := NewLayoutEngine(LayoutVertical, 80, 24)
+	p1 := e.Split(0, SplitDown)
+	p2 := e.Split(p1, SplitDown)
+	panes := []Pane{{ID: p1}, {ID: p2}}
+
+	before := e.Compute(panes)
+	if before[0].Rows != before[1].Rows {
+		t.Fatalf("expected equal initial heights, got %v", before)
+	}
+
+	e.Resize(p2, 0.7)
+	after := e.Compute(panes)
+	if after[1].Rows <= before[1].Rows {
+		t.Errorf("p2 height did not increase: before=%d after=%d", before[1].Rows, after[1].Rows)
+	}
+	if after[0].Rows >= before[0].Rows {
+		t.Errorf("p1 height did not decrease: before=%d after=%d", before[0].Rows, after[0].Rows)
+	}
+
+	e.Resize(p2, 0.05)
+	clamped := e.Compute(panes)
+	if clamped[1].Rows < 2 {
+		t.Errorf("p2 height %d below minimum", clamped[1].Rows)
+	}
+}

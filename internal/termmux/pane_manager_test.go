@@ -457,3 +457,79 @@ func TestPaneManager_AllocIDConsistentWithSplit(t *testing.T) {
 		t.Errorf("expected sequential IDs 1,2 got %d,%d", p1, p2)
 	}
 }
+
+func TestPaneManager_FocusAt(t *testing.T) {
+	pm := newPaneManager(LayoutVertical, 80, 24)
+	p1 := pm.engine.Split(0, SplitDown)
+	p2 := pm.engine.Split(p1, SplitDown)
+	pm.panes[p1] = &PaneBinding{PaneID: p1}
+	pm.panes[p2] = &PaneBinding{PaneID: p2}
+	pm.paneOrder = []PaneID{p1, p2}
+	pm.activePaneID = p1
+
+	id, err := pm.FocusAt(15, 10)
+	if err != nil || id != p2 {
+		t.Fatalf("FocusAt(15,10) = %d,%v, want %d,nil", id, err, p2)
+	}
+	if pm.activePaneID != p2 {
+		t.Errorf("active pane = %d, want %d", pm.activePaneID, p2)
+	}
+
+	if _, err := pm.FocusAt(100, 10); err == nil {
+		t.Error("FocusAt outside should error")
+	}
+}
+
+func TestPaneManager_ResizePaneAt(t *testing.T) {
+	pm := newPaneManager(LayoutVertical, 80, 24)
+	p1 := pm.engine.Split(0, SplitDown)
+	p2 := pm.engine.Split(p1, SplitDown)
+	pm.panes[p1] = &PaneBinding{PaneID: p1}
+	pm.panes[p2] = &PaneBinding{PaneID: p2}
+	pm.paneOrder = []PaneID{p1, p2}
+
+	geoms := pm.engine.Compute(pm.paneSlice())
+	dividerRow := geoms[0].Row + geoms[0].Rows
+
+	before := geoms[1].Rows
+	if err := pm.ResizePaneAt(dividerRow, 10, 0.7); err != nil {
+		t.Fatalf("ResizePaneAt: %v", err)
+	}
+	after := pm.engine.Compute(pm.paneSlice())
+	if after[1].Rows <= before {
+		t.Errorf("p2 height did not increase: before=%d after=%d", before, after[1].Rows)
+	}
+}
+
+func TestPaneManager_ResizePaneAtNotOnDivider(t *testing.T) {
+	pm := newPaneManager(LayoutVertical, 80, 24)
+	p1 := pm.engine.Split(0, SplitDown)
+	p2 := pm.engine.Split(p1, SplitDown)
+	pm.panes[p1] = &PaneBinding{PaneID: p1}
+	pm.panes[p2] = &PaneBinding{PaneID: p2}
+	pm.paneOrder = []PaneID{p1, p2}
+
+	if err := pm.ResizePaneAt(5, 10, 0.7); err == nil {
+		t.Error("ResizePaneAt not on divider should error")
+	}
+}
+
+func TestPaneManager_ResizePaneAtMinSize(t *testing.T) {
+	pm := newPaneManager(LayoutVertical, 80, 24)
+	p1 := pm.engine.Split(0, SplitDown)
+	p2 := pm.engine.Split(p1, SplitDown)
+	pm.panes[p1] = &PaneBinding{PaneID: p1}
+	pm.panes[p2] = &PaneBinding{PaneID: p2}
+	pm.paneOrder = []PaneID{p1, p2}
+
+	geoms := pm.engine.Compute(pm.paneSlice())
+	dividerRow := geoms[0].Row + geoms[0].Rows
+
+	if err := pm.ResizePaneAt(dividerRow, 10, 0.05); err != nil {
+		t.Fatalf("ResizePaneAt: %v", err)
+	}
+	after := pm.engine.Compute(pm.paneSlice())
+	if after[1].Rows < 2 {
+		t.Errorf("p2 height %d below minimum", after[1].Rows)
+	}
+}

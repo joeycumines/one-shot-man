@@ -36,8 +36,6 @@ func enableMouseForward(runtime *goja.Runtime, call goja.FunctionCall) goja.Valu
 
 	paneXFn := cfg.Get("paneX")
 	paneYFn := cfg.Get("paneY")
-	_ = cfg.Get("paneW")
-	_ = cfg.Get("paneH")
 
 	borderWidth := 1
 	if v := cfg.Get("borderWidth"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {

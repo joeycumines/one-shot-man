@@ -209,3 +209,55 @@ func TestControlRouter_MultipleKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestControlRouter_HandleKeyNoArgs(t *testing.T) {
+	runtime := setupControlRouter(t)
+
+	v, err := runtime.RunString(`router.handleKey().handled`)
+	if err != nil {
+		t.Fatalf("handleKey no args: %v", err)
+	}
+	if v.ToBoolean() {
+		t.Error("expected handled=false when no key provided")
+	}
+}
+
+func TestControlRouter_HandleChordNoArgs(t *testing.T) {
+	runtime := setupControlRouter(t)
+
+	v, err := runtime.RunString(`router.handleChord().handled`)
+	if err != nil {
+		t.Fatalf("handleChord no args: %v", err)
+	}
+	if v.ToBoolean() {
+		t.Error("expected handled=false when no chord key provided")
+	}
+}
+
+func TestControlRouter_HandleChordNotInChord(t *testing.T) {
+	runtime := setupControlRouter(t)
+
+	v, err := runtime.RunString(`router.handleChord('s').handled`)
+	if err != nil {
+		t.Fatalf("handleChord not in chord: %v", err)
+	}
+	if v.ToBoolean() {
+		t.Error("expected handled=false when not in chord")
+	}
+}
+
+func TestControlRouter_ChordModePrefixOnly(t *testing.T) {
+	runtime, exp := testRequire(t)
+	_ = runtime.Set("exports", exp)
+
+	v, err := runtime.RunString(`
+		var router = exports.newControlRouter({ chordMode: { prefix: 'ctrl+x' } });
+		router.handleKey('ctrl+x').handled;
+	`)
+	if err != nil {
+		t.Fatalf("chord prefix only: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Error("expected handled=true for chord prefix even without actions")
+	}
+}

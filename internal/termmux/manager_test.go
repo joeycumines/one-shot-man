@@ -193,10 +193,8 @@ func TestScreenSnapshot_ConcurrentReadSafe(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Writer goroutine (simulates the worker).
-	wg.Add(writers)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < iterations; i++ {
+	wg.Go(func() {
+		for i := range iterations {
 			snap := &ScreenSnapshot{
 				Gen:        uint64(i),
 				PlainText:  "hello",
@@ -208,14 +206,14 @@ func TestScreenSnapshot_ConcurrentReadSafe(t *testing.T) {
 			}
 			ms.snapshot.Store(snap)
 		}
-	}()
+	})
 
 	// Reader goroutines (simulate TUI, JS shim, etc.).
 	wg.Add(readers)
-	for r := 0; r < readers; r++ {
+	for range readers {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < iterations; i++ {
+			for range iterations {
 				snap := ms.snapshot.Load()
 				if snap == nil {
 					continue
@@ -701,8 +699,7 @@ func TestSessionManager_RegisterViaWorker(t *testing.T) {
 
 	m := NewSessionManager(WithTermSize(30, 120))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// Start the worker in a goroutine.
 	errCh := make(chan error, 1)
@@ -1072,8 +1069,7 @@ func TestSessionManager_Close_ClosesAllSessions(t *testing.T) {
 	t.Parallel()
 
 	m := NewSessionManager()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -1442,8 +1438,7 @@ func TestSessionManager_MethodsAfterClose(t *testing.T) {
 	t.Parallel()
 
 	m := NewSessionManager()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	errCh := make(chan error, 1)
 	go func() { errCh <- m.Run(ctx) }()
 	<-m.Started()
@@ -1505,8 +1500,7 @@ func TestSessionManager_CloseIdempotent(t *testing.T) {
 	t.Parallel()
 
 	m := NewSessionManager()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	errCh := make(chan error, 1)
 	go func() { errCh <- m.Run(ctx) }()
 	<-m.Started()
@@ -1711,7 +1705,7 @@ func TestSessionManager_Pipeline_SnapshotGenIncreases(t *testing.T) {
 	initialGen := initialSnap.Gen
 
 	// Send multiple outputs.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		session.readerCh <- []byte("x")
 	}
 	time.Sleep(200 * time.Millisecond)
@@ -1828,8 +1822,7 @@ func TestSessionManager_Pipeline_ShutdownStopsReaders(t *testing.T) {
 	t.Parallel()
 
 	m := NewSessionManager()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- m.Run(ctx) }()
@@ -2016,9 +2009,7 @@ func FuzzSessionRouter(f *testing.F) {
 			}
 			chunk := data[start:end]
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for _, b := range chunk {
 					op := b % 10
 					switch op {
@@ -2096,7 +2087,7 @@ func FuzzSessionRouter(f *testing.F) {
 						}
 					}
 				}
-			}()
+			})
 		}
 
 		wg.Wait()

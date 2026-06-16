@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -448,9 +449,7 @@ func (cs *CaptureSession) ExportConfig() CaptureConfig {
 	}
 	if cs.cfg.Env != nil {
 		cfg.Env = make(map[string]string, len(cs.cfg.Env))
-		for k, v := range cs.cfg.Env {
-			cfg.Env[k] = v
-		}
+		maps.Copy(cfg.Env, cs.cfg.Env)
 	}
 	return cfg
 }

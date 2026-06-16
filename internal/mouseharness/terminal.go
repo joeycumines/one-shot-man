@@ -151,10 +151,9 @@ func parseTerminalBuffer(buffer string) []string {
 								col = v
 							}
 						}
-						cursorCol = col - 1 // Convert to 0-indexed
-						if cursorCol < 0 {
-							cursorCol = 0
-						}
+						cursorCol = max(
+							// Convert to 0-indexed
+							col-1, 0)
 					case 'd': // Vertical Line Position Absolute (VPA)
 						row := 1
 						if params.String() != "" {
@@ -162,10 +161,9 @@ func parseTerminalBuffer(buffer string) []string {
 								row = v
 							}
 						}
-						cursorRow = row - 1 // Convert to 0-indexed
-						if cursorRow < 0 {
-							cursorRow = 0
-						}
+						cursorRow = max(
+							// Convert to 0-indexed
+							row-1, 0)
 					case 'X': // Erase Characters (ECH)
 						n := 1
 						if params.String() != "" {

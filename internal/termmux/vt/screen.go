@@ -207,10 +207,7 @@ func (s *Screen) EraseDisplay(mode int) {
 		for r := 0; r < s.CurRow; r++ {
 			s.Cells[r] = makeAttrLine(s.Cols, s.CurAttr)
 		}
-		end := s.CurCol + 1
-		if end > s.Cols {
-			end = s.Cols
-		}
+		end := min(s.CurCol+1, s.Cols)
 		s.repairWideBoundary(s.CurRow, 0, end)
 		for c := 0; c < end; c++ {
 			s.Cells[s.CurRow][c] = blank
@@ -236,10 +233,7 @@ func (s *Screen) EraseLine(mode int) {
 			s.Cells[s.CurRow][c] = blank
 		}
 	case 1:
-		end := s.CurCol + 1
-		if end > s.Cols {
-			end = s.Cols
-		}
+		end := min(s.CurCol+1, s.Cols)
 		s.repairWideBoundary(s.CurRow, 0, end)
 		for c := 0; c < end; c++ {
 			s.Cells[s.CurRow][c] = blank
@@ -332,10 +326,7 @@ func (s *Screen) PutChar(ch rune) {
 	}
 
 	// Repair wide-char pairs that this write would split.
-	end := s.CurCol + width
-	if end > s.Cols {
-		end = s.Cols
-	}
+	end := min(s.CurCol+width, s.Cols)
 	s.repairWideBoundary(s.CurRow, s.CurCol, end)
 
 	// Write the character.
@@ -381,10 +372,7 @@ func (s *Screen) EraseChars(n int) {
 	if s.CurRow < 0 || s.CurRow >= s.Rows || n <= 0 {
 		return
 	}
-	end := s.CurCol + n
-	if end > s.Cols {
-		end = s.Cols
-	}
+	end := min(s.CurCol+n, s.Cols)
 	s.repairWideBoundary(s.CurRow, s.CurCol, end)
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
 	for i := s.CurCol; i < end; i++ {

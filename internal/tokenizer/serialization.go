@@ -410,7 +410,7 @@ func (l *LowercaseNormalizer) Normalize(ns *NormalizedString) error {
 		end := ns.alignments[pos+size-1][1]
 
 		newNormalized.WriteString(lower)
-		for i := 0; i < lowerLen; i++ {
+		for range lowerLen {
 			newAlignments = append(newAlignments, [2]int{start, end})
 		}
 		pos += size
@@ -529,8 +529,8 @@ func loadPostProcessor(data []byte) (PostProcessor, error) {
 	switch typeOnly.Type {
 	case "BertProcessing":
 		var b struct {
-			Sep [2]interface{} `json:"sep"`
-			Cls [2]interface{} `json:"cls"`
+			Sep [2]any `json:"sep"`
+			Cls [2]any `json:"cls"`
 		}
 		if err := json.Unmarshal(data, &b); err != nil {
 			return nil, err
@@ -546,10 +546,10 @@ func loadPostProcessor(data []byte) (PostProcessor, error) {
 		return &BertPostProcessor{Sep: sep, Cls: cls}, nil
 	case "RobertaProcessing":
 		var b struct {
-			Sep            [2]interface{} `json:"sep"`
-			Cls            [2]interface{} `json:"cls"`
-			TrimOffsets    bool           `json:"trim_offsets"`
-			AddPrefixSpace bool           `json:"add_prefix_space"`
+			Sep            [2]any `json:"sep"`
+			Cls            [2]any `json:"cls"`
+			TrimOffsets    bool   `json:"trim_offsets"`
+			AddPrefixSpace bool   `json:"add_prefix_space"`
 		}
 		if err := json.Unmarshal(data, &b); err != nil {
 			return nil, err
@@ -645,7 +645,7 @@ func loadPostProcessor(data []byte) (PostProcessor, error) {
 	return nil, fmt.Errorf("unknown post_processor type: %q", typeOnly.Type)
 }
 
-func parseSpecialToken(v [2]interface{}) (SpecialToken, error) {
+func parseSpecialToken(v [2]any) (SpecialToken, error) {
 	token, ok1 := v[0].(string)
 	var id uint32
 	switch idv := v[1].(type) {
@@ -850,12 +850,12 @@ func parseTemplateStringPiece(s string) (TemplatePiece, error) {
 
 	tokID := s
 	typeID := uint32(0)
-	if colonIdx := strings.IndexByte(s, ':'); colonIdx >= 0 {
-		tid, err := parseUint32(s[colonIdx+1:])
+	if before, after, ok := strings.Cut(s, ":"); ok {
+		tid, err := parseUint32(after)
 		if err == nil {
 			typeID = tid
 		}
-		tokID = s[:colonIdx]
+		tokID = before
 	}
 	return TemplatePiece{
 		PieceType: TemplateSpecialToken,
@@ -901,12 +901,12 @@ func parseTemplateStringPieces(pieces []string) ([]TemplatePiece, error) {
 		} else {
 			tokID := s
 			typeID := uint32(0)
-			if colonIdx := strings.IndexByte(s, ':'); colonIdx >= 0 {
-				tid, err := parseUint32(s[colonIdx+1:])
+			if before, after, ok := strings.Cut(s, ":"); ok {
+				tid, err := parseUint32(after)
 				if err == nil {
 					typeID = tid
 				}
-				tokID = s[:colonIdx]
+				tokID = before
 			}
 			result = append(result, TemplatePiece{
 				PieceType: TemplateSpecialToken,
@@ -1162,19 +1162,19 @@ func buildWordLevelFromRaw(raw modelRaw) (Model, error) {
 func buildUnigramFromJSON(data []byte) (Model, error) {
 	// Try to parse as the HF format first (vocab is an array of [token, score] pairs)
 	var unigramHF struct {
-		Type                    string          `json:"type"`
-		Vocab                   [][]interface{} `json:"vocab"`
-		UnkToken                *string         `json:"unk_token"`
-		ContinuingSubwordPrefix *string         `json:"continuing_subword_prefix"`
-		EndOfWordSuffix         *string         `json:"end_of_word_suffix"`
-		FuseUnk                 *bool           `json:"fuse_unk"`
-		ByteFallback            *bool           `json:"byte_fallback"`
-		IgnoreMerges            *bool           `json:"ignore_merges"`
-		Dropout                 *float64        `json:"dropout"`
-		MaxInputCharsPerWord    *int            `json:"max_input_chars_per_word"`
-		UnkID                   *int            `json:"unk_id"`
-		Alpha                   *float64        `json:"alpha"`
-		NbestSize               *int            `json:"nbest_size"`
+		Type                    string   `json:"type"`
+		Vocab                   [][]any  `json:"vocab"`
+		UnkToken                *string  `json:"unk_token"`
+		ContinuingSubwordPrefix *string  `json:"continuing_subword_prefix"`
+		EndOfWordSuffix         *string  `json:"end_of_word_suffix"`
+		FuseUnk                 *bool    `json:"fuse_unk"`
+		ByteFallback            *bool    `json:"byte_fallback"`
+		IgnoreMerges            *bool    `json:"ignore_merges"`
+		Dropout                 *float64 `json:"dropout"`
+		MaxInputCharsPerWord    *int     `json:"max_input_chars_per_word"`
+		UnkID                   *int     `json:"unk_id"`
+		Alpha                   *float64 `json:"alpha"`
+		NbestSize               *int     `json:"nbest_size"`
 	}
 
 	if err := json.Unmarshal(data, &unigramHF); err == nil && len(unigramHF.Vocab) > 0 {
@@ -1196,7 +1196,7 @@ func buildUnigramFromJSON(data []byte) (Model, error) {
 // isHfUnigramVocab checks if the vocab data appears to be in the HF
 // [[token, score], ...] format by verifying the first entry is a
 // 2-element array with a string as the first element.
-func isHfUnigramVocab(vocab [][]interface{}) bool {
+func isHfUnigramVocab(vocab [][]any) bool {
 	if len(vocab) == 0 {
 		return false
 	}
@@ -1211,19 +1211,19 @@ func isHfUnigramVocab(vocab [][]interface{}) bool {
 // buildUnigramFromHF constructs a Unigram model from the HuggingFace
 // [[token, score], ...] vocab format. IDs are implicitly 0-indexed.
 func buildUnigramFromHF(raw struct {
-	Type                    string          `json:"type"`
-	Vocab                   [][]interface{} `json:"vocab"`
-	UnkToken                *string         `json:"unk_token"`
-	ContinuingSubwordPrefix *string         `json:"continuing_subword_prefix"`
-	EndOfWordSuffix         *string         `json:"end_of_word_suffix"`
-	FuseUnk                 *bool           `json:"fuse_unk"`
-	ByteFallback            *bool           `json:"byte_fallback"`
-	IgnoreMerges            *bool           `json:"ignore_merges"`
-	Dropout                 *float64        `json:"dropout"`
-	MaxInputCharsPerWord    *int            `json:"max_input_chars_per_word"`
-	UnkID                   *int            `json:"unk_id"`
-	Alpha                   *float64        `json:"alpha"`
-	NbestSize               *int            `json:"nbest_size"`
+	Type                    string   `json:"type"`
+	Vocab                   [][]any  `json:"vocab"`
+	UnkToken                *string  `json:"unk_token"`
+	ContinuingSubwordPrefix *string  `json:"continuing_subword_prefix"`
+	EndOfWordSuffix         *string  `json:"end_of_word_suffix"`
+	FuseUnk                 *bool    `json:"fuse_unk"`
+	ByteFallback            *bool    `json:"byte_fallback"`
+	IgnoreMerges            *bool    `json:"ignore_merges"`
+	Dropout                 *float64 `json:"dropout"`
+	MaxInputCharsPerWord    *int     `json:"max_input_chars_per_word"`
+	UnkID                   *int     `json:"unk_id"`
+	Alpha                   *float64 `json:"alpha"`
+	NbestSize               *int     `json:"nbest_size"`
 }) (Model, error) {
 	entries := make([]unigramEntry, 0, len(raw.Vocab))
 	for i, pair := range raw.Vocab {
@@ -1288,7 +1288,7 @@ func buildUnigramFromFlat(raw modelRaw) (Model, error) {
 
 	// The vocab is stored as {token: id}. Unigram needs entries ordered by ID.
 	// IDs are assumed to be 0..n-1 contiguous.
-	for i := 0; i < vocabSize; i++ {
+	for i := range vocabSize {
 		token, ok := idToToken[uint32(i)]
 		if !ok {
 			return nil, fmt.Errorf("unigram vocab has hole at ID %d", i)

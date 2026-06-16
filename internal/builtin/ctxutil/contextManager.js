@@ -104,6 +104,49 @@
         }
         const noSnippetWarning = !!options.noSnippetWarning;
 
+        function _parseDecimalInteger(arg) {
+            const s = String(arg).trim();
+            if (!/^[+-]?\d+$/.test(s)) {
+                return NaN;
+            }
+            return parseInt(s, 10);
+        }
+
+        function _missingPathMessage(message) {
+            return message.indexOf('path not found') !== -1 || message.indexOf('no such file') !== -1;
+        }
+
+        function _removeErrorMessage(value) {
+            return (value && value.message) ? value.message : ("" + value);
+        }
+
+        function _canRemoveFileItem(it) {
+            if (it.type !== 'file' || !it.label) {
+                return true;
+            }
+            try {
+                const err = context.removePath(it.label);
+                if (!err) {
+                    return true;
+                }
+                const msg = _removeErrorMessage(err);
+                if (_missingPathMessage(msg)) {
+                    output.print("Info: file not present, removing from session state: " + it.label);
+                    return true;
+                }
+                output.print("Error: " + msg);
+                return false;
+            } catch (e) {
+                const msg = _removeErrorMessage(e);
+                if (_missingPathMessage(msg)) {
+                    output.print("Info: file not present, removing from session state: " + it.label);
+                    return true;
+                }
+                output.print("Error: " + msg);
+                return false;
+            }
+        }
+
         // Build standard commands
         function buildCommands() {
             var cmds = {
@@ -236,7 +279,7 @@
                             output.print("Usage: edit <id>");
                             return;
                         }
-                        const id = parseInt(args[0], 10);
+                        const id = _parseDecimalInteger(args[0]);
                         if (isNaN(id)) {
                             output.print("Invalid id: " + args[0]);
                             return;
@@ -281,49 +324,56 @@
                     }
                 },
                 remove: {
-                    description: "Remove a context item by id",
-                    usage: "remove <id>",
+                    description: "Remove context items by id",
+                    usage: "remove <id> [id ...]",
                     handler: function (args) {
-                        if (args.length < 1) {
-                            output.print("Usage: remove <id>");
+                        if (!args || args.length < 1) {
+                            output.print("Usage: remove <id> [id ...]");
                             return;
                         }
-                        const id = parseInt(args[0], 10);
+
+                        // Removal is best-effort and per-item. A failed file-path removal only
+                        // skips that item; successes collected so far are still committed to the
+                        // persisted list. This mirrors the pre-multi-id contract and avoids
+                        // leaving dangling items whose files were already removed.
                         const list = getItems();
-                        const idx = list.findIndex(x => x.id === id);
-                        if (idx === -1) {
-                            output.print("Not found: " + id);
+                        const removeIndices = [];
+                        const seen = new Set();
+                        for (const arg of args) {
+                            const id = _parseDecimalInteger(arg);
+                            if (isNaN(id)) {
+                                output.print("Invalid id: " + arg);
+                                continue;
+                            }
+                            if (seen.has(id)) {
+                                continue;
+                            }
+                            seen.add(id);
+
+                            const idx = list.findIndex(x => x.id === id);
+                            if (idx === -1) {
+                                output.print("Not found: " + id);
+                                continue;
+                            }
+
+                            const it = list[idx];
+                            if (!_canRemoveFileItem(it)) {
+                                continue;
+                            }
+
+                            removeIndices.push(idx);
+                            output.print("Removed [" + id + "]");
+                        }
+
+                        if (removeIndices.length === 0) {
                             return;
                         }
-                        const it = list[idx];
-                        if (it.type === 'file' && it.label) {
-                            try {
-                                const err = context.removePath(it.label);
-                                if (err) {
-                                    const msg = (err && err.message) ? err.message : ("" + err);
-                                    // If the underlying remove failed due to the path being absent,
-                                    // treat this as non-fatal: allow the item to be removed from
-                                    // the persisted list so users can tidy up stale references.
-                                    if (msg.indexOf('path not found') !== -1 || msg.indexOf('no such file') !== -1) {
-                                        output.print("Info: file not present, removing from session state: " + it.label);
-                                    } else {
-                                        output.print("Error: " + msg);
-                                        return;
-                                    }
-                                }
-                            } catch (e) {
-                                const msg = (e && e.message) ? e.message : ("" + e);
-                                if (msg.indexOf('path not found') !== -1 || msg.indexOf('no such file') !== -1) {
-                                    output.print("Info: file not present, removing from session state: " + it.label);
-                                } else {
-                                    output.print("Error: " + e);
-                                    return;
-                                }
-                            }
+
+                        const next = list.slice();
+                        for (const idx of removeIndices.sort((a, b) => b - a)) {
+                            next.splice(idx, 1);
                         }
-                        list.splice(idx, 1);
-                        setItems(list);
-                        output.print("Removed [" + id + "]");
+                        setItems(next);
                     }
                 },
                 show: {
@@ -345,7 +395,7 @@
                             const byteCnt = _byteCount(text);
                             const byteStr = _fmt.formatBytes(byteCnt);
                             output.print(
-                                "Copied \u2502 " + _fmt.formatNum(tokCnt) + " tokens \u00b7 " +
+                                "Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tokCnt) + " tokens \u00b7 " +
                                 lineCnt + " lines \u00b7 " + byteStr + " \u2502"
                             );
                             if (postCopyHint) {

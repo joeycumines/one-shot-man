@@ -249,7 +249,7 @@ func TestBPETokenizeWithAndWithoutDropout(t *testing.T) {
 	}
 
 	// Dropout = 0.0 (same as none)
-	bpe.dropout = ptr(0.0)
+	bpe.dropout = new(0.0)
 	tokens, err = bpe.Tokenize("unrelated")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -259,7 +259,7 @@ func TestBPETokenizeWithAndWithoutDropout(t *testing.T) {
 	}
 
 	// Dropout = 1.0 -> no merges at all, just individual chars
-	bpe.dropout = ptr(1.0)
+	bpe.dropout = new(1.0)
 	tokens, err = bpe.Tokenize("unrelated")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -275,7 +275,7 @@ func TestBPETokenizeWithAndWithoutDropout(t *testing.T) {
 	}
 
 	// Dropout = 0.5 -> result should be between 1 and 9 tokens
-	bpe.dropout = ptr(0.5)
+	bpe.dropout = new(0.5)
 	tokens, err = bpe.Tokenize("unrelated")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -285,8 +285,9 @@ func TestBPETokenizeWithAndWithoutDropout(t *testing.T) {
 	}
 }
 
+//go:fix inline
 func ptr[T any](v T) *T {
-	return &v
+	return new(v)
 }
 
 func TestBPEWithDropout0(t *testing.T) {

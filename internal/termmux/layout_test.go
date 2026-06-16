@@ -91,14 +91,8 @@ func TestSplitLayout_MatchesPrSplitOriginal(t *testing.T) {
 
 		// The original JS: vpHeight = max(3, h - 8); wizardH = max(3, floor(vpHeight * ratio))
 		// wizardH = min(wizardH, vpHeight - 3 - 1); offset = { row: 5 + wizardH, col: 1 }
-		vpHeight := tt.height - 8
-		if vpHeight < 3 {
-			vpHeight = 3
-		}
-		wizardH := int(float64(vpHeight) * tt.ratio)
-		if wizardH < 3 {
-			wizardH = 3
-		}
+		vpHeight := max(tt.height-8, 3)
+		wizardH := max(int(float64(vpHeight)*tt.ratio), 3)
 		maxWiz := vpHeight - 3 - 1
 		if wizardH > maxWiz {
 			wizardH = maxWiz

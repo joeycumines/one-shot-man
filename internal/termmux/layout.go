@@ -70,40 +70,22 @@ type SplitLayout struct {
 // dimensions and the top pane's share of the available viewport height
 // (0.0–1.0). The ratio controls the split between the two panes.
 func (l SplitLayout) Compute(totalRows, totalCols int, topRatio float64) (top, bottom PaneGeometry) {
-	minPane := l.MinPaneRows
-	if minPane < 1 {
-		minPane = 1
-	}
+	minPane := max(l.MinPaneRows, 1)
 
 	// Available height for both panes + divider.
-	viewport := totalRows - l.TotalChromeRows
-	if viewport < minPane {
-		viewport = minPane
-	}
+	viewport := max(totalRows-l.TotalChromeRows, minPane)
 
 	// Top pane height (content).
-	topH := int(float64(viewport) * topRatio)
-	if topH < minPane {
-		topH = minPane
-	}
-	maxTop := viewport - l.DividerRows - minPane
-	if maxTop < minPane {
-		maxTop = minPane
-	}
+	topH := max(int(float64(viewport)*topRatio), minPane)
+	maxTop := max(viewport-l.DividerRows-minPane, minPane)
 	if topH > maxTop {
 		topH = maxTop
 	}
 
 	// Bottom pane content height.
-	bottomContentH := viewport - topH - l.DividerRows
-	if bottomContentH < 1 {
-		bottomContentH = 1
-	}
+	bottomContentH := max(viewport-topH-l.DividerRows, 1)
 
-	contentCols := totalCols - l.LeftChromeCol
-	if contentCols < 1 {
-		contentCols = 1
-	}
+	contentCols := max(totalCols-l.LeftChromeCol, 1)
 
 	top = PaneGeometry{
 		Row:  l.TopPaneHeaderRows,

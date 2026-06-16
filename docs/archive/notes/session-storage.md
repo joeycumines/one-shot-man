@@ -1203,7 +1203,7 @@ Built-in goals provide pre-configured modes for common development tasks. Each g
   - `note [text]`: Adds notes to `contextItems` for additional context
   - `list`: Displays current `contextItems` without modification
   - `edit <id>`: Modifies existing items in `contextItems`
-  - `remove <id>`: Removes items from `contextItems`
+  - `remove <id> [id ...]`: Removes items from `contextItems`
   - `show`: Displays current `contextItems` without modification
   - `copy`: Copies current `contextItems` to clipboard without modification
   - `run [file...]`: Adds files to `contextItems` and displays the analysis prompt
@@ -1221,7 +1221,7 @@ Built-in goals provide pre-configured modes for common development tasks. Each g
   - `note [text]`: Adds notes to `contextItems`
   - `list`: Displays current `contextItems`
   - `edit <id>`: Modifies items in `contextItems`
-  - `remove <id>`: Removes items from `contextItems`
+  - `remove <id> [id ...]`: Removes items from `contextItems`
   - `show`: Displays current `contextItems`
   - `copy`: Copies current `contextItems` to clipboard
   - `type <type>`: Sets `type` to specified value
@@ -1240,7 +1240,7 @@ Built-in goals provide pre-configured modes for common development tasks. Each g
   - `note [text]`: Adds notes to `contextItems`
   - `list`: Displays current `contextItems`
   - `edit <id>`: Modifies items in `contextItems`
-  - `remove <id>`: Removes items from `contextItems`
+  - `remove <id> [id ...]`: Removes items from `contextItems`
   - `show`: Displays current `contextItems`
   - `copy`: Copies current `contextItems` to clipboard
   - `type <type>`: Sets `type` to specified value
@@ -1259,7 +1259,7 @@ Built-in goals provide pre-configured modes for common development tasks. Each g
   - `note [text]`: Adds notes to `contextItems`
   - `list`: Displays current `contextItems`
   - `edit <id>`: Modifies items in `contextItems`
-  - `remove <id>`: Removes items from `contextItems`
+  - `remove <id> [id ...]`: Removes items from `contextItems`
   - `show`: Displays current `contextItems`
   - `copy`: Copies current `contextItems` to clipboard
   - `run [args...]`: Adds git diff to `contextItems` and displays the prompt
@@ -1283,7 +1283,7 @@ Built-in goals provide pre-configured modes for common development tasks. Each g
   - `note [text]`: Adds notes to `contextItems`
   - `list`: Displays current state including `phase`, `goal`, and `contextItems`
   - `edit <target>`: Edits `goal`, `template`, `meta`, `prompt`, or context items
-  - `remove <id>`: Removes items from `contextItems`
+  - `remove <id> [id ...]`: Removes items from `contextItems`
   - `template [edit]`: Modifies `template`
   - `generate`: Generates `metaPrompt` from `goal` and `contextItems`, sets `phase` to `META_GENERATED`
   - `use [text]`: Sets `taskPrompt` and advances `phase` to `TASK_PROMPT_SET`
@@ -1303,7 +1303,7 @@ Built-in goals provide pre-configured modes for common development tasks. Each g
   - `note [text|--goals]`: Adds notes to `contextItems` or pre-written goal-based notes
   - `list`: Displays current `contextItems`
   - `edit <id>`: Modifies items in `contextItems`
-  - `remove <id>`: Removes items from `contextItems`
+  - `remove <id> [id ...]`: Removes items from `contextItems`
   - `show`: Displays the generated code review prompt
   - `copy`: Copies the code review prompt to clipboard
 

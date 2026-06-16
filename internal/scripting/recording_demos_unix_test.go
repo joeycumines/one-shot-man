@@ -317,7 +317,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 	if err := recorder.SendKey("c"); err != nil {
 		t.Fatalf("Failed to send key: %v", err)
 	}
-	expect(snap, "Copied prompt", 5*time.Second)
+	expect(snap, "Prompt copied to clipboard", 5*time.Second)
 	recorder.RecordSleep(600 * time.Millisecond)
 
 	// Quit the application
@@ -482,7 +482,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 	if err := recorder.SendKey("\r"); err != nil {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
-	expect(snap, "Copied", 5*time.Second)
+	expect(snap, "Prompt copied to clipboard", 5*time.Second)
 	recorder.RecordSleep(400 * time.Millisecond)
 
 	// Exit the osm shell

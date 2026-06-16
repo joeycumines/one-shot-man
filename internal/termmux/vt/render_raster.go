@@ -64,18 +64,18 @@ func getColor256(idx int) rgba {
 func initColor256() {
 	t := color256Table
 	// 0-15: standard colors.
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		t[i] = standardColors[i]
 	}
 	// 16-231: 6x6x6 color cube.
-	for i := 0; i < 216; i++ {
+	for i := range 216 {
 		r := colorCubeScale(i / 36)
 		g := colorCubeScale((i / 6) % 6)
 		b := colorCubeScale(i % 6)
 		t[16+i] = rgba{R: r, G: g, B: b, A: 255}
 	}
 	// 232-255: grayscale ramp from near-black to near-white.
-	for i := 0; i < 24; i++ {
+	for i := range 24 {
 		v := uint8(8 + i*10)
 		t[232+i] = rgba{R: v, G: v, B: v, A: 255}
 	}

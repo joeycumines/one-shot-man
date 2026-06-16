@@ -2095,6 +2095,8 @@ func TestContextManagerRemoveEdgeCases(t *testing.T) {
 		ctxmgr.commands.remove.handler(["1"]);
 		globalThis.__errorOutput = outputCalls.slice();
 		globalThis.__itemsAfterError = items.length;
+		globalThis.__removeUsage = ctxmgr.commands.remove.usage;
+		globalThis.__removeDescription = ctxmgr.commands.remove.description;
 		outputCalls.length = 0;
 	`
 
@@ -2103,8 +2105,14 @@ func TestContextManagerRemoveEdgeCases(t *testing.T) {
 	}
 
 	noArgs := runtime.Get("__noArgsOutput").Export().([]any)
-	if len(noArgs) != 1 || !strings.Contains(noArgs[0].(string), "Usage: remove") {
-		t.Errorf("expected usage message, got %v", noArgs)
+	if len(noArgs) != 1 || noArgs[0].(string) != "Usage: remove <id> [id ...]" {
+		t.Errorf("expected exact usage message, got %v", noArgs)
+	}
+	if got := runtime.Get("__removeUsage").String(); got != "remove <id> [id ...]" {
+		t.Errorf("expected remove usage metadata, got %q", got)
+	}
+	if got := runtime.Get("__removeDescription").String(); got != "Remove context items by id" {
+		t.Errorf("expected remove description metadata, got %q", got)
 	}
 	notFound := runtime.Get("__notFoundOutput").Export().([]any)
 	if len(notFound) != 1 || !strings.Contains(notFound[0].(string), "Not found") {
@@ -2116,6 +2124,219 @@ func TestContextManagerRemoveEdgeCases(t *testing.T) {
 	}
 	if got := runtime.Get("__itemsAfterError").ToInteger(); got != 1 {
 		t.Errorf("expected item NOT removed after generic error, got %d items", got)
+	}
+}
+
+func TestContextManagerRemoveMultipleIds(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; }
+		});
+
+		items.push({id: 1, type: 'note', label: 'note 1', payload: 'one'});
+		items.push({id: 2, type: 'lazy-diff', label: 'diff 2', payload: ['HEAD']});
+		items.push({id: 3, type: 'note', label: 'note 3', payload: 'three'});
+		items.push({id: 4, type: 'note', label: 'note 4', payload: 'four'});
+
+		ctxmgr.commands.remove.handler(["1", "3"]);
+		globalThis.__itemsAfter = items.map(it => it.id);
+		globalThis.__outputCalls = outputCalls.slice();
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	items := runtime.Get("__itemsAfter").Export().([]any)
+	if len(items) != 2 || items[0].(int64) != 2 || items[1].(int64) != 4 {
+		t.Errorf("expected ids [2 4] after removing ids 1 and 3, got %v", items)
+	}
+	outputs := runtime.Get("__outputCalls").Export().([]any)
+	if len(outputs) != 2 || outputs[0].(string) != "Removed [1]" || outputs[1].(string) != "Removed [3]" {
+		t.Errorf("expected per-id removal output, got %v", outputs)
+	}
+}
+
+func TestContextManagerRemoveInvalidDuplicateAndMissingIds(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; }
+		});
+
+		items.push({id: 1, type: 'note', label: 'note 1', payload: 'one'});
+		items.push({id: 2, type: 'note', label: 'note 2', payload: 'two'});
+
+		ctxmgr.commands.remove.handler(["1", "abc", "2", "2", "1", "3.5"]);
+		globalThis.__itemsAfter = items.map(it => it.id);
+		globalThis.__outputCalls = outputCalls.slice();
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	items := runtime.Get("__itemsAfter").Export().([]any)
+	if len(items) != 0 {
+		t.Errorf("expected all existing ids to be removed, got %v", items)
+	}
+	outputs := runtime.Get("__outputCalls").Export().([]any)
+	want := []string{
+		"Removed [1]",
+		"Invalid id: abc",
+		"Removed [2]",
+		"Invalid id: 3.5",
+	}
+	if len(outputs) != len(want) {
+		t.Fatalf("expected %d output lines, got %d: %v", len(want), len(outputs), outputs)
+	}
+	for i, output := range outputs {
+		if output.(string) != want[i] {
+			t.Errorf("output[%d] = %q, want %q", i, output, want[i])
+		}
+	}
+}
+
+func TestContextManagerRemoveMixedFileAndNonFileIds(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+		globalThis.context = {
+			addPath: () => null,
+			removePath: (path) => null,
+			toTxtar: () => ''
+		};
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; }
+		});
+
+		items.push({id: 1, type: 'file', label: 'src/main.go', payload: ''});
+		items.push({id: 2, type: 'note', label: 'note 2', payload: 'two'});
+		items.push({id: 3, type: 'lazy-diff', label: 'diff 3', payload: ['HEAD']});
+
+		ctxmgr.commands.remove.handler(["1", "2", "3"]);
+		globalThis.__itemsLen = items.length;
+		globalThis.__outputCalls = outputCalls.slice();
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	if got := runtime.Get("__itemsLen").ToInteger(); got != 0 {
+		t.Errorf("expected all mixed items removed, got %d items", got)
+	}
+	outputs := runtime.Get("__outputCalls").Export().([]any)
+	want := []string{"Removed [1]", "Removed [2]", "Removed [3]"}
+	if len(outputs) != len(want) {
+		t.Fatalf("expected %d output lines, got %d: %v", len(want), len(outputs), outputs)
+	}
+	for i, output := range outputs {
+		if output.(string) != want[i] {
+			t.Errorf("output[%d] = %q, want %q", i, output, want[i])
+		}
+	}
+}
+
+func TestContextManagerRemoveMissingFileAndBackendErrorsArePerItem(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+		globalThis.context = {
+			addPath: () => null,
+			removePath: (path) => {
+				if (path === 'gone.txt') {
+					throw new Error('path not found: ' + path);
+				}
+				if (path === 'ambiguous.txt') {
+					return {message: 'ambiguous path: ' + path};
+				}
+				if (path === 'denied.txt') {
+					return {message: 'permission denied: ' + path};
+				}
+				return null;
+			},
+			toTxtar: () => ''
+		};
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; }
+		});
+
+		items.push({id: 1, type: 'file', label: 'gone.txt', payload: ''});
+		items.push({id: 2, type: 'note', label: 'note 2', payload: 'two'});
+		items.push({id: 3, type: 'file', label: 'ambiguous.txt', payload: ''});
+		items.push({id: 4, type: 'note', label: 'note 4', payload: 'four'});
+		items.push({id: 5, type: 'file', label: 'denied.txt', payload: ''});
+		items.push({id: 6, type: 'note', label: 'note 6', payload: 'six'});
+
+		ctxmgr.commands.remove.handler(["1", "2", "3", "4", "5", "6"]);
+		globalThis.__itemsAfter = items.map(it => it.id);
+		globalThis.__outputCalls = outputCalls.slice();
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	items := runtime.Get("__itemsAfter").Export().([]any)
+	wantItems := []int64{3, 5}
+	if len(items) != len(wantItems) {
+		t.Fatalf("expected only failing file ids to remain, got %v", items)
+	}
+	for i, item := range items {
+		if item.(int64) != wantItems[i] {
+			t.Errorf("remaining item[%d] = %d, want %d", i, item, wantItems[i])
+		}
+	}
+
+	outputs := runtime.Get("__outputCalls").Export().([]any)
+	wantOutputs := []string{
+		"Info: file not present, removing from session state: gone.txt",
+		"Removed [1]",
+		"Removed [2]",
+		"Error: ambiguous path: ambiguous.txt",
+		"Removed [4]",
+		"Error: permission denied: denied.txt",
+		"Removed [6]",
+	}
+	if len(outputs) != len(wantOutputs) {
+		t.Fatalf("expected %d output lines, got %d: %v", len(wantOutputs), len(outputs), outputs)
+	}
+	for i, output := range outputs {
+		if output.(string) != wantOutputs[i] {
+			t.Errorf("output[%d] = %q, want %q", i, output, wantOutputs[i])
+		}
 	}
 }
 
@@ -2620,5 +2841,137 @@ func TestContextManagerRemoveNonFileItem(t *testing.T) {
 	}
 	if got := runtime.Get("__itemsAfterDiff").ToInteger(); got != 0 {
 		t.Errorf("expected 0 items after removing diff, got %d", got)
+	}
+}
+
+func TestContextManagerRemoveInvalidIDs(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+		globalThis.context = {
+			addPath: () => null,
+			removePath: (path) => { throw new Error('unexpected removePath: ' + path); },
+			toTxtar: () => ''
+		};
+
+		let items = [];
+		const ctxmgr = contextManager({ getItems: () => items, setItems: (v) => { items = v; } });
+
+		items.push({id: 1, type: 'note', label: 'note', payload: 'text'});
+
+		// Invalid IDs should not call removePath and should not remove item 1.
+		const badInputs = ['0x10', '1e2', '12abc', '3.5', '', '  '];
+		for (const bad of badInputs) {
+			ctxmgr.commands.remove.handler([bad]);
+		}
+
+		// Valid integer forms should remove the item.
+		ctxmgr.commands.remove.handler(['1']);
+
+		globalThis.__itemsLen = items.length;
+		globalThis.__invalidCount = outputCalls.filter(m => String(m).indexOf('Invalid id') !== -1).length;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	if got := runtime.Get("__itemsLen").ToInteger(); got != 0 {
+		t.Errorf("expected 0 items after removing valid id 1, got %d", got)
+	}
+	if got := runtime.Get("__invalidCount").ToInteger(); got != 6 {
+		t.Errorf("expected 6 'Invalid id' messages, got %d", got)
+	}
+}
+
+func TestContextManagerRemoveMultipleIdsOrder(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		const removeCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+		globalThis.context = {
+			addPath: () => null,
+			removePath: (path) => { removeCalls.push(path); return null; },
+			toTxtar: () => ''
+		};
+
+		let items = [];
+		const ctxmgr = contextManager({ getItems: () => items, setItems: (v) => { items = v; } });
+
+		items.push({id: 1, type: 'note', label: 'a'});
+		items.push({id: 2, type: 'file', label: 'f.txt'});
+		items.push({id: 3, type: 'note', label: 'c'});
+
+		ctxmgr.commands.remove.handler(['1', '2', '1', '3']);
+
+		globalThis.__itemsLen = items.length;
+		globalThis.__removeCalls = removeCalls.length;
+		globalThis.__removedCount = outputCalls.filter(m => String(m).indexOf('Removed') !== -1).length;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	if got := runtime.Get("__itemsLen").ToInteger(); got != 0 {
+		t.Errorf("expected 0 items after removing all, got %d", got)
+	}
+	if got := runtime.Get("__removeCalls").ToInteger(); got != 1 {
+		t.Errorf("expected context.removePath called once (only file item), got %d", got)
+	}
+	if got := runtime.Get("__removedCount").ToInteger(); got != 3 {
+		t.Errorf("expected 3 'Removed' messages, got %d", got)
+	}
+}
+
+func TestContextManagerEditRejectsNonDecimalID(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+		globalThis.context = {
+			addPath: () => null,
+			removePath: () => null,
+			toTxtar: () => ''
+		};
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			openEditor: () => 'should not be called'
+		});
+
+		items.push({id: 1, type: 'note', label: 'note', payload: 'original'});
+		ctxmgr.commands.edit.handler(['0x10']);
+
+		globalThis.__itemsLen = items.length;
+		globalThis.__itemsPayload = items[0].payload;
+		globalThis.__invalidCount = outputCalls.filter(m => String(m).indexOf('Invalid id') !== -1).length;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	if got := runtime.Get("__itemsLen").ToInteger(); got != 1 {
+		t.Errorf("expected 1 item, got %d", got)
+	}
+	if got := runtime.Get("__itemsPayload").String(); got != "original" {
+		t.Errorf("expected payload unchanged, got %q", got)
+	}
+	if got := runtime.Get("__invalidCount").ToInteger(); got != 1 {
+		t.Errorf("expected 1 'Invalid id' message, got %d", got)
 	}
 }

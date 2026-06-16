@@ -616,7 +616,7 @@ func TestSuperDocument_CopyPromptWithDocuments(t *testing.T) {
 	sendKey(t, cp, "c")
 
 	// Should see "Copied prompt" status message
-	expect(snap, "Copied prompt", 5*time.Second)
+	expect(snap, "Prompt copied to clipboard", 5*time.Second)
 
 	// Wait briefly for clipboard command to complete, then verify clipboard file contents
 	time.Sleep(100 * time.Millisecond)
@@ -682,7 +682,7 @@ func TestSuperDocument_ErrorOnCopyWithNoDocuments(t *testing.T) {
 	sendKey(t, cp, "c")
 
 	// Should see a copy status message (copying final prompt even with no document)
-	expect(snap, "Copied prompt", 5*time.Second)
+	expect(snap, "Prompt copied to clipboard", 5*time.Second)
 
 	// Quit
 	sendKey(t, cp, "q")
@@ -1051,7 +1051,7 @@ func TestSuperDocument_MouseClickCopyPrompt(t *testing.T) {
 	}
 
 	// Verify the status message
-	expect(snap, "Copied prompt", 5*time.Second)
+	expect(snap, "Prompt copied to clipboard", 5*time.Second)
 
 	// Wait briefly for clipboard command to complete, then verify clipboard file contents
 	time.Sleep(100 * time.Millisecond)
@@ -1401,7 +1401,7 @@ func TestSuperDocument_MouseWheelDoesNotTriggerButtonClick(t *testing.T) {
 	}
 
 	// Verify no error message (copy with no documents would show error)
-	notExpect("Copied prompt", 500*time.Millisecond)
+	notExpect("Prompt copied to clipboard", 500*time.Millisecond)
 	// Also check for "No documents!" which would appear if copy was triggered with 0 docs
 	notExpect("No documents!", 200*time.Millisecond)
 

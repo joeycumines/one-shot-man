@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand/v2"
 	"strings"
 	"unicode/utf8"
@@ -263,9 +264,7 @@ func (bpe *BPE) IDToToken(id uint32) (string, bool) {
 // GetVocab implements Model.
 func (bpe *BPE) GetVocab() map[string]uint32 {
 	result := make(map[string]uint32, len(bpe.vocab))
-	for k, v := range bpe.vocab {
-		result[k] = v
-	}
+	maps.Copy(result, bpe.vocab)
 	return result
 }
 

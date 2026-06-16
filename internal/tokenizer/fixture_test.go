@@ -294,7 +294,7 @@ var inputOutputTestFixtures = []struct {
 		Input: "é",
 		NewModel: func() Model {
 			vocab := map[string]uint32{"<unk>": 0}
-			for i := 0; i < 256; i++ {
+			for i := range 256 {
 				vocab[fmt.Sprintf("<0x%02X>", i)] = uint32(i) + 1
 			}
 			b, _ := NewBpeBuilder().WithVocabAndMerges(vocab, nil).
@@ -703,7 +703,7 @@ var modelFactoriesForFuzz = []struct {
 		Name: "BPE_byte_fallback",
 		Model: func() Model {
 			vocab := map[string]uint32{"<unk>": 0}
-			for i := 0; i < 256; i++ {
+			for i := range 256 {
 				vocab[fmt.Sprintf("<0x%02X>", i)] = uint32(i) + 1
 			}
 			b, _ := NewBpeBuilder().WithVocabAndMerges(vocab, nil).
@@ -772,7 +772,7 @@ var modelFactoriesForFuzz = []struct {
 			entries := []unigramEntry{
 				{"<unk>", 0.0},
 			}
-			for i := 0; i < 256; i++ {
+			for i := range 256 {
 				entries = append(entries, unigramEntry{
 					fmt.Sprintf("<0x%02X>", i), -0.01,
 				})

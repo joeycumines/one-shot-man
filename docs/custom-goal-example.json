@@ -16,7 +16,7 @@
   },
   "contextHeader": "CONTEXT FILES",
   "bannerTemplate": "Example Custom Goal - Demonstrating OSM Goal Features",
-  "usageTemplate": "Available commands:\n  add <file>      Add files to context\n  note <text>     Add a note\n  list            List context items\n  edit <index>    Edit a context item\n  remove <index>  Remove a context item\n  show            Show the current prompt\n  copy            Copy prompt to clipboard\n  increment       Increment the counter\n  reset           Reset custom state\n  help            Show this help\n  exit            Exit the goal",
+  "usageTemplate": "Available commands:\n  add <file>      Add files to context\n  note <text>     Add a note\n  list            List context items\n  edit <id>       Edit a context item\n  remove <id> [id ...]  Remove context items by id\n  show            Show the current prompt\n  copy            Copy prompt to clipboard\n  increment       Increment the counter\n  reset           Reset custom state\n  help            Show this help\n  exit            Exit the goal",
   "commands": [
     {
       "name": "add",
@@ -41,7 +41,7 @@
     {
       "name": "remove",
       "type": "contextManager",
-      "description": "Remove a context item"
+      "description": "Remove context items by id"
     },
     {
       "name": "show",

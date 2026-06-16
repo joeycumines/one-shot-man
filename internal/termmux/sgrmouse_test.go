@@ -544,7 +544,7 @@ func TestFilterMouse_MalformedSGR_TrailingValidSequenceNotSwallowed(t *testing.T
 func bytesContain(b, sub []byte) bool {
 	for i := 0; i <= len(b)-len(sub); i++ {
 		match := true
-		for j := 0; j < len(sub); j++ {
+		for j := range sub {
 			if b[i+j] != sub[j] {
 				match = false
 				break

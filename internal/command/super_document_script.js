@@ -1029,7 +1029,7 @@ function handleKeys(msg, s) {
                         const tc = _tokenCount(prompt);
                         const lc = _lineCount(prompt);
                         const bc = _byteCount(prompt);
-                        s.statusMsg = "\u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
+                        s.statusMsg = "Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
                         s.hasError = false;
                     } catch (e) {
                         s.statusMsg = 'Clipboard error: ' + e;
@@ -1198,10 +1198,10 @@ function handleKeys(msg, s) {
                 const tc2 = _tokenCount(prompt);
                 const lc2 = _lineCount(prompt);
                 const bc2 = _byteCount(prompt);
-                s.statusMsg = "\u2502 " + _fmt.formatNum(tc2) + " tokens \u00b7 " + lc2 + " lines \u00b7 " + _fmt.formatBytes(bc2) + " \u2502";
+                s.statusMsg = "Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tc2) + " tokens \u00b7 " + lc2 + " lines \u00b7 " + _fmt.formatBytes(bc2) + " \u2502";
                 s.hasError = false;
             } catch (e) {
-                s.statusMsg = 'Clipboard error: ' + e;
+                s.statusMsg = "Clipboard error: " + e;
                 s.hasError = true;
             }
             s.focusedButtonIdx = -1; // Clear button focus
@@ -2410,7 +2410,7 @@ function buildCommands() {
                     const tc4 = _tokenCount(txt);
                     const lc4 = _lineCount(txt);
                     const bc4 = _byteCount(txt);
-                    output.print("\u2502 " + _fmt.formatNum(tc4) + " tokens \u00b7 " + lc4 + " lines \u00b7 " + _fmt.formatBytes(bc4) + " \u2502");
+                    output.print("Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tc4) + " tokens \u00b7 " + lc4 + " lines \u00b7 " + _fmt.formatBytes(bc4) + " \u2502");
                 } catch (e) {
                     output.print("Clipboard error: " + e);
                 }

@@ -51,7 +51,7 @@ func TestModuleIsolation(t *testing.T) {
 	allowedPrefix := moduleName + "/internal/termmux"
 
 	var violations []string
-	for _, dep := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for dep := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if dep == "" {
 			continue
 		}

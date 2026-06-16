@@ -698,7 +698,7 @@ Type 'help' for commands.`,
   note <text>      Add a note
   list            List context items
   edit <index>    Edit a context item
-  remove <index>  Remove a context item
+  remove <id> [id ...]  Remove context items by id
   show            Show the current prompt
   copy            Copy prompt to clipboard
   goal <text>      Update the core goal text for the plan
@@ -734,7 +734,7 @@ Type 'help' for commands.`,
 				{
 					Name:        "remove",
 					Type:        "contextManager",
-					Description: "Remove a context item",
+					Description: "Remove context items by id",
 				},
 				{
 					Name:        "show",

@@ -407,7 +407,7 @@ func TestBPEDropoutFullSkip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build error: %v", err)
 	}
-	bpe.dropout = ptr(1.0)
+	bpe.dropout = new(1.0)
 
 	tokens, err := bpe.Tokenize("unrelated")
 	if err != nil {
@@ -891,7 +891,7 @@ func FuzzBPETokenize(f *testing.F) {
 
 	// BPE model with unk and byte fallback
 	vocab := map[string]uint32{"<unk>": 0}
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		vocab[fmt.Sprintf("<0x%02X>", i)] = uint32(i) + 1
 	}
 	// Add common ASCII chars without byte fallback prefix
@@ -1063,7 +1063,7 @@ func FuzzUnigramByteFallback(f *testing.F) {
 
 	unkID := 0
 	entries := []unigramEntry{{"<unk>", 0.0}}
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		entries = append(entries, unigramEntry{
 			fmt.Sprintf("<0x%02X>", i), -0.01,
 		})
@@ -1258,7 +1258,7 @@ func BenchmarkBPETokenizeCharLevel(b *testing.B) {
 // BenchmarkBPEByteFallback benchmarks BPE with byte fallback.
 func BenchmarkBPEByteFallback(b *testing.B) {
 	vocab := map[string]uint32{"<unk>": 0}
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		vocab[fmt.Sprintf("<0x%02X>", i)] = uint32(i) + 1
 	}
 	bpe, err := NewBpeBuilder().WithVocabAndMerges(vocab, nil).
@@ -1384,8 +1384,8 @@ func BenchmarkUnigramTokenize(b *testing.B) {
 // BenchmarkTrieCommonPrefixSearch benchmarks Trie prefix search.
 func BenchmarkTrieCommonPrefixSearch(b *testing.B) {
 	trie := NewTrie()
-	for i := 0; i < 1000; i++ {
-		trie.Insert([]byte(fmt.Sprintf("token_%04d", i)))
+	for i := range 1000 {
+		trie.Insert(fmt.Appendf(nil, "token_%04d", i))
 	}
 	// Also insert short prefixes
 	trie.Insert([]byte("t"))

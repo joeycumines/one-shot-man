@@ -127,14 +127,18 @@ func TestCopyModeKeyHandler_SelectAndCopy(t *testing.T) {
 func TestCopyModeKeyHandler_ScrollPages(t *testing.T) {
 	h := NewCopyModeKeyHandler(12)
 
-	a := h.HandleKey("ctrl+b")
-	if a.Kind != CopyModeActionScrollUpOne || a.N != 1 {
-		t.Errorf("ctrl+b = %v, want ScrollUp(1)", a)
+	for _, key := range []string{"ctrl+b", "pageUp"} {
+		a := h.HandleKey(key)
+		if a.Kind != CopyModeActionPageUp {
+			t.Errorf("%q = %v, want PageUp", key, a)
+		}
 	}
 
-	a = h.HandleKey("ctrl+f")
-	if a.Kind != CopyModeActionScrollDownOne || a.N != 1 {
-		t.Errorf("ctrl+f = %v, want ScrollDown(1)", a)
+	for _, key := range []string{"ctrl+f", "pageDown"} {
+		a := h.HandleKey(key)
+		if a.Kind != CopyModeActionPageDown {
+			t.Errorf("%q = %v, want PageDown", key, a)
+		}
 	}
 }
 
@@ -178,23 +182,26 @@ func TestCopyModeKeyHandler_AllViKeys(t *testing.T) {
 	h := NewCopyModeKeyHandler(20)
 
 	keys := map[string]CopyModeActionKind{
-		"h":      CopyModeActionMoveLeft,
-		"l":      CopyModeActionMoveRight,
-		"j":      CopyModeActionMoveDown,
-		"k":      CopyModeActionMoveUp,
-		"ctrl+u": CopyModeActionHalfPageUp,
-		"ctrl+d": CopyModeActionHalfPageDown,
-		"g":      CopyModeActionTopOfScrollback,
-		"G":      CopyModeActionBottomOfScrollback,
-		"0":      CopyModeActionBeginningOfLine,
-		"$":      CopyModeActionEndOfLine,
-		"w":      CopyModeActionNextWord,
-		"b":      CopyModeActionPrevWord,
-		"q":      CopyModeActionExitCopyMode,
-		" ":      CopyModeActionSelectStart,
-		"enter":  CopyModeActionCopyAndExit,
-		"ctrl+b": CopyModeActionScrollUpOne,
-		"ctrl+f": CopyModeActionScrollDownOne,
+		"h":        CopyModeActionMoveLeft,
+		"l":        CopyModeActionMoveRight,
+		"j":        CopyModeActionMoveDown,
+		"k":        CopyModeActionMoveUp,
+		"ctrl+u":   CopyModeActionHalfPageUp,
+		"ctrl+d":   CopyModeActionHalfPageDown,
+		"g":        CopyModeActionTopOfScrollback,
+		"G":        CopyModeActionBottomOfScrollback,
+		"0":        CopyModeActionBeginningOfLine,
+		"$":        CopyModeActionEndOfLine,
+		"w":        CopyModeActionNextWord,
+		"b":        CopyModeActionPrevWord,
+		"q":        CopyModeActionExitCopyMode,
+		" ":        CopyModeActionSelectStart,
+		"enter":    CopyModeActionCopyAndExit,
+		"ctrl+b":   CopyModeActionPageUp,
+		"pageUp":   CopyModeActionPageUp,
+		"ctrl+f":   CopyModeActionPageDown,
+		"pageDown": CopyModeActionPageDown,
+		":":        CopyModeActionEnterCopyMode,
 	}
 
 	for key, wantKind := range keys {
@@ -227,10 +234,13 @@ func TestCopyModeAction_String_AllKinds(t *testing.T) {
 		{CopyModeActionCopyAndExit, "CopyAndExit"},
 		{CopyModeActionScrollUpOne, "ScrollUp(1)"},
 		{CopyModeActionScrollDownOne, "ScrollDown(1)"},
+		{CopyModeActionPageUp, "PageUp"},
+		{CopyModeActionPageDown, "PageDown"},
 		{CopyModeActionSearchForward, "SearchForward"},
 		{CopyModeActionSearchBackward, "SearchBackward"},
 		{CopyModeActionNextMatch, "NextMatch"},
 		{CopyModeActionPrevMatch, "PrevMatch"},
+		{CopyModeActionEnterCopyMode, "EnterCopyMode"},
 		{CopyModeActionNone, "None"},
 	}
 

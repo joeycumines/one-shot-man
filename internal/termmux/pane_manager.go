@@ -18,6 +18,7 @@ type PaneBinding struct {
 	LastActive   time.Time
 	Exited       bool
 	RemainOnExit bool
+	geometry     *PaneGeometry
 }
 
 // paneManager implements the PaneManager interface. It uses a LayoutEngine
@@ -36,10 +37,12 @@ type paneManager struct {
 // newPaneManager creates a paneManager with the given layout mode and
 // screen dimensions.
 func newPaneManager(mode LayoutMode, width, height int) *paneManager {
-	return &paneManager{
+	pm := &paneManager{
 		engine: NewLayoutEngine(mode, width, height),
 		panes:  make(map[PaneID]*PaneBinding),
 	}
+	pm.engine.paneMgr = pm
+	return pm
 }
 
 // Create adds a new pane associated with the given sessionID, splitting
@@ -189,6 +192,7 @@ func (pm *paneManager) Panes() []Pane {
 			SessionID:  binding.SessionID,
 			Title:      binding.Title,
 			Focus:      binding.PaneID == pm.activePaneID,
+			Exited:     binding.Exited,
 			VTerm:      binding.VTerm,
 			LastActive: binding.LastActive,
 		})
@@ -197,14 +201,55 @@ func (pm *paneManager) Panes() []Pane {
 	// Compute geometries.
 	geoms := pm.engine.Compute(paneSlice)
 
-	// Merge geometries back.
 	result := make([]Pane, len(paneSlice))
 	for i := range paneSlice {
 		result[i] = paneSlice[i]
-		result[i].Geometry = geoms[i]
+		if binding := pm.panes[paneSlice[i].ID]; binding.geometry != nil {
+			result[i].Geometry = *binding.geometry
+		} else {
+			result[i].Geometry = geoms[i]
+		}
 	}
 
 	return result
+}
+
+// ResizePaneDelta returns a new PaneGeometry for the given pane by applying a
+// directional cell delta. The override must be committed separately
+// (paneManager.setGeometry) so callers can first propagate the new size to the
+// child PTY/VTerm.
+func (pm *paneManager) ResizePaneDelta(id PaneID, direction string, delta int) (PaneGeometry, error) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if _, ok := pm.panes[id]; !ok {
+		return PaneGeometry{}, fmt.Errorf("%w: %d", ErrPaneNotFound, id)
+	}
+
+	panes := make([]Pane, 0, len(pm.paneOrder))
+	baseGeoms := pm.engine.Compute(pm.paneSlice())
+	for i, pid := range pm.paneOrder {
+		geo := baseGeoms[i]
+		if binding := pm.panes[pid]; binding.geometry != nil {
+			geo = *binding.geometry
+		}
+		panes = append(panes, Pane{ID: pid, Geometry: geo})
+	}
+
+	return pm.engine.ResizePaneDelta(panes, id, direction, delta)
+}
+
+func (pm *paneManager) setGeometry(id PaneID, g PaneGeometry) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	binding, ok := pm.panes[id]
+	if !ok {
+		return fmt.Errorf("%w: %d", ErrPaneNotFound, id)
+	}
+	gCopy := g
+	binding.geometry = &gCopy
+	return nil
 }
 
 // ActivePaneID returns the currently focused pane ID, or 0 if no panes exist.
@@ -284,6 +329,22 @@ func (pm *paneManager) setSize(width, height int) {
 	pm.engine.SetSize(width, height)
 }
 
+// setMode changes the layout engine's current layout mode.
+func (pm *paneManager) setMode(mode LayoutMode) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	pm.engine.SetMode(mode)
+}
+
+// mode returns the layout engine's current layout mode.
+func (pm *paneManager) mode() LayoutMode {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	return pm.engine.Mode()
+}
+
 // activeSessionID returns the SessionID of the active pane, or 0 if none.
 func (pm *paneManager) activeSessionID() SessionID {
 	pm.mu.Lock()
@@ -310,41 +371,49 @@ func (pm *paneManager) removeSessionID(id PaneID) SessionID {
 	return binding.SessionID
 }
 
-// transferPaneToWindow removes a pane binding from this paneManager's
-// layout engine and adds it to the target paneManager. The target
-// receives a fresh PaneID via target.engine.AllocID(). The original binding's
-// SessionID, VTerm, Title, LastActive, Exited, and RemainOnExit are
-// copied to the new binding. Returns the new PaneID or zero on failure.
-func (pm *paneManager) transferPaneToWindow(target *paneManager, dir SplitDirection) PaneID {
+// transferPaneToWindow moves the pane with the given id from this paneManager
+// to target. The pane receives a fresh PaneID in the target layout engine.
+// The original binding's SessionID, VTerm, Title, LastActive, Exited, and
+// RemainOnExit are copied to the new binding.
+//
+// On success the source pane is removed, the source window's active pane is
+// refocused to a remaining pane (if the moved pane was active), and the target
+// window's active pane is set to the newly created pane. The moved SessionID is
+// returned alongside the new PaneID so callers can update global active state.
+func (pm *paneManager) transferPaneToWindow(id PaneID, target *paneManager, dir SplitDirection) (PaneID, SessionID, error) {
 	pm.mu.Lock()
 	target.mu.Lock()
 	defer pm.mu.Unlock()
 	defer target.mu.Unlock()
 
-	binding, ok := pm.panes[pm.activePaneID]
+	binding, ok := pm.panes[id]
 	if !ok {
-		return 0
+		return 0, 0, fmt.Errorf("%w: %d", ErrPaneNotFound, id)
 	}
 
-	delete(pm.engine.splits, pm.activePaneID)
+	pm.engine.Remove(id)
 
 	srcIdx := -1
 	for i, pid := range pm.paneOrder {
-		if pid == pm.activePaneID {
+		if pid == id {
 			srcIdx = i
 			break
 		}
 	}
-	if srcIdx < 0 {
-		return 0
+	if srcIdx >= 0 {
+		pm.paneOrder = append(pm.paneOrder[:srcIdx], pm.paneOrder[srcIdx+1:]...)
 	}
-	pm.paneOrder = append(pm.paneOrder[:srcIdx], pm.paneOrder[srcIdx+1:]...)
-	delete(pm.panes, pm.activePaneID)
+	delete(pm.panes, id)
 
-	newID := target.engine.AllocID()
+	wasActive := pm.activePaneID == id
+	if wasActive {
+		pm.activePaneID = 0
+		if len(pm.paneOrder) > 0 {
+			pm.activePaneID = pm.paneOrder[0]
+		}
+	}
 
-	target.engine.splits[newID] = SplitGroup{Direction: dir, Ratio: 1.0}
-	target.engine.panes = append(target.engine.panes, newID)
+	newID := target.engine.Split(target.activePaneID, dir)
 
 	target.paneOrder = append(target.paneOrder, newID)
 	target.panes[newID] = &PaneBinding{
@@ -359,7 +428,7 @@ func (pm *paneManager) transferPaneToWindow(target *paneManager, dir SplitDirect
 
 	target.activePaneID = newID
 
-	return newID
+	return newID, binding.SessionID, nil
 }
 
 var _ PaneManager = (*paneManager)(nil)
@@ -450,8 +519,53 @@ func (pm *paneManager) PaneIDForSession(sid SessionID) PaneID {
 	return 0
 }
 
+func (pm *paneManager) RebindSession(id PaneID, sid SessionID, vterm *vt.VTerm) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	binding, ok := pm.panes[id]
+	if !ok {
+		return fmt.Errorf("%w: %d", ErrPaneNotFound, id)
+	}
+
+	binding.SessionID = sid
+	if vterm != nil {
+		binding.VTerm = vterm
+	}
+	binding.Exited = false
+	return nil
+}
+
+// Swap exchanges all metadata fields (SessionID, VTerm, Title, LastActive,
+// Exited, RemainOnExit) between the bindings for id1 and id2 while keeping
+// the pane IDs themselves unchanged. The active pane ID is preserved.
+func (pm *paneManager) Swap(id1, id2 PaneID) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	b1, ok1 := pm.panes[id1]
+	b2, ok2 := pm.panes[id2]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("%w: one or both panes not found", ErrPaneNotFound)
+	}
+
+	swapPaneBindingMetadata(b1, b2)
+	return nil
+}
+
 func (pm *paneManager) Binding(id PaneID) *PaneBinding {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	return pm.panes[id]
+}
+
+// swapPaneBindingMetadata exchanges every mutable field of two PaneBinding
+// values, leaving their PaneID fields intact.
+func swapPaneBindingMetadata(a, b *PaneBinding) {
+	a.SessionID, b.SessionID = b.SessionID, a.SessionID
+	a.VTerm, b.VTerm = b.VTerm, a.VTerm
+	a.Title, b.Title = b.Title, a.Title
+	a.LastActive, b.LastActive = b.LastActive, a.LastActive
+	a.Exited, b.Exited = b.Exited, a.Exited
+	a.RemainOnExit, b.RemainOnExit = b.RemainOnExit, a.RemainOnExit
 }

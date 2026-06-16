@@ -1,13 +1,20 @@
 package termmux
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
 	"github.com/dop251/goja"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 )
@@ -25,13 +32,29 @@ func setupPaneMgr(t *testing.T) (*goja.Runtime, func()) {
 	go func() { errCh <- mgr.Run(ctx) }()
 	<-mgr.Started()
 
+	loop, err := goeventloop.New(goeventloop.WithStrictMicrotaskOrdering(true))
+	if err != nil {
+		t.Fatalf("create event loop: %v", err)
+	}
+
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	adapter, err := gojaeventloop.New(loop, runtime)
+	if err != nil {
+		t.Fatalf("create adapter: %v", err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatalf("adapter.Bind: %v", err)
+	}
+
+	go loop.Run(ctx)
+
+	tuiMux := WrapSessionManager(ctx, adapter, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
 	return runtime, func() {
 		cancel()
 		<-errCh
+		_ = loop.Shutdown(context.Background())
 	}
 }
 
@@ -48,16 +71,34 @@ func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
 	go func() { errCh <- mgr.Run(ctx) }()
 	<-mgr.Started()
 
+	loop, err := goeventloop.New(goeventloop.WithStrictMicrotaskOrdering(true))
+	if err != nil {
+		t.Fatalf("create event loop: %v", err)
+	}
+
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	adapter, err := gojaeventloop.New(loop, runtime)
+	if err != nil {
+		t.Fatalf("create adapter: %v", err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatalf("adapter.Bind: %v", err)
+	}
+
+	go loop.Run(ctx)
+
+	tuiMux := WrapSessionManager(ctx, adapter, runtime, mgr, nil, nil, -1, "")
 
 	// Set up the termmux module namespace so newBoundedSession etc. are available.
 	exports := runtime.NewObject()
 	_ = exports.Set("newSessionManager", func(call goja.FunctionCall) goja.Value {
-		return newSessionManager(ctx, runtime, call)
+		return newSessionManager(ctx, adapter, runtime, call)
 	})
 	_ = exports.Set("newBoundedSession", func(call goja.FunctionCall) goja.Value {
-		return newBoundedSession(ctx, runtime, call)
+		return newBoundedSession(ctx, adapter, runtime, call)
+	})
+	_ = exports.Set("newCaptureSession", func(call goja.FunctionCall) goja.Value {
+		return newCaptureSession(ctx, runtime, call)
 	})
 	_ = runtime.Set("termmux", exports)
 	_ = runtime.Set("tuiMux", tuiMux)
@@ -65,6 +106,7 @@ func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
 	return runtime, func() {
 		cancel()
 		<-errCh
+		_ = loop.Shutdown(context.Background())
 	}
 }
 
@@ -487,6 +529,78 @@ func TestPaneMethodBindings(t *testing.T) {
 	}
 }
 
+func TestWindowSwitch_JSRouting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	_, err := runtime.RunString(`
+		function mkSession(name) {
+			var s = termmux.newCaptureSession("sh");
+			tuiMux.register(s, { name: name });
+			return s;
+		}
+
+		var s1 = mkSession("s1");
+		var w1 = tuiMux.newWindow("w1");
+		var p1 = tuiMux.addPaneToWindow(s1, { windowId: w1, target: { name: "w1p1" } });
+		if (p1 === 0) { throw new Error("expected valid pane id for s1"); }
+
+		var s2 = mkSession("s2");
+		var w2 = tuiMux.newWindow("w2");
+		var p2 = tuiMux.addPaneToWindow(s2, { windowId: w2, target: { name: "w2p1" } });
+		if (p2 === 0) { throw new Error("expected valid pane id for s2"); }
+
+		var before = {
+			activeWindow: tuiMux.activeWindowID(),
+			activePane: tuiMux.activePaneId(),
+			panes: tuiMux.panes().length
+		};
+
+		var next = tuiMux.nextWindow();
+		if (next !== w2) { throw new Error("nextWindow = " + next + ", want " + w2); }
+
+		var after = {
+			activeWindow: tuiMux.activeWindowID(),
+			activePane: tuiMux.activePaneId(),
+			panes: tuiMux.panes().length
+		};
+		if (after.activeWindow !== w2) { throw new Error("activeWindow after switch = " + after.activeWindow + ", want " + w2); }
+		if (after.activePane !== p2) { throw new Error("activePane after switch = " + after.activePane + ", want " + p2); }
+		if (after.panes !== 1) { throw new Error("expected 1 pane after switch, got " + after.panes); }
+
+		var sessions = tuiMux.sessions();
+		var active = sessions.filter(function(s) { return s.isActive; })[0];
+		if (!active) { throw new Error("no active session after switch"); }
+		if (active.name !== "s2") { throw new Error("active session = " + active.name + ", want s2"); }
+
+		// Drive input into the active session and verify it reaches the window.
+		tuiMux.input("echo routed\n");
+		var deadline = Date.now() + 3000;
+		var found = false;
+		while (Date.now() < deadline) {
+			var snap = tuiMux.snapshot(active.id);
+			if (snap && snap.plainText && snap.plainText.indexOf("routed") >= 0) {
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			var snap = tuiMux.snapshot(active.id);
+			throw new Error("input did not reach active session; snapshot = " + (snap && snap.plainText));
+		}
+
+		// Add the active session id as a read-only variable for Go-side assertions.
+		__activeSessionId = active.id;
+	`)
+	if err != nil {
+		t.Fatalf("window switch JS routing: %v", err)
+	}
+}
+
 func newTestSession(t *testing.T, ctx context.Context) *parent.StringIOSession {
 	t.Helper()
 	sio := &dummyStringIO{doneCh: make(chan struct{})}
@@ -517,4 +631,81 @@ func (d *dummyStringIO) Close() error {
 		close(d.doneCh)
 	}
 	return nil
+}
+
+func buildExitProgram(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	prog := `package main
+import "fmt"
+func main() { fmt.Println("hello respawn") }
+`
+	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
+		t.Fatalf("write helper source: %v", err)
+	}
+
+	binName := "exitprogram"
+	if runtime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	bin := filepath.Join(dir, binName)
+
+	cmd := exec.Command("go", "build", "-o", bin, src)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go build helper: %v\n%s", err, stderr.String())
+	}
+	return bin
+}
+
+func TestRespawnSession_JSBinding_RebindsPane(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	exitBin := buildExitProgram(t)
+	_ = runtime.Set("exitBin", exitBin)
+
+	_, err := runtime.RunString(`
+		var sess = termmux.newCaptureSession(exitBin);
+		sess.start();
+		tuiMux.setRemainOnExit(true);
+		var paneId = tuiMux.splitHorizontal({ session: sess, target: { name: "respawn-js", kind: "capture" } });
+		if (paneId === 0) { throw new Error("expected valid pane id"); }
+
+		var sid = 1;
+		var deadline = Date.now() + 5000;
+		var exited = false;
+		while (Date.now() < deadline) {
+			var list = tuiMux.sessions();
+			for (var i = 0; i < list.length; i++) {
+				if (list[i].state === "exited") {
+					exited = true;
+					break;
+				}
+			}
+			if (exited) break;
+		}
+		if (!exited) { throw new Error("timeout waiting for session exit"); }
+
+		var newSid = tuiMux.respawnSession(sid);
+		if (newSid === 0 || newSid === sid) {
+			throw new Error("expected valid new session id, got " + newSid);
+		}
+
+		var panes = tuiMux.panes();
+		if (panes.length === 0) { throw new Error("expected at least one pane"); }
+		if (panes[0].sessionId !== newSid) {
+			throw new Error("pane sessionId = " + panes[0].sessionId + ", want " + newSid);
+		}
+	`)
+	if err != nil {
+		t.Fatalf("respawnSession JS end-to-end: %v", err)
+	}
 }

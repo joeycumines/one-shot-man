@@ -24,7 +24,6 @@ internal/termmux/
 
 internal/builtin/termmux/
 ├── module.go           JS binding surface (osm:termmux)
-├── bounce.go           newBounceController JS binding
 ├── mouse_forward.go    enableMouseForward JS binding
 ├── control_router.go   newControlRouter JS binding
 ```
@@ -157,7 +156,6 @@ All features are exposed via `osm:termmux`:
 const termmux = require('osm:termmux');
 const mgr = termmux.newSessionManager({rows: 24, cols: 80});
 const {session, sid} = termmux.newBoundedSession({cmd: '/bin/sh'});
-const ctrl = termmux.newBounceController({speed: {x:1, y:1}});
 const forward = termmux.enableMouseForward({sessionManager: mgr, ...});
 const router = termmux.newControlRouter({keys: {'ctrl+p': 'pause'}});
 const chooser = termmux.newChooser(activeID);

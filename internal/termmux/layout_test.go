@@ -589,6 +589,81 @@ func TestLayoutEngine_Resize_NotFound(t *testing.T) {
 	}
 }
 
+func TestLayoutModeFromString(t *testing.T) {
+	tests := []struct {
+		input string
+		want  LayoutMode
+		ok    bool
+	}{
+		{"tiled", LayoutTiled, true},
+		{"stacked", LayoutStacked, true},
+		{"horizontal", LayoutHorizontal, true},
+		{"vertical", LayoutVertical, true},
+		{"main-horizontal", LayoutMainHorizontal, true},
+		{"main-vertical", LayoutMainVertical, true},
+		{"unknown", LayoutTiled, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, ok := LayoutModeFromString(tt.input)
+			if ok != tt.ok {
+				t.Errorf("LayoutModeFromString(%q) ok = %v, want %v", tt.input, ok, tt.ok)
+			}
+			if ok && got != tt.want {
+				t.Errorf("LayoutModeFromString(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLayoutMode_String(t *testing.T) {
+	tests := []struct {
+		mode LayoutMode
+		want string
+	}{
+		{LayoutTiled, "tiled"},
+		{LayoutStacked, "stacked"},
+		{LayoutHorizontal, "horizontal"},
+		{LayoutVertical, "vertical"},
+		{LayoutMainHorizontal, "main-horizontal"},
+		{LayoutMainVertical, "main-vertical"},
+		{LayoutMode(99), "unknown(99)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := tt.mode.String(); got != tt.want {
+				t.Errorf("String() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWindowManager_SetLayoutMode(t *testing.T) {
+	wm := NewWindowManager(LayoutVertical, 80, 24)
+	id := wm.NewWindow("w1")
+
+	if err := wm.SetLayoutMode(id, LayoutMainHorizontal); err != nil {
+		t.Fatalf("SetLayoutMode: %v", err)
+	}
+
+	mode, err := wm.LayoutMode(id)
+	if err != nil {
+		t.Fatalf("LayoutMode: %v", err)
+	}
+	if mode != LayoutMainHorizontal {
+		t.Errorf("LayoutMode = %v, want LayoutMainHorizontal", mode)
+	}
+
+	w := wm.Window(id)
+	if w.Layout != LayoutMainHorizontal {
+		t.Errorf("Window.Layout = %v, want LayoutMainHorizontal", w.Layout)
+	}
+
+	if err := wm.SetLayoutMode(WindowID(999), LayoutTiled); err == nil {
+		t.Error("expected error for unknown window")
+	}
+}
+
 func TestLayoutEngine_PaneIDs(t *testing.T) {
 	e := NewLayoutEngine(LayoutTiled, 80, 24)
 	p1 := e.Split(0, SplitRight)

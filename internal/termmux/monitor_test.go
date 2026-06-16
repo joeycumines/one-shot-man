@@ -204,6 +204,92 @@ func TestSessionManager_ActivityEvent_BackgroundPane(t *testing.T) {
 	}
 }
 
+func TestSessionManager_ActivityEvent_ResetsOnActivation(t *testing.T) {
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	s1 := newControllableSession()
+	id1, err := m.Register(s1, SessionTarget{Name: "test1", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register 1: %v", err)
+	}
+
+	s2 := newControllableSession()
+	id2, err := m.Register(s2, SessionTarget{Name: "test2", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register 2: %v", err)
+	}
+
+	if err := m.SetMonitorConfig(id2, MonitorConfig{Activity: true, ActivityThreshold: 0}); err != nil {
+		t.Fatalf("SetMonitorConfig: %v", err)
+	}
+
+	m.Activate(id1)
+
+	subID, evtCh := m.Subscribe(16)
+	defer m.Unsubscribe(subID)
+
+	s2.readerCh <- []byte("hello")
+
+	evt := waitForEventKindCh(t, evtCh, EventActivity, 2*time.Second)
+	if evt.SessionID != id2 {
+		t.Errorf("EventActivity.SessionID = %d, want %d", evt.SessionID, id2)
+	}
+
+	m.ResetActivity(id2)
+	s2.readerCh <- []byte("again")
+
+	evt = waitForEventKindCh(t, evtCh, EventActivity, 2*time.Second)
+	if evt.SessionID != id2 {
+		t.Errorf("second EventActivity.SessionID = %d, want %d", evt.SessionID, id2)
+	}
+}
+
+func TestSessionManager_ActivityEvent_QuiescenceReset(t *testing.T) {
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	s1 := newControllableSession()
+	id1, err := m.Register(s1, SessionTarget{Name: "test1", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register 1: %v", err)
+	}
+
+	s2 := newControllableSession()
+	id2, err := m.Register(s2, SessionTarget{Name: "test2", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register 2: %v", err)
+	}
+
+	if err := m.SetMonitorConfig(id2, MonitorConfig{
+		Activity:               true,
+		ActivityThreshold:      0,
+		ActivityResetThreshold: 50 * time.Millisecond,
+	}); err != nil {
+		t.Fatalf("SetMonitorConfig: %v", err)
+	}
+
+	m.Activate(id1)
+
+	subID, evtCh := m.Subscribe(16)
+	defer m.Unsubscribe(subID)
+
+	s2.readerCh <- []byte("hello")
+
+	evt := waitForEventKindCh(t, evtCh, EventActivity, 2*time.Second)
+	if evt.SessionID != id2 {
+		t.Errorf("EventActivity.SessionID = %d, want %d", evt.SessionID, id2)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	s2.readerCh <- []byte("again")
+
+	evt = waitForEventKindCh(t, evtCh, EventActivity, 2*time.Second)
+	if evt.SessionID != id2 {
+		t.Errorf("second EventActivity.SessionID = %d, want %d", evt.SessionID, id2)
+	}
+}
+
 func TestSessionManager_ActivityEvent_NotFiredForActivePane(t *testing.T) {
 	m, cleanup := startManager(t)
 	defer cleanup()

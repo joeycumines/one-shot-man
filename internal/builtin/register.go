@@ -221,7 +221,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 		muxInput = terminalProvider.GetTerminalReader()
 		muxOutput = terminalProvider.GetTerminalWriter()
 	}
-	registry.RegisterNativeModule(prefix+"termmux", termmuxmod.Require(ctx, muxInput, muxOutput))
+	registry.RegisterNativeModule(prefix+"termmux", termmuxmod.Require(ctx, eventLoopProvider.Adapter(), muxInput, muxOutput))
 
 	return RegisterResult{
 		BubbleteaManager:  bubbleteaMgr,

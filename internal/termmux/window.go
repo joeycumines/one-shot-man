@@ -132,6 +132,32 @@ func (wm *WindowManager) RenameWindow(id WindowID, name string) error {
 	return nil
 }
 
+// SetLayoutMode changes the layout mode for the window with the given ID.
+func (wm *WindowManager) SetLayoutMode(id WindowID, mode LayoutMode) error {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+
+	w, ok := wm.windows[id]
+	if !ok {
+		return fmt.Errorf("%w: %d", ErrWindowNotFound, id)
+	}
+	w.Layout = mode
+	w.paneMgr.setMode(mode)
+	return nil
+}
+
+// LayoutMode returns the current layout mode for the window with the given ID.
+func (wm *WindowManager) LayoutMode(id WindowID) (LayoutMode, error) {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+
+	w, ok := wm.windows[id]
+	if !ok {
+		return LayoutTiled, fmt.Errorf("%w: %d", ErrWindowNotFound, id)
+	}
+	return w.paneMgr.mode(), nil
+}
+
 // CloseWindow closes the window with the given ID, removing all its panes.
 // If the closed window was active, the next window becomes active.
 // Returns an error if this is the last window.
@@ -162,11 +188,75 @@ func (wm *WindowManager) CloseWindow(id WindowID) error {
 	return nil
 }
 
+// MoveWindow moves the window with the given ID to targetIndex in the
+// window order. If the ID is already at the target index, this is a no-op.
+// The active window is preserved.
+func (wm *WindowManager) MoveWindow(id WindowID, targetIndex int) error {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+
+	if _, ok := wm.windows[id]; !ok {
+		return fmt.Errorf("%w: %d", ErrWindowNotFound, id)
+	}
+
+	if targetIndex < 0 || targetIndex >= len(wm.order) {
+		return fmt.Errorf("termmux: target index %d out of range [0,%d]", targetIndex, len(wm.order)-1)
+	}
+
+	cur := wm.windowIndex(id)
+	if cur < 0 || cur == targetIndex {
+		return nil
+	}
+
+	wm.order = append(wm.order[:cur], wm.order[cur+1:]...)
+	wm.order = append(wm.order[:targetIndex], append([]WindowID{id}, wm.order[targetIndex:]...)...)
+	return nil
+}
+
+// SwapWindows exchanges the positions of two windows in the order slice.
+// Swapping a window with itself is a no-op.
+func (wm *WindowManager) SwapWindows(id1, id2 WindowID) error {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+
+	if id1 == id2 {
+		return nil
+	}
+
+	if _, ok := wm.windows[id1]; !ok {
+		return fmt.Errorf("%w: %d", ErrWindowNotFound, id1)
+	}
+	if _, ok := wm.windows[id2]; !ok {
+		return fmt.Errorf("%w: %d", ErrWindowNotFound, id2)
+	}
+
+	idx1 := wm.windowIndex(id1)
+	idx2 := wm.windowIndex(id2)
+	if idx1 < 0 || idx2 < 0 {
+		return fmt.Errorf("termmux: window index inconsistency")
+	}
+
+	wm.order[idx1], wm.order[idx2] = wm.order[idx2], wm.order[idx1]
+	return nil
+}
+
 // ActiveWindowID returns the currently active window ID, or 0 if no windows exist.
 func (wm *WindowManager) ActiveWindowID() WindowID {
 	wm.mu.Lock()
 	defer wm.mu.Unlock()
 	return wm.activeID
+}
+
+func (wm *WindowManager) setActive(id WindowID) {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+	if id == 0 {
+		wm.activeID = 0
+		return
+	}
+	if _, ok := wm.windows[id]; ok {
+		wm.activeID = id
+	}
 }
 
 // Window returns the window with the given ID, or nil if not found.
@@ -188,6 +278,17 @@ func (wm *WindowManager) Windows() []*Window {
 	return result
 }
 
+// Active returns the currently active window, or nil if no windows exist.
+func (wm *WindowManager) Active() *Window {
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+
+	if wm.activeID == 0 {
+		return nil
+	}
+	return wm.windows[wm.activeID]
+}
+
 // ActivePaneManager returns the paneManager of the active window, or nil if no windows exist.
 func (wm *WindowManager) ActivePaneManager() *paneManager {
 	wm.mu.Lock()
@@ -200,6 +301,16 @@ func (wm *WindowManager) ActivePaneManager() *paneManager {
 		return w.paneMgr
 	}
 	return nil
+}
+
+// SetSynchronize enables or disables pane synchronization for this window.
+func (w *Window) SetSynchronize(v bool) {
+	w.paneMgr.SetSynchronize(v)
+}
+
+// Synchronize reports whether pane synchronization is enabled for this window.
+func (w *Window) Synchronize() bool {
+	return w.paneMgr.Synchronize()
 }
 
 // SetSize updates the screen dimensions for all windows' layout engines.
@@ -249,22 +360,22 @@ func (wm *WindowManager) WindowPaneMgr(id WindowID) *paneManager {
 	return w.paneMgr
 }
 
-// BreakPane removes the active pane from the source window and moves it
+// BreakPane removes the specified pane from the source window and moves it
 // to a brand new window with the same screen dimensions. The new window
 // is created with a default name and automatically becomes the target
-// for the moved pane. Returns the new WindowID.
+// for the moved pane. Returns the new window's ID, the moved pane's new
+// PaneID, and the moved SessionID.
 //
 // The source window is NOT deleted even if it becomes empty.
-func (wm *WindowManager) BreakPane(sourceID WindowID) (WindowID, error) {
+func (wm *WindowManager) BreakPane(sourceID WindowID, paneID PaneID) (WindowID, PaneID, SessionID, error) {
 	wm.mu.Lock()
 	defer wm.mu.Unlock()
 
 	source, ok := wm.windows[sourceID]
 	if !ok {
-		return 0, fmt.Errorf("%w: %d", ErrWindowNotFound, sourceID)
+		return 0, 0, 0, fmt.Errorf("%w: %d", ErrWindowNotFound, sourceID)
 	}
 
-	// Create a new window with the same dimensions.
 	newID := wm.nextID
 	wm.nextID++
 	name := fmt.Sprintf("window-%d", newID)
@@ -278,9 +389,8 @@ func (wm *WindowManager) BreakPane(sourceID WindowID) (WindowID, error) {
 	wm.windows[newID] = newWindow
 	wm.order = append(wm.order, newID)
 
-	// Transfer the active pane from source to the new window.
-	newPaneID := source.paneMgr.transferPaneToWindow(newWindow.paneMgr, SplitRight)
-	if newPaneID == 0 {
+	newPaneID, sessionID, err := source.paneMgr.transferPaneToWindow(paneID, newWindow.paneMgr, SplitRight)
+	if err != nil {
 		// Transfer failed — remove the just-created window.
 		delete(wm.windows, newID)
 		for i, wid := range wm.order {
@@ -289,35 +399,33 @@ func (wm *WindowManager) BreakPane(sourceID WindowID) (WindowID, error) {
 				break
 			}
 		}
-		return 0, fmt.Errorf("%w: no active pane in window %d", ErrPaneNotFound, sourceID)
+		return 0, 0, 0, err
 	}
 
-	return newID, nil
+	return newID, newPaneID, sessionID, nil
 }
 
-// JoinPane removes the active pane from the source window and moves it
+// JoinPane removes the specified pane from the source window and moves it
 // into the target window. The target window must exist and be different
 // from the source. The pane keeps its original SessionID, VTerm, Title, etc.
-func (wm *WindowManager) JoinPane(sourceID, targetID WindowID) error {
+// Returns the moved pane's new PaneID and the moved SessionID.
+func (wm *WindowManager) JoinPane(sourceID, targetID WindowID, paneID PaneID) (PaneID, SessionID, error) {
 	wm.mu.Lock()
 	defer wm.mu.Unlock()
 
 	source, ok := wm.windows[sourceID]
 	if !ok {
-		return fmt.Errorf("%w: %d", ErrWindowNotFound, sourceID)
+		return 0, 0, fmt.Errorf("%w: %d", ErrWindowNotFound, sourceID)
 	}
 	target, ok := wm.windows[targetID]
 	if !ok {
-		return fmt.Errorf("%w: %d", ErrWindowNotFound, targetID)
+		return 0, 0, fmt.Errorf("%w: %d", ErrWindowNotFound, targetID)
 	}
 	if sourceID == targetID {
-		return fmt.Errorf("termmux: cannot join pane into the same window")
+		return 0, 0, fmt.Errorf("termmux: cannot join pane into the same window")
 	}
 
-	// Transfer the active pane from source to target.
-	source.paneMgr.transferPaneToWindow(target.paneMgr, SplitRight)
-
-	return nil
+	return source.paneMgr.transferPaneToWindow(paneID, target.paneMgr, SplitRight)
 }
 
 // WindowInfo is a read-only snapshot of a window's state for external consumers.

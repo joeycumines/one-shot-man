@@ -29,7 +29,7 @@ func setupMgr(t *testing.T, withSession bool) (*goja.Runtime, func()) {
 	<-mgr.Started()
 
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
 	if withSession {
@@ -90,7 +90,7 @@ func TestSessionManager_RunViaJS(t *testing.T) {
 	ctx := t.Context()
 
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
 	// Call run() from JS — this starts the worker goroutine.
@@ -137,7 +137,7 @@ func TestSessionManager_RegisterUnregister(t *testing.T) {
 	}
 
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 	_ = runtime.Set("sessionID", uint64(id))
 
@@ -833,7 +833,7 @@ func TestSessionManager_InputNoSession(t *testing.T) {
 
 // ── on/off/pollEvents (listener API on SessionManager) ───
 
-func TestSessionManager_OnOffPollEvents(t *testing.T) {
+func TestSessionManager_EventAPI(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
@@ -841,8 +841,42 @@ func TestSessionManager_OnOffPollEvents(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	// on() with unknown event should throw TypeError.
+	// addEventListener() with non-function callback should throw TypeError.
 	v, err := runtime.RunString(`
+		var threw = false;
+		try {
+			tuiMux.addEventListener('exit', 'not-a-function');
+		} catch (e) {
+			threw = e instanceof TypeError;
+		}
+		threw;
+	`)
+	if err != nil {
+		t.Fatalf("addEventListener(non-function): %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("addEventListener(non-function callback) should throw TypeError")
+	}
+
+	// Register listeners via primary API, dispatch, and remove.
+	v, err = runtime.RunString(`
+		var events = [];
+		function handler(evt) { events.push(evt.detail); }
+		tuiMux.addEventListener('exit', handler);
+		tuiMux.dispatchEvent(new CustomEvent('exit', { detail: { reason: 'toggle' } }));
+		tuiMux.removeEventListener('exit', handler);
+		tuiMux.dispatchEvent(new CustomEvent('exit', { detail: { reason: 'context' } }));
+		events.length;
+	`)
+	if err != nil {
+		t.Fatalf("addEventListener/dispatch/remove: %v", err)
+	}
+	if v.ToInteger() != 1 {
+		t.Fatalf("expected 1 event, got %d", v.ToInteger())
+	}
+
+	// Legacy on() unknown event rejection.
+	v, err = runtime.RunString(`
 		var threw = false;
 		try {
 			tuiMux.on('nonexistent', function() {});
@@ -858,51 +892,20 @@ func TestSessionManager_OnOffPollEvents(t *testing.T) {
 		t.Fatal("on(unknown event) should throw TypeError")
 	}
 
-	// on() with non-function callback should throw TypeError.
+	// Legacy on()/off() compatibility.
 	v, err = runtime.RunString(`
-		var threw = false;
-		try {
-			tuiMux.on('exit', 'not-a-function');
-		} catch (e) {
-			threw = e instanceof TypeError;
-		}
-		threw;
+		var legacy = [];
+		var id = tuiMux.on('focus', function(evt) { legacy.push(evt.detail); });
+		tuiMux.dispatchEvent(new CustomEvent('focus', { detail: { side: 'claude' } }));
+		var removed = tuiMux.off(id);
+		tuiMux.dispatchEvent(new CustomEvent('focus', { detail: { side: 'osm' } }));
+		removed && legacy.length === 1 && legacy[0].side === 'claude';
 	`)
 	if err != nil {
-		t.Fatalf("on(non-function): %v", err)
+		t.Fatalf("on/off compatibility: %v", err)
 	}
 	if !v.ToBoolean() {
-		t.Fatal("on(non-function callback) should throw TypeError")
-	}
-
-	// Register a valid listener, get an ID, remove it.
-	v, err = runtime.RunString(`
-		var id = tuiMux.on('exit', function(evt) {});
-		typeof id === 'number' && id > 0;
-	`)
-	if err != nil {
-		t.Fatalf("on(valid): %v", err)
-	}
-	if !v.ToBoolean() {
-		t.Fatal("on() should return a positive numeric ID")
-	}
-
-	// off() should return true for existing listener.
-	v, err = runtime.RunString(`tuiMux.off(id)`)
-	if err != nil {
-		t.Fatalf("off: %v", err)
-	}
-	if !v.ToBoolean() {
-		t.Fatal("off(existing) should return true")
-	}
-
-	// off again returns false.
-	v, err = runtime.RunString(`tuiMux.off(id)`)
-	if err != nil {
-		t.Fatalf("off (second): %v", err)
-	}
-	if v.ToBoolean() {
-		t.Fatal("off(removed) should return false")
+		t.Fatal("legacy on/off should add and remove one listener")
 	}
 
 	// pollEvents() with no pending events returns 0.
@@ -1162,7 +1165,7 @@ func TestSessionManager_AttachReturnsSessionID(t *testing.T) {
 	<-mgr.Started()
 
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
 	// Create a StringIO and expose it as a Go value for attach.
@@ -1437,7 +1440,7 @@ func TestChooser_Navigation(t *testing.T) {
 	}
 
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1, "")
+	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
 	// newChooser(activeID) should default to cursor at active session.
@@ -1657,6 +1660,74 @@ func TestUnlockSession(t *testing.T) {
 	}
 }
 
+func TestSessionManager_LockedInputGate_JS(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	mgr := parent.NewSessionManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+	defer func() {
+		cancel()
+		<-errCh
+	}()
+
+	rec := newRecordingStringIO()
+	sio := parent.NewStringIOSession(rec)
+	sio.Start()
+	id, err := mgr.Register(sio, parent.SessionTarget{Name: "gate-test", Kind: "pty"})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if err := mgr.Activate(id); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+
+	runtime := goja.New()
+	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	_ = runtime.Set("tuiMux", tuiMux)
+
+	_, err = runtime.RunString(`
+		tuiMux.lockSession(tuiMux.activeID(), 'gatepass');
+		tuiMux.session().write('should not reach child');
+	`)
+	if err != nil {
+		t.Fatalf("lock/write: %v", err)
+	}
+
+	v, err := runtime.RunString(`tuiMux.snapshot(tuiMux.activeID()).locked`)
+	if err != nil {
+		t.Fatalf("snapshot locked: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("snapshot().locked should be true while session is locked")
+	}
+
+	if len(rec.sent) != 0 {
+		t.Fatalf("child received gated input: %v", rec.sent)
+	}
+
+	_, err = runtime.RunString(`
+		tuiMux.unlockSession(tuiMux.activeID(), 'gatepass');
+		tuiMux.session().write('after unlock');
+	`)
+	if err != nil {
+		t.Fatalf("unlock/write: %v", err)
+	}
+
+	v, err = runtime.RunString(`tuiMux.snapshot(tuiMux.activeID()).locked`)
+	if err != nil {
+		t.Fatalf("snapshot locked after unlock: %v", err)
+	}
+	if v.ToBoolean() {
+		t.Fatal("snapshot().locked should be false after unlock")
+	}
+}
+
 func TestSessionStatusMethodBindings(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
@@ -1725,11 +1796,11 @@ func TestSearchForwardBackwardBindings(t *testing.T) {
 }
 
 type mockInteractiveSession struct {
-	done                           chan struct{}
-	readerCh                       chan []byte
-	writes                         []string
-	resizes                        [][2]int
-	writeErr, resizeErr, closeErr  error
+	done                          chan struct{}
+	readerCh                      chan []byte
+	writes                        []string
+	resizes                       [][2]int
+	writeErr, resizeErr, closeErr error
 }
 
 func (m *mockInteractiveSession) Write(p []byte) (int, error) {

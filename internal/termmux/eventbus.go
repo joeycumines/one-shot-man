@@ -53,6 +53,10 @@ const (
 	// EventSilence is published when a session produces no output for a
 	// configurable duration.
 	EventSilence
+
+	// EventWindowUpdated is published when a window's pane layout changes
+	// (panes added, removed, or moved between windows).
+	EventWindowUpdated
 )
 
 // String returns a human-readable name for the event kind.
@@ -82,6 +86,8 @@ func (k EventKind) String() string {
 		return "activity"
 	case EventSilence:
 		return "silence"
+	case EventWindowUpdated:
+		return "window-updated"
 	default:
 		return "unknown"
 	}

@@ -1,11 +1,20 @@
 package termmux
 
 import (
+	"fmt"
 	"slices"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
+
+// MinPaneRows is the smallest content height a pane may have after a
+// directional resize. Sizes below this are clamped up.
+const MinPaneRows = 2
+
+// MinPaneCols is the smallest content width a pane may have after a
+// directional resize. Sizes below this are clamped up.
+const MinPaneCols = 2
 
 // PaneGeometry describes a rectangular region within a terminal screen.
 type PaneGeometry struct {
@@ -127,6 +136,47 @@ const (
 	LayoutMainVertical
 )
 
+// LayoutModeFromString parses a layout mode name into a LayoutMode value.
+// Returns the mode and true if the name is recognized.
+func LayoutModeFromString(s string) (LayoutMode, bool) {
+	switch s {
+	case "tiled":
+		return LayoutTiled, true
+	case "stacked":
+		return LayoutStacked, true
+	case "horizontal":
+		return LayoutHorizontal, true
+	case "vertical":
+		return LayoutVertical, true
+	case "main-horizontal":
+		return LayoutMainHorizontal, true
+	case "main-vertical":
+		return LayoutMainVertical, true
+	default:
+		return LayoutTiled, false
+	}
+}
+
+// String returns the canonical name of the layout mode.
+func (m LayoutMode) String() string {
+	switch m {
+	case LayoutTiled:
+		return "tiled"
+	case LayoutStacked:
+		return "stacked"
+	case LayoutHorizontal:
+		return "horizontal"
+	case LayoutVertical:
+		return "vertical"
+	case LayoutMainHorizontal:
+		return "main-horizontal"
+	case LayoutMainVertical:
+		return "main-vertical"
+	default:
+		return fmt.Sprintf("unknown(%d)", m)
+	}
+}
+
 // SplitDirection indicates the direction in which a new pane is inserted
 // relative to the pivot pane.
 type SplitDirection int
@@ -167,6 +217,7 @@ type Pane struct {
 	Geometry    PaneGeometry
 	Title       string
 	Focus       bool
+	Exited      bool
 	BorderStyle string
 	VTerm       *vt.VTerm
 	LastActive  time.Time
@@ -209,6 +260,7 @@ type LayoutEngine struct {
 	nextID     PaneID
 	mainRatio  float64
 	zoomedPane PaneID
+	paneMgr    *paneManager
 }
 
 // NewLayoutEngine creates a LayoutEngine with the given mode and screen
@@ -416,6 +468,24 @@ func (e *LayoutEngine) FocusNext(current PaneID, direction NavigationDirection) 
 }
 
 func (e *LayoutEngine) Swap(a, b PaneID) bool {
+	return e.swapLayoutOnly(a, b) && e.swapPaneMetadata(a, b)
+}
+
+// swapPaneMetadata swaps the paneManager bindings for a and b when the engine
+// is owned by a paneManager. Resolving the metadata swap through the layout
+// engine keeps layout order and binding order consistent for callers that use
+// only the engine.
+func (e *LayoutEngine) swapPaneMetadata(a, b PaneID) bool {
+	if e.paneMgr == nil {
+		return true
+	}
+	return e.paneMgr.Swap(a, b) == nil
+}
+
+// swapLayoutOnly exchanges the positions of a and b in the engine's pane order
+// without touching paneManager metadata. It is used by SessionManager.SwapPanes,
+// which already updates metadata separately so the swap is not applied twice.
+func (e *LayoutEngine) swapLayoutOnly(a, b PaneID) bool {
 	idxA, idxB := -1, -1
 	for i, id := range e.panes {
 		if id == a {
@@ -535,7 +605,7 @@ func (e *LayoutEngine) computeVertical(geoms []PaneGeometry, panes []Pane, avail
 	}
 
 	allocated := 0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		var h int
 		if i == n-1 {
 			h = availH - allocated
@@ -567,7 +637,7 @@ func (e *LayoutEngine) computeHorizontal(geoms []PaneGeometry, panes []Pane, ava
 	}
 
 	allocated := 0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		var w int
 		if i == n-1 {
 			w = availW - allocated
@@ -697,6 +767,68 @@ func ceilSqrt(n int) int {
 		return x
 	}
 	return x + 1
+}
+
+// parseResizeDirection validates and parses a resize direction string such as
+// "left", "right", "up", or "down". It returns the row/column delta sign and
+// which axis is affected. Horizontal directions return dr=0 dc=±1; vertical
+// directions return dr=±1 dc=0. The delta magnitude is applied by the caller.
+func parseResizeDirection(direction string) (dr, dc int, err error) {
+	switch direction {
+	case "left":
+		return 0, -1, nil
+	case "right":
+		return 0, 1, nil
+	case "up":
+		return -1, 0, nil
+	case "down":
+		return 1, 0, nil
+	default:
+		return 0, 0, fmt.Errorf("termmux: invalid resize direction %q (expected left, right, up, down)", direction)
+	}
+}
+
+// ResizePaneDelta computes a new PaneGeometry for the given pane by applying a
+// directional delta. The caller supplies the current panes slice so the helper
+// can locate the target pane's current geometry without recomputing the full
+// layout. Rows are adjusted for "up"/"down"; columns for "left"/"right".
+// Positive delta grows in the direction (right/down) or shrinks the opposite
+// edge (left/up). The resulting dimensions are clamped to MinPaneRows and
+// MinPaneCols. Returns ErrPaneNotFound if the pane is not in the slice.
+func (e *LayoutEngine) ResizePaneDelta(panes []Pane, id PaneID, direction string, delta int) (PaneGeometry, error) {
+	dr, dc, err := parseResizeDirection(direction)
+	if err != nil {
+		return PaneGeometry{}, err
+	}
+
+	idx := -1
+	for i, p := range panes {
+		if p.ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return PaneGeometry{}, fmt.Errorf("%w: %d", ErrPaneNotFound, id)
+	}
+
+	g := panes[idx].Geometry
+	newRows := g.Rows + dr*delta
+	newCols := g.Cols + dc*delta
+
+	if newRows < MinPaneRows {
+		newRows = MinPaneRows
+	}
+	if newCols < MinPaneCols {
+		newCols = MinPaneCols
+	}
+
+	return PaneGeometry{
+		Row:  g.Row,
+		Col:  g.Col,
+		Rows: newRows,
+		Cols: newCols,
+	}, nil
 }
 
 // clamp restricts v to [lo, hi].

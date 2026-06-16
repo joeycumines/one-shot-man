@@ -3139,12 +3139,16 @@ func TestSessionManager_SetSynchronizePanes(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	m.SetSynchronizePanes(true)
+	if err := m.SetSynchronizePanes(true); err != nil {
+		t.Fatalf("SetSynchronizePanes(true): %v", err)
+	}
 	if !m.SynchronizePanes() {
 		t.Error("SynchronizePanes = false, want true after SetSynchronizePanes(true)")
 	}
 
-	m.SetSynchronizePanes(false)
+	if err := m.SetSynchronizePanes(false); err != nil {
+		t.Fatalf("SetSynchronizePanes(false): %v", err)
+	}
 	if m.SynchronizePanes() {
 		t.Error("SynchronizePanes = true, want false after SetSynchronizePanes(false)")
 	}
@@ -3159,16 +3163,20 @@ func TestSessionManager_SynchronizePanes_InputBroadcast(t *testing.T) {
 	s1 := newControllableSession()
 	s2 := newControllableSession()
 
-	id1, _ := m.Register(s1, SessionTarget{Name: "pane1"})
-	id2, _ := m.Register(s2, SessionTarget{Name: "pane2"})
-	_ = id2
+	if _, err := m.NewPane(s1, SessionTarget{Name: "pane1"}, SplitRight); err != nil {
+		t.Fatalf("NewPane s1: %v", err)
+	}
+	if _, err := m.NewPane(s2, SessionTarget{Name: "pane2"}, SplitRight); err != nil {
+		t.Fatalf("NewPane s2: %v", err)
+	}
 
-	_ = id1
 	s1.readerCh <- []byte("ready1\n")
 	s2.readerCh <- []byte("ready2\n")
 	time.Sleep(200 * time.Millisecond)
 
-	m.SetSynchronizePanes(true)
+	if err := m.SetSynchronizePanes(true); err != nil {
+		t.Fatalf("SetSynchronizePanes(true): %v", err)
+	}
 
 	if err := m.Input([]byte("test")); err != nil {
 		t.Fatalf("Input error: %v", err)
@@ -3194,10 +3202,13 @@ func TestSessionManager_SynchronizePanes_Off_OnlyActive(t *testing.T) {
 	s1 := newControllableSession()
 	s2 := newControllableSession()
 
-	id1, _ := m.Register(s1, SessionTarget{Name: "pane1"})
-	_, _ = m.Register(s2, SessionTarget{Name: "pane2"})
+	if _, err := m.NewPane(s1, SessionTarget{Name: "pane1"}, SplitRight); err != nil {
+		t.Fatalf("NewPane s1: %v", err)
+	}
+	if _, err := m.NewPane(s2, SessionTarget{Name: "pane2"}, SplitRight); err != nil {
+		t.Fatalf("NewPane s2: %v", err)
+	}
 
-	_ = id1
 	s1.readerCh <- []byte("ready1\n")
 	s2.readerCh <- []byte("ready2\n")
 	time.Sleep(200 * time.Millisecond)
@@ -3209,10 +3220,12 @@ func TestSessionManager_SynchronizePanes_Off_OnlyActive(t *testing.T) {
 	w1 := s1.Written()
 	w2 := s2.Written()
 
-	if string(w1) != "test" {
-		t.Errorf("s1.Written = %q, want %q", string(w1), "test")
+	// NewPane makes the most recently registered session active; verify only
+	// that session receives input while sync is off.
+	if string(w2) != "test" {
+		t.Errorf("s2.Written = %q, want %q", string(w2), "test")
 	}
-	if len(w2) != 0 {
-		t.Errorf("s2.Written = %q, want empty (not active)", string(w2))
+	if len(w1) != 0 {
+		t.Errorf("s1.Written = %q, want empty (not active)", string(w1))
 	}
 }

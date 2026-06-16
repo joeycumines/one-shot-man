@@ -1,0 +1,214 @@
+package termmux
+
+import (
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/dop251/goja"
+
+	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
+)
+
+func waitForSnapshotText(t *testing.T, runtime *goja.Runtime, mgr goja.Value, sid uint64, substr string) {
+	t.Helper()
+	_ = runtime.Set("__waitMgr", mgr)
+	_ = runtime.Set("__waitSid", sid)
+	_ = runtime.Set("__waitSubstr", substr)
+	defer func() {
+		_ = runtime.Set("__waitMgr", goja.Undefined())
+		_ = runtime.Set("__waitSid", goja.Undefined())
+		_ = runtime.Set("__waitSubstr", goja.Undefined())
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		v, err := runtime.RunString(`
+			(function() {
+				var snap = __waitMgr.snapshot(__waitSid);
+				return !!(snap && snap.plainText && snap.plainText.indexOf(__waitSubstr) >= 0);
+			})()
+		`)
+		if err != nil {
+			t.Fatalf("waitForSnapshotText: %v", err)
+		}
+		if v.ToBoolean() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for %q in session %d snapshot", substr, sid)
+}
+
+func TestSearchForwardBackwardBindings_DefaultSearcher(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	v, err := runtime.RunString(`
+		var s = termmux.newBoundedSession({ cmd: "/bin/echo", args: ["hello", "world"], rows: 5, cols: 40, name: "search" });
+		s.sid
+	`)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	sid := uint64(v.ToInteger())
+	mgr, err := runtime.RunString("s.mgr")
+	if err != nil {
+		t.Fatalf("get manager: %v", err)
+	}
+
+	waitForSnapshotText(t, runtime, mgr, sid, "hello")
+
+	_, err = runtime.RunString(fmt.Sprintf(`
+		var sid = %d;
+		var mgr = s.mgr;
+		var fwd = mgr.searchForward(sid, "hello");
+		if (!fwd.found || fwd.row !== 1 || fwd.col !== 1) {
+			throw new Error("searchForward = " + JSON.stringify(fwd));
+		}
+
+		var bwd = mgr.searchBackward(sid, "world");
+		if (!bwd.found || bwd.row !== 1 || bwd.col !== 7) {
+			throw new Error("searchBackward = " + JSON.stringify(bwd));
+		}
+
+		var none = mgr.searchForward(sid, "xyz");
+		if (none.found) {
+			throw new Error("expected no match");
+		}
+
+		var empty = mgr.searchForward(sid, "");
+		if (empty.found) {
+			throw new Error("empty pattern must not match");
+		}
+	`, sid))
+	if err != nil {
+		t.Fatalf("default searcher binding test: %v", err)
+	}
+}
+
+func TestNewCopyModeSearcher_OptionalCallback(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	v, err := runtime.RunString(`
+		var s = termmux.newBoundedSession({ cmd: "/bin/echo", args: ["alpha", "beta"], rows: 5, cols: 40, name: "copysearch" });
+		s.sid
+	`)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	sid := uint64(v.ToInteger())
+	mgr, err := runtime.RunString("s.mgr")
+	if err != nil {
+		t.Fatalf("get manager: %v", err)
+	}
+
+	waitForSnapshotText(t, runtime, mgr, sid, "alpha")
+
+	_, err = runtime.RunString(`
+		var searcher = s.mgr.newCopyModeSearcher();
+		searcher.startSearch(0, 0, 0);
+		searcher.appendChar("a");
+		searcher.appendChar("l");
+		searcher.appendChar("p");
+		searcher.appendChar("h");
+		searcher.appendChar("a");
+
+		var match = searcher.execute();
+		if (!match.found || match.row !== 0 || match.col !== 0) {
+			throw new Error("execute (no callback) = " + JSON.stringify(match));
+		}
+
+		var next = searcher.nextMatch(match.row, match.col);
+		if (next.found) {
+			throw new Error("expected no next match for single occurrence");
+		}
+
+		function mySearch(pattern, row, col) {
+			if (pattern === "alpha" && row === 0 && col === 0) {
+				return { found: true, row: 0, col: 0 };
+			}
+			return { found: false };
+		}
+		var custom = searcher.execute(mySearch);
+		if (!custom.found || custom.row !== 0 || custom.col !== 0) {
+			throw new Error("execute (callback) = " + JSON.stringify(custom));
+		}
+	`)
+	if err != nil {
+		t.Fatalf("optional callback test: %v", err)
+	}
+}
+
+func TestNewCopyModeSearcher_BackwardNoCallback(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	v, err := runtime.RunString(`
+		var s = termmux.newBoundedSession({ cmd: "/bin/echo", args: ["one", "two"], rows: 5, cols: 40, name: "copysearch2" });
+		s.sid
+	`)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	sid := uint64(v.ToInteger())
+	mgr, err := runtime.RunString("s.mgr")
+	if err != nil {
+		t.Fatalf("get manager: %v", err)
+	}
+
+	waitForSnapshotText(t, runtime, mgr, sid, "one")
+
+	_, err = runtime.RunString(`
+		var searcher = s.mgr.newCopyModeSearcher();
+		searcher.startSearch(1, 0, 10);
+		searcher.appendChar("o");
+		searcher.appendChar("n");
+		searcher.appendChar("e");
+
+		var match = searcher.execute();
+		if (!match.found || match.row !== 0 || match.col !== 0) {
+			throw new Error("backward execute (no callback) = " + JSON.stringify(match));
+		}
+
+		var prev = searcher.prevMatch(match.row, match.col);
+		if (prev.found) {
+			throw new Error("expected no previous match for single occurrence");
+		}
+	`)
+	if err != nil {
+		t.Fatalf("backward no-callback test: %v", err)
+	}
+}
+
+func TestSearchForwardBackwardBindings_InvalidSession(t *testing.T) {
+	runtime, cleanup := setupTmuxModule(t)
+	defer cleanup()
+
+	_, err := runtime.RunString(`
+		var fwd = tuiMux.searchForward(999999, "hello");
+		if (fwd.found) {
+			throw new Error("expected no match for invalid session");
+		}
+
+		var bwd = tuiMux.searchBackward(999999, "hello");
+		if (bwd.found) {
+			throw new Error("expected no match for invalid session");
+		}
+	`)
+	if err != nil {
+		t.Fatalf("invalid session search test: %v", err)
+	}
+}
+
+func TestWrapSearchMatch1Based(t *testing.T) {
+	m := wrapSearchMatch1Based(&vt.SearchMatch{Row: 0, Col: 5})
+	if !m["found"].(bool) || m["row"].(int) != 1 || m["col"].(int) != 6 {
+		t.Fatalf("unexpected 1-based match: %v", m)
+	}
+
+	m = wrapSearchMatch1Based(nil)
+	if m["found"].(bool) {
+		t.Fatal("expected found=false for nil match")
+	}
+}

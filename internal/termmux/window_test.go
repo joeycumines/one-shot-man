@@ -267,3 +267,96 @@ func TestWindow_Created(t *testing.T) {
 		t.Errorf("Window.created = %v, want between %v and %v", w.created, before, after)
 	}
 }
+
+func TestWindowManager_MoveWindow(t *testing.T) {
+	wm := NewWindowManager(LayoutTiled, 80, 24)
+
+	id1 := wm.NewWindow("a")
+	id2 := wm.NewWindow("b")
+	id3 := wm.NewWindow("c")
+
+	if err := wm.MoveWindow(id3, 0); err != nil {
+		t.Fatalf("MoveWindow: %v", err)
+	}
+	windows := wm.Windows()
+	if windows[0].ID != id3 || windows[1].ID != id1 || windows[2].ID != id2 {
+		t.Errorf("MoveWindow to 0: got %v, want [%d %d %d]", windowIDs(windows), id3, id1, id2)
+	}
+
+	if err := wm.MoveWindow(id3, 1); err != nil {
+		t.Fatalf("MoveWindow: %v", err)
+	}
+	windows = wm.Windows()
+	if windows[0].ID != id1 || windows[1].ID != id3 || windows[2].ID != id2 {
+		t.Errorf("MoveWindow to 1: got %v, want [%d %d %d]", windowIDs(windows), id1, id3, id2)
+	}
+
+	if err := wm.MoveWindow(id3, 2); err != nil {
+		t.Fatalf("MoveWindow: %v", err)
+	}
+	windows = wm.Windows()
+	if windows[0].ID != id1 || windows[1].ID != id2 || windows[2].ID != id3 {
+		t.Errorf("MoveWindow to end: got %v, want [%d %d %d]", windowIDs(windows), id1, id2, id3)
+	}
+
+	if err := wm.MoveWindow(id1, 0); err != nil {
+		t.Errorf("MoveWindow same index returned error: %v", err)
+	}
+
+	if err := wm.MoveWindow(999, 0); err == nil {
+		t.Error("MoveWindow: expected error for missing window")
+	}
+	if err := wm.MoveWindow(id1, -1); err == nil {
+		t.Error("MoveWindow: expected error for negative index")
+	}
+	if err := wm.MoveWindow(id1, 3); err == nil {
+		t.Error("MoveWindow: expected error for out-of-range index")
+	}
+
+	if wm.ActiveWindowID() != id1 {
+		t.Errorf("ActiveWindowID = %d, want %d", wm.ActiveWindowID(), id1)
+	}
+}
+
+func TestWindowManager_SwapWindows(t *testing.T) {
+	wm := NewWindowManager(LayoutTiled, 80, 24)
+
+	id1 := wm.NewWindow("a")
+	id2 := wm.NewWindow("b")
+	id3 := wm.NewWindow("c")
+
+	if err := wm.SwapWindows(id1, id3); err != nil {
+		t.Fatalf("SwapWindows: %v", err)
+	}
+	windows := wm.Windows()
+	if windows[0].ID != id3 || windows[1].ID != id2 || windows[2].ID != id1 {
+		t.Errorf("SwapWindows: got %v, want [%d %d %d]", windowIDs(windows), id3, id2, id1)
+	}
+
+	if err := wm.SwapWindows(id2, id2); err != nil {
+		t.Errorf("SwapWindows same ID returned error: %v", err)
+	}
+	windows = wm.Windows()
+	if windows[0].ID != id3 || windows[1].ID != id2 || windows[2].ID != id1 {
+		t.Errorf("SwapWindows same ID changed order: got %v", windowIDs(windows))
+	}
+
+	if err := wm.SwapWindows(999, id1); err == nil {
+		t.Error("SwapWindows: expected error for missing first window")
+	}
+	if err := wm.SwapWindows(id1, 999); err == nil {
+		t.Error("SwapWindows: expected error for missing second window")
+	}
+
+	if wm.ActiveWindowID() != id1 {
+		t.Errorf("ActiveWindowID = %d, want %d after swap", wm.ActiveWindowID(), id1)
+	}
+}
+
+func windowIDs(windows []*Window) []WindowID {
+	ids := make([]WindowID, len(windows))
+	for i, w := range windows {
+		ids[i] = w.ID
+	}
+	return ids
+}

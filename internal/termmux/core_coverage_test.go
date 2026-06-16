@@ -105,9 +105,15 @@ func TestPaneManager_TransferPaneToWindow(t *testing.T) {
 	src.paneOrder = []PaneID{p1}
 	src.activePaneID = p1
 
-	newID := src.transferPaneToWindow(dst, SplitRight)
+	newID, sessionID, err := src.transferPaneToWindow(p1, dst, SplitRight)
+	if err != nil {
+		t.Fatalf("transferPaneToWindow: %v", err)
+	}
 	if newID == 0 {
 		t.Fatal("transferPaneToWindow returned zero")
+	}
+	if sessionID != SessionID(1) {
+		t.Errorf("sessionID = %d, want 1", sessionID)
 	}
 	if _, ok := dst.panes[newID]; !ok {
 		t.Errorf("pane %d not in destination", newID)

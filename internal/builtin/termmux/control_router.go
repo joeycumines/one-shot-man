@@ -11,6 +11,28 @@ type controlRouter struct {
 	inChord     bool
 }
 
+// handleKey dispatches a key through the router and returns handled/action.
+func (r *controlRouter) handleKey(key string) (bool, string) {
+	if r.inChord {
+		r.inChord = false
+		if action, ok := r.chordKeys[key]; ok {
+			return true, action
+		}
+		if key == "esc" {
+			return true, ""
+		}
+		return false, ""
+	}
+	if action, ok := r.keys[key]; ok {
+		return true, action
+	}
+	if r.chordPrefix != "" && key == r.chordPrefix {
+		r.inChord = true
+		return true, ""
+	}
+	return false, ""
+}
+
 func newControlRouter(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	cr := &controlRouter{
 		keys:      make(map[string]string),

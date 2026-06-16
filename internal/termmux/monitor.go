@@ -15,6 +15,11 @@ type MonitorConfig struct {
 	// background pane is considered "activity". Zero means immediate.
 	ActivityThreshold time.Duration
 
+	// ActivityResetThreshold is the idle duration after which an already
+	// fired activity flag is reset so the pane can fire again. Zero disables
+	// automatic reset by quiescence.
+	ActivityResetThreshold time.Duration
+
 	// Silence controls whether a pane that produces no output for the
 	// configured duration triggers a MonitorSilence event.
 	Silence bool

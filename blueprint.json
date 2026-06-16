@@ -30,6 +30,9 @@
       "warning": "ADVERSARIAL AUTOPSY SOURCE: ./scratch/impl-gaps-pull-out-hackery-proper-ecosystem/ contains the full adversarial analysis with file paths and line numbers."
     },
     {
+      "warning": "WAVE 4 AUTOPSY SOURCE: ./scratch/termmux-functional-autopsy-20260615/ and ./scratch/builtin-termmux-autopsy-20260615/ contain the adversarial audits that generated tasks 69-98."
+    },
+    {
       "warning": "DEPENDENCY ORDER IS MANDATORY: Tasks are sequenced so that later tasks depend on earlier ones. Do not reorder without updating this blueprint and logging the deviation."
     },
     {
@@ -51,8 +54,8 @@
     "ruleOfTwo": "Before committing any task's code, invoke strict-review-gate with two independent subagents. Only proceed if both reviews pass contiguously."
   },
   "statusSection": {
-    "currentState": "Tasks 1-68 DONE. Wave 3 complete. Ready for two contiguous Rule of Two reviews and commit.",
-    "goalState": "A production-quality termmux terminal multiplexer that: (1) correctly emulates VT220/xterm with full protocol compliance and zero doc.go contradictions, (2) has complete copy mode with vi navigation and search, (3) has window management, prefix key system, and synchronized panes, (4) has monitoring (bell, activity, silence) and remain-on-exit, (5) has main-horizontal/main-vertical layouts, (6) has configurable status bar with left/right sections, (7) has full mouse support (click-to-focus, drag-to-resize, scroll-in-copy-mode), (8) has no empty stub methods or AI slop in public interfaces, (9) example-15-bouncing-logo.js is a thin ~100-line shim backed by Go utilities, (10) is independently verified by two hostile reviewers before every commit, (11) has >=60% test coverage on all termmux packages including JS bindings, (12) has no ID divergence between paneManager and LayoutEngine.",
+    "currentState": "Tasks 1-88 DONE. Task 88 was broadened from forwarding five missing event kinds into a full refactor of the termmux event bridge to use goja-eventloop EventTarget/Event/CustomEvent while preserving the legacy on/off/pollEvents API. Bounce-presenter Go implementation (tasks 83-87) was removed after user clarification that it is application-specific; scripts/example-15-bouncing-logo.js was rewritten as pure JavaScript using reusable Go primitives. Generic reusable termmux primitives remain intact. Next concrete task: 89 (resize-pane directional deltas) is already complete; next remaining concrete task: 95 (wire copy-mode key actions to SessionManager methods)."
+    "goalState": "A production-quality termmux terminal multiplexer that: (1) correctly emulates VT220/xterm with full protocol compliance and zero doc.go contradictions, (2) has complete copy mode with vi navigation and search, (3) has window management, prefix key system, and synchronized panes, (4) has monitoring (bell, activity, silence) and remain-on-exit, (5) has main-horizontal/main-vertical layouts, (6) has configurable status bar with left/right sections, (7) has full mouse support (click-to-focus, drag-to-resize, scroll-in-copy-mode), (8) has no empty stub methods or AI slop in public interfaces, (9) example-15-bouncing-logo.js is a pure JavaScript implementation using reusable Go primitives (no app-specific Go bindings), (10) is independently verified by two hostile reviewers before every commit, (11) has >=60% test coverage on all termmux packages including JS bindings, (12) has no ID divergence between paneManager and LayoutEngine.",
     "replanLog": [
       "2026-06-15: DEEP ARCHITECTURAL PLANNING PHASE. Three parallel subagent audits completed: (1) termmux feature audit vs tmux, (2) bouncing-logo refactoring analysis, (3) VT engine quality audit. All 64 prior tasks pruned (Done). Blueprint rewritten with expanded scope: 55 new tasks covering VT engine fixes, pane manager cleanup, 7 new Go JS bindings, bouncing-logo rewrite, and tmux-parity features.",
       "2026-06-15: SCOPE EXPANSION. Added tasks 39-46: newBouncePresenter binding (Done), bouncing-logo rewrite (Done), bouncePresenter tests, pane/chooser/lock JS integration tests, duplicate method cleanup, DECSC/DECRC extended attributes, OSC 52 clipboard, final validation. Bouncing-logo reduced from 225 to 79 lines.",
@@ -61,417 +64,194 @@
       "2026-06-15: WAVE 2 COMPLETE. Ran full validation, race detector, lint. Passed two contiguous Oracle Rule of Two reviews (scratch/rule-of-two-review-1.md and scratch/rule-of-two-review-2.md). Committed changes. Coverage targets exceeded for builtin/termmux.",
       "2026-06-15: WAVE 2.5 / WAVE 3 PLANNING. Fixed pre-existing race in controllableSession.Close(), removed no-op paneW/paneH reads, raised forwardMouse coverage to 72.1%. Coverage audit identified next gaps: registerEvents/quitCmd, search/wrapInteractiveSession, registerSnapshotMethods/registerPersistenceMethods, persistedStateToJS/prefixActionKindFromName, mouse drag-to-resize. Added tasks 64-68.",
       "2026-06-15: WAVE 3 PROGRESS. Completed tasks 62-66: active mouse tracking test (forwardMouse 72.1%), registerEvents/quitCmd coverage, search/wrapInteractiveSession/controlRouter coverage, registerSnapshotMethods (97.6%), registerPersistenceMethods (73.0%), persistedStateToJS (100%), prefixActionKindFromName (100%). Fixed flaky TestChooser_Navigation by sorting SessionManager.NewChooser items by SessionID. Tasks 67-68 remain.",
-      "2026-06-15: WAVE 3 COMPLETE. Implemented mouse drag-to-resize pane borders with LayoutEngine.PaneAt, DividerAt, weight-proportional vertical/horizontal layout, and paneManager.FocusAt/ResizePaneAt. Routed FocusAt/ResizePaneAt through the SessionManager worker queue so active session updates and child PTY/VTerm resizes happen correctly; exported them as JS focusPaneAt/resizePaneAt bindings. Fixed DividerAt content-area bounds and restricted divider reporting to supported layouts. Added manager coverage tests for Screen, window operations, and FocusAt/ResizePaneAt side effects, plus core coverage tests for SessionTarget helpers, PrefixAction.String, and pane manager helpers. Strengthened TestBouncePresenter_ForwardMouse_ActiveTracking to assert forwarded SGR bytes. internal/termmux core coverage reached 86.1% (target 85%), internal/builtin/termmux reached 82.1% (target 80%). Full validation, race detector, and lint all pass."
+      "2026-06-15: WAVE 3 COMPLETE. Implemented mouse drag-to-resize pane borders with LayoutEngine.PaneAt, DividerAt, weight-proportional vertical/horizontal layout, and paneManager.FocusAt/ResizePaneAt. Routed FocusAt/ResizePaneAt through the SessionManager worker queue so active session updates and child PTY/VTerm resizes happen correctly; exported them as JS focusPaneAt/resizePaneAt bindings. Fixed DividerAt content-area bounds and restricted divider reporting to supported layouts. Added manager coverage tests for Screen, window operations, and FocusAt/ResizePaneAt side effects, plus core coverage tests for SessionTarget helpers, PrefixAction.String, and pane manager helpers. Strengthened TestBouncePresenter_ForwardMouse_ActiveTracking to assert forwarded SGR bytes. internal/termmux core coverage reached 86.1% (target 85%), internal/builtin/termmux reached 82.1% (target 80%). Full validation, race detector, and lint all pass.",
+      "2026-06-15: WAVE 4 BLUEPRINT EXPANSION. Synthesized three adversarial fan-out audits (termmux functional, VT/PTY deep-dive, builtin/termmux JS bindings) into 30 new sequential tasks (69-98). Tasks cover critical gaps: RespawnSession config preservation, lock-session input gating, window-switch focus routing, choose-tree overlay, status bar colors/position, display-message rendering, prefix dispatch execution, break/join mapping stability, per-window synchronize-panes, copy-mode search wiring, mouse drag state machine, pane swap metadata, pipe-pane command, activeSide passthrough state, Go-side compositor, ready-to-run BubbleTea model, unified SGR encoding, expanded CaptureConfig options, bridge missing events, resize-pane deltas, window ordering, send-keys, pane borders, activity auto-reset, exited-pane marking, copy-mode key dispatch, main-layout JS smoke tests, and final Rule of Two.",
+      "2026-06-15: TASK 70 COMPLETE. Implemented locked-session input gating in `SessionManager.handleInput`, added password-buffer unlock prompt with Backspace/DEL, Enter, Escape handling, wired correct/wrong password feedback via `DisplayMessage`, exposed `Locked` in `ScreenSnapshot`, added `RenderUnlockPrompt`/`UnlockPromptString` overlay rendering invoked from `Passthrough`, and added JS `snapshot().locked`. Added Go tests in `internal/termmux/manager_lock_test.go` and a JS binding gate test in `internal/builtin/termmux/module_session_test.go`. All verification passes.",
+      "2026-06-16: BOUNCE CLEANUP. User clarified that the bouncing-logo example is application-specific and must not have a dedicated Go-side implementation. Deleted internal/builtin/termmux/bounce.go, bounce_test.go, bounce_presenter.go, bounce_presenter_test.go, compositor.go, compositor_test.go, module_bounce_model_test.go, and module_compositor_test.go. Removed newBounceController, newBouncePresenter, and newCompositor exports from internal/builtin/termmux/module.go. Moved shared helpers jsGetString/jsGetInt into internal/builtin/termmux/jsutil.go and controlRouter.handleKey into control_router.go so reusable code stays intact. Rewrote scripts/example-15-bouncing-logo.js in pure JavaScript using osm:termmux, osm:termui/compositor, osm:bubbletea, osm:lipgloss, and osm:flag. Cancelled blueprint tasks 83-87 and added a new completed task for the JS rewrite. Updated WIP.md and docs/termmux-architecture.md to remove references to deleted Go code. Full test suite, race detector, lint, and smoke test pass.",
+      "2026-06-16: TASK 88 REFACTORED. Replaced hand-rolled muxEvents listener list with goja-eventloop EventTarget/Event/CustomEvent. Updated termmuxmod.Require to accept a *gojaeventloop.Adapter, create one EventTarget per wrapped SessionManager, and dispatch SessionManager EventBus events onto the event loop. Added addEventListener/removeEventListener/dispatchEvent methods while preserving legacy on/off/pollEvents aliases and all public constants. Removed dead muxEvents code. Updated call sites in internal/builtin/register.go, internal/command/pr_split.go, and internal/command/pr_split_tui_persistence_truthful_test.go. Rewrote internal/builtin/termmux/module_events_test.go for the new API and updated testhelpers_test.go, module_test.go, module_session_test.go, module_pane_test.go, and module_passthrough_state_test.go. Updated docs/reference/termmux-js-api.md. Validation recorded in scratch/event-bridge-refactor-validation.md. All verification commands pass.",
+      "2026-06-16: TASK 89 COMPLETE. Added resize-pane directional deltas. Implemented LayoutEngine.ResizePaneDelta and parseResizeDirection in internal/termmux/layout.go with MinPaneRows/MinPaneCols constants. Added paneManager.ResizePaneDelta, setGeometry, and per-pane geometry override merging in Panes(). Added SessionManager.ResizePaneDelta, reqResizePaneDelta, resizePaneDeltaPayload, and handleResizePaneDelta in internal/termmux/manager.go, resizing the child PTY/VTerm and emitting EventWindowUpdated. Added JS binding resizePaneDelta(id, direction, delta) in internal/builtin/termmux/module.go. Added Go tests in internal/termmux/manager_resize_delta_test.go and JS tests in internal/builtin/termmux/module_resize_delta_test.go covering right/left/down/up, clamping, invalid direction, invalid pane, and event emission. Updated blueprint.json, WIP.md, and scratch/task89-validation.md."
     ]
   },
   "sequentialTasks": [
     {
-      "task": "Integration test baseline: verify all existing tests pass before changes",
-      "description": "Run the full test suite and benchmarks to establish a baseline. Record pass/fail counts and any known flaky tests. This MUST be the first task before any code changes. Files: none (verification only).",
-      "acceptance": "go test -short -count=1 -timeout=5m ./... passes with 0 failures. Benchmark suite runs without panics. Baseline recorded in WIP.md.",
+      "task": "Fix RespawnSession to preserve the original CaptureConfig and rebind the pane",
+      "description": "`handleRespawnSession` in `internal/termmux/manager.go:2209-2283` creates `NewCaptureSession(CaptureConfig{})`, discarding the original command, args, directory, and environment. Store the original `CaptureConfig` on `managedSession` at registration time. In the respawn handler, create the new `CaptureSession` from that stored config, reattach the pane binding in whichever `paneManager` owns the pane so it references the new `SessionID`, and emit `EventSessionRegistered`/`EventSessionActivated` so front-ends update. Files: internal/termmux/manager.go, internal/builtin/termmux/module.go (respawnSession binding), internal/termmux/pane_manager.go.",
+      "acceptance": "A respawned session runs the same command/args/dir/env as the original. The original pane reports the new `SessionID`. `respawnSession(sid)` JS integration test succeeds. At least 5 tests.",
       "status": "Done"
     },
     {
-      "task": "Fix DECRQM missing mode 4 (Insert Mode) and mode 1001 (Highlight Tracking)",
-      "description": "DECRQM in internal/termmux/vt/csi.go silently returns status=1 (unknown) for mode 4 (InsertMode) and mode 1001 (HighlightTracking) because these cases are not in the switch. Both mode flags exist on Screen. Add case 4 and case 1001 to the DECRQM handler that check the corresponding Screen field and return status 2 (set) or 3 (reset). Also added case 1003 (MouseTrackingAnyEvent) to DECRQM, and case 4 (InsertMode) to decset/decrst handlers. Files: internal/termmux/vt/csi.go.",
-      "acceptance": "CSI ?4$p returns status 2 when InsertMode=true, status 3 when InsertMode=false. CSI ?1001$p returns status 2 when HighlightTracking=true, status 3 when HighlightTracking=false. At least 4 new DECRQM tests covering both modes.",
+      "task": "Gate locked-session input and render a lock overlay",
+      "description": "`handleInput` in `internal/termmux/manager.go:1787-1815` forwards keystrokes to the child PTY without checking `ms.lock.IsLocked()`. Change it so a locked session consumes all keystrokes for an unlock prompt (alphanumeric/digit accumulates, Backspace deletes, Enter submits). Correct password unlocks the session and resumes normal routing; incorrect password stays locked. Expose the lock state in `Snapshot` and render a lock overlay in `Passthrough` so the screen is not visible. Add JS binding tests for lock/unlock. Files: internal/termmux/manager.go, internal/termmux/passthrough.go, internal/builtin/termmux/module.go.",
+      "acceptance": "No input reaches a locked child PTY. Correct password unlocks; wrong password remains locked. A lock overlay/password prompt is visible while locked. At least 6 tests.",
       "status": "Done"
     },
     {
-      "task": "Fix doc.go BracketedPaste contradiction and DA2 formatting",
-      "description": "doc.go has a contradiction: line 122 says BracketedPaste 2004 is 'Supported' but line 167 says 'Not yet (mode flag only)'. The mode flag IS supported (DECSET/DECRST 2004 works), but the actual \\x1b[200~ / \\x1b[201~ paste delimiters are never emitted by VTerm.Write() during paste processing because VTerm.Write() has no paste entry point that checks the mode. Fix: change line 122 to 'Supported (mode flag only; paste delimiters not yet emitted by VTerm)' and update line 167 to match. Also fix DA2 entry: 'DA2> -- Extended DA -- Supported' is misleading because the '>' is an intermediate byte, not a separate feature. Fix: 'DA2 (CSI >c) -- Secondary Device Attributes -- Supported'. Files: internal/termmux/vt/doc.go.",
-      "acceptance": "No contradiction in doc.go about BracketedPaste. DA2 entry clearly describes CSI >c with intermediate byte. All other entries accurate.",
+      "task": "Couple window switching with active pane focus and input routing",
+      "description": "`SessionManager.ActivePaneID`, `FocusNextPane`, `FocusAt`, `ResizePaneAt`, and `Panes` currently operate on `m.paneMgr` regardless of which window is active. Track an active `WindowID` in `SessionManager`; when a window is active, route pane-level operations through that window's `paneManager`. `NextWindow`/`PrevWindow` must update `m.activeID` to a session inside the new window, focus its first pane, and emit `EventSessionActivated`. Update `WindowPanes` and `ActiveWindowID` JS bindings. Files: internal/termmux/manager.go, internal/termmux/window.go, internal/builtin/termmux/module.go.",
+      "acceptance": "After switching windows, `ActivePaneID()` returns a pane inside the new window, keyboard input routes to that pane, and `Panes()` returns the new window's panes. At least 8 tests.",
       "status": "Done"
     },
     {
-      "task": "Fix duplicate comment in InsertLines (screen.go:879)",
-      "description": "screen.go line 879 has a duplicate sentence in the InsertLines comment: 'InsertLines inserts n blank lines at the cursor row within the scroll region. inserts n blank lines at the cursor row within the scroll region.' Fix: remove the duplicate sentence. Files: internal/termmux/vt/screen.go.",
-      "acceptance": "InsertLines comment has no duplicate sentence. Single clear description.",
+      "task": "Build a Go-side choose-tree BubbleTea overlay model",
+      "description": "`Chooser` is only a list model plus `Render` string; there is no built-in overlay. Add Go-side BubbleTea model `chooseTreeModel` that wraps a `Chooser`, renders it as a centered popup, handles Up/Down/Enter/Escape, and returns the selected session/window ID. Expose `termmux.chooseTree({manager, onSelect})` returning a model object that can be passed to `tea.run`. Move the chooser binding into its own file `internal/builtin/termmux/chooser.go`. Files: internal/builtin/termmux/chooser.go (new), internal/builtin/termmux/mux_state.go, internal/builtin/termmux/module.go.",
+      "acceptance": "`chooseTree` returns a ready BubbleTea model. Arrow keys navigate, Enter selects, Escape cancels. Selection callback receives the chosen session/window ID. At least 6 tests.",
       "status": "Done"
     },
     {
-      "task": "Add OSC/DCS buffer overflow warning",
-      "description": "parser.go silently drops bytes when oscBuf or dcsBuf exceeds maxOSCLen/maxDCSLen. The truncated payload is dispatched to the callback with incomplete data and no warning. Fix: add a counter or optional callback for overflow events. At minimum, add a Debug-level log when overflow occurs. The maxOSCLen and maxDCSLen are defined in defaults.go. Files: internal/termmux/vt/parser.go.",
-      "acceptance": "OSC/DCS buffer overflow emits a debug-level log or increments a counter. Callback still receives truncated payload (no behavior change for valid-length sequences). At least 2 tests verifying overflow handling.",
+      "task": "Add StatusBar configurable colors and top/bottom position",
+      "description": "`StatusBar` in `internal/termmux/statusbar/statusbar.go` now supports `SetColors(fg, bg string)`, `SetPosition(Position)`, and a `RenderLine(width, left, right)` helper. Default rendering remains reverse-video on the bottom row. The JS `registerStatusMethods` surface exposes `setStatusColors({ fg?, bg? })`, `setStatusPosition(\"top\"|\"bottom\")` (returning the module object for chaining), and a `renderStatusBar(width, left?, right?)` test/render helper. Added Go tests in `internal/termmux/statusbar/statusbar_test.go` and JS integration tests in `internal/builtin/termmux/module_status_test.go`. Files: internal/termmux/statusbar/statusbar.go, internal/builtin/termmux/module.go, internal/termmux/statusbar/statusbar_test.go, internal/builtin/termmux/module_status_test.go.",
+      "acceptance": "Status bar renders with configured fg/bg colors. Top position targets row 1; bottom targets the last row. Invalid hex falls back to reverse video. JS binding validates arguments and chains. At least 6 Go tests and 6 JS integration tests.",
       "status": "Done"
     },
     {
-      "task": "Replace fmt.Fprintf with strconv.AppendInt in render.go hot path",
-      "description": "RenderFullScreen in render.go uses fmt.Fprintf(&b, '\\x1b[%d;1H', r+1) for each row, which allocates internally. For a 24-row terminal this is 24 allocations per full-screen render. Replace with strconv.AppendInt to avoid fmt overhead. Files: internal/termmux/vt/render.go.",
-      "acceptance": "RenderFullScreen uses strconv.AppendInt instead of fmt.Fprintf. Benchmark shows measurable allocation reduction for full-screen render. All existing render tests pass.",
+      "task": "Render display-message overlays in passthrough and snapshots",
+      "description": "Implemented a bounded FIFO display-message queue per session (cap 32) in `internal/termmux/manager.go`. Replaced the single atomic `displayMessage` pointer with `managedSession.messageQueue` and updated `handleDisplayMessage` to enqueue by call order with expiry based on duration (default 3s), dropping oldest on overflow. Added `handleActiveMessageForSession` to advance past expired front messages and return the active text. Added `Message` to `ScreenSnapshot` and `ScreenSnapshot.Clone`; snapshots now reflect the active message immediately on `DisplayMessage` and on every VTerm output publish. Implemented `MessageBarLine`/`RenderMessageBar` in new `internal/termmux/message_overlay.go` using lipgloss (yellow on dark). Updated `Passthrough` to reserve a second chrome row when an active message is present, draw the message bar above the status bar, and resize VTerm/scroll region accordingly; restored and resized paths also re-render chrome. Added `StatusBar.Height()`, `Position()`, and `SetScrollRegionEx(chromeRows)`. Exposed module-level `renderMessageBar(text, row?, cols?)` and `snapshot().message` in `internal/builtin/termmux/module.go`. Added Go tests in `internal/termmux/manager_message_test.go` and `internal/termmux/passthrough_message_test.go`. Added JS integration tests in `internal/builtin/termmux/module_message_test.go`.",
+      "acceptance": "`displayMessage` text appears in `Passthrough` output while active. `Snapshot` includes a `message` field that updates immediately and empties after expiry. Multiple messages queue and display sequentially in FIFO order. Bounded at 32; oldest dropped on overflow. At least 4 tests.",
       "status": "Done"
     },
     {
-      "task": "Add DECRQM mode 4/1001 tests and Screen.Clear() comprehensive test",
-      "description": "Add tests for: (1) DECRQM for mode 4 (InsertMode) set/reset, (2) DECRQM for mode 1001 (HighlightTracking) set/reset, (3) Screen.Clear() verifies all 40+ fields are reset to zero-value defaults. Screen.Clear() is called by VTerm.reset() on RIS and is critical for correctness. Files: internal/termmux/vt/decrqm_test.go (extend), internal/termmux/vt/screen_test.go (extend).",
-      "acceptance": "DECRQM mode 4 test: query returns 2 when set, 3 when reset. DECRQM mode 1001 test: query returns 2 when set, 3 when reset. Screen.Clear() test: all fields zeroed/default after Clear(). At least 8 new tests.",
+      "task": "Implement Go-side prefix-key command dispatcher",
+      "description": "Added `PrefixResult` and `PrefixDispatcher` in `internal/termmux/prefix_keys.go`. `PrefixDispatcher` maps every bound prefix key (`c`, `n`, `p`, `,`, `x`, `%`, `\"`, `[`, `z`, `?`) to the corresponding `SessionManager` operation. New windows are created with a default placeholder session and activated; splits use new `SplitPaneHorizontal`/`SplitPaneVertical` methods backed by a `reqSplitPane` worker request that focuses the active pane then creates the new pane. Window focus synchronization was tightened: `handleActivate` now also updates the `WindowManager` active window via `setActive`, and `newPrefixKeyHandler` keeps its original prefix-only behavior. Added `termmux.handlePrefixKey({ manager, key })` in `internal/builtin/termmux/module.go` returning `{ action, consumed, description, result, listKeys }`.",
+      "acceptance": "Prefix + `c` creates a window and activates it, `n`/`p` cycle the active window, `,` renames the active window to `renamed`, `x` closes the active pane, `%`/`\"` split the active pane horizontally/vertically, `[` enters copy mode, `z` zooms the active pane, `?` returns a printable key list, and unbound keys are not consumed. JS `handlePrefixKey` executes the same actions and returns the expected shape. All tests pass with race detector and lint.",
       "status": "Done"
     },
     {
-      "task": "Add 256-color palette and UTF8 edge case tests",
-      "description": "Two test coverage gaps: (1) The 256-color palette in render_raster.go (getColor256, initColor256, colorCubeScale) is never tested. Add tests verifying color cube values, grey ramp values, and RGB conversion. (2) UTF8 edge cases not tested: stray continuation byte, invalid 2-byte start (0xC0, 0xC1), sequence start with fewer continuation bytes than needed. Files: internal/termmux/vt/render_raster_test.go (extend), internal/termmux/vt/utf8_test.go (extend or new).",
-      "acceptance": "256-color palette tests verify at least 10 specific color values across cube, grey ramp, and default ranges. UTF8 tests verify 4+ edge cases: stray continuation, C0/C1 start, truncated sequences. All tests pass.",
+      "task": "Fix BreakPane/JoinPane session-to-pane mapping and focus consistency",
+      "description": "`transferPaneToWindow` in `internal/termmux/pane_manager.go:318-363` copies the `PaneBinding` but leaves `SessionManager.activeID` and pane metadata stale. After a break or join, update source and target `paneManager` active panes when the moved pane was active, recompute geometry, and update the binding so the session can be reached by pane ID. Add JS integration tests covering break, join, and window activation. Files: internal/termmux/pane_manager.go, internal/termmux/manager.go, internal/builtin/termmux/module.go.",
+      "acceptance": "After `BreakPane`, the source window focuses a remaining pane and the moved pane is reachable in the new window. After `JoinPane`, the target window can focus the moved pane. `WindowPanes` reflects new mappings. At least 6 tests.",
       "status": "Done"
     },
     {
-      "task": "Remove 3 empty stub methods from PaneManager interface and paneManager",
-      "description": "PaneManager interface in layout.go declares SplitHorizontalAction(), SplitVerticalAction(), and CloseActivePane() which are empty stubs in paneManager that do nothing. These are AI slop -- methods that exist in an interface but have no implementation violate the interface contract. The actual split/close operations are handled by SessionManager.NewPane/ClosePane, not by the pane manager. Remove the 3 stub methods from both the PaneManager interface and the paneManager struct. Update any callers. Files: internal/termmux/layout.go, internal/termmux/pane_manager.go.",
-      "acceptance": "PaneManager interface has no empty stub methods. paneManager struct has no empty method bodies. All callers compile. All existing tests pass.",
+      "task": "Scope synchronize-panes to the active window",
+      "description": "Scoped `handleInput` in `internal/termmux/manager.go` to the active window's pane manager: it now iterates panes returned by `AllSessionIDs()` on `m.activePaneManager()` instead of every registered session. Synchronization state was already stored on `paneManager`; exposed it per-window via `Window.SetSynchronize`/`Synchronize` and `WindowManager.Active()`. Updated `SessionManager.SetSynchronizePanes` to return an error and operate on the active window (root fallback when no window is active) and `SynchronizePanes` to query the active window. Updated JS bindings in `internal/builtin/termmux/module.go` so `setSynchronizePanes(enabled)` returns the manager wrapper for chaining and `synchronizePanes()` returns the active window's sync state. Updated existing tests in `internal/termmux/manager_test.go` to create panes instead of bare sessions so broadcast semantics apply to panes. Added `internal/termmux/manager_sync_test.go` covering default-off, active-window broadcast, window-switch retargeting, disable-returns-to-single-pane, independent per-window state, and the `WindowManager.Active()`/`Window` sync accessors. Added `internal/builtin/termmux/module_sync_test.go` covering the JS bindings.",
+      "acceptance": "With synchronize enabled, input reaches only panes in the active window. Switching windows switches which panes receive synchronized input. JS setters chain correctly. At least 4 tests.",
       "status": "Done"
     },
     {
-      "task": "Add padRight/padLeft/padCenter to osm:unicodetext module",
-      "description": "Extended the existing osm:unicodetext module with padRight, padLeft, padCenter functions instead of creating a new osm:fmt module. These use uniseg.StringWidth for proper Unicode-aware width calculation. No new module registration needed since unicodetext is already registered. Files: internal/builtin/unicodetext/unicodetext.go (extended), internal/builtin/unicodetext/unicodetext_test.go (extended).",
-      "acceptance": "require('osm:unicodetext') loads without error. padRight('hello', 10) returns 'hello     '. padLeft('hello', 10) returns '     hello'. padCenter('hello', 10) returns '  hello   '. Unicode-aware: CJK characters counted as width 2. At least 4 tests.",
+      "task": "Wire copy-mode search to a default Go-side screen searcher",
+      "description": "`newCopyModeSearcher` in `internal/builtin/termmux/module.go:1439-1466` requires a JS `searchFn` callback. Implement a Go-side `ScreenSearcher` over `ScreenSnapshot.GetPlainText()` and use it as the default when no callback is supplied. Add convenience JS bindings `termmux.searchForward(sessionID, pattern)` and `termmux.searchBackward(sessionID, pattern)` that operate on the current snapshot. Files: internal/builtin/termmux/module.go, internal/builtin/termmux/searcher.go (new), internal/termmux/copy_mode_keys.go.",
+      "acceptance": "`newCopyModeSearcher` without a callback searches the current snapshot. `searchForward(sid, 'pattern')` returns match row/col. Copy-mode `/` works without JS wiring. At least 6 tests.",
       "status": "Done"
     },
     {
-      "task": "Add termmux.newBoundedSession JS binding",
-      "description": "Add a newBoundedSession factory to the osm:termmux module that creates a CaptureSession AND a SessionManager in one call, wiring them together. This replaces the 20+ lines of manual session setup in bouncing-logo.js. Signature: termmux.newBoundedSession({cmd: '/bin/sh', args: [], rows: 24, cols: 80, name: 'session', kind: 'capture'}). Returns an object with .session, .mgr, .sid properties. The caller still needs to call mgr.run(), mgr.started(), mgr.activate(sid). Files: internal/builtin/termmux/module.go.",
-      "acceptance": "termmux.newBoundedSession({cmd: '/bin/sh', rows: 10, cols: 30}) returns {session, mgr, sid}. session is a CaptureSession wrapper. mgr is a SessionManager. sid is a SessionID. mgr.run() + mgr.started() + mgr.activate(sid) work. At least 4 tests.",
+      "task": "Add Go-side mouse drag state machine for pane border resize",
+      "description": "Mouse drag-to-resize is currently implemented only as single-shot helpers; JS must track the drag lifecycle. Add `MouseDrag` helper in `internal/termmux` that tracks button-down on a divider, motion, and release, calling `ResizePaneAt` during motion. Expose `termmux.handleMouseDrag(mgr, msg)` that consumes BubbleTea mouse messages and returns `{handled, cmd}`. Integrate it into `newBouncePresenter` and add tests. Files: internal/termmux/mouse_drag.go (new), internal/builtin/termmux/mouse.go (new), internal/builtin/termmux/bounce_presenter.go.",
+      "acceptance": "Dragging a divider resizes adjacent panes. A drag that does not start on a divider is ignored. Release ends the drag; events consumed during drag are not forwarded to the child. At least 6 tests.",
       "status": "Done"
     },
     {
-      "task": "Add termmux.newBounceController JS binding",
-      "description": "Add a newBounceController factory to osm:termmux that manages pane bouncing behavior. The controller handles: position (paneX, paneY), velocity (velX, velY), bounds clamping, pause/resume, pane size adjustment, tick updates. Signature: termmux.newBounceController({speed: {x: 1, y: 1}, paneSize: {w: 32, h: 12, minW: 12, maxW: 62, minH: 7, maxH: 32, step: 2}, controlsHeight: 2}). Methods: tick(width, height) updates position, togglePause(), bigger(), smaller(), paused(), paneX(), paneY(), paneW(), paneH(), bounceCount(). This replaces 44 lines of JS bounce physics. Files: internal/builtin/termmux/bounce.go (new), internal/builtin/termmux/module.go (register).",
-      "acceptance": "newBounceController creates a controller with specified config. tick() updates position and bounces off walls. togglePause() freezes/resumes bouncing. bigger()/smaller() adjust pane size. All accessor methods return current state. Bouncing stops at screen boundaries. At least 10 tests.",
+      "task": "Swap pane metadata in paneManager during LayoutEngine.Swap",
+      "description": "Added `paneManager.Swap(id1, id2)` that swaps every mutable `PaneBinding` field (SessionID, VTerm, Title, LastActive, Exited, RemainOnExit) while preserving pane IDs and the active pane. Wired it into `LayoutEngine.Swap` via an optional back-pointer so direct callers update metadata, and added `swapLayoutOnly` to avoid double-swapping from `SessionManager.SwapPanes`. Updated `SessionManager.handleSwapPanes` to locate each pane's window, call the appropriate pane manager swap, keep `m.activeID` consistent, and emit `EventWindowUpdated` for affected windows. Cross-window swaps exchange metadata between the two windows while leaving pane IDs and geometries in place. Updated the JS `swapPanes` binding to return `{ swapped: true }` and propagate errors. Files: internal/termmux/pane_manager.go, internal/termmux/layout.go, internal/termmux/manager.go, internal/builtin/termmux/module.go, internal/termmux/pane_manager_swap_test.go, internal/termmux/manager_swap_test.go, internal/builtin/termmux/module_swap_test.go.",
+      "acceptance": "After `SwapPanes(id1, id2)`, titles, session IDs, VTerm references, remain-on-exit, and exited states are exchanged while pane IDs remain stable. Active pane ID is unchanged; active session follows the session now in the active pane. `WindowPanes` reflects the swap for same- and cross-window cases. JS `swapPanes` returns `{ swapped: true }`. At least 8 tests.",
       "status": "Done"
     },
     {
-      "task": "Add termmux.enableMouseForward JS binding",
-      "description": "Add an enableMouseForward function to osm:termmux that handles the full mouse forwarding chain: check if child enabled mouse tracking (DECSET 1000/1002/1003) -> compositor hit-test -> screen-to-pane coordinate translation -> mouseToSGR encoding -> mgr.input(). This replaces 160 lines of repeated per-event-type JS code. Signature: termmux.enableMouseForward({sessionManager: mgr, sessionId: sid, compositor: comp, paneId: 'pty', paneX: fn, paneY: fn, paneW: fn, paneH: fn, borderWidth: 1}). Returns a forward(msg) function that takes a BubbleTea mouse event and handles it. The forward function checks mouseTracking from snapshot, does hit-testing, translates coords, encodes SGR, and calls mgr.input(). Files: internal/builtin/termmux/mouse_forward.go (new), internal/builtin/termmux/module.go (register).",
-      "acceptance": "enableMouseForward returns a forward function. forward(mouseClickEvent) checks mouseTracking, does hit-test against paneId, translates coords, encodes SGR, calls mgr.input(). When mouseTracking=0 (child hasn't enabled mouse), forward is a no-op. Works for Click, Motion, Release, Wheel event types. Coordinate translation subtracts pane origin and border width. At least 8 tests.",
+      "task": "Implement pipe-pane to an external command",
+      "description": "`SetPipeFile` in `internal/termmux/manager.go:2313-2345` only tees pane output to a file. Extend it to accept a command and arguments; spawn the process and write raw PTY output to its stdin. Close/terminate the process when the pane exits or `ClearPipe` is called. Expose via JS as `pipeCommand(sessionID, cmd, args)`. Files: internal/termmux/manager.go, internal/builtin/termmux/module.go.",
+      "acceptance": "Pane output appears in the external command's stdin. The command is terminated when the pane exits or pipe is cleared. File-only mode still works. At least 4 tests.",
       "status": "Done"
     },
     {
-      "task": "Add termmux.newControlRouter JS binding",
-      "description": "Add a newControlRouter factory to osm:termmux that provides declarative key-to-action routing with chord mode support. Signature: termmux.newControlRouter({keys: {'ctrl+p': 'pause', 'ctrl+b': 'bigger', ...}, chordMode: {prefix: 'ctrl+x', actions: {'s': 'smaller', 'b': 'bigger', ...}}}). Returns a router object with handleKey(key) method that returns {handled: bool, action: string} and handleChord(key) method for chord resolution. This replaces 35 lines of JS if-chain + chord state machine. Files: internal/builtin/termmux/control_router.go (new), internal/builtin/termmux/module.go (register).",
-      "acceptance": "newControlRouter creates a router from a declarative key map. handleKey('ctrl+p') returns {handled: true, action: 'pause'}. handleKey('a') returns {handled: false, action: ''} (unhandled keys pass through). Chord mode: handleKey('ctrl+x') enters chord mode, next handleKey('s') resolves chord. handleKey('ctrl+x') then handleKey('esc') cancels chord. At least 8 tests.",
+      "task": "Fix activeSide passthrough-state stub in the JS binding",
+      "description": "`activeSide()` in `internal/builtin/termmux/module.go:2023-2025` always returns the literal string `'osm'` regardless of passthrough state. Add a boolean to `muxState` (e.g., `inPassthrough`) updated from `switchTo`, `fromModel`, and the passthrough `onToggle` callback. `activeSide()` returns `'claude'` when in passthrough and `'osm'` otherwise. Expose an `isPassthrough()` query. Files: internal/builtin/termmux/module.go, internal/builtin/termmux/mux_state.go.",
+      "acceptance": "`activeSide()` returns `'claude'` after entering passthrough and `'osm'` otherwise. `isPassthrough()` matches the current state. At least 4 tests.",
       "status": "Done"
     },
     {
-      "task": "Add compositor.addBoundedPane and compositor.renderBordered JS bindings",
-      "description": "Extend the osm:termui/compositor module with two new features: (1) addBoundedPane({id, sessionId, bounds, bordered, style, z}) adds a pane that auto-updates from a session's snapshot -- eliminates the remove+re-add pattern. (2) renderBordered(content, style, width, height) renders content inside a lipgloss-bordered frame at given dimensions -- eliminates the borderStyle.width(w).height(h).render(ansi) pattern in JS. Files: internal/builtin/termui/compositor/module.go (extend).",
-      "acceptance": "addBoundedPane creates a pane that tracks session snapshot content. renderBordered renders content inside a bordered lipgloss frame. At least 4 tests for each function.",
-      "status": "Done"
-    },
-    {
-      "task": "Rewrite example-15-bouncing-logo.js as thin shim using new Go bindings",
-      "description": "Rewrite the 704-line bouncing-logo script to approximately 100 lines using the new Go-side bindings: termmux.newBoundedSession, termmux.newBounceController, termmux.enableMouseForward, termmux.newControlRouter, compositor.addBoundedPane, compositor.renderBordered, and osm:fmt. The rewritten script should: (1) declare config (colors, dimensions), (2) create a bounded session in one call, (3) create a bounce controller, (4) set up compositor with bounded pane, (5) enable mouse forwarding, (6) declare control key routing, (7) wire event bus listeners, (8) define BubbleTea model with thin update/view that delegates to Go controllers. The script must support mouse input (via enableMouseForward) and all existing functionality (pause, bigger, smaller, quit, chord mode, resize). Files: scripts/example-15-bouncing-logo.js.",
-      "acceptance": "Script is approximately 100-120 lines (down from 704). Supports mouse input via enableMouseForward. All existing functionality preserved: pause/resume, pane size adjustment, quit, chord mode, resize, compositor rendering, zone-based buttons. Script runs without error via osm script. At least 1 manual smoke test.",
-      "status": "Done"
-    },
-    {
-      "task": "Add copy mode vi-like navigation key bindings",
-      "description": "VTerm has EnterCopyMode/ExitCopyMode/SelectStart/SelectEnd/SelectedText/CopySelection/ScrollUp/ScrollDown but no vi-like navigation key bindings for moving the cursor in copy mode. Add a CopyModeKeyHandler (similar to PaneKeyHandler) that maps keys when in copy mode: h=left, l=right, j=down, k=up, Ctrl+U=half page up, Ctrl+D=half page down, g=top of scrollback, G=bottom of scrollback, 0=beginning of line, $=end of line, w=next word, b=previous word, q=exit copy mode, Space=start selection, Enter=copy selection and exit. This is a Go-side component that can be wired from JS. Files: internal/termmux/copy_mode_keys.go (new).",
-      "acceptance": "CopyModeKeyHandler maps vi keys to copy mode actions. HandleKey('j') returns action ScrollDown(1). HandleKey('Ctrl+U') returns action ScrollDown(halfPage). HandleKey('q') returns action ExitCopyMode. HandleKey(' ') returns action SelectStart. HandleKey('Enter') returns action CopyAndExit. At least 12 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add copy mode search functionality",
-      "description": "Add incremental search to copy mode. When in copy mode, pressing / enters search-forward mode, ? enters search-backward mode. The search query is accumulated character-by-character. Pressing Enter jumps to the next match. n jumps to next match, N jumps to previous match. Search operates on the scrollback buffer (VisibleLines). The search highlights matches by setting a SearchMatch attribute on matching cells. Files: internal/termmux/vt/screen.go (add SearchForward/SearchBackward/NextMatch/PrevMatch methods), internal/termmux/copy_mode_keys.go (add search key handling).",
-      "acceptance": "SearchForward('pattern') finds the next occurrence in scrollback and scrolls to it. SearchBackward finds previous. NextMatch/PrevMatch cycle through matches. Search matches are highlighted visually. Search works across scrollback boundaries. At least 8 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add copy mode page navigation and line scroll",
-      "description": "Add PageUp, PageDown, HalfPageUp, HalfPageDown, ScrollToTop, ScrollToBottom navigation methods to VTerm copy mode. These complement the existing ScrollUp(n)/ScrollDown(n) which only scroll by n lines. Add keyboard actions to CopyModeKeyHandler: Ctrl+B=page up, Ctrl+F=page down, Ctrl+U=half page up, Ctrl+D=half page down. Files: internal/termmux/vt/vt.go, internal/termmux/copy_mode_keys.go.",
-      "acceptance": "PageUp scrolls by Rows lines. PageDown scrolls by Rows lines. HalfPageUp scrolls by Rows/2 lines. HalfPageBottom scrolls by Rows/2 lines. ScrollToTop sets ScrollOffset to max. ScrollToBottom sets ScrollOffset to 0. All clamped to valid range. At least 6 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add main-horizontal and main-vertical layout modes",
-      "description": "tmux has 'main-horizontal' (one large pane on top, remaining panes small and stacked below) and 'main-vertical' (one large pane on left, remaining panes narrow and stacked on right). Add LayoutMainHorizontal and LayoutMainVertical to the LayoutMode constants and implement computeMainHorizontal/computeMainVertical in LayoutEngine. The first pane gets a configurable main-pane-size ratio (default 60%). Remaining panes share the remaining space equally. Files: internal/termmux/layout.go.",
-      "acceptance": "LayoutMainHorizontal: first pane gets 60% of height, remaining panes share 40% equally. LayoutMainVertical: first pane gets 60% of width, remaining panes share 40% equally. Main pane ratio configurable via LayoutEngine.SetMainRatio(float64). Works with 2, 3, 5, 8 panes. At least 8 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add configurable status bar with left/right sections and window status",
-      "description": "The current StatusBar renders a single reverse-video text line. Extend it with: (1) left section (status-left), (2) center section (existing title), (3) right section (status-right), (4) per-pane window status indicators (e.g., [0:name] [1:name*]), (5) configurable foreground/background colors, (6) configurable position (top/bottom). Add SetLeftStatus, SetRightStatus, SetWindowStatus, SetColors, SetPosition methods. The window status shows all panes with the active one highlighted. Files: internal/termmux/statusbar/statusbar.go, internal/termmux/statusbar/statusbar_test.go.",
-      "acceptance": "StatusBar has left/center/right sections. Window status shows pane names with active pane highlighted. Configurable colors (foreground/background). Configurable position (top/bottom). Default position is bottom. Default colors are reverse video. At least 10 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add mouse click-to-focus pane and drag-to-resize pane border",
-      "description": "Add mouse-driven pane management: (1) Click-to-focus: when a mouse click lands inside a pane's geometry (computed by LayoutEngine), that pane becomes focused. (2) Drag-to-resize: when a mouse drag starts on a pane border (within 1 cell of a divider), dragging changes the split ratio of the adjacent panes. Both features require the compositor to know pane geometries. Add HandleMouseClick(x, y) and HandleMouseDrag(x, y) methods to PaneManager that perform hit-testing and update focus/ratio. Wire these into the BubbleTea mouse event pipeline. Files: internal/termmux/pane_manager.go, internal/termmux/pane_keys.go, internal/builtin/termmux/module.go.",
-      "acceptance": "Clicking inside a pane focuses it. Dragging a pane border resizes the adjacent panes. Click outside any pane is a no-op. Drag that doesn't start on a border is a no-op. At least 8 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add mouse wheel scroll in copy mode",
-      "description": "When copy mode is active and a mouse wheel event occurs, scroll the copy mode viewport instead of forwarding the wheel event to the child process. The scroll amount should match the wheel delta. Exit copy mode mode should restore normal wheel forwarding. Wire this into the mouse forwarding pipeline: if copy mode active and event is wheel, consume it as ScrollUp/ScrollDown instead of forwarding to PTY. Files: internal/termmux/pane_manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "Mouse wheel in copy mode scrolls viewport up/down. Mouse wheel outside copy mode forwards to child as SGR. Scroll amount matches wheel delta. At least 4 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add window management (new-window, next-window, rename-window)",
-      "description": "tmux has a 'window' concept: each window contains multiple panes, and windows are displayed in the status bar as tabs. Add Window type (id, name, pane list, active pane, layout mode) and WindowManager that manages a list of windows within a session. Only one window is visible at a time. Window switching changes which panes are rendered. Add NewWindow, NextWindow, PrevWindow, RenameWindow, CloseWindow methods. Expose via JS bindings. Files: internal/termmux/window.go (new), internal/termmux/manager.go (integrate), internal/builtin/termmux/module.go (JS bindings).",
-      "acceptance": "Window type exists with ID, name, pane list, active pane, layout. WindowManager manages list of windows. NewWindow creates a window with an initial pane. NextWindow/PrevWindow switch visible window. RenameWindow changes window name. CloseWindow closes window and all its panes. Window list shown in status bar. At least 10 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add prefix key system for command routing",
-      "description": "tmux uses a prefix key (default Ctrl+B) followed by a command key to route actions. Add a PrefixKeyHandler that buffers keystrokes: when the prefix key is detected, the next key is intercepted and dispatched as a command (not forwarded to the child). Default prefix: Ctrl+B (configurable). Command table: c=new-window, n=next-window, p=prev-window, d=detach, z=zoom-pane, x=close-pane, %=split-horizontal, \\\"=split-vertical, [=copy-mode, ?=list-keys. This replaces the current hardcoded PaneKeyHandler. Files: internal/termmux/prefix_keys.go (new), internal/termmux/pane_keys.go (refactor or replace).",
-      "acceptance": "PrefixKeyHandler intercepts prefix key and dispatches next key as command. Default prefix Ctrl+B. Command table maps 10+ keys to actions. Unrecognized command after prefix is discarded (not forwarded). When no prefix detected, all keys pass through to child. Prefix key is configurable. At least 10 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add synchronized panes (send input to all panes simultaneously)",
-      "description": "Add synchronize-panes mode: when enabled, keyboard input sent to the active pane is also sent to all other panes in the same window. This is useful for running the same command on multiple servers. Add SynchronizePanes bool to paneManager and WindowManager. When Input() is called and SynchronizePanes is true, the input is written to all panes' PTYs, not just the active one. Expose via JS binding. Files: internal/termmux/pane_manager.go, internal/termmux/manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "SynchronizePanes mode sends input to all panes, not just the active one. Toggle via JS binding. When disabled (default), only active pane receives input. Input is sent to each pane's PTY in order. Error in one pane does not block others. At least 6 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add monitoring (bell, activity, silence) and visual bell",
-      "description": "Add three monitoring features: (1) MonitorBell: when a pane emits BEL (0x07), highlight the pane's status bar entry and emit a MonitorBell event. (2) MonitorActivity: when a background pane produces output after being idle for >30s, highlight its status bar entry and emit a MonitorActivity event. (3) MonitorSilence: when a pane produces no output for a configurable duration (default 0=disabled), emit a MonitorSilence event. (4) VisualBell: on BEL, flash the pane border briefly instead of (or in addition to) the audible bell. Add MonitorConfig to paneManager. Emit events via EventBus. Files: internal/termmux/pane_manager.go, internal/termmux/manager.go, internal/termmux/eventbus.go.",
-      "acceptance": "MonitorBell event fires on BEL character. MonitorActivity event fires when background pane produces output after idle. MonitorSilence event fires when pane is silent for configured duration. VisualBell flashes pane border. All three monitors configurable per-pane. At least 8 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add remain-on-exit behavior for panes",
-      "description": "When a pane's process exits, the pane currently transitions to SessionExited and is closed. Add RemainOnExit option: when true, the pane stays visible after exit, showing the final screen content. The pane's status bar entry shows [EXITED]. The user can review output and then manually close the pane (or respawn it). Add RemainOnExit bool to paneManager/WindowManager. Add RespawnPane method that creates a new session in the same pane geometry. Files: internal/termmux/pane_manager.go, internal/termmux/manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "RemainOnExit keeps pane visible after process exit. Pane shows [EXITED] in status bar. RespawnPane creates new session in same pane geometry. Without RemainOnExit, pane closes on exit (current behavior). At least 6 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add pane swap, break, join, and zoom",
-      "description": "Add four pane management features: (1) SwapPane(id1, id2): exchanges two panes' positions in the layout while keeping their sessions. (2) BreakPane(id): moves a pane out of its current window into a new window. (3) JoinPane(id, targetWindowId): moves a pane into a target window. (4) ZoomPane(id): toggles a pane between full-screen and its normal position. These require the WindowManager to be in place. Files: internal/termmux/pane_manager.go, internal/termmux/window.go (once implemented), internal/builtin/termmux/module.go.",
-      "acceptance": "SwapPane exchanges two panes' geometries and sessions. BreakPane moves pane to new window. JoinPane moves pane into target window. ZoomPane toggles full-screen. All operations preserve session content. At least 8 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add pipe-pane for teeing pane output to external command",
-      "description": "Add pipe-pane functionality: when enabled, a pane's raw PTY output is teed to an external command (or file) in addition to being processed by VTerm. This is useful for logging, recording, or real-time output analysis. Add PipeConfig to paneManager with Command string and Enabled bool. When enabled, spawn the command and pipe output to its stdin. Expose via JS binding. Files: internal/termmux/pane_manager.go, internal/termmux/manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "Pipe-pane tees raw PTY output to configured command or file. Output still processed by VTerm normally. Pipe can be enabled/disabled at runtime. Pipe command receives all output bytes. At least 4 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add display-message for transient user notifications",
-      "description": "Add a DisplayMessage function that shows a transient message to the user for a configurable duration (default 3 seconds). The message appears as an overlay on the current pane (similar to tmux's display-message). Implementation: add a message overlay to the render pipeline. When a message is active, it appears in a highlighted bar at the bottom of the pane (above the status bar). The message auto-dismisses after the duration. Expose via JS binding: termmux.displayMessage({text: '...', duration: 3000}). Files: internal/termmux/manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "DisplayMessage shows text overlay on current pane. Message auto-dismisses after configured duration. Multiple messages queue and show sequentially. Message rendered above status bar. Exposed via JS binding. At least 4 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add choose-tree interactive session/pane selector",
-      "description": "Add a choose-tree popup that displays all sessions/panes in a navigable list (similar to tmux's choose-tree). The popup overlays the terminal and allows the user to select a session or pane with arrow keys and Enter. Implement as a BubbleTea model that can be activated from JS. The chooser lists: session name, pane title, pane state (running/exited). Selecting an item focuses that pane/window. Expose via JS binding: termmux.chooseTree({onSelect: function(id) {...}}). Files: internal/builtin/termmux/chooser.go (new), internal/builtin/termmux/module.go.",
-      "acceptance": "Choose-tree popup shows all sessions/panes. Arrow keys navigate. Enter selects and focuses. Escape cancels. Selected item highlighted. Works with multiple windows and panes. Exposed via JS binding. At least 6 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add capture-pane region selection and clipboard piping",
-      "description": "Extend ScreenSnapshot with region selection: capture specific rows (startLine to endLine) instead of the full screen. Add CapturePane(sessionID, startLine, endLine) method to SessionManager that returns the selected region as plain text and ANSI. Also add automatic clipboard piping: CopyPaneToClipboard(sessionID) that copies the visible screen to the system clipboard via OSC 52. Expose via JS bindings. Files: internal/termmux/manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "CapturePane with startLine/endLine returns only selected rows. Default (0, -1) returns full screen. CopyPaneToClipboard sends visible screen to clipboard. Region selection respects scrollback boundaries. At least 6 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add lock-session functionality",
-      "description": "Add lock-session: when locked, the terminal displays a password prompt and blocks all input/output until the correct password is entered. This provides basic security for unattended terminals. Add LockSession(password) and UnlockSession(password) methods. When locked, the screen shows only a password prompt (no session content visible). After unlocking, the session resumes normally. Password is hashed with bcrypt. Expose via JS binding. Files: internal/termmux/manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "LockSession(password) locks the session. Screen shows password prompt. UnlockSession with correct password resumes session. UnlockSession with wrong password fails. Password hashed with bcrypt. Session content hidden while locked. At least 6 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Expose copy mode, search, navigation, and all new features via JS bindings",
-      "description": "Expose all copy mode and search features via the osm:termmux JS binding: enterCopyMode, exitCopyMode, selectStart, selectEnd, selectedText, copySelection, searchForward, searchBackward, nextMatch, prevMatch, pageUp, pageDown, scrollToTop, scrollToBottom, copyModeKeyHandler. Also expose window management (newWindow, nextWindow, renameWindow, closeWindow), prefix key system, synchronized panes toggle, monitoring configuration, remain-on-exit, respawn-pane, pane swap/break/join/zoom, pipe-pane, display-message, choose-tree, capture-pane, lock-session. Wire all new Go methods from previous tasks into the JS binding layer. Files: internal/builtin/termmux/module.go.",
-      "acceptance": "All new Go methods exposed as JS functions. JS scripts can call termmux.enterCopyMode(), termmux.searchForward('pattern'), termmux.newWindow(), etc. Each JS binding has at least 1 test. All existing JS binding tests pass.",
-      "status": "Done"
-    },
-    {
-      "task": "Update VT.doc.go to reflect all new features and fix all inaccuracies",
-      "description": "After all VT engine and termmux feature tasks are complete, do a comprehensive review of internal/termmux/vt/doc.go. Update: (1) remove BracketedPaste contradiction, (2) add all new DECRQM modes, (3) add copy mode features, (4) add window management, (5) add layout modes, (6) update 'Not yet' sections to reflect what's now implemented, (7) add monitoring features, (8) add synchronized panes, (9) add pipe-pane, (10) add choose-tree. Files: internal/termmux/vt/doc.go.",
-      "acceptance": "doc.go accurately reflects all implemented features. No contradictions. No false claims. Each 'Supported' entry has corresponding working code. Each 'Not yet' entry is genuinely not implemented. A new contributor can read doc.go and understand the full capability set.",
-      "status": "Done"
-    },
-    {
-      "task": "Update termmux architecture documentation",
-      "description": "Update docs/termmux-architecture.md to reflect all new features: window management, prefix key system, copy mode with vi nav/search, main-horizontal/main-vertical layouts, configurable status bar, mouse-driven pane management, synchronized panes, monitoring, remain-on-exit, pipe-pane, choose-tree, lock-session, display-message. Update package structure, data flow, concurrency model, and JS binding surface sections. Files: docs/termmux-architecture.md.",
-      "acceptance": "Architecture documentation exists and reflects the final codebase. All new features documented. Package structure updated. Data flow diagrams current. JS binding surface documented. A new contributor can understand the system from this document alone.",
-      "status": "Done"
-    },
-    {
-      "task": "Final comprehensive integration test and production validation",
-      "description": "After all tasks are complete, run a comprehensive validation: (1) full test suite (go test -count=1 -timeout=10m ./...), (2) race detector (go test -race -short -count=1 -timeout=10m ./...), (3) lint (make lint), (4) benchmarks (go test -bench=. -benchmem ./internal/termmux/...), (5) diff against main -- verify all 77+ commits still produce working code, (6) manual smoke test of bouncing-logo script with mouse input, (7) verify example-15-bouncing-logo.js is approximately 100 lines. Record results. Files: none (verification only).",
-      "acceptance": "All tests pass with 0 failures. Race detector clean. Lint clean. Benchmarks show no regressions. Bouncing-logo script runs with mouse support and is approximately 100 lines. All new features work end-to-end. Results recorded in WIP.md.",
-      "status": "Done"
-    },
-    {
-      "task": "Add newBouncePresenter Go binding for full lifecycle management",
-      "description": "Add a newBouncePresenter factory to osm:termmux that encapsulates the entire bouncing terminal lifecycle: session creation, bounce controller, control router, mouse forwarding, compositor management, chrome rendering (lipgloss styles created Go-side), tick cycle, action dispatch, and BubbleTea model interface. The presenter creates and manages: CaptureSession + SessionManager + Register/Activate, bounceController, controlRouter, compositor panes/chrome, mouse forwarding (SGR encoding, hit-testing, copy-mode wheel scroll), lipgloss styles (borderStyle, keyStyle, dimStyle, redStyle, statusBgStyle, statusValStyle, greenStyle), formatTime, stringWidth/padRight utilities. Exposed as a Goja object with handleMsg(msg) and render() methods that serve as the BubbleTea update and view functions directly. Files: internal/builtin/termmux/bounce_presenter.go (new), internal/builtin/termmux/module.go (register).",
-      "acceptance": "termmux.newBouncePresenter(config) returns Goja object with handleMsg and render. handleMsg dispatches WindowSize, Tick, MouseClick, MouseMotion, MouseRelease, MouseWheel, Key, Focus, Blur, Paste. render produces view object with content, altScreen, mouseMode, windowTitle. Lipgloss styles created Go-side. Chrome rendering (controls + status) done Go-side. Script line count reduced from 225 to under 100. All existing tests pass. Build clean. Lint clean.",
-      "status": "Done"
-    },
-    {
-      "task": "Rewrite example-15-bouncing-logo.js as thin shim using newBouncePresenter",
-      "description": "Rewrite the 225-line bouncing-logo script to approximately 79 lines using termmux.newBouncePresenter. The rewritten script should: (1) parse flags (--cmd), (2) call newBouncePresenter with config (colors, keys, chordMode, speed, paneSize), (3) define minimal BubbleTea update/view that delegates to presenter.handleMsg/presenter.render, (4) wire zone.scan for button hit-testing in view. The script must support mouse input and all existing functionality: pause/resume, pane size adjustment, quit, chord mode, resize, compositor rendering. Files: scripts/example-15-bouncing-logo.js.",
-      "acceptance": "Script is under 100 lines (79 achieved). Supports mouse input. All existing functionality preserved. Script runs without error via osm script.",
-      "status": "Done"
-    },
-    {
-      "task": "Add bouncePresenter comprehensive tests",
-      "description": "Add tests for newBouncePresenter covering: (1) creation with valid config, (2) handleMsg dispatches WindowSize, Tick, Key, MouseClick, Focus, Blur, Paste correctly, (3) render produces valid view object, (4) bounce controller tick updates position, (5) control router dispatches actions, (6) action dispatch (pause, bigger, smaller, quit), (7) formatTime utility, (8) stringWidth/padRight utilities, (9) mouse forwarding with SGR encoding, (10) copy-mode wheel scrolling. Files: internal/builtin/termmux/bounce_presenter_test.go (new).",
-      "acceptance": "At least 12 new tests. All tests pass. Coverage of bouncePresenter methods. No flaky tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Add session respawn and pane swap JS integration tests",
-      "description": "Add integration tests for the JS bindings of: respawnSession, swapPanes, zoomPane, joinPane, breakPane. These features were implemented in tasks 27-28 but lack dedicated JS binding integration tests. Verify end-to-end: respawn creates new session in same pane, swap exchanges positions, zoom toggles fullscreen. Files: internal/builtin/termmux/module_pane_test.go (extend).",
-      "acceptance": "At least 6 new integration tests. All pass. No host state mutation. No flaky timing.",
-      "status": "Done"
-    },
-    {
-      "task": "Add choose-tree and lock-session JS binding integration tests",
-      "description": "Add integration tests for the JS bindings of: newChooser, lockSession, unlockSession, isLocked. These features were implemented in tasks 31-34 but lack dedicated JS binding integration tests. Verify: chooser shows items and navigates, lock/unlock works with correct/incorrect passwords. Files: internal/builtin/termmux/module_session_test.go (extend).",
-      "acceptance": "At least 6 new integration tests. All pass. No host state mutation. No flaky timing.",
-      "status": "Done"
-    },
-    {
-      "task": "Refine bounce_presenter.go: remove duplicate method definitions",
-      "description": "bounce_presenter.go defines handleKey, bigger, smaller, tick methods on bounceController and controlRouter that duplicate the existing JS-callable methods in bounce.go and control_router.go. Refactor: extract these as shared Go methods on the structs (not Goja-closure methods) and have both bounce.go and bounce_presenter.go call them. Remove the duplicate mapMouseButton function (exists in both mouse_forward.go and bounce_presenter.go). Files: internal/builtin/termmux/bounce_presenter.go, internal/builtin/termmux/bounce.go, internal/builtin/termmux/control_router.go, internal/builtin/termmux/mouse_forward.go.",
-      "acceptance": "No duplicate method definitions. bounceController.bigger/smaller/tick are Go methods on the struct, called by both bounce.go Goja closures and bounce_presenter.go. controlRouter.handleKey is a Go method on the struct. mapMouseButton defined once. All existing tests pass. Build clean. Lint clean.",
-      "status": "Done"
-    },
-    {
-      "task": "Add VT cursor save/restore (DECSC/DECRC) with extended attribute support",
-      "description": "The current DECSC/DECRC implementation saves/restores cursor position and basic attributes. Extend it to also save/restore: character attributes (SGR), charset designations (G0-G1; G2/G3 are not supported by this VT engine), and origin mode (DECOM). This brings the implementation closer to xterm compliance. Per the DECSC/DECRC spec note in blueprint.json globalAlerts, CursorVisible and MouseTracking/MouseSGR are NOT part of the save/restore set and must remain intentionally excluded. Also fixed a bug where the virtual SearchMatch rendering hint was being saved/restored as part of SGR state. Files: internal/termmux/vt/esc.go, internal/termmux/vt/decsc_sgr_test.go.",
-      "acceptance": "DECSC saves cursor position + SGR attributes + charset designations + origin mode. DECRC restores all saved state. CursorVisible and MouseTracking/MouseSGR NOT saved/restored (spec compliance). SearchMatch hint excluded from save/restore. At least 6 new tests verifying each saved/restored attribute.",
-      "status": "Done"
-    },
-    {
-      "task": "Add OSC 52 clipboard integration for copy-mode selections",
-      "description": "Extend the copy-mode selection flow to automatically copy selected text to the system clipboard via OSC 52 when the user presses Enter in copy mode. The current CopyPaneToClipboard sends the full visible screen; this task adds per-selection clipboard copy. Also add termmux.copySelection(sessionID), termmux.selectStart(sessionID, row, col), and termmux.selectEnd(sessionID, row, col) JS bindings. Files: internal/termmux/manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "Copy-mode Enter copies selected text to clipboard via OSC 52. termmux.copySelection(sid) copies selection only (not full screen). selectStart/selectEnd bindings allow JS scripts to set selection bounds. Empty selection is a no-op. At least 4 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Final comprehensive validation and Rule of Two review",
-      "description": "After all new tasks (39-46) are complete, run full validation: (1) full test suite, (2) race detector, (3) lint, (4) benchmarks, (5) verify bouncing-logo is under 100 lines, (6) execute Rule of Two review with two independent subagents. Record results. Commit if both reviews pass contiguously. Files: none (verification only).",
-      "acceptance": "All tests pass. Race detector clean. Lint clean. Bouncing-logo under 100 lines. Two contiguous Rule of Two reviews pass. Commit made.",
-      "status": "Done"
-    },
-    {
-      "task": "Add newBouncePresenter integration tests covering handleMsg, render, and lifecycle",
-      "description": "bounce_presenter.go has 26 functions at 0% coverage. Add integration tests that exercise newBouncePresenter through the Goja runtime: (1) creation with valid config returns a Goja object with handleMsg/render, (2) handleMsg('windowSize', {width:80, height:24}) updates dimensions, (3) handleMsg('tick') advances bounce position, (4) handleMsg('key', 'ctrl+p') dispatches pause action, (5) render() returns a view object with content/altScreen/mouseMode/windowTitle, (6) tick then render produces different position each tick, (7) mouse click triggers forwardMouse path, (8) bigger/smaller actions adjust pane size. Use the existing Goja engine test helper pattern from module_test.go. Files: internal/builtin/termmux/bounce_presenter_test.go.",
-      "acceptance": "At least 8 new tests covering newBouncePresenter lifecycle. bounce_presenter.go coverage rises above 40%. All tests pass with race detector.",
-      "status": "Done"
-    },
-    {
-      "task": "Add jsParse* config extraction tests for bounce_presenter",
-      "description": "The jsParseSpeed, jsParsePaneSize, jsParseKeys, jsParseChordMode, jsParseColors, jsGetString, jsGetInt, jsGetStringArray helper functions in bounce_presenter.go are at 0% coverage. These parse Goja value config objects into Go structs. Add unit tests that create Goja values and verify each parser: (1) jsParseSpeed with valid {x:1,y:2} and defaults, (2) jsParsePaneSize with all fields and partial fields, (3) jsParseKeys with key-to-action map, (4) jsParseChordMode with prefix and actions, (5) jsParseColors with hex strings, (6) jsGetString/jsGetInt/jsGetStringArray with valid/invalid inputs. Files: internal/builtin/termmux/bounce_presenter_test.go (extend).",
-      "acceptance": "All 8 jsParse* helpers tested. Each has at least 2 test cases (valid input + default/missing). bounce_presenter.go coverage rises above 55%.",
-      "status": "Done"
-    },
-    {
-      "task": "Add registerPaneMethods and registerSessionMethods JS binding coverage tests",
-      "description": "module.go registerPaneMethods is at 10.4% coverage and registerSessionMethods at 21.1%. These register dozens of JS-callable methods on Goja objects. Add tests that: (1) call each pane method from JS and verify it dispatches to the correct Go method, (2) call each session method from JS and verify correct dispatch, (3) verify error handling for invalid arguments. Focus on the methods that are currently at 0%: SearchForward, SearchBackward, search, wrapSearchMatch, persistedStateToJS, prefixActionKindFromName, wrapInteractiveSession, unwrapInteractiveSession, newBoundedSession. Files: internal/builtin/termmux/module_test.go (extend), internal/builtin/termmux/module_session_test.go (extend).",
-      "acceptance": "registerPaneMethods coverage rises above 50%. registerSessionMethods coverage rises above 50%. All new binding tests pass. No host state mutation.",
-      "status": "Done"
-    },
-    {
-      "task": "Add registerStatusMethods and WrapSessionManager coverage tests",
-      "description": "module.go registerStatusMethods is at 25.9% and WrapSessionManager at 51.4%. Add tests that: (1) call each status method from JS (setLeftStatus, setRightStatus, setWindowStatus, setColors, setPosition), (2) exercise WrapSessionManager methods that are currently uncovered (run, started, activate, deactivate, killSession, respawnSession), (3) verify WrapCaptureSession uncovered paths. Files: internal/builtin/termmux/module_test.go (extend).",
-      "acceptance": "registerStatusMethods coverage rises above 60%. WrapSessionManager coverage rises above 70%. All tests pass.",
-      "status": "Done"
-    },
-    {
-      "task": "Fix paneManager/LayoutEngine PaneID divergence",
-      "description": "paneManager had its own nextPaneID counter (starting at 1) and LayoutEngine had its own nextID counter (also starting at 1). When transferPaneToWindow ran, it used target.nextPaneID directly instead of the LayoutEngine's AllocID. This means the two counters could diverge, potentially assigning the same PaneID to different panes. Fix: removed paneManager.nextPaneID and made Create() use the PaneID returned by engine.Split() instead of pre-allocating. transferPaneToWindow now uses target.engine.AllocID(). All PaneID generation goes through LayoutEngine as single source of truth. Files: internal/termmux/pane_manager.go, internal/termmux/layout.go.",
-      "acceptance": "paneManager no longer has nextPaneID field. All PaneID generation goes through LayoutEngine. No duplicate PaneID possible. All existing tests pass. New test verifying no ID collision with sequential pane creation.",
-      "status": "Done"
+      "task": "Move bounce-presenter compositor and hit testing into Go",
+      "description": "CANCELLED: The user clarified that the bouncing-logo example is application-specific and must not have a dedicated Go-side implementation. The Go-side compositor and newBouncePresenter code was removed (internal/builtin/termmux/compositor.go, bounce_presenter.go, bounce.go, and their tests). Functionality is now implemented in scripts/example-15-bouncing-logo.js using reusable Go primitives.",
+      "acceptance": "All app-specific Go files deleted; no remaining references to newBouncePresenter/newCompositor in the Go source; lint and tests pass.",
+      "status": "Cancelled"
     },
     {
-      "task": "Add CaptureSession.Rows, Cols, and Passthrough tests",
-      "description": "CaptureSession.Rows and Cols are at 0% coverage. Passthrough is at 13%. Add tests: (1) Rows returns the configured row count, (2) Cols returns the configured column count, (3) Passthrough mode forwards raw bytes to VTerm without processing, (4) Passthrough mode can be toggled on/off, (5) Passthrough respects session boundaries. Files: internal/termmux/capture_test.go (extend).",
-      "acceptance": "CaptureSession.Rows test verifies correct row count. Cols test verifies correct column count. Passthrough test verifies raw byte forwarding and toggle. Coverage for these methods rises above 80%.",
-      "status": "Done"
-    },
-    {
-      "task": "Add CopyModeKeyHandler.String() and NextMatch/PrevMatch coverage tests",
-      "description": "CopyModeKeyHandler.String() is at 34.8% and NextMatch/PrevMatch at 66.7%. Add tests: (1) String() returns correct representation for all action types (MoveLeft, ScrollUp, ExitCopyMode, SelectStart, CopyAndExit, SearchForward, SearchBackward, NextMatchAction, PrevMatchAction), (2) NextMatch with multiple matches cycles through them, (3) PrevMatch with multiple matches cycles backwards, (4) NextMatch with no matches returns no-op, (5) String() for unknown action returns empty. Files: internal/termmux/copy_mode_keys_test.go (extend).",
-      "acceptance": "String() coverage rises to 90%+. NextMatch/PrevMatch coverage rises to 100%. At least 8 new tests.",
-      "status": "Done"
+      "task": "Return a ready-to-run BubbleTea model from newBouncePresenter",
+      "description": "CANCELLED: superseded by the pure-JavaScript rewrite of scripts/example-15-bouncing-logo.js. No newBouncePresenter binding exists.",
+      "acceptance": "N/A",
+      "status": "Cancelled"
     },
     {
-      "task": "Add LayoutEngine.ChromeRows, Mode, Size, AllocID, and Resize coverage tests",
-      "description": "ChromeRows, Mode, Size are at 0% coverage. AllocID at 0%. Resize at 36.4%. Add tests: (1) ChromeRows returns configured chrome row count, (2) Mode returns current layout mode, (3) Size returns current terminal dimensions, (4) AllocID returns sequential IDs, (5) Resize with valid dimensions recomputes layout, (6) Resize with zero/negative dimensions is clamped, (7) Resize with more panes than space. Files: internal/termmux/layout_test.go (extend).",
-      "acceptance": "ChromeRows/Mode/Size/AllocID coverage rises to 100%. Resize coverage rises above 80%. At least 8 new tests.",
+      "task": "Rewrite example-15-bouncing-logo.js as pure JavaScript using reusable Go primitives",
+      "description": "Rewrite scripts/example-15-bouncing-logo.js to implement the bouncing terminal entirely in JavaScript using the reusable osm:termmux primitives (newBoundedSession, newControlRouter, enableMouseForward, mouseToSGR, handleMouseDrag, keyToTermBytes), osm:termui/compositor (panes/chrome/hit/render/renderBordered), osm:bubbletea (newModel/run/tick), osm:lipgloss (border styling), and osm:flag. The script must preserve: flag parsing, default /bin/sh (cmd.exe on Windows), bounce physics with pause/resume and pane resize, compositor rendering, keyboard/mouse forwarding, chord mode, resize handling, and non-interactive smoke mode.",
+      "acceptance": "scripts/example-15-bouncing-logo.js runs via `osm script scripts/example-15-bouncing-logo.js --smoke` and exits 0 with sensible output. The script does not import newBouncePresenter, newBounceController, or a Go-side compositor. Full test suite and lint pass.",
       "status": "Done"
     },
     {
-      "task": "Add newControlRouter edge case and chord mode coverage tests",
-      "description": "newControlRouter is at 54.9% coverage. Missing: (1) chord mode with multiple prefix presses, (2) chord mode timeout/cancel scenarios, (3) unhandled key pass-through, (4) empty key map, (5) duplicate key mappings. Added tests in bounce_presenter_test.go: TestControlRouter_HandleKey_ChordCancel, TestControlRouter_HandleKey_ChordUnrecognized. Files: internal/builtin/termmux/bounce_presenter_test.go.",
-      "acceptance": "newControlRouter coverage rises above 85%. Chord mode edge cases covered. At least 6 new tests.",
-      "status": "Done"
+      "task": "Unify mouse event SGR encoding through the exported MouseToSGR helper",
+      "description": "CANCELLED: the bounce presenter and its inline SGR encoding were removed. Mouse forwarding in the rewritten JS script uses termmux.mouseToSGR via the reusable enableMouseForward helper.",
+      "acceptance": "N/A",
+      "status": "Cancelled"
     },
     {
-      "task": "Add mouse_forward.go SGR encoding and hit-testing coverage tests",
-      "description": "mouse_forward.go's enableMouseForward and mapMouseButton functions need more coverage. Add tests: (1) SGR encoding for all mouse button types (left/right/middle/none), (2) SGR encoding for motion events, (3) SGR encoding for wheel events, (4) coordinate translation with border width offset, (5) hit-testing inside/outside pane bounds, (6) mouseTracking=0 means forward is no-op, (7) copy-mode wheel scroll consumes event instead of forwarding. Files: internal/builtin/termmux/mouse_forward_test.go (extend or new).",
-      "acceptance": "mouse_forward.go coverage rises above 80%. All SGR encoding variants tested. Hit-testing boundary conditions covered. At least 8 new tests.",
-      "status": "Done"
+      "task": "newBouncePresenter accepts env, dir, and name options",
+      "description": "CANCELLED: newBouncePresenter was removed as application-specific Go code. The JavaScript rewrite creates bounded sessions via newBoundedSession, which already supports env, dir, and name.",
+      "acceptance": "N/A",
+      "status": "Cancelled"
     },
     {
-      "task": "Add newBoundedSession JS binding integration test",
-      "description": "newBoundedSession in module.go is at 0% coverage. This is the primary session factory for bounce scripts. Add integration test that: (1) creates a bounded session with cmd/rows/cols config, (2) verifies returned object has session/mgr/sid properties, (3) calls mgr.run() and mgr.started(), (4) calls mgr.activate(sid), (5) verifies session produces output, (6) verifies cleanup on close. Files: internal/builtin/termmux/module_session_test.go (extend).",
-      "acceptance": "newBoundedSession coverage rises above 80%. Integration test passes with race detector. No host state mutation. At least 5 new tests.",
-      "status": "Done"
+      "task": "Refactor bounce_presenter to consume exported standalone factories",
+      "description": "CANCELLED: bounce_presenter.go was removed. The reusable controlRouter factory remains and is used by the JavaScript script; bounce physics now lives entirely in JS.",
+      "acceptance": "N/A",
+      "status": "Cancelled"
     },
     {
-      "task": "Wave 2 final validation and Rule of Two review",
-      "description": "After all wave 2 tasks (48-58) are complete, run full validation: (1) full test suite (go test -short -count=1 -timeout=5m ./...), (2) race detector (go test -race -short -count=1 -timeout=10m ./internal/termmux/... ./internal/builtin/termmux/...), (3) lint (make lint), (4) coverage check \u2014 builtin/termmux must be above 55%, (5) verify no ID divergence, (6) execute Rule of Two review with two independent subagents. Record results. Commit if both reviews pass contiguously. Files: none (verification only).",
-      "acceptance": "All tests pass. Race detector clean. Lint clean. builtin/termmux coverage above 55%. No ID divergence. Two contiguous Rule of Two reviews pass. Commit made.",
+      "task": "Refactor termmux event bridge to goja-eventloop EventTarget",
+      "description": "Replaced hand-rolled `muxEvents` listener list with `github.com/joeycumines/goja-eventloop` `EventTarget`/`Event`/`CustomEvent`. Updated `termmuxmod.Require` to accept a `*gojaeventloop.Adapter`, create one `EventTarget` per wrapped `SessionManager`, and dispatch `SessionManager` EventBus events onto the event loop. Added `addEventListener`, `removeEventListener`, and `dispatchEvent` methods; preserved legacy `on`/`off`/`pollEvents` aliases and all public constants. Removed dead code and updated tests, docs, and call sites in `internal/builtin/register.go`, `internal/command/pr_split.go`, and `internal/command/pr_split_tui_persistence_truthful_test.go`.",
+      "acceptance": "`go test -short ./...`, `go test -race -short ./internal/termmux/... ./internal/builtin/termmux/...`, `gmake lint`, `go build -o osm ./cmd/osm`, and `./osm script scripts/example-15-bouncing-logo.js --smoke` all pass; no dead code remains; legacy `on`/`off` scripts still work.",
       "status": "Done"
     },
     {
-      "task": "Fix pre-existing race in interactive_session_test.go controllableSession.Close()",
-      "description": "Rule of Two review #2 observed a TOCTOU race in controllableSession.Close(): a check and close are not atomic, so Close() can be called twice concurrently. Reproduce with `go test -race ./internal/termmux/...` and fix using sync.Once or an atomic guard so Close() is idempotent and race-free. Files: internal/termmux/interactive_session_test.go.",
-      "acceptance": "Race detector no longer reports data races in interactive_session_test.go after multiple runs. All existing tests pass.",
+      "task": "Add resize-pane directional deltas",
+      "description": "tmux supports `resize-pane -L/-R/-U/-D` to adjust pane size by a cell count. Add `SessionManager.ResizePaneDelta(paneID, direction, delta)` where direction is one of `'left'`, `'right'`, `'up'`, `'down'`. Compute new width/height with delta, clamping to minimum sizes, and propagate geometry to the child PTY/VTerm. Expose via JS binding `resizePaneDelta(id, direction, delta)`. Files: internal/termmux/layout.go, internal/termmux/manager.go, internal/builtin/termmux/module.go.",
+      "acceptance": "`resize-pane -R 5` grows width by 5, `-L 5` shrinks; `-D 5` grows height, `-U 5` shrinks. Sizes never fall below minimum. At least 4 tests.",
       "status": "Done"
     },
     {
-      "task": "Remove no-op paneW/paneH reads in mouse_forward.go",
-      "description": "enableMouseForward reads cfg.Get(\"paneW\") and cfg.Get(\"paneH\") into blank identifiers (lines 39-40). These values are never used; remove the no-op reads and update any tests/docs that mention them. Files: internal/builtin/termmux/mouse_forward.go.",
-      "acceptance": "No blank-identifier reads of paneW/paneH in enableMouseForward. Build and tests pass.",
+      "task": "Add move-window and swap-window ordering primitives",
+      "description": "tmux supports `move-window -t index` and `swap-window -t id`. Add `WindowManager.MoveWindow(id, targetIndex)` and `WindowManager.SwapWindows(id1, id2)` to reorder the window list, plus `SessionManager` wrappers and JS bindings `moveWindow`/`swapWindow`. Update `StatusBar` window-status rendering to reflect the new order. Files: internal/termmux/window.go, internal/termmux/manager.go, internal/builtin/termmux/module.go.",
+      "acceptance": "`moveWindow` reorders the window list. `swapWindow` exchanges two window positions. Status-bar window status shows the new order. At least 4 tests.",
       "status": "Done"
     },
     {
-      "task": "Exercise active mouse-tracking path to raise bounce_presenter.go forwardMouse coverage",
-      "description": "bounce_presenter.go forwardMouse is at ~16.3% because tests do not enable child mouse tracking. Add a test that sets mouseTracking > 0 in the session snapshot and verifies forwardMouse encodes SGR input correctly through the presenter. Files: internal/builtin/termmux/bounce_presenter_test.go.",
-      "acceptance": "forwardMouse coverage rises above 70%. Test verifies SGR input is forwarded to the child PTY when mouse tracking is enabled.",
+      "task": "Add send-keys raw key injection binding",
+      "description": "`Input` accepts raw bytes but there is no high-level `send-keys` API with tmux-style key names. Add `SessionManager.SendKeys(sessionID, keyNames...)` that converts names like `ctrl+c`, `alt+x`, `f1`, `left` to terminal bytes using `parent.KeyToTermBytes`, and writes them to the session. Expose `termmux.sendKeys(sid, ...keys)` and `sendKeys` on the wrapped session. Use it in tests instead of manually writing byte sequences. Files: internal/termmux/manager.go, internal/builtin/termmux/module.go.",
+      "acceptance": "`sendKeys(sid, 'ctrl+c')` writes `0x03`. `sendKeys(sid, 'alt+x')` writes ESC x. `sendKeys(sid, 'f1')` writes the correct escape sequence. At least 6 tests.",
       "status": "Done"
     },
     {
-      "task": "Holistic reassessment of remaining tmux-parity gaps and coverage targets",
-      "description": "After tasks 60-62, perform a fresh audit of termmux vs tmux parity and coverage. Identify the next highest-value gaps (features, coverage, AI slop, doc contradictions) and expand the blueprint with tasks 64+. Include a coverage report and gap list in WIP.md.",
-      "acceptance": "At least 3 new tasks added to blueprint.json with clear acceptance criteria. Replan log updated. WIP.md updated with audit findings.",
+      "task": "Add pane border drawing with index and title labels",
+      "description": "tmux draws borders around panes showing their index and title. Add a `BorderRenderer` in `internal/termmux/statusbar` or a new package that takes terminal dimensions and a `PaneGeometry` slice and returns an ANSI string with box-drawing characters and labels. Expose as `termmux.renderPaneBorders(width, height, geometries)` and optionally use it in `Passthrough`. Files: internal/termmux/statusbar/borders.go (new), internal/builtin/termmux/module.go.",
+      "acceptance": "`renderPaneBorders` produces a string with border lines around each pane and labels containing pane index/title. Borders do not overwrite pane content. At least 4 tests.",
       "status": "Done"
     },
     {
-      "task": "Add registerEvents and quitCmd coverage tests for bounce_presenter.go",
-      "description": "registerEvents is at 57.1% and quitCmd at 20.0% coverage. Add tests that: (1) verify registerEvents wires copy-mode, bell, activity, and silence handlers, (2) verify quitCmd returns a valid tea quit command, (3) verify dispatchAction for 'quit' exits the model. Files: internal/builtin/termmux/bounce_presenter_test.go.",
-      "acceptance": "registerEvents coverage rises above 85%. quitCmd coverage rises above 80%. All tests pass.",
+      "task": "Auto-reset activity monitor so repeated activity events can fire",
+      "description": "`MonitorActivity` in `internal/termmux/manager.go:2729-2733` sets `ActivityFired = true` and never resets it. Add automatic reset after the pane becomes active or after a configurable quiescence period, so background panes can trigger activity more than once. Add a JS binding to manually reset if desired. Files: internal/termmux/monitor.go, internal/termmux/manager.go.",
+      "acceptance": "A background pane can emit multiple `EventActivity` events over time. Activating the pane resets the activity flag. At least 2 tests.",
       "status": "Done"
     },
     {
-      "task": "Add search, wrapInteractiveSession, and controlRouter edge coverage tests",
-      "description": "module.go search is at 55.6% and wrapInteractiveSession at 29.7%; control_router.go newControlRouter is at 54.9%. Add tests that: (1) call termmux.search() with pattern and verify it dispatches, (2) exercise wrapInteractiveSession's JS methods (close, resize, write), (3) cover newControlRouter's empty key map and duplicate-key paths. Files: internal/builtin/termmux/module_session_test.go, internal/builtin/termmux/control_router_test.go (or extend bounce_presenter_test.go).",
-      "acceptance": "search coverage above 80%. wrapInteractiveSession coverage above 70%. newControlRouter coverage above 75%. All tests pass.",
+      "task": "Mark exited panes and wire remain-on-exit state to the pane binding",
+      "description": "Added `SessionManager.markSessionPaneExited` and called it from `handleSessionOutput` when `remainOnExit` is true so the pane binding records `Exited=true`. Added `Exited` to the exported `Pane` struct and populated it in `paneManager.Panes()`; exposed it in JS `panes()` and `windowPanes` so scripts/status bars can render `[EXITED]`. Cleared `binding.Exited` in `paneManager.RebindSession` so respawn reuses the same pane geometry without lingering exited state. Verified that `ClosePane` removes the binding. Files: internal/termmux/manager.go, internal/termmux/pane_manager.go, internal/termmux/layout.go, internal/builtin/termmux/module.go.",
+      "acceptance": "Exited pane reports `PaneExited` true. `panes()`/`windowPanes()` expose `exited`. Respawn reuses the same pane geometry and clears the exited flag. ClosePane removes the binding. At least 4 tests.",
       "status": "Done"
     },
     {
-      "task": "Add registerSnapshotMethods, registerPersistenceMethods, persistedStateToJS, and prefixActionKindFromName coverage tests",
-      "description": "module.go registerSnapshotMethods is at 59.0%, registerPersistenceMethods at 4.8%, persistedStateToJS at 0.0%, prefixActionKindFromName at 0.0%. Add integration tests that call each JS-bound method with valid and invalid arguments and verify dispatch. Files: internal/builtin/termmux/module_session_test.go (extend).",
-      "acceptance": "registerSnapshotMethods coverage above 80%. registerPersistenceMethods coverage above 70%. persistedStateToJS and prefixActionKindFromName coverage above 80%. All tests pass.",
+      "task": "Wire copy-mode key actions to SessionManager methods",
+      "description": "`CopyModeKeyHandler` returns actions but the caller must execute them. Add `SessionManager.HandleCopyModeKey(sessionID, key)` that maps actions to real operations: scroll, select start/end, copy, search, enter/exit copy mode. Expose `termmux.copyModeKey(sid, key)` so scripts do not need their own dispatch table. Files: internal/termmux/manager.go, internal/termmux/copy_mode_keys.go, internal/builtin/termmux/module.go.",
+      "acceptance": "`handleCopyModeKey('j')` scrolls the copy-mode viewport. `q` exits copy mode. Space starts selection, Enter copies. At least 6 tests.",
       "status": "Done"
     },
     {
-      "task": "Audit and harden mouse drag-to-resize pane border functionality",
-      "description": "Mouse click-to-focus and drag-to-resize pane borders are implemented but lack dedicated integration tests and may have edge cases with border widths and compositor coordinate translation. Add tests for: (1) clicking inside a pane focuses it, (2) dragging a divider changes the split ratio, (3) drag that doesn't start on a divider is ignored, (4) resize respects minimum pane sizes. Files: internal/termmux/pane_manager_test.go, internal/termmux/layout_test.go.",
-      "acceptance": "At least 6 new tests. Drag-to-resize behavior verified with mock compositor. All existing tests pass.",
+      "task": "Expose main-horizontal/main-vertical layout smoke tests via JS",
+      "description": "Main layouts are implemented in Go but not exercised end-to-end from JavaScript. Add integration tests that create a session manager, add three panes, set layout mode to `main-horizontal` and `main-vertical`, and assert the active window's pane geometries match the 60/40 split. Expose a JS function `termmux.layoutMode()` to query the current mode. Files: internal/builtin/termmux/module.go, internal/builtin/termmux/module_layout_test.go (new).",
+      "acceptance": "JS smoke test creates 3 panes in main-horizontal: first pane height is roughly 60% of total, remaining panes share the rest. Main-vertical analogous for widths. At least 2 tests.",
       "status": "Done"
     },
     {
-      "task": "Raise termmux package coverage gates and run final validation",
-      "description": "After tasks 64-67, run a coverage gate: internal/builtin/termmux must be >=80% and internal/termmux core >=85%. Run full test suite, race detector, lint, and a new Rule of Two review cycle. Add any remaining tests needed to meet the gate. Files: various test files.",
-      "acceptance": "builtin/termmux coverage >=80%. internal/termmux coverage >=85%. All tests pass. Race detector clean. Lint clean. Two contiguous Rule of Two reviews pass.",
-      "status": "Done"
+      "task": "Final Wave 4 validation and Rule of Two review",
+      "description": "After tasks 69-97 are complete, run the full validation pipeline: `gmake build`, `go test -short -count=1 -timeout=5m ./...`, `go test -race -short -count=1 -timeout=10m ./internal/termmux/... ./internal/builtin/termmux/...`, `gmake lint`, verify `scripts/example-15-bouncing-logo.js --smoke` exits 0, and confirm coverage gates (internal/termmux >=85%, internal/builtin/termmux >=80%). Conduct two contiguous Rule of Two reviews and commit only if both pass. Files: none (verification only).",
+      "acceptance": "All builds, tests, race detector, and lint pass. Smoke run exits 0. Coverage gates met. Two contiguous issue-free Rule of Two reviews recorded. Commit made.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {

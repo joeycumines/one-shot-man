@@ -92,16 +92,31 @@ func TestLayoutEngine_Unzoom(t *testing.T) {
 }
 
 func TestSessionManager_SwapPanes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	e := m.paneMgr.engine
-	id1 := e.Split(0, SplitRight)
-	id2 := e.Split(id1, SplitRight)
+	s1 := newControllableSession()
+	sid1, _ := m.Register(s1, SessionTarget{Name: "one", Kind: SessionKindPTY})
+	s2 := newControllableSession()
+	sid2, _ := m.Register(s2, SessionTarget{Name: "two", Kind: SessionKindPTY})
+
+	id1 := m.paneMgr.PaneIDForSession(sid1)
+	id2 := m.paneMgr.PaneIDForSession(sid2)
 
 	err := m.SwapPanes(id1, id2)
 	if err != nil {
 		t.Fatalf("SwapPanes: %v", err)
+	}
+
+	if m.paneMgr.panes[id1].SessionID != sid2 {
+		t.Errorf("pane %d session = %d, want %d", id1, m.paneMgr.panes[id1].SessionID, sid2)
+	}
+	if m.paneMgr.panes[id2].SessionID != sid1 {
+		t.Errorf("pane %d session = %d, want %d", id2, m.paneMgr.panes[id2].SessionID, sid1)
 	}
 }
 

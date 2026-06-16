@@ -9,11 +9,14 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
@@ -127,6 +130,10 @@ type ScreenSnapshot struct {
 	// CursorCol is the cursor's column position (0-indexed) at capture time.
 	CursorCol int
 
+	// Locked reports whether the session was locked when this snapshot
+	// was published.
+	Locked bool
+
 	// MouseTracking indicates the child's active mouse tracking level.
 	// Values: 0=none, 1=basic (1000), 2=button-event (1002), 3=any-event (1003).
 	MouseTracking int
@@ -178,6 +185,10 @@ type ScreenSnapshot struct {
 	// is active. When true, LF also performs a carriage return.
 	LineFeedNewLine bool
 
+	// Message is the active display-message overlay text for this session,
+	// or empty when no message is queued or the front message has expired.
+	Message string
+
 	// Timestamp records when this snapshot was created.
 	Timestamp time.Time
 }
@@ -217,6 +228,34 @@ func (s *ScreenSnapshot) GetFullScreen() string {
 		}
 	})
 	return s.fullScreenCache
+}
+
+// Clone returns a shallow copy of s with fresh sync.Once fields. The returned
+// snapshot shares the underlying screen and may have its metadata mutated
+// before publication.
+func (s *ScreenSnapshot) Clone() *ScreenSnapshot {
+	return &ScreenSnapshot{
+		Gen:                s.Gen,
+		screen:             s.screen,
+		Rows:               s.Rows,
+		Cols:               s.Cols,
+		CursorRow:          s.CursorRow,
+		CursorCol:          s.CursorCol,
+		MouseTracking:      s.MouseTracking,
+		MouseSGR:           s.MouseSGR,
+		InsertMode:         s.InsertMode,
+		BracketedPaste:     s.BracketedPaste,
+		ApplicationCursor:  s.ApplicationCursor,
+		KeypadApplication:  s.KeypadApplication,
+		CursorShape:        s.CursorShape,
+		FocusReporting:     s.FocusReporting,
+		SynchronizedOutput: s.SynchronizedOutput,
+		AutoWrap:           s.AutoWrap,
+		LineFeedNewLine:    s.LineFeedNewLine,
+		Locked:             s.Locked,
+		Message:            s.Message,
+		Timestamp:          s.Timestamp,
+	}
 }
 
 // NewScreenSnapshot creates a ScreenSnapshot backed by the given cell grid.
@@ -271,6 +310,12 @@ const (
 	// reqInput asks the worker to write data to the active session.
 	// Payload: []byte. Reply value: nil.
 	reqInput
+
+	reqSendKeys
+
+	// reqResetActivity resets the activity-fired flag for a session.
+	// Payload: SessionID. Reply value: none.
+	reqResetActivity
 
 	// reqResize asks the worker to resize all sessions' VTerms and PTYs.
 	// Payload: *resizePayload. Reply value: nil.
@@ -356,6 +401,10 @@ const (
 	// divider at the given coordinates. Payload: *resizePaneAtPayload. Reply value: nil.
 	reqResizePaneAt
 
+	// reqResizePaneDelta asks the worker to resize a pane by a directional
+	// cell delta. Payload: *resizePaneDeltaPayload. Reply value: nil.
+	reqResizePaneDelta
+
 	// reqPanes asks the worker to return the current pane list.
 	// Payload: nil. Reply value: []Pane.
 	reqPanes
@@ -392,6 +441,10 @@ const (
 	// Payload: selectPayload. Reply value: none.
 	reqSelectEnd
 
+	// reqHandleCopyModeKey asks the worker to dispatch a copy-mode key.
+	// Payload: handleCopyModeKeyPayload. Reply value: none.
+	reqHandleCopyModeKey
+
 	// reqNewWindow asks the worker to create a new window.
 	// Payload: *newWindowPayload. Reply value: WindowID.
 	reqNewWindow
@@ -411,6 +464,14 @@ const (
 	// reqCloseWindow asks the worker to close a window.
 	// Payload: WindowID. Reply value: none.
 	reqCloseWindow
+
+	// reqMoveWindow asks the worker to move a window to a target index.
+	// Payload: moveWindowPayload. Reply value: none.
+	reqMoveWindow
+
+	// reqSwapWindows asks the worker to swap two windows' positions.
+	// Payload: swapWindowsPayload. Reply value: none.
+	reqSwapWindows
 
 	// reqActiveWindowID asks the worker to return the active window's ID.
 	// Payload: none. Reply value: WindowID.
@@ -480,9 +541,9 @@ const (
 	// Payload: none. Reply value: PaneID.
 	reqZoomedPane
 
-	// reqSetPipeFile sets a file path for piping pane output.
-	// Payload: pipeFilePayload. Reply value: none.
-	reqSetPipeFile
+	// reqSetPipe configures a pipe target (file or command) for pane output.
+	// Payload: setPipePayload. Reply value: none.
+	reqSetPipe
 
 	// reqClearPipe clears the pipe writer for a session.
 	// Payload: SessionID. Reply value: none.
@@ -517,6 +578,10 @@ const (
 	// Payload: SessionID. Reply value: bool.
 	reqIsLocked
 
+	// reqUnlockPrompt returns the current lock-prompt state for a session.
+	// Payload: SessionID. Reply value: unlockPromptResponse.
+	reqUnlockPrompt
+
 	// reqBreakPane breaks the active pane out of its window into a new one.
 	// Payload: WindowID. Reply value: WindowID.
 	reqBreakPane
@@ -528,6 +593,18 @@ const (
 	// reqAddPaneToWindow adds a session as a pane to a specific window.
 	// Payload: *addPaneToWindowPayload. Reply value: PaneID.
 	reqAddPaneToWindow
+
+	// reqSplitPane adds a session as a pane split from an existing pane.
+	// Payload: *splitPanePayload. Reply value: PaneID.
+	reqSplitPane
+
+	// reqSetLayoutMode asks the worker to set the layout mode for a window.
+	// Payload: *setLayoutModePayload. Reply value: none.
+	reqSetLayoutMode
+
+	// reqLayoutMode asks the worker for the layout mode of a window.
+	// Payload: WindowID. Reply value: string.
+	reqLayoutMode
 )
 
 // registerPayload carries the arguments for a reqRegister request.
@@ -553,10 +630,10 @@ type swapPanesPayload struct {
 	a, b PaneID
 }
 
-// pipeFilePayload carries the session ID and file path for pipe-pane.
-type pipeFilePayload struct {
+// setPipePayload carries the session ID and pipe configuration.
+type setPipePayload struct {
 	sessionID SessionID
-	path      string
+	config    PipeConfig
 }
 
 // displayMessage is a transient message shown as an overlay.
@@ -564,6 +641,10 @@ type displayMessage struct {
 	text      string
 	expiresAt time.Time
 }
+
+// maxDisplayMessages caps the per-session display-message queue to prevent
+// unbounded growth if callers enqueue faster than messages expire.
+const maxDisplayMessages = 32
 
 // displayMessagePayload carries the session ID, text, and duration.
 type displayMessagePayload struct {
@@ -586,10 +667,24 @@ type selectPayload struct {
 	col       int
 }
 
+// handleCopyModeKeyPayload carries the session ID and key to dispatch.
+type handleCopyModeKeyPayload struct {
+	sessionID SessionID
+	key       string
+}
+
 // lockPayload carries the session ID and plaintext password.
 type lockPayload struct {
 	sessionID SessionID
 	password  string
+}
+
+// unlockPromptResponse carries the current lock prompt state for a session.
+type unlockPromptResponse struct {
+	active    bool
+	maskLen   int
+	message   string
+	expiresAt time.Time
 }
 
 // resizePayload carries the new terminal dimensions for a reqResize request.
@@ -639,6 +734,14 @@ type resizePaneAtPayload struct {
 	ratio float64
 }
 
+// resizePaneDeltaPayload carries the pane ID, direction, and cell delta for a
+// reqResizePaneDelta request.
+type resizePaneDeltaPayload struct {
+	id        PaneID
+	direction string
+	delta     int
+}
+
 // scrollCopyModePayload carries the session ID and scroll delta.
 type scrollCopyModePayload struct {
 	id    SessionID
@@ -656,14 +759,31 @@ type renameWindowPayload struct {
 	name string
 }
 
-// breakPanePayload carries the source window ID for a reqBreakPane request.
-type breakPanePayload struct {
-	windowID WindowID
+// moveWindowPayload carries the window ID and target index.
+type moveWindowPayload struct {
+	id          WindowID
+	targetIndex int
 }
 
-// joinPanePayload carries source and target window IDs for a reqJoinPane request.
+// swapWindowsPayload carries two window IDs to swap.
+type swapWindowsPayload struct {
+	a, b WindowID
+}
+
+// sendKeysPayload carries a session ID and the named keys to inject.
+type sendKeysPayload struct {
+	id   SessionID
+	keys []string
+}
+
+// breakPanePayload carries the pane ID to break into a new window.
+type breakPanePayload struct {
+	paneID PaneID
+}
+
+// joinPanePayload carries the pane ID to move and the target window ID.
 type joinPanePayload struct {
-	sourceWindowID WindowID
+	paneID         PaneID
 	targetWindowID WindowID
 }
 
@@ -673,6 +793,19 @@ type addPaneToWindowPayload struct {
 	target    SessionTarget
 	windowID  WindowID
 	direction SplitDirection
+}
+
+// splitPanePayload carries arguments for reqSplitPane.
+type splitPanePayload struct {
+	activePane PaneID
+	cfg        CaptureConfig
+	direction  SplitDirection
+}
+
+// setLayoutModePayload carries the window ID and new layout mode.
+type setLayoutModePayload struct {
+	windowID WindowID
+	mode     LayoutMode
 }
 
 // RestoreResult describes the outcome of a [SessionManager.RestoreFromState]
@@ -691,6 +824,72 @@ type RestoreResult struct {
 type RestoreFailure struct {
 	SessionID SessionID
 	Error     error
+}
+
+// PipeConfig configures where a pane's raw PTY output is teed.
+// Exactly one of Path or Command should be non-empty. Setting both returns
+// an error from SetPipe.
+type PipeConfig struct {
+	// Path, when non-empty, opens the file for append and writes each
+	// raw output chunk to it.
+	Path string
+
+	// Command, when non-empty, spawns the external command and writes
+	// each raw output chunk to its stdin.
+	Command string
+
+	// Args are the command-line arguments passed to Command.
+	Args []string
+}
+
+// pipeProcess wraps a spawned external command and its stdin pipe.
+// It implements io.Writer and io.Closer so it can be stored in
+// managedSession.pipeWriter and torn down on pane exit or ClearPipe.
+type pipeProcess struct {
+	cmd       *exec.Cmd
+	stdin     io.WriteCloser
+	closeOnce sync.Once
+	done      chan struct{}
+}
+
+// Write forwards raw PTY bytes to the command's stdin. If the pipe has
+// been closed, writes are silently dropped.
+func (p *pipeProcess) Write(data []byte) (int, error) {
+	if p.stdin == nil {
+		return len(data), nil
+	}
+	return p.stdin.Write(data)
+}
+
+// Close closes the command's stdin and waits for the process to exit.
+// If it does not terminate in a short grace period it is killed.
+// It is safe to call Close multiple times.
+func (p *pipeProcess) Close() error {
+	p.closeOnce.Do(func() {
+		if p.stdin != nil {
+			_ = p.stdin.Close()
+		}
+		if p.cmd != nil && p.cmd.Process != nil {
+			select {
+			case <-p.done:
+			case <-time.After(200 * time.Millisecond):
+				_ = p.cmd.Process.Kill()
+				<-p.done
+			}
+		} else {
+			close(p.done)
+		}
+	})
+	return nil
+}
+
+// reap waits for the process to exit and then closes p.done. It is
+// started once when the pipe process is created so that an external
+// command which exits on its own is reaped promptly rather than
+// remaining a zombie until ClearPipe or session close runs.
+func (p *pipeProcess) reap() {
+	_ = p.cmd.Wait()
+	close(p.done)
 }
 
 // request is a typed message sent from a public API method to the worker
@@ -750,11 +949,28 @@ type managedSession struct {
 
 	remainOnExit bool
 
+	captureConfig CaptureConfig
+
 	pipeWriter atomic.Pointer[io.Writer]
 
-	message atomic.Pointer[displayMessage]
+	// messageQueue holds queued display messages for this session.
+	// It is only accessed by the worker goroutine; no synchronization is needed.
+	messageQueue []displayMessage
 
 	lock SessionLock
+
+	// Password buffer for the unlock prompt. Owned exclusively by the
+	// worker goroutine while the session is locked.
+	password      []rune
+	passwordCarry []byte
+
+	// unlockMessage holds a transient "wrong password" hint shown by the
+	// lock overlay. Nil when empty; worker goroutine only.
+	unlockMessage *displayMessage
+
+	// copySearcher holds the in-progress copy-mode search state while the
+	// session is in copy mode. Worker goroutine only.
+	copySearcher *CopyModeSearcher
 }
 
 // SessionManager coordinates multiple interactive terminal sessions using a
@@ -828,6 +1044,10 @@ type SessionManager struct {
 	// windowMgr manages windows, each with its own pane layout.
 	windowMgr *WindowManager
 
+	// activeWindowID is the window whose paneManager currently drives
+	// pane-level operations. Zero means the root/default paneManager.
+	activeWindowID WindowID
+
 	// monitors tracks per-pane monitoring state keyed by SessionID.
 	monitors map[SessionID]*MonitorState
 
@@ -851,6 +1071,32 @@ func WithRequestBuffer(cap int) ManagerOption {
 	return func(m *SessionManager) {
 		m.reqChan = make(chan request, cap)
 	}
+}
+
+// activePaneManager returns the pane manager that currently owns focus:
+// the root pane manager when no window is active, otherwise the active
+// window's pane manager. The worker goroutine is the only caller.
+func (m *SessionManager) activePaneManager() *paneManager {
+	if m.activeWindowID != 0 {
+		if w := m.windowMgr.Window(m.activeWindowID); w != nil {
+			return w.paneMgr
+		}
+	}
+	return m.paneMgr
+}
+
+// windowIDForSession returns the WindowID that contains the given session,
+// or 0 if the session lives in the root/default pane manager.
+func (m *SessionManager) windowIDForSession(id SessionID) WindowID {
+	if m.paneMgr.PaneIDForSession(id) != 0 {
+		return 0
+	}
+	for _, w := range m.windowMgr.Windows() {
+		if w.paneMgr.PaneIDForSession(id) != 0 {
+			return w.ID
+		}
+	}
+	return 0
 }
 
 // WithMergedOutputBuffer sets the capacity of the merged output channel. Defaults to DefaultChannelBuffer.
@@ -1036,6 +1282,18 @@ func (m *SessionManager) Input(data []byte) error {
 	return m.sendRequest(reqInput, data).err
 }
 
+// SendKeys converts named keys to terminal bytes and writes them to the
+// specified session's PTY. Unrecognized key names return an error.
+func (m *SessionManager) SendKeys(id SessionID, keys ...string) error {
+	return m.sendRequest(reqSendKeys, sendKeysPayload{id: id, keys: keys}).err
+}
+
+// ResetActivity clears the activity-fired flag for the given session so it can
+// fire EventActivity again.
+func (m *SessionManager) ResetActivity(id SessionID) {
+	_ = m.sendRequest(reqResetActivity, id)
+}
+
 // Resize broadcasts new terminal dimensions to all sessions.
 func (m *SessionManager) Resize(rows, cols int) error {
 	return m.sendRequest(reqResize, &resizePayload{rows: rows, cols: cols}).err
@@ -1138,7 +1396,11 @@ func (m *SessionManager) Panes() []Pane {
 // FocusNextPane moves focus to the adjacent pane in the given direction.
 // Returns the new active PaneID.
 func (m *SessionManager) FocusNextPane(direction NavigationDirection) PaneID {
-	return m.paneMgr.FocusNext(direction)
+	resp := m.sendRequest(reqFocusNextPane, direction)
+	if resp.value == nil {
+		return 0
+	}
+	return resp.value.(PaneID)
 }
 
 // FocusAt focuses the pane at the given screen coordinates and updates the
@@ -1159,9 +1421,22 @@ func (m *SessionManager) ResizePaneAt(row, col int, ratio float64) error {
 	return m.sendRequest(reqResizePaneAt, &resizePaneAtPayload{row: row, col: col, ratio: ratio}).err
 }
 
+// ResizePaneDelta resizes a pane by a directional cell delta. Direction must
+// be one of "left", "right", "up", or "down"; positive delta always grows in
+// that direction (right/down) or shrinks toward the opposite edge (left/up).
+// The new geometry is stored on the pane binding and propagated to the child
+// PTY/VTerm. Returns ErrPaneNotFound if the pane does not exist.
+func (m *SessionManager) ResizePaneDelta(paneID PaneID, direction string, delta int) error {
+	return m.sendRequest(reqResizePaneDelta, &resizePaneDeltaPayload{id: paneID, direction: direction, delta: delta}).err
+}
+
 // ActivePaneID returns the currently focused pane ID, or 0 if no panes exist.
 func (m *SessionManager) ActivePaneID() PaneID {
-	return m.paneMgr.ActivePaneID()
+	resp := m.sendRequest(reqActivePaneID, nil)
+	if resp.value == nil {
+		return 0
+	}
+	return resp.value.(PaneID)
 }
 
 // IsCopyModeActive reports whether copy mode is active for the given session.
@@ -1203,6 +1478,11 @@ func (m *SessionManager) SelectEnd(id SessionID, row, col int) error {
 	return m.sendRequest(reqSelectEnd, selectPayload{sessionID: id, row: row, col: col}).err
 }
 
+// HandleCopyModeKey dispatches a copy-mode key for the given session.
+func (m *SessionManager) HandleCopyModeKey(id SessionID, key string) error {
+	return m.sendRequest(reqHandleCopyModeKey, handleCopyModeKeyPayload{sessionID: id, key: key}).err
+}
+
 // NewWindow creates a new window with the given name and returns its ID.
 func (m *SessionManager) NewWindow(name string) (WindowID, error) {
 	resp := m.sendRequest(reqNewWindow, &newWindowPayload{name: name})
@@ -1240,6 +1520,17 @@ func (m *SessionManager) CloseWindow(id WindowID) error {
 	return m.sendRequest(reqCloseWindow, id).err
 }
 
+// MoveWindow moves the window with the given ID to the target index in the
+// window order. The active window is preserved.
+func (m *SessionManager) MoveWindow(id WindowID, targetIndex int) error {
+	return m.sendRequest(reqMoveWindow, moveWindowPayload{id: id, targetIndex: targetIndex}).err
+}
+
+// SwapWindows exchanges the positions of two windows in the window order.
+func (m *SessionManager) SwapWindows(a, b WindowID) error {
+	return m.sendRequest(reqSwapWindows, swapWindowsPayload{a: a, b: b}).err
+}
+
 // ActiveWindowID returns the currently active window ID, or 0 if no windows exist.
 func (m *SessionManager) ActiveWindowID() WindowID {
 	resp := m.sendRequest(reqActiveWindowID, nil)
@@ -1267,12 +1558,14 @@ func (m *SessionManager) WindowPanes() map[WindowID][]Pane {
 	return result
 }
 
-// SetSynchronizePanes enables or disables synchronized pane input.
-func (m *SessionManager) SetSynchronizePanes(v bool) {
-	_ = m.sendRequest(reqSetSynchronizePanes, v)
+// SetSynchronizePanes enables or disables synchronized pane input for the
+// active window. If no window is active, the root/default pane manager is used.
+func (m *SessionManager) SetSynchronizePanes(v bool) error {
+	return m.sendRequest(reqSetSynchronizePanes, v).err
 }
 
-// SynchronizePanes reports whether synchronized pane input is enabled.
+// SynchronizePanes reports whether synchronized pane input is enabled for
+// the active window. If no window is active, the root/default pane manager is used.
 func (m *SessionManager) SynchronizePanes() bool {
 	resp := m.sendRequest(reqSynchronizePanes, nil)
 	if resp.value == nil {
@@ -1376,8 +1669,34 @@ func (m *SessionManager) SwapPanes(a, b PaneID) error {
 	return resp.err
 }
 
+// SetLayoutMode sets the layout mode for the given window. Use windowID 0 to
+// target the root/default pane manager.
+func (m *SessionManager) SetLayoutMode(id WindowID, mode LayoutMode) error {
+	return m.sendRequest(reqSetLayoutMode, &setLayoutModePayload{windowID: id, mode: mode}).err
+}
+
+// LayoutMode returns the current layout mode for the given window. Use
+// windowID 0 to query the root/default pane manager.
+func (m *SessionManager) LayoutMode(id WindowID) (LayoutMode, error) {
+	resp := m.sendRequest(reqLayoutMode, id)
+	if resp.err != nil {
+		return LayoutTiled, resp.err
+	}
+	if resp.value == nil {
+		return LayoutTiled, nil
+	}
+	return resp.value.(LayoutMode), nil
+}
+
 func (m *SessionManager) ZoomPane(id PaneID) {
 	_ = m.sendRequest(reqZoomPane, id)
+}
+
+// ToggleZoom toggles zoom state for the pane with the given ID.
+// It is an alias for ZoomPane and exists to satisfy callers that expect
+// a ToggleZoom operation.
+func (m *SessionManager) ToggleZoom(id PaneID) {
+	m.ZoomPane(id)
 }
 
 func (m *SessionManager) ZoomedPane() PaneID {
@@ -1388,9 +1707,20 @@ func (m *SessionManager) ZoomedPane() PaneID {
 	return resp.value.(PaneID)
 }
 
-func (m *SessionManager) SetPipeFile(id SessionID, path string) error {
-	resp := m.sendRequest(reqSetPipeFile, pipeFilePayload{sessionID: id, path: path})
+func (m *SessionManager) SetPipe(id SessionID, cfg PipeConfig) error {
+	resp := m.sendRequest(reqSetPipe, setPipePayload{sessionID: id, config: cfg})
 	return resp.err
+}
+
+func (m *SessionManager) SetPipeFile(id SessionID, path string) error {
+	return m.SetPipe(id, PipeConfig{Path: path})
+}
+
+func (m *SessionManager) PipePaneCommand(id SessionID, cmd string, args []string) error {
+	if cmd == "" {
+		return fmt.Errorf("termmux: pipe-pane command is required")
+	}
+	return m.SetPipe(id, PipeConfig{Command: cmd, Args: args})
 }
 
 func (m *SessionManager) ClearPipe(id SessionID) error {
@@ -1464,22 +1794,49 @@ func (m *SessionManager) IsLocked(id SessionID) bool {
 	return resp.value.(bool)
 }
 
-// BreakPane removes the active pane from the given window and moves it
-// into a brand new window. Returns the new WindowID.
-func (m *SessionManager) BreakPane(windowID WindowID) (WindowID, error) {
-	resp := m.sendRequest(reqBreakPane, &breakPanePayload{windowID: windowID})
+// UnlockPrompt returns the current lock prompt state for a session.
+// The response is useful for rendering an overlay without exposing the
+// actual password buffer. If the session is not locked, active is false.
+func (m *SessionManager) UnlockPrompt(id SessionID) unlockPromptResponse {
+	resp := m.sendRequest(reqUnlockPrompt, id)
 	if resp.err != nil {
-		return 0, resp.err
+		return unlockPromptResponse{}
 	}
-	return resp.value.(WindowID), nil
+	pr, _ := resp.value.(unlockPromptResponse)
+	return pr
 }
 
-// JoinPane moves the active pane from sourceWindowID into targetWindowID.
-func (m *SessionManager) JoinPane(sourceWindowID, targetWindowID WindowID) error {
-	return m.sendRequest(reqJoinPane, &joinPanePayload{
-		sourceWindowID: sourceWindowID,
-		targetWindowID: targetWindowID,
-	}).err
+// BreakPane removes the pane with the given ID from its current window
+// (or the default pane manager) and moves it into a brand new window.
+// Returns the new WindowID, the moved pane's new PaneID, and the moved
+// SessionID. The moved pane becomes active in the new window.
+func (m *SessionManager) BreakPane(paneID PaneID) (WindowID, PaneID, SessionID, error) {
+	resp := m.sendRequest(reqBreakPane, &breakPanePayload{paneID: paneID})
+	if resp.err != nil {
+		return 0, 0, 0, resp.err
+	}
+	res := resp.value.(breakJoinResult)
+	return res.windowID, res.paneID, res.sessionID, nil
+}
+
+// JoinPane moves the pane with the given ID into targetWindowID. The pane
+// may live in any existing window or the default pane manager. Returns the
+// moved pane's new PaneID and the moved SessionID. The moved pane becomes
+// active in the target window.
+func (m *SessionManager) JoinPane(paneID PaneID, targetWindowID WindowID) (PaneID, SessionID, error) {
+	resp := m.sendRequest(reqJoinPane, &joinPanePayload{paneID: paneID, targetWindowID: targetWindowID})
+	if resp.err != nil {
+		return 0, 0, resp.err
+	}
+	res := resp.value.(breakJoinResult)
+	return res.paneID, res.sessionID, nil
+}
+
+// breakJoinResult is the worker response for break/join operations.
+type breakJoinResult struct {
+	windowID  WindowID
+	paneID    PaneID
+	sessionID SessionID
 }
 
 // AddPaneToWindow creates a new pane from a session in the specified window.
@@ -1489,6 +1846,29 @@ func (m *SessionManager) AddPaneToWindow(session InteractiveSession, target Sess
 	})
 	if resp.err != nil {
 		return 0, resp.err
+	}
+	return resp.value.(PaneID), nil
+}
+
+// SplitPaneHorizontal creates a new pane below activePane using cfg. An empty
+// cfg.Command produces a placeholder session instead of a real process.
+func (m *SessionManager) SplitPaneHorizontal(activePane PaneID, cfg CaptureConfig) (PaneID, error) {
+	return m.splitPane(activePane, cfg, SplitDown)
+}
+
+// SplitPaneVertical creates a new pane to the right of activePane using cfg.
+// An empty cfg.Command produces a placeholder session instead of a real process.
+func (m *SessionManager) SplitPaneVertical(activePane PaneID, cfg CaptureConfig) (PaneID, error) {
+	return m.splitPane(activePane, cfg, SplitRight)
+}
+
+func (m *SessionManager) splitPane(activePane PaneID, cfg CaptureConfig, direction SplitDirection) (PaneID, error) {
+	resp := m.sendRequest(reqSplitPane, &splitPanePayload{activePane: activePane, cfg: cfg, direction: direction})
+	if resp.err != nil {
+		return 0, resp.err
+	}
+	if resp.value == nil {
+		return 0, nil
 	}
 	return resp.value.(PaneID), nil
 }
@@ -1523,6 +1903,10 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleActivate(req.payload.(SessionID))
 	case reqInput:
 		resp = m.handleInput(req.payload.([]byte))
+	case reqSendKeys:
+		resp = m.handleSendKeys(req.payload.(sendKeysPayload))
+	case reqResetActivity:
+		resp = m.handleResetActivity(req.payload.(SessionID))
 	case reqResize:
 		resp = m.handleResize(req.payload.(*resizePayload))
 	case reqResizeSession:
@@ -1562,6 +1946,8 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleFocusAt(req.payload.(*focusAtPayload))
 	case reqResizePaneAt:
 		resp = m.handleResizePaneAt(req.payload.(*resizePaneAtPayload))
+	case reqResizePaneDelta:
+		resp = m.handleResizePaneDelta(req.payload.(*resizePaneDeltaPayload))
 	case reqPanes:
 		resp = m.handlePanes()
 	case reqFocusNextPane:
@@ -1580,6 +1966,8 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleSelectStart(req.payload.(selectPayload))
 	case reqSelectEnd:
 		resp = m.handleSelectEnd(req.payload.(selectPayload))
+	case reqHandleCopyModeKey:
+		resp = m.handleCopyModeKey(req.payload.(handleCopyModeKeyPayload))
 	case reqNewWindow:
 		resp = m.handleNewWindow(req.payload.(*newWindowPayload))
 	case reqNextWindow:
@@ -1590,6 +1978,10 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleRenameWindow(req.payload.(*renameWindowPayload))
 	case reqCloseWindow:
 		resp = m.handleCloseWindow(req.payload.(WindowID))
+	case reqMoveWindow:
+		resp = m.handleMoveWindow(req.payload.(moveWindowPayload))
+	case reqSwapWindows:
+		resp = m.handleSwapWindows(req.payload.(swapWindowsPayload))
 	case reqActiveWindowID:
 		resp = m.handleActiveWindowID()
 	case reqWindows:
@@ -1624,8 +2016,8 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleZoomPane(req.payload)
 	case reqZoomedPane:
 		resp = m.handleZoomedPane()
-	case reqSetPipeFile:
-		resp = m.handleSetPipeFile(req.payload)
+	case reqSetPipe:
+		resp = m.handleSetPipe(req.payload)
 	case reqClearPipe:
 		resp = m.handleClearPipe(req.payload)
 	case reqDisplayMessage:
@@ -1642,12 +2034,20 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleUnlockSession(req.payload)
 	case reqIsLocked:
 		resp = m.handleIsLocked(req.payload)
+	case reqUnlockPrompt:
+		resp = m.handleUnlockPrompt(req.payload)
 	case reqBreakPane:
 		resp = m.handleBreakPane(req.payload)
 	case reqJoinPane:
 		resp = m.handleJoinPane(req.payload)
 	case reqAddPaneToWindow:
 		resp = m.handleAddPaneToWindow(req.payload)
+	case reqSplitPane:
+		resp = m.handleSplitPane(req.payload.(*splitPanePayload))
+	case reqSetLayoutMode:
+		resp = m.handleSetLayoutMode(req.payload)
+	case reqLayoutMode:
+		resp = m.handleLayoutMode(req.payload)
 	default:
 		resp = response{err: fmt.Errorf("termmux: unknown request kind %d", req.kind)}
 	}
@@ -1681,6 +2081,10 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 		target:       p.target,
 		lastActive:   time.Now(),
 		remainOnExit: m.paneMgr.RemainOnExit(),
+	}
+
+	if cs, ok := p.session.(*CaptureSession); ok {
+		ms.captureConfig = cs.ExportConfig()
 	}
 
 	// Wire DA/DSR response callback so VT responses are routed back to
@@ -1751,6 +2155,9 @@ func (m *SessionManager) handleUnregister(id SessionID) response {
 		return response{err: fmt.Errorf("%w: already closed", ErrInvalidTransition)}
 	}
 
+	// Close any active pipe before closing the underlying session.
+	m.closePipeForSession(ms)
+
 	// Close the underlying session — log errors rather than silently discarding.
 	if err := ms.session.Close(); err != nil {
 		slog.Warn("session close failed during unregister", "sessionID", id, "error", err)
@@ -1779,20 +2186,41 @@ func (m *SessionManager) handleActivate(id SessionID) response {
 	}
 	m.activeID = id
 	ms.lastActive = time.Now()
+	m.activeWindowID = m.windowIDForSession(id)
+	m.windowMgr.setActive(m.activeWindowID)
+	if mon, ok := m.monitors[id]; ok {
+		mon.ActivityFired = false
+	}
 	m.eventBus.emit(EventSessionActivated, id)
 	return response{}
 }
 
-// handleInput writes data to the active session's PTY.
+// handleInput routes input to the active session. Locked sessions consume
+// keystrokes through the unlock prompt instead of the child PTY.
 func (m *SessionManager) handleInput(data []byte) response {
-	if m.activeID == 0 {
+	activeSession := m.activeID
+	if m.activeWindowID != 0 {
+		activeSession = m.activePaneManager().activeSessionID()
+	}
+	if activeSession == 0 {
 		return response{err: ErrSessionNotFound}
 	}
 
-	if m.paneMgr.Synchronize() {
+	pm := m.activePaneManager()
+	if pm != nil && pm.Synchronize() {
 		var firstErr error
-		for _, ms := range m.sessions {
+		for _, id := range pm.AllSessionIDs() {
+			ms, ok := m.sessions[id]
+			if !ok {
+				continue
+			}
 			if ms.state != SessionRunning && ms.state != SessionCreated {
+				continue
+			}
+			if ms.lock.IsLocked() {
+				if resp := m.handleLockedInput(data, ms, id); resp.err != nil && firstErr == nil {
+					firstErr = resp.err
+				}
 				continue
 			}
 			if _, err := ms.session.Write(data); err != nil && firstErr == nil {
@@ -1802,17 +2230,107 @@ func (m *SessionManager) handleInput(data []byte) response {
 		return response{err: firstErr}
 	}
 
-	ms, ok := m.sessions[m.activeID]
+	ms, ok := m.sessions[activeSession]
 	if !ok {
 		return response{err: fmt.Errorf("%w: active session %d disappeared",
-			ErrSessionNotFound, m.activeID)}
+			ErrSessionNotFound, activeSession)}
 	}
 	if ms.state != SessionRunning && ms.state != SessionCreated {
 		return response{err: fmt.Errorf("%w: session %d in state %s",
-			ErrInvalidTransition, m.activeID, ms.state)}
+			ErrInvalidTransition, activeSession, ms.state)}
+	}
+	if ms.lock.IsLocked() {
+		return m.handleLockedInput(data, ms, activeSession)
 	}
 	_, err := ms.session.Write(data)
 	return response{err: err}
+}
+
+func (m *SessionManager) handleSendKeys(p sendKeysPayload) response {
+	ms, ok := m.sessions[p.id]
+	if !ok {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.id)}
+	}
+	if ms.state != SessionRunning && ms.state != SessionCreated {
+		return response{err: fmt.Errorf("%w: session %d in state %s", ErrInvalidTransition, p.id, ms.state)}
+	}
+	if ms.lock.IsLocked() {
+		return response{err: fmt.Errorf("termmux: cannot send keys to locked session %d", p.id)}
+	}
+
+	var buf strings.Builder
+	for _, key := range p.keys {
+		seq, ok := KeyToTermBytes(key, false, false)
+		if !ok {
+			return response{err: fmt.Errorf("termmux: unrecognized key %q", key)}
+		}
+		buf.WriteString(seq)
+	}
+
+	_, err := ms.session.Write([]byte(buf.String()))
+	return response{err: err}
+}
+
+func (m *SessionManager) handleResetActivity(id SessionID) response {
+	if mon, ok := m.monitors[id]; ok {
+		mon.ActivityFired = false
+	}
+	return response{}
+}
+
+// inputKey labels control bytes handled by the unlock prompt.
+type inputKey byte
+
+const (
+	keyBackspace inputKey = 0x08
+	keyDelete    inputKey = 0x7F
+	keyEnter     inputKey = 0x0D
+	keyLineFeed  inputKey = 0x0A
+	keyEscape    inputKey = 0x1B
+)
+
+// handleLockedInput consumes keystrokes for the unlock prompt. It builds a
+// password buffer, handles backspace/escape, and submits on enter.
+func (m *SessionManager) handleLockedInput(data []byte, ms *managedSession, _ SessionID) response {
+	data = append(ms.passwordCarry, data...)
+	ms.passwordCarry = nil
+
+	for len(data) > 0 {
+		r, size := utf8.DecodeRune(data)
+		if r == utf8.RuneError && size == 1 && len(data) < utf8.UTFMax {
+			ms.passwordCarry = append([]byte(nil), data...)
+			break
+		}
+		data = data[size:]
+
+		if len(ms.password) == 0 && r == 0 {
+			continue
+		}
+
+		switch {
+		case r == rune(keyEscape):
+			ms.password = nil
+		case r == rune(keyBackspace) || r == rune(keyDelete):
+			if len(ms.password) > 0 {
+				ms.password = ms.password[:len(ms.password)-1]
+			}
+		case r == rune(keyEnter) || r == rune(keyLineFeed):
+			password := string(ms.password)
+			ms.password = nil
+			ms.passwordCarry = nil
+			if ms.lock.Unlock(password) {
+				ms.unlockMessage = nil
+				return response{}
+			}
+			ms.unlockMessage = &displayMessage{
+				text:      "wrong password",
+				expiresAt: time.Now().Add(2 * time.Second),
+			}
+		case r >= ' ' && unicode.IsPrint(r):
+			ms.password = append(ms.password, r)
+		}
+	}
+	return response{}
 }
 
 // handleResize broadcasts the new terminal dimensions to all non-closed sessions.
@@ -1820,6 +2338,9 @@ func (m *SessionManager) handleResize(p *resizePayload) response {
 	m.termRows = p.rows
 	m.termCols = p.cols
 	m.paneMgr.setSize(p.cols, p.rows)
+	for _, w := range m.windowMgr.Windows() {
+		w.paneMgr.setSize(p.cols, p.rows)
+	}
 	for id, ms := range m.sessions {
 		if ms.state == SessionClosed {
 			continue
@@ -1876,7 +2397,8 @@ func (m *SessionManager) handleNewPane(p *newPanePayload) response {
 	}
 	sessionID := regResp.value.(SessionID)
 
-	paneID, err := m.paneMgr.Create(sessionID, p.direction)
+	pm := m.activePaneManager()
+	paneID, err := pm.Create(sessionID, p.direction)
 	if err != nil {
 		m.handleUnregister(sessionID)
 		return response{err: err}
@@ -1884,7 +2406,7 @@ func (m *SessionManager) handleNewPane(p *newPanePayload) response {
 
 	ms, ok := m.sessions[sessionID]
 	if ok {
-		m.paneMgr.setVTerm(paneID, ms.vterm)
+		pm.setVTerm(paneID, ms.vterm)
 	}
 
 	m.activeID = sessionID
@@ -1893,9 +2415,11 @@ func (m *SessionManager) handleNewPane(p *newPanePayload) response {
 }
 
 func (m *SessionManager) handleClosePane(id PaneID) response {
-	sessionID := m.paneMgr.removeSessionID(id)
+	pm := m.activePaneManager()
 
-	if err := m.paneMgr.Remove(id); err != nil {
+	sessionID := pm.removeSessionID(id)
+
+	if err := pm.Remove(id); err != nil {
 		return response{err: err}
 	}
 
@@ -1906,7 +2430,7 @@ func (m *SessionManager) handleClosePane(id PaneID) response {
 		}
 	}
 
-	if activeSessionID := m.paneMgr.activeSessionID(); activeSessionID != 0 {
+	if activeSessionID := pm.activeSessionID(); activeSessionID != 0 {
 		m.activeID = activeSessionID
 	} else {
 		m.activeID = 0
@@ -1916,13 +2440,16 @@ func (m *SessionManager) handleClosePane(id PaneID) response {
 }
 
 func (m *SessionManager) handleFocusPane(id PaneID) response {
-	if err := m.paneMgr.Focus(id); err != nil {
+	pm := m.activePaneManager()
+
+	if err := pm.Focus(id); err != nil {
 		return response{err: err}
 	}
 
-	sessionID := m.paneMgr.activeSessionID()
+	sessionID := pm.activeSessionID()
 	if sessionID != 0 {
 		m.activeID = sessionID
+		m.activeWindowID = m.windowIDForSession(sessionID)
 		ms, ok := m.sessions[sessionID]
 		if ok {
 			ms.lastActive = time.Now()
@@ -1933,11 +2460,13 @@ func (m *SessionManager) handleFocusPane(id PaneID) response {
 }
 
 func (m *SessionManager) handleResizePane(p *resizePanePayload) response {
-	if err := m.paneMgr.Resize(p.id, p.ratio); err != nil {
+	pm := m.activePaneManager()
+
+	if err := pm.Resize(p.id, p.ratio); err != nil {
 		return response{err: err}
 	}
 
-	panes := m.paneMgr.Panes()
+	panes := pm.Panes()
 	for _, pane := range panes {
 		ms, ok := m.sessions[pane.SessionID]
 		if !ok || ms.state == SessionClosed {
@@ -1953,14 +2482,17 @@ func (m *SessionManager) handleResizePane(p *resizePanePayload) response {
 }
 
 func (m *SessionManager) handleFocusAt(p *focusAtPayload) response {
-	id, err := m.paneMgr.FocusAt(p.row, p.col)
+	pm := m.activePaneManager()
+
+	id, err := pm.FocusAt(p.row, p.col)
 	if err != nil {
 		return response{err: err}
 	}
 
-	sessionID := m.paneMgr.activeSessionID()
+	sessionID := pm.activeSessionID()
 	if sessionID != 0 {
 		m.activeID = sessionID
+		m.activeWindowID = m.windowIDForSession(sessionID)
 		if ms, ok := m.sessions[sessionID]; ok {
 			ms.lastActive = time.Now()
 		}
@@ -1970,11 +2502,13 @@ func (m *SessionManager) handleFocusAt(p *focusAtPayload) response {
 }
 
 func (m *SessionManager) handleResizePaneAt(p *resizePaneAtPayload) response {
-	if err := m.paneMgr.ResizePaneAt(p.row, p.col, p.ratio); err != nil {
+	pm := m.activePaneManager()
+
+	if err := pm.ResizePaneAt(p.row, p.col, p.ratio); err != nil {
 		return response{err: err}
 	}
 
-	panes := m.paneMgr.Panes()
+	panes := pm.Panes()
 	for _, pane := range panes {
 		ms, ok := m.sessions[pane.SessionID]
 		if !ok || ms.state == SessionClosed {
@@ -1989,17 +2523,56 @@ func (m *SessionManager) handleResizePaneAt(p *resizePaneAtPayload) response {
 	return response{}
 }
 
+func (m *SessionManager) handleResizePaneDelta(p *resizePaneDeltaPayload) response {
+	pm := m.activePaneManager()
+
+	geo, err := pm.ResizePaneDelta(p.id, p.direction, p.delta)
+	if err != nil {
+		return response{err: err}
+	}
+
+	if err := pm.setGeometry(p.id, geo); err != nil {
+		return response{err: err}
+	}
+
+	sessionID := pm.removeSessionID(p.id)
+	if sessionID != 0 {
+		if ms, ok := m.sessions[sessionID]; ok && ms.state != SessionClosed {
+			ms.vterm.Resize(geo.Rows, geo.Cols)
+			if err := ms.session.Resize(geo.Rows, geo.Cols); err != nil {
+				slog.Warn("session resize failed during pane resize delta", "sessionID", sessionID, "error", err)
+			}
+		}
+	}
+
+	windowID := m.windowIDForPane(p.id)
+	m.emitWindowUpdated(windowID, windowID)
+
+	return response{}
+}
+
 func (m *SessionManager) handlePanes() response {
-	return response{value: m.paneMgr.Panes()}
+	pm := m.activePaneManager()
+	return response{value: pm.Panes()}
 }
 
 func (m *SessionManager) handleFocusNextPane(direction NavigationDirection) response {
-	nextID := m.paneMgr.FocusNext(direction)
+	pm := m.activePaneManager()
+	nextID := pm.FocusNext(direction)
+	if nextID != 0 {
+		if sid := pm.activeSessionID(); sid != 0 {
+			m.activeID = sid
+			m.activeWindowID = m.windowIDForSession(sid)
+			if ms, ok := m.sessions[sid]; ok {
+				ms.lastActive = time.Now()
+			}
+		}
+	}
 	return response{value: nextID}
 }
 
 func (m *SessionManager) handleActivePaneID() response {
-	return response{value: m.paneMgr.ActivePaneID()}
+	return response{value: m.activePaneManager().ActivePaneID()}
 }
 
 func (m *SessionManager) handleIsCopyModeActive(id SessionID) response {
@@ -2054,6 +2627,88 @@ func (m *SessionManager) handleSelectEnd(p selectPayload) response {
 	return response{}
 }
 
+func (m *SessionManager) handleCopyModeKey(p handleCopyModeKeyPayload) response {
+	ms, ok := m.sessions[p.sessionID]
+	if !ok {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.sessionID)}
+	}
+
+	action := defaultCopyModeKeyHandler.HandleKey(p.key)
+	if !ms.vterm.InCopyMode() {
+		switch action.Kind {
+		case CopyModeActionNone, CopyModeActionExitCopyMode:
+			return response{}
+		case CopyModeActionEnterCopyMode:
+			ms.vterm.EnterCopyMode()
+			ms.copySearcher = nil
+			return response{}
+		}
+		return response{err: fmt.Errorf("termmux: session %d is not in copy mode", p.sessionID)}
+	}
+
+	switch action.Kind {
+	case CopyModeActionMoveLeft:
+		ms.vterm.MoveCopyModeCursor(0, -action.N)
+	case CopyModeActionMoveRight:
+		ms.vterm.MoveCopyModeCursor(0, action.N)
+	case CopyModeActionMoveUp:
+		ms.vterm.ScrollCopyMode(action.N)
+	case CopyModeActionMoveDown:
+		ms.vterm.ScrollCopyMode(-action.N)
+	case CopyModeActionHalfPageUp:
+		ms.vterm.ScrollCopyMode(action.N)
+	case CopyModeActionHalfPageDown:
+		ms.vterm.ScrollCopyMode(-action.N)
+	case CopyModeActionPageUp:
+		ms.vterm.ScrollCopyMode(m.termRows)
+	case CopyModeActionPageDown:
+		ms.vterm.ScrollCopyMode(-m.termRows)
+	case CopyModeActionTopOfScrollback:
+		ms.vterm.ScrollCopyModeToTop()
+	case CopyModeActionBottomOfScrollback:
+		ms.vterm.ScrollCopyModeToBottom()
+	case CopyModeActionBeginningOfLine:
+		ms.vterm.SetCopyModeCursorCol(0)
+	case CopyModeActionEndOfLine:
+		ms.vterm.SetCopyModeCursorCol(m.termCols - 1)
+	case CopyModeActionNextWord:
+		ms.vterm.MoveCopyModeCursor(0, 5)
+	case CopyModeActionPrevWord:
+		ms.vterm.MoveCopyModeCursor(0, -5)
+	case CopyModeActionExitCopyMode:
+		ms.vterm.ExitCopyMode()
+		ms.copySearcher = nil
+	case CopyModeActionSelectStart:
+		row, col := ms.vterm.CopyModeCursorPosition()
+		ms.vterm.SelectStart(row, col)
+	case CopyModeActionCopyAndExit:
+		row, col := ms.vterm.CopyModeCursorPosition()
+		ms.vterm.SelectEnd(row, col)
+		ms.vterm.CopySelection()
+		ms.vterm.ExitCopyMode()
+	case CopyModeActionSearchForward:
+		if ms.copySearcher == nil {
+			ms.copySearcher = NewCopyModeSearcher()
+		}
+		row, col := ms.vterm.CopyModeCursorPosition()
+		absRow := ms.vterm.CopyModeScrollOffset() + row
+		ms.copySearcher.StartSearch(SearchForward, absRow, col)
+	case CopyModeActionSearchBackward:
+		if ms.copySearcher == nil {
+			ms.copySearcher = NewCopyModeSearcher()
+		}
+		row, col := ms.vterm.CopyModeCursorPosition()
+		absRow := ms.vterm.CopyModeScrollOffset() + row
+		ms.copySearcher.StartSearch(SearchBackward, absRow, col)
+	case CopyModeActionNextMatch, CopyModeActionPrevMatch:
+		// Search execution is intentionally delegated to the JS search bindings.
+	case CopyModeActionEnterCopyMode, CopyModeActionNone:
+		// No state change required.
+	}
+
+	return response{}
+}
+
 func (m *SessionManager) handleNewWindow(p *newWindowPayload) response {
 	id := m.windowMgr.NewWindow(p.name)
 	return response{value: id}
@@ -2061,12 +2716,50 @@ func (m *SessionManager) handleNewWindow(p *newWindowPayload) response {
 
 func (m *SessionManager) handleNextWindow() response {
 	id := m.windowMgr.NextWindow()
+	m.activeWindowID = id
+	m.activateFirstPaneInActiveWindow()
 	return response{value: id}
 }
 
 func (m *SessionManager) handlePrevWindow() response {
 	id := m.windowMgr.PrevWindow()
+	m.activeWindowID = id
+	m.activateFirstPaneInActiveWindow()
 	return response{value: id}
+}
+
+// activateFirstPaneInActiveWindow focuses the active window's first pane,
+// updates m.activeID to that pane's session, and emits EventSessionActivated.
+func (m *SessionManager) activateFirstPaneInActiveWindow() {
+	pm := m.activePaneManager()
+	if pm == nil {
+		m.activeID = 0
+		return
+	}
+
+	paneID := pm.ActivePaneID()
+	if paneID == 0 {
+		m.activeID = 0
+		return
+	}
+
+	if err := pm.Focus(paneID); err != nil {
+		m.activeID = 0
+		return
+	}
+
+	sessionID := pm.activeSessionID()
+	if sessionID == 0 {
+		m.activeID = 0
+		return
+	}
+
+	m.activeID = sessionID
+	m.activeWindowID = m.windowIDForSession(sessionID)
+	if ms, ok := m.sessions[sessionID]; ok {
+		ms.lastActive = time.Now()
+	}
+	m.eventBus.emit(EventSessionActivated, sessionID)
 }
 
 func (m *SessionManager) handleRenameWindow(p *renameWindowPayload) response {
@@ -2080,10 +2773,29 @@ func (m *SessionManager) handleCloseWindow(id WindowID) response {
 	if err := m.windowMgr.CloseWindow(id); err != nil {
 		return response{err: err}
 	}
+
+	// If the closed window was active, follow the WindowManager's new active
+	// window so pane operations stay consistent.
+	if m.activeWindowID == id {
+		m.activeWindowID = m.windowMgr.ActiveWindowID()
+		m.activateFirstPaneInActiveWindow()
+	}
+
 	return response{}
 }
 
+func (m *SessionManager) handleMoveWindow(p moveWindowPayload) response {
+	return response{err: m.windowMgr.MoveWindow(p.id, p.targetIndex)}
+}
+
+func (m *SessionManager) handleSwapWindows(p swapWindowsPayload) response {
+	return response{err: m.windowMgr.SwapWindows(p.a, p.b)}
+}
+
 func (m *SessionManager) handleActiveWindowID() response {
+	if m.activeWindowID != 0 {
+		return response{value: m.activeWindowID}
+	}
 	return response{value: m.windowMgr.ActiveWindowID()}
 }
 
@@ -2092,12 +2804,19 @@ func (m *SessionManager) handleWindows() response {
 }
 
 func (m *SessionManager) handleSetSynchronizePanes(v bool) response {
-	m.paneMgr.SetSynchronize(v)
+	pm := m.activePaneManager()
+	if pm != nil {
+		pm.SetSynchronize(v)
+	}
 	return response{}
 }
 
 func (m *SessionManager) handleSynchronizePanes() response {
-	return response{value: m.paneMgr.Synchronize()}
+	pm := m.activePaneManager()
+	if pm == nil {
+		return response{value: false}
+	}
+	return response{value: pm.Synchronize()}
 }
 
 func (m *SessionManager) handleSetMonitorConfig(payload any) response {
@@ -2183,7 +2902,7 @@ func (m *SessionManager) handleSetPaneRemainOnExit(payload any) response {
 	if !ok {
 		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
 	}
-	return response{err: m.paneMgr.SetPaneRemainOnExit(p.paneID, p.value)}
+	return response{err: m.activePaneManager().SetPaneRemainOnExit(p.paneID, p.value)}
 }
 
 func (m *SessionManager) handlePaneRemainOnExit(payload any) response {
@@ -2191,7 +2910,7 @@ func (m *SessionManager) handlePaneRemainOnExit(payload any) response {
 	if !ok {
 		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
 	}
-	v, err := m.paneMgr.PaneRemainOnExit(id)
+	v, err := m.activePaneManager().PaneRemainOnExit(id)
 	if err != nil {
 		return response{err: err}
 	}
@@ -2203,7 +2922,19 @@ func (m *SessionManager) handlePaneExited(payload any) response {
 	if !ok {
 		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
 	}
-	return response{value: m.paneMgr.PaneExited(id)}
+	return response{value: m.activePaneManager().PaneExited(id)}
+}
+
+func (m *SessionManager) rebindSessionID(oldID, newID SessionID, vterm *vt.VTerm) error {
+	if paneID := m.paneMgr.PaneIDForSession(oldID); paneID != 0 {
+		return m.paneMgr.RebindSession(paneID, newID, vterm)
+	}
+	for _, w := range m.windowMgr.Windows() {
+		if paneID := w.paneMgr.PaneIDForSession(oldID); paneID != 0 {
+			return w.paneMgr.RebindSession(paneID, newID, vterm)
+		}
+	}
+	return nil
 }
 
 func (m *SessionManager) handleRespawnSession(payload any) response {
@@ -2221,9 +2952,19 @@ func (m *SessionManager) handleRespawnSession(payload any) response {
 
 	_ = ms.session.Close()
 
-	newSession := NewCaptureSession(CaptureConfig{})
+	cfg := ms.captureConfig
+	newSession := NewCaptureSession(cfg)
 	newID := m.nextID
 	m.nextID++
+
+	if cfg.Command != "" {
+		if err := newSession.Start(m.readerCtx); err != nil {
+			return response{err: fmt.Errorf("termmux: respawn start failed: %w", err)}
+		}
+		if err := newSession.Resize(m.termRows, m.termCols); err != nil {
+			slog.Debug("respawn resize failed", "sessionID", newID, "error", err)
+		}
+	}
 
 	v := vt.NewVTerm(m.termRows, m.termCols)
 	v.BellFn = func() {
@@ -2234,12 +2975,13 @@ func (m *SessionManager) handleRespawnSession(payload any) response {
 	}
 
 	newMS := &managedSession{
-		session:      newSession,
-		vterm:        v,
-		state:        SessionCreated,
-		target:       ms.target,
-		lastActive:   time.Now(),
-		remainOnExit: m.paneMgr.RemainOnExit(),
+		session:       newSession,
+		vterm:         v,
+		state:         SessionCreated,
+		target:        ms.target,
+		lastActive:    time.Now(),
+		remainOnExit:  ms.remainOnExit,
+		captureConfig: cfg,
 	}
 
 	v.ResponseWriter = func(data []byte) {
@@ -2270,13 +3012,21 @@ func (m *SessionManager) handleRespawnSession(payload any) response {
 
 	m.snapshotGen++
 
-	if m.activeID == oldID {
+	if err := m.rebindSessionID(oldID, newID, v); err != nil {
+		slog.Debug("respawn rebind failed", "sessionID", newID, "error", err)
+	}
+
+	wasActive := m.activeID == oldID
+	if wasActive {
 		m.activeID = newID
 	}
 
 	delete(m.sessions, oldID)
 
 	m.eventBus.emit(EventSessionRegistered, newID)
+	if wasActive {
+		m.eventBus.emit(EventSessionActivated, newID)
+	}
 	m.startReaderGoroutine(newID, newSession)
 
 	return response{value: newID}
@@ -2287,10 +3037,67 @@ func (m *SessionManager) handleSwapPanes(payload any) response {
 	if !ok {
 		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
 	}
-	if !m.paneMgr.engine.Swap(p.a, p.b) {
-		return response{err: fmt.Errorf("termmux: swap failed: one or both panes not found")}
+
+	windowA := m.windowIDForPane(p.a)
+	windowB := m.windowIDForPane(p.b)
+
+	pmA := m.paneManagerForWindow(windowA)
+	pmB := m.paneManagerForWindow(windowB)
+
+	if pmA == nil || pmA.Binding(p.a) == nil {
+		return response{err: fmt.Errorf("%w: %d", ErrPaneNotFound, p.a)}
 	}
-	return response{}
+	if pmB == nil || pmB.Binding(p.b) == nil {
+		return response{err: fmt.Errorf("%w: %d", ErrPaneNotFound, p.b)}
+	}
+
+	if pmA == pmB {
+		// Both panes live in the same pane manager. Swap metadata through the
+		// pane manager and update the layout order without applying the
+		// metadata swap a second time.
+		if err := pmA.Swap(p.a, p.b); err != nil {
+			return response{err: err}
+		}
+		if !pmA.engine.swapLayoutOnly(p.a, p.b) {
+			return response{err: fmt.Errorf("termmux: swap failed: one or both panes not found in layout")}
+		}
+	} else {
+		// Panes live in different windows: exchange only their metadata so the
+		// sessions, titles, and lifecycle state trade places while the pane
+		// geometries and IDs stay in their original windows.
+		swapPaneBindingMetadata(pmA.Binding(p.a), pmB.Binding(p.b))
+	}
+
+	// Keep the active session consistent with the pane that currently has focus.
+	if activePM := m.activePaneManager(); activePM != nil {
+		if activeSID := activePM.activeSessionID(); activeSID != 0 {
+			m.activeID = activeSID
+		}
+	}
+
+	// Notify subscribers for every affected window.
+	m.emitWindowUpdated(windowA, windowA)
+	if windowA != windowB {
+		m.emitWindowUpdated(windowB, windowB)
+	}
+
+	return response{value: true}
+}
+
+// paneManagerForWindow returns the pane manager for the given window ID, or the
+// root/default pane manager when id is 0.
+func (m *SessionManager) paneManagerForWindow(id WindowID) *paneManager {
+	if id == 0 {
+		return m.paneMgr
+	}
+	if w := m.windowMgr.Window(id); w != nil {
+		return w.paneMgr
+	}
+	return nil
+}
+
+func (m *SessionManager) emitWindowUpdated(source, target WindowID) {
+	m.eventBus.emitData(EventWindowUpdated, 0, windowUpdateData{SourceWindow: source, TargetWindow: target})
 }
 
 func (m *SessionManager) handleZoomPane(payload any) response {
@@ -2298,20 +3105,21 @@ func (m *SessionManager) handleZoomPane(payload any) response {
 	if !ok {
 		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
 	}
-	if m.paneMgr.engine.ZoomedPane() == id {
-		m.paneMgr.engine.Unzoom()
+	pm := m.activePaneManager()
+	if pm.engine.ZoomedPane() == id {
+		pm.engine.Unzoom()
 	} else {
-		m.paneMgr.engine.Zoom(id)
+		pm.engine.Zoom(id)
 	}
 	return response{}
 }
 
 func (m *SessionManager) handleZoomedPane() response {
-	return response{value: m.paneMgr.engine.ZoomedPane()}
+	return response{value: m.activePaneManager().engine.ZoomedPane()}
 }
 
-func (m *SessionManager) handleSetPipeFile(payload any) response {
-	p, ok := payload.(pipeFilePayload)
+func (m *SessionManager) handleSetPipe(payload any) response {
+	p, ok := payload.(setPipePayload)
 	if !ok {
 		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
 	}
@@ -2319,11 +3127,41 @@ func (m *SessionManager) handleSetPipeFile(payload any) response {
 	if !exists {
 		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.sessionID)}
 	}
-	f, err := os.OpenFile(p.path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-	if err != nil {
-		return response{err: fmt.Errorf("termmux: pipe-pane open: %w", err)}
+
+	cfg := p.config
+	hasPath := cfg.Path != ""
+	hasCmd := cfg.Command != ""
+	if !hasPath && !hasCmd {
+		return response{err: fmt.Errorf("termmux: pipe-pane requires Path or Command")}
 	}
-	var w io.Writer = f
+	if hasPath && hasCmd {
+		return response{err: fmt.Errorf("termmux: pipe-pane Path and Command are mutually exclusive")}
+	}
+
+	m.closePipeForSession(ms)
+
+	if hasPath {
+		f, err := os.OpenFile(cfg.Path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+		if err != nil {
+			return response{err: fmt.Errorf("termmux: pipe-pane open: %w", err)}
+		}
+		var w io.Writer = f
+		ms.pipeWriter.Store(&w)
+		return response{}
+	}
+
+	cmd := exec.Command(cfg.Command, cfg.Args...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return response{err: fmt.Errorf("termmux: pipe-pane stdin pipe: %w", err)}
+	}
+	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
+		return response{err: fmt.Errorf("termmux: pipe-pane start command: %w", err)}
+	}
+	pp := &pipeProcess{cmd: cmd, stdin: stdin, done: make(chan struct{})}
+	go pp.reap()
+	var w io.Writer = pp
 	ms.pipeWriter.Store(&w)
 	return response{}
 }
@@ -2337,12 +3175,18 @@ func (m *SessionManager) handleClearPipe(payload any) response {
 	if !exists {
 		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
 	}
+	m.closePipeForSession(ms)
+	return response{}
+}
+
+// closePipeForSession closes any active pipe (file or command) for the
+// session. It is safe to call when no pipe is set.
+func (m *SessionManager) closePipeForSession(ms *managedSession) {
 	if old := ms.pipeWriter.Swap(nil); old != nil {
 		if c, ok := (*old).(io.Closer); ok {
 			_ = c.Close()
 		}
 	}
-	return response{}
 }
 
 func (m *SessionManager) handleDisplayMessage(payload any) response {
@@ -2358,11 +3202,39 @@ func (m *SessionManager) handleDisplayMessage(payload any) response {
 	if dur <= 0 {
 		dur = 3 * time.Second
 	}
-	ms.message.Store(&displayMessage{
+	ms.messageQueue = append(ms.messageQueue, displayMessage{
 		text:      p.text,
 		expiresAt: time.Now().Add(dur),
 	})
+	if len(ms.messageQueue) > maxDisplayMessages {
+		ms.messageQueue = ms.messageQueue[len(ms.messageQueue)-maxDisplayMessages:]
+	}
+	now := time.Now()
+	if snap := ms.snapshot.Load(); snap != nil {
+		m.snapshotGen++
+		newSnap := snap.Clone()
+		newSnap.Gen = m.snapshotGen
+		newSnap.Message = m.activeMessageForSession(p.sessionID, now)
+		newSnap.Timestamp = now
+		ms.snapshot.Store(newSnap)
+	}
 	return response{}
+}
+
+// activeMessageForSession returns the current non-expired message for a
+// session, advancing the queue past any expired front entries.
+func (m *SessionManager) activeMessageForSession(id SessionID, now time.Time) string {
+	ms, exists := m.sessions[id]
+	if !exists {
+		return ""
+	}
+	for len(ms.messageQueue) > 0 && now.After(ms.messageQueue[0].expiresAt) {
+		ms.messageQueue = ms.messageQueue[1:]
+	}
+	if len(ms.messageQueue) > 0 {
+		return ms.messageQueue[0].text
+	}
+	return ""
 }
 
 func (m *SessionManager) handleActiveMessage(payload any) response {
@@ -2370,18 +3242,7 @@ func (m *SessionManager) handleActiveMessage(payload any) response {
 	if !ok {
 		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
 	}
-	ms, exists := m.sessions[id]
-	if !exists {
-		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
-	}
-	msg := ms.message.Load()
-	if msg == nil || time.Now().After(msg.expiresAt) {
-		if msg != nil {
-			ms.message.Store(nil)
-		}
-		return response{value: ""}
-	}
-	return response{value: msg.text}
+	return response{value: m.activeMessageForSession(id, time.Now())}
 }
 
 func (m *SessionManager) handleCapturePane(payload any) response {
@@ -2441,6 +3302,9 @@ func (m *SessionManager) handleLockSession(payload any) response {
 	if err := ms.lock.Lock(p.password); err != nil {
 		return response{err: err}
 	}
+	ms.password = nil
+	ms.passwordCarry = nil
+	ms.unlockMessage = nil
 	return response{}
 }
 
@@ -2468,60 +3332,63 @@ func (m *SessionManager) handleIsLocked(payload any) response {
 	return response{value: ms.lock.IsLocked()}
 }
 
+func (m *SessionManager) handleUnlockPrompt(payload any) response {
+	id, ok := payload.(SessionID)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	ms, exists := m.sessions[id]
+	if !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
+	}
+	pr := unlockPromptResponse{active: ms.lock.IsLocked(), maskLen: len(ms.password)}
+	if msg := ms.unlockMessage; msg != nil && time.Now().Before(msg.expiresAt) {
+		pr.message = msg.text
+		pr.expiresAt = msg.expiresAt
+	}
+	return response{value: pr}
+}
+
 func (m *SessionManager) handleBreakPane(payload any) response {
 	p, ok := payload.(*breakPanePayload)
 	if !ok {
 		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
 	}
-	// If windowID is 0, check the SessionManager's own paneMgr first.
-	if p.windowID == 0 {
-		if m.paneMgr.Binding(m.paneMgr.ActivePaneID()) != nil {
-			newID, err := m.breakPaneFromSessionMgr()
-			return response{value: newID, err: err}
+
+	sourceWindowID := m.windowIDForPane(p.paneID)
+	if sourceWindowID == 0 && m.paneMgr.Binding(p.paneID) == nil {
+		return response{err: fmt.Errorf("%w: %d", ErrPaneNotFound, p.paneID)}
+	}
+
+	var newWindowID WindowID
+	var newPaneID PaneID
+	var sessionID SessionID
+	var err error
+
+	if sourceWindowID == 0 {
+		newWindowID = m.windowMgr.NewWindow("")
+		newWindow := m.windowMgr.Window(newWindowID)
+		if newWindow == nil {
+			return response{err: fmt.Errorf("termmux: failed to create new window")}
 		}
-		return response{err: fmt.Errorf("%w: no active pane", ErrPaneNotFound)}
+		newPaneID, sessionID, err = m.paneMgr.transferPaneToWindow(p.paneID, newWindow.paneMgr, SplitRight)
+	} else {
+		newWindowID, newPaneID, sessionID, err = m.windowMgr.BreakPane(sourceWindowID, p.paneID)
 	}
-	newID, err := m.windowMgr.BreakPane(p.windowID)
-	return response{value: newID, err: err}
-}
-
-// breakPaneFromSessionMgr breaks the active pane from the SessionManager's
-// own paneMgr into a new window. Used when panes haven't been assigned
-// to any window yet.
-func (m *SessionManager) breakPaneFromSessionMgr() (WindowID, error) {
-	activePaneID := m.paneMgr.ActivePaneID()
-	if activePaneID == 0 {
-		return 0, fmt.Errorf("%w: no active pane", ErrPaneNotFound)
-	}
-
-	// Get the binding from SessionManager's paneMgr.
-	binding := m.paneMgr.Binding(activePaneID)
-	if binding == nil {
-		return 0, fmt.Errorf("%w: %d", ErrPaneNotFound, activePaneID)
-	}
-
-	// Create a new window.
-	newWindowID := m.windowMgr.NewWindow("")
-	newWindow := m.windowMgr.Window(newWindowID)
-	if newWindow == nil {
-		return 0, fmt.Errorf("termmux: failed to create new window")
-	}
-
-	// Remove the pane from SessionManager's paneMgr.
-	if err := m.paneMgr.Remove(activePaneID); err != nil {
-		return 0, fmt.Errorf("%w: %d", ErrPaneNotFound, activePaneID)
-	}
-
-	// Add the pane to the new window.
-	newPaneID, err := newWindow.paneMgr.Create(binding.SessionID, SplitRight)
 	if err != nil {
-		return 0, fmt.Errorf("termmux: failed to create pane in new window")
+		return response{err: err}
 	}
-	newWindow.paneMgr.setVTerm(newPaneID, binding.VTerm)
-	newWindow.paneMgr.panes[newPaneID].Title = binding.Title
-	newWindow.paneMgr.panes[newPaneID].LastActive = binding.LastActive
 
-	return newWindowID, nil
+	m.eventBus.emitData(EventWindowUpdated, 0, windowUpdateData{sourceWindowID, newWindowID})
+
+	if m.activeID == sessionID {
+		m.activeID = sessionID
+		m.activeWindowID = newWindowID
+		m.windowMgr.setActive(newWindowID)
+		m.eventBus.emit(EventSessionActivated, sessionID)
+	}
+
+	return response{value: breakJoinResult{windowID: newWindowID, paneID: newPaneID, sessionID: sessionID}}
 }
 
 func (m *SessionManager) handleJoinPane(payload any) response {
@@ -2529,47 +3396,60 @@ func (m *SessionManager) handleJoinPane(payload any) response {
 	if !ok {
 		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
 	}
-	// Source windowID of 0 means pane is in SessionManager's own paneMgr.
-	if p.sourceWindowID == 0 {
-		if m.paneMgr.Binding(m.paneMgr.ActivePaneID()) == nil {
-			return response{err: fmt.Errorf("%w: no active pane to join", ErrPaneNotFound)}
-		}
-		if err := m.joinPaneFromSessionMgr(p.targetWindowID); err != nil {
-			return response{err: err}
-		}
-		return response{}
+
+	sourceWindowID := m.windowIDForPane(p.paneID)
+	if sourceWindowID == 0 && m.paneMgr.Binding(p.paneID) == nil {
+		return response{err: fmt.Errorf("%w: %d", ErrPaneNotFound, p.paneID)}
 	}
-	return response{err: m.windowMgr.JoinPane(p.sourceWindowID, p.targetWindowID)}
+
+	targetWindow := m.windowMgr.Window(p.targetWindowID)
+	if targetWindow == nil {
+		return response{err: fmt.Errorf("%w: %d", ErrWindowNotFound, p.targetWindowID)}
+	}
+	if sourceWindowID == p.targetWindowID {
+		return response{err: fmt.Errorf("termmux: cannot join pane into the same window")}
+	}
+
+	var newPaneID PaneID
+	var sessionID SessionID
+	var err error
+	if sourceWindowID == 0 {
+		newPaneID, sessionID, err = m.paneMgr.transferPaneToWindow(p.paneID, targetWindow.paneMgr, SplitRight)
+	} else {
+		newPaneID, sessionID, err = m.windowMgr.JoinPane(sourceWindowID, p.targetWindowID, p.paneID)
+	}
+	if err != nil {
+		return response{err: err}
+	}
+
+	m.eventBus.emitData(EventWindowUpdated, 0, windowUpdateData{sourceWindowID, p.targetWindowID})
+
+	m.activeID = sessionID
+	m.activeWindowID = p.targetWindowID
+	m.windowMgr.setActive(p.targetWindowID)
+	m.eventBus.emit(EventSessionActivated, sessionID)
+
+	return response{value: breakJoinResult{paneID: newPaneID, sessionID: sessionID}}
 }
 
-// joinPaneFromSessionMgr joins the active pane from the SessionManager's
-// own paneMgr into the target window.
-func (m *SessionManager) joinPaneFromSessionMgr(targetWindowID WindowID) error {
-	activePaneID := m.paneMgr.ActivePaneID()
-	if activePaneID == 0 {
-		return fmt.Errorf("%w: no active pane", ErrPaneNotFound)
+// windowUpdateData is the payload for EventWindowUpdated.
+type windowUpdateData struct {
+	SourceWindow WindowID
+	TargetWindow WindowID
+}
+
+// windowIDForPane returns the window containing pane id, or 0 if the pane
+// lives in the default (root) pane manager.
+func (m *SessionManager) windowIDForPane(id PaneID) WindowID {
+	if m.paneMgr.Binding(id) != nil {
+		return 0
 	}
-	binding := m.paneMgr.Binding(activePaneID)
-	if binding == nil {
-		return fmt.Errorf("%w: %d", ErrPaneNotFound, activePaneID)
+	for _, w := range m.windowMgr.Windows() {
+		if w.paneMgr.Binding(id) != nil {
+			return w.ID
+		}
 	}
-	targetWindow := m.windowMgr.Window(targetWindowID)
-	if targetWindow == nil {
-		return fmt.Errorf("%w: %d", ErrWindowNotFound, targetWindowID)
-	}
-	// Remove from SessionManager's paneMgr.
-	if err := m.paneMgr.Remove(activePaneID); err != nil {
-		return fmt.Errorf("%w: %d", ErrPaneNotFound, activePaneID)
-	}
-	// Add to target window.
-	newPaneID, err := targetWindow.paneMgr.Create(binding.SessionID, SplitRight)
-	if err != nil {
-		return fmt.Errorf("termmux: failed to create pane in target window")
-	}
-	targetWindow.paneMgr.setVTerm(newPaneID, binding.VTerm)
-	targetWindow.paneMgr.panes[newPaneID].Title = binding.Title
-	targetWindow.paneMgr.panes[newPaneID].LastActive = binding.LastActive
-	return nil
+	return 0
 }
 
 func (m *SessionManager) handleAddPaneToWindow(payload any) response {
@@ -2601,6 +3481,82 @@ func (m *SessionManager) handleAddPaneToWindow(payload any) response {
 	}
 
 	return response{value: paneID}
+}
+
+func (m *SessionManager) handleSplitPane(p *splitPanePayload) response {
+	if resp := m.handleFocusPane(p.activePane); resp.err != nil {
+		return resp
+	}
+
+	var session InteractiveSession
+	var target SessionTarget
+	if p.cfg.Command == "" {
+		session = newDefaultInteractiveSession()
+		target = SessionTarget{Name: defaultSessionName(p.cfg.Name), Kind: p.cfg.Kind}
+		if target.Kind == SessionKindUnknown {
+			target.Kind = SessionKindPTY
+		}
+	} else {
+		cs := NewCaptureSession(p.cfg)
+		if err := cs.Start(m.readerCtx); err != nil {
+			return response{err: err}
+		}
+		session = cs
+		target = SessionTarget{Name: p.cfg.Name, Kind: p.cfg.Kind}
+	}
+
+	regResp := m.handleRegister(&registerPayload{session: session, target: target})
+	if regResp.err != nil {
+		_ = session.Close()
+		return regResp
+	}
+	sessionID := regResp.value.(SessionID)
+
+	pm := m.activePaneManager()
+	paneID, err := pm.Create(sessionID, p.direction)
+	if err != nil {
+		m.handleUnregister(sessionID)
+		return response{err: err}
+	}
+
+	ms, ok := m.sessions[sessionID]
+	if ok {
+		pm.setVTerm(paneID, ms.vterm)
+	}
+
+	m.activeID = sessionID
+	return response{value: paneID}
+}
+
+func (m *SessionManager) handleSetLayoutMode(payload any) response {
+	p, ok := payload.(*setLayoutModePayload)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	pm := m.paneManagerForWindow(p.windowID)
+	if pm == nil {
+		return response{err: fmt.Errorf("%w: %d", ErrWindowNotFound, p.windowID)}
+	}
+	pm.setMode(p.mode)
+	if p.windowID != 0 {
+		if w := m.windowMgr.Window(p.windowID); w != nil {
+			w.Layout = p.mode
+		}
+	}
+	m.emitWindowUpdated(p.windowID, p.windowID)
+	return response{}
+}
+
+func (m *SessionManager) handleLayoutMode(payload any) response {
+	id, ok := payload.(WindowID)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	pm := m.paneManagerForWindow(id)
+	if pm == nil {
+		return response{err: fmt.Errorf("%w: %d", ErrWindowNotFound, id)}
+	}
+	return response{value: pm.mode()}
 }
 
 // handleSessions builds a list of SessionInfo values from the sessions map.
@@ -2635,8 +3591,11 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 			ms.state = SessionExited
 			m.eventBus.emit(EventSessionExited, so.id)
 			if ms.remainOnExit {
+				m.closePipeForSession(ms)
+				m.markSessionPaneExited(so.id)
 				return
 			}
+			m.closePipeForSession(ms)
 			if err := ms.session.Close(); err != nil {
 				slog.Warn("session close failed on exit", "sessionID", so.id, "error", err)
 			}
@@ -2647,6 +3606,7 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 			delete(m.sessions, so.id)
 			m.eventBus.emit(EventSessionClosed, so.id)
 		} else if ms.state == SessionCreated {
+			m.closePipeForSession(ms)
 			if err := ms.session.Close(); err != nil {
 				slog.Warn("session close failed during immediate exit", "sessionID", so.id, "error", err)
 			}
@@ -2686,6 +3646,7 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 	// Publish a new immutable snapshot.
 	m.snapshotGen++
 	scr := ms.vterm.ActiveScreen()
+	now := time.Now()
 	snap := &ScreenSnapshot{
 		Gen:                m.snapshotGen,
 		screen:             scr,
@@ -2704,7 +3665,9 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 		SynchronizedOutput: scr.SynchronizedOutput,
 		AutoWrap:           scr.AutoWrap,
 		LineFeedNewLine:    scr.LineFeedNewLine,
-		Timestamp:          time.Now(),
+		Locked:             ms.lock.IsLocked(),
+		Message:            m.activeMessageForSession(so.id, now),
+		Timestamp:          now,
 	}
 	ms.snapshot.Store(snap)
 
@@ -2725,12 +3688,31 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 		mon.LastOutputAt = now
 		mon.SilenceFired = false
 
-		// Activity: background pane produced output after being idle.
-		if mon.Config.Activity && !mon.ActivityFired && so.id != m.activeID {
-			if mon.Config.ActivityThreshold <= 0 || wasIdle >= mon.Config.ActivityThreshold {
+		if mon.Config.Activity && so.id != m.activeID {
+			if mon.ActivityFired && mon.Config.ActivityResetThreshold > 0 && wasIdle >= mon.Config.ActivityResetThreshold {
+				mon.ActivityFired = false
+			}
+			if !mon.ActivityFired && (mon.Config.ActivityThreshold <= 0 || wasIdle >= mon.Config.ActivityThreshold) {
 				mon.ActivityFired = true
 				m.eventBus.emit(EventActivity, so.id)
 			}
+		}
+	}
+}
+
+func (m *SessionManager) markSessionPaneExited(sid SessionID) {
+	if pid := m.paneMgr.PaneIDForSession(sid); pid != 0 {
+		m.paneMgr.MarkPaneExited(pid)
+		return
+	}
+	for _, w := range m.windowMgr.Windows() {
+		pm := w.paneMgr
+		if pm == nil {
+			continue
+		}
+		if pid := pm.PaneIDForSession(sid); pid != 0 {
+			pm.MarkPaneExited(pid)
+			return
 		}
 	}
 }
@@ -2907,6 +3889,7 @@ func (m *SessionManager) shutdownSessions() {
 	for _, id := range ids {
 		ms := m.sessions[id]
 		if ms.state != SessionClosed {
+			m.closePipeForSession(ms)
 			if err := ms.session.Close(); err != nil {
 				slog.Warn("session close failed during shutdown", "sessionID", id, "error", err)
 			}

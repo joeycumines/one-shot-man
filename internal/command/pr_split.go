@@ -516,7 +516,7 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 	// provides the same API surface (attach, switchTo, session, etc.)
 	// that JS scripts expect.
 	tuiMgr := termmux.NewSessionManager()
-	tuiMux := termmuxmod.WrapSessionManager(ctx, engine.Runtime(), tuiMgr, os.Stdin, stdout, termFd, "")
+	tuiMux := termmuxmod.WrapSessionManager(ctx, engine.Adapter(), engine.Runtime(), tuiMgr, os.Stdin, stdout, termFd, "")
 
 	// Pre-configure session target metadata so attach() registers with
 	// the correct identity from the start (not assigned lazily in JS).

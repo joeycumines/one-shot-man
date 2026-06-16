@@ -1388,7 +1388,7 @@ func (s *Screen) PutASCII(data []byte) {
 		if row >= 0 && row < s.Rows {
 			s.repairWideBoundary(row, col, col+n)
 			cells := s.Cells[row]
-			for j := 0; j < n; j++ {
+			for j := range n {
 				cells[col+j] = Cell{Ch: rune(data[i+j]), Attr: attr}
 			}
 		}

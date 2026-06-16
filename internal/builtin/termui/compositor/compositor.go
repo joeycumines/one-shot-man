@@ -196,14 +196,27 @@ func createCompositorObject(runtime *goja.Runtime, c *compositor.Compositor) goj
 		return obj
 	})
 
-	// updateChrome({id, content}) — chainable
+	// updateChrome({id, content}) or updateChrome(id, content) — chainable
 	_ = obj.Set("updateChrome", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			panic(runtime.NewTypeError("updateChrome requires an object argument {id, content}"))
+		id := ""
+		content := ""
+		if len(call.Arguments) >= 2 {
+			id = call.Argument(0).String()
+			content = call.Argument(1).String()
+		} else if len(call.Arguments) == 1 {
+			cfg := call.Argument(0).ToObject(runtime)
+			if cfg == nil {
+				panic(runtime.NewTypeError("updateChrome requires an object argument {id, content}"))
+			}
+			if idVal := cfg.Get("id"); idVal != nil && !goja.IsUndefined(idVal) && !goja.IsNull(idVal) {
+				id = idVal.String()
+			}
+			if contentVal := cfg.Get("content"); contentVal != nil && !goja.IsUndefined(contentVal) && !goja.IsNull(contentVal) {
+				content = contentVal.String()
+			}
+		} else {
+			panic(runtime.NewTypeError("updateChrome requires (id, content) or an object argument {id, content}"))
 		}
-		cfg := call.Argument(0).ToObject(runtime)
-		id := cfg.Get("id").String()
-		content := cfg.Get("content").String()
 		c.UpdateChrome(id, content)
 		return obj
 	})

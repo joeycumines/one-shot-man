@@ -2,6 +2,7 @@ package termmux
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
@@ -9,6 +10,76 @@ import (
 type ScreenSearcher interface {
 	SearchForward(pattern string, startRow, startCol int) *vt.SearchMatch
 	SearchBackward(pattern string, startRow, startCol int) *vt.SearchMatch
+}
+
+// NewScreenSnapshotSearcher creates a ScreenSearcher backed by snap's plain text.
+func NewScreenSnapshotSearcher(snap *ScreenSnapshot) ScreenSearcher {
+	return &screenSnapshotSearcher{snap: snap}
+}
+
+type screenSnapshotSearcher struct {
+	snap *ScreenSnapshot
+}
+
+func (s *screenSnapshotSearcher) rows() []string {
+	if s.snap == nil {
+		return nil
+	}
+	plain := s.snap.GetPlainText()
+	if plain == "" {
+		return nil
+	}
+	return strings.Split(plain, "\n")
+}
+
+func (s *screenSnapshotSearcher) SearchForward(pattern string, startRow, startCol int) *vt.SearchMatch {
+	if pattern == "" || startRow < 0 || startCol < 0 || s.snap == nil {
+		return nil
+	}
+	rows := s.rows()
+	if rows == nil || startRow >= len(rows) {
+		return nil
+	}
+	for row := startRow; row < len(rows); row++ {
+		text := rows[row]
+		col := 0
+		if row == startRow {
+			col = startCol
+		}
+		if col >= len(text) {
+			continue
+		}
+		if idx := strings.Index(text[col:], pattern); idx >= 0 {
+			return &vt.SearchMatch{Row: row, Col: col + idx}
+		}
+	}
+	return nil
+}
+
+func (s *screenSnapshotSearcher) SearchBackward(pattern string, startRow, startCol int) *vt.SearchMatch {
+	if pattern == "" || startRow < 0 || startCol < 0 || s.snap == nil {
+		return nil
+	}
+	rows := s.rows()
+	if rows == nil {
+		return nil
+	}
+	if startRow >= len(rows) {
+		if len(rows) == 0 {
+			return nil
+		}
+		startRow = len(rows) - 1
+	}
+	for row := startRow; row >= 0; row-- {
+		text := rows[row]
+		if row == startRow && startCol < len(text) {
+			text = text[:startCol]
+		}
+		if idx := strings.LastIndex(text, pattern); idx >= 0 {
+			return &vt.SearchMatch{Row: row, Col: idx}
+		}
+	}
+	return nil
 }
 
 type CopyModeActionKind int
@@ -36,6 +107,9 @@ const (
 	CopyModeActionSearchBackward
 	CopyModeActionNextMatch
 	CopyModeActionPrevMatch
+	CopyModeActionPageUp
+	CopyModeActionPageDown
+	CopyModeActionEnterCopyMode
 )
 
 type CopyModeAction struct {
@@ -87,6 +161,12 @@ func (a CopyModeAction) String() string {
 		return "NextMatch"
 	case CopyModeActionPrevMatch:
 		return "PrevMatch"
+	case CopyModeActionPageUp:
+		return "PageUp"
+	case CopyModeActionPageDown:
+		return "PageDown"
+	case CopyModeActionEnterCopyMode:
+		return "EnterCopyMode"
 	default:
 		return "None"
 	}
@@ -102,6 +182,10 @@ func NewCopyModeKeyHandler(halfPageRows int) *CopyModeKeyHandler {
 	}
 	return &CopyModeKeyHandler{halfPageRows: halfPageRows}
 }
+
+// defaultCopyModeKeyHandler is the shared key handler used by the worker
+// goroutine when dispatching copy-mode keys.
+var defaultCopyModeKeyHandler = NewCopyModeKeyHandler(0)
 
 func (h *CopyModeKeyHandler) HandleKey(key string) CopyModeAction {
 	switch key {
@@ -121,9 +205,9 @@ func (h *CopyModeKeyHandler) HandleKey(key string) CopyModeAction {
 		return CopyModeAction{Kind: CopyModeActionTopOfScrollback}
 	case "G":
 		return CopyModeAction{Kind: CopyModeActionBottomOfScrollback}
-	case "0":
+	case "0", "home":
 		return CopyModeAction{Kind: CopyModeActionBeginningOfLine}
-	case "$":
+	case "$", "end":
 		return CopyModeAction{Kind: CopyModeActionEndOfLine}
 	case "w":
 		return CopyModeAction{Kind: CopyModeActionNextWord, N: 1}
@@ -133,12 +217,14 @@ func (h *CopyModeKeyHandler) HandleKey(key string) CopyModeAction {
 		return CopyModeAction{Kind: CopyModeActionExitCopyMode}
 	case " ":
 		return CopyModeAction{Kind: CopyModeActionSelectStart}
-	case "enter":
+	case "enter", "return":
 		return CopyModeAction{Kind: CopyModeActionCopyAndExit}
-	case "ctrl+b":
-		return CopyModeAction{Kind: CopyModeActionScrollUpOne, N: 1}
-	case "ctrl+f":
-		return CopyModeAction{Kind: CopyModeActionScrollDownOne, N: 1}
+	case "ctrl+b", "pageUp":
+		return CopyModeAction{Kind: CopyModeActionPageUp}
+	case "ctrl+f", "pageDown":
+		return CopyModeAction{Kind: CopyModeActionPageDown}
+	case ":":
+		return CopyModeAction{Kind: CopyModeActionEnterCopyMode}
 	case "/":
 		return CopyModeAction{Kind: CopyModeActionSearchForward}
 	case "?":

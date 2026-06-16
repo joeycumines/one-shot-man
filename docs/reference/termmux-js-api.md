@@ -155,23 +155,59 @@ should prefer pinned SessionID access: `snapshot(id)` /
 
 ### Events
 
+`osm:termmux` wraps each `SessionManager` in a standard DOM-style
+`EventTarget`. You may use either the modern `addEventListener` API or
+the legacy `on`/`off` aliases; both register listeners on the same
+underlying target. Listeners receive `CustomEvent` instances with a
+`detail` object containing event-specific data.
+
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
-| `on(event, callback)` | listener registration | `string, function` | `number` (listener ID) | throws TypeError if invalid |
-| `off(id)` | listener removal | `number` | `boolean` | silent |
-| `pollEvents()` | drain event queue | — | `number` (events delivered) | silent |
+| `addEventListener(event, callback)` | `EventTarget.addEventListener()` | `string, function` | `undefined` | throws TypeError if callback is not a function |
+| `removeEventListener(event, callback)` | `EventTarget.removeEventListener()` | `string, function` | `undefined` | silent |
+| `dispatchEvent(event)` | `EventTarget.dispatchEvent()` | `Event\|CustomEvent` | `boolean` | throws TypeError if the event is missing a `type` |
+| `on(event, callback)` | legacy wrapper | `string, function` | `number` (listener ID) | throws TypeError if invalid event or callback |
+| `off(id)` | legacy wrapper | `number` | `boolean` | silent |
+| `pollEvents()` | compatibility no-op | — | `number` (always `0`) | silent |
 | `subscribe(bufSize?)` | `EventBus.Subscribe()` | `number?` | `{id, pollEvents}` | silent |
 | `unsubscribe(id)` | `EventBus.Unsubscribe()` | `number` | `boolean` | silent |
 
-Valid event names: `exit`, `resize`, `focus`, `bell`, `output`,
-`registered`, `activated`, `closed`, `terminal-resize`.
+Valid legacy event names for `on`: `exit`, `resize`, `focus`, `bell`,
+`output`, `registered`, `activated`, `closed`, `terminal-resize`.
+`addEventListener` accepts any event `type`.
+
+#### Event detail payload
+
+| Event type | `detail` fields |
+|------------|-----------------|
+| `exit` | `{ sessionId: number, pane?: string }` |
+| `resize` | `{ sessionId: number }` |
+| `focus` | `{ sessionId: number }` |
+| `bell` | `{ sessionId: number, pane?: string }` |
+| `output` | `{ sessionId: number, pane?: string, chunk?: string }` |
+| `registered` | `{ sessionId: number }` |
+| `activated` | `{ sessionId: number }` |
+| `closed` | `{ sessionId: number }` |
+| `terminal-resize` | `{ sessionId: number, rows: number, cols: number }` |
+
+Example:
+
+```js
+var termmux = require('osm:termmux');
+var bounded = termmux.newBoundedSession({ cmd: '/bin/sh' });
+
+bounded.mgr.addEventListener('output', function (e) {
+  output.print('output from ' + e.detail.sessionId + ': ' + e.detail.chunk);
+});
+```
 
 ### BubbleTea Integration
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
-| `fromModel(model, opts?)` | model wrapper | `any, {altScreen?,toggleKey?}` | `{model, options}` | throws TypeError if no model |
-| `activeSide()` | hardcoded | — | `"osm"` | N/A |
+| `fromModel(model, opts?)` | model wrapper | `any, {altScreen?,toggleKey?,onToggle?}` | `{model, options}` | throws TypeError if no model |
+| `activeSide()` | passthrough state | — | `"osm"` or `"claude"` | N/A |
+| `isPassthrough()` | passthrough state | — | `boolean` | N/A |
 
 ---
 

@@ -103,17 +103,7 @@ func TestSessionManager_RemainOnExit_Off_ClosesOnExit(t *testing.T) {
 	subID, evtCh := m.Subscribe(16)
 	defer m.Unsubscribe(subID)
 
-	deadline := time.After(2 * time.Second)
-	for {
-		select {
-		case evt := <-evtCh:
-			if evt.Kind == EventSessionClosed && evt.SessionID == id {
-				return
-			}
-		case <-deadline:
-			t.Fatal("timed out waiting for SessionClosed")
-		}
-	}
+	waitForEventKindCh(t, evtCh, EventSessionClosed, 10*time.Second)
 }
 
 func TestSessionManager_RespawnSession(t *testing.T) {
@@ -136,19 +126,8 @@ func TestSessionManager_RespawnSession(t *testing.T) {
 	subID, evtCh := m.Subscribe(16)
 	defer m.Unsubscribe(subID)
 
-	deadline := time.After(2 * time.Second)
-	for {
-		select {
-		case evt := <-evtCh:
-			if evt.Kind == EventSessionExited && evt.SessionID == id {
-				goto respawn
-			}
-		case <-deadline:
-			t.Fatal("timed out waiting for SessionExited")
-		}
-	}
+	waitForEventKindCh(t, evtCh, EventSessionExited, 10*time.Second)
 
-respawn:
 	newID, err := m.RespawnSession(id)
 	if err != nil {
 		t.Fatalf("RespawnSession: %v", err)

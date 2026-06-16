@@ -733,6 +733,8 @@ type copyModeState struct {
 	active    bool
 	savedRow  int
 	savedCol  int
+	cursorRow int // visible row of the copy-mode cursor
+	cursorCol int // visible column of the copy-mode cursor
 	selStart  int // absolute row in [0, ScrollbackLines+Rows)
 	selEnd    int // absolute row in [0, ScrollbackLines+Rows)
 	selStartC int // column of selection start
@@ -750,11 +752,23 @@ func (v *VTerm) EnterCopyMode() {
 		return
 	}
 	v.copyMode = copyModeState{
-		active:   true,
-		savedRow: v.active.CurRow,
-		savedCol: v.active.CurCol,
+		active:    true,
+		savedRow:  v.active.CurRow,
+		savedCol:  v.active.CurCol,
+		cursorRow: clampCopyModeCursor(v.active.CurRow, v.rows),
+		cursorCol: clampCopyModeCursor(v.active.CurCol, v.cols),
 	}
 	v.primary.ScrollOffset = 0
+}
+
+func clampCopyModeCursor(v, max int) int {
+	if v < 0 {
+		return 0
+	}
+	if max > 0 && v >= max {
+		return max - 1
+	}
+	return v
 }
 
 // ExitCopyMode exits copy/scroll mode: resets ScrollOffset to 0 and
@@ -776,6 +790,113 @@ func (v *VTerm) InCopyMode() bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.copyMode.active
+}
+
+// CopyModeCursorPosition reports the copy-mode cursor in viewport coordinates.
+func (v *VTerm) CopyModeCursorPosition() (int, int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.copyMode.active {
+		return 0, 0
+	}
+	return v.copyMode.cursorRow, v.copyMode.cursorCol
+}
+
+// MoveCopyModeCursor moves the copy-mode cursor and keeps it on screen.
+func (v *VTerm) MoveCopyModeCursor(dRow, dCol int) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.copyMode.active {
+		return false
+	}
+	v.copyMode.cursorRow += dRow
+	v.copyMode.cursorCol += dCol
+	if v.copyMode.cursorCol < 0 {
+		v.copyMode.cursorCol = 0
+	}
+	if v.copyMode.cursorCol >= v.cols {
+		v.copyMode.cursorCol = v.cols - 1
+	}
+	for v.copyMode.cursorRow < 0 && v.primary.ScrollOffset < v.primary.MaxScrollOffset() {
+		v.primary.ScrollOffset++
+		v.copyMode.cursorRow++
+	}
+	for v.copyMode.cursorRow >= v.rows && v.primary.ScrollOffset > 0 {
+		v.primary.ScrollOffset--
+		v.copyMode.cursorRow--
+	}
+	if v.copyMode.cursorRow < 0 {
+		v.copyMode.cursorRow = 0
+	}
+	if v.copyMode.cursorRow >= v.rows {
+		v.copyMode.cursorRow = v.rows - 1
+	}
+	v.primary.ClampScrollOffset()
+	return true
+}
+
+// SetCopyModeCursorRow sets the copy-mode cursor row.
+func (v *VTerm) SetCopyModeCursorRow(row int) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.copyMode.active {
+		return false
+	}
+	if row < 0 {
+		row = 0
+	}
+	if row >= v.rows {
+		row = v.rows - 1
+	}
+	v.copyMode.cursorRow = row
+	return true
+}
+
+// SetCopyModeCursorCol sets the copy-mode cursor column.
+func (v *VTerm) SetCopyModeCursorCol(col int) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.copyMode.active {
+		return false
+	}
+	if col < 0 {
+		col = 0
+	}
+	if col >= v.cols {
+		col = v.cols - 1
+	}
+	v.copyMode.cursorCol = col
+	return true
+}
+
+// CopyModeScrollOffset returns the copy-mode scroll offset.
+func (v *VTerm) CopyModeScrollOffset() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.primary.ScrollOffset
+}
+
+// ScrollCopyModeToTop jumps to the oldest scrollback line.
+func (v *VTerm) ScrollCopyModeToTop() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.copyMode.active {
+		return false
+	}
+	v.primary.ScrollOffset = v.primary.MaxScrollOffset()
+	v.primary.ClampScrollOffset()
+	return true
+}
+
+// ScrollCopyModeToBottom jumps to the present line.
+func (v *VTerm) ScrollCopyModeToBottom() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.copyMode.active {
+		return false
+	}
+	v.primary.ScrollOffset = 0
+	return true
 }
 
 // ScrollCopyMode scrolls the viewport by delta lines when copy mode is active.

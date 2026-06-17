@@ -16,6 +16,8 @@ type paneEntry struct {
 	content string
 	gen     uint64
 	x, y, z int
+	width   int
+	height  int
 }
 
 // chromeEntry tracks a single chrome (UI) layer.
@@ -23,6 +25,8 @@ type chromeEntry struct {
 	id      string
 	content string
 	x, y, z int
+	width   int
+	height  int
 }
 
 // Compositor manages pane and chrome layers, wrapping lipgloss.Compositor
@@ -61,6 +65,8 @@ func (c *Compositor) AddPane(id string, content string, bounds coordinate.Rect, 
 		x:       bounds.Position.X,
 		y:       bounds.Position.Y,
 		z:       z,
+		width:   bounds.Size.Width,
+		height:  bounds.Size.Height,
 	}
 	return c
 }
@@ -73,6 +79,20 @@ func (c *Compositor) UpdatePane(id string, content string) *Compositor {
 		return c
 	}
 	pe.content = content
+	return c
+}
+
+// UpdatePaneBounds updates an existing pane's position and size. No-op if the
+// pane does not exist. Returns the Compositor for chaining.
+func (c *Compositor) UpdatePaneBounds(id string, bounds coordinate.Rect) *Compositor {
+	pe, ok := c.panes[id]
+	if !ok {
+		return c
+	}
+	pe.x = bounds.Position.X
+	pe.y = bounds.Position.Y
+	pe.width = bounds.Size.Width
+	pe.height = bounds.Size.Height
 	return c
 }
 
@@ -118,6 +138,8 @@ func (c *Compositor) AddChrome(id string, content string, bounds coordinate.Rect
 		x:       bounds.Position.X,
 		y:       bounds.Position.Y,
 		z:       z,
+		width:   bounds.Size.Width,
+		height:  bounds.Size.Height,
 	}
 	return c
 }
@@ -130,6 +152,20 @@ func (c *Compositor) UpdateChrome(id string, content string) *Compositor {
 		return c
 	}
 	ce.content = content
+	return c
+}
+
+// UpdateChromeBounds updates an existing chrome entry's position and size
+// without changing its content. No-op if the chrome entry does not exist.
+func (c *Compositor) UpdateChromeBounds(id string, bounds coordinate.Rect) *Compositor {
+	ce, ok := c.chrome[id]
+	if !ok {
+		return c
+	}
+	ce.x = bounds.Position.X
+	ce.y = bounds.Position.Y
+	ce.width = bounds.Size.Width
+	ce.height = bounds.Size.Height
 	return c
 }
 

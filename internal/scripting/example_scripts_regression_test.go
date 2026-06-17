@@ -54,7 +54,7 @@ func loadExampleProgram(t *testing.T, engine *Engine, scriptName string) {
 	// Script-specific modelStart patterns (variable name and declaration keyword vary).
 	modelStarts := map[string]string{
 		"example-14-comprehensive-demo.js": "var program = tea.newModel({",
-		"example-15-bouncing-logo.js":      "var bouncingProgram = tea.newModel({",
+		"example-15-bouncing-logo.js":      "var program = tea.newModel({",
 	}
 	modelStart, ok := modelStarts[scriptName]
 	if !ok {
@@ -71,46 +71,74 @@ func loadExampleProgram(t *testing.T, engine *Engine, scriptName string) {
 		// Stub flag.parse(args) — args is not available in test engine.
 		source = strings.Replace(source, "fs.parse(args)", "fs.parse([])", 1)
 		// Stub termmux session creation — PTY operations fail in test environment.
-		const termmuxBlock = `var session;
-try {
-    session = termmux.newCaptureSession(CMD, targetArgs, { rows: DEFAULT_PANE_HEIGHT - 2 * BORDER_WIDTH, cols: DEFAULT_PANE_WIDTH - 2 * BORDER_WIDTH });
-    session.start();
-} catch (e) {
-    output.print('Failed to start capture session: ' + e.message);
-    throw e;
-}
+		const termmuxStub = `var __regressionTermmux = (function() {
+	var sid = 'test-sid';
+	var session = { close: function() {}, resize: function() {} };
+	var mgr = {
+		resize: function() {},
+		resizeSession: function() {},
+		snapshot: function() { return { plainText: 'mock shell', rows: 10, cols: 30, mouseTracking: 0 }; },
+		input: function() {},
+		close: function() {},
+		activeID: function() { return sid; },
+		sessions: function() { return [{ target: {name:'',kind:'',id:''}, state:'attached', isActive:true, id:sid }]; },
+		enterCopyMode: function() {},
+		exitCopyMode: function() {},
+		isCopyModeActive: function() { return false; }
+	};
+	return { session: session, mgr: mgr, sid: sid };
+})();
 
-var mgr;
-var sid;
-try {
-    mgr = termmux.newSessionManager({ rows: DEFAULT_PANE_HEIGHT - 2 * BORDER_WIDTH, cols: DEFAULT_PANE_WIDTH - 2 * BORDER_WIDTH });
-    mgr.run();
-    mgr.started();
+var __regressionTermpane = (function() {
+	var bounds = { x: 0, y: 0, width: 80, height: 24 };
+	function updatePaneBounds(b) {
+		bounds.x = b.x;
+		bounds.y = b.y;
+		bounds.width = b.width;
+		bounds.height = b.height;
+	}
+	function paneObj() {
+		return {
+			setBounds: function(r) { updatePaneBounds(r); return this; },
+			bounds: function() { return bounds; },
+			update: function(msg) { return [this, null]; },
+			view: function() {
+				return {
+					content: 'mock shell pane',
+					gen: Date.now(),
+					cursor: { x: 1, y: 1, shape: 'block', blink: false }
+				};
+			},
+			close: function() {},
+			asBubbleteaModel: function() { return { _type: 'bubbleteaGoModel' }; }
+		};
+	}
+	return { termpane: function() { return paneObj(); } };
+})();
 
-    sid = mgr.register(session, { name: 'bouncing', kind: 'capture' });
-    mgr.activate(sid);
-} catch (e) {
-    output.print('Failed to register session: ' + e.message);
-    try { if (sid) mgr.deactivate(sid); } catch (_) {}
-    try { session.close(); } catch (_) {}
-    throw e;
-}`
-		const termmuxStub = `var session = { start: function() {}, close: function() {} };
-var mgr = { run: function() {}, started: function() {}, register: function() { return 'test-sid'; }, activate: function() {}, on: function() {} };
-var sid = 'test-sid';`
-		if !strings.Contains(source, termmuxBlock) {
-			t.Fatalf("%s missing expected termmux session creation block", scriptName)
-		}
-		source = strings.Replace(source, termmuxBlock, termmuxStub, 1)
+var __regressionRequire = require;
+require = function(name) {
+	if (name === 'osm:termmux') {
+		return {
+			newBoundedSession: function() { return __regressionTermmux; },
+			newControlRouter: function() { return { handleKey: function() { return {handled:false}; }, inChordMode: function() { return false; } }; },
+			handlePrefixKey: function() { return {action:'Cancel'}; }
+		};
+	}
+	if (name === 'osm:termui/termpane') {
+		return __regressionTermpane;
+	}
+	return __regressionRequire(name);
+};
+`
+		source = termmuxStub + "\n" + source
 	}
 
 	runMarker := "tea.run(program);"
 	switch scriptName {
 	case "minimal-bubbletea-test.js":
 		runMarker = "const result = tea.run(program);"
-	case "example-15-bouncing-logo.js":
-		runMarker = "tea.run(bouncingProgram);"
-	case "example-02-graphical-todo.js", "benchmark-input-latency.js", "example-13-split-pane.js", "example-14-comprehensive-demo.js":
+	case "example-02-graphical-todo.js", "benchmark-input-latency.js", "example-13-split-pane.js", "example-14-comprehensive-demo.js", "example-15-bouncing-logo.js":
 	default:
 		t.Fatalf("unsupported script %q", scriptName)
 	}
@@ -449,15 +477,19 @@ func TestExample15BouncingLogo_InitStartsTick(t *testing.T) {
 var initRes = __programConfig.init();
 var model = initRes[0];
 var cmd = initRes[1];
+var viewRes = __programConfig.view(model);
 
 __result = {
     initIsArray: Array.isArray(initRes),
     initCmdType: cmd && cmd._cmdType || null,
     modelHasWidth: model.width === 80,
     modelHasHeight: model.height === 24,
-    modelHasBounceCount: model.bounceCount === 0,
+    modelHasBounces: model.bounces === 0,
     modelHasTickCount: model.tickCount === 0,
-    modelHasPaused: model.paused === false
+    modelHasPaused: model.paused === false,
+    viewHasContent: typeof viewRes.content === 'string' && viewRes.content.length > 0,
+    viewAltScreen: viewRes.altScreen === true,
+    viewMouseMode: viewRes.mouseMode === 'allMotion'
 };
 `)
 
@@ -473,14 +505,23 @@ __result = {
 	if got := result["modelHasHeight"]; got != true {
 		t.Fatalf("expected initial model.height === 24, got %v", got)
 	}
-	if got := result["modelHasBounceCount"]; got != true {
-		t.Fatalf("expected initial model.bounceCount === 0, got %v", got)
+	if got := result["modelHasBounces"]; got != true {
+		t.Fatalf("expected initial model.bounces === 0, got %v", got)
 	}
 	if got := result["modelHasTickCount"]; got != true {
 		t.Fatalf("expected initial model.tickCount === 0, got %v", got)
 	}
 	if got := result["modelHasPaused"]; got != true {
 		t.Fatalf("expected initial model.paused === false, got %v", got)
+	}
+	if got := result["viewHasContent"]; got != true {
+		t.Fatalf("expected view to produce non-empty content, got %v", got)
+	}
+	if got := result["viewAltScreen"]; got != true {
+		t.Fatalf("expected view altScreen=true, got %v", got)
+	}
+	if got := result["viewMouseMode"]; got != true {
+		t.Fatalf("expected view mouseMode='allMotion', got %v", got)
 	}
 }
 

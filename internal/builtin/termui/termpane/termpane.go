@@ -25,8 +25,10 @@
 package termpane
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 
+	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
 	"github.com/joeycumines/one-shot-man/internal/termmux"
 	"github.com/joeycumines/one-shot-man/internal/termui/coordinate"
@@ -192,6 +194,44 @@ func createTermpaneObject(runtime *goja.Runtime, m *termpane.Model) goja.Value {
 	_ = obj.Set("bounds", func(call goja.FunctionCall) goja.Value {
 		r := m.Bounds()
 		return createRectJSObject(runtime, &r)
+	})
+
+	// update(msg) — converts a JS BubbleTea message object to a Go tea.Msg,
+	// dispatches it to the underlying model, and returns [pane, cmd].
+	// The returned cmd is a wrapped Go tea.Cmd that can be returned from a
+	// JavaScript BubbleTea update function.
+	_ = obj.Set("update", func(call goja.FunctionCall) goja.Value {
+		cmd := tea.Cmd(nil)
+
+		if len(call.Arguments) >= 1 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+			if msgObj, ok := call.Argument(0).(*goja.Object); ok && msgObj != nil {
+				if msg := bubbletea.JsToTeaMsg(runtime, msgObj); msg != nil {
+					_, cmd = m.Update(msg)
+				}
+			}
+		}
+
+		return runtime.NewArray(obj, bubbletea.WrapCmd(runtime, cmd))
+	})
+
+	_ = obj.Set("view", func(call goja.FunctionCall) goja.Value {
+		m.RefreshSnapshot()
+		v := m.ANSIView()
+
+		result := runtime.NewObject()
+		_ = result.Set("content", v.Content)
+		_ = result.Set("gen", m.SnapshotGen())
+
+		if v.Cursor != nil {
+			cursor := runtime.NewObject()
+			_ = cursor.Set("x", v.Cursor.X)
+			_ = cursor.Set("y", v.Cursor.Y)
+			_ = cursor.Set("shape", "block")
+			_ = cursor.Set("blink", false)
+			_ = result.Set("cursor", cursor)
+		}
+
+		return result
 	})
 
 	// close() — cleanup (unsubscribe from EventBus, stop bridge goroutine)

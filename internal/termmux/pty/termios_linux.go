@@ -5,7 +5,6 @@ package pty
 import "golang.org/x/sys/unix"
 
 const (
-	tcgets    = unix.TCGETS
-	tcsets    = unix.TCSETS
-	tiocspgrp = unix.TIOCSPGRP
+	tcgets = unix.TCGETS
+	tcsets = unix.TCSETS
 )

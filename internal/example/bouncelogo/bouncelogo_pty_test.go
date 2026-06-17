@@ -73,8 +73,8 @@ func launchBouncingLogo(t *testing.T, ctx context.Context, timeout time.Duration
 		t.Fatalf("Failed to write temp mock script: %v", err)
 	}
 
-	env := append(newTestProcessEnv(t), "OSM_SYNC_PROTOCOL=1")
-	args := []string{"script", scriptPath, "--cmd", "/bin/bash", "--", tmpMock}
+	env := newTestProcessEnv(t)
+	args := []string{"script", scriptPath, "--cmd", "/bin/sh", "--", tmpMock}
 
 	ptyRows, ptyCols := uint16(30), uint16(100)
 	cp, err := termtest.NewConsole(ctx,
@@ -86,9 +86,11 @@ func launchBouncingLogo(t *testing.T, ctx context.Context, timeout time.Duration
 	)
 	require.NoError(t, err, "Failed to create termtest console")
 
-	// Wait for the bouncing terminal title or controls to appear
+	// Wait for the Bubble Tea dashboard to attach the nested PTY and render
+	// the mock shell banner. This is the point at which sends are safe.
 	snap := cp.Snapshot()
-	expect(t, ctx, cp, snap, "Bouncing Terminal", 15*time.Second)
+	expect(t, ctx, cp, snap, "Bouncing Logo Shell", 15*time.Second)
+	time.Sleep(200 * time.Millisecond)
 
 	return cp
 }
@@ -114,12 +116,11 @@ func TestBouncingLogo_LaunchAndDashboard(t *testing.T) {
 
 	// Verify dashboard elements are present
 	buffer := cp.String()
-	assert.Contains(t, buffer, "[^P] Pause", "dashboard should show ctrl+p pause button")
-	assert.Contains(t, buffer, "[^Q] Quit", "dashboard should show ctrl+q quit button")
+	assert.Contains(t, buffer, "^P Pause", "dashboard should show ctrl+p pause button")
+	assert.Contains(t, buffer, "^Q Quit", "dashboard should show ctrl+q quit button")
 
-	// Wait for the mock shell to appear in the PTY snapshot
-	snap := cp.Snapshot()
-	expect(t, testCtx, cp, snap, "Bouncing Logo Shell", 10*time.Second)
+	// Verify the nested PTY banner is visible.
+	assert.Contains(t, cp.String(), "Bouncing Logo Shell", "PTY snapshot should show mock shell banner")
 
 	// Verify status bar is present
 	buffer = cp.String()
@@ -140,9 +141,8 @@ func TestBouncingLogo_BounceAnimation(t *testing.T) {
 	cp := launchBouncingLogo(t, testCtx, timeout)
 	defer cp.Close()
 
-	// Wait for initial render and mock shell
-	snap := cp.Snapshot()
-	expect(t, testCtx, cp, snap, "Bouncing Logo Shell", 10*time.Second)
+	// Verify the banner is already visible after launch.
+	assert.Contains(t, cp.String(), "Bouncing Logo Shell", "mock shell banner should be visible")
 
 	// Wait a moment for bounces to accumulate (bounce speed is 1px/tick at 50ms)
 	time.Sleep(3 * time.Second)
@@ -164,19 +164,18 @@ func TestBouncingLogo_PauseResume(t *testing.T) {
 	cp := launchBouncingLogo(t, testCtx, timeout)
 	defer cp.Close()
 
-	// Wait for initial render
-	snap := cp.Snapshot()
-	expect(t, testCtx, cp, snap, "Bouncing Logo Shell", 10*time.Second)
+	// Verify the banner is already visible after launch.
+	assert.Contains(t, cp.String(), "Bouncing Logo Shell", "mock shell banner should be visible")
 
 	// Send ctrl+p to pause
 	sendKey(t, cp, "\x10")
-	snap = cp.Snapshot()
-	expect(t, testCtx, cp, snap, "Resume", 5*time.Second)
+	snap := cp.Snapshot()
+	expect(t, testCtx, cp, snap, "PAUSED", 5*time.Second)
 
 	// Send ctrl+p again to resume
 	sendKey(t, cp, "\x10")
 	snap = cp.Snapshot()
-	expect(t, testCtx, cp, snap, "Pause", 5*time.Second)
+	expect(t, testCtx, cp, snap, "RUNNING", 5*time.Second)
 }
 
 // TestBouncingLogo_KeyboardInput verifies keyboard input is forwarded to the
@@ -192,15 +191,14 @@ func TestBouncingLogo_KeyboardInput(t *testing.T) {
 	cp := launchBouncingLogo(t, testCtx, timeout)
 	defer cp.Close()
 
-	// Wait for mock shell prompt to appear in snapshot
-	snap := cp.Snapshot()
-	expect(t, testCtx, cp, snap, "Bouncing Logo Shell", 10*time.Second)
+	// Verify the banner is already visible after launch.
+	assert.Contains(t, cp.String(), "Bouncing Logo Shell", "mock shell banner should be visible")
 
 	// Type "hello" and press Enter — the mock shell echoes it
 	sendKey(t, cp, "hello\r")
 
 	// Wait for the echo response in the PTY snapshot
-	snap = cp.Snapshot()
+	snap := cp.Snapshot()
 	expect(t, testCtx, cp, snap, "Echo: hello", 5*time.Second)
 }
 
@@ -242,9 +240,8 @@ func TestBouncingLogo_ANSIPreview(t *testing.T) {
 	cp := launchBouncingLogo(t, testCtx, timeout)
 	defer cp.Close()
 
-	// Wait for snapshot to populate
-	snap := cp.Snapshot()
-	expect(t, testCtx, cp, snap, "Bouncing Logo Shell", 10*time.Second)
+	// Verify the banner is already visible after launch.
+	assert.Contains(t, cp.String(), "Bouncing Logo Shell", "mock shell banner should be visible")
 
 	// The buffer should contain ANSI escape sequences from the child PTY output
 	buffer := cp.String()
@@ -264,10 +261,6 @@ func TestBouncingLogo_NoObjectObject(t *testing.T) {
 	cp := launchBouncingLogo(t, testCtx, timeout)
 	defer cp.Close()
 
-	// Wait for dashboard to render
-	snap := cp.Snapshot()
-	expect(t, testCtx, cp, snap, "Bouncing Terminal", 15*time.Second)
-
 	// The buffer must NEVER contain [object Object]
 	buffer := cp.String()
 	assert.NotContains(t, buffer, "[object Object]", "view must never produce [object Object]")
@@ -285,9 +278,8 @@ func TestBouncingLogo_ResizePane(t *testing.T) {
 	cp := launchBouncingLogo(t, testCtx, timeout)
 	defer cp.Close()
 
-	// Wait for initial render
-	snap := cp.Snapshot()
-	expect(t, testCtx, cp, snap, "Bouncing Logo Shell", 10*time.Second)
+	// Verify the banner is already visible after launch.
+	assert.Contains(t, cp.String(), "Bouncing Logo Shell", "mock shell banner should be visible")
 
 	// Send ctrl+b to make pane bigger
 	sendKey(t, cp, "\x02")
@@ -326,15 +318,14 @@ func TestBouncingLogo_BareLettersForward(t *testing.T) {
 	cp := launchBouncingLogo(t, testCtx, timeout)
 	defer cp.Close()
 
-	// Wait for mock shell prompt
-	snap := cp.Snapshot()
-	expect(t, testCtx, cp, snap, "Bouncing Logo Shell", 10*time.Second)
+	// Verify the banner is already visible after launch.
+	assert.Contains(t, cp.String(), "Bouncing Logo Shell", "mock shell banner should be visible")
 
 	// Type "sbpq" — all four letters that WERE control keys before the fix.
 	// Each letter must be forwarded to the PTY and echoed by the mock shell.
 	sendKey(t, cp, "sbpq\r")
 
-	snap = cp.Snapshot()
+	snap := cp.Snapshot()
 	expect(t, testCtx, cp, snap, "Echo: sbpq", 5*time.Second)
 }
 
@@ -352,15 +343,14 @@ func TestBouncingLogo_SpacebarForward(t *testing.T) {
 	cp := launchBouncingLogo(t, testCtx, timeout)
 	defer cp.Close()
 
-	// Wait for mock shell prompt
-	snap := cp.Snapshot()
-	expect(t, testCtx, cp, snap, "Bouncing Logo Shell", 10*time.Second)
+	// Verify the banner is already visible after launch.
+	assert.Contains(t, cp.String(), "Bouncing Logo Shell", "mock shell banner should be visible")
 
 	// Type "echo hello world" with spaces — the spacebar must forward actual
 	// space characters, not the literal string "space".
 	sendKey(t, cp, "echo hello world\r")
 
-	snap = cp.Snapshot()
+	snap := cp.Snapshot()
 	expect(t, testCtx, cp, snap, "Echo: echo hello world", 5*time.Second)
 }
 
@@ -378,9 +368,8 @@ func TestBouncingLogo_ChordMode(t *testing.T) {
 	cp := launchBouncingLogo(t, testCtx, timeout)
 	defer cp.Close()
 
-	// Wait for mock shell prompt
-	snap := cp.Snapshot()
-	expect(t, testCtx, cp, snap, "Bouncing Logo Shell", 10*time.Second)
+	// Verify the banner is already visible after launch.
+	assert.Contains(t, cp.String(), "Bouncing Logo Shell", "mock shell banner should be visible")
 
 	// Enter chord mode: ctrl+x (0x18) then 'b' to make pane bigger
 	sendKey(t, cp, "\x18")
@@ -400,13 +389,13 @@ func TestBouncingLogo_ChordMode(t *testing.T) {
 	sendKey(t, cp, "p")
 	time.Sleep(300 * time.Millisecond)
 	buffer = cp.String()
-	assert.Contains(t, buffer, "Resume", "chord ctrl+x p should toggle pause")
+	assert.Contains(t, buffer, "PAUSED", "chord ctrl+x p should toggle pause")
 
 	// Resume with direct ctrl+p (not chord)
 	sendKey(t, cp, "\x10")
 	time.Sleep(300 * time.Millisecond)
 	buffer = cp.String()
-	assert.Contains(t, buffer, "Pause", "ctrl+p should toggle pause back")
+	assert.Contains(t, buffer, "RUNNING", "ctrl+p should toggle pause back")
 
 	// Verify no errors
 	assert.NotContains(t, buffer, "panic")

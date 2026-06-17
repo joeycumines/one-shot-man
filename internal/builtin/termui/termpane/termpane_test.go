@@ -528,6 +528,136 @@ func TestTermpane_BoundsRectAccessors(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// update() / view()
+// ---------------------------------------------------------------------------
+
+func TestTermpane_Update_View(t *testing.T) {
+	skipSlow(t)
+
+	rt, _, _, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	script := `
+		const tp = require('osm:termui/termpane');
+		const pane = tp.termpane({
+			manager: _mgr,
+			sessionId: _sessionID,
+			bounds: {x: 0, y: 0, width: 80, height: 24}
+		});
+
+		// view() should return content/gen/cursor even for an empty session.
+		const v1 = pane.view();
+		if (typeof v1.content !== 'string') throw new Error('view should return string content');
+		if (typeof v1.gen !== 'number') throw new Error('view should return numeric gen');
+
+		// update() should return [pane, cmd].
+		const res = pane.update({type: 'WindowSize', width: 40, height: 12});
+		if (!Array.isArray(res)) throw new Error('update should return array');
+		if (res[0] !== pane) throw new Error('update should return same pane');
+		if (res[1] !== null && typeof res[1] !== 'object') throw new Error('update cmd should be null or object');
+
+		// Bounds are updated by setBounds; WindowSize resizes the PTY.
+		pane.setBounds({x: 0, y: 0, width: 40, height: 12});
+		const b = pane.bounds();
+		if (b.width !== 40) throw new Error('width should be 40 after setBounds, got ' + b.width);
+		if (b.height !== 12) throw new Error('height should be 12 after setBounds, got ' + b.height);
+
+		'ok';
+	`
+	val, err := rt.RunString(script)
+	if err != nil {
+		t.Fatalf("script error: %v", err)
+	}
+	if val.Export() != "ok" {
+		t.Errorf("unexpected result: %v", val.Export())
+	}
+}
+
+func TestTermpane_Update_ForwardsKey(t *testing.T) {
+	skipSlow(t)
+
+	mgr, mgrCleanup := startManager(t, termmux.WithTermSize(24, 80))
+	defer mgrCleanup()
+
+	inputs := make(chan []byte, 16)
+	session := &recordingSession{
+		doneCh:   make(chan struct{}),
+		readerCh: make(chan []byte, 16),
+		inputs:   inputs,
+	}
+	sessionID, _ := mgr.Register(session, termmux.SessionTarget{Name: "test"})
+
+	rt := goja.New()
+	mgrObj := wrapManager(rt, mgr)
+	rt.Set("_mgr", mgrObj)
+	rt.Set("_sessionID", uint64(sessionID))
+
+	rt.Set("require", func(call goja.FunctionCall) goja.Value {
+		arg := call.Argument(0).String()
+		switch arg {
+		case "osm:termui/termpane":
+			mod := rt.NewObject()
+			_ = mod.Set("exports", rt.NewObject())
+			Require(rt, mod)
+			return mod.Get("exports")
+		}
+		return goja.Undefined()
+	})
+
+	script := `
+		const tp = require('osm:termui/termpane');
+		const pane = tp.termpane({
+			manager: _mgr,
+			sessionId: _sessionID,
+			bounds: {x: 0, y: 0, width: 80, height: 24}
+		});
+		pane.update({type: 'Key', key: 'a', text: 'a'});
+		'ok';
+	`
+	val, err := rt.RunString(script)
+	if err != nil {
+		t.Fatalf("script error: %v", err)
+	}
+	if val.Export() != "ok" {
+		t.Errorf("unexpected result: %v", val.Export())
+	}
+
+	select {
+	case got := <-inputs:
+		if string(got) != "a" {
+			t.Errorf("expected key 'a', got %q", string(got))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for forwarded key")
+	}
+}
+
+// recordingSession is a controllable session that records all Write calls.
+type recordingSession struct {
+	doneCh   chan struct{}
+	readerCh chan []byte
+	inputs   chan<- []byte
+}
+
+func (s *recordingSession) Done() <-chan struct{} { return s.doneCh }
+func (s *recordingSession) Reader() <-chan []byte { return s.readerCh }
+func (s *recordingSession) Resize(int, int) error { return nil }
+func (s *recordingSession) Close() error {
+	select {
+	case <-s.doneCh:
+	default:
+		close(s.doneCh)
+	}
+	return nil
+}
+func (s *recordingSession) Write(p []byte) (int, error) {
+	if s.inputs != nil {
+		s.inputs <- append([]byte(nil), p...)
+	}
+	return len(p), nil
+}
+
+// ---------------------------------------------------------------------------
 // Go interop: UnwrapSessionManager
 // ---------------------------------------------------------------------------
 

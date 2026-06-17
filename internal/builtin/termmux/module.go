@@ -864,6 +864,8 @@ func newSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 // Returns { session, mgr, sid } where session is the wrapped CaptureSession,
 // mgr is the wrapped SessionManager, and sid is the session ID.
 func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
+	ctx = context.WithoutCancel(ctx)
+
 	if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
 		panic(runtime.NewTypeError("newBoundedSession: options object is required"))
 	}

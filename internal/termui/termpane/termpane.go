@@ -309,6 +309,32 @@ func mouseButtonToTermmux(b tea.MouseButton) termmux.MouseButton {
 	}
 }
 
+func (m *Model) viewContentAndCursor(contentFunc func() string) tea.View {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.snap == nil {
+		return tea.NewView("")
+	}
+
+	content := contentFunc()
+
+	cursorRow := m.snap.CursorRow + m.bounds.Position.Y
+	cursorCol := m.snap.CursorCol + m.bounds.Position.X
+
+	cursorVisible := cursorRow >= m.bounds.Position.Y &&
+		cursorRow < m.bounds.Position.Y+m.bounds.Size.Height &&
+		cursorCol >= m.bounds.Position.X &&
+		cursorCol < m.bounds.Position.X+m.bounds.Size.Width
+
+	v := tea.NewView(content)
+	if cursorVisible {
+		v.Cursor = tea.NewCursor(cursorCol, cursorRow)
+	}
+
+	return v
+}
+
 // View implements tea.Model. It renders the terminal session's screen
 // content into a tea.View with generation-checked caching.
 //
@@ -338,28 +364,30 @@ func (m *Model) View() tea.View {
 		content = m.snap.GetANSI()
 	}
 
-	// Build cursor position offset by bounds.
-	cursorRow := m.snap.CursorRow + m.bounds.Position.Y
-	cursorCol := m.snap.CursorCol + m.bounds.Position.X
-
-	// Determine cursor visibility: cursor is visible only if it falls
-	// within the pane's bounds.
-	cursorVisible := cursorRow >= m.bounds.Position.Y &&
-		cursorRow < m.bounds.Position.Y+m.bounds.Size.Height &&
-		cursorCol >= m.bounds.Position.X &&
-		cursorCol < m.bounds.Position.X+m.bounds.Size.Width
-
-	v := tea.NewView(content)
-
-	if cursorVisible {
-		v.Cursor = tea.NewCursor(cursorCol, cursorRow)
-	}
+	v := m.viewContentAndCursor(func() string { return content })
 
 	// Cache the result.
 	m.cachedView = content
 	m.cachedGen = m.snap.Gen
 
 	return v
+}
+
+// ANSIView returns a tea.View suitable for embedding the terminal as a
+// compositor layer. The content contains SGR escape sequences but no absolute
+// cursor-positioning (CUP) sequences, so it can be composited at arbitrary
+// coordinates. The cursor is positioned relative to the pane's bounds.
+func (m *Model) ANSIView() tea.View {
+	return m.viewContentAndCursor(func() string {
+		if m.snap == nil {
+			return ""
+		}
+		content := m.snap.GetANSI()
+		if content == "" {
+			content = m.snap.GetFullScreen()
+		}
+		return content
+	})
 }
 
 // Close unsubscribes from the EventBus, signals the bridge goroutine to
@@ -410,4 +438,30 @@ func (m *Model) Bounds() coordinate.Rect {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.bounds
+}
+
+// RefreshSnapshot fetches the latest screen snapshot from the session manager
+// and updates the cached application cursor/keypad flags. It is safe to call
+// from outside the BubbleTea Update loop (for example, from a JS wrapper that
+// composes the pane as a sub-component).
+func (m *Model) RefreshSnapshot() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.snap = m.manager.Snapshot(m.sessionID)
+	if m.snap != nil {
+		m.appCursor = m.snap.ApplicationCursor
+		m.appKeypad = m.snap.KeypadApplication
+	}
+}
+
+// SnapshotGen returns the generation of the current snapshot. It is useful for
+// callers that want to avoid re-rendering when the screen has not changed.
+func (m *Model) SnapshotGen() uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.snap == nil {
+		return 0
+	}
+	return m.snap.Gen
 }

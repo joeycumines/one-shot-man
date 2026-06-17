@@ -117,15 +117,14 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 	cmd.Stdout = tty
 	cmd.Stderr = tty
 
-	// Create a new process group so that signals (especially SIGKILL)
-	// can be delivered to the entire process tree, not just the parent.
-	// This prevents orphaned child processes when force-killing.
-	// Set Ctty so the child has a controlling terminal — this is required
-	// for job control (Ctrl+Z, fg/bg) and prevents SIGTTOU when the child
-	// calls tcsetattr on its terminal.
+	// Run the child in a new session and make the slave PTY its controlling
+	// terminal. This places the child in the foreground process group of its
+	// own terminal without relying on the parent to call tcsetpgrp, which may
+	// fail when the parent is not the session leader (e.g. under termtest).
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-		Ctty:    int(tty.Fd()),
+		Setsid:  true,
+		Setctty: true,
+		Ctty:    0,
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -133,15 +132,6 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 		tty.Close()
 		return nil, fmt.Errorf("pty: failed to start command %q: %w", cfg.Command, err)
 	}
-
-	// Make the child's process group the foreground process group of the
-	// terminal. This is required for job control — without it, the child
-	// is in a background process group and will receive SIGTTOU when it
-	// tries to call tcsetattr (e.g., setting raw mode for vim/less).
-	// We must do this after Start() because the child's PID is not
-	// available before then, and the child's process group is not
-	// established until after exec.
-	setForegroundGroup(int(tty.Fd()), cmd.Process.Pid)
 
 	handle := &unixProcessHandle{cmd: cmd}
 	done := make(chan struct{})
@@ -299,23 +289,4 @@ func clearTOSTOP(fd int) {
 	}
 	termios.Lflag &^= unix.TOSTOP
 	_ = unix.IoctlSetTermios(fd, tcsets, termios)
-}
-
-// setForegroundGroup makes the given pid's process group the foreground
-// process group of the terminal referred to by fd. This is a no-op if
-// the call fails — the child may still work without being the foreground
-// group, but job control (Ctrl+Z, fg/bg) will not function correctly.
-func setForegroundGroup(fd, pid int) {
-	// Ensure the process group is established before we try to set it
-	// as the foreground group. Setpgid in SysProcAttr requests creation
-	// of a new group, but there's a race between the child calling setpgid
-	// in its pre-exec path and the parent calling tcsetpgrp here.
-	_ = unix.Setpgid(pid, pid)
-	// Get the process group ID for the child. If setpgid succeeded, this
-	// is the child's own PID (since we set pgid = pid above).
-	pgid, err := unix.Getpgid(pid)
-	if err != nil {
-		pgid = pid // fallback: assume pgid == pid
-	}
-	_ = unix.IoctlSetPointerInt(fd, tiocspgrp, pgid)
 }

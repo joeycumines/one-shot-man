@@ -169,6 +169,18 @@ func createCompositorObject(runtime *goja.Runtime, c *compositor.Compositor) goj
 		return obj
 	})
 
+	// updatePaneBounds({id, x, y, width, height}) — chainable
+	_ = obj.Set("updatePaneBounds", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("updatePaneBounds requires an object argument {id, x, y, width, height}"))
+		}
+		cfg := call.Argument(0).ToObject(runtime)
+		id := cfg.Get("id").String()
+		bounds := extractBounds(cfg)
+		c.UpdatePaneBounds(id, bounds)
+		return obj
+	})
+
 	// removePane(id) — chainable
 	_ = obj.Set("removePane", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
@@ -218,6 +230,18 @@ func createCompositorObject(runtime *goja.Runtime, c *compositor.Compositor) goj
 			panic(runtime.NewTypeError("updateChrome requires (id, content) or an object argument {id, content}"))
 		}
 		c.UpdateChrome(id, content)
+		return obj
+	})
+
+	// updateChromeBounds({id, x, y, width, height}) — chainable
+	_ = obj.Set("updateChromeBounds", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("updateChromeBounds requires an object argument {id, x, y, width, height}"))
+		}
+		cfg := call.Argument(0).ToObject(runtime)
+		id := cfg.Get("id").String()
+		bounds := extractBounds(cfg)
+		c.UpdateChromeBounds(id, bounds)
 		return obj
 	})
 

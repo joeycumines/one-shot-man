@@ -42,7 +42,7 @@
     {
       "name": "remove",
       "type": "contextManager",
-      "description": "Remove a context item"
+      "description": "Remove context items by id"
     },
     {
       "name": "show",

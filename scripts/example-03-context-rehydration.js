@@ -43,7 +43,7 @@ tui.registerMode({
         output.print("  5. Delete one of the test files");
         output.print("  6. Restart this script");
         output.print("  7. Run: list (verify restoration with missing marker)");
-        output.print("  8. Run: remove <id> (verify remove works)");
+        output.print("  8. Run: remove <id> [id ...] (verify remove works)");
         output.print("  9. Run: test-txtar (verify toTxtar works after remove)");
         output.print("");
     },

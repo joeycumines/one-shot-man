@@ -259,6 +259,10 @@ func TestGoalScript_MoraleImprover_ContextManagerCommands(t *testing.T) {
 	if err := engine.GetTUIManager().ExecuteCommand("note", []string{"This", "is", "a", "test", "note"}); err != nil {
 		t.Fatalf("note command failed: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("note", []string{"Second", "test", "note"}); err != nil {
+		t.Fatalf("second note command failed: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
+	}
 
 	// Test list command
 	stdout.Reset()
@@ -276,10 +280,14 @@ func TestGoalScript_MoraleImprover_ContextManagerCommands(t *testing.T) {
 		t.Fatalf("diff command failed: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
 
-	// Test remove command on the note we added
+	// Test remove command on the notes we added
 	stdout.Reset()
-	if err := engine.GetTUIManager().ExecuteCommand("remove", []string{"1"}); err != nil {
+	if err := engine.GetTUIManager().ExecuteCommand("remove", []string{"1", "2"}); err != nil {
 		t.Fatalf("remove command failed: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
+	}
+	removeOut := stdout.String()
+	if !strings.Contains(removeOut, "Removed [1]") || !strings.Contains(removeOut, "Removed [2]") {
+		t.Errorf("expected multi-id remove confirmations, got:\n%s", removeOut)
 	}
 
 	// Verify removal
@@ -288,9 +296,9 @@ func TestGoalScript_MoraleImprover_ContextManagerCommands(t *testing.T) {
 		t.Fatalf("list command after removal failed: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
 	listOut2 := stdout.String()
-	// After removal, list should be empty or not contain the removed item
-	if strings.Contains(listOut2, "This is a test note") {
-		t.Errorf("expected note to be removed from list, got:\n%s", listOut2)
+	// After removal, list should not contain either removed note
+	if strings.Contains(listOut2, "This is a test note") || strings.Contains(listOut2, "Second test note") {
+		t.Errorf("expected both notes to be removed from list, got:\n%s", listOut2)
 	}
 }
 

@@ -95,7 +95,7 @@ func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
 		return newSessionManager(ctx, adapter, runtime, call)
 	})
 	_ = exports.Set("newBoundedSession", func(call goja.FunctionCall) goja.Value {
-		return newBoundedSession(ctx, adapter, runtime, call)
+		return newBoundedSession(ctx, adapter, runtime, mgr, call)
 	})
 	_ = exports.Set("newCaptureSession", func(call goja.FunctionCall) goja.Value {
 		return newCaptureSession(ctx, runtime, call)

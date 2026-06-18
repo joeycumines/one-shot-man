@@ -476,7 +476,7 @@ function buildCommands(state) {
                     const lineCnt = _lineCount(text);
                     const byteCnt = _byteCount(text);
                     output.print(
-                        "\u2502 " + _fmt.formatNum(tokCnt) + " tokens \u00b7 " +
+                        label + " copied to clipboard. \u2502 " + _fmt.formatNum(tokCnt) + " tokens \u00b7 " +
                         lineCnt + " lines \u00b7 " + _fmt.formatBytes(byteCnt) + " \u2502"
                     );
                 } catch (e) {

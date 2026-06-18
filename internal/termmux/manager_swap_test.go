@@ -14,19 +14,19 @@ func TestSessionManager_SwapPanes_SameWindow(t *testing.T) {
 	defer cleanup()
 
 	s1 := newControllableSession()
-	sid1, err := m.Register(s1, SessionTarget{Name: "one", Kind: SessionKindPTY})
+	p1, err := m.NewPane(s1, SessionTarget{Name: "one", Kind: SessionKindPTY}, SplitRight)
 	if err != nil {
-		t.Fatalf("Register s1: %v", err)
+		t.Fatalf("NewPane s1: %v", err)
 	}
 
 	s2 := newControllableSession()
-	sid2, err := m.Register(s2, SessionTarget{Name: "two", Kind: SessionKindPTY})
+	p2, err := m.NewPane(s2, SessionTarget{Name: "two", Kind: SessionKindPTY}, SplitDown)
 	if err != nil {
-		t.Fatalf("Register s2: %v", err)
+		t.Fatalf("NewPane s2: %v", err)
 	}
 
-	p1 := m.paneMgr.PaneIDForSession(sid1)
-	p2 := m.paneMgr.PaneIDForSession(sid2)
+	sid1 := m.paneMgr.panes[p1].SessionID
+	sid2 := m.paneMgr.panes[p2].SessionID
 
 	// Distinguish the bindings so swapping is observable.
 	m.paneMgr.SetPaneRemainOnExit(p1, true)
@@ -76,12 +76,16 @@ func TestSessionManager_SwapPanes_PreservesActiveID(t *testing.T) {
 	defer cleanup()
 
 	s1 := newControllableSession()
-	sid1, _ := m.Register(s1, SessionTarget{Name: "one", Kind: SessionKindPTY})
+	p1, err := m.NewPane(s1, SessionTarget{Name: "one", Kind: SessionKindPTY}, SplitRight)
+	if err != nil {
+		t.Fatalf("NewPane s1: %v", err)
+	}
 	s2 := newControllableSession()
-	sid2, _ := m.Register(s2, SessionTarget{Name: "two", Kind: SessionKindPTY})
-
-	p1 := m.paneMgr.PaneIDForSession(sid1)
-	p2 := m.paneMgr.PaneIDForSession(sid2)
+	p2, err := m.NewPane(s2, SessionTarget{Name: "two", Kind: SessionKindPTY}, SplitDown)
+	if err != nil {
+		t.Fatalf("NewPane s2: %v", err)
+	}
+	sid1 := m.paneMgr.panes[p1].SessionID
 
 	if err := m.FocusPane(p2); err != nil {
 		t.Fatalf("FocusPane: %v", err)
@@ -112,38 +116,39 @@ func TestSessionManager_SwapPanes_WindowPanesReflectsSwap(t *testing.T) {
 	defer cleanup()
 
 	w1, _ := m.NewWindow("w1")
+	if err := m.SetLayoutMode(w1, LayoutHorizontal); err != nil {
+		t.Fatalf("SetLayoutMode: %v", err)
+	}
 	s1 := newControllableSession()
 	p1, _ := m.AddPaneToWindow(s1, SessionTarget{Name: "a", Kind: SessionKindPTY}, w1, SplitRight)
-
-	w2, _ := m.NewWindow("w2")
 	s2 := newControllableSession()
-	p2, _ := m.AddPaneToWindow(s2, SessionTarget{Name: "b", Kind: SessionKindPTY}, w2, SplitRight)
+	p2, _ := m.AddPaneToWindow(s2, SessionTarget{Name: "b", Kind: SessionKindPTY}, w1, SplitRight)
 
 	sid1 := windowPaneSession(m, w1, p1)
-	sid2 := windowPaneSession(m, w2, p2)
+	sid2 := windowPaneSession(m, w1, p2)
 
 	if err := m.SwapPanes(p1, p2); err != nil {
 		t.Fatalf("SwapPanes: %v", err)
 	}
 
 	wp := m.WindowPanes()
-	if len(wp[w1]) != 1 {
-		t.Fatalf("window %d pane count = %d, want 1", w1, len(wp[w1]))
+	if len(wp[w1]) != 2 {
+		t.Fatalf("window %d pane count = %d, want 2", w1, len(wp[w1]))
 	}
-	if len(wp[w2]) != 1 {
-		t.Fatalf("window %d pane count = %d, want 1", w2, len(wp[w2]))
+	var got1, got2 Pane
+	for _, p := range wp[w1] {
+		if p.ID == p1 {
+			got1 = p
+		}
+		if p.ID == p2 {
+			got2 = p
+		}
 	}
-	if wp[w1][0].SessionID != sid2 {
-		t.Errorf("window %d pane session = %d, want %d", w1, wp[w1][0].SessionID, sid2)
+	if got1.SessionID != sid2 {
+		t.Errorf("pane %d session = %d, want %d", p1, got1.SessionID, sid2)
 	}
-	if wp[w2][0].SessionID != sid1 {
-		t.Errorf("window %d pane session = %d, want %d", w2, wp[w2][0].SessionID, sid1)
-	}
-	if wp[w1][0].ID != p1 {
-		t.Errorf("window %d pane ID changed to %d, want %d", w1, wp[w1][0].ID, p1)
-	}
-	if wp[w2][0].ID != p2 {
-		t.Errorf("window %d pane ID changed to %d, want %d", w2, wp[w2][0].ID, p2)
+	if got2.SessionID != sid1 {
+		t.Errorf("pane %d session = %d, want %d", p2, got2.SessionID, sid1)
 	}
 }
 
@@ -156,11 +161,13 @@ func TestSessionManager_SwapPanes_EmitsWindowUpdated(t *testing.T) {
 	defer cleanup()
 
 	w1, _ := m.NewWindow("w1")
+	if err := m.SetLayoutMode(w1, LayoutHorizontal); err != nil {
+		t.Fatalf("SetLayoutMode: %v", err)
+	}
 	s1 := newControllableSession()
 	p1, _ := m.AddPaneToWindow(s1, SessionTarget{Name: "a", Kind: SessionKindPTY}, w1, SplitRight)
-	w2, _ := m.NewWindow("w2")
 	s2 := newControllableSession()
-	p2, _ := m.AddPaneToWindow(s2, SessionTarget{Name: "b", Kind: SessionKindPTY}, w2, SplitRight)
+	p2, _ := m.AddPaneToWindow(s2, SessionTarget{Name: "b", Kind: SessionKindPTY}, w1, SplitRight)
 
 	subID, events := m.Subscribe(32)
 	defer m.Unsubscribe(subID)
@@ -199,13 +206,15 @@ func TestSessionManager_SwapPanes_ExitedState(t *testing.T) {
 	defer cleanup()
 
 	s1 := newControllableSession()
-	sid1, _ := m.Register(s1, SessionTarget{Name: "one", Kind: SessionKindPTY})
+	p1, err := m.NewPane(s1, SessionTarget{Name: "one", Kind: SessionKindPTY}, SplitRight)
+	if err != nil {
+		t.Fatalf("NewPane s1: %v", err)
+	}
 	s2 := newControllableSession()
-	sid2, _ := m.Register(s2, SessionTarget{Name: "two", Kind: SessionKindPTY})
-
-	p1 := m.paneMgr.PaneIDForSession(sid1)
-	p2 := m.paneMgr.PaneIDForSession(sid2)
-
+	p2, err := m.NewPane(s2, SessionTarget{Name: "two", Kind: SessionKindPTY}, SplitDown)
+	if err != nil {
+		t.Fatalf("NewPane s2: %v", err)
+	}
 	m.paneMgr.MarkPaneExited(p2)
 	m.paneMgr.SetPaneRemainOnExit(p1, true)
 
@@ -233,13 +242,15 @@ func TestSessionManager_SwapPanes_VTermReference(t *testing.T) {
 	defer cleanup()
 
 	s1 := newControllableSession()
-	sid1, _ := m.Register(s1, SessionTarget{Name: "one", Kind: SessionKindPTY})
+	p1, err := m.NewPane(s1, SessionTarget{Name: "one", Kind: SessionKindPTY}, SplitRight)
+	if err != nil {
+		t.Fatalf("NewPane s1: %v", err)
+	}
 	s2 := newControllableSession()
-	sid2, _ := m.Register(s2, SessionTarget{Name: "two", Kind: SessionKindPTY})
-
-	p1 := m.paneMgr.PaneIDForSession(sid1)
-	p2 := m.paneMgr.PaneIDForSession(sid2)
-
+	p2, err := m.NewPane(s2, SessionTarget{Name: "two", Kind: SessionKindPTY}, SplitDown)
+	if err != nil {
+		t.Fatalf("NewPane s2: %v", err)
+	}
 	v1 := m.paneMgr.panes[p1].VTerm
 	v2 := m.paneMgr.panes[p2].VTerm
 

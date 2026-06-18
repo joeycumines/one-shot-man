@@ -122,28 +122,28 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 		},
 	})
 
-	// Mock ClaudeCodeExecutor.
+	// Mock AgentCodeExecutor.
 	mockSetup := `
 		prSplit.SEND_TEXT_CHUNK_BYTES = 1000000;
 		var _mockSentPrompts = [];
-		ClaudeCodeExecutor = function(config) {
+		AgentCodeExecutor = function(config) {
 			this.config = config;
-			this.resolved = { command: 'mock-claude' };
+			this.resolved = { command: 'mock-agent' };
 			this.handle = {
 				send: function(text) { _mockSentPrompts.push(text); },
 				isAlive: function() { return true; }
 			};
 		};
-		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+		AgentCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		AgentCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
+		AgentCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-session-bench' };
 		};
-		ClaudeCodeExecutor.prototype.close = function() {};
-		ClaudeCodeExecutor.prototype.kill = function() {};
+		AgentCodeExecutor.prototype.close = function() {};
+		AgentCodeExecutor.prototype.kill = function() {};
 	`
 	if _, err := tp.EvalJS(mockSetup); err != nil {
-		t.Fatalf("Failed to inject mock ClaudeCodeExecutor: %v", err)
+		t.Fatalf("Failed to inject mock AgentCodeExecutor: %v", err)
 	}
 
 	// Set up MCP callback injection.
@@ -189,11 +189,11 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 	var report struct {
 		Error  string `json:"error"`
 		Report struct {
-			Mode               string `json:"mode"`
-			Error              string `json:"error"`
-			ClaudeInteractions int    `json:"claudeInteractions"`
-			FallbackUsed       bool   `json:"fallbackUsed"`
-			Steps              []struct {
+			Mode              string `json:"mode"`
+			Error             string `json:"error"`
+			AgentInteractions int    `json:"agentInteractions"`
+			FallbackUsed      bool   `json:"fallbackUsed"`
+			Steps             []struct {
 				Name      string `json:"name"`
 				ElapsedMs int    `json:"elapsedMs"`
 				Error     string `json:"error"`

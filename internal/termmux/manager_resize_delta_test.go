@@ -13,6 +13,24 @@ func paneGeometryByID(panes []Pane, id PaneID) (PaneGeometry, bool) {
 	return PaneGeometry{}, false
 }
 
+// newHalfHeightPane creates a root pane and then splits it horizontally,
+// returning the bottom half pane and its controllable session. The resulting
+// pane is 12 rows by 80 columns in a 24x80 terminal, matching the geometry
+// assumptions in the ResizePaneDelta tests.
+func newHalfHeightPane(t *testing.T, m *SessionManager) (*controllableSession, PaneID) {
+	t.Helper()
+	_, err := m.NewPane(newControllableSession(), SessionTarget{Name: "root", Kind: SessionKindPTY}, SplitRight)
+	if err != nil {
+		t.Fatalf("root pane: %v", err)
+	}
+	s := newControllableSession()
+	p, err := m.NewPane(s, SessionTarget{Name: "p", Kind: SessionKindPTY}, SplitDown)
+	if err != nil {
+		t.Fatalf("NewPane: %v", err)
+	}
+	return s, p
+}
+
 func TestSessionManager_ResizePaneDelta_RightGrowsWidth(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
@@ -21,11 +39,7 @@ func TestSessionManager_ResizePaneDelta_RightGrowsWidth(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	s := newControllableSession()
-	p, err := m.NewPane(s, SessionTarget{Name: "p", Kind: SessionKindPTY}, SplitRight)
-	if err != nil {
-		t.Fatalf("NewPane: %v", err)
-	}
+	s, p := newHalfHeightPane(t, m)
 
 	if err := m.ResizePaneDelta(p, "right", 5); err != nil {
 		t.Fatalf("ResizePaneDelta: %v", err)
@@ -60,11 +74,7 @@ func TestSessionManager_ResizePaneDelta_LeftShrinksWidth(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	s := newControllableSession()
-	p, err := m.NewPane(s, SessionTarget{Name: "p", Kind: SessionKindPTY}, SplitRight)
-	if err != nil {
-		t.Fatalf("NewPane: %v", err)
-	}
+	s, p := newHalfHeightPane(t, m)
 
 	if err := m.ResizePaneDelta(p, "left", 5); err != nil {
 		t.Fatalf("ResizePaneDelta: %v", err)
@@ -96,11 +106,7 @@ func TestSessionManager_ResizePaneDelta_DownGrowsHeight(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	s := newControllableSession()
-	p, err := m.NewPane(s, SessionTarget{Name: "p", Kind: SessionKindPTY}, SplitRight)
-	if err != nil {
-		t.Fatalf("NewPane: %v", err)
-	}
+	s, p := newHalfHeightPane(t, m)
 
 	if err := m.ResizePaneDelta(p, "down", 5); err != nil {
 		t.Fatalf("ResizePaneDelta: %v", err)
@@ -135,11 +141,7 @@ func TestSessionManager_ResizePaneDelta_UpShrinksHeight(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	s := newControllableSession()
-	p, err := m.NewPane(s, SessionTarget{Name: "p", Kind: SessionKindPTY}, SplitRight)
-	if err != nil {
-		t.Fatalf("NewPane: %v", err)
-	}
+	s, p := newHalfHeightPane(t, m)
 
 	if err := m.ResizePaneDelta(p, "up", 5); err != nil {
 		t.Fatalf("ResizePaneDelta: %v", err)
@@ -171,11 +173,7 @@ func TestSessionManager_ResizePaneDelta_ClampsAtMinimum(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	s := newControllableSession()
-	p, err := m.NewPane(s, SessionTarget{Name: "p", Kind: SessionKindPTY}, SplitRight)
-	if err != nil {
-		t.Fatalf("NewPane: %v", err)
-	}
+	_, p := newHalfHeightPane(t, m)
 
 	if err := m.ResizePaneDelta(p, "up", 100); err != nil {
 		t.Fatalf("ResizePaneDelta: %v", err)
@@ -210,13 +208,9 @@ func TestSessionManager_ResizePaneDelta_InvalidDirection(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	s := newControllableSession()
-	p, err := m.NewPane(s, SessionTarget{Name: "p", Kind: SessionKindPTY}, SplitRight)
-	if err != nil {
-		t.Fatalf("NewPane: %v", err)
-	}
+	_, p := newHalfHeightPane(t, m)
 
-	err = m.ResizePaneDelta(p, "diagonal", 5)
+	err := m.ResizePaneDelta(p, "diagonal", 5)
 	if err == nil {
 		t.Fatal("expected error for invalid direction")
 	}
@@ -244,11 +238,7 @@ func TestSessionManager_ResizePaneDelta_EmitsWindowUpdated(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	s := newControllableSession()
-	p, err := m.NewPane(s, SessionTarget{Name: "p", Kind: SessionKindPTY}, SplitRight)
-	if err != nil {
-		t.Fatalf("NewPane: %v", err)
-	}
+	_, p := newHalfHeightPane(t, m)
 
 	subID, events := m.Subscribe(16)
 	defer m.Unsubscribe(subID)

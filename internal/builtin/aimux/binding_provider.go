@@ -1,0 +1,395 @@
+package aimux
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/dop251/goja"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
+
+	"github.com/joeycumines/one-shot-man/internal/aimuxcore"
+)
+
+// promisifyFn matches adapter.Loop().Promisify. It runs blocking work in a
+// background goroutine, keeps the Goja event loop alive until completion, and
+// resolves/rejects the returned promise on the loop goroutine.
+type promisifyFn func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
+
+// registerProviderBindings wires the generic provider/registry/handle JavaScript API.
+//
+// The surface is intentionally provider-agnostic. Consumers (e.g. pr-split) that
+// need provider-specific defaults or model-menu utilities must implement those
+// helpers in JavaScript on top of processProvider and the parser/registry APIs.
+func registerProviderBindings(_ context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, exports *goja.Object) {
+	promisify := adapter.Loop().Promisify
+	_ = exports.Set("newRegistry", func() *goja.Object {
+		return newRegistryObject(runtime, adapter, promisify, aimuxcore.NewRegistry())
+	})
+
+	_ = exports.Set("processProvider", func(opts goja.Value) *goja.Object {
+		cfg := providerConfigFromJS(runtime, opts)
+		return newProviderObject(runtime, adapter, promisify, aimuxcore.NewProcessProvider(cfg.name, cfg.command, cfg.defaultArgs, cfg.caps))
+	})
+}
+
+type providerConfig struct {
+	name        string
+	command     string
+	defaultArgs []string
+	caps        aimuxcore.ProviderCapabilities
+}
+
+func providerConfigFromJS(runtime *goja.Runtime, v goja.Value) providerConfig {
+	cfg := providerConfig{name: "process"}
+	if isAbsent(v) {
+		return cfg
+	}
+	return providerConfigFromObject(runtime, v.(*goja.Object))
+}
+
+func providerConfigFromObject(runtime *goja.Runtime, obj *goja.Object) providerConfig {
+	cfg := providerConfig{name: gojaString(obj, "name")}
+	if cfg.name == "" {
+		cfg.name = "process"
+	}
+	cfg.command = gojaString(obj, "command")
+	cfg.defaultArgs = gojaStringSlice(runtime, obj, "defaultArgs")
+	cfg.caps = capabilitiesFromJS(runtime, obj)
+	return cfg
+}
+
+func capabilitiesFromJS(runtime *goja.Runtime, obj *goja.Object) aimuxcore.ProviderCapabilities {
+	var caps aimuxcore.ProviderCapabilities
+	if v := obj.Get("capabilities"); !isAbsent(v) {
+		_ = runtime.ExportTo(v, &caps)
+	}
+	caps.MCP = gojaBoolDefault(obj, "mcp", caps.MCP)
+	caps.Streaming = gojaBoolDefault(obj, "streaming", caps.Streaming)
+	caps.MultiTurn = gojaBoolDefault(obj, "multiTurn", caps.MultiTurn)
+	caps.Resizable = gojaBoolDefault(obj, "resizable", caps.Resizable)
+	return caps
+}
+
+func newProviderObject(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify promisifyFn, p *aimuxcore.ProcessProvider) *goja.Object {
+	obj := runtime.NewObject()
+	_ = obj.Set("_provider", runtime.ToValue(p))
+	_ = obj.Set("name", func() string { return p.Name() })
+	_ = obj.Set("capabilities", func() *goja.Object {
+		capsObj := runtime.NewObject()
+		c := p.Capabilities()
+		_ = capsObj.Set("mcp", c.MCP)
+		_ = capsObj.Set("streaming", c.Streaming)
+		_ = capsObj.Set("multiTurn", c.MultiTurn)
+		_ = capsObj.Set("resizable", c.Resizable)
+		return capsObj
+	})
+	_ = obj.Set("spawn", func(opts goja.Value) *goja.Object {
+		return spawnProvider(runtime, adapter, promisify, p, opts)
+	})
+	return obj
+}
+
+func newRegistryObject(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify promisifyFn, r *aimuxcore.Registry) *goja.Object {
+	obj := runtime.NewObject()
+	_ = obj.Set("register", func(p *goja.Object) error {
+		if p == nil {
+			return fmt.Errorf("register: provider is nil")
+		}
+		prov, err := providerFromJS(runtime, p)
+		if err != nil {
+			return err
+		}
+		return r.Register(prov)
+	})
+	_ = obj.Set("get", func(name string) goja.Value {
+		p, err := r.Get(name)
+		if err != nil {
+			return goja.Null()
+		}
+		return newProviderObject(runtime, adapter, promisify, p.(*aimuxcore.ProcessProvider))
+	})
+	_ = obj.Set("list", func() []string {
+		return r.List()
+	})
+	_ = obj.Set("spawn", func(providerName string, opts goja.Value) *goja.Object {
+		p, err := r.Get(providerName)
+		if err != nil {
+			panic(runtime.NewTypeError(err.Error()))
+		}
+		pp := p.(*aimuxcore.ProcessProvider)
+		if pp == nil {
+			panic(runtime.NewTypeError("provider not found"))
+		}
+		return spawnProvider(runtime, adapter, promisify, pp, opts)
+	})
+	return obj
+}
+
+func spawnProvider(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify promisifyFn, p *aimuxcore.ProcessProvider, opts goja.Value) *goja.Object {
+	ctx, cancel := context.WithCancel(context.Background())
+	h, err := p.Spawn(ctx, spawnOptsFromJS(runtime, opts))
+	if err != nil {
+		cancel()
+		panic(runtime.NewTypeError(err.Error()))
+	}
+	return newHandleObject(runtime, adapter, promisify, h, cancel)
+}
+
+func providerFromJS(runtime *goja.Runtime, p *goja.Object) (aimuxcore.Provider, error) {
+	if v := p.Get("_provider"); !isAbsent(v) {
+		var pp *aimuxcore.ProcessProvider
+		if err := runtime.ExportTo(v, &pp); err == nil && pp != nil {
+			return pp, nil
+		}
+	}
+	name := gojaString(p, "name")
+	command := gojaString(p, "command")
+	if command == "" {
+		command = name
+	}
+	if command == "" {
+		return nil, fmt.Errorf("register: provider has no command")
+	}
+	defaultArgs := gojaStringSlice(runtime, p, "defaultArgs")
+	caps := capabilitiesFromJS(runtime, p)
+	return aimuxcore.NewProcessProvider(name, command, defaultArgs, caps), nil
+}
+
+func newHandleObject(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify promisifyFn, h aimuxcore.AgentHandle, cancel context.CancelFunc) *goja.Object {
+	obj := runtime.NewObject()
+	_ = obj.Set("_handle", runtime.ToValue(h))
+
+	// send and resize are generally fast PTY/syscall operations and may stay synchronous.
+	_ = obj.Set("send", func(input string) error {
+		return h.Send(input)
+	})
+	_ = obj.Set("resize", func(rows, cols int) error {
+		return h.Resize(rows, cols)
+	})
+
+	// isAlive is a non-blocking query.
+	_ = obj.Set("isAlive", func() bool {
+		return h.IsAlive()
+	})
+
+	// close may block waiting for the child to exit.
+	_ = obj.Set("close", func() goja.Value {
+		cancel()
+		return asyncHandleVoid(runtime, adapter, promisify, func() error { return h.Close() })
+	})
+
+	// receive blocks until output is available or the handle closes.
+	_ = obj.Set("receive", func() goja.Value {
+		out, err := h.Receive()
+		if err != nil || out == "" {
+			return goja.Null()
+		}
+		return runtime.ToValue(out)
+	})
+	_ = obj.Set("receiveAsync", func() goja.Value {
+		return asyncHandleValue(runtime, adapter, promisify, func() (any, error) {
+			out, err := h.Receive()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					return goja.Null(), nil
+				}
+				return nil, err
+			}
+			if out == "" {
+				return goja.Null(), nil
+			}
+			return out, nil
+		})
+	})
+
+	// drainOutput blocks until the handle reaches EOF.
+	_ = obj.Set("drainOutput", func() string {
+		return drainHandleOutput(h)
+	})
+	_ = obj.Set("drainOutputAsync", func() goja.Value {
+		return asyncHandleValue(runtime, adapter, promisify, func() (any, error) {
+			return drainHandleOutput(h), nil
+		})
+	})
+
+	// wait blocks until process exit.
+	_ = obj.Set("wait", func() map[string]any {
+		code, err := h.Wait()
+		result := map[string]any{"code": code}
+		if err != nil {
+			result["error"] = err.Error()
+		}
+		return result
+	})
+	_ = obj.Set("waitAsync", func() goja.Value {
+		return asyncHandleValue(runtime, adapter, promisify, func() (any, error) {
+			code, err := h.Wait()
+			result := map[string]any{"code": code}
+			if err != nil {
+				result["error"] = err.Error()
+			}
+			return result, nil
+		})
+	})
+
+	// waitReady blocks until the provider signals readiness or the timeout expires.
+	_ = obj.Set("waitReady", func(timeoutMs int) error {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
+		defer cancel()
+		return h.WaitReady(ctx)
+	})
+	_ = obj.Set("waitReadyAsync", func(timeoutMs int) goja.Value {
+		return asyncHandleVoid(runtime, adapter, promisify, func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
+			defer cancel()
+			return h.WaitReady(ctx)
+		})
+	})
+
+	return obj
+}
+
+func drainHandleOutput(h aimuxcore.AgentHandle) string {
+	var out []string
+	for {
+		chunk, err := h.Receive()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			continue
+		}
+		if chunk == "" {
+			break
+		}
+		out = append(out, chunk)
+	}
+	return strings.Join(out, "")
+}
+
+func spawnOptsFromJS(runtime *goja.Runtime, v goja.Value) aimuxcore.SpawnOpts {
+	if isAbsent(v) {
+		return aimuxcore.SpawnOpts{}
+	}
+	obj := v.(*goja.Object)
+	var opts aimuxcore.SpawnOpts
+	_ = runtime.ExportTo(obj, &opts)
+	if cmd := gojaString(obj, "command"); cmd != "" {
+		opts.Command = cmd
+	}
+	if dir := gojaString(obj, "dir"); dir != "" {
+		opts.Dir = dir
+	}
+	if args := gojaStringSlice(runtime, obj, "args"); len(args) > 0 {
+		opts.Args = args
+	}
+	if env := gojaStringMap(runtime, obj, "env"); len(env) > 0 {
+		opts.Env = env
+	}
+	if rows := gojaInt(obj, "rows"); rows > 0 {
+		opts.Rows = uint16(rows)
+	}
+	if cols := gojaInt(obj, "cols"); cols > 0 {
+		opts.Cols = uint16(cols)
+	}
+	return opts
+}
+
+func asyncHandleValue(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify promisifyFn, fn func() (any, error)) goja.Value {
+	promise, resolve, reject := adapter.JS().NewChainedPromise()
+
+	promisify(context.Background(), func(ctx context.Context) (any, error) {
+		v, err := fn()
+		if subErr := adapter.Loop().Submit(func() {
+			if err != nil {
+				reject(err)
+				return
+			}
+			resolve(v)
+		}); subErr != nil {
+			_ = adapter.Loop().Submit(func() {
+				reject(fmt.Errorf("event loop not running"))
+			})
+		}
+		return nil, nil
+	})
+
+	return adapter.GojaWrapPromise(promise)
+}
+
+func asyncHandleVoid(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify promisifyFn, fn func() error) goja.Value {
+	return asyncHandleValue(runtime, adapter, promisify, func() (any, error) {
+		return goja.Undefined(), fn()
+	})
+}
+
+func isAbsent(v goja.Value) bool {
+	return v == nil || goja.IsNull(v) || goja.IsUndefined(v)
+}
+
+func gojaString(obj *goja.Object, key string) string {
+	v := obj.Get(key)
+	if isAbsent(v) {
+		return ""
+	}
+	if s, ok := v.Export().(string); ok {
+		return s
+	}
+	return ""
+}
+
+func gojaStringSlice(runtime *goja.Runtime, obj *goja.Object, key string) []string {
+	v := obj.Get(key)
+	if isAbsent(v) {
+		return nil
+	}
+	var out []string
+	if err := runtime.ExportTo(v, &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func gojaStringMap(runtime *goja.Runtime, obj *goja.Object, key string) map[string]string {
+	v := obj.Get(key)
+	if isAbsent(v) {
+		return nil
+	}
+	var out map[string]string
+	if err := runtime.ExportTo(v, &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func gojaInt(obj *goja.Object, key string) int {
+	v := obj.Get(key)
+	if isAbsent(v) {
+		return 0
+	}
+	switch n := v.Export().(type) {
+	case int64:
+		return int(n)
+	case int:
+		return n
+	case float64:
+		return int(n)
+	}
+	return 0
+}
+
+func gojaBoolDefault(obj *goja.Object, key string, def bool) bool {
+	v := obj.Get(key)
+	if isAbsent(v) {
+		return def
+	}
+	if b, ok := v.Export().(bool); ok {
+		return b
+	}
+	return def
+}

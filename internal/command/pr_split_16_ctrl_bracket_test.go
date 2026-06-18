@@ -8,7 +8,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-//  T309/T394: Ctrl+] Claude switching — toggleModel + ToggleReturn handler
+//  T309/T394: Ctrl+] Agent switching — toggleModel + ToggleReturn handler
 //
 //  T394 moved Ctrl+] handling from the JS update function to the Go-level
 //  toggleModel wrapper (BubbleTea ReleaseTerminal/RestoreTerminal lifecycle).
@@ -22,12 +22,12 @@ import (
 //
 //  Tests that:
 //  1. _onToggle calls proxy passthrough (activate → switchTo → restore)
-//     when Claude has a pinned SessionID and is running.
-//  2. _onToggle returns {skipped: true} when Claude has no pinned SessionID.
+//     when Agent has a pinned SessionID and is running.
+//  2. _onToggle returns {skipped: true} when Agent has no pinned SessionID.
 //  3. _onToggle returns {skipped: true} when tuiMux is completely absent.
 //  4. ToggleReturn with skipped=true sets the notification.
 //  5. ToggleReturn without skipped does NOT set notification.
-//  6. Status bar shows "Ctrl+] Claude" only when Claude proxy isRunning.
+//  6. Status bar shows "Ctrl+] Agent" only when Agent proxy isRunning.
 //  7. _onToggle activates the correct sessionID before switchTo and
 //     restores the previous activeID afterward.
 // ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ import (
 func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 	t.Parallel()
 
-	t.Run("onToggle_calls_passthrough_when_claude_attached", func(t *testing.T) {
+	t.Run("onToggle_calls_passthrough_when_agent_attached", func(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -49,8 +49,8 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 				switchTo: function() { switchCalled = true; return {reason: 'toggle'}; },
 				snapshot: function(id) { return { fullScreen: '', plainText: '' }; }
 			};
-			// Set pinned Claude SessionID.
-			prSplit._state.claudeSessionID = 42;
+			// Set pinned Agent SessionID.
+			prSplit._state.agentSessionID = 42;
 			try {
 				var result = globalThis.prSplit._onToggle();
 				if (!switchCalled) return 'FAIL: switchTo was not called';
@@ -65,18 +65,18 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 				return 'OK';
 			} finally {
 				delete globalThis.tuiMux;
-				delete prSplit._state.claudeSessionID;
+				delete prSplit._state.agentSessionID;
 			}
 		})()`)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if raw != "OK" {
-			t.Errorf("onToggle with claude attached: %v", raw)
+			t.Errorf("onToggle with agent attached: %v", raw)
 		}
 	})
 
-	t.Run("onToggle_skipped_when_no_claude_session_id", func(t *testing.T) {
+	t.Run("onToggle_skipped_when_no_agent_session_id", func(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -89,11 +89,11 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 				switchTo: function() { switchCalled = true; },
 				snapshot: function(id) { return null; }
 			};
-			// No claudeSessionID set — Claude not attached.
-			delete prSplit._state.claudeSessionID;
+			// No agentSessionID set — Agent not attached.
+			delete prSplit._state.agentSessionID;
 			try {
 				var result = globalThis.prSplit._onToggle();
-				if (switchCalled) return 'FAIL: switchTo should not be called when no claudeSessionID';
+				if (switchCalled) return 'FAIL: switchTo should not be called when no agentSessionID';
 				if (!result.skipped) return 'FAIL: should be skipped';
 				if (result.reason !== 'no_child') return 'FAIL: wrong reason: ' + result.reason;
 				return 'OK';
@@ -105,11 +105,11 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 			t.Fatal(err)
 		}
 		if raw != "OK" {
-			t.Errorf("onToggle with no claudeSessionID: %v", raw)
+			t.Errorf("onToggle with no agentSessionID: %v", raw)
 		}
 	})
 
-	t.Run("onToggle_skipped_when_claude_session_done", func(t *testing.T) {
+	t.Run("onToggle_skipped_when_agent_session_done", func(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -122,8 +122,8 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 				switchTo: function() { switchCalled = true; },
 				snapshot: function(id) { return null; }
 			};
-			// Claude SessionID set but session is done.
-			prSplit._state.claudeSessionID = 42;
+			// Agent SessionID set but session is done.
+			prSplit._state.agentSessionID = 42;
 			try {
 				var result = globalThis.prSplit._onToggle();
 				if (switchCalled) return 'FAIL: switchTo should not be called when session is done';
@@ -132,14 +132,14 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 				return 'OK';
 			} finally {
 				delete globalThis.tuiMux;
-				delete prSplit._state.claudeSessionID;
+				delete prSplit._state.agentSessionID;
 			}
 		})()`)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if raw != "OK" {
-			t.Errorf("onToggle with done claude session: %v", raw)
+			t.Errorf("onToggle with done agent session: %v", raw)
 		}
 	})
 
@@ -177,10 +177,10 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 			var r = update({type: 'ToggleReturn', skipped: true, reason: 'no_child'}, s);
 			s = r[0];
 			var errors = [];
-			if (!s.claudeAutoAttachNotif) errors.push('expected notification, got empty');
-			if (s.claudeAutoAttachNotif && s.claudeAutoAttachNotif.indexOf('not available') < 0)
-				errors.push('expected "not available" in notification, got: ' + s.claudeAutoAttachNotif);
-			if (!s.claudeAutoAttachNotifAt) errors.push('notifAt timestamp not set');
+			if (!s.agentAutoAttachNotif) errors.push('expected notification, got empty');
+			if (s.agentAutoAttachNotif && s.agentAutoAttachNotif.indexOf('not available') < 0)
+				errors.push('expected "not available" in notification, got: ' + s.agentAutoAttachNotif);
+			if (!s.agentAutoAttachNotifAt) errors.push('notifAt timestamp not set');
 			return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 		})()`)
 		if err != nil {
@@ -199,7 +199,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 			var s = initState('PLAN_REVIEW');
 			var r = update({type: 'ToggleReturn', reason: 'toggle'}, s);
 			s = r[0];
-			if (s.claudeAutoAttachNotif && s.claudeAutoAttachNotif.indexOf('not available') >= 0)
+			if (s.agentAutoAttachNotif && s.agentAutoAttachNotif.indexOf('not available') >= 0)
 				return 'FAIL: should not set "not available" notification on success';
 			return 'OK';
 		})()`)
@@ -227,22 +227,22 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 				snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
 				lastActivityMs: function() { return Date.now(); }
 			};
-			prSplit._state.claudeSessionID = 1;
+			prSplit._state.agentSessionID = 1;
 			try {
 				var s = { width: 80, wizardState: 'EQUIV_CHECK' };
 				var rendered = globalThis.prSplit._renderStatusBar(s);
 				return rendered;
 			} finally {
 				delete globalThis.tuiMux;
-				delete prSplit._state.claudeSessionID;
+				delete prSplit._state.agentSessionID;
 			}
 		})()`)
 		if err != nil {
 			t.Fatal(err)
 		}
 		rendered := raw.(string)
-		if !strings.Contains(rendered, "Ctrl+] Claude") {
-			t.Errorf("expected status bar to contain 'Ctrl+] Claude' when child attached, got:\n%s", rendered)
+		if !strings.Contains(rendered, "Ctrl+] Agent") {
+			t.Errorf("expected status bar to contain 'Ctrl+] Agent' when child attached, got:\n%s", rendered)
 		}
 	})
 
@@ -258,8 +258,8 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 				snapshot: function(id) { return null; },
 				lastActivityMs: function() { return Date.now(); }
 			};
-			// No claudeSessionID — Claude not attached.
-			delete prSplit._state.claudeSessionID;
+			// No agentSessionID — Agent not attached.
+			delete prSplit._state.agentSessionID;
 			try {
 				var s = { width: 80, wizardState: 'EQUIV_CHECK' };
 				var rendered = globalThis.prSplit._renderStatusBar(s);
@@ -272,8 +272,8 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 			t.Fatal(err)
 		}
 		rendered := raw.(string)
-		if strings.Contains(rendered, "Ctrl+] Claude") || strings.Contains(rendered, "C-]") {
-			t.Errorf("expected status bar to NOT contain 'Ctrl+] Claude' when no child, got:\n%s", rendered)
+		if strings.Contains(rendered, "Ctrl+] Agent") || strings.Contains(rendered, "C-]") {
+			t.Errorf("expected status bar to NOT contain 'Ctrl+] Agent' when no child, got:\n%s", rendered)
 		}
 		if !strings.Contains(rendered, "Ctrl+L Split") {
 			t.Errorf("expected status bar to still show 'Ctrl+L Split', got:\n%s", rendered)
@@ -293,8 +293,8 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 			t.Fatal(err)
 		}
 		rendered := raw.(string)
-		if strings.Contains(rendered, "Ctrl+] Claude") || strings.Contains(rendered, "C-]") {
-			t.Errorf("expected status bar to NOT contain 'Ctrl+] Claude' when tuiMux absent, got:\n%s", rendered)
+		if strings.Contains(rendered, "Ctrl+] Agent") || strings.Contains(rendered, "C-]") {
+			t.Errorf("expected status bar to NOT contain 'Ctrl+] Agent' when tuiMux absent, got:\n%s", rendered)
 		}
 	})
 
@@ -309,8 +309,8 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 				activate: function(id) {},
 				snapshot: function(id) { return null; }
 			};
-			// No claudeSessionID — Claude not attached.
-			delete prSplit._state.claudeSessionID;
+			// No agentSessionID — Agent not attached.
+			delete prSplit._state.agentSessionID;
 			try {
 				// veryNarrow (<40): would show 'C-]' if child attached, empty if not.
 				var s = { width: 30, wizardState: 'EQUIV_CHECK' };
@@ -362,7 +362,7 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 			var s = {
 				width: 80, wizardState: 'BRANCH_BUILDING',
 				splitViewEnabled: true, splitViewFocus: 'wizard',
-				splitViewTab: 'claude'
+				splitViewTab: 'agent'
 			};
 			return globalThis.prSplit._renderStatusBar(s);
 		})()`)
@@ -385,7 +385,7 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 		raw, err := evalJS(`(function() {
 			var s = {
 				width: 80, wizardState: 'BRANCH_BUILDING',
-				splitViewEnabled: true, splitViewFocus: 'claude',
+				splitViewEnabled: true, splitViewFocus: 'agent',
 				splitViewTab: 'verify', activeVerifySession: { screen: function() { return ''; } }
 			};
 			return globalThis.prSplit._renderStatusBar(s);
@@ -412,7 +412,7 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 		raw, err := evalJS(`(function() {
 			var s = {
 				width: 80, wizardState: 'BRANCH_BUILDING',
-				splitViewEnabled: true, splitViewFocus: 'claude',
+				splitViewEnabled: true, splitViewFocus: 'agent',
 				splitViewTab: 'verify', activeVerifySession: null
 			};
 			return globalThis.prSplit._renderStatusBar(s);
@@ -436,7 +436,7 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 		raw, err := evalJS(`(function() {
 			var s = {
 				width: 80, wizardState: 'BRANCH_BUILDING',
-				splitViewEnabled: true, splitViewFocus: 'claude',
+				splitViewEnabled: true, splitViewFocus: 'agent',
 				splitViewTab: 'output'
 			};
 			return globalThis.prSplit._renderStatusBar(s);
@@ -460,7 +460,7 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 		raw, err := evalJS(`(function() {
 			var s = {
 				width: 50, wizardState: 'BRANCH_BUILDING',
-				splitViewEnabled: true, splitViewFocus: 'claude',
+				splitViewEnabled: true, splitViewFocus: 'agent',
 				splitViewTab: 'verify', activeVerifySession: { screen: function() { return ''; } }
 			};
 			return globalThis.prSplit._renderStatusBar(s);
@@ -478,7 +478,7 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngine(t)
 
-		// Worst case: Claude attached + split enabled + INPUT indicator.
+		// Worst case: Agent attached + split enabled + INPUT indicator.
 		raw, err := evalJS(`(function() {
 			globalThis.tuiMux = {
 				isDone: function(id) { return false; },
@@ -487,11 +487,11 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 				snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
 				lastActivityMs: function() { return 500; }
 			};
-			prSplit._state.claudeSessionID = 1;
+			prSplit._state.agentSessionID = 1;
 			try {
 				var s = {
 					width: 80, wizardState: 'BRANCH_BUILDING',
-					splitViewEnabled: true, splitViewFocus: 'claude',
+					splitViewEnabled: true, splitViewFocus: 'agent',
 					splitViewTab: 'verify', activeVerifySession: { screen: function() { return ''; } }
 				};
 				var bar = globalThis.prSplit._renderStatusBar(s);
@@ -502,7 +502,7 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 				return { rendered: bar, width: globalThis.prSplit._lipgloss.width(statusLine) };
 			} finally {
 				delete globalThis.tuiMux;
-				delete prSplit._state.claudeSessionID;
+				delete prSplit._state.agentSessionID;
 			}
 		})()`)
 		if err != nil {

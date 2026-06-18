@@ -765,7 +765,7 @@ func TestExecuteSplit_CancellationMidFile(t *testing.T) {
 // cancellation. It verifies:
 //
 //  1. finishTUI emits resume instructions (plan path + osm pr-split --resume)
-//  2. The mock Claude executor's close() is NOT called (heuristic fallback
+//  2. The mock Agent executor's close() is NOT called (heuristic fallback
 //     path never spawns a process, so no process cleanup is needed)
 //  3. The pipeline exits with a cancellation-related error
 func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
@@ -791,24 +791,24 @@ func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Mock ClaudeCodeExecutor to track close() calls and fail resolve
+	// Mock AgentCodeExecutor to track close() calls and fail resolve
 	// (forcing heuristic fallback).
 	if _, err := tp.EvalJS(`
 		var _executorClosed = false;
-		ClaudeCodeExecutor = function(config) { this.config = config; };
-		ClaudeCodeExecutor.prototype.resolve = function() {
-			return { error: 'claude not found' };
+		AgentCodeExecutor = function(config) { this.config = config; };
+		AgentCodeExecutor.prototype.resolve = function() {
+			return { error: 'agent not found' };
 		};
-		ClaudeCodeExecutor.prototype.resolveAsync = async function() {
-			return { error: 'claude not found' };
+		AgentCodeExecutor.prototype.resolveAsync = async function() {
+			return { error: 'agent not found' };
 		};
-		ClaudeCodeExecutor.prototype.spawn = function() {
+		AgentCodeExecutor.prototype.spawn = function() {
 			return { error: 'not resolved' };
 		};
-		ClaudeCodeExecutor.prototype.close = function() {
+		AgentCodeExecutor.prototype.close = function() {
 			_executorClosed = true;
 		};
-		ClaudeCodeExecutor.prototype.kill = function() {};
+		AgentCodeExecutor.prototype.kill = function() {};
 	`); err != nil {
 		t.Fatalf("mock setup: %v", err)
 	}
@@ -902,7 +902,7 @@ func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
 	}
 
 	// Note: executor close() is NOT called on the heuristic fallback path
-	// because cleanupExecutor() is only invoked in the Claude execution
+	// because cleanupExecutor() is only invoked in the Agent execution
 	// loop (in the pipeline chunk). When resolve() fails
 	// and the pipeline falls back to heuristic mode, the executor object
 	// exists but was never spawned, so no process cleanup is needed.

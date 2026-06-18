@@ -339,7 +339,7 @@ func TestRenderConflictPrompt_MinimalInput(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// heuristicFallback — local splitting without Claude
+// heuristicFallback — local splitting without Agent
 // ---------------------------------------------------------------------------
 
 func TestHeuristicFallback_DirectoryStrategy(t *testing.T) {
@@ -480,7 +480,7 @@ func TestHeuristicFallback_TreeHashMismatch(t *testing.T) {
 //
 // When prSplit._modules.template is null/unset, all render*Prompt functions
 // must return { text: '', error: <non-empty> }. Callers must NOT silently
-// send the empty .text to Claude.
+// send the empty .text to Agent.
 // ---------------------------------------------------------------------------
 
 func TestRenderPrompt_TemplateModuleNull(t *testing.T) {

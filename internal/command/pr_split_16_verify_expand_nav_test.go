@@ -496,16 +496,16 @@ func TestChunk16_T38_CtrlTabSwitchesPanes(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var errors = [];
 
-		// Ctrl+Tab: wizard → claude (first pane tab).
+		// Ctrl+Tab: wizard → agent (first pane tab).
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
 		s.splitViewFocus = 'wizard';
 		var r = sendKey(s, 'ctrl+tab');
-		if (r[0].splitViewFocus !== 'claude') errors.push('ctrl+tab did not switch to claude');
+		if (r[0].splitViewFocus !== 'agent') errors.push('ctrl+tab did not switch to agent');
 
-		// Ctrl+Tab: claude → output (cycles to next tab, not back to wizard).
+		// Ctrl+Tab: agent → output (cycles to next tab, not back to wizard).
 		r = sendKey(r[0], 'ctrl+tab');
-		if (r[0].splitViewFocus !== 'claude') errors.push('focus not on pane after second ctrl+tab');
+		if (r[0].splitViewFocus !== 'agent') errors.push('focus not on pane after second ctrl+tab');
 		if (r[0].splitViewTab !== 'output') errors.push('ctrl+tab did not advance to output tab');
 
 		// Ctrl+Tab: output → wizard (no verify, wraps back).
@@ -530,21 +530,21 @@ func TestChunk16_T38_CtrlTabSwitchesPanes(t *testing.T) {
 	}
 }
 
-// TestChunk16_T38_TabForwardedToClaudePTY verifies that Tab in split-view
-// with Claude pane focused is forwarded to the child PTY (not intercepted).
-func TestChunk16_T38_TabForwardedToClaudePTY(t *testing.T) {
+// TestChunk16_T38_TabForwardedToAgentPTY verifies that Tab in split-view
+// with Agent pane focused is forwarded to the child PTY (not intercepted).
+func TestChunk16_T38_TabForwardedToAgentPTY(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
 
-		// Tab should NOT be in CLAUDE_RESERVED_KEYS (so it forwards to PTY).
-		var reserved = globalThis.prSplit._CLAUDE_RESERVED_KEYS;
-		if (reserved['tab']) errors.push('tab is in CLAUDE_RESERVED_KEYS (should not be)');
+		// Tab should NOT be in AGENT_RESERVED_KEYS (so it forwards to PTY).
+		var reserved = globalThis.prSplit._AGENT_RESERVED_KEYS;
+		if (reserved['tab']) errors.push('tab is in AGENT_RESERVED_KEYS (should not be)');
 
 		// Ctrl+Tab SHOULD be reserved (stays with wizard for pane switching).
-		if (!reserved['ctrl+tab']) errors.push('ctrl+tab not in CLAUDE_RESERVED_KEYS');
+		if (!reserved['ctrl+tab']) errors.push('ctrl+tab not in AGENT_RESERVED_KEYS');
 
 		// keyToTermBytes should map tab → '\t'.
 		var bytes = globalThis.prSplit._keyToTermBytes('tab');
@@ -557,7 +557,7 @@ func TestChunk16_T38_TabForwardedToClaudePTY(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("T38 tab forwarded to Claude PTY: %v", raw)
+		t.Errorf("T38 tab forwarded to Agent PTY: %v", raw)
 	}
 }
 
@@ -649,7 +649,7 @@ func TestChunk16_T38_PaneDividerHint(t *testing.T) {
 		s.splitViewFocus = 'wizard';
 		s.width = 120;
 		s.height = 40;
-		s.claudeScreen = 'claude output here';
+		s.agentScreen = 'agent output here';
 		var rendered = globalThis.prSplit._wizardView(s);
 
 		// The pane divider should mention Ctrl+Tab, not bare Tab.
@@ -680,27 +680,27 @@ func TestChunk16_T38_PaneDividerHint(t *testing.T) {
 	}
 }
 
-// TestChunk16_T38_TabInClaudeFocusDoesNotCycleWizard verifies that Tab
-// when Claude pane is focused does NOT cycle wizard focusable elements.
-func TestChunk16_T38_TabInClaudeFocusDoesNotCycleWizard(t *testing.T) {
+// TestChunk16_T38_TabInAgentFocusDoesNotCycleWizard verifies that Tab
+// when Agent pane is focused does NOT cycle wizard focusable elements.
+func TestChunk16_T38_TabInAgentFocusDoesNotCycleWizard(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
 
-		// When Claude pane is focused, Tab should NOT change focusIndex.
+		// When Agent pane is focused, Tab should NOT change focusIndex.
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.focusIndex = 0;
 		var r = sendKey(s, 'tab');
 		if (r[0].focusIndex !== 0) {
-			errors.push('tab in claude focus changed focusIndex from 0 to ' + r[0].focusIndex);
+			errors.push('tab in agent focus changed focusIndex from 0 to ' + r[0].focusIndex);
 		}
-		// Focus should remain on Claude.
-		if (r[0].splitViewFocus !== 'claude') {
-			errors.push('focus changed from claude to ' + r[0].splitViewFocus);
+		// Focus should remain on Agent.
+		if (r[0].splitViewFocus !== 'agent') {
+			errors.push('focus changed from agent to ' + r[0].splitViewFocus);
 		}
 
 		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
@@ -710,7 +710,7 @@ func TestChunk16_T38_TabInClaudeFocusDoesNotCycleWizard(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("T38 tab in claude focus: %v", raw)
+		t.Errorf("T38 tab in agent focus: %v", raw)
 	}
 }
 
@@ -1165,12 +1165,12 @@ func TestChunk16_T40_ConfigToggleAdvancedFocus(t *testing.T) {
 		r = sendKey(r[0], 'enter');
 		if (r[0].showAdvanced) errors.push('Enter on toggle-advanced did not close advanced options');
 
-		// CONFIG with auto mode: 3 strategies + test-claude + toggle-advanced + nav-next + nav-cancel = 7.
+		// CONFIG with auto mode: 3 strategies + test-agent + toggle-advanced + nav-next + nav-cancel = 7.
 		s = initState('CONFIG');
 		globalThis.prSplit.runtime.mode = 'auto';
 		elems = globalThis.prSplit._getFocusElements(s);
 		if (elems.length !== 7) errors.push('auto mode: got ' + elems.length + ' elems, want 7');
-		// toggle-advanced should be at index 4 (after test-claude at index 3).
+		// toggle-advanced should be at index 4 (after test-agent at index 3).
 		if (elems[4] && elems[4].id !== 'toggle-advanced') {
 			errors.push('auto mode: elem[4]=' + (elems[4] ? elems[4].id : 'undefined') + ', want toggle-advanced');
 		}
@@ -1257,7 +1257,7 @@ func TestChunk16_T40_ErrorResolutionNavNext(t *testing.T) {
 
 		// ERROR_RESOLUTION should include nav-cancel as last element, nav-next as second-to-last.
 		var s = initState('ERROR_RESOLUTION');
-		globalThis.prSplit._state.claudeExecutor = {};
+		globalThis.prSplit._state.agentExecutor = {};
 		var elems = globalThis.prSplit._getFocusElements(s);
 		var last = elems[elems.length - 1];
 		if (!last || last.id !== 'nav-cancel' || last.type !== 'nav') {
@@ -1277,7 +1277,7 @@ func TestChunk16_T40_ErrorResolutionNavNext(t *testing.T) {
 
 		// Crash mode: should have nav-cancel as last, nav-next as second-to-last.
 		s = initState('ERROR_RESOLUTION');
-		s.claudeCrashDetected = true;
+		s.agentCrashDetected = true;
 		elems = globalThis.prSplit._getFocusElements(s);
 		last = elems[elems.length - 1];
 		if (!last || last.id !== 'nav-cancel') {
@@ -1398,14 +1398,14 @@ func TestChunk16_T40_ElementCountParity(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var errors = [];
 		setupPlanCache();
-		globalThis.prSplit._state.claudeExecutor = {};
+		globalThis.prSplit._state.agentExecutor = {};
 
 		// Verify exact element counts per screen.
 		var expected = {
 			'CONFIG':           6,  // 3 strategies + toggle-advanced + nav-next + nav-cancel
-			'PLAN_REVIEW':      8,  // 3 cards + plan-edit + plan-regenerate + ask-claude + nav-next + nav-cancel
+			'PLAN_REVIEW':      8,  // 3 cards + plan-edit + plan-regenerate + ask-agent + nav-next + nav-cancel
 			'PLAN_EDITOR':      8,  // 3 cards + editor-move + editor-rename + editor-merge + nav-next + nav-cancel
-			'ERROR_RESOLUTION': 8,  // 5 buttons + error-ask-claude + nav-next + nav-cancel
+			'ERROR_RESOLUTION': 8,  // 5 buttons + error-ask-agent + nav-next + nav-cancel
 			'FINALIZATION':     5,  // final-report + final-create-prs + final-done + nav-next + nav-cancel
 			'BRANCH_BUILDING':  0,  // passive — keyboard shortcuts, not focus elements
 			'PLAN_GENERATION':  0,  // passive
@@ -1416,7 +1416,7 @@ func TestChunk16_T40_ElementCountParity(t *testing.T) {
 		for (var state in expected) {
 			var s = initState(state);
 			if (state === 'ERROR_RESOLUTION') {
-				globalThis.prSplit._state.claudeExecutor = {};
+				globalThis.prSplit._state.agentExecutor = {};
 			}
 			var elems = globalThis.prSplit._getFocusElements(s);
 			if (elems.length !== expected[state]) {
@@ -1424,7 +1424,7 @@ func TestChunk16_T40_ElementCountParity(t *testing.T) {
 			}
 		}
 
-		// CONFIG with auto mode: test-claude adds 1 element.
+		// CONFIG with auto mode: test-agent adds 1 element.
 		globalThis.prSplit.runtime.mode = 'auto';
 		var s = initState('CONFIG');
 		var elems = globalThis.prSplit._getFocusElements(s);

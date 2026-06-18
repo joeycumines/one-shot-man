@@ -190,7 +190,7 @@ func TestChunk16f_SplitTabVerify(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
-		s.splitViewTab = 'claude';
+		s.splitViewTab = 'agent';
 
 		// Click split-tab-verify.
 		var restore = mockZoneHit('split-tab-verify');
@@ -202,12 +202,12 @@ func TestChunk16f_SplitTabVerify(t *testing.T) {
 		// Verify tabs are ignored when splitView is disabled.
 		s = initState('CONFIG');
 		s.splitViewEnabled = false;
-		s.splitViewTab = 'claude';
+		s.splitViewTab = 'agent';
 		restore = mockZoneHit('split-tab-verify');
 		try {
 			var r = sendClick(s);
 			// Tab should be unchanged — zone not processed when split disabled.
-			if (r[0].splitViewTab !== 'claude') return 'FAIL: disabled split should not change tab, got ' + r[0].splitViewTab;
+			if (r[0].splitViewTab !== 'agent') return 'FAIL: disabled split should not change tab, got ' + r[0].splitViewTab;
 		} finally { restore(); }
 
 		return 'OK';

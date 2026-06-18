@@ -28,7 +28,7 @@ func TestRenderVerifyPane_LiveOutput(t *testing.T) {
 		var result = fn({
 			verifyScreen: ansiContent,
 			activeVerifySession: true,
-			splitViewFocus: 'claude',
+			splitViewFocus: 'agent',
 			splitViewTab: 'verify',
 			verifyPaused: false,
 			verifyViewportOffset: 0,
@@ -75,7 +75,7 @@ func TestRenderVerifyPane_ScrollOffset(t *testing.T) {
 		var base = {
 			verifyScreen: content,
 			activeVerifySession: true,
-			splitViewFocus: 'claude',
+			splitViewFocus: 'agent',
 			splitViewTab: 'verify',
 			verifyPaused: false,
 			activeVerifyBranch: 'split/01-types',
@@ -178,7 +178,7 @@ func TestRenderVerifyPane_TitleInfo(t *testing.T) {
 		var result = fn({
 			verifyScreen: 'test output line\n',
 			activeVerifySession: true,
-			splitViewFocus: 'claude',
+			splitViewFocus: 'agent',
 			splitViewTab: 'verify',
 			verifyPaused: false,
 			verifyViewportOffset: 0,
@@ -255,7 +255,7 @@ func TestRenderVerifyPane_WidthBehavior(t *testing.T) {
 		var state = {
 			verifyScreen: 'line 1: short\nline 2: a somewhat longer line of verification output text here\nline 3: done\n',
 			activeVerifySession: true,
-			splitViewFocus: 'claude',
+			splitViewFocus: 'agent',
 			splitViewTab: 'verify',
 			verifyPaused: false,
 			verifyViewportOffset: 0,

@@ -1,5 +1,5 @@
 'use strict';
-// pr_split_10c_pipeline_resolve.js — Pipeline: IPC wait, heuristic fallback, Claude conflict resolution
+// pr_split_10c_pipeline_resolve.js — Pipeline: IPC wait, heuristic fallback, Agent conflict resolution
 // Dependencies: chunks 00-10b must be loaded first.
 
 (function(prSplit) {
@@ -31,7 +31,7 @@
 
         // Heartbeat monitoring: if opts.heartbeatTool is set, check that the
         // named MCP tool was called within opts.heartbeatTimeoutMs. This
-        // detects when Claude is alive but not making progress.
+        // detects when Agent is alive but not making progress.
         var heartbeatTool = opts.heartbeatTool || '';
         var heartbeatTimeoutMs = opts.heartbeatTimeoutMs || 0;
         var heartbeatStale = false;
@@ -86,7 +86,7 @@
             return { data: null, error: 'cancelled by user' };
         }
         if (heartbeatStale) {
-            return { data: null, error: 'Claude process unresponsive (heartbeat timeout for ' + toolName + ')' };
+            return { data: null, error: 'Agent process unresponsive (heartbeat timeout for ' + toolName + ')' };
         }
         if (result.error) {
             log.printf('auto-split waitFor: tool=%s FAILED after %dms — %s', toolName, elapsedMs, result.error);
@@ -98,7 +98,7 @@
 
     // --- heuristicFallback — standard heuristic split flow ---
 
-    // Runs the standard heuristic split flow when Claude is unavailable.
+    // Runs the standard heuristic split flow when Agent is unavailable.
     async function heuristicFallback(analysis, config, report) {
         // Late-bind cross-chunk dependencies (async versions for non-blocking).
         var runtime = prSplit.runtime;
@@ -156,10 +156,10 @@
         return { error: report.error, report: report };
     }
 
-    // --- resolveConflictsWithClaude — Claude-based conflict resolution ---
+    // --- resolveConflictsWithAgent — Agent-based conflict resolution ---
 
-    // Attempts to fix failing splits using Claude.
-    async function resolveConflictsWithClaude(failures, sessionId, timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn, heartbeatTimeoutMs) {
+    // Attempts to fix failing splits using Agent.
+    async function resolveConflictsWithAgent(failures, sessionId, timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn, heartbeatTimeoutMs) {
         // Late-bind cross-chunk dependencies.
         var isCancelled = prSplit.isCancelled;
         var isForceCancelled = prSplit.isForceCancelled;  // T117
@@ -174,7 +174,7 @@
         var osmod = prSplit._modules.osmod;
         var runtime = prSplit.runtime;
         var state = prSplit._state;
-        var claudeExec = state.claudeExecutor;
+        var agentExec = state.agentExecutor;
         var recordConversation = prSplit.recordConversation || function() {};
         var dir = resolveDir('.');
 
@@ -234,7 +234,7 @@
                     error: fail.error || fail.output || ''
                 });
 
-                // Send conflict prompt to Claude.
+                // Send conflict prompt to Agent.
                 var promptResult = renderConflictPrompt({
                     branchName: fail.branch || fail.name,
                     files: fail.files || [],
@@ -247,7 +247,7 @@
                     break;
                 }
 
-                var sendResult = await sendToHandle(claudeExec.handle, promptResult.text);
+                var sendResult = await sendToHandle(agentExec.handle, promptResult.text);
                 if (sendResult.error) {
                     log.printf('auto-split: failed to send conflict prompt: %s', sendResult.error);
                     if (!isTransientError(sendResult.error)) {
@@ -256,7 +256,7 @@
                     }
                     continue; // transient — allow backoff + retry
                 }
-                report.claudeInteractions++;
+                report.agentInteractions++;
                 recordConversation('conflict-resolution', promptResult.text, '');
 
                 // Wait for resolution via mcpcallback.
@@ -304,7 +304,7 @@
                 // Check if re-split is suggested.
                 if (resolution.reSplitSuggested) {
                     reSplitNeeded = true;
-                    reSplitReason = resolution.reSplitReason || 'Claude suggested re-split';
+                    reSplitReason = resolution.reSplitReason || 'Agent suggested re-split';
                     break;
                 }
 
@@ -378,7 +378,7 @@
             }
 
             if (!fixed && !reSplitNeeded) {
-                log.printf('auto-split: Claude resolution exhausted for %s, trying local strategies', fail.branch || fail.name);
+                log.printf('auto-split: Agent resolution exhausted for %s, trying local strategies', fail.branch || fail.name);
             }
         }
 
@@ -388,5 +388,5 @@
     // Exports.
     prSplit.waitForLogged = waitForLogged;
     prSplit.heuristicFallback = heuristicFallback;
-    prSplit.resolveConflictsWithClaude = resolveConflictsWithClaude;
+    prSplit.resolveConflictsWithAgent = resolveConflictsWithAgent;
 })(globalThis.prSplit);

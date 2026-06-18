@@ -310,18 +310,18 @@
 
     prSplit._buildReport = buildReport;
 
-    // Build a pinned proxy for Claude's session, modeled after
+    // Build a pinned proxy for Agent's session, modeled after
     // _buildVerifyProxy. Uses tuiMux.snapshot(sessionID) for reads and
     // explicit activate/restore for writes, so no code path can confuse
-    // Claude's pane with verify's when ActiveID changes temporarily.
-    function _buildClaudeProxy(sessionID) {
+    // Agent's pane with verify's when ActiveID changes temporarily.
+    function _buildAgentProxy(sessionID) {
         return {
             screen: function() {
                 try {
                     var snap = tuiMux.snapshot(sessionID);
                     return snap ? (snap.fullScreen || '') : '';
                 } catch (e) {
-                    log.debug('claudeProxy.screen failed', { sessionID: sessionID, error: e.message || String(e) });
+                    log.debug('agentProxy.screen failed', { sessionID: sessionID, error: e.message || String(e) });
                     return '';
                 }
             },
@@ -330,7 +330,7 @@
                     var snap = tuiMux.snapshot(sessionID);
                     return snap ? (snap.plainText || '') : '';
                 } catch (e) {
-                    log.debug('claudeProxy.output failed', { sessionID: sessionID, error: e.message || String(e) });
+                    log.debug('agentProxy.output failed', { sessionID: sessionID, error: e.message || String(e) });
                     return '';
                 }
             },
@@ -340,7 +340,7 @@
                 if (typeof tuiMux.isDone === 'function') {
                     return tuiMux.isDone(sessionID);
                 }
-                var exec = prSplit._state && prSplit._state.claudeExecutor;
+                var exec = prSplit._state && prSplit._state.agentExecutor;
                 if (exec && exec.handle && typeof exec.handle.isAlive === 'function') {
                     return !exec.handle.isAlive();
                 }
@@ -360,47 +360,80 @@
                     }
                 }
             },
+            writeAsync: function(data) {
+                var prevID = tuiMux.activeID();
+                return tuiMux.activateAsync(sessionID).then(function() {
+                    return tuiMux.inputAsync(typeof data === 'string' ? data : String(data));
+                }).then(function() {
+                    if (prevID && prevID !== sessionID) {
+                        return tuiMux.activateAsync(prevID).catch(function(e) {});
+                    }
+                }).catch(function(e) {
+                    log.debug('agentProxy.writeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
+                });
+            },
             resize: function(rows, cols) {
                 // SessionManager.Resize broadcasts to ALL managed sessions.
                 tuiMux.resize(rows, cols);
             },
+            resizeAsync: function(rows, cols) {
+                return tuiMux.resizeAsync(rows, cols).catch(function(e) {
+                    log.debug('agentProxy.resizeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
+                });
+            },
             passthrough: function() {
-                // Task 5: Activate Claude session in SessionManager, enter
+                // Task 5: Activate Agent session in SessionManager, enter
                 // passthrough via tuiMux.switchTo, then restore previous active.
                 var prevID = tuiMux.activeID();
                 try {
                     tuiMux.activate(sessionID);
                 } catch (e) {
-                    log.debug('claudeProxy.passthrough: activate failed', { sessionID: sessionID, error: e.message || String(e) });
+                    log.debug('agentProxy.passthrough: activate failed', { sessionID: sessionID, error: e.message || String(e) });
                     return { skipped: true, reason: 'activate_failed' };
                 }
                 var result = tuiMux.switchTo();
                 if (prevID && prevID !== sessionID) {
                     try { tuiMux.activate(prevID); } catch (e) {
-                        log.debug('claudeProxy.passthrough: restore failed', { prevID: prevID, error: e.message || String(e) });
+                        log.debug('agentProxy.passthrough: restore failed', { prevID: prevID, error: e.message || String(e) });
                     }
                 }
                 return result;
             },
-            target: function() { return { name: 'claude', kind: 'pty' }; },
-            setTarget: function() { /* no-op: Claude target is fixed */ }
+            passthroughAsync: function() {
+                var prevID = tuiMux.activeID();
+                return tuiMux.activateAsync(sessionID).then(function() {
+                    return tuiMux.switchToAsync();
+                }).then(function(result) {
+                    if (prevID && prevID !== sessionID) {
+                        return tuiMux.activateAsync(prevID).catch(function(e) {
+                            log.debug('agentProxy.passthroughAsync: restore failed', { prevID: prevID, error: e.message || String(e) });
+                        }).then(function() { return result; });
+                    }
+                    return result;
+                }).catch(function(e) {
+                    log.debug('agentProxy.passthroughAsync: activate failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return { skipped: true, reason: 'activate_failed' };
+                });
+            },
+            target: function() { return { name: 'agent', kind: 'pty' }; },
+            setTarget: function() { /* no-op: Agent target is fixed */ }
         };
     }
 
-    function getClaudePaneSession() {
+    function getAgentPaneSession() {
         if (typeof tuiMux === 'undefined' || !tuiMux) return null;
-        var cid = prSplit._state && prSplit._state.claudeSessionID;
+        var cid = prSplit._state && prSplit._state.agentSessionID;
         if (cid) {
-            return _buildClaudeProxy(cid);
+            return _buildAgentProxy(cid);
         }
-        // No pinned SessionID yet — Claude not attached.
+        // No pinned SessionID yet — Agent not attached.
         return null;
     }
 
     function getInteractivePaneSession(s, tab) {
         if (!s && !tab) return null;
-        var pane = tab || (s && s.splitViewTab) || 'claude';
-        if (pane === 'claude') return getClaudePaneSession();
+        var pane = tab || (s && s.splitViewTab) || 'agent';
+        if (pane === 'agent') return getAgentPaneSession();
         if (pane === 'verify') {
             if (!s) return null;
             var val = s.activeVerifySession;
@@ -456,8 +489,6 @@
                 return captureRef ? !captureRef.isDone() : false;
             },
             passthrough: function() {
-                // Task 48: Activate verify session in SessionManager, enter
-                // passthrough via tuiMux.switchTo, then re-activate Claude.
                 var prevID = tuiMux.activeID();
                 try {
                     tuiMux.activate(sessionID);
@@ -473,14 +504,28 @@
                 }
                 return result;
             },
+            passthroughAsync: function() {
+                var prevID = tuiMux.activeID();
+                return tuiMux.activateAsync(sessionID).then(function() {
+                    return tuiMux.switchToAsync();
+                }).then(function(result) {
+                    if (prevID && prevID !== sessionID) {
+                        return tuiMux.activateAsync(prevID).catch(function(e) {
+                            log.debug('verifyProxy.passthroughAsync: re-activate failed', { prevID: prevID, error: e.message || String(e) });
+                        }).then(function() { return result; });
+                    }
+                    return result;
+                }).catch(function(e) {
+                    log.debug('verifyProxy.passthroughAsync: activate failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return { skipped: true, reason: 'activate_failed' };
+                });
+            },
             interrupt: function() { if (captureRef && captureRef.interrupt) captureRef.interrupt(); },
             kill: function() { if (captureRef && captureRef.kill) captureRef.kill(); },
             pause: function() { if (captureRef && captureRef.pause) captureRef.pause(); },
             resume: function() { if (captureRef && captureRef.resume) captureRef.resume(); },
             isPaused: function() { return captureRef && captureRef.isPaused ? captureRef.isPaused() : false; },
             write: function(data) {
-                // Task 48: Route through SessionManager. Temporarily activate the
-                // verify session, send input, then restore the prior active session.
                 var prevID = tuiMux.activeID();
                 try {
                     tuiMux.activate(sessionID);
@@ -491,9 +536,25 @@
                     }
                 }
             },
+            writeAsync: function(data) {
+                var prevID = tuiMux.activeID();
+                return tuiMux.activateAsync(sessionID).then(function() {
+                    return tuiMux.inputAsync(typeof data === 'string' ? data : String(data));
+                }).then(function() {
+                    if (prevID && prevID !== sessionID) {
+                        return tuiMux.activateAsync(prevID).catch(function(e) {});
+                    }
+                }).catch(function(e) {
+                    log.debug('verifyProxy.writeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
+                });
+            },
             resize: function(rows, cols) {
-                // SessionManager.Resize broadcasts to ALL managed sessions.
                 tuiMux.resize(rows, cols);
+            },
+            resizeAsync: function(rows, cols) {
+                return tuiMux.resizeAsync(rows, cols).catch(function(e) {
+                    log.debug('verifyProxy.resizeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
+                });
             }
         };
     }
@@ -562,15 +623,15 @@
         return !!getInteractivePaneSession(s, tab);
     }
 
-    // Task 8: Shell tab removed — only claude, output, verify tabs remain.
+    // Task 8: Shell tab removed — only agent, output, verify tabs remain.
     function listSplitViewTabs(s) {
-        var tabs = ['claude', 'output'];
+        var tabs = ['agent', 'output'];
         if (hasInteractivePaneSession(s, 'verify') || s.verifyFallbackRunning || s.verifyScreen) tabs.push('verify');
         return tabs;
     }
 
-    prSplit._buildClaudeProxy = _buildClaudeProxy;
-    prSplit._getClaudePaneSession = getClaudePaneSession;
+    prSplit._buildAgentProxy = _buildAgentProxy;
+    prSplit._getAgentPaneSession = getAgentPaneSession;
     prSplit._getInteractivePaneSession = getInteractivePaneSession;
     prSplit._closeInteractivePaneSession = closeInteractivePaneSession;
     prSplit._clearVerifyPaneSession = clearVerifyPaneSession;
@@ -907,12 +968,12 @@
         }
 
         if (choice === 'manual') {
-            // Manual fix: user interacts with Claude pane to fix branches,
+            // Manual fix: user interacts with Agent pane to fix branches,
             // then re-enters BRANCH_BUILDING for re-verification.
             // NOTE: Do NOT call output.print() here — this runs inside
             // BubbleTea context and would corrupt the terminal. The caller
             // (handleErrorResolutionChoice in chunk 16) handles switching
-            // to the Claude pane and storing context for the view.
+            // to the Agent pane and storing context for the view.
             var failedBranches = (wizard.data && wizard.data.failedBranches) || [];
             wizard.transition('BRANCH_BUILDING');
             return { action: 'manual', state: 'BRANCH_BUILDING', failedBranches: failedBranches };

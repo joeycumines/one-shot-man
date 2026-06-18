@@ -141,7 +141,7 @@ func newPrSplitEvalWithMgr(t testing.TB) (*termmux.SessionManager, func(string) 
 // scripts loaded).
 //
 // This directly validates the fix for GAP-C01/C02 from the pr-split autopsy:
-// the session() wrapper was missing write/resize, causing all inline Claude
+// the session() wrapper was missing write/resize, causing all inline Agent
 // pane keystrokes to silently fail.
 func TestInlineKeystrokeReachesPTY(t *testing.T) {
 	skipSlow(t)
@@ -149,14 +149,14 @@ func TestInlineKeystrokeReachesPTY(t *testing.T) {
 
 	mgr, evalJS := newPrSplitEvalWithMgr(t)
 
-	// Register a recording StringIO session as the active Claude session.
+	// Register a recording StringIO session as the active Agent session.
 	rec := newRecordingStringIO()
 	sio := termmux.NewStringIOSession(rec)
 	sio.Start()
 	t.Cleanup(func() { _ = rec.Close() })
 
 	id, err := mgr.Register(sio, termmux.SessionTarget{
-		Name: "claude",
+		Name: "agent",
 		Kind: termmux.SessionKindPTY,
 	})
 	if err != nil {

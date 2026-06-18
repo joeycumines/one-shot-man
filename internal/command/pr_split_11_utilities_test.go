@@ -18,7 +18,7 @@ import (
 var allChunksThrough11 = []string{
 	"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 	"05_execution", "06_verification", "07_prcreation", "08_conflict",
-	"09_claude",
+	"09_agent",
 	"10a_pipeline_config", "10b_pipeline_send", "10c_pipeline_resolve", "10d_pipeline_orchestrator",
 	"11_utilities",
 }
@@ -365,10 +365,10 @@ func TestChunk11_Telemetry_IncrementDefault(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// recordTelemetry with no value on a numeric key should increment by 1.
-	if _, err := evalJS(`globalThis.prSplit.recordTelemetry('claudeInteractions')`); err != nil {
+	if _, err := evalJS(`globalThis.prSplit.recordTelemetry('agentInteractions')`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := evalJS(`globalThis.prSplit.recordTelemetry('claudeInteractions')`); err != nil {
+	if _, err := evalJS(`globalThis.prSplit.recordTelemetry('agentInteractions')`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -380,8 +380,8 @@ func TestChunk11_Telemetry_IncrementDefault(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw.(string)), &summary); err != nil {
 		t.Fatal(err)
 	}
-	if summary["claudeInteractions"] != float64(2) {
-		t.Errorf("claudeInteractions = %v, want 2", summary["claudeInteractions"])
+	if summary["agentInteractions"] != float64(2) {
+		t.Errorf("agentInteractions = %v, want 2", summary["agentInteractions"])
 	}
 }
 
@@ -1081,7 +1081,7 @@ func TestChunk11_12_MissingExportsIsEmpty(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 		"05_execution", "06_verification", "07_prcreation", "08_conflict",
-		"09_claude",
+		"09_agent",
 		"10a_pipeline_config", "10b_pipeline_send", "10c_pipeline_resolve", "10d_pipeline_orchestrator",
 		"11_utilities", "12_exports",
 	)

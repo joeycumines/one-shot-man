@@ -238,11 +238,11 @@ The `[pr-split]` section configures default options for `osm pr-split`. All keys
 | `prefix` | string | `split/` | `--prefix` | Branch name prefix |
 | `verify` | string | `make test` | `--verify` | Verification command run after each split |
 | `dry-run` | bool | `false` | `--dry-run` | Plan without creating branches |
-| `claude-command` | string | _(auto-detect)_ | `--claude-command` | Claude binary path. Auto-detects `claude` or `ollama` if empty |
-| `claude-arg` | string (repeatable) | _(empty)_ | `--claude-arg` | Additional CLI argument for Claude (repeatable — one arg per entry) |
-| `claude-model` | string | _(empty)_ | `--claude-model` | Model name (provider-dependent) |
-| `claude-config-dir` | string | _(empty)_ | `--claude-config-dir` | Claude config directory override |
-| `claude-env` | string | _(empty)_ | `--claude-env` | Extra environment variables (`KEY=VALUE,KEY=VALUE`) |
+| `agent-command` | string | _(auto-detect)_ | `--agent-command` | Agent binary path. Empty value triggers auto-detection of a supported agent on PATH |
+| `agent-arg` | string (repeatable) | _(empty)_ | `--agent-arg` | Additional CLI argument for the agent (repeatable — one arg per entry) |
+| `agent-model` | string | _(empty)_ | `--agent-model` | Model name (provider-dependent) |
+| `agent-config-dir` | string | _(empty)_ | `--agent-config-dir` | Agent config directory override |
+| `agent-env` | string | _(empty)_ | `--agent-env` | Extra environment variables (`KEY=VALUE,KEY=VALUE`) |
 
 ### Runtime-only settings
 
@@ -263,56 +263,8 @@ strategy extension
 max 8
 prefix feature-split/
 verify go test ./...
-claude-command claude
-claude-model sonnet
-```
-
-## Claude Code multiplexer (`[claude-mux]`)
-
-The `[claude-mux]` section configures the Claude Code agent orchestration system used by the `mcp-bridge` command and `osm:claudemux` scripting module.
-
-### Keys
-
-- `provider` (string, default `claude-code`)
-  - AI provider name. Determines how agents are spawned.
-- `model` (string, default _(empty)_)
-  - Model identifier passed to the provider. When empty, uses the provider's default.
-- `work-dir` (string, default _(empty)_)
-  - Working directory for spawned agents. When empty, uses the current working directory.
-- `env-inherit` (bool, default `true`)
-  - Whether agents inherit the parent process's environment variables.
-  - Accepts: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` (case-insensitive).
-- `env` (string, default _(empty)_)
-  - Additional environment variable in `KEY=VALUE` format to set for agent processes.
-- `env-profile` (string, default _(empty)_)
-  - Active environment variable profile name. Profiles are defined as `[claude-mux.env.<profile>]` sections.
-- `pre-spawn-hook` (string, default _(empty)_)
-  - Path to a JavaScript file executed before each agent spawn. Useful for credential injection or dynamic environment setup.
-- `permission-policy` (string, default `reject`)
-  - How permission prompts from agents are handled. `reject` automatically denies permission requests; `ask` surfaces them to the user.
-- `rate-limit-backoff-sec` (int, default `30`)
-  - Initial backoff duration in seconds when an agent encounters API rate limits.
-- `max-agents` (int, default `4`)
-  - Maximum number of concurrent agents in the pool.
-- `pty-rows` (int, default `24`)
-  - Row count for agent PTY allocation.
-- `pty-cols` (int, default `80`)
-  - Column count for agent PTY allocation.
-- `provider-command` (string, default _(empty)_)
-  - Override the provider executable path. When empty, the provider is resolved via `$PATH`.
-- `mcp-servers` (string, default _(empty)_)
-  - Comma-separated MCP server commands to configure for agents.
-
-Example:
-
-```text
-[claude-mux]
-provider claude-code
-model sonnet
-max-agents 2
-permission-policy ask
-pty-rows 40
-pty-cols 120
+agent-command /path/to/agent
+agent-model llama3
 ```
 
 ## Global options

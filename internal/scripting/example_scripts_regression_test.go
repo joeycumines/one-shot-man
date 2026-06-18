@@ -53,8 +53,7 @@ func loadExampleProgram(t *testing.T, engine *Engine, scriptName string) {
 
 	// Script-specific modelStart patterns (variable name and declaration keyword vary).
 	modelStarts := map[string]string{
-		"example-14-comprehensive-demo.js": "var program = tea.newModel({",
-		"example-15-bouncing-logo.js":      "var program = tea.newModel({",
+		"example-15-bouncing-logo.js": "var program = tea.newModel({",
 	}
 	modelStart, ok := modelStarts[scriptName]
 	if !ok {
@@ -138,7 +137,7 @@ require = function(name) {
 	switch scriptName {
 	case "minimal-bubbletea-test.js":
 		runMarker = "const result = tea.run(program);"
-	case "example-02-graphical-todo.js", "benchmark-input-latency.js", "example-13-split-pane.js", "example-14-comprehensive-demo.js", "example-15-bouncing-logo.js":
+	case "example-02-graphical-todo.js", "benchmark-input-latency.js", "example-13-split-pane.js", "example-15-bouncing-logo.js":
 	default:
 		t.Fatalf("unsupported script %q", scriptName)
 	}
@@ -422,50 +421,6 @@ __result = {
 	}
 }
 
-func TestExample14Comprehensive_InitStartsTick(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping slow test")
-	}
-	engine := newExampleScriptEngine(t)
-	loadExampleProgram(t, engine, "example-14-comprehensive-demo.js")
-
-	result := runResultScript(t, engine, "example-14-regression", `
-var initRes = __programConfig.init();
-var model = initRes[0];
-var cmd = initRes[1];
-
-var viewRes = __programConfig.view(model);
-
-__result = {
-    initIsArray: Array.isArray(initRes),
-    initCmdType: cmd && cmd._cmdType || null,
-    modelHasTick: model.tick === 0,
-    modelHasView: model.view === 0,
-    viewHasContent: typeof viewRes.content === 'string' && viewRes.content.length > 0,
-    viewAltScreen: viewRes.altScreen === true
-};
-`)
-
-	if got := result["initIsArray"]; got != true {
-		t.Fatalf("expected init to return [state, cmd], got %v", got)
-	}
-	if got := result["initCmdType"]; got != "tick" {
-		t.Fatalf("expected init to schedule tick, got %v", got)
-	}
-	if got := result["modelHasTick"]; got != true {
-		t.Fatalf("expected initial model.tick === 0, got %v", got)
-	}
-	if got := result["modelHasView"]; got != true {
-		t.Fatalf("expected initial model.view === 0, got %v", got)
-	}
-	if got := result["viewHasContent"]; got != true {
-		t.Fatalf("expected view to produce non-empty content, got %v", got)
-	}
-	if got := result["viewAltScreen"]; got != true {
-		t.Fatalf("expected view altScreen=true, got %v", got)
-	}
-}
-
 func TestExample15BouncingLogo_InitStartsTick(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test")
@@ -522,128 +477,5 @@ __result = {
 	}
 	if got := result["viewMouseMode"]; got != true {
 		t.Fatalf("expected view mouseMode='allMotion', got %v", got)
-	}
-}
-
-func runNonInteractiveExampleScript(t *testing.T, scriptName string) string {
-	t.Helper()
-
-	engine := newExampleScriptEngine(t)
-
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd failed: %v", err)
-	}
-	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
-	scriptPath := filepath.Join(projectDir, "scripts", scriptName)
-	content, err := os.ReadFile(scriptPath)
-	if err != nil {
-		t.Fatalf("ReadFile(%s) failed: %v", scriptPath, err)
-	}
-
-	source := string(content)
-	if strings.HasPrefix(source, "#!") {
-		if idx := strings.Index(source, "\n"); idx >= 0 {
-			source = source[idx+1:]
-		} else {
-			source = ""
-		}
-	}
-
-	script := engine.LoadScriptFromString(scriptName, source)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("ExecuteScript(%s) failed: %v", scriptName, err)
-	}
-
-	stdoutBuf, ok := engine.Stdout().(*bytes.Buffer)
-	if !ok {
-		t.Fatalf("engine.Stdout() is not a *bytes.Buffer")
-	}
-	return stdoutBuf.String()
-}
-
-func TestExample08ClaudeMockProtocol(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping slow test")
-	}
-	output := runNonInteractiveExampleScript(t, "example-08-claude-mock-protocol.js")
-	for _, marker := range []string{
-		"=== 1. Provider Registration ===",
-		"mock-claude",
-		"=== 7. Parser Patterns ===",
-		"Protocol mode demo complete",
-	} {
-		if !strings.Contains(output, marker) {
-			t.Fatalf("expected output to contain %q", marker)
-		}
-	}
-}
-
-func TestExample09ClaudeTuiDetection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping slow test")
-	}
-	output := runNonInteractiveExampleScript(t, "example-09-claude-tui-detection.js")
-	for _, marker := range []string{
-		"=== 1. TUI State Machine ===",
-		"TUI_STATE_READY",
-		"=== 7. Event Type Constants ===",
-		"TUI detection demo complete",
-	} {
-		if !strings.Contains(output, marker) {
-			t.Fatalf("expected output to contain %q", marker)
-		}
-	}
-}
-
-func TestExample10ClaudePool(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping slow test")
-	}
-	output := runNonInteractiveExampleScript(t, "example-10-claude-pool.js")
-	for _, marker := range []string{
-		"=== 1. Provider & Registry ===",
-		"mock-claude",
-		"=== 6. Cleanup ===",
-		"Pool demo complete",
-	} {
-		if !strings.Contains(output, marker) {
-			t.Fatalf("expected output to contain %q", marker)
-		}
-	}
-}
-
-func TestExample11MultiAgentTeam(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping slow test")
-	}
-	output := runNonInteractiveExampleScript(t, "example-11-multi-agent-team.js")
-	for _, marker := range []string{
-		"=== Multi-Agent Team Demo ===",
-		"planner",
-		"coder",
-		"reviewer",
-		"Multi-Agent Team Demo Complete",
-	} {
-		if !strings.Contains(output, marker) {
-			t.Fatalf("expected output to contain %q", marker)
-		}
-	}
-}
-
-func TestExample12AgentPanel(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping slow test")
-	}
-	output := runNonInteractiveExampleScript(t, "example-12-agent-panel.js")
-	for _, marker := range []string{
-		"=== Agent Panel Demo ===",
-		"agent-planner",
-		"Keyboard Input Routing",
-		"Agent Panel Demo Complete",
-	} {
-		if !strings.Contains(output, marker) {
-			t.Fatalf("expected output to contain %q", marker)
-		}
 	}
 }

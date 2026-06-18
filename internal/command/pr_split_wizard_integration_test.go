@@ -50,28 +50,28 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 		},
 	})
 
-	// Mock ClaudeCodeExecutor (pipeline requires it for classify+plan).
+	// Mock AgentCodeExecutor (pipeline requires it for classify+plan).
 	mockSetup := `
 		prSplit.SEND_TEXT_CHUNK_BYTES = 1000000;
 		var _mockSentPrompts = [];
-		ClaudeCodeExecutor = function(config) {
+		AgentCodeExecutor = function(config) {
 			this.config = config;
-			this.resolved = { command: 'mock-claude' };
+			this.resolved = { command: 'mock-agent' };
 			this.handle = {
 				send: function(text) { _mockSentPrompts.push(text); },
 				isAlive: function() { return true; }
 			};
 		};
-		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.spawn = function(sid, opts) {
+		AgentCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		AgentCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
+		AgentCodeExecutor.prototype.spawn = function(sid, opts) {
 			return { error: null, sessionId: 'mock-session-baseline-retry' };
 		};
-		ClaudeCodeExecutor.prototype.close = function() {};
-		ClaudeCodeExecutor.prototype.kill = function() {};
+		AgentCodeExecutor.prototype.close = function() {};
+		AgentCodeExecutor.prototype.kill = function() {};
 	`
 	if _, err := tp.EvalJS(mockSetup); err != nil {
-		t.Fatalf("inject mock ClaudeCodeExecutor: %v", err)
+		t.Fatalf("inject mock AgentCodeExecutor: %v", err)
 	}
 
 	// --- Step 1: dispatch auto-split → should hit BASELINE_FAIL ---
@@ -147,7 +147,7 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 	}
 
 	// Verify the pipeline actually ran (should mention steps or produce report).
-	// The pipeline sends prompts to the mock Claude, so there should be
+	// The pipeline sends prompts to the mock Agent, so there should be
 	// classification+plan interaction.
 	promptCount, err := tp.EvalJS(`_mockSentPrompts.length`)
 	if err != nil {
@@ -161,7 +161,7 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 		}
 	}
 	if pCount < 1 {
-		t.Errorf("expected at least 1 prompt sent to mock Claude, got %d", pCount)
+		t.Errorf("expected at least 1 prompt sent to mock Agent, got %d", pCount)
 	}
 }
 

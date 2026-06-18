@@ -251,7 +251,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 
 | Module | Description |
 |--------|-------------|
-| `osm:claudemux` | Claude Code process management — PTY output parsing, guard rails, error recovery, instance pooling, safety validation |
+| `osm:aimux` | Provider-agnostic agent process multiplexer — process registry, PTY spawn, output parser, used by `pr-split` |
 
 ### Context management
 
@@ -493,7 +493,7 @@ The PR Split TUI uses a split-view layout during branch building with four multi
 ┌─────────────────────────────────┐
 │  Wizard (top pane)              │  ← BubbleTea TUI
 ├─────────────────────────────────┤
-│  Tab Bar: Claude|Output|Verify|Shell  │
+│  Tab Bar: Agent|Output|Verify|Shell   │
 │  ┌─────────────────────────────┐│
 │  │  Active Tab Content         ││  ← CaptureSession or text
 │  │  (ANSI-rendered terminal)   ││

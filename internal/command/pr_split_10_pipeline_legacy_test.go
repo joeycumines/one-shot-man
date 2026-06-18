@@ -11,7 +11,7 @@ import (
 
 // ---------------------------------------------------------------------------
 // T063: Pipeline function tests — validatePlan, resolveConflicts,
-// ClaudeCodeExecutor.resolve
+// AgentCodeExecutor.resolve
 //
 // These tests exercise mid-level pipeline functions that orchestrate
 // splitting, verification, and conflict resolution. Each test group
@@ -71,19 +71,19 @@ func parseResolveConflictsResult(t *testing.T, raw any) resolveConflictsResult {
 	return r
 }
 
-type claudeResolveResult struct {
+type agentResolveResult struct {
 	Error *string `json:"error"`
 }
 
-func parseClaudeResolveResult(t *testing.T, raw any) claudeResolveResult {
+func parseAgentResolveResult(t *testing.T, raw any) agentResolveResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
 		t.Fatalf("expected string from evalJS, got %T: %v", raw, raw)
 	}
-	var r claudeResolveResult
+	var r agentResolveResult
 	if err := json.Unmarshal([]byte(s), &r); err != nil {
-		t.Fatalf("failed to parse ClaudeCodeExecutor resolve result: %v\nraw: %s", err, s)
+		t.Fatalf("failed to parse AgentCodeExecutor resolve result: %v\nraw: %s", err, s)
 	}
 	return r
 }
@@ -660,10 +660,10 @@ func jsStringLiteral(s string) string {
 }
 
 // ---------------------------------------------------------------------------
-// TestClaudeCodeExecutor_Resolve — uses exec mock
+// TestAgentCodeExecutor_Resolve — uses exec mock
 // ---------------------------------------------------------------------------
 
-func TestClaudeCodeExecutor_Resolve(t *testing.T) {
+func TestAgentCodeExecutor_Resolve(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -673,14 +673,14 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The ClaudeCodeExecutor.resolve() uses exec.execv with 'which'.
+	// The AgentCodeExecutor.resolve() uses exec.execv with 'which'.
 	// We mock 'which' via the '!sh' fallback and add logic keyed on argv.
 
 	tests := []struct {
 		name      string
 		setup     string
 		invoke    string
-		check     func(t *testing.T, r claudeResolveResult)
+		check     func(t *testing.T, r agentResolveResult)
 		postCheck string // optional secondary JS eval to check executor state
 	}{
 		{
@@ -691,20 +691,20 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 				var origExecv = execMod.execv;
 				execMod.execv = function(argv) {
 					if (argv[0] === 'which' || argv[0] === 'where.exe') {
-						return _gitOk('/usr/bin/my-claude');
+						return _gitOk('/usr/bin/my-agent');
 					}
 					return origExecv(argv);
 				};
-				var ce = new globalThis.prSplit.ClaudeCodeExecutor({claudeCommand: 'my-claude'});
+				var ce = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'my-agent'});
 			`,
 			invoke: `JSON.stringify(ce.resolve())`,
-			check: func(t *testing.T, r claudeResolveResult) {
+			check: func(t *testing.T, r agentResolveResult) {
 				if r.Error != nil {
 					t.Errorf("expected no error, got: %s", *r.Error)
 				}
 			},
 			postCheck: `
-				if (ce.resolved.command !== 'my-claude') throw new Error('expected my-claude, got ' + ce.resolved.command);
+				if (ce.resolved.command !== 'my-agent') throw new Error('expected my-agent, got ' + ce.resolved.command);
 				if (ce.resolved.type !== 'explicit') throw new Error('expected explicit, got ' + ce.resolved.type);
 				'ok'
 			`,
@@ -720,10 +720,10 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 					}
 					return origExecv(argv);
 				};
-				var ce = new globalThis.prSplit.ClaudeCodeExecutor({claudeCommand: 'nonexistent-bin'});
+				var ce = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'nonexistent-bin'});
 			`,
 			invoke: `JSON.stringify(ce.resolve())`,
-			check: func(t *testing.T, r claudeResolveResult) {
+			check: func(t *testing.T, r agentResolveResult) {
 				if r.Error == nil {
 					t.Fatal("expected error when command not found")
 				}
@@ -733,7 +733,7 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 			},
 		},
 		{
-			name: "auto-detect finds claude",
+			name: "auto-detect finds agent",
 			setup: `
 				var execMod = require('osm:exec');
 				var origExecv = execMod.execv;
@@ -745,21 +745,21 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 						return _gitFail('not found');
 					}
 					if (argv[0] === 'claude' && argv[1] === '--version') {
-						return _gitOk('claude-code 1.0.0');
+						return _gitOk('claude 1.0.0');
 					}
 					return origExecv(argv);
 				};
-				var ce = new globalThis.prSplit.ClaudeCodeExecutor({});
+				var ce = new globalThis.prSplit.AgentCodeExecutor({});
 			`,
 			invoke: `JSON.stringify(ce.resolve())`,
-			check: func(t *testing.T, r claudeResolveResult) {
+			check: func(t *testing.T, r agentResolveResult) {
 				if r.Error != nil {
 					t.Errorf("expected no error, got: %s", *r.Error)
 				}
 			},
 			postCheck: `
 				if (ce.resolved.command !== 'claude') throw new Error('expected claude');
-				if (ce.resolved.type !== 'claude-code') throw new Error('expected claude-code type');
+				if (ce.resolved.type !== 'agent') throw new Error('expected agent type');
 				'ok'
 			`,
 		},
@@ -780,10 +780,10 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 					}
 					return origExecv(argv);
 				};
-				var ce = new globalThis.prSplit.ClaudeCodeExecutor({});
+				var ce = new globalThis.prSplit.AgentCodeExecutor({});
 			`,
 			invoke: `JSON.stringify(ce.resolve())`,
-			check: func(t *testing.T, r claudeResolveResult) {
+			check: func(t *testing.T, r agentResolveResult) {
 				if r.Error != nil {
 					t.Errorf("expected no error, got: %s", *r.Error)
 				}
@@ -795,7 +795,7 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 			`,
 		},
 		{
-			name: "no claude-compatible binary found",
+			name: "no agent-compatible binary found",
 			setup: `
 				var execMod = require('osm:exec');
 				var origExecv = execMod.execv;
@@ -805,15 +805,15 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 					}
 					return origExecv(argv);
 				};
-				var ce = new globalThis.prSplit.ClaudeCodeExecutor({});
+				var ce = new globalThis.prSplit.AgentCodeExecutor({});
 			`,
 			invoke: `JSON.stringify(ce.resolve())`,
-			check: func(t *testing.T, r claudeResolveResult) {
+			check: func(t *testing.T, r agentResolveResult) {
 				if r.Error == nil {
 					t.Fatal("expected error when nothing found")
 				}
-				if !strings.Contains(*r.Error, "No Claude-compatible binary") {
-					t.Errorf("expected 'No Claude-compatible binary' in error, got: %s", *r.Error)
+				if !strings.Contains(*r.Error, "No agent binary found") {
+					t.Errorf("expected 'No agent binary found' in error, got: %s", *r.Error)
 				}
 			},
 		},
@@ -831,7 +831,7 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 			if err != nil {
 				t.Fatalf("invoke failed: %v", err)
 			}
-			r := parseClaudeResolveResult(t, raw)
+			r := parseAgentResolveResult(t, raw)
 			tt.check(t, r)
 
 			if tt.postCheck != "" {

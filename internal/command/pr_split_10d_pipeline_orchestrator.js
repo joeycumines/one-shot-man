@@ -33,7 +33,7 @@
         var verifySplits = prSplit.verifySplitsAsync;
         var verifyEquivalence = prSplit.verifyEquivalenceAsync;
         var cleanupBranches = prSplit.cleanupBranchesAsync;
-        var ClaudeCodeExecutor = prSplit.ClaudeCodeExecutor;
+        var AgentCodeExecutor = prSplit.AgentCodeExecutor;
         var renderClassificationPrompt = prSplit.renderClassificationPrompt;
         var padIndex = prSplit._padIndex;
         var osmod = prSplit._modules.osmod;
@@ -52,7 +52,7 @@
         var sendToHandle = prSplit.sendToHandle;
         var waitForLogged = prSplit.waitForLogged;
         var heuristicFallback = prSplit.heuristicFallback;
-        var resolveConflictsWithClaude = prSplit.resolveConflictsWithClaude;
+        var resolveConflictsWithAgent = prSplit.resolveConflictsWithAgent;
 
         var dir = resolveDir(config.dir || '.');
 
@@ -67,14 +67,14 @@
             filesAnalyzed: 0,
             splitCount: 0,
             strategy: '',
-            claudeInteractions: 0,
+            agentInteractions: 0,
             conflictsResolved: 0,
             conflictsFailed: 0,
             startTime: new Date().toISOString(),
             endTime: null
         };
-        state.claudeExecutor = null;
-        state.claudeSessionID = null;
+        state.agentExecutor = null;
+        state.agentSessionID = null;
         state.mcpCallbackObj = null;
         state.analysisCache = null;
         state.groupsCache = null;
@@ -84,7 +84,7 @@
         // previous pipeline run are not used by buildReport().
         state.equivalenceResult = null;
         // Also reset the prSplit-level pointers used by other chunks.
-        prSplit._claudeExecutor = null;
+        prSplit._agentExecutor = null;
         prSplit._mcpCallbackObj = null;
 
         var timeouts = {
@@ -124,7 +124,7 @@
             conflicts: [],
             resolutions: [],
             independencePairs: [],
-            claudeInteractions: 0,
+            agentInteractions: 0,
             fallbackUsed: false,
             error: null
         };
@@ -214,7 +214,7 @@
         // finishTUI signals the auto-split TUI is done.
         function finishTUI(result) {
             // T393: Only clean up MCP callback on error — keep alive for "Ask
-            // Claude" conversation overlay on PLAN_REVIEW/ERROR_RESOLUTION.
+            // Agent" conversation overlay on PLAN_REVIEW/ERROR_RESOLUTION.
             // On success, the wizard's quit handler handles cleanup.
             if (result.error) {
                 var mcpCb = prSplit._mcpCallbackObj;
@@ -280,7 +280,7 @@
             analysis = state.analysisCache || { files: [], fileStatuses: {}, baseBranch: '', currentBranch: '' };
         }
 
-        // Initialize MCP callback transport for Claude IPC.
+        // Initialize MCP callback transport for Agent IPC.
         var mcpCallbackObj;
         try {
             var mcpMod = require('osm:mcp');
@@ -349,13 +349,13 @@
                     }
                 });
 
-            // Heartbeat tool — Claude calls periodically to signal liveness.
-            // Heartbeat timeout: if Claude has sent at least one heartbeat but
+            // Heartbeat tool — Agent calls periodically to signal liveness.
+            // Heartbeat timeout: if Agent has sent at least one heartbeat but
             // then goes silent for longer than this, waitForLogged aborts.
-            // Default: claudeHeartbeatTimeoutMs from AUTOMATED_DEFAULTS (60s).
-            var heartbeatTimeoutMs = typeof config.heartbeatTimeoutMs === 'number' ? config.heartbeatTimeoutMs : AUTOMATED_DEFAULTS.claudeHeartbeatTimeoutMs;
+            // Default: agentHeartbeatTimeoutMs from AUTOMATED_DEFAULTS (60s).
+            var heartbeatTimeoutMs = typeof config.heartbeatTimeoutMs === 'number' ? config.heartbeatTimeoutMs : AUTOMATED_DEFAULTS.agentHeartbeatTimeoutMs;
             mcpCallbackObj.addTool('heartbeat',
-                'Send a heartbeat to indicate Claude is still actively working. Call this periodically during long-running analysis.',
+                'Send a heartbeat to indicate Agent is still actively working. Call this periodically during long-running analysis.',
                 {
                     type: 'object',
                     properties: {
@@ -377,119 +377,119 @@
         }
 
         // Steps 2-6 are skipped when resuming from a saved plan.
-        var claudeExecutor;
+        var agentExecutor;
         var sessionId;
         var aliveCheckFn;
 
         if (!resuming) {
 
-        // Step 2: Spawn Claude (or fall back to heuristic).
-        var executor = await step('Spawn Claude', async function() {
-            updateDetail('Spawn Claude', 'Resolving Claude executable...');
-            claudeExecutor = state.claudeExecutor;
-            if (!claudeExecutor) {
-                claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
-                state.claudeExecutor = claudeExecutor;
-                prSplit._claudeExecutor = claudeExecutor;
+        // Step 2: Spawn Agent (or fall back to heuristic).
+        var executor = await step('Spawn Agent', async function() {
+            updateDetail('Spawn Agent', 'Resolving Agent executable...');
+            agentExecutor = state.agentExecutor;
+            if (!agentExecutor) {
+                agentExecutor = new AgentCodeExecutor(prSplitConfig);
+                state.agentExecutor = agentExecutor;
+                prSplit._agentExecutor = agentExecutor;
             }
-            var resolveResult = await claudeExecutor.resolveAsync(function(msg) {
-                updateDetail('Spawn Claude', msg);
+            var resolveResult = await agentExecutor.resolveAsync(function(msg) {
+                updateDetail('Spawn Agent', msg);
             });
             if (resolveResult.error) {
                 return { error: resolveResult.error };
             }
-            updateDetail('Spawn Claude', 'Starting Claude process...');
+            updateDetail('Spawn Agent', 'Starting Agent process...');
             var spawnOpts = {};
             spawnOpts.mcpConfigPath = mcpCallbackObj.mcpConfigPath;
-            var spawnResult = await claudeExecutor.spawn(null, spawnOpts);
+            var spawnResult = await agentExecutor.spawn(null, spawnOpts);
             if (spawnResult.error) {
                 return { error: spawnResult.error };
             }
             return { error: null, sessionId: spawnResult.sessionId };
         });
 
-        // If Claude is unavailable, fall back to heuristic mode.
+        // If Agent is unavailable, fall back to heuristic mode.
         if (executor.error) {
-            emitOutput('[auto-split] Claude unavailable — falling back to heuristic mode.');
+            emitOutput('[auto-split] Agent unavailable — falling back to heuristic mode.');
             report.fallbackUsed = true;
             return finishTUI(await heuristicFallback(analysis, config, report));
         }
 
         sessionId = executor.sessionId;
 
-        // Heartbeat function: checks if the Claude session is still alive.
-        // Uses the pinned Claude SessionID for event-driven liveness checks,
+        // Heartbeat function: checks if the Agent session is still alive.
+        // Uses the pinned Agent SessionID for event-driven liveness checks,
         // with a direct handle.isAlive() fallback for headless mode.
         aliveCheckFn = function() {
-            // Pinned session check: use tuiMux.isDone(claudeSessionID) when
+            // Pinned session check: use tuiMux.isDone(agentSessionID) when
             // available. This is a channel-based (event-driven) signal that
             // fires when the PTY's Done() channel closes, independent of
             // which session is currently active.
-            if (claudeExecutor && claudeExecutor.handle &&
+            if (agentExecutor && agentExecutor.handle &&
                 typeof tuiMux !== 'undefined' && tuiMux &&
-                state.claudeSessionID &&
+                state.agentSessionID &&
                 typeof tuiMux.isDone === 'function') {
-                if (tuiMux.isDone(state.claudeSessionID)) {
+                if (tuiMux.isDone(state.agentSessionID)) {
                     return false;
                 }
             }
             // Direct handle check: covers headless mode (no tuiMux) and
             // catches process death before PTY output fully drains.
-            if (!claudeExecutor || !claudeExecutor.handle ||
-                typeof claudeExecutor.handle.isAlive !== 'function' ||
-                !claudeExecutor.handle.isAlive()) {
+            if (!agentExecutor || !agentExecutor.handle ||
+                typeof agentExecutor.handle.isAlive !== 'function' ||
+                !agentExecutor.handle.isAlive()) {
                 return false;
             }
             lastProgressTime = Date.now();
             return true;
         };
 
-        // Attach Claude's PTY handle to tuiMux so ctrl+] can forward.
-        // The session target was pre-configured as sessionTypes.claude at
+        // Attach Agent's PTY handle to tuiMux so ctrl+] can forward.
+        // The session target was pre-configured as sessionTypes.agent at
         // bootstrap (setupEngineGlobals) — no lazy assignment needed.
         // attach() returns the pinned SessionID; store it in state so all
-        // Claude reads/writes use tuiMux.snapshot(cid) rather than ActiveID.
-        // SYNCHRONOUS INVARIANT: state.claudeSessionID MUST be written in the
-        // same synchronous JS turn as the attach() call. pollClaudeScreenshot
+        // Agent reads/writes use tuiMux.snapshot(cid) rather than ActiveID.
+        // SYNCHRONOUS INVARIANT: state.agentSessionID MUST be written in the
+        // same synchronous JS turn as the attach() call. pollAgentScreenshot
         // depends on this — if a tick fires between attach and state write,
-        // the guard will treat Claude as "not yet attached".
-        if (claudeExecutor && claudeExecutor.handle && typeof tuiMux !== 'undefined' && tuiMux) {
-	            if (typeof claudeExecutor.handle.isAlive === 'function' && !claudeExecutor.handle.isAlive()) {
-	                log.printf('auto-split: Claude process died between spawn and attach — ctrl+] will not work');
-	                emitOutput('[auto-split] Warning: Claude process exited unexpectedly. Toggle (Ctrl+]) unavailable.');
+        // the guard will treat Agent as "not yet attached".
+        if (agentExecutor && agentExecutor.handle && typeof tuiMux !== 'undefined' && tuiMux) {
+	            if (typeof agentExecutor.handle.isAlive === 'function' && !agentExecutor.handle.isAlive()) {
+	                log.printf('auto-split: Agent process died between spawn and attach — ctrl+] will not work');
+	                emitOutput('[auto-split] Warning: Agent process exited unexpectedly. Toggle (Ctrl+]) unavailable.');
 	            } else {
-	                try {
-	                    var cid = tuiMux.attach(claudeExecutor.handle);
-	                    state.claudeSessionID = cid;
-	                    log.printf('auto-split: attached Claude (%s) handle to tuiMux, sessionID=%d',
-	                        typeof sessionTypes !== 'undefined' && sessionTypes.claude ? sessionTypes.claude.name : 'claude',
-	                        cid || 0);
-	                } catch (e) {
-	                    log.printf('auto-split: tuiMux attach warning: %s', e.message || String(e));
-	                }
+                try {
+                    var cid = await tuiMux.attachAsync(agentExecutor.handle);
+                    state.agentSessionID = cid;
+                    log.printf('auto-split: attached Agent (%s) handle to tuiMux, sessionID=%d',
+                        typeof sessionTypes !== 'undefined' && sessionTypes.agent ? sessionTypes.agent.name : 'agent',
+                        cid || 0);
+                } catch (e) {
+                    log.printf('auto-split: tuiMux attachAsync warning: %s', e.message || String(e));
+                }
             }
-        } else if (claudeExecutor && claudeExecutor.handle &&
-                   typeof claudeExecutor.handle.drainOutput === 'function') {
-            // No tuiMux (headless/test mode): drain Claude's PTY output to
+        } else if (agentExecutor && agentExecutor.handle &&
+                   typeof agentExecutor.handle.drainOutput === 'function') {
+            // No tuiMux (headless/test mode): drain Agent's PTY output to
             // prevent buffer deadlocks.
-            claudeExecutor.handle.drainOutput();
+            agentExecutor.handle.drainOutput();
             log.printf('auto-split: no tuiMux — started PTY output drain to prevent deadlock');
         }
 
         // Step 2b: Dismiss Ollama launcher menu if present.
         // Ollama shows a "Run a model" launcher screen before the model
-        // selection menu.  We detect it via the pinned Claude snapshot and send
+        // selection menu.  We detect it via the pinned Agent snapshot and send
         // the appropriate dismissal keystrokes.  For non-Ollama providers
         // this block is a no-op.
-        if (claudeExecutor && claudeExecutor.resolved &&
-            claudeExecutor.resolved.type === 'ollama' &&
-            claudeExecutor.handle && claudeExecutor.cm) {
+        if (agentExecutor && agentExecutor.resolved &&
+            agentExecutor.resolved.type === 'ollama' &&
+            agentExecutor.handle && agentExecutor.cm) {
             var launcherResult = await step('Dismiss launcher', async function() {
                 var LAUNCHER_POLL_MS     = AUTOMATED_DEFAULTS.launcherPollMs;
                 var LAUNCHER_TIMEOUT_MS  = AUTOMATED_DEFAULTS.launcherTimeoutMs;
                 var LAUNCHER_STABLE_NEED = AUTOMATED_DEFAULTS.launcherStableNeed;
-                var cm = claudeExecutor.cm;
-                var handle = claudeExecutor.handle;
+                var cm = agentExecutor.cm;
+                var handle = agentExecutor.handle;
                 var startMs = Date.now();
                 var stableCount = 0;
                 var dismissed = false;
@@ -547,11 +547,11 @@
 
                     // Not a launcher menu — might be model selection.
                     // If we have a target model, navigate to it.
-                    if (claudeExecutor.model && !dismissed) {
+                    if (agentExecutor.model && !dismissed) {
                         try {
-                            var navKeys = cm.navigateToModel(menu, claudeExecutor.model);
+                            var navKeys = cm.navigateToModel(menu, agentExecutor.model);
                             if (navKeys) {
-                                log.printf('auto-split launcher: navigating to model %s', claudeExecutor.model);
+                                log.printf('auto-split launcher: navigating to model %s', agentExecutor.model);
                                 handle.send(navKeys);
                                 await new Promise(function(r) { setTimeout(r, AUTOMATED_DEFAULTS.launcherPostDismissMs); });
                             }
@@ -587,14 +587,14 @@
             if (renderResult.error) {
                 return { error: renderResult.error };
             }
-            updateDetail('Send classification request', 'Sending prompt to Claude...');
-            var sendResult = await sendToHandle(claudeExecutor.handle, renderResult.text);
+            updateDetail('Send classification request', 'Sending prompt to Agent...');
+            var sendResult = await sendToHandle(agentExecutor.handle, renderResult.text);
             if (sendResult.error) {
-                return { error: 'failed to send prompt to Claude: ' + sendResult.error };
+                return { error: 'failed to send prompt to Agent: ' + sendResult.error };
             }
-            report.claudeInteractions++;
+            report.agentInteractions++;
             recordConversation('classification', renderResult.text, '');
-            recordTelemetry('claudeInteractions', 1);
+            recordTelemetry('agentInteractions', 1);
             return { error: null };
         });
         if (classifyResult.error) {
@@ -675,9 +675,9 @@
             return finishTUI({ error: classification.error, report: report });
         }
 
-        // Step 5: Generate plan (from Claude or locally).
+        // Step 5: Generate plan (from Agent or locally).
         var planResult = await step('Generate split plan', async function() {
-            updateDetail('Generate split plan', 'Checking for Claude-generated plan...');
+            updateDetail('Generate split plan', 'Checking for Agent-generated plan...');
             var planPoll = await waitForLogged('reportSplitPlan', AUTOMATED_DEFAULTS.planPollTimeoutMs, {
                 aliveCheck: aliveCheckFn,
                 heartbeatTool: 'heartbeat',
@@ -689,22 +689,22 @@
                 planPoll = { data: planPoll.data.stages || planPoll.data, error: null };
             }
             if (!planPoll.error && planPoll.data) {
-                var claudePlan = planPoll.data;
-                if (Array.isArray(claudePlan) && claudePlan.length > 0) {
-                    var stageVal = validateSplitPlan(claudePlan);
+                var agentPlan = planPoll.data;
+                if (Array.isArray(agentPlan) && agentPlan.length > 0) {
+                    var stageVal = validateSplitPlan(agentPlan);
                     if (!stageVal.valid) {
-                        log.printf('auto-split: Claude split plan stage validation errors: %s', stageVal.errors.join('; '));
+                        log.printf('auto-split: Agent split plan stage validation errors: %s', stageVal.errors.join('; '));
                     }
-                    report.claudeInteractions++;
+                    report.agentInteractions++;
                     var plan = {
                         baseBranch: analysis.baseBranch,
                         sourceBranch: analysis.currentBranch,
                         dir: '.',
                         verifyCommand: runtime.verifyCommand,
                         fileStatuses: analysis.fileStatuses || {},
-                        splits: claudePlan.map(function(s, i) {
+                        splits: agentPlan.map(function(s, i) {
                             return {
-                                name: s.name || (runtime.branchPrefix + padIndex(i, claudePlan.length)),
+                                name: s.name || (runtime.branchPrefix + padIndex(i, agentPlan.length)),
                                 files: s.files || [],
                                 message: s.message || ('Split ' + (i + 1)),
                                 order: typeof s.order === 'number' ? s.order : i
@@ -716,7 +716,7 @@
                         report.plan = plan;
                         return { error: null, plan: plan };
                     }
-                    log.printf('auto-split: Claude plan invalid: %s — generating locally', validation.errors.join('; '));
+                    log.printf('auto-split: Agent plan invalid: %s — generating locally', validation.errors.join('; '));
                 }
             }
 
@@ -801,50 +801,50 @@
             sessionId = null;
             aliveCheckFn = null;
 
-            // Try to spawn Claude for conflict resolution capability.
-            claudeExecutor = state.claudeExecutor;
-            if (!claudeExecutor) {
-                claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
-                state.claudeExecutor = claudeExecutor;
-                prSplit._claudeExecutor = claudeExecutor;
+            // Try to spawn Agent for conflict resolution capability.
+            agentExecutor = state.agentExecutor;
+            if (!agentExecutor) {
+                agentExecutor = new AgentCodeExecutor(prSplitConfig);
+                state.agentExecutor = agentExecutor;
+                prSplit._agentExecutor = agentExecutor;
             }
-            var resumeResolve = await claudeExecutor.resolveAsync();
+            var resumeResolve = await agentExecutor.resolveAsync();
             if (!resumeResolve.error) {
-                var resumeSpawn = await claudeExecutor.spawn(null, { mcpConfigPath: mcpCallbackObj.mcpConfigPath });
+                var resumeSpawn = await agentExecutor.spawn(null, { mcpConfigPath: mcpCallbackObj.mcpConfigPath });
                 if (!resumeSpawn.error) {
                     sessionId = resumeSpawn.sessionId;
                     aliveCheckFn = function() {
-                        // Pinned session check: use tuiMux.isDone(claudeSessionID)
+                        // Pinned session check: use tuiMux.isDone(agentSessionID)
                         // for event-driven liveness, with handle.isAlive() fallback.
-                        if (claudeExecutor && claudeExecutor.handle &&
+                        if (agentExecutor && agentExecutor.handle &&
                             typeof tuiMux !== 'undefined' && tuiMux &&
-                            state.claudeSessionID &&
+                            state.agentSessionID &&
                             typeof tuiMux.isDone === 'function') {
-                            if (tuiMux.isDone(state.claudeSessionID)) {
+                            if (tuiMux.isDone(state.agentSessionID)) {
                                 return false;
                             }
                         }
-                        return claudeExecutor && claudeExecutor.handle &&
-                               typeof claudeExecutor.handle.isAlive === 'function' &&
-                               claudeExecutor.handle.isAlive();
+                        return agentExecutor && agentExecutor.handle &&
+                               typeof agentExecutor.handle.isAlive === 'function' &&
+                               agentExecutor.handle.isAlive();
                     };
                     // Re-attach to tuiMux and capture pinned SessionID.
-                    if (claudeExecutor && claudeExecutor.handle &&
+                    if (agentExecutor && agentExecutor.handle &&
                         typeof tuiMux !== 'undefined' && tuiMux &&
                         typeof tuiMux.attach === 'function') {
                         try {
-                            var resumeCid = tuiMux.attach(claudeExecutor.handle);
-                            state.claudeSessionID = resumeCid;
-                            log.printf('auto-split resume: attached Claude handle to tuiMux, sessionID=%d', resumeCid || 0);
+                            var resumeCid = await tuiMux.attachAsync(agentExecutor.handle);
+                            state.agentSessionID = resumeCid;
+                            log.printf('auto-split resume: attached Agent handle to tuiMux, sessionID=%d', resumeCid || 0);
                         } catch (e) {
-                            log.printf('auto-split resume: tuiMux attach warning: %s', e.message || String(e));
+                            log.printf('auto-split resume: tuiMux attachAsync warning: %s', e.message || String(e));
                         }
                     }
                 } else {
-                    emitOutput('[auto-split] Warning: Claude spawn failed — conflict resolution disabled.');
+                    emitOutput('[auto-split] Warning: Agent spawn failed — conflict resolution disabled.');
                 }
             } else {
-                emitOutput('[auto-split] Claude unavailable — conflict resolution disabled for resume.');
+                emitOutput('[auto-split] Agent unavailable — conflict resolution disabled for resume.');
             }
         }
 
@@ -909,8 +909,8 @@
         // Step 8: Resolve conflicts (if any real failures).
         var reSplitCount = 0;
         if (verifyResult.failures && verifyResult.failures.length > 0) {
-            var resolved = await step('Resolve conflicts via Claude', async function() {
-                return await resolveConflictsWithClaude(
+            var resolved = await step('Resolve conflicts via Agent', async function() {
+                return await resolveConflictsWithAgent(
                     verifyResult.failures, sessionId,
                     timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn,
                     heartbeatTimeoutMs
@@ -925,11 +925,11 @@
                 var reClassifyResult = await step('Re-classify (retry ' + reSplitCount + ')', async function() {
                     var constraintPrompt = 'Re-classify these files with the constraint: ' +
                         resolved.reSplitReason + '\n\nUse the reportClassification MCP tool.\n';
-                    var sendResult = await sendToHandle(claudeExecutor.handle, constraintPrompt);
+                    var sendResult = await sendToHandle(agentExecutor.handle, constraintPrompt);
                     if (sendResult.error) {
                         return { error: 'failed to send re-classify prompt: ' + sendResult.error };
                     }
-                    report.claudeInteractions++;
+                    report.agentInteractions++;
                     recordConversation('re-classify', constraintPrompt, '');
                     mcpCallbackObj.resetWaiter('reportClassification');
                     var rePoll = await waitForLogged('reportClassification', timeouts.classify, {
@@ -1016,7 +1016,7 @@
         emitOutput('');
         emitOutput('=== Auto-Split Complete ===');
         emitOutput('Splits: ' + plan.splits.length);
-        emitOutput('Claude interactions: ' + report.claudeInteractions);
+        emitOutput('Agent interactions: ' + report.agentInteractions);
         emitOutput('Equivalence: ' + (equivResult.result && equivResult.result.equivalent ? 'PASS' : 'FAIL'));
         if (report.independencePairs.length > 0) {
             emitOutput('Independent pairs: ' + report.independencePairs.map(function(p) {
@@ -1024,10 +1024,10 @@
             }).join(', '));
         }
         if (report.fallbackUsed) {
-            emitOutput('Mode: heuristic (Claude unavailable)');
+            emitOutput('Mode: heuristic (Agent unavailable)');
         }
 
-        // T393: Keep Claude alive for "Ask Claude" on PLAN_REVIEW.
+        // T393: Keep Agent alive for "Ask Agent" on PLAN_REVIEW.
         // Only clean up on error — the wizard's quit handler (confirmCancel)
         // handles cleanup on success/cancel paths, and Go context cancellation
         // handles cleanup on process exit.

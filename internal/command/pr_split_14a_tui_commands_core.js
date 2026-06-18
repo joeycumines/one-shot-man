@@ -527,11 +527,11 @@
                         }
                     }
                     if (useAuto) {
-                        if (!st.claudeExecutor) {
-                            st.claudeExecutor = new (prSplit.ClaudeCodeExecutor)(prSplitConfig);
+                        if (!st.agentExecutor) {
+                            st.agentExecutor = new (prSplit.AgentCodeExecutor)(prSplitConfig);
                         }
-                        if (st.claudeExecutor.isAvailable()) {
-                            output.print(style.info('Mode: automated (Claude detected)'));
+                        if (st.agentExecutor.isAvailable()) {
+                            output.print(style.info('Mode: automated (Agent detected)'));
                             var autoConfig = {
                                 baseBranch: runtime.baseBranch,
                                 strategy: runtime.strategy,
@@ -548,7 +548,7 @@
                             if (runtime.jsonOutput && result.report) output.print(JSON.stringify(result.report, null, 2));
                             return;
                         }
-                        output.print(style.warning('Claude not available \u2014 using heuristic mode.'));
+                        output.print(style.warning('Agent not available \u2014 using heuristic mode.'));
                     }
                     var workflowStart = Date.now();
                     output.print(style.header('Running full PR split workflow...'));

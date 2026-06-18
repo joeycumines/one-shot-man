@@ -64,7 +64,7 @@ func TestChunk08_AutoFixStrategies_Structure(t *testing.T) {
 		"npm-install":              false,
 		"make-generate":            false,
 		"add-missing-files":        false,
-		"claude-fix":               false,
+		"agent-fix":                false,
 	}
 	for _, name := range data.Names {
 		if _, ok := expectedNames[name]; ok {
@@ -453,23 +453,23 @@ func TestChunk08_ResolveConflicts_RetryBudgetExhausted(t *testing.T) {
 	}
 }
 
-func TestChunk08_ClaudeFixDetect_NoExecutor(t *testing.T) {
+func TestChunk08_AgentFixDetect_NoExecutor(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
-	// Verify claude-fix strategy detect returns false when no executor is set.
+	// Verify agent-fix strategy detect returns false when no executor is set.
 	result, err := evalJS(`
 		(function() {
 			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
-			var claudeStrat = null;
+			var agentStrat = null;
 			for (var i = 0; i < strats.length; i++) {
-				if (strats[i].name === 'claude-fix') {
-					claudeStrat = strats[i];
+				if (strats[i].name === 'agent-fix') {
+					agentStrat = strats[i];
 					break;
 				}
 			}
-			if (!claudeStrat) return JSON.stringify({error: 'claude-fix not found'});
-			return JSON.stringify({detected: claudeStrat.detect()});
+			if (!agentStrat) return JSON.stringify({error: 'agent-fix not found'});
+			return JSON.stringify({detected: agentStrat.detect()});
 		})()
 	`)
 	if err != nil {
@@ -487,7 +487,7 @@ func TestChunk08_ClaudeFixDetect_NoExecutor(t *testing.T) {
 		t.Fatal(data.Error)
 	}
 	if data.Detected {
-		t.Error("expected claude-fix detect=false when no executor set")
+		t.Error("expected agent-fix detect=false when no executor set")
 	}
 }
 

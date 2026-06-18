@@ -412,42 +412,42 @@ func TestChunk16_EditorDialog_EscClosesAll(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-//  Claude Conversation Overlay
+//  Agent Conversation Overlay
 // ---------------------------------------------------------------------------
 
-func TestChunk16_ClaudeConvo_InputAndSend(t *testing.T) {
+func TestChunk16_AgentConvo_InputAndSend(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
-		s.claudeConvo.active = true;
-		s.claudeConvo.context = 'plan-review';
-		s.claudeConvo.inputText = '';
+		s.agentConvo.active = true;
+		s.agentConvo.context = 'plan-review';
+		s.agentConvo.inputText = '';
 
 		// Type characters.
 		var r = sendKey(s, 'h');
-		if (r[0].claudeConvo.inputText !== 'h') return 'FAIL: char h not appended';
+		if (r[0].agentConvo.inputText !== 'h') return 'FAIL: char h not appended';
 		r = sendKey(r[0], 'i');
-		if (r[0].claudeConvo.inputText !== 'hi') return 'FAIL: char i not appended';
+		if (r[0].agentConvo.inputText !== 'hi') return 'FAIL: char i not appended';
 
 		// Backspace deletes.
 		r = sendKey(r[0], 'backspace');
-		if (r[0].claudeConvo.inputText !== 'h') return 'FAIL: backspace failed, got ' + r[0].claudeConvo.inputText;
+		if (r[0].agentConvo.inputText !== 'h') return 'FAIL: backspace failed, got ' + r[0].agentConvo.inputText;
 
 		// Ctrl+U clears.
-		r[0].claudeConvo.inputText = 'hello world';
+		r[0].agentConvo.inputText = 'hello world';
 		r = sendKey(r[0], 'ctrl+u');
-		if (r[0].claudeConvo.inputText !== '') return 'FAIL: ctrl+u did not clear';
+		if (r[0].agentConvo.inputText !== '') return 'FAIL: ctrl+u did not clear';
 
 		// Enter with empty text is no-op (doesn't crash).
-		r[0].claudeConvo.inputText = '';
+		r[0].agentConvo.inputText = '';
 		r = sendKey(r[0], 'enter');
-		if (r[0].claudeConvo.active !== true) return 'FAIL: enter on empty closed convo';
+		if (r[0].agentConvo.active !== true) return 'FAIL: enter on empty closed convo';
 
 		// Esc closes.
 		r = sendKey(r[0], 'esc');
-		if (r[0].claudeConvo.active) return 'FAIL: esc did not close convo';
+		if (r[0].agentConvo.active) return 'FAIL: esc did not close convo';
 
 		return 'OK';
 	})()`)
@@ -455,40 +455,40 @@ func TestChunk16_ClaudeConvo_InputAndSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude convo input: %v", raw)
+		t.Errorf("agent convo input: %v", raw)
 	}
 }
 
-func TestChunk16_ClaudeConvo_ScrollAndWheel(t *testing.T) {
+func TestChunk16_AgentConvo_ScrollAndWheel(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
-		s.claudeConvo.active = true;
-		s.claudeConvo.scrollOffset = 0;
+		s.agentConvo.active = true;
+		s.agentConvo.scrollOffset = 0;
 
 		// up/pgup scrolls back.
 		var r = sendKey(s, 'up');
-		if (r[0].claudeConvo.scrollOffset !== 3) return 'FAIL: up did not scroll, got ' + r[0].claudeConvo.scrollOffset;
+		if (r[0].agentConvo.scrollOffset !== 3) return 'FAIL: up did not scroll, got ' + r[0].agentConvo.scrollOffset;
 
 		r = sendKey(r[0], 'pgup');
-		if (r[0].claudeConvo.scrollOffset !== 6) return 'FAIL: pgup did not scroll';
+		if (r[0].agentConvo.scrollOffset !== 6) return 'FAIL: pgup did not scroll';
 
 		// down/pgdown scrolls forward.
 		r = sendKey(r[0], 'down');
-		if (r[0].claudeConvo.scrollOffset !== 3) return 'FAIL: down did not scroll back';
+		if (r[0].agentConvo.scrollOffset !== 3) return 'FAIL: down did not scroll back';
 
 		r = sendKey(r[0], 'pgdown');
-		if (r[0].claudeConvo.scrollOffset !== 0) return 'FAIL: pgdown did not scroll to 0';
+		if (r[0].agentConvo.scrollOffset !== 0) return 'FAIL: pgdown did not scroll to 0';
 
 		// Mouse wheel.
 		r = sendWheel(s, 'up');
-		if (r[0].claudeConvo.scrollOffset < 1) return 'FAIL: wheel-up did not scroll';
+		if (r[0].agentConvo.scrollOffset < 1) return 'FAIL: wheel-up did not scroll';
 
 		r = sendWheel(r[0], 'down');
 		// Should decrement, possibly to 0.
-		if (r[0].claudeConvo.scrollOffset < 0) return 'FAIL: wheel-down went negative';
+		if (r[0].agentConvo.scrollOffset < 0) return 'FAIL: wheel-down went negative';
 
 		return 'OK';
 	})()`)
@@ -496,31 +496,31 @@ func TestChunk16_ClaudeConvo_ScrollAndWheel(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude convo scroll: %v", raw)
+		t.Errorf("agent convo scroll: %v", raw)
 	}
 }
 
-func TestChunk16_ClaudeConvo_SendingBlocksInput(t *testing.T) {
+func TestChunk16_AgentConvo_SendingBlocksInput(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
-		s.claudeConvo.active = true;
-		s.claudeConvo.sending = true;
-		s.claudeConvo.inputText = 'locked';
+		s.agentConvo.active = true;
+		s.agentConvo.sending = true;
+		s.agentConvo.inputText = 'locked';
 
 		// Typing while sending is blocked.
 		var r = sendKey(s, 'x');
-		if (r[0].claudeConvo.inputText !== 'locked') return 'FAIL: typing during send not blocked';
+		if (r[0].agentConvo.inputText !== 'locked') return 'FAIL: typing during send not blocked';
 
 		// Backspace while sending is blocked.
 		r = sendKey(s, 'backspace');
-		if (r[0].claudeConvo.inputText !== 'locked') return 'FAIL: backspace during send not blocked';
+		if (r[0].agentConvo.inputText !== 'locked') return 'FAIL: backspace during send not blocked';
 
 		// Ctrl+U while sending is blocked.
 		r = sendKey(s, 'ctrl+u');
-		if (r[0].claudeConvo.inputText !== 'locked') return 'FAIL: ctrl+u during send not blocked';
+		if (r[0].agentConvo.inputText !== 'locked') return 'FAIL: ctrl+u during send not blocked';
 
 		return 'OK';
 	})()`)
@@ -528,7 +528,7 @@ func TestChunk16_ClaudeConvo_SendingBlocksInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude convo sending blocks: %v", raw)
+		t.Errorf("agent convo sending blocks: %v", raw)
 	}
 }
 

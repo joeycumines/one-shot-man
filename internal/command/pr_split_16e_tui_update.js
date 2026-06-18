@@ -40,20 +40,20 @@
     var pollVerifySession = prSplit._pollVerifySession;
     var handleVerifySignal = prSplit._handleVerifySignal;
     var handleVerifyFallbackPoll = prSplit._handleVerifyFallbackPoll;
-    var updateClaudeConvo = prSplit._updateClaudeConvo;
-    var pollClaudeConvo = prSplit._pollClaudeConvo;
+    var updateAgentConvo = prSplit._updateAgentConvo;
+    var pollAgentConvo = prSplit._pollAgentConvo;
 
-    // Cross-chunk imports — Claude automation handlers (from chunk 16d).
-    var handleClaudeCheck = prSplit._handleClaudeCheck;
-    var handleClaudeCheckPoll = prSplit._handleClaudeCheckPoll;
+    // Cross-chunk imports — Agent automation handlers (from chunk 16d).
+    var handleAgentCheck = prSplit._handleAgentCheck;
+    var handleAgentCheckPoll = prSplit._handleAgentCheckPoll;
     var handleAutoSplitPoll = prSplit._handleAutoSplitPoll;
-    var handleRestartClaudePoll = prSplit._handleRestartClaudePoll;
+    var handleRestartAgentPoll = prSplit._handleRestartAgentPoll;
     var keyToTermBytes = prSplit._keyToTermBytes;
     var mouseToTermBytes = prSplit._mouseToTermBytes;
-    var CLAUDE_RESERVED_KEYS = prSplit._CLAUDE_RESERVED_KEYS;
+    var AGENT_RESERVED_KEYS = prSplit._AGENT_RESERVED_KEYS;
     var INTERACTIVE_RESERVED_KEYS = prSplit._INTERACTIVE_RESERVED_KEYS;
     var CHROME_ESTIMATE = prSplit._CHROME_ESTIMATE;
-    var pollClaudeScreenshot = prSplit._pollClaudeScreenshot;
+    var pollAgentScreenshot = prSplit._pollAgentScreenshot;
     var C = prSplit._TUI_CONSTANTS;
     var getInteractivePaneSession = prSplit._getInteractivePaneSession;
     var listSplitViewTabs = prSplit._listSplitViewTabs;
@@ -107,9 +107,9 @@
             var vc = s.verifyScreen || '';
             return vc ? vc.split('\n') : [];
         }
-        // Claude tab: prefer ANSI, fall back to plain screenshot.
+        // Agent tab: prefer ANSI, fall back to plain screenshot.
         // For text extraction we always use plain text.
-        var cc = s.claudeScreenshot || '';
+        var cc = s.agentScreenshot || '';
         return cc ? cc.split('\n') : [];
     }
 
@@ -134,7 +134,7 @@
         var offset = 0;
         if (tab === 'output')      offset = s.outputViewOffset || 0;
         else if (tab === 'verify') offset = s.verifyViewportOffset || 0;
-        else                       offset = s.claudeViewOffset || 0;
+        else                       offset = s.agentViewOffset || 0;
 
         var startLine;
         if (offset <= 0) {
@@ -146,7 +146,7 @@
     }
 
     // getCursorInPane returns {row, col} of the cursor within the active pane's
-    // content space. For Claude and verify tabs, reads from the snapshot's cursor
+    // content space. For Agent and verify tabs, reads from the snapshot's cursor
     // position. For the output tab, defaults to the end of the last line.
     function getCursorInPane(s) {
         var tab = s.splitViewTab;
@@ -156,7 +156,7 @@
             var lastCol = ol.length > 0 ? (ol[lastRow] || '').length : 0;
             return { row: lastRow, col: lastCol };
         }
-        // Claude / verify: read cursor from snapshot.
+        // Agent / verify: read cursor from snapshot.
         if (typeof tuiMux !== 'undefined' && tuiMux &&
             typeof tuiMux.snapshot === 'function') {
             var sid = 0;
@@ -165,7 +165,7 @@
                     ? s.activeVerifySession
                     : s.activeVerifySession.id;
             } else {
-                sid = prSplit._state && prSplit._state.claudeSessionID;
+                sid = prSplit._state && prSplit._state.agentSessionID;
             }
             if (sid) {
                 var snap = tuiMux.snapshot(sid);
@@ -291,7 +291,7 @@
             var paneRows = Math.max(3, cH - 3);
             var paneCols = Math.max(20, (s.width || 80) - 4);
             // Task 8: Shell tab removed from interactive tabs.
-            var interactiveTabs = ['claude', 'verify'];
+            var interactiveTabs = ['agent', 'verify'];
             for (var ti = 0; ti < interactiveTabs.length; ti++) {
                 var resizeTab = interactiveTabs[ti];
                 var resizeSession = getInteractivePaneSession(s, resizeTab);
@@ -302,6 +302,11 @@
             // Task 44: Sync SessionManager's internal VTerm dimensions so
             // childScreen()/snapshot() return properly-sized ANSI output.
             if (typeof tuiMux !== 'undefined' && tuiMux &&
+                typeof tuiMux.resizeAsync === 'function') {
+                tuiMux.resizeAsync(paneRows, paneCols).catch(function(e) {
+                    log.debug("session manager resizeAsync failed", { error: e.message || String(e) });
+                });
+            } else if (typeof tuiMux !== 'undefined' && tuiMux &&
                 typeof tuiMux.resize === 'function') {
                 try { tuiMux.resize(paneRows, paneCols); } catch (e) {
                     log.debug("session manager resize failed", { error: e.message || String(e) });
@@ -319,8 +324,8 @@
             // Start the wizard on first render.
             s.wizardState = 'CONFIG';
             s.wizard.transition('CONFIG');
-            // T42: Auto-detect Claude on startup to default to 'auto' strategy.
-            return [s, tea.batch(tea.clearScreen(), tea.tick(1, 'auto-detect-claude'))];
+            // T42: Auto-detect Agent on startup to default to 'auto' strategy.
+            return [s, tea.batch(tea.clearScreen(), tea.tick(1, 'auto-detect-agent'))];
         }
         return [s, null];
     }
@@ -415,96 +420,96 @@
             return updateEditorDialog(msg, s);
         }
 
-        // Claude conversation overlay intercepts all input when active.
-        if (s.claudeConvo.active) {
-            return updateClaudeConvo(msg, s);
+        // Agent conversation overlay intercepts all input when active.
+        if (s.agentConvo.active) {
+            return updateAgentConvo(msg, s);
         }
 
-        // T46: Inline Claude question prompt input interceptor.
-        // When the user is actively typing a response to Claude's question,
+        // T46: Inline Agent question prompt input interceptor.
+        // When the user is actively typing a response to Agent's question,
         // intercept all keyboard input (like a mini text editor).
         // Exception: Ctrl+L passes through so user can toggle split-view.
-        if (s.claudeQuestionInputActive && msg.type === 'Key' && msg.key !== 'ctrl+l') {
+        if (s.agentQuestionInputActive && msg.type === 'Key' && msg.key !== 'ctrl+l') {
             var qk = msg.key;
 
             // Escape — dismiss the question prompt entirely.
             if (qk === 'esc') {
-                s.claudeQuestionDetected = false;
-                s.claudeQuestionLine = '';
-                s.claudeQuestionInputText = '';
-                s.claudeQuestionInputActive = false;
+                s.agentQuestionDetected = false;
+                s.agentQuestionLine = '';
+                s.agentQuestionInputText = '';
+                s.agentQuestionInputActive = false;
                 return [s, null];
             }
 
-            // Enter — send response to Claude's PTY.
+            // Enter — send response to Agent's PTY.
             if (qk === 'enter') {
-                var responseText = (s.claudeQuestionInputText || '').trim();
+                var responseText = (s.agentQuestionInputText || '').trim();
                 if (responseText.length > 0) {
                     // Record in conversation history.
-                    s.claudeConversations.push({
-                        question: s.claudeQuestionLine,
+                    s.agentConversations.push({
+                        question: s.agentQuestionLine,
                         answer: responseText,
                         ts: Date.now()
                     });
-                    if (s.claudeConversations.length > C.CONVO_HISTORY_CAP) {
-                        s.claudeConversations = s.claudeConversations.slice(-C.CONVO_HISTORY_TRIM);
+                    if (s.agentConversations.length > C.CONVO_HISTORY_CAP) {
+                        s.agentConversations = s.agentConversations.slice(-C.CONVO_HISTORY_TRIM);
                     }
 
-                    // Send to Claude PTY via the pinned Claude pane proxy.
-                    var claudeQuestionSession = getInteractivePaneSession(s, 'claude');
-                    if (claudeQuestionSession && typeof claudeQuestionSession.write === 'function') {
+                    // Send to Agent PTY via the pinned Agent pane proxy.
+                    var agentQuestionSession = getInteractivePaneSession(s, 'agent');
+                    if (agentQuestionSession && typeof agentQuestionSession.write === 'function') {
                         try {
-                            claudeQuestionSession.write(responseText + '\r');
-                            log.printf('T46: sent response to Claude: %s', responseText);
+                            agentQuestionSession.write(responseText + '\r');
+                            log.printf('T46: sent response to Agent: %s', responseText);
                         } catch (e) {
-                            // T393: Surface error to user — keep claudeQuestionDetected
-                            // true so renderClaudeQuestionPrompt renders the error line.
-                            log.printf('T46: Claude write failed: %s', String(e));
-                            s.claudeQuestionLine = 'Error sending response: ' + String(e);
-                            s.claudeQuestionInputActive = false;
-                            s.claudeQuestionInputText = '';
+                            // T393: Surface error to user — keep agentQuestionDetected
+                            // true so renderAgentQuestionPrompt renders the error line.
+                            log.printf('T46: Agent write failed: %s', String(e));
+                            s.agentQuestionLine = 'Error sending response: ' + String(e);
+                            s.agentQuestionInputActive = false;
+                            s.agentQuestionInputText = '';
                             return [s, null];
                         }
                     } else {
-                        // T393: tuiMux not available — keep claudeQuestionDetected
+                        // T393: tuiMux not available — keep agentQuestionDetected
                         // true so the error is visible to the user.
-                        log.printf('T46: Claude session write not available');
-                        s.claudeQuestionLine = 'Error: Claude terminal not connected';
-                        s.claudeQuestionInputActive = false;
-                        s.claudeQuestionInputText = '';
+                        log.printf('T46: Agent session write not available');
+                        s.agentQuestionLine = 'Error: Agent terminal not connected';
+                        s.agentQuestionInputActive = false;
+                        s.agentQuestionInputText = '';
                         return [s, null];
                     }
 
                     // Clear question state.
-                    s.claudeQuestionDetected = false;
-                    s.claudeQuestionLine = '';
-                    s.claudeQuestionInputText = '';
-                    s.claudeQuestionInputActive = false;
+                    s.agentQuestionDetected = false;
+                    s.agentQuestionLine = '';
+                    s.agentQuestionInputText = '';
+                    s.agentQuestionInputActive = false;
                     // Reset throttle so we don't immediately re-detect
-                    // the same question before Claude starts streaming.
-                    s.claudeLastQuestionCheckMs = Date.now();
+                    // the same question before Agent starts streaming.
+                    s.agentLastQuestionCheckMs = Date.now();
                 }
                 return [s, null];
             }
 
             // Backspace.
             if (qk === 'backspace') {
-                var qt = s.claudeQuestionInputText || '';
+                var qt = s.agentQuestionInputText || '';
                 if (qt.length > 0) {
-                    s.claudeQuestionInputText = qt.substring(0, qt.length - 1);
+                    s.agentQuestionInputText = qt.substring(0, qt.length - 1);
                 }
                 return [s, null];
             }
 
             // Ctrl+U: clear input line.
             if (qk === 'ctrl+u') {
-                s.claudeQuestionInputText = '';
+                s.agentQuestionInputText = '';
                 return [s, null];
             }
 
             // Single printable character — accumulate.
             if (qk.length === 1) {
-                s.claudeQuestionInputText = (s.claudeQuestionInputText || '') + qk;
+                s.agentQuestionInputText = (s.agentQuestionInputText || '') + qk;
                 return [s, null];
             }
 
@@ -514,19 +519,19 @@
 
         // T46: When question detected but input not yet active, any
         // printable character activates the input field.
-        if (s.claudeQuestionDetected && !s.claudeQuestionInputActive && msg.type === 'Key') {
+        if (s.agentQuestionDetected && !s.agentQuestionInputActive && msg.type === 'Key') {
             var qak = msg.key;
             if (qak.length === 1) {
-                s.claudeQuestionInputActive = true;
-                s.claudeQuestionInputText = qak;
+                s.agentQuestionInputActive = true;
+                s.agentQuestionInputText = qak;
                 return [s, null];
             }
             // Escape still dismisses even when not actively typing.
             if (qak === 'esc') {
-                s.claudeQuestionDetected = false;
-                s.claudeQuestionLine = '';
-                s.claudeQuestionInputText = '';
-                s.claudeQuestionInputActive = false;
+                s.agentQuestionDetected = false;
+                s.agentQuestionLine = '';
+                s.agentQuestionInputText = '';
+                s.agentQuestionInputActive = false;
                 return [s, null];
             }
             // Other keys pass through to normal handling.
@@ -679,32 +684,32 @@
             }
         }
 
-        // Split-view: Ctrl+L to toggle Claude window-in-window.
+        // Split-view: Ctrl+L to toggle Agent window-in-window.
         if (k === 'ctrl+l') {
             s.splitViewEnabled = !s.splitViewEnabled;
             syncMainViewport(s); // T120: sync dimensions after toggle.
             if (s.splitViewEnabled) {
                 // T45: User re-opened — clear manual dismiss flag.
-                s.claudeManuallyDismissed = false;
+                s.agentManuallyDismissed = false;
                 // Start screenshot polling. Preserve focusIndex.
-                return [s, tea.tick(C.TICK_INTERVAL_MS, 'claude-screenshot')];
+                return [s, tea.tick(C.TICK_INTERVAL_MS, 'agent-screenshot')];
             } else {
                 // T45: User explicitly closed — set manual dismiss flag
                 // so auto-attach does not re-open the pane.
-                s.claudeManuallyDismissed = true;
+                s.agentManuallyDismissed = true;
                 // Reset split-view state on disable. Preserve focusIndex.
-                s.claudeScreenshot = '';
-                s.claudeScreen = '';
-                s.claudeViewOffset = 0;
+                s.agentScreenshot = '';
+                s.agentScreen = '';
+                s.agentViewOffset = 0;
                 s.splitViewFocus = 'wizard';
-                s.splitViewTab = 'claude'; // T44: reset tab on disable
+                s.splitViewTab = 'agent'; // T44: reset tab on disable
                 // T46: Clear inline question state — the question prompt
                 // wouldn't auto-dismiss with split-view disabled (no
-                // pollClaudeScreenshot running to clear it).
-                s.claudeQuestionDetected = false;
-                s.claudeQuestionLine = '';
-                s.claudeQuestionInputText = '';
-                s.claudeQuestionInputActive = false;
+                // pollAgentScreenshot running to clear it).
+                s.agentQuestionDetected = false;
+                s.agentQuestionLine = '';
+                s.agentQuestionInputText = '';
+                s.agentQuestionInputActive = false;
             }
             return [s, null];
         }
@@ -712,7 +717,7 @@
         // Split-view keybindings (only when enabled).
         if (s.splitViewEnabled) {
             // T61: Ctrl+Tab cycles through all focusable targets:
-            // wizard → claude → output → verify (if active) → wizard → ...
+            // wizard → agent → output → verify (if active) → wizard → ...
             if (k === 'ctrl+tab') {
                 var allTargets = ['wizard'];
                 var tabs = listSplitViewTabs(s);
@@ -721,14 +726,14 @@
                 }
                 // Determine current position in the cycle.
                 var current = (s.splitViewFocus === 'wizard')
-                    ? 'wizard' : (s.splitViewTab || 'claude');
+                    ? 'wizard' : (s.splitViewTab || 'agent');
                 var curIdx = allTargets.indexOf(current);
                 if (curIdx < 0) curIdx = 0;
                 var nextTarget = allTargets[(curIdx + 1) % allTargets.length];
                 if (nextTarget === 'wizard') {
                     s.splitViewFocus = 'wizard';
                 } else {
-                    s.splitViewFocus = 'claude';
+                    s.splitViewFocus = 'agent';
                     s.splitViewTab = nextTarget;
                 }
                 return [s, null];
@@ -757,7 +762,7 @@
             // T62: Paste — Ctrl+Shift+V pastes clipboard into active PTY session.
             if (k === 'ctrl+shift+v') {
                 var tab = s.splitViewTab;
-                // Only paste into interactive panes (Claude, verify), not output.
+                // Only paste into interactive panes (Agent, verify), not output.
                 if (tab !== 'output') {
                     if (tab === 'verify' &&
                         (s.verifyFallbackRunning || s.verifyMode === 'oneshot' ||
@@ -830,9 +835,9 @@
                 s.splitViewTab = tabs[(idx + 1) % tabs.length];
                 return [s, null];
             }
-            // T29: Claude pane keyboard input forwarding.
-            // When Claude pane is focused, forward non-reserved keys to child PTY.
-            if (s.splitViewFocus === 'claude') {
+            // T29: Agent pane keyboard input forwarding.
+            // When Agent pane is focused, forward non-reserved keys to child PTY.
+            if (s.splitViewFocus === 'agent') {
                 // T44: Output tab scroll keys (when output tab is active).
                 if (s.splitViewTab === 'output') {
                     if (k === 'up' || k === 'k') {
@@ -865,7 +870,7 @@
                         s.outputAutoScroll = true;
                         return [s, null];
                     }
-                    // Output tab is read-only — don't forward to PTY, don't scroll Claude.
+                    // Output tab is read-only — don't forward to PTY, don't scroll Agent.
                     return [s, null];
                 }
                 // Verify tab has one canonical interactive shell mode plus degraded
@@ -945,51 +950,51 @@
                         return [s, null];
                     }
                 }
-                // Viewport scroll keys — scroll the Claude pane output.
+                // Viewport scroll keys — scroll the Agent pane output.
                 if (k === 'up' || k === 'k') {
-                    s.claudeViewOffset = (s.claudeViewOffset || 0) + 1;
+                    s.agentViewOffset = (s.agentViewOffset || 0) + 1;
                     return [s, null];
                 }
                 if (k === 'down' || k === 'j') {
-                    s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 1);
+                    s.agentViewOffset = Math.max(0, (s.agentViewOffset || 0) - 1);
                     return [s, null];
                 }
                 if (k === 'pgup') {
-                    s.claudeViewOffset = (s.claudeViewOffset || 0) + 5;
+                    s.agentViewOffset = (s.agentViewOffset || 0) + 5;
                     return [s, null];
                 }
                 if (k === 'pgdown') {
-                    s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 5);
+                    s.agentViewOffset = Math.max(0, (s.agentViewOffset || 0) - 5);
                     return [s, null];
                 }
                 if (k === 'home') {
-                    s.claudeViewOffset = C.FAR_SCROLL_SENTINEL;
+                    s.agentViewOffset = C.FAR_SCROLL_SENTINEL;
                     return [s, null];
                 }
                 if (k === 'end') {
-                    s.claudeViewOffset = 0;
+                    s.agentViewOffset = 0;
                     return [s, null];
                 }
-                // Forward non-reserved keys to Claude's PTY.
-                if (!CLAUDE_RESERVED_KEYS[k]) {
+                // Forward non-reserved keys to Agent's PTY.
+                if (!AGENT_RESERVED_KEYS[k]) {
                     var bytes = keyToTermBytes(k);
-                    var claudeSession = getInteractivePaneSession(s, 'claude');
-                    if (bytes !== null && claudeSession &&
-                        typeof claudeSession.write === 'function') {
+                    var agentSession = getInteractivePaneSession(s, 'agent');
+                    if (bytes !== null && agentSession &&
+                        typeof agentSession.write === 'function') {
                         try {
-                            claudeSession.write(bytes);
+                            agentSession.write(bytes);
                             // Auto-scroll to bottom on input (follow live output).
-                            s.claudeViewOffset = 0;
+                            s.agentViewOffset = 0;
                             // Clear any previous write error on success.
-                            if (s.claudeWriteError) {
-                                s.claudeWriteError = '';
+                            if (s.agentWriteError) {
+                                s.agentWriteError = '';
                             }
                         } catch (e) {
                             // Task 9: Surface write errors instead of silently
                             // swallowing — user sees a transient indicator.
-                            s.claudeWriteError = e.message || String(e);
-                            s.claudeWriteErrorAt = Date.now();
-                            log.warn('claude write failed', {
+                            s.agentWriteError = e.message || String(e);
+                            s.agentWriteErrorAt = Date.now();
+                            log.warn('agent write failed', {
                                 key: k,
                                 error: e.message || String(e)
                             });
@@ -1182,8 +1187,8 @@
     function handleToggleReturn(msg, s) {
         if (msg.skipped) {
             // No interactive session — show notification.
-            s.claudeAutoAttachNotif = 'Passthrough not available \u2014 no active interactive session';
-            s.claudeAutoAttachNotifAt = Date.now();
+            s.agentAutoAttachNotif = 'Passthrough not available \u2014 no active interactive session';
+            s.agentAutoAttachNotifAt = Date.now();
         }
         return [s, null];
     }
@@ -1240,7 +1245,7 @@
         // Press events are NOT intercepted here — they go through
         // handleMouseClick for zone detection first.
         if (s.splitViewEnabled &&
-            s.splitViewFocus === 'claude' && s.splitViewTab !== 'output') {
+            s.splitViewFocus === 'agent' && s.splitViewTab !== 'output') {
             if (msg.type === 'MouseMotion') {
                 var ofs = computeSplitPaneContentOffset(s);
                 var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
@@ -1286,10 +1291,10 @@
             }
         }
 
-        // Split-view Claude pane mouse wheel → scroll Claude screenshot.
+        // Split-view Agent pane mouse wheel → scroll Agent screenshot.
         // T44: Also handle Output tab scrolling.
         if (msg.type === 'MouseWheel' && s.splitViewEnabled &&
-            s.splitViewFocus === 'claude') {
+            s.splitViewFocus === 'agent') {
             if (s.splitViewTab === 'output') {
                 // Output tab scrolling.
                 if (msg.button === 'wheel up') {
@@ -1303,13 +1308,13 @@
                     return [s, null];
                 }
             } else {
-                // Claude tab scrolling.
+                // Agent tab scrolling.
                 if (msg.button === 'wheel up') {
-                    s.claudeViewOffset = (s.claudeViewOffset || 0) + 3;
+                    s.agentViewOffset = (s.agentViewOffset || 0) + 3;
                     return [s, null];
                 }
                 if (msg.button === 'wheel down') {
-                    s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 3);
+                    s.agentViewOffset = Math.max(0, (s.agentViewOffset || 0) - 3);
                     return [s, null];
                 }
             }
@@ -1334,7 +1339,7 @@
     }
 
     // handleTickMessage processes Tick messages — programmatic continuations
-    // dispatched by timer-based polling (analysis, execution, verify, Claude
+    // dispatched by timer-based polling (analysis, execution, verify, Agent
     // screenshot, conversation, PR creation, transient notification dismiss).
     function handleTickMessage(msg, s) {
         if (msg.id === 'mux-poll') {
@@ -1369,40 +1374,40 @@
         if (msg.id === 'resolve-poll') {
             return handleResolvePoll(s);
         }
-        // Claude restart polling (non-blocking restart flow).
-        if (msg.id === 'restart-claude-poll') {
-            return handleRestartClaudePoll(s);
+        // Agent restart polling (non-blocking restart flow).
+        if (msg.id === 'restart-agent-poll') {
+            return handleRestartAgentPoll(s);
         }
-        // Claude availability check (CONFIG screen).
-        if (msg.id === 'check-claude') {
-            return handleClaudeCheck(s);
+        // Agent availability check (CONFIG screen).
+        if (msg.id === 'check-agent') {
+            return handleAgentCheck(s);
         }
-        // T42: Auto-detect Claude on startup to default to 'auto' strategy.
-        if (msg.id === 'auto-detect-claude') {
+        // T42: Auto-detect Agent on startup to default to 'auto' strategy.
+        if (msg.id === 'auto-detect-agent') {
             // Skip if user already manually selected a strategy.
             if (s.userHasSelectedStrategy) return [s, null];
             // Skip if already checking or detected.
-            if (s.claudeCheckStatus) return [s, null];
-            return handleClaudeCheck(s);
+            if (s.agentCheckStatus) return [s, null];
+            return handleAgentCheck(s);
         }
-        if (msg.id === 'claude-check-poll') {
-            return handleClaudeCheckPoll(s);
+        if (msg.id === 'agent-check-poll') {
+            return handleAgentCheckPoll(s);
         }
-        // T5: On-demand Claude spawn polling (Ask Claude in non-auto modes).
-        if (msg.id === 'claude-spawn-poll') {
-            if (s.claudeOnDemandSpawning) {
-                return [s, tea.tick(C.CLAUDE_CHECK_POLL_MS, 'claude-spawn-poll')];
+        // T5: On-demand Agent spawn polling (Ask Agent in non-auto modes).
+        if (msg.id === 'agent-spawn-poll') {
+            if (s.agentOnDemandSpawning) {
+                return [s, tea.tick(C.AGENT_CHECK_POLL_MS, 'agent-spawn-poll')];
             }
             // Spawn completed (success or failure) — UI will re-render.
             return [s, null];
         }
-        // Split-view: poll Claude screenshot.
-        if (msg.id === 'claude-screenshot') {
-            return pollClaudeScreenshot(s);
+        // Split-view: poll Agent screenshot.
+        if (msg.id === 'agent-screenshot') {
+            return pollAgentScreenshot(s);
         }
-        // Claude conversation: poll for async send/wait completion.
-        if (msg.id === 'claude-convo-poll') {
-            return pollClaudeConvo(s);
+        // Agent conversation: poll for async send/wait completion.
+        if (msg.id === 'agent-convo-poll') {
+            return pollAgentConvo(s);
         }
         // T095: PR creation polling.
         if (msg.id === 'pr-creation-poll') {
@@ -1412,9 +1417,9 @@
         // Guard: only dismiss if the current notification is old enough
         // to prevent a stale tick from clearing a newer notification.
         if (msg.id === 'dismiss-attach-notif') {
-            if (s.claudeAutoAttachNotifAt && (Date.now() - s.claudeAutoAttachNotifAt) >= C.AUTO_ATTACH_NOTIF_GUARD_MS) {
-                s.claudeAutoAttachNotif = '';
-                s.claudeAutoAttachNotifAt = 0;
+            if (s.agentAutoAttachNotifAt && (Date.now() - s.agentAutoAttachNotifAt) >= C.AUTO_ATTACH_NOTIF_GUARD_MS) {
+                s.agentAutoAttachNotif = '';
+                s.agentAutoAttachNotifAt = 0;
             }
             return [s, null];
         }
@@ -1460,11 +1465,11 @@
             // T46: Clear inline question state on screen transition to
             // prevent orphaned input mode on screens that don't render
             // the question prompt.
-            if (s.claudeQuestionDetected || s.claudeQuestionInputActive) {
-                s.claudeQuestionDetected = false;
-                s.claudeQuestionLine = '';
-                s.claudeQuestionInputText = '';
-                s.claudeQuestionInputActive = false;
+            if (s.agentQuestionDetected || s.agentQuestionInputActive) {
+                s.agentQuestionDetected = false;
+                s.agentQuestionLine = '';
+                s.agentQuestionInputText = '';
+                s.agentQuestionInputActive = false;
             }
         }
 

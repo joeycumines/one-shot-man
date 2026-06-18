@@ -10,13 +10,13 @@ import (
 	inprocgrpc "github.com/joeycumines/go-inprocgrpc"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	gojaprotobuf "github.com/joeycumines/goja-protobuf"
+	aimuxmod "github.com/joeycumines/one-shot-man/internal/builtin/aimux"
 	"github.com/joeycumines/one-shot-man/internal/builtin/argv"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	textareamod "github.com/joeycumines/one-shot-man/internal/builtin/bubbles/textarea"
 	viewportmod "github.com/joeycumines/one-shot-man/internal/builtin/bubbles/viewport"
 	bubbleteamod "github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	bubblezonemod "github.com/joeycumines/one-shot-man/internal/builtin/bubblezone"
-	claudemuxmod "github.com/joeycumines/one-shot-man/internal/builtin/claudemux"
 	cryptomod "github.com/joeycumines/one-shot-man/internal/builtin/crypto"
 	ctxutils "github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
 	encodingmod "github.com/joeycumines/one-shot-man/internal/builtin/encoding"
@@ -143,7 +143,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	})
 	registry.RegisterNativeModule(prefix+"grpc", grpcmod.Require(ch, pbMod, eventLoopProvider.Adapter()))
 
-	registry.RegisterNativeModule(prefix+"claudemux", claudemuxmod.Require(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"aimux", aimuxmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
 	registry.RegisterNativeModule(prefix+"path", pathmod.Require)
 	registry.RegisterNativeModule(prefix+"regexp", regexpmod.Require)

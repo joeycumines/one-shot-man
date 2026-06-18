@@ -14,7 +14,7 @@ func TestRenderPaneBorders_JSBinding(t *testing.T) {
 	defer cleanup()
 
 	res, err := runtime.RunString(`
-		var out = tuiMux.renderPaneBorders(22, 5, [
+		var out = tuiMux.renderPaneBorders(43, 5, [
 			{ row: 0, col: 0, rows: 4, cols: 20, title: "a" },
 			{ row: 0, col: 22, rows: 4, cols: 20, title: "b" }
 		]);

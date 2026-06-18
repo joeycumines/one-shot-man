@@ -155,7 +155,7 @@ func TestChunk16e_ComputeOffset_VeryLargeTerminal(t *testing.T) {
 
 // ────────────────────── writeMouseToPane ──────────────────────
 
-func TestChunk16e_GetCursorInPane_ClaudeUsesPinnedSessionID(t *testing.T) {
+func TestChunk16e_GetCursorInPane_AgentUsesPinnedSessionID(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
@@ -163,7 +163,7 @@ func TestChunk16e_GetCursorInPane_ClaudeUsesPinnedSessionID(t *testing.T) {
 		(function() {
 			var snapshots = [];
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = 42;
+			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = {
 				activeID: function() { return 99; },
 				snapshot: function(id) {
@@ -173,11 +173,11 @@ func TestChunk16e_GetCursorInPane_ClaudeUsesPinnedSessionID(t *testing.T) {
 				}
 			};
 			try {
-				var cur = prSplit._getCursorInPane({ splitViewTab: 'claude' });
+				var cur = prSplit._getCursorInPane({ splitViewTab: 'agent' });
 				return JSON.stringify({ cur: cur, snapshots: snapshots });
 			} finally {
 				delete globalThis.tuiMux;
-				if (prSplit._state) prSplit._state.claudeSessionID = null;
+				if (prSplit._state) prSplit._state.agentSessionID = null;
 			}
 		})()
 	`)
@@ -186,10 +186,10 @@ func TestChunk16e_GetCursorInPane_ClaudeUsesPinnedSessionID(t *testing.T) {
 	}
 	s := val.(string)
 	if !strings.Contains(s, `"row":7`) || !strings.Contains(s, `"col":11`) {
-		t.Errorf("claude cursor should come from pinned snapshot: %s", s)
+		t.Errorf("agent cursor should come from pinned snapshot: %s", s)
 	}
 	if !strings.Contains(s, `"snapshots":[42]`) {
-		t.Errorf("claude cursor should snapshot pinned session ID only: %s", s)
+		t.Errorf("agent cursor should snapshot pinned session ID only: %s", s)
 	}
 }
 
@@ -228,7 +228,7 @@ func TestChunk16e_GetCursorInPane_VerifyUsesNumericSessionID(t *testing.T) {
 	}
 }
 
-func TestChunk16e_WriteMouseToPane_ClaudeTab(t *testing.T) {
+func TestChunk16e_WriteMouseToPane_AgentTab(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
@@ -239,7 +239,7 @@ func TestChunk16e_WriteMouseToPane_ClaudeTab(t *testing.T) {
 			var active = 7;
 			var __mockCID = 42;
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = __mockCID;
+			prSplit._state.agentSessionID = __mockCID;
 			globalThis.tuiMux = {
 				snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
 				isDone: function(id) { return false; },
@@ -248,12 +248,12 @@ func TestChunk16e_WriteMouseToPane_ClaudeTab(t *testing.T) {
 				input: function(data) { written.push(data); },
 			};
 			try {
-				var s = {splitViewTab: 'claude'};
+				var s = {splitViewTab: 'agent'};
 				var ok = prSplit._writeMouseToPane('test-bytes', s);
 				return JSON.stringify({ok: ok, written: written, activations: activations, active: active});
 			} finally {
 				delete globalThis.tuiMux;
-				if (prSplit._state) prSplit._state.claudeSessionID = null;
+				if (prSplit._state) prSplit._state.agentSessionID = null;
 			}
 		})()
 	`)
@@ -262,20 +262,20 @@ func TestChunk16e_WriteMouseToPane_ClaudeTab(t *testing.T) {
 	}
 	s := val.(string)
 	if !strings.Contains(s, `"ok":true`) {
-		t.Errorf("claude tab write should succeed: %s", s)
+		t.Errorf("agent tab write should succeed: %s", s)
 	}
 	if !strings.Contains(s, `"written":["test-bytes"]`) {
 		t.Errorf("bytes should be written to tuiMux: %s", s)
 	}
 	if !strings.Contains(s, `"activations":[42,7]`) {
-		t.Errorf("claude tab write should activate pinned Claude session then restore prior active session: %s", s)
+		t.Errorf("agent tab write should activate pinned Agent session then restore prior active session: %s", s)
 	}
 	if !strings.Contains(s, `"active":7`) {
-		t.Errorf("active session should be restored after Claude write: %s", s)
+		t.Errorf("active session should be restored after Agent write: %s", s)
 	}
 }
 
-func TestChunk16e_WriteMouseToPane_ClaudeTabWriteFailure(t *testing.T) {
+func TestChunk16e_WriteMouseToPane_AgentTabWriteFailure(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
@@ -285,7 +285,7 @@ func TestChunk16e_WriteMouseToPane_ClaudeTabWriteFailure(t *testing.T) {
 			var active = 7;
 			var __mockCID = 42;
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = __mockCID;
+			prSplit._state.agentSessionID = __mockCID;
 			globalThis.tuiMux = {
 				snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
 				isDone: function(id) { return false; },
@@ -294,12 +294,12 @@ func TestChunk16e_WriteMouseToPane_ClaudeTabWriteFailure(t *testing.T) {
 				input: function(data) { throw new Error('boom'); },
 			};
 			try {
-				var s = {splitViewTab: 'claude'};
+				var s = {splitViewTab: 'agent'};
 				var ok = prSplit._writeMouseToPane('wrapped-bytes', s);
 				return JSON.stringify({ok: ok, activations: activations, active: active});
 			} finally {
 				delete globalThis.tuiMux;
-				if (prSplit._state) prSplit._state.claudeSessionID = null;
+				if (prSplit._state) prSplit._state.agentSessionID = null;
 			}
 		})()
 	`)
@@ -308,13 +308,13 @@ func TestChunk16e_WriteMouseToPane_ClaudeTabWriteFailure(t *testing.T) {
 	}
 	s := val.(string)
 	if !strings.Contains(s, `"ok":false`) {
-		t.Errorf("claude write failure should return false: %s", s)
+		t.Errorf("agent write failure should return false: %s", s)
 	}
 	if !strings.Contains(s, `"activations":[42,7]`) {
-		t.Errorf("claude write failure should still restore prior active session: %s", s)
+		t.Errorf("agent write failure should still restore prior active session: %s", s)
 	}
 	if !strings.Contains(s, `"active":7`) {
-		t.Errorf("active session should be restored after failed Claude write: %s", s)
+		t.Errorf("active session should be restored after failed Agent write: %s", s)
 	}
 }
 
@@ -352,8 +352,8 @@ func TestChunk16e_WriteMouseToPane_NoSession(t *testing.T) {
 	val, err := evalJS(`
 		(function() {
 			var results = [];
-			// claude tab but no tuiMux.
-			results.push(prSplit._writeMouseToPane('x', {splitViewTab: 'claude'}));
+			// agent tab but no tuiMux.
+			results.push(prSplit._writeMouseToPane('x', {splitViewTab: 'agent'}));
 			// verify tab but no session.
 			results.push(prSplit._writeMouseToPane('x', {splitViewTab: 'verify'}));
 			// unknown tab.
@@ -381,19 +381,19 @@ func TestChunk16e_WriteMouseToPane_WriteThrows(t *testing.T) {
 			var results = [];
 			var activations = [];
 			var active = 7;
-			// claude tab with pinned Claude proxy write failure.
+			// agent tab with pinned Agent proxy write failure.
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = 42;
+			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = {
 				snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
 				isDone: function(id) { return false; },
 				activeID: function() { return active; },
 				activate: function(id) { activations.push(id); active = id; },
-				input: function() { throw new Error('claude-fail'); },
+				input: function() { throw new Error('agent-fail'); },
 			};
-			results.push(prSplit._writeMouseToPane('x', {splitViewTab: 'claude'}));
+			results.push(prSplit._writeMouseToPane('x', {splitViewTab: 'agent'}));
 			delete globalThis.tuiMux;
-			prSplit._state.claudeSessionID = null;
+			prSplit._state.agentSessionID = null;
 
 			// verify tab with throwing write.
 			results.push(prSplit._writeMouseToPane('x', {
@@ -412,7 +412,7 @@ func TestChunk16e_WriteMouseToPane_WriteThrows(t *testing.T) {
 		t.Errorf("all should return false when write throws: %s", s)
 	}
 	if !strings.Contains(s, `"activations":[42,7]`) {
-		t.Errorf("claude failure path should restore active session: %s", s)
+		t.Errorf("agent failure path should restore active session: %s", s)
 	}
 	if !strings.Contains(s, `"active":7`) {
 		t.Errorf("active session should be restored after failure: %s", s)

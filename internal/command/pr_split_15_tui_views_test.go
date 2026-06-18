@@ -12,7 +12,7 @@ import (
 // ---------------------------------------------------------------------------
 //  Chunk 15: TUI Views — comprehensive tests
 //
-//  Covers: zone mark verification, dialog overlays, Claude pane/convo,
+//  Covers: zone mark verification, dialog overlays, Agent pane/convo,
 //  plan editor state permutations, responsive layout breakpoints,
 //  extreme-size robustness, and WCAG contrast exports.
 //
@@ -241,7 +241,7 @@ func TestViews_NavBar_FocusNextHighlightsNext(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var elems = prSplit._getFocusElements({
 			wizardState: 'CONFIG', showAdvanced: false,
-			claudeTestResult: '', claudeAvailable: false
+			agentTestResult: '', agentAvailable: false
 		});
 		var navNextIdx = -1;
 		var navCancelIdx = -1;
@@ -315,7 +315,7 @@ func TestViews_NavBar_FocusCancelDoesNotHighlightNext(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var elems = prSplit._getFocusElements({
 			wizardState: 'CONFIG', showAdvanced: false,
-			claudeTestResult: '', claudeAvailable: false
+			agentTestResult: '', agentAvailable: false
 		});
 		var navCancelIdx = -1;
 		for (var i = 0; i < elems.length; i++) {
@@ -395,7 +395,7 @@ func TestViews_NavBar_FocusStyling_AllStates(t *testing.T) {
 				%s
 				var s = {
 					wizardState: '%s', showAdvanced: false,
-					claudeTestResult: '', claudeAvailable: false,
+					agentTestResult: '', agentAvailable: false,
 					planCache: globalThis.prSplit._state.planCache || null,
 					equivalenceResult: {equivalent: true, results: [{status: 'pass', branchName: 'test'}]},
 					executionResults: [{branchName: 'test', status: 'done'}]
@@ -445,18 +445,18 @@ func TestViews_ConfigScreen_ZoneMarks(t *testing.T) {
 	})`, []string{"toggle-advanced"})
 }
 
-func TestViews_ConfigScreen_ClaudeTestZone(t *testing.T) {
+func TestViews_ConfigScreen_AgentTestZone(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	assertZoneMarks(t, evalJS, `globalThis.prSplit._viewConfigScreen({
 		wizardState: 'CONFIG', width: 80, showAdvanced: false,
-		claudeCheckStatus: 'available',
-		claudeResolvedInfo: {command: 'claude', type: 'Claude Code'}
-	})`, []string{"test-claude"})
+		agentCheckStatus: 'available',
+		agentResolvedInfo: {command: 'agent', type: 'Agent Code'}
+	})`, []string{"test-agent"})
 }
 
-func TestViews_ConfigScreen_ClaudeStatuses(t *testing.T) {
+func TestViews_ConfigScreen_AgentStatuses(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
@@ -467,17 +467,17 @@ func TestViews_ConfigScreen_ClaudeStatuses(t *testing.T) {
 		want   string
 	}{
 		{"available", "available",
-			"claudeResolvedInfo: {command: 'claude', type: 'Claude Code'}", "Claude available"},
+			"agentResolvedInfo: {command: 'agent', type: 'Agent Code'}", "Agent available"},
 		{"unavailable", "unavailable",
-			"claudeCheckError: 'not found in PATH'", "Claude unavailable"},
-		{"checking", "checking", "", "Checking Claude"},
+			"agentCheckError: 'not found in PATH'", "Agent unavailable"},
+		{"checking", "checking", "", "Checking Agent"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			js := `globalThis.prSplit._viewConfigScreen({
 				wizardState: 'CONFIG', width: 80, showAdvanced: false,
-				claudeCheckStatus: '` + tc.status + `'`
+				agentCheckStatus: '` + tc.status + `'`
 			if tc.extra != "" {
 				js += `, ` + tc.extra
 			}
@@ -507,7 +507,7 @@ func TestViews_PlanReviewScreen_ZoneMarks(t *testing.T) {
 
 	assertZoneMarks(t, evalJS, `globalThis.prSplit._viewPlanReviewScreen({
 		wizardState: 'PLAN_REVIEW', width: 80, selectedSplitIdx: 0, focusIndex: 0
-	})`, []string{"plan-edit", "plan-regenerate", "ask-claude"})
+	})`, []string{"plan-edit", "plan-regenerate", "ask-agent"})
 }
 
 func TestViews_PlanReviewScreen_SplitNames(t *testing.T) {
@@ -732,15 +732,15 @@ func TestViews_ErrorResolutionScreen_ZoneMarks(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
-	// error-ask-claude only renders when st.claudeExecutor is set.
-	if _, err := evalJS(`globalThis.prSplit._state.claudeExecutor = {}`); err != nil {
+	// error-ask-agent only renders when st.agentExecutor is set.
+	if _, err := evalJS(`globalThis.prSplit._state.agentExecutor = {}`); err != nil {
 		t.Fatal(err)
 	}
 
 	assertZoneMarks(t, evalJS, `globalThis.prSplit._viewErrorResolutionScreen({
 		wizardState: 'ERROR_RESOLUTION', width: 80,
 		errorDetails: 'cherry-pick failed'
-	})`, []string{"error-ask-claude"})
+	})`, []string{"error-ask-agent"})
 }
 
 // ---------------------------------------------------------------------------
@@ -907,48 +907,48 @@ func TestViews_MergeSplitsDialog_ZoneMarks(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-//  Claude Pane
+//  Agent Pane
 // ---------------------------------------------------------------------------
 
-func TestViews_ClaudePane_NoMux(t *testing.T) {
+func TestViews_AgentPane_NoMux(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
-	raw, err := evalJS(`globalThis.prSplit._renderClaudePane({
-		claudeScreenshot: '', width: 60, height: 20
+	raw, err := evalJS(`globalThis.prSplit._renderAgentPane({
+		agentScreenshot: '', width: 60, height: 20
 	}, 60, 20)`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(raw.(string), "No Claude session") {
-		t.Error("claude pane without mux should show 'No Claude session'")
+	if !strings.Contains(raw.(string), "No Agent session") {
+		t.Error("agent pane without mux should show 'No Agent session'")
 	}
 }
 
-func TestViews_ClaudePane_FocusedRendersNonEmpty(t *testing.T) {
+func TestViews_AgentPane_FocusedRendersNonEmpty(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
-	raw, err := evalJS(`globalThis.prSplit._renderClaudePane({
-		claudeScreenshot: '', splitViewFocus: 'claude',
+	raw, err := evalJS(`globalThis.prSplit._renderAgentPane({
+		agentScreenshot: '', splitViewFocus: 'agent',
 		width: 60, height: 20
 	}, 60, 20)`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if raw.(string) == "" {
-		t.Error("focused claude pane should produce non-empty output")
+		t.Error("focused agent pane should produce non-empty output")
 	}
 }
 
-func TestViews_ClaudePane_WithPinnedSession(t *testing.T) {
+func TestViews_AgentPane_WithPinnedSession(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
-	// Inject a pinned Claude session so renderClaudePane treats the pane as attached.
+	// Inject a pinned Agent session so renderAgentPane treats the pane as attached.
 	if _, err := evalJS(`
 		prSplit._state = prSplit._state || {};
-		prSplit._state.claudeSessionID = 42;
+		prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			snapshot: function(id) {
 				if (id !== 42) return null;
@@ -963,35 +963,35 @@ func TestViews_ClaudePane_WithPinnedSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = evalJS(`delete globalThis.tuiMux; if (prSplit._state) prSplit._state.claudeSessionID = null;`)
+		_, _ = evalJS(`delete globalThis.tuiMux; if (prSplit._state) prSplit._state.agentSessionID = null;`)
 	})
 
-	raw, err := evalJS(`globalThis.prSplit._renderClaudePane({
-		claudeScreenshot: 'line1\nline2\nline3', width: 60, height: 20
+	raw, err := evalJS(`globalThis.prSplit._renderAgentPane({
+		agentScreenshot: 'line1\nline2\nline3', width: 60, height: 20
 	}, 60, 20)`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := raw.(string)
-	if strings.Contains(s, "No Claude session") {
-		t.Error("claude pane with screenshot should NOT show placeholder")
+	if strings.Contains(s, "No Agent session") {
+		t.Error("agent pane with screenshot should NOT show placeholder")
 	}
-	if !strings.Contains(s, "Claude") {
-		t.Error("claude pane with screenshot should show 'Claude' title")
+	if !strings.Contains(s, "Agent") {
+		t.Error("agent pane with screenshot should show 'Agent' title")
 	}
 }
 
 // ---------------------------------------------------------------------------
-//  Claude Conversation Overlay
+//  Agent Conversation Overlay
 // ---------------------------------------------------------------------------
 
-func TestViews_ClaudeConvoOverlay_EmptyHistory(t *testing.T) {
+func TestViews_AgentConvoOverlay_EmptyHistory(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
-	raw, err := evalJS(`globalThis.prSplit._viewClaudeConvoOverlay({
+	raw, err := evalJS(`globalThis.prSplit._viewAgentConvoOverlay({
 		width: 80, height: 24,
-		claudeConvo: {
+		agentConvo: {
 			context: 'plan-review', history: [], inputText: '',
 			sending: false, lastError: null, scrollOffset: 0
 		}
@@ -1000,21 +1000,21 @@ func TestViews_ClaudeConvoOverlay_EmptyHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := raw.(string)
-	if !strings.Contains(s, "Ask Claude") {
-		t.Error("convo overlay should contain 'Ask Claude'")
+	if !strings.Contains(s, "Ask Agent") {
+		t.Error("convo overlay should contain 'Ask Agent'")
 	}
 	if !strings.Contains(s, "Plan Review") {
 		t.Error("convo overlay should show context label 'Plan Review'")
 	}
 }
 
-func TestViews_ClaudeConvoOverlay_ErrorResolutionContext(t *testing.T) {
+func TestViews_AgentConvoOverlay_ErrorResolutionContext(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
-	raw, err := evalJS(`globalThis.prSplit._viewClaudeConvoOverlay({
+	raw, err := evalJS(`globalThis.prSplit._viewAgentConvoOverlay({
 		width: 80, height: 24,
-		claudeConvo: {
+		agentConvo: {
 			context: 'error-resolution', history: [], inputText: '',
 			sending: false, lastError: null, scrollOffset: 0
 		}
@@ -1027,13 +1027,13 @@ func TestViews_ClaudeConvoOverlay_ErrorResolutionContext(t *testing.T) {
 	}
 }
 
-func TestViews_ClaudeConvoOverlay_WithMessages(t *testing.T) {
+func TestViews_AgentConvoOverlay_WithMessages(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
-	raw, err := evalJS(`globalThis.prSplit._viewClaudeConvoOverlay({
+	raw, err := evalJS(`globalThis.prSplit._viewAgentConvoOverlay({
 		width: 80, height: 24,
-		claudeConvo: {
+		agentConvo: {
 			context: 'error-resolution',
 			history: [
 				{role: 'user', text: 'How do I fix this?'},
@@ -1050,21 +1050,21 @@ func TestViews_ClaudeConvoOverlay_WithMessages(t *testing.T) {
 	if !strings.Contains(s, "You") {
 		t.Error("convo overlay should show user badge 'You'")
 	}
-	if !strings.Contains(s, "Claude") {
-		t.Error("convo overlay should show assistant badge 'Claude'")
+	if !strings.Contains(s, "Agent") {
+		t.Error("convo overlay should show assistant badge 'Agent'")
 	}
 	if !strings.Contains(s, "2 messages") {
 		t.Error("convo overlay should show '2 messages' status")
 	}
 }
 
-func TestViews_ClaudeConvoOverlay_SendingState(t *testing.T) {
+func TestViews_AgentConvoOverlay_SendingState(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
-	raw, err := evalJS(`globalThis.prSplit._viewClaudeConvoOverlay({
+	raw, err := evalJS(`globalThis.prSplit._viewAgentConvoOverlay({
 		width: 80, height: 24,
-		claudeConvo: {
+		agentConvo: {
 			context: 'plan-review', history: [],
 			inputText: '', sending: true, waitingForTool: 'analyze',
 			lastError: null, scrollOffset: 0
@@ -1079,13 +1079,13 @@ func TestViews_ClaudeConvoOverlay_SendingState(t *testing.T) {
 	}
 }
 
-func TestViews_ClaudeConvoOverlay_ErrorBanner(t *testing.T) {
+func TestViews_AgentConvoOverlay_ErrorBanner(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
-	raw, err := evalJS(`globalThis.prSplit._viewClaudeConvoOverlay({
+	raw, err := evalJS(`globalThis.prSplit._viewAgentConvoOverlay({
 		width: 80, height: 24,
-		claudeConvo: {
+		agentConvo: {
 			context: 'plan-review', history: [],
 			inputText: '', sending: false,
 			lastError: 'connection timed out', scrollOffset: 0
@@ -1103,7 +1103,7 @@ func TestViews_ClaudeConvoOverlay_ErrorBanner(t *testing.T) {
 	}
 }
 
-func TestViews_ClaudeConvoOverlay_ScrollOffset(t *testing.T) {
+func TestViews_AgentConvoOverlay_ScrollOffset(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
@@ -1114,9 +1114,9 @@ func TestViews_ClaudeConvoOverlay_ScrollOffset(t *testing.T) {
 			history.push({role: 'user', text: 'message ' + i});
 			history.push({role: 'assistant', text: 'reply ' + i});
 		}
-		return globalThis.prSplit._viewClaudeConvoOverlay({
+		return globalThis.prSplit._viewAgentConvoOverlay({
 			width: 80, height: 24,
-			claudeConvo: {
+			agentConvo: {
 				context: 'plan-review', history: history,
 				inputText: '', sending: false,
 				lastError: null, scrollOffset: 10
@@ -1250,8 +1250,8 @@ func TestViews_NoPanicAtTinyWidth(t *testing.T) {
 		{"titleBar", `globalThis.prSplit._renderTitleBar({wizardState:'CONFIG',startTime:Date.now(),width:10})`},
 		{"navBar", `globalThis.prSplit._renderNavBar({wizardState:'CONFIG',width:10,isProcessing:false})`},
 		{"statusBar", `globalThis.prSplit._renderStatusBar({width:10})`},
-		{"claudePane", `globalThis.prSplit._renderClaudePane({width:10,height:5},10,5)`},
-		{"convoOverlay", `globalThis.prSplit._viewClaudeConvoOverlay({width:10,height:10,claudeConvo:{context:'plan-review',history:[],inputText:'',sending:false,lastError:null,scrollOffset:0}})`},
+		{"agentPane", `globalThis.prSplit._renderAgentPane({width:10,height:5},10,5)`},
+		{"convoOverlay", `globalThis.prSplit._viewAgentConvoOverlay({width:10,height:10,agentConvo:{context:'plan-review',history:[],inputText:'',sending:false,lastError:null,scrollOffset:0}})`},
 		{"moveDialog", `globalThis.prSplit._viewMoveFileDialog({width:10,selectedSplitIdx:0,selectedFileIdx:0,editorDialogState:{targetIdx:0}})`},
 		{"renameDialog", `globalThis.prSplit._viewRenameSplitDialog({width:10,selectedSplitIdx:0,editorDialogState:{inputText:'x'}})`},
 		{"mergeDialog", `globalThis.prSplit._viewMergeSplitsDialog({width:10,selectedSplitIdx:0,editorDialogState:{selected:{},cursorIdx:0}})`},
@@ -1285,7 +1285,7 @@ func TestViews_NoPanicAtLargeWidth(t *testing.T) {
 		{"finalizationScreen", `globalThis.prSplit._viewFinalizationScreen({wizardState:'FINALIZATION',width:300,startTime:Date.now(),equivalenceResult:{equivalent:true}})`},
 		{"titleBar", `globalThis.prSplit._renderTitleBar({wizardState:'CONFIG',startTime:Date.now(),width:300})`},
 		{"navBar", `globalThis.prSplit._renderNavBar({wizardState:'CONFIG',width:300,isProcessing:false})`},
-		{"convoOverlay", `globalThis.prSplit._viewClaudeConvoOverlay({width:300,height:50,claudeConvo:{context:'plan-review',history:[],inputText:'',sending:false,lastError:null,scrollOffset:0}})`},
+		{"convoOverlay", `globalThis.prSplit._viewAgentConvoOverlay({width:300,height:50,agentConvo:{context:'plan-review',history:[],inputText:'',sending:false,lastError:null,scrollOffset:0}})`},
 		{"moveDialog", `globalThis.prSplit._viewMoveFileDialog({width:300,selectedSplitIdx:0,selectedFileIdx:0,editorDialogState:{targetIdx:0}})`},
 		{"mergeDialog", `globalThis.prSplit._viewMergeSplitsDialog({width:300,selectedSplitIdx:0,editorDialogState:{selected:{},cursorIdx:0}})`},
 	}
@@ -2191,8 +2191,8 @@ func TestViews_PlanReviewScreen_ButtonLayout(t *testing.T) {
 	screen := raw.(string)
 	screenLines := strings.Split(screen, "\n")
 
-	var editLine, regenLine, askClaudeLine int
-	editLine, regenLine, askClaudeLine = -1, -1, -1
+	var editLine, regenLine, askAgentLine int
+	editLine, regenLine, askAgentLine = -1, -1, -1
 	for i, line := range screenLines {
 		if strings.Contains(line, "Edit Plan") {
 			editLine = i
@@ -2200,20 +2200,20 @@ func TestViews_PlanReviewScreen_ButtonLayout(t *testing.T) {
 		if strings.Contains(line, "Regenerate") {
 			regenLine = i
 		}
-		if strings.Contains(line, "Ask Claude") {
-			askClaudeLine = i
+		if strings.Contains(line, "Ask Agent") {
+			askAgentLine = i
 		}
 	}
 
-	if editLine < 0 || regenLine < 0 || askClaudeLine < 0 {
-		t.Fatalf("missing button labels in PlanReview output:\nEdit=%d Regen=%d AskClaude=%d\n%s",
-			editLine, regenLine, askClaudeLine, screen)
+	if editLine < 0 || regenLine < 0 || askAgentLine < 0 {
+		t.Fatalf("missing button labels in PlanReview output:\nEdit=%d Regen=%d AskAgent=%d\n%s",
+			editLine, regenLine, askAgentLine, screen)
 	}
 
 	// All three must be on the same line (horizontal layout).
-	if editLine != regenLine || regenLine != askClaudeLine {
-		t.Errorf("PlanReview button labels not on same line — Edit=%d Regen=%d AskClaude=%d",
-			editLine, regenLine, askClaudeLine)
+	if editLine != regenLine || regenLine != askAgentLine {
+		t.Errorf("PlanReview button labels not on same line — Edit=%d Regen=%d AskAgent=%d",
+			editLine, regenLine, askAgentLine)
 	}
 
 	// Border top should be on the line above.

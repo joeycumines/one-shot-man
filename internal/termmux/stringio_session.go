@@ -45,9 +45,8 @@ func (s *StringIOSession) Write(p []byte) (int, error) {
 
 // Resize delegates to the underlying StringIO if it implements a
 // Resize(rows, cols int) error method. PTY-backed agent handles
-// (e.g., claudemux.ptyAgentHandle) carry a real PTY that supports
-// SIGWINCH delivery. Plain string-based handles lack Resize, so
-// the call is a safe no-op.
+// carry a real PTY that supports SIGWINCH delivery. Plain
+// string-based handles lack Resize, so the call is a safe no-op.
 func (s *StringIOSession) Resize(rows, cols int) error {
 	type resizer interface {
 		Resize(rows, cols int) error

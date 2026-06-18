@@ -63,8 +63,8 @@ var prSplitChunk07PRCreation string
 //go:embed pr_split_08_conflict.js
 var prSplitChunk08Conflict string
 
-//go:embed pr_split_09_claude.js
-var prSplitChunk09Claude string
+//go:embed pr_split_09_agent.js
+var prSplitChunk09Agent string
 
 //go:embed pr_split_10a_pipeline_config.js
 var prSplitChunk10aPipelineConfig string
@@ -114,8 +114,8 @@ var prSplitChunk16bTUIHandlersPipeline string
 //go:embed pr_split_16c_tui_handlers_verify.js
 var prSplitChunk16cTUIHandlersVerify string
 
-//go:embed pr_split_16d_tui_handlers_claude.js
-var prSplitChunk16dTUIHandlersClaude string
+//go:embed pr_split_16d_tui_handlers_agent.js
+var prSplitChunk16dTUIHandlersAgent string
 
 //go:embed pr_split_16e_tui_update.js
 var prSplitChunk16eTUIUpdate string
@@ -142,7 +142,7 @@ var prSplitChunks = []struct {
 	{"06b_verify_shell", &prSplitChunk06bVerifyShell},
 	{"07_prcreation", &prSplitChunk07PRCreation},
 	{"08_conflict", &prSplitChunk08Conflict},
-	{"09_claude", &prSplitChunk09Claude},
+	{"09_agent", &prSplitChunk09Agent},
 	{"10a_pipeline_config", &prSplitChunk10aPipelineConfig},
 	{"10b_pipeline_send", &prSplitChunk10bPipelineSend},
 	{"10c_pipeline_resolve", &prSplitChunk10cPipelineResolve},
@@ -159,7 +159,7 @@ var prSplitChunks = []struct {
 	{"16a_tui_focus", &prSplitChunk16aTUIFocus},
 	{"16b_tui_handlers_pipeline", &prSplitChunk16bTUIHandlersPipeline},
 	{"16c_tui_handlers_verify", &prSplitChunk16cTUIHandlersVerify},
-	{"16d_tui_handlers_claude", &prSplitChunk16dTUIHandlersClaude},
+	{"16d_tui_handlers_agent", &prSplitChunk16dTUIHandlersAgent},
 	{"16e_tui_update", &prSplitChunk16eTUIUpdate},
 	{"16f_tui_model", &prSplitChunk16fTUIModel},
 	{"16g_persistence", &prSplitChunk16gPersistence},
@@ -201,14 +201,14 @@ type PrSplitCommand struct {
 	// When set, validateGitRepo() will validate that directory explicitly.
 	testWorkingDir string
 
-	// Claude Code execution configuration
-	claudeCommand   string          // explicit path/name of Claude binary (empty = auto-detect)
-	claudeArgs      stringSliceFlag // additional CLI arguments for Claude (repeatable --claude-arg flags)
-	claudeModel     string          // model to use (provider-dependent)
-	claudeConfigDir string          // config directory override
-	claudeEnv       string          // extra environment variables (KEY=VALUE,KEY=VALUE)
+	// Agent execution configuration
+	agentCommand   string          // explicit path/name of agent binary (empty = auto-detect)
+	agentArgs      stringSliceFlag // additional CLI arguments for the agent (repeatable --agent-arg flags)
+	agentModel     string          // model to use (provider-dependent)
+	agentConfigDir string          // config directory override
+	agentEnv       string          // extra environment variables (KEY=VALUE,KEY=VALUE)
 
-	// Timeout for Claude communication steps (classify, plan, resolve).
+	// Timeout for agent communication steps (classify, plan, resolve).
 	timeout time.Duration
 
 	// Resume a previously saved auto-split session.
@@ -270,14 +270,14 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 
 	fs.BoolVar(&c.jsonOutput, "json", false, "Output results as JSON (combine with run or --dry-run)")
 
-	// Claude Code execution
-	fs.StringVar(&c.claudeCommand, "claude-command", "", "Claude binary path (empty = auto-detect)")
-	fs.Var(&c.claudeArgs, "claude-arg", "Additional Claude CLI argument (repeatable)")
-	fs.StringVar(&c.claudeModel, "claude-model", "", "Model name (provider-dependent)")
-	fs.StringVar(&c.claudeConfigDir, "claude-config-dir", "", "Claude config directory override")
-	fs.StringVar(&c.claudeEnv, "claude-env", "", "Extra environment variables (KEY=VALUE,KEY=VALUE)")
+	// Agent execution
+	fs.StringVar(&c.agentCommand, "agent-command", "", "Agent binary path (empty = auto-detect)")
+	fs.Var(&c.agentArgs, "agent-arg", "Additional agent CLI argument (repeatable)")
+	fs.StringVar(&c.agentModel, "agent-model", "", "Model name (provider-dependent)")
+	fs.StringVar(&c.agentConfigDir, "agent-config-dir", "", "Agent config directory override")
+	fs.StringVar(&c.agentEnv, "agent-env", "", "Extra environment variables (KEY=VALUE,KEY=VALUE)")
 
-	fs.DurationVar(&c.timeout, "timeout", 0, "Timeout for Claude communication steps (e.g. 5m); 0 = defaults")
+	fs.DurationVar(&c.timeout, "timeout", 0, "Timeout for agent communication steps (e.g. 5m); 0 = defaults")
 	fs.BoolVar(&c.resume, "resume", false, "Resume a previously saved auto-split session")
 	fs.BoolVar(&c.cleanupOnFailure, "cleanup-on-failure", false, "Delete split branches if the pipeline fails")
 
@@ -465,9 +465,9 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 	}
 
 	// Expose split configuration to JS.
-	claudeArgsList := make([]string, len(c.claudeArgs))
-	copy(claudeArgsList, c.claudeArgs)
-	claudeEnvMap := parseClaudeEnv(c.claudeEnv)
+	agentArgsList := make([]string, len(c.agentArgs))
+	copy(agentArgsList, c.agentArgs)
+	agentEnvMap := parseAgentEnv(c.agentEnv)
 	engine.SetGlobal("prSplitConfig", map[string]any{
 		"baseBranch":       c.baseBranch,
 		"strategy":         c.strategy,
@@ -476,11 +476,11 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 		"verifyCommand":    c.verifyCommand,
 		"dryRun":           c.dryRun,
 		"jsonOutput":       c.jsonOutput,
-		"claudeCommand":    c.claudeCommand,
-		"claudeArgs":       claudeArgsList,
-		"claudeModel":      c.claudeModel,
-		"claudeConfigDir":  c.claudeConfigDir,
-		"claudeEnv":        claudeEnvMap,
+		"agentCommand":     c.agentCommand,
+		"agentArgs":        agentArgsList,
+		"agentModel":       c.agentModel,
+		"agentConfigDir":   c.agentConfigDir,
+		"agentEnv":         agentEnvMap,
 		"timeoutMs":        int64(c.timeout / time.Millisecond),
 		"resumeFromPlan":   c.resume,
 		"cleanupOnFailure": c.cleanupOnFailure,
@@ -490,11 +490,11 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 	// ── Session lifecycle: tuiMux ────────────────────────────────────
 	//
 	// The TUI mux owns the fullscreen passthrough between osm and a child
-	// PTY (Claude Code). JS chunks interact with it via the tuiMux global:
+	// PTY (Agent Code). JS chunks interact with it via the tuiMux global:
 	//
-	//   1. pr_split_09_claude.js  → spawns Claude, gets AgentHandle
+	//   1. pr_split_09_agent.js  → spawns agent, gets AgentHandle
 	//   2. pr_split_10d_orchestrator.js → tuiMux.attach(handle)
-	//   3. pr_split_16d_tui_handlers_claude.js → tuiMux.switchTo() (blocking)
+	//   3. pr_split_16d_tui_handlers_agent.js → tuiMux.switchTo() (blocking)
 	//   4. pr_split_10a_pipeline_config.js → executor.close() / deferred detach
 	//
 	// Verification sessions ARE registered with tuiMux via
@@ -522,7 +522,7 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 	// the correct identity from the start (not assigned lazily in JS).
 	// Uses session().setTarget() on the wrapped object.
 	targetObj := engine.Runtime().NewObject()
-	_ = targetObj.Set("name", "claude")
+	_ = targetObj.Set("name", "agent")
 	_ = targetObj.Set("kind", string(termmux.SessionKindPTY))
 	setTargetFn, _ := goja.AssertFunction(tuiMux.ToObject(engine.Runtime()).Get("session"))
 	if setTargetFn != nil {
@@ -547,8 +547,8 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 	// consistently. Defined here so the Go bootstrap and all JS chunks
 	// agree on the session vocabulary.
 	engine.SetGlobal("sessionTypes", map[string]any{
-		"claude": map[string]any{
-			"name": "claude",
+		"agent": map[string]any{
+			"name": "agent",
 			"kind": "pty",
 		},
 		"verify": map[string]any{
@@ -596,13 +596,13 @@ func (c *PrSplitCommand) applyConfigDefaults() {
 	if v, ok := c.config.GetCommandOption("pr-split", "dry-run"); ok && !c.dryRun {
 		c.dryRun = v == "true" || v == "1" || v == "yes"
 	}
-	applyStr("claude-command", &c.claudeCommand, "")
-	if v, ok := c.config.GetCommandOption("pr-split", "claude-arg"); ok && len(c.claudeArgs) == 0 {
-		c.claudeArgs = append(c.claudeArgs, v)
+	applyStr("agent-command", &c.agentCommand, "")
+	if v, ok := c.config.GetCommandOption("pr-split", "agent-arg"); ok && len(c.agentArgs) == 0 {
+		c.agentArgs = append(c.agentArgs, v)
 	}
-	applyStr("claude-model", &c.claudeModel, "")
-	applyStr("claude-config-dir", &c.claudeConfigDir, "")
-	applyStr("claude-env", &c.claudeEnv, "")
+	applyStr("agent-model", &c.agentModel, "")
+	applyStr("agent-config-dir", &c.agentConfigDir, "")
+	applyStr("agent-env", &c.agentEnv, "")
 	if v, ok := c.config.GetCommandOption("pr-split", "timeout"); ok && c.timeout == 0 {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			c.timeout = d
@@ -712,10 +712,10 @@ func forceCloseSessionManager(mgr *termmux.SessionManager) {
 	}
 }
 
-// parseClaudeEnv parses a comma-separated KEY=VALUE string into a map.
+// parseAgentEnv parses a comma-separated KEY=VALUE string into a map.
 // Malformed entries (empty key, no '=') are logged as warnings and skipped.
 // Whitespace around pairs is trimmed.
-func parseClaudeEnv(raw string) map[string]string {
+func parseAgentEnv(raw string) map[string]string {
 	m := map[string]string{}
 	if raw == "" {
 		return m
@@ -727,11 +727,11 @@ func parseClaudeEnv(raw string) map[string]string {
 		}
 		k, v, ok := strings.Cut(pair, "=")
 		if !ok {
-			slog.Warn("parseClaudeEnv: entry has no '=' delimiter, skipping", "entry", pair)
+			slog.Warn("parseAgentEnv: entry has no '=' delimiter, skipping", "entry", pair)
 			continue
 		}
 		if k == "" {
-			slog.Warn("parseClaudeEnv: entry has empty key, skipping", "entry", pair)
+			slog.Warn("parseAgentEnv: entry has empty key, skipping", "entry", pair)
 			continue
 		}
 		m[k] = v

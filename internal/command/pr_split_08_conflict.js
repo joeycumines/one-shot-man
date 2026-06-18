@@ -2,7 +2,7 @@
 // pr_split_08_conflict.js — Auto-fix strategies & local conflict resolution
 // Dependencies: chunks 00, 04 must be loaded first
 // Late-binds: renderConflictPrompt (09), sendToHandle (10), waitForLogged (10),
-//             AUTOMATED_DEFAULTS (10), _claudeExecutor (10), _mcpCallbackObj (10)
+//             AUTOMATED_DEFAULTS (10), _agentExecutor (10), _mcpCallbackObj (10)
 //
 // All external symbols are read from prSplit.* INSIDE function bodies for
 // late-binding. This allows mocking in tests and avoids capturing undefined
@@ -316,15 +316,15 @@
             }
         },
         {
-            name: 'claude-fix',
-            // Late-bound: claudeExecutor set by pipeline chunk (10)
+            name: 'agent-fix',
+            // Late-bound: agentExecutor set by pipeline chunk (10)
             detect: function() {
-                var claudeExecutor = prSplit._claudeExecutor;
-                return !!(claudeExecutor && claudeExecutor.handle && claudeExecutor.isAvailable());
+                var agentExecutor = prSplit._agentExecutor;
+                return !!(agentExecutor && agentExecutor.handle && agentExecutor.isAvailable());
             },
             // Async: sendToHandle uses setTimeout delay for PTY write separation
             fix: async function(dir, failedBranch, plan, verifyOutput, options) {
-                var claudeExecutor = prSplit._claudeExecutor;
+                var agentExecutor = prSplit._agentExecutor;
                 var renderConflictPrompt = prSplit.renderConflictPrompt;
                 var sendToHandle = prSplit.sendToHandle;
                 var waitForLogged = prSplit.waitForLogged;
@@ -337,8 +337,8 @@
                 var osmod = prSplit._modules.osmod;
                 var AUTOMATED_DEFAULTS = prSplit.AUTOMATED_DEFAULTS || {};
 
-                if (!claudeExecutor || !claudeExecutor.handle) {
-                    return { fixed: false, error: 'Claude executor not available' };
+                if (!agentExecutor || !agentExecutor.handle) {
+                    return { fixed: false, error: 'Agent executor not available' };
                 }
                 options = options || {};
                 var resolveTimeoutMs = options.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs;
@@ -350,14 +350,14 @@
                     exitCode: 1,
                     errorOutput: verifyOutput || '',
                     goModContent: '',
-                    sessionId: claudeExecutor.sessionId || ''
+                    sessionId: agentExecutor.sessionId || ''
                 });
                 if (promptResult.error) {
                     return { fixed: false, error: 'render conflict prompt failed: ' + promptResult.error };
                 }
-                var sendResult = await sendToHandle(claudeExecutor.handle, promptResult.text);
+                var sendResult = await sendToHandle(agentExecutor.handle, promptResult.text);
                 if (sendResult.error) {
-                    return { fixed: false, error: 'failed to send to Claude: ' + sendResult.error };
+                    return { fixed: false, error: 'failed to send to Agent: ' + sendResult.error };
                 }
                 mcpCallbackObj.resetWaiter('reportResolution');
                 var resolutionPoll = await waitForLogged('reportResolution', resolveTimeoutMs, {
@@ -365,7 +365,7 @@
                     checkIntervalMs: pollIntervalMs
                 });
                 if (resolutionPoll.error) {
-                    return { fixed: false, error: 'Claude resolution timed out waiting for reportResolution tool call: ' + resolutionPoll.error + ' — check Claude process logs for errors' };
+                    return { fixed: false, error: 'Agent resolution timed out waiting for reportResolution tool call: ' + resolutionPoll.error + ' — check Agent process logs for errors' };
                 }
                 var resolution = resolutionPoll.data;
                 var resVal = validateResolution(resolution);

@@ -285,7 +285,7 @@ func TestAutoFixStrategy_AddMissingFiles_Detect(t *testing.T) {
 	})
 }
 
-func TestAutoFixStrategy_ClaudeFix_Detect(t *testing.T) {
+func TestAutoFixStrategy_AgentFix_Detect(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -293,9 +293,9 @@ func TestAutoFixStrategy_ClaudeFix_Detect(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Without claudeExecutor, should be false.
+	// Without agentExecutor, should be false.
 	t.Run("detect_false_without_executor", func(t *testing.T) {
-		val, err := evalJS(`getStrategy('claude-fix').detect()`)
+		val, err := evalJS(`getStrategy('agent-fix').detect()`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -306,10 +306,10 @@ func TestAutoFixStrategy_ClaudeFix_Detect(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// T57: ClaudeCodeExecutor.resolve auto-detection tests
+// T57: AgentCodeExecutor.resolve auto-detection tests
 // ---------------------------------------------------------------------------
 
-func TestClaudeCodeExecutor_Resolve_ExplicitCommand(t *testing.T) {
+func TestAgentCodeExecutor_Resolve_ExplicitCommand(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -321,8 +321,8 @@ func TestClaudeCodeExecutor_Resolve_ExplicitCommand(t *testing.T) {
 		if _, err := evalJS(`
 			var execMod57 = require('osm:exec');
 			execMod57.execv = function(argv) {
-				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'my-claude') {
-					return {stdout: '/usr/bin/my-claude', stderr: '', code: 0};
+				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'my-agent') {
+					return {stdout: '/usr/bin/my-agent', stderr: '', code: 0};
 				}
 				return {stdout: '', stderr: 'not found', code: 1};
 			};
@@ -330,7 +330,7 @@ func TestClaudeCodeExecutor_Resolve_ExplicitCommand(t *testing.T) {
 			t.Fatal(err)
 		}
 		val, err := evalJS(`
-			var exe = new globalThis.prSplit.ClaudeCodeExecutor({claudeCommand: 'my-claude'});
+			var exe = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'my-agent'});
 			var result = exe.resolve();
 			JSON.stringify({error: result.error, resolved: exe.resolved})
 		`)
@@ -356,7 +356,7 @@ func TestClaudeCodeExecutor_Resolve_ExplicitCommand(t *testing.T) {
 			t.Fatal(err)
 		}
 		val, err := evalJS(`
-			var exe = new globalThis.prSplit.ClaudeCodeExecutor({claudeCommand: 'nonexistent'});
+			var exe = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'nonexistent'});
 			var result = exe.resolve();
 			JSON.stringify(result)
 		`)
@@ -370,7 +370,7 @@ func TestClaudeCodeExecutor_Resolve_ExplicitCommand(t *testing.T) {
 	})
 }
 
-func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
+func TestAgentCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -378,7 +378,7 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Run("claude_autodetected_version_ok", func(t *testing.T) {
+	t.Run("agent_autodetected_version_ok", func(t *testing.T) {
 		if _, err := evalJS(`
 			var execMod57c = require('osm:exec');
 			execMod57c.execv = function(argv) {
@@ -394,7 +394,7 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 			t.Fatal(err)
 		}
 		val, err := evalJS(`
-			var exe = new globalThis.prSplit.ClaudeCodeExecutor({});
+			var exe = new globalThis.prSplit.AgentCodeExecutor({});
 			var result = exe.resolve();
 			JSON.stringify({error: result.error, resolved: exe.resolved})
 		`)
@@ -402,12 +402,12 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := val.(string)
-		if !strings.Contains(s, `"type":"claude-code"`) {
-			t.Errorf("expected claude-code type, got: %s", s)
+		if !strings.Contains(s, `"type":"agent"`) {
+			t.Errorf("expected agent type, got: %s", s)
 		}
 	})
 
-	t.Run("claude_found_version_fails", func(t *testing.T) {
+	t.Run("agent_found_version_fails", func(t *testing.T) {
 		if _, err := evalJS(`
 			var execMod57d = require('osm:exec');
 			execMod57d.execv = function(argv) {
@@ -423,7 +423,7 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 			t.Fatal(err)
 		}
 		val, err := evalJS(`
-			var exe = new globalThis.prSplit.ClaudeCodeExecutor({});
+			var exe = new globalThis.prSplit.AgentCodeExecutor({});
 			var result = exe.resolve();
 			JSON.stringify(result)
 		`)
@@ -455,7 +455,7 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 			t.Fatal(err)
 		}
 		val, err := evalJS(`
-			var exe = new globalThis.prSplit.ClaudeCodeExecutor({claudeModel: 'llama3'});
+			var exe = new globalThis.prSplit.AgentCodeExecutor({agentModel: 'llama3'});
 			var result = exe.resolve();
 			JSON.stringify({error: result.error, resolved: exe.resolved})
 		`)
@@ -472,7 +472,7 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 		if _, err := evalJS(`
 			var execMod57f = require('osm:exec');
 			execMod57f.execv = function(argv) {
-				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'claude') {
+				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'agent') {
 					return {stdout: '', stderr: '', code: 1};
 				}
 				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'ollama') {
@@ -487,7 +487,7 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 			t.Fatal(err)
 		}
 		val, err := evalJS(`
-			var exe = new globalThis.prSplit.ClaudeCodeExecutor({claudeModel: 'llama3'});
+			var exe = new globalThis.prSplit.AgentCodeExecutor({agentModel: 'llama3'});
 			var result = exe.resolve();
 			JSON.stringify(result)
 		`)
@@ -510,7 +510,7 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 			t.Fatal(err)
 		}
 		val, err := evalJS(`
-			var exe = new globalThis.prSplit.ClaudeCodeExecutor({});
+			var exe = new globalThis.prSplit.AgentCodeExecutor({});
 			var result = exe.resolve();
 			JSON.stringify(result)
 		`)
@@ -518,7 +518,7 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := val.(string)
-		if !strings.Contains(s, "No Claude-compatible binary") {
+		if !strings.Contains(s, "No agent binary found") {
 			t.Errorf("expected no binary found error, got: %s", s)
 		}
 	})

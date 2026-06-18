@@ -101,7 +101,7 @@ State & prompt building:
 
 - `promptFooter` (string, optional): footer text appended after context in the final prompt. This string is itself rendered as a template (like `promptInstructions`), so it can reference state variables (e.g., `{{index .stateKeys "outputFormat"}}`). The rendered result is available as `{{.promptFooter}}` in the `promptTemplate`. Useful for adding reminders, constraints, or follow-up instructions that should appear at the end of the generated prompt.
 
-- `postCopyHint` (string, optional): if set, this text is printed to the terminal after the user successfully copies the prompt to clipboard. Useful for suggesting follow-up actions (e.g., "Try pasting into Claude and asking it to review the output.").
+- `postCopyHint` (string, optional): if set, this text is printed to the terminal after the user successfully copies the prompt to clipboard. Useful for suggesting follow-up actions (e.g., "Try pasting into your agent and asking it to review the output.").
 
 Hot-snippets:
 

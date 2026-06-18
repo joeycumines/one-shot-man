@@ -372,9 +372,10 @@ func TestCompositor_Chaining(t *testing.T) {
 	skipSlow(t)
 	c := NewCompositor(40, 5)
 	b := coordinate.Rect{Position: coordinate.Position{X: 0, Y: 0}, Size: coordinate.Size{Width: 10, Height: 1}}
+	chromeBounds := coordinate.Rect{Position: coordinate.Position{X: 0, Y: 1}, Size: coordinate.Size{Width: 10, Height: 1}}
 
 	result := c.AddPane("p1", "hello", b, 0).
-		AddChrome("c1", "status", b, 10).
+		AddChrome("c1", "status", chromeBounds, 10).
 		UpdatePane("p1", "world").
 		UpdateChrome("c1", "DONE")
 

@@ -1,6 +1,6 @@
 package command
 
-// Tests proving Claude-pane keyboard and mouse routing end-to-end with pinned
+// Tests proving Agent-pane keyboard and mouse routing end-to-end with pinned
 // SessionID. Every test in this file uses a real SessionManager with recording
 // InteractiveSession mocks — the "SessionManager-backed write path" evidence
 // tier. These tests prove bytes traverse the full JS → Go → session write
@@ -20,29 +20,29 @@ import (
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-// setupPinnedClaudeSession registers a recording InteractiveSession as Claude's
-// pinned session and sets prSplit._state.claudeSessionID. Returns the session
+// setupPinnedAgentSession registers a recording InteractiveSession as Agent's
+// pinned session and sets prSplit._state.agentSessionID. Returns the session
 // ID and recording handle.
-func setupPinnedClaudeSession(t testing.TB, mgr *termmux.SessionManager, evalJS func(string) (any, error)) (termmux.SessionID, *recordingInteractiveSession) {
+func setupPinnedAgentSession(t testing.TB, mgr *termmux.SessionManager, evalJS func(string) (any, error)) (termmux.SessionID, *recordingInteractiveSession) {
 	t.Helper()
 
 	rec := newRecordingInteractiveSession()
 	t.Cleanup(func() { _ = rec.Close() })
 
 	id, err := mgr.Register(rec, termmux.SessionTarget{
-		Name: "claude",
+		Name: "agent",
 		Kind: termmux.SessionKindPTY,
 	})
 	if err != nil {
-		t.Fatalf("register claude session: %v", err)
+		t.Fatalf("register agent session: %v", err)
 	}
 	if err := mgr.Activate(id); err != nil {
-		t.Fatalf("activate claude session: %v", err)
+		t.Fatalf("activate agent session: %v", err)
 	}
 
-	_, err = evalJS(fmt.Sprintf(`prSplit._state.claudeSessionID = %d`, id))
+	_, err = evalJS(fmt.Sprintf(`prSplit._state.agentSessionID = %d`, id))
 	if err != nil {
-		t.Fatalf("set claudeSessionID: %v", err)
+		t.Fatalf("set agentSessionID: %v", err)
 	}
 
 	return id, rec
@@ -68,14 +68,14 @@ func setupPinnedVerifySession(t testing.TB, mgr *termmux.SessionManager) (termmu
 }
 
 // ── TestPinnedSessionIsolation ───────────────────────────────────────────────
-// Register both Claude and verify sessions with pinned SessionIDs. Send keys
-// to Claude-focused state and verify that:
-//   - Claude's recording gets the bytes
+// Register both Agent and verify sessions with pinned SessionIDs. Send keys
+// to Agent-focused state and verify that:
+//   - Agent's recording gets the bytes
 //   - Verify's recording stays empty
 //
 // Then focus verify tab, send keys, and prove:
 //   - Verify's recording gets the bytes
-//   - Claude's recording is unaffected
+//   - Agent's recording is unaffected
 //
 // This proves the pinned SessionID proxy routes writes to the correct session
 // even when both sessions exist in the same SessionManager.
@@ -85,7 +85,7 @@ func TestPinnedSessionIsolation(t *testing.T) {
 
 	mgr, evalJS := newPrSplitEvalWithMgr(t)
 
-	claudeID, claudeRec := setupPinnedClaudeSession(t, mgr, evalJS)
+	agentID, agentRec := setupPinnedAgentSession(t, mgr, evalJS)
 	verifyID, verifyRec := setupPinnedVerifySession(t, mgr)
 
 	// Set the verify session ID in state so getInteractivePaneSession
@@ -95,23 +95,23 @@ func TestPinnedSessionIsolation(t *testing.T) {
 		t.Fatalf("set activeVerifySession: %v", err)
 	}
 
-	// ── Send key to Claude-focused state ─────────────────────────────
-	claudeState := testState(true, "claude", "claude")
+	// ── Send key to Agent-focused state ─────────────────────────────
+	agentState := testState(true, "agent", "agent")
 	_, err = evalJS(`
-		var __cs = ` + claudeState + `;
-		__cs.claudeSessionID = ` + fmt.Sprintf("%d", claudeID) + `;
+		var __cs = ` + agentState + `;
+		__cs.agentSessionID = ` + fmt.Sprintf("%d", agentID) + `;
 		__cs.activeVerifySession = ` + fmt.Sprintf("%d", verifyID) + `;
 		var __km = { type: 'Key', key: 'a' };
 		prSplit._wizardUpdateImpl(__km, __cs);
 	`)
 	if err != nil {
-		t.Fatalf("send 'a' to claude: %v", err)
+		t.Fatalf("send 'a' to agent: %v", err)
 	}
 
-	claudeWrites := claudeRec.getWrites()
+	agentWrites := agentRec.getWrites()
 	verifyWrites := verifyRec.getWrites()
-	if len(claudeWrites) != 1 || claudeWrites[0] != "a" {
-		t.Errorf("claude received %v, want [\"a\"]", claudeWrites)
+	if len(agentWrites) != 1 || agentWrites[0] != "a" {
+		t.Errorf("agent received %v, want [\"a\"]", agentWrites)
 	}
 	if len(verifyWrites) != 0 {
 		t.Errorf("verify received %v, want empty (isolation violated)", verifyWrites)
@@ -119,10 +119,10 @@ func TestPinnedSessionIsolation(t *testing.T) {
 
 	// ── Send key to verify-focused state ─────────────────────────────
 	// Activate verify session so mgr.Input dispatches to it.
-	verifyState := testState(true, "claude", "verify")
+	verifyState := testState(true, "agent", "verify")
 	_, err = evalJS(`
 		var __vs = ` + verifyState + `;
-		__vs.claudeSessionID = ` + fmt.Sprintf("%d", claudeID) + `;
+		__vs.agentSessionID = ` + fmt.Sprintf("%d", agentID) + `;
 		__vs.activeVerifySession = ` + fmt.Sprintf("%d", verifyID) + `;
 		__vs.verifyScreen = 'active';
 		var __vm = { type: 'Key', key: 'b' };
@@ -132,10 +132,10 @@ func TestPinnedSessionIsolation(t *testing.T) {
 		t.Fatalf("send 'b' to verify: %v", err)
 	}
 
-	claudeWrites = claudeRec.getWrites()
+	agentWrites = agentRec.getWrites()
 	verifyWrites = verifyRec.getWrites()
-	if len(claudeWrites) != 1 {
-		t.Errorf("claude writes changed to %v, want still [\"a\"] (isolation violated)", claudeWrites)
+	if len(agentWrites) != 1 {
+		t.Errorf("agent writes changed to %v, want still [\"a\"] (isolation violated)", agentWrites)
 	}
 	if len(verifyWrites) != 1 || verifyWrites[0] != "b" {
 		t.Errorf("verify received %v, want [\"b\"]", verifyWrites)
@@ -144,7 +144,7 @@ func TestPinnedSessionIsolation(t *testing.T) {
 
 // ── TestCtrlComboForwarding ──────────────────────────────────────────────────
 // Prove that Ctrl key combinations are correctly translated to control
-// characters and delivered to the Claude PTY via the pinned SessionID.
+// characters and delivered to the Agent PTY via the pinned SessionID.
 //
 // Evidence tier: SessionManager-backed (InteractiveSession.Write recording).
 func TestCtrlComboForwarding(t *testing.T) {
@@ -152,7 +152,7 @@ func TestCtrlComboForwarding(t *testing.T) {
 	t.Parallel()
 
 	mgr, evalJS := newPrSplitEvalWithMgr(t)
-	_, claudeRec := setupPinnedClaudeSession(t, mgr, evalJS)
+	_, agentRec := setupPinnedAgentSession(t, mgr, evalJS)
 
 	cases := []struct {
 		key  string
@@ -166,7 +166,7 @@ func TestCtrlComboForwarding(t *testing.T) {
 		{"ctrl+z", "\x1a", "ctrl+z → SUB (0x1a)"},
 	}
 
-	state := testState(true, "claude", "claude")
+	state := testState(true, "agent", "agent")
 
 	for i, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -179,7 +179,7 @@ func TestCtrlComboForwarding(t *testing.T) {
 				t.Fatalf("wizardUpdateImpl(%s): %v", tc.key, err)
 			}
 
-			writes := claudeRec.getWrites()
+			writes := agentRec.getWrites()
 			if len(writes) < i+1 {
 				t.Fatalf("expected at least %d writes, got %d: %v", i+1, len(writes), writes)
 			}
@@ -191,8 +191,8 @@ func TestCtrlComboForwarding(t *testing.T) {
 }
 
 // ── TestReservedKeyGuard ─────────────────────────────────────────────────────
-// Prove that ALL keys in CLAUDE_RESERVED_KEYS are NOT forwarded to the Claude
-// PTY when the Claude pane is focused. This is the comprehensive guard.
+// Prove that ALL keys in AGENT_RESERVED_KEYS are NOT forwarded to the Agent
+// PTY when the Agent pane is focused. This is the comprehensive guard.
 //
 // Evidence tier: SessionManager-backed (InteractiveSession.Write recording).
 func TestReservedKeyGuard(t *testing.T) {
@@ -200,12 +200,12 @@ func TestReservedKeyGuard(t *testing.T) {
 	t.Parallel()
 
 	mgr, evalJS := newPrSplitEvalWithMgr(t)
-	_, claudeRec := setupPinnedClaudeSession(t, mgr, evalJS)
+	_, agentRec := setupPinnedAgentSession(t, mgr, evalJS)
 
 	// Fetch the reserved keys list from JS.
-	v, err := evalJS(`JSON.stringify(Object.keys(prSplit._CLAUDE_RESERVED_KEYS))`)
+	v, err := evalJS(`JSON.stringify(Object.keys(prSplit._AGENT_RESERVED_KEYS))`)
 	if err != nil {
-		t.Fatalf("get CLAUDE_RESERVED_KEYS: %v", err)
+		t.Fatalf("get AGENT_RESERVED_KEYS: %v", err)
 	}
 	keysJSON := fmt.Sprintf("%v", v)
 	// Parse: ["ctrl+tab","ctrl+l",...] — extract key names.
@@ -215,7 +215,7 @@ func TestReservedKeyGuard(t *testing.T) {
 		t.Fatalf("expected at least 10 reserved keys, got %d: %v", len(keys), keys)
 	}
 
-	state := testState(true, "claude", "claude")
+	state := testState(true, "agent", "agent")
 
 	// Send each reserved key and verify no writes reach the session.
 	// Note: ctrl+shift+v is excluded because it's the paste handler which
@@ -227,7 +227,7 @@ func TestReservedKeyGuard(t *testing.T) {
 			continue // paste handler — tested separately
 		}
 		t.Run(key, func(t *testing.T) {
-			before := len(claudeRec.getWrites())
+			before := len(agentRec.getWrites())
 
 			_, _ = evalJS(`
 				var __rk = ` + state + `;
@@ -235,7 +235,7 @@ func TestReservedKeyGuard(t *testing.T) {
 				prSplit._wizardUpdateImpl(__rkm, __rk);
 			`)
 
-			after := len(claudeRec.getWrites())
+			after := len(agentRec.getWrites())
 			if after != before {
 				t.Errorf("reserved key %q was forwarded to PTY (writes: %d → %d)",
 					key, before, after)
@@ -251,7 +251,7 @@ func TestReservedKeyGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sanity key 'q': %v", err)
 	}
-	finalWrites := claudeRec.getWrites()
+	finalWrites := agentRec.getWrites()
 	if len(finalWrites) == 0 || finalWrites[len(finalWrites)-1] != "q" {
 		t.Errorf("sanity: non-reserved 'q' was not forwarded: %v", finalWrites)
 	}
@@ -259,7 +259,7 @@ func TestReservedKeyGuard(t *testing.T) {
 
 // ── TestMouseEventVariety ────────────────────────────────────────────────────
 // Prove that mouse motion, release, and wheel events produce correct SGR
-// escape sequences and deliver them to the Claude PTY via the pinned
+// escape sequences and deliver them to the Agent PTY via the pinned
 // SessionID. MouseClick (press) goes through zone detection and is NOT
 // forwarded directly to the child terminal.
 //
@@ -269,9 +269,9 @@ func TestMouseEventVariety(t *testing.T) {
 	t.Parallel()
 
 	mgr, evalJS := newPrSplitEvalWithMgr(t)
-	_, claudeRec := setupPinnedClaudeSession(t, mgr, evalJS)
+	_, agentRec := setupPinnedAgentSession(t, mgr, evalJS)
 
-	state := testState(true, "claude", "claude")
+	state := testState(true, "agent", "agent")
 
 	cases := []struct {
 		name      string
@@ -345,7 +345,7 @@ func TestMouseEventVariety(t *testing.T) {
 				t.Fatalf("wizardUpdateImpl(%s): %v", tc.name, err)
 			}
 
-			writes := claudeRec.getWrites()
+			writes := agentRec.getWrites()
 			if len(writes) < i+1 {
 				t.Fatalf("expected at least %d writes, got %d", i+1, len(writes))
 			}
@@ -366,7 +366,7 @@ func TestMouseEventVariety(t *testing.T) {
 
 // ── TestVerifyPaneRouting ────────────────────────────────────────────────────
 // Prove that when the verify tab is focused in split-view, keystrokes are
-// forwarded to the verify session (not Claude).
+// forwarded to the verify session (not Agent).
 //
 // Also proves that INTERACTIVE_RESERVED_KEYS (the minimal reserved set for
 // fully-interactive tabs) are NOT forwarded to verify.
@@ -377,7 +377,7 @@ func TestVerifyPaneRouting(t *testing.T) {
 	t.Parallel()
 
 	mgr, evalJS := newPrSplitEvalWithMgr(t)
-	claudeID, claudeRec := setupPinnedClaudeSession(t, mgr, evalJS)
+	agentID, agentRec := setupPinnedAgentSession(t, mgr, evalJS)
 	verifyID, verifyRec := setupPinnedVerifySession(t, mgr)
 
 	_, err := evalJS(fmt.Sprintf(`prSplit._state.activeVerifySession = %d`, verifyID))
@@ -386,12 +386,12 @@ func TestVerifyPaneRouting(t *testing.T) {
 	}
 
 	// State: split-view on, focus on bottom pane, tab = verify.
-	verifyState := testState(true, "claude", "verify")
+	verifyState := testState(true, "agent", "verify")
 
 	// ── Printable key reaches verify ─────────────────────────────────
 	_, err = evalJS(`
 		var __vr1 = ` + verifyState + `;
-		__vr1.claudeSessionID = ` + fmt.Sprintf("%d", claudeID) + `;
+		__vr1.agentSessionID = ` + fmt.Sprintf("%d", agentID) + `;
 		__vr1.activeVerifySession = ` + fmt.Sprintf("%d", verifyID) + `;
 		__vr1.verifyScreen = 'active';
 		prSplit._wizardUpdateImpl({ type: 'Key', key: 'x' }, __vr1);
@@ -401,12 +401,12 @@ func TestVerifyPaneRouting(t *testing.T) {
 	}
 
 	verifyWrites := verifyRec.getWrites()
-	claudeWrites := claudeRec.getWrites()
+	agentWrites := agentRec.getWrites()
 	if len(verifyWrites) != 1 || verifyWrites[0] != "x" {
 		t.Errorf("verify received %v, want [\"x\"]", verifyWrites)
 	}
-	if len(claudeWrites) != 0 {
-		t.Errorf("claude received %v, want empty (isolation violated)", claudeWrites)
+	if len(agentWrites) != 0 {
+		t.Errorf("agent received %v, want empty (isolation violated)", agentWrites)
 	}
 
 	// ── Arrow key reaches verify (NOT reserved in INTERACTIVE set) ───
@@ -414,7 +414,7 @@ func TestVerifyPaneRouting(t *testing.T) {
 	// handler at the top of handleKeyMessage, so we use 'left' instead.
 	_, err = evalJS(`
 		var __vr2 = ` + verifyState + `;
-		__vr2.claudeSessionID = ` + fmt.Sprintf("%d", claudeID) + `;
+		__vr2.agentSessionID = ` + fmt.Sprintf("%d", agentID) + `;
 		__vr2.activeVerifySession = ` + fmt.Sprintf("%d", verifyID) + `;
 		__vr2.verifyScreen = 'active';
 		prSplit._wizardUpdateImpl({ type: 'Key', key: 'left' }, __vr2);
@@ -450,7 +450,7 @@ func TestVerifyPaneRouting(t *testing.T) {
 
 		_, _ = evalJS(`
 			var __vrk = ` + verifyState + `;
-			__vrk.claudeSessionID = ` + fmt.Sprintf("%d", claudeID) + `;
+			__vrk.agentSessionID = ` + fmt.Sprintf("%d", agentID) + `;
 			__vrk.activeVerifySession = ` + fmt.Sprintf("%d", verifyID) + `;
 			__vrk.verifyScreen = 'active';
 			prSplit._wizardUpdateImpl({ type: 'Key', key: '` + key + `' }, __vrk);
@@ -466,7 +466,7 @@ func TestVerifyPaneRouting(t *testing.T) {
 
 // ── TestSpecialKeyForwarding ─────────────────────────────────────────────────
 // Prove that special terminal keys (tab, escape, delete, backspace, function
-// keys) are correctly translated and forwarded to Claude's PTY.
+// keys) are correctly translated and forwarded to Agent's PTY.
 //
 // Evidence tier: SessionManager-backed (InteractiveSession.Write recording).
 func TestSpecialKeyForwarding(t *testing.T) {
@@ -474,7 +474,7 @@ func TestSpecialKeyForwarding(t *testing.T) {
 	t.Parallel()
 
 	mgr, evalJS := newPrSplitEvalWithMgr(t)
-	_, claudeRec := setupPinnedClaudeSession(t, mgr, evalJS)
+	_, agentRec := setupPinnedAgentSession(t, mgr, evalJS)
 
 	cases := []struct {
 		key  string
@@ -489,7 +489,7 @@ func TestSpecialKeyForwarding(t *testing.T) {
 		{" ", " ", "space char"},
 	}
 
-	state := testState(true, "claude", "claude")
+	state := testState(true, "agent", "agent")
 
 	for i, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -501,7 +501,7 @@ func TestSpecialKeyForwarding(t *testing.T) {
 				t.Fatalf("wizardUpdateImpl(%s): %v", tc.key, err)
 			}
 
-			writes := claudeRec.getWrites()
+			writes := agentRec.getWrites()
 			if len(writes) < i+1 {
 				t.Fatalf("expected at least %d writes, got %d", i+1, len(writes))
 			}
@@ -513,14 +513,14 @@ func TestSpecialKeyForwarding(t *testing.T) {
 }
 
 // ── TestFocusChangeWriteIsolation ────────────────────────────────────────────
-// Prove that rapidly switching focus between wizard, claude, and verify
+// Prove that rapidly switching focus between wizard, agent, and verify
 // doesn't leak writes to the wrong session.
 //
 // Sequence:
-//  1. Focus claude, send 'a' → claude gets 'a'
+//  1. Focus agent, send 'a' → agent gets 'a'
 //  2. Focus wizard, send 'b' → neither gets 'b' (wizard doesn't forward)
-//  3. Focus verify, send 'c' → verify gets 'c', claude unchanged
-//  4. Focus claude, send 'd' → claude gets 'd', verify unchanged
+//  3. Focus verify, send 'c' → verify gets 'c', agent unchanged
+//  4. Focus agent, send 'd' → agent gets 'd', verify unchanged
 //
 // Evidence tier: SessionManager-backed (InteractiveSession.Write recording).
 func TestFocusChangeWriteIsolation(t *testing.T) {
@@ -528,7 +528,7 @@ func TestFocusChangeWriteIsolation(t *testing.T) {
 	t.Parallel()
 
 	mgr, evalJS := newPrSplitEvalWithMgr(t)
-	claudeID, claudeRec := setupPinnedClaudeSession(t, mgr, evalJS)
+	agentID, agentRec := setupPinnedAgentSession(t, mgr, evalJS)
 	verifyID, verifyRec := setupPinnedVerifySession(t, mgr)
 
 	_, err := evalJS(fmt.Sprintf(`prSplit._state.activeVerifySession = %d`, verifyID))
@@ -541,7 +541,7 @@ func TestFocusChangeWriteIsolation(t *testing.T) {
 		st := testState(true, focus, tab)
 		_, err := evalJS(`
 			var __fci = ` + st + `;
-			__fci.claudeSessionID = ` + fmt.Sprintf("%d", claudeID) + `;
+			__fci.agentSessionID = ` + fmt.Sprintf("%d", agentID) + `;
 			__fci.activeVerifySession = ` + fmt.Sprintf("%d", verifyID) + `;
 			__fci.verifyScreen = 'active';
 			prSplit._wizardUpdateImpl({ type: 'Key', key: '` + key + `' }, __fci);
@@ -551,37 +551,37 @@ func TestFocusChangeWriteIsolation(t *testing.T) {
 		}
 	}
 
-	// Step 1: Claude focus → 'a'
-	sendKey("claude", "claude", "a")
-	if cw := claudeRec.getWrites(); len(cw) != 1 || cw[0] != "a" {
-		t.Errorf("step 1 claude: %v", cw)
+	// Step 1: Agent focus → 'a'
+	sendKey("agent", "agent", "a")
+	if cw := agentRec.getWrites(); len(cw) != 1 || cw[0] != "a" {
+		t.Errorf("step 1 agent: %v", cw)
 	}
 	if vw := verifyRec.getWrites(); len(vw) != 0 {
 		t.Errorf("step 1 verify: %v (should be empty)", vw)
 	}
 
 	// Step 2: Wizard focus → 'b' (not forwarded)
-	sendKey("wizard", "claude", "b")
-	if cw := claudeRec.getWrites(); len(cw) != 1 {
-		t.Errorf("step 2 claude: %v (should still be 1)", cw)
+	sendKey("wizard", "agent", "b")
+	if cw := agentRec.getWrites(); len(cw) != 1 {
+		t.Errorf("step 2 agent: %v (should still be 1)", cw)
 	}
 	if vw := verifyRec.getWrites(); len(vw) != 0 {
 		t.Errorf("step 2 verify: %v (should still be empty)", vw)
 	}
 
 	// Step 3: Verify focus → 'c'
-	sendKey("claude", "verify", "c")
-	if cw := claudeRec.getWrites(); len(cw) != 1 {
-		t.Errorf("step 3 claude: %v (should still be 1)", cw)
+	sendKey("agent", "verify", "c")
+	if cw := agentRec.getWrites(); len(cw) != 1 {
+		t.Errorf("step 3 agent: %v (should still be 1)", cw)
 	}
 	if vw := verifyRec.getWrites(); len(vw) != 1 || vw[0] != "c" {
 		t.Errorf("step 3 verify: %v, want [\"c\"]", vw)
 	}
 
-	// Step 4: Claude focus → 'd'
-	sendKey("claude", "claude", "d")
-	if cw := claudeRec.getWrites(); len(cw) != 2 || cw[1] != "d" {
-		t.Errorf("step 4 claude: %v, want [\"a\", \"d\"]", cw)
+	// Step 4: Agent focus → 'd'
+	sendKey("agent", "agent", "d")
+	if cw := agentRec.getWrites(); len(cw) != 2 || cw[1] != "d" {
+		t.Errorf("step 4 agent: %v, want [\"a\", \"d\"]", cw)
 	}
 	if vw := verifyRec.getWrites(); len(vw) != 1 {
 		t.Errorf("step 4 verify: %v (should still be 1)", vw)

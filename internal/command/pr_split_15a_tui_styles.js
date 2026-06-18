@@ -260,16 +260,16 @@
         DISMISS_NOTIF_MS: 5000,     // auto-dismiss notification timeout (ms)
         ANALYSIS_TIMEOUT_MS: 60000, // slow-analysis warning threshold
         RESOLVE_POLL_MS: 500,       // conflict-resolution poll interval
-        CLAUDE_CHECK_POLL_MS: 50,   // claude binary resolution fast-poll
+        AGENT_CHECK_POLL_MS: 50,   // agent binary resolution fast-poll
         AUTO_SPLIT_POLL_MS: 500,    // auto-split pipeline poll interval
-        CLAUDE_SCREENSHOT_POLL_MS: 500, // claude terminal screenshot poll
-        CLAUDE_ACTIVE_POLL_MS: 100,     // fast poll when Claude is outputting
-        CLAUDE_IDLE_POLL_MS: 2000,      // slow poll when idle (no recent output)
-        CLAUDE_OUTPUT_IDLE_MS: 3000,    // Claude idle threshold (no output events)
-        CLAUDE_BELL_FLASH_MS: 1500,     // bell visual indicator duration
+        AGENT_SCREENSHOT_POLL_MS: 500, // agent terminal screenshot poll
+        AGENT_ACTIVE_POLL_MS: 100,     // fast poll when Agent is outputting
+        AGENT_IDLE_POLL_MS: 2000,      // slow poll when idle (no recent output)
+        AGENT_OUTPUT_IDLE_MS: 3000,    // Agent idle threshold (no output events)
+        AGENT_BELL_FLASH_MS: 1500,     // bell visual indicator duration
         QUESTION_IDLE_MS: 2000,     // idle threshold before question detection
         QUESTION_SCAN_LINES: 15,    // trailing lines scanned for questions
-        CONVO_POLL_MS: 200,         // claude conversation send/wait poll
+        CONVO_POLL_MS: 200,         // agent conversation send/wait poll
         PLAN_REVISION_TIMEOUT_MS: 180000, // 3-min plan revision timeout
         SCREENSHOT_CAPTURE_CHARS: 500,    // max chars from screenshot capture
         CONVO_HISTORY_CAP: 100,     // conversation history cap

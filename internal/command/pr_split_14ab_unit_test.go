@@ -152,7 +152,7 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	t.Run("negative ms — no output yet", func(t *testing.T) {
 		_, err := evalJS(`
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = 42;
+			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = { lastActivityMs: function(id) { return -1; } };
 		`)
 		if err != nil {
@@ -171,7 +171,7 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	t.Run("live — under 1s", func(t *testing.T) {
 		_, err := evalJS(`
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = 42;
+			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = { lastActivityMs: function(id) { return 500; } };
 		`)
 		if err != nil {
@@ -190,7 +190,7 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	t.Run("live — 1s", func(t *testing.T) {
 		_, err := evalJS(`
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = 42;
+			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = { lastActivityMs: function(id) { return 1500; } };
 		`)
 		if err != nil {
@@ -210,7 +210,7 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	t.Run("idle — 5s", func(t *testing.T) {
 		_, err := evalJS(`
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = 42;
+			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = { lastActivityMs: function(id) { return 5000; } };
 		`)
 		if err != nil {
@@ -229,7 +229,7 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	t.Run("quiet — 30s", func(t *testing.T) {
 		_, err := evalJS(`
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = 42;
+			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = { lastActivityMs: function(id) { return 30000; } };
 		`)
 		if err != nil {
@@ -248,7 +248,7 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	t.Run("quiet — 120s in minutes", func(t *testing.T) {
 		_, err := evalJS(`
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = 42;
+			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = { lastActivityMs: function(id) { return 120000; } };
 		`)
 		if err != nil {
@@ -267,7 +267,7 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	t.Run("prefers pinned session activity over active session activity", func(t *testing.T) {
 		_, err := evalJS(`
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = 42;
+			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = {
 				lastActivityMs: function(id) {
 					if (id !== 42) return 30000;
@@ -308,10 +308,10 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 		}
 	})
 
-	t.Run("missing pinned Claude session returns empty", func(t *testing.T) {
+	t.Run("missing pinned Agent session returns empty", func(t *testing.T) {
 		_, err := evalJS(`
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = null;
+			prSplit._state.agentSessionID = null;
 			globalThis.tuiMux = {
 				screenshot: function() { throw new Error('legacy fallback should not run'); }
 			};
@@ -331,7 +331,7 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 	t.Run("trims trailing empty lines", func(t *testing.T) {
 		_, err := evalJS(`
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = 42;
+			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = {
 				snapshot: function(id) { return { plainText: 'line1\nline2\nline3\n\n\n' }; }
 			};
@@ -352,7 +352,7 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 	t.Run("slices to last N", func(t *testing.T) {
 		_, err := evalJS(`
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = 42;
+			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = {
 				snapshot: function(id) { return { plainText: 'a\nb\nc\nd\ne' }; }
 			};
@@ -373,7 +373,7 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 	t.Run("snapshot error returns unavailable", func(t *testing.T) {
 		_, err := evalJS(`
 			prSplit._state = prSplit._state || {};
-			prSplit._state.claudeSessionID = 42;
+			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = {
 				snapshot: function(id) { throw new Error('fail'); }
 			};
@@ -393,7 +393,7 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 
 	// Clean up.
 	_, _ = evalJS(`delete globalThis.tuiMux;`)
-	_, _ = evalJS(`if (prSplit._state) prSplit._state.claudeSessionID = null;`)
+	_, _ = evalJS(`if (prSplit._state) prSplit._state.agentSessionID = null;`)
 }
 
 // --- Chunk 14b: _renderHudStatusLine ---
@@ -420,7 +420,7 @@ func TestChunk14b_RenderHudStatusLine(t *testing.T) {
 	// With tuiMux mock providing activity and screenshot.
 	_, err = evalJS(`
 		prSplit._state = prSplit._state || {};
-		prSplit._state.claudeSessionID = 42;
+		prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			lastActivityMs: function() { return 500; },
 			snapshot: function(id) { return { plainText: 'hello world\n' }; }
@@ -444,7 +444,7 @@ func TestChunk14b_RenderHudStatusLine(t *testing.T) {
 
 	// Clean up.
 	_, _ = evalJS(`delete globalThis.tuiMux;`)
-	_, _ = evalJS(`if (prSplit._state) prSplit._state.claudeSessionID = null;`)
+	_, _ = evalJS(`if (prSplit._state) prSplit._state.agentSessionID = null;`)
 }
 
 // --- Chunk 14b: _renderHudStatusLine truncates long output ---
@@ -456,7 +456,7 @@ func TestChunk14b_RenderHudStatusLine_Truncation(t *testing.T) {
 	// Create a long screenshot line (>30 chars).
 	_, err := evalJS(`
 		prSplit._state = prSplit._state || {};
-		prSplit._state.claudeSessionID = 42;
+		prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			lastActivityMs: function() { return 100; },
 			snapshot: function(id) {
@@ -485,5 +485,5 @@ func TestChunk14b_RenderHudStatusLine_Truncation(t *testing.T) {
 
 	// Clean up.
 	_, _ = evalJS(`delete globalThis.tuiMux;`)
-	_, _ = evalJS(`if (prSplit._state) prSplit._state.claudeSessionID = null;`)
+	_, _ = evalJS(`if (prSplit._state) prSplit._state.agentSessionID = null;`)
 }

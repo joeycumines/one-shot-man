@@ -100,12 +100,12 @@ func TestSessionManager_SwapPanes(t *testing.T) {
 	defer cleanup()
 
 	s1 := newControllableSession()
-	sid1, _ := m.Register(s1, SessionTarget{Name: "one", Kind: SessionKindPTY})
+	id1, _ := m.NewPane(s1, SessionTarget{Name: "one", Kind: SessionKindPTY}, SplitRight)
 	s2 := newControllableSession()
-	sid2, _ := m.Register(s2, SessionTarget{Name: "two", Kind: SessionKindPTY})
+	id2, _ := m.NewPane(s2, SessionTarget{Name: "two", Kind: SessionKindPTY}, SplitDown)
 
-	id1 := m.paneMgr.PaneIDForSession(sid1)
-	id2 := m.paneMgr.PaneIDForSession(sid2)
+	sid1 := m.paneMgr.panes[id1].SessionID
+	sid2 := m.paneMgr.panes[id2].SessionID
 
 	err := m.SwapPanes(id1, id2)
 	if err != nil {
@@ -125,8 +125,7 @@ func TestSessionManager_ZoomPane_Toggle(t *testing.T) {
 	defer cleanup()
 
 	session := newControllableSession()
-	id, _ := m.Register(session, SessionTarget{Name: "test", Kind: SessionKindPTY})
-	paneID := m.paneMgr.PaneIDForSession(id)
+	paneID, _ := m.NewPane(session, SessionTarget{Name: "test", Kind: SessionKindPTY}, SplitRight)
 
 	if m.ZoomedPane() != 0 {
 		t.Error("no pane should be zoomed initially")

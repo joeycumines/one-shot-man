@@ -19,13 +19,13 @@ import (
 var _ = []string{ // compile-time proof the list is valid
 	"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 	"05_execution", "06_verification", "07_prcreation", "08_conflict",
-	"09_claude",
+	"09_agent",
 	"10a_pipeline_config", "10b_pipeline_send", "10c_pipeline_resolve", "10d_pipeline_orchestrator",
 	"11_utilities", "12_exports",
 	"13_tui", "14a_tui_commands_core", "14b_tui_commands_ext",
 	"15a_tui_styles", "15b_tui_chrome", "15c_tui_screens", "15d_tui_dialogs",
 	"16a_tui_focus", "16b_tui_handlers_pipeline", "16c_tui_handlers_verify",
-	"16d_tui_handlers_claude", "16e_tui_update", "16f_tui_model",
+	"16d_tui_handlers_agent", "16e_tui_update", "16f_tui_model",
 }
 
 // TestChunk13_GuardSkipsWithoutTUI verifies that when tui/ctx/output are
@@ -60,7 +60,7 @@ func TestChunk13_GuardSkipsWithoutTUI(t *testing.T) {
 		{"16a_tui_focus", prSplitChunk16aTUIFocus},
 		{"16b_tui_handlers_pipeline", prSplitChunk16bTUIHandlersPipeline},
 		{"16c_tui_handlers_verify", prSplitChunk16cTUIHandlersVerify},
-		{"16d_tui_handlers_claude", prSplitChunk16dTUIHandlersClaude},
+		{"16d_tui_handlers_agent", prSplitChunk16dTUIHandlersAgent},
 		{"16e_tui_update", prSplitChunk16eTUIUpdate},
 		{"16f_tui_model", prSplitChunk16fTUIModel},
 	}
@@ -2970,7 +2970,7 @@ func TestChunk13_HUD_RenderPanel(t *testing.T) {
 		t.Errorf("panel too short: %q", panel)
 	}
 	// Should contain key elements.
-	for _, needle := range []string{"Claude Process HUD", "Status:", "Wizard:"} {
+	for _, needle := range []string{"Agent Process HUD", "Status:", "Wizard:"} {
 		if !strings.Contains(panel, needle) {
 			t.Errorf("panel missing %q:\n%s", needle, panel)
 		}
@@ -3234,8 +3234,8 @@ func TestChunk13_RenderStatusBar_ContainsHints(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := raw.(string)
-	if !strings.Contains(s, "Claude") {
-		t.Errorf("statusBar should contain 'Claude', got %q", s)
+	if !strings.Contains(s, "Agent") {
+		t.Errorf("statusBar should contain 'Agent', got %q", s)
 	}
 	if !strings.Contains(s, "Help") {
 		t.Errorf("statusBar should contain 'Help', got %q", s)
@@ -4810,7 +4810,7 @@ func TestChunk13_WizardView_ErrorStateSuppressesSplitPane(t *testing.T) {
 		s.errorDetails = 'unexpected failure';
 		s.errorFromState = 'CONFIG';
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 		s.activeVerifySession = {
 			screen: function() { return 'DUPLICATE_MARKER'; },
@@ -5009,8 +5009,8 @@ func TestChunk13_ViewErrorResolutionScreen_CrashMode(t *testing.T) {
 		var s = {
 			wizardState: 'ERROR_RESOLUTION',
 			width: 80,
-			claudeCrashDetected: true,
-			errorDetails: 'Claude process crashed unexpectedly.\n\nLast output:\nsegfault',
+			agentCrashDetected: true,
+			errorDetails: 'Agent process crashed unexpectedly.\n\nLast output:\nsegfault',
 			wizard: { data: {} }
 		};
 		var rendered = globalThis.prSplit._viewErrorResolutionScreen(s);
@@ -5021,8 +5021,8 @@ func TestChunk13_ViewErrorResolutionScreen_CrashMode(t *testing.T) {
 			errors.push('should contain "Crashed" header');
 		}
 		// Crash-specific buttons.
-		if (rendered.indexOf('Restart Claude') < 0) {
-			errors.push('should contain "Restart Claude" button');
+		if (rendered.indexOf('Restart Agent') < 0) {
+			errors.push('should contain "Restart Agent" button');
 		}
 		if (rendered.indexOf('Heuristic') < 0) {
 			errors.push('should contain "Heuristic" button');

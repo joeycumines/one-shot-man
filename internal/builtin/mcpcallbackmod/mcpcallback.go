@@ -483,7 +483,7 @@ module.exports = {
 		return fmt.Errorf("write bootstrap script: %w", err)
 	}
 
-	// Generate MCP config JSON for Claude Code integration.
+	// Generate MCP config JSON for agent integration.
 	// Use the osm binary itself as the stdio-to-socket bridge, replacing
 	// the external socat dependency. The mcp-bridge subcommand is a
 	// simple bidirectional stdio↔socket proxy.

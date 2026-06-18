@@ -835,7 +835,7 @@ func Require(ctx context.Context, input io.Reader, output io.Writer) func(*goja.
 | `EXIT_CONTEXT` | `"context"` | Passthrough exited via context cancellation |
 | `EXIT_ERROR` | `"error"` | Passthrough exited via I/O error |
 | `SIDE_OSM` | `"osm"` | Side: OSM (parent) |
-| `SIDE_CLAUDE` | `"claude"` | Side: Claude (child) |
+| `SIDE_AGENT` | `"agent"` | Side: Agent (child) |
 | `DEFAULT_TOGGLE_KEY` | `0x1D` | Ctrl+] byte value |
 | `EVENT_EXIT` | `"exit"` | Child process exited |
 | `EVENT_RESIZE` | `"resize"` | Terminal was resized |
@@ -928,11 +928,11 @@ go func() {
 The bridge handles:
 - `EventSessionRegistered` → JS event `"registered"` with `sessionId`
 - `EventSessionActivated` → JS event `"activated"` with `sessionId`
-- `EventSessionExited` → JS event `"exit"` with `pane: "claude"`, `sessionId`
+- `EventSessionExited` → JS event `"exit"` with `pane: "agent"`, `sessionId`
 - `EventSessionClosed` → JS event `"closed"` with `sessionId`
 - `EventResize` → JS event `"terminal-resize"` with `rows`, `cols`
-- `EventBell` → JS event `"bell"` with `pane: "claude"`, `sessionId`
-- `EventSessionOutput` → JS event `"output"` with `pane: "claude"`, `sessionId`, `chunk`
+- `EventBell` → JS event `"bell"` with `pane: "agent"`, `sessionId`
+- `EventSessionOutput` → JS event `"output"` with `pane: "agent"`, `sessionId`, `chunk`
 
 **Non-blocking delivery**: If the `pending` channel is full (64 buffered), events are dropped silently. This prevents blocking non-JS goroutines.
 

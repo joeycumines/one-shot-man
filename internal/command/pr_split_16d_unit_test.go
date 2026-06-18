@@ -1,7 +1,7 @@
 package command
 
 // T429: Unit tests for chunk 16d — mouseToTermBytes exotic buttons and
-// pollClaudeScreenshot edge cases.
+// pollAgentScreenshot edge cases.
 //
 // Extends T340's 10 existing mouseToTermBytes tests in
 // pr_split_16_mouse_bytes_test.go with coverage of the 5 button types
@@ -10,7 +10,7 @@ package command
 //     forward, none+release, and unknown (→ null)
 //   - mouseToTermBytes combined modifier+motion (1 test): all three modifier
 //     bits + motion flag in a single event
-//   - pollClaudeScreenshot (2 tests): split-view disabled early return and
+//   - pollAgentScreenshot (2 tests): split-view disabled early return and
 //     no-tuiMux early return
 
 import (
@@ -193,18 +193,18 @@ func TestChunk16d_MouseToTermBytes_AllModifiersAndMotion(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-//  pollClaudeScreenshot — edge paths (T429)
+//  pollAgentScreenshot — edge paths (T429)
 // ---------------------------------------------------------------------------
 
-// TestChunk16d_PollClaudeScreenshot_SplitViewDisabled verifies that when
+// TestChunk16d_PollAgentScreenshot_SplitViewDisabled verifies that when
 // splitViewEnabled is false, the function returns [s, null] immediately.
-func TestChunk16d_PollClaudeScreenshot_SplitViewDisabled(t *testing.T) {
+func TestChunk16d_PollAgentScreenshot_SplitViewDisabled(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var s = {splitViewEnabled: false};
-		var r = prSplit._pollClaudeScreenshot(s);
+		var r = prSplit._pollAgentScreenshot(s);
 		return JSON.stringify({
 			isArray: Array.isArray(r),
 			len: r.length,
@@ -223,16 +223,16 @@ func TestChunk16d_PollClaudeScreenshot_SplitViewDisabled(t *testing.T) {
 	}
 }
 
-// TestChunk16d_PollClaudeScreenshot_NoTuiMuxContinuesPolling verifies that
+// TestChunk16d_PollAgentScreenshot_NoTuiMuxContinuesPolling verifies that
 // when splitViewEnabled is true but tuiMux is undefined, the function returns
 // a tick command to continue polling.
-func TestChunk16d_PollClaudeScreenshot_NoTuiMuxContinuesPolling(t *testing.T) {
+func TestChunk16d_PollAgentScreenshot_NoTuiMuxContinuesPolling(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var s = {splitViewEnabled: true};
-		var r = prSplit._pollClaudeScreenshot(s);
+		var r = prSplit._pollAgentScreenshot(s);
 		return JSON.stringify({
 			isArray: Array.isArray(r),
 			len: r.length,

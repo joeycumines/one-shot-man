@@ -799,7 +799,7 @@ func TestVerifyTab_FallbackVisibility(t *testing.T) {
 		t.Errorf("fallback tab visibility (running): %v", raw)
 	}
 
-	// Case 2: Everything empty — Verify tab must NOT appear (only Claude + Output).
+	// Case 2: Everything empty — Verify tab must NOT appear (only Agent + Output).
 	raw2, err := evalJS(`(function() {
 		setupPlanCache();
 		var s = initState('BRANCH_BUILDING');
@@ -823,13 +823,13 @@ func TestVerifyTab_FallbackVisibility(t *testing.T) {
 		// Count occurrences of 'Verify' — should be zero in the tab bar.
 		// (The word 'Verify' may appear in section headers, so we check
 		// the tab bar area specifically by looking for the tab bar pattern.)
-		// The tab bar renders: [Claude] [Output] [Verify?] [Shell?]
-		// When verify is hidden, only Claude and Output tabs should exist
+		// The tab bar renders: [Agent] [Output] [Verify?] [Shell?]
+		// When verify is hidden, only Agent and Output tabs should exist
 		// in the tab divider line.
 		var tabLine = '';
 		var lines = view.split('\n');
 		for (var i = 0; i < lines.length; i++) {
-			if (lines[i].indexOf('Claude') >= 0 && lines[i].indexOf('Output') >= 0 &&
+			if (lines[i].indexOf('Agent') >= 0 && lines[i].indexOf('Output') >= 0 &&
 			    lines[i].indexOf('switch') >= 0) {
 				tabLine = lines[i];
 				break;
@@ -1046,7 +1046,7 @@ func TestAutoOpenSplitView_StartAnalysis_T388(t *testing.T) {
 		var s = initState('CONFIG');
 		s.height = 30;
 		s.splitViewEnabled = false;
-		s.splitViewTab = 'claude';
+		s.splitViewTab = 'agent';
 
 		var r = globalThis.prSplit._startAnalysis(s);
 		s = r[0];
@@ -1168,7 +1168,7 @@ func TestAutoOpenSplitView_StartExecution_T388(t *testing.T) {
 		var s = initState('PLAN_REVIEW');
 		s.height = 30;
 		s.splitViewEnabled = false;
-		s.splitViewTab = 'claude';
+		s.splitViewTab = 'agent';
 
 		// Set nav focus to Next button and press Enter.
 		// Or call startExecution directly:
@@ -1225,8 +1225,8 @@ func TestCtrlO_IncludesFallbackVerify_T388(t *testing.T) {
 		s.verifyScreen = '';
 		s.verifyFallbackRunning = true;  // fallback path active
 
-		// First Ctrl+O: output → verify (skipping claude since we start at output).
-		// Actually: rotation is ['claude','output','verify']. Starting at 'output' (idx 1),
+		// First Ctrl+O: output → verify (skipping agent since we start at output).
+		// Actually: rotation is ['agent','output','verify']. Starting at 'output' (idx 1),
 		// next is 'verify' (idx 2).
 		var r = sendKey(s, 'ctrl+o');
 		s = r[0];
@@ -1283,7 +1283,7 @@ func TestVerifyTabPreActivation_WithVerifyCommand_T389(t *testing.T) {
 		var s = initState('CONFIG');
 		s.height = 30;
 		s.splitViewEnabled = false;
-		s.splitViewTab = 'claude';
+		s.splitViewTab = 'agent';
 
 		var r = globalThis.prSplit._startAnalysis(s);
 		s = r[0];

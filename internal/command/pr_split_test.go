@@ -200,7 +200,7 @@ const chunkCompatShim = `
         'cleanupBranches',
         'createPRs',
         'resolveConflicts',
-        'ClaudeCodeExecutor',
+        'AgentCodeExecutor',
         'renderClassificationPrompt', 'renderSplitPlanPrompt', 'renderConflictPrompt',
         'renderPrompt',
         'detectLanguage',
@@ -279,7 +279,7 @@ const chunkCompatShim = `
     var stateNames = [
         'analysisCache', 'groupsCache', 'planCache',
         'executionResultCache', 'conversationHistory',
-        'claudeExecutor', 'mcpCallbackObj'
+        'agentExecutor', 'mcpCallbackObj'
     ];
     stateNames.forEach(function(k) {
         try {

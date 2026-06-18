@@ -92,7 +92,7 @@ func TestPrSplitCommand_SetupFlags(t *testing.T) {
 		"base", "strategy", "max", "prefix", "verify", "dry-run",
 		"json",
 		"test", "session", "store", "log-level", "log-file", "log-buffer",
-		"claude-command", "claude-arg", "claude-model", "claude-config-dir", "claude-env",
+		"agent-command", "agent-arg", "agent-model", "agent-config-dir", "agent-env",
 		"timeout",
 	}
 
@@ -452,10 +452,10 @@ func TestPrSplitCommand_EmbeddedContent(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// T91: parseClaudeEnv edge cases
+// T91: parseAgentEnv edge cases
 // ---------------------------------------------------------------------------
 
-func TestParseClaudeEnv(t *testing.T) {
+func TestParseAgentEnv(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -517,7 +517,7 @@ func TestParseClaudeEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseClaudeEnv(tt.raw)
+			got := parseAgentEnv(tt.raw)
 			if len(got) != len(tt.want) {
 				t.Errorf("len mismatch: got %d, want %d\ngot: %v\nwant: %v",
 					len(got), len(tt.want), got, tt.want)
@@ -535,10 +535,10 @@ func TestParseClaudeEnv(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// T59: parseClaudeEnv malformed-input warning logging
+// T59: parseAgentEnv malformed-input warning logging
 // ---------------------------------------------------------------------------
 
-func TestParseClaudeEnv_MalformedInput(t *testing.T) {
+func TestParseAgentEnv_MalformedInput(t *testing.T) {
 	// NOT parallel — mutates global slog default.
 	var buf strings.Builder
 	oldDefault := slog.Default()
@@ -550,7 +550,7 @@ func TestParseClaudeEnv_MalformedInput(t *testing.T) {
 	//   =VALUE     → empty key → warn
 	//   ONLY_KEY   → no '=' sign → warn
 	//   ,,VALID=ok → empty pairs (skip silently) + valid pair
-	got := parseClaudeEnv("KEY=,=VALUE,ONLY_KEY,,VALID=ok")
+	got := parseAgentEnv("KEY=,=VALUE,ONLY_KEY,,VALID=ok")
 
 	// Valid entries must still parse.
 	if v, ok := got["KEY"]; !ok || v != "" {
@@ -578,10 +578,10 @@ func TestParseClaudeEnv_MalformedInput(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Task 27: parseClaudeEnv additional edge cases
+// Task 27: parseAgentEnv additional edge cases
 // ---------------------------------------------------------------------------
 
-func TestParseClaudeEnv_EdgeCases(t *testing.T) {
+func TestParseAgentEnv_EdgeCases(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -607,7 +607,7 @@ func TestParseClaudeEnv_EdgeCases(t *testing.T) {
 		{
 			name: "comma in value not treated as separator",
 			raw:  "KEY=val1,val2",
-			// This actually DOES split at the comma — parseClaudeEnv splits on commas first.
+			// This actually DOES split at the comma — parseAgentEnv splits on commas first.
 			// So "KEY=val1" + "val2" (no =, dropped). This is expected behavior.
 			want: map[string]string{"KEY": "val1"},
 		},
@@ -615,7 +615,7 @@ func TestParseClaudeEnv_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseClaudeEnv(tt.raw)
+			got := parseAgentEnv(tt.raw)
 			if len(got) != len(tt.want) {
 				t.Errorf("len mismatch: got %d, want %d\ngot: %v\nwant: %v",
 					len(got), len(tt.want), got, tt.want)
@@ -772,56 +772,56 @@ func TestPrSplitCommand_PrepareEngineFailure(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// T368: Claude flag passthrough — verifies all Claude-specific CLI flags
+// T368: Agent flag passthrough — verifies all Agent-specific CLI flags
 // are correctly parsed and stored in the PrSplitCommand struct.
 // ---------------------------------------------------------------------------
 
-func TestPrSplitCommand_ClaudeCommandFlagParsing(t *testing.T) {
+func TestPrSplitCommand_AgentCommandFlagParsing(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
 
-	fs := flag.NewFlagSet("test-claude-flags", flag.ContinueOnError)
+	fs := flag.NewFlagSet("test-agent-flags", flag.ContinueOnError)
 	cmd.SetupFlags(fs)
 
 	err := fs.Parse([]string{
-		"--claude-command", "/opt/custom-claude",
-		"--claude-arg", "launch",
-		"--claude-arg", "claude",
-		"--claude-arg", "--model=minimax-m2.5:cloud",
-		"--claude-arg", "--",
-		"--claude-model", "sonnet",
-		"--claude-config-dir", "/tmp/claude-cfg",
-		"--claude-env", "API_KEY=secret,DEBUG=1",
+		"--agent-command", "/opt/custom-agent",
+		"--agent-arg", "launch",
+		"--agent-arg", "agent",
+		"--agent-arg", "--model=minimax-m2.5:cloud",
+		"--agent-arg", "--",
+		"--agent-model", "sonnet",
+		"--agent-config-dir", "/tmp/agent-cfg",
+		"--agent-env", "API_KEY=secret,DEBUG=1",
 	})
 	if err != nil {
 		t.Fatalf("flag parsing failed: %v", err)
 	}
 
-	if cmd.claudeCommand != "/opt/custom-claude" {
-		t.Errorf("claudeCommand: got %q, want %q", cmd.claudeCommand, "/opt/custom-claude")
+	if cmd.agentCommand != "/opt/custom-agent" {
+		t.Errorf("agentCommand: got %q, want %q", cmd.agentCommand, "/opt/custom-agent")
 	}
 
-	// claude-arg is a repeatable flag (stringSliceFlag).
-	wantArgs := []string{"launch", "claude", "--model=minimax-m2.5:cloud", "--"}
-	if len(cmd.claudeArgs) != len(wantArgs) {
-		t.Fatalf("claudeArgs: got %d args %v, want %d args %v",
-			len(cmd.claudeArgs), []string(cmd.claudeArgs), len(wantArgs), wantArgs)
+	// agent-arg is a repeatable flag (stringSliceFlag).
+	wantArgs := []string{"launch", "agent", "--model=minimax-m2.5:cloud", "--"}
+	if len(cmd.agentArgs) != len(wantArgs) {
+		t.Fatalf("agentArgs: got %d args %v, want %d args %v",
+			len(cmd.agentArgs), []string(cmd.agentArgs), len(wantArgs), wantArgs)
 	}
 	for i, want := range wantArgs {
-		if string(cmd.claudeArgs[i]) != want {
-			t.Errorf("claudeArgs[%d]: got %q, want %q", i, cmd.claudeArgs[i], want)
+		if string(cmd.agentArgs[i]) != want {
+			t.Errorf("agentArgs[%d]: got %q, want %q", i, cmd.agentArgs[i], want)
 		}
 	}
 
-	if cmd.claudeModel != "sonnet" {
-		t.Errorf("claudeModel: got %q, want %q", cmd.claudeModel, "sonnet")
+	if cmd.agentModel != "sonnet" {
+		t.Errorf("agentModel: got %q, want %q", cmd.agentModel, "sonnet")
 	}
-	if cmd.claudeConfigDir != "/tmp/claude-cfg" {
-		t.Errorf("claudeConfigDir: got %q, want %q", cmd.claudeConfigDir, "/tmp/claude-cfg")
+	if cmd.agentConfigDir != "/tmp/agent-cfg" {
+		t.Errorf("agentConfigDir: got %q, want %q", cmd.agentConfigDir, "/tmp/agent-cfg")
 	}
-	if cmd.claudeEnv != "API_KEY=secret,DEBUG=1" {
-		t.Errorf("claudeEnv: got %q, want %q", cmd.claudeEnv, "API_KEY=secret,DEBUG=1")
+	if cmd.agentEnv != "API_KEY=secret,DEBUG=1" {
+		t.Errorf("agentEnv: got %q, want %q", cmd.agentEnv, "API_KEY=secret,DEBUG=1")
 	}
 }

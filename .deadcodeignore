@@ -11,9 +11,6 @@ internal/mouseharness/*
 internal\mouseharness\*
 internal/command/prsplittest/*
 internal\command\prsplittest\*
-internal/builtin/claudemux/testutil/*
-internal\builtin\claudemux\testutil\*
-
 # Cross-package test helpers — exported for use by external test packages.
 # ctxutil: used from ctxutil_test (external package).
 internal/builtin/ctxutil/ctxutil.go:*: unreachable func: SetRunGitDiffFn
@@ -55,10 +52,6 @@ internal\builtin\bubbletea\testing.go:*: unreachable func: SyncJSRunner.RunJSSyn
 # PA-BT module exports — called from JavaScript via Goja runtime (not visible to deadcode analyzer).
 internal/builtin/pabt/*: unreachable func: *
 internal\builtin\pabt\*: unreachable func: *
-
-# claudemux multi_agent_panel — Bubble Tea tea.Model interface methods unreachable by deadcode (interface dispatch).
-internal/builtin/claudemux/multi_agent_panel.go:*: unreachable func: *
-internal\builtin\claudemux\multi_agent_panel.go:*: unreachable func: *
 
 # mcpcallback test injection — cross-package test helpers used from command_test.
 internal/builtin/mcpcallbackmod/mcpcallback.go:*: unreachable func: WatchForInit

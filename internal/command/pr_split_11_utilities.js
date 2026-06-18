@@ -164,7 +164,7 @@
 
     // --- Conversation History ---
 
-    // recordConversation saves a Claude interaction to the history stored on
+    // recordConversation saves a Agent interaction to the history stored on
     // prSplit._state.conversationHistory.
     // T087: Maximum number of conversation entries to retain in memory.
     // Configurable via prSplitConfig.maxConversationHistory; defaults to 100.
@@ -210,7 +210,7 @@
                 filesAnalyzed: 0,
                 splitCount: 0,
                 strategy: '',
-                claudeInteractions: 0,
+                agentInteractions: 0,
                 conflictsResolved: 0,
                 conflictsFailed: 0,
                 startTime: new Date().toISOString(),
@@ -233,7 +233,7 @@
                 filesAnalyzed: 0,
                 splitCount: 0,
                 strategy: '',
-                claudeInteractions: 0,
+                agentInteractions: 0,
                 conflictsResolved: 0,
                 conflictsFailed: 0,
                 startTime: new Date().toISOString(),

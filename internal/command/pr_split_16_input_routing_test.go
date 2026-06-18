@@ -7,7 +7,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// T342: Input routing tests for verify/claude/output tabs
+// T342: Input routing tests for verify/agent/output tabs
 //
 // These are mock-only tests — no PTY spawning. They exercise the keyboard
 // input dispatch logic in _wizardUpdate (chunk 16e) when split-view is
@@ -17,7 +17,7 @@ import (
 //   - Verify tab + activeVerifySession: non-reserved keys → session.write()
 //   - Verify tab (interactive): non-reserved keys → session.write()
 //   - Output tab:                       read-only, keys consumed (no forwarding)
-//   - Claude tab:                       non-reserved keys → pinned Claude session write()
+//   - Agent tab:                       non-reserved keys → pinned Agent session write()
 //   - Reserved keys (ctrl+tab, ctrl+o): always handled by split-view controls
 //   - Wizard focus:                     all keys go to wizard, not terminal
 // ---------------------------------------------------------------------------
@@ -31,7 +31,7 @@ func TestInputRouting_VerifyTabConsumedKey(t *testing.T) {
 		var written = [];
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 		s.activeVerifySession = {
 			write: function(b) { written.push(b); },
@@ -76,7 +76,7 @@ func TestInputRouting_VerifyTabOneShotScrollsInsteadOfWriting(t *testing.T) {
 		var written = [];
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 		s.verifyMode = 'oneshot';
 		s.activeVerifySession = {
@@ -120,7 +120,7 @@ func TestInputRouting_VerifyTabShellExitedPFCAreSignals(t *testing.T) {
 		var written = [];
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 		s.verifyMode = 'interactive';
 		s.verifyShellExited = true;
@@ -164,7 +164,7 @@ func TestInputRouting_VerifyTabShellExitedScrollsInsteadOfWriting(t *testing.T) 
 		var written = [];
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 		s.verifyMode = 'interactive';
 		s.verifyShellExited = true;
@@ -210,7 +210,7 @@ func TestInputRouting_VerifyTabOneShotPasteBlocked(t *testing.T) {
 		var written = [];
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 		s.verifyMode = 'oneshot';
 		s.activeVerifySession = {
@@ -250,7 +250,7 @@ func TestInputRouting_VerifyTabShellExitedPasteBlocked(t *testing.T) {
 		var written = [];
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 		s.verifyMode = 'interactive';
 		s.verifyShellExited = true;
@@ -292,7 +292,7 @@ func TestInputRouting_VerifyTabShellExitedCtrlCOpensCancel(t *testing.T) {
 		var killed = false;
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 		s.verifyMode = 'interactive';
 		s.verifyShellExited = true;
@@ -385,7 +385,7 @@ func TestInputRouting_OutputTabPassthrough(t *testing.T) {
 		var errors = [];
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'output';
 		s.outputViewOffset = 0;
 		s.outputAutoScroll = true;
@@ -421,31 +421,31 @@ func TestInputRouting_CtrlTabSwitchesFocus(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var errors = [];
 
-		// Start with wizard focus, send ctrl+tab → should switch to claude.
+		// Start with wizard focus, send ctrl+tab → should switch to agent.
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
 		s.splitViewFocus = 'wizard';
-		s.splitViewTab = 'claude';
+		s.splitViewTab = 'agent';
 
 		var r = sendKey(s, 'ctrl+tab');
 		var ns = r[0];
-		if (ns.splitViewFocus !== 'claude') {
-			errors.push('wizard→claude: got ' + ns.splitViewFocus);
+		if (ns.splitViewFocus !== 'agent') {
+			errors.push('wizard→agent: got ' + ns.splitViewFocus);
 		}
 
-		// From claude focus, send ctrl+tab → cycles to output tab (T61).
+		// From agent focus, send ctrl+tab → cycles to output tab (T61).
 		var s2 = initState('BRANCH_BUILDING');
 		s2.splitViewEnabled = true;
-		s2.splitViewFocus = 'claude';
-		s2.splitViewTab = 'claude';
+		s2.splitViewFocus = 'agent';
+		s2.splitViewTab = 'agent';
 
 		var r2 = sendKey(s2, 'ctrl+tab');
 		var ns2 = r2[0];
-		if (ns2.splitViewFocus !== 'claude') {
-			errors.push('claude→output focus: got ' + ns2.splitViewFocus);
+		if (ns2.splitViewFocus !== 'agent') {
+			errors.push('agent→output focus: got ' + ns2.splitViewFocus);
 		}
 		if (ns2.splitViewTab !== 'output') {
-			errors.push('claude→output tab: got ' + ns2.splitViewTab);
+			errors.push('agent→output tab: got ' + ns2.splitViewTab);
 		}
 
 		// From output, send ctrl+tab → wraps to wizard (no verify).
@@ -480,26 +480,26 @@ func TestInputRouting_CtrlOCyclesTabs(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var errors = [];
 
-		// Basic cycle with no sessions: claude → output → claude.
+		// Basic cycle with no sessions: agent → output → agent.
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'claude';
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
 
 		var r = sendKey(s, 'ctrl+o');
 		if (r[0].splitViewTab !== 'output') {
-			errors.push('claude→output: got ' + r[0].splitViewTab);
+			errors.push('agent→output: got ' + r[0].splitViewTab);
 		}
 		r = sendKey(r[0], 'ctrl+o');
-		if (r[0].splitViewTab !== 'claude') {
-			errors.push('output→claude: got ' + r[0].splitViewTab);
+		if (r[0].splitViewTab !== 'agent') {
+			errors.push('output→agent: got ' + r[0].splitViewTab);
 		}
 
-		// Extended cycle with verify session: claude → output → verify → claude.
+		// Extended cycle with verify session: agent → output → verify → agent.
 		var s2 = initState('BRANCH_BUILDING');
 		s2.splitViewEnabled = true;
-		s2.splitViewFocus = 'claude';
-		s2.splitViewTab = 'claude';
+		s2.splitViewFocus = 'agent';
+		s2.splitViewTab = 'agent';
 		s2.activeVerifySession = { write: function(){}, screen: function(){return '';}, isDone: function(){return false;} };
 
 		var tabs = [];
@@ -509,7 +509,7 @@ func TestInputRouting_CtrlOCyclesTabs(t *testing.T) {
 			cur = r2[0];
 			tabs.push(cur.splitViewTab);
 		}
-		var expected = 'output,verify,claude,output';
+		var expected = 'output,verify,agent,output';
 		if (tabs.join(',') !== expected) {
 			errors.push('extended cycle: expected [' + expected + '] got [' + tabs.join(',') + ']');
 		}
@@ -571,16 +571,16 @@ func TestInputRouting_ReservedKeysNotForwarded(t *testing.T) {
 		// (the ctrl+tab handler requires !activeVerifySession).
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 
 		// Ctrl+Tab is a reserved key — it should NOT be forwarded to terminal.
 		// T61: From verify tab (no active verify session, so verify not in cycle),
-		// ctrl+tab cycles to the next available target after wizard → claude.
+		// ctrl+tab cycles to the next available target after wizard → agent.
 		var r = sendKey(s, 'ctrl+tab');
 		var ns = r[0];
 
-		if (ns.splitViewFocus !== 'claude') {
+		if (ns.splitViewFocus !== 'agent') {
 			errors.push('ctrl+tab did not cycle from orphaned verify: got focus=' + ns.splitViewFocus + ' tab=' + ns.splitViewTab);
 		}
 		if (ns.wizardState !== 'BRANCH_BUILDING') {
@@ -590,7 +590,7 @@ func TestInputRouting_ReservedKeysNotForwarded(t *testing.T) {
 		// Also verify Ctrl+O is reserved: it should cycle tabs, not forward.
 		var s2 = initState('BRANCH_BUILDING');
 		s2.splitViewEnabled = true;
-		s2.splitViewFocus = 'claude';
+		s2.splitViewFocus = 'agent';
 		s2.splitViewTab = 'verify';
 		s2.activeVerifySession = {
 			write: function(b) { written.push(b); },

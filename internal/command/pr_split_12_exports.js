@@ -51,8 +51,8 @@
         // Chunk 08: Conflict resolution
         'resolveConflicts', 'AUTO_FIX_STRATEGIES',
 
-        // Chunk 09: Claude
-        'ClaudeCodeExecutor',
+        // Chunk 09: Agent
+        'AgentCodeExecutor',
         'renderPrompt', 'renderClassificationPrompt',
         'renderSplitPlanPrompt', 'renderConflictPrompt',
         'detectLanguage',
@@ -64,7 +64,7 @@
         'AUTOMATED_DEFAULTS', 'SEND_TEXT_NEWLINE_DELAY_MS',
         'sendToHandle', 'waitForLogged',
         'classificationToGroups', 'cleanupExecutor',
-        'heuristicFallback', 'resolveConflictsWithClaude',
+        'heuristicFallback', 'resolveConflictsWithAgent',
         'automatedSplit',
 
         // Chunk 11: Utilities

@@ -38,12 +38,12 @@ func setupMouseDragMgr(t *testing.T) (*goja.Runtime, *parent.SessionManager, fun
 	}
 
 	runtime, termmux, env := testRequireCtx(t, ctx)
-	defer env.stop()
 	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tm", tuiMux)
 	_ = runtime.Set("termmux", termmux)
 
 	cleanup := func() {
+		env.stop()
 		cancel()
 		<-errCh
 	}

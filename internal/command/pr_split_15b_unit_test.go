@@ -3,7 +3,7 @@ package command
 // T425: Unit tests for chunk 15b chrome pane renderers.
 //
 // Covers the 3 most under-tested renderers:
-//   - renderClaudeQuestionPrompt: 0 prior tests — 5 tests
+//   - renderAgentQuestionPrompt: 0 prior tests — 5 tests
 //   - renderVerifyPane: testing
 //   - renderOutputPane: 2 tests (placeholder + content) — 3 new edge-case tests
 //
@@ -19,25 +19,25 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-//  renderClaudeQuestionPrompt — 5 tests (previously 0)
+//  renderAgentQuestionPrompt — 5 tests (previously 0)
 // ---------------------------------------------------------------------------
 
-// TestChunk15b_ClaudeQuestionPrompt_Falsy verifies that calling the function
-// with a state object where claudeQuestionDetected is falsy returns an empty
+// TestChunk15b_AgentQuestionPrompt_Falsy verifies that calling the function
+// with a state object where agentQuestionDetected is falsy returns an empty
 // string. Five falsy variants are exercised.
-func TestChunk15b_ClaudeQuestionPrompt_Falsy(t *testing.T) {
+func TestChunk15b_AgentQuestionPrompt_Falsy(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	for _, variant := range []string{
-		`{}`,                                  // undefined field
-		`{claudeQuestionDetected: false}`,     // explicit false
-		`{claudeQuestionDetected: 0}`,         // zero
-		`{claudeQuestionDetected: null}`,      // null
-		`{claudeQuestionDetected: undefined}`, // explicit undefined
+		`{}`,                                 // undefined field
+		`{agentQuestionDetected: false}`,     // explicit false
+		`{agentQuestionDetected: 0}`,         // zero
+		`{agentQuestionDetected: null}`,      // null
+		`{agentQuestionDetected: undefined}`, // explicit undefined
 	} {
 		t.Run(variant, func(t *testing.T) {
-			val, err := evalJS(`prSplit._renderClaudeQuestionPrompt(` + variant + `)`)
+			val, err := evalJS(`prSplit._renderAgentQuestionPrompt(` + variant + `)`)
 			if err != nil {
 				t.Fatalf("eval error for %s: %v", variant, err)
 			}
@@ -49,17 +49,17 @@ func TestChunk15b_ClaudeQuestionPrompt_Falsy(t *testing.T) {
 	}
 }
 
-// TestChunk15b_ClaudeQuestionPrompt_ActiveInput verifies that an active input
+// TestChunk15b_AgentQuestionPrompt_ActiveInput verifies that an active input
 // renders a bold prompt marker, the cursor block, and "Enter: send" hint.
-func TestChunk15b_ClaudeQuestionPrompt_ActiveInput(t *testing.T) {
+func TestChunk15b_AgentQuestionPrompt_ActiveInput(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
-		return prSplit._renderClaudeQuestionPrompt({
-			claudeQuestionDetected: true,
-			claudeQuestionInputActive: true,
-			claudeQuestionInputText: 'yes',
+		return prSplit._renderAgentQuestionPrompt({
+			agentQuestionDetected: true,
+			agentQuestionInputActive: true,
+			agentQuestionInputText: 'yes',
 			width: 80
 		});
 	})()`)
@@ -68,8 +68,8 @@ func TestChunk15b_ClaudeQuestionPrompt_ActiveInput(t *testing.T) {
 	}
 	s := val.(string)
 
-	if !strings.Contains(s, "Claude asks") {
-		t.Error("expected 'Claude asks' banner")
+	if !strings.Contains(s, "Agent asks") {
+		t.Error("expected 'Agent asks' banner")
 	}
 	if !strings.Contains(s, "yes") {
 		t.Error("expected input text 'yes' to appear")
@@ -80,16 +80,16 @@ func TestChunk15b_ClaudeQuestionPrompt_ActiveInput(t *testing.T) {
 	}
 }
 
-// TestChunk15b_ClaudeQuestionPrompt_InactiveInput verifies that an inactive
+// TestChunk15b_AgentQuestionPrompt_InactiveInput verifies that an inactive
 // input renders the "Type to respond" hint instead of "Enter: send".
-func TestChunk15b_ClaudeQuestionPrompt_InactiveInput(t *testing.T) {
+func TestChunk15b_AgentQuestionPrompt_InactiveInput(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
-		return prSplit._renderClaudeQuestionPrompt({
-			claudeQuestionDetected: true,
-			claudeQuestionInputActive: false,
+		return prSplit._renderAgentQuestionPrompt({
+			agentQuestionDetected: true,
+			agentQuestionInputActive: false,
 			width: 80
 		});
 	})()`)
@@ -104,24 +104,24 @@ func TestChunk15b_ClaudeQuestionPrompt_InactiveInput(t *testing.T) {
 	if strings.Contains(s, "Enter: send") {
 		t.Error("inactive input should NOT show 'Enter: send'")
 	}
-	// Default question text when claudeQuestionLine is omitted.
+	// Default question text when agentQuestionLine is omitted.
 	if !strings.Contains(s, "(question detected)") {
-		t.Error("missing claudeQuestionLine should fall back to '(question detected)'")
+		t.Error("missing agentQuestionLine should fall back to '(question detected)'")
 	}
 }
 
-// TestChunk15b_ClaudeQuestionPrompt_LongQuestionTruncation verifies that a
+// TestChunk15b_AgentQuestionPrompt_LongQuestionTruncation verifies that a
 // question line exceeding the width budget is truncated with '...'
-func TestChunk15b_ClaudeQuestionPrompt_LongQuestionTruncation(t *testing.T) {
+func TestChunk15b_AgentQuestionPrompt_LongQuestionTruncation(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var longQ = '';
 		for (var i = 0; i < 200; i++) longQ += 'x';
-		return prSplit._renderClaudeQuestionPrompt({
-			claudeQuestionDetected: true,
-			claudeQuestionLine: longQ,
+		return prSplit._renderAgentQuestionPrompt({
+			agentQuestionDetected: true,
+			agentQuestionLine: longQ,
 			width: 60
 		});
 	})()`)
@@ -140,17 +140,17 @@ func TestChunk15b_ClaudeQuestionPrompt_LongQuestionTruncation(t *testing.T) {
 	}
 }
 
-// TestChunk15b_ClaudeQuestionPrompt_ConversationCount verifies that when
-// claudeConversations has entries, the count is displayed.
-func TestChunk15b_ClaudeQuestionPrompt_ConversationCount(t *testing.T) {
+// TestChunk15b_AgentQuestionPrompt_ConversationCount verifies that when
+// agentConversations has entries, the count is displayed.
+func TestChunk15b_AgentQuestionPrompt_ConversationCount(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	// Single conversation → singular "exchange".
 	val, err := evalJS(`(function() {
-		return prSplit._renderClaudeQuestionPrompt({
-			claudeQuestionDetected: true,
-			claudeConversations: [{role:'user',text:'hi'}],
+		return prSplit._renderAgentQuestionPrompt({
+			agentQuestionDetected: true,
+			agentConversations: [{role:'user',text:'hi'}],
 			width: 80
 		});
 	})()`)
@@ -168,9 +168,9 @@ func TestChunk15b_ClaudeQuestionPrompt_ConversationCount(t *testing.T) {
 
 	// Multiple conversations → plural.
 	val2, err := evalJS(`(function() {
-		return prSplit._renderClaudeQuestionPrompt({
-			claudeQuestionDetected: true,
-			claudeConversations: [{},{},{}],
+		return prSplit._renderAgentQuestionPrompt({
+			agentQuestionDetected: true,
+			agentConversations: [{},{},{}],
 			width: 80
 		});
 	})()`)
@@ -184,9 +184,9 @@ func TestChunk15b_ClaudeQuestionPrompt_ConversationCount(t *testing.T) {
 
 	// Empty array → no count line.
 	val3, err := evalJS(`(function() {
-		return prSplit._renderClaudeQuestionPrompt({
-			claudeQuestionDetected: true,
-			claudeConversations: [],
+		return prSplit._renderAgentQuestionPrompt({
+			agentQuestionDetected: true,
+			agentConversations: [],
 			width: 80
 		});
 	})()`)
@@ -195,7 +195,7 @@ func TestChunk15b_ClaudeQuestionPrompt_ConversationCount(t *testing.T) {
 	}
 	s3 := val3.(string)
 	if strings.Contains(s3, "prior Q&A") {
-		t.Error("empty claudeConversations should not render exchange count")
+		t.Error("empty agentConversations should not render exchange count")
 	}
 }
 
@@ -253,7 +253,7 @@ func TestChunk15b_OutputPane_FocusIndicator(t *testing.T) {
 			Object.assign({}, base, {splitViewFocus: 'plan'}), 60, 8
 		);
 		var focused = prSplit._renderOutputPane(
-			Object.assign({}, base, {splitViewFocus: 'claude'}), 60, 8
+			Object.assign({}, base, {splitViewFocus: 'agent'}), 60, 8
 		);
 		return JSON.stringify({
 			unfocusedHasTitle: unfocused.indexOf('Output') >= 0,

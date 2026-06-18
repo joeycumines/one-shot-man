@@ -139,7 +139,7 @@ func setupPassthroughState(t *testing.T) (runtime *goja.Runtime, s *muxState, st
 }
 
 // TestSwitchTo_PassthroughState toggles into and out of passthrough via
-// switchTo, confirming activeSide flips to "claude" while passthrough is
+// switchTo, confirming activeSide flips to "agent" while passthrough is
 // active and back to "osm" once the toggle key returns control.
 func TestSwitchTo_PassthroughState(t *testing.T) {
 	if testing.Short() {
@@ -172,8 +172,8 @@ func TestSwitchTo_PassthroughState(t *testing.T) {
 		}
 	}
 
-	if got := s.activeSideForTest(); got != "claude" {
-		t.Fatalf("activeSide during passthrough = %q, want 'claude'", got)
+	if got := s.activeSideForTest(); got != "agent" {
+		t.Fatalf("activeSide during passthrough = %q, want 'agent'", got)
 	}
 
 	if _, err := stdinW.Write([]byte{parent.DefaultToggleKey}); err != nil {
@@ -237,8 +237,8 @@ func TestFromModel_PassthroughState(t *testing.T) {
 		}
 	}
 
-	if got := s.activeSideForTest(); got != "claude" {
-		t.Fatalf("activeSide during onToggle passthrough = %q, want 'claude'", got)
+	if got := s.activeSideForTest(); got != "agent" {
+		t.Fatalf("activeSide during onToggle passthrough = %q, want 'agent'", got)
 	}
 
 	if _, err := stdinW.Write([]byte{parent.DefaultToggleKey}); err != nil {
@@ -300,7 +300,7 @@ func TestFromModel_OnToggleWrapsOriginal(t *testing.T) {
 // is in progress without competing for the Goja runtime.
 func (s *muxState) activeSideForTest() string {
 	if s.IsPassthrough() {
-		return "claude"
+		return "agent"
 	}
 	return "osm"
 }

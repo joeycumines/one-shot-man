@@ -16,13 +16,8 @@ They are not intended to be useful on their own — see the builtin commands for
 | `example-05-pick-and-place.js` | PA-BT (Planning-Augmented Behavior Trees) robot demo | Interactive (BubbleTea) |
 | `example-06-api-client.js` | HTTP client demo: GET, POST, streaming, error handling, timeouts | Non-interactive |
 | `example-07-flag-parsing.js` | Flag parsing demo: typed flags, introspection, visit/visitAll | Non-interactive |
-| `example-08-claude-mock-protocol.js` | Protocol mode demo: mock provider, spawn, waitReady, send/receive, event classification, rate limit detection | Non-interactive |
-| `example-09-claude-tui-detection.js` | TUI state machine and VT state detector: state transitions, pattern matching, screen text extraction | Non-interactive |
-| `example-10-claude-pool.js` | Multi-instance pool: registry, multiple handles, ReliablePrompter, pool worker management | Non-interactive |
-| `example-11-multi-agent-team.js` | Multi-agent team: role registry, coordination bus, agent panel, dispatch system | Non-interactive |
-| `example-12-agent-panel.js` | Agent panel: pane management, keyboard routing, health tracking, dynamic add/remove | Non-interactive |
+| `example-08-aimux-session.js` | Interactive PTY TUI with `osm:aimux`: spawn, async I/O, state machine, parser, viewport, textarea | Interactive (BubbleTea) |
 | `example-13-split-pane.js` | Terminal compositor: split panes, focus cycling, animated content, lipgloss styling | Interactive (BubbleTea) |
-| `example-14-comprehensive-demo.js` | Full API walkthrough: all TermUI components, compositor, coordinate/layout, TUI state machine, VT detector, parser, provider registry, pool, multi-agent panel, role registry, coordination bus, supervisor, guards, safety validation, managed session, TermMux events/capture | Non-interactive |
 | `example-15-bouncing-logo.js` | Bouncing terminal: nested PTY session with ctrl+letter controls (^P pause, ^B bigger, ^S smaller, ^Q quit), chord mode (ctrl+x prefix), compositor rendering, mouse/keyboard forwarding | Interactive (BubbleTea) |
 
 ## Tests & Benchmarks

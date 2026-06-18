@@ -562,7 +562,7 @@ The notification badge in the status bar shows Claude's state:
 ### Architecture
 
 The pr-split wizard runs as the "OSM side" of a termmux session. The
-"Claude side" is the Claude agent process (launched via ClaudeCodeExecutor).
+"Agent side" is the agent process (launched via AgentCodeExecutor).
 
 ```
 ┌─────────────────────────┐
@@ -876,7 +876,7 @@ The TUI chunk (13) calls functions from prior chunks via `prSplit.*`:
 - `prSplit.verifyEquivalence()` (chunk 06) — during verification
 - `prSplit.createPRs()` (chunk 07) — during finalization
 - `prSplit.resolveConflicts()` (chunk 08) — during error resolution
-- `prSplit.ClaudeCodeExecutor` (chunk 09) — Claude integration
+- `prSplit.AgentCodeExecutor` (chunk 09) — agent integration
 - `prSplit.automatedSplit()` (chunk 10) — full pipeline orchestration
 
 ### Testing Strategy

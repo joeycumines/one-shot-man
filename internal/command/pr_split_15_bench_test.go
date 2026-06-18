@@ -21,7 +21,7 @@ func BenchmarkRender_VerifyPane(b *testing.B) {
 		globalThis._benchState = {
 			verifyScreen: _benchContent,
 			activeVerifySession: true,
-			splitViewFocus: 'claude',
+			splitViewFocus: 'agent',
 			splitViewTab: 'verify',
 			verifyPaused: false,
 			verifyViewportOffset: 0,
@@ -86,7 +86,7 @@ func BenchmarkRender_VerifyPane_Wide(b *testing.B) {
 		globalThis._benchWideState = {
 			verifyScreen: _benchWideContent,
 			activeVerifySession: true,
-			splitViewFocus: 'claude',
+			splitViewFocus: 'agent',
 			splitViewTab: 'verify',
 			verifyPaused: false,
 			verifyViewportOffset: 0,
@@ -111,7 +111,7 @@ func BenchmarkRender_VerifyPane_Wide(b *testing.B) {
 }
 
 // BenchmarkRender_TabBar_AllTabs measures the cost of rendering the full wizard
-// view with all tabs visible (Claude, Output, Verify). The tab bar construction
+// view with all tabs visible (Agent, Output, Verify). The tab bar construction
 // involves Lipgloss style calls, zone marks, and string assembly.
 func BenchmarkRender_TabBar_AllTabs(b *testing.B) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(b)
@@ -120,7 +120,7 @@ func BenchmarkRender_TabBar_AllTabs(b *testing.B) {
 		setupPlanCache();
 		var _benchTabState = initState('BRANCH_BUILDING');
 		_benchTabState.splitViewEnabled = true;
-		_benchTabState.splitViewTab = 'claude';
+		_benchTabState.splitViewTab = 'agent';
 		_benchTabState.splitViewFocus = 'wizard';
 		_benchTabState.width = 80;
 		_benchTabState.height = 24;
@@ -174,7 +174,7 @@ func BenchmarkRender_FullSplitView_VerifyTab(b *testing.B) {
 		var _benchFullState = initState('BRANCH_BUILDING');
 		_benchFullState.splitViewEnabled = true;
 		_benchFullState.splitViewTab = 'verify';
-		_benchFullState.splitViewFocus = 'claude';
+		_benchFullState.splitViewFocus = 'agent';
 		_benchFullState.width = 80;
 		_benchFullState.height = 24;
 		_benchFullState.isProcessing = true;

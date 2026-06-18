@@ -227,13 +227,13 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:bt` | Behavior tree primitives ([go-behaviortree](https://github.com/joeycumines/go-behaviortree)) | Status: `success`, `failure`, `running`; Nodes: `node(tick, ...children)`, `createLeafNode(fn)`, `createBlockingLeafNode(fn)`; Composites: `sequence(children)`, `fallback(children)` / `selector(children)`, `fork()`; Decorators: `memorize(tick)`, `async(tick)`, `not(tick)`, `interval(ms)`; Execution: `tick(node)`, `newTicker(ms, node, opts?)`, `newManager()`; State: `new Blackboard()`, `exposeBlackboard(bb)` |
 | `osm:pabt` | Planning-Augmented Behavior Trees ([go-pabt](https://github.com/joeycumines/go-pabt)) | `newState(blackboard) → State`, `newAction(name, conditions, effects, node) → Action`, `newPlan(state, goals) → Plan`, `newExprCondition(key, expr, value?) → Condition`; State: `.variable(key)`, `.get(key)`, `.set(key, value)`, `.registerAction(name, action)`, `.getAction(name)`, `.setActionGenerator(fn)`; Plan: `.node()`, `.running()` |
 
-#### Claude Code orchestration
+#### Generic agent/multiplexer
 
 | Module | Description | Key exports |
 |--------|-------------|-------------|
-| `osm:claudemux` | Claude Code orchestration building blocks | Parser: `newParser()`, `eventTypeName(type)`, `KEY_*` constants; Guard: `newGuard(config)`, `defaultGuardConfig()`, `guardActionName(action)`, `GUARD_ACTION_*`/`PERMISSION_POLICY_*` constants; MCPGuard: `newMCPGuard(config)`, `defaultMCPGuardConfig()`; Supervisor: `newSupervisor(config)`, `defaultSupervisorConfig()`, error/action/state constants; Pool: `newPool(config)`, `defaultPoolConfig()`; Panel: `newPanel(config)`, `defaultPanelConfig()`; Session: `createSession(id, config?)`, `defaultManagedSessionConfig()`, `managedSessionStateName(state)`, `SESSION_*` constants; Safety: `newSafetyValidator(config)`, `defaultSafetyConfig()`, `newCompositeValidator()`, intent/scope/risk/policy constants; Choice: `newChoiceResolver(config)`, `defaultChoiceConfig()`; Instance: `newInstanceRegistry(baseDir)`; ModelNav: `parseModelMenu(lines)`, `navigateToModel(menu, target)`, `isLauncherMenu(menu)`, `dismissLauncherKeys(menu)` |
+| `osm:aimux` | Generic agent process multiplexer | `processProvider(opts)` → provider object; `newRegistry()` → registry object with `register(provider)`, `get(name)`, `list()`, `spawn(name, opts)`; `newParser()` → parser object with `.parse(line)`, `.patterns()`; parser event constants: `EVENT_TEXT`, `EVENT_RATE_LIMIT`, `EVENT_PERMISSION`, `EVENT_MODEL_SELECT`, `EVENT_SSO_LOGIN`, `EVENT_COMPLETION`, `EVENT_TOOL_USE`, `EVENT_ERROR`, `EVENT_THINKING`; `eventTypeName(type)`. Used by `osm pr-split` to spawn agent processes provider-agnostically. |
 | `osm:mcp` | Promise-based MCP (Model Context Protocol) server | `createServer(name, version?) → server`; Server methods: `.addTool(toolDef, handler)` where toolDef = `{name, description?, inputSchema?}`, `.run(transport?)` (default: "stdio"), `.close()` |
-| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, opts?)`, `.unregister(id)`, `.activate(id)`, `.attach(handle) → id`, `.detach()`, `.hasChild()`, `.passthrough(opts?)` (blocking — enters passthrough, returns `{reason, error?}`), `.switchTo()` (blocking, returns `{reason, error?}`), `.activeSide()`, `.activeID()`, `.sessions()`, `.snapshot(id)`, `.eventsDropped()`, `.input(data)`, `.resize(rows, cols)`, `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe(bufSize?)`, `.unsubscribe(id)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.snapshot(id)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `.activate(id)` + `.input(data)` for writes; `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_CLAUDE`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (9 event names). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
+| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, opts?)`, `.unregister(id)`, `.activate(id)`, `.attach(handle) → id`, `.detach()`, `.hasChild()`, `.passthrough(opts?)` (blocking — enters passthrough, returns `{reason, error?}`), `.switchTo()` (blocking, returns `{reason, error?}`), `.activeSide()`, `.activeID()`, `.sessions()`, `.snapshot(id)`, `.eventsDropped()`, `.input(data)`, `.resize(rows, cols)`, `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe(bufSize?)`, `.unsubscribe(id)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.snapshot(id)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `.activate(id)` + `.input(data)` for writes; `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_AGENT`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (9 event names). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
 
 ### osm:bt (Behavior Trees)
 
@@ -448,7 +448,7 @@ The `server` must be created via `createServer()` and must **not** have `.run()`
 | `cb.address` | `string` | Listener address. UDS: socket path. TCP: `127.0.0.1:<port>`. |
 | `cb.scriptPath` | `string` | Path to generated `bootstrap.js` (`module.exports = { transport, address }`). |
 | `cb.transport` | `string` | `"unix"` (Linux/macOS) or `"tcp"` (Windows). |
-| `cb.mcpConfigPath` | `string` | Path to generated `mcp-config.json` for Claude Code MCP server config. |
+| `cb.mcpConfigPath` | `string` | Path to generated `mcp-config.json` for the agent's MCP server config. |
 
 **Waiting for tool calls:**
 
@@ -480,76 +480,32 @@ result = cb.waitFor('reportResolution', 600000, { aliveCheck });
 cb.closeSync();
 ```
 
-### osm:claudemux (Claude Code Orchestration)
+### osm:aimux (agent process multiplexer)
 
-Building blocks for multi-instance Claude Code management. Used by `osm pr-split` for communicating with Claude Code instances.
+`osm:aimux` is the provider-agnostic agent/process multiplexer. It provides
+provider-agnostic building blocks for starting, controlling, and parsing output from
+interactive agent processes. It is used by `osm pr-split` to spawn the configured
+agent executable (e.g. `claude` or `ollama`) without hard-coding any provider.
 
-**Parser** — PTY output classification:
-- `cm.newParser()` — Create a parser with built-in Claude Code output patterns
-- `parser.parse(line)` — Classify a line → `{type, line, fields, pattern}`
-- `parser.addPattern(name, regex, eventType, extractFn?)` — Register custom patterns
-- `parser.patterns()` — List registered patterns
-- `cm.eventTypeName(type)` — Human-readable event type name
-- Constants: `cm.EVENT_TEXT`, `cm.EVENT_RATE_LIMIT`, `cm.EVENT_PERMISSION`, `cm.EVENT_MODEL_SELECT`, `cm.EVENT_SSO_LOGIN`, `cm.EVENT_COMPLETION`, `cm.EVENT_TOOL_USE`, `cm.EVENT_ERROR`, `cm.EVENT_THINKING`
-- Key constants: `cm.KEY_UP`, `cm.KEY_DOWN`, `cm.KEY_ENTER`, `cm.KEY_Y`, `cm.KEY_N`
+**Provider/registry:**
+- `aimux.processProvider(opts)` — Build a process-backed provider (`name`, `command`, `defaultArgs`, `capabilities`).
+- `aimux.newRegistry()` — Build a registry with `.register(provider)`, `.get(name)`, `.list()`, `.spawn(name, opts)`.
+- `registry.spawn(name, opts)` — Start a process and return a handle (`command`, `args`, `env`, `dir`, `rows`, `cols`).
 
-**Guard** — PTY output monitors:
-- `cm.newGuard(config)` — Create a guard with rate-limit, permission, crash, and timeout monitors
-- `guard.processEvent(event, now)` — Evaluate an output event → `{action, reason, details}` or null
-- `guard.processCrash(exitCode, now)` — Report a crash → guard event
-- `guard.checkTimeout(now)` — Check for output timeout → guard event or null
-- `cm.defaultGuardConfig()` — Production defaults
-- `cm.guardActionName(action)` — Human-readable action name
-- Constants: `cm.GUARD_ACTION_NONE`, `cm.GUARD_ACTION_PAUSE`, `cm.GUARD_ACTION_REJECT`, `cm.GUARD_ACTION_RESTART`, `cm.GUARD_ACTION_ESCALATE`, `cm.GUARD_ACTION_TIMEOUT`; `cm.PERMISSION_POLICY_DENY`, `cm.PERMISSION_POLICY_ALLOW`
+**Handle:**
+- `handle.send(input)` — Send text to stdin.
+- `handle.receive()` / `handle.receiveAsync()` — Read output.
+- `handle.isAlive()` — Non-blocking liveness check.
+- `handle.resize(rows, cols)` — Resize the PTY.
+- `handle.close()` / `handle.drainOutput()` — Terminate and drain output.
+- `handle.wait()` — Block until exit.
 
-**MCPGuard** — MCP call monitors:
-- `cm.newMCPGuard(config)` — Create an MCP guard with frequency, repeat, allowlist, and timeout monitors
-- `mcpGuard.processToolCall(call)` — Evaluate a tool call → `{action, reason, details}` or null
-- `mcpGuard.checkNoCallTimeout(now)` — Check for no-call timeout
-- `cm.defaultMCPGuardConfig()` — Production defaults
-
-**Supervisor** — Error recovery:
-- `cm.newSupervisor(config)` — Create a supervisor state machine
-- `supervisor.start()` — Transition to Running
-- `supervisor.handleError(msg, errorClass)` — Get recovery decision
-- `supervisor.shutdown()` — Initiate graceful drain
-- `cm.defaultSupervisorConfig()` — Production defaults
-- Error class constants: `cm.ERROR_CLASS_*`; Recovery action constants: `cm.RECOVERY_*`
-
-**Pool** — Concurrent instance management:
-- `cm.newPool(config)` — Create a pool with acquire/release dispatch
-- `pool.start()`, `pool.addWorker(worker)`, `pool.acquire()`, `pool.tryAcquire()`, `pool.release(worker, err, now)`, `pool.drain()`, `pool.close()`, `pool.stats()`
-- `cm.defaultPoolConfig()` — Default max size 4
-
-**Panel** — TUI multi-instance display:
-- `cm.newPanel(config)` — Create a panel with Alt+1..9 switching
-- `panel.start()`, `panel.addPane(id, title)`, `panel.routeInput(key)`, `panel.appendOutput(id, text)`, `panel.updateHealth(id, health)`, `panel.statusBar()`, `panel.getVisibleLines(id, height)`, `panel.snapshot()`, `panel.close()`
-- `cm.defaultPanelConfig()` — Default 9 panes, 10000 scrollback
-
-**ManagedSession** — Unified monitoring pipeline:
-- `cm.createSession(id, config?)` — Create a session composing Parser+Guard+MCPGuard+Supervisor
-- `session.processLine(line, now)` → `{event, guardEvent, action}`
-- `session.processCrash(exitCode, now)` → `{guardEvent, recoveryDecision}`
-- `session.processToolCall(call)` → tool call result
-- `session.shutdown()`, `session.close()`
-- `session.onEvent(fn)`, `session.onGuardAction(fn)`, `session.onRecoveryDecision(fn)` — Callbacks
-- `cm.defaultManagedSessionConfig()`, `cm.managedSessionStateName(state)`
-- Constants: `cm.SESSION_IDLE`, `cm.SESSION_ACTIVE`, `cm.SESSION_PAUSED`, `cm.SESSION_FAILED`, `cm.SESSION_CLOSED`
-
-**Safety** — Intent/scope/risk classification:
-- `cm.newSafetyValidator(config)` — Create a rule-based safety validator
-- `validator.validate(toolName, args)` → `{intent, scope, risk, riskLevel, action, reason}`
-- `cm.defaultSafetyConfig()`, `cm.newCompositeValidator()`
-- Constants: `cm.INTENT_*`, `cm.SCOPE_*`, `cm.RISK_*`, `cm.POLICY_*`
-
-**Choice** — Multi-criteria decision analysis:
-- `cm.newChoiceResolver(config)` — Create a resolver with configurable criteria
-- `resolver.analyze(candidates, criteria?)` → `{recommendedID, rankings, justification, needsConfirm}`
-- `cm.defaultChoiceConfig()` — Default 4 criteria (complexity/risk/maintainability/performance)
-
-**Instance** — Session isolation:
-- `cm.newInstanceRegistry(baseDir)` — Create a registry for isolated instance state
-- `registry.create(id)`, `registry.get(id)`, `registry.close(id)`, `registry.closeAll()`, `registry.list()`, `registry.len()`, `registry.baseDir()`
+**Parser:**
+- `aimux.newParser()` — Create a parser.
+- `parser.parse(line)` — Classify a PTY output line.
+- `parser.addPattern(name, regex, eventType)` — Register custom detection patterns.
+- `parser.patterns()` — List registered patterns.
+- Event constants: `EVENT_TEXT`, `EVENT_RATE_LIMIT`, `EVENT_PERMISSION`, `EVENT_MODEL_SELECT`, `EVENT_SSO_LOGIN`, `EVENT_COMPLETION`, `EVENT_TOOL_USE`, `EVENT_ERROR`, `EVENT_THINKING`.
 
 ### osm:termmux CaptureSession
 
@@ -664,7 +620,7 @@ context.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `automatedSplit` | `(config?) → {report, error?}` | Full 10-step Claude-assisted pipeline |
+| `automatedSplit` | `(config?) → {report, error?}` | Full 10-step agent-assisted pipeline |
 | `heuristicFallback` | `(analysis, config, report) → {error?, report}` | Local-only splitting fallback |
 | `assessIndependence` | `(plan, classification?) → [[name, name]]` | Detect independent split pairs |
 | `classificationToGroups` | `(classification) → [{name, files}]` | Convert file→group map to groups array |
@@ -673,7 +629,7 @@ context.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `renderClassificationPrompt` | `(analysis, opts?) → {text, error?}` | Build Claude classification prompt |
+| `renderClassificationPrompt` | `(analysis, opts?) → {text, error?}` | Build agent classification prompt |
 | `renderSplitPlanPrompt` | `(classification, config) → {text, error?}` | Build split plan prompt from classification |
 | `renderConflictPrompt` | `(conflict) → {text, error?}` | Build conflict resolution prompt |
 | `detectLanguage` | `(files) → string` | Detect primary language from file extensions |
@@ -686,11 +642,11 @@ context.
 | `SPLIT_PLAN_PROMPT_TEMPLATE` | string | Template for split plan prompts |
 | `CONFLICT_RESOLUTION_PROMPT_TEMPLATE` | string | Template for conflict resolution prompts |
 
-### Claude Executor
+### Agent Executor
 
 | Symbol | Type | Description |
 |--------|------|-------------|
-| `ClaudeCodeExecutor` | constructor | `new ClaudeCodeExecutor(config)` — manages Claude Code lifecycle |
+| `AgentCodeExecutor` | constructor | `new AgentCodeExecutor(config)` — manages the configured agent process lifecycle |
 
 ### BT Node Factories
 

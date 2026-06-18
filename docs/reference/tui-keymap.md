@@ -61,8 +61,8 @@ outcome.
 | Key              | Action                                    |
 |------------------|-------------------------------------------|
 | `Ctrl+L`         | Toggle split view on / off                |
-| `Ctrl+Tab`       | Cycle focus target (wizard → Claude → Output → Verify when present → wizard) |
-| `Ctrl+O`         | Cycle visible bottom tabs (Claude ↔ Output, adding Verify when present) |
+| `Ctrl+Tab`       | Cycle focus target (wizard → Agent → Output → Verify when present → wizard) |
+| `Ctrl+O`         | Cycle visible bottom tabs (Agent ↔ Output, adding Verify when present) |
 | `Ctrl+]`         | Full passthrough (focused pane)           |
 | `Ctrl+=` / `Ctrl+-` | Resize split view ratio (±10%)         |
 
@@ -113,9 +113,9 @@ output from the async fallback:
 | `PgUp` / `PgDn`  | Scroll 5 lines           |
 | `Home` / `End`   | Jump to top / bottom     |
 
-### Bottom Pane — Claude Tab
+### Bottom Pane — Agent Tab
 
-Claude pane supports scrolling and PTY forwarding. Reserved keys that
+Agent pane supports scrolling and PTY forwarding. Reserved keys that
 are NOT forwarded:
 
 `Ctrl+Tab`, `Ctrl+L`, `Ctrl+O`, `Ctrl+]`, `Ctrl++`, `Ctrl+=`, `Ctrl+-`,
@@ -173,7 +173,7 @@ All editor dialogs close with `Esc`.
 **Merge Splits:** `j`/`↓` and `k`/`↑` navigate, `Space` toggles
 selection, `Enter` confirms merge.
 
-### Claude Conversation
+### Agent Conversation
 
 | Key              | Action                         |
 |------------------|--------------------------------|
@@ -184,12 +184,12 @@ selection, `Enter` confirms merge.
 | `↑` / `PgUp`    | Scroll history up              |
 | `↓` / `PgDn`    | Scroll history down            |
 
-### Claude Question Input
+### Agent Question Input
 
 | Key              | Action                         |
 |------------------|--------------------------------|
 | `Esc`            | Dismiss question               |
-| `Enter`          | Send response to Claude PTY    |
+| `Enter`          | Send response to agent PTY    |
 | `Backspace`      | Delete character               |
 | `Ctrl+U`         | Clear input                    |
 | *(any char)*     | Accumulate in input buffer     |
@@ -221,7 +221,7 @@ When multiple handlers could match, the TUI processes in this order:
 1. **Window resize** — always handled first
 2. **State transition reset** — clears focus index
 3. **Overlays** — checked in order: help → confirm cancel → report →
-   editor dialog → Claude conversation → Claude question →
+   editor dialog → Agent conversation → Agent question →
    inline title edit → config field edit
 4. **Per-type dispatch** — Key → ToggleReturn → Mouse → Tick
 

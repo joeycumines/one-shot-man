@@ -383,57 +383,6 @@ func TestAutoMergeOptions(t *testing.T) {
 // T-new: _goHandle extraction roundtrip test
 // ---------------------------------------------------------------------------
 
-// TestGoHandleExtractionRoundtrip verifies that a Goja-wrapped AgentHandle
-// stored via _goHandle can be extracted via map[string]any and cast
-// to mux.StringIO. This is the bridge between the JS claudeExecutor.handle
-// and the Go tuiMux.attach closure.
-func TestGoHandleExtractionRoundtrip(t *testing.T) {
-	t.Parallel()
-
-	evalJS := prsplittest.NewFullEngine(t, nil)
-
-	// The claudemux module's wrapAgentHandle stores _goHandle. We can
-	// verify the pattern works by checking that the exported result
-	// includes _goHandle as a non-nil value.
-	//
-	// Since we can't spawn a real PTY in unit tests, we verify that:
-	// 1. The module sets _goHandle on wrapped handles
-	// 2. The JS object has _goHandle accessible
-	result, err := evalJS(`
-		(function() {
-			var cm = require('osm:claudemux');
-			// Create a mock registry with a provider.
-			// We can't call spawn without a real PTY, but we can verify
-			// that wrapAgentHandle would set _goHandle.
-			return {
-				hasClaudeMux: typeof cm !== 'undefined',
-				hasNewRegistry: typeof cm.newRegistry === 'function',
-				hasClaudeCode: typeof cm.claudeCode === 'function',
-				hasOllama: typeof cm.ollama === 'function',
-			};
-		})()
-	`)
-	if err != nil {
-		t.Fatalf("Failed to eval: %v", err)
-	}
-
-	m, ok := result.(map[string]any)
-	if !ok {
-		t.Fatalf("Expected map, got %T", result)
-	}
-
-	for _, key := range []string{"hasClaudeMux", "hasNewRegistry", "hasClaudeCode", "hasOllama"} {
-		v, exists := m[key]
-		if !exists {
-			t.Errorf("Missing key %q in result", key)
-			continue
-		}
-		if v != true {
-			t.Errorf("Expected %q=true, got %v", key, v)
-		}
-	}
-}
-
 // ---------------------------------------------------------------------------
 // stringSliceFlag tests
 // ---------------------------------------------------------------------------
@@ -488,21 +437,21 @@ func TestStringSliceFlag_FlagIntegration(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	cmd.SetupFlags(fs)
 
-	// Multiple --claude-arg flags
+	// Multiple --agent-arg flags
 	err := fs.Parse([]string{
-		"--claude-arg", "--verbose",
-		"--claude-arg", "--no-color",
-		"--claude-arg", "--config=/path with spaces/conf.json",
+		"--agent-arg", "--verbose",
+		"--agent-arg", "--no-color",
+		"--agent-arg", "--config=/path with spaces/conf.json",
 	})
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
 
-	if len(cmd.claudeArgs) != 3 {
-		t.Fatalf("expected 3 args, got %d: %v", len(cmd.claudeArgs), cmd.claudeArgs)
+	if len(cmd.agentArgs) != 3 {
+		t.Fatalf("expected 3 args, got %d: %v", len(cmd.agentArgs), cmd.agentArgs)
 	}
 	// Verify no string splitting happened — spaces preserved
-	if cmd.claudeArgs[2] != "--config=/path with spaces/conf.json" {
-		t.Errorf("arg with spaces mangled: got %q", cmd.claudeArgs[2])
+	if cmd.agentArgs[2] != "--config=/path with spaces/conf.json" {
+		t.Errorf("arg with spaces mangled: got %q", cmd.agentArgs[2])
 	}
 }

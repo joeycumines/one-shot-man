@@ -27,7 +27,7 @@ This audit extends the scan to ALL JS chunks for the same anti-pattern.
 
 ## All Bugs Fixed
 
-### BUG-1: `pr_split_09_claude.js` — `exitCode || 1`
+### BUG-1: `pr_split_09_agent.js` — `exitCode || 1`
 Exit code 0 (success) replaced with 1 (error) in conflict prompt.
 **Fix:** `typeof conflict.exitCode === 'number' ? conflict.exitCode : 1`
 
@@ -53,10 +53,10 @@ Two call sites for `verifySplits` used `config.verifyTimeoutMs || ...`.
 Combined: `(timeouts.resolve || default) * (maxAttemptsPerBranch || 3)`.
 **Fix:** typeof checks for both values.
 
-### BUG-13: `pr_split_09_claude.js:260` — spawnHealthCheckDelayMs
+### BUG-13: `pr_split_09_agent.js:260` — spawnHealthCheckDelayMs
 **Fix:** typeof check with ternary.
 
-### BUG-14: `pr_split_09_claude.js:461` — maxFilesPerSplit
+### BUG-14: `pr_split_09_agent.js:461` — maxFilesPerSplit
 `config.maxFilesPerSplit || runtime.maxFiles || 0` — if config is 0, falls through.
 **Fix:** Nested typeof ternaries.
 

@@ -771,7 +771,7 @@ func TestModuleConstants(t *testing.T) {
 		{"EXIT_CONTEXT", `tm.EXIT_CONTEXT`, "context"},
 		{"EXIT_ERROR", `tm.EXIT_ERROR`, "error"},
 		{"SIDE_OSM", `tm.SIDE_OSM`, "osm"},
-		{"SIDE_CLAUDE", `tm.SIDE_CLAUDE`, "claude"},
+		{"SIDE_AGENT", `tm.SIDE_AGENT`, "agent"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

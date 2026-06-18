@@ -83,7 +83,7 @@ func TestPrSplitCommand_HelpIncludesAutoSplit(t *testing.T) {
 
 func TestPrSplitCommand_AutoSplitFallsBackToHeuristic(t *testing.T) {
 	skipSlow(t)
-	// Auto-split without Claude available should fall back to heuristic.
+	// Auto-split without Agent available should fall back to heuristic.
 	dir := setupTestGitRepo(t)
 
 	oldDir, err := os.Getwd()
@@ -95,9 +95,9 @@ func TestPrSplitCommand_AutoSplitFallsBackToHeuristic(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Force Claude to be "not found" so auto-split falls back to heuristic.
+	// Force Agent to be "not found" so auto-split falls back to heuristic.
 	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
-		"claudeCommand": "/nonexistent/claude-for-test",
+		"agentCommand": "/nonexistent/agent-for-test",
 	})
 
 	if err := dispatch("auto-split", nil); err != nil {
@@ -119,7 +119,7 @@ func TestPrSplitCommand_AutoSplitFallsBackToHeuristic(t *testing.T) {
 
 func TestPrSplitCommand_RunModeAutoFallback(t *testing.T) {
 	skipSlow(t)
-	// run --mode auto without Claude should fall back to heuristic.
+	// run --mode auto without Agent should fall back to heuristic.
 	dir := setupTestGitRepo(t)
 
 	oldDir, err := os.Getwd()
@@ -131,9 +131,9 @@ func TestPrSplitCommand_RunModeAutoFallback(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Force Claude to be "not found" so run --mode auto falls back to heuristic.
+	// Force Agent to be "not found" so run --mode auto falls back to heuristic.
 	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
-		"claudeCommand": "/nonexistent/claude-for-test",
+		"agentCommand": "/nonexistent/agent-for-test",
 	})
 
 	if err := dispatch("run", []string{"--mode", "auto"}); err != nil {
@@ -144,8 +144,8 @@ func TestPrSplitCommand_RunModeAutoFallback(t *testing.T) {
 	t.Logf("run --mode auto output:\n%s", output)
 
 	// Should fall back to heuristic mode and actually complete the workflow.
-	if !contains(output, "not available") && !contains(output, "Claude not available") {
-		t.Errorf("Expected 'Claude not available' message, got:\n%s", output)
+	if !contains(output, "not available") && !contains(output, "Agent not available") {
+		t.Errorf("Expected 'Agent not available' message, got:\n%s", output)
 	}
 	// Should have completed heuristic workflow — look for actual split execution.
 	if !contains(output, "Split executed:") {
@@ -259,7 +259,7 @@ func TestPrSplitCommand_AutoFixStrategiesExist(t *testing.T) {
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
-	// Verify all 7 strategies are present (2 Phase 3 + 4 Phase 5 + claude-fix).
+	// Verify all 7 strategies are present (2 Phase 3 + 4 Phase 5 + agent-fix).
 	val, err := evalJS(`(function() {
 		var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
 		if (!strats || !Array.isArray(strats)) return 'not-array';
@@ -301,7 +301,7 @@ func TestPrSplitCommand_AutoFixStrategyNames(t *testing.T) {
 		"npm-install",
 		"make-generate",
 		"add-missing-files",
-		"claude-fix",
+		"agent-fix",
 	}
 	if len(names) != len(expected) {
 		t.Fatalf("Expected %d strategies, got %d: %v", len(expected), len(names), names)
@@ -552,30 +552,30 @@ func TestPrSplitCommand_AddMissingFilesDetect(t *testing.T) {
 	}
 }
 
-func TestPrSplitCommand_ClaudeFixDetect(t *testing.T) {
+func TestPrSplitCommand_AgentFixDetect(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
-	// Without a spawned Claude executor, detect should return false.
+	// Without a spawned Agent executor, detect should return false.
 	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[6].detect('.')`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if val != false {
-		t.Errorf("claude-fix detect without executor: expected false, got %v", val)
+		t.Errorf("agent-fix detect without executor: expected false, got %v", val)
 	}
 }
 
-func TestPrSplitCommand_ClaudeFixFixWithoutExecutor(t *testing.T) {
+func TestPrSplitCommand_AgentFixFixWithoutExecutor(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// fix() should return {fixed: false} when no executor is available.
-	// Note: claude-fix strategy's fix() is async, so we need await.
+	// Note: agent-fix strategy's fix() is async, so we need await.
 	val, err := evalJS(`JSON.stringify(
 		await globalThis.prSplit.AUTO_FIX_STRATEGIES[6].fix('.', 'branch-1', {splits:[]}, 'test error')
 	)`)

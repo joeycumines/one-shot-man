@@ -1,5 +1,5 @@
 'use strict';
-// pr_split_16c_tui_handlers_verify.js — TUI: verify handlers, confirm cancel, Claude conversation, error resolution
+// pr_split_16c_tui_handlers_verify.js — TUI: verify handlers, confirm cancel, Agent conversation, error resolution
 // Dependencies: chunks 00-16b must be loaded first.
 // Requires Go-injected globals: tui, ctx, output, log, prSplitConfig.
 
@@ -43,9 +43,9 @@
             s.analysisRunning = false; // T001: stop orphaned analysis poll ticks
             s.autoSplitRunning = false; // T001: same for auto-split pipeline
             cleanupActiveSession();
-            // T393: Clean up Claude executor and MCP callback on wizard exit.
-            if (st && st.claudeExecutor) {
-                try { st.claudeExecutor.close(); } catch (e) { log.debug('cleanup: claudeExec.close failed: ' + (e.message || e)); }
+            // T393: Clean up Agent executor and MCP callback on wizard exit.
+            if (st && st.agentExecutor) {
+                try { st.agentExecutor.close(); } catch (e) { log.debug('cleanup: agentExec.close failed: ' + (e.message || e)); }
             }
             var mcpCb = prSplit._mcpCallbackObj;
             if (mcpCb) {
@@ -58,9 +58,9 @@
             if (prSplit.persistence && typeof prSplit.persistence.cleanup === 'function') {
                 try { prSplit.persistence.cleanup(); } catch (e) { log.debug('cleanup: persistence.cleanup failed: ' + (e.message || e)); }
             }
-            // Task 9: Unwire Claude lifecycle event handlers.
-            if (typeof prSplit._unwireClaudeLifecycleEvents === 'function') {
-                try { prSplit._unwireClaudeLifecycleEvents(); } catch (e) { log.debug('cleanup: unwireClaudeLifecycleEvents failed: ' + (e.message || e)); }
+            // Task 9: Unwire Agent lifecycle event handlers.
+            if (typeof prSplit._unwireAgentLifecycleEvents === 'function') {
+                try { prSplit._unwireAgentLifecycleEvents(); } catch (e) { log.debug('cleanup: unwireAgentLifecycleEvents failed: ' + (e.message || e)); }
             }
             s.wizard.cancel();
             s.wizardState = 'CANCELLED';
@@ -293,7 +293,7 @@
             // T325+T380: Auto-open split-view with Verify tab.
             if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
                 s.splitViewEnabled = true;
-                s.splitViewFocus = 'claude';
+                s.splitViewFocus = 'agent';
                 s.splitViewTab = 'verify';
                 if (typeof prSplit._syncMainViewport === 'function') {
                     prSplit._syncMainViewport(s);
@@ -316,23 +316,30 @@
             }
 
             if (persistentShell) {
-                // Task 48: Register persistent shell with SessionManager.
-                var shellSessionID = null;
-                if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
+                s.verifyMode = 'interactive';
+                s.activeVerifySession = persistentShell;
+                s._verifySessionRef = persistentShell;
+
+                // Task 48: Register persistent shell with SessionManager async.
+                if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.registerAsync === 'function') {
+                    tuiMux.registerAsync(persistentShell, { kind: 'verify', name: branchName }).then(function(id) {
+                        if (s.activeVerifySession === persistentShell) {
+                            s.activeVerifySession = id;
+                        }
+                    }).catch(function(e) {
+                        log.debug('runVerifyBranch: tuiMux.registerAsync shell failed', { error: e.message || String(e) });
+                    });
+                } else if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
                     try {
-                        shellSessionID = tuiMux.register(persistentShell, { kind: 'verify', name: branchName });
+                        var shellSessionID = tuiMux.register(persistentShell, { kind: 'verify', name: branchName });
+                        if (shellSessionID != null) {
+                            s.activeVerifySession = shellSessionID;
+                        }
                     } catch (e) {
                         log.debug('runVerifyBranch: tuiMux.register shell failed', { error: e.message || String(e) });
                     }
                 }
 
-                // If SessionManager registration fails, keep the raw shell object.
-                // getInteractivePaneSession() and clearVerifyPaneSession() both
-                // support this direct-object fallback for tests and degraded
-                // runtime cleanup, so the session still closes cleanly.
-                s.verifyMode = 'interactive';
-                s.activeVerifySession = shellSessionID != null ? shellSessionID : persistentShell;
-                s._verifySessionRef = persistentShell;
                 s.activeVerifyWorktree = wt.worktreeDir;
                 s.activeVerifyBranch = branchName;
                 s.activeVerifyDir = wt.dir;
@@ -403,7 +410,7 @@
             // T325+T380: Auto-open split-view with Verify tab in fallback path.
             if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
                 s.splitViewEnabled = true;
-                s.splitViewFocus = 'claude';
+                s.splitViewFocus = 'agent';
                 s.splitViewTab = 'verify';
                 if (typeof prSplit._syncMainViewport === 'function') {
                     prSplit._syncMainViewport(s);
@@ -426,19 +433,30 @@
         }
 
         // One-shot CaptureSession started successfully.
-        // Register with SessionManager.
-        var verifySessionID = null;
-        if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
+        // Register with SessionManager async (fire-and-forget state update
+        // so the verify poll picks up the numeric SessionID on the next tick).
+        s.verifyMode = 'oneshot';
+        s.activeVerifySession = sessionResult.session;
+        s._verifySessionRef = sessionResult.session;
+
+        if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.registerAsync === 'function') {
+            tuiMux.registerAsync(sessionResult.session, { kind: 'verify', name: branchName }).then(function(id) {
+                if (s.activeVerifySession === sessionResult.session) {
+                    s.activeVerifySession = id;
+                }
+            }).catch(function(e) {
+                log.debug('runVerifyBranch: tuiMux.registerAsync oneshot failed', { error: e.message || String(e) });
+            });
+        } else if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
             try {
-                verifySessionID = tuiMux.register(sessionResult.session, { kind: 'verify', name: branchName });
+                var verifySessionID = tuiMux.register(sessionResult.session, { kind: 'verify', name: branchName });
+                if (verifySessionID != null) {
+                    s.activeVerifySession = verifySessionID;
+                }
             } catch (e) {
-                log.debug('runVerifyBranch: tuiMux.register failed', { error: e.message || String(e) });
+                log.debug('runVerifyBranch: tuiMux.register oneshot failed', { error: e.message || String(e) });
             }
         }
-
-        s.verifyMode = 'oneshot';
-        s.activeVerifySession = verifySessionID != null ? verifySessionID : sessionResult.session;
-        s._verifySessionRef = sessionResult.session;
         s.activeVerifyWorktree = sessionResult.worktreeDir;
         s.activeVerifyBranch = branchName;
         s.activeVerifyDir = sessionResult.dir;
@@ -451,7 +469,7 @@
         // T325+T380: Auto-open split-view with Verify tab.
         if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
             s.splitViewEnabled = true;
-            s.splitViewFocus = 'claude';
+            s.splitViewFocus = 'agent';
             s.splitViewTab = 'verify';
             if (typeof prSplit._syncMainViewport === 'function') {
                 prSplit._syncMainViewport(s);
@@ -725,11 +743,11 @@
         return [s, tea.tick(1, 'verify-branch')];
     }
 
-    // --- Claude Conversation (T16) ---
+    // --- Agent Conversation (T16) ---
 
-    // ensureMCPCallback creates the MCP callback transport for Claude
+    // ensureMCPCallback creates the MCP callback transport for Agent
     // IPC if one does not already exist. Called on-demand by
-    // openClaudeConvo so that "Ask Claude" works regardless of whether
+    // openAgentConvo so that "Ask Agent" works regardless of whether
     // the automated pipeline was ever started.
     function ensureMCPCallback() {
         if (prSplit._mcpCallbackObj) {
@@ -778,7 +796,7 @@
                 });
 
             mcpCallbackObj.addTool('heartbeat',
-                'Send a heartbeat to indicate Claude is still actively working.',
+                'Send a heartbeat to indicate Agent is still actively working.',
                 {
                     type: 'object',
                     properties: {
@@ -795,161 +813,161 @@
         }
     }
 
-    // spawnClaudeOnDemand creates the MCP callback transport and spawns
-    // a Claude executor when "Ask Claude" is used outside the automated
-    // pipeline. Updates s.claudeOnDemandSpawning and s.claudeConvo
+    // spawnAgentOnDemand creates the MCP callback transport and spawns
+    // a Agent executor when "Ask Agent" is used outside the automated
+    // pipeline. Updates s.agentOnDemandSpawning and s.agentConvo
     // state for tick-based progress rendering.
-    async function spawnClaudeOnDemand(s) {
+    async function spawnAgentOnDemand(s) {
         try {
-            s.claudeConvo.spawnProgress = 'Setting up MCP transport\u2026';
+            s.agentConvo.spawnProgress = 'Setting up MCP transport\u2026';
 
             var mcpResult = ensureMCPCallback();
             if (mcpResult.error) {
-                s.claudeConvo.lastError = mcpResult.error;
-                s.claudeOnDemandSpawning = false;
+                s.agentConvo.lastError = mcpResult.error;
+                s.agentOnDemandSpawning = false;
                 return;
             }
 
             // Create executor if needed (T42 may have already created one).
-            var executor = st.claudeExecutor;
+            var executor = st.agentExecutor;
             if (!executor) {
                 if (typeof prSplitConfig === 'undefined') {
-                    s.claudeConvo.lastError = 'Configuration not available.';
-                    s.claudeOnDemandSpawning = false;
+                    s.agentConvo.lastError = 'Configuration not available.';
+                    s.agentOnDemandSpawning = false;
                     return;
                 }
-                executor = new (prSplit.ClaudeCodeExecutor)(prSplitConfig);
-                st.claudeExecutor = executor;
+                executor = new (prSplit.AgentCodeExecutor)(prSplitConfig);
+                st.agentExecutor = executor;
             }
 
             // Resolve binary path if not already resolved.
             if (!executor.resolved) {
-                s.claudeConvo.spawnProgress = 'Resolving Claude binary\u2026';
+                s.agentConvo.spawnProgress = 'Resolving Agent binary\u2026';
                 var resolveResult = await executor.resolveAsync(function(msg) {
-                    s.claudeConvo.spawnProgress = msg;
+                    s.agentConvo.spawnProgress = msg;
                 });
                 if (resolveResult.error) {
-                    s.claudeConvo.lastError = resolveResult.error;
-                    s.claudeOnDemandSpawning = false;
+                    s.agentConvo.lastError = resolveResult.error;
+                    s.agentOnDemandSpawning = false;
                     return;
                 }
             }
 
-            // Spawn the Claude process.
-            s.claudeConvo.spawnProgress = 'Starting Claude process\u2026';
+            // Spawn the Agent process.
+            s.agentConvo.spawnProgress = 'Starting Agent process\u2026';
             var mcpCb = prSplit._mcpCallbackObj;
             var spawnResult = await executor.spawn(null, {
                 mcpConfigPath: mcpCb.mcpConfigPath
             });
             if (spawnResult && spawnResult.error) {
-                s.claudeConvo.lastError = spawnResult.error;
-                s.claudeOnDemandSpawning = false;
+                s.agentConvo.lastError = spawnResult.error;
+                s.agentOnDemandSpawning = false;
                 return;
             }
 
             // Success — clear error and progress state.
-            s.claudeConvo.lastError = null;
-            s.claudeConvo.spawnProgress = null;
-            s.claudeOnDemandSpawning = false;
-            log.printf('on-demand Claude spawn succeeded (session=%s)', spawnResult.sessionId || '');
+            s.agentConvo.lastError = null;
+            s.agentConvo.spawnProgress = null;
+            s.agentOnDemandSpawning = false;
+            log.printf('on-demand Agent spawn succeeded (session=%s)', spawnResult.sessionId || '');
         } catch (e) {
-            s.claudeConvo.lastError = 'Claude spawn error: ' + (e.message || String(e));
-            s.claudeOnDemandSpawning = false;
+            s.agentConvo.lastError = 'Agent spawn error: ' + (e.message || String(e));
+            s.agentOnDemandSpawning = false;
         }
     }
 
-    // openClaudeConvo opens the conversation overlay.
-    function openClaudeConvo(s, context) {
-        // Check Claude availability.
-        var executor = st.claudeExecutor;
+    // openAgentConvo opens the conversation overlay.
+    function openAgentConvo(s, context) {
+        // Check Agent availability.
+        var executor = st.agentExecutor;
 
         // Happy path: executor alive — open conversation immediately.
         if (executor && executor.handle &&
             (typeof executor.handle.isAlive !== 'function' || executor.handle.isAlive())) {
-            s.claudeConvo.active = true;
-            s.claudeConvo.context = context;
-            s.claudeConvo.inputText = '';
-            s.claudeConvo.lastError = null;
-            s.claudeConvo.scrollOffset = 0;
+            s.agentConvo.active = true;
+            s.agentConvo.context = context;
+            s.agentConvo.inputText = '';
+            s.agentConvo.lastError = null;
+            s.agentConvo.scrollOffset = 0;
             return [s, null];
         }
 
         // Dead handle — report and allow retry.
         if (executor && executor.handle &&
             typeof executor.handle.isAlive === 'function' && !executor.handle.isAlive()) {
-            s.claudeConvo.lastError = 'Claude process has exited. Restart analysis to reconnect.';
-            s.claudeConvo.active = true;
-            s.claudeConvo.context = context;
+            s.agentConvo.lastError = 'Agent process has exited. Restart analysis to reconnect.';
+            s.agentConvo.active = true;
+            s.agentConvo.context = context;
             return [s, null];
         }
 
         // No executor or no handle — try on-demand spawn.
-        // Gate: Claude binary was already checked and is unavailable.
-        if (s.claudeCheckStatus === 'unavailable') {
-            s.claudeConvo.lastError = 'Claude is not installed. Install Claude Code CLI (claude) or Ollama (ollama).';
-            s.claudeConvo.active = true;
-            s.claudeConvo.context = context;
+        // Gate: Agent binary was already checked and is unavailable.
+        if (s.agentCheckStatus === 'unavailable') {
+            s.agentConvo.lastError = 'Agent is not installed. Install Agent Code CLI (agent) or Ollama (ollama).';
+            s.agentConvo.active = true;
+            s.agentConvo.context = context;
             return [s, null];
         }
 
         // Already spawning — don't double-launch, but re-open the overlay
         // if the user requested it (e.g. closed with Escape, then re-clicked).
-        if (s.claudeOnDemandSpawning) {
-            s.claudeConvo.active = true;
-            s.claudeConvo.context = context;
+        if (s.agentOnDemandSpawning) {
+            s.agentConvo.active = true;
+            s.agentConvo.context = context;
             return [s, null];
         }
 
         // Start on-demand spawn.
-        s.claudeConvo.active = true;
-        s.claudeConvo.context = context;
-        s.claudeConvo.inputText = '';
-        s.claudeConvo.lastError = null;
-        s.claudeConvo.scrollOffset = 0;
-        s.claudeOnDemandSpawning = true;
-        s.claudeConvo.spawnProgress = 'Connecting to Claude\u2026';
+        s.agentConvo.active = true;
+        s.agentConvo.context = context;
+        s.agentConvo.inputText = '';
+        s.agentConvo.lastError = null;
+        s.agentConvo.scrollOffset = 0;
+        s.agentOnDemandSpawning = true;
+        s.agentConvo.spawnProgress = 'Connecting to Agent\u2026';
 
-        spawnClaudeOnDemand(s);
+        spawnAgentOnDemand(s);
 
-        return [s, tea.tick(C.CLAUDE_CHECK_POLL_MS, 'claude-spawn-poll')];
+        return [s, tea.tick(C.AGENT_CHECK_POLL_MS, 'agent-spawn-poll')];
     }
 
-    // closeClaudeConvo dismisses the conversation overlay.
-    function closeClaudeConvo(s) {
-        s.claudeConvo.active = false;
-        s.claudeConvo.inputText = '';
-        s.claudeConvo.scrollOffset = 0;
-        s.claudeConvo.spawnProgress = null;
-        // Note: claudeOnDemandSpawning is intentionally NOT cleared here.
+    // closeAgentConvo dismisses the conversation overlay.
+    function closeAgentConvo(s) {
+        s.agentConvo.active = false;
+        s.agentConvo.inputText = '';
+        s.agentConvo.scrollOffset = 0;
+        s.agentConvo.spawnProgress = null;
+        // Note: agentOnDemandSpawning is intentionally NOT cleared here.
         // The async spawn continues in the background so the session is
         // ready when the user re-opens the overlay.
         // Keep history and context for re-opening.
         return [s, null];
     }
 
-    // updateClaudeConvo handles input while conversation overlay is active.
-    function updateClaudeConvo(msg, s) {
-        var convo = s.claudeConvo;
+    // updateAgentConvo handles input while conversation overlay is active.
+    function updateAgentConvo(msg, s) {
+        var convo = s.agentConvo;
 
         if (msg.type === 'Key') {
             var k = msg.key;
 
             // Escape closes the overlay.
             if (k === 'esc') {
-                return closeClaudeConvo(s);
+                return closeAgentConvo(s);
             }
 
             // Enter submits the current input (if not already sending or spawning).
-            if (k === 'enter' && !convo.sending && !s.claudeOnDemandSpawning) {
+            if (k === 'enter' && !convo.sending && !s.agentOnDemandSpawning) {
                 var text = (convo.inputText || '').trim();
                 if (text.length > 0) {
-                    return submitClaudeMessage(s, text);
+                    return submitAgentMessage(s, text);
                 }
                 return [s, null];
             }
 
             // Backspace.
-            if (k === 'backspace' && !convo.sending && !s.claudeOnDemandSpawning) {
+            if (k === 'backspace' && !convo.sending && !s.agentOnDemandSpawning) {
                 var t = convo.inputText || '';
                 if (t.length > 0) {
                     convo.inputText = t.substring(0, t.length - 1);
@@ -958,7 +976,7 @@
             }
 
             // Ctrl+U: clear input line.
-            if (k === 'ctrl+u' && !convo.sending && !s.claudeOnDemandSpawning) {
+            if (k === 'ctrl+u' && !convo.sending && !s.agentOnDemandSpawning) {
                 convo.inputText = '';
                 return [s, null];
             }
@@ -974,7 +992,7 @@
             }
 
             // Single printable char — accumulate (when not sending or spawning).
-            if (k.length === 1 && !convo.sending && !s.claudeOnDemandSpawning) {
+            if (k.length === 1 && !convo.sending && !s.agentOnDemandSpawning) {
                 convo.inputText = (convo.inputText || '') + k;
                 return [s, null];
             }
@@ -999,8 +1017,8 @@
         return [s, null];
     }
 
-    // buildClaudePrompt constructs the prompt based on conversation context.
-    function buildClaudePrompt(context, userMessage, s) {
+    // buildAgentPrompt constructs the prompt based on conversation context.
+    function buildAgentPrompt(context, userMessage, s) {
         var parts = [];
 
         if (context === 'plan-review') {
@@ -1038,13 +1056,13 @@
         return parts.join('\n');
     }
 
-    // submitClaudeMessage launches the async send + wait operation.
-    function submitClaudeMessage(s, text) {
-        var convo = s.claudeConvo;
-        var executor = st.claudeExecutor;
+    // submitAgentMessage launches the async send + wait operation.
+    function submitAgentMessage(s, text) {
+        var convo = s.agentConvo;
+        var executor = st.agentExecutor;
 
         if (!executor || !executor.handle) {
-            convo.lastError = 'Claude is not running.';
+            convo.lastError = 'Agent is not running.';
             return [s, null];
         }
 
@@ -1068,7 +1086,7 @@
         convo.waitingForTool = toolToWait;
 
         // Build the prompt.
-        var prompt = buildClaudePrompt(convo.context, text, s);
+        var prompt = buildAgentPrompt(convo.context, text, s);
 
         // Launch async operation: sendToHandle → waitForLogged.
         // Use same pattern as automatedSplit: Promise + tick polling.
@@ -1083,7 +1101,7 @@
                 }
 
                 if (toolToWait) {
-                    // Wait for Claude to call the expected MCP tool.
+                    // Wait for Agent to call the expected MCP tool.
                     var waitResult = await prSplit.waitForLogged(toolToWait, timeoutMs, {
                         aliveCheck: function() {
                             return (executor.handle &&
@@ -1093,28 +1111,28 @@
                     });
                     if (waitResult && waitResult.data) {
                         convoState.history.push({
-                            role: 'claude',
-                            text: formatClaudeResponse(toolToWait, waitResult.data),
+                            role: 'agent',
+                            text: formatAgentResponse(toolToWait, waitResult.data),
                             ts: Date.now()
                         });
                         // Process structured response.
-                        processClaudeConvoResult(convoState, toolToWait, waitResult.data);
+                        processAgentConvoResult(convoState, toolToWait, waitResult.data);
                     } else if (waitResult && waitResult.error) {
-                        convoState.lastError = 'Claude: ' + waitResult.error;
+                        convoState.lastError = 'Agent: ' + waitResult.error;
                     } else {
-                        // No tool call received — Claude may have responded in free text.
-                        // Capture the latest pinned Claude snapshot as response.
+                        // No tool call received — Agent may have responded in free text.
+                        // Capture the latest pinned Agent snapshot as response.
                         var shot = null;
-                        if (typeof prSplit._readClaudePlainText === 'function') {
+                        if (typeof prSplit._readAgentPlainText === 'function') {
                             try {
-                                shot = prSplit._readClaudePlainText();
+                                shot = prSplit._readAgentPlainText();
                             } catch (e) {
-                                log.debug('screenCapture: pinnedClaudeSnapshot failed', { error: e.message || String(e) });
+                                log.debug('screenCapture: pinnedAgentSnapshot failed', { error: e.message || String(e) });
                             }
                         }
                         if (shot) {
                             convoState.history.push({
-                                role: 'claude',
+                                role: 'agent',
                                 text: '[screenshot]\n' + shot.substring(shot.length - C.SCREENSHOT_CAPTURE_CHARS),
                                 ts: Date.now()
                             });
@@ -1123,8 +1141,8 @@
                 } else {
                     // No specific tool to wait for — just note the send succeeded.
                     convoState.history.push({
-                        role: 'claude',
-                        text: '(message sent — check Claude pane for response)',
+                        role: 'agent',
+                        text: '(message sent — check Agent pane for response)',
                         ts: Date.now()
                     });
                 }
@@ -1139,11 +1157,11 @@
         );
 
         // Start tick polling for completion.
-        return [s, tea.tick(C.CONVO_POLL_MS, 'claude-convo-poll')];
+        return [s, tea.tick(C.CONVO_POLL_MS, 'agent-convo-poll')];
     }
 
-    // formatClaudeResponse formats structured MCP tool response for display.
-    function formatClaudeResponse(toolName, data) {
+    // formatAgentResponse formats structured MCP tool response for display.
+    function formatAgentResponse(toolName, data) {
         // T122: MCP schema uses 'stages'; accept both field names.
         var splits = (toolName === 'reportSplitPlan' && data) ? (data.stages || data.splits) : null;
         if (splits && splits.length > 0) {
@@ -1161,12 +1179,12 @@
         return JSON.stringify(data, null, 2);
     }
 
-    // processClaudeConvoResult applies structured result to wizard state.
-    function processClaudeConvoResult(convo, toolName, data) {
+    // processAgentConvoResult applies structured result to wizard state.
+    function processAgentConvoResult(convo, toolName, data) {
         // T122: MCP schema uses 'stages'; accept both field names.
         var splits = (toolName === 'reportSplitPlan' && data) ? (data.stages || data.splits) : null;
         if (splits) {
-            // Update the plan cache with the revised plan from Claude.
+            // Update the plan cache with the revised plan from Agent.
             if (st.planCache) {
                 st.planCache.splits = splits;
                 if (data.baseBranch) {
@@ -1180,16 +1198,16 @@
         // The user can manually apply the suggestion or use auto-resolve.
     }
 
-    // pollClaudeConvo checks async send/wait progress.
-    function pollClaudeConvo(s) {
-        var convo = s.claudeConvo;
+    // pollAgentConvo checks async send/wait progress.
+    function pollAgentConvo(s) {
+        var convo = s.agentConvo;
 
         // If still sending, keep polling.
         if (convo.sending) {
-            return [s, tea.tick(C.CONVO_POLL_MS, 'claude-convo-poll')];
+            return [s, tea.tick(C.CONVO_POLL_MS, 'agent-convo-poll')];
         }
 
-        // T122: If plan was revised by Claude, reset split selection.
+        // T122: If plan was revised by Agent, reset split selection.
         if (st.planRevised) {
             st.planRevised = false;
             s.selectedSplitIdx = 0;
@@ -1206,10 +1224,10 @@
         // 'abort' and calls wizard.cancel(). Instead, crash-recovery
         // resets the wizard to a resumable state (PLAN_GENERATION) so
         // startAnalysis can take over.
-        if (choice === 'restart-claude') {
-            var executor = st.claudeExecutor;
+        if (choice === 'restart-agent') {
+            var executor = st.agentExecutor;
             if (!executor) {
-                s.errorDetails = 'No Claude executor available for restart.';
+                s.errorDetails = 'No Agent executor available for restart.';
                 return [s, null];
             }
             var restartOpts = {};
@@ -1217,21 +1235,21 @@
                 restartOpts.mcpConfigPath = prSplit._mcpCallbackObj.mcpConfigPath;
             }
             // Non-blocking restart: launch as Promise, poll via tick.
-            s.claudeRestarting = true;
+            s.agentRestarting = true;
             s.restartResult = null;
-            s.errorDetails = 'Restarting Claude...';
+            s.errorDetails = 'Restarting Agent...';
             executor.restart(null, restartOpts).then(function(restartResult) {
-                s.claudeRestarting = false;
+                s.agentRestarting = false;
                 s.restartResult = restartResult;
             }, function(err) {
-                s.claudeRestarting = false;
-                s.restartResult = { error: 'Claude restart error: ' + ((err && err.message) || String(err)) };
+                s.agentRestarting = false;
+                s.restartResult = { error: 'Agent restart error: ' + ((err && err.message) || String(err)) };
             });
-            return [s, tea.tick(C.AUTO_SPLIT_POLL_MS, 'restart-claude-poll')];
+            return [s, tea.tick(C.AUTO_SPLIT_POLL_MS, 'restart-agent-poll')];
         }
 
         if (choice === 'fallback-heuristic') {
-            s.claudeCrashDetected = false;
+            s.agentCrashDetected = false;
             prSplit.runtime.mode = 'heuristic';
             // Reset verification phase — restarting from plan generation.
             prSplit._resetVerifyPhase(s);
@@ -1274,19 +1292,23 @@
             return [s, tea.tick(C.RESOLVE_POLL_MS, 'resolve-poll')];
 
         case 'manual':
-            // Switch to Claude pane — user fixes manually. Store context
+            // Switch to Agent pane — user fixes manually. Store context
             // so the execution screen can show instructions when user
-            // returns from Claude.
+            // returns from Agent.
             s.manualFixContext = {
                 failedBranches: (result && result.failedBranches) ||
                     (s.wizard.data && s.wizard.data.failedBranches) || []
             };
-            // Task 5: Use pinned Claude SessionID proxy for passthrough.
-            var claudePaneSession = getInteractivePaneSession(s, 'claude');
-            if (claudePaneSession && typeof claudePaneSession.passthrough === 'function' &&
-                typeof claudePaneSession.isRunning === 'function' &&
-                claudePaneSession.isRunning()) {
-                claudePaneSession.passthrough();
+            // Task 5: Use pinned Agent SessionID proxy for passthrough.
+            var agentPaneSession = getInteractivePaneSession(s, 'agent');
+            if (agentPaneSession && typeof agentPaneSession.passthroughAsync === 'function' &&
+                typeof agentPaneSession.isRunning === 'function' &&
+                agentPaneSession.isRunning()) {
+                agentPaneSession.passthroughAsync();
+            } else if (agentPaneSession && typeof agentPaneSession.passthrough === 'function' &&
+                typeof agentPaneSession.isRunning === 'function' &&
+                agentPaneSession.isRunning()) {
+                agentPaneSession.passthrough();
             }
             return [s, null];
 
@@ -1340,10 +1362,10 @@
     // Task 8: _pollShellSession removed — shell tab unified into verify pane.
     prSplit._handleVerifySignal = handleVerifySignal;
     prSplit._handleVerifyFallbackPoll = handleVerifyFallbackPoll;
-    prSplit._openClaudeConvo = openClaudeConvo;
-    prSplit._closeClaudeConvo = closeClaudeConvo;
-    prSplit._updateClaudeConvo = updateClaudeConvo;
-    prSplit._pollClaudeConvo = pollClaudeConvo;
+    prSplit._openAgentConvo = openAgentConvo;
+    prSplit._closeAgentConvo = closeAgentConvo;
+    prSplit._updateAgentConvo = updateAgentConvo;
+    prSplit._pollAgentConvo = pollAgentConvo;
     prSplit._handleErrorResolutionChoice = handleErrorResolutionChoice;
 
 })(globalThis.prSplit);

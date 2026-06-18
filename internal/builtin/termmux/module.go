@@ -178,7 +178,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, input io.Reade
 		_ = exports.Set("EXIT_CONTEXT", "context")
 		_ = exports.Set("EXIT_ERROR", "error")
 		_ = exports.Set("SIDE_OSM", "osm")
-		_ = exports.Set("SIDE_CLAUDE", "claude")
+		_ = exports.Set("SIDE_AGENT", "agent")
 		_ = exports.Set("DEFAULT_TOGGLE_KEY", int(parent.DefaultToggleKey))
 
 		// ── Event name constants ─────────────────────────────
@@ -217,7 +217,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, input io.Reade
 		})
 
 		_ = exports.Set("newBoundedSession", func(call goja.FunctionCall) goja.Value {
-			return newBoundedSession(ctx, adapter, runtime, call)
+			return newBoundedSession(ctx, adapter, runtime, nil, call)
 		})
 
 		_ = exports.Set("enableMouseForward", func(call goja.FunctionCall) goja.Value {
@@ -863,7 +863,7 @@ func newSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 //
 // Returns { session, mgr, sid } where session is the wrapped CaptureSession,
 // mgr is the wrapped SessionManager, and sid is the session ID.
-func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
+func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, mgr *parent.SessionManager, call goja.FunctionCall) goja.Value {
 	ctx = context.WithoutCancel(ctx)
 
 	if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
@@ -933,13 +933,12 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 	}
 
 	cs := parent.NewCaptureSession(captureCfg)
-	if err := cs.Start(ctx); err != nil {
-		panic(runtime.NewGoError(fmt.Errorf("newBoundedSession: start failed: %w", err)))
-	}
 
-	mgr := parent.NewSessionManager(parent.WithTermSize(rows, cols))
-	go mgr.Run(ctx)
-	<-mgr.Started()
+	if mgr == nil {
+		mgr = parent.NewSessionManager(parent.WithTermSize(rows, cols))
+		go mgr.Run(ctx)
+		<-mgr.Started()
+	}
 
 	sid, err := mgr.Register(cs, parent.SessionTarget{
 		Name: name,
@@ -947,6 +946,10 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 	})
 	if err != nil {
 		panic(runtime.NewGoError(fmt.Errorf("newBoundedSession: register failed: %w", err)))
+	}
+
+	if err := cs.Start(ctx); err != nil {
+		panic(runtime.NewGoError(fmt.Errorf("newBoundedSession: start failed: %w", err)))
 	}
 
 	sessionVal := WrapCaptureSession(ctx, runtime, cs)
@@ -1056,7 +1059,7 @@ func buildEventData(evt parent.Event) *eventDispatchData {
 	case parent.EventSessionActivated:
 		return &eventDispatchData{EventActivated, data}
 	case parent.EventSessionExited:
-		data["pane"] = "claude"
+		data["pane"] = "agent"
 		return &eventDispatchData{EventExit, data}
 	case parent.EventSessionClosed:
 		return &eventDispatchData{EventClosed, data}
@@ -1067,10 +1070,10 @@ func buildEventData(evt parent.Event) *eventDispatchData {
 		}
 		return &eventDispatchData{EventTerminalResize, data}
 	case parent.EventBell:
-		data["pane"] = "claude"
+		data["pane"] = "agent"
 		return &eventDispatchData{EventBell, data}
 	case parent.EventSessionOutput:
-		data["pane"] = "claude"
+		data["pane"] = "agent"
 		if raw, ok := evt.Data.([]byte); ok {
 			data["chunk"] = string(raw)
 		}
@@ -1981,7 +1984,7 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 
 		s.SetInPassthrough(true)
 		s.dispatchEventOnLoop(EventFocus, map[string]any{
-			"side": "claude", "action": "enter",
+			"side": "agent", "action": "enter",
 		})
 
 		cfg := parent.PassthroughConfig{
@@ -2029,7 +2032,7 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 
 		s.dispatchEventOnLoop(EventExit, map[string]any{
 			"reason": exitReasonString(reason),
-			"pane":   "claude",
+			"pane":   "agent",
 		})
 
 		return s.runtime.ToValue(result)
@@ -2203,7 +2206,7 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			}
 
 			s.dispatchEventOnLoop(EventFocus, map[string]any{
-				"side": "claude", "action": "enter",
+				"side": "agent", "action": "enter",
 			})
 
 			cfg := parent.PassthroughConfig{
@@ -2252,7 +2255,7 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 
 	_ = obj.Set("activeSide", func() string {
 		if s.IsPassthrough() {
-			return "claude"
+			return "agent"
 		}
 		return "osm"
 	})

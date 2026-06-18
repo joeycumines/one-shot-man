@@ -15,7 +15,7 @@ creating sessions and managers, plus event constants.
 | `EXIT_CONTEXT` | `"context"` | Passthrough ended by context cancellation |
 | `EXIT_ERROR` | `"error"` | Passthrough ended by error |
 | `SIDE_OSM` | `"osm"` | Constant for the OSM side identifier |
-| `SIDE_CLAUDE` | `"claude"` | Constant for the Claude side identifier |
+| `SIDE_AGENT` | `"agent"` | Constant for the agent side identifier |
 | `DEFAULT_TOGGLE_KEY` | `29` (0x1D) | Ctrl+] key code |
 | `EVENT_EXIT` | `"exit"` | Exit event name |
 | `EVENT_RESIZE` | `"resize"` | Resize event name |
@@ -206,7 +206,7 @@ bounded.mgr.addEventListener('output', function (e) {
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
 | `fromModel(model, opts?)` | model wrapper | `any, {altScreen?,toggleKey?,onToggle?}` | `{model, options}` | throws TypeError if no model |
-| `activeSide()` | passthrough state | — | `"osm"` or `"claude"` | N/A |
+| `activeSide()` | passthrough state | — | `"osm"` or `"agent"` | N/A |
 | `isPassthrough()` | passthrough state | — | `boolean` | N/A |
 
 ---

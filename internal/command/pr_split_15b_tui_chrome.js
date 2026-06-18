@@ -18,8 +18,8 @@
     // Display thresholds for status bar and TUI chrome.
     var TUI_THRESHOLDS = {
         notifAutoDismissMs: 5000,       // Transient notification auto-dismiss (ms)
-        claudeStatusLiveMs: 2000,       // PTY output within this = "LIVE"
-        claudeStatusIdleMs: 15000       // PTY output within this = "idle"; beyond = "quiet"
+        agentStatusLiveMs: 2000,       // PTY output within this = "LIVE"
+        agentStatusIdleMs: 15000       // PTY output within this = "idle"; beyond = "quiet"
     };
     var repeatStr = prSplit._repeatStr;
 
@@ -30,7 +30,7 @@
     // if it overlaps the active selection in the given pane tab.
     // line: the raw text of this content line (plain text, NOT ANSI).
     // contentLineIndex: the 0-based index in the pane's full content.
-    // paneTab: 'claude' | 'output' | 'verify' — must match selectionPane.
+    // paneTab: 'agent' | 'output' | 'verify' — must match selectionPane.
     // s: the TUI model state.
     // Returns the (potentially highlighted) line.
     function applySelectionHighlight(line, contentLineIndex, paneTab, s) {
@@ -285,47 +285,47 @@
         }
     }
 
-    // --- T46: Inline Claude Question Prompt ---
-    // When Claude asks a question during automated analysis/execution, this
+    // --- T46: Inline Agent Question Prompt ---
+    // When Agent asks a question during automated analysis/execution, this
     // renders a compact inline prompt at the bottom of the affected screen.
     // The user can type a response and press Enter to send it directly to
-    // Claude's pinned PTY session.
+    // Agent's pinned PTY session.
 
-    function renderClaudeQuestionPrompt(s) {
-        if (!s.claudeQuestionDetected) return '';
+    function renderAgentQuestionPrompt(s) {
+        if (!s.agentQuestionDetected) return '';
 
         var w = Math.max(40, (s.width || 80) - 4);
         var lines = [];
 
         // Question banner.
-        var questionText = s.claudeQuestionLine || '(question detected)';
+        var questionText = s.agentQuestionLine || '(question detected)';
         if (questionText.length > w - 20) {
             questionText = questionText.substring(0, w - 23) + '...';
         }
-        lines.push(styles.warningBadge().render(' \ud83e\udd16 Claude asks ') +
+        lines.push(styles.warningBadge().render(' \ud83e\udd16 Agent asks ') +
             ' ' + styles.fieldValue().render(questionText));
 
         // Input field.
         var inputPrefix;
-        if (s.claudeQuestionInputActive) {
+        if (s.agentQuestionInputActive) {
             inputPrefix = styles.bold().render('\u276f ');
         } else {
             inputPrefix = styles.dim().render('\u276f ');
         }
-        var inputText = (s.claudeQuestionInputText || '') +
-            (s.claudeQuestionInputActive ? styles.dim().render('\u2588') : '');
-        var inputHint = s.claudeQuestionInputActive
+        var inputText = (s.agentQuestionInputText || '') +
+            (s.agentQuestionInputActive ? styles.dim().render('\u2588') : '');
+        var inputHint = s.agentQuestionInputActive
             ? styles.dim().render('  Enter: send  Esc: dismiss')
             : styles.dim().render('  Type to respond or Esc to dismiss');
 
-        lines.push('  ' + zone.mark('claude-question-input',
+        lines.push('  ' + zone.mark('agent-question-input',
             inputPrefix + truncate(inputText, w - 16)) + inputHint);
 
         // Conversation history count (if any).
-        if (s.claudeConversations && s.claudeConversations.length > 0) {
+        if (s.agentConversations && s.agentConversations.length > 0) {
             lines.push('  ' + styles.dim().render(
-                s.claudeConversations.length + ' prior Q&A exchange' +
-                (s.claudeConversations.length !== 1 ? 's' : '')));
+                s.agentConversations.length + ' prior Q&A exchange' +
+                (s.agentConversations.length !== 1 ? 's' : '')));
         }
 
         // Wrap in a subtle bordered box.
@@ -344,14 +344,14 @@
         var veryNarrow = w < 40;
 
         // Left: termmux toggle hint + split-view hint.
-        // T309: Only show Ctrl+] Claude when a Claude child is actually attached.
+        // T309: Only show Ctrl+] Agent when a Agent child is actually attached.
         // Task 5: Use pinned SessionID proxy instead of raw session() check.
-        var claudeSession = getInteractivePaneSession(s, 'claude');
-        var hasMuxChild = claudeSession && typeof claudeSession.isRunning === 'function' &&
-            claudeSession.isRunning();
+        var agentSession = getInteractivePaneSession(s, 'agent');
+        var hasMuxChild = agentSession && typeof agentSession.isRunning === 'function' &&
+            agentSession.isRunning();
         var leftParts;
         if (hasMuxChild) {
-            leftParts = veryNarrow ? 'C-]' : 'Ctrl+] Claude';
+            leftParts = veryNarrow ? 'C-]' : 'Ctrl+] Agent';
         } else {
             leftParts = '';
         }
@@ -361,7 +361,7 @@
         }
         // Task 8: Context-sensitive hints — shell tab removed, verify is the interactive pane.
         if (!narrow && s.splitViewEnabled) {
-            if (s.splitViewFocus === 'claude' && s.splitViewTab === 'verify' &&
+            if (s.splitViewFocus === 'agent' && s.splitViewTab === 'verify' &&
                 getInteractivePaneSession(s, 'verify')) {
                 leftParts += '  INPUT \u25b8 Verify';
             } else {
@@ -373,9 +373,9 @@
         // Center: help.
         var center = veryNarrow ? '' : styles.dim().render('? Help');
 
-        // Right: Claude process status.
-        var claudeStatus = getClaudeStatusText(s);
-        var right = narrow ? '' : zone.mark('claude-status', claudeStatus);
+        // Right: Agent process status.
+        var agentStatus = getAgentStatusText(s);
+        var right = narrow ? '' : zone.mark('agent-status', agentStatus);
 
         // Build status line with guaranteed minimum spacing.
         var items = [left];
@@ -408,11 +408,11 @@
         // T028: The notification is now dismissed by a 'dismiss-attach-notif'
         // tick handler in _updateFn, not here. The view only reads state.
         var notifLine = '';
-        if (s.claudeAutoAttachNotif && s.claudeAutoAttachNotifAt) {
-            var elapsed = Date.now() - s.claudeAutoAttachNotifAt;
+        if (s.agentAutoAttachNotif && s.agentAutoAttachNotifAt) {
+            var elapsed = Date.now() - s.agentAutoAttachNotifAt;
             if (elapsed < TUI_THRESHOLDS.notifAutoDismissMs) {
                 notifLine = styles.primaryButton().render(
-                    ' \u2139 ' + s.claudeAutoAttachNotif + ' '
+                    ' \u2139 ' + s.agentAutoAttachNotif + ' '
                 ) + '\n';
             }
             // No else — dismiss is handled by 'dismiss-attach-notif' tick.
@@ -445,27 +445,27 @@
         ) + '\n' + statusLine;
     }
 
-    function getClaudeStatusText(s) {
+    function getAgentStatusText(s) {
         if (typeof tuiMux === 'undefined' || !tuiMux ||
-            typeof prSplit._readClaudeActivityMs !== 'function') {
-            return styles.statusIdle().render('\ud83d\udca4 Claude: N/A');
+            typeof prSplit._readAgentActivityMs !== 'function') {
+            return styles.statusIdle().render('\ud83d\udca4 Agent: N/A');
         }
-        var ms = prSplit._readClaudeActivityMs();
-        if (ms < 0) return styles.statusIdle().render('\u23f8\ufe0f Claude: no output');
-        if (ms < TUI_THRESHOLDS.claudeStatusLiveMs) return styles.statusActive().render('\ud83d\udd04 Claude: LIVE');
-        if (ms < TUI_THRESHOLDS.claudeStatusIdleMs) return styles.statusIdle().render('\u23f3 Claude: idle (' + Math.round(ms / 1000) + 's)');
-        return styles.statusQuiet().render('\ud83d\udca4 Claude: quiet');
+        var ms = prSplit._readAgentActivityMs();
+        if (ms < 0) return styles.statusIdle().render('\u23f8\ufe0f Agent: no output');
+        if (ms < TUI_THRESHOLDS.agentStatusLiveMs) return styles.statusActive().render('\ud83d\udd04 Agent: LIVE');
+        if (ms < TUI_THRESHOLDS.agentStatusIdleMs) return styles.statusIdle().render('\u23f3 Agent: idle (' + Math.round(ms / 1000) + 's)');
+        return styles.statusQuiet().render('\ud83d\udca4 Agent: quiet');
     }
 
-    // --- Split-View: Claude Pane Renderer (T15) ---
-    function renderClaudePane(s, width, height) {
-        // T28: Prefer ANSI-styled content (claudeScreen), fall back to plain text.
-        var ansiContent = s.claudeScreen || '';
-        var plainContent = s.claudeScreenshot || '';
+    // --- Split-View: Agent Pane Renderer (T15) ---
+    function renderAgentPane(s, width, height) {
+        // T28: Prefer ANSI-styled content (agentScreen), fall back to plain text.
+        var ansiContent = s.agentScreen || '';
+        var plainContent = s.agentScreenshot || '';
         var content = ansiContent || plainContent;
         var isANSI = !!ansiContent;
-        var claudeSession = getInteractivePaneSession(s, 'claude');
-        var hasMux = !!claudeSession;
+        var agentSession = getInteractivePaneSession(s, 'agent');
+        var hasMux = !!agentSession;
 
         // Height budget: border adds 2 lines (top + bottom).
         // Content height = height - 2. First content line is the title.
@@ -474,25 +474,25 @@
         var viewW = Math.max(10, width - 6);    // border(2) + padding(2) + safety(2)
 
         // Focus indicator.
-        var isFocused = (s.splitViewFocus === 'claude');
+        var isFocused = (s.splitViewFocus === 'agent');
         var borderColor = isFocused ? COLORS.primary : COLORS.border;
 
-        // Placeholder when no Claude session is available.
+        // Placeholder when no Agent session is available.
         if (!hasMux || !content) {
             // Task 9: Show lifecycle-aware placeholder.
-            var phState = s.claudeLifecycleState || '';
+            var phState = s.agentLifecycleState || '';
             var phMsg;
             if (phState === 'crashed') {
-                phMsg = 'Claude process crashed';
+                phMsg = 'Agent process crashed';
             } else if (phState === 'exited' || phState === 'closed') {
-                phMsg = 'Claude session ended';
+                phMsg = 'Agent session ended';
             } else if (hasMux) {
-                phMsg = 'Waiting for Claude output...';
+                phMsg = 'Waiting for Agent output...';
             } else {
-                phMsg = 'No Claude session attached';
+                phMsg = 'No Agent session attached';
             }
             var placeholder = styles.dim().render(phMsg);
-            var hint = styles.dim().render('Ctrl+] to toggle Claude \u00b7 Ctrl+L to close split');
+            var hint = styles.dim().render('Ctrl+] to toggle Agent \u00b7 Ctrl+L to close split');
 
             var phLines = [];
             var phPadTop = Math.max(0, Math.floor((contentH - 2) / 2));
@@ -520,10 +520,10 @@
         // Scroll indicator.
         var scrollInfo = '';
         if (totalLines > viewH) {
-            if (s.claudeViewOffset <= 0) {
+            if (s.agentViewOffset <= 0) {
                 scrollInfo = ' [live]';
             } else {
-                var startForPct = Math.max(0, totalLines - viewH - s.claudeViewOffset);
+                var startForPct = Math.max(0, totalLines - viewH - s.agentViewOffset);
                 var pct = Math.round((startForPct / Math.max(1, totalLines - viewH)) * 100);
                 scrollInfo = ' [' + pct + '%]';
             }
@@ -535,7 +535,7 @@
         var inputTag = isFocused ? ' INPUT' : '';
         // Task 9: Lifecycle state indicator.
         var lifecycleTag = '';
-        var lcs = s.claudeLifecycleState || '';
+        var lcs = s.agentLifecycleState || '';
         if (lcs === 'active') {
             lifecycleTag = ' \u25cf'; // ● (filled circle — actively outputting)
         } else if (lcs === 'idle') {
@@ -546,31 +546,31 @@
             lifecycleTag = ' \u2717'; // ✗ (cross — exited/crashed)
         }
         // Task 9: Bell flash indicator.
-        var bellTag = s.claudeBellFlash ? ' \ud83d\udd14' : ''; // 🔔
+        var bellTag = s.agentBellFlash ? ' \ud83d\udd14' : ''; // 🔔
         // Task 9: Write error indicator (transient).
         var writeErrTag = '';
-        if (s.claudeWriteError && s.claudeWriteErrorAt &&
-            (Date.now() - s.claudeWriteErrorAt) < 3000) {
+        if (s.agentWriteError && s.agentWriteErrorAt &&
+            (Date.now() - s.agentWriteErrorAt) < 3000) {
             writeErrTag = ' [write error]';
         }
-        var titleText = styles.bold().render(' Claude' + inputTag + lifecycleTag + bellTag + writeErrTag + modeTag + scrollInfo + ' ');
+        var titleText = styles.bold().render(' Agent' + inputTag + lifecycleTag + bellTag + writeErrTag + modeTag + scrollInfo + ' ');
 
         // Determine visible window based on scroll offset.
         var startLine;
-        if (s.claudeViewOffset <= 0) {
+        if (s.agentViewOffset <= 0) {
             startLine = Math.max(0, totalLines - viewH);
         } else {
-            startLine = Math.max(0, totalLines - viewH - s.claudeViewOffset);
+            startLine = Math.max(0, totalLines - viewH - s.agentViewOffset);
         }
         var endLine = Math.min(totalLines, startLine + viewH);
 
         // Build viewport content with ANSI-aware line truncation.
-        // T62: When selection is active on the Claude pane and content is ANSI,
+        // T62: When selection is active on the Agent pane and content is ANSI,
         // we use the plain-text screenshot for selected lines so the reverse-video
         // highlighting can be applied cleanly.
         var plainLines = null;
-        if (s.selectionActive && s.selectionPane === 'claude' && isANSI) {
-            var pc = s.claudeScreenshot || '';
+        if (s.selectionActive && s.selectionPane === 'agent' && isANSI) {
+            var pc = s.agentScreenshot || '';
             plainLines = pc ? pc.split('\n') : [];
             while (plainLines.length > 0 && plainLines[plainLines.length - 1] === '') {
                 plainLines.pop();
@@ -580,13 +580,13 @@
         for (var ci = startLine; ci < endLine; ci++) {
             var ln = lines[ci] || '';
             // T62: For selected lines in ANSI mode, swap to plain text for highlighting.
-            var isSelected = (s.selectionActive && s.selectionPane === 'claude' &&
+            var isSelected = (s.selectionActive && s.selectionPane === 'agent' &&
                 ci >= Math.min(s.selectionStartRow, s.selectionEndRow) &&
                 ci <= Math.max(s.selectionStartRow, s.selectionEndRow));
             if (isSelected && plainLines && ci < plainLines.length) {
-                ln = applySelectionHighlight(plainLines[ci] || '', ci, 'claude', s);
+                ln = applySelectionHighlight(plainLines[ci] || '', ci, 'agent', s);
             } else if (!isANSI) {
-                ln = applySelectionHighlight(ln, ci, 'claude', s);
+                ln = applySelectionHighlight(ln, ci, 'agent', s);
             }
             // Use lipgloss.width for ANSI-aware visual width calculation.
             var visualW = lipgloss.width(ln);
@@ -613,9 +613,9 @@
         return paneStyle.render(contentLines.join('\n'));
     }
 
-    // --- Claude Conversation Overlay (T16) ---
-    function viewClaudeConvoOverlay(s) {
-        var convo = s.claudeConvo;
+    // --- Agent Conversation Overlay (T16) ---
+    function viewAgentConvoOverlay(s) {
+        var convo = s.agentConvo;
         var w = Math.min((s.width || 80) - 4, 76);
         var h = Math.min((s.height || C.DEFAULT_ROWS) - 4, 22);
 
@@ -624,8 +624,8 @@
         // Title.
         var contextLabel = convo.context === 'plan-review' ? 'Plan Review'
             : convo.context === 'error-resolution' ? 'Error Resolution'
-            : 'Claude';
-        lines.push(styles.bold().render('\ud83e\udd16 Ask Claude \u2014 ' + contextLabel));
+            : 'Agent';
+        lines.push(styles.bold().render('\ud83e\udd16 Ask Agent \u2014 ' + contextLabel));
         lines.push(styles.dim().render('Type your message. Enter to send. Esc to close.'));
         lines.push('');
 
@@ -636,8 +636,8 @@
             lines.push('');
         }
 
-        // On-demand spawn progress (T5: Ask Claude in non-auto modes).
-        if (s.claudeOnDemandSpawning && convo.spawnProgress) {
+        // On-demand spawn progress (T5: Ask Agent in non-auto modes).
+        if (s.agentOnDemandSpawning && convo.spawnProgress) {
             lines.push(styles.dim().render('\u23f3 ' + convo.spawnProgress));
             lines.push('');
         }
@@ -645,7 +645,7 @@
         // Conversation history.
         var historyHeight = h - 7; // title(2) + blank(1) + input(2) + status(1) + padding(1)
         if (convo.lastError) historyHeight -= 2;
-        if (s.claudeOnDemandSpawning && convo.spawnProgress) historyHeight -= 2;
+        if (s.agentOnDemandSpawning && convo.spawnProgress) historyHeight -= 2;
         historyHeight = Math.max(3, historyHeight);
 
         var historyLines = [];
@@ -655,7 +655,7 @@
                 historyLines.push(styles.primaryButton().render(' You ') + ' ' + entry.text);
             } else {
                 var cLines = entry.text.split('\n');
-                historyLines.push(styles.successBadge().render(' Claude '));
+                historyLines.push(styles.successBadge().render(' Agent '));
                 for (var cl = 0; cl < cLines.length; cl++) {
                     historyLines.push('  ' + truncate(cLines[cl], w - 6));
                 }
@@ -690,13 +690,13 @@
         // Input field.
         var inputPrefix = convo.sending
             ? styles.dim().render('\u23f3 Sending...')
-            : s.claudeOnDemandSpawning
+            : s.agentOnDemandSpawning
             ? styles.dim().render('\u23f3 Connecting...')
             : styles.bold().render('\u276f ');
         var inputText = convo.sending
-            ? styles.dim().render('Waiting for Claude to respond...')
-            : s.claudeOnDemandSpawning
-            ? styles.dim().render('Spawning Claude process...')
+            ? styles.dim().render('Waiting for Agent to respond...')
+            : s.agentOnDemandSpawning
+            ? styles.dim().render('Spawning Agent process...')
             : (convo.inputText || '') + styles.dim().render('\u2588');
         lines.push(inputPrefix + truncate(inputText, w - 8));
 
@@ -736,7 +736,7 @@
         var viewW = Math.max(10, width - 6);    // border(2) + padding(2) + safety(2)
 
         // Focus indicator.
-        var isFocused = (s.splitViewFocus === 'claude' && s.splitViewTab === 'output');
+        var isFocused = (s.splitViewFocus === 'agent' && s.splitViewTab === 'output');
         var borderColor = isFocused ? COLORS.primary : COLORS.border;
 
         // Placeholder when no output is available.
@@ -819,7 +819,7 @@
         var viewH = Math.max(1, contentH - 1);
         var viewW = Math.max(10, width - 6);
 
-        var isFocused = (s.splitViewFocus === 'claude' && s.splitViewTab === 'verify');
+        var isFocused = (s.splitViewFocus === 'agent' && s.splitViewTab === 'verify');
         // Border color: warning (yellow) when running, success (green) when paused,
         // default border when no session
         var borderColor = isFocused ? COLORS.primary
@@ -933,13 +933,13 @@
     prSplit._renderTitleBar = renderTitleBar;
     prSplit._renderNavBar = renderNavBar;
     prSplit._renderStatusBar = renderStatusBar;
-    prSplit._renderClaudePane = renderClaudePane;
+    prSplit._renderAgentPane = renderAgentPane;
     prSplit._renderOutputPane = renderOutputPane;
     prSplit._renderVerifyPane = renderVerifyPane;
     // Task 8: _renderShellPane removed — no longer needed.
     prSplit._renderStepDots = renderStepDots;
-    prSplit._viewClaudeConvoOverlay = viewClaudeConvoOverlay;
-    prSplit._renderClaudeQuestionPrompt = renderClaudeQuestionPrompt;
+    prSplit._viewAgentConvoOverlay = viewAgentConvoOverlay;
+    prSplit._renderAgentQuestionPrompt = renderAgentQuestionPrompt;
     // T62: Selection highlight helper.
     prSplit._applySelectionHighlight = applySelectionHighlight;
 

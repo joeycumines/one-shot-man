@@ -1954,7 +1954,7 @@ func TestValidatePlan_FallbackToLocal(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	// Reproduce the Step 5 logic: Claude provides a structurally-invalid plan
+	// Reproduce the Step 5 logic: Agent provides a structurally-invalid plan
 	// (split with no files), validatePlan returns valid=false, code falls
 	// through to classificationToGroups → createSplitPlan.
 	val, err := evalJS(`(function() {
@@ -1970,8 +1970,8 @@ func TestValidatePlan_FallbackToLocal(t *testing.T) {
 			{ name: 'docs', description: 'Docs', files: ['docs/readme.md'] }
 		];
 
-		// Claude provides a plan with a split that has NO files (invalid).
-		var claudeStages = [
+		// Agent provides a plan with a split that has NO files (invalid).
+		var agentStages = [
 			{ name: 'split/01-cmd', files: ['cmd/main.go'], message: 'cmd changes' },
 			{ name: 'split/02-empty', files: [], message: 'empty split' }
 		];
@@ -1982,7 +1982,7 @@ func TestValidatePlan_FallbackToLocal(t *testing.T) {
 			dir: '.',
 			verifyCommand: 'true',
 			fileStatuses: analysis.fileStatuses,
-			splits: claudeStages.map(function(s, i) {
+			splits: agentStages.map(function(s, i) {
 				return {
 					name: s.name,
 					files: s.files || [],
@@ -2008,8 +2008,8 @@ func TestValidatePlan_FallbackToLocal(t *testing.T) {
 		});
 
 		return JSON.stringify({
-			claudeValid: validation.valid,
-			claudeErrors: validation.errors,
+			agentValid: validation.valid,
+			agentErrors: validation.errors,
 			localPlanSplits: localPlan.splits.length,
 			localPlanFiles: localPlan.splits.map(function(s) { return s.files; })
 		});
@@ -2019,8 +2019,8 @@ func TestValidatePlan_FallbackToLocal(t *testing.T) {
 	}
 
 	var result struct {
-		ClaudeValid     bool       `json:"claudeValid"`
-		ClaudeErrors    []string   `json:"claudeErrors"`
+		AgentValid      bool       `json:"agentValid"`
+		AgentErrors     []string   `json:"agentErrors"`
 		LocalPlanSplits int        `json:"localPlanSplits"`
 		LocalPlanFiles  [][]string `json:"localPlanFiles"`
 	}
@@ -2028,11 +2028,11 @@ func TestValidatePlan_FallbackToLocal(t *testing.T) {
 		t.Fatalf("parse: %v\nraw: %s", err, val)
 	}
 
-	// 1. Claude's plan should be invalid.
-	if result.ClaudeValid {
-		t.Error("expected Claude plan to be invalid")
+	// 1. Agent's plan should be invalid.
+	if result.AgentValid {
+		t.Error("expected Agent plan to be invalid")
 	}
-	if len(result.ClaudeErrors) == 0 {
+	if len(result.AgentErrors) == 0 {
 		t.Error("expected validation errors")
 	}
 
@@ -2050,13 +2050,13 @@ func TestValidatePlan_FallbackToLocal(t *testing.T) {
 
 	// 3. Verify the specific validation error mentions "no files".
 	found := false
-	for _, e := range result.ClaudeErrors {
+	for _, e := range result.AgentErrors {
 		if strings.Contains(e, "no files") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected error mentioning 'no files', got: %v", result.ClaudeErrors)
+		t.Errorf("expected error mentioning 'no files', got: %v", result.AgentErrors)
 	}
 }

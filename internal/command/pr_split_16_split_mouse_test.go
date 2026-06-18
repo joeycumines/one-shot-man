@@ -156,7 +156,7 @@ func TestChunk16_VerifyOneShot_MouseStaysReadOnly(t *testing.T) {
 
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 		s.verifyMode = 'oneshot';
 		s.activeVerifySession = mockSession;
@@ -188,23 +188,23 @@ func TestChunk16_VerifyTextOnly_MouseWheelScrollsVerifyViewport(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 		s.verifyMode = 'textonly';
 		s.verifyScreen = 'line1\nline2\nline3\nline4';
 		s.verifyAutoScroll = true;
 		s.verifyViewportOffset = 0;
-		s.claudeViewOffset = 0;
+		s.agentViewOffset = 0;
 
 		var r = sendWheel(s, 'up');
 		if (r[0].verifyViewportOffset !== 3) return 'FAIL: textonly wheel-up offset=' + r[0].verifyViewportOffset + ', want 3';
 		if (r[0].verifyAutoScroll) return 'FAIL: textonly wheel-up should disable auto-scroll';
-		if (r[0].claudeViewOffset !== 0) return 'FAIL: textonly wheel-up should not scroll claude pane';
+		if (r[0].agentViewOffset !== 0) return 'FAIL: textonly wheel-up should not scroll agent pane';
 
 		r = sendWheel(r[0], 'down');
 		if (r[0].verifyViewportOffset !== 0) return 'FAIL: textonly wheel-down offset=' + r[0].verifyViewportOffset + ', want 0';
 		if (!r[0].verifyAutoScroll) return 'FAIL: textonly wheel-down to 0 should re-enable auto-scroll';
-		if (r[0].claudeViewOffset !== 0) return 'FAIL: textonly wheel-down should not scroll claude pane';
+		if (r[0].agentViewOffset !== 0) return 'FAIL: textonly wheel-down should not scroll agent pane';
 
 		return 'OK';
 	})()`)
@@ -224,7 +224,7 @@ func TestChunk16_VerifyShellExited_MouseWheelScrollsVerifyViewport(t *testing.T)
 		var writes = [];
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 		s.verifyMode = 'interactive';
 		s.verifyShellExited = true;
@@ -299,7 +299,7 @@ func TestChunk16_LiveVerify_MousePassIgnoredUntilShellExit(t *testing.T) {
 			setupPlanCache();
 			var s = initState('BRANCH_BUILDING');
 			s.splitViewEnabled = true;
-			s.splitViewFocus = 'claude';
+			s.splitViewFocus = 'agent';
 			s.splitViewTab = 'verify';
 			s.verifyMode = 'interactive';
 			s.activeVerifyBranch = 'split/verify';
@@ -335,7 +335,7 @@ func TestChunk16_VerifyShellExited_MousePassSignals(t *testing.T) {
 			setupPlanCache();
 			var s = initState('BRANCH_BUILDING');
 			s.splitViewEnabled = true;
-			s.splitViewFocus = 'claude';
+			s.splitViewFocus = 'agent';
 			s.splitViewTab = 'verify';
 			s.verifyMode = 'interactive';
 			s.verifyShellExited = true;
@@ -383,8 +383,8 @@ func TestChunk16_SplitView_Toggle(t *testing.T) {
 		// Ctrl+L again disables.
 		r = sendKey(r[0], 'ctrl+l');
 		if (r[0].splitViewEnabled) return 'FAIL: ctrl+l did not disable split view';
-		if (r[0].claudeScreenshot !== '') return 'FAIL: screenshot not cleared';
-		if (r[0].claudeViewOffset !== 0) return 'FAIL: claude offset not reset';
+		if (r[0].agentScreenshot !== '') return 'FAIL: screenshot not cleared';
+		if (r[0].agentViewOffset !== 0) return 'FAIL: agent offset not reset';
 		if (r[0].splitViewFocus !== 'wizard') return 'FAIL: focus not reset to wizard';
 
 		return 'OK';
@@ -406,13 +406,13 @@ func TestChunk16_SplitView_TabFocusSwitch(t *testing.T) {
 		s.splitViewEnabled = true;
 		s.splitViewFocus = 'wizard';
 
-		// Ctrl+Tab switches to Claude pane.
+		// Ctrl+Tab switches to Agent pane.
 		var r = sendKey(s, 'ctrl+tab');
-		if (r[0].splitViewFocus !== 'claude') return 'FAIL: ctrl+tab did not switch to claude';
+		if (r[0].splitViewFocus !== 'agent') return 'FAIL: ctrl+tab did not switch to agent';
 
 		// Ctrl+Tab cycles to output tab (T61: no longer toggles back to wizard).
 		r = sendKey(r[0], 'ctrl+tab');
-		if (r[0].splitViewFocus !== 'claude') return 'FAIL: ctrl+tab should stay on pane';
+		if (r[0].splitViewFocus !== 'agent') return 'FAIL: ctrl+tab should stay on pane';
 		if (r[0].splitViewTab !== 'output') return 'FAIL: ctrl+tab should advance to output';
 
 		// Ctrl+Tab from output wraps to wizard (no verify tab).
@@ -424,7 +424,7 @@ func TestChunk16_SplitView_TabFocusSwitch(t *testing.T) {
 		r[0].splitViewFocus = 'wizard';
 		r = sendKey(r[0], 'ctrl+tab');
 		// T380: Ctrl+Tab now works during verify — switches to pane.
-		if (r[0].splitViewFocus !== 'claude') return 'FAIL: ctrl+tab during verify should switch to claude';
+		if (r[0].splitViewFocus !== 'agent') return 'FAIL: ctrl+tab during verify should switch to agent';
 
 		return 'OK';
 	})()`)
@@ -480,37 +480,37 @@ func TestChunk16_SplitView_RatioAdjust(t *testing.T) {
 	}
 }
 
-func TestChunk16_SplitView_ClaudePaneNav(t *testing.T) {
+func TestChunk16_SplitView_AgentPaneNav(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.claudeViewOffset = 0;
+		s.splitViewFocus = 'agent';
+		s.agentViewOffset = 0;
 
-		// up/k scrolls Claude pane.
+		// up/k scrolls Agent pane.
 		var r = sendKey(s, 'up');
-		if (r[0].claudeViewOffset !== 1) return 'FAIL: up offset=' + r[0].claudeViewOffset;
+		if (r[0].agentViewOffset !== 1) return 'FAIL: up offset=' + r[0].agentViewOffset;
 
 		r = sendKey(r[0], 'k');
-		if (r[0].claudeViewOffset !== 2) return 'FAIL: k offset=' + r[0].claudeViewOffset;
+		if (r[0].agentViewOffset !== 2) return 'FAIL: k offset=' + r[0].agentViewOffset;
 
 		// down/j scrolls back.
 		r = sendKey(r[0], 'down');
-		if (r[0].claudeViewOffset !== 1) return 'FAIL: down offset=' + r[0].claudeViewOffset;
+		if (r[0].agentViewOffset !== 1) return 'FAIL: down offset=' + r[0].agentViewOffset;
 
 		r = sendKey(r[0], 'j');
-		if (r[0].claudeViewOffset !== 0) return 'FAIL: j offset=' + r[0].claudeViewOffset;
+		if (r[0].agentViewOffset !== 0) return 'FAIL: j offset=' + r[0].agentViewOffset;
 
 		// home jumps far.
 		r = sendKey(r[0], 'home');
-		if (r[0].claudeViewOffset !== 999999) return 'FAIL: home offset=' + r[0].claudeViewOffset;
+		if (r[0].agentViewOffset !== 999999) return 'FAIL: home offset=' + r[0].agentViewOffset;
 
 		// end jumps to bottom.
 		r = sendKey(r[0], 'end');
-		if (r[0].claudeViewOffset !== 0) return 'FAIL: end offset=' + r[0].claudeViewOffset;
+		if (r[0].agentViewOffset !== 0) return 'FAIL: end offset=' + r[0].agentViewOffset;
 
 		return 'OK';
 	})()`)
@@ -518,27 +518,27 @@ func TestChunk16_SplitView_ClaudePaneNav(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("split view claude nav: %v", raw)
+		t.Errorf("split view agent nav: %v", raw)
 	}
 }
 
-func TestChunk16_SplitView_ClaudeMouseWheel(t *testing.T) {
+func TestChunk16_SplitView_AgentMouseWheel(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.claudeViewOffset = 0;
+		s.splitViewFocus = 'agent';
+		s.agentViewOffset = 0;
 
 		// Mouse wheel up.
 		var r = sendWheel(s, 'up');
-		if (r[0].claudeViewOffset !== 3) return 'FAIL: wheel-up offset=' + r[0].claudeViewOffset;
+		if (r[0].agentViewOffset !== 3) return 'FAIL: wheel-up offset=' + r[0].agentViewOffset;
 
 		// Mouse wheel down.
 		r = sendWheel(r[0], 'down');
-		if (r[0].claudeViewOffset !== 0) return 'FAIL: wheel-down offset=' + r[0].claudeViewOffset;
+		if (r[0].agentViewOffset !== 0) return 'FAIL: wheel-down offset=' + r[0].agentViewOffset;
 
 		return 'OK';
 	})()`)
@@ -546,7 +546,7 @@ func TestChunk16_SplitView_ClaudeMouseWheel(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("split view claude wheel: %v", raw)
+		t.Errorf("split view agent wheel: %v", raw)
 	}
 }
 
@@ -679,13 +679,13 @@ func TestChunk16_MouseClick_ConfigZones(t *testing.T) {
 			if (globalThis.prSplit.runtime.mode !== 'directory') return 'FAIL: strategy-directory not set';
 		} finally { restore(); }
 
-		// strategy-auto triggers Claude check.
+		// strategy-auto triggers Agent check.
 		s = initState('CONFIG');
 		restore = mockZoneHit('strategy-auto');
 		try {
 			var r = sendClick(s);
 			if (globalThis.prSplit.runtime.mode !== 'auto') return 'FAIL: strategy-auto not set';
-			if (r[0].claudeCheckStatus !== 'checking') return 'FAIL: auto did not start claude check';
+			if (r[0].agentCheckStatus !== 'checking') return 'FAIL: auto did not start agent check';
 		} finally { restore(); }
 
 		// toggle-advanced.
@@ -699,13 +699,13 @@ func TestChunk16_MouseClick_ConfigZones(t *testing.T) {
 			if (r[0].showAdvanced) return 'FAIL: toggle-advanced did not disable';
 		} finally { restore(); }
 
-		// test-claude triggers check.
+		// test-agent triggers check.
 		s = initState('CONFIG');
-		restore = mockZoneHit('test-claude');
+		restore = mockZoneHit('test-agent');
 		try {
 			var r = sendClick(s);
-			if (r[0].claudeCheckStatus !== 'checking') return 'FAIL: test-claude did not start check';
-			if (globalThis.prSplit.runtime.mode !== 'auto') return 'FAIL: test-claude did not set mode to auto';
+			if (r[0].agentCheckStatus !== 'checking') return 'FAIL: test-agent did not start check';
+			if (globalThis.prSplit.runtime.mode !== 'auto') return 'FAIL: test-agent did not set mode to auto';
 		} finally { restore(); }
 
 		return 'OK';
@@ -757,13 +757,13 @@ func TestChunk16_MouseClick_PlanReviewZones(t *testing.T) {
 			if (r[0].wizardState !== 'CONFIG') return 'FAIL: plan-regenerate: state=' + r[0].wizardState;
 		} finally { restore(); }
 
-		// ask-claude opens conversation overlay.
+		// ask-agent opens conversation overlay.
 		s = initState('PLAN_REVIEW');
-		restore = mockZoneHit('ask-claude');
+		restore = mockZoneHit('ask-agent');
 		try {
 			var r = sendClick(s);
-			if (!r[0].claudeConvo.active) return 'FAIL: ask-claude did not open convo';
-			if (r[0].claudeConvo.context !== 'plan-review') return 'FAIL: ask-claude context wrong';
+			if (!r[0].agentConvo.active) return 'FAIL: ask-agent did not open convo';
+			if (r[0].agentConvo.context !== 'plan-review') return 'FAIL: ask-agent context wrong';
 		} finally { restore(); }
 
 		return 'OK';
@@ -865,14 +865,14 @@ func TestChunk16_MouseClick_ErrorResolutionZones(t *testing.T) {
 				} finally { restore(); }
 			}
 
-			// error-ask-claude opens convo.
-			globalThis.prSplit._state.claudeExecutor = {};
+			// error-ask-agent opens convo.
+			globalThis.prSplit._state.agentExecutor = {};
 			var s = initState('ERROR_RESOLUTION');
-			var restore = mockZoneHit('error-ask-claude');
+			var restore = mockZoneHit('error-ask-agent');
 			try {
 				var r = sendClick(s);
-				if (!r[0].claudeConvo.active) return 'FAIL: error-ask-claude did not open convo';
-				if (r[0].claudeConvo.context !== 'error-resolution') return 'FAIL: context wrong';
+				if (!r[0].agentConvo.active) return 'FAIL: error-ask-agent did not open convo';
+				if (r[0].agentConvo.context !== 'error-resolution') return 'FAIL: context wrong';
 			} finally { restore(); }
 
 		} finally {
@@ -1095,12 +1095,12 @@ func TestChunk16_ConfirmCancel_WheelDoesNotTriggerZones(t *testing.T) {
 	}
 }
 
-func TestChunk16_MouseClick_ClaudeStatusBadge(t *testing.T) {
+func TestChunk16_MouseClick_AgentStatusBadge(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		// Task 5: Claude-status badge uses pinned SessionID proxy.
+		// Task 5: Agent-status badge uses pinned SessionID proxy.
 		var __mockCID = 1;
 		globalThis.tuiMux = {
 			isDone: function(id) { return false; },
@@ -1110,21 +1110,21 @@ func TestChunk16_MouseClick_ClaudeStatusBadge(t *testing.T) {
 			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};
-		var savedCID = prSplit._state.claudeSessionID;
-		prSplit._state.claudeSessionID = __mockCID;
+		var savedCID = prSplit._state.agentSessionID;
+		prSplit._state.agentSessionID = __mockCID;
 
 		var s = initState('CONFIG');
-		var restore = mockZoneHit('claude-status');
+		var restore = mockZoneHit('agent-status');
 		try {
 			var r = sendClick(s);
 			s = r[0];
-			if (!s.splitViewEnabled) return 'FAIL: claude-status should open split-view';
-			if (s.splitViewTab !== 'claude') return 'FAIL: tab should be claude, got ' + s.splitViewTab;
+			if (!s.splitViewEnabled) return 'FAIL: agent-status should open split-view';
+			if (s.splitViewTab !== 'agent') return 'FAIL: tab should be agent, got ' + s.splitViewTab;
 		} finally {
 			restore();
 			delete globalThis.tuiMux;
-			if (savedCID !== undefined) prSplit._state.claudeSessionID = savedCID;
-			else delete prSplit._state.claudeSessionID;
+			if (savedCID !== undefined) prSplit._state.agentSessionID = savedCID;
+			else delete prSplit._state.agentSessionID;
 		}
 
 		return 'OK';
@@ -1133,7 +1133,7 @@ func TestChunk16_MouseClick_ClaudeStatusBadge(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude status badge: %v", raw)
+		t.Errorf("agent status badge: %v", raw)
 	}
 }
 

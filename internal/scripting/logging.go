@@ -345,7 +345,7 @@ func (l *TUILogger) Logger() *slog.Logger {
 // %!s(int64=0). The %v verb produces identical output for strings but handles
 // all Go types correctly. This normalization is applied at the JS→Go boundary
 // so that JS printf calls work naturally with values originating from Go
-// structs (e.g., claudemux module fields).
+// structs (e.g., aimux module fields).
 func jsNormalizePrintfFormat(format string) string {
 	var b strings.Builder
 	b.Grow(len(format))

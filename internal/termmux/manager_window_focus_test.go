@@ -285,10 +285,13 @@ func TestSessionManager_Window_ResizePaneAtWorksInWindow(t *testing.T) {
 	_, _ = m.AddPaneToWindow(s1, SessionTarget{Name: "p1", Kind: SessionKindPTY}, w1, SplitRight)
 
 	w2, _ := m.NewWindow("w2")
+	if err := m.SetLayoutMode(w2, LayoutHorizontal); err != nil {
+		t.Fatalf("SetLayoutMode w2: %v", err)
+	}
 	s2 := newControllableSession()
 	p2a, _ := m.AddPaneToWindow(s2, SessionTarget{Name: "p2a", Kind: SessionKindPTY}, w2, SplitRight)
 	s2b := newControllableSession()
-	p2b, _ := m.AddPaneToWindow(s2b, SessionTarget{Name: "p2b", Kind: SessionKindPTY}, w2, SplitDown)
+	p2b, _ := m.AddPaneToWindow(s2b, SessionTarget{Name: "p2b", Kind: SessionKindPTY}, w2, SplitRight)
 
 	_ = m.NextWindow()
 

@@ -26,8 +26,15 @@ type testEnv struct {
 
 // stop cancels the context and shuts down the event loop.
 func (e *testEnv) stop() {
-	e.cancel()
-	_ = e.loop.Shutdown(context.Background())
+	if e == nil {
+		return
+	}
+	if e.cancel != nil {
+		e.cancel()
+	}
+	if e.loop != nil {
+		_ = e.loop.Shutdown(context.Background())
+	}
 }
 
 // newTestEnv creates a fresh Goja runtime with EventTarget/CustomEvent globals

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 )
 
 // Provider abstracts an interactive terminal agent backend.
@@ -34,6 +35,27 @@ type AgentHandle interface {
 	Resize(rows, cols int) error
 	// WaitReady blocks until the process signals readiness or the context is cancelled.
 	WaitReady(ctx context.Context) error
+	// Events returns a channel of line-level output events. Each LineEvent
+	// carries one complete line (with line terminators stripped). A final
+	// LineEvent with Err != nil signals EOF; the channel is then closed.
+	// Returns nil if the handle does not support line-level events.
+	Events() <-chan LineEvent
+	// Health returns a snapshot of the handle's current health state.
+	Health() HealthSnapshot
+}
+
+// LineEvent represents a single line of output from an agent process.
+// Line terminators (\r\n and \n) are stripped. Err is non-nil on EOF.
+type LineEvent struct {
+	Line string
+	Err  error
+}
+
+// HealthSnapshot captures a point-in-time view of an AgentHandle's health.
+type HealthSnapshot struct {
+	Alive     bool
+	LastEvent time.Time // Last time output was received from the process
+	LastSend  time.Time // Last time input was sent to the process
 }
 
 // SpawnOpts configures process spawning.

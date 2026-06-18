@@ -9,16 +9,15 @@
 // This package MUST NOT import internal/command. Doing so would create a
 // Go import cycle since test files in internal/command import this package.
 // Engine creation uses [scripting.NewEngineDetailed] directly, and chunk
-// loading reads JS files from disk rather than accessing the unexported
-// prSplitChunks variable.
+// loading reads JS files from disk rather than accessing the embedded
+// manifest or chunkFS variable.
 //
 // # Chunk Discovery
 //
-// JS chunk files are discovered by globbing pr_split_*.js in the
-// internal/command/ directory (located via [runtime.Caller]). Chunk names
-// are extracted by stripping the "pr_split_" prefix and ".js" suffix.
-// Files are loaded in lexicographic order, matching the production load
-// order defined by the prSplitChunks array in pr_split.go.
+// JS chunk files are discovered by reading pr_split_manifest.json in the
+// internal/command/ directory (located via [runtime.Caller]). The manifest
+// defines chunk IDs, file names, and load order. Chunk sources are read
+// from disk using the file names from the manifest.
 //
 // # Engine Variants
 //

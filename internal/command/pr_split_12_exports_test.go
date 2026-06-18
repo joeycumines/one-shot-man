@@ -12,13 +12,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // allChunksThrough12 loads chunks 00-12 for manifest validation tests.
-var allChunksThrough12 = []string{
-	"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
-	"05_execution", "06_verification", "07_prcreation", "08_conflict",
-	"09_agent",
-	"10a_pipeline_config", "10b_pipeline_send", "10c_pipeline_resolve", "10d_pipeline_orchestrator",
-	"11_utilities", "12_exports",
-}
+var allChunksThrough12 = prsplittest.ChunkNamesThrough("12")
 
 func TestChunk12_VERSION(t *testing.T) {
 	t.Parallel()

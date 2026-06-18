@@ -2,6 +2,7 @@ package aimux
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -91,25 +92,36 @@ func prSplitScriptPath(t *testing.T) string {
 	return combinedChunkScript(t)
 }
 
-// prSplitChunkFiles lists all pr-split chunk files in load order.
-var prSplitChunkFiles = []string{
-	"pr_split_00_core.js",
-	"pr_split_01_analysis.js",
-	"pr_split_02_grouping.js",
-	"pr_split_03_planning.js",
-	"pr_split_04_validation.js",
-	"pr_split_05_execution.js",
-	"pr_split_06_verification.js",
-	"pr_split_07_prcreation.js",
-	"pr_split_08_conflict.js",
-	"pr_split_09_agent.js",
-	"pr_split_10a_pipeline_config.js",
-	"pr_split_10b_pipeline_send.js",
-	"pr_split_10c_pipeline_resolve.js",
-	"pr_split_10d_pipeline_orchestrator.js",
-	"pr_split_11_utilities.js",
-	"pr_split_12_exports.js",
-	"pr_split_13_tui.js",
+// prSplitChunkFilesFromManifest reads the manifest and returns chunk file
+// names up to and including "13_tui", matching the previous hardcoded list.
+func prSplitChunkFilesFromManifest(t *testing.T) []string {
+	t.Helper()
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	dir := filepath.Join(wd, "..", "..", "command")
+	absDir, err := filepath.Abs(dir)
+	require.NoError(t, err)
+
+	manifestPath := filepath.Join(absDir, "pr_split_manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+
+	var m struct {
+		Chunks []struct {
+			ID   string `json:"id"`
+			File string `json:"file"`
+		} `json:"chunks"`
+	}
+	require.NoError(t, json.Unmarshal(data, &m))
+
+	var files []string
+	for _, chunk := range m.Chunks {
+		files = append(files, chunk.File)
+		if chunk.ID == "13_tui" {
+			break
+		}
+	}
+	return files
 }
 
 // combinedChunkScript concatenates all pr-split chunk files from
@@ -123,8 +135,10 @@ func combinedChunkScript(t *testing.T) string {
 	absDir, err := filepath.Abs(dir)
 	require.NoError(t, err)
 
+	chunkFiles := prSplitChunkFilesFromManifest(t)
+
 	var buf strings.Builder
-	for _, name := range prSplitChunkFiles {
+	for _, name := range chunkFiles {
 		content, err := os.ReadFile(filepath.Join(absDir, name))
 		require.NoError(t, err, "failed to read chunk %s at %s", name, absDir)
 		buf.Write(content)

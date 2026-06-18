@@ -39,5 +39,6 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *
 		registerProviderBindings(ctx, adapter, runtime, exports)
 		registerParserBindings(runtime, exports)
 		registerTUIStateBindings(runtime, exports)
+		registerEventStreamBindings(runtime, exports)
 	}
 }

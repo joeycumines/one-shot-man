@@ -2,7 +2,8 @@ package command
 
 import (
 	"context"
-	_ "embed"
+	"embed"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -32,147 +33,44 @@ var prSplitTemplate string
 
 // Chunked script files — loaded in sequence as an alternative to the monolith.
 // Each chunk is an IIFE that attaches exports to globalThis.prSplit.
-//
-//go:embed pr_split_00_core.js
-var prSplitChunk00Core string
 
-//go:embed pr_split_01_analysis.js
-var prSplitChunk01Analysis string
+//go:embed pr_split_manifest.json
+var prSplitManifest string
 
-//go:embed pr_split_02_grouping.js
-var prSplitChunk02Grouping string
+//go:embed pr_split_*.js
+var chunkFS embed.FS
 
-//go:embed pr_split_03_planning.js
-var prSplitChunk03Planning string
+type chunkManifestEntry struct {
+	ID      string   `json:"id"`
+	File    string   `json:"file"`
+	Exports []string `json:"exports"`
+}
 
-//go:embed pr_split_04_validation.js
-var prSplitChunk04Validation string
+type chunkManifest struct {
+	Version string               `json:"version"`
+	Chunks  []chunkManifestEntry `json:"chunks"`
+}
 
-//go:embed pr_split_05_execution.js
-var prSplitChunk05Execution string
+var prSplitManifestData chunkManifest
 
-//go:embed pr_split_06_verification.js
-var prSplitChunk06Verification string
-
-//go:embed pr_split_06b_verify_shell.js
-var prSplitChunk06bVerifyShell string
-
-//go:embed pr_split_07_prcreation.js
-var prSplitChunk07PRCreation string
-
-//go:embed pr_split_08_conflict.js
-var prSplitChunk08Conflict string
-
-//go:embed pr_split_09_agent.js
-var prSplitChunk09Agent string
-
-//go:embed pr_split_10a_pipeline_config.js
-var prSplitChunk10aPipelineConfig string
-
-//go:embed pr_split_10b_pipeline_send.js
-var prSplitChunk10bPipelineSend string
-
-//go:embed pr_split_10c_pipeline_resolve.js
-var prSplitChunk10cPipelineResolve string
-
-//go:embed pr_split_10d_pipeline_orchestrator.js
-var prSplitChunk10dPipelineOrchestrator string
-
-//go:embed pr_split_11_utilities.js
-var prSplitChunk11Utilities string
-
-//go:embed pr_split_12_exports.js
-var prSplitChunk12Exports string
-
-//go:embed pr_split_13_tui.js
-var prSplitChunk13TUI string
-
-//go:embed pr_split_14a_tui_commands_core.js
-var prSplitChunk14aTUICommandsCore string
-
-//go:embed pr_split_14b_tui_commands_ext.js
-var prSplitChunk14bTUICommandsExt string
-
-//go:embed pr_split_15a_tui_styles.js
-var prSplitChunk15aTUIStyles string
-
-//go:embed pr_split_15b_tui_chrome.js
-var prSplitChunk15bTUIChrome string
-
-//go:embed pr_split_15c_tui_screens.js
-var prSplitChunk15cTUIScreens string
-
-//go:embed pr_split_15d_tui_dialogs.js
-var prSplitChunk15dTUIDialogs string
-
-//go:embed pr_split_16a_tui_focus.js
-var prSplitChunk16aTUIFocus string
-
-//go:embed pr_split_16b_tui_handlers_pipeline.js
-var prSplitChunk16bTUIHandlersPipeline string
-
-//go:embed pr_split_16c_tui_handlers_verify.js
-var prSplitChunk16cTUIHandlersVerify string
-
-//go:embed pr_split_16d_tui_handlers_agent.js
-var prSplitChunk16dTUIHandlersAgent string
-
-//go:embed pr_split_16e_tui_update.js
-var prSplitChunk16eTUIUpdate string
-
-//go:embed pr_split_16f_tui_model.js
-var prSplitChunk16fTUIModel string
-
-//go:embed pr_split_16g_persistence.js
-var prSplitChunk16gPersistence string
-
-// prSplitChunks defines the ordered sequence of chunk files for the split
-// architecture. Each entry is (name, source) loaded in order.
-var prSplitChunks = []struct {
-	name   string
-	source *string
-}{
-	{"00_core", &prSplitChunk00Core},
-	{"01_analysis", &prSplitChunk01Analysis},
-	{"02_grouping", &prSplitChunk02Grouping},
-	{"03_planning", &prSplitChunk03Planning},
-	{"04_validation", &prSplitChunk04Validation},
-	{"05_execution", &prSplitChunk05Execution},
-	{"06_verification", &prSplitChunk06Verification},
-	{"06b_verify_shell", &prSplitChunk06bVerifyShell},
-	{"07_prcreation", &prSplitChunk07PRCreation},
-	{"08_conflict", &prSplitChunk08Conflict},
-	{"09_agent", &prSplitChunk09Agent},
-	{"10a_pipeline_config", &prSplitChunk10aPipelineConfig},
-	{"10b_pipeline_send", &prSplitChunk10bPipelineSend},
-	{"10c_pipeline_resolve", &prSplitChunk10cPipelineResolve},
-	{"10d_pipeline_orchestrator", &prSplitChunk10dPipelineOrchestrator},
-	{"11_utilities", &prSplitChunk11Utilities},
-	{"12_exports", &prSplitChunk12Exports},
-	{"13_tui", &prSplitChunk13TUI},
-	{"14a_tui_commands_core", &prSplitChunk14aTUICommandsCore},
-	{"14b_tui_commands_ext", &prSplitChunk14bTUICommandsExt},
-	{"15a_tui_styles", &prSplitChunk15aTUIStyles},
-	{"15b_tui_chrome", &prSplitChunk15bTUIChrome},
-	{"15c_tui_screens", &prSplitChunk15cTUIScreens},
-	{"15d_tui_dialogs", &prSplitChunk15dTUIDialogs},
-	{"16a_tui_focus", &prSplitChunk16aTUIFocus},
-	{"16b_tui_handlers_pipeline", &prSplitChunk16bTUIHandlersPipeline},
-	{"16c_tui_handlers_verify", &prSplitChunk16cTUIHandlersVerify},
-	{"16d_tui_handlers_agent", &prSplitChunk16dTUIHandlersAgent},
-	{"16e_tui_update", &prSplitChunk16eTUIUpdate},
-	{"16f_tui_model", &prSplitChunk16fTUIModel},
-	{"16g_persistence", &prSplitChunk16gPersistence},
+func init() {
+	if err := json.Unmarshal([]byte(prSplitManifest), &prSplitManifestData); err != nil {
+		panic("pr-split: failed to parse manifest: " + err.Error())
+	}
 }
 
 // loadChunkedScript loads all pr-split chunk files in order into the engine.
 // Each chunk is loaded as a separate script with error reporting per-chunk.
 func loadChunkedScript(engine *scripting.Engine) error {
-	for _, chunk := range prSplitChunks {
-		name := "pr-split/" + chunk.name
-		script := engine.LoadScriptFromString(name, *chunk.source)
+	for _, entry := range prSplitManifestData.Chunks {
+		data, err := chunkFS.ReadFile(entry.File)
+		if err != nil {
+			return fmt.Errorf("pr-split: chunk file %q not found in embedded FS: %w", entry.File, err)
+		}
+		name := "pr-split/" + entry.ID
+		script := engine.LoadScriptFromString(name, string(data))
 		if err := engine.ExecuteScript(script); err != nil {
-			return fmt.Errorf("failed to load pr-split chunk %s: %w", chunk.name, err)
+			return fmt.Errorf("failed to load pr-split chunk %s: %w", entry.ID, err)
 		}
 	}
 	return nil
@@ -557,7 +455,7 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 		},
 	})
 
-	// Load the 30 chunked script files in dependency order.
+	// Load the chunked script files in dependency order.
 	if err := loadChunkedScript(engine); err != nil {
 		return 0, nil, err
 	}

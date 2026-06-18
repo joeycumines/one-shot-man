@@ -207,6 +207,39 @@ func newHandleObject(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, prom
 		})
 	})
 
+	// receiveEventAsync blocks until a line event is available or the handle
+	// closes. Resolves to the line string, or null on EOF / unsupported.
+	_ = obj.Set("receiveEventAsync", func() goja.Value {
+		return asyncHandleValue(runtime, adapter, promisify, func() (any, error) {
+			eventsCh := h.Events()
+			if eventsCh == nil {
+				return goja.Null(), nil
+			}
+			le, ok := <-eventsCh
+			if !ok || le.Err != nil {
+				return goja.Null(), nil
+			}
+			return le.Line, nil
+		})
+	})
+
+	// health returns a snapshot of the handle's current health state.
+	_ = obj.Set("health", func() map[string]any {
+		snap := h.Health()
+		var lastEventMs, lastSendMs int64
+		if !snap.LastEvent.IsZero() {
+			lastEventMs = snap.LastEvent.UnixMilli()
+		}
+		if !snap.LastSend.IsZero() {
+			lastSendMs = snap.LastSend.UnixMilli()
+		}
+		return map[string]any{
+			"alive":       snap.Alive,
+			"lastEventMs": lastEventMs,
+			"lastSendMs":  lastSendMs,
+		}
+	})
+
 	// drainOutput blocks until the handle reaches EOF.
 	_ = obj.Set("drainOutput", func() string {
 		return drainHandleOutput(h)

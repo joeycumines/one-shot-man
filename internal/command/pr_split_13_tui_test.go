@@ -46,27 +46,16 @@ func TestChunk13_GuardSkipsWithoutTUI(t *testing.T) {
 	}
 
 	// Chunks 13-16 should not crash even without tui/ctx/output.
-	tuiChunks := []struct {
-		name   string
-		source string
-	}{
-		{"13_tui", prSplitChunk13TUI},
-		{"14a_tui_commands_core", prSplitChunk14aTUICommandsCore},
-		{"14b_tui_commands_ext", prSplitChunk14bTUICommandsExt},
-		{"15a_tui_styles", prSplitChunk15aTUIStyles},
-		{"15b_tui_chrome", prSplitChunk15bTUIChrome},
-		{"15c_tui_screens", prSplitChunk15cTUIScreens},
-		{"15d_tui_dialogs", prSplitChunk15dTUIDialogs},
-		{"16a_tui_focus", prSplitChunk16aTUIFocus},
-		{"16b_tui_handlers_pipeline", prSplitChunk16bTUIHandlersPipeline},
-		{"16c_tui_handlers_verify", prSplitChunk16cTUIHandlersVerify},
-		{"16d_tui_handlers_agent", prSplitChunk16dTUIHandlersAgent},
-		{"16e_tui_update", prSplitChunk16eTUIUpdate},
-		{"16f_tui_model", prSplitChunk16fTUIModel},
+	tuiChunkNames := []string{
+		"13_tui", "14a_tui_commands_core", "14b_tui_commands_ext",
+		"15a_tui_styles", "15b_tui_chrome", "15c_tui_screens", "15d_tui_dialogs",
+		"16a_tui_focus", "16b_tui_handlers_pipeline", "16c_tui_handlers_verify",
+		"16d_tui_handlers_agent", "16e_tui_update", "16f_tui_model",
 	}
-	for _, chunk := range tuiChunks {
-		if _, err := evalJS(chunk.source); err != nil {
-			t.Fatalf("chunk %s should not error without TUI globals: %v", chunk.name, err)
+	for _, name := range tuiChunkNames {
+		src := prsplittest.ChunkSource(name)
+		if _, err := evalJS(src); err != nil {
+			t.Fatalf("chunk %s should not error without TUI globals: %v", name, err)
 		}
 	}
 

@@ -555,8 +555,12 @@ func dispatchAwaitPromise(engine *scripting.Engine, tm *scripting.TUIManager, na
 // former monolith prSplitScript variable.
 func allChunkSources() string {
 	var b strings.Builder
-	for _, chunk := range prSplitChunks {
-		b.WriteString(*chunk.source)
+	for _, entry := range prSplitManifestData.Chunks {
+		data, err := chunkFS.ReadFile(entry.File)
+		if err != nil {
+			panic("allChunkSources: failed to read " + entry.File + ": " + err.Error())
+		}
+		b.Write(data)
 		b.WriteByte('\n')
 	}
 	return b.String()

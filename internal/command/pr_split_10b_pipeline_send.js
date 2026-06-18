@@ -172,6 +172,24 @@
     }
 
     async function waitForPromptReady(cfg) {
+        // Optional fast path: if the agentExecutor has a TUIStateMachine
+        // and it reports "Ready", skip screenshot polling entirely.
+        // This is an optimization — if the state machine is unavailable
+        // or not in "Ready" state, the existing screenshot-based
+        // detection below runs unchanged.
+        var agentExecutor = prSplit._state && prSplit._state.agentExecutor;
+        if (agentExecutor && agentExecutor.stateMachine &&
+            typeof agentExecutor.stateMachine.stateName === 'function') {
+            try {
+                var stateName = agentExecutor.stateMachine.stateName();
+                if (stateName === 'Ready') {
+                    return { error: null, observed: false, state: null, viaStateMachine: true };
+                }
+            } catch (e) {
+                log.debug('waitForPromptReady: stateMachine check failed', { error: e.message || String(e) });
+            }
+        }
+
         var startMs = Date.now();
         var lastKey = '';
         var stableCount = 0;

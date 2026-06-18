@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/joeycumines/one-shot-man/internal/aimuxcore"
 )
 
 // MockHandle is a minimal stub AgentHandle for basic tests.
@@ -76,6 +78,14 @@ func (h *MockHandle) Wait() (int, error) {
 func (h *MockHandle) Resize(_, _ int) error { return nil }
 
 func (h *MockHandle) WaitReady(_ context.Context) error { return nil }
+
+func (h *MockHandle) Events() <-chan aimuxcore.LineEvent { return nil }
+
+func (h *MockHandle) Health() aimuxcore.HealthSnapshot {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return aimuxcore.HealthSnapshot{Alive: h.Alive}
+}
 
 // ChannelHandle uses Go channels for async I/O simulation.
 type ChannelHandle struct {
@@ -150,6 +160,12 @@ func (h *ChannelHandle) Wait() (int, error) {
 func (h *ChannelHandle) Resize(_, _ int) error { return nil }
 
 func (h *ChannelHandle) WaitReady(_ context.Context) error { return nil }
+
+func (h *ChannelHandle) Events() <-chan aimuxcore.LineEvent { return nil }
+
+func (h *ChannelHandle) Health() aimuxcore.HealthSnapshot {
+	return aimuxcore.HealthSnapshot{Alive: h.IsAlive()}
+}
 
 // WriteOutput writes to the output channel for test producers.
 func (h *ChannelHandle) WriteOutput(s string) {
@@ -284,3 +300,9 @@ func (h *ScriptedHandle) Wait() (int, error) {
 func (h *ScriptedHandle) Resize(_, _ int) error { return nil }
 
 func (h *ScriptedHandle) WaitReady(_ context.Context) error { return nil }
+
+func (h *ScriptedHandle) Events() <-chan aimuxcore.LineEvent { return nil }
+
+func (h *ScriptedHandle) Health() aimuxcore.HealthSnapshot {
+	return aimuxcore.HealthSnapshot{Alive: h.IsAlive()}
+}

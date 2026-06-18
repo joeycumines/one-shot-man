@@ -27,6 +27,16 @@
         this.handle = null;
         this.sessionId = null;
         this.cm = aimux;
+        // Optional TUIStateMachine integration for event-driven state tracking.
+        // These are created in initEventTracking() after spawn succeeds.
+        // If aimux does not provide the constructors (e.g. stripped test
+        // builds), all remain null and the existing screenshot-based
+        // detection and isAlive() polling continue to work unchanged.
+        this.stateMachine = null;
+        this.eventStream = null;
+        this.healthMonitor = null;
+        this._eventLoopRunning = false;
+        this._eventLoopStop = false;
     }
 
     // runAsync runs a command via osm:exec spawn and returns buffered output.
@@ -218,7 +228,105 @@
             }
         }
 
+        this.initEventTracking();
+
         return { error: null, sessionId: this.sessionId };
+    };
+
+    // initEventTracking creates the optional TUIStateMachine, EventStream,
+    // and HealthMonitor after a successful spawn. Each is created
+    // independently — if one fails, the others are still attempted.
+    // All are optional: if aimux does not expose the constructor or the
+    // handle lacks the required methods, the field stays null and the
+    // existing screenshot-based detection and isAlive() polling continue.
+    AgentCodeExecutor.prototype.initEventTracking = function() {
+        try {
+            if (typeof aimux.newTUIStateMachine === 'function') {
+                this.stateMachine = aimux.newTUIStateMachine();
+            }
+        } catch (e) {
+            log.debug('initEventTracking: stateMachine creation failed', { error: e.message || String(e) });
+            this.stateMachine = null;
+        }
+
+        try {
+            if (typeof aimux.newEventStream === 'function' && this.handle) {
+                this.eventStream = aimux.newEventStream(this.handle, parser);
+            }
+        } catch (e) {
+            log.debug('initEventTracking: eventStream creation failed', { error: e.message || String(e) });
+            this.eventStream = null;
+        }
+
+        try {
+            if (typeof aimux.newHealthMonitor === 'function' && this.handle) {
+                this.healthMonitor = aimux.newHealthMonitor(this.handle, 5000);
+            }
+        } catch (e) {
+            log.debug('initEventTracking: healthMonitor creation failed', { error: e.message || String(e) });
+            this.healthMonitor = null;
+        }
+
+        this.startEventLoop();
+    };
+
+    // startEventLoop reads output lines from the handle via
+    // receiveEventAsync and feeds each line to the state machine's
+    // processOutput method. The loop is Promise-based and non-blocking:
+    // each iteration awaits a single line, then schedules the next via
+    // setTimeout(0) to yield to the JS event loop. The loop stops when
+    // stopEventLoop is called, the handle dies, or receiveEventAsync
+    // resolves null (EOF / unsupported).
+    AgentCodeExecutor.prototype.startEventLoop = function() {
+        if (this._eventLoopRunning) return;
+        if (!this.stateMachine || !this.handle) return;
+        if (typeof this.handle.receiveEventAsync !== 'function') return;
+
+        this._eventLoopRunning = true;
+        this._eventLoopStop = false;
+
+        var self = this;
+        var sm = this.stateMachine;
+
+        function loop() {
+            if (self._eventLoopStop || !self.handle) {
+                self._eventLoopRunning = false;
+                return;
+            }
+            if (typeof self.handle.isAlive === 'function' && !self.handle.isAlive()) {
+                self._eventLoopRunning = false;
+                return;
+            }
+
+            self.handle.receiveEventAsync().then(function(line) {
+                if (self._eventLoopStop || !self.handle) {
+                    self._eventLoopRunning = false;
+                    return;
+                }
+                if (line === null || line === undefined) {
+                    self._eventLoopRunning = false;
+                    return;
+                }
+                if (line !== '') {
+                    try {
+                        sm.processOutput(line);
+                    } catch (e) {
+                        log.debug('eventLoop: processOutput failed', { error: e.message || String(e) });
+                    }
+                }
+                setTimeout(loop, 0);
+            }).catch(function(err) {
+                log.debug('eventLoop: receiveEventAsync error', { error: err.message || String(err) });
+                self._eventLoopRunning = false;
+            });
+        }
+
+        loop();
+    };
+
+    AgentCodeExecutor.prototype.stopEventLoop = function() {
+        this._eventLoopStop = true;
+        this._eventLoopRunning = false;
     };
 
     AgentCodeExecutor.prototype.isAvailable = function() {
@@ -234,8 +342,22 @@
     };
 
     AgentCodeExecutor.prototype.close = function() {
+        this.stopEventLoop();
+
+        if (this.eventStream && typeof this.eventStream.close === 'function') {
+            try { this.eventStream.close(); } catch (e) { log.debug('close: eventStream.close failed', { error: e.message || String(e) }); }
+        }
+        this.eventStream = null;
+
+        if (this.healthMonitor && typeof this.healthMonitor.close === 'function') {
+            try { this.healthMonitor.close(); } catch (e) { log.debug('close: healthMonitor.close failed', { error: e.message || String(e) }); }
+        }
+        this.healthMonitor = null;
+
+        this.stateMachine = null;
+
         if (this.handle && typeof this.handle.close === 'function') {
-            try { this.handle.close(); } catch (e) { log.debug('close: handle.close failed: ' + (e.message || e)); }
+            try { this.handle.close(); } catch (e) { log.debug('close: handle.close failed', { error: e.message || String(e) }); }
         }
         this.handle = null;
         this.sessionId = null;
@@ -266,8 +388,22 @@
     };
 
     AgentCodeExecutor.prototype.kill = function() {
+        this.stopEventLoop();
+
+        if (this.eventStream && typeof this.eventStream.close === 'function') {
+            try { this.eventStream.close(); } catch (e) { log.debug('kill: eventStream.close failed', { error: e.message || String(e) }); }
+        }
+        this.eventStream = null;
+
+        if (this.healthMonitor && typeof this.healthMonitor.close === 'function') {
+            try { this.healthMonitor.close(); } catch (e) { log.debug('kill: healthMonitor.close failed', { error: e.message || String(e) }); }
+        }
+        this.healthMonitor = null;
+
+        this.stateMachine = null;
+
         if (this.handle && typeof this.handle.close === 'function') {
-            try { this.handle.close(); } catch (e) { log.debug('kill: handle.close failed: ' + (e.message || e)); }
+            try { this.handle.close(); } catch (e) { log.debug('kill: handle.close failed', { error: e.message || String(e) }); }
         }
         this.handle = null;
         this.resolved = null;

@@ -405,6 +405,27 @@
             if (spawnResult.error) {
                 return { error: spawnResult.error };
             }
+
+            // WaitReady: optionally wait for the agent to signal readiness.
+            // Uses spawnHealthCheckDelayMs as the base timeout, overridable
+            // via config.spawnReadyTimeoutMs. On timeout, log a warning but
+            // continue — the existing isAlive() health check will catch
+            // dead processes.
+            if (agentExecutor.handle) {
+                var readyTimeoutMs = typeof config.spawnReadyTimeoutMs === 'number' ?
+                    config.spawnReadyTimeoutMs : AUTOMATED_DEFAULTS.spawnHealthCheckDelayMs;
+                try {
+                    if (typeof agentExecutor.handle.waitReadyAsync === 'function') {
+                        await agentExecutor.handle.waitReadyAsync(readyTimeoutMs);
+                    } else if (typeof agentExecutor.handle.waitReady === 'function') {
+                        agentExecutor.handle.waitReady(readyTimeoutMs);
+                    }
+                } catch (e) {
+                    log.printf('auto-split: WaitReady timeout (%dms) — continuing: %s',
+                        readyTimeoutMs, e.message || String(e));
+                }
+            }
+
             return { error: null, sessionId: spawnResult.sessionId };
         });
 

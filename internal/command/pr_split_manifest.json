@@ -1,0 +1,200 @@
+{
+  "version": "6.0.0",
+  "chunks": [
+    {
+      "id": "00_core",
+      "file": "pr_split_00_core.js",
+      "exports": [
+        "_state", "_modules", "_style", "_cfg", "_COMMAND_NAME", "_MODE_NAME",
+        "runtime", "_gitExec", "_gitExecAsync", "_resolveDir", "_shellQuote",
+        "_gitAddChangedFiles", "_gitAddChangedFilesAsync",
+        "_dirname", "_fileExtension", "_sanitizeBranchName", "_padIndex",
+        "discoverVerifyCommand", "scopedVerifyCommand",
+        "isCancelled", "isPaused", "isForceCancelled"
+      ]
+    },
+    {
+      "id": "01_analysis",
+      "file": "pr_split_01_analysis.js",
+      "exports": ["analyzeDiff", "analyzeDiffAsync", "analyzeDiffStats"]
+    },
+    {
+      "id": "02_grouping",
+      "file": "pr_split_02_grouping.js",
+      "exports": [
+        "groupByDirectory", "groupByExtension", "groupByPattern",
+        "groupByChunks", "groupByDependency",
+        "parseGoImports", "detectGoModulePath",
+        "applyStrategy", "selectStrategy"
+      ]
+    },
+    {
+      "id": "03_planning",
+      "file": "pr_split_03_planning.js",
+      "exports": ["DEFAULT_PLAN_PATH", "createSplitPlan", "createSplitPlanAsync", "savePlan", "loadPlan"]
+    },
+    {
+      "id": "04_validation",
+      "file": "pr_split_04_validation.js",
+      "exports": ["validateClassification", "validatePlan", "validateSplitPlan", "validateResolution"]
+    },
+    {
+      "id": "05_execution",
+      "file": "pr_split_05_execution.js",
+      "exports": ["executeSplit", "executeSplitAsync"]
+    },
+    {
+      "id": "06_verification",
+      "file": "pr_split_06_verification.js",
+      "exports": [
+        "verifySplit", "verifySplitAsync", "verifySplits", "verifySplitsAsync",
+        "verifyEquivalence", "verifyEquivalenceAsync", "verifyEquivalenceDetailed",
+        "cleanupBranches", "cleanupBranchesAsync",
+        "startVerifySession", "cleanupVerifyWorktree"
+      ]
+    },
+    {
+      "id": "06b_verify_shell",
+      "file": "pr_split_06b_verify_shell.js",
+      "exports": []
+    },
+    {
+      "id": "07_prcreation",
+      "file": "pr_split_07_prcreation.js",
+      "exports": ["createPRs"]
+    },
+    {
+      "id": "08_conflict",
+      "file": "pr_split_08_conflict.js",
+      "exports": ["resolveConflicts", "AUTO_FIX_STRATEGIES"]
+    },
+    {
+      "id": "09_agent",
+      "file": "pr_split_09_agent.js",
+      "exports": [
+        "AgentCodeExecutor",
+        "renderPrompt", "renderClassificationPrompt",
+        "renderSplitPlanPrompt", "renderConflictPrompt",
+        "detectLanguage",
+        "CLASSIFICATION_PROMPT_TEMPLATE",
+        "SPLIT_PLAN_PROMPT_TEMPLATE",
+        "CONFLICT_RESOLUTION_PROMPT_TEMPLATE"
+      ]
+    },
+    {
+      "id": "10a_pipeline_config",
+      "file": "pr_split_10a_pipeline_config.js",
+      "exports": [
+        "AUTOMATED_DEFAULTS", "SEND_TEXT_NEWLINE_DELAY_MS",
+        "sendToHandle", "waitForLogged",
+        "classificationToGroups", "cleanupExecutor",
+        "heuristicFallback", "resolveConflictsWithAgent",
+        "automatedSplit"
+      ]
+    },
+    {
+      "id": "10b_pipeline_send",
+      "file": "pr_split_10b_pipeline_send.js",
+      "exports": []
+    },
+    {
+      "id": "10c_pipeline_resolve",
+      "file": "pr_split_10c_pipeline_resolve.js",
+      "exports": []
+    },
+    {
+      "id": "10d_pipeline_orchestrator",
+      "file": "pr_split_10d_pipeline_orchestrator.js",
+      "exports": []
+    },
+    {
+      "id": "11_utilities",
+      "file": "pr_split_11_utilities.js",
+      "exports": [
+        "extractDirs", "extractGoImports", "extractGoPkgs",
+        "splitsAreIndependentFromMaps", "assessIndependence",
+        "_splitsAreIndependent",
+        "recordConversation", "getConversationHistory",
+        "recordTelemetry", "getTelemetrySummary", "saveTelemetry",
+        "renderColorizedDiff", "getSplitDiff",
+        "buildDependencyGraph", "renderAsciiGraph",
+        "analyzeRetrospective"
+      ]
+    },
+    {
+      "id": "12_exports",
+      "file": "pr_split_12_exports.js",
+      "exports": []
+    },
+    {
+      "id": "13_tui",
+      "file": "pr_split_13_tui.js",
+      "exports": []
+    },
+    {
+      "id": "14a_tui_commands_core",
+      "file": "pr_split_14a_tui_commands_core.js",
+      "exports": []
+    },
+    {
+      "id": "14b_tui_commands_ext",
+      "file": "pr_split_14b_tui_commands_ext.js",
+      "exports": []
+    },
+    {
+      "id": "15a_tui_styles",
+      "file": "pr_split_15a_tui_styles.js",
+      "exports": []
+    },
+    {
+      "id": "15b_tui_chrome",
+      "file": "pr_split_15b_tui_chrome.js",
+      "exports": []
+    },
+    {
+      "id": "15c_tui_screens",
+      "file": "pr_split_15c_tui_screens.js",
+      "exports": []
+    },
+    {
+      "id": "15d_tui_dialogs",
+      "file": "pr_split_15d_tui_dialogs.js",
+      "exports": []
+    },
+    {
+      "id": "16a_tui_focus",
+      "file": "pr_split_16a_tui_focus.js",
+      "exports": []
+    },
+    {
+      "id": "16b_tui_handlers_pipeline",
+      "file": "pr_split_16b_tui_handlers_pipeline.js",
+      "exports": []
+    },
+    {
+      "id": "16c_tui_handlers_verify",
+      "file": "pr_split_16c_tui_handlers_verify.js",
+      "exports": []
+    },
+    {
+      "id": "16d_tui_handlers_agent",
+      "file": "pr_split_16d_tui_handlers_agent.js",
+      "exports": []
+    },
+    {
+      "id": "16e_tui_update",
+      "file": "pr_split_16e_tui_update.js",
+      "exports": []
+    },
+    {
+      "id": "16f_tui_model",
+      "file": "pr_split_16f_tui_model.js",
+      "exports": []
+    },
+    {
+      "id": "16g_persistence",
+      "file": "pr_split_16g_persistence.js",
+      "exports": []
+    }
+  ]
+}

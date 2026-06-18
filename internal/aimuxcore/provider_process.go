@@ -1,11 +1,15 @@
 package aimuxcore
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux"
 )
@@ -80,17 +84,23 @@ func (p *ProcessProvider) Spawn(ctx context.Context, opts SpawnOpts) (AgentHandl
 
 // captureAgentHandle adapts a termmux.CaptureSession to the AgentHandle interface.
 type captureAgentHandle struct {
-	cs    *termmux.CaptureSession
-	ch    chan []byte
-	ready chan struct{}
-	once  sync.Once
+	cs       *termmux.CaptureSession
+	ch       chan []byte
+	eventsCh chan LineEvent
+	ready    chan struct{}
+	once     sync.Once
+
+	healthMu  sync.RWMutex
+	lastEvent time.Time
+	lastSend  time.Time
 }
 
 func newCaptureAgentHandle(cs *termmux.CaptureSession) *captureAgentHandle {
 	h := &captureAgentHandle{
-		cs:    cs,
-		ch:    make(chan []byte, 1024),
-		ready: make(chan struct{}),
+		cs:       cs,
+		ch:       make(chan []byte, 1024),
+		eventsCh: make(chan LineEvent, 256),
+		ready:    make(chan struct{}),
 	}
 	if r := cs.Reader(); r != nil {
 		go h.forwardOutput(r)
@@ -100,9 +110,50 @@ func newCaptureAgentHandle(cs *termmux.CaptureSession) *captureAgentHandle {
 
 func (h *captureAgentHandle) forwardOutput(src <-chan []byte) {
 	defer close(h.ch)
+	defer close(h.eventsCh)
+
+	var lineBuf []byte
 	for chunk := range src {
 		h.ch <- chunk
 		h.once.Do(func() { close(h.ready) })
+
+		lineBuf = append(lineBuf, chunk...)
+		lineBuf = h.drainLines(lineBuf)
+	}
+
+	if len(lineBuf) > 0 {
+		line := strings.TrimRight(string(lineBuf), "\r")
+		h.emitLineEvent(LineEvent{Line: line})
+	}
+
+	h.emitLineEvent(LineEvent{Err: io.EOF})
+}
+
+// drainLines splits buf on \n (stripping preceding \r) and emits a LineEvent
+// for each complete line. Returns the remaining incomplete tail.
+func (h *captureAgentHandle) drainLines(buf []byte) []byte {
+	for {
+		idx := bytes.IndexByte(buf, '\n')
+		if idx < 0 {
+			return buf
+		}
+		line := strings.TrimRight(string(buf[:idx]), "\r")
+		h.emitLineEvent(LineEvent{Line: line})
+		buf = buf[idx+1:]
+	}
+}
+
+func (h *captureAgentHandle) emitLineEvent(ev LineEvent) {
+	if ev.Err == nil {
+		h.healthMu.Lock()
+		h.lastEvent = time.Now()
+		h.healthMu.Unlock()
+	}
+	select {
+	case h.eventsCh <- ev:
+	default:
+		slog.Debug("aimux: events channel full, dropping line event",
+			"err", ev.Err, "lineLen", len(ev.Line))
 	}
 }
 
@@ -110,7 +161,13 @@ func (h *captureAgentHandle) Send(input string) error {
 	if h.cs == nil {
 		return errors.New("aimux: handle closed")
 	}
-	return h.cs.WriteString(input)
+	if err := h.cs.WriteString(input); err != nil {
+		return err
+	}
+	h.healthMu.Lock()
+	h.lastSend = time.Now()
+	h.healthMu.Unlock()
+	return nil
 }
 
 func (h *captureAgentHandle) Receive() (string, error) {
@@ -179,5 +236,21 @@ func (h *captureAgentHandle) WaitReady(ctx context.Context) error {
 		return errors.New("aimux: process exited before becoming ready")
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+func (h *captureAgentHandle) Events() <-chan LineEvent {
+	return h.eventsCh
+}
+
+func (h *captureAgentHandle) Health() HealthSnapshot {
+	h.healthMu.RLock()
+	lastEvent := h.lastEvent
+	lastSend := h.lastSend
+	h.healthMu.RUnlock()
+	return HealthSnapshot{
+		Alive:     h.IsAlive(),
+		LastEvent: lastEvent,
+		LastSend:  lastSend,
 	}
 }

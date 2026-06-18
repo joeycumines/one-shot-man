@@ -1,0 +1,53 @@
+$ echo -e '\033[1;31mRED TEXT\033[0m'
+RED TEXT
+$ echo -e '\033[1;32mGREEN TEXT\033[0m'
+GREEN TEXT
+$ echo -e '\033[38;2;255;100;0mTRUECOLOR\033[0m'
+TRUECOLOR
+$ echo -e '\033[48;5;232mBG256\033[0m'
+BG256
+$ echo -e '\033[3;4mItalic Underline\033[0m'
+Italic Underline
+$ echo -e '\033[7mReversed\033[0m'
+Reversed
+$ echo -e '\033[1;38;5;208mBold Orange\033[0m'
+Bold Orange
+$  ╔════════════════════════════════════════╗
+  ║                                     ║
+  ║   Claude Code Session               ║
+  ║   Model: claude-sonnet-4-20250514       ║
+  ║                                     ║
+  ╚════════════════════════════════════════╝
+
+⏳ Thinking...
+
+  I'll help you fix the bug in the parser.
+
+  Let me look at the relevant code:
+
+  ```go
+  func Parse(data []byte) error {
+      // ... existing code
+      return nil
+  }
+  ```
+
+✓ Read file: internal/parser/parser.go
+
+  The issue is on line 42 where the boundary check
+  is off-by-one. Here's the fix:
+
+✓ Edit file: internal/parser/parser.go
+  Applied 1 edit to internal/parser/parser.go
+
+  ┌─────────────────────────────┐
+  │ Tool Use Progress: 2/5      │
+  │ ████████░░░░░░░░  40%       │
+  └─────────────────────────────┘
+
+⏳ Running tests...
+
+✓ Tests passed (12/12)
+
+  All tests pass. The fix corrects the off-by-one error
+  in the boundary check.

@@ -309,10 +309,8 @@ func mouseButtonToTermmux(b tea.MouseButton) termmux.MouseButton {
 	}
 }
 
+// viewContentAndCursor renders the view while the caller holds m.mu.
 func (m *Model) viewContentAndCursor(contentFunc func() string) tea.View {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if m.snap == nil {
 		return tea.NewView("")
 	}
@@ -378,6 +376,9 @@ func (m *Model) View() tea.View {
 // cursor-positioning (CUP) sequences, so it can be composited at arbitrary
 // coordinates. The cursor is positioned relative to the pane's bounds.
 func (m *Model) ANSIView() tea.View {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	return m.viewContentAndCursor(func() string {
 		if m.snap == nil {
 			return ""

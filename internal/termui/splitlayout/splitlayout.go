@@ -56,7 +56,8 @@ type SplitLayout struct {
 	done     chan struct{}
 	wg       sync.WaitGroup
 
-	closed bool
+	closed         bool
+	outputChClosed bool
 }
 
 // SplitLayoutOption configures a SplitLayout.
@@ -615,20 +616,24 @@ func (sl *SplitLayout) View() tea.View {
 // for it to finish, and closes outputCh. Idempotent.
 func (sl *SplitLayout) Close() error {
 	sl.mu.Lock()
-	defer sl.mu.Unlock()
-
 	if sl.closed {
+		sl.mu.Unlock()
 		return nil
 	}
 	sl.closed = true
-
 	close(sl.done)
+	sl.mu.Unlock()
 
 	sl.manager.Unsubscribe(sl.subID)
 
 	sl.wg.Wait()
 
-	close(sl.outputCh)
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	if !sl.outputChClosed {
+		sl.outputChClosed = true
+		close(sl.outputCh)
+	}
 
 	return nil
 }

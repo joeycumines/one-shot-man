@@ -2371,13 +2371,26 @@ func (m *SessionManager) handleResizeSession(p *resizeSessionPayload) response {
 	return response{}
 }
 
-// handleSnapshot returns the latest screen snapshot for the given session.
+// handleSnapshot returns the latest screen snapshot for the given session,
+// making sure the transient display message reflects the current queue state
+// (including any expired messages) so callers do not see stale overlays.
 func (m *SessionManager) handleSnapshot(id SessionID) response {
 	ms, ok := m.sessions[id]
 	if !ok {
 		return response{}
 	}
-	return response{value: ms.snapshot.Load()}
+	snap := ms.snapshot.Load()
+	if snap == nil {
+		return response{}
+	}
+	now := time.Now()
+	activeMsg := m.activeMessageForSession(id, now)
+	if snap.Message != activeMsg {
+		snap = snap.Clone()
+		snap.Message = activeMsg
+		snap.Timestamp = now
+	}
+	return response{value: snap}
 }
 
 // handleScreen returns a deep copy of the session's VTerm screen with

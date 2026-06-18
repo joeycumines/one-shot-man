@@ -21,7 +21,8 @@ func TestActivityReset_JSBinding(t *testing.T) {
 		mgr.activate(s2.sid);
 		mgr.setMonitorConfig(sid, { activity: true, activityThreshold: 0, activityResetThreshold: 0.05 });
 
-		var sub = mgr.subscribe(64);
+		var sub = mgr.subscribe(1024);
+
 		function waitOutput(text, deadline) {
 			while (Date.now() < deadline) {
 				var snap = mgr.snapshot(sid);
@@ -35,7 +36,7 @@ func TestActivityReset_JSBinding(t *testing.T) {
 			var found = 0;
 			var evts = sub.pollEvents();
 			for (var j = 0; j < evts.length; j++) {
-				if (evts[j].kind === "activity" && Number(evts[j].sessionId) === sid) {
+				if (evts[j].kind === "activity" && Number(evts[j].sessionId) === Number(sid)) {
 					found++;
 				}
 			}
@@ -58,7 +59,7 @@ func TestActivityReset_JSBinding(t *testing.T) {
 		if (!waitOutput("hello2", Date.now() + 3000)) {
 			throw new Error("expected output from s1");
 		}
-		waitActivity(Date.now() + 5000);
+		waitActivity(Date.now() + 3000);
 
 		mgr.resetActivity(sid);
 		s1.session.write("again\n");
@@ -66,7 +67,7 @@ func TestActivityReset_JSBinding(t *testing.T) {
 		if (!waitOutput("again2", Date.now() + 3000)) {
 			throw new Error("expected output from s1 after reset");
 		}
-		waitActivity(Date.now() + 5000);
+		waitActivity(Date.now() + 3000);
 	`)
 	if err != nil {
 		t.Fatalf("activity reset script: %v", err)

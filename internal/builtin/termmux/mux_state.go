@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -72,14 +73,36 @@ func (s *muxState) dispatchCustomEvent(eventType string, detail map[string]any) 
 	}
 
 	opts := s.runtime.NewObject()
-	_ = opts.Set("detail", s.runtime.ToValue(detail))
+	_ = opts.Set("detail", detailToValue(s.runtime, detail))
 
-	event, err := s.customEventCtor(s.jsEventTarget.ToObject(s.runtime), s.runtime.ToValue(eventType), opts)
+	event, err := s.customEventCtor(nil, s.runtime.ToValue(eventType), opts)
 	if err != nil {
 		return
 	}
 
-	_, _ = s.dispatch(s.jsEventTarget, event)
+	_, _ = s.dispatch(goja.Undefined(), event)
+}
+
+// detailToValue converts a Go map into a JS object with a stable key order.
+// Nested maps are recursively converted so JSON.stringify and property
+// enumeration are deterministic across runs.
+func detailToValue(r *goja.Runtime, v any) goja.Value {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return r.ToValue(v)
+	}
+
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	obj := r.NewObject()
+	for _, k := range keys {
+		_ = obj.Set(k, detailToValue(r, m[k]))
+	}
+	return obj
 }
 
 func (s *muxState) isOnEventLoopGoroutine() bool {
@@ -95,32 +118,36 @@ func (s *muxState) isOnEventLoopGoroutine() bool {
 func (s *muxState) initEventTarget() error {
 	s.eventTarget = goeventloop.NewEventTarget()
 
-	etVal := s.runtime.GlobalObject().Get("EventTarget")
-	if etVal == nil || goja.IsUndefined(etVal) {
-		return errEventTargetNotBound
-	}
-	etCtor, ok := goja.AssertConstructor(etVal)
-	if !ok {
-		return errEventTargetNotBound
-	}
-
-	jsTarget, err := etCtor(s.runtime.NewObject())
+	res, err := s.runtime.RunString(`
+(function() {
+	var t = new EventTarget();
+	return {
+		target: t,
+		add: t.addEventListener.bind(t),
+		remove: t.removeEventListener.bind(t),
+		dispatch: t.dispatchEvent.bind(t)
+	};
+})()
+`)
 	if err != nil {
 		return err
 	}
-	s.jsEventTarget = jsTarget
-	s.eventLoopGoroutineID.Store(goroutineid.Get())
 
-	obj := s.jsEventTarget.ToObject(s.runtime)
-	s.addListener, _ = goja.AssertFunction(obj.Get("addEventListener"))
-	s.removeListener, _ = goja.AssertFunction(obj.Get("removeEventListener"))
-	s.dispatch, _ = goja.AssertFunction(obj.Get("dispatchEvent"))
+	obj := res.ToObject(s.runtime)
+	s.jsEventTarget = obj.Get("target")
+	s.addListener, _ = goja.AssertFunction(obj.Get("add"))
+	if s.addListener == nil {
+		return errEventTargetNotBound
+	}
+	s.removeListener, _ = goja.AssertFunction(obj.Get("remove"))
+	s.dispatch, _ = goja.AssertFunction(obj.Get("dispatch"))
 
 	customEventVal := s.runtime.GlobalObject().Get("CustomEvent")
 	if customEventVal != nil && !goja.IsUndefined(customEventVal) {
 		s.customEventCtor, _ = goja.AssertConstructor(customEventVal)
 	}
 
+	s.eventLoopGoroutineID.Store(goroutineid.Get())
 	s.onListeners = make(map[int]*onListener)
 
 	return nil

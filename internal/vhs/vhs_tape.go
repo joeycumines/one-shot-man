@@ -429,20 +429,6 @@ func escapeVHSString(s string) string {
 	panic(fmt.Sprintf("cannot quote string: input contains all possible delimiters (\", ', `): %q", s))
 }
 
-// quoteVHSString quotes a string for VHS tape format.
-func quoteVHSString(s string) string {
-	if !strings.ContainsRune(s, '"') {
-		return `"` + s + `"`
-	}
-	if !strings.ContainsRune(s, '\'') {
-		return "'" + s + "'"
-	}
-	if !strings.ContainsRune(s, '`') {
-		return "`" + s + "`"
-	}
-	return `"` + strings.ReplaceAll(s, `"`, `'`) + `"`
-}
-
 // RecordingContext wraps a VHS tape builder with convenience methods
 // for recording actions during integration test execution.
 type RecordingContext struct {

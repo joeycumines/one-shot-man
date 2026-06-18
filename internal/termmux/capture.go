@@ -269,6 +269,11 @@ func (cs *CaptureSession) Kill() error {
 // can be resumed with Resume(). On platforms that do not support SIGSTOP,
 // Pause returns an error. Use IsPaused() to check the pause state.
 func (cs *CaptureSession) Pause() error {
+	// ConPTY on Windows does not support process suspension, regardless of
+	// whether the session has been started or is already paused.
+	if runtime.GOOS == "windows" {
+		return ErrPauseNotSupported
+	}
 	cs.mu.Lock()
 	proc := cs.proc
 	if cs.paused {
@@ -278,10 +283,6 @@ func (cs *CaptureSession) Pause() error {
 	cs.mu.Unlock()
 	if proc == nil {
 		return errors.New("capture: not started")
-	}
-	// ConPTY on Windows does not support process suspension.
-	if runtime.GOOS == "windows" {
-		return ErrPauseNotSupported
 	}
 	if err := proc.Signal("SIGSTOP"); err != nil {
 		return err
@@ -295,6 +296,11 @@ func (cs *CaptureSession) Pause() error {
 // Resume sends SIGCONT to the child process, resuming it after a Pause().
 // On platforms that do not support SIGCONT, Resume returns an error.
 func (cs *CaptureSession) Resume() error {
+	// ConPTY on Windows does not support process resumption, regardless of
+	// state.
+	if runtime.GOOS == "windows" {
+		return ErrResumeNotSupported
+	}
 	cs.mu.Lock()
 	proc := cs.proc
 	if !cs.paused {
@@ -304,10 +310,6 @@ func (cs *CaptureSession) Resume() error {
 	cs.mu.Unlock()
 	if proc == nil {
 		return errors.New("capture: not started")
-	}
-	// ConPTY on Windows does not support process resumption.
-	if runtime.GOOS == "windows" {
-		return ErrResumeNotSupported
 	}
 	if err := proc.Signal("SIGCONT"); err != nil {
 		return err

@@ -423,15 +423,19 @@ func TestEventBridge_MultipleListeners(t *testing.T) {
 	waitForEvents(t, runtime, "titleA", 1)
 	waitForEvents(t, runtime, "titleB", 1)
 
-	want := `{"sessionId":` + sessionIDJSON(uint64(id)) + `,"data":"XTerm Title"}`
-	for _, arr := range []string{"titleA", "titleB"} {
-		v, err := runtime.RunString(`JSON.stringify(` + arr + `[0])`)
-		if err != nil {
-			t.Fatalf("stringify %s[0]: %v", arr, err)
-		}
-		if got := v.String(); got != want {
-			t.Errorf("%s[0] = %s, want %s", arr, got, want)
-		}
+	sidJSON := sessionIDJSON(uint64(id))
+	_, err = runtime.RunString(fmt.Sprintf(`
+		var wantSessionId = %s;
+		var wantData = "XTerm Title";
+		if (!titleA[0]) { throw new Error("titleA empty"); }
+		if (!titleB[0]) { throw new Error("titleB empty"); }
+		if (titleA[0].sessionId !== wantSessionId) { throw new Error("titleA sessionId mismatch"); }
+		if (titleA[0].data !== wantData) { throw new Error("titleA data mismatch"); }
+		if (titleB[0].sessionId !== wantSessionId) { throw new Error("titleB sessionId mismatch"); }
+		if (titleB[0].data !== wantData) { throw new Error("titleB data mismatch"); }
+	`, sidJSON))
+	if err != nil {
+		t.Errorf("multiple listener detail fields: %v", err)
 	}
 
 	cancel()

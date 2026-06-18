@@ -183,9 +183,17 @@ func TestCaptureSession_PauseResume_NotStarted(t *testing.T) {
 		t.Fatal("Pause on not-started session should return error")
 	}
 	// Resume on a not-started, not-paused session is a no-op (returns nil)
-	// because it's already "not paused" — there's nothing to resume.
-	if err := cs.Resume(); err != nil {
-		t.Fatalf("Resume on not-started, not-paused session should be no-op, got: %v", err)
+	// on Unix-like platforms because it's already "not paused" — there's
+	// nothing to resume. On Windows, ConPTY lacks SIGCONT support so Resume
+	// returns ErrResumeNotSupported regardless of state.
+	if runtime.GOOS == "windows" {
+		if err := cs.Resume(); !errors.Is(err, ErrResumeNotSupported) {
+			t.Fatalf("Resume on Windows should return ErrResumeNotSupported, got: %v", err)
+		}
+	} else {
+		if err := cs.Resume(); err != nil {
+			t.Fatalf("Resume on not-started, not-paused session should be no-op, got: %v", err)
+		}
 	}
 	if cs.IsPaused() {
 		t.Fatal("should not be paused when not started")

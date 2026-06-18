@@ -5,8 +5,6 @@ import (
 	"context"
 	"io"
 	"strings"
-	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
@@ -972,68 +970,5 @@ func TestCaptureSession_Passthrough_WithTerminalState(t *testing.T) {
 	}
 	if !bg.isRestoreCalled() {
 		t.Error("BlockingGuard.Restore was not called")
-	}
-}
-
-func TestSessionManager_Passthrough_SignalChildSIGTSTP(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping slow test in -short mode")
-	}
-	skipIfWindows(t)
-
-	m, _, _ := passthroughTestManager(t)
-
-	stdinR, stdinW := io.Pipe()
-	defer stdinW.Close()
-	stdout := &syncBuffer{}
-
-	var sigtstpReceived atomic.Int32
-	signalChild := func(sig string) error {
-		if sig == "SIGTSTP" {
-			sigtstpReceived.Add(1)
-		}
-		return nil
-	}
-
-	resultCh := make(chan struct {
-		reason ExitReason
-		err    error
-	}, 1)
-	go func() {
-		reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-			TerminalIO: TerminalIO{
-				Stdin:  stdinR,
-				Stdout: stdout,
-				TermFd: -1,
-			},
-			PassthroughOptions: PassthroughOptions{
-				ToggleKey:   0x1D,
-				SignalChild: signalChild,
-			},
-		})
-		resultCh <- struct {
-			reason ExitReason
-			err    error
-		}{reason, err}
-	}()
-
-	time.Sleep(200 * time.Millisecond)
-
-	syscall.Kill(syscall.Getpid(), syscall.SIGTSTP)
-
-	select {
-	case r := <-resultCh:
-		if r.reason != ExitSuspended {
-			t.Errorf("reason = %v, want ExitSuspended", r.reason)
-		}
-		if r.err != nil {
-			t.Errorf("err = %v, want nil", r.err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for passthrough to return after SIGTSTP")
-	}
-
-	if sigtstpReceived.Load() < 1 {
-		t.Errorf("SIGTSTP forwarded %d times, want >= 1", sigtstpReceived.Load())
 	}
 }

@@ -68,7 +68,7 @@ internal\vtassert\*: unreachable func: *
 
 # VHS tape builder, RecordingContext, InputCaptureRecorder — test helpers used from recording_demos_unix_test.go and vhs_record_test.go (external packages).
 internal/vhs/*: unreachable func: *
-internal\vhsh\*: unreachable func: *
+internal\vhs\*: unreachable func: *
 
 # termui scrollbar — Go API methods called from JS binding layer via Goja runtime (not visible to deadcode).
 internal/termui/scrollbar/scrollbar.go:*: unreachable func: Model.*

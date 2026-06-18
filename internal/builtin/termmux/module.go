@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dop251/goja"
@@ -21,6 +22,18 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
+
+// managerWrapperCache avoids re-creating a wrapper for the same SessionManager
+// while an event loop is running. Wrapping involves mutating the runtime via
+// Object.Set, so concurrent wrapping from production scripts (which run on the
+// event loop) and tests (which call runtime.RunString directly) can corrupt
+// Goja's internal state. Reusing the existing wrapper is safe.
+var managerWrapperCache sync.Map // key: *parent.SessionManager
+
+type wrapperCacheEntry struct {
+	obj   *goja.Object
+	state *muxState
+}
 
 func toInt64(m map[string]any, key string) int64 {
 	v, ok := m[key]
@@ -980,6 +993,15 @@ func WrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, run
 // wrapSessionManager is the internal implementation of WrapSessionManager; it
 // also returns the backing *muxState for package-internal test assertions.
 func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int, title string) (*goja.Object, *muxState) {
+	if adapter != nil && mgr != nil {
+		if cached, ok := managerWrapperCache.Load(mgr); ok {
+			entry := cached.(*wrapperCacheEntry)
+			if entry.state != nil && entry.state.runtime == runtime {
+				return entry.obj, entry.state
+			}
+		}
+	}
+
 	obj := runtime.NewObject()
 
 	_ = obj.DefineDataProperty("_goSessionManager", runtime.ToValue(mgr),
@@ -1010,7 +1032,7 @@ func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, run
 
 		// EventBus → EventTarget bridge: translate SessionManager events into
 		// CustomEvents delivered on the event loop.
-		busID, busCh := mgr.Subscribe(64)
+		busID, busCh := mgr.Subscribe(4096)
 		go func() {
 			defer mgr.Unsubscribe(busID)
 			for {
@@ -1040,6 +1062,10 @@ func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, run
 	registerPersistenceMethods(obj, s)
 	registerPaneMethods(obj, s)
 	registerChooserMethods(obj, s)
+
+	if adapter != nil && mgr != nil {
+		managerWrapperCache.Store(mgr, &wrapperCacheEntry{obj: obj, state: s})
+	}
 
 	return obj, s
 }

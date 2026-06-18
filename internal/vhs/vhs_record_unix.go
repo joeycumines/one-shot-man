@@ -16,6 +16,20 @@ import (
 	"github.com/joeycumines/go-prompt/termtest"
 )
 
+// quoteVHSString quotes a string for VHS tape format.
+func quoteVHSString(s string) string {
+	if !strings.ContainsRune(s, '"') {
+		return "\"" + s + "\""
+	}
+	if !strings.ContainsRune(s, '\'') {
+		return "'" + s + "'"
+	}
+	if !strings.ContainsRune(s, '`') {
+		return "`" + s + "`"
+	}
+	return "\"" + strings.ReplaceAll(s, "\"", "'") + "\""
+}
+
 // RecorderOption configures an InputCaptureRecorder.
 type RecorderOption interface {
 	applyRecorder(*recorderConfig) error

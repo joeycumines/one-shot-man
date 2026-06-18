@@ -46,15 +46,20 @@ func setupPaneMgr(t *testing.T) (*goja.Runtime, func()) {
 		t.Fatalf("adapter.Bind: %v", err)
 	}
 
-	go loop.Run(ctx)
-
 	tuiMux := WrapSessionManager(ctx, adapter, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
+
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		_ = loop.Run(ctx)
+	}()
 
 	return runtime, func() {
 		cancel()
 		<-errCh
 		_ = loop.Shutdown(context.Background())
+		<-loopDone
 	}
 }
 
@@ -87,8 +92,6 @@ func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
 		t.Fatalf("adapter.Bind: %v", err)
 	}
 
-	go loop.Run(ctx)
-
 	tuiMux := WrapSessionManager(ctx, adapter, runtime, mgr, nil, nil, -1, "")
 
 	// Set up the termmux module namespace so newBoundedSession etc. are available.
@@ -105,12 +108,19 @@ func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
 	_ = runtime.Set("termmux", exports)
 	_ = runtime.Set("tuiMux", tuiMux)
 
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		_ = loop.Run(ctx)
+	}()
+
 	testLoops.Store(runtime, loop)
 	return runtime, func() {
 		testLoops.Delete(runtime)
 		cancel()
 		<-errCh
 		_ = loop.Shutdown(context.Background())
+		<-loopDone
 	}
 }
 

@@ -154,8 +154,17 @@ func wrapTestSessionManager(t *testing.T, ctx context.Context, runtime *goja.Run
 		t.Fatalf("adapter.Bind: %v", err)
 	}
 
-	go loop.Run(ctx)
-	t.Cleanup(func() { _ = loop.Shutdown(context.Background()) })
+	wrapper := WrapSessionManager(ctx, adapter, runtime, mgr, stdin, stdout, termFd, title)
 
-	return WrapSessionManager(ctx, adapter, runtime, mgr, stdin, stdout, termFd, title)
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		_ = loop.Run(ctx)
+	}()
+	t.Cleanup(func() {
+		_ = loop.Shutdown(context.Background())
+		<-loopDone
+	})
+
+	return wrapper
 }

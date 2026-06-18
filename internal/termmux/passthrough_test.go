@@ -521,7 +521,7 @@ func TestPassthroughStatusBar_ScrollRegionSetup(t *testing.T) {
 	}
 
 	// Verify that status bar content was rendered (generic title, no product branding).
-	if strings.Contains(got, "[Claude]") {
+	if strings.Contains(got, "[Agent]") {
 		t.Errorf("stdout should not contain product-specific branding; got %q", got)
 	}
 	// The status bar should contain the toggle key hint.
@@ -650,7 +650,7 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 		t.Errorf("status bar toggle hint count = %d, want >= 2 (initial + post-restore); got %q", switchCount, got)
 	}
 	// Verify no product-specific branding leaked.
-	if strings.Contains(got, "[Claude]") {
+	if strings.Contains(got, "[Agent]") {
 		t.Errorf("stdout should not contain product-specific branding; got %q", got)
 	}
 }

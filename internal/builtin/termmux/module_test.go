@@ -141,7 +141,7 @@ func (r *recordingStringIO) Close() error {
 //
 // This is the core regression test for GAP-C01/C02 from the pr-split
 // autopsy: the session() wrapper was missing write/resize methods,
-// causing all inline Claude interactivity to silently fail.
+// causing all inline agent interactivity to silently fail.
 func TestSessionWrapper_WriteResize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")

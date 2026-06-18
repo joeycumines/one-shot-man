@@ -370,7 +370,7 @@ func TestAgentCodeExecutor_Resolve_ExplicitCommand(t *testing.T) {
 	})
 }
 
-func TestAgentCodeExecutor_Resolve_AutoDetect(t *testing.T) {
+func TestAgentCodeExecutor_Resolve_Explicit(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -378,15 +378,12 @@ func TestAgentCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Run("agent_autodetected_version_ok", func(t *testing.T) {
+	t.Run("explicit_command_found", func(t *testing.T) {
 		if _, err := evalJS(`
 			var execMod57c = require('osm:exec');
 			execMod57c.execv = function(argv) {
-				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'claude') {
-					return {stdout: '/usr/local/bin/claude', stderr: '', code: 0};
-				}
-				if (argv[0] === 'claude' && argv[1] === '--version') {
-					return {stdout: 'Claude Code v2.1.0', stderr: '', code: 0};
+				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'my-agent') {
+					return {stdout: '/usr/local/bin/my-agent', stderr: '', code: 0};
 				}
 				return {stdout: '', stderr: 'not found', code: 1};
 			};
@@ -394,7 +391,7 @@ func TestAgentCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 			t.Fatal(err)
 		}
 		val, err := evalJS(`
-			var exe = new globalThis.prSplit.AgentCodeExecutor({});
+			var exe = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'my-agent'});
 			var result = exe.resolve();
 			JSON.stringify({error: result.error, resolved: exe.resolved})
 		`)
@@ -402,28 +399,22 @@ func TestAgentCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := val.(string)
-		if !strings.Contains(s, `"type":"agent"`) {
-			t.Errorf("expected agent type, got: %s", s)
+		if !strings.Contains(s, `"type":"explicit"`) {
+			t.Errorf("expected explicit type, got: %s", s)
 		}
 	})
 
-	t.Run("agent_found_version_fails", func(t *testing.T) {
+	t.Run("explicit_command_not_found", func(t *testing.T) {
 		if _, err := evalJS(`
 			var execMod57d = require('osm:exec');
 			execMod57d.execv = function(argv) {
-				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'claude') {
-					return {stdout: '/usr/local/bin/claude', stderr: '', code: 0};
-				}
-				if (argv[0] === 'claude' && argv[1] === '--version') {
-					return {stdout: '', stderr: 'segfault', code: 139};
-				}
 				return {stdout: '', stderr: 'not found', code: 1};
 			};
 		`); err != nil {
 			t.Fatal(err)
 		}
 		val, err := evalJS(`
-			var exe = new globalThis.prSplit.AgentCodeExecutor({});
+			var exe = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'missing-agent'});
 			var result = exe.resolve();
 			JSON.stringify(result)
 		`)
@@ -431,79 +422,15 @@ func TestAgentCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := val.(string)
-		if !strings.Contains(s, "version check failed") {
-			t.Errorf("expected version check failure, got: %s", s)
+		if !strings.Contains(s, "Agent command not found") {
+			t.Errorf("expected command not found error, got: %s", s)
 		}
 	})
 
-	t.Run("ollama_autodetected_model_available", func(t *testing.T) {
+	t.Run("no_command_configured", func(t *testing.T) {
 		if _, err := evalJS(`
 			var execMod57e = require('osm:exec');
 			execMod57e.execv = function(argv) {
-				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'claude') {
-					return {stdout: '', stderr: '', code: 1};
-				}
-				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'ollama') {
-					return {stdout: '/usr/local/bin/ollama', stderr: '', code: 0};
-				}
-				if (argv[0] === 'ollama' && argv[1] === 'list') {
-					return {stdout: 'NAME\nllama3:latest\nmistral:latest\n', stderr: '', code: 0};
-				}
-				return {stdout: '', stderr: '', code: 1};
-			};
-		`); err != nil {
-			t.Fatal(err)
-		}
-		val, err := evalJS(`
-			var exe = new globalThis.prSplit.AgentCodeExecutor({agentModel: 'llama3'});
-			var result = exe.resolve();
-			JSON.stringify({error: result.error, resolved: exe.resolved})
-		`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		s := val.(string)
-		if !strings.Contains(s, `"type":"ollama"`) {
-			t.Errorf("expected ollama type, got: %s", s)
-		}
-	})
-
-	t.Run("ollama_model_missing", func(t *testing.T) {
-		if _, err := evalJS(`
-			var execMod57f = require('osm:exec');
-			execMod57f.execv = function(argv) {
-				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'agent') {
-					return {stdout: '', stderr: '', code: 1};
-				}
-				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'ollama') {
-					return {stdout: '/usr/local/bin/ollama', stderr: '', code: 0};
-				}
-				if (argv[0] === 'ollama' && argv[1] === 'list') {
-					return {stdout: 'NAME\nmistral:latest\n', stderr: '', code: 0};
-				}
-				return {stdout: '', stderr: '', code: 1};
-			};
-		`); err != nil {
-			t.Fatal(err)
-		}
-		val, err := evalJS(`
-			var exe = new globalThis.prSplit.AgentCodeExecutor({agentModel: 'llama3'});
-			var result = exe.resolve();
-			JSON.stringify(result)
-		`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		s := val.(string)
-		if !strings.Contains(s, "not available") {
-			t.Errorf("expected model not available error, got: %s", s)
-		}
-	})
-
-	t.Run("nothing_found", func(t *testing.T) {
-		if _, err := evalJS(`
-			var execMod57g = require('osm:exec');
-			execMod57g.execv = function(argv) {
 				return {stdout: '', stderr: '', code: 1};
 			};
 		`); err != nil {
@@ -518,8 +445,8 @@ func TestAgentCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := val.(string)
-		if !strings.Contains(s, "No agent binary found") {
-			t.Errorf("expected no binary found error, got: %s", s)
+		if !strings.Contains(s, "No agent command configured") {
+			t.Errorf("expected no command configured error, got: %s", s)
 		}
 	})
 }

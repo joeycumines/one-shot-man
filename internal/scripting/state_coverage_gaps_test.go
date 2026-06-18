@@ -1557,7 +1557,7 @@ func TestContextManager_NormalizeOwnerPath_OutsideBase(t *testing.T) {
 // tilde ONLY for existence verification, while preserving the original tilde
 // form as the returned owner (so TUI state labels remain user-friendly).
 // This is a regression test for: when a user adds a file like
-// ~/.claude/agents/Takumi.md, the raw tilde path is stored as the TUI state
+// ~/.config/agent/Takumi.md, the raw tilde path is stored as the TUI state
 // label. On rehydration, AddRelativePath must expand tilde to verify the file
 // exists but must return the original tilde label unchanged.
 func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
@@ -1565,7 +1565,7 @@ func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
 	// Set up a fake home directory with a real file inside it so that
 	// the lstat check in AddRelativePath succeeds.
 	fakeHome := t.TempDir()
-	fileDir := filepath.Join(fakeHome, ".claude", "agents")
+	fileDir := filepath.Join(fakeHome, ".config", "agent")
 	if err := os.MkdirAll(fileDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -1585,12 +1585,12 @@ func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
 
 	// Test 1: AddRelativePath with tilde label succeeds and returns the
 	// ORIGINAL tilde form (not the expanded absolute path).
-	owner, err := cm.AddRelativePath("~/.claude/agents/Takumi.md")
+	owner, err := cm.AddRelativePath("~/.config/agent/Takumi.md")
 	if err != nil {
 		t.Fatalf("AddRelativePath with tilde label: %v", err)
 	}
-	if owner != "~/.claude/agents/Takumi.md" {
-		t.Errorf("expected tilde form %q, got %q — owner should preserve tilde", "~/.claude/agents/Takumi.md", owner)
+	if owner != "~/.config/agent/Takumi.md" {
+		t.Errorf("expected tilde form %q, got %q — owner should preserve tilde", "~/.config/agent/Takumi.md", owner)
 	}
 
 	// Test 2: The file is tracked internally under the normalized absolute
@@ -1632,7 +1632,7 @@ func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
 	}
 
 	// Test 5: Non-existent tilde path returns error (file truly missing).
-	_, err = cm.AddRelativePath("~/.claude/nonexistent.md")
+	_, err = cm.AddRelativePath("~/.config/agent/nonexistent.md")
 	if err == nil {
 		t.Fatal("expected error for nonexistent tilde path")
 	}
@@ -1641,9 +1641,9 @@ func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
 	}
 
 	// Test 6: RemovePath round-trips through tilde expansion correctly.
-	// After RemovePath("~/.claude/agents/Takumi.md"), the file should no
+	// After RemovePath("~/.config/agent/Takumi.md"), the file should no
 	// longer be tracked internally.
-	err = cm.RemovePath("~/.claude/agents/Takumi.md")
+	err = cm.RemovePath("~/.config/agent/Takumi.md")
 	if err != nil {
 		t.Fatalf("RemovePath with tilde label: %v", err)
 	}
@@ -1653,16 +1653,16 @@ func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
 	}
 
 	// Test 7: RefreshPath round-trips through tilde expansion after re-adding.
-	_, err = cm.AddRelativePath("~/.claude/agents/Takumi.md")
+	_, err = cm.AddRelativePath("~/.config/agent/Takumi.md")
 	if err != nil {
 		t.Fatalf("re-add after remove: %v", err)
 	}
 	// Modify the file on disk so RefreshPath has observable effect
-	updatedPath := filepath.Join(fakeHome, ".claude", "agents", "Takumi.md")
+	updatedPath := filepath.Join(fakeHome, ".config", "agent", "Takumi.md")
 	if err := os.WriteFile(updatedPath, []byte("# Updated Takumi"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	err = cm.RefreshPath("~/.claude/agents/Takumi.md")
+	err = cm.RefreshPath("~/.config/agent/Takumi.md")
 	if err != nil {
 		t.Fatalf("RefreshPath with tilde label: %v", err)
 	}

@@ -485,7 +485,7 @@ cb.closeSync();
 `osm:aimux` is the provider-agnostic agent/process multiplexer. It provides
 provider-agnostic building blocks for starting, controlling, and parsing output from
 interactive agent processes. It is used by `osm pr-split` to spawn the configured
-agent executable (e.g. `claude` or `ollama`) without hard-coding any provider.
+agent executable without hard-coding any provider.
 
 **Provider/registry:**
 - `aimux.processProvider(opts)` — Build a process-backed provider (`name`, `command`, `defaultArgs`, `capabilities`).

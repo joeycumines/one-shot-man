@@ -61,7 +61,7 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 
 	// When Command contains spaces and Args is empty, split Command
 	// into binary + args using POSIX shell word-splitting rules.
-	// This allows callers to pass "ollama launch claude --config" as
+	// This allows callers to pass "ollama launch my-agent --config" as
 	// a single Command string without pre-splitting.
 	binary, args := cfg.Command, cfg.Args
 	if len(cfg.Args) == 0 {
@@ -205,8 +205,8 @@ func (p *Process) platformClose() {}
 // with a nil args slice.
 //
 // This function is used when cfg.Command contains spaces and cfg.Args is
-// empty — e.g., "ollama launch claude --config" becomes
-// binary="ollama", args=["launch", "claude", "--config"].
+// empty — e.g., "ollama launch my-agent --config" becomes
+// binary="ollama", args=["launch", "my-agent", "--config"].
 func splitCommand(s string) (binary string, args []string, err error) {
 	var words []string
 	var cur strings.Builder

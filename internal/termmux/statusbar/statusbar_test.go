@@ -82,8 +82,8 @@ func TestRender_NoTitleByDefault(t *testing.T) {
 	sb := New(&buf)
 	sb.Render()
 	got := buf.String()
-	if strings.Contains(got, "[Claude]") {
-		t.Errorf("default render should not contain [Claude]; got %q", got)
+	if strings.Contains(got, "[Agent]") {
+		t.Errorf("default render should not contain [Agent]; got %q", got)
 	}
 	// Positive assertion: the no-title fallback should be present.
 	if !strings.Contains(got, " ready │ Ctrl+] to switch ") {

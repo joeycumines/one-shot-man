@@ -733,23 +733,20 @@ func TestAgentCodeExecutor_Resolve(t *testing.T) {
 			},
 		},
 		{
-			name: "auto-detect finds agent",
+			name: "explicit agent command resolves",
 			setup: `
 				var execMod = require('osm:exec');
 				var origExecv = execMod.execv;
 				execMod.execv = function(argv) {
-					if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'claude') {
-						return _gitOk('/usr/local/bin/claude');
+					if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'my-agent') {
+						return _gitOk('/usr/local/bin/my-agent');
 					}
 					if (argv[0] === 'which' || argv[0] === 'where.exe') {
 						return _gitFail('not found');
 					}
-					if (argv[0] === 'claude' && argv[1] === '--version') {
-						return _gitOk('claude 1.0.0');
-					}
 					return origExecv(argv);
 				};
-				var ce = new globalThis.prSplit.AgentCodeExecutor({});
+				var ce = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'my-agent'});
 			`,
 			invoke: `JSON.stringify(ce.resolve())`,
 			check: func(t *testing.T, r agentResolveResult) {
@@ -758,44 +755,36 @@ func TestAgentCodeExecutor_Resolve(t *testing.T) {
 				}
 			},
 			postCheck: `
-				if (ce.resolved.command !== 'claude') throw new Error('expected claude');
-				if (ce.resolved.type !== 'agent') throw new Error('expected agent type');
+				if (ce.resolved.command !== 'my-agent') throw new Error('expected my-agent');
+				if (ce.resolved.type !== 'explicit') throw new Error('expected explicit type');
 				'ok'
 			`,
 		},
 		{
-			name: "auto-detect falls back to ollama",
+			name: "explicit command not found",
 			setup: `
 				var execMod = require('osm:exec');
 				var origExecv = execMod.execv;
 				execMod.execv = function(argv) {
-					if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'claude') {
-						return _gitFail('not found');
-					}
-					if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'ollama') {
-						return _gitOk('/usr/bin/ollama');
-					}
 					if (argv[0] === 'which' || argv[0] === 'where.exe') {
 						return _gitFail('not found');
 					}
 					return origExecv(argv);
 				};
-				var ce = new globalThis.prSplit.AgentCodeExecutor({});
+				var ce = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'missing-agent'});
 			`,
 			invoke: `JSON.stringify(ce.resolve())`,
 			check: func(t *testing.T, r agentResolveResult) {
-				if r.Error != nil {
-					t.Errorf("expected no error, got: %s", *r.Error)
+				if r.Error == nil {
+					t.Fatal("expected error when command not found")
+				}
+				if !strings.Contains(*r.Error, "Agent command not found") {
+					t.Errorf("expected 'Agent command not found' in error, got: %s", *r.Error)
 				}
 			},
-			postCheck: `
-				if (ce.resolved.command !== 'ollama') throw new Error('expected ollama');
-				if (ce.resolved.type !== 'ollama') throw new Error('expected ollama type');
-				'ok'
-			`,
 		},
 		{
-			name: "no agent-compatible binary found",
+			name: "no agent command configured",
 			setup: `
 				var execMod = require('osm:exec');
 				var origExecv = execMod.execv;
@@ -810,10 +799,10 @@ func TestAgentCodeExecutor_Resolve(t *testing.T) {
 			invoke: `JSON.stringify(ce.resolve())`,
 			check: func(t *testing.T, r agentResolveResult) {
 				if r.Error == nil {
-					t.Fatal("expected error when nothing found")
+					t.Fatal("expected error when no command configured")
 				}
-				if !strings.Contains(*r.Error, "No agent binary found") {
-					t.Errorf("expected 'No agent binary found' in error, got: %s", *r.Error)
+				if !strings.Contains(*r.Error, "No agent command configured") {
+					t.Errorf("expected 'No agent command configured' in error, got: %s", *r.Error)
 				}
 			},
 		},

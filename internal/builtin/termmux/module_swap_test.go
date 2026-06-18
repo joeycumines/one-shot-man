@@ -8,36 +8,38 @@ func TestSwapPanes_JSBinding_ReturnsSwapped(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
-	t.Skip("broken: cross-manager session registration leaves panes empty")
 
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	_, err := runOnLoop(t, runtime, `
 		function mkSession(name) {
-			var s = termmux.newBoundedSession({ cmd: "sh" });
-			tuiMux.register(s.session, { name: name });
-			return s.session;
+			return termmux.newBoundedSession({ cmd: "cat" });
 		}
-		mkSession("one");
-		mkSession("two");
+		var s1 = mkSession("one");
+		var s2 = mkSession("two");
+		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "one" } }));
+		var p2 = Number(tuiMux.splitHorizontal({ session: s2.session, target: { name: "two" } }));
+		if (p1 === 0 || p2 === 0) {
+			throw new Error("expected valid pane ids");
+		}
 	`)
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
-	res, err := runtime.RunString(`
-		const before = tuiMux.panes();
-		const p1 = before[0].id;
-		const p2 = before[1].id;
-		const result = tuiMux.swapPanes(p1, p2);
-		const after = tuiMux.panes();
+	res, err := runOnLoop(t, runtime, `
+		var before = tuiMux.panes();
+		var p1 = Number(before[0].id);
+		var p2 = Number(before[1].id);
+		var result = tuiMux.swapPanes(p1, p2);
+		var after = tuiMux.panes();
 		({
 			p1,
 			p2,
 			swapped: result.swapped,
-			beforeSessions: [before[0].sessionId, before[1].sessionId],
-			afterSessions: [after[0].sessionId, after[1].sessionId]
+			beforeSessions: [Number(before[0].sessionId), Number(before[1].sessionId)],
+			afterSessions: [Number(after[0].sessionId), Number(after[1].sessionId)]
 		})
 	`)
 	if err != nil {

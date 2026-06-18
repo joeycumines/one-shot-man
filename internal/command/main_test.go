@@ -91,8 +91,8 @@ func skipIfNoAgent(t *testing.T) {
 // Skips the test if Agent cannot process a prompt (e.g., not logged in,
 // no API key, model unavailable).
 //
-// This catches the common failure mode where Agent Code's interactive TUI
-// shows "Not logged in · Run /login" — in TUI mode, authentication is
+// This catches the common failure mode where an agent CLI's interactive TUI
+// shows a "not logged in" prompt — in TUI mode, authentication is
 // required and prompts won't be processed without it.
 func verifyAgentAuth(t *testing.T) {
 	t.Helper()

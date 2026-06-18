@@ -622,12 +622,12 @@ func TestVTerm_TabStops_MultipleTabs(t *testing.T) {
 	}
 }
 
-// ── T110: VTerm handles real Claude Code output samples ────────────
+// ── T110: VTerm handles real agent CLI output samples ────────────
 
-func TestVTerm_RealClaudeCodeOutput(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("testdata", "claude_output.txt"))
+func TestVTerm_RealAgentCodeOutput(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "agent_output.txt"))
 	if err != nil {
-		t.Skipf("testdata/claude_output.txt not found: %v", err)
+		t.Skipf("testdata/agent_output.txt not found: %v", err)
 	}
 
 	v := NewVTerm(100, 120)
@@ -660,7 +660,7 @@ func TestVTerm_RealClaudeCodeOutput(t *testing.T) {
 	text := screenText.String()
 
 	// These strings should appear somewhere in the rendered content.
-	fragments := []string{"Claude", "tests", "pass"}
+	fragments := []string{"Agent", "tests", "pass"}
 	for _, frag := range fragments {
 		if !strings.Contains(text, frag) {
 			t.Errorf("screen text missing fragment %q", frag)

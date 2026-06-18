@@ -17,17 +17,17 @@ generate-tapes-and-gifs: ## Generate all recording tapes and GIFs
 
 .PHONY: integration-test-prsplit
 integration-test-prsplit: ## Run pr-split integration tests with a real agent (requires agent infrastructure)
-integration-test-prsplit: AGENT_COMMAND ?= claude
+integration-test-prsplit: AGENT_COMMAND ?=
 integration-test-prsplit: AGENT_ARGS ?=
 integration-test-prsplit: INTEGRATION_MODEL ?= minimax-m2.5:cloud
-integration-test-prsplit: PRSPLIT_TEST_RUN ?= TestIntegration_(.*Claude|AutoSplitComplex|PrSplit_VTerm)
+integration-test-prsplit: PRSPLIT_TEST_RUN ?= TestIntegration_(.*Agent|AutoSplitComplex|PrSplit_VTerm)
 integration-test-prsplit:
 	$(GO) test -race -count=1 -timeout=15m \
 		./internal/command/... \
 		-run '$(PRSPLIT_TEST_RUN)' \
 		-integration \
 		-agent-command=$(AGENT_COMMAND) \
-		$(foreach arg,$(AGENT_ARGS),-claude-arg=$(arg)) \
+		$(foreach arg,$(AGENT_ARGS),-agent-arg=$(arg)) \
 		-integration-model=$(INTEGRATION_MODEL)
 
 .PHONY: integration-test-prsplit-mcp

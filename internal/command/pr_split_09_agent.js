@@ -88,48 +88,8 @@
             return { error: null };
         }
 
-        progress('Resolving binary…');
-        var claudeCheck = await lookupBinary(exec, 'claude');
-        if (claudeCheck.found) {
-            progress('Checking version…');
-            var versionCheck = await runAsync(exec, ['claude', '--version']);
-            if (versionCheck.code !== 0) {
-                return {
-                    error: 'Claude found at ' + claudeCheck.path +
-                           ' but version check failed (exit ' + versionCheck.code + '): ' +
-                           (versionCheck.stderr || versionCheck.stdout || '').trim()
-                };
-            }
-            self.resolved = { command: 'claude', type: 'agent' };
-            return { error: null };
-        }
-
-        var ollamaCheck = await lookupBinary(exec, 'ollama');
-        if (ollamaCheck.found) {
-            progress('Checking Ollama…');
-            if (self.model) {
-                var listCheck = await runAsync(exec, ['ollama', 'list']);
-                if (listCheck.code !== 0) {
-                    return {
-                        error: 'Ollama found but list command failed (exit ' + listCheck.code + '): ' +
-                               (listCheck.stderr || listCheck.stdout || '').trim()
-                    };
-                }
-                var modelOutput = (listCheck.stdout || '');
-                if (modelOutput.indexOf(self.model) === -1) {
-                    return {
-                        error: 'Ollama found but model ' + self.model + ' not available. ' +
-                               'Available models: ' + modelOutput.trim().split('\n').slice(1).join(', ')
-                    };
-                }
-            }
-            self.resolved = { command: 'ollama', type: 'ollama' };
-            return { error: null };
-        }
-
         return {
-            error: 'No agent binary found. Install an agent CLI ' +
-                   '(e.g. claude or ollama), or set --agent-command explicitly.'
+            error: 'No agent command configured. Set --agent-command to the agent CLI executable.'
         };
     };
 
@@ -155,45 +115,8 @@
             return { error: null };
         }
 
-        var claudeCheck = lookupSync('claude');
-        if (claudeCheck.found) {
-            var versionCheck = exec.execv(['claude', '--version']);
-            if (versionCheck.code !== 0) {
-                return {
-                    error: 'Claude found at ' + claudeCheck.path +
-                           ' but version check failed (exit ' + versionCheck.code + '): ' +
-                           (versionCheck.stderr || versionCheck.stdout || '').trim()
-                };
-            }
-            self.resolved = { command: 'claude', type: 'agent' };
-            return { error: null };
-        }
-
-        var ollamaCheck = lookupSync('ollama');
-        if (ollamaCheck.found) {
-            if (self.model) {
-                var listCheck = exec.execv(['ollama', 'list']);
-                if (listCheck.code !== 0) {
-                    return {
-                        error: 'Ollama found but list command failed (exit ' + listCheck.code + '): ' +
-                               (listCheck.stderr || listCheck.stdout || '').trim()
-                    };
-                }
-                var modelOutput = (listCheck.stdout || '');
-                if (modelOutput.indexOf(self.model) === -1) {
-                    return {
-                        error: 'Ollama found but model ' + self.model + ' not available. ' +
-                               'Available models: ' + modelOutput.trim().split('\n').slice(1).join(', ')
-                    };
-                }
-            }
-            self.resolved = { command: 'ollama', type: 'ollama' };
-            return { error: null };
-        }
-
         return {
-            error: 'No agent binary found. Install an agent CLI ' +
-                   '(e.g. claude or ollama), or set --agent-command explicitly.'
+            error: 'No agent command configured. Set --agent-command to the agent CLI executable.'
         };
     };
 
@@ -217,10 +140,6 @@
         var baseArgs = (this.args || []).concat(['--mcp-config', opts.mcpConfigPath]);
         var providerName;
         if (this.resolved.type === 'agent' || this.resolved.type === 'agent-code' || this.resolved.type === 'explicit') {
-            var basename = this.resolved.command.replace(/^.*[\/\\]/, '');
-            if (basename.indexOf('claude') !== -1) {
-                baseArgs = ['--dangerously-skip-permissions'].concat(baseArgs);
-            }
             providerName = 'agent';
             provider = aimux.processProvider({
                 name: providerName,

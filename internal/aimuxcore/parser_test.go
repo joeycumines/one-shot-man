@@ -98,7 +98,7 @@ func TestParse_ModelSelect(t *testing.T) {
 		name string
 		line string
 	}{
-		{"select a model", "Select a model: claude-sonnet-4-20250514, opus"},
+		{"select a model", "Select a model: my-model, opus"},
 		{"select model", "Please select model from the list"},
 		{"choose a model", "Choose a model to use"},
 		{"choose model", "Choose model for this task"},
@@ -127,7 +127,7 @@ func TestParse_ModelItemSelected(t *testing.T) {
 		line          string
 		wantModelName string
 	}{
-		{"arrow selected", "❯ claude-sonnet-4-20250514", "claude-sonnet-4-20250514"},
+		{"arrow selected", "❯ my-model", "my-model"},
 		{"gt selected", "> llama3.2", "llama3.2"},
 		{"indented arrow", "  ❯ model-name", "model-name"},
 		{"indented gt", "  > codellama:7b", "codellama:7b"},
@@ -529,7 +529,7 @@ func TestParse_CapturedOutputSamples(t *testing.T) {
 	}{
 		{"rate limit sample", "Rate limited. Please try again in 30 seconds.", EventRateLimit},
 		{"permission sample", "Do you want to allow write access to /etc/passwd? [Y/n]", EventPermission},
-		{"model select sample", "Select a model: claude-sonnet-4-20250514, opus", EventModelSelect},
+		{"model select sample", "Select a model: my-model, opus", EventModelSelect},
 		{"sso sample", "Opening your browser for SSO authentication...", EventSSOLogin},
 		{"tool use sample", "Calling tool: readFile", EventToolUse},
 		{"error sample", "Error: file not found", EventError},

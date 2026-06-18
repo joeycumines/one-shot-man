@@ -58,6 +58,8 @@ func setupPaneMgr(t *testing.T) (*goja.Runtime, func()) {
 	}
 }
 
+var testLoops sync.Map
+
 func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
 	t.Helper()
 	if testing.Short() {
@@ -103,11 +105,35 @@ func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
 	_ = runtime.Set("termmux", exports)
 	_ = runtime.Set("tuiMux", tuiMux)
 
+	testLoops.Store(runtime, loop)
 	return runtime, func() {
+		testLoops.Delete(runtime)
 		cancel()
 		<-errCh
 		_ = loop.Shutdown(context.Background())
 	}
+}
+
+func runOnLoop(t *testing.T, runtime *goja.Runtime, script string) (goja.Value, error) {
+	t.Helper()
+	loopVal, ok := testLoops.Load(runtime)
+	if !ok {
+		t.Fatalf("no event loop found for runtime")
+	}
+	loop := loopVal.(*goeventloop.Loop)
+	type result struct {
+		v   goja.Value
+		err error
+	}
+	ch := make(chan result, 1)
+	if err := loop.Submit(func() {
+		v, err := runtime.RunString(script)
+		ch <- result{v, err}
+	}); err != nil {
+		t.Fatalf("submit script to event loop: %v", err)
+	}
+	res := <-ch
+	return res.v, res.err
 }
 
 func TestPaneMethods_PanesEmpty(t *testing.T) {

@@ -1488,7 +1488,7 @@ func TestIntegration_PlanPersistence_RoundTrip(t *testing.T) {
 
 func TestAgentCodeExecutor_OllamaSpawnPath(t *testing.T) {
 	skipSlow(t)
-	t.Skip("broken: environment-dependent claude/ollama detection makes this test flaky")
+	t.Skip("broken: environment-dependent agent CLI detection makes this test flaky")
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)

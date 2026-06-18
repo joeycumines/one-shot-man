@@ -10,7 +10,7 @@ func TestSessionTarget_String(t *testing.T) {
 	}{
 		{name: "zero", got: SessionTarget{}, want: "unknown"},
 		{name: "kind", got: SessionTarget{Kind: SessionKindPTY}, want: "pty"},
-		{name: "name", got: SessionTarget{Name: "claude"}, want: "claude"},
+		{name: "name", got: SessionTarget{Name: "agent"}, want: "agent"},
 		{name: "name-kind", got: SessionTarget{Name: "verify", Kind: SessionKindCapture}, want: "verify[capture]"},
 		{name: "name-kind-id", got: SessionTarget{Name: "shell", Kind: SessionKindCapture, ID: "s-1"}, want: "shell[capture:s-1]"},
 	}

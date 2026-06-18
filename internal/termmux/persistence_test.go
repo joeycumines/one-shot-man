@@ -23,13 +23,13 @@ func TestSaveLoadManagerState_RoundTrip(t *testing.T) {
 		Sessions: []PersistedSession{
 			{
 				SessionID:  1,
-				Target:     SessionTarget{Name: "claude", Kind: SessionKindPTY},
+				Target:     SessionTarget{Name: "my-agent", Kind: SessionKindPTY},
 				State:      SessionRunning,
 				PID:        12345,
 				Rows:       40,
 				Cols:       120,
 				LastActive: time.Now().Add(-5 * time.Minute).Truncate(time.Millisecond),
-				Command:    "claude",
+				Command:    "my-agent",
 				Args:       []string{"--chat"},
 				Dir:        "/home/user/project",
 			},

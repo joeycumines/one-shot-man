@@ -147,8 +147,8 @@ func TestSessionInfo_Construction(t *testing.T) {
 	t.Parallel()
 
 	target := SessionTarget{
-		ID:   "claude-1",
-		Name: "Claude",
+		ID:   "agent-1",
+		Name: "Agent",
 		Kind: SessionKindCapture,
 	}
 
@@ -162,8 +162,8 @@ func TestSessionInfo_Construction(t *testing.T) {
 	if info.ID != 42 {
 		t.Errorf("ID = %d, want 42", info.ID)
 	}
-	if info.Target.Name != "Claude" {
-		t.Errorf("Target.Name = %q, want %q", info.Target.Name, "Claude")
+	if info.Target.Name != "Agent" {
+		t.Errorf("Target.Name = %q, want %q", info.Target.Name, "Agent")
 	}
 	if info.Target.Kind != SessionKindCapture {
 		t.Errorf("Target.Kind = %q, want %q", info.Target.Kind, SessionKindCapture)
@@ -686,7 +686,7 @@ func TestSessionManager_Register(t *testing.T) {
 	}
 
 	// Register a second session — should get id 2.
-	id2, err := m.Register(newControllableSession(), SessionTarget{Name: "claude"})
+	id2, err := m.Register(newControllableSession(), SessionTarget{Name: "agent"})
 	if err != nil {
 		t.Fatalf("Register error: %v", err)
 	}
@@ -940,7 +940,7 @@ func TestSessionManager_Sessions(t *testing.T) {
 	defer cleanup()
 
 	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "shell", Kind: SessionKindPTY})
-	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "claude", Kind: SessionKindCapture})
+	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "agent", Kind: SessionKindCapture})
 
 	infos := m.Sessions()
 	if len(infos) != 2 {

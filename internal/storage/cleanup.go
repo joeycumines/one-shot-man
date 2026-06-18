@@ -45,8 +45,10 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	parent := filepath.Dir(sessionsDir)
-	globalLockPath := filepath.Join(parent, "cleanup.lock")
+	// Keep the lock inside the sessions directory so tests that override
+	// the session directory with SetTestPaths do not contend on a shared
+	// parent directory (e.g. /tmp/cleanup.lock) across concurrent tests.
+	globalLockPath := filepath.Join(sessionsDir, "cleanup.lock")
 
 	globalLock, err := acquireFileLock(globalLockPath)
 	if err != nil {

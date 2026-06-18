@@ -651,8 +651,8 @@ func TestProcess_Pid_NilCmd(t *testing.T) {
 // for the entire duration of the blocking kernel write, causing Signal
 // (which also needs p.mu) to deadlock.
 //
-// Regression test for: auto-split hang when Claude doesn't read stdin fast
-// enough — cancel (SIGKILL) could never be delivered.
+// Regression test for: auto-split hang when the consumer doesn't read stdin
+// fast enough — cancel (SIGKILL) could never be delivered.
 func TestProcess_WriteSignalDeadlock(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in short mode")
@@ -902,7 +902,6 @@ func TestProcess_Close_CustomGracePeriod(t *testing.T) {
 // promptly when the process exits before the grace period elapses.
 func TestProcess_Close_CustomGracePeriod_QuickExit(t *testing.T) {
 	t.Parallel()
-	t.Skip("broken: Close force-kill wait times out on macOS for fast-exiting process")
 	skipIfWindows(t)
 
 	proc, err := Spawn(context.Background(), SpawnConfig{

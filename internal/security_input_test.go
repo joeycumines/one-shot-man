@@ -566,7 +566,7 @@ func TestConfigParserSecurity_SymlinkRejection(t *testing.T) {
 		t.Skip("Symlinks not supported")
 	}
 
-	cfg, err := config.LoadFromPath(linkPath)
+	cfg, err := config.LoadFile(linkPath)
 	if err == nil {
 		t.Errorf("LoadFromPath should reject symlink, got config with %d global options", len(cfg.Global))
 	} else if !strings.Contains(err.Error(), "symlink not allowed") {
@@ -577,7 +577,7 @@ func TestConfigParserSecurity_SymlinkRejection(t *testing.T) {
 func TestConfigParserSecurity_NullByteInPath(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFromPath("config\x00.txt")
+	cfg, err := config.LoadFile("config\x00.txt")
 	if err == nil {
 		t.Errorf("LoadFromPath should reject path with null byte, config has %d global options", len(cfg.Global))
 	}
@@ -587,7 +587,7 @@ func TestConfigParserSecurity_NullByteInPath(t *testing.T) {
 func TestConfigParserSecurity_NonexistentPath(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFromPath("/nonexistent/path/config.txt")
+	cfg, err := config.LoadFile("/nonexistent/path/config.txt")
 	if err != nil {
 		t.Logf("Nonexistent path produces error: %v", err)
 	} else {

@@ -120,7 +120,7 @@ func TestLoadFromPathMissing(t *testing.T) {
 	t.Parallel()
 	path := t.TempDir() + "/missing-config"
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("expected no error loading missing config, got %v", err)
 	}
@@ -139,7 +139,7 @@ func TestLoadFromPathExisting(t *testing.T) {
 		t.Fatalf("failed to write config file: %v", err)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("expected load success, got %v", err)
 	}
@@ -197,7 +197,7 @@ func TestMissingConfigFiles(t *testing.T) {
 			t.Fatalf("failed to create directory: %v", err)
 		}
 
-		cfg, err := LoadFromPath(configPath)
+		cfg, err := LoadFile(configPath)
 		if err == nil {
 			t.Fatalf("expected error when config file is a directory, got config: %+v", cfg)
 		}
@@ -210,7 +210,7 @@ func TestMissingConfigFiles(t *testing.T) {
 		longName := strings.Repeat("a", 300)
 		configPath := filepath.Join(dir, longName)
 
-		cfg, err := LoadFromPath(configPath)
+		cfg, err := LoadFile(configPath)
 		if err == nil {
 			t.Fatalf("expected error when config path is too long, got config: %+v", cfg)
 		}
@@ -221,7 +221,7 @@ func TestMissingConfigFiles(t *testing.T) {
 		// Some systems may not allow control characters in paths
 		configPath := filepath.Join(dir, "config\nwith\ttabs")
 
-		cfg, err := LoadFromPath(configPath)
+		cfg, err := LoadFile(configPath)
 		if err == nil {
 			// If it succeeded, verify the config is empty (file shouldn't exist)
 			if len(cfg.Global) != 0 || len(cfg.Commands) != 0 {
@@ -466,7 +466,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		}
 		defer os.Remove(relPath)
 
-		cfg, err := LoadFromPath(relPath)
+		cfg, err := LoadFile(relPath)
 		if err != nil {
 			t.Fatalf("expected load success with relative path, got: %v", err)
 		}
@@ -492,7 +492,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		// This tests that the path resolution handles ".." components
 		relPath := filepath.Join(nested, "..", "level2", "config")
 
-		cfg, err := LoadFromPath(relPath)
+		cfg, err := LoadFile(relPath)
 		if err != nil {
 			t.Fatalf("expected load success with .. in path, got: %v", err)
 		}
@@ -524,7 +524,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 			t.Fatalf("failed to create config file: %v", err)
 		}
 
-		cfg, err := LoadFromPath(configPath)
+		cfg, err := LoadFile(configPath)
 		if err != nil {
 			t.Fatalf("expected load success with symlink path, got: %v", err)
 		}
@@ -550,7 +550,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 			t.Skip("symlinks not supported on this platform")
 		}
 
-		_, err := LoadFromPath(symlinkPath)
+		_, err := LoadFile(symlinkPath)
 		if err == nil {
 			t.Fatal("expected error for direct symlink config, got nil")
 		}
@@ -574,7 +574,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 			t.Skip("symlinks not supported on this platform")
 		}
 
-		_, err := LoadFromPath(symlinkPath)
+		_, err := LoadFile(symlinkPath)
 		if err == nil {
 			t.Fatal("expected error for symlink to sensitive file, got nil")
 		}
@@ -600,7 +600,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 				continue
 			}
 
-			cfg, err := LoadFromPath(configPath)
+			cfg, err := LoadFile(configPath)
 			if err != nil {
 				t.Errorf("expected load success with %s, got: %v", name, err)
 				continue
@@ -619,7 +619,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 			t.Skip("whitespace-only filenames not supported")
 		}
 
-		cfg, err := LoadFromPath(configPath)
+		cfg, err := LoadFile(configPath)
 		if err != nil {
 			t.Fatalf("expected load success with whitespace path, got: %v", err)
 		}
@@ -636,7 +636,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 			t.Fatalf("failed to create config file: %v", err)
 		}
 
-		cfg, err := LoadFromPath(absPath)
+		cfg, err := LoadFile(absPath)
 		if err != nil {
 			t.Fatalf("expected load success with absolute path, got: %v", err)
 		}
@@ -649,7 +649,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 	t.Run("EmptyPath", func(t *testing.T) {
 		// Empty path handling - behavior depends on os.Open behavior
 		// On most systems, empty path returns an error or IsNotExist
-		cfg, err := LoadFromPath("")
+		cfg, err := LoadFile("")
 		if err != nil {
 			// Expected on most systems
 			t.Logf("got expected error for empty path: %v", err)
@@ -669,7 +669,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		}
 		defer os.Remove(dotConfig)
 
-		cfg, err := LoadFromPath("./.config")
+		cfg, err := LoadFile("./.config")
 		if err != nil {
 			t.Fatalf("expected load success with ./path, got: %v", err)
 		}

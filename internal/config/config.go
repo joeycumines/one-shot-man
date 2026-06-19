@@ -73,15 +73,15 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to get config path: %w", err)
 	}
 
-	return LoadFromPath(configPath)
+	return LoadFile(configPath)
 }
 
-// LoadFromPath loads configuration from the specified file path.
+// LoadFile loads configuration from the specified file path.
 // The file uses dnsmasq-style format: optionName remainingLineIsTheValue
 //
 // SECURITY: This function rejects symlinks to prevent symlink attacks
 // that could read sensitive files through symlink traversal.
-func LoadFromPath(path string) (*Config, error) {
+func LoadFile(path string) (*Config, error) {
 	// Security: Lstat checks the final path component for symlinks.
 	// This prevents symlink-to-file attacks (e.g., config -> /etc/passwd).
 	// Intermediate directory symlinks are NOT checked, by design:

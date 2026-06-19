@@ -32,7 +32,7 @@ func TestLoadFromPath_DirectFileSymlink_Rejected(t *testing.T) {
 	}
 
 	// LoadFromPath should reject the direct-file symlink.
-	_, err := LoadFromPath(linkFile)
+	_, err := LoadFile(linkFile)
 	if err == nil {
 		t.Fatal("expected error for direct-file symlink, got nil")
 	}
@@ -60,7 +60,7 @@ func TestLoadFromPath_StatError_NotENOENT(t *testing.T) {
 
 	// Path inside restricted directory — Lstat will fail with permission denied.
 	badPath := filepath.Join(restricted, "config")
-	_, err := LoadFromPath(badPath)
+	_, err := LoadFile(badPath)
 	if err == nil {
 		t.Fatal("expected error for stat failure, got nil")
 	}

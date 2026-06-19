@@ -49,7 +49,7 @@ func TestPathTraversalPrevention_ConfigLoading(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.valid {
-				cfg, err := config.LoadFromPath(tc.path)
+				cfg, err := config.LoadFile(tc.path)
 				if err != nil && !errors.Is(err, os.ErrNotExist) {
 					t.Errorf("Unexpected error for valid path %s: %v", tc.path, err)
 				}
@@ -60,7 +60,7 @@ func TestPathTraversalPrevention_ConfigLoading(t *testing.T) {
 				// The loader does not block traversal (it reads any
 				// valid path), but it should not accidentally resolve
 				// to a different config in the test directory.
-				cfg, err := config.LoadFromPath(tc.path)
+				cfg, err := config.LoadFile(tc.path)
 				if err == nil && len(cfg.Global) > 0 {
 					if _, hasTest := cfg.Global["test"]; hasTest {
 						t.Errorf("Traversal path %q loaded config containing test key — may have escaped the intended directory", tc.path)
@@ -81,7 +81,7 @@ func TestPathTraversalPrevention_NullByteInjection(t *testing.T) {
 
 	for _, path := range pathsWithNull {
 		t.Run("null-byte-"+path[:10], func(t *testing.T) {
-			cfg, err := config.LoadFromPath(path)
+			cfg, err := config.LoadFile(path)
 			if err == nil {
 				t.Errorf("LoadFromPath should reject path with null byte, but got nil error (config has %d global options)", len(cfg.Global))
 			}
@@ -100,7 +100,7 @@ func TestPathTraversalPrevention_AbsolutePathEscape(t *testing.T) {
 
 	for _, path := range paths {
 		t.Run("absolute-"+filepath.Base(path), func(t *testing.T) {
-			cfg, err := config.LoadFromPath(path)
+			cfg, err := config.LoadFile(path)
 			if err == nil && len(cfg.Global) > 0 {
 				t.Logf("Config loaded from %s (system allows reading)", path)
 			} else if err != nil {
@@ -136,7 +136,7 @@ func TestPathTraversalPrevention_SymlinkEscape(t *testing.T) {
 		t.Skip("Symlinks not supported on this platform")
 	}
 
-	cfg, err := config.LoadFromPath(linkPath)
+	cfg, err := config.LoadFile(linkPath)
 	if err == nil {
 		t.Errorf("LoadFromPath should reject symlink but succeeded: got config with %d global options", len(cfg.Global))
 	} else if !strings.Contains(err.Error(), "symlink not allowed") {
@@ -455,7 +455,7 @@ func TestFilePermissionHandling_ReadPermissions(t *testing.T) {
 		t.Skip("Cannot set file permissions on this platform")
 	}
 
-	cfg, err := config.LoadFromPath(noReadFile)
+	cfg, err := config.LoadFile(noReadFile)
 	if err == nil {
 		if len(cfg.Global) > 0 {
 			t.Error("Successfully read file with no read permissions")
@@ -482,7 +482,7 @@ func TestFilePermissionHandling_WorldWritable(t *testing.T) {
 		t.Skip("Cannot write to directory")
 	}
 
-	cfg, err := config.LoadFromPath(testFile)
+	cfg, err := config.LoadFile(testFile)
 	if err == nil {
 		t.Log("Config loaded from world-writable directory")
 	} else {
@@ -516,7 +516,7 @@ func TestFilePermissionHandling_SymlinkAttacks(t *testing.T) {
 		t.Skip("Symlinks not supported")
 	}
 
-	cfg, err := config.LoadFromPath(linkPath)
+	cfg, err := config.LoadFile(linkPath)
 	if err == nil {
 		t.Errorf("LoadFromPath should reject symlink but succeeded: got config with %d global options", len(cfg.Global))
 	} else if !strings.Contains(err.Error(), "symlink not allowed") {
@@ -805,7 +805,7 @@ func TestOutputSanitization_ErrorMessagesNoSensitivePaths(t *testing.T) {
 
 	for _, path := range sensitivePaths {
 		t.Run(filepath.Base(path), func(t *testing.T) {
-			_, err := config.LoadFromPath(path)
+			_, err := config.LoadFile(path)
 			if err != nil {
 				errStr := err.Error()
 				if strings.Contains(errStr, "secret") || strings.Contains(errStr, "SENSITIVE") {

@@ -39,7 +39,7 @@ func TestConfigSet_SchemaValidation_KnownBoolKey_ValidValue(t *testing.T) {
 	}
 
 	// Verify on disk
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatalf("failed to reload: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestConfigSet_SchemaValidation_KnownDurationKey_ValidValue(t *testing.T) {
 		t.Fatalf("expected no stderr for valid duration, got: %q", stderr.String())
 	}
 
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatalf("failed to reload: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestConfigSet_SchemaValidation_UnknownKey_Warning(t *testing.T) {
 	}
 
 	// Should still persist to disk
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatalf("failed to reload: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestConfigSet_SchemaValidation_KnownIntKey_ValidValue(t *testing.T) {
 		t.Fatalf("expected no stderr, got: %q", stderr.String())
 	}
 
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatalf("failed to reload: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestConfigSet_FullRoundtrip_SetReadValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := config.LoadFromPath(configPath)
+	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatalf("initial load: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestConfigSet_FullRoundtrip_SetReadValidate(t *testing.T) {
 	}
 
 	// Verify file roundtrip: reload from disk
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestConfigSet_FullRoundtrip_MultipleKeys(t *testing.T) {
 	}
 
 	// Reload from disk and verify all keys
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestConfigSet_FullRoundtrip_UpdateExistingKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := config.LoadFromPath(configPath)
+	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +392,7 @@ func TestConfigSet_FullRoundtrip_UpdateExistingKey(t *testing.T) {
 	}
 
 	// Verify other keys preserved
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +411,7 @@ func TestConfigSet_InvalidType_DoesNotPersist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := config.LoadFromPath(configPath)
+	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +426,7 @@ func TestConfigSet_InvalidType_DoesNotPersist(t *testing.T) {
 	}
 
 	// Verify disk was NOT changed
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +451,7 @@ func TestConfigSet_PathListKey_AcceptsColonSeparated(t *testing.T) {
 		t.Fatalf("expected no stderr for path-list, got: %q", stderr.String())
 	}
 
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -796,7 +796,7 @@ func TestConfigReset_SingleKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := config.LoadFromPath(configPath)
+	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -826,7 +826,7 @@ func TestConfigReset_SingleKey(t *testing.T) {
 	}
 
 	// Verify on disk.
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -863,7 +863,7 @@ func TestConfigReset_SingleKey_NotSet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := config.LoadFromPath(configPath)
+	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -912,7 +912,7 @@ func TestConfigReset_AllKeys_WithForce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := config.LoadFromPath(configPath)
+	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -938,7 +938,7 @@ func TestConfigReset_AllKeys_WithForce(t *testing.T) {
 	}
 
 	// Verify on disk: global keys removed, section preserved.
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}

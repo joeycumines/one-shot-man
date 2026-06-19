@@ -557,7 +557,7 @@ format full
 	}
 
 	// Load and test the configuration
-	testConfig, err := config.LoadFromPath(configPath)
+	testConfig, err := config.LoadFile(configPath)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Warning: Failed to load created config: %v\n", err)
 	} else {

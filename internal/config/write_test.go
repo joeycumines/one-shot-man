@@ -24,7 +24,7 @@ func TestSetKeyInFile_NewKeyEmptyFile(t *testing.T) {
 		t.Fatalf("expected 'color auto', got %q", got)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestSetKeyInFile_NewKeyExistingFile(t *testing.T) {
 		t.Fatalf("expected new key to be added, got %q", content)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestSetKeyInFile_UpdateExistingKey(t *testing.T) {
 		t.Fatalf("expected other keys preserved, got %q", content)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestSetKeyInFile_InsertsBeforeFirstSection(t *testing.T) {
 		t.Fatalf("expected section options preserved, got %q", content)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestSetKeyInFile_DoesNotMatchKeyInSection(t *testing.T) {
 		t.Fatalf("expected exactly two 'format' lines (global + section), got %q", content)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestSetKeyInFile_ValueWithSpaces(t *testing.T) {
 		t.Fatalf("SetKeyInFile returned error: %v", err)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestSetKeyInFile_EmptyValue(t *testing.T) {
 		t.Fatalf("expected 'session.id', got %q", got)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}
@@ -343,7 +343,7 @@ func TestSetKeyInFile_UpdateExistingKeyToEmptyValue(t *testing.T) {
 		t.Fatalf("expected other keys preserved, got %q", content)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}
@@ -396,7 +396,7 @@ func TestDeleteKeyInFile_ExistingKey(t *testing.T) {
 		t.Fatalf("expected 'editor vim' to be preserved, got %q", content)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}
@@ -486,7 +486,7 @@ func TestDeleteKeyInFile_DoesNotDeleteSectionKey(t *testing.T) {
 		t.Fatalf("DeleteKeyInFile returned error: %v", err)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}
@@ -527,7 +527,7 @@ func TestDeleteAllGlobalKeysInFile_RemovesAllGlobalKeys(t *testing.T) {
 		t.Fatalf("expected 3 keys removed, got %d", count)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}
@@ -634,7 +634,7 @@ func TestSetKeyInFile_MultipleSequentialWrites(t *testing.T) {
 		}
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}
@@ -682,7 +682,7 @@ func TestSetKeyInFile_ComplexConfigRoundTrip(t *testing.T) {
 		t.Fatalf("SetKeyInFile returned error: %v", err)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("LoadFromPath returned error: %v", err)
 	}

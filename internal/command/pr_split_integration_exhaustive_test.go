@@ -603,7 +603,7 @@ func setupBinaryManyFilesRepo(t *testing.T) string {
 	git("commit", "-m", "initial")
 
 	git("checkout", "-b", "feature")
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		writeFile(
 			"pkg/file"+string(rune('a'+i))+".go",
 			"package pkg\n\nfunc Func"+string(rune('A'+i))+"() {}\n",
@@ -1101,7 +1101,7 @@ func setupBinaryLargeDiffRepo(t *testing.T) string {
 	git("checkout", "-b", "feature")
 	dirs := []string{"pkg/auth", "pkg/core", "pkg/storage", "cmd/server", "cmd/cli", "internal/util"}
 	for i, d := range dirs {
-		for j := 0; j < 3; j++ {
+		for j := range 3 {
 			fileName := d + "/file" + string(rune('a'+j)) + ".go"
 			content := "package " + filepath.Base(d) + "\n\nfunc Func" + string(rune('A'+i)) + string(rune('A'+j)) + "() {}\n"
 			writeFile(fileName, content)

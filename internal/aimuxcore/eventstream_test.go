@@ -662,12 +662,10 @@ func TestHealthMonitor_ConcurrentClose(t *testing.T) {
 	hm := NewHealthMonitor(h, 50*time.Millisecond)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 10 {
+		wg.Go(func() {
 			hm.Close()
-		}()
+		})
 	}
 	wg.Wait()
 }

@@ -742,12 +742,7 @@ function runVisualTui() {
 
         // Flag to force a full screen clear on first render
         // This ensures the title line is rendered correctly when re-entering TUI from shell
-        needsInitClear: true,
-
-        // Ctrl+X prefix state: when true, the next key press will be treated
-        // as an action hotkey (a/l/e/d/c/r/R/q/s). Set by pressing Ctrl+X,
-        // cleared after a follow-up key or after 1 second timeout.
-        ctrlXPrefix: false
+        needsInitClear: true
     };
 
     const model = tea.newModel({
@@ -777,9 +772,6 @@ function runVisualTui() {
                     tuiState.needsInitClear = false;
                     return [tuiState, tea.clearScreen()];
                 }
-            } else if (msg.type === 'Tick' && msg.id === 'ctrlx-timeout') {
-                tuiState.ctrlXPrefix = false;
-                return [tuiState, null];
             } else if (msg.type === 'Key') {
                 return handleKeys(msg, tuiState);
             } else if (msg.type === 'MouseClick' && msg.button === 'left') {
@@ -900,114 +892,120 @@ function handleKeys(msg, s) {
     }
 
     if (s.mode === MODE_LIST) {
-        // Ctrl+X prefix handler: activates prefix mode for action hotkeys
-        if (k === 'ctrl+x') {
-            s.ctrlXPrefix = true;
-            return [s, tea.tick(1000, 'ctrlx-timeout')];
+        // Action hotkeys — bare keys work directly. The super-document is a
+        // pure TUI with no PTY passthrough, so printable letters are always
+        // interpreted as commands. Early returns keep the dispatch table
+        // explicit and prevent action keys from falling through to navigation.
+        if (k === 'q') {
+            _userRequestedShell = false;
+            return [s, tea.quit()];
         }
-
-        // If prefix is active, check for action hotkey (then consume the prefix)
-        if (s.ctrlXPrefix) {
-            s.ctrlXPrefix = false;
-            if (k === 'q') {
-                _userRequestedShell = false;
-                return [s, tea.quit()];
-            }
-            if (k === 's') {
-                _userRequestedShell = true;
-                return [s, tea.quit()];
-            }
-            if (k === 'a') {
+        if (k === 's') {
+            _userRequestedShell = true;
+            return [s, tea.quit()];
+        }
+        if (k === 'a') {
+            s.mode = MODE_INPUT;
+            s.inputOperation = INPUT_ADD;
+            s.inputFocus = FOCUS_LABEL;
+            s.labelBuffer = '';
+            s.contentTextarea = textareaLib.new();
+            configureTextarea(s.contentTextarea, s.width);
+            s.focusedButtonIdx = -1;
+            s.inputViewportUnlocked = false;
+            return [s, null];
+        }
+        if (k === 'l') {
+            s.mode = MODE_INPUT;
+            s.inputOperation = INPUT_LOAD;
+            s.inputFocus = FOCUS_LABEL;
+            s.labelBuffer = '';
+            s.contentTextarea = null;
+            s.focusedButtonIdx = -1;
+            s.inputViewportUnlocked = false;
+            return [s, null];
+        }
+        // 'e' or Enter on a document (no button focused) = edit
+        if (k === 'e' || (k === 'enter' && s.focusedButtonIdx < 0)) {
+            const doc = s.documents[s.selectedIdx];
+            if (doc) {
                 s.mode = MODE_INPUT;
-                s.inputOperation = INPUT_ADD;
-                s.inputFocus = FOCUS_LABEL;
-                s.labelBuffer = '';
+                s.inputOperation = INPUT_EDIT;
+                s.inputFocus = FOCUS_CONTENT;
+                s.labelBuffer = doc.label;
                 s.contentTextarea = textareaLib.new();
                 configureTextarea(s.contentTextarea, s.width);
+                s.contentTextarea.setValue(doc.content);
+                s.contentTextarea.focus();
+                s.editingDocId = doc.id;
                 s.focusedButtonIdx = -1;
                 s.inputViewportUnlocked = false;
-                return [s, null];
             }
-            if (k === 'l') {
+            return [s, null];
+        }
+        if (k === 'r') {
+            s.mode = MODE_CONFIRM;
+            s.confirmPrompt = 'Reset the session (archive current state and clear all persisted state)? This cannot be undone. (y/n)';
+            s.confirmDocId = -1;
+            s.focusedButtonIdx = -1;
+            return [s, null];
+        }
+        if (k === 'R') {
+            const doc = s.documents[s.selectedIdx];
+            if (doc) {
                 s.mode = MODE_INPUT;
-                s.inputOperation = INPUT_LOAD;
+                s.inputOperation = INPUT_RENAME;
                 s.inputFocus = FOCUS_LABEL;
-                s.labelBuffer = '';
+                s.labelBuffer = doc.label;
                 s.contentTextarea = null;
-                s.focusedButtonIdx = -1;
+                s.editingDocId = doc.id;
                 s.inputViewportUnlocked = false;
-                return [s, null];
             }
-            if (k === 'e') {
-                const doc = s.documents[s.selectedIdx];
-                if (doc) {
-                    s.mode = MODE_INPUT;
-                    s.inputOperation = INPUT_EDIT;
-                    s.inputFocus = FOCUS_CONTENT;
-                    s.labelBuffer = doc.label;
-                    s.contentTextarea = textareaLib.new();
-                    configureTextarea(s.contentTextarea, s.width);
-                    s.contentTextarea.setValue(doc.content);
-                    s.contentTextarea.focus();
-                    s.editingDocId = doc.id;
-                    s.focusedButtonIdx = -1;
-                    s.inputViewportUnlocked = false;
-                }
-                return [s, null];
-            }
-            if (k === 'r') {
+            s.focusedButtonIdx = -1;
+            return [s, null];
+        }
+        // 'd' or Backspace on a document = delete confirm
+        if (k === 'd' || k === 'backspace') {
+            const doc = s.documents[s.selectedIdx];
+            if (doc) {
                 s.mode = MODE_CONFIRM;
-                s.confirmPrompt = 'Reset the session (archive current state and clear all persisted state)? This cannot be undone. (y/n)';
-                s.confirmDocId = -1;
-                s.focusedButtonIdx = -1;
-                return [s, null];
+                s.confirmPrompt = `Delete document #${doc.id} "${doc.label}"? (y/n)`;
+                s.confirmDocId = doc.id;
             }
-            if (k === 'R') {
-                const doc = s.documents[s.selectedIdx];
-                if (doc) {
-                    s.mode = MODE_INPUT;
-                    s.inputOperation = INPUT_RENAME;
-                    s.inputFocus = FOCUS_LABEL;
-                    s.labelBuffer = doc.label;
-                    s.contentTextarea = null;
-                    s.editingDocId = doc.id;
-                    s.inputViewportUnlocked = false;
-                }
-                s.focusedButtonIdx = -1;
-                return [s, null];
+            s.focusedButtonIdx = -1;
+            return [s, null];
+        }
+        if (k === 'c') {
+            const prompt = buildFinalPrompt();
+            try {
+                os.clipboardCopy(prompt);
+                const tc = _tokenCount(prompt);
+                const lc = _lineCount(prompt);
+                const bc = _byteCount(prompt);
+                s.statusMsg = "\u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
+                s.hasError = false;
+            } catch (e) {
+                s.statusMsg = 'Clipboard error: ' + e;
+                s.hasError = true;
             }
-            if (k === 'd') {
-                const doc = s.documents[s.selectedIdx];
-                if (doc) {
-                    s.mode = MODE_CONFIRM;
-                    s.confirmPrompt = `Delete document #${doc.id} "${doc.label}"? (y/n)`;
-                    s.confirmDocId = doc.id;
-                }
-                s.focusedButtonIdx = -1;
-                return [s, null];
+            s.focusedButtonIdx = -1;
+            return [s, null];
+        }
+        // Enter on focused button activates it (re-dispatch via the button's key)
+        if (k === 'enter' && s.focusedButtonIdx >= 0) {
+            const btn = BUTTONS[s.focusedButtonIdx];
+            if (btn) {
+                return handleKeys({key: btn.key}, s);
             }
-            if (k === 'c') {
-                const prompt = buildFinalPrompt();
-                try {
-                    os.clipboardCopy(prompt);
-                    const tc = _tokenCount(prompt);
-                    const lc = _lineCount(prompt);
-                    const bc = _byteCount(prompt);
-                    s.statusMsg = "\u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
-                    s.hasError = false;
-                } catch (e) {
-                    s.statusMsg = 'Clipboard error: ' + e;
-                    s.hasError = true;
-                }
-                s.focusedButtonIdx = -1;
-                return [s, null];
-            }
-            // Unrecognized follow-up key: prefix consumed, no action
+        }
+        if (k === '?') {
+            s.statusMsg = 'a:add l:load e:edit R:rename d:del c:copy s:shell r:reset q:quit';
             return [s, null];
         }
 
-        // Navigation keys (no prefix required):
-
+        // Navigation keys (vi-style: k/j/h, plus arrows, tab, page, home, end).
+        // Note: 'l' is NOT mapped to right-nav because it is the load action
+        // above; use the right arrow key for horizontal button navigation.
         if (k === 'up' || k === 'k') {
             if (s.focusedButtonIdx >= 0) {
                 s.focusedButtonIdx = -1;
@@ -1049,7 +1047,7 @@ function handleKeys(msg, s) {
                 s.focusedButtonIdx--;
             }
         }
-        if (k === 'right' || k === 'l') {
+        if (k === 'right') {
             if (s.focusedButtonIdx >= 0 && s.focusedButtonIdx < BUTTONS.length - 1) {
                 s.focusedButtonIdx++;
             }
@@ -1079,42 +1077,6 @@ function handleKeys(msg, s) {
                 s.focusedButtonIdx = BUTTONS.length - 1;
                 ensureSelectionVisible(s);
             }
-        }
-        // Enter on focused button activates it
-        if (k === 'enter' && s.focusedButtonIdx >= 0) {
-            const btn = BUTTONS[s.focusedButtonIdx];
-            if (btn) {
-                s.ctrlXPrefix = true;
-                return handleKeys({key: btn.key}, s);
-            }
-        }
-        // Enter on document = edit (same as ⌃X e)
-        if (k === 'enter' && s.focusedButtonIdx < 0) {
-            const doc = s.documents[s.selectedIdx];
-            if (doc) {
-                s.mode = MODE_INPUT;
-                s.inputOperation = INPUT_EDIT;
-                s.inputFocus = FOCUS_CONTENT;
-                s.labelBuffer = doc.label;
-                s.contentTextarea = textareaLib.new();
-                configureTextarea(s.contentTextarea, s.width);
-                s.contentTextarea.setValue(doc.content);
-                s.contentTextarea.focus();
-                s.editingDocId = doc.id;
-                s.focusedButtonIdx = -1;
-                s.inputViewportUnlocked = false;
-                return [s, null];
-            }
-        }
-        // Backspace on document = delete confirm (same as ⌃X d)
-        if (k === 'backspace') {
-            const doc = s.documents[s.selectedIdx];
-            if (doc) {
-                s.mode = MODE_CONFIRM;
-                s.confirmPrompt = `Delete document #${doc.id} "${doc.label}"? (y/n)`;
-                s.confirmDocId = doc.id;
-            }
-            s.focusedButtonIdx = -1;
         }
         if (k === 'pgdown') {
             if (s.focusedButtonIdx >= 0) {
@@ -1171,8 +1133,6 @@ function handleKeys(msg, s) {
         }
 
         state.set(stateKeys.selectedIndex, s.selectedIdx);
-
-        if (k === '?') s.statusMsg = '\u2303X+a:add \u2303X+l:load \u2303X+e:edit \u2303X+R:rename \u2303X+d:del \u2303X+c:copy \u2303X+s:shell \u2303X+r:reset \u2303X+q:quit';
     } else if (s.mode === MODE_INPUT) {
         // PRECISE SCROLL & EVENT PROPAGATION FOR INPUT MODE
 
@@ -1916,14 +1876,14 @@ function renderList(s) {
 
     // Build help strip with styled key/desc pairs
     const helpPairs = [
-        {key: '⌃X a', desc: 'add'},
-        {key: '⌃X l', desc: 'load'},
-        {key: '⌃X e', desc: 'edit'},
-        {key: '⌃X d', desc: 'del'},
-        {key: '⌃X c', desc: 'copy'},
-        {key: '⌃X s', desc: 'shell'},
-        {key: '⌃X r', desc: 'reset'},
-        {key: '⌃X q', desc: 'quit'},
+        {key: 'a', desc: 'add'},
+        {key: 'l', desc: 'load'},
+        {key: 'e', desc: 'edit'},
+        {key: 'd', desc: 'del'},
+        {key: 'c', desc: 'copy'},
+        {key: 's', desc: 'shell'},
+        {key: 'r', desc: 'reset'},
+        {key: 'q', desc: 'quit'},
         {key: '↑↓', desc: 'nav'},
     ];
 
@@ -1934,11 +1894,7 @@ function renderList(s) {
         i < helpItems.length - 1 ? item + '  ' : item
     ));
 
-    const prefixIndicator = s.ctrlXPrefix
-        ? lipgloss.newStyle().foreground(lipgloss.color('#ffdd57')).bold(true).render(' ⌃X… ') + ' '
-        : '';
-
-    const footer = lipgloss.joinVertical(lipgloss.Left, separator, prefixIndicator + helpText);
+    const footer = lipgloss.joinVertical(lipgloss.Left, separator, helpText);
 
     // ------------------------------------------------------------------------
     // DYNAMIC VIEWPORT HEIGHT CALCULATION

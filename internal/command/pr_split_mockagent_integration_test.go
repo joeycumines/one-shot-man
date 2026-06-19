@@ -318,7 +318,7 @@ func TestBinaryE2E_MockAgentProcessCleanup(t *testing.T) {
 	// Retry for up to 10 seconds to allow cleanup to complete under
 	// heavy parallel load (e.g. race detection with many concurrent tests).
 	var orphanPIDs []string
-	for attempt := 0; attempt < 20; attempt++ {
+	for attempt := range 20 {
 		listCmd := exec.Command("pgrep", "-f", filepath.Base(mockBin))
 		listOut, listErr := listCmd.CombinedOutput()
 		if listErr != nil || len(strings.TrimSpace(string(listOut))) == 0 {

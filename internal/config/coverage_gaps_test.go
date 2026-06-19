@@ -9,10 +9,10 @@ import (
 )
 
 // ============================================================================
-// LoadFromPath — symlink and error-path coverage
+// LoadFile — symlink and error-path coverage
 // ============================================================================
 
-func TestLoadFromPath_DirectFileSymlink_Rejected(t *testing.T) {
+func TestLoadFile_DirectFileSymlink_Rejected(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("symlinks require elevated privileges on Windows")
@@ -31,7 +31,7 @@ func TestLoadFromPath_DirectFileSymlink_Rejected(t *testing.T) {
 		t.Skipf("symlinks not supported: %v", err)
 	}
 
-	// LoadFromPath should reject the direct-file symlink.
+	// LoadFile should reject the direct-file symlink.
 	_, err := LoadFile(linkFile)
 	if err == nil {
 		t.Fatal("expected error for direct-file symlink, got nil")
@@ -41,7 +41,7 @@ func TestLoadFromPath_DirectFileSymlink_Rejected(t *testing.T) {
 	}
 }
 
-func TestLoadFromPath_StatError_NotENOENT(t *testing.T) {
+func TestLoadFile_StatError_NotENOENT(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("permission-based stat errors differ on Windows")

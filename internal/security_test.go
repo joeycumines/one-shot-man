@@ -83,7 +83,7 @@ func TestPathTraversalPrevention_NullByteInjection(t *testing.T) {
 		t.Run("null-byte-"+path[:10], func(t *testing.T) {
 			cfg, err := config.LoadFile(path)
 			if err == nil {
-				t.Errorf("LoadFromPath should reject path with null byte, but got nil error (config has %d global options)", len(cfg.Global))
+				t.Errorf("LoadFile should reject path with null byte, but got nil error (config has %d global options)", len(cfg.Global))
 			}
 			_ = cfg
 		})
@@ -138,7 +138,7 @@ func TestPathTraversalPrevention_SymlinkEscape(t *testing.T) {
 
 	cfg, err := config.LoadFile(linkPath)
 	if err == nil {
-		t.Errorf("LoadFromPath should reject symlink but succeeded: got config with %d global options", len(cfg.Global))
+		t.Errorf("LoadFile should reject symlink but succeeded: got config with %d global options", len(cfg.Global))
 	} else if !strings.Contains(err.Error(), "symlink not allowed") {
 		t.Errorf("Expected symlink rejection error, got: %v", err)
 	}
@@ -518,7 +518,7 @@ func TestFilePermissionHandling_SymlinkAttacks(t *testing.T) {
 
 	cfg, err := config.LoadFile(linkPath)
 	if err == nil {
-		t.Errorf("LoadFromPath should reject symlink but succeeded: got config with %d global options", len(cfg.Global))
+		t.Errorf("LoadFile should reject symlink but succeeded: got config with %d global options", len(cfg.Global))
 	} else if !strings.Contains(err.Error(), "symlink not allowed") {
 		t.Errorf("Expected symlink rejection error, got: %v", err)
 	}

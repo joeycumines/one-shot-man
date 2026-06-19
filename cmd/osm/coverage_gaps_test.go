@@ -10,7 +10,7 @@ import (
 // TestRun_ConfigLoadError covers the config.Load() error path in run().
 // When config.Load() returns an error, run() creates an empty config
 // and continues. This test triggers the error by pointing OSM_CONFIG
-// to a symlink, which LoadFromPath rejects for security.
+// to a symlink, which LoadFile rejects for security.
 //
 // We cannot use runWithCapturedIO here because it always overwrites
 // OSM_CONFIG with its own temp path, stomping the symlink we set up.

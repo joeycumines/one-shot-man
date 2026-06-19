@@ -116,7 +116,7 @@ func TestSetGlobalAndCommandOptions(t *testing.T) {
 	}
 }
 
-func TestLoadFromPathMissing(t *testing.T) {
+func TestLoadFileMissing(t *testing.T) {
 	t.Parallel()
 	path := t.TempDir() + "/missing-config"
 
@@ -130,7 +130,7 @@ func TestLoadFromPathMissing(t *testing.T) {
 	}
 }
 
-func TestLoadFromPathExisting(t *testing.T) {
+func TestLoadFileExisting(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	path := dir + "/config"
@@ -534,7 +534,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		}
 	})
 
-	// T60: Direct symlink attack tests — verify LoadFromPath() rejects
+	// T60: Direct symlink attack tests — verify LoadFile() rejects
 	// config files that are themselves symlinks (not just intermediary dirs).
 	t.Run("DirectSymlink_Rejected", func(t *testing.T) {
 		t.Parallel()
@@ -564,7 +564,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		dir := t.TempDir()
 
 		// Symlink pointing to /etc/passwd (or any existing file).
-		// LoadFromPath must reject before opening.
+		// LoadFile must reject before opening.
 		target := "/etc/passwd"
 		if _, err := os.Stat(target); err != nil {
 			t.Skip("target file not available on this platform")

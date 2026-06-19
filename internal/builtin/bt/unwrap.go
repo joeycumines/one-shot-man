@@ -67,43 +67,43 @@ func nodeUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Node, erro
 				return fmt.Errorf("JS node function error: %w", err)
 			}
 
-		// Result should be an array [tick, children]
-		resultObj := result.ToObject(loopVm)
-		if resultObj == nil {
-			return errors.New("JS node function must return [tick, children] array")
-		}
+			// Result should be an array [tick, children]
+			resultObj := result.ToObject(loopVm)
+			if resultObj == nil {
+				return errors.New("JS node function must return [tick, children] array")
+			}
 
-		// Get tick (index 0)
-		tickVal := resultObj.Get("0")
-		if tickVal == nil || goja.IsUndefined(tickVal) {
-			return errors.New("JS node function must return tick as first element")
-		}
+			// Get tick (index 0)
+			tickVal := resultObj.Get("0")
+			if tickVal == nil || goja.IsUndefined(tickVal) {
+				return errors.New("JS node function must return tick as first element")
+			}
 
-		tick, jsErr = tickUnwrap(bridge, loopVm, tickVal)
-		if jsErr != nil {
-			return fmt.Errorf("failed to unwrap tick: %w", jsErr)
-		}
+			tick, jsErr = tickUnwrap(bridge, loopVm, tickVal)
+			if jsErr != nil {
+				return fmt.Errorf("failed to unwrap tick: %w", jsErr)
+			}
 
-		// Get children (index 1) - may be undefined/null for leaves
-		childrenVal := resultObj.Get("1")
-		if childrenVal != nil && !goja.IsUndefined(childrenVal) && !goja.IsNull(childrenVal) {
-			childrenObj := childrenVal.ToObject(loopVm)
-			if childrenObj != nil {
-				length := childrenObj.Get("length")
-				if length != nil && !goja.IsUndefined(length) {
-					n := int(length.ToInteger())
-					children = make([]bt.Node, 0, n)
-					for i := range n {
-						childVal := childrenObj.Get(fmt.Sprintf("%d", i))
-						child, err := nodeUnwrap(bridge, loopVm, childVal)
-						if err != nil {
-							return fmt.Errorf("failed to unwrap child %d: %w", i, err)
+			// Get children (index 1) - may be undefined/null for leaves
+			childrenVal := resultObj.Get("1")
+			if childrenVal != nil && !goja.IsUndefined(childrenVal) && !goja.IsNull(childrenVal) {
+				childrenObj := childrenVal.ToObject(loopVm)
+				if childrenObj != nil {
+					length := childrenObj.Get("length")
+					if length != nil && !goja.IsUndefined(length) {
+						n := int(length.ToInteger())
+						children = make([]bt.Node, 0, n)
+						for i := range n {
+							childVal := childrenObj.Get(fmt.Sprintf("%d", i))
+							child, err := nodeUnwrap(bridge, loopVm, childVal)
+							if err != nil {
+								return fmt.Errorf("failed to unwrap child %d: %w", i, err)
+							}
+							children = append(children, child)
 						}
-						children = append(children, child)
 					}
 				}
 			}
-		}
 
 			return nil
 		})

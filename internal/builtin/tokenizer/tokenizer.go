@@ -29,9 +29,10 @@ import (
 //	const t2 = tok.loadJSON('{"type":"BPE","vocab":...}');
 //
 //	// Model-specific loaders
-	// const bpe = tok.loadBPE(vocabJson, mergesStr);
-	// const wp = tok.loadWordPiece(jsonStr);
-	// const wl = tok.loadWordLevel(jsonStr);
+//
+// const bpe = tok.loadBPE(vocabJson, mergesStr);
+// const wp = tok.loadWordPiece(jsonStr);
+// const wl = tok.loadWordLevel(jsonStr);
 func Require(runtime *goja.Runtime, module *goja.Object) {
 	exports := module.Get("exports").(*goja.Object)
 

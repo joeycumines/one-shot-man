@@ -26,7 +26,7 @@ func TestSetKeyInFile_NewKeyEmptyFile(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 	if v, ok := cfg.GetGlobalOption("color"); !ok || v != "auto" {
 		t.Fatalf("expected color=auto after round-trip, got %q exists=%v", v, ok)
@@ -60,7 +60,7 @@ func TestSetKeyInFile_NewKeyExistingFile(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 	if v, ok := cfg.GetGlobalOption("verbose"); !ok || v != "true" {
 		t.Fatalf("expected verbose=true, got %q exists=%v", v, ok)
@@ -100,7 +100,7 @@ func TestSetKeyInFile_UpdateExistingKey(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 	if v, ok := cfg.GetGlobalOption("color"); !ok || v != "never" {
 		t.Fatalf("expected color=never, got %q exists=%v", v, ok)
@@ -174,7 +174,7 @@ func TestSetKeyInFile_InsertsBeforeFirstSection(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 	if v, ok := cfg.GetGlobalOption("color"); !ok || v != "auto" {
 		t.Fatalf("expected color=auto, got %q exists=%v", v, ok)
@@ -209,7 +209,7 @@ func TestSetKeyInFile_DoesNotMatchKeyInSection(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 	if v, ok := cfg.GetGlobalOption("format"); !ok || v != "json" {
 		t.Fatalf("expected global format=json, got %q exists=%v", v, ok)
@@ -279,7 +279,7 @@ func TestSetKeyInFile_ValueWithSpaces(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 	if v, ok := cfg.GetGlobalOption("editor"); !ok || v != "vim -u NONE" {
 		t.Fatalf("expected editor='vim -u NONE', got %q exists=%v", v, ok)
@@ -305,7 +305,7 @@ func TestSetKeyInFile_EmptyValue(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 	if v, ok := cfg.GetGlobalOption("session.id"); !ok || v != "" {
 		t.Fatalf("expected session.id='', got %q exists=%v", v, ok)
@@ -345,7 +345,7 @@ func TestSetKeyInFile_UpdateExistingKeyToEmptyValue(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 	if v, ok := cfg.GetGlobalOption("session.id"); !ok || v != "" {
 		t.Fatalf("expected session.id='', got %q exists=%v", v, ok)
@@ -398,7 +398,7 @@ func TestDeleteKeyInFile_ExistingKey(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 	if _, ok := cfg.GetGlobalOption("color"); ok {
 		t.Fatal("expected 'color' to not exist after deletion")
@@ -488,7 +488,7 @@ func TestDeleteKeyInFile_DoesNotDeleteSectionKey(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 	// Section key should be preserved.
 	if v, ok := cfg.GetCommandOption("version", "format"); !ok || v != "short" {
@@ -529,7 +529,7 @@ func TestDeleteAllGlobalKeysInFile_RemovesAllGlobalKeys(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 	if len(cfg.Global) != 0 {
 		t.Fatalf("expected no global keys, got %v", cfg.Global)
@@ -636,7 +636,7 @@ func TestSetKeyInFile_MultipleSequentialWrites(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 
 	for _, kv := range keys {
@@ -684,7 +684,7 @@ func TestSetKeyInFile_ComplexConfigRoundTrip(t *testing.T) {
 
 	cfg, err := LoadFile(path)
 	if err != nil {
-		t.Fatalf("LoadFromPath returned error: %v", err)
+		t.Fatalf("LoadFile returned error: %v", err)
 	}
 
 	if v, ok := cfg.GetGlobalOption("verbose"); !ok || v != "false" {

@@ -2963,7 +2963,9 @@ func (m *SessionManager) handleRespawnSession(payload any) response {
 		return response{err: fmt.Errorf("termmux: session %d has not exited (state=%v)", oldID, ms.state)}
 	}
 
-	_ = ms.session.Close()
+	if err := ms.session.Close(); err != nil {
+		slog.Debug("respawn old session close failed", "sessionID", oldID, "error", err)
+	}
 
 	cfg := ms.captureConfig
 	newSession := NewCaptureSession(cfg)
@@ -3169,7 +3171,9 @@ func (m *SessionManager) handleSetPipe(payload any) response {
 		return response{err: fmt.Errorf("termmux: pipe-pane stdin pipe: %w", err)}
 	}
 	if err := cmd.Start(); err != nil {
-		_ = stdin.Close()
+		if cerr := stdin.Close(); cerr != nil {
+			slog.Debug("pipe-pane stdin close failed", "error", cerr)
+		}
 		return response{err: fmt.Errorf("termmux: pipe-pane start command: %w", err)}
 	}
 	pp := &pipeProcess{cmd: cmd, stdin: stdin, done: make(chan struct{})}
@@ -3520,7 +3524,9 @@ func (m *SessionManager) handleSplitPane(p *splitPanePayload) response {
 
 	regResp := m.handleRegister(&registerPayload{session: session, target: target})
 	if regResp.err != nil {
-		_ = session.Close()
+		if err := session.Close(); err != nil {
+			slog.Debug("split pane session close failed", "error", err)
+		}
 		return regResp
 	}
 	sessionID := regResp.value.(SessionID)

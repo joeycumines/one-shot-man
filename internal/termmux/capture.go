@@ -536,7 +536,9 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 			return ExitError, err
 		}
 		defer func() {
-			_ = cfg.TermState.Restore(cfg.TermFd, savedState)
+			if err := cfg.TermState.Restore(cfg.TermFd, savedState); err != nil {
+				slog.Debug("capture terminal restore failed", "error", err)
+			}
 		}()
 
 		// Ensure stdin fd is in blocking mode.

@@ -473,13 +473,6 @@ func TestStatusBar_JoinSegments(t *testing.T) {
 	}
 }
 
-func TestStatusBar_Segment_Color(t *testing.T) {
-	seg := Segment{Text: "hello", Color: "#ff0000"}
-	if seg.Text != "hello" || seg.Color != "#ff0000" {
-		t.Errorf("Segment fields wrong: %+v", seg)
-	}
-}
-
 // ── T73: StatusBar configurable colors and position ─────────────────
 
 func TestStatusBar_Defaults_ReverseVideoBottom(t *testing.T) {

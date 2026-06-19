@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/dop251/goja"
 
@@ -655,10 +654,10 @@ func TestEventBridge_GoEventsToJSCallbacks(t *testing.T) {
 	<-mgr.Started()
 
 	runtime := goja.New()
-	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("mux", wrapper)
 
-	_, err := runtime.RunString(`
+	_, err := runJS(t, runtime, `
 		var registeredEvents = [];
 		mux.addEventListener('registered', function(evt) {
 			registeredEvents.push(evt.detail);
@@ -676,23 +675,9 @@ func TestEventBridge_GoEventsToJSCallbacks(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		_, _ = runtime.RunString(`queueMicrotask(() => {})`)
-		v, checkErr := runtime.RunString(`registeredEvents.length`)
-		if checkErr != nil {
-			t.Fatalf("check length: %v", checkErr)
-		}
-		if v.ToInteger() >= 1 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("timed out waiting for registered event")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForEvents(t, runtime, "registeredEvents", 1)
 
-	v, err := runtime.RunString(`registeredEvents[0].sessionId`)
+	v, err := runJS(t, runtime, `registeredEvents[0].sessionId`)
 	if err != nil {
 		t.Fatalf("check sessionId: %v", err)
 	}

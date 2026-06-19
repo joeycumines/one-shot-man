@@ -3,6 +3,7 @@ package termmux
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
 )
@@ -33,7 +34,9 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 			return ExitError, rawErr
 		}
 		defer func() {
-			_ = cfg.TermState.Restore(cfg.TermFd, savedState)
+			if err := cfg.TermState.Restore(cfg.TermFd, savedState); err != nil {
+				slog.Debug("passthrough terminal restore failed", "error", err)
+			}
 		}()
 
 		// Ensure stdin fd is in blocking mode. Go's os.File.Read does
@@ -131,7 +134,9 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 	if cfg.ResizeFn != nil && cfg.TermFd >= 0 && cfg.TermState != nil {
 		if w2, h, sizeErr := cfg.TermState.GetSize(cfg.TermFd); sizeErr == nil {
 			childH := max(h-chromeRows, 1)
-			_ = cfg.ResizeFn(uint16(childH), uint16(w2))
+			if err := cfg.ResizeFn(uint16(childH), uint16(w2)); err != nil {
+				slog.Debug("passthrough initial resize failed", "error", err)
+			}
 		}
 	}
 
@@ -177,7 +182,9 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 			}
 
 			if cfg.ResizeFn != nil {
-				_ = cfg.ResizeFn(uint16(childRows), uint16(cols))
+				if err := cfg.ResizeFn(uint16(childRows), uint16(cols)); err != nil {
+					slog.Debug("passthrough sigwinch resize failed", "error", err)
+				}
 			}
 		})
 	}

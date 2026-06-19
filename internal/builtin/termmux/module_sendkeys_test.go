@@ -16,9 +16,9 @@ func TestSendKeys_JSBinding(t *testing.T) {
 
 	_, err := runtime.RunString(`
 		var s = termmux.newBoundedSession({ cmd: "cat" });
-		var sid = tuiMux.register(s.session, { name: "sk-test" });
+		tuiMux.activate(s.sid);
 
-		tuiMux.sendKeys(sid, "h", "e", "l", "l", "o", "enter");
+		tuiMux.sendKeys(s.sid, "h", "e", "l", "l", "o", "enter");
 
 		if (typeof s.session.sendKeys !== "function") {
 			throw new Error("session wrapper missing sendKeys method");
@@ -33,7 +33,7 @@ func TestSendKeys_JSBinding(t *testing.T) {
 	for range 50 {
 		v, err := runtime.RunString(`
 			var chunks = [];
-			for (var ch = s.session.readAvailable(); ch !== null; ch = s.session.readAvailable()) {
+			for (var ch = s.session.readAvailable(); ch !== null && ch !== ""; ch = s.session.readAvailable()) {
 				chunks.push(ch);
 			}
 			chunks.join("")

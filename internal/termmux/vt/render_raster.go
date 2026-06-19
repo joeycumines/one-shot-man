@@ -1,6 +1,7 @@
 package vt
 
 import (
+	"fmt"
 	"image"
 	icolor "image/color"
 	"image/png"
@@ -258,7 +259,9 @@ func SaveRasterPNG(img *image.RGBA, path string) error {
 		return err
 	}
 	if err := png.Encode(f, img); err != nil {
-		_ = f.Close()
+		if cerr := f.Close(); cerr != nil {
+			return fmt.Errorf("encode: %w; close: %v", err, cerr)
+		}
 		return err
 	}
 	return f.Close()

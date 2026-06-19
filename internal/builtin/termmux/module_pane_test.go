@@ -354,8 +354,8 @@ func TestJoinPane_MovesPaneBetweenWindows(t *testing.T) {
 
 	_, err = runtime.RunString(`
 		var newWin = tuiMux.breakPane(1);
-		if (newWin !== 2) {
-			throw new Error("expected window 2, got " + newWin);
+		if (newWin.windowID !== 2) {
+			throw new Error("expected window 2, got " + newWin.windowID);
 		}
 	`)
 	if err != nil {
@@ -363,9 +363,9 @@ func TestJoinPane_MovesPaneBetweenWindows(t *testing.T) {
 	}
 
 	_, err = runtime.RunString(`
-		var err = tuiMux.joinPane(1, 1);
-		if (err) {
-			throw new Error("joinPane failed: " + err.message);
+		var result = tuiMux.joinPane(1, 1);
+		if (!result || !result.paneID) {
+			throw new Error("joinPane failed: returned " + JSON.stringify(result));
 		}
 	`)
 	if err != nil {

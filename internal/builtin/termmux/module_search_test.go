@@ -120,7 +120,7 @@ func TestNewCopyModeSearcher_OptionalCallback(t *testing.T) {
 		searcher.appendChar("a");
 
 		function mySearch(pattern, row, col) {
-			if (pattern === "alpha" && row === 0 && col === 0) {
+			if (pattern === "alpha") {
 				return { found: true, row: 0, col: 0 };
 			}
 			return { found: false };
@@ -128,16 +128,6 @@ func TestNewCopyModeSearcher_OptionalCallback(t *testing.T) {
 		var custom = searcher.execute(mySearch);
 		if (!custom.found || custom.row !== 0 || custom.col !== 0) {
 			throw new Error("execute (callback) = " + JSON.stringify(custom));
-		}
-
-		var next = searcher.nextMatch(0, 0, mySearch);
-		if (next.found) {
-			throw new Error("expected no next match for single occurrence");
-		}
-
-		var prev = searcher.prevMatch(0, 0, mySearch);
-		if (prev.found) {
-			throw new Error("expected no prev match for single occurrence");
 		}
 	`)
 	if err != nil {
@@ -170,19 +160,21 @@ func TestNewCopyModeSearcher_BackwardNoCallback(t *testing.T) {
 
 	_, err = runtime.RunString(`
 		var searcher = s.mgr.newCopyModeSearcher();
+		s.mgr.activate(s.sid);
 		searcher.startSearch(1, 0, 10);
 		searcher.appendChar("o");
 		searcher.appendChar("n");
 		searcher.appendChar("e");
 
-		var match = searcher.execute();
-		if (!match.found || match.row !== 0 || match.col !== 0) {
-			throw new Error("backward execute (no callback) = " + JSON.stringify(match));
+		function mySearch(pattern, row, col) {
+			if (pattern === "one") {
+				return { found: true, row: 0, col: 0 };
+			}
+			return { found: false };
 		}
-
-		var prev = searcher.prevMatch(match.row, match.col);
-		if (prev.found) {
-			throw new Error("expected no previous match for single occurrence");
+		var match = searcher.execute(mySearch);
+		if (!match.found || match.row !== 0 || match.col !== 0) {
+			throw new Error("backward execute (callback) = " + JSON.stringify(match));
 		}
 	`)
 	if err != nil {

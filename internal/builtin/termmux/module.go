@@ -1697,13 +1697,25 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 
 	_ = obj.Set("newCopyModeSearcher", func() map[string]any {
 		cs := parent.NewCopyModeSearcher()
-		resolveSearcher := func(call goja.FunctionCall, idx int) parent.ScreenSearcher {
-			if len(call.Arguments) > idx {
-				arg := call.Argument(idx)
+		resolveSearcher := func(args []goja.Value, idx int) parent.ScreenSearcher {
+			if len(args) > idx {
+				arg := args[idx]
 				if arg != nil && !goja.IsUndefined(arg) && !goja.IsNull(arg) {
-					var searchFn func(string, int, int) map[string]any
-					if err := s.runtime.ExportTo(arg, &searchFn); err == nil && searchFn != nil {
-						return copyModeSearchAdapter{searchFn: searchFn}
+					if fn, ok := goja.AssertFunction(arg); ok {
+						return copyModeSearchAdapter{searchFn: func(pattern string, row, col int) map[string]any {
+							ret, err := fn(goja.Undefined(),
+								s.runtime.ToValue(pattern),
+								s.runtime.ToValue(row),
+								s.runtime.ToValue(col))
+							if err != nil || ret == nil || goja.IsUndefined(ret) || goja.IsNull(ret) {
+								return nil
+							}
+							m, ok := ret.Export().(map[string]any)
+							if !ok {
+								return nil
+							}
+							return m
+						}}
 					}
 				}
 			}
@@ -1714,27 +1726,39 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 				cs.StartSearch(parent.CopyModeSearchDirection(direction), cursorRow, cursorCol)
 			},
 			"direction": func() int { return int(cs.Direction()) },
-			"pattern":   cs.Pattern,
+			"pattern":   func() string { return cs.Pattern() },
 			"appendChar": func(ch string) {
 				if len(ch) > 0 {
 					cs.AppendChar(rune(ch[0]))
 				}
 			},
 			"backspace": cs.Backspace,
-			"execute": func(call goja.FunctionCall) map[string]any {
-				match := cs.Execute(resolveSearcher(call, 0))
+			"execute": func(args ...goja.Value) map[string]any {
+				match := cs.Execute(resolveSearcher(args, 0))
 				return wrapSearchMatch(match)
 			},
-			"nextMatch": func(call goja.FunctionCall) map[string]any {
-				currentRow := int(call.Argument(0).ToInteger())
-				currentCol := int(call.Argument(1).ToInteger())
-				match := cs.NextMatch(resolveSearcher(call, 2), currentRow, currentCol)
+			"nextMatch": func(args ...goja.Value) map[string]any {
+				currentRow := 0
+				currentCol := 0
+				if len(args) > 0 && !goja.IsUndefined(args[0]) {
+					currentRow = int(args[0].ToInteger())
+				}
+				if len(args) > 1 && !goja.IsUndefined(args[1]) {
+					currentCol = int(args[1].ToInteger())
+				}
+				match := cs.NextMatch(resolveSearcher(args, 2), currentRow, currentCol)
 				return wrapSearchMatch(match)
 			},
-			"prevMatch": func(call goja.FunctionCall) map[string]any {
-				currentRow := int(call.Argument(0).ToInteger())
-				currentCol := int(call.Argument(1).ToInteger())
-				match := cs.PrevMatch(resolveSearcher(call, 2), currentRow, currentCol)
+			"prevMatch": func(args ...goja.Value) map[string]any {
+				currentRow := 0
+				currentCol := 0
+				if len(args) > 0 && !goja.IsUndefined(args[0]) {
+					currentRow = int(args[0].ToInteger())
+				}
+				if len(args) > 1 && !goja.IsUndefined(args[1]) {
+					currentCol = int(args[1].ToInteger())
+				}
+				match := cs.PrevMatch(resolveSearcher(args, 2), currentRow, currentCol)
 				return wrapSearchMatch(match)
 			},
 		}
@@ -2394,6 +2418,9 @@ func registerStatusMethods(obj *goja.Object, s *muxState) {
 		}
 		if len(call.Arguments) < 2 {
 			panic(s.runtime.NewTypeError("addEventListener: requires (event, callback)"))
+		}
+		if _, ok := goja.AssertFunction(call.Argument(1)); !ok {
+			panic(s.runtime.NewTypeError("addEventListener: callback must be a function"))
 		}
 		_, _ = s.addListener(s.jsEventTarget, call.Argument(0), call.Argument(1))
 		return goja.Undefined()

@@ -28,8 +28,7 @@ type StatusBar struct {
 }
 
 type Segment struct {
-	Text  string
-	Color string
+	Text string
 }
 
 // DefaultTerminalHeight is the default terminal height used when no height

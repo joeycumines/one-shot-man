@@ -51,8 +51,8 @@ func TestBlackboard_ConcurrentJSLeaves(t *testing.T) {
 			// Tick the node and wait for completion
 			status, err := node.Tick()
 			if err != nil {
-				// record error in test
-				panic(err)
+				t.Errorf("node.Tick() failed: %v", err)
+				return
 			}
 			if status != bt.Running {
 				// still acceptable - we still wait for completion

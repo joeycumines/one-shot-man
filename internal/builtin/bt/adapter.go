@@ -288,7 +288,7 @@ func (a *JSLeafAdapter) dispatchJSWithGen(gen uint64) {
 		} else {
 			ctxVal = goja.Undefined()
 		}
-		argsVal := goja.Undefined() // Reserved for future use
+		argsVal := goja.Undefined()
 
 		// Call runLeaf(fn, ctx, args, callback)
 		_, err := runLeafFn(
@@ -435,10 +435,10 @@ func BlockingJSLeaf(ctx context.Context, bridge *Bridge, vm *goja.Runtime, tick 
 				once.Do(func() { ch <- r })
 			}
 
-			// MAJ-4 FIX PART 2: Install cleanup BEFORE RunOnLoop check.
-			// If bridge is stopped, RunOnLoop returns ok=false and we return early.
-			// The defer must be installed FIRST to guarantee cleanup runs on all paths.
-			defer func() {
+		// Install cleanup BEFORE RunOnLoop check.
+		// If bridge is stopped, RunOnLoop returns ok=false and we return early.
+		// The defer must be installed FIRST to guarantee cleanup runs on all paths.
+		defer func() {
 				select {
 				case <-ch:
 					// Drain if available

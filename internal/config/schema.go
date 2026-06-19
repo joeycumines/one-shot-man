@@ -414,7 +414,7 @@ func (s *ConfigSchema) FormatHelp() string {
 		if len(opts) == 0 {
 			continue
 		}
-		b.WriteString(fmt.Sprintf("\n[%s] Options:\n", sec))
+		fmt.Fprintf(&b, "\n[%s] Options:\n", sec)
 		for _, o := range opts {
 			writeOptionHelp(&b, o)
 		}
@@ -424,7 +424,7 @@ func (s *ConfigSchema) FormatHelp() string {
 }
 
 func writeOptionHelp(b *strings.Builder, o ConfigOption) {
-	b.WriteString(fmt.Sprintf("  %-35s %s", o.Key, o.Description))
+	fmt.Fprintf(b, "  %-35s %s", o.Key, o.Description)
 	parts := make([]string, 0, 3)
 	if o.Type != "" && o.Type != TypeString {
 		parts = append(parts, fmt.Sprintf("type: %s", o.Type))
@@ -436,7 +436,7 @@ func writeOptionHelp(b *strings.Builder, o ConfigOption) {
 		parts = append(parts, fmt.Sprintf("env: %s", o.EnvVar))
 	}
 	if len(parts) > 0 {
-		b.WriteString(fmt.Sprintf(" (%s)", strings.Join(parts, ", ")))
+		fmt.Fprintf(b, " (%s)", strings.Join(parts, ", "))
 	}
 	b.WriteString("\n")
 }

@@ -1,214 +1,362 @@
 {
   "meta": {
     "fileName": "blueprint.json",
-    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
-    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST. NEVER SPECIFY ANY PRIORITY OF ANY KIND."
+    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE. DEVIATIONS LOGGED WITHIN THE PLAN. REASSESS HOLISTICALLY AFTER ANY CHANGE.",
+    "completionPolicy": "COMPLETE 100% OF THE BLUEPRINT. DO NOT STOP. REFINE REGULARLY. NO ESTIMATES. NO PRIORITIES.",
+    "userGuidance": {
+      "startTime": "2026-06-20 03:41:11 AEST",
+      "scope": "Enumerate and audit EVERY checked-in file (1110 files). Anti-AI-slop every file. Three factors: correctness, conformance, quality. Fix all bugs. Clean up all mess. Nine hours. Blast subagents. Commit regularly after strict-review-gate. ALL checks must pass: gmake make-all-with-log AND Linux AND Windows targets. Reread blueprint regularly."
+    }
   },
   "globalAlerts": [
     {
-      "warning": "BUILD FIRST: Always run `make build` before running scripts. The osm binary must be up-to-date."
+      "warning": "BUILD FIRST: gmake build before running scripts."
     },
     {
-      "warning": "TEST AFTER EVERY CHANGE: Run `go test -short -count=1 -timeout=5m ./...` after each significant change to catch regressions early."
+      "warning": "TEST AFTER EVERY CHANGE: go test -short -count=1 -timeout=10m ./..."
     },
     {
-      "warning": "ZERO TOLERANCE: Tests must be isolated -- no host state mutation, no external dependencies, no flaky timing-dependent tests."
+      "warning": "ZERO TOLERANCE: Tests isolated, no host state mutation, no flaky tests."
     },
     {
-      "warning": "PLATFORM COMPATIBILITY: All code must work identically on Linux, macOS, and Windows."
+      "warning": "PLATFORM COMPAT: All code works on Linux, macOS, Windows. Cross-platform targets must pass."
     },
     {
-      "warning": "JAVASCRIPT SCRIPTS: All app-specific functionality MUST be modeled as JavaScript scripts using the osm runtime."
+      "warning": "RULE OF TWO: Two contiguous issue-free subagent reviews before every commit."
     },
     {
-      "warning": "RULE OF TWO: Every commit must pass two contiguous issue-free subagent reviews before being committed."
+      "warning": "NO GIT CLI: Use gitops Go package. Only PullRebase may shell out."
     },
     {
-      "warning": "NO GIT CLI: The gitops Go package MUST be used for all git operations. Do NOT introduce exec.Command('git', ...) calls. The ONLY exception is gitops.PullRebase which shells out for rebase (go-git limitation)."
+      "warning": "JS BINDING CONTRACT: All I/O returns Promises. No context.Background() in bindings."
     },
     {
-      "warning": "GO AS REUSABLE MODULES: Go code must be exposed as reusable, modular implementations accessible via osm script. Never hardcode application-specific logic."
+      "warning": "NO SHIMS: One implementation. Update all call sites. Delete boldly."
     },
     {
-      "warning": "INTERNAL API DISCIPLINE: No shims, no variant accumulation. One implementation, update all call sites."
+      "warning": "DEADCODE: Never add to .deadcodeignore. Wire up or delete dead code."
     },
     {
-      "warning": "JS BINDING CONTRACT: No binding may block the event loop. All I/O must return Promises via adapter.Loop().Promisify(). context.Background() is forbidden inside bindings — use the ctx from Require."
+      "warning": "NAMING: No prepositions (From, Into, To, By, On, In, Of, For) in public APIs."
     },
     {
-      "warning": "NO SHIMS: When migrating a legacy binding to async, REMOVE the old synchronous version entirely. Do NOT keep both. Update ALL call sites."
+      "warning": "STRUCTURED LOGGING: lowercase, event-phrased, camelCase attrs via slog."
+    },
+    {
+      "warning": "THREE FACTORS: Every file checked for (1) correctness (2) conformance (3) quality. No AI slop."
+    },
+    {
+      "warning": "ALL CHECKS ALL PLATFORMS: gmake make-all-with-log + Linux container + Windows remote must ALL pass."
+    },
+    {
+      "warning": "REREAD BLUEPRINT: Reread blueprint.json regularly for user guidance and task state."
     }
   ],
   "mandatoryDirectives": {
-    "contextManagement": "Tasks are grouped to be manageable units. Do not attempt to solve all tasks in a single turn.",
-    "verificationBeforeProceeding": "After every code change, run the full test suite with `go test -short -count=1 -timeout=5m ./...` before marking the task done.",
-    "ruleOfTwo": "Before committing any task's code, invoke strict-review-gate with two independent subagents. Only proceed if both reviews pass contiguously."
+    "contextManagement": "Tasks grouped by package. Fan out subagents in parallel for independent packages.",
+    "verificationBeforeProceeding": "After every change: gmake build && gmake lint && go test -short -count=1 -timeout=10m ./...",
+    "ruleOfTwo": "Before committing: strict-review-gate with two independent subagents. Two contiguous passes required.",
+    "commitCadence": "Commit after each task group passes strict-review-gate AND all checks pass.",
+    "parallelExecution": "Fan out subagents for independent package audits. Blast them in parallel."
   },
   "statusSection": {
-    "currentState": "ALL 9 legacy blocking bindings migrated or removed. Zero blocking JS bindings remain. All tests pass (84 packages, 0 failures). Build, lint (vet+staticcheck+deadcode), and race detection all pass. Ready for commit.",
-    "goalState": "ACHIEVED: Zero blocking JS bindings remain. All 9 legacy blocking bindings migrated to async Promise-returning or removed entirely. AGENTS.md JS Binding Contract in place. All JS scripts and tests use async patterns. Event loop is never blocked by any binding.",
-    "goalLog": [
-      "A codebase where NO JS binding blocks the event loop — all I/O returns Promises via adapter.Loop().Promisify()",
-      "All 9 legacy blocking bindings from AGENTS.md are migrated or removed",
-      "AGENTS.md legacy debt list is empty",
-      "All JS scripts and tests updated to use async patterns",
-      "All checks pass on all platforms with race detection"
-    ],
+    "currentState": "First commit (8188fa0): 18 tasks Done, 21 In Progress, 3 Not Started. Build+lint+test PASS. Proceeding with next batch.",
+    "goalState": "Every checked-in file (1110) audited against three factors. All deficiencies fixed. All bugs resolved. AI slop removed. All checks pass on all platforms. Regular commits throughout.",
     "replanLog": [
       {
-        "trigger": "bt/require.go context.Background() → bridge.ctx change broke TestIntegration_SharedModeTickerShutdown",
-        "affectedTask": "context.Background() fix in bt/require.go",
-        "summary": "Reverted bt/require.go. The context.Background() in waitAndResolve is intentional lifecycle design — the Promise must resolve after bridge shutdown. Using bridge.ctx cancels the goroutine before the Promise can settle. waitAndResolve doesn't use the ctx parameter at all — it waits on ticker.Done()."
+        "trigger": "Blueprint overwritten by concurrent subagent",
+        "affectedTask": "blueprint.json itself",
+        "summary": "First blueprint write was overwritten by a background subagent editing root files. Rewrote with more concise format."
       }
     ]
   },
   "sequentialTasks": [
     {
-      "task": "Rewrite AGENTS.md with JS Binding Contract and Concurrency Model",
-      "description": "Remove all structural info from AGENTS.md (Architecture, Build Commands, Directory listings). Add Concurrency Model section explaining Goja single-threaded event loop. Add JS Binding Contract with 5 rules: non-blocking I/O, context propagation, consistent constructors, no synchronous sleeps, confirm sync appropriate. Add Known blocking bindings legacy debt list (9 entries). Keep existing behavioral rules (Code Quality Standards, Important Conventions).",
-      "acceptance": "AGENTS.md contains zero structural information (no file paths, no directory listings, no build commands). It steers behavior only. The JS Binding Contract is clear and actionable. The legacy debt list enumerates all 9 blocking bindings with their async alternatives.",
+      "task": "Audit cmd/osm (3 files: main.go, main_test.go, coverage_gaps_test.go)",
+      "description": "CLI entry point. Check error handling, exit codes, command wiring, platform compat, structured logging, test isolation.",
+      "acceptance": "main.go clean, all commands wired, proper exit codes, tests isolated and pass. No AI slop.",
       "status": "Done"
     },
     {
-      "task": "Migrate gitops JS module to async Promise bindings",
-      "description": "Change gitops.Require to accept (ctx context.Context, adapter *gojaeventloop.Adapter). Convert push(), commit(), addAll(), hasStagedChanges() to return Promises via jsPromise helper using adapter.Loop().Promisify() + adapter.Loop().Submit() + adapter.GojaWrapPromise(). Keep read operations (isRepo, open, openDetect, defaultBranch, branchExists, isWorkTree, headBranchName) synchronous with SYNCHRONOUS: justification comments. Wire in register.go. Add async tests with event-loop-based test helper.",
-      "acceptance": "gitops.push()/commit()/addAll()/hasStagedChanges() return Promises from JS. Read operations remain synchronous. All gitops tests pass with race detection. The jsPromise helper follows the canonical async pattern from exec.go.",
+      "task": "Audit root project files (15 files: Makefile, project.mk, example.config.mk, go.mod, go.sum, .gitignore, .deadcodeignore, AGENTS.md, CLAUDE.md, README.md, CHANGELOG.md, LICENSE, WIP.md, .github/workflows/ci.yml, hack/run-on-windows.sh)",
+      "description": "Config and doc files. Verify Makefile cross-platform, project.mk deadcode config, example.config.mk targets, go.mod deps current, .gitignore complete, .deadcodeignore justified, AGENTS.md accurate, README.md correct, CHANGELOG.md format, CI matches local, hack script works.",
+      "acceptance": "All root files accurate and current. CI matches local targets. No stale docs.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/builtin/register.go + shared_symbols.go (4 files with tests)",
+      "description": "Module registry. Verify all builtin modules registered once, ctx threading, no stale registrations. Files: register.go, shared_symbols.go, register_test.go, shared_symbols_test.go.",
+      "acceptance": "All modules registered once. ctx threaded. Tests cover all modules.",
       "status": "Done"
     },
     {
-      "task": "Fix context.Background() violations across all builtin modules",
-      "description": "Replace context.Background() with threaded ctx in: fetch/fetch.go (Require signature + reqCtx shadowing fix), fetch/readable_stream.go (ctx field on ReadableStream struct), fetch/sse.go (ctx threaded through wrapSSEParserJS), exec/exec.go (baseCtx threaded through wrapChildProcess/wrapReadableStream), bubbletea/bubbletea.go (baseCtx in manager.promisify), aimux/binding_provider.go (full ctx threading chain), mcpmod/mcp.go (ctx added to Require), mcpcallbackmod/mcpcallback.go (ctx added to Require), register.go (wiring for all updated modules). Leave bt/require.go context.Background() as intentional lifecycle design (Promise resolution after bridge shutdown). Leave nil-check fallbacks (ctx = context.Background() when ctx is nil) as defensive programming.",
-      "acceptance": "Zero context.Background() calls remain that violate the JS Binding Contract (inside bindings doing I/O). All remaining context.Background() calls are either nil-check fallbacks or intentional lifecycle design (documented). All modules pass race detection.",
+      "task": "Audit internal/builtin/exec (7 files: exec.go, doc.go, spawn.go, spawn_unix.go, spawn_windows.go, exec_test.go, spawn_test.go)",
+      "description": "Child process exec module. Verify execv async, spawn sync, no legacy exec/execStream, ctx threading, platform code correct.",
+      "acceptance": "Fully async I/O. No blocking. Platform code correct. Tests pass with race.",
       "status": "Done"
     },
     {
-      "task": "Fix time.sleep LEGACY marker and correct async alternative reference",
-      "description": "Add LEGACY comment to internal/builtin/time/time.go sleep() pointing to `await new Promise(r => setTimeout(r, ms))` (NOT delay(ms) which doesn't exist). Update AGENTS.md legacy debt list entry. Update docs/scripting.md, docs/reference/time.md (deprecation notice), docs/architecture.md, docs/security.md to note time.sleep is legacy.",
-      "acceptance": "time.sleep has a LEGACY marker with the correct async alternative. All docs note the legacy status. No reference to non-existent delay(ms) function.",
+      "task": "Audit internal/builtin/fetch (7 files: fetch.go, readable_stream.go, sse.go + 4 test files)",
+      "description": "Fetch API module. Verify Promise-based, AbortController, ReadableStream ctx field, SSE ctx threading, no blocking.",
+      "acceptance": "Fully async, AbortController works, ctx threaded. Tests pass.",
       "status": "Done"
     },
     {
-      "task": "Document osm:gitops module in docs",
-      "description": "Add osm:gitops to docs/scripting.md module table and add a section with API examples. Add osm:gitops to docs/architecture.md module list. Show sync vs async method distinction.",
-      "acceptance": "osm:gitops is documented in scripting.md with code examples showing both sync and async methods. architecture.md lists it in the module table.",
+      "task": "Audit internal/builtin/os (2 files: os.go, os_test.go)",
+      "description": "Filesystem/clipboard/editor module. Verify readFile/writeFile/appendFile/clipboardCopy/clipboardPaste/openEditor all async Promises. Require has ctx+adapter+tuiSink.",
+      "acceptance": "All I/O async. No sync I/O. Tests pass with race.",
       "status": "Done"
     },
     {
-      "task": "Fix TestModule_Async_AddAll_Commit test bug",
-      "description": "The test called addAll().then(commit()) but didn't create a new file before calling addAll. The repo had no changes to stage, so commit rejected with 'nothing to commit'. Fix by writing a new file before the addAll call. Also: async tests were being SKIPPED in -short mode (asyncTestEnv helper skips), so this bug was hidden. Verify async tests pass without -short.",
-      "acceptance": "TestModule_Async_AddAll_Commit creates a new file before addAll, passes with and without -short, passes with race detection.",
+      "task": "Audit internal/builtin/gitops (2 files: module.go, module_test.go)",
+      "description": "Git ops module. Verify push/commit/addAll/hasStagedChanges async. Read ops sync with justification. No git CLI, uses go-git.",
+      "acceptance": "Write ops async, read ops sync with justification. No git CLI. Tests pass.",
       "status": "Done"
     },
     {
-      "task": "Migrate osm:time.sleep to async — REMOVE sleep, update all call sites",
-      "description": "Remove the sleep() function from internal/builtin/time/time.go entirely. The global setTimeout (bound by goja-eventloop adapter) is the standard async alternative: `await new Promise(r => setTimeout(r, ms))`. Update register.go wiring (time.Require may need to change or be removed if sleep was the only export). Search ALL .js files for time.sleep usage and replace with the async setTimeout pattern. Update time_test.go — either remove sleep tests or replace with setTimeout-based tests. Update docs/reference/time.md to reflect removal. Update docs/scripting.md osm:time section. Remove osm:time from AGENTS.md legacy debt list. If time module has no other exports, remove the module entirely and update register.go.",
-      "acceptance": "time.sleep no longer exists in the codebase. No JS script calls time.sleep. All scripts that used time.sleep now use `await new Promise(r => setTimeout(r, ms))`. The osm:time module is either removed entirely or contains only non-blocking exports. AGENTS.md legacy debt list no longer mentions osm:time.sleep. All tests pass.",
+      "task": "Audit internal/builtin/path (2 files: path.go, path_test.go)",
+      "description": "Path module. Verify glob async Promise. All other functions sync (pure computation). Require has ctx+adapter.",
+      "acceptance": "glob async, all else sync. Tests pass.",
       "status": "Done"
     },
     {
-      "task": "Migrate osm:mcpcallback.waitFor to async — REMOVE waitFor, keep waitForAsync",
-      "description": "Remove the waitFor() function from internal/builtin/mcpcallbackmod/mcpcallback.go. The async alternative waitForAsync() already exists and is the correct Promise-returning version. Search ALL .js files for waitFor() usage (NOT waitForAsync) and replace with waitForAsync(). Update mcpcallback_test.go to remove waitFor tests (keep waitForAsync tests). Update docs/scripting.md. Remove osm:mcpcallback.waitFor from AGENTS.md legacy debt list.",
-      "acceptance": "waitFor() no longer exists — only waitForAsync() remains. No JS script calls waitFor() (all use waitForAsync). All mcpcallback tests pass. AGENTS.md legacy debt list no longer mentions osm:mcpcallback.waitFor.",
+      "task": "Audit internal/builtin/ctxutil (8 files: ctxutil.go, doc.go, contextManager.js + 5 test files)",
+      "description": "Context utility module. Verify buildContext async (git diff+exec I/O). Test helpers justified. JS uses async patterns.",
+      "acceptance": "buildContext async. JS async. Tests pass with race.",
       "status": "Done"
     },
     {
-      "task": "Migrate osm:path.glob to async — add ctx+adapter to path.Require, convert glob to Promise",
-      "description": "Change internal/builtin/path/path.go Require signature from `Require(runtime *goja.Runtime, module *goja.Object)` to `Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object)`. Convert glob() to return a Promise using adapter.Loop().Promisify(). Keep all other path functions (join, dir, base, ext, abs, rel, clean, isAbs, match, separator, listSeparator) synchronous — they are pure computation. Update register.go wiring. Update path_test.go to use async test pattern for glob tests. Search ALL .js files for path.glob usage and update to `await path.glob(pattern)`. Update docs/scripting.md. Remove osm:path.glob from AGENTS.md legacy debt list.",
-      "acceptance": "path.glob() returns a Promise from JS. All other path functions remain synchronous. No JS script calls path.glob synchronously. All path tests pass with race detection. AGENTS.md legacy debt list no longer mentions osm:path.glob.",
+      "task": "Audit internal/builtin/bt (21 files: adapter.go, blackboard.go, bridge.go, require.go, unwrap.go, doc.go + 15 test files)",
+      "description": "Behavior tree module. Verify go-behaviortree integration, event loop safety, context.Background() in waitAndResolve is intentional (documented).",
+      "acceptance": "bt correct, event loop safe. context.Background() documented as intentional. Tests pass.",
       "status": "Done"
     },
     {
-      "task": "Migrate osm:ctxutil.buildContext to async — add adapter to ctxutil.Require, convert buildContext to Promise",
-      "description": "Change internal/builtin/ctxutil/ctxutil.go Require signature from `Require(baseCtx context.Context)` to `Require(baseCtx context.Context, adapter *gojaeventloop.Adapter)`. Convert buildContext() to return a Promise using adapter.Loop().Promisify() — it does git diff and exec which are I/O. Keep other ctxutil functions synchronous if they are pure computation. Update register.go wiring. Update ctxutil_test.go and cm_test.go for async buildContext tests. Search ALL .js files for ctxutil.buildContext usage and update to `await ctxutil.buildContext(...)`. Update docs/scripting.md. Remove osm:ctxutil.buildContext from AGENTS.md legacy debt list.",
-      "acceptance": "ctxutil.buildContext() returns a Promise from JS. No JS script calls buildContext synchronously. All ctxutil tests pass with race detection. AGENTS.md legacy debt list no longer mentions osm:ctxutil.buildContext.",
+      "task": "Audit internal/builtin/pabt (22 files: actions.go, evaluation.go, require.go, simple.go, state.go, doc.go + 16 test files)",
+      "description": "PA-BT module. Verify go-pabt integration, ctx threading, exports called from JS (deadcode justified).",
+      "acceptance": "pabt correct, exports justified. Tests pass.",
       "status": "Done"
     },
     {
-      "task": "Migrate osm:os.readFile/writeFile/appendFile to async — add adapter to os.Require, convert to Promises",
-      "description": "Change internal/builtin/os/os.go Require signature from `Require(ctx context.Context, tuiSink func(string))` to `Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(string))`. Convert readFile(), writeFile(), appendFile() to return Promises using adapter.Loop().Promisify(). These do disk I/O which can block. Update register.go wiring. Update os_test.go for async tests. Search ALL .js files for os.readFile/writeFile/appendFile usage and update to `await os.readFile(path)` etc. Update docs/scripting.md. Remove osm:os.readFile/writeFile/appendFile from AGENTS.md legacy debt list.",
-      "acceptance": "os.readFile/writeFile/appendFile return Promises from JS. No JS script calls them synchronously. All os tests pass with race detection. AGENTS.md legacy debt list no longer mentions osm:os.readFile/writeFile/appendFile.",
+      "task": "Audit internal/builtin/bubbletea (25 files: bubbletea.go, input_validation.go, parsekey.go, parsemouse.go, keys_gen.go, mouse_gen.go, testing.go + 18 test files)",
+      "description": "TUI framework module. Verify manager.promisify uses baseCtx, generated code up-to-date, SyncJSRunner test helper justified.",
+      "acceptance": "Correct, event loop safe, generated code current. Tests pass.",
       "status": "Done"
     },
     {
-      "task": "Migrate osm:os.clipboardCopy/clipboardPaste to async — convert to Promises",
-      "description": "In internal/builtin/os/os.go (with adapter already added in previous task), convert clipboardCopy() and clipboardPaste() to return Promises. These do subprocess execution with timeout which blocks. Update os_test.go for async tests. Search ALL .js files for os.clipboardCopy/clipboardPaste usage and update to `await os.clipboardCopy(text)` etc. Update docs/scripting.md. Remove osm:os.clipboardCopy/clipboardPaste from AGENTS.md legacy debt list.",
-      "acceptance": "os.clipboardCopy/clipboardPaste return Promises from JS. No JS script calls them synchronously. All os tests pass. AGENTS.md legacy debt list no longer mentions clipboardCopy/clipboardPaste.",
+      "task": "Audit internal/builtin/termmux (38 files: module.go, control_router.go, chooser.go, searcher.go, jsutil.go, mouse.go, mouse_forward.go, mux_state.go + 29 test files)",
+      "description": "Terminal multiplexer JS binding. Verify passthrough async, event routing, mouse handling, state management.",
+      "acceptance": "passthrough async, event loop safe. Tests pass with race.",
       "status": "Done"
     },
     {
-      "task": "Migrate osm:os.openEditor to async — convert to Promise",
-      "description": "In internal/builtin/os/os.go (with adapter already added), convert openEditor() to return a Promise. It blocks until the editor exits which stalls the event loop. Update os_test.go for async tests. Search ALL .js files for os.openEditor usage and update to `await os.openEditor(title, content)`. Update docs/scripting.md. Remove osm:os.openEditor from AGENTS.md legacy debt list.",
-      "acceptance": "os.openEditor returns a Promise from JS. No JS script calls it synchronously. All os tests pass. AGENTS.md legacy debt list no longer mentions osm:os.openEditor.",
+      "task": "Audit internal/builtin/aimux (8 files: module.go, binding_eventstream.go, binding_parser.go, binding_provider.go, binding_tuistate.go + 3 test files)",
+      "description": "AI multiplexer module. Verify full ctx threading chain, event loop safety.",
+      "acceptance": "ctx threaded throughout. Tests pass.",
       "status": "Done"
     },
     {
-      "task": "Migrate osm:exec.exec/execv/execStream — REMOVE sync versions, keep spawn",
-      "description": "Remove exec(), execv(), execStream() from internal/builtin/exec/exec.go. The async alternative spawn() already exists and is the correct Promise-returning version. Search ALL .js files for exec.exec/execv/execStream usage and replace with spawn(). Update exec_test.go to remove sync exec tests (keep spawn tests). Update docs/scripting.md. Remove osm:exec.exec/execv/execStream from AGENTS.md legacy debt list.",
-      "acceptance": "exec.exec/execStream removed, execv is async. spawn() remains sync. No JS script calls removed functions. All exec tests pass. AGENTS.md legacy debt list no longer mentions osm:exec.exec/execv/execStream.",
+      "task": "Audit internal/builtin/mcpmod + mcpcallbackmod (4 files: mcp.go, mcpcallback.go + 2 test files)",
+      "description": "MCP modules. Verify waitFor removed (only waitForAsync), ctx threading, test helpers justified.",
+      "acceptance": "waitFor removed. ctx threaded. Tests pass.",
       "status": "Done"
     },
     {
-      "task": "Migrate osm:termmux.passthrough to async — convert to Promise",
-      "description": "In internal/builtin/termmux/module.go (already has ctx and adapter), convert passthrough() to return a Promise. It does an indefinite terminal block which stalls the event loop. Update termmux tests for async tests. Search ALL .js files for termmux.passthrough usage and update to `await termmux.passthrough(...)`. Update docs/scripting.md and docs/reference/termmux-js-api.md. Remove osm:termmux.passthrough from AGENTS.md legacy debt list.",
-      "acceptance": "termmux.passthrough returns a Promise from JS. No JS script calls it synchronously. All termmux tests pass. AGENTS.md legacy debt list no longer mentions osm:termmux.passthrough.",
+      "task": "Audit internal/builtin/grpc (3 files: grpc.go, grpc_test.go, coverage_gaps_test.go)",
+      "description": "gRPC module. Verify Promise-based, goja-grpc integration, ctx threading, no blocking.",
+      "acceptance": "Fully async, ctx threaded. Tests pass.",
       "status": "Done"
     },
     {
-      "task": "Update all JS scripts to use async patterns for migrated bindings",
-      "description": "After all Go-side migrations are complete, update ALL .js files in internal/command/ and scripts/ that use any of the migrated bindings. Each call site must use `await` with the Promise-returning version. This includes: pr_split_00_core.js, pr_split_02_grouping.js, pr_split_07_prcreation.js, pr_split_08_conflict.js, pr_split_09_agent.js, pr_split_11_utilities.js, pr_split_16d_tui_handlers_agent.js, super_document_script.js, and any other scripts found. Verify each script still works by running it through the osm runtime.",
-      "acceptance": "All JS scripts use async/await for all I/O bindings. No script calls a legacy synchronous binding. All scripts execute without errors in the osm runtime.",
+      "task": "Audit internal/builtin utility packages (~40 files: crypto, json, encoding, regexp, flag, format, template, nextintegerid, tokenizer, unicodetext, lipgloss, bubblezone, argv + test files)",
+      "description": "Utility modules. Verify no blocking I/O, correct Goja patterns, naming conventions.",
+      "acceptance": "All utility modules correct, no blocking. Tests pass.",
       "status": "Done"
     },
     {
-      "task": "Update all documentation for migrated bindings",
-      "description": "Update docs/scripting.md module table and sections for all migrated bindings. Update docs/reference/time.md (remove or mark as removed). Update docs/architecture.md module list. Update docs/security.md API surface table. Update docs/reference/termmux-js-api.md for passthrough. Ensure all docs reflect the new async API signatures.",
-      "acceptance": "All documentation reflects the new async API signatures. No doc shows a synchronous call to a migrated binding. All docs are consistent with the code.",
+      "task": "Audit internal/builtin/bubbles + termui (~38 files across subdirectories)",
+      "description": "UI component bindings. Verify Goja patterns, event loop safety, deadcode entries justified (scrollbar Model.*, coordinate FromPaneGeometry called from JS).",
+      "acceptance": "All bindings correct, deadcode justified. Tests pass.",
       "status": "Done"
     },
     {
-      "task": "Clear AGENTS.md legacy debt list — all bindings migrated",
-      "description": "After all 9 legacy blocking bindings are migrated or removed, update AGENTS.md to remove the 'Known blocking bindings (legacy debt)' section entirely (or replace with 'No blocking bindings remain'). The JS Binding Contract rules remain — they prevent new blocking bindings from being added.",
-      "acceptance": "AGENTS.md no longer lists any legacy blocking bindings. The JS Binding Contract rules remain in place to prevent regressions. Zero blocking bindings exist in the codebase.",
+      "task": "Audit internal/command core .go files (~36 non-test files: base.go, builtin.go, registry*.go, code_review.go, goal*.go, pr_split.go, diff_splitter.go, prompt_*.go, sync*.go, super_document.go, session.go, etc.)",
+      "description": "Command implementations. Verify registry wiring, platform-specific code, structured logging, error handling, naming (no prepositions).",
+      "acceptance": "All commands correct, platform-safe, structured logging. No AI slop.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/command JS scripts (16 files: code_review_script.js, goal.js, prompt_flow_script.js, super_document_script.js, pr_split_00_core.js through pr_split_16g_persistence.js)",
+      "description": "JS scripts. Verify all I/O uses await, no sync calls to migrated bindings, pipeline logic correct.",
+      "acceptance": "All JS scripts use async/await. No sync binding calls. Pipeline correct.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/command test files (~200 test files + prsplittest/ 8 files + testdata/ fixtures)",
+      "description": "Test files. Verify test isolation (t.TempDir, t.Setenv), skipSlow guards, race safety, no flaky tests. Check prsplittest helpers.",
+      "acceptance": "All tests isolated, skipSlow present, race-safe. No AI slop in tests.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/scripting (109 files: context.go, engine_core.go, runtime.go, state_manager.go, terminal.go, execution_context.go, debug_assertions*.go, logging.go, log_rotate.go, module_hardening.go, session_id_common.go, tui_*.go, js_*.go, go_prompt_sync.go + ~90 test files)",
+      "description": "Scripting engine. Verify engine_core.go NewEngineWithConfig justified in deadcode, runtime.go NewRuntime justified, debug_assertions stub justified, TUI management, JS API bindings, event loop safety.",
+      "acceptance": "Engine correct, event loop safe, ctx threaded. Deadcode justified. Tests pass with race.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/termmux core (~80 files: manager.go, pane_manager.go, session.go, window.go, config.go, borders.go, capture.go, eventbus.go, input.go, layout.go, lock.go, passthrough*.go, persistence*.go, sgrmouse.go, etc. + ~45 test files)",
+      "description": "Terminal multiplexer core. Verify mutex/concurrency safety, pane/window/session management, platform-specific code, persistence.",
+      "acceptance": "Concurrent-safe, platform-correct. Tests pass with race.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/termmux/vt (58 files: parser.go, screen.go, render.go, render_raster.go, csi.go, esc.go, sgr.go, utf8.go, vt.go, defaults.go, doc.go + ~48 test files)",
+      "description": "Virtual terminal. Verify terminal escape sequence parser, screen model, rendering, all sequence handlers correct.",
+      "acceptance": "VT parser correct, handles all sequences. Fuzz tests pass.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/termmux/pty (10 files: pty.go, pty_unix.go, pty_windows.go, pty_signal_*.go, termios_darwin.go, termios_linux.go + 3 test files)",
+      "description": "PTY package. Verify Unix PTY (creack/pty), Windows PTY, termios, signal forwarding.",
+      "acceptance": "PTY correct on all platforms. Signal handling correct. Tests pass.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/termmux/ptyio + statusbar (12 files: ptyio.go, reader.go, blocking_unix.go, blocking_windows.go, doc.go + statusbar/statusbar.go, doc.go + test files)",
+      "description": "PTY I/O management and status bar. Verify non-blocking I/O, platform-specific blocking, status bar rendering.",
+      "acceptance": "ptyio non-blocking, platform-correct. statusbar correct. Tests pass.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/config (16 files: config.go, schema.go, location.go, migration.go, write.go, doc.go + 10 test files)",
+      "description": "Config package. Verify loading, schema, platform-safe location, migration, atomic writing.",
+      "acceptance": "Config correct, platform-safe, tests isolated. Tests pass.",
       "status": "Done"
     },
     {
-      "task": "Full verification: build, test (with and without -short), lint, race detection",
-      "description": "Run: go build ./..., go test -short -count=1 -timeout=5m ./..., go test -count=1 -timeout=10m ./internal/builtin/... (without -short), go test -race -short -count=1 -timeout=10m ./..., gmake lint. Fix any failures. Ensure deadcode passes (no dead code from removed bindings). Ensure all migrated bindings work correctly from JS.",
-      "acceptance": "All checks pass: build clean, all tests pass (84 packages, 0 failures), lint clean (vet, staticcheck, deadcode), race detection clean on all 7 migrated modules. Zero regressions.",
-      "status": "Done"
+      "task": "Audit internal/session (16 files: session.go, types.go, session_darwin.go, session_linux.go, session_other.go, session_windows.go, doc.go + 9 test files)",
+      "description": "Session package. Verify session management, locking, platform-specific session IDs.",
+      "acceptance": "Correct locking, platform-safe. Tests pass with race.",
+      "status": "In Progress"
     },
     {
-      "task": "Rule of Two review for legacy binding migration",
-      "description": "Invoke strict-review-gate: spawn two independent subagent reviews of the complete diff (all legacy binding migrations). Both must pass contiguously on the same diff. Address all findings between reviews (which resets the counter). Only proceed after two contiguous passes.",
-      "acceptance": "Two contiguous issue-free reviews confirm all migrations are correct. No blocking bindings remain. All call sites updated. All tests pass.",
-      "status": "Done"
+      "task": "Audit internal/storage (36 files: atomic_write*.go, backend.go, cleanup*.go, filelock*.go, fs_backend.go, inspector.go, memory_backend.go, paths.go, registry.go, schema.go, doc.go + 20 test files)",
+      "description": "Storage package. Verify atomic writes, file locking, backend interface, cleanup, test helpers justified in deadcode.",
+      "acceptance": "Atomic writes work, platform-safe. Deadcode justified. Tests pass with race.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/tokenizer (28 files: bpe.go, byte_level.go, chartokenizer.go, lattice.go, metaspace.go, model.go, pipeline.go, serialization.go, token.go, trie.go, unigram.go, whitespace.go, wordlevel.go, wordpiece.go + 14 test files)",
+      "description": "Tokenizer package. Verify each algorithm (BPE, byte-level, metaspace, unigram, wordlevel, wordpiece, whitespace) correct.",
+      "acceptance": "All tokenizer implementations correct. Tests pass.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/aimuxcore (12 files: eventstream.go, parser.go, provider.go, provider_process.go, tuistate.go + testutil/ + test files)",
+      "description": "AI multiplexer core. Verify event stream, parser, provider interface, process provider, TUI state.",
+      "acceptance": "aimuxcore correct. Tests pass.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/argv (6 files: argv.go, doc.go, argv_test.go, argv_fuzz_test.go + 2 fuzz testdata)",
+      "description": "Argument parsing. Verify round-trip correctness, fuzz test data valid.",
+      "acceptance": "argv parsing correct, round-trip verified. Fuzz tests pass.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/gitops (2 files: gitops.go, gitops_test.go)",
+      "description": "Internal gitops Go package (not builtin). Verify go-git usage, only PullRebase shells out.",
+      "acceptance": "Uses go-git, only PullRebase exception. Tests pass.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/filepathutil + mouseharness (15 files)",
+      "description": "Tilde expansion + mouse harness. Verify cross-platform tilde expansion, mouse harness correct (deadcode justified).",
+      "acceptance": "Tilde expansion cross-platform. mouseharness correct. Tests pass.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/testutil (12 files: eventloop.go, heuristics.go, platform.go, polling.go, ptytest.go, testids.go + 6 test files)",
+      "description": "Shared test utilities. Verify event loop helper, platform helpers, polling, PTY test, test IDs. Deadcode justified.",
+      "acceptance": "testutil correct, deadcode justified. Tests pass.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit internal/termui + vhs + vtassert + cmd + example + root tests (~53 files)",
+      "description": "Go UI components, VHS recording, visual regression, code generators, examples, root security tests.",
+      "acceptance": "All correct, deadcode justified, generators produce current output. Tests pass.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Audit scripts/ (17 files: 12 example scripts, 4 test scripts, README.md, benchmark-input-latency.js)",
+      "description": "JS scripts. Verify all I/O uses async/await, scripts functional with osm runtime, README accurate.",
+      "acceptance": "All scripts async, functional. README accurate. No AI slop.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Audit goals/ (6 files: README.md, full-featured.json, minimal.json, with-flag-defs.json, with-hot-snippets.json, with-state-vars.json)",
+      "description": "Goal definition files. Verify JSON valid, matches schema, functional.",
+      "acceptance": "All goal JSON valid and functional. README accurate.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Audit docs/ (67 files: README.md, architecture.md, configuration.md, scripting.md, security.md, session.md, reference/*, archive/notes/*, key-input-autopsy/*, visuals/*, adr/*, design/*, projects/*)",
+      "description": "Documentation. Verify docs match current code (no stale API refs like time.sleep, waitFor, exec.exec), scripting.md lists all modules, architecture.md accurate.",
+      "acceptance": "All docs accurate and current. No stale API references. No AI slop.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Full verification: gmake make-all-with-log + Linux container + Windows remote",
+      "description": "After all audits and fixes, run all three check targets. All must pass.",
+      "acceptance": "ALL three check targets pass with zero failures on all platforms.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Final Rule of Two review for entire audit diff",
+      "description": "Two independent subagent reviews of complete diff. Both must pass contiguously.",
+      "acceptance": "Two contiguous issue-free reviews confirm all audit work correct.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Scope expansion: identify next frontier improvements",
+      "description": "Per blueprint mandate, identify next improvements after all audits complete.",
+      "acceptance": "New improvement tasks added. Scope expanded toward True Perfection.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {
-    "task": "Run make build && go test -short -count=1 -timeout=5m ./... after EVERY significant change",
-    "description": "Execute the project's build/test pipeline after each code change.",
-    "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix the issue before proceeding."
+    "task": "Run gmake build && gmake lint && go test -short -count=1 -timeout=10m ./... after EVERY change",
+    "description": "Build/test pipeline after each code change. At commit boundaries: gmake make-all-with-log + Linux + Windows.",
+    "failPolicy": "If ANY check fails, STOP and fix before proceeding. Zero tolerance."
   },
   "finalEnforcementProtocol": [
     {
-      "type": "POST_EXECUTION_WARNING",
-      "alert": "BUILD FIRST: Always rebuild osm before running scripts."
+      "type": "WARNING",
+      "alert": "BUILD FIRST: gmake build before scripts."
     },
     {
-      "type": "POST_EXECUTION_WARNING_REPEATED",
-      "alert": "TEST AFTER EVERY CHANGE: `go test -short -count=1 -timeout=5m ./...`"
+      "type": "WARNING",
+      "alert": "TEST AFTER EVERY CHANGE: go test -short -count=1 -timeout=10m ./..."
     },
     {
-      "type": "POST_EXECUTION_WARNING_THIRD",
-      "alert": "ZERO TOLERANCE FOR FAILURES: If tests fail, fix them before proceeding."
+      "type": "WARNING",
+      "alert": "ZERO TOLERANCE: Fix failures before proceeding."
     },
     {
-      "type": "POST_EXECUTION_WARNING",
-      "alert": "RULE OF TWO: Two contiguous issue-free reviews before every commit."
+      "type": "WARNING",
+      "alert": "RULE OF TWO: Two contiguous reviews before every commit."
     },
     {
-      "type": "POST_EXECUTION_WARNING",
-      "alert": "NO BLOCKING BINDINGS: Every I/O binding must return a Promise. No exceptions."
+      "type": "WARNING",
+      "alert": "ALL CHECKS ALL PLATFORMS: make-all-with-log + Linux + Windows must ALL pass."
+    },
+    {
+      "type": "WARNING",
+      "alert": "THREE FACTORS: correctness, conformance, quality. No AI slop."
+    },
+    {
+      "type": "WARNING",
+      "alert": "REREAD BLUEPRINT: Reread blueprint.json regularly."
     }
   ]
 }

@@ -2,7 +2,6 @@ package config
 
 import (
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -403,39 +402,43 @@ func TestGetDuration(t *testing.T) {
 }
 
 func TestGetWithEnv(t *testing.T) {
-	dir := t.TempDir() // avoid parallel due to Setenv
-	_ = dir
+	const envVar = "OSM_TEST_EDITOR_XYZ"
 
 	c := NewConfig()
 	c.SetGlobalOption("editor", "vim")
 
-	// Env not set: falls back to config.
-	if v := c.GetWithEnv("editor", "OSM_TEST_EDITOR_XYZ"); v != "vim" {
-		t.Fatalf("expected vim, got %q", v)
-	}
+	t.Run("FallbackToConfig", func(t *testing.T) {
+		if v := c.GetWithEnv("editor", envVar); v != "vim" {
+			t.Fatalf("expected vim, got %q", v)
+		}
+	})
 
-	// Env set: takes precedence.
-	t.Setenv("OSM_TEST_EDITOR_XYZ", "nano")
-	if v := c.GetWithEnv("editor", "OSM_TEST_EDITOR_XYZ"); v != "nano" {
-		t.Fatalf("expected nano from env, got %q", v)
-	}
+	t.Run("EnvOverridesConfig", func(t *testing.T) {
+		t.Setenv(envVar, "nano")
+		if v := c.GetWithEnv("editor", envVar); v != "nano" {
+			t.Fatalf("expected nano from env, got %q", v)
+		}
+	})
 
-	// Env set to empty string: still takes precedence.
-	t.Setenv("OSM_TEST_EDITOR_XYZ", "")
-	if v := c.GetWithEnv("editor", "OSM_TEST_EDITOR_XYZ"); v != "" {
-		t.Fatalf("expected empty from env, got %q", v)
-	}
+	t.Run("EmptyEnvOverridesConfig", func(t *testing.T) {
+		t.Setenv(envVar, "")
+		if v := c.GetWithEnv("editor", envVar); v != "" {
+			t.Fatalf("expected empty from env, got %q", v)
+		}
+	})
 
-	// Empty envVar means no env check.
-	if v := c.GetWithEnv("editor", ""); v != "vim" {
-		t.Fatalf("expected vim with empty envVar, got %q", v)
-	}
+	t.Run("EmptyEnvVarSkipsLookup", func(t *testing.T) {
+		if v := c.GetWithEnv("editor", ""); v != "vim" {
+			t.Fatalf("expected vim with empty envVar, got %q", v)
+		}
+	})
 
-	// Env set but for a different key; key not in config.
-	os.Unsetenv("OSM_TEST_EDITOR_XYZ")
-	if v := c.GetWithEnv("nonexistent", "OSM_TEST_EDITOR_XYZ"); v != "" {
-		t.Fatalf("expected empty for unset env and unset config, got %q", v)
-	}
+	t.Run("UnsetEnvAndConfigReturnsEmpty", func(t *testing.T) {
+		const otherEnvVar = "OSM_TEST_EDITOR_UNSET"
+		if v := c.GetWithEnv("nonexistent", otherEnvVar); v != "" {
+			t.Fatalf("expected empty for unset env and unset config, got %q", v)
+		}
+	})
 }
 
 // --- DefaultSchema tests ---
@@ -818,39 +821,41 @@ func TestSchemaResolve(t *testing.T) {
 	c.SetGlobalOption("editor", "vim")
 	c.SetGlobalOption("color", "always")
 
-	// Config value takes effect when env var is not set.
-	if v := s.Resolve(c, "editor"); v != "vim" {
-		t.Fatalf("expected vim from config, got %q", v)
-	}
+	t.Run("ConfigValueWhenEnvUnset", func(t *testing.T) {
+		if v := s.Resolve(c, "editor"); v != "vim" {
+			t.Fatalf("expected vim from config, got %q", v)
+		}
+	})
 
-	// Env var overrides config.
-	t.Setenv("OSM_TEST_RESOLVE_EDITOR", "nano")
-	if v := s.Resolve(c, "editor"); v != "nano" {
-		t.Fatalf("expected nano from env, got %q", v)
-	}
+	t.Run("EnvOverridesConfig", func(t *testing.T) {
+		t.Setenv("OSM_TEST_RESOLVE_EDITOR", "nano")
+		if v := s.Resolve(c, "editor"); v != "nano" {
+			t.Fatalf("expected nano from env, got %q", v)
+		}
+	})
 
-	// Env var set to empty still overrides.
-	t.Setenv("OSM_TEST_RESOLVE_EDITOR", "")
-	if v := s.Resolve(c, "editor"); v != "" {
-		t.Fatalf("expected empty from env, got %q", v)
-	}
+	t.Run("EmptyEnvOverridesConfig", func(t *testing.T) {
+		t.Setenv("OSM_TEST_RESOLVE_EDITOR", "")
+		if v := s.Resolve(c, "editor"); v != "" {
+			t.Fatalf("expected empty from env, got %q", v)
+		}
+	})
 
-	// Option without EnvVar: just config.
-	if v := s.Resolve(c, "color"); v != "always" {
-		t.Fatalf("expected always from config, got %q", v)
-	}
+	t.Run("OptionWithoutEnvVarUsesConfig", func(t *testing.T) {
+		if v := s.Resolve(c, "color"); v != "always" {
+			t.Fatalf("expected always from config, got %q", v)
+		}
+	})
 
-	// Unset key falls back to schema default.
-	c2 := NewConfig()
-	os.Unsetenv("OSM_TEST_RESOLVE_EDITOR")
-	if v := s.Resolve(c2, "editor"); v != "vi" {
-		t.Fatalf("expected vi default, got %q", v)
-	}
-
-	// Unknown key returns empty.
-	if v := s.Resolve(c2, "nonexistent"); v != "" {
-		t.Fatalf("expected empty for unknown key, got %q", v)
-	}
+	t.Run("UnsetKeyFallsBackToDefault", func(t *testing.T) {
+		c2 := NewConfig()
+		if v := s.Resolve(c2, "editor"); v != "vi" {
+			t.Fatalf("expected vi default, got %q", v)
+		}
+		if v := s.Resolve(c2, "nonexistent"); v != "" {
+			t.Fatalf("expected empty for unknown key, got %q", v)
+		}
+	})
 }
 
 // --- GlobalOptions returns copies ---

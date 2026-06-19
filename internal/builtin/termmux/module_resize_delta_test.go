@@ -12,7 +12,7 @@ func TestJSResizePaneDelta_RightGrowsWidth(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runOnLoop(t, runtime, `
+	_, err := runtime.RunString(`
 		var s1 = termmux.newBoundedSession({ cmd: "cat" });
 		var s2 = termmux.newBoundedSession({ cmd: "cat" });
 		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "s1" } }));
@@ -39,7 +39,7 @@ func TestJSResizePaneDelta_LeftShrinksWidth(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runOnLoop(t, runtime, `
+	_, err := runtime.RunString(`
 		var s1 = termmux.newBoundedSession({ cmd: "cat" });
 		var s2 = termmux.newBoundedSession({ cmd: "cat" });
 		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "s1" } }));
@@ -66,7 +66,7 @@ func TestJSResizePaneDelta_DownGrowsHeight(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runOnLoop(t, runtime, `
+	_, err := runtime.RunString(`
 		var s1 = termmux.newBoundedSession({ cmd: "cat" });
 		var s2 = termmux.newBoundedSession({ cmd: "cat" });
 		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "s1" } }));
@@ -93,7 +93,7 @@ func TestJSResizePaneDelta_UpShrinksHeight(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runOnLoop(t, runtime, `
+	_, err := runtime.RunString(`
 		var s1 = termmux.newBoundedSession({ cmd: "cat" });
 		var s2 = termmux.newBoundedSession({ cmd: "cat" });
 		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "s1" } }));
@@ -120,7 +120,7 @@ func TestJSResizePaneDelta_ClampsAtMinimum(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runOnLoop(t, runtime, `
+	_, err := runtime.RunString(`
 		var s1 = termmux.newBoundedSession({ cmd: "cat" });
 		var s2 = termmux.newBoundedSession({ cmd: "cat" });
 		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "s1" } }));
@@ -153,7 +153,7 @@ func TestJSResizePaneDelta_InvalidDirection(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runOnLoop(t, runtime, `
+	_, err := runtime.RunString(`
 		var bs = termmux.newBoundedSession({ cmd: "sh" });
 		tuiMux.register(bs.session, { name: "dir" });
 		try {
@@ -176,7 +176,7 @@ func TestJSResizePaneDelta_InvalidPane(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runOnLoop(t, runtime, `
+	_, err := runtime.RunString(`
 		try {
 			tuiMux.resizePaneDelta(999, "right", 5);
 			throw new Error("expected error");

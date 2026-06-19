@@ -8,7 +8,6 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
-// mockStateManager records SetSharedSymbols calls for testing.
 type mockStateManager struct {
 	setSharedSymbolsCalled bool
 	symbolToStringLen      int
@@ -37,7 +36,6 @@ func (m *mockStateManager) ClearAllState()                   {}
 func (m *mockStateManager) AddListener(StateListener) int    { return 0 }
 func (m *mockStateManager) RemoveListener(int)               {}
 
-// mockStateManagerProvider returns the mock state manager.
 type mockStateManagerProvider struct {
 	sm StateManager
 }
@@ -59,31 +57,27 @@ func TestGetSharedSymbolsLoader(t *testing.T) {
 
 	rt := goja.New()
 	module := rt.NewObject()
-
-	// Call the loader (simulates require("osm:sharedStateSymbols")).
 	loader(rt, module)
 
-	// Verify exports were set.
 	exports := module.Get("exports")
 	if exports == nil {
 		t.Fatal("expected 'exports' to be set on module")
 	}
 	exportsObj := exports.ToObject(rt)
 
-	// Verify contextItems key exists and is a Symbol.
 	contextItems := exportsObj.Get("contextItems")
 	if contextItems == nil || goja.IsUndefined(contextItems) {
 		t.Fatal("expected 'contextItems' key in exports")
 	}
-
-	// Symbols in goja are represented as *goja.Symbol — verify the value
-	// is truthy and of the expected type by checking its string form.
-	str := contextItems.String()
-	if str == "" || str == "undefined" {
-		t.Fatalf("expected Symbol value for contextItems, got: %q", str)
+	if _, ok := contextItems.(*goja.Symbol); !ok {
+		t.Fatalf("expected *goja.Symbol for contextItems, got %T", contextItems)
 	}
 
-	// Verify SetSharedSymbols was called.
+	str := contextItems.String()
+	if str == "" || str == "undefined" {
+		t.Fatalf("expected non-empty Symbol string, got: %q", str)
+	}
+
 	if !sm.setSharedSymbolsCalled {
 		t.Fatal("expected SetSharedSymbols to be called on StateManager")
 	}
@@ -98,19 +92,29 @@ func TestGetSharedSymbolsLoader(t *testing.T) {
 func TestGetSharedSymbolsLoader_NilStateManager(t *testing.T) {
 	t.Parallel()
 
-	// Provider returns nil StateManager — should not panic.
-	provider := &mockStateManagerProvider{sm: nil}
-
-	loader := GetSharedSymbolsLoader(provider)
+	loader := GetSharedSymbolsLoader(&mockStateManagerProvider{sm: nil})
 	rt := goja.New()
 	module := rt.NewObject()
 
-	// Must not panic.
 	loader(rt, module)
 
-	// Exports should still be set.
 	exports := module.Get("exports")
 	if exports == nil {
 		t.Fatal("expected 'exports' to be set even with nil StateManager")
+	}
+}
+
+func TestGetSharedSymbolsLoader_NilProvider(t *testing.T) {
+	t.Parallel()
+
+	loader := GetSharedSymbolsLoader(nil)
+	rt := goja.New()
+	module := rt.NewObject()
+
+	loader(rt, module)
+
+	exports := module.Get("exports")
+	if exports == nil {
+		t.Fatal("expected 'exports' to be set even with nil provider")
 	}
 }

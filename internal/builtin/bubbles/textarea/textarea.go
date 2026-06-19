@@ -164,7 +164,7 @@ func setPositionInternal(model *textarea.Model, targetRow, targetCol int) {
 
 // parseStyleFromJS parses a JavaScript style object and returns a lipgloss.Style.
 // The JS object can have: foreground, background, bold, italic, underline, strikethrough, reverse, blink.
-func parseStyleFromJS(runtime *goja.Runtime, styleObj *goja.Object) lipgloss.Style {
+func parseStyleFromJS(_ *goja.Runtime, styleObj *goja.Object) lipgloss.Style {
 	style := lipgloss.NewStyle()
 	if v := styleObj.Get("foreground"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 		style = style.Foreground(lipgloss.Color(v.String()))

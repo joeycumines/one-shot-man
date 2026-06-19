@@ -39,7 +39,7 @@ type Bridge struct {
 	vm        *goja.Runtime
 	promisify PromisifyFunc
 
-	// Event loop goroutine ID (MANDATORY - fixes GAP #2)
+	// Event loop goroutine ID for deadlock prevention.
 	// We extract the goroutine ID from runtime.Stack() during initialization.
 	// This parsing happens ONCE at startup. The format "goroutine X" has been
 	// stable since Go 1.5, making this a portable solution.
@@ -159,10 +159,9 @@ func newBridgeWithLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Run
 
 	// NOW register the osm:bt module (after ID is captured)
 	if reg != nil {
-		// CRIT-3 FIX: Use internal childCtx instead of parent ctx
-		// Module loader must use bridge's internal lifecycle context (childCtx)
+		// Module loader uses bridge's internal lifecycle context (childCtx),
 		// NOT the external parent context parameter, to ensure module lifecycle
-		// matches bridge's lifecycle logic
+		// matches bridge's lifecycle logic.
 		reg.RegisterNativeModule("osm:bt", b.ModuleLoader(childCtx))
 	}
 
@@ -183,9 +182,9 @@ func newBridgeWithLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Run
 
 // initializeJS sets up the JavaScript environment with behavior tree helpers.
 func (b *Bridge) initializeJS() error {
-	// MANDATORY STEP #1: Capture event loop goroutine ID (fixes GAP #2)
-	// We extract the goroutine ID from the stack trace. This parsing happens
-	// ONCE at initialization, so the overhead is acceptable.
+	// Capture event loop goroutine ID. We extract the goroutine ID from the
+	// stack trace. This parsing happens ONCE at initialization, so the overhead
+	// is acceptable.
 	b.eventLoopGoroutineID.Store(goroutineid.Get())
 
 	// Set up the runLeaf helper which bridges async JS functions to callbacks
@@ -246,7 +245,7 @@ globalThis.bt = {
 // Operations that were already scheduled may still execute after Stop returns.
 // Callers should not assume that no more work will happen after Stop returns.
 //
-// CRITICAL FIX (C3): The correct sequence is now:
+// The correct sequence is:
 //  1. Acquire lock
 //  2. Cancel context (closes Done() channel, unblocks RunOnLoopSync waiters)
 //  3. Set stopped=true (atomic with cancellation, guarantees invariant)
@@ -259,12 +258,13 @@ func (b *Bridge) Stop() {
 		return
 	}
 
-	// CRITICAL FIX (C3): Perform BOTH cancel and stopped update atomically under lock.
-	// This guarantees the lifecycle invariant: "Once Done() is closed, IsRunning() MUST return false".
+	// Perform BOTH cancel and stopped update atomically under lock.
+	// This guarantees the lifecycle invariant: "Once Done() is closed,
+	// IsRunning() MUST return false".
 	//
-	// The happens-before relationship from the mutex ensures that any goroutine that
-	// observes Done() being closed will also observe stopped=true, because both
-	// operations happen before we release the lock.
+	// The happens-before relationship from the mutex ensures that any goroutine
+	// that observes Done() being closed will also observe stopped=true, because
+	// both operations happen before we release the lock.
 	//
 	// Without this, there was a race window:
 	//   - Thread A calls cancel() → Done() closed
@@ -274,8 +274,8 @@ func (b *Bridge) Stop() {
 	b.stopped = true // Update state atomically with cancellation
 	b.mu.Unlock()
 
-	// Now stop the internal bt.Manager (stops all tickers)
-	// Tickers blocked in RunOnLoopSync have already been unblocked by Done() closing
+	// Now stop the internal bt.Manager (stops all tickers).
+	// Tickers blocked in RunOnLoopSync have already been unblocked by Done() closing.
 	if b.manager != nil {
 		b.manager.Stop()
 	}

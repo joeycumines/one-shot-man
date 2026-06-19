@@ -67,43 +67,43 @@ func nodeUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Node, erro
 				return fmt.Errorf("JS node function error: %w", err)
 			}
 
-			// Result should be an array [tick, children]
-			resultObj := result.ToObject(loopVm) // LOW #11 FIX: Use loopVm
-			if resultObj == nil {
-				return errors.New("JS node function must return [tick, children] array")
-			}
+		// Result should be an array [tick, children]
+		resultObj := result.ToObject(loopVm)
+		if resultObj == nil {
+			return errors.New("JS node function must return [tick, children] array")
+		}
 
-			// Get tick (index 0)
-			tickVal := resultObj.Get("0")
-			if tickVal == nil || goja.IsUndefined(tickVal) {
-				return errors.New("JS node function must return tick as first element")
-			}
+		// Get tick (index 0)
+		tickVal := resultObj.Get("0")
+		if tickVal == nil || goja.IsUndefined(tickVal) {
+			return errors.New("JS node function must return tick as first element")
+		}
 
-			tick, jsErr = tickUnwrap(bridge, loopVm, tickVal) // LOW #11 FIX: Use loopVm
-			if jsErr != nil {
-				return fmt.Errorf("failed to unwrap tick: %w", jsErr)
-			}
+		tick, jsErr = tickUnwrap(bridge, loopVm, tickVal)
+		if jsErr != nil {
+			return fmt.Errorf("failed to unwrap tick: %w", jsErr)
+		}
 
-			// Get children (index 1) - may be undefined/null for leaves
-			childrenVal := resultObj.Get("1")
-			if childrenVal != nil && !goja.IsUndefined(childrenVal) && !goja.IsNull(childrenVal) {
-				childrenObj := childrenVal.ToObject(loopVm) // LOW #11 FIX: Use loopVm
-				if childrenObj != nil {
-					length := childrenObj.Get("length")
-					if length != nil && !goja.IsUndefined(length) {
-						n := int(length.ToInteger())
-						children = make([]bt.Node, 0, n)
-						for i := range n {
-							childVal := childrenObj.Get(fmt.Sprintf("%d", i))
-							child, err := nodeUnwrap(bridge, loopVm, childVal) // LOW #11 FIX: Use loopVm
-							if err != nil {
-								return fmt.Errorf("failed to unwrap child %d: %w", i, err)
-							}
-							children = append(children, child)
+		// Get children (index 1) - may be undefined/null for leaves
+		childrenVal := resultObj.Get("1")
+		if childrenVal != nil && !goja.IsUndefined(childrenVal) && !goja.IsNull(childrenVal) {
+			childrenObj := childrenVal.ToObject(loopVm)
+			if childrenObj != nil {
+				length := childrenObj.Get("length")
+				if length != nil && !goja.IsUndefined(length) {
+					n := int(length.ToInteger())
+					children = make([]bt.Node, 0, n)
+					for i := range n {
+						childVal := childrenObj.Get(fmt.Sprintf("%d", i))
+						child, err := nodeUnwrap(bridge, loopVm, childVal)
+						if err != nil {
+							return fmt.Errorf("failed to unwrap child %d: %w", i, err)
 						}
+						children = append(children, child)
 					}
 				}
 			}
+		}
 
 			return nil
 		})
@@ -216,10 +216,10 @@ func tickUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Tick, erro
 				// It's an object - check if it has a callable 'then' property (Promise signature)
 				obj := retVal.ToObject(loopVm)
 				if thenProp := obj.Get("then"); thenProp != nil && !goja.IsUndefined(thenProp) {
-					// HIGH #1 FIX: Verify 'then' is actually callable (a function)
+					// Verify 'then' is actually callable (a function).
 					// This prevents false positives from objects like {then: "value"}
 					if _, callable := goja.AssertFunction(thenProp); callable {
-						// CRITICAL FIX: Reject async functions to prevent infinite Promise loop
+						// Reject async functions to prevent infinite Promise loop.
 						// Async functions return a Promise that would be discarded, creating
 						// a memory leak and infinite Running state. User must use bt.createLeafNode()
 						// for async behavior, not raw bt.node() with async functions.
@@ -253,8 +253,8 @@ func tickUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Tick, erro
 			return bt.Failure, syncErr
 		}
 
-		// CRITICAL FIX: No async path - we reject async functions explicitly above
-		// This prevents the infinite Promise loop bug where Promises were discarded
+		// No async path — we reject async functions explicitly above.
+		// This prevents the infinite Promise loop bug where Promises were discarded.
 
 		// Return the sync result (must be Success, Failure, or Running)
 		return syncResult, nil

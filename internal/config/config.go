@@ -152,10 +152,6 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 
 		// Parse option line: optionName remainingLineIsTheValue
 		parts := strings.SplitN(line, " ", 2)
-		if len(parts) < 1 {
-			continue
-		}
-
 		optionName := parts[0]
 		var value string
 		if len(parts) > 1 {
@@ -198,7 +194,7 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 func (c *Config) addWarning(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	c.Warnings = append(c.Warnings, msg)
-	slog.Warn(msg, "source", "config")
+	slog.Warn("config warning", "warning", msg, "source", "config")
 }
 
 // parseSessionOption parses a session configuration option and updates the SessionConfig.

@@ -100,13 +100,6 @@ func tryExtractPlainText(v any) string {
 		if pt := m.Get("plainText"); pt != nil && !goja.IsUndefined(pt) && !goja.IsNull(pt) {
 			return pt.String()
 		}
-	case goja.Value:
-		obj := m.ToObject(nil)
-		if obj != nil {
-			if pt := obj.Get("plainText"); pt != nil && !goja.IsUndefined(pt) && !goja.IsNull(pt) {
-				return pt.String()
-			}
-		}
 	}
 	rv := reflect.ValueOf(v)
 	if rv.Kind() == reflect.Pointer && !rv.IsNil() {

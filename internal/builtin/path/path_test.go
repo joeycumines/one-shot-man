@@ -35,31 +35,31 @@ func asyncTestEnv(t *testing.T) (*goja.Runtime, func(string) (goja.Value, error)
 	if testing.Short() {
 		t.Skip("skipping async path test in -short mode")
 	}
-	runtime := goja.New()
+	vm := goja.New()
 	loop, err := goeventloop.New()
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter, err := gojaeventloop.New(loop, runtime)
+	adapter, err := gojaeventloop.New(loop, vm)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := adapter.Bind(); err != nil {
 		t.Fatal(err)
 	}
-	module := runtime.NewObject()
-	exports := runtime.NewObject()
+	module := vm.NewObject()
+	exports := vm.NewObject()
 	_ = module.Set("exports", exports)
-	Require(context.Background(), adapter)(runtime, module)
-	_ = runtime.Set("path", module.Get("exports"))
+	Require(context.Background(), adapter)(vm, module)
+	_ = vm.Set("path", module.Get("exports"))
 
 	resultCh := make(chan goja.Value, 1)
 	errCh := make(chan error, 1)
-	_ = runtime.Set("__collect", func(call goja.FunctionCall) goja.Value {
+	_ = vm.Set("__collect", func(call goja.FunctionCall) goja.Value {
 		resultCh <- call.Argument(0)
 		return goja.Undefined()
 	})
-	_ = runtime.Set("__collectErr", func(call goja.FunctionCall) goja.Value {
+	_ = vm.Set("__collectErr", func(call goja.FunctionCall) goja.Value {
 		errCh <- fmt.Errorf("%s", call.Argument(0).String())
 		return goja.Undefined()
 	})
@@ -74,7 +74,7 @@ func asyncTestEnv(t *testing.T) (*goja.Runtime, func(string) (goja.Value, error)
 	runJS := func(script string) (goja.Value, error) {
 		t.Helper()
 		submitErr := loop.Submit(func() {
-			_, runErr := runtime.RunString(script)
+			_, runErr := vm.RunString(script)
 			if runErr != nil {
 				errCh <- runErr
 			}
@@ -91,7 +91,7 @@ func asyncTestEnv(t *testing.T) (*goja.Runtime, func(string) (goja.Value, error)
 			return goja.Undefined(), fmt.Errorf("timeout waiting for async result")
 		}
 	}
-	return runtime, runJS
+	return vm, runJS
 }
 
 // --- join ---

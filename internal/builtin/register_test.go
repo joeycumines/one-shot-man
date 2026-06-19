@@ -6,54 +6,95 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
+
+// allBuiltinModules is the complete set of module names registered by Register.
+// Keep this list in sync with register.go.
+var allBuiltinModules = []string{
+	"osm:aimux",
+	"osm:argv",
+	"osm:bt",
+	"osm:bubbles/textarea",
+	"osm:bubbles/viewport",
+	"osm:bubbletea",
+	"osm:bubblezone",
+	"osm:crypto",
+	"osm:ctxutil",
+	"osm:encoding",
+	"osm:exec",
+	"osm:fetch",
+	"osm:flag",
+	"osm:format",
+	"osm:gitops",
+	"osm:grpc",
+	"osm:json",
+	"osm:lipgloss",
+	"osm:mcp",
+	"osm:mcpcallback",
+	"osm:nextIntegerID",
+	"osm:nextIntegerId",
+	"osm:os",
+	"osm:pabt",
+	"osm:path",
+	"osm:protobuf",
+	"osm:regexp",
+	"osm:termmux",
+	"osm:termui/box",
+	"osm:termui/compositor",
+	"osm:termui/coordinate",
+	"osm:termui/divider",
+	"osm:termui/label",
+	"osm:termui/layout",
+	"osm:termui/list",
+	"osm:termui/modal",
+	"osm:termui/panel",
+	"osm:termui/scrollbar",
+	"osm:termui/splitlayout",
+	"osm:termui/splitview",
+	"osm:termui/table",
+	"osm:termui/termpane",
+	"osm:termui/toast",
+	"osm:text/template",
+	"osm:tokenizer",
+	"osm:unicodetext",
+}
 
 func TestRegister(t *testing.T) {
 	t.Parallel()
 
-	// Create test event loop provider (REQUIRED)
 	eventLoopProvider := testutil.NewTestEventLoopProvider()
 	t.Cleanup(eventLoopProvider.Stop)
 
-	runtime := goja.New()
-	registry := require.NewRegistry()
-	var tuiMessages []string
+	registry := eventLoopProvider.Registry()
+	runtime := eventLoopProvider.Runtime()
 
+	var tuiMessages []string
 	Register(context.Background(), func(msg string) {
 		tuiMessages = append(tuiMessages, msg)
-	}, registry, nil, eventLoopProvider)
+	}, registry, &mockTerminalProvider{reader: strings.NewReader(""), writer: io.Discard}, eventLoopProvider)
 
 	req := registry.Enable(runtime)
-	modules := []string{
-		"osm:argv",
-		"osm:crypto",
-		"osm:encoding",
-		"osm:json",
-		"osm:fetch",
-		"osm:flag",
-		"osm:nextIntegerID",
-		"osm:nextIntegerId", // Deprecated alias — must still resolve
-		"osm:exec",
-		"osm:grpc",
-		"osm:protobuf",
-		"osm:os",
-		"osm:path",
-		"osm:regexp",
-		"osm:ctxutil",
-	}
-
-	for _, name := range modules {
+	for _, name := range allBuiltinModules {
 		if _, err := req.Require(name); err != nil {
 			t.Fatalf("expected module %s to load, got error: %v", name, err)
 		}
 	}
 
-	// Ensure the sink is stored even if not invoked immediately.
 	if tuiMessages != nil {
 		t.Fatalf("expected TUI sink to be lazily used, got %v", tuiMessages)
+	}
+}
+
+func TestRegister_AllModuleNamesAreUnique(t *testing.T) {
+	t.Parallel()
+
+	seen := make(map[string]struct{}, len(allBuiltinModules))
+	for _, name := range allBuiltinModules {
+		if _, ok := seen[name]; ok {
+			t.Fatalf("duplicate module name in allBuiltinModules: %s", name)
+		}
+		seen[name] = struct{}{}
 	}
 }
 
@@ -72,17 +113,11 @@ func TestRegister_WithTerminalProvider(t *testing.T) {
 	eventLoopProvider := testutil.NewTestEventLoopProvider()
 	t.Cleanup(eventLoopProvider.Stop)
 
-	runtime := goja.New()
-	registry := require.NewRegistry()
+	registry := eventLoopProvider.Registry()
+	runtime := eventLoopProvider.Runtime()
 
-	tp := &mockTerminalProvider{
-		reader: strings.NewReader(""),
-		writer: io.Discard,
-	}
+	result := Register(context.Background(), func(msg string) {}, registry, &mockTerminalProvider{reader: strings.NewReader(""), writer: io.Discard}, eventLoopProvider)
 
-	result := Register(context.Background(), func(msg string) {}, registry, tp, eventLoopProvider)
-
-	// Verify result managers are non-nil.
 	if result.BubbleteaManager == nil {
 		t.Fatal("expected non-nil BubbleteaManager")
 	}
@@ -93,7 +128,6 @@ func TestRegister_WithTerminalProvider(t *testing.T) {
 		t.Fatal("expected non-nil BubblezoneManager")
 	}
 
-	// Verify bubbletea module loads with terminal provider.
 	req := registry.Enable(runtime)
 	if _, err := req.Require("osm:bubbletea"); err != nil {
 		t.Fatalf("expected bubbletea to load with terminal provider: %v", err)
@@ -103,10 +137,9 @@ func TestRegister_WithTerminalProvider(t *testing.T) {
 func TestRegister_NilEventLoopPanics(t *testing.T) {
 	t.Parallel()
 	defer func() {
-		r := recover()
-		if r == nil {
+		if r := recover(); r == nil {
 			t.Fatal("expected panic for nil eventLoopProvider")
 		}
 	}()
-	Register(context.Background(), nil, require.NewRegistry(), nil, nil)
+	Register(context.Background(), nil, nil, nil, nil)
 }

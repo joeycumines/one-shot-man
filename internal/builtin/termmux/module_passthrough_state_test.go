@@ -124,7 +124,6 @@ func setupPassthroughState(t *testing.T) (runtime *goja.Runtime, s *muxState, st
 	if err := adapter.Bind(); err != nil {
 		t.Fatalf("adapter.Bind: %v", err)
 	}
-	go loop.Run(ctx)
 
 	tuiMux, state := wrapSessionManager(ctx, adapter, runtime, mgr, stdinR, &bytes.Buffer{}, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)

@@ -12,7 +12,7 @@ func TestActivityReset_JSBinding(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runOnLoop(t, runtime, `
+	_, err := runtime.RunString(`
 		var s1 = termmux.newBoundedSession({ cmd: "cat" });
 		var s2 = termmux.newBoundedSession({ cmd: "cat" });
 		var mgr = s1.mgr;

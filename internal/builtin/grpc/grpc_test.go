@@ -1,6 +1,7 @@
 package grpc_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/dop251/goja"
@@ -11,6 +12,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// skipSlow skips tests that spawn a JS runtime when -short is set.
+func skipSlow(t testing.TB) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+}
 
 // runOnLoop runs fn on the event-loop goroutine and waits for completion.
 func runOnLoop(t *testing.T, provider *testutil.TestEventLoopProvider, fn func()) {
@@ -39,7 +47,7 @@ func loadModule(t *testing.T, provider *testutil.TestEventLoopProvider) (pbMod *
 	ch := inprocgrpc.NewChannel(inprocgrpc.WithLoop(provider.Loop()))
 	adapter := provider.Adapter()
 
-	loader := grpc.Require(ch, pbMod, adapter)
+	loader := grpc.Require(context.Background(), ch, pbMod, adapter)
 
 	runOnLoop(t, provider, func() {
 		module := vm.NewObject()
@@ -53,6 +61,7 @@ func loadModule(t *testing.T, provider *testutil.TestEventLoopProvider) (pbMod *
 }
 
 func TestRequire_ReturnsLoader(t *testing.T) {
+	skipSlow(t)
 	provider := testutil.NewTestEventLoopProvider()
 	t.Cleanup(provider.Stop)
 
@@ -65,11 +74,12 @@ func TestRequire_ReturnsLoader(t *testing.T) {
 	})
 
 	ch := inprocgrpc.NewChannel(inprocgrpc.WithLoop(provider.Loop()))
-	loader := grpc.Require(ch, pbMod, provider.Adapter())
+	loader := grpc.Require(context.Background(), ch, pbMod, provider.Adapter())
 	assert.NotNil(t, loader)
 }
 
 func TestRequire_ExportsPresent(t *testing.T) {
+	skipSlow(t)
 	provider := testutil.NewTestEventLoopProvider()
 	t.Cleanup(provider.Stop)
 
@@ -85,6 +95,7 @@ func TestRequire_ExportsPresent(t *testing.T) {
 }
 
 func TestStatus_Constants(t *testing.T) {
+	skipSlow(t)
 	provider := testutil.NewTestEventLoopProvider()
 	t.Cleanup(provider.Stop)
 
@@ -126,6 +137,7 @@ func TestStatus_Constants(t *testing.T) {
 }
 
 func TestMetadata_Exported(t *testing.T) {
+	skipSlow(t)
 	provider := testutil.NewTestEventLoopProvider()
 	t.Cleanup(provider.Stop)
 
@@ -139,6 +151,7 @@ func TestMetadata_Exported(t *testing.T) {
 }
 
 func TestDial_Exported(t *testing.T) {
+	skipSlow(t)
 	provider := testutil.NewTestEventLoopProvider()
 	t.Cleanup(provider.Stop)
 
@@ -153,6 +166,7 @@ func TestDial_Exported(t *testing.T) {
 }
 
 func TestCreateClient_Exported(t *testing.T) {
+	skipSlow(t)
 	provider := testutil.NewTestEventLoopProvider()
 	t.Cleanup(provider.Stop)
 
@@ -167,6 +181,7 @@ func TestCreateClient_Exported(t *testing.T) {
 }
 
 func TestCreateServer_Exported(t *testing.T) {
+	skipSlow(t)
 	provider := testutil.NewTestEventLoopProvider()
 	t.Cleanup(provider.Stop)
 
@@ -181,6 +196,7 @@ func TestCreateServer_Exported(t *testing.T) {
 }
 
 func TestEnableReflection_Exported(t *testing.T) {
+	skipSlow(t)
 	provider := testutil.NewTestEventLoopProvider()
 	t.Cleanup(provider.Stop)
 
@@ -195,6 +211,7 @@ func TestEnableReflection_Exported(t *testing.T) {
 }
 
 func TestCreateReflectionClient_Exported(t *testing.T) {
+	skipSlow(t)
 	provider := testutil.NewTestEventLoopProvider()
 	t.Cleanup(provider.Stop)
 

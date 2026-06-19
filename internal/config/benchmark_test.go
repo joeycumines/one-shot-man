@@ -75,15 +75,15 @@ func BenchmarkSetKeyInFile(b *testing.B) {
 		var sb strings.Builder
 		sb.WriteString("# Main configuration\n\n")
 		for j := range 30 {
-			sb.WriteString(fmt.Sprintf("option-%d value-%d\n", j, j))
+			fmt.Fprintf(&sb, "option-%d value-%d\n", j, j)
 		}
 		sb.WriteString("\n[section1]\n")
 		for j := range 20 {
-			sb.WriteString(fmt.Sprintf("sec1-opt%d value%d\n", j, j))
+			fmt.Fprintf(&sb, "sec1-opt%d value%d\n", j, j)
 		}
 		sb.WriteString("\n[section2]\n")
 		for j := range 20 {
-			sb.WriteString(fmt.Sprintf("sec2-opt%d value%d\n", j, j))
+			fmt.Fprintf(&sb, "sec2-opt%d value%d\n", j, j)
 		}
 		if err := os.WriteFile(path, []byte(sb.String()), 0644); err != nil {
 			b.Fatal(err)

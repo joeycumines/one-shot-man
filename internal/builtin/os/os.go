@@ -57,19 +57,19 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 				path = call.Argument(0).String()
 			}
 			if path == "" {
-				return jsPromise(adapter, ctx, func() (any, error) {
+				return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
 					return map[string]any{"error": true, "message": "empty path", "content": ""}, nil
 				})
 			}
 
 			expanded, err := expandTildeOnly(path)
 			if err != nil {
-				return jsPromise(adapter, ctx, func() (any, error) {
+				return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
 					return map[string]any{"error": true, "message": err.Error(), "content": ""}, nil
 				})
 			}
 
-			return jsPromise(adapter, ctx, func() (any, error) {
+			return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
 				data, err := os.ReadFile(expanded)
 				if err != nil {
 					return map[string]any{"error": true, "message": err.Error(), "content": ""}, nil
@@ -148,7 +148,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 			if len(call.Arguments) > 1 {
 				initialContent = call.Argument(1).String()
 			}
-			return jsPromise(adapter, ctx, func() (any, error) {
+			return jsPromise(adapter, ctx, func(ctx context.Context) (any, error) {
 				editorCtx, cancel := context.WithCancel(ctx)
 				defer cancel()
 				return openEditor(editorCtx, nameHint, initialContent), nil
@@ -161,7 +161,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 			if len(call.Arguments) > 0 {
 				text = call.Argument(0).String()
 			}
-			return jsPromise(adapter, ctx, func() (any, error) {
+			return jsPromise(adapter, ctx, func(ctx context.Context) (any, error) {
 				clipCtx, cancel := context.WithTimeout(ctx, clipboardTimeout)
 				defer cancel()
 				if err := ClipboardCopy(clipCtx, tuiSink, text); err != nil {
@@ -173,7 +173,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 
 		// clipboardPaste(): Promise<string>
 		_ = exports.Set("clipboardPaste", func(call goja.FunctionCall) goja.Value {
-			return jsPromise(adapter, ctx, func() (any, error) {
+			return jsPromise(adapter, ctx, func(ctx context.Context) (any, error) {
 				clipCtx, cancel := context.WithTimeout(ctx, clipboardTimeout)
 				defer cancel()
 				text, err := ClipboardPaste(clipCtx)
@@ -199,18 +199,18 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 		_ = exports.Set("writeFile", func(call goja.FunctionCall) goja.Value {
 			path, content, mode, createDirs := parseWriteArgs(vm, call)
 			if path == "" {
-				return jsPromise(adapter, ctx, func() (any, error) {
+				return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
 					return nil, fmt.Errorf("writeFile: path is required")
 				})
 			}
 			expanded, err := expandTildeOnly(path)
 			if err != nil {
-				return jsPromise(adapter, ctx, func() (any, error) {
+				return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
 					return nil, fmt.Errorf("writeFile: %w", err)
 				})
 			}
 			path = expanded
-			return jsPromise(adapter, ctx, func() (any, error) {
+			return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
 				if createDirs {
 					if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 						return nil, fmt.Errorf("writeFile: %w", err)
@@ -230,18 +230,18 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 		_ = exports.Set("appendFile", func(call goja.FunctionCall) goja.Value {
 			path, content, mode, createDirs := parseWriteArgs(vm, call)
 			if path == "" {
-				return jsPromise(adapter, ctx, func() (any, error) {
+				return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
 					return nil, fmt.Errorf("appendFile: path is required")
 				})
 			}
 			resolved, err := expandTildeOnly(path)
 			if err != nil {
-				return jsPromise(adapter, ctx, func() (any, error) {
+				return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
 					return nil, fmt.Errorf("appendFile: %w", err)
 				})
 			}
 			path = resolved
-			return jsPromise(adapter, ctx, func() (any, error) {
+			return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
 				if createDirs {
 					if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 						return nil, fmt.Errorf("appendFile: %w", err)
@@ -262,28 +262,24 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 }
 
 // jsPromise wraps a blocking operation in a Promise that runs off the event
-// loop via Promisify. The work context is derived from the base context so
+// loop via Promisify. The context passed to fn is derived from baseCtx so
 // engine shutdown cancels in-flight operations. Resolution/rejection is
 // scheduled back on the event loop via adapter.Loop().Submit().
-func jsPromise(adapter *gojaeventloop.Adapter, baseCtx context.Context, fn func() (any, error)) goja.Value {
+func jsPromise(adapter *gojaeventloop.Adapter, baseCtx context.Context, fn func(ctx context.Context) (any, error)) goja.Value {
 	if adapter == nil {
 		panic("os: async binding requires an event loop adapter")
 	}
 	promise, resolve, reject := adapter.JS().NewChainedPromise()
 
 	adapter.Loop().Promisify(baseCtx, func(ctx context.Context) (any, error) {
-		result, err := fn()
-		if submitErr := adapter.Loop().Submit(func() {
+		result, err := fn(ctx)
+		_ = adapter.Loop().Submit(func() {
 			if err != nil {
 				reject(err)
 			} else {
 				resolve(result)
 			}
-		}); submitErr != nil {
-			_ = adapter.Loop().Submit(func() {
-				reject(fmt.Errorf("event loop not running"))
-			})
-		}
+		})
 		return nil, nil
 	})
 

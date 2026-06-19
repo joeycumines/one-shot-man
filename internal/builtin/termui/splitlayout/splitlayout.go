@@ -224,7 +224,7 @@ func parseDirection(runtime *goja.Runtime, val goja.Value) layout.Direction {
 }
 
 // extractRatios extracts a slice of float64 from a JS array value.
-func extractRatios(runtime *goja.Runtime, val goja.Value) []float64 {
+func extractRatios(_ *goja.Runtime, val goja.Value) []float64 {
 	arr, ok := val.Export().([]any)
 	if !ok {
 		return nil

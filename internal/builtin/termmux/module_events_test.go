@@ -46,8 +46,8 @@ func waitForEvents(t *testing.T, runtime *goja.Runtime, varName string, wantCoun
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		runtime.RunString(`queueMicrotask(() => {})`) // allow microtasks to run
-		v, err := runtime.RunString(varName + `.length`)
+		_, _ = runJS(t, runtime, `queueMicrotask(() => {})`)
+		v, err := runJS(t, runtime, varName+`.length`)
 		if err != nil {
 			t.Fatalf("check %s.length: %v", varName, err)
 		}
@@ -98,10 +98,10 @@ func TestEventBridge_Title(t *testing.T) {
 	sess.Start()
 
 	runtime := goja.New()
-	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("mux", wrapper)
 
-	_, err := runtime.RunString(`
+	_, err := runJS(t, runtime, `
 		var titleEvents = [];
 		mux.addEventListener('title', function(evt) { titleEvents.push(evt.detail); });
 	`)
@@ -120,7 +120,7 @@ func TestEventBridge_Title(t *testing.T) {
 	waitForEvents(t, runtime, "titleEvents", 1)
 
 	sidJSON := sessionIDJSON(uint64(id))
-	_, err = runtime.RunString(fmt.Sprintf(`
+	_, err = runJS(t, runtime, fmt.Sprintf(`
 		var got = titleEvents[0];
 		if (!got) { throw new Error("no title event"); }
 		if (got.sessionId !== %s) { throw new Error("sessionId mismatch"); }
@@ -152,10 +152,10 @@ func TestEventBridge_WorkingDirectory(t *testing.T) {
 	sess.Start()
 
 	runtime := goja.New()
-	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("mux", wrapper)
 
-	_, err := runtime.RunString(`
+	_, err := runJS(t, runtime, `
 		var cwdEvents = [];
 		mux.addEventListener('cwd', function(evt) { cwdEvents.push(evt.detail); });
 	`)
@@ -174,7 +174,7 @@ func TestEventBridge_WorkingDirectory(t *testing.T) {
 	waitForEvents(t, runtime, "cwdEvents", 1)
 
 	sidJSON := sessionIDJSON(uint64(id))
-	_, err = runtime.RunString(fmt.Sprintf(`
+	_, err = runJS(t, runtime, fmt.Sprintf(`
 		var got = cwdEvents[0];
 		if (got.sessionId !== %s) { throw new Error("sessionId mismatch"); }
 		if (got.data !== "file:///home/user") { throw new Error("data mismatch"); }
@@ -268,10 +268,10 @@ func TestEventBridge_Activity(t *testing.T) {
 	bgSess.Start()
 
 	runtime := goja.New()
-	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("mux", wrapper)
 
-	_, err := runtime.RunString(`
+	_, err := runJS(t, runtime, `
 		var activityEvents = [];
 		mux.addEventListener('activity', function(evt) { activityEvents.push(evt.detail); });
 	`)
@@ -304,7 +304,7 @@ func TestEventBridge_Activity(t *testing.T) {
 
 	waitForEvents(t, runtime, "activityEvents", 1)
 
-	v, err := runtime.RunString(`JSON.stringify(activityEvents[0])`)
+	v, err := runJS(t, runtime, `JSON.stringify(activityEvents[0])`)
 	if err != nil {
 		t.Fatalf("stringify activity event: %v", err)
 	}
@@ -399,10 +399,10 @@ func TestEventBridge_MultipleListeners(t *testing.T) {
 	sess.Start()
 
 	runtime := goja.New()
-	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("mux", wrapper)
 
-	_, err := runtime.RunString(`
+	_, err := runJS(t, runtime, `
 		var titleA = [];
 		var titleB = [];
 		mux.addEventListener('title', function(evt) { titleA.push(evt.detail); });
@@ -424,7 +424,7 @@ func TestEventBridge_MultipleListeners(t *testing.T) {
 	waitForEvents(t, runtime, "titleB", 1)
 
 	sidJSON := sessionIDJSON(uint64(id))
-	_, err = runtime.RunString(fmt.Sprintf(`
+	_, err = runJS(t, runtime, fmt.Sprintf(`
 		var wantSessionId = %s;
 		var wantData = "XTerm Title";
 		if (!titleA[0]) { throw new Error("titleA empty"); }

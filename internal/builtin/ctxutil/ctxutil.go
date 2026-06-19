@@ -439,12 +439,7 @@ func parsePayloadArgs(payload any, isDiff bool) (args []string, hadErr bool, err
 	case string:
 		args = gosmargv.ParseSlice(p)
 	default:
-		typeName := ""
-		if payload != nil {
-			typeName = reflect.TypeOf(payload).String()
-		} else {
-			typeName = "undefined"
-		}
+		typeName := reflect.TypeOf(payload).String()
 		return nil, true, fmt.Sprintf("Invalid payload: expected a string or string array, but got type '%s'", typeName)
 	}
 

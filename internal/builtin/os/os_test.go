@@ -1133,9 +1133,6 @@ func TestAppendFile_CreateDirsFails(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWriteFile_TildeExpansion(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping async test in -short mode")
-	}
 	_, runJS := asyncTestEnv(t)
 
 	fakeHome := t.TempDir()

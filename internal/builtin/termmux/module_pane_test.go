@@ -49,21 +49,12 @@ func setupPaneMgr(t *testing.T) (*goja.Runtime, func()) {
 	tuiMux := WrapSessionManager(ctx, adapter, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
-	loopDone := make(chan struct{})
-	go func() {
-		defer close(loopDone)
-		_ = loop.Run(ctx)
-	}()
-
 	return runtime, func() {
 		cancel()
 		<-errCh
 		_ = loop.Shutdown(context.Background())
-		<-loopDone
 	}
 }
-
-var testLoops sync.Map
 
 func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
 	t.Helper()
@@ -108,42 +99,11 @@ func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
 	_ = runtime.Set("termmux", exports)
 	_ = runtime.Set("tuiMux", tuiMux)
 
-	loopDone := make(chan struct{})
-	go func() {
-		defer close(loopDone)
-		_ = loop.Run(ctx)
-	}()
-
-	testLoops.Store(runtime, loop)
 	return runtime, func() {
-		testLoops.Delete(runtime)
 		cancel()
 		<-errCh
 		_ = loop.Shutdown(context.Background())
-		<-loopDone
 	}
-}
-
-func runOnLoop(t *testing.T, runtime *goja.Runtime, script string) (goja.Value, error) {
-	t.Helper()
-	loopVal, ok := testLoops.Load(runtime)
-	if !ok {
-		t.Fatalf("no event loop found for runtime")
-	}
-	loop := loopVal.(*goeventloop.Loop)
-	type result struct {
-		v   goja.Value
-		err error
-	}
-	ch := make(chan result, 1)
-	if err := loop.Submit(func() {
-		v, err := runtime.RunString(script)
-		ch <- result{v, err}
-	}); err != nil {
-		t.Fatalf("submit script to event loop: %v", err)
-	}
-	res := <-ch
-	return res.v, res.err
 }
 
 func TestPaneMethods_PanesEmpty(t *testing.T) {

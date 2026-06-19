@@ -52,6 +52,7 @@ package coordinate
 import (
 	"charm.land/lipgloss/v2"
 	"github.com/dop251/goja"
+	"github.com/joeycumines/one-shot-man/internal/termmux"
 	coord "github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 )
 
@@ -117,17 +118,14 @@ func Require() func(runtime *goja.Runtime, module *goja.Object) {
 				panic(runtime.NewTypeError("fromPaneGeometry requires a pane geometry object {row, col, rows, cols}"))
 			}
 			obj := call.Argument(0).ToObject(runtime)
-			r := &coord.Rect{
-				Position: coord.Position{
-					X: int(obj.Get("col").ToInteger()),
-					Y: int(obj.Get("row").ToInteger()),
-				},
-				Size: coord.Size{
-					Width:  int(obj.Get("cols").ToInteger()),
-					Height: int(obj.Get("rows").ToInteger()),
-				},
+			pg := termmux.PaneGeometry{
+				Row:  int(obj.Get("row").ToInteger()),
+				Col:  int(obj.Get("col").ToInteger()),
+				Rows: int(obj.Get("rows").ToInteger()),
+				Cols: int(obj.Get("cols").ToInteger()),
 			}
-			return createRectObject(runtime, r)
+			r := coord.FromPaneGeometry(pg)
+			return createRectObject(runtime, &r)
 		})
 
 		// fromLayer(lipglossLayerObj) — creates a Layer from a lipgloss layer.

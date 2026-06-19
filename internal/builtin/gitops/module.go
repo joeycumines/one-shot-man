@@ -12,7 +12,6 @@ package gitops
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/dop251/goja"
@@ -242,17 +241,13 @@ func jsPromise(adapter *gojaeventloop.Adapter, baseCtx context.Context, fn func(
 
 	adapter.Loop().Promisify(baseCtx, func(ctx context.Context) (any, error) {
 		result, err := fn(ctx)
-		if submitErr := adapter.Loop().Submit(func() {
+		_ = adapter.Loop().Submit(func() {
 			if err != nil {
 				reject(err)
 			} else {
 				resolve(result)
 			}
-		}); submitErr != nil {
-			_ = adapter.Loop().Submit(func() {
-				reject(fmt.Errorf("event loop not running"))
-			})
-		}
+		})
 		return nil, nil
 	})
 

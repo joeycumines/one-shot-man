@@ -12,7 +12,7 @@ func TestSwapPanes_JSBinding_ReturnsSwapped(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runOnLoop(t, runtime, `
+	_, err := runtime.RunString(`
 		function mkSession(name) {
 			return termmux.newBoundedSession({ cmd: "cat" });
 		}
@@ -28,7 +28,7 @@ func TestSwapPanes_JSBinding_ReturnsSwapped(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	res, err := runOnLoop(t, runtime, `
+	res, err := runtime.RunString(`
 		var before = tuiMux.panes();
 		var p1 = Number(before[0].id);
 		var p2 = Number(before[1].id);

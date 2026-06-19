@@ -11,15 +11,17 @@ import (
 )
 
 func TestGetConfigPathEnvOverride(t *testing.T) {
-	t.Setenv("OSM_CONFIG", "/tmp/custom-config")
+	dir := t.TempDir()
+	want := filepath.Join(dir, "custom-config")
+	t.Setenv("OSM_CONFIG", want)
 
 	got, err := GetConfigPath()
 	if err != nil {
 		t.Fatalf("GetConfigPath returned error: %v", err)
 	}
 
-	if got != "/tmp/custom-config" {
-		t.Fatalf("expected override path, got %q", got)
+	if got != want {
+		t.Fatalf("expected override path %q, got %q", want, got)
 	}
 }
 

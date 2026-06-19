@@ -21,7 +21,7 @@ func Require() func(runtime *goja.Runtime, module *goja.Object) {
 		_ = exports.Set("new", func(call goja.FunctionCall) goja.Value {
 			m := termuisb.New()
 			if len(call.Arguments) >= 1 {
-				m.ViewportHeight = int(call.Argument(0).ToInteger())
+				m.SetWidth(int(call.Argument(0).ToInteger()))
 			}
 			return createScrollbarObject(runtime, m)
 		})
@@ -38,7 +38,7 @@ func createScrollbarObject(runtime *goja.Runtime, m *termuisb.Model) goja.Value 
 			return goja.Undefined()
 		}
 		h := max(int(call.Argument(0).ToInteger()), 0)
-		m.ViewportHeight = h
+		m.SetWidth(h)
 		return obj
 	})
 
@@ -47,7 +47,7 @@ func createScrollbarObject(runtime *goja.Runtime, m *termuisb.Model) goja.Value 
 			return goja.Undefined()
 		}
 		h := max(int(call.Argument(0).ToInteger()), 0)
-		m.ContentHeight = h
+		m.SetTotal(h)
 		return obj
 	})
 
@@ -56,7 +56,7 @@ func createScrollbarObject(runtime *goja.Runtime, m *termuisb.Model) goja.Value 
 			return goja.Undefined()
 		}
 		y := int(call.Argument(0).ToInteger())
-		m.YOffset = y
+		m.SetPosition(y)
 		return obj
 	})
 
@@ -88,7 +88,7 @@ func createScrollbarObject(runtime *goja.Runtime, m *termuisb.Model) goja.Value 
 			return goja.Undefined()
 		}
 		c := call.Argument(0).String()
-		m.ThumbStyle = m.ThumbStyle.Background(lipgloss.Color(c))
+		m.SetThumbStyle(m.ThumbStyle.Background(lipgloss.Color(c)))
 		return obj
 	})
 
@@ -97,7 +97,7 @@ func createScrollbarObject(runtime *goja.Runtime, m *termuisb.Model) goja.Value 
 			return goja.Undefined()
 		}
 		c := call.Argument(0).String()
-		m.ThumbStyle = m.ThumbStyle.Foreground(lipgloss.Color(c))
+		m.SetThumbStyle(m.ThumbStyle.Foreground(lipgloss.Color(c)))
 		return obj
 	})
 
@@ -106,7 +106,7 @@ func createScrollbarObject(runtime *goja.Runtime, m *termuisb.Model) goja.Value 
 			return goja.Undefined()
 		}
 		c := call.Argument(0).String()
-		m.TrackStyle = m.TrackStyle.Background(lipgloss.Color(c))
+		m.SetTrackStyle(m.TrackStyle.Background(lipgloss.Color(c)))
 		return obj
 	})
 
@@ -115,7 +115,7 @@ func createScrollbarObject(runtime *goja.Runtime, m *termuisb.Model) goja.Value 
 			return goja.Undefined()
 		}
 		c := call.Argument(0).String()
-		m.TrackStyle = m.TrackStyle.Foreground(lipgloss.Color(c))
+		m.SetTrackStyle(m.TrackStyle.Foreground(lipgloss.Color(c)))
 		return obj
 	})
 

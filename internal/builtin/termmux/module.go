@@ -1072,6 +1072,12 @@ func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, run
 
 	if adapter != nil && mgr != nil {
 		managerWrapperCache.Store(mgr, &wrapperCacheEntry{obj: obj, state: s})
+		// Clean up the cache entry when the context is cancelled so stale
+		// entries don't leak across test runs or manager lifecycles.
+		go func() {
+			<-ctx.Done()
+			managerWrapperCache.Delete(mgr)
+		}()
 	}
 
 	return obj, s

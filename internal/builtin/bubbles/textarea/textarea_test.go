@@ -450,9 +450,9 @@ func TestTextareaLargeDocument(t *testing.T) {
 	var content strings.Builder
 	for i := range 150 {
 		if i > 0 {
-			content.WriteString("\n")
+			content.WriteByte('\n')
 		}
-		content.WriteString("Line " + string(rune('A'+i%26)) + " number " + string(rune('0'+i/100)) + string(rune('0'+(i/10)%10)) + string(rune('0'+i%10)))
+		fmt.Fprintf(&content, "Line %c number %03d", 'A'+i%26, i)
 	}
 
 	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))

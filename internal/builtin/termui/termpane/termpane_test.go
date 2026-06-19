@@ -91,7 +91,7 @@ func setupTestEnv(t *testing.T) (*goja.Runtime, *termmux.SessionManager, termmux
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require(rt, mod)
+			Require()(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -153,7 +153,7 @@ func TestTermpane_Factory_MissingConfig(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require(rt, mod)
+			Require()(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -184,7 +184,7 @@ func TestTermpane_Factory_MissingManager(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require(rt, mod)
+			Require()(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -215,7 +215,7 @@ func TestTermpane_Factory_MissingSessionId(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require(rt, mod)
+			Require()(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -246,7 +246,7 @@ func TestTermpane_Factory_MissingBounds(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require(rt, mod)
+			Require()(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -598,7 +598,7 @@ func TestTermpane_Update_ForwardsKey(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require(rt, mod)
+			Require()(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -755,7 +755,7 @@ func TestTermpane_EventBusSubscription(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require(rt, mod)
+			Require()(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -799,7 +799,7 @@ func TestTermpane_Factory_InvalidManager(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require(rt, mod)
+			Require()(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -841,7 +841,7 @@ func TestTermpane_MultiplePanes(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require(rt, mod)
+			Require()(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()

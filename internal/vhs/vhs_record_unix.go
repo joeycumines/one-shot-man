@@ -16,20 +16,6 @@ import (
 	"github.com/joeycumines/go-prompt/termtest"
 )
 
-// quoteVHSString quotes a string for VHS tape format.
-func quoteVHSString(s string) string {
-	if !strings.ContainsRune(s, '"') {
-		return "\"" + s + "\""
-	}
-	if !strings.ContainsRune(s, '\'') {
-		return "'" + s + "'"
-	}
-	if !strings.ContainsRune(s, '`') {
-		return "`" + s + "`"
-	}
-	return "\"" + strings.ReplaceAll(s, "\"", "'") + "\""
-}
-
 // RecorderOption configures an InputCaptureRecorder.
 type RecorderOption interface {
 	applyRecorder(*recorderConfig) error
@@ -219,13 +205,6 @@ func NewInputCaptureRecorder(ctx context.Context, tapePath string, opts ...Recor
 	}, nil
 }
 
-// WithSettings sets custom VHS recording configuration.
-// Deprecated: Use WithRecorderVHSConfig option instead.
-func (r *InputCaptureRecorder) WithSettings(settings VHSConfig) *InputCaptureRecorder {
-	r.config = settings
-	return r
-}
-
 // Console returns the underlying termtest.Console for interaction.
 func (r *InputCaptureRecorder) Console() *termtest.Console {
 	return r.console
@@ -279,7 +258,7 @@ func (r *InputCaptureRecorder) TypeCommand() error {
 	cmdLine.WriteString(typedCommand)
 	for _, arg := range typedArgs {
 		if strings.ContainsAny(arg, " \t") {
-			cmdLine.WriteString(" " + quoteVHSString(arg))
+			cmdLine.WriteString(" " + escapeVHSString(arg))
 		} else {
 			cmdLine.WriteString(" " + arg)
 		}
@@ -546,7 +525,7 @@ func (r *InputCaptureRecorder) inputToTape(input string) string {
 
 			if trimmed == "" {
 				if orig != "" {
-					result.WriteString(fmt.Sprintf("Type %s\n", quoteVHSString(orig)))
+					result.WriteString(fmt.Sprintf("Type %s\n", escapeVHSString(orig)))
 				}
 				continue
 			}
@@ -556,7 +535,7 @@ func (r *InputCaptureRecorder) inputToTape(input string) string {
 				continue
 			}
 
-			result.WriteString(fmt.Sprintf("Type %s\n", quoteVHSString(orig)))
+			result.WriteString(fmt.Sprintf("Type %s\n", escapeVHSString(orig)))
 		}
 	}
 

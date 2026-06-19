@@ -157,7 +157,7 @@
                     flagDefs: [
                         {name: "from-diff", description: "Add all files changed in a git diff"}
                     ],
-                    handler: function (args) {
+                    handler: async function (args) {
                         // Handle --from-diff flag
                         if (args.length > 0 && args[0] === "--from-diff") {
                             var argv = ["git", "diff", "--name-only"];
@@ -192,8 +192,8 @@
                             return;
                         }
                         if (args.length === 0) {
-                            const edited = openEditor("paths", "\n# one path per line\n");
-                            args = edited.split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('#'));
+                            const edited = await openEditor("paths", "\n# one path per line\n");
+                            args = (edited || "").split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('#'));
                         }
                         for (const p of args) {
                             try {
@@ -252,9 +252,9 @@
                 note: {
                     description: "Add a freeform note",
                     usage: "note [text]",
-                    handler: function (args) {
+                    handler: async function (args) {
                         let text = args.join(" ");
-                        if (!text) text = openEditor("note", "");
+                        if (!text) text = await openEditor("note", "");
                         const id = addItem("note", "note", text);
                         output.print("Added note [" + id + "]");
                     }
@@ -274,7 +274,7 @@
                 edit: {
                     description: "Edit context item by id",
                     usage: "edit <id>",
-                    handler: function (args) {
+                    handler: async function (args) {
                         if (args.length < 1) {
                             output.print("Usage: edit <id>");
                             return;
@@ -298,7 +298,7 @@
                             const isExec = list[idx].type === 'lazy-exec';
                             const initial = Array.isArray(list[idx].payload) ? formatArgv(list[idx].payload) : (list[idx].payload || "");
                             const editorTitle = (isExec ? "exec" : "diff") + "-spec-" + id;
-                            const edited = openEditor(editorTitle, initial);
+                            const edited = await openEditor(editorTitle, initial);
                             const argv = parseArgv((edited || "").trim());
                             if (isExec && argv.length === 0) {
                                 output.print("Command cannot be empty");
@@ -317,7 +317,7 @@
                             output.print("Updated " + (isExec ? "exec" : "diff") + " specification [" + id + "]");
                             return;
                         }
-                        const edited = openEditor("item-" + id, list[idx].payload || "");
+                        const edited = await openEditor("item-" + id, list[idx].payload || "");
                         list[idx].payload = edited;
                         setItems(list);
                         output.print("Edited [" + id + "]");

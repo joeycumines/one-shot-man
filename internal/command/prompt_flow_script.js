@@ -195,7 +195,7 @@ function buildCommands(state) {
         goal: {
             description: "Set or edit the goal",
             usage: "goal [text|--prewritten]",
-            handler: function (args) {
+            handler: async function (args) {
                 if (args.length === 1 && args[0] === "--prewritten") {
                     // Show available pre-written goals
                     output.print("Available pre-written goals:");
@@ -237,7 +237,7 @@ function buildCommands(state) {
                 if (!goalText) {
                     // No arguments: open editor to edit current goal
                     const currentGoal = getGoal();
-                    const newGoal = ctxmgr.openEditor("goal", currentGoal);
+                    const newGoal = await ctxmgr.openEditor("goal", currentGoal);
                     if (newGoal && newGoal !== currentGoal) {
                         setGoal(newGoal);
                         output.print("Goal updated.");
@@ -251,10 +251,10 @@ function buildCommands(state) {
         template: {
             description: "Set or edit the meta-prompt template",
             usage: "template <edit>",
-            handler: function (args) {
+            handler: async function (args) {
                 if (args.length === 0 || args[0] === "edit") {
                     const currentTemplate = getTemplate();
-                    const newTemplate = ctxmgr.openEditor("template", currentTemplate);
+                    const newTemplate = await ctxmgr.openEditor("template", currentTemplate);
                     if (newTemplate && newTemplate !== currentTemplate) {
                         setTemplate(newTemplate);
                         output.print("Template updated.");
@@ -284,14 +284,14 @@ function buildCommands(state) {
         use: {
             description: "Set the task prompt directly (or from LLM-generated output)",
             usage: "use [text...]",
-            handler: function (args) {
+            handler: async function (args) {
                 // Allow 'use' from any phase - enables one-step mode
                 // (no need to go through goal → generate first)
                 let prompt;
                 if (args.length === 0) {
                     // No arguments: open editor to edit/set task prompt
                     const currentPrompt = getTaskPrompt();
-                    prompt = ctxmgr.openEditor("task-prompt", currentPrompt);
+                    prompt = await ctxmgr.openEditor("task-prompt", currentPrompt);
                 } else {
                     prompt = args.join(" ");
                 }
@@ -341,7 +341,7 @@ function buildCommands(state) {
         edit: {
             ...baseCommands.edit,
             usage: "edit <goal|template|meta|prompt|id>",
-            handler: function (args) {
+            handler: async function (args) {
                 if (args.length === 0) {
                     output.print("Usage: edit <goal|template|meta|prompt|id>");
                     return;
@@ -352,7 +352,7 @@ function buildCommands(state) {
                 // Handle special edit targets
                 if (target === "goal") {
                     const currentGoal = getGoal();
-                    const newGoal = ctxmgr.openEditor("goal", currentGoal);
+                    const newGoal = await ctxmgr.openEditor("goal", currentGoal);
                     if (newGoal && newGoal !== currentGoal) {
                         setGoal(newGoal);
                         output.print("Goal updated.");
@@ -362,7 +362,7 @@ function buildCommands(state) {
 
                 if (target === "template") {
                     const currentTemplate = getTemplate();
-                    const newTemplate = ctxmgr.openEditor("template", currentTemplate);
+                    const newTemplate = await ctxmgr.openEditor("template", currentTemplate);
                     if (newTemplate && newTemplate !== currentTemplate) {
                         setTemplate(newTemplate);
                         output.print("Template updated.");
@@ -376,7 +376,7 @@ function buildCommands(state) {
                         return;
                     }
                     const currentMeta = getMetaPrompt();
-                    const newMeta = ctxmgr.openEditor("meta-prompt", currentMeta);
+                    const newMeta = await ctxmgr.openEditor("meta-prompt", currentMeta);
                     if (newMeta && newMeta !== currentMeta) {
                         setMetaPrompt(newMeta);
                         output.print("Meta-prompt updated.");
@@ -390,7 +390,7 @@ function buildCommands(state) {
                         return;
                     }
                     const currentPrompt = getTaskPrompt();
-                    const newPrompt = ctxmgr.openEditor("task-prompt", currentPrompt);
+                    const newPrompt = await ctxmgr.openEditor("task-prompt", currentPrompt);
                     const trimmed = (newPrompt || "").trim();
                     if (!trimmed) {
                         output.print("Task prompt not updated (no content provided).");
@@ -489,9 +489,9 @@ function buildCommands(state) {
         footer: {
             description: "Set footer text (appended after context in final output)",
             usage: "footer [text...]",
-            handler: function (args) {
+            handler: async function (args) {
                 let text = args.join(" ");
-                if (!text) text = ctxmgr.openEditor("footer", getFooter() || "");
+                if (!text) text = await ctxmgr.openEditor("footer", getFooter() || "");
                 const trimmed = (text || "").trim();
                 if (!trimmed) {
                     setFooter("");

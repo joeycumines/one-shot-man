@@ -42,53 +42,55 @@ import (
 )
 
 // Require returns a CommonJS module under "osm:termui/compositor".
-func Require(runtime *goja.Runtime, module *goja.Object) {
-	exports := runtime.NewObject()
-	_ = module.Set("exports", exports)
+func Require() func(runtime *goja.Runtime, module *goja.Object) {
+	return func(runtime *goja.Runtime, module *goja.Object) {
+		exports := runtime.NewObject()
+		_ = module.Set("exports", exports)
 
-	// compositor({width, height}) — creates a Compositor with canvas
-	_ = exports.Set("compositor", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
-			panic(runtime.NewTypeError("compositor requires a config object {width, height}"))
-		}
+		// compositor({width, height}) — creates a Compositor with canvas
+		_ = exports.Set("compositor", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+				panic(runtime.NewTypeError("compositor requires a config object {width, height}"))
+			}
 
-		config := call.Argument(0).ToObject(runtime)
-		if config == nil {
-			panic(runtime.NewTypeError("compositor: config must be an object"))
-		}
+			config := call.Argument(0).ToObject(runtime)
+			if config == nil {
+				panic(runtime.NewTypeError("compositor: config must be an object"))
+			}
 
-		widthVal := config.Get("width")
-		heightVal := config.Get("height")
+			widthVal := config.Get("width")
+			heightVal := config.Get("height")
 
-		var width, height int
-		if widthVal != nil && !goja.IsUndefined(widthVal) && !goja.IsNull(widthVal) {
-			width = int(widthVal.ToInteger())
-		}
-		if heightVal != nil && !goja.IsUndefined(heightVal) && !goja.IsNull(heightVal) {
-			height = int(heightVal.ToInteger())
-		}
+			var width, height int
+			if widthVal != nil && !goja.IsUndefined(widthVal) && !goja.IsNull(widthVal) {
+				width = int(widthVal.ToInteger())
+			}
+			if heightVal != nil && !goja.IsUndefined(heightVal) && !goja.IsNull(heightVal) {
+				height = int(heightVal.ToInteger())
+			}
 
-		c := compositor.NewCompositor(width, height)
+			c := compositor.NewCompositor(width, height)
 
-		return createCompositorObject(runtime, c)
-	})
+			return createCompositorObject(runtime, c)
+		})
 
-	_ = exports.Set("renderBordered", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 4 {
-			panic(runtime.NewTypeError("renderBordered requires (content, borderStyle, width, height)"))
-		}
-		content := call.Argument(0).String()
-		borderStyleVal := call.Argument(1)
-		width := int(call.Argument(2).ToInteger())
-		height := int(call.Argument(3).ToInteger())
+		_ = exports.Set("renderBordered", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 4 {
+				panic(runtime.NewTypeError("renderBordered requires (content, borderStyle, width, height)"))
+			}
+			content := call.Argument(0).String()
+			borderStyleVal := call.Argument(1)
+			width := int(call.Argument(2).ToInteger())
+			height := int(call.Argument(3).ToInteger())
 
-		border := jsToBorder(runtime, borderStyleVal)
-		styled := lipgloss.NewStyle().Border(border).Width(width).Height(height).Render(content)
-		return runtime.ToValue(styled)
-	})
+			border := jsToBorder(runtime, borderStyleVal)
+			styled := lipgloss.NewStyle().Border(border).Width(width).Height(height).Render(content)
+			return runtime.ToValue(styled)
+		})
 
-	_ = exports.Set("normalBorder", func() map[string]any { return borderToJS(lipgloss.NormalBorder()) })
-	_ = exports.Set("roundedBorder", func() map[string]any { return borderToJS(lipgloss.RoundedBorder()) })
+		_ = exports.Set("normalBorder", func() map[string]any { return borderToJS(lipgloss.NormalBorder()) })
+		_ = exports.Set("roundedBorder", func() map[string]any { return borderToJS(lipgloss.RoundedBorder()) })
+	}
 }
 
 // createCompositorObject wraps a *compositor.Compositor as a Goja Object

@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // VHSTheme defines terminal color themes for VHS recordings.
@@ -432,20 +431,18 @@ func escapeVHSString(s string) string {
 // RecordingContext wraps a VHS tape builder with convenience methods
 // for recording actions during integration test execution.
 type RecordingContext struct {
-	tape       *VHSTapeBuilder
-	enabled    bool
-	tapePath   string
-	lastAction time.Time
+	tape     *VHSTapeBuilder
+	enabled  bool
+	tapePath string
 }
 
 // NewRecordingContext creates a new recording context.
 // If enabled is false, all recording methods are no-ops.
 func NewRecordingContext(config VHSConfig, tapePath string, enabled bool) *RecordingContext {
 	return &RecordingContext{
-		tape:       NewVHSTapeBuilder(config),
-		enabled:    enabled,
-		tapePath:   tapePath,
-		lastAction: time.Now(),
+		tape:     NewVHSTapeBuilder(config),
+		enabled:  enabled,
+		tapePath: tapePath,
 	}
 }
 
@@ -472,7 +469,6 @@ func (r *RecordingContext) RecordType(text string) {
 	} else {
 		r.tape.Type(text)
 	}
-	r.lastAction = time.Now()
 }
 
 // RecordEnter records an Enter key press if enabled.
@@ -481,7 +477,6 @@ func (r *RecordingContext) RecordEnter() {
 		return
 	}
 	r.tape.Enter()
-	r.lastAction = time.Now()
 }
 
 // RecordKey records a special key press if enabled.
@@ -504,7 +499,6 @@ func (r *RecordingContext) RecordKey(key string) {
 	} else {
 		r.tape.Type(key)
 	}
-	r.lastAction = time.Now()
 }
 
 // RecordCtrl records a Ctrl+key combination if enabled.
@@ -513,7 +507,6 @@ func (r *RecordingContext) RecordCtrl(key string) {
 		return
 	}
 	r.tape.Ctrl(key)
-	r.lastAction = time.Now()
 }
 
 // RecordWait records a wait-for-pattern action if enabled.
@@ -522,7 +515,6 @@ func (r *RecordingContext) RecordWait(pattern, timeout string) {
 		return
 	}
 	r.tape.Wait(pattern, timeout)
-	r.lastAction = time.Now()
 }
 
 // RecordComment records a comment if enabled.
@@ -539,7 +531,6 @@ func (r *RecordingContext) RecordSleep(duration string) {
 		return
 	}
 	r.tape.Sleep(duration)
-	r.lastAction = time.Now()
 }
 
 // SetEnv sets an environment variable for the recording.

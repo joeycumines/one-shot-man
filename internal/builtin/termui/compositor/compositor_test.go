@@ -16,7 +16,7 @@ func setupRuntime(t *testing.T) *goja.Runtime {
 		switch arg {
 		case "osm:termui/compositor":
 			mod := rt.NewObject()
-			Require(rt, mod)
+			Require()(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -28,7 +28,7 @@ func TestRequire_Exports(t *testing.T) {
 	rt := goja.New()
 	module := rt.NewObject()
 	require.NoError(t, module.Set("exports", rt.NewObject()))
-	Require(rt, module)
+	Require()(rt, module)
 
 	exports := module.Get("exports").ToObject(rt)
 	require.NotNil(t, exports)

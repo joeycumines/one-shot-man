@@ -639,12 +639,12 @@ func TestBorderChromeID(t *testing.T) {
 }
 
 func TestMouseButtonToTermmux(t *testing.T) {
-	assert.Equal(t, termmux.MouseLeft, mouseButtonToTermmux(tea.MouseLeft))
-	assert.Equal(t, termmux.MouseMiddle, mouseButtonToTermmux(tea.MouseMiddle))
-	assert.Equal(t, termmux.MouseRight, mouseButtonToTermmux(tea.MouseRight))
-	assert.Equal(t, termmux.MouseWheelUp, mouseButtonToTermmux(tea.MouseWheelUp))
-	assert.Equal(t, termmux.MouseWheelDown, mouseButtonToTermmux(tea.MouseWheelDown))
-	assert.Equal(t, termmux.MouseNone, mouseButtonToTermmux(tea.MouseNone))
+	assert.Equal(t, termmux.MouseLeft, termmux.MouseButtonTea(tea.MouseLeft))
+	assert.Equal(t, termmux.MouseMiddle, termmux.MouseButtonTea(tea.MouseMiddle))
+	assert.Equal(t, termmux.MouseRight, termmux.MouseButtonTea(tea.MouseRight))
+	assert.Equal(t, termmux.MouseWheelUp, termmux.MouseButtonTea(tea.MouseWheelUp))
+	assert.Equal(t, termmux.MouseWheelDown, termmux.MouseButtonTea(tea.MouseWheelDown))
+	assert.Equal(t, termmux.MouseNone, termmux.MouseButtonTea(tea.MouseNone))
 }
 
 // --- FocusGroup Integration Tests ---

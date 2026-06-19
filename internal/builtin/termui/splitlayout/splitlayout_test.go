@@ -60,7 +60,7 @@ func setupTestRuntime(t *testing.T, mgr *termmux.SessionManager) *goja.Runtime {
 		case "osm:termui/splitlayout":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require(rt, mod)
+			Require()(rt, mod)
 			return mod.Get("exports")
 		case "osm:termmux":
 			// Return a minimal termmux module with the wrapped manager.

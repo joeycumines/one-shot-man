@@ -170,14 +170,12 @@ func (m *Model) SetTrackStyle(s lipgloss.Style) *Model {
 
 // RenderBounds renders the scrollbar within a coordinate.Rect, extracting the
 // viewport height from the rectangle's size and delegating to View().
-// This makes the scrollbar compatible with the atom.Component interface pattern.
 func (m *Model) RenderBounds(bounds coordinate.Rect) string {
 	m.ViewportHeight = bounds.Size.Height
 	return m.View()
 }
 
 // clamp restricts x to be between low and high.
-// Signature adheres to the plan: func clamp(high, low, x float64) float64.
 func clamp(high, low, x float64) float64 {
 	switch {
 	case high < x:

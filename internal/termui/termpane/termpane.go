@@ -268,16 +268,16 @@ func (m *Model) forwardMouse(msg tea.MouseMsg) {
 	switch msg := msg.(type) {
 	case tea.MouseClickMsg:
 		evt.Type = termmux.MouseClick
-		evt.Button = mouseButtonToTermmux(msg.Button)
+		evt.Button = termmux.MouseButtonTea(msg.Button)
 	case tea.MouseReleaseMsg:
 		evt.Type = termmux.MouseRelease
-		evt.Button = mouseButtonToTermmux(msg.Button)
+		evt.Button = termmux.MouseButtonTea(msg.Button)
 	case tea.MouseMotionMsg:
 		evt.Type = termmux.MouseMotion
-		evt.Button = mouseButtonToTermmux(msg.Button)
+		evt.Button = termmux.MouseButtonTea(msg.Button)
 	case tea.MouseWheelMsg:
 		evt.Type = termmux.MouseWheel
-		evt.Button = mouseButtonToTermmux(msg.Button)
+		evt.Button = termmux.MouseButtonTea(msg.Button)
 	default:
 		return
 	}
@@ -288,24 +288,6 @@ func (m *Model) forwardMouse(msg tea.MouseMsg) {
 	}
 	if err := m.manager.Input([]byte(seq)); err != nil {
 		slog.Debug("termpane mouse forward failed", "error", err)
-	}
-}
-
-// mouseButtonToTermmux converts a tea.MouseButton to a termmux.MouseButton.
-func mouseButtonToTermmux(b tea.MouseButton) termmux.MouseButton {
-	switch b {
-	case tea.MouseLeft:
-		return termmux.MouseLeft
-	case tea.MouseMiddle:
-		return termmux.MouseMiddle
-	case tea.MouseRight:
-		return termmux.MouseRight
-	case tea.MouseWheelUp:
-		return termmux.MouseWheelUp
-	case tea.MouseWheelDown:
-		return termmux.MouseWheelDown
-	default:
-		return termmux.MouseNone
 	}
 }
 

@@ -517,16 +517,16 @@ func (sl *SplitLayout) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.MouseClickMsg:
 		evt.Type = termmux.MouseClick
-		evt.Button = mouseButtonToTermmux(msg.Button)
+		evt.Button = termmux.MouseButtonTea(msg.Button)
 	case tea.MouseReleaseMsg:
 		evt.Type = termmux.MouseRelease
-		evt.Button = mouseButtonToTermmux(msg.Button)
+		evt.Button = termmux.MouseButtonTea(msg.Button)
 	case tea.MouseMotionMsg:
 		evt.Type = termmux.MouseMotion
-		evt.Button = mouseButtonToTermmux(msg.Button)
+		evt.Button = termmux.MouseButtonTea(msg.Button)
 	case tea.MouseWheelMsg:
 		evt.Type = termmux.MouseWheel
-		evt.Button = mouseButtonToTermmux(msg.Button)
+		evt.Button = termmux.MouseButtonTea(msg.Button)
 	default:
 		return nil
 	}
@@ -685,22 +685,4 @@ func paneIDFromStr(s string) termmux.SessionID {
 // borderChromeID returns the chrome layer ID for the i-th border.
 func borderChromeID(i int) string {
 	return fmt.Sprintf("border-%d", i)
-}
-
-// mouseButtonToTermmux converts a tea.MouseButton to a termmux.MouseButton.
-func mouseButtonToTermmux(b tea.MouseButton) termmux.MouseButton {
-	switch b {
-	case tea.MouseLeft:
-		return termmux.MouseLeft
-	case tea.MouseMiddle:
-		return termmux.MouseMiddle
-	case tea.MouseRight:
-		return termmux.MouseRight
-	case tea.MouseWheelUp:
-		return termmux.MouseWheelUp
-	case tea.MouseWheelDown:
-		return termmux.MouseWheelDown
-	default:
-		return termmux.MouseNone
-	}
 }

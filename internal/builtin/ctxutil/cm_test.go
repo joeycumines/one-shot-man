@@ -179,7 +179,7 @@ func TestContextManagerAddItem(t *testing.T) {
 }
 
 func TestContextManagerCommandExtension(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -189,7 +189,7 @@ func TestContextManagerCommandExtension(t *testing.T) {
 			getItems: () => items,
 			setItems: (v) => { items = v; },
 			buildPrompt: () => "base prompt",
-			openEditor: () => "test note content"
+			openEditor: () => Promise.resolve("test note content")
 		});
 
 		// Test extending a command
@@ -217,14 +217,15 @@ func TestContextManagerCommandExtension(t *testing.T) {
 		commands.note.handler(["--special"]);
 		globalThis.__specialResult = globalThis.__specialHandled === true;
 
-		// Call with regular args (should delegate)
-		commands.note.handler([]);
-		globalThis.__regularResult = items.length === 1;
+		// Call with regular args (should delegate) - base handler is async
+		(async () => {
+			await commands.note.handler([]);
+			globalThis.__regularResult = items.length === 1;
+			__signalDone();
+		})();
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	if !runtime.Get("__specialResult").ToBoolean() {
 		t.Error("expected special handler to be invoked")
@@ -321,7 +322,7 @@ func TestContextManagerHelperOverrides(t *testing.T) {
 			buildPrompt: () => "test",
 			openEditor: (title, initial) => {
 				openEditorCalled = true;
-				return "edited content";
+				return Promise.resolve("edited content");
 			},
 			clipboardCopy: (text) => {
 				clipboardCopyCalled = true;
@@ -1281,7 +1282,7 @@ func TestContextManagerExecNoArgs(t *testing.T) {
 }
 
 func TestContextManagerExecEditLazyExec(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1299,7 +1300,7 @@ func TestContextManagerExecEditLazyExec(t *testing.T) {
 			openEditor: (title, initial) => {
 				editorTitle = title;
 				editorInitial = initial;
-				return "cat /etc/hosts";
+				return Promise.resolve("cat /etc/hosts");
 			},
 			formatArgv: (argv) => argv.join(" "),
 			parseArgv: (str) => str.split(" ").filter(s => s !== "")
@@ -1308,18 +1309,19 @@ func TestContextManagerExecEditLazyExec(t *testing.T) {
 		// Manually add a lazy-exec item
 		items.push({id: 1, type: "lazy-exec", label: "ls -la", payload: ["ls", "-la"]});
 
-		// Edit it
-		ctxmgr.commands.edit.handler(["1"]);
+		// Edit it - handler is async (awaits openEditor)
+		(async () => {
+			await ctxmgr.commands.edit.handler(["1"]);
 
-		globalThis.__editorTitle = editorTitle;
-		globalThis.__editorInitial = editorInitial;
-		globalThis.__items = items;
-		globalThis.__outputCalls = outputCalls;
+			globalThis.__editorTitle = editorTitle;
+			globalThis.__editorInitial = editorInitial;
+			globalThis.__items = items;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		})();
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	// Verify editor was opened with correct title and initial content
 	if got := runtime.Get("__editorTitle").String(); got != "exec-spec-1" {
@@ -1960,7 +1962,7 @@ func TestContextManagerListEmpty(t *testing.T) {
 }
 
 func TestContextManagerEditEdgeCases(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1972,7 +1974,7 @@ func TestContextManagerEditEdgeCases(t *testing.T) {
 		const ctxmgr = contextManager({
 			getItems: () => items,
 			setItems: (v) => { items = v; },
-			openEditor: (title, initial) => 'edited: ' + initial,
+			openEditor: (title, initial) => Promise.resolve('edited: ' + initial),
 			formatArgv: (argv) => argv.join(" "),
 			parseArgv: (str) => str.split(" ").filter(s => s !== "")
 		});
@@ -1981,43 +1983,46 @@ func TestContextManagerEditEdgeCases(t *testing.T) {
 		items.push({id: 2, type: 'note', label: 'note', payload: 'original text'});
 		items.push({id: 3, type: 'lazy-diff', label: 'git diff HEAD', payload: ['HEAD']});
 
-		// Test: no args
-		ctxmgr.commands.edit.handler([]);
-		globalThis.__noArgsOutput = outputCalls.slice();
-		outputCalls.length = 0;
+		// edit handler is async (awaits openEditor for note/diff/exec items)
+		(async () => {
+			// Test: no args
+			await ctxmgr.commands.edit.handler([]);
+			globalThis.__noArgsOutput = outputCalls.slice();
+			outputCalls.length = 0;
 
-		// Test: invalid id
-		ctxmgr.commands.edit.handler(["abc"]);
-		globalThis.__invalidIdOutput = outputCalls.slice();
-		outputCalls.length = 0;
+			// Test: invalid id
+			await ctxmgr.commands.edit.handler(["abc"]);
+			globalThis.__invalidIdOutput = outputCalls.slice();
+			outputCalls.length = 0;
 
-		// Test: not found
-		ctxmgr.commands.edit.handler(["999"]);
-		globalThis.__notFoundOutput = outputCalls.slice();
-		outputCalls.length = 0;
+			// Test: not found
+			await ctxmgr.commands.edit.handler(["999"]);
+			globalThis.__notFoundOutput = outputCalls.slice();
+			outputCalls.length = 0;
 
-		// Test: edit file (not supported)
-		ctxmgr.commands.edit.handler(["1"]);
-		globalThis.__fileEditOutput = outputCalls.slice();
-		outputCalls.length = 0;
+			// Test: edit file (not supported)
+			await ctxmgr.commands.edit.handler(["1"]);
+			globalThis.__fileEditOutput = outputCalls.slice();
+			outputCalls.length = 0;
 
-		// Test: edit note
-		ctxmgr.commands.edit.handler(["2"]);
-		globalThis.__noteEditOutput = outputCalls.slice();
-		globalThis.__notePayloadAfter = items[1].payload;
-		outputCalls.length = 0;
+			// Test: edit note
+			await ctxmgr.commands.edit.handler(["2"]);
+			globalThis.__noteEditOutput = outputCalls.slice();
+			globalThis.__notePayloadAfter = items[1].payload;
+			outputCalls.length = 0;
 
-		// Test: edit lazy-diff
-		ctxmgr.commands.edit.handler(["3"]);
-		globalThis.__diffEditOutput = outputCalls.slice();
-		globalThis.__diffPayloadAfter = items[2].payload;
-		globalThis.__diffLabelAfter = items[2].label;
-		outputCalls.length = 0;
+			// Test: edit lazy-diff
+			await ctxmgr.commands.edit.handler(["3"]);
+			globalThis.__diffEditOutput = outputCalls.slice();
+			globalThis.__diffPayloadAfter = items[2].payload;
+			globalThis.__diffLabelAfter = items[2].label;
+			outputCalls.length = 0;
+
+			__signalDone();
+		})();
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	noArgs := runtime.Get("__noArgsOutput").Export().([]any)
 	if len(noArgs) != 1 || !strings.Contains(noArgs[0].(string), "Usage: edit") {
@@ -2056,7 +2061,7 @@ func TestContextManagerEditEdgeCases(t *testing.T) {
 }
 
 func TestContextManagerEditExecEmptyCommand(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2068,21 +2073,23 @@ func TestContextManagerEditExecEmptyCommand(t *testing.T) {
 		const ctxmgr = contextManager({
 			getItems: () => items,
 			setItems: (v) => { items = v; },
-			openEditor: (title, initial) => '',
+			openEditor: (title, initial) => Promise.resolve(''),
 			formatArgv: (argv) => argv.join(" "),
 			parseArgv: (str) => str.split(" ").filter(s => s !== "")
 		});
 
 		items.push({id: 1, type: 'lazy-exec', label: 'ls', payload: ['ls']});
 
-		ctxmgr.commands.edit.handler(["1"]);
-		globalThis.__outputCalls = outputCalls;
-		globalThis.__payloadAfter = items[0].payload;
+		// edit handler is async (awaits openEditor)
+		(async () => {
+			await ctxmgr.commands.edit.handler(["1"]);
+			globalThis.__outputCalls = outputCalls;
+			globalThis.__payloadAfter = items[0].payload;
+			__signalDone();
+		})();
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	outputs := runtime.Get("__outputCalls").Export().([]any)
 	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Command cannot be empty") {
@@ -2535,7 +2542,7 @@ func TestContextManagerHotSnippetClipboardError(t *testing.T) {
 }
 
 func TestContextManagerAddNoArgsEditor(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2553,18 +2560,20 @@ func TestContextManagerAddNoArgsEditor(t *testing.T) {
 		const ctxmgr = contextManager({
 			getItems: () => items,
 			setItems: (v) => { items = v; },
-			openEditor: (title, initial) => "src/main.go\n# comment line\n  src/util.go  \n\n"
+			openEditor: (title, initial) => Promise.resolve("src/main.go\n# comment line\n  src/util.go  \n\n")
 		});
 
-		ctxmgr.commands.add.handler([]);
-		globalThis.__addPathCalls = addPathCalls;
-		globalThis.__items = items;
-		globalThis.__outputCalls = outputCalls;
+		// add handler with no args opens editor (async)
+		(async () => {
+			await ctxmgr.commands.add.handler([]);
+			globalThis.__addPathCalls = addPathCalls;
+			globalThis.__items = items;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		})();
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	addPathCalls := runtime.Get("__addPathCalls").Export().([]any)
 	if len(addPathCalls) != 2 {
@@ -2660,7 +2669,7 @@ func TestContextManagerRefreshWithoutContextGlobal(t *testing.T) {
 }
 
 func TestContextManagerNoteViaEditor(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2672,17 +2681,19 @@ func TestContextManagerNoteViaEditor(t *testing.T) {
 		const ctxmgr = contextManager({
 			getItems: () => items,
 			setItems: (v) => { items = v; },
-			openEditor: (title, initial) => 'editor note content'
+			openEditor: (title, initial) => Promise.resolve('editor note content')
 		});
 
-		ctxmgr.commands.note.handler([]);
-		globalThis.__outputCalls = outputCalls;
-		globalThis.__items = items;
+		// note handler with no args opens editor (async)
+		(async () => {
+			await ctxmgr.commands.note.handler([]);
+			globalThis.__outputCalls = outputCalls;
+			globalThis.__items = items;
+			__signalDone();
+		})();
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	items := runtime.Get("__items").Export().([]any)
 	if len(items) != 1 {
@@ -2991,7 +3002,7 @@ func TestContextManagerEditRejectsNonDecimalID(t *testing.T) {
 		const ctxmgr = contextManager({
 			getItems: () => items,
 			setItems: (v) => { items = v; },
-			openEditor: () => 'should not be called'
+			openEditor: () => Promise.resolve('should not be called')
 		});
 
 		items.push({id: 1, type: 'note', label: 'note', payload: 'original'});
@@ -3014,5 +3025,170 @@ func TestContextManagerEditRejectsNonDecimalID(t *testing.T) {
 	}
 	if got := runtime.Get("__invalidCount").ToInteger(); got != 1 {
 		t.Errorf("expected 1 'Invalid id' message, got %d", got)
+	}
+}
+
+func TestAddCommand_AsyncEditor(t *testing.T) {
+	runtime, loop := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+		globalThis.__testError = null;
+
+		const addPathCalls = [];
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+		globalThis.context = {
+			addPath: (path) => { addPathCalls.push(path); return null; },
+			removePath: () => null,
+			toTxtar: () => ''
+		};
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			// Mock openEditor returns a Promise, matching the real osm:os
+			// openEditor which is async via Promisify.
+			openEditor: (title, initial) => Promise.resolve("file1.go\nfile2.go")
+		});
+
+		// Call add with no args — triggers the editor flow. The handler is
+		// async and awaits openEditor, so it returns a Promise that resolves
+		// only after the editor Promise resolves and files are added.
+		ctxmgr.commands.add.handler([]).then(function() {
+			globalThis.__addPathCalls = addPathCalls;
+			globalThis.__items = items;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		}).catch(function(e) {
+			globalThis.__testError = (e && e.message) ? e.message : String(e);
+			__signalDone();
+		});
+	`
+
+	runAsyncCM(t, runtime, loop, script)
+
+	if v := runtime.Get("__testError"); v.Export() != nil {
+		t.Fatalf("add handler rejected: %s", v.String())
+	}
+
+	addPathCalls := runtime.Get("__addPathCalls").Export().([]any)
+	if len(addPathCalls) != 2 {
+		t.Fatalf("expected 2 addPath calls, got %d: %v", len(addPathCalls), addPathCalls)
+	}
+	if addPathCalls[0].(string) != "file1.go" {
+		t.Errorf("expected first path 'file1.go', got %q", addPathCalls[0])
+	}
+	if addPathCalls[1].(string) != "file2.go" {
+		t.Errorf("expected second path 'file2.go', got %q", addPathCalls[1])
+	}
+
+	items := runtime.Get("__items").Export().([]any)
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items added, got %d", len(items))
+	}
+}
+
+func TestNoteCommand_AsyncEditor(t *testing.T) {
+	runtime, loop := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+		globalThis.__testError = null;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			// Mock openEditor returns a Promise, matching the real osm:os
+			// openEditor which is async via Promisify.
+			openEditor: (title, initial) => Promise.resolve("my note text")
+		});
+
+		// Call note with no args — triggers the editor flow.
+		ctxmgr.commands.note.handler([]).then(function() {
+			globalThis.__items = items;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		}).catch(function(e) {
+			globalThis.__testError = (e && e.message) ? e.message : String(e);
+			__signalDone();
+		});
+	`
+
+	runAsyncCM(t, runtime, loop, script)
+
+	if v := runtime.Get("__testError"); v.Export() != nil {
+		t.Fatalf("note handler rejected: %s", v.String())
+	}
+
+	items := runtime.Get("__items").Export().([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	item := items[0].(map[string]any)
+	if item["type"].(string) != "note" {
+		t.Errorf("expected type 'note', got %q", item["type"])
+	}
+	if item["payload"].(string) != "my note text" {
+		t.Errorf("expected payload 'my note text', got %q", item["payload"])
+	}
+}
+
+func TestEditCommand_AsyncEditor(t *testing.T) {
+	runtime, loop := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+		globalThis.__testError = null;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			// Mock openEditor returns a Promise, matching the real osm:os
+			// openEditor which is async via Promisify.
+			openEditor: (title, initial) => Promise.resolve("edited note content")
+		});
+
+		// Add a note item to edit
+		items.push({id: 1, type: 'note', label: 'note', payload: 'original text'});
+
+		// Call edit with id "1" — triggers the editor flow for a note item.
+		ctxmgr.commands.edit.handler(["1"]).then(function() {
+			globalThis.__items = items;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		}).catch(function(e) {
+			globalThis.__testError = (e && e.message) ? e.message : String(e);
+			__signalDone();
+		});
+	`
+
+	runAsyncCM(t, runtime, loop, script)
+
+	if v := runtime.Get("__testError"); v.Export() != nil {
+		t.Fatalf("edit handler rejected: %s", v.String())
+	}
+
+	items := runtime.Get("__items").Export().([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	item := items[0].(map[string]any)
+	if item["payload"].(string) != "edited note content" {
+		t.Errorf("expected payload 'edited note content', got %q", item["payload"])
+	}
+
+	outputs := runtime.Get("__outputCalls").Export().([]any)
+	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Edited [1]") {
+		t.Errorf("expected 'Edited [1]' message, got %v", outputs)
 	}
 }

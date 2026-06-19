@@ -3,6 +3,8 @@ package termmux
 import (
 	"strconv"
 	"strings"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // KeyToTermBytes converts a BubbleTea-style key name to terminal byte
@@ -286,6 +288,24 @@ const (
 	MouseForward    MouseButton = "forward"
 	MouseNone       MouseButton = "none"
 )
+
+// MouseButtonTea converts a bubbletea tea.MouseButton to a termmux MouseButton.
+func MouseButtonTea(b tea.MouseButton) MouseButton {
+	switch b {
+	case tea.MouseLeft:
+		return MouseLeft
+	case tea.MouseMiddle:
+		return MouseMiddle
+	case tea.MouseRight:
+		return MouseRight
+	case tea.MouseWheelUp:
+		return MouseWheelUp
+	case tea.MouseWheelDown:
+		return MouseWheelDown
+	default:
+		return MouseNone
+	}
+}
 
 // MouseEventType identifies the type of mouse event.
 type MouseEventType string

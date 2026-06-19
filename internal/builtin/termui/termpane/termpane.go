@@ -36,47 +36,49 @@ import (
 )
 
 // Require returns a CommonJS native module under "osm:termui/termpane".
-func Require(runtime *goja.Runtime, module *goja.Object) {
-	exports := runtime.NewObject()
-	_ = module.Set("exports", exports)
+func Require() func(runtime *goja.Runtime, module *goja.Object) {
+	return func(runtime *goja.Runtime, module *goja.Object) {
+		exports := runtime.NewObject()
+		_ = module.Set("exports", exports)
 
-	// termpane({manager, sessionId, bounds}) — creates a TermPane model
-	_ = exports.Set("termpane", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
-			panic(runtime.NewTypeError("termpane requires a config object {manager, sessionId, bounds}"))
-		}
+		// termpane({manager, sessionId, bounds}) — creates a TermPane model
+		_ = exports.Set("termpane", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+				panic(runtime.NewTypeError("termpane requires a config object {manager, sessionId, bounds}"))
+			}
 
-		config := call.Argument(0).ToObject(runtime)
-		if config == nil {
-			panic(runtime.NewTypeError("termpane: config must be an object"))
-		}
+			config := call.Argument(0).ToObject(runtime)
+			if config == nil {
+				panic(runtime.NewTypeError("termpane: config must be an object"))
+			}
 
-		managerVal := config.Get("manager")
-		if managerVal == nil || goja.IsUndefined(managerVal) || goja.IsNull(managerVal) {
-			panic(runtime.NewTypeError("termpane: manager is required (pass a termmux SessionManager)"))
-		}
-		managerObj := managerVal.ToObject(runtime)
-		manager := termmuxmod.UnwrapSessionManager(managerObj)
-		if manager == nil {
-			panic(runtime.NewTypeError("termpane: manager must be a termmux SessionManager object"))
-		}
+			managerVal := config.Get("manager")
+			if managerVal == nil || goja.IsUndefined(managerVal) || goja.IsNull(managerVal) {
+				panic(runtime.NewTypeError("termpane: manager is required (pass a termmux SessionManager)"))
+			}
+			managerObj := managerVal.ToObject(runtime)
+			manager := termmuxmod.UnwrapSessionManager(managerObj)
+			if manager == nil {
+				panic(runtime.NewTypeError("termpane: manager must be a termmux SessionManager object"))
+			}
 
-		sessionIDVal := config.Get("sessionId")
-		if sessionIDVal == nil || goja.IsUndefined(sessionIDVal) || goja.IsNull(sessionIDVal) {
-			panic(runtime.NewTypeError("termpane: sessionId is required"))
-		}
-		sessionID := termmux.SessionID(sessionIDVal.ToInteger())
+			sessionIDVal := config.Get("sessionId")
+			if sessionIDVal == nil || goja.IsUndefined(sessionIDVal) || goja.IsNull(sessionIDVal) {
+				panic(runtime.NewTypeError("termpane: sessionId is required"))
+			}
+			sessionID := termmux.SessionID(sessionIDVal.ToInteger())
 
-		boundsVal := config.Get("bounds")
-		if boundsVal == nil || goja.IsUndefined(boundsVal) || goja.IsNull(boundsVal) {
-			panic(runtime.NewTypeError("termpane: bounds is required"))
-		}
-		bounds := extractRect(runtime, boundsVal)
+			boundsVal := config.Get("bounds")
+			if boundsVal == nil || goja.IsUndefined(boundsVal) || goja.IsNull(boundsVal) {
+				panic(runtime.NewTypeError("termpane: bounds is required"))
+			}
+			bounds := extractRect(runtime, boundsVal)
 
-		m := termpane.NewModel(sessionID, manager, bounds)
+			m := termpane.NewModel(sessionID, manager, bounds)
 
-		return createTermpaneObject(runtime, m)
-	})
+			return createTermpaneObject(runtime, m)
+		})
+	}
 }
 
 // extractRect extracts a coordinate.Rect from a Goja value.

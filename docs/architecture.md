@@ -243,7 +243,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 
 | Module | Description |
 |--------|-------------|
-| `osm:mcp` | Promise-based MCP (Model Context Protocol) client |
+| `osm:mcp` | Promise-based MCP (Model Context Protocol) server |
 | `osm:mcpcallback` | MCP callback handler for tool invocation responses |
 | `osm:termmux` | Terminal multiplexer — pane management, visibility, events, BubbleTea integration |
 

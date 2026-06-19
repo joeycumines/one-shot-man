@@ -294,7 +294,7 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 			var err error
 			configPath, err = config.GetConfigPath()
 			if err != nil {
-				slog.Warn("config path resolution failed, skipping disk write", "error", err)
+				slog.Warn("config path resolution failed skipping disk write", "error", err)
 			}
 		}
 		if configPath != "" {
@@ -429,7 +429,7 @@ func (c *ConfigCommand) executeResetKey(key string, stdout, stderr io.Writer) er
 		var err error
 		configPath, err = config.GetConfigPath()
 		if err != nil {
-			slog.Warn("config path resolution failed, skipping disk write", "error", err)
+			slog.Warn("config path resolution failed skipping disk write", "error", err)
 		}
 	}
 	if configPath != "" {
@@ -454,7 +454,7 @@ func (c *ConfigCommand) executeResetAll(stdout, stderr io.Writer) error {
 		var err error
 		configPath, err = config.GetConfigPath()
 		if err != nil {
-			slog.Warn("config path resolution failed, skipping disk write", "error", err)
+			slog.Warn("config path resolution failed skipping disk write", "error", err)
 		}
 	}
 	if configPath != "" {

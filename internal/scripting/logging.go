@@ -128,8 +128,7 @@ func (h *tuiLogHandler) Handle(ctx context.Context, record slog.Record) error {
 
 	// Add source information if available
 	if record.PC != 0 {
-		// Extract source info from PC
-		entry.Source = "scripting" // simplified for now
+		entry.Source = "scripting"
 	}
 
 	h.shared.entries = append(h.shared.entries, entry)
@@ -140,13 +139,7 @@ func (h *tuiLogHandler) Handle(ctx context.Context, record slog.Record) error {
 		h.shared.entries = h.shared.entries[1:]
 	}
 
-	// Forward to file handler if configured
 	if h.fileHandler != nil {
-		// We can't hold the lock while calling the file handler as it might be slow
-		// OR we can hold it if we're sure it's fast enough.
-		// Detailed logging to file is IO-bound.
-		// Standard slog handlers are thread-safe.
-		// So we can unlock before calling file handler.
 		h.shared.mutex.Unlock()
 		return h.fileHandler.Handle(ctx, record)
 	}

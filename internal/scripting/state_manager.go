@@ -78,7 +78,7 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 	} else {
 		// Handle schema migration if needed
 		if session.Version != storage.CurrentSchemaVersion {
-			slog.Warn("session schema version mismatch, starting fresh session",
+			slog.Warn("session schema version mismatch starting fresh session",
 				"expectedVersion", storage.CurrentSchemaVersion,
 				"gotVersion", session.Version)
 			session = &storage.Session{

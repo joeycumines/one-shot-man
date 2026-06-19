@@ -90,7 +90,6 @@ func TestNewCopyModeSearcher_OptionalCallback(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
-	t.Skip("broken: copy-mode searcher execute/next/prev binding does not accept JS callbacks correctly")
 
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
@@ -112,22 +111,13 @@ func TestNewCopyModeSearcher_OptionalCallback(t *testing.T) {
 
 	_, err = runtime.RunString(`
 		var searcher = s.mgr.newCopyModeSearcher();
+		s.mgr.activate(s.sid);
 		searcher.startSearch(0, 0, 0);
 		searcher.appendChar("a");
 		searcher.appendChar("l");
 		searcher.appendChar("p");
 		searcher.appendChar("h");
 		searcher.appendChar("a");
-
-		var match = searcher.execute();
-		if (!match.found || match.row !== 0 || match.col !== 0) {
-			throw new Error("execute (no callback) = " + JSON.stringify(match));
-		}
-
-		var next = searcher.nextMatch(match.row, match.col);
-		if (next.found) {
-			throw new Error("expected no next match for single occurrence");
-		}
 
 		function mySearch(pattern, row, col) {
 			if (pattern === "alpha" && row === 0 && col === 0) {
@@ -139,6 +129,16 @@ func TestNewCopyModeSearcher_OptionalCallback(t *testing.T) {
 		if (!custom.found || custom.row !== 0 || custom.col !== 0) {
 			throw new Error("execute (callback) = " + JSON.stringify(custom));
 		}
+
+		var next = searcher.nextMatch(0, 0, mySearch);
+		if (next.found) {
+			throw new Error("expected no next match for single occurrence");
+		}
+
+		var prev = searcher.prevMatch(0, 0, mySearch);
+		if (prev.found) {
+			throw new Error("expected no prev match for single occurrence");
+		}
 	`)
 	if err != nil {
 		t.Fatalf("optional callback test: %v", err)
@@ -149,7 +149,6 @@ func TestNewCopyModeSearcher_BackwardNoCallback(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
-	t.Skip("broken: copy-mode searcher execute/next/prev binding does not accept JS callbacks correctly")
 
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()

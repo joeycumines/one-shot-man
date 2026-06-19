@@ -10,6 +10,7 @@ creating sessions and managers, plus event constants.
 |--------|------|-------------|
 | `newCaptureSession(cmd, args?, opts?)` | factory | Create a standalone PTY session |
 | `newSessionManager(opts?)` | factory | Create a new SessionManager |
+| `newBoundedSession(opts)` | factory | Create a CaptureSession + SessionManager in one call. Opts: `{cmd, args?, dir?, rows?, cols?, env?, name?, kind?}`. Returns `{mgr, session, id}`. |
 | `EXIT_TOGGLE` | `"toggle"` | Passthrough ended by toggle key |
 | `EXIT_CHILD_EXIT` | `"childExit"` | Passthrough ended by child process exit |
 | `EXIT_CONTEXT` | `"context"` | Passthrough ended by context cancellation |
@@ -26,6 +27,28 @@ creating sessions and managers, plus event constants.
 | `EVENT_ACTIVATED` | `"activated"` | Session activated event name |
 | `EVENT_CLOSED` | `"closed"` | Session closed event name |
 | `EVENT_TERMINAL_RESIZE` | `"terminal-resize"` | Terminal resize event name |
+| `EVENT_ACTIVITY` | `"activity"` | Session activity detected (new output) |
+| `EVENT_SILENCE` | `"silence"` | Session silence detected (no output for a period) |
+| `EVENT_TITLE` | `"title"` | Session title changed |
+| `EVENT_WORKING_DIRECTORY` | `"cwd"` | Working directory changed |
+| `EVENT_CWD` | `"cwd"` | Alias for `EVENT_WORKING_DIRECTORY` |
+| `EVENT_CLIPBOARD` | `"clipboard"` | Clipboard event |
+| `LAYOUT_TILED` | `"tiled"` | Tiled layout mode |
+| `LAYOUT_STACKED` | `"stacked"` | Stacked layout mode |
+| `LAYOUT_HORIZONTAL` | `"horizontal"` | Horizontal split layout mode |
+| `LAYOUT_VERTICAL` | `"vertical"` | Vertical split layout mode |
+| `LAYOUT_MAIN_HORIZONTAL` | `"main-horizontal"` | Main-horizontal layout mode |
+| `LAYOUT_MAIN_VERTICAL` | `"main-vertical"` | Main-vertical layout mode |
+| `enableMouseForward()` | function | Enable mouse forward emulation |
+| `mouseDrag()` | function | Create a mouse drag object |
+| `handleMouseDrag(msg, ...)` | function | Handle mouse drag events |
+| `newControlRouter(opts?)` | function | Create a control router for key dispatch |
+| `newPrefixKeyHandler(opts?)` | function | Create a prefix key handler |
+| `handlePrefixKey(mgr, key)` | function | Execute prefix action on a SessionManager |
+| `keyToTermBytes(key)` | function | Convert a key to terminal byte sequence |
+| `renderMessageBar(msg, width)` | function | Render a message bar string |
+| `mouseToSGR(x, y, button, press)` | function | Convert mouse coordinates to SGR format |
+| `splitLayout(...)` | function | Split layout operation |
 
 ---
 
@@ -173,7 +196,8 @@ underlying target. Listeners receive `CustomEvent` instances with a
 | `unsubscribe(id)` | `EventBus.Unsubscribe()` | `number` | `boolean` | silent |
 
 Valid legacy event names for `on`: `exit`, `resize`, `focus`, `bell`,
-`output`, `registered`, `activated`, `closed`, `terminal-resize`.
+`output`, `registered`, `activated`, `closed`, `terminal-resize`,
+`activity`, `silence`, `title`, `cwd`, `clipboard`.
 `addEventListener` accepts any event `type`.
 
 #### Event detail payload
@@ -189,6 +213,11 @@ Valid legacy event names for `on`: `exit`, `resize`, `focus`, `bell`,
 | `activated` | `{ sessionId: number }` |
 | `closed` | `{ sessionId: number }` |
 | `terminal-resize` | `{ sessionId: number, rows: number, cols: number }` |
+| `activity` | `{ sessionId: number }` |
+| `silence` | `{ sessionId: number }` |
+| `title` | `{ sessionId: number, title?: string }` |
+| `cwd` | `{ sessionId: number, path?: string }` |
+| `clipboard` | `{ sessionId: number, data?: string }` |
 
 Example:
 

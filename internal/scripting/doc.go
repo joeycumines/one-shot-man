@@ -7,5 +7,5 @@
 //   - ContextManager: file/diff/note context management for prompt construction
 //   - TUIManager: terminal UI integration via Bubble Tea and Lipgloss
 //   - StateManager: session persistence and history through storage backends
-//   - LogManager: structured logging with search, filtering, and rotation
+//   - TUILogger: structured logging with search, filtering, and rotation
 package scripting

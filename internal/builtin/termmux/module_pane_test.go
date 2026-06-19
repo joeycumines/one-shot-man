@@ -332,7 +332,6 @@ func TestJoinPane_MovesPaneBetweenWindows(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
-	t.Skip("broken: breakPane now returns an object; test expects old numeric window ID API")
 
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
@@ -411,7 +410,6 @@ func TestJoinPane_InvalidPaneId(t *testing.T) {
 }
 
 func TestJoinPane_InvalidTargetWindow(t *testing.T) {
-	t.Skip("broken: GoError from joinPane is not caught by JS try/catch in goja")
 
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
@@ -446,7 +444,6 @@ func TestZoomSwap_StillWork(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
-	t.Skip("broken: pane geometry after split does not produce expected pane ID 2")
 
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
@@ -541,7 +538,6 @@ func TestWindowSwitch_JSRouting(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
-	t.Skip("broken: newCaptureSession harness causes goja runtime panic during window switch assertions")
 
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
@@ -674,7 +670,6 @@ func TestRespawnSession_JSBinding_RebindsPane(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
-	t.Skip("broken: same-session respawn leaves tuiMux panes in inconsistent state")
 
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()

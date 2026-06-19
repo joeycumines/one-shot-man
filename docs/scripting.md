@@ -189,6 +189,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:json` | JSON utilities | `parse(str) → any`, `stringify(value, indent?) → string`, `query(obj, path) → any` (dot-notation, `[n]`, `[*]` wildcard), `mergePatch(target, patch) → any` (RFC 7386), `diff(a, b) → [{op, path, value?, oldValue?}]` (JSON Pointer paths), `flatten(obj, sep?) → object`, `unflatten(obj, sep?) → object` |
 | `osm:gitops` | Git operations (go-git) | `isRepo(path)`, `open(path)` / `openDetect(path)` → Repo, `defaultBranch(path)`, `branchExists(path, name)`, `isWorkTree(path)`, `headBranchName(path)`; Repo methods: `.defaultBranch()`, `.branchExists(name)`, `.isWorkTree()`, `.headBranchName()` (sync), `.addAll() → Promise<void>`, `.commit(msg) → Promise<string>`, `.push() → Promise<void>`, `.hasStagedChanges() → Promise<bool>` (async) |
 | `osm:argv` | Command-line string parsing | `parseArgv(cmdline) → string[]`, `formatArgv(argv[]) → string` |
+| `osm:format` | Number and byte formatting | `formatNum(n) → string` (comma grouping <10000, SI k/M/G above), `formatBytes(n) → string` (IEC binary B/kB/MB/GB/TB) |
 
 #### Data & text processing
 
@@ -199,6 +200,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:fetch` | Promise-based HTTP client (browser Fetch API) | `fetch(url, opts?) → Promise<Response>`; Options: `method`, `headers`, `body`, `timeout`, `signal`; Response: `.status`, `.ok`, `.statusText`, `.url`, `.headers` (Headers object with `.get()`, `.has()`, `.entries()`, `.keys()`, `.values()`, `.forEach()`), `.text() → Promise<string>`, `.json() → Promise<any>` |
 | `osm:grpc` | Promise-based gRPC client and server (via [goja-grpc](https://github.com/joeycumines/goja-grpc)) | `createClient(service) → Client` (methods return `Promise`), `createServer(service, handler) → Server`, `dial(target, opts?) → Channel`, `status` (code constants: `OK`, `CANCELLED`, `NOT_FOUND`, etc.), `metadata`, `enableReflection(server)`, `createReflectionClient(channel)` |
 | `osm:protobuf` | Protocol Buffers for goja (via [goja-protobuf](https://github.com/joeycumines/goja-protobuf)) | `loadDescriptorSet(bytes)` — loads binary `FileDescriptorSet` for use with `osm:grpc` |
+| `osm:tokenizer` | Token counting and tokenizer loading | `tokenize(text) → {tokens, count}` (built-in char-level), `count(text) → number`, `loadFile(path) → Tokenizer`, `loadJSON(jsonStr) → Tokenizer`, `loadBPE(vocab, merges) → Tokenizer`, `loadWordPiece(json) → Tokenizer`, `loadWordLevel(json) → Tokenizer`; Tokenizer: `.encode(text) → {tokens, count}`, `.count(text) → number` |
 
 #### Workflow & state
 
@@ -219,6 +221,20 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:bubbles/viewport` | Scrollable viewport component | `new(width?, height?) → Viewport`; Viewport: `.setContent(s)`, `.setWidth(n)`, `.setHeight(n)`, `.scrollDown(n)`, `.scrollUp(n)`, `.gotoTop()`, `.gotoBottom()`, `.pageUp()`, `.pageDown()`, `.setYOffset(n)`, `.yOffset()`, `.scrollPercent()`, `.atTop()`, `.atBottom()`, `.totalLineCount()`, `.visibleLineCount()`, `.setStyle(lipglossStyle)`, `.update(msg)`, `.view()` |
 | `osm:bubbles/textarea` | Multi-line text input component | `new() → Textarea`; Textarea: `.setValue(s)`, `.value()`, `.setWidth(n)`, `.setHeight(n)`, `.focus()`, `.blur()`, `.focused()`, `.insertString(s)`, `.setCursor(col)`, `.setPosition(row, col)`, `.lineCount()`, `.lineInfo()`, `.cursorVisualLine()`, `.visualLineCount()`, `.performHitTest(x, y)`, `.handleClickAtScreenCoords(x, y)`, `.getScrollSyncInfo()`, `.update(msg)`, `.view()` |
 | `osm:termui/scrollbar` | Thin vertical scrollbar | `new(viewportHeight?) → Scrollbar`; Scrollbar: `.setViewportHeight(n)`, `.setContentHeight(n)`, `.setYOffset(n)`, `.viewportHeight()`, `.contentHeight()`, `.yOffset()`, `.setChars(thumb, track)`, `.setThumbForeground(color)`, `.setThumbBackground(color)`, `.setTrackForeground(color)`, `.setTrackBackground(color)`, `.view()`. [Reference →](reference/scrollbar.md) |
+| `osm:termui/box` | Box container component | `new(opts?) → Box`; Box: `.setContent(str)`, `.setStyle(style)`, `.setWidth(n)`, `.setHeight(n)`, `.view() → string` |
+| `osm:termui/compositor` | Layer compositor for rendering | `new() → Compositor`; Compositor: `.addLayer(layer)`, `.removeLayer(id)`, `.clear()`, `.render() → string` |
+| `osm:termui/coordinate` | 2D coordinate geometry types | `position({x, y})`, `size({width, height})`, `rect({x, y, width, height})`, `layer({x, y, width, height, z})`, `paneGeometryRect({row, col, rows, cols})`, `lipglossLayer(lipglossLayerObj)` |
+| `osm:termui/divider` | Horizontal/vertical divider | `new() → Divider`; Divider: `.setHorizontal(bool)`, `.setStyle(style)`, `.view() → string` |
+| `osm:termui/label` | Text label component | `new(text?) → Label`; Label: `.setText(str)`, `.setStyle(style)`, `.view() → string` |
+| `osm:termui/layout` | Layout container component | `new() → Layout`; Layout: `.addItem(item)`, `.setDirection(dir)`, `.setSpacing(n)`, `.view() → string` |
+| `osm:termui/list` | Selectable list component | `new(items?) → List`; List: `.setItems(items)`, `.select(n)`, `.selected() → number`, `.setStyle(style)`, `.view() → string` |
+| `osm:termui/modal` | Modal overlay component | `new(content?) → Modal`; Modal: `.setContent(str)`, `.setStyle(style)`, `.show()`, `.hide()`, `.view() → string` |
+| `osm:termui/panel` | Panel container component | `new(opts?) → Panel`; Panel: `.setContent(str)`, `.setStyle(style)`, `.setTitle(str)`, `.view() → string` |
+| `osm:termui/splitlayout` | Split-pane layout manager | `new(manager, bounds) → SplitLayout`; SplitLayout: `.addPane(id)`, `.removePane(id)`, `.update(msg)`, `.view()`, `.close()` |
+| `osm:termui/splitview` | Split-view component | `new(opts?) → SplitView`; SplitView: `.setLeft(view)`, `.setRight(view)`, `.setRatio(n)`, `.view() → string` |
+| `osm:termui/table` | Table component | `new() → Table`; Table: `.setHeaders(headers)`, `.setRows(rows)`, `.setStyle(style)`, `.view() → string` |
+| `osm:termui/termpane` | Terminal pane component | `new(manager, id, opts?) → TermPane`; TermPane: `.update(msg)`, `.view()`, `.resize(rows, cols)` |
+| `osm:termui/toast` | Toast notification component | `new(msg?) → Toast`; Toast: `.setMessage(str)`, `.setStyle(style)`, `.show()`, `.hide()`, `.view() → string` |
 
 #### Behavior trees & planning
 

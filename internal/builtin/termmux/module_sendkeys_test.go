@@ -10,7 +10,6 @@ func TestSendKeys_JSBinding(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
-	t.Skip("broken: session readAvailable native binding panics in this harness")
 
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()

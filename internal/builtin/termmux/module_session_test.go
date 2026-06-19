@@ -354,7 +354,6 @@ func TestSessionManager_WriteToChild(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
-	t.Skip("broken: writeToChild after detach returns session not found")
 
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()
@@ -838,7 +837,6 @@ func TestSessionManager_EventAPI(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
-	t.Skip("broken: addEventListener non-function callback validation does not throw TypeError")
 
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
@@ -1666,7 +1664,6 @@ func TestSessionManager_LockedInputGate_JS(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
-	t.Skip("broken: snapshot().locked is not true while session is locked")
 
 	mgr := parent.NewSessionManager()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1776,7 +1773,6 @@ func TestSearchForwardBackwardBindings(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
-	t.Skip("broken: copy-mode searcher binding does not accept JS callback correctly")
 
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
@@ -2015,7 +2011,6 @@ func TestPersistenceMethods(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
-	t.Skip("broken: restoreState rejects persisted state because exportState omits fields")
 
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()

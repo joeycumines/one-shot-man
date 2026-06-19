@@ -8,7 +8,6 @@ func TestWindowPanes_ExitedFlag(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
-	t.Skip("broken: session manager event handling panics during exited-pane polling")
 
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()

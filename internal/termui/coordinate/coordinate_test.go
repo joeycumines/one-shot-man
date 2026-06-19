@@ -391,10 +391,10 @@ func TestRect_AsPaneGeometry(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
-func TestFromPaneGeometry(t *testing.T) {
+func TestPaneGeometryRect(t *testing.T) {
 	pg := termmux.PaneGeometry{Row: 5, Col: 3, Rows: 24, Cols: 80}
 
-	got := FromPaneGeometry(pg)
+	got := PaneGeometryRect(pg)
 	want := Rect{
 		Position: Position{X: 3, Y: 5},
 		Size:     Size{Width: 80, Height: 24},
@@ -409,7 +409,7 @@ func TestRect_PaneGeometry_RoundTrip(t *testing.T) {
 	}
 
 	pg := original.AsPaneGeometry()
-	restored := FromPaneGeometry(pg)
+	restored := PaneGeometryRect(pg)
 	assert.Equal(t, original, restored)
 }
 
@@ -430,18 +430,18 @@ func TestLayer_AsLayer(t *testing.T) {
 	assert.Equal(t, 2, ll.GetZ())
 }
 
-func TestFromLayer(t *testing.T) {
+func TestLipglossLayer(t *testing.T) {
 	ll := lipgloss.NewLayer("hello").
 		X(5).
 		Y(10).
 		Z(2)
 
-	l := FromLayer(ll)
+	l := LipglossLayer(ll)
 	assert.Equal(t, Position{X: 5, Y: 10}, l.Rect.Position)
 	assert.Equal(t, 2, l.Z)
 }
 
-func TestLayer_FromLayer_RoundTrip(t *testing.T) {
+func TestLayer_LipglossLayer_RoundTrip(t *testing.T) {
 	original := Layer{
 		Rect: Rect{
 			Position: Position{X: 3, Y: 7},
@@ -451,7 +451,7 @@ func TestLayer_FromLayer_RoundTrip(t *testing.T) {
 	}
 
 	ll := original.AsLayer()
-	restored := FromLayer(ll)
+	restored := LipglossLayer(ll)
 	assert.Equal(t, original.Rect.Position, restored.Rect.Position)
 	assert.Equal(t, original.Z, restored.Z)
 	// Note: AsLayer creates a layer with empty content, so Width/Height

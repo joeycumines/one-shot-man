@@ -112,7 +112,7 @@ func Require() func(runtime *goja.Runtime, module *goja.Object) {
 		})
 
 		// fromPaneGeometry({row, col, rows, cols}) — creates a Rect from pane geometry.
-		// Maps: Row→Y, Col→X, Rows→Height, Cols→Width (same as Go FromPaneGeometry).
+		// Maps: Row→Y, Col→X, Rows→Height, Cols→Width (same as Go PaneGeometryRect).
 		_ = exports.Set("fromPaneGeometry", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
 				panic(runtime.NewTypeError("fromPaneGeometry requires a pane geometry object {row, col, rows, cols}"))
@@ -124,7 +124,7 @@ func Require() func(runtime *goja.Runtime, module *goja.Object) {
 				Rows: int(obj.Get("rows").ToInteger()),
 				Cols: int(obj.Get("cols").ToInteger()),
 			}
-			r := coord.FromPaneGeometry(pg)
+			r := coord.PaneGeometryRect(pg)
 			return createRectObject(runtime, &r)
 		})
 
@@ -140,7 +140,7 @@ func Require() func(runtime *goja.Runtime, module *goja.Object) {
 			// Try to extract a Go *lipgloss.Layer via Export().
 			if exported := arg.Export(); exported != nil {
 				if ll, ok := exported.(*lipgloss.Layer); ok {
-					l := coord.FromLayer(ll)
+					l := coord.LipglossLayer(ll)
 					return createLayerObject(runtime, &l)
 				}
 			}

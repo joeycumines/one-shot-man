@@ -31,21 +31,21 @@ func validateModulePaths(paths []string, logger *slog.Logger) []string {
 			continue
 		}
 		if !info.IsDir() {
-			logger.Warn("ignoring module path: not a directory",
+			logger.Warn("ignoring module path not a directory",
 				slog.String("path", p))
 			continue
 		}
 		// Resolve to absolute + evaluate symlinks for consistent comparison.
 		resolved, err := filepath.Abs(p)
 		if err != nil {
-			logger.Warn("ignoring module path: cannot resolve absolute path",
+			logger.Warn("ignoring module path cannot resolve absolute path",
 				slog.String("path", p),
 				slog.String("error", err.Error()))
 			continue
 		}
 		resolved, err = filepath.EvalSymlinks(resolved)
 		if err != nil {
-			logger.Warn("ignoring module path: cannot resolve symlinks",
+			logger.Warn("ignoring module path cannot resolve symlinks",
 				slog.String("path", p),
 				slog.String("error", err.Error()))
 			continue

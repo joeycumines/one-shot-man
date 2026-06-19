@@ -285,7 +285,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 				}
 				// Best-effort: exit alt screen + show cursor.
 				fmt.Fprint(os.Stderr, "\x1b[?1049l\x1b[?25h")
-				slog.Error("pr-split: force-exit on double SIGINT")
+				slog.Error("pr split force exit on double sigint")
 				os.Exit(130) // 128 + SIGINT(2)
 			case <-done:
 				// Graceful shutdown completed; goroutine exits cleanly.
@@ -564,11 +564,10 @@ func (c *PrSplitCommand) validateGitRepo() error {
 	if c.baseBranch == "" || c.baseBranch == "auto" {
 		detected, detectErr := repo.DefaultBranch()
 		if detectErr != nil {
-			slog.Warn("pr-split: failed to auto-detect default branch, falling back to 'main'",
-				"error", detectErr)
+		slog.Warn("pr split failed to auto detect default branch falling back to main", "error", detectErr)
 			c.baseBranch = "main"
 		} else {
-			slog.Info("pr-split: auto-detected base branch", "branch", detected)
+			slog.Info("pr split auto detected base branch", "branch", detected)
 			c.baseBranch = detected
 		}
 	}
@@ -618,9 +617,9 @@ func forceCloseSessionManager(mgr *termmux.SessionManager) {
 	}()
 	select {
 	case <-closeDone:
-		slog.Info("pr-split: SessionManager closed before force-exit")
+		slog.Info("pr split session manager closed before force exit")
 	case <-time.After(5 * time.Second):
-		slog.Warn("pr-split: SessionManager.Close() timed out, proceeding with force-exit")
+		slog.Warn("pr split session manager close timed out proceeding with force exit")
 	}
 }
 
@@ -639,11 +638,11 @@ func parseAgentEnv(raw string) map[string]string {
 		}
 		k, v, ok := strings.Cut(pair, "=")
 		if !ok {
-			slog.Warn("parseAgentEnv: entry has no '=' delimiter, skipping", "entry", pair)
+			slog.Warn("parse agent env entry has no equals delimiter skipping", "entry", pair)
 			continue
 		}
 		if k == "" {
-			slog.Warn("parseAgentEnv: entry has empty key, skipping", "entry", pair)
+			slog.Warn("parse agent env entry has empty key skipping", "entry", pair)
 			continue
 		}
 		m[k] = v

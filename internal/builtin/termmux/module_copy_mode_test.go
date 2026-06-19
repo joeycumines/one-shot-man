@@ -108,7 +108,6 @@ func TestCopyModeKey_JS_SelectAndCopy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
-	t.Skip("broken: copy-and-exit emits empty clipboard event in this harness")
 
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()

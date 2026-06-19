@@ -198,8 +198,8 @@ func (r Rect) AsPaneGeometry() termmux.PaneGeometry {
 	}
 }
 
-// FromPaneGeometry converts a termmux.PaneGeometry to a Rect.
-func FromPaneGeometry(pg termmux.PaneGeometry) Rect {
+// PaneGeometryRect converts a termmux.PaneGeometry to a Rect.
+func PaneGeometryRect(pg termmux.PaneGeometry) Rect {
 	return Rect{
 		Position: Position{X: pg.Col, Y: pg.Row},
 		Size:     Size{Width: pg.Cols, Height: pg.Rows},
@@ -223,9 +223,9 @@ func (l Layer) AsLayer() *lipgloss.Layer {
 		Z(l.Z)
 }
 
-// FromLayer converts a lipgloss.Layer to a coordinate Layer, extracting
+// LipglossLayer converts a lipgloss.Layer to a coordinate Layer, extracting
 // position, dimensions, and Z-order.
-func FromLayer(ll *lipgloss.Layer) Layer {
+func LipglossLayer(ll *lipgloss.Layer) Layer {
 	return Layer{
 		Rect: Rect{
 			Position: Position{X: ll.GetX(), Y: ll.GetY()},

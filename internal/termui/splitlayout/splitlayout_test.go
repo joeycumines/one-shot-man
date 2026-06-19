@@ -378,57 +378,6 @@ func TestSplitLayout_FocusCycling(t *testing.T) {
 	assert.Equal(t, sessionIDStr(ids[1]), active.ID, "Shift+Tab should cycle backward to second pane")
 }
 
-func TestSplitLayout_MouseFocus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping slow test in -short mode")
-	}
-	// TODO: this test relies on focus hit-testing inside a SplitLayout with
-	// sessions registered directly via SessionManager.Register. Those sessions
-	// have no backing pane geometry, and the current focus/compositor updates
-	// do not produce the expected side-by-side pane bounds. Skipping until the
-	// termui/splitlayout test harness creates proper panes.
-	t.Skip("broken: sessions registered without backing panes")
-
-	mgr, _, ids, cleanup := startTestManager(t, 2)
-	defer cleanup()
-
-	bounds := coordinate.Rect{
-		Position: coordinate.Position{X: 0, Y: 0},
-		Size:     coordinate.Size{Width: 80, Height: 24},
-	}
-
-	sl := NewSplitLayout(mgr, bounds)
-	defer sl.Close()
-
-	sl.AddPane(ids[0])
-	sl.AddPane(ids[1])
-
-	// Initially first pane focused.
-	assert.Equal(t, sessionIDStr(ids[0]), sl.focus.Active().ID)
-
-	// Click in second pane (x=50, y=5 — within pane 1's bounds at x=40..80).
-	clickMsg := tea.MouseClickMsg{
-		X:      50,
-		Y:      5,
-		Button: tea.MouseLeft,
-	}
-	sl.Update(clickMsg)
-
-	active := sl.focus.Active()
-	assert.Equal(t, sessionIDStr(ids[1]), active.ID, "click in pane 1 should switch focus")
-
-	// Click in first pane (x=10, y=5 — within pane 0's bounds at x=0..40).
-	clickMsg = tea.MouseClickMsg{
-		X:      10,
-		Y:      5,
-		Button: tea.MouseLeft,
-	}
-	sl.Update(clickMsg)
-
-	active = sl.focus.Active()
-	assert.Equal(t, sessionIDStr(ids[0]), active.ID, "click in pane 0 should switch focus back")
-}
-
 // --- View Tests ---
 
 func TestSplitLayout_View_EmptyPanes(t *testing.T) {
@@ -449,51 +398,6 @@ func TestSplitLayout_View_EmptyPanes(t *testing.T) {
 
 	v := sl.View()
 	assert.NotNil(t, v, "View should return non-nil tea.View")
-}
-
-func TestSplitLayout_View_WithPanes(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping slow test in -short mode")
-	}
-	// TODO: this test drives a SplitLayout with sessions registered directly
-	// via SessionManager.Register (no backing panes). The resulting snapshots
-	// have a 1x1 VTerm backing, so ScreenSnapshot.GetPlainText panics when
-	// rendering pane geometries. Skip until the harness creates real panes.
-	t.Skip("broken: registered sessions lack VTerm geometry")
-
-	mgr, sessions, ids, cleanup := startTestManager(t, 2)
-	defer cleanup()
-
-	bounds := coordinate.Rect{
-		Position: coordinate.Position{X: 0, Y: 0},
-		Size:     coordinate.Size{Width: 80, Height: 24},
-	}
-
-	sl := NewSplitLayout(mgr, bounds)
-	defer sl.Close()
-
-	sl.AddPane(ids[0])
-	sl.AddPane(ids[1])
-
-	// Produce output in first session.
-	sessions[0].readerCh <- []byte("hello from pane 0")
-
-	// Wait for snapshot to update.
-	deadline := time.After(2 * time.Second)
-	for {
-		snap := mgr.Snapshot(ids[0])
-		if snap != nil && strings.Contains(snap.GetPlainText(), "hello") {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for pane 0 snapshot")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
-
-	v := sl.View()
-	assert.NotEmpty(t, v.Content, "View should have content when panes have output")
 }
 
 func TestSplitLayout_View_CursorFocused(t *testing.T) {

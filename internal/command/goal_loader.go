@@ -131,7 +131,7 @@ func FindGoalFiles(dir string) ([]GoalFileCandidate, error) {
 
 	// Protect against extremely large directories
 	if len(entries) > maxDirEntries {
-		slog.Warn("goal directory contains excess entries, truncating scan",
+		slog.Warn("goal directory contains excess entries truncating scan",
 			"directory", dir,
 			"entryCount", len(entries),
 			"limit", maxDirEntries)

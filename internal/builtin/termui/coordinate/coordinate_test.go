@@ -367,7 +367,7 @@ func TestCreateLayerObject_GoInterop(t *testing.T) {
 	require.Equal(t, "(10,20) 50x15 z:99", res.String())
 }
 
-func TestFromPaneGeometry(t *testing.T) {
+func TestPaneGeometryRect(t *testing.T) {
 	rt := setupRuntime(t)
 
 	script := `
@@ -385,7 +385,7 @@ func TestFromPaneGeometry(t *testing.T) {
 	require.Equal(t, "ok", res.Export())
 }
 
-func TestFromLayer_PlainObject(t *testing.T) {
+func TestLipglossLayer_PlainObject(t *testing.T) {
 	rt := setupRuntime(t)
 
 	script := `
@@ -605,7 +605,7 @@ func TestRect_Union_OneEmpty(t *testing.T) {
 	require.Equal(t, "ok", res.Export())
 }
 
-func TestFromPaneGeometry_Error_NoArgs(t *testing.T) {
+func TestPaneGeometryRect_Error_NoArgs(t *testing.T) {
 	rt := setupRuntime(t)
 
 	script := `
@@ -624,7 +624,7 @@ func TestFromPaneGeometry_Error_NoArgs(t *testing.T) {
 	require.Equal(t, "ok", res.Export())
 }
 
-func TestFromLayer_Error_NoArgs(t *testing.T) {
+func TestLipglossLayer_Error_NoArgs(t *testing.T) {
 	rt := setupRuntime(t)
 
 	script := `

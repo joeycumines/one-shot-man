@@ -20,6 +20,10 @@ internal\builtin\ctxutil\ctxutil.go:*: unreachable func: SetGetDefaultGitDiffArg
 internal/builtin/ctxutil/ctxutil.go:*: unreachable func: SetRunExecFn
 internal\builtin\ctxutil\ctxutil.go:*: unreachable func: SetRunExecFn
 
+# Engine creation helpers — used from security_test, integration_persistence_test, etc. (external packages).
+internal/scripting/engine_core.go:*: unreachable func: NewEngineWithConfig
+internal\scripting\engine_core.go:*: unreachable func: NewEngineWithConfig
+
 # Runtime convenience constructor — used from benchmark_test (external package).
 internal/scripting/runtime.go:*: unreachable func: NewRuntime
 internal\scripting\runtime.go:*: unreachable func: NewRuntime
@@ -73,3 +77,4 @@ internal\termui\scrollbar\scrollbar.go:*: unreachable func: Model.*
 # termui coordinate — Go API methods called from JS binding layer via Goja runtime.
 internal/termui/coordinate/coordinate.go:*: unreachable func: FromPaneGeometry
 internal\termui\coordinate\coordinate.go:*: unreachable func: FromPaneGeometry
+internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: mcpCallback.injectToolResult

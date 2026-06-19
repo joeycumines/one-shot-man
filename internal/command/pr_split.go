@@ -564,7 +564,7 @@ func (c *PrSplitCommand) validateGitRepo() error {
 	if c.baseBranch == "" || c.baseBranch == "auto" {
 		detected, detectErr := repo.DefaultBranch()
 		if detectErr != nil {
-		slog.Warn("pr split failed to auto detect default branch falling back to main", "error", detectErr)
+			slog.Warn("pr split failed to auto detect default branch falling back to main", "error", detectErr)
 			c.baseBranch = "main"
 		} else {
 			slog.Info("pr split auto detected base branch", "branch", detected)

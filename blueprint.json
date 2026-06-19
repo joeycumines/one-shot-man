@@ -60,7 +60,7 @@
     "parallelExecution": "Fan out subagents for independent package audits. Blast them in parallel."
   },
   "statusSection": {
-    "currentState": "4 commits made: c022c6f (audit cleanup), 993c4d4 (revert rogue), 15855de (termmux test fix), edf6cde (LoadFromPath->LoadFile rename). 18 tasks Done. 5 subagents running for remaining packages. Build+lint+test all PASS. Preposition violation LoadFromPath fixed. Still pending: LoadTokenizerFromFile/JSON, FromTxtar (in packages being audited by subagents).",
+    "currentState": "6 commits made. 32 tasks Done, 8 In Progress, 2 Not Started. Build+lint+test all PASS. Remaining: termmux core (subagent broke it, reverted), scripting, command tests, full verification, review gate.",
     "goalState": "Every checked-in file (1110) audited against three factors. All deficiencies fixed. All bugs resolved. AI slop removed. All checks pass on all platforms. Regular commits throughout.",
     "replanLog": [
       {
@@ -81,7 +81,7 @@
       "task": "Audit root project files (15 files: Makefile, project.mk, example.config.mk, go.mod, go.sum, .gitignore, .deadcodeignore, AGENTS.md, CLAUDE.md, README.md, CHANGELOG.md, LICENSE, WIP.md, .github/workflows/ci.yml, hack/run-on-windows.sh)",
       "description": "Config and doc files. Verify Makefile cross-platform, project.mk deadcode config, example.config.mk targets, go.mod deps current, .gitignore complete, .deadcodeignore justified, AGENTS.md accurate, README.md correct, CHANGELOG.md format, CI matches local, hack script works.",
       "acceptance": "All root files accurate and current. CI matches local targets. No stale docs.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/builtin/register.go + shared_symbols.go (4 files with tests)",
@@ -183,7 +183,7 @@
       "task": "Audit internal/command core .go files (~36 non-test files: base.go, builtin.go, registry*.go, code_review.go, goal*.go, pr_split.go, diff_splitter.go, prompt_*.go, sync*.go, super_document.go, session.go, etc.)",
       "description": "Command implementations. Verify registry wiring, platform-specific code, structured logging, error handling, naming (no prepositions).",
       "acceptance": "All commands correct, platform-safe, structured logging. No AI slop.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/command JS scripts (16 files: code_review_script.js, goal.js, prompt_flow_script.js, super_document_script.js, pr_split_00_core.js through pr_split_16g_persistence.js)",
@@ -201,13 +201,13 @@
       "task": "Audit internal/scripting (109 files: context.go, engine_core.go, runtime.go, state_manager.go, terminal.go, execution_context.go, debug_assertions*.go, logging.go, log_rotate.go, module_hardening.go, session_id_common.go, tui_*.go, js_*.go, go_prompt_sync.go + ~90 test files)",
       "description": "Scripting engine. Verify engine_core.go NewEngineWithConfig justified in deadcode, runtime.go NewRuntime justified, debug_assertions stub justified, TUI management, JS API bindings, event loop safety.",
       "acceptance": "Engine correct, event loop safe, ctx threaded. Deadcode justified. Tests pass with race.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/termmux core (~80 files: manager.go, pane_manager.go, session.go, window.go, config.go, borders.go, capture.go, eventbus.go, input.go, layout.go, lock.go, passthrough*.go, persistence*.go, sgrmouse.go, etc. + ~45 test files)",
       "description": "Terminal multiplexer core. Verify mutex/concurrency safety, pane/window/session management, platform-specific code, persistence.",
       "acceptance": "Concurrent-safe, platform-correct. Tests pass with race.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/termmux/vt (58 files: parser.go, screen.go, render.go, render_raster.go, csi.go, esc.go, sgr.go, utf8.go, vt.go, defaults.go, doc.go + ~48 test files)",
@@ -237,49 +237,49 @@
       "task": "Audit internal/session (16 files: session.go, types.go, session_darwin.go, session_linux.go, session_other.go, session_windows.go, doc.go + 9 test files)",
       "description": "Session package. Verify session management, locking, platform-specific session IDs.",
       "acceptance": "Correct locking, platform-safe. Tests pass with race.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/storage (36 files: atomic_write*.go, backend.go, cleanup*.go, filelock*.go, fs_backend.go, inspector.go, memory_backend.go, paths.go, registry.go, schema.go, doc.go + 20 test files)",
       "description": "Storage package. Verify atomic writes, file locking, backend interface, cleanup, test helpers justified in deadcode.",
       "acceptance": "Atomic writes work, platform-safe. Deadcode justified. Tests pass with race.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/tokenizer (28 files: bpe.go, byte_level.go, chartokenizer.go, lattice.go, metaspace.go, model.go, pipeline.go, serialization.go, token.go, trie.go, unigram.go, whitespace.go, wordlevel.go, wordpiece.go + 14 test files)",
       "description": "Tokenizer package. Verify each algorithm (BPE, byte-level, metaspace, unigram, wordlevel, wordpiece, whitespace) correct.",
       "acceptance": "All tokenizer implementations correct. Tests pass.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/aimuxcore (12 files: eventstream.go, parser.go, provider.go, provider_process.go, tuistate.go + testutil/ + test files)",
       "description": "AI multiplexer core. Verify event stream, parser, provider interface, process provider, TUI state.",
       "acceptance": "aimuxcore correct. Tests pass.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/argv (6 files: argv.go, doc.go, argv_test.go, argv_fuzz_test.go + 2 fuzz testdata)",
       "description": "Argument parsing. Verify round-trip correctness, fuzz test data valid.",
       "acceptance": "argv parsing correct, round-trip verified. Fuzz tests pass.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/gitops (2 files: gitops.go, gitops_test.go)",
       "description": "Internal gitops Go package (not builtin). Verify go-git usage, only PullRebase shells out.",
       "acceptance": "Uses go-git, only PullRebase exception. Tests pass.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/filepathutil + mouseharness (15 files)",
       "description": "Tilde expansion + mouse harness. Verify cross-platform tilde expansion, mouse harness correct (deadcode justified).",
       "acceptance": "Tilde expansion cross-platform. mouseharness correct. Tests pass.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/testutil (12 files: eventloop.go, heuristics.go, platform.go, polling.go, ptytest.go, testids.go + 6 test files)",
       "description": "Shared test utilities. Verify event loop helper, platform helpers, polling, PTY test, test IDs. Deadcode justified.",
       "acceptance": "testutil correct, deadcode justified. Tests pass.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/termui + vhs + vtassert + cmd + example + root tests (~53 files)",
@@ -291,7 +291,7 @@
       "task": "Audit scripts/ (17 files: 12 example scripts, 4 test scripts, README.md, benchmark-input-latency.js)",
       "description": "JS scripts. Verify all I/O uses async/await, scripts functional with osm runtime, README accurate.",
       "acceptance": "All scripts async, functional. README accurate. No AI slop.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Audit goals/ (6 files: README.md, full-featured.json, minimal.json, with-flag-defs.json, with-hot-snippets.json, with-state-vars.json)",
@@ -303,7 +303,7 @@
       "task": "Audit docs/ (67 files: README.md, architecture.md, configuration.md, scripting.md, security.md, session.md, reference/*, archive/notes/*, key-input-autopsy/*, visuals/*, adr/*, design/*, projects/*)",
       "description": "Documentation. Verify docs match current code (no stale API refs like time.sleep, waitFor, exec.exec), scripting.md lists all modules, architecture.md accurate.",
       "acceptance": "All docs accurate and current. No stale API references. No AI slop.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Full verification: gmake make-all-with-log + Linux container + Windows remote",

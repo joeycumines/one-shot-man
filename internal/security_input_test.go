@@ -18,6 +18,7 @@ package internal_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -153,57 +154,103 @@ func TestExecSecurity_NewlinesInArgs(t *testing.T) {
 func TestExecSecurity_EmptyCommand(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
-
-	script := engine.LoadScriptFromString("empty-command", `
-		const {exec} = require('osm:exec');
-		const r1 = exec();
-		if (!r1.error || r1.message !== 'exec: missing command') {
-			throw new Error('expected "exec: missing command", got: ' + r1.message);
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			const {execv} = require('osm:exec');
+			execv().then(function(r1) {
+				if (!r1.error || r1.message !== 'execv: no argv') {
+					__testErr('expected "execv: no argv", got: ' + r1.message);
+					return;
+				}
+				execv(['']).then(function(r2) {
+					if (!r2.error) {
+						__testErr('expected error for empty command');
+						return;
+					}
+					__testOK();
+				}).catch(function(e) { __testErr(e.message); });
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-		const r2 = exec('');
-		if (!r2.error || r2.message !== 'exec: command must be a non-empty string') {
-			throw new Error('expected "exec: command must be a non-empty string", got: ' + r2.message);
-		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("Empty command test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("Empty command test failed: %v", testErr)
 	}
 }
 
 func TestExecvSecurity_Validation(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
-
-	script := engine.LoadScriptFromString("execv-validate", `
-		const {execv} = require('osm:exec');
-		// No args
-		const r1 = execv();
-		if (!r1.error || r1.message !== 'execv: no argv') {
-			throw new Error('expected "execv: no argv", got: ' + r1.message);
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			const {execv} = require('osm:exec');
+			// No args
+			execv().then(function(r1) {
+				if (!r1.error || r1.message !== 'execv: no argv') {
+					__testErr('expected "execv: no argv", got: ' + r1.message);
+					return;
+				}
+				// Null
+				execv(null).then(function(r2) {
+					if (!r2.error || r2.message !== 'execv: no argv') {
+						__testErr('expected "execv: no argv" for null, got: ' + r2.message);
+						return;
+					}
+					// Undefined
+					execv(undefined).then(function(r3) {
+						if (!r3.error || r3.message !== 'execv: no argv') {
+							__testErr('expected "execv: no argv" for undefined, got: ' + r3.message);
+							return;
+						}
+						// Empty array
+						execv([]).then(function(r4) {
+							if (!r4.error || r4.message !== 'execv: expects array of strings') {
+								__testErr('expected "execv: expects array of strings" for empty array, got: ' + r4.message);
+								return;
+							}
+							// Non-array
+							execv('echo hello').then(function(r5) {
+								if (!r5.error || r5.message !== 'execv: expects array of strings') {
+									__testErr('expected "execv: expects array of strings" for string, got: ' + r5.message);
+									return;
+								}
+								__testOK();
+							}).catch(function(e) { __testErr(e.message); });
+						}).catch(function(e) { __testErr(e.message); });
+					}).catch(function(e) { __testErr(e.message); });
+				}).catch(function(e) { __testErr(e.message); });
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-		// Null
-		const r2 = execv(null);
-		if (!r2.error || r2.message !== 'execv: no argv') {
-			throw new Error('expected "execv: no argv" for null, got: ' + r2.message);
-		}
-		// Undefined
-		const r3 = execv(undefined);
-		if (!r3.error || r3.message !== 'execv: no argv') {
-			throw new Error('expected "execv: no argv" for undefined, got: ' + r3.message);
-		}
-		// Empty array
-		const r4 = execv([]);
-		if (!r4.error || r4.message !== 'execv: expects array of strings') {
-			throw new Error('expected "execv: expects array of strings" for empty array, got: ' + r4.message);
-		}
-		// Non-array
-		const r5 = execv('echo hello');
-		if (!r5.error || r5.message !== 'execv: expects array of strings') {
-			throw new Error('expected "execv: expects array of strings" for string, got: ' + r5.message);
-		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("execv validation test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("execv validation test failed: %v", testErr)
 	}
 }
 
@@ -234,35 +281,72 @@ func TestExecSecurity_StdinExposureDocumented(t *testing.T) {
 func TestReadFileSecurity_EmptyPath(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
-
-	script := engine.LoadScriptFromString("readfile-empty", `
-		const {readFile} = require('osm:os');
-		const result = readFile('');
-		if (!result.error || result.message !== 'empty path') {
-			throw new Error('expected "empty path" error, got: ' + JSON.stringify(result));
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			const {readFile} = require('osm:os');
+			readFile('').then(function(result) {
+				if (!result.error || result.message !== 'empty path') {
+					__testErr('expected "empty path" error, got: ' + JSON.stringify(result));
+					return;
+				}
+				__testOK();
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("ReadFile empty path test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("ReadFile empty path test failed: %v", testErr)
 	}
 }
 
 func TestReadFileSecurity_NonexistentPath(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
-
-	script := engine.LoadScriptFromString("readfile-nonexist", `
-		const {readFile} = require('osm:os');
-		const result = readFile('/nonexistent/path/to/file');
-		if (!result.error) {
-			throw new Error('expected error for nonexistent path');
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			const {readFile} = require('osm:os');
+			readFile('/nonexistent/path/to/file').then(function(result) {
+				if (!result.error) {
+					__testErr('expected error for nonexistent path');
+					return;
+				}
+				if (result.content !== '') {
+					__testErr('expected empty content for nonexistent path');
+					return;
+				}
+				__testOK();
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-		if (result.content !== '') {
-			throw new Error('expected empty content for nonexistent path');
-		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("ReadFile nonexistent path test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("ReadFile nonexistent path test failed: %v", testErr)
 	}
 }
 
@@ -279,18 +363,38 @@ func TestReadFileSecurity_NoSandboxDocumented(t *testing.T) {
 	}
 
 	escaped := escapeJS(tmpFile)
-	script := engine.LoadScriptFromString("readfile-nosandbox", `
-		const {readFile} = require('osm:os');
-		const result = readFile('`+escaped+`');
-		if (result.error) {
-			throw new Error('readFile should read any accessible path: ' + result.message);
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			const {readFile} = require('osm:os');
+			readFile('` + escaped + `').then(function(result) {
+				if (result.error) {
+					__testErr('readFile should read any accessible path: ' + result.message);
+					return;
+				}
+				if (result.content !== 'test content') {
+					__testErr('expected "test content", got: ' + result.content);
+					return;
+				}
+				__testOK();
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-		if (result.content !== 'test content') {
-			throw new Error('expected "test content", got: ' + result.content);
-		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("ReadFile no-sandbox test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("ReadFile no-sandbox test failed: %v", testErr)
 	}
 }
 

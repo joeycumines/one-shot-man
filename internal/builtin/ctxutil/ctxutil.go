@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dop251/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	gosmargv "github.com/joeycumines/one-shot-man/internal/argv"
 )
 
@@ -24,10 +25,10 @@ var (
 
 // contentBlock holds the processed data for each distinct section before rendering.
 type contentBlock struct {
-	Title   string // The full title, e.g., "Note: Important", "Diff: git diff HEAD"
-	Content string // The raw payload for the section
-	Lang    string // The code block language (e.g., "diff"). Empty for non-code blocks.
-	IsError bool   // Flag to distinguish successful diffs from errors.
+	Title   string
+	Content string
+	Lang    string
+	IsError bool
 }
 
 // SetRunGitDiffFn sets the git diff function for testing.
@@ -51,9 +52,6 @@ func SetRunExecFn(fn func(context.Context, []string) (string, string, bool)) fun
 	return func() { runExecFn = old }
 }
 
-// calculateBacktickFence determines the required fence length based on content.
-// It scans all provided content strings for the longest consecutive run of backticks,
-// then returns a fence that is one character longer, with a minimum of 5 backticks.
 func calculateBacktickFence(contents []string) string {
 	maxLength := 0
 	for _, content := range contents {
@@ -69,35 +67,23 @@ func calculateBacktickFence(contents []string) string {
 			}
 		}
 	}
-
 	fenceLen := max(maxLength+1, 5)
 	return strings.Repeat("`", fenceLen)
 }
 
+// extractedItem is the Go representation of a context item, extracted from goja
+// on the event loop before processing on a goroutine.
+type extractedItem struct {
+	Type    string
+	Label   string
+	Payload any
+}
+
 // Require returns a CommonJS native module under "osm:ctxutil".
-// It exposes helpers to build context strings from a list of items while
-// resolving lazy diffs at call-time to ensure always-fresh content.
-//
-// API (JS):
-//
-//	const { buildContext, contextManager } = require('osm:ctxutil');
-//	const text = buildContext(itemsArray, { toTxtar: () => context.toTxtar() });
-//
-// itemsArray: Array<{ id?: number, type: 'note'|'diff'|'diff-error'|'lazy-diff'|'lazy-exec', label?: string, payload?: any }>
-// options.toTxtar: optional function returning string to append as fenced txtar block.
-//
-// Behavior:
-// - note: emits a markdown Note section using payload string.
-// - diff: emits a markdown Diff section using payload string.
-// - diff-error: emits a markdown Diff Error section using payload string.
-// - lazy-diff: payload can be string (shell-like) or string[] (argv). Runs `git diff ...` and emits Diff or Diff Error.
-// - lazy-exec: payload can be string (shell-like) or string[] (argv). Executes the command and emits Exec or Exec Error.
-//
-// contextManager: Factory function for creating reusable context management patterns.
-// See contextManager.js for detailed documentation.
-func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.Object) {
+// buildContext returns a Promise<string> because lazy-diff and lazy-exec
+// perform blocking subprocess I/O that must not stall the event loop.
+func Require(baseCtx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
-		// Get or create exports object
 		exportsVal := module.Get("exports")
 		var exports *goja.Object
 		if exportsVal == nil || goja.IsUndefined(exportsVal) || goja.IsNull(exportsVal) {
@@ -107,470 +93,34 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 			exports = exportsVal.ToObject(runtime)
 		}
 
-		// buildContext(items, options?) -> string
+		// buildContext(items, options?) -> Promise<string>
 		_ = exports.Set("buildContext", func(call goja.FunctionCall) goja.Value {
-			if len(call.Arguments) < 1 {
-				return runtime.ToValue("")
-			}
+			items := extractItems(runtime, call.Argument(0))
+			txtarContent := extractTxtar(runtime, call)
 
-			itemsArg := call.Argument(0)
-			if goja.IsUndefined(itemsArg) || goja.IsNull(itemsArg) {
-				return runtime.ToValue("")
-			}
-
-			obj, objErr := toObject(runtime, itemsArg)
-			if objErr != nil {
-				return runtime.ToValue("")
-			}
-
-			// Extract items as []goja.Value to iterate with minimal assumptions
-			var items []goja.Value
-			if obj != nil && obj.ClassName() == "Array" {
-				l := int(obj.Get("length").ToInteger())
-				items = make([]goja.Value, 0, l)
-				for i := range l {
-					items = append(items, obj.Get(fmt.Sprintf("%d", i)))
-				}
-			} else {
-				// Fall back to exporting into generic slice (e.g., Go slices exposed to JS)
-				var itemsGo []any
-				if err := runtime.ExportTo(itemsArg, &itemsGo); err != nil {
-					return runtime.ToValue("")
-				}
-				items = make([]goja.Value, 0, len(itemsGo))
-				for _, item := range itemsGo {
-					items = append(items, runtime.ToValue(item))
-				}
-			}
-
-			// Stage 1: Collection
-			var blocks []*contentBlock
-			var codeContents []string
-
-			for _, v := range items {
-				if goja.IsUndefined(v) || goja.IsNull(v) {
-					continue
-				}
-				obj, objErr := toObject(runtime, v)
-				if objErr != nil {
-					continue
-				}
-
-				// type is required; skip if missing
-				typeVal := valueOrUndefined(obj.Get("type"))
-				if goja.IsUndefined(typeVal) || goja.IsNull(typeVal) {
-					continue
-				}
-				t := typeVal.String()
-
-				// optional label
-				var label string
-				labelVal := valueOrUndefined(obj.Get("label"))
-				if !goja.IsUndefined(labelVal) && !goja.IsNull(labelVal) {
-					label = labelVal.String()
-				}
-
-				switch t {
-				case "note":
-					payload := safeGetString(obj, "payload")
-					title := "Note: "
-					if label != "" {
-						title += label
-					} else {
-						title += "note"
-					}
-					blocks = append(blocks, &contentBlock{
-						Title:   title,
-						Content: payload,
-						Lang:    "",
-						IsError: false,
-					})
-
-				case "diff":
-					payload := safeGetString(obj, "payload")
-					title := "Diff: "
-					if label != "" {
-						title += label
-					} else {
-						title += "git diff"
-					}
-					blocks = append(blocks, &contentBlock{
-						Title:   title,
-						Content: payload,
-						Lang:    "diff",
-						IsError: false,
-					})
-					codeContents = append(codeContents, payload)
-
-				case "diff-error":
-					payload := safeGetString(obj, "payload")
-					title := "Diff Error: "
-					if label != "" {
-						title += label
-					} else {
-						title += "git diff"
-					}
-					blocks = append(blocks, &contentBlock{
-						Title:   title,
-						Content: payload,
-						Lang:    "",
-						IsError: true,
-					})
-
-				case "lazy-diff":
-					// Determine argv for `git diff ...`
-					payloadVal := valueOrUndefined(obj.Get("payload"))
-					var args []string
-					var hadErr bool
-					var errMsg string
-
-					if goja.IsUndefined(payloadVal) || goja.IsNull(payloadVal) {
-						// Unspecified -> choose robust default
-						args = getDefaultGitDiffArgsFn(baseCtx)
-					} else if arr, arrErr := toArrayObject(runtime, payloadVal); arrErr != nil {
-						hadErr = true
-						errMsg = fmt.Sprintf("Invalid payload: %v", arrErr)
-					} else if arr != nil {
-						length := int(arr.Get("length").ToInteger())
-						tmp := make([]string, 0, length)
-						for i := range length {
-							itemVal := valueOrUndefined(arr.Get(fmt.Sprintf("%d", i)))
-							if goja.IsUndefined(itemVal) || goja.IsNull(itemVal) {
-								hadErr = true
-								errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%v')", i, itemVal)
-								break
-							}
-							exported, err := exportGojaValue(runtime, itemVal)
-							if err != nil {
-								hadErr = true
-								errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, err)
-								break
-							}
-							str, ok := exported.(string)
-							if !ok {
-								typeName := ""
-								if exported != nil {
-									typeName = reflect.TypeOf(exported).String()
-								} else {
-									typeName = "undefined"
-								}
-								hadErr = true
-								errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, typeName)
-								break
-							}
-							tmp = append(tmp, str)
-						}
-						if !hadErr {
-							args = tmp
-						}
-					} else if exported, err := exportGojaValue(runtime, payloadVal); err != nil {
-						hadErr = true
-						errMsg = fmt.Sprintf("Invalid payload: %v", err)
-					} else {
-						switch exported := exported.(type) {
-						case []any:
-							tmp := make([]string, 0, len(exported))
-							for i, item := range exported {
-								str, ok := item.(string)
-								if !ok {
-									typeName := "undefined"
-									if item != nil {
-										typeName = reflect.TypeOf(item).String()
-									}
-									hadErr = true
-									errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, typeName)
-									break
-								}
-								tmp = append(tmp, str)
-							}
-							if !hadErr {
-								args = tmp
-							}
-						case []string:
-							args = append(args, exported...)
-						case string:
-							args = gosmargv.ParseSlice(exported)
-						default:
-							typeName := ""
-							if exported != nil {
-								typeName = reflect.TypeOf(exported).String()
-							} else {
-								typeName = "undefined"
-							}
-							hadErr = true
-							errMsg = fmt.Sprintf("Invalid payload: expected a string or string array, but got type '%s'", typeName)
-						}
-					}
-
-					// If still no args (e.g. empty string payload), choose robust default.
-					// N.B. This is "smart" in that it resolved to the most-likely-useful default.
-					if !hadErr && len(args) == 0 {
-						args = getDefaultGitDiffArgsFn(baseCtx)
-					}
-
-					// Execute git diff with args
-					var out string
-					if !hadErr {
-						var gitErr bool
-						out, errMsg, gitErr = runGitDiffFn(baseCtx, args)
-						hadErr = gitErr
-					}
-
-					finalLabel := label
-					if finalLabel == "" {
-						finalLabel = "git diff " + strings.TrimSpace(strings.Join(args, " "))
-					}
-
-					if hadErr {
-						title := "Diff Error: " + finalLabel
-						content := "Error executing git diff: " + errMsg
-						blocks = append(blocks, &contentBlock{
-							Title:   title,
-							Content: content,
-							Lang:    "",
-							IsError: true,
-						})
-					} else {
-						title := "Diff: " + finalLabel
-						blocks = append(blocks, &contentBlock{
-							Title:   title,
-							Content: out,
-							Lang:    "diff",
-							IsError: false,
-						})
-						codeContents = append(codeContents, out)
-					}
-
-				case "lazy-exec":
-					// Determine argv for the command
-					payloadVal := valueOrUndefined(obj.Get("payload"))
-					var execArgs []string
-					var hadErr bool
-					var errMsg string
-
-					if goja.IsUndefined(payloadVal) || goja.IsNull(payloadVal) {
-						// No payload → error
-						hadErr = true
-						errMsg = "exec: no command specified"
-					} else if arr, arrErr := toArrayObject(runtime, payloadVal); arrErr != nil {
-						hadErr = true
-						errMsg = fmt.Sprintf("Invalid payload: %v", arrErr)
-					} else if arr != nil {
-						length := int(arr.Get("length").ToInteger())
-						tmp := make([]string, 0, length)
-						for i := range length {
-							itemVal := valueOrUndefined(arr.Get(fmt.Sprintf("%d", i)))
-							if goja.IsUndefined(itemVal) || goja.IsNull(itemVal) {
-								hadErr = true
-								errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%v')", i, itemVal)
-								break
-							}
-							exported, err := exportGojaValue(runtime, itemVal)
-							if err != nil {
-								hadErr = true
-								errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, err)
-								break
-							}
-							str, ok := exported.(string)
-							if !ok {
-								typeName := ""
-								if exported != nil {
-									typeName = reflect.TypeOf(exported).String()
-								} else {
-									typeName = "undefined"
-								}
-								hadErr = true
-								errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, typeName)
-								break
-							}
-							tmp = append(tmp, str)
-						}
-						if !hadErr {
-							execArgs = tmp
-						}
-					} else if exported, err := exportGojaValue(runtime, payloadVal); err != nil {
-						hadErr = true
-						errMsg = fmt.Sprintf("Invalid payload: %v", err)
-					} else {
-						switch exported := exported.(type) {
-						case []any:
-							tmp := make([]string, 0, len(exported))
-							for i, item := range exported {
-								str, ok := item.(string)
-								if !ok {
-									typeName := "undefined"
-									if item != nil {
-										typeName = reflect.TypeOf(item).String()
-									}
-									hadErr = true
-									errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, typeName)
-									break
-								}
-								tmp = append(tmp, str)
-							}
-							if !hadErr {
-								execArgs = tmp
-							}
-						case []string:
-							execArgs = append(execArgs, exported...)
-						case string:
-							execArgs = gosmargv.ParseSlice(exported)
-						default:
-							typeName := ""
-							if exported != nil {
-								typeName = reflect.TypeOf(exported).String()
-							} else {
-								typeName = "undefined"
-							}
-							hadErr = true
-							errMsg = fmt.Sprintf("Invalid payload: expected a string or string array, but got type '%s'", typeName)
-						}
-					}
-
-					// Execute the command
-					var out string
-					if !hadErr {
-						var execErr bool
-						out, errMsg, execErr = runExecFn(baseCtx, execArgs)
-						hadErr = execErr
-					}
-
-					finalLabel := label
-					if finalLabel == "" {
-						finalLabel = strings.TrimSpace(strings.Join(execArgs, " "))
-					}
-
-					if hadErr {
-						title := "Exec Error: " + finalLabel
-						content := "Error executing command: " + errMsg
-						blocks = append(blocks, &contentBlock{
-							Title:   title,
-							Content: content,
-							Lang:    "",
-							IsError: true,
-						})
-					} else {
-						title := "Exec: " + finalLabel
-						blocks = append(blocks, &contentBlock{
-							Title:   title,
-							Content: out,
-							Lang:    "",
-							IsError: false,
-						})
-						codeContents = append(codeContents, out)
-					}
-				}
-			}
-
-			// Process txtar content if provided
-			var txtarContent string
-			if len(call.Arguments) >= 2 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
-				// options is an object; look for toTxtar
-				optObj := call.Argument(1).ToObject(runtime)
-				if v := valueOrUndefined(optObj.Get("toTxtar")); !goja.IsUndefined(v) && !goja.IsNull(v) {
-					if callable, ok := goja.AssertFunction(v); ok {
-						if res, err := callable(goja.Undefined(), nil...); err == nil {
-							if !goja.IsUndefined(res) && !goja.IsNull(res) && res.String() != "" {
-								txtarContent = res.String()
-								codeContents = append(codeContents, txtarContent)
-							}
-						}
-					}
-				}
-			}
-
-			// Stage 2: Rendering
-			fence := calculateBacktickFence(codeContents)
-			var buf strings.Builder
-
-			for _, block := range blocks {
-				buf.WriteString("### ")
-				buf.WriteString(block.Title)
-				buf.WriteString("\n\n")
-
-				if block.Lang == "diff" {
-					buf.WriteString(fence)
-					buf.WriteString("diff\n")
-					buf.WriteString(block.Content)
-					buf.WriteString("\n")
-					buf.WriteString(fence)
-					buf.WriteString("\n\n---\n")
-				} else {
-					buf.WriteString(block.Content)
-					buf.WriteString("\n\n---\n")
-				}
-			}
-
-			// Append txtar block if present.
-			// Extract metadata lines (context root, common path, tracked directories)
-			// and render them OUTSIDE the code fence for better readability.
-			if txtarContent != "" {
-				var metaLines []string
-				var bodyLines []string
-				inMeta := true
-				for line := range strings.SplitSeq(txtarContent, "\n") {
-					if inMeta {
-						trimmed := strings.TrimSpace(line)
-						if strings.HasPrefix(trimmed, "context root:") ||
-							strings.HasPrefix(trimmed, "common path:") ||
-							strings.HasPrefix(trimmed, "tracked directories:") {
-							metaLines = append(metaLines, line)
-							continue
-						}
-						// Empty lines before first file marker are still metadata region.
-						if trimmed == "" {
-							continue
-						}
-						inMeta = false
-					}
-					bodyLines = append(bodyLines, line)
-				}
-
-				// Render metadata above the fence, with paths in backticks.
-				for _, ml := range metaLines {
-					if before, after, ok := strings.Cut(ml, ": "); ok {
-						key := strings.TrimSpace(before)
-						val := strings.TrimSpace(after)
-						buf.WriteString(key)
-						buf.WriteString(": `")
-						buf.WriteString(val)
-						buf.WriteString("`\n")
-					} else {
-						buf.WriteString(ml)
-						buf.WriteString("\n")
-					}
-				}
-				if len(metaLines) > 0 {
-					buf.WriteString("\n")
-				}
-
-				body := strings.Join(bodyLines, "\n")
-				buf.WriteString(fence)
-				buf.WriteString("txtar\n")
-				buf.WriteString(body)
-				buf.WriteString("\n")
-				buf.WriteString(fence)
-			}
-
-			return runtime.ToValue(buf.String())
+			promise, resolve, _ := adapter.JS().NewChainedPromise()
+			adapter.Loop().Promisify(baseCtx, func(ctx context.Context) (any, error) {
+				result := renderContext(baseCtx, items, txtarContent)
+				_ = adapter.Loop().Submit(func() {
+					resolve(runtime.ToValue(result))
+				})
+				return nil, nil
+			})
+			return adapter.GojaWrapPromise(promise)
 		})
 
-		// Load contextManager by setting up a temporary module context
-		// We need to execute contextManager.js which uses module.exports pattern
+		// Load contextManager
 		tempModule := runtime.NewObject()
 		tempExports := runtime.NewObject()
 		_ = tempModule.Set("exports", tempExports)
 
-		// Wrap contextManager script in a function to avoid polluting global scope
 		wrappedScript := "(function(module) { " + contextManagerScript + "\nreturn module.exports; })"
 
-		// Compile and call the wrapped function
 		compiledScript, err := runtime.RunString(wrappedScript)
 		if err != nil {
 			panic(fmt.Errorf("failed to compile contextManager script: %w", err))
 		}
 
-		// Call the function with tempModule
 		fn, ok := goja.AssertFunction(compiledScript)
 		if !ok {
 			panic(fmt.Errorf("contextManager script wrapper did not return a function"))
@@ -581,28 +131,324 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 			panic(fmt.Errorf("failed to execute contextManager script: %w", err))
 		}
 
-		// Extract the contextManager function from the result
 		tempExports = result.ToObject(runtime)
 		contextManagerFn := tempExports.Get("contextManager")
 		if goja.IsUndefined(contextManagerFn) || goja.IsNull(contextManagerFn) {
 			panic(fmt.Errorf("contextManager function not found in module exports"))
 		}
 
-		// Set it on our exports object
 		_ = exports.Set("contextManager", contextManagerFn)
 	}
 }
 
-// safeGetString reads a property and returns "" if undefined or null.
-func safeGetString(obj *goja.Object, propName string) string {
-	if obj == nil {
+// extractItems converts goja items to Go data structures on the event loop.
+func extractItems(runtime *goja.Runtime, itemsArg goja.Value) []extractedItem {
+	if goja.IsUndefined(itemsArg) || goja.IsNull(itemsArg) {
+		return nil
+	}
+
+	obj, objErr := toObject(runtime, itemsArg)
+	if objErr != nil || obj == nil {
+		return nil
+	}
+
+	var gojaItems []goja.Value
+	if obj.ClassName() == "Array" {
+		l := int(obj.Get("length").ToInteger())
+		gojaItems = make([]goja.Value, 0, l)
+		for i := range l {
+			gojaItems = append(gojaItems, obj.Get(fmt.Sprintf("%d", i)))
+		}
+	} else {
+		var itemsGo []any
+		if err := runtime.ExportTo(itemsArg, &itemsGo); err != nil {
+			return nil
+		}
+		gojaItems = make([]goja.Value, 0, len(itemsGo))
+		for _, item := range itemsGo {
+			gojaItems = append(gojaItems, runtime.ToValue(item))
+		}
+	}
+
+	var result []extractedItem
+	for _, v := range gojaItems {
+		if goja.IsUndefined(v) || goja.IsNull(v) {
+			continue
+		}
+		itemObj, err := toObject(runtime, v)
+		if err != nil || itemObj == nil {
+			continue
+		}
+
+		typeVal := valueOrUndefined(itemObj.Get("type"))
+		if goja.IsUndefined(typeVal) || goja.IsNull(typeVal) {
+			continue
+		}
+
+		var label string
+		labelVal := valueOrUndefined(itemObj.Get("label"))
+		if !goja.IsUndefined(labelVal) && !goja.IsNull(labelVal) {
+			label = labelVal.String()
+		}
+
+		var payload any
+		payloadVal := valueOrUndefined(itemObj.Get("payload"))
+		if !goja.IsUndefined(payloadVal) && !goja.IsNull(payloadVal) {
+			payload, _ = exportGojaValue(runtime, payloadVal)
+		}
+
+		result = append(result, extractedItem{
+			Type:    typeVal.String(),
+			Label:   label,
+			Payload: payload,
+		})
+	}
+
+	return result
+}
+
+// extractTxtar calls the toTxtar JS function synchronously and returns the result.
+func extractTxtar(runtime *goja.Runtime, call goja.FunctionCall) string {
+	if len(call.Arguments) < 2 || goja.IsUndefined(call.Argument(1)) || goja.IsNull(call.Argument(1)) {
 		return ""
 	}
-	val := valueOrUndefined(obj.Get(propName))
-	if goja.IsUndefined(val) || goja.IsNull(val) {
+	optObj := call.Argument(1).ToObject(runtime)
+	v := valueOrUndefined(optObj.Get("toTxtar"))
+	if goja.IsUndefined(v) || goja.IsNull(v) {
 		return ""
 	}
-	return val.String()
+	callable, ok := goja.AssertFunction(v)
+	if !ok {
+		return ""
+	}
+	res, err := callable(goja.Undefined())
+	if err != nil {
+		return ""
+	}
+	if goja.IsUndefined(res) || goja.IsNull(res) || res.String() == "" {
+		return ""
+	}
+	return res.String()
+}
+
+// renderContext processes extracted items and renders the final context string.
+// This function runs on a goroutine and performs blocking I/O (git diff, exec).
+func renderContext(baseCtx context.Context, items []extractedItem, txtarContent string) string {
+	var blocks []*contentBlock
+	var codeContents []string
+
+	for _, item := range items {
+		t := item.Type
+		label := item.Label
+
+		switch t {
+		case "note":
+			payload, _ := item.Payload.(string)
+			title := "Note: "
+			if label != "" {
+				title += label
+			} else {
+				title += "note"
+			}
+			blocks = append(blocks, &contentBlock{Title: title, Content: payload})
+
+		case "diff":
+			payload, _ := item.Payload.(string)
+			title := "Diff: "
+			if label != "" {
+				title += label
+			} else {
+				title += "git diff"
+			}
+			blocks = append(blocks, &contentBlock{Title: title, Content: payload, Lang: "diff"})
+			codeContents = append(codeContents, payload)
+
+		case "diff-error":
+			payload, _ := item.Payload.(string)
+			title := "Diff Error: "
+			if label != "" {
+				title += label
+			} else {
+				title += "git diff"
+			}
+			blocks = append(blocks, &contentBlock{Title: title, Content: payload, IsError: true})
+
+		case "lazy-diff":
+			args, hadErr, errMsg := parsePayloadArgs(item.Payload, true)
+
+			if !hadErr && len(args) == 0 {
+				args = getDefaultGitDiffArgsFn(baseCtx)
+			}
+
+			var out string
+			if !hadErr {
+				var gitErr bool
+				out, errMsg, gitErr = runGitDiffFn(baseCtx, args)
+				hadErr = gitErr
+			}
+
+			finalLabel := label
+			if finalLabel == "" {
+				finalLabel = "git diff " + strings.TrimSpace(strings.Join(args, " "))
+			}
+
+			if hadErr {
+				blocks = append(blocks, &contentBlock{
+					Title:   "Diff Error: " + finalLabel,
+					Content: "Error executing git diff: " + errMsg,
+					IsError: true,
+				})
+			} else {
+				blocks = append(blocks, &contentBlock{
+					Title:   "Diff: " + finalLabel,
+					Content: out,
+					Lang:    "diff",
+				})
+				codeContents = append(codeContents, out)
+			}
+
+		case "lazy-exec":
+			args, hadErr, errMsg := parsePayloadArgs(item.Payload, false)
+
+			var out string
+			if !hadErr {
+				var execErr bool
+				out, errMsg, execErr = runExecFn(baseCtx, args)
+				hadErr = execErr
+			}
+
+			finalLabel := label
+			if finalLabel == "" {
+				finalLabel = strings.TrimSpace(strings.Join(args, " "))
+			}
+
+			if hadErr {
+				blocks = append(blocks, &contentBlock{
+					Title:   "Exec Error: " + finalLabel,
+					Content: "Error executing command: " + errMsg,
+					IsError: true,
+				})
+			} else {
+				blocks = append(blocks, &contentBlock{
+					Title:   "Exec: " + finalLabel,
+					Content: out,
+				})
+				codeContents = append(codeContents, out)
+			}
+		}
+	}
+
+	if txtarContent != "" {
+		codeContents = append(codeContents, txtarContent)
+	}
+
+	fence := calculateBacktickFence(codeContents)
+	var buf strings.Builder
+
+	for _, block := range blocks {
+		buf.WriteString("### ")
+		buf.WriteString(block.Title)
+		buf.WriteString("\n\n")
+
+		if block.Lang == "diff" {
+			buf.WriteString(fence)
+			buf.WriteString("diff\n")
+			buf.WriteString(block.Content)
+			buf.WriteString("\n")
+			buf.WriteString(fence)
+			buf.WriteString("\n\n---\n")
+		} else {
+			buf.WriteString(block.Content)
+			buf.WriteString("\n\n---\n")
+		}
+	}
+
+	if txtarContent != "" {
+		var metaLines []string
+		var bodyLines []string
+		inMeta := true
+		for line := range strings.SplitSeq(txtarContent, "\n") {
+			if inMeta {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "context root:") ||
+					strings.HasPrefix(trimmed, "common path:") ||
+					strings.HasPrefix(trimmed, "tracked directories:") {
+					metaLines = append(metaLines, line)
+					continue
+				}
+				if trimmed == "" {
+					continue
+				}
+				inMeta = false
+			}
+			bodyLines = append(bodyLines, line)
+		}
+
+		for _, ml := range metaLines {
+			if before, after, ok := strings.Cut(ml, ": "); ok {
+				buf.WriteString(strings.TrimSpace(before))
+				buf.WriteString(": `")
+				buf.WriteString(strings.TrimSpace(after))
+				buf.WriteString("`\n")
+			} else {
+				buf.WriteString(ml)
+				buf.WriteString("\n")
+			}
+		}
+		if len(metaLines) > 0 {
+			buf.WriteString("\n")
+		}
+
+		body := strings.Join(bodyLines, "\n")
+		buf.WriteString(fence)
+		buf.WriteString("txtar\n")
+		buf.WriteString(body)
+		buf.WriteString("\n")
+		buf.WriteString(fence)
+	}
+
+	return buf.String()
+}
+
+// parsePayloadArgs converts a payload (any) to []string args.
+func parsePayloadArgs(payload any, isDiff bool) (args []string, hadErr bool, errMsg string) {
+	if payload == nil {
+		if isDiff {
+			return nil, false, ""
+		}
+		return nil, true, "exec: no command specified"
+	}
+
+	switch p := payload.(type) {
+	case []string:
+		args = append(args, p...)
+	case []any:
+		tmp := make([]string, 0, len(p))
+		for i, item := range p {
+			str, ok := item.(string)
+			if !ok {
+				typeName := "undefined"
+				if item != nil {
+					typeName = reflect.TypeOf(item).String()
+				}
+				return nil, true, fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, typeName)
+			}
+			tmp = append(tmp, str)
+		}
+		args = tmp
+	case string:
+		args = gosmargv.ParseSlice(p)
+	default:
+		typeName := ""
+		if payload != nil {
+			typeName = reflect.TypeOf(payload).String()
+		} else {
+			typeName = "undefined"
+		}
+		return nil, true, fmt.Sprintf("Invalid payload: expected a string or string array, but got type '%s'", typeName)
+	}
+
+	return args, false, ""
 }
 
 func valueOrUndefined(val goja.Value) goja.Value {
@@ -632,19 +478,6 @@ func exportGojaValue(runtime *goja.Runtime, value goja.Value) (any, error) {
 	}
 
 	return result, nil
-}
-
-func toArrayObject(runtime *goja.Runtime, value goja.Value) (*goja.Object, error) {
-	obj, err := toObject(runtime, value)
-	if err != nil {
-		return nil, err
-	}
-
-	if obj == nil || obj.ClassName() != "Array" {
-		return nil, nil
-	}
-
-	return obj, nil
 }
 
 func toObject(runtime *goja.Runtime, value goja.Value) (*goja.Object, error) {
@@ -689,33 +522,22 @@ func runGitDiff(ctx context.Context, args []string) (stdout string, message stri
 	return outBuf.String(), "", false
 }
 
-// getDefaultGitDiffArgs returns a robust default for `git diff`.
-// Prefer `HEAD` when it seems appropriate (i.e. `git diff HEAD` produces output or the command runs),
-// otherwise fall back to previous behaviour (HEAD~1 if available, else empty-tree vs HEAD).
 func getDefaultGitDiffArgs(ctx context.Context) []string {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	// Try `git diff HEAD` and accept it only if the command produces output
-	// (covers the case where git exits with status 1 to indicate differences
-	// and writes the diff to stdout). If there is no output (e.g. single-commit
-	// repository where HEAD has no changes), fall through to legacy behaviour.
 	if out, _ := exec.CommandContext(ctx, "git", "diff", "--no-ext-diff", "--no-color", "HEAD").CombinedOutput(); len(bytes.TrimSpace(out)) > 0 {
 		return []string{"HEAD"}
 	}
 
-	// Check if HEAD~1 exists (preserve previous preference)
 	if err := exec.CommandContext(ctx, "git", "rev-parse", "-q", "--verify", "HEAD~1").Run(); err == nil {
 		return []string{"HEAD~1"}
 	}
 
-	// Fallback: empty tree vs HEAD
 	return []string{"4b825dc642cb6eb9a060e54bf8d69288fbee4904", "HEAD"}
 }
 
-// runExec executes an arbitrary command and returns its output.
-// The first element of args is the command name; subsequent elements are arguments.
 func runExec(ctx context.Context, args []string) (stdout string, message string, hadErr bool) {
 	if ctx == nil {
 		ctx = context.Background()

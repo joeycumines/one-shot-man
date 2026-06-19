@@ -72,7 +72,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 	})
 
 	// --- Step 1: Analyze diff. ---
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeDiff({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.analyzeDiff({
 		baseBranch: 'main',
 		dir: ` + jsString(repoDir) + `
 	}))`)
@@ -97,7 +97,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 	t.Logf("Analyzed %d files: %v", len(analysis.Files), analysis.Files)
 
 	// --- Step 2: Apply directory strategy. ---
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.applyStrategy(
 		` + mustJSON(t, analysis.Files) + `,
 		'directory-deep',
 		{
@@ -122,7 +122,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 	}
 
 	// --- Step 3: Create split plan. ---
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.createSplitPlan(
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.createSplitPlan(
 		` + mustJSON(t, groups) + `,
 		{
 			baseBranch: 'main',
@@ -173,7 +173,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 	}
 
 	// --- Step 4: Execute split. ---
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: ` + jsString(repoDir) + `,
@@ -232,7 +232,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 	runGit(t, repoDir, "checkout", "feature")
 
 	// --- Step 6: Verify tree-hash equivalence. ---
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: ` + jsString(repoDir) + `,

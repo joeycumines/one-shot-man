@@ -890,7 +890,7 @@ const mgr = termmux.newSessionManager({
 | `pid()` → `number` | Child PID |
 | `exitCode()` → `number` | Exit code (-1 if not exited) |
 | `isDone()` → `boolean` | Non-blocking completion check |
-| `passthrough(cfg?)` → `{reason, error?}` | Enter raw terminal mode |
+| `passthrough(cfg?)` → `Promise<{reason, error?}>` | Enter raw terminal mode (async) |
 | `reader()` → `string|null` | Blocking read next chunk |
 | `readAvailable()` → `string|null` | Non-blocking drain of buffered chunks |
 

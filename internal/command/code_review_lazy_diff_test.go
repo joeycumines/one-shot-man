@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
@@ -221,8 +222,7 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 		output.print("LAZY_DIFF_TEST_6_PASS");
 
 		// Test 7: Build prompt should execute the lazy diffs (without mutating state)
-		try {
-			const prompt = buildPrompt();
+		Promise.resolve(buildPrompt()).then(function(prompt) {
 			let executed = 0;
 			if (prompt.includes("### Diff:")) executed++;
 			if (prompt.includes("### Diff Error:")) executed++;
@@ -238,15 +238,29 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 				throw new Error("Items mutated unexpectedly; expected lazy-diff to remain");
 			}
 			output.print("LAZY_DIFF_TEST_7_PASS");
-		} catch (e) {
+			__signalDone();
+		}).catch(function(e) {
 			output.print("LAZY_DIFF_TEST_7_FAIL: " + e.message);
-		}
+			__signalDone();
+		});
 	`
 
 	testScriptObj := engine.LoadScriptFromString("lazy-diff-test", testScript)
+
+	done := make(chan struct{})
+	_ = engine.Runtime().Set("__signalDone", func() {
+		close(done)
+	})
+
 	err = engine.ExecuteScript(testScriptObj)
 	if err != nil {
 		t.Fatalf("Test script execution failed: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async script completion")
 	}
 
 	output := stdout.String()

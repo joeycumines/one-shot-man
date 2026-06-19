@@ -1654,11 +1654,11 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 		var _origExecuteSplitAsync = executeSplitAsync;
 		executeSplitAsync = function(plan, options) {
 			// Create the first branch for real to prove cleanup works.
-			gitExec('.', ['checkout', plan.baseBranch]);
-			gitExec('.', ['checkout', '-b', plan.splits[0].name]);
-			gitExec('.', ['checkout', plan.sourceBranch, '--', plan.splits[0].files[0]]);
-			gitExec('.', ['commit', '-m', 'partial split']);
-			gitExec('.', ['checkout', plan.baseBranch]);
+			await gitExec('.', ['checkout', plan.baseBranch]);
+			await gitExec('.', ['checkout', '-b', plan.splits[0].name]);
+			await gitExec('.', ['checkout', plan.sourceBranch, '--', plan.splits[0].files[0]]);
+			await gitExec('.', ['commit', '-m', 'partial split']);
+			await gitExec('.', ['checkout', plan.baseBranch]);
 			return {
 				error: 'simulated execution failure at branch 2',
 				results: [{name: plan.splits[0].name, sha: 'abc', error: null, passed: false}]
@@ -1802,11 +1802,11 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 	// Override executeSplitAsync: create first branch, then fail.
 	overrideExec := `
 		executeSplitAsync = function(plan, options) {
-			gitExec('.', ['checkout', plan.baseBranch]);
-			gitExec('.', ['checkout', '-b', plan.splits[0].name]);
-			gitExec('.', ['checkout', plan.sourceBranch, '--', plan.splits[0].files[0]]);
-			gitExec('.', ['commit', '-m', 'partial split']);
-			gitExec('.', ['checkout', plan.baseBranch]);
+			await gitExec('.', ['checkout', plan.baseBranch]);
+			await gitExec('.', ['checkout', '-b', plan.splits[0].name]);
+			await gitExec('.', ['checkout', plan.sourceBranch, '--', plan.splits[0].files[0]]);
+			await gitExec('.', ['commit', '-m', 'partial split']);
+			await gitExec('.', ['checkout', plan.baseBranch]);
 			return {
 				error: 'simulated failure',
 				results: [{name: plan.splits[0].name, sha: 'abc', error: null, passed: false}]

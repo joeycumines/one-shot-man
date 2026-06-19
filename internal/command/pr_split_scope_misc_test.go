@@ -50,7 +50,7 @@ func BenchmarkCreateSplitPlan(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := evalJS(`prSplit.createSplitPlan(benchGroups, {
+		_, err := evalJS(`await prSplit.createSplitPlan(benchGroups, {
 			baseBranch: 'main', sourceBranch: 'feature',
 			branchPrefix: 'split/', maxFiles: 20
 		})`)
@@ -82,7 +82,7 @@ func BenchmarkAssessIndependence(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := evalJS(`prSplit.assessIndependence(benchPlan, null)`)
+		_, err := evalJS(`await prSplit.assessIndependence(benchPlan, null)`)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -107,7 +107,7 @@ func BenchmarkSelectStrategy(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := evalJS(`prSplit.selectStrategy(benchSelectFiles, {maxPerGroup: 10})`)
+		_, err := evalJS(`await prSplit.selectStrategy(benchSelectFiles, {maxPerGroup: 10})`)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -132,7 +132,7 @@ func BenchmarkSelectStrategy_LargeRepo(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := evalJS(`prSplit.selectStrategy(benchLargeFiles, {maxPerGroup: 15})`)
+		_, err := evalJS(`await prSplit.selectStrategy(benchLargeFiles, {maxPerGroup: 15})`)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -146,14 +146,14 @@ func TestSelectStrategy_ResultShape(t *testing.T) {
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// 200 Go files across 20 packages.
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		var files = [];
 		for (var p = 0; p < 20; p++) {
 			for (var f = 0; f < 10; f++) {
 				files.push('internal/pkg' + p + '/file' + f + '.go');
 			}
 		}
-		var result = prSplit.selectStrategy(files, {maxPerGroup: 10});
+		var result = await prSplit.selectStrategy(files, {maxPerGroup: 10});
 		return JSON.stringify({
 			strategy: result.strategy,
 			groupCount: Object.keys(result.groups).length,
@@ -198,7 +198,7 @@ func TestBuildDependencyGraph(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
-	val, err := evalJS(`JSON.stringify(prSplit.buildDependencyGraph({
+	val, err := evalJS(`JSON.stringify(await prSplit.buildDependencyGraph({
 		splits: [
 			{name: 'api', files: ['api/handler.go']},
 			{name: 'db', files: ['db/store.go']},

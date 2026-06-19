@@ -171,8 +171,8 @@ func TestPrSplitCommand_FlagDefaults(t *testing.T) {
 	cmd.SetupFlags(fs)
 
 	// Don't parse any flags — check defaults
-	if cmd.baseBranch != "main" {
-		t.Errorf("Expected default baseBranch 'main', got: %s", cmd.baseBranch)
+	if cmd.baseBranch != "" {
+		t.Errorf("Expected default baseBranch '' (auto-detect), got: %s", cmd.baseBranch)
 	}
 	if cmd.strategy != "directory" {
 		t.Errorf("Expected default strategy 'directory', got: %s", cmd.strategy)

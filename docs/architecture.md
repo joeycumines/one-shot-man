@@ -196,7 +196,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 | `osm:os` | File I/O (read, write, append), environment variables, clipboard, editor |
 | `osm:path` | Path manipulation (join, dir, base, ext, abs, rel, glob) |
 | `osm:regexp` | RE2 regular expressions (match, find, replace, split, compile) |
-| `osm:time` | Sleep (millisecond-precision delay) |
+| `osm:gitops` | Git operations via go-git (isRepo, open, addAll, commit, push) |
 | `osm:fetch` | HTTP client (GET, POST, etc.) |
 | `osm:grpc` | Promise-based gRPC client/server (via goja-grpc, in-process channel) |
 | `osm:protobuf` | Protocol Buffers descriptor loading (via goja-protobuf) |

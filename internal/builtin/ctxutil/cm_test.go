@@ -4,24 +4,23 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
-func setupContextManager(t *testing.T) *goja.Runtime {
+func setupContextManager(t *testing.T) (*goja.Runtime, *goeventloop.Loop) {
 	t.Helper()
 
-	runtime := goja.New()
-
-	// Create test event loop provider (REQUIRED for builtin.Register)
 	eventLoopProvider := testutil.NewTestEventLoopProvider()
 	t.Cleanup(eventLoopProvider.Stop)
 
-	registry := require.NewRegistry()
+	runtime := eventLoopProvider.Runtime()
+	registry := eventLoopProvider.Registry()
 
 	builtin.Register(context.Background(),
 		func(s string) {
@@ -30,18 +29,42 @@ func setupContextManager(t *testing.T) *goja.Runtime {
 		registry,
 		nil, eventLoopProvider)
 
-	registry.Enable(runtime)
-
 	_, err := runtime.RunString(`const exports = require("osm:ctxutil");`)
 	if err != nil {
 		t.Fatalf("failed to load ctxutil module: %v", err)
 	}
 
-	return runtime
+	return runtime, eventLoopProvider.Loop()
+}
+
+func runAsyncCM(t *testing.T, runtime *goja.Runtime, loop *goeventloop.Loop, script string) {
+	t.Helper()
+	done := make(chan error, 1)
+
+	err := loop.Submit(func() {
+		_ = runtime.Set("__signalDone", func() {
+			done <- nil
+		})
+		_, err := runtime.RunString(script)
+		if err != nil {
+			done <- err
+		}
+	})
+	if err != nil {
+		t.Fatalf("failed to submit script: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("script error: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timeout waiting for async script")
+	}
 }
 
 func TestContextManagerBasicUsage(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -110,7 +133,7 @@ func TestContextManagerBasicUsage(t *testing.T) {
 }
 
 func TestContextManagerAddItem(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -156,7 +179,7 @@ func TestContextManagerAddItem(t *testing.T) {
 }
 
 func TestContextManagerCommandExtension(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -213,7 +236,7 @@ func TestContextManagerCommandExtension(t *testing.T) {
 }
 
 func TestContextManagerNextIntegerId(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -243,7 +266,7 @@ func TestContextManagerNextIntegerId(t *testing.T) {
 }
 
 func TestContextManagerCustomNextIntegerId(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -281,7 +304,7 @@ func TestContextManagerCustomNextIntegerId(t *testing.T) {
 }
 
 func TestContextManagerHelperOverrides(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -351,7 +374,7 @@ func TestContextManagerHelperOverrides(t *testing.T) {
 }
 
 func TestContextManagerCommandDescriptions(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -395,7 +418,7 @@ func TestContextManagerCommandDescriptions(t *testing.T) {
 }
 
 func TestContextManagerIntegrationWithBuildContext(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	// Setup git diff mock
 	restoreRunGitDiff := ctxutil.SetRunGitDiffFn(func(ctx context.Context, args []string) (string, string, bool) {
@@ -470,14 +493,14 @@ func TestContextManagerIntegrationWithBuildContext(t *testing.T) {
 		globalThis.__itemsAfterRemove = items.length;
 
 		// Build the prompt
-		const prompt = ctxmgr.buildPrompt();
-		globalThis.__prompt = prompt;
-		globalThis.__outputCalls = outputCalls.length;
+		Promise.resolve(ctxmgr.buildPrompt()).then(function(prompt) {
+			globalThis.__prompt = prompt;
+			globalThis.__outputCalls = outputCalls.length;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	// Verify add command called context.addPath
 	if addPathCalls := runtime.Get("__addPathCalls").ToInteger(); addPathCalls != 1 {
@@ -528,7 +551,7 @@ func TestContextManagerIntegrationWithBuildContext(t *testing.T) {
 }
 
 func TestContextManagerLazyExecIntegration(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	// Setup exec mock
 	restoreRunExec := ctxutil.SetRunExecFn(func(ctx context.Context, args []string) (string, string, bool) {
@@ -567,13 +590,13 @@ func TestContextManagerLazyExecIntegration(t *testing.T) {
 		globalThis.__itemPayload = JSON.stringify(items[0].payload);
 
 		// Build the prompt
-		const prompt = ctxmgr.buildPrompt();
-		globalThis.__prompt = prompt;
+		Promise.resolve(ctxmgr.buildPrompt()).then(function(prompt) {
+			globalThis.__prompt = prompt;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	// Verify item was added correctly
 	if itemCount := runtime.Get("__itemCount").ToInteger(); itemCount != 1 {
@@ -602,7 +625,7 @@ func TestContextManagerLazyExecIntegration(t *testing.T) {
 }
 
 func TestContextManagerDiffHandlerPayload(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -657,7 +680,7 @@ func TestContextManagerDiffHandlerPayload(t *testing.T) {
 }
 
 func TestContextManagerRemoveMissingFile(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	// Mock the context and output globals where removePath returns an error indicating missing path
 	script := `
@@ -702,7 +725,7 @@ func TestContextManagerRemoveMissingFile(t *testing.T) {
 }
 
 func TestContextManagerCopyRefreshesFileItems(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -736,14 +759,16 @@ func TestContextManagerCopyRefreshesFileItems(t *testing.T) {
 		// Invoke copy
 		ctxmgr.commands.copy.handler();
 
-		globalThis.__refreshedPaths = refreshedPaths;
-		globalThis.__clipboardContent = clipboardContent;
-		globalThis.__outputCalls = outputCalls;
+		// Wait for the copy to complete and signal done
+		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+			globalThis.__refreshedPaths = refreshedPaths;
+			globalThis.__clipboardContent = clipboardContent;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	// Verify refreshPath was called for each file-type item (but NOT notes)
 	refreshedPaths := runtime.Get("__refreshedPaths").Export()
@@ -768,7 +793,7 @@ func TestContextManagerCopyRefreshesFileItems(t *testing.T) {
 }
 
 func TestContextManagerShowRefreshesFileItems(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -797,13 +822,15 @@ func TestContextManagerShowRefreshesFileItems(t *testing.T) {
 		// Invoke show
 		ctxmgr.commands.show.handler();
 
-		globalThis.__refreshedPaths = refreshedPaths;
-		globalThis.__outputCalls = outputCalls;
+		// Wait for the show to complete and signal done
+		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+			globalThis.__refreshedPaths = refreshedPaths;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	refreshedPaths := runtime.Get("__refreshedPaths").Export()
 	paths, ok := refreshedPaths.([]any)
@@ -828,7 +855,7 @@ func TestContextManagerShowRefreshesFileItems(t *testing.T) {
 }
 
 func TestContextManagerRefreshIgnoresErrors(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -855,12 +882,15 @@ func TestContextManagerRefreshIgnoresErrors(t *testing.T) {
 
 		// Copy should NOT throw even though refreshPath throws
 		ctxmgr.commands.copy.handler();
-		globalThis.__clipboardContent = clipboardContent;
+
+		// Wait for copy to complete and signal done
+		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+			globalThis.__clipboardContent = clipboardContent;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	if got := runtime.Get("__clipboardContent").String(); got != "still works" {
 		t.Errorf("expected clipboard content 'still works' despite refresh error, got %q", got)
@@ -868,7 +898,7 @@ func TestContextManagerRefreshIgnoresErrors(t *testing.T) {
 }
 
 func TestContextManagerErrorHandling(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	// Test that contextManager requires certain methods
 	script := `
@@ -917,7 +947,7 @@ func TestContextManagerErrorHandling(t *testing.T) {
 }
 
 func TestContextManagerAddFromDiffBasic(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -982,7 +1012,7 @@ func TestContextManagerAddFromDiffBasic(t *testing.T) {
 }
 
 func TestContextManagerAddFromDiffWithSpec(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1040,7 +1070,7 @@ func TestContextManagerAddFromDiffWithSpec(t *testing.T) {
 }
 
 func TestContextManagerAddFromDiffNoChanges(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1091,7 +1121,7 @@ func TestContextManagerAddFromDiffNoChanges(t *testing.T) {
 }
 
 func TestContextManagerAddFromDiffError(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1142,7 +1172,7 @@ func TestContextManagerAddFromDiffError(t *testing.T) {
 }
 
 func TestContextManagerExecBasic(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1204,7 +1234,7 @@ func TestContextManagerExecBasic(t *testing.T) {
 }
 
 func TestContextManagerExecNoArgs(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1251,7 +1281,7 @@ func TestContextManagerExecNoArgs(t *testing.T) {
 }
 
 func TestContextManagerExecEditLazyExec(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1332,7 +1362,7 @@ func TestContextManagerExecEditLazyExec(t *testing.T) {
 }
 
 func TestContextManagerAddFromDiffPartialFailure(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1409,7 +1439,7 @@ func TestContextManagerAddFromDiffPartialFailure(t *testing.T) {
 
 func TestContextManagerAddArgCompletersIncludeGitref(t *testing.T) {
 	t.Parallel()
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1459,7 +1489,7 @@ func TestContextManagerAddArgCompletersIncludeGitref(t *testing.T) {
 }
 
 func TestContextManagerPostCopyHint(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1479,13 +1509,15 @@ func TestContextManagerPostCopyHint(t *testing.T) {
 
 		ctxmgr.commands.copy.handler();
 
-		globalThis.__clipboardContent = clipboardContent;
-		globalThis.__outputCalls = outputCalls;
+		// Wait for copy to complete and signal done
+		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+			globalThis.__clipboardContent = clipboardContent;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	if got := runtime.Get("__clipboardContent").String(); got != "test prompt" {
 		t.Errorf("expected clipboard content 'test prompt', got %q", got)
@@ -1512,7 +1544,7 @@ func TestContextManagerPostCopyHint(t *testing.T) {
 }
 
 func TestContextManagerPostCopyHintNotShownWhenEmpty(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1530,12 +1562,15 @@ func TestContextManagerPostCopyHintNotShownWhenEmpty(t *testing.T) {
 		});
 
 		ctxmgr.commands.copy.handler();
-		globalThis.__outputCalls = outputCalls;
+
+		// Wait for copy to complete and signal done
+		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	outputCalls := runtime.Get("__outputCalls").Export()
 	outputs, ok := outputCalls.([]any)
@@ -1552,7 +1587,7 @@ func TestContextManagerPostCopyHintNotShownWhenEmpty(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetBasic(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1621,7 +1656,7 @@ func TestContextManagerHotSnippetBasic(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetWarning(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1676,7 +1711,7 @@ func TestContextManagerHotSnippetWarning(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetWarningDisabled(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1730,7 +1765,7 @@ func TestContextManagerHotSnippetWarningDisabled(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetsList(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1801,7 +1836,7 @@ func TestContextManagerHotSnippetsList(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetsEmpty(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1846,7 +1881,7 @@ func TestContextManagerHotSnippetsEmpty(t *testing.T) {
 }
 
 func TestContextManagerListCommand(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1894,7 +1929,7 @@ func TestContextManagerListCommand(t *testing.T) {
 }
 
 func TestContextManagerListEmpty(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1925,7 +1960,7 @@ func TestContextManagerListEmpty(t *testing.T) {
 }
 
 func TestContextManagerEditEdgeCases(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2021,7 +2056,7 @@ func TestContextManagerEditEdgeCases(t *testing.T) {
 }
 
 func TestContextManagerEditExecEmptyCommand(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2060,7 +2095,7 @@ func TestContextManagerEditExecEmptyCommand(t *testing.T) {
 }
 
 func TestContextManagerRemoveEdgeCases(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2128,7 +2163,7 @@ func TestContextManagerRemoveEdgeCases(t *testing.T) {
 }
 
 func TestContextManagerRemoveMultipleIds(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2167,7 +2202,7 @@ func TestContextManagerRemoveMultipleIds(t *testing.T) {
 }
 
 func TestContextManagerRemoveInvalidDuplicateAndMissingIds(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2215,7 +2250,7 @@ func TestContextManagerRemoveInvalidDuplicateAndMissingIds(t *testing.T) {
 }
 
 func TestContextManagerRemoveMixedFileAndNonFileIds(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2263,7 +2298,7 @@ func TestContextManagerRemoveMixedFileAndNonFileIds(t *testing.T) {
 }
 
 func TestContextManagerRemoveMissingFileAndBackendErrorsArePerItem(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2341,7 +2376,7 @@ func TestContextManagerRemoveMissingFileAndBackendErrorsArePerItem(t *testing.T)
 }
 
 func TestContextManagerRemoveThrowPath(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2395,7 +2430,7 @@ func TestContextManagerRemoveThrowPath(t *testing.T) {
 }
 
 func TestContextManagerRemoveThrowGenericError(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2435,7 +2470,7 @@ func TestContextManagerRemoveThrowGenericError(t *testing.T) {
 }
 
 func TestContextManagerCopyClipboardError(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2451,12 +2486,15 @@ func TestContextManagerCopyClipboardError(t *testing.T) {
 		});
 
 		ctxmgr.commands.copy.handler();
-		globalThis.__outputCalls = outputCalls;
+
+		// Wait for copy to complete and signal done
+		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	outputs := runtime.Get("__outputCalls").Export().([]any)
 	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Clipboard error") {
@@ -2465,7 +2503,7 @@ func TestContextManagerCopyClipboardError(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetClipboardError(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2497,7 +2535,7 @@ func TestContextManagerHotSnippetClipboardError(t *testing.T) {
 }
 
 func TestContextManagerAddNoArgsEditor(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2541,7 +2579,7 @@ func TestContextManagerAddNoArgsEditor(t *testing.T) {
 }
 
 func TestContextManagerAddErrorInRegularPath(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2579,7 +2617,7 @@ func TestContextManagerAddErrorInRegularPath(t *testing.T) {
 }
 
 func TestContextManagerRefreshWithoutContextGlobal(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2601,13 +2639,16 @@ func TestContextManagerRefreshWithoutContextGlobal(t *testing.T) {
 		items.push({id: 1, type: 'file', label: 'test.txt', payload: ''});
 
 		ctxmgr.commands.copy.handler();
-		globalThis.__clipboardContent = clipboardContent;
-		globalThis.__outputCalls = outputCalls;
+
+		// Wait for copy to complete and signal done
+		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+			globalThis.__clipboardContent = clipboardContent;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	if got := runtime.Get("__clipboardContent").String(); got != "prompt without context" {
 		t.Errorf("expected clipboard content, got %q", got)
@@ -2619,7 +2660,7 @@ func TestContextManagerRefreshWithoutContextGlobal(t *testing.T) {
 }
 
 func TestContextManagerNoteViaEditor(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2654,7 +2695,7 @@ func TestContextManagerNoteViaEditor(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetAutoDetectFromGlobal(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2710,7 +2751,7 @@ func TestContextManagerHotSnippetAutoDetectFromGlobal(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetExplicitOverridesGlobal(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2756,7 +2797,7 @@ func TestContextManagerHotSnippetExplicitOverridesGlobal(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetNoGlobalNoOptions(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2808,7 +2849,7 @@ func TestContextManagerHotSnippetNoGlobalNoOptions(t *testing.T) {
 }
 
 func TestContextManagerRemoveNonFileItem(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2845,7 +2886,7 @@ func TestContextManagerRemoveNonFileItem(t *testing.T) {
 }
 
 func TestContextManagerRemoveInvalidIDs(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2889,7 +2930,7 @@ func TestContextManagerRemoveInvalidIDs(t *testing.T) {
 }
 
 func TestContextManagerRemoveMultipleIdsOrder(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2933,7 +2974,7 @@ func TestContextManagerRemoveMultipleIdsOrder(t *testing.T) {
 }
 
 func TestContextManagerEditRejectsNonDecimalID(t *testing.T) {
-	runtime := setupContextManager(t)
+	runtime, _ := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;

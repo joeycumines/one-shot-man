@@ -644,7 +644,7 @@
     // handleConfigState validates configuration and prepares baseline verify
     // config. T090: Actual baseline verification is deferred to the async
     // pipeline so the TUI event loop is never blocked.
-    function handleConfigState(config) {
+    async function handleConfigState(config) {
         var runtime = prSplit.runtime;
         var gitExec = prSplit._gitExec;
         var resolveDir = prSplit._resolveDir;
@@ -661,7 +661,7 @@
         }
 
         // Detect source branch (current branch).
-        var branchResult = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+        var branchResult = await gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
         if (branchResult.code !== 0) {
             // T43: Distinguish empty repo from other failures.
             var stderrMsg = (branchResult.stderr || '').trim();
@@ -673,7 +673,7 @@
                 errors.push('Cannot determine current branch: ' + stderrMsg);
             }
             // T43: Try to list available branches as fallback.
-            var branchListResult = gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
+            var branchListResult = await gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
             if (branchListResult.code === 0 && branchListResult.stdout.trim()) {
                 availableBranches = branchListResult.stdout.trim().split('\n');
             }
@@ -683,7 +683,7 @@
             if (sourceBranch === 'HEAD') {
                 errors.push('Detached HEAD state detected. Please checkout a branch before splitting (git checkout <branch>).');
                 // T43: List available branches for reference.
-                var detachedBranchList = gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
+                var detachedBranchList = await gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
                 if (detachedBranchList.code === 0 && detachedBranchList.stdout.trim()) {
                     availableBranches = detachedBranchList.stdout.trim().split('\n');
                 }
@@ -694,10 +694,10 @@
 
         // T43: Validate target (base) branch exists.
         if (runtime.baseBranch) {
-            var targetCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + runtime.baseBranch]);
+            var targetCheck = await gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + runtime.baseBranch]);
             if (targetCheck.code !== 0) {
                 // Also check for remote tracking branch.
-                var remoteCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/remotes/origin/' + runtime.baseBranch]);
+                var remoteCheck = await gitExec(dir, ['rev-parse', '--verify', 'refs/remotes/origin/' + runtime.baseBranch]);
                 if (remoteCheck.code !== 0) {
                     errors.push('Target branch "' + runtime.baseBranch + '" does not exist locally or as origin remote');
                 }

@@ -218,7 +218,7 @@ func TestVerifySplit_TUIOutput(t *testing.T) {
 	// Call verifySplit with an outputFn that captures lines.
 	val, err := evalJS(`(function() {
 		var captured = [];
-		var result = verifySplit('split/test', {
+		var result = await verifySplit('split/test', {
 			dir: '` + escapedDir + `',
 			verifyCommand: 'echo "line1" && echo "line2" && echo "line3"',
 			outputFn: function(line) { captured.push(line); }
@@ -371,7 +371,7 @@ func TestExecuteSplit_ProgressFeedback(t *testing.T) {
 				{ name: 'split/batch-2', files: [` + strings.Join(split2Files, ",") + `], message: 'batch 2' }
 			]
 		};
-		var result = executeSplit(plan, {
+		var result = await executeSplit(plan, {
 			progressFn: function(msg) { messages.push(msg); }
 		});
 		return JSON.stringify({ error: result.error, messages: messages });
@@ -499,7 +499,7 @@ func TestResolveConflicts_RestoresBranchOnError(t *testing.T) {
 			perBranchRetryBudget: 1
 		});
 		// Check which branch we're on now.
-		var currentBranch = gitExec('` + escapedDir + `', ['rev-parse', '--abbrev-ref', 'HEAD']);
+		var currentBranch = await gitExec('` + escapedDir + `', ['rev-parse', '--abbrev-ref', 'HEAD']);
 		return JSON.stringify({
 			errors: result.errors,
 			currentBranch: currentBranch.stdout.trim()
@@ -603,7 +603,7 @@ func TestResolveConflicts_CancellationDuringStrategyLoop(t *testing.T) {
 		});
 		isCancelled = origIsCancelled;
 		// Check which branch we're on.
-		var currentBranch = gitExec('` + escapedDir + `', ['rev-parse', '--abbrev-ref', 'HEAD']);
+		var currentBranch = await gitExec('` + escapedDir + `', ['rev-parse', '--abbrev-ref', 'HEAD']);
 		return JSON.stringify({
 			cancelledByUser: result.cancelledByUser || false,
 			totalRetries: result.totalRetries,
@@ -723,10 +723,10 @@ func TestExecuteSplit_CancellationMidFile(t *testing.T) {
 				{ name: 'split/big', files: [` + strings.Join(fileNames, ",") + `], message: 'big branch' }
 			]
 		};
-		var result = executeSplit(plan, {});
+		var result = await executeSplit(plan, {});
 		isCancelled = origIsCancelled;
 		// Check which branch we're on.
-		var currentBranch = gitExec('` + escapedDir + `', ['rev-parse', '--abbrev-ref', 'HEAD']);
+		var currentBranch = await gitExec('` + escapedDir + `', ['rev-parse', '--abbrev-ref', 'HEAD']);
 		return JSON.stringify({
 			error: result.error,
 			currentBranch: currentBranch.stdout.trim()
@@ -955,7 +955,7 @@ func TestVerifySplits_CancellationMidIteration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 		dir: '/tmp/test',
 		sourceBranch: 'feature',
 		verifyCommand: 'make test',

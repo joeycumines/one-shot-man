@@ -139,24 +139,24 @@ function buildCommands(state) {
         state.set(stateKeys.autoGenerateOnCopy, v);
     }
 
-    function buildContextTxtar() {
-        return buildContext(state.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
+    async function buildContextTxtar() {
+        return await buildContext(state.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
     }
 
-    function buildMetaPrompt() {
-        const fullContext = buildContextTxtar();
+    async function buildMetaPrompt() {
+        const fullContext = await buildContextTxtar();
         return template.execute(getTemplate(), {
             goal: getGoal(),
             contextTxtar: fullContext
         });
     }
 
-    function assembleFinal() {
+    async function assembleFinal() {
         const parts = [];
         const p = getTaskPrompt();
         if (p) parts.push(p.trim());
         parts.push("\n---\n## IMPLEMENTATIONS/CONTEXT\n---\n");
-        parts.push(buildContextTxtar());
+        parts.push(await buildContextTxtar());
         const f = getFooter();
         if (f) {
             parts.push("\n---\n");
@@ -170,13 +170,13 @@ function buildCommands(state) {
         getItems: () => state.get(shared.contextItems) || [],
         setItems: (v) => state.set(shared.contextItems, v),
         nextIntegerId: nextIntegerId,
-        buildPrompt: function () {
+        buildPrompt: async function () {
             // Phase-dependent prompt building
             if (getPhase() === 'TASK_PROMPT_SET') {
-                return assembleFinal();
+                return await assembleFinal();
             } else if (!getGoal().trim()) {
                 // One-step mode: no goal set, return raw context
-                return buildContextTxtar();
+                return await buildContextTxtar();
             } else {
                 return getMetaPrompt();
             }
@@ -267,13 +267,13 @@ function buildCommands(state) {
         generate: {
             description: "Generate the meta-prompt (phase: CONTEXT_BUILDING -> META_GENERATED)",
             usage: "generate",
-            handler: function () {
+            handler: async function () {
                 if (!getGoal().trim()) {
                     output.print("Error: Please set a goal first using the 'goal' command.");
                     return;
                 }
                 setPhase("CONTEXT_BUILDING");
-                const metaPrompt = buildMetaPrompt();
+                const metaPrompt = await buildMetaPrompt();
                 setMetaPrompt(metaPrompt);
                 setTaskPrompt("");
                 setPhase("META_GENERATED");
@@ -420,13 +420,15 @@ function buildCommands(state) {
                     output.print(getTaskPrompt());
                     return;
                 }
-                baseCommands.show.handler([]);
+                return Promise.resolve(ctxmgr.buildPrompt()).then(function(text) {
+                    output.print(text);
+                });
             }
         },
         copy: {
             description: "Copy meta, task prompt, or final output to clipboard",
             usage: "copy [meta|prompt]",
-            handler: function (args) {
+            handler: async function (args) {
                 const target = args[0] || "";
                 let text;
                 let label;
@@ -440,7 +442,7 @@ function buildCommands(state) {
                         (target !== 'prompt' && getPhase() !== 'TASK_PROMPT_SET'));
                     if (wouldCopyMeta && getGoal().trim() && !getMetaPrompt().trim()) {
                         setPhase("CONTEXT_BUILDING");
-                        const metaPrompt = buildMetaPrompt();
+                        const metaPrompt = await buildMetaPrompt();
                         setMetaPrompt(metaPrompt);
                         setTaskPrompt("");
                         setPhase("META_GENERATED");
@@ -458,11 +460,11 @@ function buildCommands(state) {
                 } else {
                     // Default behavior
                     if (getPhase() === 'TASK_PROMPT_SET') {
-                        text = assembleFinal();
+                        text = await assembleFinal();
                         label = "Final output";
                     } else if (!getGoal().trim()) {
                         // One-step mode: no goal set, copy raw context
-                        text = buildContextTxtar();
+                        text = await buildContextTxtar();
                         label = "Context";
                     } else {
                         text = getMetaPrompt();

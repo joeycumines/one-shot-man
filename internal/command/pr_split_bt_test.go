@@ -108,7 +108,7 @@ func TestGetSplitDiff_InvalidIndex(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff({ splits: [{ name: 'a', files: ['f.go'] }] }, 5))`)
+	val, err := evalJS(`JSON.stringify(await prSplit.getSplitDiff({ splits: [{ name: 'a', files: ['f.go'] }] }, 5))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestGetSplitDiff_EmptyFiles(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff({ splits: [{ name: 'a', files: [] }] }, 0))`)
+	val, err := evalJS(`JSON.stringify(await prSplit.getSplitDiff({ splits: [{ name: 'a', files: [] }] }, 0))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestGetSplitDiff_NullPlan(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff(null, 0))`)
+	val, err := evalJS(`JSON.stringify(await prSplit.getSplitDiff(null, 0))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestGetSplitDiff_NegativeIndex(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff({ splits: [{ name: 'a', files: ['f.go'] }] }, -1))`)
+	val, err := evalJS(`JSON.stringify(await prSplit.getSplitDiff({ splits: [{ name: 'a', files: ['f.go'] }] }, -1))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestGetSplitDiff_SuccessWithDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff({
+	val, err := evalJS(`JSON.stringify(await prSplit.getSplitDiff({
 		baseBranch: 'main',
 		splits: [{name: 'split/01', files: ['f.go']}]
 	}, 0))`)
@@ -268,7 +268,7 @@ func TestGetSplitDiff_FallbackOnThreeDotFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff({
+	val, err := evalJS(`JSON.stringify(await prSplit.getSplitDiff({
 		baseBranch: 'main',
 		splits: [{name: 'split/01', files: ['f.go']}]
 	}, 0))`)
@@ -317,7 +317,7 @@ func TestGetSplitDiff_BothDiffsFail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff({
+	val, err := evalJS(`JSON.stringify(await prSplit.getSplitDiff({
 		baseBranch: 'main',
 		splits: [{name: 'split/01', files: ['f.go']}]
 	}, 0))`)

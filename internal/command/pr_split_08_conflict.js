@@ -12,7 +12,7 @@
 
     // fileExistsSync checks file existence using osmod (preferred) or the
     // platform shell as fallback. Avoids hardcoded 'test -f' on Windows.
-    function fileExistsSync(path) {
+    async function fileExistsSync(path) {
         var osmod = prSplit._modules.osmod;
         if (osmod && typeof osmod.fileExists === 'function') {
             return osmod.fileExists(path);
@@ -20,9 +20,9 @@
         var exec = prSplit._modules.exec;
         var isWindows = prSplit._isWindows;
         if (isWindows && isWindows()) {
-            return exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)']).code === 0;
+            return (await exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)'])).code === 0;
         }
-        return exec.execv(['test', '-f', path]).code === 0;
+        return (await exec.execv(['test', '-f', path])).code === 0;
     }
 
     // AUTO_FIX_STRATEGIES: sequential repair strategies to try when a split
@@ -30,9 +30,9 @@
     var AUTO_FIX_STRATEGIES = [
         {
             name: 'go-mod-tidy',
-            detect: function(dir) {
+            detect: async function(dir) {
                 var path = (dir !== '.' ? dir + '/' : '') + 'go.mod';
-                return fileExistsSync(path);
+                return await fileExistsSync(path);
             },
             fix: async function(dir) {
                 var shellExecAsync = prSplit._shellExecAsync;
@@ -61,9 +61,9 @@
         },
         {
             name: 'go-generate-sum',
-            detect: function(dir) {
+            detect: async function(dir) {
                 var path = (dir !== '.' ? dir + '/' : '') + 'go.sum';
-                return fileExistsSync(path);
+                return await fileExistsSync(path);
             },
             fix: async function(dir) {
                 var shellExecAsync = prSplit._shellExecAsync;
@@ -135,9 +135,9 @@
         },
         {
             name: 'npm-install',
-            detect: function(dir) {
+            detect: async function(dir) {
                 var path = (dir !== '.' ? dir + '/' : '') + 'package.json';
-                return fileExistsSync(path);
+                return await fileExistsSync(path);
             },
             fix: async function(dir) {
                 var shellExecAsync = prSplit._shellExecAsync;
@@ -164,17 +164,17 @@
         },
         {
             name: 'make-generate',
-            detect: function(dir) {
+            detect: async function(dir) {
                 var osmod = prSplit._modules.osmod;
                 var shellQuote = prSplit._shellQuote;
                 var makPath = (dir !== '.' ? dir + '/' : '') + 'Makefile';
-                var hasMakefile = fileExistsSync(makPath);
+                var hasMakefile = await fileExistsSync(makPath);
                 if (hasMakefile) {
                     // Check if the Makefile has a 'generate:' target.
                     // Prefer osmod.readFile to avoid shell-dependent grep.
                     if (osmod && typeof osmod.readFile === 'function') {
                         try {
-                            var readResult = osmod.readFile(makPath);
+                            var readResult = await osmod.readFile(makPath);
                             if (!readResult.error) {
                                 var fileContent = readResult.content;
                                 if (fileContent.indexOf('\ngenerate:') >= 0 || fileContent.indexOf('generate:') === 0) {
@@ -192,7 +192,7 @@
                             var grepCmd = (isWindows && isWindows())
                                 ? cdFallback + shellQuote(dir) + ' && findstr /b "generate:" Makefile'
                                 : cdFallback + shellQuote(dir) + ' && grep -q "^generate:" Makefile';
-                            var grep = shellSpawnSync(grepCmd);
+                            var grep = await shellSpawnSync(grepCmd);
                             if (grep.code === 0) return true;
                         }
                     }
@@ -206,7 +206,7 @@
                         for (var i = 0; i < entries.length; i++) {
                             if (entries[i].match && entries[i].match(/\.go$/)) {
                                 var goPath = (dir !== '.' ? dir + '/' : '') + entries[i];
-                                var goReadResult = osmod.readFile(goPath);
+                                var goReadResult = await osmod.readFile(goPath);
                                 if (!goReadResult.error && goReadResult.content.indexOf('//go:generate') >= 0) {
                                     return true;
                                 }
@@ -227,7 +227,7 @@
                     var shellArgs = (isWindows2 && isWindows2())
                         ? ['cmd.exe', '/C', 'cd /d ' + shellQuote(dir) + ' && ' + scanCmd]
                         : ['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + scanCmd];
-                    var goGen = execMod.execv(shellArgs);
+                    var goGen = await execMod.execv(shellArgs);
                     return goGen.code === 0 && (goGen.stdout || '').trim() !== '';
                 }
                 return false;
@@ -246,7 +246,7 @@
                 var makPath = (dir !== '.' ? dir + '/' : '') + 'Makefile';
                 if (osmod && typeof osmod.readFile === 'function') {
                     try {
-                        var readResult2 = osmod.readFile(makPath);
+                        var readResult2 = await osmod.readFile(makPath);
                         if (!readResult2.error) {
                             hasMakeTarget = readResult2.content.indexOf('\ngenerate:') >= 0 || readResult2.content.indexOf('generate:') === 0;
                         }
@@ -318,9 +318,9 @@
         {
             name: 'agent-fix',
             // Late-bound: agentExecutor set by pipeline chunk (10)
-            detect: function() {
+            detect: async function() {
                 var agentExecutor = prSplit._agentExecutor;
-                return !!(agentExecutor && agentExecutor.handle && agentExecutor.isAvailable());
+                return !!(agentExecutor && agentExecutor.handle && await agentExecutor.isAvailable());
             },
             // Async: sendToHandle uses setTimeout delay for PTY write separation
             fix: async function(dir, failedBranch, plan, verifyOutput, options) {
@@ -514,7 +514,7 @@
                         break;
                     }
                     var strategy = strategies[s];
-                    if (!strategy.detect(worktreeDir, verifyOutput)) {
+                    if (!(await strategy.detect(worktreeDir, verifyOutput))) {
                         continue;
                     }
 

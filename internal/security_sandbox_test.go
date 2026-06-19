@@ -13,9 +13,11 @@ package internal_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
@@ -269,7 +271,7 @@ func TestSandbox_ExecModuleAPIBoundary(t *testing.T) {
 	engine, _, _ := newSandboxTestEngine(t)
 	script := engine.LoadScriptFromString("exec-boundary", `
 		var execmod = require('osm:exec');
-		var expected = ['exec', 'execv', 'spawn', 'execStream'];
+		var expected = ['execv', 'spawn'];
 		for (var i = 0; i < expected.length; i++) {
 			if (typeof execmod[expected[i]] !== 'function') {
 				throw new Error('Missing expected export: ' + expected[i]);
@@ -370,35 +372,57 @@ func TestSandbox_GlobalScopeIsMinimal(t *testing.T) {
 func TestSandbox_ReturnedObjectsDontExposeGoMethods(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("go-methods", `
-		var execmod = require('osm:exec');
-		var result = execmod.exec('echo', 'test');
-		var resultKeys = Object.keys(result).sort();
-		var expectedKeys = ['code', 'error', 'message', 'stderr', 'stdout'];
-		if (JSON.stringify(resultKeys) !== JSON.stringify(expectedKeys)) {
-			throw new Error('Unexpected exec result keys: ' + JSON.stringify(resultKeys));
-		}
-		var proto = Object.getPrototypeOf(result);
-		if (proto !== Object.prototype) {
-			var protoKeys = Object.getOwnPropertyNames(proto);
-			var goMethods = ['Close', 'Sync', 'Read', 'Write', 'Seek',
-				'Lock', 'Unlock', 'String', 'Error', 'GoString'];
-			for (var i = 0; i < goMethods.length; i++) {
-				if (protoKeys.indexOf(goMethods[i]) !== -1) {
-					throw new Error('SANDBOX_BREACH: Go method "' + goMethods[i] + '" on result');
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			var execmod = require('osm:exec');
+			execmod.execv(['echo', 'test']).then(function(result) {
+				var resultKeys = Object.keys(result).sort();
+				var expectedKeys = ['code', 'error', 'message', 'stderr', 'stdout'];
+				if (JSON.stringify(resultKeys) !== JSON.stringify(expectedKeys)) {
+					__testErr('Unexpected exec result keys: ' + JSON.stringify(resultKeys));
+					return;
 				}
-			}
+				var proto = Object.getPrototypeOf(result);
+				if (proto !== Object.prototype) {
+					var protoKeys = Object.getOwnPropertyNames(proto);
+					var goMethods = ['Close', 'Sync', 'Read', 'Write', 'Seek',
+						'Lock', 'Unlock', 'String', 'Error', 'GoString'];
+					for (var i = 0; i < goMethods.length; i++) {
+						if (protoKeys.indexOf(goMethods[i]) !== -1) {
+							__testErr('SANDBOX_BREACH: Go method "' + goMethods[i] + '" on result');
+							return;
+						}
+					}
+				}
+				var osmod = require('osm:os');
+				osmod.readFile('/nonexistent/path').then(function(fileResult) {
+					var fileKeys = Object.keys(fileResult).sort();
+					var expectedFileKeys = ['content', 'error', 'message'];
+					if (JSON.stringify(fileKeys) !== JSON.stringify(expectedFileKeys)) {
+						__testErr('Unexpected readFile result keys: ' + JSON.stringify(fileKeys));
+						return;
+					}
+					__testOK();
+				}).catch(function(e) { __testErr(e.message); });
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-		var osmod = require('osm:os');
-		var fileResult = osmod.readFile('/nonexistent/path');
-		var fileKeys = Object.keys(fileResult).sort();
-		var expectedFileKeys = ['content', 'error', 'message'];
-		if (JSON.stringify(fileKeys) !== JSON.stringify(expectedFileKeys)) {
-			throw new Error('Unexpected readFile result keys: ' + JSON.stringify(fileKeys));
-		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("Go methods exposure test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("Go methods exposure test failed: %v", testErr)
 	}
 }
 
@@ -408,7 +432,7 @@ func TestSandbox_RequireOnlyLoadsRegisteredModules(t *testing.T) {
 	script := engine.LoadScriptFromString("require-osm", `
 		var modules = [
 			'osm:exec', 'osm:os', 'osm:fetch', 'osm:flag',
-			'osm:time', 'osm:argv', 'osm:ctxutil',
+			'osm:argv', 'osm:ctxutil',
 			'osm:text/template', 'osm:unicodetext',
 			'osm:bubbletea', 'osm:bubblezone',
 			'osm:bubbles/textarea', 'osm:bubbles/viewport',
@@ -488,16 +512,38 @@ func TestSandbox_ExecUsesCommandContextNotShell(t *testing.T) {
 	platform := testutil.DetectPlatform(t)
 	testutil.SkipIfWindows(t, platform, "echo is a shell builtin on Windows, not a standalone executable")
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("exec-no-shell", `
-		var execmod = require('osm:exec');
-		var result = execmod.exec('echo', '$(id)', '&&', 'rm', '-rf', '/');
-		if (result.error) throw new Error('exec failed: ' + result.message);
-		if (result.stdout.indexOf('$(id)') === -1) {
-			throw new Error('Shell expansion occurred — exec should not use shell');
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			var execmod = require('osm:exec');
+			execmod.execv(['echo', '$(id)', '&&', 'rm', '-rf', '/']).then(function(result) {
+				if (result.error) {
+					__testErr('exec failed: ' + result.message);
+					return;
+				}
+				if (result.stdout.indexOf('$(id)') === -1) {
+					__testErr('Shell expansion occurred — exec should not use shell');
+					return;
+				}
+				__testOK();
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("Exec no-shell test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("Exec no-shell test failed: %v", testErr)
 	}
 }
 

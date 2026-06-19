@@ -367,7 +367,7 @@
             log.printf('auto-split: MCP callback initialized at %s (%s)', mcpCallbackObj.address, mcpCallbackObj.transport);
             log.printf('auto-split: MCP config path: %s', mcpCallbackObj.mcpConfigPath);
             try {
-                var readResult = osmod.readFile(mcpCallbackObj.mcpConfigPath);
+                var readResult = await osmod.readFile(mcpCallbackObj.mcpConfigPath);
                 log.printf('auto-split: MCP config contents: %s', (!readResult.error && readResult.content) ? readResult.content : '(empty)');
             } catch (e) {
                 log.printf('auto-split: could not read MCP config: %s', e.message || String(e));
@@ -1031,7 +1031,7 @@
         }
 
         // Assess independence.
-        report.independencePairs = assessIndependence(plan, classification.classification || {});
+        report.independencePairs = await assessIndependence(plan, classification.classification || {});
 
         // Summary.
         emitOutput('');

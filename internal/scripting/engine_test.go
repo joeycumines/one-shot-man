@@ -234,8 +234,6 @@ func TestEngine_ComplexScenario(t *testing.T) {
 	})
 
 	script := engine.LoadScriptFromString("complex_test", `
-		const {sleep} = require('osm:time');
-
 		ctx.run("setup", function() {
 			ctx.log("Setting up test environment");
 			ctx.defer(function() {
@@ -249,8 +247,6 @@ func TestEngine_ComplexScenario(t *testing.T) {
 
 			ctx.run("sub_operation", function() {
 				ctx.log("Performing sub-operation");
-				// Simulate some work
-				sleep(10);
 				ctx.log("Sub-operation completed");
 			});
 		});

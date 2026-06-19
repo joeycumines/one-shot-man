@@ -21,238 +21,167 @@
       "warning": "JAVASCRIPT SCRIPTS: All app-specific functionality MUST be modeled as JavaScript scripts using the osm runtime."
     },
     {
-      "warning": "PTY TESTS: All PTY tests use termtest.NewConsole and must respect unix build tag. Slow tests must use testing.Short() skip guards."
-    },
-    {
       "warning": "RULE OF TWO: Every commit must pass two contiguous issue-free subagent reviews before being committed."
     },
     {
-      "warning": "ADVERSARIAL AUTOPSY SOURCE: ./scratch/impl-gaps-pull-out-hackery-proper-ecosystem/ contains the full adversarial analysis with file paths and line numbers."
-    },
-    {
-      "warning": "WAVE 4 AUTOPSY SOURCE: ./scratch/termmux-functional-autopsy-20260615/ and ./scratch/builtin-termmux-autopsy-20260615/ contain the adversarial audits that generated tasks 69-98."
-    },
-    {
-      "warning": "DEPENDENCY ORDER IS MANDATORY: Tasks are sequenced so that later tasks depend on earlier ones. Do not reorder without updating this blueprint and logging the deviation."
-    },
-    {
-      "warning": "DECSC/DECRC SPEC NOTE: Per xterm specification, CursorVisible and MouseTracking/MouseSGR are NOT part of the DECSC/DECRC save/restore set. These modes are intentionally excluded."
+      "warning": "NO GIT CLI: The gitops Go package MUST be used for all git operations. Do NOT introduce exec.Command('git', ...) calls. The ONLY exception is gitops.PullRebase which shells out for rebase (go-git limitation)."
     },
     {
       "warning": "GO AS REUSABLE MODULES: Go code must be exposed as reusable, modular implementations accessible via osm script. Never hardcode application-specific logic."
     },
     {
-      "warning": "JS FOR APP-SPECIFIC LOGIC: All application-specific functionality MUST be modeled as JavaScript. Don't do anything in Go that someone else couldn't do using OSM."
+      "warning": "INTERNAL API DISCIPLINE: No shims, no variant accumulation. One implementation, update all call sites."
     },
     {
-      "warning": "THIN SHIM PRINCIPLE: JS scripts should be thin configuration shims that wire up Go utilities -- like socat wiring up core utilities, not like a monolithic application."
+      "warning": "JS BINDING CONTRACT: No binding may block the event loop. All I/O must return Promises via adapter.Loop().Promisify(). context.Background() is forbidden inside bindings — use the ctx from Require."
+    },
+    {
+      "warning": "NO SHIMS: When migrating a legacy binding to async, REMOVE the old synchronous version entirely. Do NOT keep both. Update ALL call sites."
     }
   ],
   "mandatoryDirectives": {
-    "contextManagement": "Tasks are grouped to be manageable units. Do not attempt to solve all tasks in a single turn. Break work into sessions as appropriate to prevent context window exhaustion.",
+    "contextManagement": "Tasks are grouped to be manageable units. Do not attempt to solve all tasks in a single turn.",
     "verificationBeforeProceeding": "After every code change, run the full test suite with `go test -short -count=1 -timeout=5m ./...` before marking the task done.",
     "ruleOfTwo": "Before committing any task's code, invoke strict-review-gate with two independent subagents. Only proceed if both reviews pass contiguously."
   },
   "statusSection": {
-    "currentState": "Tasks 1-96 DONE. Task 97 (Final Wave 4 validation and Rule of Two review) is IN PROGRESS after cross-platform short-test stabilization: recovered deleted fixture, fixed event bridge races/termpane/splitlayout deadlocks, and resolved Windows/Linux compile/test issues. Short-test validation passes on macOS, Linux container, and Windows. Full (non-short) validation and Rule of Two remain.",
-    "goalState": "A production-quality termmux terminal multiplexer that: (1) correctly emulates VT220/xterm with full protocol compliance and zero doc.go contradictions, (2) has complete copy mode with vi navigation and search, (3) has window management, prefix key system, and synchronized panes, (4) has monitoring (bell, activity, silence) and remain-on-exit, (5) has main-horizontal/main-vertical layouts, (6) has configurable status bar with left/right sections, (7) has full mouse support (click-to-focus, drag-to-resize, scroll-in-copy-mode), (8) has no empty stub methods or AI slop in public interfaces, (9) example-15-bouncing-logo.js is a pure JavaScript implementation using reusable Go primitives (no app-specific Go bindings), (10) is independently verified by two hostile reviewers before every commit, (11) has >=60% test coverage on all termmux packages including JS bindings, (12) has no ID divergence between paneManager and LayoutEngine.",
-      "replanLog": [
-        "2026-06-18: CROSS-PLATFORM BUILD STABILIZATION. Recovered `internal/termmux/vt/testdata/claude_output.txt` from git history. Fixed builtin/termmux Goja runtime races via wrapper caching and deterministic event-loop construction. Fixed termpane and splitlayout deadlocks. Moved Unix-only code behind build tags (`passthrough_signal_unix_test.go`, `bouncelogo_smoke_test.go`, `quoteVHSString`) and corrected `.deadcodeignore` Windows typo for vhs. Fixed Windows CaptureSession.Pause/Resume semantics and snapshot display-message expiry. Short-test validation passes on macOS, Linux container, and Windows. Marked task 97 In Progress; full validation and Rule of Two remain.",
-        "2026-06-15: DEEP ARCHITECTURAL PLANNING PHASE. Three parallel subagent audits completed: (1) termmux feature audit vs tmux, (2) bouncing-logo refactoring analysis, (3) VT engine quality audit. All 64 prior tasks pruned (Done). Blueprint rewritten with expanded scope: 55 new tasks covering VT engine fixes, pane manager cleanup, 7 new Go JS bindings, bouncing-logo rewrite, and tmux-parity features.",
-      "2026-06-15: SCOPE EXPANSION. Added tasks 39-46: newBouncePresenter binding (Done), bouncing-logo rewrite (Done), bouncePresenter tests, pane/chooser/lock JS integration tests, duplicate method cleanup, DECSC/DECRC extended attributes, OSC 52 clipboard, final validation. Bouncing-logo reduced from 225 to 79 lines.",
-      "2026-06-15: WAVE 2 SCOPE EXPANSION. Coverage audit revealed: bounce_presenter.go at 0% (26 functions), builtin/termmux at 29.9%, paneManager/LayoutEngine ID divergence, CaptureSession.Rows/Cols/Passthrough untested, CopyModeKeyHandler.String at 34.8%. Added tasks 48-59 to close coverage gaps, fix ID divergence, and harden JS binding layer.",
-      "2026-06-15: WAVE 2 EXECUTION. Completed tasks 48-58: newBouncePresenter integration tests, jsParse* tests, pane/session/status binding coverage tests, PaneID divergence fix, CaptureSession tests, CopyModeKeyHandler tests, LayoutEngine tests, controlRouter edge case tests, mouse_forward SGR/hit-testing tests, newBoundedSession integration test. Coverage targets exceeded for builtin/termmux. Structural blueprint.json repair merged wave 2 tasks back into sequentialTasks array.",
-      "2026-06-15: WAVE 2 COMPLETE. Ran full validation, race detector, lint. Passed two contiguous Oracle Rule of Two reviews (scratch/rule-of-two-review-1.md and scratch/rule-of-two-review-2.md). Committed changes. Coverage targets exceeded for builtin/termmux.",
-      "2026-06-15: WAVE 2.5 / WAVE 3 PLANNING. Fixed pre-existing race in controllableSession.Close(), removed no-op paneW/paneH reads, raised forwardMouse coverage to 72.1%. Coverage audit identified next gaps: registerEvents/quitCmd, search/wrapInteractiveSession, registerSnapshotMethods/registerPersistenceMethods, persistedStateToJS/prefixActionKindFromName, mouse drag-to-resize. Added tasks 64-68.",
-      "2026-06-15: WAVE 3 PROGRESS. Completed tasks 62-66: active mouse tracking test (forwardMouse 72.1%), registerEvents/quitCmd coverage, search/wrapInteractiveSession/controlRouter coverage, registerSnapshotMethods (97.6%), registerPersistenceMethods (73.0%), persistedStateToJS (100%), prefixActionKindFromName (100%). Fixed flaky TestChooser_Navigation by sorting SessionManager.NewChooser items by SessionID. Tasks 67-68 remain.",
-      "2026-06-15: WAVE 3 COMPLETE. Implemented mouse drag-to-resize pane borders with LayoutEngine.PaneAt, DividerAt, weight-proportional vertical/horizontal layout, and paneManager.FocusAt/ResizePaneAt. Routed FocusAt/ResizePaneAt through the SessionManager worker queue so active session updates and child PTY/VTerm resizes happen correctly; exported them as JS focusPaneAt/resizePaneAt bindings. Fixed DividerAt content-area bounds and restricted divider reporting to supported layouts. Added manager coverage tests for Screen, window operations, and FocusAt/ResizePaneAt side effects, plus core coverage tests for SessionTarget helpers, PrefixAction.String, and pane manager helpers. Strengthened TestBouncePresenter_ForwardMouse_ActiveTracking to assert forwarded SGR bytes. internal/termmux core coverage reached 86.1% (target 85%), internal/builtin/termmux reached 82.1% (target 80%). Full validation, race detector, and lint all pass.",
-      "2026-06-15: WAVE 4 BLUEPRINT EXPANSION. Synthesized three adversarial fan-out audits (termmux functional, VT/PTY deep-dive, builtin/termmux JS bindings) into 30 new sequential tasks (69-98). Tasks cover critical gaps: RespawnSession config preservation, lock-session input gating, window-switch focus routing, choose-tree overlay, status bar colors/position, display-message rendering, prefix dispatch execution, break/join mapping stability, per-window synchronize-panes, copy-mode search wiring, mouse drag state machine, pane swap metadata, pipe-pane command, activeSide passthrough state, Go-side compositor, ready-to-run BubbleTea model, unified SGR encoding, expanded CaptureConfig options, bridge missing events, resize-pane deltas, window ordering, send-keys, pane borders, activity auto-reset, exited-pane marking, copy-mode key dispatch, main-layout JS smoke tests, and final Rule of Two.",
-      "2026-06-15: TASK 70 COMPLETE. Implemented locked-session input gating in `SessionManager.handleInput`, added password-buffer unlock prompt with Backspace/DEL, Enter, Escape handling, wired correct/wrong password feedback via `DisplayMessage`, exposed `Locked` in `ScreenSnapshot`, added `RenderUnlockPrompt`/`UnlockPromptString` overlay rendering invoked from `Passthrough`, and added JS `snapshot().locked`. Added Go tests in `internal/termmux/manager_lock_test.go` and a JS binding gate test in `internal/builtin/termmux/module_session_test.go`. All verification passes.",
-      "2026-06-16: BOUNCE CLEANUP. User clarified that the bouncing-logo example is application-specific and must not have a dedicated Go-side implementation. Deleted internal/builtin/termmux/bounce.go, bounce_test.go, bounce_presenter.go, bounce_presenter_test.go, compositor.go, compositor_test.go, module_bounce_model_test.go, and module_compositor_test.go. Removed newBounceController, newBouncePresenter, and newCompositor exports from internal/builtin/termmux/module.go. Moved shared helpers jsGetString/jsGetInt into internal/builtin/termmux/jsutil.go and controlRouter.handleKey into control_router.go so reusable code stays intact. Rewrote scripts/example-15-bouncing-logo.js in pure JavaScript using osm:termmux, osm:termui/compositor, osm:bubbletea, osm:lipgloss, and osm:flag. Cancelled blueprint tasks 83-87 and added a new completed task for the JS rewrite. Updated WIP.md and docs/termmux-architecture.md to remove references to deleted Go code. Full test suite, race detector, lint, and smoke test pass.",
-      "2026-06-16: TASK 88 REFACTORED. Replaced hand-rolled muxEvents listener list with goja-eventloop EventTarget/Event/CustomEvent. Updated termmuxmod.Require to accept a *gojaeventloop.Adapter, create one EventTarget per wrapped SessionManager, and dispatch SessionManager EventBus events onto the event loop. Added addEventListener/removeEventListener/dispatchEvent methods while preserving legacy on/off/pollEvents aliases and all public constants. Removed dead muxEvents code. Updated call sites in internal/builtin/register.go, internal/command/pr_split.go, and internal/command/pr_split_tui_persistence_truthful_test.go. Rewrote internal/builtin/termmux/module_events_test.go for the new API and updated testhelpers_test.go, module_test.go, module_session_test.go, module_pane_test.go, and module_passthrough_state_test.go. Updated docs/reference/termmux-js-api.md. Validation recorded in scratch/event-bridge-refactor-validation.md. All verification commands pass.",
-      "2026-06-16: TASK 89 COMPLETE. Added resize-pane directional deltas. Implemented LayoutEngine.ResizePaneDelta and parseResizeDirection in internal/termmux/layout.go with MinPaneRows/MinPaneCols constants. Added paneManager.ResizePaneDelta, setGeometry, and per-pane geometry override merging in Panes(). Added SessionManager.ResizePaneDelta, reqResizePaneDelta, resizePaneDeltaPayload, and handleResizePaneDelta in internal/termmux/manager.go, resizing the child PTY/VTerm and emitting EventWindowUpdated. Added JS binding resizePaneDelta(id, direction, delta) in internal/builtin/termmux/module.go. Added Go tests in internal/termmux/manager_resize_delta_test.go and JS tests in internal/builtin/termmux/module_resize_delta_test.go covering right/left/down/up, clamping, invalid direction, invalid pane, and event emission. Updated blueprint.json, WIP.md, and scratch/task89-validation.md."
+    "currentState": "ALL 9 legacy blocking bindings migrated or removed. Zero blocking JS bindings remain. All tests pass (84 packages, 0 failures). Build, lint (vet+staticcheck+deadcode), and race detection all pass. Ready for commit.",
+    "goalState": "ACHIEVED: Zero blocking JS bindings remain. All 9 legacy blocking bindings migrated to async Promise-returning or removed entirely. AGENTS.md JS Binding Contract in place. All JS scripts and tests use async patterns. Event loop is never blocked by any binding.",
+    "goalLog": [
+      "A codebase where NO JS binding blocks the event loop — all I/O returns Promises via adapter.Loop().Promisify()",
+      "All 9 legacy blocking bindings from AGENTS.md are migrated or removed",
+      "AGENTS.md legacy debt list is empty",
+      "All JS scripts and tests updated to use async patterns",
+      "All checks pass on all platforms with race detection"
+    ],
+    "replanLog": [
+      {
+        "trigger": "bt/require.go context.Background() → bridge.ctx change broke TestIntegration_SharedModeTickerShutdown",
+        "affectedTask": "context.Background() fix in bt/require.go",
+        "summary": "Reverted bt/require.go. The context.Background() in waitAndResolve is intentional lifecycle design — the Promise must resolve after bridge shutdown. Using bridge.ctx cancels the goroutine before the Promise can settle. waitAndResolve doesn't use the ctx parameter at all — it waits on ticker.Done()."
+      }
     ]
   },
   "sequentialTasks": [
     {
-      "task": "Fix RespawnSession to preserve the original CaptureConfig and rebind the pane",
-      "description": "`handleRespawnSession` in `internal/termmux/manager.go:2209-2283` creates `NewCaptureSession(CaptureConfig{})`, discarding the original command, args, directory, and environment. Store the original `CaptureConfig` on `managedSession` at registration time. In the respawn handler, create the new `CaptureSession` from that stored config, reattach the pane binding in whichever `paneManager` owns the pane so it references the new `SessionID`, and emit `EventSessionRegistered`/`EventSessionActivated` so front-ends update. Files: internal/termmux/manager.go, internal/builtin/termmux/module.go (respawnSession binding), internal/termmux/pane_manager.go.",
-      "acceptance": "A respawned session runs the same command/args/dir/env as the original. The original pane reports the new `SessionID`. `respawnSession(sid)` JS integration test succeeds. At least 5 tests.",
+      "task": "Rewrite AGENTS.md with JS Binding Contract and Concurrency Model",
+      "description": "Remove all structural info from AGENTS.md (Architecture, Build Commands, Directory listings). Add Concurrency Model section explaining Goja single-threaded event loop. Add JS Binding Contract with 5 rules: non-blocking I/O, context propagation, consistent constructors, no synchronous sleeps, confirm sync appropriate. Add Known blocking bindings legacy debt list (9 entries). Keep existing behavioral rules (Code Quality Standards, Important Conventions).",
+      "acceptance": "AGENTS.md contains zero structural information (no file paths, no directory listings, no build commands). It steers behavior only. The JS Binding Contract is clear and actionable. The legacy debt list enumerates all 9 blocking bindings with their async alternatives.",
       "status": "Done"
     },
     {
-      "task": "Gate locked-session input and render a lock overlay",
-      "description": "`handleInput` in `internal/termmux/manager.go:1787-1815` forwards keystrokes to the child PTY without checking `ms.lock.IsLocked()`. Change it so a locked session consumes all keystrokes for an unlock prompt (alphanumeric/digit accumulates, Backspace deletes, Enter submits). Correct password unlocks the session and resumes normal routing; incorrect password stays locked. Expose the lock state in `Snapshot` and render a lock overlay in `Passthrough` so the screen is not visible. Add JS binding tests for lock/unlock. Files: internal/termmux/manager.go, internal/termmux/passthrough.go, internal/builtin/termmux/module.go.",
-      "acceptance": "No input reaches a locked child PTY. Correct password unlocks; wrong password remains locked. A lock overlay/password prompt is visible while locked. At least 6 tests.",
+      "task": "Migrate gitops JS module to async Promise bindings",
+      "description": "Change gitops.Require to accept (ctx context.Context, adapter *gojaeventloop.Adapter). Convert push(), commit(), addAll(), hasStagedChanges() to return Promises via jsPromise helper using adapter.Loop().Promisify() + adapter.Loop().Submit() + adapter.GojaWrapPromise(). Keep read operations (isRepo, open, openDetect, defaultBranch, branchExists, isWorkTree, headBranchName) synchronous with SYNCHRONOUS: justification comments. Wire in register.go. Add async tests with event-loop-based test helper.",
+      "acceptance": "gitops.push()/commit()/addAll()/hasStagedChanges() return Promises from JS. Read operations remain synchronous. All gitops tests pass with race detection. The jsPromise helper follows the canonical async pattern from exec.go.",
       "status": "Done"
     },
     {
-      "task": "Couple window switching with active pane focus and input routing",
-      "description": "`SessionManager.ActivePaneID`, `FocusNextPane`, `FocusAt`, `ResizePaneAt`, and `Panes` currently operate on `m.paneMgr` regardless of which window is active. Track an active `WindowID` in `SessionManager`; when a window is active, route pane-level operations through that window's `paneManager`. `NextWindow`/`PrevWindow` must update `m.activeID` to a session inside the new window, focus its first pane, and emit `EventSessionActivated`. Update `WindowPanes` and `ActiveWindowID` JS bindings. Files: internal/termmux/manager.go, internal/termmux/window.go, internal/builtin/termmux/module.go.",
-      "acceptance": "After switching windows, `ActivePaneID()` returns a pane inside the new window, keyboard input routes to that pane, and `Panes()` returns the new window's panes. At least 8 tests.",
+      "task": "Fix context.Background() violations across all builtin modules",
+      "description": "Replace context.Background() with threaded ctx in: fetch/fetch.go (Require signature + reqCtx shadowing fix), fetch/readable_stream.go (ctx field on ReadableStream struct), fetch/sse.go (ctx threaded through wrapSSEParserJS), exec/exec.go (baseCtx threaded through wrapChildProcess/wrapReadableStream), bubbletea/bubbletea.go (baseCtx in manager.promisify), aimux/binding_provider.go (full ctx threading chain), mcpmod/mcp.go (ctx added to Require), mcpcallbackmod/mcpcallback.go (ctx added to Require), register.go (wiring for all updated modules). Leave bt/require.go context.Background() as intentional lifecycle design (Promise resolution after bridge shutdown). Leave nil-check fallbacks (ctx = context.Background() when ctx is nil) as defensive programming.",
+      "acceptance": "Zero context.Background() calls remain that violate the JS Binding Contract (inside bindings doing I/O). All remaining context.Background() calls are either nil-check fallbacks or intentional lifecycle design (documented). All modules pass race detection.",
       "status": "Done"
     },
     {
-      "task": "Build a Go-side choose-tree BubbleTea overlay model",
-      "description": "`Chooser` is only a list model plus `Render` string; there is no built-in overlay. Add Go-side BubbleTea model `chooseTreeModel` that wraps a `Chooser`, renders it as a centered popup, handles Up/Down/Enter/Escape, and returns the selected session/window ID. Expose `termmux.chooseTree({manager, onSelect})` returning a model object that can be passed to `tea.run`. Move the chooser binding into its own file `internal/builtin/termmux/chooser.go`. Files: internal/builtin/termmux/chooser.go (new), internal/builtin/termmux/mux_state.go, internal/builtin/termmux/module.go.",
-      "acceptance": "`chooseTree` returns a ready BubbleTea model. Arrow keys navigate, Enter selects, Escape cancels. Selection callback receives the chosen session/window ID. At least 6 tests.",
+      "task": "Fix time.sleep LEGACY marker and correct async alternative reference",
+      "description": "Add LEGACY comment to internal/builtin/time/time.go sleep() pointing to `await new Promise(r => setTimeout(r, ms))` (NOT delay(ms) which doesn't exist). Update AGENTS.md legacy debt list entry. Update docs/scripting.md, docs/reference/time.md (deprecation notice), docs/architecture.md, docs/security.md to note time.sleep is legacy.",
+      "acceptance": "time.sleep has a LEGACY marker with the correct async alternative. All docs note the legacy status. No reference to non-existent delay(ms) function.",
       "status": "Done"
     },
     {
-      "task": "Add StatusBar configurable colors and top/bottom position",
-      "description": "`StatusBar` in `internal/termmux/statusbar/statusbar.go` now supports `SetColors(fg, bg string)`, `SetPosition(Position)`, and a `RenderLine(width, left, right)` helper. Default rendering remains reverse-video on the bottom row. The JS `registerStatusMethods` surface exposes `setStatusColors({ fg?, bg? })`, `setStatusPosition(\"top\"|\"bottom\")` (returning the module object for chaining), and a `renderStatusBar(width, left?, right?)` test/render helper. Added Go tests in `internal/termmux/statusbar/statusbar_test.go` and JS integration tests in `internal/builtin/termmux/module_status_test.go`. Files: internal/termmux/statusbar/statusbar.go, internal/builtin/termmux/module.go, internal/termmux/statusbar/statusbar_test.go, internal/builtin/termmux/module_status_test.go.",
-      "acceptance": "Status bar renders with configured fg/bg colors. Top position targets row 1; bottom targets the last row. Invalid hex falls back to reverse video. JS binding validates arguments and chains. At least 6 Go tests and 6 JS integration tests.",
+      "task": "Document osm:gitops module in docs",
+      "description": "Add osm:gitops to docs/scripting.md module table and add a section with API examples. Add osm:gitops to docs/architecture.md module list. Show sync vs async method distinction.",
+      "acceptance": "osm:gitops is documented in scripting.md with code examples showing both sync and async methods. architecture.md lists it in the module table.",
       "status": "Done"
     },
     {
-      "task": "Render display-message overlays in passthrough and snapshots",
-      "description": "Implemented a bounded FIFO display-message queue per session (cap 32) in `internal/termmux/manager.go`. Replaced the single atomic `displayMessage` pointer with `managedSession.messageQueue` and updated `handleDisplayMessage` to enqueue by call order with expiry based on duration (default 3s), dropping oldest on overflow. Added `handleActiveMessageForSession` to advance past expired front messages and return the active text. Added `Message` to `ScreenSnapshot` and `ScreenSnapshot.Clone`; snapshots now reflect the active message immediately on `DisplayMessage` and on every VTerm output publish. Implemented `MessageBarLine`/`RenderMessageBar` in new `internal/termmux/message_overlay.go` using lipgloss (yellow on dark). Updated `Passthrough` to reserve a second chrome row when an active message is present, draw the message bar above the status bar, and resize VTerm/scroll region accordingly; restored and resized paths also re-render chrome. Added `StatusBar.Height()`, `Position()`, and `SetScrollRegionEx(chromeRows)`. Exposed module-level `renderMessageBar(text, row?, cols?)` and `snapshot().message` in `internal/builtin/termmux/module.go`. Added Go tests in `internal/termmux/manager_message_test.go` and `internal/termmux/passthrough_message_test.go`. Added JS integration tests in `internal/builtin/termmux/module_message_test.go`.",
-      "acceptance": "`displayMessage` text appears in `Passthrough` output while active. `Snapshot` includes a `message` field that updates immediately and empties after expiry. Multiple messages queue and display sequentially in FIFO order. Bounded at 32; oldest dropped on overflow. At least 4 tests.",
+      "task": "Fix TestModule_Async_AddAll_Commit test bug",
+      "description": "The test called addAll().then(commit()) but didn't create a new file before calling addAll. The repo had no changes to stage, so commit rejected with 'nothing to commit'. Fix by writing a new file before the addAll call. Also: async tests were being SKIPPED in -short mode (asyncTestEnv helper skips), so this bug was hidden. Verify async tests pass without -short.",
+      "acceptance": "TestModule_Async_AddAll_Commit creates a new file before addAll, passes with and without -short, passes with race detection.",
       "status": "Done"
     },
     {
-      "task": "Implement Go-side prefix-key command dispatcher",
-      "description": "Added `PrefixResult` and `PrefixDispatcher` in `internal/termmux/prefix_keys.go`. `PrefixDispatcher` maps every bound prefix key (`c`, `n`, `p`, `,`, `x`, `%`, `\"`, `[`, `z`, `?`) to the corresponding `SessionManager` operation. New windows are created with a default placeholder session and activated; splits use new `SplitPaneHorizontal`/`SplitPaneVertical` methods backed by a `reqSplitPane` worker request that focuses the active pane then creates the new pane. Window focus synchronization was tightened: `handleActivate` now also updates the `WindowManager` active window via `setActive`, and `newPrefixKeyHandler` keeps its original prefix-only behavior. Added `termmux.handlePrefixKey({ manager, key })` in `internal/builtin/termmux/module.go` returning `{ action, consumed, description, result, listKeys }`.",
-      "acceptance": "Prefix + `c` creates a window and activates it, `n`/`p` cycle the active window, `,` renames the active window to `renamed`, `x` closes the active pane, `%`/`\"` split the active pane horizontally/vertically, `[` enters copy mode, `z` zooms the active pane, `?` returns a printable key list, and unbound keys are not consumed. JS `handlePrefixKey` executes the same actions and returns the expected shape. All tests pass with race detector and lint.",
+      "task": "Migrate osm:time.sleep to async — REMOVE sleep, update all call sites",
+      "description": "Remove the sleep() function from internal/builtin/time/time.go entirely. The global setTimeout (bound by goja-eventloop adapter) is the standard async alternative: `await new Promise(r => setTimeout(r, ms))`. Update register.go wiring (time.Require may need to change or be removed if sleep was the only export). Search ALL .js files for time.sleep usage and replace with the async setTimeout pattern. Update time_test.go — either remove sleep tests or replace with setTimeout-based tests. Update docs/reference/time.md to reflect removal. Update docs/scripting.md osm:time section. Remove osm:time from AGENTS.md legacy debt list. If time module has no other exports, remove the module entirely and update register.go.",
+      "acceptance": "time.sleep no longer exists in the codebase. No JS script calls time.sleep. All scripts that used time.sleep now use `await new Promise(r => setTimeout(r, ms))`. The osm:time module is either removed entirely or contains only non-blocking exports. AGENTS.md legacy debt list no longer mentions osm:time.sleep. All tests pass.",
       "status": "Done"
     },
     {
-      "task": "Fix BreakPane/JoinPane session-to-pane mapping and focus consistency",
-      "description": "`transferPaneToWindow` in `internal/termmux/pane_manager.go:318-363` copies the `PaneBinding` but leaves `SessionManager.activeID` and pane metadata stale. After a break or join, update source and target `paneManager` active panes when the moved pane was active, recompute geometry, and update the binding so the session can be reached by pane ID. Add JS integration tests covering break, join, and window activation. Files: internal/termmux/pane_manager.go, internal/termmux/manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "After `BreakPane`, the source window focuses a remaining pane and the moved pane is reachable in the new window. After `JoinPane`, the target window can focus the moved pane. `WindowPanes` reflects new mappings. At least 6 tests.",
+      "task": "Migrate osm:mcpcallback.waitFor to async — REMOVE waitFor, keep waitForAsync",
+      "description": "Remove the waitFor() function from internal/builtin/mcpcallbackmod/mcpcallback.go. The async alternative waitForAsync() already exists and is the correct Promise-returning version. Search ALL .js files for waitFor() usage (NOT waitForAsync) and replace with waitForAsync(). Update mcpcallback_test.go to remove waitFor tests (keep waitForAsync tests). Update docs/scripting.md. Remove osm:mcpcallback.waitFor from AGENTS.md legacy debt list.",
+      "acceptance": "waitFor() no longer exists — only waitForAsync() remains. No JS script calls waitFor() (all use waitForAsync). All mcpcallback tests pass. AGENTS.md legacy debt list no longer mentions osm:mcpcallback.waitFor.",
       "status": "Done"
     },
     {
-      "task": "Scope synchronize-panes to the active window",
-      "description": "Scoped `handleInput` in `internal/termmux/manager.go` to the active window's pane manager: it now iterates panes returned by `AllSessionIDs()` on `m.activePaneManager()` instead of every registered session. Synchronization state was already stored on `paneManager`; exposed it per-window via `Window.SetSynchronize`/`Synchronize` and `WindowManager.Active()`. Updated `SessionManager.SetSynchronizePanes` to return an error and operate on the active window (root fallback when no window is active) and `SynchronizePanes` to query the active window. Updated JS bindings in `internal/builtin/termmux/module.go` so `setSynchronizePanes(enabled)` returns the manager wrapper for chaining and `synchronizePanes()` returns the active window's sync state. Updated existing tests in `internal/termmux/manager_test.go` to create panes instead of bare sessions so broadcast semantics apply to panes. Added `internal/termmux/manager_sync_test.go` covering default-off, active-window broadcast, window-switch retargeting, disable-returns-to-single-pane, independent per-window state, and the `WindowManager.Active()`/`Window` sync accessors. Added `internal/builtin/termmux/module_sync_test.go` covering the JS bindings.",
-      "acceptance": "With synchronize enabled, input reaches only panes in the active window. Switching windows switches which panes receive synchronized input. JS setters chain correctly. At least 4 tests.",
+      "task": "Migrate osm:path.glob to async — add ctx+adapter to path.Require, convert glob to Promise",
+      "description": "Change internal/builtin/path/path.go Require signature from `Require(runtime *goja.Runtime, module *goja.Object)` to `Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object)`. Convert glob() to return a Promise using adapter.Loop().Promisify(). Keep all other path functions (join, dir, base, ext, abs, rel, clean, isAbs, match, separator, listSeparator) synchronous — they are pure computation. Update register.go wiring. Update path_test.go to use async test pattern for glob tests. Search ALL .js files for path.glob usage and update to `await path.glob(pattern)`. Update docs/scripting.md. Remove osm:path.glob from AGENTS.md legacy debt list.",
+      "acceptance": "path.glob() returns a Promise from JS. All other path functions remain synchronous. No JS script calls path.glob synchronously. All path tests pass with race detection. AGENTS.md legacy debt list no longer mentions osm:path.glob.",
       "status": "Done"
     },
     {
-      "task": "Wire copy-mode search to a default Go-side screen searcher",
-      "description": "`newCopyModeSearcher` in `internal/builtin/termmux/module.go:1439-1466` requires a JS `searchFn` callback. Implement a Go-side `ScreenSearcher` over `ScreenSnapshot.GetPlainText()` and use it as the default when no callback is supplied. Add convenience JS bindings `termmux.searchForward(sessionID, pattern)` and `termmux.searchBackward(sessionID, pattern)` that operate on the current snapshot. Files: internal/builtin/termmux/module.go, internal/builtin/termmux/searcher.go (new), internal/termmux/copy_mode_keys.go.",
-      "acceptance": "`newCopyModeSearcher` without a callback searches the current snapshot. `searchForward(sid, 'pattern')` returns match row/col. Copy-mode `/` works without JS wiring. At least 6 tests.",
+      "task": "Migrate osm:ctxutil.buildContext to async — add adapter to ctxutil.Require, convert buildContext to Promise",
+      "description": "Change internal/builtin/ctxutil/ctxutil.go Require signature from `Require(baseCtx context.Context)` to `Require(baseCtx context.Context, adapter *gojaeventloop.Adapter)`. Convert buildContext() to return a Promise using adapter.Loop().Promisify() — it does git diff and exec which are I/O. Keep other ctxutil functions synchronous if they are pure computation. Update register.go wiring. Update ctxutil_test.go and cm_test.go for async buildContext tests. Search ALL .js files for ctxutil.buildContext usage and update to `await ctxutil.buildContext(...)`. Update docs/scripting.md. Remove osm:ctxutil.buildContext from AGENTS.md legacy debt list.",
+      "acceptance": "ctxutil.buildContext() returns a Promise from JS. No JS script calls buildContext synchronously. All ctxutil tests pass with race detection. AGENTS.md legacy debt list no longer mentions osm:ctxutil.buildContext.",
       "status": "Done"
     },
     {
-      "task": "Add Go-side mouse drag state machine for pane border resize",
-      "description": "Mouse drag-to-resize is currently implemented only as single-shot helpers; JS must track the drag lifecycle. Add `MouseDrag` helper in `internal/termmux` that tracks button-down on a divider, motion, and release, calling `ResizePaneAt` during motion. Expose `termmux.handleMouseDrag(mgr, msg)` that consumes BubbleTea mouse messages and returns `{handled, cmd}`. Integrate it into `newBouncePresenter` and add tests. Files: internal/termmux/mouse_drag.go (new), internal/builtin/termmux/mouse.go (new), internal/builtin/termmux/bounce_presenter.go.",
-      "acceptance": "Dragging a divider resizes adjacent panes. A drag that does not start on a divider is ignored. Release ends the drag; events consumed during drag are not forwarded to the child. At least 6 tests.",
+      "task": "Migrate osm:os.readFile/writeFile/appendFile to async — add adapter to os.Require, convert to Promises",
+      "description": "Change internal/builtin/os/os.go Require signature from `Require(ctx context.Context, tuiSink func(string))` to `Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(string))`. Convert readFile(), writeFile(), appendFile() to return Promises using adapter.Loop().Promisify(). These do disk I/O which can block. Update register.go wiring. Update os_test.go for async tests. Search ALL .js files for os.readFile/writeFile/appendFile usage and update to `await os.readFile(path)` etc. Update docs/scripting.md. Remove osm:os.readFile/writeFile/appendFile from AGENTS.md legacy debt list.",
+      "acceptance": "os.readFile/writeFile/appendFile return Promises from JS. No JS script calls them synchronously. All os tests pass with race detection. AGENTS.md legacy debt list no longer mentions osm:os.readFile/writeFile/appendFile.",
       "status": "Done"
     },
     {
-      "task": "Swap pane metadata in paneManager during LayoutEngine.Swap",
-      "description": "Added `paneManager.Swap(id1, id2)` that swaps every mutable `PaneBinding` field (SessionID, VTerm, Title, LastActive, Exited, RemainOnExit) while preserving pane IDs and the active pane. Wired it into `LayoutEngine.Swap` via an optional back-pointer so direct callers update metadata, and added `swapLayoutOnly` to avoid double-swapping from `SessionManager.SwapPanes`. Updated `SessionManager.handleSwapPanes` to locate each pane's window, call the appropriate pane manager swap, keep `m.activeID` consistent, and emit `EventWindowUpdated` for affected windows. Cross-window swaps exchange metadata between the two windows while leaving pane IDs and geometries in place. Updated the JS `swapPanes` binding to return `{ swapped: true }` and propagate errors. Files: internal/termmux/pane_manager.go, internal/termmux/layout.go, internal/termmux/manager.go, internal/builtin/termmux/module.go, internal/termmux/pane_manager_swap_test.go, internal/termmux/manager_swap_test.go, internal/builtin/termmux/module_swap_test.go.",
-      "acceptance": "After `SwapPanes(id1, id2)`, titles, session IDs, VTerm references, remain-on-exit, and exited states are exchanged while pane IDs remain stable. Active pane ID is unchanged; active session follows the session now in the active pane. `WindowPanes` reflects the swap for same- and cross-window cases. JS `swapPanes` returns `{ swapped: true }`. At least 8 tests.",
+      "task": "Migrate osm:os.clipboardCopy/clipboardPaste to async — convert to Promises",
+      "description": "In internal/builtin/os/os.go (with adapter already added in previous task), convert clipboardCopy() and clipboardPaste() to return Promises. These do subprocess execution with timeout which blocks. Update os_test.go for async tests. Search ALL .js files for os.clipboardCopy/clipboardPaste usage and update to `await os.clipboardCopy(text)` etc. Update docs/scripting.md. Remove osm:os.clipboardCopy/clipboardPaste from AGENTS.md legacy debt list.",
+      "acceptance": "os.clipboardCopy/clipboardPaste return Promises from JS. No JS script calls them synchronously. All os tests pass. AGENTS.md legacy debt list no longer mentions clipboardCopy/clipboardPaste.",
       "status": "Done"
     },
     {
-      "task": "Implement pipe-pane to an external command",
-      "description": "`SetPipeFile` in `internal/termmux/manager.go:2313-2345` only tees pane output to a file. Extend it to accept a command and arguments; spawn the process and write raw PTY output to its stdin. Close/terminate the process when the pane exits or `ClearPipe` is called. Expose via JS as `pipeCommand(sessionID, cmd, args)`. Files: internal/termmux/manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "Pane output appears in the external command's stdin. The command is terminated when the pane exits or pipe is cleared. File-only mode still works. At least 4 tests.",
+      "task": "Migrate osm:os.openEditor to async — convert to Promise",
+      "description": "In internal/builtin/os/os.go (with adapter already added), convert openEditor() to return a Promise. It blocks until the editor exits which stalls the event loop. Update os_test.go for async tests. Search ALL .js files for os.openEditor usage and update to `await os.openEditor(title, content)`. Update docs/scripting.md. Remove osm:os.openEditor from AGENTS.md legacy debt list.",
+      "acceptance": "os.openEditor returns a Promise from JS. No JS script calls it synchronously. All os tests pass. AGENTS.md legacy debt list no longer mentions osm:os.openEditor.",
       "status": "Done"
     },
     {
-      "task": "Fix activeSide passthrough-state stub in the JS binding",
-      "description": "`activeSide()` in `internal/builtin/termmux/module.go:2023-2025` always returns the literal string `'osm'` regardless of passthrough state. Add a boolean to `muxState` (e.g., `inPassthrough`) updated from `switchTo`, `fromModel`, and the passthrough `onToggle` callback. `activeSide()` returns `'claude'` when in passthrough and `'osm'` otherwise. Expose an `isPassthrough()` query. Files: internal/builtin/termmux/module.go, internal/builtin/termmux/mux_state.go.",
-      "acceptance": "`activeSide()` returns `'claude'` after entering passthrough and `'osm'` otherwise. `isPassthrough()` matches the current state. At least 4 tests.",
+      "task": "Migrate osm:exec.exec/execv/execStream — REMOVE sync versions, keep spawn",
+      "description": "Remove exec(), execv(), execStream() from internal/builtin/exec/exec.go. The async alternative spawn() already exists and is the correct Promise-returning version. Search ALL .js files for exec.exec/execv/execStream usage and replace with spawn(). Update exec_test.go to remove sync exec tests (keep spawn tests). Update docs/scripting.md. Remove osm:exec.exec/execv/execStream from AGENTS.md legacy debt list.",
+      "acceptance": "exec.exec/execStream removed, execv is async. spawn() remains sync. No JS script calls removed functions. All exec tests pass. AGENTS.md legacy debt list no longer mentions osm:exec.exec/execv/execStream.",
       "status": "Done"
     },
     {
-      "task": "Move bounce-presenter compositor and hit testing into Go",
-      "description": "CANCELLED: The user clarified that the bouncing-logo example is application-specific and must not have a dedicated Go-side implementation. The Go-side compositor and newBouncePresenter code was removed (internal/builtin/termmux/compositor.go, bounce_presenter.go, bounce.go, and their tests). Functionality is now implemented in scripts/example-15-bouncing-logo.js using reusable Go primitives.",
-      "acceptance": "All app-specific Go files deleted; no remaining references to newBouncePresenter/newCompositor in the Go source; lint and tests pass.",
-      "status": "Cancelled"
-    },
-    {
-      "task": "Return a ready-to-run BubbleTea model from newBouncePresenter",
-      "description": "CANCELLED: superseded by the pure-JavaScript rewrite of scripts/example-15-bouncing-logo.js. No newBouncePresenter binding exists.",
-      "acceptance": "N/A",
-      "status": "Cancelled"
-    },
-    {
-      "task": "Rewrite example-15-bouncing-logo.js as pure JavaScript using reusable Go primitives",
-      "description": "Rewrite scripts/example-15-bouncing-logo.js to implement the bouncing terminal entirely in JavaScript using the reusable osm:termmux primitives (newBoundedSession, newControlRouter, enableMouseForward, mouseToSGR, handleMouseDrag, keyToTermBytes), osm:termui/compositor (panes/chrome/hit/render/renderBordered), osm:bubbletea (newModel/run/tick), osm:lipgloss (border styling), and osm:flag. The script must preserve: flag parsing, default /bin/sh (cmd.exe on Windows), bounce physics with pause/resume and pane resize, compositor rendering, keyboard/mouse forwarding, chord mode, resize handling, and non-interactive smoke mode.",
-      "acceptance": "scripts/example-15-bouncing-logo.js runs via `osm script scripts/example-15-bouncing-logo.js --smoke` and exits 0 with sensible output. The script does not import newBouncePresenter, newBounceController, or a Go-side compositor. Full test suite and lint pass.",
+      "task": "Migrate osm:termmux.passthrough to async — convert to Promise",
+      "description": "In internal/builtin/termmux/module.go (already has ctx and adapter), convert passthrough() to return a Promise. It does an indefinite terminal block which stalls the event loop. Update termmux tests for async tests. Search ALL .js files for termmux.passthrough usage and update to `await termmux.passthrough(...)`. Update docs/scripting.md and docs/reference/termmux-js-api.md. Remove osm:termmux.passthrough from AGENTS.md legacy debt list.",
+      "acceptance": "termmux.passthrough returns a Promise from JS. No JS script calls it synchronously. All termmux tests pass. AGENTS.md legacy debt list no longer mentions osm:termmux.passthrough.",
       "status": "Done"
     },
     {
-      "task": "Unify mouse event SGR encoding through the exported MouseToSGR helper",
-      "description": "CANCELLED: the bounce presenter and its inline SGR encoding were removed. Mouse forwarding in the rewritten JS script uses termmux.mouseToSGR via the reusable enableMouseForward helper.",
-      "acceptance": "N/A",
-      "status": "Cancelled"
-    },
-    {
-      "task": "newBouncePresenter accepts env, dir, and name options",
-      "description": "CANCELLED: newBouncePresenter was removed as application-specific Go code. The JavaScript rewrite creates bounded sessions via newBoundedSession, which already supports env, dir, and name.",
-      "acceptance": "N/A",
-      "status": "Cancelled"
-    },
-    {
-      "task": "Refactor bounce_presenter to consume exported standalone factories",
-      "description": "CANCELLED: bounce_presenter.go was removed. The reusable controlRouter factory remains and is used by the JavaScript script; bounce physics now lives entirely in JS.",
-      "acceptance": "N/A",
-      "status": "Cancelled"
-    },
-    {
-      "task": "Refactor termmux event bridge to goja-eventloop EventTarget",
-      "description": "Replaced hand-rolled `muxEvents` listener list with `github.com/joeycumines/goja-eventloop` `EventTarget`/`Event`/`CustomEvent`. Updated `termmuxmod.Require` to accept a `*gojaeventloop.Adapter`, create one `EventTarget` per wrapped `SessionManager`, and dispatch `SessionManager` EventBus events onto the event loop. Added `addEventListener`, `removeEventListener`, and `dispatchEvent` methods; preserved legacy `on`/`off`/`pollEvents` aliases and all public constants. Removed dead code and updated tests, docs, and call sites in `internal/builtin/register.go`, `internal/command/pr_split.go`, and `internal/command/pr_split_tui_persistence_truthful_test.go`.",
-      "acceptance": "`go test -short ./...`, `go test -race -short ./internal/termmux/... ./internal/builtin/termmux/...`, `gmake lint`, `go build -o osm ./cmd/osm`, and `./osm script scripts/example-15-bouncing-logo.js --smoke` all pass; no dead code remains; legacy `on`/`off` scripts still work.",
+      "task": "Update all JS scripts to use async patterns for migrated bindings",
+      "description": "After all Go-side migrations are complete, update ALL .js files in internal/command/ and scripts/ that use any of the migrated bindings. Each call site must use `await` with the Promise-returning version. This includes: pr_split_00_core.js, pr_split_02_grouping.js, pr_split_07_prcreation.js, pr_split_08_conflict.js, pr_split_09_agent.js, pr_split_11_utilities.js, pr_split_16d_tui_handlers_agent.js, super_document_script.js, and any other scripts found. Verify each script still works by running it through the osm runtime.",
+      "acceptance": "All JS scripts use async/await for all I/O bindings. No script calls a legacy synchronous binding. All scripts execute without errors in the osm runtime.",
       "status": "Done"
     },
     {
-      "task": "Add resize-pane directional deltas",
-      "description": "tmux supports `resize-pane -L/-R/-U/-D` to adjust pane size by a cell count. Add `SessionManager.ResizePaneDelta(paneID, direction, delta)` where direction is one of `'left'`, `'right'`, `'up'`, `'down'`. Compute new width/height with delta, clamping to minimum sizes, and propagate geometry to the child PTY/VTerm. Expose via JS binding `resizePaneDelta(id, direction, delta)`. Files: internal/termmux/layout.go, internal/termmux/manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "`resize-pane -R 5` grows width by 5, `-L 5` shrinks; `-D 5` grows height, `-U 5` shrinks. Sizes never fall below minimum. At least 4 tests.",
+      "task": "Update all documentation for migrated bindings",
+      "description": "Update docs/scripting.md module table and sections for all migrated bindings. Update docs/reference/time.md (remove or mark as removed). Update docs/architecture.md module list. Update docs/security.md API surface table. Update docs/reference/termmux-js-api.md for passthrough. Ensure all docs reflect the new async API signatures.",
+      "acceptance": "All documentation reflects the new async API signatures. No doc shows a synchronous call to a migrated binding. All docs are consistent with the code.",
       "status": "Done"
     },
     {
-      "task": "Add move-window and swap-window ordering primitives",
-      "description": "tmux supports `move-window -t index` and `swap-window -t id`. Add `WindowManager.MoveWindow(id, targetIndex)` and `WindowManager.SwapWindows(id1, id2)` to reorder the window list, plus `SessionManager` wrappers and JS bindings `moveWindow`/`swapWindow`. Update `StatusBar` window-status rendering to reflect the new order. Files: internal/termmux/window.go, internal/termmux/manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "`moveWindow` reorders the window list. `swapWindow` exchanges two window positions. Status-bar window status shows the new order. At least 4 tests.",
+      "task": "Clear AGENTS.md legacy debt list — all bindings migrated",
+      "description": "After all 9 legacy blocking bindings are migrated or removed, update AGENTS.md to remove the 'Known blocking bindings (legacy debt)' section entirely (or replace with 'No blocking bindings remain'). The JS Binding Contract rules remain — they prevent new blocking bindings from being added.",
+      "acceptance": "AGENTS.md no longer lists any legacy blocking bindings. The JS Binding Contract rules remain in place to prevent regressions. Zero blocking bindings exist in the codebase.",
       "status": "Done"
     },
     {
-      "task": "Add send-keys raw key injection binding",
-      "description": "`Input` accepts raw bytes but there is no high-level `send-keys` API with tmux-style key names. Add `SessionManager.SendKeys(sessionID, keyNames...)` that converts names like `ctrl+c`, `alt+x`, `f1`, `left` to terminal bytes using `parent.KeyToTermBytes`, and writes them to the session. Expose `termmux.sendKeys(sid, ...keys)` and `sendKeys` on the wrapped session. Use it in tests instead of manually writing byte sequences. Files: internal/termmux/manager.go, internal/builtin/termmux/module.go.",
-      "acceptance": "`sendKeys(sid, 'ctrl+c')` writes `0x03`. `sendKeys(sid, 'alt+x')` writes ESC x. `sendKeys(sid, 'f1')` writes the correct escape sequence. At least 6 tests.",
+      "task": "Full verification: build, test (with and without -short), lint, race detection",
+      "description": "Run: go build ./..., go test -short -count=1 -timeout=5m ./..., go test -count=1 -timeout=10m ./internal/builtin/... (without -short), go test -race -short -count=1 -timeout=10m ./..., gmake lint. Fix any failures. Ensure deadcode passes (no dead code from removed bindings). Ensure all migrated bindings work correctly from JS.",
+      "acceptance": "All checks pass: build clean, all tests pass (84 packages, 0 failures), lint clean (vet, staticcheck, deadcode), race detection clean on all 7 migrated modules. Zero regressions.",
       "status": "Done"
     },
     {
-      "task": "Add pane border drawing with index and title labels",
-      "description": "tmux draws borders around panes showing their index and title. Add a `BorderRenderer` in `internal/termmux/statusbar` or a new package that takes terminal dimensions and a `PaneGeometry` slice and returns an ANSI string with box-drawing characters and labels. Expose as `termmux.renderPaneBorders(width, height, geometries)` and optionally use it in `Passthrough`. Files: internal/termmux/statusbar/borders.go (new), internal/builtin/termmux/module.go.",
-      "acceptance": "`renderPaneBorders` produces a string with border lines around each pane and labels containing pane index/title. Borders do not overwrite pane content. At least 4 tests.",
+      "task": "Rule of Two review for legacy binding migration",
+      "description": "Invoke strict-review-gate: spawn two independent subagent reviews of the complete diff (all legacy binding migrations). Both must pass contiguously on the same diff. Address all findings between reviews (which resets the counter). Only proceed after two contiguous passes.",
+      "acceptance": "Two contiguous issue-free reviews confirm all migrations are correct. No blocking bindings remain. All call sites updated. All tests pass.",
       "status": "Done"
-    },
-    {
-      "task": "Auto-reset activity monitor so repeated activity events can fire",
-      "description": "`MonitorActivity` in `internal/termmux/manager.go:2729-2733` sets `ActivityFired = true` and never resets it. Add automatic reset after the pane becomes active or after a configurable quiescence period, so background panes can trigger activity more than once. Add a JS binding to manually reset if desired. Files: internal/termmux/monitor.go, internal/termmux/manager.go.",
-      "acceptance": "A background pane can emit multiple `EventActivity` events over time. Activating the pane resets the activity flag. At least 2 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Mark exited panes and wire remain-on-exit state to the pane binding",
-      "description": "Added `SessionManager.markSessionPaneExited` and called it from `handleSessionOutput` when `remainOnExit` is true so the pane binding records `Exited=true`. Added `Exited` to the exported `Pane` struct and populated it in `paneManager.Panes()`; exposed it in JS `panes()` and `windowPanes` so scripts/status bars can render `[EXITED]`. Cleared `binding.Exited` in `paneManager.RebindSession` so respawn reuses the same pane geometry without lingering exited state. Verified that `ClosePane` removes the binding. Files: internal/termmux/manager.go, internal/termmux/pane_manager.go, internal/termmux/layout.go, internal/builtin/termmux/module.go.",
-      "acceptance": "Exited pane reports `PaneExited` true. `panes()`/`windowPanes()` expose `exited`. Respawn reuses the same pane geometry and clears the exited flag. ClosePane removes the binding. At least 4 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Wire copy-mode key actions to SessionManager methods",
-      "description": "`CopyModeKeyHandler` returns actions but the caller must execute them. Add `SessionManager.HandleCopyModeKey(sessionID, key)` that maps actions to real operations: scroll, select start/end, copy, search, enter/exit copy mode. Expose `termmux.copyModeKey(sid, key)` so scripts do not need their own dispatch table. Files: internal/termmux/manager.go, internal/termmux/copy_mode_keys.go, internal/builtin/termmux/module.go.",
-      "acceptance": "`handleCopyModeKey('j')` scrolls the copy-mode viewport. `q` exits copy mode. Space starts selection, Enter copies. At least 6 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Expose main-horizontal/main-vertical layout smoke tests via JS",
-      "description": "Main layouts are implemented in Go but not exercised end-to-end from JavaScript. Add integration tests that create a session manager, add three panes, set layout mode to `main-horizontal` and `main-vertical`, and assert the active window's pane geometries match the 60/40 split. Expose a JS function `termmux.layoutMode()` to query the current mode. Files: internal/builtin/termmux/module.go, internal/builtin/termmux/module_layout_test.go (new).",
-      "acceptance": "JS smoke test creates 3 panes in main-horizontal: first pane height is roughly 60% of total, remaining panes share the rest. Main-vertical analogous for widths. At least 2 tests.",
-      "status": "Done"
-    },
-    {
-      "task": "Final Wave 4 validation and Rule of Two review",
-      "description": "After tasks 69-97 are complete, run the full validation pipeline: `gmake build`, `go test -short -count=1 -timeout=5m ./...`, `go test -race -short -count=1 -timeout=10m ./internal/termmux/... ./internal/builtin/termmux/...`, `gmake lint`, verify `scripts/example-15-bouncing-logo.js --smoke` exits 0, and confirm coverage gates (internal/termmux >=85%, internal/builtin/termmux >=80%). Conduct two contiguous Rule of Two reviews and commit only if both pass. Files: none (verification only).",
-      "acceptance": "All builds, tests, race detector, and lint pass. Smoke run exits 0. Coverage gates met. Two contiguous issue-free Rule of Two reviews recorded. Commit made.",
-      "status": "In Progress"
     }
   ],
   "continuousVerification": {
@@ -276,6 +205,10 @@
     {
       "type": "POST_EXECUTION_WARNING",
       "alert": "RULE OF TWO: Two contiguous issue-free reviews before every commit."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "NO BLOCKING BINDINGS: Every I/O binding must return a Promise. No exceptions."
     }
   ]
 }

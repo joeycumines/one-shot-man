@@ -179,15 +179,15 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 
 | Module | Description | Key exports |
 |--------|-------------|-------------|
-| `osm:os` | OS interactions (files, clipboard, editor, environment) | `readFile(path) → {content, error, message}`, `fileExists(path) → bool`, `writeFile(path, content, options?) → undefined` (options: `{mode?: number, createDirs?: boolean}`), `appendFile(path, content, options?) → undefined` (same options), `openEditor(nameHint, initialContent) → string`, `clipboardCopy(text)` (supports `OSM_CLIPBOARD` override), `getenv(key) → string` |
-| `osm:exec` | Process execution | `exec(cmd, ...args) → {stdout, stderr, code, error, message}`, `execv(argv[]) → {stdout, stderr, code, error, message}` |
+| `osm:os` | OS interactions (files, clipboard, editor, environment) | `readFile(path) → Promise<{content, error, message}>`, `fileExists(path) → bool`, `writeFile(path, content, options?) → Promise<undefined>` (options: `{mode?: number, createDirs?: boolean}`), `appendFile(path, content, options?) → Promise<undefined>` (same options), `openEditor(nameHint, initialContent) → Promise<string>`, `clipboardCopy(text) → Promise<void>` (supports `OSM_CLIPBOARD` override), `clipboardPaste() → Promise<string>`, `getenv(key) → string` |
+| `osm:exec` | Process execution | `execv(argv[]) → Promise<{stdout, stderr, code, error, message}>`, `spawn(cmd, args[], opts?) → ChildHandle` |
 | `osm:flag` | Go `flag` package wrapper for argument parsing | `newFlagSet(name?) → FlagSet`; FlagSet methods: `.string(name, default, usage)`, `.int(…)`, `.bool(…)`, `.float64(…)`, `.parse(argv) → {error}`, `.get(name)`, `.args()`, `.nArg()`, `.nFlag()`, `.lookup(name)`, `.defaults()`, `.visit(fn)`, `.visitAll(fn)` |
-| `osm:path` | Go `path/filepath` wrapper for path manipulation | `join(...args) → string`, `dir(path) → string`, `base(path) → string`, `ext(path) → string`, `abs(path) → {result, error}`, `rel(basepath, targpath) → {result, error}`, `clean(path) → string`, `isAbs(path) → bool`, `match(pattern, name) → {matched, error}`, `glob(pattern) → {matches, error}`, `separator`, `listSeparator` |
+| `osm:path` | Go `path/filepath` wrapper for path manipulation | `join(...args) → string`, `dir(path) → string`, `base(path) → string`, `ext(path) → string`, `abs(path) → {result, error}`, `rel(basepath, targpath) → {result, error}`, `clean(path) → string`, `isAbs(path) → bool`, `match(pattern, name) → {matched, error}`, `glob(pattern) → Promise<{matches, error}>` (async; all others sync), `separator`, `listSeparator` |
 | `osm:regexp` | Go RE2 regular expressions | `match(pattern, str) → bool`, `find(pattern, str) → string\|null`, `findAll(pattern, str, n?) → string[]`, `findSubmatch(pattern, str) → string[]\|null`, `findAllSubmatch(pattern, str, n?) → string[][]`, `replace(pattern, str, repl) → string`, `replaceAll(pattern, str, repl) → string`, `split(pattern, str, n?) → string[]`, `compile(pattern) → RegexpObject` (with same methods bound). [Reference →](reference/regexp.md) |
 | `osm:crypto` | Cryptographic hash functions | `sha256(input) → string`, `sha1(input) → string`, `md5(input) → string`, `hmacSHA256(key, message) → string`, `hmacSHA1(key, message) → string` — all return hex-encoded lowercase strings; input accepts strings or byte arrays |
 | `osm:encoding` | Base64 and hex encoding/decoding | `base64Encode(input) → string`, `base64Decode(encoded) → string`, `base64URLEncode(input) → string`, `base64URLDecode(encoded) → string`, `hexEncode(input) → string`, `hexDecode(encoded) → string` — decode errors throw JS errors; input accepts strings or byte arrays. [Reference →](reference/encoding.md) |
 | `osm:json` | JSON utilities | `parse(str) → any`, `stringify(value, indent?) → string`, `query(obj, path) → any` (dot-notation, `[n]`, `[*]` wildcard), `mergePatch(target, patch) → any` (RFC 7386), `diff(a, b) → [{op, path, value?, oldValue?}]` (JSON Pointer paths), `flatten(obj, sep?) → object`, `unflatten(obj, sep?) → object` |
-| `osm:time` | Time utilities | `sleep(ms)` — synchronous sleep (milliseconds). [Reference →](reference/time.md) |
+| `osm:gitops` | Git operations (go-git) | `isRepo(path)`, `open(path)` / `openDetect(path)` → Repo, `defaultBranch(path)`, `branchExists(path, name)`, `isWorkTree(path)`, `headBranchName(path)`; Repo methods: `.defaultBranch()`, `.branchExists(name)`, `.isWorkTree()`, `.headBranchName()` (sync), `.addAll() → Promise<void>`, `.commit(msg) → Promise<string>`, `.push() → Promise<void>`, `.hasStagedChanges() → Promise<bool>` (async) |
 | `osm:argv` | Command-line string parsing | `parseArgv(cmdline) → string[]`, `formatArgv(argv[]) → string` |
 
 #### Data & text processing
@@ -204,8 +204,8 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 
 | Module | Description | Key exports |
 |--------|-------------|-------------|
-| `osm:ctxutil` | Context building helpers (used by built-ins) | `buildContext(items, options?) → string`, `contextManager` (factory for reusable context management patterns) |
-| `osm:mcpcallback` | Go-native MCP IPC channel for sub-process tool callbacks | `MCPCallback(opts) → callbackObj`; Methods: `.addTool(name, desc?, schema?)`, `.initSync()`, `.init() → Promise`, `.waitFor(toolName, timeoutMs?, opts?) → {data, error}`, `.resetWaiter(toolName)`, `.closeSync()`, `.close() → Promise`; Properties (after init): `.address`, `.scriptPath`, `.transport`, `.mcpConfigPath` |
+| `osm:ctxutil` | Context building helpers (used by built-ins) | `buildContext(items, options?) → Promise<string>` (async; resolves to rendered context string), `contextManager` (factory for reusable context management patterns) |
+| `osm:mcpcallback` | Go-native MCP IPC channel for sub-process tool callbacks | `MCPCallback(opts) → callbackObj`; Methods: `.addTool(name, desc?, schema?)`, `.initSync()`, `.init() → Promise`, `.waitForAsync(toolName, timeoutMs?, opts?) → Promise<{data, error}>`, `.resetWaiter(toolName)`, `.closeSync()`, `.close() → Promise`; Properties (after init): `.address`, `.scriptPath`, `.transport`, `.mcpConfigPath` |
 | `osm:nextIntegerID` | Simple ID generator | Default export is a function: `nextId(list) → number` — finds max `.id` in array and returns max+1. _(Deprecated alias: `osm:nextIntegerId`)_ [Reference →](reference/nextintegerid.md) |
 | `osm:sharedStateSymbols` | Cross-mode shared state symbols | Exports Symbol properties (e.g., `contextItems`) for use with `tui.createState("__shared__", …)` |
 
@@ -233,7 +233,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 |--------|-------------|-------------|
 | `osm:aimux` | Generic agent process multiplexer | `processProvider(opts)` → provider object; `newRegistry()` → registry object with `register(provider)`, `get(name)`, `list()`, `spawn(name, opts)`; `newParser()` → parser object with `.parse(line)`, `.patterns()`; parser event constants: `EVENT_TEXT`, `EVENT_RATE_LIMIT`, `EVENT_PERMISSION`, `EVENT_MODEL_SELECT`, `EVENT_SSO_LOGIN`, `EVENT_COMPLETION`, `EVENT_TOOL_USE`, `EVENT_ERROR`, `EVENT_THINKING`; `eventTypeName(type)`. Used by `osm pr-split` to spawn agent processes provider-agnostically. |
 | `osm:mcp` | Promise-based MCP (Model Context Protocol) server | `createServer(name, version?) → server`; Server methods: `.addTool(toolDef, handler)` where toolDef = `{name, description?, inputSchema?}`, `.run(transport?)` (default: "stdio"), `.close()` |
-| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, opts?)`, `.unregister(id)`, `.activate(id)`, `.attach(handle) → id`, `.detach()`, `.hasChild()`, `.passthrough(opts?)` (blocking — enters passthrough, returns `{reason, error?}`), `.switchTo()` (blocking, returns `{reason, error?}`), `.activeSide()`, `.activeID()`, `.sessions()`, `.snapshot(id)`, `.eventsDropped()`, `.input(data)`, `.resize(rows, cols)`, `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe(bufSize?)`, `.unsubscribe(id)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.snapshot(id)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `.activate(id)` + `.input(data)` for writes; `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_AGENT`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (9 event names). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
+| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, opts?)`, `.unregister(id)`, `.activate(id)`, `.attach(handle) → id`, `.detach()`, `.hasChild()`, `.passthrough(opts?)` (async — enters passthrough, returns `Promise<{reason, error?}>`), `.switchTo()` (async, returns `Promise<{reason, error?}>`), `.activeSide()`, `.activeID()`, `.sessions()`, `.snapshot(id)`, `.eventsDropped()`, `.input(data)`, `.resize(rows, cols)`, `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe(bufSize?)`, `.unsubscribe(id)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.snapshot(id)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `.activate(id)` + `.input(data)` for writes; `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_AGENT`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (9 event names). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
 
 ### osm:bt (Behavior Trees)
 
@@ -410,11 +410,28 @@ view: function(model) {
 
 **Input validation**: `tea.isValidTextareaInput(key)`, `tea.isValidLabelInput(key)` — whitelist-based input validators.
 
-### osm:time
+### osm:gitops
 
-Time utilities:
+Git repository operations via go-git (no git CLI required):
 
-- `time.sleep(ms)` — Synchronous sleep (milliseconds)
+```javascript
+const gitops = require('osm:gitops');
+const repo = gitops.open('/path/to/repo');
+
+// Sync (fast, bounded local lookups)
+gitops.isRepo('/path');              // bool
+repo.defaultBranch();                // string
+repo.branchExists('feature/foo');    // bool
+repo.headBranchName();               // string
+repo.isWorkTree();                   // bool
+
+// Async (return Promises, run off event loop)
+repo.hasStagedChanges().then(has => { /* bool */ });
+repo.addAll().then(() => repo.commit('msg')).then(hash => { /* string */ });
+repo.push().then(() => { /* done */ });
+```
+
+Error constants: `gitops.ERR_NOT_REPO`, `gitops.ERR_NOTHING_TO_COMMIT`, `gitops.ERR_CONFLICT`, `gitops.ERR_DETACHED_HEAD`.
 
 ### osm:mcpcallback (MCP Callback IPC)
 
@@ -434,7 +451,7 @@ The `server` must be created via `createServer()` and must **not** have `.run()`
 
 **Registering tools** (must be called before `init`/`initSync`):
 
-- `cb.addTool(name, description?, inputSchema?)` — Register a Go-native tool. The handler stores incoming call arguments in a buffered channel (capacity 1, last-write-wins). Handler runs on the MCP transport goroutine, not the JS event loop, so it is safe even when JS is blocked on `waitFor()`.
+- `cb.addTool(name, description?, inputSchema?)` — Register a Go-native tool. The handler stores incoming call arguments in a buffered channel (capacity 1, last-write-wins). Handler runs on the MCP transport goroutine, not the JS event loop, so it is safe even when JS is waiting on `waitForAsync()`.
 
 **Initialization:**
 
@@ -452,11 +469,11 @@ The `server` must be created via `createServer()` and must **not** have `.run()`
 
 **Waiting for tool calls:**
 
-- `cb.waitFor(toolName, timeoutMs?, opts?) → {data, error}` — Blocking. Waits for the named tool to receive a call via the MCP transport, or timeout. Default timeout: `600000` ms (10 min, minimum 100 ms).
+- `cb.waitForAsync(toolName, timeoutMs?, opts?) → Promise<{data, error}>` — Non-blocking. Waits for the named tool to receive a call via the MCP transport, or timeout. Default timeout: `600000` ms (10 min, minimum 100 ms).
   - `opts.aliveCheck: () → bool` — Called periodically; return `false` to abort early (e.g., sub-process died).
   - `opts.onProgress: (elapsedMs, totalMs) → void` — Called periodically for TUI updates.
   - `opts.checkIntervalMs: number` — Polling interval for callbacks. Default: `5000`. Min: `100`.
-  - Returns `{data: <parsed JSON args>, error: null}` on success, or `{data: null, error: "..."}` on timeout/abort.
+  - Resolves with `{data: <parsed JSON args>, error: null}` on success, or `{data: null, error: "..."}` on timeout/abort.
 - `cb.resetWaiter(toolName)` — Drain any pending (unconsumed) data for this tool. Call before re-waiting across pipeline cycles.
 
 **Cleanup:**
@@ -471,12 +488,12 @@ cb.addTool('reportClassification', 'Report file classification.', schema);
 cb.addTool('reportSplitPlan', ...);
 cb.initSync();
 // spawn sub-process pointing at cb.mcpConfigPath
-var result = cb.waitFor('reportClassification', 300000, { aliveCheck, onProgress });
+var result = await cb.waitForAsync('reportClassification', 300000, { aliveCheck, onProgress });
 if (result.error) { throw new Error(result.error); }
 var categories = result.data.categories;
 // ... later ...
 cb.resetWaiter('reportResolution');
-result = cb.waitFor('reportResolution', 600000, { aliveCheck });
+result = await cb.waitForAsync('reportResolution', 600000, { aliveCheck });
 cb.closeSync();
 ```
 
@@ -532,7 +549,7 @@ When registered with a SessionManager, screen output is available via
 - `wait()` — Block until process exits, returns `{exitCode, error?}`
 - `reader()` — Get next output chunk (blocking), returns `string | null`
 - `readAvailable()` — Drain buffered chunks (non-blocking), returns `string | null`
-- `passthrough(opts?)` — Enter passthrough mode, returns `{reason, error?}`
+- `passthrough(opts?) → Promise<{reason, error?}>` — Enter passthrough mode (async, returns Promise)
 
 See [termmux JS API reference](reference/termmux-js-api.md) for full details.
 

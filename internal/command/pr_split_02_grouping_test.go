@@ -189,7 +189,7 @@ func TestChunk02_SelectStrategy(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	// Files across 5 directories — should favor directory strategy.
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.selectStrategy([
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.selectStrategy([
 		'pkg/a.go', 'pkg/b.go',
 		'cmd/c.go',
 		'internal/d.go',
@@ -233,9 +233,9 @@ func TestChunk02_ApplyStrategy_Dispatch(t *testing.T) {
 	for _, s := range strategies {
 		t.Run(s, func(t *testing.T) {
 			raw, err := evalJS(fmt.Sprintf(
-				`JSON.stringify(globalThis.prSplit.applyStrategy(%s, '%s'))`, files, s))
+				`JSON.stringify(await globalThis.prSplit.applyStrategy(%s, '%s'))`, files, s))
 			if err != nil {
-				t.Fatalf("applyStrategy(%s) failed: %v", s, err)
+				t.Fatalf("await applyStrategy(%s) failed: %v", s, err)
 			}
 			var groups map[string][]string
 			if err := json.Unmarshal([]byte(raw.(string)), &groups); err != nil {
@@ -264,7 +264,7 @@ func TestChunk02_EmptyInputs(t *testing.T) {
 	for _, fn := range fns {
 		t.Run(fn, func(t *testing.T) {
 			raw, err := evalJS(fmt.Sprintf(
-				`JSON.stringify(globalThis.prSplit.%s)`, fn))
+				`JSON.stringify(await globalThis.prSplit.%s)`, fn))
 			if err != nil {
 				t.Fatalf("%s failed: %v", fn, err)
 			}
@@ -285,8 +285,8 @@ func TestChunk02_ApplyStrategy_UnknownFallback(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`
-		(function() {
-			var result = globalThis.prSplit.applyStrategy(
+		(async function() {
+			var result = await globalThis.prSplit.applyStrategy(
 				['pkg/a.go', 'cmd/b.go'], 'my-typo');
 			return JSON.stringify({
 				fallbackUsed: !!result._fallbackUsed,
@@ -325,8 +325,8 @@ func TestChunk02_ApplyStrategy_ValidNoFallback(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`
-		(function() {
-			var result = globalThis.prSplit.applyStrategy(
+		(async function() {
+			var result = await globalThis.prSplit.applyStrategy(
 				['pkg/a.go', 'cmd/b.go'], 'directory');
 			return JSON.stringify({
 				fallbackUsed: !!result._fallbackUsed

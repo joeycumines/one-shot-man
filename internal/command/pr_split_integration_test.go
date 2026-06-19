@@ -202,7 +202,7 @@ func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
 	// We'll use evalJS to call functions with the dir parameter.
 
 	// Step 1: Analyze diff (using real git).
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeDiff({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.analyzeDiff({
 		baseBranch: 'main',
 		dir: ` + jsString(repoDir) + `
 	}))`)
@@ -247,7 +247,7 @@ func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
 	t.Logf("File statuses: %v", analysis.FileStatuses)
 
 	// Step 2: Apply strategy (directory grouping).
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.applyStrategy(
 		` + mustJSON(t, analysis.Files) + `,
 		'directory',
 		{
@@ -287,7 +287,7 @@ func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
 	t.Logf("Groups: %v", groups)
 
 	// Step 3: Create split plan (with real git to detect current branch).
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.createSplitPlan(
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.createSplitPlan(
 		` + mustJSON(t, groups) + `,
 		{
 			baseBranch: 'main',
@@ -351,7 +351,7 @@ func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
 	}
 
 	// Step 4: Execute the split (creates real branches).
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: ` + jsString(repoDir) + `,
@@ -392,7 +392,7 @@ func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
 	t.Logf("Created branches:\n%s", branchOutput)
 
 	// Step 5: Verify tree hash equivalence.
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: ` + jsString(repoDir) + `,
@@ -1290,8 +1290,8 @@ func TestIntegration_SendToHandle_ConcurrentSends(t *testing.T) {
 			};
 			// Launch two sendToHandle calls concurrently via Promise.all.
 			var results = await Promise.all([
-				globalThis.prSplit.sendToHandle(mockHandle, 'message-A'),
-				globalThis.prSplit.sendToHandle(mockHandle, 'message-B')
+				await globalThis.prSplit.sendToHandle(mockHandle, 'message-A'),
+				await globalThis.prSplit.sendToHandle(mockHandle, 'message-B')
 			]);
 			return JSON.stringify({
 				error0: results[0].error,
@@ -2112,7 +2112,7 @@ func TestIntegration_IsAliveGuard_AutoSplitAttach(t *testing.T) {
 			var warnings = [];
 			var outputs = [];
 
-			// Replicate the guard logic from automatedSplit().
+			// Replicate the guard logic from await automatedSplit().
 			if (typeof mockHandle.isAlive === 'function' && !mockHandle.isAlive()) {
 				warnings.push('Agent process died between spawn and attach');
 				outputs.push('[auto-split] Warning: Agent process exited unexpectedly. Toggle (Ctrl+]) unavailable.');
@@ -3334,7 +3334,7 @@ func TestIntegration_AgentClassificationAccuracy(t *testing.T) {
 	})
 
 	// Run analysis to get the file list.
-	analysisRaw, err := tp.EvalJS(`JSON.stringify(globalThis.prSplit.analyzeDiff({
+	analysisRaw, err := tp.EvalJS(`JSON.stringify(await globalThis.prSplit.analyzeDiff({
 		baseBranch: 'main',
 		dir: ` + jsString(tp.Dir) + `
 	}))`)
@@ -3532,7 +3532,7 @@ func TestIntegration_AgentSplitPlanQuality(t *testing.T) {
 	})
 
 	// Run analysis first to get file count.
-	analysisRaw, err := tp.EvalJS(`JSON.stringify(globalThis.prSplit.analyzeDiff({
+	analysisRaw, err := tp.EvalJS(`JSON.stringify(await globalThis.prSplit.analyzeDiff({
 		baseBranch: 'main',
 		dir: ` + jsString(tp.Dir) + `
 	}))`)

@@ -300,7 +300,7 @@ func TestDetectGoModulePath(t *testing.T) {
 			if _, err := evalJS(tt.setup); err != nil {
 				t.Fatalf("setup failed: %v", err)
 			}
-			raw, err := evalJS(`globalThis.prSplit.detectGoModulePath()`)
+			raw, err := evalJS(`await globalThis.prSplit.detectGoModulePath()`)
 			if err != nil {
 				t.Fatalf("evalJS failed: %v", err)
 			}
@@ -523,7 +523,7 @@ func TestAnalyzeDiff(t *testing.T) {
 					'D\told/removed.go\n'
 				);
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
 			check: func(t *testing.T, r diffAnalysisResult) {
 				if r.Error != nil {
 					t.Fatalf("unexpected error: %s", *r.Error)
@@ -558,7 +558,7 @@ func TestAnalyzeDiff(t *testing.T) {
 					'C100\tsrc/original.go\tsrc/copy.go\n'
 				);
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
 			check: func(t *testing.T, r diffAnalysisResult) {
 				if r.Error != nil {
 					t.Fatalf("unexpected error: %s", *r.Error)
@@ -592,7 +592,7 @@ func TestAnalyzeDiff(t *testing.T) {
 					'A\tnew.go\n'
 				);
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
 			check: func(t *testing.T, r diffAnalysisResult) {
 				if r.Error == nil {
 					t.Fatal("expected error for unmerged path")
@@ -611,7 +611,7 @@ func TestAnalyzeDiff(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitFail('not a git repo');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
 			check: func(t *testing.T, r diffAnalysisResult) {
 				if r.Error == nil {
 					t.Fatal("expected error for rev-parse failure")
@@ -627,7 +627,7 @@ func TestAnalyzeDiff(t *testing.T) {
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('orphan-branch');
 				globalThis._gitResponses['merge-base main orphan-branch'] = _gitFail('no merge base');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
 			check: func(t *testing.T, r diffAnalysisResult) {
 				if r.Error == nil {
 					t.Fatal("expected error for merge-base failure")
@@ -644,7 +644,7 @@ func TestAnalyzeDiff(t *testing.T) {
 				globalThis._gitResponses['merge-base main empty-branch'] = _gitOk('jkl012');
 				globalThis._gitResponses['diff --name-status jkl012 empty-branch'] = _gitOk('');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
 			check: func(t *testing.T, r diffAnalysisResult) {
 				if r.Error != nil {
 					t.Fatalf("unexpected error: %s", *r.Error)
@@ -663,7 +663,7 @@ func TestAnalyzeDiff(t *testing.T) {
 					'T\tchanged-type.go\n'
 				);
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
 			check: func(t *testing.T, r diffAnalysisResult) {
 				if r.Error != nil {
 					t.Fatalf("unexpected error: %s", *r.Error)
@@ -683,7 +683,7 @@ func TestAnalyzeDiff(t *testing.T) {
 				globalThis._gitResponses['merge-base main diff-fail-branch'] = _gitOk('pqr678');
 				globalThis._gitResponses['diff --name-status pqr678 diff-fail-branch'] = _gitFail('diff error');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`,
 			check: func(t *testing.T, r diffAnalysisResult) {
 				if r.Error == nil {
 					t.Fatal("expected error for diff failure")
@@ -698,7 +698,7 @@ func TestAnalyzeDiff(t *testing.T) {
 				globalThis._gitResponses['merge-base develop feat'] = _gitOk('stu901');
 				globalThis._gitResponses['diff --name-status stu901 feat'] = _gitOk('A\tnew.go\n');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.analyzeDiff({}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.analyzeDiff({}))`,
 			check: func(t *testing.T, r diffAnalysisResult) {
 				if r.Error != nil {
 					t.Fatalf("unexpected error: %s", *r.Error)
@@ -756,7 +756,7 @@ func TestAssessIndependence(t *testing.T) {
 		{
 			name:   "nil plan returns empty",
 			setup:  ``,
-			invoke: `JSON.stringify(globalThis.prSplit.assessIndependence(null, {}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.assessIndependence(null, {}))`,
 			check: func(t *testing.T, pairs []independencePair) {
 				if len(pairs) != 0 {
 					t.Errorf("expected 0 pairs, got %d", len(pairs))
@@ -766,7 +766,7 @@ func TestAssessIndependence(t *testing.T) {
 		{
 			name:  "single split returns empty",
 			setup: ``,
-			invoke: `JSON.stringify(globalThis.prSplit.assessIndependence({
+			invoke: `JSON.stringify(await globalThis.prSplit.assessIndependence({
 				splits: [{name: 's1', files: ['a.go']}]
 			}, {}))`,
 			check: func(t *testing.T, pairs []independencePair) {
@@ -799,7 +799,7 @@ func TestAssessIndependence(t *testing.T) {
 					return _prevExecvI(argv);
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.assessIndependence({
+			invoke: `JSON.stringify(await globalThis.prSplit.assessIndependence({
 				splits: [
 					{name: 'config', files: ['config/config.go']},
 					{name: 'session', files: ['session/session.go']}
@@ -817,7 +817,7 @@ func TestAssessIndependence(t *testing.T) {
 		{
 			name:  "dependent splits share directory",
 			setup: ``,
-			invoke: `JSON.stringify(globalThis.prSplit.assessIndependence({
+			invoke: `JSON.stringify(await globalThis.prSplit.assessIndependence({
 				splits: [
 					{name: 's1', files: ['pkg/a.go']},
 					{name: 's2', files: ['pkg/b.go']}
@@ -852,7 +852,7 @@ func TestAssessIndependence(t *testing.T) {
 					return _prevExecvJ(argv);
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.assessIndependence({
+			invoke: `JSON.stringify(await globalThis.prSplit.assessIndependence({
 				splits: [
 					{name: 'a', files: ['pkgA/a.go']},
 					{name: 'b', files: ['pkgB/b.go']},
@@ -872,7 +872,7 @@ func TestAssessIndependence(t *testing.T) {
 		{
 			name:  "non-Go files — directory-only independence",
 			setup: ``,
-			invoke: `JSON.stringify(globalThis.prSplit.assessIndependence({
+			invoke: `JSON.stringify(await globalThis.prSplit.assessIndependence({
 				splits: [
 					{name: 'docs', files: ['docs/README.md']},
 					{name: 'config', files: ['config/app.yaml']}
@@ -920,7 +920,7 @@ func TestBuildDependencyGraph_IndependentSplits(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.buildDependencyGraph({
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.buildDependencyGraph({
 		splits: [
 			{name: 'split/01-cmd', files: ['cmd/main.go']},
 			{name: 'split/02-docs', files: ['docs/README.md']}
@@ -955,7 +955,7 @@ func TestBuildDependencyGraph_DependentSplits(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.buildDependencyGraph({
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.buildDependencyGraph({
 		splits: [
 			{name: 'split/01-a', files: ['pkg/a.go']},
 			{name: 'split/02-b', files: ['pkg/b.go']},
@@ -995,7 +995,7 @@ func TestBuildDependencyGraph_NilPlan(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.buildDependencyGraph(null, null))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.buildDependencyGraph(null, null))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1483,7 +1483,7 @@ func TestSplitsAreIndependent(t *testing.T) {
 		{
 			name:  "no_dir_overlap_returns_true",
 			setup: `globalThis._mockFiles61 = {};`,
-			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+			invoke: `JSON.stringify({result: await globalThis.prSplit._splitsAreIndependent(
 				{files: ['cmd/main.go']},
 				{files: ['internal/foo.go']}
 			)})`,
@@ -1492,7 +1492,7 @@ func TestSplitsAreIndependent(t *testing.T) {
 		{
 			name:  "exact_dir_overlap_returns_false",
 			setup: `globalThis._mockFiles61 = {};`,
-			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+			invoke: `JSON.stringify({result: await globalThis.prSplit._splitsAreIndependent(
 				{files: ['pkg/a.go']},
 				{files: ['pkg/b.go']}
 			)})`,
@@ -1501,7 +1501,7 @@ func TestSplitsAreIndependent(t *testing.T) {
 		{
 			name:  "both_empty_files_returns_true",
 			setup: `globalThis._mockFiles61 = {};`,
-			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+			invoke: `JSON.stringify({result: await globalThis.prSplit._splitsAreIndependent(
 				{files: []},
 				{files: []}
 			)})`,
@@ -1519,7 +1519,7 @@ func TestSplitsAreIndependent(t *testing.T) {
 				if (globalThis._mockFiles61[p]) return {content: globalThis._mockFiles61[p], error: null};
 				return {content: '', error: 'not found'};
 			};`,
-			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+			invoke: `JSON.stringify({result: await globalThis.prSplit._splitsAreIndependent(
 				{files: ['cmd/main.go']},
 				{files: ['pkg/lib.go']}
 			)})`,
@@ -1536,7 +1536,7 @@ func TestSplitsAreIndependent(t *testing.T) {
 				if (globalThis._mockFiles61[p]) return {content: globalThis._mockFiles61[p], error: null};
 				return {content: '', error: 'not found'};
 			};`,
-			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+			invoke: `JSON.stringify({result: await globalThis.prSplit._splitsAreIndependent(
 				{files: ['pkg/lib.go']},
 				{files: ['cmd/main.go']}
 			)})`,
@@ -1545,7 +1545,7 @@ func TestSplitsAreIndependent(t *testing.T) {
 		{
 			name:  "non_Go_files_dir_overlap_returns_false",
 			setup: `globalThis._mockFiles61 = {};`,
-			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+			invoke: `JSON.stringify({result: await globalThis.prSplit._splitsAreIndependent(
 				{files: ['docs/README.md']},
 				{files: ['docs/CHANGELOG.md']}
 			)})`,
@@ -1562,7 +1562,7 @@ func TestSplitsAreIndependent(t *testing.T) {
 				if (globalThis._mockFiles61[p]) return {content: globalThis._mockFiles61[p], error: null};
 				return {content: '', error: 'not found'};
 			};`,
-			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+			invoke: `JSON.stringify({result: await globalThis.prSplit._splitsAreIndependent(
 				{files: ['cmd/main.go']},
 				{files: ['pkg/lib.go']}
 			)})`,
@@ -1599,7 +1599,7 @@ func TestExtractGoPkgs(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	t.Run("go_files_produce_dir_keys", func(t *testing.T) {
-		val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoPkgs(
+		val, err := evalJS(`JSON.stringify(await globalThis.prSplit.extractGoPkgs(
 			['internal/command/foo.go', 'cmd/main.go'],
 			'github.com/test/repo'
 		))`)
@@ -1627,7 +1627,7 @@ func TestExtractGoPkgs(t *testing.T) {
 	})
 
 	t.Run("non_go_files_ignored", func(t *testing.T) {
-		val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoPkgs(
+		val, err := evalJS(`JSON.stringify(await globalThis.prSplit.extractGoPkgs(
 			['docs/README.md', 'Makefile', 'go.mod'],
 			'github.com/test/repo'
 		))`)
@@ -1640,7 +1640,7 @@ func TestExtractGoPkgs(t *testing.T) {
 	})
 
 	t.Run("null_files_returns_empty", func(t *testing.T) {
-		val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoPkgs(null, ''))`)
+		val, err := evalJS(`JSON.stringify(await globalThis.prSplit.extractGoPkgs(null, ''))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1650,7 +1650,7 @@ func TestExtractGoPkgs(t *testing.T) {
 	})
 
 	t.Run("root_level_go_file_with_modulePath", func(t *testing.T) {
-		val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoPkgs(
+		val, err := evalJS(`JSON.stringify(await globalThis.prSplit.extractGoPkgs(
 			['main.go'],
 			'github.com/test/repo'
 		))`)
@@ -1674,7 +1674,7 @@ func TestExtractGoPkgs(t *testing.T) {
 	})
 
 	t.Run("empty_modulePath_no_qualified_keys", func(t *testing.T) {
-		val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoPkgs(
+		val, err := evalJS(`JSON.stringify(await globalThis.prSplit.extractGoPkgs(
 			['pkg/foo.go'],
 			''
 		))`)
@@ -1717,7 +1717,7 @@ func TestSaveTelemetry_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.saveTelemetry('/tmp/test-telemetry'))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.saveTelemetry('/tmp/test-telemetry'))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1782,7 +1782,7 @@ func TestSaveTelemetry_MkdirFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	badPath := filepath.ToSlash(filepath.Join(blocker, "nested"))
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.saveTelemetry('` + badPath + `'))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.saveTelemetry('` + badPath + `'))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1957,7 +1957,7 @@ func TestValidatePlan_FallbackToLocal(t *testing.T) {
 	// Reproduce the Step 5 logic: Agent provides a structurally-invalid plan
 	// (split with no files), validatePlan returns valid=false, code falls
 	// through to classificationToGroups → createSplitPlan.
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		var analysis = {
 			files: ['cmd/main.go', 'pkg/util.go', 'docs/readme.md'],
 			baseBranch: 'main',
@@ -1999,7 +1999,7 @@ func TestValidatePlan_FallbackToLocal(t *testing.T) {
 
 		// Fallback: generate plan locally from classification.
 		var groups = globalThis.prSplit.classificationToGroups(classification);
-		var localPlan = globalThis.prSplit.createSplitPlan(groups, {
+		var localPlan = await globalThis.prSplit.createSplitPlan(groups, {
 			baseBranch: analysis.baseBranch,
 			sourceBranch: analysis.currentBranch,
 			branchPrefix: 'split/',

@@ -221,7 +221,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, input io.Reade
 
 		// ── CaptureSession factory ───────────────────────────
 		_ = exports.Set("newCaptureSession", func(call goja.FunctionCall) goja.Value {
-			return newCaptureSession(ctx, runtime, call)
+			return newCaptureSession(ctx, adapter, runtime, call)
 		})
 
 		// ── SessionManager factory (experimental) ────────────
@@ -468,7 +468,7 @@ func paneGeoToJS(runtime *goja.Runtime, g parent.PaneGeometry) *goja.Object {
 // JS signature:
 //
 //	termmux.newCaptureSession(command, args?, { dir?, rows?, cols?, env? }?)
-func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
+func newCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	if len(call.Arguments) == 0 {
 		panic(runtime.NewTypeError("newCaptureSession: command argument is required"))
 	}
@@ -527,7 +527,7 @@ func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 	}
 
 	cs := parent.NewCaptureSession(cfg)
-	return WrapCaptureSession(ctx, runtime, cs)
+	return WrapCaptureSession(ctx, adapter, runtime, cs)
 }
 
 // WrapCaptureSession wraps a [parent.CaptureSession] into a Goja object with
@@ -547,7 +547,7 @@ func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 // exitCode, close, interrupt) are confirmed bound with correct signatures
 // via module_capture_test.go. Screen reads go through SessionManager
 // snapshots via the _buildVerifyProxy in JS (Task 48).
-func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.CaptureSession) goja.Value {
+func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, cs *parent.CaptureSession) goja.Value {
 	obj := wrapInteractiveSession(runtime, cs, parent.SessionKindCapture).ToObject(runtime)
 
 	// ── CaptureSession-specific methods (not part of InteractiveSession) ──
@@ -656,11 +656,11 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 		}
 	})
 
-	// ── passthrough(toggleKey?) → { reason, error? } ────
-	// BLOCKING: enters raw passthrough mode, returns when user toggles or child exits.
+	// ── passthrough(toggleKey?) → Promise<{ reason, error? }> ────
+	// Async: enters raw passthrough mode, resolves when user toggles or child exits.
 	// Uses os.Stdin/os.Stdout and the real terminal state. The caller (BubbleTea's
 	// toggleModel) must have already released the terminal before calling this.
-	_ = obj.Set("passthrough", func(call goja.FunctionCall) map[string]any {
+	_ = obj.Set("passthrough", func(call goja.FunctionCall) goja.Value {
 		toggleKey := byte(parent.DefaultToggleKey)
 		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
 			cfgObj := call.Argument(0).ToObject(runtime)
@@ -671,27 +671,34 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 			}
 		}
 
-		termFd := int(os.Stdin.Fd())
-		reason, err := cs.Passthrough(ctx, parent.PassthroughConfig{
-			TerminalIO: parent.TerminalIO{
-				Stdin:         os.Stdin,
-				Stdout:        os.Stdout,
-				TermFd:        termFd,
-				BlockingGuard: parent.DefaultBlockingGuard(),
-			},
-			PassthroughOptions: parent.PassthroughOptions{
-				ToggleKey: toggleKey,
-				TermState: ptyio.RealTermState{},
-			},
+		promise, resolve, _ := adapter.JS().NewChainedPromise()
+
+		adapter.Loop().Promisify(ctx, func(ctx context.Context) (any, error) {
+			termFd := int(os.Stdin.Fd())
+			reason, err := cs.Passthrough(ctx, parent.PassthroughConfig{
+				TerminalIO: parent.TerminalIO{
+					Stdin:         os.Stdin,
+					Stdout:        os.Stdout,
+					TermFd:        termFd,
+					BlockingGuard: parent.DefaultBlockingGuard(),
+				},
+				PassthroughOptions: parent.PassthroughOptions{
+					ToggleKey: toggleKey,
+					TermState: ptyio.RealTermState{},
+				},
+			})
+
+			result := map[string]any{
+				"reason": exitReasonString(reason),
+			}
+			if err != nil {
+				result["error"] = err.Error()
+			}
+			_ = adapter.Loop().Submit(func() { resolve(result) })
+			return nil, nil
 		})
 
-		result := map[string]any{
-			"reason": exitReasonString(reason),
-		}
-		if err != nil {
-			result["error"] = err.Error()
-		}
-		return result
+		return adapter.GojaWrapPromise(promise)
 	})
 
 	return obj
@@ -965,7 +972,7 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 		panic(runtime.NewGoError(fmt.Errorf("newBoundedSession: start failed: %w", err)))
 	}
 
-	sessionVal := WrapCaptureSession(ctx, runtime, cs)
+	sessionVal := WrapCaptureSession(ctx, adapter, runtime, cs)
 	mgrVal := WrapSessionManager(ctx, adapter, runtime, mgr, os.Stdin, os.Stdout, -1, "")
 
 	result := runtime.NewObject()
@@ -1924,13 +1931,21 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			cfg.Stdout = os.Stdout
 		}
 
-		reason, err := s.mgr.Passthrough(s.ctx, cfg)
-		result := s.runtime.NewObject()
-		_ = result.Set("reason", exitReasonString(reason))
-		if err != nil {
-			_ = result.Set("error", err.Error())
-		}
-		return result
+		promise, resolve, _ := s.adapter.JS().NewChainedPromise()
+
+		s.adapter.Loop().Promisify(s.ctx, func(ctx context.Context) (any, error) {
+			reason, err := s.mgr.Passthrough(ctx, cfg)
+			result := map[string]any{
+				"reason": exitReasonString(reason),
+			}
+			if err != nil {
+				result["error"] = err.Error()
+			}
+			_ = s.adapter.Loop().Submit(func() { resolve(result) })
+			return nil, nil
+		})
+
+		return s.adapter.GojaWrapPromise(promise)
 	})
 
 	_ = obj.Set("attach", func(call goja.FunctionCall) goja.Value {

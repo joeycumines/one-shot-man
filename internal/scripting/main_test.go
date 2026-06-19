@@ -319,18 +319,18 @@ func TestNativeModuleErrorHandling(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
-		// Test time.sleep with invalid arguments
+		// Test module functions with invalid arguments
 		script := engine.LoadScriptFromString("invalid_args", `
-			const {sleep} = require('osm:time');
+			const regexp = require('osm:regexp');
 			try {
-				sleep(-1); // Negative sleep
+				regexp.match(null, null);
 			} catch (e) {
-				ctx.log("Caught error for negative sleep: " + e.message);
+				ctx.log("Caught error for null args: " + e.message);
 			}
 			try {
-				sleep('not a number'); // Non-numeric
+				regexp.match(123, "test");
 			} catch (e) {
-				ctx.log("Caught error for string sleep: " + e.message);
+				ctx.log("Caught error for non-string pattern: " + e.message);
 			}
 		`)
 
@@ -346,7 +346,6 @@ func TestNativeModuleErrorHandling(t *testing.T) {
 
 		// Test JS error throwing from modules
 		script := engine.LoadScriptFromString("js_error", `
-			const {sleep} = require('osm:time');
 			try {
 				throw new Error("Test error from JS");
 			} catch (e) {
@@ -413,10 +412,8 @@ func TestNativeModuleErrorHandling(t *testing.T) {
 
 		// Test async module operations don't cause issues
 		script := engine.LoadScriptFromString("async_module", `
-			const {sleep} = require('osm:time');
 			ctx.log("Starting async test");
-			sleep(1);
-			ctx.log("After sleep");
+			ctx.log("After async");
 		`)
 
 		err := engine.ExecuteScript(script)

@@ -63,7 +63,7 @@ Created via `newCaptureSession(command, args?, opts?)`.
 | `pid()` | `CaptureSession.Pid()` | — | `number` | silent |
 | `exitCode()` | `CaptureSession.ExitCode()` | — | `number` | silent |
 | `isDone()` | channel select on `Done()` | — | `boolean` | silent |
-| `passthrough(opts?)` | `CaptureSession.Passthrough()` | `{toggleKey?}` | `{reason, error?}` | error field |
+| `passthrough(opts?)` | `CaptureSession.Passthrough()` | `{toggleKey?}` | `Promise<{reason, error?}>` | async, error field |
 | `reader()` | `InteractiveSession.Reader()` | — | `string\|null` | blocks; null on close |
 | `readAvailable()` | drain `Reader()` channel | — | `string\|null` | non-blocking; null on close |
 | `write(data)` | `InteractiveSession.Write()` | `string` | `undefined` | throws |
@@ -140,8 +140,8 @@ should prefer pinned SessionID access: `snapshot(id)` /
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
-| `passthrough(opts)` | `SessionManager.Passthrough()` | `{stdin?,stdout?,termFd?,toggleKey?,statusBar?,restoreScreen?,resizeFn?}` | `{reason, error?}` | error field |
-| `switchTo()` | `SessionManager.Passthrough()` | — | `{reason, error?, childOutput?}` | error field |
+| `passthrough(opts)` | `SessionManager.Passthrough()` | `{stdin?,stdout?,termFd?,toggleKey?,statusBar?,restoreScreen?,resizeFn?}` | `Promise<{reason, error?}>` | async, error field |
+| `switchTo()` | `SessionManager.Passthrough()` | — | `Promise<{reason, error?, childOutput?}>` | async, error field |
 | `hasChild()` | `ActiveID() != 0` | — | `boolean` | silent |
 
 ### Configuration

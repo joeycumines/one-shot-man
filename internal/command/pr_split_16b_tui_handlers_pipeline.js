@@ -132,7 +132,7 @@
 
     // --- Async Pipeline Handlers — drive wizard state machine ---
 
-    function startAnalysis(s) {
+    async function startAnalysis(s) {
         s.isProcessing = true;
         s.analysisProgress = 0;
         s.analysisStartedAt = Date.now();  // T002: track start time for timeout
@@ -150,7 +150,7 @@
         // Run config state handler.
         // Pass outputFn to suppress output.print (which would corrupt
         // BubbleTea terminal). Use log.printf instead — safe in TUI context.
-        var configResult = handleConfigState({
+        var configResult = await handleConfigState({
             baseBranch: prSplit.runtime.baseBranch,
             dir: prSplit.runtime.dir,
             strategy: prSplit.runtime.strategy,

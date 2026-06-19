@@ -126,7 +126,7 @@
                         };
 
                         wizard.transition('CONFIG', { config: autoConfig });
-                        var configResult = handleConfigState(autoConfig);
+                        var configResult = await handleConfigState(autoConfig);
 
                         if (configResult.error) {
                             wizard.error(configResult.error);
@@ -370,9 +370,9 @@
             telemetry: {
                 description: 'Show session telemetry (local, never sent externally)',
                 usage: 'telemetry [save]',
-                handler: function(args) {
+                handler: async function(args) {
                     if (args && args[0] === 'save') {
-                        var saveResult = prSplit.saveTelemetry();
+                        var saveResult = await prSplit.saveTelemetry();
                         if (saveResult.error) output.print('Error: ' + saveResult.error);
                         else output.print('Telemetry saved to: ' + saveResult.path);
                         return;

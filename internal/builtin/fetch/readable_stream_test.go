@@ -2,6 +2,7 @@ package fetch
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"strings"
@@ -13,7 +14,7 @@ import (
 
 func TestReadableStream_NewDefaults(t *testing.T) {
 	t.Parallel()
-	rs := NewReadableStream(io.NopCloser(strings.NewReader("x")), nil)
+	rs := NewReadableStream(context.Background(), io.NopCloser(strings.NewReader("x")), nil)
 	if rs.Locked() {
 		t.Fatal("new stream should not be locked")
 	}
@@ -21,7 +22,7 @@ func TestReadableStream_NewDefaults(t *testing.T) {
 
 func TestReadableStream_GetReader_LocksStream(t *testing.T) {
 	t.Parallel()
-	rs := NewReadableStream(io.NopCloser(strings.NewReader("hello")), nil)
+	rs := NewReadableStream(context.Background(), io.NopCloser(strings.NewReader("hello")), nil)
 
 	reader, err := rs.GetReader()
 	if err != nil {
@@ -49,7 +50,7 @@ func TestReadableStream_GetReader_LocksStream(t *testing.T) {
 func TestReadableStream_ReadAll(t *testing.T) {
 	t.Parallel()
 	data := "hello, streaming world! This is a test payload."
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(data)), nil)
+	rs := NewReadableStream(context.Background(), io.NopCloser(strings.NewReader(data)), nil)
 
 	reader, err := rs.GetReader()
 	if err != nil {
@@ -77,7 +78,7 @@ func TestReadableStream_LargeBody_MultipleChunks(t *testing.T) {
 	t.Parallel()
 	// Create a body larger than one chunk (>64 KiB).
 	data := strings.Repeat("ABCDEFGH", 10000) // 80,000 bytes
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(data)), nil)
+	rs := NewReadableStream(context.Background(), io.NopCloser(strings.NewReader(data)), nil)
 
 	reader, err := rs.GetReader()
 	if err != nil {
@@ -108,7 +109,7 @@ func TestReadableStream_LargeBody_MultipleChunks(t *testing.T) {
 
 func TestReadableStream_EmptyBody(t *testing.T) {
 	t.Parallel()
-	rs := NewReadableStream(io.NopCloser(strings.NewReader("")), nil)
+	rs := NewReadableStream(context.Background(), io.NopCloser(strings.NewReader("")), nil)
 
 	reader, err := rs.GetReader()
 	if err != nil {
@@ -127,7 +128,7 @@ func TestReadableStream_EmptyBody(t *testing.T) {
 
 func TestReadableStream_Cancel_BeforeRead(t *testing.T) {
 	t.Parallel()
-	rs := NewReadableStream(io.NopCloser(strings.NewReader("data")), nil)
+	rs := NewReadableStream(context.Background(), io.NopCloser(strings.NewReader("data")), nil)
 
 	if err := rs.Cancel(); err != nil {
 		t.Fatalf("Cancel: %v", err)
@@ -142,7 +143,7 @@ func TestReadableStream_Cancel_BeforeRead(t *testing.T) {
 
 func TestReadableStream_Cancel_Double(t *testing.T) {
 	t.Parallel()
-	rs := NewReadableStream(io.NopCloser(strings.NewReader("data")), nil)
+	rs := NewReadableStream(context.Background(), io.NopCloser(strings.NewReader("data")), nil)
 	if err := rs.Cancel(); err != nil {
 		t.Fatalf("first Cancel: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestReadableStream_Cancel_WhileReading(t *testing.T) {
 	t.Parallel()
 	// Use a blocking reader — pipe that we control.
 	pr, pw := io.Pipe()
-	rs := NewReadableStream(pr, nil)
+	rs := NewReadableStream(context.Background(), pr, nil)
 
 	reader, err := rs.GetReader()
 	if err != nil {
@@ -196,7 +197,7 @@ func TestReadableStream_Cancel_WhileReading(t *testing.T) {
 
 func TestReadableStreamDefaultReader_ReleaseLock_Double(t *testing.T) {
 	t.Parallel()
-	rs := NewReadableStream(io.NopCloser(strings.NewReader("data")), nil)
+	rs := NewReadableStream(context.Background(), io.NopCloser(strings.NewReader("data")), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -212,7 +213,7 @@ func TestReadableStreamDefaultReader_ReleaseLock_Double(t *testing.T) {
 
 func TestReadableStreamDefaultReader_ReadAfterRelease(t *testing.T) {
 	t.Parallel()
-	rs := NewReadableStream(io.NopCloser(strings.NewReader("data")), nil)
+	rs := NewReadableStream(context.Background(), io.NopCloser(strings.NewReader("data")), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -231,7 +232,7 @@ func TestReadableStreamDefaultReader_ReadAfterRelease(t *testing.T) {
 func TestReadableStream_ReacquireReaderAfterRelease(t *testing.T) {
 	t.Parallel()
 	data := "reacquire"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(data)), nil)
+	rs := NewReadableStream(context.Background(), io.NopCloser(strings.NewReader(data)), nil)
 
 	r1, err := rs.GetReader()
 	if err != nil {
@@ -281,7 +282,7 @@ func (r *errReader) Close() error             { return nil }
 func TestReadableStream_SourceError(t *testing.T) {
 	t.Parallel()
 	testErr := errors.New("synthetic read error")
-	rs := NewReadableStream(&errReader{err: testErr}, nil)
+	rs := NewReadableStream(context.Background(), &errReader{err: testErr}, nil)
 
 	reader, err := rs.GetReader()
 	if err != nil {
@@ -306,7 +307,7 @@ func TestReadableStream_ConcurrentReads(t *testing.T) {
 	// This tests that the bounded channel does not cause deadlocks
 	// when pump is writing and consumer is reading concurrently.
 	data := strings.Repeat("X", 200000) // ~200 KB
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(data)), nil)
+	rs := NewReadableStream(context.Background(), io.NopCloser(strings.NewReader(data)), nil)
 
 	reader, err := rs.GetReader()
 	if err != nil {
@@ -343,7 +344,7 @@ func TestReadableStream_ConcurrentReads(t *testing.T) {
 
 func TestReadableStream_GetReader_AfterClosed(t *testing.T) {
 	t.Parallel()
-	rs := NewReadableStream(io.NopCloser(strings.NewReader("data")), nil)
+	rs := NewReadableStream(context.Background(), io.NopCloser(strings.NewReader("data")), nil)
 	_ = rs.Cancel()
 
 	_, err := rs.GetReader()

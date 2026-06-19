@@ -17,8 +17,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
-// initRepoWithCommit creates a non-bare repo with one committed file.
-// Returns the *git.Repository and its path.
+// initRepoWithCommit creates a non-bare repo with one committed file on the
+// "main" branch. Returns the *git.Repository and its path.
 func initRepoWithCommit(t *testing.T) (*git.Repository, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -26,6 +26,14 @@ func initRepoWithCommit(t *testing.T) (*git.Repository, string) {
 	repo, err := git.PlainInit(dir, false)
 	if err != nil {
 		t.Fatalf("PlainInit: %v", err)
+	}
+
+	// Explicitly set HEAD to refs/heads/main so the initial commit creates
+	// the "main" branch regardless of the system's default branch name.
+	if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(
+		plumbing.HEAD, plumbing.NewBranchReferenceName("main"),
+	)); err != nil {
+		t.Fatalf("SetReference HEAD: %v", err)
 	}
 
 	// Create a file and commit it.
@@ -54,12 +62,19 @@ func initRepoWithCommit(t *testing.T) (*git.Repository, string) {
 	return repo, dir
 }
 
-// initBareRepo creates a bare repo at the given path.
+// initBareRepo creates a bare repo at the given path with HEAD pointing to
+// refs/heads/main. Returns the *git.Repository.
 func initBareRepo(t *testing.T, path string) *git.Repository {
 	t.Helper()
 	repo, err := git.PlainInit(path, true)
 	if err != nil {
 		t.Fatalf("PlainInit --bare: %v", err)
+	}
+	// Set HEAD to refs/heads/main so clones check out the "main" branch.
+	if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(
+		plumbing.HEAD, plumbing.NewBranchReferenceName("main"),
+	)); err != nil {
+		t.Fatalf("SetReference HEAD on bare repo: %v", err)
 	}
 	return repo
 }
@@ -826,5 +841,452 @@ func TestCommit_SpecialCharactersInMessage(t *testing.T) {
 				t.Fatalf("commit message mismatch:\n  got:  %q\n  want: %q", commit.Message, tc.msg)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests for branch inspection methods: OpenDetect, IsWorkTree, BranchExists,
+// DefaultBranch, HeadBranchName.
+// ---------------------------------------------------------------------------
+
+// setupCloneWithOriginHEAD creates a source repo with a commit, pushes to a
+// bare remote, and clones it. The clone will have origin/HEAD set to point
+// to origin/main (go-git's clone does not set this automatically, so we set
+// it manually). Returns (cloneDir, srcDir).
+func setupCloneWithOriginHEAD(t *testing.T) (cloneDir, srcDir string) {
+	t.Helper()
+
+	srcRepo, srcDir := initRepoWithCommit(t)
+
+	bareDir := filepath.Join(t.TempDir(), "bare.git")
+	initBareRepo(t, bareDir)
+
+	if _, err := srcRepo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{bareDir},
+	}); err != nil {
+		t.Fatalf("CreateRemote: %v", err)
+	}
+	if err := srcRepo.Push(&git.PushOptions{RemoteName: "origin"}); err != nil {
+		t.Fatalf("Push seed: %v", err)
+	}
+
+	cloneDir = filepath.Join(t.TempDir(), "clone")
+	cloneRepo, err := Clone(context.Background(), bareDir, cloneDir)
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+
+	// go-git's clone does not set refs/remotes/origin/HEAD. Set it manually
+	// so DefaultBranch() can detect it via the symbolic ref path.
+	if err := cloneRepo.repo.Storer.SetReference(plumbing.NewSymbolicReference(
+		plumbing.NewRemoteHEADReferenceName("origin"),
+		plumbing.NewRemoteReferenceName("origin", "main"),
+	)); err != nil {
+		t.Fatalf("SetReference origin/HEAD: %v", err)
+	}
+
+	return cloneDir, srcDir
+}
+
+// initRepoWithBranch creates a non-bare repo with one commit on the specified
+// branch name. Returns the repo path.
+func initRepoWithBranch(t *testing.T, branchName string) string {
+	t.Helper()
+	dir := t.TempDir()
+
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+
+	// Set the initial branch to the specified name.
+	if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(
+		plumbing.HEAD, plumbing.NewBranchReferenceName(branchName),
+	)); err != nil {
+		t.Fatalf("SetReference HEAD: %v", err)
+	}
+
+	// Create a file and commit it.
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# test\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree: %v", err)
+	}
+
+	if _, err := wt.Add("README.md"); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	sig := &object.Signature{
+		Name:  "test",
+		Email: "test@test.com",
+		When:  time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	if _, err := wt.Commit("init", &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	return dir
+}
+
+func TestOpenDetect_NotInRepo(t *testing.T) {
+	t.Parallel()
+
+	// An empty temp dir is not a repo.
+	_, err := OpenDetect(t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for non-repo dir")
+	}
+	if !errors.Is(err, ErrNotRepo) {
+		t.Fatalf("expected ErrNotRepo, got: %v", err)
+	}
+}
+
+func TestOpenDetect_ExactPath(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := OpenDetect(dir)
+	if err != nil {
+		t.Fatalf("OpenDetect at exact repo root: %v", err)
+	}
+	_ = repo
+}
+
+func TestOpenDetect_Subdirectory(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+
+	// Create a subdirectory and open from there.
+	subDir := filepath.Join(dir, "sub", "deep")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	repo, err := OpenDetect(subDir)
+	if err != nil {
+		t.Fatalf("OpenDetect from subdirectory: %v", err)
+	}
+
+	// Verify we can use the repo.
+	isWT, err := repo.IsWorkTree()
+	if err != nil {
+		t.Fatalf("IsWorkTree: %v", err)
+	}
+	if !isWT {
+		t.Fatal("expected worktree=true for repo opened from subdirectory")
+	}
+}
+
+func TestIsWorkTree_NormalRepo(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	isWT, err := repo.IsWorkTree()
+	if err != nil {
+		t.Fatalf("IsWorkTree: %v", err)
+	}
+	if !isWT {
+		t.Fatal("expected IsWorkTree=true for normal repo")
+	}
+}
+
+func TestIsWorkTree_BareRepo(t *testing.T) {
+	t.Parallel()
+
+	bareDir := filepath.Join(t.TempDir(), "bare.git")
+	bareGit := initBareRepo(t, bareDir)
+	r := &Repo{repo: bareGit}
+
+	isWT, err := r.IsWorkTree()
+	if err != nil {
+		t.Fatalf("IsWorkTree on bare repo returned error: %v", err)
+	}
+	if isWT {
+		t.Fatal("expected IsWorkTree=false for bare repo")
+	}
+}
+
+func TestBranchExists_Local(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// The default branch is "main" (set by initRepoWithCommit).
+	exists, err := repo.BranchExists("main")
+	if err != nil {
+		t.Fatalf("BranchExists main: %v", err)
+	}
+	if !exists {
+		t.Fatal("expected main branch to exist locally")
+	}
+}
+
+func TestBranchExists_NotFound(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	exists, err := repo.BranchExists("nonexistent-branch-xyz")
+	if err != nil {
+		t.Fatalf("BranchExists: %v", err)
+	}
+	if exists {
+		t.Fatal("expected nonexistent branch to return false")
+	}
+}
+
+func TestBranchExists_RemoteOnly(t *testing.T) {
+	t.Parallel()
+
+	// Clone from bare — clone has origin/main as a remote tracking ref.
+	cloneDir, _ := setupCloneWithOriginHEAD(t)
+
+	repo, err := Open(cloneDir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// The clone has both local main and origin/main.
+	exists, err := repo.BranchExists("main")
+	if err != nil {
+		t.Fatalf("BranchExists main: %v", err)
+	}
+	if !exists {
+		t.Fatal("expected main to exist (local or remote) in clone")
+	}
+}
+
+func TestDefaultBranch_OriginHEAD(t *testing.T) {
+	t.Parallel()
+
+	// Clone from a bare repo — clone has origin/HEAD -> origin/main.
+	cloneDir, _ := setupCloneWithOriginHEAD(t)
+
+	repo, err := Open(cloneDir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	branch, err := repo.DefaultBranch()
+	if err != nil {
+		t.Fatalf("DefaultBranch: %v", err)
+	}
+	if branch != "main" {
+		t.Fatalf("expected 'main', got %q", branch)
+	}
+}
+
+func TestDefaultBranch_OriginHEAD_Master(t *testing.T) {
+	t.Parallel()
+
+	// Create a source repo with a "master" branch, push to bare, clone.
+	srcDir := initRepoWithBranch(t, "master")
+	srcRepo, err := git.PlainOpen(srcDir)
+	if err != nil {
+		t.Fatalf("PlainOpen srcDir: %v", err)
+	}
+
+	bareDir := filepath.Join(t.TempDir(), "bare.git")
+	bareRepo := initBareRepo(t, bareDir)
+	// Set bare repo HEAD to master so clone checks out master.
+	if err := bareRepo.Storer.SetReference(plumbing.NewSymbolicReference(
+		plumbing.HEAD, plumbing.NewBranchReferenceName("master"),
+	)); err != nil {
+		t.Fatalf("SetReference HEAD on bare repo: %v", err)
+	}
+
+	if _, err := srcRepo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{bareDir},
+	}); err != nil {
+		t.Fatalf("CreateRemote: %v", err)
+	}
+	if err := srcRepo.Push(&git.PushOptions{RemoteName: "origin"}); err != nil {
+		t.Fatalf("Push seed: %v", err)
+	}
+
+	cloneDir := filepath.Join(t.TempDir(), "clone")
+	cloneRepo, err := Clone(context.Background(), bareDir, cloneDir)
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+
+	// Set origin/HEAD -> origin/master so DefaultBranch detects "master"
+	// via the symbolic ref path (not the common-name fallback).
+	if err := cloneRepo.repo.Storer.SetReference(plumbing.NewSymbolicReference(
+		plumbing.NewRemoteHEADReferenceName("origin"),
+		plumbing.NewRemoteReferenceName("origin", "master"),
+	)); err != nil {
+		t.Fatalf("SetReference origin/HEAD: %v", err)
+	}
+
+	repo, err := Open(cloneDir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	branch, err := repo.DefaultBranch()
+	if err != nil {
+		t.Fatalf("DefaultBranch: %v", err)
+	}
+	if branch != "master" {
+		t.Fatalf("expected 'master' via origin/HEAD, got %q", branch)
+	}
+}
+
+func TestDefaultBranch_LocalOnly(t *testing.T) {
+	t.Parallel()
+
+	// A local-only repo with main branch (no remote).
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	branch, err := repo.DefaultBranch()
+	if err != nil {
+		t.Fatalf("DefaultBranch: %v", err)
+	}
+	if branch != "main" {
+		t.Fatalf("expected 'main' for local-only repo, got %q", branch)
+	}
+}
+
+func TestDefaultBranch_MasterBranch(t *testing.T) {
+	t.Parallel()
+
+	// Create a repo with master branch (no main, no remote).
+	dir := initRepoWithBranch(t, "master")
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	branch, err := repo.DefaultBranch()
+	if err != nil {
+		t.Fatalf("DefaultBranch: %v", err)
+	}
+	if branch != "master" {
+		t.Fatalf("expected 'master' for repo with master branch, got %q", branch)
+	}
+}
+
+func TestDefaultBranch_Fallback(t *testing.T) {
+	t.Parallel()
+
+	// Create a repo with a non-standard branch name.
+	dir := initRepoWithBranch(t, "custom-branch")
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// No main, master, develop, or origin/HEAD → falls back to "main".
+	branch, err := repo.DefaultBranch()
+	if err != nil {
+		t.Fatalf("DefaultBranch: %v", err)
+	}
+	if branch != "main" {
+		t.Fatalf("expected 'main' fallback, got %q", branch)
+	}
+}
+
+func TestDefaultBranch_DevelopBranch(t *testing.T) {
+	t.Parallel()
+
+	// Create a repo with develop branch (no main, no master).
+	dir := initRepoWithBranch(t, "develop")
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	branch, err := repo.DefaultBranch()
+	if err != nil {
+		t.Fatalf("DefaultBranch: %v", err)
+	}
+	if branch != "develop" {
+		t.Fatalf("expected 'develop' for repo with develop branch, got %q", branch)
+	}
+}
+
+func TestHeadBranchName(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	name, err := repo.HeadBranchName()
+	if err != nil {
+		t.Fatalf("HeadBranchName: %v", err)
+	}
+	if name != "main" {
+		t.Fatalf("expected 'main', got %q", name)
+	}
+}
+
+func TestHeadBranchName_DetachedHead(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	gitRepo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatalf("PlainOpen: %v", err)
+	}
+
+	// Get the commit hash, then detach HEAD to that hash.
+	head, err := gitRepo.Head()
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	commitHash := head.Hash()
+
+	if err := gitRepo.Storer.SetReference(plumbing.NewHashReference(
+		plumbing.HEAD, commitHash,
+	)); err != nil {
+		t.Fatalf("SetReference detached HEAD: %v", err)
+	}
+
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	_, err = repo.HeadBranchName()
+	if err == nil {
+		t.Fatal("expected error for detached HEAD")
+	}
+	if !errors.Is(err, ErrDetachedHead) {
+		t.Fatalf("expected ErrDetachedHead, got: %v", err)
+	}
+}
+
+func TestErrDetachedHead(t *testing.T) {
+	t.Parallel()
+	if ErrDetachedHead.Error() != "gitops: detached HEAD" {
+		t.Fatalf("unexpected ErrDetachedHead message: %q", ErrDetachedHead.Error())
 	}
 }

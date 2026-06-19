@@ -1654,18 +1654,50 @@ func (m *toggleModel) toggleCmd() tea.Cmd {
 		// Capture the return value to forward to the model (e.g., exit reason).
 		var toggleResult map[string]any
 		if m.jsRunner != nil && m.onToggle != nil {
+			done := make(chan struct{})
 			_ = m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
 				val, err := m.onToggle(goja.Undefined())
 				if err != nil {
+					close(done)
 					return err
 				}
 				if val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
+					obj := val.ToObject(vm)
+					if obj != nil {
+						thenProp := obj.Get("then")
+						if thenProp != nil && !goja.IsUndefined(thenProp) {
+							if thenFn, ok := goja.AssertFunction(thenProp); ok {
+								onFulfilled := vm.ToValue(func(call goja.FunctionCall) goja.Value {
+									resolved := call.Argument(0)
+									if resolved != nil && !goja.IsUndefined(resolved) && !goja.IsNull(resolved) {
+										if exported, ok2 := resolved.Export().(map[string]any); ok2 {
+											toggleResult = exported
+										}
+									}
+									close(done)
+									return goja.Undefined()
+								})
+								onRejected := vm.ToValue(func(call goja.FunctionCall) goja.Value {
+									close(done)
+									return goja.Undefined()
+								})
+								thenFn(val, onFulfilled, onRejected)
+								return nil
+							}
+						}
+					}
 					if exported, ok := val.Export().(map[string]any); ok {
 						toggleResult = exported
 					}
 				}
+				close(done)
 				return nil
 			})
+			select {
+			case <-done:
+			case <-time.After(30 * time.Second):
+				slog.Error("bubbletea: onToggle Promise timed out")
+			}
 		}
 
 		// Sync enter alt-screen + clear — idempotent belt for async RestoreTerminal
@@ -2062,7 +2094,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				panic("bubbletea.Manager.promisify is REQUIRED - ensure Engine.Register was called")
 			}
 
-			manager.promisify(context.Background(), func(_ context.Context) (any, error) {
+			manager.promisify(baseCtx, func(_ context.Context) (any, error) {
 				err := manager.runProgram(programModel)
 				// Also send to done channel for WaitForProgram compatibility.
 				// This is safe because done is buffered (capacity 1).

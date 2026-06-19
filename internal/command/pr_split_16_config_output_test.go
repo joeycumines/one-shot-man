@@ -46,12 +46,10 @@ func TestChunk16_T42_AutoDetectAgentOnStartup(t *testing.T) {
 			if (s.agentCheckStatus !== 'checking') return 'FAIL: should be checking, got: ' + s.agentCheckStatus;
 
 			// Let microtasks resolve (resolveAsync completes).
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+			for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 
 			// Poll to complete.
-			r = update({type: 'Tick', id: 'agent-check-poll'}, s);
+			r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			s = r[0];
 
 			// Agent is available — mode should be auto.
@@ -78,7 +76,7 @@ func TestChunk16_T42_AutoDetectSkipsWhenUserSelected(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		globalThis.prSplitConfig = { agentCommand: '' };
 		globalThis.prSplit._state.agentExecutor = null;
 
@@ -102,7 +100,7 @@ func TestChunk16_T42_AutoDetectSkipsWhenUserSelected(t *testing.T) {
 			prSplit.runtime.mode = 'heuristic';
 
 			// Fire auto-detect-agent tick.
-			var r = update({type: 'Tick', id: 'auto-detect-agent'}, s);
+			var r = await update({type: 'Tick', id: 'auto-detect-agent'}, s);
 			s = r[0];
 
 			// Should skip entirely — no check launched.
@@ -129,14 +127,14 @@ func TestChunk16_T42_ManualSelectSetsFlag(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		globalThis.prSplitConfig = { agentCommand: '' };
 		var s = initState('CONFIG');
 		if (s.userHasSelectedStrategy) return 'FAIL: should start false';
 
 		// Simulate keyboard strategy selection (via handleFocusActivate).
 		s.focusIndex = 1; // strategy-heuristic
-		var r = sendKey(s, 'enter');
+		var r = await sendKey(s, 'enter');
 		s = r[0];
 		if (!s.userHasSelectedStrategy) return 'FAIL: enter on strategy should set flag';
 
@@ -146,7 +144,7 @@ func TestChunk16_T42_ManualSelectSetsFlag(t *testing.T) {
 		var origInBounds = z.inBounds;
 		z.inBounds = function(id) { return id === 'strategy-directory'; };
 		try {
-			r = update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
+			r = await update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
 		} finally {
 			z.inBounds = origInBounds;
 		}
@@ -188,10 +186,8 @@ func TestChunk16_T42_AutoDetectUnavailableFallback(t *testing.T) {
 			// Fire auto-detect.
 			var r = update({type: 'Tick', id: 'auto-detect-agent'}, s);
 			s = r[0];
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
-			r = update({type: 'Tick', id: 'agent-check-poll'}, s);
+			for (var _i = 0; _i < 20; _i++) await Promise.resolve();
+			r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			s = r[0];
 
 			// Agent unavailable — should stay heuristic.
@@ -218,12 +214,12 @@ func TestChunk16_T42_AutoDetectSkipsWhenAlreadyChecking(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.agentCheckStatus = 'checking';
 
 		// Fire auto-detect — should skip (already checking).
-		var r = update({type: 'Tick', id: 'auto-detect-agent'}, s);
+		var r = await update({type: 'Tick', id: 'auto-detect-agent'}, s);
 		s = r[0];
 
 		// Nothing changes.
@@ -242,7 +238,7 @@ func TestChunk16_T42_ViewShowsAutoStrategyHint(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.agentCheckStatus = 'available';
 		s.agentResolvedInfo = { command: 'agent', type: 'agent-code' };
@@ -278,12 +274,12 @@ func TestChunk16_T42_InitReturnsBatchCommand(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('IDLE');
 		s.needsInitClear = true;
 
 		// Simulate first WindowSize message.
-		var r = update({type: 'WindowSize', width: 120, height: 40}, s);
+		var r = await update({type: 'WindowSize', width: 120, height: 40}, s);
 		s = r[0];
 		var cmd = r[1];
 
@@ -318,7 +314,7 @@ func TestChunk16_T43_ConfigErrorStaysOnCONFIG(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Mock gitExec to simulate empty repo (rev-parse HEAD fails).
 		prSplit._gitExec = function(dir, args) {
 			if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
@@ -339,7 +335,7 @@ func TestChunk16_T43_ConfigErrorStaysOnCONFIG(t *testing.T) {
 		// Set focus to nav-next (index 4 for CONFIG with heuristic mode).
 		s.focusIndex = 4;
 		// Simulate pressing Enter on nav-next → handleNext → startAnalysis.
-		var r = sendKey(s, 'enter');
+		var r = await sendKey(s, 'enter');
 		s = r[0];
 
 		// T43: Should stay on CONFIG, NOT jump to ERROR.
@@ -369,7 +365,7 @@ func TestChunk16_T43_AutoAnalysisConfigErrorStaysOnCONFIG(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Mock gitExec to simulate detached HEAD.
 		prSplit._gitExec = function(dir, args) {
 			if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
@@ -389,7 +385,7 @@ func TestChunk16_T43_AutoAnalysisConfigErrorStaysOnCONFIG(t *testing.T) {
 		var s = initState('CONFIG');
 		// Set focus to nav-next (index 5 for CONFIG with auto mode — test-agent at 3).
 		s.focusIndex = 5;
-		var r = sendKey(s, 'enter');
+		var r = await sendKey(s, 'enter');
 		s = r[0];
 
 		// T43: Auto path should also stay on CONFIG.
@@ -412,7 +408,7 @@ func TestChunk16_T43_RetryCleansPreviousError(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var callCount = 0;
 		prSplit._gitExec = function(dir, args) {
 			if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
@@ -442,13 +438,13 @@ func TestChunk16_T43_RetryCleansPreviousError(t *testing.T) {
 		s.focusIndex = 4; // nav-next for heuristic mode
 
 		// First attempt: fails.
-		var r = sendKey(s, 'enter');
+		var r = await sendKey(s, 'enter');
 		s = r[0];
 		if (!s.configValidationError) return 'FAIL: first attempt should set error';
 		if (s.availableBranches.length !== 1) return 'FAIL: first attempt should list branches';
 
 		// Second attempt: succeeds (error clears).
-		r = sendKey(s, 'enter');
+		r = await sendKey(s, 'enter');
 		s = r[0];
 		if (s.configValidationError) return 'FAIL: retry should clear configValidationError';
 		if (s.availableBranches.length !== 0) return 'FAIL: retry should clear availableBranches';
@@ -467,7 +463,7 @@ func TestChunk16_T43_ViewShowsInlineValidationError(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.configValidationError = 'No commits on current branch.';
 		s.availableBranches = ['main', 'develop', 'feature-x'];
@@ -497,7 +493,7 @@ func TestChunk16_T43_ViewNoBranchesWhenEmpty(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.configValidationError = 'Cannot determine current branch: not a git repo';
 		s.availableBranches = [];
@@ -528,7 +524,7 @@ func TestChunk16_T44_InitStateHasOutputFields(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		return {
 			splitViewTab: s.splitViewTab,
@@ -566,7 +562,7 @@ func TestChunk16_T44_CtrlOSwitchesTabs(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
 		s.splitViewTab = 'agent';
@@ -601,12 +597,12 @@ func TestChunk16_T44_CtrlONotActiveWhenSplitViewDisabled(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.splitViewEnabled = false;
 		s.splitViewTab = 'agent';
 
-		var r = sendKey(s, 'ctrl+o');
+		var r = await sendKey(s, 'ctrl+o');
 		s = r[0];
 		return s.splitViewTab;
 	})()`)
@@ -624,7 +620,7 @@ func TestChunk16_T44_OutputTabScrollKeys(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
 		s.splitViewTab = 'output';
@@ -633,26 +629,26 @@ func TestChunk16_T44_OutputTabScrollKeys(t *testing.T) {
 		s.outputAutoScroll = true;
 
 		// Up → offset +1, autoScroll off.
-		var r = sendKey(s, 'up');
+		var r = await sendKey(s, 'up');
 		s = r[0];
 		var offsetAfterUp = s.outputViewOffset;
 		var autoAfterUp = s.outputAutoScroll;
 
 		// End → offset 0, autoScroll on.
-		r = sendKey(s, 'end');
+		r = await sendKey(s, 'end');
 		s = r[0];
 		var offsetAfterEnd = s.outputViewOffset;
 		var autoAfterEnd = s.outputAutoScroll;
 
 		// Home → large offset, autoScroll off.
-		r = sendKey(s, 'home');
+		r = await sendKey(s, 'home');
 		s = r[0];
 		var offsetAfterHome = s.outputViewOffset;
 		var autoAfterHome = s.outputAutoScroll;
 
 		// PgDown → decrease offset.
 		s.outputViewOffset = 10;
-		r = sendKey(s, 'pgdown');
+		r = await sendKey(s, 'pgdown');
 		s = r[0];
 		var offsetAfterPgDown = s.outputViewOffset;
 
@@ -699,7 +695,7 @@ func TestChunk16_T44_TabClickZones(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
 		s.splitViewTab = 'agent';
@@ -707,7 +703,7 @@ func TestChunk16_T44_TabClickZones(t *testing.T) {
 		// Click on output tab.
 		var restore = mockZoneHit('split-tab-output');
 		try {
-			var r = update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
+			var r = await update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
 			s = r[0];
 		} finally { restore(); }
 		var tab1 = s.splitViewTab;
@@ -740,7 +736,7 @@ func TestChunk16_T44_OutputMouseWheelScroll(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
 		s.splitViewTab = 'output';
@@ -791,7 +787,7 @@ func TestChunk16_T44_RenderOutputPanePlaceholder(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
 		s.splitViewTab = 'output';
@@ -819,7 +815,7 @@ func TestChunk16_T44_RenderOutputPaneWithContent(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
 		s.splitViewTab = 'output';
@@ -856,7 +852,7 @@ func TestChunk16_T44_OutputCaptureFnPipesLines(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.outputLines = [];
 		s.outputAutoScroll = true;
@@ -907,13 +903,13 @@ func TestChunk16_T44_CtrlLResetsTabOnDisable(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
 		s.splitViewTab = 'output';
 
 		// Ctrl+L to disable split-view.
-		var r = sendKey(s, 'ctrl+l');
+		var r = await sendKey(s, 'ctrl+l');
 		s = r[0];
 		return {
 			enabled: s.splitViewEnabled,
@@ -938,7 +934,7 @@ func TestChunk16_T44_HelpOverlayShowsCtrlO(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.width = 80;
 		s.height = 30;
@@ -963,7 +959,7 @@ func TestChunk16_T44_CtrlOInReservedKeys(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var keys = globalThis.prSplit._AGENT_RESERVED_KEYS;
 		return keys['ctrl+o'] === true;
 	})()`)
@@ -983,7 +979,7 @@ func TestChunk16_T44_ViewNoPanicWithOutputTab(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
 		s.splitViewTab = 'output';
@@ -1009,7 +1005,7 @@ func TestChunk16_T44_OutputBufferCapAtLimit(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.outputLines = [];
 		s.outputAutoScroll = true;

@@ -1178,7 +1178,7 @@ func TestChunk13_HandleConfigState_MissingBaseBranch(t *testing.T) {
 		// Clear baseBranch.
 		prSplit.runtime.baseBranch = '';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({ hasError: !!result.error, errorContains: result.error ? result.error.indexOf('baseBranch') >= 0 : false });
 	`)
 	if err != nil {
@@ -1206,7 +1206,7 @@ func TestChunk13_HandleConfigState_OnBaseBranch(t *testing.T) {
 		prSplit.verifySplit = function() { return { passed: true }; };
 		prSplit.runtime.baseBranch = 'main';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({ hasError: !!result.error, mentionsBase: result.error ? result.error.indexOf('base branch') >= 0 : false });
 	`)
 	if err != nil {
@@ -1231,7 +1231,7 @@ func TestChunk13_HandleConfigState_GitFails(t *testing.T) {
 		};
 		prSplit.runtime.baseBranch = 'main';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({ hasError: !!result.error, mentionsBranch: result.error ? result.error.indexOf('current branch') >= 0 : false });
 	`)
 	if err != nil {
@@ -1267,7 +1267,7 @@ func TestChunk13_T43_EmptyRepoDetection(t *testing.T) {
 		};
 		prSplit.runtime.baseBranch = 'main';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			hasError: !!result.error,
 			mentionsCommit: result.error ? result.error.indexOf('No commits') >= 0 : false,
@@ -1304,7 +1304,7 @@ func TestChunk13_T43_DetachedHEAD(t *testing.T) {
 		};
 		prSplit.runtime.baseBranch = 'main';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			hasError: !!result.error,
 			mentionsDetached: result.error ? result.error.indexOf('Detached HEAD') >= 0 : false,
@@ -1338,7 +1338,7 @@ func TestChunk13_T43_TargetBranchNotExist(t *testing.T) {
 		};
 		prSplit.runtime.baseBranch = 'nonexistent-branch';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			hasError: !!result.error,
 			mentionsTarget: result.error ? result.error.indexOf('nonexistent-branch') >= 0 : false,
@@ -1381,7 +1381,7 @@ func TestChunk13_T43_TargetBranchExistsRemote(t *testing.T) {
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = '';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({ error: result.error });
 	`)
 	if err != nil {
@@ -1412,7 +1412,7 @@ func TestChunk13_HandleConfigState_BaselinePass(t *testing.T) {
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			error: result.error,
 			hasConfig: !!result.baselineVerifyConfig,
@@ -1447,7 +1447,7 @@ func TestChunk13_HandleConfigState_BaselineTimeoutDefaultAndProgress(t *testing.
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			error: result.error,
 			verifyTimeoutMs: result.baselineVerifyConfig.verifyTimeoutMs,
@@ -1478,7 +1478,7 @@ func TestChunk13_HandleConfigState_BaselineTimeoutOverride(t *testing.T) {
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
-		var result = prSplit._handleConfigState({ verifyTimeoutMs: 12345 });
+		var result = await prSplit._handleConfigState({ verifyTimeoutMs: 12345 });
 		JSON.stringify({
 			error: result.error,
 			verifyTimeoutMs: result.baselineVerifyConfig.verifyTimeoutMs
@@ -1515,7 +1515,7 @@ func TestChunk13_HandleConfigState_BaselineVerifyDeferred(t *testing.T) {
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			error: result.error,
 			hasConfig: !!result.baselineVerifyConfig,
@@ -1548,7 +1548,7 @@ func TestChunk13_HandleConfigState_ResumeWithCheckpoint(t *testing.T) {
 		};
 		prSplit.runtime.baseBranch = 'main';
 
-		var result = prSplit._handleConfigState({ resume: true });
+		var result = await prSplit._handleConfigState({ resume: true });
 		JSON.stringify({ resume: !!result.resume, hasCheckpoint: !!result.checkpoint });
 	`)
 	if err != nil {
@@ -1577,7 +1577,7 @@ func TestChunk13_HandleConfigState_ResumeNoCheckpoint(t *testing.T) {
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
-		var result = prSplit._handleConfigState({ resume: true });
+		var result = await prSplit._handleConfigState({ resume: true });
 		JSON.stringify({
 			error: result.error,
 			resume: !!result.resume,
@@ -1611,7 +1611,7 @@ func TestChunk13_HandleConfigState_SkipsBaselineForTrue(t *testing.T) {
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'true';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			error: result.error,
 			verifyCalled: verifyCalled,
@@ -2658,7 +2658,7 @@ func TestChunk13_Wizard_HappyPath_E2E(t *testing.T) {
 
 		// CONFIG
 		wizard.transition('CONFIG');
-		var configResult = prSplit._handleConfigState({});
+		var configResult = await prSplit._handleConfigState({});
 		if (configResult.error) throw 'config error: ' + configResult.error;
 		wizard.transition('PLAN_GENERATION');
 
@@ -2759,11 +2759,11 @@ func TestChunk13_Wizard_BaselineFailRecovery_E2E(t *testing.T) {
 
 		// CONFIG returns baselineVerifyConfig (T090: no verify inline).
 		wizard.transition('CONFIG');
-		var configResult = prSplit._handleConfigState({});
+		var configResult = await prSplit._handleConfigState({});
 
 		// Caller performs deferred baseline verify.
 		var bvc = configResult.baselineVerifyConfig;
-		var verifyResult = prSplit.verifySplit(prSplit.runtime.baseBranch, bvc);
+		var verifyResult = await prSplit.verifySplit(prSplit.runtime.baseBranch, bvc);
 
 		// Baseline fails → transition to BASELINE_FAIL.
 		wizard.transition('BASELINE_FAIL', {

@@ -84,7 +84,8 @@ func TestValidateGitRepo_ValidRepo(t *testing.T) {
 }
 
 // TestValidateGitRepo_EmptyBaseBranch confirms that an empty base-branch
-// flag skips the branch existence check (it will be set interactively).
+// flag triggers auto-detection, which sets baseBranch to the detected
+// default branch ("main" for this test repo).
 func TestValidateGitRepo_EmptyBaseBranch(t *testing.T) {
 	dir := setupMinimalGitRepo(t)
 	pushd(t, dir)
@@ -97,27 +98,6 @@ func TestValidateGitRepo_EmptyBaseBranch(t *testing.T) {
 
 	if err := cmd.validateGitRepo(); err != nil {
 		t.Fatalf("unexpected error with empty base branch: %v", err)
-	}
-}
-
-// TestValidateGitRepo_GitNotInstalled verifies a clear error when git
-// is not on PATH (exec.ErrNotFound path).
-func TestValidateGitRepo_GitNotInstalled(t *testing.T) {
-	// Overwrite PATH to exclude git. t.Setenv restores on cleanup.
-	t.Setenv("PATH", t.TempDir())
-
-	cmd := &PrSplitCommand{
-		baseBranch: "main",
-		strategy:   "directory",
-		maxFiles:   10,
-	}
-
-	err := cmd.validateGitRepo()
-	if err == nil {
-		t.Fatal("expected error when git is not in PATH, got nil")
-	}
-	if !strings.Contains(err.Error(), "not installed") && !strings.Contains(err.Error(), "not in PATH") {
-		t.Errorf("expected 'not installed' or 'not in PATH' in error, got: %v", err)
 	}
 }
 
@@ -240,7 +220,6 @@ func setupMinimalGitRepo(t *testing.T) string {
 
 // TestValidateGitRepo_BareRepo verifies that a bare git repository
 // (one without a working tree) is rejected by validateGitRepo.
-// git rev-parse --is-inside-work-tree returns "false" for bare repos.
 func TestValidateGitRepo_BareRepo(t *testing.T) {
 	dir := t.TempDir()
 	pushd(t, dir)
@@ -327,5 +306,51 @@ func TestValidateGitRepo_RemoteBaseBranch(t *testing.T) {
 	err := cmd.validateGitRepo()
 	if err != nil {
 		t.Errorf("expected remote base branch to be accepted, got: %v", err)
+	}
+}
+
+// TestValidateGitRepo_AutoDetect verifies that an empty baseBranch triggers
+// auto-detection and sets the correct branch name.
+func TestValidateGitRepo_AutoDetect(t *testing.T) {
+	// Cannot use t.Parallel() — changes process working directory.
+	dir := setupMinimalGitRepo(t)
+	pushd(t, dir)
+
+	cmd := &PrSplitCommand{
+		baseBranch: "", // empty = auto-detect
+		strategy:   "directory",
+		maxFiles:   10,
+	}
+
+	if err := cmd.validateGitRepo(); err != nil {
+		t.Fatalf("unexpected error with auto-detect: %v", err)
+	}
+
+	// The repo has "main" as the default branch, so auto-detection should
+	// find "main" (via local branch existence fallback).
+	if cmd.baseBranch != "main" {
+		t.Errorf("expected auto-detected baseBranch 'main', got: %q", cmd.baseBranch)
+	}
+}
+
+// TestValidateGitRepo_AutoKeyword verifies that the "auto" keyword triggers
+// auto-detection and sets the correct branch name.
+func TestValidateGitRepo_AutoKeyword(t *testing.T) {
+	// Cannot use t.Parallel() — changes process working directory.
+	dir := setupMinimalGitRepo(t)
+	pushd(t, dir)
+
+	cmd := &PrSplitCommand{
+		baseBranch: "auto", // "auto" = auto-detect
+		strategy:   "directory",
+		maxFiles:   10,
+	}
+
+	if err := cmd.validateGitRepo(); err != nil {
+		t.Fatalf("unexpected error with auto keyword: %v", err)
+	}
+
+	if cmd.baseBranch != "main" {
+		t.Errorf("expected auto-detected baseBranch 'main', got: %q", cmd.baseBranch)
 	}
 }

@@ -49,7 +49,7 @@ func TestAutoFixStrategy_GoModTidy_Detect(t *testing.T) {
 		if _, err := evalJS(`globalThis._mockFileExists = {'go.mod': true};`); err != nil {
 			t.Fatal(err)
 		}
-		val, err := evalJS(`getStrategy('go-mod-tidy').detect('.')`)
+		val, err := evalJS(`await getStrategy('go-mod-tidy').detect('.')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -62,7 +62,7 @@ func TestAutoFixStrategy_GoModTidy_Detect(t *testing.T) {
 		if _, err := evalJS(`globalThis._mockFileExists = {};`); err != nil {
 			t.Fatal(err)
 		}
-		val, err := evalJS(`getStrategy('go-mod-tidy').detect('.')`)
+		val, err := evalJS(`await getStrategy('go-mod-tidy').detect('.')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -75,7 +75,7 @@ func TestAutoFixStrategy_GoModTidy_Detect(t *testing.T) {
 		if _, err := evalJS(`globalThis._mockFileExists = {'/repo/go.mod': true};`); err != nil {
 			t.Fatal(err)
 		}
-		val, err := evalJS(`getStrategy('go-mod-tidy').detect('/repo')`)
+		val, err := evalJS(`await getStrategy('go-mod-tidy').detect('/repo')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -103,7 +103,7 @@ func TestAutoFixStrategy_GoGenerateSum_Detect(t *testing.T) {
 		if _, err := evalJS(`globalThis._mockFileExists = {'go.sum': true};`); err != nil {
 			t.Fatal(err)
 		}
-		val, err := evalJS(`getStrategy('go-generate-sum').detect('.')`)
+		val, err := evalJS(`await getStrategy('go-generate-sum').detect('.')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,7 +116,7 @@ func TestAutoFixStrategy_GoGenerateSum_Detect(t *testing.T) {
 		if _, err := evalJS(`globalThis._mockFileExists = {};`); err != nil {
 			t.Fatal(err)
 		}
-		val, err := evalJS(`getStrategy('go-generate-sum').detect('.')`)
+		val, err := evalJS(`await getStrategy('go-generate-sum').detect('.')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -135,7 +135,7 @@ func TestAutoFixStrategy_GoBuildMissingImports_Detect(t *testing.T) {
 	}
 
 	t.Run("detect_true_with_undefined_reference", func(t *testing.T) {
-		val, err := evalJS(`getStrategy('go-build-missing-imports').detect('.', 'src/foo.go:10: undefined: SomeFunc')`)
+		val, err := evalJS(`await getStrategy('go-build-missing-imports').detect('.', 'src/foo.go:10: undefined: SomeFunc')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -145,7 +145,7 @@ func TestAutoFixStrategy_GoBuildMissingImports_Detect(t *testing.T) {
 	})
 
 	t.Run("detect_true_with_unused_import", func(t *testing.T) {
-		val, err := evalJS(`getStrategy('go-build-missing-imports').detect('.', '"fmt" imported and not used')`)
+		val, err := evalJS(`await getStrategy('go-build-missing-imports').detect('.', '"fmt" imported and not used')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -155,7 +155,7 @@ func TestAutoFixStrategy_GoBuildMissingImports_Detect(t *testing.T) {
 	})
 
 	t.Run("detect_true_with_could_not_import", func(t *testing.T) {
-		val, err := evalJS(`getStrategy('go-build-missing-imports').detect('.', 'could not import github.com/foo/bar')`)
+		val, err := evalJS(`await getStrategy('go-build-missing-imports').detect('.', 'could not import github.com/foo/bar')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -165,7 +165,7 @@ func TestAutoFixStrategy_GoBuildMissingImports_Detect(t *testing.T) {
 	})
 
 	t.Run("detect_false_with_unrelated_error", func(t *testing.T) {
-		val, err := evalJS(`getStrategy('go-build-missing-imports').detect('.', 'syntax error: unexpected EOF')`)
+		val, err := evalJS(`await getStrategy('go-build-missing-imports').detect('.', 'syntax error: unexpected EOF')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -175,7 +175,7 @@ func TestAutoFixStrategy_GoBuildMissingImports_Detect(t *testing.T) {
 	})
 
 	t.Run("detect_false_with_null_output", func(t *testing.T) {
-		val, err := evalJS(`getStrategy('go-build-missing-imports').detect('.', null)`)
+		val, err := evalJS(`await getStrategy('go-build-missing-imports').detect('.', null)`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -203,7 +203,7 @@ func TestAutoFixStrategy_NpmInstall_Detect(t *testing.T) {
 		if _, err := evalJS(`globalThis._mockFileExists = {'package.json': true};`); err != nil {
 			t.Fatal(err)
 		}
-		val, err := evalJS(`getStrategy('npm-install').detect('.')`)
+		val, err := evalJS(`await getStrategy('npm-install').detect('.')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -216,7 +216,7 @@ func TestAutoFixStrategy_NpmInstall_Detect(t *testing.T) {
 		if _, err := evalJS(`globalThis._mockFileExists = {};`); err != nil {
 			t.Fatal(err)
 		}
-		val, err := evalJS(`getStrategy('npm-install').detect('.')`)
+		val, err := evalJS(`await getStrategy('npm-install').detect('.')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -235,7 +235,7 @@ func TestAutoFixStrategy_AddMissingFiles_Detect(t *testing.T) {
 	}
 
 	t.Run("detect_true_no_such_file", func(t *testing.T) {
-		val, err := evalJS(`getStrategy('add-missing-files').detect('.', 'open foo.go: no such file or directory')`)
+		val, err := evalJS(`await getStrategy('add-missing-files').detect('.', 'open foo.go: no such file or directory')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -245,7 +245,7 @@ func TestAutoFixStrategy_AddMissingFiles_Detect(t *testing.T) {
 	})
 
 	t.Run("detect_true_cannot_find", func(t *testing.T) {
-		val, err := evalJS(`getStrategy('add-missing-files').detect('.', 'error: cannot find module bar')`)
+		val, err := evalJS(`await getStrategy('add-missing-files').detect('.', 'error: cannot find module bar')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -255,7 +255,7 @@ func TestAutoFixStrategy_AddMissingFiles_Detect(t *testing.T) {
 	})
 
 	t.Run("detect_true_file_not_found", func(t *testing.T) {
-		val, err := evalJS(`getStrategy('add-missing-files').detect('.', 'compilation: file not found')`)
+		val, err := evalJS(`await getStrategy('add-missing-files').detect('.', 'compilation: file not found')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -265,7 +265,7 @@ func TestAutoFixStrategy_AddMissingFiles_Detect(t *testing.T) {
 	})
 
 	t.Run("detect_false_for_unrelated", func(t *testing.T) {
-		val, err := evalJS(`getStrategy('add-missing-files').detect('.', 'test failure: assertion error')`)
+		val, err := evalJS(`await getStrategy('add-missing-files').detect('.', 'test failure: assertion error')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -275,7 +275,7 @@ func TestAutoFixStrategy_AddMissingFiles_Detect(t *testing.T) {
 	})
 
 	t.Run("detect_false_for_null", func(t *testing.T) {
-		val, err := evalJS(`getStrategy('add-missing-files').detect('.', null)`)
+		val, err := evalJS(`await getStrategy('add-missing-files').detect('.', null)`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -295,7 +295,7 @@ func TestAutoFixStrategy_AgentFix_Detect(t *testing.T) {
 
 	// Without agentExecutor, should be false.
 	t.Run("detect_false_without_executor", func(t *testing.T) {
-		val, err := evalJS(`getStrategy('agent-fix').detect()`)
+		val, err := evalJS(`await getStrategy('agent-fix').detect()`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -329,11 +329,11 @@ func TestAgentCodeExecutor_Resolve_ExplicitCommand(t *testing.T) {
 		`); err != nil {
 			t.Fatal(err)
 		}
-		val, err := evalJS(`
+		val, err := evalJS(`(async function() {
 			var exe = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'my-agent'});
-			var result = exe.resolve();
-			JSON.stringify({error: result.error, resolved: exe.resolved})
-		`)
+			var result = await exe.resolve();
+			return JSON.stringify({error: result.error, resolved: exe.resolved});
+		})()`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -355,11 +355,11 @@ func TestAgentCodeExecutor_Resolve_ExplicitCommand(t *testing.T) {
 		`); err != nil {
 			t.Fatal(err)
 		}
-		val, err := evalJS(`
+		val, err := evalJS(`(async function() {
 			var exe = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'nonexistent'});
-			var result = exe.resolve();
-			JSON.stringify(result)
-		`)
+			var result = await exe.resolve();
+			return JSON.stringify(result);
+		})()`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -390,11 +390,11 @@ func TestAgentCodeExecutor_Resolve_Explicit(t *testing.T) {
 		`); err != nil {
 			t.Fatal(err)
 		}
-		val, err := evalJS(`
+		val, err := evalJS(`(async function() {
 			var exe = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'my-agent'});
-			var result = exe.resolve();
-			JSON.stringify({error: result.error, resolved: exe.resolved})
-		`)
+			var result = await exe.resolve();
+			return JSON.stringify({error: result.error, resolved: exe.resolved});
+		})()`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -413,11 +413,11 @@ func TestAgentCodeExecutor_Resolve_Explicit(t *testing.T) {
 		`); err != nil {
 			t.Fatal(err)
 		}
-		val, err := evalJS(`
+		val, err := evalJS(`(async function() {
 			var exe = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'missing-agent'});
-			var result = exe.resolve();
-			JSON.stringify(result)
-		`)
+			var result = await exe.resolve();
+			return JSON.stringify(result);
+		})()`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -436,11 +436,11 @@ func TestAgentCodeExecutor_Resolve_Explicit(t *testing.T) {
 		`); err != nil {
 			t.Fatal(err)
 		}
-		val, err := evalJS(`
+		val, err := evalJS(`(async function() {
 			var exe = new globalThis.prSplit.AgentCodeExecutor({});
-			var result = exe.resolve();
-			JSON.stringify(result)
-		`)
+			var result = await exe.resolve();
+			return JSON.stringify(result);
+		})()`)
 		if err != nil {
 			t.Fatal(err)
 		}

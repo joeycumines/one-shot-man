@@ -24,6 +24,7 @@ import (
 	fetchmod "github.com/joeycumines/one-shot-man/internal/builtin/fetch"
 	flagmod "github.com/joeycumines/one-shot-man/internal/builtin/flag"
 	formatmod "github.com/joeycumines/one-shot-man/internal/builtin/format"
+	gitopsmod "github.com/joeycumines/one-shot-man/internal/builtin/gitops"
 	grpcmod "github.com/joeycumines/one-shot-man/internal/builtin/grpc"
 	jsonmod "github.com/joeycumines/one-shot-man/internal/builtin/json"
 	lipglossmod "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
@@ -51,7 +52,6 @@ import (
 	tablemod "github.com/joeycumines/one-shot-man/internal/builtin/termui/table"
 	termpanemod "github.com/joeycumines/one-shot-man/internal/builtin/termui/termpane"
 	toastmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/toast"
-	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
 	tokenizermod "github.com/joeycumines/one-shot-man/internal/builtin/tokenizer"
 	unicodetextmod "github.com/joeycumines/one-shot-man/internal/builtin/unicodetext"
 )
@@ -123,10 +123,10 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"nextIntegerID", nextintegerid.Require)
 	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require) // Deprecated: use osm:nextIntegerID
 	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"flag", flagmod.Require)
-	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"mcpcallback", mcpcallbackmod.Require(eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"mcpcallback", mcpcallbackmod.Require(ctx, eventLoopProvider.Adapter()))
 
 	// Create shared protobuf module for gRPC and osm:protobuf.
 	// The SAME Module instance is used by both so descriptors loaded via
@@ -144,15 +144,15 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"grpc", grpcmod.Require(ch, pbMod, eventLoopProvider.Adapter()))
 
 	registry.RegisterNativeModule(prefix+"aimux", aimuxmod.Require(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
-	registry.RegisterNativeModule(prefix+"path", pathmod.Require)
+	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, eventLoopProvider.Adapter(), tuiSink))
+	registry.RegisterNativeModule(prefix+"path", pathmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"regexp", regexpmod.Require)
-	registry.RegisterNativeModule(prefix+"time", timemod.Require)
-	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.Require(ctx))
+	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"text/template", templatemod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"unicodetext", unicodetextmod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"tokenizer", tokenizermod.Require)
 	registry.RegisterNativeModule(prefix+"format", formatmod.Require)
+	registry.RegisterNativeModule(prefix+"gitops", gitopsmod.Require(ctx, eventLoopProvider.Adapter()))
 
 	// Register lipgloss module - always available as it's stateless
 	lipglossMgr := lipglossmod.NewManager()

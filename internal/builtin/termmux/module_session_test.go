@@ -3,6 +3,7 @@ package termmux
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -1138,17 +1139,37 @@ func TestSessionManager_PassthroughNoChild(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	// passthrough() with no active session should return {reason: "error", error: "..."}.
-	v, err := runtime.RunString(`
-		var result = tuiMux.passthrough({});
-		result.reason === 'error' && typeof result.error === 'string' && result.error.length > 0;
+	resultCh := make(chan goja.Value, 1)
+	errCh := make(chan error, 1)
+	_ = runtime.Set("__collect", func(call goja.FunctionCall) goja.Value {
+		resultCh <- call.Argument(0)
+		return goja.Undefined()
+	})
+	_ = runtime.Set("__collectErr", func(call goja.FunctionCall) goja.Value {
+		errCh <- fmt.Errorf("%s", call.Argument(0).String())
+		return goja.Undefined()
+	})
+
+	_, err := runtime.RunString(`
+		tuiMux.passthrough({}).then(function(result) {
+			__collect(result.reason === 'error' && typeof result.error === 'string' && result.error.length > 0);
+		}).catch(function(e) {
+			__collectErr(e.message || String(e));
+		});
 	`)
 	if err != nil {
 		t.Fatalf("passthrough(): %v", err)
 	}
-	if !v.ToBoolean() {
-		raw, _ := runtime.RunString(`JSON.stringify(tuiMux.passthrough({}))`)
-		t.Fatalf("passthrough() with no child should return error result, got: %s", raw)
+
+	select {
+	case v := <-resultCh:
+		if !v.ToBoolean() {
+			t.Fatal("passthrough() with no child should return error result")
+		}
+	case err := <-errCh:
+		t.Fatalf("passthrough(): %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for passthrough result")
 	}
 }
 

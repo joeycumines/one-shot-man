@@ -159,7 +159,7 @@ func TestGroupByDependency(t *testing.T) {
 			setup: `
 				// No exec calls needed — no Go files.
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.groupByDependency(['README.md', 'docs/guide.md', 'config.yaml']))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.groupByDependency(['README.md', 'docs/guide.md', 'config.yaml']))`,
 			check: func(t *testing.T, r groupResult) {
 				// Should group by directory (depth 1).
 				if len(r) == 0 {
@@ -193,7 +193,7 @@ func TestGroupByDependency(t *testing.T) {
 					return _gitFail('no such file');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.groupByDependency(['internal/config/config.go', 'internal/config/config_test.go']))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.groupByDependency(['internal/config/config.go', 'internal/config/config_test.go']))`,
 			check: func(t *testing.T, r groupResult) {
 				// Both files are in the same package → single group.
 				if len(r) != 1 {
@@ -228,7 +228,7 @@ func TestGroupByDependency(t *testing.T) {
 					return _gitFail('no such file');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.groupByDependency(['internal/config/config.go', 'internal/session/session.go']))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.groupByDependency(['internal/config/config.go', 'internal/session/session.go']))`,
 			check: func(t *testing.T, r groupResult) {
 				if len(r) != 2 {
 					t.Fatalf("expected 2 groups, got %d: %v", len(r), r)
@@ -264,7 +264,7 @@ func TestGroupByDependency(t *testing.T) {
 					return _prevExecv(argv);
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.groupByDependency(['internal/command/cmd.go', 'internal/config/config.go']))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.groupByDependency(['internal/command/cmd.go', 'internal/config/config.go']))`,
 			check: func(t *testing.T, r groupResult) {
 				// command imports config → they should be merged into one group.
 				if len(r) != 1 {
@@ -302,7 +302,7 @@ func TestGroupByDependency(t *testing.T) {
 					return _gitFail('no such file');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.groupByDependency(['internal/command/cmd_test.go', 'internal/config/config.go']))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.groupByDependency(['internal/command/cmd_test.go', 'internal/config/config.go']))`,
 			check: func(t *testing.T, r groupResult) {
 				// Test file import doesn't cause merge → 2 separate groups.
 				if len(r) != 2 {
@@ -331,7 +331,7 @@ func TestGroupByDependency(t *testing.T) {
 					return _gitFail('no such file');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.groupByDependency(['internal/config/config.go', 'internal/config/README.md']))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.groupByDependency(['internal/config/config.go', 'internal/config/README.md']))`,
 			check: func(t *testing.T, r groupResult) {
 				// README.md should be placed in the same group as config.go.
 				if len(r) != 1 {
@@ -365,7 +365,7 @@ func TestGroupByDependency(t *testing.T) {
 					return _gitFail('no such file');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.groupByDependency(['internal/config/config.go', 'docs/README.md']))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.groupByDependency(['internal/config/config.go', 'docs/README.md']))`,
 			check: func(t *testing.T, r groupResult) {
 				if len(r) != 2 {
 					t.Fatalf("expected 2 groups (Go + separate non-Go dir), got %d: %v", len(r), r)
@@ -407,7 +407,7 @@ func TestGroupByDependency(t *testing.T) {
 					return _gitFail('no such file');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.groupByDependency(['main.go']))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.groupByDependency(['main.go']))`,
 			check: func(t *testing.T, r groupResult) {
 				if _, ok := r["."]; !ok {
 					t.Errorf("expected root package '.', got groups: %v", r)
@@ -506,7 +506,7 @@ func TestSelectStrategy(t *testing.T) {
 					return _gitFail('no such file');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.selectStrategy([
+			invoke: `JSON.stringify(await globalThis.prSplit.selectStrategy([
 				'pkg/a/a.go', 'pkg/b/b.go', 'pkg/c/c.go', 'pkg/d/d.go', 'pkg/e/e.go'
 			]))`,
 			check: func(t *testing.T, r selectStrategyResult) {
@@ -545,7 +545,7 @@ func TestSelectStrategy(t *testing.T) {
 					return _gitOk('package main\n\nfunc main() {}');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.selectStrategy(['main.go']))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.selectStrategy(['main.go']))`,
 			check: func(t *testing.T, r selectStrategyResult) {
 				if r.Strategy == "" {
 					t.Fatal("expected strategy to be selected")
@@ -564,7 +564,7 @@ func TestSelectStrategy(t *testing.T) {
 					return _gitOk('package main\n\nimport "fmt"\n\nfunc F() {}');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.selectStrategy([
+			invoke: `JSON.stringify(await globalThis.prSplit.selectStrategy([
 				'pkg/a.go', 'pkg/b.go', 'pkg/c.go', 'pkg/d.go', 'pkg/e.go',
 				'pkg/f.go', 'pkg/g.go', 'pkg/h.go', 'pkg/i.go', 'pkg/j.go'
 			], {maxPerGroup: 3}))`,
@@ -590,7 +590,7 @@ func TestSelectStrategy(t *testing.T) {
 					return _gitOk('package main\n\nfunc F() {}');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.selectStrategy([
+			invoke: `JSON.stringify(await globalThis.prSplit.selectStrategy([
 				'a/x.go', 'b/y.go', 'c/z.go'
 			]))`,
 			check: func(t *testing.T, r selectStrategyResult) {
@@ -617,7 +617,7 @@ func TestSelectStrategy(t *testing.T) {
 					return _gitOk('package main\n\nfunc F() {}');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.selectStrategy([
+			invoke: `JSON.stringify(await globalThis.prSplit.selectStrategy([
 				'a/f.go', 'b/f.go', 'c/f.go', 'd/f.go', 'e/f.go',
 				'f/f.go', 'g/f.go', 'h/f.go', 'i/f.go', 'j/f.go'
 			]))`,
@@ -657,7 +657,7 @@ func TestSelectStrategy(t *testing.T) {
 					return _gitOk('package main\n\nfunc F() {}');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.selectStrategy([
+			invoke: `JSON.stringify(await globalThis.prSplit.selectStrategy([
 				'pkg/a.go', 'pkg/b.go', 'pkg/c.go', 'pkg/d.go', 'pkg/e.go',
 				'pkg/f.go', 'pkg/g.go', 'pkg/h.go', 'pkg/i.go', 'pkg/j.go',
 				'pkg/k.go', 'pkg/l.go'
@@ -755,7 +755,7 @@ func TestCreateSplitPlan(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature-branch');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.createSplitPlan(
+			invoke: `JSON.stringify(await globalThis.prSplit.createSplitPlan(
 				{'config': ['config.go', 'config_test.go'], 'session': ['session.go']},
 				{baseBranch: 'main', branchPrefix: 'split/'}
 			))`,
@@ -791,7 +791,7 @@ func TestCreateSplitPlan(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('should-not-use');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.createSplitPlan(
+			invoke: `JSON.stringify(await globalThis.prSplit.createSplitPlan(
 				{'pkg': ['main.go']},
 				{baseBranch: 'main', branchPrefix: 'pr/', sourceBranch: 'my-branch'}
 			))`,
@@ -806,7 +806,7 @@ func TestCreateSplitPlan(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitFail('not a repo');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.createSplitPlan(
+			invoke: `JSON.stringify(await globalThis.prSplit.createSplitPlan(
 				{'pkg': ['main.go']},
 				{baseBranch: 'main', branchPrefix: 'split/'}
 			))`,
@@ -821,7 +821,7 @@ func TestCreateSplitPlan(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.createSplitPlan(
+			invoke: `JSON.stringify(await globalThis.prSplit.createSplitPlan(
 				{'internal/config': ['config.go']},
 				{baseBranch: 'main', branchPrefix: 'split/'}
 			))`,
@@ -841,7 +841,7 @@ func TestCreateSplitPlan(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.createSplitPlan(
+			invoke: `JSON.stringify(await globalThis.prSplit.createSplitPlan(
 				{'config': ['config.go']},
 				{baseBranch: 'main', branchPrefix: 'split/', commitPrefix: '[feat] '}
 			))`,
@@ -859,7 +859,7 @@ func TestCreateSplitPlan(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.createSplitPlan(
+			invoke: `JSON.stringify(await globalThis.prSplit.createSplitPlan(
 				{'a': ['a.go'], 'b': ['b.go'], 'c': ['c.go']},
 				{baseBranch: 'main', branchPrefix: 'pr/'}
 			))`,
@@ -912,7 +912,7 @@ func TestCreateSplitPlan_EmptyAndNullGroups(t *testing.T) {
 		{
 			name:  "empty_groups_object",
 			setup: `globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');`,
-			invoke: `JSON.stringify(globalThis.prSplit.createSplitPlan(
+			invoke: `JSON.stringify(await globalThis.prSplit.createSplitPlan(
 				{},
 				{baseBranch: 'main', branchPrefix: 'split/'}
 			))`,
@@ -925,7 +925,7 @@ func TestCreateSplitPlan_EmptyAndNullGroups(t *testing.T) {
 		{
 			name:  "null_groups",
 			setup: `globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');`,
-			invoke: `JSON.stringify(globalThis.prSplit.createSplitPlan(
+			invoke: `JSON.stringify(await globalThis.prSplit.createSplitPlan(
 				null,
 				{baseBranch: 'main', branchPrefix: 'split/'}
 			))`,
@@ -938,7 +938,7 @@ func TestCreateSplitPlan_EmptyAndNullGroups(t *testing.T) {
 		{
 			name:  "undefined_groups",
 			setup: `globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');`,
-			invoke: `JSON.stringify(globalThis.prSplit.createSplitPlan(
+			invoke: `JSON.stringify(await globalThis.prSplit.createSplitPlan(
 				undefined,
 				{baseBranch: 'main', branchPrefix: 'split/'}
 			))`,
@@ -985,7 +985,7 @@ func TestCreateSplitPlan_DependencyField(t *testing.T) {
 	}
 
 	t.Run("first split has empty dependencies, subsequent list predecessor", func(t *testing.T) {
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.createSplitPlan(
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.createSplitPlan(
 			{'alpha': ['a.go'], 'beta': ['b.go'], 'gamma': ['c.go']},
 			{baseBranch: 'main', branchPrefix: 'split/'}
 		))`)
@@ -1014,7 +1014,7 @@ func TestCreateSplitPlan_DependencyField(t *testing.T) {
 	})
 
 	t.Run("single split has empty dependencies", func(t *testing.T) {
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.createSplitPlan(
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.createSplitPlan(
 			{'only': ['sole.go']},
 			{baseBranch: 'main', branchPrefix: 'split/'}
 		))`)

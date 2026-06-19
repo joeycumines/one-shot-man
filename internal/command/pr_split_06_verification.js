@@ -23,7 +23,7 @@
     //  Tries proper branch checkout first (preserves branch name for verify
     //  commands that inspect HEAD), falls back to detached HEAD if the
     //  branch is already checked out elsewhere.
-    function verifySplit(branchName, config) {
+    async function verifySplit(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
         var command = config.verifyCommand || prSplit.runtime.verifyCommand;
@@ -40,11 +40,11 @@
         var worktreeDir = worktreeTmpPath('osm-verify-');
 
         // Try proper branch checkout first (preserves branch name in HEAD).
-        var wtAdd = gitExec(dir, ['worktree', 'add', worktreeDir, branchName]);
+        var wtAdd = await gitExec(dir, ['worktree', 'add', worktreeDir, branchName]);
         if (wtAdd.code !== 0) {
             // Branch might be checked out elsewhere (user's CWD); fallback to detached HEAD.
-            gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
-            wtAdd = gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
+            await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            wtAdd = await gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
             if (wtAdd.code !== 0) {
                 return {
                     name: branchName,
@@ -55,8 +55,8 @@
             }
         }
 
-        function cleanupWorktree() {
-            gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+        async function cleanupWorktree() {
+            await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
         }
 
         var startMs = Date.now();
@@ -94,7 +94,7 @@
             }
         }
 
-        var result = shellSpawnSync(shellCmd, {
+        var result = await shellSpawnSync(shellCmd, {
             onStdout: function(chunk) {
                 stdoutBuf += chunk;
                 emitChunk(chunk);
@@ -106,7 +106,7 @@
         });
         var elapsedMs = Date.now() - startMs;
 
-        cleanupWorktree();
+        await cleanupWorktree();
 
         if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
             return {
@@ -129,7 +129,7 @@
     //
     //  Each branch is verified in its own temporary worktree (via verifySplit),
     //  so the user's CWD is never modified.
-    function verifySplits(plan, options) {
+    async function verifySplits(plan, options) {
         options = options || {};
         if (!plan || !plan.splits) {
             return { allPassed: false, results: [], error: 'verifySplits: invalid plan — missing splits array' };
@@ -148,7 +148,7 @@
         // pre-existing rather than new regressions.
         var baselineFailure = null;
         if (plan.verifyCommand && plan.sourceBranch) {
-            var baselineResult = verifySplit(plan.sourceBranch, {
+            var baselineResult = await verifySplit(plan.sourceBranch, {
                 dir: dir,
                 verifyCommand: plan.verifyCommand,
                 verifyTimeoutMs: verifyTimeoutMs,
@@ -198,7 +198,7 @@
                     onBranchOutput(brName, line);
                 };
             }
-            var result = verifySplit(split.name, {
+            var result = await verifySplit(split.name, {
                 dir: dir,
                 verifyCommand: scopedCmd,
                 verifyTimeoutMs: verifyTimeoutMs,
@@ -242,7 +242,7 @@
     //  If the execution model ever changes to INDEPENDENT branches (each
     //  starting from baseBranch), this check would need redesign — likely
     //  a combined merge or tree-walk approach.
-    function verifyEquivalence(plan) {
+    async function verifyEquivalence(plan) {
         if (!plan) {
             return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan' };
         }
@@ -254,7 +254,7 @@
 
         var lastSplit = plan.splits[plan.splits.length - 1].name;
 
-        var splitTreeResult = gitExec(dir, ['rev-parse', lastSplit + '^{tree}']);
+        var splitTreeResult = await gitExec(dir, ['rev-parse', lastSplit + '^{tree}']);
         if (splitTreeResult.code !== 0) {
             return {
                 equivalent: false,
@@ -265,7 +265,7 @@
         }
         var splitTree = splitTreeResult.stdout.trim();
 
-        var sourceTreeResult = gitExec(dir, ['rev-parse', plan.sourceBranch + '^{tree}']);
+        var sourceTreeResult = await gitExec(dir, ['rev-parse', plan.sourceBranch + '^{tree}']);
         if (sourceTreeResult.code !== 0) {
             return {
                 equivalent: false,
@@ -285,12 +285,12 @@
     }
 
     // --- verifyEquivalenceDetailed — adds per-file diff info on mismatch ---
-    function verifyEquivalenceDetailed(plan) {
+    async function verifyEquivalenceDetailed(plan) {
         if (!plan) {
             return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan', diffFiles: [], diffSummary: '' };
         }
         var dir = resolveDir(plan.dir || '.');
-        var base = verifyEquivalence(plan);
+        var base = await verifyEquivalence(plan);
 
         if (base.error || base.equivalent) {
             base.diffFiles = [];
@@ -299,10 +299,10 @@
         }
 
         var lastSplit = plan.splits[plan.splits.length - 1].name;
-        var diffResult = gitExec(dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
+        var diffResult = await gitExec(dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
         base.diffSummary = diffResult.code === 0 ? diffResult.stdout.trim() : '';
 
-        var diffNamesResult = gitExec(dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
+        var diffNamesResult = await gitExec(dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
         if (diffNamesResult.code === 0 && diffNamesResult.stdout.trim() !== '') {
             base.diffFiles = diffNamesResult.stdout.trim().split('\n').filter(function(f) {
                 return f !== '';
@@ -315,7 +315,7 @@
     }
 
     // --- cleanupBranches — deletes split branches ---
-    function cleanupBranches(plan) {
+    async function cleanupBranches(plan) {
         if (!plan || !plan.splits) {
             return { deleted: [], errors: ['cleanupBranches: invalid plan — missing splits array'] };
         }
@@ -325,14 +325,14 @@
 
         // Try to checkout baseBranch; fall back to detaching HEAD so
         // branch -D can still succeed.
-        var coRes = gitExec(dir, ['checkout', plan.baseBranch]);
+        var coRes = await gitExec(dir, ['checkout', plan.baseBranch]);
         if (coRes.code !== 0) {
-            gitExec(dir, ['checkout', '--detach', 'HEAD']);
+            await gitExec(dir, ['checkout', '--detach', 'HEAD']);
         }
 
         for (var i = 0; i < plan.splits.length; i++) {
             var name = plan.splits[i].name;
-            var result = gitExec(dir, ['branch', '-D', name]);
+            var result = await gitExec(dir, ['branch', '-D', name]);
             if (result.code === 0) {
                 deleted.push(name);
             } else {
@@ -354,7 +354,7 @@
     //    { worktreeDir, dir }     on success
     //    { skipped: true }        if no verify command configured
     //    { error: string }        on failure
-    function prepareVerifyWorktree(branchName, config) {
+    async function prepareVerifyWorktree(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
         var command = config.verifyCommand || prSplit.runtime.verifyCommand;
@@ -368,11 +368,11 @@
 
         var worktreeDir = worktreeTmpPath('osm-verify-');
 
-        var wtAdd = gitExec(dir, ['worktree', 'add', worktreeDir, branchName]);
+        var wtAdd = await gitExec(dir, ['worktree', 'add', worktreeDir, branchName]);
         if (wtAdd.code !== 0) {
             // Branch might be checked out elsewhere; fallback to detached HEAD.
-            gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
-            wtAdd = gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
+            await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            wtAdd = await gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
             if (wtAdd.code !== 0) {
                 return {
                     error: 'create worktree failed: ' + wtAdd.stderr.trim(),
@@ -399,7 +399,7 @@
     //    { session, worktreeDir, dir, branchName, startTime }  on success
     //    { skipped: true }                                     if no verify command
     //    { error: string }                                     on failure
-    function startVerifySession(branchName, config) {
+    async function startVerifySession(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
         var command = config.verifyCommand || prSplit.runtime.verifyCommand;
@@ -441,7 +441,7 @@
             });
             session.start();
         } catch (e) {
-            gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
             return {
                 error: 'start verify session failed: ' + e.message,
                 session: null,
@@ -460,8 +460,8 @@
 
     // cleanupVerifyWorktree removes a temporary worktree created by
     // startVerifySession.
-    function cleanupVerifyWorktree(dir, worktreeDir) {
-        gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+    async function cleanupVerifyWorktree(dir, worktreeDir) {
+        await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
     }
 
     // --- DESIGN NOTE (T003): PTY Verify Pipeline Audit ---

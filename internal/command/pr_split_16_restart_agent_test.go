@@ -24,7 +24,7 @@ func TestChunk16_RestartAgentPoll_WithPlan(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + prsplittest.GitMockSetupJS() + `
 		setupPlanCache(); // populate st.planCache
 
@@ -74,7 +74,7 @@ func TestChunk16_RestartAgentPoll_NoPlan_AutoMode(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + prsplittest.GitMockSetupJS() + `
 
 		var s = initState('ERROR_RESOLUTION');
@@ -89,7 +89,7 @@ func TestChunk16_RestartAgentPoll_NoPlan_AutoMode(t *testing.T) {
 		// Ensure no plan cache.
 		globalThis.prSplit._state.planCache = null;
 
-		var r = update({type: 'Tick', id: 'restart-agent-poll'}, s);
+		var r = await update({type: 'Tick', id: 'restart-agent-poll'}, s);
 		var state = r[0];
 
 		// T114: Should transition to PLAN_GENERATION for re-analysis.
@@ -129,7 +129,7 @@ func TestChunk16_RestartAgentPoll_NoPlan_HeuristicMode(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + prsplittest.GitMockSetupJS() + `
 
 		var s = initState('ERROR_RESOLUTION');
@@ -144,7 +144,7 @@ func TestChunk16_RestartAgentPoll_NoPlan_HeuristicMode(t *testing.T) {
 		// Ensure no plan cache.
 		globalThis.prSplit._state.planCache = null;
 
-		var r = update({type: 'Tick', id: 'restart-agent-poll'}, s);
+		var r = await update({type: 'Tick', id: 'restart-agent-poll'}, s);
 		var state = r[0];
 
 		// T114: Should transition to PLAN_GENERATION for re-analysis.
@@ -173,7 +173,7 @@ func TestChunk16_RestartAgentPoll_StillRestarting(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('ERROR_RESOLUTION');
 		s.agentRestarting = true; // still in progress
 		s.restartResult = null;
@@ -203,7 +203,7 @@ func TestChunk16_RestartAgentPoll_Error(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('ERROR_RESOLUTION');
 		s.agentRestarting = false;
 		s.restartResult = { error: 'Connection refused' };

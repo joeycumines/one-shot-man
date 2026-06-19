@@ -697,7 +697,7 @@ func TestAgentCodeExecutor_Resolve(t *testing.T) {
 				};
 				var ce = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'my-agent'});
 			`,
-			invoke: `JSON.stringify(ce.resolve())`,
+			invoke: `JSON.stringify(await ce.resolve())`,
 			check: func(t *testing.T, r agentResolveResult) {
 				if r.Error != nil {
 					t.Errorf("expected no error, got: %s", *r.Error)
@@ -722,7 +722,7 @@ func TestAgentCodeExecutor_Resolve(t *testing.T) {
 				};
 				var ce = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'nonexistent-bin'});
 			`,
-			invoke: `JSON.stringify(ce.resolve())`,
+			invoke: `JSON.stringify(await ce.resolve())`,
 			check: func(t *testing.T, r agentResolveResult) {
 				if r.Error == nil {
 					t.Fatal("expected error when command not found")
@@ -748,7 +748,7 @@ func TestAgentCodeExecutor_Resolve(t *testing.T) {
 				};
 				var ce = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'my-agent'});
 			`,
-			invoke: `JSON.stringify(ce.resolve())`,
+			invoke: `JSON.stringify(await ce.resolve())`,
 			check: func(t *testing.T, r agentResolveResult) {
 				if r.Error != nil {
 					t.Errorf("expected no error, got: %s", *r.Error)
@@ -773,7 +773,7 @@ func TestAgentCodeExecutor_Resolve(t *testing.T) {
 				};
 				var ce = new globalThis.prSplit.AgentCodeExecutor({agentCommand: 'missing-agent'});
 			`,
-			invoke: `JSON.stringify(ce.resolve())`,
+			invoke: `JSON.stringify(await ce.resolve())`,
 			check: func(t *testing.T, r agentResolveResult) {
 				if r.Error == nil {
 					t.Fatal("expected error when command not found")
@@ -796,7 +796,7 @@ func TestAgentCodeExecutor_Resolve(t *testing.T) {
 				};
 				var ce = new globalThis.prSplit.AgentCodeExecutor({});
 			`,
-			invoke: `JSON.stringify(ce.resolve())`,
+			invoke: `JSON.stringify(await ce.resolve())`,
 			check: func(t *testing.T, r agentResolveResult) {
 				if r.Error == nil {
 					t.Fatal("expected error when no command configured")
@@ -972,13 +972,13 @@ func TestGitAddChangedFiles(t *testing.T) {
 					return _gitOk('');
 				};
 			`,
-			check: `
-				globalThis.prSplit._gitAddChangedFiles('.');
+			check: `(async function() {
+				await globalThis.prSplit._gitAddChangedFiles('.');
 				if (!addedFiles) throw new Error('git add not called');
 				if (addedFiles.indexOf('src/main.go') === -1) throw new Error('missing src/main.go, got: ' + JSON.stringify(addedFiles));
 				if (addedFiles.indexOf('newfile.txt') === -1) throw new Error('missing newfile.txt, got: ' + JSON.stringify(addedFiles));
-				'ok'
-			`,
+				return 'ok';
+			})()`,
 		},
 		{
 			name: "rename extracts new path only",
@@ -990,13 +990,13 @@ func TestGitAddChangedFiles(t *testing.T) {
 					return _gitOk('');
 				};
 			`,
-			check: `
-				globalThis.prSplit._gitAddChangedFiles('.');
+			check: `(async function() {
+				await globalThis.prSplit._gitAddChangedFiles('.');
 				if (!addedFiles) throw new Error('git add not called');
 				if (addedFiles.indexOf('new.go') === -1) throw new Error('expected new.go, got: ' + JSON.stringify(addedFiles));
 				if (addedFiles.indexOf('old.go') !== -1) throw new Error('should not include old.go');
-				'ok'
-			`,
+				return 'ok';
+			})()`,
 		},
 		{
 			name: "quoted path strips quotes",
@@ -1008,12 +1008,12 @@ func TestGitAddChangedFiles(t *testing.T) {
 					return _gitOk('');
 				};
 			`,
-			check: `
-				globalThis.prSplit._gitAddChangedFiles('.');
+			check: `(async function() {
+				await globalThis.prSplit._gitAddChangedFiles('.');
 				if (!addedFiles) throw new Error('git add not called');
 				if (addedFiles[0] !== 'path with spaces/file.go') throw new Error('expected unquoted path, got: ' + JSON.stringify(addedFiles));
-				'ok'
-			`,
+				return 'ok';
+			})()`,
 		},
 		{
 			name: "pr-split-plan.json excluded",
@@ -1025,13 +1025,13 @@ func TestGitAddChangedFiles(t *testing.T) {
 					return _gitOk('');
 				};
 			`,
-			check: `
-				globalThis.prSplit._gitAddChangedFiles('.');
+			check: `(async function() {
+				await globalThis.prSplit._gitAddChangedFiles('.');
 				if (!addedFiles) throw new Error('git add not called');
 				if (addedFiles.length !== 1) throw new Error('expected 1 file (excluding plan files), got: ' + JSON.stringify(addedFiles));
 				if (addedFiles[0] !== 'src/main.go') throw new Error('expected src/main.go only, got: ' + JSON.stringify(addedFiles));
-				'ok'
-			`,
+				return 'ok';
+			})()`,
 		},
 		{
 			name: "empty status does not call git add",
@@ -1043,11 +1043,11 @@ func TestGitAddChangedFiles(t *testing.T) {
 					return _gitOk('');
 				};
 			`,
-			check: `
-				globalThis.prSplit._gitAddChangedFiles('.');
+			check: `(async function() {
+				await globalThis.prSplit._gitAddChangedFiles('.');
 				if (addCalled) throw new Error('git add should not be called for empty status');
-				'ok'
-			`,
+				return 'ok';
+			})()`,
 		},
 	}
 

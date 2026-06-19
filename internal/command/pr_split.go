@@ -4,13 +4,11 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -20,6 +18,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/config"
+	"github.com/joeycumines/one-shot-man/internal/gitops"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/storage"
 	"github.com/joeycumines/one-shot-man/internal/termmux"
@@ -145,7 +144,7 @@ func NewPrSplitCommand(cfg *config.Config) *PrSplitCommand {
 
 		// Defaults — mirrored in SetupFlags for flag-based parsing.
 		interactive:   true,
-		baseBranch:    "main",
+		baseBranch:    "", // empty = auto-detect
 		strategy:      "directory",
 		maxFiles:      10,
 		branchPrefix:  "split/",
@@ -159,7 +158,7 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.interactive, "i", true, "Start interactive mode (short form)")
 
 	// Split configuration
-	fs.StringVar(&c.baseBranch, "base", "main", "Base branch to split against")
+	fs.StringVar(&c.baseBranch, "base", "", "Base branch to split against (empty or \"auto\" = auto-detect)")
 	fs.StringVar(&c.strategy, "strategy", "directory", "Grouping strategy: directory, directory-deep, extension, chunks, dependency, auto")
 	fs.IntVar(&c.maxFiles, "max", 10, "Maximum files per split")
 	fs.StringVar(&c.branchPrefix, "prefix", "split/", "Branch name prefix for splits")
@@ -482,7 +481,7 @@ func (c *PrSplitCommand) applyConfigDefaults() {
 			*target = v
 		}
 	}
-	applyStr("base", &c.baseBranch, "main")
+	applyStr("base", &c.baseBranch, "")
 	applyStr("strategy", &c.strategy, "directory")
 	if v, ok := c.config.GetCommandOption("pr-split", "max"); ok && (c.maxFiles == 10 || c.maxFiles == 0) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -536,54 +535,69 @@ func (c *PrSplitCommand) validateFlags() error {
 
 // validateGitRepo performs early detection of common git-related errors
 // before launching the expensive scripting engine and TUI wizard.
-// Returns a clear error if the working directory is not inside a git repo
-// or if the specified base branch does not exist.
+// Returns a clear error if the working directory is not inside a git repo,
+// if the repository is bare, or if the specified (or auto-detected) base
+// branch does not exist.
+//
+// All checks use the gitops Go package (go-git/v6) — no git CLI calls.
+// When baseBranch is empty or "auto", the default branch is auto-detected
+// via DefaultBranch() (origin/HEAD symbolic ref → common branch names → "main").
 func (c *PrSplitCommand) validateGitRepo() error {
-	// Check if we're inside a git working tree.
-	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
-	if c.testWorkingDir != "" {
-		cmd.Dir = c.testWorkingDir
-	}
-	out, err := cmd.CombinedOutput()
+	wd := c.workingDir()
+
+	// Open the repo, walking up parent directories to find .git.
+	repo, err := gitops.OpenDetect(wd)
 	if err != nil {
-		if errors.Is(err, exec.ErrNotFound) {
-			return fmt.Errorf("git is not installed or not in PATH")
-		}
-		outStr := strings.TrimSpace(string(out))
-		if strings.Contains(outStr, "not a git repository") {
-			return fmt.Errorf("not a git repository (or any parent up to mount point)")
-		}
-		if outStr != "" {
-			return fmt.Errorf("git check failed: %s", outStr)
-		}
+		return fmt.Errorf("not a git repository (or any parent up to mount point)")
+	}
+
+	// Reject bare repositories — pr-split requires a working tree.
+	isWT, err := repo.IsWorkTree()
+	if err != nil {
 		return fmt.Errorf("git check failed: %w", err)
 	}
-	// Bare repos report "false" — not a valid working tree for pr-split.
-	if strings.TrimSpace(string(out)) != "true" {
+	if !isWT {
 		return fmt.Errorf("not inside a git working tree (bare repository?)")
 	}
 
-	// Validate the base branch exists (local or remote tracking ref).
-	base := c.baseBranch
-	if base != "" {
-		// Try local branch first, then remote tracking refs.
-		cmd = exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+base)
-		if c.testWorkingDir != "" {
-			cmd.Dir = c.testWorkingDir
+	// Auto-detect the default branch when not explicitly specified.
+	if c.baseBranch == "" || c.baseBranch == "auto" {
+		detected, detectErr := repo.DefaultBranch()
+		if detectErr != nil {
+			slog.Warn("pr-split: failed to auto-detect default branch, falling back to 'main'",
+				"error", detectErr)
+			c.baseBranch = "main"
+		} else {
+			slog.Info("pr-split: auto-detected base branch", "branch", detected)
+			c.baseBranch = detected
 		}
-		if err := cmd.Run(); err != nil {
-			// Not a local branch — try common remote refs.
-			cmd = exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+base)
-			if c.testWorkingDir != "" {
-				cmd.Dir = c.testWorkingDir
-			}
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("base branch %q not found (checked local and origin remote)", base)
-			}
+	}
+
+	// Validate the base branch exists (local or remote tracking ref).
+	if c.baseBranch != "" {
+		exists, existsErr := repo.BranchExists(c.baseBranch)
+		if existsErr != nil {
+			return fmt.Errorf("git check failed: %w", existsErr)
+		}
+		if !exists {
+			return fmt.Errorf("base branch %q not found (checked local and origin remote)", c.baseBranch)
 		}
 	}
 
 	return nil
+}
+
+// workingDir returns the directory to operate in. When testWorkingDir is set
+// (by tests), it is used directly. Otherwise the process CWD is returned.
+func (c *PrSplitCommand) workingDir() string {
+	if c.testWorkingDir != "" {
+		return c.testWorkingDir
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return wd
 }
 
 // forceCloseSessionManager attempts to gracefully shut down the

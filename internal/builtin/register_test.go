@@ -42,7 +42,6 @@ func TestRegister(t *testing.T) {
 		"osm:os",
 		"osm:path",
 		"osm:regexp",
-		"osm:time",
 		"osm:ctxutil",
 	}
 

@@ -39,7 +39,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-		raw, err := evalJS(`(function() {
+		raw, err := evalJS(`(async function() {
 			var activateCalls = [];
 			var switchCalled = false;
 			globalThis.tuiMux = {
@@ -52,7 +52,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 			// Set pinned Agent SessionID.
 			prSplit._state.agentSessionID = 42;
 			try {
-				var result = globalThis.prSplit._onToggle();
+				var result = await globalThis.prSplit._onToggle();
 				if (!switchCalled) return 'FAIL: switchTo was not called';
 				if (result.skipped) return 'FAIL: should not be skipped';
 				if (result.reason !== 'toggle') return 'FAIL: unexpected result: ' + JSON.stringify(result);
@@ -80,7 +80,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-		raw, err := evalJS(`(function() {
+		raw, err := evalJS(`(async function() {
 			var switchCalled = false;
 			globalThis.tuiMux = {
 				isDone: function(id) { return true; },
@@ -92,7 +92,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 			// No agentSessionID set — Agent not attached.
 			delete prSplit._state.agentSessionID;
 			try {
-				var result = globalThis.prSplit._onToggle();
+				var result = await globalThis.prSplit._onToggle();
 				if (switchCalled) return 'FAIL: switchTo should not be called when no agentSessionID';
 				if (!result.skipped) return 'FAIL: should be skipped';
 				if (result.reason !== 'no_child') return 'FAIL: wrong reason: ' + result.reason;
@@ -113,7 +113,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-		raw, err := evalJS(`(function() {
+		raw, err := evalJS(`(async function() {
 			var switchCalled = false;
 			globalThis.tuiMux = {
 				isDone: function(id) { return true; },
@@ -125,7 +125,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 			// Agent SessionID set but session is done.
 			prSplit._state.agentSessionID = 42;
 			try {
-				var result = globalThis.prSplit._onToggle();
+				var result = await globalThis.prSplit._onToggle();
 				if (switchCalled) return 'FAIL: switchTo should not be called when session is done';
 				if (!result.skipped) return 'FAIL: should be skipped';
 				if (result.reason !== 'no_child') return 'FAIL: wrong reason: ' + result.reason;
@@ -147,12 +147,12 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-		raw, err := evalJS(`(function() {
+		raw, err := evalJS(`(async function() {
 			// Ensure tuiMux is explicitly absent.
 			var saved = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 			delete globalThis.tuiMux;
 			try {
-				var result = globalThis.prSplit._onToggle();
+				var result = await globalThis.prSplit._onToggle();
 				if (!result.skipped) return 'FAIL: should be skipped when tuiMux absent';
 				if (result.reason !== 'no_child') return 'FAIL: wrong reason: ' + result.reason;
 				return 'OK';

@@ -27,19 +27,19 @@ type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, 
 // Require returns a module loader for the osm:mcp module.
 // The adapter is used for thread-safe JS callback invocation and Promisify support.
 // If adapter is nil, the module loads but createServer is unavailable — matching exec.go behavior.
-func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 		// Guard against nil adapter to prevent segfault at module load time.
 		// exec.go uses the same pattern: the module loads but spawn is unavailable.
 		if adapter != nil {
-			_ = exports.Set("createServer", jsCreateServer(runtime, adapter, adapter.Loop().Promisify))
+			_ = exports.Set("createServer", jsCreateServer(ctx, runtime, adapter, adapter.Loop().Promisify))
 		}
 	}
 }
 
 // jsCreateServer returns the JS function: createServer(name, version) → server object
-func jsCreateServer(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
+func jsCreateServer(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		name := call.Argument(0).String()
 		version := ""
@@ -56,6 +56,7 @@ func jsCreateServer(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promi
 			server:  srv,
 			adapter: adapter,
 			runtime: runtime,
+			ctx:     ctx,
 		}
 
 		obj := runtime.NewObject()
@@ -89,6 +90,7 @@ type mcpServer struct {
 	server  *mcp.Server
 	adapter *gojaeventloop.Adapter
 	runtime *goja.Runtime
+	ctx     context.Context
 
 	mu      sync.Mutex
 	running bool
@@ -338,14 +340,14 @@ func (s *mcpServer) jsRun() func(call goja.FunctionCall) goja.Value {
 		}
 
 		s.running = true
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(s.ctx)
 		s.cancel = cancel
 		s.mu.Unlock()
 
 		// Create promise for async run
 		promise, resolve, reject := s.adapter.JS().NewChainedPromise()
 
-		s.adapter.Loop().Promisify(context.Background(), func(_ context.Context) (any, error) {
+		s.adapter.Loop().Promisify(s.ctx, func(_ context.Context) (any, error) {
 			err := s.server.Run(ctx, &mcp.StdioTransport{})
 			if err != nil && !errors.Is(err, context.Canceled) {
 				_ = s.adapter.Loop().Submit(func() {

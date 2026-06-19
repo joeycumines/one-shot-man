@@ -67,7 +67,7 @@ func TestChunk05_ExecuteSplit_BasicExecution(t *testing.T) {
 					{ name: 'split/02-dels', files: ['delete-me.go'], message: 'deletions' }
 				]
 			};
-			var r = prSplit.executeSplit(plan);
+			var r = await prSplit.executeSplit(plan);
 			return JSON.stringify(r);
 		})()
 	`)
@@ -140,8 +140,8 @@ func TestChunk05_ExecuteSplit_InvalidPlan(t *testing.T) {
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
 
 	result, err := evalJS(`
-		(function() {
-			var r = globalThis.prSplit.executeSplit({ splits: [] });
+		(async function() {
+			var r = await globalThis.prSplit.executeSplit({ splits: [] });
 			return r.error;
 		})()
 	`)
@@ -162,8 +162,8 @@ func TestChunk05_ExecuteSplit_MissingFileStatuses(t *testing.T) {
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
 
 	result, err := evalJS(`
-		(function() {
-			var r = globalThis.prSplit.executeSplit({
+		(async function() {
+			var r = await globalThis.prSplit.executeSplit({
 				splits: [{ name: 'test', files: ['a.go'] }]
 			});
 			return r.error;
@@ -202,7 +202,7 @@ func TestChunk05_ExecuteSplit_ProgressCallback(t *testing.T) {
 					{ name: 'split/01-all', files: ['modify.go', 'new-file.go', 'delete-me.go'], message: 'all changes' }
 				]
 			};
-			var r = prSplit.executeSplit(plan, {
+			var r = await prSplit.executeSplit(plan, {
 				progressFn: function(msg) { messages.push(msg); }
 			});
 			return JSON.stringify({ error: r.error, messageCount: messages.length, messages: messages });
@@ -252,8 +252,8 @@ func TestChunk05_ExecuteSplit_ReRunDeletesOldBranches(t *testing.T) {
 
 	// Run once.
 	_, err := evalJS(`
-		(function() {
-			var r = globalThis.prSplit.executeSplit(` + planJS + `);
+		(async function() {
+			var r = await globalThis.prSplit.executeSplit(` + planJS + `);
 			return r.error || 'ok';
 		})()
 	`)
@@ -263,8 +263,8 @@ func TestChunk05_ExecuteSplit_ReRunDeletesOldBranches(t *testing.T) {
 
 	// Run again — should succeed (old branch deleted and recreated).
 	result, err := evalJS(`
-		(function() {
-			var r = globalThis.prSplit.executeSplit(` + planJS + `);
+		(async function() {
+			var r = await globalThis.prSplit.executeSplit(` + planJS + `);
 			return r.error || 'ok';
 		})()
 	`)
@@ -334,7 +334,7 @@ func TestChunk05_ExecuteSplit_GitIgnoredFilesSkipped(t *testing.T) {
 					{ name: 'split/01-mixed', files: ['feature.go', 'debug.log'], message: 'mixed files' }
 				]
 			};
-			var r = prSplit.executeSplit(plan);
+			var r = await prSplit.executeSplit(plan);
 			return JSON.stringify(r);
 		})()
 	`)
@@ -414,7 +414,7 @@ func TestChunk05_ExecuteSplit_NoIgnoredFiles(t *testing.T) {
 					{ name: 'split/01-mods', files: ['modify.go', 'new-file.go'], message: 'modifications' }
 				]
 			};
-			var r = prSplit.executeSplit(plan);
+			var r = await prSplit.executeSplit(plan);
 			return JSON.stringify(r);
 		})()
 	`)

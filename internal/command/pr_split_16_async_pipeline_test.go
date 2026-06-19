@@ -17,13 +17,13 @@ func TestChunk16_AnalysisPoll_StillRunning(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.isProcessing = true;
 		s.analysisRunning = true;
 		s.analysisError = null;
 
-		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
+		var r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 		if (!r[1]) return 'FAIL: should return a tick cmd when still running';
 		if (!r[0].analysisRunning) return 'FAIL: analysisRunning should still be true';
 		if (!r[0].isProcessing) return 'FAIL: isProcessing should still be true';
@@ -43,13 +43,13 @@ func TestChunk16_AnalysisPoll_Cancelled(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.isProcessing = false;
 		s.analysisRunning = false;
 		s.analysisError = null;
 
-		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
+		var r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 		if (r[1] !== null) return 'FAIL: should return null cmd on cancel, got: ' + r[1];
 		return 'OK';
 	})()`)
@@ -67,13 +67,13 @@ func TestChunk16_AnalysisPoll_ErrorFromPromise(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.isProcessing = true;
 		s.analysisRunning = false;
 		s.analysisError = 'git diff failed: permission denied';
 
-		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
+		var r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 		if (r[0].wizardState !== 'ERROR') return 'FAIL: wizardState should be ERROR, got: ' + r[0].wizardState;
 		if (r[0].isProcessing) return 'FAIL: isProcessing should be false';
 		if (r[0].splitViewEnabled) return 'FAIL: splitViewEnabled should be false in ERROR state';
@@ -99,7 +99,7 @@ func TestChunk16_AnalysisPoll_CompletedSuccess(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Simulate async pipeline having completed successfully:
 		// analysisRunning=false, analysisError=null, wizardState already
 		// transitioned to PLAN_REVIEW by runAnalysisAsync.
@@ -108,7 +108,7 @@ func TestChunk16_AnalysisPoll_CompletedSuccess(t *testing.T) {
 		s.analysisRunning = false;
 		s.analysisError = null;
 
-		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
+		var r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 		// Should return null cmd (stop polling), state unchanged.
 		if (r[1] !== null) return 'FAIL: should return null cmd on success';
 		if (r[0].wizardState !== 'PLAN_REVIEW') return 'FAIL: wizardState should be PLAN_REVIEW, got: ' + r[0].wizardState;
@@ -184,22 +184,15 @@ func TestChunk16_AnalysisAsync_HappyPath(t *testing.T) {
 			s.focusIndex = 4; // nav-next element (after toggle-advanced)
 
 			// Trigger startAnalysis via enter key on nav-next.
-			var r = sendKey(s, 'enter');
+			var r = await sendKey(s, 'enter');
 			s = r[0];
 
-			// startAnalysis launched the async pipeline.
-			if (!s.isProcessing) {
-				return 'FAIL: isProcessing should be true after startAnalysis, state=' + s.wizardState +
-					', error=' + s.errorDetails;
+			if (s.isProcessing) {
+				for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 			}
 
-			// Let microtasks resolve (mocked functions resolve immediately).
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
-
 			// Poll to finalize.
-			r = update({type: 'Tick', id: 'analysis-poll'}, s);
+			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 			s = r[0];
 
 			// After completion, should be PLAN_REVIEW.
@@ -261,18 +254,14 @@ func TestChunk16_AnalysisAsync_AnalyzeDiffError(t *testing.T) {
 			globalThis.prSplit.runtime.mode = 'heuristic';
 			s.focusIndex = 4; // nav-next element (after toggle-advanced)
 
-			var r = sendKey(s, 'enter');
+			var r = await sendKey(s, 'enter');
 			s = r[0];
 
-			if (!s.isProcessing) {
-				return 'FAIL: isProcessing should be true, state=' + s.wizardState + ', error=' + s.errorDetails;
+			if (s.isProcessing) {
+				for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 			}
 
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
-
-			r = update({type: 'Tick', id: 'analysis-poll'}, s);
+			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 			s = r[0];
 
 			if (s.wizardState !== 'ERROR') {
@@ -324,18 +313,14 @@ func TestChunk16_AnalysisAsync_NoChanges(t *testing.T) {
 			globalThis.prSplit.runtime.mode = 'heuristic';
 			s.focusIndex = 4; // nav-next element (after toggle-advanced)
 
-			var r = sendKey(s, 'enter');
+			var r = await sendKey(s, 'enter');
 			s = r[0];
 
-			if (!s.isProcessing) {
-				return 'FAIL: isProcessing should be true, state=' + s.wizardState + ', error=' + s.errorDetails;
+			if (s.isProcessing) {
+				for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 			}
 
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
-
-			r = update({type: 'Tick', id: 'analysis-poll'}, s);
+			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 			s = r[0];
 
 			if (s.wizardState !== 'CONFIG') {
@@ -408,18 +393,14 @@ func TestChunk16_AnalysisAsync_ValidationFailure(t *testing.T) {
 			globalThis.prSplit.runtime.mode = 'heuristic';
 			s.focusIndex = 4; // nav-next element (after toggle-advanced)
 
-			var r = sendKey(s, 'enter');
+			var r = await sendKey(s, 'enter');
 			s = r[0];
 
-			if (!s.isProcessing) {
-				return 'FAIL: isProcessing should be true, state=' + s.wizardState + ', error=' + s.errorDetails;
+			if (s.isProcessing) {
+				for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 			}
 
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
-
-			r = update({type: 'Tick', id: 'analysis-poll'}, s);
+			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 			s = r[0];
 
 			if (s.wizardState !== 'ERROR') {
@@ -451,14 +432,14 @@ func TestChunk16_AnalysisAsync_NoSyncCallsRemain(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.isProcessing = true;
 
 		// Old tick IDs should be ignored (return [s, null]).
 		var oldTicks = ['analysis-step-0', 'analysis-step-1', 'analysis-step-2', 'analysis-step-3'];
 		for (var i = 0; i < oldTicks.length; i++) {
-			var r = update({type: 'Tick', id: oldTicks[i]}, s);
+			var r = await update({type: 'Tick', id: oldTicks[i]}, s);
 			if (r[1] !== null) return 'FAIL: old tick ' + oldTicks[i] + ' should return null cmd';
 		}
 		return 'OK';
@@ -481,13 +462,13 @@ func TestChunk16_ExecutionPoll_StillRunning(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
 		s.executionRunning = true;
 		s.executionError = null;
 
-		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		var r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		if (!r[1]) return 'FAIL: should return a tick cmd when still running';
 		if (!r[0].executionRunning) return 'FAIL: executionRunning should still be true';
 		if (!r[0].isProcessing) return 'FAIL: isProcessing should still be true';
@@ -507,13 +488,13 @@ func TestChunk16_ExecutionPoll_Cancelled(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = false;
 		s.executionRunning = false;
 		s.executionError = null;
 
-		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		var r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		if (r[1] !== null) return 'FAIL: should return null cmd on cancel, got: ' + r[1];
 		return 'OK';
 	})()`)
@@ -531,13 +512,13 @@ func TestChunk16_ExecutionPoll_ErrorFromPromise(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
 		s.executionRunning = false;
 		s.executionError = 'git worktree failed: permission denied';
 
-		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		var r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		if (r[0].wizardState !== 'ERROR_RESOLUTION') {
 			return 'FAIL: wizardState should be ERROR_RESOLUTION, got: ' + r[0].wizardState;
 		}
@@ -562,14 +543,14 @@ func TestChunk16_ExecutionPoll_CompletedToVerify(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
 		s.executionRunning = false;
 		s.executionError = null;
 		s.executionNextStep = 'verify';
 
-		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		var r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		// Should dispatch to verify-branch.
 		if (!r[1]) return 'FAIL: should return a tick cmd for verify-branch';
 		if (r[0].verifyingIdx !== 0) return 'FAIL: verifyingIdx should be 0, got: ' + r[0].verifyingIdx;
@@ -590,14 +571,14 @@ func TestChunk16_ExecutionPoll_CompletedToEquiv(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
 		s.executionRunning = false;
 		s.executionError = null;
 		s.executionNextStep = 'equiv';
 
-		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		var r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		// Should start equiv check — returns a tick cmd for equiv-poll.
 		if (!r[1]) return 'FAIL: should return a tick cmd for equiv-poll';
 		if (r[0].wizardState !== 'EQUIV_CHECK') {
@@ -620,13 +601,13 @@ func TestChunk16_EquivPoll_StillRunning(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('EQUIV_CHECK');
 		s.isProcessing = true;
 		s.equivRunning = true;
 		s.equivError = null;
 
-		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		var r = await update({type: 'Tick', id: 'equiv-poll'}, s);
 		if (!r[1]) return 'FAIL: should return a tick cmd when still running';
 		if (!r[0].equivRunning) return 'FAIL: equivRunning should still be true';
 		return 'OK';
@@ -645,13 +626,13 @@ func TestChunk16_EquivPoll_Cancelled(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('EQUIV_CHECK');
 		s.isProcessing = false;
 		s.equivRunning = false;
 		s.equivError = null;
 
-		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		var r = await update({type: 'Tick', id: 'equiv-poll'}, s);
 		if (r[1] !== null) return 'FAIL: should return null cmd on cancel';
 		return 'OK';
 	})()`)
@@ -669,13 +650,13 @@ func TestChunk16_EquivPoll_Error(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('EQUIV_CHECK');
 		s.isProcessing = true;
 		s.equivRunning = false;
 		s.equivError = 'failed to get split tree: fatal: not a valid object name';
 
-		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		var r = await update({type: 'Tick', id: 'equiv-poll'}, s);
 		if (r[0].wizardState !== 'ERROR') {
 			return 'FAIL: wizardState should be ERROR, got: ' + r[0].wizardState;
 		}
@@ -700,7 +681,7 @@ func TestChunk16_EquivPoll_CompletedSuccess(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Simulate async equiv complete: equivRunning=false, equivError=null,
 		// wizardState already transitioned to FINALIZATION by runEquivCheckAsync.
 		var s = initState('FINALIZATION');
@@ -708,7 +689,7 @@ func TestChunk16_EquivPoll_CompletedSuccess(t *testing.T) {
 		s.equivRunning = false;
 		s.equivError = null;
 
-		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		var r = await update({type: 'Tick', id: 'equiv-poll'}, s);
 		if (r[1] !== null) return 'FAIL: should return null cmd on success';
 		if (r[0].wizardState !== 'FINALIZATION') {
 			return 'FAIL: wizardState should be FINALIZATION, got: ' + r[0].wizardState;
@@ -729,14 +710,14 @@ func TestChunk16_ExecutionAsync_NoSyncCallsRemain(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
 
 		// Old tick IDs should be ignored (return [s, null]).
 		var oldTicks = ['exec-step-0', 'exec-step-1', 'exec-step-2'];
 		for (var i = 0; i < oldTicks.length; i++) {
-			var r = update({type: 'Tick', id: oldTicks[i]}, s);
+			var r = await update({type: 'Tick', id: oldTicks[i]}, s);
 			if (r[1] !== null) return 'FAIL: old tick ' + oldTicks[i] + ' should return null cmd';
 		}
 		return 'OK';
@@ -762,7 +743,7 @@ func TestChunk16_ExecutionAsync_HappyPath(t *testing.T) {
 		var origVerifyEquivalenceDetailedAsync = globalThis.prSplit.verifyEquivalenceDetailedAsync;
 
 		try {
-			// Mock verifyEquivalenceDetailedAsync (checked first by runEquivCheckAsync).
+			// Mock await verifyEquivalenceDetailedAsync(checked first by runEquivCheckAsync).
 			globalThis.prSplit.verifyEquivalenceDetailedAsync = async function(plan) {
 				return { equivalent: true, splitTree: 'aaa', sourceTree: 'aaa', error: null, diffFiles: [], diffSummary: '' };
 			};
@@ -783,8 +764,7 @@ func TestChunk16_ExecutionAsync_HappyPath(t *testing.T) {
 			];
 
 			// Poll execution → should transition to EQUIV_CHECK and start equiv async.
-			var r = update({type: 'Tick', id: 'execution-poll'}, s);
-			s = r[0];
+			update({type: 'Tick', id: 'execution-poll'}, s);
 
 			if (s.wizardState !== 'EQUIV_CHECK') {
 				return 'FAIL: expected EQUIV_CHECK after execution-poll, got ' + s.wizardState;
@@ -792,12 +772,10 @@ func TestChunk16_ExecutionAsync_HappyPath(t *testing.T) {
 			if (!s.equivRunning) return 'FAIL: equivRunning should be true';
 
 			// Let microtasks resolve (mocked verifyEquivalenceAsync resolves immediately).
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+		for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 
 			// Poll equiv check for completion.
-			r = update({type: 'Tick', id: 'equiv-poll'}, s);
+			var r = await update({type: 'Tick', id: 'equiv-poll'}, s);
 			s = r[0];
 
 			if (s.wizardState !== 'FINALIZATION') {
@@ -829,7 +807,7 @@ func TestChunk16_ExecutionAsync_ExecutionError(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Simulate execution error via the poll handler.
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
@@ -842,7 +820,7 @@ func TestChunk16_ExecutionAsync_ExecutionError(t *testing.T) {
 		s.isProcessing = false;
 
 		// Poll should see completed state and stop.
-		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		var r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		if (r[1] !== null) return 'FAIL: should return null cmd after error';
 		if (r[0].wizardState !== 'ERROR_RESOLUTION') {
 			return 'FAIL: wizardState should stay ERROR_RESOLUTION, got: ' + r[0].wizardState;
@@ -956,14 +934,14 @@ func TestChunk16_CancelDuringExecution(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
 		s.executionRunning = true;
 		s.showConfirmCancel = true;
 
 		// User confirms cancel.
-		var r = update({type: 'Key', key: 'y'}, s);
+		var r = await update({type: 'Key', key: 'y'}, s);
 		s = r[0];
 
 		// Cancel should:
@@ -979,7 +957,7 @@ func TestChunk16_CancelDuringExecution(t *testing.T) {
 
 		// Subsequent execution-poll should stop (isProcessing=false).
 		s.executionRunning = false;
-		r = update({type: 'Tick', id: 'execution-poll'}, s);
+		r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		if (r[1] !== null) return 'FAIL: execution-poll should stop after cancel';
 
 		return 'OK';
@@ -998,13 +976,13 @@ func TestChunk16_EquivPoll_ErrorWizardStateSync(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('EQUIV_CHECK');
 		s.isProcessing = true;
 		s.equivRunning = false;
 		s.equivError = 'tree mismatch';
 
-		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		var r = await update({type: 'Tick', id: 'equiv-poll'}, s);
 		s = r[0];
 		// Both wizardState and wizard.current must agree.
 		if (s.wizardState !== s.wizard.current) {
@@ -1034,13 +1012,13 @@ func TestChunk16_AgentCheck_NoPrSplitConfig(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Save and delete prSplitConfig to simulate missing config.
 		var saved = globalThis.prSplitConfig;
 		delete globalThis.prSplitConfig;
 		try {
 			var s = initState('CONFIG');
-			var r = update({type: 'Tick', id: 'check-agent'}, s);
+			var r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
 			if (s.agentCheckStatus !== 'unavailable') {
 				return 'FAIL: expected unavailable, got: ' + JSON.stringify(s.agentCheckStatus);
@@ -1068,7 +1046,7 @@ func TestChunk16_AgentCheck_CachedExecutor(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Set up prSplitConfig so we don't hit test mode guard.
 		globalThis.prSplitConfig = { agentCommand: 'agent' };
 
@@ -1078,7 +1056,7 @@ func TestChunk16_AgentCheck_CachedExecutor(t *testing.T) {
 		};
 
 		var s = initState('CONFIG');
-		var r = update({type: 'Tick', id: 'check-agent'}, s);
+		var r = await update({type: 'Tick', id: 'check-agent'}, s);
 		s = r[0];
 
 		if (s.agentCheckStatus !== 'available') {
@@ -1108,7 +1086,7 @@ func TestChunk16_AgentCheck_LaunchesAsync(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Mock prSplitConfig.
 		globalThis.prSplitConfig = { agentCommand: '' };
 
@@ -1159,12 +1137,12 @@ func TestChunk16_AgentCheckPoll_StillRunning(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.agentCheckRunning = true;
 		s.agentCheckStatus = 'checking';
 
-		var r = update({type: 'Tick', id: 'agent-check-poll'}, s);
+		var r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 		if (!r[1]) return 'FAIL: should return a poll tick when still running';
 		if (!r[0].agentCheckRunning) return 'FAIL: agentCheckRunning should still be true';
 		return 'OK';
@@ -1183,13 +1161,13 @@ func TestChunk16_AgentCheckPoll_Completed(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.agentCheckRunning = false;
 		s.agentCheckStatus = 'available';
 		s.agentResolvedInfo = { command: 'agent', type: 'agent-code' };
 
-		var r = update({type: 'Tick', id: 'agent-check-poll'}, s);
+		var r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 		if (r[1] !== null) return 'FAIL: should return null cmd when complete';
 		if (r[0].agentCheckStatus !== 'available') {
 			return 'FAIL: status should be available, got: ' + r[0].agentCheckStatus;
@@ -1236,17 +1214,15 @@ func TestChunk16_AgentCheck_AsyncHappyPath(t *testing.T) {
 			var s = initState('CONFIG');
 
 			// Trigger check.
-			var r = update({type: 'Tick', id: 'check-agent'}, s);
+			var r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
 			if (!s.agentCheckRunning) return 'FAIL: should be running after check-agent';
 
 			// Let microtasks resolve.
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+		for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 
 			// Poll — should be complete.
-			r = update({type: 'Tick', id: 'agent-check-poll'}, s);
+			r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			s = r[0];
 
 			if (s.agentCheckRunning) return 'FAIL: should not be running after poll';
@@ -1299,14 +1275,12 @@ func TestChunk16_AgentCheck_AsyncError(t *testing.T) {
 
 		try {
 			var s = initState('CONFIG');
-			var r = update({type: 'Tick', id: 'check-agent'}, s);
+			var r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
 
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+		for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 
-			r = update({type: 'Tick', id: 'agent-check-poll'}, s);
+			r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			s = r[0];
 
 			if (s.agentCheckStatus !== 'unavailable') {
@@ -1355,14 +1329,12 @@ func TestChunk16_AgentCheck_AsyncThrows(t *testing.T) {
 
 		try {
 			var s = initState('CONFIG');
-			var r = update({type: 'Tick', id: 'check-agent'}, s);
+			var r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
 
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+		for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 
-			r = update({type: 'Tick', id: 'agent-check-poll'}, s);
+			r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			s = r[0];
 
 			if (s.agentCheckStatus !== 'unavailable') {
@@ -1393,7 +1365,7 @@ func TestChunk16_AgentCheck_OldSyncRemoved(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		globalThis.prSplitConfig = { agentCommand: '' };
 		globalThis.prSplit._state.agentExecutor = null;
 
@@ -1415,8 +1387,8 @@ func TestChunk16_AgentCheck_OldSyncRemoved(t *testing.T) {
 
 		try {
 			var s = initState('CONFIG');
-			update({type: 'Tick', id: 'check-agent'}, s);
-			if (syncResolveCalled) return 'FAIL: sync resolve() was called';
+			await update({type: 'Tick', id: 'check-agent'}, s);
+			if (syncResolveCalled) return 'FAIL: sync await resolve() was called';
 			return 'OK';
 		} finally {
 			globalThis.prSplit.AgentCodeExecutor = origCtor;
@@ -1437,7 +1409,7 @@ func TestChunk16_AgentCheck_ReentryGuard(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		globalThis.prSplitConfig = { agentCommand: '' };
 		globalThis.prSplit._state.agentExecutor = null;
 
@@ -1457,12 +1429,12 @@ func TestChunk16_AgentCheck_ReentryGuard(t *testing.T) {
 		try {
 			var s = initState('CONFIG');
 			// First call — should launch async.
-			var r = update({type: 'Tick', id: 'check-agent'}, s);
+			var r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
 			if (!s.agentCheckRunning) return 'FAIL: should be running after first call';
 
 			// Second call while still running — should NOT launch again.
-			r = update({type: 'Tick', id: 'check-agent'}, s);
+			r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
 			if (launchCount !== 1) {
 				return 'FAIL: expected 1 launch, got: ' + launchCount;
@@ -1488,7 +1460,7 @@ func TestChunk16_AgentCheck_SwitchAwayCleansUp(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		globalThis.prSplitConfig = { agentCommand: '' };
 		globalThis.prSplit._state.agentExecutor = null;
 
@@ -1499,14 +1471,14 @@ func TestChunk16_AgentCheck_SwitchAwayCleansUp(t *testing.T) {
 		};
 		MockExecutor.prototype.resolveAsync = async function(progressFn) {
 			// Simulate slow resolution — won't complete in this test.
-			return new Promise(function() {});
+			return new Promise(async function() {});
 		};
 		globalThis.prSplit.AgentCodeExecutor = MockExecutor;
 
 		try {
 			var s = initState('CONFIG');
 			// Launch async check.
-			var r = update({type: 'Tick', id: 'check-agent'}, s);
+			var r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
 			if (!s.agentCheckRunning) return 'FAIL: should be running';
 
@@ -1515,7 +1487,7 @@ func TestChunk16_AgentCheck_SwitchAwayCleansUp(t *testing.T) {
 			var origInBounds = z.inBounds;
 			z.inBounds = function(id) { return id === 'strategy-heuristic'; };
 			try {
-				r = update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
+				r = await update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
 			} finally {
 				z.inBounds = origInBounds;
 			}

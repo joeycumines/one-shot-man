@@ -38,7 +38,7 @@ func TestChunk03_CreateSplitPlan_BasicGroups(t *testing.T) {
 				'backend': { files: ['a.go', 'b.go'], description: 'Backend changes' },
 				'frontend': ['c.js', 'd.js']
 			};
-			return JSON.stringify(globalThis.prSplit.createSplitPlan(groups, {
+			return JSON.stringify(await globalThis.prSplit.createSplitPlan(groups, {
 				dir: '` + escapeJSPath(dir) + `',
 				sourceBranch: 'main'
 			}));
@@ -235,7 +235,7 @@ func TestChunk03_SaveLoadPlan_RoundTrip(t *testing.T) {
 
 			// Create a plan and cache it.
 			var groups = { 'grp1': ['a.go'], 'grp2': ['b.go', 'c.go'] };
-			var plan = prSplit.createSplitPlan(groups, {
+			var plan = await prSplit.createSplitPlan(groups, {
 				dir: '` + escapeJSPath(dir) + `',
 				sourceBranch: 'main'
 			});
@@ -536,7 +536,7 @@ func TestChunk03_LoadPlan_DoubleLoadNoDuplication(t *testing.T) {
 
 			// Create a plan.
 			var groups = { 'grp1': ['x.go'] };
-			var plan = prSplit.createSplitPlan(groups, {
+			var plan = await prSplit.createSplitPlan(groups, {
 				dir: '` + escapeJSPath(dir) + `',
 				sourceBranch: 'main'
 			});

@@ -278,13 +278,13 @@ function updateDocument(id, content, label) {
     return false;
 }
 
-function buildContextTxtar() {
-    return buildContext(state.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
+async function buildContextTxtar() {
+    return await buildContext(state.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
 }
 
-function buildFinalPrompt() {
+async function buildFinalPrompt() {
     const docs = getDocuments();
-    const contextTxtar = buildContextTxtar();
+    const contextTxtar = await buildContextTxtar();
 
     // Execute template
     return template.execute(getTemplate(), {
@@ -976,18 +976,22 @@ function handleKeys(msg, s) {
             return [s, null];
         }
         if (k === 'c') {
-            const prompt = buildFinalPrompt();
-            try {
-                os.clipboardCopy(prompt);
-                const tc = _tokenCount(prompt);
-                const lc = _lineCount(prompt);
-                const bc = _byteCount(prompt);
-                s.statusMsg = "\u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
-                s.hasError = false;
-            } catch (e) {
-                s.statusMsg = 'Clipboard error: ' + e;
-                s.hasError = true;
-            }
+            buildFinalPrompt().then(function(prompt) {
+                try {
+                    os.clipboardCopy(prompt).catch(function(e) {
+                        s.statusMsg = 'Clipboard error: ' + e;
+                        s.hasError = true;
+                    });
+                    const tc = _tokenCount(prompt);
+                    const lc = _lineCount(prompt);
+                    const bc = _byteCount(prompt);
+                    s.statusMsg = "\u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
+                    s.hasError = false;
+                } catch (e) {
+                    s.statusMsg = 'Clipboard error: ' + e;
+                    s.hasError = true;
+                }
+            });
             s.focusedButtonIdx = -1;
             return [s, null];
         }
@@ -1205,14 +1209,22 @@ function handleKeys(msg, s) {
                 updateDocument(s.editingDocId, undefined, s.labelBuffer.trim());
                 s.statusMsg = 'Renamed document';
             } else if (s.inputOperation === INPUT_LOAD) {
-                const res = os.readFile(s.labelBuffer.trim());
-                if (res.error) {
-                    s.statusMsg = 'Error: ' + res.message;
+                os.readFile(s.labelBuffer.trim()).then(function(res) {
+                    if (res.error) {
+                        s.statusMsg = 'Error: ' + res.message;
+                        s.hasError = true;
+                        return;
+                    }
+                    addDocument(s.labelBuffer.trim(), res.content);
+                    s.documents = getDocuments();
+                    s.statusMsg = 'Loaded document';
+                    s.mode = MODE_LIST;
+                    s.hasError = false;
+                    s.inputViewportUnlocked = false;
+                }).catch(function(e) {
+                    s.statusMsg = 'Error: ' + e.message;
                     s.hasError = true;
-                    return [s, null];
-                }
-                const doc = addDocument(s.labelBuffer.trim(), res.content);
-                s.statusMsg = 'Loaded document #' + doc.id;
+                });
             }
             // Refresh local state from global after mutation
             s.documents = getDocuments();
@@ -1246,7 +1258,10 @@ function handleKeys(msg, s) {
                     const allContent = s.contentTextarea.value();
                     if (allContent) {
                         try {
-                            os.clipboardCopy(allContent);
+                            os.clipboardCopy(allContent).catch(function(e) {
+                                s.statusMsg = 'Clipboard error: ' + e;
+                                s.hasError = true;
+                            });
                             const tc3 = _tokenCount(allContent);
                             const lc3 = _lineCount(allContent);
                             const bc3 = _byteCount(allContent);
@@ -2286,13 +2301,16 @@ function buildCommands() {
             handler: function (args) {
                 if (args.length >= 2 && args[0] === "--file") {
                     const path = args[1];
-                    const res = os.readFile(path);
-                    if (res.error) {
-                        output.print("Error: " + res.message);
-                        return;
-                    }
-                    const doc = addDocument(path, res.content);
-                    output.print(`Added document #${doc.id} from ${path}`);
+                    os.readFile(path).then(function(res) {
+                        if (res.error) {
+                            output.print("Error: " + res.message);
+                            return;
+                        }
+                        const doc = addDocument(path, res.content);
+                        output.print(`Added document #${doc.id} from ${path}`);
+                    }).catch(function(e) {
+                        output.print("Error: " + e.message);
+                    });
                 } else {
                     const content = args.join(" ");
                     const doc = addDocument(null, content);
@@ -2328,16 +2346,21 @@ function buildCommands() {
             }
         }, "copy": {
             description: "Copy the final prompt to clipboard", handler: function () {
-                const txt = buildFinalPrompt();
-                try {
-                    ctxmgr.clipboardCopy(txt);
-                    const tc4 = _tokenCount(txt);
-                    const lc4 = _lineCount(txt);
-                    const bc4 = _byteCount(txt);
-                    output.print("\u2502 " + _fmt.formatNum(tc4) + " tokens \u00b7 " + lc4 + " lines \u00b7 " + _fmt.formatBytes(bc4) + " \u2502");
-                } catch (e) {
-                    output.print("Clipboard error: " + e);
-                }
+                buildFinalPrompt().then(function(txt) {
+                    try {
+                        os.clipboardCopy(txt).catch(function(e) {
+                            output.print("Clipboard error: " + e);
+                        });
+                        const tc4 = _tokenCount(txt);
+                        const lc4 = _lineCount(txt);
+                        const bc4 = _byteCount(txt);
+                        output.print("\u2502 " + _fmt.formatNum(tc4) + " tokens \u00b7 " + lc4 + " lines \u00b7 " + _fmt.formatBytes(bc4) + " \u2502");
+                    } catch (e) {
+                        output.print("Error: " + e);
+                    }
+                }).catch(function(e) {
+                    output.print("Error: " + e.message);
+                });
             }
         }, "tui": {
             description: "Open the Visual TUI interface", handler: function () {

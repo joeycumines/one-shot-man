@@ -161,7 +161,7 @@ func TestChunk11_AssessIndependence_TooFewSplits(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
-		JSON.stringify(globalThis.prSplit.assessIndependence(
+		JSON.stringify(await globalThis.prSplit.assessIndependence(
 			{ splits: [{ name: 'only', files: ['a.go'] }] },
 			{}
 		))
@@ -182,7 +182,7 @@ func TestChunk11_AssessIndependence_NullPlan(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.assessIndependence(null, {}))`)
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.assessIndependence(null, {}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,9 +199,13 @@ func TestChunk11_AssessIndependence_IndependentSplits(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
+	if _, err := evalJS(`var _osmod = require('osm:os'); _osmod.readFile = function(p) { return {content: '', error: true, message: 'mocked'}; };`); err != nil {
+		t.Fatal(err)
+	}
+
 	// Two splits touching completely different directories with non-Go files.
 	raw, err := evalJS(`
-		JSON.stringify(globalThis.prSplit.assessIndependence({
+		JSON.stringify(await globalThis.prSplit.assessIndependence({
 			splits: [
 				{ name: 'api', files: ['api/handler.txt', 'api/route.txt'] },
 				{ name: 'ui', files: ['ui/app.txt', 'ui/style.txt'] }
@@ -227,9 +231,13 @@ func TestChunk11_AssessIndependence_DependentSplits(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
+	if _, err := evalJS(`var _osmod = require('osm:os'); _osmod.readFile = function(p) { return {content: '', error: true, message: 'mocked'}; };`); err != nil {
+		t.Fatal(err)
+	}
+
 	// Two splits touching the same directory — dependent.
 	raw, err := evalJS(`
-		JSON.stringify(globalThis.prSplit.assessIndependence({
+		JSON.stringify(await globalThis.prSplit.assessIndependence({
 			splits: [
 				{ name: 'a', files: ['shared/foo.txt'] },
 				{ name: 'b', files: ['shared/bar.txt'] }
@@ -471,7 +479,7 @@ func TestChunk11_GetSplitDiff_InvalidIndex(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
-		JSON.stringify(globalThis.prSplit.getSplitDiff(
+		JSON.stringify(await globalThis.prSplit.getSplitDiff(
 			{ splits: [{ name: 'a', files: ['x.go'] }], baseBranch: 'main' },
 			5
 		))
@@ -494,7 +502,7 @@ func TestChunk11_GetSplitDiff_NoFiles(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
-		JSON.stringify(globalThis.prSplit.getSplitDiff(
+		JSON.stringify(await globalThis.prSplit.getSplitDiff(
 			{ splits: [{ name: 'a', files: [] }], baseBranch: 'main' },
 			0
 		))
@@ -516,7 +524,7 @@ func TestChunk11_GetSplitDiff_NullPlan(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.getSplitDiff(null, 0))`)
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.getSplitDiff(null, 0))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,9 +544,13 @@ func TestChunk11_BuildDependencyGraph_Independent(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
+	if _, err := evalJS(`var _osmod = require('osm:os'); _osmod.readFile = function(p) { return {content: '', error: true, message: 'mocked'}; };`); err != nil {
+		t.Fatal(err)
+	}
+
 	// Non-Go files in different directories → no edges.
 	raw, err := evalJS(`
-		JSON.stringify(globalThis.prSplit.buildDependencyGraph({
+		JSON.stringify(await globalThis.prSplit.buildDependencyGraph({
 			splits: [
 				{ name: 'api', files: ['api/handler.txt'] },
 				{ name: 'ui', files: ['ui/app.txt'] }
@@ -573,9 +585,13 @@ func TestChunk11_BuildDependencyGraph_Dependent(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
+	if _, err := evalJS(`var _osmod = require('osm:os'); _osmod.readFile = function(p) { return {content: '', error: true, message: 'mocked'}; };`); err != nil {
+		t.Fatal(err)
+	}
+
 	// Same directory → edge between them.
 	raw, err := evalJS(`
-		JSON.stringify(globalThis.prSplit.buildDependencyGraph({
+		JSON.stringify(await globalThis.prSplit.buildDependencyGraph({
 			splits: [
 				{ name: 'a', files: ['shared/foo.txt'] },
 				{ name: 'b', files: ['shared/bar.txt'] }
@@ -610,7 +626,7 @@ func TestChunk11_BuildDependencyGraph_Null(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.buildDependencyGraph(null, {}))`)
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.buildDependencyGraph(null, {}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -858,7 +874,7 @@ func TestChunk11_ExtractGoPkgs_WithModulePath(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
-		JSON.stringify(globalThis.prSplit.extractGoPkgs(
+		JSON.stringify(await globalThis.prSplit.extractGoPkgs(
 			['internal/cmd/main.go', 'pkg/api/handler.go', 'README.md'],
 			'github.com/example/project'
 		))
@@ -992,7 +1008,7 @@ func TestChunk11_GetSplitDiff_HappyPath(t *testing.T) {
 	}
 
 	raw, err := evalJS(`
-		JSON.stringify(globalThis.prSplit.getSplitDiff(
+		JSON.stringify(await globalThis.prSplit.getSplitDiff(
 			{
 				baseBranch: 'main',
 				dir: '.',
@@ -1049,7 +1065,7 @@ func TestChunk11_GetSplitDiff_FallbackOnBranchDiffFailure(t *testing.T) {
 	}
 
 	raw, err := evalJS(`
-		JSON.stringify(globalThis.prSplit.getSplitDiff(
+		JSON.stringify(await globalThis.prSplit.getSplitDiff(
 			{
 				baseBranch: 'main',
 				dir: '.',

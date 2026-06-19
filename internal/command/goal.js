@@ -107,10 +107,10 @@
     }
 
     // Build prompt from configuration
-    function buildPrompt() {
+    async function buildPrompt() {
         const templateData = buildBaseTemplateData(); // N.B. func defined below
 
-        templateData.contextTxtar = buildContext(state.get(stateKeys.contextItems), {toTxtar: () => context.toTxtar()});
+        templateData.contextTxtar = await buildContext(state.get(stateKeys.contextItems), {toTxtar: () => context.toTxtar()});
 
         // The promptInstructions string is itself a template. We must execute it
         // first using the template data we've just constructed to resolve any

@@ -39,7 +39,7 @@ type Handle struct {
 }
 
 // InjectToolResult sends data directly to a tool waiter channel, bypassing
-// the MCP transport. This unblocks a concurrent jsWaitFor call for the named
+// the MCP transport. This unblocks a concurrent jsWaitForAsync call for the named
 // tool. For Go integration test use only.
 func (h *Handle) InjectToolResult(toolName string, data json.RawMessage) error {
 	return h.cb.injectToolResult(toolName, data)
@@ -61,7 +61,7 @@ var (
 // mcpCallback that completes initialization (initSync/init). If a callback
 // is already initialized when this is called, the Handle is delivered
 // immediately. Used by Go integration tests to inject tool results while
-// the JS runtime is blocked on waitFor.
+// the JS runtime is waiting on waitForAsync.
 //
 // The caller MUST drain the returned channel to avoid goroutine leaks.
 func WatchForInit() <-chan *Handle {
@@ -135,13 +135,13 @@ type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, 
 // Require returns a module loader for the osm:mcpcallback module.
 // The adapter is used for thread-safe JS callback invocation and Promisify support.
 // If adapter is nil, the module loads but MCPCallback is unavailable — matching exec.go behavior.
-func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter) require.ModuleLoader {
 	return func(rt *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 		// Guard against nil adapter to prevent segfault at module load time.
 		// exec.go uses the same pattern: the module loads but spawn is unavailable.
 		if adapter != nil {
-			_ = exports.Set("MCPCallback", jsCallbackFactory(rt, adapter))
+			_ = exports.Set("MCPCallback", jsCallbackFactory(ctx, rt, adapter))
 		}
 	}
 }
@@ -155,7 +155,7 @@ func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
 //	await cb.init();
 //	// cb.address, cb.scriptPath, cb.transport, cb.mcpConfigPath available
 //	await cb.close();
-func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
+func jsCallbackFactory(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
 	loop := adapter.Loop()
 	promisify := adapter.Loop().Promisify
 	return func(call goja.FunctionCall) goja.Value {
@@ -207,6 +207,7 @@ func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter) func(ca
 			loop:      loop,
 			runtime:   rt,
 			parentCtx: parentCtx,
+			baseCtx:   ctx,
 			promisify: promisify,
 		}
 
@@ -216,7 +217,6 @@ func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter) func(ca
 		_ = obj.Set("close", cb.jsClose())
 		_ = obj.Set("addTool", cb.jsAddTool())
 		_ = obj.Set("initSync", cb.jsInitSync())
-		_ = obj.Set("waitFor", cb.jsWaitFor())
 		_ = obj.Set("waitForAsync", cb.jsWaitForAsync())
 		_ = obj.Set("closeSync", cb.jsCloseSync())
 		_ = obj.Set("resetWaiter", cb.jsResetWaiter())
@@ -256,7 +256,7 @@ func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter) func(ca
 }
 
 // toolWaiter holds a channel for receiving Go-native tool call data.
-// Used by addTool/waitFor for synchronous IPC that bypasses the JS event loop.
+// Used by addTool/waitForAsync for IPC that bypasses the JS event loop.
 type toolWaiter struct {
 	ch           chan json.RawMessage // buffered(1): holds latest tool call arguments
 	lastCallTime atomic.Int64         // unix ms of last tool call — thread-safe for cross-goroutine reads
@@ -268,7 +268,8 @@ type mcpCallback struct {
 	adapter   *gojaeventloop.Adapter
 	loop      *goeventloop.Loop
 	runtime   *goja.Runtime
-	parentCtx context.Context // optional parent context; nil = context.Background()
+	parentCtx context.Context // optional parent context; nil = baseCtx
+	baseCtx   context.Context // base context from Require, used for cancellation
 	promisify PromisifyFunc
 
 	mu            sync.Mutex
@@ -307,7 +308,7 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 
 		promise, resolve, reject := cb.adapter.JS().NewChainedPromise()
 
-		cb.promisify(context.Background(), func(ctx context.Context) (any, error) {
+		cb.promisify(cb.baseCtx, func(ctx context.Context) (any, error) {
 			if err := cb.startListener(); err != nil {
 				cb.cleanup()
 				cb.mu.Lock()
@@ -334,7 +335,7 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 			// Use signal.NotifyContext for automatic cleanup on SIGINT/SIGTERM.
 			parent := cb.parentCtx
 			if parent == nil {
-				parent = context.Background()
+				parent = cb.baseCtx
 			}
 			nctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 			cb.mu.Lock()
@@ -349,7 +350,7 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 			})
 
 			// Watch for context cancellation (signal or parent cancel) and auto-cleanup.
-			cb.promisify(context.Background(), func(ctx context.Context) (any, error) {
+			cb.promisify(cb.baseCtx, func(ctx context.Context) (any, error) {
 				<-nctx.Done()
 				cb.mu.Lock()
 				alreadyClosed := cb.closed
@@ -582,7 +583,7 @@ func (cb *mcpCallback) jsClose() func(call goja.FunctionCall) goja.Value {
 
 		promise, resolve, _ := cb.adapter.JS().NewChainedPromise()
 
-		cb.promisify(context.Background(), func(ctx context.Context) (any, error) {
+		cb.promisify(cb.baseCtx, func(ctx context.Context) (any, error) {
 			cb.cleanup()
 
 			if submitErr := cb.loop.Submit(func() {
@@ -627,18 +628,16 @@ func (cb *mcpCallback) cleanup() {
 	}
 }
 
-// --- Go-native tool registration and synchronous IPC ---
+// --- Go-native tool registration and IPC ---
 //
-// These methods enable synchronous JS code (e.g., automatedSplit) to register
-// MCP tools with Go-native handlers and block until a tool call arrives.
-// This avoids the event loop deadlock that would occur with JS-level handlers:
-// the JS event loop is blocked by the waitFor call, but the Go-native handler
+// These methods enable JS code to register MCP tools with Go-native
+// handlers and wait until a tool call arrives. The Go-native handler
 // runs on the MCP transport goroutine and doesn't need the event loop.
 
 // jsAddTool returns the JS method: addTool(name, description, inputSchema?)
 //
 // Registers a Go-native MCP tool whose handler stores incoming call arguments
-// in a channel. Use waitFor() to block until data arrives.
+// in a channel. Use waitForAsync() to wait until data arrives.
 // Must be called before initSync()/init().
 func (cb *mcpCallback) jsAddTool() func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
@@ -755,7 +754,7 @@ func (cb *mcpCallback) jsInitSync() func(call goja.FunctionCall) goja.Value {
 		// Start accept loop in background goroutine
 		parent := cb.parentCtx
 		if parent == nil {
-			parent = context.Background()
+			parent = cb.baseCtx
 		}
 		nctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 		cb.mu.Lock()
@@ -770,7 +769,7 @@ func (cb *mcpCallback) jsInitSync() func(call goja.FunctionCall) goja.Value {
 		})
 
 		// Auto-cleanup on context cancellation
-		cb.promisify(context.Background(), func(ctx context.Context) (any, error) {
+		cb.promisify(cb.baseCtx, func(ctx context.Context) (any, error) {
 			<-nctx.Done()
 			cb.mu.Lock()
 			alreadyClosed := cb.closed
@@ -789,127 +788,11 @@ func (cb *mcpCallback) jsInitSync() func(call goja.FunctionCall) goja.Value {
 	}
 }
 
-// jsWaitFor returns the JS method: waitFor(toolName, timeoutMs, opts?)
-//
-// Blocks the calling goroutine until the named tool is called via MCP,
-// or the timeout expires. Returns {data: <parsed args>, error: null} on
-// success, or {data: null, error: <string>} on timeout/error.
-//
-// opts (optional object):
-//
-//	aliveCheck: function() → bool — called periodically; false = abort
-//	onProgress: function(elapsedMs, totalMs) — called periodically for TUI updates
-//	checkIntervalMs: number — interval for aliveCheck/onProgress (default 5000)
-func (cb *mcpCallback) jsWaitFor() func(call goja.FunctionCall) goja.Value {
-	return func(call goja.FunctionCall) goja.Value {
-		name := call.Argument(0).String()
-		if name == "" {
-			return cb.waitResult(nil, "waitFor: tool name is required")
-		}
-
-		timeoutMs := int64(600000) // default 10 min
-		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
-			timeoutMs = call.Argument(1).ToInteger()
-		}
-		if timeoutMs < 100 {
-			timeoutMs = 100
-		}
-
-		// Parse optional opts object
-		var aliveCheckFn goja.Callable
-		var progressFn goja.Callable
-		checkIntervalMs := int64(5000)
-
-		if len(call.Arguments) > 2 && !goja.IsUndefined(call.Argument(2)) && !goja.IsNull(call.Argument(2)) {
-			opts := call.Argument(2).ToObject(cb.runtime)
-			if v := opts.Get("aliveCheck"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-				aliveCheckFn, _ = goja.AssertFunction(v)
-			}
-			if v := opts.Get("onProgress"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-				progressFn, _ = goja.AssertFunction(v)
-			}
-			if v := opts.Get("checkIntervalMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-				checkIntervalMs = max(v.ToInteger(), 100)
-			}
-		}
-
-		cb.toolMu.RLock()
-		waiter, ok := cb.toolWaiters[name]
-		cb.toolMu.RUnlock()
-
-		if !ok {
-			return cb.waitResult(nil, "waitFor: tool not registered: "+name)
-		}
-
-		// Get cancellation context
-		cb.mu.Lock()
-		ctx := cb.ctx
-		cb.mu.Unlock()
-
-		timeout := time.Duration(timeoutMs) * time.Millisecond
-		deadline := time.NewTimer(timeout)
-		defer deadline.Stop()
-
-		interval := time.Duration(checkIntervalMs) * time.Millisecond
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		startTime := time.Now()
-
-		for {
-			select {
-			case data := <-waiter.ch:
-				var parsed any
-				if len(data) > 0 {
-					if err := json.Unmarshal(data, &parsed); err != nil {
-						return cb.waitResult(nil, "waitFor: failed to parse tool data: "+err.Error())
-					}
-				}
-				result := cb.runtime.NewObject()
-				_ = result.Set("data", cb.runtime.ToValue(parsed))
-				_ = result.Set("error", goja.Null())
-				return result
-
-			case <-ticker.C:
-				// Alive check — call JS function on same goroutine (reentrant, safe)
-				if aliveCheckFn != nil {
-					ret, err := aliveCheckFn(goja.Undefined())
-					if err == nil && !ret.ToBoolean() {
-						return cb.waitResult(nil, "process exited during wait for "+name)
-					}
-				}
-				// Progress callback
-				if progressFn != nil {
-					elapsed := time.Since(startTime).Milliseconds()
-					_, _ = progressFn(goja.Undefined(),
-						cb.runtime.ToValue(elapsed),
-						cb.runtime.ToValue(timeoutMs))
-				}
-
-			case <-deadline.C:
-				return cb.waitResult(nil, fmt.Sprintf("timeout waiting for %s after %dms", name, timeoutMs))
-
-			case <-func() <-chan struct{} {
-				if ctx != nil {
-					return ctx.Done()
-				}
-				// No context — return a channel that never fires
-				return make(chan struct{})
-			}():
-				return cb.waitResult(nil, "MCPCallback closed during wait for "+name)
-			}
-		}
-	}
-}
-
 // jsWaitForAsync returns the JS method:
 //
 //	waitForAsync(name, timeoutMs?, opts?) → Promise<{data, error}>
 //
-// Non-blocking version of waitFor. Returns a Promise that resolves with the
-// same {data, error} shape as the synchronous waitFor so callers can migrate
-// by adding `await` and changing the method name.
-//
+// Returns a Promise that resolves with {data, error} shape.
 // The event loop remains free to service microtasks, timers, and I/O while
 // the goroutine waits for the tool call on the internal channel.
 //
@@ -967,7 +850,7 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 
 		promise, resolve, _ := cb.adapter.JS().NewChainedPromise()
 
-		cb.promisify(context.Background(), func(_ context.Context) (any, error) {
+		cb.promisify(cb.baseCtx, func(_ context.Context) (any, error) {
 			timeout := time.Duration(timeoutMs) * time.Millisecond
 			deadline := time.NewTimer(timeout)
 			defer deadline.Stop()

@@ -34,7 +34,7 @@
 
     // extractGoImports returns a set of imported package paths from Go files.
     // Uses osmod.readFile for portability, with platform-aware fallback.
-    function extractGoImports(files) {
+    async function extractGoImports(files) {
         var osmod = prSplit._modules.osmod;
         var exec = prSplit._modules.exec;
         var parseGoImports = prSplit.parseGoImports;
@@ -44,16 +44,16 @@
                 var content = '';
                 try {
                     if (osmod) {
-                        var readResult = osmod.readFile(files[i]);
+                        var readResult = await osmod.readFile(files[i]);
                         if (!readResult.error) {
                             content = readResult.content;
                         }
                     } else if (exec) {
                         var readResult2;
                         if (prSplit._isWindows && prSplit._isWindows()) {
-                            readResult2 = exec.execv(['cmd.exe', '/C', 'type "' + files[i] + '"']);
+                            readResult2 = await exec.execv(['cmd.exe', '/C', 'type "' + files[i] + '"']);
                         } else {
-                            readResult2 = exec.execv(['cat', files[i]]);
+                            readResult2 = await exec.execv(['cat', files[i]]);
                         }
                         if (readResult2.code === 0) {
                             content = readResult2.stdout;
@@ -75,12 +75,12 @@
 
     // extractGoPkgs returns a set of Go package directories from Go files.
     // Accepts optional modulePath to avoid repeated detectGoModulePath() calls.
-    function extractGoPkgs(files, modulePath) {
+    async function extractGoPkgs(files, modulePath) {
         var dirname = prSplit._dirname;
         var detectGoModulePath = prSplit.detectGoModulePath;
         var pkgs = {};
         if (typeof modulePath === 'undefined') {
-            modulePath = detectGoModulePath();
+            modulePath = await detectGoModulePath();
         }
         for (var i = 0; i < (files || []).length; i++) {
             if (files[i].match(/\.go$/)) {
@@ -113,20 +113,20 @@
     // Returns an array of [nameA, nameB] pairs.
     // Pre-computes directory, import, and package maps once per split to
     // avoid O(N^2) repeated file reads and module path detection.
-    function assessIndependence(plan, classification) {
+    async function assessIndependence(plan, classification) {
         if (!plan || !plan.splits || plan.splits.length < 2) {
             return [];
         }
         var detectGoModulePath = prSplit.detectGoModulePath;
         var n = plan.splits.length;
-        var modulePath = detectGoModulePath();
+        var modulePath = await detectGoModulePath();
         var dirs = new Array(n);
         var imports = new Array(n);
         var pkgs = new Array(n);
         for (var k = 0; k < n; k++) {
             dirs[k] = extractDirs(plan.splits[k].files);
-            imports[k] = extractGoImports(plan.splits[k].files);
-            pkgs[k] = extractGoPkgs(plan.splits[k].files, modulePath);
+            imports[k] = await extractGoImports(plan.splits[k].files);
+            pkgs[k] = await extractGoPkgs(plan.splits[k].files, modulePath);
         }
         var pairs = [];
         for (var i = 0; i < n; i++) {
@@ -143,16 +143,16 @@
     // splitsAreIndependent checks if two splits have no directory overlap
     // and no import dependency overlap (for Go files).
     // Legacy wrapper — does NOT accept pre-computed modulePath.
-    function splitsAreIndependent(a, b, classification) {
+    async function splitsAreIndependent(a, b, classification) {
         var dirsA = extractDirs(a.files);
         var dirsB = extractDirs(b.files);
         for (var d in dirsA) {
             if (dirsB[d]) return false;
         }
-        var importsA = extractGoImports(a.files);
-        var importsB = extractGoImports(b.files);
-        var pkgsA = extractGoPkgs(a.files);
-        var pkgsB = extractGoPkgs(b.files);
+        var importsA = await extractGoImports(a.files);
+        var importsB = await extractGoImports(b.files);
+        var pkgsA = await extractGoPkgs(a.files);
+        var pkgsB = await extractGoPkgs(b.files);
         for (var imp in importsA) {
             if (pkgsB[imp]) return false;
         }
@@ -246,7 +246,7 @@
 
     // saveTelemetry persists telemetry to disk (opt-in, local only).
     // Uses osmod.writeFile with createDirs.
-    function saveTelemetry(dir) {
+    async function saveTelemetry(dir) {
         var osmod = prSplit._modules.osmod;
         dir = dir || '.osm/telemetry';
         if (!osmod) {
@@ -257,7 +257,10 @@
             var ts = (summary.startTime || new Date().toISOString()).replace(/[:.]/g, '-');
             var filename = dir + '/session-' + ts + '.json';
             var data = JSON.stringify(summary, null, 2);
-            osmod.writeFile(filename, data, { createDirs: true });
+            var result = await osmod.writeFile(filename, data, { createDirs: true });
+            if (result && result.error) {
+                return { error: 'failed to save telemetry to "' + filename + '": ' + result.message };
+            }
             return { error: null, path: filename };
         } catch (e) {
             return { error: 'failed to save telemetry to "' + filename + '": ' + (e.message || String(e)) };
@@ -293,7 +296,7 @@
     }
 
     // getSplitDiff returns the git diff for a specific split.
-    function getSplitDiff(plan, splitIndex) {
+    async function getSplitDiff(plan, splitIndex) {
         var gitExec = prSplit._gitExec;
         var resolveDir = prSplit._resolveDir;
         if (!plan || !plan.splits || splitIndex < 0 || splitIndex >= plan.splits.length) {
@@ -310,14 +313,14 @@
         for (var i = 0; i < files.length; i++) {
             diffArgs.push(files[i]);
         }
-        var result = gitExec(dir, diffArgs);
+        var result = await gitExec(dir, diffArgs);
         if (result.code !== 0) {
             // Fallback: diff against base for just these files.
             var fallbackArgs = ['diff', plan.baseBranch, '--'];
             for (var j = 0; j < files.length; j++) {
                 fallbackArgs.push(files[j]);
             }
-            result = gitExec(dir, fallbackArgs);
+            result = await gitExec(dir, fallbackArgs);
         }
         if (result.code !== 0) {
             return { error: 'git diff failed: ' + result.stderr.trim(), diff: '' };
@@ -330,7 +333,7 @@
     // buildDependencyGraph creates an adjacency list from plan splits.
     // Each split that shares directory or import dependencies with another
     // gets an edge. Returns {nodes: [{name, index}], edges: [{from, to}]}.
-    function buildDependencyGraph(plan, classification) {
+    async function buildDependencyGraph(plan, classification) {
         if (!plan || !plan.splits) return { nodes: [], edges: [] };
         var detectGoModulePath = prSplit.detectGoModulePath;
         var nodes = [];
@@ -338,14 +341,14 @@
         for (var i = 0; i < n; i++) {
             nodes.push({ name: plan.splits[i].name, index: i });
         }
-        var modulePath = detectGoModulePath();
+        var modulePath = await detectGoModulePath();
         var dirs = new Array(n);
         var imports = new Array(n);
         var pkgs = new Array(n);
         for (var k = 0; k < n; k++) {
             dirs[k] = extractDirs(plan.splits[k].files);
-            imports[k] = extractGoImports(plan.splits[k].files);
-            pkgs[k] = extractGoPkgs(plan.splits[k].files, modulePath);
+            imports[k] = await extractGoImports(plan.splits[k].files);
+            pkgs[k] = await extractGoPkgs(plan.splits[k].files, modulePath);
         }
         var edges = [];
         for (var a = 0; a < n; a++) {

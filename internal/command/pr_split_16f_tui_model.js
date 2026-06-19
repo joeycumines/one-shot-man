@@ -999,20 +999,15 @@
     // T10: Now dispatches to any focused interactive pane, not only mux.
     // Task 5: Session-specific — uses pinned SessionID via proxy passthrough
     // instead of raw tuiMux.switchTo() which targets the active session.
-    prSplit._onToggle = function() {
-        // Read current model state (stored by _initModelFn on each init).
+    prSplit._onToggle = async function() {
         var tuiState = prSplit._toggleModelState;
         var focusTab = tuiState && tuiState.splitViewTab || 'agent';
         var focusPane = tuiState && tuiState.splitViewFocus || 'wizard';
 
         log.printf('ctrl+] toggle: focusPane=%s focusTab=%s', focusPane, focusTab);
 
-        // Determine which pane to passthrough to. When wizard is focused
-        // (no split or split with wizard selected), default to Agent.
         var targetTab = (focusPane === 'wizard') ? 'agent' : focusTab;
 
-        // Obtain the proxy for the target session — returns null if no
-        // pinned SessionID or no interactive session exists.
         var session = (typeof prSplit._getInteractivePaneSession === 'function')
             ? prSplit._getInteractivePaneSession(tuiState, targetTab)
             : null;
@@ -1020,12 +1015,9 @@
         if (session && typeof session.passthrough === 'function' &&
             typeof session.isRunning === 'function' && session.isRunning()) {
             log.printf('ctrl+] toggle: dispatching to %s session passthrough', targetTab);
-            // Focus events are emitted by tuiMux.switchTo() inside the proxy,
-            // so no additional tui.emit calls needed here.
-            return session.passthrough();
+            return await session.passthrough();
         }
 
-        // No interactive session — return indicator for ToggleReturn handler.
         log.printf('ctrl+] toggle: no child available, skipping');
         return {skipped: true, reason: 'no_child'};
     };

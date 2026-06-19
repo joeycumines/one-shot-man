@@ -1992,9 +1992,9 @@ func TestPrSplitCommand_ResolveConflictsWithAgent_SuccessfulFix(t *testing.T) {
 	//  1. sendToHandle sends prompt → increment counter
 	//  2. mcpCallbackObj.waitForAsync returns resolution with patches
 	//  3. osmod.writeFile applies each patch
-	//  4. gitAddChangedFiles stages modified files → gitExec(['status', '--porcelain']), gitExec(['add', '--', ...])
+	//  4. gitAddChangedFiles stages modified files → await gitExec(['status', '--porcelain']), await gitExec(['add', '--', ...])
 	//  5. git commit --amend --no-edit
-	//  6. verifySplit: gitExec(['checkout', branch]) + exec.execStream(['sh', '-c', ...]) → passed
+	//  6. verifySplit: await gitExec(['checkout', branch]) + exec.execStream(['sh', '-c', ...]) → passed
 	//  7. Result: fixed=true, reSplitNeeded=false, 1 agent interaction, 1 resolution recorded
 	val, err := evalJS(`(async function() {
 		// --- Track osmod.writeFile calls without real filesystem ---

@@ -35,14 +35,14 @@ type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, 
 // The adapter is required for Promise-based async fetch operations.
 // If adapter is nil (e.g., in restricted JS runtime contexts or certain tests),
 // the module loads but fetch/sseReader are unavailable — matching exec.go behavior.
-func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 		// Guard against nil adapter to prevent segfault at module load time.
 		// exec.go uses the same pattern: the module loads but spawn is unavailable.
 		if adapter != nil {
-			_ = exports.Set("fetch", jsFetch(runtime, adapter, adapter.Loop().Promisify))
-			_ = exports.Set("sseReader", jsSSEReader(runtime, adapter, adapter.Loop().Promisify))
+			_ = exports.Set("fetch", jsFetch(ctx, runtime, adapter, adapter.Loop().Promisify))
+			_ = exports.Set("sseReader", jsSSEReader(ctx, runtime, adapter, adapter.Loop().Promisify))
 		}
 	}
 }
@@ -68,7 +68,7 @@ func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
 //	headers    - Headers object with get/has/entries/keys/values/forEach
 //	text()     - returns Promise<string> with body as string
 //	json()     - returns Promise<any> with body parsed as JSON
-func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
+func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		url := call.Argument(0).String()
 		method, timeout, bodyReader, reqHeaders, signal, maxBody := parseOptions(call)
@@ -84,7 +84,7 @@ func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify Pr
 		}
 
 		// Set up context for request cancellation.
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		reqCtx, cancel := context.WithTimeout(ctx, timeout)
 
 		// Wire AbortSignal to cancel the request context.
 		if signal != nil {
@@ -99,11 +99,11 @@ func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify Pr
 			})
 		}
 
-		req = req.WithContext(ctx)
+		req = req.WithContext(reqCtx)
 		promise, resolve, reject := adapter.JS().NewChainedPromise()
 
 		// Wrap the HTTP request in Promisify to keep the event loop alive.
-		promisify(context.Background(), func(_ context.Context) (any, error) {
+		promisify(ctx, func(_ context.Context) (any, error) {
 			defer cancel()
 			client := &http.Client{}
 			resp, doErr := client.Do(req)
@@ -131,7 +131,7 @@ func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify Pr
 			}
 
 			if submitErr := adapter.Loop().Submit(func() {
-				resolve(buildResponse(runtime, adapter, resp, body, promisify))
+				resolve(buildResponse(ctx, runtime, adapter, resp, body, promisify))
 			}); submitErr != nil {
 				_ = adapter.Loop().Submit(func() {
 					reject(fmt.Errorf("event loop not running"))
@@ -147,7 +147,7 @@ func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify Pr
 // jsSSEReader returns a factory function: sseReader(body) → SSE reader object.
 // body must be a ReadableStream JS object (response.body).  The returned reader
 // has a read() method returning Promise<{value: {event, data, id}, done: boolean}>.
-func jsSSEReader(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
+func jsSSEReader(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		bodyArg := call.Argument(0)
 		if bodyArg == nil || goja.IsUndefined(bodyArg) || goja.IsNull(bodyArg) {
@@ -173,7 +173,7 @@ func jsSSEReader(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisif
 			panic(runtime.NewGoError(err))
 		}
 		parser := NewSSEParser(reader)
-		return wrapSSEParserJS(runtime, adapter, parser, promisify)
+		return wrapSSEParserJS(ctx, runtime, adapter, parser, promisify)
 	}
 }
 
@@ -249,7 +249,7 @@ func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration,
 
 // buildResponse constructs the JS Response object with the full body buffered.
 // Must be called on the event loop goroutine.
-func buildResponse(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, resp *http.Response, body []byte, promisify PromisifyFunc) *goja.Object {
+func buildResponse(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, resp *http.Response, body []byte, promisify PromisifyFunc) *goja.Object {
 	result := runtime.NewObject()
 	_ = result.Set("status", resp.StatusCode)
 	_ = result.Set("ok", resp.StatusCode >= 200 && resp.StatusCode < 300)
@@ -259,8 +259,8 @@ func buildResponse(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, resp *
 
 	// body — ReadableStream backed by the already-buffered bytes.
 	// reader.read() returns Promise<{value: string, done: boolean}>.
-	stream := NewReadableStream(io.NopCloser(bytes.NewReader(body)), promisify)
-	_ = result.Set("body", wrapReadableStreamJS(runtime, adapter, stream, promisify))
+	stream := NewReadableStream(ctx, io.NopCloser(bytes.NewReader(body)), promisify)
+	_ = result.Set("body", wrapReadableStreamJS(ctx, runtime, adapter, stream, promisify))
 
 	// text() returns a Promise<string> that resolves with the body as a string.
 	// Since the body is fully buffered, the Promise resolves immediately.

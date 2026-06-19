@@ -14,7 +14,7 @@ func TestChunk16_HelpOverlay_ContainsAllSections(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var errors = [];
 
 		// T065: Help overlay is now context-aware. Test each section
@@ -77,14 +77,14 @@ func TestChunk16_JKContextAwareness_SplitNavigation(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var errors = [];
 
 		// PLAN_REVIEW: j/k should navigate splits.
 		setupPlanCache();
 		var s = initState('PLAN_REVIEW');
 		s.selectedSplitIdx = 0;
-		var r = sendKey(s, 'j');
+		var r = await sendKey(s, 'j');
 		if (r[0].selectedSplitIdx !== 1) errors.push('PLAN_REVIEW j did not move split down (got ' + r[0].selectedSplitIdx + ')');
 		r = sendKey(r[0], 'k');
 		if (r[0].selectedSplitIdx !== 0) errors.push('PLAN_REVIEW k did not move split up (got ' + r[0].selectedSplitIdx + ')');
@@ -120,7 +120,7 @@ func TestChunk16_ArrowContextAwareness_VerifySession(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var errors = [];
 
 		// Verify session active: up/down should scroll output, not navigate lists.
@@ -133,7 +133,7 @@ func TestChunk16_ArrowContextAwareness_VerifySession(t *testing.T) {
 		s.verifyViewportOffset = 0;
 		s.verifyAutoScroll = true;
 
-		var r = sendKey(s, 'up');
+		var r = await sendKey(s, 'up');
 		if ((r[0].verifyViewportOffset || 0) <= 0) errors.push('up in verify session did not scroll (got ' + r[0].verifyViewportOffset + ')');
 		if (r[0].verifyAutoScroll !== false) errors.push('up in verify session did not disable auto-scroll');
 
@@ -160,14 +160,14 @@ func TestChunk16_TabBehaviorInSplitView(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var errors = [];
 
 		// Normal mode: Tab cycles focus.
 		var s = initState('CONFIG');
 		s.splitViewEnabled = false;
 		s.focusIndex = 0;
-		var r = sendKey(s, 'tab');
+		var r = await sendKey(s, 'tab');
 		if (r[0].focusIndex === 0) errors.push('normal tab did not cycle focus');
 
 		// Split-view mode: Ctrl+Tab cycles pane targets (T61).
@@ -205,14 +205,14 @@ func TestChunk16_PlanReviewE_EntersEditor(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var errors = [];
 
 		// 'e' in PLAN_REVIEW (not processing) should enter editor.
 		setupPlanCache();
 		var s = initState('PLAN_REVIEW');
 		s.isProcessing = false;
-		var r = sendKey(s, 'e');
+		var r = await sendKey(s, 'e');
 		if (r[0].wizardState !== 'PLAN_EDITOR') errors.push('e did not enter editor (got ' + r[0].wizardState + ')');
 
 		// 'e' when processing should NOT enter editor.
@@ -239,7 +239,7 @@ func TestChunk16_Keyboard_AllBindingsConsistency(t *testing.T) {
 
 	// Comprehensive test: verify EVERY key binding documented in the help overlay
 	// actually does something (returns a changed state or a command).
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var errors = [];
 
 		function stateSnapshot(s) {
@@ -270,12 +270,12 @@ func TestChunk16_Keyboard_AllBindingsConsistency(t *testing.T) {
 			}
 		}
 
-		function testKeyChanges(key, state, label, opts) {
+		async function testKeyChanges(key, state, label, opts) {
 			setupPlanCache();
 			var s = initState(state, opts);
 			fillViewport(s);
 			var before = stateSnapshot(s);
-			var r = sendKey(s, key);
+			var r = await sendKey(s, key);
 			var after = stateSnapshot(r[0]);
 			if (before === after && r[1] === null) {
 				errors.push(label + ': no change on key=' + key);
@@ -283,32 +283,32 @@ func TestChunk16_Keyboard_AllBindingsConsistency(t *testing.T) {
 		}
 
 		// Global navigation.
-		testKeyChanges('?', 'CONFIG', 'help-?');
-		testKeyChanges('f1', 'CONFIG', 'help-f1');
-		testKeyChanges('ctrl+c', 'CONFIG', 'cancel');
-		testKeyChanges('ctrl+l', 'CONFIG', 'split-view');
-		testKeyChanges('enter', 'CONFIG', 'enter-config');
-		testKeyChanges('pgdown', 'CONFIG', 'pgdown');
-		testKeyChanges('pgup', 'CONFIG', 'pgup');
-		testKeyChanges('home', 'CONFIG', 'home');
-		testKeyChanges('end', 'CONFIG', 'end');
-		testKeyChanges('tab', 'CONFIG', 'tab');
-		testKeyChanges('shift+tab', 'CONFIG', 'shift-tab', {focusIndex: 1});
+		await testKeyChanges('?', 'CONFIG', 'help-?');
+		await testKeyChanges('f1', 'CONFIG', 'help-f1');
+		await testKeyChanges('ctrl+c', 'CONFIG', 'cancel');
+		await testKeyChanges('ctrl+l', 'CONFIG', 'split-view');
+		await testKeyChanges('enter', 'CONFIG', 'enter-config');
+		await testKeyChanges('pgdown', 'CONFIG', 'pgdown');
+		await testKeyChanges('pgup', 'CONFIG', 'pgup');
+		await testKeyChanges('home', 'CONFIG', 'home');
+		await testKeyChanges('end', 'CONFIG', 'end');
+		await testKeyChanges('tab', 'CONFIG', 'tab');
+		await testKeyChanges('shift+tab', 'CONFIG', 'shift-tab', {focusIndex: 1});
 
 		// Plan review navigation.
-		testKeyChanges('j', 'PLAN_REVIEW', 'j-review', {selectedSplitIdx: 0});
-		testKeyChanges('k', 'PLAN_REVIEW', 'k-review', {selectedSplitIdx: 1});
-		testKeyChanges('down', 'PLAN_REVIEW', 'down-review', {selectedSplitIdx: 0});
-		testKeyChanges('up', 'PLAN_REVIEW', 'up-review', {selectedSplitIdx: 1});
-		testKeyChanges('e', 'PLAN_REVIEW', 'e-review');
+		await testKeyChanges('j', 'PLAN_REVIEW', 'j-review', {selectedSplitIdx: 0});
+		await testKeyChanges('k', 'PLAN_REVIEW', 'k-review', {selectedSplitIdx: 1});
+		await testKeyChanges('down', 'PLAN_REVIEW', 'down-review', {selectedSplitIdx: 0});
+		await testKeyChanges('up', 'PLAN_REVIEW', 'up-review', {selectedSplitIdx: 1});
+		await testKeyChanges('e', 'PLAN_REVIEW', 'e-review');
 
 		// Plan editor specific.
-		testKeyChanges('e', 'PLAN_EDITOR', 'e-editor', {selectedSplitIdx: 0});
-		testKeyChanges(' ', 'PLAN_EDITOR', 'space-editor', {selectedSplitIdx: 0, selectedFileIdx: 0});
-		testKeyChanges('j', 'PLAN_EDITOR', 'j-editor', {selectedSplitIdx: 0, selectedFileIdx: 0});
-		testKeyChanges('k', 'PLAN_EDITOR', 'k-editor', {selectedSplitIdx: 0, selectedFileIdx: 1});
-		testKeyChanges('shift+down', 'PLAN_EDITOR', 'shift-down', {selectedSplitIdx: 0, selectedFileIdx: 0});
-		testKeyChanges('shift+up', 'PLAN_EDITOR', 'shift-up', {selectedSplitIdx: 0, selectedFileIdx: 1});
+		await testKeyChanges('e', 'PLAN_EDITOR', 'e-editor', {selectedSplitIdx: 0});
+		await testKeyChanges(' ', 'PLAN_EDITOR', 'space-editor', {selectedSplitIdx: 0, selectedFileIdx: 0});
+		await testKeyChanges('j', 'PLAN_EDITOR', 'j-editor', {selectedSplitIdx: 0, selectedFileIdx: 0});
+		await testKeyChanges('k', 'PLAN_EDITOR', 'k-editor', {selectedSplitIdx: 0, selectedFileIdx: 1});
+		await testKeyChanges('shift+down', 'PLAN_EDITOR', 'shift-down', {selectedSplitIdx: 0, selectedFileIdx: 0});
+		await testKeyChanges('shift+up', 'PLAN_EDITOR', 'shift-up', {selectedSplitIdx: 0, selectedFileIdx: 1});
 
 		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
 		return 'OK';
@@ -332,7 +332,7 @@ func TestChunk16_CrashDetection_AutoPoll(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Mock AgentCodeExecutor with a dead handle.
 		globalThis.prSplit._state.agentExecutor = {
 			handle: {
@@ -349,7 +349,7 @@ func TestChunk16_CrashDetection_AutoPoll(t *testing.T) {
 		s.lastAgentHealthCheckMs = 0; // Force immediate health check.
 
 		// Send auto-poll tick.
-		var r = update({type: 'Tick', id: 'auto-poll'}, s);
+		var r = await update({type: 'Tick', id: 'auto-poll'}, s);
 		var newState = r[0];
 
 		var errors = [];
@@ -394,7 +394,7 @@ func TestChunk16_CrashDetection_SessionModel(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var errors = [];
 
 		// --- Subtest 1: isDone()=true WITH executor → crash detected ---
@@ -414,7 +414,7 @@ func TestChunk16_CrashDetection_SessionModel(t *testing.T) {
 		s.isProcessing = true;
 		s.lastAgentHealthCheckMs = 0;
 
-		var r = update({type: 'Tick', id: 'auto-poll'}, s);
+		var r = await update({type: 'Tick', id: 'auto-poll'}, s);
 		var newState = r[0];
 		if (newState.wizardState !== 'ERROR_RESOLUTION') {
 			errors.push('subtest1: want ERROR_RESOLUTION, got ' + newState.wizardState);
@@ -462,7 +462,7 @@ func TestChunk16_CrashDetection_AliveSkipsCheck(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Mock AgentCodeExecutor with a LIVE handle.
 		globalThis.prSplit._state.agentExecutor = {
 			handle: {
@@ -475,7 +475,7 @@ func TestChunk16_CrashDetection_AliveSkipsCheck(t *testing.T) {
 		s.isProcessing = true;
 		s.lastAgentHealthCheckMs = 0;
 
-		var r = update({type: 'Tick', id: 'auto-poll'}, s);
+		var r = await update({type: 'Tick', id: 'auto-poll'}, s);
 		var newState = r[0];
 
 		// Should still be running — no crash detected.
@@ -504,7 +504,7 @@ func TestChunk16_CrashDetection_HealthPollThrottled(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var checkCount = 0;
 		globalThis.prSplit._state.agentExecutor = {
 			handle: {
@@ -518,7 +518,7 @@ func TestChunk16_CrashDetection_HealthPollThrottled(t *testing.T) {
 		// Set last check to NOW — should skip the immediate check.
 		s.lastAgentHealthCheckMs = Date.now();
 
-		var r = update({type: 'Tick', id: 'auto-poll'}, s);
+		var r = await update({type: 'Tick', id: 'auto-poll'}, s);
 		// isAlive should NOT have been called (throttled).
 		if (checkCount !== 0) {
 			return 'FAIL: health check should be throttled, but isAlive called ' + checkCount + ' times';
@@ -539,7 +539,7 @@ func TestChunk16_CrashRecovery_ClickZones(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var errors = [];
 
 		// Mock a minimal AgentCodeExecutor for restart.
@@ -598,13 +598,14 @@ func TestChunk16_CrashRecovery_ClickZones(t *testing.T) {
 		s.agentCrashDetected = true;
 		restore = mockZoneHit('resolve-fallback-heuristic');
 		try {
-			var r2 = sendClick(s);
+			var r2 = await sendClick(s);
 			if (r2[0].agentCrashDetected) {
 				errors.push('fallback: agentCrashDetected should be cleared');
 			}
 			if (globalThis.prSplit.runtime.mode !== 'heuristic') {
 				errors.push('fallback: mode should be heuristic, got ' + globalThis.prSplit.runtime.mode);
 			}
+		} catch (e) {
 		} finally { restore(); }
 
 		// Test 3: abort zone click during crash.
@@ -640,7 +641,7 @@ func TestChunk16_GetFocusElements_CrashMode(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var errors = [];
 
 		// Standard ERROR_RESOLUTION (no crash) — should have 5+ normal buttons.
@@ -692,7 +693,7 @@ func TestChunk16_FocusActivate_CrashButtons(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var errors = [];
 
 		// Mock executor for restart (returns Promise, matching async impl).
@@ -716,7 +717,7 @@ func TestChunk16_FocusActivate_CrashButtons(t *testing.T) {
 		s.agentCrashDetected = true;
 		s.focusIndex = 0; // First button = resolve-restart-agent.
 		restartCalled = false;
-		var r = sendKey(s, 'enter');
+		var r = await sendKey(s, 'enter');
 		if (!restartCalled) {
 			errors.push('enter-restart: executor.restart() not called');
 		}
@@ -761,7 +762,7 @@ func TestChunk16_CrashDetection_InitState(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = globalThis.prSplit._wizardInit();
 		var errors = [];
 		if (s.agentCrashDetected !== false) {
@@ -790,7 +791,7 @@ func TestChunk16_CrashDetection_PlanGenerationTransition(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Mock dead Agent handle.
 		globalThis.prSplit._state.agentExecutor = {
 			handle: { isAlive: function() { return false; } },
@@ -811,7 +812,7 @@ func TestChunk16_CrashDetection_PlanGenerationTransition(t *testing.T) {
 		s.isProcessing = true;
 		s.lastAgentHealthCheckMs = 0;
 
-		var r = update({type: 'Tick', id: 'auto-poll'}, s);
+		var r = await update({type: 'Tick', id: 'auto-poll'}, s);
 		var newState = r[0];
 
 		if (newState.wizardState !== 'ERROR_RESOLUTION') {
@@ -837,7 +838,7 @@ func TestChunk16_CrashDetection_ConfigStateTransition(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Mock dead Agent handle.
 		globalThis.prSplit._state.agentExecutor = {
 			handle: { isAlive: function() { return false; } },
@@ -857,7 +858,7 @@ func TestChunk16_CrashDetection_ConfigStateTransition(t *testing.T) {
 		s.isProcessing = true;
 		s.lastAgentHealthCheckMs = 0;
 
-		var r = update({type: 'Tick', id: 'auto-poll'}, s);
+		var r = await update({type: 'Tick', id: 'auto-poll'}, s);
 		var newState = r[0];
 
 		if (newState.wizardState !== 'ERROR_RESOLUTION') {
@@ -885,7 +886,7 @@ func TestChunk16_CrashRecovery_RestartFailure(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Mock executor that fails on restart (returns Promise with error).
 		globalThis.prSplit._state.agentExecutor = {
 			handle: { isAlive: function() { return false; } },
@@ -902,7 +903,7 @@ func TestChunk16_CrashRecovery_RestartFailure(t *testing.T) {
 		// The actual error is surfaced by the restart-agent-poll tick handler.
 		var restore = mockZoneHit('resolve-restart-agent');
 		try {
-			var r = sendClick(s);
+			var r = await sendClick(s);
 			// Model should be in restarting state immediately.
 			if (!r[0].agentRestarting) {
 				return 'FAIL: agentRestarting should be true during async restart, got false';
@@ -935,7 +936,7 @@ func TestChunk16_CrashRecovery_NoExecutor(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// No executor set.
 		globalThis.prSplit._state.agentExecutor = null;
 
@@ -944,7 +945,7 @@ func TestChunk16_CrashRecovery_NoExecutor(t *testing.T) {
 
 		var restore = mockZoneHit('resolve-restart-agent');
 		try {
-			var r = sendClick(s);
+			var r = await sendClick(s);
 			if (!r[0].errorDetails || r[0].errorDetails.indexOf('No Agent executor') < 0) {
 				return 'FAIL: missing no-executor error, got: ' + r[0].errorDetails;
 			}
@@ -969,7 +970,7 @@ func TestChunk16_PollAgentScreenshot_NoMux(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Remove tuiMux to simulate headless/test context.
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = undefined;
@@ -1011,7 +1012,7 @@ func TestChunk16_PollAgentScreenshot_NoChild(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Mock tuiMux with hasChild() returning false.
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
@@ -1054,7 +1055,7 @@ func TestChunk16_PollAgentScreenshot_WithChild(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		var __mockCID = 42;
 		prSplit._state = prSplit._state || {};
@@ -1105,7 +1106,7 @@ func TestChunk16_PollAgentScreenshot_SplitViewDisabled(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = false;
 
@@ -1131,7 +1132,7 @@ func TestChunk16_SwitchTo_NoChild(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var switchCalled = false;
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
@@ -1146,7 +1147,7 @@ func TestChunk16_SwitchTo_NoChild(t *testing.T) {
 		delete prSplit._state.agentSessionID;
 
 		// T394: Call _onToggle directly.
-		var result = globalThis.prSplit._onToggle();
+		var result = await globalThis.prSplit._onToggle();
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
@@ -1173,7 +1174,7 @@ func TestChunk16_SwitchTo_WithChild(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var activateCalls = [];
 		var switchCalled = false;
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -1189,7 +1190,7 @@ func TestChunk16_SwitchTo_WithChild(t *testing.T) {
 		prSplit._state.agentSessionID = 7;
 
 		// T394: Call _onToggle directly (Ctrl+] is intercepted by Go toggleModel).
-		var result = globalThis.prSplit._onToggle();
+		var result = await globalThis.prSplit._onToggle();
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;

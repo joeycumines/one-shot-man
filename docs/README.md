@@ -26,7 +26,6 @@ If you just want to try it, see the [root README](../README.md).
 - [NextIntegerId (sequential IDs)](reference/nextintegerid.md)
 - [Regexp (Go RE2)](reference/regexp.md)
 - [Scrollbar widget](reference/scrollbar.md)
-- [Time utilities](reference/time.md)
 - [UnicodeText (text measurement)](reference/unicodetext.md)
 
 ## Architecture & internals

@@ -560,7 +560,7 @@ func TestChunk16_CtrlBracketTermmux(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var activateCalls = [];
 		var switchCalled = false;
 		globalThis.tuiMux = {
@@ -574,7 +574,7 @@ func TestChunk16_CtrlBracketTermmux(t *testing.T) {
 		var savedCID = prSplit._state.agentSessionID;
 		prSplit._state.agentSessionID = 5;
 
-		var result = globalThis.prSplit._onToggle();
+		var result = await globalThis.prSplit._onToggle();
 
 		delete globalThis.tuiMux;
 		if (savedCID !== undefined) prSplit._state.agentSessionID = savedCID;

@@ -104,20 +104,20 @@
     };
 
     // resolve synchronous fallback.
-    AgentCodeExecutor.prototype.resolve = function() {
+    AgentCodeExecutor.prototype.resolve = async function() {
         var exec = prSplit._modules.exec;
         var self = this;
-        function lookupSync(cmd) {
+        async function lookupSync(cmd) {
             if (typeof prSplit._lookupBinary === 'function') {
-                return prSplit._lookupBinary(cmd);
+                return await prSplit._lookupBinary(cmd);
             }
-            var result = exec.execv(['which', cmd]);
+            var result = await exec.execv(['which', cmd]);
             var path = (result.stdout || '').split('\n')[0].trim();
             return { found: result.code === 0 && path !== '', path: path };
         }
 
         if (self.command) {
-            var check = lookupSync(self.command);
+            var check = await lookupSync(self.command);
             if (!check.found) {
                 return { error: 'Agent command not found: ' + self.command };
             }
@@ -329,9 +329,9 @@
         this._eventLoopRunning = false;
     };
 
-    AgentCodeExecutor.prototype.isAvailable = function() {
+    AgentCodeExecutor.prototype.isAvailable = async function() {
         if (this.resolved) return true;
-        var result = this.resolve();
+        var result = await this.resolve();
         return !result.error;
     };
 

@@ -30,7 +30,7 @@
     //      → maxAttemptsPerBranch: min 0
     //
     //   6. Consumers: Each pipeline step reads its timeout from the resolved chain:
-    //      → mcpCallbackObj.waitFor(toolName, timeoutMs, opts)
+    //      → mcpCallbackObj.waitForAsync(toolName, timeoutMs, opts)
     //      → resolveConflictsWithAgent(..., { resolveWallClockTimeoutMs })
     //      → verifySplit(..., { verifyTimeoutMs })
     var AUTOMATED_DEFAULTS = {

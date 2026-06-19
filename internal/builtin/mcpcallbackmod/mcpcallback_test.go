@@ -76,7 +76,7 @@ func loadModules(t *testing.T, p *testutil.TestEventLoopProvider) {
 		_ = vm.Set("mcpMod", mcpExports)
 
 		// Load osm:mcpcallback module
-		cbLoader := Require(p.Adapter())
+		cbLoader := Require(context.Background(), p.Adapter())
 		cbModule := vm.NewObject()
 		cbExports := vm.NewObject()
 		_ = cbModule.Set("exports", cbExports)
@@ -1075,25 +1075,19 @@ func TestMCPCallback_WaitFor_Timeout(t *testing.T) {
 	t.Cleanup(p.Stop)
 	loadModules(t, p)
 
-	runOnLoop(t, p, func() {
-		vm := p.Runtime()
-		_, err := vm.RunString(`
-			var srv = mcpMod.createServer('test', '1.0.0');
-			var cb = mcpCbMod.MCPCallback({ server: srv });
-			cb.addTool('testTool', 'test');
-			cb.initSync();
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.addTool('testTool', 'test');
+		cb.initSync();
 
-			var result = cb.waitFor('testTool', 200);
-			if (!result.error) throw new Error('expected timeout error');
-			if (result.error.indexOf('timeout') === -1) throw new Error('unexpected error: ' + result.error);
-			if (result.data !== null) throw new Error('data should be null on timeout');
+		var result = await cb.waitForAsync('testTool', 200);
+		if (!result.error) throw new Error('expected timeout error');
+		if (result.error.indexOf('timeout') === -1) throw new Error('unexpected error: ' + result.error);
+		if (result.data !== null) throw new Error('data should be null on timeout');
 
-			cb.closeSync();
-		`)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
+		cb.closeSync();
+	`)
 }
 
 func TestMCPCallback_WaitFor_NotRegistered(t *testing.T) {
@@ -1101,23 +1095,17 @@ func TestMCPCallback_WaitFor_NotRegistered(t *testing.T) {
 	t.Cleanup(p.Stop)
 	loadModules(t, p)
 
-	runOnLoop(t, p, func() {
-		vm := p.Runtime()
-		_, err := vm.RunString(`
-			var srv = mcpMod.createServer('test', '1.0.0');
-			var cb = mcpCbMod.MCPCallback({ server: srv });
-			cb.initSync();
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.initSync();
 
-			var result = cb.waitFor('nonExistent', 100);
-			if (!result.error) throw new Error('expected error');
-			if (result.error.indexOf('not registered') === -1) throw new Error('unexpected error: ' + result.error);
+		var result = await cb.waitForAsync('nonExistent', 100);
+		if (!result.error) throw new Error('expected error');
+		if (result.error.indexOf('not registered') === -1) throw new Error('unexpected error: ' + result.error);
 
-			cb.closeSync();
-		`)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
+		cb.closeSync();
+	`)
 }
 
 func TestMCPCallback_WaitFor_AliveCheck(t *testing.T) {
@@ -1125,32 +1113,26 @@ func TestMCPCallback_WaitFor_AliveCheck(t *testing.T) {
 	t.Cleanup(p.Stop)
 	loadModules(t, p)
 
-	runOnLoop(t, p, func() {
-		vm := p.Runtime()
-		_, err := vm.RunString(`
-			var srv = mcpMod.createServer('test', '1.0.0');
-			var cb = mcpCbMod.MCPCallback({ server: srv });
-			cb.addTool('testTool', 'test');
-			cb.initSync();
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.addTool('testTool', 'test');
+		cb.initSync();
 
-			var checkCount = 0;
-			var result = cb.waitFor('testTool', 5000, {
-				aliveCheck: function() {
-					checkCount++;
-					return checkCount < 3; // Die on 3rd check
-				},
-				checkIntervalMs: 100
-			});
-			if (!result.error) throw new Error('expected error');
-			if (result.error.indexOf('process exited') === -1) throw new Error('unexpected: ' + result.error);
-			if (checkCount < 3) throw new Error('expected at least 3 alive checks, got ' + checkCount);
+		var checkCount = 0;
+		var result = await cb.waitForAsync('testTool', 5000, {
+			aliveCheck: function() {
+				checkCount++;
+				return checkCount < 3; // Die on 3rd check
+			},
+			checkIntervalMs: 100
+		});
+		if (!result.error) throw new Error('expected error');
+		if (result.error.indexOf('process exited') === -1) throw new Error('unexpected: ' + result.error);
+		if (checkCount < 3) throw new Error('expected at least 3 alive checks, got ' + checkCount);
 
-			cb.closeSync();
-		`)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
+		cb.closeSync();
+	`)
 }
 
 func TestMCPCallback_ResetWaiter(t *testing.T) {
@@ -1206,7 +1188,7 @@ func TestMCPCallback_ResetWaiter_NotRegistered_Panics(t *testing.T) {
 }
 
 // TestMCPCallback_WaitFor_EndToEnd tests the full cycle: addTool → initSync →
-// external MCP client calls the tool → waitFor returns the data.
+// external MCP client calls the tool → waitForAsync returns the data.
 func TestMCPCallback_WaitFor_EndToEnd(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires Unix domain socket — skipped on Windows")
@@ -1216,14 +1198,12 @@ func TestMCPCallback_WaitFor_EndToEnd(t *testing.T) {
 	t.Cleanup(p.Stop)
 	loadModules(t, p)
 
-	// Get the address and transport from JS after init
 	type connInfo struct {
 		address   string
 		transport string
 	}
 	infoCh := make(chan connInfo, 1)
 
-	// Inject helper to extract connection info from JS
 	runOnLoop(t, p, func() {
 		vm := p.Runtime()
 		_ = vm.Set("__reportConnInfo", func(addr, trans string) {
@@ -1231,58 +1211,57 @@ func TestMCPCallback_WaitFor_EndToEnd(t *testing.T) {
 		})
 	})
 
-	// Run the JS that sets up server, registers tool, inits, and waits
 	resultCh := make(chan error, 1)
 	if err := p.Loop().Submit(func() {
 		vm := p.Runtime()
+		_ = vm.Set("__asyncDone", func() { resultCh <- nil })
+		_ = vm.Set("__asyncFail", func(msg string) { resultCh <- errors.New(msg) })
 		_, runErr := vm.RunString(`
-			var srv = mcpMod.createServer('test', '1.0.0');
-			var cb = mcpCbMod.MCPCallback({ server: srv });
-			cb.addTool('reportClassification', 'Report classification', {
-				type: 'object',
-				properties: {
-					categories: {
-						type: 'array',
-						items: {
-							type: 'object',
-							properties: {
-								name: { type: 'string' },
-								files: { type: 'array', items: { type: 'string' } }
+			(async function() {
+				var srv = mcpMod.createServer('test', '1.0.0');
+				var cb = mcpCbMod.MCPCallback({ server: srv });
+				cb.addTool('reportClassification', 'Report classification', {
+					type: 'object',
+					properties: {
+						categories: {
+							type: 'array',
+							items: {
+								type: 'object',
+								properties: {
+									name: { type: 'string' },
+									files: { type: 'array', items: { type: 'string' } }
+								}
 							}
 						}
 					}
-				}
-			});
-			cb.initSync();
-			__reportConnInfo(cb.address, cb.transport);
+				});
+				cb.initSync();
+				__reportConnInfo(cb.address, cb.transport);
 
-			// This blocks until the tool is called or timeout
-			var result = cb.waitFor('reportClassification', 10000);
-			if (result.error) throw new Error('waitFor failed: ' + result.error);
-			if (!result.data) throw new Error('expected data');
-			if (!result.data.categories) throw new Error('expected categories in data');
-			if (result.data.categories.length !== 1) throw new Error('expected 1 category, got ' + result.data.categories.length);
-			if (result.data.categories[0].name !== 'types') throw new Error('expected name=types, got ' + result.data.categories[0].name);
-			if (result.data.categories[0].files.length !== 2) throw new Error('expected 2 files');
+				var result = await cb.waitForAsync('reportClassification', 10000);
+				if (result.error) throw new Error('waitForAsync failed: ' + result.error);
+				if (!result.data) throw new Error('expected data');
+				if (!result.data.categories) throw new Error('expected categories in data');
+				if (result.data.categories.length !== 1) throw new Error('expected 1 category, got ' + result.data.categories.length);
+				if (result.data.categories[0].name !== 'types') throw new Error('expected name=types, got ' + result.data.categories[0].name);
+				if (result.data.categories[0].files.length !== 2) throw new Error('expected 2 files');
 
-			cb.closeSync();
+				cb.closeSync();
+			})()
+			.then(function() { __asyncDone(); })
+			.catch(function(e) { __asyncFail(e.message || String(e)); });
 		`)
 		if runErr != nil {
 			resultCh <- runErr
-		} else {
-			resultCh <- nil
 		}
 	}); err != nil {
 		t.Fatalf("submit failed: %v", err)
 	}
 
-	// Wait for the JS to report connection info, then connect as MCP client
 	select {
 	case info := <-infoCh:
-		// Small delay to ensure waitFor is blocking
 		time.Sleep(100 * time.Millisecond)
 
-		// Connect to the MCPCallback's socket
 		var conn net.Conn
 		var err error
 		if info.transport == "unix" {
@@ -1295,7 +1274,6 @@ func TestMCPCallback_WaitFor_EndToEnd(t *testing.T) {
 		}
 		defer conn.Close()
 
-		// Send MCP tool call as raw JSON-RPC
 		toolArgs := `{"categories":[{"name":"types","files":["a.go","b.go"]}]}`
 		reqJSON := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}` + "\n"
 		_, err = conn.Write([]byte(reqJSON))
@@ -1303,15 +1281,13 @@ func TestMCPCallback_WaitFor_EndToEnd(t *testing.T) {
 			t.Fatalf("failed to write initialize: %v", err)
 		}
 
-		// Read initialize response
 		buf := make([]byte, 8192)
 		n, err := conn.Read(buf)
 		if err != nil {
 			t.Fatalf("failed to read initialize response: %v", err)
 		}
-		_ = n // We just need to consume the response
+		_ = n
 
-		// Send initialized notification
 		notifJSON := `{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}` + "\n"
 		_, err = conn.Write([]byte(notifJSON))
 		if err != nil {
@@ -1319,7 +1295,6 @@ func TestMCPCallback_WaitFor_EndToEnd(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 
-		// Call the tool
 		callJSON := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reportClassification","arguments":` + toolArgs + `}}` + "\n"
 		_, err = conn.Write([]byte(callJSON))
 		if err != nil {
@@ -1330,7 +1305,6 @@ func TestMCPCallback_WaitFor_EndToEnd(t *testing.T) {
 		t.Fatal("timeout waiting for connection info")
 	}
 
-	// Wait for the JS to complete
 	select {
 	case err := <-resultCh:
 		if err != nil {
@@ -1346,33 +1320,27 @@ func TestMCPCallback_WaitFor_ProgressCallback(t *testing.T) {
 	t.Cleanup(p.Stop)
 	loadModules(t, p)
 
-	runOnLoop(t, p, func() {
-		vm := p.Runtime()
-		_, err := vm.RunString(`
-			var srv = mcpMod.createServer('test', '1.0.0');
-			var cb = mcpCbMod.MCPCallback({ server: srv });
-			cb.addTool('testTool', 'test');
-			cb.initSync();
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.addTool('testTool', 'test');
+		cb.initSync();
 
-			var progressCalled = 0;
-			var result = cb.waitFor('testTool', 500, {
-				onProgress: function(elapsed, total) {
-					progressCalled++;
-					if (typeof elapsed !== 'number') throw new Error('elapsed should be number');
-					if (typeof total !== 'number') throw new Error('total should be number');
-				},
-				checkIntervalMs: 100
-			});
-			// Should timeout, but progress should have been called
-			if (!result.error) throw new Error('expected timeout');
-			if (progressCalled === 0) throw new Error('expected onProgress calls, got 0');
+		var progressCalled = 0;
+		var result = await cb.waitForAsync('testTool', 500, {
+			onProgress: function(elapsed, total) {
+				progressCalled++;
+				if (typeof elapsed !== 'number') throw new Error('elapsed should be number');
+				if (typeof total !== 'number') throw new Error('total should be number');
+			},
+			checkIntervalMs: 100
+		});
+		// Should timeout, but progress should have been called
+		if (!result.error) throw new Error('expected timeout');
+		if (progressCalled === 0) throw new Error('expected onProgress calls, got 0');
 
-			cb.closeSync();
-		`)
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
+		cb.closeSync();
+	`)
 }
 
 func TestMCPCallback_CleanupErrorLogging(t *testing.T) {
@@ -1570,7 +1538,7 @@ func TestMCPCallback_WaitForAsync_ProgressCallback(t *testing.T) {
 func TestMCPCallback_WaitForAsync_NonBlocking(t *testing.T) {
 	// Critical test: proves the event loop is free while waitForAsync waits.
 	// We start a waitForAsync, then verify that setTimeout still fires during
-	// the wait (which would be impossible with the blocking waitFor).
+	// the wait (which would be impossible with a blocking wait).
 	p := testutil.NewTestEventLoopProvider()
 	t.Cleanup(p.Stop)
 	loadModules(t, p)
@@ -1764,7 +1732,7 @@ func TestMCPCallback_WaitForAsync_ContextCancellation(t *testing.T) {
 
 func TestMCPCallback_WaitForAsync_ResultShape(t *testing.T) {
 	// Verify that the Promise resolves with {data, error} shape
-	// matching the synchronous waitFor contract exactly.
+	// matching the waitForAsync contract exactly.
 	p := testutil.NewTestEventLoopProvider()
 	t.Cleanup(p.Stop)
 	loadModules(t, p)

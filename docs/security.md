@@ -49,12 +49,11 @@ Attempts to `require('go:os')`, `require('node:fs')`, or other prefixes fail.
 
 | API | Security Notes |
 |---|---|
-| `exec(cmd, ...args)` | Uses `exec.CommandContext` — **no shell**. Arguments are passed directly, not interpreted. Shell metacharacters like `$(id)` are literal strings. |
-| `execv(cmd, args[])` | Same as `exec` but takes args as array. |
+| `execv(argv[])` | Uses `exec.CommandContext` — **no shell**. Arguments are passed directly, not interpreted. Returns a Promise. |
+| `spawn(cmd, args[], opts?)` | Returns a streaming `ChildHandle` for real-time output. Uses `exec.CommandContext`. |
 
 - **Stdin:** Wired to `os.Stdin` (by design — the user is the operator)
-- **No shell expansion:** `exec('echo', '$(id)')` outputs the literal `$(id)`
-- **No dangerous extras:** No `spawn`, `fork`, `kill`, `system`, or `popen`
+- **No shell expansion:** `execv(['echo', '$(id)'])` outputs the literal `$(id)`
 
 #### `osm:os` — File Operations
 
@@ -119,7 +118,6 @@ Attempts to `require('go:os')`, `require('node:fs')`, or other prefixes fail.
 
 | Module | API Surface | Risk |
 |---|---|---|
-| `osm:time` | `sleep(ms)` | Minimal — only delays |
 | `osm:argv` | `parseArgv`, `formatArgv` | String processing only |
 | `osm:nextIntegerID` | `new()` → counter | Pure computation |
 | `osm:flag` | Go `flag` wrapper | Argument parsing |

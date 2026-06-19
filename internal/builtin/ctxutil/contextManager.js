@@ -380,30 +380,33 @@
                     description: "Show the prompt",
                     handler: function () {
                         _refreshFileItems(getItems);
-                        output.print(buildPrompt());
+                        return Promise.resolve(buildPrompt()).then(function(text) {
+                            output.print(text);
+                        });
                     }
                 },
                 copy: {
                     description: "Copy prompt to clipboard",
                     handler: function () {
                         _refreshFileItems(getItems);
-                        const text = buildPrompt();
-                        try {
-                            clipboardCopy(text);
-                            const tokCnt = _tokenCount(text);
-                            const lineCnt = _lineCount(text);
-                            const byteCnt = _byteCount(text);
-                            const byteStr = _fmt.formatBytes(byteCnt);
-                            output.print(
-                                "Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tokCnt) + " tokens \u00b7 " +
-                                lineCnt + " lines \u00b7 " + byteStr + " \u2502"
-                            );
-                            if (postCopyHint) {
-                                output.print(postCopyHint);
+                        return Promise.resolve(buildPrompt()).then(function(text) {
+                            try {
+                                clipboardCopy(text);
+                                const tokCnt = _tokenCount(text);
+                                const lineCnt = _lineCount(text);
+                                const byteCnt = _byteCount(text);
+                                const byteStr = _fmt.formatBytes(byteCnt);
+                                output.print(
+                                    "Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tokCnt) + " tokens \u00b7 " +
+                                    lineCnt + " lines \u00b7 " + byteStr + " \u2502"
+                                );
+                                if (postCopyHint) {
+                                    output.print(postCopyHint);
+                                }
+                            } catch (e) {
+                                output.print("Clipboard error: " + (e && e.message ? e.message : e));
                             }
-                        } catch (e) {
-                            output.print("Clipboard error: " + (e && e.message ? e.message : e));
-                        }
+                        });
                     }
                 }
             };

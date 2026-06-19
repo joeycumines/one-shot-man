@@ -108,30 +108,30 @@ func TestGracefulDegradation_NoShellOnWindows(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngine(t)
 
-		raw, err := evalJS(`(function() {
-			var origRequire = require;
-			require = function(name) {
-				if (name === 'osm:termmux') {
-					throw new Error('mock termmux missing');
-				}
-				return origRequire(name);
-			};
-			try {
-				var result = globalThis.prSplit.startVerifySession('split/test', {
-					dir: '.',
-					verifyCommand: 'make test'
-				});
-				if (!result || typeof result.error !== 'string') {
-					return 'FAIL: expected structured error result';
-				}
-				if (result.error.indexOf('termmux unavailable') < 0) {
-					return 'FAIL: missing degraded error prefix: ' + result.error;
-				}
-				return 'OK';
-			} finally {
-				require = origRequire;
+		raw, err := evalJS(`(async function() {
+		var origRequire = require;
+		require = function(name) {
+			if (name === 'osm:termmux') {
+				throw new Error('mock termmux missing');
 			}
-		})()`)
+			return origRequire(name);
+		};
+		try {
+			var result = await globalThis.prSplit.startVerifySession('split/test', {
+				dir: '.',
+				verifyCommand: 'make test'
+			});
+			if (!result || typeof result.error !== 'string') {
+				return 'FAIL: expected structured error result';
+			}
+			if (result.error.indexOf('termmux unavailable') < 0) {
+				return 'FAIL: missing degraded error prefix: ' + result.error;
+			}
+			return 'OK';
+		} finally {
+			require = origRequire;
+		}
+	})()`)
 		if err != nil {
 			t.Fatal(err)
 		}

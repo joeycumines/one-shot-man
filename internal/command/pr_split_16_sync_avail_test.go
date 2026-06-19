@@ -27,7 +27,7 @@ func TestChunk16_StartAutoAnalysis_DefersWhenUnresolved(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		if (typeof prSplitConfig === 'undefined') {
 			prSplitConfig = {
 				cleanupOnFailure: false,
@@ -58,7 +58,7 @@ func TestChunk16_StartAutoAnalysis_DefersWhenUnresolved(t *testing.T) {
 			globalThis.prSplit._state.agentExecutor = { resolved: null };
 
 			// Trigger via Enter key on CONFIG → handleNext → startAutoAnalysis.
-			var r = sendKey(s, 'enter');
+			var r = await sendKey(s, 'enter');
 			var state = r[0];
 			var cmd = r[1];
 
@@ -86,7 +86,7 @@ func TestChunk16_StartAutoAnalysis_ProceedsWhenResolved(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		if (typeof prSplitConfig === 'undefined') {
 			prSplitConfig = {
 				cleanupOnFailure: false,
@@ -121,7 +121,7 @@ func TestChunk16_StartAutoAnalysis_ProceedsWhenResolved(t *testing.T) {
 			isAvailable: function() { return true; }
 		};
 
-		var r = sendKey(s, 'enter');
+		var r = await sendKey(s, 'enter');
 		var state = r[0];
 
 		if (state.pendingAutoAnalysis) {
@@ -151,7 +151,7 @@ func TestChunk16_HandleAgentCheckPoll_ResumesPendingAutoAnalysis(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		if (typeof prSplitConfig === 'undefined') {
 			prSplitConfig = {
 				cleanupOnFailure: false,
@@ -186,7 +186,7 @@ func TestChunk16_HandleAgentCheckPoll_ResumesPendingAutoAnalysis(t *testing.T) {
 				isAvailable: function() { return true; }
 			};
 
-			var r = update({type: 'Tick', id: 'agent-check-poll'}, s);
+			var r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			var state = r[0];
 
 			if (state.pendingAutoAnalysis) {
@@ -216,7 +216,7 @@ func TestChunk16_HandleAgentCheckPoll_FallsBackWhenUnavailable(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		if (typeof prSplitConfig === 'undefined') {
 			prSplitConfig = {
 				cleanupOnFailure: false,
@@ -246,7 +246,7 @@ func TestChunk16_HandleAgentCheckPoll_FallsBackWhenUnavailable(t *testing.T) {
 			s.pendingAutoAnalysis = true;
 			globalThis.prSplit._state.agentExecutor = { resolved: null };
 
-			var r = update({type: 'Tick', id: 'agent-check-poll'}, s);
+			var r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			var state = r[0];
 
 			if (state.pendingAutoAnalysis) {
@@ -277,7 +277,7 @@ func TestChunk16_StartAutoAnalysis_NoSyncIsAvailableCall(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		if (typeof prSplitConfig === 'undefined') {
 			prSplitConfig = {
 				cleanupOnFailure: false,
@@ -314,7 +314,7 @@ func TestChunk16_StartAutoAnalysis_NoSyncIsAvailableCall(t *testing.T) {
 
 			// Should NOT throw — deferral via .resolved check happens first.
 			try {
-				var r = sendKey(s, 'enter');
+				var r = await sendKey(s, 'enter');
 				var state = r[0];
 				if (!state.pendingAutoAnalysis) {
 					return 'FAIL: expected deferral (pendingAutoAnalysis), got ' + state.pendingAutoAnalysis;
@@ -342,7 +342,7 @@ func TestChunk16_HandleAgentCheckPoll_NoPendingNoAction(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		setupPlanCache();
 		var s = initState('CONFIG');
 
@@ -350,7 +350,7 @@ func TestChunk16_HandleAgentCheckPoll_NoPendingNoAction(t *testing.T) {
 		s.agentCheckStatus = 'available';
 		s.pendingAutoAnalysis = false;
 
-		var r = update({type: 'Tick', id: 'agent-check-poll'}, s);
+		var r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 		var state = r[0];
 		var cmd = r[1];
 

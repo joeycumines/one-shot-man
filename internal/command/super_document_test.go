@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
@@ -445,8 +446,8 @@ func TestSuperDocument_FocusedButtonEnterDoesNotFallIntoEdit(t *testing.T) {
 	}
 
 	testScript := `
-buildFinalPrompt = function () { return 'prompt body'; };
-os.clipboardCopy = function (txt) { globalThis.__copiedPrompt = txt; };
+buildFinalPrompt = function () { return Promise.resolve('prompt body'); };
+os.clipboardCopy = function (txt) { globalThis.__copiedPrompt = txt; return Promise.resolve(); };
 
 function baseState(idx) {
     return {
@@ -475,7 +476,8 @@ var copyRes = handleKeys({ type: 'Key', key: 'enter' }, copyState);
 var resetState = baseState(BUTTONS.findIndex(function (btn) { return btn.key === 'r'; }));
 var resetRes = handleKeys({ type: 'Key', key: 'enter' }, resetState);
 
-__result = {
+Promise.resolve().then(function() {
+globalThis.__result = {
     addMode: addState.mode,
     addOperation: addState.inputOperation,
     addCmdType: addRes[1] && addRes[1]._cmdType || null,
@@ -490,11 +492,20 @@ __result = {
     resetConfirmDocId: resetState.confirmDocId,
     resetCmdType: resetRes[1] && resetRes[1]._cmdType || null
 };
+});
 `
 
 	testObj := engine.LoadScriptFromString("super-doc-focused-button-enter", testScript)
 	if err := engine.ExecuteScript(testObj); err != nil {
 		t.Fatalf("test script execution failed: %v", err)
+	}
+
+	flushDone := make(chan struct{})
+	engine.Loop().Submit(func() { close(flushDone) })
+	select {
+	case <-flushDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for microtasks")
 	}
 
 	val := engine.GetGlobal("__result")
@@ -586,8 +597,8 @@ func TestSuperDocument_BareKeyHotkeys_Regression(t *testing.T) {
 
 	testScript := `
 	// Stub clipboard + prompt builder so 'c' (copy) works without real I/O.
-	buildFinalPrompt = function () { return 'prompt body'; };
-	os.clipboardCopy = function (txt) { globalThis.__copiedPrompt = txt; };
+	buildFinalPrompt = function () { return Promise.resolve('prompt body'); };
+	os.clipboardCopy = function (txt) { globalThis.__copiedPrompt = txt; return Promise.resolve(); };
 
 	function baseState(extra) {
 		return Object.assign({
@@ -650,6 +661,7 @@ func TestSuperDocument_BareKeyHotkeys_Regression(t *testing.T) {
 
 	// 'c' = copy → stays in list, copies prompt, sets statusMsg, no command
 	s = baseState();
+	var c_s = s;
 	res = handleKeys({key: 'c'}, s);
 	r.c_mode = s.mode;
 	r.c_statusMsg = s.statusMsg;
@@ -710,11 +722,24 @@ func TestSuperDocument_BareKeyHotkeys_Regression(t *testing.T) {
 	r.k_selectedIdx = s.selectedIdx;
 
 	__results = r;
+Promise.resolve().then(function() {
+	r.c_statusMsg = c_s.statusMsg;
+	r.c_copied = globalThis.__copiedPrompt;
+	__results = r;
+});
 `
 
 	testObj := engine.LoadScriptFromString("sd-hotkey-regression", testScript)
 	if err := engine.ExecuteScript(testObj); err != nil {
 		t.Fatalf("regression test script failed: %v", err)
+	}
+
+	flushDone2 := make(chan struct{})
+	engine.Loop().Submit(func() { close(flushDone2) })
+	select {
+	case <-flushDone2:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for microtasks")
 	}
 
 	val := engine.GetGlobal("__results")

@@ -195,7 +195,7 @@ func TestIntegration_WizardHandlerChain_PlanReject(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		var _cfgResult = prSplit._handleConfigState({
+		var _cfgResult = await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy: 'directory',
 			verifyCommand: 'true'
@@ -440,7 +440,7 @@ func TestIntegration_WizardHandlerChain_BranchFailSkip(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		var _cfgResult = prSplit._handleConfigState({
+		var _cfgResult = await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy: 'directory',
 			verifyCommand: 'true'
@@ -649,7 +649,7 @@ func TestIntegration_WizardHandlerChain_HappyPath(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		var _cfgResult = prSplit._handleConfigState({
+		var _cfgResult = await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -805,7 +805,7 @@ func TestIntegration_WizardHandlerChain_PlanEditRoundtrip(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		var _cfgResult = prSplit._handleConfigState({
+		var _cfgResult = await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -994,7 +994,7 @@ func TestIntegration_WizardHandlerChain_ErrorRetry(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		var _cfgResult = prSplit._handleConfigState({
+		var _cfgResult = await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -1178,7 +1178,7 @@ func TestIntegration_WizardHandlerChain_ErrorAutoResolve(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		prSplit._handleConfigState({
+		prSplit._await handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -1727,7 +1727,7 @@ func TestIntegration_WizardHandlerChain_BaselineFailAbort(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		var _cfgResult = prSplit._handleConfigState({
+		var _cfgResult = await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'test -f .nonexistent-file'
@@ -1735,7 +1735,7 @@ func TestIntegration_WizardHandlerChain_BaselineFailAbort(t *testing.T) {
 		// T090: handleConfigState returns baselineVerifyConfig, not verify result.
 		// Perform deferred baseline verify using the config.
 		var _bvc = _cfgResult.baselineVerifyConfig;
-		var _verifyResult = prSplit.verifySplit(prSplit.runtime.baseBranch, _bvc);
+		var _verifyResult = await prSplit.verifySplit(prSplit.runtime.baseBranch, _bvc);
 		// Baseline should fail — .nonexistent-file doesn't exist.
 		if (_verifyResult.passed) throw new Error('expected baseline failure');
 		_tw.transition('BASELINE_FAIL');
@@ -1790,7 +1790,7 @@ func TestIntegration_WizardHandlerChain_FinalizationReport(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		prSplit._handleConfigState({
+		prSplit._await handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -1933,7 +1933,7 @@ func TestIntegration_WizardHandlerChain_ErrorAbort(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		prSplit._handleConfigState({
+		prSplit._await handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'

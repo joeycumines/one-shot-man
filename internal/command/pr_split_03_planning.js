@@ -32,7 +32,7 @@
     }
 
     // --- createSplitPlan — builds a plan from group objects ---
-    function createSplitPlan(groups, config) {
+    async function createSplitPlan(groups, config) {
         if (!groups || typeof groups !== 'object') groups = {};
         config = config || {};
         var dir = resolveDir(config.dir || '.');
@@ -44,7 +44,7 @@
 
         var sourceBranch = config.sourceBranch;
         if (!sourceBranch) {
-            var result = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+            var result = await gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
             sourceBranch = result.code === 0 ? result.stdout.trim() : 'HEAD';
         }
 

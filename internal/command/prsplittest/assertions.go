@@ -266,15 +266,6 @@ func GitMockSetupJS() string {
         return ok('');
     };
 
-    // execStream delegates to the execv mock but adapts the interface.
-    execMod.execStream = function(argv, opts) {
-        var r = execMod.execv(argv);
-        opts = opts || {};
-        if (opts.onStdout && r.stdout) opts.onStdout(r.stdout);
-        if (opts.onStderr && r.stderr) opts.onStderr(r.stderr);
-        return {code: r.code, error: r.error, message: r.message};
-    };
-
     // Mock exec.spawn to route through the same mock dispatcher as execv.
     // Returns a ChildHandle-compatible object with ReadableStream stdout/stderr
     // and an async wait() method. Used by verifySplitAsync (exec.spawn('sh',...)).

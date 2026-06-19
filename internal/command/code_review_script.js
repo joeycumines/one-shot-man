@@ -30,8 +30,8 @@ function buildCommands(stateArg) {
         getItems: () => stateArg.get(shared.contextItems) || [],
         setItems: (v) => stateArg.set(shared.contextItems, v),
         nextIntegerId: nextIntegerId,
-        buildPrompt: () => {
-            const fullContext = buildContext(stateArg.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
+        buildPrompt: async () => {
+            const fullContext = await buildContext(stateArg.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
             return template.execute(codeReviewTemplate, {
                 contextTxtar: fullContext
             });
@@ -99,9 +99,9 @@ function buildCommands(stateArg) {
         'review-chunks': {
             description: "Split large diffs into LLM-sized chunks and copy",
             usage: "review-chunks [N]",
-            handler: function (args) {
+            handler: async function (args) {
                 // Build the full prompt text and extract diff sections.
-                var text = buildPrompt();
+                var text = await buildPrompt();
                 var chunks = splitDiff(text, defaultMaxDiffLines);
 
                 if (!chunks || chunks.length <= 1) {

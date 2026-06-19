@@ -269,7 +269,7 @@
     // The pipeline runs on the JS event loop independently. We poll for
     // completion via ticks so BubbleTea can render progress and the user
 
-    function startAutoAnalysis(s) {
+    async function startAutoAnalysis(s) {
         // Defense-in-depth: if prSplitConfig is absent (test/offline),
         // fall back immediately rather than crashing on property access.
         if (typeof prSplitConfig === 'undefined') {
@@ -293,7 +293,7 @@
 
         // Run config state handler (same as heuristic path).
         // Pass outputFn to suppress output.print in TUI context.
-        var configResult = handleConfigState({
+        var configResult = await handleConfigState({
             baseBranch: prSplit.runtime.baseBranch,
             dir: prSplit.runtime.dir,
             strategy: prSplit.runtime.strategy,

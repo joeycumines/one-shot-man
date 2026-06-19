@@ -184,7 +184,7 @@ func TestPrSplitCommand_AssessIndependence_NoOverlap(t *testing.T) {
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Two splits with completely different directories.
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.assessIndependence({
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.assessIndependence({
 		splits: [
 			{ name: "split/01-docs", files: ["docs/readme.md", "docs/api.md"] },
 			{ name: "split/02-src",  files: ["src/main.go", "src/util.go"] }
@@ -213,7 +213,7 @@ func TestPrSplitCommand_AssessIndependence_WithOverlap(t *testing.T) {
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Two splits sharing the same directory — NOT independent.
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.assessIndependence({
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.assessIndependence({
 		splits: [
 			{ name: "split/01-types",  files: ["pkg/types.go"] },
 			{ name: "split/02-impl",   files: ["pkg/impl.go"] }
@@ -237,7 +237,7 @@ func TestPrSplitCommand_AssessIndependence_Singles(t *testing.T) {
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Single split — no pairs possible.
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.assessIndependence({
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.assessIndependence({
 		splits: [
 			{ name: "split/01-only", files: ["pkg/types.go"] }
 		]
@@ -254,7 +254,7 @@ func TestPrSplitCommand_AssessIndependence_Singles(t *testing.T) {
 	}
 
 	// Null/undefined plan.
-	val, err = evalJS(`JSON.stringify(globalThis.prSplit.assessIndependence(null, {}))`)
+	val, err = evalJS(`JSON.stringify(await globalThis.prSplit.assessIndependence(null, {}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +384,7 @@ func TestPrSplitCommand_GroupByDependency_NoGoFiles(t *testing.T) {
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Non-Go files should fall back to directory grouping.
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.groupByDependency(
 		["docs/readme.md", "docs/api.md", "config/settings.yaml"],
 		{}
 	))`)
@@ -413,7 +413,7 @@ func TestPrSplitCommand_GroupByDependency_EmptyInput(t *testing.T) {
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency([], {}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.groupByDependency([], {}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +432,7 @@ func TestPrSplitCommand_GroupByDependency_MixedGoAndNonGo(t *testing.T) {
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Mix of Go and non-Go files — non-Go should be placed in matching dir group.
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.groupByDependency(
 		["pkg/types.go", "pkg/README.md", "cmd/main.go"],
 		{}
 	))`)
@@ -458,7 +458,7 @@ func TestPrSplitCommand_GroupByDependency_SingleGoFile(t *testing.T) {
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.groupByDependency(
 		["main.go"],
 		{}
 	))`)
@@ -614,42 +614,42 @@ func TestRenderPrompt(t *testing.T) {
 	}{
 		{
 			name:     "simple variable substitution",
-			js:       `JSON.stringify(renderPrompt('Hello {{.Name}}!', {Name: 'World'}))`,
+			js:       `JSON.stringify(await renderPrompt('Hello {{.Name}}!', {Name: 'World'}))`,
 			wantText: "Hello World!",
 		},
 		{
 			name:     "multiple variables",
-			js:       `JSON.stringify(renderPrompt('{{.A}} and {{.B}}', {A: 'foo', B: 'bar'}))`,
+			js:       `JSON.stringify(await renderPrompt('{{.A}} and {{.B}}', {A: 'foo', B: 'bar'}))`,
 			wantText: "foo and bar",
 		},
 		{
 			name:     "empty template",
-			js:       `JSON.stringify(renderPrompt('', {Name: 'X'}))`,
+			js:       `JSON.stringify(await renderPrompt('', {Name: 'X'}))`,
 			wantText: "",
 		},
 		{
 			name:     "no variables in template",
-			js:       `JSON.stringify(renderPrompt('static text', {}))`,
+			js:       `JSON.stringify(await renderPrompt('static text', {}))`,
 			wantText: "static text",
 		},
 		{
 			name:     "numeric value",
-			js:       `JSON.stringify(renderPrompt('count: {{.Count}}', {Count: 42}))`,
+			js:       `JSON.stringify(await renderPrompt('count: {{.Count}}', {Count: 42}))`,
 			wantText: "count: 42",
 		},
 		{
 			name:      "malformed template syntax",
-			js:        `JSON.stringify(renderPrompt('{{.Unclosed', {Foo: 1}))`,
+			js:        `JSON.stringify(await renderPrompt('{{.Unclosed', {Foo: 1}))`,
 			wantError: "template render failed:",
 		},
 		{
 			name:     "special characters in value",
-			js:       `JSON.stringify(renderPrompt('val={{.V}}', {V: '<script>alert("xss")</script>'}))`,
+			js:       `JSON.stringify(await renderPrompt('val={{.V}}', {V: '<script>alert("xss")</script>'}))`,
 			wantText: `<script>alert("xss")</script>`, // text/template does NOT escape HTML
 		},
 		{
 			name:     "empty data object",
-			js:       `JSON.stringify(renderPrompt('no vars here', null))`,
+			js:       `JSON.stringify(await renderPrompt('no vars here', null))`,
 			wantText: "no vars here",
 		},
 	}
@@ -697,7 +697,7 @@ func TestRenderPrompt_TemplateModuleUnavailable(t *testing.T) {
 	val, err := evalJS(`
 		var savedTemplate = template;
 		template = null;
-		var result = JSON.stringify(renderPrompt('hello {{.Name}}', {Name: 'World'}));
+		var result = JSON.stringify(await renderPrompt('hello {{.Name}}', {Name: 'World'}));
 		template = savedTemplate;
 		result;
 	`)

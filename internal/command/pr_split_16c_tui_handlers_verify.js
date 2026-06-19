@@ -1308,7 +1308,7 @@
             } else if (agentPaneSession && typeof agentPaneSession.passthrough === 'function' &&
                 typeof agentPaneSession.isRunning === 'function' &&
                 agentPaneSession.isRunning()) {
-                agentPaneSession.passthrough();
+                (async function() { await agentPaneSession.passthrough(); })();
             }
             return [s, null];
 

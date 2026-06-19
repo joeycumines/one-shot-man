@@ -22,66 +22,48 @@ type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, 
 // with context.WithCancel and uses exec.CommandContext to ensure proper
 // cancellation propagation.
 //
-// The adapter parameter is used for the spawn() function which requires
-// Promise-based streaming (goroutine → event loop → resolve). If adapter is
-// nil, spawn() will not be available (only exec/execv).
+// The adapter parameter is required for execv() and spawn(), which both return
+// Promises. If adapter is nil, neither will be available.
 func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
-		// exec(command: string, ...args: string[]): { stdout, stderr, code, error, message }
-		_ = exports.Set("exec", func(call goja.FunctionCall) goja.Value {
-			if len(call.Arguments) == 0 {
-				return runtime.ToValue(map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "exec: missing command"})
-			}
-			cmdStr, ok := call.Argument(0).Export().(string)
-			if !ok || cmdStr == "" {
-				return runtime.ToValue(map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "exec: command must be a non-empty string"})
-			}
-			var args []string
-			for i := 1; i < len(call.Arguments); i++ {
-				if s, ok := call.Argument(i).Export().(string); ok {
-					args = append(args, s)
-				} else {
-					// Coerce non-strings via String() for JS ergonomics
-					args = append(args, call.Argument(i).String())
-				}
-			}
-			ctx, cancel := context.WithCancel(ctx)
-			defer cancel()
-			return runtime.ToValue(runExec(ctx, cmdStr, args...))
-		})
-
-		// execv(argv: string[]): { stdout, stderr, code, error, message }
-		_ = exports.Set("execv", func(call goja.FunctionCall) goja.Value {
-			if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
-				return runtime.ToValue(map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: no argv"})
-			}
-			var parts []string
-			if err := runtime.ExportTo(call.Argument(0), &parts); err != nil || len(parts) == 0 {
-				return runtime.ToValue(map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: expects array of strings"})
-			}
-			cmd := parts[0]
-			var args []string
-			if len(parts) > 1 {
-				args = parts[1:]
-			}
-			ctx, cancel := context.WithCancel(ctx)
-			defer cancel()
-			return runtime.ToValue(runExec(ctx, cmd, args...))
-		})
-
-		// spawn(command: string, args: string[], opts?: {cwd?, env?}): ChildHandle
-		// Returns a child process handle with streaming stdout/stderr read().
 		if adapter != nil {
+			// execv(argv: string[]): Promise<{stdout, stderr, code, error, message}>
+			_ = exports.Set("execv", func(call goja.FunctionCall) goja.Value {
+				if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+					promise, resolve, _ := adapter.JS().NewChainedPromise()
+					_ = adapter.Loop().Submit(func() {
+						resolve(runtime.ToValue(map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: no argv"}))
+					})
+					return adapter.GojaWrapPromise(promise)
+				}
+				var parts []string
+				if err := runtime.ExportTo(call.Argument(0), &parts); err != nil || len(parts) == 0 {
+					promise, resolve, _ := adapter.JS().NewChainedPromise()
+					_ = adapter.Loop().Submit(func() {
+						resolve(runtime.ToValue(map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: expects array of strings"}))
+					})
+					return adapter.GojaWrapPromise(promise)
+				}
+				cmd := parts[0]
+				var args []string
+				if len(parts) > 1 {
+					args = parts[1:]
+				}
+				promise, resolve, _ := adapter.JS().NewChainedPromise()
+				adapter.Loop().Promisify(ctx, func(ctx context.Context) (any, error) {
+					result := runExec(ctx, cmd, args...)
+					_ = adapter.Loop().Submit(func() { resolve(runtime.ToValue(result)) })
+					return nil, nil
+				})
+				return adapter.GojaWrapPromise(promise)
+			})
+
+			// spawn(command: string, args: string[], opts?: {cwd?, env?}): ChildHandle
+			// Returns a child process handle with streaming stdout/stderr read().
 			_ = exports.Set("spawn", jsSpawn(ctx, runtime, adapter, adapter.Loop().Promisify))
 		}
-
-		// execStream(argv: string[], opts?: {onStdout?: fn, onStderr?: fn, cwd?: string, env?: object}): {code, error, message}
-		// Synchronous blocking call that fires callbacks for each output chunk.
-		// Designed for pipeline use where the caller needs real-time output but
-		// doesn't want to deal with Promises.
-		_ = exports.Set("execStream", jsExecStream(ctx, runtime))
 	}
 }
 
@@ -128,12 +110,12 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			panic(rt.NewGoError(fmt.Errorf("spawn failed: %w", err)))
 		}
 
-		return wrapChildProcess(rt, adapter, child, cancel, promisify)
+		return wrapChildProcess(baseCtx, rt, adapter, child, cancel, promisify)
 	}
 }
 
 // wrapChildProcess creates a JS object exposing the child process handle.
-func wrapChildProcess(rt *goja.Runtime, adapter *gojaeventloop.Adapter, child *ChildProcess, cancel context.CancelFunc, promisify PromisifyFunc) goja.Value {
+func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, child *ChildProcess, cancel context.CancelFunc, promisify PromisifyFunc) goja.Value {
 	obj := rt.NewObject()
 
 	// child.pid
@@ -160,16 +142,16 @@ func wrapChildProcess(rt *goja.Runtime, adapter *gojaeventloop.Adapter, child *C
 	_ = obj.Set("stdin", stdinObj)
 
 	// child.stdout — {read(): Promise<{value: string, done: boolean}>}
-	_ = obj.Set("stdout", wrapReadableStream(rt, adapter, child.ReadStdout, promisify))
+	_ = obj.Set("stdout", wrapReadableStream(baseCtx, rt, adapter, child.ReadStdout, promisify))
 
 	// child.stderr — {read(): Promise<{value: string, done: boolean}>}
-	_ = obj.Set("stderr", wrapReadableStream(rt, adapter, child.ReadStderr, promisify))
+	_ = obj.Set("stderr", wrapReadableStream(baseCtx, rt, adapter, child.ReadStderr, promisify))
 
 	// child.wait(): Promise<{code: number, signal: string|null}>
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
 		promise, resolve, reject := adapter.JS().NewChainedPromise()
 
-		promisify(context.Background(), func(ctx context.Context) (any, error) {
+		promisify(baseCtx, func(ctx context.Context) (any, error) {
 			code, waitErr := child.Wait()
 			if submitErr := adapter.Loop().Submit(func() {
 				result := rt.NewObject()
@@ -205,12 +187,12 @@ func wrapChildProcess(rt *goja.Runtime, adapter *gojaeventloop.Adapter, child *C
 
 // wrapReadableStream creates a JS object with a read() method that returns
 // Promises, following the ReadableStream protocol: {value: string, done: bool}.
-func wrapReadableStream(rt *goja.Runtime, adapter *gojaeventloop.Adapter, readFn func() (string, bool, error), promisify PromisifyFunc) goja.Value {
+func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, readFn func() (string, bool, error), promisify PromisifyFunc) goja.Value {
 	streamObj := rt.NewObject()
 	_ = streamObj.Set("read", func(call goja.FunctionCall) goja.Value {
 		promise, resolve, reject := adapter.JS().NewChainedPromise()
 
-		promisify(context.Background(), func(ctx context.Context) (any, error) {
+		promisify(baseCtx, func(ctx context.Context) (any, error) {
 			data, done, err := readFn()
 			if err != nil {
 				_ = adapter.Loop().Submit(func() {
@@ -239,133 +221,6 @@ func wrapReadableStream(rt *goja.Runtime, adapter *gojaeventloop.Adapter, readFn
 		return adapter.GojaWrapPromise(promise)
 	})
 	return streamObj
-}
-
-// jsExecStream creates the execStream() JS function. It spawns a subprocess,
-// drains stdout/stderr through JS callbacks in real-time, and returns the
-// exit code synchronously. This lets pipeline code (which is synchronous)
-// stream output to the TUI without dealing with Promises.
-//
-// Usage:
-//
-//	var result = exec.execStream(['make', 'test'], {
-//	    onStdout: function(chunk) { tui.output(chunk); },
-//	    onStderr: function(chunk) { tui.error(chunk); },
-//	    cwd: '/repo',
-//	    env: { CC: 'gcc' }
-//	});
-//	// result.code === 0 means success
-func jsExecStream(baseCtx context.Context, rt *goja.Runtime) func(call goja.FunctionCall) goja.Value {
-	return func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
-			return rt.ToValue(map[string]any{"code": -1, "error": true, "message": "execStream: no argv"})
-		}
-
-		var parts []string
-		if err := rt.ExportTo(call.Argument(0), &parts); err != nil || len(parts) == 0 {
-			return rt.ToValue(map[string]any{"code": -1, "error": true, "message": "execStream: expects array of strings"})
-		}
-
-		// Parse options.
-		var onStdout, onStderr goja.Callable
-		cfg := SpawnConfig{Command: parts[0]}
-		if len(parts) > 1 {
-			cfg.Args = parts[1:]
-		}
-
-		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
-			optsObj := call.Argument(1).ToObject(rt)
-			if v := optsObj.Get("onStdout"); v != nil && !goja.IsUndefined(v) {
-				fn, ok := goja.AssertFunction(v)
-				if ok {
-					onStdout = fn
-				}
-			}
-			if v := optsObj.Get("onStderr"); v != nil && !goja.IsUndefined(v) {
-				fn, ok := goja.AssertFunction(v)
-				if ok {
-					onStderr = fn
-				}
-			}
-			if v := optsObj.Get("cwd"); v != nil && !goja.IsUndefined(v) {
-				cfg.Cwd = v.String()
-			}
-			if v := optsObj.Get("env"); v != nil && !goja.IsUndefined(v) {
-				envMap := make(map[string]string)
-				if err := rt.ExportTo(v, &envMap); err == nil {
-					cfg.Env = envMap
-				}
-			}
-		}
-
-		ctx, cancel := context.WithCancel(baseCtx)
-		defer cancel()
-
-		child, err := SpawnChild(ctx, cfg)
-		if err != nil {
-			return rt.ToValue(map[string]any{"code": -1, "error": true, "message": fmt.Sprintf("execStream: spawn failed: %v", err)})
-		}
-
-		// Drain stdout/stderr channels, firing JS callbacks synchronously.
-		// Both channels are bounded and fed by pump goroutines; we select
-		// between them to avoid deadlock (child may write to both).
-		stdoutDone, stderrDone := false, false
-		for !stdoutDone || !stderrDone {
-			// Build dynamic select using channel state.
-			if stdoutDone {
-				chunk, ok := <-child.stderrChan
-				if !ok {
-					stderrDone = true
-					continue
-				}
-				if chunk.err == nil && onStderr != nil {
-					_, _ = onStderr(goja.Undefined(), rt.ToValue(string(chunk.data)))
-				}
-				continue
-			}
-			if stderrDone {
-				chunk, ok := <-child.stdoutChan
-				if !ok {
-					stdoutDone = true
-					continue
-				}
-				if chunk.err == nil && onStdout != nil {
-					_, _ = onStdout(goja.Undefined(), rt.ToValue(string(chunk.data)))
-				}
-				continue
-			}
-			// Both channels still open — use select to avoid deadlock.
-			select {
-			case chunk, ok := <-child.stdoutChan:
-				if !ok {
-					stdoutDone = true
-					continue
-				}
-				if chunk.err == nil && onStdout != nil {
-					_, _ = onStdout(goja.Undefined(), rt.ToValue(string(chunk.data)))
-				}
-			case chunk, ok := <-child.stderrChan:
-				if !ok {
-					stderrDone = true
-					continue
-				}
-				if chunk.err == nil && onStderr != nil {
-					_, _ = onStderr(goja.Undefined(), rt.ToValue(string(chunk.data)))
-				}
-			}
-		}
-
-		code, waitErr := child.Wait()
-		errStr := ""
-		if waitErr != nil {
-			errStr = waitErr.Error()
-		}
-		return rt.ToValue(map[string]any{
-			"code":    code,
-			"error":   waitErr != nil,
-			"message": errStr,
-		})
-	}
 }
 
 func runExec(ctx context.Context, cmd string, args ...string) map[string]any {

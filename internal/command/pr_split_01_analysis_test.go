@@ -113,7 +113,7 @@ func TestChunk01_AnalyzeDiff_MultiFileChanges(t *testing.T) {
 	}, "00_core", "01_analysis")
 
 	raw, err := evalJS(fmt.Sprintf(
-		`JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: %q}))`, dir))
+		`JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: %q}))`, dir))
 	if err != nil {
 		t.Fatalf("analyzeDiff failed: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestChunk01_AnalyzeDiff_EmptyDiff(t *testing.T) {
 	}, "00_core", "01_analysis")
 
 	raw, err := evalJS(fmt.Sprintf(
-		`JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: %q}))`, dir))
+		`JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: %q}))`, dir))
 	if err != nil {
 		t.Fatalf("analyzeDiff failed: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestChunk01_AnalyzeDiff_BadBaseBranch(t *testing.T) {
 	}, "00_core", "01_analysis")
 
 	raw, err := evalJS(fmt.Sprintf(
-		`JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'nonexistent-branch', dir: %q}))`, dir))
+		`JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'nonexistent-branch', dir: %q}))`, dir))
 	if err != nil {
 		t.Fatalf("analyzeDiff failed: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestChunk01_AnalyzeDiff_Rename(t *testing.T) {
 	}, "00_core", "01_analysis")
 
 	raw, err := evalJS(fmt.Sprintf(
-		`JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: %q}))`, dir))
+		`JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: %q}))`, dir))
 	if err != nil {
 		t.Fatalf("analyzeDiff failed: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestChunk01_AnalyzeDiffStats_BasicCounts(t *testing.T) {
 	}, "00_core", "01_analysis")
 
 	raw, err := evalJS(fmt.Sprintf(
-		`JSON.stringify(globalThis.prSplit.analyzeDiffStats({baseBranch: 'main', dir: %q}))`, dir))
+		`JSON.stringify(await globalThis.prSplit.analyzeDiffStats({baseBranch: 'main', dir: %q}))`, dir))
 	if err != nil {
 		t.Fatalf("analyzeDiffStats failed: %v", err)
 	}
@@ -375,7 +375,7 @@ func TestChunk01_AnalyzeDiffStats_EmptyDiff(t *testing.T) {
 	}, "00_core", "01_analysis")
 
 	raw, err := evalJS(fmt.Sprintf(
-		`JSON.stringify(globalThis.prSplit.analyzeDiffStats({baseBranch: 'main', dir: %q}))`, dir))
+		`JSON.stringify(await globalThis.prSplit.analyzeDiffStats({baseBranch: 'main', dir: %q}))`, dir))
 	if err != nil {
 		t.Fatal(err)
 	}

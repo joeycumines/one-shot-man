@@ -181,7 +181,7 @@ func TestChunk08_ResolveConflicts_MockStrategy_AllPass(t *testing.T) {
 			globalThis.prSplit._modules.exec.execv = function(args) {
 				return { code: 0, stdout: 'ok\n', stderr: '' };
 			};
-			// Mock exec.spawn to delegate to the mocked exec.execv (T078: shellExecAsync uses spawn).
+			// Mock exec.spawn to delegate to the mocked await exec.execv(T078: shellExecAsync uses spawn).
 			globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
 				var fullArgv = [cmd].concat(args || []);
 				var r = globalThis.prSplit._modules.exec.execv(fullArgv);
@@ -280,7 +280,7 @@ func TestChunk08_ResolveConflicts_MockStrategy_FixApplied(t *testing.T) {
 				}
 				return { code: 0, stdout: 'ok\n', stderr: '' };
 			};
-			// Mock exec.spawn to delegate to the mocked exec.execv (T078: shellExecAsync uses spawn).
+			// Mock exec.spawn to delegate to the mocked await exec.execv(T078: shellExecAsync uses spawn).
 			globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
 				var fullArgv = [cmd].concat(args || []);
 				var r = globalThis.prSplit._modules.exec.execv(fullArgv);
@@ -376,7 +376,7 @@ func TestChunk08_ResolveConflicts_RetryBudgetExhausted(t *testing.T) {
 			globalThis.prSplit._modules.exec.execv = function(args) {
 				return { code: 1, stdout: '', stderr: 'test failed' };
 			};
-			// Mock exec.spawn to delegate to the mocked exec.execv (T078: shellExecAsync uses spawn).
+			// Mock exec.spawn to delegate to the mocked await exec.execv(T078: shellExecAsync uses spawn).
 			globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
 				var fullArgv = [cmd].concat(args || []);
 				var r = globalThis.prSplit._modules.exec.execv(fullArgv);
@@ -459,7 +459,7 @@ func TestChunk08_AgentFixDetect_NoExecutor(t *testing.T) {
 
 	// Verify agent-fix strategy detect returns false when no executor is set.
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
 			var agentStrat = null;
 			for (var i = 0; i < strats.length; i++) {
@@ -469,7 +469,7 @@ func TestChunk08_AgentFixDetect_NoExecutor(t *testing.T) {
 				}
 			}
 			if (!agentStrat) return JSON.stringify({error: 'agent-fix not found'});
-			return JSON.stringify({detected: agentStrat.detect()});
+			return JSON.stringify({detected: await agentStrat.detect()});
 		})()
 	`)
 	if err != nil {
@@ -498,7 +498,7 @@ func TestChunk08_Strategy_GoModTidy_Detect(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
 			var s = null;
 			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'go-mod-tidy') { s = strats[i]; break; } }
@@ -511,10 +511,10 @@ func TestChunk08_Strategy_GoModTidy_Detect(t *testing.T) {
 			osmod.fileExists = function(p) {
 				return p.indexOf('go.mod') >= 0;
 			};
-			var existsResult = s.detect('/fake/dir');
+			var existsResult = await s.detect('/fake/dir');
 			// go.mod does NOT exist.
 			osmod.fileExists = function(p) { return false; };
-			var notExistsResult = s.detect('/fake/dir');
+			var notExistsResult = await s.detect('/fake/dir');
 
 			osmod.fileExists = origFileExists;
 			return JSON.stringify({exists: !!existsResult, notExists: !!notExistsResult});
@@ -544,7 +544,7 @@ func TestChunk08_Strategy_GoGenerateSum_Detect(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
 			var s = null;
 			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'go-generate-sum') { s = strats[i]; break; } }
@@ -556,9 +556,9 @@ func TestChunk08_Strategy_GoGenerateSum_Detect(t *testing.T) {
 			osmod.fileExists = function(p) {
 				return p.indexOf('go.sum') >= 0;
 			};
-			var yes = s.detect('/fake/dir');
+			var yes = await s.detect('/fake/dir');
 			osmod.fileExists = function(p) { return false; };
-			var no = s.detect('/fake/dir');
+			var no = await s.detect('/fake/dir');
 
 			osmod.fileExists = origFileExists;
 			return JSON.stringify({yes: !!yes, no: !!no});
@@ -587,18 +587,18 @@ func TestChunk08_Strategy_GoBuildMissingImports_Detect(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
 			var s = null;
 			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'go-build-missing-imports') { s = strats[i]; break; } }
 			if (!s) return JSON.stringify({error: 'not found'});
 			return JSON.stringify({
-				undefined: s.detect('.', 'build error: undefined: SomeFunc'),
-				importedNotUsed: s.detect('.', 'imported and not used: "fmt"'),
-				couldNotImport: s.detect('.', 'could not import foo/bar'),
-				noMatch: s.detect('.', 'test passed ok'),
-				empty: s.detect('.', ''),
-				nil: s.detect('.', null)
+				undefined: await s.detect('.', 'build error: undefined: SomeFunc'),
+				importedNotUsed: await s.detect('.', 'imported and not used: "fmt"'),
+				couldNotImport: await s.detect('.', 'could not import foo/bar'),
+				noMatch: await s.detect('.', 'test passed ok'),
+				empty: await s.detect('.', ''),
+				nil: await s.detect('.', null)
 			});
 		})()
 	`)
@@ -634,7 +634,7 @@ func TestChunk08_Strategy_NpmInstall_Detect(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
 			var s = null;
 			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'npm-install') { s = strats[i]; break; } }
@@ -646,9 +646,9 @@ func TestChunk08_Strategy_NpmInstall_Detect(t *testing.T) {
 			osmod.fileExists = function(p) {
 				return p.indexOf('package.json') >= 0;
 			};
-			var yes = s.detect('/work');
+			var yes = await s.detect('/work');
 			osmod.fileExists = function(p) { return false; };
-			var no = s.detect('/work');
+			var no = await s.detect('/work');
 
 			osmod.fileExists = origFileExists;
 			return JSON.stringify({yes: !!yes, no: !!no});
@@ -677,7 +677,7 @@ func TestChunk08_Strategy_MakeGenerate_Detect(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
 			var s = null;
 			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'make-generate') { s = strats[i]; break; } }
@@ -697,7 +697,7 @@ func TestChunk08_Strategy_MakeGenerate_Detect(t *testing.T) {
 				if (p === 'Makefile') return { content: 'all:\ngenerate:\n\tgo generate ./...', error: null };
 				return { content: '', error: 'not found' };
 			};
-			var withMakeGenerate = s.detect('.');
+			var withMakeGenerate = await s.detect('.');
 
 			// Scenario 2: No Makefile but has //go:generate.
 			osmod.fileExists = function(p) {
@@ -712,7 +712,7 @@ func TestChunk08_Strategy_MakeGenerate_Detect(t *testing.T) {
 				if (p === 'main.go') return { content: 'package main', error: null };
 				return { content: '', error: 'not found' };
 			};
-			var withGoGenerate = s.detect('.');
+			var withGoGenerate = await s.detect('.');
 
 			// Scenario 3: No Makefile, no go:generate.
 			osmod.fileExists = function(p) { return false; };
@@ -721,7 +721,7 @@ func TestChunk08_Strategy_MakeGenerate_Detect(t *testing.T) {
 				if (p === 'main.go') return { content: 'package main\nfunc main() {}', error: null };
 				return { content: '', error: 'not found' };
 			};
-			var noGenerate = s.detect('.');
+			var noGenerate = await s.detect('.');
 
 			osmod.readFile = origReadFile;
 			osmod.fileExists = origFileExists;
@@ -760,18 +760,18 @@ func TestChunk08_Strategy_AddMissingFiles_Detect(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
 			var s = null;
 			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'add-missing-files') { s = strats[i]; break; } }
 			if (!s) return JSON.stringify({error: 'not found'});
 			return JSON.stringify({
-				noSuchFile: s.detect('.', 'open foo.go: no such file or directory'),
-				cannotFind: s.detect('.', 'error: cannot find module'),
-				fileNotFound: s.detect('.', 'FATAL: file not found: bar.txt'),
-				noMatch: s.detect('.', 'all tests passed'),
-				empty: s.detect('.', ''),
-				nil: s.detect('.', null)
+				noSuchFile: await s.detect('.', 'open foo.go: no such file or directory'),
+				cannotFind: await s.detect('.', 'error: cannot find module'),
+				fileNotFound: await s.detect('.', 'FATAL: file not found: bar.txt'),
+				noMatch: await s.detect('.', 'all tests passed'),
+				empty: await s.detect('.', ''),
+				nil: await s.detect('.', null)
 			});
 		})()
 	`)

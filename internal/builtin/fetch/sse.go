@@ -213,13 +213,13 @@ func (p *SSEParser) processLine(line string) {
 
 // wrapSSEParserJS returns a goja.Object wrapping the SSEParser for JS use.
 // The read() method returns Promise<{value: {event, data, id}, done: boolean}>.
-func wrapSSEParserJS(rt *goja.Runtime, adapter *gojaeventloop.Adapter, parser *SSEParser, promisify PromisifyFunc) *goja.Object {
+func wrapSSEParserJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, parser *SSEParser, promisify PromisifyFunc) *goja.Object {
 	obj := rt.NewObject()
 
 	_ = obj.Set("read", func(call goja.FunctionCall) goja.Value {
 		promise, resolve, reject := adapter.JS().NewChainedPromise()
 
-		promisify(context.Background(), func(ctx context.Context) (any, error) {
+		promisify(ctx, func(ctx context.Context) (any, error) {
 			ev, done, err := parser.Next()
 			if err != nil {
 				_ = adapter.Loop().Submit(func() {

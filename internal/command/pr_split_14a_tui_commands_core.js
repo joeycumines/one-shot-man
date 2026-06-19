@@ -22,11 +22,11 @@
             analyze: {
                 description: 'Analyze diff between current branch and base',
                 usage: 'analyze [base-branch]',
-                handler: function(args) {
+                handler: async function(args) {
                     try {
                     var base = (args && args.length > 0) ? args[0] : runtime.baseBranch;
                     output.print('Analyzing diff against ' + base + '...');
-                    st.analysisCache = prSplit.analyzeDiff({ baseBranch: base });
+                    st.analysisCache = await prSplit.analyzeDiff({ baseBranch: base });
                     if (st.analysisCache.error) {
                         output.print('Error: ' + st.analysisCache.error);
                         return;
@@ -47,8 +47,8 @@
             stats: {
                 description: 'Show diff stats with addition/deletion counts',
                 usage: 'stats',
-                handler: function() {
-                    var stats = prSplit.analyzeDiffStats({ baseBranch: runtime.baseBranch });
+                handler: async function() {
+                    var stats = await prSplit.analyzeDiffStats({ baseBranch: runtime.baseBranch });
                     if (stats.error) {
                         output.print('Error: ' + stats.error);
                         return;
@@ -69,13 +69,13 @@
             group: {
                 description: 'Group files by strategy',
                 usage: 'group [strategy]',
-                handler: function(args) {
+                handler: async function(args) {
                     if (!st.analysisCache || !st.analysisCache.files || st.analysisCache.files.length === 0) {
                         output.print('Run "analyze" first.');
                         return;
                     }
                     var strategy = (args && args.length > 0) ? args[0] : runtime.strategy;
-                    st.groupsCache = prSplit.applyStrategy(st.analysisCache.files, strategy);
+                    st.groupsCache = await prSplit.applyStrategy(st.analysisCache.files, strategy);
                     var groupNames = Object.keys(st.groupsCache).sort();
                     output.print('Groups (' + strategy + '): ' + groupNames.length);
                     for (var i = 0; i < groupNames.length; i++) {
@@ -398,7 +398,7 @@
             'create-prs': {
                 description: 'Push branches and create stacked GitHub PRs',
                 usage: 'create-prs [--draft] [--push-only] [--auto-merge]',
-                handler: function(args) {
+                handler: async function(args) {
                     if (!st.planCache) { output.print('No plan \u2014 run "plan" or "run" first.'); return; }
                     if (!st.executionResultCache || st.executionResultCache.length === 0) {
                         output.print('No splits executed \u2014 run "execute" or "run" first.'); return;
@@ -435,7 +435,7 @@
                     }
 
                     output.print('Creating PRs for ' + effectivePlan.splits.length + ' splits...');
-                    var result = prSplit.createPRs(effectivePlan, {
+                    var result = await prSplit.createPRs(effectivePlan, {
                         draft: draft, pushOnly: pushOnly,
                         autoMerge: autoMerge, mergeMethod: mergeMethod,
                         dryRun: runtime.dryRun || false  // T077
@@ -530,7 +530,7 @@
                         if (!st.agentExecutor) {
                             st.agentExecutor = new (prSplit.AgentCodeExecutor)(prSplitConfig);
                         }
-                        if (st.agentExecutor.isAvailable()) {
+                        if (await st.agentExecutor.isAvailable()) {
                             output.print(style.info('Mode: automated (Agent detected)'));
                             var autoConfig = {
                                 baseBranch: runtime.baseBranch,
@@ -558,7 +558,7 @@
                     output.print('');
 
                     // Step 1: Analyze
-                    st.analysisCache = prSplit.analyzeDiff({ baseBranch: runtime.baseBranch });
+                    st.analysisCache = await prSplit.analyzeDiff({ baseBranch: runtime.baseBranch });
                     if (st.analysisCache.error) {
                         output.print(style.error('Analysis failed: ' + st.analysisCache.error)); return;
                     }
@@ -568,7 +568,7 @@
                     output.print(style.success('\u2713 Analysis: ') + st.analysisCache.files.length + ' changed files');
 
                     // Step 2: Group
-                    st.groupsCache = prSplit.applyStrategy(st.analysisCache.files, runtime.strategy);
+                    st.groupsCache = await prSplit.applyStrategy(st.analysisCache.files, runtime.strategy);
                     var groupNames = Object.keys(st.groupsCache).sort();
                     if (groupNames.length === 0) { output.print('No groups created.'); return; }
                     output.print(style.success('\u2713 Grouped into ' + groupNames.length + ' groups') +

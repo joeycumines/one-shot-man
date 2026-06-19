@@ -111,7 +111,7 @@
         var state = prSplit._state;
 
         var strategy = config.strategy || runtime.strategy;
-        var groups = applyStrategy(analysis.files, strategy, {
+        var groups = await applyStrategy(analysis.files, strategy, {
             fileStatuses: analysis.fileStatuses,
             maxFiles: runtime.maxFiles,
             baseBranch: analysis.baseBranch

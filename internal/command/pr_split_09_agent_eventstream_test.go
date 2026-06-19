@@ -197,7 +197,7 @@ func TestAgentEventStream_EventLoopStopsOnClose(t *testing.T) {
 			isAlive: function() { return true; },
 			receiveEventAsync: function() {
 				return new Promise(function(resolve) {
-					setTimeout(function() { resolve('test'); }, 50);
+					setTimeout(function() { await resolve('test'); }, 50);
 				});
 			},
 			close: function() {},

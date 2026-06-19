@@ -60,7 +60,7 @@
     "parallelExecution": "Fan out subagents for independent package audits. Blast them in parallel."
   },
   "statusSection": {
-    "currentState": "6 commits made. 32 tasks Done, 8 In Progress, 2 Not Started. Build+lint+test all PASS. Remaining: termmux core (subagent broke it, reverted), scripting, command tests, full verification, review gate.",
+    "currentState": "7 commits made. 37 tasks Done, 4 In Progress, 1 Not Started (verification, review gate, scope expansion). Build+lint+test all PASS. Working tree clean.",
     "goalState": "Every checked-in file (1110) audited against three factors. All deficiencies fixed. All bugs resolved. AI slop removed. All checks pass on all platforms. Regular commits throughout.",
     "replanLog": [
       {
@@ -195,7 +195,7 @@
       "task": "Audit internal/command test files (~200 test files + prsplittest/ 8 files + testdata/ fixtures)",
       "description": "Test files. Verify test isolation (t.TempDir, t.Setenv), skipSlow guards, race safety, no flaky tests. Check prsplittest helpers.",
       "acceptance": "All tests isolated, skipSlow present, race-safe. No AI slop in tests.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/scripting (109 files: context.go, engine_core.go, runtime.go, state_manager.go, terminal.go, execution_context.go, debug_assertions*.go, logging.go, log_rotate.go, module_hardening.go, session_id_common.go, tui_*.go, js_*.go, go_prompt_sync.go + ~90 test files)",
@@ -213,19 +213,19 @@
       "task": "Audit internal/termmux/vt (58 files: parser.go, screen.go, render.go, render_raster.go, csi.go, esc.go, sgr.go, utf8.go, vt.go, defaults.go, doc.go + ~48 test files)",
       "description": "Virtual terminal. Verify terminal escape sequence parser, screen model, rendering, all sequence handlers correct.",
       "acceptance": "VT parser correct, handles all sequences. Fuzz tests pass.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/termmux/pty (10 files: pty.go, pty_unix.go, pty_windows.go, pty_signal_*.go, termios_darwin.go, termios_linux.go + 3 test files)",
       "description": "PTY package. Verify Unix PTY (creack/pty), Windows PTY, termios, signal forwarding.",
       "acceptance": "PTY correct on all platforms. Signal handling correct. Tests pass.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/termmux/ptyio + statusbar (12 files: ptyio.go, reader.go, blocking_unix.go, blocking_windows.go, doc.go + statusbar/statusbar.go, doc.go + test files)",
       "description": "PTY I/O management and status bar. Verify non-blocking I/O, platform-specific blocking, status bar rendering.",
       "acceptance": "ptyio non-blocking, platform-correct. statusbar correct. Tests pass.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Audit internal/config (16 files: config.go, schema.go, location.go, migration.go, write.go, doc.go + 10 test files)",
@@ -297,7 +297,7 @@
       "task": "Audit goals/ (6 files: README.md, full-featured.json, minimal.json, with-flag-defs.json, with-hot-snippets.json, with-state-vars.json)",
       "description": "Goal definition files. Verify JSON valid, matches schema, functional.",
       "acceptance": "All goal JSON valid and functional. README accurate.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Audit docs/ (67 files: README.md, architecture.md, configuration.md, scripting.md, security.md, session.md, reference/*, archive/notes/*, key-input-autopsy/*, visuals/*, adr/*, design/*, projects/*)",

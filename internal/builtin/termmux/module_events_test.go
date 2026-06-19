@@ -191,7 +191,6 @@ func TestEventBridge_Clipboard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
-	t.Skip("broken: OSC 52 clipboard payload is not propagated into event detail")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -206,10 +205,10 @@ func TestEventBridge_Clipboard(t *testing.T) {
 	sess.Start()
 
 	runtime := goja.New()
-	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("mux", wrapper)
 
-	_, err := runtime.RunString(`
+	_, err := runJS(t, runtime, `
 		var clipboardEvents = [];
 		mux.addEventListener('clipboard', function(evt) { clipboardEvents.push(evt.detail); });
 	`)
@@ -227,7 +226,7 @@ func TestEventBridge_Clipboard(t *testing.T) {
 
 	waitForEvents(t, runtime, "clipboardEvents", 1)
 
-	v, err := runtime.RunString(`
+	v, err := runJS(t, runtime, `
 		(function() {
 			var e = clipboardEvents[0];
 			return JSON.stringify({ sessionId: e.sessionId, data: e.data });
@@ -322,7 +321,6 @@ func TestEventBridge_Silence(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
-	t.Skip("broken: async silence event delivery panics in event loop")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -337,10 +335,10 @@ func TestEventBridge_Silence(t *testing.T) {
 	sess.Start()
 
 	runtime := goja.New()
-	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("mux", wrapper)
 
-	_, err := runtime.RunString(`
+	_, err := runJS(t, runtime, `
 		var silenceEvents = [];
 		mux.addEventListener('silence', function(evt) { silenceEvents.push(evt.detail); });
 	`)
@@ -354,7 +352,7 @@ func TestEventBridge_Silence(t *testing.T) {
 	}
 	if err := mgr.SetMonitorConfig(id, parent.MonitorConfig{
 		Silence:          true,
-		SilenceThreshold: 1, // 1 nanosecond — immediately silent after registration.
+		SilenceThreshold: 1,
 	}); err != nil {
 		t.Fatalf("SetMonitorConfig: %v", err)
 	}
@@ -366,7 +364,7 @@ func TestEventBridge_Silence(t *testing.T) {
 
 	waitForEvents(t, runtime, "silenceEvents", 1)
 
-	v, err := runtime.RunString(`JSON.stringify(silenceEvents[0])`)
+	v, err := runJS(t, runtime, `JSON.stringify(silenceEvents[0])`)
 	if err != nil {
 		t.Fatalf("stringify silence event: %v", err)
 	}
@@ -524,7 +522,6 @@ func TestEventBridge_NonLoopGoroutineDelivery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
-	t.Skip("broken: async event delivery panics in event loop or detail is undefined")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -535,10 +532,10 @@ func TestEventBridge_NonLoopGoroutineDelivery(t *testing.T) {
 	<-mgr.Started()
 
 	runtime := goja.New()
-	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("mux", wrapper)
 
-	_, err := runtime.RunString(`
+	_, err := runJS(t, runtime, `
 		var events = [];
 		mux.addEventListener('registered', function(evt) { events.push(evt.detail); });
 	`)
@@ -553,7 +550,7 @@ func TestEventBridge_NonLoopGoroutineDelivery(t *testing.T) {
 
 	waitForEvents(t, runtime, "events", 1)
 
-	v, err := runtime.RunString(`JSON.stringify(events[0])`)
+	v, err := runJS(t, runtime, `JSON.stringify(events[0])`)
 	if err != nil {
 		t.Fatalf("read events[0]: %v", err)
 	}

@@ -65,9 +65,9 @@ func (b *WordLevelBuilder) Build() (*WordLevel, error) {
 	}, nil
 }
 
-// LoadWordLevelFromJSON reads a JSON object of {token: id} pairs and
+// LoadWordLevelJSON reads a JSON object of {token: id} pairs and
 // constructs a WordLevel model. The unk token defaults to "<unk>".
-func LoadWordLevelFromJSON(r io.Reader) (*WordLevel, error) {
+func LoadWordLevelJSON(r io.Reader) (*WordLevel, error) {
 	var vocab map[string]uint32
 	decoder := json.NewDecoder(r)
 	if err := decoder.Decode(&vocab); err != nil {

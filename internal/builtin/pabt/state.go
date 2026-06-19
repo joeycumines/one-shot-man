@@ -259,11 +259,11 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 			// Handle error based on configured mode
 			if errorMode == ActionGeneratorErrorStrict {
 				// Strict mode: log error and return it to caller
-				slog.Error("[PA-BT] ActionGenerator error (strict mode)", "error", err, "failedKey", failedKey)
-				return nil, fmt.Errorf("[PA-BT] ActionGenerator failed for key %v: %w", failedKey, err)
+				slog.Error("actiongenerator error", "mode", "strict", "error", err, "failedKey", failedKey)
+				return nil, fmt.Errorf("actiongenerator failed for key %v: %w", failedKey, err)
 			}
 			// Fallback mode: log warning and continue to static actions
-			slog.Warn("[PA-BT] ActionGenerator error, falling back to static actions", "error", err, "failedKey", failedKey)
+			slog.Warn("actiongenerator error fallback to static actions", "error", err, "failedKey", failedKey)
 		} else {
 			// Filter generated actions for relevance
 			for _, action := range generatedActions {

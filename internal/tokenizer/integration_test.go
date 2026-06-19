@@ -35,7 +35,7 @@ func TestGPT2Integration(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatalf("failed to load tokenizer: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestMetaspaceIntegration(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatalf("failed to load tokenizer: %v", err)
 	}

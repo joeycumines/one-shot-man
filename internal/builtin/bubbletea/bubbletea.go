@@ -484,11 +484,11 @@ func (m *Manager) WaitForProgram() error {
 	return err
 }
 
-// JsToTeaMsg converts a JavaScript message object to a tea.Msg.
+// ParseMsg converts a JavaScript message object to a tea.Msg.
 // This provides a standard way to decode events sent from JS components to Go models.
 // It handles standard "Key", "Mouse", and "WindowSize" event types.
 // Returns nil if the message cannot be converted (invalid object, unknown type, etc.)
-func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
+func ParseMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
 	if obj == nil || runtime == nil {
 		return nil
 	}
@@ -1030,8 +1030,8 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 		}
 
 	case tea.MouseMsg:
-		// Use the generated MouseEventToJS which ensures consistency with tea.Mouse.String()
-		return MouseEventToJS(msg)
+		// Use the generated EncodeMouseEvent which ensures consistency with tea.Mouse.String()
+		return EncodeMouseEvent(msg)
 
 	case tea.WindowSizeMsg:
 		return map[string]any{

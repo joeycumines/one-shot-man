@@ -540,12 +540,12 @@ func TestValidateLabelInput_UnicodePrintable(t *testing.T) {
 }
 
 // ========================================================================
-// JsToTeaMsg — nil runtime path
+// ParseMsg — nil runtime path
 // ========================================================================
 
-func TestJsToTeaMsg_NilRuntime(t *testing.T) {
+func TestParseMsg_NilRuntime(t *testing.T) {
 	t.Parallel()
-	msg := JsToTeaMsg(nil, nil)
+	msg := ParseMsg(nil, nil)
 	assert.Nil(t, msg)
 }
 

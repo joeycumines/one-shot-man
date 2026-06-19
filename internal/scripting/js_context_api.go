@@ -38,7 +38,7 @@ func (e *Engine) jsContextToTxtar() string {
 
 // jsContextFromTxtar loads context from a txtar-formatted string.
 func (e *Engine) jsContextFromTxtar(data string) error {
-	return e.contextManager.LoadFromTxtarString(data)
+	return e.contextManager.LoadTxtarString(data)
 }
 
 // jsContextGetStats returns context statistics.

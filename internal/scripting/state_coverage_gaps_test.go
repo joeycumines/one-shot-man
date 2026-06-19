@@ -21,8 +21,8 @@ import (
 // context.go coverage gaps
 // ============================================================================
 
-// TestFromTxtar tests FromTxtar (0% covered).
-func TestFromTxtar(t *testing.T) {
+// TestLoadTxtar tests LoadTxtar (0% covered).
+func TestLoadTxtar(t *testing.T) {
 	t.Parallel()
 
 	t.Run("basic_archive", func(t *testing.T) {
@@ -38,8 +38,8 @@ func TestFromTxtar(t *testing.T) {
 				{Name: "README.md", Data: []byte("# Hello\n")},
 			},
 		}
-		if err := cm.FromTxtar(archive); err != nil {
-			t.Fatalf("FromTxtar: %v", err)
+		if err := cm.LoadTxtar(archive); err != nil {
+			t.Fatalf("LoadTxtar: %v", err)
 		}
 
 		paths := cm.ListPaths()
@@ -74,8 +74,8 @@ func TestFromTxtar(t *testing.T) {
 		_ = cm.AddPath(f)
 
 		archive := &txtar.Archive{}
-		if err := cm.FromTxtar(archive); err != nil {
-			t.Fatalf("FromTxtar: %v", err)
+		if err := cm.LoadTxtar(archive); err != nil {
+			t.Fatalf("LoadTxtar: %v", err)
 		}
 		paths := cm.ListPaths()
 		if len(paths) != 0 {
@@ -99,19 +99,19 @@ func TestFromTxtar(t *testing.T) {
 				{Name: "new.go", Data: []byte("new content")},
 			},
 		}
-		_ = cm.FromTxtar(archive)
+		_ = cm.LoadTxtar(archive)
 
 		if _, exists := cm.GetPath("old.txt"); exists {
-			t.Error("old.txt should have been cleared by FromTxtar")
+			t.Error("old.txt should have been cleared by LoadTxtar")
 		}
 		if _, exists := cm.GetPath("new.go"); !exists {
-			t.Error("new.go should exist after FromTxtar")
+			t.Error("new.go should exist after LoadTxtar")
 		}
 	})
 }
 
-// TestLoadFromTxtarString tests LoadFromTxtarString (0% covered).
-func TestLoadFromTxtarString(t *testing.T) {
+// TestLoadTxtarString tests LoadTxtarString (0% covered).
+func TestLoadTxtarString(t *testing.T) {
 	t.Parallel()
 	cm, err := NewContextManager(t.TempDir())
 	if err != nil {
@@ -119,8 +119,8 @@ func TestLoadFromTxtarString(t *testing.T) {
 	}
 
 	txtarData := "-- hello.txt --\nHello, world!\n-- sub/nested.go --\npackage sub\n"
-	if err := cm.LoadFromTxtarString(txtarData); err != nil {
-		t.Fatalf("LoadFromTxtarString: %v", err)
+	if err := cm.LoadTxtarString(txtarData); err != nil {
+		t.Fatalf("LoadTxtarString: %v", err)
 	}
 
 	cp, exists := cm.GetPath("hello.txt")
@@ -1012,7 +1012,7 @@ func TestJsCreateState_NullDefEntry(t *testing.T) {
 // state_manager.go coverage gaps
 // ============================================================================
 
-// newTestBackend creates a test InMemoryBackend with consistent session ID.
+// newTestBackend creates a test MemoryBackend with consistent session ID.
 func newTestBackend(t *testing.T, sessionID string) storage.StorageBackend {
 	t.Helper()
 	backend, err := storage.NewInMemoryBackend(sessionID)

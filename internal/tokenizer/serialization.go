@@ -259,20 +259,20 @@ func (t *Tokenizer) TokenCount(text string) (int, error) {
 	return count, err
 }
 
-// LoadTokenizerFromFile reads a HuggingFace tokenizer.json file and
+// LoadTokenizerFile reads a HuggingFace tokenizer.json file and
 // constructs the appropriate model based on the "type" field.
-func LoadTokenizerFromFile(path string) (*Tokenizer, error) {
+func LoadTokenizerFile(path string) (*Tokenizer, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	return LoadTokenizerFromJSON(f)
+	return LoadTokenizerJSON(f)
 }
 
-// LoadTokenizerFromJSON reads a HuggingFace tokenizer.json format from
+// LoadTokenizerJSON reads a HuggingFace tokenizer.json format from
 // an io.Reader and constructs the Tokenizer.
-func LoadTokenizerFromJSON(r io.Reader) (*Tokenizer, error) {
+func LoadTokenizerJSON(r io.Reader) (*Tokenizer, error) {
 	// Read the entire input so we can try both formats
 	data, err := io.ReadAll(r)
 	if err != nil {

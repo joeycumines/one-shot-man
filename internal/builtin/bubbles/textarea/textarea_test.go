@@ -2431,7 +2431,7 @@ func TestHandleClickAtScreenCoords_PrefersVpCtxOverArg(t *testing.T) {
 
 // TestTextareaUpdateWithKeyInsertsCharacter verifies that calling textarea.update()
 // with a Key message inserts the character into the textarea value.
-// This tests the critical path: JS update → JsToTeaMsg → textarea.Update(msg) → value changes.
+// This tests the critical path: JS update → ParseMsg → textarea.Update(msg) → value changes.
 func TestTextareaUpdateWithKeyInsertsCharacter(t *testing.T) {
 	runtime := goja.New()
 

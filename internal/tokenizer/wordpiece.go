@@ -87,10 +87,10 @@ func (b *WordPieceBuilder) Build() (*WordPiece, error) {
 	}, nil
 }
 
-// LoadWordPieceFromJSON reads a JSON object of {token: id} pairs and
+// LoadWordPieceJSON reads a JSON object of {token: id} pairs and
 // constructs a WordPiece model with defaults: unkToken="[UNK]",
 // continuingSubwordPrefix="##", maxInputCharsPerWord=100.
-func LoadWordPieceFromJSON(r io.Reader) (*WordPiece, error) {
+func LoadWordPieceJSON(r io.Reader) (*WordPiece, error) {
 	var vocab map[string]uint32
 	decoder := json.NewDecoder(r)
 	if err := decoder.Decode(&vocab); err != nil {

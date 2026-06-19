@@ -389,7 +389,7 @@ func createViewportObject(runtime *goja.Runtime, vp *viewport.Model) goja.Value 
 		}
 
 		// Convert JS message to tea.Msg
-		msg := bubbletea.JsToTeaMsg(runtime, msgObj)
+		msg := bubbletea.ParseMsg(runtime, msgObj)
 		if msg == nil {
 			arr := runtime.NewArray()
 			_ = arr.Set("0", obj)

@@ -1363,7 +1363,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 			return arr
 		}
 
-		msg := bubbletea.JsToTeaMsg(runtime, msgObj)
+		msg := bubbletea.ParseMsg(runtime, msgObj)
 		if msg == nil {
 			return arr
 		}

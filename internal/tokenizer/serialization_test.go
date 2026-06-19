@@ -8,9 +8,9 @@ import (
 func TestLoadTokenizerBPE(t *testing.T) {
 	jsonData := `{"type":"BPE","vocab":{"a":0,"b":1,"c":2,"ab":3},"merges":["a b"]}`
 	r := strings.NewReader(jsonData)
-	tok, err := LoadTokenizerFromJSON(r)
+	tok, err := LoadTokenizerJSON(r)
 	if err != nil {
-		t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+		t.Fatalf("LoadTokenizerJSON failed: %v", err)
 	}
 
 	tokens, count, err := tok.Encode("ab")
@@ -25,9 +25,9 @@ func TestLoadTokenizerBPE(t *testing.T) {
 func TestLoadTokenizerWordPiece(t *testing.T) {
 	jsonData := `{"type":"WordPiece","vocab":{"[UNK]":0,"a":1,"##b":2,"ab":3},"unk_token":"[UNK]","continuing_subword_prefix":"##"}`
 	r := strings.NewReader(jsonData)
-	tok, err := LoadTokenizerFromJSON(r)
+	tok, err := LoadTokenizerJSON(r)
 	if err != nil {
-		t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+		t.Fatalf("LoadTokenizerJSON failed: %v", err)
 	}
 
 	tokens, count, err := tok.Encode("ab")
@@ -42,9 +42,9 @@ func TestLoadTokenizerWordPiece(t *testing.T) {
 func TestLoadTokenizerWordLevel(t *testing.T) {
 	jsonData := `{"type":"WordLevel","vocab":{"<unk>":0,"hello":1,"world":2},"unk_token":"<unk>"}`
 	r := strings.NewReader(jsonData)
-	tok, err := LoadTokenizerFromJSON(r)
+	tok, err := LoadTokenizerJSON(r)
 	if err != nil {
-		t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+		t.Fatalf("LoadTokenizerJSON failed: %v", err)
 	}
 
 	tokens, count, err := tok.Encode("hello")
@@ -67,9 +67,9 @@ func TestLoadTokenizerWordLevel(t *testing.T) {
 func TestLoadTokenizerUnigram(t *testing.T) {
 	jsonData := `{"type":"Unigram","vocab":{"<unk>":0,"a":1,"b":2,"ab":3},"unk_id":0}`
 	r := strings.NewReader(jsonData)
-	tok, err := LoadTokenizerFromJSON(r)
+	tok, err := LoadTokenizerJSON(r)
 	if err != nil {
-		t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+		t.Fatalf("LoadTokenizerJSON failed: %v", err)
 	}
 
 	tokens, count, err := tok.Encode("ab")
@@ -90,7 +90,7 @@ func TestLoadTokenizerUnigram(t *testing.T) {
 func TestLoadTokenizerUnknownType(t *testing.T) {
 	jsonData := `{"type":"UnknownModel","vocab":{}}`
 	r := strings.NewReader(jsonData)
-	_, err := LoadTokenizerFromJSON(r)
+	_, err := LoadTokenizerJSON(r)
 	if err == nil {
 		t.Fatal("expected error for unknown type, got nil")
 	}
@@ -102,9 +102,9 @@ func TestLoadTokenizerUnknownType(t *testing.T) {
 func TestTokenizerTokenCount(t *testing.T) {
 	jsonData := `{"type":"WordLevel","vocab":{"<unk>":0,"a":1,"b":2},"unk_token":"<unk>"}`
 	r := strings.NewReader(jsonData)
-	tok, err := LoadTokenizerFromJSON(r)
+	tok, err := LoadTokenizerJSON(r)
 	if err != nil {
-		t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+		t.Fatalf("LoadTokenizerJSON failed: %v", err)
 	}
 
 	count, err := tok.TokenCount("a b")
@@ -124,9 +124,9 @@ func TestLoadTokenizerHFBPE(t *testing.T) {
 	// Standard HuggingFace tokenizer.json with "model" wrapper
 	jsonData := `{"version":"1.0","model":{"type":"BPE","vocab":{"<unk>":0,"a":1,"b":2,"ab":3},"merges":["a b"]}}`
 	r := strings.NewReader(jsonData)
-	tok, err := LoadTokenizerFromJSON(r)
+	tok, err := LoadTokenizerJSON(r)
 	if err != nil {
-		t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+		t.Fatalf("LoadTokenizerJSON failed: %v", err)
 	}
 
 	tokens, count, err := tok.Encode("ab")
@@ -141,9 +141,9 @@ func TestLoadTokenizerHFBPE(t *testing.T) {
 func TestLoadTokenizerHFWordPiece(t *testing.T) {
 	jsonData := `{"version":"1.0","model":{"type":"WordPiece","vocab":{"[UNK]":0,"a":1,"##b":2,"ab":3},"unk_token":"[UNK]","continuing_subword_prefix":"##"}}`
 	r := strings.NewReader(jsonData)
-	tok, err := LoadTokenizerFromJSON(r)
+	tok, err := LoadTokenizerJSON(r)
 	if err != nil {
-		t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+		t.Fatalf("LoadTokenizerJSON failed: %v", err)
 	}
 
 	tokens, count, err := tok.Encode("ab")
@@ -158,9 +158,9 @@ func TestLoadTokenizerHFWordPiece(t *testing.T) {
 func TestLoadTokenizerHFWordLevel(t *testing.T) {
 	jsonData := `{"version":"1.0","model":{"type":"WordLevel","vocab":{"<unk>":0,"hello":1,"world":2},"unk_token":"<unk>"}}`
 	r := strings.NewReader(jsonData)
-	tok, err := LoadTokenizerFromJSON(r)
+	tok, err := LoadTokenizerJSON(r)
 	if err != nil {
-		t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+		t.Fatalf("LoadTokenizerJSON failed: %v", err)
 	}
 
 	tokens, count, err := tok.Encode("hello")
@@ -176,9 +176,9 @@ func TestLoadTokenizerHFUnigramWithScores(t *testing.T) {
 	// Standard HF Unigram format with [[token, score], ...] vocab
 	jsonData := `{"version":"1.0","model":{"type":"Unigram","vocab":[["<unk>",0.0],["a",-0.3],["b",-0.4],["ab",-0.1]],"unk_id":0}}`
 	r := strings.NewReader(jsonData)
-	tok, err := LoadTokenizerFromJSON(r)
+	tok, err := LoadTokenizerJSON(r)
 	if err != nil {
-		t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+		t.Fatalf("LoadTokenizerJSON failed: %v", err)
 	}
 
 	tokens, count, err := tok.Encode("ab")
@@ -197,9 +197,9 @@ func TestLoadTokenizerFlatBackwardsCompat(t *testing.T) {
 	// Existing flat format should still work (backwards compatibility)
 	jsonData := `{"type":"BPE","vocab":{"<unk>":0,"a":1,"b":2,"ab":3},"merges":["a b"]}`
 	r := strings.NewReader(jsonData)
-	tok, err := LoadTokenizerFromJSON(r)
+	tok, err := LoadTokenizerJSON(r)
 	if err != nil {
-		t.Fatalf("LoadTokenizerFromJSON failed for flat format: %v", err)
+		t.Fatalf("LoadTokenizerJSON failed for flat format: %v", err)
 	}
 
 	tokens, count, err := tok.Encode("ab")

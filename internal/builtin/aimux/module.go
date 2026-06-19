@@ -9,9 +9,9 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/aimuxcore"
 )
 
-// Require returns a module loader for `osm:aimux`. The initial implementation
-// exposes event/state constants only; bindings for parser, provider, guard, etc.,
-// are added progressively in binding_*.go files.
+// Require returns a module loader for `osm:aimux`. It exposes event/state
+// constants and bindings for provider, parser, TUI state, and event stream
+// management via the binding_*.go files.
 func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)

@@ -74,7 +74,7 @@ func TestZeroWidthTokenOffsets(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}

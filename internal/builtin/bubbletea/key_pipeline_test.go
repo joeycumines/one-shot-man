@@ -351,7 +351,7 @@ func TestKeyPipeline_SpaceUsesTextNotNamedKey(t *testing.T) {
 }
 
 // TestKeyPipeline_ParseKeyRoundTrip verifies that the critical round-trip
-// through JsToTeaMsg/ParseKey correctly reconstructs a tea.KeyPressMsg
+// through ParseMsg/ParseKey correctly reconstructs a tea.KeyPressMsg
 // whose .String() matches the key binding strings in bubbles textarea.
 //
 // This is the definitive test for the arrow key bug: if ParseKey("up")

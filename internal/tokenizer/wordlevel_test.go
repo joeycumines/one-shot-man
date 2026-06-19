@@ -85,13 +85,13 @@ func TestWordLevelTokenizeMissingUnkToken(t *testing.T) {
 	}
 }
 
-func TestLoadWordLevelFromJSON(t *testing.T) {
+func TestLoadWordLevelJSON(t *testing.T) {
 	// Simulate reading a JSON vocab file: {"a": 0, "b": 1}
 	jsonData := []byte(`{"<unk>":0,"a":1,"b":2}`)
 	r := &byteReader{data: jsonData}
-	wl, err := LoadWordLevelFromJSON(r)
+	wl, err := LoadWordLevelJSON(r)
 	if err != nil {
-		t.Fatalf("LoadWordLevelFromJSON failed: %v", err)
+		t.Fatalf("LoadWordLevelJSON failed: %v", err)
 	}
 
 	tokens, err := wl.Tokenize("a")

@@ -1,10 +1,12 @@
 package tokenizermod
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/dop251/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/tokenizer"
 )
 
@@ -33,8 +35,11 @@ import (
 // const bpe = tok.loadBPE(vocabJson, mergesStr);
 // const wp = tok.loadWordPiece(jsonStr);
 // const wl = tok.loadWordLevel(jsonStr);
-func Require(runtime *goja.Runtime, module *goja.Object) {
-	exports := module.Get("exports").(*goja.Object)
+// Require returns a module loader for `osm:tokenizer` that uses the provided
+// base context and event-loop adapter for async file I/O.
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(vm *goja.Runtime, module *goja.Object) {
+	return func(runtime *goja.Runtime, module *goja.Object) {
+		exports := module.Get("exports").(*goja.Object)
 
 	// ---- tokenize(text: string): { tokens: Array, count: number } ----
 	// Uses the built-in char-level tokenizer. Always available.
@@ -78,18 +83,25 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 		return runtime.ToValue(strings.Count(text, "\n") + 1)
 	})
 
-	// ---- loadFile(path: string): TokenizerWrapper ----
-	// Loads a HuggingFace tokenizer.json from disk.
+	// ---- loadFile(path: string): Promise<TokenizerWrapper> ----
+	// Loads a HuggingFace tokenizer.json from disk. Returns a Promise because
+	// file I/O runs off the event loop to avoid blocking JavaScript execution.
 	_ = exports.Set("loadFile", func(call goja.FunctionCall) goja.Value {
 		path := argString(call, 0)
 		if path == "" {
-			panic(runtime.NewGoError(fmt.Errorf("loadFile: path is required")))
+			promise, resolve, _ := adapter.JS().NewChainedPromise()
+			adapter.Loop().Submit(func() {
+				resolve(nil)
+			})
+			return adapter.GojaWrapPromise(promise)
 		}
-		tok, err := tokenizer.LoadTokenizerFromFile(path)
-		if err != nil {
-			panic(runtime.NewGoError(fmt.Errorf("loadFile: %w", err)))
-		}
-		return newTokenizerWrapper(runtime, tok)
+		return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+			tok, err := tokenizer.LoadTokenizerFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("loadFile: %w", err)
+			}
+			return newTokenizerWrapper(runtime, tok), nil
+		})
 	})
 
 	// ---- loadJSON(jsonStr: string): TokenizerWrapper ----
@@ -99,7 +111,7 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 		if jsonStr == "" {
 			panic(runtime.NewGoError(fmt.Errorf("loadJSON: json string is required")))
 		}
-		tok, err := tokenizer.LoadTokenizerFromJSON(strings.NewReader(jsonStr))
+		tok, err := tokenizer.LoadTokenizerJSON(strings.NewReader(jsonStr))
 		if err != nil {
 			panic(runtime.NewGoError(fmt.Errorf("loadJSON: %w", err)))
 		}
@@ -114,7 +126,7 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 		if vocabStr == "" {
 			panic(runtime.NewGoError(fmt.Errorf("loadBPE: vocab JSON is required")))
 		}
-		model, err := tokenizer.LoadBPEFromFiles(
+		model, err := tokenizer.LoadBPEFiles(
 			strings.NewReader(vocabStr),
 			strings.NewReader(mergesStr),
 		)
@@ -131,7 +143,7 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 		if jsonStr == "" {
 			panic(runtime.NewGoError(fmt.Errorf("loadWordPiece: json string is required")))
 		}
-		model, err := tokenizer.LoadWordPieceFromJSON(strings.NewReader(jsonStr))
+		model, err := tokenizer.LoadWordPieceJSON(strings.NewReader(jsonStr))
 		if err != nil {
 			panic(runtime.NewGoError(fmt.Errorf("loadWordPiece: %w", err)))
 		}
@@ -145,12 +157,32 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 		if jsonStr == "" {
 			panic(runtime.NewGoError(fmt.Errorf("loadWordLevel: json string is required")))
 		}
-		model, err := tokenizer.LoadWordLevelFromJSON(strings.NewReader(jsonStr))
+		model, err := tokenizer.LoadWordLevelJSON(strings.NewReader(jsonStr))
 		if err != nil {
 			panic(runtime.NewGoError(fmt.Errorf("loadWordLevel: %w", err)))
 		}
 		return newTokenizerWrapper(runtime, &tokenizer.Tokenizer{Model: model})
 	})
+	}
+}
+
+// jsPromise wraps a goroutine-based operation into a JS Promise resolved on the event loop.
+func jsPromise(adapter *gojaeventloop.Adapter, baseCtx context.Context, fn func(ctx context.Context) (any, error)) goja.Value {
+	promise, resolve, reject := adapter.JS().NewChainedPromise()
+
+	adapter.Loop().Promisify(baseCtx, func(ctx context.Context) (any, error) {
+		result, err := fn(ctx)
+		_ = adapter.Loop().Submit(func() {
+			if err != nil {
+				reject(err)
+			} else {
+				resolve(result)
+			}
+		})
+		return nil, nil
+	})
+
+	return adapter.GojaWrapPromise(promise)
 }
 
 // newTokenizerWrapper creates a JS object wrapping a Go *tokenizer.Tokenizer

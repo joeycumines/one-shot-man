@@ -201,7 +201,6 @@ func rectSliceToArray(runtime *goja.Runtime, rects []coord.Rect) goja.Value {
 
 // createRectObject wraps a *coord.Rect as a Goja Object with
 // accessor properties (x, y, width, height) and methods.
-// Mirrors the pattern from osm:termui/coordinate for consistency.
 func createRectObject(runtime *goja.Runtime, r *coord.Rect) goja.Value {
 	obj := runtime.NewObject()
 

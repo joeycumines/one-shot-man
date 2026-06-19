@@ -83,26 +83,6 @@ func TestBinding_EventStream_NewEventStream_WithFakeHandle(t *testing.T) {
 	t.Parallel()
 	vm, runJS := eventStreamTestEnv(t)
 
-	// Create a fake handle object with _handle pointing to a real aimuxcore handle.
-	// We use the testutil fake handle via Go directly.
-	handle := aimuxcore.NewProcessProvider("test", "echo", nil, aimuxcore.ProviderCapabilities{})
-
-	// We can't easily create a real handle without spawning, so let's test
-	// that newEventStream accepts a handle object and returns an object with
-	// events() and close() methods.
-	_ = handle
-
-	// Instead, test via JS that the function exists and returns an object.
-	result := runJS(`typeof require('osm:aimux').newEventStream`)
-	assert.Equal(t, "function", result.String())
-
-	// Test newHealthMonitor exists.
-	result = runJS(`typeof require('osm:aimux').newHealthMonitor`)
-	assert.Equal(t, "function", result.String())
-
-	// Test that calling with a valid handle object works.
-	// We need a handle with _handle property pointing to an AgentHandle.
-	// Since we can't easily create one in JS, let's use the vm directly.
 	handleObj := vm.NewObject()
 	_ = handleObj.Set("_handle", &fakeAgentHandleForBinding{})
 
@@ -111,7 +91,7 @@ func TestBinding_EventStream_NewEventStream_WithFakeHandle(t *testing.T) {
 	// Store the handle in globalThis for JS access.
 	_ = vm.Set("testHandle", handleObj)
 
-	result = runJS(`
+	result := runJS(`
 		var es = aimux.newEventStream(testHandle, null);
 		typeof es.events === 'function' && typeof es.close === 'function';
 	`)

@@ -995,13 +995,6 @@ func TestVariable_NumericKeys(t *testing.T) {
 	assert.Equal(t, "stringer-val", val)
 }
 
-// testBridgeLocal is an alternative bridge setup if testBridge from require_test.go
-// is not visible. Since we're in the same package, testBridge IS visible.
-// This function only serves as documentation that testBridge is reused.
-func init() {
-	// Compile-time check: testBridge must be visible from this file
-	_ = testBridge
-}
 
 // ========================================================================
 // NewExprCondition_Match with various edge cases through ExprCondition

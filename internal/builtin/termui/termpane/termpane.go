@@ -82,7 +82,6 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 // extractRect extracts a coordinate.Rect from a Goja value.
 // Supports Rect JS objects (from osm:termui/coordinate) and plain objects
 // with x, y, width, height properties (duck typing).
-// Mirrors the pattern from osm:termui/coordinate and osm:termui/layout.
 func extractRect(runtime *goja.Runtime, val goja.Value) coordinate.Rect {
 	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 		return coordinate.Rect{}
@@ -104,8 +103,6 @@ func extractRect(runtime *goja.Runtime, val goja.Value) coordinate.Rect {
 }
 
 // createRectJSObject creates a JS Rect object from a coordinate.Rect.
-// Uses accessor properties (get/set) matching the pattern from
-// osm:termui/coordinate's createRectObject for consistency.
 func createRectJSObject(runtime *goja.Runtime, r *coordinate.Rect) goja.Value {
 	obj := runtime.NewObject()
 
@@ -205,7 +202,7 @@ func createTermpaneObject(runtime *goja.Runtime, m *termpane.Model) goja.Value {
 
 		if len(call.Arguments) >= 1 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
 			if msgObj, ok := call.Argument(0).(*goja.Object); ok && msgObj != nil {
-				if msg := bubbletea.JsToTeaMsg(runtime, msgObj); msg != nil {
+				if msg := bubbletea.ParseMsg(runtime, msgObj); msg != nil {
 					_, cmd = m.Update(msg)
 				}
 			}

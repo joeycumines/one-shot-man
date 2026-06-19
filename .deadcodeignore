@@ -78,3 +78,4 @@ internal\termui\scrollbar\scrollbar.go:*: unreachable func: Model.*
 internal/termui/coordinate/coordinate.go:*: unreachable func: FromPaneGeometry
 internal\termui\coordinate\coordinate.go:*: unreachable func: FromPaneGeometry
 internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: mcpCallback.injectToolResult
+internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: mcpCallback.injectToolResult

@@ -255,7 +255,7 @@ func TestParseMouseEvent(t *testing.T) {
 	}
 }
 
-func TestMouseEventToJS(t *testing.T) {
+func TestEncodeMouseEvent(t *testing.T) {
 	tests := []struct {
 		name       string
 		event      tea.MouseMsg
@@ -284,12 +284,12 @@ func TestMouseEventToJS(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			js := MouseEventToJS(tt.event)
+			js := EncodeMouseEvent(tt.event)
 			if js["type"] != tt.wantType {
-				t.Errorf("MouseEventToJS() type = %v, want %v", js["type"], tt.wantType)
+				t.Errorf("EncodeMouseEvent() type = %v, want %v", js["type"], tt.wantType)
 			}
 			if js["button"] != tt.wantButton {
-				t.Errorf("MouseEventToJS() button = %v, want %v", js["button"], tt.wantButton)
+				t.Errorf("EncodeMouseEvent() button = %v, want %v", js["button"], tt.wantButton)
 			}
 		})
 	}

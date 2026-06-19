@@ -295,10 +295,9 @@ func (c *JSCondition) Key() any {
 // so RunOnLoopSync would return an error anyway, but early exit improves shutdown
 // responsiveness.
 //
-// ERROR HANDLING (H8 fix): Errors are now logged to help distinguish from actual
+// Errors are logged to help distinguish from actual
 // false matches. This includes nil condition/bridge/matcher cases and bridge
-// stopped cases. Callers can use pabt.NewJSConditionWithValidation for stricter
-// error handling.
+// stopped cases.
 func (c *JSCondition) Match(value any) bool {
 	// Defensive: check if condition is valid before calling matcher
 	if c == nil {
@@ -392,7 +391,7 @@ func (c *ExprCondition) SetJSObject(obj *goja.Object) {
 // NewExprCondition creates a new expr-lang based condition.
 // The expression is compiled lazily on first Match call and cached globally.
 //
-// Panics if expression is empty (m-3 fix).
+// Panics if expression is empty.
 //
 // Expression syntax follows expr-lang (github.com/expr-lang/expr):
 //   - Field access: Value.x, Value.name
@@ -431,7 +430,7 @@ type ExprEnv struct {
 // This provides 10-100x performance improvement over JavaScript evaluation
 // for equivalent conditions.
 //
-// ERROR HANDLING (M-3 fix): Compilation and evaluation errors are now tracked
+// Compilation and evaluation errors are tracked
 // and logged to help distinguish from actual false results. Use LastError()
 // to retrieve the most recent error.
 func (c *ExprCondition) Match(value any) bool {
@@ -450,7 +449,7 @@ func (c *ExprCondition) Match(value any) bool {
 		c.mu.Lock()
 		c.lastErr = fmt.Errorf("expression compilation failed: %w", err)
 		c.mu.Unlock()
-		slog.Error("[PA-BT] ExprCondition compilation error",
+		slog.Error("exprcondition compilation error",
 			"expression", c.expression,
 			"error", err)
 		return false
@@ -465,9 +464,9 @@ func (c *ExprCondition) Match(value any) bool {
 		c.mu.Lock()
 		c.lastErr = fmt.Errorf("expression evaluation failed: %w", err)
 		c.mu.Unlock()
-		slog.Error("[PA-BT] ExprCondition evaluation error",
+		slog.Error("exprcondition evaluation error",
 			"expression", c.expression,
-			"value", fmt.Sprintf("%v", value),
+			"value", value,
 			"error", err)
 		return false
 	}
@@ -480,10 +479,10 @@ func (c *ExprCondition) Match(value any) bool {
 	c.mu.Lock()
 	c.lastErr = fmt.Errorf("expression returned non-boolean result: %T", result)
 	c.mu.Unlock()
-	slog.Warn("[PA-BT] ExprCondition non-boolean result",
+	slog.Warn("exprcondition unexpected result type",
 		"expression", c.expression,
 		"resultType", fmt.Sprintf("%T", result),
-		"result", fmt.Sprintf("%v", result))
+		"result", result)
 	return false
 }
 

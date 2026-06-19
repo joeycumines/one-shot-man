@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestJsToTeaMsg_KeyEvents verifies conversion of JS Key objects to tea.Msg
-func TestJsToTeaMsg_KeyEvents(t *testing.T) {
+// TestParseMsg_KeyEvents verifies conversion of JS Key objects to tea.Msg
+func TestParseMsg_KeyEvents(t *testing.T) {
 	vm := goja.New()
 
 	tests := []struct {
@@ -63,7 +63,7 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			msg := JsToTeaMsg(vm, tc.jsObj())
+			msg := ParseMsg(vm, tc.jsObj())
 			require.NotNil(t, msg)
 			keyMsg, ok := msg.(tea.KeyPressMsg)
 			require.True(t, ok, "Expected KeyPressMsg")
@@ -75,8 +75,8 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 	}
 }
 
-// TestJsToTeaMsg_MouseEvents verifies conversion of JS Mouse objects to tea.Msg
-func TestJsToTeaMsg_MouseEvents(t *testing.T) {
+// TestParseMsg_MouseEvents verifies conversion of JS Mouse objects to tea.Msg
+func TestParseMsg_MouseEvents(t *testing.T) {
 	vm := goja.New()
 
 	tests := []struct {
@@ -128,7 +128,7 @@ func TestJsToTeaMsg_MouseEvents(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			msg := JsToTeaMsg(vm, tc.jsObj())
+			msg := ParseMsg(vm, tc.jsObj())
 			require.NotNil(t, msg)
 			switch expected := tc.expected.(type) {
 			case tea.MouseClickMsg:
@@ -157,8 +157,8 @@ func TestJsToTeaMsg_MouseEvents(t *testing.T) {
 	}
 }
 
-// TestJsToTeaMsg_WindowSize verifies conversion of JS WindowSize objects to tea.Msg
-func TestJsToTeaMsg_WindowSize(t *testing.T) {
+// TestParseMsg_WindowSize verifies conversion of JS WindowSize objects to tea.Msg
+func TestParseMsg_WindowSize(t *testing.T) {
 	vm := goja.New()
 
 	obj := vm.NewObject()
@@ -166,7 +166,7 @@ func TestJsToTeaMsg_WindowSize(t *testing.T) {
 	obj.Set("width", 80)
 	obj.Set("height", 24)
 
-	msg := JsToTeaMsg(vm, obj)
+	msg := ParseMsg(vm, obj)
 	require.NotNil(t, msg)
 	winMsg, ok := msg.(tea.WindowSizeMsg)
 	require.True(t, ok, "Expected WindowSizeMsg")
@@ -174,8 +174,8 @@ func TestJsToTeaMsg_WindowSize(t *testing.T) {
 	assert.Equal(t, 24, winMsg.Height)
 }
 
-// TestJsToTeaMsg_Invalid verifies invalid inputs return nil
-func TestJsToTeaMsg_Invalid(t *testing.T) {
+// TestParseMsg_Invalid verifies invalid inputs return nil
+func TestParseMsg_Invalid(t *testing.T) {
 	vm := goja.New()
 
 	tests := []struct {
@@ -212,7 +212,7 @@ func TestJsToTeaMsg_Invalid(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			msg := JsToTeaMsg(vm, tc.jsObj())
+			msg := ParseMsg(vm, tc.jsObj())
 			assert.Nil(t, msg)
 		})
 	}
@@ -461,15 +461,15 @@ func TestJsModToKeyMod(t *testing.T) {
 	})
 }
 
-// TestJsToTeaMsg_PasteEvents verifies JS→Go conversion of paste messages.
-func TestJsToTeaMsg_PasteEvents(t *testing.T) {
+// TestParseMsg_PasteEvents verifies JS→Go conversion of paste messages.
+func TestParseMsg_PasteEvents(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 
 	t.Run("PasteStart", func(t *testing.T) {
 		obj := vm.NewObject()
 		_ = obj.Set("type", "PasteStart")
-		msg := JsToTeaMsg(vm, obj)
+		msg := ParseMsg(vm, obj)
 		require.NotNil(t, msg)
 		_, ok := msg.(tea.PasteStartMsg)
 		assert.True(t, ok, "expected PasteStartMsg")
@@ -478,7 +478,7 @@ func TestJsToTeaMsg_PasteEvents(t *testing.T) {
 	t.Run("PasteEnd", func(t *testing.T) {
 		obj := vm.NewObject()
 		_ = obj.Set("type", "PasteEnd")
-		msg := JsToTeaMsg(vm, obj)
+		msg := ParseMsg(vm, obj)
 		require.NotNil(t, msg)
 		_, ok := msg.(tea.PasteEndMsg)
 		assert.True(t, ok, "expected PasteEndMsg")
@@ -488,7 +488,7 @@ func TestJsToTeaMsg_PasteEvents(t *testing.T) {
 		obj := vm.NewObject()
 		_ = obj.Set("type", "Paste")
 		_ = obj.Set("content", "hello world")
-		msg := JsToTeaMsg(vm, obj)
+		msg := ParseMsg(vm, obj)
 		require.NotNil(t, msg)
 		paste, ok := msg.(tea.PasteMsg)
 		require.True(t, ok, "expected PasteMsg")
@@ -498,7 +498,7 @@ func TestJsToTeaMsg_PasteEvents(t *testing.T) {
 	t.Run("Paste without content", func(t *testing.T) {
 		obj := vm.NewObject()
 		_ = obj.Set("type", "Paste")
-		msg := JsToTeaMsg(vm, obj)
+		msg := ParseMsg(vm, obj)
 		require.NotNil(t, msg)
 		paste, ok := msg.(tea.PasteMsg)
 		require.True(t, ok, "expected PasteMsg")
@@ -506,8 +506,8 @@ func TestJsToTeaMsg_PasteEvents(t *testing.T) {
 	})
 }
 
-// TestJsToTeaMsg_KeyRelease verifies JS→Go conversion of KeyRelease messages.
-func TestJsToTeaMsg_KeyRelease(t *testing.T) {
+// TestParseMsg_KeyRelease verifies JS→Go conversion of KeyRelease messages.
+func TestParseMsg_KeyRelease(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 
@@ -515,7 +515,7 @@ func TestJsToTeaMsg_KeyRelease(t *testing.T) {
 		obj := vm.NewObject()
 		_ = obj.Set("type", "KeyRelease")
 		_ = obj.Set("key", "a")
-		msg := JsToTeaMsg(vm, obj)
+		msg := ParseMsg(vm, obj)
 		require.NotNil(t, msg)
 		keyRelease, ok := msg.(tea.KeyReleaseMsg)
 		require.True(t, ok, "expected KeyReleaseMsg")
@@ -526,7 +526,7 @@ func TestJsToTeaMsg_KeyRelease(t *testing.T) {
 		obj := vm.NewObject()
 		_ = obj.Set("type", "KeyRelease")
 		_ = obj.Set("key", "enter")
-		msg := JsToTeaMsg(vm, obj)
+		msg := ParseMsg(vm, obj)
 		require.NotNil(t, msg)
 		keyRelease, ok := msg.(tea.KeyReleaseMsg)
 		require.True(t, ok, "expected KeyReleaseMsg")
@@ -536,20 +536,20 @@ func TestJsToTeaMsg_KeyRelease(t *testing.T) {
 	t.Run("nil key returns nil", func(t *testing.T) {
 		obj := vm.NewObject()
 		_ = obj.Set("type", "KeyRelease")
-		msg := JsToTeaMsg(vm, obj)
+		msg := ParseMsg(vm, obj)
 		assert.Nil(t, msg)
 	})
 }
 
-// TestJsToTeaMsg_FocusBlur verifies JS→Go conversion of Focus/Blur messages.
-func TestJsToTeaMsg_FocusBlur(t *testing.T) {
+// TestParseMsg_FocusBlur verifies JS→Go conversion of Focus/Blur messages.
+func TestParseMsg_FocusBlur(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 
 	t.Run("Focus", func(t *testing.T) {
 		obj := vm.NewObject()
 		_ = obj.Set("type", "Focus")
-		msg := JsToTeaMsg(vm, obj)
+		msg := ParseMsg(vm, obj)
 		require.NotNil(t, msg)
 		_, ok := msg.(tea.FocusMsg)
 		assert.True(t, ok, "expected FocusMsg")
@@ -558,15 +558,15 @@ func TestJsToTeaMsg_FocusBlur(t *testing.T) {
 	t.Run("Blur", func(t *testing.T) {
 		obj := vm.NewObject()
 		_ = obj.Set("type", "Blur")
-		msg := JsToTeaMsg(vm, obj)
+		msg := ParseMsg(vm, obj)
 		require.NotNil(t, msg)
 		_, ok := msg.(tea.BlurMsg)
 		assert.True(t, ok, "expected BlurMsg")
 	})
 }
 
-// TestJsToTeaMsg_MouseMotion verifies JS→Go conversion of MouseMotion messages.
-func TestJsToTeaMsg_MouseMotion(t *testing.T) {
+// TestParseMsg_MouseMotion verifies JS→Go conversion of MouseMotion messages.
+func TestParseMsg_MouseMotion(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 
@@ -576,7 +576,7 @@ func TestJsToTeaMsg_MouseMotion(t *testing.T) {
 		_ = obj.Set("x", 15)
 		_ = obj.Set("y", 25)
 		_ = obj.Set("button", "left")
-		msg := JsToTeaMsg(vm, obj)
+		msg := ParseMsg(vm, obj)
 		require.NotNil(t, msg)
 		motion, ok := msg.(tea.MouseMotionMsg)
 		require.True(t, ok, "expected MouseMotionMsg")
@@ -593,7 +593,7 @@ func TestJsToTeaMsg_MouseMotion(t *testing.T) {
 		modArr := vm.NewArray()
 		_ = modArr.Set("0", "shift")
 		_ = obj.Set("mod", modArr)
-		msg := JsToTeaMsg(vm, obj)
+		msg := ParseMsg(vm, obj)
 		require.NotNil(t, msg)
 		motion, ok := msg.(tea.MouseMotionMsg)
 		require.True(t, ok, "expected MouseMotionMsg")
@@ -601,8 +601,8 @@ func TestJsToTeaMsg_MouseMotion(t *testing.T) {
 	})
 }
 
-// TestJsToTeaMsg_MouseRelease_Button verifies the Button field is preserved.
-func TestJsToTeaMsg_MouseRelease_Button(t *testing.T) {
+// TestParseMsg_MouseRelease_Button verifies the Button field is preserved.
+func TestParseMsg_MouseRelease_Button(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 
@@ -611,7 +611,7 @@ func TestJsToTeaMsg_MouseRelease_Button(t *testing.T) {
 	_ = obj.Set("x", 10)
 	_ = obj.Set("y", 20)
 	_ = obj.Set("button", "left")
-	msg := JsToTeaMsg(vm, obj)
+	msg := ParseMsg(vm, obj)
 	require.NotNil(t, msg)
 	release, ok := msg.(tea.MouseReleaseMsg)
 	require.True(t, ok, "expected MouseReleaseMsg")

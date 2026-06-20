@@ -623,7 +623,7 @@ func (cb *mcpCallback) cleanup() {
 	// Remove temp directory and all contents (socket, scripts, config)
 	if tempDir != "" {
 		if err := os.RemoveAll(tempDir); err != nil {
-			slog.Warn("failed to remove MCP callback temp dir", "path", tempDir, "error", err)
+			slog.Warn("failed to remove mcp callback temp dir", "path", tempDir, "error", err)
 		}
 	}
 }

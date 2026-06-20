@@ -1377,7 +1377,7 @@ func TestMCPCallback_CleanupErrorLogging(t *testing.T) {
 	cb.cleanup()
 
 	logs := logBuf.String()
-	if !strings.Contains(logs, "failed to remove MCP callback temp dir") {
+	if !strings.Contains(logs, "failed to remove mcp callback temp dir") {
 		t.Errorf("expected slog warning about failed removal, got: %q", logs)
 	}
 	if !strings.Contains(logs, tempDir) {

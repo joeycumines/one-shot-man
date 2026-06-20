@@ -377,11 +377,11 @@ func createTickerJSWrapper(bridge *Bridge, runtime *goja.Runtime, ticker bt.Tick
 				return nil, tickerErr
 			}
 
-			if bridge.promisify != nil {
-				bridge.promisify(context.Background(), waitAndResolve)
-			} else {
-				go func() { _, _ = waitAndResolve(context.Background()) }()
-			}
+		if bridge.promisify != nil {
+			bridge.promisify(bridge.ctx, waitAndResolve)
+		} else {
+			go func() { _, _ = waitAndResolve(bridge.ctx) }()
+		}
 		})
 		return donePromise
 	})
@@ -463,11 +463,11 @@ func createManagerJSWrapper(bridge *Bridge, runtime *goja.Runtime, manager bt.Ma
 				return nil, managerErr
 			}
 
-			if bridge.promisify != nil {
-				bridge.promisify(context.Background(), waitAndResolve)
-			} else {
-				go func() { _, _ = waitAndResolve(context.Background()) }()
-			}
+		if bridge.promisify != nil {
+			bridge.promisify(bridge.ctx, waitAndResolve)
+		} else {
+			go func() { _, _ = waitAndResolve(bridge.ctx) }()
+		}
 		})
 		return donePromise
 	})

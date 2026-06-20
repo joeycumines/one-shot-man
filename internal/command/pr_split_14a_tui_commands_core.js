@@ -307,10 +307,10 @@
             verify: {
                 description: 'Verify all split branches (run tests on each)',
                 usage: 'verify',
-                handler: function() {
+                handler: async function() {
                     if (!st.planCache) { output.print('Run "plan" first.'); return; }
                     output.print('Verifying ' + st.planCache.splits.length + ' splits...');
-                    var result = prSplit.verifySplits(st.planCache);
+                    var result = await prSplit.verifySplits(st.planCache);
                     for (var i = 0; i < result.results.length; i++) {
                         var r = result.results[i];
                         var icon = r.passed ? style.success('\u2713') :
@@ -330,9 +330,9 @@
             equivalence: {
                 description: 'Check tree hash equivalence',
                 usage: 'equivalence',
-                handler: function() {
+                handler: async function() {
                     if (!st.planCache) { output.print('Run "plan" first.'); return; }
-                    var result = prSplit.verifyEquivalenceDetailed(st.planCache);
+                    var result = await prSplit.verifyEquivalenceDetailed(st.planCache);
                     if (result.error) { output.print('Error: ' + result.error); return; }
                     if (result.equivalent) {
                         output.print(style.success('\u2705 Trees are equivalent'));
@@ -354,9 +354,9 @@
             cleanup: {
                 description: 'Delete all split branches',
                 usage: 'cleanup',
-                handler: function() {
+                handler: async function() {
                     if (!st.planCache) { output.print('No plan to clean up.'); return; }
-                    var result = prSplit.cleanupBranches(st.planCache);
+                    var result = await prSplit.cleanupBranches(st.planCache);
                     if (result.deleted.length > 0) {
                         output.print('Deleted branches:');
                         for (var i = 0; i < result.deleted.length; i++) output.print('  ' + result.deleted[i]);

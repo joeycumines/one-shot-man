@@ -302,7 +302,7 @@ func TestIntegration_WizardHandlerChain_PlanReject(t *testing.T) {
 	}
 
 	// --- Execute branch building (real git operations) ---
-	buildResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("branch building: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestIntegration_WizardHandlerChain_PlanReject(t *testing.T) {
 	}
 
 	// --- Equivalence check ---
-	equivResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
+	equivResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("equiv check: %v", err)
 	}
@@ -476,7 +476,7 @@ func TestIntegration_WizardHandlerChain_BranchFailSkip(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING: one branch should fail verification ---
-	buildResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("branch building: %v", err)
 	}
@@ -541,7 +541,7 @@ func TestIntegration_WizardHandlerChain_BranchFailSkip(t *testing.T) {
 	}
 
 	// --- EQUIV_CHECK ---
-	equivResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
+	equivResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("equiv check: %v", err)
 	}
@@ -700,7 +700,7 @@ func TestIntegration_WizardHandlerChain_HappyPath(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING → EQUIV_CHECK (all pass) ---
-	buildResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -735,7 +735,7 @@ func TestIntegration_WizardHandlerChain_HappyPath(t *testing.T) {
 	}
 
 	// --- EQUIV_CHECK → FINALIZATION ---
-	equivResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
+	equivResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("equiv: %v", err)
 	}
@@ -903,7 +903,7 @@ func TestIntegration_WizardHandlerChain_PlanEditRoundtrip(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING with the edited 2-split plan ---
-	buildResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -932,7 +932,7 @@ func TestIntegration_WizardHandlerChain_PlanEditRoundtrip(t *testing.T) {
 	}
 
 	// --- EQUIV_CHECK → FINALIZATION ---
-	equivResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
+	equivResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("equiv: %v", err)
 	}
@@ -1027,7 +1027,7 @@ func TestIntegration_WizardHandlerChain_ErrorRetry(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING (fail) → ERROR_RESOLUTION ---
-	buildResult1, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult1, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("build 1: %v", err)
 	}
@@ -1089,7 +1089,7 @@ func TestIntegration_WizardHandlerChain_ErrorRetry(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING (success) → EQUIV_CHECK ---
-	buildResult2, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult2, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("build 2: %v", err)
 	}
@@ -1105,7 +1105,7 @@ func TestIntegration_WizardHandlerChain_ErrorRetry(t *testing.T) {
 	}
 
 	// --- EQUIV_CHECK → FINALIZATION ---
-	equivResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
+	equivResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("equiv: %v", err)
 	}
@@ -1206,7 +1206,7 @@ func TestIntegration_WizardHandlerChain_ErrorAutoResolve(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING (fail — flag file exists) → ERROR_RESOLUTION ---
-	buildResult1, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult1, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("build 1: %v", err)
 	}
@@ -1243,7 +1243,7 @@ func TestIntegration_WizardHandlerChain_ErrorAutoResolve(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING (success) → EQUIV_CHECK ---
-	buildResult2, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult2, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("build 2: %v", err)
 	}
@@ -1260,7 +1260,7 @@ func TestIntegration_WizardHandlerChain_ErrorAutoResolve(t *testing.T) {
 
 	// --- EQUIV_CHECK → FINALIZATION → DONE ---
 	_, err = tp.EvalJS(`
-		prSplit._handleEquivCheckState(_tw, _tw.data.plan);
+		await prSplit._handleEquivCheckState(_tw, _tw.data.plan);
 		prSplit._handleFinalizationState(_tw, 'done');
 	`)
 	if err != nil {
@@ -1808,8 +1808,8 @@ func TestIntegration_WizardHandlerChain_FinalizationReport(t *testing.T) {
 		};
 		_tw.transition('PLAN_REVIEW');
 		prSplit._handlePlanReviewState(_tw, 'approve');
-		prSplit._handleBranchBuildingState(_tw, _tw.data.plan);
-		prSplit._handleEquivCheckState(_tw, _tw.data.plan);
+		await prSplit._handleBranchBuildingState(_tw, _tw.data.plan);
+		await prSplit._handleEquivCheckState(_tw, _tw.data.plan);
 	`)
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -1956,7 +1956,7 @@ func TestIntegration_WizardHandlerChain_ErrorAbort(t *testing.T) {
 		};
 		_tw.transition('PLAN_REVIEW');
 		prSplit._handlePlanReviewState(_tw, 'approve');
-		prSplit._handleBranchBuildingState(_tw, _tw.data.plan);
+		await prSplit._handleBranchBuildingState(_tw, _tw.data.plan);
 	`)
 	if err != nil {
 		t.Fatalf("setup: %v", err)

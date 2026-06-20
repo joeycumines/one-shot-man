@@ -3744,7 +3744,7 @@ func TestBuildReport(t *testing.T) {
 		}
 
 		// buildReport is defined inside TUI guard — exposed via _buildReport.
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit._buildReport())`)
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit._buildReport())`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -3797,7 +3797,7 @@ func TestBuildReport(t *testing.T) {
 		}
 
 		// Now build the report — analysisCache and groupsCache should be populated.
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit._buildReport())`)
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit._buildReport())`)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -260,7 +260,7 @@
 
     // --- buildReport — JSON-serializable status report ---
 
-    function buildReport() {
+    async function buildReport() {
         var runtime = prSplit.runtime;
         var report = {
             version: prSplit.VERSION || 'unknown',
@@ -301,7 +301,7 @@
             // T089: Use cached equivalence result from TUI pipeline if available,
             // avoiding a synchronous verifyEquivalence() call that blocks the
             // event loop on final-branch tree comparison.
-            var equiv = st.equivalenceResult || prSplit.verifyEquivalence(st.planCache);
+            var equiv = st.equivalenceResult || await prSplit.verifyEquivalence(st.planCache);
             report.equivalence = {
                 verified: equiv.equivalent,
                 splitTree: equiv.splitTree,
@@ -835,7 +835,7 @@
 
     // handleBranchBuildingState executes plan splits and verifies each branch.
     // Transitions to EQUIV_CHECK (all pass) or ERROR_RESOLUTION (any fail).
-    function handleBranchBuildingState(wizard, plan, opts) {
+    async function handleBranchBuildingState(wizard, plan, opts) {
         if (wizard.current !== 'BRANCH_BUILDING') {
             return { error: 'wizard is not in BRANCH_BUILDING state (current: ' + wizard.current + ')' };
         }
@@ -850,7 +850,7 @@
         }
 
         // Execute splits.
-        var execResult = prSplit.executeSplit(plan);
+        var execResult = await prSplit.executeSplit(plan);
         if (execResult.error) {
             wizard.error(execResult.error);
             return { error: execResult.error, action: 'error', state: 'ERROR' };
@@ -886,7 +886,7 @@
                 status.verifyError = 'skipped — execution failed: ' + branch.error;
                 failedBranches.push(status);
             } else if (plan.verifyCommand && plan.verifyCommand !== 'true') {
-                var verifyResult = prSplit.verifySplit(branch.name, {
+                var verifyResult = await prSplit.verifySplit(branch.name, {
                     verifyCommand: plan.verifyCommand,
                     dir: plan.dir || '.'
                 });
@@ -991,7 +991,7 @@
     prSplit._handleErrorResolutionState = handleErrorResolutionState;
 
     // handleEquivCheckState runs equivalence check and transitions to FINALIZATION.
-    function handleEquivCheckState(wizard, plan) {
+    async function handleEquivCheckState(wizard, plan) {
         if (wizard.current !== 'EQUIV_CHECK') {
             return { error: 'wizard is not in EQUIV_CHECK state (current: ' + wizard.current + ')' };
         }
@@ -1002,7 +1002,7 @@
         }
 
         // T089: Prefer cached result from TUI pipeline to avoid sync git calls.
-        var equivResult = st.equivalenceResult || prSplit.verifyEquivalence(plan);
+        var equivResult = st.equivalenceResult || await prSplit.verifyEquivalence(plan);
         st.equivalenceResult = equivResult; // cache for buildReport()
 
         // Annotate with skip information so callers understand the context.

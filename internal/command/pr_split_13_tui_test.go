@@ -215,7 +215,7 @@ func TestChunk13_BuildReportStructure(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._buildReport())`)
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit._buildReport())`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2112,7 +2112,7 @@ func TestChunk13_HandleBranchBuildingState_AllPass(t *testing.T) {
 			]
 		};
 
-		var result = prSplit._handleBranchBuildingState(wizard, plan);
+		var result = await prSplit._handleBranchBuildingState(wizard, plan);
 		JSON.stringify({
 			action: result.action,
 			state: result.state,
@@ -2165,7 +2165,7 @@ func TestChunk13_HandleBranchBuildingState_OneFail(t *testing.T) {
 			]
 		};
 
-		var result = prSplit._handleBranchBuildingState(wizard, plan);
+		var result = await prSplit._handleBranchBuildingState(wizard, plan);
 		JSON.stringify({
 			action: result.action,
 			state: result.state,
@@ -2196,7 +2196,7 @@ func TestChunk13_HandleBranchBuildingState_EmptyPlan(t *testing.T) {
 		wizard.transition('PLAN_REVIEW');
 		wizard.transition('BRANCH_BUILDING');
 
-		var result = prSplit._handleBranchBuildingState(wizard, { splits: [] });
+		var result = await prSplit._handleBranchBuildingState(wizard, { splits: [] });
 		JSON.stringify({ action: result.action, state: result.state, current: wizard.current, hasError: !!result.error });
 	`)
 	if err != nil {
@@ -2232,7 +2232,7 @@ func TestChunk13_HandleBranchBuildingState_Cancel(t *testing.T) {
 
 		// Cancel immediately after execution.
 		var cancelCount = 0;
-		var result = prSplit._handleBranchBuildingState(wizard, {
+		var result = await prSplit._handleBranchBuildingState(wizard, {
 			baseBranch: 'main', sourceBranch: 'feature', verifyCommand: 'make test',
 			splits: [{ name: 'split/01-a', files: ['a.go'], message: 'add a', order: 0 }]
 		}, { isCancelled: function() { cancelCount++; return cancelCount > 1; } });
@@ -2258,7 +2258,7 @@ func TestChunk13_HandleBranchBuildingState_WrongState(t *testing.T) {
 		var wizard = new prSplit.WizardState();
 		wizard.transition('CONFIG');
 
-		var result = prSplit._handleBranchBuildingState(wizard, {});
+		var result = await prSplit._handleBranchBuildingState(wizard, {});
 		JSON.stringify({ hasError: !!result.error });
 	`)
 	if err != nil {
@@ -2422,7 +2422,7 @@ func TestChunk13_HandleEquivCheckState_Pass(t *testing.T) {
 			return { equivalent: true, splitTree: 'abc123', sourceTree: 'abc123', error: null };
 		};
 
-		var result = prSplit._handleEquivCheckState(wizard, { baseBranch: 'main', splits: [] });
+		var result = await prSplit._handleEquivCheckState(wizard, { baseBranch: 'main', splits: [] });
 		JSON.stringify({
 			action: result.action,
 			state: result.state,
@@ -2457,7 +2457,7 @@ func TestChunk13_HandleEquivCheckState_Mismatch(t *testing.T) {
 			return { equivalent: false, splitTree: 'abc', sourceTree: 'def', error: null };
 		};
 
-		var result = prSplit._handleEquivCheckState(wizard, { baseBranch: 'main', splits: [] });
+		var result = await prSplit._handleEquivCheckState(wizard, { baseBranch: 'main', splits: [] });
 		JSON.stringify({
 			action: result.action,
 			state: result.state,
@@ -2488,7 +2488,7 @@ func TestChunk13_HandleEquivCheckState_NoPlan(t *testing.T) {
 		wizard.transition('BRANCH_BUILDING');
 		wizard.transition('EQUIV_CHECK');
 
-		var result = prSplit._handleEquivCheckState(wizard, null);
+		var result = await prSplit._handleEquivCheckState(wizard, null);
 		JSON.stringify({ action: result.action, state: result.state, hasError: !!result.error });
 	`)
 	if err != nil {
@@ -2674,10 +2674,10 @@ func TestChunk13_Wizard_HappyPath_E2E(t *testing.T) {
 				{ name: 'split/02-b', files: ['b.go'], message: 'add b', order: 1 }
 			]
 		};
-		var buildResult = prSplit._handleBranchBuildingState(wizard, plan);
+		var buildResult = await prSplit._handleBranchBuildingState(wizard, plan);
 
 		// EQUIV_CHECK
-		var equivResult = prSplit._handleEquivCheckState(wizard, plan);
+		var equivResult = await prSplit._handleEquivCheckState(wizard, plan);
 
 		// FINALIZATION → DONE
 		var finalResult = prSplit._handleFinalizationState(wizard, 'done');
@@ -2828,16 +2828,16 @@ func TestChunk13_Wizard_BranchFailRecovery_E2E(t *testing.T) {
 		};
 
 		// First build — fails.
-		var r1 = prSplit._handleBranchBuildingState(wizard, plan);
+		var r1 = await prSplit._handleBranchBuildingState(wizard, plan);
 
 		// Auto-resolve → re-enter BRANCH_BUILDING.
 		var r2 = prSplit._handleErrorResolutionState(wizard, 'auto-resolve');
 
 		// Second build — succeeds.
-		var r3 = prSplit._handleBranchBuildingState(wizard, plan);
+		var r3 = await prSplit._handleBranchBuildingState(wizard, plan);
 
 		// Equiv check.
-		var r4 = prSplit._handleEquivCheckState(wizard, plan);
+		var r4 = await prSplit._handleEquivCheckState(wizard, plan);
 
 		// Done.
 		var r5 = prSplit._handleFinalizationState(wizard, 'done');

@@ -136,9 +136,9 @@ const (
 	LayoutMainVertical
 )
 
-// LayoutModeFromString parses a layout mode name into a LayoutMode value.
+// ParseLayoutMode parses a layout mode name into a LayoutMode value.
 // Returns the mode and true if the name is recognized.
-func LayoutModeFromString(s string) (LayoutMode, bool) {
+func ParseLayoutMode(s string) (LayoutMode, bool) {
 	switch s {
 	case "tiled":
 		return LayoutTiled, true

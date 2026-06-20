@@ -20,7 +20,7 @@ format detailed
 [version]
 format short`
 
-	config, err := LoadFromReader(strings.NewReader(configContent))
+	config, err := LoadReader(strings.NewReader(configContent))
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
@@ -56,7 +56,7 @@ format short`
 
 func TestEmptyConfig(t *testing.T) {
 	t.Parallel()
-	config, err := LoadFromReader(strings.NewReader(""))
+	config, err := LoadReader(strings.NewReader(""))
 	if err != nil {
 		t.Fatalf("Failed to load empty config: %v", err)
 	}
@@ -81,7 +81,7 @@ color auto
 # Command option comment
 pager less`
 
-	config, err := LoadFromReader(strings.NewReader(configContent))
+	config, err := LoadReader(strings.NewReader(configContent))
 	if err != nil {
 		t.Fatalf("Failed to load config with comments: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestInvalidConfigurationValues(t *testing.T) {
 		// Config can have empty values - this is allowed by the parser
 		// Empty values should be stored and retrievable
 		configContent := "session.id "
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error for empty value, got: %v", err)
 		}
@@ -255,7 +255,7 @@ func TestInvalidConfigurationValues(t *testing.T) {
 	t.Run("SessionIDWithSpecialCharacters", func(t *testing.T) {
 		// Config parser should accept special characters in values
 		configContent := "session.id test-session_2024.01+user@host"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error for special chars, got: %v", err)
 		}
@@ -272,7 +272,7 @@ func TestInvalidConfigurationValues(t *testing.T) {
 	t.Run("NegativeValues", func(t *testing.T) {
 		// Config parser accepts negative numeric values
 		configContent := "timeout -30\nretries -5"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error for negative values, got: %v", err)
 		}
@@ -287,7 +287,7 @@ func TestInvalidConfigurationValues(t *testing.T) {
 		largeValue := strings.Repeat("x", 10000)
 		configContent := "data " + largeValue
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error for large values, got: %v", err)
 		}
@@ -300,7 +300,7 @@ func TestInvalidConfigurationValues(t *testing.T) {
 	t.Run("UnicodeValues", func(t *testing.T) {
 		// Config parser should accept unicode characters
 		configContent := "description Hello 世界 🌍 Ñoño"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error for unicode, got: %v", err)
 		}
@@ -318,7 +318,7 @@ func TestInvalidConfigurationValues(t *testing.T) {
 option2 line2
 option3 line3`
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -691,7 +691,7 @@ maxSizeMB 200
 autoCleanupEnabled false
 cleanupIntervalHours 12`
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -723,7 +723,7 @@ maxAgeDays 60
 [help]
 pager less`
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -758,7 +758,7 @@ pager less`
 		for _, tc := range invalidValues {
 			t.Run(tc.name, func(t *testing.T) {
 				configContent := "[sessions]\n" + tc.input
-				_, err := LoadFromReader(strings.NewReader(configContent))
+				_, err := LoadReader(strings.NewReader(configContent))
 				if err == nil {
 					t.Errorf("expected error for invalid value %q", tc.input)
 				}
@@ -768,7 +768,7 @@ pager less`
 
 	t.Run("InvalidBooleanValues", func(t *testing.T) {
 		configContent := "[sessions]\nautoCleanupEnabled maybe"
-		_, err := LoadFromReader(strings.NewReader(configContent))
+		_, err := LoadReader(strings.NewReader(configContent))
 		if err == nil {
 			t.Error("expected error for invalid boolean value")
 		}
@@ -787,7 +787,7 @@ pager less`
 		for _, tc := range negativeValues {
 			t.Run(tc.name, func(t *testing.T) {
 				configContent := "[sessions]\n" + tc.input
-				_, err := LoadFromReader(strings.NewReader(configContent))
+				_, err := LoadReader(strings.NewReader(configContent))
 				if err == nil {
 					t.Errorf("expected error for negative value %q", tc.input)
 				}
@@ -797,7 +797,7 @@ pager less`
 
 	t.Run("ZeroCleanupInterval", func(t *testing.T) {
 		configContent := "[sessions]\ncleanupIntervalHours 0"
-		_, err := LoadFromReader(strings.NewReader(configContent))
+		_, err := LoadReader(strings.NewReader(configContent))
 		if err == nil {
 			t.Error("expected error for cleanupIntervalHours=0")
 		}
@@ -805,7 +805,7 @@ pager less`
 
 	t.Run("UnknownSessionOption", func(t *testing.T) {
 		configContent := "[sessions]\nunknownOption value"
-		_, err := LoadFromReader(strings.NewReader(configContent))
+		_, err := LoadReader(strings.NewReader(configContent))
 		if err == nil {
 			t.Error("expected error for unknown session option")
 		}
@@ -816,7 +816,7 @@ pager less`
 
 		for _, val := range trueValues {
 			configContent := "[sessions]\nautoCleanupEnabled " + val
-			cfg, err := LoadFromReader(strings.NewReader(configContent))
+			cfg, err := LoadReader(strings.NewReader(configContent))
 			if err != nil {
 				t.Errorf("expected no error for %q, got: %v", val, err)
 				continue
@@ -832,7 +832,7 @@ pager less`
 
 		for _, val := range falseValues {
 			configContent := "[sessions]\nautoCleanupEnabled " + val
-			cfg, err := LoadFromReader(strings.NewReader(configContent))
+			cfg, err := LoadReader(strings.NewReader(configContent))
 			if err != nil {
 				t.Errorf("expected no error for %q, got: %v", val, err)
 				continue
@@ -845,7 +845,7 @@ pager less`
 
 	t.Run("EmptySessionsSection", func(t *testing.T) {
 		configContent := "[sessions]\n\n[global]\nverbose true"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -860,7 +860,7 @@ pager less`
 maxAgeDays 45
 autoCleanupEnabled true`
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -884,7 +884,7 @@ autoCleanupEnabled true`
 
 	t.Run("DefaultValuesWhenNoSessionsSection", func(t *testing.T) {
 		configContent := "verbose true"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -913,7 +913,7 @@ func TestConfigSchemaValidation_M1(t *testing.T) {
 
 	t.Run("UnknownGlobalOption", func(t *testing.T) {
 		configContent := "verbos true" // typo of "verbose"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -938,7 +938,7 @@ func TestConfigSchemaValidation_M1(t *testing.T) {
 	t.Run("UnknownCommandOption", func(t *testing.T) {
 		configContent := `[help]
 pagr less` // typo of "pager"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -962,7 +962,7 @@ pagr less` // typo of "pager"
 
 	t.Run("KnownGlobalOption", func(t *testing.T) {
 		configContent := "verbose true"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -975,7 +975,7 @@ pagr less` // typo of "pager"
 	t.Run("KnownCommandOption", func(t *testing.T) {
 		configContent := `[help]
 pager less`
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -989,7 +989,7 @@ pager less`
 		// Global options should be valid in command sections too
 		configContent := `[help]
 verbose true`
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1007,7 +1007,7 @@ colr auto
 pagr less
 formt detailed`
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1038,7 +1038,7 @@ formt detailed`
 		configContent := `[unknowncmd]
 weirdoption value`
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1061,7 +1061,7 @@ weirdoption value`
 	})
 
 	t.Run("NoWarningsForEmptyConfig", func(t *testing.T) {
-		cfg, err := LoadFromReader(strings.NewReader(""))
+		cfg, err := LoadReader(strings.NewReader(""))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1080,7 +1080,7 @@ weirdoption value`
 
 		// Loading config with unknown option should add warnings
 		configContent := "unknownoption value"
-		cfg2, err := LoadFromReader(strings.NewReader(configContent))
+		cfg2, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1097,7 +1097,7 @@ func TestLoadFromReader_TypeValidation(t *testing.T) {
 	t.Parallel()
 
 	t.Run("InvalidBool", func(t *testing.T) {
-		cfg, err := LoadFromReader(strings.NewReader("verbose notabool"))
+		cfg, err := LoadReader(strings.NewReader("verbose notabool"))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1117,7 +1117,7 @@ func TestLoadFromReader_TypeValidation(t *testing.T) {
 	})
 
 	t.Run("InvalidInt", func(t *testing.T) {
-		cfg, err := LoadFromReader(strings.NewReader("script.max-traversal-depth abc"))
+		cfg, err := LoadReader(strings.NewReader("script.max-traversal-depth abc"))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1137,7 +1137,7 @@ func TestLoadFromReader_TypeValidation(t *testing.T) {
 	})
 
 	t.Run("InvalidDuration", func(t *testing.T) {
-		cfg, err := LoadFromReader(strings.NewReader("timeout notaduration"))
+		cfg, err := LoadReader(strings.NewReader("timeout notaduration"))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1157,7 +1157,7 @@ func TestLoadFromReader_TypeValidation(t *testing.T) {
 	})
 
 	t.Run("ValidTypes", func(t *testing.T) {
-		cfg, err := LoadFromReader(strings.NewReader("verbose true\nscript.max-traversal-depth 5\ntimeout 30s"))
+		cfg, err := LoadReader(strings.NewReader("verbose true\nscript.max-traversal-depth 5\ntimeout 30s"))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1167,7 +1167,7 @@ func TestLoadFromReader_TypeValidation(t *testing.T) {
 	})
 
 	t.Run("MixedUnknownAndTypeMismatch", func(t *testing.T) {
-		cfg, err := LoadFromReader(strings.NewReader("unknownkey hello\nverbose maybe"))
+		cfg, err := LoadReader(strings.NewReader("unknownkey hello\nverbose maybe"))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1188,7 +1188,7 @@ func TestLoadFromReader_TypeValidation(t *testing.T) {
 func TestHotSnippetConfigParsing(t *testing.T) {
 	t.Run("BasicSnippet", func(t *testing.T) {
 		input := "[hot-snippets]\nfollowup Continue with the same context."
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1209,7 +1209,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("SnippetWithDescription", func(t *testing.T) {
 		input := "[hot-snippets]\nfollowup Continue with the same context.\nfollowup.description Follow-up prompt"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1230,7 +1230,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("MultipleSnippets", func(t *testing.T) {
 		input := "[hot-snippets]\nfollowup Continue with the same context.\nkickoff You are an expert software engineer.\nkickoff.description Kickoff prompt"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1250,7 +1250,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("EscapedNewlines", func(t *testing.T) {
 		input := "[hot-snippets]\nmultiline First line\\nSecond line\\nThird line"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1265,7 +1265,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("EmptySection", func(t *testing.T) {
 		input := "[hot-snippets]\n\n[prompt-flow]\ntemplate default"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1276,7 +1276,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("DescriptionWithoutSnippet", func(t *testing.T) {
 		input := "[hot-snippets]\nnonexistent.description This should fail"
-		_, err := LoadFromReader(strings.NewReader(input))
+		_, err := LoadReader(strings.NewReader(input))
 		if err == nil {
 			t.Fatal("expected error for description targeting nonexistent snippet")
 		}
@@ -1288,7 +1288,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 	t.Run("SnippetNameOnly", func(t *testing.T) {
 		// A snippet with a name but no text
 		input := "[hot-snippets]\nemptytext"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1302,7 +1302,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("MixedWithOtherSections", func(t *testing.T) {
 		input := "verbose true\n\n[hot-snippets]\nsnip1 hello world\n\n[sessions]\nmaxAgeDays 30\n\n[prompt-flow]\ntemplate default"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1327,7 +1327,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 	t.Run("SnippetsNotInCommands", func(t *testing.T) {
 		// Verify [hot-snippets] section is NOT stored in Commands map
 		input := "[hot-snippets]\nsnip1 text"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1349,7 +1349,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 	t.Run("DuplicateSnippetNames", func(t *testing.T) {
 		// Duplicate names are allowed — both are added (contextManager handles dedup if needed)
 		input := "[hot-snippets]\ndup First text\ndup Second text"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1367,7 +1367,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 	t.Run("DescriptionAppliesToLastMatch", func(t *testing.T) {
 		// When there are duplicates, .description applies to the last one with that name
 		input := "[hot-snippets]\ndup First\ndup Second\ndup.description Applies to second"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1381,7 +1381,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("CommentsInHotSnippetsSection", func(t *testing.T) {
 		input := "[hot-snippets]\n# This is a comment\nsnip1 text\n# Another comment"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

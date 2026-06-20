@@ -562,7 +562,7 @@ func TestStatusBar_PositionFromString(t *testing.T) {
 		{"foo", DefaultPosition, false},
 	}
 	for _, tt := range tests {
-		got, ok := PositionFromString(tt.in)
+		got, ok := ParsePosition(tt.in)
 		if ok != tt.wantOK || got != tt.want {
 			t.Errorf("PositionFromString(%q) = (%v, %v); want (%v, %v)", tt.in, got, ok, tt.want, tt.wantOK)
 		}

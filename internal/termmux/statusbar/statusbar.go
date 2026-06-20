@@ -50,8 +50,8 @@ const (
 	DefaultPosition = PositionBottom
 )
 
-// PositionFromString parses "top" or "bottom" (case-insensitive).
-func PositionFromString(s string) (Position, bool) {
+// ParsePosition parses "top" or "bottom" (case-insensitive).
+func ParsePosition(s string) (Position, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "top":
 		return PositionTop, true

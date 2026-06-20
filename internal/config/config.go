@@ -107,11 +107,11 @@ func LoadFile(path string) (*Config, error) {
 	}
 	defer file.Close()
 
-	return LoadFromReader(file)
+	return LoadReader(file)
 }
 
-// LoadFromReader loads configuration from an io.Reader.
-func LoadFromReader(r io.Reader) (*Config, error) {
+// LoadReader loads configuration from an io.Reader.
+func LoadReader(r io.Reader) (*Config, error) {
 	config := NewConfig()
 	scanner := bufio.NewScanner(r)
 

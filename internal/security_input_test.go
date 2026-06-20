@@ -406,7 +406,7 @@ func TestConfigParserSecurity_NullBytesInConfigFile(t *testing.T) {
 	t.Parallel()
 
 	input := strings.NewReader("key1 value1\x00\nkey2 value2\n")
-	cfg, err := config.LoadFromReader(input)
+	cfg, err := config.LoadReader(input)
 	if err != nil {
 		t.Fatalf("LoadFromReader should not error on null bytes: %v", err)
 	}
@@ -427,7 +427,7 @@ func TestConfigParserSecurity_OversizedLines(t *testing.T) {
 	// return "token too long" — this is acceptable behavior, no panic or OOM.
 	bigValue := strings.Repeat("x", 1<<20)
 	input := strings.NewReader("bigkey " + bigValue + "\n")
-	cfg, err := config.LoadFromReader(input)
+	cfg, err := config.LoadReader(input)
 	if err != nil {
 		// Expected: bufio.Scanner returns "token too long" for lines > ~64KB
 		if !strings.Contains(err.Error(), "token too long") {
@@ -451,7 +451,7 @@ func TestConfigParserSecurity_ControlCharsInValues(t *testing.T) {
 
 	// Control characters in values should be stored as-is
 	input := strings.NewReader("key1 \x01\x02\x03value\n")
-	cfg, err := config.LoadFromReader(input)
+	cfg, err := config.LoadReader(input)
 	if err != nil {
 		t.Fatalf("LoadFromReader failed on control chars: %v", err)
 	}
@@ -480,7 +480,7 @@ func TestConfigParserSecurity_MalformedSections(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := config.LoadFromReader(strings.NewReader(tc.input))
+			cfg, err := config.LoadReader(strings.NewReader(tc.input))
 			if err != nil {
 				// Error is acceptable — no panic
 				t.Logf("Malformed section %q handled as error: %v", tc.name, err)
@@ -500,7 +500,7 @@ func TestConfigParserSecurity_BinaryInput(t *testing.T) {
 	for i := range binary {
 		binary[i] = byte(i)
 	}
-	cfg, err := config.LoadFromReader(bytes.NewReader(binary))
+	cfg, err := config.LoadReader(bytes.NewReader(binary))
 	if err != nil {
 		t.Logf("Binary input handled as error: %v", err)
 		return
@@ -521,7 +521,7 @@ maxSizeMB 1
 autoCleanupEnabled false
 cleanupIntervalHours 1
 `
-	cfg, err := config.LoadFromReader(strings.NewReader(input))
+	cfg, err := config.LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader failed: %v", err)
 	}
@@ -542,7 +542,7 @@ func TestConfigParserSecurity_HotSnippetInjection(t *testing.T) {
 shell-inject ; rm -rf /
 pipe-inject | cat /etc/passwd
 `
-	cfg, err := config.LoadFromReader(strings.NewReader(input))
+	cfg, err := config.LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader failed: %v", err)
 	}

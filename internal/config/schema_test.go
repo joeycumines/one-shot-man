@@ -684,7 +684,7 @@ timeout 30s
 [help]
 pager less`
 
-	cfg, err := LoadFromReader(strings.NewReader(configContent))
+	cfg, err := LoadReader(strings.NewReader(configContent))
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -701,7 +701,7 @@ func TestLoadAndValidateWithSchema_InvalidTypes(t *testing.T) {
 	configContent := `verbose notbool
 script.max-traversal-depth abc`
 
-	cfg, err := LoadFromReader(strings.NewReader(configContent))
+	cfg, err := LoadReader(strings.NewReader(configContent))
 	if err != nil {
 		t.Fatalf("failed to load: %v", err)
 	}
@@ -732,7 +732,7 @@ goal.paths /my/goals
 goal.path-patterns osm-goals,goals
 goal.debug-discovery false`
 
-	cfg, err := LoadFromReader(strings.NewReader(configContent))
+	cfg, err := LoadReader(strings.NewReader(configContent))
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -748,7 +748,7 @@ func TestSyncKeysNoLongerWarn(t *testing.T) {
 sync.auto-pull false
 sync.local-path /home/user/.osm-sync`
 
-	cfg, err := LoadFromReader(strings.NewReader(configContent))
+	cfg, err := LoadReader(strings.NewReader(configContent))
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}

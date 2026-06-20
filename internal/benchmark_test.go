@@ -449,7 +449,7 @@ option1 value1
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, err := config.LoadFromReader(reader)
+			_, err := config.LoadReader(reader)
 			if err != nil {
 				b.Fatalf("failed to load config: %v", err)
 			}

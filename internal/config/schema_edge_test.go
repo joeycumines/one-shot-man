@@ -173,7 +173,7 @@ func TestLoadConfig_SpecialCharsInValue(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			cfg, err := LoadFromReader(strings.NewReader(tc.input))
+			cfg, err := LoadReader(strings.NewReader(tc.input))
 			if err != nil {
 				t.Fatalf("LoadFromReader error: %v", err)
 			}
@@ -192,7 +192,7 @@ func TestLoadConfig_DottedKeys(t *testing.T) {
 	t.Parallel()
 	// Keys with dots are commonly used (goal.autodiscovery, script.paths, etc.)
 	input := "goal.autodiscovery true\nscript.max-traversal-depth 5"
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestLoadConfig_WhitespaceOnlyValue(t *testing.T) {
 	t.Parallel()
 	// "key   " after TrimSpace becomes "key", so SplitN yields only key, value=""
 	input := "verbose   "
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestLoadConfig_EmptyValue(t *testing.T) {
 	t.Parallel()
 	// Explicit key with no value (just the key name on the line)
 	input := "editor"
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestLoadConfig_LongValue10KB(t *testing.T) {
 	}
 
 	input := "script.paths " + longValue
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error on 10KB value: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestLoadConfig_ValueWithManyColons(t *testing.T) {
 	pathList := strings.Join(parts, ":")
 
 	input := "script.paths " + pathList
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestLoadConfig_Latin1Characters(t *testing.T) {
 	// but Go strings are byte sequences, so bufio.Scanner reads them).
 	latin1Value := "caf\xe9 na\xefve" // café naïve in Latin-1
 	input := "editor " + latin1Value
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error on Latin-1: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestLoadConfig_HighBytesInValue(t *testing.T) {
 	// Bytes 0x80, 0xFF in value
 	binaryValue := "start\x80middle\xFFend"
 	input := "editor " + binaryValue
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error on high bytes: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestLoadConfig_HighBytesInValue(t *testing.T) {
 func TestLoadConfig_KeyOnly_NoValue(t *testing.T) {
 	t.Parallel()
 	input := "verbose"
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestLoadConfig_CRLFLineEndings(t *testing.T) {
 	t.Parallel()
 	// Simulate Windows-style line endings (\r\n)
 	input := "verbose true\r\ncolor auto\r\neditor vim\r\n"
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error on CRLF: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestLoadConfig_MultipleSpacesBetweenKeyAndValue(t *testing.T) {
 	// SplitN(line, " ", 2) splits on the first space; remaining spaces are
 	// part of the value string.
 	input := "color    auto"
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error: %v", err)
 	}
@@ -410,7 +410,7 @@ func TestLoadConfig_LeadingTrailingSpacesOnLine(t *testing.T) {
 	t.Parallel()
 	// TrimSpace removes leading/trailing whitespace from the whole line
 	input := "   verbose true   "
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error: %v", err)
 	}
@@ -426,7 +426,7 @@ func TestLoadConfig_LeadingTrailingSpacesOnLine(t *testing.T) {
 func TestLoadConfig_SectionNameWithSpecialChars(t *testing.T) {
 	t.Parallel()
 	input := "[my-cmd-123]\npager less\n\n[foo_bar.baz]\nformat json"
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error: %v", err)
 	}
@@ -457,7 +457,7 @@ color auto
 editor vim
 
 `
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error: %v", err)
 	}
@@ -471,7 +471,7 @@ editor vim
 func TestLoadConfig_CommentLineNotParsedAsKey(t *testing.T) {
 	t.Parallel()
 	input := "# verbose true\ncolor auto"
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error: %v", err)
 	}
@@ -490,7 +490,7 @@ func TestLoadConfig_CommentLineNotParsedAsKey(t *testing.T) {
 func TestLoadConfig_SectionWithEmptyBody(t *testing.T) {
 	t.Parallel()
 	input := "[help]\n\n[version]\nformat json"
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error: %v", err)
 	}
@@ -508,7 +508,7 @@ func TestLoadConfig_SectionWithEmptyBody(t *testing.T) {
 func TestLoadConfig_MultipleSectionsBackToBack(t *testing.T) {
 	t.Parallel()
 	input := "[help]\npager less\n[version]\nformat json\n[prompt]\ntemplate default"
-	cfg, err := LoadFromReader(strings.NewReader(input))
+	cfg, err := LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader error: %v", err)
 	}

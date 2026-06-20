@@ -605,7 +605,7 @@ func TestLayoutModeFromString(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got, ok := LayoutModeFromString(tt.input)
+			got, ok := ParseLayoutMode(tt.input)
 			if ok != tt.ok {
 				t.Errorf("LayoutModeFromString(%q) ok = %v, want %v", tt.input, ok, tt.ok)
 			}

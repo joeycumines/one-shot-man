@@ -1410,7 +1410,7 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 			panic(s.runtime.NewTypeError("setLayoutMode requires 1 argument (mode)"))
 		}
 		name := call.Argument(0).String()
-		mode, ok := parent.LayoutModeFromString(name)
+		mode, ok := parent.ParseLayoutMode(name)
 		if !ok {
 			panic(s.runtime.NewTypeError("setLayoutMode: unknown mode " + name))
 		}
@@ -2377,7 +2377,7 @@ func registerStatusMethods(obj *goja.Object, s *muxState) {
 		if len(call.Arguments) < 1 {
 			panic(s.runtime.NewTypeError("setStatusPosition requires 1 argument (\"top\" or \"bottom\")"))
 		}
-		pos, ok := statusbar.PositionFromString(call.Argument(0).String())
+		pos, ok := statusbar.ParsePosition(call.Argument(0).String())
 		if !ok {
 			panic(s.runtime.NewTypeError("setStatusPosition: must be \"top\" or \"bottom\""))
 		}

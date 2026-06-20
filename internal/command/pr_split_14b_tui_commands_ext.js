@@ -351,12 +351,12 @@
             graph: {
                 description: 'Show dependency graph between splits',
                 usage: 'graph',
-                handler: function() {
+                handler: async function() {
                     if (!st.planCache || !st.planCache.splits || st.planCache.splits.length === 0) {
                         output.print('No plan \u2014 run "plan" or "run" first.'); return;
                     }
                     output.print(prSplit.renderAsciiGraph(prSplit.buildDependencyGraph(st.planCache, null)));
-                    var indPairs = prSplit.assessIndependence(st.planCache, null);
+                    var indPairs = await prSplit.assessIndependence(st.planCache, null);
                     if (indPairs.length > 0) {
                         output.print('');
                         output.print('Independent pairs (can merge in parallel):');

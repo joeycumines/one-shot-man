@@ -288,6 +288,7 @@
                             ' (' + r.files.length + ' files, SHA: ' + style.dim(r.sha.substring(0, 8)) + ')');
                     }
                     var equiv = await prSplit.verifyEquivalence(st.planCache);
+                    st.equivalenceResult = equiv;
                     if (equiv.equivalent) {
                         output.print(style.success('\u2705 Tree hash equivalence verified'));
                     } else if (equiv.error) {
@@ -604,6 +605,7 @@
 
                     // Step 5: Verify equivalence
                     var equiv = await prSplit.verifyEquivalence(st.planCache);
+                    st.equivalenceResult = equiv;
                     if (equiv.equivalent) {
                         output.print(style.success('\u2705 Tree hash equivalence verified'));
                     } else if (equiv.error) {

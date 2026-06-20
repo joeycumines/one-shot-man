@@ -1178,7 +1178,7 @@ func TestIntegration_WizardHandlerChain_ErrorAutoResolve(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		prSplit._await handleConfigState({
+		await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -1790,7 +1790,7 @@ func TestIntegration_WizardHandlerChain_FinalizationReport(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		prSplit._await handleConfigState({
+		await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -1933,7 +1933,7 @@ func TestIntegration_WizardHandlerChain_ErrorAbort(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		prSplit._await handleConfigState({
+		await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'

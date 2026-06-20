@@ -995,7 +995,6 @@ func TestVariable_NumericKeys(t *testing.T) {
 	assert.Equal(t, "stringer-val", val)
 }
 
-
 // ========================================================================
 // NewExprCondition_Match with various edge cases through ExprCondition
 // ========================================================================

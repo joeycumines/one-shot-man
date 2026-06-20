@@ -473,7 +473,7 @@ function buildCommands(state) {
                 }
 
                 try {
-                    ctxmgr.clipboardCopy(text);
+                    await ctxmgr.clipboardCopy(text);
                     const tokCnt = _tokenCount(text);
                     const lineCnt = _lineCount(text);
                     const byteCnt = _byteCount(text);

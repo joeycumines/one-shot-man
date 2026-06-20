@@ -1013,7 +1013,7 @@ func TestContextManagerAddFromDiffBasic(t *testing.T) {
 }
 
 func TestContextManagerAddFromDiffWithSpec(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1042,15 +1042,17 @@ func TestContextManagerAddFromDiffWithSpec(t *testing.T) {
 			}
 		});
 
-		ctxmgr.commands.add.handler(["--from-diff", "HEAD~2"]);
-
-		globalThis.__receivedArgv = receivedArgv;
-		globalThis.__itemCount = items.length;
+		ctxmgr.commands.add.handler(["--from-diff", "HEAD~2"]).then(function() {
+			globalThis.__receivedArgv = receivedArgv;
+			globalThis.__itemCount = items.length;
+			__signalDone();
+		}).catch(function(e) {
+			globalThis.__testError = (e && e.message) ? e.message : String(e);
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	receivedArgv := runtime.Get("__receivedArgv").Export()
 	argv, ok := receivedArgv.([]any)

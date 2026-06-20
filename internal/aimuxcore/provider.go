@@ -74,9 +74,6 @@ type SpawnOpts struct {
 	Cols uint16
 }
 
-// ErrNotReady is returned when a process is not ready within the timeout.
-var ErrNotReady = errors.New("aimux: agent not ready")
-
 // ProviderCapabilities declares supported features.
 type ProviderCapabilities struct {
 	MCP       bool // Supports MCP tool calling

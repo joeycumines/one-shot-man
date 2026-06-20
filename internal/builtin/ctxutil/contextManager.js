@@ -164,7 +164,7 @@
                             for (var i = 1; i < args.length; i++) {
                                 argv.push(args[i]);
                             }
-                            var result = execv(argv);
+                            var result = await execv(argv);
                             if (result.error) {
                                 output.print("git diff --name-only failed: " + result.message);
                                 return;
@@ -389,9 +389,9 @@
                     description: "Copy prompt to clipboard",
                     handler: function () {
                         _refreshFileItems(getItems);
-                        return Promise.resolve(buildPrompt()).then(function(text) {
+                        return Promise.resolve(buildPrompt()).then(async function(text) {
                             try {
-                                clipboardCopy(text);
+                                await clipboardCopy(text);
                                 const tokCnt = _tokenCount(text);
                                 const lineCnt = _lineCount(text);
                                 const byteCnt = _byteCount(text);
@@ -417,12 +417,12 @@
                     var cmdName = "hot-" + snippet.name;
                     cmds[cmdName] = {
                         description: snippet.description || ("Hot snippet: " + snippet.name),
-                        handler: function () {
+                        handler: async function () {
                             if (snippet.builtin && !noSnippetWarning) {
                                 output.print("Note: Using embedded snippet '" + snippet.name + "'. Override in config to customize.");
                             }
                             try {
-                                clipboardCopy(snippet.text);
+                                await clipboardCopy(snippet.text);
                                 output.print("Copied snippet '" + snippet.name + "' to clipboard.");
                             } catch (e) {
                                 output.print("Clipboard error: " + (e && e.message ? e.message : e));

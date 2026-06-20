@@ -143,7 +143,7 @@ function buildCommands(stateArg) {
                 });
 
                 try {
-                    ctxmgr.clipboardCopy(chunkPrompt);
+                    await ctxmgr.clipboardCopy(chunkPrompt);
                     output.print("Chunk " + chunkNum + "/" + chunks.length +
                         " copied to clipboard (" + chunk.lines + " lines, files: " +
                         chunk.files.join(", ") + ").");

@@ -152,7 +152,7 @@ func (h *captureAgentHandle) emitLineEvent(ev LineEvent) {
 	select {
 	case h.eventsCh <- ev:
 	default:
-		slog.Debug("aimux: events channel full, dropping line event",
+		slog.Debug("events channel full dropping line event",
 			"err", ev.Err, "lineLen", len(ev.Line))
 	}
 }

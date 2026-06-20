@@ -29,8 +29,8 @@ func TestMultilinePromptConfig_Enabled(t *testing.T) {
 	t.Parallel()
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
-		reader: NewTUIReaderFromIO(&bytes.Reader{}),
+		writer: NewTUIWriterIO(io.Discard),
+		reader: NewTUIReaderIO(&bytes.Reader{}),
 	}
 
 	p := tm.buildGoPrompt(promptBuildConfig{
@@ -51,8 +51,8 @@ func TestMultilineDisabled_NoASCIIBind(t *testing.T) {
 	t.Parallel()
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
-		reader: NewTUIReaderFromIO(&bytes.Reader{}),
+		writer: NewTUIWriterIO(io.Discard),
+		reader: NewTUIReaderIO(&bytes.Reader{}),
 	}
 
 	p := tm.buildGoPrompt(promptBuildConfig{
@@ -73,8 +73,8 @@ func TestMultilineAltEnterInsertNewline(t *testing.T) {
 	t.Parallel()
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
-		reader: NewTUIReaderFromIO(&bytes.Reader{}),
+		writer: NewTUIWriterIO(io.Discard),
+		reader: NewTUIReaderIO(&bytes.Reader{}),
 	}
 
 	p := tm.buildGoPrompt(promptBuildConfig{
@@ -102,14 +102,14 @@ func TestMultilineNewLineMethod(t *testing.T) {
 
 	vm := goja.New()
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		engine: &Engine{vm: vm},
 	}
 
 	// Create a prompt with minimal options.
 	p := prompt.New(
 		func(s string) {},
-		prompt.WithWriter(NewTUIWriterFromIO(io.Discard)),
+		prompt.WithWriter(NewTUIWriterIO(io.Discard)),
 	)
 	obj := tm.buildPromptJSObject(p)
 

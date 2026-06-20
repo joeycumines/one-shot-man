@@ -163,7 +163,7 @@ func TestApplyFromInterfaceMap_NonStringValue(t *testing.T) {
 func TestExecutor_EmptyInput(t *testing.T) {
 	t.Parallel()
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		modes:  make(map[string]*ScriptMode),
 	}
 	result := tm.executor("")
@@ -183,7 +183,7 @@ func TestExecutor_ExitQuit(t *testing.T) {
 	t.Run("exit_no_mode", func(t *testing.T) {
 		var buf bytes.Buffer
 		tm := &TUIManager{
-			writer:   NewTUIWriterFromIO(&buf),
+			writer:   NewTUIWriterIO(&buf),
 			commands: make(map[string]Command),
 			modes:    make(map[string]*ScriptMode),
 		}
@@ -199,7 +199,7 @@ func TestExecutor_ExitQuit(t *testing.T) {
 	t.Run("quit_no_mode", func(t *testing.T) {
 		var buf bytes.Buffer
 		tm := &TUIManager{
-			writer:   NewTUIWriterFromIO(&buf),
+			writer:   NewTUIWriterIO(&buf),
 			commands: make(map[string]Command),
 			modes:    make(map[string]*ScriptMode),
 		}
@@ -252,7 +252,7 @@ func TestExecutor_ExitQuit(t *testing.T) {
 		eng := mustNewEngine(t, ctx, &buf, &buf)
 		tm := eng.GetTUIManager()
 		// Replace writer so output goes to buf instead of os.Stdout
-		tm.writer = NewTUIWriterFromIO(&buf)
+		tm.writer = NewTUIWriterIO(&buf)
 
 		script := eng.LoadScriptFromString("setup", `
 			tui.registerMode({
@@ -285,7 +285,7 @@ func TestExecutor_Help(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 	// Replace writer so output goes to buf instead of os.Stdout
-	tm.writer = NewTUIWriterFromIO(&buf)
+	tm.writer = NewTUIWriterIO(&buf)
 
 	tm.RegisterCommand(Command{
 		Name:        "test-cmd",
@@ -344,7 +344,7 @@ func TestExecutor_UnknownCommand_NoMode(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	tm := &TUIManager{
-		writer:   NewTUIWriterFromIO(&buf),
+		writer:   NewTUIWriterIO(&buf),
 		commands: make(map[string]Command),
 		modes:    make(map[string]*ScriptMode),
 	}
@@ -366,7 +366,7 @@ func TestExecutor_HandlerError_DisplaysError(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	tm := &TUIManager{
-		writer:   NewTUIWriterFromIO(&buf),
+		writer:   NewTUIWriterIO(&buf),
 		commands: make(map[string]Command),
 		modes:    make(map[string]*ScriptMode),
 	}
@@ -399,7 +399,7 @@ func TestExecutor_HandlerPanic_DisplaysError(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	tm := &TUIManager{
-		writer:   NewTUIWriterFromIO(&buf),
+		writer:   NewTUIWriterIO(&buf),
 		commands: make(map[string]Command),
 		modes:    make(map[string]*ScriptMode),
 	}
@@ -533,7 +533,7 @@ func TestExecuteJavaScript_NoMode(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(&buf),
+		writer: NewTUIWriterIO(&buf),
 	}
 	tm.executeJavaScript("1+1")
 	if !strings.Contains(buf.String(), "No active mode") {
@@ -548,7 +548,7 @@ func TestExecuteJavaScript_WithError(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 	// Replace writer so output goes to buf instead of os.Stdout
-	tm.writer = NewTUIWriterFromIO(&buf)
+	tm.writer = NewTUIWriterIO(&buf)
 
 	script := eng.LoadScriptFromString("setup", `
 		tui.registerMode({
@@ -577,7 +577,7 @@ func TestShowHelp_WithMode(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 	// Replace writer so output goes to buf instead of os.Stdout
-	tm.writer = NewTUIWriterFromIO(&buf)
+	tm.writer = NewTUIWriterIO(&buf)
 
 	script := eng.LoadScriptFromString("setup", `
 		tui.registerMode({
@@ -610,7 +610,7 @@ func TestShowHelp_NoMode(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 	// Replace writer so output goes to buf, and clear currentMode
-	tm.writer = NewTUIWriterFromIO(&buf)
+	tm.writer = NewTUIWriterIO(&buf)
 	tm.currentMode = nil
 
 	tm.showHelp()
@@ -630,7 +630,7 @@ func TestBuiltinCommand_Modes(t *testing.T) {
 	t.Run("no_modes", func(t *testing.T) {
 		var buf bytes.Buffer
 		tm := &TUIManager{
-			writer:   NewTUIWriterFromIO(&buf),
+			writer:   NewTUIWriterIO(&buf),
 			commands: make(map[string]Command),
 			modes:    make(map[string]*ScriptMode),
 		}
@@ -645,7 +645,7 @@ func TestBuiltinCommand_Modes(t *testing.T) {
 		var buf bytes.Buffer
 		mode := &ScriptMode{Name: "alpha", Commands: make(map[string]Command)}
 		tm := &TUIManager{
-			writer:      NewTUIWriterFromIO(&buf),
+			writer:      NewTUIWriterIO(&buf),
 			commands:    make(map[string]Command),
 			modes:       map[string]*ScriptMode{"alpha": mode},
 			currentMode: mode,
@@ -669,7 +669,7 @@ func TestBuiltinCommand_State(t *testing.T) {
 	t.Run("no_active_mode", func(t *testing.T) {
 		var buf bytes.Buffer
 		tm := &TUIManager{
-			writer:   NewTUIWriterFromIO(&buf),
+			writer:   NewTUIWriterIO(&buf),
 			commands: make(map[string]Command),
 			modes:    make(map[string]*ScriptMode),
 		}
@@ -684,7 +684,7 @@ func TestBuiltinCommand_State(t *testing.T) {
 		var buf bytes.Buffer
 		mode := &ScriptMode{Name: "stateful", Commands: make(map[string]Command)}
 		tm := &TUIManager{
-			writer:      NewTUIWriterFromIO(&buf),
+			writer:      NewTUIWriterIO(&buf),
 			commands:    make(map[string]Command),
 			modes:       map[string]*ScriptMode{"stateful": mode},
 			currentMode: mode,
@@ -708,7 +708,7 @@ func TestBuiltinCommand_Mode(t *testing.T) {
 	t.Run("no_args", func(t *testing.T) {
 		var buf bytes.Buffer
 		tm := &TUIManager{
-			writer:   NewTUIWriterFromIO(&buf),
+			writer:   NewTUIWriterIO(&buf),
 			commands: make(map[string]Command),
 			modes:    make(map[string]*ScriptMode),
 		}
@@ -722,7 +722,7 @@ func TestBuiltinCommand_Mode(t *testing.T) {
 	t.Run("nonexistent_mode", func(t *testing.T) {
 		var buf bytes.Buffer
 		tm := &TUIManager{
-			writer:   NewTUIWriterFromIO(&buf),
+			writer:   NewTUIWriterIO(&buf),
 			commands: make(map[string]Command),
 			modes:    make(map[string]*ScriptMode),
 		}
@@ -738,7 +738,7 @@ func TestBuiltinCommand_Mode(t *testing.T) {
 		var buf bytes.Buffer
 		mode := &ScriptMode{Name: "target", Commands: make(map[string]Command)}
 		tm := &TUIManager{
-			writer:   NewTUIWriterFromIO(&buf),
+			writer:   NewTUIWriterIO(&buf),
 			commands: make(map[string]Command),
 			modes:    map[string]*ScriptMode{"target": mode},
 		}
@@ -913,8 +913,8 @@ func TestTerminalIO_Fd_FallbackToWriter(t *testing.T) {
 	t.Parallel()
 
 	// Both reader and writer from io wrappers -> both return invalid
-	reader := NewTUIReaderFromIO(strings.NewReader(""))
-	writer := NewTUIWriterFromIO(io.Discard)
+	reader := NewTUIReaderIO(strings.NewReader(""))
+	writer := NewTUIWriterIO(io.Discard)
 	tio := NewTerminalIO(reader, writer)
 
 	fd := tio.Fd()
@@ -926,8 +926,8 @@ func TestTerminalIO_Fd_FallbackToWriter(t *testing.T) {
 // TestTerminalIO_MakeRaw_InvalidFd tests MakeRaw with invalid fd.
 func TestTerminalIO_MakeRaw_InvalidFd(t *testing.T) {
 	t.Parallel()
-	reader := NewTUIReaderFromIO(strings.NewReader(""))
-	writer := NewTUIWriterFromIO(io.Discard)
+	reader := NewTUIReaderIO(strings.NewReader(""))
+	writer := NewTUIWriterIO(io.Discard)
 	tio := NewTerminalIO(reader, writer)
 
 	state, err := tio.MakeRaw()
@@ -942,8 +942,8 @@ func TestTerminalIO_MakeRaw_InvalidFd(t *testing.T) {
 // TestTerminalIO_Restore_NilState tests Restore with nil state.
 func TestTerminalIO_Restore_NilState(t *testing.T) {
 	t.Parallel()
-	reader := NewTUIReaderFromIO(strings.NewReader(""))
-	writer := NewTUIWriterFromIO(io.Discard)
+	reader := NewTUIReaderIO(strings.NewReader(""))
+	writer := NewTUIWriterIO(io.Discard)
 	tio := NewTerminalIO(reader, writer)
 
 	if err := tio.Restore(nil); err != nil {
@@ -954,8 +954,8 @@ func TestTerminalIO_Restore_NilState(t *testing.T) {
 // TestTerminalIO_Restore_InvalidFd tests Restore with invalid fd.
 func TestTerminalIO_Restore_InvalidFd(t *testing.T) {
 	t.Parallel()
-	reader := NewTUIReaderFromIO(strings.NewReader(""))
-	writer := NewTUIWriterFromIO(io.Discard)
+	reader := NewTUIReaderIO(strings.NewReader(""))
+	writer := NewTUIWriterIO(io.Discard)
 	tio := NewTerminalIO(reader, writer)
 
 	// Non-nil state but invalid fd
@@ -968,8 +968,8 @@ func TestTerminalIO_Restore_InvalidFd(t *testing.T) {
 // TestTerminalIO_GetSize_InvalidFd tests GetSize with invalid fd.
 func TestTerminalIO_GetSize_InvalidFd(t *testing.T) {
 	t.Parallel()
-	reader := NewTUIReaderFromIO(strings.NewReader(""))
-	writer := NewTUIWriterFromIO(io.Discard)
+	reader := NewTUIReaderIO(strings.NewReader(""))
+	writer := NewTUIWriterIO(io.Discard)
 	tio := NewTerminalIO(reader, writer)
 
 	w, h, err := tio.GetSize()
@@ -984,8 +984,8 @@ func TestTerminalIO_GetSize_InvalidFd(t *testing.T) {
 // TestTerminalIO_IsTerminal_InvalidFd tests IsTerminal with invalid fd.
 func TestTerminalIO_IsTerminal_InvalidFd(t *testing.T) {
 	t.Parallel()
-	reader := NewTUIReaderFromIO(strings.NewReader(""))
-	writer := NewTUIWriterFromIO(io.Discard)
+	reader := NewTUIReaderIO(strings.NewReader(""))
+	writer := NewTUIWriterIO(io.Discard)
 	tio := NewTerminalIO(reader, writer)
 
 	if tio.IsTerminal() {
@@ -996,7 +996,7 @@ func TestTerminalIO_IsTerminal_InvalidFd(t *testing.T) {
 // TestTUIReader_Restore_InvalidFd tests Restore returning nil for non-terminal.
 func TestTUIReader_Restore_InvalidFd(t *testing.T) {
 	t.Parallel()
-	r := NewTUIReaderFromIO(strings.NewReader(""))
+	r := NewTUIReaderIO(strings.NewReader(""))
 
 	// Exercise the Restore path with nil state on a non-terminal reader
 	if err := r.Restore(nil); err != nil {
@@ -1509,8 +1509,8 @@ func TestNewTUIManagerWithConfig_PreWrappedReaderWriter(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
 	// Pass pre-wrapped reader/writer
-	reader := NewTUIReaderFromIO(strings.NewReader(""))
-	writer := NewTUIWriterFromIO(&buf)
+	reader := NewTUIReaderIO(strings.NewReader(""))
+	writer := NewTUIWriterIO(&buf)
 
 	tm := NewTUIManagerWithConfig(ctx, eng, reader, writer,
 		testutil.NewTestSessionID("test", t.Name()), "memory")
@@ -1608,7 +1608,7 @@ func TestExecuteCommand_GoHandlerWithTUIManager(t *testing.T) {
 	t.Parallel()
 	var called bool
 	tm := &TUIManager{
-		writer:   NewTUIWriterFromIO(io.Discard),
+		writer:   NewTUIWriterIO(io.Discard),
 		commands: make(map[string]Command),
 		modes:    make(map[string]*ScriptMode),
 	}
@@ -1629,7 +1629,7 @@ func TestExecuteCommand_GoHandlerWithTUIManager(t *testing.T) {
 func TestExecuteCommand_InvalidGoHandler(t *testing.T) {
 	t.Parallel()
 	tm := &TUIManager{
-		writer:   NewTUIWriterFromIO(io.Discard),
+		writer:   NewTUIWriterIO(io.Discard),
 		commands: make(map[string]Command),
 		modes:    make(map[string]*ScriptMode),
 	}
@@ -1838,7 +1838,7 @@ func TestFlushQueuedOutput_Empty(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(&buf),
+		writer: NewTUIWriterIO(&buf),
 	}
 	tm.flushQueuedOutput()
 	if buf.Len() != 0 {
@@ -2209,7 +2209,7 @@ func TestTryCallJSCompleter_DocumentMethods(t *testing.T) {
 func TestCompletion_ModeCompletion(t *testing.T) {
 	t.Parallel()
 	tm := &TUIManager{
-		writer:   NewTUIWriterFromIO(io.Discard),
+		writer:   NewTUIWriterIO(io.Discard),
 		commands: make(map[string]Command),
 		modes: map[string]*ScriptMode{
 			"alpha":   {Name: "alpha"},
@@ -2234,7 +2234,7 @@ func TestCompletion_ModeCompletion(t *testing.T) {
 func TestCompletion_UnknownArgCompleter(t *testing.T) {
 	t.Parallel()
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"cmd": {Name: "cmd", ArgCompleters: []string{"unknowntype"}},
 		},
@@ -2251,7 +2251,7 @@ func TestCompletion_UnknownArgCompleter(t *testing.T) {
 func TestCompletion_CommandNotFound(t *testing.T) {
 	t.Parallel()
 	tm := &TUIManager{
-		writer:   NewTUIWriterFromIO(io.Discard),
+		writer:   NewTUIWriterIO(io.Discard),
 		commands: make(map[string]Command),
 		modes:    make(map[string]*ScriptMode),
 	}
@@ -2270,7 +2270,7 @@ func TestCompletion_CommandNotFound(t *testing.T) {
 func TestExecuteCommand_CommandNotFound(t *testing.T) {
 	t.Parallel()
 	tm := &TUIManager{
-		writer:   NewTUIWriterFromIO(io.Discard),
+		writer:   NewTUIWriterIO(io.Discard),
 		commands: make(map[string]Command),
 		modes:    make(map[string]*ScriptMode),
 	}
@@ -2293,7 +2293,7 @@ func TestListCommands_WithModeCommands(t *testing.T) {
 		CommandOrder: []string{"mcmd"},
 	}
 	tm := &TUIManager{
-		writer:       NewTUIWriterFromIO(io.Discard),
+		writer:       NewTUIWriterIO(io.Discard),
 		commands:     map[string]Command{"gcmd": {Name: "gcmd", Description: "global cmd"}},
 		commandOrder: []string{"gcmd"},
 		modes:        map[string]*ScriptMode{"testmode": mode},
@@ -2335,7 +2335,7 @@ func TestBuiltinCommand_Reset_StateManagerNil(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	tm := &TUIManager{
-		writer:       NewTUIWriterFromIO(&buf),
+		writer:       NewTUIWriterIO(&buf),
 		commands:     make(map[string]Command),
 		modes:        make(map[string]*ScriptMode),
 		stateManager: nil, // triggers "no state manager" error from resetAllState
@@ -2486,7 +2486,7 @@ func TestSwitchMode_OnExitError(t *testing.T) {
 
 	tm := eng.GetTUIManager()
 	// Replace writer so output goes to buf instead of os.Stdout
-	tm.writer = NewTUIWriterFromIO(&buf)
+	tm.writer = NewTUIWriterIO(&buf)
 	if err := tm.SwitchMode("exit-err-mode"); err != nil {
 		t.Fatalf("switch to exit-err-mode: %v", err)
 	}
@@ -2567,7 +2567,7 @@ func TestBuildGoPrompt_KeyBindModes(t *testing.T) {
 func TestCompletion_EmptyBefore(t *testing.T) {
 	t.Parallel()
 	tm := &TUIManager{
-		writer:       NewTUIWriterFromIO(io.Discard),
+		writer:       NewTUIWriterIO(io.Discard),
 		commands:     map[string]Command{"add": {Name: "add", Description: "Add files"}},
 		commandOrder: []string{"add"},
 		modes:        make(map[string]*ScriptMode),

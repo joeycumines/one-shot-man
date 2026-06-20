@@ -243,11 +243,11 @@ func NewTUIWriter() *TUIWriter {
 	}
 }
 
-// NewTUIWriterFromIO creates a TUIWriter that wraps an io.Writer.
+// NewTUIWriterIO creates a TUIWriter that wraps an io.Writer.
 // This is useful for tests that only need basic Write functionality
 // without the full prompt.Writer terminal control capabilities.
 // The terminal control methods (cursor movement, colors, etc.) are no-ops.
-func NewTUIWriterFromIO(w io.Writer) *TUIWriter {
+func NewTUIWriterIO(w io.Writer) *TUIWriter {
 	return &TUIWriter{
 		writer: &ioWriterAdapter{w: w},
 	}
@@ -644,10 +644,10 @@ func (a *ioReaderAdapter) GetWinSize() *prompt.WinSize {
 	return &prompt.WinSize{Row: prompt.DefRowCount, Col: prompt.DefColCount}
 }
 
-// NewTUIReaderFromIO creates a TUIReader that wraps an io.Reader.
+// NewTUIReaderIO creates a TUIReader that wraps an io.Reader.
 // This is useful for tests that only need basic Read functionality
 // without the full prompt.Reader terminal capabilities.
-func NewTUIReaderFromIO(r io.Reader) *TUIReader {
+func NewTUIReaderIO(r io.Reader) *TUIReader {
 	return &TUIReader{
 		reader: &ioReaderAdapter{r: r},
 	}

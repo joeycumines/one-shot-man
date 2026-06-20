@@ -66,7 +66,7 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 	} else if input == nil {
 		reader = NewTUIReader() // lazily initializes to stdin
 	} else {
-		reader = NewTUIReaderFromIO(input)
+		reader = NewTUIReaderIO(input)
 	}
 
 	// Check if output is already a *TUIWriter (avoid double-wrapping)
@@ -75,7 +75,7 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 	} else if output == nil {
 		writer = NewTUIWriter() // lazily initializes to stdout
 	} else {
-		writer = NewTUIWriterFromIO(output)
+		writer = NewTUIWriterIO(output)
 	}
 
 	manager := &TUIManager{

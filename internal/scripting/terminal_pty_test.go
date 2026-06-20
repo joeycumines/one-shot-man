@@ -42,9 +42,9 @@ func TestTerminalRun_TerminalStateSaveRestore(t *testing.T) {
 	t.Cleanup(func() { _ = engine.Close() })
 
 	// Replace TUI I/O so go-prompt exits immediately via EOF → Ctrl-D.
-	engine.tuiManager.reader = NewTUIReaderFromIO(bytes.NewReader(nil))
+	engine.tuiManager.reader = NewTUIReaderIO(bytes.NewReader(nil))
 	var tuiOut bytes.Buffer
-	engine.tuiManager.writer = NewTUIWriterFromIO(&tuiOut)
+	engine.tuiManager.writer = NewTUIWriterIO(&tuiOut)
 
 	terminal := NewTerminal(ctx, engine)
 

@@ -295,7 +295,7 @@ func TestPOSIXCompletionWithBackslash(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer:   NewTUIWriterFromIO(io.Discard),
+		writer:   NewTUIWriterIO(io.Discard),
 		commands: make(map[string]Command),
 		modes:    make(map[string]*ScriptMode),
 	}
@@ -326,7 +326,7 @@ func TestWindowsTildeCompletion(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer:   NewTUIWriterFromIO(io.Discard),
+		writer:   NewTUIWriterIO(io.Discard),
 		commands: make(map[string]Command),
 		modes:    make(map[string]*ScriptMode),
 	}

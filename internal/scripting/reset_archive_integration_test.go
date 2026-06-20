@@ -186,7 +186,7 @@ func TestResetCommand_WithArchive(t *testing.T) {
 	var buf bytes.Buffer
 	tuiMgr := &TUIManager{
 		stateManager: stateManager,
-		writer:       NewTUIWriterFromIO(&buf),
+		writer:       NewTUIWriterIO(&buf),
 	}
 
 	// Set some state before reset

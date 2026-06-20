@@ -82,7 +82,7 @@ func (r *DynamicGoalRegistry) Reload() error {
 		}
 
 		for _, candidate := range candidates {
-			goal, err := LoadGoalFromFile(candidate.Path)
+			goal, err := LoadGoalFile(candidate.Path)
 			if err != nil {
 				slog.Warn("failed to load goal", "path", candidate.Path, "error", err)
 				continue

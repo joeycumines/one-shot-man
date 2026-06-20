@@ -112,7 +112,7 @@ func TestChunk03_CreateSplitPlan_EmptyGroups(t *testing.T) {
 
 	result, err := evalJS(`
 		(function() {
-			var plan = globalThis.prSplit.createSplitPlan({}, { sourceBranch: 'main' });
+			var plan = await globalThis.prSplit.createSplitPlan({}, { sourceBranch: 'main' });
 			return plan.splits.length;
 		})()
 	`)
@@ -132,7 +132,7 @@ func TestChunk03_CreateSplitPlan_NilGroups(t *testing.T) {
 
 	result, err := evalJS(`
 		(function() {
-			var plan = globalThis.prSplit.createSplitPlan(null, { sourceBranch: 'main' });
+			var plan = await globalThis.prSplit.createSplitPlan(null, { sourceBranch: 'main' });
 			return plan.splits.length;
 		})()
 	`)
@@ -154,12 +154,12 @@ func TestChunk03_CreateSplitPlan_BranchNames(t *testing.T) {
 	}, "00_core", "01_analysis", "02_grouping", "03_planning")
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var groups = {
 				'feat/login page': ['login.go'],
 				'fix/bug #42': ['bug.go']
 			};
-			var plan = globalThis.prSplit.createSplitPlan(groups, { sourceBranch: 'main' });
+			var plan = await globalThis.prSplit.createSplitPlan(groups, { sourceBranch: 'main' });
 			return JSON.stringify(plan.splits.map(function(s) { return s.name; }));
 		})()
 	`)

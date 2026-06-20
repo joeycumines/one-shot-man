@@ -843,7 +843,7 @@ func TestAnalyzeDiff_SpecialCharPaths(t *testing.T) {
 	}
 
 	val, err := evalJS(`(function() {
-		var analysis = globalThis.prSplit.analyzeDiff({baseBranch: 'main'});
+		var analysis = await globalThis.prSplit.analyzeDiff({baseBranch: 'main'});
 		var errors = [];
 
 		// All 5 files should be detected.

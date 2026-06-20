@@ -445,7 +445,7 @@ func TestHeuristicFallback_TreeHashMismatch(t *testing.T) {
 	}
 
 	val, err := tp.EvalJS(`(async function() {
-		var analysis = globalThis.prSplit.analyzeDiff();
+		var analysis = await globalThis.prSplit.analyzeDiff();
 		var report = { plan: null, splits: [], error: null };
 		var result = await globalThis.prSplit.heuristicFallback(analysis, {
 			strategy: 'directory'

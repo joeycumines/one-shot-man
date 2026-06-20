@@ -474,7 +474,7 @@ func TestIntegration_ExecuteSplit_WorktreeConflict(t *testing.T) {
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 	escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
 
-	raw, err := evalJS(fmt.Sprintf(`(function() {
+	raw, err := evalJS(fmt.Sprintf(`(async function() {
 		var plan = {
 			baseBranch: 'main',
 			sourceBranch: 'feature',
@@ -486,7 +486,7 @@ func TestIntegration_ExecuteSplit_WorktreeConflict(t *testing.T) {
 			}],
 			fileStatuses: { 'hello.go': 'M' }
 		};
-		var result = globalThis.prSplit.executeSplit(plan, {});
+		var result = await globalThis.prSplit.executeSplit(plan, {});
 		return JSON.stringify(result);
 	})()`, escapedDir))
 	if err != nil {

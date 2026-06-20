@@ -717,17 +717,17 @@ context.
 // my-split.js — custom splitting with dependency grouping
 var ps = globalThis.prSplit;
 
-var analysis = ps.analyzeDiff({ base: 'develop' });
+var analysis = await ps.analyzeDiff({ base: 'develop' });
 var groups = ps.groupByDependency(analysis.files, { modulePath: 'github.com/my/repo' });
-var plan = ps.createSplitPlan(groups, {
+var plan = await ps.createSplitPlan(groups, {
     baseBranch: 'develop',
     sourceBranch: analysis.currentBranch,
     branchPrefix: 'review/',
     maxFiles: 15
 });
 
-ps.executeSplit(plan);
-var equiv = ps.verifyEquivalence(plan);
+await ps.executeSplit(plan);
+var equiv = await ps.verifyEquivalence(plan);
 log.printf('Equivalence: %s', equiv.equivalent ? 'PASS' : 'FAIL');
 ```
 

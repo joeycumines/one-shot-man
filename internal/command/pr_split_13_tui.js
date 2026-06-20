@@ -260,7 +260,7 @@
 
     // --- buildReport — JSON-serializable status report ---
 
-    async function buildReport() {
+    function buildReport() {
         var runtime = prSplit.runtime;
         var report = {
             version: prSplit.VERSION || 'unknown',
@@ -298,10 +298,12 @@
                     };
                 })
             };
-            // T089: Use cached equivalence result from TUI pipeline if available,
-            // avoiding a synchronous verifyEquivalence() call that blocks the
-            // event loop on final-branch tree comparison.
-            var equiv = st.equivalenceResult || await prSplit.verifyEquivalence(st.planCache);
+            // T089: Use cached equivalence result from TUI pipeline.
+            // buildReport is synchronous — callers that need a fresh
+            // equivalence check must run verifyEquivalence beforehand
+            // (e.g. via handleEquivCheckState) and cache the result in
+            // st.equivalenceResult before calling buildReport().
+            var equiv = st.equivalenceResult || { equivalent: false, splitTree: null, sourceTree: null, error: 'not verified' };
             report.equivalence = {
                 verified: equiv.equivalent,
                 splitTree: equiv.splitTree,

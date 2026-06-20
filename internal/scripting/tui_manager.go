@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
@@ -297,7 +298,7 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 	// Exit current mode (outside the lock).
 	if onExitCallback != nil {
 		if _, err := onExitCallback(goja.Undefined()); err != nil {
-			tm.printf("Error exiting mode %s: %v", currentMode.Name, err)
+			_, _ = fmt.Fprintf(tm.writer, "Error exiting mode %s: %v\n", currentMode.Name, err)
 		}
 	}
 
@@ -336,7 +337,7 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 	}
 
 	// N.B. After releasing the lock to mitigate deadlock risk.
-	tm.printf("Switched to mode: %s", mode.Name)
+	_, _ = fmt.Fprintf(tm.writer, "Switched to mode: %s\n", mode.Name)
 
 	// Rehydrate ContextManager from shared state after mode switch
 	// This ensures file paths are restored from persisted contextItems
@@ -345,7 +346,7 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 	// N.B. Avoid calling holding locks here, or risk deadlock within command factories.
 	if builder != nil && needBuild {
 		if err := tm.buildModeCommands(mode); err != nil {
-			tm.printf("Error building commands for mode %s: %v", mode.Name, err)
+			_, _ = fmt.Fprintf(tm.writer, "Error building commands for mode %s: %v\n", mode.Name, err)
 			// Note: We don't return the error to allow mode entry to continue
 		}
 	}
@@ -353,13 +354,13 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 	// The intent of this message is to notify the user that state restoration occurred.
 	// Excessive noise is detrimental, so we keep it concise / on one line.
 	if restoredItems > 0 {
-		tm.printf("Session restored: %d items (%d files). 'reset' to clear.", restoredItems, restoredFiles)
+		_, _ = fmt.Fprintf(tm.writer, "Session restored: %d items (%d files). 'reset' to clear.\n", restoredItems, restoredFiles)
 	}
 
 	// N.B. Similarly, mitigate deadlock risk - avoid holding locks while calling OnEnter.
 	if onEnterCallback != nil {
 		if _, err := onEnterCallback(goja.Undefined(), goja.Undefined(), goja.Undefined()); err != nil {
-			tm.printf("Error entering mode %s: %v", mode.Name, err)
+			_, _ = fmt.Fprintf(tm.writer, "Error entering mode %s: %v\n", mode.Name, err)
 		}
 	}
 
@@ -1003,11 +1004,10 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 	return prompt.New(executor, options...)
 }
 
-// flushQueuedOutput writes buffered output messages to the terminal.
-// Uses the logger's raw tuiWriter (not tm.writer/PosixWriter) to avoid
-// internal buffering and ESC-byte replacement, ensuring ANSI codes are
-// preserved and output is visible immediately. Falls back to tm.writer
-// for test-only TUIManager instances created without an engine.
+// flushQueuedOutput writes any buffered output messages to the terminal
+// using a syncWriter to ensure they hit the PTY immediately. Messages are
+// written verbatim as provided by PrintToTUI/PrintfToTUI, which are
+// responsible for ensuring trailing newlines as needed.
 func (tm *TUIManager) flushQueuedOutput() {
 	tm.outputMu.Lock()
 	queue := tm.outputQueue
@@ -1016,16 +1016,10 @@ func (tm *TUIManager) flushQueuedOutput() {
 	if len(queue) == 0 {
 		return
 	}
-
-	if tm.engine != nil && tm.engine.logger != nil {
-		for _, m := range queue {
-			tm.engine.logger.WriteDirect([]byte(m))
-		}
-	} else {
-		for _, m := range queue {
-			_, _ = tm.writer.Write([]byte(m))
-		}
-		_ = tm.writer.Flush()
+	for _, m := range queue {
+		// Messages already include any necessary trailing newline.
+		b := unsafe.Slice(unsafe.StringData(m), len(m))
+		_, _ = tm.writer.Write(b)
 	}
 }
 
@@ -1084,7 +1078,7 @@ func (tm *TUIManager) captureHistorySnapshot(commandName string, commandArgs []s
 	// Capture snapshot
 	modeID := currentMode.Name
 	if err := tm.stateManager.CaptureSnapshot(modeID, cmdString, stateJSON); err != nil {
-		tm.printf("Warning: Failed to capture history snapshot: %v", err)
+		_, _ = fmt.Fprintf(tm.writer, "Warning: Failed to capture history snapshot: %v\n", err)
 	}
 }
 
@@ -1312,11 +1306,11 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 			// Handle error (err is guaranteed non-nil here since we returned early on success)
 			// If the file no longer exists, log it and remove from state
 			if errors.Is(err, os.ErrNotExist) {
-				tm.printf("Info: file from previous session not found, removing: %s", label)
+				_, _ = fmt.Fprintf(tm.writer, "Info: file from previous session not found, removing: %s\n", label)
 				stateChanged = true
 				continue
 			}
-			tm.printf("Error restoring file %s: %v", label, err)
+			_, _ = fmt.Fprintf(tm.writer, "Error restoring file %s: %v\n", label, err)
 			// For other errors, we also remove it to ensure the session is valid
 			stateChanged = true
 			continue
@@ -1330,7 +1324,7 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 	if stateChanged {
 		tm.stateManager.SetState("contextItems", validItems)
 		if err := tm.stateManager.PersistSession(); err != nil {
-			tm.printf("Warning: failed to persist rehydrated contextItems: %v", err)
+			_, _ = fmt.Fprintf(tm.writer, "Warning: failed to persist rehydrated contextItems: %v\n", err)
 		}
 	}
 

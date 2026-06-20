@@ -541,8 +541,8 @@ globalThis.__result = {
 	if !strings.Contains(statusMsg, "\u2502") {
 		t.Fatalf("expected copy button enter to set copy summary, got %q", statusMsg)
 	}
-	if got := result["copyCmdType"]; got != nil {
-		t.Fatalf("expected copy button enter to return no command, got %v", got)
+	if got := result["copyCmdType"]; got != "tick" {
+		t.Fatalf("expected copy button enter to return a tick command, got %v", got)
 	}
 	if got := result["copiedPrompt"]; got != "prompt body" {
 		t.Fatalf("expected copy button enter to copy prompt body, got %v", got)
@@ -834,8 +834,8 @@ Promise.resolve().then(function() {
 	if got := get("c_copied"); got != "prompt body" {
 		t.Errorf("bare 'c' should copy prompt body, got %v", got)
 	}
-	if got := get("c_cmd"); got != nil {
-		t.Errorf("bare 'c' should return no command, got %v", got)
+	if got := get("c_cmd"); got != "tick" {
+		t.Errorf("bare 'c' should return a tick command, got %v", got)
 	}
 
 	// 'q' = quit

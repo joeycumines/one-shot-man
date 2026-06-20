@@ -742,7 +742,10 @@ function runVisualTui() {
 
         // Flag to force a full screen clear on first render
         // This ensures the title line is rendered correctly when re-entering TUI from shell
-        needsInitClear: true
+        needsInitClear: true,
+
+        clipboardCopyRunning: false,
+        fileLoadRunning: false
     };
 
     const model = tea.newModel({
@@ -786,6 +789,8 @@ function runVisualTui() {
                 const [newTa, taCmd] = tuiState.contentTextarea.update(msg);
                 tuiState.contentTextarea = newTa;
                 return [tuiState, taCmd];
+            } else if (msg.type === 'Tick') {
+                return handleTick(msg, tuiState);
             }
             return [tuiState, null];
         }, view: function (tuiState) {
@@ -976,24 +981,34 @@ function handleKeys(msg, s) {
             return [s, null];
         }
         if (k === 'c') {
+            if (s.clipboardCopyRunning) {
+                s.statusMsg = 'Clipboard copy in progress...';
+                s.focusedButtonIdx = -1;
+                return [s, null];
+            }
+            s.clipboardCopyRunning = true;
+            s.statusMsg = 'Copying to clipboard...';
+            s.hasError = false;
+            s.focusedButtonIdx = -1;
             buildFinalPrompt().then(function(prompt) {
-                try {
-                    os.clipboardCopy(prompt).catch(function(e) {
-                        s.statusMsg = 'Clipboard error: ' + e;
-                        s.hasError = true;
-                    });
-                    const tc = _tokenCount(prompt);
-                    const lc = _lineCount(prompt);
-                    const bc = _byteCount(prompt);
-                    s.statusMsg = "\u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
-                    s.hasError = false;
-                } catch (e) {
+                const tc = _tokenCount(prompt);
+                const lc = _lineCount(prompt);
+                const bc = _byteCount(prompt);
+                s.statusMsg = "\u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
+                s.hasError = false;
+                return os.clipboardCopy(prompt).then(function() {
+                    s.clipboardCopyRunning = false;
+                }).catch(function(e) {
                     s.statusMsg = 'Clipboard error: ' + e;
                     s.hasError = true;
-                }
+                    s.clipboardCopyRunning = false;
+                });
+            }).catch(function(e) {
+                s.statusMsg = 'Clipboard error: ' + e;
+                s.hasError = true;
+                s.clipboardCopyRunning = false;
             });
-            s.focusedButtonIdx = -1;
-            return [s, null];
+            return [s, tea.tick(50, 'clipboard-copy-poll')];
         }
         // Enter on focused button activates it (re-dispatch via the button's key)
         if (k === 'enter' && s.focusedButtonIdx >= 0) {
@@ -1209,28 +1224,40 @@ function handleKeys(msg, s) {
                 updateDocument(s.editingDocId, undefined, s.labelBuffer.trim());
                 s.statusMsg = 'Renamed document';
             } else if (s.inputOperation === INPUT_LOAD) {
-                os.readFile(s.labelBuffer.trim()).then(function(res) {
+                if (s.fileLoadRunning) {
+                    s.statusMsg = 'File load in progress...';
+                    return [s, null];
+                }
+                s.fileLoadRunning = true;
+                s.statusMsg = 'Loading file...';
+                s.hasError = false;
+                const loadPath = s.labelBuffer.trim();
+                os.readFile(loadPath).then(function(res) {
                     if (res.error) {
                         s.statusMsg = 'Error: ' + res.message;
                         s.hasError = true;
+                        s.fileLoadRunning = false;
                         return;
                     }
-                    addDocument(s.labelBuffer.trim(), res.content);
+                    addDocument(loadPath, res.content);
                     s.documents = getDocuments();
                     s.statusMsg = 'Loaded document';
                     s.mode = MODE_LIST;
                     s.hasError = false;
                     s.inputViewportUnlocked = false;
+                    s.fileLoadRunning = false;
                 }).catch(function(e) {
                     s.statusMsg = 'Error: ' + e.message;
                     s.hasError = true;
+                    s.fileLoadRunning = false;
                 });
+                return [s, tea.tick(50, 'file-load-poll')];
             }
             // Refresh local state from global after mutation
             s.documents = getDocuments();
             s.mode = MODE_LIST;
             s.hasError = false;
-            s.inputViewportUnlocked = false; // Reset on mode exit
+            s.inputViewportUnlocked = false;
         } else {
             // Field input handling
 
@@ -1257,20 +1284,25 @@ function handleKeys(msg, s) {
                 if (k === 'ctrl+a') {
                     const allContent = s.contentTextarea.value();
                     if (allContent) {
-                        try {
-                            os.clipboardCopy(allContent).catch(function(e) {
-                                s.statusMsg = 'Clipboard error: ' + e;
-                                s.hasError = true;
-                            });
-                            const tc3 = _tokenCount(allContent);
-                            const lc3 = _lineCount(allContent);
-                            const bc3 = _byteCount(allContent);
-                            s.statusMsg = 'All content copied \u2502 ' + _fmt.formatNum(tc3) + ' tokens \u00b7 ' + lc3 + ' lines \u00b7 ' + _fmt.formatBytes(bc3) + ' \u2502';
+                        if (s.clipboardCopyRunning) {
+                            s.statusMsg = 'Clipboard copy in progress...';
                             s.hasError = false;
-                        } catch (e) {
+                            return [s, null];
+                        }
+                        s.clipboardCopyRunning = true;
+                        const tc3 = _tokenCount(allContent);
+                        const lc3 = _lineCount(allContent);
+                        const bc3 = _byteCount(allContent);
+                        s.statusMsg = 'All content copied \u2502 ' + _fmt.formatNum(tc3) + ' tokens \u00b7 ' + lc3 + ' lines \u00b7 ' + _fmt.formatBytes(bc3) + ' \u2502';
+                        s.hasError = false;
+                        os.clipboardCopy(allContent).then(function() {
+                            s.clipboardCopyRunning = false;
+                        }).catch(function(e) {
                             s.statusMsg = 'Clipboard error: ' + e;
                             s.hasError = true;
-                        }
+                            s.clipboardCopyRunning = false;
+                        });
+                        return [s, tea.tick(50, 'clipboard-copy-poll')];
                     } else {
                         s.statusMsg = 'No content to select';
                         s.hasError = false;
@@ -1345,6 +1377,25 @@ function handleKeys(msg, s) {
     // This ensures BubbleTea re-renders the entire screen including the title
     if (s.mode === MODE_LIST && prevMode !== MODE_LIST) {
         return [s, tea.clearScreen()];
+    }
+    return [s, null];
+}
+
+function handleTick(msg, s) {
+    if (msg.id === 'clipboard-copy-poll') {
+        if (s.clipboardCopyRunning) {
+            return [s, tea.tick(50, 'clipboard-copy-poll')];
+        }
+        return [s, null];
+    }
+    if (msg.id === 'file-load-poll') {
+        if (s.fileLoadRunning) {
+            return [s, tea.tick(50, 'file-load-poll')];
+        }
+        if (s.mode === MODE_LIST) {
+            return [s, tea.clearScreen()];
+        }
+        return [s, null];
     }
     return [s, null];
 }
@@ -2298,19 +2349,20 @@ function buildCommands() {
         "doc-add": {
             description: "Add a new document",
             usage: "doc-add [content] OR doc-add --file <path>",
-            handler: function (args) {
+            handler: async function (args) {
                 if (args.length >= 2 && args[0] === "--file") {
                     const path = args[1];
-                    os.readFile(path).then(function(res) {
+                    try {
+                        const res = await os.readFile(path);
                         if (res.error) {
                             output.print("Error: " + res.message);
                             return;
                         }
                         const doc = addDocument(path, res.content);
                         output.print(`Added document #${doc.id} from ${path}`);
-                    }).catch(function(e) {
-                        output.print("Error: " + e.message);
-                    });
+                    } catch (e) {
+                        output.print("Error: " + (e && e.message ? e.message : e));
+                    }
                 } else {
                     const content = args.join(" ");
                     const doc = addDocument(null, content);
@@ -2345,22 +2397,17 @@ function buildCommands() {
                 output.print("All documents cleared.");
             }
         }, "copy": {
-            description: "Copy the final prompt to clipboard", handler: function () {
-                buildFinalPrompt().then(function(txt) {
-                    try {
-                        os.clipboardCopy(txt).catch(function(e) {
-                            output.print("Clipboard error: " + e);
-                        });
-                        const tc4 = _tokenCount(txt);
-                        const lc4 = _lineCount(txt);
-                        const bc4 = _byteCount(txt);
-                        output.print("\u2502 " + _fmt.formatNum(tc4) + " tokens \u00b7 " + lc4 + " lines \u00b7 " + _fmt.formatBytes(bc4) + " \u2502");
-                    } catch (e) {
-                        output.print("Error: " + e);
-                    }
-                }).catch(function(e) {
-                    output.print("Error: " + e.message);
-                });
+            description: "Copy the final prompt to clipboard", handler: async function () {
+                try {
+                    const txt = await buildFinalPrompt();
+                    await os.clipboardCopy(txt);
+                    const tc4 = _tokenCount(txt);
+                    const lc4 = _lineCount(txt);
+                    const bc4 = _byteCount(txt);
+                    output.print("\u2502 " + _fmt.formatNum(tc4) + " tokens \u00b7 " + lc4 + " lines \u00b7 " + _fmt.formatBytes(bc4) + " \u2502");
+                } catch (e) {
+                    output.print("Error: " + (e && e.message ? e.message : e));
+                }
             }
         }, "tui": {
             description: "Open the Visual TUI interface", handler: function () {

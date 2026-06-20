@@ -149,6 +149,19 @@
 
         // Build standard commands
         function buildCommands() {
+            function _printCopySuccess(text) {
+                var tokCnt = _tokenCount(text);
+                var lineCnt = _lineCount(text);
+                var byteCnt = _byteCount(text);
+                var byteStr = _fmt.formatBytes(byteCnt);
+                output.print(
+                    "Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tokCnt) + " tokens \u00b7 " +
+                    lineCnt + " lines \u00b7 " + byteStr + " \u2502"
+                );
+                if (postCopyHint) {
+                    output.print(postCopyHint);
+                }
+            }
             var cmds = {
                 add: {
                     description: "Add file content to context",
@@ -389,20 +402,17 @@
                     description: "Copy prompt to clipboard",
                     handler: function () {
                         _refreshFileItems(getItems);
-                        return Promise.resolve(buildPrompt()).then(async function(text) {
+                        return Promise.resolve(buildPrompt()).then(function(text) {
                             try {
-                                await clipboardCopy(text);
-                                const tokCnt = _tokenCount(text);
-                                const lineCnt = _lineCount(text);
-                                const byteCnt = _byteCount(text);
-                                const byteStr = _fmt.formatBytes(byteCnt);
-                                output.print(
-                                    "Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tokCnt) + " tokens \u00b7 " +
-                                    lineCnt + " lines \u00b7 " + byteStr + " \u2502"
-                                );
-                                if (postCopyHint) {
-                                    output.print(postCopyHint);
+                                var result = clipboardCopy(text);
+                                if (result && typeof result.then === 'function') {
+                                    return result.then(function() {
+                                        _printCopySuccess(text);
+                                    }).catch(function(e) {
+                                        output.print("Clipboard error: " + (e && e.message ? e.message : e));
+                                    });
                                 }
+                                _printCopySuccess(text);
                             } catch (e) {
                                 output.print("Clipboard error: " + (e && e.message ? e.message : e));
                             }

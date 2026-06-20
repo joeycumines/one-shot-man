@@ -903,7 +903,7 @@ func TestChunk16_CrashRecovery_RestartFailure(t *testing.T) {
 		// The actual error is surfaced by the restart-agent-poll tick handler.
 		var restore = mockZoneHit('resolve-restart-agent');
 		try {
-			var r = await sendClick(s);
+			var r = sendClick(s);
 			// Model should be in restarting state immediately.
 			if (!r[0].agentRestarting) {
 				return 'FAIL: agentRestarting should be true during async restart, got false';

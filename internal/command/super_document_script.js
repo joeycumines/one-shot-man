@@ -1241,7 +1241,7 @@ function handleKeys(msg, s) {
                     }
                     addDocument(loadPath, res.content);
                     s.documents = getDocuments();
-                    s.statusMsg = 'Loaded document';
+                    s.statusMsg = 'Loaded document #' + s.documents[s.documents.length - 1].id;
                     s.mode = MODE_LIST;
                     s.hasError = false;
                     s.inputViewportUnlocked = false;

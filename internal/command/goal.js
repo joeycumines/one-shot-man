@@ -286,10 +286,11 @@
                     let handlerCode = cmdConfig.handler.trim();
 
                     // If it's a function expression like "function (args) { ... }"
-                    // we need to extract just the body
-                    const funcMatch = handlerCode.match(/^function\s*\([^)]*\)\s*\{([\s\S]*)}$/);
+                    // or "async function (args) { ... }", extract just the body
+                    const funcMatch = handlerCode.match(/^(async\s+)?function\s*\([^)]*\)\s*\{([\s\S]*)}$/);
+                    const isAsync = funcMatch && funcMatch[1] !== undefined;
                     if (funcMatch) {
-                        handlerCode = funcMatch[1];
+                        handlerCode = funcMatch[2];
                     }
 
                     // Create function with access to necessary variables
@@ -306,7 +307,10 @@
                         ['buildPrompt', buildPrompt],
                     ];
 
-                    const handler = new Function(
+                    const ctor = isAsync
+                        ? Object.getPrototypeOf(async function(){}).constructor
+                        : Function;
+                    const handler = new ctor(
                         ...getVars().map(v => v[0]),
                         handlerCode);
 

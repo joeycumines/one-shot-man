@@ -66,7 +66,7 @@ func TestSessionPersistence_ConversationHistory(t *testing.T) {
 	}
 
 	// Save plan (includes conversations in snapshot).
-	val, err = evalJS(`JSON.stringify(savePlan())`)
+	val, err = evalJS(`JSON.stringify(await savePlan())`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestSessionPersistence_ConversationHistory(t *testing.T) {
 	}
 
 	// Load plan (should restore conversations).
-	val, err = evalJS(`JSON.stringify(loadPlan())`)
+	val, err = evalJS(`JSON.stringify(await loadPlan())`)
 	if err != nil {
 		t.Fatal(err)
 	}

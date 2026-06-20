@@ -1651,8 +1651,7 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 	// Override executeSplitAsync to create one branch, then return an error.
 	// This simulates a partial execution failure where branches exist.
 	overrideExec := `
-		var _origExecuteSplitAsync = executeSplitAsync;
-		executeSplitAsync = function(plan, options) {
+		executeSplitAsync = async function(plan, options) {
 			// Create the first branch for real to prove cleanup works.
 			await gitExec('.', ['checkout', plan.baseBranch]);
 			await gitExec('.', ['checkout', '-b', plan.splits[0].name]);
@@ -1801,7 +1800,7 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 
 	// Override executeSplitAsync: create first branch, then fail.
 	overrideExec := `
-		executeSplitAsync = function(plan, options) {
+		executeSplitAsync = async function(plan, options) {
 			await gitExec('.', ['checkout', plan.baseBranch]);
 			await gitExec('.', ['checkout', '-b', plan.splits[0].name]);
 			await gitExec('.', ['checkout', plan.sourceBranch, '--', plan.splits[0].files[0]]);

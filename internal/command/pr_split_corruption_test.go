@@ -42,7 +42,7 @@ func TestChunk03_LoadPlan_NoVersionField(t *testing.T) {
 
 	result, err := evalJS(`
 		(function() {
-			var r = globalThis.prSplit.loadPlan('` + escapeJSPath(planPath) + `');
+			var r = await globalThis.prSplit.loadPlan('` + escapeJSPath(planPath) + `');
 			return r.error;
 		})()
 	`)
@@ -81,7 +81,7 @@ func TestChunk13_Wizard_ResumeCorruptCheckpoint(t *testing.T) {
 	// handleConfigState function logs a warning and falls through to fresh
 	// start. We verify it doesn't panic or hang by testing loadPlan directly
 	// and then checking that the wizard can still start normally.
-	result, err := tp.EvalJS(`JSON.stringify(prSplit.loadPlan('` + escapeJSPath(planPath) + `'))`)
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.loadPlan('` + escapeJSPath(planPath) + `'))`)
 	if err != nil {
 		t.Fatalf("loadPlan should not throw on corrupt file: %v", err)
 	}

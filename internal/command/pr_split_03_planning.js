@@ -131,7 +131,7 @@
     // --- savePlan — persists plan + caches to a JSON file ---
     // An optional second argument specifies the lastCompletedStep name for
     // crash recovery.  When provided, the snapshot version is bumped to 2.
-    function savePlan(path, lastCompletedStep) {
+    async function savePlan(path, lastCompletedStep) {
         path = resolvePlanPath(path);
         if (!osmod) {
             return { error: 'osm:os module not available — cannot persist plan' };
@@ -172,7 +172,7 @@
         }
 
         try {
-            osmod.writeFile(path, JSON.stringify(snapshot, null, 2));
+            await osmod.writeFile(path, JSON.stringify(snapshot, null, 2));
             return { path: path, error: null };
         } catch (e) {
             return { error: 'failed to write plan: ' + String(e) };
@@ -180,13 +180,13 @@
     }
 
     // --- loadPlan — reads a previously-saved plan snapshot from disk ---
-    function loadPlan(path) {
+    async function loadPlan(path) {
         path = resolvePlanPath(path);
         if (!osmod) {
             return { error: 'osm:os module not available — cannot load plan' };
         }
 
-        var result = osmod.readFile(path);
+        var result = await osmod.readFile(path);
         if (result.error) {
             return { error: 'failed to read plan: ' + result.message };
         }

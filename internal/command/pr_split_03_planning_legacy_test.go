@@ -1069,7 +1069,7 @@ func TestSavePlan(t *testing.T) {
 			setup: `
 				// planCache is null by default — savePlan should error.
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.savePlan())`,
+			invoke: `JSON.stringify(await globalThis.prSplit.savePlan())`,
 			check: func(t *testing.T, r savePlanResult) {
 				if r.Error == nil {
 					t.Fatal("expected error when no plan exists")
@@ -1099,7 +1099,7 @@ func TestSavePlan(t *testing.T) {
 					};
 				}
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.savePlan('/tmp/test-plan.json'))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.savePlan('/tmp/test-plan.json'))`,
 			check: func(t *testing.T, r savePlanResult) {
 				if r.Error != nil {
 					t.Errorf("expected no error, got: %s", *r.Error)
@@ -1124,7 +1124,7 @@ func TestSavePlan(t *testing.T) {
 					};
 				}
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.savePlan())`,
+			invoke: `JSON.stringify(await globalThis.prSplit.savePlan())`,
 			check: func(t *testing.T, r savePlanResult) {
 				if r.Error != nil {
 					t.Errorf("expected no error, got: %s", *r.Error)
@@ -1147,7 +1147,7 @@ func TestSavePlan(t *testing.T) {
 					};
 				}
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.savePlan())`,
+			invoke: `JSON.stringify(await globalThis.prSplit.savePlan())`,
 			check: func(t *testing.T, r savePlanResult) {
 				if r.Error == nil {
 					t.Fatal("expected error when writeFile throws")
@@ -1224,7 +1224,7 @@ func TestLoadPlan(t *testing.T) {
 					};
 				}
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.loadPlan('/nonexistent.json'))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.loadPlan('/nonexistent.json'))`,
 			check: func(t *testing.T, r loadPlanResult) {
 				if r.Error == nil {
 					t.Fatal("expected error for missing file")
@@ -1243,7 +1243,7 @@ func TestLoadPlan(t *testing.T) {
 					};
 				}
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.loadPlan())`,
+			invoke: `JSON.stringify(await globalThis.prSplit.loadPlan())`,
 			check: func(t *testing.T, r loadPlanResult) {
 				if r.Error == nil {
 					t.Fatal("expected error for invalid JSON")
@@ -1262,7 +1262,7 @@ func TestLoadPlan(t *testing.T) {
 					};
 				}
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.loadPlan())`,
+			invoke: `JSON.stringify(await globalThis.prSplit.loadPlan())`,
 			check: func(t *testing.T, r loadPlanResult) {
 				if r.Error == nil {
 					t.Fatal("expected error for unsupported version")
@@ -1281,7 +1281,7 @@ func TestLoadPlan(t *testing.T) {
 					};
 				}
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.loadPlan())`,
+			invoke: `JSON.stringify(await globalThis.prSplit.loadPlan())`,
 			check: func(t *testing.T, r loadPlanResult) {
 				if r.Error == nil {
 					t.Fatal("expected error for missing splits")
@@ -1329,7 +1329,7 @@ func TestLoadPlan(t *testing.T) {
 					};
 				}
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.loadPlan())`,
+			invoke: `JSON.stringify(await globalThis.prSplit.loadPlan())`,
 			check: func(t *testing.T, r loadPlanResult) {
 				if r.Error != nil {
 					t.Errorf("expected no error, got: %s", *r.Error)
@@ -1370,8 +1370,8 @@ func TestLoadPlan(t *testing.T) {
 					};
 				}
 			`,
-			invoke: `(function() {
-				var result = globalThis.prSplit.loadPlan();
+			invoke: `(async function() {
+				var result = await globalThis.prSplit.loadPlan();
 				return JSON.stringify({
 					loadResult: result,
 					baseBranch: runtime.baseBranch,
@@ -1405,7 +1405,7 @@ func TestLoadPlan(t *testing.T) {
 					};
 				}
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.loadPlan())`,
+			invoke: `JSON.stringify(await globalThis.prSplit.loadPlan())`,
 			check: func(t *testing.T, r loadPlanResult) {
 				if r.Error != nil {
 					t.Errorf("expected no error for empty splits, got: %s", *r.Error)
@@ -1435,7 +1435,7 @@ func TestLoadPlan(t *testing.T) {
 					};
 				}
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.loadPlan())`,
+			invoke: `JSON.stringify(await globalThis.prSplit.loadPlan())`,
 			check: func(t *testing.T, r loadPlanResult) {
 				if r.Error != nil {
 					t.Errorf("expected no error for missing baseBranch, got: %s", *r.Error)
@@ -1469,7 +1469,7 @@ func TestLoadPlan(t *testing.T) {
 					};
 				}
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.loadPlan())`,
+			invoke: `JSON.stringify(await globalThis.prSplit.loadPlan())`,
 			check: func(t *testing.T, r loadPlanResult) {
 				if r.Error != nil {
 					t.Errorf("expected no error, got: %s", *r.Error)

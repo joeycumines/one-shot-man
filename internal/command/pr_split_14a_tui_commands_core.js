@@ -575,7 +575,7 @@
                         ' (' + runtime.strategy + ')');
 
                     // Step 3: Plan
-                    st.planCache = prSplit.createSplitPlan(st.groupsCache, {
+                    st.planCache = await prSplit.createSplitPlan(st.groupsCache, {
                         baseBranch: runtime.baseBranch,
                         sourceBranch: st.analysisCache.currentBranch,
                         branchPrefix: runtime.branchPrefix,
@@ -597,13 +597,13 @@
                         return;
                     }
                     output.print(style.info('Executing ' + st.planCache.splits.length + ' splits...'));
-                    var result = prSplit.executeSplit(st.planCache);
+                    var result = await prSplit.executeSplit(st.planCache);
                     if (result.error) { output.print(style.error('Execution failed: ' + result.error)); return; }
                     st.executionResultCache = result.results;
                     output.print(style.success('\u2713 Split executed: ' + result.results.length + ' branches created'));
 
                     // Step 5: Verify equivalence
-                    var equiv = prSplit.verifyEquivalence(st.planCache);
+                    var equiv = await prSplit.verifyEquivalence(st.planCache);
                     if (equiv.equivalent) {
                         output.print(style.success('\u2705 Tree hash equivalence verified'));
                     } else if (equiv.error) {

@@ -56,9 +56,9 @@
             'save-plan': {
                 description: 'Save current plan to a JSON file',
                 usage: 'save-plan [path]',
-                handler: function(args) {
+                handler: async function(args) {
                     var path = (args && args.length > 0) ? args[0] : undefined;
-                    var result = prSplit.savePlan(path);
+                    var result = await prSplit.savePlan(path);
                     if (result.error) { output.print('Error: ' + result.error); return; }
                     output.print('Plan saved to ' + result.path);
                 }
@@ -67,9 +67,9 @@
             'load-plan': {
                 description: 'Load a previously-saved plan from a JSON file',
                 usage: 'load-plan [path]',
-                handler: function(args) {
+                handler: async function(args) {
                     var path = (args && args.length > 0) ? args[0] : undefined;
-                    var result = prSplit.loadPlan(path);
+                    var result = await prSplit.loadPlan(path);
                     if (result.error) { output.print('Error: ' + result.error); return; }
                     output.print('Plan loaded from ' + result.path);
                     output.print('  Total splits: ' + result.totalSplits + '  Executed: ' + result.executedSplits +

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
@@ -59,23 +60,39 @@ func TestCodeReviewCommand_ShowActualDiffOutput(t *testing.T) {
 
 		// Step 2: Generate the prompt (this should execute the lazy diff)
 		output.print("\\n=== GENERATING PROMPT ===");
-		const prompt = buildPrompt();
+		Promise.resolve(buildPrompt()).then(function(prompt) {
+			// Show the final prompt
+			output.print("\\n=== FINAL PROMPT OUTPUT ===");
+			output.print(prompt);
 
-		// Show the final prompt
-		output.print("\\n=== FINAL PROMPT OUTPUT ===");
-		output.print(prompt);
+			// Show updated list after prompt generation
+			output.print("\\n=== ITEMS AFTER PROMPT GENERATION ===");
+			commands.list.handler();
 
-		// Show updated list after prompt generation
-		output.print("\\n=== ITEMS AFTER PROMPT GENERATION ===");
-		commands.list.handler();
-
-		output.print("\\n=== END TEST ===");
+			output.print("\\n=== END TEST ===");
+			__signalDone();
+		}).catch(function(e) {
+			output.print("BUILD_PROMPT_ERROR: " + (e && e.message ? e.message : String(e)));
+			__signalDone();
+		});
 	`
 
 	testScriptObj := engine.LoadScriptFromString("demo-test", testScript)
+
+	done := make(chan struct{})
+	_ = engine.Runtime().Set("__signalDone", func() {
+		close(done)
+	})
+
 	err = engine.ExecuteScript(testScriptObj)
 	if err != nil {
 		t.Fatalf("Demo script execution failed: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async script completion")
 	}
 
 	output := stdout.String()

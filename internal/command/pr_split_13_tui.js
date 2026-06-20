@@ -238,7 +238,11 @@
         // against it not being available (e.g. minimal test environments).
         if (typeof prSplit.savePlan === 'function') {
             try {
-                prSplit.savePlan(null, 'checkpoint:' + this.current);
+                prSplit.savePlan(null, 'checkpoint:' + this.current).catch(function(e) {
+                    if (typeof log !== 'undefined' && log.warn) {
+                        log.warn('saveCheckpoint: savePlan failed: ' + (e.message || e));
+                    }
+                });
             } catch (e) {
                 // Best-effort — checkpoint still succeeds in-memory.
                 if (typeof log !== 'undefined' && log.warn) {
@@ -714,7 +718,7 @@
 
         // --- Step 2: Check for --resume flag ---
         if (config.resume) {
-            var checkpoint = loadPlan();
+            var checkpoint = await loadPlan();
             if (checkpoint && !checkpoint.error && checkpoint.plan) {
                 return { resume: true, checkpoint: checkpoint };
             }

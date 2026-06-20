@@ -156,7 +156,7 @@
                             break;
                         }
                     }
-                    savePlan(resolvedPlanPath, lastDone || 'paused');
+                    await savePlan(resolvedPlanPath, lastDone || 'paused');
                     emitOutput('[auto-split] Paused — checkpoint saved to ' + resolvedPlanPath);
                     emitOutput('[auto-split] Resume with: osm pr-split --resume');
                 }
@@ -212,7 +212,7 @@
         }
 
         // finishTUI signals the auto-split TUI is done.
-        function finishTUI(result) {
+        async function finishTUI(result) {
             // T393: Only clean up MCP callback on error — keep alive for "Ask
             // Agent" conversation overlay on PLAN_REVIEW/ERROR_RESOLUTION.
             // On success, the wizard's quit handler handles cleanup.
@@ -228,7 +228,7 @@
             // On error, emit resume instructions if a plan was saved.
             if (result.error && state.planCache && state.planCache.splits && state.planCache.splits.length > 0) {
                 try {
-                    savePlan(resolvedPlanPath, report.lastCompletedStep || 'error');
+                    await savePlan(resolvedPlanPath, report.lastCompletedStep || 'error');
                 } catch (e) { log.debug('cleanup: savePlan failed: ' + (e.message || e)); }
 
                 emitOutput('\n[auto-split] Pipeline failed: ' + result.error);
@@ -245,7 +245,7 @@
         // Resume support: skip Steps 1-6 if resuming from a saved plan.
         var resuming = !!config.resumeFromPlan;
         if (resuming) {
-            var loadResult = loadPlan(config.resumePlanPath);
+            var loadResult = await loadPlan(config.resumePlanPath);
             if (loadResult.error) {
                 report.error = 'Resume failed: ' + loadResult.error;
                 return finishTUI({ error: report.error, report: report });
@@ -763,7 +763,7 @@
         state.planCache = plan;
 
         // Checkpoint after plan generation.
-        savePlan(null, 'Generate split plan');
+        await savePlan(null, 'Generate split plan');
 
         // Step 6: Execute split.
         var execResult = await step('Execute split plan', async function() {
@@ -808,7 +808,7 @@
         }
 
         // Persist plan for crash recovery / resume.
-        var saveResult = savePlan(null, 'Execute split plan');
+        var saveResult = await savePlan(null, 'Execute split plan');
         if (saveResult.error) {
             log.printf('auto-split: save plan warning: %s', saveResult.error);
         } else {
@@ -925,7 +925,7 @@
         });
 
         // Checkpoint after verify.
-        savePlan(null, 'Verify splits');
+        await savePlan(null, 'Verify splits');
 
         // Step 8: Resolve conflicts (if any real failures).
         var reSplitCount = 0;
@@ -1015,7 +1015,7 @@
             }
 
             // Checkpoint after resolve/re-split.
-            savePlan(null, 'Resolve conflicts');
+            await savePlan(null, 'Resolve conflicts');
         }
 
         // Step 10: Equivalence check and report.

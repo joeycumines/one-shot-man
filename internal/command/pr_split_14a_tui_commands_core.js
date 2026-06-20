@@ -91,7 +91,7 @@
             plan: {
                 description: 'Create split plan from current groups',
                 usage: 'plan',
-                handler: function() {
+                handler: async function() {
                     if (!st.groupsCache) {
                         output.print('Run "group" first.');
                         return;
@@ -105,7 +105,7 @@
                         planConfig.sourceBranch = st.analysisCache.currentBranch;
                         planConfig.fileStatuses = st.analysisCache.fileStatuses;
                     }
-                    st.planCache = prSplit.createSplitPlan(st.groupsCache, planConfig);
+                    st.planCache = await prSplit.createSplitPlan(st.groupsCache, planConfig);
                     var validation = prSplit.validatePlan(st.planCache);
                     if (!validation.valid) {
                         output.print('Plan validation errors:');
@@ -270,7 +270,7 @@
             execute: {
                 description: 'Execute the split plan (creates branches)',
                 usage: 'execute',
-                handler: function() {
+                handler: async function() {
                     try {
                     if (!st.planCache) { output.print('Run "plan" first.'); return; }
                     if (runtime.dryRun) {
@@ -278,16 +278,16 @@
                         return;
                     }
                     output.print('Executing split plan (' + st.planCache.splits.length + ' splits)...');
-                    var result = prSplit.executeSplit(st.planCache);
+                    var result = await prSplit.executeSplit(st.planCache);
                     if (result.error) { output.print('Error: ' + result.error); return; }
                     st.executionResultCache = result.results;
-                    output.print(style.success('Split completed successfully!'));
+                    output.print(style.success('✓') + ' Split completed successfully!');
                     for (var i = 0; i < result.results.length; i++) {
                         var r = result.results[i];
-                        output.print('  ' + style.success('\u2713') + ' ' + r.name +
+                        output.print('  ' + style.success('✓') + ' ' + r.name +
                             ' (' + r.files.length + ' files, SHA: ' + style.dim(r.sha.substring(0, 8)) + ')');
                     }
-                    var equiv = prSplit.verifyEquivalence(st.planCache);
+                    var equiv = await prSplit.verifyEquivalence(st.planCache);
                     if (equiv.equivalent) {
                         output.print(style.success('\u2705 Tree hash equivalence verified'));
                     } else if (equiv.error) {

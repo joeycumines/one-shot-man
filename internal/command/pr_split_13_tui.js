@@ -366,7 +366,7 @@
                     return tuiMux.inputAsync(typeof data === 'string' ? data : String(data));
                 }).then(function() {
                     if (prevID && prevID !== sessionID) {
-                        return tuiMux.activateAsync(prevID).catch(function(e) {});
+                        return tuiMux.activateAsync(prevID).catch(function(e) { log.debug('restore prev session failed', { prevID: prevID, error: e.message || String(e) }); });
                     }
                 }).catch(function(e) {
                     log.debug('agentProxy.writeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
@@ -542,7 +542,7 @@
                     return tuiMux.inputAsync(typeof data === 'string' ? data : String(data));
                 }).then(function() {
                     if (prevID && prevID !== sessionID) {
-                        return tuiMux.activateAsync(prevID).catch(function(e) {});
+                        return tuiMux.activateAsync(prevID).catch(function(e) { log.debug('restore prev session failed', { prevID: prevID, error: e.message || String(e) }); });
                     }
                 }).catch(function(e) {
                     log.debug('verifyProxy.writeAsync failed', { sessionID: sessionID, error: e.message || String(e) });

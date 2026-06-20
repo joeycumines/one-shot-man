@@ -308,8 +308,19 @@ func (tm *TUIManager) jsCreatePrompt(config any) (string, error) {
 		}
 		tm.mu.RUnlock()
 
-		if jsCompleter != nil && tm.engine != nil && tm.engine.vm != nil {
-			if sugg, err := tm.tryCallJSCompleter(jsCompleter, document); err != nil {
+		if jsCompleter != nil && tm.engine != nil && tm.engine.runtime != nil {
+			// Route the JS completer call through the event loop to avoid
+			// data races on the goja.Runtime, which is not goroutine-safe.
+			// go-prompt invokes completers from its own goroutine, so we
+			// must use RunOnLoopSync to execute the JS function on the
+			// event loop goroutine and block until it completes.
+			var sugg []prompt.Suggest
+			err := tm.engine.runtime.RunOnLoopSync(func(vm *goja.Runtime) error {
+				var callErr error
+				sugg, callErr = tm.tryCallJSCompleter(jsCompleter, document)
+				return callErr
+			})
+			if err != nil {
 				_, _ = fmt.Fprintf(tm.writer, "Completer error: %v\n", err)
 			} else if sugg != nil {
 				return sugg, istrings.RuneNumber(start), istrings.RuneNumber(end)
@@ -648,11 +659,17 @@ func (tm *TUIManager) buildKeyBinds() []prompt.KeyBind {
 			keyBinds = append(keyBinds, prompt.KeyBind{
 				Key: key,
 				Fn: func(p *prompt.Prompt) bool {
-					// Build a JS wrapper exposing prompt editing methods
-					promptObj := tm.buildPromptJSObject(p)
-
-					// Call the JavaScript handler with the prompt object
-					result, err := jsHandler(goja.Undefined(), promptObj)
+					// Route the JS key binding handler call through the event
+					// loop to avoid data races on the goja.Runtime, which is
+					// not goroutine-safe. go-prompt invokes key binding
+					// handlers from its own goroutine.
+					var result goja.Value
+					err := tm.engine.runtime.RunOnLoopSync(func(vm *goja.Runtime) error {
+						promptObj := tm.buildPromptJSObject(p)
+						var callErr error
+						result, callErr = jsHandler(goja.Undefined(), promptObj)
+						return callErr
+					})
 					if err != nil {
 						_, _ = fmt.Fprintf(tm.writer, "Key binding error: %v\n", err)
 						return false

@@ -351,9 +351,13 @@ func TestLeaves_CreateLeafNode(t *testing.T) {
 		assert.Equal(t, bt.Running, status)
 
 		// 2. Wait for event loop to process the promise
-		// We simply yield or run a small no-op on the loop to allow microtasks to flush
-		err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error { return nil })
-		require.NoError(t, err)
+		// Multiple yields needed because the test event loop does not use
+		// WithStrictMicrotaskOrdering, so the native-promise microtask may
+		// not drain in a single macrotask under -race.
+		for i := 0; i < 5; i++ {
+			err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error { return nil })
+			require.NoError(t, err)
+		}
 
 		// 3. Second Tick -> Success
 		status, err = tick(nil)

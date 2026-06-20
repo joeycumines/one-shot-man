@@ -13,16 +13,11 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
-	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const toolHandlerTimeout = 30 * time.Second
-
-// PromisifyFunc is the signature for the event loop's Promisify method.
-// Stored in internal data structures for easier mocking in tests.
-type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 
 // Require returns a module loader for the osm:mcp module.
 // The adapter is used for thread-safe JS callback invocation and Promisify support.
@@ -33,13 +28,13 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) require.Module
 		// Guard against nil adapter to prevent segfault at module load time.
 		// exec.go uses the same pattern: the module loads but spawn is unavailable.
 		if adapter != nil {
-			_ = exports.Set("createServer", jsCreateServer(ctx, runtime, adapter, adapter.Loop().Promisify))
+			_ = exports.Set("createServer", jsCreateServer(ctx, runtime, adapter))
 		}
 	}
 }
 
 // jsCreateServer returns the JS function: createServer(name, version) → server object
-func jsCreateServer(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
+func jsCreateServer(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		name := call.Argument(0).String()
 		version := ""
@@ -85,7 +80,7 @@ type handlerResult struct {
 }
 
 // mcpServer wraps a Go MCP server for JS access.
-// adapter is required; loop and promisify are derived at call time.
+// adapter is required; loop is derived at call time.
 type mcpServer struct {
 	server  *mcp.Server
 	adapter *gojaeventloop.Adapter
@@ -354,13 +349,10 @@ func (s *mcpServer) jsRun() func(call goja.FunctionCall) goja.Value {
 					reject(err)
 				})
 				return nil, err
-			} else {
-				if submitErr := s.adapter.Loop().Submit(func() {
-					resolve(goja.Undefined())
-				}); submitErr != nil {
-					// Event loop gone — nothing to do
-				}
 			}
+			_ = s.adapter.Loop().Submit(func() {
+				resolve(goja.Undefined())
+			})
 			return nil, nil
 		})
 

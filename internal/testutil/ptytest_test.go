@@ -23,13 +23,13 @@ func TestRepoRoot(t *testing.T) {
 	}
 }
 
-func TestRepoRootFromWD(t *testing.T) {
+func TestRepoRootWD(t *testing.T) {
 	t.Parallel()
 
-	root := RepoRootFromWD()
+	root := RepoRootWD()
 	marker := filepath.Join(root, "cmd", "osm", "main.go")
 	if _, err := os.Stat(marker); err != nil {
-		t.Fatalf("RepoRootFromWD returned %q, but marker %q does not exist: %v", root, marker, err)
+		t.Fatalf("RepoRootWD returned %q, but marker %q does not exist: %v", root, marker, err)
 	}
 }
 

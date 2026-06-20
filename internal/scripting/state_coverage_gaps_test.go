@@ -1015,7 +1015,7 @@ func TestJsCreateState_NullDefEntry(t *testing.T) {
 // newTestBackend creates a test MemoryBackend with consistent session ID.
 func newTestBackend(t *testing.T, sessionID string) storage.StorageBackend {
 	t.Helper()
-	backend, err := storage.NewInMemoryBackend(sessionID)
+	backend, err := storage.NewMemoryBackend(sessionID)
 	if err != nil {
 		t.Fatal(err)
 	}

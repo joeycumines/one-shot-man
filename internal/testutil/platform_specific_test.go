@@ -372,9 +372,6 @@ func TestTerminalDetectionPlatformSpecific(t *testing.T) {
 
 	t.Run("TERMEnvironmentVariable", func(t *testing.T) {
 		// Test TERM environment variable parsing
-		originalTERM := os.Getenv("TERM")
-		defer t.Setenv("TERM", originalTERM)
-
 		// Test with common terminal types
 		terminalTypes := []string{
 			"xterm",
@@ -398,16 +395,12 @@ func TestTerminalDetectionPlatformSpecific(t *testing.T) {
 
 	t.Run("NoTERMSpecified", func(t *testing.T) {
 		// Test behavior when TERM is not set
-		originalTERM := os.Getenv("TERM")
 		t.Setenv("TERM", "")
 
 		term := os.Getenv("TERM")
 		if term != "" {
 			t.Errorf("Expected TERM to be empty, got %s", term)
 		}
-
-		// Restore original
-		t.Setenv("TERM", originalTERM)
 	})
 
 	t.Run("InteractiveDetection", func(t *testing.T) {
@@ -439,9 +432,6 @@ func TestTerminalDetectionPlatformSpecific(t *testing.T) {
 
 	t.Run("ColorSupportDetection", func(t *testing.T) {
 		// Test color support detection based on terminal type
-		originalTERM := os.Getenv("TERM")
-		defer t.Setenv("TERM", originalTERM)
-
 		testCases := []struct {
 			termType    string
 			expectColor bool
@@ -623,14 +613,6 @@ func TestPlatformSpecificCodePaths(t *testing.T) {
 
 	t.Run("EnvironmentOverride", func(t *testing.T) {
 		// Test environment variable overrides
-		originalHome := os.Getenv("HOME")
-		originalUSERPROFILE := os.Getenv("USERPROFILE")
-
-		defer func() {
-			t.Setenv("HOME", originalHome)
-			t.Setenv("USERPROFILE", originalUSERPROFILE)
-		}()
-
 		if platform.IsWindows {
 			// On Windows, USERPROFILE should be used
 			t.Setenv("USERPROFILE", "C:\\Users\\test")

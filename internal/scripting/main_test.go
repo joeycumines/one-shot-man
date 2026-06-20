@@ -50,7 +50,7 @@ func buildTestBinary(tb testing.TB) string {
 //
 //lint:ignore U1000 Unused depending on env.
 func getRecordingOutputDir() string {
-	return filepath.Join(testutil.RepoRootFromWD(), "docs", "visuals", "gifs")
+	return filepath.Join(testutil.RepoRootWD(), "docs", "visuals", "gifs")
 }
 
 // ============================================================================

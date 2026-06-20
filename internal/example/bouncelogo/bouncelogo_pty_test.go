@@ -18,12 +18,12 @@ import (
 
 func resolveScriptPath(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(testutil.RepoRootFromWD(), "scripts", "example-15-bouncing-logo.js")
+	return filepath.Join(testutil.RepoRootWD(), "scripts", "example-15-bouncing-logo.js")
 }
 
 func resolveMockPath(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(testutil.RepoRootFromWD(), "internal", "example", "bouncelogo", "mock_shell.sh")
+	return filepath.Join(testutil.RepoRootWD(), "internal", "example", "bouncelogo", "mock_shell.sh")
 }
 
 func newTestProcessEnv(tb testing.TB) []string {
@@ -81,7 +81,7 @@ func launchBouncingLogo(t *testing.T, ctx context.Context, timeout time.Duration
 		termtest.WithCommand(binaryPath, args...),
 		termtest.WithDefaultTimeout(timeout),
 		termtest.WithEnv(env),
-		termtest.WithDir(testutil.RepoRootFromWD()),
+		termtest.WithDir(testutil.RepoRootWD()),
 		termtest.WithSize(ptyRows, ptyCols),
 	)
 	require.NoError(t, err, "Failed to create termtest console")
@@ -298,7 +298,7 @@ func TestBouncingLogo_ResizePane(t *testing.T) {
 // TestBouncingLogo_ScriptPath verifies the script file exists at the expected path.
 func TestBouncingLogo_ScriptPath(t *testing.T) {
 	t.Parallel()
-	root := testutil.RepoRootFromWD()
+	root := testutil.RepoRootWD()
 	p := filepath.Join(root, "scripts", "example-15-bouncing-logo.js")
 	_, err := os.Stat(p)
 	assert.NoError(t, err, "script must exist at %s", p)

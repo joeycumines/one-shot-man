@@ -6,13 +6,13 @@ import (
 )
 
 // ==========================================================================
-// InMemoryBackend — json.Marshal error in LoadSession (line 51-53)
+// MemoryBackend — json.Marshal error in LoadSession (line 51-53)
 // ==========================================================================
 
-func TestInMemoryBackend_LoadSession_MarshalError(t *testing.T) {
-	defer ClearAllInMemorySessions()
+func TestMemoryBackend_LoadSession_MarshalError(t *testing.T) {
+	defer ClearAllMemorySessions()
 
-	b, err := NewInMemoryBackend("marshal-err-load")
+	b, err := NewMemoryBackend("marshal-err-load")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,13 +37,13 @@ func TestInMemoryBackend_LoadSession_MarshalError(t *testing.T) {
 }
 
 // ==========================================================================
-// InMemoryBackend — json.Marshal error in SaveSession (line 71-73)
+// MemoryBackend — json.Marshal error in SaveSession (line 71-73)
 // ==========================================================================
 
-func TestInMemoryBackend_SaveSession_MarshalError(t *testing.T) {
-	defer ClearAllInMemorySessions()
+func TestMemoryBackend_SaveSession_MarshalError(t *testing.T) {
+	defer ClearAllMemorySessions()
 
-	b, err := NewInMemoryBackend("marshal-err-save")
+	b, err := NewMemoryBackend("marshal-err-save")
 	if err != nil {
 		t.Fatal(err)
 	}

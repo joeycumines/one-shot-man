@@ -27,9 +27,9 @@ func RepoRoot(dir string) string {
 	}
 }
 
-// RepoRootFromWD returns the repository root starting from the current
+// RepoRootWD returns the repository root starting from the current
 // working directory. It is a convenience wrapper around RepoRoot.
-func RepoRootFromWD() string {
+func RepoRootWD() string {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "."
@@ -78,7 +78,7 @@ func BuildOSMBinary(repoRoot string) (binaryPath string, err error) {
 // RunPTYSuite.
 type PTYSuiteConfig struct {
 	// RepoRoot is the path to the repository root. If empty, it is
-	// auto-detected via RepoRootFromWD.
+	// auto-detected via RepoRootWD.
 	RepoRoot string
 
 	// ExtraEnv is a list of additional environment variables to set in
@@ -111,7 +111,7 @@ func RunPTYSuite(m *testing.M, cfg PTYSuiteConfig) {
 	// First invocation: build the binary and re-exec in a subprocess.
 	repoRoot := cfg.RepoRoot
 	if repoRoot == "" {
-		repoRoot = RepoRootFromWD()
+		repoRoot = RepoRootWD()
 	}
 
 	binPath, err := BuildOSMBinary(repoRoot)

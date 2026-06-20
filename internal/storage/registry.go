@@ -18,7 +18,7 @@ func init() {
 
 	// Register an in-memory backend for testing
 	BackendRegistry["memory"] = func(sessionID string) (StorageBackend, error) {
-		return NewInMemoryBackend(sessionID)
+		return NewMemoryBackend(sessionID)
 	}
 }
 

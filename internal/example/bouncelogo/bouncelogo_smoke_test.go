@@ -20,7 +20,7 @@ import (
 
 func TestBouncingLogo_Smoke(t *testing.T) {
 	binaryPath := buildTestBinary(t)
-	root := testutil.RepoRootFromWD()
+	root := testutil.RepoRootWD()
 	scriptPath := filepath.Join(root, "scripts", "example-15-bouncing-logo.js")
 
 	// Use a minimal mock shell that exits immediately to keep the smoke fast.

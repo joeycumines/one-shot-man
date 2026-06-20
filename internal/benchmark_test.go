@@ -89,7 +89,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 	})
 
 	b.Run("SessionPersistenceWrite", func(b *testing.B) {
-		storage.ClearAllInMemorySessions()
+		storage.ClearAllMemorySessions()
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -100,7 +100,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 				ScriptState: make(map[string]map[string]any),
 				SharedState: make(map[string]any),
 			}
-			backend, err := storage.NewInMemoryBackend(sess.ID)
+			backend, err := storage.NewMemoryBackend(sess.ID)
 			if err != nil {
 				b.Fatalf("failed to create backend: %v", err)
 			}
@@ -112,7 +112,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 	})
 
 	b.Run("SessionPersistenceRead", func(b *testing.B) {
-		storage.ClearAllInMemorySessions()
+		storage.ClearAllMemorySessions()
 		sess := &storage.Session{
 			ID:          "benchmark-test-session",
 			Version:     storage.CurrentSchemaVersion,
@@ -120,14 +120,14 @@ func BenchmarkSessionOperations(b *testing.B) {
 			ScriptState: make(map[string]map[string]any),
 			SharedState: make(map[string]any),
 		}
-		backend, _ := storage.NewInMemoryBackend(sess.ID)
+		backend, _ := storage.NewMemoryBackend(sess.ID)
 		_ = backend.SaveSession(sess)
 		_ = backend.Close()
 
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			backend, err := storage.NewInMemoryBackend(sess.ID)
+			backend, err := storage.NewMemoryBackend(sess.ID)
 			if err != nil {
 				b.Fatalf("failed to create backend: %v", err)
 			}
@@ -143,7 +143,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 	})
 
 	b.Run("ConcurrentSessionAccess", func(b *testing.B) {
-		storage.ClearAllInMemorySessions()
+		storage.ClearAllMemorySessions()
 		sess := &storage.Session{
 			ID:          "benchmark-test-session",
 			Version:     storage.CurrentSchemaVersion,
@@ -151,14 +151,14 @@ func BenchmarkSessionOperations(b *testing.B) {
 			ScriptState: make(map[string]map[string]any),
 			SharedState: make(map[string]any),
 		}
-		backend, _ := storage.NewInMemoryBackend(sess.ID)
+		backend, _ := storage.NewMemoryBackend(sess.ID)
 		_ = backend.SaveSession(sess)
 		_ = backend.Close()
 
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
 			for pb.Next() {
-				backend, err := storage.NewInMemoryBackend(sess.ID)
+				backend, err := storage.NewMemoryBackend(sess.ID)
 				if err != nil {
 					b.Fatalf("failed to create backend: %v", err)
 				}
@@ -642,7 +642,7 @@ func TestPerformanceRegression(t *testing.T) {
 			t.Skip("Skipping in short mode")
 		}
 
-		storage.ClearAllInMemorySessions()
+		storage.ClearAllMemorySessions()
 
 		// Write benchmark
 		writeStart := time.Now()
@@ -655,7 +655,7 @@ func TestPerformanceRegression(t *testing.T) {
 			SharedState: make(map[string]any),
 		}
 		for range writeIter {
-			backend, _ := storage.NewInMemoryBackend(sess.ID)
+			backend, _ := storage.NewMemoryBackend(sess.ID)
 			_ = backend.SaveSession(sess)
 			_ = backend.Close()
 		}
@@ -670,7 +670,7 @@ func TestPerformanceRegression(t *testing.T) {
 		readStart := time.Now()
 		const readIter = 50
 		for range readIter {
-			backend, _ := storage.NewInMemoryBackend(sess.ID)
+			backend, _ := storage.NewMemoryBackend(sess.ID)
 			loaded, _ := backend.LoadSession(sess.ID)
 			if loaded == nil {
 				t.Fatal("session not found")
@@ -751,7 +751,7 @@ func TestPerformanceRegression(t *testing.T) {
 			t.Skip("Skipping in short mode")
 		}
 
-		storage.ClearAllInMemorySessions()
+		storage.ClearAllMemorySessions()
 		sess := &storage.Session{
 			ID:          "test-session",
 			Version:     storage.CurrentSchemaVersion,
@@ -759,7 +759,7 @@ func TestPerformanceRegression(t *testing.T) {
 			ScriptState: make(map[string]map[string]any),
 			SharedState: make(map[string]any),
 		}
-		backend, _ := storage.NewInMemoryBackend(sess.ID)
+		backend, _ := storage.NewMemoryBackend(sess.ID)
 		_ = backend.SaveSession(sess)
 		_ = backend.Close()
 
@@ -772,7 +772,7 @@ func TestPerformanceRegression(t *testing.T) {
 		for range numGoroutines {
 			wg.Go(func() {
 				for range iterPerGoroutine {
-					backend, err := storage.NewInMemoryBackend(sess.ID)
+					backend, err := storage.NewMemoryBackend(sess.ID)
 					if err != nil {
 						t.Errorf("failed to create backend: %v", err)
 						return
@@ -843,7 +843,7 @@ func TestMemoryUsageRegression(t *testing.T) {
 			t.Skip("Skipping in short mode")
 		}
 
-		storage.ClearAllInMemorySessions()
+		storage.ClearAllMemorySessions()
 		var m1, m2 runtime.MemStats
 		runtime.GC()
 		runtime.ReadMemStats(&m1)
@@ -857,7 +857,7 @@ func TestMemoryUsageRegression(t *testing.T) {
 				ScriptState: make(map[string]map[string]any),
 				SharedState: make(map[string]any),
 			}
-			backend, err := storage.NewInMemoryBackend(sess.ID)
+			backend, err := storage.NewMemoryBackend(sess.ID)
 			if err != nil {
 				t.Fatalf("failed to create backend: %v", err)
 			}

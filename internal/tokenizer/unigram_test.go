@@ -175,7 +175,7 @@ func TestUnigramEncode2(t *testing.T) {
 	}
 
 	for _, isOptimized := range []bool{true, false} {
-		u.SetOptimized(isOptimized)
+		u.setOptimized(isOptimized)
 		t.Logf("IsOptimized=%v", isOptimized)
 
 		result, err := u.Encode("abc")
@@ -194,7 +194,7 @@ func TestUnigramEncode2(t *testing.T) {
 			t.Errorf("encode('AB') = %v, want ['AB']", result)
 		}
 
-		u.SetFuseUnk(false)
+		u.setFuseUnk(false)
 		result, err = u.Encode("AB")
 		if err != nil {
 			t.Fatalf("encode error: %v", err)
@@ -202,7 +202,7 @@ func TestUnigramEncode2(t *testing.T) {
 		if !stringSliceEqual(result, []string{"A", "B"}) {
 			t.Errorf("fuse_unk=false: encode('AB') = %v, want ['A','B']", result)
 		}
-		u.SetFuseUnk(true)
+		u.setFuseUnk(true)
 
 		result, err = u.Encode("AB")
 		if err != nil {
@@ -237,7 +237,7 @@ func TestUnigramEncode2(t *testing.T) {
 			t.Errorf("encode('xabcabaabcdd') = %v, want %v", result, expected)
 		}
 
-		u.SetFuseUnk(false)
+		u.setFuseUnk(false)
 		result, err = u.Encode("xyz東京")
 		if err != nil {
 			t.Fatalf("encode error: %v", err)
@@ -245,7 +245,7 @@ func TestUnigramEncode2(t *testing.T) {
 		if !stringSliceEqual(result, []string{"x", "y", "z", "東", "京"}) {
 			t.Errorf("fuse_unk=false: encode('xyz東京') = %v, want ['x','y','z','東','京']", result)
 		}
-		u.SetFuseUnk(true)
+		u.setFuseUnk(true)
 
 		result, err = u.Encode("xyz東京")
 		if err != nil {
@@ -569,4 +569,14 @@ func TestTrieCommonPrefixSearch(t *testing.T) {
 	if !stringSliceEqual(tokens, expected) {
 		t.Errorf("tokens = %v, want %v", tokens, expected)
 	}
+}
+
+// setFuseUnk sets whether consecutive unk tokens are fused.
+func (u *Unigram) setFuseUnk(fuseUnk bool) {
+	u.fuseUnk = fuseUnk
+}
+
+// setOptimized sets whether the optimized DP path is used.
+func (u *Unigram) setOptimized(isOptimized bool) {
+	u.isOptimized = isOptimized
 }

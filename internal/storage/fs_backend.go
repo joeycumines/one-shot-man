@@ -200,10 +200,9 @@ func (b *FileSystemBackend) ArchiveSession(sessionID string, destPath string) er
 
 		// Write contents and ensure durable write before removing source.
 		// We keep the destination file if subsequent removal of the source
-		// fails so we do not destroy the user's data.
-		// Write contents and ensure durable write before removing source. On
-		// Windows the file cannot be removed while the handle is still open, so
-		// ensure we close the destination before attempting any cleanup.
+		// fails so we do not destroy the user's data. On Windows the file
+		// cannot be removed while the handle is still open, so ensure we
+		// close the destination before attempting any cleanup.
 		if _, err := dstFile.Write(data); err != nil {
 			return fmt.Errorf("failed to write archive destination: %w", err)
 		}

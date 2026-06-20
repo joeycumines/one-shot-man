@@ -1511,7 +1511,7 @@ func TestRecording_Script_BT_Shooter(t *testing.T) {
 		vhs.WithRecorderShell("bash"),
 		vhs.WithRecorderCommand("osm", "script", "scripts/example-04-bt-shooter.js"),
 		vhs.WithRecorderTimeout(90*time.Second),
-		vhs.WithRecorderDir(testutil.RepoRootFromWD()),
+		vhs.WithRecorderDir(testutil.RepoRootWD()),
 		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
@@ -1711,7 +1711,7 @@ func TestRecording_Script_PickAndPlace(t *testing.T) {
 		vhs.WithRecorderShell("bash"),
 		vhs.WithRecorderCommand("osm", "script", "scripts/example-05-pick-and-place.js"),
 		vhs.WithRecorderTimeout(90*time.Second),
-		vhs.WithRecorderDir(testutil.RepoRootFromWD()),
+		vhs.WithRecorderDir(testutil.RepoRootWD()),
 		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
@@ -1850,7 +1850,7 @@ func TestRecording_Example13_SplitPane(t *testing.T) {
 		vhs.WithRecorderShell("bash"),
 		vhs.WithRecorderCommand("osm", "script", "scripts/example-13-split-pane.js"),
 		vhs.WithRecorderTimeout(30*time.Second),
-		vhs.WithRecorderDir(testutil.RepoRootFromWD()),
+		vhs.WithRecorderDir(testutil.RepoRootWD()),
 		vhs.WithRecorderEnv(
 			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",

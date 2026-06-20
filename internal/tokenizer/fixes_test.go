@@ -203,10 +203,6 @@ func TestRobertaPostProcessor(t *testing.T) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────
-// review-4 and review-5 regression tests
-// ──────────────────────────────────────────────────────────
-
 // TestSplitMergesLineNullByte verifies that null bytes in merge tokens
 // are not treated as delimiters (review-5 #4).
 func TestSplitMergesLineNullByte(t *testing.T) {
@@ -965,11 +961,6 @@ func TestTemplatePostProcessorMismatchedArrays(t *testing.T) {
 		t.Errorf("unexpected token sequence: %+v", tokens)
 	}
 }
-
-// ──────────────────────────────────────────────────────────
-// review-1 regression tests: Normalized token isolation (bug #1),
-// SingleWord/LStrip/RStrip constraints (bug #4), IsFirst propagation
-// ──────────────────────────────────────────────────────────
 
 // TestNormalizedTokenIsolation verifies that added tokens with
 // Normalized=true are extracted after normalization but before

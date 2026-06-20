@@ -13,7 +13,7 @@ func TestGetBackend(t *testing.T) {
 	})
 
 	t.Run("memory backend succeeds", func(t *testing.T) {
-		defer ClearAllInMemorySessions()
+		defer ClearAllMemorySessions()
 		b, err := GetBackend("memory", "reg-mem-test")
 		if err != nil {
 			t.Fatalf("GetBackend(memory) failed: %v", err)

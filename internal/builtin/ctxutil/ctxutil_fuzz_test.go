@@ -39,15 +39,13 @@ func FuzzBuildContext(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		SetRunGitDiffFn(func(_ context.Context, args []string) (string, string, bool) {
+		defer SetRunGitDiffFn(func(_ context.Context, args []string) (string, string, bool) {
 			return "--- stub\n+++ stub\n@@ -1 +1 @@\n-old\n+new\n", "", true
-		})
-		defer SetRunGitDiffFn(nil)
+		})()
 
-		SetGetDefaultGitDiffArgsFn(func(_ context.Context) []string {
+		defer SetGetDefaultGitDiffArgsFn(func(_ context.Context) []string {
 			return []string{"HEAD"}
-		})
-		defer SetGetDefaultGitDiffArgsFn(nil)
+		})()
 
 		module := runtime.NewObject()
 		exports := runtime.NewObject()

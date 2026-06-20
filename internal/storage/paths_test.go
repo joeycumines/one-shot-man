@@ -66,39 +66,14 @@ func TestPaths(t *testing.T) {
 		// directory is cached and returns the same path across multiple invocations.
 		// This is critical for persistence to work in headless/CI environments.
 
-		// Save original HOME/USERPROFILE and XDG_CONFIG_HOME
-		originalHome := os.Getenv("HOME")
-		originalUserProfile := os.Getenv("USERPROFILE")
-		originalXDG := os.Getenv("XDG_CONFIG_HOME")
-		originalAppData := os.Getenv("AppData")
-		originalLocalAppData := os.Getenv("LocalAppData")
-
-		// Clear environment variables that os.UserConfigDir depends on
-		os.Unsetenv("HOME")
+		// Clear environment variables that os.UserConfigDir depends on.
+		// t.Setenv automatically saves and restores the original values.
+		t.Setenv("HOME", "")
 		// XDG_CONFIG_HOME is also consulted on Unix-like systems.
-		os.Unsetenv("XDG_CONFIG_HOME")
-		os.Unsetenv("USERPROFILE")
-		os.Unsetenv("AppData")
-		os.Unsetenv("LocalAppData")
-
-		defer func() {
-			// Restore original environment
-			if originalHome != "" {
-				os.Setenv("HOME", originalHome)
-			}
-			if originalUserProfile != "" {
-				os.Setenv("USERPROFILE", originalUserProfile)
-			}
-			if originalXDG != "" {
-				os.Setenv("XDG_CONFIG_HOME", originalXDG)
-			}
-			if originalAppData != "" {
-				os.Setenv("AppData", originalAppData)
-			}
-			if originalLocalAppData != "" {
-				os.Setenv("LocalAppData", originalLocalAppData)
-			}
-		}()
+		t.Setenv("XDG_CONFIG_HOME", "")
+		t.Setenv("USERPROFILE", "")
+		t.Setenv("AppData", "")
+		t.Setenv("LocalAppData", "")
 
 		// Call SessionDirectory multiple times
 		dir1, err1 := SessionDirectory()

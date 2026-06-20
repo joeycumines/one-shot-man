@@ -62,17 +62,3 @@ func (t *Trie) CommonPrefixSearch(iter func(yield func(byte) bool)) func(yield f
 		})
 	}
 }
-
-// Clone returns a deep copy of the trie.
-func (t *Trie) Clone() *Trie {
-	var cloneNode func(n *TrieNode) *TrieNode
-	cloneNode = func(n *TrieNode) *TrieNode {
-		c := newTrieNode()
-		c.isLeaf = n.isLeaf
-		for k, v := range n.children {
-			c.children[k] = cloneNode(v)
-		}
-		return c
-	}
-	return &Trie{root: cloneNode(t.root)}
-}

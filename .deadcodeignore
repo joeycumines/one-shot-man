@@ -31,8 +31,8 @@ internal\scripting\runtime.go:*: unreachable func: NewRuntime
 # Storage test helpers — used from scripting_test, benchmark_test, etc. (external packages).
 internal/storage/atomic_write.go:*: unreachable func: SetTestHookCrashBeforeRename
 internal\storage\atomic_write.go:*: unreachable func: SetTestHookCrashBeforeRename
-internal/storage/memory_backend.go:*: unreachable func: ClearAllInMemorySessions
-internal\storage\memory_backend.go:*: unreachable func: ClearAllInMemorySessions
+internal/storage/memory_backend.go:*: unreachable func: ClearAllMemorySessions
+internal\storage\memory_backend.go:*: unreachable func: ClearAllMemorySessions
 internal/storage/paths.go:*: unreachable func: SetTestPaths
 internal\storage\paths.go:*: unreachable func: SetTestPaths
 internal/storage/paths.go:*: unreachable func: ResetPaths

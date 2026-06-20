@@ -620,7 +620,7 @@ var inputOutputTestFixtures = []struct {
 				{"ABCD", -0.5}, {"abcdabcd", 20.0},
 				{"q", 20.5}, {"r", 20.5}, {"qr", -0.5},
 			}).WithUnkID(&unkID).Build()
-			u.SetOptimized(false)
+			u.setOptimized(false)
 			return u
 		},
 		Want: []Token{
@@ -641,7 +641,7 @@ var inputOutputTestFixtures = []struct {
 				{"ABC", -0.5}, {"abcdabcd", 20.0},
 				{"q", 20.5}, {"r", 20.5}, {"qr", -0.5},
 			}).WithUnkID(&unkID).Build()
-			u.SetFuseUnk(false)
+			u.setFuseUnk(false)
 			return u
 		},
 		Want: []Token{

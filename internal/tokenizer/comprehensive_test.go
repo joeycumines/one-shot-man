@@ -493,12 +493,12 @@ func TestUnigramOptimizedVsUnoptimized(t *testing.T) {
 	for _, input := range inputs {
 		t.Run(input, func(t *testing.T) {
 			u1, _ := NewUnigramBuilder().WithVocab(entries).WithUnkID(&unkID).Build()
-			u1.SetOptimized(true)
-			u1.SetFuseUnk(true)
+			u1.setOptimized(true)
+			u1.setFuseUnk(true)
 
 			u2, _ := NewUnigramBuilder().WithVocab(entries).WithUnkID(&unkID).Build()
-			u2.SetOptimized(false)
-			u2.SetFuseUnk(true)
+			u2.setOptimized(false)
+			u2.setFuseUnk(true)
 
 			r1, err1 := u1.Tokenize(input)
 			r2, err2 := u2.Tokenize(input)
@@ -649,7 +649,7 @@ func TestTrieClone(t *testing.T) {
 	trie.Insert([]byte("abc"))
 	trie.Insert([]byte("def"))
 
-	clone := trie.Clone()
+	clone := trie.clone()
 
 	// Verify clone has same entries
 	var tokens []string
@@ -1365,14 +1365,14 @@ func BenchmarkUnigramTokenize(b *testing.B) {
 
 	for _, inp := range inputs {
 		b.Run(inp.name+"_optimized", func(b *testing.B) {
-			u.SetOptimized(true)
+			u.setOptimized(true)
 			b.SetBytes(int64(len(inp.input)))
 			for i := 0; i < b.N; i++ {
 				_, _ = u.Tokenize(inp.input)
 			}
 		})
 		b.Run(inp.name+"_unoptimized", func(b *testing.B) {
-			u.SetOptimized(false)
+			u.setOptimized(false)
 			b.SetBytes(int64(len(inp.input)))
 			for i := 0; i < b.N; i++ {
 				_, _ = u.Tokenize(inp.input)
@@ -1431,3 +1431,17 @@ func BenchmarkLatticeViterbi(b *testing.B) {
 // ──────────────────────────────────────────────────────────
 // Helper functions — ptr is defined in bpe_test.go
 // ──────────────────────────────────────────────────────────
+
+// clone returns a deep copy of the trie.
+func (t *Trie) clone() *Trie {
+	var cloneNode func(n *TrieNode) *TrieNode
+	cloneNode = func(n *TrieNode) *TrieNode {
+		c := newTrieNode()
+		c.isLeaf = n.isLeaf
+		for k, v := range n.children {
+			c.children[k] = cloneNode(v)
+		}
+		return c
+	}
+	return &Trie{root: cloneNode(t.root)}
+}

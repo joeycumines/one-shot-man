@@ -64,7 +64,7 @@ func prSplitTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	t.Cleanup(func() { bridge.Stop() })
 
 	// Register exec module (bt is auto-registered by bridge).
-	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx, nil))
+	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx, adapter))
 
 	// Register aimux module for strategy selection.
 	reg.RegisterNativeModule("osm:aimux", Require(ctx, adapter))
@@ -82,6 +82,42 @@ func prSplitTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	}
 
 	return bridge, runJS
+}
+
+// runAsyncJS executes a JavaScript script that uses async/await on the event
+// loop. The script is wrapped in an async IIFE and must call __signalDone()
+// when complete. This is necessary because vm.RunString cannot await Promises
+// directly — the event loop must process microtasks after RunString returns.
+//
+// Results that need to be read by subsequent runJS calls must be stored on
+// globalThis (e.g. globalThis.__result = await prSplit.executeSplit(...);).
+func runAsyncJS(t *testing.T, bridge *btmod.Bridge, script string) {
+	t.Helper()
+	done := make(chan error, 1)
+
+	ok := bridge.RunOnLoop(func(vm *goja.Runtime) {
+		_ = vm.Set("__signalDone", func(call goja.FunctionCall) goja.Value {
+			if arg := call.Argument(0); !goja.IsUndefined(arg) && !goja.IsNull(arg) {
+				done <- fmt.Errorf("%s", arg.String())
+			} else {
+				done <- nil
+			}
+			return goja.Undefined()
+		})
+		wrapped := "(async () => {\n" + script + "\n})().catch(function(e) { __signalDone(String(e)); });"
+		_, err := vm.RunString(wrapped)
+		if err != nil {
+			done <- err
+		}
+	})
+	require.True(t, ok, "failed to submit async script to event loop")
+
+	select {
+	case err := <-done:
+		require.NoError(t, err, "async script error")
+	case <-time.After(120 * time.Second):
+		t.Fatalf("timeout waiting for async script")
+	}
 }
 
 // prSplitScriptPath returns the path to a temporary JS file that
@@ -384,14 +420,18 @@ func TestPRSplit_ValidatePlan_EmptySplit(t *testing.T) {
 
 func TestPRSplit_CreateSplitPlan(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 	runJS(`var prSplit = require('` + sp + `');`)
 
-	val := runJS(`JSON.stringify(prSplit.createSplitPlan(
-		{ pkg: ['pkg/a.go', 'pkg/b.go'], docs: ['docs/readme.md'] },
-		{ baseBranch: 'main', sourceBranch: 'feat', branchPrefix: 'pr/' }
-	))`)
+	runAsyncJS(t, bridge, `
+		globalThis.__planResult = await prSplit.createSplitPlan(
+			{ pkg: ['pkg/a.go', 'pkg/b.go'], docs: ['docs/readme.md'] },
+			{ baseBranch: 'main', sourceBranch: 'feat', branchPrefix: 'pr/' }
+		);
+		__signalDone();
+	`)
+	val := runJS(`JSON.stringify(__planResult)`)
 	s := val.String()
 	// Should have two splits, sorted by group name: docs first, then pkg
 	assert.Contains(t, s, `"pr/01-docs"`)
@@ -402,7 +442,7 @@ func TestPRSplit_CreateSplitPlan(t *testing.T) {
 
 func TestPRSplit_AnalyzeDiff(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -413,22 +453,25 @@ func TestPRSplit_AnalyzeDiff(t *testing.T) {
 	// Escape backslashes for Windows paths (though test is skipped on Windows).
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 
-	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
+	runAsyncJS(t, bridge, `
+		globalThis.__analysis = await prSplit.analyzeDiff({baseBranch: 'main', dir: '`+escapedDir+`'});
+		__signalDone();
+	`)
 
 	// Error should be null.
-	errVal := runJS(`analysis.error`)
+	errVal := runJS(`__analysis.error`)
 	assert.True(t, goja.IsNull(errVal) || goja.IsUndefined(errVal), "error should be null, got: %v", errVal)
 
 	// Current branch should be feature.
-	branchVal := runJS(`analysis.currentBranch`)
+	branchVal := runJS(`__analysis.currentBranch`)
 	assert.Equal(t, "feature", branchVal.String())
 
 	// Should find 5 changed files.
-	lenVal := runJS(`analysis.files.length`)
+	lenVal := runJS(`__analysis.files.length`)
 	assert.Equal(t, int64(5), lenVal.ToInteger())
 
 	// Spot-check specific files.
-	filesVal := runJS(`JSON.stringify(analysis.files.sort())`)
+	filesVal := runJS(`JSON.stringify(__analysis.files.sort())`)
 	assert.Contains(t, filesVal.String(), "pkg/impl.go")
 	assert.Contains(t, filesVal.String(), "docs/guide.md")
 	assert.Contains(t, filesVal.String(), "cmd/run.go")
@@ -436,7 +479,7 @@ func TestPRSplit_AnalyzeDiff(t *testing.T) {
 
 func TestPRSplit_AnalyzeDiffStats(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -444,22 +487,25 @@ func TestPRSplit_AnalyzeDiffStats(t *testing.T) {
 
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 	runJS(`var prSplit = require('` + sp + `');`)
-	runJS(`var stats = prSplit.analyzeDiffStats({baseBranch: 'main', dir: '` + escapedDir + `'});`)
+	runAsyncJS(t, bridge, `
+		globalThis.__stats = await prSplit.analyzeDiffStats({baseBranch: 'main', dir: '`+escapedDir+`'});
+		__signalDone();
+	`)
 
-	errVal := runJS(`stats.error`)
+	errVal := runJS(`__stats.error`)
 	assert.True(t, goja.IsNull(errVal) || goja.IsUndefined(errVal))
 
-	lenVal := runJS(`stats.files.length`)
+	lenVal := runJS(`__stats.files.length`)
 	assert.Equal(t, int64(5), lenVal.ToInteger())
 
 	// Each file should have additions > 0.
-	addVal := runJS(`stats.files[0].additions`)
+	addVal := runJS(`__stats.files[0].additions`)
 	assert.Greater(t, addVal.ToInteger(), int64(0))
 }
 
 func TestPRSplit_ExecuteSplit(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -468,36 +514,38 @@ func TestPRSplit_ExecuteSplit(t *testing.T) {
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 	runJS(`var prSplit = require('` + sp + `');`)
 
-	// Create plan from analysis.
-	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
-	runJS(`var groups = prSplit.groupByDirectory(analysis.files, 1);`)
-	runJS(`var plan = prSplit.createSplitPlan(groups, {
-		baseBranch: 'main',
-		sourceBranch: 'feature',
-		dir: '` + escapedDir + `',
-		branchPrefix: 'split/',
-		verifyCommand: 'true',
-		fileStatuses: analysis.fileStatuses
-	});`)
+	// Create plan from analysis and execute.
+	runAsyncJS(t, bridge, `
+		var analysis = await prSplit.analyzeDiff({baseBranch: 'main', dir: '`+escapedDir+`'});
+		var groups = prSplit.groupByDirectory(analysis.files, 1);
+		var plan = await prSplit.createSplitPlan(groups, {
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			dir: '`+escapedDir+`',
+			branchPrefix: 'split/',
+			verifyCommand: 'true',
+			fileStatuses: analysis.fileStatuses
+		});
+		globalThis.__plan = plan;
+		globalThis.__result = await prSplit.executeSplit(plan);
+		__signalDone();
+	`)
 
 	// Validate plan.
-	valResult := runJS(`JSON.stringify(prSplit.validatePlan(plan))`)
+	valResult := runJS(`JSON.stringify(prSplit.validatePlan(__plan))`)
 	assert.Contains(t, valResult.String(), `"valid":true`)
 
-	// Execute split.
-	runJS(`var result = prSplit.executeSplit(plan);`)
-
 	// No error.
-	errVal := runJS(`result.error`)
+	errVal := runJS(`__result.error`)
 	assert.True(t, goja.IsNull(errVal) || goja.IsUndefined(errVal), "execute error: %v", errVal)
 
 	// All splits should have SHAs.
-	splitCount := runJS(`result.results.length`)
+	splitCount := runJS(`__result.results.length`)
 	assert.Equal(t, int64(3), splitCount.ToInteger()) // cmd, docs, pkg
 
 	// Verify each result has a non-empty SHA.
 	for i := range 3 {
-		shaVal := runJS(fmt.Sprintf(`result.results[%d].sha`, i))
+		shaVal := runJS(fmt.Sprintf(`__result.results[%d].sha`, i))
 		assert.NotEmpty(t, shaVal.String(), "split %d should have a SHA", i)
 	}
 
@@ -514,7 +562,7 @@ func TestPRSplit_ExecuteSplit(t *testing.T) {
 
 func TestPRSplit_VerifyEquivalence(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -523,31 +571,32 @@ func TestPRSplit_VerifyEquivalence(t *testing.T) {
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 	runJS(`var prSplit = require('` + sp + `');`)
 
-	// Analyze, group, plan, execute.
-	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
-	runJS(`var groups = prSplit.groupByDirectory(analysis.files, 1);`)
-	runJS(`var plan = prSplit.createSplitPlan(groups, {
-		baseBranch: 'main',
-		sourceBranch: 'feature',
-		dir: '` + escapedDir + `',
-		branchPrefix: 'split/',
-		fileStatuses: analysis.fileStatuses
-	});`)
-	runJS(`prSplit.executeSplit(plan);`)
+	// Analyze, group, plan, execute, verify equivalence.
+	runAsyncJS(t, bridge, `
+		var analysis = await prSplit.analyzeDiff({baseBranch: 'main', dir: '`+escapedDir+`'});
+		var groups = prSplit.groupByDirectory(analysis.files, 1);
+		var plan = await prSplit.createSplitPlan(groups, {
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			dir: '`+escapedDir+`',
+			branchPrefix: 'split/',
+			fileStatuses: analysis.fileStatuses
+		});
+		await prSplit.executeSplit(plan);
+		globalThis.__equiv = await prSplit.verifyEquivalence(plan);
+		__signalDone();
+	`)
 
-	// Verify equivalence.
-	runJS(`var equiv = prSplit.verifyEquivalence(plan);`)
-
-	equivVal := runJS(`equiv.equivalent`)
+	equivVal := runJS(`__equiv.equivalent`)
 	assert.Equal(t, true, equivVal.ToBoolean(), "tree hashes should match")
 
-	errVal := runJS(`equiv.error`)
+	errVal := runJS(`__equiv.error`)
 	assert.True(t, goja.IsNull(errVal) || goja.IsUndefined(errVal))
 }
 
 func TestPRSplit_VerifySplits(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -556,24 +605,27 @@ func TestPRSplit_VerifySplits(t *testing.T) {
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 	runJS(`var prSplit = require('` + sp + `');`)
 
-	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
-	runJS(`var groups = prSplit.groupByDirectory(analysis.files, 1);`)
-	runJS(`var plan = prSplit.createSplitPlan(groups, {
-		baseBranch: 'main',
-		sourceBranch: 'feature',
-		dir: '` + escapedDir + `',
-		branchPrefix: 'split/',
-		verifyCommand: 'true',
-		fileStatuses: analysis.fileStatuses
-	});`)
-	runJS(`prSplit.executeSplit(plan);`)
+	runAsyncJS(t, bridge, `
+		var analysis = await prSplit.analyzeDiff({baseBranch: 'main', dir: '`+escapedDir+`'});
+		var groups = prSplit.groupByDirectory(analysis.files, 1);
+		var plan = await prSplit.createSplitPlan(groups, {
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			dir: '`+escapedDir+`',
+			branchPrefix: 'split/',
+			verifyCommand: 'true',
+			fileStatuses: analysis.fileStatuses
+		});
+		await prSplit.executeSplit(plan);
+		globalThis.__verify = await prSplit.verifySplits(plan);
+		__signalDone();
+	`)
 
 	// Verify all splits (with 'true' command, should all pass).
-	runJS(`var verify = prSplit.verifySplits(plan);`)
-	allPassed := runJS(`verify.allPassed`)
+	allPassed := runJS(`__verify.allPassed`)
 	assert.Equal(t, true, allPassed.ToBoolean())
 
-	verifyLen := runJS(`verify.results.length`)
+	verifyLen := runJS(`__verify.results.length`)
 	assert.Equal(t, int64(3), verifyLen.ToInteger())
 
 	// Restore to feature after verifySplits.
@@ -583,7 +635,7 @@ func TestPRSplit_VerifySplits(t *testing.T) {
 
 func TestPRSplit_CleanupBranches(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -592,27 +644,34 @@ func TestPRSplit_CleanupBranches(t *testing.T) {
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 	runJS(`var prSplit = require('` + sp + `');`)
 
-	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
-	runJS(`var groups = prSplit.groupByDirectory(analysis.files, 1);`)
-	runJS(`var plan = prSplit.createSplitPlan(groups, {
-		baseBranch: 'main',
-		sourceBranch: 'feature',
-		dir: '` + escapedDir + `',
-		branchPrefix: 'split/',
-		fileStatuses: analysis.fileStatuses
-	});`)
-	runJS(`prSplit.executeSplit(plan);`)
+	runAsyncJS(t, bridge, `
+		var analysis = await prSplit.analyzeDiff({baseBranch: 'main', dir: '`+escapedDir+`'});
+		var groups = prSplit.groupByDirectory(analysis.files, 1);
+		var plan = await prSplit.createSplitPlan(groups, {
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			dir: '`+escapedDir+`',
+			branchPrefix: 'split/',
+			fileStatuses: analysis.fileStatuses
+		});
+		await prSplit.executeSplit(plan);
+		globalThis.__plan = plan;
+		__signalDone();
+	`)
 
 	// Verify branches exist before cleanup.
 	branches := runGit(t, dir, "branch")
 	assert.Contains(t, branches, "split/01-cmd")
 
 	// Cleanup.
-	runJS(`var cleanup = prSplit.cleanupBranches(plan);`)
-	deletedLen := runJS(`cleanup.deleted.length`)
+	runAsyncJS(t, bridge, `
+		globalThis.__cleanup = await prSplit.cleanupBranches(__plan);
+		__signalDone();
+	`)
+	deletedLen := runJS(`__cleanup.deleted.length`)
 	assert.Equal(t, int64(3), deletedLen.ToInteger())
 
-	errLen := runJS(`cleanup.errors.length`)
+	errLen := runJS(`__cleanup.errors.length`)
 	assert.Equal(t, int64(0), errLen.ToInteger())
 
 	// Verify branches are gone.
@@ -624,7 +683,7 @@ func TestPRSplit_CleanupBranches(t *testing.T) {
 
 func TestPRSplit_AnalyzeDiff_NoChanges(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -633,70 +692,82 @@ func TestPRSplit_AnalyzeDiff_NoChanges(t *testing.T) {
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 	runJS(`var prSplit = require('` + sp + `');`)
 
-	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
+	runAsyncJS(t, bridge, `
+		globalThis.__analysis = await prSplit.analyzeDiff({baseBranch: 'main', dir: '`+escapedDir+`'});
+		__signalDone();
+	`)
 
-	errVal := runJS(`analysis.error`)
+	errVal := runJS(`__analysis.error`)
 	assert.True(t, goja.IsNull(errVal) || goja.IsUndefined(errVal), "error should be null for no-changes case")
 
-	filesLen := runJS(`analysis.files.length`)
+	filesLen := runJS(`__analysis.files.length`)
 	assert.Equal(t, int64(0), filesLen.ToInteger())
 }
 
 func TestPRSplit_ExecuteSplit_InvalidPlan(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 	runJS(`var prSplit = require('` + sp + `');`)
 
-	runJS(`var result = prSplit.executeSplit({ splits: [] });`)
-	errVal := runJS(`result.error`)
+	runAsyncJS(t, bridge, `
+		globalThis.__result = await prSplit.executeSplit({ splits: [] });
+		__signalDone();
+	`)
+	errVal := runJS(`__result.error`)
 	assert.Contains(t, errVal.String(), "invalid plan")
 }
 
 func TestPRSplit_SelectStrategy(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 	runJS(`var prSplit = require('` + sp + `');`)
 
-	val := runJS(`JSON.stringify(prSplit.selectStrategy(
-		['pkg/a.go', 'pkg/b.go', 'cmd/main.go', 'docs/readme.md', 'Makefile']
-	))`)
+	runAsyncJS(t, bridge, `
+		globalThis.__stratResult = await prSplit.selectStrategy(
+			['pkg/a.go', 'pkg/b.go', 'cmd/main.go', 'docs/readme.md', 'Makefile']
+		);
+		__signalDone();
+	`)
+
+	val := runJS(`JSON.stringify(__stratResult)`)
 	s := val.String()
 	assert.Contains(t, s, `"strategy"`)
 	assert.Contains(t, s, `"reason"`)
 	assert.Contains(t, s, `"groups"`)
 
 	// Strategy should be one of the known values.
-	stratVal := runJS(`prSplit.selectStrategy(
-		['pkg/a.go', 'pkg/b.go', 'cmd/main.go', 'docs/readme.md', 'Makefile']
-	).strategy`)
+	stratVal := runJS(`__stratResult.strategy`)
 	known := []string{"directory", "directory-deep", "extension", "chunks", "dependency"}
 	assert.Contains(t, known, stratVal.String())
 }
 
 func TestPRSplit_SelectStrategy_Scored(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 	runJS(`var prSplit = require('` + sp + `');`)
 
 	// With many files across multiple directories, scored should have entries.
-	runJS(`var result = prSplit.selectStrategy([
-		'pkg/a.go', 'pkg/b.go', 'pkg/c.go',
-		'cmd/main.go', 'cmd/run.go',
-		'docs/readme.md', 'docs/guide.md',
-		'internal/foo.go', 'internal/bar.go',
-		'tests/test_a.go'
-	]);`)
+	runAsyncJS(t, bridge, `
+		globalThis.__stratResult = await prSplit.selectStrategy([
+			'pkg/a.go', 'pkg/b.go', 'pkg/c.go',
+			'cmd/main.go', 'cmd/run.go',
+			'docs/readme.md', 'docs/guide.md',
+			'internal/foo.go', 'internal/bar.go',
+			'tests/test_a.go'
+		]);
+		__signalDone();
+	`)
 
-	scoredLen := runJS(`result.scored.length`)
+	scoredLen := runJS(`__stratResult.scored.length`)
 	assert.Equal(t, int64(5), scoredLen.ToInteger(), "should score 5 strategies")
 }
 
 func TestPRSplit_VerifyEquivalenceDetailed_Equivalent(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -705,27 +776,29 @@ func TestPRSplit_VerifyEquivalenceDetailed_Equivalent(t *testing.T) {
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 	runJS(`var prSplit = require('` + sp + `');`)
 
-	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
-	runJS(`var groups = prSplit.groupByDirectory(analysis.files, 1);`)
-	runJS(`var plan = prSplit.createSplitPlan(groups, {
-		baseBranch: 'main',
-		sourceBranch: 'feature',
-		dir: '` + escapedDir + `',
-		branchPrefix: 'split/',
-		fileStatuses: analysis.fileStatuses
-	});`)
-	runJS(`prSplit.executeSplit(plan);`)
+	runAsyncJS(t, bridge, `
+		var analysis = await prSplit.analyzeDiff({baseBranch: 'main', dir: '`+escapedDir+`'});
+		var groups = prSplit.groupByDirectory(analysis.files, 1);
+		var plan = await prSplit.createSplitPlan(groups, {
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			dir: '`+escapedDir+`',
+			branchPrefix: 'split/',
+			fileStatuses: analysis.fileStatuses
+		});
+		await prSplit.executeSplit(plan);
+		globalThis.__equiv = await prSplit.verifyEquivalenceDetailed(plan);
+		__signalDone();
+	`)
 
-	runJS(`var equiv = prSplit.verifyEquivalenceDetailed(plan);`)
-
-	equivVal := runJS(`equiv.equivalent`)
+	equivVal := runJS(`__equiv.equivalent`)
 	assert.Equal(t, true, equivVal.ToBoolean())
 
 	// When equivalent, diffFiles should be empty.
-	diffLen := runJS(`equiv.diffFiles.length`)
+	diffLen := runJS(`__equiv.diffFiles.length`)
 	assert.Equal(t, int64(0), diffLen.ToInteger())
 
-	diffSummary := runJS(`equiv.diffSummary`)
+	diffSummary := runJS(`__equiv.diffSummary`)
 	assert.Equal(t, "", diffSummary.String())
 }
 
@@ -808,52 +881,59 @@ func TestPRSplit_EndToEnd_WithCompilation(t *testing.T) {
 	runJS(`var prSplit = require('` + sp + `');`)
 
 	// 1. Analyze what changed.
-	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
+	runAsyncJS(t, bridge, `
+		var analysis = await prSplit.analyzeDiff({baseBranch: 'main', dir: '`+escapedDir+`'});
+		var groups = prSplit.groupByDirectory(analysis.files, 1);
+		var plan = await prSplit.createSplitPlan(groups, {
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			dir: '`+escapedDir+`',
+			branchPrefix: 'split/',
+			verifyCommand: 'go build ./...',
+			fileStatuses: analysis.fileStatuses
+		});
+		globalThis.__analysis = analysis;
+		globalThis.__groups = groups;
+		globalThis.__plan = plan;
+		__signalDone();
+	`)
 
-	errVal := runJS(`analysis.error`)
+	errVal := runJS(`__analysis.error`)
 	assert.True(t, goja.IsNull(errVal) || goja.IsUndefined(errVal), "analysis error: %v", errVal)
-	assert.Equal(t, "feature", runJS(`analysis.currentBranch`).String())
-	assert.Equal(t, int64(3), runJS(`analysis.files.length`).ToInteger(),
+	assert.Equal(t, "feature", runJS(`__analysis.currentBranch`).String())
+	assert.Equal(t, int64(3), runJS(`__analysis.files.length`).ToInteger(),
 		"expected 3 changed files: pkg/bar.go, cmd/app/run.go, docs/guide.md")
 
 	// 2. Group by directory (depth=1).
-	runJS(`var groups = prSplit.groupByDirectory(analysis.files, 1);`)
-	groupKeys := runJS(`Object.keys(groups).sort().join(',')`)
+	groupKeys := runJS(`Object.keys(__groups).sort().join(',')`)
 	assert.Equal(t, "cmd,docs,pkg", groupKeys.String())
 
-	// 3. Create split plan with "go build ./..." as verification command.
-	runJS(`var plan = prSplit.createSplitPlan(groups, {
-		baseBranch: 'main',
-		sourceBranch: 'feature',
-		dir: '` + escapedDir + `',
-		branchPrefix: 'split/',
-		verifyCommand: 'go build ./...',
-		fileStatuses: analysis.fileStatuses
-	});`)
-
-	// Validate plan.
-	valResult := runJS(`JSON.stringify(prSplit.validatePlan(plan))`)
+	// 3. Validate plan.
+	valResult := runJS(`JSON.stringify(prSplit.validatePlan(__plan))`)
 	assert.Contains(t, valResult.String(), `"valid":true`)
 
-	assert.Equal(t, int64(3), runJS(`plan.splits.length`).ToInteger())
+	assert.Equal(t, int64(3), runJS(`__plan.splits.length`).ToInteger())
 	t.Logf("Split plan: %d splits", 3)
 	for i := range 3 {
-		name := runJS(fmt.Sprintf(`plan.splits[%d].name`, i)).String()
-		filesLen := runJS(fmt.Sprintf(`plan.splits[%d].files.length`, i)).ToInteger()
+		name := runJS(fmt.Sprintf(`__plan.splits[%d].name`, i)).String()
+		filesLen := runJS(fmt.Sprintf(`__plan.splits[%d].files.length`, i)).ToInteger()
 		t.Logf("  %s (%d files)", name, filesLen)
 	}
 
 	// 4. Execute the split — creates stacked branches.
-	runJS(`var execResult = prSplit.executeSplit(plan);`)
-	execErr := runJS(`execResult.error`)
+	runAsyncJS(t, bridge, `
+		globalThis.__execResult = await prSplit.executeSplit(__plan);
+		__signalDone();
+	`)
+	execErr := runJS(`__execResult.error`)
 	assert.True(t, goja.IsNull(execErr) || goja.IsUndefined(execErr),
 		"execute error: %v", execErr)
 
-	splitCount := runJS(`execResult.results.length`).ToInteger()
+	splitCount := runJS(`__execResult.results.length`).ToInteger()
 	assert.Equal(t, int64(3), splitCount)
 	for i := range splitCount {
-		sha := runJS(fmt.Sprintf(`execResult.results[%d].sha`, i)).String()
-		name := runJS(fmt.Sprintf(`execResult.results[%d].name`, i)).String()
+		sha := runJS(fmt.Sprintf(`__execResult.results[%d].sha`, i)).String()
+		name := runJS(fmt.Sprintf(`__execResult.results[%d].name`, i)).String()
 		assert.NotEmpty(t, sha, "split %s should have a SHA", name)
 		t.Logf("  Created: %s (sha=%s)", name, sha[:8])
 	}
@@ -865,16 +945,19 @@ func TestPRSplit_EndToEnd_WithCompilation(t *testing.T) {
 	assert.Contains(t, branches, "split/03-pkg")
 
 	// 5. Verify each split compiles with "go build ./..."
-	runJS(`var verify = prSplit.verifySplits(plan);`)
-	allPassed := runJS(`verify.allPassed`).ToBoolean()
+	runAsyncJS(t, bridge, `
+		globalThis.__verify = await prSplit.verifySplits(__plan);
+		__signalDone();
+	`)
+	allPassed := runJS(`__verify.allPassed`).ToBoolean()
 
-	verifyLen := runJS(`verify.results.length`).ToInteger()
+	verifyLen := runJS(`__verify.results.length`).ToInteger()
 	for i := range verifyLen {
-		name := runJS(fmt.Sprintf(`verify.results[%d].name`, i)).String()
-		passed := runJS(fmt.Sprintf(`verify.results[%d].passed`, i)).ToBoolean()
+		name := runJS(fmt.Sprintf(`__verify.results[%d].name`, i)).String()
+		passed := runJS(fmt.Sprintf(`__verify.results[%d].passed`, i)).ToBoolean()
 		t.Logf("  Verify: %s compiled=%v", name, passed)
 		if !passed {
-			errStr := runJS(fmt.Sprintf(`verify.results[%d].error`, i)).String()
+			errStr := runJS(fmt.Sprintf(`__verify.results[%d].error`, i)).String()
 			t.Logf("    Error: %s", errStr)
 		}
 		assert.True(t, passed, "split %s should compile with 'go build ./...'", name)
@@ -882,12 +965,15 @@ func TestPRSplit_EndToEnd_WithCompilation(t *testing.T) {
 	assert.True(t, allPassed, "all split branches must compile independently")
 
 	// 6. Verify tree equivalence — final split tree must match source.
-	runJS(`var equiv = prSplit.verifyEquivalence(plan);`)
-	equivalent := runJS(`equiv.equivalent`).ToBoolean()
+	runAsyncJS(t, bridge, `
+		globalThis.__equiv = await prSplit.verifyEquivalence(__plan);
+		__signalDone();
+	`)
+	equivalent := runJS(`__equiv.equivalent`).ToBoolean()
 	assert.True(t, equivalent, "final split tree hash must equal source branch tree hash")
 	if !equivalent {
-		splitTree := runJS(`equiv.splitTree`).String()
-		sourceTree := runJS(`equiv.sourceTree`).String()
+		splitTree := runJS(`__equiv.splitTree`).String()
+		sourceTree := runJS(`__equiv.sourceTree`).String()
 		t.Fatalf("Tree mismatch: split=%s source=%s", splitTree, sourceTree)
 	}
 
@@ -900,7 +986,7 @@ func TestPRSplit_EndToEnd_WithCompilation(t *testing.T) {
 
 func TestPRSplit_ExecuteSplit_MissingFile(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -922,9 +1008,12 @@ func TestPRSplit_ExecuteSplit_MissingFile(t *testing.T) {
 			message: 'missing file'
 		}]
 	};`)
-	runJS(`var result = prSplit.executeSplit(plan);`)
+	runAsyncJS(t, bridge, `
+		globalThis.__result = await prSplit.executeSplit(plan);
+		__signalDone();
+	`)
 
-	errVal := runJS(`result.error`)
+	errVal := runJS(`__result.error`)
 	assert.Contains(t, errVal.String(), "checkout file")
 	assert.Contains(t, errVal.String(), "does-not-exist.go")
 }
@@ -955,7 +1044,7 @@ func addFeatureFilesWithDeletions(t *testing.T, dir string) {
 
 func TestPRSplit_AnalyzeDiff_FileStatuses(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -963,30 +1052,33 @@ func TestPRSplit_AnalyzeDiff_FileStatuses(t *testing.T) {
 
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 	runJS(`var prSplit = require('` + sp + `');`)
-	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
+	runAsyncJS(t, bridge, `
+		globalThis.__analysis = await prSplit.analyzeDiff({baseBranch: 'main', dir: '`+escapedDir+`'});
+		__signalDone();
+	`)
 
 	// Error should be null.
-	errVal := runJS(`analysis.error`)
+	errVal := runJS(`__analysis.error`)
 	assert.True(t, goja.IsNull(errVal) || goja.IsUndefined(errVal))
 
 	// Should find 3 files: 2 added + 1 deleted.
-	lenVal := runJS(`analysis.files.length`)
+	lenVal := runJS(`__analysis.files.length`)
 	assert.Equal(t, int64(3), lenVal.ToInteger())
 
 	// Verify fileStatuses is populated correctly.
-	implStatus := runJS(`analysis.fileStatuses['pkg/impl.go']`)
+	implStatus := runJS(`__analysis.fileStatuses['pkg/impl.go']`)
 	assert.Equal(t, "A", implStatus.String())
 
-	docsStatus := runJS(`analysis.fileStatuses['docs/guide.md']`)
+	docsStatus := runJS(`__analysis.fileStatuses['docs/guide.md']`)
 	assert.Equal(t, "A", docsStatus.String())
 
-	readmeStatus := runJS(`analysis.fileStatuses['README.md']`)
+	readmeStatus := runJS(`__analysis.fileStatuses['README.md']`)
 	assert.Equal(t, "D", readmeStatus.String())
 }
 
 func TestPRSplit_ExecuteSplit_WithDeletedFiles(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -995,28 +1087,31 @@ func TestPRSplit_ExecuteSplit_WithDeletedFiles(t *testing.T) {
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 	runJS(`var prSplit = require('` + sp + `');`)
 
-	// Full pipeline: analyze → group → plan → execute.
-	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
-	runJS(`var groups = prSplit.groupByDirectory(analysis.files, 1);`)
-	runJS(`var plan = prSplit.createSplitPlan(groups, {
-		baseBranch: 'main',
-		sourceBranch: 'feature',
-		dir: '` + escapedDir + `',
-		branchPrefix: 'split/',
-		verifyCommand: 'true',
-		fileStatuses: analysis.fileStatuses
-	});`)
+	// Full pipeline: analyze → group → plan → execute → verify equivalence.
+	runAsyncJS(t, bridge, `
+		var analysis = await prSplit.analyzeDiff({baseBranch: 'main', dir: '`+escapedDir+`'});
+		var groups = prSplit.groupByDirectory(analysis.files, 1);
+		var plan = await prSplit.createSplitPlan(groups, {
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			dir: '`+escapedDir+`',
+			branchPrefix: 'split/',
+			verifyCommand: 'true',
+			fileStatuses: analysis.fileStatuses
+		});
+		var result = await prSplit.executeSplit(plan);
+		globalThis.__plan = plan;
+		globalThis.__result = result;
+		globalThis.__equiv = await prSplit.verifyEquivalence(plan);
+		__signalDone();
+	`)
 
-	// Execute split — should handle deleted README.md correctly.
-	runJS(`var result = prSplit.executeSplit(plan);`)
-
-	errVal := runJS(`result.error`)
+	errVal := runJS(`__result.error`)
 	assert.True(t, goja.IsNull(errVal) || goja.IsUndefined(errVal),
 		"executeSplit should succeed with deleted files, got: %v", errVal)
 
 	// Verify equivalence — tree hashes must match.
-	runJS(`var equiv = prSplit.verifyEquivalence(plan);`)
-	equivVal := runJS(`equiv.equivalent`)
+	equivVal := runJS(`__equiv.equivalent`)
 	assert.True(t, equivVal.ToBoolean(), "tree hashes should match when deletions are handled correctly")
 
 	// The branch containing the deletion (README.md is in '.') should exist.
@@ -1024,7 +1119,7 @@ func TestPRSplit_ExecuteSplit_WithDeletedFiles(t *testing.T) {
 	assert.Contains(t, branches, "split/")
 
 	// Verify README.md is actually gone on the last split branch.
-	lastSplit := runJS(`plan.splits[plan.splits.length-1].name`).String()
+	lastSplit := runJS(`__plan.splits[__plan.splits.length-1].name`).String()
 	runGit(t, dir, "checkout", lastSplit)
 	_, err := os.Stat(filepath.Join(dir, "README.md"))
 	assert.True(t, errors.Is(err, os.ErrNotExist), "README.md should not exist on the last split branch")
@@ -1035,7 +1130,7 @@ func TestPRSplit_ExecuteSplit_WithDeletedFiles(t *testing.T) {
 
 func TestPRSplit_ExecuteSplit_RerunDeletesBranches(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -1044,60 +1139,69 @@ func TestPRSplit_ExecuteSplit_RerunDeletesBranches(t *testing.T) {
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 	runJS(`var prSplit = require('` + sp + `');`)
 
-	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
-	runJS(`var groups = prSplit.groupByDirectory(analysis.files, 1);`)
-	runJS(`var plan = prSplit.createSplitPlan(groups, {
-		baseBranch: 'main',
-		sourceBranch: 'feature',
-		dir: '` + escapedDir + `',
-		branchPrefix: 'split/',
-		fileStatuses: analysis.fileStatuses
-	});`)
-
-	// First run — creates branches.
-	runJS(`var result1 = prSplit.executeSplit(plan);`)
-	err1 := runJS(`result1.error`)
+	// First run — analyze, plan, execute.
+	runAsyncJS(t, bridge, `
+		var analysis = await prSplit.analyzeDiff({baseBranch: 'main', dir: '`+escapedDir+`'});
+		var groups = prSplit.groupByDirectory(analysis.files, 1);
+		var plan = await prSplit.createSplitPlan(groups, {
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			dir: '`+escapedDir+`',
+			branchPrefix: 'split/',
+			fileStatuses: analysis.fileStatuses
+		});
+		globalThis.__plan = plan;
+		globalThis.__result1 = await prSplit.executeSplit(plan);
+		__signalDone();
+	`)
+	err1 := runJS(`__result1.error`)
 	assert.True(t, goja.IsNull(err1) || goja.IsUndefined(err1), "first run should succeed")
 
 	branches1 := runGit(t, dir, "branch")
 	assert.Contains(t, branches1, "split/01-cmd")
 
 	// Second run — same plan, branches already exist. Should NOT fail.
-	runJS(`var result2 = prSplit.executeSplit(plan);`)
-	err2 := runJS(`result2.error`)
+	runAsyncJS(t, bridge, `
+		globalThis.__result2 = await prSplit.executeSplit(__plan);
+		globalThis.__equiv = await prSplit.verifyEquivalence(__plan);
+		__signalDone();
+	`)
+	err2 := runJS(`__result2.error`)
 	assert.True(t, goja.IsNull(err2) || goja.IsUndefined(err2),
 		"re-run should succeed (pre-existing branches deleted), got: %v", err2)
 
 	// Verify equivalence still holds after re-run.
-	runJS(`var equiv = prSplit.verifyEquivalence(plan);`)
-	equivVal := runJS(`equiv.equivalent`)
+	equivVal := runJS(`__equiv.equivalent`)
 	assert.True(t, equivVal.ToBoolean(), "tree hashes should match after re-run")
 }
 
 func TestPRSplit_ExecuteSplit_NoFileStatuses(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 	runJS(`var prSplit = require('` + sp + `');`)
 
 	// Plan with valid structure but missing fileStatuses.
-	runJS(`var result = prSplit.executeSplit({
-		baseBranch: 'main',
-		sourceBranch: 'feature',
-		splits: [{
-			name: 'split/01-test',
-			files: ['a.go'],
-			message: 'test'
-		}]
-	});`)
+	runAsyncJS(t, bridge, `
+		globalThis.__result = await prSplit.executeSplit({
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			splits: [{
+				name: 'split/01-test',
+				files: ['a.go'],
+				message: 'test'
+			}]
+		});
+		__signalDone();
+	`)
 
-	errVal := runJS(`result.error`)
+	errVal := runJS(`__result.error`)
 	assert.Contains(t, errVal.String(), "fileStatuses is required")
 }
 
 func TestPRSplit_ExecuteSplit_MissingFileStatus(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
 
 	dir := initTestGitRepo(t)
@@ -1107,19 +1211,22 @@ func TestPRSplit_ExecuteSplit_MissingFileStatus(t *testing.T) {
 	runJS(`var prSplit = require('` + sp + `');`)
 
 	// Plan with fileStatuses that's missing an entry for one file.
-	runJS(`var result = prSplit.executeSplit({
-		baseBranch: 'main',
-		sourceBranch: 'feature',
-		dir: '` + escapedDir + `',
-		fileStatuses: { 'pkg/impl.go': 'A' },
-		splits: [{
-			name: 'split/01-test',
-			files: ['pkg/impl.go', 'cmd/run.go'],
-			message: 'test'
-		}]
-	});`)
+	runAsyncJS(t, bridge, `
+		globalThis.__result = await prSplit.executeSplit({
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			dir: '`+escapedDir+`',
+			fileStatuses: { 'pkg/impl.go': 'A' },
+			splits: [{
+				name: 'split/01-test',
+				files: ['pkg/impl.go', 'cmd/run.go'],
+				message: 'test'
+			}]
+		});
+		__signalDone();
+	`)
 
-	errVal := runJS(`result.error`)
+	errVal := runJS(`__result.error`)
 	assert.Contains(t, errVal.String(), "cmd/run.go")
 	assert.Contains(t, errVal.String(), "no entry in plan.fileStatuses")
 }

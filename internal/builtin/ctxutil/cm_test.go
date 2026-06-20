@@ -948,7 +948,7 @@ func TestContextManagerErrorHandling(t *testing.T) {
 }
 
 func TestContextManagerAddFromDiffBasic(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -976,16 +976,18 @@ func TestContextManagerAddFromDiffBasic(t *testing.T) {
 			})
 		});
 
-		ctxmgr.commands.add.handler(["--from-diff"]);
-
-		globalThis.__addPathCalls = addPathCalls;
-		globalThis.__items = items;
-		globalThis.__outputCalls = outputCalls;
+		ctxmgr.commands.add.handler(["--from-diff"]).then(function() {
+			globalThis.__addPathCalls = addPathCalls;
+			globalThis.__items = items;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		}).catch(function(e) {
+			globalThis.__testError = (e && e.message) ? e.message : String(e);
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	addPathCalls := runtime.Get("__addPathCalls").Export()
 	paths, ok := addPathCalls.([]any)
@@ -1073,7 +1075,7 @@ func TestContextManagerAddFromDiffWithSpec(t *testing.T) {
 }
 
 func TestContextManagerAddFromDiffNoChanges(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1100,15 +1102,17 @@ func TestContextManagerAddFromDiffNoChanges(t *testing.T) {
 			})
 		});
 
-		ctxmgr.commands.add.handler(["--from-diff"]);
-
-		globalThis.__outputCalls = outputCalls;
-		globalThis.__itemCount = items.length;
+		ctxmgr.commands.add.handler(["--from-diff"]).then(function() {
+			globalThis.__outputCalls = outputCalls;
+			globalThis.__itemCount = items.length;
+			__signalDone();
+		}).catch(function(e) {
+			globalThis.__testError = (e && e.message) ? e.message : String(e);
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	outputCalls := runtime.Get("__outputCalls").Export()
 	outputs, ok := outputCalls.([]any)
@@ -1124,7 +1128,7 @@ func TestContextManagerAddFromDiffNoChanges(t *testing.T) {
 }
 
 func TestContextManagerAddFromDiffError(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1151,15 +1155,17 @@ func TestContextManagerAddFromDiffError(t *testing.T) {
 			})
 		});
 
-		ctxmgr.commands.add.handler(["--from-diff"]);
-
-		globalThis.__outputCalls = outputCalls;
-		globalThis.__itemCount = items.length;
+		ctxmgr.commands.add.handler(["--from-diff"]).then(function() {
+			globalThis.__outputCalls = outputCalls;
+			globalThis.__itemCount = items.length;
+			__signalDone();
+		}).catch(function(e) {
+			globalThis.__testError = (e && e.message) ? e.message : String(e);
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	outputCalls := runtime.Get("__outputCalls").Export()
 	outputs, ok := outputCalls.([]any)
@@ -1366,7 +1372,7 @@ func TestContextManagerExecEditLazyExec(t *testing.T) {
 }
 
 func TestContextManagerAddFromDiffPartialFailure(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1396,15 +1402,17 @@ func TestContextManagerAddFromDiffPartialFailure(t *testing.T) {
 			})
 		});
 
-		ctxmgr.commands.add.handler(["--from-diff"]);
-
-		globalThis.__items = items;
-		globalThis.__outputCalls = outputCalls;
+		ctxmgr.commands.add.handler(["--from-diff"]).then(function() {
+			globalThis.__items = items;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		}).catch(function(e) {
+			globalThis.__testError = (e && e.message) ? e.message : String(e);
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	// 2 successful adds (good.txt and also-good.txt), 1 failed (deleted.txt)
 	items := runtime.Get("__items").Export()
@@ -1511,10 +1519,7 @@ func TestContextManagerPostCopyHint(t *testing.T) {
 			postCopyHint: '[Hint] Try a follow-up prompt: "Do something next."'
 		});
 
-		ctxmgr.commands.copy.handler();
-
-		// Wait for copy to complete and signal done
-		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+		ctxmgr.commands.copy.handler().then(function() {
 			globalThis.__clipboardContent = clipboardContent;
 			globalThis.__outputCalls = outputCalls;
 			__signalDone();
@@ -1565,10 +1570,7 @@ func TestContextManagerPostCopyHintNotShownWhenEmpty(t *testing.T) {
 			clipboardCopy: (text) => { clipboardContent = text; }
 		});
 
-		ctxmgr.commands.copy.handler();
-
-		// Wait for copy to complete and signal done
-		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+		ctxmgr.commands.copy.handler().then(function() {
 			globalThis.__outputCalls = outputCalls;
 			__signalDone();
 		});
@@ -1591,7 +1593,7 @@ func TestContextManagerPostCopyHintNotShownWhenEmpty(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetBasic(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1620,13 +1622,14 @@ func TestContextManagerHotSnippetBasic(t *testing.T) {
 
 		// Execute the followup snippet
 		ctxmgr.commands["hot-followup"].handler();
-		globalThis.__clipboardContent = clipboardContent;
-		globalThis.__outputCalls = outputCalls;
+		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+			globalThis.__clipboardContent = clipboardContent;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	if !runtime.Get("__hasFollowup").ToBoolean() {
 		t.Error("expected hot-followup command to exist")
@@ -1660,7 +1663,7 @@ func TestContextManagerHotSnippetBasic(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetWarning(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1681,13 +1684,14 @@ func TestContextManagerHotSnippetWarning(t *testing.T) {
 		});
 
 		ctxmgr.commands["hot-builtin1"].handler();
-		globalThis.__outputCalls = outputCalls;
-		globalThis.__clipboardContent = clipboardContent;
+		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+			globalThis.__outputCalls = outputCalls;
+			globalThis.__clipboardContent = clipboardContent;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	outputCalls := runtime.Get("__outputCalls").Export()
 	outputs, ok := outputCalls.([]any)
@@ -1715,7 +1719,7 @@ func TestContextManagerHotSnippetWarning(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetWarningDisabled(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -1737,13 +1741,14 @@ func TestContextManagerHotSnippetWarningDisabled(t *testing.T) {
 		});
 
 		ctxmgr.commands["hot-builtin1"].handler();
-		globalThis.__outputCalls = outputCalls;
-		globalThis.__clipboardContent = clipboardContent;
+		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+			globalThis.__outputCalls = outputCalls;
+			globalThis.__clipboardContent = clipboardContent;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	outputCalls := runtime.Get("__outputCalls").Export()
 	outputs, ok := outputCalls.([]any)
@@ -2649,10 +2654,7 @@ func TestContextManagerRefreshWithoutContextGlobal(t *testing.T) {
 
 		items.push({id: 1, type: 'file', label: 'test.txt', payload: ''});
 
-		ctxmgr.commands.copy.handler();
-
-		// Wait for copy to complete and signal done
-		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+		ctxmgr.commands.copy.handler().then(function() {
 			globalThis.__clipboardContent = clipboardContent;
 			globalThis.__outputCalls = outputCalls;
 			__signalDone();
@@ -2708,7 +2710,7 @@ func TestContextManagerNoteViaEditor(t *testing.T) {
 }
 
 func TestContextManagerHotSnippetAutoDetectFromGlobal(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
 		const { contextManager } = exports;
@@ -2738,16 +2740,17 @@ func TestContextManagerHotSnippetAutoDetectFromGlobal(t *testing.T) {
 
 		// Execute auto1
 		ctxmgr.commands["hot-auto1"].handler();
-		globalThis.__clipboardContent = clipboardContent;
-		globalThis.__outputCalls = outputCalls;
+		Promise.resolve(ctxmgr.buildPrompt()).then(function() {
+			globalThis.__clipboardContent = clipboardContent;
+			globalThis.__outputCalls = outputCalls;
 
-		// Cleanup
-		delete globalThis.CONFIG_HOT_SNIPPETS;
+			// Cleanup
+			delete globalThis.CONFIG_HOT_SNIPPETS;
+			__signalDone();
+		});
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	if !runtime.Get("__hasAuto1").ToBoolean() {
 		t.Error("expected auto1 command to exist from auto-detected CONFIG_HOT_SNIPPETS")

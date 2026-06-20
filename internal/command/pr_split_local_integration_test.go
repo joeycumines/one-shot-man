@@ -258,8 +258,8 @@ func TestIntegration_RefactoringBranch(t *testing.T) {
 	// Verify the diff statuses are captured.
 	// Use EvalJS to check the analysis directly.
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
-	val, err := evalJS(`(function() {
-		var a = globalThis.prSplit.analyzeDiff({ baseBranch: 'main' });
+	val, err := evalJS(`(async function() {
+		var a = await globalThis.prSplit.analyzeDiff({ baseBranch: 'main' });
 		return JSON.stringify({ files: a.files.length, statuses: a.fileStatuses });
 	})()`)
 	if err != nil {
@@ -350,22 +350,22 @@ func TestIntegration_BrokenSplitsResolution(t *testing.T) {
 	// the resolution path.
 	val, err := tp.EvalJS(`(async function() {
 		var ps = globalThis.prSplit;
-		var analysis = ps.analyzeDiff({ baseBranch: 'main' });
+		var analysis = await ps.analyzeDiff({ baseBranch: 'main' });
 		if (analysis.error) return JSON.stringify({ error: analysis.error });
 
-		var groups = ps.applyStrategy(analysis.files, 'directory', {
+		var groups = await ps.applyStrategy(analysis.files, 'directory', {
 			fileStatuses: analysis.fileStatuses,
 			maxFiles: 10,
 			baseBranch: 'main'
 		});
-		var plan = ps.createSplitPlan(groups, {
+		var plan = await ps.createSplitPlan(groups, {
 			baseBranch: analysis.baseBranch,
 			sourceBranch: analysis.currentBranch,
 			branchPrefix: 'split/',
 			maxFiles: 10,
 			fileStatuses: analysis.fileStatuses
 		});
-		var execResult = ps.executeSplit(plan);
+		var execResult = await ps.executeSplit(plan);
 		if (execResult.error) return JSON.stringify({ error: execResult.error });
 
 		// Call resolveConflicts with verify='false' (always fails).
@@ -459,24 +459,24 @@ func TestIntegration_IndependentChanges(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Analyze, plan, execute, then check independence.
-	val, err := tp.EvalJS(`(function() {
+	val, err := tp.EvalJS(`(async function() {
 		var ps = globalThis.prSplit;
-		var analysis = ps.analyzeDiff({ baseBranch: 'main' });
+		var analysis = await ps.analyzeDiff({ baseBranch: 'main' });
 		if (analysis.error) return JSON.stringify({ error: analysis.error });
 
-		var groups = ps.applyStrategy(analysis.files, 'directory', {
+		var groups = await ps.applyStrategy(analysis.files, 'directory', {
 			fileStatuses: analysis.fileStatuses,
 			maxFiles: 10,
 			baseBranch: 'main'
 		});
-		var plan = ps.createSplitPlan(groups, {
+		var plan = await ps.createSplitPlan(groups, {
 			baseBranch: analysis.baseBranch,
 			sourceBranch: analysis.currentBranch,
 			branchPrefix: 'split/',
 			maxFiles: 10,
 			fileStatuses: analysis.fileStatuses
 		});
-		var execResult = ps.executeSplit(plan);
+		var execResult = await ps.executeSplit(plan);
 		if (execResult.error) return JSON.stringify({ error: execResult.error });
 
 		// Build a classification from groups.
@@ -487,7 +487,7 @@ func TestIntegration_IndependentChanges(t *testing.T) {
 			}
 		}
 
-		var pairs = ps.assessIndependence(plan, classification);
+		var pairs = await ps.assessIndependence(plan, classification);
 		return JSON.stringify({
 			error: null,
 			splitCount: plan.splits.length,
@@ -767,15 +767,15 @@ func TestIntegration_PRCreationMockGh(t *testing.T) {
 	}
 
 	// Test createPRs directly with push-only mode and a nonexistent remote.
-	val, err := tp.EvalJS(`(function() {
+	val, err := tp.EvalJS(`(async function() {
 		var ps = globalThis.prSplit;
 		// Get the cached plan.
-		var analysis = ps.analyzeDiff({ baseBranch: 'main' });
-		var groups = ps.applyStrategy(analysis.files, 'directory', {
+		var analysis = await ps.analyzeDiff({ baseBranch: 'main' });
+		var groups = await ps.applyStrategy(analysis.files, 'directory', {
 			fileStatuses: analysis.fileStatuses,
 			maxFiles: 10
 		});
-		var plan = ps.createSplitPlan(groups, {
+		var plan = await ps.createSplitPlan(groups, {
 			baseBranch: analysis.baseBranch,
 			sourceBranch: analysis.currentBranch,
 			branchPrefix: 'split/',
@@ -785,7 +785,7 @@ func TestIntegration_PRCreationMockGh(t *testing.T) {
 
 		// Without a remote, the push will fail — but verify the function's
 		// error handling is correct.
-		var result = ps.createPRs(plan, { pushOnly: true, remote: 'nonexistent' });
+		var result = await ps.createPRs(plan, { pushOnly: true, remote: 'nonexistent' });
 		return JSON.stringify({
 			error: result.error || null,
 			resultCount: (result.results || []).length,

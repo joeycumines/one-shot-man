@@ -287,9 +287,9 @@ func TestFixture_CreateSplitPlan_FromFixtures(t *testing.T) {
 			}
 
 			// Run selectStrategy then pipe groups into createSplitPlan.
-			js := `(function() {
-				var sel = globalThis.prSplit.selectStrategy(` + string(filesJSON) + `);
-				var plan = globalThis.prSplit.createSplitPlan(sel.groups, {
+			js := `(async function() {
+				var sel = await globalThis.prSplit.selectStrategy(` + string(filesJSON) + `);
+				var plan = await globalThis.prSplit.createSplitPlan(sel.groups, {
 					baseBranch: 'main',
 					branchPrefix: 'split/',
 					dir: '` + escapeJSPath(dir) + `',

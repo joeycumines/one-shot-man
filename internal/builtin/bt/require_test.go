@@ -258,9 +258,13 @@ func TestUnwrap_Logic(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, bt.Running, status)
 
-		// Yield to event loop
-		err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error { return nil })
-		require.NoError(t, err)
+		// Yield to event loop — multiple yields needed because the test event
+		// loop does not use WithStrictMicrotaskOrdering, so the native-promise
+		// microtask may not drain in a single macrotask under -race.
+		for i := 0; i < 5; i++ {
+			err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error { return nil })
+			require.NoError(t, err)
+		}
 
 		// Second tick: Success
 		status, err = tick(nil)

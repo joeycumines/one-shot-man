@@ -416,6 +416,8 @@
                             } catch (e) {
                                 output.print("Clipboard error: " + (e && e.message ? e.message : e));
                             }
+                        }).catch(function(e) {
+                            output.print("Prompt error: " + (e && e.message ? e.message : e));
                         });
                     }
                 }

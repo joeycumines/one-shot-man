@@ -73,8 +73,8 @@ func TestChunk06_VerifyEquivalence_Equivalent(t *testing.T) {
 	dir := setupExecRepoAndExecute(t, evalJS)
 
 	result, err := evalJS(`
-		(function() {
-			var r = globalThis.prSplit.verifyEquivalence({
+		(async function() {
+			var r = await globalThis.prSplit.verifyEquivalence({
 				dir: '` + escapeJSPath(dir) + `',
 				sourceBranch: 'feature',
 				splits: [
@@ -143,8 +143,8 @@ func TestChunk06_VerifyEquivalence_Mismatch(t *testing.T) {
 	}
 
 	result, err := evalJS(`
-		(function() {
-			var r = globalThis.prSplit.verifyEquivalence({
+		(async function() {
+			var r = await globalThis.prSplit.verifyEquivalence({
 				dir: '` + escapeJSPath(dir) + `',
 				sourceBranch: 'feature',
 				splits: [{ name: 'split/01-partial' }]
@@ -173,8 +173,8 @@ func TestChunk06_VerifyEquivalence_NullPlan(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 
 	result, err := evalJS(`
-		(function() {
-			var r = globalThis.prSplit.verifyEquivalence(null);
+		(async function() {
+			var r = await globalThis.prSplit.verifyEquivalence(null);
 			return r.error;
 		})()
 	`)
@@ -217,8 +217,8 @@ func TestChunk06_VerifyEquivalenceDetailed_IncludesDiffFiles(t *testing.T) {
 	`)
 
 	result, err := evalJS(`
-		(function() {
-			var r = globalThis.prSplit.verifyEquivalenceDetailed({
+		(async function() {
+			var r = await globalThis.prSplit.verifyEquivalenceDetailed({
 				dir: '` + escapeJSPath(dir) + `',
 				sourceBranch: 'feature',
 				splits: [{ name: 'split/01-a' }]
@@ -262,8 +262,8 @@ func TestChunk06_CleanupBranches(t *testing.T) {
 	dir := setupExecRepoAndExecute(t, evalJS)
 
 	result, err := evalJS(`
-		(function() {
-			var r = globalThis.prSplit.cleanupBranches({
+		(async function() {
+			var r = await globalThis.prSplit.cleanupBranches({
 				baseBranch: 'main',
 				dir: '` + escapeJSPath(dir) + `',
 				splits: [
@@ -325,8 +325,8 @@ func TestChunk06_CleanupBranches_Idempotent(t *testing.T) {
 
 	// Second cleanup — should not panic, branches just already gone.
 	result, err := evalJS(`
-		(function() {
-			var r = globalThis.prSplit.cleanupBranches({
+		(async function() {
+			var r = await globalThis.prSplit.cleanupBranches({
 				baseBranch: 'main',
 				dir: '` + escapeJSPath(dir) + `',
 				splits: [{ name: 'split/01-a' }, { name: 'split/02-c' }]
@@ -357,8 +357,8 @@ func TestChunk06_CleanupBranches_NullPlan(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 
 	result, err := evalJS(`
-		(function() {
-			var r = globalThis.prSplit.cleanupBranches(null);
+		(async function() {
+			var r = await globalThis.prSplit.cleanupBranches(null);
 			return JSON.stringify(r);
 		})()
 	`)

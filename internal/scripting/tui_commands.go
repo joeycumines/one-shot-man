@@ -13,6 +13,26 @@ import (
 // global command registry.
 var ErrCommandNotFound = errors.New("command not found")
 
+// print writes a message to the terminal, routing through the logger's
+// PrintToTUI (which respects the TUI sink and writes to raw stdout when
+// the sink is nil) when the engine is available. Falls back to tm.writer
+// with an explicit Flush for test-only TUIManager instances without an engine.
+func (tm *TUIManager) print(msg string) {
+	if tm.engine != nil && tm.engine.logger != nil {
+		tm.engine.logger.PrintToTUI(msg)
+		return
+	}
+	if !strings.HasSuffix(msg, "\n") {
+		msg += "\n"
+	}
+	_, _ = fmt.Fprint(tm.writer, msg)
+	_ = tm.writer.Flush()
+}
+
+func (tm *TUIManager) printf(format string, args ...any) {
+	tm.print(fmt.Sprintf(format, args...))
+}
+
 // executor handles command execution.
 func (tm *TUIManager) executor(input string) bool {
 	input = strings.TrimSpace(input)
@@ -31,10 +51,10 @@ func (tm *TUIManager) executor(input string) bool {
 		// Exit current mode if any
 		if tm.currentMode != nil && tm.currentMode.OnExit != nil {
 			if _, err := tm.currentMode.OnExit(goja.Undefined()); err != nil {
-				_, _ = fmt.Fprintf(tm.writer, "Error exiting mode %s: %v\n", tm.currentMode.Name, err)
+				tm.printf("Error exiting mode %s: %v", tm.currentMode.Name, err)
 			}
 		}
-		_, _ = fmt.Fprintln(tm.writer, "Goodbye!")
+		tm.print("Goodbye!")
 		return false
 	case "help":
 		tm.showHelp()
@@ -50,12 +70,12 @@ func (tm *TUIManager) executor(input string) bool {
 			if tm.currentMode != nil {
 				tm.executeJavaScript(input)
 			} else {
-				_, _ = fmt.Fprintf(tm.writer, "Command not found: %s\n", cmdName)
-				_, _ = fmt.Fprintln(tm.writer, "Type 'help' for available commands or switch to a mode to execute JavaScript")
+				tm.printf("Command not found: %s", cmdName)
+				tm.print("Type 'help' for available commands or switch to a mode to execute JavaScript")
 			}
 		} else {
 			// Command was found but the handler itself returned an error
-			_, _ = fmt.Fprintf(tm.writer, "Error: %v\n", err)
+			tm.printf("Error: %v", err)
 		}
 	}
 	return true
@@ -83,7 +103,7 @@ func (tm *TUIManager) getInitialCommand() string {
 // executeJavaScript executes JavaScript code in the current mode context.
 func (tm *TUIManager) executeJavaScript(code string) {
 	if tm.currentMode == nil {
-		_, _ = fmt.Fprintln(tm.writer, "No active mode for JavaScript execution")
+		tm.print("No active mode for JavaScript execution")
 		return
 	}
 
@@ -92,46 +112,44 @@ func (tm *TUIManager) executeJavaScript(code string) {
 
 	// Execute with mode state available
 	if err := tm.engine.ExecuteScript(script); err != nil {
-		_, _ = fmt.Fprintf(tm.writer, "Error: %v\n", err)
+		tm.printf("Error: %v", err)
 	}
 }
 
 // showHelp displays help information.
 func (tm *TUIManager) showHelp() {
-	writer := tm.writer
-
-	_, _ = fmt.Fprintln(writer, "Available commands:")
-	_, _ = fmt.Fprintln(writer, "  help                 - Show this help message")
-	_, _ = fmt.Fprintln(writer, "  exit, quit           - Exit the terminal")
-	_, _ = fmt.Fprintln(writer, "  mode <name>          - Switch to a mode")
-	_, _ = fmt.Fprintln(writer, "  modes                - List available modes")
-	_, _ = fmt.Fprintln(writer, "  state                - Show current mode state")
-	_, _ = fmt.Fprintln(writer, "")
+	tm.print("Available commands:")
+	tm.print("  help                 - Show this help message")
+	tm.print("  exit, quit           - Exit the terminal")
+	tm.print("  mode <name>          - Switch to a mode")
+	tm.print("  modes                - List available modes")
+	tm.print("  state                - Show current mode state")
+	tm.print("")
 
 	commands := tm.ListCommands()
 	if len(commands) > 0 {
-		_, _ = fmt.Fprintln(writer, "Registered commands:")
+		tm.print("Registered commands:")
 		for _, cmd := range commands {
-			_, _ = fmt.Fprintf(writer, "  %-20s - %s\n", cmd.Name, cmd.Description)
+			tm.printf("  %-20s - %s", cmd.Name, cmd.Description)
 			if cmd.Usage != "" {
-				_, _ = fmt.Fprintf(writer, "    Usage: %s\n", cmd.Usage)
+				tm.printf("    Usage: %s", cmd.Usage)
 			}
 		}
-		_, _ = fmt.Fprintln(writer, "")
+		tm.print("")
 	}
 
 	// Show loaded scripts
 	scripts := tm.engine.GetScripts()
 	if len(scripts) > 0 {
-		_, _ = fmt.Fprintf(writer, "Loaded scripts: %d\n", len(scripts))
+		tm.printf("Loaded scripts: %d", len(scripts))
 	}
 
 	if tm.currentMode != nil {
-		_, _ = fmt.Fprintf(writer, "Current mode: %s\n", tm.currentMode.Name)
-		_, _ = fmt.Fprintln(writer, "Note: You can execute JavaScript code directly!")
+		tm.printf("Current mode: %s", tm.currentMode.Name)
+		tm.print("Note: You can execute JavaScript code directly!")
 	} else {
-		_, _ = fmt.Fprintf(writer, "Available modes: %s\n", strings.Join(tm.ListModes(), ", "))
-		_, _ = fmt.Fprintln(writer, "Switch to a mode to execute JavaScript code.")
+		tm.printf("Available modes: %s", strings.Join(tm.ListModes(), ", "))
+		tm.print("Switch to a mode to execute JavaScript code.")
 	}
 }
 
@@ -151,7 +169,7 @@ func (tm *TUIManager) registerBuiltinCommands() {
 			}
 			err := tm.SwitchMode(args[0])
 			if err != nil {
-				_, _ = fmt.Fprintf(tm.writer, "mode %s not found\n", args[0])
+				tm.printf("mode %s not found", args[0])
 				return nil // Don't return error to avoid "Command not found"
 			}
 			return nil
@@ -166,11 +184,11 @@ func (tm *TUIManager) registerBuiltinCommands() {
 		Handler: func(args []string) error {
 			modes := tm.ListModes()
 			if len(modes) == 0 {
-				_, _ = fmt.Fprintln(tm.writer, "No modes registered")
+				tm.print("No modes registered")
 			} else {
-				_, _ = fmt.Fprintf(tm.writer, "Available modes: %s\n", strings.Join(modes, ", "))
+				tm.printf("Available modes: %s", strings.Join(modes, ", "))
 				if tm.currentMode != nil {
-					_, _ = fmt.Fprintf(tm.writer, "Current mode: %s\n", tm.currentMode.Name)
+					tm.printf("Current mode: %s", tm.currentMode.Name)
 				}
 			}
 			return nil
@@ -184,16 +202,15 @@ func (tm *TUIManager) registerBuiltinCommands() {
 		Description: "Show current mode state",
 		Handler: func(args []string) error {
 			if tm.currentMode == nil {
-				_, _ = fmt.Fprintln(tm.writer, "No active mode")
+				tm.print("No active mode")
 				return nil
 			}
 
 			tm.currentMode.mu.RLock()
 			defer tm.currentMode.mu.RUnlock()
 
-			_, _ = fmt.Fprintf(tm.writer, "Mode: %s\n", tm.currentMode.Name)
-			// State is now managed by StateManager, not directly on mode
-			_, _ = fmt.Fprintln(tm.writer, "State: managed by StateManager (use history to view state snapshots)")
+			tm.printf("Mode: %s", tm.currentMode.Name)
+			tm.print("State: managed by StateManager (use history to view state snapshots)")
 			return nil
 		},
 		IsGoCommand: true,
@@ -211,14 +228,14 @@ func (tm *TUIManager) registerBuiltinCommands() {
 
 			archivePath, err := tm.resetAllState()
 			if err != nil {
-				_, _ = fmt.Fprintf(tm.writer, "WARNING: Failed to archive session: %v\nState preserved; reset aborted.\n", err)
+				tm.printf("WARNING: Failed to archive session: %v\nState preserved; reset aborted.", err)
 				return nil
 			}
 
 			if archivePath != "" {
-				_, _ = fmt.Fprintf(tm.writer, "Session archived to: %s\n", archivePath)
+				tm.printf("Session archived to: %s", archivePath)
 			} else {
-				_, _ = fmt.Fprintln(tm.writer, "All shared and mode-specific state has been reset to default values.")
+				tm.print("All shared and mode-specific state has been reset to default values.")
 			}
 			return nil
 		},

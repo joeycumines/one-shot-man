@@ -269,6 +269,25 @@ func (l *TUILogger) SetTUISink(sink func(string)) {
 	l.tuiSink = sink
 }
 
+// WriteDirect writes raw bytes to the terminal writer, bypassing the TUI
+// sink. Unlike tm.writer (PosixWriter), it does not buffer or replace ESC
+// bytes, ensuring queued output is visible immediately with ANSI intact.
+// Holds sinkMu.RLock for the same atomicity guarantee as PrintToTUI.
+func (l *TUILogger) WriteDirect(data []byte) {
+	l.sinkMu.RLock()
+	defer l.sinkMu.RUnlock()
+	if l.tuiWriter != nil {
+		_, _ = l.tuiWriter.Write(data)
+	}
+}
+
+// GetTUIWriter returns the underlying terminal writer, or nil if unset.
+func (l *TUILogger) GetTUIWriter() io.Writer {
+	l.sinkMu.RLock()
+	defer l.sinkMu.RUnlock()
+	return l.tuiWriter
+}
+
 // GetLogs returns all log entries.
 func (l *TUILogger) GetLogs() []logEntry {
 	l.handler.shared.mutex.RLock()

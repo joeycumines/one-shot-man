@@ -101,7 +101,7 @@ require (
 )
 
 replace (
-	github.com/dop251/goja => /Users/joeyc/dev/goja
+	github.com/dop251/goja => github.com/joeycumines/goja v0.0.0-20260623084332-22eadc31347a
 	github.com/joeycumines/go-eventloop => /Users/joeyc/dev/go-utilpkg/eventloop
 	github.com/joeycumines/goja-eventloop => /Users/joeyc/dev/go-utilpkg/goja-eventloop
 )

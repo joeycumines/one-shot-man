@@ -110,6 +110,8 @@ github.com/joeycumines/go-prompt v0.0.0-20260331032446-9186991b1af7 h1:6fE5Olxsx
 github.com/joeycumines/go-prompt v0.0.0-20260331032446-9186991b1af7/go.mod h1:cMpb1Xz+wa/HPJ5iDhTjJq20R09q3xpwIfQl96D8qnM=
 github.com/joeycumines/go-utilpkg/jsonenc v0.0.0-20230803131503-0fe828ecefae h1:XL7IcdFq74hx1dXXl1xOXRbgaZUWdCojaa1tAW6/ozc=
 github.com/joeycumines/go-utilpkg/jsonenc v0.0.0-20230803131503-0fe828ecefae/go.mod h1:CunLunFiy6ZyhuiuwK5K6z9n1DsFLOvNd5Cu0KgK420=
+github.com/joeycumines/goja v0.0.0-20260623084332-22eadc31347a h1:HoUbZSLeHqxA1TqRN3XxPfKiku4R96twxpFU0wDWft4=
+github.com/joeycumines/goja v0.0.0-20260623084332-22eadc31347a/go.mod h1:Sc+QOu1WruvaaeT/cxFez/pXHpI9ZDjg/E8QNfSVveI=
 github.com/joeycumines/goja-grpc v0.0.0-20260331032357-983806976d09 h1:a2m+4wQrdSD4OpJCDQh/xDB9ytN6X5Ky1lQQZ2zAOGA=
 github.com/joeycumines/goja-grpc v0.0.0-20260331032357-983806976d09/go.mod h1:K8gEfWmPnrE7yh/BrXwUbWOxaDfj/YPx3j7xTPsY80Y=
 github.com/joeycumines/goja-protobuf v0.0.0-20260331032401-b5c5be7a30d3 h1:9RAgQk2dlTs/ZVldkwT1h6NrYdm86VPv7kuJu7qs4p8=

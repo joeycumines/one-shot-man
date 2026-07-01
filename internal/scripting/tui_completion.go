@@ -9,9 +9,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/argv"
 	"github.com/joeycumines/one-shot-man/internal/filepathutil"
 )

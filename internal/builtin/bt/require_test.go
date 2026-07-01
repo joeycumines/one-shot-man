@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/dop251/goja"
 	bt "github.com/joeycumines/go-behaviortree"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -261,7 +261,7 @@ func TestUnwrap_Logic(t *testing.T) {
 		// Yield to event loop — multiple yields needed because the test event
 		// loop does not use WithStrictMicrotaskOrdering, so the native-promise
 		// microtask may not drain in a single macrotask under -race.
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error { return nil })
 			require.NoError(t, err)
 		}
@@ -354,7 +354,7 @@ func TestLeaves_CreateLeafNode(t *testing.T) {
 		// Multiple yields needed because the test event loop does not use
 		// WithStrictMicrotaskOrdering, so the native-promise microtask may
 		// not drain in a single macrotask under -race.
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error { return nil })
 			require.NoError(t, err)
 		}

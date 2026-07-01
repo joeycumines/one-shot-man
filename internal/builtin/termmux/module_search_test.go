@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
@@ -43,8 +43,11 @@ func TestSearchForwardBackwardBindings_DefaultSearcher(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
+	echoBin := buildEchoIdleProgram(t, "hello world")
+	_ = runtime.Set("echoBin", echoBin)
+
 	v, err := runtime.RunString(`
-		var s = termmux.newBoundedSession({ cmd: "sh", args: ["-c", "echo 'hello world'; exec cat"], rows: 5, cols: 40, name: "search" });
+		var s = termmux.newBoundedSession({ cmd: echoBin, rows: 5, cols: 40, name: "search" });
 		s.sid
 	`)
 	if err != nil {
@@ -94,8 +97,11 @@ func TestNewCopyModeSearcher_OptionalCallback(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
+	echoBin := buildEchoIdleProgram(t, "alpha beta")
+	_ = runtime.Set("echoBin", echoBin)
+
 	v, err := runtime.RunString(`
-		var s = termmux.newBoundedSession({ cmd: "sh", args: ["-c", "echo 'alpha beta'; exec cat"], rows: 5, cols: 40, name: "copysearch" });
+		var s = termmux.newBoundedSession({ cmd: echoBin, rows: 5, cols: 40, name: "copysearch" });
 		s.sid
 	`)
 	if err != nil {
@@ -143,8 +149,11 @@ func TestNewCopyModeSearcher_BackwardNoCallback(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
+	echoBin := buildEchoIdleProgram(t, "one two")
+	_ = runtime.Set("echoBin", echoBin)
+
 	v, err := runtime.RunString(`
-		var s = termmux.newBoundedSession({ cmd: "sh", args: ["-c", "echo 'one two'; exec cat"], rows: 5, cols: 40, name: "copysearch2" });
+		var s = termmux.newBoundedSession({ cmd: echoBin, rows: 5, cols: 40, name: "copysearch2" });
 		s.sid
 	`)
 	if err != nil {

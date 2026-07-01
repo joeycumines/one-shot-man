@@ -1,78 +1,41 @@
-# WIP.md — Session: Tue Jun 10 2026 — Bouncing Logo Input Fix (EXPANDED SCOPE)
+# WIP
 
-## Current Status
-IN PROGRESS. Code changes complete for example-15. Two critical bugs found and fixed by first review gate. Full suite passes with -short. VT audit found 25 findings (1 CRITICAL, 6 HIGH, 9 MEDIUM). First review gate found 10 findings (1 CRITICAL fixed, 1 HIGH fixed). Remaining: second review gate, then expanded scope to termmux package production-readiness.
+## Session: 2026-07-01 — Address scratch/review-01..03.md (DONE)
 
-## Changes Made (unstaged)
-1. `scripts/example-15-bouncing-logo.js`:
-   - handleControlKey: removed bare letter shortcuts, only ctrl+letter now
-   - Chord mode: FIXED — now passes 'ctrl+s'/'ctrl+b'/'ctrl+p' to handleControlKey (was passing bare 's'/'b'/'p')
-   - buttonIdToKey: returns 'ctrl+p'/'ctrl+b'/'ctrl+s'/'ctrl+q'
-   - Button labels: [^P] Pause, [^B] Bigger, [^S] Smaller, [^Q] Quit
+All review findings addressed. 18 fixes across 15 files. All three platforms pass.
 
-2. `internal/example/bouncelogo/bouncelogo_pty_test.go`:
-   - Updated 3 tests to use ctrl+letter bytes
-   - Added TestBouncingLogo_BareLettersForward, TestBouncingLogo_SpacebarForward
-   - FIXED TestBouncingLogo_ChordMode: uses buffer.Contains instead of delta-based expect
+## Changes
 
-3. `internal/termmux/input.go` (prior session): space case + Unicode fallback fix
-4. `internal/termmux/input_test.go` (prior session): SpaceKey + UnrecognizedKeyNames tests
-5. `scripts/README.md`: updated example-15 description
+### Review-01..03 fixes (7):
+1. pr_split_06_verification.js — .catch() guarded with typeof .then
+2. go.mod — go mod tidy removed dop251 direct deps
+3. prsplittest/eval.go — globals deleted after settle
+4. pty_windows.go — removed STARTF_USESTDHANDLES
+5. pr_split_16b — startAnalysis async [s,cmd] return; handleConfigError delegates to processConfigResult; handleConfigState dynamic dispatch
+6. pr_split_16d — startAutoAnalysis async [s,cmd]; handleAutoConfigError delegates; dynamic dispatch
+7. pr_split_16_async_pipeline_test.go — 4 original + 2 new rejection tests
 
-## Review Gate Status
-- FIRST PASS: DONE. Found 10 issues. Fixed F-001 (CRITICAL: chord mode bare letter), F-002 (HIGH: chord test timing).
-- SECOND PASS: NOT STARTED. Must run before commit.
-- Remaining findings to address in expanded scope: F-003 through F-010
+### Flaky test / data race fixes (5):
+8. pty.go — Close() closes slave tty BEFORE grace/force loop (macOS E-state fix; surgical: only tty, wf stays)
+9. bubblezone_test.go — waitForZone deadline+sleep (Gosched starvation fix) + RescanUpdatesZones
+10. engine_core.go — removed e.vm=nil + e.scripts=nil (DATA RACE); atomic.Bool closed idempotency; executeOnLoop local vm capture; e.scripts protected with globalsMu + slices.Clone
+11. manager_exited_pane_test.go — Subscribe before close(readerCh) (TOCTOU fix)
+12. passthrough_test.go — echo→sleep 5 (Linux race: echo exited before toggle key read)
 
-## VT Audit Findings (termmux/vt/) — EXPANDED SCOPE
-The VT audit found 25 findings. Most impactful for production readiness:
+### Missing links / regression fixes (4):
+13. pr_split_14b_tui_commands_ext.js — handleConfigState dynamic dispatch (same bug as 16b/16d)
+14. pr_split_16b — split-view cleanup on config error (splitViewOpenedHere tracking)
+15. remain_on_exit_test.go — Subscribe before close (3 instances, same TOCTOU)
+16. load_test.go — Gosched busy-waits replaced with time.Sleep (4 instances)
 
-### CRITICAL
-- F1: ActiveScreen() leaks mutable *Screen outside mutex → data races
+### Adversarial autopsy findings:
+- No test weakening found (all assertions intact, no tests skipped/removed)
+- Stale comments fixed (references to removed e.vm=nil, line numbers)
 
-### HIGH (6)
-- F2: CSI cursor commands don't clear PendingWrap → rendering glitches
-- F3: ESC cursor commands don't clear PendingWrap → rendering glitches
-- F18: CSI u (restore cursor) no bounds check → panic after resize
-- F19: ESC 8 (DECRC) no bounds check → panic after resize
-- F25: switchToPrimary restores cursor without bounds check → panic after resize
-- F10: Missing DECOM, DSR, DECSCUSR, many DECSET modes → programs break
-
-### MEDIUM (9)
-- F4: No VT mouse tracking unit tests
-- F5: InsertLines/DeleteLines don't clear PendingWrap
-- F12/24: Resize doesn't clear PendingWrap → stale wrap after grow
-- F20: EraseDisplay no CurRow bounds check
-- F6: OSC discarded (no title storage)
-- F7: Parser conflates private prefix with intermediate bytes
-- F8: DCS data entirely discarded (no Sixel support)
-- F22: RenderFullScreen loses scroll region, tab stops, mouse modes
-- F10: Missing DECOM origin mode → scroll region cursor positioning wrong
-
-## Next Session Instructions
-1. Read WIP.md and blueprint.json FIRST
-2. Run `go test -short -count=1 -timeout=5m ./...` to verify current state
-3. Run SECOND review gate (new subagent)
-4. Address remaining review findings (F-003 through F-010)
-5. Expand blueprint with termmux/vt production-readiness tasks based on VT audit
-6. Fix PendingWrap clearing across all cursor movement operations (F2, F3, F5, F12)
-7. Fix cursor restore bounds checking (F18, F19, F25)
-8. Consider removing ActiveScreen() or making it safe (F1)
-9. Run full test suite after each fix
-10. DO NOT COMMIT until second review gate passes
-
-## Key File Locations
-- Bouncing logo script: scripts/example-15-bouncing-logo.js
-- PTY tests: internal/example/bouncelogo/bouncelogo_pty_test.go
-- Mock shell: internal/example/bouncelogo/mock_shell.sh
-- Go key forwarding: internal/termmux/input.go
-- Go tests: internal/termmux/input_test.go
-- VT parser: internal/termmux/vt/vt.go
-- VT screen: internal/termmux/vt/screen.go
-- CSI handler: internal/termmux/vt/csi.go
-- ESC handler: internal/termmux/vt/esc.go
-- Parser: internal/termmux/vt/parser.go
-- Render: internal/termmux/vt/render.go
-- Session manager: internal/termmux/manager.go
-- JS bindings: internal/builtin/termmux/module.go
-- Prior autopsy: docs/key-input-autopsy-20260610/
+## Verification
+- macOS: make all PASS (EXIT=0)
+- Windows: make all PASS (EXIT=0)
+- Linux: make all PASS (EXIT=0)
+- gmake lint PASS (vet+staticcheck+deadcode)
+- Rule of Two: multiple rounds, all PASS
+- Scratch files cleaned (only original review-01..03.md remain)

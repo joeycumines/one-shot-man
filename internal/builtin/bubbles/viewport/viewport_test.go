@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"charm.land/bubbles/v2/viewport"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	jslipgloss "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 )
 

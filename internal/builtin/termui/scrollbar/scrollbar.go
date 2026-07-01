@@ -8,7 +8,7 @@ package scrollbar
 
 import (
 	"charm.land/lipgloss/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	termuisb "github.com/joeycumines/one-shot-man/internal/termui/scrollbar"
 )
 

@@ -3,7 +3,7 @@ package splitview
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	splitviewsb "github.com/joeycumines/one-shot-man/internal/termui/splitview"
 	"github.com/stretchr/testify/require"
 )

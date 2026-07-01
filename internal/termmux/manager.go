@@ -2385,9 +2385,11 @@ func (m *SessionManager) handleSnapshot(id SessionID) response {
 	}
 	now := time.Now()
 	activeMsg := m.activeMessageForSession(id, now)
-	if snap.Message != activeMsg {
+	locked := ms.lock.IsLocked()
+	if snap.Message != activeMsg || snap.Locked != locked {
 		snap = snap.Clone()
 		snap.Message = activeMsg
+		snap.Locked = locked
 		snap.Timestamp = now
 	}
 	return response{value: snap}
@@ -3398,12 +3400,12 @@ func (m *SessionManager) handleBreakPane(payload any) response {
 
 	m.eventBus.emitData(EventWindowUpdated, 0, windowUpdateData{sourceWindowID, newWindowID})
 
-	if m.activeID == sessionID {
-		m.activeID = sessionID
-		m.activeWindowID = newWindowID
-		m.windowMgr.setActive(newWindowID)
-		m.eventBus.emit(EventSessionActivated, sessionID)
-	}
+	// break-pane always makes the new window active and focuses the moved
+	// session, matching tmux's default behavior.
+	m.activeID = sessionID
+	m.activeWindowID = newWindowID
+	m.windowMgr.setActive(newWindowID)
+	m.eventBus.emit(EventSessionActivated, sessionID)
 
 	return response{value: breakJoinResult{windowID: newWindowID, paneID: newPaneID, sessionID: sessionID}}
 }

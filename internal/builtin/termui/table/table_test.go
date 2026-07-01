@@ -3,7 +3,7 @@ package table
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	jslipgloss "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 	termuitable "github.com/joeycumines/one-shot-man/internal/termui/table"
 	"github.com/stretchr/testify/require"

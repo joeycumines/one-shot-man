@@ -3,7 +3,7 @@ package layout
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	coord "github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 	termlayout "github.com/joeycumines/one-shot-man/internal/termui/layout"
 	"github.com/stretchr/testify/require"

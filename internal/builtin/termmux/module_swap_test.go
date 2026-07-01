@@ -12,9 +12,12 @@ func TestSwapPanes_JSBinding_ReturnsSwapped(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
+	idleBin := buildIdleProgram(t)
+	_ = runtime.Set("idleBin", idleBin)
+
 	_, err := runtime.RunString(`
 		function mkSession(name) {
-			return termmux.newBoundedSession({ cmd: "cat" });
+			return termmux.newBoundedSession({ cmd: idleBin });
 		}
 		var s1 = mkSession("one");
 		var s2 = mkSession("two");

@@ -589,7 +589,7 @@
     // Returns a Promise<{found: bool, path: string}>.
     async function lookupBinaryAsync(name) {
         if (absolutePath(name)) {
-            var exists = fileExistsSync(name);
+            var exists = await fileExistsSync(name);
             return {
                 found: exists,
                 path: exists ? name : ''

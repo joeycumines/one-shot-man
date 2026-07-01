@@ -2,7 +2,7 @@ package termmux
 
 import (
 	tea "charm.land/bubbletea/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 
 	btea "github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"

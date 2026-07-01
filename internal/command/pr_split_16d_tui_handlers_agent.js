@@ -15,7 +15,6 @@
 
     // Cross-chunk imports — state and handlers from chunks 13-14.
     var st = prSplit._state;
-    var handleConfigState = prSplit._handleConfigState;
     var getInteractivePaneSession = prSplit._getInteractivePaneSession;
 
     // Late-bound cross-chunk references (defined in sibling 16x chunks, resolved at call time).
@@ -269,7 +268,7 @@
     // The pipeline runs on the JS event loop independently. We poll for
     // completion via ticks so BubbleTea can render progress and the user
 
-    async function startAutoAnalysis(s) {
+    function startAutoAnalysis(s) {
         // Defense-in-depth: if prSplitConfig is absent (test/offline),
         // fall back immediately rather than crashing on property access.
         if (typeof prSplitConfig === 'undefined') {
@@ -291,50 +290,6 @@
             { label: 'Executing splits', active: false, done: false }
         ];
 
-        // Run config state handler (same as heuristic path).
-        // Pass outputFn to suppress output.print in TUI context.
-        var configResult = await handleConfigState({
-            baseBranch: prSplit.runtime.baseBranch,
-            dir: prSplit.runtime.dir,
-            strategy: prSplit.runtime.strategy,
-            verifyCommand: prSplit.runtime.verifyCommand,
-            outputFn: function(s) { log.printf('wizard: %s', s); }
-        });
-
-        if (configResult.error) {
-            // T43: Stay on CONFIG with inline validation error instead of jumping to ERROR.
-            s.isProcessing = false;
-            s.configValidationError = configResult.error;
-            if (configResult.availableBranches) {
-                s.availableBranches = configResult.availableBranches;
-            }
-            s.wizardState = 'CONFIG';
-            return [s, null];
-        }
-
-        // T090: Stash baseline verify config for async pre-step.
-        var baselineVerifyConfig = configResult.baselineVerifyConfig || null;
-
-        if (s.wizard.current === 'IDLE') {
-            s.wizard.transition('CONFIG');
-        }
-
-        // Initialize Agent executor if needed.
-        if (!st.agentExecutor) {
-            st.agentExecutor = new (prSplit.AgentCodeExecutor)(prSplitConfig);
-        }
-
-        // T113: Avoid calling the synchronous isAvailable() here — it invokes
-        // exec.execv('which agent') which blocks the BubbleTea event loop.
-        // Instead, check the cached resolution state and defer to the async
-        // check-agent tick if the executor hasn't resolved yet.
-        if (!st.agentExecutor.resolved) {
-            // Executor not yet resolved — defer via async check-agent.
-            log.printf('auto-analysis: executor not yet resolved — deferring to async check');
-            s.pendingAutoAnalysis = true;
-            return [s, tea.tick(1, 'check-agent')];
-        }
-
         // Build config for automatedSplit (mirrors REPL 'run' command).
         var autoConfig = {
             baseBranch: prSplit.runtime.baseBranch,
@@ -348,104 +303,178 @@
             autoConfig.verifyTimeoutMs = prSplitConfig.timeoutMs;
         }
 
-        // Launch the pipeline as an async Promise. It runs on the JS
-        // event loop independently of BubbleTea's message loop.
-        s.autoSplitRunning = true;
-        s.autoSplitResult = null;
-
-        // T44: Install global output capture to pipe git command output to Output tab.
-        prSplit._outputCaptureFn = function(line) {
-            s.outputLines.push(line);
-            if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
-                s.outputLines = s.outputLines.slice(-C.OUTPUT_BUFFER_CAP);
-            }
-            if (s.outputAutoScroll) {
-                s.outputViewOffset = 0;
-            }
-        };
-
-        // T090: Run async baseline verify, then launch automatedSplit.
-        // Both run non-blocking on the JS event loop.
-        (async function() {
-            // Baseline verify pre-step.
-            var bvc = baselineVerifyConfig;
-            if (bvc && bvc.verifyCommand && bvc.verifyCommand !== 'true') {
-                // T389: Activate Verify tab for live baseline verify output.
-                s.verifyFallbackRunning = true;
-                s.activeVerifyBranch = 'baseline';
-                s.activeVerifyStartTime = Date.now();
-                s.verifyElapsedMs = 0;
-                if (!s.verifyScreen) s.verifyScreen = '';
-                if (s.splitViewEnabled && s.splitViewTab !== 'verify') {
-                    s.splitViewTab = 'verify';
+        // Process config validation result: check executor, then launch pipeline.
+        function processAutoConfigResult(configResult) {
+            // Config validation settled — clear the async-path gate (no-op
+            // in the sync path, where the flag was never set).
+            s.autoConfigValidating = false;
+            if (configResult.error) {
+                // T43: Stay on CONFIG with inline validation error.
+                s.isProcessing = false;
+                s.configValidationError = configResult.error;
+                if (configResult.availableBranches) {
+                    s.availableBranches = configResult.availableBranches;
                 }
+                s.wizardState = 'CONFIG';
+                return [s, null];
+            }
 
-                s.analysisSteps[0].active = true;
-                var baseStart = Date.now();
-                try {
-                    var baselineResult = await prSplit.verifySplitAsync(prSplit.runtime.baseBranch, {
-                        verifyCommand: bvc.verifyCommand,
-                        dir: bvc.dir,
-                        verifyTimeoutMs: bvc.verifyTimeoutMs,
-                        outputFn: function(line) {
-                            log.printf('wizard: %s', line);
-                            // T389: Route verify command output to Verify tab.
-                            s.verifyScreen = (s.verifyScreen || '') + line + '\n';
+            // T090: Stash baseline verify config for async pre-step.
+            var baselineVerifyConfig = configResult.baselineVerifyConfig || null;
+
+            if (s.wizard.current === 'IDLE') {
+                s.wizard.transition('CONFIG');
+            }
+
+            // Initialize Agent executor if needed (after config validation).
+            if (!st.agentExecutor) {
+                st.agentExecutor = new (prSplit.AgentCodeExecutor)(prSplitConfig);
+            }
+
+            // T113: Avoid calling the synchronous isAvailable() here — it invokes
+            // exec.execv('which agent') which blocks the BubbleTea event loop.
+            // Instead, check the cached resolution state and defer to the async
+            // check-agent tick if the executor hasn't resolved yet.
+            if (!st.agentExecutor.resolved) {
+                log.printf('auto-analysis: executor not yet resolved — deferring to async check');
+                s.pendingAutoAnalysis = true;
+                return [s, tea.tick(1, 'check-agent')];
+            }
+
+            // Executor is resolved — launch the pipeline.
+            s.autoSplitRunning = true;
+            s.autoSplitResult = null;
+
+            // T389: Auto-open split-view synchronously using runtime config.
+            if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
+                s.splitViewEnabled = true;
+                s.splitViewFocus = 'wizard';
+                if (prSplit.runtime.verifyCommand &&
+                    prSplit.runtime.verifyCommand !== 'true') {
+                    s.verifyFallbackRunning = true;
+                    s.activeVerifyBranch = 'baseline';
+                    s.verifyScreen = '';
+                    s.splitViewTab = 'verify';
+                } else {
+                    s.splitViewTab = 'output';
+                }
+                syncMainViewport(s);
+            }
+
+            // T44: Install global output capture to pipe git command output to Output tab.
+            prSplit._outputCaptureFn = function(line) {
+                s.outputLines.push(line);
+                if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
+                    s.outputLines = s.outputLines.slice(-C.OUTPUT_BUFFER_CAP);
+                }
+                if (s.outputAutoScroll) {
+                    s.outputViewOffset = 0;
+                }
+            };
+
+            // T090: Run async baseline verify, then launch automatedSplit.
+            (async function() {
+                var bvc = baselineVerifyConfig;
+                if (bvc && bvc.verifyCommand && bvc.verifyCommand !== 'true') {
+                    s.verifyFallbackRunning = true;
+                    s.activeVerifyBranch = 'baseline';
+                    s.activeVerifyStartTime = Date.now();
+                    s.verifyElapsedMs = 0;
+                    if (!s.verifyScreen) s.verifyScreen = '';
+                    if (s.splitViewEnabled && s.splitViewTab !== 'verify') {
+                        s.splitViewTab = 'verify';
+                    }
+
+                    s.analysisSteps[0].active = true;
+                    var baseStart = Date.now();
+                    try {
+                        var baselineResult = await prSplit.verifySplitAsync(prSplit.runtime.baseBranch, {
+                            verifyCommand: bvc.verifyCommand,
+                            dir: bvc.dir,
+                            verifyTimeoutMs: bvc.verifyTimeoutMs,
+                            outputFn: function(line) {
+                                log.printf('wizard: %s', line);
+                                s.verifyScreen = (s.verifyScreen || '') + line + '\n';
+                            }
+                        });
+                        if (!baselineResult.passed) {
+                            s.verifyFallbackRunning = false;
+                            s.analysisSteps[0].active = false;
+                            throw new Error('Baseline verification failed: ' +
+                                (baselineResult.error || 'exit code non-zero'));
                         }
-                    });
-                    if (!baselineResult.passed) {
+                    } catch (e) {
                         s.verifyFallbackRunning = false;
                         s.analysisSteps[0].active = false;
-                        throw new Error('Baseline verification failed: ' +
-                            (baselineResult.error || 'exit code non-zero'));
+                        throw e;
                     }
-                } catch (e) {
                     s.verifyFallbackRunning = false;
+                    s.analysisSteps[0].done = true;
                     s.analysisSteps[0].active = false;
-                    throw e; // re-throw to outer rejection handler
+                    s.analysisSteps[0].elapsed = Date.now() - baseStart;
+                    log.printf('wizard: baseline verify OK (%dms)', s.analysisSteps[0].elapsed);
+                } else {
+                    s.analysisSteps[0].done = true;
+                    s.analysisSteps[0].active = false;
+                    s.analysisSteps[0].elapsed = 0;
                 }
-                s.verifyFallbackRunning = false;
-                s.analysisSteps[0].done = true;
-                s.analysisSteps[0].active = false;
-                s.analysisSteps[0].elapsed = Date.now() - baseStart;
-                log.printf('wizard: baseline verify OK (%dms)', s.analysisSteps[0].elapsed);
-            } else {
-                s.analysisSteps[0].done = true;
-                s.analysisSteps[0].active = false;
-                s.analysisSteps[0].elapsed = 0;
-            }
-            s.analysisSteps[1].active = true; // Activate 'Spawning Agent' step
-            return await prSplit.automatedSplit(autoConfig);
-        })().then(
-            function(result) {
-                s.autoSplitResult = result;
-                s.autoSplitRunning = false;
-            },
-            function(err) {
-                s.autoSplitResult = { error: (err && err.message) ? err.message : String(err) };
-                s.autoSplitRunning = false;
-            }
-        );
+                s.analysisSteps[1].active = true;
+                return await prSplit.automatedSplit(autoConfig);
+            })().then(
+                function(result) {
+                    s.autoSplitResult = result;
+                    s.autoSplitRunning = false;
+                },
+                function(err) {
+                    s.autoSplitResult = { error: (err && err.message) ? err.message : String(err) };
+                    s.autoSplitRunning = false;
+                }
+            );
 
-        // T389: Auto-open split-view. If verify command configured, pre-activate
-        // Verify tab for immediate baseline verify display. Otherwise Output tab.
-        if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
-            s.splitViewEnabled = true;
-            s.splitViewFocus = 'wizard';
-            if (baselineVerifyConfig && baselineVerifyConfig.verifyCommand &&
-                baselineVerifyConfig.verifyCommand !== 'true') {
-                s.verifyFallbackRunning = true;
-                s.activeVerifyBranch = 'baseline';
-                s.verifyScreen = '';
-                s.splitViewTab = 'verify';
-            } else {
-                s.splitViewTab = 'output';
-            }
-            syncMainViewport(s);
+            return [s, tea.tick(C.AUTO_SPLIT_POLL_MS, 'auto-poll')];
         }
 
-        // Poll for completion every 500ms.
-        return [s, tea.tick(C.AUTO_SPLIT_POLL_MS, 'auto-poll')];
+        function handleAutoConfigError(err) {
+            // Delegate to processAutoConfigResult's error path so unexpected
+            // promise rejections (e.g. git crashed, analyzeDiff threw)
+            // surface identically to resolved validation errors:
+            // configValidationError + wizardState='CONFIG' on the CONFIG
+            // screen, where the user sees the message and can retry.
+            // Without this, the poll handler's early !isProcessing exit
+            // would silently drop the error.
+            processAutoConfigResult({ error: (err && err.message) ? err.message : String(err) });
+        }
+
+        // Run config validation. handleConfigState returns sync when gitExec
+        // is sync (tests), or a Promise in production. Dispatched dynamically
+        // via prSplit._handleConfigState (not captured at module load) so
+        // tests can override it to inject rejection paths.
+        var autoConfigPromise = prSplit._handleConfigState({
+            baseBranch: prSplit.runtime.baseBranch,
+            dir: prSplit.runtime.dir,
+            strategy: prSplit.runtime.strategy,
+            verifyCommand: prSplit.runtime.verifyCommand,
+            outputFn: function(s) { log.printf('wizard: %s', s); }
+        });
+
+        if (autoConfigPromise && typeof autoConfigPromise.then === 'function') {
+            // Async path (production: gitExec returns Promises). Cannot return
+            // the Promise — BubbleTea's updateDirect requires an Array
+            // [state, cmd], not a thenable; returning a Promise logs an error,
+            // drops the command, and freezes the wizard. Instead, run config
+            // validation in the background and return [s, auto-poll] now.
+            // autoConfigValidating gates handleAutoSplitPoll so it keeps polling
+            // (rather than treating a still-null result as "pipeline complete")
+            // until processAutoConfigResult settles and sets pendingAutoAnalysis
+            // (deferral) or autoSplitRunning (launch), or records an error.
+            s.autoConfigValidating = true;
+            s._cfgPromise = autoConfigPromise;
+            autoConfigPromise.then(processAutoConfigResult, handleAutoConfigError);
+            return [s, tea.tick(C.AUTO_SPLIT_POLL_MS, 'auto-poll')];
+        }
+
+        // Sync path
+        return processAutoConfigResult(autoConfigPromise);
     }
 
     // handleAutoSplitPoll: Called every 500ms to check if the async
@@ -455,6 +484,21 @@
         // If cancelled, stop polling.
         if (!s.isProcessing) {
             return [s, null];
+        }
+
+        // Async config-validation still in progress (production path where
+        // gitExec returns Promises). processAutoConfigResult hasn't settled
+        // yet, so pendingAutoAnalysis/autoSplitRunning aren't set — keep
+        // polling instead of mistaking the null result for "pipeline complete".
+        if (s.autoConfigValidating) {
+            return [s, tea.tick(C.AUTO_SPLIT_POLL_MS, 'auto-poll')];
+        }
+
+        // Config validation deferred to the async Agent availability check.
+        // Route to the check-agent poll (mirrors the sync path, which returns
+        // a 'check-agent' tick directly from processAutoConfigResult).
+        if (s.pendingAutoAnalysis && !s.autoSplitRunning) {
+            return [s, tea.tick(1, 'check-agent')];
         }
 
         // Still running — update progress from pipeline state and poll again.

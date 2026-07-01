@@ -658,8 +658,8 @@ func TestAutoSplit_BinaryFiles(t *testing.T) {
 	}
 
 	// Verify git sees the binary files.
-	diffOut, err := tp.EvalJS(`await gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
-		['diff', '--numstat', 'main...feature']).stdout`)
+	diffOut, err := tp.EvalJS(`(await gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
+		['diff', '--numstat', 'main...feature'])).stdout`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -933,8 +933,8 @@ func TestAutoSplit_BranchCollision(t *testing.T) {
 	}
 
 	// Verify pre-existing branches exist.
-	verifyBranch, err := tp.EvalJS(`await gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
-		['branch', '--list', 'split/*']).stdout`)
+	verifyBranch, err := tp.EvalJS(`(await gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
+		['branch', '--list', 'split/*'])).stdout`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -980,8 +980,8 @@ func TestAutoSplit_BranchCollision(t *testing.T) {
 	}
 
 	// Verify split branches exist again (re-created after pre-flight delete).
-	branchOut, err := tp.EvalJS(`await gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
-		['branch', '--list', 'split/*']).stdout`)
+	branchOut, err := tp.EvalJS(`(await gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
+		['branch', '--list', 'split/*'])).stdout`)
 	if err != nil {
 		t.Fatal(err)
 	}

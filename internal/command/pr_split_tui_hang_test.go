@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
@@ -63,12 +63,12 @@ func TestTUIHang_RealAsyncAnalysis(t *testing.T) {
 
 	// Step 1: Initialize state at CONFIG and trigger startAnalysis.
 	// This calls the REAL analyzeDiffAsync with exec.spawn.
-	result, err := evalJS(`(function() {
+	result, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.focusIndex = 4; // nav-next element
 
 		// Trigger startAnalysis via enter key.
-		var r = sendKey(s, 'enter');
+		var r = await sendKey(s, 'enter');
 		s = r[0];
 
 		// Save state globally so Step 2 can poll it.
@@ -230,10 +230,10 @@ func TestTUIHang_ConcurrentPolling(t *testing.T) {
 	}
 
 	// Trigger startAnalysis (on event loop via evalJS/Submit).
-	result, err := evalJS(`(function() {
+	result, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.focusIndex = 4;
-		var r = sendKey(s, 'enter');
+		var r = await sendKey(s, 'enter');
 		s = r[0];
 		globalThis.__tuiHangState = s;
 		return JSON.stringify({

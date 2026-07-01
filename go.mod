@@ -15,8 +15,6 @@ require (
 	charm.land/lipgloss/v2 v2.0.4
 	github.com/creack/pty v1.1.24
 	github.com/dlclark/regexp2 v1.12.0
-	github.com/dop251/goja v0.0.0-20260618133527-c9b2ea77db59
-	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14
 	github.com/expr-lang/expr v1.17.8
 	github.com/go-git/go-git/v6 v6.0.0-alpha.4
 	github.com/google/uuid v1.6.0
@@ -25,9 +23,11 @@ require (
 	github.com/joeycumines/go-inprocgrpc v0.0.0-20260624075719-4d4ca2aad3e8
 	github.com/joeycumines/go-pabt v0.2.0
 	github.com/joeycumines/go-prompt v0.0.0-20260429212922-e8b9e8f9d754
+	github.com/joeycumines/goja v0.0.0-20260623232508-7e089e2060db
 	github.com/joeycumines/goja-eventloop v0.0.0-20260624075653-1774b6f91929
 	github.com/joeycumines/goja-grpc v0.0.0-20260624075659-30e326fed6a8
 	github.com/joeycumines/goja-protobuf v0.0.0-20260624075704-ffc13154913d
+	github.com/joeycumines/goja_nodejs v0.0.0-20260623201902-5cfbacfa7161
 	github.com/joeycumines/goroutineid v1.1.0
 	github.com/lrstanley/bubblezone/v2 v2.0.0
 	github.com/modelcontextprotocol/go-sdk v1.6.1
@@ -64,12 +64,11 @@ require (
 	github.com/google/pprof v0.0.0-20260604005048-7023385849c0 // indirect
 	github.com/joeycumines/go-bigbuff v1.21.0 // indirect
 	github.com/joeycumines/go-catrate v0.0.0-20260429212737-202f4120003b // indirect
-	github.com/joeycumines/goja v0.0.0-20260623232508-7e089e2060db // indirect
-	github.com/joeycumines/goja_nodejs v0.0.0-20260623201902-5cfbacfa7161 // indirect
 	github.com/joeycumines/logiface v0.5.0 // indirect
 	github.com/joeycumines/simple-command-output-filter v0.2.1 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/kr/pretty v0.3.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
@@ -79,6 +78,7 @@ require (
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/term v1.2.0-beta.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect

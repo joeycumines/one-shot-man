@@ -3,7 +3,7 @@ package pickandplace
 import (
 	"context"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 )
 

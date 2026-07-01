@@ -8,7 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // Require is the Goja module loader for osm:encoding.

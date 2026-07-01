@@ -17,10 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/goja_nodejs/require"
 )
 
 // defaultMaxResponseSize is the maximum response body size (10 MiB).

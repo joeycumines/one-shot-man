@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // ErrCommandNotFound is returned by [TUIManager.ExecuteCommand] when no

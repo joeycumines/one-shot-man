@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 )
 

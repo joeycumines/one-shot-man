@@ -30,8 +30,7 @@ func TestPTYSpawn_ForceKill_OrphanSurvival(t *testing.T) {
 	// 2. Prints the background process PID
 	// 3. Waits a moment for output to flush
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command: "sh",
-		Args:    []string{"-c", "sleep 3600 & echo CHILD_PID=$!; sleep 1"},
+		Command: buildChildPidProgram(t),
 	})
 	if err != nil {
 		t.Fatalf("Spawn failed: %v", err)

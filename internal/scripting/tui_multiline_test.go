@@ -6,9 +6,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
+	"github.com/joeycumines/goja"
 )
 
 // TestMultilinePromptConfig_DefaultFalse verifies that multiline defaults to false.

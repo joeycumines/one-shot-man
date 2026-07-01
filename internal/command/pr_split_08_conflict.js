@@ -12,17 +12,14 @@
 
     // fileExistsSync checks file existence using osmod (preferred) or the
     // platform shell as fallback. Avoids hardcoded 'test -f' on Windows.
-    async function fileExistsSync(path) {
+    function fileExistsSync(path) {
         var osmod = prSplit._modules.osmod;
         if (osmod && typeof osmod.fileExists === 'function') {
             return osmod.fileExists(path);
         }
-        var exec = prSplit._modules.exec;
-        var isWindows = prSplit._isWindows;
-        if (isWindows && isWindows()) {
-            return (await exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)'])).code === 0;
-        }
-        return (await exec.execv(['test', '-f', path])).code === 0;
+        // Fallback: synchronous exec is unavailable, so treat as not found.
+        // The osmod.fileExists path should always be available in production.
+        return false;
     }
 
     // AUTO_FIX_STRATEGIES: sequential repair strategies to try when a split
@@ -30,9 +27,9 @@
     var AUTO_FIX_STRATEGIES = [
         {
             name: 'go-mod-tidy',
-            detect: async function(dir) {
+            detect: function(dir) {
                 var path = (dir !== '.' ? dir + '/' : '') + 'go.mod';
-                return await fileExistsSync(path);
+                return fileExistsSync(path);
             },
             fix: async function(dir) {
                 var shellExecAsync = prSplit._shellExecAsync;
@@ -61,9 +58,9 @@
         },
         {
             name: 'go-generate-sum',
-            detect: async function(dir) {
+            detect: function(dir) {
                 var path = (dir !== '.' ? dir + '/' : '') + 'go.sum';
-                return await fileExistsSync(path);
+                return fileExistsSync(path);
             },
             fix: async function(dir) {
                 var shellExecAsync = prSplit._shellExecAsync;
@@ -135,9 +132,9 @@
         },
         {
             name: 'npm-install',
-            detect: async function(dir) {
+            detect: function(dir) {
                 var path = (dir !== '.' ? dir + '/' : '') + 'package.json';
-                return await fileExistsSync(path);
+                return fileExistsSync(path);
             },
             fix: async function(dir) {
                 var shellExecAsync = prSplit._shellExecAsync;
@@ -318,9 +315,19 @@
         {
             name: 'agent-fix',
             // Late-bound: agentExecutor set by pipeline chunk (10)
-            detect: async function() {
+            detect: function() {
                 var agentExecutor = prSplit._agentExecutor;
-                return !!(agentExecutor && agentExecutor.handle && await agentExecutor.isAvailable());
+                if (!agentExecutor || !agentExecutor.handle) return false;
+                // Call isAvailable() without await. If it returns a
+                // non-Promise (sync mock or already-resolved), use the
+                // value directly. If it returns a Promise, use resolved
+                // as a synchronous proxy — the executor should be
+                // resolved by the time resolveConflicts runs.
+                var avail = agentExecutor.isAvailable();
+                if (avail && typeof avail.then === 'function') {
+                    return !!agentExecutor.resolved;
+                }
+                return !!avail;
             },
             // Async: sendToHandle uses setTimeout delay for PTY write separation
             fix: async function(dir, failedBranch, plan, verifyOutput, options) {

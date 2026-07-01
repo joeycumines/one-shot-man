@@ -29,7 +29,7 @@ func TestIntegration_BufferedReader_RealPTY(t *testing.T) {
 	// open briefly so ReadLoop has time to read before EIO. Without the
 	// trailing sleep, on macOS the slave can close before the master
 	// side delivers data, causing Read to return EIO with 0 bytes.
-	cmd := exec.Command("sh", "-c", "echo hello && sleep 0.1")
+	cmd := exec.Command(buildEchoSleepProgram(t, "hello"))
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		t.Fatalf("pty.Start: %v", err)

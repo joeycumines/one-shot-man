@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/rivo/uniseg"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"

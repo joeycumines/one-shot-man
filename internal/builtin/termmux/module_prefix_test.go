@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 func TestHandlePrefixKey_NewWindow(t *testing.T) {

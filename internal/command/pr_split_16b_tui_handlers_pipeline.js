@@ -12,7 +12,6 @@
     var tea = prSplit._tea;
     var st = prSplit._state;
     var C = prSplit._TUI_CONSTANTS;
-    var handleConfigState = prSplit._handleConfigState;
     var handlePlanReviewState = prSplit._handlePlanReviewState;
     var clearVerifyPaneSession = prSplit._clearVerifyPaneSession;
 
@@ -132,7 +131,7 @@
 
     // --- Async Pipeline Handlers — drive wizard state machine ---
 
-    async function startAnalysis(s) {
+    function startAnalysis(s) {
         s.isProcessing = true;
         s.analysisProgress = 0;
         s.analysisStartedAt = Date.now();  // T002: track start time for timeout
@@ -147,75 +146,22 @@
             { label: 'Validate plan', active: false, done: false }
         ];
 
-        // Run config state handler.
-        // Pass outputFn to suppress output.print (which would corrupt
-        // BubbleTea terminal). Use log.printf instead — safe in TUI context.
-        var configResult = await handleConfigState({
-            baseBranch: prSplit.runtime.baseBranch,
-            dir: prSplit.runtime.dir,
-            strategy: prSplit.runtime.strategy,
-            verifyCommand: prSplit.runtime.verifyCommand,
-            outputFn: function(s) { log.printf('wizard: %s', s); }
-        });
-
-        if (configResult.error) {
-            // T43: Stay on CONFIG with inline validation error instead of jumping to ERROR.
-            s.isProcessing = false;
-            s.configValidationError = configResult.error;
-            if (configResult.availableBranches) {
-                s.availableBranches = configResult.availableBranches;
-            }
-            s.wizardState = 'CONFIG';
-            return [s, null];
-        }
-
-        // T090: Stash baseline verify config on the model so
-        // runAnalysisAsync can run it asynchronously (non-blocking).
-        s._baselineVerifyConfig = configResult.baselineVerifyConfig || null;
-
-        // Transition to CONFIG if needed.
-        if (s.wizard.current === 'IDLE') {
-            s.wizard.transition('CONFIG');
-        }
-
-        // Launch all analysis steps as an async pipeline on the event loop.
-        // The Promise resolves when all steps complete. We poll for
-        // completion via tea.tick so BubbleTea can render progress, animate
-        // the spinner, and let the user cancel with Ctrl+C.
+        // Set analysisRunning early so the poll handler keeps polling
+        // while config validation is in progress.
         s.analysisRunning = true;
         s.analysisError = null;
 
-        // T44: Install global output capture to pipe git command output to Output tab.
-        prSplit._outputCaptureFn = function(line) {
-            s.outputLines.push(line);
-            // Cap output buffer to prevent unbounded memory growth.
-            if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
-                s.outputLines = s.outputLines.slice(-C.OUTPUT_BUFFER_CAP);
-            }
-            // Auto-scroll to bottom when new output arrives.
-            if (s.outputAutoScroll) {
-                s.outputViewOffset = 0;
-            }
-        };
-
-        runAnalysisAsync(s).then(
-            function() {
-                s.analysisRunning = false;
-            },
-            function(err) {
-                s.analysisError = (err && err.message) ? err.message : String(err);
-                s.analysisRunning = false;
-            }
-        );
-
-        // T389: Auto-open split-view. If a verify command is configured,
-        // pre-activate the Verify tab so the user sees baseline verification
-        // output the instant it starts. Otherwise fall back to Output tab.
+        // T389: Auto-open split-view synchronously using runtime config.
+        // The tab selection uses prSplit.runtime.verifyCommand (available
+        // now) instead of waiting for handleConfigState to resolve.
+        // Track whether WE opened it so the error path can clean up.
+        var splitViewOpenedHere = false;
         if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
             s.splitViewEnabled = true;
+            splitViewOpenedHere = true;
             s.splitViewFocus = 'wizard';
-            var _bvc = s._baselineVerifyConfig;
-            if (_bvc && _bvc.verifyCommand && _bvc.verifyCommand !== 'true') {
+            if (prSplit.runtime.verifyCommand &&
+                prSplit.runtime.verifyCommand !== 'true') {
                 s.verifyFallbackRunning = true;
                 s.activeVerifyBranch = 'baseline';
                 s.verifyScreen = '';
@@ -227,6 +173,105 @@
                 prSplit._syncMainViewport(s);
             }
         }
+
+        // Process config validation result (shared by sync and async paths).
+        function processConfigResult(configResult) {
+            if (configResult.error) {
+                // T43: Stay on CONFIG with inline validation error.
+                s.isProcessing = false;
+                s.analysisRunning = false;
+                s.configValidationError = configResult.error;
+                // Clean up split-view if startAnalysis opened it speculatively.
+                if (splitViewOpenedHere) {
+                    s.splitViewEnabled = false;
+                    s.verifyFallbackRunning = false;
+                    s.splitViewTab = '';
+                    s.activeVerifyBranch = '';
+                }
+                if (configResult.availableBranches) {
+                    s.availableBranches = configResult.availableBranches;
+                }
+                s.wizardState = 'CONFIG';
+                return;
+            }
+
+            // T090: Stash baseline verify config on the model.
+            s._baselineVerifyConfig = configResult.baselineVerifyConfig || null;
+
+            // Transition to CONFIG if needed.
+            if (s.wizard.current === 'IDLE') {
+                s.wizard.transition('CONFIG');
+            }
+
+            // T44: Install global output capture to pipe git command output to Output tab.
+            prSplit._outputCaptureFn = function(line) {
+                s.outputLines.push(line);
+                if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
+                    s.outputLines = s.outputLines.slice(-C.OUTPUT_BUFFER_CAP);
+                }
+                if (s.outputAutoScroll) {
+                    s.outputViewOffset = 0;
+                }
+            };
+
+            // Launch all analysis steps as an async pipeline on the event loop.
+            runAnalysisAsync(s).then(
+                function() {
+                    s.analysisRunning = false;
+                },
+                function(err) {
+                    s.analysisError = (err && err.message) ? err.message : String(err);
+                    s.analysisRunning = false;
+                }
+            );
+        }
+
+        function handleConfigError(err) {
+            // Delegate to processConfigResult's error path so unexpected
+            // promise rejections (e.g. git crashed, analyzeDiff threw)
+            // surface identically to resolved validation errors:
+            // configValidationError + wizardState='CONFIG' on the CONFIG
+            // screen, where the user sees the message and can retry.
+            // Without this, the poll handler's early !isProcessing exit
+            // would silently drop the error.
+            processConfigResult({ error: (err && err.message) ? err.message : String(err) });
+        }
+
+        // Run config validation. handleConfigState returns a sync result
+        // when gitExec is synchronous (tests), or a Promise in production.
+        // Dispatched dynamically via prSplit._handleConfigState (not captured
+        // at module load) so tests can override it to inject rejection paths.
+        var configPromise = prSplit._handleConfigState({
+            baseBranch: prSplit.runtime.baseBranch,
+            dir: prSplit.runtime.dir,
+            strategy: prSplit.runtime.strategy,
+            verifyCommand: prSplit.runtime.verifyCommand,
+            outputFn: function(s) { log.printf('wizard: %s', s); }
+        });
+
+        if (configPromise && typeof configPromise.then === 'function') {
+            // Async path (production: gitExec returns Promises). Run config
+            // validation in the background and return a [model, cmd] tuple
+            // immediately. Returning the Promise itself would violate the
+            // BubbleTea update contract — bubbletea.updateDirect requires an
+            // Array [state, cmd], not a thenable, and would log an error,
+            // drop the command, and leave the model unchanged (frozen wizard).
+            // analysisRunning is already true, so handleAnalysisPoll keeps
+            // polling until processConfigResult launches runAnalysisAsync
+            // (or handleConfigError records the failure), then detects
+            // completion and re-renders.
+            //
+            // The Promise is also stashed on the model so callers/tests that
+            // need to drive the event loop until config validation settles can
+            // await it directly (this engine only advances exec.execv when a
+            // Promise is awaited, not via background .then pumping).
+            s._cfgPromise = configPromise;
+            configPromise.then(processConfigResult, handleConfigError);
+            return [s, tea.tick(C.TICK_INTERVAL_MS, 'analysis-poll')];
+        }
+
+        // Sync path — process result immediately.
+        processConfigResult(configPromise);
 
         // Poll at tick interval for responsive spinner animation.
         return [s, tea.tick(C.TICK_INTERVAL_MS, 'analysis-poll')];

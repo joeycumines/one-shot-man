@@ -102,8 +102,7 @@ func TestCaptureSession_PauseResume(t *testing.T) {
 
 	// Use a command that writes output periodically so we can observe the pause.
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "i=0; while true; do echo \"line$i\"; i=$((i+1)); sleep 0.1; done"},
+		Command: buildPeriodicProgram(t),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -111,8 +110,17 @@ func TestCaptureSession_PauseResume(t *testing.T) {
 	defer cs.Close()
 	collector := startCollector(cs)
 
-	// Let the process run and produce some output.
-	time.Sleep(500 * time.Millisecond)
+	// Wait for initial output to arrive (may be delayed under high parallelism).
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(collector.current()) > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if len(collector.current()) == 0 {
+		t.Fatal("no output received from process within 5 seconds")
+	}
 
 	// Verify not paused initially.
 	if cs.IsPaused() {
@@ -228,7 +236,7 @@ func TestCaptureSession_Resize(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 		Rows:    24,
 		Cols:    80,
 	})
@@ -353,8 +361,7 @@ func TestCaptureSession_ExitCode(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "exit 42"},
+		Command: buildExitCodeProgram(t, 42),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -376,7 +383,7 @@ func TestCaptureSession_Write(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -409,7 +416,7 @@ func TestCaptureSession_SendEOF(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -533,8 +540,7 @@ func TestCaptureSession_EnvVars(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "echo $CAPTURE_TEST_VAR"},
+		Command: buildEnvEchoProgram(t, "CAPTURE_TEST_VAR"),
 		Env: map[string]string{
 			"CAPTURE_TEST_VAR": "capture_value_99",
 		},
@@ -621,8 +627,7 @@ func TestCaptureSession_MultilineOutput(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "echo line1; echo line2; echo line3"},
+		Command: buildEchoProgram(t, "line1\nline2\nline3"),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -665,8 +670,7 @@ func TestCaptureSession_ConcurrentOutput(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "for i in $(seq 1 50); do echo line$i; done"},
+		Command: buildSeqProgram(t, 50, "line%d"),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1084,8 +1088,7 @@ func TestCaptureSession_Passthrough_ResizeNotBlockedByOutput(t *testing.T) {
 
 	// Start a session that produces continuous output.
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "for i in $(seq 1 100); do echo \"line $i\"; done; sleep 60"},
+		Command: buildSeqIdleProgram(t, 100, "line %d"),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)

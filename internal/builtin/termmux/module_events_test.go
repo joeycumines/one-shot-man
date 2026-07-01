@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 )
@@ -356,6 +356,11 @@ func TestEventBridge_Silence(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetMonitorConfig: %v", err)
 	}
+
+	// Wait for the silence threshold to elapse. NewMonitorState sets
+	// LastOutputAt = time.Now(), so the silence timer starts from config
+	// time, not from session creation.
+	time.Sleep(1100 * time.Millisecond)
 
 	count := mgr.CheckSilenceMonitors()
 	if count == 0 {

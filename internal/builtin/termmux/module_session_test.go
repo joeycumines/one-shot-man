@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 )
@@ -1285,8 +1285,11 @@ func TestNewBoundedSession(t *testing.T) {
 	runtime, exp := testRequire(t)
 	_ = runtime.Set("exports", exp)
 
+	echoBin := buildEchoProgram(t, "hello")
+	_ = runtime.Set("echoBin", echoBin)
+
 	v, err := runtime.RunString(`
-		var result = exports.newBoundedSession({ cmd: '/bin/echo', args: ['hello'], rows: 10, cols: 30, name: 'test', kind: 'capture' });
+		var result = exports.newBoundedSession({ cmd: echoBin, rows: 10, cols: 30, name: 'test', kind: 'capture' });
 		JSON.stringify({ hasSession: typeof result.session === 'object', hasMgr: typeof result.mgr === 'object', hasSid: result.sid > 0 });
 	`)
 	if err != nil {
@@ -1732,9 +1735,12 @@ func TestSessionStatusMethodBindings(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
+	idleBin := buildIdleProgram(t)
+	_ = runtime.Set("idleBin", idleBin)
+
 	_, err := runtime.RunString(`
 		function mkSession(name) {
-			var s = termmux.newBoundedSession({ cmd: "sh" });
+			var s = termmux.newBoundedSession({ cmd: idleBin });
 			tuiMux.register(s.session, { name: name });
 			return s;
 		}
@@ -1777,8 +1783,11 @@ func TestSearchForwardBackwardBindings(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
+	idleBin := buildIdleProgram(t)
+	_ = runtime.Set("idleBin", idleBin)
+
 	_, err := runtime.RunString(`
-		var s = termmux.newBoundedSession({ cmd: "cat" });
+		var s = termmux.newBoundedSession({ cmd: idleBin });
 		tuiMux.register(s.session, { name: "search" });
 		function mySearch(pattern, row, col) {
 			if (pattern === "hello") {

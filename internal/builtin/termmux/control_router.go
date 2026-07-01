@@ -1,7 +1,7 @@
 package termmux
 
 import (
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 type controlRouter struct {

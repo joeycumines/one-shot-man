@@ -3,7 +3,7 @@ package list
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	jslipgloss "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 	termuilist "github.com/joeycumines/one-shot-man/internal/termui/list"
 	"github.com/stretchr/testify/require"

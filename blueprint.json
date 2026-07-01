@@ -60,7 +60,7 @@
     "parallelExecution": "Fan out subagents for independent package audits. Blast them in parallel."
   },
   "statusSection": {
-    "currentState": "7 commits made. 37 tasks Done, 4 In Progress, 1 Not Started (verification, review gate, scope expansion). Build+lint+test all PASS. Working tree clean.",
+    "currentState": "Review-01..03 findings fully addressed. 10 fixes applied: (1) startVerifySession .catch guard, (2) go mod tidy (dop251 removed), (3) eval.go globals cleanup, (4) pty_windows STARTF_USESTDHANDLES removal, (5-6) startAnalysis/startAutoAnalysis async-path [s,cmd] return + _cfgPromise stash, (7) 4 async-pipeline tests await _cfgPromise, (8) pty.go Close() SURGICAL slave-before-gracekill ordering (only tty moved, wf unchanged — zero Windows behavior change; macOS E-state fix), (9) bubblezone waitForZone + RescanUpdatesZones deadline+sleep (Gosched starvation fix), (10) handleConfigError/handleAutoConfigError DELEGATE to processConfigResult/processAutoConfigResult({error:msg}) — DRY reuses tested error path; handleConfigState DYNAMIC DISPATCH (enables test injection); 2 NEW end-to-end rejection tests (16b + 16d paths). 5 'not a bug' adjudications verified. Rule of Two v3 PASSED (scratch/run1-review-v3.md + run2-review-v3.md, both PASS). Full -race suite PASS (2 consecutive runs, zero failures). gmake lint PASS. GOOS=windows build+vet PASS.",
     "goalState": "Every checked-in file (1110) audited against three factors. All deficiencies fixed. All bugs resolved. AI slop removed. All checks pass on all platforms. Regular commits throughout.",
     "replanLog": [
       {
@@ -312,10 +312,22 @@
       "status": "In Progress"
     },
     {
-      "task": "Final Rule of Two review for entire audit diff",
-      "description": "Two independent subagent reviews of complete diff. Both must pass contiguously.",
-      "acceptance": "Two contiguous issue-free reviews confirm all audit work correct.",
-      "status": "In Progress"
+      "task": "Address scratch/review-01..03.md findings on the audit diff",
+      "description": "Adjudicate conflicting review claims by reading source first-hand. Fix confirmed bugs: (1) pr_split_06_verification.js startVerifySession .catch() on possibly-sync gitExec — guard with typeof .then; (2) go.mod stale dop251 direct reqs — go mod tidy (removed entirely; goja-grpc uses joeycumines/goja); (3) prsplittest/eval.go __evalResult_N/__evalError_N globals leak — delete after settle; (4) pty_windows.go STARTF_USESTDHANDLES with zeroed handles — remove flag (MS ConPTY sample relies on PSEUDOCONSOLE attr); (5) pr_split_16b startAnalysis async path returns Promise → bubbletea.updateDirect rejects non-Array — return [s,cmd], launch config validation in background, stash s._cfgPromise; (6) pr_split_16d startAutoAnalysis same + autoConfigValidating flag + handleAutoSplitPoll routing. Confirmed NOT bugs (no change): bridge.Stop() mutex order (would deadlock), capture.go double Wait() (proc.Wait reads <-p.done channel), agent-fix detect sync (isAvailable is async/blocking; explicit test forbids sync call; resolved is reliable proxy), break-pane activation (intentional, matches tmux), lookupBinaryAsync awaits fileExistsSync (00_core fileExistsSync IS async).",
+      "acceptance": "All review-identified issues fixed or adjudicated with first-hand evidence. Rule of Two: two contiguous subagent PASS reviews (scratch/run1-review.md, scratch/run2-review.md). go build + GOOS=windows build + go vet + gmake lint + go test -short ./... + go test -short -race ./internal/command/... all PASS.",
+      "status": "Done"
+    },
+    {
+      "task": "Scope expansion: surface config-promise rejection errors in TUI poll handlers",
+      "description": "Both Rule-of-Two reviewers independently flagged (LOW, practically unreachable): handleConfigError (pr_split_16b) and handleAutoConfigError (pr_split_16d) set error fields + isProcessing=false, but the poll handlers' early !isProcessing exit silently dropped the error. Fixed by mirroring processConfigResult's error path (set s.configValidationError + s.wizardState='CONFIG'). The rejection path is unreachable in production (exec.execv always resolves, never rejects), so a dedicated unit test is infeasible without invasive module-load restructuring (violates no-shims); verified by structural equivalence to the tested {error:...} resolved path.",
+      "acceptance": "handleConfigError/handleAutoConfigError set configValidationError + wizardState='CONFIG' (rendered by CONFIG view). Structural mirror of processConfigResult's tested error path. Rule of Two v2 PASS.",
+      "status": "Done"
+    },
+    {
+      "task": "Scope expansion: fix flaky -race tests (PTY macOS E-state + bubblezone Gosched starvation)",
+      "description": "Full -race suite had two flaky tests under parallel load. (1) TestProcess_Close_CustomGracePeriod_QuickExit (termmux/pty): macOS session-leader children stuck in 'Exiting' (E) state when parent holds slave tty open — wait4 blocked indefinitely, Close burned full grace+force. Root cause found via ps (?Es state) + slave-close-before-wait probe (120/120 pass). Fixed: Close() now closes slave tty BEFORE the grace/force kill loop (child keeps its own dup'd slave fds, so no EIO/SIGKILL impact). (2) bubblezone waitForZone + TestIntegration_RescanUpdatesZones: runtime.Gosched() 1000-iter busy-wait starved under full-suite -race load. Fixed: 5s deadline + 1ms sleep poll (yields OS thread to worker).",
+      "acceptance": "TestProcess_Close_CustomGracePeriod_QuickExit passes 20x -race. Full pty package 3x -race. bubblezone 3x -race. Full -race suite (go test -short -race -count=1 ./...) PASS with zero failures. Rule of Two v2 PASS.",
+      "status": "Done"
     },
     {
       "task": "Scope expansion: identify next frontier improvements",

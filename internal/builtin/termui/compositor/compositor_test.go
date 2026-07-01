@@ -3,7 +3,7 @@ package compositor
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	compositorsb "github.com/joeycumines/one-shot-man/internal/termui/compositor"
 	"github.com/stretchr/testify/require"
 )

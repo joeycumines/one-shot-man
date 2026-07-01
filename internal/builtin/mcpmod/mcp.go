@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

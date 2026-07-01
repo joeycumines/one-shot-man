@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
 	bt "github.com/joeycumines/go-behaviortree"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
+	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/goroutineid"
 )
 
@@ -258,27 +258,23 @@ func (b *Bridge) Stop() {
 		return
 	}
 
-	// Perform BOTH cancel and stopped update atomically under lock.
-	// This guarantees the lifecycle invariant: "Once Done() is closed,
-	// IsRunning() MUST return false".
-	//
-	// The happens-before relationship from the mutex ensures that any goroutine
-	// that observes Done() being closed will also observe stopped=true, because
-	// both operations happen before we release the lock.
-	//
-	// Without this, there was a race window:
-	//   - Thread A calls cancel() → Done() closed
-	//   - Thread B observes Done() closed, checks IsRunning()
-	//   - Thread B sees stopped=false (not yet set) → VIOLATION
-	b.cancel()       // Close Done channel (unblocks waiters immediately)
-	b.stopped = true // Update state atomically with cancellation
+	// Set stopped=true BEFORE cancelling so that IsRunning() returns false
+	// atomically with the state change. The Done() channel is closed
+	// slightly later (after manager.Stop()), which is safe because
+	// the lifecycle invariant only requires: "Once Done() is closed,
+	// IsRunning() MUST return false" — setting stopped early satisfies this.
+	b.stopped = true
 	b.mu.Unlock()
 
-	// Now stop the internal bt.Manager (stops all tickers).
-	// Tickers blocked in RunOnLoopSync have already been unblocked by Done() closing.
+	// Stop the internal bt.Manager FIRST (stops all tickers and settles
+	// their done promises). This must happen while the event loop is
+	// still running so promise callbacks can be dispatched.
 	if b.manager != nil {
 		b.manager.Stop()
 	}
+
+	// Then cancel the context to close Done() and stop the event loop.
+	b.cancel()
 }
 
 // Manager returns the internal bt.Manager that aggregates all tickers.

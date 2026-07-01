@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"text/template"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // Require returns a CommonJS native module under "osm:text/template".

@@ -4,7 +4,7 @@
 
 ## Introduction
 
-This document surfaces notable features, usage patterns, and implementation notes regarding the [github.com/dop251/goja](https://pkg.go.dev/github.com/dop251/goja) module, which implements a JavaScript virtual machine in Go. It is intended as a high-level reference to complement the full API documentation.
+This document surfaces notable features, usage patterns, and implementation notes regarding the [github.com/joeycumines/goja](https://pkg.go.dev/github.com/joeycumines/goja) module, which implements a JavaScript virtual machine in Go. It is intended as a high-level reference to complement the full API documentation.
 
 -----
 

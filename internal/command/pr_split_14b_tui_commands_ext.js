@@ -12,7 +12,6 @@
     var tuiState = prSplit._tuiState;
     var buildReport = prSplit._buildReport;
     var WizardState = prSplit.WizardState;
-    var handleConfigState = prSplit._handleConfigState;
     var handleBaselineFailState = prSplit._handleBaselineFailState;
 
     // --- buildExtCommands ---
@@ -126,7 +125,7 @@
                         };
 
                         wizard.transition('CONFIG', { config: autoConfig });
-                        var configResult = await handleConfigState(autoConfig);
+                        var configResult = await prSplit._handleConfigState(autoConfig);
 
                         if (configResult.error) {
                             wizard.error(configResult.error);

@@ -3,7 +3,7 @@ package nextintegerid
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // --- Edge cases for Require function ---

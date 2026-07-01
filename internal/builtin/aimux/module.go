@@ -3,7 +3,7 @@ package aimux
 import (
 	"context"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 
 	"github.com/joeycumines/one-shot-man/internal/aimuxcore"

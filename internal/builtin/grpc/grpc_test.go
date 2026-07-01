@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dop251/goja"
 	inprocgrpc "github.com/joeycumines/go-inprocgrpc"
+	"github.com/joeycumines/goja"
 	gojaprotobuf "github.com/joeycumines/goja-protobuf"
 	"github.com/joeycumines/one-shot-man/internal/builtin/grpc"
 	"github.com/joeycumines/one-shot-man/internal/testutil"

@@ -14,12 +14,12 @@ package grpc
 import (
 	"context"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
 	inprocgrpc "github.com/joeycumines/go-inprocgrpc"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	gojagrpc "github.com/joeycumines/goja-grpc"
 	gojaprotobuf "github.com/joeycumines/goja-protobuf"
+	"github.com/joeycumines/goja_nodejs/require"
 )
 
 // Require returns a module loader for "osm:grpc" backed by goja-grpc.

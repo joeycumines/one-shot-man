@@ -2431,8 +2431,7 @@ func TestCaptureSession_RowsCols(t *testing.T) {
 	}
 	t.Parallel()
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "echo",
-		Args:    []string{"test"},
+		Command: buildEchoProgram(t, "test"),
 		Rows:    30,
 		Cols:    120,
 	})

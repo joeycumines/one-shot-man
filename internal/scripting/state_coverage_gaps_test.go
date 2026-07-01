@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/storage"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 	"golang.org/x/tools/txtar"

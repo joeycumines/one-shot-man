@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/dop251/goja"
 	bt "github.com/joeycumines/go-behaviortree"
+	"github.com/joeycumines/goja"
 )
 
 // nodeUnwrap extracts a bt.Node from a goja.Value.

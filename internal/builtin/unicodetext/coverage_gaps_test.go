@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // --- Require function edge cases ---

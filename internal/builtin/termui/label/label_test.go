@@ -3,7 +3,7 @@ package label
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	termuilabel "github.com/joeycumines/one-shot-man/internal/termui/label"
 	"github.com/stretchr/testify/require"
 )

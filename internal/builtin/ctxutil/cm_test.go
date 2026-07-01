@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
 	"github.com/joeycumines/one-shot-man/internal/testutil"

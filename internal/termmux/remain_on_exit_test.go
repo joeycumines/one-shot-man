@@ -44,10 +44,12 @@ func TestSessionManager_RemainOnExit_KeepsSessionAfterExit(t *testing.T) {
 	session.readerCh <- []byte("ready")
 	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
 
-	close(session.readerCh)
-
+	// Subscribe BEFORE closing readerCh to avoid a TOCTOU race where the
+	// manager processes the EOF and emits the event before subscription.
 	subID, evtCh := m.Subscribe(16)
 	defer m.Unsubscribe(subID)
+
+	close(session.readerCh)
 
 	deadline := time.After(2 * time.Second)
 	for {
@@ -98,10 +100,11 @@ func TestSessionManager_RemainOnExit_Off_ClosesOnExit(t *testing.T) {
 	session.readerCh <- []byte("ready")
 	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
 
-	close(session.readerCh)
-
+	// Subscribe BEFORE closing readerCh to avoid TOCTOU race.
 	subID, evtCh := m.Subscribe(16)
 	defer m.Unsubscribe(subID)
+
+	close(session.readerCh)
 
 	waitForEventKindCh(t, evtCh, EventSessionClosed, 10*time.Second)
 }
@@ -121,10 +124,11 @@ func TestSessionManager_RespawnSession(t *testing.T) {
 	session.readerCh <- []byte("ready")
 	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
 
-	close(session.readerCh)
-
+	// Subscribe BEFORE closing readerCh to avoid TOCTOU race.
 	subID, evtCh := m.Subscribe(16)
 	defer m.Unsubscribe(subID)
+
+	close(session.readerCh)
 
 	waitForEventKindCh(t, evtCh, EventSessionExited, 10*time.Second)
 

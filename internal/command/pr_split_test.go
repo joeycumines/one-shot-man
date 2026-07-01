@@ -13,10 +13,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 )
@@ -712,15 +713,23 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuf
 			// All await-containing calls are expressions (not statements),
 			// so the `var __res = <js>` wrapping is safe for these.
 			if strings.Contains(js, "await ") {
-				_ = vm.Set("__evalResult", func(val any) {
+				// Convert IIFEs to async so `await` is valid inside them.
+				// Only convert top-level IIFEs: (function() {...})() → (async function() {...})()
+				// Do NOT convert callbacks like .map(function(...) {...}) — those must
+				// remain sync to return values, not Promises.
+				js = convertIIFEsToAsync(js)
+				callID := atomic.AddInt64(&evalJSCallID, 1)
+				resultVar := fmt.Sprintf("__evalResult_%d", callID)
+				errorVar := fmt.Sprintf("__evalError_%d", callID)
+				_ = vm.Set(resultVar, func(val any) {
 					result = val
 					close(done)
 				})
-				_ = vm.Set("__evalError", func(msg string) {
+				_ = vm.Set(errorVar, func(msg string) {
 					resultErr = errors.New(msg)
 					close(done)
 				})
-				wrapped := "(async function() {\n\ttry {\n\t\tvar __res = " + js + ";\n\t\tif (__res && typeof __res.then === 'function') { __res = await __res; }\n\t\t__evalResult(__res);\n\t} catch(e) {\n\t\t__evalError(e.message || String(e));\n\t}\n})();"
+				wrapped := "(async function() {\n\ttry {\n\t\tvar __res = " + js + ";\n\t\tif (__res && typeof __res.then === 'function') { __res = await __res; }\n\t\t" + resultVar + "(__res);\n\t} catch(e) {\n\t\t" + errorVar + "(e.message || String(e));\n\t}\n})();"
 				if _, runErr := vm.RunString(wrapped); runErr != nil {
 					resultErr = runErr
 					close(done)
@@ -812,20 +821,23 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuf
 
 			// If the JS contains 'await', wrap in async IIFE.
 			if strings.Contains(js, "await ") {
-				_ = vm.Set("__asyncResult", func(val any) {
+				callID := atomic.AddInt64(&evalJSCallID, 1)
+				resultVar := fmt.Sprintf("__asyncResult_%d", callID)
+				errorVar := fmt.Sprintf("__asyncError_%d", callID)
+				_ = vm.Set(resultVar, func(val any) {
 					result = val
 					close(done)
 				})
-				_ = vm.Set("__asyncError", func(msg string) {
+				_ = vm.Set(errorVar, func(msg string) {
 					resultErr = errors.New(msg)
 					close(done)
 				})
 				wrapped := `(async function() {
 				try {
 					var __res = ` + js + `;
-					__asyncResult(__res);
+					` + resultVar + `(__res);
 				} catch(e) {
-					__asyncError(e.message || String(e));
+					` + errorVar + `(e.message || String(e));
 				}
 			})();`
 				if _, runErr := vm.RunString(wrapped); runErr != nil {
@@ -902,6 +914,24 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuf
 
 // Compile-time assertion that scripting.Engine is used (to avoid unused import).
 var _ = (*scripting.Engine)(nil)
+
+// evalJSCallID generates unique callback names for concurrent evalJS calls.
+var evalJSCallID int64
+
+// convertIIFEsToAsync converts leading IIFEs from (function(...) to
+// (async function(...) so that `await` is valid inside them. It only
+// converts IIFEs at the START of the code — callbacks like .map(function)
+// are left alone so they return values, not Promises.
+func convertIIFEsToAsync(js string) string {
+	trimmed := strings.TrimLeft(js, " \t\n\r")
+	// Only convert if the code starts with (function (not already (async function)
+	if strings.HasPrefix(trimmed, "(function") && !strings.HasPrefix(trimmed, "(async function") {
+		// Find the offset of (function in the original string
+		idx := len(js) - len(trimmed)
+		return js[:idx] + "(async function" + js[idx+9:]
+	}
+	return js
+}
 
 // ===========================================================================
 // Vaporware audit: Tests for previously untested TUI commands

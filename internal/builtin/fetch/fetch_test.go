@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	fetchmod "github.com/joeycumines/one-shot-man/internal/builtin/fetch"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )

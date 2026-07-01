@@ -650,7 +650,108 @@
     // handleConfigState validates configuration and prepares baseline verify
     // config. T090: Actual baseline verification is deferred to the async
     // pipeline so the TUI event loop is never blocked.
-    async function handleConfigState(config) {
+    //
+    // This function is dual-mode: when gitExec returns synchronous values
+    // (e.g. mocked in tests), it runs synchronously. When gitExec returns
+    // Promises (production), it falls back to the async version.
+    function handleConfigState(config) {
+        var runtime = prSplit.runtime;
+        var gitExec = prSplit._gitExec;
+        var resolveDir = prSplit._resolveDir;
+        var dir = resolveDir(config.dir || '.');
+
+        // Probe: if the first gitExec call returns a Promise, use async path.
+        var probe = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+        if (probe && typeof probe.then === 'function') {
+            return handleConfigStateAsync(config);
+        }
+
+        // --- Sync path ---
+        var automatedDefaults = prSplit.AUTOMATED_DEFAULTS || {};
+        var loadPlan = prSplit.loadPlan;
+
+        var errors = [];
+        var availableBranches = null;
+
+        if (!runtime.baseBranch) {
+            errors.push('baseBranch is required (set via config or "set baseBranch <name>")');
+        }
+
+        var branchResult = probe;
+        if (branchResult.code !== 0) {
+            var stderrMsg = (branchResult.stderr || '').trim();
+            if (stderrMsg.indexOf('ambiguous argument') !== -1 ||
+                stderrMsg.indexOf('bad default revision') !== -1 ||
+                stderrMsg.indexOf('unknown revision') !== -1) {
+                errors.push('No commits on current branch. Please make at least one commit before splitting.');
+            } else {
+                errors.push('Cannot determine current branch: ' + stderrMsg);
+            }
+            var branchListResult = gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
+            if (branchListResult.code === 0 && branchListResult.stdout.trim()) {
+                availableBranches = branchListResult.stdout.trim().split('\n');
+            }
+        } else {
+            var sourceBranch = branchResult.stdout.trim();
+            if (sourceBranch === 'HEAD') {
+                errors.push('Detached HEAD state detected. Please checkout a branch before splitting (git checkout <branch>).');
+                var detachedBranchList = gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
+                if (detachedBranchList.code === 0 && detachedBranchList.stdout.trim()) {
+                    availableBranches = detachedBranchList.stdout.trim().split('\n');
+                }
+            } else if (sourceBranch === runtime.baseBranch) {
+                errors.push('Currently on base branch (' + runtime.baseBranch + '); checkout a feature branch first');
+            }
+        }
+
+        if (runtime.baseBranch) {
+            var targetCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + runtime.baseBranch]);
+            if (targetCheck.code !== 0) {
+                var remoteCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/remotes/origin/' + runtime.baseBranch]);
+                if (remoteCheck.code !== 0) {
+                    errors.push('Target branch "' + runtime.baseBranch + '" does not exist locally or as origin remote');
+                }
+            }
+        }
+
+        if (errors.length > 0) {
+            var result = { error: errors.join('; ') };
+            if (availableBranches) {
+                result.availableBranches = availableBranches;
+            }
+            return result;
+        }
+
+        if (config.resume) {
+            var checkpoint = loadPlan();
+            if (checkpoint && !checkpoint.error && checkpoint.plan) {
+                return { resume: true, checkpoint: checkpoint };
+            }
+            log.printf('wizard: --resume specified but no valid checkpoint found; starting fresh');
+        }
+
+        var verifyCommand = runtime.verifyCommand;
+        var verifyTimeoutMs = 0;
+        if (typeof config.verifyTimeoutMs === 'number' && config.verifyTimeoutMs > 0) {
+            verifyTimeoutMs = config.verifyTimeoutMs;
+        } else if (typeof automatedDefaults.verifyTimeoutMs === 'number' &&
+                   automatedDefaults.verifyTimeoutMs > 0) {
+            verifyTimeoutMs = automatedDefaults.verifyTimeoutMs;
+        }
+
+        return {
+            error: null,
+            baselineVerifyConfig: {
+                verifyCommand: verifyCommand,
+                dir: dir,
+                verifyTimeoutMs: verifyTimeoutMs
+            }
+        };
+    }
+
+    // handleConfigStateAsync is the async version used when gitExec returns
+    // Promises (production runtime with real git operations).
+    async function handleConfigStateAsync(config) {
         var runtime = prSplit.runtime;
         var gitExec = prSplit._gitExec;
         var resolveDir = prSplit._resolveDir;
@@ -729,9 +830,6 @@
         }
 
         // --- Step 3: Baseline verification config ---
-        // T090: Actual verification moved to async pipeline (runAnalysisAsync /
-        // automatedSplit pre-step) so the TUI event loop is never blocked.
-        // We just resolve the config here and pass it back to the caller.
         var verifyCommand = runtime.verifyCommand;
         var verifyTimeoutMs = 0;
         if (typeof config.verifyTimeoutMs === 'number' && config.verifyTimeoutMs > 0) {

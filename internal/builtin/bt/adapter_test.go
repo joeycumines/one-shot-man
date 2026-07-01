@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
 	bt "github.com/joeycumines/go-behaviortree"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/require"
 )
 

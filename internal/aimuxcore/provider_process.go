@@ -233,7 +233,17 @@ func (h *captureAgentHandle) WaitReady(ctx context.Context) error {
 	case <-h.ready:
 		return nil
 	case <-h.cs.Done():
-		return errors.New("aimux: process exited before becoming ready")
+		// Process exited — but output may still be in the pipeline.
+		// Wait a brief grace period for the reader to flush remaining
+		// output and signal ready.
+		select {
+		case <-h.ready:
+			return nil
+		case <-time.After(500 * time.Millisecond):
+			return errors.New("aimux: process exited before becoming ready")
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	case <-ctx.Done():
 		return ctx.Err()
 	}

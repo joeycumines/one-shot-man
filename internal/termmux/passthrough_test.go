@@ -925,8 +925,8 @@ func TestCaptureSession_Passthrough_WithTerminalState(t *testing.T) {
 	t.Parallel()
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "echo",
-		Args:    []string{"capture-pt-term"},
+		Command: "sleep",
+		Args:    []string{"5"},
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)

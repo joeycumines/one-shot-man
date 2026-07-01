@@ -78,7 +78,7 @@ import (
 
 	"charm.land/bubbles/v2/viewport"
 	"charm.land/lipgloss/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	jslipgloss "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 )

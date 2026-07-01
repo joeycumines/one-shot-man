@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // normalizeSymbolDescription converts a goja.Symbol string representation into the

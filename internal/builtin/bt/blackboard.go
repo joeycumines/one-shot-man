@@ -10,7 +10,7 @@ import (
 	"maps"
 	"sync"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // Blackboard provides a thread-safe key-value store for behavior tree state.

@@ -10,9 +10,12 @@ func TestBreakPane_JSBinding_ReturnsMovedPane(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
+	idleBin := buildIdleProgram(t)
+	_ = runtime.Set("idleBin", idleBin)
+
 	script := `
-		var bs1 = termmux.newBoundedSession({cmd: "cat", rows: 10, cols: 40});
-		var bs2 = termmux.newBoundedSession({cmd: "cat", rows: 10, cols: 40});
+		var bs1 = termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
+		var bs2 = termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
 		var w1 = tuiMux.newWindow("w1");
 		var p1 = tuiMux.addPaneToWindow(bs1.session, { windowId: w1 });
 		var p2 = tuiMux.addPaneToWindow(bs2.session, { windowId: w1 });
@@ -105,9 +108,12 @@ func TestBreakPane_JSBinding_RefocusesSource(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
+	idleBin := buildIdleProgram(t)
+	_ = runtime.Set("idleBin", idleBin)
+
 	script := `
-		var bs1 = termmux.newBoundedSession({cmd: "cat", rows: 10, cols: 40});
-		var bs2 = termmux.newBoundedSession({cmd: "cat", rows: 10, cols: 40});
+		var bs1 = termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
+		var bs2 = termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
 		var w1 = tuiMux.newWindow("w1");
 		var p1 = tuiMux.addPaneToWindow(bs1.session, { windowId: w1 });
 		var p2 = tuiMux.addPaneToWindow(bs2.session, { windowId: w1 });
@@ -151,9 +157,12 @@ func TestJoinPane_JSBinding_MovesAndActivates(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
+	idleBin := buildIdleProgram(t)
+	_ = runtime.Set("idleBin", idleBin)
+
 	script := `
-		var bs1 = termmux.newBoundedSession({cmd: "cat", rows: 10, cols: 40});
-		var bs2 = termmux.newBoundedSession({cmd: "cat", rows: 10, cols: 40});
+		var bs1 = termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
+		var bs2 = termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
 		var w1 = tuiMux.newWindow("w1");
 		var w2 = tuiMux.newWindow("w2");
 		var p1 = tuiMux.addPaneToWindow(bs1.session, { windowId: w1 });

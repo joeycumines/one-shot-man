@@ -92,8 +92,12 @@ func TestSessionManager_PaneExited_NoRemainOnExit(t *testing.T) {
 	session.readerCh <- []byte("ready")
 	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
 
-	close(session.readerCh)
+	// Subscribe BEFORE closing readerCh to avoid a TOCTOU race: under
+	// heavy parallel load the manager can process the EOF and emit
+	// EventSessionClosed before Subscribe is called, causing the test
+	// to miss the event and time out.
 	_, closedCh := m.Subscribe(16)
+	close(session.readerCh)
 	waitForEventKindCh(t, closedCh, EventSessionClosed, 10*time.Second)
 
 	if m.PaneExited(paneID) {

@@ -83,7 +83,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // Error codes for lipgloss operations.

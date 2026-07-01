@@ -115,6 +115,7 @@ func BenchmarkMultiSessionOutput(b *testing.B) {
 			break
 		}
 		runtime.Gosched()
+		time.Sleep(time.Millisecond)
 	}
 
 	// Start background output producers — each session gets continuous data.
@@ -288,6 +289,7 @@ func BenchmarkSnapshotReadDuringWrite(b *testing.B) {
 			break
 		}
 		runtime.Gosched()
+		time.Sleep(time.Millisecond)
 	}
 
 	// Start aggressive writer goroutines to create contention.
@@ -311,7 +313,7 @@ func BenchmarkSnapshotReadDuringWrite(b *testing.B) {
 	}
 
 	// Allow writers to establish steady state.
-	runtime.Gosched()
+	time.Sleep(time.Millisecond)
 
 	b.ResetTimer()
 	for range b.N {
@@ -472,7 +474,7 @@ func TestStressBoundedMemoryGrowth(t *testing.T) {
 		_ = m.Activate(id)
 
 		// Give reader goroutine time to drain output.
-		runtime.Gosched()
+		time.Sleep(time.Millisecond)
 
 		if err := m.Unregister(id); err != nil {
 			t.Fatalf("unregister cycle %d: %v", i, err)

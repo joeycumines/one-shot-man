@@ -3,7 +3,7 @@ package builtin
 import (
 	"encoding/json"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 

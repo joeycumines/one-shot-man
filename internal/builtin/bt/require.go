@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
 	bt "github.com/joeycumines/go-behaviortree"
+	"github.com/joeycumines/goja"
+	"github.com/joeycumines/goja_nodejs/require"
 )
 
 // ModuleLoader returns a require.ModuleLoader for the "osm:bt" module.

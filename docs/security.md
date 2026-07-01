@@ -14,7 +14,7 @@ to run — just like they trust shell scripts they execute.
 
 ## Goja Runtime Isolation
 
-The [Goja](https://github.com/dop251/goja) JavaScript engine provides:
+The [Goja](https://github.com/joeycumines/goja) JavaScript engine provides:
 
 | Property | Status |
 |---|---|

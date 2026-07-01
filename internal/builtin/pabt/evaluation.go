@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/dop251/goja"
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
 	pabtpkg "github.com/joeycumines/go-pabt"
+	"github.com/joeycumines/goja"
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 )
 

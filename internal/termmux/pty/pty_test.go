@@ -133,8 +133,7 @@ func TestSpawn_EnvVars(t *testing.T) {
 	skipIfWindows(t)
 
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command: "sh",
-		Args:    []string{"-c", "echo $MY_TEST_VAR"},
+		Command: buildEnvEchoProgram(t, "MY_TEST_VAR"),
 		Env: map[string]string{
 			"MY_TEST_VAR": "test_value_42",
 		},
@@ -224,7 +223,7 @@ func TestProcess_Resize(t *testing.T) {
 	skipIfWindows(t)
 
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 		Rows:    24,
 		Cols:    80,
 	})
@@ -326,7 +325,7 @@ func TestProcess_Write_AfterClose(t *testing.T) {
 	skipIfWindows(t)
 
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err != nil {
 		t.Fatalf("Spawn failed: %v", err)
@@ -347,7 +346,7 @@ func TestProcess_Read_AfterClose(t *testing.T) {
 	skipIfWindows(t)
 
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err != nil {
 		t.Fatalf("Spawn failed: %v", err)
@@ -445,7 +444,7 @@ func TestProcess_WriteAndReadCat(t *testing.T) {
 	skipIfWindows(t)
 
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err != nil {
 		t.Fatalf("Spawn failed: %v", err)
@@ -519,7 +518,7 @@ func TestProcess_Resize_AfterClose(t *testing.T) {
 	skipIfWindows(t)
 
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err != nil {
 		t.Fatalf("Spawn failed: %v", err)
@@ -540,7 +539,7 @@ func TestProcess_Signal_AfterClose(t *testing.T) {
 	skipIfWindows(t)
 
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err != nil {
 		t.Fatalf("Spawn failed: %v", err)
@@ -602,8 +601,7 @@ func TestSpawn_CommandWithSpacesAndExplicitArgs(t *testing.T) {
 	// When Args is provided, Command should NOT be split — even if it
 	// contains spaces. This preserves backward compatibility.
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command: "sh",
-		Args:    []string{"-c", "echo explicit_args"},
+		Command: buildEchoProgram(t, "explicit_args"),
 	})
 	if err != nil {
 		t.Fatalf("Spawn failed: %v", err)
@@ -950,7 +948,7 @@ func TestProcess_Write_WithTimeout(t *testing.T) {
 
 	// Normal write succeeds with timeout enabled (the default).
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err != nil {
 		t.Fatalf("Spawn failed: %v", err)
@@ -972,7 +970,7 @@ func TestProcess_Write_TimeoutDisabled(t *testing.T) {
 	skipIfWindows(t)
 
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command:      "cat",
+		Command:      buildIdleProgram(t),
 		WriteTimeout: -1, // disable deadline
 	})
 	if err != nil {
@@ -994,7 +992,7 @@ func TestProcess_Write_CustomTimeout(t *testing.T) {
 	skipIfWindows(t)
 
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command:      "cat",
+		Command:      buildIdleProgram(t),
 		WriteTimeout: 5 * time.Second,
 	})
 	if err != nil {
@@ -1282,8 +1280,7 @@ func TestProcess_DrainOutput(t *testing.T) {
 	defer cancel()
 
 	proc, err := Spawn(ctx, SpawnConfig{
-		Command: "sh",
-		Args:    []string{"-c", "echo drain-test; sleep 60"},
+		Command: buildEchoIdleProgram(t, "drain-test"),
 	})
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)

@@ -1,6 +1,6 @@
 package termmux
 
-import "github.com/dop251/goja"
+import "github.com/joeycumines/goja"
 
 // jsGetString returns the string value for key from obj, or defaultVal if the
 // key is missing, undefined, or null.

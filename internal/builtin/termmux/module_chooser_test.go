@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"

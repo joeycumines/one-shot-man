@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"

@@ -17,7 +17,7 @@ import (
 	"fmt"
 
 	"charm.land/lipgloss/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 
 	lipglossjs "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 	"github.com/joeycumines/one-shot-man/internal/termui/coordinate"

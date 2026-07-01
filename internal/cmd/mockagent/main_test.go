@@ -27,7 +27,11 @@ func buildMock(t *testing.T) string {
 		t.Fatal("could not determine test file path")
 	}
 	srcDir := filepath.Dir(thisFile)
-	bin := filepath.Join(t.TempDir(), "mockagent")
+	binName := "mockagent"
+	if runtime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	bin := filepath.Join(t.TempDir(), binName)
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = srcDir
 	if out, err := cmd.CombinedOutput(); err != nil {

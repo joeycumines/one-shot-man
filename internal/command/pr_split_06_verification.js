@@ -399,7 +399,7 @@
     //    { session, worktreeDir, dir, branchName, startTime }  on success
     //    { skipped: true }                                     if no verify command
     //    { error: string }                                     on failure
-    async function startVerifySession(branchName, config) {
+    function startVerifySession(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
         var command = config.verifyCommand || prSplit.runtime.verifyCommand;
@@ -441,7 +441,15 @@
             });
             session.start();
         } catch (e) {
-            await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            // Fire-and-forget cleanup — we're already in an error path.
+            // gitExec is dual-mode: a Promise in production (async) but a
+            // plain object in tests (sync mock). Guard the .catch so a sync
+            // return value doesn't throw a masking TypeError that would
+            // clobber the original error `e`.
+            var cleanupRes = gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            if (cleanupRes && typeof cleanupRes.catch === 'function') {
+                cleanupRes.catch(function() {});
+            }
             return {
                 error: 'start verify session failed: ' + e.message,
                 session: null,

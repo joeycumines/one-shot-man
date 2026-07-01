@@ -3,7 +3,7 @@ package aimux
 import (
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/aimuxcore"
 )
 

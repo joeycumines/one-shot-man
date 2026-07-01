@@ -295,7 +295,8 @@ func TestBinaryE2E_AgentCommandPathValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 func TestBinaryE2E_MockAgentProcessCleanup(t *testing.T) {
 	skipSlow(t)
-	t.Parallel()
+	// NOT parallel: pgrep -f mockagent would match osm processes from other
+	// parallel tests (which have mockagent in their -agent-command argument).
 	osmBin := buildOSMBinary(t)
 	mockBin := buildMockAgent(t)
 	repoDir := setupBinaryTestRepo(t)

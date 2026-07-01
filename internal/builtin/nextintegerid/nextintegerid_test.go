@@ -3,7 +3,7 @@ package nextintegerid
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 func setupModule(t *testing.T) (*goja.Runtime, goja.Callable) {

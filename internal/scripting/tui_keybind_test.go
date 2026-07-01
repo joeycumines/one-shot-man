@@ -4,9 +4,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
+	"github.com/joeycumines/goja"
 )
 
 func TestBuildKeyBinds_PassesPromptObject(t *testing.T) {

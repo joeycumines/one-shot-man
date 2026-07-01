@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // TestRuntime_PersistentLoop_SurvivesMultipleExecuteScript verifies that the

@@ -12,9 +12,12 @@ func TestActivityReset_JSBinding(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
+	idleBin := buildIdleProgram(t)
+	_ = runtime.Set("idleBin", idleBin)
+
 	_, err := runtime.RunString(`
-		var s1 = termmux.newBoundedSession({ cmd: "cat" });
-		var s2 = termmux.newBoundedSession({ cmd: "cat" });
+		var s1 = termmux.newBoundedSession({ cmd: idleBin });
+		var s2 = termmux.newBoundedSession({ cmd: idleBin });
 		var mgr = s1.mgr;
 		var sid = s1.sid;
 

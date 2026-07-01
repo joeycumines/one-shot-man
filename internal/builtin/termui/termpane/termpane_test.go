@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 
 	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
 	"github.com/joeycumines/one-shot-man/internal/termmux"

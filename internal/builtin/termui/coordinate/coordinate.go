@@ -51,7 +51,7 @@ package coordinate
 
 import (
 	"charm.land/lipgloss/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/termmux"
 	coord "github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 )

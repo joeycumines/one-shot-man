@@ -187,8 +187,17 @@ func TestChunk16_AnalysisAsync_HappyPath(t *testing.T) {
 			var r = await sendKey(s, 'enter');
 			s = r[0];
 
+			if (s._cfgPromise) {
+				// startAnalysis runs config validation (real git via exec.execv)
+				// in the background and returns [s, cmd] immediately. This engine
+				// only advances exec.execv when its Promise is awaited, so await
+				// the stashed config promise to drive config validation to
+				// completion before pumping the (mocked, microtask) analysis
+				// pipeline.
+				await s._cfgPromise;
+			}
 			if (s.isProcessing) {
-				for (var _i = 0; _i < 20; _i++) await Promise.resolve();
+				for (var _i = 0; _i < 40; _i++) await Promise.resolve();
 			}
 
 			// Poll to finalize.
@@ -257,8 +266,17 @@ func TestChunk16_AnalysisAsync_AnalyzeDiffError(t *testing.T) {
 			var r = await sendKey(s, 'enter');
 			s = r[0];
 
+			if (s._cfgPromise) {
+				// startAnalysis runs config validation (real git via exec.execv)
+				// in the background and returns [s, cmd] immediately. This engine
+				// only advances exec.execv when its Promise is awaited, so await
+				// the stashed config promise to drive config validation to
+				// completion before pumping the (mocked, microtask) analysis
+				// pipeline.
+				await s._cfgPromise;
+			}
 			if (s.isProcessing) {
-				for (var _i = 0; _i < 20; _i++) await Promise.resolve();
+				for (var _i = 0; _i < 40; _i++) await Promise.resolve();
 			}
 
 			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
@@ -316,8 +334,17 @@ func TestChunk16_AnalysisAsync_NoChanges(t *testing.T) {
 			var r = await sendKey(s, 'enter');
 			s = r[0];
 
+			if (s._cfgPromise) {
+				// startAnalysis runs config validation (real git via exec.execv)
+				// in the background and returns [s, cmd] immediately. This engine
+				// only advances exec.execv when its Promise is awaited, so await
+				// the stashed config promise to drive config validation to
+				// completion before pumping the (mocked, microtask) analysis
+				// pipeline.
+				await s._cfgPromise;
+			}
 			if (s.isProcessing) {
-				for (var _i = 0; _i < 20; _i++) await Promise.resolve();
+				for (var _i = 0; _i < 40; _i++) await Promise.resolve();
 			}
 
 			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
@@ -396,8 +423,17 @@ func TestChunk16_AnalysisAsync_ValidationFailure(t *testing.T) {
 			var r = await sendKey(s, 'enter');
 			s = r[0];
 
+			if (s._cfgPromise) {
+				// startAnalysis runs config validation (real git via exec.execv)
+				// in the background and returns [s, cmd] immediately. This engine
+				// only advances exec.execv when its Promise is awaited, so await
+				// the stashed config promise to drive config validation to
+				// completion before pumping the (mocked, microtask) analysis
+				// pipeline.
+				await s._cfgPromise;
+			}
 			if (s.isProcessing) {
-				for (var _i = 0; _i < 20; _i++) await Promise.resolve();
+				for (var _i = 0; _i < 40; _i++) await Promise.resolve();
 			}
 
 			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
@@ -1513,5 +1549,127 @@ func TestChunk16_AgentCheck_SwitchAwayCleansUp(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("agent check switch away cleans up: %v", raw)
+	}
+}
+
+// TestChunk16_AnalysisAsync_ConfigRejection verifies that when config
+// validation REJECTS (unexpected throw — e.g. git binary missing, resolveDir
+// threw), the error is surfaced on the CONFIG screen via
+// configValidationError + wizardState='CONFIG' — NOT silently dropped by the
+// poll handler's early !isProcessing exit.
+//
+// In normal operation exec.execv always resolves (never rejects), so
+// handleConfigStateAsync never rejects via git failures. This test overrides
+// prSplit._handleConfigState (dynamic dispatch) to inject a rejection,
+// exercising the handleConfigError → processConfigResult({error:...}) path.
+func TestChunk16_AnalysisAsync_ConfigRejection(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		var origHandleConfigState = globalThis.prSplit._handleConfigState;
+		try {
+			globalThis.prSplit._handleConfigState = async function(config) {
+				throw new Error('config validation crashed');
+			};
+
+			var s = initState('CONFIG');
+			globalThis.prSplit.runtime.baseBranch = 'main';
+			globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
+			globalThis.prSplit.runtime.strategy = 'directory';
+			globalThis.prSplit.runtime.mode = 'heuristic';
+			s.focusIndex = 4; // nav-next element (after toggle-advanced)
+
+			var r = await sendKey(s, 'enter');
+			s = r[0];
+
+			// startAnalysis stashed the rejecting config promise. Await it
+			// (with .catch) to drive the rejection through the event loop,
+			// which fires handleConfigError → processConfigResult({error:...}).
+			if (s._cfgPromise) {
+				await s._cfgPromise.catch(function() {});
+				for (var _i = 0; _i < 10; _i++) await Promise.resolve();
+			}
+
+			if (s.wizardState !== 'CONFIG') {
+				return 'FAIL: expected CONFIG, got ' + s.wizardState;
+			}
+			if (!s.configValidationError ||
+				s.configValidationError.indexOf('config validation crashed') < 0) {
+				return 'FAIL: configValidationError should contain error, got: ' + s.configValidationError;
+			}
+			if (s.isProcessing) return 'FAIL: isProcessing should be false';
+			if (s.analysisRunning) return 'FAIL: analysisRunning should be false';
+			return 'OK';
+		} finally {
+			globalThis.prSplit._handleConfigState = origHandleConfigState;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("config rejection: %v", raw)
+	}
+}
+
+// TestChunk16_AutoSplitAsync_ConfigRejection verifies that when config
+// validation rejects in the auto-analysis path (startAutoAnalysis), the error
+// is surfaced on the CONFIG screen via configValidationError +
+// wizardState='CONFIG' — NOT silently dropped by the poll handler's early
+// !isProcessing exit. Mirrors the 16b rejection test but exercises the 16d
+// handleAutoConfigError → processAutoConfigResult({error:...}) path.
+func TestChunk16_AutoSplitAsync_ConfigRejection(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		var origHandleConfigState = globalThis.prSplit._handleConfigState;
+		try {
+			globalThis.prSplit._handleConfigState = async function(config) {
+				throw new Error('auto config validation crashed');
+			};
+			globalThis.prSplitConfig = { cleanupOnFailure: false, timeoutMs: 0 };
+
+			var s = initState('CONFIG');
+			globalThis.prSplit.runtime.baseBranch = 'main';
+			globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
+			globalThis.prSplit.runtime.strategy = 'directory';
+			globalThis.prSplit.runtime.mode = 'auto';
+
+			// Call startAutoAnalysis directly (exposed as prSplit._startAutoAnalysis).
+			var r = prSplit._startAutoAnalysis(s);
+			s = r[0];
+
+			// startAutoAnalysis stashed the rejecting config promise. Await it
+			// (with .catch) to drive the rejection, which fires
+			// handleAutoConfigError → processAutoConfigResult({error:...}).
+			if (s._cfgPromise) {
+				await s._cfgPromise.catch(function() {});
+				for (var _i = 0; _i < 10; _i++) await Promise.resolve();
+			}
+
+			if (s.wizardState !== 'CONFIG') {
+				return 'FAIL: expected CONFIG, got ' + s.wizardState;
+			}
+			if (!s.configValidationError ||
+				s.configValidationError.indexOf('auto config validation crashed') < 0) {
+				return 'FAIL: configValidationError should contain error, got: ' + s.configValidationError;
+			}
+			if (s.isProcessing) return 'FAIL: isProcessing should be false';
+			if (s.autoConfigValidating) return 'FAIL: autoConfigValidating should be false';
+			return 'OK';
+		} finally {
+			globalThis.prSplit._handleConfigState = origHandleConfigState;
+			delete globalThis.prSplitConfig;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("auto config rejection: %v", raw)
 	}
 }

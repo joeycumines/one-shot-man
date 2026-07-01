@@ -196,6 +196,9 @@ func (p *Process) platformResize(rows, cols uint16) error {
 // platformClose is a no-op on Unix — all cleanup is handled by Close().
 func (p *Process) platformClose() {}
 
+// platformClosePseudoConsole is a no-op on Unix (no ConPTY).
+func (p *Process) platformClosePseudoConsole() {}
+
 // splitCommand splits a command string into a binary and arguments using
 // POSIX-like shell word rules. Single quotes preserve literal content,
 // double quotes allow backslash escaping of \, ", $, `, and newline.

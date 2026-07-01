@@ -1,6 +1,6 @@
 package bubbletea
 
-import "github.com/dop251/goja"
+import "github.com/joeycumines/goja"
 
 // SyncJSRunner is a JSRunner implementation for unit tests.
 // It executes callbacks synchronously using the provided runtime.

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	termuipanel "github.com/joeycumines/one-shot-man/internal/termui/panel"
 	"github.com/stretchr/testify/require"
 )

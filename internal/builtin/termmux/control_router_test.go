@@ -3,7 +3,7 @@ package termmux
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 func setupControlRouter(t *testing.T) *goja.Runtime {

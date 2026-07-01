@@ -1,7 +1,7 @@
 package termmux
 
 import (
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 func enableMouseForward(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {

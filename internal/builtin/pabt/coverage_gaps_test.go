@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dop251/goja"
 	"github.com/expr-lang/expr"
 	bt "github.com/joeycumines/go-behaviortree"
 	"github.com/joeycumines/go-pabt"
+	"github.com/joeycumines/goja"
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

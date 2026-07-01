@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/dop251/goja"
 	bt "github.com/joeycumines/go-behaviortree"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/goroutineid"
 )
 

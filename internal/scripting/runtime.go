@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaEventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/goroutineid"
 )
 

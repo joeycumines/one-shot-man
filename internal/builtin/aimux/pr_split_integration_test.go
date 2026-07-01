@@ -13,13 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
-	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
-	gojarequire "github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	gojanodejsconsole "github.com/joeycumines/goja_nodejs/console"
+	gojarequire "github.com/joeycumines/goja_nodejs/require"
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	execmod "github.com/joeycumines/one-shot-man/internal/builtin/exec"
+	osmod "github.com/joeycumines/one-shot-man/internal/builtin/os"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,6 +66,10 @@ func prSplitTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 
 	// Register exec module (bt is auto-registered by bridge).
 	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx, adapter))
+
+	// Register os module so JS code can use os.tmpdir() for worktrees
+	// instead of falling back to /tmp (which may contain a stale .git).
+	reg.RegisterNativeModule("osm:os", osmod.Require(ctx, adapter, nil))
 
 	// Register aimux module for strategy selection.
 	reg.RegisterNativeModule("osm:aimux", Require(ctx, adapter))
@@ -866,7 +871,9 @@ func addCompilableFeatureFiles(t *testing.T, dir string) {
 //
 // Workflow: analyze → group → plan → execute → verify (go build) → equivalence
 func TestPRSplit_EndToEnd_WithCompilation(t *testing.T) {
-	t.Parallel()
+	// Not parallel: t.Setenv isolates TMPDIR to avoid VCS stamping
+	// issues from stale /tmp/.git directories left by other processes.
+	t.Setenv("TMPDIR", t.TempDir())
 	bridge, runJS := prSplitTestEnv(t)
 
 	// E2E test with real compilation; increase timeout to avoid flakes.

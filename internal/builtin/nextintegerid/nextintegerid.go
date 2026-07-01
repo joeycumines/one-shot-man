@@ -3,7 +3,7 @@ package nextintegerid
 import (
 	"fmt"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 func Require(runtime *goja.Runtime, module *goja.Object) {

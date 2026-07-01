@@ -21,7 +21,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 

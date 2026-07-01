@@ -1034,7 +1034,7 @@ func TestAutoOpenSplitView_StartAnalysis_T388(t *testing.T) {
 
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Configure runtime to point at the real git repo.
 		globalThis.prSplit.runtime.baseBranch = 'main';
 		globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
@@ -1048,7 +1048,7 @@ func TestAutoOpenSplitView_StartAnalysis_T388(t *testing.T) {
 		s.splitViewEnabled = false;
 		s.splitViewTab = 'agent';
 
-		var r = globalThis.prSplit._startAnalysis(s);
+		var r = await globalThis.prSplit._startAnalysis(s);
 		s = r[0];
 
 		return JSON.stringify({
@@ -1110,7 +1110,7 @@ func TestAutoOpenSplitView_ShortTerminal_T388(t *testing.T) {
 
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		globalThis.prSplit.runtime.baseBranch = 'main';
 		globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
 		globalThis.prSplit.runtime.strategy = 'directory';
@@ -1122,7 +1122,7 @@ func TestAutoOpenSplitView_ShortTerminal_T388(t *testing.T) {
 		s.height = 8;  // below INLINE_VIEW_HEIGHT (12)
 		s.splitViewEnabled = false;
 
-		var r = globalThis.prSplit._startAnalysis(s);
+		var r = await globalThis.prSplit._startAnalysis(s);
 		s = r[0];
 
 		return JSON.stringify({
@@ -1272,7 +1272,7 @@ func TestVerifyTabPreActivation_WithVerifyCommand_T389(t *testing.T) {
 
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		globalThis.prSplit.runtime.baseBranch = 'main';
 		globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
 		globalThis.prSplit.runtime.strategy = 'directory';
@@ -1285,7 +1285,7 @@ func TestVerifyTabPreActivation_WithVerifyCommand_T389(t *testing.T) {
 		s.splitViewEnabled = false;
 		s.splitViewTab = 'agent';
 
-		var r = globalThis.prSplit._startAnalysis(s);
+		var r = await globalThis.prSplit._startAnalysis(s);
 		s = r[0];
 
 		return JSON.stringify({
@@ -1357,7 +1357,7 @@ func TestVerifyTabPreActivation_NoVerifyCommand_T389(t *testing.T) {
 
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		globalThis.prSplit.runtime.baseBranch = 'main';
 		globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
 		globalThis.prSplit.runtime.strategy = 'directory';
@@ -1369,7 +1369,7 @@ func TestVerifyTabPreActivation_NoVerifyCommand_T389(t *testing.T) {
 		s.height = 30;
 		s.splitViewEnabled = false;
 
-		var r = globalThis.prSplit._startAnalysis(s);
+		var r = await globalThis.prSplit._startAnalysis(s);
 		s = r[0];
 
 		return JSON.stringify({

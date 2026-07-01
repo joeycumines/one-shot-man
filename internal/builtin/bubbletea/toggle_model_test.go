@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // TestToggleModel_Init delegates to inner model.

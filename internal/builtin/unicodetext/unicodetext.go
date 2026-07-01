@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/rivo/uniseg"
 )
 

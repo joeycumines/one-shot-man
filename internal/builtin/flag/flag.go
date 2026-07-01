@@ -8,7 +8,7 @@ import (
 	"bytes"
 	goflag "flag"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // Require is the Goja module loader for osm:flag.

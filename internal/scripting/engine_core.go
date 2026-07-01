@@ -9,14 +9,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"sync/atomic"
 
-	"github.com/dop251/goja"
-	_ "github.com/dop251/goja_nodejs/console" // init() registers "console" core module
-	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaEventloop "github.com/joeycumines/goja-eventloop"
+	_ "github.com/joeycumines/goja_nodejs/console" // init() registers "console" core module
+	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/goroutineid"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
@@ -81,6 +82,7 @@ type Engine struct {
 	testMode             bool
 	threadCheckMode      bool  // If true, SetGlobal/GetGlobal panic on wrong goroutine
 	eventLoopGoroutineID int64 // Captured at initialization for thread checking (atomic)
+	closed               atomic.Bool
 	tuiManager           *TUIManager
 	contextManager       *ContextManager
 	logger               *TUILogger
@@ -274,8 +276,8 @@ func NewEngine(
 	engine.setupGlobals()
 
 	// Interrupt JS execution when context is canceled.
-	// Capture vm locally to avoid racing with Close() which sets e.vm = nil.
-	// goja.Runtime.Interrupt is documented as safe to call from any goroutine.
+	// Capture vm locally for the context.AfterFunc callback. goja.Runtime.Interrupt
+	// is documented as safe to call from any goroutine.
 	vmForInterrupt := engine.vm
 	context.AfterFunc(ctx, func() {
 		if vmForInterrupt != nil {
@@ -436,7 +438,9 @@ func (e *Engine) LoadScript(name, path string) (*Script, error) {
 		Content: content,
 	}
 
+	e.globalsMu.Lock()
 	e.scripts = append(e.scripts, script)
+	e.globalsMu.Unlock()
 	return script, nil
 }
 
@@ -448,7 +452,9 @@ func (e *Engine) LoadScriptFromString(name, content string) *Script {
 		Content: content,
 	}
 
+	e.globalsMu.Lock()
 	e.scripts = append(e.scripts, script)
+	e.globalsMu.Unlock()
 	return script
 }
 
@@ -607,17 +613,24 @@ func (e *Engine) executeOnLoop(fn func(*goja.Runtime) error) error {
 		return errors.New("event loop not available")
 	}
 
+	// Capture vm locally to avoid racing with Close(). This is the same
+	// defense-in-depth pattern used at engine_core.go:279 (vmForInterrupt)
+	// and engine_core.go:308 (QueueSetGlobal). Even though Close() no longer
+	// nils e.vm, capturing locally ensures a stable pointer for the closure
+	// regardless of any future changes to Close()'s cleanup.
+	vm := e.vm
+
 	// Deadlock prevention: if we are already on the event loop goroutine,
 	// run directly. Submitting work and blocking for the result would
 	// deadlock the single-threaded event loop.
 	eventLoopID := e.runtime.eventLoopGoroutineID.Load()
 	if eventLoopID > 0 && goroutineid.Get() == eventLoopID {
-		return fn(e.vm)
+		return fn(vm)
 	}
 
 	errCh := make(chan error, 1)
 	if submitErr := loop.Submit(func() {
-		errCh <- fn(e.vm)
+		errCh <- fn(vm)
 	}); submitErr != nil {
 		return fmt.Errorf("event loop not running: %w", submitErr)
 	}
@@ -706,13 +719,24 @@ func (e *Engine) Promisify(ctx context.Context, fn func(ctx context.Context) (an
 	return e.runtime.Promisify(ctx, fn)
 }
 
-// GetScripts returns all loaded scripts.
+// GetScripts returns a snapshot of all loaded scripts. The returned slice is
+// a copy — callers can safely iterate it without racing with LoadScript
+// appends. Protected by globalsMu to synchronize with LoadScript/LoadScriptFromString.
 func (e *Engine) GetScripts() []*Script {
-	return e.scripts
+	e.globalsMu.RLock()
+	defer e.globalsMu.RUnlock()
+	return slices.Clone(e.scripts)
 }
 
-// Close cleans up the engine resources.
+// Close cleans up the engine resources. It is idempotent — subsequent calls
+// return nil without re-cleaning.
 func (e *Engine) Close() error {
+	// Idempotency guard: ensure Close runs exactly once. Without this,
+	// a double-close would re-close the TUI manager, btBridge, etc.
+	if !e.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+
 	// Close TUI manager if it exists (this persists state)
 	if e.tuiManager != nil {
 		if err := e.tuiManager.Close(); err != nil {
@@ -743,7 +767,8 @@ func (e *Engine) Close() error {
 	// been closed when the prompt loop exits.
 
 	// Close the runtime (this stops the event loop).
-	// Runtime.Close() cancels the loop context and shuts down cleanly.
+	// Runtime.Close() cancels the loop context and waits for the loop
+	// goroutine to exit (<-rt.done).
 	if e.runtime != nil {
 		if err := e.runtime.Close(); err != nil {
 			if e.stderr != nil {
@@ -752,9 +777,13 @@ func (e *Engine) Close() error {
 		}
 	}
 
-	// Clean up any resources
-	e.vm = nil
-	e.scripts = nil
+	// NOTE: We intentionally do NOT nil e.vm or e.scripts here. Setting
+	// e.vm = nil without synchronization races with executeOnLoop's closure
+	// which reads e.vm — the race detector flags this as a DATA RACE under
+	// concurrent test execution. The event loop is already stopped by
+	// runtime.Close(), so no new reads will occur after this point. Any
+	// in-flight executeOnLoop captures e.vm locally (defense-in-depth). The
+	// GC reclaims vm/scripts when the Engine is no longer referenced.
 	return nil
 }
 

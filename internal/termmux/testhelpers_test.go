@@ -3,6 +3,11 @@ package termmux
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -321,3 +326,211 @@ var _ InteractiveSession = (*controllableSession)(nil)
 var _ InteractiveSession = (mockSession{})
 var _ ptyio.TermState = (*ptTestTermState)(nil)
 var _ ptyio.BlockingGuard = (*ptTestBlockingGuard)(nil)
+
+// ---------------------------------------------------------------------------
+// Cross-platform test program builders
+// ---------------------------------------------------------------------------
+
+var ()
+
+// buildProgram compiles a Go source string into a binary and returns its path.
+func buildProgram(t *testing.T, src string) string {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("spawns process to build test helper")
+	}
+	dir := t.TempDir()
+	sourceFile := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(sourceFile, []byte(src), 0o644); err != nil {
+		t.Fatalf("write helper source: %v", err)
+	}
+	binName := "testprog"
+	if runtime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	bin := filepath.Join(dir, binName)
+	cmd := exec.Command("go", "build", "-o", bin, sourceFile)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go build helper: %v\n%s", err, stderr.String())
+	}
+	return bin
+}
+
+// buildIdleProgram builds a binary that reads stdin until EOF then exits,
+// replacing "cat" in tests that need a long-lived process attached to a PTY.
+func buildIdleProgram(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return "cmd.exe"
+	}
+	return buildProgram(t, `package main
+
+import (
+	"io"
+	"os"
+)
+
+func main() {
+	io.Copy(os.Stdout, os.Stdin)
+}
+`)
+}
+
+// buildEchoIdleProgram builds a binary that prints the given text to stdout
+// and then reads stdin until EOF, replacing "sh -c 'echo text; exec cat'"
+// patterns in tests.
+func buildEchoIdleProgram(t *testing.T, text string) string {
+	t.Helper()
+	return buildProgram(t, fmt.Sprintf(`package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+)
+
+func main() {
+	fmt.Println(%q)
+	io.Copy(os.Stdout, os.Stdin)
+}
+`, text))
+}
+
+// buildEchoProgram builds a binary that prints the given text and exits,
+// replacing "sh -c 'echo text'" patterns.
+func buildEchoProgram(t *testing.T, text string) string {
+	t.Helper()
+	return buildProgram(t, fmt.Sprintf(`package main
+
+import "fmt"
+
+func main() {
+	fmt.Println(%q)
+}
+`, text))
+}
+
+// buildExitCodeProgram builds a binary that exits with the given code,
+// replacing "sh -c 'exit N'" patterns.
+func buildExitCodeProgram(t *testing.T, code int) string {
+	t.Helper()
+	return buildProgram(t, fmt.Sprintf(`package main
+
+import "os"
+
+func main() {
+	os.Exit(%d)
+}
+`, code))
+}
+
+// buildEnvEchoProgram builds a binary that prints the value of the given
+// environment variable and exits, replacing "sh -c 'echo $VAR'" patterns.
+func buildEnvEchoProgram(t *testing.T, varName string) string {
+	t.Helper()
+	return buildProgram(t, fmt.Sprintf(`package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	fmt.Println(os.Getenv(%q))
+}
+`, varName))
+}
+
+// buildPwdProgram builds a binary that prints its working directory and exits,
+// replacing "sh -c 'pwd'" patterns.
+func buildPwdProgram(t *testing.T) string {
+	t.Helper()
+	return buildProgram(t, `package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	dir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Println(dir)
+}
+`)
+}
+
+// buildSeqProgram builds a binary that prints sequential lines (e.g. "line1"
+// through "lineN") and exits, replacing "sh -c 'for i in $(seq 1 N); do
+// echo prefix$i; done'" patterns. The format string uses %d for the index.
+func buildSeqProgram(t *testing.T, count int, format string) string {
+	t.Helper()
+	var lines []string
+	for i := 1; i <= count; i++ {
+		lines = append(lines, fmt.Sprintf(format, i))
+	}
+	return buildEchoProgram(t, strings.Join(lines, "\n"))
+}
+
+// buildSeqIdleProgram builds a binary that prints sequential lines and then
+// reads stdin until EOF, replacing "sh -c 'for i in ...; do echo ...; done;
+// sleep 60'" patterns.
+func buildSeqIdleProgram(t *testing.T, count int, format string) string {
+	t.Helper()
+	var lines []string
+	for i := 1; i <= count; i++ {
+		lines = append(lines, fmt.Sprintf(format, i))
+	}
+	return buildEchoIdleProgram(t, strings.Join(lines, "\n"))
+}
+
+// buildPeriodicProgram builds a binary that prints "line0", "line1", etc.
+// every 10ms indefinitely, replacing "sh -c 'while true; do echo line$i;
+// i=$((i+1)); sleep 0.1; done'" patterns. A brief startup delay lets the
+// PTY reader pipeline initialize before the first write. The binary is
+// cached at the package level to avoid concurrent go build contention.
+func buildPeriodicProgram(t *testing.T) string {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("spawns process to build test helper")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	prog := `package main
+
+import (
+	"fmt"
+	"time"
+)
+
+func main() {
+	time.Sleep(50 * time.Millisecond)
+	i := 0
+	for {
+		fmt.Printf("line%d\n", i)
+		i++
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+`
+	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
+		t.Fatalf("write helper source: %v", err)
+	}
+	binName := "periodicprogram"
+	if runtime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	bin := filepath.Join(dir, binName)
+	cmd := exec.Command("go", "build", "-o", bin, src)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go build helper: %v\n%s", err, stderr.String())
+	}
+	return bin
+}

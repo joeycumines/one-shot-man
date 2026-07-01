@@ -863,7 +863,7 @@ those directories to untrusted code.
 
 ### ES module syntax (ESM) limitations
 
-The `osm` scripting runtime uses [Goja](https://github.com/dop251/goja), which
+The `osm` scripting runtime uses [Goja](https://github.com/joeycumines/goja), which
 implements a CommonJS module system via [goja_nodejs](https://github.com/nicois/goja_nodejs).
 
 **ESM is not supported.** The following ES module syntax will cause a parse error:

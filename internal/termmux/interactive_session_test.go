@@ -50,7 +50,7 @@ func allFactories() map[string]sessionFactory {
 	if !testing.Short() && runtime.GOOS != "windows" {
 		factories["capture"] = func(t *testing.T) (InteractiveSession, func()) {
 			cs := NewCaptureSession(CaptureConfig{
-				Command: "cat",
+				Command: buildIdleProgram(t),
 			})
 			if err := cs.Start(context.Background()); err != nil {
 				t.Fatalf("capture Start: %v", err)
@@ -326,7 +326,7 @@ func TestInteractiveSession_CaptureSession_WriteEcho(t *testing.T) {
 	t.Parallel()
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -365,7 +365,7 @@ func TestInteractiveSession_CaptureSession_ResizeUpdatesDimensions(t *testing.T)
 	t.Parallel()
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 		Rows:    24,
 		Cols:    80,
 	})
@@ -393,7 +393,7 @@ func TestInteractiveSession_CaptureSession_ResizeInvalidDimensions(t *testing.T)
 	t.Parallel()
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -421,7 +421,7 @@ func TestInteractiveSession_CaptureSession_ResizeInvalidDimensions(t *testing.T)
 func TestInteractiveSession_CaptureSession_NotStarted(t *testing.T) {
 	t.Parallel()
 
-	cs := NewCaptureSession(CaptureConfig{Command: "cat"})
+	cs := NewCaptureSession(CaptureConfig{Command: buildIdleProgram(t)})
 
 	// Operations on a not-yet-started session should return errors.
 	var sess InteractiveSession = cs
@@ -785,8 +785,7 @@ func TestInteractiveSession_CaptureSession_RegisteredWithManager(t *testing.T) {
 	defer cleanup()
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "echo registered; sleep 0.1"},
+		Command: buildEchoIdleProgram(t, "registered"),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -830,7 +829,7 @@ func TestInteractiveSession_CaptureSession_RegisteredWithManager(t *testing.T) {
 func TestInteractiveSession_CaptureSession_PassthroughNotStarted(t *testing.T) {
 	t.Parallel()
 
-	cs := NewCaptureSession(CaptureConfig{Command: "cat"})
+	cs := NewCaptureSession(CaptureConfig{Command: buildIdleProgram(t)})
 
 	// Passthrough on a not-started session should return an error.
 	reason, err := cs.Passthrough(context.Background(), PassthroughConfig{})
@@ -910,7 +909,7 @@ func TestInteractiveSession_CaptureSession_WriteString(t *testing.T) {
 	t.Parallel()
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -1039,8 +1038,7 @@ func TestInteractiveSession_CaptureSession_NonZeroExitCode(t *testing.T) {
 	t.Parallel()
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "exit 42"},
+		Command: buildExitCodeProgram(t, 42),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -1067,7 +1065,7 @@ func TestInteractiveSession_CaptureSession_DoubleStart(t *testing.T) {
 	skipIfWindows(t)
 	t.Parallel()
 
-	cs := NewCaptureSession(CaptureConfig{Command: "cat"})
+	cs := NewCaptureSession(CaptureConfig{Command: buildIdleProgram(t)})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("first Start: %v", err)
 	}
@@ -1089,7 +1087,7 @@ func TestInteractiveSession_CaptureSession_DoubleStart(t *testing.T) {
 func TestInteractiveSession_CaptureSession_WaitWithoutStart(t *testing.T) {
 	t.Parallel()
 
-	cs := NewCaptureSession(CaptureConfig{Command: "cat"})
+	cs := NewCaptureSession(CaptureConfig{Command: buildIdleProgram(t)})
 	_, err := cs.Wait()
 	if err == nil {
 		t.Fatal("expected error when Wait called without Start")
@@ -1110,8 +1108,7 @@ func TestInteractiveSession_CaptureSession_WorkingDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "pwd"},
+		Command: buildPwdProgram(t),
 		Dir:     tmpDir,
 	})
 	if err := cs.Start(context.Background()); err != nil {
@@ -1147,8 +1144,7 @@ func TestInteractiveSession_CaptureSession_EnvironmentVariables(t *testing.T) {
 	t.Parallel()
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "echo $OSM_TEST_VAR"},
+		Command: buildEnvEchoProgram(t, "OSM_TEST_VAR"),
 		Env:     map[string]string{"OSM_TEST_VAR": "contract_test_value"},
 	})
 	if err := cs.Start(context.Background()); err != nil {
@@ -1183,7 +1179,7 @@ func TestInteractiveSession_CaptureSession_WriteAfterClose(t *testing.T) {
 	skipIfWindows(t)
 	t.Parallel()
 
-	cs := NewCaptureSession(CaptureConfig{Command: "cat"})
+	cs := NewCaptureSession(CaptureConfig{Command: buildIdleProgram(t)})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -1217,7 +1213,7 @@ func TestInteractiveSession_CaptureSession_ImplementsCloser(t *testing.T) {
 func TestInteractiveSession_CaptureSession_InterruptNotStarted(t *testing.T) {
 	t.Parallel()
 
-	cs := NewCaptureSession(CaptureConfig{Command: "cat"})
+	cs := NewCaptureSession(CaptureConfig{Command: buildIdleProgram(t)})
 	err := cs.Interrupt()
 	if err == nil {
 		t.Error("expected error interrupting not-started session")
@@ -1227,7 +1223,7 @@ func TestInteractiveSession_CaptureSession_InterruptNotStarted(t *testing.T) {
 func TestInteractiveSession_CaptureSession_KillNotStarted(t *testing.T) {
 	t.Parallel()
 
-	cs := NewCaptureSession(CaptureConfig{Command: "cat"})
+	cs := NewCaptureSession(CaptureConfig{Command: buildIdleProgram(t)})
 	err := cs.Kill()
 	if err == nil {
 		t.Error("expected error killing not-started session")
@@ -1307,7 +1303,7 @@ func TestInteractiveSession_CaptureSession_ContextCancelKillsChild(t *testing.T)
 func TestInteractiveSession_CaptureSession_ErrNoChild(t *testing.T) {
 	t.Parallel()
 
-	cs := NewCaptureSession(CaptureConfig{Command: "cat"})
+	cs := NewCaptureSession(CaptureConfig{Command: buildIdleProgram(t)})
 
 	// Passthrough on not-started session should wrap ErrNoChild.
 	_, err := cs.Passthrough(context.Background(), PassthroughConfig{})

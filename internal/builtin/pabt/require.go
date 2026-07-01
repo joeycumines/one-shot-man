@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
 	bt "github.com/joeycumines/go-behaviortree"
 	pabtpkg "github.com/joeycumines/go-pabt"
+	"github.com/joeycumines/goja"
+	"github.com/joeycumines/goja_nodejs/require"
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 )
 

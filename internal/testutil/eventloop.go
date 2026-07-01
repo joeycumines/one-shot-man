@@ -4,11 +4,11 @@ package testutil
 import (
 	"context"
 
-	"github.com/dop251/goja"
-	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
-	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	gojanodejsconsole "github.com/joeycumines/goja_nodejs/console"
+	"github.com/joeycumines/goja_nodejs/require"
 )
 
 // TestEventLoopProvider implements builtin.EventLoopProvider for testing.

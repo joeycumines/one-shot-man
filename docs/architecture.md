@@ -109,7 +109,7 @@ Source: [internal/command/registry.go](../internal/command/registry.go)
 
 ## Scripting engine
 
-The scripting engine is the core runtime for JavaScript execution, backed by [Goja](https://github.com/dop251/goja) (a pure-Go ES5.1+ engine).
+The scripting engine is the core runtime for JavaScript execution, backed by [Goja](https://github.com/joeycumines/goja) (a pure-Go ES5.1+ engine).
 
 ### Engine creation
 

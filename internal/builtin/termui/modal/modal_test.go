@@ -3,7 +3,7 @@ package modal
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	jslipgloss "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 	listbinding "github.com/joeycumines/one-shot-man/internal/builtin/termui/list"
 	termuilist "github.com/joeycumines/one-shot-man/internal/termui/list"

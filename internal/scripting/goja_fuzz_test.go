@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // FuzzGojaRunString ensures the Goja JavaScript VM does not panic on

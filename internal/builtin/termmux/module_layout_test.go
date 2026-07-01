@@ -12,10 +12,13 @@ func TestLayoutMode_JSBinding(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
+	idleBin := buildIdleProgram(t)
+	_ = runtime.Set("idleBin", idleBin)
+
 	_, err := runtime.RunString(`
-		var s1 = termmux.newBoundedSession({ cmd: "sh", rows: 24, cols: 80 });
-		var s2 = termmux.newBoundedSession({ cmd: "sh", rows: 24, cols: 80 });
-		var s3 = termmux.newBoundedSession({ cmd: "sh", rows: 24, cols: 80 });
+		var s1 = termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
+		var s2 = termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
+		var s3 = termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
 		tuiMux.splitHorizontal({ session: s1.session, target: { name: "p1" } });
 		tuiMux.splitVertical({ session: s2.session, target: { name: "p2" } });
 		tuiMux.splitHorizontal({ session: s3.session, target: { name: "p3" } });
@@ -90,8 +93,11 @@ func TestLayoutMode_JSBinding_Chains(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
+	idleBin := buildIdleProgram(t)
+	_ = runtime.Set("idleBin", idleBin)
+
 	_, err := runtime.RunString(`
-		var s1 = termmux.newBoundedSession({ cmd: "sh", rows: 24, cols: 80 });
+		var s1 = termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
 		tuiMux.splitHorizontal({ session: s1.session, target: { name: "p1" } });
 		var ret = tuiMux.setLayoutMode("main-horizontal");
 		if (ret !== tuiMux) {

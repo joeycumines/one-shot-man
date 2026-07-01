@@ -174,6 +174,23 @@ func (cs *CaptureSession) Start(ctx context.Context) error {
 	cs.mu.Unlock()
 	go cs.reader.ReadLoop(readerCtx)
 
+	// On Windows (ConPTY), the output pipe is not automatically closed
+	// when the child process exits, so ReadLoop blocks on Read() forever.
+	// Start a watcher that calls ClosePseudoConsole on process exit.
+	// ClosePseudoConsole flushes the ConPTY's internal buffer to the
+	// output pipe and closes the pipe's write end, causing Read() to
+	// return remaining data followed by EOF — no data is lost.
+	// This unblocks ReadLoop, which cascades to readerLoop closing
+	// outputCh and cs.done, satisfying both SessionManager and
+	// passthrough consumers.
+	// On Unix, ClosePseudoConsole is a no-op (PTY closes naturally).
+	if runtime.GOOS == "windows" {
+		go func() {
+			_, _ = proc.Wait()
+			proc.ClosePseudoConsole()
+		}()
+	}
+
 	// Start the background reader that forwards PTY output to the
 	// Reader() channel. The reader goroutine also captures exit status
 	// before signaling completion, ensuring Wait() always returns the

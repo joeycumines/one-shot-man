@@ -15,7 +15,7 @@ func TestSessionManager_Screen(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	cs := NewCaptureSession(CaptureConfig{Command: "cat"})
+	cs := NewCaptureSession(CaptureConfig{Command: buildIdleProgram(t)})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}

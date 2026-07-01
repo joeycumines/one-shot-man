@@ -333,6 +333,16 @@ func (p *Process) File() *os.File {
 	return p.ptyFile
 }
 
+// ClosePseudoConsole closes the ConPTY pseudoconsole handle (Windows only).
+// On Windows, this flushes the ConPTY's internal buffer to the output pipe
+// and closes the pipe's write end, causing Read() to return remaining data
+// followed by EOF. On Unix this is a no-op.
+// Safe to call after the process has exited — use to unblock ReadLoop
+// when the ConPTY output pipe doesn't close automatically on exit.
+func (p *Process) ClosePseudoConsole() {
+	p.platformClosePseudoConsole()
+}
+
 // Close terminates the child process and releases the PTY.
 // It sends SIGTERM, waits up to CloseGracePeriod, then sends SIGKILL.
 // If the process survives SIGKILL for CloseForceWait, ErrForceKillTimeout is returned.
@@ -353,6 +363,33 @@ func (p *Process) Close() error {
 	p.ttyFile = nil   // prevent double-close with Wait goroutine
 	p.writeFile = nil // prevent double-close
 	p.mu.Unlock()
+
+	// Close the slave PTY BEFORE the grace/force kill loop.
+	//
+	// On macOS, the child runs as a session leader (Setsid+Setctty). A
+	// session-leader process that has called exit() cannot complete its
+	// transition to a reapable zombie state while any slave tty fd remains
+	// open — it lingers in the macOS-specific "Exiting" (E) state, blocking
+	// wait4 indefinitely. Spawn intentionally keeps the parent's slave fd
+	// open during normal operation to prevent EIO data loss on the master
+	// for fast-exiting commands; closing it here (during shutdown) releases
+	// that hold so the wait goroutine can reap the child.
+	//
+	// This is safe: the child retains its own slave fds (dup'd at Start), so
+	// closing the parent's copy does not deliver EIO while the child is alive,
+	// and SIGTERM/SIGKILL still reach the child normally. Closing the slave
+	// first means a child that has already logically exited (but is stuck in
+	// E state) becomes reapable immediately, so Close returns promptly instead
+	// of burning the full grace+force budget.
+	//
+	// Note: only the slave tty (ttyFile, Unix-only) is moved here. The write
+	// pipe (writeFile, Windows ConPTY input) stays after the grace loop —
+	// moving it would alter Windows close ordering without test coverage on
+	// this platform. On Unix writeFile is always nil, so this is a no-op
+	// for Windows.
+	if tty != nil {
+		_ = tty.Close()
+	}
 
 	// Try graceful shutdown first.
 	forceKillTimedOut := false
@@ -378,12 +415,9 @@ func (p *Process) Close() error {
 	// Platform-specific cleanup (e.g., ConPTY handle on Windows).
 	p.platformClose()
 
-	// Close write pipe (ConPTY input on Windows), slave PTY, then master.
+	// Close write pipe (ConPTY input on Windows), then master.
 	if wf != nil {
 		_ = wf.Close()
-	}
-	if tty != nil {
-		_ = tty.Close()
 	}
 	closeErr := f.Close()
 	if forceKillTimedOut {

@@ -26,7 +26,7 @@ package termpane
 
 import (
 	tea "charm.land/bubbletea/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"

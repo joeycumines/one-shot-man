@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
 	bt "github.com/joeycumines/go-behaviortree"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

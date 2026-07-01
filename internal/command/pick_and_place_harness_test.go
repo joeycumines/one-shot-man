@@ -974,7 +974,7 @@ func (h *PickAndPlaceHarness) WaitForManualPathEmpty(timeout time.Duration) bool
 
 // WaitForFrames waits for simulator tick counter to advance by specified number
 func (h *PickAndPlaceHarness) WaitForFrames(frames int64) {
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	initialState := h.GetDebugState()
 	initialTick := initialState.Tick
 
@@ -986,7 +986,7 @@ func (h *PickAndPlaceHarness) WaitForFrames(frames int64) {
 			h.t.Logf("WaitForFrames: debug overlay found, buffer len=%d", len(buffer))
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	// Now wait for frames to advance
@@ -1195,13 +1195,13 @@ func (h *PickAndPlaceHarness) parseDebugStateFromLog() *PickAndPlaceDebugJSON {
 			if !strings.HasPrefix(innerJSON, "{") {
 				continue
 			}
-			var state PickAndPlaceDebugJSON
+			var state *PickAndPlaceDebugJSON
 			if err := json.Unmarshal([]byte(innerJSON), &state); err != nil {
 				continue
 			}
 			if state.Tick > lastTick {
 				lastTick = state.Tick
-				lastState = &state
+				lastState = state
 			}
 			continue
 		}
@@ -1520,14 +1520,24 @@ func TestPickAndPlaceLogging(t *testing.T) {
 		t.Fatalf("Tick messages not being processed: %v", err)
 	}
 
-	// Verify that the debug JSON in the buffer has a non-zero tick
-	state := harness.GetDebugState()
-	t.Logf("Debug state after 2s: tick=%d, actor=(%.1f,%.1f)", state.Tick, state.ActorX, state.ActorY)
+	// Verify that the debug JSON in the buffer has a non-zero tick.
+	// The simulation may take time to start ticking, especially under
+	// parallel test load. Poll for up to 10 seconds.
+	deadline := time.Now().Add(10 * time.Second)
+	var state *PickAndPlaceDebugJSON
+	for time.Now().Before(deadline) {
+		state = harness.GetDebugState()
+		if state.Tick > 0 {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Logf("Debug state: tick=%d, actor=(%.1f,%.1f)", state.Tick, state.ActorX, state.ActorY)
 	if state.Tick == 0 {
 		// Debug: dump the last 500 chars of buffer
 		buffer := harness.GetScreenBuffer()
 		t.Logf("Buffer (last 500 chars): %q", buffer[max(0, len(buffer)-500):])
-		t.Errorf("Expected tick > 0 after 2 seconds, got tick=0")
+		t.Errorf("Expected tick > 0 after polling, got tick=0")
 	}
 }
 

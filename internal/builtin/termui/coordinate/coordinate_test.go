@@ -3,7 +3,7 @@ package coordinate
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	coordsb "github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 	"github.com/stretchr/testify/require"
 )

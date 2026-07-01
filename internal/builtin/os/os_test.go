@@ -1,17 +1,19 @@
 package os
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
@@ -141,6 +143,84 @@ func writeScript(t *testing.T, contents string) string {
 	return path
 }
 
+// buildEditorProgram builds a cross-platform Go binary that writes "edited\n"
+// to the file path passed as its first argument, replacing the POSIX shell
+// script `echo edited > "$1"` used by editor tests on Unix.
+func buildEditorProgram(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	prog := `package main
+
+import "os"
+
+func main() {
+	_ = os.WriteFile(os.Args[1], []byte("edited\n"), 0o644)
+}
+`
+	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
+		t.Fatalf("write editor helper source: %v", err)
+	}
+
+	binName := "editorprogram"
+	if goruntime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	bin := filepath.Join(dir, binName)
+
+	cmd := exec.Command("go", "build", "-o", bin, src)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go build editor helper: %v\n%s", err, stderr.String())
+	}
+	return bin
+}
+
+// buildStdinWriterProgram builds a cross-platform Go binary that reads stdin
+// and writes it to the file path passed as its first argument, replacing the
+// POSIX `cat > file` pattern used by clipboard tests on Unix.
+func buildStdinWriterProgram(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	prog := `package main
+
+import (
+	"io"
+	"os"
+)
+
+func main() {
+	f, err := os.Create(os.Args[1])
+	if err != nil {
+		os.Exit(1)
+	}
+	defer f.Close()
+	io.Copy(f, os.Stdin)
+}
+`
+	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
+		t.Fatalf("write stdin writer helper source: %v", err)
+	}
+
+	binName := "stdinwriter"
+	if goruntime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	bin := filepath.Join(dir, binName)
+
+	cmd := exec.Command("go", "build", "-o", bin, src)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go build stdin writer helper: %v\n%s", err, stderr.String())
+	}
+	return bin
+}
+
 func TestReadFile(t *testing.T) {
 	runtime, runJS := asyncTestEnv(t)
 
@@ -211,8 +291,13 @@ func TestFileExistsAndGetenv(t *testing.T) {
 func TestOpenEditor(t *testing.T) {
 	_, runJS := asyncTestEnv(t)
 
-	script := writeScript(t, "#!/bin/sh\necho edited > \"$1\"")
-	t.Setenv("EDITOR", script)
+	var editor string
+	if goruntime.GOOS == "windows" {
+		editor = buildEditorProgram(t)
+	} else {
+		editor = writeScript(t, "#!/bin/sh\necho edited > \"$1\"")
+	}
+	t.Setenv("EDITOR", editor)
 	t.Setenv("VISUAL", "")
 
 	val, err := runJS(`
@@ -230,7 +315,13 @@ func TestClipboardCopy(t *testing.T) {
 	_, runJS := asyncTestEnv(t)
 
 	outFile := filepath.Join(t.TempDir(), "clipboard.txt")
-	t.Setenv("OSM_CLIPBOARD", "cat > "+outFile)
+	var clipboardCmd string
+	if goruntime.GOOS == "windows" {
+		clipboardCmd = buildStdinWriterProgram(t) + " " + outFile
+	} else {
+		clipboardCmd = "cat > " + outFile
+	}
+	t.Setenv("OSM_CLIPBOARD", clipboardCmd)
 	_, err := runJS(`
 		os.clipboardCopy("hello clipboard").then(function() { __collect(true); });
 	`)

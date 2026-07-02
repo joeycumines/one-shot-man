@@ -86,20 +86,24 @@ func TestResolution_FilenameDirname(t *testing.T) {
 	writeFile(t, wantFile, `module.exports = { fn: __filename, dn: __dirname };`)
 	writeFile(t, filepath.Join(dir, "main.js"), `
 		var s = require('./self');
-		globalThis.__rc = JSON.stringify({ fn: s.fn, dn: s.dn });
+		globalThis.__fn = s.fn;
+		globalThis.__dn = s.dn;
 	`)
 	engine, err := runFileScriptAt(t, ctx, dir, "main.js")
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
-	v, _ := evalJS(t, engine, `globalThis.__rc`, defaultEvalTimeout)
-	s, _ := v.(string)
-	// __filename should be the absolute path of self.js; __dirname its dir.
-	if !strings.Contains(s, filepath.ToSlash(wantFile)) && !strings.Contains(s, wantFile) {
-		t.Errorf("__filename drift: result %s does not contain %s", s, wantFile)
+	// Compare with forward-slash normalization so the test is robust to the
+	// platform path separator (Windows uses '\', Unix '/').
+	gotFn, _ := evalJS(t, engine, `globalThis.__fn`, defaultEvalTimeout)
+	gotDn, _ := evalJS(t, engine, `globalThis.__dn`, defaultEvalTimeout)
+	fnStr, _ := gotFn.(string)
+	dnStr, _ := gotDn.(string)
+	if filepath.ToSlash(fnStr) != filepath.ToSlash(wantFile) {
+		t.Errorf("__filename drift: got %q, want %q", fnStr, wantFile)
 	}
-	if !strings.Contains(s, filepath.ToSlash(dir)) && !strings.Contains(s, dir) {
-		t.Errorf("__dirname drift: result %s does not contain %s", s, dir)
+	if filepath.ToSlash(dnStr) != filepath.ToSlash(dir) {
+		t.Errorf("__dirname drift: got %q, want %q", dnStr, dir)
 	}
 }
 

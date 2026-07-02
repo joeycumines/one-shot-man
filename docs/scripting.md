@@ -179,7 +179,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 
 | Module | Description | Key exports |
 |--------|-------------|-------------|
-| `osm:os` | OS interactions (files, clipboard, editor, environment) | `readFile(path) → Promise<{content, error, message}>`, `fileExists(path) → bool`, `writeFile(path, content, options?) → Promise<undefined>` (options: `{mode?: number, createDirs?: boolean}`), `appendFile(path, content, options?) → Promise<undefined>` (same options), `openEditor(nameHint, initialContent) → Promise<string>`, `clipboardCopy(text) → Promise<void>` (supports `OSM_CLIPBOARD` override), `clipboardPaste() → Promise<string>`, `getenv(key) → string` |
+| `osm:os` | OS interactions (files, clipboard, editor, environment) | `readFile(path) → Promise<{content, error, message}>`, `fileExists(path) → bool`, `writeFile(path, content, options?) → Promise<undefined>` (options: `{mode?: number, createDirs?: boolean}`), `appendFile(path, content, options?) → Promise<undefined>` (same options), `openEditor(nameHint, initialContent) → Promise<string>`, `clipboardCopy(text) → Promise<void>` (supports `OSM_CLIPBOARD` override), `clipboardPaste() → Promise<string>`, `getenv(key) → string`, `isAbsolute(path) → bool`, `join(...paths) → string`, `platform() → string` |
 | `osm:exec` | Process execution | `execv(argv[]) → Promise<{stdout, stderr, code, error, message}>`, `spawn(cmd, args[], opts?) → ChildHandle` |
 | `osm:flag` | Go `flag` package wrapper for argument parsing | `newFlagSet(name?) → FlagSet`; FlagSet methods: `.string(name, default, usage)`, `.int(…)`, `.bool(…)`, `.float64(…)`, `.parse(argv) → {error}`, `.get(name)`, `.args()`, `.nArg()`, `.nFlag()`, `.lookup(name)`, `.defaults()`, `.visit(fn)`, `.visitAll(fn)` |
 | `osm:path` | Go `path/filepath` wrapper for path manipulation | `join(...args) → string`, `dir(path) → string`, `base(path) → string`, `ext(path) → string`, `abs(path) → {result, error}`, `rel(basepath, targpath) → {result, error}`, `clean(path) → string`, `isAbs(path) → bool`, `match(pattern, name) → {matched, error}`, `glob(pattern) → Promise<{matches, error}>` (async; all others sync), `separator`, `listSeparator` |
@@ -231,6 +231,17 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:termui/modal` | Modal overlay component | `new(content?) → Modal`; Modal: `.setContent(str)`, `.setStyle(style)`, `.show()`, `.hide()`, `.view() → string` |
 | `osm:termui/panel` | Panel container component | `new(opts?) → Panel`; Panel: `.setContent(str)`, `.setStyle(style)`, `.setTitle(str)`, `.view() → string` |
 | `osm:termui/splitlayout` | Split-pane layout manager | `new(manager, bounds) → SplitLayout`; SplitLayout: `.addPane(id)`, `.removePane(id)`, `.update(msg)`, `.view()`, `.close()` |
+
+> **Constructor names (`osm:termui/*`):** most `osm:termui/*` modules export a
+> factory named after the module (lowercase), not `new`. For example
+> `require('osm:termui/box').box(opts)`, `require('osm:termui/label').label(text)`,
+> `require('osm:termui/divider').divider('horizontal')`,
+> `require('osm:termui/compositor').compositor({width,height})`,
+> `require('osm:termui/splitview').splitView(opts)`,
+> `require('osm:termui/splitlayout').splitLayout(manager, bounds)`. The
+> `new(...)` form shown in the table above is shorthand for "construct with the
+> documented options"; the actual constructor is the lowercase module-name
+> function. (`osm:termui/scrollbar` exports `new`.)
 | `osm:termui/splitview` | Split-view component | `new(opts?) → SplitView`; SplitView: `.setLeft(view)`, `.setRight(view)`, `.setRatio(n)`, `.view() → string` |
 | `osm:termui/table` | Table component | `new() → Table`; Table: `.setHeaders(headers)`, `.setRows(rows)`, `.setStyle(style)`, `.view() → string` |
 | `osm:termui/termpane` | Terminal pane component | `new(manager, id, opts?) → TermPane`; TermPane: `.update(msg)`, `.view()`, `.resize(rows, cols)` |
@@ -892,3 +903,38 @@ module system predates WHATWG ESM and uses the CommonJS `require`/`module.export
 conventions. ESM support (static `import`/`export` declarations) is tracked upstream
 in goja but is not yet implemented. If ESM support is added to goja in a future
 release, `osm` will evaluate adopting it.
+
+## Verified runtime behavior notes
+
+These details were confirmed by the JS runtime compliance suite
+(`internal/jscompliance`); they refine or qualify statements elsewhere in this
+document.
+
+- **`args` is bound by the command layer, not the engine.** In `osm script`,
+  `osm pr-split`, `osm code-review`, etc., the command binds `args` to the
+  post-filename arguments. A bare engine (e.g. inside another host) does not
+  set `args` until the host does. For inline `-e` snippets `args` is `[]`.
+- **`ctx` is a conditional global.** The testing-style execution context
+  (`ctx.run` / `ctx.defer` / `ctx.log` / …) is bound only while an
+  `ExecutionContext` is active (during script execution). It is not present on a
+  freshly constructed bare engine until execution begins.
+- **`console` routes to the process stdout/stderr**, not to the engine's
+  `io.Writer`. The adapter binds timer/inspection methods (`time`, `timeEnd`,
+  `count`, `group`, …); the standard `log`/`warn`/`error`/`info`/`debug` come
+  from the `goja_nodejs/console` module and write to the process's standard
+  streams via its default printer.
+- **Bare `crypto` is the WHATWG global**, not `osm:crypto`. The adapter binds a
+  WHATWG-style `crypto` global with `randomUUID()` and `getRandomValues()`
+  (no hashing). Use `require('osm:crypto')` for `sha256`/`sha1`/`md5`/`hmac*`.
+- **ES2024 globals are present:** `Promise.withResolvers`, `Promise.try`,
+  `AbortSignal.timeout`, `AbortSignal.any`, plus the broader WHATWG surface
+  (`TextEncoder`/`TextDecoder`, `URL`/`URLSearchParams`, `Blob`, `Headers`,
+  `FormData`, `DOMException`, `structuredClone`, `performance`, `setImmediate`,
+  `BigInt`).
+- **Async iteration is not supported.** `for await…of` and async generators are
+  rejected by the parser (a `SyntaxError`). `Symbol.asyncIterator` exists as a
+  symbol, but the syntax cannot be used. This is a Goja limitation.
+- **Unhandled Promise rejections are currently silent.** A rejected promise
+  with no `.catch`/`.then(_,reject)` is not surfaced to the host. Always attach
+  a rejection handler. (Tracked for an observability fix; see the compliance
+  suite's `TestUnhandledRejection_Observability`.)

@@ -111,6 +111,18 @@ test('flag parses typed flags and exposes get/args', function () {
 	assert.deepEqual('positional args', fs.args(), ['extra']);
 });
 
+// --- tokenizer (pure: count/tokenize; loadFile is async, covered by contract) ---
+test('tokenizer count and tokenize agree on length', function () {
+	var t = require('osm:tokenizer');
+	var text = 'hello world';
+	var c = t.count(text);
+	var r = t.tokenize(text);
+	assert.equal('tokenize returns object', typeof r, 'object');
+	assert.equal('tokenize.count === count', r.count, c);
+	assert.equal('tokenize.tokens is array', Array.isArray(r.tokens), true);
+	assert.equal('tokenize.tokens length matches count', r.tokens.length, c);
+});
+
 // helper: build a byte array (for encoding tests)
 function arrayOfBytes(arr) {
 	var u = new Uint8Array(arr.length);

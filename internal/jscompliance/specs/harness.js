@@ -63,43 +63,26 @@ function __recordOutcome(name, threw, threwMsg) {
 	}
 }
 
-// test registers a test. fn may return a Promise (async) or a value (sync)
-// or throw. The test is recorded as failed if any assert fails or fn
-// throws/rejects.
+// test registers a test. fn may be async (returns a Promise) or sync, and may
+// throw. The test is recorded as failed if any assert fails or fn throws/rejects.
+// Uses async/await (.then-free): awaiting fn() unifies sync return, async
+// resolution, and sync/async rejection into one try/catch.
 function test(name, fn) {
 	__pending += 1;
 	// Defer to a microtask so registration is synchronous even if fn throws
 	// synchronously — all test() calls in a spec register before any runs.
-	Promise.resolve()
-		.then(function () {
-			var threw = false;
-			var threwMsg = null;
-			var r;
-			try {
-				r = fn();
-			} catch (e) {
-				threw = true;
-				threwMsg = __errMsg(e);
-			}
-			if (threw) {
-				__recordOutcome(name, true, threwMsg);
-				__settleOne();
-				return;
-			}
-			if (r !== undefined && r !== null && typeof r.then === 'function') {
-				r.then(
-					function () { __recordOutcome(name, false, null); __settleOne(); },
-					function (e) { __recordOutcome(name, true, __errMsg(e)); __settleOne(); }
-				);
-			} else {
-				__recordOutcome(name, false, null);
-				__settleOne();
-			}
-		})
-		.catch(function (e) { // should be unreachable; defensive
-			__record(name, false, 'harness error: ' + __errMsg(e));
-			__settleOne();
-		});
+	queueMicrotask(async function () {
+		var threw = false;
+		var threwMsg = null;
+		try {
+			await fn();
+		} catch (e) {
+			threw = true;
+			threwMsg = __errMsg(e);
+		}
+		__recordOutcome(name, threw, threwMsg);
+		__settleOne();
+	});
 }
 
 function __errMsg(e) {
@@ -168,22 +151,28 @@ var assert = {
 			__fail(name, message || ('expected Promise, got ' + __nameOf(value)));
 		}
 	},
-	// assert.resolves: returns the promise so the test body can await it.
+	// assert.resolves: returns a promise (it's async) the test body awaits.
 	// Fails the named test if the promise rejects or never settles (the
-	// never-settle case is caught by the Go runner timeout).
-	resolves: function (name, promise, message) {
+	// never-settle case is caught by the Go runner timeout). async/await.
+	resolves: async function (name, promise, message) {
 		assert.isPromise(name, promise, message);
-		return promise.then(
-			function (v) { return v; },
-			function (e) { __fail(name, message || ('expected promise to resolve, rejected with: ' + __errMsg(e))); throw e; }
-		);
+		try {
+			return await promise;
+		} catch (e) {
+			__fail(name, message || ('expected promise to resolve, rejected with: ' + __errMsg(e)));
+			throw e;
+		}
 	},
-	rejects: function (name, promiseOrFn, message) {
-		var p = (typeof promiseOrFn === 'function') ? Promise.resolve().then(promiseOrFn) : promiseOrFn;
-		return Promise.resolve(p).then(
-			function (v) { __fail(name, message || ('expected promise to reject, resolved with: ' + JSON.stringify(v))); return v; },
-			function () { /* expected */ }
-		);
+	rejects: async function (name, promiseOrFn, message) {
+		// Normalize a fn arg to a promise (async IIFE, .then-free).
+		var p = (typeof promiseOrFn === 'function') ? (async function () { return await promiseOrFn(); })() : promiseOrFn;
+		try {
+			var v = await p;
+			__fail(name, message || ('expected promise to reject, resolved with: ' + JSON.stringify(v)));
+			return v;
+		} catch (e) {
+			// expected rejection
+		}
 	},
 };
 

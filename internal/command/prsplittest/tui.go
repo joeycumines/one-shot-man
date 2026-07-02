@@ -46,7 +46,10 @@ const SetupTUIMocks = `
 
     globalThis.output = {
         print: function(s) { globalThis._prints.push(String(s)); },
-        toClipboard: function(s) { globalThis._clipboardContent = s; }
+        // toClipboard/fromClipboard are async in production (binding contract);
+        // the mock returns resolved Promises so callers' .then() chains work.
+        toClipboard: function(s) { globalThis._clipboardContent = s; return Promise.resolve(); },
+        fromClipboard: function() { return Promise.resolve(globalThis._clipboardContent || ''); }
     };
 
     globalThis.log = {

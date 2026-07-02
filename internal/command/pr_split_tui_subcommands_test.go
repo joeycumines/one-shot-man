@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPrSplitCommand_CopyCommand(t *testing.T) {
@@ -24,6 +25,12 @@ func TestPrSplitCommand_CopyCommand(t *testing.T) {
 	})
 
 	t.Run("with_plan", func(t *testing.T) {
+		// Isolation: the copy command calls the REAL output.toClipboard on a
+		// real engine, which would otherwise run pbcopy/xclip/clip and MUTATE
+		// the host clipboard (CLAUDE.md forbids host-state mutation in tests).
+		// Redirect to harmless no-op commands. (Not t.Parallel — safe with Setenv.)
+		t.Setenv("OSM_CLIPBOARD", "true")         // copy: discard stdin, exit 0
+		t.Setenv("OSM_CLIPBOARD_PASTE", "echo x") // paste: deterministic text
 		tp := chdirTestPipeline(t, TestPipelineOpts{})
 		runPlanPipeline(t, tp)
 		tp.Stdout.Reset()
@@ -31,7 +38,21 @@ func TestPrSplitCommand_CopyCommand(t *testing.T) {
 		if err := tp.Dispatch("copy", nil); err != nil {
 			t.Fatalf("copy: %v", err)
 		}
-		out := tp.Stdout.String()
+		// output.toClipboard is async (JS Binding Contract); the copy command
+		// fire-and-forgets it via an async IIFE. Poll the event loop until the
+		// deferred print lands (robust to clipboard subprocess timing).
+		var out string
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			out = tp.Stdout.String()
+			if strings.Contains(out, "copied to clipboard") || strings.Contains(out, "Plan copied") || strings.Contains(out, "Error copying") {
+				break
+			}
+			if _, err := tp.EvalJS(`await new Promise(function (r) { setTimeout(function () { r(); }, 25); })`); err != nil {
+				t.Fatalf("drain: %v", err)
+			}
+		}
+		out = tp.Stdout.String()
 		// The copy command either succeeds (clipboard available) or fails with a
 		// clipboard error. Both are valid: the template rendered successfully.
 		// In test env, output.toClipboard is typically unavailable.

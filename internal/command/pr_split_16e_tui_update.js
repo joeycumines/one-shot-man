@@ -358,12 +358,14 @@
                 }
                 // T073: Copy report to clipboard with success flash and error fallback.
                 if (rk === 'c') {
-                    try {
-                        output.toClipboard(s.reportContent || '');
-                        s.clipboardFlash = 'Copied to clipboard \u2713';
-                    } catch (e) {
-                        s.clipboardFlash = 'Copy failed: ' + (e.message || String(e));
-                    }
+                    // output.toClipboard() is async (JS Binding Contract); the
+                    // sync update handler sets an optimistic flash and flips it
+                    // to the error on rejection. Prefer async/await (.then-free).
+                    s.clipboardFlash = 'Copied to clipboard \u2713';
+                    (async function () {
+                        try { await output.toClipboard(s.reportContent || ''); }
+                        catch (e) { s.clipboardFlash = 'Copy failed: ' + (e.message || String(e)); }
+                    })();
                     s.clipboardFlashAt = Date.now();
                     return [s, tea.tick(C.CLIPBOARD_FLASH_MS, 'dismiss-clipboard-flash')];
                 }
@@ -744,15 +746,15 @@
                 if (s.selectionActive) {
                     var selText = extractSelectedText(s);
                     if (selText) {
-                        try {
-                            output.toClipboard(selText);
-                            s.clipboardFlash = 'Copied ' + selText.length + ' chars';
-                            s.clipboardFlashAt = Date.now();
-                            s.selectedText = selText;
-                        } catch (e) {
-                            s.clipboardFlash = 'Copy failed: ' + (e.message || e);
-                            s.clipboardFlashAt = Date.now();
-                        }
+                        // output.toClipboard() is async (binding contract):
+                        // optimistic flash, flip on rejection. async/await (.then-free).
+                        s.clipboardFlash = 'Copied ' + selText.length + ' chars';
+                        s.clipboardFlashAt = Date.now();
+                        s.selectedText = selText;
+                        (async function () {
+                            try { await output.toClipboard(selText); }
+                            catch (e) { s.clipboardFlash = 'Copy failed: ' + (e.message || e); s.clipboardFlashAt = Date.now(); }
+                        })();
                     }
                     clearSelection(s);
                 }
@@ -771,20 +773,25 @@
                         s.clipboardFlashAt = Date.now();
                         return [s, null];
                     }
-                    try {
-                        var pastedText = output.fromClipboard();
-                        if (pastedText) {
-                            var pasteSession = getInteractivePaneSession(s, tab);
-                            if (pasteSession && typeof pasteSession.write === 'function') {
-                                pasteSession.write(pastedText);
-                                s.clipboardFlash = 'Pasted ' + pastedText.length + ' chars';
-                                s.clipboardFlashAt = Date.now();
+                    // output.fromClipboard() is async (binding contract); the
+                    // sync update handler fire-and-forgets the paste via an
+                    // async IIFE (async/await, .then-free).
+                    (async function () {
+                        try {
+                            var pastedText = await output.fromClipboard();
+                            if (pastedText) {
+                                var pasteSession = getInteractivePaneSession(s, tab);
+                                if (pasteSession && typeof pasteSession.write === 'function') {
+                                    pasteSession.write(pastedText);
+                                    s.clipboardFlash = 'Pasted ' + pastedText.length + ' chars';
+                                    s.clipboardFlashAt = Date.now();
+                                }
                             }
+                        } catch (e) {
+                            s.clipboardFlash = 'Paste failed: ' + (e.message || e);
+                            s.clipboardFlashAt = Date.now();
                         }
-                    } catch (e) {
-                        s.clipboardFlash = 'Paste failed: ' + (e.message || e);
-                        s.clipboardFlashAt = Date.now();
-                    }
+                    })();
                 }
                 return [s, null];
             }

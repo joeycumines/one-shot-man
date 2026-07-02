@@ -16,17 +16,16 @@ test('abort(reason) is exposed as signal.reason', function () {
 	assert.equal('reason is the error', ac.signal.reason.message, 'stopped');
 });
 
-test('AbortSignal.timeout(ms) resolves aborted=true (ES2024)', function () {
+test('AbortSignal.timeout(ms) resolves aborted=true (ES2024)', async function () {
 	if (typeof AbortSignal.timeout !== 'function') {
 		assert.equal('AbortSignal.timeout present', typeof AbortSignal.timeout, 'function');
 		return;
 	}
-	return new Promise(function (resolve) {
+	var aborted = await new Promise(function (resolve) {
 		var s = AbortSignal.timeout(15);
 		s.addEventListener('abort', function () { resolve(s.aborted); });
-	}).then(function (aborted) {
-		assert.equal('timeout aborted', aborted, true);
 	});
+	assert.equal('timeout aborted', aborted, true);
 });
 
 test('AbortSignal.any() aborts when any source aborts (ES2024)', function () {

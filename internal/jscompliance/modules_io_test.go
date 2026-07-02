@@ -82,3 +82,40 @@ func mapKeys(m map[string]any) []string {
 	}
 	return keys
 }
+
+// TestSlow_OutputClipboard_IsAsync pins the DRIFT-4 FIX: output.toClipboard
+// and output.fromClipboard must return Promises (async per the JS Binding
+// Contract — clipboard is subprocess I/O). Uses OSM_CLIPBOARD[_PASTE] overrides
+// so no host clipboard is mutated.
+func TestSlow_OutputClipboard_IsAsync(t *testing.T) {
+	skipSlow(t)
+	// Not parallel: mutates env (OSM_CLIPBOARD*) for isolation.
+
+	// Isolate: redirect clipboard to harmless commands (no host mutation).
+	t.Setenv("OSM_CLIPBOARD", "true")        // copy: discard stdin, exit 0
+	t.Setenv("OSM_CLIPBOARD_PASTE", "echo pasted-text") // paste: stdout -> text
+
+	ctx := context.Background()
+	engine, _, _ := newComplianceEngine(t, ctx)
+
+	// toClipboard returns a Promise.
+	isPromise, err := evalJS(t, engine, `(function(){
+		var p = output.toClipboard('jscompliance');
+		return (p !== null && p !== undefined && typeof p === 'object' && typeof p.then === 'function');
+	})()`, defaultEvalTimeout)
+	if err != nil {
+		t.Fatalf("toClipboard probe: %v", err)
+	}
+	if b, _ := isPromise.(bool); !b {
+		t.Errorf("DRIFT-4: output.toClipboard must return a Promise (binding contract); got %v", isPromise)
+	}
+
+	// fromClipboard returns a Promise<string> that resolves to the pasted text.
+	v, err := evalJS(t, engine, `await output.fromClipboard()`, defaultEvalTimeout)
+	if err != nil {
+		t.Fatalf("fromClipboard await: %v", err)
+	}
+	if s, _ := v.(string); strings.TrimSpace(s) == "" {
+		t.Errorf("DRIFT-4: output.fromClipboard resolved to %q, want a non-empty string from OSM_CLIPBOARD_PASTE", s)
+	}
+}

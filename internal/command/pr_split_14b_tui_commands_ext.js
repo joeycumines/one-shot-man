@@ -44,8 +44,18 @@
                             }),
                             verified: false
                         });
-                        output.toClipboard(text);
-                        output.print('Plan copied to clipboard.');
+                        // output.toClipboard() is async (binding contract);
+                        // prefer async/await over .then chaining. The command
+                        // handler is sync, so fire-and-forget an async IIFE and
+                        // print the outcome when the clipboard settles.
+                        (async function () {
+                            try {
+                                await output.toClipboard(text);
+                                output.print('Plan copied to clipboard.');
+                            } catch (e) {
+                                output.print('Error copying: ' + (e && e.message ? e.message : e));
+                            }
+                        })();
                     } catch (e) {
                         output.print('Error copying: ' + (e && e.message ? e.message : e));
                     }

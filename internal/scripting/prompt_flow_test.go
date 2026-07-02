@@ -160,6 +160,13 @@ fi
 	defer cp.Close()
 
 	expect := func(timeout time.Duration, since termtest.Snapshot, cond termtest.Condition, description string) error {
+		// Floor at 60s to match WithDefaultTimeout above: under the parallel
+		// load of `gmake all` on macOS ARM64, a child TUI can be CPU-starved
+		// enough that a 30s per-call wait is exceeded (this test once timed
+		// out on "goal set"), even though it finishes in ~10s when isolated.
+		if timeout < 60*time.Second {
+			timeout = 60 * time.Second
+		}
 		ctx, cancel := context.WithTimeout(t.Context(), timeout)
 		defer cancel()
 		return cp.Expect(ctx, since, cond, description)

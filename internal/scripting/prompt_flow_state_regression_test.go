@@ -54,7 +54,7 @@ esac
 
 	cp, err := termtest.NewConsole(ctx,
 		termtest.WithCommand(binaryPath, "prompt-flow", "-i"),
-		termtest.WithDefaultTimeout(30*time.Second),
+		termtest.WithDefaultTimeout(60*time.Second), // macOS parallel-load headroom
 		termtest.WithEnv(env),
 	)
 	if err != nil {
@@ -63,6 +63,12 @@ esac
 	defer cp.Close()
 
 	expect := func(timeout time.Duration, since termtest.Snapshot, cond termtest.Condition, description string) error {
+		// Floor at 60s: under `gmake all` parallel load on macOS ARM64 a child
+		// TUI can be starved enough to exceed 30s per-call waits (same class of
+		// flake as TestPromptFlow_Interactive).
+		if timeout < 60*time.Second {
+			timeout = 60 * time.Second
+		}
 		ctx, cancel := context.WithTimeout(t.Context(), timeout)
 		defer cancel()
 		return cp.Expect(ctx, since, cond, description)

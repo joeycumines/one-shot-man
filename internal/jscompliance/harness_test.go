@@ -58,6 +58,19 @@ func newComplianceEngine(t testing.TB, ctx context.Context) (*scripting.Engine, 
 	return engine, &stdout, &stderr
 }
 
+// newComplianceEngineOpts is like newComplianceEngine but applies EngineOptions
+// (e.g. WithModulePaths for bare-name/security resolution tests).
+func newComplianceEngineOpts(t testing.TB, ctx context.Context, opts ...scripting.EngineOption) (*scripting.Engine, *bytes.Buffer, *bytes.Buffer) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("", t.Name()), "memory", nil, 0, slog.LevelInfo, opts...)
+	if err != nil {
+		t.Fatalf("NewEngine failed: %v", err)
+	}
+	t.Cleanup(func() { _ = engine.Close() })
+	return engine, &stdout, &stderr
+}
+
 // evalJS evaluates a JavaScript expression on the engine's event loop and
 // returns its result. It is await-aware (mirrors
 // internal/command/prsplittest.makeEvalJS): for top-level-await expressions it

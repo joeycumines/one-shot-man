@@ -100,5 +100,13 @@ fails — a spec that asserts nothing is a false-confidence trap.
   `TestUnhandledRejection_Observability` is a tracked `t.Skip` with the full
   fix path (add a `SetUnhandledRejection` setter to the `go-eventloop` fork and
   call it on-loop in `runtime.go`); the assertion activates once the fix lands.
+  `TestUnhandledRejection_DoesNotCrash` is the actionable stopgap (an unhandled
+  rejection must not crash the runtime or stall the loop).
+- **termmux `CaptureSession.wait()` is synchronous (WAIT-1).** Unlike
+  `exec.spawn.wait()` (async), the termmux wait blocks the event loop. It has
+  zero production callers (pr-split polls `isDone()`/`exitCode()` instead);
+  making it async requires adding event-loop infrastructure to the termmux
+  package tests. `TestBindingContract_TermmuxWaitShouldBeAsync` is a tracked
+  `t.Skip` with the concrete fix path.
 
 See `WIP.md` for the live drift register and resolutions.

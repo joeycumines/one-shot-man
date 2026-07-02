@@ -661,9 +661,12 @@
         var dir = resolveDir(config.dir || '.');
 
         // Probe: if the first gitExec call returns a Promise, use async path.
+        // The probe is reused by handleConfigStateAsync (awaited there) so the
+        // rev-parse runs exactly once and is never left as an unhandled
+        // rejection.
         var probe = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
         if (probe && typeof probe.then === 'function') {
-            return handleConfigStateAsync(config);
+            return handleConfigStateAsync(config, probe);
         }
 
         // --- Sync path ---
@@ -750,8 +753,11 @@
     }
 
     // handleConfigStateAsync is the async version used when gitExec returns
-    // Promises (production runtime with real git operations).
-    async function handleConfigStateAsync(config) {
+    // Promises (production runtime with real git operations). The `probe`
+    // argument is the already-issued `rev-parse --abbrev-ref HEAD` result from
+    // handleConfigState; it is awaited rather than re-executed so the branch
+    // lookup runs exactly once.
+    async function handleConfigStateAsync(config, probe) {
         var runtime = prSplit.runtime;
         var gitExec = prSplit._gitExec;
         var resolveDir = prSplit._resolveDir;
@@ -767,8 +773,9 @@
             errors.push('baseBranch is required (set via config or "set baseBranch <name>")');
         }
 
-        // Detect source branch (current branch).
-        var branchResult = await gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+        // Detect source branch (current branch). Reuse the probe issued in
+        // handleConfigState instead of re-running rev-parse.
+        var branchResult = await probe;
         if (branchResult.code !== 0) {
             // T43: Distinguish empty repo from other failures.
             var stderrMsg = (branchResult.stderr || '').trim();

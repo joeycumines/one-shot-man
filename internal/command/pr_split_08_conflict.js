@@ -17,8 +17,14 @@
         if (osmod && typeof osmod.fileExists === 'function') {
             return osmod.fileExists(path);
         }
-        // Fallback: synchronous exec is unavailable, so treat as not found.
-        // The osmod.fileExists path should always be available in production.
+        // osmod.fileExists is a core module that should always be registered
+        // in production; reaching here means broken module wiring. Treat the
+        // file as not found (don't block) but warn loudly, otherwise every
+        // auto-fix strategy that uses fileExistsSync silently no-ops and the
+        // real cause (missing osmod) is invisible.
+        if (typeof log !== 'undefined' && log.warn) {
+            log.warn('fileExistsSync: osmod.fileExists unavailable; treating "' + path + '" as not found');
+        }
         return false;
     }
 
@@ -165,7 +171,7 @@
                 var osmod = prSplit._modules.osmod;
                 var shellQuote = prSplit._shellQuote;
                 var makPath = (dir !== '.' ? dir + '/' : '') + 'Makefile';
-                var hasMakefile = await fileExistsSync(makPath);
+                var hasMakefile = fileExistsSync(makPath);
                 if (hasMakefile) {
                     // Check if the Makefile has a 'generate:' target.
                     // Prefer osmod.readFile to avoid shell-dependent grep.
@@ -318,11 +324,18 @@
             detect: function() {
                 var agentExecutor = prSplit._agentExecutor;
                 if (!agentExecutor || !agentExecutor.handle) return false;
-                // Call isAvailable() without await. If it returns a
-                // non-Promise (sync mock or already-resolved), use the
-                // value directly. If it returns a Promise, use resolved
-                // as a synchronous proxy — the executor should be
-                // resolved by the time resolveConflicts runs.
+                // handle is set only after resolve()/resolveAsync() succeeds
+                // (chunk 09) and is cleared together with `resolved` (in
+                // close()/kill(), handle is nulled first), so handle != null
+                // implies resolved != null. With resolved set, isAvailable()
+                // short-circuits to true (chunk 09: `if (this.resolved) return
+                // true`), so the `resolved` proxy below is exactly equivalent
+                // to awaiting isAvailable() — without making detect async and
+                // without risking the sync resolve() path on an unresolved
+                // executor. Net effect: agent-fix is enabled precisely when an
+                // agent is actually running, never silently skipped. Sync mocks
+                // (tests) return a non-Promise from isAvailable() and take the
+                // !!avail path.
                 var avail = agentExecutor.isAvailable();
                 if (avail && typeof avail.then === 'function') {
                     return !!agentExecutor.resolved;

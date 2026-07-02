@@ -245,12 +245,18 @@ globalThis.bt = {
 // Operations that were already scheduled may still execute after Stop returns.
 // Callers should not assume that no more work will happen after Stop returns.
 //
-// The correct sequence is:
-//  1. Acquire lock
-//  2. Cancel context (closes Done() channel, unblocks RunOnLoopSync waiters)
-//  3. Set stopped=true (atomic with cancellation, guarantees invariant)
-//  4. Release lock
-//  5. Stop manager (tickers can now exit cleanly)
+// The shutdown sequence is:
+//  1. Acquire lock; return early if already stopped.
+//  2. Set stopped=true (so IsRunning() returns false from this point on).
+//  3. Release lock.
+//  4. Stop the internal bt.Manager — while the event loop is still alive, so
+//     settled ticker promises can dispatch their callbacks. (bt.Manager.Stop
+//     only closes its stop signal and joins its run loop; it does not block on
+//     this bridge's context or the event loop, so this step cannot deadlock.)
+//  5. Cancel the context — closes Done() and unblocks RunOnLoopSync waiters.
+//
+// Ordering invariant: stopped is set true in step 2, strictly before Done()
+// closes in step 5, so "Done() closed ⇒ IsRunning()==false" always holds.
 func (b *Bridge) Stop() {
 	b.mu.Lock()
 	if b.stopped {

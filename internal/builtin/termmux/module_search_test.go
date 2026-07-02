@@ -20,7 +20,13 @@ func waitForSnapshotText(t *testing.T, runtime *goja.Runtime, mgr goja.Value, si
 		_ = runtime.Set("__waitSid", goja.Undefined())
 		_ = runtime.Set("__waitSubstr", goja.Undefined())
 	}()
-	deadline := time.Now().Add(2 * time.Second)
+	// 10s deadline (not a tighter value): these tests spawn real PTY
+	// subprocesses whose output timing depends on CPU scheduling. Under the
+	// parallel load of `gmake all` (many packages running concurrently), a
+	// child can take several seconds to flush its first bytes, and a 2s
+	// deadline flakes. 10s matches the project's robust poll-timeout tier
+	// and only matters under contention — the common case resolves in <1s.
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		v, err := runtime.RunString(`
 			(function() {

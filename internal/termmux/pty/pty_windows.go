@@ -134,8 +134,10 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 
 // spawnWithConPTY creates the child process attached to the given ConPTY.
 // On success, ownership of pconsole, inputWrite, and outputRead is
-// transferred to the returned Process. The inputRead handle is closed
-// after CreateProcess returns.
+// transferred to the returned Process. The inputRead handle is retained
+// (stored on the process handle) and closed later by closeConPTY() when the
+// pseudoconsole is torn down; keeping it open for the ConPTY's lifetime avoids
+// prematurely severing the input pipe (see the retention note in Spawn above).
 func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite, outputRead, inputRead windows.Handle) (*Process, error) {
 	// Set up the process thread attribute list with the pseudoconsole.
 	attrList, err := windows.NewProcThreadAttributeList(1)
@@ -185,16 +187,30 @@ func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite,
 
 	// Create the child process with the extended startup info.
 	//
-	// STARTF_USESTDHANDLES is intentionally NOT set. Per the Microsoft
-	// ConPTY sample, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE wires the child's
-	// stdin/stdout/stderr to the pseudoconsole. Setting STARTF_USESTDHANDLES
-	// while leaving hStdInput/hStdOutput/hStdError zeroed instructs the
-	// child to use NULL standard handles, which overrides the pseudoconsole
-	// wiring — the child's stdout/stderr go nowhere, so its output never
-	// reaches the output pipe (the ConPTY's own init sequences still arrive
-	// because they are emitted by the pseudoconsole itself, not the child).
-	// Microsoft's CreatePseudoConsole sample leaves StartupInfo.Flags at
-	// zero for exactly this reason.
+	// STARTF_USESTDHANDLES (with hStd* left NULL) is REQUIRED here, and the
+	// reason is subtle. With bInheritHandles=FALSE (below), Windows'
+	// NtCreateUserProcess applies a legacy fallback that DUPLICATES the
+	// parent's standard handles into a console-app child (a ConPTY child
+	// qualifies). ConPTY's own cleanup (CONSOLE_USING_PTY_REFERENCE ->
+	// ConsoleCloseIfConsoleHandle) only discards duplicated *console* handles,
+	// NOT pipe/file handles — so when the parent's stdout is a pipe or file
+	// (e.g. under `go test`, or any redirected/headless caller), the child
+	// would inherit a working handle to the PARENT's stdout, bypass the
+	// pseudoconsole entirely, and the ConPTY output pipe would never reach
+	// EOF — deadlocking the read on child exit (reproduced: TestConPTY_Smoke
+	// and TestCaptureAgentHandle_* fail/hang when this flag is removed).
+	//
+	// STARTF_USESTDHANDLES + NULL hStd* forces the child's standard-handle
+	// slots to NULL, bypassing the duplication fallback; the pseudoconsole
+	// attach then opens fresh ConDrv handles bound to conhost's screen buffer,
+	// restoring correct output capture and a clean EOF on exit. This is the
+	// canonical ConPTY pattern — Microsoft's own node-pty sets exactly this
+	// combination ("VERY IMPORTANT that [bInheritHandles] is false"), as does
+	// charmbracelet/x/conpty. The MS EchoCon sample omits the flag only
+	// because it assumes a console-attached parent whose handles the cleanup
+	// can discard. Refs: microsoft/terminal#15814 (DHowett, eryksun);
+	// rprichard/win32-console-docs (CreateProcess rule 4 vs 6); vim/vim#19589.
+	// Do NOT remove this flag without re-validating ConPTY capture on Windows.
 	si := windows.StartupInfoEx{
 		StartupInfo: windows.StartupInfo{
 			Cb:    uint32(unsafe.Sizeof(windows.StartupInfoEx{})),

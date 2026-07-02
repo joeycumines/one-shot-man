@@ -235,11 +235,16 @@ func (h *captureAgentHandle) WaitReady(ctx context.Context) error {
 	case <-h.cs.Done():
 		// Process exited — but output may still be in the pipeline.
 		// Wait a brief grace period for the reader to flush remaining
-		// output and signal ready.
+		// output and signal ready. Use NewTimer (not time.After) and
+		// defer Stop so the timer is reaped immediately if h.ready or
+		// ctx.Done() wins the race, instead of the timer goroutine
+		// lingering until the full 500ms elapses.
+		timer := time.NewTimer(500 * time.Millisecond)
+		defer timer.Stop()
 		select {
 		case <-h.ready:
 			return nil
-		case <-time.After(500 * time.Millisecond):
+		case <-timer.C:
 			return errors.New("aimux: process exited before becoming ready")
 		case <-ctx.Done():
 			return ctx.Err()

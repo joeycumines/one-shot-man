@@ -27,6 +27,16 @@ func makeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) f
 		var result any
 		var resultErr error
 
+		// Pre-generate the unique global-callback names so the timeout path
+		// below can neutralize them on the event loop if the await-path
+		// registers them and the promise then never settles. Without this, a
+		// timed-out EvalJS leaks the __evalResult_N/__evalError_N globals —
+		// and the Go state they capture (vm, result, done) — on the VM for
+		// the lifetime of the engine.
+		callID := atomic.AddInt64(&evalJSCallID, 1)
+		resultVar := fmt.Sprintf("__evalResult_%d", callID)
+		errorVar := fmt.Sprintf("__evalError_%d", callID)
+
 		submitErr := engine.Loop().Submit(func() {
 			vm := engine.Runtime()
 
@@ -34,9 +44,8 @@ func makeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) f
 			if err != nil {
 				errMsg := err.Error()
 				if strings.Contains(errMsg, "await") || strings.Contains(errMsg, "Unexpected identifier") || strings.Contains(errMsg, "Unexpected token") {
-					callID := atomic.AddInt64(&evalJSCallID, 1)
-					resultVar := fmt.Sprintf("__evalResult_%d", callID)
-					errorVar := fmt.Sprintf("__evalError_%d", callID)
+					// callID/resultVar/errorVar are hoisted to the enclosing
+					// closure so the timeout path can also neutralize them.
 					// cleanup removes the uniquely-named global callbacks
 					// after they fire, so repeated EvalJS calls on the same
 					// engine don't accumulate Go closures (and the local
@@ -117,6 +126,17 @@ func makeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) f
 		case <-done:
 			return result, resultErr
 		case <-time.After(timeout):
+			// The await-path's promise never settled. Replace its global
+			// callbacks with no-ops on the event loop — NOT delete — so that
+			// a late settlement doesn't dereference a removed global and
+			// throw. The original closures (capturing vm/result/done) are
+			// released; the no-ops left behind capture nothing, bounding
+			// what would otherwise be a per-timed-out-call leak.
+			_ = engine.Loop().Submit(func() {
+				vm := engine.Runtime()
+				_ = vm.Set(resultVar, func(_ any) {})
+				_ = vm.Set(errorVar, func(_ string) {})
+			})
 			return nil, fmt.Errorf("evalJS timed out after %s", timeout)
 		}
 	}

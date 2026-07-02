@@ -66,10 +66,12 @@ func TestGlobals_CtxIsConditional(t *testing.T) {
 	if err != nil {
 		t.Fatalf("typeof ctx probe: %v", err)
 	}
+	// Pin the CURRENT reality as an assertion: a bare engine does NOT bind ctx.
+	// If a future change binds ctx by default, this fails — signaling that
+	// scripting.md's "available in every script" is now satisfied and this
+	// drift record + the scripting.md "Verified runtime behavior notes" should
+	// be updated.
 	if s, _ := v.(string); s != "undefined" {
-		t.Logf("note: ctx is now defined (%v) in the bare engine — if intentional, scripting.md's 'available in every script' is satisfied; update this test", s)
+		t.Errorf("ctx-DRIFT changed: a bare engine now binds ctx (%v) — update scripting.md (remove the 'ctx is conditional' note) and this test", s)
 	}
-	// This is informational (drift record), not a hard failure: the contract
-	// is that ctx is conditionally bound. scripting.md should document the
-	// condition (see docs update task / DRIFT-3 family).
 }

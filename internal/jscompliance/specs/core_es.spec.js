@@ -217,3 +217,37 @@ test('a custom [Symbol.iterator] makes an object iterable', function () {
 test('String.raw preserves backslashes literally', function () {
 	assert.equal('String.raw keeps backslash', String.raw`\n`, '\\n');
 });
+
+// --- Map / Set / WeakMap collection semantics ---
+test('Map preserves insertion order and supports get/set/has/delete/size', function () {
+	var m = new Map();
+	m.set('b', 2); m.set('a', 1); m.set('c', 3);
+	assert.equal('map size', m.size, 3);
+	assert.equal('map get a', m.get('a'), 1);
+	assert.equal('map has c', m.has('c'), true);
+	m.delete('a');
+	assert.equal('map size after delete', m.size, 2);
+	// insertion order preserved: b, c
+	var keys = [];
+	m.forEach(function (v, k) { keys.push(k); });
+	assert.deepEqual('map insertion order', keys, ['b', 'c']);
+});
+test('Set dedupes and iterates in insertion order', function () {
+	var s = new Set([1, 2, 2, 3, 1]);
+	assert.equal('set size deduped', s.size, 3);
+	assert.equal('set has 2', s.has(2), true);
+	s.add(4); s.delete(2);
+	assert.equal('set size after ops', s.size, 3);
+	var vals = [];
+	s.forEach(function (v) { vals.push(v); });
+	assert.deepEqual('set insertion order', vals, [1, 3, 4]);
+});
+test('WeakMap supports get/set/has/delete (no size/iteration)', function () {
+	var wm = new WeakMap();
+	var k = {};
+	wm.set(k, 'v');
+	assert.equal('weakmap get', wm.get(k), 'v');
+	assert.equal('weakmap has', wm.has(k), true);
+	wm.delete(k);
+	assert.equal('weakmap has after delete', wm.has(k), false);
+});

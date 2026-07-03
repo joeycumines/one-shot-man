@@ -164,3 +164,45 @@ test('json.stringify with indent pretty-prints', function () {
 	assert.equal('compact is single-line', compact.indexOf('\n') === -1, true);
 	assert.equal('pretty is multi-line', pretty.indexOf('\n') >= 0, true);
 });
+
+// --- flag deeper: int/float64 + visit/visitAll ---
+test('flag parses int and float64 flags', function () {
+	var flag = require('osm:flag');
+	var fs = flag.newFlagSet('deep');
+	fs.int('port', 8080, 'p');
+	fs.float64('rate', 1.5, 'r');
+	var res = fs.parse(['--port', '9000', '--rate', '2.5']);
+	assert.equal('parse no error', res.error === null || res.error === undefined, true);
+	assert.equal('int flag get', fs.get('port'), 9000);
+	assert.equal('float64 flag get', fs.get('rate'), 2.5);
+});
+test('flag visit/visitAll iterate defined flags', function () {
+	var flag = require('osm:flag');
+	var fs = flag.newFlagSet('visit');
+	fs.string('a', 'x', ''); fs.string('b', 'y', '');
+	fs.parse(['--a', '1', '--b', '2']);
+	var seen = {};
+	fs.visit(function (name) { seen[name] = true; });
+	assert.equal('visit saw a', !!seen.a, true);
+	assert.equal('visit saw b', !!seen.b, true);
+});
+
+// --- argv edge cases (quoted + escaped) ---
+test('argv parseArgv handles quotes and spaces', function () {
+	var a = require('osm:argv');
+	var p1 = a.parseArgv('echo "a b" c');
+	assert.equal('quoted phrase kept', p1.indexOf('a b') >= 0, true);
+	assert.equal('separate arg c', p1.indexOf('c') >= 0, true);
+	// formatArgv round-trips an array
+	var formatted = a.formatArgv(['x', 'y z']);
+	var reparsed = a.parseArgv(formatted);
+	assert.deepEqual('formatArgv round-trip', reparsed, ['x', 'y z']);
+});
+
+// --- unicodetext wide-char (emoji) width ---
+test('unicodetext width of a wide emoji is 2', function () {
+	var u = require('osm:unicodetext');
+	// 😀 is a wide (astral) emoji; display width is 2 in a monospace cell grid.
+	var w = u.width('😀'); // 😀
+	assert.equal('emoji width is 2', w, 2);
+});

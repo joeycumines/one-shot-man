@@ -129,3 +129,38 @@ function arrayOfBytes(arr) {
 	for (var i = 0; i < arr.length; i++) u[i] = arr[i];
 	return u;
 }
+
+// --- crypto hmacSHA1 (known RFC test vector) ---
+test('crypto hmacSHA1 matches known vector', function () {
+	var c = require('osm:crypto');
+	assert.equal('hmacSHA1', c.hmacSHA1('key', 'The quick brown fox jumps over the lazy dog'), 'de7c9b85b8b78aa6bc8a7a36f70a90701c9db4d9');
+});
+
+// --- regexp.compile returns a RegexpObject with bound methods ---
+test('regexp.compile returns a reusable RegexpObject', function () {
+	var r = require('osm:regexp');
+	var re = r.compile('^f(oo)+$');
+	assert.equal('compile returns object', typeof re, 'object');
+	assert.equal('compiled.match hit', re.match('foooo'), true);
+	assert.equal('compiled.match miss', re.match('bar'), false);
+	assert.equal('compiled.find captures', re.find('x fooy z'), 'fooy');
+});
+
+// --- json.diff produces JSON-Pointer op records ---
+test('json.diff returns op records with JSON Pointer paths', function () {
+	var j = require('osm:json');
+	var d = j.diff({ a: 1, b: 2 }, { a: 1, b: 3, c: 4 });
+	assert.equal('diff is array', Array.isArray(d), true);
+	// every record has an op + a path
+	var allShaped = d.every(function (op) { return typeof op.op === 'string' && typeof op.path === 'string'; });
+	assert.equal('diff records shaped', allShaped, true);
+});
+
+// --- json.stringify indent pretty-prints ---
+test('json.stringify with indent pretty-prints', function () {
+	var j = require('osm:json');
+	var compact = j.stringify({ a: 1 });
+	var pretty = j.stringify({ a: 1 }, 2);
+	assert.equal('compact is single-line', compact.indexOf('\n') === -1, true);
+	assert.equal('pretty is multi-line', pretty.indexOf('\n') >= 0, true);
+});

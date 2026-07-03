@@ -119,3 +119,31 @@ func TestSlow_OutputClipboard_IsAsync(t *testing.T) {
 		t.Errorf("DRIFT-4: output.fromClipboard resolved to %q, want a non-empty string from OSM_CLIPBOARD_PASTE", s)
 	}
 }
+
+// TestSlow_OutputClipboard_GracefulDegradation pins a verified property of the
+// DRIFT-4 binding: output.toClipboard DEGRADES GRACEFULLY — it resolves (does
+// NOT reject) even when the clipboard override fails. ClipboardCopy (os.go:381)
+// falls through a chain (OSM_CLIPBOARD override → platform utility pbcopy/xclip/
+// clip → tuiSink fallback) and only errors when EVERY mechanism fails AND no
+// tuiSink is set; the output binding always passes a tuiSink, so toClipboard
+// effectively never rejects (it prints the content to the TUI as a last
+// resort). This test sets the override to a failing command and asserts it
+// still resolves — pinning the graceful-degradation contract.
+func TestSlow_OutputClipboard_GracefulDegradation(t *testing.T) {
+	skipSlow(t)
+	// Not parallel: mutates env.
+	t.Setenv("OSM_CLIPBOARD", "false") // override exits non-zero → falls through
+
+	ctx := context.Background()
+	engine, _, _ := newComplianceEngine(t, ctx)
+	v, err := evalJS(t, engine, `(async function () {
+		try { await output.toClipboard('jscompliance-degrade-probe'); return 'RESOLVED'; }
+		catch (e) { return 'REJECTED'; }
+	})()`, defaultEvalTimeout)
+	if err != nil {
+		t.Fatalf("clipboard degradation probe failed: %v", err)
+	}
+	if s, _ := v.(string); s != "RESOLVED" {
+		t.Errorf("output.toClipboard should degrade gracefully (resolve via the fallback chain), not reject; got %v", v)
+	}
+}

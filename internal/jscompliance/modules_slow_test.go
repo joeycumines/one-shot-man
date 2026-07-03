@@ -81,3 +81,30 @@ func TestSlow_Exec_SpawnWaitIsAsync(t *testing.T) {
 		t.Errorf("exec spawn handle.wait() must return a Promise (binding contract); got %v", v)
 	}
 }
+
+// TestSlow_Exec_SpawnReadStream pins the spawn handle's stdout readable stream:
+// read() returns Promise<{value, done}>; draining it yields the child's stdout.
+// Completes exec's async coverage (wait + streaming reads).
+func TestSlow_Exec_SpawnReadStream(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+	ctx := context.Background()
+	engine, _, _ := newComplianceEngine(t, ctx)
+	cmd, args := echoCommand("spawn-stream-probe")
+	v, err := evalJS(t, engine, fmt.Sprintf(`(async function () {
+		var h = require('osm:exec').spawn(%s, %s);
+		var out = '';
+		while (true) {
+			var chunk = await h.stdout.read();
+			if (chunk.done) break;
+			out += chunk.value;
+		}
+		return out;
+	})()`, jsStringLit(cmd), jsStrings(args)), defaultEvalTimeout)
+	if err != nil {
+		t.Fatalf("spawn read stream failed: %v", err)
+	}
+	if s, _ := v.(string); !strings.Contains(s, "spawn-stream-probe") {
+		t.Errorf("spawn stdout stream = %q, want it to contain the marker", s)
+	}
+}

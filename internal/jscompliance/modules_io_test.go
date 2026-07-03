@@ -147,3 +147,39 @@ func TestSlow_OutputClipboard_GracefulDegradation(t *testing.T) {
 		t.Errorf("output.toClipboard should degrade gracefully (resolve via the fallback chain), not reject; got %v", v)
 	}
 }
+
+// TestSlow_Os_WriteAppendValue pins osm:os.writeFile + appendFile (async) with
+// VALUE assertions: writeFile creates content, appendFile extends it, readFile
+// reads it back. Completes os's async VALUE coverage (was Promise-shape only).
+func TestSlow_Os_WriteAppendValue(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+	ctx := context.Background()
+	engine, _, _ := newComplianceEngine(t, ctx)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "wa.txt")
+
+	// writeFile creates the file with the given content.
+	if _, err := evalJS(t, engine, `await require('osm:os').writeFile(`+jsStringLit(path)+`, 'first')`, defaultEvalTimeout); err != nil {
+		t.Fatalf("writeFile: %v", err)
+	}
+	got, _ := evalJS(t, engine, `await require('osm:os').readFile(`+jsStringLit(path)+`)`, defaultEvalTimeout)
+	if m, ok := got.(map[string]any); ok {
+		if s, _ := m["content"].(string); s != "first" {
+			t.Errorf("after writeFile, readFile content = %q, want 'first'", s)
+		}
+	} else {
+		t.Errorf("readFile after writeFile returned %T", got)
+	}
+
+	// appendFile extends the content.
+	if _, err := evalJS(t, engine, `await require('osm:os').appendFile(`+jsStringLit(path)+`, '-second')`, defaultEvalTimeout); err != nil {
+		t.Fatalf("appendFile: %v", err)
+	}
+	got2, _ := evalJS(t, engine, `await require('osm:os').readFile(`+jsStringLit(path)+`)`, defaultEvalTimeout)
+	if m, ok := got2.(map[string]any); ok {
+		if s, _ := m["content"].(string); s != "first-second" {
+			t.Errorf("after appendFile, readFile content = %q, want 'first-second'", s)
+		}
+	}
+}

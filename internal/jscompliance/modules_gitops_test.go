@@ -77,4 +77,29 @@ func TestSlow_Gitops_RepoContract(t *testing.T) {
 	} else if s, _ := v.(string); !strings.HasPrefix(s, "object:function") {
 		t.Errorf("gitops.open(repoDir) = %q, want an object with a headBranchName function", s)
 	}
+
+	// Async value round-trip: write a new file, addAll (async), hasStagedChanges
+	// (async) → true, commit (async) → a commit hash string. Pins the documented
+	// async Repo methods with VALUE assertions (not just Promise-shape).
+	newFile := filepath.Join(repoDir, "second.txt")
+	if err := os.WriteFile(newFile, []byte("second\n"), 0o600); err != nil {
+		t.Fatalf("write second file: %v", err)
+	}
+	v, err := evalJS(t, engine, `(async function () {
+		var r = require('osm:gitops').open(`+jsStringLit(repoDir)+`);
+		await r.addAll();
+		var staged = await r.hasStagedChanges();
+		var hash = await r.commit('second commit');
+		return JSON.stringify({ staged: staged, hashType: typeof hash, hashLen: String(hash).length });
+	})()`, defaultEvalTimeout)
+	if err != nil {
+		t.Fatalf("gitops async addAll/hasStagedChanges/commit: %v", err)
+	}
+	s, _ := v.(string)
+	if !strings.Contains(s, `"staged":true`) {
+		t.Errorf("gitops hasStagedChanges after addAll should be true; got %s", s)
+	}
+	if !strings.Contains(s, `"hashType":"string"`) {
+		t.Errorf("gitops commit should resolve to a string hash; got %s", s)
+	}
 }

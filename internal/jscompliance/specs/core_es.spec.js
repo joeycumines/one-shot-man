@@ -175,3 +175,45 @@ test('Number precision boundary at 2^53', function () {
 	// 2^53 + 1 is NOT representable; it rounds to 2^53
 	assert.equal('2^53+1 rounds to 2^53', 9007199254740992 + 1, 9007199254740992);
 });
+
+// --- typed arrays: more views + value fidelity ---
+test('Int32Array and Float64Array preserve values', function () {
+	var i = new Int32Array([1000000, -2]);
+	assert.equal('i32[0]', i[0], 1000000);
+	assert.equal('i32[1]', i[1], -2);
+	var f = new Float64Array([0.5, 2.5]);
+	assert.equal('f64 sum', f[0] + f[1], 3);
+});
+test('ArrayBuffer is the shared backing store of a typed array', function () {
+	var buf = new ArrayBuffer(8);
+	var v1 = new Int32Array(buf);
+	v1[0] = 42;
+	var v2 = new Int32Array(buf);
+	assert.equal('views share memory', v2[0], 42);
+});
+
+// --- Number boundaries + safe-integer ---
+test('Number constants and isSafeInteger', function () {
+	assert.equal('MAX_VALUE is finite', Number.isFinite(Number.MAX_VALUE), true);
+	assert.equal('MIN_VALUE > 0', Number.MIN_VALUE > 0, true);
+	assert.equal('isSafeInteger(2^53-1)', Number.isSafeInteger(9007199254740991), true);
+	assert.equal('isSafeInteger(2^53) false', Number.isSafeInteger(9007199254740992), false);
+});
+
+// --- iterator protocol: a custom iterable ---
+test('a custom [Symbol.iterator] makes an object iterable', function () {
+	var obj = {};
+	obj[Symbol.iterator] = function () {
+		var n = 0;
+		return { next: function () { n++; return n <= 3 ? { value: n * 10, done: false } : { value: undefined, done: true }; } };
+	};
+	var out = [];
+	for (var v of obj) out.push(v);
+	assert.deepEqual('custom iterable sequence', out, [10, 20, 30]);
+	assert.deepEqual('spread custom iterable', [...obj], [10, 20, 30]);
+});
+
+// --- String.raw ---
+test('String.raw preserves backslashes literally', function () {
+	assert.equal('String.raw keeps backslash', String.raw`\n`, '\\n');
+});

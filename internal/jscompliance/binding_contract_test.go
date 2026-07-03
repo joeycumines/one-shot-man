@@ -34,6 +34,12 @@ func TestBindingContract_IOExportsAreAsync(t *testing.T) {
 	returnsPromise(t, engine, `require('osm:os').readFile(`+jsStringLit(nope)+`)`)
 	returnsPromise(t, engine, `require('osm:exec').execv(['this-binary-does-not-exist-xyz'])`)
 	returnsPromise(t, engine, `require('osm:path').glob(`+jsStringLit(filepath.Join(t.TempDir(), "*.nosuchext"))+`)`)
+	// fetch.fetch (bogus URL — rejects fast, no real network wait)
+	returnsPromise(t, engine, `require('osm:fetch').fetch(`+jsStringLit("http://127.0.0.1:1/jscompliance-bindingcontract")+`)`)
+	// tokenizer.loadFile (missing file)
+	returnsPromise(t, engine, `require('osm:tokenizer').loadFile(`+jsStringLit(filepath.Join(t.TempDir(), "no-tokenizer.json"))+`)`)
+	// ctxutil.buildContext (async per binding contract)
+	returnsPromise(t, engine, `require('osm:ctxutil').buildContext([])`)
 }
 
 // TestBindingContract_LoopLivenessDuringIO asserts the event loop is NOT

@@ -74,31 +74,27 @@ func TestBindingContract_LoopLivenessDuringIO(t *testing.T) {
 	}
 }
 
-
 // TestBindingContract_TermmuxWaitShouldBeAsync encodes WAIT-1: termmux
 // CaptureSession.wait() is SYNCHRONOUS/blocking (internal/builtin/termmux/
 // module.go:615 returns a map, blocks on cs.Wait()), unlike exec.spawn.wait()
 // which is async (exec.go:150 returns a Promise). This violates the JS Binding
 // Contract (a subprocess wait is I/O that must be async).
 //
-// WHY DEFERRED (not a dodge — evidence-based): the fix is concrete (rebind
-// wait to Promisify, mirroring exec.go:154-171 AND the existing async
-// termmux passthrough binding at module.go:674-701), and pr-split (the only
-// termmux consumer) NEVER calls CaptureSession.wait() — it polls
-// isDone()/exitCode() (pr_split_13_tui.js) — so there are ZERO production
-// callers. The cost is in the termmux PACKAGE tests (module_capture_test.go,
-// 6 sites) which call cs.wait() synchronously on a runtime with NO event
-// loop; making it async requires adding loop+adapter infra to those tests +
-// migrating the sites + re-verifying the (already-flaky-under-load) PTY tests.
-// This t.Skip encodes the intended contract + fix path; it activates when the
-// fix lands.
+// This is FIXABLE-IN-REPO (the termmux package is in this repo). The fix is
+// concrete: rebind wait to Promisify, mirroring exec.go:154-171 AND the
+// existing async termmux passthrough binding at module.go:674-701. pr-split
+// (the only termmux consumer) NEVER calls CaptureSession.wait() — it polls
+// isDone()/exitCode() — so there are ZERO production callers. The cost is in
+// the termmux PACKAGE tests (module_capture_test.go, ~6 sites) which call
+// cs.wait() synchronously on a runtime with NO event loop; making it async
+// requires adding loop+adapter infra to those tests + migrating the sites.
+//
+// Per the compliance directive: this test FAILS (not skips) on Unix until the
+// fix lands. The Windows guard remains a skip (termmux requires a Unix PTY).
 func TestBindingContract_TermmuxWaitShouldBeAsync(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("termmux requires Unix PTY")
 	}
-	t.Skip("TODO(osm): WAIT-1 — make termmux CaptureSession.wait() async (Promisify, mirror exec.go:154-171); migrate the 6 cs.wait() sites in module_capture_test.go to a loop+await harness. Zero prod callers (pr-split polls isDone/exitCode). See internal/jscompliance/binding_contract_test.go comment.")
-
-	// When the fix lands, remove the skip and this asserts the contract:
 	skipSlow(t) // real PTY subprocess
 	ctx := context.Background()
 	engine, _, _ := newComplianceEngine(t, ctx)

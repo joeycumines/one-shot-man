@@ -2,6 +2,7 @@ package nextintegerid
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/joeycumines/goja"
 )
@@ -30,7 +31,11 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 		}
 		length := lengthVal.ToInteger()
 
-		var maxVal int64 = 0
+		// Initialize to MinInt64 so all-negative id lists compute the true max
+		// (max+1). The previous 0-floor caused [{id:-5},{id:-1}] to return 1
+		// instead of 0 (the correct max+1 for max=-1).
+		var maxVal int64 = math.MinInt64
+		var foundAny bool
 		for i := range length {
 			itemVal := listObj.Get(fmt.Sprintf("%d", i))
 			if itemVal == nil || goja.IsUndefined(itemVal) || goja.IsNull(itemVal) {
@@ -49,6 +54,11 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 			if id > maxVal {
 				maxVal = id
 			}
+			foundAny = true
+		}
+		// Empty list (or no items with an id): floor is 1.
+		if !foundAny {
+			return runtime.ToValue(1)
 		}
 		return runtime.ToValue(maxVal + 1)
 	})

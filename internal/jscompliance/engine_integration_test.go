@@ -33,10 +33,10 @@ func TestEngine_Integration(t *testing.T) {
 	// WHATWG crypto, which lacks sha256) — they must be require'd.
 	cases := map[string]string{
 		`require('osm:crypto').sha256('abc')`:            `"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"`,
-		`require('osm:json').query({a:{b:1}}, 'a.b')`:     `1`,
-		`require('osm:regexp').match('^f(o)+$', 'fooo')`:  `true`,
-		`require('osm:encoding').hexEncode('A')`:          `"41"`,
-		`require('osm:format').formatBytes(2048)`:         `"2.0 kB"`,
+		`require('osm:json').query({a:{b:1}}, 'a.b')`:    `1`,
+		`require('osm:regexp').match('^f(o)+$', 'fooo')`: `true`,
+		`require('osm:encoding').hexEncode('A')`:         `"41"`,
+		`require('osm:format').formatBytes(2048)`:        `"2.0 kB"`,
 	}
 	for js, wantExpr := range cases {
 		got, err := evalJS(t, engine, js, defaultEvalTimeout)

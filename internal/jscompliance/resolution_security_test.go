@@ -118,7 +118,7 @@ func TestSecurity_BareNameTraversalBlocked(t *testing.T) {
 
 	tmp := t.TempDir()
 	libDir := filepath.Join(tmp, "libs")
-	writeFile(t, filepath.Join(libDir, "x", ".gitkeep"), "")     // x subdir exists (for the bare-name resolver)
+	writeFile(t, filepath.Join(libDir, "x", ".gitkeep"), "") // x subdir exists (for the bare-name resolver)
 	writeFile(t, filepath.Join(libDir, "allowed.js"), `module.exports = { ok: true };`)
 	writeFile(t, filepath.Join(tmp, "secret.js"), `module.exports = { data: "stolen" };`) // OUTSIDE libDir
 

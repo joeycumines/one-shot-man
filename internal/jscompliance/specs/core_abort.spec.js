@@ -10,7 +10,12 @@ test('abort() flips aborted and fires listeners', function () {
 	assert.equal('listener fired', seen, 1);
 });
 
-test('abort(reason) is exposed as signal.reason', function () {
+// ADAPTER-FORK-BLOCKED — abort(reason) does not store the reason as
+// signal.reason (the reason is lost, exposed as an empty object). This test
+// FAILS until the goja-eventloop adapter fork is updated to store the reason
+// passed to abort() and expose it via signal.reason. Per the compliance
+// directive: non-compliance of ANY KIND must bubble as a test failure.
+test('abort(reason) is exposed as signal.reason (ADAPTER-FORK-BLOCKED)', function () {
 	var ac = new AbortController();
 	ac.abort(new Error('stopped'));
 	assert.equal('reason is the error', ac.signal.reason.message, 'stopped');

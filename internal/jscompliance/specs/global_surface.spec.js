@@ -123,5 +123,10 @@ presentFn('Symbol');
 presentFn('Map');
 presentFn('Set');
 presentFn('Proxy');
-presentFn('Reflect');
+// Reflect is a namespace object per ecma-262 §27.3 (typeof === "object"),
+// NOT a function constructor. Use presentDefined to avoid the false failure.
+presentDefined('Reflect');
+test('Reflect is a namespace object (not a function)', function () {
+	assert.equal('Reflect typeof', typeof Reflect, 'object');
+});
 presentDefined('BigInt');

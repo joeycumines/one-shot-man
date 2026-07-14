@@ -36,53 +36,67 @@ function __settleOne() {
 	}
 }
 
-// Per-test outcome tracking. assert.* mark the test failed via __fail (keeping
-// the FIRST, most-informative message). The test() settlement records the
-// outcome EXACTLY ONCE via __recordOutcome — so a failed test never produces
-// duplicate records (a previous version recorded both in __fail and at
-// settlement).
-var __failures = {}; // name -> true
-var __failMsgs = {}; // name -> first failure message
+// Per-test outcome tracking. Tests run SEQUENTIALLY (one at a time, each
+// fully settled before the next starts) — the same model as Jest/Mocha. This
+// eliminates the class of microtask-interleaving bugs where a failure in one
+// test's async continuation could be attributed to another test. assert.*
+// mark the currently-running test failed via __fail, which writes to the
+// single __activeSink — the failure collector of the test whose body is
+// executing RIGHT NOW. The `name` argument to assert.* and __fail is a
+// DIAGNOSTIC LABEL only (used in the recorded error message); it is NOT used
+// as a lookup key, so a mismatch between the test() name and the assert name
+// can never cause a failure to be silently dropped (the bug this redesign
+// fixes). Each test sets __activeSink before running its body and clears it
+// after recording the outcome.
+var __testQueue = []; // [{ name: string, fn: function }]
+var __activeSink = null; // { failures: bool, failMsg: string|null } or null
 
 function __fail(name, message) {
-	if (!__failures[name]) {
-		__failures[name] = true;
-		__failMsgs[name] = String(message);
+	if (__activeSink === null) {
+		return; // No active test — defensive; shouldn't happen in well-formed specs.
+	}
+	if (!__activeSink.failures) {
+		__activeSink.failures = true;
+		__activeSink.failMsg = String(message);
 	}
 }
 
-// __recordOutcome records a single outcome for name: prefer an assertion
-// failure message (most descriptive), else a thrown/rejected error, else pass.
-function __recordOutcome(name, threw, threwMsg) {
-	if (__failures[name]) {
-		__record(name, false, __failMsgs[name]);
-	} else if (threw) {
-		__record(name, false, threwMsg);
-	} else {
-		__record(name, true, null);
+// __runTests processes the test queue SEQUENTIALLY. Each test's body (which
+// may be async) runs to full settlement before the next test starts. This
+// ensures __activeSink is unambiguous at all times: exactly one test is
+// "running" — even when its body suspends at an await, no other test body
+// executes until it resumes and completes.
+async function __runTests() {
+	for (var i = 0; i < __testQueue.length; i++) {
+		var entry = __testQueue[i];
+		__activeSink = { failures: false, failMsg: null };
+		var threw = false;
+		var threwMsg = null;
+		try {
+			await entry.fn();
+		} catch (e) {
+			threw = true;
+			threwMsg = __errMsg(e);
+		}
+		if (__activeSink.failures) {
+			__record(entry.name, false, __activeSink.failMsg);
+		} else if (threw) {
+			__record(entry.name, false, threwMsg);
+		} else {
+			__record(entry.name, true, null);
+		}
+		__activeSink = null;
+		__settleOne();
 	}
 }
 
 // test registers a test. fn may be async (returns a Promise) or sync, and may
 // throw. The test is recorded as failed if any assert fails or fn throws/rejects.
-// Uses async/await (.then-free): awaiting fn() unifies sync return, async
-// resolution, and sync/async rejection into one try/catch.
+// Tests are queued and run sequentially by __runTests (invoked after registration
+// closes via __finishRegistration).
 function test(name, fn) {
 	__pending += 1;
-	// Defer to a microtask so registration is synchronous even if fn throws
-	// synchronously — all test() calls in a spec register before any runs.
-	queueMicrotask(async function () {
-		var threw = false;
-		var threwMsg = null;
-		try {
-			await fn();
-		} catch (e) {
-			threw = true;
-			threwMsg = __errMsg(e);
-		}
-		__recordOutcome(name, threw, threwMsg);
-		__settleOne();
-	});
+	__testQueue.push({ name: name, fn: fn });
 }
 
 function __errMsg(e) {
@@ -177,14 +191,19 @@ var assert = {
 };
 
 // __finishRegistration is invoked by the Go runner immediately after the spec
-// body has executed (all test() calls are therefore registered). If no tests
-// are pending, __done resolves right away; otherwise it resolves when the
-// last pending test settles.
+// body has executed (all test() calls are therefore registered). It closes
+// registration and kicks off __runTests, which drains the queue sequentially.
+// __done resolves when the last pending test settles (via __settleOne).
 function __finishRegistration() {
 	__registrationOpen = false;
 	if (__pending <= 0 && __resolveDone !== null) {
 		var resolve = __resolveDone;
 		__resolveDone = null;
 		resolve();
+		return;
 	}
+	// Run the queued tests sequentially. This is async; __done settles via
+	// __settleOne when all tests complete. The promise is intentionally not
+	// awaited (it runs as a detached microtask chain).
+	__runTests();
 }

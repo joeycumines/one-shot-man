@@ -45,9 +45,11 @@ test('bubbletea isTTY returns a boolean', function () {
 });
 test('bubbletea validators whitelist input', function () {
 	var tea = require('osm:bubbletea');
-	// a printable single char is valid textarea input
-	assert.equal('valid textarea char', tea.isValidTextareaInput('a'), true);
-	assert.equal('invalid textarea ctrl', tea.isValidTextareaInput(String.fromCharCode(0x01)), false);
+	// isValidTextareaInput returns {valid, reason} — pin the shape + values.
+	var ok = tea.isValidTextareaInput('a');
+	assert.equal('valid textarea char valid', ok.valid, true);
+	var bad = tea.isValidTextareaInput(String.fromCharCode(0x01));
+	assert.equal('invalid textarea ctrl valid', bad.valid, false);
 });
 test('bubbletea keys/keysByName/mouseButtons metadata present', function () {
 	var tea = require('osm:bubbletea');
@@ -69,7 +71,10 @@ test('lipgloss border factories produce styles + render contains content', funct
 test('lipgloss place/width/height/size measure', function () {
 	var l = require('osm:lipgloss');
 	assert.equal('width(abc)', l.width('abc'), 3);
-	assert.equal('size returns number', typeof l.size('hello'), 'number');
+	// size returns {width,height}, not a bare number.
+	var sz = l.size('hello');
+	assert.equal('size.width', sz.width, 5);
+	assert.equal('size.height', sz.height, 1);
 });
 
 // --- unicodetext (width of wide chars + truncate) ---

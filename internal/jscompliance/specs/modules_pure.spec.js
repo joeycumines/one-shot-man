@@ -69,8 +69,10 @@ test('regexp find and replace', function () {
 	var r = require('osm:regexp');
 	assert.equal('find', r.find('\\d+', 'abc123def'), '123');
 	assert.deepEqual('findAll', r.findAll('\\d', 'a1b2c3'), ['1', '2', '3']);
-	assert.equal('replace', r.replace('\\d+', 'a1b2', 'X'), 'aXbX');
-	assert.equal('replaceAll', r.replaceAll('\\d', 'a1b2', ''), 'ab');
+	// replace replaces only the FIRST match (Go regexp.Replace, not ReplaceAll).
+	assert.equal('replace (first only)', r.replace('\\d+', 'a1b2', 'X'), 'aXb2');
+	// replaceAll replaces every match.
+	assert.equal('replaceAll', r.replaceAll('\\d+', 'a1b2', 'X'), 'aXbX');
 	assert.deepEqual('split', r.split(',', 'a,b,c'), ['a', 'b', 'c']);
 });
 test('regexp findSubmatch captures groups', function () {
@@ -139,9 +141,11 @@ test('crypto hmacSHA1 matches known vector', function () {
 // --- regexp.compile returns a RegexpObject with bound methods ---
 test('regexp.compile returns a reusable RegexpObject', function () {
 	var r = require('osm:regexp');
-	var re = r.compile('^f(oo)+$');
+	// Use an unanchored pattern so .find can locate the match mid-string.
+	// f(oo)+y matches "fooy", "fooooy", etc.
+	var re = r.compile('f(oo)+y');
 	assert.equal('compile returns object', typeof re, 'object');
-	assert.equal('compiled.match hit', re.match('foooo'), true);
+	assert.equal('compiled.match hit', re.match('fooy'), true);
 	assert.equal('compiled.match miss', re.match('bar'), false);
 	assert.equal('compiled.find captures', re.find('x fooy z'), 'fooy');
 });
@@ -179,10 +183,11 @@ test('flag parses int and float64 flags', function () {
 test('flag visit/visitAll iterate defined flags', function () {
 	var flag = require('osm:flag');
 	var fs = flag.newFlagSet('visit');
-	fs.string('a', 'x', ''); fs.string('b', 'y', '');
+	fs.string('a', 'x', 'desc-a'); fs.string('b', 'y', 'desc-b');
 	fs.parse(['--a', '1', '--b', '2']);
 	var seen = {};
-	fs.visit(function (name) { seen[name] = true; });
+	// visit callback receives a flag descriptor object {name,usage,defValue,value}
+	fs.visit(function (f) { seen[f.name] = true; });
 	assert.equal('visit saw a', !!seen.a, true);
 	assert.equal('visit saw b', !!seen.b, true);
 });

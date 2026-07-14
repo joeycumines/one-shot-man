@@ -10,10 +10,16 @@ test('bt status constants are the documented strings', function () {
 	assert.equal('failure', bt.failure, 'failure');
 	assert.equal('running', bt.running, 'running');
 });
-test('bt.createLeafNode + tick returns the leaf status', function () {
+test('bt.createLeafNode + tick returns running then the leaf status (async)', async function () {
 	var bt = require('osm:bt');
 	var n = bt.createLeafNode(function () { return bt.success; });
-	assert.equal('tick leaf success', bt.tick(n), 'success');
+	// JSLeafAdapter is an async state machine (adapter.go:38-40): the first tick
+	// dispatches to JS and returns Running; the leaf's JS function settles on the
+	// event loop. A subsequent tick returns the final status.
+	assert.equal('tick returns running (dispatch)', bt.tick(n), bt.running);
+	// Wait for the leaf's JS callback to settle, then tick again.
+	await new Promise(function (resolve) { setTimeout(resolve, 50); });
+	assert.equal('tick returns success (settled)', bt.tick(n), bt.success);
 });
 test('bt.Blackboard get/set/has/delete', function () {
 	var bt = require('osm:bt');

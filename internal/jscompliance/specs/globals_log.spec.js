@@ -1,8 +1,9 @@
 // globals_log.spec.js — the `log` global (structured logging API surface).
 // Detailed entry semantics are covered in internal/scripting; here we pin the
 // CONTRACT SURFACE and one round-trip. NOTE: goja exports the logEntry struct
-// with CAPITALIZED Go field names (Message/Level/Attrs); slog.Level exports as
-// its integer value (INFO=0, WARN=4, ERROR=8), NOT the string — pinned here.
+// with CAPITALIZED Go field names (Message/Level/Attrs). slog.Level implements
+// fmt.Stringer, so goja exports it as its string form ("INFO", "WARN", "ERROR"),
+// NOT the raw integer — pinned here.
 
 test('log exposes the documented method surface', function () {
 	assert.equal('log.debug', typeof log.debug, 'function');
@@ -20,7 +21,9 @@ test('log.info records an entry retrievable via getLogs', function () {
 	log.info('hello');
 	var last = log.getLogs().pop();
 	assert.equal('entry Message', last.Message, 'hello');
-	assert.equal('entry Level (INFO=0)', last.Level, 0);
+	// slog.Level is exported by goja as an object (fmt.Stringer), so coerce via
+	// String() to compare its string form "INFO".
+	assert.equal('entry Level (INFO)', String(last.Level), 'INFO');
 });
 
 test('log entries carry stringified structured attributes (Attrs)', function () {

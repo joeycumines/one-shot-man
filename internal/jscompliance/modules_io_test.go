@@ -92,7 +92,7 @@ func TestSlow_OutputClipboard_IsAsync(t *testing.T) {
 	// Not parallel: mutates env (OSM_CLIPBOARD*) for isolation.
 
 	// Isolate: redirect clipboard to harmless commands (no host mutation).
-	t.Setenv("OSM_CLIPBOARD", "true")        // copy: discard stdin, exit 0
+	t.Setenv("OSM_CLIPBOARD", "true")                   // copy: discard stdin, exit 0
 	t.Setenv("OSM_CLIPBOARD_PASTE", "echo pasted-text") // paste: stdout -> text
 
 	ctx := context.Background()

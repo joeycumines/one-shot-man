@@ -115,3 +115,57 @@ func TestHarness_SpecRejectsEmpty(t *testing.T) {
 	// slice and runSpecSource turns it into a failure. That mapping is what
 	// makes an asserting-nothing spec a real test failure.
 }
+
+// TestHarness_MismatchedNameFailure pins the harness name-keying fix: a failing
+// assertion MUST record pass=false even when the test() name differs from the
+// assert name. Before the fix (sequential-test + __activeSink redesign), the
+// harness keyed __failures by the assert name but __recordOutcome by the test
+// name — so a mismatch silently dropped failures (pass=true). This test
+// covers: (a) mismatched-name false-assert fails, (b) interleaved async tests
+// with mismatched names both fail, (c) a mismatched-name true-assert passes.
+func TestHarness_MismatchedNameFailure(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	// (a) Single mismatched-name false-assert.
+	eng1, _, _ := newComplianceEngine(t, ctx)
+	r1, err := collectSpecResults(t, eng1, "mismatch1",
+		`test('testname', function(){ assert.equal('assertname', typeof NotARealGlobal___, 'string'); });`,
+		defaultEvalTimeout)
+	if err != nil {
+		t.Fatalf("mismatch1: %v", err)
+	}
+	if len(r1) != 1 || r1[0].Pass {
+		t.Errorf("mismatch1: false assertion with mismatched name must FAIL, got %+v", r1)
+	}
+
+	// (b) Two interleaved async tests with mismatched names — both must fail.
+	eng2, _, _ := newComplianceEngine(t, ctx)
+	r2, err := collectSpecResults(t, eng2, "mismatch2",
+		`test('a', async function(){ await Promise.resolve(); assert.equal('a-assert', 1, 2); });
+test('b', async function(){ await Promise.resolve(); assert.equal('b-assert', 1, 2); });`,
+		defaultEvalTimeout)
+	if err != nil {
+		t.Fatalf("mismatch2: %v", err)
+	}
+	if len(r2) != 2 {
+		t.Fatalf("mismatch2: expected 2 results, got %d", len(r2))
+	}
+	for _, res := range r2 {
+		if res.Pass {
+			t.Errorf("mismatch2: test %q should FAIL but passed (interleaving bug)", res.Name)
+		}
+	}
+
+	// (c) Mismatched-name true-assert must PASS.
+	eng3, _, _ := newComplianceEngine(t, ctx)
+	r3, err := collectSpecResults(t, eng3, "mismatch3",
+		`test('p', function(){ assert.equal('p-assert', typeof Object, 'function'); });`,
+		defaultEvalTimeout)
+	if err != nil {
+		t.Fatalf("mismatch3: %v", err)
+	}
+	if len(r3) != 1 || !r3[0].Pass {
+		t.Errorf("mismatch3: true assertion with mismatched name must PASS, got %+v", r3)
+	}
+}

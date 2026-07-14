@@ -9,10 +9,11 @@ import (
 // TestUnhandledRejection_Observability encodes the RISK-A contract: an
 // UNHANDLED Promise rejection (one with no .catch/.then(_,reject)) MUST be
 // observable by the host (logged), and the runtime MUST keep running other
-// work (not crash).
+// work (not crash). This is the HostPromiseRejectionTracker host hook
+// (ecma-262 §27.2.1.9 + HTML §8.5.3.3).
 //
-// CURRENT STATE (RISK-A, verified): the runtime does NOT observe unhandled
-// rejections. go-eventloop's checkUnhandledRejections (promise.go:946) reads
+// CURRENT STATE (RISK-A): the runtime does NOT observe unhandled rejections.
+// go-eventloop's checkUnhandledRejections (promise.go:946) reads
 // js.unhandledCallback under js.mu and SILENTLY DROPS when nil; the callback
 // is set only via the WithUnhandledRejection JSOption at NewJS time, but the
 // goja-eventloop adapter calls NewJS(loop) with NO options (adapter.go:70) and
@@ -20,22 +21,20 @@ import (
 // runtime.go never wires it. So a rejected promise with no handler vanishes —
 // a real observability gap.
 //
-// FIX PATH (requires a dependency change, deferred): add an exported setter
+// FIX PATH (requires an eventloop-fork change): add an exported setter
 // `func (js *JS) SetUnhandledRejection(h RejectionHandler)` to the
 // joeycumines/go-eventloop fork (the field is already read dynamically under
 // js.mu, so a post-construction setter is race-safe), publish a new
 // pseudo-version, bump go.mod, and call
 // `rt.adapter.JS().SetUnhandledRejection(<slog.Error handler>)` in runtime.go
 // INSIDE the loop.Submit closure AFTER rt.adapter.Bind() (runtime.go:138) and
-// BEFORE errCh<-nil — on-loop, before any user JS. (A local `replace` is
-// rejected because it breaks make-all-in-container / make-all-run-windows,
-// which copy only this repo.)
+// BEFORE errCh<-nil — on-loop, before any user JS.
 //
-// This test is SKIPPED (tracked, not silent) until the fix lands. When it
-// does, remove the skip and the assertion below validates end-to-end.
+// EVENTLOOP-FORK-BLOCKED — per the compliance directive, this test FAILS
+// (not skips) until the fork is updated. A WIP refactor is in progress in the
+// eventloop fork that may address this. When the fix lands, this test passes.
 func TestUnhandledRejection_Observability(t *testing.T) {
-	t.Skip("TODO(osm): RISK-A — wire WithUnhandledRejection via go-eventloop SetUnhandledRejection setter (see comment); not silent, tracked here")
-
+	t.Parallel()
 	ctx := context.Background()
 	engine, _, stderr := newComplianceEngine(t, ctx)
 
@@ -47,7 +46,8 @@ func TestUnhandledRejection_Observability(t *testing.T) {
 	}
 
 	// When the handler is wired to slog.Error, the marker must surface in the
-	// engine's stderr (the startup/slog sink). Until then this test is skipped.
+	// engine's stderr (the startup/slog sink). Until the fork fix lands, this
+	// assertion FAILS — the rejection vanishes silently.
 	if !containsStderr(stderr, "risk-a-marker") {
 		t.Errorf("RISK-A: unhandled rejection was not observable (expected 'risk-a-marker' in logs once WithUnhandledRejection is wired)")
 	}

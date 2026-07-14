@@ -115,11 +115,17 @@ test('generators yield a correct iterable sequence', function () {
 
 // NOTE: goja does NOT support `for await...of` / async iteration (the parser
 // rejects `for await` — a SyntaxError that would prevent this whole spec file
-// from loading). We therefore pin the Symbol.asyncIterator PRESENCE only and
-// record the limitation (see WIP.md / docs). The parse-unsafe syntax is
-// deliberately omitted so the file loads.
-test('Symbol.asyncIterator is present (for-await-of itself is a known goja gap)', function () {
-	assert.equal('asyncIterator symbol present', typeof Symbol.asyncIterator, 'symbol');
+// from loading). `Symbol.asyncIterator` is a well-known symbol per ecma-262
+// §6.1.5.1 that MUST be registered. The goja fork does NOT register it
+// (returns undefined). This test FAILS until the goja fork is updated to
+// register @@asyncIterator in the well-known symbols table. The parse-unsafe
+// for-await-of syntax is deliberately omitted so this file loads.
+//
+// GOJA-FORK-BLOCKED — tracked as a failing test (not a skip) per the
+// compliance directive: non-compliance of ANY KIND must bubble as a test
+// failure.
+test('Symbol.asyncIterator is a registered well-known symbol (GOJA-FORK-BLOCKED)', function () {
+	assert.equal('Symbol.asyncIterator typeof', typeof Symbol.asyncIterator, 'symbol');
 });
 
 // 7. Destructuring, optional chaining, nullish coalescing
@@ -250,4 +256,49 @@ test('WeakMap supports get/set/has/delete (no size/iteration)', function () {
 	assert.equal('weakmap has', wm.has(k), true);
 	wm.delete(k);
 	assert.equal('weakmap has after delete', wm.has(k), false);
+});
+
+// --- ES2022-2025 features (supported by goja, pinned to catch regressions) ---
+
+// ES2023: Array.prototype.findLast / findLastIndex
+test('Array.prototype.findLast/findLastIndex (ES2023)', function () {
+	assert.equal('findLast', [1, 2, 3, 2].findLast(function (x) { return x === 2; }), 2);
+	assert.equal('findLastIndex', [1, 2, 3, 2].findLastIndex(function (x) { return x === 2; }), 3);
+	assert.equal('findLast miss', [1, 2, 3].findLast(function (x) { return x > 10; }), undefined);
+});
+
+// ES2022: Object.hasOwn
+test('Object.hasOwn (ES2022)', function () {
+	assert.equal('hasOwn own prop', Object.hasOwn({ a: 1 }, 'a'), true);
+	assert.equal('hasOwn inherited', Object.hasOwn({}, 'toString'), false);
+	assert.equal('hasOwn missing', Object.hasOwn({ a: 1 }, 'b'), false);
+});
+
+// ES2022: Error.cause on Error subclasses
+test('Error.cause propagates to TypeError/RangeError (ES2022)', function () {
+	var e = new TypeError('msg', { cause: 'root' });
+	assert.equal('TypeError cause', e.cause, 'root');
+	var r = new RangeError('msg', { cause: 42 });
+	assert.equal('RangeError cause', r.cause, 42);
+});
+
+// ES2024: String.prototype.isWellFormed / toWellFormed
+// GOJA-FORK-BLOCKED — the goja fork does NOT implement isWellFormed/toWellFormed
+// (returns undefined). ecma-262 §22.1.3.x. This test FAILS until the goja fork
+// is updated. Per the compliance directive: non-compliance bubbles as a failure.
+test('String.prototype.isWellFormed/toWellFormed (ES2024, GOJA-FORK-BLOCKED)', function () {
+	assert.equal('isWellFormed is a function', typeof 'hello'.isWellFormed, 'function');
+	assert.equal('well-formed ASCII', 'hello'.isWellFormed(), true);
+	assert.equal('lone surrogate not well-formed', '\uD800'.isWellFormed(), false);
+});
+
+// ES2024: Object.groupBy / Map.groupBy
+// GOJA-FORK-BLOCKED — the goja fork does NOT implement Object.groupBy/Map.groupBy
+// (returns undefined). ecma-262 §20.1.2.x. This test FAILS until the goja fork
+// is updated.
+test('Object.groupBy/Map.groupBy (ES2024, GOJA-FORK-BLOCKED)', function () {
+	assert.equal('Object.groupBy is function', typeof Object.groupBy, 'function');
+	var grouped = Object.groupBy([1, 2, 3, 4], function (x) { return x % 2 ? 'odd' : 'even'; });
+	assert.equal('odd group', grouped.odd.length, 2);
+	assert.equal('even group', grouped.even.length, 2);
 });

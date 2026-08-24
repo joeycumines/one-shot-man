@@ -35,7 +35,7 @@
     "ALWAYS": "Tee every long command to scratch/ before tail/head per globalAlerts. Pattern: mkdir -p scratch && <cmd> 2>&1 | tee scratch/<name>.log | tail -n 100; echo EXIT:${PIPESTATUS[0]}"
   },
   "statusSection": {
-    "currentState": "Task 8/22 DONE: scripting race fixed (SetGlobal/GetGlobal owner-safe). Verified via -race no race, grep shows only loop paths. Next: task 9 F3/F4 TUIManager.Run/SwitchMode.",
+    "currentState": "Task 9/22 DONE: F3/F4 TUIManager discipline fixed (GetGlobal + executeOnLoop). Next: task 10 F5-F8 loop monopolization (termmux/aimux/mcpcb).",
     "goalState": "All 6 red packages green, sandbox escape closed, fetch streaming restored with liveness, Bridge nil-adapter class eliminated, Bridge stall gone (5s+forever -> sub-ms), tokenizer race gone, scripting races gone, binding contract converged (zero loop-monopolizing sync twins), duplication collapsed (~350+80+60 lines net deletion), stale microtask comments fixed, WithLogger/Metrics wired, verification parity (-race/fuzz/determinism/coverage) green, docs/AGENTS realigned, and BOTH `gmake -j 10 make-all-with-log` and `gmake -j 10 make-all-in-container` pass with zero unintended failures (go vet/build/deadcode/staticcheck + `go test -timeout=20m ./...`). Two contiguous strict-review-gate passes confirm no hard-coded test-only fixes.",
     "goalLog": [
       {
@@ -326,7 +326,7 @@
       "task": "F3/F4: repair TUIManager.Run main-goroutine VM Get and SwitchMode goroutine discipline",
       "description": "tui_manager.go:752-756 `tm.engine.vm.Get(\"__skipREPL\")` reached via Terminal.Run() on main goroutine concurrent with bubbletea/bt callbacks \u2014 read-only but live window. Fix via `engine.GetGlobal` or `adapter.Submit` read, or cache flag before loop start. SwitchMode (tui_manager.go:300 OnExit, 362 OnEnter, 417+ buildModeCommands) invokes JS callables with no discipline \u2014 production callers happen to be on-loop today via ExecuteCommand Loop.Submit, but tests call from arbitrary goroutines. Fix by routing OnExit/OnEnter through `executeOnLoop`/`adapter.Submit` or asserting IsLoopThread with panic-by-default, and documenting invariant. Add `checkEventLoopGoroutine` guard default-on.",
       "acceptance": "No direct `vm.Get/Set` off-loop in tui_manager.go: `grep -n \"\\.vm\\.Get\\|\\.vm\\.Set\" internal/scripting/tui_manager.go` shows zero outside Submit/RunSync. TUIManager.Run no longer races `__skipREPL` read under `go test -race ./internal/scripting -run TestTUIManager` (or broader scripting race suite). SwitchMode callable invocations are owner-safe; future off-loop caller panics with clear message rather than corrupting.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/scripting/tui_manager.go",
         "internal/scripting/terminal.go",

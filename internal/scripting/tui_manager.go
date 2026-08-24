@@ -295,9 +295,12 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 	// Release lock before calling OnExit to avoid deadlock when callback accesses state.
 	tm.mu.Unlock()
 
-	// Exit current mode (outside the lock).
+	// Exit current mode (outside the lock) — owner-safe via executeOnLoop (F4).
 	if onExitCallback != nil {
-		if _, err := onExitCallback(goja.Undefined()); err != nil {
+		if err := tm.engine.executeOnLoop(func(rt *goja.Runtime) error {
+			_, err := onExitCallback(goja.Undefined())
+			return err
+		}); err != nil {
 			_, _ = fmt.Fprintf(tm.writer, "Error exiting mode %s: %v\n", currentMode.Name, err)
 		}
 	}
@@ -358,8 +361,12 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 	}
 
 	// N.B. Similarly, mitigate deadlock risk - avoid holding locks while calling OnEnter.
+	// Owner-safe via executeOnLoop (F4) — direct callable invocation would race.
 	if onEnterCallback != nil {
-		if _, err := onEnterCallback(goja.Undefined(), goja.Undefined(), goja.Undefined()); err != nil {
+		if err := tm.engine.executeOnLoop(func(rt *goja.Runtime) error {
+			_, err := onEnterCallback(goja.Undefined(), goja.Undefined(), goja.Undefined())
+			return err
+		}); err != nil {
 			_, _ = fmt.Fprintf(tm.writer, "Error entering mode %s: %v\n", mode.Name, err)
 		}
 	}
@@ -419,11 +426,19 @@ func (tm *TUIManager) buildModeCommands(mode *ScriptMode) error {
 		return nil
 	}
 
-	// Call the CommandsBuilder function
-	// Scripts manage their own state through closures now
-	result, err := mode.CommandsBuilder(goja.Undefined(), goja.Undefined())
-	if err != nil {
+	// Call the CommandsBuilder function — owner-safe via executeOnLoop (F4).
+	var result goja.Value
+	var cbErr error
+	if err := tm.engine.executeOnLoop(func(rt *goja.Runtime) error {
+		var err error
+		result, err = mode.CommandsBuilder(goja.Undefined(), goja.Undefined())
+		cbErr = err
+		return err
+	}); err != nil {
 		return fmt.Errorf("CommandsBuilder failed: %w", err)
+	}
+	if cbErr != nil {
+		return fmt.Errorf("CommandsBuilder failed: %w", cbErr)
 	}
 
 	// Convert result to commands map
@@ -748,10 +763,13 @@ func (tm *TUIManager) Run() {
 
 	// Check if script wants to skip the REPL (e.g., after BubbleTea TUI exits in non-interactive mode).
 	// Scripts can set globalThis.__skipREPL = true in __postBubbleTeaExit to prevent REPL launch.
+	// Use owner-safe GetGlobal to avoid main-goroutine vs loop race (F3).
 	skipREPL := false
-	if tm.engine.vm != nil {
-		if skipVal := tm.engine.vm.Get("__skipREPL"); skipVal != nil && !goja.IsUndefined(skipVal) {
-			skipREPL = skipVal.ToBoolean()
+	if val := tm.engine.GetGlobal("__skipREPL"); val != nil {
+		if b, ok := val.(bool); ok {
+			skipREPL = b
+		} else {
+			skipREPL = true
 		}
 	}
 

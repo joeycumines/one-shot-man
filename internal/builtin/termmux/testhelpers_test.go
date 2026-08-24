@@ -2,6 +2,7 @@ package termmux
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -214,11 +215,7 @@ func wrapTestSessionManagerWithLoop(t *testing.T, ctx context.Context, runtime *
 // goroutine. The runtime must have been registered via wrapTestSessionManagerWithLoop.
 func runJS(t *testing.T, runtime *goja.Runtime, script string) (goja.Value, error) {
 	t.Helper()
-	loopVal, ok := testLoops.Load(runtime)
-	if !ok {
-		t.Fatalf("no event loop found for runtime")
-	}
-	loop := loopVal.(*goeventloop.Loop)
+	loop := loopForRuntime(t, runtime)
 	type result struct {
 		v   goja.Value
 		err error
@@ -237,4 +234,44 @@ func runJS(t *testing.T, runtime *goja.Runtime, script string) (goja.Value, erro
 		t.Fatalf("runJS timed out")
 		return nil, nil
 	}
+}
+
+// awaitJS runs an async JS snippet (may use await) on the event loop
+// goroutine associated with the given runtime and waits for it to settle.
+// The runtime must have been registered via wrapTestSessionManagerWithLoop.
+func awaitJS(t *testing.T, runtime *goja.Runtime, script string) {
+	t.Helper()
+	loop := loopForRuntime(t, runtime)
+	errCh := make(chan error, 1)
+	if err := loop.Submit(func() {
+		_ = runtime.Set("__awaitJSDone", func() { errCh <- nil })
+		_ = runtime.Set("__awaitJSFail", func(msg string) { errCh <- errors.New(msg) })
+		wrapped := `(async function() { ` + script + ` })()
+		.then(function() { __awaitJSDone(); })
+		.catch(function(e) { __awaitJSFail(e && e.message ? e.message : String(e)); });`
+		if _, runErr := runtime.RunString(wrapped); runErr != nil {
+			errCh <- runErr
+		}
+	}); err != nil {
+		t.Fatalf("submit script to event loop: %v", err)
+	}
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("awaitJS: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatalf("awaitJS timed out")
+	}
+}
+
+// loopForRuntime returns the event loop registered for the given runtime.
+// The runtime must have been registered via wrapTestSessionManagerWithLoop.
+func loopForRuntime(t *testing.T, runtime *goja.Runtime) *goeventloop.Loop {
+	t.Helper()
+	loopVal, ok := testLoops.Load(runtime)
+	if !ok {
+		t.Fatalf("no event loop found for runtime")
+	}
+	return loopVal.(*goeventloop.Loop)
 }

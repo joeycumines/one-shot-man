@@ -49,7 +49,7 @@
             }
             var mcpCb = prSplit._mcpCallbackObj;
             if (mcpCb) {
-                try { mcpCb.closeSync(); } catch (e) { log.debug('cleanup: mcpCb.closeSync failed: ' + (e.message || e)); }
+                try { mcpCb.close().catch(function(e) { log.debug('cleanup: mcpCb.close failed: ' + (e.message || e)); }); } catch (e) { log.debug('cleanup: mcpCb.close failed: ' + (e.message || e)); }
                 prSplit._mcpCallbackObj = null;
                 if (st) st.mcpCallbackObj = null;
             }
@@ -749,7 +749,7 @@
     // IPC if one does not already exist. Called on-demand by
     // openAgentConvo so that "Ask Agent" works regardless of whether
     // the automated pipeline was ever started.
-    function ensureMCPCallback() {
+    async function ensureMCPCallback() {
         if (prSplit._mcpCallbackObj) {
             return { error: null };
         }
@@ -804,7 +804,7 @@
                     }
                 });
 
-            mcpCallbackObj.initSync();
+            await mcpCallbackObj.init();
             prSplit._mcpCallbackObj = mcpCallbackObj;
             log.printf('on-demand MCP callback initialized at %s', mcpCallbackObj.address || '(unknown)');
             return { error: null };
@@ -821,7 +821,7 @@
         try {
             s.agentConvo.spawnProgress = 'Setting up MCP transport\u2026';
 
-            var mcpResult = ensureMCPCallback();
+            var mcpResult = await ensureMCPCallback();
             if (mcpResult.error) {
                 s.agentConvo.lastError = mcpResult.error;
                 s.agentOnDemandSpawning = false;

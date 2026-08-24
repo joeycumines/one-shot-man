@@ -7,10 +7,10 @@ import (
 	"io"
 	"sync"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin/async"
-	goeventloop "github.com/joeycumines/go-eventloop"
 )
 
 const (
@@ -31,8 +31,8 @@ type ReadableStream struct {
 	locked    bool
 	started   bool
 	closed    bool
-	chunks chan readResult
-	done   chan struct{}
+	chunks    chan readResult
+	done      chan struct{}
 }
 
 func NewReadableStream(ctx context.Context, src io.ReadCloser) *ReadableStream {
@@ -164,7 +164,7 @@ func wrapReaderJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.
 	_ = obj.Set("read", func(call goja.FunctionCall) goja.Value {
 		if loop != nil {
 			promise, settler := adapter.NewPromise()
-			_ = loop.Promisify(ctx, func(_ context.Context) (any, error) {
+			loop.Promisify(ctx, func(_ context.Context) (any, error) {
 				data, done, err := reader.Read()
 				if err != nil {
 					_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })

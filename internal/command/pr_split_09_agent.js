@@ -209,9 +209,9 @@
             await new Promise(function(resolve) { setTimeout(resolve, healthCheckDelayMs); });
             if (!this.handle.isAlive()) {
                 var lastOutput = '';
-                if (typeof this.handle.receive === 'function') {
+                if (typeof this.handle.receiveAsync === 'function') {
                     try {
-                        var chunk = this.handle.receive();
+                        var chunk = await this.handle.receiveAsync();
                         if (chunk) { lastOutput = chunk; }
                     } catch (readErr) { log.debug('drain: read failed (expected for dead process): ' + (readErr.message || readErr)); }
                 }
@@ -364,12 +364,12 @@
         this.resolved = null;
     };
 
-    AgentCodeExecutor.prototype.captureDiagnostic = function() {
+    AgentCodeExecutor.prototype.captureDiagnostic = async function() {
         if (!this.handle) return '';
         var output = '';
-        if (typeof this.handle.receive === 'function') {
+        if (typeof this.handle.receiveAsync === 'function') {
             try {
-                var chunk = this.handle.receive();
+                var chunk = await this.handle.receiveAsync();
                 if (chunk) { output = chunk; }
             } catch (e) { log.debug('captureDiagnostic: read failed: ' + (e.message || e)); }
         }

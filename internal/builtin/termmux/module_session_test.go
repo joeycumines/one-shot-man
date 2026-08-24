@@ -1859,7 +1859,6 @@ func TestWrapInteractiveSession_HappyPath(t *testing.T) {
 		s.resize(25, 100);
 		s.write("hello");
 		s.isDone();
-		var r1 = s.reader();
 		var r2 = s.readAvailable();
 	`)
 	if err != nil {

@@ -870,7 +870,6 @@ func TestNewCaptureSession_ValidCommand(t *testing.T) {
 			typeof cs.exitCode === 'function' &&
 			typeof cs.isDone === 'function' &&
 			typeof cs.passthrough === 'function' &&
-			typeof cs.reader === 'function' &&
 			typeof cs.readAvailable === 'function';
 	`)
 	if err != nil {

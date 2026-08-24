@@ -76,13 +76,13 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 		var tm = require('osm:termmux');
 		var cs = tm.newCaptureSession('echo', ['hello T004']);
 
-		// Verify all 17 methods exist and are functions.
+		// Verify all 16 methods exist and are functions.
 		var methods = [
 			'start', 'interrupt', 'kill',
 			'pause', 'resume', 'isPaused',
 			'resize', 'wait', 'write', 'sendEOF', 'close', 'pid', 'exitCode', 'isDone',
 			'passthrough',
-			'reader', 'readAvailable'
+			'readAvailable'
 		];
 		var missing = [];
 		for (var i = 0; i < methods.length; i++) {

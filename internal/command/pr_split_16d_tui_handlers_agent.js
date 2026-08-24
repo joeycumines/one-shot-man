@@ -534,35 +534,38 @@
                 }
 
                 if (sessionDead) {
-                    // Agent process died — capture diagnostic output.
-                    var diagnostic = '';
-                    if (executor && typeof executor.captureDiagnostic === 'function') {
-                        diagnostic = executor.captureDiagnostic();
-                    }
                     log.printf('auto-split: Agent crash detected by TUI health check (session model)');
+                    s.isProcessing = false;
+                    s.autoSplitRunning = false;
+                    s.agentCrashDetected = true;
 
                     // Transition to error resolution with crash context.
                     // No st.agentCrashDetected — the pipeline's aliveCheckFn
                     // uses tuiMux.isDone(agentSessionID) directly (event-driven).
-                    s.isProcessing = false;
-                    s.autoSplitRunning = false;
-                    s.agentCrashDetected = true;
-                    s.errorDetails = 'Agent process crashed unexpectedly.' +
-                        (diagnostic ? '\n\nLast output:\n' + diagnostic : '');
-                    // T45: Auto-close split-view on Agent crash with notification.
-                    if (s.splitViewEnabled) {
-                        s.splitViewEnabled = false;
-                        s.agentScreenshot = '';
-                        s.agentScreen = '';
-                        s.agentViewOffset = 0;
-                        s.splitViewFocus = 'wizard';
-                        s.splitViewTab = 'agent';
-                        s.agentAutoAttachNotif = 'Agent crashed \u2014 split-view closed';
-                        s.agentAutoAttachNotifAt = Date.now();
-                        syncMainViewport(s); // T120: sync dimensions after close.
+                    var finishCrash = function(diagnostic) {
+                        s.errorDetails = 'Agent process crashed unexpectedly.' +
+                            (diagnostic ? '\n\nLast output:\n' + diagnostic : '');
+                        // T45: Auto-close split-view on Agent crash with notification.
+                        if (s.splitViewEnabled) {
+                            s.splitViewEnabled = false;
+                            s.agentScreenshot = '';
+                            s.agentScreen = '';
+                            s.agentViewOffset = 0;
+                            s.splitViewFocus = 'wizard';
+                            s.splitViewTab = 'agent';
+                            s.agentAutoAttachNotif = 'Agent crashed \u2014 split-view closed';
+                            s.agentAutoAttachNotifAt = Date.now();
+                            syncMainViewport(s); // T120: sync dimensions after close.
+                        }
+                        s.wizard.transition('ERROR_RESOLUTION');
+                        s.wizardState = 'ERROR_RESOLUTION';
+                    };
+
+                    if (executor && typeof executor.captureDiagnostic === 'function') {
+                        executor.captureDiagnostic().then(finishCrash, function() { finishCrash(''); });
+                    } else {
+                        finishCrash('');
                     }
-                    s.wizard.transition('ERROR_RESOLUTION');
-                    s.wizardState = 'ERROR_RESOLUTION';
                     return [s, tea.tick(C.DISMISS_NOTIF_MS, 'dismiss-attach-notif')];
                 }
             }

@@ -538,7 +538,7 @@ func newCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 //
 //	start, interrupt, kill, pause, resume, isPaused,
 //	resize, wait, write, sendEOF, close, pid, exitCode, isDone,
-//	passthrough, reader, readAvailable.
+//	passthrough, readAvailable.
 //
 // Task 56: target, setTarget, isRunning removed — all JS call sites
 // use SessionManager wrappers (tuiMux.session()) instead.
@@ -711,7 +711,7 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, run
 //
 // Exported methods (6 total, matching the trimmed InteractiveSession interface):
 //
-//	resize, write, close, isDone, reader, readAvailable.
+//	resize, write, close, isDone, readAvailable.
 //
 // CaptureSession wrappers add concrete-type-specific methods
 // (start, interrupt, kill, pause, resume, isPaused, wait, sendEOF,
@@ -763,20 +763,6 @@ func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSes
 		default:
 			return false
 		}
-	})
-
-	// reader() returns a Go channel adapter: call reader() to get the next
-	// chunk (blocking), or null when the channel is closed.
-	_ = obj.Set("reader", func() goja.Value {
-		ch := session.Reader()
-		if ch == nil {
-			return goja.Null()
-		}
-		data, ok := <-ch
-		if !ok {
-			return goja.Null()
-		}
-		return runtime.ToValue(string(data))
 	})
 
 	// readAvailable() drains all currently-buffered chunks from the Reader()
@@ -2077,33 +2063,39 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			cfg.ResizeFn = s.resizeFn
 		}
 
-		reason, err := s.mgr.Passthrough(s.ctx, cfg)
-		s.swappedOnce = true
-		s.SetInPassthrough(false)
+		promise, settler := s.adapter.NewPromise()
+		go func() {
+			reason, err := s.mgr.Passthrough(s.ctx, cfg)
+			_ = settler.Resolve(func(rt *goja.Runtime) any {
+				s.swappedOnce = true
+				s.SetInPassthrough(false)
 
-		s.dispatchEventOnLoop(EventFocus, map[string]any{
-			"side": "osm", "action": "return",
-		})
+				s.dispatchEventOnLoop(EventFocus, map[string]any{
+					"side": "osm", "action": "return",
+				})
 
-		result := map[string]any{
-			"reason": exitReasonString(reason),
-		}
-		if err != nil {
-			result["error"] = err.Error()
-		}
+				result := map[string]any{
+					"reason": exitReasonString(reason),
+				}
+				if err != nil {
+					result["error"] = err.Error()
+				}
 
-		if id := s.mgr.ActiveID(); id != 0 {
-			if snap := s.mgr.Snapshot(id); snap != nil {
-				result["childOutput"] = snap.GetPlainText()
-			}
-		}
+				if id := s.mgr.ActiveID(); id != 0 {
+					if snap := s.mgr.Snapshot(id); snap != nil {
+						result["childOutput"] = snap.GetPlainText()
+					}
+				}
 
-		s.dispatchEventOnLoop(EventExit, map[string]any{
-			"reason": exitReasonString(reason),
-			"pane":   "agent",
-		})
+				s.dispatchEventOnLoop(EventExit, map[string]any{
+					"reason": exitReasonString(reason),
+					"pane":   "agent",
+				})
 
-		return s.runtime.ToValue(result)
+				return result
+			})
+		}()
+		return promise
 	})
 
 	_ = obj.Set("screenshot", func() string {
@@ -2299,22 +2291,28 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 				cfg.ResizeFn = s.resizeFn
 			}
 
-			reason, err := s.mgr.Passthrough(s.ctx, cfg)
-			s.swappedOnce = true
-			s.SetInPassthrough(false)
+			promise, settler := s.adapter.NewPromise()
+			go func() {
+				reason, err := s.mgr.Passthrough(s.ctx, cfg)
+				_ = settler.Resolve(func(rt *goja.Runtime) any {
+					s.swappedOnce = true
+					s.SetInPassthrough(false)
 
-			res := map[string]any{
-				"reason": exitReasonString(reason),
-			}
-			if err != nil {
-				res["error"] = err.Error()
-			}
+					res := map[string]any{
+						"reason": exitReasonString(reason),
+					}
+					if err != nil {
+						res["error"] = err.Error()
+					}
 
-			s.dispatchEventOnLoop(EventFocus, map[string]any{
-				"side": "osm", "action": "return",
-			})
+					s.dispatchEventOnLoop(EventFocus, map[string]any{
+						"side": "osm", "action": "return",
+					})
 
-			return s.runtime.ToValue(res)
+					return res
+				})
+			}()
+			return promise
 		})
 
 		_ = result.Set("options", runOpts)

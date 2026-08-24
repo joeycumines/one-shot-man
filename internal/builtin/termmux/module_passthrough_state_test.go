@@ -87,8 +87,10 @@ func TestSwitchTo_NoChild(t *testing.T) {
 }
 
 // setupPassthroughState creates a running SessionManager with an active test
-// session and a wrapped mux object backed by a pipe stdin. The caller should
-// close stdinW after the test to unblock any pending reads.
+// session and a wrapped mux object backed by a pipe stdin. The event loop
+// runs so Promises returned by switchTo/onToggle settle; scripts must be
+// executed via runJS/awaitJS. The caller should close stdinW after the test
+// to unblock any pending reads.
 func setupPassthroughState(t *testing.T) (runtime *goja.Runtime, s *muxState, stdinW *io.PipeWriter, cleanup func()) {
 	t.Helper()
 
@@ -128,11 +130,20 @@ func setupPassthroughState(t *testing.T) (runtime *goja.Runtime, s *muxState, st
 	tuiMux, state := wrapSessionManager(ctx, adapter, runtime, mgr, stdinR, &bytes.Buffer{}, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		_ = loop.Run(ctx)
+	}()
+	testLoops.Store(runtime, loop)
+
 	cleanup = func() {
+		testLoops.Delete(runtime)
 		_ = stdinW.Close()
 		cancel()
 		<-errCh
 		_ = loop.Shutdown(context.Background())
+		<-loopDone
 	}
 	return runtime, state, stdinW, cleanup
 }
@@ -148,44 +159,22 @@ func TestSwitchTo_PassthroughState(t *testing.T) {
 	runtime, s, stdinW, cleanup := setupPassthroughState(t)
 	defer cleanup()
 
-	resultCh := make(chan goja.Value, 1)
+	switchDone := make(chan struct{})
 	go func() {
-		v, err := runtime.RunString(`tuiMux.switchTo()`)
-		if err != nil {
-			t.Errorf("switchTo(): %v", err)
+		defer close(switchDone)
+		waitEntered(t, s)
+		if got := s.activeSideForTest(); got != "agent" {
+			t.Errorf("activeSide during passthrough = %q, want 'agent'", got)
 		}
-		resultCh <- v
+		if _, err := stdinW.Write([]byte{parent.DefaultToggleKey}); err != nil {
+			t.Errorf("writing toggle key: %v", err)
+		}
 	}()
 
-	deadline := time.After(5 * time.Second)
-	entered := false
-	for !entered {
-		if s.IsPassthrough() {
-			entered = true
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting to enter passthrough")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
+	awaitJS(t, runtime, `globalThis.__switchResult = await tuiMux.switchTo();`)
+	<-switchDone
 
-	if got := s.activeSideForTest(); got != "agent" {
-		t.Fatalf("activeSide during passthrough = %q, want 'agent'", got)
-	}
-
-	if _, err := stdinW.Write([]byte{parent.DefaultToggleKey}); err != nil {
-		t.Fatalf("writing toggle key: %v", err)
-	}
-
-	select {
-	case <-resultCh:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for switchTo to return")
-	}
-
-	v, err := runtime.RunString(`tuiMux.activeSide() + ':' + tuiMux.isPassthrough()`)
+	v, err := runJS(t, runtime, `tuiMux.activeSide() + ':' + tuiMux.isPassthrough()`)
 	if err != nil {
 		t.Fatalf("post-switchTo state query: %v", err)
 	}
@@ -205,7 +194,7 @@ func TestFromModel_PassthroughState(t *testing.T) {
 	runtime, s, stdinW, cleanup := setupPassthroughState(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	_, err := runJS(t, runtime, `
 		var wrapped = tuiMux.fromModel({}, {toggleKey: 0x1D});
 		var onToggle = wrapped.options.onToggle;
 	`)
@@ -213,49 +202,42 @@ func TestFromModel_PassthroughState(t *testing.T) {
 		t.Fatalf("fromModel setup: %v", err)
 	}
 
-	resultCh := make(chan goja.Value, 1)
+	toggleDone := make(chan struct{})
 	go func() {
-		v, err := runtime.RunString(`onToggle()`)
-		if err != nil {
-			t.Errorf("onToggle(): %v", err)
+		defer close(toggleDone)
+		waitEntered(t, s)
+		if got := s.activeSideForTest(); got != "agent" {
+			t.Errorf("activeSide during onToggle passthrough = %q, want 'agent'", got)
 		}
-		resultCh <- v
+		if _, err := stdinW.Write([]byte{parent.DefaultToggleKey}); err != nil {
+			t.Errorf("writing toggle key: %v", err)
+		}
 	}()
 
-	deadline := time.After(5 * time.Second)
-	entered := false
-	for !entered {
-		if s.IsPassthrough() {
-			entered = true
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting to enter passthrough via onToggle")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
+	awaitJS(t, runtime, `globalThis.__toggleResult = await onToggle();`)
+	<-toggleDone
 
-	if got := s.activeSideForTest(); got != "agent" {
-		t.Fatalf("activeSide during onToggle passthrough = %q, want 'agent'", got)
-	}
-
-	if _, err := stdinW.Write([]byte{parent.DefaultToggleKey}); err != nil {
-		t.Fatalf("writing toggle key: %v", err)
-	}
-
-	select {
-	case <-resultCh:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for onToggle to return")
-	}
-
-	v, err := runtime.RunString(`tuiMux.activeSide() + ':' + tuiMux.isPassthrough()`)
+	v, err := runJS(t, runtime, `tuiMux.activeSide() + ':' + tuiMux.isPassthrough()`)
 	if err != nil {
 		t.Fatalf("post-onToggle state query: %v", err)
 	}
 	if v.String() != "osm:false" {
 		t.Fatalf("after onToggle, state = %q, want 'osm:false'", v.String())
+	}
+}
+
+func waitEntered(t *testing.T, s *muxState) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		if s.IsPassthrough() {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting to enter passthrough")
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 }
 

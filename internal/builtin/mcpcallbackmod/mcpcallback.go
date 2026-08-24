@@ -58,7 +58,7 @@ var (
 )
 
 // WatchForInit returns a channel that receives a Handle to the next
-// mcpCallback that completes initialization (initSync/init). If a callback
+// mcpCallback that completes initialization (init). If a callback
 // is already initialized when this is called, the Handle is delivered
 // immediately. Used by Go integration tests to inject tool results while
 // the JS runtime is waiting on waitForAsync.
@@ -91,7 +91,7 @@ func mcpCallbackDebugf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, "[mcpcallback] "+format+"\n", args...)
 }
 
-// notifyWatchers is called after successful initSync/init. It delivers
+// notifyWatchers is called after successful init. It delivers
 // a Handle to all registered watcher channels and clears the list.
 func notifyWatchers(cb *mcpCallback) {
 	h := &Handle{cb: cb}
@@ -208,9 +208,7 @@ func jsCallbackFactory(ctx context.Context, rt *goja.Runtime, adapter *gojaevent
 		_ = obj.Set("init", cb.jsInit())
 		_ = obj.Set("close", cb.jsClose())
 		_ = obj.Set("addTool", cb.jsAddTool())
-		_ = obj.Set("initSync", cb.jsInitSync())
 		_ = obj.Set("waitForAsync", cb.jsWaitForAsync())
-		_ = obj.Set("closeSync", cb.jsCloseSync())
 		_ = obj.Set("resetWaiter", cb.jsResetWaiter())
 		_ = obj.Set("lastCallTime", cb.jsLastCallTime())
 
@@ -607,13 +605,13 @@ func (cb *mcpCallback) cleanup() {
 //
 // Registers a Go-native MCP tool whose handler stores incoming call arguments
 // in a channel. Use waitForAsync() to wait until data arrives.
-// Must be called before initSync()/init().
+// Must be called before init().
 func (cb *mcpCallback) jsAddTool() func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		cb.mu.Lock()
 		if cb.initialized {
 			cb.mu.Unlock()
-			panic(cb.runtime.NewGoError(errors.New("cannot add tools after init — call addTool before initSync/init")))
+			panic(cb.runtime.NewGoError(errors.New("cannot add tools after init — call addTool before init")))
 		}
 		cb.mu.Unlock()
 
@@ -680,76 +678,6 @@ func (cb *mcpCallback) jsAddTool() func(call goja.FunctionCall) goja.Value {
 				Content: []mcp.Content{&mcp.TextContent{Text: "accepted"}},
 			}, nil
 		})
-
-		return goja.Undefined()
-	}
-}
-
-// jsInitSync returns the JS method: initSync()
-//
-// Synchronous version of init() — blocks the calling goroutine until the
-// listener is ready. Does not use promises. Designed for synchronous JS code
-// that cannot await (e.g., automatedSplit pipeline).
-func (cb *mcpCallback) jsInitSync() func(call goja.FunctionCall) goja.Value {
-	return func(call goja.FunctionCall) goja.Value {
-		cb.mu.Lock()
-		if cb.initialized {
-			cb.mu.Unlock()
-			panic(cb.runtime.NewGoError(errors.New("MCPCallback already initialized")))
-		}
-		if cb.closed {
-			cb.mu.Unlock()
-			panic(cb.runtime.NewGoError(errors.New("MCPCallback already closed")))
-		}
-		cb.initialized = true
-		cb.mu.Unlock()
-
-		if err := cb.startListener(); err != nil {
-			cb.cleanup()
-			cb.mu.Lock()
-			cb.initialized = false
-			cb.mu.Unlock()
-			panic(cb.runtime.NewGoError(fmt.Errorf("initSync: start listener: %w", err)))
-		}
-
-		if err := cb.generateFiles(); err != nil {
-			cb.cleanup()
-			cb.mu.Lock()
-			cb.initialized = false
-			cb.mu.Unlock()
-			panic(cb.runtime.NewGoError(fmt.Errorf("initSync: generate files: %w", err)))
-		}
-
-		// Start accept loop in background goroutine
-		parent := cb.parentCtx
-		if parent == nil {
-			parent = cb.baseCtx
-		}
-		nctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
-		cb.mu.Lock()
-		cb.stop = stop
-		cb.ctx = nctx
-		listener := cb.listener
-		cb.mu.Unlock()
-
-		go func() {
-			cb.acceptLoop(nctx, listener)
-			}()
-
-		// Auto-cleanup on context cancellation
-		go func() {
-			<-nctx.Done()
-			cb.mu.Lock()
-			alreadyClosed := cb.closed
-			cb.closed = true
-			cb.mu.Unlock()
-			if !alreadyClosed {
-				cb.cleanup()
-			}
-			}()
-
-		// Notify test watchers that a callback is ready for injection.
-		notifyWatchers(cb)
 
 		return goja.Undefined()
 	}
@@ -958,25 +886,6 @@ func (cb *mcpCallback) waitResult(data any, errMsg string) goja.Value {
 		_ = result.Set("error", goja.Null())
 	}
 	return result
-}
-
-// jsCloseSync returns the JS method: closeSync()
-//
-// Synchronous version of close() — tears down all resources and returns
-// immediately. Idempotent.
-func (cb *mcpCallback) jsCloseSync() func(call goja.FunctionCall) goja.Value {
-	return func(call goja.FunctionCall) goja.Value {
-		cb.mu.Lock()
-		if cb.closed {
-			cb.mu.Unlock()
-			return goja.Undefined()
-		}
-		cb.closed = true
-		cb.mu.Unlock()
-
-		cb.cleanup()
-		return goja.Undefined()
-	}
 }
 
 // jsResetWaiter returns the JS method: resetWaiter(toolName)

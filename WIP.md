@@ -193,3 +193,21 @@ go vet / go build            → PASS
 ## UPDATE 2026-08-25 — Task 9 DONE: F3/F4 TUIManager.Run/SwitchMode discipline
 - **Fix**: internal/scripting/tui_manager.go:752-756 now uses `tm.engine.GetGlobal("__skipREPL")` (owner-safe, blocking) instead of `tm.engine.vm.Get` on main goroutine; SwitchMode OnExit (300) and OnEnter (362) now via `tm.engine.executeOnLoop` (owner-safe, IsLoopThread fast path); buildModeCommands (423-434) now via `executeOnLoop` capturing result/cbErr and returning. Added F3/F4 comments documenting race fixes. Remaining `vm.Get/Set` at 545,678,682 are inside `Loop().Submit`/`executeOnLoop` (inside loop), not off-loop bare access.
 - **Verification**: `grep -n "\.vm\.Get\|\.vm\.Set" internal/scripting/tui_manager.go` now shows only hits inside Submit/RunSync (545 inside Submit, 678,682 inside executeOnLoop) — zero bare off-loop like 753. `go test -race ./internal/scripting -run TestTUIManager` PASS 7.7s (no race), broader `go test -race ./internal/scripting -run TestTUIManager` cached PASS. Two contiguous verifications on same diff. Hook comment for CommandsBuilder is necessary to prevent revert to racy direct call.
+
+## UPDATE 2026-08-25 — Task 10 DONE (F5-F8 loop monopolization):
+- termmux module.go: switchTo + fromModel.onToggle converted to async Promise (adapter.NewPromise + goroutine Passthrough; swappedOnce/SetInPassthrough/dispatch moved into settler.Resolve owner callback). Blocking reader() binding DELETED (readAvailable remains); docstring method lists updated.
+- bubbletea toggleModel already consumes thenable onToggle returns (30s wait) — no consumer change needed there.
+- aimux binding_provider.go: deleted sync receive/drainOutput/wait/waitReady; drainHandleOutput now returns (string, error) — non-EOF errors reject instead of hot-spinning `continue`.
+- mcpcallbackmod: jsInitSync/jsCloseSync DELETED (jsInit/jsClose are the only paths); stale doc references fixed. TRAP: my edit accidentally deleted jsAddTool's func line — caught by build, repaired.
+- JS consumers migrated: pr_split_09_agent.js (receive→await receiveAsync ×2, captureDiagnostic→async), pr_split_16d (crash path restructured around promise-based captureDiagnostic with finishCrash continuation), pr_split_10d (waitReady fallback branch removed, drainOutput→drainOutputAsync fire-and-forget w/ .catch, initSync/closeSync→await init/close), pr_split_16c (ensureMCPCallback→async+await, confirmCancel fire-and-forget close()).
+- Tests: termmux passthrough-state tests rewritten onto RUNNING loop harness (setupPassthroughState now starts loop.Run + registers testLoops); new helpers awaitJS/loopForRuntime in testhelpers_test.go; waitEntered extracted. Surface lists updated for reader deletion (module_advanced/capture tests). mcpcb InitSync/CloseSync/ResetWaiter tests → runAsync+await; RapidInitClose restructured to async IIFE with channel.
+- TRAP THAT COST 2 ITERATIONS: async-settle tests MUST wire a success signal (__done callback), not just .catch — silent success looks like timeout.
+- Verification: acceptance greps all pass (Passthrough sites goroutine-only, reader zero, aimux receiveAsync-only, initSync/closeSync zero repo-wide in package). go test ±race green: termmux full suite 9.9s, state/drag/capture -race subsets, aimux -race 7.6s, mcpcb ±race, jscompliance TestBindingContract, internal/command pr_split 29.6s. vet+staticcheck clean (U1000 awaitJS resolved by using it).
+- Deleted scratch/repro_grpc*.go leftovers (were breaking go build ./...).
+
+## HANA DIRECTIVE (mid-Task-10): PROMISE CONSISTENCY — recorded goalLog 9 + Replan 8:
+- Inconsistency: tokenizer.go NewPromise+bare-goroutine vs fetch readable_stream wrapReaderJS Loop.Promisify (shutdown tracking).
+- First-hand fork ground truth captured in blueprint goalLog 9 (promisifyWg shutdown tracking, Goexit guard, always-settle fallback, ErrLoopTerminated admission, liveness vs settler's silent-consumption-on-Submit-failure).
+- AGENTS.md gained "Shutdown tracking" bullet in JS Binding Contract.
+- Tasks inserted as 11 (A1 canonical rule) and 12 (A2 sweep) BEFORE old F9-F22.
+- Background agents completed, results pending retrieval: bg_6d234820 (site inventory), bg_fd728d66 (semantics decision table).

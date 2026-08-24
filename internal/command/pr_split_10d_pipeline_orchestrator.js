@@ -219,7 +219,7 @@
             if (result.error) {
                 var mcpCb = prSplit._mcpCallbackObj;
                 if (mcpCb) {
-                    try { mcpCb.closeSync(); } catch (e) { log.debug('cleanup: mcpCb.closeSync failed: ' + (e.message || e)); }
+                    try { await mcpCb.close(); } catch (e) { log.debug('cleanup: mcpCb.close failed: ' + (e.message || e)); }
                     prSplit._mcpCallbackObj = null;
                     state.mcpCallbackObj = null;
                 }
@@ -363,7 +363,7 @@
                     }
                 });
 
-            mcpCallbackObj.initSync();
+            await mcpCallbackObj.init();
             log.printf('auto-split: MCP callback initialized at %s (%s)', mcpCallbackObj.address, mcpCallbackObj.transport);
             log.printf('auto-split: MCP config path: %s', mcpCallbackObj.mcpConfigPath);
             try {
@@ -417,8 +417,6 @@
                 try {
                     if (typeof agentExecutor.handle.waitReadyAsync === 'function') {
                         await agentExecutor.handle.waitReadyAsync(readyTimeoutMs);
-                    } else if (typeof agentExecutor.handle.waitReady === 'function') {
-                        agentExecutor.handle.waitReady(readyTimeoutMs);
                     }
                 } catch (e) {
                     log.printf('auto-split: WaitReady timeout (%dms) — continuing: %s',
@@ -490,10 +488,12 @@
                 }
             }
         } else if (agentExecutor && agentExecutor.handle &&
-                   typeof agentExecutor.handle.drainOutput === 'function') {
+                   typeof agentExecutor.handle.drainOutputAsync === 'function') {
             // No tuiMux (headless/test mode): drain Agent's PTY output to
             // prevent buffer deadlocks.
-            agentExecutor.handle.drainOutput();
+            agentExecutor.handle.drainOutputAsync().catch(function(e) {
+                log.debug('auto-split: PTY drain failed: ' + (e && e.message ? e.message : String(e)));
+            });
             log.printf('auto-split: no tuiMux — started PTY output drain to prevent deadlock');
         }
 
@@ -800,7 +800,7 @@
             // callback inline since finishTUI only cleans on error.
             var mcpCbDry = prSplit._mcpCallbackObj;
             if (mcpCbDry) {
-                try { mcpCbDry.closeSync(); } catch (e) { log.debug('cleanup: mcpCb.closeSync failed (dry-run): ' + (e.message || e)); }
+                try { await mcpCbDry.close(); } catch (e) { log.debug('cleanup: mcpCb.close failed (dry-run): ' + (e.message || e)); }
                 prSplit._mcpCallbackObj = null;
                 state.mcpCallbackObj = null;
             }

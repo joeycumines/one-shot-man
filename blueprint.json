@@ -2,40 +2,40 @@
   "meta": {
     "fileName": "blueprint.json",
     "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
-    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST \u2014 ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY ANY PRIORITY OF ANY KIND."
+    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY ANY PRIORITY OF ANY KIND."
   },
   "globalAlerts": [
     {
-      "warning": "Forks are 20260823 baseline (go-eventloop 22f9a6a, goja-eventloop 54cfe1a, goja 46200cb, goja_nodejs 05fa4bc) BUMPED to 20260824 patch set at cd0578a (go-eventloop 22f9a6a, go-inprocgrpc e327357, goja-grpc 39a74e7, goja-protobuf 9e31b568). Treat Adapter.Submit, Adapter.NewPromise+PromiseSettler, Adapter.Done, TrackAbortSignal, strict microtask always-on as ground truth. Legacy Loop/JS/Runtime/GojaWrapPromise/NewChainedPromise/WithStrictMicrotaskOrdering remain DELETED \u2014 grep gate must stay zero."
+      "warning": "Forks are 20260823 baseline (go-eventloop 22f9a6a, goja-eventloop 54cfe1a, goja 46200cb, goja_nodejs 05fa4bc) BUMPED to 20260824 patch set at cd0578a (go-eventloop 22f9a6a, go-inprocgrpc e327357, goja-grpc 39a74e7, goja-protobuf 9e31b568). Treat Adapter.Submit, Adapter.NewPromise+PromiseSettler, Adapter.Done, TrackAbortSignal, strict microtask always-on as ground truth. Legacy Loop/JS/Runtime/GojaWrapPromise/NewChainedPromise/WithStrictMicrotaskOrdering remain DELETED — grep gate must stay zero."
     },
     {
-      "warning": "BOTH `gmake -j 10 make-all-with-log` AND `gmake -j 10 make-all-in-container` MUST pass with zero unintended failures \u2014 explicitly, no exceptions, on every platform tier the Makefile defines (all = build+vet+staticcheck+deadcode+test). Container target derives golang:$go_version from go.mod (currently 1.27.0); if docker manifest for golang:1.27.0 is absent, update example.config.mk (and config.mk) to pin an existing image (e.g., 1.27, 1.27-bookworm, or latest patch) and document fallback. Cross-platform make-all-run-windows is secondary but must not regress."
+      "warning": "BOTH `gmake -j 10 make-all-with-log` AND `gmake -j 10 make-all-in-container` MUST pass with zero unintended failures — explicitly, no exceptions, on every platform tier the Makefile defines (all = build+vet+staticcheck+deadcode+test). Container target derives golang:$go_version from go.mod (currently 1.27.0); if docker manifest for golang:1.27.0 is absent, update example.config.mk (and config.mk) to pin an existing image (e.g., 1.27, 1.27-bookworm, or latest patch) and document fallback. Cross-platform make-all-run-windows is secondary but must not regress."
     },
     {
       "warning": "Tests must be isolated (t.TempDir, t.Setenv, no host-state mutation) and must not depend on loop-terminated state. Slow tests (>2s) guard with skipSlow/testing.Short. Never use build tags to segment tests."
     },
     {
-      "warning": "Compliance harness (harness.js __activeSink) is load-bearing but does not cover host binding layer \u2014 regressions live in binding layer, not compliance specs. Do not claim compliance PASS means integration PASS."
+      "warning": "Compliance harness (harness.js __activeSink) is load-bearing but does not cover host binding layer — regressions live in binding layer, not compliance specs. Do not claim compliance PASS means integration PASS."
     },
     {
       "warning": "Post-migration ZERO legacy hits: adapter.Loop()/JS()/Runtime()/GojaWrapPromise/WithStrictMicrotaskOrdering/NewChainedPromise/PromisifyFunc must grep zero in --include=*.go (allow CHANGELOG+blueprint history). Single async pattern is Adapter.NewPromise+Settler+goroutine+ctx or Loop.Promisify where *Loop held; fire-and-forget via adapter.Submit."
     },
     {
-      "warning": "ALWAYS tee before tail: `mkdir -p scratch && <cmd> 2>&1 | tee scratch/<name>.log | tail -n 100; echo EXIT:$PIPESTATUS` \u2014 never `gmake ... | tail` without tee."
+      "warning": "ALWAYS tee before tail: `mkdir -p scratch && <cmd> 2>&1 | tee scratch/<name>.log | tail -n 100; echo EXIT:$PIPESTATUS` — never `gmake ... | tail` without tee."
     }
   ],
   "mandatoryDirectives": {
     "contextManagement": "Tasks are flat sequential, one in_progress at a time. Every session starts cold by reading blueprint.json + WIP.md + build.log + scratch/engine-slop-autopsy/README. Update task status incrementally after each internal checkpoint.",
     "eventloopIntegrationPolicy": "Every fork capability adopted must LEVERAGE new semantics, not merely patch compile. WithLogger/WithMetrics/Loop.Log give panic observability; Requests/SetQuiescenceHandler give liveness correctness; strict microtask always-on removes option plumbing. Document deliberately unused surface (RegisterFD) with rationale.",
-    "completeness": "Every deficiency in autopsy 02-05,10 is owned: sandbox, tokenizer race, fetch streaming+liveness, Bridge nil-adapter class, Bridge stall, termmux/grpc/pabt red lists, scripting races, loop monopolization, spawn/disk sync, context severance, settlement slop. No 'pre-existing' noise \u2014 main at 498102f proves all 6 packages green before branch.",
+    "completeness": "Every deficiency in autopsy 02-05,10 is owned: sandbox, tokenizer race, fetch streaming+liveness, Bridge nil-adapter class, Bridge stall, termmux/grpc/pabt red lists, scripting races, loop monopolization, spawn/disk sync, context severance, settlement slop. No 'pre-existing' noise — main at 498102f proves all 6 packages green before branch.",
     "standardGoTestPatterns": "Standard Go only: -run patterns, testing.Short/skipSlow, t.Skip only for platform guards (Windows PTY). No custom flags/TestMain/build tags.",
-    "quantifiedCompliance": "Quantified compliance retained (test262 1100 + goja_compat 600 via go:embed) but tail is CLOSED \u2014 pass rate vs goja baseline reported, not expanded indefinitely. Binding-layer regressions are the critical path, not language compliance optimization.",
+    "quantifiedCompliance": "Quantified compliance retained (test262 1100 + goja_compat 600 via go:embed) but tail is CLOSED — pass rate vs goja baseline reported, not expanded indefinitely. Binding-layer regressions are the critical path, not language compliance optimization.",
     "containerDualTarget": "Dual-target mandate: local `gmake -j 10 make-all-with-log` and container `gmake -j 10 make-all-in-container` (docker golang:$go_version) both green. If image missing, update example.config.mk fallback (strip patch, use bookworm, or pin latest) and verify `docker run --rm golang:$ver go version` succeeds before marking container task Done.",
     "strictReviewGate": "Rule of Two applies per task and once globally. Two contiguous hostile independent reviews must guarantee correctness on same unchanged diff; any fix resets the pair. Reviews verify implementation generalizes, not hard-coded to test inputs.",
     "ALWAYS": "Tee every long command to scratch/ before tail/head per globalAlerts. Pattern: mkdir -p scratch && <cmd> 2>&1 | tee scratch/<name>.log | tail -n 100; echo EXIT:${PIPESTATUS[0]}"
   },
   "statusSection": {
-    "currentState": "Task 9/22 DONE: F3/F4 TUIManager discipline fixed (GetGlobal + executeOnLoop). Next: task 10 F5-F8 loop monopolization (termmux/aimux/mcpcb).",
+    "currentState": "Tasks 11-12/24 NEXT: PROMISE-CONSISTENCY A1+A2 (agent results ready: bg_6d234820 inventory, bg_fd728d66 semantics) BEFORE old F9-F22 tasks.",
     "goalState": "All 6 red packages green, sandbox escape closed, fetch streaming restored with liveness, Bridge nil-adapter class eliminated, Bridge stall gone (5s+forever -> sub-ms), tokenizer race gone, scripting races gone, binding contract converged (zero loop-monopolizing sync twins), duplication collapsed (~350+80+60 lines net deletion), stale microtask comments fixed, WithLogger/Metrics wired, verification parity (-race/fuzz/determinism/coverage) green, docs/AGENTS realigned, and BOTH `gmake -j 10 make-all-with-log` and `gmake -j 10 make-all-in-container` pass with zero unintended failures (go vet/build/deadcode/staticcheck + `go test -timeout=20m ./...`). Two contiguous strict-review-gate passes confirm no hard-coded test-only fixes.",
     "goalLog": [
       {
@@ -47,7 +47,7 @@
           "Spec bugs (wrong expectations) are fixed to match correct engine behavior: Reflect is an object not function; regexp.find needs unanchored pattern; flag.visit callback receives {name,...} not a bare string; lipgloss.size returns {width,height}; bubbletea.isValidTextareaInput returns {valid,reason}; log.Level is exported as an object (String() => 'INFO'); regexp.replace replaces first-only; bt.tick is an async state machine (first tick=running, second=settled).",
           "Real in-repo engine bug fixed: nextIntegerID initialized maxVal=0, causing all-negative ID lists to return 1 instead of max+1=0. Fixed via math.MinInt64 init + empty-list guard.",
           "Fork-blocked gaps (Symbol.asyncIterator, abort(reason), RISK-A unhandled rejection) are now FAILING tests (not skips) with documented fix paths.",
-          "WAIT-1 (termmux.wait sync) is FIXABLE-IN-REPO (termmux package is in this repo) \u2014 failing test active, fix is a blueprint task."
+          "WAIT-1 (termmux.wait sync) is FIXABLE-IN-REPO (termmux package is in this repo) — failing test active, fix is a blueprint task."
         ]
       },
       {
@@ -65,7 +65,7 @@
         "timestamp": "2026-07-27T14:50:00+10:00",
         "direction": "Replan: Complete remaining JS compliance work (WAIT-1 fix, CommonJS behaviors, Web-API gaps, doc-drift resolution) and restructure the build pipeline so that fork-blocked test failures no longer break the main build target (gmake all). Fork-blocked tests remain as failing tests (not skips, not tolerated) but are separated into their own test target using standard Go `-run` name patterns (idiomatic Go testing, no custom flags, no TestMain infrastructure, no build tags). The main test pipeline (gmake all, test-jscompliance, test-jscompliance-all) excludes fork-blocked tests via `-run` name patterns in config.mk. A dedicated test-jscompliance-fork-blocked target uses a `-run` pattern that includes only fork-blocked test functions (expected to fail independently). After compliance is complete and the build pipeline passes on all three platforms, proceed to the 3-Stage Pipeline feature work.",
         "decisions": [
-          "Fork-blocked test failures (GOJA-FORK, ADAPTER-FORK, EVENTLOOP-FORK) are correct and must remain as failing tests. They are not skipped and not tolerated \u2014 they are separated into a dedicated test target that is expected to fail, using standard Go `-run` name patterns.",
+          "Fork-blocked test failures (GOJA-FORK, ADAPTER-FORK, EVENTLOOP-FORK) are correct and must remain as failing tests. They are not skipped and not tolerated — they are separated into a dedicated test target that is expected to fail, using standard Go `-run` name patterns.",
           "WAIT-1 (termmux.wait sync) is FIXABLE-IN-REPO and must be fixed as part of compliance completion. After the fix, termmux.wait() returns a Promise via Promisify, mirroring exec.spawn.wait() async pattern.",
           "The build pipeline (gmake all) currently fails because go test ./... includes the jscompliance package which has fork-blocked test failures. The fix: move fork-blocked assertions to separate spec files and Go test functions, and exclude them from main test runs using standard Go `-run` name patterns in config.mk (negative lookahead to exclude fork-blocked test function names).",
           "AGENTS.md mandates standard Go testing patterns for test separation: `-run` name patterns for test selection, `testing.Short()` guards for slow/platform tests, and `t.Skip()` only for platform-specific guards (e.g., Windows PTY). No custom flags, TestMain fork infrastructure, or ad-hoc test-control mechanisms are permitted.",
@@ -76,12 +76,12 @@
       {
         "entry": 4,
         "timestamp": "2026-08-24T08:00:00+10:00",
-        "direction": "MAXIMUM-EFFORT INTEGRATION of the critical dependency update (go 1.27.0, go-eventloop 673d434, goja-eventloop 54cfe1a, goja 46200cb, goja_nodejs 05fa4bc, charm bubbletea 2.0.9/lipgloss 2.0.6/bubbles 2.2.0, go-git alpha.5, etc.). The breaking changes were SPECIFICALLY for this project's benefit: owner-topology scheduler, exact Node v26.5.0 timer/nextTick/microtask/Promise semantics, Promise.withResolvers/try, AbortSignal.any/timeout with ownership, performance origin, structuredClone DataCloneError, timer handle ref/unref/dispose, quiescence, Done barrier, bounded retention, and strict microtask ordering now always-on. The integration must not be a minimal patch \u2014 it must comprehensively adopt every new capability that improves correctness, observability, and robustness, promote newly-fixed fork-blocked tests, and expand coverage. AGENTS.md must be realigned to the new integration surface while preserving intent. A continual background scan for further alignment gaps is mandated.",
+        "direction": "MAXIMUM-EFFORT INTEGRATION of the critical dependency update (go 1.27.0, go-eventloop 673d434, goja-eventloop 54cfe1a, goja 46200cb, goja_nodejs 05fa4bc, charm bubbletea 2.0.9/lipgloss 2.0.6/bubbles 2.2.0, go-git alpha.5, etc.). The breaking changes were SPECIFICALLY for this project's benefit: owner-topology scheduler, exact Node v26.5.0 timer/nextTick/microtask/Promise semantics, Promise.withResolvers/try, AbortSignal.any/timeout with ownership, performance origin, structuredClone DataCloneError, timer handle ref/unref/dispose, quiescence, Done barrier, bounded retention, and strict microtask ordering now always-on. The integration must not be a minimal patch — it must comprehensively adopt every new capability that improves correctness, observability, and robustness, promote newly-fixed fork-blocked tests, and expand coverage. AGENTS.md must be realigned to the new integration surface while preserving intent. A continual background scan for further alignment gaps is mandated.",
         "decisions": [
           "Exhaustive migration from legacy Adapter.Loop/JS/Runtime/GojaWrapPromise + JS.NewChainedPromise + Loop.Promisify to Adapter.NewPromise+PromiseSettler + Adapter.Submit, with goroutine offloading and context propagation via captured baseCtx. Loop.Promisify retained only where *goeventloop.Loop is directly held (runtime.go bootstrap token). PromisifyFunc signature is retired.",
           "WithStrictMicrotaskOrdering deleted everywhere (runtime.go, testutil/eventloop.go, termmux pane tests, docs). New strict ordering is always-on; new compliance tests in core_microtask.spec.js verify ordering without option.",
           "No shims retained per Internal API Discipline: one implementation, update everything, delete boldly. A grep gate (zero legacy adapter calls) pins the migration.",
-          "AGENTS.md Concurrency Model and JS Binding Contract updated to describe Adapter.Submit(func(*goja.Runtime)) and Adapter.NewPromise+Settler, context threading via baseCtx, and Done/TrackAbortSignal where applicable \u2014 preserving clipboard-first, platform compat, and logging conventions.",
+          "AGENTS.md Concurrency Model and JS Binding Contract updated to describe Adapter.Submit(func(*goja.Runtime)) and Adapter.NewPromise+Settler, context threading via baseCtx, and Done/TrackAbortSignal where applicable — preserving clipboard-first, platform compat, and logging conventions.",
           "Compliance expansion: re-probe all prior GOJA-/ADAPTER-/EVENTLOOP-FORK markers against the new runtime; any now-passing assertion (e.g., Symbol.asyncIterator, abort reason, isWellFormed/groupBy, unhandledRejection) is promoted from fail to pass and moved to the main pipeline. New surfaces (withResolvers/try, any/timeout, structuredClone DataCloneError, timer dispose) get failing-then-passing specs as appropriate.",
           "Charm and go-git bumps audited as first-class integration tasks (bubbletea key pipeline, lipgloss width/height, bubblezone hit-testing, go-billy alpha.2, securejoin removal). Build must pass on Linux/Windows via cross-build after each tier.",
           "Existing pending work (Complete JS Compliance Suite, fork-blocked separation, 3-Stage Pipeline Core/Dual-Auditor/TUI, Rule of Two) remains as the exhaustive tail, sequenced after integration is green, with dependencies rewired to the new adapter contract."
@@ -90,7 +90,7 @@
       {
         "entry": 5,
         "timestamp": "2026-08-24T11:30:00+10:00",
-        "direction": "REPLAN: Prune even the always-expand-scope task. Intent is QUANTIFIED JAVASCRIPT COMPLIANCE \u2014 maximally compatible JS engine behavior BETTER than goja and robust and correct. Already have compliance tests (internal/jscompliance harness.js + specs via go:embed, sequential __activeSink). Ideally integrate external tests, similarly to ~/dev/goja/ (tc39_test.go with test262 harness, builtin_*_test.go suites). The task list is closed \u2014 no indefinite expansion. Drive to zero outstanding items and a quantified pass-rate vs goja baseline.",
+        "direction": "REPLAN: Prune even the always-expand-scope task. Intent is QUANTIFIED JAVASCRIPT COMPLIANCE — maximally compatible JS engine behavior BETTER than goja and robust and correct. Already have compliance tests (internal/jscompliance harness.js + specs via go:embed, sequential __activeSink). Ideally integrate external tests, similarly to ~/dev/goja/ (tc39_test.go with test262 harness, builtin_*_test.go suites). The task list is closed — no indefinite expansion. Drive to zero outstanding items and a quantified pass-rate vs goja baseline.",
         "decisions": [
           "Remove the indefinite-cycle mandate (backgroundGapDiscovery + continual gap sweep task). The tail is now closed and quantified: external test integration + gap closure to surpass goja + robustness + reporting.",
           "Adopt goja's external test pattern: testdata/test262 harness (tc39_test.go:879, skipList, harness, yaml, semver) and builtin test suites (builtin_array_test.go, builtin_promise_test.go etc.) as reference for quantified compliance. Reuse goja's harness concepts: prefixList, skipList, ignorableTestError, yaml frontmatter, semver.",
@@ -113,7 +113,7 @@
       {
         "entry": 7,
         "timestamp": "2026-08-24T12:01:54.663015",
-        "direction": "DIRECTIVE: Adapter.NewPromise audit \u2014 go doc -all go-eventloop / goja-eventloop mandatory. Adapter.NewPromise is extremely questionable; if Go-resolvable promise needed, existing Loop.Promisify / Requests / Done / TrackAbortSignal abstractions must be used. FULL migration to best surfaces mandatory, DO NOT tolerate cruft. Leverage AbortController, sophisticated Go-native vs goja-integration functionality. Fan out subagents and integrate ALL refinement areas to bring one-shot-man API surface/concurrency in line with optimal latest refined packages; cull MANY HACKS.",
+        "direction": "DIRECTIVE: Adapter.NewPromise audit — go doc -all go-eventloop / goja-eventloop mandatory. Adapter.NewPromise is extremely questionable; if Go-resolvable promise needed, existing Loop.Promisify / Requests / Done / TrackAbortSignal abstractions must be used. FULL migration to best surfaces mandatory, DO NOT tolerate cruft. Leverage AbortController, sophisticated Go-native vs goja-integration functionality. Fan out subagents and integrate ALL refinement areas to bring one-shot-man API surface/concurrency in line with optimal latest refined packages; cull MANY HACKS.",
         "decisions": [
           "Run go doc -all for both modules, read goja-eventloop/README, promisebridge, adapter, and Loop lifecycle; identify owner-only NewPromise vs Loop.Promisify distinction (JS-visible vs Go-native).",
           "Audit all 17 Adapter.NewPromise sites + async.Promise helper vs Loop.Promisify (context propagation, Goexit handler, liveness via promisifyWg, graceful Shutdown tracking, fallback).",
@@ -125,15 +125,27 @@
       {
         "entry": 8,
         "timestamp": "2026-08-25T01:50:54.438709+10:00",
-        "direction": "EXHAUSTIVE REPLANNING: engine-slop autopsy (build.log 2026-08-25 + scratch/engine-slop-autopsy/ 01-12 + evidence) proves blueprint 33/33 Done is false \u2014 tree is red in 6 packages (internal sandbox 3, fetch 4, grpc 6, pabt 1, termmux 7, jscompliance 1) including SECURITY sandbox escape process.exit, deterministic fetch body-streaming dead, nil-adapter class, Bridge.RunSync 5s/forever stall, tokenizer off-loop VM race, scripting races, loop-monopolizing sync twins, context severance, settlement slop, 6-way wait-for-loop duplication, stale microtask comments, unused WithLogger/Metrics. Mandate: FULLY ADDRESS all deficiencies known and unknown, present and future, and make BOTH `gmake -j 10 make-all-with-log` and `gmake -j 10 make-all-in-container` MUST pass (update container Go version pin in example.config.mk if golang:1.27.0 image missing). No scope hand-waving, no pre-existing noise \u2014 every failure is owned.",
+        "direction": "EXHAUSTIVE REPLANNING: engine-slop autopsy (build.log 2026-08-25 + scratch/engine-slop-autopsy/ 01-12 + evidence) proves blueprint 33/33 Done is false — tree is red in 6 packages (internal sandbox 3, fetch 4, grpc 6, pabt 1, termmux 7, jscompliance 1) including SECURITY sandbox escape process.exit, deterministic fetch body-streaming dead, nil-adapter class, Bridge.RunSync 5s/forever stall, tokenizer off-loop VM race, scripting races, loop-monopolizing sync twins, context severance, settlement slop, 6-way wait-for-loop duplication, stale microtask comments, unused WithLogger/Metrics. Mandate: FULLY ADDRESS all deficiencies known and unknown, present and future, and make BOTH `gmake -j 10 make-all-with-log` and `gmake -j 10 make-all-in-container` MUST pass (update container Go version pin in example.config.mk if golang:1.27.0 image missing). No scope hand-waving, no pre-existing noise — every failure is owned.",
         "decisions": [
-          "Treat build.log as ground truth, not WIP claims: 6 red packages at cd0578a (go-eventloop 22f9a6a/b, goja-grpc 39a74e7, bubbles 2.2.1) \u2014 not 5 at 80e5a3e. Add jscompliance TestBindingContract_IOExportsAreAsync loop-terminated to red list.",
-          "Phase 0 stop-the-bleeding front-loads small structural fixes (sandbox, tokenizer settler, fetch adapter+ctx+liveness, Bridge adapter required, Bridge fast path, termmux ownership/wait, grpc loop callback, scripting race) \u2014 each lands with its package -race green before next.",
+          "Treat build.log as ground truth, not WIP claims: 6 red packages at cd0578a (go-eventloop 22f9a6a/b, goja-grpc 39a74e7, bubbles 2.2.1) — not 5 at 80e5a3e. Add jscompliance TestBindingContract_IOExportsAreAsync loop-terminated to red list.",
+          "Phase 0 stop-the-bleeding front-loads small structural fixes (sandbox, tokenizer settler, fetch adapter+ctx+liveness, Bridge adapter required, Bridge fast path, termmux ownership/wait, grpc loop callback, scripting race) — each lands with its package -race green before next.",
           "Collapse duplication aggressively but regression-free: one Runner substrate for wait-for-loop sextet + lifecycle triplet delegation; unify bt leaf/composite/ticker; delete dead _any params and state-refresh storm.",
-          "Converge binding contract: delete sync twins, make every I/O binding Promise+goroutine+ctx+owner-safe settler, fix context severance and settlement slop \u2014 contract stops being folklore.",
+          "Converge binding contract: delete sync twins, make every I/O binding Promise+goroutine+ctx+owner-safe settler, fix context severance and settlement slop — contract stops being folklore.",
           "Leverage fork capability half: wire WithLogger (Loop.Log) and WithMetrics behind slog so panics become diagnosable events and perf mandate becomes measurable; adopt Requests/quiescence where needed.",
           "Harden verification permanently: -race tier, async helper tests, tokenizer first tests, bt fork-from-loop tests, fetch suite promotion, fuzz/determinism/coverage; docs and AGENTS realigned; container Go version verified against docker manifest and example.config.mk updated if needed.",
-          "Final gate is strict-review-gate x2 contiguous plus full `gmake -j 10 make-all-with-log` and `gmake -j 10 make-all-in-container` green \u2014 both are mandatory and explicit in acceptance."
+          "Final gate is strict-review-gate x2 contiguous plus full `gmake -j 10 make-all-with-log` and `gmake -j 10 make-all-in-container` green — both are mandatory and explicit in acceptance."
+        ]
+      },
+      {
+        "entry": 9,
+        "timestamp": "2026-08-25T02:40:00+10:00",
+        "direction": "DIRECTIVE (Hana, mid-Task-10): 'There's still inconsistency around promises. In internal/builtin/tokenizer/tokenizer.go there's goja-eventloop.Adapter.NewPromise used with a bare goroutine, while in internal/builtin/fetch/readable_stream.go wrapReaderJS uses go-eventloop.Loop.Promisify — which provides shutdown tracking tied to the loop (and other features, but shutdown tracking is the most important). IMMEDIATELY SCHEDULE WORK to address these issues — do not interrupt the current task, but insert them prior to other tasks. Aggressively fan out multiple DEEP analysis subagents focusing on different areas/aspects of the work both already completed and planned, to identify gaps, issues, and information necessary to produce solutions. Accumulate ALL knowledge in blueprint.json, EXPLICITLY RECORD instructions, leverage Skills, ensure plan is exhaustive and actively maintained.' Still bound by ALL prior directives.",
+        "decisions": [
+          "First-hand ground truth read from pinned forks: go-eventloop 22f9a6a promisify.go — Loop.Promisify provides promisifyWg shutdown tracking (graceful Shutdown waits), Goexit guard (ErrGoexit reject), ctx propagation, single-owner settlement via SubmitInternal with always-settle fallback, atomic terminal-state admission (ErrLoopTerminated), and auto-exit liveness participation via promisifyCount.",
+          "goja-eventloop 54cfe1a promisebridge.go — Adapter.NewPromise+PromiseSettler provides exactly-once owner-safe settlement (panic/Goexit in result callback recovered to rejection) but NO shutdown tracking, NO liveness contribution, and NO settlement guarantee: if adapter.Submit fails at loop death the sole settlement attempt is consumed silently and the JS promise never settles.",
+          "Two deep-analysis subagents fanned out in background: bg_6d234820 (explore: exhaustive settlement-site inventory repo-wide) and bg_fd728d66 (librarian: Promisify vs NewPromise decision table from module source).",
+          "AGENTS.md JS Binding Contract gained a 'Shutdown tracking' bullet stating the untracked nature of NewPromise+bare-goroutine and prescribing loop.Promisify where *Loop is available, else short-lived process-scoped work plus no ignored settler errors in shutdown-sensitive paths.",
+          "Two PROMISE-CONSISTENCY tasks inserted immediately after Task 10 (F5-F8), before all other pending tasks, per 'insert them prior to other tasks'."
         ]
       }
     ],
@@ -143,20 +155,20 @@
         "timestamp": "2026-07-27T14:50:00+10:00",
         "trigger": "User directive: complete Node.js compliance work before 3-Stage Pipeline starts; build must pass on all three platforms; fork-blocked tests are correct failures to be separated not skipped",
         "affectedTasks": "All Not Started tasks in sequentialTasks restructured; 4 remaining compliance tasks (WAIT-1 fix, CommonJS, Web-API gaps, doc-drift) consolidated into task 1; new Task 2 added for fork-blocked test separation and build pipeline restructuring; 3-Stage Pipeline tasks sequenced after compliance as Tasks 3-5; Rule of Two preserved as Task 6",
-        "summary": "Consolidated remaining compliance work into Task 1 (WAIT-1 fix, CommonJS, Web-API gaps, doc-drift). Added Task 2 (fork-blocked test separation using standard Go `-run` name patterns in config.mk, move fork-blocked assertions to separate spec files and dedicated Go test functions). Tasks 1\u20132 are staged/blocking prerequisites for 3-Stage Pipeline feature work (Tasks 3\u20135). Task 6 (Rule of Two) gates all changes."
+        "summary": "Consolidated remaining compliance work into Task 1 (WAIT-1 fix, CommonJS, Web-API gaps, doc-drift). Added Task 2 (fork-blocked test separation using standard Go `-run` name patterns in config.mk, move fork-blocked assertions to separate spec files and dedicated Go test functions). Tasks 1–2 are staged/blocking prerequisites for 3-Stage Pipeline feature work (Tasks 3–5). Task 6 (Rule of Two) gates all changes."
       },
       {
         "event": "Replan 2",
         "timestamp": "2026-08-24T08:30:00+10:00",
         "trigger": "MANDATE: Maximum-effort integration of critical dependency update (go 1.27.0 + 20260823 fork surface) with breaking changes. User: 'Those breaking changes - one and all - were SPECIFICALLY for use by this project. Consider DEEPLY what that means, and maintain a continual background effort to identify further gaps.' Plus AGENTS.md realignment required.",
-        "affectedTasks": "Full exhaustive replan. Preserved 6 Done tasks (harness, spec bugs, nextIntegerID, fork-blocked pins, WAIT-1 pin, ES2022-2025). Inserted new Task 7 (AGENTS.md realignment) + Task 8 (strict-ordering removal) + Task 9 (canonical async helper) + Task 10\u201318 (per-module exhaustive migration to NewPromise+Settler, zero-legacy gate) + Task 19 (re-probe and promote fork-fixed gaps) + Task 20 (new-surface compliance expansion) + Task 21 (charm/git bump audit) + Task 22 (doc drift). Rewired prior pending tasks 23\u201327 as tail (Complete JS Compliance Suite remainder, fork separation, 3-Stage Core, Dual-Auditor, TUI, Rule of Two) with dependencies on integration green. Total sequentialTasks now 28 (6 Done + 22 Not Started).",
+        "affectedTasks": "Full exhaustive replan. Preserved 6 Done tasks (harness, spec bugs, nextIntegerID, fork-blocked pins, WAIT-1 pin, ES2022-2025). Inserted new Task 7 (AGENTS.md realignment) + Task 8 (strict-ordering removal) + Task 9 (canonical async helper) + Task 10–18 (per-module exhaustive migration to NewPromise+Settler, zero-legacy gate) + Task 19 (re-probe and promote fork-fixed gaps) + Task 20 (new-surface compliance expansion) + Task 21 (charm/git bump audit) + Task 22 (doc drift). Rewired prior pending tasks 23–27 as tail (Complete JS Compliance Suite remainder, fork separation, 3-Stage Core, Dual-Auditor, TUI, Rule of Two) with dependencies on integration green. Total sequentialTasks now 28 (6 Done + 22 Not Started).",
         "summary": "Integrated the breaking dependency surface as the highest-effort front of the plan: AGENTS.md realignment first, then strict-ordering cleanup, then a single canonical async pattern, then exhaustive per-module migration (os/path/exec/ctxutil/fetch/gitops/tokenizer/termmux/aimux/mcp/mcpcallback/output/testutil), then zero-legacy grep gate, then compliance promotion and expansion with new adapter capabilities, then charm/git audits, then tail work (remaining compliance, fork separation, 3-Stage Pipeline). Every migration task has project-specific acceptance and context pointers; no estimates/priorities; flat sequence; continual gap discovery mandated."
       },
       {
         "event": "Replan 3",
         "timestamp": "2026-08-24T09:15:00+10:00",
         "trigger": "Holistic reassessment triggered by user directive: plan materialization does not take existing task list as gospel. Structural error uncovered (Task 20 pointed at non-existent internal/scripting/require/resolve.go:141; actual resolution lives in external goja_nodejs require/resolve.go + internal/scripting/engine_core.go registry). Grand scope tail (3-Stage Pipeline T22-24) required re-validation for depth and dependency on T20.",
-        "affectedTasks": "Task 20 (Complete JS Compliance Suite remainder) contextPointers/description corrected; Task 22-23 dependsOn extended to include T20; statusSection.currentState updated. No sequentialTasks added/removed \u2014 tail remains T22-26, sequenced after integration green. Verified Tasks 22-24 pass anti-vaporware test (project-specific files, acceptance describes executable value).",
+        "affectedTasks": "Task 20 (Complete JS Compliance Suite remainder) contextPointers/description corrected; Task 22-23 dependsOn extended to include T20; statusSection.currentState updated. No sequentialTasks added/removed — tail remains T22-26, sequenced after integration green. Verified Tasks 22-24 pass anti-vaporware test (project-specific files, acceptance describes executable value).",
         "summary": "Corrected vaporware pointer, revalidated grand scope materialization (integration green -> compliance remainder -> 3-Stage Core/Dual-Auditor/TUI -> gap sweep -> Rule of Two). Plan now provably achieves goalState with zero gospel assumptions."
       },
       {
@@ -183,16 +195,23 @@
       {
         "event": "Replan 7",
         "timestamp": "2026-08-25T01:50:54.438709+10:00",
-        "trigger": "ANALYZE-MODE: read build.log (392 lines, 22 FAILs across 6 packages) + ALL 12 autopsy docs + evidence/REPORT.md + repro harnesses. Prior blueprint 33/33 Done falsified \u2014 WIP 'no unresolved findings' blind, verification never ran red packages, branch cannot merge. Instruction: exhaustively replan to cater for ALL deficiencies both known and unknown, present and future, encode specifics, immediately execute, and make BOTH make-all-with-log and make-all-in-container MUST pass (update container Go version if needed).",
+        "trigger": "ANALYZE-MODE: read build.log (392 lines, 22 FAILs across 6 packages) + ALL 12 autopsy docs + evidence/REPORT.md + repro harnesses. Prior blueprint 33/33 Done falsified — WIP 'no unresolved findings' blind, verification never ran red packages, branch cannot merge. Instruction: exhaustively replan to cater for ALL deficiencies both known and unknown, present and future, encode specifics, immediately execute, and make BOTH make-all-with-log and make-all-in-container MUST pass (update container Go version if needed).",
         "affectedTasks": "Full sequentialTasks replaced: 33 Done -> 22 Not Started exhaustive tasks (Phase 0 repair 1-8, contract convergence 9-13, substrate collapse 14-16, observability 17, verification parity 18-19, charm/docs 20, container dual-target 21, Rule of Two 22). globalAlerts/mandatoryDirectives/continuousVerification/finalEnforcementProtocol rewritten to pin dual-target mandate. goalLog entry 8 appended; prior 1-7 preserved append-only.",
         "summary": "Replanned from first-hand code + log evidence, not claims. New blueprint is closed, falsifiable, and proves 'done' via two hostile reviews plus both make targets green with zero unintended failures."
+      },
+      {
+        "event": "Replan 8",
+        "timestamp": "2026-08-25T02:40:00+10:00",
+        "trigger": "Hana directive mid-Task-10: promise-settlement inconsistency (tokenizer NewPromise+bare-goroutine vs fetch wrapReaderJS loop.Promisify shutdown tracking). Schedule work immediately, insert prior to other tasks, fan out deep-analysis subagents, accumulate all knowledge in blueprint, remain bound by prior directives.",
+        "affectedTasks": "Inserted PROMISE-CONSISTENCY A1 (canonical rule from agent fanout) and A2 (shutdown-tracked sweep) immediately after Task 10 F5-F8; all subsequent tasks shift by two positions. AGENTS.md gained Shutdown tracking bullet. Two background agents launched: bg_6d234820 (site inventory), bg_fd728d66 (fork semantics).",
+        "summary": "Promise-consistency work scheduled ahead of F9-F22 with first-hand fork-source ground truth captured in goalLog 9; execution begins after Task 10 commits."
       }
     ]
   },
   "sequentialTasks": [
     {
       "task": "H0 SECURITY: neutralize fork new process globals so TestSandbox_* pass (process.exit/ env/pid/ Buffer/Deno/require bypass)",
-      "description": "Engine hardening predates 20260823 goja-eventloop Bind which installs Node v26.5 process lifecycle globals (process.exit/exitCode, process.env/pid, Buffer, Deno). Fix in internal/scripting/runtime.go after adapter.Bind(): on-loop VM scrub \u2014 `vm.Set(\"process\", undefined)` override with stub where `exit` throws TypeError sandbox, or delete via `vm.Get(\"process\")` Object Delete + freeze; likewise neutralize `global.process`, `Buffer`, `Deno`, `exit`. Also harden module_hardening.go to block osm: prefix bypass reaching these globals. Pin with TestSandbox_NoGoUnsafe/NoOsExit/GojaDefaultsAreSafe (security_sandbox_test.go:90-187). Verify no legitimate script needs real process.exit \u2014 osm never exposes it intentionally.",
+      "description": "Engine hardening predates 20260823 goja-eventloop Bind which installs Node v26.5 process lifecycle globals (process.exit/exitCode, process.env/pid, Buffer, Deno). Fix in internal/scripting/runtime.go after adapter.Bind(): on-loop VM scrub — `vm.Set(\"process\", undefined)` override with stub where `exit` throws TypeError sandbox, or delete via `vm.Get(\"process\")` Object Delete + freeze; likewise neutralize `global.process`, `Buffer`, `Deno`, `exit`. Also harden module_hardening.go to block osm: prefix bypass reaching these globals. Pin with TestSandbox_NoGoUnsafe/NoOsExit/GojaDefaultsAreSafe (security_sandbox_test.go:90-187). Verify no legitimate script needs real process.exit — osm never exposes it intentionally.",
       "acceptance": "A user script executing `process.exit(1)`, `process.exit()`, `typeof process.exit==='function'` or `require('osm:os').exit` inside `scripting.NewEngine` either throws TypeError sandbox or is undefined, never terminates host. `go test -run TestSandbox -count=1 ./internal -race` green (3/3). `go test -run TestSecurity -count=1 ./internal/scripting` still green. Production `osm code-review` / `osm script -e 'process.exit'` no longer kills CLI; console output shows handled error.",
       "status": "Done",
       "files": [
@@ -208,7 +227,7 @@
     },
     {
       "task": "H1 CRITICAL: fix tokenizer.loadFile off-loop VM mutation (only off-loop VM write in tree)",
-      "description": "internal/builtin/tokenizer/tokenizer.go:97-103 does `return newTokenizerWrapper(runtime, tok)` inside async.Promise goroutine \u2014 concurrent with loop owner mutating same goja.Runtime (NewObject/Set/ToValue). Fix via settler callback: `go func(){ tok,err:=LoadTokenizerFile(path); if err { settler.Reject(rt.NewGoError) } else { settler.Resolve(func(rt *goja.Runtime) any { return newTokenizerWrapper(rt,tok) }) } }` and drop async.Promise helper here (its fn returns any outside owner). Keep path==\"\" immediate Null via NewPromise+Resolve. Delete direct runtime capture. Patch sketch P1 (12_phase0_patch_sketches.md) is the reference form.",
+      "description": "internal/builtin/tokenizer/tokenizer.go:97-103 does `return newTokenizerWrapper(runtime, tok)` inside async.Promise goroutine — concurrent with loop owner mutating same goja.Runtime (NewObject/Set/ToValue). Fix via settler callback: `go func(){ tok,err:=LoadTokenizerFile(path); if err { settler.Reject(rt.NewGoError) } else { settler.Resolve(func(rt *goja.Runtime) any { return newTokenizerWrapper(rt,tok) }) } }` and drop async.Promise helper here (its fn returns any outside owner). Keep path==\"\" immediate Null via NewPromise+Resolve. Delete direct runtime capture. Patch sketch P1 (12_phase0_patch_sketches.md) is the reference form.",
       "acceptance": "Concurrent `loadFile` while timers/microtasks run no longer races (go test -race ./internal/builtin/tokenizer with first-ever test file + hammer of 2 goroutines x 3s shows no race, `grep -R \"newTokenizerWrapper(runtime\"` zero). Existing interfaces (loadJSON/BPE/WordPiece remain sync) unchanged. `go vet` clean; new tokenizer_test.go with loadFile success+error+concurrent hammer passes -race.",
       "status": "Done",
       "files": [
@@ -223,7 +242,7 @@
     },
     {
       "task": "Regression 1 + H5 + H8: restore fetch body streaming with adapter+ctx threading, liveness, Background fix and dead _any removal",
-      "description": "buildResponse (fetch.go:207-208) currently `NewReadableStream(Background, NopCloser(bytes.NewReader(body)), nil)` + `wrapReadableStreamJS(Background, runtime, nil, stream, nil)` \u2014 nil adapter panics in readable_stream.go:163-174 async.Promise nil, loop recovers panic -> never-settled Promise -> 10s hang (4 tests). Fix: (a) thread captured ctx+adapter from Require(ctx,adapter) through buildResponse(ctx, runtime, adapter, resp, body) and into NewReadableStream(ctx, src) + wrapReadableStreamJS(ctx, rt, adapter, rs); delete both `_ any` corpse params (readable_stream.go:37,138). (b) Restore per-pending-read liveness: each `reader.read()` holds a Loop.Promisify token (via eventLoopProvider Liveness interface) released on settle/cancel, matching Node ref semantics. Minimal form in P2 (12_...md): Promisify holds token while blocking Read, settler resolves inside same Promisify callback. (c) Replace Background with captured ctx for cancellation propagation. Wire via register.go already having adapter.",
+      "description": "buildResponse (fetch.go:207-208) currently `NewReadableStream(Background, NopCloser(bytes.NewReader(body)), nil)` + `wrapReadableStreamJS(Background, runtime, nil, stream, nil)` — nil adapter panics in readable_stream.go:163-174 async.Promise nil, loop recovers panic -> never-settled Promise -> 10s hang (4 tests). Fix: (a) thread captured ctx+adapter from Require(ctx,adapter) through buildResponse(ctx, runtime, adapter, resp, body) and into NewReadableStream(ctx, src) + wrapReadableStreamJS(ctx, rt, adapter, rs); delete both `_ any` corpse params (readable_stream.go:37,138). (b) Restore per-pending-read liveness: each `reader.read()` holds a Loop.Promisify token (via eventLoopProvider Liveness interface) released on settle/cancel, matching Node ref semantics. Minimal form in P2 (12_...md): Promisify holds token while blocking Read, settler resolves inside same Promisify callback. (c) Replace Background with captured ctx for cancellation propagation. Wire via register.go already having adapter.",
       "acceptance": "Fetch body streaming works: `TestE2E_ReadableStream_ChunkedBody`, `TestResponseBody_GetReader_ReadAll`, `TextAndBodyIndependent`, `EmptyBody` all pass without timeout, -race clean. `wrapReaderJS` read() returns {value,done} Promise settled on owner, not panicking. Pending read holds loop alive (no premature auto-exit). `grep -n \"_ any\" internal/builtin/fetch/readable_stream.go` zero, `grep -n Background internal/builtin/fetch/fetch.go` shows no Background in body-stream path.",
       "status": "Done",
       "files": [
@@ -307,7 +326,7 @@
     },
     {
       "task": "Regression 3 + F2: repair scripting race on Engine.SetGlobal/GetGlobal and legacy globalsMu guard (15 tests poisoned)",
-      "description": "engine_core.go:378-387 SetGlobal writes `e.vm.Set(name,value)` under globalsMu from caller goroutine \u2014 mutex protects Go map only, goja Runtime is not goroutine-safe, race detector fires at engine_test.go:422-448 (TestSetGlobal_MutexProtection spawns 100 goroutines mutating VM, asserts safe). Fix: route SetGlobal/GetGlobal through adapter.Submit or Runner.TrySync (like QueueSetGlobal already does at 306/324 via adapter.Submit after prior fix). Make checkEventLoopGoroutine (`threadCheckMode`) default-on or document loop-only with panic, but implementation must be owner-safe. Fix test `TestSetGlobal_MutexProtection` to assert via on-loop serialization, not concurrent VM writes. Verify via `go test -race -count=1 ./internal/scripting -run TestSetGlobal` no race.",
+      "description": "engine_core.go:378-387 SetGlobal writes `e.vm.Set(name,value)` under globalsMu from caller goroutine — mutex protects Go map only, goja Runtime is not goroutine-safe, race detector fires at engine_test.go:422-448 (TestSetGlobal_MutexProtection spawns 100 goroutines mutating VM, asserts safe). Fix: route SetGlobal/GetGlobal through adapter.Submit or Runner.TrySync (like QueueSetGlobal already does at 306/324 via adapter.Submit after prior fix). Make checkEventLoopGoroutine (`threadCheckMode`) default-on or document loop-only with panic, but implementation must be owner-safe. Fix test `TestSetGlobal_MutexProtection` to assert via on-loop serialization, not concurrent VM writes. Verify via `go test -race -count=1 ./internal/scripting -run TestSetGlobal` no race.",
       "acceptance": " `go test -race -count=1 ./internal/scripting -run TestQueueGetGlobal_NilHandling` no race, full `go test -race ./internal/scripting -count=1` 15 downstream fails gone (all green). `grep -n \"vm.Set\\|vm.Get\" internal/scripting/engine_core.go` shows only inside adapter.Submit/loop paths, not bare caller goroutine. Harness integrity (harness.js) unaffected.",
       "status": "Done",
       "files": [
@@ -324,7 +343,7 @@
     },
     {
       "task": "F3/F4: repair TUIManager.Run main-goroutine VM Get and SwitchMode goroutine discipline",
-      "description": "tui_manager.go:752-756 `tm.engine.vm.Get(\"__skipREPL\")` reached via Terminal.Run() on main goroutine concurrent with bubbletea/bt callbacks \u2014 read-only but live window. Fix via `engine.GetGlobal` or `adapter.Submit` read, or cache flag before loop start. SwitchMode (tui_manager.go:300 OnExit, 362 OnEnter, 417+ buildModeCommands) invokes JS callables with no discipline \u2014 production callers happen to be on-loop today via ExecuteCommand Loop.Submit, but tests call from arbitrary goroutines. Fix by routing OnExit/OnEnter through `executeOnLoop`/`adapter.Submit` or asserting IsLoopThread with panic-by-default, and documenting invariant. Add `checkEventLoopGoroutine` guard default-on.",
+      "description": "tui_manager.go:752-756 `tm.engine.vm.Get(\"__skipREPL\")` reached via Terminal.Run() on main goroutine concurrent with bubbletea/bt callbacks — read-only but live window. Fix via `engine.GetGlobal` or `adapter.Submit` read, or cache flag before loop start. SwitchMode (tui_manager.go:300 OnExit, 362 OnEnter, 417+ buildModeCommands) invokes JS callables with no discipline — production callers happen to be on-loop today via ExecuteCommand Loop.Submit, but tests call from arbitrary goroutines. Fix by routing OnExit/OnEnter through `executeOnLoop`/`adapter.Submit` or asserting IsLoopThread with panic-by-default, and documenting invariant. Add `checkEventLoopGoroutine` guard default-on.",
       "acceptance": "No direct `vm.Get/Set` off-loop in tui_manager.go: `grep -n \"\\.vm\\.Get\\|\\.vm\\.Set\" internal/scripting/tui_manager.go` shows zero outside Submit/RunSync. TUIManager.Run no longer races `__skipREPL` read under `go test -race ./internal/scripting -run TestTUIManager` (or broader scripting race suite). SwitchMode callable invocations are owner-safe; future off-loop caller panics with clear message rather than corrupting.",
       "status": "Done",
       "files": [
@@ -341,9 +360,9 @@
     },
     {
       "task": "F5-F8 LOOP MONOPOLIZATION: make termmux passthrough/reader and aimux sync twins and mcpcb initSync async (HIGH)",
-      "description": "Freeze-all-JS bindings: termmux switchTo/fromModel.onToggle `s.mgr.Passthrough(s.ctx,cfg)` sync on-loop (module.go:~2080) vs compliant passthrough x2 (1964-1975,678-700) already async via NewPromise \u2014 unify to async Promise. termmux reader() `data,ok:=<-ch` blocking (770-780) -> delete in favor of readAvailable (786-806) non-blocking. aimux sync receive/drainOutput/wait/waitReady (binding_provider.go :184-190,241,251,271) with async twins adjacent -> delete sync variants, keep async, fix drainHandleOutput swallowing non-EOF with continue (292-296) to return error or backoff not hot-spin. mcpcallbackmod initSync/closeSync tempdir+chmod+Listen+file writes sync (mcpcallback.go:707-720,977) -> fold into existing async paths, remove deliberate sync-for-JS-that-cannot-await bypass (violates AGENTS.md). AGENTS.md: no sync waits.",
+      "description": "Freeze-all-JS bindings: termmux switchTo/fromModel.onToggle `s.mgr.Passthrough(s.ctx,cfg)` sync on-loop (module.go:~2080) vs compliant passthrough x2 (1964-1975,678-700) already async via NewPromise — unify to async Promise. termmux reader() `data,ok:=<-ch` blocking (770-780) -> delete in favor of readAvailable (786-806) non-blocking. aimux sync receive/drainOutput/wait/waitReady (binding_provider.go :184-190,241,251,271) with async twins adjacent -> delete sync variants, keep async, fix drainHandleOutput swallowing non-EOF with continue (292-296) to return error or backoff not hot-spin. mcpcallbackmod initSync/closeSync tempdir+chmod+Listen+file writes sync (mcpcallback.go:707-720,977) -> fold into existing async paths, remove deliberate sync-for-JS-that-cannot-await bypass (violates AGENTS.md). AGENTS.md: no sync waits.",
       "acceptance": "All JS bindings doing I/O return Promise and never block loop: `grep -n \"Passthrough.*s\\.ctx\" internal/builtin/termmux/module.go` shows only async wrappers, `grep -n \"func.*reader()\"` shows no blocking ch recv, `grep -n \"func.*receive\\b\" internal/builtin/aimux` shows only receiveAsync, `grep -n \"initSync\\|closeSync\" internal/builtin/mcpcallbackmod` zero. Manual loop responsiveness test (schedule timer then call passthrough-equivalent) shows timer fires without 5s stall.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/builtin/termmux/module.go",
         "internal/builtin/aimux/binding_provider.go",
@@ -354,6 +373,41 @@
         "readerBlock": "module.go:770-780",
         "aimuxSync": "aimux/binding_provider.go:184-190",
         "mcpcbSync": "mcpcallback.go:707-720"
+      }
+    },
+    {
+      "task": "PROMISE-CONSISTENCY A1: canonical promise-settlement rule from deep analysis fanout",
+      "description": "Hana directive: tokenizer.go uses Adapter.NewPromise+bare-goroutine while fetch/readable_stream.go wrapReaderJS uses Loop.Promisify (shutdown tracking) — inconsistent. Ground truth already established first-hand (goalLog 9). Integrate findings from background agents bg_6d234820 (settlement-site inventory: file:line, pattern, loop-held vs adapter-only, I/O class, shutdown gap) and bg_fd728d66 (Promisify vs NewPromise decision matrix from fork source). Produce and record ONE canonical rule: which sites must migrate to loop.Promisify (work that must survive/complete across loop lifecycle: disk writes, spawns, network, listener teardown), which may stay NewPromise+goroutine (short-lived, process-scoped, justified), and how *Loop is threaded to bindings that need it (fetch eventLoopProvider.Loop() pattern is precedent; check 'no loop fields on structs' constraint vs Require-time threading). Classify every inventoried site against the rule.",
+      "acceptance": "Canonical rule recorded in this task's decisions and reflected in AGENTS.md (Shutdown tracking bullet already added). Every settlement site from the inventory has a classification: migrate-to-Promisify | keep-NewPromise-with-justification | covered-by-other-task (e.g. F15-F16 settlement slop). Rule text appears in WIP.md for the next Takumi. No code changes in this task beyond what A2 executes.",
+      "status": "Not Started",
+      "files": [
+        "AGENTS.md",
+        "blueprint.json",
+        "WIP.md"
+      ],
+      "contextPointers": {
+        "promisifySemantics": "go-eventloop@22f9a6a promisify.go:38-120 (promisifyWg, ErrLoopTerminated, liveness)",
+        "settlerSemantics": "goja-eventloop@54cfe1a promisebridge.go NewPromise/settle (silent consumption on Submit failure)",
+        "agentsDirective": "goalLog entry 9",
+        "inventoryAgent": "bg_6d234820",
+        "semanticsAgent": "bg_fd728d66"
+      }
+    },
+    {
+      "task": "PROMISE-CONSISTENCY A2: shutdown-tracked settlement sweep per canonical rule",
+      "description": "Execute A1's classifications: migrate every site classified migrate-to-Promisify to loop.Promisify (thread *Loop through module Require using the fetch register.go eventLoopProvider pattern where the module lacks it; respect 'Consistent constructors' contract — ctx first param, adapter next, loop threading explicit not stored ad hoc). Sites expected to include tokenizer loadFile (bare goroutine today), and any inventory sites doing durable I/O with ignored settler errors. Keep-NewPromise sites get a one-line justification in their package docstring or A1 record. Do NOT duplicate F15-F16 scope: only sites touched by the new rule are edited there; overlapping ignored-settler-error fixes land in whichever task runs later without double-editing.",
+      "acceptance": "grep gate per A1's final rule (expected shape: no `adapter.NewPromise()` followed by bare `go func()` outside documented exceptions — exact regex fixed in A1 decisions). `go test -race` green on every migrated package. Shutdown-behavior test where feasible: settle-after-Shutdown path rejects or completes rather than hangs (tokenizer loadFile concurrent hammer still passes). Both make targets unaffected locally (full dual-target run remains Task FINAL-DUAL).",
+      "status": "Not Started",
+      "files": [
+        "internal/builtin/tokenizer/tokenizer.go",
+        "internal/builtin/fetch/readable_stream.go",
+        "internal/builtin/register.go",
+        "internal/builtin/async/promise.go"
+      ],
+      "contextPointers": {
+        "precedentThreading": "internal/builtin/register.go eventLoopProvider.Loop() into fetch (Task 3)",
+        "tokenizerSite": "internal/builtin/tokenizer/tokenizer.go loadFile settler+goroutine",
+        "promisifyPrecedent": "internal/builtin/fetch/readable_stream.go wrapReadableStreamJS/wrapReaderJS loop.Promisify per pending op"
       }
     },
     {
@@ -396,8 +450,8 @@
     },
     {
       "task": "F15-F16 SETTLEMENT DISCIPLINE: fix 21 ignored settler errors + empty branch and 3 unchecked Submits",
-      "description": "Settler errors ignored at 21 sites across 7 files (exec.go:32,41; fetch.go:58,78,84,89,92; mcp.go:346,348; mcpcallback.go:307,316,354,557,773,809,855; termmux/module.go:623,699,1973; tokenizer.go:94; async/promise.go:25,30). Only async/promise.go:35 inspects ErrAdapterInvalid/ErrPromiseSettled but body is empty comment, Reject ignores unconditionally. Fix: make helper handle both symmetrically \u2014 log at debug or return handled error, document tolerance. Then make async.Promise sole construction site: delete hand-rolled NewPromise+goroutine+`_ =` in 7 modules, migrate to helper, ensure every settler Resolve/Reject error checked (not `_ =`). Also fix 3 unchecked fire-and-forget Submit (termmux/module.go:1057, mux_state.go:66, mcpcallback.go:903) to check error and log on shutdown drop, aligning with checked sites 353,843,878.",
-      "acceptance": "`grep -R \"_ = settler\" --include=*.go internal/builtin` shows zero; `grep -R \"_ =.*Submit\" --include=*.go internal/builtin` shows zero unchecked (all checked or explicitly log). async/promise.go no empty branch \u2014 either logs or handles ErrPromiseSettled/ErrAdapterInvalid symmetrically for Resolve/Reject. `go vet` zero; `go test -race ./internal/builtin/... -count=1` shows no dropped settler errors under shutdown race.",
+      "description": "Settler errors ignored at 21 sites across 7 files (exec.go:32,41; fetch.go:58,78,84,89,92; mcp.go:346,348; mcpcallback.go:307,316,354,557,773,809,855; termmux/module.go:623,699,1973; tokenizer.go:94; async/promise.go:25,30). Only async/promise.go:35 inspects ErrAdapterInvalid/ErrPromiseSettled but body is empty comment, Reject ignores unconditionally. Fix: make helper handle both symmetrically — log at debug or return handled error, document tolerance. Then make async.Promise sole construction site: delete hand-rolled NewPromise+goroutine+`_ =` in 7 modules, migrate to helper, ensure every settler Resolve/Reject error checked (not `_ =`). Also fix 3 unchecked fire-and-forget Submit (termmux/module.go:1057, mux_state.go:66, mcpcallback.go:903) to check error and log on shutdown drop, aligning with checked sites 353,843,878.",
+      "acceptance": "`grep -R \"_ = settler\" --include=*.go internal/builtin` shows zero; `grep -R \"_ =.*Submit\" --include=*.go internal/builtin` shows zero unchecked (all checked or explicitly log). async/promise.go no empty branch — either logs or handles ErrPromiseSettled/ErrAdapterInvalid symmetrically for Resolve/Reject. `go vet` zero; `go test -race ./internal/builtin/... -count=1` shows no dropped settler errors under shutdown race.",
       "status": "Not Started",
       "files": [
         "internal/builtin/async/promise.go",
@@ -475,7 +529,7 @@
     },
     {
       "task": "Adopt unused fork surface: WithLogger/Loop.Log + WithMetrics + WithDebugMode for observability (10 top leverage)",
-      "description": "Wire the two highest-leverage unused capabilities so regressions become loud: (a) runtime.go loop construction `goeventloop.New(WithAutoExit(true), WithLogger(slog bridge), WithMetrics(true), WithDebugMode(env DEBUG))` plus `SetConsoleOutput` handling \u2014 panics in callbacks log via Loop.Log isolated goroutine instead of silent hang, promise creation stacks and unhandledRejection reports answer 'where did this promise come from' (P1/P4 panics would have logged `async: adapter is nil`). (b) Optionally expose metrics via debug flag or `osm:debug` module (callback latency percentiles, queue depths) to quantify perf mandate instead of asserting. Document deliberately unused RegisterFD (epoll/kqueue) as channel-based is legitimate for Windows ErrReadinessUnsupported \u2014 add comment in tui_manager.go/termmux. Evidence for decision in scratch/engine-slop-autopsy/10_unused_surface.md.",
+      "description": "Wire the two highest-leverage unused capabilities so regressions become loud: (a) runtime.go loop construction `goeventloop.New(WithAutoExit(true), WithLogger(slog bridge), WithMetrics(true), WithDebugMode(env DEBUG))` plus `SetConsoleOutput` handling — panics in callbacks log via Loop.Log isolated goroutine instead of silent hang, promise creation stacks and unhandledRejection reports answer 'where did this promise come from' (P1/P4 panics would have logged `async: adapter is nil`). (b) Optionally expose metrics via debug flag or `osm:debug` module (callback latency percentiles, queue depths) to quantify perf mandate instead of asserting. Document deliberately unused RegisterFD (epoll/kqueue) as channel-based is legitimate for Windows ErrReadinessUnsupported — add comment in tui_manager.go/termmux. Evidence for decision in scratch/engine-slop-autopsy/10_unused_surface.md.",
       "acceptance": "WithLogger wired: a deliberately panicking binding (test helper) emits structured log via Loop.Log and `go test -run TestPanicLog -count=1` captures it; previously silent 5s timeout now shows `LOG: async: adapter is nil` before timeout. WithMetrics enabled, `Loop.Metrics()` callback latency percentiles available via debug env. `grep -R \"WithLogger\\|WithMetrics\\|Loop.Log\" --include=*.go internal/scripting` shows usage at runtime.go:86-88. Unused RegisterFD has rationale comment, not silent omission.",
       "status": "Not Started",
       "files": [
@@ -492,8 +546,8 @@
     },
     {
       "task": "Verification parity: harden async helper, tokenizer, bt fork, fetch suite (makes Phase 0-3 safe, closes H10)",
-      "description": "Add tests that would have caught all regressions: (a) internal/builtin/async: nil adapter handling, double-settle (ErrPromiseSettled), shutdown race (adapter.Done closed), panic-in-fn propagation (decide recover+reject). Currently zero test files \u2014 add async_test.go. (b) tokenizer first-ever tests: loadFile/loadJSON success+error+race hammer. (c) bt: fork-with-JS-leaves from both goroutine classes (loop vs non-loop), two tickers sharing one raw JS node (H3 refuted but still regression test), orphan ticker liveness pin (Bridge.Stop reaps). (d) fetch: restore body-streaming suite to main tier and ensure 4 tests are in `go test ./...` path, not compliance-only. All run with -race -count=1.",
-      "acceptance": " `go test -race -count=1 ./internal/builtin/async` passes with 4+ subtests; `./internal/builtin/tokenizer -race` passes with hammer; `./internal/builtin/bt -race -run TestFork` passes sub-ms for both variants (forkjs/fork). Fetch suite 4 tests green without -run filter. `grep -R \"no test files\" internal/builtin/async` zero \u2014 helper now has coverage.",
+      "description": "Add tests that would have caught all regressions: (a) internal/builtin/async: nil adapter handling, double-settle (ErrPromiseSettled), shutdown race (adapter.Done closed), panic-in-fn propagation (decide recover+reject). Currently zero test files — add async_test.go. (b) tokenizer first-ever tests: loadFile/loadJSON success+error+race hammer. (c) bt: fork-with-JS-leaves from both goroutine classes (loop vs non-loop), two tickers sharing one raw JS node (H3 refuted but still regression test), orphan ticker liveness pin (Bridge.Stop reaps). (d) fetch: restore body-streaming suite to main tier and ensure 4 tests are in `go test ./...` path, not compliance-only. All run with -race -count=1.",
+      "acceptance": " `go test -race -count=1 ./internal/builtin/async` passes with 4+ subtests; `./internal/builtin/tokenizer -race` passes with hammer; `./internal/builtin/bt -race -run TestFork` passes sub-ms for both variants (forkjs/fork). Fetch suite 4 tests green without -run filter. `grep -R \"no test files\" internal/builtin/async` zero — helper now has coverage.",
       "status": "Not Started",
       "files": [
         "internal/builtin/async/async_test.go",
@@ -545,8 +599,8 @@
       }
     },
     {
-      "task": "DUAL TARGET MANDATE: make BOTH `gmake -j 10 make-all-with-log` and `gmake -j 10 make-all-in-container` pass \u2014 update container Go version pin if needed",
-      "description": "ContinuousVerification dual mandate: run `mkdir -p scratch && gmake -j 10 make-all-with-log 2>&1 | tee scratch/make-all-with-log.log | tail -n 200; echo EXIT:$PIPESTATUS` \u2014 must show `ok` for all packages, no FAIL, vet/staticcheck/deadcode zero. Then run `gmake -j 10 make-all-in-container 2>&1 | tee scratch/make-all-in-container.log | tail -n 200`. Container derives `golang:$go_version` from `go mod edit -print | awk '/^go / {print $2}'` (1.27.0). Verify image exists via `docker manifest inspect golang:1.27.0` or pull. If absent (common for very new Go), update config.mk and example.config.mk: fallback to `golang:1.27`, `golang:1.27-bookworm`, or latest patch, stripping patch version `${go_version%.*}` or pinning `1.27.1` etc., and document. Fix any Linux-specific failures surfaced (cgo, pty, file paths). Both logs must end EXIT:0. This task is the commit gate for the whole blueprint.",
+      "task": "DUAL TARGET MANDATE: make BOTH `gmake -j 10 make-all-with-log` and `gmake -j 10 make-all-in-container` pass — update container Go version pin if needed",
+      "description": "ContinuousVerification dual mandate: run `mkdir -p scratch && gmake -j 10 make-all-with-log 2>&1 | tee scratch/make-all-with-log.log | tail -n 200; echo EXIT:$PIPESTATUS` — must show `ok` for all packages, no FAIL, vet/staticcheck/deadcode zero. Then run `gmake -j 10 make-all-in-container 2>&1 | tee scratch/make-all-in-container.log | tail -n 200`. Container derives `golang:$go_version` from `go mod edit -print | awk '/^go / {print $2}'` (1.27.0). Verify image exists via `docker manifest inspect golang:1.27.0` or pull. If absent (common for very new Go), update config.mk and example.config.mk: fallback to `golang:1.27`, `golang:1.27-bookworm`, or latest patch, stripping patch version `${go_version%.*}` or pinning `1.27.1` etc., and document. Fix any Linux-specific failures surfaced (cgo, pty, file paths). Both logs must end EXIT:0. This task is the commit gate for the whole blueprint.",
       "acceptance": " `scratch/make-all-with-log.log` shows `ok` for all 83+ packages, FAIL count zero, and `build.log` tail shows zero FAIL lines after `go test -timeout=20m ./...`. `scratch/make-all-in-container.log` likewise shows `ok` inside docker golang image (same counts, linux). `docker run --rm golang:$resolvedVer go version` matches 1.27.x. If image fallback used, `example.config.mk` updated and committed with comment. Neither target shows `operation timed out` or `SANDBOX_BREACH`.",
       "status": "Not Started",
       "files": [
@@ -577,13 +631,13 @@
   "continuousVerification": {
     "task": "Keep both make targets green after EVERY change; no silent hangs",
     "description": "After each code change: (a) legacy grep zero, (b) `go test -race -count=1 -timeout=20m ./internal -run TestSandbox` green, (c) `go test -race -count=1 ./internal/builtin/fetch -run TestResponseBody` green, (d) `go test -race -count=1 ./internal/builtin/pabt -run TestGraphJS` green, (e) `go test -race -count=1 ./internal/builtin/termmux -run TestHandleMouseDrag|TestCaptureSession` green, (f) `go test -race -count=1 ./internal/builtin/grpc -run TestStatus` green, (g) `gmake -j 10 make-all-with-log` tail shows zero FAIL (or per-task focused `go test` subset), (h) periodically `gmake -j 10 make-all-in-container` to catch Linux-only. Every `tail` must have been `tee scratch/` first.",
-    "failPolicy": "If ANY unintended FAIL or grep hit or 5s/10s timeout appears, STOP and fix \u2014 zero tolerance for hangs, races, or flakiness. Intended fails: none \u2014 all 22 tasks must make previously red tests green. Fork-blocked quant tier remains separate but main `go test ./...` must be fully green.",
+    "failPolicy": "If ANY unintended FAIL or grep hit or 5s/10s timeout appears, STOP and fix — zero tolerance for hangs, races, or flakiness. Intended fails: none — all 22 tasks must make previously red tests green. Fork-blocked quant tier remains separate but main `go test ./...` must be fully green.",
     "testCoverage": "Coverage must span sandbox, tokenizer race hammer, fetch streaming liveness, Bridge fast path (on/off loop), termmux owner, grpc export, scripting race, monopolization deletions, Runner, bt seam, observability log, and dual container target."
   },
   "finalEnforcementProtocol": [
     {
       "type": "POST_EXECUTION_WARNING",
-      "alert": "The 20260823/24 forks are not upstream. Adapter.NewPromise+Settler and Adapter.Submit are the ONLY async paths \u2014 never reintroduce JS.NewChainedPromise or Loop exposure via shims. Delete boldly per Internal API Discipline."
+      "alert": "The 20260823/24 forks are not upstream. Adapter.NewPromise+Settler and Adapter.Submit are the ONLY async paths — never reintroduce JS.NewChainedPromise or Loop exposure via shims. Delete boldly per Internal API Discipline."
     },
     {
       "type": "POST_EXECUTION_WARNING_REPEATED",
@@ -591,11 +645,11 @@
     },
     {
       "type": "POST_EXECUTION_WARNING_REPEATED",
-      "alert": "Both make targets are MANDATORY: `gmake -j 10 make-all-with-log` local and `gmake -j 10 make-all-in-container` docker (golang:1.27.0 or fallback in example.config.mk) must both be green with zero FAIL \u2014 this repeats the globalAlerts dual-target warning for reinforcement."
+      "alert": "Both make targets are MANDATORY: `gmake -j 10 make-all-with-log` local and `gmake -j 10 make-all-in-container` docker (golang:1.27.0 or fallback in example.config.mk) must both be green with zero FAIL — this repeats the globalAlerts dual-target warning for reinforcement."
     },
     {
       "type": "POST_EXECUTION_WARNING_REPEATED",
-      "alert": "Quantified language compliance is closed \u2014 not the tail. Binding-layer correctness and dual-target green are the tail. Harness integrity (__activeSink) plus binding tests are load-bearing."
+      "alert": "Quantified language compliance is closed — not the tail. Binding-layer correctness and dual-target green are the tail. Harness integrity (__activeSink) plus binding tests are load-bearing."
     }
   ]
 }

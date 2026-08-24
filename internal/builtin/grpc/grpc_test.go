@@ -54,7 +54,15 @@ func loadModule(t *testing.T, provider *testutil.TestEventLoopProvider) (pbMod *
 		exp := vm.NewObject()
 		_ = module.Set("exports", exp)
 		loader(vm, module)
-		exports = exp
+		if v := module.Get("exports"); v != nil {
+			if obj, ok := v.(*goja.Object); ok {
+				exports = obj
+			} else {
+				exports = exp
+			}
+		} else {
+			exports = exp
+		}
 	})
 
 	return pbMod, exports

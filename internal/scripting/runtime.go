@@ -75,16 +75,14 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 		registry = require.NewRegistry()
 	}
 
-	// Create the Go event loop.
-	// WithStrictMicrotaskOrdering ensures Promise .then() callbacks
-	// (microtasks) are drained after EVERY macrotask, matching standard
-	// JavaScript event-loop semantics.
+	// Create the Go event loop. Strict microtask ordering (microtasks drained after
+	// every macrotask, per Node.js semantics) is now always-on in the 20260823
+	// surface — no option needed.
 	//
 	// WithAutoExit(true) allows the loop to exit naturally when no tasks,
 	// timers, or Promisify tokens remain. This is the primary shutdown
 	// signal for the application.
 	loop, err := goeventloop.New(
-		goeventloop.WithStrictMicrotaskOrdering(true),
 		goeventloop.WithAutoExit(true),
 	)
 	if err != nil {
@@ -118,33 +116,20 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 		return nil, nil
 	})
 
-	// Create goja adapter and bind JS globals (setTimeout, Promise, etc.)
-	// This must happen on the event loop goroutine.
-	// We submit this work BEFORE starting the loop goroutine to avoid the
-	// auto-exit race where an empty loop exits immediately.
-	errCh := make(chan error, 1)
-	err = loop.Submit(func() {
-		// Capture event loop goroutine ID for deadlock prevention
-		rt.eventLoopGoroutineID.Store(goroutineid.Get())
-
-		var bindErr error
-		rt.adapter, bindErr = gojaEventloop.New(loop, vm)
-		if bindErr != nil {
-			errCh <- fmt.Errorf("failed to create goja adapter: %w", bindErr)
-			return
-		}
-
-		if bindErr = rt.adapter.Bind(); bindErr != nil {
-			errCh <- fmt.Errorf("failed to bind JS globals: %w", bindErr)
-			return
-		}
-
-		errCh <- nil
-	})
-	if err != nil {
+	// Create goja adapter and bind JS globals before starting the loop.
+	// New in 20260823: New/Bind must be called while the loop is awake (before Run),
+	// not from inside a Submit callback (which would be Running).
+	var err2 error
+	rt.adapter, err2 = gojaEventloop.New(loop, vm)
+	if err2 != nil {
 		close(rt.bootstrapDone)
 		loopCancel()
-		return nil, fmt.Errorf("failed to submit initialization task: %w", err)
+		return nil, fmt.Errorf("failed to create goja adapter: %w", err2)
+	}
+	if err2 = rt.adapter.Bind(); err2 != nil {
+		close(rt.bootstrapDone)
+		loopCancel()
+		return nil, fmt.Errorf("failed to bind JS globals: %w", err2)
 	}
 
 	// Start the event loop in background goroutine
@@ -157,15 +142,15 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 		}
 	}()
 
+	// Capture event loop goroutine ID for deadlock prevention via a Submit
+	// trampoline (runs on the loop goroutine once it starts).
+	_ = loop.Submit(func() {
+		rt.eventLoopGoroutineID.Store(goroutineid.Get())
+	})
+
 	rt.mu.Lock()
 	rt.started = true
 	rt.mu.Unlock()
-
-	// Wait for the initialization task to complete
-	if initErr := <-errCh; initErr != nil {
-		_ = rt.Close()
-		return nil, initErr
-	}
 
 	// Handle external context cancellation
 	if ctx.Done() != nil {

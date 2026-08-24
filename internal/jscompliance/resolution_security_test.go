@@ -107,6 +107,97 @@ func TestResolution_FilenameDirname(t *testing.T) {
 	}
 }
 
+// TestResolution_DirectoryRequire verifies directory require semantics on the
+// 20260823 surface: require('./mydir') resolves via package.json "main" if
+// present, otherwise falls back to index.js. This exercises the external
+// goja_nodejs require/resolve.go logic wired through engine_core.go
+// (WithGlobalFolders/WithLoader) and must remain green on the new adapter.
+func TestResolution_DirectoryRequire(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	// Case A: directory with package.json main -> main file wins over index.js.
+	pkgDir := filepath.Join(dir, "pkgdir")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(pkgDir, "package.json"), `{"main": "./lib/main.js"}`)
+	writeFile(t, filepath.Join(pkgDir, "lib", "main.js"), `module.exports = { via: 'pkg-main' };`)
+	writeFile(t, filepath.Join(pkgDir, "index.js"), `module.exports = { via: 'index' };`)
+	writeFile(t, filepath.Join(dir, "main.js"), `
+		var a = require('./pkgdir');
+		globalThis.__dirA = a.via;
+	`)
+
+	// Case B: directory without package.json -> index.js fallback.
+	idxDir := filepath.Join(dir, "idxdir")
+	if err := os.MkdirAll(idxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(idxDir, "index.js"), `module.exports = { via: 'index-fallback' };`)
+	writeFile(t, filepath.Join(dir, "main2.js"), `
+		var b = require('./idxdir');
+		globalThis.__dirB = b.via;
+	`)
+
+	engine, err := runFileScriptAt(t, ctx, dir, "main.js")
+	if err != nil {
+		t.Fatalf("directory require (package.json main) script error: %v", err)
+	}
+	if err := execMain(t, engine, filepath.Join(dir, "main2.js")); err != nil {
+		t.Fatalf("directory require (index fallback) script error: %v", err)
+	}
+	vA, _ := evalJS(t, engine, `globalThis.__dirA`, defaultEvalTimeout)
+	if s, _ := vA.(string); s != "pkg-main" {
+		t.Errorf("directory require via package.json main: got %q want %q", s, "pkg-main")
+	}
+	vB, _ := evalJS(t, engine, `globalThis.__dirB`, defaultEvalTimeout)
+	if s, _ := vB.(string); s != "index-fallback" {
+		t.Errorf("directory require via index.js fallback: got %q want %q", s, "index-fallback")
+	}
+}
+
+// TestResolution_CircularRequire verifies Node-compatible circular require
+// partial-exports semantics backed by internal/scripting/module_hardening.go:212-248
+// cycle tracker (enter/leave + warning). A -> B -> A must not deadlock and must
+// return partial exports, with a warning logged.
+func TestResolution_CircularRequire(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.js"), `
+		exports.loaded = false;
+		exports.name = 'a';
+		var b = require('./b');
+		exports.bName = b.name;
+		exports.loaded = true;
+	`)
+	writeFile(t, filepath.Join(dir, "b.js"), `
+		exports.name = 'b';
+		var a = require('./a');
+		// At this point a is partially evaluated (loaded=false, name='a', bName undefined)
+		exports.aLoaded = a.loaded;
+		exports.aName = a.name;
+	`)
+	writeFile(t, filepath.Join(dir, "main.js"), `
+		var a = require('./a');
+		var b = require('./b');
+		globalThis.__circ = JSON.stringify({ aLoaded: a.loaded, aBName: a.bName, bALoaded: b.aLoaded, bAName: b.aName });
+	`)
+	engine, err := runFileScriptAt(t, ctx, dir, "main.js")
+	if err != nil {
+		t.Fatalf("circular require script error: %v", err)
+	}
+	v, _ := evalJS(t, engine, `globalThis.__circ`, defaultEvalTimeout)
+	s, _ := v.(string)
+	for _, want := range []string{`"aLoaded":true`, `"aBName":"b"`, `"bALoaded":false`, `"bAName":"a"`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("circular require partial-exports mismatch %s missing %s", s, want)
+		}
+	}
+}
+
 // TestSecurity_BareNameTraversalBlocked asserts that a BARE module name (no ./
 // ../ prefix) containing `..` components that would escape the configured
 // module-paths is BLOCKED by the path-traversal hardening

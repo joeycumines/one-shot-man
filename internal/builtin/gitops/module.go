@@ -16,6 +16,7 @@ import (
 
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 
 	"github.com/joeycumines/one-shot-man/internal/gitops"
 )
@@ -234,22 +235,5 @@ func newRepoWrapper(runtime *goja.Runtime, repo *gitops.Repo, ctx context.Contex
 // engine shutdown cancels in-flight operations. Resolution/rejection is
 // scheduled back on the event loop via adapter.Loop().Submit().
 func jsPromise(adapter *gojaeventloop.Adapter, baseCtx context.Context, fn func(ctx context.Context) (any, error)) goja.Value {
-	if adapter == nil {
-		panic("gitops: async binding requires an event loop adapter")
-	}
-	promise, resolve, reject := adapter.JS().NewChainedPromise()
-
-	adapter.Loop().Promisify(baseCtx, func(ctx context.Context) (any, error) {
-		result, err := fn(ctx)
-		_ = adapter.Loop().Submit(func() {
-			if err != nil {
-				reject(err)
-			} else {
-				resolve(result)
-			}
-		})
-		return nil, nil
-	})
-
-	return adapter.GojaWrapPromise(promise)
+	return async.Promise(adapter, baseCtx, fn)
 }

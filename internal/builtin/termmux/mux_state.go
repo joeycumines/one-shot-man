@@ -63,7 +63,7 @@ func (s *muxState) dispatchEventOnLoop(eventType string, detail map[string]any) 
 		s.dispatchCustomEvent(eventType, detail)
 		return
 	}
-	s.adapter.Loop().Submit(func() { s.dispatchCustomEvent(eventType, detail) })
+	s.adapter.Submit(func(_ *goja.Runtime) { s.dispatchCustomEvent(eventType, detail) })
 }
 
 // dispatchCustomEvent must be called on the JS/event-loop goroutine.

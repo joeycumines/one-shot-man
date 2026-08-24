@@ -49,9 +49,9 @@ var moduleContracts = []moduleContract{
 	{name: "nextIntegerID", mustExist: nil, smoke: `require('osm:nextIntegerID')([{id:1},{id:3}])`, smokeWant: `4`},
 	{name: "nextIntegerId", mustExist: nil, smoke: `require('osm:nextIntegerId')([{id:1},{id:3}])`, smokeWant: `4`},
 	{name: "path", asyncExports: []string{"glob"}, mustExist: []string{"join", "dir", "base", "ext", "abs", "rel", "clean", "isAbs", "match", "glob", "separator", "listSeparator"}},
-	{name: "unicodetext", mustExist: []string{"width", "truncate"}, smoke: `require('osm:unicodetext').width('abc')`, smokeWant: `3`},
+	{name: "unicodetext", mustExist: []string{"width", "truncate", "padLeft", "padRight", "padCenter"}, smoke: `require('osm:unicodetext').width('abc')`, smokeWant: `3`},
 	{name: "text/template", mustExist: []string{"new", "execute"}, smoke: `require('osm:text/template').execute('{{.V}}', {V:'hi'})`, smokeWant: `"hi"`},
-	{name: "tokenizer", asyncExports: []string{"loadFile"}, mustExist: []string{"tokenize", "count", "loadFile", "loadJSON", "loadBPE", "loadWordPiece", "loadWordLevel"}, smoke: `require('osm:tokenizer').count('hello')`, smokeWant: `5`},
+	{name: "tokenizer", asyncExports: []string{"loadFile"}, mustExist: []string{"tokenize", "count", "loadFile", "loadJSON", "loadBPE", "loadWordPiece", "loadWordLevel", "byteCount", "lineCount"}, smoke: `require('osm:tokenizer').count('hello')`, smokeWant: `5`},
 	{name: "ctxutil", asyncExports: []string{"buildContext"}, mustExist: []string{"buildContext", "contextManager"}},
 	{name: "protobuf", mustExist: []string{"loadDescriptorSet"}},
 

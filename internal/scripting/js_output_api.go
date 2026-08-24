@@ -57,26 +57,23 @@ func (e *Engine) jsOutputFromClipboard() goja.Value {
 	})
 }
 
-// clipboardPromise runs a clipboard I/O function off the event loop and returns
-// a JS Promise that resolves/rejects with its result. Mirrors the osm:os
-// clipboardCopy/Paste binding (internal/builtin/os/os.go jsPromise).
 func (e *Engine) clipboardPromise(fn func(ctx context.Context) (any, error)) goja.Value {
 	adapter := e.Adapter()
-	promise, resolve, reject := adapter.JS().NewChainedPromise()
-
-	adapter.Loop().Promisify(e.ctx, func(ctx context.Context) (any, error) {
-		clipCtx, cancel := context.WithTimeout(ctx, outputClipboardTimeout)
+	promise, settler := adapter.NewPromise()
+	go func() {
+		clipCtx, cancel := context.WithTimeout(e.ctx, outputClipboardTimeout)
 		defer cancel()
 		result, err := fn(clipCtx)
-		_ = adapter.Loop().Submit(func() {
-			if err != nil {
-				reject(err)
-			} else {
-				resolve(result)
-			}
-		})
-		return nil, nil
-	})
-
-	return adapter.GojaWrapPromise(promise)
+		if err != nil {
+			_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+		} else {
+			_ = settler.Resolve(func(rt *goja.Runtime) any {
+				if result == nil {
+					return goja.Undefined()
+				}
+				return result
+			})
+		}
+	}()
+	return promise
 }

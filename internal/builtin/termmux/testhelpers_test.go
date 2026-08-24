@@ -48,7 +48,7 @@ func (e *testEnv) stop() {
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 
-	loop, err := goeventloop.New(goeventloop.WithStrictMicrotaskOrdering(true))
+	loop, err := goeventloop.New()
 	if err != nil {
 		t.Fatalf("create event loop: %v", err)
 	}
@@ -98,7 +98,7 @@ func testRequire(t *testing.T) (*goja.Runtime, *goja.Object) {
 func newTestEnvCtx(t *testing.T, ctx context.Context) *testEnv {
 	t.Helper()
 
-	loop, err := goeventloop.New(goeventloop.WithStrictMicrotaskOrdering(true))
+	loop, err := goeventloop.New()
 	if err != nil {
 		t.Fatalf("create event loop: %v", err)
 	}
@@ -148,7 +148,7 @@ func testRequireCtx(t *testing.T, ctx context.Context) (*goja.Runtime, *goja.Obj
 func wrapTestSessionManager(t *testing.T, ctx context.Context, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int, title string) goja.Value {
 	t.Helper()
 
-	loop, err := goeventloop.New(goeventloop.WithStrictMicrotaskOrdering(true))
+	loop, err := goeventloop.New()
 	if err != nil {
 		t.Fatalf("create event loop: %v", err)
 	}
@@ -178,7 +178,7 @@ func wrapTestSessionManager(t *testing.T, ctx context.Context, runtime *goja.Run
 func wrapTestSessionManagerWithLoop(t *testing.T, ctx context.Context, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int, title string) goja.Value {
 	t.Helper()
 
-	loop, err := goeventloop.New(goeventloop.WithStrictMicrotaskOrdering(true))
+	loop, err := goeventloop.New()
 	if err != nil {
 		t.Fatalf("create event loop: %v", err)
 	}

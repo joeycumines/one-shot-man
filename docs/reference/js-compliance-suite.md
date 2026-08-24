@@ -69,7 +69,7 @@ fails — a spec that asserts nothing is a false-confidence trap.
   Go↔JS marshalling precision boundary.
 - **Promise / event loop (`TestCorePromises` / `Microtask` / `Timers` /
   `Abort`):** combinators, ES2024 `Promise.withResolvers`/`try`,
-  `WithStrictMicrotaskOrdering`, `setTimeout`/`setInterval`/`setImmediate`,
+  `setTimeout`/`setInterval`/`setImmediate`,
   `AbortController` + ES2024 `AbortSignal.timeout`/`any`.
 - **ES2020+ global surface (`TestGlobalSurface`):** the WHATWG/ES globals the
   adapter provides (TextEncoder, URL, Blob, Headers, FormData, DOMException,

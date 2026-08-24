@@ -7,6 +7,7 @@ import (
 
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	"github.com/joeycumines/one-shot-man/internal/tokenizer"
 )
 
@@ -89,13 +90,11 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(vm *goja.
 		_ = exports.Set("loadFile", func(call goja.FunctionCall) goja.Value {
 			path := argString(call, 0)
 			if path == "" {
-				promise, resolve, _ := adapter.JS().NewChainedPromise()
-				adapter.Loop().Submit(func() {
-					resolve(nil)
-				})
-				return adapter.GojaWrapPromise(promise)
+				promise, settler := adapter.NewPromise()
+				_ = settler.Resolve(func(rt *goja.Runtime) any { return goja.Null() })
+				return promise
 			}
-			return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+			return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 				tok, err := tokenizer.LoadTokenizerFile(path)
 				if err != nil {
 					return nil, fmt.Errorf("loadFile: %w", err)
@@ -166,23 +165,8 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(vm *goja.
 	}
 }
 
-// jsPromise wraps a goroutine-based operation into a JS Promise resolved on the event loop.
 func jsPromise(adapter *gojaeventloop.Adapter, baseCtx context.Context, fn func(ctx context.Context) (any, error)) goja.Value {
-	promise, resolve, reject := adapter.JS().NewChainedPromise()
-
-	adapter.Loop().Promisify(baseCtx, func(ctx context.Context) (any, error) {
-		result, err := fn(ctx)
-		_ = adapter.Loop().Submit(func() {
-			if err != nil {
-				reject(err)
-			} else {
-				resolve(result)
-			}
-		})
-		return nil, nil
-	})
-
-	return adapter.GojaWrapPromise(promise)
+	return async.Promise(adapter, baseCtx, fn)
 }
 
 // newTokenizerWrapper creates a JS object wrapping a Go *tokenizer.Tokenizer

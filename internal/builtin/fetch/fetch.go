@@ -1,10 +1,4 @@
 // Package fetch provides a Goja module wrapping Go's net/http client for JS scripts.
-// It is registered as "osm:fetch" and provides a Promise-based fetch() function
-// following the browser Fetch API.
-//
-// The module requires the goja-eventloop adapter for async Promise support.
-// HTTP requests run in a dedicated goroutine and resolve on the event loop,
-// ensuring thread-safe access to the goja runtime.
 package fetch
 
 import (
@@ -23,56 +17,22 @@ import (
 	"github.com/joeycumines/goja_nodejs/require"
 )
 
-// defaultMaxResponseSize is the maximum response body size (10 MiB).
-// Callers can override via the maxResponseSize option.
 const defaultMaxResponseSize int64 = 10 << 20
 
-// PromisifyFunc is the signature for the event loop's Promisify method.
-// Stored in internal data structures for easier mocking in tests.
-type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
-
-// Require returns a module loader for osm:fetch backed by the event loop adapter.
-// The adapter is required for Promise-based async fetch operations.
-// If adapter is nil (e.g., in restricted JS runtime contexts or certain tests),
-// the module loads but fetch/sseReader are unavailable — matching exec.go behavior.
 func Require(ctx context.Context, adapter *gojaeventloop.Adapter) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
-		// Guard against nil adapter to prevent segfault at module load time.
-		// exec.go uses the same pattern: the module loads but spawn is unavailable.
 		if adapter != nil {
-			_ = exports.Set("fetch", jsFetch(ctx, runtime, adapter, adapter.Loop().Promisify))
-			_ = exports.Set("sseReader", jsSSEReader(ctx, runtime, adapter, adapter.Loop().Promisify))
+			_ = exports.Set("fetch", jsFetch(ctx, runtime, adapter))
+			_ = exports.Set("sseReader", jsSSEReader(ctx, runtime, adapter))
 		}
 	}
 }
 
-// jsFetch implements the browser-compliant fetch(url, options?) function.
-// It returns a Promise<Response> that resolves with a Response object
-// once the HTTP request completes and the body is fully read.
-//
-// Options:
-//
-//	method  - HTTP method (default: "GET")
-//	headers - object of header key/value pairs
-//	body    - request body string
-//	timeout - request timeout in seconds (default: 30)
-//	signal  - AbortSignal for cancelling the request
-//
-// The returned Promise resolves with a Response object:
-//
-//	status     - HTTP status code (number)
-//	ok         - true if status is 200-299 (boolean)
-//	statusText - HTTP status line, e.g. "200 OK" (string)
-//	url        - final URL after redirects (string)
-//	headers    - Headers object with get/has/entries/keys/values/forEach
-//	text()     - returns Promise<string> with body as string
-//	json()     - returns Promise<any> with body parsed as JSON
-func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
+func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		url := call.Argument(0).String()
-		method, timeout, bodyReader, reqHeaders, signal, maxBody := parseOptions(call)
-
+		method, timeout, bodyReader, reqHeaders, signalVal, signal, maxBody := parseOptions(call)
 		req, err := http.NewRequest(method, url, bodyReader)
 		if err != nil {
 			panic(runtime.NewGoError(err))
@@ -82,72 +42,95 @@ func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.
 				req.Header.Set(k, s)
 			}
 		}
-
-		// Set up context for request cancellation.
 		reqCtx, cancel := context.WithTimeout(ctx, timeout)
-
-		// Wire AbortSignal to cancel the request context.
-		if signal != nil {
+		var abortCleanup func()
+		// Prefer JS signal (signalVal) for abort handling via TrackAbortSignal, which is owner-safe.
+		// Fall back to Go native signal only if JS signal is unavailable.
+		if signalVal != nil && !goja.IsUndefined(signalVal) && !goja.IsNull(signalVal) {
+			// Check already-aborted via JS property
+			if sigObj, ok := signalVal.(*goja.Object); ok {
+				if av := sigObj.Get("aborted"); av != nil && av.ToBoolean() {
+					reasonVal := sigObj.Get("reason")
+					var reason any
+					if reasonVal != nil && !goja.IsUndefined(reasonVal) && !goja.IsNull(reasonVal) {
+						reason = reasonVal.Export()
+					}
+					cancel()
+					promise, settler := adapter.NewPromise()
+					_ = settler.Reject(func(rt *goja.Runtime) any {
+						if reason != nil {
+							return reason
+						}
+						return rt.NewGoError(fmt.Errorf("aborted"))
+					})
+					return promise
+				}
+			}
+			if cleanup, aborted, ok := adapter.TrackAbortSignal(signalVal, func() { cancel() }); ok {
+				abortCleanup = cleanup
+				if aborted {
+					sigObj, _ := signalVal.(*goja.Object)
+					var reason any
+					if sigObj != nil {
+						if rv := sigObj.Get("reason"); rv != nil && !goja.IsUndefined(rv) && !goja.IsNull(rv) {
+							reason = rv.Export()
+						}
+					}
+					cancel()
+					promise, settler := adapter.NewPromise()
+					_ = settler.Reject(func(rt *goja.Runtime) any {
+						if reason != nil {
+							return reason
+						}
+						return rt.NewGoError(fmt.Errorf("aborted"))
+					})
+					return promise
+				}
+			} else if signal != nil {
+				signal.OnAbort(func(reason any) { cancel() })
+			}
+		} else if signal != nil {
 			if signal.Aborted() {
 				cancel()
-				promise, _, reject := adapter.JS().NewChainedPromise()
-				reject(signal.Reason())
-				return adapter.GojaWrapPromise(promise)
+				promise, settler := adapter.NewPromise()
+				_ = settler.Reject(func(rt *goja.Runtime) any { return signal.Reason() })
+				return promise
 			}
-			signal.OnAbort(func(reason any) {
-				cancel()
-			})
+			signal.OnAbort(func(reason any) { cancel() })
 		}
-
 		req = req.WithContext(reqCtx)
-		promise, resolve, reject := adapter.JS().NewChainedPromise()
-
-		// Wrap the HTTP request in Promisify to keep the event loop alive.
-		promisify(ctx, func(_ context.Context) (any, error) {
+		promise, settler := adapter.NewPromise()
+		go func() {
 			defer cancel()
+			if abortCleanup != nil {
+				defer abortCleanup()
+			}
 			client := &http.Client{}
 			resp, doErr := client.Do(req)
 			if doErr != nil {
-				_ = adapter.Loop().Submit(func() {
-					reject(doErr)
-				})
-				return nil, doErr
+				_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(doErr) })
+				return
 			}
-
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 			resp.Body.Close()
 			if readErr != nil {
-				_ = adapter.Loop().Submit(func() {
-					reject(readErr)
-				})
-				return nil, readErr
+				_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(readErr) })
+				return
 			}
 			if int64(len(body)) > maxBody {
 				err := fmt.Errorf("response body exceeds maximum size of %d bytes", maxBody)
-				_ = adapter.Loop().Submit(func() {
-					reject(err)
-				})
-				return nil, err
+				_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
 			}
-
-			if submitErr := adapter.Loop().Submit(func() {
-				resolve(buildResponse(ctx, runtime, adapter, resp, body, promisify))
-			}); submitErr != nil {
-				_ = adapter.Loop().Submit(func() {
-					reject(fmt.Errorf("event loop not running"))
-				})
-			}
-			return nil, nil
-		})
-
-		return adapter.GojaWrapPromise(promise)
+			_ = settler.Resolve(func(rt *goja.Runtime) any {
+				return buildResponse(rt, resp, body)
+			})
+		}()
+		return promise
 	}
 }
 
-// jsSSEReader returns a factory function: sseReader(body) → SSE reader object.
-// body must be a ReadableStream JS object (response.body).  The returned reader
-// has a read() method returning Promise<{value: {event, data, id}, done: boolean}>.
-func jsSSEReader(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
+func jsSSEReader(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		bodyArg := call.Argument(0)
 		if bodyArg == nil || goja.IsUndefined(bodyArg) || goja.IsNull(bodyArg) {
@@ -157,8 +140,6 @@ func jsSSEReader(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventl
 		if !ok {
 			panic(runtime.NewTypeError("sseReader argument must be a ReadableStream object"))
 		}
-
-		// Retrieve the Go ReadableStream stashed on the JS object.
 		goStreamVal := bodyObj.Get("_goStream")
 		if goStreamVal == nil || goja.IsUndefined(goStreamVal) {
 			panic(runtime.NewTypeError("body does not have a Go ReadableStream"))
@@ -167,22 +148,19 @@ func jsSSEReader(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventl
 		if !ok {
 			panic(runtime.NewTypeError("_goStream is not a *ReadableStream"))
 		}
-
 		reader, err := goStream.GetReader()
 		if err != nil {
 			panic(runtime.NewGoError(err))
 		}
 		parser := NewSSEParser(reader)
-		return wrapSSEParserJS(ctx, runtime, adapter, parser, promisify)
+		return wrapSSEParserJS(ctx, runtime, adapter, parser)
 	}
 }
 
-// parseOptions extracts HTTP request parameters from the optional second argument.
-func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration, bodyReader io.Reader, reqHeaders map[string]any, signal *goeventloop.AbortSignal, maxResponseSize int64) {
+func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration, bodyReader io.Reader, reqHeaders map[string]any, signalVal goja.Value, signal *goeventloop.AbortSignal, maxResponseSize int64) {
 	method = "GET"
 	timeout = 30 * time.Second
 	maxResponseSize = defaultMaxResponseSize
-
 	if len(call.Arguments) <= 1 {
 		return
 	}
@@ -194,7 +172,6 @@ func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration,
 	if !ok {
 		return
 	}
-
 	if m, ok := opts["method"]; ok {
 		if s, ok := m.(string); ok {
 			method = strings.ToUpper(s)
@@ -226,14 +203,11 @@ func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration,
 			reqHeaders = m
 		}
 	}
-
-	// Extract AbortSignal from the options object via the raw goja value.
-	// The signal is stored as a native Go *goeventloop.AbortSignal on the
-	// JS object's "_signal" property, set by the goja-eventloop adapter.
 	if len(call.Arguments) > 1 {
 		if argObj, ok := call.Arguments[1].(*goja.Object); ok {
-			if signalVal := argObj.Get("signal"); signalVal != nil && !goja.IsUndefined(signalVal) && !goja.IsNull(signalVal) {
-				if signalObj, ok := signalVal.(*goja.Object); ok {
+			if sv := argObj.Get("signal"); sv != nil && !goja.IsUndefined(sv) && !goja.IsNull(sv) {
+				signalVal = sv
+				if signalObj, ok := sv.(*goja.Object); ok {
 					if nativeVal := signalObj.Get("_signal"); nativeVal != nil && !goja.IsUndefined(nativeVal) {
 						if s, ok := nativeVal.Export().(*goeventloop.AbortSignal); ok {
 							signal = s
@@ -243,36 +217,21 @@ func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration,
 			}
 		}
 	}
-
 	return
 }
 
-// buildResponse constructs the JS Response object with the full body buffered.
-// Must be called on the event loop goroutine.
-func buildResponse(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, resp *http.Response, body []byte, promisify PromisifyFunc) *goja.Object {
+func buildResponse(runtime *goja.Runtime, resp *http.Response, body []byte) *goja.Object {
 	result := runtime.NewObject()
 	_ = result.Set("status", resp.StatusCode)
 	_ = result.Set("ok", resp.StatusCode >= 200 && resp.StatusCode < 300)
 	_ = result.Set("statusText", resp.Status)
 	_ = result.Set("url", resp.Request.URL.String())
 	_ = result.Set("headers", buildHeaders(runtime, resp.Header))
-
-	// body — ReadableStream backed by the already-buffered bytes.
-	// reader.read() returns Promise<{value: string, done: boolean}>.
-	stream := NewReadableStream(ctx, io.NopCloser(bytes.NewReader(body)), promisify)
-	_ = result.Set("body", wrapReadableStreamJS(ctx, runtime, adapter, stream, promisify))
-
-	// text() returns a Promise<string> that resolves with the body as a string.
-	// Since the body is fully buffered, the Promise resolves immediately.
 	_ = result.Set("text", func(goja.FunctionCall) goja.Value {
 		p, resolve, _ := runtime.NewPromise()
 		resolve(string(body))
 		return runtime.ToValue(p)
 	})
-
-	// json() returns a Promise<any> that resolves with the parsed JSON.
-	// Since the body is fully buffered, the Promise resolves immediately.
-	// Rejects if the body is not valid JSON.
 	_ = result.Set("json", func(goja.FunctionCall) goja.Value {
 		var parsed any
 		if err := json.Unmarshal(body, &parsed); err != nil {
@@ -284,16 +243,14 @@ func buildResponse(ctx context.Context, runtime *goja.Runtime, adapter *gojaeven
 		resolve(runtime.ToValue(parsed))
 		return runtime.ToValue(p)
 	})
-
+	// body stream
+	stream := NewReadableStream(context.Background(), io.NopCloser(bytes.NewReader(body)), nil)
+	_ = result.Set("body", wrapReadableStreamJS(context.Background(), runtime, nil, stream, nil))
 	return result
 }
 
-// buildHeaders constructs a Headers object implementing the browser Headers API.
-// Must be called on the event loop goroutine.
 func buildHeaders(runtime *goja.Runtime, h http.Header) *goja.Object {
 	obj := runtime.NewObject()
-
-	// get(name) returns the header value (joined with ", ") or null if not present.
 	_ = obj.Set("get", func(name string) goja.Value {
 		canonical := http.CanonicalHeaderKey(name)
 		values, exists := h[canonical]
@@ -302,14 +259,10 @@ func buildHeaders(runtime *goja.Runtime, h http.Header) *goja.Object {
 		}
 		return runtime.ToValue(strings.Join(values, ", "))
 	})
-
-	// has(name) returns true if the header exists.
 	_ = obj.Set("has", func(name string) bool {
 		_, exists := h[http.CanonicalHeaderKey(name)]
 		return exists
 	})
-
-	// entries() returns an array of [name, value] pairs (lowercased keys).
 	_ = obj.Set("entries", func() goja.Value {
 		var entries []any
 		for k, v := range h {
@@ -317,8 +270,6 @@ func buildHeaders(runtime *goja.Runtime, h http.Header) *goja.Object {
 		}
 		return runtime.ToValue(entries)
 	})
-
-	// keys() returns an array of lowercased header names.
 	_ = obj.Set("keys", func() goja.Value {
 		var keys []string
 		for k := range h {
@@ -326,8 +277,6 @@ func buildHeaders(runtime *goja.Runtime, h http.Header) *goja.Object {
 		}
 		return runtime.ToValue(keys)
 	})
-
-	// values() returns an array of header values.
 	_ = obj.Set("values", func() goja.Value {
 		var values []string
 		for _, v := range h {
@@ -335,8 +284,6 @@ func buildHeaders(runtime *goja.Runtime, h http.Header) *goja.Object {
 		}
 		return runtime.ToValue(values)
 	})
-
-	// forEach(callback) calls callback(value, name, headers) for each header.
 	_ = obj.Set("forEach", func(call goja.FunctionCall) goja.Value {
 		fn, ok := goja.AssertFunction(call.Argument(0))
 		if !ok {
@@ -344,16 +291,11 @@ func buildHeaders(runtime *goja.Runtime, h http.Header) *goja.Object {
 		}
 		for k, v := range h {
 			val := strings.Join(v, ", ")
-			if _, err := fn(goja.Undefined(),
-				runtime.ToValue(val),
-				runtime.ToValue(strings.ToLower(k)),
-				obj,
-			); err != nil {
+			if _, err := fn(goja.Undefined(), runtime.ToValue(val), runtime.ToValue(strings.ToLower(k)), obj); err != nil {
 				panic(err)
 			}
 		}
 		return goja.Undefined()
 	})
-
 	return obj
 }

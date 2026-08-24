@@ -259,7 +259,7 @@ func TestUnwrap_Logic(t *testing.T) {
 		assert.Equal(t, bt.Running, status)
 
 		// Yield to event loop — multiple yields needed because the test event
-		// loop does not use WithStrictMicrotaskOrdering, so the native-promise
+		// loop now always uses strict microtask ordering, so the native-promise
 		// microtask may not drain in a single macrotask under -race.
 		for range 5 {
 			err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error { return nil })
@@ -352,7 +352,7 @@ func TestLeaves_CreateLeafNode(t *testing.T) {
 
 		// 2. Wait for event loop to process the promise
 		// Multiple yields needed because the test event loop does not use
-		// WithStrictMicrotaskOrdering, so the native-promise microtask may
+		// strict ordering, so the native-promise microtask may
 		// not drain in a single macrotask under -race.
 		for range 5 {
 			err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error { return nil })

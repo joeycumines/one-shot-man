@@ -20,17 +20,11 @@ function presentDefined(name) {
 	});
 }
 
-// --- Text / encoding ---
-presentFn('TextEncoder');
-presentFn('TextDecoder');
-test('TextEncoder encodes UTF-8 bytes', function () {
-	var u = new TextEncoder().encode('AB');
-	assert.equal('te length', u.length, 2);
-	assert.equal('te byte', u[0], 65);
-});
-test('TextDecoder decodes UTF-8', function () {
-	var s = new TextDecoder().decode(new Uint8Array([65, 66]));
-	assert.equal('td decode', s, 'AB');
+// --- Text / encoding (removed from adapter in 20260823: TextEncoder/TextDecoder/URL/Blob/Headers/FormData are host-provided, not installed by adapter) ---
+// Adapter no longer installs TextEncoder/TextDecoder — host must provide if needed. Assert absence.
+test('TextEncoder/TextDecoder are not installed by adapter (host-provided)', function () {
+	assert.equal('TextEncoder absent', typeof TextEncoder, 'undefined');
+	assert.equal('TextDecoder absent', typeof TextDecoder, 'undefined');
 });
 presentDefined('atob');
 presentDefined('btoa');
@@ -41,25 +35,14 @@ test('btoa/atob round-trip', function () {
 	assert.equal('atob(btoa(x)) round-trips', atob(btoa('hi')), 'hi');
 });
 
-// --- URL ---
-presentFn('URL');
-presentFn('URLSearchParams');
-test('URL parses host and path', function () {
-	var u = new URL('https://example.com/a/b?x=1');
-	assert.equal('url host', u.host, 'example.com');
-	assert.equal('url pathname', u.pathname, '/a/b');
+// --- URL / Blob / Headers / FormData (removed from adapter in 20260823) ---
+test('URL/Blob/Headers/FormData are not installed by adapter (host-provided)', function () {
+	assert.equal('URL absent', typeof URL, 'undefined');
+	assert.equal('URLSearchParams absent', typeof URLSearchParams, 'undefined');
+	assert.equal('Blob absent', typeof Blob, 'undefined');
+	assert.equal('Headers absent', typeof Headers, 'undefined');
+	assert.equal('FormData absent', typeof FormData, 'undefined');
 });
-test('URLSearchParams round-trips', function () {
-	var p = new URLSearchParams('a=1&b=2');
-	assert.equal('usp get', p.get('a'), '1');
-	p.set('c', '3');
-	assert.equal('usp toString has c', p.toString().indexOf('c=3') >= 0, true);
-});
-
-// --- Blob / FormData / Headers / DOMException / structuredClone ---
-presentDefined('Blob');
-presentDefined('Headers');
-presentDefined('FormData');
 presentDefined('DOMException');
 presentDefined('structuredClone');
 test('structuredClone deep-copies an object', function () {

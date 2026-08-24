@@ -5,11 +5,11 @@ package pathmod
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
 
 // Require is the Goja module loader for osm:path.
@@ -153,30 +153,21 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *
 			if len(call.Arguments) > 0 {
 				pattern = call.Argument(0).String()
 			}
-			promise, resolve, reject := adapter.JS().NewChainedPromise()
-			adapter.Loop().Promisify(ctx, func(opCtx context.Context) (any, error) {
+			return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 				matches, err := filepath.Glob(pattern)
-				if submitErr := adapter.Loop().Submit(func() {
-					result := runtime.NewObject()
-					if matches != nil {
-						_ = result.Set("matches", matches)
-					} else {
-						_ = result.Set("matches", goja.Null())
-					}
-					if err != nil {
-						_ = result.Set("error", err.Error())
-					} else {
-						_ = result.Set("error", goja.Null())
-					}
-					resolve(result)
-				}); submitErr != nil {
-					_ = adapter.Loop().Submit(func() {
-						reject(fmt.Errorf("event loop not running"))
-					})
+				m := make(map[string]any)
+				if matches != nil {
+					m["matches"] = matches
+				} else {
+					m["matches"] = nil
 				}
-				return nil, nil
+				if err != nil {
+					m["error"] = err.Error()
+				} else {
+					m["error"] = nil
+				}
+				return m, nil
 			})
-			return adapter.GojaWrapPromise(promise)
 		})
 	}
 }

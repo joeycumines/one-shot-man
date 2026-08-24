@@ -610,15 +610,19 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, run
 		}
 	})
 
-	// ── wait() → { code, error? } ───────────────────────
-	// BLOCKING: waits until child process exits and output is drained.
-	_ = obj.Set("wait", func() map[string]any {
-		code, err := cs.Wait()
-		result := map[string]any{"code": code}
-		if err != nil {
-			result["error"] = err.Error()
-		}
-		return result
+	// ── wait() → Promise<{ code, error? }> ─────────────────
+	// Async per JS Binding Contract: waits until child process exits and output is drained.
+	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
+		promise, settler := adapter.NewPromise()
+		go func() {
+			code, err := cs.Wait()
+			result := map[string]any{"code": code}
+			if err != nil {
+				result["error"] = err.Error()
+			}
+			_ = settler.Resolve(func(rt *goja.Runtime) any { return result })
+		}()
+		return promise
 	})
 
 	// ── sendEOF() ────────────────────────────────────────
@@ -671,9 +675,8 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, run
 			}
 		}
 
-		promise, resolve, _ := adapter.JS().NewChainedPromise()
-
-		adapter.Loop().Promisify(ctx, func(ctx context.Context) (any, error) {
+		promise, settler := adapter.NewPromise()
+		go func() {
 			termFd := int(os.Stdin.Fd())
 			reason, err := cs.Passthrough(ctx, parent.PassthroughConfig{
 				TerminalIO: parent.TerminalIO{
@@ -687,18 +690,15 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, run
 					TermState: ptyio.RealTermState{},
 				},
 			})
-
 			result := map[string]any{
 				"reason": exitReasonString(reason),
 			}
 			if err != nil {
 				result["error"] = err.Error()
 			}
-			_ = adapter.Loop().Submit(func() { resolve(result) })
-			return nil, nil
-		})
-
-		return adapter.GojaWrapPromise(promise)
+			_ = settler.Resolve(func(rt *goja.Runtime) any { return result })
+		}()
+		return promise
 	})
 
 	return obj
@@ -1054,7 +1054,7 @@ func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, run
 					if data == nil {
 						continue
 					}
-					adapter.Loop().Submit(func() {
+					adapter.Submit(func(_ *goja.Runtime) {
 						s.dispatchCustomEvent(data.eventType, data.detail)
 					})
 				}
@@ -1961,21 +1961,18 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			cfg.Stdout = os.Stdout
 		}
 
-		promise, resolve, _ := s.adapter.JS().NewChainedPromise()
-
-		s.adapter.Loop().Promisify(s.ctx, func(ctx context.Context) (any, error) {
-			reason, err := s.mgr.Passthrough(ctx, cfg)
+		promise, settler := s.adapter.NewPromise()
+		go func() {
+			reason, err := s.mgr.Passthrough(s.ctx, cfg)
 			result := map[string]any{
 				"reason": exitReasonString(reason),
 			}
 			if err != nil {
 				result["error"] = err.Error()
 			}
-			_ = s.adapter.Loop().Submit(func() { resolve(result) })
-			return nil, nil
-		})
-
-		return s.adapter.GojaWrapPromise(promise)
+			_ = settler.Resolve(func(rt *goja.Runtime) any { return result })
+		}()
+		return promise
 	})
 
 	_ = obj.Set("attach", func(call goja.FunctionCall) goja.Value {

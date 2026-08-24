@@ -21,9 +21,9 @@ import (
 	"syscall"
 	"time"
 
-	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -128,10 +128,6 @@ func (cb *mcpCallback) injectToolResult(toolName string, data json.RawMessage) e
 	return nil
 }
 
-// PromisifyFunc is the signature for the event loop's Promisify method.
-// Stored in internal data structures for easier mocking in tests.
-type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
-
 // Require returns a module loader for the osm:mcpcallback module.
 // The adapter is used for thread-safe JS callback invocation and Promisify support.
 // If adapter is nil, the module loads but MCPCallback is unavailable — matching exec.go behavior.
@@ -156,8 +152,6 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) require.Module
 //	// cb.address, cb.scriptPath, cb.transport, cb.mcpConfigPath available
 //	await cb.close();
 func jsCallbackFactory(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
-	loop := adapter.Loop()
-	promisify := adapter.Loop().Promisify
 	return func(call goja.FunctionCall) goja.Value {
 		opts := call.Argument(0)
 		if opts == nil || goja.IsUndefined(opts) || goja.IsNull(opts) {
@@ -204,11 +198,9 @@ func jsCallbackFactory(ctx context.Context, rt *goja.Runtime, adapter *gojaevent
 		cb := &mcpCallback{
 			server:    goServer,
 			adapter:   adapter,
-			loop:      loop,
 			runtime:   rt,
 			parentCtx: parentCtx,
 			baseCtx:   ctx,
-			promisify: promisify,
 		}
 
 		// Build JS object with methods and read-only property getters
@@ -266,11 +258,9 @@ type toolWaiter struct {
 type mcpCallback struct {
 	server    *mcp.Server
 	adapter   *gojaeventloop.Adapter
-	loop      *goeventloop.Loop
 	runtime   *goja.Runtime
 	parentCtx context.Context // optional parent context; nil = baseCtx
 	baseCtx   context.Context // base context from Require, used for cancellation
-	promisify PromisifyFunc
 
 	mu            sync.Mutex
 	initialized   bool
@@ -306,18 +296,16 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 		cb.initialized = true
 		cb.mu.Unlock()
 
-		promise, resolve, reject := cb.adapter.JS().NewChainedPromise()
+		promise, settler := cb.adapter.NewPromise()
 
-		cb.promisify(cb.baseCtx, func(ctx context.Context) (any, error) {
+	go func() {
 			if err := cb.startListener(); err != nil {
 				cb.cleanup()
 				cb.mu.Lock()
 				cb.initialized = false
 				cb.mu.Unlock()
-				if submitErr := cb.loop.Submit(func() { reject(err) }); submitErr != nil {
-					// Event loop gone — nothing to do
-				}
-				return nil, err
+				_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
 			}
 
 			if err := cb.generateFiles(); err != nil {
@@ -325,10 +313,8 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 				cb.mu.Lock()
 				cb.initialized = false
 				cb.mu.Unlock()
-				if submitErr := cb.loop.Submit(func() { reject(err) }); submitErr != nil {
-					// Event loop gone
-				}
-				return nil, err
+				_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
 			}
 
 			// Start accept loop for MCP connections.
@@ -344,13 +330,12 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 			listener := cb.listener
 			cb.mu.Unlock()
 
-			cb.promisify(nctx, func(ctx context.Context) (any, error) {
-				cb.acceptLoop(ctx, listener)
-				return nil, nil
-			})
+			go func() {
+				cb.acceptLoop(nctx, listener)
+			}()
 
 			// Watch for context cancellation (signal or parent cancel) and auto-cleanup.
-			cb.promisify(cb.baseCtx, func(ctx context.Context) (any, error) {
+			go func() {
 				<-nctx.Done()
 				cb.mu.Lock()
 				alreadyClosed := cb.closed
@@ -359,22 +344,20 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 				if !alreadyClosed {
 					cb.cleanup()
 				}
-				return nil, nil
-			})
+			}()
 
 			// Notify test watchers that a callback is ready for injection.
 			notifyWatchers(cb)
 
 			// Resolve promise on event loop thread
-			if submitErr := cb.loop.Submit(func() {
-				resolve(goja.Undefined())
+			if submitErr := cb.adapter.Submit(func(_ *goja.Runtime) {
+				_ = settler.Resolve(func(rt *goja.Runtime) any { return goja.Undefined() })
 			}); submitErr != nil {
 				// Event loop gone
 			}
-			return nil, nil
-		})
+			}()
 
-		return cb.adapter.GojaWrapPromise(promise)
+		return promise
 	}
 }
 
@@ -543,9 +526,7 @@ func (cb *mcpCallback) acceptLoop(ctx context.Context, listener net.Listener) {
 
 		mcpCallbackDebugf("accepted MCP connection from %s", conn.RemoteAddr())
 
-		// Serve MCP on this connection in a dedicated goroutine.
-		// Each connection gets its own Transport (SDK requirement: one Transport per Connect call).
-		cb.promisify(ctx, func(ctx context.Context) (any, error) {
+		go func() {
 			defer conn.Close()
 			transport := &mcp.IOTransport{
 				Reader: conn,
@@ -554,13 +535,12 @@ func (cb *mcpCallback) acceptLoop(ctx context.Context, listener net.Listener) {
 			session, sErr := cb.server.Connect(ctx, transport, nil)
 			if sErr != nil {
 				mcpCallbackDebugf("MCP server.Connect error: %v", sErr)
-				return nil, sErr
+				return
 			}
 			mcpCallbackDebugf("MCP session established, waiting...")
 			waitErr := session.Wait()
 			mcpCallbackDebugf("MCP session ended: %v", waitErr)
-			return nil, waitErr
-		})
+		}()
 	}
 }
 
@@ -573,28 +553,17 @@ func (cb *mcpCallback) jsClose() func(call goja.FunctionCall) goja.Value {
 		cb.mu.Lock()
 		if cb.closed {
 			cb.mu.Unlock()
-			// Idempotent — return already-resolved promise
-			promise, resolve, _ := cb.adapter.JS().NewChainedPromise()
-			resolve(goja.Undefined())
-			return cb.adapter.GojaWrapPromise(promise)
+				promise, settler := cb.adapter.NewPromise()
+			_ = settler.Resolve(func(rt *goja.Runtime) any { return goja.Undefined() })
+			return promise
 		}
 		cb.closed = true
 		cb.mu.Unlock()
 
-		promise, resolve, _ := cb.adapter.JS().NewChainedPromise()
-
-		cb.promisify(cb.baseCtx, func(ctx context.Context) (any, error) {
+		return async.Promise(cb.adapter, cb.baseCtx, func(ctx context.Context) (any, error) {
 			cb.cleanup()
-
-			if submitErr := cb.loop.Submit(func() {
-				resolve(goja.Undefined())
-			}); submitErr != nil {
-				// Event loop gone
-			}
-			return nil, nil
+			return goja.Undefined(), nil
 		})
-
-		return cb.adapter.GojaWrapPromise(promise)
 	}
 }
 
@@ -763,13 +732,12 @@ func (cb *mcpCallback) jsInitSync() func(call goja.FunctionCall) goja.Value {
 		listener := cb.listener
 		cb.mu.Unlock()
 
-		cb.promisify(nctx, func(ctx context.Context) (any, error) {
-			cb.acceptLoop(ctx, listener)
-			return nil, nil
-		})
+		go func() {
+			cb.acceptLoop(nctx, listener)
+			}()
 
 		// Auto-cleanup on context cancellation
-		cb.promisify(cb.baseCtx, func(ctx context.Context) (any, error) {
+		go func() {
 			<-nctx.Done()
 			cb.mu.Lock()
 			alreadyClosed := cb.closed
@@ -778,8 +746,7 @@ func (cb *mcpCallback) jsInitSync() func(call goja.FunctionCall) goja.Value {
 			if !alreadyClosed {
 				cb.cleanup()
 			}
-			return nil, nil
-		})
+			}()
 
 		// Notify test watchers that a callback is ready for injection.
 		notifyWatchers(cb)
@@ -802,9 +769,9 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 	return func(call goja.FunctionCall) goja.Value {
 		name := call.Argument(0).String()
 		if name == "" {
-			promise, resolve, _ := cb.adapter.JS().NewChainedPromise()
-			resolve(cb.waitResult(nil, "waitForAsync: tool name is required"))
-			return cb.adapter.GojaWrapPromise(promise)
+			promise, settler := cb.adapter.NewPromise()
+			_ = settler.Resolve(func(rt *goja.Runtime) any { return cb.waitResult(nil, "waitForAsync: tool name is required") })
+			return promise
 		}
 
 		timeoutMs := int64(600000) // default 10 min
@@ -838,9 +805,9 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 		cb.toolMu.RUnlock()
 
 		if !ok {
-			promise, resolve, _ := cb.adapter.JS().NewChainedPromise()
-			resolve(cb.waitResult(nil, "waitForAsync: tool not registered: "+name))
-			return cb.adapter.GojaWrapPromise(promise)
+			promise, settler := cb.adapter.NewPromise()
+			_ = settler.Resolve(func(rt *goja.Runtime) any { return cb.waitResult(nil, "waitForAsync: tool not registered: "+name) })
+			return promise
 		}
 
 		// Get cancellation context
@@ -848,9 +815,9 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 		nctx := cb.ctx
 		cb.mu.Unlock()
 
-		promise, resolve, _ := cb.adapter.JS().NewChainedPromise()
+		promise, settler := cb.adapter.NewPromise()
 
-		cb.promisify(cb.baseCtx, func(_ context.Context) (any, error) {
+		go func() {
 			timeout := time.Duration(timeoutMs) * time.Millisecond
 			deadline := time.NewTimer(timeout)
 			defer deadline.Stop()
@@ -873,7 +840,7 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 			// resolveOnLoop schedules promise resolution on the event loop
 			// goroutine where Goja operations are safe.
 			resolveOnLoop := func(data any, errMsg string) {
-				if submitErr := cb.loop.Submit(func() {
+				if submitErr := cb.adapter.Submit(func(_ *goja.Runtime) {
 					result := cb.runtime.NewObject()
 					if data != nil {
 						_ = result.Set("data", cb.runtime.ToValue(data))
@@ -885,7 +852,7 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 					} else {
 						_ = result.Set("error", goja.Null())
 					}
-					resolve(result)
+					_ = settler.Resolve(func(rt *goja.Runtime) any { return result })
 				}); submitErr != nil {
 					// Event loop gone — nothing to do
 				}
@@ -898,42 +865,42 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 					if len(data) > 0 {
 						if err := json.Unmarshal(data, &parsed); err != nil {
 							resolveOnLoop(nil, "waitForAsync: failed to parse tool data: "+err.Error())
-							return nil, err
+							return
 						}
 					}
 					resolveOnLoop(parsed, "")
-					return nil, nil
+					return
 
 				case <-ticker.C:
 					// Alive check — trampoline to event loop goroutine for Goja safety
 					if aliveCheckFn != nil {
 						aliveCh := make(chan bool, 1)
-						if submitErr := cb.loop.Submit(func() {
+						if submitErr := cb.adapter.Submit(func(_ *goja.Runtime) {
 							ret, callErr := aliveCheckFn(goja.Undefined())
 							aliveCh <- (callErr != nil || ret.ToBoolean())
 						}); submitErr != nil {
 							resolveOnLoop(nil, "event loop terminated during wait for "+name)
-							return nil, submitErr
+							return
 						}
 						select {
 						case alive := <-aliveCh:
 							if !alive {
 								resolveOnLoop(nil, "process exited during wait for "+name)
-								return nil, errors.New("process exited")
+								return
 							}
 						case <-deadline.C:
 							resolveOnLoop(nil, fmt.Sprintf("timeout waiting for %s after %dms", name, capturedTimeoutMs))
-							return nil, errors.New("timeout")
+							return
 						case <-ctxDone:
 							resolveOnLoop(nil, "MCPCallback closed during wait for "+name)
-							return nil, errors.New("closed")
+							return
 						}
 					}
 
 					// Progress callback — fire-and-forget on event loop
 					if progressFn != nil {
 						elapsed := time.Since(startTime).Milliseconds()
-						_ = cb.loop.Submit(func() {
+						_ = cb.adapter.Submit(func(_ *goja.Runtime) {
 							_, _ = progressFn(goja.Undefined(),
 								cb.runtime.ToValue(elapsed),
 								cb.runtime.ToValue(capturedTimeoutMs))
@@ -942,16 +909,16 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 
 				case <-deadline.C:
 					resolveOnLoop(nil, fmt.Sprintf("timeout waiting for %s after %dms", name, capturedTimeoutMs))
-					return nil, errors.New("timeout")
+					return
 
 				case <-ctxDone:
 					resolveOnLoop(nil, "MCPCallback closed during wait for "+name)
-					return nil, errors.New("closed")
+					return
 				}
 			}
-		})
+		}()
 
-		return cb.adapter.GojaWrapPromise(promise)
+		return promise
 	}
 }
 

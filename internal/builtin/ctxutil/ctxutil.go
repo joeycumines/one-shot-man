@@ -11,6 +11,7 @@ import (
 
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	gosmargv "github.com/joeycumines/one-shot-man/internal/argv"
 )
 
@@ -98,15 +99,10 @@ func Require(baseCtx context.Context, adapter *gojaeventloop.Adapter) func(runti
 			items := extractItems(runtime, call.Argument(0))
 			txtarContent := extractTxtar(runtime, call)
 
-			promise, resolve, _ := adapter.JS().NewChainedPromise()
-			adapter.Loop().Promisify(baseCtx, func(ctx context.Context) (any, error) {
-				result := renderContext(baseCtx, items, txtarContent)
-				_ = adapter.Loop().Submit(func() {
-					resolve(runtime.ToValue(result))
-				})
-				return nil, nil
+			return async.Promise(adapter, baseCtx, func(ctx context.Context) (any, error) {
+				result := renderContext(ctx, items, txtarContent)
+				return result, nil
 			})
-			return adapter.GojaWrapPromise(promise)
 		})
 
 		// Load contextManager

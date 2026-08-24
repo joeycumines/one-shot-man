@@ -150,7 +150,7 @@ func (s *mcpServer) makeToolHandler(handler goja.Callable) mcp.ToolHandler {
 		resultCh := make(chan handlerResult, 1)
 
 		// Schedule JS callback on event loop thread (goja.Runtime is not thread-safe)
-		if err := s.adapter.Loop().Submit(func() {
+		if err := s.adapter.Submit(func(_ *goja.Runtime) {
 			// Parse raw arguments to a JS object
 			var args any
 			if req.Params.Arguments != nil {
@@ -339,24 +339,16 @@ func (s *mcpServer) jsRun() func(call goja.FunctionCall) goja.Value {
 		s.cancel = cancel
 		s.mu.Unlock()
 
-		// Create promise for async run
-		promise, resolve, reject := s.adapter.JS().NewChainedPromise()
-
-		s.adapter.Loop().Promisify(s.ctx, func(_ context.Context) (any, error) {
+		promise, settler := s.adapter.NewPromise()
+		go func() {
 			err := s.server.Run(ctx, &mcp.StdioTransport{})
 			if err != nil && !errors.Is(err, context.Canceled) {
-				_ = s.adapter.Loop().Submit(func() {
-					reject(err)
-				})
-				return nil, err
+				_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+			} else {
+				_ = settler.Resolve(func(rt *goja.Runtime) any { return goja.Undefined() })
 			}
-			_ = s.adapter.Loop().Submit(func() {
-				resolve(goja.Undefined())
-			})
-			return nil, nil
-		})
-
-		return s.adapter.GojaWrapPromise(promise)
+		}()
+		return promise
 	}
 }
 

@@ -34,7 +34,7 @@ func setupPaneMgr(t *testing.T) (*goja.Runtime, func()) {
 	go func() { errCh <- mgr.Run(ctx) }()
 	<-mgr.Started()
 
-	loop, err := goeventloop.New(goeventloop.WithStrictMicrotaskOrdering(true))
+	loop, err := goeventloop.New()
 	if err != nil {
 		t.Fatalf("create event loop: %v", err)
 	}
@@ -71,7 +71,7 @@ func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
 	go func() { errCh <- mgr.Run(ctx) }()
 	<-mgr.Started()
 
-	loop, err := goeventloop.New(goeventloop.WithStrictMicrotaskOrdering(true))
+	loop, err := goeventloop.New()
 	if err != nil {
 		t.Fatalf("create event loop: %v", err)
 	}

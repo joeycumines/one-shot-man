@@ -113,20 +113,7 @@ test('generators yield a correct iterable sequence', function () {
 	assert.equal('generator sequence', out, '123');
 });
 
-// NOTE: goja does NOT support `for await...of` / async iteration (the parser
-// rejects `for await` — a SyntaxError that would prevent this whole spec file
-// from loading). `Symbol.asyncIterator` is a well-known symbol per ecma-262
-// §6.1.5.1 that MUST be registered. The goja fork does NOT register it
-// (returns undefined). This test FAILS until the goja fork is updated to
-// register @@asyncIterator in the well-known symbols table. The parse-unsafe
-// for-await-of syntax is deliberately omitted so this file loads.
-//
-// GOJA-FORK-BLOCKED — tracked as a failing test (not a skip) per the
-// compliance directive: non-compliance of ANY KIND must bubble as a test
-// failure.
-test('Symbol.asyncIterator is a registered well-known symbol (GOJA-FORK-BLOCKED)', function () {
-	assert.equal('Symbol.asyncIterator typeof', typeof Symbol.asyncIterator, 'symbol');
-});
+// Symbol.asyncIterator moved to core_es_fork_blocked.spec.js (GOJA-FORK-BLOCKED)
 
 // 7. Destructuring, optional chaining, nullish coalescing
 test('destructuring binds and defaults correctly', function () {
@@ -282,23 +269,6 @@ test('Error.cause propagates to TypeError/RangeError (ES2022)', function () {
 	assert.equal('RangeError cause', r.cause, 42);
 });
 
-// ES2024: String.prototype.isWellFormed / toWellFormed
-// GOJA-FORK-BLOCKED — the goja fork does NOT implement isWellFormed/toWellFormed
-// (returns undefined). ecma-262 §22.1.3.x. This test FAILS until the goja fork
-// is updated. Per the compliance directive: non-compliance bubbles as a failure.
-test('String.prototype.isWellFormed/toWellFormed (ES2024, GOJA-FORK-BLOCKED)', function () {
-	assert.equal('isWellFormed is a function', typeof 'hello'.isWellFormed, 'function');
-	assert.equal('well-formed ASCII', 'hello'.isWellFormed(), true);
-	assert.equal('lone surrogate not well-formed', '\uD800'.isWellFormed(), false);
-});
+// isWellFormed/toWellFormed moved to core_es_fork_blocked.spec.js (GOJA-FORK-BLOCKED)
 
-// ES2024: Object.groupBy / Map.groupBy
-// GOJA-FORK-BLOCKED — the goja fork does NOT implement Object.groupBy/Map.groupBy
-// (returns undefined). ecma-262 §20.1.2.x. This test FAILS until the goja fork
-// is updated.
-test('Object.groupBy/Map.groupBy (ES2024, GOJA-FORK-BLOCKED)', function () {
-	assert.equal('Object.groupBy is function', typeof Object.groupBy, 'function');
-	var grouped = Object.groupBy([1, 2, 3, 4], function (x) { return x % 2 ? 'odd' : 'even'; });
-	assert.equal('odd group', grouped.odd.length, 2);
-	assert.equal('even group', grouped.even.length, 2);
-});
+// Object.groupBy/Map.groupBy moved to core_es_fork_blocked.spec.js (GOJA-FORK-BLOCKED)

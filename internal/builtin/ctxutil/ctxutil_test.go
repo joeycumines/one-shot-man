@@ -17,9 +17,7 @@ func setupBuildContext(t *testing.T) (*goja.Runtime, *goeventloop.Loop) {
 
 	runtime := goja.New()
 
-	loop, err := goeventloop.New(
-		goeventloop.WithStrictMicrotaskOrdering(true),
-	)
+	loop, err := goeventloop.New()
 	if err != nil {
 		t.Fatal(err)
 	}

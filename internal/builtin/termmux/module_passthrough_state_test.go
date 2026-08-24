@@ -113,7 +113,7 @@ func setupPassthroughState(t *testing.T) (runtime *goja.Runtime, s *muxState, st
 	stdinR, stdinW := io.Pipe()
 	runtime = goja.New()
 
-	loop, err := goeventloop.New(goeventloop.WithStrictMicrotaskOrdering(true))
+	loop, err := goeventloop.New()
 	if err != nil {
 		t.Fatalf("create event loop: %v", err)
 	}

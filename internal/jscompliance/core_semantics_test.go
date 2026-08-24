@@ -2,6 +2,7 @@ package jscompliance
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 )
@@ -26,7 +27,7 @@ func TestCorePromises(t *testing.T) {
 	runSpec(t, engine, "specs/core_promises.spec.js", specTimeout)
 }
 
-// TestCoreMicrotask pins the WithStrictMicrotaskOrdering guarantee.
+// TestCoreMicrotask pins the strict microtask ordering (always-on since 20260823) guarantee.
 func TestCoreMicrotask(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -48,4 +49,21 @@ func TestCoreAbort(t *testing.T) {
 	ctx := context.Background()
 	engine, _, _ := newComplianceEngine(t, ctx)
 	runSpec(t, engine, "specs/core_abort.spec.js", specTimeout)
+}
+
+// TestCoreES_ForkBlocked runs the GOJA-FORK-BLOCKED ES2024+ features that are expected to FAIL.
+// This is separated from TestCoreES so that gmake test-jscompliance (main tier) can pass while
+// the dedicated test-jscompliance-fork-blocked target shows the expected failures.
+// When the goja fork is updated, these tests will pass and can be promoted.
+func TestCoreES_ForkBlocked(t *testing.T) {
+	if os.Getenv("JS_COMPLIANCE_FORK_BLOCKED") == "" {
+		t.Skip("skipping fork-blocked test (set JS_COMPLIANCE_FORK_BLOCKED=1 to run)")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow fork-blocked test in short mode")
+	}
+	t.Parallel()
+	ctx := context.Background()
+	engine, _, _ := newComplianceEngine(t, ctx)
+	runSpec(t, engine, "specs/core_es_fork_blocked.spec.js", specTimeout)
 }

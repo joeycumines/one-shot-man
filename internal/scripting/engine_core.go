@@ -714,7 +714,7 @@ func (e *Engine) Adapter() *gojaEventloop.Adapter {
 // This implements builtin.EventLoopProvider.
 func (e *Engine) Promisify(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise {
 	if e.runtime == nil {
-		return nil
+		panic("engine runtime is nil")
 	}
 	return e.runtime.Promisify(ctx, fn)
 }

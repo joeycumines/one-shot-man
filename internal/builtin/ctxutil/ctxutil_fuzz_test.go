@@ -25,9 +25,7 @@ func FuzzBuildContext(f *testing.F) {
 	f.Fuzz(func(t *testing.T, itemType, label, payload string) {
 		runtime := goja.New()
 
-		loop, err := goeventloop.New(
-			goeventloop.WithStrictMicrotaskOrdering(true),
-		)
+		loop, err := goeventloop.New()
 		if err != nil {
 			t.Fatal(err)
 		}

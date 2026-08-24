@@ -304,30 +304,19 @@ func (e *Engine) SetTestMode(enabled bool) {
 // will cause SetGlobal/GetGlobal to panic if called from the wrong goroutine.
 // See SetThreadCheckMode.
 func (e *Engine) QueueSetGlobal(name string, value any) {
-	// Queue the VM and local cache update to the event loop for thread safety
-	// Also acquire lock to synchronize with GetGlobal's Lock()
-	vm := e.vm
-	e.runtime.loop.Submit(func() {
+	e.runtime.adapter.Submit(func(rt *goja.Runtime) {
 		e.globalsMu.Lock()
 		e.globals[name] = value
-		vm.Set(name, value)
+		rt.Set(name, value)
 		e.globalsMu.Unlock()
 	})
 }
 
 // QueueGetGlobal queues a GetGlobal operation to be executed on the event loop.
-// This is the thread-safe alternative to GetGlobal for use from arbitrary goroutines.
-//
-// The operation is asynchronous - the callback is invoked with the result
-// once the operation completes on the event loop.
-// If you need synchronous access, use Runtime.GetGlobal instead.
 func (e *Engine) QueueGetGlobal(name string, callback func(value any)) {
-	// Queue the VM read to the event loop for thread safety
-	// Also acquire lock to synchronize with QueueSetGlobal's vm.Set() calls
-	vm := e.vm
-	e.runtime.loop.Submit(func() {
+	e.runtime.adapter.Submit(func(rt *goja.Runtime) {
 		e.globalsMu.Lock()
-		val := vm.Get(name)
+		val := rt.Get(name)
 		e.globalsMu.Unlock()
 		var result any
 		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {

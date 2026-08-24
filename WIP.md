@@ -130,3 +130,8 @@ go vet / go build            → PASS
 - Task: `Adopt adapter.Done terminal barrier in scripting runtime` — acceptance: Close() waits until adapter.Done() closes (no pending callbacks), not just Loop.Run exit.
 - Changes: `internal/scripting/runtime.go:212 Done()` now returns `adapter.Done()` when bound (checked per doc: terminal cleanup signal, closes only after no callback can still execute), else `ctx.Done()`. `Close()` and `Wait()` now `<-adapter.Done()` after `<-rt.done`. Verified `go vet`/`go build` PASS, `gmake test-jscompliance` PASS.
 - Commit: a9ec4e4
+
+## UPDATE 2026-08-24 — Refinement 2/5 DONE: QueueSetGlobal to adapter.Submit
+- Task: `Migrate engine_core QueueSetGlobal/QueueGetGlobal to adapter.Submit`
+- Changes: `internal/scripting/engine_core.go:306 QueueSetGlobal` and `324 QueueGetGlobal` now use `adapter.Submit(func(rt *goja.Runtime))` (logical owner, not physical goroutine), removed captured `vm` and `loop.Submit(func())`. Verified `go vet`/`go build` PASS, `gmake test-jscompliance` PASS.
+- Commit: 08fdb45

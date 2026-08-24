@@ -656,7 +656,7 @@
       "task": "Migrate engine_core QueueSetGlobal/QueueGetGlobal to adapter.Submit",
       "description": "Replace internal/scripting/engine_core.go QueueSetGlobal/QueueGetGlobal and RunOnLoopSync that currently use loop.Submit with adapter.Submit (serialized logical callback-owner role, physical goroutine identity not part of contract). Ensure vm.Set/vm.Get are under adapter ownership, remove direct loop.Submit where adapter.Submit is available, and keep globalsMu protection. Verify no concurrent runtime access.",
       "acceptance": "All Goja work after callbacks may execute routes via adapter.Submit, never loop.Submit for JS work. `grep -R loop.Submit --include=\"*.go\" internal/scripting` shows only lifecycle (Loop.Promisify bootstrap) remaining. Tests pass with -race.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/scripting/engine_core.go"
       ],

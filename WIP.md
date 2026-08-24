@@ -211,3 +211,6 @@ go vet / go build            → PASS
 - AGENTS.md gained "Shutdown tracking" bullet in JS Binding Contract.
 - Tasks inserted as 11 (A1 canonical rule) and 12 (A2 sweep) BEFORE old F9-F22.
 - Background agents completed, results pending retrieval: bg_6d234820 (site inventory), bg_fd728d66 (semantics decision table).
+
+## UPDATE 2026-08-25 — Task 11 DONE (PROMISE-CONSISTENCY A1, canonical rule):
+RULE: all goroutine-backed binding settlements -> loop.Promisify; JS-visible results via NewPromise-settler bridge on owner. Exceptions: sync settles, Submit trampolines. Full rationale + 42-site inventory + tier plan recorded in blueprint A1 description. Key facts: promisifyCount=liveness, promisifyWg=Shutdown drain, settler attempt consumed on failed Submit (pending forever). bt/require.go 327-vs-353 is the flagship inconsistency. Next Takumi: implement A2 = upgrade async/promise.go with tracked helper (check go-eventloop Promise.Then signature in GOMODCACHE future.go/promise.go first), thread *Loop through register.go Requires (fetch precedent), Tier-1 then Tier-2, grep gate + -race.

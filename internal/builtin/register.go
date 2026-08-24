@@ -35,6 +35,8 @@ import (
 	pabtmod "github.com/joeycumines/one-shot-man/internal/builtin/pabt"
 	pathmod "github.com/joeycumines/one-shot-man/internal/builtin/path"
 	regexpmod "github.com/joeycumines/one-shot-man/internal/builtin/regexp"
+	astpackmod "github.com/joeycumines/one-shot-man/internal/builtin/astpack"
+	difftriagemod "github.com/joeycumines/one-shot-man/internal/builtin/difftriage"
 	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
 	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
 	boxmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/box"
@@ -120,6 +122,8 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"text/template", templatemod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"unicodetext", unicodetextmod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"gitops", gitopsmod.Require(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"astpack", astpackmod.Require(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"diff_triage", difftriagemod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"termmux", termmuxmod.Require(ctx, eventLoopProvider.Adapter(), terminalReader(terminalProvider), terminalWriter(terminalProvider)))
 
 	pbMod, err := gojaprotobuf.New(eventLoopProvider.Runtime())

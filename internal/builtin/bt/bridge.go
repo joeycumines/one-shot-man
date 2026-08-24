@@ -360,6 +360,10 @@ func (b *Bridge) RunSync(fn func(*goja.Runtime) error) error {
 	timeout := b.timeout
 	b.mu.RUnlock()
 
+	if eventlooputil.IsLoopThread(b.eventLoopGoroutineID.Load()) {
+		return fn(b.vm)
+	}
+
 	vm := b.vm
 	errCh := make(chan error, 1)
 	submitErr := b.loop.Submit(func() {

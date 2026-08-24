@@ -7,7 +7,6 @@ import (
 
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	"github.com/joeycumines/one-shot-man/internal/tokenizer"
 )
 
@@ -94,13 +93,20 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(vm *goja.
 				_ = settler.Resolve(func(rt *goja.Runtime) any { return goja.Null() })
 				return promise
 			}
-			return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
+			promise, settler := adapter.NewPromise()
+			go func() {
 				tok, err := tokenizer.LoadTokenizerFile(path)
 				if err != nil {
-					return nil, fmt.Errorf("loadFile: %w", err)
+					_ = settler.Reject(func(rt *goja.Runtime) any {
+						return rt.NewGoError(fmt.Errorf("loadFile: %w", err))
+					})
+					return
 				}
-				return newTokenizerWrapper(runtime, tok), nil
-			})
+				_ = settler.Resolve(func(rt *goja.Runtime) any {
+					return newTokenizerWrapper(rt, tok)
+				})
+			}()
+			return promise
 		})
 
 		// ---- loadJSON(jsonStr: string): TokenizerWrapper ----

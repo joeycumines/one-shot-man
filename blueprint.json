@@ -35,7 +35,7 @@
     "ALWAYS": "Tee every long command to scratch/ before tail/head per globalAlerts. Pattern: mkdir -p scratch && <cmd> 2>&1 | tee scratch/<name>.log | tail -n 100; echo EXIT:${PIPESTATUS[0]}"
   },
   "statusSection": {
-    "currentState": "Task 1/22 DONE: H0 sandbox neutralized (process.exit/env/pid/exitCode/_exiting scrubbed, Buffer/Deno/quit cleared). Both sandbox verifications PASS (go test -run TestSandbox -race and -v). Next: task 2 H1 tokenizer off-loop VM mutation.",
+    "currentState": "Task 2/22 DONE: H1 tokenizer off-loop VM mutation fixed (settler callback). Verified via go test -race PASS (4/4 including hammer) and vet clean. Next: task 3 fetch body streaming+liveness.",
     "goalState": "All 6 red packages green, sandbox escape closed, fetch streaming restored with liveness, Bridge nil-adapter class eliminated, Bridge stall gone (5s+forever -> sub-ms), tokenizer race gone, scripting races gone, binding contract converged (zero loop-monopolizing sync twins), duplication collapsed (~350+80+60 lines net deletion), stale microtask comments fixed, WithLogger/Metrics wired, verification parity (-race/fuzz/determinism/coverage) green, docs/AGENTS realigned, and BOTH `gmake -j 10 make-all-with-log` and `gmake -j 10 make-all-in-container` pass with zero unintended failures (go vet/build/deadcode/staticcheck + `go test -timeout=20m ./...`). Two contiguous strict-review-gate passes confirm no hard-coded test-only fixes.",
     "goalLog": [
       {
@@ -210,7 +210,7 @@
       "task": "H1 CRITICAL: fix tokenizer.loadFile off-loop VM mutation (only off-loop VM write in tree)",
       "description": "internal/builtin/tokenizer/tokenizer.go:97-103 does `return newTokenizerWrapper(runtime, tok)` inside async.Promise goroutine \u2014 concurrent with loop owner mutating same goja.Runtime (NewObject/Set/ToValue). Fix via settler callback: `go func(){ tok,err:=LoadTokenizerFile(path); if err { settler.Reject(rt.NewGoError) } else { settler.Resolve(func(rt *goja.Runtime) any { return newTokenizerWrapper(rt,tok) }) } }` and drop async.Promise helper here (its fn returns any outside owner). Keep path==\"\" immediate Null via NewPromise+Resolve. Delete direct runtime capture. Patch sketch P1 (12_phase0_patch_sketches.md) is the reference form.",
       "acceptance": "Concurrent `loadFile` while timers/microtasks run no longer races (go test -race ./internal/builtin/tokenizer with first-ever test file + hammer of 2 goroutines x 3s shows no race, `grep -R \"newTokenizerWrapper(runtime\"` zero). Existing interfaces (loadJSON/BPE/WordPiece remain sync) unchanged. `go vet` clean; new tokenizer_test.go with loadFile success+error+concurrent hammer passes -race.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/builtin/tokenizer/tokenizer.go",
         "internal/builtin/async/promise.go"

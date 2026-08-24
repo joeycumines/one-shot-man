@@ -1,4 +1,4 @@
-package command
+package triage
 
 import "testing"
 
@@ -46,7 +46,6 @@ func TestTriageDiff_HighRisk(t *testing.T) {
 }
 
 func TestTriageDiff_EliminationRate(t *testing.T) {
-	// Fixture with mostly trivial churn.
 	var diff string
 	diff += "diff --git a/go.mod b/go.mod\n--- a/go.mod\n+++ b/go.mod\n@@ -1,2 +1,2 @@\n-module foo\n+module foo\n"
 	diff += "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1,2 +1,2 @@\n-hello world\n+hello  world\n"
@@ -59,7 +58,6 @@ func TestTriageDiff_EliminationRate(t *testing.T) {
 			trivial++
 		}
 	}
-	// At least 1 of 4 should be trivial (lockfile) — mechanism works.
 	if trivial < 1 {
 		t.Errorf("expected >=1 trivial, got %d in %+v", trivial, results)
 	}
@@ -68,7 +66,6 @@ func TestTriageDiff_EliminationRate(t *testing.T) {
 func TestTriageDiff_CommentsOnly(t *testing.T) {
 	diff := "diff --git a/foo.go b/foo.go\n--- a/foo.go\n+++ b/foo.go\n@@ -1,3 +1,3 @@\n package foo\n-// old comment\n+// new comment\n func Foo() {}\n"
 	results := TriageDiff(diff)
-	// Could be trivial or semantic depending on heuristic; ensure not panicking.
 	if len(results) != 1 {
 		t.Fatalf("expected 1")
 	}

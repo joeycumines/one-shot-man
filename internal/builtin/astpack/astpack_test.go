@@ -100,8 +100,4 @@ func Helper() {}
 	}
 }
 
-func skipSlow(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skip slow")
-	}
-}
+

@@ -153,10 +153,7 @@ func splitDiffForTriage(diff string) []triageFileDiff {
 			current = []string{line}
 			parts := strings.Split(line, " ")
 			if len(parts) >= 4 {
-				b := parts[3]
-				if strings.HasPrefix(b, "b/") {
-					b = b[2:]
-				}
+				b := strings.TrimPrefix(parts[3], "b/")
 				currentName = filepath.Clean(b)
 			} else {
 				currentName = line

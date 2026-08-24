@@ -115,13 +115,10 @@ func isRustFile(p string) bool    { return strings.HasSuffix(p, ".rs") }
 func isCppFile(p string) bool     { return strings.HasSuffix(p, ".cc") || strings.HasSuffix(p, ".cpp") || strings.HasSuffix(p, ".c") || strings.HasSuffix(p, ".h") || strings.HasSuffix(p, ".hpp") }
 
 var (
-	goFuncRe    = regexp.MustCompile(`(?m)^func\s+(?:\([^)]+\)\s+)?(\w+)\s*\(`)
-	jsFuncRe    = regexp.MustCompile(`(?m)(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(|(\w+)\s*:\s*function|def\s+(\w+)\s*\()`)
-	pyFuncRe    = regexp.MustCompile(`(?m)^def\s+(\w+)\s*\(`)
-	pyClassRe   = regexp.MustCompile(`(?m)^class\s+(\w+)`)
-	rustFnRe    = regexp.MustCompile(`(?m)fn\s+(\w+)\s*\(|struct\s+(\w+)|enum\s+(\w+)`)
-	cppFuncRe   = regexp.MustCompile(`(?m)^\s*(?:\w+\s+)+(\w+)\s*\([^;]*\)\s*\{`)
-	callRe      = regexp.MustCompile(`(\w+)\s*\(.*\)`)
+	jsFuncRe  = regexp.MustCompile(`(?m)(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(|(\w+)\s*:\s*function|def\s+(\w+)\s*\()`)
+	rustFnRe  = regexp.MustCompile(`(?m)fn\s+(\w+)\s*\(|struct\s+(\w+)|enum\s+(\w+)`)
+	cppFuncRe = regexp.MustCompile(`(?m)^\s*(?:\w+\s+)+(\w+)\s*\([^;]*\)\s*\{`)
+	callRe    = regexp.MustCompile(`(\w+)\s*\(.*\)`)
 )
 
 func parseGoFile(path, content string) ([]Symbol, []Call, []Symbol) {
@@ -287,10 +284,7 @@ func extractFilesFromDiff(diff string) map[string]string {
 			// diff --git a/foo/bar.go b/foo/bar.go
 			parts := strings.Split(line, " ")
 			if len(parts) >= 4 {
-				b := parts[3]
-				if strings.HasPrefix(b, "b/") {
-					b = b[2:]
-				}
+				b := strings.TrimPrefix(parts[3], "b/")
 				currentFile = b
 			} else {
 				currentFile = line

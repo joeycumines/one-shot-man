@@ -24,9 +24,9 @@ import (
 //go:embed all:testdata
 var testdata embed.FS
 
-var invalidFormatError = errors.New("invalid test262 file format")
+var errInvalidFormat = errors.New("invalid test262 file format")
 
-var ignorableTestError = errors.New("IgnorableTestError")
+var errIgnorableTest = errors.New("IgnorableTestError")
 
 // skipList mirrors goja's tc39_test.go skipList for known exclusions (subset for our curated data).
 var skipList = map[string]bool{}
@@ -124,12 +124,12 @@ func (m *tc39Meta) hasFlag(flag string) bool {
 func parseTestFile(content string) (*tc39Meta, string, error) {
 	metaStart := strings.Index(content, "/*---")
 	if metaStart == -1 {
-		return nil, "", invalidFormatError
+		return nil, "", errInvalidFormat
 	}
 	metaStart += 5
 	metaEnd := strings.Index(content, "---*/")
 	if metaEnd == -1 || metaEnd <= metaStart {
-		return nil, "", invalidFormatError
+		return nil, "", errInvalidFormat
 	}
 	var meta tc39Meta
 	if err := yaml.Unmarshal([]byte(content[metaStart:metaEnd]), &meta); err != nil {
@@ -187,34 +187,6 @@ func loadHarnessFile(name string) (string, error) {
 	return s, nil
 }
 
-// newEngine creates a fresh osm engine per test file (hermetic).
-func newEngine(t interface{ Helper(); Cleanup(func()); Name() string }) (*scripting.Engine, *bytes.Buffer, *bytes.Buffer) {
-	// Use testing.TB via type assertion; caller passes *testing.T.
-	// To avoid import cycle, we use interface and runtime check.
-	type tb interface {
-		Helper()
-		Cleanup(func())
-		Name() string
-		Fatalf(string, ...any)
-	}
-	var tbVal tb
-	if v, ok := t.(tb); ok {
-		tbVal = v
-		tbVal.Helper()
-	}
-	ctx := context.Background()
-	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("", t.Name()), "memory", nil, 0, slog.LevelInfo)
-	if err != nil {
-		if tbVal != nil {
-			tbVal.Fatalf("NewEngine failed: %v", err)
-		}
-		panic(fmt.Sprintf("NewEngine failed: %v", err))
-	}
-	t.Cleanup(func() { _ = engine.Close() })
-	return engine, &stdout, &stderr
-}
-
 // runOne runs a single test262 file content on a fresh engine.
 func runOne(name, src string, meta *tc39Meta) (bool, bool, string) {
 	// Feature blacklist
@@ -262,7 +234,7 @@ func runOne(name, src string, meta *tc39Meta) (bool, bool, string) {
 			return goja.Undefined()
 		})
 		_262.Set("createRealm", func(goja.FunctionCall) goja.Value {
-			panic(ignorableTestError)
+			panic(errIgnorableTest)
 		})
 		_262.Set("evalScript", func(call goja.FunctionCall) goja.Value {
 			script := call.Argument(0).String()
@@ -331,7 +303,7 @@ func runOne(name, src string, meta *tc39Meta) (bool, bool, string) {
 	res := <-done
 	if res.err != nil {
 		// Handle IgnorableTestError as skip
-		if errors.Is(res.err, ignorableTestError) {
+		if errors.Is(res.err, errIgnorableTest) {
 			return false, true, "IgnorableTestError"
 		}
 		if exc, ok := res.err.(*goja.Exception); ok {
@@ -339,7 +311,7 @@ func runOne(name, src string, meta *tc39Meta) (bool, bool, string) {
 				return false, true, "IgnorableTestError"
 			}
 			// Check for symbol
-			if exc.Value().Export() == ignorableTestError {
+			if exc.Value().Export() == errIgnorableTest {
 				return false, true, "IgnorableTestError"
 			}
 		}

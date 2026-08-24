@@ -23,20 +23,11 @@ import (
 //go:embed all:testdata
 var testdata embed.FS
 
-var invalidFormatError = errors.New("invalid goja compat file format")
+var errInvalidFormat = errors.New("invalid goja compat file format")
 
 type tc39Meta struct {
 	Includes []string `yaml:"includes"`
 	Flags    []string `yaml:"flags"`
-}
-
-func (m *tc39Meta) hasFlag(f string) bool {
-	for _, v := range m.Flags {
-		if v == f {
-			return true
-		}
-	}
-	return false
 }
 
 func parseFile(content string) (*tc39Meta, string, error) {
@@ -48,7 +39,7 @@ func parseFile(content string) (*tc39Meta, string, error) {
 	start += 5
 	end := strings.Index(content, "---*/")
 	if end == -1 || end <= start {
-		return nil, "", invalidFormatError
+		return nil, "", errInvalidFormat
 	}
 	var meta tc39Meta
 	if err := yaml.Unmarshal([]byte(content[start:end]), &meta); err != nil {

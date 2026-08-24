@@ -1,5 +1,5 @@
-charm.land/bubbles/v2 v2.2.0 h1:9GEMewcejrNtVIxZ9Y2wSsWJamsWNsXa8MpMLnH4yI4=
-charm.land/bubbles/v2 v2.2.0/go.mod h1:wdMgn+sje1KNXdwFizIWjbf328fIUBxqEmJ/vYPo8yc=
+charm.land/bubbles/v2 v2.2.1 h1:Fq1+qm5hV6GkvzLQDhCBpXXE5tLgvh1PRriCLwSvIQU=
+charm.land/bubbles/v2 v2.2.1/go.mod h1:wdMgn+sje1KNXdwFizIWjbf328fIUBxqEmJ/vYPo8yc=
 charm.land/bubbletea/v2 v2.0.9 h1:DpJCMWKgzQK8SJv4zbKKFHAI10ymWy/evClPFk0k0f8=
 charm.land/bubbletea/v2 v2.0.9/go.mod h1:2SkdgoTXluXJHOUwAoRlRXF/28vklb1rFl6GcgV1/ss=
 charm.land/lipgloss/v2 v2.0.6 h1:EaGKeuA8FvF+v2BT5VmZd2LoYLaMZJXA5n34th8nCIQ=
@@ -96,10 +96,10 @@ github.com/joeycumines/go-bigbuff v1.21.1 h1:UNX65np8YFSzORxCMHSrXXVNNI7ebedmBQv
 github.com/joeycumines/go-bigbuff v1.21.1/go.mod h1:Ftwjd8wCDJqDk5NLsCbTibX0BrbzPv/GYiHoa3fbO9E=
 github.com/joeycumines/go-catrate v0.0.0-20260822232657-5012a789c17d h1:SWlXN36/O1QhdlVH6d7jl2QEarCWVb0S/9xPyl7wMgI=
 github.com/joeycumines/go-catrate v0.0.0-20260822232657-5012a789c17d/go.mod h1:X63aGRQPisT+0HCrrRpb/lf458gQK53isDCq+zmfFqY=
-github.com/joeycumines/go-eventloop v0.0.0-20260823222032-673d434da850 h1:zTc2gSUu7Fh0aMrQMZkKq0vWJWYivfm6QSo2gCWjI6k=
-github.com/joeycumines/go-eventloop v0.0.0-20260823222032-673d434da850/go.mod h1:2enscnjphCjwS8rWjvFLw/vFnJ+jpVybtq9W2+FoDuQ=
-github.com/joeycumines/go-inprocgrpc v0.0.0-20260823044935-cc12a1c30a46 h1:hblHrFeNctY9Kq/RocTqx3Ucyf6WJw+OXI05f/91UfI=
-github.com/joeycumines/go-inprocgrpc v0.0.0-20260823044935-cc12a1c30a46/go.mod h1:/2WR+xkQUwEG1ZgnzTzuWYumQB3izoAxVpuXO6bA4fA=
+github.com/joeycumines/go-eventloop v0.0.0-20260824131324-22f9a6a5545e h1:wYosIjxbPvQRM3isz4Hj3dAb2RLxLwK2O1OH/+nZf/o=
+github.com/joeycumines/go-eventloop v0.0.0-20260824131324-22f9a6a5545e/go.mod h1:2enscnjphCjwS8rWjvFLw/vFnJ+jpVybtq9W2+FoDuQ=
+github.com/joeycumines/go-inprocgrpc v0.0.0-20260824131419-e327357f7935 h1:sQP+Lfn0kwWiLkXtaXNl47HFFocCtN5tB7dg4Fbj6lY=
+github.com/joeycumines/go-inprocgrpc v0.0.0-20260824131419-e327357f7935/go.mod h1:/2WR+xkQUwEG1ZgnzTzuWYumQB3izoAxVpuXO6bA4fA=
 github.com/joeycumines/go-pabt v0.2.0 h1:wKlj9wY9al/tBAtWtlIirxDnpimBEZME9AFAA/RKwdk=
 github.com/joeycumines/go-pabt v0.2.0/go.mod h1:ZkTHK9//CRrDKmhcNh6AYiw0uLVR+UTrxGBtMd6OFew=
 github.com/joeycumines/go-prompt v0.0.0-20260823080611-669b4665c6b5 h1:xbfdVveyU3YLqr2ZGN/u21EvTVM4rTjc+Gwyw9I6ve4=
@@ -110,10 +110,10 @@ github.com/joeycumines/goja v0.0.0-20260823081319-46200cbcb6c2 h1:IBLAqEHJW2ndNr
 github.com/joeycumines/goja v0.0.0-20260823081319-46200cbcb6c2/go.mod h1:/ZSI3/FMDq5+TSgTFAkaPi0TNcF5dLzZwBu90fNPqcU=
 github.com/joeycumines/goja-eventloop v0.0.0-20260823044921-54cfe1a9109f h1:nJ+sgBIXZx4c0coAHOa7/mC288VHeQgh3QS4k+CcufM=
 github.com/joeycumines/goja-eventloop v0.0.0-20260823044921-54cfe1a9109f/go.mod h1:Pqc6Vc+N3wburjNTWy4Uhvw22bFvJxO+u5T8TosV9mw=
-github.com/joeycumines/goja-grpc v0.0.0-20260823044926-095109ba4fe9 h1:opZLK0eN0K/0Xi1Guhk7XrsnsLkTVBX6rXsC8F2P7EE=
-github.com/joeycumines/goja-grpc v0.0.0-20260823044926-095109ba4fe9/go.mod h1:ipC7OCSV/qXv0Jw7gvziVjol41McW/BmdEmWQZT6A6k=
-github.com/joeycumines/goja-protobuf v0.0.0-20260822232803-44a77899ef04 h1:1Qdq5DmWtKdrjeSWFmirEDVHe7YhGyTYsDSeTgo2VhI=
-github.com/joeycumines/goja-protobuf v0.0.0-20260822232803-44a77899ef04/go.mod h1:yCNR3ccBpUS5boV4ehDHoeluWfZYwOyu2lBDCrdg80g=
+github.com/joeycumines/goja-grpc v0.0.0-20260824131346-39a74e7fb91b h1:q8UPsAcjsM/4qzUXno5LH7Wh8sBV9FcHxgbeCEiLY20=
+github.com/joeycumines/goja-grpc v0.0.0-20260824131346-39a74e7fb91b/go.mod h1:ipC7OCSV/qXv0Jw7gvziVjol41McW/BmdEmWQZT6A6k=
+github.com/joeycumines/goja-protobuf v0.0.0-20260824131356-9e31b56891a0 h1:XA4AaaLbw9oFU9BNY8+2k4PIjoCw4ngpKDnwpgHzrqE=
+github.com/joeycumines/goja-protobuf v0.0.0-20260824131356-9e31b56891a0/go.mod h1:yCNR3ccBpUS5boV4ehDHoeluWfZYwOyu2lBDCrdg80g=
 github.com/joeycumines/goja-protojson v0.0.0-20260822232805-5701873b10dc h1:Z2tZVg1nKs2K526fycAzynZjvf4M8tP3RAUBXynyY9g=
 github.com/joeycumines/goja-protojson v0.0.0-20260822232805-5701873b10dc/go.mod h1:Sz+easxmBrzW4suly8dpkV1KXOFQ829VHsZ0M3DOJxs=
 github.com/joeycumines/goja_nodejs v0.0.0-20260823081323-05fa4bcb64d4 h1:n3gKYQ469203ojhwFUGAdqZNDC3VP9vJ3qgiehiZIR0=

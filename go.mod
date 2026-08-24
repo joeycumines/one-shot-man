@@ -10,7 +10,7 @@ tool (
 )
 
 require (
-	charm.land/bubbles/v2 v2.2.0
+	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/creack/pty v1.1.24
@@ -20,14 +20,14 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-behaviortree v1.11.0
-	github.com/joeycumines/go-eventloop v0.0.0-20260823222032-673d434da850
-	github.com/joeycumines/go-inprocgrpc v0.0.0-20260823044935-cc12a1c30a46
+	github.com/joeycumines/go-eventloop v0.0.0-20260824131324-22f9a6a5545e
+	github.com/joeycumines/go-inprocgrpc v0.0.0-20260824131419-e327357f7935
 	github.com/joeycumines/go-pabt v0.2.0
 	github.com/joeycumines/go-prompt v0.0.0-20260823080611-669b4665c6b5
 	github.com/joeycumines/goja v0.0.0-20260823081319-46200cbcb6c2
 	github.com/joeycumines/goja-eventloop v0.0.0-20260823044921-54cfe1a9109f
-	github.com/joeycumines/goja-grpc v0.0.0-20260823044926-095109ba4fe9
-	github.com/joeycumines/goja-protobuf v0.0.0-20260822232803-44a77899ef04
+	github.com/joeycumines/goja-grpc v0.0.0-20260824131346-39a74e7fb91b
+	github.com/joeycumines/goja-protobuf v0.0.0-20260824131356-9e31b56891a0
 	github.com/joeycumines/goja_nodejs v0.0.0-20260823081323-05fa4bcb64d4
 	github.com/joeycumines/goroutineid v1.1.1
 	github.com/lrstanley/bubblezone/v2 v2.0.0

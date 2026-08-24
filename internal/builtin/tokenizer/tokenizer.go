@@ -165,10 +165,6 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(vm *goja.
 	}
 }
 
-func jsPromise(adapter *gojaeventloop.Adapter, baseCtx context.Context, fn func(ctx context.Context) (any, error)) goja.Value {
-	return async.Promise(adapter, baseCtx, fn)
-}
-
 // newTokenizerWrapper creates a JS object wrapping a Go *tokenizer.Tokenizer
 // with encode() and count() methods.
 func newTokenizerWrapper(runtime *goja.Runtime, tok *tokenizer.Tokenizer) goja.Value {

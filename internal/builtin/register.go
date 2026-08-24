@@ -141,6 +141,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"lipgloss", lipglossmod.Require(lipglossMgr))
 
 	btBridge := bt.NewBridgeWithEventLoop(ctx, eventLoopProvider.Loop(), eventLoopProvider.Runtime(), registry)
+	btBridge.SetAdapter(eventLoopProvider.Adapter())
 	registry.RegisterNativeModule(prefix+"pabt", pabtmod.Require(ctx, btBridge))
 
 	bubbleteaMgr := bubbleteamod.NewManager(ctx, terminalReader(terminalProvider), terminalWriter(terminalProvider), btBridge, nil, nil)

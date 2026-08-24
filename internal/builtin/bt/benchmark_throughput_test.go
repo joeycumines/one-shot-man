@@ -84,6 +84,7 @@ func setupBenchBridge(tb testing.TB) *Bridge {
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 	bridge := NewBridgeWithEventLoop(context.Background(), loop, vm, registry)
+	bridge.SetAdapter(adapter)
 	tb.Cleanup(func() {
 		bridge.Stop()
 		loopCancel()

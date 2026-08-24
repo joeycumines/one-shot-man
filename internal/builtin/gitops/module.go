@@ -183,7 +183,7 @@ func newRepoWrapper(runtime *goja.Runtime, repo *gitops.Repo, ctx context.Contex
 	// hasStagedChanges() -> Promise<bool>
 	// ASYNC: walks worktree status, can be slow for large repos.
 	_ = obj.Set("hasStagedChanges", func(call goja.FunctionCall) goja.Value {
-		return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+		return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 			has, err := repo.HasStagedChanges()
 			if err != nil {
 				return nil, err
@@ -195,7 +195,7 @@ func newRepoWrapper(runtime *goja.Runtime, repo *gitops.Repo, ctx context.Contex
 	// addAll() -> Promise<void>
 	// ASYNC: stages all files, walks worktree, writes index.
 	_ = obj.Set("addAll", func(call goja.FunctionCall) goja.Value {
-		return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+		return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 			if err := repo.AddAll(); err != nil {
 				return nil, err
 			}
@@ -207,7 +207,7 @@ func newRepoWrapper(runtime *goja.Runtime, repo *gitops.Repo, ctx context.Contex
 	// ASYNC: creates commit, writes git objects to disk.
 	_ = obj.Set("commit", func(call goja.FunctionCall) goja.Value {
 		msg := call.Argument(0).String()
-		return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+		return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 			hash, err := repo.Commit(msg, time.Now())
 			if err != nil {
 				return nil, err
@@ -219,7 +219,7 @@ func newRepoWrapper(runtime *goja.Runtime, repo *gitops.Repo, ctx context.Contex
 	// push() -> Promise<void>
 	// ASYNC: network I/O to remote. Uses context for cancellation.
 	_ = obj.Set("push", func(call goja.FunctionCall) goja.Value {
-		return jsPromise(adapter, ctx, func(opCtx context.Context) (any, error) {
+		return async.Promise(adapter, ctx, func(opCtx context.Context) (any, error) {
 			if err := repo.Push(opCtx); err != nil {
 				return nil, err
 			}
@@ -228,12 +228,4 @@ func newRepoWrapper(runtime *goja.Runtime, repo *gitops.Repo, ctx context.Contex
 	})
 
 	return obj
-}
-
-// jsPromise wraps a blocking operation in a Promise that runs off the event
-// loop via Promisify. The work context is derived from the base context so
-// engine shutdown cancels in-flight operations. Resolution/rejection is
-// scheduled back on the event loop via adapter.Loop().Submit().
-func jsPromise(adapter *gojaeventloop.Adapter, baseCtx context.Context, fn func(ctx context.Context) (any, error)) goja.Value {
-	return async.Promise(adapter, baseCtx, fn)
 }

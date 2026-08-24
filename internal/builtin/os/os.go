@@ -58,19 +58,19 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 				path = call.Argument(0).String()
 			}
 			if path == "" {
-				return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+				return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 					return map[string]any{"error": true, "message": "empty path", "content": ""}, nil
 				})
 			}
 
 			expanded, err := expandTildeOnly(path)
 			if err != nil {
-				return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+				return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 					return map[string]any{"error": true, "message": err.Error(), "content": ""}, nil
 				})
 			}
 
-			return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+			return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 				data, err := os.ReadFile(expanded)
 				if err != nil {
 					return map[string]any{"error": true, "message": err.Error(), "content": ""}, nil
@@ -149,7 +149,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 			if len(call.Arguments) > 1 {
 				initialContent = call.Argument(1).String()
 			}
-			return jsPromise(adapter, ctx, func(ctx context.Context) (any, error) {
+			return async.Promise(adapter, ctx, func(ctx context.Context) (any, error) {
 				editorCtx, cancel := context.WithCancel(ctx)
 				defer cancel()
 				return openEditor(editorCtx, nameHint, initialContent), nil
@@ -162,7 +162,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 			if len(call.Arguments) > 0 {
 				text = call.Argument(0).String()
 			}
-			return jsPromise(adapter, ctx, func(ctx context.Context) (any, error) {
+			return async.Promise(adapter, ctx, func(ctx context.Context) (any, error) {
 				clipCtx, cancel := context.WithTimeout(ctx, clipboardTimeout)
 				defer cancel()
 				if err := ClipboardCopy(clipCtx, tuiSink, text); err != nil {
@@ -174,7 +174,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 
 		// clipboardPaste(): Promise<string>
 		_ = exports.Set("clipboardPaste", func(call goja.FunctionCall) goja.Value {
-			return jsPromise(adapter, ctx, func(ctx context.Context) (any, error) {
+			return async.Promise(adapter, ctx, func(ctx context.Context) (any, error) {
 				clipCtx, cancel := context.WithTimeout(ctx, clipboardTimeout)
 				defer cancel()
 				text, err := ClipboardPaste(clipCtx)
@@ -200,18 +200,18 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 		_ = exports.Set("writeFile", func(call goja.FunctionCall) goja.Value {
 			path, content, mode, createDirs := parseWriteArgs(vm, call)
 			if path == "" {
-				return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+				return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 					return nil, fmt.Errorf("writeFile: path is required")
 				})
 			}
 			expanded, err := expandTildeOnly(path)
 			if err != nil {
-				return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+				return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 					return nil, fmt.Errorf("writeFile: %w", err)
 				})
 			}
 			path = expanded
-			return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+			return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 				if createDirs {
 					if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 						return nil, fmt.Errorf("writeFile: %w", err)
@@ -231,18 +231,18 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 		_ = exports.Set("appendFile", func(call goja.FunctionCall) goja.Value {
 			path, content, mode, createDirs := parseWriteArgs(vm, call)
 			if path == "" {
-				return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+				return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 					return nil, fmt.Errorf("appendFile: path is required")
 				})
 			}
 			resolved, err := expandTildeOnly(path)
 			if err != nil {
-				return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+				return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 					return nil, fmt.Errorf("appendFile: %w", err)
 				})
 			}
 			path = resolved
-			return jsPromise(adapter, ctx, func(_ context.Context) (any, error) {
+			return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
 				if createDirs {
 					if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 						return nil, fmt.Errorf("appendFile: %w", err)
@@ -260,10 +260,6 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, tuiSink func(s
 			})
 		})
 	}
-}
-
-func jsPromise(adapter *gojaeventloop.Adapter, baseCtx context.Context, fn func(ctx context.Context) (any, error)) goja.Value {
-	return async.Promise(adapter, baseCtx, fn)
 }
 
 // parseWriteArgs extracts (path, content, mode, createDirs) from writeFile/appendFile calls.

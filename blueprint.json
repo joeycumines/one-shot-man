@@ -669,7 +669,7 @@
       "task": "Collapse bt/bridge promisify field and raw runtime.NewPromise hand-roll onto adapter.NewPromise",
       "description": "Refactor internal/builtin/bt/bridge.go to delete promisify PromisifyFunc field and injectable constructor param, calling loop.Promisify directly where *Loop held or adapter.NewPromise via eventLoopProvider.Adapter() where JS-visible promise needed. Refactor internal/builtin/bt/require.go createTickerJSWrapper.done() and createManagerJSWrapper.done() that currently use runtime.NewPromise() + bridge.RunOnLoop/loop.Submit fallback to use adapter.NewPromise() + PromiseSettler (async.Promise) with exact-once admission. Delete manual resolveFn/bridge.promisify dispatch.",
       "acceptance": "bt.Bridge no longer stores promisify field; done() wrappers use adapter.NewPromise + settler, single implementation. `grep -R PromisifyFunc --include=\"*.go\" internal/builtin/bt` zero, `grep -R runtime.NewPromise` in bt zero. `gmake test ./internal/builtin/bt -race` green.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/builtin/bt/bridge.go",
         "internal/builtin/bt/require.go",
@@ -684,7 +684,7 @@
       "task": "Remove fetch Go-native AbortSignal fallback, keep TrackAbortSignal as sole abort path",
       "description": "In internal/builtin/fetch/fetch.go remove legacy Go-native *goeventloop.AbortSignal surfaced as _signal property and signal.OnAbort fallback (lines 90/99/211-212). Keep only adapter.TrackAbortSignal(jsSignal, cb) owner-safe path (cleanup, aborted, ok) with pre-abort check. Ensure already-aborted case returns aborted=true without registering callback, and that cross-goroutine cleanup is idempotent. Update tests that assert _signal presence.",
       "acceptance": "Fetch abort uses single TrackAbortSignal path, no _signal export, no OnAbort fallback. `grep -R \"_signal\\|OnAbort\" --include=\"*.go\" internal/builtin/fetch` zero. Abort with reason and already-aborted cases still pass; pre-abort fast path respects TrackAbortSignal aborted return.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/builtin/fetch/fetch.go"
       ],
@@ -697,7 +697,7 @@
       "task": "Consolidate async.Promise helper to thin wrapper over Loop.Promisify where *Loop held, delete dead jsPromise wrappers",
       "description": "Audit internal/builtin/async/promise.go: if Go-resolvable promise needed, prefer Loop.Promisify (context-aware, Goexit/panic/shutdown via promisifyWg) where *Loop is held (runtime, bt.Bridge, bubbletea). Where only Adapter held and JS-visible promise needed, keep adapter.NewPromise + settler via async.Promise as thin wrapper. Delete duplicate jsPromise pass-throughs in internal/builtin/tokenizer/tokenizer.go:168, gitops/module.go:237, os/os.go:265. Ensure single async implementation per AGENTS.md.",
       "acceptance": "Three dead jsPromise wrappers deleted, grep for jsPromise zero. async.Promise remains sole helper for JS-visible promises where Adapter only; where Loop held, call loop.Promisify directly. `grep -R \"jsPromise\" --include=\"*.go\" internal/builtin` zero, `go vet` clean.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/builtin/async/promise.go",
         "internal/builtin/tokenizer/tokenizer.go",
@@ -713,7 +713,7 @@
       "task": "Run Rule of Two (strict-review-gate) on all changes before commit",
       "description": "Before committing any of the above changes, invoke the strict-review-gate twice contiguously. Reviewers must be hostile: (1) AGENTS.md realignment preserves intent and updates contract correctly; (2) WithStrictMicrotaskOrdering removal is total; (3) canonical async pattern is single-implementation, context-correct, and handles GoError/ToValue/foreign runtime correctly; (4) each per-module migration (os/path/exec/fetch/gitops/tokenizer/termmux/aimux/mcp/mcpcallback) is correctly owner-safe and non-blocking; (5) zero-legacy grep gate is enforced; (6) re-probed fork gaps are correctly promoted/kept; (7) new-surface specs will pass when adapter fixes land (not just fail now); (8) charm/git bumps are correctly adapted; (9) doc drift is resolved; (10) -run pattern separation still holds; (11) 3-Stage tail remains sequenced correctly; (12) background sweep honors indefinite cycle.",
       "acceptance": "Two contiguous subagent reviews confirm correctness with zero unresolved findings. gmake test-jscompliance-all main tier green, fork-blocked target shows only documented remaining fails, gmake all green on macOS, cross-build green. The commit can proceed.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [],
       "dependsOn": [
         "Realign AGENTS.md with the August 2026 integration surface (preserve intent, update contract)",

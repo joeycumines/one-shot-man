@@ -11,6 +11,7 @@ import (
 	bt "github.com/joeycumines/go-behaviortree"
 	"github.com/joeycumines/goja"
 	"github.com/joeycumines/goja_nodejs/require"
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
 
 // ModuleLoader returns a require.ModuleLoader for the "osm:bt" module.
@@ -323,14 +324,10 @@ func (b *Bridge) ModuleLoader(ctx context.Context) require.ModuleLoader {
 				}
 			}
 
-			// Keep the event loop alive as long as the ticker is running.
-			// This covers the background ticking goroutine inside go-behaviortree.
-			if b.promisify != nil {
-				b.promisify(ctx, func(ctx context.Context) (any, error) {
-					<-ticker.Done()
-					return nil, ticker.Err()
-				})
-			}
+			b.loop.Promisify(ctx, func(ctx context.Context) (any, error) {
+				<-ticker.Done()
+				return nil, ticker.Err()
+			})
 
 			// Create a JS wrapper object
 			return createTickerJSWrapper(b, runtime, ticker)
@@ -351,37 +348,12 @@ func createTickerJSWrapper(bridge *Bridge, runtime *goja.Runtime, ticker bt.Tick
 	var donePromise goja.Value
 	var doneOnce sync.Once
 
-	// done() - Returns a Promise that resolves when the ticker completes
 	_ = obj.Set("done", func(call goja.FunctionCall) goja.Value {
 		doneOnce.Do(func() {
-			promise, resolve, reject := runtime.NewPromise()
-			donePromise = runtime.ToValue(promise)
-
-			waitAndResolve := func(ctx context.Context) (any, error) {
+			donePromise = async.Promise(bridge.adapter, bridge.ctx, func(ctx context.Context) (any, error) {
 				<-ticker.Done()
-				tickerErr := ticker.Err()
-
-				resolveFn := func(vm *goja.Runtime) {
-					if tickerErr != nil {
-						reject(vm.ToValue(tickerErr.Error()))
-					} else {
-						resolve(goja.Undefined())
-					}
-				}
-
-				if !bridge.RunOnLoop(resolveFn) {
-					if bridge.loop != nil {
-						_ = bridge.loop.Submit(func() { resolveFn(bridge.vm) })
-					}
-				}
-				return nil, tickerErr
-			}
-
-			if bridge.promisify != nil {
-				bridge.promisify(bridge.ctx, waitAndResolve)
-			} else {
-				go func() { _, _ = waitAndResolve(bridge.ctx) }()
-			}
+				return nil, ticker.Err()
+			})
 		})
 		return donePromise
 	})
@@ -440,34 +412,10 @@ func createManagerJSWrapper(bridge *Bridge, runtime *goja.Runtime, manager bt.Ma
 
 	_ = obj.Set("done", func(call goja.FunctionCall) goja.Value {
 		doneOnce.Do(func() {
-			promise, resolve, reject := runtime.NewPromise()
-			donePromise = runtime.ToValue(promise)
-
-			waitAndResolve := func(ctx context.Context) (any, error) {
+			donePromise = async.Promise(bridge.adapter, bridge.ctx, func(ctx context.Context) (any, error) {
 				<-manager.Done()
-				managerErr := manager.Err()
-
-				resolveFn := func(vm *goja.Runtime) {
-					if managerErr != nil {
-						reject(vm.ToValue(managerErr.Error()))
-					} else {
-						resolve(goja.Undefined())
-					}
-				}
-
-				if !bridge.RunOnLoop(resolveFn) {
-					if bridge.loop != nil {
-						_ = bridge.loop.Submit(func() { resolveFn(bridge.vm) })
-					}
-				}
-				return nil, managerErr
-			}
-
-			if bridge.promisify != nil {
-				bridge.promisify(bridge.ctx, waitAndResolve)
-			} else {
-				go func() { _, _ = waitAndResolve(bridge.ctx) }()
-			}
+				return nil, manager.Err()
+			})
 		})
 		return donePromise
 	})

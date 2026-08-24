@@ -11,13 +11,10 @@ import (
 	bt "github.com/joeycumines/go-behaviortree"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/goroutineid"
 )
-
-// PromisifyFunc is the signature for the event loop's Promisify method.
-// Stored in Bridge for easier mocking in tests.
-type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 
 // Bridge manages the behavior tree integration between Go and JavaScript.
 // It provides a safe interface for Go code to interact with JavaScript, ensuring
@@ -34,10 +31,10 @@ type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, 
 type Bridge struct {
 	// timeout is the maximum duration to wait for RunOnLoopSync operations.
 	// Default is 5 seconds. Set to 0 to disable timeout (not recommended for production).
-	timeout   time.Duration
-	loop      *goeventloop.Loop
-	vm        *goja.Runtime
-	promisify PromisifyFunc
+	timeout time.Duration
+	loop    *goeventloop.Loop
+	vm      *goja.Runtime
+	adapter *gojaeventloop.Adapter
 
 	// Event loop goroutine ID for deadlock prevention.
 	// We extract the goroutine ID from runtime.Stack() during initialization.
@@ -89,11 +86,17 @@ func NewBridgeWithEventLoop(ctx context.Context, loop *goeventloop.Loop, vm *goj
 	if vm == nil {
 		panic("goja runtime must not be nil")
 	}
-	return newBridgeWithLoop(ctx, loop, vm, registry, loop.Promisify)
+	return newBridgeWithLoop(ctx, loop, vm, registry)
+}
+
+// SetAdapter sets the goja-eventloop adapter for JS-visible promise creation.
+// Must be called before any ticker/manager done() promises are created.
+func (b *Bridge) SetAdapter(adapter *gojaeventloop.Adapter) {
+	b.adapter = adapter
 }
 
 // newBridgeWithLoop is the internal constructor for Bridge.
-func newBridgeWithLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Runtime, reg *require.Registry, promisify PromisifyFunc) *Bridge {
+func newBridgeWithLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Runtime, reg *require.Registry) *Bridge {
 	// NOTE ON CONTEXT DERIVATION (addressing CRIT-2 from review-1.md):
 	// Bridge's internal lifecycle context (childCtx) is NOT derived from parent ctx.
 	// This is intentional to maintain the critical invariant:
@@ -116,13 +119,12 @@ func newBridgeWithLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Run
 	childCtx, cancel := context.WithCancel(context.Background())
 
 	b := &Bridge{
-		loop:      loop,
-		vm:        vm,
-		ctx:       childCtx,
-		cancel:    cancel,
-		timeout:   DefaultTimeout,
-		manager:   bt.NewManager(),
-		promisify: promisify,
+		loop:    loop,
+		vm:      vm,
+		ctx:     childCtx,
+		cancel:  cancel,
+		timeout: DefaultTimeout,
+		manager: bt.NewManager(),
 	}
 
 	// Mark as started (event loop should already be running)

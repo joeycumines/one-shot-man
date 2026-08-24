@@ -50,6 +50,7 @@ func testBridge(t *testing.T) *Bridge {
 	})
 
 	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
+	bridge.SetAdapter(adapter)
 	t.Cleanup(func() {
 		bridge.Stop()
 	})
@@ -104,6 +105,7 @@ func testBridgeWithManualShutdown(t *testing.T) (*Bridge, func()) {
 
 	ctx := context.Background()
 	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
+	bridge.SetAdapter(adapter)
 
 	stopLoop := func() {
 		loopCancel()

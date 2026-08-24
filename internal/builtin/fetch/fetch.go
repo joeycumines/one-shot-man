@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/goja_nodejs/require"
@@ -32,7 +31,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) require.Module
 func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		url := call.Argument(0).String()
-		method, timeout, bodyReader, reqHeaders, signalVal, signal, maxBody := parseOptions(call)
+		method, timeout, bodyReader, reqHeaders, signalVal, maxBody := parseOptions(call)
 		req, err := http.NewRequest(method, url, bodyReader)
 		if err != nil {
 			panic(runtime.NewGoError(err))
@@ -44,34 +43,12 @@ func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.
 		}
 		reqCtx, cancel := context.WithTimeout(ctx, timeout)
 		var abortCleanup func()
-		// Prefer JS signal (signalVal) for abort handling via TrackAbortSignal, which is owner-safe.
-		// Fall back to Go native signal only if JS signal is unavailable.
 		if signalVal != nil && !goja.IsUndefined(signalVal) && !goja.IsNull(signalVal) {
-			// Check already-aborted via JS property
-			if sigObj, ok := signalVal.(*goja.Object); ok {
-				if av := sigObj.Get("aborted"); av != nil && av.ToBoolean() {
-					reasonVal := sigObj.Get("reason")
-					var reason any
-					if reasonVal != nil && !goja.IsUndefined(reasonVal) && !goja.IsNull(reasonVal) {
-						reason = reasonVal.Export()
-					}
-					cancel()
-					promise, settler := adapter.NewPromise()
-					_ = settler.Reject(func(rt *goja.Runtime) any {
-						if reason != nil {
-							return reason
-						}
-						return rt.NewGoError(fmt.Errorf("aborted"))
-					})
-					return promise
-				}
-			}
 			if cleanup, aborted, ok := adapter.TrackAbortSignal(signalVal, func() { cancel() }); ok {
 				abortCleanup = cleanup
 				if aborted {
-					sigObj, _ := signalVal.(*goja.Object)
 					var reason any
-					if sigObj != nil {
+					if sigObj, ok := signalVal.(*goja.Object); ok {
 						if rv := sigObj.Get("reason"); rv != nil && !goja.IsUndefined(rv) && !goja.IsNull(rv) {
 							reason = rv.Export()
 						}
@@ -86,17 +63,7 @@ func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.
 					})
 					return promise
 				}
-			} else if signal != nil {
-				signal.OnAbort(func(reason any) { cancel() })
 			}
-		} else if signal != nil {
-			if signal.Aborted() {
-				cancel()
-				promise, settler := adapter.NewPromise()
-				_ = settler.Reject(func(rt *goja.Runtime) any { return signal.Reason() })
-				return promise
-			}
-			signal.OnAbort(func(reason any) { cancel() })
 		}
 		req = req.WithContext(reqCtx)
 		promise, settler := adapter.NewPromise()
@@ -157,7 +124,7 @@ func jsSSEReader(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventl
 	}
 }
 
-func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration, bodyReader io.Reader, reqHeaders map[string]any, signalVal goja.Value, signal *goeventloop.AbortSignal, maxResponseSize int64) {
+func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration, bodyReader io.Reader, reqHeaders map[string]any, signalVal goja.Value, maxResponseSize int64) {
 	method = "GET"
 	timeout = 30 * time.Second
 	maxResponseSize = defaultMaxResponseSize
@@ -207,13 +174,6 @@ func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration,
 		if argObj, ok := call.Arguments[1].(*goja.Object); ok {
 			if sv := argObj.Get("signal"); sv != nil && !goja.IsUndefined(sv) && !goja.IsNull(sv) {
 				signalVal = sv
-				if signalObj, ok := sv.(*goja.Object); ok {
-					if nativeVal := signalObj.Get("_signal"); nativeVal != nil && !goja.IsUndefined(nativeVal) {
-						if s, ok := nativeVal.Export().(*goeventloop.AbortSignal); ok {
-							signal = s
-						}
-					}
-				}
 			}
 		}
 	}

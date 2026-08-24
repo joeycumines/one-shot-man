@@ -639,6 +639,77 @@
       ]
     },
     {
+      "task": "Adopt adapter.Done terminal barrier in scripting runtime",
+      "description": "Replace internal/scripting/runtime.go custom done channel (rt.done closed when Loop.Run returns) with adapter.Done() / loop.Done() terminal signal that closes only after terminal cleanup when no callback can still execute. Wire Runtime.Done() to return adapter.Done() (goroutine-safe, non-copyable check) and update Close() to wait on adapter.Done() instead of own channel. Verify graceful Promisify workers continue after Run while Done remains open, and that external Shutdown/Close callers join correct barrier. Update tests that probe done semantics.",
+      "acceptance": "Close() waits until adapter.Done() closes (no pending callbacks), not just Loop.Run exit. `go vet` clean, `gmake test -run TestEngine_Integration` passes with terminal barrier semantics. No custom rt.done leaked; adapter.Done() is the sole barrier.",
+      "status": "Not Started",
+      "files": [
+        "internal/scripting/runtime.go",
+        "internal/scripting/engine_core.go"
+      ],
+      "contextPointers": {
+        "adapterDone": "goja-eventloop doc: Adapter.Done() returns terminal-completion signal",
+        "runtimeDone": "internal/scripting/runtime.go:Done() currently returns rt.ctx.Done()"
+      }
+    },
+    {
+      "task": "Migrate engine_core QueueSetGlobal/QueueGetGlobal to adapter.Submit",
+      "description": "Replace internal/scripting/engine_core.go QueueSetGlobal/QueueGetGlobal and RunOnLoopSync that currently use loop.Submit with adapter.Submit (serialized logical callback-owner role, physical goroutine identity not part of contract). Ensure vm.Set/vm.Get are under adapter ownership, remove direct loop.Submit where adapter.Submit is available, and keep globalsMu protection. Verify no concurrent runtime access.",
+      "acceptance": "All Goja work after callbacks may execute routes via adapter.Submit, never loop.Submit for JS work. `grep -R loop.Submit --include=\"*.go\" internal/scripting` shows only lifecycle (Loop.Promisify bootstrap) remaining. Tests pass with -race.",
+      "status": "Not Started",
+      "files": [
+        "internal/scripting/engine_core.go"
+      ],
+      "contextPointers": {
+        "submitDoc": "goja-eventloop: Adapter.Submit schedules under logical callback-owner",
+        "queueFns": "internal/scripting/engine_core.go:QueueSetGlobal/QueueGetGlobal"
+      }
+    },
+    {
+      "task": "Collapse bt/bridge promisify field and raw runtime.NewPromise hand-roll onto adapter.NewPromise",
+      "description": "Refactor internal/builtin/bt/bridge.go to delete promisify PromisifyFunc field and injectable constructor param, calling loop.Promisify directly where *Loop held or adapter.NewPromise via eventLoopProvider.Adapter() where JS-visible promise needed. Refactor internal/builtin/bt/require.go createTickerJSWrapper.done() and createManagerJSWrapper.done() that currently use runtime.NewPromise() + bridge.RunOnLoop/loop.Submit fallback to use adapter.NewPromise() + PromiseSettler (async.Promise) with exact-once admission. Delete manual resolveFn/bridge.promisify dispatch.",
+      "acceptance": "bt.Bridge no longer stores promisify field; done() wrappers use adapter.NewPromise + settler, single implementation. `grep -R PromisifyFunc --include=\"*.go\" internal/builtin/bt` zero, `grep -R runtime.NewPromise` in bt zero. `gmake test ./internal/builtin/bt -race` green.",
+      "status": "Not Started",
+      "files": [
+        "internal/builtin/bt/bridge.go",
+        "internal/builtin/bt/require.go",
+        "internal/builtin/register.go"
+      ],
+      "contextPointers": {
+        "bridgePromisify": "internal/builtin/bt/bridge.go:40,96,125",
+        "doneWrappers": "internal/builtin/bt/require.go:357,443"
+      }
+    },
+    {
+      "task": "Remove fetch Go-native AbortSignal fallback, keep TrackAbortSignal as sole abort path",
+      "description": "In internal/builtin/fetch/fetch.go remove legacy Go-native *goeventloop.AbortSignal surfaced as _signal property and signal.OnAbort fallback (lines 90/99/211-212). Keep only adapter.TrackAbortSignal(jsSignal, cb) owner-safe path (cleanup, aborted, ok) with pre-abort check. Ensure already-aborted case returns aborted=true without registering callback, and that cross-goroutine cleanup is idempotent. Update tests that assert _signal presence.",
+      "acceptance": "Fetch abort uses single TrackAbortSignal path, no _signal export, no OnAbort fallback. `grep -R \"_signal\\|OnAbort\" --include=\"*.go\" internal/builtin/fetch` zero. Abort with reason and already-aborted cases still pass; pre-abort fast path respects TrackAbortSignal aborted return.",
+      "status": "Not Started",
+      "files": [
+        "internal/builtin/fetch/fetch.go"
+      ],
+      "contextPointers": {
+        "trackAbort": "goja-eventloop: Adapter.TrackAbortSignal(signal, cb) (cleanup, aborted, ok)",
+        "fetchAbort": "internal/builtin/fetch/fetch.go:47-90"
+      }
+    },
+    {
+      "task": "Consolidate async.Promise helper to thin wrapper over Loop.Promisify where *Loop held, delete dead jsPromise wrappers",
+      "description": "Audit internal/builtin/async/promise.go: if Go-resolvable promise needed, prefer Loop.Promisify (context-aware, Goexit/panic/shutdown via promisifyWg) where *Loop is held (runtime, bt.Bridge, bubbletea). Where only Adapter held and JS-visible promise needed, keep adapter.NewPromise + settler via async.Promise as thin wrapper. Delete duplicate jsPromise pass-throughs in internal/builtin/tokenizer/tokenizer.go:168, gitops/module.go:237, os/os.go:265. Ensure single async implementation per AGENTS.md.",
+      "acceptance": "Three dead jsPromise wrappers deleted, grep for jsPromise zero. async.Promise remains sole helper for JS-visible promises where Adapter only; where Loop held, call loop.Promisify directly. `grep -R \"jsPromise\" --include=\"*.go\" internal/builtin` zero, `go vet` clean.",
+      "status": "Not Started",
+      "files": [
+        "internal/builtin/async/promise.go",
+        "internal/builtin/tokenizer/tokenizer.go",
+        "internal/builtin/gitops/module.go",
+        "internal/builtin/os/os.go"
+      ],
+      "contextPointers": {
+        "promisifyNative": "go-eventloop: Loop.Promisify(ctx, fn) Promise (Go-native, liveness, Goexit)",
+        "asyncHelper": "internal/builtin/async/promise.go:11-40"
+      }
+    },
+    {
       "task": "Run Rule of Two (strict-review-gate) on all changes before commit",
       "description": "Before committing any of the above changes, invoke the strict-review-gate twice contiguously. Reviewers must be hostile: (1) AGENTS.md realignment preserves intent and updates contract correctly; (2) WithStrictMicrotaskOrdering removal is total; (3) canonical async pattern is single-implementation, context-correct, and handles GoError/ToValue/foreign runtime correctly; (4) each per-module migration (os/path/exec/fetch/gitops/tokenizer/termmux/aimux/mcp/mcpcallback) is correctly owner-safe and non-blocking; (5) zero-legacy grep gate is enforced; (6) re-probed fork gaps are correctly promoted/kept; (7) new-surface specs will pass when adapter fixes land (not just fail now); (8) charm/git bumps are correctly adapted; (9) doc drift is resolved; (10) -run pattern separation still holds; (11) 3-Stage tail remains sequenced correctly; (12) background sweep honors indefinite cycle.",
       "acceptance": "Two contiguous subagent reviews confirm correctness with zero unresolved findings. gmake test-jscompliance-all main tier green, fork-blocked target shows only documented remaining fails, gmake all green on macOS, cross-build green. The commit can proceed.",

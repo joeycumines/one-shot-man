@@ -116,3 +116,12 @@ go vet / go build            → PASS
 - Fanned out 5 parallel subagents: go-eventloop docs, goja-eventloop docs, concurrency hacks cull, librarian eventloop/abort — all in_progress, awaiting background_output.
 - Recorded in blueprint.json goalLog entry 7 + replanLog Replan 6, updated currentState to audit pending.
 - Next: integrate subagent findings, refactor internal/builtin/async/promise.go to leverage Loop.Promisify where *Loop held, use TrackAbortSignal for AbortController, cull 17 manual goroutine+settler sites, replace with optimal surfaces.
+
+## UPDATE 2026-08-24 — Refinement sweep from Adapter.NewPromise audit (5 new tasks)
+- Inserted 5 refinement tasks before Rule of Two (33 total, 27 Done, 6 Not Started) per exhaustive go doc -all audit:
+  1. Adopt adapter.Done terminal barrier in scripting runtime
+  2. Migrate engine_core QueueSetGlobal/QueueGetGlobal to adapter.Submit
+  3. Collapse bt/bridge promisify field + raw runtime.NewPromise onto adapter.NewPromise
+  4. Remove fetch Go-native AbortSignal fallback (_signal/OnAbort) keep TrackAbortSignal sole path
+  5. Consolidate async.Promise vs Loop.Promisify, delete dead jsPromise wrappers
+- Next: work incrementally per DIRECTIVE, one task at a time, full migration to best surfaces, cull hacks, record in blueprint.

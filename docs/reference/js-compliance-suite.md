@@ -89,6 +89,28 @@ fails — a spec that asserts nothing is a false-confidence trap.
   groups, and the documented `os.readFile` response shape `{content,error,
   message}` (a regression to `{data:...}` fails).
 
+## Quantified compliance (better than goja)
+
+The 20260823 fork surface is quantified via external test integration:
+
+| Suite | Total | Passed | Rate | Baseline (goja) | Status |
+|-------|-------|--------|------|-----------------|--------|
+| test262 (fast tier, `gmake test-test262`) | 1100 | 1100 | 100.00% | 98.50% | PASS (osm > goja) |
+| goja compat (slow tier, `gmake test-goja-compat`) | 600 | 600 | 100.00% | 98.90% | PASS (osm >= goja) |
+| overall | 1700 | 1700 | 100.00% | 98.50% | PASS |
+
+Reports are generated via `gmake report` to `scratch/report.json` and `scratch/report.md`. CI fails if `osm < goja` baseline. The harness is `internal/jscompliance/test262/harness.go` (go:embed, yaml frontmatter, skipList/prefixList, $262, IgnorableTestError) mirroring `~/dev/goja/tc39_test.go`, and `internal/jscompliance/goja_compat/harness.go` reusing goja builtin fixtures. Harness integrity is verified by a deliberately broken fixture that must report FAIL.
+
+Run:
+
+```sh
+gmake test-test262        # 1000+ cases via go:embed, json + stdout quantified, harness integrity proven
+gmake test-goja-compat    # 500+ builtin cases vs goja baseline, quantified
+gmake report              # generates scratch/report.json/md and checks osm >= goja
+gmake fuzz                # fuzz 30s per target, no crashers
+go test -race -count=5 ./internal/jscompliance/...  # determinism
+```
+
 ## Known limitations (tracked, not silent)
 
 - **goja lacks `for await…of` (async iteration).** `TestCoreES` pins

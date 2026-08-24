@@ -143,7 +143,7 @@ func testRequireCtx(t *testing.T, ctx context.Context) (*goja.Runtime, *goja.Obj
 // Starting the loop would cause a data race because the event bridge goroutine
 // dispatches SessionManager events to the loop, accessing the Goja runtime
 // concurrently with runtime.RunString(). The loop is still created so
-// adapter.Loop().Submit() calls queue without panicking; they are drained on
+// adapter Submit calls queue without panicking; they are drained on
 // shutdown.
 func wrapTestSessionManager(t *testing.T, ctx context.Context, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int, title string) goja.Value {
 	t.Helper()

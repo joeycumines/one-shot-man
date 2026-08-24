@@ -15,7 +15,7 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/aimuxcore"
 )
 
-// promisifyFn matches adapter.Loop().Promisify. It runs blocking work in a
+// promisifyFn matches the adapter promise helper. It runs blocking work in a
 // background goroutine, keeps the Goja event loop alive until completion, and
 // resolves/rejects the returned promise on the loop goroutine.
 // registerProviderBindings wires the generic provider/registry/handle JavaScript API.

@@ -17,6 +17,7 @@ require (
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/expr-lang/expr v1.17.8
 	github.com/go-git/go-git/v6 v6.0.0-alpha.5
+	github.com/goccy/go-yaml v1.19.2
 	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-behaviortree v1.11.0
 	github.com/joeycumines/go-eventloop v0.0.0-20260823222032-673d434da850

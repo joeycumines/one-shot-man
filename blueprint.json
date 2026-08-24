@@ -642,7 +642,7 @@
       "task": "Adopt adapter.Done terminal barrier in scripting runtime",
       "description": "Replace internal/scripting/runtime.go custom done channel (rt.done closed when Loop.Run returns) with adapter.Done() / loop.Done() terminal signal that closes only after terminal cleanup when no callback can still execute. Wire Runtime.Done() to return adapter.Done() (goroutine-safe, non-copyable check) and update Close() to wait on adapter.Done() instead of own channel. Verify graceful Promisify workers continue after Run while Done remains open, and that external Shutdown/Close callers join correct barrier. Update tests that probe done semantics.",
       "acceptance": "Close() waits until adapter.Done() closes (no pending callbacks), not just Loop.Run exit. `go vet` clean, `gmake test -run TestEngine_Integration` passes with terminal barrier semantics. No custom rt.done leaked; adapter.Done() is the sole barrier.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/scripting/runtime.go",
         "internal/scripting/engine_core.go"

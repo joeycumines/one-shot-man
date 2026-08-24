@@ -125,3 +125,8 @@ go vet / go build            → PASS
   4. Remove fetch Go-native AbortSignal fallback (_signal/OnAbort) keep TrackAbortSignal sole path
   5. Consolidate async.Promise vs Loop.Promisify, delete dead jsPromise wrappers
 - Next: work incrementally per DIRECTIVE, one task at a time, full migration to best surfaces, cull hacks, record in blueprint.
+
+## UPDATE 2026-08-24 — Refinement 1/5 DONE: adapter.Done terminal barrier
+- Task: `Adopt adapter.Done terminal barrier in scripting runtime` — acceptance: Close() waits until adapter.Done() closes (no pending callbacks), not just Loop.Run exit.
+- Changes: `internal/scripting/runtime.go:212 Done()` now returns `adapter.Done()` when bound (checked per doc: terminal cleanup signal, closes only after no callback can still execute), else `ctx.Done()`. `Close()` and `Wait()` now `<-adapter.Done()` after `<-rt.done`. Verified `go vet`/`go build` PASS, `gmake test-jscompliance` PASS.
+- Commit: a9ec4e4

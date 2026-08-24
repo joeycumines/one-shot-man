@@ -192,6 +192,9 @@ func (rt *Runtime) Close() error {
 	if rt.done != nil {
 		<-rt.done
 	}
+	if rt.adapter != nil {
+		<-rt.adapter.Done()
+	}
 
 	return nil
 }
@@ -207,10 +210,18 @@ func (rt *Runtime) Wait() {
 	}
 	rt.mu.Unlock()
 	<-rt.done
+	if rt.adapter != nil {
+		<-rt.adapter.Done()
+	}
 }
 
-// Done returns a channel that is closed when the runtime is stopped.
+// Done returns the terminal completion signal from the adapter when bound,
+// otherwise the internal lifecycle context. The adapter signal closes only
+// after terminal cleanup when no callback accepted can still execute.
 func (rt *Runtime) Done() <-chan struct{} {
+	if rt.adapter != nil {
+		return rt.adapter.Done()
+	}
 	return rt.ctx.Done()
 }
 

@@ -61,7 +61,7 @@ func prSplitTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	})
 
 	ctx := context.Background()
-	bridge := btmod.NewBridge(ctx, loop, vm, reg, nil)
+	bridge := btmod.NewBridge(ctx, loop, vm, reg, adapter)
 	t.Cleanup(func() { bridge.Stop() })
 
 	// Register exec module (bt is auto-registered by bridge).

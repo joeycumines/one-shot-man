@@ -9,6 +9,7 @@ import (
 	bt "github.com/joeycumines/go-behaviortree"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/stretchr/testify/require"
 )
 
@@ -684,6 +685,13 @@ func TestBridge_InitFailure_IsRunningFalse(t *testing.T) {
 		t.Fatal(err)
 	}
 	vm := goja.New()
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 	defer func() {
@@ -694,7 +702,7 @@ func TestBridge_InitFailure_IsRunningFalse(t *testing.T) {
 	ctx := t.Context()
 
 	// Create bridge - this should succeed
-	bridge := NewBridge(ctx, loop, vm, nil, nil)
+	bridge := NewBridge(ctx, loop, vm, nil, adapter)
 
 	// Verify bridge is running
 	require.True(t, bridge.IsRunning(), "Bridge should be running after creation")
@@ -730,6 +738,13 @@ func TestBridge_LifecycleInvariant_DoneClosedImpliesNotRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	vm := goja.New()
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 	defer func() {
@@ -739,7 +754,7 @@ func TestBridge_LifecycleInvariant_DoneClosedImpliesNotRunning(t *testing.T) {
 
 	ctx := t.Context()
 
-	bridge := NewBridge(ctx, loop, vm, nil, nil)
+	bridge := NewBridge(ctx, loop, vm, nil, adapter)
 
 	// Start multiple goroutines to stress-test the invariant
 	const numGoroutines = 20

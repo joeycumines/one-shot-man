@@ -348,8 +348,7 @@ func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
 
 	// Create bridge in shared mode (does NOT own the loop)
 	ctx := context.Background()
-	bridge := NewBridge(ctx, loop, vm, reg, nil)
-	bridge.SetAdapter(adapter)
+	bridge := NewBridge(ctx, loop, vm, reg, adapter)
 	defer func() {
 		bridge.Stop()
 		loopCancel()
@@ -496,8 +495,7 @@ func TestIntegration_SharedModeTickerShutdown(t *testing.T) {
 
 	// Create bridge in shared mode
 	ctx := context.Background()
-	bridge := NewBridge(ctx, loop, vm, reg, nil)
-	bridge.SetAdapter(adapter)
+	bridge := NewBridge(ctx, loop, vm, reg, adapter)
 	defer func() {
 		bridge.Stop()
 		loopCancel()

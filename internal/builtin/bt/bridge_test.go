@@ -49,8 +49,7 @@ func testBridge(t *testing.T) *Bridge {
 		loop.Shutdown(context.Background())
 	})
 
-	bridge := NewBridge(ctx, loop, vm, reg, nil)
-	bridge.SetAdapter(adapter)
+	bridge := NewBridge(ctx, loop, vm, reg, adapter)
 	t.Cleanup(func() {
 		bridge.Stop()
 	})
@@ -104,8 +103,7 @@ func testBridgeWithManualShutdown(t *testing.T) (*Bridge, func()) {
 	go loop.Run(loopCtx)
 
 	ctx := context.Background()
-	bridge := NewBridge(ctx, loop, vm, reg, nil)
-	bridge.SetAdapter(adapter)
+	bridge := NewBridge(ctx, loop, vm, reg, adapter)
 
 	stopLoop := func() {
 		loopCancel()
@@ -174,6 +172,13 @@ func TestBridge_ContextCancellation(t *testing.T) {
 	}
 	vm := goja.New()
 	reg.Enable(vm)
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 	t.Cleanup(func() {
@@ -181,7 +186,7 @@ func TestBridge_ContextCancellation(t *testing.T) {
 		loop.Shutdown(context.Background())
 	})
 
-	bridge := NewBridge(ctx, loop, vm, reg, nil)
+	bridge := NewBridge(ctx, loop, vm, reg, adapter)
 	require.True(t, bridge.IsRunning())
 
 	// Cancel context
@@ -229,6 +234,13 @@ func TestBridge_RunAfterStop(t *testing.T) {
 	}
 	vm := goja.New()
 	reg.Enable(vm)
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 	defer func() {
@@ -237,7 +249,7 @@ func TestBridge_RunAfterStop(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	bridge := NewBridge(ctx, loop, vm, reg, nil)
+	bridge := NewBridge(ctx, loop, vm, reg, adapter)
 
 	bridge.Stop()
 

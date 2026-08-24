@@ -72,15 +72,12 @@ func NewBridge(ctx context.Context, loop *goeventloop.Loop, vm *goja.Runtime, re
 	if vm == nil {
 		panic("goja runtime must not be nil")
 	}
+	if adapter == nil {
+		panic("goja-eventloop adapter must not be nil")
+	}
 	b := newBridgeWithLoop(ctx, loop, vm, registry)
 	b.adapter = adapter
 	return b
-}
-
-// SetAdapter sets the goja-eventloop adapter for JS-visible promise creation.
-// Must be called before any ticker/manager done() promises are created.
-func (b *Bridge) SetAdapter(adapter *gojaeventloop.Adapter) {
-	b.adapter = adapter
 }
 
 // newBridgeWithLoop is the internal constructor for Bridge.

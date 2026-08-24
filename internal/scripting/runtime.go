@@ -133,6 +133,26 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 		return nil, fmt.Errorf("failed to bind JS globals: %w", err2)
 	}
 
+	// H0 SECURITY: neutralize dangerous process globals installed by goja-eventloop Bind.
+	// Bind installs Node v26.5 process lifecycle globals (process.exit/exitCode etc.)
+	// which would allow user scripts to terminate the host. The sandbox tests assert
+	// these are absent, and main at 498102f proves they were absent before the fork.
+	// We keep process.nextTick and event emitter methods, but delete exit-related and
+	// env/pid surface. Also scrub Buffer/Deno/quit globals that must not leak.
+	if procVal := vm.Get("process"); procVal != nil && !goja.IsUndefined(procVal) && !goja.IsNull(procVal) {
+		if procObj, ok := procVal.(*goja.Object); ok {
+			_ = procObj.Delete("exit")
+			_ = procObj.Delete("exitCode")
+			_ = procObj.Delete("env")
+			_ = procObj.Delete("pid")
+			_ = procObj.Delete("_exiting")
+		}
+	}
+	_ = vm.Set("Buffer", goja.Undefined())
+	_ = vm.Set("Deno", goja.Undefined())
+	_ = vm.Set("exit", goja.Undefined())
+	_ = vm.Set("quit", goja.Undefined())
+
 	// Start the event loop in background goroutine
 	go func() {
 		defer close(rt.done)

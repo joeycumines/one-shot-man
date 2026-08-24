@@ -365,53 +365,59 @@ func (e *Engine) checkEventLoopGoroutine(methodName string) {
 
 // SetGlobal sets a global variable in the JavaScript runtime.
 //
-// THREADING: This method directly accesses the goja.Runtime without going through
-// the event loop. It must ONLY be called:
-//   - During engine initialization (before any async operations)
-//   - From within script execution context (already on event loop goroutine)
-//
-// For thread-safe global access from arbitrary goroutines, use QueueSetGlobal
-// or Runtime.SetGlobal instead.
-//
-// PANIC: In debug mode (when ThreadCheckMode is enabled), this will panic
-// if called from a goroutine other than the event loop goroutine.
+// THREADING: This method is now owner-safe and may be called from any goroutine.
+// When called on the event loop goroutine it executes inline; otherwise it
+// submits to the loop via adapter.Submit and returns immediately (fire-and-forget).
+// Ordering with subsequent ExecuteScript is preserved because both are queued
+// to the same loop in submission order. For synchronous thread-safe access
+// with result, use QueueSetGlobal or Runtime.SetGlobal.
 func (e *Engine) SetGlobal(name string, value any) {
-	if e.threadCheckMode {
-		e.checkEventLoopGoroutine("SetGlobal")
+	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
+		e.globalsMu.Lock()
+		e.globals[name] = value
+		e.vm.Set(name, value)
+		e.globalsMu.Unlock()
+		return
 	}
-	// Use mutex to protect globals map and VM access (C5 fix)
-	e.globalsMu.Lock()
-	e.globals[name] = value
-	e.vm.Set(name, value)
-	e.globalsMu.Unlock()
+	e.runtime.adapter.Submit(func(rt *goja.Runtime) {
+		e.globalsMu.Lock()
+		e.globals[name] = value
+		rt.Set(name, value)
+		e.globalsMu.Unlock()
+	})
 }
 
 // GetGlobal retrieves a global variable from the JavaScript runtime.
 // Returns nil if the variable is not defined or is undefined.
 //
-// THREADING: This method directly accesses the goja.Runtime without going through
-// the event loop. It must ONLY be called:
-//   - During engine initialization (before any async operations)
-//   - From within script execution context (already on event loop goroutine)
-//
-// For thread-safe global access from arbitrary goroutines, use QueueGetGlobal
-// or Runtime.GetGlobal instead.
-//
-// PANIC: In debug mode (when ThreadCheckMode is enabled), this will panic
-// if called from a goroutine other than the event loop goroutine.
+// THREADING: This method is now owner-safe and may be called from any goroutine.
+// When called on the event loop goroutine it executes inline; otherwise it
+// submits to the loop and blocks until the result is available. For callback-
+// based async access, use QueueGetGlobal.
 func (e *Engine) GetGlobal(name string) any {
-	if e.threadCheckMode {
-		e.checkEventLoopGoroutine("GetGlobal")
+	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
+		e.globalsMu.Lock()
+		val := e.vm.Get(name)
+		e.globalsMu.Unlock()
+		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+			return nil
+		}
+		return val.Export()
 	}
-	// Use mutex to protect both globals map and VM access (C5 fix)
-	// Using full Lock instead of RLock to synchronize with QueueSetGlobal's vm.Set() calls
-	e.globalsMu.Lock()
-	val := e.vm.Get(name)
-	e.globalsMu.Unlock()
-	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
-		return nil
-	}
-	return val.Export()
+	resultCh := make(chan any, 1)
+	e.runtime.adapter.Submit(func(rt *goja.Runtime) {
+		e.globalsMu.Lock()
+		val := rt.Get(name)
+		e.globalsMu.Unlock()
+		var result any
+		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+			result = nil
+		} else {
+			result = val.Export()
+		}
+		resultCh <- result
+	})
+	return <-resultCh
 }
 
 // Stdout returns the engine's stdout writer.

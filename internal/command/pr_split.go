@@ -67,7 +67,7 @@ func loadChunkedScript(engine *scripting.Engine) error {
 			return fmt.Errorf("pr-split: chunk file %q not found in embedded FS: %w", entry.File, err)
 		}
 		name := "pr-split/" + entry.ID
-		script := engine.LoadScriptFromString(name, string(data))
+		script := engine.LoadScriptString(name, string(data))
 		if err := engine.ExecuteScript(script); err != nil {
 			return fmt.Errorf("failed to load pr-split chunk %s: %w", entry.ID, err)
 		}
@@ -298,7 +298,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		// BubbleTea's RunJSSync callbacks. ExecuteScript automatically calls
 		// WaitForProgram() on the calling goroutine, blocking until the user
 		// exits the wizard or context is cancelled.
-		wizardScript := engine.LoadScriptFromString(
+		wizardScript := engine.LoadScriptString(
 			"pr-split/wizard-launch",
 			`globalThis.prSplit.startWizard();`)
 		if err := engine.ExecuteScript(wizardScript); err != nil {

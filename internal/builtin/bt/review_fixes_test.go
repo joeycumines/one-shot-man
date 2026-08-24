@@ -6,7 +6,7 @@ import (
 	bt "github.com/joeycumines/go-behaviortree"
 )
 
-// TestCriticalFixes_ThreadSafety verifies CRITICAL #1: TryRunOnLoopSync thread safety
+// TestCriticalFixes_ThreadSafety verifies CRITICAL #1: TryRunSync thread safety
 func TestReviewFix_ThreadSafety(t *testing.T) {
 	bridge := testBridge(t)
 

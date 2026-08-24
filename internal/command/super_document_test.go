@@ -42,7 +42,7 @@ func TestSuperDocument_FormMode_TextareaCommandPropagation(t *testing.T) {
 	engine.SetGlobal("superDocumentTemplate", "dummy template")
 
 	// Load and execute the embedded command script
-	script := engine.LoadScriptFromString("super-document", superDocumentScript)
+	script := engine.LoadScriptString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute super-document script: %v", err)
 	}
@@ -64,7 +64,7 @@ var res = handleKeys({ type: 'Key', key: 'a', paste: false }, s);
 __result = res;
 `
 
-	testObj := engine.LoadScriptFromString("super-doc-propagation", testScript)
+	testObj := engine.LoadScriptString("super-doc-propagation", testScript)
 	if err := engine.ExecuteScript(testObj); err != nil {
 		t.Fatalf("test script execution failed: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestSuperDocument_ListMode_NoCommandOnKeyNav(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-	script := engine.LoadScriptFromString("super-document", superDocumentScript)
+	script := engine.LoadScriptString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute super-document script: %v", err)
 	}
@@ -137,7 +137,7 @@ __resArr = res;
 __s = s;
 `
 
-	testObj := engine.LoadScriptFromString("super-doc-list-nav", testScript)
+	testObj := engine.LoadScriptString("super-doc-list-nav", testScript)
 	if err := engine.ExecuteScript(testObj); err != nil {
 		t.Fatalf("test script execution failed: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestSuperDocument_ListMode_ViewportCommandPropagation(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-	script := engine.LoadScriptFromString("super-document", superDocumentScript)
+	script := engine.LoadScriptString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute super-document script: %v", err)
 	}
@@ -205,7 +205,7 @@ var res = (function(){ const r = s.vp.update({type:'wheel'}); return r[1]; })();
 __result = res;
 `
 
-	testObj := engine.LoadScriptFromString("super-doc-vp-prop", testScript)
+	testObj := engine.LoadScriptString("super-doc-vp-prop", testScript)
 	if err := engine.ExecuteScript(testObj); err != nil {
 		t.Fatalf("test script execution failed: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestSuperDocument_ModeTransition_TextareaToList(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-	script := engine.LoadScriptFromString("super-document", superDocumentScript)
+	script := engine.LoadScriptString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute super-document script: %v", err)
 	}
@@ -259,7 +259,7 @@ var res = handleKeys({ key: 'ctrl+enter' }, s);
 __res = res;
 `
 
-	testObj := engine.LoadScriptFromString("super-doc-input-submit", testScript)
+	testObj := engine.LoadScriptString("super-doc-input-submit", testScript)
 	if err := engine.ExecuteScript(testObj); err != nil {
 		t.Fatalf("test script execution failed: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestSuperDocument_ModeTransition_ListToForm(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-	script := engine.LoadScriptFromString("super-document", superDocumentScript)
+	script := engine.LoadScriptString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute super-document script: %v", err)
 	}
@@ -320,7 +320,7 @@ __s = s;
 __res = res;
 `
 
-	testObj := engine.LoadScriptFromString("super-doc-list-to-form", testScript)
+	testObj := engine.LoadScriptString("super-doc-list-to-form", testScript)
 	if err := engine.ExecuteScript(testObj); err != nil {
 		t.Fatalf("test script execution failed: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestSuperDocument_ModeTransition_PreservesState(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-	script := engine.LoadScriptFromString("super-document", superDocumentScript)
+	script := engine.LoadScriptString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute super-document script: %v", err)
 	}
@@ -389,7 +389,7 @@ __doc = post;
 __s = s;
 `
 
-	testObj := engine.LoadScriptFromString("super-doc-preserve", testScript)
+	testObj := engine.LoadScriptString("super-doc-preserve", testScript)
 	if err := engine.ExecuteScript(testObj); err != nil {
 		t.Fatalf("test script execution failed: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestSuperDocument_FocusedButtonEnterDoesNotFallIntoEdit(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-	script := engine.LoadScriptFromString("super-document", superDocumentScript)
+	script := engine.LoadScriptString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute super-document script: %v", err)
 	}
@@ -495,7 +495,7 @@ globalThis.__result = {
 });
 `
 
-	testObj := engine.LoadScriptFromString("super-doc-focused-button-enter", testScript)
+	testObj := engine.LoadScriptString("super-doc-focused-button-enter", testScript)
 	if err := engine.ExecuteScript(testObj); err != nil {
 		t.Fatalf("test script execution failed: %v", err)
 	}
@@ -590,7 +590,7 @@ func TestSuperDocument_BareKeyHotkeys_Regression(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-	script := engine.LoadScriptFromString("super-document", superDocumentScript)
+	script := engine.LoadScriptString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute super-document script: %v", err)
 	}
@@ -729,7 +729,7 @@ Promise.resolve().then(function() {
 });
 `
 
-	testObj := engine.LoadScriptFromString("sd-hotkey-regression", testScript)
+	testObj := engine.LoadScriptString("sd-hotkey-regression", testScript)
 	if err := engine.ExecuteScript(testObj); err != nil {
 		t.Fatalf("regression test script failed: %v", err)
 	}

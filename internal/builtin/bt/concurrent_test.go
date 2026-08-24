@@ -13,7 +13,7 @@ import (
 
 // TestConcurrent_BTTickerAndRunJSSync reproduces the shooter game scenario:
 // - BubbleTea periodically calls RunJSSync for Update
-// - BT tickers periodically call BlockingJSLeaf.Tick which uses RunOnLoop
+// - BT tickers periodically call BlockingJSLeaf.Tick which uses Run
 //
 // This test verifies both can coexist without deadlock.
 func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
@@ -21,7 +21,7 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 
 	// Verify runLeaf exists
 	var runLeafExists bool
-	err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get("runLeaf")
 		runLeafExists = val != nil && !goja.IsUndefined(val)
 		return nil
@@ -34,7 +34,7 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 	var btTickCount atomic.Int32
 	var leafCalls atomic.Int32
 	var node bt.Node
-	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(func(vm *goja.Runtime) error {
 		// Create a tree matching the shooter grunt structure:
 		// sequence(checkAlive, fallback(sequence(checkAlive, checkInRange, shoot), moveToward))
 		val, err := vm.RunString(`
@@ -100,7 +100,7 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 			status, err := tick(c)
 			t.Logf("[Go] Tree tick #%d completed with %v, %v", count, status, err)
 			// After tree tick, get leaf count from JS
-			bridge.RunOnLoop(func(vm *goja.Runtime) {
+			bridge.Run(func(vm *goja.Runtime) {
 				val := vm.Get("leafCount")
 				if val != nil && !goja.IsUndefined(val) {
 					leafCalls.Store(int32(val.ToInteger()))
@@ -135,7 +135,7 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 	}
 
 	var tickers []bt.Ticker
-	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(func(vm *goja.Runtime) error {
 		for range 3 {
 			ticker := bt.NewTicker(ctx, 50*time.Millisecond, wrappedNode)
 			tickers = append(tickers, ticker)

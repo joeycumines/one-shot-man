@@ -348,7 +348,7 @@ func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
 
 	// Create bridge in shared mode (does NOT own the loop)
 	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
+	bridge := NewBridge(ctx, loop, vm, reg, nil)
 	bridge.SetAdapter(adapter)
 	defer func() {
 		bridge.Stop()
@@ -372,7 +372,7 @@ func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
 	var promiseError error
 
 	// Attach .then() callback with Go-native notification
-	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(func(vm *goja.Runtime) error {
 		managerObj := vm.Get("testManager").ToObject(vm)
 		doneFn := managerObj.Get("done")
 		doneCallable, ok := goja.AssertFunction(doneFn)
@@ -427,8 +427,8 @@ func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
 
 	// Now stop the manager DIRECTLY on the loop (using channel for sync)
 	// The background goroutine will receive manager.Done() closing and
-	// try bridge.RunOnLoop() (which fails due to bridge stopped).
-	// The fallback mechanism should trigger and call bridge.loop.RunOnLoop()
+	// try bridge.Run() (which fails due to bridge stopped).
+	// The fallback mechanism should trigger and call bridge.loop.Run()
 	// to settle the promise.
 	stopCh := make(chan error, 1)
 	submitErr := loop.Submit(func() {
@@ -454,8 +454,8 @@ func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
 	// The fallback mechanism MUST be triggered because:
 	// 1. bridge.Stop() sets b.stopped = true
 	// 2. manager.Stop() triggers Done() closure
-	// 3. Background goroutine tries bridge.RunOnLoop (fails)
-	// 4. Fallback to bridge.loop.RunOnLoop must work
+	// 3. Background goroutine tries bridge.Run (fails)
+	// 4. Fallback to bridge.loop.Run must work
 	select {
 	case <-promiseSettled:
 		if promiseError != nil {
@@ -496,7 +496,7 @@ func TestIntegration_SharedModeTickerShutdown(t *testing.T) {
 
 	// Create bridge in shared mode
 	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
+	bridge := NewBridge(ctx, loop, vm, reg, nil)
 	bridge.SetAdapter(adapter)
 	defer func() {
 		bridge.Stop()
@@ -516,7 +516,7 @@ func TestIntegration_SharedModeTickerShutdown(t *testing.T) {
 	var promiseError error
 
 	// Get the ticker's done promise and attach .then() callback with Go notification
-	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(func(vm *goja.Runtime) error {
 		tickerObj := vm.Get("testTicker").ToObject(vm)
 		doneFn := tickerObj.Get("done")
 		doneCallable, ok := goja.AssertFunction(doneFn)
@@ -565,7 +565,7 @@ func TestIntegration_SharedModeTickerShutdown(t *testing.T) {
 	// Stop the ticker directly via the event loop. This settles the
 	// done promise while the event loop is still running, allowing
 	// the promise callbacks to be dispatched.
-	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(func(vm *goja.Runtime) error {
 		tickerObj := vm.Get("testTicker").ToObject(vm)
 		stopFn := tickerObj.Get("stop")
 		if stopCallable, ok := goja.AssertFunction(stopFn); ok {

@@ -42,7 +42,7 @@ const (
 // Thread Safety:
 // The adapter is safe for concurrent Tick() calls. All state transitions are atomic
 // (under mutex), and generation counting prevents stale callbacks from corrupting state.
-// JavaScript execution happens on the event loop goroutine via Bridge.RunOnLoop.
+// JavaScript execution happens on the event loop goroutine via Bridge.Run.
 //
 // One-Shot Context Semantics:
 // JSLeafAdapter uses the parent context directly without creating child contexts.
@@ -240,7 +240,7 @@ func (a *JSLeafAdapter) Tick(children []bt.Node) (bt.Status, error) {
 // dispatchJSWithGen sends the execution request to the JavaScript event loop.
 // The gen parameter is passed to finalize to ensure stale callbacks are ignored.
 func (a *JSLeafAdapter) dispatchJSWithGen(gen uint64) {
-	ok := a.bridge.RunOnLoop(func(vm *goja.Runtime) {
+	ok := a.bridge.Run(func(vm *goja.Runtime) {
 		defer func() {
 			if r := recover(); r != nil {
 				a.finalize(gen, bt.Failure, fmt.Errorf("panic in JS leaf: %v", r))
@@ -435,8 +435,8 @@ func BlockingJSLeaf(ctx context.Context, bridge *Bridge, vm *goja.Runtime, tick 
 				once.Do(func() { ch <- r })
 			}
 
-			// Install cleanup BEFORE RunOnLoop check.
-			// If bridge is stopped, RunOnLoop returns ok=false and we return early.
+			// Install cleanup BEFORE Run check.
+			// If bridge is stopped, Run returns ok=false and we return early.
 			// The defer must be installed FIRST to guarantee cleanup runs on all paths.
 			defer func() {
 				select {
@@ -447,7 +447,7 @@ func BlockingJSLeaf(ctx context.Context, bridge *Bridge, vm *goja.Runtime, tick 
 				}
 			}()
 
-			ok := bridge.RunOnLoop(func(loopVM *goja.Runtime) {
+			ok := bridge.Run(func(loopVM *goja.Runtime) {
 				defer func() {
 					if r := recover(); r != nil {
 						send(result{bt.Failure, fmt.Errorf("panic: %v", r)})

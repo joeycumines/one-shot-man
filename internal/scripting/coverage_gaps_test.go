@@ -136,8 +136,8 @@ func TestEngine_GetScripts_AfterLoad(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
-	engine.LoadScriptFromString("a", "1")
-	engine.LoadScriptFromString("b", "2")
+	engine.LoadScriptString("a", "1")
+	engine.LoadScriptString("b", "2")
 	scripts := engine.GetScripts()
 	if len(scripts) != 2 {
 		t.Errorf("GetScripts() should return 2 scripts, got %d", len(scripts))
@@ -352,7 +352,7 @@ func TestNewEngineDetailed_WithModulePaths(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = engine.Close() })
 
-	script := engine.LoadScriptFromString("test", `
+	script := engine.LoadScriptString("test", `
 		var lib = require('mylib');
 		ctx.log("answer: " + lib.answer);
 	`)
@@ -380,7 +380,7 @@ func TestExecuteScript_PanicRecovery_GoPanic(t *testing.T) {
 		panic("go panic value")
 	})
 
-	script := engine.LoadScriptFromString("go_panic", `goPanic();`)
+	script := engine.LoadScriptString("go_panic", `goPanic();`)
 	err := engine.ExecuteScript(script)
 	if err == nil {
 		t.Fatal("expected error from Go panic")
@@ -416,7 +416,7 @@ func TestExecuteScript_PanicRecovery_GoPanicWithError(t *testing.T) {
 		panic(inner)
 	})
 
-	script := engine.LoadScriptFromString("go_panic_err", `goPanicErr();`)
+	script := engine.LoadScriptString("go_panic_err", `goPanicErr();`)
 	err := engine.ExecuteScript(script)
 	if err == nil {
 		t.Fatal("expected error from Go panic")
@@ -443,7 +443,7 @@ func TestExecuteScript_DeferredError_CombinedWithExecError(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("combined_err", `
+	script := engine.LoadScriptString("combined_err", `
 		ctx.defer(function() {
 			ctx.error("deferred error");
 		});
@@ -469,7 +469,7 @@ func TestExecuteScript_DeferredError_OnlyDeferred(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("deferred_only", `
+	script := engine.LoadScriptString("deferred_only", `
 		ctx.defer(function() {
 			ctx.error("deferred failure");
 		});
@@ -599,7 +599,7 @@ func TestExecuteScript_InlineScript_RuntimeError(t *testing.T) {
 	ctx := context.Background()
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 
-	script := engine.LoadScriptFromString("inline_err", "undefinedVar;")
+	script := engine.LoadScriptString("inline_err", "undefinedVar;")
 	err := engine.ExecuteScript(script)
 	if err == nil {
 		t.Fatal("expected runtime error")
@@ -661,7 +661,7 @@ func TestEngine_RegisterNativeModule(t *testing.T) {
 		exports.Set("hello", func() string { return "from native module" })
 	})
 
-	script := engine.LoadScriptFromString("native_mod", `
+	script := engine.LoadScriptString("native_mod", `
 		var m = require("osm:test_coverage");
 		ctx.log(m.hello());
 	`)
@@ -677,7 +677,7 @@ func TestEngine_RegisterNativeModule(t *testing.T) {
 // Runtime coverage gaps
 // =============================================================================
 
-func TestRuntime_RunOnLoopSync_NoTimeout_Success(t *testing.T) {
+func TestRuntime_RunSync_NoTimeout_Success(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -692,19 +692,19 @@ func TestRuntime_RunOnLoopSync_NoTimeout_Success(t *testing.T) {
 	rt.SetTimeout(0)
 
 	var value int
-	err = rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(func(vm *goja.Runtime) error {
 		value = 99
 		return nil
 	})
 	if err != nil {
-		t.Errorf("RunOnLoopSync with no timeout failed: %v", err)
+		t.Errorf("RunSync with no timeout failed: %v", err)
 	}
 	if value != 99 {
 		t.Errorf("value = %d, want 99", value)
 	}
 }
 
-func TestRuntime_RunOnLoopSync_NoTimeout_RuntimeStopped(t *testing.T) {
+func TestRuntime_RunSync_NoTimeout_RuntimeStopped(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -716,25 +716,25 @@ func TestRuntime_RunOnLoopSync_NoTimeout_RuntimeStopped(t *testing.T) {
 
 	// Schedule a job that blocks until we close
 	blockCh := make(chan struct{})
-	scheduled := rt.RunOnLoop(func(vm *goja.Runtime) {
+	scheduled := rt.Run(func(vm *goja.Runtime) {
 		<-blockCh
 	})
 	if !scheduled {
-		t.Fatal("RunOnLoop should succeed")
+		t.Fatal("Run should succeed")
 	}
 
 	// Set no timeout
 	rt.SetTimeout(0)
 
-	// Start a goroutine that will try RunOnLoopSync (will block because event loop is busy)
+	// Start a goroutine that will try RunSync (will block because event loop is busy)
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+		errCh <- rt.RunSync(func(vm *goja.Runtime) error {
 			return nil // This will never execute due to close
 		})
 	}()
 
-	// Close the runtime — the pending RunOnLoopSync should get "runtime stopped" error
+	// Close the runtime — the pending RunSync should get "runtime stopped" error
 	close(blockCh) // unblock the first job
 	rt.Close()
 
@@ -742,10 +742,10 @@ func TestRuntime_RunOnLoopSync_NoTimeout_RuntimeStopped(t *testing.T) {
 	// Might get "event loop not running" or "runtime stopped before completion", or nil
 	// (depends on timing — the close may happen before or after the schedule).
 	// The important thing is it doesn't hang.
-	t.Logf("RunOnLoopSync after close returned: %v", err)
+	t.Logf("RunSync after close returned: %v", err)
 }
 
-func TestRuntime_RunOnLoopSync_RuntimeStoppedDuringWait(t *testing.T) {
+func TestRuntime_RunSync_RuntimeStoppedDuringWait(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -757,7 +757,7 @@ func TestRuntime_RunOnLoopSync_RuntimeStoppedDuringWait(t *testing.T) {
 
 	// Block event loop with a long-running job
 	blockCh := make(chan struct{})
-	rt.RunOnLoop(func(vm *goja.Runtime) {
+	rt.Run(func(vm *goja.Runtime) {
 		<-blockCh
 	})
 
@@ -766,7 +766,7 @@ func TestRuntime_RunOnLoopSync_RuntimeStoppedDuringWait(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+		errCh <- rt.RunSync(func(vm *goja.Runtime) error {
 			return nil
 		})
 	}()
@@ -776,10 +776,10 @@ func TestRuntime_RunOnLoopSync_RuntimeStoppedDuringWait(t *testing.T) {
 	rt.Close()
 
 	err = <-errCh
-	t.Logf("RunOnLoopSync returned: %v", err)
+	t.Logf("RunSync returned: %v", err)
 }
 
-func TestRuntime_TryRunOnLoopSync_Stopped(t *testing.T) {
+func TestRuntime_TryRunSync_Stopped(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -791,7 +791,7 @@ func TestRuntime_TryRunOnLoopSync_Stopped(t *testing.T) {
 
 	rt.Close()
 
-	err = rt.TryRunOnLoopSync(nil, func(vm *goja.Runtime) error {
+	err = rt.TryRunSync(nil, func(vm *goja.Runtime) error {
 		return nil
 	})
 	if err == nil {
@@ -822,19 +822,19 @@ func TestRuntime_LoadScript_RuntimeError(t *testing.T) {
 	}
 }
 
-func TestRuntime_RunOnLoop_NotStarted(t *testing.T) {
+func TestRuntime_Run_NotStarted(t *testing.T) {
 	t.Parallel()
 	// Create a runtime with minimal fields where started=false
 	rt := &Runtime{}
-	ok := rt.RunOnLoop(func(vm *goja.Runtime) {
+	ok := rt.Run(func(vm *goja.Runtime) {
 		t.Error("should not execute")
 	})
 	if ok {
-		t.Error("RunOnLoop should return false for not-started runtime")
+		t.Error("Run should return false for not-started runtime")
 	}
 }
 
-func TestRuntime_RunOnLoopSync_RuntimeStoppedWithTimeout(t *testing.T) {
+func TestRuntime_RunSync_RuntimeStoppedWithTimeout(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -844,9 +844,9 @@ func TestRuntime_RunOnLoopSync_RuntimeStoppedWithTimeout(t *testing.T) {
 		t.Fatalf("NewRuntime failed: %v", err)
 	}
 
-	// Block the event loop so our RunOnLoopSync job can't execute
+	// Block the event loop so our RunSync job can't execute
 	blockCh := make(chan struct{})
-	rt.RunOnLoop(func(vm *goja.Runtime) {
+	rt.Run(func(vm *goja.Runtime) {
 		<-blockCh
 	})
 
@@ -855,14 +855,14 @@ func TestRuntime_RunOnLoopSync_RuntimeStoppedWithTimeout(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+		errCh <- rt.RunSync(func(vm *goja.Runtime) error {
 			return nil
 		})
 	}()
 
-	// Close the runtime — Done channel fires, RunOnLoopSync picks "runtime stopped"
+	// Close the runtime — Done channel fires, RunSync picks "runtime stopped"
 	go func() {
-		// Give RunOnLoopSync time to schedule its callback
+		// Give RunSync time to schedule its callback
 		for i := 0; i < 100; i++ {
 			if len(errCh) > 0 {
 				return
@@ -874,10 +874,10 @@ func TestRuntime_RunOnLoopSync_RuntimeStoppedWithTimeout(t *testing.T) {
 
 	err = <-errCh
 	// May get nil (job executed), "runtime stopped", or "event loop not running"
-	t.Logf("RunOnLoopSync with timeout during stop: %v", err)
+	t.Logf("RunSync with timeout during stop: %v", err)
 }
 
-func TestRuntime_RunOnLoopSync_SecondRunOnLoopFails(t *testing.T) {
+func TestRuntime_RunSync_SecondRunFails(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -888,12 +888,12 @@ func TestRuntime_RunOnLoopSync_SecondRunOnLoopFails(t *testing.T) {
 	}
 
 	// Stop the loop but don't update the stopped flag yet —
-	// this is the race window where state check passes but loop.RunOnLoop returns false.
-	// We can't reliably reproduce this race, but we can verify the RunOnLoop
-	// returns false check by calling RunOnLoopSync after Close.
+	// this is the race window where state check passes but loop.Run returns false.
+	// We can't reliably reproduce this race, but we can verify the Run
+	// returns false check by calling RunSync after Close.
 	rt.Close()
 
-	err = rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(func(vm *goja.Runtime) error {
 		return nil
 	})
 	if err == nil {
@@ -910,7 +910,7 @@ func TestSetupGlobals_TuiResetSuccess(t *testing.T) {
 	engine.SetTestMode(true)
 
 	// tui.reset calls tuiManager.resetAllState() which should work on a fresh engine
-	script := engine.LoadScriptFromString("tui_reset", `
+	script := engine.LoadScriptString("tui_reset", `
 		try {
 			var result = tui.reset();
 			ctx.log("reset result: " + result);
@@ -935,7 +935,7 @@ func TestExecutionContext_Fatal(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("fatal_test", `
+	script := engine.LoadScriptString("fatal_test", `
 		ctx.fatal("fatal error message");
 		ctx.log("should not reach here");
 	`)
@@ -959,7 +959,7 @@ func TestExecutionContext_Fatalf(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("fatalf_test", `
+	script := engine.LoadScriptString("fatalf_test", `
 		ctx.fatalf("fatal: %s %d", "arg", 42);
 		ctx.log("should not reach here");
 	`)
@@ -980,7 +980,7 @@ func TestExecutionContext_Failed(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("failed_test", `
+	script := engine.LoadScriptString("failed_test", `
 		ctx.log("failed before error: " + ctx.failed());
 		ctx.error("marking failed");
 		ctx.log("failed after error: " + ctx.failed());
@@ -1006,7 +1006,7 @@ func TestExecutionContext_Name(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("name_test", `
+	script := engine.LoadScriptString("name_test", `
 		ctx.log("name: " + ctx.name());
 	`)
 
@@ -1030,7 +1030,7 @@ func TestExecutionContext_Run_SubTestPanic(t *testing.T) {
 		panic("sub-test panic")
 	})
 
-	script := engine.LoadScriptFromString("subtest_panic", `
+	script := engine.LoadScriptString("subtest_panic", `
 		var result = ctx.run("panicking", function() {
 			doPanic();
 		});
@@ -1054,7 +1054,7 @@ func TestExecutionContext_Run_SubTestCallError(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("subtest_call_err", `
+	script := engine.LoadScriptString("subtest_call_err", `
 		var result = ctx.run("throwing", function() {
 			throw new Error("sub-test error");
 		});
@@ -1077,7 +1077,7 @@ func TestExecutionContext_Run_SubTestDeferredError(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("subtest_deferred_err", `
+	script := engine.LoadScriptString("subtest_deferred_err", `
 		var result = ctx.run("with_defer", function() {
 			ctx.defer(function() {
 				ctx.error("deferred error in sub-test");
@@ -1107,7 +1107,7 @@ func TestExecutionContext_RunDeferred_PanicInDeferred(t *testing.T) {
 		panic("deferred panic value")
 	})
 
-	script := engine.LoadScriptFromString("deferred_panic", `
+	script := engine.LoadScriptString("deferred_panic", `
 		ctx.defer(function() {
 			doPanicInDefer();
 		});
@@ -1130,7 +1130,7 @@ func TestExecutionContext_RunDeferred_LIFO(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("lifo_test", `
+	script := engine.LoadScriptString("lifo_test", `
 		ctx.defer(function() { ctx.log("defer-1"); });
 		ctx.defer(function() { ctx.log("defer-2"); });
 		ctx.defer(function() { ctx.log("defer-3"); });
@@ -1168,7 +1168,7 @@ func TestExecutionContext_Run_PassingSubTest(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("passing_subtest", `
+	script := engine.LoadScriptString("passing_subtest", `
 		var result = ctx.run("passing", function() {
 			ctx.log("subtest ran");
 		});
@@ -1193,7 +1193,7 @@ func TestExecutionContext_Run_NestedSubTest(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("nested_sub", `
+	script := engine.LoadScriptString("nested_sub", `
 		ctx.run("outer", function() {
 			ctx.log("name: " + ctx.name());
 			ctx.run("inner", function() {
@@ -1248,7 +1248,7 @@ func TestEngine_SetTestMode(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 
 	// Default is false — Log shouldn't go to stdout in non-testMode
-	script := engine.LoadScriptFromString("no_test_mode", `ctx.log("hidden");`)
+	script := engine.LoadScriptString("no_test_mode", `ctx.log("hidden");`)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatal(err)
 	}
@@ -1258,7 +1258,7 @@ func TestEngine_SetTestMode(t *testing.T) {
 
 	stdout.Reset()
 	engine.SetTestMode(true)
-	script2 := engine.LoadScriptFromString("test_mode", `ctx.log("visible");`)
+	script2 := engine.LoadScriptString("test_mode", `ctx.log("visible");`)
 	if err := engine.ExecuteScript(script2); err != nil {
 		t.Fatal(err)
 	}

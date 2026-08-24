@@ -38,7 +38,7 @@ import (
 // ============================================================================
 //
 // Bridge overhead:
-//   - RunOnLoop (async):    ~101ns/op,    40B,    2 allocs
+//   - Run (async):    ~101ns/op,    40B,    2 allocs
 //   - RunJSSync (empty):    ~1.0µs/op,   424B,    7 allocs (make(chan error,1) dominates)
 //   - RunJSSync (1+1 JS):   ~1.1µs/op,   472B,    9 allocs (+130ns for trivial JS)
 //   - Concurrent RunJSSync: ~2.5µs/op,   424B,    7 allocs (serialized, no contention degradation)
@@ -53,7 +53,7 @@ import (
 //
 // pprof analysis:
 //   - Application code accounts for <1% of CPU time in all benchmarks
-//   - Bridge RunOnLoopSync: make(chan error,1) is the sole per-call alloc in our code
+//   - Bridge RunSync: make(chan error,1) is the sole per-call alloc in our code
 //   - View rendering allocations (128KB, 3870) are entirely Goja VM string operations
 //   - Tick update CPU is dominated by Goja VM executing JS game logic
 //
@@ -83,7 +83,7 @@ func setupBenchBridge(tb testing.TB) *Bridge {
 	}
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
-	bridge := NewBridgeWithEventLoop(context.Background(), loop, vm, registry)
+	bridge := NewBridge(context.Background(), loop, vm, registry, nil)
 	bridge.SetAdapter(adapter)
 	tb.Cleanup(func() {
 		bridge.Stop()
@@ -93,8 +93,8 @@ func setupBenchBridge(tb testing.TB) *Bridge {
 	return bridge
 }
 
-// BenchmarkRunOnLoop measures the throughput of scheduling callbacks on the event loop.
-func BenchmarkRunOnLoop(b *testing.B) {
+// BenchmarkRun measures the throughput of scheduling callbacks on the event loop.
+func BenchmarkRun(b *testing.B) {
 	bridge := setupBenchBridge(b)
 
 	b.ResetTimer()
@@ -104,11 +104,11 @@ func BenchmarkRunOnLoop(b *testing.B) {
 	wg.Add(b.N)
 
 	for i := 0; i < b.N; i++ {
-		ok := bridge.RunOnLoop(func(vm *goja.Runtime) {
+		ok := bridge.Run(func(vm *goja.Runtime) {
 			wg.Done()
 		})
 		if !ok {
-			b.Fatal("RunOnLoop failed")
+			b.Fatal("Run failed")
 		}
 	}
 

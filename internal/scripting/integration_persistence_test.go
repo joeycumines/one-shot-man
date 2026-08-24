@@ -178,7 +178,7 @@ func TestEndToEndLifecycle(t *testing.T) {
 	}
 	defer engine1.Close()
 
-	script1 := engine1.LoadScriptFromString("test-script.js", testScript)
+	script1 := engine1.LoadScriptString("test-script.js", testScript)
 	if err := engine1.ExecuteScript(script1); err != nil {
 		t.Fatalf("Failed to execute test script: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestEndToEndLifecycle(t *testing.T) {
 	defer engine2.Close()
 
 	// Load the same script to register the mode
-	script2 := engine2.LoadScriptFromString("test-script.js", testScript)
+	script2 := engine2.LoadScriptString("test-script.js", testScript)
 	if err := engine2.ExecuteScript(script2); err != nil {
 		t.Fatalf("Failed to execute test script in second session: %v", err)
 	}

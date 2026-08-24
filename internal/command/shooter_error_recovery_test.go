@@ -42,7 +42,7 @@ func TestShooterError_ER001_ModuleLoadingError(t *testing.T) {
 		}
 	`
 
-	script := engine.LoadScriptFromString("missing-module-test", scriptWithMissingModule)
+	script := engine.LoadScriptString("missing-module-test", scriptWithMissingModule)
 	err = engine.ExecuteScript(script)
 
 	// Verify that ExecuteScript returns an error (non-zero exit code)
@@ -85,7 +85,7 @@ func TestShooterError_ER001_ModuleLoadingError(t *testing.T) {
 		defer engine2.Close()
 		engine2.SetTestMode(true)
 
-		script2 := engine2.LoadScriptFromString("modified-shooter", modifiedContent)
+		script2 := engine2.LoadScriptString("modified-shooter", modifiedContent)
 		err = engine2.ExecuteScript(script2)
 
 		if err == nil {
@@ -169,7 +169,7 @@ func TestShooterError_ER002_RuntimeIntentionalError(t *testing.T) {
 			defer engine.Close()
 			engine.SetTestMode(true)
 
-			script := engine.LoadScriptFromString(tc.name, tc.script)
+			script := engine.LoadScriptString(tc.name, tc.script)
 			err = engine.ExecuteScript(script)
 
 			if tc.wantErr {
@@ -225,7 +225,7 @@ thisWillCauseAnError();
 		defer engine3.Close()
 		engine3.SetTestMode(true)
 
-		script3 := engine3.LoadScriptFromString("broken-shooter", modifiedContent)
+		script3 := engine3.LoadScriptString("broken-shooter", modifiedContent)
 		err = engine3.ExecuteScript(script3)
 
 		if err == nil {
@@ -273,7 +273,7 @@ func TestShooterError_ER003_NormalExecution(t *testing.T) {
 
 	t.Run("script_loads_without_syntax_errors", func(t *testing.T) {
 		// Load the script - syntax errors would be caught here
-		script := engine.LoadScriptFromString("shooter-normal", string(content))
+		script := engine.LoadScriptString("shooter-normal", string(content))
 		// Just verify the script can be loaded (parsed) without syntax errors.
 		// We do NOT execute the full script because it uses bubbletea which puts
 		// the terminal into raw mode and corrupts TTY state if not properly cleaned up.
@@ -337,7 +337,7 @@ func TestShooterError_ER003_NormalExecution(t *testing.T) {
 		console.log('All core functionality works correctly!');
 		`
 
-		script := engine.LoadScriptFromString("normal-execution-test", moduleTestScript)
+		script := engine.LoadScriptString("normal-execution-test", moduleTestScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {
@@ -379,7 +379,7 @@ func TestShooterError_ER003_NormalExecution(t *testing.T) {
 		console.log('✓ Program structure is valid');
 		`
 
-		script := engine.LoadScriptFromString("quit-key-test", minimalTUIScript)
+		script := engine.LoadScriptString("quit-key-test", minimalTUIScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {
@@ -543,7 +543,7 @@ func TestShooterError_ER004_BehaviorTreeErrors(t *testing.T) {
 
 			t.Logf("Testing: %s", tc.description)
 
-			script := engine.LoadScriptFromString(tc.name, tc.script)
+			script := engine.LoadScriptString(tc.name, tc.script)
 			err = engine.ExecuteScript(script)
 
 			if tc.wantErr {
@@ -632,7 +632,7 @@ func TestShooterError_ER004_BehaviorTreeErrors(t *testing.T) {
 		console.log('=== ENEMY TYPE VALIDATION WORKING CORRECTLY ===');
 		`
 
-		script := engine.LoadScriptFromString("enemy-type-validation", enemyTestScript)
+		script := engine.LoadScriptString("enemy-type-validation", enemyTestScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {
@@ -667,7 +667,7 @@ func TestShooterError_PanicRecovery(t *testing.T) {
 		})();
 	`
 
-	script := engine.LoadScriptFromString("panic-test", panicScript)
+	script := engine.LoadScriptString("panic-test", panicScript)
 	err = engine.ExecuteScript(script)
 
 	if err == nil {
@@ -732,7 +732,7 @@ func TestShooterError_MultipleErrors(t *testing.T) {
 		throw errors[0];
 		`
 
-		script := engine.LoadScriptFromString("multi-error", multiErrorScript)
+		script := engine.LoadScriptString("multi-error", multiErrorScript)
 		err = engine.ExecuteScript(script)
 
 		if err == nil {

@@ -62,7 +62,7 @@ This is critical for proper lifecycle management and avoiding memory leaks:
 # Core Components
 
 Bridge: Manages the goja runtime and event loop. All JavaScript operations must
-happen within RunOnLoop callbacks to maintain thread safety. The Done() channel
+happen within Run callbacks to maintain thread safety. The Done() channel
 can be used to detect bridge shutdown. Use GetCallable() to retrieve JS functions
 for use with the adapters.
 

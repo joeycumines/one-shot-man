@@ -188,7 +188,7 @@ func unmarshalJSON(s string, v any) error {
 }
 
 // TestTUIHang_ConcurrentPolling simulates BubbleTea's behavior: a separate
-// goroutine rapidly polls via RunOnLoopSync (100ms intervals) while the
+// goroutine rapidly polls via RunSync (100ms intervals) while the
 // async analysis pipeline runs on the event loop. This catches races where
 // rapid external submissions can starve Promise/microtask resolution.
 func TestTUIHang_ConcurrentPolling(t *testing.T) {
@@ -257,7 +257,7 @@ func TestTUIHang_ConcurrentPolling(t *testing.T) {
 		t.Fatalf("startAnalysis didn't start: %+v", step1)
 	}
 
-	// NOW simulate BubbleTea's behavior: poll via RunOnLoopSync from a
+	// NOW simulate BubbleTea's behavior: poll via RunSync from a
 	// separate goroutine, exactly like BubbleTea's Update handler.
 	// This is the critical difference from TestTUIHang_RealAsyncAnalysis
 	// which uses evalJS (loop.Submit) with 200ms sleeps between polls.
@@ -275,7 +275,7 @@ func TestTUIHang_ConcurrentPolling(t *testing.T) {
 	errCh := make(chan error, 1)
 
 	// runOnLoopSync is the critical function — it submits to the event loop
-	// and blocks, exactly like BubbleTea's TryRunOnLoopSync does when called
+	// and blocks, exactly like BubbleTea's TryRunSync does when called
 	// from an external goroutine.
 	runOnLoopSync := func(fn func(*goja.Runtime) error) error {
 		done := make(chan error, 1)
@@ -301,7 +301,7 @@ func TestTUIHang_ConcurrentPolling(t *testing.T) {
 			case <-ticker.C:
 			}
 
-			// Poll: exactly what BubbleTea does via TryRunOnLoopSync.
+			// Poll: exactly what BubbleTea does via TryRunSync.
 			var pr pollResult
 			if loopErr := runOnLoopSync(func(vm *goja.Runtime) error {
 				val, runErr := vm.RunString(`(function() {
@@ -361,7 +361,7 @@ func TestTUIHang_ConcurrentPolling(t *testing.T) {
 	case loopErr := <-errCh:
 		pollWg.Wait()
 		if loopErr != nil {
-			t.Fatalf("RunOnLoopSync error: %v", loopErr)
+			t.Fatalf("RunSync error: %v", loopErr)
 		}
 		t.Fatalf("TIMEOUT: Concurrent polling — pipeline did not complete in 30s. THIS REPRODUCES THE HANG BUG.")
 	}

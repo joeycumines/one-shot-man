@@ -54,7 +54,7 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	})
 
 	ctx := context.Background()
-	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, vm, reg)
+	bridge := btmod.NewBridge(ctx, loop, vm, reg, nil)
 	t.Cleanup(func() { bridge.Stop() })
 
 	// Register additional modules.
@@ -66,7 +66,7 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	runJS := func(script string) goja.Value {
 		t.Helper()
 		var res goja.Value
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			var e error
 			res, e = vm.RunString(script)
 			return e

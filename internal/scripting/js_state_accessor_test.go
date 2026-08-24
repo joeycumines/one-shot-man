@@ -54,7 +54,7 @@ func TestJSStateAccessor_FallbackToDefaults(t *testing.T) {
 		});
 	`
 
-	if err := engine.ExecuteScript(engine.LoadScriptFromString("setup", setupScript)); err != nil {
+	if err := engine.ExecuteScript(engine.LoadScriptString("setup", setupScript)); err != nil {
 		t.Fatalf("Failed to setup: %v", err)
 	}
 

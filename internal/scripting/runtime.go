@@ -14,6 +14,7 @@ import (
 	gojaEventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/goroutineid"
+	"github.com/joeycumines/one-shot-man/internal/eventlooputil"
 )
 
 // Runtime wraps a goja.Runtime with an integrated event loop and module registry.
@@ -27,7 +28,7 @@ type Runtime struct {
 	// registry is the CommonJS require registry for native modules.
 	registry *require.Registry
 
-	// timeout is the maximum duration to wait for RunOnLoopSync operations.
+	// timeout is the maximum duration to wait for RunSync operations.
 	// Default is defaultSyncTimeout. Set to 0 to disable timeout (not recommended).
 	timeout time.Duration
 
@@ -55,7 +56,7 @@ type Runtime struct {
 	cancel context.CancelFunc
 }
 
-// defaultSyncTimeout is the maximum duration to wait for RunOnLoopSync operations.
+// defaultSyncTimeout is the maximum duration to wait for RunSync operations.
 const defaultSyncTimeout = 5 * time.Second
 
 // NewRuntime creates a new Runtime with an initialized event loop.
@@ -250,6 +251,11 @@ func (rt *Runtime) Adapter() *gojaEventloop.Adapter {
 	return rt.adapter
 }
 
+// GoroutineID returns the stored event-loop goroutine ID for reentrancy checks.
+func (rt *Runtime) GoroutineID() int64 {
+	return rt.eventLoopGoroutineID.Load()
+}
+
 // Promisify implements EventLoopProvider. It wraps a Go function in a
 // Promise-like lifecycle that keeps the event loop alive until completion.
 func (rt *Runtime) Promisify(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise {
@@ -263,7 +269,7 @@ func (rt *Runtime) IsRunning() bool {
 	return rt.started && !rt.stopped
 }
 
-// SetTimeout sets the timeout for RunOnLoopSync operations.
+// SetTimeout sets the timeout for RunSync operations.
 func (rt *Runtime) SetTimeout(timeout time.Duration) {
 	rt.mu.Lock()
 	rt.timeout = timeout
@@ -277,9 +283,9 @@ func (rt *Runtime) GetTimeout() time.Duration {
 	return rt.timeout
 }
 
-// RunOnLoop schedules a function to run on the event loop goroutine.
+// Run schedules a function to run on the event loop goroutine.
 // Returns true if the function was successfully scheduled.
-func (rt *Runtime) RunOnLoop(fn func(vm *goja.Runtime)) bool {
+func (rt *Runtime) Run(fn func(vm *goja.Runtime)) bool {
 	rt.mu.RLock()
 	if !rt.started || rt.stopped {
 		rt.mu.RUnlock()
@@ -293,9 +299,9 @@ func (rt *Runtime) RunOnLoop(fn func(vm *goja.Runtime)) bool {
 	return err == nil
 }
 
-// RunOnLoopSync schedules a function on the event loop and waits for completion.
+// RunSync schedules a function on the event loop and waits for completion.
 // Returns an error if the event loop is not running or stops while waiting.
-func (rt *Runtime) RunOnLoopSync(fn func(vm *goja.Runtime) error) error {
+func (rt *Runtime) RunSync(fn func(vm *goja.Runtime) error) error {
 	rt.mu.RLock()
 	if !rt.started || rt.stopped {
 		rt.mu.RUnlock()
@@ -335,10 +341,10 @@ func (rt *Runtime) RunOnLoopSync(fn func(vm *goja.Runtime) error) error {
 	}
 }
 
-// TryRunOnLoopSync attempts to run a function on the event loop synchronously.
+// TryRunSync attempts to run a function on the event loop synchronously.
 // If we're already on the event loop goroutine, the function is executed
 // directly to avoid deadlock. Otherwise, it posts to the loop and waits.
-func (rt *Runtime) TryRunOnLoopSync(currentVM *goja.Runtime, fn func(vm *goja.Runtime) error) error {
+func (rt *Runtime) TryRunSync(currentVM *goja.Runtime, fn func(vm *goja.Runtime) error) error {
 	rt.mu.RLock()
 	if !rt.started || rt.stopped {
 		rt.mu.RUnlock()
@@ -346,22 +352,17 @@ func (rt *Runtime) TryRunOnLoopSync(currentVM *goja.Runtime, fn func(vm *goja.Ru
 	}
 	rt.mu.RUnlock()
 
-	// Capture current goroutine ID
-	currentID := goroutineid.Get()
-	loopID := rt.eventLoopGoroutineID.Load()
-
-	if currentID == loopID {
-		// We are already on the loop thread, run directly
+	if eventlooputil.IsLoopThread(rt.eventLoopGoroutineID.Load()) {
 		return fn(currentVM)
 	}
 
 	// Different thread, use synchronous submission
-	return rt.RunOnLoopSync(fn)
+	return rt.RunSync(fn)
 }
 
 // LoadScript loads and executes JavaScript code in the runtime.
 func (rt *Runtime) LoadScript(name, code string) error {
-	return rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	return rt.RunSync(func(vm *goja.Runtime) error {
 		prg, err := goja.Compile(name, code, true)
 		if err != nil {
 			return fmt.Errorf("failed to compile %s: %w", name, err)
@@ -376,7 +377,7 @@ func (rt *Runtime) LoadScript(name, code string) error {
 
 // SetGlobal sets a global variable in the JavaScript runtime.
 func (rt *Runtime) SetGlobal(name string, value any) error {
-	return rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	return rt.RunSync(func(vm *goja.Runtime) error {
 		return vm.Set(name, value)
 	})
 }
@@ -384,7 +385,7 @@ func (rt *Runtime) SetGlobal(name string, value any) error {
 // GetGlobal retrieves a global variable from the JavaScript runtime.
 func (rt *Runtime) GetGlobal(name string) (any, error) {
 	var result any
-	err := rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err := rt.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get(name)
 		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 			result = nil
@@ -399,7 +400,7 @@ func (rt *Runtime) GetGlobal(name string) (any, error) {
 // GetCallable retrieves a global function from the JavaScript runtime.
 func (rt *Runtime) GetCallable(name string) (goja.Callable, error) {
 	var result goja.Callable
-	err := rt.TryRunOnLoopSync(nil, func(vm *goja.Runtime) error {
+	err := rt.TryRunSync(nil, func(vm *goja.Runtime) error {
 		val := vm.Get(name)
 		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 			return nil

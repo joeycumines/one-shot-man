@@ -911,10 +911,10 @@ func TestRequire_NewAction_InvalidNodeArg(t *testing.T) {
 }
 
 // ========================================================================
-// Integration: JSCondition.Match with RunOnLoopSync error
+// Integration: JSCondition.Match with RunSync error
 // ========================================================================
 
-func TestJSCondition_Match_RunOnLoopSync_Error(t *testing.T) {
+func TestJSCondition_Match_RunSync_Error(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 

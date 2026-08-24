@@ -42,7 +42,7 @@ func TestSuperDocumentE2E_FullWorkflow(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-	script := engine.LoadScriptFromString("super-document", superDocumentScript)
+	script := engine.LoadScriptString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute super-document script: %v", err)
 	}
@@ -80,7 +80,7 @@ __res = (function(){
 })();
 `
 
-	testObj := engine.LoadScriptFromString("super-document-e2e", testScript)
+	testObj := engine.LoadScriptString("super-document-e2e", testScript)
 	if err := engine.ExecuteScript(testObj); err != nil {
 		t.Fatalf("E2E script failed: %v", err)
 	}

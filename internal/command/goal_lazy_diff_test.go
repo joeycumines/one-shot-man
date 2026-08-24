@@ -39,7 +39,7 @@ func TestGoalScript_DiffHeadDoesNotThrowSyntaxError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to marshal goal config: %v", err)
 	}
-	script := engine.LoadScriptFromString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
+	script := engine.LoadScriptString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to execute goal script: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}

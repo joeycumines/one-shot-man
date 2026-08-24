@@ -92,7 +92,7 @@ func testModeSwitching(ctx context.Context, t *testing.T) {
 	engine := mustNewEngine(t, ctx, os.Stdin, os.Stdout)
 
 	// Register a test mode
-	testScript := engine.LoadScriptFromString("test-mode", `
+	testScript := engine.LoadScriptString("test-mode", `
         tui.registerMode({
             name: "test-mode",
             tui: {

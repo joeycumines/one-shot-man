@@ -14,6 +14,7 @@ import (
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/goroutineid"
+	"github.com/joeycumines/one-shot-man/internal/eventlooputil"
 )
 
 // Bridge manages the behavior tree integration between Go and JavaScript.
@@ -21,7 +22,7 @@ import (
 // all JavaScript operations happen on the event loop goroutine.
 //
 // Key Constraints:
-//   - goja.Runtime is NOT goroutine-safe; all access must happen via RunOnLoop
+//   - goja.Runtime is NOT goroutine-safe; all access must happen via Run
 //   - Promise resolve/reject functions must be called on the event loop goroutine
 //   - The event loop must be started before any JavaScript operations
 //
@@ -29,7 +30,7 @@ import (
 // starting and stopping the event loop. The Bridge's Stop() method only stops
 // the internal bt.Manager, not the event loop.
 type Bridge struct {
-	// timeout is the maximum duration to wait for RunOnLoopSync operations.
+	// timeout is the maximum duration to wait for RunSync operations.
 	// Default is 5 seconds. Set to 0 to disable timeout (not recommended for production).
 	timeout time.Duration
 	loop    *goeventloop.Loop
@@ -59,34 +60,21 @@ type Bridge struct {
 	stopParentCtx func() bool
 }
 
-// DefaultTimeout is the maximum duration to wait for RunOnLoopSync operations.
+// DefaultTimeout is the maximum duration to wait for RunSync operations.
 const DefaultTimeout = 5 * time.Second
 
-// NewBridgeWithEventLoop creates a Bridge that uses an external event loop.
+// NewBridge creates a Bridge that uses an external event loop.
 // The event loop must be started and managed by the caller.
-//
-// Panics if:
-//   - loop is nil
-//   - initialization fails
-//
-// Parameters:
-//   - ctx: Context for cancellation support
-//   - loop: The event loop (must already be started)
-//   - vm: The goja.Runtime
-//   - registry: The require.Registry for module registration (can be nil)
-//
-// The Bridge will:
-//   - Register the osm:bt module with the registry
-//   - Initialize JavaScript helpers on the event loop
-//   - Create an internal bt.Manager for ticker aggregation
-func NewBridgeWithEventLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Runtime, registry *require.Registry) *Bridge {
+func NewBridge(ctx context.Context, loop *goeventloop.Loop, vm *goja.Runtime, registry *require.Registry, adapter *gojaeventloop.Adapter) *Bridge {
 	if loop == nil {
 		panic("event loop must not be nil")
 	}
 	if vm == nil {
 		panic("goja runtime must not be nil")
 	}
-	return newBridgeWithLoop(ctx, loop, vm, registry)
+	b := newBridgeWithLoop(ctx, loop, vm, registry)
+	b.adapter = adapter
+	return b
 }
 
 // SetAdapter sets the goja-eventloop adapter for JS-visible promise creation.
@@ -135,7 +123,7 @@ func newBridgeWithLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Run
 	// Initialize the VM within the event loop BEFORE registering the module.
 	// This ensures the event loop goroutine ID is captured BEFORE any script
 	// can require the module. Otherwise, immediate require would call
-	// TryRunOnLoopSync before ID capture, causing deadlock when already on loop.
+	// TryRunSync before ID capture, causing deadlock when already on loop.
 	//
 	// The happens-before guarantee:
 	// 1. initializeJS runs on event loop -> captures goroutine ID (atomic.Store)
@@ -243,7 +231,7 @@ globalThis.bt = {
 // Stop only stops the internal bt.Manager (which stops all tickers).
 // The event loop is managed externally by the caller.
 //
-// IMPORTANT: Stop does NOT wait for in-flight RunOnLoop operations to complete.
+// IMPORTANT: Stop does NOT wait for in-flight Run operations to complete.
 // Operations that were already scheduled may still execute after Stop returns.
 // Callers should not assume that no more work will happen after Stop returns.
 //
@@ -255,7 +243,7 @@ globalThis.bt = {
 //     settled ticker promises can dispatch their callbacks. (bt.Manager.Stop
 //     only closes its stop signal and joins its run loop; it does not block on
 //     this bridge's context or the event loop, so this step cannot deadlock.)
-//  5. Cancel the context — closes Done() and unblocks RunOnLoopSync waiters.
+//  5. Cancel the context — closes Done() and unblocks RunSync waiters.
 //
 // Ordering invariant: stopped is set true in step 2, strictly before Done()
 // closes in step 5, so "Done() closed ⇒ IsRunning()==false" always holds.
@@ -300,7 +288,7 @@ func (b *Bridge) Done() <-chan struct{} {
 	return b.ctx.Done()
 }
 
-// SetTimeout sets the timeout for RunOnLoopSync operations.
+// SetTimeout sets the timeout for RunSync operations.
 // Pass 0 to disable timeout (not recommended for production).
 func (b *Bridge) SetTimeout(timeout time.Duration) {
 	b.mu.Lock()
@@ -343,12 +331,12 @@ func (b *Bridge) GetLifecycleSnapshot() (doneClosed bool, isRunning bool) {
 	return
 }
 
-// RunOnLoop schedules a function to run on the event loop goroutine.
+// Run schedules a function to run on the event loop goroutine.
 // Returns true if the function was successfully scheduled.
 // Returns false if the event loop is not running.
 //
 // IMPORTANT: All goja.Runtime operations must happen inside this callback.
-func (b *Bridge) RunOnLoop(fn func(*goja.Runtime)) bool {
+func (b *Bridge) Run(fn func(*goja.Runtime)) bool {
 	b.mu.RLock()
 	if !b.started || b.stopped {
 		b.mu.RUnlock()
@@ -363,10 +351,10 @@ func (b *Bridge) RunOnLoop(fn func(*goja.Runtime)) bool {
 	return err == nil
 }
 
-// RunOnLoopSync schedules a function on the event loop and waits for completion.
+// RunSync schedules a function on the event loop and waits for completion.
 // Returns an error if the event loop is not running or stops while waiting.
 // If configured, will timeout after the Bridge's timeout duration.
-func (b *Bridge) RunOnLoopSync(fn func(*goja.Runtime) error) error {
+func (b *Bridge) RunSync(fn func(*goja.Runtime) error) error {
 	b.mu.RLock()
 	if !b.started || b.stopped {
 		b.mu.RUnlock()
@@ -408,16 +396,16 @@ func (b *Bridge) RunOnLoopSync(fn func(*goja.Runtime) error) error {
 }
 
 // RunJSSync implements bubbletea.JSRunner interface.
-// This is an alias for RunOnLoopSync, provided for interface compatibility.
+// This is an alias for RunSync, provided for interface compatibility.
 // It schedules a function on the event loop and waits for completion.
 func (b *Bridge) RunJSSync(fn func(*goja.Runtime) error) error {
-	return b.RunOnLoopSync(fn)
+	return b.RunSync(fn)
 }
 
 // LoadScript loads JavaScript code into the runtime.
 // Returns an error if the code fails to compile or execute.
 func (b *Bridge) LoadScript(name, code string) error {
-	return b.RunOnLoopSync(func(vm *goja.Runtime) error {
+	return b.RunSync(func(vm *goja.Runtime) error {
 		prg, err := goja.Compile(name, code, true)
 		if err != nil {
 			return fmt.Errorf("failed to compile %s: %w", name, err)
@@ -432,7 +420,7 @@ func (b *Bridge) LoadScript(name, code string) error {
 
 // SetGlobal sets a global variable in the JavaScript runtime.
 func (b *Bridge) SetGlobal(name string, value any) error {
-	return b.RunOnLoopSync(func(vm *goja.Runtime) error {
+	return b.RunSync(func(vm *goja.Runtime) error {
 		return vm.Set(name, value)
 	})
 }
@@ -445,7 +433,7 @@ func (b *Bridge) SetGlobal(name string, value any) error {
 func (b *Bridge) GetGlobal(name string) (any, bool) {
 	var result any
 	var exists bool
-	err := b.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err := b.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get(name)
 		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 			// Check if the property actually exists on the global object
@@ -473,10 +461,10 @@ func (b *Bridge) GetGlobal(name string) (any, bool) {
 	return result, exists
 }
 
-// TryRunOnLoopSync attempts to run a function on the event loop synchronously.
+// TryRunSync attempts to run a function on the event loop synchronously.
 // If we're already on the event loop goroutine (detected via goroutine ID),
 // the function is executed directly to avoid deadlock. Otherwise, it posts to the loop
-// and waits like RunOnLoopSync.
+// and waits like RunSync.
 //
 // This is CRITICAL for code that might be called from within the event loop itself,
 // such as when JS nodes contain composites that call back into JS via tickUnwrap.
@@ -492,7 +480,7 @@ func (b *Bridge) GetGlobal(name string) (any, bool) {
 // We rely SOLELY on goroutine ID checking. This is required because
 // closures capture VM references and can be called from background goroutines
 // (e.g., Ticker goroutines), proving identity but NOT execution thread security.
-func (b *Bridge) TryRunOnLoopSync(currentVM *goja.Runtime, fn func(*goja.Runtime) error) error {
+func (b *Bridge) TryRunSync(currentVM *goja.Runtime, fn func(*goja.Runtime) error) error {
 	// STEP 1: Bridge state check
 	b.mu.RLock()
 	if !b.started || b.stopped {
@@ -501,21 +489,12 @@ func (b *Bridge) TryRunOnLoopSync(currentVM *goja.Runtime, fn func(*goja.Runtime
 	}
 	b.mu.RUnlock()
 
-	// STEP 2: Goroutine ID check (MANDATORY - no shortcuts)
-	// We MUST check if we are on the event loop goroutine.
-	eventLoopID := b.eventLoopGoroutineID.Load()
-	if eventLoopID > 0 {
-		currentGoroutineID := goroutineid.Get()
-
-		if currentGoroutineID == eventLoopID {
-			// We are on the event loop. It is safe to run directly.
-			// No locking needed for VM access as we OWN the loop.
-			return fn(currentVM)
-		}
+	if eventlooputil.IsLoopThread(b.eventLoopGoroutineID.Load()) {
+		return fn(currentVM)
 	}
 
 	// STEP 3: Not on event loop - schedule and wait
-	return b.RunOnLoopSync(fn)
+	return b.RunSync(fn)
 }
 
 // GetCallable retrieves a global function from the JavaScript runtime as a goja.Callable.
@@ -523,7 +502,7 @@ func (b *Bridge) TryRunOnLoopSync(currentVM *goja.Runtime, fn func(*goja.Runtime
 // Returns an error if the variable doesn't exist or is not callable.
 func (b *Bridge) GetCallable(name string) (goja.Callable, error) {
 	var result goja.Callable
-	err := b.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err := b.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get(name)
 		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 			return fmt.Errorf("function '%s' not found", name)
@@ -540,7 +519,7 @@ func (b *Bridge) GetCallable(name string) (goja.Callable, error) {
 
 // ExposeBlackboard exposes a Blackboard to JavaScript with the given name.
 func (b *Bridge) ExposeBlackboard(name string, bb *Blackboard) error {
-	return b.RunOnLoopSync(func(vm *goja.Runtime) error {
+	return b.RunSync(func(vm *goja.Runtime) error {
 		return vm.Set(name, bb.ExposeToJS(vm))
 	})
 }

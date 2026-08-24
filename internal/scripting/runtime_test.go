@@ -103,7 +103,7 @@ func TestRuntime_ContextCancellation(t *testing.T) {
 	}
 }
 
-func TestRuntime_RunOnLoop(t *testing.T) {
+func TestRuntime_Run(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -116,20 +116,20 @@ func TestRuntime_RunOnLoop(t *testing.T) {
 	var executed atomic.Bool
 	done := make(chan struct{})
 
-	ok := rt.RunOnLoop(func(vm *goja.Runtime) {
+	ok := rt.Run(func(vm *goja.Runtime) {
 		executed.Store(true)
 		close(done)
 	})
 
 	if !ok {
-		t.Fatal("RunOnLoop should return true for running runtime")
+		t.Fatal("Run should return true for running runtime")
 	}
 
 	select {
 	case <-done:
 		// expected
 	case <-time.After(time.Second):
-		t.Fatal("RunOnLoop callback should execute")
+		t.Fatal("Run callback should execute")
 	}
 
 	if !executed.Load() {
@@ -137,7 +137,7 @@ func TestRuntime_RunOnLoop(t *testing.T) {
 	}
 }
 
-func TestRuntime_RunOnLoop_Stopped(t *testing.T) {
+func TestRuntime_Run_Stopped(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -148,16 +148,16 @@ func TestRuntime_RunOnLoop_Stopped(t *testing.T) {
 
 	rt.Close()
 
-	ok := rt.RunOnLoop(func(vm *goja.Runtime) {
+	ok := rt.Run(func(vm *goja.Runtime) {
 		t.Error("callback should not be executed on stopped runtime")
 	})
 
 	if ok {
-		t.Error("RunOnLoop should return false for stopped runtime")
+		t.Error("Run should return false for stopped runtime")
 	}
 }
 
-func TestRuntime_RunOnLoopSync(t *testing.T) {
+func TestRuntime_RunSync(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -169,13 +169,13 @@ func TestRuntime_RunOnLoopSync(t *testing.T) {
 
 	// Test successful execution
 	var value int64
-	err = rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(func(vm *goja.Runtime) error {
 		value = 42
 		return nil
 	})
 
 	if err != nil {
-		t.Errorf("RunOnLoopSync failed: %v", err)
+		t.Errorf("RunSync failed: %v", err)
 	}
 	if value != 42 {
 		t.Errorf("value should be 42, got %d", value)
@@ -183,7 +183,7 @@ func TestRuntime_RunOnLoopSync(t *testing.T) {
 
 	// Test error propagation
 	expectedErr := errors.New("test error")
-	err = rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(func(vm *goja.Runtime) error {
 		return expectedErr
 	})
 
@@ -192,7 +192,7 @@ func TestRuntime_RunOnLoopSync(t *testing.T) {
 	}
 }
 
-func TestRuntime_RunOnLoopSync_Timeout(t *testing.T) {
+func TestRuntime_RunSync_Timeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -206,7 +206,7 @@ func TestRuntime_RunOnLoopSync_Timeout(t *testing.T) {
 	rt.SetTimeout(10 * time.Millisecond)
 
 	// Schedule a long-running operation
-	err = rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(func(vm *goja.Runtime) error {
 		time.Sleep(100 * time.Millisecond)
 		return nil
 	})
@@ -216,7 +216,7 @@ func TestRuntime_RunOnLoopSync_Timeout(t *testing.T) {
 	}
 }
 
-func TestRuntime_RunOnLoopSync_Stopped(t *testing.T) {
+func TestRuntime_RunSync_Stopped(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -227,7 +227,7 @@ func TestRuntime_RunOnLoopSync_Stopped(t *testing.T) {
 
 	rt.Close()
 
-	err = rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(func(vm *goja.Runtime) error {
 		return nil
 	})
 
@@ -236,7 +236,7 @@ func TestRuntime_RunOnLoopSync_Stopped(t *testing.T) {
 	}
 }
 
-func TestRuntime_TryRunOnLoopSync_DirectExecution(t *testing.T) {
+func TestRuntime_TryRunSync_DirectExecution(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -248,9 +248,9 @@ func TestRuntime_TryRunOnLoopSync_DirectExecution(t *testing.T) {
 
 	// Test from within the event loop - should execute directly
 	var innerExecuted bool
-	err = rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(func(vm *goja.Runtime) error {
 		// This call from within the event loop should execute directly
-		return rt.TryRunOnLoopSync(vm, func(innerVM *goja.Runtime) error {
+		return rt.TryRunSync(vm, func(innerVM *goja.Runtime) error {
 			innerExecuted = true
 			// Should be same VM instance
 			if innerVM != vm {
@@ -261,14 +261,14 @@ func TestRuntime_TryRunOnLoopSync_DirectExecution(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Errorf("TryRunOnLoopSync failed: %v", err)
+		t.Errorf("TryRunSync failed: %v", err)
 	}
 	if !innerExecuted {
 		t.Error("inner function should have executed")
 	}
 }
 
-func TestRuntime_TryRunOnLoopSync_ScheduledExecution(t *testing.T) {
+func TestRuntime_TryRunSync_ScheduledExecution(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -280,13 +280,13 @@ func TestRuntime_TryRunOnLoopSync_ScheduledExecution(t *testing.T) {
 
 	// Test from outside the event loop - should schedule and wait
 	var executed bool
-	err = rt.TryRunOnLoopSync(nil, func(vm *goja.Runtime) error {
+	err = rt.TryRunSync(nil, func(vm *goja.Runtime) error {
 		executed = true
 		return nil
 	})
 
 	if err != nil {
-		t.Errorf("TryRunOnLoopSync failed: %v", err)
+		t.Errorf("TryRunSync failed: %v", err)
 	}
 	if !executed {
 		t.Error("function should have executed")
@@ -426,12 +426,12 @@ func TestRuntime_ConcurrentAccess(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func() {
 			defer wg.Done()
-			err := rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+			err := rt.RunSync(func(vm *goja.Runtime) error {
 				_, err := vm.RunString("counter++;")
 				return err
 			})
 			if err != nil {
-				t.Errorf("concurrent RunOnLoopSync failed: %v", err)
+				t.Errorf("concurrent RunSync failed: %v", err)
 			}
 		}()
 	}

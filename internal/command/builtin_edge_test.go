@@ -514,7 +514,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		engine.SetGlobal("args", []string{})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-		script := engine.LoadScriptFromString("super-document", superDocumentScript)
+		script := engine.LoadScriptString("super-document", superDocumentScript)
 		if err := engine.ExecuteScript(script); err != nil {
 			t.Fatalf("failed to execute super-document script: %v", err)
 		}
@@ -534,7 +534,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		engine.SetGlobal("args", []string{"   \t\n  "})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-		script := engine.LoadScriptFromString("super-document", superDocumentScript)
+		script := engine.LoadScriptString("super-document", superDocumentScript)
 		if err := engine.ExecuteScript(script); err != nil {
 			t.Fatalf("failed to execute super-document script: %v", err)
 		}
@@ -554,7 +554,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		engine.SetGlobal("args", []string{"/nonexistent/path/to/file.txt"})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-		script := engine.LoadScriptFromString("super-document", superDocumentScript)
+		script := engine.LoadScriptString("super-document", superDocumentScript)
 		if err := engine.ExecuteScript(script); err != nil {
 			t.Fatalf("failed to execute super-document script: %v", err)
 		}
@@ -577,7 +577,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		engine.SetGlobal("args", []string{tmpDir})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-		script := engine.LoadScriptFromString("super-document", superDocumentScript)
+		script := engine.LoadScriptString("super-document", superDocumentScript)
 		if err := engine.ExecuteScript(script); err != nil {
 			t.Fatalf("failed to execute super-document script: %v", err)
 		}
@@ -600,7 +600,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		engine.SetGlobal("args", []string{longInput})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-		script := engine.LoadScriptFromString("super-document", superDocumentScript)
+		script := engine.LoadScriptString("super-document", superDocumentScript)
 		if err := engine.ExecuteScript(script); err != nil {
 			t.Fatalf("failed to execute super-document script: %v", err)
 		}
@@ -623,7 +623,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		engine.SetGlobal("args", []string{})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-		script := engine.LoadScriptFromString("super-document", superDocumentScript)
+		script := engine.LoadScriptString("super-document", superDocumentScript)
 		if err := engine.ExecuteScript(script); err != nil {
 			t.Fatalf("failed to execute super-document script with nil config: %v", err)
 		}
@@ -918,7 +918,7 @@ func TestSuperDocumentCommandWithVariousFlags(t *testing.T) {
 		engine.SetGlobal("args", []string{"--shell"})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-		script := engine.LoadScriptFromString("super-document", superDocumentScript)
+		script := engine.LoadScriptString("super-document", superDocumentScript)
 		if err := engine.ExecuteScript(script); err != nil {
 			t.Fatalf("failed to execute super-document script: %v", err)
 		}
@@ -938,7 +938,7 @@ func TestSuperDocumentCommandWithVariousFlags(t *testing.T) {
 		engine.SetGlobal("args", []string{"--test"})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
-		script := engine.LoadScriptFromString("super-document", superDocumentScript)
+		script := engine.LoadScriptString("super-document", superDocumentScript)
 		if err := engine.ExecuteScript(script); err != nil {
 			t.Fatalf("failed to execute super-document script: %v", err)
 		}

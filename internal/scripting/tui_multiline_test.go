@@ -202,7 +202,7 @@ func TestMultilineRegisterMode(t *testing.T) {
 	tm := eng.GetTUIManager()
 
 	// Register a mode with multiline=true
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerMode({
 			name: "ml-mode",
 			multiline: true,
@@ -228,7 +228,7 @@ func TestMultilineRegisterMode(t *testing.T) {
 	}
 
 	// Register a mode without multiline (should default to false)
-	script2 := eng.LoadScriptFromString("setup2", `
+	script2 := eng.LoadScriptString("setup2", `
 		tui.registerMode({
 			name: "no-ml-mode",
 			tui: { prompt: "[no-ml]> " }

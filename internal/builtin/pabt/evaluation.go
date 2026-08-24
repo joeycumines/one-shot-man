@@ -194,7 +194,7 @@ func (c *ExprLRUCache) String() string {
 
 // EvaluationMode specifies how conditions are evaluated at runtime.
 // This is a critical performance decision: JavaScript evaluation requires
-// thread-safe marshalling via Bridge.RunOnLoopSync, while expr-lang
+// thread-safe marshalling via Bridge.RunSync, while expr-lang
 // evaluation runs natively in Go with zero Goja overhead.
 type EvaluationMode int
 
@@ -255,7 +255,7 @@ type JSCondition struct {
 var _ Condition = (*JSCondition)(nil)
 
 // NewJSCondition creates a new JavaScript-based condition.
-// The matcher function is called via Bridge.RunOnLoopSync for thread safety.
+// The matcher function is called via Bridge.RunSync for thread safety.
 func NewJSCondition(key any, matcher goja.Callable, bridge *btmod.Bridge) *JSCondition {
 	return &JSCondition{
 		key:     key,
@@ -284,15 +284,15 @@ func (c *JSCondition) Key() any {
 }
 
 // Match implements pabtpkg.Condition.Match(value any) bool.
-// It calls the JavaScript matcher function via Bridge.RunOnLoopSync.
+// It calls the JavaScript matcher function via Bridge.RunSync.
 //
 // CRITICAL: This method is called from the bt.Ticker goroutine, but goja.Runtime
-// is NOT thread-safe. We MUST use Bridge.RunOnLoopSync to marshal the call to
+// is NOT thread-safe. We MUST use Bridge.RunSync to marshal the call to
 // the event loop goroutine where goja operations are safe.
 //
 // IMPORTANT: If the bridge is stopping, we return false immediately to avoid
-// blocking on RunOnLoopSync. The bridge's Done() channel is closed when stopping,
-// so RunOnLoopSync would return an error anyway, but early exit improves shutdown
+// blocking on RunSync. The bridge's Done() channel is closed when stopping,
+// so RunSync would return an error anyway, but early exit improves shutdown
 // responsiveness.
 //
 // Errors are logged to help distinguish from actual
@@ -310,13 +310,13 @@ func (c *JSCondition) Match(value any) bool {
 		return false
 	}
 
-	// Early exit if bridge is stopping - avoids blocking in RunOnLoopSync
+	// Early exit if bridge is stopping - avoids blocking in RunSync
 	if !c.bridge.IsRunning() {
 		return false
 	}
 
 	var result bool
-	err := c.bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err := c.bridge.RunSync(func(vm *goja.Runtime) error {
 		res, callErr := c.matcher(goja.Undefined(), vm.ToValue(value))
 		if callErr != nil {
 			return callErr

@@ -42,7 +42,7 @@ func testBridge(t *testing.T) *btmod.Bridge {
 	})
 
 	ctx := context.Background()
-	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, vm, reg)
+	bridge := btmod.NewBridge(ctx, loop, vm, reg, nil)
 	t.Cleanup(func() {
 		bridge.Stop()
 	})
@@ -61,7 +61,7 @@ func setupTestEnv(t *testing.T) (*btmod.Bridge, *goja.Runtime, *goja.Object) {
 	var vm *goja.Runtime
 	var pabtObj *goja.Object
 
-	err := b.RunOnLoopSync(func(runtime *goja.Runtime) error {
+	err := b.RunSync(func(runtime *goja.Runtime) error {
 		vm = runtime
 		_, err := vm.RunString(`
 			const bt = require('osm:bt');
@@ -88,7 +88,7 @@ func setupTestEnv(t *testing.T) (*btmod.Bridge, *goja.Runtime, *goja.Object) {
 // executeJS executes a JS string and returns the result.
 func executeJS(t *testing.T, b *btmod.Bridge, script string) goja.Value {
 	var res goja.Value
-	err := b.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err := b.RunSync(func(vm *goja.Runtime) error {
 		var err error
 		res, err = vm.RunString(script)
 		return err
@@ -150,7 +150,7 @@ func TestNewState_Creation(t *testing.T) {
 
 	t.Run("MissingBlackboard", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`pabt.newState()`)
 			return err
 		})
@@ -160,7 +160,7 @@ func TestNewState_Creation(t *testing.T) {
 
 	t.Run("InvalidBlackboard", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`pabt.newState({})`)
 			return err
 		})
@@ -232,7 +232,7 @@ func TestNewAction_Creation(t *testing.T) {
 
 	t.Run("MissingArguments", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`pabt.newAction("test", [], [])`)
 			return err
 		})
@@ -242,7 +242,7 @@ func TestNewAction_Creation(t *testing.T) {
 
 	t.Run("InvalidNode", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`
 				pabt.newAction("test", [], [], "not a node")
 			`)
@@ -286,7 +286,7 @@ func TestRegisterAction(t *testing.T) {
 
 	t.Run("InvalidAction", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`
 				(() => {
 					const bb = new bt.Blackboard();
@@ -399,7 +399,7 @@ func TestNewPlan_Creation(t *testing.T) {
 
 	t.Run("MissingState", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`pabt.newPlan()`)
 			return err
 		})
@@ -409,7 +409,7 @@ func TestNewPlan_Creation(t *testing.T) {
 
 	t.Run("InvalidState", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`pabt.newPlan({}, [])`)
 			return err
 		})
@@ -422,7 +422,7 @@ func TestNewPlan_Creation(t *testing.T) {
 //
 // NOTE: Calling bt.tick(plan.node()) from within JS would deadlock because:
 // - bt.tick() is synchronous
-// - Action nodes contain JS callbacks that use RunOnLoopSync
+// - Action nodes contain JS callbacks that use RunSync
 // - We're already on the event loop from executeJS()
 //
 // For full plan execution testing, use bt.newTicker() which runs in a separate
@@ -508,9 +508,9 @@ func TestPlanExecution(t *testing.T) {
 	})
 }
 
-// TestJSCondition_ThreadSafety verifies that JSCondition.Match uses RunOnLoopSync.
+// TestJSCondition_ThreadSafety verifies that JSCondition.Match uses RunSync.
 // This test creates a plan in JS, then ticks it from Go to trigger the cross-goroutine
-// match call that requires RunOnLoopSync.
+// match call that requires RunSync.
 func TestJSCondition_ThreadSafety(t *testing.T) {
 	t.Run("ConditionMatchFromGo", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
@@ -519,7 +519,7 @@ func TestJSCondition_ThreadSafety(t *testing.T) {
 		// JS conditions are properly created and can be matched.
 		//
 		// NOTE: Calling bt.tick() directly from JS while using JS match functions
-		// would deadlock because match uses RunOnLoopSync from within the loop.
+		// would deadlock because match uses RunSync from within the loop.
 		// The actual cross-goroutine test happens when bt.Ticker runs in its own goroutine.
 		// Here we just verify the condition wiring is correct.
 		res := executeJS(t, bridge, `
@@ -539,7 +539,7 @@ func TestJSCondition_ThreadSafety(t *testing.T) {
 					}
 				};
 
-				// Directly call match (simulating what RunOnLoopSync would do)
+				// Directly call match (simulating what RunSync would do)
 				const matchResult = goal.match(1);
 
 				return { matchCalled, matchResult };

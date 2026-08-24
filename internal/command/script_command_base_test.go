@@ -141,7 +141,7 @@ func TestScriptCommandBase_PrepareEngine_TestMode(t *testing.T) {
 
 	// Engine should be in test mode. We can verify by executing a script
 	// that checks testMode behavior (output includes script name prefix).
-	script := engine.LoadScriptFromString("test-script", "ctx.log('hello');")
+	script := engine.LoadScriptString("test-script", "ctx.log('hello');")
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestScriptCommandBase_PrepareEngine_WithLogFile(t *testing.T) {
 	}
 
 	// Log something through the engine.
-	script := engine.LoadScriptFromString("log-test", `log.info("from-base-test");`)
+	script := engine.LoadScriptString("log-test", `log.info("from-base-test");`)
 	if err := engine.ExecuteScript(script); err != nil {
 		cleanup()
 		t.Fatalf("ExecuteScript: %v", err)

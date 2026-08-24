@@ -24,7 +24,7 @@ import (
 //
 // The bridge parameter is required for thread-safe goja.Runtime access.
 // JSCondition.Match is called from the bt.Ticker goroutine and must use
-// Bridge.RunOnLoopSync to marshal calls to the event loop goroutine.
+// Bridge.RunSync to marshal calls to the event loop goroutine.
 func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
@@ -143,7 +143,7 @@ func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 
 				// Create a Go ActionGeneratorFunc that calls the JS function
 				generator := func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
-					// Early exit if bridge is stopping - avoids blocking in RunOnLoopSync
+					// Early exit if bridge is stopping - avoids blocking in RunSync
 					// during shutdown. This prevents deadlock where manager.Stop() waits
 					// for tickers while tickers are blocked here.
 					if !bridge.IsRunning() {
@@ -153,8 +153,8 @@ func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 					var actions []pabtpkg.IAction
 					var genErr error
 
-					// CRITICAL: Must use RunOnLoopSync for thread-safe goja access
-					err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+					// CRITICAL: Must use RunSync for thread-safe goja access
+					err := bridge.RunSync(func(vm *goja.Runtime) error {
 						// Pass the original JS object back unchanged if available.
 						// This preserves ALL properties (including .value) for action templating,
 						// equivalent to Go's type assertion for accessing internal state.

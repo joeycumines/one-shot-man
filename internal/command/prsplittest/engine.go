@@ -93,7 +93,7 @@ func (e *Engine) LoadChunks(t testing.TB, names ...string) {
 		if !ok {
 			t.Fatalf("prsplittest: unknown chunk name %q", name)
 		}
-		script := e.engine.LoadScriptFromString("pr-split/"+name, src)
+		script := e.engine.LoadScriptString("pr-split/"+name, src)
 		if err := e.engine.ExecuteScript(script); err != nil {
 			t.Fatalf("prsplittest: failed to load chunk %s: %v", name, err)
 		}

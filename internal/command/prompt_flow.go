@@ -65,7 +65,7 @@ func (c *PromptFlowCommand) Execute(args []string, stdout, stderr io.Writer) err
 	engine.SetGlobal("promptFlowTemplate", promptFlowTemplate)
 
 	// Load the embedded script
-	script := engine.LoadScriptFromString("prompt-flow", promptFlowScript)
+	script := engine.LoadScriptString("prompt-flow", promptFlowScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		return fmt.Errorf("failed to execute prompt-flow script: %w", err)
 	}

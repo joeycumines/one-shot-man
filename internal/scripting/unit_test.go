@@ -27,7 +27,7 @@ func TestTUIManagerAPI(t *testing.T) {
 	}
 
 	// Test JavaScript API via script
-	script := engine.LoadScriptFromString("api-test", `
+	script := engine.LoadScriptString("api-test", `
 		// Test mode registration
 		tui.registerMode({
 			name: "api-test-mode",
@@ -161,7 +161,7 @@ func TestJavaScriptAPIBinding(t *testing.T) {
 	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	// Test that all API functions are available
-	script := engine.LoadScriptFromString("api-binding-test", `
+	script := engine.LoadScriptString("api-binding-test", `
 		// Test TUI API availability
 		if (typeof tui === 'undefined') {
 			throw new Error("tui object not available");
@@ -196,7 +196,7 @@ func TestCommandExecution(t *testing.T) {
 	tuiManager := engine.GetTUIManager()
 
 	// Register a test mode with commands using state
-	script := engine.LoadScriptFromString("command-test", `
+	script := engine.LoadScriptString("command-test", `
 		// Define state for test mode
 		const stateKeys = {
 			test1_executed: Symbol("test1_executed"),
@@ -311,7 +311,7 @@ func TestConcurrentSafety(t *testing.T) {
 	tuiManager := engine.GetTUIManager()
 
 	// Register a test mode
-	script := engine.LoadScriptFromString("concurrent-test", `
+	script := engine.LoadScriptString("concurrent-test", `
 		tui.registerMode({
 			name: "concurrent-test",
 			commands: {}

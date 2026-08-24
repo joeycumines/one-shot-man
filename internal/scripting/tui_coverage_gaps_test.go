@@ -216,7 +216,7 @@ func TestExecutor_ExitQuit(t *testing.T) {
 		tm := eng.GetTUIManager()
 
 		// Register a mode with an onExit callback via JS
-		script := eng.LoadScriptFromString("setup", `
+		script := eng.LoadScriptString("setup", `
 			var exitCalled = false;
 			tui.registerMode({
 				name: "test-exit",
@@ -254,7 +254,7 @@ func TestExecutor_ExitQuit(t *testing.T) {
 		// Replace writer so output goes to buf instead of os.Stdout
 		tm.writer = NewTUIWriterIO(&buf)
 
-		script := eng.LoadScriptFromString("setup", `
+		script := eng.LoadScriptString("setup", `
 			tui.registerMode({
 				name: "test-exit-err",
 				onExit: function() { throw new Error("exit boom"); }
@@ -319,7 +319,7 @@ func TestExecutor_UnknownCommand_WithMode(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerMode({
 			name: "js-mode",
 			tui: { prompt: "[js]> " }
@@ -434,7 +434,7 @@ func TestExecutor_UnknownCommand_WithMode_JSFallback(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerMode({
 			name: "fallback-mode",
 			tui: { prompt: "[fb]> " }
@@ -550,7 +550,7 @@ func TestExecuteJavaScript_WithError(t *testing.T) {
 	// Replace writer so output goes to buf instead of os.Stdout
 	tm.writer = NewTUIWriterIO(&buf)
 
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerMode({
 			name: "js-err-mode",
 			tui: { prompt: "[js]> " }
@@ -579,7 +579,7 @@ func TestShowHelp_WithMode(t *testing.T) {
 	// Replace writer so output goes to buf instead of os.Stdout
 	tm.writer = NewTUIWriterIO(&buf)
 
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerMode({
 			name: "help-test",
 			tui: { prompt: "[help]> " }
@@ -1076,7 +1076,7 @@ func TestJsRegisterMode_WithInlineCommands(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerMode({
 			name: "inline-cmds",
 			commands: {
@@ -1179,7 +1179,7 @@ func TestJsRegisterKeyBinding(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerKeyBinding("ctrl-a", function(p) {
 			return true;
 		});
@@ -1348,7 +1348,7 @@ func TestBuildKeyBinds_WithRegisteredBindings(t *testing.T) {
 	tm := eng.GetTUIManager()
 
 	// Register a key binding
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerKeyBinding("ctrl-b", function(p) { return false; });
 	`)
 	if err := eng.ExecuteScript(script); err != nil {
@@ -1654,7 +1654,7 @@ func TestExecuteCommand_JSCallableHandler(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		var jsCalled = false;
 		tui.registerCommand({
 			name: "js-cmd-test",
@@ -1682,7 +1682,7 @@ func TestExecuteCommand_JSHandler_Panic(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerCommand({
 			name: "panic-cmd",
 			description: "test",
@@ -1706,7 +1706,7 @@ func TestExecuteCommand_JSAsyncHandlerAwaited(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		var asyncOrder = [];
 		tui.registerCommand({
 			name: "async-cmd-test",
@@ -1760,7 +1760,7 @@ func TestExecuteCommand_JSAsyncHandlerRejected(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerCommand({
 			name: "async-reject-cmd",
 			description: "test",
@@ -2381,7 +2381,7 @@ func TestJsSetCompleter_Success(t *testing.T) {
 	tm := eng.GetTUIManager()
 
 	// Register a completer
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerCompleter("mycomp", function(doc) { return ["a", "b"]; });
 	`)
 	if err := eng.ExecuteScript(script); err != nil {
@@ -2420,7 +2420,7 @@ func TestCaptureHistorySnapshot_WithArgs(t *testing.T) {
 	tm := eng.GetTUIManager()
 
 	// Register and switch to a mode
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerMode({ name: "hist-mode", tui: { prompt: "[h]> " } });
 	`)
 	if err := eng.ExecuteScript(script); err != nil {
@@ -2440,7 +2440,7 @@ func TestJsRegisterMode_WithOnEnterOnExit(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		var entered = false;
 		var exited = false;
 		tui.registerMode({
@@ -2470,7 +2470,7 @@ func TestSwitchMode_OnExitError(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerMode({
 			name: "exit-err-mode",
 			onExit: function() { throw new Error("exit fail"); }

@@ -189,7 +189,7 @@ function setupPlanCache() {
 
 // NewTUIEngineE loads chunks 00–12, injects TUI mocks, then loads chunks
 // 13–16f. Returns the [Engine] wrapper so callers can access the underlying
-// [scripting.Engine] (e.g. for RunOnLoopSync in hang-reproducer tests).
+// [scripting.Engine] (e.g. for RunSync in hang-reproducer tests).
 //
 // Most tests should prefer [NewTUIEngine] or [NewTUIEngineWithHelpers].
 func NewTUIEngineE(t testing.TB) *Engine {

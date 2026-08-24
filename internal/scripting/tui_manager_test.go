@@ -59,7 +59,7 @@ func TestResetCommand_EndToEnd(t *testing.T) {
 	}
 
 	// Register modes with mode-specific state
-	modesScript := engine.LoadScriptFromString("modes-setup", `
+	modesScript := engine.LoadScriptString("modes-setup", `
 		// Import shared symbols
 		const shared = require('osm:sharedStateSymbols');
 

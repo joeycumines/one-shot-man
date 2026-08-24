@@ -338,7 +338,7 @@ func TestClearExprCache(t *testing.T) {
 func TestExprCondition_NoGojaCallsVerification(t *testing.T) {
 	ClearExprCache()
 
-	// Create a mock bridge that panics if RunOnLoopSync is ever called
+	// Create a mock bridge that panics if RunSync is ever called
 	panicBridge := &mockPanicBridge{t: t}
 
 	// This should NOT use the bridge at all
@@ -359,8 +359,8 @@ type mockPanicBridge struct {
 	t *testing.T
 }
 
-func (m *mockPanicBridge) RunOnLoopSync(fn func(*goja.Runtime) error) error {
-	m.t.Fatal("ExprCondition should NOT call RunOnLoopSync - this indicates Goja is being used incorrectly!")
+func (m *mockPanicBridge) RunSync(fn func(*goja.Runtime) error) error {
+	m.t.Fatal("ExprCondition should NOT call RunSync - this indicates Goja is being used incorrectly!")
 	return nil
 }
 

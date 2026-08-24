@@ -101,7 +101,7 @@ func TestRuntimeInitializationFailures(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				script := engine.LoadScriptFromString(tc.name, tc.script)
+				script := engine.LoadScriptString(tc.name, tc.script)
 				err := engine.ExecuteScript(script)
 				if tc.shouldError && err == nil {
 					t.Errorf("Expected error for %s but got none", tc.name)
@@ -123,7 +123,7 @@ func TestRuntimeInitializationFailures(t *testing.T) {
 
 		// After Close, the VM should be nil
 		// Attempting to load a script should be handled
-		script := engine.LoadScriptFromString("after_close", "1 + 1")
+		script := engine.LoadScriptString("after_close", "1 + 1")
 		// ExecuteScript will panic when trying to access nil VM
 		// This is expected behavior - the test documents this edge case
 		defer func() {
@@ -147,8 +147,8 @@ func TestRuntimeInitializationFailures(t *testing.T) {
 		t.Log("Multiple Close calls completed without panic")
 	})
 
-	t.Run("RunOnLoopSyncAfterClose", func(t *testing.T) {
-		// Test RunOnLoopSync behavior after runtime is closed
+	t.Run("RunSyncAfterClose", func(t *testing.T) {
+		// Test RunSync behavior after runtime is closed
 		var stdout, stderr bytes.Buffer
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
@@ -156,11 +156,11 @@ func TestRuntimeInitializationFailures(t *testing.T) {
 		engine.runtime.Close()
 
 		// Try to run on loop sync - should return error
-		err := engine.runtime.RunOnLoopSync(func(r *goja.Runtime) error {
+		err := engine.runtime.RunSync(func(r *goja.Runtime) error {
 			return nil
 		})
 		if err == nil {
-			t.Log("Note: RunOnLoopSync after close succeeded (may be allowed for cleanup)")
+			t.Log("Note: RunSync after close succeeded (may be allowed for cleanup)")
 		}
 	})
 }
@@ -277,7 +277,7 @@ func TestGlobalRegistrationEdgeCases(t *testing.T) {
 		engine.SetGlobal("undefined", nil) // JS undefined vs Go nil
 
 		// Access from JS
-		script := engine.LoadScriptFromString("check_globals", `
+		script := engine.LoadScriptString("check_globals", `
 			results = {
 				isNil: nilValue === null || nilValue === undefined,
 				isUndefined: typeof undefined === 'undefined' ? false : undefined === undefined,
@@ -301,7 +301,7 @@ func TestNativeModuleErrorHandling(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Test require with invalid module
-		script := engine.LoadScriptFromString("invalid_require", `
+		script := engine.LoadScriptString("invalid_require", `
 			try {
 				require('osm:nonexistent_module');
 			} catch (e) {
@@ -320,7 +320,7 @@ func TestNativeModuleErrorHandling(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Test module functions with invalid arguments
-		script := engine.LoadScriptFromString("invalid_args", `
+		script := engine.LoadScriptString("invalid_args", `
 			const regexp = require('osm:regexp');
 			try {
 				regexp.match(null, null);
@@ -345,7 +345,7 @@ func TestNativeModuleErrorHandling(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Test JS error throwing from modules
-		script := engine.LoadScriptFromString("js_error", `
+		script := engine.LoadScriptString("js_error", `
 			try {
 				throw new Error("Test error from JS");
 			} catch (e) {
@@ -364,7 +364,7 @@ func TestNativeModuleErrorHandling(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Test panic recovery - scripts should not crash the host
-		script := engine.LoadScriptFromString("panic_test", `
+		script := engine.LoadScriptString("panic_test", `
 			// This should be caught by the panic recovery in ExecuteScript
 			(function() {
 				throw "String panic";
@@ -387,7 +387,7 @@ func TestNativeModuleErrorHandling(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Test nested try-catch around panic scenarios
-		script := engine.LoadScriptFromString("nested_panic", `
+		script := engine.LoadScriptString("nested_panic", `
 			try {
 				try {
 					throw new Error("Inner error");
@@ -411,7 +411,7 @@ func TestNativeModuleErrorHandling(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Test async module operations don't cause issues
-		script := engine.LoadScriptFromString("async_module", `
+		script := engine.LoadScriptString("async_module", `
 			ctx.log("Starting async test");
 			ctx.log("After async");
 		`)
@@ -432,7 +432,7 @@ func TestTUIBindingEdgeCases(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Access TUI functions without an active TUI session
-		script := engine.LoadScriptFromString("tui_no_session", `
+		script := engine.LoadScriptString("tui_no_session", `
 			try {
 				// These should not crash even without active TUI
 				const modes = tui.listModes();
@@ -453,7 +453,7 @@ func TestTUIBindingEdgeCases(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Test with invalid mode registration
-		script := engine.LoadScriptFromString("invalid_tui_ops", `
+		script := engine.LoadScriptString("invalid_tui_ops", `
 			try {
 				// Invalid mode registration
 				tui.registerMode({
@@ -476,7 +476,7 @@ func TestTUIBindingEdgeCases(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Test accessing non-existent modes
-		script := engine.LoadScriptFromString("invalid_mode_access", `
+		script := engine.LoadScriptString("invalid_mode_access", `
 			try {
 				tui.switchMode("nonexistent_mode_12345");
 			} catch (e) {
@@ -495,7 +495,7 @@ func TestTUIBindingEdgeCases(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Test TUI state creation and access
-		script := engine.LoadScriptFromString("tui_state_test", `
+		script := engine.LoadScriptString("tui_state_test", `
 			const StateKeys = {
 				testKey: Symbol("testKey")
 			};
@@ -523,7 +523,7 @@ func TestTUIBindingEdgeCases(t *testing.T) {
 		tempDir := t.TempDir()
 
 		// Test context operations
-		script := engine.LoadScriptFromString("context_test", `
+		script := engine.LoadScriptString("context_test", `
 			context.addPath("`+tempDir+`");
 			const paths = context.listPaths();
 			ctx.log("Paths: " + JSON.stringify(paths));
@@ -540,7 +540,7 @@ func TestTUIBindingEdgeCases(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Test logger operations
-		script := engine.LoadScriptFromString("logger_test", `
+		script := engine.LoadScriptString("logger_test", `
 			log.debug("Debug message");
 			log.info("Info message");
 			log.warn("Warning message");
@@ -559,7 +559,7 @@ func TestTUIBindingEdgeCases(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Test command registration - the handler must be a function
-		script := engine.LoadScriptFromString("command_test", `
+		script := engine.LoadScriptString("command_test", `
 			tui.registerCommand({
 				name: "testcmd",
 				fn: function() {
@@ -581,7 +581,7 @@ func TestTUIBindingEdgeCases(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Test exit request operations
-		script := engine.LoadScriptFromString("exit_test", `
+		script := engine.LoadScriptString("exit_test", `
 			ctx.log("Exit requested before: " + tui.isExitRequested());
 			tui.requestExit();
 			ctx.log("Exit requested after: " + tui.isExitRequested());
@@ -600,7 +600,7 @@ func TestTUIBindingEdgeCases(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Multiple TUI operations in sequence
-		script := engine.LoadScriptFromString("multi_tui", `
+		script := engine.LoadScriptString("multi_tui", `
 			// Register a mode
 			tui.registerMode({
 				name: "test",
@@ -688,7 +688,7 @@ func TestConcurrentScriptExecution(t *testing.T) {
 			}
 
 			// Execute a simple script
-			script := engine.LoadScriptFromString("test", "1 + 1")
+			script := engine.LoadScriptString("test", "1 + 1")
 			_ = engine.ExecuteScript(script)
 
 			// Close immediately
@@ -762,7 +762,7 @@ func TestScriptPanicRecovery(t *testing.T) {
 
 		for _, pt := range panicTypes {
 			t.Run(pt.name, func(t *testing.T) {
-				script := engine.LoadScriptFromString("panic_"+pt.name, fmt.Sprintf(`
+				script := engine.LoadScriptString("panic_"+pt.name, fmt.Sprintf(`
 					(function() {
 						throw %v;
 					})();
@@ -780,7 +780,7 @@ func TestScriptPanicRecovery(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
-		script := engine.LoadScriptFromString("defer_panic", `
+		script := engine.LoadScriptString("defer_panic", `
 			ctx.log("Before defer");
 			ctx.defer(function() {
 				ctx.log("Deferred cleanup");
@@ -803,7 +803,7 @@ func TestScriptPanicRecovery(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
-		script := engine.LoadScriptFromString("nested_panic_recovery", `
+		script := engine.LoadScriptString("nested_panic_recovery", `
 			try {
 				try {
 					throw new Error("Inner");
@@ -827,7 +827,7 @@ func TestScriptPanicRecovery(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
-		script := engine.LoadScriptFromString("panic_in_defer", `
+		script := engine.LoadScriptString("panic_in_defer", `
 			ctx.defer(function() {
 				throw new Error("Panic in defer");
 			});
@@ -855,7 +855,7 @@ func TestScriptExecutionEdgeCases(t *testing.T) {
 		for i := 0; i < 1000; i++ {
 			lines = append(lines, fmt.Sprintf("var line_%d = %d;", i, i))
 		}
-		script := engine.LoadScriptFromString("long_script", strings.Join(lines, "\n"))
+		script := engine.LoadScriptString("long_script", strings.Join(lines, "\n"))
 
 		err := engine.ExecuteScript(script)
 		if err != nil {
@@ -868,7 +868,7 @@ func TestScriptExecutionEdgeCases(t *testing.T) {
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
 		// Build deeply nested code
-		script := engine.LoadScriptFromString("deep_nesting", `
+		script := engine.LoadScriptString("deep_nesting", `
 			(function() {
 				return (function() {
 					return (function() {
@@ -900,7 +900,7 @@ func TestScriptExecutionEdgeCases(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
-		script := engine.LoadScriptFromString("unicode_script", `
+		script := engine.LoadScriptString("unicode_script", `
 			const message = "Hello, 世界! 🌍";
 			ctx.log(message);
 			const symbols = ["α", "β", "γ", "δ", "ε"];
@@ -917,7 +917,7 @@ func TestScriptExecutionEdgeCases(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
-		script := engine.LoadScriptFromString("special_chars", `
+		script := engine.LoadScriptString("special_chars", `
 			const str = "Line1\nLine2\tTab\r\nReturn";
 			ctx.log("Special chars: " + JSON.stringify(str));
 			const template = `+"`template\nmultiline`"+`;
@@ -934,7 +934,7 @@ func TestScriptExecutionEdgeCases(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
-		script := engine.LoadScriptFromString("regex_test", `
+		script := engine.LoadScriptString("regex_test", `
 			const pattern = /test/gi;
 			const result = "This is a Test".match(pattern);
 			ctx.log("Regex result: " + JSON.stringify(result));

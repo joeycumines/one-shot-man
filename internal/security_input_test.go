@@ -69,7 +69,7 @@ func TestExecSecurity_NullBytesInArgs(t *testing.T) {
 
 	// exec passes args directly to exec.CommandContext (no shell),
 	// so null bytes are either handled by the OS or cause command failure.
-	script := engine.LoadScriptFromString("null-args", `
+	script := engine.LoadScriptString("null-args", `
 		const {exec} = require('osm:exec');
 		const result = exec('echo', 'hello\x00world');
 		if (result.error && result.code !== 0) {
@@ -87,7 +87,7 @@ func TestExecSecurity_ControlCharsInArgs(t *testing.T) {
 	engine, _, _ := newTestEngine(t)
 
 	// Control characters should be passed literally (no shell expansion)
-	script := engine.LoadScriptFromString("control-args", `
+	script := engine.LoadScriptString("control-args", `
 		const {exec} = require('osm:exec');
 		const result = exec('echo', '\x03\x04\x1b[31m');
 		// exec.CommandContext passes these as literal args, no shell processing
@@ -109,7 +109,7 @@ func TestExecSecurity_ShellMetacharsNotExpanded(t *testing.T) {
 
 	// Shell metacharacters passed as args should NOT be expanded because
 	// exec.CommandContext bypasses the shell entirely.
-	script := engine.LoadScriptFromString("metachar-args", `
+	script := engine.LoadScriptString("metachar-args", `
 		const {exec} = require('osm:exec');
 		const result = exec('echo', '$(whoami)', '&&', 'rm', '-rf', '/');
 		// The echo command should output the literal strings
@@ -133,7 +133,7 @@ func TestExecSecurity_NewlinesInArgs(t *testing.T) {
 	// Newlines in arguments should be passed literally (not interpreted as
 	// command separators). exec.CommandContext handles this correctly because
 	// it bypasses the shell, but we verify explicitly.
-	script := engine.LoadScriptFromString("newline-args", `
+	script := engine.LoadScriptString("newline-args", `
 		const {exec} = require('osm:exec');
 		// Newlines in args should NOT cause additional command execution.
 		const r1 = exec('echo', 'line1\nwhoami');
@@ -644,7 +644,7 @@ func TestREPLSecurity_OversizedScript(t *testing.T) {
 
 	// 1MB of "var x=1;" repeated — should either execute or gracefully fail
 	bigScript := strings.Repeat("var x=1;", 1<<17) // ~1MB
-	script := engine.LoadScriptFromString("oversized", bigScript)
+	script := engine.LoadScriptString("oversized", bigScript)
 	err := engine.ExecuteScript(script)
 	// Either succeeds or returns error — no panic or OOM
 	_ = err
@@ -668,7 +668,7 @@ func TestREPLSecurity_DeepRecursion(t *testing.T) {
 	}
 	defer engine.Close()
 
-	script := engine.LoadScriptFromString("deep-recursion", `
+	script := engine.LoadScriptString("deep-recursion", `
 		function recurse(n) { return recurse(n + 1); }
 		try { recurse(0); } catch(e) {
 			// Expected: stack overflow or similar
@@ -695,7 +695,7 @@ func TestREPLSecurity_InfiniteLoopWithCancel(t *testing.T) {
 	}
 	defer engine.Close()
 
-	script := engine.LoadScriptFromString("infinite-loop", `
+	script := engine.LoadScriptString("infinite-loop", `
 		while(true) {}
 	`)
 	// The engine should respect context cancellation or Goja's interrupt mechanism
@@ -857,7 +857,7 @@ func TestRequireSecurity_TraversalAllowed(t *testing.T) {
 	}
 	defer engine.Close()
 
-	script := engine.LoadScriptFromString("require-test", `
+	script := engine.LoadScriptString("require-test", `
 		const mod = require('testmod');
 		if (mod.value !== 42) throw new Error('expected 42, got ' + mod.value);
 	`)
@@ -894,7 +894,7 @@ func TestRequireSecurity_NonJSFileContent(t *testing.T) {
 	}
 	defer engine.Close()
 
-	script := engine.LoadScriptFromString("require-bad", `
+	script := engine.LoadScriptString("require-bad", `
 		try {
 			require('notjs');
 			throw new Error('should have failed');
@@ -912,7 +912,7 @@ func TestRequireSecurity_NonexistentModule(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("require-missing", `
+	script := engine.LoadScriptString("require-missing", `
 		try {
 			require('nonexistent-module-that-does-not-exist');
 			throw new Error('should have failed');
@@ -955,7 +955,7 @@ func TestRequireSecurity_ShebangHandling(t *testing.T) {
 	}
 	defer engine.Close()
 
-	script := engine.LoadScriptFromString("require-shebang", `
+	script := engine.LoadScriptString("require-shebang", `
 		const mod = require('withshebang');
 		if (!mod.shebang) throw new Error('shebang module did not load correctly');
 	`)
@@ -973,7 +973,7 @@ func TestFetchSecurity_FileProtocolRejected(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("fetch-file", `
+	script := engine.LoadScriptString("fetch-file", `
 		const {fetch} = require('osm:fetch');
 		try {
 			const resp = fetch('file:///etc/passwd');
@@ -994,7 +994,7 @@ func TestFetchSecurity_InvalidURLs(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("fetch-invalid", `
+	script := engine.LoadScriptString("fetch-invalid", `
 		const {fetch} = require('osm:fetch');
 		const badURLs = [
 			'',
@@ -1033,7 +1033,7 @@ func TestResourceLimits_LargeStrings(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("large-strings", `
+	script := engine.LoadScriptString("large-strings", `
 		// Create a ~4MB string inside the VM
 		var s = 'x';
 		for (var i = 0; i < 22; i++) { s = s + s; }
@@ -1048,7 +1048,7 @@ func TestResourceLimits_ManyObjects(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("many-objects", `
+	script := engine.LoadScriptString("many-objects", `
 		var arr = [];
 		for (var i = 0; i < 100000; i++) {
 			arr.push({key: i, value: 'item-' + i});
@@ -1065,7 +1065,7 @@ func TestResourceLimits_RegexBacktracking(t *testing.T) {
 	engine, _, _ := newTestEngine(t)
 
 	// ReDoS-style regex — should either complete or hit a timeout
-	script := engine.LoadScriptFromString("regex-backtrack", `
+	script := engine.LoadScriptString("regex-backtrack", `
 		try {
 			// This regex is susceptible to catastrophic backtracking
 			var evil = /^(a+)+$/;
@@ -1130,7 +1130,7 @@ func TestCrossModuleIsolation_RequireCaching(t *testing.T) {
 	defer engine2.Close()
 
 	// Increment counter in engine 1
-	s1 := engine1.LoadScriptFromString("cross-module-1", `
+	s1 := engine1.LoadScriptString("cross-module-1", `
 		const counter = require('counter');
 		counter.inc(); counter.inc(); counter.inc();
 		if (counter.inc() !== 4) throw new Error('engine1 counter should be 4');
@@ -1140,7 +1140,7 @@ func TestCrossModuleIsolation_RequireCaching(t *testing.T) {
 	}
 
 	// Engine 2's counter should start fresh at 1, not continue from 4
-	s2 := engine2.LoadScriptFromString("cross-module-2", `
+	s2 := engine2.LoadScriptString("cross-module-2", `
 		const counter = require('counter');
 		if (counter.inc() !== 1) throw new Error('engine2 counter should start at 1, not continue from engine1');
 	`)
@@ -1157,7 +1157,7 @@ func TestFileExistsSecurity_SpecialChars(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("fileexists-special", `
+	script := engine.LoadScriptString("fileexists-special", `
 		const {fileExists} = require('osm:os');
 		// Empty path
 		if (fileExists('')) throw new Error('empty path should return false');
@@ -1183,7 +1183,7 @@ func TestGitSpecSecurity_RefNameInjection(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("gitspec-inject", `
+	script := engine.LoadScriptString("gitspec-inject", `
 		const {exec} = require('osm:exec');
 		// Simulate what would happen if a git ref contained shell metacharacters
 		const result = exec('echo', 'refs/heads/$(whoami)');

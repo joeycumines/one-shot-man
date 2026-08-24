@@ -35,7 +35,7 @@ func TestCodeReviewCommand_ShowActualDiffOutput(t *testing.T) {
 	engine.SetGlobal("config", map[string]any{"name": "code-review"})
 
 	// Load the script
-	script := engine.LoadScriptFromString("code-review", codeReviewScript)
+	script := engine.LoadScriptString("code-review", codeReviewScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to execute script: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestCodeReviewCommand_ShowActualDiffOutput(t *testing.T) {
 		});
 	`
 
-	testScriptObj := engine.LoadScriptFromString("demo-test", testScript)
+	testScriptObj := engine.LoadScriptString("demo-test", testScript)
 
 	done := make(chan struct{})
 	_ = engine.Runtime().Set("__signalDone", func() {

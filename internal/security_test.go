@@ -187,7 +187,7 @@ func TestCommandInjectionPrevention_ShellMetacharacters(t *testing.T) {
 				return s
 			}
 
-			script := engine.LoadScriptFromString("test-"+tc.name, `
+			script := engine.LoadScriptString("test-"+tc.name, `
 				const {exec} = require('osm:exec');
 				const result = exec('echo', '`+escapeJS(tc.input)+`');
 			`)
@@ -238,7 +238,7 @@ func TestCommandInjectionPrevention_CommandChaining(t *testing.T) {
 			}
 			defer engine.Close()
 
-			script := engine.LoadScriptFromString("chain-"+tc.name, `
+			script := engine.LoadScriptString("chain-"+tc.name, `
 				const {exec} = require('osm:exec');
 				const result = exec('`+tc.command+`');
 			`)
@@ -293,7 +293,7 @@ func TestCommandInjectionPrevention_SubshellInjection(t *testing.T) {
 				return s
 			}
 
-			script := engine.LoadScriptFromString("subshell-"+tc.name, `
+			script := engine.LoadScriptString("subshell-"+tc.name, `
 				const {exec} = require('osm:exec');
 				const result = exec('echo', '`+escapeJS(tc.command)+`');
 			`)
@@ -570,7 +570,7 @@ func TestInputValidation_DangerousScriptInputs(t *testing.T) {
 				return s
 			}
 
-			script := engine.LoadScriptFromString("dangerous-"+tc.name, `
+			script := engine.LoadScriptString("dangerous-"+tc.name, `
 				const test = "`+escapeJS(tc.input)+`";
 				const length = test.length;
 			`)
@@ -620,7 +620,7 @@ func TestInputValidation_TemplateInjection(t *testing.T) {
 				return s
 			}
 
-			script := engine.LoadScriptFromString("template-"+tc.name, `
+			script := engine.LoadScriptString("template-"+tc.name, `
 				const input = "`+escapeJS(tc.input)+`";
 				const length = input.length;
 			`)
@@ -672,7 +672,7 @@ func TestInputValidation_ANSIEscapeSequences(t *testing.T) {
 				return s
 			}
 
-			script := engine.LoadScriptFromString("escape-"+tc.name, `
+			script := engine.LoadScriptString("escape-"+tc.name, `
 				const input = "`+escapeJS(tc.input)+`";
 				const length = input.length;
 			`)
@@ -1147,7 +1147,7 @@ func TestTUIInputSecurity_EscapeSequences(t *testing.T) {
 	}
 	defer engine.Close()
 
-	script := engine.LoadScriptFromString("escape-tui", `
+	script := engine.LoadScriptString("escape-tui", `
 		const input = "\x1b[31mRED\x1b[0m \x1b[1mBOLD\x1b[0m";
 		const length = input.length;
 	`)

@@ -165,7 +165,7 @@ func TestExprCondition_JSObjectPassthroughToGenerator(t *testing.T) {
 
 	// Verify the generator received the original JS object
 	var hasValueField bool
-	_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	_ = bridge.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get("receivedCondition")
 		if val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
 			obj := val.ToObject(vm)

@@ -620,7 +620,7 @@ func TestJsContextGetPath(t *testing.T) {
 	}
 
 	// Add the path via JS
-	script := eng.LoadScriptFromString("setup", fmt.Sprintf(`context.addPath(%q);`, f))
+	script := eng.LoadScriptString("setup", fmt.Sprintf(`context.addPath(%q);`, f))
 	if err := eng.ExecuteScript(script); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
@@ -786,7 +786,7 @@ func TestJsCreateState_EmptyCommandName(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		try {
 			tui.createState("", {});
 			throw new Error("should have thrown");
@@ -807,7 +807,7 @@ func TestJsCreateState_ColonInName(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		try {
 			tui.createState("cmd:name", {});
 			throw new Error("should have thrown");
@@ -828,7 +828,7 @@ func TestJsCreateState_NilDefs(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		try {
 			tui.createState("cmd", undefined);
 			throw new Error("should have thrown");
@@ -847,7 +847,7 @@ func TestJsCreateState_GetSetUnregisteredKey(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		const s = tui.createState("test-unreg", {
 			[Symbol("k1")]: { defaultValue: "default" }
 		});
@@ -883,7 +883,7 @@ func TestJsCreateState_SharedSymbol(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		// The shared symbols module should already be loaded
 		const shared = require('osm:sharedStateSymbols');
 
@@ -916,7 +916,7 @@ func TestJsCreateState_DefaultFallback(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		const k = Symbol("testKey");
 		const s = tui.createState("fallback-test", {
 			[k]: { defaultValue: "myDefault" }
@@ -939,7 +939,7 @@ func TestJsCreateState_DefaultFallback(t *testing.T) {
 	tm.stateManager.ClearAllState()
 
 	// After clear, get should fallback to default
-	script2 := eng.LoadScriptFromString("check", `
+	script2 := eng.LoadScriptString("check", `
 		// Re-run to re-register state definitions
 		const k2 = Symbol("testKey");
 		const s2 = tui.createState("fallback-test", {
@@ -960,7 +960,7 @@ func TestJsCreateState_EmptySymbolDesc(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		try {
 			// Symbol() without description has description "undefined" in goja
 			// We need to test the normalizeSymbolDescription returning empty string
@@ -992,7 +992,7 @@ func TestJsCreateState_NullDefEntry(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		// Test with definition that has no defaultValue
 		const k = Symbol("noDefault");
 		const s = tui.createState("test-no-default", {
@@ -1412,7 +1412,7 @@ func TestJsCreateState_NoTUIManager(t *testing.T) {
 
 	defer func() { eng.tuiManager = savedTM }()
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		try {
 			tui.createState("cmd", { [Symbol("k")]: { defaultValue: 1 } });
 			throw new Error("should have thrown");
@@ -1439,7 +1439,7 @@ func TestJsCreateState_NoStateManager(t *testing.T) {
 	tm.stateManager = nil
 	defer func() { tm.stateManager = savedSM }()
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		try {
 			tui.createState("cmd", { [Symbol("k")]: { defaultValue: 1 } });
 			throw new Error("should have thrown");
@@ -1460,7 +1460,7 @@ func TestJsCreateState_ExistingState(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		const k = Symbol("persist-test");
 		const s1 = tui.createState("persist-cmd", {
 			[k]: { defaultValue: "initial" }

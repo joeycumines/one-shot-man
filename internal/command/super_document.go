@@ -114,7 +114,7 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 	engine.SetGlobal("superDocumentTemplate", superDocumentTemplate)
 
 	// Load the embedded script
-	script := engine.LoadScriptFromString("super-document", superDocumentScript)
+	script := engine.LoadScriptString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		return fmt.Errorf("failed to execute super-document script: %w", err)
 	}

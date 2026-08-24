@@ -281,7 +281,7 @@ func TestFileScript_InlineScriptStillWorks(t *testing.T) {
 	ctx := context.Background()
 	engine := newTestEngineWithOpts(t, ctx, &stdout, &stderr)
 
-	script := engine.LoadScriptFromString("inline", `output.print("inline works");`)
+	script := engine.LoadScriptString("inline", `output.print("inline works");`)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript failed: %v", err)
 	}
@@ -466,7 +466,7 @@ func TestModulePaths_InlineScriptWithModulePaths(t *testing.T) {
 		WithModulePaths(tmpDir))
 
 	// Inline scripts can use bare module names via global folders
-	script := engine.LoadScriptFromString("inline", `
+	script := engine.LoadScriptString("inline", `
 		var greeting = require('greeting');
 		output.print(greeting.hello());
 	`)

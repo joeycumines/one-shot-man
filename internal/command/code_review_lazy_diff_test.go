@@ -56,7 +56,7 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 	engine.SetGlobal("config", map[string]any{"name": "code-review"})
 
 	// Load the script
-	script := engine.LoadScriptFromString("code-review", codeReviewScript)
+	script := engine.LoadScriptString("code-review", codeReviewScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to execute script: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 		output.print("=== END SMOKE TEST ===");
 	`
 
-	smokeTestObj := engine.LoadScriptFromString("smoke-test", smokeTest)
+	smokeTestObj := engine.LoadScriptString("smoke-test", smokeTest)
 	if err := engine.ExecuteScript(smokeTestObj); err != nil {
 		t.Fatalf("Smoke test failed: %v\nOutput: %s", err, stdout.String())
 	}
@@ -245,7 +245,7 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 		});
 	`
 
-	testScriptObj := engine.LoadScriptFromString("lazy-diff-test", testScript)
+	testScriptObj := engine.LoadScriptString("lazy-diff-test", testScript)
 
 	done := make(chan struct{})
 	_ = engine.Runtime().Set("__signalDone", func() {

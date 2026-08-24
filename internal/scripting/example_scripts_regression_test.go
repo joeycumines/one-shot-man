@@ -163,7 +163,7 @@ globalThis.__programConfig = __programConfig;`
 	}
 	source = strings.Replace(source, runMarker, replacement, 1)
 
-	script := engine.LoadScriptFromString(scriptName, source)
+	script := engine.LoadScriptString(scriptName, source)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript(%s) failed: %v", scriptName, err)
 	}
@@ -177,7 +177,7 @@ globalThis.__programConfig = __programConfig;`
 
 func runResultScript(t *testing.T, engine *Engine, name, source string) map[string]any {
 	t.Helper()
-	script := engine.LoadScriptFromString(name, source)
+	script := engine.LoadScriptString(name, source)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript(%s) failed: %v", name, err)
 	}

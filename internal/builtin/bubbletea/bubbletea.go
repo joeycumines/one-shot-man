@@ -261,18 +261,18 @@ type JSRunner interface {
 // the BubbleTea program finishes.
 type AsyncJSRunner interface {
 	JSRunner
-	// RunOnLoop schedules a function on the event loop WITHOUT blocking.
+	// Run schedules a function on the event loop WITHOUT blocking.
 	// Returns true if the function was successfully scheduled.
 	// Returns false if the event loop is not running.
-	RunOnLoop(fn func(*goja.Runtime)) bool
+	Run(fn func(*goja.Runtime)) bool
 }
 
 // TrySyncJSRunner extends JSRunner with deadlock-safe synchronous execution.
-// TryRunOnLoopSync executes the callback directly when already on the event
+// TryRunSync executes the callback directly when already on the event
 // loop goroutine, and otherwise schedules-and-waits on the loop.
 type TrySyncJSRunner interface {
 	JSRunner
-	TryRunOnLoopSync(currentVM *goja.Runtime, fn func(*goja.Runtime) error) error
+	TryRunSync(currentVM *goja.Runtime, fn func(*goja.Runtime) error) error
 }
 
 // Manager holds bubbletea-related state per engine instance.
@@ -601,14 +601,14 @@ type jsModel struct {
 }
 
 // runJSSync executes fn on the JS event loop and waits for completion.
-// If the runner supports TryRunOnLoopSync, recursion on the event-loop
+// If the runner supports TryRunSync, recursion on the event-loop
 // goroutine is executed directly to avoid self-deadlock.
 func (m *jsModel) runJSSync(fn func(*goja.Runtime) error) error {
 	if m.jsRunner == nil {
 		return fmt.Errorf("bubbletea: js runner is nil")
 	}
 	if tr, ok := m.jsRunner.(TrySyncJSRunner); ok {
-		return tr.TryRunOnLoopSync(m.runtime, fn)
+		return tr.TryRunSync(m.runtime, fn)
 	}
 	return m.jsRunner.RunJSSync(fn)
 }

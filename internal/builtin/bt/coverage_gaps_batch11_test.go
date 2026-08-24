@@ -30,7 +30,7 @@ func TestJSLeafAdapter_RunLeafUndefined(t *testing.T) {
 	require.NoError(t, err)
 
 	// Remove runLeaf from the VM.
-	bridge.RunOnLoop(func(vm *goja.Runtime) {
+	bridge.Run(func(vm *goja.Runtime) {
 		vm.Set("runLeaf", goja.Undefined())
 	})
 	// Wait for it to execute.
@@ -66,7 +66,7 @@ func TestJSLeafAdapter_RunLeafNotCallable(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set runLeaf to a string (not callable).
-	bridge.RunOnLoop(func(vm *goja.Runtime) {
+	bridge.Run(func(vm *goja.Runtime) {
 		vm.Set("runLeaf", "not-a-function")
 	})
 	time.Sleep(50 * time.Millisecond)
@@ -230,9 +230,9 @@ func TestJSLeafAdapter_Tick_DefaultCase(t *testing.T) {
 // T145: BlockingJSLeaf — uncovered error paths
 // ============================================================================
 
-// TestBlockingJSLeaf_RunOnLoopFalse verifies that when bridge is stopped before
+// TestBlockingJSLeaf_RunFalse verifies that when bridge is stopped before
 // BlockingJSLeaf ticks, it returns an event loop terminated error.
-func TestBlockingJSLeaf_RunOnLoopFalse(t *testing.T) {
+func TestBlockingJSLeaf_RunFalse(t *testing.T) {
 	t.Parallel()
 
 	bridge, stopLoop := testBridgeWithManualShutdown(t)
@@ -361,7 +361,7 @@ func TestBlockingJSLeaf_ChannelPath_RunLeafNotFound(t *testing.T) {
 	require.NoError(t, err)
 
 	// Remove runLeaf from VM.
-	bridge.RunOnLoop(func(vm *goja.Runtime) {
+	bridge.Run(func(vm *goja.Runtime) {
 		vm.Set("runLeaf", goja.Undefined())
 	})
 	time.Sleep(50 * time.Millisecond)

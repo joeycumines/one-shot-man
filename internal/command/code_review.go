@@ -82,7 +82,7 @@ func (c *CodeReviewCommand) Execute(args []string, stdout, stderr io.Writer) err
 	})
 
 	// Load the embedded script
-	script := engine.LoadScriptFromString("code-review", codeReviewScript)
+	script := engine.LoadScriptString("code-review", codeReviewScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		return fmt.Errorf("failed to execute code-review script: %w", err)
 	}

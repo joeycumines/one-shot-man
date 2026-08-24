@@ -332,7 +332,7 @@ func TestPromptFlowCommand_UseFromInitialPhase(t *testing.T) {
 	engine.SetGlobal("promptFlowTemplate", promptFlowTemplate)
 
 	// Load and execute the prompt-flow script
-	script := engine.LoadScriptFromString("prompt-flow", promptFlowScript)
+	script := engine.LoadScriptString("prompt-flow", promptFlowScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript failed: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
@@ -410,7 +410,7 @@ func TestPromptFlowCommand_Footer(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("promptFlowTemplate", promptFlowTemplate)
 
-	script := engine.LoadScriptFromString("prompt-flow", promptFlowScript)
+	script := engine.LoadScriptString("prompt-flow", promptFlowScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript failed: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
@@ -488,7 +488,7 @@ func TestPromptFlowCommand_FooterClear(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("promptFlowTemplate", promptFlowTemplate)
 
-	script := engine.LoadScriptFromString("prompt-flow", promptFlowScript)
+	script := engine.LoadScriptString("prompt-flow", promptFlowScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript failed: %v", err)
 	}
@@ -559,7 +559,7 @@ func TestPromptFlowCommand_NoFooter(t *testing.T) {
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("promptFlowTemplate", promptFlowTemplate)
 
-	script := engine.LoadScriptFromString("prompt-flow", promptFlowScript)
+	script := engine.LoadScriptString("prompt-flow", promptFlowScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript failed: %v", err)
 	}
@@ -625,7 +625,7 @@ func newPromptFlowTestEngine(t *testing.T) (*scripting.Engine, *bytes.Buffer, *b
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("promptFlowTemplate", promptFlowTemplate)
 
-	script := engine.LoadScriptFromString("prompt-flow", promptFlowScript)
+	script := engine.LoadScriptString("prompt-flow", promptFlowScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript failed: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}

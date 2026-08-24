@@ -21,6 +21,7 @@ import (
 	"github.com/joeycumines/goroutineid"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
+	"github.com/joeycumines/one-shot-man/internal/eventlooputil"
 )
 
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.
@@ -226,7 +227,7 @@ func NewEngine(
 	// Enable the `require` function in the runtime (must be done on event loop).
 	// Store the RequireModule so we can use it for file-based script execution,
 	// which gives scripts proper __filename, __dirname, and relative require resolution.
-	err = runtime.RunOnLoopSync(func(r *goja.Runtime) error {
+	err = runtime.RunSync(func(r *goja.Runtime) error {
 		engine.requireModule = registry.Enable(r)
 
 		// Extend the console object (created by adapter.Bind() with timer methods)
@@ -293,17 +294,14 @@ func (e *Engine) SetTestMode(enabled bool) {
 	e.testMode = enabled
 }
 
-// QueueSetGlobal queues a SetGlobal operation to be executed on the event loop.
-// This is the thread-safe alternative to SetGlobal for use from arbitrary goroutines.
-//
-// The operation is asynchronous - it will be executed on the event loop but
-// this method returns immediately. If you need to wait for completion,
-// use Runtime.SetGlobal instead.
-//
-// For testing/debugging, you can enable strict thread-checking mode which
-// will cause SetGlobal/GetGlobal to panic if called from the wrong goroutine.
-// See SetThreadCheckMode.
 func (e *Engine) QueueSetGlobal(name string, value any) {
+	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
+		e.globalsMu.Lock()
+		e.globals[name] = value
+		e.vm.Set(name, value)
+		e.globalsMu.Unlock()
+		return
+	}
 	e.runtime.adapter.Submit(func(rt *goja.Runtime) {
 		e.globalsMu.Lock()
 		e.globals[name] = value
@@ -312,8 +310,20 @@ func (e *Engine) QueueSetGlobal(name string, value any) {
 	})
 }
 
-// QueueGetGlobal queues a GetGlobal operation to be executed on the event loop.
 func (e *Engine) QueueGetGlobal(name string, callback func(value any)) {
+	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
+		e.globalsMu.Lock()
+		val := e.vm.Get(name)
+		e.globalsMu.Unlock()
+		var result any
+		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+			result = nil
+		} else {
+			result = val.Export()
+		}
+		callback(result)
+		return
+	}
 	e.runtime.adapter.Submit(func(rt *goja.Runtime) {
 		e.globalsMu.Lock()
 		val := rt.Get(name)
@@ -433,8 +443,8 @@ func (e *Engine) LoadScript(name, path string) (*Script, error) {
 	return script, nil
 }
 
-// LoadScriptFromString loads a JavaScript script from a string.
-func (e *Engine) LoadScriptFromString(name, content string) *Script {
+// LoadScriptString loads a JavaScript script from a string.
+func (e *Engine) LoadScriptString(name, content string) *Script {
 	script := &Script{
 		Name:    name,
 		Path:    "<string>",
@@ -462,9 +472,9 @@ func (e *Engine) LoadScriptFromString(name, content string) *Script {
 // use the VM via RunJSSync). Panic recovery and deferred function execution
 // also run on the event loop goroutine for the same reason.
 //
-// Uses executeOnLoop (no timeout) rather than RunOnLoopSync because scripts
+// Uses executeOnLoop (no timeout) rather than RunSync because scripts
 // may perform significant synchronous work (repeated exec.execv calls etc.)
-// that exceeds the 5-second RunOnLoopSync timeout.
+// that exceeds the 5-second RunSync timeout.
 //
 // If the script starts a BubbleTea program via tea.run() (which is
 // non-blocking), ExecuteScript automatically blocks on WaitForProgram()
@@ -590,7 +600,7 @@ func (e *Engine) Wait() {
 }
 
 // executeOnLoop submits a function to the event loop and blocks until it
-// completes. Unlike RunOnLoopSync this has NO timeout — scripts can take
+// completes. Unlike RunSync this has NO timeout — scripts can take
 // arbitrarily long to execute.
 //
 // If the caller is already on the event loop goroutine, fn is executed
@@ -609,11 +619,7 @@ func (e *Engine) executeOnLoop(fn func(*goja.Runtime) error) error {
 	// regardless of any future changes to Close()'s cleanup.
 	vm := e.vm
 
-	// Deadlock prevention: if we are already on the event loop goroutine,
-	// run directly. Submitting work and blocking for the result would
-	// deadlock the single-threaded event loop.
-	eventLoopID := e.runtime.eventLoopGoroutineID.Load()
-	if eventLoopID > 0 && goroutineid.Get() == eventLoopID {
+	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
 		return fn(vm)
 	}
 
@@ -710,7 +716,7 @@ func (e *Engine) Promisify(ctx context.Context, fn func(ctx context.Context) (an
 
 // GetScripts returns a snapshot of all loaded scripts. The returned slice is
 // a copy — callers can safely iterate it without racing with LoadScript
-// appends. Protected by globalsMu to synchronize with LoadScript/LoadScriptFromString.
+// appends. Protected by globalsMu to synchronize with LoadScript/LoadScriptString.
 func (e *Engine) GetScripts() []*Script {
 	e.globalsMu.RLock()
 	defer e.globalsMu.RUnlock()

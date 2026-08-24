@@ -80,7 +80,7 @@ func newPrSplitEvalWithMgr(t testing.TB) (*termmux.SessionManager, func(string) 
 		t.Fatalf("setup engine globals: %v", err)
 	}
 
-	shim := engine.LoadScriptFromString("pr-split/compat-shim", chunkCompatShim)
+	shim := engine.LoadScriptString("pr-split/compat-shim", chunkCompatShim)
 	if err := engine.ExecuteScript(shim); err != nil {
 		t.Fatalf("compat shim failed: %v", err)
 	}

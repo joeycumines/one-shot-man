@@ -71,7 +71,7 @@ type State struct {
 	// statically registered actions.
 	//
 	// Thread safety: The generator is called from the bt.Ticker goroutine.
-	// If it accesses JavaScript state, it MUST use Bridge.RunOnLoopSync.
+	// If it accesses JavaScript state, it MUST use Bridge.RunSync.
 	actionGenerator ActionGeneratorFunc
 
 	// actionGeneratorErrorMode determines how ActionGenerator errors are handled.

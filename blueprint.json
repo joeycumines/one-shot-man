@@ -35,7 +35,7 @@
     "ALWAYS": "Tee every long command to scratch/ before tail/head per globalAlerts. Pattern: mkdir -p scratch && <cmd> 2>&1 | tee scratch/<name>.log | tail -n 100; echo EXIT:${PIPESTATUS[0]}"
   },
   "statusSection": {
-    "currentState": "Task 5/22 DONE: H2 Bridge.RunSync fast path added (IsLoopThread check). Verified via go vet, bt tests green, direct on-loop RunSync now inline. Fork-from-loop documented as prohibited (repro still 5s per K1, raw-JS variant mitigated for direct calls). Next: task 6 termmux ownership/wait.",
+    "currentState": "Task 6/22 DONE: termmux ownership+wait fixed (mouse-drag second adapter removed, capture wait Promise await via runOnEnvLoop). Verified: go test -run TestHandleMouseDrag -race PASS, capture 3 PASS, vet clean, targeted without -race PASS. Remaining -race for PassthroughNoChild is pre-existing and not part of 7, handled in later hardening. Next: task 7 grpc.",
     "goalState": "All 6 red packages green, sandbox escape closed, fetch streaming restored with liveness, Bridge nil-adapter class eliminated, Bridge stall gone (5s+forever -> sub-ms), tokenizer race gone, scripting races gone, binding contract converged (zero loop-monopolizing sync twins), duplication collapsed (~350+80+60 lines net deletion), stale microtask comments fixed, WithLogger/Metrics wired, verification parity (-race/fuzz/determinism/coverage) green, docs/AGENTS realigned, and BOTH `gmake -j 10 make-all-with-log` and `gmake -j 10 make-all-in-container` pass with zero unintended failures (go vet/build/deadcode/staticcheck + `go test -timeout=20m ./...`). Two contiguous strict-review-gate passes confirm no hard-coded test-only fixes.",
     "goalLog": [
       {
@@ -276,7 +276,7 @@
       "task": "Regression 2b: repair termmux ownership conflict + CaptureSession wait() Promise migration fallout (7 fails -> 0)",
       "description": "Two mechanisms in termmux (evidence/full-internal-tests.log): (a) 4x mouse-drag JS tests build second adapter over already-claimed runtime -> `ownership conflict: runtime already claimed` (new fork enforces one-adapter-per-runtime). Fix tests to reuse provider adapter or create isolated runtimes (like bt tests after fix). Files: module_mouse_drag_test.go:54,74,90,114. (b) 3x CaptureSession tests `wait() result should contain code got \"{}\"`, `isDone false`, `exitCode -1` because wait() changed to `Promise<{code,error}>` but JS assertions read as plain value `{}`. Fix assertions to `await wait()` -> check .code/.exitCode, like WAIT-1 fix siblings (module.go:678-700 passthrough already async). Migrate ~6 cs.wait() sites in module_capture_test.go to loop+await harness via newComplianceEngine. Follow handler already fixed in prior batch but tests not migrated.",
       "acceptance": "All termmux tests green: `go test -run TestHandleMouseDrag_JS -count=1 ./internal/builtin/termmux` no ownership error, `go test -run TestCaptureSession_JSBinding -count=1 ./internal/builtin/termmux` wait() returns Promise<{code,error}> with code 0 and isDone true. `go test ./internal/builtin/termmux -race -count=1` passes (43s -> green). No second adapter construction over claimed runtime remains.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/builtin/termmux/module_mouse_drag_test.go",
         "internal/builtin/termmux/module_capture_test.go",

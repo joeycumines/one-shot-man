@@ -35,7 +35,7 @@
     "ALWAYS": "Tee every long command to scratch/ before tail/head per globalAlerts. Pattern: mkdir -p scratch && <cmd> 2>&1 | tee scratch/<name>.log | tail -n 100; echo EXIT:${PIPESTATUS[0]}"
   },
   "statusSection": {
-    "currentState": "Task 2/22 DONE: H1 tokenizer off-loop VM mutation fixed (settler callback). Verified via go test -race PASS (4/4 including hammer) and vet clean. Next: task 3 fetch body streaming+liveness.",
+    "currentState": "Task 3/22 DONE: fetch body streaming restored (adapter+ctx+loop threading, _any removed, liveness via Loop.Promisify). Both verifications PASS (4/4 previously failing now green). Next: task 4 Bridge adapter required.",
     "goalState": "All 6 red packages green, sandbox escape closed, fetch streaming restored with liveness, Bridge nil-adapter class eliminated, Bridge stall gone (5s+forever -> sub-ms), tokenizer race gone, scripting races gone, binding contract converged (zero loop-monopolizing sync twins), duplication collapsed (~350+80+60 lines net deletion), stale microtask comments fixed, WithLogger/Metrics wired, verification parity (-race/fuzz/determinism/coverage) green, docs/AGENTS realigned, and BOTH `gmake -j 10 make-all-with-log` and `gmake -j 10 make-all-in-container` pass with zero unintended failures (go vet/build/deadcode/staticcheck + `go test -timeout=20m ./...`). Two contiguous strict-review-gate passes confirm no hard-coded test-only fixes.",
     "goalLog": [
       {
@@ -225,7 +225,7 @@
       "task": "Regression 1 + H5 + H8: restore fetch body streaming with adapter+ctx threading, liveness, Background fix and dead _any removal",
       "description": "buildResponse (fetch.go:207-208) currently `NewReadableStream(Background, NopCloser(bytes.NewReader(body)), nil)` + `wrapReadableStreamJS(Background, runtime, nil, stream, nil)` \u2014 nil adapter panics in readable_stream.go:163-174 async.Promise nil, loop recovers panic -> never-settled Promise -> 10s hang (4 tests). Fix: (a) thread captured ctx+adapter from Require(ctx,adapter) through buildResponse(ctx, runtime, adapter, resp, body) and into NewReadableStream(ctx, src) + wrapReadableStreamJS(ctx, rt, adapter, rs); delete both `_ any` corpse params (readable_stream.go:37,138). (b) Restore per-pending-read liveness: each `reader.read()` holds a Loop.Promisify token (via eventLoopProvider Liveness interface) released on settle/cancel, matching Node ref semantics. Minimal form in P2 (12_...md): Promisify holds token while blocking Read, settler resolves inside same Promisify callback. (c) Replace Background with captured ctx for cancellation propagation. Wire via register.go already having adapter.",
       "acceptance": "Fetch body streaming works: `TestE2E_ReadableStream_ChunkedBody`, `TestResponseBody_GetReader_ReadAll`, `TextAndBodyIndependent`, `EmptyBody` all pass without timeout, -race clean. `wrapReaderJS` read() returns {value,done} Promise settled on owner, not panicking. Pending read holds loop alive (no premature auto-exit). `grep -n \"_ any\" internal/builtin/fetch/readable_stream.go` zero, `grep -n Background internal/builtin/fetch/fetch.go` shows no Background in body-stream path.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/builtin/fetch/fetch.go",
         "internal/builtin/fetch/readable_stream.go",

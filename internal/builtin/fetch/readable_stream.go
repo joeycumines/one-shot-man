@@ -10,6 +10,7 @@ import (
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin/async"
+	goeventloop "github.com/joeycumines/go-eventloop"
 )
 
 const (
@@ -34,7 +35,7 @@ type ReadableStream struct {
 	done   chan struct{}
 }
 
-func NewReadableStream(ctx context.Context, src io.ReadCloser, _ any) *ReadableStream {
+func NewReadableStream(ctx context.Context, src io.ReadCloser) *ReadableStream {
 	return &ReadableStream{
 		ctx:       ctx,
 		source:    src,
@@ -135,7 +136,7 @@ func (r *ReadableStreamDefaultReader) ReleaseLock() {
 	r.stream.mu.Unlock()
 }
 
-func wrapReadableStreamJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, rs *ReadableStream, _ any) *goja.Object {
+func wrapReadableStreamJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, rs *ReadableStream, loop *goeventloop.Loop) *goja.Object {
 	obj := rt.NewObject()
 	_ = obj.Set("_goStream", rs)
 	getter := rt.ToValue(func(goja.FunctionCall) goja.Value {
@@ -147,7 +148,7 @@ func wrapReadableStreamJS(ctx context.Context, rt *goja.Runtime, adapter *gojaev
 		if err != nil {
 			panic(rt.NewGoError(err))
 		}
-		return wrapReaderJS(ctx, rt, adapter, reader)
+		return wrapReaderJS(ctx, rt, adapter, reader, loop)
 	})
 	_ = obj.Set("cancel", func(call goja.FunctionCall) goja.Value {
 		if err := rs.Cancel(); err != nil {
@@ -158,9 +159,24 @@ func wrapReadableStreamJS(ctx context.Context, rt *goja.Runtime, adapter *gojaev
 	return obj
 }
 
-func wrapReaderJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, reader *ReadableStreamDefaultReader) *goja.Object {
+func wrapReaderJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, reader *ReadableStreamDefaultReader, loop *goeventloop.Loop) *goja.Object {
 	obj := rt.NewObject()
 	_ = obj.Set("read", func(call goja.FunctionCall) goja.Value {
+		if loop != nil {
+			promise, settler := adapter.NewPromise()
+			_ = loop.Promisify(ctx, func(_ context.Context) (any, error) {
+				data, done, err := reader.Read()
+				if err != nil {
+					_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				} else if done {
+					_ = settler.Resolve(func(*goja.Runtime) any { return map[string]any{"value": nil, "done": true} })
+				} else {
+					_ = settler.Resolve(func(*goja.Runtime) any { return map[string]any{"value": string(data), "done": false} })
+				}
+				return nil, nil
+			})
+			return promise
+		}
 		return async.Promise(adapter, ctx, func(ctx context.Context) (any, error) {
 			data, done, err := reader.Read()
 			if err != nil {

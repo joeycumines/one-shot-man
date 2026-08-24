@@ -112,7 +112,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"tokenizer", tokenizermod.Require(ctx, eventLoopProvider.Adapter()))
 
 	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"mcpcallback", mcpcallbackmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"aimux", aimuxmod.Require(ctx, eventLoopProvider.Adapter()))

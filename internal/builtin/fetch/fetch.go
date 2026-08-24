@@ -14,21 +14,22 @@ import (
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/goja_nodejs/require"
+	goeventloop "github.com/joeycumines/go-eventloop"
 )
 
 const defaultMaxResponseSize int64 = 10 << 20
 
-func Require(ctx context.Context, adapter *gojaeventloop.Adapter) require.ModuleLoader {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 		if adapter != nil {
-			_ = exports.Set("fetch", jsFetch(ctx, runtime, adapter))
+			_ = exports.Set("fetch", jsFetch(ctx, runtime, adapter, loop))
 			_ = exports.Set("sseReader", jsSSEReader(ctx, runtime, adapter))
 		}
 	}
 }
 
-func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
+func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		url := call.Argument(0).String()
 		method, timeout, bodyReader, reqHeaders, signalVal, maxBody := parseOptions(call)
@@ -90,7 +91,7 @@ func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.
 				return
 			}
 			_ = settler.Resolve(func(rt *goja.Runtime) any {
-				return buildResponse(rt, resp, body)
+				return buildResponse(ctx, rt, adapter, loop, resp, body)
 			})
 		}()
 		return promise
@@ -180,7 +181,7 @@ func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration,
 	return
 }
 
-func buildResponse(runtime *goja.Runtime, resp *http.Response, body []byte) *goja.Object {
+func buildResponse(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, resp *http.Response, body []byte) *goja.Object {
 	result := runtime.NewObject()
 	_ = result.Set("status", resp.StatusCode)
 	_ = result.Set("ok", resp.StatusCode >= 200 && resp.StatusCode < 300)
@@ -203,9 +204,8 @@ func buildResponse(runtime *goja.Runtime, resp *http.Response, body []byte) *goj
 		resolve(runtime.ToValue(parsed))
 		return runtime.ToValue(p)
 	})
-	// body stream
-	stream := NewReadableStream(context.Background(), io.NopCloser(bytes.NewReader(body)), nil)
-	_ = result.Set("body", wrapReadableStreamJS(context.Background(), runtime, nil, stream, nil))
+	stream := NewReadableStream(ctx, io.NopCloser(bytes.NewReader(body)))
+	_ = result.Set("body", wrapReadableStreamJS(ctx, runtime, adapter, stream, loop))
 	return result
 }
 

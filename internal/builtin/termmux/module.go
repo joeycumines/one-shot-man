@@ -14,9 +14,11 @@ import (
 	"sync"
 	"time"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 	"github.com/joeycumines/one-shot-man/internal/termmux/ptyio"
 	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
@@ -181,7 +183,7 @@ func isValidEventType(event string) bool {
 // Require returns a module loader for "osm:termmux" that exposes the terminal
 // multiplexer to JavaScript. The input/output parameters are optional; when nil
 // the module falls back to os.Stdin/os.Stdout.
-func Require(ctx context.Context, adapter *gojaeventloop.Adapter, input io.Reader, output io.Writer) func(*goja.Runtime, *goja.Object) {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, input io.Reader, output io.Writer) func(*goja.Runtime, *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -221,16 +223,16 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, input io.Reade
 
 		// ── CaptureSession factory ───────────────────────────
 		_ = exports.Set("newCaptureSession", func(call goja.FunctionCall) goja.Value {
-			return newCaptureSession(ctx, adapter, runtime, call)
+			return newCaptureSession(ctx, adapter, loop, runtime, call)
 		})
 
 		// ── SessionManager factory (experimental) ────────────
 		_ = exports.Set("newSessionManager", func(call goja.FunctionCall) goja.Value {
-			return newSessionManager(ctx, adapter, runtime, call)
+			return newSessionManager(ctx, adapter, loop, runtime, call)
 		})
 
 		_ = exports.Set("newBoundedSession", func(call goja.FunctionCall) goja.Value {
-			return newBoundedSession(ctx, adapter, runtime, nil, call)
+			return newBoundedSession(ctx, adapter, loop, runtime, nil, call)
 		})
 
 		_ = exports.Set("enableMouseForward", func(call goja.FunctionCall) goja.Value {
@@ -468,7 +470,7 @@ func paneGeoToJS(runtime *goja.Runtime, g parent.PaneGeometry) *goja.Object {
 // JS signature:
 //
 //	termmux.newCaptureSession(command, args?, { dir?, rows?, cols?, env? }?)
-func newCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
+func newCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	if len(call.Arguments) == 0 {
 		panic(runtime.NewTypeError("newCaptureSession: command argument is required"))
 	}
@@ -527,7 +529,7 @@ func newCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 	}
 
 	cs := parent.NewCaptureSession(cfg)
-	return WrapCaptureSession(ctx, adapter, runtime, cs)
+	return WrapCaptureSession(ctx, adapter, loop, runtime, cs)
 }
 
 // WrapCaptureSession wraps a [parent.CaptureSession] into a Goja object with
@@ -547,7 +549,7 @@ func newCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 // exitCode, close, interrupt) are confirmed bound with correct signatures
 // via module_capture_test.go. Screen reads go through SessionManager
 // snapshots via the _buildVerifyProxy in JS (Task 48).
-func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, cs *parent.CaptureSession) goja.Value {
+func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, runtime *goja.Runtime, cs *parent.CaptureSession) goja.Value {
 	obj := wrapInteractiveSession(runtime, cs, parent.SessionKindCapture).ToObject(runtime)
 
 	// ── CaptureSession-specific methods (not part of InteractiveSession) ──
@@ -613,16 +615,14 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, run
 	// ── wait() → Promise<{ code, error? }> ─────────────────
 	// Async per JS Binding Contract: waits until child process exits and output is drained.
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
-		promise, settler := adapter.NewPromise()
-		go func() {
+		return async.PromiseTracked(adapter, loop, ctx, func(ctx context.Context) (any, error) {
 			code, err := cs.Wait()
 			result := map[string]any{"code": code}
 			if err != nil {
 				result["error"] = err.Error()
 			}
-			_ = settler.Resolve(func(rt *goja.Runtime) any { return result })
-		}()
-		return promise
+			return result, nil
+		}, nil)
 	})
 
 	// ── sendEOF() ────────────────────────────────────────
@@ -675,8 +675,7 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, run
 			}
 		}
 
-		promise, settler := adapter.NewPromise()
-		go func() {
+		return async.PromiseTracked(adapter, loop, ctx, func(ctx context.Context) (any, error) {
 			termFd := int(os.Stdin.Fd())
 			reason, err := cs.Passthrough(ctx, parent.PassthroughConfig{
 				TerminalIO: parent.TerminalIO{
@@ -696,9 +695,8 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, run
 			if err != nil {
 				result["error"] = err.Error()
 			}
-			_ = settler.Resolve(func(rt *goja.Runtime) any { return result })
-		}()
-		return promise
+			return result, nil
+		}, nil)
 	})
 
 	return obj
@@ -826,7 +824,7 @@ func UnwrapSessionManager(obj *goja.Object) *parent.SessionManager {
 // JS signature:
 //
 //	termmux.newSessionManager({ rows?: number, cols?: number, requestBuffer?: number, outputBuffer?: number, title?: string })
-func newSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
+func newSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	var opts []parent.ManagerOption
 	var title string
 
@@ -856,7 +854,7 @@ func newSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 	}
 
 	mgr := parent.NewSessionManager(opts...)
-	return WrapSessionManager(ctx, adapter, runtime, mgr, os.Stdin, os.Stdout, -1, title)
+	return WrapSessionManager(ctx, adapter, loop, runtime, mgr, os.Stdin, os.Stdout, -1, title)
 }
 
 // newBoundedSession creates a CaptureSession and a SessionManager in one call,
@@ -869,7 +867,7 @@ func newSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 //
 // Returns { session, mgr, sid } where session is the wrapped CaptureSession,
 // mgr is the wrapped SessionManager, and sid is the session ID.
-func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, mgr *parent.SessionManager, call goja.FunctionCall) goja.Value {
+func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, runtime *goja.Runtime, mgr *parent.SessionManager, call goja.FunctionCall) goja.Value {
 	ctx = context.WithoutCancel(ctx)
 
 	if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
@@ -958,8 +956,8 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 		panic(runtime.NewGoError(fmt.Errorf("newBoundedSession: start failed: %w", err)))
 	}
 
-	sessionVal := WrapCaptureSession(ctx, adapter, runtime, cs)
-	mgrVal := WrapSessionManager(ctx, adapter, runtime, mgr, os.Stdin, os.Stdout, -1, "")
+	sessionVal := WrapCaptureSession(ctx, adapter, loop, runtime, cs)
+	mgrVal := WrapSessionManager(ctx, adapter, loop, runtime, mgr, os.Stdin, os.Stdout, -1, "")
 
 	result := runtime.NewObject()
 	_ = result.Set("session", sessionVal)
@@ -978,14 +976,14 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 //
 // The adapter must have had Bind() called so EventTarget and CustomEvent
 // globals are available.
-func WrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int, title string) goja.Value {
-	obj, _ := wrapSessionManager(ctx, adapter, runtime, mgr, stdin, stdout, termFd, title)
+func WrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int, title string) goja.Value {
+	obj, _ := wrapSessionManager(ctx, adapter, loop, runtime, mgr, stdin, stdout, termFd, title)
 	return obj
 }
 
 // wrapSessionManager is the internal implementation of WrapSessionManager; it
 // also returns the backing *muxState for package-internal test assertions.
-func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int, title string) (*goja.Object, *muxState) {
+func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int, title string) (*goja.Object, *muxState) {
 	if adapter != nil && mgr != nil {
 		if cached, ok := managerWrapperCache.Load(mgr); ok {
 			entry := cached.(*wrapperCacheEntry)
@@ -1004,6 +1002,7 @@ func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, run
 		ctx:       ctx,
 		runtime:   runtime,
 		mgr:       mgr,
+		loop:      loop,
 		stdin:     stdin,
 		stdout:    stdout,
 		termFd:    termFd,
@@ -1947,8 +1946,7 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			cfg.Stdout = os.Stdout
 		}
 
-		promise, settler := s.adapter.NewPromise()
-		go func() {
+		return async.PromiseTracked(s.adapter, s.loop, s.ctx, func(ctx context.Context) (any, error) {
 			reason, err := s.mgr.Passthrough(s.ctx, cfg)
 			result := map[string]any{
 				"reason": exitReasonString(reason),
@@ -1956,9 +1954,8 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			if err != nil {
 				result["error"] = err.Error()
 			}
-			_ = settler.Resolve(func(rt *goja.Runtime) any { return result })
-		}()
-		return promise
+			return result, nil
+		}, nil)
 	})
 
 	_ = obj.Set("attach", func(call goja.FunctionCall) goja.Value {
@@ -2063,39 +2060,38 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			cfg.ResizeFn = s.resizeFn
 		}
 
-		promise, settler := s.adapter.NewPromise()
-		go func() {
-			reason, err := s.mgr.Passthrough(s.ctx, cfg)
-			_ = settler.Resolve(func(rt *goja.Runtime) any {
-				s.swappedOnce = true
-				s.SetInPassthrough(false)
+		var reason parent.ExitReason
+		var passthroughErr error
+		return async.PromiseTracked(s.adapter, s.loop, s.ctx, func(ctx context.Context) (any, error) {
+			reason, passthroughErr = s.mgr.Passthrough(s.ctx, cfg)
+			return nil, nil
+		}, func(rt *goja.Runtime, result any) any {
+			s.swappedOnce = true
+			s.SetInPassthrough(false)
 
-				s.dispatchEventOnLoop(EventFocus, map[string]any{
-					"side": "osm", "action": "return",
-				})
-
-				result := map[string]any{
-					"reason": exitReasonString(reason),
-				}
-				if err != nil {
-					result["error"] = err.Error()
-				}
-
-				if id := s.mgr.ActiveID(); id != 0 {
-					if snap := s.mgr.Snapshot(id); snap != nil {
-						result["childOutput"] = snap.GetPlainText()
-					}
-				}
-
-				s.dispatchEventOnLoop(EventExit, map[string]any{
-					"reason": exitReasonString(reason),
-					"pane":   "agent",
-				})
-
-				return result
+			s.dispatchEventOnLoop(EventFocus, map[string]any{
+				"side": "osm", "action": "return",
 			})
-		}()
-		return promise
+
+			res := map[string]any{
+				"reason": exitReasonString(reason),
+			}
+			if passthroughErr != nil {
+				res["error"] = passthroughErr.Error()
+			}
+
+			s.dispatchEventOnLoop(EventExit, map[string]any{
+				"reason": exitReasonString(reason),
+				"pane":   "agent",
+			})
+
+			if id := s.mgr.ActiveID(); id != 0 {
+				if snap := s.mgr.Snapshot(id); snap != nil {
+					res["childOutput"] = snap.GetPlainText()
+				}
+			}
+			return res
+		})
 	})
 
 	_ = obj.Set("screenshot", func() string {
@@ -2291,28 +2287,28 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 				cfg.ResizeFn = s.resizeFn
 			}
 
-			promise, settler := s.adapter.NewPromise()
-			go func() {
-				reason, err := s.mgr.Passthrough(s.ctx, cfg)
-				_ = settler.Resolve(func(rt *goja.Runtime) any {
-					s.swappedOnce = true
-					s.SetInPassthrough(false)
+			var reason parent.ExitReason
+			var passthroughErr error
+			return async.PromiseTracked(s.adapter, s.loop, s.ctx, func(ctx context.Context) (any, error) {
+				reason, passthroughErr = s.mgr.Passthrough(s.ctx, cfg)
+				return nil, nil
+			}, func(rt *goja.Runtime, result any) any {
+				s.swappedOnce = true
+				s.SetInPassthrough(false)
 
-					res := map[string]any{
-						"reason": exitReasonString(reason),
-					}
-					if err != nil {
-						res["error"] = err.Error()
-					}
+				res := map[string]any{
+					"reason": exitReasonString(reason),
+				}
+				if passthroughErr != nil {
+					res["error"] = passthroughErr.Error()
+				}
 
-					s.dispatchEventOnLoop(EventFocus, map[string]any{
-						"side": "osm", "action": "return",
-					})
-
-					return res
+				s.dispatchEventOnLoop(EventFocus, map[string]any{
+					"side": "osm", "action": "return",
 				})
-			}()
-			return promise
+
+				return res
+			})
 		})
 
 		_ = result.Set("options", runOpts)

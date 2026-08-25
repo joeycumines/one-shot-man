@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/goja"
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	builtinos "github.com/joeycumines/one-shot-man/internal/builtin/os"
 )
 
@@ -58,22 +59,7 @@ func (e *Engine) jsOutputFromClipboard() goja.Value {
 }
 
 func (e *Engine) clipboardPromise(fn func(ctx context.Context) (any, error)) goja.Value {
-	adapter := e.Adapter()
-	promise, settler := adapter.NewPromise()
-	go func() {
-		clipCtx, cancel := context.WithTimeout(e.ctx, outputClipboardTimeout)
-		defer cancel()
-		result, err := fn(clipCtx)
-		if err != nil {
-			_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-		} else {
-			_ = settler.Resolve(func(rt *goja.Runtime) any {
-				if result == nil {
-					return goja.Undefined()
-				}
-				return result
-			})
-		}
-	}()
-	return promise
+	clipCtx, cancel := context.WithTimeout(e.ctx, outputClipboardTimeout)
+	defer cancel()
+	return async.PromiseTracked(e.Adapter(), e.Loop(), clipCtx, fn, nil)
 }

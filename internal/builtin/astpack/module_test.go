@@ -31,7 +31,7 @@ func asyncEnv(t *testing.T) (*goja.Runtime, func(string) (goja.Value, error)) {
 	mod := rt.NewObject()
 	exports := rt.NewObject()
 	_ = mod.Set("exports", exports)
-	Require(context.Background(), adapter)(rt, mod)
+	Require(context.Background(), adapter, loop)(rt, mod)
 	_ = rt.Set("astpack", mod.Get("exports"))
 	resultCh := make(chan goja.Value, 1)
 	errCh := make(chan error, 1)

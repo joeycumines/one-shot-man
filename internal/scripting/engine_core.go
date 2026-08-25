@@ -18,7 +18,6 @@ import (
 	gojaEventloop "github.com/joeycumines/goja-eventloop"
 	_ "github.com/joeycumines/goja_nodejs/console" // init() registers "console" core module
 	"github.com/joeycumines/goja_nodejs/require"
-	"github.com/joeycumines/goroutineid"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	"github.com/joeycumines/one-shot-man/internal/eventlooputil"
@@ -81,7 +80,6 @@ type Engine struct {
 	globals              map[string]any
 	globalsMu            sync.RWMutex // Protects globals map access (C5 fix)
 	testMode             bool
-	threadCheckMode      bool  // If true, SetGlobal/GetGlobal panic on wrong goroutine
 	eventLoopGoroutineID int64 // Captured at initialization for thread checking (atomic)
 	closed               atomic.Bool
 	tuiManager           *TUIManager
@@ -338,30 +336,6 @@ func (e *Engine) QueueGetGlobal(name string, callback func(value any)) {
 	})
 }
 
-// SetThreadCheckMode enables or disables strict thread-checking mode.
-// When enabled, SetGlobal and GetGlobal will panic if called from a goroutine
-// other than the event loop goroutine. This helps catch threading bugs early.
-//
-// Default is disabled for performance. Enable during testing or debugging.
-func (e *Engine) SetThreadCheckMode(enabled bool) {
-	e.threadCheckMode = enabled
-	if enabled {
-		// Capture the event loop goroutine ID using atomic store
-		atomic.StoreInt64(&e.eventLoopGoroutineID, goroutineid.Get())
-	}
-}
-
-// checkEventLoopGoroutine panics if called from the wrong goroutine (when thread checking is enabled).
-func (e *Engine) checkEventLoopGoroutine(methodName string) {
-	currentID := goroutineid.Get()
-	// Use atomic load for thread-safe read of eventLoopGoroutineID
-	storedID := atomic.LoadInt64(&e.eventLoopGoroutineID)
-	if currentID != storedID {
-		panic(fmt.Sprintf("%s called from wrong goroutine: expected %d, got %d. "+
-			"Use QueueSetGlobal/QueueGetGlobal or Runtime.SetGlobal/Runtime.GetGlobal for thread-safe access.",
-			methodName, storedID, currentID))
-	}
-}
 
 // SetGlobal sets a global variable in the JavaScript runtime.
 //

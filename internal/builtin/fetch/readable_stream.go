@@ -10,7 +10,6 @@ import (
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
 
 const (
@@ -160,33 +159,24 @@ func wrapReadableStreamJS(ctx context.Context, rt *goja.Runtime, adapter *gojaev
 }
 
 func wrapReaderJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, reader *ReadableStreamDefaultReader, loop *goeventloop.Loop) *goja.Object {
+	if loop == nil {
+		panic("fetch: nil event loop")
+	}
 	obj := rt.NewObject()
 	_ = obj.Set("read", func(call goja.FunctionCall) goja.Value {
-		if loop != nil {
-			promise, settler := adapter.NewPromise()
-			loop.Promisify(ctx, func(_ context.Context) (any, error) {
-				data, done, err := reader.Read()
-				if err != nil {
-					_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-				} else if done {
-					_ = settler.Resolve(func(*goja.Runtime) any { return map[string]any{"value": nil, "done": true} })
-				} else {
-					_ = settler.Resolve(func(*goja.Runtime) any { return map[string]any{"value": string(data), "done": false} })
-				}
-				return nil, nil
-			})
-			return promise
-		}
-		return async.Promise(adapter, ctx, func(ctx context.Context) (any, error) {
+		promise, settler := adapter.NewPromise()
+		loop.Promisify(ctx, func(_ context.Context) (any, error) {
 			data, done, err := reader.Read()
 			if err != nil {
-				return nil, err
+				_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+			} else if done {
+				_ = settler.Resolve(func(*goja.Runtime) any { return map[string]any{"value": nil, "done": true} })
+			} else {
+				_ = settler.Resolve(func(*goja.Runtime) any { return map[string]any{"value": string(data), "done": false} })
 			}
-			if done {
-				return map[string]any{"value": nil, "done": true}, nil
-			}
-			return map[string]any{"value": string(data), "done": false}, nil
+			return nil, nil
 		})
+		return promise
 	})
 	_ = obj.Set("releaseLock", func(call goja.FunctionCall) goja.Value {
 		reader.ReleaseLock()

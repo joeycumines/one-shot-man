@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 
 	"github.com/joeycumines/one-shot-man/internal/aimuxcore"
 )
@@ -23,14 +24,14 @@ import (
 // The surface is intentionally provider-agnostic. Consumers (e.g. pr-split) that
 // need provider-specific defaults or model-menu utilities must implement those
 // helpers in JavaScript on top of processProvider and the parser/registry APIs.
-func registerProviderBindings(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, exports *goja.Object) {
+func registerProviderBindings(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, runtime *goja.Runtime, exports *goja.Object) {
 	_ = exports.Set("newRegistry", func() *goja.Object {
-		return newRegistryObject(ctx, runtime, adapter, aimuxcore.NewRegistry())
+		return newRegistryObject(ctx, runtime, adapter, loop, aimuxcore.NewRegistry())
 	})
 
 	_ = exports.Set("processProvider", func(opts goja.Value) *goja.Object {
 		cfg := providerConfigFromJS(runtime, opts)
-		return newProviderObject(ctx, runtime, adapter, aimuxcore.NewProcessProvider(cfg.name, cfg.command, cfg.defaultArgs, cfg.caps))
+		return newProviderObject(ctx, runtime, adapter, loop, aimuxcore.NewProcessProvider(cfg.name, cfg.command, cfg.defaultArgs, cfg.caps))
 	})
 }
 
@@ -72,7 +73,7 @@ func capabilitiesFromJS(runtime *goja.Runtime, obj *goja.Object) aimuxcore.Provi
 	return caps
 }
 
-func newProviderObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, p *aimuxcore.ProcessProvider) *goja.Object {
+func newProviderObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, p *aimuxcore.ProcessProvider) *goja.Object {
 	obj := runtime.NewObject()
 	_ = obj.Set("_provider", runtime.ToValue(p))
 	_ = obj.Set("name", func() string { return p.Name() })
@@ -86,12 +87,12 @@ func newProviderObject(ctx context.Context, runtime *goja.Runtime, adapter *goja
 		return capsObj
 	})
 	_ = obj.Set("spawn", func(opts goja.Value) *goja.Object {
-		return spawnProvider(ctx, runtime, adapter, p, opts)
+		return spawnProvider(ctx, runtime, adapter, loop, p, opts)
 	})
 	return obj
 }
 
-func newRegistryObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, r *aimuxcore.Registry) *goja.Object {
+func newRegistryObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, r *aimuxcore.Registry) *goja.Object {
 	obj := runtime.NewObject()
 	_ = obj.Set("register", func(p *goja.Object) error {
 		if p == nil {
@@ -108,7 +109,7 @@ func newRegistryObject(ctx context.Context, runtime *goja.Runtime, adapter *goja
 		if err != nil {
 			return goja.Null()
 		}
-		return newProviderObject(ctx, runtime, adapter, p.(*aimuxcore.ProcessProvider))
+		return newProviderObject(ctx, runtime, adapter, loop, p.(*aimuxcore.ProcessProvider))
 	})
 	_ = obj.Set("list", func() []string {
 		return r.List()
@@ -122,19 +123,19 @@ func newRegistryObject(ctx context.Context, runtime *goja.Runtime, adapter *goja
 		if pp == nil {
 			panic(runtime.NewTypeError("provider not found"))
 		}
-		return spawnProvider(ctx, runtime, adapter, pp, opts)
+		return spawnProvider(ctx, runtime, adapter, loop, pp, opts)
 	})
 	return obj
 }
 
-func spawnProvider(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, p *aimuxcore.ProcessProvider, opts goja.Value) *goja.Object {
+func spawnProvider(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, p *aimuxcore.ProcessProvider, opts goja.Value) *goja.Object {
 	ctx, cancel := context.WithCancel(ctx)
 	h, err := p.Spawn(ctx, spawnOptsFromJS(runtime, opts))
 	if err != nil {
 		cancel()
 		panic(runtime.NewTypeError(err.Error()))
 	}
-	return newHandleObject(ctx, runtime, adapter, h, cancel)
+	return newHandleObject(ctx, runtime, adapter, loop, h, cancel)
 }
 
 func providerFromJS(runtime *goja.Runtime, p *goja.Object) (aimuxcore.Provider, error) {
@@ -157,7 +158,7 @@ func providerFromJS(runtime *goja.Runtime, p *goja.Object) (aimuxcore.Provider, 
 	return aimuxcore.NewProcessProvider(name, command, defaultArgs, caps), nil
 }
 
-func newHandleObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, h aimuxcore.AgentHandle, cancel context.CancelFunc) *goja.Object {
+func newHandleObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, h aimuxcore.AgentHandle, cancel context.CancelFunc) *goja.Object {
 	obj := runtime.NewObject()
 	_ = obj.Set("_handle", runtime.ToValue(h))
 
@@ -177,13 +178,13 @@ func newHandleObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaev
 	// close may block waiting for the child to exit.
 	_ = obj.Set("close", func() goja.Value {
 		cancel()
-		return asyncHandleVoid(ctx, runtime, adapter, func() error { return h.Close() })
+		return asyncHandleVoid(ctx, runtime, adapter, loop, func() error { return h.Close() })
 	})
 
 	// receiveAsync blocks until output is available or the handle closes.
 	// Resolves to the line string, or null on EOF.
 	_ = obj.Set("receiveAsync", func() goja.Value {
-		return asyncHandleValue(ctx, runtime, adapter, func() (any, error) {
+		return asyncHandleValue(ctx, runtime, adapter, loop, func() (any, error) {
 			out, err := h.Receive()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
@@ -201,7 +202,7 @@ func newHandleObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaev
 	// receiveEventAsync blocks until a line event is available or the handle
 	// closes. Resolves to the line string, or null on EOF / unsupported.
 	_ = obj.Set("receiveEventAsync", func() goja.Value {
-		return asyncHandleValue(ctx, runtime, adapter, func() (any, error) {
+		return asyncHandleValue(ctx, runtime, adapter, loop, func() (any, error) {
 			eventsCh := h.Events()
 			if eventsCh == nil {
 				return goja.Null(), nil
@@ -234,7 +235,7 @@ func newHandleObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaev
 	// drainOutputAsync blocks until the handle reaches EOF and resolves with
 	// all captured output. Rejects on non-EOF read errors.
 	_ = obj.Set("drainOutputAsync", func() goja.Value {
-		return asyncHandleValue(ctx, runtime, adapter, func() (any, error) {
+		return asyncHandleValue(ctx, runtime, adapter, loop, func() (any, error) {
 			out, err := drainHandleOutput(h)
 			if err != nil {
 				return nil, err
@@ -245,7 +246,7 @@ func newHandleObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaev
 
 	// waitAsync blocks until process exit and resolves with {code, error?}.
 	_ = obj.Set("waitAsync", func() goja.Value {
-		return asyncHandleValue(ctx, runtime, adapter, func() (any, error) {
+		return asyncHandleValue(ctx, runtime, adapter, loop, func() (any, error) {
 			code, err := h.Wait()
 			result := map[string]any{"code": code}
 			if err != nil {
@@ -256,7 +257,7 @@ func newHandleObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaev
 	})
 
 	_ = obj.Set("waitReadyAsync", func(timeoutMs int) goja.Value {
-		return asyncHandleVoid(ctx, runtime, adapter, func() error {
+		return asyncHandleVoid(ctx, runtime, adapter, loop, func() error {
 			ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 			defer cancel()
 			return h.WaitReady(ctx)
@@ -312,14 +313,14 @@ func spawnOptsFromJS(runtime *goja.Runtime, v goja.Value) aimuxcore.SpawnOpts {
 	return opts
 }
 
-func asyncHandleValue(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, fn func() (any, error)) goja.Value {
-	return async.Promise(adapter, ctx, func(ctx context.Context) (any, error) {
+func asyncHandleValue(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, fn func() (any, error)) goja.Value {
+	return async.PromiseTracked(adapter, loop, ctx, func(ctx context.Context) (any, error) {
 		return fn()
-	})
+	}, nil)
 }
 
-func asyncHandleVoid(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, fn func() error) goja.Value {
-	return asyncHandleValue(ctx, runtime, adapter, func() (any, error) {
+func asyncHandleVoid(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, fn func() error) goja.Value {
+	return asyncHandleValue(ctx, runtime, adapter, loop, func() (any, error) {
 		return goja.Undefined(), fn()
 	})
 }

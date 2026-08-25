@@ -11,9 +11,11 @@ import (
 	"sync"
 	"time"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/goja_nodejs/require"
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -22,19 +24,19 @@ const toolHandlerTimeout = 30 * time.Second
 // Require returns a module loader for the osm:mcp module.
 // The adapter is used for thread-safe JS callback invocation and Promisify support.
 // If adapter is nil, the module loads but createServer is unavailable — matching exec.go behavior.
-func Require(ctx context.Context, adapter *gojaeventloop.Adapter) require.ModuleLoader {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 		// Guard against nil adapter to prevent segfault at module load time.
 		// exec.go uses the same pattern: the module loads but spawn is unavailable.
 		if adapter != nil {
-			_ = exports.Set("createServer", jsCreateServer(ctx, runtime, adapter))
+			_ = exports.Set("createServer", jsCreateServer(ctx, runtime, adapter, loop))
 		}
 	}
 }
 
 // jsCreateServer returns the JS function: createServer(name, version) → server object
-func jsCreateServer(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
+func jsCreateServer(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		name := call.Argument(0).String()
 		version := ""
@@ -50,6 +52,7 @@ func jsCreateServer(ctx context.Context, runtime *goja.Runtime, adapter *gojaeve
 		s := &mcpServer{
 			server:  srv,
 			adapter: adapter,
+			loop:    loop,
 			runtime: runtime,
 			ctx:     ctx,
 		}
@@ -80,10 +83,10 @@ type handlerResult struct {
 }
 
 // mcpServer wraps a Go MCP server for JS access.
-// adapter is required; loop is derived at call time.
 type mcpServer struct {
 	server  *mcp.Server
 	adapter *gojaeventloop.Adapter
+	loop    *goeventloop.Loop
 	runtime *goja.Runtime
 	ctx     context.Context
 
@@ -339,16 +342,13 @@ func (s *mcpServer) jsRun() func(call goja.FunctionCall) goja.Value {
 		s.cancel = cancel
 		s.mu.Unlock()
 
-		promise, settler := s.adapter.NewPromise()
-		go func() {
+		return async.PromiseTracked(s.adapter, s.loop, ctx, func(ctx context.Context) (any, error) {
 			err := s.server.Run(ctx, &mcp.StdioTransport{})
 			if err != nil && !errors.Is(err, context.Canceled) {
-				_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-			} else {
-				_ = settler.Resolve(func(rt *goja.Runtime) any { return goja.Undefined() })
+				return nil, err
 			}
-		}()
-		return promise
+			return nil, nil
+		}, nil)
 	}
 }
 

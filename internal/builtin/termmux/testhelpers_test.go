@@ -68,7 +68,7 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	registry.RegisterNativeModule("osm:termmux", Require(ctx, adapter, nil, nil))
+	registry.RegisterNativeModule("osm:termmux", Require(ctx, adapter, loop, nil, nil))
 
 	v, err := runtime.RunString(`require('osm:termmux')`)
 	if err != nil {
@@ -116,7 +116,7 @@ func newTestEnvCtx(t *testing.T, ctx context.Context) *testEnv {
 		t.Fatalf("adapter.Bind: %v", err)
 	}
 
-	registry.RegisterNativeModule("osm:termmux", Require(ctx, adapter, nil, nil))
+	registry.RegisterNativeModule("osm:termmux", Require(ctx, adapter, loop, nil, nil))
 
 	v, err := runtime.RunString(`require('osm:termmux')`)
 	if err != nil {
@@ -162,7 +162,7 @@ func wrapTestSessionManager(t *testing.T, ctx context.Context, runtime *goja.Run
 		t.Fatalf("adapter.Bind: %v", err)
 	}
 
-	wrapper := WrapSessionManager(ctx, adapter, runtime, mgr, stdin, stdout, termFd, title)
+	wrapper := WrapSessionManager(ctx, adapter, loop, runtime, mgr, stdin, stdout, termFd, title)
 
 	t.Cleanup(func() {
 		_ = loop.Shutdown(context.Background())
@@ -192,7 +192,7 @@ func wrapTestSessionManagerWithLoop(t *testing.T, ctx context.Context, runtime *
 		t.Fatalf("adapter.Bind: %v", err)
 	}
 
-	wrapper := WrapSessionManager(ctx, adapter, runtime, mgr, stdin, stdout, termFd, title)
+	wrapper := WrapSessionManager(ctx, adapter, loop, runtime, mgr, stdin, stdout, termFd, title)
 
 	testLoops.Store(runtime, loop)
 	loopDone := make(chan struct{})

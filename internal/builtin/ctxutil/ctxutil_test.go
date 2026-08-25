@@ -33,7 +33,7 @@ func setupBuildContext(t *testing.T) (*goja.Runtime, *goeventloop.Loop) {
 	exports := runtime.NewObject()
 	_ = module.Set("exports", exports)
 
-	loader := Require(context.Background(), adapter)
+	loader := Require(context.Background(), adapter, loop)
 	loader(runtime, module)
 
 	if err := runtime.Set("exports", exports); err != nil {
@@ -618,7 +618,7 @@ func TestRequire_UndefinedExports(t *testing.T) {
 	runtime := goja.New()
 	module := runtime.NewObject()
 
-	loader := Require(context.Background(), nil)
+	loader := Require(context.Background(), nil, nil)
 	loader(runtime, module)
 
 	exportsVal := module.Get("exports")

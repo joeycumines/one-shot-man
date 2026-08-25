@@ -58,6 +58,7 @@ func newPersistenceIntegrationEval(t *testing.T, state *termmux.PersistedManager
 	eng.SetGlobal("tuiMux", termmuxmod.WrapSessionManager(
 		ctx,
 		eng.ScriptingEngine().Adapter(),
+		eng.ScriptingEngine().Loop(),
 		eng.ScriptingEngine().Runtime(),
 		mgr,
 		nil,

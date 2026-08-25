@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin/async"
@@ -213,10 +214,10 @@ func (p *SSEParser) processLine(line string) {
 
 // wrapSSEParserJS returns a goja.Object wrapping the SSEParser for JS use.
 // The read() method returns Promise<{value: {event, data, id}, done: boolean}>.
-func wrapSSEParserJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, parser *SSEParser) *goja.Object {
+func wrapSSEParserJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, parser *SSEParser) *goja.Object {
 	obj := rt.NewObject()
 	_ = obj.Set("read", func(call goja.FunctionCall) goja.Value {
-		return async.Promise(adapter, ctx, func(ctx context.Context) (any, error) {
+		return async.PromiseTracked(adapter, loop, ctx, func(ctx context.Context) (any, error) {
 			ev, done, err := parser.Next()
 			if err != nil {
 				return nil, err
@@ -225,7 +226,7 @@ func wrapSSEParserJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventlo
 				return map[string]any{"value": nil, "done": true}, nil
 			}
 			return map[string]any{"value": map[string]any{"event": ev.Event, "data": ev.Data, "id": ev.ID}, "done": false}, nil
-		})
+		}, nil)
 	})
 
 	return obj

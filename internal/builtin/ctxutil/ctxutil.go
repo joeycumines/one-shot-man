@@ -9,10 +9,11 @@ import (
 	"reflect"
 	"strings"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	gosmargv "github.com/joeycumines/one-shot-man/internal/argv"
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
 
 //go:embed contextManager.js
@@ -83,7 +84,7 @@ type extractedItem struct {
 // Require returns a CommonJS native module under "osm:ctxutil".
 // buildContext returns a Promise<string> because lazy-diff and lazy-exec
 // perform blocking subprocess I/O that must not stall the event loop.
-func Require(baseCtx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
+func Require(baseCtx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exportsVal := module.Get("exports")
 		var exports *goja.Object
@@ -99,10 +100,10 @@ func Require(baseCtx context.Context, adapter *gojaeventloop.Adapter) func(runti
 			items := extractItems(runtime, call.Argument(0))
 			txtarContent := extractTxtar(runtime, call)
 
-			return async.Promise(adapter, baseCtx, func(ctx context.Context) (any, error) {
+			return async.PromiseTracked(adapter, loop, baseCtx, func(ctx context.Context) (any, error) {
 				result := renderContext(ctx, items, txtarContent)
 				return result, nil
-			})
+			}, nil)
 		})
 
 		// Load contextManager

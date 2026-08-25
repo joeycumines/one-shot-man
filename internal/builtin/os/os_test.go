@@ -37,7 +37,7 @@ func setupModuleAllPlatforms(t *testing.T, sink func(string)) (*goja.Runtime, *g
 	exports := runtime.NewObject()
 	_ = module.Set("exports", exports)
 
-	loader := Require(context.Background(), nil, sink)
+	loader := Require(context.Background(), nil, nil, sink)
 	loader(runtime, module)
 
 	return runtime, exports
@@ -67,7 +67,7 @@ func asyncTestEnv(t *testing.T) (*goja.Runtime, func(string) (goja.Value, error)
 	module := runtime.NewObject()
 	exports := runtime.NewObject()
 	_ = module.Set("exports", exports)
-	Require(context.Background(), adapter, nil)(runtime, module)
+	Require(context.Background(), adapter, loop, nil)(runtime, module)
 	_ = runtime.Set("os", module.Get("exports"))
 
 	resultCh := make(chan goja.Value, 1)

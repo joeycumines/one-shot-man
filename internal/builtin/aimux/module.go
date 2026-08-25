@@ -3,6 +3,7 @@ package aimux
 import (
 	"context"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 
@@ -12,7 +13,7 @@ import (
 // Require returns a module loader for `osm:aimux`. It exposes event/state
 // constants and bindings for provider, parser, TUI state, and event stream
 // management via the binding_*.go files.
-func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -36,7 +37,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *
 		_ = exports.Set("STATE_RATE_LIMITED", int(aimuxcore.StateRateLimited))
 		_ = exports.Set("STATE_PERMISSION_PROMPT", int(aimuxcore.StatePermissionPrompt))
 
-		registerProviderBindings(ctx, adapter, runtime, exports)
+		registerProviderBindings(ctx, adapter, loop, runtime, exports)
 		registerParserBindings(runtime, exports)
 		registerTUIStateBindings(runtime, exports)
 		registerEventStreamBindings(runtime, exports)

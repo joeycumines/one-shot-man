@@ -14,6 +14,7 @@ import (
 	"context"
 	"time"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin/async"
@@ -26,7 +27,7 @@ import (
 // The base context is captured and threaded into every async goroutine so that
 // engine shutdown cancels in-flight operations. The adapter provides Promise
 // resolution and event-loop scheduling.
-func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -51,7 +52,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *
 			if err != nil {
 				panic(runtime.NewTypeError("%s", err.Error()))
 			}
-			return newRepoWrapper(runtime, repo, ctx, adapter)
+			return newRepoWrapper(runtime, repo, ctx, adapter, loop)
 		})
 
 		// openDetect(path) -> Repo
@@ -62,7 +63,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *
 			if err != nil {
 				panic(runtime.NewTypeError("%s", err.Error()))
 			}
-			return newRepoWrapper(runtime, repo, ctx, adapter)
+			return newRepoWrapper(runtime, repo, ctx, adapter, loop)
 		})
 
 		// defaultBranch(path) -> string
@@ -136,7 +137,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *
 //
 // Mutating/state-scanning methods (addAll, commit, push, hasStagedChanges)
 // return Promises and run off the event loop via Promisify.
-func newRepoWrapper(runtime *goja.Runtime, repo *gitops.Repo, ctx context.Context, adapter *gojaeventloop.Adapter) goja.Value {
+func newRepoWrapper(runtime *goja.Runtime, repo *gitops.Repo, ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) goja.Value {
 	obj := runtime.NewObject()
 
 	// defaultBranch() -> string
@@ -183,48 +184,48 @@ func newRepoWrapper(runtime *goja.Runtime, repo *gitops.Repo, ctx context.Contex
 	// hasStagedChanges() -> Promise<bool>
 	// ASYNC: walks worktree status, can be slow for large repos.
 	_ = obj.Set("hasStagedChanges", func(call goja.FunctionCall) goja.Value {
-		return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
+		return async.PromiseTracked(adapter, loop, ctx, func(_ context.Context) (any, error) {
 			has, err := repo.HasStagedChanges()
 			if err != nil {
 				return nil, err
 			}
 			return has, nil
-		})
+		}, nil)
 	})
 
 	// addAll() -> Promise<void>
 	// ASYNC: stages all files, walks worktree, writes index.
 	_ = obj.Set("addAll", func(call goja.FunctionCall) goja.Value {
-		return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
+		return async.PromiseTracked(adapter, loop, ctx, func(_ context.Context) (any, error) {
 			if err := repo.AddAll(); err != nil {
 				return nil, err
 			}
 			return nil, nil
-		})
+		}, nil)
 	})
 
 	// commit(msg) -> Promise<string>
 	// ASYNC: creates commit, writes git objects to disk.
 	_ = obj.Set("commit", func(call goja.FunctionCall) goja.Value {
 		msg := call.Argument(0).String()
-		return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
+		return async.PromiseTracked(adapter, loop, ctx, func(_ context.Context) (any, error) {
 			hash, err := repo.Commit(msg, time.Now())
 			if err != nil {
 				return nil, err
 			}
 			return hash.String(), nil
-		})
+		}, nil)
 	})
 
 	// push() -> Promise<void>
 	// ASYNC: network I/O to remote. Uses context for cancellation.
 	_ = obj.Set("push", func(call goja.FunctionCall) goja.Value {
-		return async.Promise(adapter, ctx, func(opCtx context.Context) (any, error) {
+		return async.PromiseTracked(adapter, loop, ctx, func(opCtx context.Context) (any, error) {
 			if err := repo.Push(opCtx); err != nil {
 				return nil, err
 			}
 			return nil, nil
-		})
+		}, nil)
 	})
 
 	return obj

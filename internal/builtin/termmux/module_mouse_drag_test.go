@@ -38,7 +38,7 @@ func setupMouseDragMgr(t *testing.T) (*goja.Runtime, *parent.SessionManager, fun
 	}
 
 	runtime, termmux, env := testRequireCtx(t, ctx)
-	tuiMux := WrapSessionManager(ctx, env.adapter, runtime, mgr, nil, nil, -1, "")
+	tuiMux := WrapSessionManager(ctx, env.adapter, env.loop, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tm", tuiMux)
 	_ = runtime.Set("termmux", termmux)
 

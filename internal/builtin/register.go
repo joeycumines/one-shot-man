@@ -12,6 +12,7 @@ import (
 	"github.com/joeycumines/goja_nodejs/require"
 	aimuxmod "github.com/joeycumines/one-shot-man/internal/builtin/aimux"
 	"github.com/joeycumines/one-shot-man/internal/builtin/argv"
+	astpackmod "github.com/joeycumines/one-shot-man/internal/builtin/astpack"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	textareamod "github.com/joeycumines/one-shot-man/internal/builtin/bubbles/textarea"
 	viewportmod "github.com/joeycumines/one-shot-man/internal/builtin/bubbles/viewport"
@@ -19,6 +20,7 @@ import (
 	bubblezonemod "github.com/joeycumines/one-shot-man/internal/builtin/bubblezone"
 	cryptomod "github.com/joeycumines/one-shot-man/internal/builtin/crypto"
 	ctxutilmod "github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
+	difftriagemod "github.com/joeycumines/one-shot-man/internal/builtin/difftriage"
 	encodingmod "github.com/joeycumines/one-shot-man/internal/builtin/encoding"
 	execmod "github.com/joeycumines/one-shot-man/internal/builtin/exec"
 	fetchmod "github.com/joeycumines/one-shot-man/internal/builtin/fetch"
@@ -35,8 +37,6 @@ import (
 	pabtmod "github.com/joeycumines/one-shot-man/internal/builtin/pabt"
 	pathmod "github.com/joeycumines/one-shot-man/internal/builtin/path"
 	regexpmod "github.com/joeycumines/one-shot-man/internal/builtin/regexp"
-	astpackmod "github.com/joeycumines/one-shot-man/internal/builtin/astpack"
-	difftriagemod "github.com/joeycumines/one-shot-man/internal/builtin/difftriage"
 	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
 	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
 	boxmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/box"
@@ -109,22 +109,22 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"nextIntegerID", nextintegerid.Require)
 	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require)
 	registry.RegisterNativeModule(prefix+"regexp", regexpmod.Require)
-	registry.RegisterNativeModule(prefix+"tokenizer", tokenizermod.Require(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"tokenizer", tokenizermod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 
-	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
-	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"mcpcallback", mcpcallbackmod.Require(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"aimux", aimuxmod.Require(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, eventLoopProvider.Adapter(), tuiSink))
-	registry.RegisterNativeModule(prefix+"path", pathmod.Require(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"ctxutil", ctxutilmod.Require(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
+	registry.RegisterNativeModule(prefix+"mcpcallback", mcpcallbackmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
+	registry.RegisterNativeModule(prefix+"aimux", aimuxmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
+	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop(), tuiSink))
+	registry.RegisterNativeModule(prefix+"path", pathmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
+	registry.RegisterNativeModule(prefix+"ctxutil", ctxutilmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 	registry.RegisterNativeModule(prefix+"text/template", templatemod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"unicodetext", unicodetextmod.Require(ctx))
-	registry.RegisterNativeModule(prefix+"gitops", gitopsmod.Require(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"astpack", astpackmod.Require(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"diff_triage", difftriagemod.Require(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"termmux", termmuxmod.Require(ctx, eventLoopProvider.Adapter(), terminalReader(terminalProvider), terminalWriter(terminalProvider)))
+	registry.RegisterNativeModule(prefix+"gitops", gitopsmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
+	registry.RegisterNativeModule(prefix+"astpack", astpackmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
+	registry.RegisterNativeModule(prefix+"diff_triage", difftriagemod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
+	registry.RegisterNativeModule(prefix+"termmux", termmuxmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop(), terminalReader(terminalProvider), terminalWriter(terminalProvider)))
 
 	pbMod, err := gojaprotobuf.New(eventLoopProvider.Runtime())
 	if err != nil {

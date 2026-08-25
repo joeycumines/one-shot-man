@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	"github.com/joeycumines/one-shot-man/internal/tokenizer"
 )
 
@@ -37,7 +39,7 @@ import (
 // const wl = tok.loadWordLevel(jsonStr);
 // Require returns a module loader for `osm:tokenizer` that uses the provided
 // base context and event-loop adapter for async file I/O.
-func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(vm *goja.Runtime, module *goja.Object) {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(vm *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -93,20 +95,15 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(vm *goja.
 				_ = settler.Resolve(func(rt *goja.Runtime) any { return goja.Null() })
 				return promise
 			}
-			promise, settler := adapter.NewPromise()
-			go func() {
+			return async.PromiseTracked(adapter, loop, ctx, func(ctx context.Context) (any, error) {
 				tok, err := tokenizer.LoadTokenizerFile(path)
 				if err != nil {
-					_ = settler.Reject(func(rt *goja.Runtime) any {
-						return rt.NewGoError(fmt.Errorf("loadFile: %w", err))
-					})
-					return
+					return nil, fmt.Errorf("loadFile: %w", err)
 				}
-				_ = settler.Resolve(func(rt *goja.Runtime) any {
-					return newTokenizerWrapper(rt, tok)
-				})
-			}()
-			return promise
+				return tok, nil
+			}, func(rt *goja.Runtime, result any) any {
+				return newTokenizerWrapper(rt, result.(*tokenizer.Tokenizer))
+			})
 		})
 
 		// ---- loadJSON(jsonStr: string): TokenizerWrapper ----

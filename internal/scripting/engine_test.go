@@ -326,28 +326,6 @@ func TestSetGlobal_QueueSafeFromGoroutine(t *testing.T) {
 	}
 }
 
-// TestSetGlobal_ThreadCheckMode verifies that SetThreadCheckMode enables panic on wrong goroutine.
-func TestSetGlobal_ThreadCheckMode(t *testing.T) {
-	t.Parallel()
-	var stdout, stderr bytes.Buffer
-	ctx := context.Background()
-
-	engine := newTestEngine(t, ctx, &stdout, &stderr)
-	engine.SetTestMode(true)
-
-	// Enable thread check mode
-	engine.SetThreadCheckMode(true)
-
-	// Set a value from the main goroutine (should be the event loop goroutine after SetThreadCheckMode)
-	engine.SetGlobal("testKey", "testValue")
-
-	// Get the value
-	value := engine.GetGlobal("testKey")
-	if value != "testValue" {
-		t.Errorf("Expected 'testValue', got: %v", value)
-	}
-}
-
 // TestSetGlobal_DirectAccess_WorksOnEventLoop verifies direct access works when called correctly.
 func TestSetGlobal_DirectAccess_WorksOnEventLoop(t *testing.T) {
 	t.Parallel()
@@ -638,8 +616,10 @@ func TestQueueSetGlobal_ValueTypes(t *testing.T) {
 	}
 }
 
-// TestThreadCheckMode_PanicDetection verifies SetThreadCheckMode causes panic on wrong goroutine.
-func TestThreadCheckMode_PanicDetection(t *testing.T) {
+// TestThreadCheckMode_OffLoopOwnerSafe verifies SetGlobal/GetGlobal remain
+// owner-safe when called from a non-event-loop goroutine: no panic occurs and
+// values round-trip through the loop-serialized path.
+func TestThreadCheckMode_OffLoopOwnerSafe(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
@@ -647,57 +627,54 @@ func TestThreadCheckMode_PanicDetection(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	// Enable thread check mode - this captures the current goroutine ID
-	engine.SetThreadCheckMode(true)
-
 	// Calling SetGlobal from the same goroutine should work
 	engine.SetGlobal("testKey", "testValue")
 
-	// Now verify that calling from a different goroutine would panic
-	// We use a subtest to catch the expected panic
-	t.Run("SetGlobal_panics_on_wrong_goroutine", func(t *testing.T) {
-		panicChan := make(chan any, 1)
+	t.Run("SetGlobal_off_loop_does_not_panic", func(t *testing.T) {
+		done := make(chan error, 1)
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					panicChan <- r
+					done <- fmt.Errorf("unexpected panic: %v", r)
 				}
 			}()
-			// This should panic because we're not on the event loop goroutine
 			engine.SetGlobal("wrongGoroutineKey", "value")
+			done <- nil
 		}()
-		// Wait for the goroutine to complete
 		select {
-		case r := <-panicChan:
-			// Panic was caught as expected
-			if r == nil {
-				t.Error("Expected non-nil panic value")
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
 			}
-		case <-time.After(time.Second):
-			t.Error("Timeout waiting for panic from goroutine")
+		case <-time.After(2 * time.Second):
+			t.Fatal("Timeout waiting for off-loop SetGlobal")
 		}
 	})
 
-	t.Run("GetGlobal_panics_on_wrong_goroutine", func(t *testing.T) {
-		panicChan := make(chan any, 1)
+	t.Run("GetGlobal_off_loop_returns_value", func(t *testing.T) {
+		type result struct {
+			value any
+			err   error
+		}
+		done := make(chan result, 1)
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					panicChan <- r
+					done <- result{err: fmt.Errorf("unexpected panic: %v", r)}
 				}
 			}()
-			// This should panic because we're not on the event loop goroutine
-			_ = engine.GetGlobal("testKey")
+			done <- result{value: engine.GetGlobal("testKey")}
 		}()
-		// Wait for the goroutine to complete
 		select {
-		case r := <-panicChan:
-			// Panic was caught as expected
-			if r == nil {
-				t.Error("Expected non-nil panic value")
+		case r := <-done:
+			if r.err != nil {
+				t.Fatal(r.err)
 			}
-		case <-time.After(time.Second):
-			t.Error("Timeout waiting for panic from goroutine")
+			if r.value != "testValue" {
+				t.Fatalf("GetGlobal round-trip = %v, want testValue", r.value)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("Timeout waiting for off-loop GetGlobal")
 		}
 	})
 }

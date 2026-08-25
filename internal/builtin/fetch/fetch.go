@@ -11,10 +11,11 @@ import (
 	"strings"
 	"time"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/goja_nodejs/require"
-	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
 
 const defaultMaxResponseSize int64 = 10 << 20
@@ -24,7 +25,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 		exports := module.Get("exports").(*goja.Object)
 		if adapter != nil {
 			_ = exports.Set("fetch", jsFetch(ctx, runtime, adapter, loop))
-			_ = exports.Set("sseReader", jsSSEReader(ctx, runtime, adapter))
+			_ = exports.Set("sseReader", jsSSEReader(ctx, runtime, adapter, loop))
 		}
 	}
 }
@@ -67,8 +68,11 @@ func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.
 			}
 		}
 		req = req.WithContext(reqCtx)
-		promise, settler := adapter.NewPromise()
-		go func() {
+		type fetchResult struct {
+			resp *http.Response
+			body []byte
+		}
+		return async.PromiseTracked(adapter, loop, reqCtx, func(ctx context.Context) (any, error) {
 			defer cancel()
 			if abortCleanup != nil {
 				defer abortCleanup()
@@ -76,29 +80,25 @@ func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.
 			client := &http.Client{}
 			resp, doErr := client.Do(req)
 			if doErr != nil {
-				_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(doErr) })
-				return
+				return nil, doErr
 			}
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 			resp.Body.Close()
 			if readErr != nil {
-				_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(readErr) })
-				return
+				return nil, readErr
 			}
 			if int64(len(body)) > maxBody {
-				err := fmt.Errorf("response body exceeds maximum size of %d bytes", maxBody)
-				_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-				return
+				return nil, fmt.Errorf("response body exceeds maximum size of %d bytes", maxBody)
 			}
-			_ = settler.Resolve(func(rt *goja.Runtime) any {
-				return buildResponse(ctx, rt, adapter, loop, resp, body)
-			})
-		}()
-		return promise
+			return fetchResult{resp: resp, body: body}, nil
+		}, func(rt *goja.Runtime, result any) any {
+			fr := result.(fetchResult)
+			return buildResponse(ctx, rt, adapter, loop, fr.resp, fr.body)
+		})
 	}
 }
 
-func jsSSEReader(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
+func jsSSEReader(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		bodyArg := call.Argument(0)
 		if bodyArg == nil || goja.IsUndefined(bodyArg) || goja.IsNull(bodyArg) {
@@ -121,7 +121,7 @@ func jsSSEReader(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventl
 			panic(runtime.NewGoError(err))
 		}
 		parser := NewSSEParser(reader)
-		return wrapSSEParserJS(ctx, runtime, adapter, parser)
+		return wrapSSEParserJS(ctx, runtime, adapter, loop, parser)
 	}
 }
 

@@ -3,6 +3,7 @@ package difftriage
 import (
 	"context"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin/async"
@@ -10,7 +11,7 @@ import (
 )
 
 // Require returns the osm:diff_triage module loader.
-func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.Runtime, *goja.Object) {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(*goja.Runtime, *goja.Object) {
 	return func(rt *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 		_ = exports.Set("triage", func(call goja.FunctionCall) goja.Value {
@@ -21,10 +22,10 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.Run
 			if len(call.Arguments) > 0 {
 				diff = call.Argument(0).String()
 			}
-			return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
+			return async.PromiseTracked(adapter, loop, ctx, func(_ context.Context) (any, error) {
 				results := triage.TriageDiff(diff)
 				return results, nil
-			})
+			}, nil)
 		})
 		_ = exports.Set("triageSummary", func(call goja.FunctionCall) goja.Value {
 			if adapter == nil {
@@ -34,7 +35,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.Run
 			if len(call.Arguments) > 0 {
 				diff = call.Argument(0).String()
 			}
-			return async.Promise(adapter, ctx, func(_ context.Context) (any, error) {
+			return async.PromiseTracked(adapter, loop, ctx, func(_ context.Context) (any, error) {
 				results := triage.TriageDiff(diff)
 				summary := triage.TriageSummary(results)
 				// Convert to map[string]int for JS.
@@ -43,7 +44,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.Run
 					m[string(k)] = v
 				}
 				return m, nil
-			})
+			}, nil)
 		})
 	}
 }

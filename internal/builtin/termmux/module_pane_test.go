@@ -48,7 +48,7 @@ func setupPaneMgr(t *testing.T) (*goja.Runtime, func()) {
 		t.Fatalf("adapter.Bind: %v", err)
 	}
 
-	tuiMux := WrapSessionManager(ctx, adapter, runtime, mgr, nil, nil, -1, "")
+	tuiMux := WrapSessionManager(ctx, adapter, loop, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
 	return runtime, func() {
@@ -85,18 +85,18 @@ func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
 		t.Fatalf("adapter.Bind: %v", err)
 	}
 
-	tuiMux := WrapSessionManager(ctx, adapter, runtime, mgr, nil, nil, -1, "")
+	tuiMux := WrapSessionManager(ctx, adapter, loop, runtime, mgr, nil, nil, -1, "")
 
 	// Set up the termmux module namespace so newBoundedSession etc. are available.
 	exports := runtime.NewObject()
 	_ = exports.Set("newSessionManager", func(call goja.FunctionCall) goja.Value {
-		return newSessionManager(ctx, adapter, runtime, call)
+		return newSessionManager(ctx, adapter, loop, runtime, call)
 	})
 	_ = exports.Set("newBoundedSession", func(call goja.FunctionCall) goja.Value {
-		return newBoundedSession(ctx, adapter, runtime, mgr, call)
+		return newBoundedSession(ctx, adapter, loop, runtime, mgr, call)
 	})
 	_ = exports.Set("newCaptureSession", func(call goja.FunctionCall) goja.Value {
-		return newCaptureSession(ctx, adapter, runtime, call)
+		return newCaptureSession(ctx, adapter, loop, runtime, call)
 	})
 	_ = runtime.Set("termmux", exports)
 	_ = runtime.Set("tuiMux", tuiMux)

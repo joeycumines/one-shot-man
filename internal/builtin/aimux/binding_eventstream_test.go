@@ -46,7 +46,7 @@ func eventStreamTestEnv(t *testing.T) (*goja.Runtime, func(string) goja.Value) {
 	bridge := btmod.NewBridge(ctx, loop, vm, reg, adapter)
 	t.Cleanup(func() { bridge.Stop() })
 
-	reg.RegisterNativeModule("osm:aimux", Require(ctx, adapter))
+	reg.RegisterNativeModule("osm:aimux", Require(ctx, adapter, loop))
 
 	runJS := func(script string) goja.Value {
 		t.Helper()

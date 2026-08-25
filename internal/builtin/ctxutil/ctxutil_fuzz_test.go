@@ -49,7 +49,7 @@ func FuzzBuildContext(f *testing.F) {
 		exports := runtime.NewObject()
 		_ = module.Set("exports", exports)
 
-		loader := Require(context.Background(), adapter)
+		loader := Require(context.Background(), adapter, loop)
 		loader(runtime, module)
 
 		if err := runtime.Set("exports", exports); err != nil {

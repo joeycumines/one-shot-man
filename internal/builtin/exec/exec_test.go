@@ -41,7 +41,7 @@ func asyncTestEnv(t *testing.T) (*goja.Runtime, func(string) (goja.Value, error)
 	module := runtime.NewObject()
 	exports := runtime.NewObject()
 	_ = module.Set("exports", exports)
-	Require(context.Background(), adapter)(runtime, module)
+	Require(context.Background(), adapter, loop)(runtime, module)
 	_ = runtime.Set("exec", module.Get("exports"))
 
 	resultCh := make(chan goja.Value, 1)

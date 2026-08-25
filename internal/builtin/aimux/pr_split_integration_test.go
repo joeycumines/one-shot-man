@@ -65,14 +65,14 @@ func prSplitTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	t.Cleanup(func() { bridge.Stop() })
 
 	// Register exec module (bt is auto-registered by bridge).
-	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx, adapter))
+	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx, adapter, loop))
 
 	// Register os module so JS code can use os.tmpdir() for worktrees
 	// instead of falling back to /tmp (which may contain a stale .git).
-	reg.RegisterNativeModule("osm:os", osmod.Require(ctx, adapter, nil))
+	reg.RegisterNativeModule("osm:os", osmod.Require(ctx, adapter, loop, nil))
 
 	// Register aimux module for strategy selection.
-	reg.RegisterNativeModule("osm:aimux", Require(ctx, adapter))
+	reg.RegisterNativeModule("osm:aimux", Require(ctx, adapter, loop))
 
 	runJS := func(script string) goja.Value {
 		t.Helper()

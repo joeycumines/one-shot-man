@@ -24,6 +24,7 @@ type muxState struct {
 	ctx                  context.Context
 	runtime              *goja.Runtime
 	mgr                  *parent.SessionManager
+	loop                 *goeventloop.Loop
 	stdin                io.Reader
 	stdout               io.Writer
 	termFd               int

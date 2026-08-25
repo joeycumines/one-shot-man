@@ -350,10 +350,10 @@ func createTickerJSWrapper(bridge *Bridge, runtime *goja.Runtime, ticker bt.Tick
 
 	_ = obj.Set("done", func(call goja.FunctionCall) goja.Value {
 		doneOnce.Do(func() {
-			donePromise = async.Promise(bridge.adapter, bridge.ctx, func(ctx context.Context) (any, error) {
+			donePromise = async.PromiseTracked(bridge.adapter, bridge.loop, bridge.ctx, func(ctx context.Context) (any, error) {
 				<-ticker.Done()
 				return nil, ticker.Err()
-			})
+			}, nil)
 		})
 		return donePromise
 	})
@@ -412,10 +412,10 @@ func createManagerJSWrapper(bridge *Bridge, runtime *goja.Runtime, manager bt.Ma
 
 	_ = obj.Set("done", func(call goja.FunctionCall) goja.Value {
 		doneOnce.Do(func() {
-			donePromise = async.Promise(bridge.adapter, bridge.ctx, func(ctx context.Context) (any, error) {
+			donePromise = async.PromiseTracked(bridge.adapter, bridge.loop, bridge.ctx, func(ctx context.Context) (any, error) {
 				<-manager.Done()
 				return nil, manager.Err()
-			})
+			}, nil)
 		})
 		return donePromise
 	})

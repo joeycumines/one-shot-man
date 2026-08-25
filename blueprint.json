@@ -35,7 +35,7 @@
     "ALWAYS": "Tee every long command to scratch/ before tail/head per globalAlerts. Pattern: mkdir -p scratch && <cmd> 2>&1 | tee scratch/<name>.log | tail -n 100; echo EXIT:${PIPESTATUS[0]}"
   },
   "statusSection": {
-    "currentState": "Task 12/24 NEXT: PROMISE-CONSISTENCY A2 shutdown-tracked settlement sweep (canonical rule recorded in A1).",
+    "currentState": "Task 13/24 NEXT: F9-F11 sync spawn/disk (exec/aimux/termmux spawns off-loop; termmux/os disk async) — NOTE spawn sites may already be tracked via A2 PromiseTracked threading; re-scope against current tree first.",
     "goalState": "All 6 red packages green, sandbox escape closed, fetch streaming restored with liveness, Bridge nil-adapter class eliminated, Bridge stall gone (5s+forever -> sub-ms), tokenizer race gone, scripting races gone, binding contract converged (zero loop-monopolizing sync twins), duplication collapsed (~350+80+60 lines net deletion), stale microtask comments fixed, WithLogger/Metrics wired, verification parity (-race/fuzz/determinism/coverage) green, docs/AGENTS realigned, and BOTH `gmake -j 10 make-all-with-log` and `gmake -j 10 make-all-in-container` pass with zero unintended failures (go vet/build/deadcode/staticcheck + `go test -timeout=20m ./...`). Two contiguous strict-review-gate passes confirm no hard-coded test-only fixes.",
     "goalLog": [
       {
@@ -397,7 +397,7 @@
       "task": "PROMISE-CONSISTENCY A2: shutdown-tracked settlement sweep per canonical rule",
       "description": "Execute A1's classifications: migrate every site classified migrate-to-Promisify to loop.Promisify (thread *Loop through module Require using the fetch register.go eventLoopProvider pattern where the module lacks it; respect 'Consistent constructors' contract — ctx first param, adapter next, loop threading explicit not stored ad hoc). Sites expected to include tokenizer loadFile (bare goroutine today), and any inventory sites doing durable I/O with ignored settler errors. Keep-NewPromise sites get a one-line justification in their package docstring or A1 record. Do NOT duplicate F15-F16 scope: only sites touched by the new rule are edited there; overlapping ignored-settler-error fixes land in whichever task runs later without double-editing.",
       "acceptance": "grep gate per A1's final rule (expected shape: no `adapter.NewPromise()` followed by bare `go func()` outside documented exceptions — exact regex fixed in A1 decisions). `go test -race` green on every migrated package. Shutdown-behavior test where feasible: settle-after-Shutdown path rejects or completes rather than hangs (tokenizer loadFile concurrent hammer still passes). Both make targets unaffected locally (full dual-target run remains Task FINAL-DUAL).",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/builtin/tokenizer/tokenizer.go",
         "internal/builtin/fetch/readable_stream.go",

@@ -73,3 +73,5 @@ DIRECTIVE.txt
 .mcp.json
 __pycache__
 /mockclaude
+
+.dbg/

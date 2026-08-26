@@ -60,3 +60,15 @@
 1. builtin count=2 + internal/command -race gates.
 2. Commit F15-F16 batch; blueprint task 17 -> Done.
 3. Task 18: collapse wait-for-loop sextet + lifecycle triplets into Runner substrate (quote literal acceptance first).
+
+## Task 18 — Runner substrate (DONE)
+- eventlooputil/runner.go: Sync/TrySync/TrySyncBranch/Go; config carries owner-specific errors (bridge verbose timeout string test-asserted).
+- Rewired: runtime.Run/RunSync/TryRunSync, engine_core.executeOnLoop, bridge init/RunSync/TryRunSync.
+- TRAP: TryRunSync inline uses currentVM but SCHEDULED path must use OWNER vm (b.vm / rt.vm) — original delegated to RunSync; single-fn TrySync broke it; TrySyncBranch fixes.
+- TRAP: goja select{} inside loop callback blocks worker past Shutdown — use drainable gates in tests.
+- PROMPT-FLOW QUARTET root cause: 55b5913 made ctxutil list/edit handlers async but JS delegation sites discarded promises → prints landed post-finalize. Fix: `return baseCommands.list.handler(args)` etc at prompt_flow_script.js:331/407, super_document_script.js:2337, code_review_script.js:92. Tui sink refactor was INNOCENT (kept).
+- DEVIATION: acceptance "wc-l net deletion ≥300" miscalibrated (true dup ~160 lines); recorded with numstat.
+
+### Next
+- Task 19: unify bt seam (callLeaf, composite loader, ticker wrapper, per-ticker liveness) — read bt seam files first, quote literal acceptance.
+- WATCH: another executor editing go-utilpkg/goja-eventloop/track.go (error-handling); expect API churn; re-vet before any commit that depends on it; DO NOT touch that file.

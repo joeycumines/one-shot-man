@@ -58,6 +58,9 @@ type Bridge struct {
 	// stopParentCtx keeps the context.AfterFunc stop handle alive
 	// to prevent GC from collecting it before parent context cancellation.
 	stopParentCtx func() bool
+
+	// loopRunner is the shared submit-and-wait substrate, built during New.
+	loopRunner *eventlooputil.Runner
 }
 
 // DefaultTimeout is the maximum duration to wait for RunSync operations.
@@ -128,17 +131,25 @@ func newBridgeWithLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Run
 	// 3. Any subsequent require sees published module AND captured ID
 
 	// Initialize the VM within the event loop FIRST
-	errCh := make(chan error, 1)
-	submitErr := loop.Submit(func() {
-		errCh <- b.initializeJS()
+	initRunner, runnerErr := eventlooputil.NewRunner(eventlooputil.RunnerConfig{
+		Loop:          loop,
+		OnLoopThread:  func() bool { return eventlooputil.IsLoopThread(b.eventLoopGoroutineID.Load()) },
+		Done:          b.ctx.Done(),
+		NotRunningErr: errors.New("event loop not running"),
+		StoppedErr:    errors.New("bridge stopped before completion"),
+		TimeoutErr: func(d time.Duration) error {
+			return fmt.Errorf("operation timed out after %v (consider increasing timeout or checking for infinite loops in JS code)", d)
+		},
 	})
-	if submitErr != nil {
+	if runnerErr != nil {
 		cancel()
 		b.manager.Stop()
-		panic(fmt.Sprintf("failed to initialize: %v", submitErr))
+		panic(runnerErr)
 	}
-
-	if err := <-errCh; err != nil {
+	b.loopRunner = initRunner
+	if err := initRunner.Sync(func() error {
+		return b.initializeJS()
+	}, 0); err != nil {
 		cancel()
 		b.manager.Stop()
 		panic(fmt.Sprintf("failed to initialize JavaScript environment: %v", err))
@@ -360,40 +371,12 @@ func (b *Bridge) RunSync(fn func(*goja.Runtime) error) error {
 	timeout := b.timeout
 	b.mu.RUnlock()
 
-	if eventlooputil.IsLoopThread(b.eventLoopGoroutineID.Load()) {
-		return fn(b.vm)
-	}
-
+	// The runner owns the on-loop fast path (deadlock prevention), the
+	// submit, and the timeout/cancellation wait.
 	vm := b.vm
-	errCh := make(chan error, 1)
-	submitErr := b.loop.Submit(func() {
-		errCh <- fn(vm)
-	})
-	if submitErr != nil {
-		return errors.New("event loop not running")
-	}
-
-	// Wait with timeout and cancellation support
-	if timeout > 0 {
-		timer := time.NewTimer(timeout)
-		defer timer.Stop() // Cleanup prevents goroutine leak on early return
-		select {
-		case err := <-errCh:
-			return err
-		case <-b.Done():
-			return errors.New("bridge stopped before completion")
-		case <-timer.C:
-			return fmt.Errorf("operation timed out after %v (consider increasing timeout or checking for infinite loops in JS code)", timeout)
-		}
-	}
-
-	// No timeout - just wait with cancellation support
-	select {
-	case err := <-errCh:
-		return err
-	case <-b.Done():
-		return errors.New("bridge stopped before completion")
-	}
+	return b.loopRunner.TrySync(func() error {
+		return fn(vm)
+	}, timeout)
 }
 
 // RunJSSync implements bubbletea.JSRunner interface.
@@ -490,12 +473,14 @@ func (b *Bridge) TryRunSync(currentVM *goja.Runtime, fn func(*goja.Runtime) erro
 	}
 	b.mu.RUnlock()
 
-	if eventlooputil.IsLoopThread(b.eventLoopGoroutineID.Load()) {
-		return fn(currentVM)
-	}
-
-	// STEP 3: Not on event loop - schedule and wait
-	return b.RunSync(fn)
+	// STEP 2/3: The runner inlines when already on the event loop goroutine
+	// (executing against the caller-provided currentVM) and otherwise
+	// schedules onto the bridge's own VM via RunSync semantics.
+	return b.loopRunner.TrySyncBranch(
+		func() error { return fn(currentVM) },
+		func() error { return fn(b.vm) },
+		b.timeout,
+	)
 }
 
 // GetCallable retrieves a global function from the JavaScript runtime as a goja.Callable.

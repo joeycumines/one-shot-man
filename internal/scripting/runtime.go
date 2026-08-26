@@ -51,6 +51,10 @@ type Runtime struct {
 	started bool
 	stopped bool
 
+	// loopRunner is the shared submit-and-wait substrate (lazy, see runner).
+	loopRunner *eventlooputil.Runner
+	runnerOnce sync.Once
+
 	// ctx is the lifecycle context for Done() channel
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -313,10 +317,10 @@ func (rt *Runtime) Run(fn func(vm *goja.Runtime)) bool {
 	}
 	rt.mu.RUnlock()
 
-	err := rt.loop.Submit(func() {
+	return rt.runner().Go(func() error {
 		fn(rt.vm)
-	})
-	return err == nil
+		return nil
+	}) == nil
 }
 
 // RunSync schedules a function on the event loop and waits for completion.
@@ -330,35 +334,9 @@ func (rt *Runtime) RunSync(fn func(vm *goja.Runtime) error) error {
 	timeout := rt.timeout
 	rt.mu.RUnlock()
 
-	done := make(chan struct{})
-	var resErr error
-	err := rt.loop.Submit(func() {
-		defer close(done)
-		resErr = fn(rt.vm)
-	})
-	if err != nil {
-		return errors.New("event loop not running")
-	}
-
-	if timeout > 0 {
-		timer := time.NewTimer(timeout)
-		defer timer.Stop()
-		select {
-		case <-done:
-			return resErr
-		case <-rt.ctx.Done():
-			return errors.New("runtime stopped while waiting for synchronous task")
-		case <-timer.C:
-			return fmt.Errorf("operation timed out after %v", timeout)
-		}
-	}
-
-	select {
-	case <-done:
-		return resErr
-	case <-rt.ctx.Done():
-		return errors.New("runtime stopped while waiting for synchronous task")
-	}
+	return rt.runner().Sync(func() error {
+		return fn(rt.vm)
+	}, timeout)
 }
 
 // TryRunSync attempts to run a function on the event loop synchronously.
@@ -372,12 +350,29 @@ func (rt *Runtime) TryRunSync(currentVM *goja.Runtime, fn func(vm *goja.Runtime)
 	}
 	rt.mu.RUnlock()
 
-	if eventlooputil.IsLoopThread(rt.eventLoopGoroutineID.Load()) {
-		return fn(currentVM)
-	}
+	return rt.runner().TrySyncBranch(
+		func() error { return fn(currentVM) },
+		func() error { return fn(rt.vm) },
+		rt.timeout,
+	)
+}
 
-	// Different thread, use synchronous submission
-	return rt.RunSync(fn)
+// runner lazily builds the shared submit-and-wait substrate for this runtime.
+func (rt *Runtime) runner() *eventlooputil.Runner {
+	rt.runnerOnce.Do(func() {
+		r, err := eventlooputil.NewRunner(eventlooputil.RunnerConfig{
+			Loop:          rt.loop,
+			OnLoopThread:  func() bool { return eventlooputil.IsLoopThread(rt.eventLoopGoroutineID.Load()) },
+			Done:          rt.ctx.Done(),
+			NotRunningErr: errors.New("event loop not running"),
+			StoppedErr:    errors.New("runtime stopped while waiting for synchronous task"),
+		})
+		if err != nil {
+			panic(err)
+		}
+		rt.loopRunner = r
+	})
+	return rt.loopRunner
 }
 
 // LoadScript loads and executes JavaScript code in the runtime.

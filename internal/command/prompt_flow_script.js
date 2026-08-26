@@ -328,7 +328,7 @@ function buildCommands(state) {
 
                 output.print("");
                 // Delegate to base list command for context items
-                baseCommands.list.handler(args);
+                return baseCommands.list.handler(args);
             }
         },
         view: {
@@ -404,7 +404,7 @@ function buildCommands(state) {
                 }
 
                 // Delegate to base edit command for numeric IDs
-                baseCommands.edit.handler(args);
+                return baseCommands.edit.handler(args);
             }
         },
         show: {

@@ -2334,7 +2334,7 @@ function buildCommands() {
 
                 // Delegate to base list command for context items (files, diffs, notes)
                 // This shows the critical IDs that were missing per review.md
-                ctxmgr.commands.list.handler(args);
+                return ctxmgr.commands.list.handler(args);
 
                 // If both are empty, show helpful message
                 if (docs.length === 0) {

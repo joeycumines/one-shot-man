@@ -354,7 +354,7 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 	// All runtime mutation must happen on the event-loop goroutine: the
 	// termmux wrapper's event bridge dispatches SessionManager events onto
 	// the loop as soon as WrapSessionManager runs, and goja.Runtime is not
-	// goroutine-safe. Inner Engine calls take their on-loop fast path.
+	// goroutine-safe.
 	done := make(chan struct{})
 	var runErr error
 	if submitErr := loop.Submit(func() {

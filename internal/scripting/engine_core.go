@@ -90,6 +90,8 @@ type Engine struct {
 	btBridge             *bt.Bridge                // Behavior tree bridge for JS integration
 	bubblezoneManager    builtin.BubblezoneManager // Zone-based mouse hit-testing for BubbleTea
 	requireModule        *require.RequireModule    // CommonJS require module for file-based script execution
+	loopRunner           *eventlooputil.Runner     // Shared submit-and-wait substrate (lazy, see runner)
+	runnerOnce           sync.Once
 }
 
 // Script represents a JavaScript script with metadata.
@@ -599,23 +601,28 @@ func (e *Engine) executeOnLoop(fn func(*goja.Runtime) error) error {
 	// regardless of any future changes to Close()'s cleanup.
 	vm := e.vm
 
-	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
+	return e.runner(loop).TrySync(func() error {
 		return fn(vm)
-	}
+	}, 0)
+}
 
-	errCh := make(chan error, 1)
-	if submitErr := loop.Submit(func() {
-		errCh <- fn(vm)
-	}); submitErr != nil {
-		return fmt.Errorf("event loop not running: %w", submitErr)
-	}
-
-	select {
-	case err := <-errCh:
-		return err
-	case <-e.runtime.Done():
-		return errors.New("runtime stopped before script completion")
-	}
+// runner returns the shared submit-and-wait substrate for this engine,
+// wired to the loop's liveness via runtime.Done().
+func (e *Engine) runner(loop *goeventloop.Loop) *eventlooputil.Runner {
+	e.runnerOnce.Do(func() {
+		r, err := eventlooputil.NewRunner(eventlooputil.RunnerConfig{
+			Loop:          loop,
+			OnLoopThread:  func() bool { return eventlooputil.IsLoopThread(e.runtime.GoroutineID()) },
+			Done:          e.runtime.Done(),
+			NotRunningErr: errors.New("event loop not running"),
+			StoppedErr:    errors.New("runtime stopped before script completion"),
+		})
+		if err != nil {
+			panic(err)
+		}
+		e.loopRunner = r
+	})
+	return e.loopRunner
 }
 
 // Logger returns the engine's logger.

@@ -1082,17 +1082,11 @@ func TestJSLeafAdapter_NilContext(t *testing.T) {
 	fn, err := bridge.GetCallable("simpleLeaf")
 	require.NoError(t, err)
 
-	// Pass nil context indirectly — NewJSLeafAdapter should default to context.Background()
-	var nilCtx context.Context // intentionally testing nil context handling
-	node := NewJSLeafAdapter(nilCtx, bridge, fn, nil)
-
-	status, err := node.Tick()
-	require.NoError(t, err)
-	require.Equal(t, bt.Running, status)
-
-	finalStatus, err := waitForCompletion(t, node, time.Second)
-	require.NoError(t, err)
-	require.Equal(t, bt.Success, finalStatus)
+	// nil baseCtx is rejected at construction: contexts must be threaded
+	// from the engine/bootstrap (F12-F14), never defaulted to Background.
+	var nilCtx context.Context // intentionally testing nil context rejection
+	require.PanicsWithValue(t, "bt: nil context requires baseCtx threading",
+		func() { NewJSLeafAdapter(nilCtx, bridge, fn, nil) })
 }
 
 // TestJSLeafAdapter_WithGetCtx verifies NewJSLeafAdapter with a getCtx function.
@@ -1141,13 +1135,11 @@ func TestBlockingJSLeaf_NilContext(t *testing.T) {
 	fn, err := bridge.GetCallable("blockingSimple")
 	require.NoError(t, err)
 
-	// nil context indirectly — should default to context.Background()
-	var nilCtx context.Context // intentionally testing nil context handling
-	node := BlockingJSLeaf(nilCtx, bridge, nil, fn, nil)
-
-	status, err := node.Tick()
-	require.NoError(t, err)
-	require.Equal(t, bt.Success, status)
+	// nil baseCtx is rejected at construction: contexts must be threaded
+	// from the engine/bootstrap (F12-F14), never defaulted to Background.
+	var nilCtx context.Context // intentionally testing nil context rejection
+	require.PanicsWithValue(t, "bt: nil context requires baseCtx threading",
+		func() { BlockingJSLeaf(nilCtx, bridge, nil, fn, nil) })
 }
 
 // TestBlockingJSLeaf_WithGetCtx verifies BlockingJSLeaf with a getCtx function.

@@ -55,15 +55,20 @@ var CONFIG = {
 
 // ── Bootstrap termmux session ─────────────────────────────────────────────────
 
-var bounded = termmux.newBoundedSession({
+var bounded = null;
+var mgr = null;
+var sid = null;
+var sessionReady = termmux.newBoundedSession({
     cmd: CMD,
     args: TARGET_ARGS,
     rows: CONFIG.paneH - 2 * CONFIG.borderWidth,
     cols: CONFIG.paneW - 2 * CONFIG.borderWidth,
     passthrough: false,
+}).then(function(b) {
+    bounded = b;
+    mgr = bounded.mgr;
+    sid = bounded.sid;
 });
-var mgr = bounded.mgr;
-var sid = bounded.sid;
 
 // ── Model / Physics ──────────────────────────────────────────────────────────
 
@@ -444,13 +449,15 @@ function runSmoke() {
 
 // ── Entry point ─────────────────────────────────────────────────────────────
 
-if (SMOKE) {
-    runSmoke();
-} else {
-    var program = tea.newModel({
-        init: initModel,
-        update: updateModel,
-        view: viewModel,
-    });
-    tea.run(program);
-}
+sessionReady.then(function() {
+    if (SMOKE) {
+        runSmoke();
+    } else {
+        var program = tea.newModel({
+            init: initModel,
+            update: updateModel,
+            view: viewModel,
+        });
+        tea.run(program);
+    }
+});

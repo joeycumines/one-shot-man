@@ -1,6 +1,7 @@
 package termmux
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -13,14 +14,14 @@ func TestSwapPanes_JSBinding_ReturnsSwapped(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		function mkSession(name) {
-			return termmux.newBoundedSession({ cmd: idleBin });
+	err := awaitJSErr(t, runtime, `
+		async function mkSession(name) {
+			return await termmux.newBoundedSession({ cmd: idleBin });
 		}
-		var s1 = mkSession("one");
-		var s2 = mkSession("two");
+		var s1 = await mkSession("one");
+		var s2 = await mkSession("two");
 		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "one" } }));
 		var p2 = Number(tuiMux.splitHorizontal({ session: s2.session, target: { name: "two" } }));
 		if (p1 === 0 || p2 === 0) {
@@ -31,15 +32,13 @@ func TestSwapPanes_JSBinding_ReturnsSwapped(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	res, err := runtime.RunString(`
+	res, err := sessionRun(t, runtime, `
 		var before = tuiMux.panes();
 		var p1 = Number(before[0].id);
 		var p2 = Number(before[1].id);
 		var result = tuiMux.swapPanes(p1, p2);
 		var after = tuiMux.panes();
-		({
-			p1,
-			p2,
+		JSON.stringify({
 			swapped: result.swapped,
 			beforeSessions: [Number(before[0].sessionId), Number(before[1].sessionId)],
 			afterSessions: [Number(after[0].sessionId), Number(after[1].sessionId)]
@@ -49,17 +48,19 @@ func TestSwapPanes_JSBinding_ReturnsSwapped(t *testing.T) {
 		t.Fatalf("swapPanes: %v", err)
 	}
 
-	obj := res.ToObject(runtime)
-	if v := obj.Get("swapped"); !v.ToBoolean() {
-		t.Errorf("result.swapped = %v, want true", v)
+	var out struct {
+		Swapped        bool   `json:"swapped"`
+		BeforeSessions [2]int `json:"beforeSessions"`
+		AfterSessions  [2]int `json:"afterSessions"`
+	}
+	if err := json.Unmarshal([]byte(res.String()), &out); err != nil {
+		t.Fatalf("decode swapPanes result: %v", err)
+	}
+	if !out.Swapped {
+		t.Errorf("result.swapped = false, want true")
 	}
 
-	before0 := obj.Get("beforeSessions").ToObject(runtime).Get("0").ToInteger()
-	before1 := obj.Get("beforeSessions").ToObject(runtime).Get("1").ToInteger()
-	after0 := obj.Get("afterSessions").ToObject(runtime).Get("0").ToInteger()
-	after1 := obj.Get("afterSessions").ToObject(runtime).Get("1").ToInteger()
-
-	if after0 != before1 || after1 != before0 {
-		t.Errorf("sessions not swapped: before [%d, %d], after [%d, %d]", before0, before1, after0, after1)
+	if out.AfterSessions[0] != out.BeforeSessions[1] || out.AfterSessions[1] != out.BeforeSessions[0] {
+		t.Errorf("sessions not swapped: before %v, after %v", out.BeforeSessions, out.AfterSessions)
 	}
 }

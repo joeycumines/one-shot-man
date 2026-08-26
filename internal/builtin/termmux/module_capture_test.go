@@ -100,45 +100,34 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 		t.Fatalf("missing methods on CaptureSession: %s", missingStr)
 	}
 
-	// Start the session and wait for completion.
-	_, err = runOnEnvLoop(t, e, `cs.start()`)
+	// Start the session (awaited) and confirm a positive pid.
+	v, err = awaitJSValue(t, e.runtime, `
+		await cs.start();
+		return cs.pid();
+	`)
 	if err != nil {
-		t.Fatalf("cs.start() failed: %v", err)
-	}
-
-	// pid() should return a positive integer.
-	v, err = runOnEnvLoop(t, e, `cs.pid()`)
-	if err != nil {
-		t.Fatalf("pid() failed: %v", err)
+		t.Fatalf("cs.start/pid failed: %v", err)
 	}
 	pid := v.ToInteger()
 	if pid <= 0 {
 		t.Errorf("expected positive pid, got %d", pid)
 	}
 
-	// wait() now returns Promise<{code,error}> — await it.
-	_, err = runOnEnvLoop(t, e, `globalThis.__waitDone = false; globalThis.__waitResult = null; cs.wait().then(r => { globalThis.__waitResult = JSON.stringify(r); globalThis.__waitDone = true; }).catch(e => { globalThis.__waitResult = JSON.stringify({error: e.message}); globalThis.__waitDone = true; })`)
-	if err != nil {
-		t.Fatalf("cs.wait() failed: %v", err)
+	// wait() returns Promise<{code,error}> — await it inline.
+	waitValV, waitErr := awaitJSValue(t, e.runtime, `
+		var r = await cs.wait();
+		return JSON.stringify(r);
+	`)
+	waitVal := ""
+	if waitErr != nil {
+		t.Fatalf("wait(): %v", waitErr)
 	}
-	waitResult := ""
-	for i := 0; i < 20; i++ {
-		time.Sleep(50 * time.Millisecond)
-		v, _ := runOnEnvLoop(t, e, `globalThis.__waitDone`)
-		if v.ToBoolean() {
-			v2, _ := runOnEnvLoop(t, e, `globalThis.__waitResult`)
-			waitResult = v2.String()
-			break
-		}
+	waitVal = waitValV.String()
+	if !strings.Contains(waitVal, `"code"`) {
+		t.Errorf("wait() result should contain 'code', got %q", waitVal)
 	}
-	if waitResult == "" {
-		t.Fatalf("wait() promise did not settle")
-	}
-	if !strings.Contains(waitResult, `"code"`) {
-		t.Errorf("wait() result should contain 'code', got %q", waitResult)
-	}
-	if !strings.Contains(waitResult, `"code":0`) {
-		t.Errorf("echo should exit with code 0, got %q", waitResult)
+	if !strings.Contains(waitVal, `"code":0`) {
+		t.Errorf("echo should exit with code 0, got %q", waitVal)
 	}
 
 	// After wait(), isDone() must be true.
@@ -179,7 +168,7 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 	// Task 56: isRunning(), target(), setTarget() removed — all call sites
 	// use SessionManager wrappers. Verify they are absent.
 	for _, removed := range []string{"isRunning", "target", "setTarget"} {
-		v, err = runOnEnvLoop(t, e, `typeof cs.` + removed)
+		v, err = runOnEnvLoop(t, e, `typeof cs.`+removed)
 		if err != nil {
 			t.Fatalf("typeof cs.%s check failed: %v", removed, err)
 		}

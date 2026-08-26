@@ -151,6 +151,10 @@ func TestChunk16_VTerm_Lifecycle_AutoAttachOneShot(t *testing.T) {
 			// Fire auto-poll tick — should NOT re-trigger.
 			var r = update({type: 'Tick', id: 'auto-poll'}, s);
 			var ns = r[0];
+			// Crash diagnostics resolve asynchronously; flush microtasks
+			// so finishCrash applies its transitions before assertions.
+			await Promise.resolve();
+			ns = r[0];
 			var errors = [];
 
 			// Split-view should remain disabled.
@@ -316,6 +320,10 @@ func TestChunk16_VTerm_Lifecycle_NoMuxNoAutoAttach(t *testing.T) {
 
 			var r = update({type: 'Tick', id: 'auto-poll'}, s);
 			var ns = r[0];
+			// Crash diagnostics resolve asynchronously; flush microtasks
+			// so finishCrash applies its transitions before assertions.
+			await Promise.resolve();
+			ns = r[0];
 			var errors = [];
 
 			if (ns.splitViewEnabled === true) {
@@ -362,6 +370,10 @@ func TestChunk16_VTerm_Lifecycle_NoChildNoAutoAttach(t *testing.T) {
 
 			var r = update({type: 'Tick', id: 'auto-poll'}, s);
 			var ns = r[0];
+			// Crash diagnostics resolve asynchronously; flush microtasks
+			// so finishCrash applies its transitions before assertions.
+			await Promise.resolve();
+			ns = r[0];
 			var errors = [];
 
 			if (ns.splitViewEnabled === true) {
@@ -807,6 +819,10 @@ func TestChunk16_VTerm_Lifecycle_AutoAttachNotificationText(t *testing.T) {
 
 			var r = update({type: 'Tick', id: 'auto-poll'}, s);
 			var ns = r[0];
+			// Crash diagnostics resolve asynchronously; flush microtasks
+			// so finishCrash applies its transitions before assertions.
+			await Promise.resolve();
+			ns = r[0];
 			var errors = [];
 
 			// Notification should contain helpful keybinding info.
@@ -862,6 +878,10 @@ func TestChunk16_VTerm_Lifecycle_CrashClosesPane(t *testing.T) {
 
 			var r = update({type: 'Tick', id: 'auto-poll'}, s);
 			var ns = r[0];
+			// Crash diagnostics resolve asynchronously; flush microtasks
+			// so finishCrash applies its transitions before assertions.
+			await Promise.resolve();
+			ns = r[0];
 			var errors = [];
 
 			// Split-view should close.

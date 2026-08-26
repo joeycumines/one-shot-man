@@ -13,11 +13,11 @@ func TestJSResizePaneDelta_RightGrowsWidth(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var s1 = termmux.newBoundedSession({ cmd: idleBin });
-		var s2 = termmux.newBoundedSession({ cmd: idleBin });
+	err := awaitJSErr(t, runtime, `
+		var s1 = await termmux.newBoundedSession({ cmd: idleBin });
+		var s2 = await termmux.newBoundedSession({ cmd: idleBin });
 		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "s1" } }));
 		var p2 = Number(tuiMux.splitHorizontal({ session: s2.session, target: { name: "s2" } }));
 		tuiMux.resizePaneDelta(p1, "right", 5);
@@ -43,11 +43,11 @@ func TestJSResizePaneDelta_LeftShrinksWidth(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var s1 = termmux.newBoundedSession({ cmd: idleBin });
-		var s2 = termmux.newBoundedSession({ cmd: idleBin });
+	err := awaitJSErr(t, runtime, `
+		var s1 = await termmux.newBoundedSession({ cmd: idleBin });
+		var s2 = await termmux.newBoundedSession({ cmd: idleBin });
 		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "s1" } }));
 		var p2 = Number(tuiMux.splitHorizontal({ session: s2.session, target: { name: "s2" } }));
 		tuiMux.resizePaneDelta(p1, "left", 5);
@@ -73,11 +73,11 @@ func TestJSResizePaneDelta_DownGrowsHeight(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var s1 = termmux.newBoundedSession({ cmd: idleBin });
-		var s2 = termmux.newBoundedSession({ cmd: idleBin });
+	err := awaitJSErr(t, runtime, `
+		var s1 = await termmux.newBoundedSession({ cmd: idleBin });
+		var s2 = await termmux.newBoundedSession({ cmd: idleBin });
 		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "s1" } }));
 		var p2 = Number(tuiMux.splitHorizontal({ session: s2.session, target: { name: "s2" } }));
 		tuiMux.resizePaneDelta(p1, "down", 5);
@@ -103,11 +103,11 @@ func TestJSResizePaneDelta_UpShrinksHeight(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var s1 = termmux.newBoundedSession({ cmd: idleBin });
-		var s2 = termmux.newBoundedSession({ cmd: idleBin });
+	err := awaitJSErr(t, runtime, `
+		var s1 = await termmux.newBoundedSession({ cmd: idleBin });
+		var s2 = await termmux.newBoundedSession({ cmd: idleBin });
 		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "s1" } }));
 		var p2 = Number(tuiMux.splitHorizontal({ session: s2.session, target: { name: "s2" } }));
 		tuiMux.resizePaneDelta(p1, "up", 5);
@@ -133,11 +133,11 @@ func TestJSResizePaneDelta_ClampsAtMinimum(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var s1 = termmux.newBoundedSession({ cmd: idleBin });
-		var s2 = termmux.newBoundedSession({ cmd: idleBin });
+	err := awaitJSErr(t, runtime, `
+		var s1 = await termmux.newBoundedSession({ cmd: idleBin });
+		var s2 = await termmux.newBoundedSession({ cmd: idleBin });
 		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "s1" } }));
 		var p2 = Number(tuiMux.splitHorizontal({ session: s2.session, target: { name: "s2" } }));
 		tuiMux.resizePaneDelta(p1, "up", 100);
@@ -169,10 +169,10 @@ func TestJSResizePaneDelta_InvalidDirection(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var bs = termmux.newBoundedSession({ cmd: idleBin });
+	err := awaitJSErr(t, runtime, `
+		var bs = await termmux.newBoundedSession({ cmd: idleBin });
 		tuiMux.register(bs.session, { name: "dir" });
 		try {
 			tuiMux.resizePaneDelta(1, "sideways", 5);
@@ -194,7 +194,7 @@ func TestJSResizePaneDelta_InvalidPane(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	err := awaitJSErr(t, runtime, `
 		try {
 			tuiMux.resizePaneDelta(999, "right", 5);
 			throw new Error("expected error");

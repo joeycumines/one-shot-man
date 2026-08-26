@@ -42,8 +42,11 @@
     function _persistState(reason) {
         if (!canPersist) return;
         try {
-            tuiMux.saveState(statePath);
-            log.debug('persistence: saved state', { reason: reason, path: statePath });
+            tuiMux.saveState(statePath).then(function() {
+                log.debug('persistence: saved state', { reason: reason, path: statePath });
+            }, function(e) {
+                log.warn('persistence: save failed', { reason: reason, error: (e && e.message) || String(e) });
+            });
         } catch (e) {
             log.warn('persistence: save failed', { reason: reason, error: e.message || String(e) });
         }
@@ -80,14 +83,14 @@
      *
      * Returns null if no state file exists.
      */
-    function loadPreviousState() {
+    async function loadPreviousState() {
         // Resolve tuiMux at call time so tests can inject mocks.
         var mux = (typeof tuiMux !== 'undefined') ? tuiMux : null;
         if (!mux) {
             return null;
         }
         try {
-            var state = mux.loadState(statePath);
+            var state = await mux.loadState(statePath);
             if (!state) {
                 return null;
             }
@@ -146,8 +149,11 @@
         var mux = (typeof tuiMux !== 'undefined') ? tuiMux : null;
         if (!mux) return;
         try {
-            mux.removeState(statePath);
-            log.debug('persistence: state file removed on clean exit', { path: statePath });
+            mux.removeState(statePath).then(function() {
+                log.debug('persistence: state file removed on clean exit', { path: statePath });
+            }, function(e) {
+                log.debug('persistence: remove failed on exit', { error: (e && e.message) || String(e) });
+            });
         } catch (e) {
             log.debug('persistence: remove failed on exit', { error: e.message || String(e) });
         }
@@ -174,6 +180,10 @@
 
     // Auto-load previous state on chunk initialization so the TUI can
     // check prSplit.previousState during model setup.
-    prSplit.previousState = loadPreviousState();
+    prSplit.previousState = null;
+    prSplit.previousStatePromise = loadPreviousState();
+    prSplit.previousStatePromise.then(function(state) {
+        prSplit.previousState = state;
+    });
 
 })();

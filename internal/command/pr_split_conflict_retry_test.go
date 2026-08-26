@@ -2181,17 +2181,17 @@ func TestPrSplitCommand_StrategyDetect_GoModTidy(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Mock osmod.fileExists to return true for go.mod check.
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		var osmod = globalThis.prSplit._modules.osmod;
-		osmod.fileExists = function(path) { return path.indexOf('go.mod') >= 0; };
+		osmod.fileExists = function(path) { return { exists: path.indexOf('go.mod') >= 0 }; };
 		var s = globalThis.prSplit.AUTO_FIX_STRATEGIES[0]; // go-mod-tidy
+		var detectTrue = await s.detect('.');
+		osmod.fileExists = function() { return false; };
+		var detectFalse = await s.detect('.');
 		return JSON.stringify({
 			name: s.name,
-			detectTrue: s.detect('.'),
-			detectFalse: (function() {
-				osmod.fileExists = function() { return false; };
-				return s.detect('.');
-			})()
+			detectTrue: detectTrue,
+			detectFalse: detectFalse
 		});
 	})()`)
 	if err != nil {
@@ -2217,17 +2217,17 @@ func TestPrSplitCommand_StrategyDetect_GoGenerateSum(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		var osmod = globalThis.prSplit._modules.osmod;
-		osmod.fileExists = function(path) { return path.indexOf('go.sum') >= 0; };
+		osmod.fileExists = function(path) { return { exists: path.indexOf('go.sum') >= 0 }; };
 		var s = globalThis.prSplit.AUTO_FIX_STRATEGIES[1]; // go-generate-sum
+		var detectTrue = await s.detect('.');
+		osmod.fileExists = function() { return false; };
+		var detectFalse = await s.detect('.');
 		return JSON.stringify({
 			name: s.name,
-			detectTrue: s.detect('.'),
-			detectFalse: (function() {
-				osmod.fileExists = function() { return false; };
-				return s.detect('.');
-			})()
+			detectTrue: detectTrue,
+			detectFalse: detectFalse
 		});
 	})()`)
 	if err != nil {
@@ -2300,17 +2300,17 @@ func TestPrSplitCommand_StrategyDetect_NpmInstall(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		var osmod = globalThis.prSplit._modules.osmod;
-		osmod.fileExists = function(path) { return path.indexOf('package.json') >= 0; };
+		osmod.fileExists = function(path) { return { exists: path.indexOf('package.json') >= 0 }; };
 		var s = globalThis.prSplit.AUTO_FIX_STRATEGIES[3]; // npm-install
+		var detectTrue = await s.detect('.');
+		osmod.fileExists = function() { return false; };
+		var detectFalse = await s.detect('.');
 		return JSON.stringify({
 			name: s.name,
-			detectTrue: s.detect('.'),
-			detectFalse: (function() {
-				osmod.fileExists = function() { return false; };
-				return s.detect('.');
-			})()
+			detectTrue: detectTrue,
+			detectFalse: detectFalse
 		});
 	})()`)
 	if err != nil {

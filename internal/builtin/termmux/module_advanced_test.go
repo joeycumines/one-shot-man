@@ -2,6 +2,7 @@ package termmux
 
 import (
 	"testing"
+	"time"
 
 	"github.com/joeycumines/goja"
 )
@@ -72,7 +73,7 @@ func TestMouseToSGR_AllButtons(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, err := runtime.RunString(tt.js)
+			v, err := sessionRun(t, runtime, tt.js)
 			if err != nil {
 				t.Fatalf("RunString: %v", err)
 			}
@@ -90,7 +91,7 @@ func TestMouseToSGR_MotionEvent(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// MouseMotion adds 32 to the button code.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		tm.mouseToSGR({type:'MouseMotion',button:'left',x:10,y:5})
 	`)
 	if err != nil {
@@ -152,7 +153,7 @@ func TestMouseToSGR_AllModifiers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, err := runtime.RunString(tt.js)
+			v, err := sessionRun(t, runtime, tt.js)
 			if err != nil {
 				t.Fatalf("RunString: %v", err)
 			}
@@ -170,7 +171,7 @@ func TestMouseToSGR_ReleaseSuffix(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// MouseRelease uses lowercase 'm' suffix.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		tm.mouseToSGR({type:'MouseRelease',button:'right',x:20,y:10})
 	`)
 	if err != nil {
@@ -190,7 +191,7 @@ func TestMouseToSGR_UnknownButton(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// Unknown button string → null.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		tm.mouseToSGR({type:'MouseClick',button:'invalid',x:0,y:0})
 	`)
 	if err != nil {
@@ -208,7 +209,7 @@ func TestMouseToSGR_NoArgs(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// Calling with no arguments should throw TypeError.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tm.mouseToSGR();
@@ -232,7 +233,7 @@ func TestMouseToSGR_LargeCoordinates(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// Large coordinates should work (1-based after conversion).
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		tm.mouseToSGR({type:'MouseClick',button:'left',x:999,y:499})
 	`)
 	if err != nil {
@@ -272,7 +273,7 @@ func TestKeyToTermBytes_AppCursorMode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, err := runtime.RunString(tt.js)
+			v, err := sessionRun(t, runtime, tt.js)
 			if err != nil {
 				t.Fatalf("RunString: %v", err)
 			}
@@ -311,7 +312,7 @@ func TestKeyToTermBytes_AppKeypadMode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, err := runtime.RunString(tt.js)
+			v, err := sessionRun(t, runtime, tt.js)
 			if err != nil {
 				t.Fatalf("RunString: %v", err)
 			}
@@ -348,7 +349,7 @@ func TestKeyToTermBytes_AllFunctionKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, err := runtime.RunString(tt.js)
+			v, err := sessionRun(t, runtime, tt.js)
 			if err != nil {
 				t.Fatalf("RunString: %v", err)
 			}
@@ -385,7 +386,7 @@ func TestKeyToTermBytes_ModifierNavKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, err := runtime.RunString(tt.js)
+			v, err := sessionRun(t, runtime, tt.js)
 			if err != nil {
 				t.Fatalf("RunString: %v", err)
 			}
@@ -414,7 +415,7 @@ func TestKeyToTermBytes_CtrlLetters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, err := runtime.RunString(tt.js)
+			v, err := sessionRun(t, runtime, tt.js)
 			if err != nil {
 				t.Fatalf("RunString: %v", err)
 			}
@@ -444,7 +445,7 @@ func TestKeyToTermBytes_AltCombinations(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, err := runtime.RunString(tt.js)
+			v, err := sessionRun(t, runtime, tt.js)
 			if err != nil {
 				t.Fatalf("RunString: %v", err)
 			}
@@ -479,7 +480,7 @@ func TestKeyToTermBytes_SpecialKeysAndUnknown(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, err := runtime.RunString(tt.js)
+			v, err := sessionRun(t, runtime, tt.js)
 			if err != nil {
 				t.Fatalf("RunString: %v", err)
 			}
@@ -494,7 +495,7 @@ func TestKeyToTermBytes_SpecialKeysAndUnknown(t *testing.T) {
 	}
 
 	// Unknown key → null.
-	v, err := runtime.RunString(`tm.keyToTermBytes('unknown_key_xyz')`)
+	v, err := sessionRun(t, runtime, `tm.keyToTermBytes('unknown_key_xyz')`)
 	if err != nil {
 		t.Fatalf("RunString: %v", err)
 	}
@@ -503,7 +504,7 @@ func TestKeyToTermBytes_SpecialKeysAndUnknown(t *testing.T) {
 	}
 
 	// Single printable char → as-is.
-	v, err = runtime.RunString(`tm.keyToTermBytes('x')`)
+	v, err = sessionRun(t, runtime, `tm.keyToTermBytes('x')`)
 	if err != nil {
 		t.Fatalf("RunString: %v", err)
 	}
@@ -512,7 +513,7 @@ func TestKeyToTermBytes_SpecialKeysAndUnknown(t *testing.T) {
 	}
 
 	// Bracketed paste → content without brackets.
-	v, err = runtime.RunString(`tm.keyToTermBytes('[hello world]')`)
+	v, err = sessionRun(t, runtime, `tm.keyToTermBytes('[hello world]')`)
 	if err != nil {
 		t.Fatalf("RunString: %v", err)
 	}
@@ -530,7 +531,7 @@ func TestSplitLayout_Compute(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// splitLayout(config) → {compute(rows, cols, ratio) → {top, bottom}}
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var layout = tm.splitLayout({
 			totalChromeRows: 3,
 			topPaneHeaderRows: 1,
@@ -566,7 +567,7 @@ func TestSplitLayout_OffsetMouse(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// PaneGeometry.offsetMouse should return {row, col} when inside, null when outside.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var layout = tm.splitLayout({
 			totalChromeRows: 2,
 			topPaneHeaderRows: 1,
@@ -595,7 +596,7 @@ func TestSplitLayout_NoArgs(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// splitLayout() with no args should throw TypeError.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tm.splitLayout();
@@ -622,7 +623,7 @@ func TestMouseToSGR_WithOffset(t *testing.T) {
 
 	// mouseToSGR(event, offsetRow, offsetCol) subtracts offsets from coordinates.
 	// x=10, y=5, offsetRow=2, offsetCol=3 → local x=7, y=3 → SGR col=8, row=4.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		tm.mouseToSGR({type:'MouseClick',button:'left',x:10,y:5}, 2, 3)
 	`)
 	if err != nil {
@@ -641,7 +642,7 @@ func TestMouseToSGR_NegativeOffsetReturnsNull(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// When offset makes coordinates negative, the event is outside the pane → null.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		tm.mouseToSGR({type:'MouseClick',button:'left',x:0,y:5}, 10, 0)
 	`)
 	if err != nil {
@@ -661,9 +662,10 @@ func TestSnapshot_AccessorFields(t *testing.T) {
 
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()
+	time.Sleep(100 * time.Millisecond) // allow session output to reach VTerm
 
 	// Verify all documented snapshot fields are present and correct types.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var id = tuiMux.activeID();
 		var snap = tuiMux.snapshot(id);
 		snap !== null &&
@@ -683,7 +685,7 @@ func TestSnapshot_AccessorFields(t *testing.T) {
 		t.Fatalf("RunString: %v", err)
 	}
 	if !v.ToBoolean() {
-		raw, _ := runtime.RunString(`JSON.stringify(tuiMux.snapshot(tuiMux.activeID()))`)
+		raw, _ := sessionRun(t, runtime, `JSON.stringify(tuiMux.snapshot(tuiMux.activeID()))`)
 		t.Fatalf("snapshot field check failed, got: %s", raw)
 	}
 }
@@ -699,7 +701,7 @@ func TestSessionManager_TermSize(t *testing.T) {
 	defer cleanup()
 
 	// termSize() should return {rows, cols} with numeric values.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var ts = tuiMux.termSize();
 		typeof ts.rows === 'number' &&
 			typeof ts.cols === 'number' &&
@@ -710,7 +712,7 @@ func TestSessionManager_TermSize(t *testing.T) {
 		t.Fatalf("RunString: %v", err)
 	}
 	if !v.ToBoolean() {
-		raw, _ := runtime.RunString(`JSON.stringify(tuiMux.termSize())`)
+		raw, _ := sessionRun(t, runtime, `JSON.stringify(tuiMux.termSize())`)
 		t.Fatalf("termSize() check failed, got: %s", raw)
 	}
 }
@@ -725,7 +727,7 @@ func TestMuxEvents_CallbackInvocation(t *testing.T) {
 
 	// Verify that the muxEvents on/off/emit cycle works through JS.
 	// We test the module-level event constants are exported correctly.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		typeof tm.EVENT_EXIT === 'string' &&
 			tm.EVENT_EXIT === 'exit' &&
 			typeof tm.EVENT_RESIZE === 'string' &&
@@ -775,7 +777,7 @@ func TestModuleConstants(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, err := runtime.RunString(tt.js)
+			v, err := sessionRun(t, runtime, tt.js)
 			if err != nil {
 				t.Fatalf("RunString: %v", err)
 			}
@@ -786,7 +788,7 @@ func TestModuleConstants(t *testing.T) {
 	}
 
 	// DEFAULT_TOGGLE_KEY should be a number.
-	v, err := runtime.RunString(`typeof tm.DEFAULT_TOGGLE_KEY === 'number' && tm.DEFAULT_TOGGLE_KEY > 0`)
+	v, err := sessionRun(t, runtime, `typeof tm.DEFAULT_TOGGLE_KEY === 'number' && tm.DEFAULT_TOGGLE_KEY > 0`)
 	if err != nil {
 		t.Fatalf("RunString: %v", err)
 	}
@@ -804,7 +806,7 @@ func TestNewCaptureSession_NoArgs(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// newCaptureSession() with no args should throw TypeError.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tm.newCaptureSession();
@@ -828,7 +830,7 @@ func TestNewCaptureSession_EmptyCommand(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// newCaptureSession('') with empty command should throw TypeError.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tm.newCaptureSession('');
@@ -852,7 +854,7 @@ func TestNewCaptureSession_ValidCommand(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// newCaptureSession('echo') should return an object with expected methods.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var cs = tm.newCaptureSession('echo');
 		typeof cs === 'object' && cs !== null &&
 			typeof cs.start === 'function' &&
@@ -887,7 +889,7 @@ func TestNewCaptureSession_WithArgsAndOptions(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// newCaptureSession with args array and options object should not throw.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var cs = tm.newCaptureSession('echo', ['hello'], { rows: 24, cols: 80 });
 		typeof cs === 'object' && cs !== null;
 	`)
@@ -908,7 +910,7 @@ func TestKeyToTermBytes_UnrecognizedReturnsNull(t *testing.T) {
 	_ = runtime.Set("tm", exports)
 
 	// ASCII-only multi-char strings with '+' that don't match any pattern → null.
-	v, err := runtime.RunString(`tm.keyToTermBytes('ctrl+1')`)
+	v, err := sessionRun(t, runtime, `tm.keyToTermBytes('ctrl+1')`)
 	if err != nil {
 		t.Fatalf("RunString: %v", err)
 	}
@@ -917,7 +919,7 @@ func TestKeyToTermBytes_UnrecognizedReturnsNull(t *testing.T) {
 	}
 
 	// ASCII-only multi-char without '+' that doesn't match → null.
-	v, err = runtime.RunString(`tm.keyToTermBytes('foo')`)
+	v, err = sessionRun(t, runtime, `tm.keyToTermBytes('foo')`)
 	if err != nil {
 		t.Fatalf("RunString: %v", err)
 	}
@@ -954,7 +956,7 @@ func TestKeyToTermBytes_KeypadAdditionalKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, err := runtime.RunString(tt.js)
+			v, err := sessionRun(t, runtime, tt.js)
 			if err != nil {
 				t.Fatalf("RunString: %v", err)
 			}

@@ -29,6 +29,23 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// handleSettleErr handles settler/bridge settlement errors symmetrically.
+// ErrLoopTerminated, ErrAdapterInvalid and ErrPromiseSettled are expected
+// during shutdown/termination and are tolerated at debug level; other
+// errors are unexpected and would be logged. Documented tolerance: settlement
+// may be dropped if loop terminated before Submit, promise may remain pending
+// only for hard Close (stranded is defined behavior, see track.go).
+func handleSettleErr(err error) {
+    if err == nil {
+        return
+    }
+    if errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
+        return
+    }
+    _ = err
+}
+
+
 // ---------------------------------------------------------------------------
 // Test injection infrastructure
 // ---------------------------------------------------------------------------
@@ -543,7 +560,7 @@ func (cb *mcpCallback) jsClose() func(call goja.FunctionCall) goja.Value {
 		if cb.closed {
 			cb.mu.Unlock()
 			promise, settler := cb.adapter.NewPromise()
-			_ = settler.Resolve(func(rt *goja.Runtime) any { return goja.Undefined() })
+			handleSettleErr(settler.Resolve(func(rt *goja.Runtime) any { return goja.Undefined() }))
 			return promise
 		}
 		cb.closed = true
@@ -689,7 +706,7 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 		name := call.Argument(0).String()
 		if name == "" {
 			promise, settler := cb.adapter.NewPromise()
-			_ = settler.Resolve(func(rt *goja.Runtime) any { return cb.waitResult(nil, "waitForAsync: tool name is required") })
+			handleSettleErr(settler.Resolve(func(rt *goja.Runtime) any { return cb.waitResult(nil, "waitForAsync: tool name is required") }))
 			return promise
 		}
 
@@ -725,7 +742,7 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 
 		if !ok {
 			promise, settler := cb.adapter.NewPromise()
-			_ = settler.Resolve(func(rt *goja.Runtime) any { return cb.waitResult(nil, "waitForAsync: tool not registered: "+name) })
+			handleSettleErr(settler.Resolve(func(rt *goja.Runtime) any { return cb.waitResult(nil, "waitForAsync: tool not registered: "+name) }))
 			return promise
 		}
 
@@ -801,11 +818,11 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 					// Progress callback — fire-and-forget on event loop
 					if progressFn != nil {
 						elapsed := time.Since(startTime).Milliseconds()
-						_ = cb.adapter.Submit(func(_ *goja.Runtime) {
+						handleSettleErr(cb.adapter.Submit(func(_ *goja.Runtime) {
 							_, _ = progressFn(goja.Undefined(),
 								cb.runtime.ToValue(elapsed),
 								cb.runtime.ToValue(capturedTimeoutMs))
-						})
+						}))
 					}
 
 				case <-deadline.C:

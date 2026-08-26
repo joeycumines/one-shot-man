@@ -119,7 +119,7 @@ var __regressionRequire = require;
 require = function(name) {
 	if (name === 'osm:termmux') {
 		return {
-			newBoundedSession: function() { return __regressionTermmux; },
+			newBoundedSession: function() { return Promise.resolve(__regressionTermmux); },
 			newControlRouter: function() { return { handleKey: function() { return {handled:false}; }, inChordMode: function() { return false; } }; },
 			handlePrefixKey: function() { return {action:'Cancel'}; }
 		};

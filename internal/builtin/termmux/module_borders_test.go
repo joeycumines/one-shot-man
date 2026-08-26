@@ -13,7 +13,7 @@ func TestRenderPaneBorders_JSBinding(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	res, err := runtime.RunString(`
+	res, err := sessionRun(t, runtime, `
 		var out = tuiMux.renderPaneBorders(43, 5, [
 			{ row: 0, col: 0, rows: 4, cols: 20, title: "a" },
 			{ row: 0, col: 22, rows: 4, cols: 20, title: "b" }

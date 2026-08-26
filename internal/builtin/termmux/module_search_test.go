@@ -1,7 +1,6 @@
 package termmux
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -10,39 +9,17 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
 
-func waitForSnapshotText(t *testing.T, runtime *goja.Runtime, mgr goja.Value, sid uint64, substr string) {
+func waitForSnapshotText(t *testing.T, runtime *goja.Runtime, mgrExpr, sidExpr, substr string) {
 	t.Helper()
-	_ = runtime.Set("__waitMgr", mgr)
-	_ = runtime.Set("__waitSid", sid)
-	_ = runtime.Set("__waitSubstr", substr)
-	defer func() {
-		_ = runtime.Set("__waitMgr", goja.Undefined())
-		_ = runtime.Set("__waitSid", goja.Undefined())
-		_ = runtime.Set("__waitSubstr", goja.Undefined())
-	}()
-	// 10s deadline (not a tighter value): these tests spawn real PTY
-	// subprocesses whose output timing depends on CPU scheduling. Under the
-	// parallel load of `gmake all` (many packages running concurrently), a
-	// child can take several seconds to flush its first bytes, and a 2s
-	// deadline flakes. 10s matches the project's robust poll-timeout tier
-	// and only matters under contention — the common case resolves in <1s.
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		v, err := runtime.RunString(`
-			(function() {
-				var snap = __waitMgr.snapshot(__waitSid);
-				return !!(snap && snap.plainText && snap.plainText.indexOf(__waitSubstr) >= 0);
-			})()
-		`)
-		if err != nil {
-			t.Fatalf("waitForSnapshotText: %v", err)
-		}
-		if v.ToBoolean() {
+		v, err := awaitJSValue(t, runtime, "return (function(){ var snap = ("+mgrExpr+").snapshot("+sidExpr+"); return !!(snap && snap.plainText && snap.plainText.indexOf("+substr+") >= 0); })();")
+		if err == nil && v.ToBoolean() {
 			return
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatalf("timeout waiting for %q in session %d snapshot", substr, sid)
+	t.Fatalf("timeout waiting for snapshot text %q", substr)
 }
 
 func TestSearchForwardBackwardBindings_DefaultSearcher(t *testing.T) {
@@ -50,25 +27,23 @@ func TestSearchForwardBackwardBindings_DefaultSearcher(t *testing.T) {
 	defer cleanup()
 
 	echoBin := buildEchoIdleProgram(t, "hello world")
-	_ = runtime.Set("echoBin", echoBin)
+	setOnLoop(t, runtime, "echoBin", echoBin)
 
-	v, err := runtime.RunString(`
-		var s = termmux.newBoundedSession({ cmd: echoBin, rows: 5, cols: 40, name: "search" });
-		s.sid
-	`)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	sid := uint64(v.ToInteger())
-	mgr, err := runtime.RunString("s.mgr")
-	if err != nil {
-		t.Fatalf("get manager: %v", err)
-	}
+	err := awaitJSErr(t, runtime, `
+		var s = await termmux.newBoundedSession({ cmd: echoBin, rows: 5, cols: 40, name: "search" });
+		function waitSnapshot(substr, deadlineMs) {
+			return new Promise(function(resolve, reject) {
+				(function poll() {
+					var snap = s.mgr.snapshot(s.sid);
+					if (snap && snap.plainText && snap.plainText.indexOf(substr) >= 0) return resolve();
+					if (Date.now() > deadlineMs) return reject(new Error('timeout waiting for ' + substr));
+					setTimeout(poll, 10);
+				})();
+			});
+		}
+		await waitSnapshot("hello", Date.now() + 5000);
 
-	waitForSnapshotText(t, runtime, mgr, sid, "hello")
-
-	_, err = runtime.RunString(fmt.Sprintf(`
-		var sid = %d;
+		var sid = s.sid;
 		var mgr = s.mgr;
 		var fwd = mgr.searchForward(sid, "hello");
 		if (!fwd.found || fwd.row !== 1 || fwd.col !== 1) {
@@ -89,7 +64,7 @@ func TestSearchForwardBackwardBindings_DefaultSearcher(t *testing.T) {
 		if (empty.found) {
 			throw new Error("empty pattern must not match");
 		}
-	`, sid))
+	`)
 	if err != nil {
 		t.Fatalf("default searcher binding test: %v", err)
 	}
@@ -104,24 +79,22 @@ func TestNewCopyModeSearcher_OptionalCallback(t *testing.T) {
 	defer cleanup()
 
 	echoBin := buildEchoIdleProgram(t, "alpha beta")
-	_ = runtime.Set("echoBin", echoBin)
+	setOnLoop(t, runtime, "echoBin", echoBin)
 
-	v, err := runtime.RunString(`
-		var s = termmux.newBoundedSession({ cmd: echoBin, rows: 5, cols: 40, name: "copysearch" });
-		s.sid
-	`)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	sid := uint64(v.ToInteger())
-	mgr, err := runtime.RunString("s.mgr")
-	if err != nil {
-		t.Fatalf("get manager: %v", err)
-	}
+	err := awaitJSErr(t, runtime, `
+		var s = await termmux.newBoundedSession({ cmd: echoBin, rows: 5, cols: 40, name: "copysearch" });
+		function waitSnapshot(substr, deadlineMs) {
+			return new Promise(function(resolve, reject) {
+				(function poll() {
+					var snap = s.mgr.snapshot(s.sid);
+					if (snap && snap.plainText && snap.plainText.indexOf(substr) >= 0) return resolve();
+					if (Date.now() > deadlineMs) return reject(new Error('timeout waiting for ' + substr));
+					setTimeout(poll, 10);
+				})();
+			});
+		}
+		await waitSnapshot("alpha", Date.now() + 5000);
 
-	waitForSnapshotText(t, runtime, mgr, sid, "alpha")
-
-	_, err = runtime.RunString(`
 		var searcher = s.mgr.newCopyModeSearcher();
 		s.mgr.activate(s.sid);
 		searcher.startSearch(0, 0, 0);
@@ -156,24 +129,22 @@ func TestNewCopyModeSearcher_BackwardNoCallback(t *testing.T) {
 	defer cleanup()
 
 	echoBin := buildEchoIdleProgram(t, "one two")
-	_ = runtime.Set("echoBin", echoBin)
+	setOnLoop(t, runtime, "echoBin", echoBin)
 
-	v, err := runtime.RunString(`
-		var s = termmux.newBoundedSession({ cmd: echoBin, rows: 5, cols: 40, name: "copysearch2" });
-		s.sid
-	`)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	sid := uint64(v.ToInteger())
-	mgr, err := runtime.RunString("s.mgr")
-	if err != nil {
-		t.Fatalf("get manager: %v", err)
-	}
+	err := awaitJSErr(t, runtime, `
+		var s = await termmux.newBoundedSession({ cmd: echoBin, rows: 5, cols: 40, name: "copysearch2" });
+		function waitSnapshot(substr, deadlineMs) {
+			return new Promise(function(resolve, reject) {
+				(function poll() {
+					var snap = s.mgr.snapshot(s.sid);
+					if (snap && snap.plainText && snap.plainText.indexOf(substr) >= 0) return resolve();
+					if (Date.now() > deadlineMs) return reject(new Error('timeout waiting for ' + substr));
+					setTimeout(poll, 10);
+				})();
+			});
+		}
+		await waitSnapshot("one", Date.now() + 5000);
 
-	waitForSnapshotText(t, runtime, mgr, sid, "one")
-
-	_, err = runtime.RunString(`
 		var searcher = s.mgr.newCopyModeSearcher();
 		s.mgr.activate(s.sid);
 		searcher.startSearch(1, 0, 10);
@@ -201,7 +172,7 @@ func TestSearchForwardBackwardBindings_InvalidSession(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	_, err := sessionRun(t, runtime, `
 		var fwd = tuiMux.searchForward(999999, "hello");
 		if (fwd.found) {
 			throw new Error("expected no match for invalid session");

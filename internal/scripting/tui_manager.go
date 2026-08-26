@@ -750,16 +750,9 @@ func (tm *TUIManager) ListCommands() []Command {
 	return commands
 }
 
-// Run starts the TUI manager.
+// Run starts the TUIManager.
 func (tm *TUIManager) Run() {
-	// Route engine output through a queue we flush at safe points
-	tm.engine.logger.SetTUISink(func(msg string) {
-		tm.outputMu.Lock()
-		tm.outputQueue = append(tm.outputQueue, msg)
-		tm.outputMu.Unlock()
-	})
-	// Flush any pending output (e.g., from onEnter) before starting prompt
-	tm.flushQueuedOutput()
+	tm.engine.logger.SetTUISink(tm.writeTerminal)
 
 	// Check if script wants to skip the REPL (e.g., after BubbleTea TUI exits in non-interactive mode).
 	// Scripts can set globalThis.__skipREPL = true in __postBubbleTeaExit to prevent REPL launch.
@@ -811,7 +804,6 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		completer:               completer,
 		initialCommand:          tm.getInitialCommand(),
 		history:                 tm.commandHistory,
-		flushOutput:             true,
 		maxSuggestion:           10,
 		dynamicCompletion:       true,
 		executeHidesCompletions: true,
@@ -842,32 +834,9 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 	// When executor returns false, signal the exit checker to terminate the prompt.
 	// We do NOT call os.Exit here - exit is handled gracefully via ExitChecker.
 	executor := func(line string) {
-		if cfg.flushOutput {
-			tm.flushQueuedOutput()
-		}
-
-		// During command execution, bypass the output queue and write
-		// directly to the terminal. go-prompt is not rendering while the
-		// executor is running, so direct writes are safe and ensure the
-		// user sees output immediately (critical for long-running async
-		// pipeline commands like auto-split). This also ensures ANSI
-		// escape codes reach the terminal unmangled.
-		tm.engine.logger.SetTUISink(nil)
-
 		if !tm.executor(line) {
 			// Signal the prompt to exit via ExitChecker mechanism
 			tm.RequestExit()
-		}
-
-		// Restore output queuing for the prompt rendering cycle.
-		tm.engine.logger.SetTUISink(func(msg string) {
-			tm.outputMu.Lock()
-			tm.outputQueue = append(tm.outputQueue, msg)
-			tm.outputMu.Unlock()
-		})
-
-		if cfg.flushOutput {
-			tm.flushQueuedOutput()
 		}
 	}
 
@@ -1022,23 +991,17 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 	return prompt.New(executor, options...)
 }
 
-// flushQueuedOutput writes any buffered output messages to the terminal
-// using a syncWriter to ensure they hit the PTY immediately. Messages are
-// written verbatim as provided by PrintToTUI/PrintfToTUI, which are
-// responsible for ensuring trailing newlines as needed.
-func (tm *TUIManager) flushQueuedOutput() {
-	tm.outputMu.Lock()
-	queue := tm.outputQueue
-	tm.outputQueue = nil
-	tm.outputMu.Unlock()
-	if len(queue) == 0 {
-		return
-	}
-	for _, m := range queue {
-		// Messages already include any necessary trailing newline.
-		b := unsafe.Slice(unsafe.StringData(m), len(m))
-		_, _ = tm.writer.Write(b)
-	}
+// writeTerminal delivers engine output straight to the terminal writer. The
+// TUIWriter serializes through its dedicated writer goroutine, so this is
+// safe from any goroutine, including promise continuations that fire after
+// the REPL executor has returned. Output printed while go-prompt is mid-render
+// may transiently interleave with a frame; the next keystroke redraws it, and
+// deferring prints instead (the previous queue) silently dropped them for as
+// long as the prompt sat idle. Messages arrive with trailing newlines already
+// applied by PrintToTUI/PrintfToTUI.
+func (tm *TUIManager) writeTerminal(msg string) {
+	b := unsafe.Slice(unsafe.StringData(msg), len(msg))
+	_, _ = tm.writer.Write(b)
 }
 
 // === TEST HELPER METHODS ===

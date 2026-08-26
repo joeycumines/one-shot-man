@@ -41,9 +41,11 @@ func PromiseTracked(
 			return
 		}
 		if err, isErr := result.(error); isErr {
-			_ = settler.Reject(func(rt *goja.Runtime) any {
+			if err := settler.Reject(func(rt *goja.Runtime) any {
 				return rt.NewGoError(err)
-			})
+			}); err != nil && !tolerateSettlementRace(err) {
+				slog.Error("async: promise settlement failed", "error", err)
+			}
 			return
 		}
 		if err := settler.Resolve(func(rt *goja.Runtime) any {

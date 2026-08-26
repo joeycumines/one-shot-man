@@ -12,10 +12,11 @@
 
     // fileExistsSync checks file existence using osmod (preferred) or the
     // platform shell as fallback. Avoids hardcoded 'test -f' on Windows.
-    function fileExistsSync(path) {
+    async function fileExistsSync(path) {
         var osmod = prSplit._modules.osmod;
         if (osmod && typeof osmod.fileExists === 'function') {
-            return osmod.fileExists(path);
+            var r = await osmod.fileExists(path);
+            return !!(r && r.exists);
         }
         // osmod.fileExists is a core module that should always be registered
         // in production; reaching here means broken module wiring. Treat the
@@ -33,9 +34,9 @@
     var AUTO_FIX_STRATEGIES = [
         {
             name: 'go-mod-tidy',
-            detect: function(dir) {
+            detect: async function(dir) {
                 var path = (dir !== '.' ? dir + '/' : '') + 'go.mod';
-                return fileExistsSync(path);
+                return await fileExistsSync(path);
             },
             fix: async function(dir) {
                 var shellExecAsync = prSplit._shellExecAsync;
@@ -64,9 +65,9 @@
         },
         {
             name: 'go-generate-sum',
-            detect: function(dir) {
+            detect: async function(dir) {
                 var path = (dir !== '.' ? dir + '/' : '') + 'go.sum';
-                return fileExistsSync(path);
+                return await fileExistsSync(path);
             },
             fix: async function(dir) {
                 var shellExecAsync = prSplit._shellExecAsync;

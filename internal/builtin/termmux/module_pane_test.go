@@ -9,10 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
@@ -51,10 +49,19 @@ func setupPaneMgr(t *testing.T) (*goja.Runtime, func()) {
 	tuiMux := WrapSessionManager(ctx, adapter, loop, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		_ = loop.Run(ctx)
+	}()
+	testLoops.Store(runtime, loop)
+
 	return runtime, func() {
+		testLoops.Delete(runtime)
 		cancel()
 		<-errCh
 		_ = loop.Shutdown(context.Background())
+		<-loopDone
 	}
 }
 
@@ -101,10 +108,19 @@ func setupTmuxModule(t *testing.T) (*goja.Runtime, func()) {
 	_ = runtime.Set("termmux", exports)
 	_ = runtime.Set("tuiMux", tuiMux)
 
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		_ = loop.Run(ctx)
+	}()
+	testLoops.Store(runtime, loop)
+
 	return runtime, func() {
+		testLoops.Delete(runtime)
 		cancel()
 		<-errCh
 		_ = loop.Shutdown(context.Background())
+		<-loopDone
 	}
 }
 
@@ -112,7 +128,7 @@ func TestPaneMethods_PanesEmpty(t *testing.T) {
 	runtime, cleanup := setupPaneMgr(t)
 	defer cleanup()
 
-	v, err := runtime.RunString(`JSON.stringify(tuiMux.panes())`)
+	v, err := awaitJSValue(t, runtime, `return JSON.stringify(tuiMux.panes())`)
 	if err != nil {
 		t.Fatalf("panes(): %v", err)
 	}
@@ -125,7 +141,7 @@ func TestPaneMethods_ActivePaneIdZero(t *testing.T) {
 	runtime, cleanup := setupPaneMgr(t)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.activePaneId()`)
+	v, err := awaitJSValue(t, runtime, `return tuiMux.activePaneId()`)
 	if err != nil {
 		t.Fatalf("activePaneId(): %v", err)
 	}
@@ -139,7 +155,7 @@ func TestPaneMethods_FocusPaneDirectionsNoPanes(t *testing.T) {
 	defer cleanup()
 
 	for _, dir := range []string{"Up", "Down", "Left", "Right"} {
-		v, err := runtime.RunString(fmt.Sprintf("tuiMux.focusPane%s()", dir))
+		v, err := awaitJSValue(t, runtime, fmt.Sprintf("return tuiMux.focusPane%s()", dir))
 		if err != nil {
 			t.Fatalf("focusPane%s(): %v", dir, err)
 		}
@@ -153,7 +169,7 @@ func TestPaneMethods_ClosePaneInvalid(t *testing.T) {
 	runtime, cleanup := setupPaneMgr(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	_, err := awaitJSValue(t, runtime, `
 		try {
 			tuiMux.closePane(999);
 			throw new Error("expected error");
@@ -170,7 +186,7 @@ func TestPaneMethods_ResizePaneInvalid(t *testing.T) {
 	runtime, cleanup := setupPaneMgr(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	_, err := awaitJSValue(t, runtime, `
 		try {
 			tuiMux.resizePane(999, 0.5);
 			throw new Error("expected error");
@@ -187,7 +203,7 @@ func TestPaneMethods_SplitHorizontalNoArgs(t *testing.T) {
 	runtime, cleanup := setupPaneMgr(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	_, err := awaitJSValue(t, runtime, `
 		try {
 			tuiMux.splitHorizontal();
 			throw new Error("expected error");
@@ -204,7 +220,7 @@ func TestPaneMethods_SplitVerticalNoArgs(t *testing.T) {
 	runtime, cleanup := setupPaneMgr(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	_, err := awaitJSValue(t, runtime, `
 		try {
 			tuiMux.splitVertical();
 			throw new Error("expected error");
@@ -221,7 +237,7 @@ func TestPaneMethods_ResizePaneArgCount(t *testing.T) {
 	runtime, cleanup := setupPaneMgr(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	_, err := awaitJSValue(t, runtime, `
 		try {
 			tuiMux.resizePane(1);
 			throw new Error("expected error");
@@ -238,7 +254,7 @@ func TestPaneMethods_ClosePaneArgCount(t *testing.T) {
 	runtime, cleanup := setupPaneMgr(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	_, err := awaitJSValue(t, runtime, `
 		try {
 			tuiMux.closePane();
 			throw new Error("expected error");
@@ -300,10 +316,10 @@ func TestBreakPane_CreatesNewWindow(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var sess = termmux.newBoundedSession({ cmd: idleBin });
+	err := awaitJSErr(t, runtime, `
+		var sess = await termmux.newBoundedSession({ cmd: idleBin });
 		tuiMux.register(sess.session, { name: "test" });
 		var winId = tuiMux.newWindow("win1");
 		tuiMux.addPaneToWindow(sess.session, { name: "test", windowId: winId });
@@ -312,7 +328,7 @@ func TestBreakPane_CreatesNewWindow(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	_, err = runtime.RunString(`
+	_, err = awaitJSValue(t, runtime, `
 		var newWin = tuiMux.breakPane(1);
 		if (newWin <= 0) {
 			throw new Error("breakPane should return new window ID > 0, got " + newWin);
@@ -322,7 +338,7 @@ func TestBreakPane_CreatesNewWindow(t *testing.T) {
 		t.Fatalf("breakPane: %v", err)
 	}
 
-	_, err = runtime.RunString(`
+	_, err = awaitJSValue(t, runtime, `
 		var wins = tuiMux.windows();
 		if (wins.length !== 2) {
 			throw new Error("expected 2 windows, got " + wins.length);
@@ -342,17 +358,17 @@ func TestJoinPane_MovesPaneBetweenWindows(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var sess1 = termmux.newBoundedSession({ cmd: idleBin });
+	err := awaitJSErr(t, runtime, `
+		globalThis.sess1 = await termmux.newBoundedSession({ cmd: idleBin });
 		tuiMux.register(sess1.session, { name: "test" });
 	`)
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
-	_, err = runtime.RunString(`
+	_, err = awaitJSValue(t, runtime, `
 		var winId = tuiMux.newWindow("win1");
 		tuiMux.addPaneToWindow(sess1.session, { name: "test", windowId: winId });
 	`)
@@ -360,7 +376,7 @@ func TestJoinPane_MovesPaneBetweenWindows(t *testing.T) {
 		t.Fatalf("addPaneToWindow: %v", err)
 	}
 
-	_, err = runtime.RunString(`
+	_, err = awaitJSValue(t, runtime, `
 		var newWin = tuiMux.breakPane(1);
 		if (newWin.windowID !== 2) {
 			throw new Error("expected window 2, got " + newWin.windowID);
@@ -370,7 +386,7 @@ func TestJoinPane_MovesPaneBetweenWindows(t *testing.T) {
 		t.Fatalf("breakPane: %v", err)
 	}
 
-	_, err = runtime.RunString(`
+	_, err = awaitJSValue(t, runtime, `
 		var result = tuiMux.joinPane(1, 1);
 		if (!result || !result.paneID) {
 			throw new Error("joinPane failed: returned " + JSON.stringify(result));
@@ -386,7 +402,7 @@ func TestBreakPane_InvalidPaneId(t *testing.T) {
 	defer cleanup()
 
 	// Break with a non-existent pane ID should error.
-	_, err := runtime.RunString(`
+	_, err := awaitJSValue(t, runtime, `
 		try {
 			tuiMux.breakPane(999);
 			throw new Error("expected error");
@@ -404,7 +420,7 @@ func TestJoinPane_InvalidPaneId(t *testing.T) {
 	defer cleanup()
 
 	// Join with a non-existent pane ID should error.
-	_, err := runtime.RunString(`
+	_, err := awaitJSValue(t, runtime, `
 		try {
 			tuiMux.joinPane(999, 1);
 			throw new Error("expected error");
@@ -423,13 +439,13 @@ func TestJoinPane_InvalidTargetWindow(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
 	// Register a session and split to create panes.
-	_, err := runtime.RunString(`
-		var sess = termmux.newBoundedSession({ cmd: idleBin });
+	err := awaitJSErr(t, runtime, `
+		var sess = await termmux.newBoundedSession({ cmd: idleBin });
 		tuiMux.register(sess.session, { name: "test" });
-		var sess2 = termmux.newBoundedSession({ cmd: idleBin });
+		var sess2 = await termmux.newBoundedSession({ cmd: idleBin });
 		tuiMux.register(sess2.session, { name: "test2" });
 		tuiMux.splitVertical({ session: sess2.session, target: { name: "test2" } });
 	`)
@@ -438,7 +454,7 @@ func TestJoinPane_InvalidTargetWindow(t *testing.T) {
 	}
 
 	// Join to a non-existent window should error.
-	_, err = runtime.RunString(`
+	_, err = awaitJSValue(t, runtime, `
 		try {
 			tuiMux.joinPane(1, 999);
 			throw new Error("expected error");
@@ -460,21 +476,22 @@ func TestZoomSwap_StillWork(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
 	// Register sessions and create panes via splitVertical.
-	_, err := runtime.RunString(`
-		var sess = termmux.newBoundedSession({ cmd: idleBin });
+	_, err := awaitJSValue(t, runtime, `
+		var sess = await termmux.newBoundedSession({ cmd: idleBin });
 		tuiMux.splitVertical({ session: sess.session, target: { name: "test" } });
-		var sess2 = termmux.newBoundedSession({ cmd: idleBin });
+		var sess2 = await termmux.newBoundedSession({ cmd: idleBin });
 		tuiMux.splitVertical({ session: sess2.session, target: { name: "test2" } });
+		return true;
 	`)
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
 	// Zoom should not error.
-	_, err = runtime.RunString(`
+	_, err = awaitJSValue(t, runtime, `
 		tuiMux.zoomPane(1);
 	`)
 	if err != nil {
@@ -482,7 +499,7 @@ func TestZoomSwap_StillWork(t *testing.T) {
 	}
 
 	// Swap panes should not error.
-	_, err = runtime.RunString(`
+	_, err = awaitJSValue(t, runtime, `
 		tuiMux.swapPanes(1, 2);
 	`)
 	if err != nil {
@@ -495,11 +512,11 @@ func TestRespawnSession_StillWorks(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
 	// Register a session.
-	_, err := runtime.RunString(`
-		var sess = termmux.newBoundedSession({ cmd: idleBin });
+	_, err := awaitJSValue(t, runtime, `
+		var sess = await termmux.newBoundedSession({ cmd: idleBin });
 		tuiMux.register(sess.session, { name: "test" });
 	`)
 	if err != nil {
@@ -507,7 +524,7 @@ func TestRespawnSession_StillWorks(t *testing.T) {
 	}
 
 	// Respawn should not error.
-	_, err = runtime.RunString(`
+	_, err = awaitJSValue(t, runtime, `
 		var newSid = tuiMux.respawnSession(1);
 	`)
 	if err != nil {
@@ -520,18 +537,18 @@ func TestPaneMethodBindings(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		function mkSession(name) {
-			var s = termmux.newBoundedSession({ cmd: idleBin });
+	_, err := awaitJSValue(t, runtime, `
+		async function mkSession(name) {
+			var s = await termmux.newBoundedSession({ cmd: idleBin });
 			tuiMux.register(s.session, { name: name });
 			return s.session;
 		}
-		mkSession("test");
-		var pid = tuiMux.splitHorizontal({ session: mkSession("sp"), target: { name: "sp" } });
+		await mkSession("test");
+		var pid = tuiMux.splitHorizontal({ session: (await mkSession("sp")), target: { name: "sp" } });
 		if (typeof pid !== "bigint" && typeof pid !== "number") { throw new Error("splitHorizontal returned non-numeric"); }
-		pid = tuiMux.splitVertical({ session: mkSession("sv"), target: { name: "sv" } });
+		pid = tuiMux.splitVertical({ session: (await mkSession("sv")), target: { name: "sv" } });
 		if (typeof pid !== "bigint" && typeof pid !== "number") { throw new Error("splitVertical returned non-numeric"); }
 		tuiMux.focusPaneUp();
 		tuiMux.focusPaneDown();
@@ -542,7 +559,7 @@ func TestPaneMethodBindings(t *testing.T) {
 		if (paneList.length === 0) { throw new Error("expected panes"); }
 		tuiMux.resizePane(1, 0.7);
 		var winId = tuiMux.newWindow("winAdded");
-		tuiMux.addPaneToWindow(mkSession("added"), { target: { name: "added" }, windowId: winId });
+		tuiMux.addPaneToWindow((await mkSession("added")), { target: { name: "added" }, windowId: winId });
 		tuiMux.zoomPane(1);
 		tuiMux.zoomPane(1);
 		tuiMux.swapPanes(1, 2);
@@ -562,26 +579,26 @@ func TestWindowSwitch_JSRouting(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		function mkSession(name) {
+	_, err := awaitJSValue(t, runtime, `
+		async function mkSession(name) {
 			// Use newCaptureSession to create a CaptureSession without
 			// registering it with the SessionManager. addPaneToWindow will
 			// register it. This avoids double-registration which creates
 			// two per-session output goroutines that compete for the same
 			// CaptureSession output channel.
 			var s = termmux.newCaptureSession(idleBin, [], { name: name });
-			s.start();
+			await s.start();
 			return s;
 		}
 
-		var s1 = mkSession("s1");
+		var s1 = await mkSession("s1");
 		var w1 = tuiMux.newWindow("w1");
 		var p1 = tuiMux.addPaneToWindow(s1, { windowId: w1, target: { name: "w1p1" } });
 		if (p1 === 0) { throw new Error("expected valid pane id for s1"); }
 
-		var s2 = mkSession("s2");
+		var s2 = await mkSession("s2");
 		var w2 = tuiMux.newWindow("w2");
 		var p2 = tuiMux.addPaneToWindow(s2, { windowId: w2, target: { name: "w2p1" } });
 		if (p2 === 0) { throw new Error("expected valid pane id for s2"); }
@@ -615,38 +632,24 @@ func TestWindowSwitch_JSRouting(t *testing.T) {
 		var keys = ("echo routed").split("");
 		keys.push("enter");
 		tuiMux.sendKeys.apply(tuiMux, [active.id].concat(keys));
-		__activeId = active.id;
+
+		// Cooperative poll for routed output — yields to the loop so the
+		// SessionManager pipeline can deliver PTY bytes to the VTerm.
+		return new Promise(function(resolve, reject) {
+			(function poll() {
+				var snap = tuiMux.snapshot(active.id);
+				var text = snap && snap.plainText ? snap.plainText : '';
+				if (text.indexOf('routed') >= 0) return resolve(text);
+				if (Date.now() > (poll.deadline || (poll.deadline = Date.now() + 10000))) {
+					return reject(new Error('input did not reach active session; snapshot=' + text));
+				}
+				setTimeout(poll, 50);
+			})();
+		});
 	`)
 	if err != nil {
 		t.Fatalf("window switch JS routing: %v", err)
 	}
-
-	// Wait for cmd.exe (Windows) to fully initialize before polling.
-	// On Windows, cmd.exe prints a startup banner that takes variable time.
-	time.Sleep(1 * time.Second)
-
-	// Poll for "routed" in the snapshot with Go-side delays.
-	// The JS while-loop was a busy-loop that starved the SessionManager worker.
-	activeIdVal := runtime.Get("__activeId")
-	activeId := uint64(activeIdVal.ToInteger())
-	_ = activeId // used in JS via __activeId variable
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		v, err := runtime.RunString(`
-			var snap = tuiMux.snapshot(__activeId);
-			snap && snap.plainText ? snap.plainText : ""
-		`)
-		if err != nil {
-			t.Fatalf("snapshot: %v", err)
-		}
-		if strings.Contains(v.String(), "routed") {
-			return // SUCCESS
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-
-	snapVal, _ := runtime.RunString(`var snap = tuiMux.snapshot(__activeId); snap && snap.plainText ? snap.plainText : "(nil)"`)
-	t.Fatalf("input did not reach active session; snapshot = %s", snapVal.String())
 }
 
 func newTestSession(t *testing.T, ctx context.Context) *parent.StringIOSession {
@@ -813,9 +816,9 @@ func TestRespawnSession_JSBinding_RebindsPane(t *testing.T) {
 	defer cleanup()
 
 	exitBin := buildExitProgram(t)
-	_ = runtime.Set("exitBin", exitBin)
+	setOnLoop(t, runtime, "exitBin", exitBin)
 
-	_, err := runtime.RunString(`
+	_, err := awaitJSValue(t, runtime, `
 		var sess = termmux.newCaptureSession(exitBin);
 		sess.start();
 		tuiMux.setRemainOnExit(true);

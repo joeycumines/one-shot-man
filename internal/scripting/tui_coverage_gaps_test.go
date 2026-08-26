@@ -1833,19 +1833,6 @@ func TestTriggerExit_NilPrompt(t *testing.T) {
 	tm.TriggerExit()
 }
 
-// TestFlushQueuedOutput_Empty tests flushing empty queue.
-func TestFlushQueuedOutput_Empty(t *testing.T) {
-	t.Parallel()
-	var buf bytes.Buffer
-	tm := &TUIManager{
-		writer: NewTUIWriterIO(&buf),
-	}
-	tm.flushQueuedOutput()
-	if buf.Len() != 0 {
-		t.Errorf("expected no output, got %q", buf.String())
-	}
-}
-
 // TestScheduleWriteAndWait_AfterShutdown tests that scheduling after shutdown returns error.
 func TestScheduleWriteAndWait_AfterShutdown(t *testing.T) {
 	ctx := context.Background()

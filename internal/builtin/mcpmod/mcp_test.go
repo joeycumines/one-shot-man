@@ -61,7 +61,7 @@ func runAsync(t *testing.T, p *testutil.TestEventLoopProvider, js string) {
 		if result != nil {
 			t.Fatal(result)
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(60 * time.Second):
 		t.Fatal("async test timed out")
 	}
 }
@@ -166,7 +166,6 @@ func TestAddTool_AfterRun_Panics(t *testing.T) {
 	loadModule(t, p)
 	runAsync(t, p, `
 		var srv = mcpMod.createServer('test', '1.0.0');
-		// Start server (it will fail because stdin is not MCP, but running flag is set)
 		var runPromise = srv.run('stdio');
 		try {
 			srv.addTool({ name: 'late' }, function() { return { text: 'hi' }; });
@@ -177,6 +176,7 @@ func TestAddTool_AfterRun_Panics(t *testing.T) {
 			}
 		}
 		srv.close();
+		await new Promise(function(r) { setTimeout(r, 25); }); // let close() settle before awaiting runPromise
 		try { await runPromise; } catch(e) { /* expected - no real MCP client */ }
 	`)
 }

@@ -154,9 +154,10 @@
         });
         registry.register(provider);
 
-        var handle = registry.spawn('demo-agent', { rows: 24, cols: 80 });
-        model.handle = handle;
-        model.alive = handle.isAlive();
+        registry.spawn('demo-agent', { rows: 24, cols: 80 }).then(function(handle) {
+            model.handle = handle;
+            model.alive = handle.isAlive();
+        });
 
         // Parser
         var parser = aimux.newParser();

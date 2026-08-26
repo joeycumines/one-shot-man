@@ -567,7 +567,7 @@
 
         // Non-blocking: use platform-aware shell spawn so the event loop
         // stays responsive during verification.
-        var child = shellSpawnAsync(shellCmd);
+        var child = await shellSpawnAsync(shellCmd);
 
         // Read stdout and stderr concurrently via async streams.
         async function readStream(stream, onChunk) {

@@ -146,7 +146,7 @@ type JSLeafAdapter struct {
 
 func NewJSLeafAdapter(ctx context.Context, bridge *Bridge, tick goja.Callable, getCtx func() any) bt.Node {
 	if ctx == nil {
-		ctx = context.Background()
+		panic("bt: nil context requires baseCtx threading")
 	}
 	adapter := &JSLeafAdapter{
 		bridge: bridge,
@@ -344,14 +344,14 @@ func mapJSStatus(s string) bt.Status {
 // from within event loop callbacks.
 //
 // Parameters:
-//   - ctx: Context for cancellation support (pass nil for context.Background())
+//   - ctx: Context for cancellation support (must be non-nil, threaded from baseCtx)
 //   - bridge: The Bridge managing the JavaScript runtime
 //   - vm: Optional VM reference for direct execution when on event loop (can be nil)
 //   - tick: The JavaScript callable (goja.Callable) to execute
 //   - getCtx: Function that returns the context/blackboard to pass to the JS function
 func BlockingJSLeaf(ctx context.Context, bridge *Bridge, vm *goja.Runtime, tick goja.Callable, getCtx func() any) bt.Node {
 	if ctx == nil {
-		ctx = context.Background()
+		panic("bt: nil context requires baseCtx threading")
 	}
 	return func() (bt.Tick, []bt.Node) {
 		return func(children []bt.Node) (bt.Status, error) {

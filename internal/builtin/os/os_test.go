@@ -254,23 +254,24 @@ func TestReadFile(t *testing.T) {
 }
 
 func TestFileExistsAndGetenv(t *testing.T) {
-	runtime, exports := setupModule(t, nil)
-	fileExists := requireCallable(t, exports, "fileExists")
-	getenv := requireCallable(t, exports, "getenv")
+	_, runJS := asyncTestEnv(t)
 
 	tmp := filepath.Join(t.TempDir(), "example.txt")
 	if err := os.WriteFile(tmp, []byte("hello world"), 0o600); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
 
-	existsVal, err := fileExists(goja.Undefined(), runtime.ToValue(tmp))
+	existsVal, err := runJS(fmt.Sprintf(
+		`os.fileExists(%q).then(function(r) { __collect(r.exists); });`, tmp))
 	if err != nil {
 		t.Fatalf("fileExists failed: %v", err)
 	}
 	if !existsVal.ToBoolean() {
 		t.Fatalf("expected fileExists to return true")
 	}
-	notExists, err := fileExists(goja.Undefined(), runtime.ToValue(filepath.Join(t.TempDir(), "nope")))
+	notExists, err := runJS(fmt.Sprintf(
+		`os.fileExists(%q).then(function(r) { __collect(r.exists); });`,
+		filepath.Join(t.TempDir(), "nope")))
 	if err != nil {
 		t.Fatalf("fileExists missing failed: %v", err)
 	}
@@ -279,7 +280,7 @@ func TestFileExistsAndGetenv(t *testing.T) {
 	}
 
 	t.Setenv("MY_ENV_VAR", "value123")
-	envVal, err := getenv(goja.Undefined(), runtime.ToValue("MY_ENV_VAR"))
+	envVal, err := runJS(`__collect(os.getenv("MY_ENV_VAR"));`)
 	if err != nil {
 		t.Fatalf("getenv failed: %v", err)
 	}
@@ -458,11 +459,10 @@ func TestReadFile_EmptyPath(t *testing.T) {
 }
 
 func TestFileExists_EmptyPath(t *testing.T) {
-	runtime, exports := setupModule(t, nil)
-	fileExists := requireCallable(t, exports, "fileExists")
+	_, runJS := asyncTestEnv(t)
 
-	// No arguments → false
-	res, err := fileExists(goja.Undefined())
+	// No arguments → {exists:false}
+	res, err := runJS(`os.fileExists().then(function(r) { __collect(r.exists); });`)
 	if err != nil {
 		t.Fatalf("fileExists no args: %v", err)
 	}
@@ -470,8 +470,8 @@ func TestFileExists_EmptyPath(t *testing.T) {
 		t.Fatal("expected false for no args")
 	}
 
-	// Empty string argument → path="" → false
-	res, err = fileExists(goja.Undefined(), runtime.ToValue(""))
+	// Empty string argument → path="" → {exists:false}
+	res, err = runJS(`os.fileExists("").then(function(r) { __collect(r.exists); });`)
 	if err != nil {
 		t.Fatalf("fileExists empty string: %v", err)
 	}
@@ -1383,8 +1383,7 @@ func TestReadFile_TildeExpansionFailure(t *testing.T) {
 // TestFileExists_TildeExpansion verifies that fileExists correctly handles
 // tilde paths when HOME is available.
 func TestFileExists_TildeExpansion(t *testing.T) {
-	vm, exports := setupModuleAllPlatforms(t, nil)
-	fileExists := requireCallable(t, exports, "fileExists")
+	_, runJS := asyncTestEnv(t)
 
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
@@ -1396,7 +1395,7 @@ func TestFileExists_TildeExpansion(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	res, err := fileExists(goja.Undefined(), vm.ToValue("~/exists.txt"))
+	res, err := runJS(`os.fileExists("~/exists.txt").then(function(r) { __collect(r.exists); });`)
 	if err != nil {
 		t.Fatalf("fileExists ~/exists.txt error: %v", err)
 	}
@@ -1405,7 +1404,7 @@ func TestFileExists_TildeExpansion(t *testing.T) {
 	}
 
 	// Non-existent file under tilde should return false
-	res, err = fileExists(goja.Undefined(), vm.ToValue("~/nope.txt"))
+	res, err = runJS(`os.fileExists("~/nope.txt").then(function(r) { __collect(r.exists); });`)
 	if err != nil {
 		t.Fatalf("fileExists ~/nope.txt error: %v", err)
 	}

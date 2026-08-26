@@ -3,7 +3,6 @@ package termmux
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestSendKeys_JSBinding(t *testing.T) {
@@ -15,10 +14,10 @@ func TestSendKeys_JSBinding(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var s = termmux.newBoundedSession({ cmd: idleBin });
+	snapVal, snapErr := awaitJSValue(t, runtime, `
+		var s = await termmux.newBoundedSession({ cmd: idleBin });
 		tuiMux.activate(s.sid);
 
 		tuiMux.sendKeys(s.sid, "h", "e", "l", "l", "o", "enter");
@@ -27,36 +26,23 @@ func TestSendKeys_JSBinding(t *testing.T) {
 			throw new Error("session wrapper missing sendKeys method");
 		}
 		s.session.sendKeys("w", "o", "r", "l", "d", "enter");
+
+		return new Promise(function(resolve, reject) {
+			(function poll() {
+				var snap = tuiMux.snapshot(s.sid);
+				var text = snap && snap.plainText ? snap.plainText : "";
+				if (text.indexOf("hello") >= 0 && text.indexOf("world") >= 0) return resolve(text);
+				if (Date.now() > (poll.deadline || (poll.deadline = Date.now() + 5000))) return reject(new Error("timeout waiting for output"));
+				setTimeout(poll, 50);
+			})();
+		});
 	`)
-	if err != nil {
-		t.Fatalf("sendKeys script: %v", err)
+	if snapErr != nil {
+		t.Fatalf("sendKeys script: %v", snapErr)
 	}
+	snapText := snapVal.String()
+	_ = snapErr
 
-	// Use snapshot to read the VTerm's plain text instead of readAvailable(),
-	// because the SessionManager consumes the CaptureSession's output channel
-	// (Reader()) via its per-session goroutine. On Windows with cmd.exe, the
-	// startup banner output is consumed before readAvailable can read it.
-	// snapshot reads from the VTerm which processes output through the
-	// SessionManager's internal pipeline.
-	var snapText string
-	for range 60 {
-		v, err := runtime.RunString(`
-			var snap = tuiMux.snapshot(s.sid);
-			snap && snap.plainText ? snap.plainText : ""
-		`)
-		if err != nil {
-			t.Fatalf("snapshot: %v", err)
-		}
-		snapText = v.String()
-		if strings.Contains(snapText, "hello") && strings.Contains(snapText, "world") {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-
-	if !strings.Contains(snapText, "hello") {
-		t.Errorf("output missing hello: %q", snapText)
-	}
 	if !strings.Contains(snapText, "world") {
 		t.Errorf("output missing world: %q", snapText)
 	}

@@ -269,6 +269,9 @@ func TestChunk16_T45_CrashCloseSplitView(t *testing.T) {
 
 		var r = update({type: 'Tick', id: 'auto-poll'}, s);
 		var ns = r[0];
+		// Crash diagnostics resolve asynchronously; flush microtasks.
+		await Promise.resolve();
+		ns = r[0];
 
 		var errors = [];
 		if (ns.splitViewEnabled) errors.push('splitViewEnabled should be false after crash');

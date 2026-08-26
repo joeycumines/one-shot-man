@@ -13,11 +13,11 @@ func TestActivityReset_JSBinding(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var s1 = termmux.newBoundedSession({ cmd: idleBin });
-		var s2 = termmux.newBoundedSession({ cmd: idleBin });
+	_, err := awaitJSValue(t, runtime, `
+		var s1 = await termmux.newBoundedSession({ cmd: idleBin });
+		var s2 = await termmux.newBoundedSession({ cmd: idleBin });
 		var mgr = s1.mgr;
 		var sid = s1.sid;
 
@@ -26,14 +26,15 @@ func TestActivityReset_JSBinding(t *testing.T) {
 
 		var sub = mgr.subscribe(1024);
 
-		function waitOutput(text, deadline) {
-			while (Date.now() < deadline) {
-				var snap = mgr.snapshot(sid);
-				if (snap && snap.plainText && snap.plainText.indexOf(text) >= 0) {
-					return true;
-				}
-			}
-			return false;
+		function waitOutput(text, deadlineMs) {
+			return new Promise(function(resolve, reject) {
+				(function poll() {
+					var snap = mgr.snapshot(sid);
+					if (snap && snap.plainText && snap.plainText.indexOf(text) >= 0) return resolve();
+					if (Date.now() > deadlineMs) return reject(new Error('timeout waiting output ' + text));
+					setTimeout(poll, 10);
+				})();
+			});
 		}
 		function countActivity() {
 			var found = 0;
@@ -45,32 +46,26 @@ func TestActivityReset_JSBinding(t *testing.T) {
 			}
 			return found;
 		}
-		function waitActivity(deadline) {
-			var saw = 0;
-			while (Date.now() < deadline) {
-				var n = countActivity();
-				saw += n;
-				if (n >= 1) {
-					return;
-				}
-			}
-			throw new Error("timeout; activity count=" + saw);
+		function waitActivity(deadlineMs) {
+			return new Promise(function(resolve, reject) {
+				(function poll() {
+					if (countActivity() >= 1) return resolve();
+					if (Date.now() > deadlineMs) return reject(new Error('timeout; activity count=0'));
+					setTimeout(poll, 10);
+				})();
+			});
 		}
 
 		s1.session.write("hello\n");
 		s1.session.write("hello2\n");
-		if (!waitOutput("hello2", Date.now() + 3000)) {
-			throw new Error("expected output from s1");
-		}
-		waitActivity(Date.now() + 3000);
+		await waitOutput("hello2", Date.now() + 3000);
+		await waitActivity(Date.now() + 3000);
 
 		mgr.resetActivity(sid);
 		s1.session.write("again\n");
 		s1.session.write("again2\n");
-		if (!waitOutput("again2", Date.now() + 3000)) {
-			throw new Error("expected output from s1 after reset");
-		}
-		waitActivity(Date.now() + 3000);
+		await waitOutput("again2", Date.now() + 3000);
+		await waitActivity(Date.now() + 3000);
 	`)
 	if err != nil {
 		t.Fatalf("activity reset script: %v", err)

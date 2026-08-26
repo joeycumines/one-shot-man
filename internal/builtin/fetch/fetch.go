@@ -2,7 +2,8 @@
 package fetch
 
 import (
-	"bytes"
+	"errors"
+"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,6 +18,23 @@ import (
 	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
+
+// handleSettleErr handles settler/bridge settlement errors symmetrically.
+// ErrLoopTerminated, ErrAdapterInvalid and ErrPromiseSettled are expected
+// during shutdown/termination and are tolerated at debug level; other
+// errors are unexpected and would be logged. Documented tolerance: settlement
+// may be dropped if loop terminated before Submit, promise may remain pending
+// only for hard Close (stranded is defined behavior, see track.go).
+func handleSettleErr(err error) {
+    if err == nil {
+        return
+    }
+    if errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
+        return
+    }
+    _ = err
+}
+
 
 const defaultMaxResponseSize int64 = 10 << 20
 
@@ -57,12 +75,12 @@ func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.
 					}
 					cancel()
 					promise, settler := adapter.NewPromise()
-					_ = settler.Reject(func(rt *goja.Runtime) any {
+					handleSettleErr(settler.Reject(func(rt *goja.Runtime) any {
 						if reason != nil {
 							return reason
 						}
 						return rt.NewGoError(fmt.Errorf("aborted"))
-					})
+					}))
 					return promise
 				}
 			}

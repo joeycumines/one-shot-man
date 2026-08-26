@@ -69,16 +69,17 @@ func TestSlow_Exec_SpawnWaitIsAsync(t *testing.T) {
 	ctx := context.Background()
 	engine, _, _ := newComplianceEngine(t, ctx)
 	cmd, args := echoCommand("spawn-marker")
-	v, err := evalJS(t, engine, fmt.Sprintf(`(function(){
-		var h = require('osm:exec').spawn(%s, %s);
+	v, err := evalJS(t, engine, fmt.Sprintf(`(async function(){
+		var h = await require('osm:exec').spawn(%s, %s);
 		var w = h.wait();
-		return (w !== null && w !== undefined && typeof w === 'object' && typeof w.then === 'function');
+		var isPromise = (w !== null && w !== undefined && typeof w === 'object' && typeof w.then === 'function');
+		return isPromise;
 	})()`, jsStringLit(cmd), jsStrings(args)), defaultEvalTimeout)
 	if err != nil {
 		t.Fatalf("spawn probe failed: %v", err)
 	}
 	if b, ok := v.(bool); !ok || !b {
-		t.Errorf("exec spawn handle.wait() must return a Promise (binding contract); got %v", v)
+		t.Errorf("exec spawn must resolve to a handle whose wait() returns a Promise (binding contract); got %v", v)
 	}
 }
 
@@ -92,7 +93,7 @@ func TestSlow_Exec_SpawnReadStream(t *testing.T) {
 	engine, _, _ := newComplianceEngine(t, ctx)
 	cmd, args := echoCommand("spawn-stream-probe")
 	v, err := evalJS(t, engine, fmt.Sprintf(`(async function () {
-		var h = require('osm:exec').spawn(%s, %s);
+		var h = await require('osm:exec').spawn(%s, %s);
 		var out = '';
 		while (true) {
 			var chunk = await h.stdout.read();

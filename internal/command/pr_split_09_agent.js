@@ -41,7 +41,7 @@
 
     // runAsync runs a command via osm:exec spawn and returns buffered output.
     async function runAsync(exec, argv) {
-        var child = exec.spawn(argv[0], argv.slice(1));
+        var child = await exec.spawn(argv[0], argv.slice(1));
         async function readAll(stream) {
             var buf = '';
             while (true) {
@@ -190,7 +190,7 @@
         try {
             var registry = aimux.newRegistry();
             registry.register(provider);
-            this.handle = registry.spawn(providerName, spawnOpts);
+            this.handle = await registry.spawn(providerName, spawnOpts);
         } catch (e) {
             return {
                 error: 'Agent spawn failed: ' + (e.message || String(e)) +

@@ -562,7 +562,7 @@
                     };
 
                     if (executor && typeof executor.captureDiagnostic === 'function') {
-                        executor.captureDiagnostic().then(finishCrash, function() { finishCrash(''); });
+                        Promise.resolve(executor.captureDiagnostic()).then(finishCrash, function() { finishCrash(''); });
                     } else {
                         finishCrash('');
                     }

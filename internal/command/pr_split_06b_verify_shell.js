@@ -89,7 +89,12 @@
         }
 
         var session = termmux.newCaptureSession(shell, shellArgs, sessionOpts);
-        session.start();
+        var started = session.start();
+        if (started && typeof started.then === 'function') {
+            started.catch(function(e) {
+                log.debug('spawnShell: async start failed', { error: (e && e.message) || String(e) });
+            });
+        }
         return session;
     }
 

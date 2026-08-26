@@ -40,7 +40,7 @@ func TestAutoFixStrategy_GoModTidy_Detect(t *testing.T) {
 	// Mock osmod.fileExists.
 	if _, err := evalJS(`
 		var _osmod56 = require('osm:os');
-		_osmod56.fileExists = function(p) { return !!(globalThis._mockFileExists && globalThis._mockFileExists[p]); };
+		_osmod56.fileExists = async function(p) { var hit = !!(globalThis._mockFileExists && globalThis._mockFileExists[p]); return { exists: !!hit }; };
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestAutoFixStrategy_GoGenerateSum_Detect(t *testing.T) {
 	}
 	if _, err := evalJS(`
 		var _osmod56b = require('osm:os');
-		_osmod56b.fileExists = function(p) { return !!(globalThis._mockFileExists && globalThis._mockFileExists[p]); };
+		_osmod56b.fileExists = async function(p) { var hit = !!(globalThis._mockFileExists && globalThis._mockFileExists[p]); return { exists: !!hit }; };
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestAutoFixStrategy_NpmInstall_Detect(t *testing.T) {
 	}
 	if _, err := evalJS(`
 		var _osmod56c = require('osm:os');
-		_osmod56c.fileExists = function(p) { return !!(globalThis._mockFileExists && globalThis._mockFileExists[p]); };
+		_osmod56c.fileExists = async function(p) { var hit = !!(globalThis._mockFileExists && globalThis._mockFileExists[p]); return { exists: !!hit }; };
 	`); err != nil {
 		t.Fatal(err)
 	}

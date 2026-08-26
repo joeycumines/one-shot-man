@@ -12,6 +12,7 @@ import (
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
+
 const (
 	defaultChunkSize  = 65536
 	defaultBufferSize = 4
@@ -168,11 +169,11 @@ func wrapReaderJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.
 		loop.Promisify(ctx, func(_ context.Context) (any, error) {
 			data, done, err := reader.Read()
 			if err != nil {
-				_ = settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				handleSettleErr(settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) }))
 			} else if done {
-				_ = settler.Resolve(func(*goja.Runtime) any { return map[string]any{"value": nil, "done": true} })
+				handleSettleErr(settler.Resolve(func(*goja.Runtime) any { return map[string]any{"value": nil, "done": true} }))
 			} else {
-				_ = settler.Resolve(func(*goja.Runtime) any { return map[string]any{"value": string(data), "done": false} })
+				handleSettleErr(settler.Resolve(func(*goja.Runtime) any { return map[string]any{"value": string(data), "done": false} }))
 			}
 			return nil, nil
 		})

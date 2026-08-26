@@ -56,7 +56,7 @@ var moduleContracts = []moduleContract{
 	{name: "protobuf", mustExist: []string{"loadDescriptorSet"}},
 
 	// --- I/O / process modules (async exports checked for typeof; behavior in SLOW specs) ---
-	{name: "os", asyncExports: []string{"readFile", "writeFile", "appendFile", "openEditor", "clipboardCopy", "clipboardPaste"}, mustExist: []string{"readFile", "writeFile", "appendFile", "fileExists", "openEditor", "clipboardCopy", "clipboardPaste", "getenv", "isAbsolute", "join", "platform"}},
+	{name: "os", asyncExports: []string{"readFile", "writeFile", "appendFile", "fileExists", "openEditor", "clipboardCopy", "clipboardPaste"}, mustExist: []string{"readFile", "writeFile", "appendFile", "openEditor", "clipboardCopy", "clipboardPaste", "getenv", "isAbsolute", "join", "platform"}},
 	{name: "exec", asyncExports: []string{"execv"}, mustExist: []string{"execv", "spawn"}},
 	{name: "fetch", asyncExports: []string{"fetch", "sseReader"}, mustExist: []string{"fetch"}},
 	{name: "gitops", mustExist: []string{"isRepo", "open", "openDetect", "defaultBranch", "branchExists", "isWorkTree", "headBranchName", "ERR_NOT_REPO", "ERR_NOTHING_TO_COMMIT", "ERR_CONFLICT", "ERR_DETACHED_HEAD"}},

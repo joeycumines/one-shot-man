@@ -14,7 +14,7 @@ func TestMoveWindow_JSBinding_Reorders(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	res, err := runtime.RunString(`
+	res, err := sessionRun(t, runtime, `
 		const w1 = tuiMux.newWindow("a");
 		const w2 = tuiMux.newWindow("b");
 		const w3 = tuiMux.newWindow("c");

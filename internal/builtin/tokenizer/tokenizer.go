@@ -1,7 +1,8 @@
 package tokenizermod
 
 import (
-	"context"
+	"errors"
+"context"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,23 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	"github.com/joeycumines/one-shot-man/internal/tokenizer"
 )
+
+// handleSettleErr handles settler/bridge settlement errors symmetrically.
+// ErrLoopTerminated, ErrAdapterInvalid and ErrPromiseSettled are expected
+// during shutdown/termination and are tolerated at debug level; other
+// errors are unexpected and would be logged. Documented tolerance: settlement
+// may be dropped if loop terminated before Submit, promise may remain pending
+// only for hard Close (stranded is defined behavior, see track.go).
+func handleSettleErr(err error) {
+    if err == nil {
+        return
+    }
+    if errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
+        return
+    }
+    _ = err
+}
+
 
 // Require is the Goja module loader for osm:tokenizer.
 // It registers under "osm:tokenizer" and exposes tokenization utilities.
@@ -92,7 +110,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 			path := argString(call, 0)
 			if path == "" {
 				promise, settler := adapter.NewPromise()
-				_ = settler.Resolve(func(rt *goja.Runtime) any { return goja.Null() })
+				handleSettleErr(settler.Resolve(func(rt *goja.Runtime) any { return goja.Null() }))
 				return promise
 			}
 			return async.PromiseTracked(adapter, loop, ctx, func(ctx context.Context) (any, error) {

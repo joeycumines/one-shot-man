@@ -24,7 +24,7 @@ func TestActiveSideDefault(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.activeSide()`)
+	v, err := sessionRun(t, runtime, `tuiMux.activeSide()`)
 	if err != nil {
 		t.Fatalf("activeSide: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestActiveSideDefault(t *testing.T) {
 		t.Fatalf("activeSide() = %q, want 'osm'", v.String())
 	}
 
-	v, err = runtime.RunString(`tuiMux.isPassthrough()`)
+	v, err = sessionRun(t, runtime, `tuiMux.isPassthrough()`)
 	if err != nil {
 		t.Fatalf("isPassthrough: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestSwitchTo_NoChild(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.switchTo()`)
+	v, err := sessionRun(t, runtime, `tuiMux.switchTo()`)
 	if err != nil {
 		t.Fatalf("switchTo(): %v", err)
 	}
@@ -77,7 +77,7 @@ func TestSwitchTo_NoChild(t *testing.T) {
 		t.Fatalf("switchTo() with no child should return undefined, got %v", v)
 	}
 
-	v, err = runtime.RunString(`tuiMux.activeSide()`)
+	v, err = sessionRun(t, runtime, `tuiMux.activeSide()`)
 	if err != nil {
 		t.Fatalf("activeSide after no-op switchTo: %v", err)
 	}
@@ -128,7 +128,7 @@ func setupPassthroughState(t *testing.T) (runtime *goja.Runtime, s *muxState, st
 	}
 
 	tuiMux, state := wrapSessionManager(ctx, adapter, loop, runtime, mgr, stdinR, &bytes.Buffer{}, -1, "")
-	_ = runtime.Set("tuiMux", tuiMux)
+	_ = runtime.Set( "tuiMux", tuiMux)
 
 	loopDone := make(chan struct{})
 	go func() {
@@ -252,7 +252,7 @@ func TestFromModel_OnToggleWrapsOriginal(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var originalCalled = false;
 		var wrapped = tuiMux.fromModel({}, {
 			onToggle: function() { originalCalled = true; }
@@ -267,7 +267,7 @@ func TestFromModel_OnToggleWrapsOriginal(t *testing.T) {
 		t.Fatal("original onToggle callback was not invoked by wrapped onToggle")
 	}
 
-	v, err = runtime.RunString(`tuiMux.activeSide() + ':' + tuiMux.isPassthrough()`)
+	v, err = sessionRun(t, runtime, `tuiMux.activeSide() + ':' + tuiMux.isPassthrough()`)
 	if err != nil {
 		t.Fatalf("post-callback state query: %v", err)
 	}

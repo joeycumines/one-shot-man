@@ -274,11 +274,18 @@
                 },
                 list: {
                     description: "List context items",
-                    handler: function () {
+                    handler: async function () {
                         for (const it of getItems()) {
                             let line = "[" + it.id + "] [" + it.type + "] " + (it.label || "");
-                            if (it.type === 'file' && it.label && !fileExists(it.label)) {
-                                line += " (missing)";
+                            if (it.type === 'file' && it.label) {
+                                try {
+                                    const fe = await fileExists(it.label);
+                                    if (!(fe && fe.exists)) {
+                                        line += " (missing)";
+                                    }
+                                } catch (e) {
+                                    line += " (unverifiable: " + ((e && e.message) || e) + ")";
+                                }
                             }
                             output.print(line);
                         }

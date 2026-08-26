@@ -20,7 +20,7 @@ func setup(t *testing.T) *goja.Runtime {
 	module := vm.NewObject()
 	exports := vm.NewObject()
 	_ = module.Set("exports", exports)
-	Require(context.Background(), nil, nil)(vm, module)
+	Require(context.Background(), nil)(vm, module)
 	_ = vm.Set("path", module.Get("exports"))
 	return vm
 }
@@ -50,7 +50,7 @@ func asyncTestEnv(t *testing.T) (*goja.Runtime, func(string) (goja.Value, error)
 	module := vm.NewObject()
 	exports := vm.NewObject()
 	_ = module.Set("exports", exports)
-	Require(context.Background(), adapter, loop)(vm, module)
+	Require(context.Background(), adapter)(vm, module)
 	_ = vm.Set("path", module.Get("exports"))
 
 	resultCh := make(chan goja.Value, 1)

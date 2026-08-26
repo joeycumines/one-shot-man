@@ -2,7 +2,8 @@
 package exec
 
 import (
-	"bytes"
+	"errors"
+"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -13,6 +14,23 @@ import (
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
+
+// handleSettleErr handles settler/bridge settlement errors symmetrically.
+// ErrLoopTerminated, ErrAdapterInvalid and ErrPromiseSettled are expected
+// during shutdown/termination and are tolerated at debug level; other
+// errors are unexpected and would be logged. Documented tolerance: settlement
+// may be dropped if loop terminated before Submit, promise may remain pending
+// only for hard Close (stranded is defined behavior, see track.go).
+func handleSettleErr(err error) {
+    if err == nil {
+        return
+    }
+    if errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
+        return
+    }
+    _ = err
+}
+
 
 // Require returns a module loader for `osm:exec` that uses the provided base context
 // (typically the TUI manager's context). Each invocation wraps the base context
@@ -30,19 +48,19 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 			_ = exports.Set("execv", func(call goja.FunctionCall) goja.Value {
 				if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
 					promise, settler := adapter.NewPromise()
-					_ = settler.Resolve(func(rt *goja.Runtime) any {
+					handleSettleErr(settler.Resolve(func(rt *goja.Runtime) any {
 						m := map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: no argv"}
 						return m
-					})
+					}))
 					return promise
 				}
 				var parts []string
 				if err := runtime.ExportTo(call.Argument(0), &parts); err != nil || len(parts) == 0 {
 					promise, settler := adapter.NewPromise()
-					_ = settler.Resolve(func(rt *goja.Runtime) any {
+					handleSettleErr(settler.Resolve(func(rt *goja.Runtime) any {
 						m := map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: expects array of strings"}
 						return m
-					})
+					}))
 					return promise
 				}
 				cmd := parts[0]

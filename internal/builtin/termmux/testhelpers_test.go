@@ -43,9 +43,8 @@ func (e *testEnv) stop() {
 }
 
 // newTestEnv creates a fresh Goja runtime with EventTarget/CustomEvent globals
-// bound and the osm:termmux module loaded. The event loop is NOT started to
-// avoid data races between event dispatch and runtime.RunString(). Callers
-// must run e.stop() before the test returns.
+// bound and the osm:termmux module loaded. The event loop runs so Promises
+// settle; scripts must execute via runJS/awaitJS helpers (or runOnEnvLoop).
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 
@@ -74,6 +73,20 @@ func newTestEnv(t *testing.T) *testEnv {
 	if err != nil {
 		t.Fatalf("require osm:termmux: %v", err)
 	}
+
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		_ = loop.Run(ctx)
+	}()
+	testLoops.Store(runtime, loop)
+
+	t.Cleanup(func() {
+		testLoops.Delete(runtime)
+		cancel()
+		_ = loop.Shutdown(context.Background())
+		<-loopDone
+	})
 
 	return &testEnv{
 		ctx:     ctx,
@@ -136,6 +149,27 @@ func testRequireCtx(t *testing.T, ctx context.Context) (*goja.Runtime, *goja.Obj
 	t.Helper()
 	e := newTestEnvCtx(t, ctx)
 	return e.runtime, e.exports, e
+}
+
+// testRequireLooped is testRequire with a running event loop registered in
+// testLoops, for tests whose scripts must await promises.
+func testRequireLooped(t *testing.T) (*goja.Runtime, *goja.Object) {
+	t.Helper()
+	e := newTestEnv(t)
+	loopDone := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		defer close(loopDone)
+		_ = e.loop.Run(ctx)
+	}()
+	testLoops.Store(e.runtime, e.loop)
+	t.Cleanup(func() {
+		cancel()
+		testLoops.Delete(e.runtime)
+		e.stop()
+		<-loopDone
+	})
+	return e.runtime, e.exports
 }
 
 // wrapTestSessionManager creates a fresh event loop, binds EventTarget/CustomEvent
@@ -274,4 +308,84 @@ func loopForRuntime(t *testing.T, runtime *goja.Runtime) *goeventloop.Loop {
 		t.Fatalf("no event loop found for runtime")
 	}
 	return loopVal.(*goeventloop.Loop)
+}
+
+// awaitJSValue runs an async JS snippet (may use await; its returned value is
+// captured) on the event loop goroutine for the given runtime and waits for
+// settlement. The runtime must have been registered via
+// wrapTestSessionManagerWithLoop or setupTmuxModule.
+func awaitJSValue(t *testing.T, runtime *goja.Runtime, script string) (goja.Value, error) {
+	t.Helper()
+	loop := loopForRuntime(t, runtime)
+	type result struct {
+		v   goja.Value
+		err error
+	}
+	ch := make(chan result, 1)
+	if err := loop.Submit(func() {
+		_ = runtime.Set("__awaitJSVal", func(v goja.Value) { ch <- result{v: v} })
+		_ = runtime.Set("__awaitJSFail", func(msg string) { ch <- result{err: errors.New(msg)} })
+		wrapped := `(async function() { ` + script + ` })()
+		.then(function(v) { __awaitJSVal(v); }, function(e) { __awaitJSFail(e && e.message ? e.message : String(e)); });`
+		if _, runErr := runtime.RunString(wrapped); runErr != nil {
+			ch <- result{err: runErr}
+		}
+	}); err != nil {
+		return nil, err
+	}
+	select {
+	case r := <-ch:
+		return r.v, r.err
+	case <-time.After(30 * time.Second):
+		return nil, errors.New("awaitJSValue timed out")
+	}
+}
+
+// awaitJSErr runs an async JS snippet on the event loop goroutine for the
+// given runtime and returns any settlement error.
+func awaitJSErr(t *testing.T, runtime *goja.Runtime, script string) error {
+	_, err := awaitJSValue(t, runtime, script)
+	return err
+}
+
+// setOnLoop sets a global on the event loop goroutine. Required whenever the
+// runtime's loop is running: direct runtime access from the test goroutine
+// races with bridge-dispatched event callbacks.
+func setOnLoop(t *testing.T, runtime *goja.Runtime, name string, value any) {
+	t.Helper()
+	loop := loopForRuntime(t, runtime)
+	done := make(chan struct{})
+	if err := loop.Submit(func() {
+		defer close(done)
+		_ = runtime.Set(name, value)
+	}); err != nil {
+		t.Fatalf("submit set to event loop: %v", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatalf("setOnLoop(%s) timed out", name)
+	}
+}
+
+// getOnLoop reads a global from the event loop goroutine.
+func getOnLoop(t *testing.T, runtime *goja.Runtime, name string) goja.Value {
+	t.Helper()
+	loop := loopForRuntime(t, runtime)
+	type result struct {
+		v goja.Value
+	}
+	ch := make(chan result, 1)
+	if err := loop.Submit(func() {
+		ch <- result{v: runtime.Get(name)}
+	}); err != nil {
+		t.Fatalf("submit get to event loop: %v", err)
+	}
+	select {
+	case r := <-ch:
+		return r.v
+	case <-time.After(30 * time.Second):
+		t.Fatalf("getOnLoop(%s) timed out", name)
+		return nil
+	}
 }

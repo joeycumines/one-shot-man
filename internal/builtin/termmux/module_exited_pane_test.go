@@ -13,28 +13,28 @@ func TestWindowPanes_ExitedFlag(t *testing.T) {
 	defer cleanup()
 
 	exitBin := buildExitProgram(t)
-	_ = runtime.Set("exitBin", exitBin)
+	setOnLoop(t, runtime, "exitBin", exitBin)
 
-	_, err := runtime.RunString(`
+	err := awaitJSErr(t, runtime, `
 		tuiMux.setRemainOnExit(true);
 		var sess = termmux.newCaptureSession(exitBin);
-		sess.start();
+		await sess.start();
 		var paneId = tuiMux.splitHorizontal({ session: sess, target: { name: "exited-js", kind: "capture" } });
 		if (paneId === 0) { throw new Error("expected valid pane id"); }
 
-		var deadline = Date.now() + 5000;
-		var exited = false;
-		while (Date.now() < deadline) {
-			var sessions = tuiMux.sessions();
-			for (var i = 0; i < sessions.length; i++) {
-				if (sessions[i].state === "exited") {
-					exited = true;
-					break;
-				}
-			}
-			if (exited) break;
+		function waitExited(deadlineMs) {
+			return new Promise(function(resolve, reject) {
+				(function poll() {
+					var sessions = tuiMux.sessions();
+					for (var i = 0; i < sessions.length; i++) {
+						if (sessions[i].state === "exited") return resolve();
+					}
+					if (Date.now() > deadlineMs) return reject(new Error("timeout waiting for session exit"));
+					setTimeout(poll, 10);
+				})();
+			});
 		}
-		if (!exited) { throw new Error("timeout waiting for session exit"); }
+		await waitExited(Date.now() + 5000);
 
 		if (tuiMux.paneExited(paneId) !== true) {
 			throw new Error("expected paneExited=true before respawn, got " + tuiMux.paneExited(paneId));

@@ -7,10 +7,8 @@ import (
 	"context"
 	"path/filepath"
 
-	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
 
 // Require is the Goja module loader for osm:path.
@@ -19,7 +17,7 @@ import (
 // that engine shutdown cancels in-flight operations. The adapter provides
 // Promise resolution and event-loop scheduling. All bindings except glob are
 // synchronous pure computation.
-func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(runtime *goja.Runtime, module *goja.Object) {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -154,7 +152,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 			if len(call.Arguments) > 0 {
 				pattern = call.Argument(0).String()
 			}
-			return async.PromiseTracked(adapter, loop, ctx, func(_ context.Context) (any, error) {
+			return adapter.Promisify(ctx, func(_ context.Context) (any, error) {
 				matches, err := filepath.Glob(pattern)
 				m := make(map[string]any)
 				if matches != nil {
@@ -168,7 +166,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 					m["error"] = nil
 				}
 				return m, nil
-			}, nil)
+			})
 		})
 	}
 }

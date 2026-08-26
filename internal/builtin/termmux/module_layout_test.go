@@ -13,12 +13,12 @@ func TestLayoutMode_JSBinding(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var s1 = termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
-		var s2 = termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
-		var s3 = termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
+	_, err := awaitJSValue(t, runtime, `
+		var s1 = await termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
+		var s2 = await termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
+		var s3 = await termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
 		tuiMux.splitHorizontal({ session: s1.session, target: { name: "p1" } });
 		tuiMux.splitVertical({ session: s2.session, target: { name: "p2" } });
 		tuiMux.splitHorizontal({ session: s3.session, target: { name: "p3" } });
@@ -94,10 +94,10 @@ func TestLayoutMode_JSBinding_Chains(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var s1 = termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
+	_, err := awaitJSValue(t, runtime, `
+		var s1 = await termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
 		tuiMux.splitHorizontal({ session: s1.session, target: { name: "p1" } });
 		var ret = tuiMux.setLayoutMode("main-horizontal");
 		if (ret !== tuiMux) {
@@ -117,7 +117,7 @@ func TestLayoutMode_JSBinding_UnknownMode(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	_, err := awaitJSValue(t, runtime, `
 		try {
 			tuiMux.setLayoutMode("diagonal");
 			throw new Error("expected error");
@@ -138,7 +138,7 @@ func TestLayoutMode_JSBinding_ArgCount(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	_, err := awaitJSValue(t, runtime, `
 		try {
 			tuiMux.setLayoutMode();
 			throw new Error("expected error");

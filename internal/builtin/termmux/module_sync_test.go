@@ -8,7 +8,7 @@ func TestSynchronizePanesBinding_DefaultOff(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.synchronizePanes()`)
+	v, err := sessionRun(t, runtime, `tuiMux.synchronizePanes()`)
 	if err != nil {
 		t.Fatalf("synchronizePanes(): %v", err)
 	}
@@ -21,7 +21,7 @@ func TestSynchronizePanesBinding_ToggleAndChain(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.setSynchronizePanes(true)`)
+	v, err := sessionRun(t, runtime, `tuiMux.setSynchronizePanes(true)`)
 	if err != nil {
 		t.Fatalf("setSynchronizePanes(true): %v", err)
 	}
@@ -29,7 +29,7 @@ func TestSynchronizePanesBinding_ToggleAndChain(t *testing.T) {
 		t.Fatal("setSynchronizePanes(true) should return the manager wrapper")
 	}
 
-	v, err = runtime.RunString(`tuiMux.synchronizePanes()`)
+	v, err = sessionRun(t, runtime, `tuiMux.synchronizePanes()`)
 	if err != nil {
 		t.Fatalf("synchronizePanes(): %v", err)
 	}
@@ -37,12 +37,12 @@ func TestSynchronizePanesBinding_ToggleAndChain(t *testing.T) {
 		t.Error("synchronizePanes() = false, want true after set")
 	}
 
-	_, err = runtime.RunString(`tuiMux.setSynchronizePanes(false)`)
+	_, err = sessionRun(t, runtime, `tuiMux.setSynchronizePanes(false)`)
 	if err != nil {
 		t.Fatalf("setSynchronizePanes(false): %v", err)
 	}
 
-	v, err = runtime.RunString(`tuiMux.synchronizePanes()`)
+	v, err = sessionRun(t, runtime, `tuiMux.synchronizePanes()`)
 	if err != nil {
 		t.Fatalf("synchronizePanes() after disable: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestSynchronizePanesBinding_ChainingReturnsWrapper(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.setSynchronizePanes(true) === tuiMux`)
+	v, err := sessionRun(t, runtime, `tuiMux.setSynchronizePanes(true) === tuiMux`)
 	if err != nil {
 		t.Fatalf("chaining check: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestSynchronizePanesBinding_PerWindowState(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`
+	_, err := sessionRun(t, runtime, `
 		var w1 = tuiMux.newWindow("w1");
 		var w2 = tuiMux.newWindow("w2");
 
@@ -91,7 +91,7 @@ func TestSynchronizePanesBinding_PerWindowState(t *testing.T) {
 		t.Fatalf("per-window state script: %v", err)
 	}
 
-	v, err := runtime.RunString(`ok`)
+	v, err := sessionRun(t, runtime, `ok`)
 	if err != nil {
 		t.Fatalf("read ok: %v", err)
 	}

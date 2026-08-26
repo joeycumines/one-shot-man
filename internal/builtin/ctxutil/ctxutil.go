@@ -9,11 +9,9 @@ import (
 	"reflect"
 	"strings"
 
-	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	gosmargv "github.com/joeycumines/one-shot-man/internal/argv"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
 
 //go:embed contextManager.js
@@ -84,7 +82,7 @@ type extractedItem struct {
 // Require returns a CommonJS native module under "osm:ctxutil".
 // buildContext returns a Promise<string> because lazy-diff and lazy-exec
 // perform blocking subprocess I/O that must not stall the event loop.
-func Require(baseCtx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(runtime *goja.Runtime, module *goja.Object) {
+func Require(baseCtx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exportsVal := module.Get("exports")
 		var exports *goja.Object
@@ -100,10 +98,10 @@ func Require(baseCtx context.Context, adapter *gojaeventloop.Adapter, loop *goev
 			items := extractItems(runtime, call.Argument(0))
 			txtarContent := extractTxtar(runtime, call)
 
-			return async.PromiseTracked(adapter, loop, baseCtx, func(ctx context.Context) (any, error) {
+			return adapter.Promisify(baseCtx, func(ctx context.Context) (any, error) {
 				result := renderContext(ctx, items, txtarContent)
 				return result, nil
-			}, nil)
+			})
 		})
 
 		// Load contextManager
@@ -500,7 +498,7 @@ func toObject(runtime *goja.Runtime, value goja.Value) (*goja.Object, error) {
 
 func runGitDiff(ctx context.Context, args []string) (stdout string, message string, hadErr bool) {
 	if ctx == nil {
-		ctx = context.Background()
+		panic("ctxutil: nil context requires baseCtx threading")
 	}
 	argv := append([]string{"diff"}, args...)
 	cmd := exec.CommandContext(ctx, "git", argv...)
@@ -516,7 +514,7 @@ func runGitDiff(ctx context.Context, args []string) (stdout string, message stri
 
 func getDefaultGitDiffArgs(ctx context.Context) []string {
 	if ctx == nil {
-		ctx = context.Background()
+		panic("ctxutil: nil context requires baseCtx threading")
 	}
 
 	if out, _ := exec.CommandContext(ctx, "git", "diff", "--no-ext-diff", "--no-color", "HEAD").CombinedOutput(); len(bytes.TrimSpace(out)) > 0 {
@@ -532,7 +530,7 @@ func getDefaultGitDiffArgs(ctx context.Context) []string {
 
 func runExec(ctx context.Context, args []string) (stdout string, message string, hadErr bool) {
 	if ctx == nil {
-		ctx = context.Background()
+		panic("ctxutil: nil context requires baseCtx threading")
 	}
 	if len(args) == 0 {
 		return "", "exec: no command specified", true

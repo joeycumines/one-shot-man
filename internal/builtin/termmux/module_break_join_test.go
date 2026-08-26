@@ -11,11 +11,11 @@ func TestBreakPane_JSBinding_ReturnsMovedPane(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
 	script := `
-		var bs1 = termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
-		var bs2 = termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
+		var bs1 = await termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
+		var bs2 = await termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
 		var w1 = tuiMux.newWindow("w1");
 		var p1 = tuiMux.addPaneToWindow(bs1.session, { windowId: w1 });
 		var p2 = tuiMux.addPaneToWindow(bs2.session, { windowId: w1 });
@@ -23,9 +23,9 @@ func TestBreakPane_JSBinding_ReturnsMovedPane(t *testing.T) {
 		tuiMux.activate(bs1.sid);
 		var result = tuiMux.breakPane(p1);
 		var wp = tuiMux.windowPanes();
-		JSON.stringify({ result: result, windowPanes: wp })
-	`
-	v, err := runtime.RunString(script)
+		return JSON.stringify({ result: result, windowPanes: wp });
+`
+	v, err := awaitJSValue(t, runtime, script)
 	if err != nil {
 		t.Fatalf("script: %v", err)
 	}
@@ -109,11 +109,11 @@ func TestBreakPane_JSBinding_RefocusesSource(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
 	script := `
-		var bs1 = termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
-		var bs2 = termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
+		var bs1 = await termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
+		var bs2 = await termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
 		var w1 = tuiMux.newWindow("w1");
 		var p1 = tuiMux.addPaneToWindow(bs1.session, { windowId: w1 });
 		var p2 = tuiMux.addPaneToWindow(bs2.session, { windowId: w1 });
@@ -121,9 +121,9 @@ func TestBreakPane_JSBinding_RefocusesSource(t *testing.T) {
 		tuiMux.activate(bs1.sid);
 		tuiMux.breakPane(p1);
 		var wp = tuiMux.windowPanes();
-		JSON.stringify({ windowPanes: wp })
-	`
-	v, err := runtime.RunString(script)
+		return JSON.stringify({ windowPanes: wp });
+`
+	v, err := awaitJSValue(t, runtime, script)
 	if err != nil {
 		t.Fatalf("script: %v", err)
 	}
@@ -158,11 +158,11 @@ func TestJoinPane_JSBinding_MovesAndActivates(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
 	script := `
-		var bs1 = termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
-		var bs2 = termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
+		var bs1 = await termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
+		var bs2 = await termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
 		var w1 = tuiMux.newWindow("w1");
 		var w2 = tuiMux.newWindow("w2");
 		var p1 = tuiMux.addPaneToWindow(bs1.session, { windowId: w1 });
@@ -171,9 +171,9 @@ func TestJoinPane_JSBinding_MovesAndActivates(t *testing.T) {
 		tuiMux.activate(bs1.sid);
 		var result = tuiMux.joinPane(p1, w2);
 		var wp = tuiMux.windowPanes();
-		JSON.stringify({ result: result, activeWindow: tuiMux.activeWindowID(), activePane: tuiMux.activePaneId(), windowPanes: wp })
-	`
-	v, err := runtime.RunString(script)
+		return JSON.stringify({ result: result, activeWindow: tuiMux.activeWindowID(), activePane: tuiMux.activePaneId(), windowPanes: wp });
+`
+	v, err := awaitJSValue(t, runtime, script)
 	if err != nil {
 		t.Fatalf("script: %v", err)
 	}

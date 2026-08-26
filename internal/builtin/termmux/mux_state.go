@@ -8,8 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/goroutineid"
 
@@ -24,11 +24,11 @@ type muxState struct {
 	ctx                  context.Context
 	runtime              *goja.Runtime
 	mgr                  *parent.SessionManager
-	loop                 *goeventloop.Loop
 	stdin                io.Reader
 	stdout               io.Writer
 	termFd               int
 	adapter              *gojaeventloop.Adapter
+	loop                 *goeventloop.Loop
 	eventTarget          *goeventloop.EventTarget
 	jsEventTarget        goja.Value
 	addListener          goja.Callable
@@ -64,7 +64,9 @@ func (s *muxState) dispatchEventOnLoop(eventType string, detail map[string]any) 
 		s.dispatchCustomEvent(eventType, detail)
 		return
 	}
-	s.adapter.Submit(func(_ *goja.Runtime) { s.dispatchCustomEvent(eventType, detail) })
+	if err := s.adapter.Submit(func(_ *goja.Runtime) { s.dispatchCustomEvent(eventType, detail) }); err != nil {
+		_ = err
+	}
 }
 
 // dispatchCustomEvent must be called on the JS/event-loop goroutine.

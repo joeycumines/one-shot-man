@@ -912,32 +912,47 @@
 
         // Model init returns a startup heartbeat command so the update loop
         // can keep draining mux events even when the TUI is otherwise idle.
+        var applyResumeState = function(state) {
+            var prev = prSplit.previousState;
+            if (!prev) return;
+            var meta = prev._resumeMeta || {};
+            state.resumeFound = true;
+            state.resumeStale = !!meta.stale;
+            state.resumeAgeMs = meta.ageMs || 0;
+            var sessions = prev.sessions || [];
+            state.resumeSessions = [];
+            for (var ri = 0; ri < sessions.length; ri++) {
+                var rs = sessions[ri];
+                state.resumeSessions.push({
+                    name: (rs.target && rs.target.name) || 'unnamed',
+                    kind: (rs.target && rs.target.kind) || 'unknown',
+                    status: rs.status || 'unknown',
+                    pid: rs.pid || 0
+                });
+            }
+            log.info('resume: previous state detected', {
+                sessionCount: sessions.length,
+                stale: state.resumeStale,
+                ageMs: state.resumeAgeMs
+            });
+        };
+
         var _initModelFn = function() {
             var state = _initStateFn();
 
             // Task 10: Populate resume state from previousState if available.
-            if (prSplit.previousState) {
-                var prev = prSplit.previousState;
-                var meta = prev._resumeMeta || {};
-                state.resumeFound = true;
-                state.resumeStale = !!meta.stale;
-                state.resumeAgeMs = meta.ageMs || 0;
-                var sessions = prev.sessions || [];
-                state.resumeSessions = [];
-                for (var ri = 0; ri < sessions.length; ri++) {
-                    var rs = sessions[ri];
-                    state.resumeSessions.push({
-                        name: (rs.target && rs.target.name) || 'unnamed',
-                        kind: (rs.target && rs.target.kind) || 'unknown',
-                        status: rs.status || 'unknown',
-                        pid: rs.pid || 0
-                    });
-                }
-                log.info('resume: previous state detected', {
-                    sessionCount: sessions.length,
-                    stale: state.resumeStale,
-                    ageMs: state.resumeAgeMs
+            // previousState loads asynchronously now; when it lands after
+            // init, applyResumeState applies it and schedules a re-render.
+            if (!prSplit.previousState && typeof prSplit.previousStatePromise === 'object' && prSplit.previousStatePromise) {
+                prSplit.previousStatePromise.then(function(prev) {
+                    if (!prev) return;
+                    prSplit.previousState = prev;
+                    applyResumeState(state);
+                    prSplit._stateRefresh && prSplit._stateRefresh();
                 });
+            }
+            if (prSplit.previousState) {
+                applyResumeState(state);
             }
 
             // T10: Store current model state reference so _onToggle can

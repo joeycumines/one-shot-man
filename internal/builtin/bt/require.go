@@ -11,7 +11,6 @@ import (
 	bt "github.com/joeycumines/go-behaviortree"
 	"github.com/joeycumines/goja"
 	"github.com/joeycumines/goja_nodejs/require"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
 
 // ModuleLoader returns a require.ModuleLoader for the "osm:bt" module.
@@ -350,10 +349,10 @@ func createTickerJSWrapper(bridge *Bridge, runtime *goja.Runtime, ticker bt.Tick
 
 	_ = obj.Set("done", func(call goja.FunctionCall) goja.Value {
 		doneOnce.Do(func() {
-			donePromise = async.PromiseTracked(bridge.adapter, bridge.loop, bridge.ctx, func(ctx context.Context) (any, error) {
+			donePromise = bridge.adapter.Promisify(bridge.ctx, func(ctx context.Context) (any, error) {
 				<-ticker.Done()
 				return nil, ticker.Err()
-			}, nil)
+			})
 		})
 		return donePromise
 	})
@@ -412,10 +411,10 @@ func createManagerJSWrapper(bridge *Bridge, runtime *goja.Runtime, manager bt.Ma
 
 	_ = obj.Set("done", func(call goja.FunctionCall) goja.Value {
 		doneOnce.Do(func() {
-			donePromise = async.PromiseTracked(bridge.adapter, bridge.loop, bridge.ctx, func(ctx context.Context) (any, error) {
+			donePromise = bridge.adapter.Promisify(bridge.ctx, func(ctx context.Context) (any, error) {
 				<-manager.Done()
 				return nil, manager.Err()
-			}, nil)
+			})
 		})
 		return donePromise
 	})

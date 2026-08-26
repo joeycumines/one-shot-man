@@ -4,14 +4,12 @@ import (
 	"context"
 	"encoding/json"
 
-	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
 
 // Require returns the osm:astpack module loader.
-func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(*goja.Runtime, *goja.Object) {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.Runtime, *goja.Object) {
 	return func(rt *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -47,11 +45,11 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 				}
 			}
 			// Async pack: offload to goroutine via async.Promise.
-			return async.PromiseTracked(adapter, loop, ctx, func(_ context.Context) (any, error) {
+			return adapter.Promisify(ctx, func(_ context.Context) (any, error) {
 				pkg := Pack(files)
 				// Return as map for JS consumption.
 				return pkg, nil
-			}, nil)
+			})
 		})
 
 		_ = exports.Set("packDiff", func(call goja.FunctionCall) goja.Value {
@@ -62,10 +60,10 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 			if len(call.Arguments) > 0 {
 				diff = call.Argument(0).String()
 			}
-			return async.PromiseTracked(adapter, loop, ctx, func(_ context.Context) (any, error) {
+			return adapter.Promisify(ctx, func(_ context.Context) (any, error) {
 				pkg := PackDiff(diff)
 				return pkg, nil
-			}, nil)
+			})
 		})
 	}
 }

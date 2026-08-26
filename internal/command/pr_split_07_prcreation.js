@@ -196,7 +196,7 @@
         }
         if (outputFn) outputFn('\u276f gh ' + args.join(' '));
 
-        var child = exec.spawn('gh', args);
+        var child = await exec.spawn('gh', args);
 
         async function readAll(stream, streamOutputFn) {
             var buf = '';

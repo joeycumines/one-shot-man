@@ -18,6 +18,13 @@ import (
 //
 // The manager has an optional test session registered and activated when
 // withSession is true.
+// sessionRun submits script to the runtime's event loop (registered by
+// setupMgr via wrapTestSessionManagerWithLoop) and returns the result.
+func sessionRun(t *testing.T, runtime *goja.Runtime, script string) (goja.Value, error) {
+	t.Helper()
+	return runJS(t, runtime, script)
+}
+
 func setupMgr(t *testing.T, withSession bool) (*goja.Runtime, func()) {
 	t.Helper()
 
@@ -29,8 +36,8 @@ func setupMgr(t *testing.T, withSession bool) (*goja.Runtime, func()) {
 	<-mgr.Started()
 
 	runtime := goja.New()
-	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("tuiMux", tuiMux)
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
 
 	if withSession {
 		rec := newRecordingStringIO()
@@ -63,7 +70,7 @@ func TestSessionManager_RunStartedClose(t *testing.T) {
 	defer cleanup()
 
 	// started() returns true since manager is already running.
-	v, err := runtime.RunString(`tuiMux.started()`)
+	v, err := sessionRun(t, runtime, `tuiMux.started()`)
 	if err != nil {
 		t.Fatalf("started(): %v", err)
 	}
@@ -72,7 +79,7 @@ func TestSessionManager_RunStartedClose(t *testing.T) {
 	}
 
 	// close() should not error.
-	_, err = runtime.RunString(`tuiMux.close()`)
+	_, err = sessionRun(t, runtime, `tuiMux.close()`)
 	if err != nil {
 		t.Fatalf("close(): %v", err)
 	}
@@ -90,17 +97,17 @@ func TestSessionManager_RunViaJS(t *testing.T) {
 	ctx := t.Context()
 
 	runtime := goja.New()
-	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("tuiMux", tuiMux)
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
 
 	// Call run() from JS — this starts the worker goroutine.
-	_, err := runtime.RunString(`tuiMux.run()`)
+	_, err := sessionRun(t, runtime, `tuiMux.run()`)
 	if err != nil {
 		t.Fatalf("run(): %v", err)
 	}
 
 	// started() should block until the worker is ready, then return true.
-	v, err := runtime.RunString(`tuiMux.started()`)
+	v, err := sessionRun(t, runtime, `tuiMux.started()`)
 	if err != nil {
 		t.Fatalf("started(): %v", err)
 	}
@@ -137,18 +144,18 @@ func TestSessionManager_RegisterUnregister(t *testing.T) {
 	}
 
 	runtime := goja.New()
-	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("tuiMux", tuiMux)
-	_ = runtime.Set("sessionID", uint64(id))
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
+	setOnLoop(t, runtime, "sessionID", uint64(id))
 
 	// activate(id) should succeed.
-	_, err = runtime.RunString(`tuiMux.activate(sessionID)`)
+	_, err = sessionRun(t, runtime, `tuiMux.activate(sessionID)`)
 	if err != nil {
 		t.Fatalf("activate: %v", err)
 	}
 
 	// activeID() should return the activated session.
-	v, err := runtime.RunString(`tuiMux.activeID()`)
+	v, err := sessionRun(t, runtime, `tuiMux.activeID()`)
 	if err != nil {
 		t.Fatalf("activeID: %v", err)
 	}
@@ -157,13 +164,13 @@ func TestSessionManager_RegisterUnregister(t *testing.T) {
 	}
 
 	// unregister(id) should succeed.
-	_, err = runtime.RunString(`tuiMux.unregister(sessionID)`)
+	_, err = sessionRun(t, runtime, `tuiMux.unregister(sessionID)`)
 	if err != nil {
 		t.Fatalf("unregister: %v", err)
 	}
 
 	// activeID() should now be 0.
-	v, err = runtime.RunString(`tuiMux.activeID()`)
+	v, err = sessionRun(t, runtime, `tuiMux.activeID()`)
 	if err != nil {
 		t.Fatalf("activeID after unregister: %v", err)
 	}
@@ -183,10 +190,11 @@ func TestSessionManager_SessionsAndSnapshot(t *testing.T) {
 	}
 
 	runtime, cleanup := setupMgr(t, true)
+	time.Sleep(100 * time.Millisecond) // allow session output to reach VTerm
 	defer cleanup()
 
 	// sessions() should return an array with one entry.
-	v, err := runtime.RunString(`JSON.stringify(tuiMux.sessions())`)
+	v, err := sessionRun(t, runtime, `JSON.stringify(tuiMux.sessions())`)
 	if err != nil {
 		t.Fatalf("sessions(): %v", err)
 	}
@@ -198,7 +206,7 @@ func TestSessionManager_SessionsAndSnapshot(t *testing.T) {
 	}
 
 	// sessions() entry should have expected fields.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var ss = tuiMux.sessions();
 		ss.length === 1 && typeof ss[0].id === 'number' &&
 			typeof ss[0].target === 'object' &&
@@ -210,13 +218,13 @@ func TestSessionManager_SessionsAndSnapshot(t *testing.T) {
 		t.Fatalf("sessions() field check: %v", err)
 	}
 	if !v.ToBoolean() {
-		raw, _ := runtime.RunString(`JSON.stringify(tuiMux.sessions())`)
+		raw, _ := sessionRun(t, runtime, `JSON.stringify(tuiMux.sessions())`)
 		t.Fatalf("sessions() field check failed, got: %s", raw)
 	}
 
 	// snapshot(id) should return an object (may have empty text for
 	// StringIOSession — that's fine, we verify the shape).
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var id = tuiMux.activeID();
 		var snap = tuiMux.snapshot(id);
 		snap !== null && typeof snap.gen === 'number' &&
@@ -231,12 +239,12 @@ func TestSessionManager_SessionsAndSnapshot(t *testing.T) {
 		t.Fatalf("snapshot(): %v", err)
 	}
 	if !v.ToBoolean() {
-		raw, _ := runtime.RunString(`JSON.stringify(tuiMux.snapshot(tuiMux.activeID()))`)
+		raw, _ := sessionRun(t, runtime, `JSON.stringify(tuiMux.snapshot(tuiMux.activeID()))`)
 		t.Fatalf("snapshot() shape check failed, got: %s", raw)
 	}
 
 	// snapshot for a non-existent session returns null.
-	v, err = runtime.RunString(`tuiMux.snapshot(999999) === null`)
+	v, err = sessionRun(t, runtime, `tuiMux.snapshot(999999) === null`)
 	if err != nil {
 		t.Fatalf("snapshot(999999): %v", err)
 	}
@@ -255,7 +263,7 @@ func TestSessionManager_EventsDropped(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.eventsDropped()`)
+	v, err := sessionRun(t, runtime, `tuiMux.eventsDropped()`)
 	if err != nil {
 		t.Fatalf("eventsDropped: %v", err)
 	}
@@ -275,7 +283,7 @@ func TestSessionManager_HasChild(t *testing.T) {
 	defer cleanup()
 
 	// No session → hasChild() is false, activeID() is 0.
-	v, err := runtime.RunString(`tuiMux.hasChild()`)
+	v, err := sessionRun(t, runtime, `tuiMux.hasChild()`)
 	if err != nil {
 		t.Fatalf("hasChild(): %v", err)
 	}
@@ -283,7 +291,7 @@ func TestSessionManager_HasChild(t *testing.T) {
 		t.Fatal("hasChild() should be false with no sessions")
 	}
 
-	v, err = runtime.RunString(`tuiMux.activeID()`)
+	v, err = sessionRun(t, runtime, `tuiMux.activeID()`)
 	if err != nil {
 		t.Fatalf("activeID: %v", err)
 	}
@@ -300,7 +308,7 @@ func TestSessionManager_HasChildWithSession(t *testing.T) {
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.hasChild()`)
+	v, err := sessionRun(t, runtime, `tuiMux.hasChild()`)
 	if err != nil {
 		t.Fatalf("hasChild(): %v", err)
 	}
@@ -320,7 +328,7 @@ func TestSessionManager_ScreenshotAndChildScreen(t *testing.T) {
 	defer cleanup()
 
 	// screenshot() should return a string.
-	v, err := runtime.RunString(`typeof tuiMux.screenshot()`)
+	v, err := sessionRun(t, runtime, `typeof tuiMux.screenshot()`)
 	if err != nil {
 		t.Fatalf("screenshot(): %v", err)
 	}
@@ -329,7 +337,7 @@ func TestSessionManager_ScreenshotAndChildScreen(t *testing.T) {
 	}
 
 	// childScreen() should return a string.
-	v, err = runtime.RunString(`typeof tuiMux.childScreen()`)
+	v, err = sessionRun(t, runtime, `typeof tuiMux.childScreen()`)
 	if err != nil {
 		t.Fatalf("childScreen(): %v", err)
 	}
@@ -338,7 +346,7 @@ func TestSessionManager_ScreenshotAndChildScreen(t *testing.T) {
 	}
 
 	// With no active session:
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		tuiMux.detach();
 		tuiMux.screenshot() === '' && tuiMux.childScreen() === '';
 	`)
@@ -359,7 +367,7 @@ func TestSessionManager_WriteToChild(t *testing.T) {
 	defer cleanup()
 
 	// writeToChild returns byte count.
-	v, err := runtime.RunString(`tuiMux.writeToChild('hello')`)
+	v, err := sessionRun(t, runtime, `tuiMux.writeToChild('hello')`)
 	if err != nil {
 		t.Fatalf("writeToChild: %v", err)
 	}
@@ -368,7 +376,7 @@ func TestSessionManager_WriteToChild(t *testing.T) {
 	}
 
 	// With no session, writeToChild throws (consistent with session().write()).
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		tuiMux.detach();
 		var threw = false;
 		try { tuiMux.writeToChild('fail'); } catch(e) { threw = true; }
@@ -393,13 +401,13 @@ func TestSessionManager_InputResize(t *testing.T) {
 	defer cleanup()
 
 	// input(data) should not throw with an active session.
-	_, err := runtime.RunString(`tuiMux.input('test data')`)
+	_, err := sessionRun(t, runtime, `tuiMux.input('test data')`)
 	if err != nil {
 		t.Fatalf("input: %v", err)
 	}
 
 	// resize(rows, cols) should not throw with an active session.
-	_, err = runtime.RunString(`tuiMux.resize(40, 120)`)
+	_, err = sessionRun(t, runtime, `tuiMux.resize(40, 120)`)
 	if err != nil {
 		t.Fatalf("resize: %v", err)
 	}
@@ -416,7 +424,7 @@ func TestSessionManager_LastActivityMs(t *testing.T) {
 	defer cleanup()
 
 	// No session → -1.
-	v, err := runtime.RunString(`tuiMux.lastActivityMs()`)
+	v, err := sessionRun(t, runtime, `tuiMux.lastActivityMs()`)
 	if err != nil {
 		t.Fatalf("lastActivityMs: %v", err)
 	}
@@ -434,7 +442,7 @@ func TestSessionManager_LastActivityMsWithSession(t *testing.T) {
 	defer cleanup()
 
 	// With session, lastActivityMs ≥ 0 (or -1 if snapshot timestamp is zero).
-	v, err := runtime.RunString(`tuiMux.lastActivityMs()`)
+	v, err := sessionRun(t, runtime, `tuiMux.lastActivityMs()`)
 	if err != nil {
 		t.Fatalf("lastActivityMs: %v", err)
 	}
@@ -453,7 +461,7 @@ func TestSessionManager_LastActivityMsExplicitSessionID(t *testing.T) {
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.lastActivityMs(tuiMux.activeID())`)
+	v, err := sessionRun(t, runtime, `tuiMux.lastActivityMs(tuiMux.activeID())`)
 	if err != nil {
 		t.Fatalf("lastActivityMs(activeID): %v", err)
 	}
@@ -461,7 +469,7 @@ func TestSessionManager_LastActivityMsExplicitSessionID(t *testing.T) {
 		t.Fatalf("lastActivityMs(activeID) = %d, want >= -1", ms)
 	}
 
-	v, err = runtime.RunString(`tuiMux.lastActivityMs(999999)`)
+	v, err = sessionRun(t, runtime, `tuiMux.lastActivityMs(999999)`)
 	if err != nil {
 		t.Fatalf("lastActivityMs(unknown): %v", err)
 	}
@@ -481,13 +489,13 @@ func TestSessionManager_Detach(t *testing.T) {
 	defer cleanup()
 
 	// Detach with active session should succeed.
-	_, err := runtime.RunString(`tuiMux.detach()`)
+	_, err := sessionRun(t, runtime, `tuiMux.detach()`)
 	if err != nil {
 		t.Fatalf("detach: %v", err)
 	}
 
 	// hasChild() should be false after detach.
-	v, err := runtime.RunString(`tuiMux.hasChild()`)
+	v, err := sessionRun(t, runtime, `tuiMux.hasChild()`)
 	if err != nil {
 		t.Fatalf("hasChild after detach: %v", err)
 	}
@@ -496,7 +504,7 @@ func TestSessionManager_Detach(t *testing.T) {
 	}
 
 	// Detach again (idempotent) should also not throw.
-	_, err = runtime.RunString(`tuiMux.detach()`)
+	_, err = sessionRun(t, runtime, `tuiMux.detach()`)
 	if err != nil {
 		t.Fatal("double detach should not throw")
 	}
@@ -513,7 +521,7 @@ func TestSessionManager_SubscribeUnsubscribe(t *testing.T) {
 	defer cleanup()
 
 	// subscribe() should return an object with id + pollEvents.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var sub = tuiMux.subscribe(16);
 		typeof sub.id === 'number' && typeof sub.pollEvents === 'function';
 	`)
@@ -525,7 +533,7 @@ func TestSessionManager_SubscribeUnsubscribe(t *testing.T) {
 	}
 
 	// pollEvents() on fresh subscription should return empty array.
-	v, err = runtime.RunString(`JSON.stringify(sub.pollEvents())`)
+	v, err = sessionRun(t, runtime, `JSON.stringify(sub.pollEvents())`)
 	if err != nil {
 		t.Fatalf("pollEvents: %v", err)
 	}
@@ -534,7 +542,7 @@ func TestSessionManager_SubscribeUnsubscribe(t *testing.T) {
 	}
 
 	// unsubscribe should succeed.
-	v, err = runtime.RunString(`tuiMux.unsubscribe(sub.id)`)
+	v, err = sessionRun(t, runtime, `tuiMux.unsubscribe(sub.id)`)
 	if err != nil {
 		t.Fatalf("unsubscribe: %v", err)
 	}
@@ -543,7 +551,7 @@ func TestSessionManager_SubscribeUnsubscribe(t *testing.T) {
 	}
 
 	// unsubscribe again should return false.
-	v, err = runtime.RunString(`tuiMux.unsubscribe(sub.id)`)
+	v, err = sessionRun(t, runtime, `tuiMux.unsubscribe(sub.id)`)
 	if err != nil {
 		t.Fatalf("unsubscribe (second): %v", err)
 	}
@@ -563,29 +571,29 @@ func TestSessionManager_ConfigSetters(t *testing.T) {
 	defer cleanup()
 
 	// setStatus(text) — should not throw.
-	_, err := runtime.RunString(`tuiMux.setStatus('testing')`)
+	_, err := sessionRun(t, runtime, `tuiMux.setStatus('testing')`)
 	if err != nil {
 		t.Fatalf("setStatus: %v", err)
 	}
 
 	// setToggleKey(k) — should not throw.
-	_, err = runtime.RunString(`tuiMux.setToggleKey(0x03)`)
+	_, err = sessionRun(t, runtime, `tuiMux.setToggleKey(0x03)`)
 	if err != nil {
 		t.Fatalf("setToggleKey: %v", err)
 	}
 
 	// setStatusEnabled(b) — should not throw.
-	_, err = runtime.RunString(`tuiMux.setStatusEnabled(true)`)
+	_, err = sessionRun(t, runtime, `tuiMux.setStatusEnabled(true)`)
 	if err != nil {
 		t.Fatalf("setStatusEnabled: %v", err)
 	}
-	_, err = runtime.RunString(`tuiMux.setStatusEnabled(false)`)
+	_, err = sessionRun(t, runtime, `tuiMux.setStatusEnabled(false)`)
 	if err != nil {
 		t.Fatalf("setStatusEnabled(false): %v", err)
 	}
 
 	// setResizeFunc(fn) — should accept a function.
-	_, err = runtime.RunString(`tuiMux.setResizeFunc(function(rows, cols) {})`)
+	_, err = sessionRun(t, runtime, `tuiMux.setResizeFunc(function(rows, cols) {})`)
 	if err != nil {
 		t.Fatalf("setResizeFunc: %v", err)
 	}
@@ -601,7 +609,7 @@ func TestSessionManager_ActiveSide(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.activeSide()`)
+	v, err := sessionRun(t, runtime, `tuiMux.activeSide()`)
 	if err != nil {
 		t.Fatalf("activeSide: %v", err)
 	}
@@ -621,7 +629,7 @@ func TestSessionManager_SessionWrapper_IsRunningIsDone(t *testing.T) {
 	defer cleanup()
 
 	// No session attached → isRunning = false, isDone = true.
-	v, err := runtime.RunString(`tuiMux.session().isRunning()`)
+	v, err := sessionRun(t, runtime, `tuiMux.session().isRunning()`)
 	if err != nil {
 		t.Fatalf("isRunning: %v", err)
 	}
@@ -629,7 +637,7 @@ func TestSessionManager_SessionWrapper_IsRunningIsDone(t *testing.T) {
 		t.Fatal("isRunning should be false with no session")
 	}
 
-	v, err = runtime.RunString(`tuiMux.session().isDone()`)
+	v, err = sessionRun(t, runtime, `tuiMux.session().isDone()`)
 	if err != nil {
 		t.Fatalf("isDone: %v", err)
 	}
@@ -646,7 +654,7 @@ func TestSessionManager_SessionWrapper_IsRunningWithSession(t *testing.T) {
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.session().isRunning()`)
+	v, err := sessionRun(t, runtime, `tuiMux.session().isRunning()`)
 	if err != nil {
 		t.Fatalf("isRunning: %v", err)
 	}
@@ -664,7 +672,7 @@ func TestSessionManager_SessionWrapper_OutputScreen(t *testing.T) {
 	defer cleanup()
 
 	// output() returns a string (may be empty for StringIO).
-	v, err := runtime.RunString(`typeof tuiMux.session().output()`)
+	v, err := sessionRun(t, runtime, `typeof tuiMux.session().output()`)
 	if err != nil {
 		t.Fatalf("output(): %v", err)
 	}
@@ -673,7 +681,7 @@ func TestSessionManager_SessionWrapper_OutputScreen(t *testing.T) {
 	}
 
 	// screen() returns a string.
-	v, err = runtime.RunString(`typeof tuiMux.session().screen()`)
+	v, err = sessionRun(t, runtime, `typeof tuiMux.session().screen()`)
 	if err != nil {
 		t.Fatalf("screen(): %v", err)
 	}
@@ -682,7 +690,7 @@ func TestSessionManager_SessionWrapper_OutputScreen(t *testing.T) {
 	}
 
 	// No session → both return empty string.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		tuiMux.detach();
 		tuiMux.session().output() === '' && tuiMux.session().screen() === '';
 	`)
@@ -703,7 +711,7 @@ func TestSessionManager_SessionWrapper_TargetSetTarget(t *testing.T) {
 	defer cleanup()
 
 	// target() returns an object with default values.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var t = tuiMux.session().target();
 		typeof t.id === 'string' && typeof t.name === 'string' && typeof t.kind === 'string';
 	`)
@@ -715,13 +723,13 @@ func TestSessionManager_SessionWrapper_TargetSetTarget(t *testing.T) {
 	}
 
 	// setTarget() should mutate the closure.
-	_, err = runtime.RunString(`tuiMux.session().setTarget({name: 'mySession', kind: 'pty', id: 'abc123'})`)
+	_, err = sessionRun(t, runtime, `tuiMux.session().setTarget({name: 'mySession', kind: 'pty', id: 'abc123'})`)
 	if err != nil {
 		t.Fatalf("setTarget: %v", err)
 	}
 
 	// Read back via target().
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var t2 = tuiMux.session().target();
 		t2.name === 'mySession' && t2.kind === 'pty' && t2.id === 'abc123';
 	`)
@@ -729,12 +737,12 @@ func TestSessionManager_SessionWrapper_TargetSetTarget(t *testing.T) {
 		t.Fatalf("target after setTarget: %v", err)
 	}
 	if !v.ToBoolean() {
-		raw, _ := runtime.RunString(`JSON.stringify(tuiMux.session().target())`)
+		raw, _ := sessionRun(t, runtime, `JSON.stringify(tuiMux.session().target())`)
 		t.Fatalf("target not updated, got: %s", raw)
 	}
 
 	// setTarget(null) should throw TypeError.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tuiMux.session().setTarget(null);
@@ -762,7 +770,7 @@ func TestSessionManager_ActivateInvalidID(t *testing.T) {
 	defer cleanup()
 
 	// activate a non-existent session should throw.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tuiMux.activate(99999);
@@ -788,7 +796,7 @@ func TestSessionManager_UnregisterInvalidID(t *testing.T) {
 	defer cleanup()
 
 	// unregister a non-existent session should throw.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tuiMux.unregister(99999);
@@ -814,7 +822,7 @@ func TestSessionManager_InputNoSession(t *testing.T) {
 	defer cleanup()
 
 	// input with no active session should throw.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tuiMux.input('hello');
@@ -842,7 +850,7 @@ func TestSessionManager_EventAPI(t *testing.T) {
 	defer cleanup()
 
 	// addEventListener() with non-function callback should throw TypeError.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tuiMux.addEventListener('exit', 'not-a-function');
@@ -859,7 +867,7 @@ func TestSessionManager_EventAPI(t *testing.T) {
 	}
 
 	// Register listeners via primary API, dispatch, and remove.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var events = [];
 		function handler(evt) { events.push(evt.detail); }
 		tuiMux.addEventListener('exit', handler);
@@ -876,7 +884,7 @@ func TestSessionManager_EventAPI(t *testing.T) {
 	}
 
 	// Legacy on() unknown event rejection.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tuiMux.on('nonexistent', function() {});
@@ -893,7 +901,7 @@ func TestSessionManager_EventAPI(t *testing.T) {
 	}
 
 	// Legacy on()/off() compatibility.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var legacy = [];
 		var id = tuiMux.on('focus', function(evt) { legacy.push(evt.detail); });
 		tuiMux.dispatchEvent(new CustomEvent('focus', { detail: { side: 'agent' } }));
@@ -909,7 +917,7 @@ func TestSessionManager_EventAPI(t *testing.T) {
 	}
 
 	// pollEvents() with no pending events returns 0.
-	v, err = runtime.RunString(`tuiMux.pollEvents()`)
+	v, err = sessionRun(t, runtime, `tuiMux.pollEvents()`)
 	if err != nil {
 		t.Fatalf("pollEvents: %v", err)
 	}
@@ -929,7 +937,7 @@ func TestSessionManager_AttachTypeError(t *testing.T) {
 	defer cleanup()
 
 	// attach() with no arguments should throw TypeError.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tuiMux.attach();
@@ -946,7 +954,7 @@ func TestSessionManager_AttachTypeError(t *testing.T) {
 	}
 
 	// attach(42) — not an InteractiveSession, should throw TypeError.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tuiMux.attach(42);
@@ -974,7 +982,7 @@ func TestSessionManager_WriteToChildTypeError(t *testing.T) {
 	defer cleanup()
 
 	// writeToChild() with no arguments should throw TypeError.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tuiMux.writeToChild();
@@ -1002,7 +1010,7 @@ func TestSessionManager_MethodPresence(t *testing.T) {
 	defer cleanup()
 
 	// Every documented method should be a function on the manager object.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var methods = [
 			'run', 'started', 'close',
 			'register', 'unregister', 'activate',
@@ -1034,7 +1042,7 @@ func TestSessionManager_MethodPresence(t *testing.T) {
 	}
 
 	// session() wrapper methods.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var smethods = ['isRunning', 'isDone', 'output', 'screen', 'target', 'setTarget', 'write', 'resize'];
 		var ses = tuiMux.session();
 		var smissing = [];
@@ -1064,7 +1072,7 @@ func TestSessionManager_SwitchToNoChild(t *testing.T) {
 	defer cleanup()
 
 	// switchTo() with no child returns undefined (guard clause).
-	v, err := runtime.RunString(`tuiMux.switchTo()`)
+	v, err := sessionRun(t, runtime, `tuiMux.switchTo()`)
 	if err != nil {
 		t.Fatalf("switchTo(): %v", err)
 	}
@@ -1084,7 +1092,7 @@ func TestSessionManager_FromModelTypeError(t *testing.T) {
 	defer cleanup()
 
 	// fromModel() with no arguments should throw TypeError.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var threw = false;
 		try {
 			tuiMux.fromModel();
@@ -1110,7 +1118,7 @@ func TestSessionManager_FromModelValid(t *testing.T) {
 	defer cleanup()
 
 	// fromModel with a minimal model object should return {model, options}.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var result = tuiMux.fromModel({});
 		typeof result === 'object' &&
 			result !== null &&
@@ -1121,7 +1129,7 @@ func TestSessionManager_FromModelValid(t *testing.T) {
 		t.Fatalf("fromModel({}): %v", err)
 	}
 	if !v.ToBoolean() {
-		raw, _ := runtime.RunString(`JSON.stringify(tuiMux.fromModel({}))`)
+		raw, _ := sessionRun(t, runtime, `JSON.stringify(tuiMux.fromModel({}))`)
 		t.Fatalf("fromModel({}) shape check failed, got: %s", raw)
 	}
 }
@@ -1141,7 +1149,7 @@ func TestSessionManager_PassthroughNoChild(t *testing.T) {
 	// the Promise resolution happens on the event loop which is not running
 	// in tests. We verify the binding returns a thenable, confirming the
 	// async migration is in place.
-	v, err := runtime.RunString(`typeof tuiMux.passthrough({}).then === 'function'`)
+	v, err := sessionRun(t, runtime, `typeof tuiMux.passthrough({}).then === 'function'`)
 	if err != nil {
 		t.Fatalf("passthrough(): %v", err)
 	}
@@ -1165,15 +1173,15 @@ func TestSessionManager_AttachReturnsSessionID(t *testing.T) {
 	<-mgr.Started()
 
 	runtime := goja.New()
-	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("tuiMux", tuiMux)
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
 
 	// Create a StringIO and expose it as a Go value for attach.
 	rec := newRecordingStringIO()
-	_ = runtime.Set("testSIO", rec)
+	setOnLoop(t, runtime, "testSIO", rec)
 
 	// attach(sio) should return a number > 0 (the SessionID).
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var id = tuiMux.attach(testSIO);
 		typeof id === 'number' && id > 0 ? id : -1;
 	`)
@@ -1185,7 +1193,7 @@ func TestSessionManager_AttachReturnsSessionID(t *testing.T) {
 	}
 
 	// activeID() should match the returned ID.
-	v2, err := runtime.RunString(`tuiMux.activeID()`)
+	v2, err := sessionRun(t, runtime, `tuiMux.activeID()`)
 	if err != nil {
 		t.Fatalf("activeID: %v", err)
 	}
@@ -1205,7 +1213,7 @@ func TestSessionManager_IsDone(t *testing.T) {
 	defer cleanup()
 
 	// Get the active session ID.
-	v, err := runtime.RunString(`tuiMux.activeID()`)
+	v, err := sessionRun(t, runtime, `tuiMux.activeID()`)
 	if err != nil {
 		t.Fatalf("activeID: %v", err)
 	}
@@ -1213,10 +1221,10 @@ func TestSessionManager_IsDone(t *testing.T) {
 	if activeID == 0 {
 		t.Fatal("expected an active session")
 	}
-	_ = runtime.Set("sid", activeID)
+	setOnLoop(t, runtime, "sid", activeID)
 
 	// Active session should not be done (it was just started).
-	v, err = runtime.RunString(`tuiMux.isDone(sid)`)
+	v, err = sessionRun(t, runtime, `tuiMux.isDone(sid)`)
 	if err != nil {
 		t.Fatalf("isDone(sid): %v", err)
 	}
@@ -1225,7 +1233,7 @@ func TestSessionManager_IsDone(t *testing.T) {
 	}
 
 	// Non-existent ID should be treated as done.
-	v, err = runtime.RunString(`tuiMux.isDone(999999)`)
+	v, err = sessionRun(t, runtime, `tuiMux.isDone(999999)`)
 	if err != nil {
 		t.Fatalf("isDone(999999): %v", err)
 	}
@@ -1238,10 +1246,10 @@ func TestSessionManager_IsDone(t *testing.T) {
 
 func TestNewSessionManager_TitleOption(t *testing.T) {
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// newSessionManager() with no args should return a valid object.
-	v, err := runtime.RunString(`tm.newSessionManager()`)
+	v, err := sessionRun(t, runtime, `tm.newSessionManager()`)
 	if err != nil {
 		t.Fatalf("newSessionManager(): %v", err)
 	}
@@ -1250,7 +1258,7 @@ func TestNewSessionManager_TitleOption(t *testing.T) {
 	}
 
 	// newSessionManager() with title option should also work.
-	v, err = runtime.RunString(`tm.newSessionManager({ title: 'My Title' })`)
+	v, err = sessionRun(t, runtime, `tm.newSessionManager({ title: 'My Title' })`)
 	if err != nil {
 		t.Fatalf("newSessionManager({title}): %v", err)
 	}
@@ -1259,7 +1267,7 @@ func TestNewSessionManager_TitleOption(t *testing.T) {
 	}
 
 	// newSessionManager() with mixed options should work.
-	v, err = runtime.RunString(`tm.newSessionManager({ rows: 30, cols: 100, title: 'Custom' })`)
+	v, err = sessionRun(t, runtime, `tm.newSessionManager({ rows: 30, cols: 100, title: 'Custom' })`)
 	if err != nil {
 		t.Fatalf("newSessionManager({rows, cols, title}): %v", err)
 	}
@@ -1268,7 +1276,7 @@ func TestNewSessionManager_TitleOption(t *testing.T) {
 	}
 
 	// newSessionManager() with empty title should work.
-	v, err = runtime.RunString(`tm.newSessionManager({ title: '' })`)
+	v, err = sessionRun(t, runtime, `tm.newSessionManager({ title: '' })`)
 	if err != nil {
 		t.Fatalf("newSessionManager({title: ''}): %v", err)
 	}
@@ -1282,15 +1290,15 @@ func TestNewBoundedSession(t *testing.T) {
 		t.Skip("slow: spawns child process and SessionManager")
 	}
 
-	runtime, exp := testRequire(t)
-	_ = runtime.Set("exports", exp)
+	runtime, exp := testRequireLooped(t)
+	setOnLoop(t, runtime, "exports", exp)
 
 	echoBin := buildEchoProgram(t, "hello")
-	_ = runtime.Set("echoBin", echoBin)
+	setOnLoop(t, runtime, "echoBin", echoBin)
 
-	v, err := runtime.RunString(`
-		var result = exports.newBoundedSession({ cmd: echoBin, rows: 10, cols: 30, name: 'test', kind: 'capture' });
-		JSON.stringify({ hasSession: typeof result.session === 'object', hasMgr: typeof result.mgr === 'object', hasSid: result.sid > 0 });
+	v, err := awaitJSValue(t, runtime, `
+		var result = await exports.newBoundedSession({ cmd: echoBin, rows: 10, cols: 30, name: 'test', kind: 'capture' });
+		return JSON.stringify({ hasSession: typeof result.session === 'object', hasMgr: typeof result.mgr === 'object', hasSid: result.sid > 0 });
 	`)
 	if err != nil {
 		t.Fatalf("newBoundedSession: %v", err)
@@ -1308,9 +1316,9 @@ func TestNewBoundedSession_MissingCmd(t *testing.T) {
 	}
 
 	runtime, exp := testRequire(t)
-	_ = runtime.Set("exports", exp)
+	setOnLoop(t, runtime, "exports", exp)
 
-	_, err := runtime.RunString(`exports.newBoundedSession({})`)
+	_, err := sessionRun(t, runtime, `exports.newBoundedSession({})`)
 	if err == nil {
 		t.Fatal("expected error for missing cmd")
 	}
@@ -1322,9 +1330,9 @@ func TestNewBoundedSession_NoArgs(t *testing.T) {
 	}
 
 	runtime, exp := testRequire(t)
-	_ = runtime.Set("exports", exp)
+	setOnLoop(t, runtime, "exports", exp)
 
-	_, err := runtime.RunString(`exports.newBoundedSession()`)
+	_, err := sessionRun(t, runtime, `exports.newBoundedSession()`)
 	if err == nil {
 		t.Fatal("expected error for no arguments")
 	}
@@ -1341,15 +1349,15 @@ func TestChooser_Creation(t *testing.T) {
 	defer cleanup()
 
 	// Get active session ID to pass to newChooser.
-	v, err := runtime.RunString(`tuiMux.activeID()`)
+	v, err := sessionRun(t, runtime, `tuiMux.activeID()`)
 	if err != nil {
 		t.Fatalf("activeID: %v", err)
 	}
 	activeID := v.ToInteger()
-	_ = runtime.Set("activeID", activeID)
+	setOnLoop(t, runtime, "activeID", activeID)
 
 	// newChooser should return an object with the expected methods.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var c = tuiMux.newChooser(activeID);
 		typeof c.show === 'function' &&
 			typeof c.hide === 'function' &&
@@ -1375,14 +1383,14 @@ func TestChooser_Visibility(t *testing.T) {
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.activeID()`)
+	v, err := sessionRun(t, runtime, `tuiMux.activeID()`)
 	if err != nil {
 		t.Fatalf("activeID: %v", err)
 	}
-	_ = runtime.Set("activeID", v.ToInteger())
+	setOnLoop(t, runtime, "activeID", v.ToInteger())
 
 	// After show(), visible() should be true.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var c = tuiMux.newChooser(activeID);
 		c.show();
 		c.visible();
@@ -1395,7 +1403,7 @@ func TestChooser_Visibility(t *testing.T) {
 	}
 
 	// After hide(), visible() should be false.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var c = tuiMux.newChooser(activeID);
 		c.hide();
 		c.visible();
@@ -1443,11 +1451,11 @@ func TestChooser_Navigation(t *testing.T) {
 	}
 
 	runtime := goja.New()
-	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("tuiMux", tuiMux)
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
 
 	// newChooser(activeID) should default to cursor at active session.
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var active = tuiMux.activeID();
 		var c = tuiMux.newChooser(active);
 		var sel = c.selected();
@@ -1466,7 +1474,7 @@ func TestChooser_Navigation(t *testing.T) {
 	}
 
 	// down() should move cursor to gamma.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var c = tuiMux.newChooser(tuiMux.activeID());
 		c.down();
 		var sel = c.selected();
@@ -1480,7 +1488,7 @@ func TestChooser_Navigation(t *testing.T) {
 	}
 
 	// up() should move cursor back to beta.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var c = tuiMux.newChooser(tuiMux.activeID());
 		c.down();
 		c.up();
@@ -1495,7 +1503,7 @@ func TestChooser_Navigation(t *testing.T) {
 	}
 
 	// At bottom, down() should stay on gamma.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var c = tuiMux.newChooser(tuiMux.activeID());
 		c.down();
 		c.down();
@@ -1511,7 +1519,7 @@ func TestChooser_Navigation(t *testing.T) {
 	}
 
 	// At top, up() should stay on alpha.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var c = tuiMux.newChooser(tuiMux.activeID());
 		c.down();
 		c.down();
@@ -1540,7 +1548,7 @@ func TestChooser_Render(t *testing.T) {
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()
 
-	v, err := runtime.RunString(`
+	v, err := sessionRun(t, runtime, `
 		var id = tuiMux.activeID();
 		var c = tuiMux.newChooser(id);
 		c.show();
@@ -1555,7 +1563,7 @@ func TestChooser_Render(t *testing.T) {
 	}
 
 	// Render when hidden should return empty string.
-	v, err = runtime.RunString(`
+	v, err = sessionRun(t, runtime, `
 		var c = tuiMux.newChooser(tuiMux.activeID());
 		c.hide();
 		c.render(60) === '';
@@ -1578,20 +1586,20 @@ func TestLockSession(t *testing.T) {
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.activeID()`)
+	v, err := sessionRun(t, runtime, `tuiMux.activeID()`)
 	if err != nil {
 		t.Fatalf("activeID: %v", err)
 	}
-	_ = runtime.Set("sid", v.ToInteger())
+	setOnLoop(t, runtime, "sid", v.ToInteger())
 
 	// lockSession should not throw and should succeed.
-	_, err = runtime.RunString(`tuiMux.lockSession(sid, 'testpass')`)
+	_, err = sessionRun(t, runtime, `tuiMux.lockSession(sid, 'testpass')`)
 	if err != nil {
 		t.Fatalf("lockSession: %v", err)
 	}
 
 	// isLocked should return true.
-	v, err = runtime.RunString(`tuiMux.isLocked(sid)`)
+	v, err = sessionRun(t, runtime, `tuiMux.isLocked(sid)`)
 	if err != nil {
 		t.Fatalf("isLocked: %v", err)
 	}
@@ -1608,20 +1616,20 @@ func TestUnlockSession(t *testing.T) {
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()
 
-	v, err := runtime.RunString(`tuiMux.activeID()`)
+	v, err := sessionRun(t, runtime, `tuiMux.activeID()`)
 	if err != nil {
 		t.Fatalf("activeID: %v", err)
 	}
-	_ = runtime.Set("sid", v.ToInteger())
+	setOnLoop(t, runtime, "sid", v.ToInteger())
 
 	// Lock with password.
-	_, err = runtime.RunString(`tuiMux.lockSession(sid, 'correctpass')`)
+	_, err = sessionRun(t, runtime, `tuiMux.lockSession(sid, 'correctpass')`)
 	if err != nil {
 		t.Fatalf("lockSession: %v", err)
 	}
 
 	// Unlock with correct password should return true.
-	v, err = runtime.RunString(`tuiMux.unlockSession(sid, 'correctpass')`)
+	v, err = sessionRun(t, runtime, `tuiMux.unlockSession(sid, 'correctpass')`)
 	if err != nil {
 		t.Fatalf("unlockSession correct: %v", err)
 	}
@@ -1630,7 +1638,7 @@ func TestUnlockSession(t *testing.T) {
 	}
 
 	// isLocked should now be false.
-	v, err = runtime.RunString(`tuiMux.isLocked(sid)`)
+	v, err = sessionRun(t, runtime, `tuiMux.isLocked(sid)`)
 	if err != nil {
 		t.Fatalf("isLocked after correct unlock: %v", err)
 	}
@@ -1639,13 +1647,13 @@ func TestUnlockSession(t *testing.T) {
 	}
 
 	// Lock again.
-	_, err = runtime.RunString(`tuiMux.lockSession(sid, 'otherpass')`)
+	_, err = sessionRun(t, runtime, `tuiMux.lockSession(sid, 'otherpass')`)
 	if err != nil {
 		t.Fatalf("lockSession: %v", err)
 	}
 
 	// Unlock with wrong password should return false.
-	v, err = runtime.RunString(`tuiMux.unlockSession(sid, 'wrongpass')`)
+	v, err = sessionRun(t, runtime, `tuiMux.unlockSession(sid, 'wrongpass')`)
 	if err != nil {
 		t.Fatalf("unlockSession wrong: %v", err)
 	}
@@ -1654,7 +1662,7 @@ func TestUnlockSession(t *testing.T) {
 	}
 
 	// isLocked should still be true.
-	v, err = runtime.RunString(`tuiMux.isLocked(sid)`)
+	v, err = sessionRun(t, runtime, `tuiMux.isLocked(sid)`)
 	if err != nil {
 		t.Fatalf("isLocked after wrong unlock: %v", err)
 	}
@@ -1691,10 +1699,10 @@ func TestSessionManager_LockedInputGate_JS(t *testing.T) {
 	}
 
 	runtime := goja.New()
-	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("tuiMux", tuiMux)
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
 
-	_, err = runtime.RunString(`
+	_, err = sessionRun(t, runtime, `
 		tuiMux.lockSession(tuiMux.activeID(), 'gatepass');
 		tuiMux.session().write('should not reach child');
 	`)
@@ -1702,7 +1710,7 @@ func TestSessionManager_LockedInputGate_JS(t *testing.T) {
 		t.Fatalf("lock/write: %v", err)
 	}
 
-	v, err := runtime.RunString(`tuiMux.snapshot(tuiMux.activeID()).locked`)
+	v, err := sessionRun(t, runtime, `tuiMux.snapshot(tuiMux.activeID()).locked`)
 	if err != nil {
 		t.Fatalf("snapshot locked: %v", err)
 	}
@@ -1714,7 +1722,7 @@ func TestSessionManager_LockedInputGate_JS(t *testing.T) {
 		t.Fatalf("child received gated input: %v", rec.sent)
 	}
 
-	_, err = runtime.RunString(`
+	_, err = sessionRun(t, runtime, `
 		tuiMux.unlockSession(tuiMux.activeID(), 'gatepass');
 		tuiMux.session().write('after unlock');
 	`)
@@ -1722,7 +1730,7 @@ func TestSessionManager_LockedInputGate_JS(t *testing.T) {
 		t.Fatalf("unlock/write: %v", err)
 	}
 
-	v, err = runtime.RunString(`tuiMux.snapshot(tuiMux.activeID()).locked`)
+	v, err = sessionRun(t, runtime, `tuiMux.snapshot(tuiMux.activeID()).locked`)
 	if err != nil {
 		t.Fatalf("snapshot locked after unlock: %v", err)
 	}
@@ -1736,15 +1744,15 @@ func TestSessionStatusMethodBindings(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		function mkSession(name) {
-			var s = termmux.newBoundedSession({ cmd: idleBin });
+	err := awaitJSErr(t, runtime, `
+		async function mkSession(name) {
+			var s = await termmux.newBoundedSession({ cmd: idleBin });
 			tuiMux.register(s.session, { name: name });
 			return s;
 		}
-		var base = mkSession("base");
+		var base = await mkSession("base");
 		tuiMux.setStatus("left");
 		tuiMux.setToggleKey(29);
 		tuiMux.setStatusEnabled(true);
@@ -1784,10 +1792,10 @@ func TestSearchForwardBackwardBindings(t *testing.T) {
 	defer cleanup()
 
 	idleBin := buildIdleProgram(t)
-	_ = runtime.Set("idleBin", idleBin)
+	setOnLoop(t, runtime, "idleBin", idleBin)
 
-	_, err := runtime.RunString(`
-		var s = termmux.newBoundedSession({ cmd: idleBin });
+	err := awaitJSErr(t, runtime, `
+		var s = await termmux.newBoundedSession({ cmd: idleBin });
 		tuiMux.register(s.session, { name: "search" });
 		function mySearch(pattern, row, col) {
 			if (pattern === "hello") {
@@ -1853,9 +1861,9 @@ func TestWrapInteractiveSession_HappyPath(t *testing.T) {
 	sess.readerCh <- []byte("beta")
 
 	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set("s", wrapped)
+	_ = runtime.Set( "s", wrapped)
 
-	_, err := runtime.RunString(`
+	_, err := runtime.RunString( `
 		s.resize(25, 100);
 		s.write("hello");
 		s.isDone();
@@ -1877,9 +1885,9 @@ func TestWrapInteractiveSession_Close(t *testing.T) {
 	runtime := goja.New()
 	sess := &mockInteractiveSession{done: make(chan struct{})}
 	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set("s", wrapped)
+	_ = runtime.Set( "s", wrapped)
 
-	_, err := runtime.RunString(`s.close()`)
+	_, err := runtime.RunString( `s.close()`)
 	if err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -1895,9 +1903,9 @@ func TestWrapInteractiveSession_ResizeError(t *testing.T) {
 	runtime := goja.New()
 	sess := &mockInteractiveSession{resizeErr: errors.New("resize fail")}
 	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set("s", wrapped)
+	_ = runtime.Set( "s", wrapped)
 
-	_, err := runtime.RunString(`s.resize(10, 20)`)
+	_, err := runtime.RunString( `s.resize(10, 20)`)
 	if err == nil {
 		t.Error("expected error from resize failure")
 	}
@@ -1907,9 +1915,9 @@ func TestWrapInteractiveSession_WriteError(t *testing.T) {
 	runtime := goja.New()
 	sess := &mockInteractiveSession{writeErr: errors.New("write fail")}
 	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set("s", wrapped)
+	_ = runtime.Set( "s", wrapped)
 
-	_, err := runtime.RunString(`s.write("x")`)
+	_, err := runtime.RunString( `s.write("x")`)
 	if err == nil {
 		t.Error("expected error from write failure")
 	}
@@ -1919,9 +1927,9 @@ func TestWrapInteractiveSession_CloseError(t *testing.T) {
 	runtime := goja.New()
 	sess := &mockInteractiveSession{closeErr: errors.New("close fail")}
 	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set("s", wrapped)
+	_ = runtime.Set( "s", wrapped)
 
-	_, err := runtime.RunString(`s.close()`)
+	_, err := runtime.RunString( `s.close()`)
 	if err == nil {
 		t.Error("expected error from close failure")
 	}
@@ -1972,12 +1980,12 @@ func TestSnapshotMethods(t *testing.T) {
 	defer cleanup()
 
 	var rasterPath string
-	_ = runtime.Set("recordRasterPath", func(p string) { rasterPath = p })
-	_ = runtime.Set("removeFile", func(p string) error {
+	setOnLoop(t, runtime, "recordRasterPath", func(p string) { rasterPath = p })
+	setOnLoop(t, runtime, "removeFile", func(p string) error {
 		return os.Remove(p)
 	})
 
-	_, err := runtime.RunString(`
+	err := awaitJSErr(t, runtime, `
 		var ts = tuiMux.termSize();
 		var list = tuiMux.sessions();
 		var id = list[0].id;
@@ -1988,13 +1996,13 @@ func TestSnapshotMethods(t *testing.T) {
 		var missingDone = tuiMux.isDone(999999);
 		var dropped = tuiMux.eventsDropped();
 		var last = tuiMux.lastActivityMs(id);
-		var raster = tuiMux.renderRaster(id);
+		var raster = await tuiMux.renderRaster(id);
 		recordRasterPath(raster.path);
-		var raster2 = tuiMux.renderRaster(id, {cellW: 10, cellH: 20});
+		var raster2 = await tuiMux.renderRaster(id, {cellW: 10, cellH: 20});
 		removeFile(raster2.path);
 		try { tuiMux.renderRaster(); } catch (e) {}
 		try { tuiMux.renderRaster(id, {cellW: 0}); } catch (e) {}
-		var nullRaster = tuiMux.renderRaster(999999);
+		var nullRaster = await tuiMux.renderRaster(999999);
 		var ok = typeof ts === 'object' &&
 			snap !== null &&
 			typeof aid === 'number' &&
@@ -2025,18 +2033,18 @@ func TestPersistenceMethods(t *testing.T) {
 
 	path := t.TempDir() + "/state.json"
 	missingPath := t.TempDir() + "/missing.json"
-	_ = runtime.Set("statePath", path)
-	_ = runtime.Set("missingPath", missingPath)
+	setOnLoop(t, runtime, "statePath", path)
+	setOnLoop(t, runtime, "missingPath", missingPath)
 
-	_, err := runtime.RunString(`
+	err := awaitJSErr(t, runtime, `
 		var state = tuiMux.exportState();
-		tuiMux.saveState(statePath);
-		var loaded = tuiMux.loadState(statePath);
+		await tuiMux.saveState(statePath);
+		var loaded = await tuiMux.loadState(statePath);
 		var alive = tuiMux.processAlive(0);
 		var restored = tuiMux.restoreState(loaded);
-		tuiMux.removeState(statePath);
-		try { tuiMux.saveState(''); } catch (e) {}
-		try { tuiMux.loadState(missingPath); } catch (e) {}
+		await tuiMux.removeState(statePath);
+		try { await tuiMux.saveState(''); } catch (e) {}
+		try { await tuiMux.loadState(missingPath); } catch (e) {}
 		try { tuiMux.restoreState(null); } catch (e) {}
 		try { tuiMux.processAlive(); } catch (e) {}
 	`)

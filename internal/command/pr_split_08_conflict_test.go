@@ -509,11 +509,11 @@ func TestChunk08_Strategy_GoModTidy_Detect(t *testing.T) {
 
 			// go.mod exists.
 			osmod.fileExists = function(p) {
-				return p.indexOf('go.mod') >= 0;
+				return { exists: p.indexOf('go.mod') >= 0 };
 			};
 			var existsResult = await s.detect('/fake/dir');
 			// go.mod does NOT exist.
-			osmod.fileExists = function(p) { return false; };
+			osmod.fileExists = function(p) { return { exists: false }; };
 			var notExistsResult = await s.detect('/fake/dir');
 
 			osmod.fileExists = origFileExists;
@@ -554,10 +554,10 @@ func TestChunk08_Strategy_GoGenerateSum_Detect(t *testing.T) {
 			var origFileExists = osmod.fileExists;
 
 			osmod.fileExists = function(p) {
-				return p.indexOf('go.sum') >= 0;
+				return { exists: p.indexOf('go.sum') >= 0 };
 			};
 			var yes = await s.detect('/fake/dir');
-			osmod.fileExists = function(p) { return false; };
+			osmod.fileExists = function(p) { return { exists: false }; };
 			var no = await s.detect('/fake/dir');
 
 			osmod.fileExists = origFileExists;
@@ -644,10 +644,10 @@ func TestChunk08_Strategy_NpmInstall_Detect(t *testing.T) {
 			var origFileExists = osmod.fileExists;
 
 			osmod.fileExists = function(p) {
-				return p.indexOf('package.json') >= 0;
+				return { exists: p.indexOf('package.json') >= 0 };
 			};
 			var yes = await s.detect('/work');
-			osmod.fileExists = function(p) { return false; };
+			osmod.fileExists = function(p) { return { exists: false }; };
 			var no = await s.detect('/work');
 
 			osmod.fileExists = origFileExists;
@@ -715,7 +715,7 @@ func TestChunk08_Strategy_MakeGenerate_Detect(t *testing.T) {
 			var withGoGenerate = await s.detect('.');
 
 			// Scenario 3: No Makefile, no go:generate.
-			osmod.fileExists = function(p) { return false; };
+			osmod.fileExists = function(p) { return { exists: false }; };
 			osmod.readDir = function(p) { return ['main.go']; };
 			osmod.readFile = function(p) {
 				if (p === 'main.go') return { content: 'package main\nfunc main() {}', error: null };

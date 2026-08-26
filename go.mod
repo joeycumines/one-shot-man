@@ -20,12 +20,12 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-behaviortree v1.11.0
-	github.com/joeycumines/go-eventloop v0.0.0-20260824131324-22f9a6a5545e
+	github.com/joeycumines/go-eventloop v0.0.0-20260825213014-777ee7a02efc
 	github.com/joeycumines/go-inprocgrpc v0.0.0-20260824131419-e327357f7935
 	github.com/joeycumines/go-pabt v0.2.0
 	github.com/joeycumines/go-prompt v0.0.0-20260823080611-669b4665c6b5
 	github.com/joeycumines/goja v0.0.0-20260823081319-46200cbcb6c2
-	github.com/joeycumines/goja-eventloop v0.0.0-20260823044921-54cfe1a9109f
+	github.com/joeycumines/goja-eventloop v0.0.0-20260825080307-2a846284cdbf
 	github.com/joeycumines/goja-grpc v0.0.0-20260824131346-39a74e7fb91b
 	github.com/joeycumines/goja-protobuf v0.0.0-20260824131356-9e31b56891a0
 	github.com/joeycumines/goja_nodejs v0.0.0-20260823081323-05fa4bcb64d4
@@ -62,7 +62,7 @@ require (
 	github.com/go-git/go-billy/v6 v6.0.0-alpha.2 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
-	github.com/google/pprof v0.0.0-20260802141513-ef3492d7dac3 // indirect
+	github.com/google/pprof v0.0.0-20260825002013-8a176773c324 // indirect
 	github.com/joeycumines/go-bigbuff v1.21.1 // indirect
 	github.com/joeycumines/go-catrate v0.0.0-20260822232657-5012a789c17d // indirect
 	github.com/joeycumines/logiface v0.6.0 // indirect
@@ -84,7 +84,7 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yuin/goldmark v1.8.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/exp v0.0.0-20260820142414-ca536658362e // indirect
+	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa // indirect
 	golang.org/x/exp/typeparams v0.0.0-20260820142414-ca536658362e // indirect
 	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
@@ -98,3 +98,9 @@ require (
 	google.golang.org/grpc v1.83.1 // indirect
 	honnef.co/go/tools v0.8.1 // indirect
 )
+
+replace github.com/joeycumines/goja-eventloop => /Users/joeyc/dev/go-utilpkg/goja-eventloop
+
+replace github.com/joeycumines/go-eventloop => /Users/joeyc/dev/go-utilpkg/eventloop
+
+replace github.com/joeycumines/goja => /Users/joeyc/dev/go-utilpkg/goja

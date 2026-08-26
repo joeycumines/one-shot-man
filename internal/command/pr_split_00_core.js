@@ -140,7 +140,7 @@
         var hasMakefile = false;
         for (var i = 0; i < names.length; i++) {
             var path = dir ? (dir + sep + names[i]) : names[i];
-            if (osmod && osmod.fileExists(path)) {
+            if (osmod && (await osmod.fileExists(path)).exists) {
                 hasMakefile = true;
                 break;
             } else if (!osmod) {
@@ -353,7 +353,7 @@
             outputFn('\u276f git ' + args.join(' '));
         }
 
-        var child = exec.spawn('git', gitArgs);
+        var child = await exec.spawn('git', gitArgs);
 
         // Collect stdout and stderr in parallel to avoid deadlock
         // (process may fill stderr buffer before we finish reading stdout).
@@ -427,7 +427,7 @@
         }
 
         // Use platform shell for command dispatch.
-        var child = shellSpawnAsync(command);
+        var child = await shellSpawnAsync(command);
 
         // Collect stdout and stderr in parallel (same readAll pattern as gitExecAsync).
         async function readAll(stream, streamOutputFn) {
@@ -557,7 +557,8 @@
 
     async function fileExistsSync(path) {
         if (osmod && typeof osmod.fileExists === 'function') {
-            return osmod.fileExists(path);
+            var r = await osmod.fileExists(path);
+            return !!(r && r.exists);
         }
         return isWindows()
             ? (await exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)'])).code === 0
@@ -599,7 +600,7 @@
         // Late-bind exec through prSplit._modules so test compat shims
         // that reassign the global 'exec' are visible here.
         var e = (typeof prSplit !== 'undefined' && prSplit._modules && prSplit._modules.exec) || exec;
-        var child = e.spawn(cmd, [name]);
+        var child = await e.spawn(cmd, [name]);
         var stdout = '';
         while (true) {
             var chunk = await child.stdout.read();
@@ -632,11 +633,11 @@
     // shellSpawnAsync runs a shell command string asynchronously through the
     // platform shell (sh -c on Unix, cmd.exe /C on Windows).
     // Returns the spawned child process.
-    function shellSpawnAsync(shellCmd) {
+    async function shellSpawnAsync(shellCmd) {
         if (isWindows()) {
-            return exec.spawn('cmd.exe', ['/C', shellCmd]);
+            return await exec.spawn('cmd.exe', ['/C', shellCmd]);
         }
-        return exec.spawn('sh', ['-c', shellCmd]);
+        return await exec.spawn('sh', ['-c', shellCmd]);
     }
 
     // gitAddChangedFiles stages modified, new, and deleted files while

@@ -114,7 +114,7 @@ func TestPersistence_TruthfulAnnotation(t *testing.T) {
 			off: function() {}
 		};
 
-		var result = prSplit.persistence.loadPrevious();
+		var result = await prSplit.persistence.loadPrevious();
 		if (!result) {
 			errors.push('loadPrevious should return state');
 		}
@@ -201,7 +201,7 @@ func TestPersistence_StaleDetection(t *testing.T) {
 			off: function() {}
 		};
 
-		var result = prSplit.persistence.loadPrevious();
+		var result = await prSplit.persistence.loadPrevious();
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
 
@@ -277,7 +277,8 @@ func TestPersistence_ResumeStatePopulatedByModelInit(t *testing.T) {
 		SavedAt:  time.Now().Add(-48 * time.Hour),
 	})
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
+		await (prSplit.previousStatePromise || Promise.resolve());
 		var errors = [];
 		if (!prSplit.previousState) {
 			errors.push('previousState should load from the real persisted file at startup');
@@ -609,7 +610,7 @@ func TestPersistence_NoPreviousState(t *testing.T) {
 			off: function() {}
 		};
 
-		var result = prSplit.persistence.loadPrevious();
+		var result = await prSplit.persistence.loadPrevious();
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
 
@@ -659,7 +660,7 @@ func TestPersistence_UnknownPIDSessions(t *testing.T) {
 			off: function() {}
 		};
 
-		var result = prSplit.persistence.loadPrevious();
+		var result = await prSplit.persistence.loadPrevious();
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
 
@@ -778,7 +779,7 @@ func TestPersistence_ResumeMetaCounts(t *testing.T) {
 					on: function() { return 0; },
 					off: function() {}
 				};
-				var result = prSplit.persistence.loadPrevious();
+				var result = await prSplit.persistence.loadPrevious();
 				if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 				else delete globalThis.tuiMux;
 				if (!result || !result._resumeMeta) return 'FAIL: no meta';

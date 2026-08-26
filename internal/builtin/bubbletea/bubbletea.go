@@ -339,7 +339,7 @@ func NewManagerWithStderr(
 		panic("bubbletea.NewManagerWithStderr: jsRunner is REQUIRED - cannot be nil; provide a JSRunner implementation (e.g., *bt.Bridge)")
 	}
 	if ctx == nil {
-		ctx = context.Background()
+		panic("bubbletea: nil context requires baseCtx threading")
 	}
 	// Track if we received nil inputs - if so, skip TTY detection entirely.
 	// This avoids triggering stdin access during engine construction in tests.

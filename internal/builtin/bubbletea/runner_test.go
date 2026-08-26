@@ -19,6 +19,7 @@ import (
 	ttRequire "github.com/stretchr/testify/require"
 )
 
+
 // setupRunnerTest creates a JSRunner (bt.Bridge) for testing with proper cleanup.
 func setupRunnerTest(t *testing.T) bubbletea.JSRunner {
 	t.Helper()
@@ -32,7 +33,6 @@ func setupRunnerTest(t *testing.T) bubbletea.JSRunner {
 	registry.Enable(vm)
 	gojanodejsconsole.Enable(vm)
 	loopCtx, loopCancel := context.WithCancel(context.Background())
-	go loop.Run(loopCtx)
 	t.Cleanup(func() {
 		loopCancel()
 		loop.Shutdown(context.Background())
@@ -47,6 +47,9 @@ func setupRunnerTest(t *testing.T) bubbletea.JSRunner {
 	if err := adapter.Bind(); err != nil {
 		t.Fatal(err)
 	}
+	// Start the loop after adapter construction (claimAdapter requires the
+	// pre-Run StateAwake window) but before NewBridge, which submits JS init.
+	go loop.Run(loopCtx)
 	bridge := bt.NewBridge(ctx, loop, vm, registry, adapter)
 	t.Cleanup(bridge.Stop)
 
@@ -301,7 +304,6 @@ func TestJSRunner_StoppedBridgeReturnsError(t *testing.T) {
 		t.Fatal(adapterErr)
 	}
 	loopCtx, loopCancel := context.WithCancel(context.Background())
-	go loop.Run(loopCtx)
 	t.Cleanup(func() {
 		loopCancel()
 		loop.Shutdown(context.Background())
@@ -309,6 +311,7 @@ func TestJSRunner_StoppedBridgeReturnsError(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
+	go loop.Run(loopCtx)
 	bridge := bt.NewBridge(ctx, loop, vm, registry, adapter)
 
 	var jsRunner bubbletea.JSRunner = bridge

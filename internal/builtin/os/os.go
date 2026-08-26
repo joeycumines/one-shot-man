@@ -80,7 +80,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 			}, nil)
 		})
 
-		// fileExists(path: string): boolean
+		// fileExists(path: string): Promise<{ exists: boolean }>
 		// Automatically expands ~ to the user's home directory before checking.
 		_ = exports.Set("fileExists", func(call goja.FunctionCall) goja.Value {
 			var path string
@@ -88,7 +88,9 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 				path = call.Argument(0).String()
 			}
 			if path == "" {
-				return vm.ToValue(false)
+				return async.PromiseTracked(adapter, loop, ctx, func(_ context.Context) (any, error) {
+					return map[string]any{"exists": false}, nil
+				}, nil)
 			}
 
 			expanded, err := expandTildeOnly(path)
@@ -100,8 +102,10 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 				panic(vm.NewGoError(fmt.Errorf("fileExists: %w", err)))
 			}
 
-			_, err = os.Stat(expanded)
-			return vm.ToValue(err == nil)
+			return async.PromiseTracked(adapter, loop, ctx, func(_ context.Context) (any, error) {
+				_, err := os.Stat(expanded)
+				return map[string]any{"exists": err == nil}, nil
+			}, nil)
 		})
 
 		// isAbsolute(path: string): boolean

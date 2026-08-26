@@ -1,6 +1,7 @@
 package command
 
 import (
+	"errors"
 	"context"
 	"embed"
 	"encoding/json"
@@ -345,6 +346,31 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 // session-related globals are configured here — JS chunks use them but
 // never create new mux instances.
 func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripting.Engine, stdout io.Writer) (termFd int, sessionMgr *termmux.SessionManager, err error) {
+	loop := engine.Loop()
+	if loop == nil {
+		return 0, nil, errors.New("event loop not available")
+	}
+
+	// All runtime mutation must happen on the event-loop goroutine: the
+	// termmux wrapper's event bridge dispatches SessionManager events onto
+	// the loop as soon as WrapSessionManager runs, and goja.Runtime is not
+	// goroutine-safe. Inner Engine calls take their on-loop fast path.
+	done := make(chan struct{})
+	var runErr error
+	if submitErr := loop.Submit(func() {
+		defer close(done)
+		termFd, sessionMgr, runErr = c.setupEngineGlobalsOnLoop(ctx, engine, stdout)
+	}); submitErr != nil {
+		return 0, nil, fmt.Errorf("event loop not running: %w", submitErr)
+	}
+	<-done
+	if runErr != nil {
+		return 0, nil, runErr
+	}
+	return termFd, sessionMgr, nil
+}
+
+func (c *PrSplitCommand) setupEngineGlobalsOnLoop(ctx context.Context, engine *scripting.Engine, stdout io.Writer) (termFd int, sessionMgr *termmux.SessionManager, err error) {
 	// Inject command name for state namespacing.
 	engine.SetGlobal("config", map[string]any{
 		"name": "pr-split",

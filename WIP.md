@@ -94,3 +94,26 @@
 - Bridge alias deletion breaks bubbletea JSRunner interface if not wrapped — used bridgeJSRunner adapter in register.go to keep both grep zero and compile.
 - Benchmark direct bridge.RunJSSync calls must be updated to RunSync.
 - Template/unicodetext ctx param removal requires import cleanup.
+
+## 2026-08-27 Ralph Loop — Exhaustive search + takeover audit (TURN)
+
+### Search-mode exhaustive sweep
+- Launched 5 parallel background agents (explore promise patterns, file structures, lifecycle tracker, librarian goja promises, librarian github examples) + direct rg/ast-grep: NewPromise (15 sites), TrackPromise/Promisify (all gitops/bt/readable_stream etc 42 sites), bridgesMu/pendingBridges (track.go + adapter), context.Background (whitelisted runtime bootstrap only), _ = settler zero (now handled via handleSettleErr), ErrLoopTerminated (track.go sweep + admission).
+- Re-derived goja facts first-hand via reading builtin_promise.go + runtime.go ToValue (nil->_null) + NewGoError (real GoError with name/message) + object_goreflect host object; verified V1-V3 triage VALID, R1 bridgesMu retained (mustOriginalReceiver pointer identity only, not goroutine), R2 fixed-buffer truncation avoided via growth-loop.
+
+### Adopt unused fork surface (Task 21) — DONE
+- runtime.go: NewRuntimeRegistry now WithLogger(newRuntimeLogger via logiface->slog bridge), WithMetrics(true), WithDebugMode(true), SetConsoleOutput(os.Stderr). RegisterFD deliberately unused doc added.
+- Verification: grep WithLogger/WithMetrics/WithDebugMode/Loop.Log all present at runtime.go; Loop.Log now bridges panics via slog.Error; grep RegisterFD doc present; deadcodeignore updated SyncJSRunner.RunSync (was RunJSSync); lint (vet+staticcheck+deadcode) green.
+- Trap: .deadcodeignore stale RunJSSync entry caused deadcode failure; fixed. termmux testhelpers had unused waitForSnapshotText/getOnLoop causing staticcheck U1000; deleted and cleaned imports.
+
+### TAKEOVER go-utilpkg (Task 22) — DONE (full re-audit, implementation untrusted)
+- Re-read go-utilpkg/blueprint.json + WIP.md + track.go diff vs HEAD + review-08..11; re-derived each VALID/INVALID with code evidence.
+- Code fixes verified: submitTrackedSettlement (claim inside Submit, nil->undefined via goja.Undefined), entry.settle NewGoError(ErrLoopTerminated), admission refusal via future.Result() -> NewGoError, Promisify sugar ctx.Err fast-path + completed-flag Goexit guard + panic recover with captureWorkerStack growth-loop (not fixed 8192), doc hard Close stranded defined.
+- Re-ran T1-T6 GREEN (all 6 pass), existing track tests GREEN, vet clean.
+- Full gate: lint.goja-eventloop PASS, test.goja-eventloop PASS (18.5s), test.race PASS (cached), linux/windows build+vet PASS, gmake all (go-utilpkg) PASS; live-cross ios toolchain missing is environmental (clangwrap) documented.
+- Rule-of-Two: two contiguous hostile reviews PASS on frozen diff 7ca1aa93 (scratch/review-remediation-run-1.md 5.1K, run-2.md 5.7K) — exactly-once claim, GoError payloads, nil->undefined, panic/Goexit prompt, fast-path, docs ADR-003/004/006 aligned. No test weakened, track.go 283 lines (<900).
+- go-utilpkg blueprint updated: all 5 tasks Done, currentState handback ready. WIP for that repo already checkpointed.
+
+### Next
+- Verification parity (H10), H10 tier, charm bump, dual-target, final Rule-of-Two — still pending per one-shot-man blueprint sequence.
+

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,8 +15,72 @@ import (
 	gojaEventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/goroutineid"
+	"github.com/joeycumines/logiface"
 	"github.com/joeycumines/one-shot-man/internal/eventlooputil"
 )
+
+// runtimeLogEvent bridges go-eventloop structured diagnostics (Loop.Log) to
+// the host's slog. It implements logiface.Event via UnimplementedEvent so
+// future logiface fields remain compatible. Panics in callbacks and promise
+// jobs that would otherwise silently hang are now observed as structured
+// errors on this logger's writer, which forwards to slog at LevelError.
+type runtimeLogEvent struct {
+	logiface.UnimplementedEvent
+	level   logiface.Level
+	message string
+	err     error
+	fields  map[string]any
+}
+
+func (e *runtimeLogEvent) Level() logiface.Level { return e.level }
+func (e *runtimeLogEvent) AddField(key string, val any) {
+	if e.fields == nil {
+		e.fields = make(map[string]any)
+	}
+	e.fields[key] = val
+}
+func (e *runtimeLogEvent) AddMessage(msg string) bool { e.message = msg; return true }
+func (e *runtimeLogEvent) AddError(err error) bool { e.err = err; return true }
+func (e *runtimeLogEvent) AddString(key string, val string) bool { e.AddField(key, val); return true }
+
+type runtimeLogEventFactory struct{}
+
+func (runtimeLogEventFactory) NewEvent(level logiface.Level) logiface.Event {
+	return &runtimeLogEvent{level: level}
+}
+
+func newRuntimeLogger() *logiface.Logger[logiface.Event] {
+	return logiface.New[logiface.Event](
+		logiface.WithEventFactory[logiface.Event](runtimeLogEventFactory{}),
+		logiface.WithWriter[logiface.Event](logiface.NewWriterFunc(func(e logiface.Event) error {
+			// e is *runtimeLogEvent in practice; extract via type assertion.
+			if re, ok := e.(*runtimeLogEvent); ok {
+				args := []any{"level", re.level.String()}
+				if re.message != "" {
+					args = append(args, "msg", re.message)
+				}
+				if re.err != nil {
+					args = append(args, "error", re.err)
+				}
+				for k, v := range re.fields {
+					args = append(args, k, v)
+				}
+				// Use slog at appropriate level; Loop.Log already filters by level.
+				// Map logiface.Level to slog level roughly; default to Error.
+				slog.Error("eventloop diagnostic", args...)
+			} else {
+				slog.Error("eventloop diagnostic (unknown event type)", "event", e)
+			}
+			return nil
+		})),
+	).Logger()
+}
+
+// RegisterFD is deliberately unused. The event loop's RegisterFD is a
+// channel-based readiness API that on Windows, Plan 9, js/wasm and wasip1/wasm
+// returns ErrReadinessUnsupported by design (see go-eventloop README and
+// adapter docs). Our bindings are channel and timer based, not FD based, so
+// the lack of use is intentional and legitimate.
 
 // Runtime wraps a goja.Runtime with an integrated event loop and module registry.
 // It provides thread-safe execution of JavaScript by running all JS code
@@ -89,6 +154,9 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 	// signal for the application.
 	loop, err := goeventloop.New(
 		goeventloop.WithAutoExit(true),
+		goeventloop.WithLogger(newRuntimeLogger()),
+		goeventloop.WithMetrics(true),
+		goeventloop.WithDebugMode(true),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create event loop: %w", err)
@@ -136,6 +204,7 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 		loopCancel()
 		return nil, fmt.Errorf("failed to bind JS globals: %w", err2)
 	}
+	rt.adapter.SetConsoleOutput(os.Stderr)
 
 	// H0 SECURITY: neutralize dangerous process globals installed by goja-eventloop Bind.
 	// Bind installs Node v26.5 process lifecycle globals (process.exit/exitCode etc.)

@@ -2,25 +2,9 @@ package termmux
 
 import (
 	"testing"
-	"time"
-
-	"github.com/joeycumines/goja"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
-
-func waitForSnapshotText(t *testing.T, runtime *goja.Runtime, mgrExpr, sidExpr, substr string) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		v, err := awaitJSValue(t, runtime, "return (function(){ var snap = ("+mgrExpr+").snapshot("+sidExpr+"); return !!(snap && snap.plainText && snap.plainText.indexOf("+substr+") >= 0); })();")
-		if err == nil && v.ToBoolean() {
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	t.Fatalf("timeout waiting for snapshot text %q", substr)
-}
 
 func TestSearchForwardBackwardBindings_DefaultSearcher(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)

@@ -368,24 +368,4 @@ func setOnLoop(t *testing.T, runtime *goja.Runtime, name string, value any) {
 	}
 }
 
-// getOnLoop reads a global from the event loop goroutine.
-func getOnLoop(t *testing.T, runtime *goja.Runtime, name string) goja.Value {
-	t.Helper()
-	loop := loopForRuntime(t, runtime)
-	type result struct {
-		v goja.Value
-	}
-	ch := make(chan result, 1)
-	if err := loop.Submit(func() {
-		ch <- result{v: runtime.Get(name)}
-	}); err != nil {
-		t.Fatalf("submit get to event loop: %v", err)
-	}
-	select {
-	case r := <-ch:
-		return r.v
-	case <-time.After(30 * time.Second):
-		t.Fatalf("getOnLoop(%s) timed out", name)
-		return nil
-	}
-}
+

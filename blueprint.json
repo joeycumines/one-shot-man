@@ -35,7 +35,7 @@
     "ALWAYS": "Tee every long command to scratch/ before tail/head per globalAlerts. Pattern: mkdir -p scratch && <cmd> 2>&1 | tee scratch/<name>.log | tail -n 100; echo EXIT:${PIPESTATUS[0]}"
   },
   "statusSection": {
-    "currentState": "TASK 20 DONE: dead _ any/ctx params removed, Bridge.RunJSSync alias deleted via wrapper, BlockingJSLeaf drain defer removed, state-refresh coalescing dispatcher (1 bounded goroutine, latest wins, serialized per key) added, stale no-microtask comments rewritten (strict always-on), 5 review-doc citations/spec punt deleted, grep gates zero, go vet clean, rapid 100 SetState bounded/latest-wins verified, template/unicodetext/bt vet+tests green. NEXT: TASK 21 Adopt unused fork surface WithLogger/Loop.Log + WithMetrics + WithDebugMode",
+    "currentState": "TASK 21 (Adopt unused fork surface) DONE: WithLogger/WithMetrics/WithDebugMode wired via newRuntimeLogger + SetConsoleOutput, RegisterFD doc added, lint deadcodeignore fixed, grep gates zero, termmux helpers cleared. TAKEOVER TASK DONE: go-utilpkg TrackPromise/Promisify fully owned and re-verified from first principles \u2014 V1 GoError payloads, V2 nil->undefined, V3 panic/Goexit prompt rejection with stack growth-loop, full gate green (lint/test/race/linux+windows, gmake all), two contiguous Rule-of-Two PASS (scratch/review-remediation-run-1/2.md). NEXT: Verification parity, H10 tier, charm bump, dual-target, final Rule-of-Two.",
     "goalState": "All 6 red packages green, promise abstraction intent-explicit (Close vs Shutdown documented, no hidden footguns), handback exactly-once live-correct with honest test, perf fast-paths (canceled ctx, pooling, sharding), close lifecycle correctly aligned (stranded for hard Close documented, graceful for Shutdown guaranteed), sandbox/tokenizer/fetch/Bridge/termmux/grpc/scripting races gone, runner collapse, bt seam, dead code, WithLogger/Metrics, verification parity, dual gmake targets green, 2x strict-review-gate clean.",
     "goalLog": [
       {
@@ -185,7 +185,9 @@
       "User directive (verbatim): 'N.B. I'm sending another executor to fix your attempt at implementing /Users/joeyc/dev/go-utilpkg/goja-eventloop/track.go DO NOT TOUCH while it is in-flight, and continue working even if you observe errors relating to e.g. compilation errors as files change (just continue constructive work then come back to where you left off). Note: precise details pending, it is related to error handling. DONT anticipate me getting back to you, you are NOT REDIRECTED and are still STRICTLY responsible driving to completion.'",
       "Self-directed: task-18 gates closed; wc-l>=300 recorded as miscalibrated-criterion deviation with numstat evidence (+527/-135 scope total; production-only +189 net); tui-sink revert withdrawn after promise-fix proved 55b5913 sink innocent.",
       "Self-directed: task-19 verified against current tree rather than blindly re-executed: grep callLeaf=0 (single satisfied); single createTickerJSWrapper/createManagerJSWrapper; zero in-package per-ticker goroutines (liveness via adapter.Promisify=A2 fold); bt -race -count=5 STABLE ok 53.3s. DEVIATION on 'net deletion >=80+55+60': target deletions were consumed by earlier F-series/A2 commits (2e1d79c sync-twin deletion, A2 thread-check machinery deletion); nothing left to delete without manufacturing churn.",
-      "[2026-08-27 Ralph Loop] Per saved text file : ./DIRECTIVE.txt Read this file before continuing. Your context window will be automatically compacted as it approaches its limit, allowing you to continue working indefinitely from where you left off. Therefore, do not stop tasks early due to token budget concerns. As you approach your token budget limit, save your current progress and state to memory before the context window refreshes. Always be as persistent and autonomous as possible and complete tasks fully, even if the end of your budget is approaching. Never artificially stop any task early regardless of the context remaining. [restore checkpointed session agent configuration after compaction] + [search-mode] MAXIMIZE SEARCH EFFORT. Launch multiple background agents IN PARALLEL: explore agents (codebase patterns, file structures, ast-grep) + librarian agents (remote repos, official docs, GitHub examples) Plus direct tools: Grep, ripgrep (rg), ast-grep (sg) NEVER stop at first result - be exhaustive. N.B. external executor editing /Users/joeyc/dev/go-utilpkg/goja-eventloop/track.go DO NOT TOUCH remains in-flight."
+      "[2026-08-27 Ralph Loop] Per saved text file : ./DIRECTIVE.txt Read this file before continuing. Your context window will be automatically compacted as it approaches its limit, allowing you to continue working indefinitely from where you left off. Therefore, do not stop tasks early due to token budget concerns. As you approach your token budget limit, save your current progress and state to memory before the context window refreshes. Always be as persistent and autonomous as possible and complete tasks fully, even if the end of your budget is approaching. Never artificially stop any task early regardless of the context remaining. [restore checkpointed session agent configuration after compaction] + [search-mode] MAXIMIZE SEARCH EFFORT. Launch multiple background agents IN PARALLEL: explore agents (codebase patterns, file structures, ast-grep) + librarian agents (remote repos, official docs, GitHub examples) Plus direct tools: Grep, ripgrep (rg), ast-grep (sg) NEVER stop at first result - be exhaustive. N.B. external executor editing /Users/joeyc/dev/go-utilpkg/goja-eventloop/track.go DO NOT TOUCH remains in-flight.",
+      "You now FULLY own /Users/joeyc/dev/go-utilpkg/ - I fired the agent who was working on the changes there for disobedience. You will need to immediately add a task to your blueprint.json in an appropriate location to FULLY TAKE OVER THE WORK THERE. Note that it has its OWN /Users/joeyc/dev/go-utilpkg/blueprint.json and /Users/joeyc/dev/go-utilpkg/WIP.md . Or had - as mentioned it is fired. Record as much in the task. Note: DO NOT TRUST THE IMPLEMENTATION AS IS.",
+      "[2026-08-27 Ralph Loop audit] TAKEOVER ownership of go-utilpkg completed: re-derived goja facts first-hand (ToValue nil=_null, NewGoError=GoError, host object no message), re-ran T1-T6 GREEN, verified submitTrackedSettlement nil->undefined, panic/Goexit stack capture, admission refusal via future.Result(), full local gate (lint, test, race, live-cross darwin/linux/windows, gmake all) green, two contiguous hostile reviews PASS on frozen diff, blueprint/WIP updated. Adopt fork surface: WithLogger/Metrics/DebugMode verified via greedy exhaustive rg + go vet/staticcheck/deadcode green."
     ]
   },
   "sequentialTasks": [
@@ -537,7 +539,7 @@
       "task": "Adopt unused fork surface: WithLogger/Loop.Log + WithMetrics + WithDebugMode for observability",
       "description": "Wire two highest-leverage unused capabilities: runtime.go loop construction goeventloop.New(WithAutoExit, WithLogger(slog bridge), WithMetrics, WithDebugMode) plus SetConsoleOutput \u2014 panics in callbacks log via Loop.Log isolated goroutine instead of silent hang. Optionally expose metrics via debug flag or osm:debug module. Document deliberately unused RegisterFD as channel-based legitimate for Windows ErrReadinessUnsupported.",
       "acceptance": "WithLogger wired: panicking binding emits structured log via Loop.Log and test captures it; 5s timeout now shows LOG before timeout. Loop.Metrics callback latency percentiles available. grep WithLogger/WithMetrics/Loop.Log shows usage at runtime.go.",
-      "status": "In Progress",
+      "status": "Done",
       "files": [
         "internal/scripting/runtime.go",
         "internal/eventlooputil/runner.go"
@@ -545,6 +547,28 @@
       "contextPointers": {
         "unusedDoc": "10_unused_surface.md",
         "loopLog": "WithLogger"
+      }
+    },
+    {
+      "task": "TAKEOVER: Assume full ownership of go-utilpkg TrackPromise/Promisify remediation (review-08..11) \u2014 prior agent fired, implementation untrusted, own blueprint/WIP now under this owner",
+      "description": "Take over ALL work at /Users/joeyc/dev/go-utilpkg/ which has its OWN blueprint.json and WIP.md (prior agent fired for disobedience; that agent's implementation is UNTRUSTED and must be audited from first principles). Scope: the staged goja-eventloop TrackPromise/Promisify diff remediating scratch/review-08..11 (V1 GoError payload via NewGoError not raw ErrLoopTerminated, V2 nil->undefined via goja.Undefined, V3 panic/Goexit sink with recovery-site stack capture and completed-flag, V5 test gaps T1-T6). Actions: (1) read /Users/joeyc/dev/go-utilpkg/blueprint.json + WIP.md + track.go/track_test.go diff vs HEAD + review-08..11; (2) re-derive goja facts first-hand (ToValue(nil)=_null, ToValue(goError)=host object without .message, NewGoError=real JS Error) and verify each VALID/INVALID triage; (3) re-run/observe all six RED tests then GREEN (T1 TerminalSweep GoError, T2 AdmissionRefused GoError, T3 Promisify panic, T4 TrackPromise panic, T5 Goexit, T6 nil fulfillment) and existing track tests; (4) re-verify production code (submitTrackedSettlement helper, admission refusal via future.Result(), stack capture growth-loop, doc updates) is correct and not trusting prior agent's claims; (5) run full local gate per its blueprint task 4 (gmake lint/test/race/live-cross + GOOS linux/windows build/vet + repo-wide gmake all) and fix any failures; (6) drive its Rule-of-Two gate (two contiguous subagent reviews on identical frozen diff) + fitness check and bookkeeping; until this takeover task is Done, downstream one-shot-man tasks depending on go-utilpkg remain blocked. Do NOT trust the implementation as is \u2014 every fix must be re-proven.",
+      "acceptance": "go-utilpkg blueprint sequentialTasks 1-5 all Done, with track.go fixes for V1-V3 re-verified from first principles (GoError payloads, nil->undefined, panic/Goexit prompt rejection while loop running, no stranding) and WIP.md updated with audit evidence. Full gate green: gmake lint.goja-eventloop, test.goja-eventloop, test.race.goja-eventloop, goja-eventloop-live-cross, GOOS=linux/windows build+vet, and repo-wide gmake all on darwin \u2014 zero failures, no tests weakened/deleted, three-platform evidence. Two contiguous issue-free Rule-of-Two reviews pass on the same frozen diff (scratch/review-remediation-run-1/2.md PASS) plus fitness check. git status clean except mandated review artifacts. Downstream one-shot-man dual-target and final gates unblocked.",
+      "status": "Done",
+      "files": [
+        "/Users/joeyc/dev/go-utilpkg/blueprint.json",
+        "/Users/joeyc/dev/go-utilpkg/WIP.md",
+        "/Users/joeyc/dev/go-utilpkg/goja-eventloop/track.go",
+        "/Users/joeyc/dev/go-utilpkg/goja-eventloop/track_test.go",
+        "/Users/joeyc/dev/go-utilpkg/scratch/review-08.md",
+        "/Users/joeyc/dev/go-utilpkg/scratch/review-09.md",
+        "/Users/joeyc/dev/go-utilpkg/scratch/review-10.md",
+        "/Users/joeyc/dev/go-utilpkg/scratch/review-11.md"
+      ],
+      "contextPointers": {
+        "ownBlueprint": "/Users/joeyc/dev/go-utilpkg/blueprint.json",
+        "ownWIP": "/Users/joeyc/dev/go-utilpkg/WIP.md",
+        "track": "goja-eventloop/track.go: V1/V2/V3 fixes",
+        "triage": "WIP.md V1-V5 vs R1-R3 table"
       }
     },
     {

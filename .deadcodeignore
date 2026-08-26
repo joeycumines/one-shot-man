@@ -46,8 +46,8 @@ internal/scripting/debug_assertions_stub.go:*: unreachable func: TUIManager.debu
 internal\scripting\debug_assertions_stub.go:*: unreachable func: TUIManager.debugAssertInWriteContext
 
 # SyncJSRunner — test helper used across bubbletea, textarea, pickandplace packages.
-internal/builtin/bubbletea/testing.go:*: unreachable func: SyncJSRunner.RunJSSync
-internal\builtin\bubbletea\testing.go:*: unreachable func: SyncJSRunner.RunJSSync
+internal/builtin/bubbletea/testing.go:*: unreachable func: SyncJSRunner.RunSync
+internal\builtin\bubbletea\testing.go:*: unreachable func: SyncJSRunner.RunSync
 
 # PA-BT module exports — called from JavaScript via Goja runtime (not visible to deadcode analyzer).
 internal/builtin/pabt/*: unreachable func: *

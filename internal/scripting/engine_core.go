@@ -92,6 +92,77 @@ type Engine struct {
 	requireModule        *require.RequireModule    // CommonJS require module for file-based script execution
 	loopRunner           *eventlooputil.Runner     // Shared submit-and-wait substrate (lazy, see runner)
 	runnerOnce           sync.Once
+	stateRefreshDispatcher *stateRefreshDispatcher
+}
+
+// stateRefreshDispatcher coalesces rapid state refreshes per key into a single
+// SendStateRefresh, using one bounded goroutine. Latest wins deterministically.
+type stateRefreshDispatcher struct {
+	mu      sync.Mutex
+	pending map[string]struct{}
+	ch      chan struct{}
+	stop    chan struct{}
+	mgr     builtin.BubbleteaManager
+}
+
+func newStateRefreshDispatcher(mgr builtin.BubbleteaManager) *stateRefreshDispatcher {
+	d := &stateRefreshDispatcher{
+		pending: make(map[string]struct{}),
+		ch:      make(chan struct{}, 1),
+		stop:    make(chan struct{}),
+		mgr:     mgr,
+	}
+	go d.loop()
+	return d
+}
+
+func (d *stateRefreshDispatcher) Enqueue(key string) {
+	d.mu.Lock()
+	d.pending[key] = struct{}{}
+	select {
+	case d.ch <- struct{}{}:
+	default:
+	}
+	d.mu.Unlock()
+}
+
+func (d *stateRefreshDispatcher) loop() {
+	for {
+		select {
+		case <-d.ch:
+			d.mu.Lock()
+			keys := make([]string, 0, len(d.pending))
+			for k := range d.pending {
+				keys = append(keys, k)
+				delete(d.pending, k)
+			}
+			d.mu.Unlock()
+			for _, k := range keys {
+				d.mgr.SendStateRefresh(k)
+			}
+			// Drain coalesced signals that arrived while sending.
+			d.mu.Lock()
+			hasPending := len(d.pending) > 0
+			d.mu.Unlock()
+			if hasPending {
+				select {
+				case d.ch <- struct{}{}:
+				default:
+				}
+			}
+		case <-d.stop:
+			return
+		}
+	}
+}
+
+func (d *stateRefreshDispatcher) Close() {
+	select {
+	case <-d.stop:
+		return
+	default:
+		close(d.stop)
+	}
 }
 
 // Script represents a JavaScript script with metadata.
@@ -258,15 +329,15 @@ func NewEngine(
 	// Pass the shared terminal reader/writer from terminalIO.
 	engine.tuiManager = NewTUIManagerWithConfig(ctx, engine, terminalIO.TUIReader, terminalIO.TUIWriter, sessionID, store)
 
-	// Wire StateManager to send state refresh messages to bubbletea when state changes.
-	// This enables the TUI to automatically re-render when external code modifies state.
-	// NOTE: The listener is invoked asynchronously (in a goroutine) to avoid blocking
-	// the update loop or causing issues with p.Send() being called from within updates.
+	// Wire StateManager to bubbletea with a coalescing dispatcher.
+	// Rapid 100 SetState calls for the same key collapse to a single
+	// SendStateRefresh for the latest value, using one bounded goroutine
+	// serialized per engine lifecycle. Latest wins deterministically.
 	if engine.bubbleteaManager != nil && engine.tuiManager.stateManager != nil {
-		bubbleteaMgr := engine.bubbleteaManager
+		dispatcher := newStateRefreshDispatcher(engine.bubbleteaManager)
+		engine.stateRefreshDispatcher = dispatcher
 		engine.tuiManager.stateManager.AddListener(func(key string) {
-			// Send state refresh asynchronously to avoid blocking
-			go bubbleteaMgr.SendStateRefresh(key)
+			dispatcher.Enqueue(key)
 		})
 	}
 
@@ -739,6 +810,10 @@ func (e *Engine) Close() error {
 	// This prevents resource leaks which can cause tests to timeout.
 	if e.bubblezoneManager != nil {
 		e.bubblezoneManager.Close()
+	}
+
+	if e.stateRefreshDispatcher != nil {
+		e.stateRefreshDispatcher.Close()
 	}
 
 	// NOTE: We intentionally do NOT close terminalIO here.

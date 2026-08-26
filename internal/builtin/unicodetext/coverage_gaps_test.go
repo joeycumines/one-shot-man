@@ -1,7 +1,6 @@
 package unicodetext
 
 import (
-	"context"
 	"testing"
 
 	"github.com/joeycumines/goja"
@@ -14,7 +13,7 @@ func TestRequire_ExportsUndefined(t *testing.T) {
 	module := runtime.NewObject()
 	// Do NOT set "exports" — leave undefined.
 
-	loader := Require(context.Background())
+	loader := Require()
 	loader(runtime, module)
 
 	exports := module.Get("exports")
@@ -36,7 +35,7 @@ func TestRequire_ExportsNull(t *testing.T) {
 	module := runtime.NewObject()
 	_ = module.Set("exports", goja.Null())
 
-	loader := Require(context.Background())
+	loader := Require()
 	loader(runtime, module)
 
 	exports := module.Get("exports")

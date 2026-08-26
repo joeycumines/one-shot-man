@@ -2,7 +2,6 @@ package template
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"text/template"
 
@@ -35,7 +34,7 @@ import (
 //
 //	// Helper function for quick template execution
 //	const output = template.execute("Hello {{.name}}!", {name: "World"});
-func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.Object) {
+func Require() func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		// Get or create exports object
 		exportsVal := module.Get("exports")

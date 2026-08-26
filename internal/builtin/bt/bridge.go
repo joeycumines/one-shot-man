@@ -85,9 +85,8 @@ func NewBridge(ctx context.Context, loop *goeventloop.Loop, vm *goja.Runtime, re
 
 // newBridgeWithLoop is the internal constructor for Bridge.
 func newBridgeWithLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Runtime, reg *require.Registry) *Bridge {
-	// NOTE ON CONTEXT DERIVATION (addressing CRIT-2 from review-1.md):
-	// Bridge's internal lifecycle context (childCtx) is NOT derived from parent ctx.
-	// This is intentional to maintain the critical invariant:
+	// Bridge's internal lifecycle context (childCtx) is independent of the parent ctx.
+	// This maintains the critical invariant:
 	//
 	//   INVARIANT: Once Done() is closed, IsRunning() MUST return false
 	//
@@ -197,14 +196,11 @@ const jsHelpers = `
 // runLeaf executes a JS leaf function and calls the callback with the result.
 // This bridges the JS world to the callback-based Go world.
 //
-// CRITICAL: This implementation calls the tick function SYNCHRONOUSLY.
-// The goja_nodejs event loop only has a macrotask queue, NOT a microtask queue.
-// Using Promise.resolve().then(...) would schedule microtasks that never run,
-// causing the Go caller to block forever waiting for the callback.
-//
-// For async tick functions that return a Promise, we detect this and handle
-// the Promise. But the Promise resolution still requires the event loop to
-// process it, which only works if the event loop drains pending jobs.
+// Strict microtask ordering is always-on, so Promise microtasks drain after
+// each macrotask. runLeaf calls the tick function synchronously and
+// detects Promise returns via thenable checks, bridging both sync and async
+// results through the callback. Async Promise resolution is driven by the
+// event loop's microtask drain, which is guaranteed to run.
 globalThis.runLeaf = function(fn, ctx, args, callback) {
 	try {
 		var result = fn(ctx, args);
@@ -377,13 +373,6 @@ func (b *Bridge) RunSync(fn func(*goja.Runtime) error) error {
 	return b.loopRunner.TrySync(func() error {
 		return fn(vm)
 	}, timeout)
-}
-
-// RunJSSync implements bubbletea.JSRunner interface.
-// This is an alias for RunSync, provided for interface compatibility.
-// It schedules a function on the event loop and waits for completion.
-func (b *Bridge) RunJSSync(fn func(*goja.Runtime) error) error {
-	return b.RunSync(fn)
 }
 
 // LoadScript loads JavaScript code into the runtime.

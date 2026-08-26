@@ -2,7 +2,6 @@ package template
 
 import (
 	"bytes"
-	"context"
 	"testing"
 	"text/template"
 
@@ -19,7 +18,7 @@ func BenchmarkTemplateExecution(b *testing.B) {
 		// Benchmark the quick template.execute() helper: parse + execute in one call.
 		vm := goja.New()
 		registry := require.NewRegistry()
-		registry.RegisterNativeModule("osm:text/template", Require(context.Background()))
+		registry.RegisterNativeModule("osm:text/template", Require())
 		registry.Enable(vm)
 
 		_, err := vm.RunString(`var tmpl = require('osm:text/template');`)
@@ -41,7 +40,7 @@ func BenchmarkTemplateExecution(b *testing.B) {
 		// Benchmark creating a template, parsing, and executing through JS.
 		vm := goja.New()
 		registry := require.NewRegistry()
-		registry.RegisterNativeModule("osm:text/template", Require(context.Background()))
+		registry.RegisterNativeModule("osm:text/template", Require())
 		registry.Enable(vm)
 
 		_, err := vm.RunString(`var tmpl = require('osm:text/template');`)
@@ -67,7 +66,7 @@ func BenchmarkTemplateExecution(b *testing.B) {
 		// Benchmark executing an already-parsed template (hot path for repeated use).
 		vm := goja.New()
 		registry := require.NewRegistry()
-		registry.RegisterNativeModule("osm:text/template", Require(context.Background()))
+		registry.RegisterNativeModule("osm:text/template", Require())
 		registry.Enable(vm)
 
 		_, err := vm.RunString(`
@@ -95,7 +94,7 @@ func BenchmarkTemplateExecution(b *testing.B) {
 		// within template pipelines.
 		vm := goja.New()
 		registry := require.NewRegistry()
-		registry.RegisterNativeModule("osm:text/template", Require(context.Background()))
+		registry.RegisterNativeModule("osm:text/template", Require())
 		registry.Enable(vm)
 
 		_, err := vm.RunString(`
@@ -126,7 +125,7 @@ func BenchmarkTemplateExecution(b *testing.B) {
 		// goal commands (conditionals, range, pipelines).
 		vm := goja.New()
 		registry := require.NewRegistry()
-		registry.RegisterNativeModule("osm:text/template", Require(context.Background()))
+		registry.RegisterNativeModule("osm:text/template", Require())
 		registry.Enable(vm)
 
 		_, err := vm.RunString(`

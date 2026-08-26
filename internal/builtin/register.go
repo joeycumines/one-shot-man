@@ -79,6 +79,16 @@ type BubbleteaManager = *bubbleteamod.Manager
 // BubblezoneManager is the bubblezone manager returned by Register.
 type BubblezoneManager = *bubblezonemod.Manager
 
+// bridgeJSRunner adapts *bt.Bridge to bubbletea.JSRunner (and TrySyncJSRunner) without
+// requiring Bridge itself to expose an alias.
+type bridgeJSRunner struct{ *bt.Bridge }
+
+func (b *bridgeJSRunner) RunSync(fn func(*goja.Runtime) error) error { return b.Bridge.RunSync(fn) }
+
+func (b *bridgeJSRunner) TryRunSync(currentVM *goja.Runtime, fn func(*goja.Runtime) error) error {
+	return b.Bridge.TryRunSync(currentVM, fn)
+}
+
 // RegisterResult holds the managers created during registration.
 type RegisterResult struct {
 	BubbleteaManager  BubbleteaManager
@@ -119,8 +129,8 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop(), tuiSink))
 	registry.RegisterNativeModule(prefix+"path", pathmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"ctxutil", ctxutilmod.Require(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"text/template", templatemod.Require(ctx))
-	registry.RegisterNativeModule(prefix+"unicodetext", unicodetextmod.Require(ctx))
+	registry.RegisterNativeModule(prefix+"text/template", templatemod.Require())
+	registry.RegisterNativeModule(prefix+"unicodetext", unicodetextmod.Require())
 	registry.RegisterNativeModule(prefix+"gitops", gitopsmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"astpack", astpackmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"diff_triage", difftriagemod.Require(ctx, eventLoopProvider.Adapter()))
@@ -143,7 +153,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	btBridge := bt.NewBridge(ctx, eventLoopProvider.Loop(), eventLoopProvider.Runtime(), registry, eventLoopProvider.Adapter())
 	registry.RegisterNativeModule(prefix+"pabt", pabtmod.Require(ctx, btBridge))
 
-	bubbleteaMgr := bubbleteamod.NewManager(ctx, terminalReader(terminalProvider), terminalWriter(terminalProvider), btBridge, nil, nil)
+	bubbleteaMgr := bubbleteamod.NewManager(ctx, terminalReader(terminalProvider), terminalWriter(terminalProvider), &bridgeJSRunner{btBridge}, nil, nil)
 	bubbleteaMgr.SetPromisify(eventLoopProvider.Promisify)
 	registry.RegisterNativeModule(prefix+"bubbletea", bubbleteamod.Require(ctx, bubbleteaMgr))
 

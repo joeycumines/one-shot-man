@@ -363,7 +363,7 @@ type directJSRunner struct {
 	mu      sync.Mutex
 }
 
-func (r *directJSRunner) RunJSSync(fn func(*goja.Runtime) error) error {
+func (r *directJSRunner) RunSync(fn func(*goja.Runtime) error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return fn(r.runtime)

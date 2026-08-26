@@ -1,7 +1,6 @@
 package unicodetext
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -21,7 +20,7 @@ import (
 //
 //	// Truncate a string to fit within a display width
 //	const s = unicodetext.truncate("Long string", 5, "..."); // Returns "Lo..."
-func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.Object) {
+func Require() func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		// Get or create exports object
 		exportsVal := module.Get("exports")

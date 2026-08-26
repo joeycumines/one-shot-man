@@ -1029,14 +1029,14 @@ func TestBridge_TryRunSync_BridgeStopped(t *testing.T) {
 	assert.Contains(t, err.Error(), "not running")
 }
 
-// TestBridge_RunJSSync verifies the RunJSSync alias for RunSync.
-func TestBridge_RunJSSync(t *testing.T) {
+// TestBridge_RunSync verifies synchronous execution on the event loop.
+func TestBridge_RunSync(t *testing.T) {
 	t.Parallel()
 
 	bridge := testBridge(t)
 
 	var result int64
-	err := bridge.RunJSSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`21 * 2`)
 		if err != nil {
 			return err

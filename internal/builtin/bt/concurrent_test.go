@@ -149,7 +149,7 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		for range 50 {
-			err := bridge.RunJSSync(func(vm *goja.Runtime) error {
+			err := bridge.RunSync(func(vm *goja.Runtime) error {
 				// Simulate Update - quick JS operation
 				_, err := vm.RunString(`1 + 1`)
 				return err

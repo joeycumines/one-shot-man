@@ -134,7 +134,7 @@ func makeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) f
 			// what would otherwise be a per-timed-out-call leak.
 			_ = engine.Loop().Submit(func() {
 				vm := engine.Runtime()
-				_ = vm.Set(resultVar, func(_ any) {})
+				_ = vm.Set(resultVar, func(any) {})
 				_ = vm.Set(errorVar, func(_ string) {})
 			})
 			return nil, fmt.Errorf("evalJS timed out after %s", timeout)

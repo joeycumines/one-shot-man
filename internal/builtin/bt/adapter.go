@@ -183,12 +183,10 @@ func (a *JSLeafAdapter) Tick(children []bt.Node) (bt.Status, error) {
 		a.state = StateRunning
 		a.mu.Unlock()
 
-		// CRITICAL FIX #3 (review.md): Double-check context cancellation
-		// BEFORE dispatching to JS loop. There's a race window between
-		// unlocking the mutex and calling dispatchJSWithGen where the
-		// context could be cancelled. If we dispatch after cancellation,
-		// we risk executing stale logic or corrupting state.
-		// CRIT-1 FIX: If cancelled, must reset state to prevent zombie
+		// Double-check context cancellation before dispatching to the JS loop.
+		// There is a race window between unlocking the mutex and calling
+		// dispatchJSWithGen where the context could be cancelled.
+		// If cancelled, reset state to prevent zombie tasks.
 		select {
 		case <-a.ctx.Done():
 			// Context was cancelled right after we unlocked
@@ -206,13 +204,11 @@ func (a *JSLeafAdapter) Tick(children []bt.Node) (bt.Status, error) {
 		return bt.Running, nil
 
 	case StateRunning:
-		// Check for cancellation while running
+		// Check for cancellation while running.
 		select {
 		case <-a.ctx.Done():
-			// CRITICAL FIX: Bump generation BEFORE changing state
-			// This prevents finalize() from applying stale result to new request
+			// Bump generation before changing state to invalidate pending callbacks.
 			a.generation++
-			// Now safe to move state
 			a.state = StateIdle
 			a.mu.Unlock()
 			return bt.Failure, errors.New("execution cancelled")
@@ -434,18 +430,6 @@ func BlockingJSLeaf(ctx context.Context, bridge *Bridge, vm *goja.Runtime, tick 
 			send := func(r result) {
 				once.Do(func() { ch <- r })
 			}
-
-			// Install cleanup BEFORE Run check.
-			// If bridge is stopped, Run returns ok=false and we return early.
-			// The defer must be installed FIRST to guarantee cleanup runs on all paths.
-			defer func() {
-				select {
-				case <-ch:
-					// Drain if available
-				default:
-					// Not sent yet, safe to ignore
-				}
-			}()
 
 			ok := bridge.Run(func(loopVM *goja.Runtime) {
 				defer func() {

@@ -15,7 +15,7 @@ import (
 // errorJSRunner is a JSRunner that always returns an error.
 type errorJSRunner struct{}
 
-func (r *errorJSRunner) RunJSSync(func(*goja.Runtime) error) error {
+func (r *errorJSRunner) RunSync(func(*goja.Runtime) error) error {
 	return errors.New("event loop error")
 }
 
@@ -902,10 +902,10 @@ func TestRequire_Run_InvalidModelID(t *testing.T) {
 }
 
 // ========================================================================
-// Init/Update/View — RunJSSync error paths
+// Init/Update/View — RunSync error paths
 // ========================================================================
 
-func TestInit_RunJSSyncError(t *testing.T) {
+func TestInit_RunSyncError(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 	model := &jsModel{
@@ -921,7 +921,7 @@ func TestInit_RunJSSyncError(t *testing.T) {
 	assert.Contains(t, model.initError, "event loop")
 }
 
-func TestUpdate_RunJSSyncError(t *testing.T) {
+func TestUpdate_RunSyncError(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 	model := &jsModel{
@@ -937,7 +937,7 @@ func TestUpdate_RunJSSyncError(t *testing.T) {
 	assert.Nil(t, cmd)
 }
 
-func TestView_RunJSSyncError(t *testing.T) {
+func TestView_RunSyncError(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 	model := &jsModel{

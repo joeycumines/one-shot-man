@@ -2,9 +2,9 @@
 package exec
 
 import (
-	"errors"
-"bytes"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	osexec "os/exec"
@@ -12,7 +12,6 @@ import (
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
 
 // handleSettleErr handles settler/bridge settlement errors symmetrically.
@@ -68,9 +67,10 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 				if len(parts) > 1 {
 					args = parts[1:]
 				}
-				return async.PromiseTracked(adapter, loop, ctx, func(ctx context.Context) (any, error) {
-					return runExec(ctx, cmd, args...), nil
-				}, nil)
+				return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+					result := runExec(ctx, cmd, args...)
+					_ = settle.Settle(false, func(rt *goja.Runtime) any { return result })
+				})
 			})
 
 			// spawn(command: string, args: string[], opts?: {cwd?, env?}): ChildHandle
@@ -162,7 +162,7 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 
 	// child.wait(): Promise<{code: number, signal: string|null}>
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
-		return async.PromiseTracked(adapter, loop, baseCtx, func(ctx context.Context) (any, error) {
+		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 			code, waitErr := child.Wait()
 			m := map[string]any{"code": code}
 			if waitErr != nil {
@@ -170,8 +170,8 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 			} else {
 				m["signal"] = nil
 			}
-			return m, nil
-		}, nil)
+			_ = settle.Settle(false, func(rt *goja.Runtime) any { return m })
+		})
 	})
 
 	// child.kill()
@@ -191,16 +191,22 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, readFn func() (string, bool, error)) goja.Value {
 	streamObj := rt.NewObject()
 	_ = streamObj.Set("read", func(call goja.FunctionCall) goja.Value {
-		return async.PromiseTracked(adapter, loop, baseCtx, func(ctx context.Context) (any, error) {
+		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 			data, done, err := readFn()
 			if err != nil {
-				return nil, err
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
 			}
 			if done {
-				return map[string]any{"value": nil, "done": true}, nil
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					return map[string]any{"value": nil, "done": true}
+				})
+				return
 			}
-			return map[string]any{"value": data, "done": false}, nil
-		}, nil)
+			_ = settle.Settle(false, func(rt *goja.Runtime) any {
+				return map[string]any{"value": data, "done": false}
+			})
+		})
 	})
 	return streamObj
 }

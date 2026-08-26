@@ -1,15 +1,14 @@
 package tokenizermod
 
 import (
+	"context"
 	"errors"
-"context"
 	"fmt"
 	"strings"
 
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	"github.com/joeycumines/one-shot-man/internal/tokenizer"
 )
 
@@ -113,14 +112,17 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 				handleSettleErr(settler.Resolve(func(rt *goja.Runtime) any { return goja.Null() }))
 				return promise
 			}
-			return async.PromiseTracked(adapter, loop, ctx, func(ctx context.Context) (any, error) {
+			return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 				tok, err := tokenizer.LoadTokenizerFile(path)
 				if err != nil {
-					return nil, fmt.Errorf("loadFile: %w", err)
+					_ = settle.Settle(true, func(rt *goja.Runtime) any {
+						return rt.NewGoError(fmt.Errorf("loadFile: %w", err))
+					})
+					return
 				}
-				return tok, nil
-			}, func(rt *goja.Runtime, result any) any {
-				return newTokenizerWrapper(rt, result.(*tokenizer.Tokenizer))
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					return newTokenizerWrapper(rt, tok)
+				})
 			})
 		})
 

@@ -35,7 +35,7 @@
     "ALWAYS": "Tee every long command to scratch/ before tail/head per globalAlerts. Pattern: mkdir -p scratch && <cmd> 2>&1 | tee scratch/<name>.log | tail -n 100; echo EXIT:${PIPESTATUS[0]}"
   },
   "statusSection": {
-    "currentState": "TASK 21 (Adopt unused fork surface) DONE: WithLogger/WithMetrics/WithDebugMode wired via newRuntimeLogger + SetConsoleOutput, RegisterFD doc added, lint deadcodeignore fixed, grep gates zero, termmux helpers cleared. TAKEOVER TASK DONE: go-utilpkg TrackPromise/Promisify fully owned and re-verified from first principles \u2014 V1 GoError payloads, V2 nil->undefined, V3 panic/Goexit prompt rejection with stack growth-loop, full gate green (lint/test/race/linux+windows, gmake all), two contiguous Rule-of-Two PASS (scratch/review-remediation-run-1/2.md). NEXT: Verification parity, H10 tier, charm bump, dual-target, final Rule-of-Two.",
+    "currentState": "Verification parity DONE: async helper purged as slop (31 sites migrated to TrackPromise), tokenizer hammer -race green, bt Fork -race green (sub-ms via integration), fetch 4 body-streaming tests -race green, vet green. Next: Future-proof hardening, charm bump, dual target, final gate.",
     "goalState": "All 6 red packages green, promise abstraction intent-explicit (Close vs Shutdown documented, no hidden footguns), handback exactly-once live-correct with honest test, perf fast-paths (canceled ctx, pooling, sharding), close lifecycle correctly aligned (stranded for hard Close documented, graceful for Shutdown guaranteed), sandbox/tokenizer/fetch/Bridge/termmux/grpc/scripting races gone, runner collapse, bt seam, dead code, WithLogger/Metrics, verification parity, dual gmake targets green, 2x strict-review-gate clean.",
     "goalLog": [
       {
@@ -575,7 +575,7 @@
       "task": "Verification parity: harden async helper, tokenizer, bt fork, fetch suite (closes H10)",
       "description": "Add tests that would have caught regressions: async nil adapter, double-settle, shutdown race, panic-in-fn propagation (add async_test.go). tokenizer first-ever tests: loadFile success+error+race hammer. bt: fork-with-JS-leaves from both goroutine classes, two tickers sharing one raw JS node, orphan ticker liveness pin. fetch: restore body-streaming suite to main tier and ensure 4 tests are in go test ./... path. All -race -count=1.",
       "acceptance": "go test -race -count=1 ./internal/builtin/async passes 4+ subtests; tokenizer -race passes hammer; bt -race -run TestFork passes sub-ms; fetch suite 4 tests green without -run filter. grep no test files zero.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/builtin/async/async_test.go",
         "internal/builtin/tokenizer/tokenizer_test.go",
@@ -729,5 +729,16 @@
       "mcpmodFix": "internal/builtin/mcpmod/mcp.go:187-196 select now includes <-s.ctx.Done() base server ctx alongside request ctx and 30s timer",
       "verification": "grep -R context.Background internal/builtin | grep -v _test.go | grep -v bt/bridge.go | wc -l == 0 (plus runtime whitelisted); no WithoutCancel in termmux newBoundedSession"
     }
-  }
+  },
+  "replanLog": [
+    {
+      "event": "Slop purge: async helper",
+      "timestamp": "2026-08-27T09:10:26.050009",
+      "trigger": "User directive DELETE internal/builtin/async/promise.go:23 - helper was shim/indirection for TrackPromise, 31 call sites migrated to adapter.TrackPromise with pendingBridges sweep, verification parity updated",
+      "affectedTasks": [
+        "Verification parity"
+      ],
+      "summary": "Deleted internal/builtin/async (promise.go + async_test.go) per direct user order. Migrated 31 sites across 7 files (tokenizer, fetch, exec, os, mcpmod, termmux, aimux, mcpcallbackmod) from async.PromiseTracked to adapter.TrackPromise with correct ctx handling (baseCtx for buildResponse). Vet and -race green for all migrated packages. Async 4+ subtests now covered via go-utilpkg TrackPromise tests (6) rather than helper-specific tests."
+    }
+  ]
 }

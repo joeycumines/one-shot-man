@@ -11,7 +11,6 @@ import (
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 
 	"github.com/joeycumines/one-shot-man/internal/aimuxcore"
 )
@@ -314,9 +313,19 @@ func spawnOptsFromJS(runtime *goja.Runtime, v goja.Value) aimuxcore.SpawnOpts {
 }
 
 func asyncHandleValue(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, fn func() (any, error)) goja.Value {
-	return async.PromiseTracked(adapter, loop, ctx, func(ctx context.Context) (any, error) {
+	return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(ctx context.Context) (any, error) {
 		return fn()
-	}, nil)
+	}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 }
 
 func asyncHandleVoid(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, fn func() error) goja.Value {

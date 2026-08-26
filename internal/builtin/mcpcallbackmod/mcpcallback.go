@@ -25,7 +25,6 @@ import (
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/goja_nodejs/require"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -314,7 +313,8 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 		cb.initialized = true
 		cb.mu.Unlock()
 
-		return async.PromiseTracked(cb.adapter, cb.loop, cb.baseCtx, func(ctx context.Context) (any, error) {
+		return cb.adapter.TrackPromise(cb.baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(ctx context.Context) (any, error) {
 			if err := cb.startListener(); err != nil {
 				cb.cleanup()
 				cb.mu.Lock()
@@ -363,7 +363,16 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 			// Notify test watchers that a callback is ready for injection.
 			notifyWatchers(cb)
 			return nil, nil
-		}, nil)
+		}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 	}
 }
 
@@ -566,10 +575,20 @@ func (cb *mcpCallback) jsClose() func(call goja.FunctionCall) goja.Value {
 		cb.closed = true
 		cb.mu.Unlock()
 
-		return async.PromiseTracked(cb.adapter, cb.loop, cb.baseCtx, func(ctx context.Context) (any, error) {
+		return cb.adapter.TrackPromise(cb.baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(ctx context.Context) (any, error) {
 			cb.cleanup()
 			return goja.Undefined(), nil
-		}, nil)
+		}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 	}
 }
 
@@ -751,7 +770,8 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 		nctx := cb.ctx
 		cb.mu.Unlock()
 
-		return async.PromiseTracked(cb.adapter, cb.loop, cb.baseCtx, func(ctx context.Context) (any, error) {
+		return cb.adapter.TrackPromise(cb.baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(ctx context.Context) (any, error) {
 			timeout := time.Duration(timeoutMs) * time.Millisecond
 			deadline := time.NewTimer(timeout)
 			defer deadline.Stop()
@@ -832,7 +852,16 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 					return waitResult(nil, "MCPCallback closed during wait for "+name), nil
 				}
 			}
-		}, nil)
+		}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 	}
 }
 

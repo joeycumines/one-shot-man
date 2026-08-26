@@ -117,3 +117,24 @@
 ### Next
 - Verification parity (H10), H10 tier, charm bump, dual-target, final Rule-of-Two — still pending per one-shot-man blueprint sequence.
 
+
+## 2026-08-27 Verification parity DONE — async helper purged as slop
+
+### Why async helper was slop
+- `internal/builtin/async/promise.go:23` was a shim wrapping `loop.Promisify` + `adapter.NewPromise` + bare goroutine bridge. It hid the canonical `TrackPromise` pending-bridges sweep and liveness, duplicated the settlement tolerance logic (21 sites had ignored `_ = settler` errors), and forced an extra indirection for 31 call sites. Per `Internal API Discipline` (No Shims, One Implementation, Delete Boldly) and the A1 canonical rule (every Go-blocking workload must be `TrackPromise`/`Promisify` with sweep), the helper was slop. User directive `DELETE IT IMMEDIATELY` confirmed. Deleted entire `internal/builtin/async` (promise.go + async_test.go) — 31 sites migrated.
+
+### What landed
+- **Purge:** `rm -rf internal/builtin/async` (promise.go:71 + async_test.go:274). Grep `async.PromiseTracked` now zero (only comment in astpack/module.go:47 remains, not code).
+- **Migration:** 31 sites across 7 files migrated from `async.PromiseTracked(adapter, loop, ctx, fn, mapResult)` to `adapter.TrackPromise(ctx, func(ctx, settle TrackedSettlement) { res, err := fn(ctx); if err != nil { settle true with NewGoError; return }; settle false with res/Undefined/mapResult })` with correct `baseCtx` capture for `fetch` `buildResponse` (was shadowing inner ctx, now uses outer baseCtx to avoid canceled stream ctx). Files: `tokenizer` (1), `fetch` (1), `exec` (3: execv, wait, read), `os` (13: readFile, fileExists, openEditor, clipboard, writeFile, appendFile, etc. via batch python with balanced paren handling), `mcpmod` (1), `termmux` (5: wait, passthrough, registerPassthroughMethods x2 switchBack with mapResult inlining), `aimux` (1), `mcpcallbackmod` (3).
+- **Fixes during migration:** `fetch` baseCtx capture for `NewReadableStream` (was using inner canceled ctx, now outer baseCtx, fixing 10s body-streaming timeout — 4 tests now green); `termmux` switchBack mapResult inlining required `_, err :=` for outer res unused (was `res, err` vet error) and correct `func(rt) any { s.swappedOnce... }` produce.
+- **Vet:** `gmake vet` now green (was `declared and not used: reason/passthroughErr` in termmux, now fixed). `go vet ./...` green.
+- **Tests:** `go test -race -count=1 ./internal/builtin/tokenizer` 1.95s ok, `go test -race -count=1 ./internal/builtin/bt -run Fork` 1.36s ok (TestIntegration_Fork), `go test -race -count=1 ./internal/builtin/fetch` 1.97s ok (was 10s timeout, now fixed), `go test -race -count=1 ./internal/builtin/...` all green except `format [no test files]` (expected, not slop). `go test ./internal/builtin/...` shows only `format [no test files]` — async package gone, so no `async [no test files]` slop.
+- **Hooks:** `promise.go:66` tolerate comment `expected shutdown race (already settled, adapter invalid, loop terminated)` is necessary — documents which errors are expected shutdown races vs unexpected failures (settlement discipline). `async_test.go` comments about direct heap read after loop death and fallback are necessary — explain non-obvious polling without loop liveness, due to decoupled promise state.
+
+### Traps
+- Do not re-create `internal/builtin/async` — canonical is direct `TrackPromise`. If a new Go-blocking binding is added, use `adapter.TrackPromise` directly, not a helper.
+- `fetch` `buildResponse` must use outer baseCtx, not inner trackCtx, otherwise stream ctx is canceled before read and body streaming times out.
+- `termmux` switchBack's mapResult must be inlined into settle's produce func, not as outer res — outer res is nil, inner `res := map...` shadows.
+
+### Next
+- Future-proof hardening: add -race tier, fuzz, determinism, coverage, blind spot closure.

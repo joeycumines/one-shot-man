@@ -2,10 +2,10 @@
 package fetch
 
 import (
-	"errors"
-"bytes"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,7 +16,6 @@ import (
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/goja_nodejs/require"
-	"github.com/joeycumines/one-shot-man/internal/builtin/async"
 )
 
 // handleSettleErr handles settler/bridge settlement errors symmetrically.
@@ -90,7 +89,8 @@ func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.
 			resp *http.Response
 			body []byte
 		}
-		return async.PromiseTracked(adapter, loop, reqCtx, func(ctx context.Context) (any, error) {
+		baseCtx := ctx
+		return adapter.TrackPromise(reqCtx, func(trackCtx context.Context, settle gojaeventloop.TrackedSettlement) {
 			defer cancel()
 			if abortCleanup != nil {
 				defer abortCleanup()
@@ -98,20 +98,25 @@ func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.
 			client := &http.Client{}
 			resp, doErr := client.Do(req)
 			if doErr != nil {
-				return nil, doErr
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(doErr) })
+				return
 			}
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 			resp.Body.Close()
 			if readErr != nil {
-				return nil, readErr
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(readErr) })
+				return
 			}
 			if int64(len(body)) > maxBody {
-				return nil, fmt.Errorf("response body exceeds maximum size of %d bytes", maxBody)
+				_ = settle.Settle(true, func(rt *goja.Runtime) any {
+					return rt.NewGoError(fmt.Errorf("response body exceeds maximum size of %d bytes", maxBody))
+				})
+				return
 			}
-			return fetchResult{resp: resp, body: body}, nil
-		}, func(rt *goja.Runtime, result any) any {
-			fr := result.(fetchResult)
-			return buildResponse(ctx, rt, adapter, loop, fr.resp, fr.body)
+			fr := fetchResult{resp: resp, body: body}
+			_ = settle.Settle(false, func(rt *goja.Runtime) any {
+				return buildResponse(baseCtx, rt, adapter, loop, fr.resp, fr.body)
+			})
 		})
 	}
 }

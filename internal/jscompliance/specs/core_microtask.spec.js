@@ -1,6 +1,6 @@
-// core_microtask.spec.js — pins the runtime's WithStrictMicrotaskOrdering
-// guarantee: microtasks (Promise.then) drain after EVERY macrotask, so a
-// .then chain always completes before a setTimeout callback runs.
+// core_microtask.spec.js — microtask ordering is always-on (20260823):
+// microtasks (Promise.then) drain after EVERY macrotask, so a .then
+// chain always completes before a setTimeout callback runs.
 // Test bodies use async/await for sequencing (the inner .then calls are the
 // subject under test — they verify microtask draining).
 

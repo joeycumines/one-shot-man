@@ -329,11 +329,6 @@ func (rt *Runtime) Runtime() *goja.Runtime {
 	return rt.vm
 }
 
-// VM returns the underlying goja.Runtime.
-func (rt *Runtime) VM() *goja.Runtime {
-	return rt.vm
-}
-
 // Registry returns the require.Registry for native modules.
 func (rt *Runtime) Registry() *require.Registry {
 	return rt.registry

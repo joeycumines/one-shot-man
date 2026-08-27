@@ -265,9 +265,7 @@ func NewEngine(
 		return nil, fmt.Errorf("failed to create runtime: %w", err)
 	}
 
-	// Get a direct reference to the VM for sync operations
-	// Note: All script execution should still go through the event loop for async safety
-	vm := runtime.VM()
+	vm := runtime.Runtime()
 
 	engine := &Engine{
 		runtime:        runtime,

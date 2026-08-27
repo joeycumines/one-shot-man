@@ -1159,14 +1159,19 @@ func TestFileExistsSecurity_SpecialChars(t *testing.T) {
 
 	script := engine.LoadScriptString("fileexists-special", `
 		const {fileExists} = require('osm:os');
-		// Empty path
-		if (fileExists('')) throw new Error('empty path should return false');
-		// Null bytes
-		if (fileExists('file\x00.txt')) {
-			// Platform-dependent — some OS return false, some error
-		}
-		// Nonexistent
-		if (fileExists('/nonexistent/path')) throw new Error('nonexistent path should return false');
+		(async () => {
+			// Empty path — fileExists is async (Promise<{exists}>)
+			let result = await fileExists('');
+			if (result.exists) throw new Error('empty path should return false');
+			// Null bytes
+			result = await fileExists('file\x00.txt');
+			if (result && result.exists) {
+				// Platform-dependent — some OS return false, some error
+			}
+			// Nonexistent
+			result = await fileExists('/nonexistent/path');
+			if (result.exists) throw new Error('nonexistent path should return false');
+		})();
 	`)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("fileExists special chars test failed: %v", err)

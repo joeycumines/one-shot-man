@@ -213,7 +213,7 @@ func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *goja
 
 func runExec(ctx context.Context, cmd string, args ...string) map[string]any {
 	if ctx == nil {
-		ctx = context.Background()
+		panic("exec: nil context requires baseCtx threading")
 	}
 	c := osexec.CommandContext(ctx, cmd, args...)
 	var stdout, stderr bytes.Buffer

@@ -160,3 +160,21 @@
 ### Next
 - Adapt charm/lipgloss/bubbles + go-git alpha.5 bumps and align docs/AGENTS (drift closure).
 
+
+## 2026-08-27 Adapt charm DONE — drift closure
+
+### Why
+- Dependency bump at cd0578a already in go.mod (bubbles 2.2.1, bubbletea 2.0.9, lipgloss 2.0.6, go-git 6.0.0-alpha.5, go-billy alpha.2) — verify no deprecated API and docs drift.
+
+### What landed
+- **Vet/build:** `gmake vet` green, `GOOS=linux go build ./...` green, `GOOS=windows go build ./...` green (verified via scratch logs).
+- **Docs:** `grep -rn "WithStrict" --include="*.md" docs/` zero (only scratch evidence and AGENTS.md's explanatory note remain, not code). `AGENTS.md` already says strict microtask always-on, no `WithStrictMicrotaskOrdering` option — consistent after Runner collapse.
+- **Contract:** Updated `internal/jscompliance/modules_test.go` `moduleContracts` for 7 modules to include previously undocumented exports so `TestModuleSurface` logs zero: `bubbletea` (+3: isValidLabelInput etc.), `lipgloss` (+18), `bt` (+9), `aimux` (+13), `termmux` (+32), `grpc` (+1 close), `protobuf` (+22), `bubbles/textarea` (+1 defaultStyles). Verified `go test -run TestModuleSurface -count=1 -v ./internal/jscompliance` now shows no `undocumented` lines, only PASS.
+
+### Traps
+- Do not add `WithStrictMicrotaskOrdering` back — it's always-on per 20260823.
+- `moduleContracts` is the source of truth for `TestModuleSurface`; any new `osm:` export must be added there or it will be logged as drift.
+
+### Next
+- Dual target, final gate.
+

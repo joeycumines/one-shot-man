@@ -53,27 +53,27 @@ var moduleContracts = []moduleContract{
 	{name: "text/template", mustExist: []string{"new", "execute"}, smoke: `require('osm:text/template').execute('{{.V}}', {V:'hi'})`, smokeWant: `"hi"`},
 	{name: "tokenizer", asyncExports: []string{"loadFile"}, mustExist: []string{"tokenize", "count", "loadFile", "loadJSON", "loadBPE", "loadWordPiece", "loadWordLevel", "byteCount", "lineCount"}, smoke: `require('osm:tokenizer').count('hello')`, smokeWant: `5`},
 	{name: "ctxutil", asyncExports: []string{"buildContext"}, mustExist: []string{"buildContext", "contextManager"}},
-	{name: "protobuf", mustExist: []string{"loadDescriptorSet"}},
+	{name: "protobuf", mustExist: []string{"anyIs", "anyPack", "anyUnpack", "clearField", "clone", "decode", "durationFromMs", "durationMs", "encode", "enumType", "equals", "fromJSON", "isFieldSet", "isMessage", "loadDescriptorSet", "loadFileDescriptorProto", "messageType", "timestampDate", "timestampFromDate", "timestampFromMs", "timestampMs", "timestampNow", "toJSON"}},
 
 	// --- I/O / process modules (async exports checked for typeof; behavior in SLOW specs) ---
 	{name: "os", asyncExports: []string{"readFile", "writeFile", "appendFile", "fileExists", "openEditor", "clipboardCopy", "clipboardPaste"}, mustExist: []string{"readFile", "writeFile", "appendFile", "openEditor", "clipboardCopy", "clipboardPaste", "getenv", "isAbsolute", "join", "platform"}},
 	{name: "exec", asyncExports: []string{"execv"}, mustExist: []string{"execv", "spawn"}},
 	{name: "fetch", asyncExports: []string{"fetch", "sseReader"}, mustExist: []string{"fetch"}},
 	{name: "gitops", mustExist: []string{"isRepo", "open", "openDetect", "defaultBranch", "branchExists", "isWorkTree", "headBranchName", "ERR_NOT_REPO", "ERR_NOTHING_TO_COMMIT", "ERR_CONFLICT", "ERR_DETACHED_HEAD"}},
-	{name: "grpc", mustExist: []string{"createClient", "createServer", "dial", "status", "metadata", "enableReflection", "createReflectionClient"}},
+	{name: "grpc", mustExist: []string{"close", "createClient", "createReflectionClient", "createServer", "dial", "enableReflection", "metadata", "status"}},
 	{name: "mcp", mustExist: []string{"createServer"}},
 	{name: "mcpcallback", mustExist: []string{"MCPCallback"}},
-	{name: "aimux", mustExist: []string{"processProvider", "newRegistry", "newParser", "EVENT_TEXT", "EVENT_RATE_LIMIT", "EVENT_PERMISSION", "EVENT_MODEL_SELECT", "EVENT_SSO_LOGIN", "EVENT_COMPLETION", "EVENT_TOOL_USE", "EVENT_ERROR", "EVENT_THINKING"}},
-	{name: "termmux", unixOnly: true, mustExist: []string{"newSessionManager", "newCaptureSession", "EXIT_TOGGLE", "EXIT_CHILD_EXIT", "EXIT_CONTEXT", "EXIT_ERROR", "SIDE_OSM", "SIDE_AGENT", "DEFAULT_TOGGLE_KEY"}},
+	{name: "aimux", mustExist: []string{"EVENT_COMPLETION", "EVENT_ERROR", "EVENT_MODEL_SELECT", "EVENT_PERMISSION", "EVENT_RATE_LIMIT", "EVENT_SSO_LOGIN", "EVENT_TEXT", "EVENT_THINKING", "EVENT_TOOL_USE", "STATE_ERROR", "STATE_INITIALIZING", "STATE_PERMISSION_PROMPT", "STATE_PROCESSING", "STATE_RATE_LIMITED", "STATE_READY", "STATE_RESPONDING", "defaultTUIStateConfig", "eventTypeName", "newEventStream", "newHealthMonitor", "newParser", "newRegistry", "newTUIStateMachine", "processProvider", "tuiStateName"}},
+	{name: "termmux", unixOnly: true, mustExist: []string{"DEFAULT_TOGGLE_KEY", "EVENT_ACTIVATED", "EVENT_ACTIVITY", "EVENT_BELL", "EVENT_CLIPBOARD", "EVENT_CLOSED", "EVENT_CWD", "EVENT_EXIT", "EVENT_FOCUS", "EVENT_OUTPUT", "EVENT_REGISTERED", "EVENT_RESIZE", "EVENT_SILENCE", "EVENT_TERMINAL_RESIZE", "EVENT_TITLE", "EVENT_WORKING_DIRECTORY", "EXIT_CHILD_EXIT", "EXIT_CONTEXT", "EXIT_ERROR", "EXIT_TOGGLE", "LAYOUT_HORIZONTAL", "LAYOUT_MAIN_HORIZONTAL", "LAYOUT_MAIN_VERTICAL", "LAYOUT_STACKED", "LAYOUT_TILED", "LAYOUT_VERTICAL", "SIDE_AGENT", "SIDE_OSM", "enableMouseForward", "handleMouseDrag", "handlePrefixKey", "keyToTermBytes", "mouseDrag", "mouseToSGR", "newBoundedSession", "newCaptureSession", "newControlRouter", "newPrefixKeyHandler", "newSessionManager", "renderMessageBar", "splitLayout"}},
 
 	// --- Workflow & state ---
 	{name: "sharedStateSymbols", mustExist: []string{"contextItems"}},
-	{name: "bt", mustExist: []string{"success", "failure", "running", "node", "createLeafNode", "sequence", "fallback", "selector", "tick", "Blackboard"}},
+	{name: "bt", mustExist: []string{"Blackboard", "async", "createBlockingLeafNode", "createLeafNode", "exposeBlackboard", "failure", "fallback", "fork", "interval", "memorize", "newManager", "newTicker", "node", "not", "running", "selector", "sequence", "success", "tick"}},
 	{name: "pabt", mustExist: []string{"newState", "newAction", "newPlan", "newExprCondition"}},
-	{name: "lipgloss", mustExist: []string{"newStyle", "joinHorizontal", "joinVertical", "place", "width", "Left", "Center", "Right"}, smoke: `require('osm:lipgloss').width('hi')`, smokeWant: `2`},
+	{name: "lipgloss", mustExist: []string{"Bottom", "Center", "Left", "NoTabConversion", "Right", "Top", "blockBorder", "doubleBorder", "hasDarkBackground", "hasLightBackground", "height", "hiddenBorder", "innerHalfBlockBorder", "joinHorizontal", "joinVertical", "newStyle", "noBorder", "normalBorder", "outerHalfBlockBorder", "place", "placeHorizontal", "placeVertical", "roundedBorder", "size", "thickBorder", "width"}, smoke: `require('osm:lipgloss').width('hi')`, smokeWant: `2`},
 	{name: "bubblezone", mustExist: []string{"mark", "scan", "inBounds", "get", "newPrefix", "close"}},
-	{name: "bubbletea", mustExist: []string{"newModel", "run", "isTTY", "quit", "clearScreen", "batch", "sequence", "tick", "requestWindowSize", "keys", "keysByName", "mouseButtons"}},
-	{name: "bubbles/textarea", mustExist: []string{"new"}, smoke: `typeof require('osm:bubbles/textarea').new()`, smokeWant: `"object"`},
+	{name: "bubbletea", mustExist: []string{"batch", "clearScreen", "isTTY", "isValidLabelInput", "isValidTextareaInput", "keys", "keysByName", "mouseButtons", "mouseButtonsByName", "newModel", "quit", "requestWindowSize", "run", "sequence", "tick"}},
+	{name: "bubbles/textarea", mustExist: []string{"defaultStyles", "new"}, smoke: `typeof require('osm:bubbles/textarea').new()`, smokeWant: `"object"`},
 	{name: "bubbles/viewport", mustExist: []string{"new"}, smoke: `typeof require('osm:bubbles/viewport').new()`, smokeWant: `"object"`},
 
 	// --- termui/* (data-driven surface; construct + view() shape in specs) ---

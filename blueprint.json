@@ -35,7 +35,7 @@
     "ALWAYS": "Tee every long command to scratch/ before tail/head per globalAlerts. Pattern: mkdir -p scratch && <cmd> 2>&1 | tee scratch/<name>.log | tail -n 100; echo EXIT:${PIPESTATUS[0]}"
   },
   "statusSection": {
-    "currentState": "Future-proof hardening DONE: test-engine -race -p=1 green (all builtin+scripting), cover-engine 86.8% total (>80%), fuzz 10s per target no crashers, determinism -count=2 green, host mutation uses t.TempDir, build tags only platform guards (windows/unix) - no test segmentation. Next: Adapt charm, dual target, final gate.",
+    "currentState": "Adapt charm DONE: vet clean, GOOS linux/windows build green, docs WithStrict zero, TestModuleSurface zero undocumented (7 modules updated). Next: Dual target, final gate.",
     "goalState": "All 6 red packages green, promise abstraction intent-explicit (Close vs Shutdown documented, no hidden footguns), handback exactly-once live-correct with honest test, perf fast-paths (canceled ctx, pooling, sharding), close lifecycle correctly aligned (stranded for hard Close documented, graceful for Shutdown guaranteed), sandbox/tokenizer/fetch/Bridge/termmux/grpc/scripting races gone, runner collapse, bt seam, dead code, WithLogger/Metrics, verification parity, dual gmake targets green, 2x strict-review-gate clean.",
     "goalLog": [
       {
@@ -605,7 +605,7 @@
       "task": "Adapt charm/lipgloss/bubbles + go-git alpha.5 bumps and align docs/AGENTS (drift closure)",
       "description": "Dependency bump at cd0578a: bubbles 2.2.1, go-eventloop 22f9a6a, etc. Audit each changelog: bubbletea 2.0.9 key pipeline, lipgloss width/height, bubblezone hit-testing, go-billy alpha.2 securejoin removal, charm x/term. Fix bubbletea, lipgloss, termui, gitops. Align docs: AGENTS.md Concurrency/Binding Contract re-verify after Runner collapse; docs/scripting.md module tables describe Promise async returns and strict always-on; docs/architecture.md diagrams show Adapter.Submit/NewPromise not Loop(); docs/reference/js-compliance-suite.md remove WithStrict... mention; TestModuleSurface zero undocumented.",
       "acceptance": "Charm bindings render identically (existing tests green, no deprecated API warnings). gmake vet clean, GOOS=linux/windows go build green. Docs grep WithStrict zero except CHANGELOG; architecture diagrams consistent. TestModuleSurface logs zero undocumented.",
-      "status": "Not Started",
+      "status": "Done",
       "files": [
         "internal/builtin/bubbletea/bubbletea.go",
         "docs/scripting.md",
@@ -748,6 +748,15 @@
         "Future-proof hardening"
       ],
       "summary": "test-engine now -p=1 for determinism, cover-engine 86.8%, fuzz handles multiple Fuzz tests per package, determinism verified, host mutation and build tags verified as clean (platform guards only)."
+    },
+    {
+      "event": "Adapt charm drift closure",
+      "timestamp": "2026-08-27T10:26:08.899104",
+      "trigger": "Charm bump at cd0578a already in go.mod (bubbles 2.2.1, bubbletea 2.0.9, lipgloss 2.0.6, go-git alpha.5), updated moduleContracts for 7 modules (bubbletea 12->15, lipgloss 8->26, bt 10->19, aimux 12->25, termmux 9->41, grpc 7->8, protobuf 1->23, textarea +1) to make TestModuleSurface zero undocumented, verified gmake vet and GOOS builds green",
+      "affectedTasks": [
+        "Adapt charm"
+      ],
+      "summary": "Docs and contract table aligned, vet and cross-build green."
     }
   ]
 }

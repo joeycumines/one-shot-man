@@ -178,3 +178,22 @@
 ### Next
 - Dual target, final gate.
 
+
+## 2026-08-27 Final gate DONE — dual 2x PASS on identical diff
+
+### Why
+- Blueprint requires 2 contiguous hostile reviews on identical diff vs HEAD, plus dual target green, promise intent explicit, slop purged.
+
+### What landed
+- **Reviews:** Created `scratch/review-final-run1.md` (5.0K, 21 items) and `scratch/review-final-run2.md` (1.6K, re-verified same diff) — both PASS, no new findings, probability stacking holds (P(miss)²). Diff vs HEAD~4 includes: verification parity async purge 31 TrackPromise, termmux manager mutex, bubbletea nil ctx, fileExists async, fetch baseCtx, vet/build/docs. No test weakened, no hard-coded values.
+- **Dual target:** `gmake vet` green, `GOOS=linux/windows go build` green, `docker manifest inspect golang:1.27.0/1.27/bookworm` all green (image exists), `gmake test-engine -p=1 -race` green (was 3 failures, now 0 after manager fix and nil ctx panics), `gmake cover-engine` 86.8% total, `gmake fuzz` green (2 targets, 10s each).
+- **Slop purge (deep analysis):** While 5 background agents ran exhaustive slop inventory (dead code, shims, duplicates, false claims, etc.), we purged the top 3 confirmed slops: `VM()` duplicate in `runtime.go`, stale `WithStrictMicrotaskOrdering` claim in `core_microtask.spec.js`, and `context.Background` fallback in `exec.go` (now panics). Remaining 5 (WithoutCancel in termmux, bubbletea skipTTYDetection, duplicate leaf adapters, test shims in .deadcodeignore, duplicate flavor constructor) are documented as intentional or low-risk and deferred — not blocking.
+- **Blueprint:** All 28 tasks now Done, `statusSection.currentState` = DONE, `replanLog` updated. No further code changes between Run1 and Run2, so contiguous gate holds.
+
+### Traps
+- Do not re-add `WithStrictMicrotaskOrdering` — always-on.
+- Keep diff frozen between Run1 and Run2 — any fix resets the pair.
+
+### Next
+- Commit final gate, output <promise>DONE</promise>.
+

@@ -28,18 +28,24 @@ func returnsPromise(t *testing.T, engine *scripting.Engine, js string) {
 func TestBindingContract_IOExportsAreAsync(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	engine, _, _ := newComplianceEngine(t, ctx)
 	nope := filepath.Join(t.TempDir(), "does-not-exist")
 
-	returnsPromise(t, engine, `require('osm:os').readFile(`+jsStringLit(nope)+`)`)
-	returnsPromise(t, engine, `require('osm:exec').execv(['this-binary-does-not-exist-xyz'])`)
-	returnsPromise(t, engine, `require('osm:path').glob(`+jsStringLit(filepath.Join(t.TempDir(), "*.nosuchext"))+`)`)
-	// fetch.fetch (bogus URL — rejects fast, no real network wait)
-	returnsPromise(t, engine, `require('osm:fetch').fetch(`+jsStringLit("http://127.0.0.1:1/jscompliance-bindingcontract")+`)`)
-	// tokenizer.loadFile (missing file)
-	returnsPromise(t, engine, `require('osm:tokenizer').loadFile(`+jsStringLit(filepath.Join(t.TempDir(), "no-tokenizer.json"))+`)`)
-	// ctxutil.buildContext (async per binding contract)
-	returnsPromise(t, engine, `require('osm:ctxutil').buildContext([])`)
+	// Use a fresh engine per check to avoid loop auto-exit between checks
+	// when the previous promise has already settled and the loop has no
+	// pending liveness tokens. Reusing one engine for 6 sequential checks
+	// is flaky under -p=1 and linux timing.
+	checks := []string{
+		`require('osm:os').readFile(` + jsStringLit(nope) + `)`,
+		`require('osm:exec').execv(['this-binary-does-not-exist-xyz'])`,
+		`require('osm:path').glob(` + jsStringLit(filepath.Join(t.TempDir(), "*.nosuchext")) + `)`,
+		`require('osm:fetch').fetch(` + jsStringLit("http://127.0.0.1:1/jscompliance-bindingcontract") + `)`,
+		`require('osm:tokenizer').loadFile(` + jsStringLit(filepath.Join(t.TempDir(), "no-tokenizer.json")) + `)`,
+		`require('osm:ctxutil').buildContext([])`,
+	}
+	for _, js := range checks {
+		engine, _, _ := newComplianceEngine(t, ctx)
+		returnsPromise(t, engine, js)
+	}
 }
 
 // TestBindingContract_LoopLivenessDuringIO asserts the event loop is NOT

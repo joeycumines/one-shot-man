@@ -58,6 +58,7 @@ var CONFIG = {
 var bounded = null;
 var mgr = null;
 var sid = null;
+var pane = null;
 var sessionReady = termmux.newBoundedSession({
     cmd: CMD,
     args: TARGET_ARGS,
@@ -68,6 +69,11 @@ var sessionReady = termmux.newBoundedSession({
     bounded = b;
     mgr = bounded.mgr;
     sid = bounded.sid;
+    pane = tp.termpane({
+        manager: mgr,
+        sessionId: sid,
+        bounds: { x: state.paneX, y: state.paneY, width: state.paneW, height: state.paneH },
+    });
 });
 
 // ── Model / Physics ──────────────────────────────────────────────────────────
@@ -121,11 +127,7 @@ var router = termmux.newControlRouter({
     },
 });
 
-var pane = tp.termpane({
-    manager: mgr,
-    sessionId: sid,
-    bounds: { x: state.paneX, y: state.paneY, width: state.paneW, height: state.paneH },
-});
+
 
 function clampPane() {
     var maxX = state.width - state.paneW;

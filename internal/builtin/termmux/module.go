@@ -887,8 +887,6 @@ func newSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 // Returns { session, mgr, sid } where session is the wrapped CaptureSession,
 // mgr is the wrapped SessionManager, and sid is the session ID.
 func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, runtime *goja.Runtime, mgr *parent.SessionManager, call goja.FunctionCall) goja.Value {
-	ctx = context.WithoutCancel(ctx)
-
 	if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
 		panic(runtime.NewTypeError("newBoundedSession: options object is required"))
 	}
@@ -955,35 +953,75 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 		kind = parent.SessionKind(v.String())
 	}
 
-	cs := parent.NewCaptureSession(captureCfg)
+	baseCtx := ctx
+	if adapter == nil {
+		cs := parent.NewCaptureSession(captureCfg)
 
-	if mgr == nil {
-		mgr = parent.NewSessionManager(parent.WithTermSize(rows, cols))
-		go mgr.Run(ctx)
-		<-mgr.Started()
+		if mgr == nil {
+			mgr = parent.NewSessionManager(parent.WithTermSize(rows, cols))
+			go mgr.Run(baseCtx)
+			<-mgr.Started()
+		}
+
+		sid, err := mgr.Register(cs, parent.SessionTarget{
+			Name: name,
+			Kind: kind,
+		})
+		if err != nil {
+			panic(runtime.NewGoError(fmt.Errorf("newBoundedSession: register failed: %w", err)))
+		}
+
+		if err := cs.Start(baseCtx); err != nil {
+			panic(runtime.NewGoError(fmt.Errorf("newBoundedSession: start failed: %w", err)))
+		}
+
+		sessionVal := WrapCaptureSession(baseCtx, adapter, loop, runtime, cs)
+		mgrVal := WrapSessionManager(baseCtx, adapter, loop, runtime, mgr, os.Stdin, os.Stdout, -1, "")
+
+		result := runtime.NewObject()
+		_ = result.Set("session", sessionVal)
+		_ = result.Set("mgr", mgrVal)
+		_ = result.Set("sid", runtime.ToValue(sid))
+
+		return result
 	}
 
-	sid, err := mgr.Register(cs, parent.SessionTarget{
-		Name: name,
-		Kind: kind,
+	return adapter.TrackPromise(baseCtx, func(trackCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+		cs := parent.NewCaptureSession(captureCfg)
+
+		var localMgr *parent.SessionManager
+		if mgr == nil {
+			localMgr = parent.NewSessionManager(parent.WithTermSize(rows, cols))
+			go localMgr.Run(baseCtx)
+			<-localMgr.Started()
+		} else {
+			localMgr = mgr
+		}
+
+		sid, err := localMgr.Register(cs, parent.SessionTarget{
+			Name: name,
+			Kind: kind,
+		})
+		if err != nil {
+			_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(fmt.Errorf("newBoundedSession: register failed: %w", err)) })
+			return
+		}
+
+		if err := cs.Start(trackCtx); err != nil {
+			_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(fmt.Errorf("newBoundedSession: start failed: %w", err)) })
+			return
+		}
+
+		_ = settle.Settle(false, func(rt *goja.Runtime) any {
+			sessionVal := WrapCaptureSession(baseCtx, adapter, loop, rt, cs)
+			mgrVal := WrapSessionManager(baseCtx, adapter, loop, rt, localMgr, os.Stdin, os.Stdout, -1, "")
+			result := rt.NewObject()
+			_ = result.Set("session", sessionVal)
+			_ = result.Set("mgr", mgrVal)
+			_ = result.Set("sid", rt.ToValue(sid))
+			return result
+		})
 	})
-	if err != nil {
-		panic(runtime.NewGoError(fmt.Errorf("newBoundedSession: register failed: %w", err)))
-	}
-
-	if err := cs.Start(ctx); err != nil {
-		panic(runtime.NewGoError(fmt.Errorf("newBoundedSession: start failed: %w", err)))
-	}
-
-	sessionVal := WrapCaptureSession(ctx, adapter, loop, runtime, cs)
-	mgrVal := WrapSessionManager(ctx, adapter, loop, runtime, mgr, os.Stdin, os.Stdout, -1, "")
-
-	result := runtime.NewObject()
-	_ = result.Set("session", sessionVal)
-	_ = result.Set("mgr", mgrVal)
-	_ = result.Set("sid", runtime.ToValue(sid))
-
-	return result
 }
 
 // WrapSessionManager wraps a [parent.SessionManager] into a Goja object with

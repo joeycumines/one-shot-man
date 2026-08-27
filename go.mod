@@ -25,7 +25,7 @@ require (
 	github.com/joeycumines/go-pabt v0.2.0
 	github.com/joeycumines/go-prompt v0.0.0-20260825080242-5d867e11e478
 	github.com/joeycumines/goja v0.0.0-20260825080301-3790b08373a0
-	github.com/joeycumines/goja-eventloop v0.0.0-20260825080307-2a846284cdbf
+	github.com/joeycumines/goja-eventloop v0.0.0-20260827223347-eb0879b26603
 	github.com/joeycumines/goja-grpc v0.0.0-20260825080312-7abed0d24959
 	github.com/joeycumines/goja-protobuf v0.0.0-20260825080318-b4a90e867ce4
 	github.com/joeycumines/goja_nodejs v0.0.0-20260825080329-b83bd892783d
@@ -90,7 +90,7 @@ require (
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260824150023-1f5465a7b7fb // indirect
+	golang.org/x/telemetry v0.0.0-20260827144034-9400fedf0e0c // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
@@ -98,9 +98,3 @@ require (
 	google.golang.org/grpc v1.83.2 // indirect
 	honnef.co/go/tools v0.8.1 // indirect
 )
-
-replace github.com/joeycumines/goja-eventloop => /Users/joeyc/dev/go-utilpkg/goja-eventloop
-
-replace github.com/joeycumines/go-eventloop => /Users/joeyc/dev/go-utilpkg/eventloop
-
-replace github.com/joeycumines/goja => /Users/joeyc/dev/go-utilpkg/goja

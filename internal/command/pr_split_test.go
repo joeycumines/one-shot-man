@@ -341,7 +341,26 @@ func setupTestPipeline(t *testing.T, opts TestPipelineOpts) *TestPipeline {
 	}
 
 	dir := t.TempDir()
-	resultDir := filepath.Join(t.TempDir(), "mcp-results")
+	t.Cleanup(func() {
+		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err == nil {
+				_ = os.Chmod(path, 0o755)
+			}
+			return nil
+		})
+		_ = os.RemoveAll(dir)
+	})
+	resultParent := t.TempDir()
+	t.Cleanup(func() {
+		_ = filepath.Walk(resultParent, func(path string, info os.FileInfo, err error) error {
+			if err == nil {
+				_ = os.Chmod(path, 0o755)
+			}
+			return nil
+		})
+		_ = os.RemoveAll(resultParent)
+	})
+	resultDir := filepath.Join(resultParent, "mcp-results")
 	if err := os.MkdirAll(resultDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -989,6 +1008,15 @@ func runGitCmdAllowFail(t *testing.T, dir string, args ...string) string {
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	t.Cleanup(func() {
+		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err == nil {
+				_ = os.Chmod(path, 0o755)
+			}
+			return nil
+		})
+		_ = os.RemoveAll(dir)
+	})
 	// Use init + symbolic-ref instead of init -b for compatibility
 	// with git versions older than 2.28 (e.g. Windows CI).
 	gitCmd(t, dir, "init")

@@ -356,11 +356,12 @@ func TestRunExec_NilContext(t *testing.T) {
 		t.Skip("exec tests rely on POSIX shell")
 	}
 	var nilCtx context.Context
-	result := runExec(nilCtx, "echo", "hello-nil-ctx")
-	if result["error"] != false || toInt64(result["code"]) != 0 {
-		t.Fatalf("expected success with nil context, got %#v", result)
-	}
-	if result["stdout"].(string) != "hello-nil-ctx\n" {
-		t.Fatalf("unexpected stdout %q", result["stdout"])
-	}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic for nil context")
+		} else if msg, ok := r.(string); !ok || msg != "exec: nil context requires baseCtx threading" {
+			t.Fatalf("unexpected panic %v", r)
+		}
+	}()
+	_ = runExec(nilCtx, "echo", "hello-nil-ctx")
 }

@@ -761,6 +761,13 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 			}
 			return runtime.ToValue(*manager.detectedDarkBackground)
 		})
+
+		_ = exports.Set("hasLightBackground", func(call goja.FunctionCall) goja.Value {
+			if manager.detectedDarkBackground == nil {
+				return runtime.ToValue(false)
+			}
+			return runtime.ToValue(!*manager.detectedDarkBackground)
+		})
 	}
 }
 

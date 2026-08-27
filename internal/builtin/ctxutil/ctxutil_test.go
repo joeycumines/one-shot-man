@@ -832,12 +832,22 @@ func TestBuildContext_TxtarMetadataOutsideFence(t *testing.T) {
 func TestRunGitDiff_NilContext(t *testing.T) {
 	t.Parallel()
 	var nilCtx context.Context
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic for nil context")
+		}
+	}()
 	_, _, _ = runGitDiff(nilCtx, []string{"--stat", "HEAD"})
 }
 
 func TestGetDefaultGitDiffArgs_NilContext(t *testing.T) {
 	t.Parallel()
 	var nilCtx context.Context
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic for nil context")
+		}
+	}()
 	result := getDefaultGitDiffArgs(nilCtx)
 	if len(result) == 0 {
 		t.Fatal("expected non-empty default args")
@@ -847,6 +857,11 @@ func TestGetDefaultGitDiffArgs_NilContext(t *testing.T) {
 func TestRunExec_NilContext(t *testing.T) {
 	t.Parallel()
 	var nilCtx context.Context
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic for nil context")
+		}
+	}()
 	_, _, _ = runExec(nilCtx, []string{"echo", "test"})
 }
 

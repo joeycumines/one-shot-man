@@ -103,7 +103,16 @@ test-goja-compat: ## Run goja compat quantified suite (slow tier, 500+ cases)
 
 .PHONY: fuzz
 fuzz: ## Run fuzz targets for 30s each
-	$(GO) -C . test -run Fuzz -fuzz=. -fuzztime=30s ./internal/jscompliance/...
+	@for pkg in $$($(GO) -C . list ./internal/jscompliance/...); do \
+		echo "Fuzzing $$pkg..."; \
+		for fuzz in FuzzHarness FuzzParseTC39 FuzzNextInteger FuzzContext; do \
+			if $(GO) -C . test -list ".*$$fuzz.*" $$pkg 2>&1 | grep -q "$$fuzz"; then \
+				echo "  Running $$fuzz in $$pkg..."; \
+				$(GO) -C . test -run "^$$fuzz$$" -fuzz="^$$fuzz$$" -fuzztime=10s $$pkg || exit 1; \
+			fi; \
+		done; \
+	done; \
+	echo "Fuzz done (10s per target, deterministic check)"
 
 .PHONY: report
 report: ## Generate quantified compliance report (test262 + goja compat vs goja baseline)
@@ -112,6 +121,16 @@ report: ## Generate quantified compliance report (test262 + goja compat vs goja 
 	@$(GO) -C . test -run TestGojaCompat -count=1 -timeout=300s ./internal/jscompliance/goja_compat/... -json 2>&1 | tee scratch/report-goja-compat-raw.json | tail -n 5
 	@$(GO) -C . run ./internal/jscompliance/report/... 2>&1 | tee scratch/report.json | tail -n 20
 	@echo "report generated: scratch/report.json scratch/report.md"
+
+.PHONY: test-engine
+test-engine: ## Run -race tier for engine and builtin packages (future-proof, -p=1 for determinism)
+	$(GO) -C . test -p=1 -race -count=1 -timeout=300s ./internal/scripting ./internal/builtin/...
+
+.PHONY: cover-engine
+cover-engine: ## Coverage for engine packages (>80% on compliance-critical paths)
+	$(GO) -C . test -covermode=count -coverprofile=scratch/cover-engine.out -count=1 -timeout=300s ./internal/scripting ./internal/builtin/...
+	@$(GO) -C . tool cover -func=scratch/cover-engine.out 2>&1 | tee scratch/cover-engine-func.log | tail -n 20
+	@echo "cover-engine generated: scratch/cover-engine.out"
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

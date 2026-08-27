@@ -988,6 +988,8 @@ type SessionManager struct {
 	// reqChan receives requests from public API methods. The worker
 	// goroutine is the sole consumer. Buffered to reduce contention.
 	reqChan chan request
+	reqMu   sync.Mutex
+	closed  bool
 
 	// mergedOutput receives raw PTY output from all per-session reader
 	// goroutines. The worker is the sole consumer.
@@ -1199,7 +1201,12 @@ func (m *SessionManager) Started() <-chan struct{} {
 
 // closeReqChan idempotently closes reqChan.
 func (m *SessionManager) closeReqChan() {
-	defer func() { recover() }() // ignore double-close panic
+	m.reqMu.Lock()
+	defer m.reqMu.Unlock()
+	if m.closed {
+		return
+	}
+	m.closed = true
 	close(m.reqChan)
 }
 
@@ -1236,15 +1243,23 @@ func (m *SessionManager) sendRequest(kind requestKind, payload any) (resp respon
 		return response{err: ErrManagerNotRunning}
 	}
 
+	m.reqMu.Lock()
+	if m.closed {
+		m.reqMu.Unlock()
+		return response{err: ErrManagerNotRunning}
+	}
 	reply := make(chan response, 1)
 	req := request{kind: kind, payload: payload, reply: reply}
-	defer func() {
-		if r := recover(); r != nil {
-			// reqChan was closed — worker has stopped.
-			resp = response{err: ErrManagerNotRunning}
-		}
-	}()
-	m.reqChan <- req
+	// Hold reqMu across the send to linearize with closeReqChan.
+	// Use select with done to avoid blocking forever if worker stopped
+	// while we were waiting to send.
+	select {
+	case m.reqChan <- req:
+		m.reqMu.Unlock()
+	case <-m.done:
+		m.reqMu.Unlock()
+		return response{err: ErrManagerNotRunning}
+	}
 
 	// Wait for the worker's response. Also select on done to prevent
 	// deadlock if the worker exits before processing this request

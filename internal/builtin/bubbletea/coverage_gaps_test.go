@@ -222,9 +222,13 @@ func TestNewManagerWithStderr_NilCtx(t *testing.T) {
 	vm := goja.New()
 	runner := &SyncJSRunner{Runtime: vm}
 
-	// nil ctx should default to context.Background()
-	m := NewManagerWithStderr(nil, nil, nil, nil, runner, nil, nil) //lint:ignore SA1012 testing nil-ctx fallback path
-	assert.NotNil(t, m.ctx)
+	// nil ctx now panics per context-severance fix (requires baseCtx threading)
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic for nil ctx")
+		}
+	}()
+	_ = NewManagerWithStderr(nil, nil, nil, nil, runner, nil, nil) //lint:ignore SA1012 testing nil-ctx panic path
 }
 
 // ========================================================================

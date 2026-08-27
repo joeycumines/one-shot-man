@@ -1890,19 +1890,20 @@ func TestContextManagerHotSnippetsEmpty(t *testing.T) {
 }
 
 func TestContextManagerListCommand(t *testing.T) {
-	runtime, _ := setupContextManager(t)
+	runtime, loop := setupContextManager(t)
 
 	script := `
-		const { contextManager } = exports;
+		(async () => {
+			const { contextManager } = exports;
 
-		const outputCalls = [];
-		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+			const outputCalls = [];
+			globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
 
 		let items = [];
 		const ctxmgr = contextManager({
 			getItems: () => items,
 			setItems: (v) => { items = v; },
-			fileExists: (path) => path !== 'deleted.txt'
+			fileExists: (path) => Promise.resolve({exists: path !== 'deleted.txt'})
 		});
 
 		items.push({id: 1, type: 'file', label: 'main.go', payload: ''});
@@ -1910,13 +1911,14 @@ func TestContextManagerListCommand(t *testing.T) {
 		items.push({id: 3, type: 'file', label: 'deleted.txt', payload: ''});
 		items.push({id: 4, type: 'lazy-diff', label: 'git diff HEAD', payload: ['HEAD']});
 
-		ctxmgr.commands.list.handler();
-		globalThis.__outputCalls = outputCalls;
+		let result = ctxmgr.commands.list.handler();
+			if (result && typeof result.then === 'function') await result;
+			globalThis.__outputCalls = outputCalls;
+			__signalDone();
+		})();
 	`
 
-	if _, err := runtime.RunString(script); err != nil {
-		t.Fatalf("failed to execute script: %v", err)
-	}
+	runAsyncCM(t, runtime, loop, script)
 
 	outputCalls := runtime.Get("__outputCalls").Export()
 	outputs, ok := outputCalls.([]any)

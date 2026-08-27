@@ -21,15 +21,16 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-behaviortree v1.11.0
 	github.com/joeycumines/go-eventloop v0.0.0-20260825213014-777ee7a02efc
-	github.com/joeycumines/go-inprocgrpc v0.0.0-20260824131419-e327357f7935
+	github.com/joeycumines/go-inprocgrpc v0.0.0-20260825080334-672b1eedaf24
 	github.com/joeycumines/go-pabt v0.2.0
-	github.com/joeycumines/go-prompt v0.0.0-20260823080611-669b4665c6b5
-	github.com/joeycumines/goja v0.0.0-20260823081319-46200cbcb6c2
+	github.com/joeycumines/go-prompt v0.0.0-20260825080242-5d867e11e478
+	github.com/joeycumines/goja v0.0.0-20260825080301-3790b08373a0
 	github.com/joeycumines/goja-eventloop v0.0.0-20260825080307-2a846284cdbf
-	github.com/joeycumines/goja-grpc v0.0.0-20260824131346-39a74e7fb91b
-	github.com/joeycumines/goja-protobuf v0.0.0-20260824131356-9e31b56891a0
-	github.com/joeycumines/goja_nodejs v0.0.0-20260823081323-05fa4bcb64d4
+	github.com/joeycumines/goja-grpc v0.0.0-20260825080312-7abed0d24959
+	github.com/joeycumines/goja-protobuf v0.0.0-20260825080318-b4a90e867ce4
+	github.com/joeycumines/goja_nodejs v0.0.0-20260825080329-b83bd892783d
 	github.com/joeycumines/goroutineid v1.1.1
+	github.com/joeycumines/logiface v0.6.0
 	github.com/lrstanley/bubblezone/v2 v2.0.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/rivo/uniseg v0.4.7
@@ -62,10 +63,9 @@ require (
 	github.com/go-git/go-billy/v6 v6.0.0-alpha.2 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
-	github.com/google/pprof v0.0.0-20260825002013-8a176773c324 // indirect
+	github.com/google/pprof v0.0.0-20260825171938-4d453200e7d9 // indirect
 	github.com/joeycumines/go-bigbuff v1.21.1 // indirect
-	github.com/joeycumines/go-catrate v0.0.0-20260822232657-5012a789c17d // indirect
-	github.com/joeycumines/logiface v0.6.0 // indirect
+	github.com/joeycumines/go-catrate v0.0.0-20260825080149-21d1636aba2d // indirect
 	github.com/joeycumines/simple-command-output-filter v0.2.1 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
@@ -85,17 +85,17 @@ require (
 	github.com/yuin/goldmark v1.8.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa // indirect
-	golang.org/x/exp/typeparams v0.0.0-20260820142414-ca536658362e // indirect
+	golang.org/x/exp/typeparams v0.0.0-20260824195058-e88cd73687aa // indirect
 	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260821201142-16c97dc83219 // indirect
+	golang.org/x/telemetry v0.0.0-20260824150023-1f5465a7b7fb // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
-	google.golang.org/grpc v1.83.1 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	honnef.co/go/tools v0.8.1 // indirect
 )
 

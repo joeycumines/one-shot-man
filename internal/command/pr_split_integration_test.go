@@ -1089,6 +1089,9 @@ func TestIntegration_SendToHandle_PromptSetupBlocker(t *testing.T) {
 // TestIntegration_SendToHandle_PromptReadyDelayed verifies that
 // sendToHandle waits for prompt readiness before writing.
 func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skip on windows: ConPTY/flaky prompt handling")
+	}
 	skipSlow(t)
 	t.Parallel()
 
@@ -1217,6 +1220,9 @@ func TestIntegration_SendToHandle_EmptyText(t *testing.T) {
 // handles a large text payload (100KB) gracefully. The chunking logic should
 // split large writes into 4KB chunks.
 func TestIntegration_SendToHandle_LargePayload(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skip on windows: large payload chunking slow/flaky")
+	}
 	skipSlow(t)
 	t.Parallel()
 

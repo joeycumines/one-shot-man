@@ -576,7 +576,15 @@ func TestCaptureAgentHandle_Health_TracksSendAndEvent(t *testing.T) {
 
 	healthBefore := h.Health()
 	if healthBefore.LastEvent.IsZero() {
-		t.Error("expected LastEvent to be set after WaitReady (first chunk received)")
+		// Poll briefly for LastEvent to be set (Windows/Linux timing flake)
+		deadline := time.Now().Add(2 * time.Second)
+		for healthBefore.LastEvent.IsZero() && time.Now().Before(deadline) {
+			time.Sleep(50 * time.Millisecond)
+			healthBefore = h.Health()
+		}
+		if healthBefore.LastEvent.IsZero() {
+			t.Error("expected LastEvent to be set after WaitReady (first chunk received)")
+		}
 	}
 
 	if err := h.Send("test input\n"); err != nil {

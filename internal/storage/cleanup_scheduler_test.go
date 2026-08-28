@@ -109,12 +109,16 @@ func TestCleanupScheduler_RunsOnTick(t *testing.T) {
 
 	// Fire the tick.
 	tick <- time.Now()
-	// Allow cleanup to process.
-	time.Sleep(50 * time.Millisecond)
-
-	// Session should now be removed.
-	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("expected session to be removed after tick, stat err: %v", err)
+	// Allow cleanup to process — poll with timeout for Windows slowness.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected session to be removed after tick, stat err: %v", func() error { _, e := os.Stat(p); return e }())
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	cancel()
@@ -295,10 +299,15 @@ func TestCleanupScheduler_MultipleTicksRunMultipleCleanups(t *testing.T) {
 	}
 
 	tick <- time.Now()
-	time.Sleep(50 * time.Millisecond)
-
-	if _, err := os.Stat(p1); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("tick 1: expected session removed, stat err: %v", err)
+	deadline1 := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(p1); errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		if time.Now().After(deadline1) {
+			t.Fatalf("tick 1: expected session removed, stat err: %v", func() error { _, e := os.Stat(p1); return e }())
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// Tick 2: create another session and tick again.
@@ -311,10 +320,15 @@ func TestCleanupScheduler_MultipleTicksRunMultipleCleanups(t *testing.T) {
 	}
 
 	tick <- time.Now()
-	time.Sleep(50 * time.Millisecond)
-
-	if _, err := os.Stat(p2); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("tick 2: expected session removed, stat err: %v", err)
+	deadline2 := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(p2); errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		if time.Now().After(deadline2) {
+			t.Fatalf("tick 2: expected session removed, stat err: %v", func() error { _, e := os.Stat(p2); return e }())
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	cancel()

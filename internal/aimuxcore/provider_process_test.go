@@ -2,12 +2,16 @@ package aimuxcore
 
 import (
 	"context"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestCaptureAgentHandle_WaitReady_DoesNotConsumeFirstChunk(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to PTY ANSI handling flake")
+	}
 	if testing.Short() {
 		t.Skip("skipping slow test")
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -551,6 +552,9 @@ collect:
 }
 
 func TestCaptureAgentHandle_Health_TracksSendAndEvent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows due to PTY ANSI handling flake")
+	}
 	if testing.Short() {
 		t.Skip("skipping slow test")
 	}

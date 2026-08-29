@@ -280,6 +280,7 @@ func GitMockSetupJS() string {
                 read: function() {
                     if (!stdoutRead) {
                         stdoutRead = true;
+                        // Read stdout: first access only.
                         if (r.stdout) return Promise.resolve({done: false, value: r.stdout});
                     }
                     return Promise.resolve({done: true});
@@ -289,6 +290,7 @@ func GitMockSetupJS() string {
                 read: function() {
                     if (!stderrRead) {
                         stderrRead = true;
+                        // Read stderr: first access only.
                         if (r.stderr) return Promise.resolve({done: false, value: r.stderr});
                     }
                     return Promise.resolve({done: true});

@@ -171,11 +171,13 @@ Maintain all functionality and behavior of the original code while improving its
 					Description: "Set documentation type",
 					Usage:       "type <comprehensive|api|readme|inline|tutorial>",
 					Handler: `function (args) {
+                        // Guard: no args provided - show current state.
                         if (args.length === 0) {
                             output.print("Current type: " + (state.get(stateKeys.type) || "comprehensive"));
                             output.print("Available types: comprehensive, api, readme, inline, tutorial");
                             return;
                         }
+                        // Extract and normalize the requested type.
                         const type = args[0].toLowerCase();
                         const validTypes = ["comprehensive", "api", "readme", "inline", "tutorial"];
                         if (!validTypes.includes(type)) {

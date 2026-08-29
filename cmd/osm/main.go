@@ -23,7 +23,7 @@ func main() {
 }
 
 func run() error {
-	// Load configuration
+	// Load configuration; fall back to empty config if missing.
 	cfg, err := config.Load()
 	if err != nil {
 		// LoadFile already returns NewConfig() for os.IsNotExist,

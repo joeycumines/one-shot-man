@@ -90,7 +90,7 @@ require (
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260827144034-9400fedf0e0c // indirect
+	golang.org/x/telemetry v0.0.0-20260828145429-86cb5733f5b7 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect

@@ -1,11 +1,10 @@
 package template
 
 import (
-	"context"
 	"strings"
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 func setupModule(t *testing.T) (*goja.Runtime, *goja.Object) {
@@ -16,7 +15,7 @@ func setupModule(t *testing.T) (*goja.Runtime, *goja.Object) {
 	exports := runtime.NewObject()
 	_ = module.Set("exports", exports)
 
-	loader := Require(context.Background())
+	loader := Require()
 	loader(runtime, module)
 
 	// Make exports available in the runtime

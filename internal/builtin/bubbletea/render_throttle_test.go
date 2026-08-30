@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -298,7 +298,5 @@ func TestRenderThrottle_ViewError(t *testing.T) {
 	assert.Contains(t, output.Content, "View error")
 	assert.Contains(t, output.Content, assert.AnError.Error())
 
-	// Error outputs should probably not be cached, or they should?
-	// The current impl caches whatever viewDirect returns.
 	assert.Equal(t, output.Content, model.cachedView)
 }

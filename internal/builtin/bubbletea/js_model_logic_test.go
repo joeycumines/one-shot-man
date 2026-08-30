@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -56,19 +56,7 @@ func TestJSModelLogic_Init(t *testing.T) {
 		model.jsRunner = &SyncJSRunner{Runtime: vm}
 
 		cmd := model.Init()
-		// Init swallows error and sets initError, returns nil cmd
-		// Actually Init() swallows errors usually or logs them?
-		// implementation: if err != nil { return nil } and logs to slog/stderr
-		// Let's check implementation behavior... implementation returns nil on error.
-		// Wait, Step 40 coverage showed Init covered 66.7%.
-
-		// If I check logic:
-		// res, err := m.jsRunner.RunJSSync(m.initFn, nil, m.state)
-		// if err != nil { slog.Error... return nil }
-		// So it expects nil.
-
-		// BUT the test above actually returns nil because the mock SyncJSRunner propagates the error
-		// and Init catches it.
+		// Init swallows errors and sets initError, returns nil cmd.
 		assert.Nil(t, cmd)
 	})
 }

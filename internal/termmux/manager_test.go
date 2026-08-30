@@ -1,8 +1,11 @@
 package termmux
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -10,102 +13,6 @@ import (
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
-
-// mockSession is a minimal InteractiveSession for type-level tests.
-type mockSession struct{}
-
-func (mockSession) Resize(int, int) error     { return nil }
-func (mockSession) Write([]byte) (int, error) { return 0, nil }
-func (mockSession) Close() error              { return nil }
-func (mockSession) Done() <-chan struct{}     { ch := make(chan struct{}); close(ch); return ch }
-func (mockSession) Reader() <-chan []byte     { ch := make(chan []byte); close(ch); return ch }
-
-// controllableSession is a richer mock that records calls and allows
-// controlling behavior from tests.
-type controllableSession struct {
-	writtenData []byte
-	writeMu     sync.Mutex
-	writeErr    error
-	resizeCalls []resizePayload
-	closeCalled atomic.Bool
-	doneCh      chan struct{}
-	readerCh    chan []byte
-}
-
-func newControllableSession() *controllableSession {
-	return &controllableSession{
-		doneCh:   make(chan struct{}),
-		readerCh: make(chan []byte, 16),
-	}
-}
-
-func (s *controllableSession) Done() <-chan struct{} { return s.doneCh }
-func (s *controllableSession) Reader() <-chan []byte { return s.readerCh }
-
-func (s *controllableSession) Write(data []byte) (int, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	if s.writeErr != nil {
-		return 0, s.writeErr
-	}
-	s.writtenData = append(s.writtenData, data...)
-	return len(data), nil
-}
-
-func (s *controllableSession) Resize(rows, cols int) error {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	s.resizeCalls = append(s.resizeCalls, resizePayload{rows: rows, cols: cols})
-	return nil
-}
-
-func (s *controllableSession) Close() error {
-	s.closeCalled.Store(true)
-	select {
-	case <-s.doneCh:
-	default:
-		close(s.doneCh)
-	}
-	return nil
-}
-
-func (s *controllableSession) Written() []byte {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	cp := make([]byte, len(s.writtenData))
-	copy(cp, s.writtenData)
-	return cp
-}
-
-func (s *controllableSession) Resizes() []resizePayload {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	cp := make([]resizePayload, len(s.resizeCalls))
-	copy(cp, s.resizeCalls)
-	return cp
-}
-
-// startManager creates a SessionManager, starts the worker, and returns
-// the manager and a cleanup function. Cleanup cancels the context and
-// waits for the worker to stop.
-func startManager(t *testing.T, opts ...ManagerOption) (*SessionManager, func()) {
-	t.Helper()
-	m := NewSessionManager(opts...)
-	ctx, cancel := context.WithCancel(context.Background())
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- m.Run(ctx)
-	}()
-	// Wait for the worker goroutine to start processing before
-	// returning — prevents races where API calls arrive before
-	// the worker is ready.
-	<-m.Started()
-	cleanup := func() {
-		cancel()
-		<-errCh
-	}
-	return m, cleanup
-}
 
 // ---------------------------------------------------------------------------
 // SessionState transition tests
@@ -186,7 +93,6 @@ func TestScreenSnapshot_ConcurrentReadSafe(t *testing.T) {
 	ms := &managedSession{}
 
 	// Simulate the worker publishing snapshots while readers consume them.
-	const writers = 1
 	const readers = 10
 	const iterations = 1000
 
@@ -196,13 +102,13 @@ func TestScreenSnapshot_ConcurrentReadSafe(t *testing.T) {
 	wg.Go(func() {
 		for i := range iterations {
 			snap := &ScreenSnapshot{
-				Gen:        uint64(i),
-				PlainText:  "hello",
-				ANSI:       "\x1b[32mhello\x1b[0m",
-				FullScreen: "\x1b[1;1Hhello",
-				Rows:       24,
-				Cols:       80,
-				Timestamp:  time.Now(),
+				Gen:             uint64(i),
+				plainTextCache:  "hello",
+				ansiCache:       "\x1b[32mhello\x1b[0m",
+				fullScreenCache: "\x1b[1;1Hhello",
+				Rows:            24,
+				Cols:            80,
+				Timestamp:       time.Now(),
 			}
 			ms.snapshot.Store(snap)
 		}
@@ -220,9 +126,9 @@ func TestScreenSnapshot_ConcurrentReadSafe(t *testing.T) {
 				}
 				// Access all fields — the race detector would catch sharing.
 				_ = snap.Gen
-				_ = snap.PlainText
-				_ = snap.ANSI
-				_ = snap.FullScreen
+				_ = snap.GetPlainText()
+				_ = snap.GetANSI()
+				_ = snap.GetFullScreen()
 				_ = snap.Rows
 				_ = snap.Cols
 				_ = snap.Timestamp
@@ -241,8 +147,8 @@ func TestSessionInfo_Construction(t *testing.T) {
 	t.Parallel()
 
 	target := SessionTarget{
-		ID:   "claude-1",
-		Name: "Claude",
+		ID:   "agent-1",
+		Name: "Agent",
 		Kind: SessionKindCapture,
 	}
 
@@ -256,8 +162,8 @@ func TestSessionInfo_Construction(t *testing.T) {
 	if info.ID != 42 {
 		t.Errorf("ID = %d, want 42", info.ID)
 	}
-	if info.Target.Name != "Claude" {
-		t.Errorf("Target.Name = %q, want %q", info.Target.Name, "Claude")
+	if info.Target.Name != "Agent" {
+		t.Errorf("Target.Name = %q, want %q", info.Target.Name, "Agent")
 	}
 	if info.Target.Kind != SessionKindCapture {
 		t.Errorf("Target.Kind = %q, want %q", info.Target.Kind, SessionKindCapture)
@@ -386,6 +292,7 @@ func TestRequestKind_AllValues(t *testing.T) {
 		reqActiveWriter,
 		reqEnablePassthroughTee,
 		reqDisablePassthroughTee,
+		reqResizeSession,
 	}
 
 	seen := make(map[requestKind]bool)
@@ -396,8 +303,8 @@ func TestRequestKind_AllValues(t *testing.T) {
 		seen[k] = true
 	}
 
-	if len(kinds) != 12 {
-		t.Errorf("expected 12 request kinds, got %d", len(kinds))
+	if len(kinds) != 13 {
+		t.Errorf("expected 13 request kinds, got %d", len(kinds))
 	}
 }
 
@@ -515,7 +422,7 @@ func TestEvent_Construction(t *testing.T) {
 	if evt.SessionID != 3 {
 		t.Errorf("SessionID = %d, want 3", evt.SessionID)
 	}
-	data, ok := evt.Data.([]byte)
+	data, ok := evt.DataAsBytes()
 	if !ok || string(data) != "output data" {
 		t.Errorf("Data = %v, want []byte(\"output data\")", evt.Data)
 	}
@@ -543,11 +450,11 @@ func TestManagedSession_SnapshotLoadStore(t *testing.T) {
 
 	// Publish a snapshot.
 	snap1 := &ScreenSnapshot{
-		Gen:       1,
-		PlainText: "gen1",
-		Rows:      24,
-		Cols:      80,
-		Timestamp: time.Now(),
+		Gen:            1,
+		plainTextCache: "gen1",
+		Rows:           24,
+		Cols:           80,
+		Timestamp:      time.Now(),
 	}
 	ms.snapshot.Store(snap1)
 
@@ -555,13 +462,13 @@ func TestManagedSession_SnapshotLoadStore(t *testing.T) {
 	if loaded == nil {
 		t.Fatal("loaded snapshot is nil after Store")
 	}
-	if loaded.Gen != 1 || loaded.PlainText != "gen1" {
+	if loaded.Gen != 1 || loaded.GetPlainText() != "gen1" {
 		t.Errorf("snapshot = {Gen: %d, PlainText: %q}, want {1, gen1}",
-			loaded.Gen, loaded.PlainText)
+			loaded.Gen, loaded.GetPlainText())
 	}
 
 	// Overwrite with a new generation.
-	snap2 := &ScreenSnapshot{Gen: 2, PlainText: "gen2"}
+	snap2 := &ScreenSnapshot{Gen: 2, plainTextCache: "gen2"}
 	ms.snapshot.Store(snap2)
 
 	loaded = ms.snapshot.Load()
@@ -570,7 +477,7 @@ func TestManagedSession_SnapshotLoadStore(t *testing.T) {
 	}
 
 	// Original snap1 is unaffected (immutability).
-	if snap1.Gen != 1 || snap1.PlainText != "gen1" {
+	if snap1.Gen != 1 || snap1.GetPlainText() != "gen1" {
 		t.Error("snap1 was mutated after publishing snap2")
 	}
 }
@@ -580,13 +487,13 @@ func TestScreenSnapshot_CursorFields(t *testing.T) {
 	t.Parallel()
 
 	snap := &ScreenSnapshot{
-		Gen:       1,
-		PlainText: "hello",
-		Rows:      24,
-		Cols:      80,
-		CursorRow: 5,
-		CursorCol: 10,
-		Timestamp: time.Now(),
+		Gen:            1,
+		plainTextCache: "hello",
+		Rows:           24,
+		Cols:           80,
+		CursorRow:      5,
+		CursorCol:      10,
+		Timestamp:      time.Now(),
 	}
 
 	if snap.CursorRow != 5 {
@@ -779,7 +686,7 @@ func TestSessionManager_Register(t *testing.T) {
 	}
 
 	// Register a second session — should get id 2.
-	id2, err := m.Register(newControllableSession(), SessionTarget{Name: "claude"})
+	id2, err := m.Register(newControllableSession(), SessionTarget{Name: "agent"})
 	if err != nil {
 		t.Fatalf("Register error: %v", err)
 	}
@@ -908,6 +815,52 @@ func TestSessionManager_Resize(t *testing.T) {
 	}
 }
 
+func TestSessionManager_ResizeSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+	id1, _ := m.Register(s1, SessionTarget{Name: "a"})
+	_, _ = m.Register(s2, SessionTarget{Name: "b"})
+
+	if err := m.ResizeSession(id1, 50, 120); err != nil {
+		t.Fatalf("ResizeSession error: %v", err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+
+	resizes1 := s1.Resizes()
+	if len(resizes1) != 1 {
+		t.Fatalf("session 1 resize calls = %d, want 1", len(resizes1))
+	}
+	if resizes1[0].rows != 50 || resizes1[0].cols != 120 {
+		t.Errorf("session 1 resize = %dx%d, want 50x120", resizes1[0].rows, resizes1[0].cols)
+	}
+
+	resizes2 := s2.Resizes()
+	if len(resizes2) != 0 {
+		t.Fatalf("session 2 resize calls = %d, want 0 (should not be affected)", len(resizes2))
+	}
+}
+
+func TestSessionManager_ResizeSession_InvalidID(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	err := m.ResizeSession(999, 50, 120)
+	if err == nil {
+		t.Fatal("expected error for non-existent session ID")
+	}
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("error = %v, want ErrSessionNotFound", err)
+	}
+}
+
 func TestSessionManager_TermSize_Default(t *testing.T) {
 	t.Parallel()
 	m, cleanup := startManager(t)
@@ -987,7 +940,7 @@ func TestSessionManager_Sessions(t *testing.T) {
 	defer cleanup()
 
 	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "shell", Kind: SessionKindPTY})
-	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "claude", Kind: SessionKindCapture})
+	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "agent", Kind: SessionKindCapture})
 
 	infos := m.Sessions()
 	if len(infos) != 2 {
@@ -1122,13 +1075,13 @@ func TestSessionManager_MergedOutput_VTerm(t *testing.T) {
 	if snap == nil {
 		t.Fatal("Snapshot is nil after output")
 	}
-	if snap.PlainText != "hello world" {
-		t.Errorf("PlainText = %q, want %q", snap.PlainText, "hello world")
+	if snap.GetPlainText() != "hello world" {
+		t.Errorf("PlainText = %q, want %q", snap.GetPlainText(), "hello world")
 	}
-	if snap.ANSI == "" {
-		t.Error("ANSI should not be empty after output")
+	if snap.GetANSI() == "" {
+		t.Error("ANSI is empty, want non-empty")
 	}
-	if snap.FullScreen == "" {
+	if snap.GetFullScreen() == "" {
 		t.Error("FullScreen should not be empty after output")
 	}
 	if snap.Gen < 2 {
@@ -1389,8 +1342,8 @@ func TestSessionManager_RoundTrip(t *testing.T) {
 	if snap == nil {
 		t.Fatal("Snapshot is nil after output")
 	}
-	if snap.PlainText != "total 42" {
-		t.Errorf("PlainText = %q, want %q", snap.PlainText, "total 42")
+	if snap.GetPlainText() != "total 42" {
+		t.Errorf("PlainText = %q, want %q", snap.GetPlainText(), "total 42")
 	}
 }
 
@@ -1586,25 +1539,25 @@ func TestSessionManager_Pipeline_OutputFlowsToSnapshot(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && snap.PlainText == "pipeline output" {
+		if snap != nil && snap.GetPlainText() == "pipeline output" {
 			break
 		}
 		select {
 		case <-deadline:
 			snap := m.Snapshot(id)
-			t.Fatalf("timed out waiting for snapshot; PlainText = %q", snap.PlainText)
+			t.Fatalf("timed out waiting for snapshot; PlainText = %q", snap.GetPlainText())
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
 
 	snap := m.Snapshot(id)
-	if snap.PlainText != "pipeline output" {
-		t.Errorf("PlainText = %q, want %q", snap.PlainText, "pipeline output")
+	if snap.GetPlainText() != "pipeline output" {
+		t.Errorf("PlainText = %q, want %q", snap.GetPlainText(), "pipeline output")
 	}
-	if snap.ANSI == "" {
+	if snap.GetANSI() == "" {
 		t.Error("ANSI should not be empty")
 	}
-	if snap.FullScreen == "" {
+	if snap.GetFullScreen() == "" {
 		t.Error("FullScreen should not be empty")
 	}
 }
@@ -1755,6 +1708,210 @@ done:
 	}
 }
 
+func TestSessionManager_Pipeline_OSCTitleEvent(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "osc-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Send OSC 0 (set window title) through the Reader channel.
+	session.readerCh <- []byte("\x1b]0;My Title\x07")
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify EventTitle was published with correct data.
+	var foundTitle bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventTitle && evt.SessionID == 1 {
+				foundTitle = true
+				if data, ok := evt.Data.(string); !ok || data != "My Title" {
+					t.Errorf("EventTitle data = %q; want %q", data, "My Title")
+				}
+			}
+		default:
+			goto doneTitle
+		}
+	}
+doneTitle:
+	if !foundTitle {
+		t.Error("EventTitle not received after OSC 0 sequence")
+	}
+}
+
+func TestSessionManager_Pipeline_OSCWorkingDirectoryEvent(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "osc-cwd-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Send OSC 7 (set working directory) through the Reader channel.
+	session.readerCh <- []byte("\x1b]7;file:///home/user\x07")
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify EventWorkingDirectory was published.
+	var foundCwd bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventWorkingDirectory && evt.SessionID == 1 {
+				foundCwd = true
+				if data, ok := evt.Data.(string); !ok || data != "file:///home/user" {
+					t.Errorf("EventWorkingDirectory data = %q; want %q", data, "file:///home/user")
+				}
+			}
+		default:
+			goto doneCwd
+		}
+	}
+doneCwd:
+	if !foundCwd {
+		t.Error("EventWorkingDirectory not received after OSC 7 sequence")
+	}
+}
+
+func TestSessionManager_Pipeline_OSCClipboardEvent(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "osc-clip-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Send OSC 52 (clipboard) through the Reader channel.
+	session.readerCh <- []byte("\x1b]52;c;SGVsbG8=\x07")
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify EventClipboard was published.
+	var foundClip bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventClipboard && evt.SessionID == 1 {
+				foundClip = true
+				if data, ok := evt.Data.(string); !ok || data != "c;SGVsbG8=" {
+					t.Errorf("EventClipboard data = %q; want %q", data, "c;SGVsbG8=")
+				}
+			}
+		default:
+			goto doneClip
+		}
+	}
+doneClip:
+	if !foundClip {
+		t.Error("EventClipboard not received after OSC 52 sequence")
+	}
+}
+
+func TestSessionManager_Pipeline_OSC2TitleEvent(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "osc2-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Send OSC 2 (set window title) through the Reader channel.
+	session.readerCh <- []byte("\x1b]2;XTerm Title\x07")
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify EventTitle was published.
+	var foundTitle bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventTitle && evt.SessionID == 1 {
+				foundTitle = true
+				if data, ok := evt.Data.(string); !ok || data != "XTerm Title" {
+					t.Errorf("EventTitle data = %q; want %q", data, "XTerm Title")
+				}
+			}
+		default:
+			goto doneOsc2
+		}
+	}
+doneOsc2:
+	if !foundTitle {
+		t.Error("EventTitle not received after OSC 2 sequence")
+	}
+}
+
+func TestSessionManager_Pipeline_OSCUnrecognizedNoEvent(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "osc-unknown-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Send OSC 4 (set color palette — not one we handle) through the Reader channel.
+	session.readerCh <- []byte("\x1b]4;0;#ff0000\x07")
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify no EventTitle/EventWorkingDirectory/EventClipboard was published.
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventTitle || evt.Kind == EventWorkingDirectory || evt.Kind == EventClipboard {
+				t.Errorf("unexpected event kind %v for unrecognized OSC code", evt.Kind)
+			}
+		default:
+			goto doneUnrecognized
+		}
+	}
+doneUnrecognized:
+	// Test passes if no unrecognized events were emitted.
+}
+
 func TestSessionManager_Pipeline_MultipleSessionsIndependent(t *testing.T) {
 	t.Parallel()
 
@@ -1773,11 +1930,11 @@ func TestSessionManager_Pipeline_MultipleSessionsIndependent(t *testing.T) {
 
 	snap1 := m.Snapshot(id1)
 	snap2 := m.Snapshot(id2)
-	if snap1 == nil || snap1.PlainText != "output-a" {
-		t.Errorf("session 1 PlainText = %q, want %q", snap1.PlainText, "output-a")
+	if snap1 == nil || snap1.GetPlainText() != "output-a" {
+		t.Errorf("session 1 PlainText = %q, want %q", snap1.GetPlainText(), "output-a")
 	}
-	if snap2 == nil || snap2.PlainText != "output-b" {
-		t.Errorf("session 2 PlainText = %q, want %q", snap2.PlainText, "output-b")
+	if snap2 == nil || snap2.GetPlainText() != "output-b" {
+		t.Errorf("session 2 PlainText = %q, want %q", snap2.GetPlainText(), "output-b")
 	}
 }
 
@@ -1809,10 +1966,10 @@ func TestSessionManager_Pipeline_DelayedStart(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	snap := m.Snapshot(id)
-	if snap == nil || snap.PlainText != "delayed output" {
+	if snap == nil || snap.GetPlainText() != "delayed output" {
 		plain := ""
 		if snap != nil {
-			plain = snap.PlainText
+			plain = snap.GetPlainText()
 		}
 		t.Errorf("PlainText = %q, want %q", plain, "delayed output")
 	}
@@ -2092,4 +2249,982 @@ func FuzzSessionRouter(f *testing.F) {
 
 		wg.Wait()
 	})
+}
+
+// ---------------------------------------------------------------------------
+// activeWriter tests
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_ActiveWriter(t *testing.T) {
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "aw-test", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Pump output to transition to Running.
+	session.readerCh <- []byte("hello")
+	waitForSnapshotContains(t, m, id, "hello", 2*time.Second)
+
+	w, err := m.activeWriter()
+	if err != nil {
+		t.Fatalf("activeWriter: %v", err)
+	}
+	if w == nil {
+		t.Fatal("activeWriter returned nil writer")
+	}
+
+	// Writing to the active writer should send data to the session.
+	n, err := w.Write([]byte("test-input"))
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if n != len("test-input") {
+		t.Errorf("Write returned %d, want %d", n, len("test-input"))
+	}
+	got := string(session.Written())
+	if !strings.Contains(got, "test-input") {
+		t.Errorf("session received %q, want it to contain %q", got, "test-input")
+	}
+}
+
+func TestSessionManager_ActiveWriter_NoActiveSession(t *testing.T) {
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	_, err := m.activeWriter()
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// passthroughTee tests
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_EnablePassthroughTee(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "tee-test", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Pump output to transition to Running.
+	session.readerCh <- []byte("ready")
+	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
+
+	// Enable tee with a buffer to capture output.
+	var teeBuf syncBuffer
+	if err := m.enablePassthroughTee(id, &teeBuf); err != nil {
+		t.Fatalf("enablePassthroughTee: %v", err)
+	}
+
+	// Send output and verify tee captures it.
+	session.readerCh <- []byte("tee-data")
+
+	// Wait for the output to be processed and teed.
+	deadline := time.After(2 * time.Second)
+	for {
+		if strings.Contains(teeBuf.String(), "tee-data") {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for tee data; teeBuf=%q", teeBuf.String())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Disable tee.
+	if err := m.disablePassthroughTee(); err != nil {
+		t.Fatalf("disablePassthroughTee: %v", err)
+	}
+
+	// Output after disable should not appear in tee.
+	session.readerCh <- []byte("after-disable")
+	// Wait for the snapshot to update.
+	waitForSnapshotContains(t, m, id, "after-disable", 2*time.Second)
+
+	// The tee buffer should not contain "after-disable" because the tee was disabled.
+	if strings.Contains(teeBuf.String(), "after-disable") {
+		t.Error("tee captured data after being disabled")
+	}
+}
+
+func TestSessionManager_EnablePassthroughTee_AlreadyActive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "tee-dup", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	session.readerCh <- []byte("ready")
+	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
+
+	var buf bytes.Buffer
+	if err := m.enablePassthroughTee(id, &buf); err != nil {
+		t.Fatalf("first enablePassthroughTee: %v", err)
+	}
+
+	// Second enable should fail with ErrPassthroughActive.
+	err = m.enablePassthroughTee(id, &buf)
+	if err == nil {
+		t.Error("expected error on duplicate enable, got nil")
+	}
+	if !errors.Is(err, ErrPassthroughActive) {
+		t.Errorf("error = %v, want ErrPassthroughActive", err)
+	}
+
+	// Clean up.
+	_ = m.disablePassthroughTee()
+}
+
+func TestSessionManager_EnablePassthroughTee_InvalidSession(t *testing.T) {
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	var buf bytes.Buffer
+	err := m.enablePassthroughTee(99999, &buf)
+	if err == nil {
+		t.Error("expected error for invalid session, got nil")
+	}
+}
+
+func TestSessionManager_DisablePassthroughTee_Idempotent(t *testing.T) {
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	// Disable when nothing is active should be a no-op.
+	if err := m.disablePassthroughTee(); err != nil {
+		t.Errorf("disablePassthroughTee no-op: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CaptureSession.Rows/Cols tests
+// ---------------------------------------------------------------------------
+
+func TestCaptureSession_RowsCols(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+	cs := NewCaptureSession(CaptureConfig{
+		Command: buildEchoProgram(t, "test"),
+		Rows:    30,
+		Cols:    120,
+	})
+
+	if got := cs.Rows(); got != 30 {
+		t.Errorf("Rows before start = %d, want 30", got)
+	}
+	if got := cs.Cols(); got != 120 {
+		t.Errorf("Cols before start = %d, want 120", got)
+	}
+
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer cs.Close()
+
+	if got := cs.Rows(); got != 30 {
+		t.Errorf("Rows after start = %d, want 30", got)
+	}
+	if got := cs.Cols(); got != 120 {
+		t.Errorf("Cols after start = %d, want 120", got)
+	}
+
+	if err := cs.Resize(40, 160); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+	if got := cs.Rows(); got != 40 {
+		t.Errorf("Rows after resize = %d, want 40", got)
+	}
+	if got := cs.Cols(); got != 160 {
+		t.Errorf("Cols after resize = %d, want 160", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Session lifecycle edge case tests
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Pipeline_CreatedToClosedOnEOF(t *testing.T) {
+	t.Parallel()
+
+	// When a process exits immediately without producing any output,
+	// the session transitions from Created directly to Closed (skipping
+	// Exited) and is removed from the sessions map.
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "immediate-exit"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Close the reader channel immediately — simulates process that exits
+	// before producing any output.
+	close(session.readerCh)
+	time.Sleep(200 * time.Millisecond)
+
+	// Session should have been removed from the map (Created -> Closed
+	// path deletes it). Sessions() should not list it.
+	for _, info := range m.Sessions() {
+		if info.ID == id {
+			t.Errorf("session %d still in Sessions() after immediate exit, state=%s", id, info.State)
+		}
+	}
+
+	// Verify EventSessionClosed was emitted (not EventSessionExited,
+	// since the Created -> Closed path skips Exited).
+	var foundClosed bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventSessionClosed && evt.SessionID == id {
+				foundClosed = true
+			}
+		default:
+			goto doneCreatedClosed
+		}
+	}
+doneCreatedClosed:
+	if !foundClosed {
+		t.Error("EventSessionClosed not received for immediate-exit session")
+	}
+
+	// Verify session.Close() was called.
+	if !session.closeCalled.Load() {
+		t.Error("session.Close() was not called on immediate exit")
+	}
+}
+
+func TestSessionManager_Pipeline_SessionSwitchingOutputRouted(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+	id1, _ := m.Register(s1, SessionTarget{Name: "session-a"})
+	id2, _ := m.Register(s2, SessionTarget{Name: "session-b"})
+
+	// Send output to session A.
+	s1.readerCh <- []byte("output-a")
+	waitForSnapshotContains(t, m, id1, "output-a", 2*time.Second)
+
+	// Activate session B (first session is active by default).
+	if err := m.Activate(id2); err != nil {
+		t.Fatalf("Activate(%d): %v", id2, err)
+	}
+
+	// Send output to session B.
+	s2.readerCh <- []byte("output-b")
+	waitForSnapshotContains(t, m, id2, "output-b", 2*time.Second)
+
+	// Verify both sessions have independent content.
+	snap1 := m.Snapshot(id1)
+	snap2 := m.Snapshot(id2)
+	if snap1 == nil || !strings.Contains(snap1.GetPlainText(), "output-a") {
+		t.Errorf("session 1 PlainText = %q, want containing %q", snap1.GetPlainText(), "output-a")
+	}
+	if snap2 == nil || !strings.Contains(snap2.GetPlainText(), "output-b") {
+		t.Errorf("session 2 PlainText = %q, want containing %q", snap2.GetPlainText(), "output-b")
+	}
+
+	// Verify session B is now active.
+	infos := m.Sessions()
+	for _, info := range infos {
+		if info.ID == id2 && !info.IsActive {
+			t.Error("session B should be active after Activate")
+		}
+		if info.ID == id1 && info.IsActive {
+			t.Error("session A should not be active after Activate(B)")
+		}
+	}
+}
+
+func TestSessionManager_Pipeline_OutputAfterUnregisterDiscarded(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "unregister-test"})
+
+	// Send initial output to transition to Running.
+	session.readerCh <- []byte("before-unregister")
+	waitForSnapshotContains(t, m, id, "before-unregister", 2*time.Second)
+
+	// Unregister the session.
+	if err := m.Unregister(id); err != nil {
+		t.Fatalf("Unregister(%d): %v", id, err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	// Send more output — should be silently discarded (no panic, no error).
+	session.readerCh <- []byte("after-unregister")
+	time.Sleep(100 * time.Millisecond)
+
+	// Snapshot for the unregistered session should be nil.
+	if snap := m.Snapshot(id); snap != nil {
+		t.Errorf("Snapshot(%d) = %v, want nil after unregister", id, snap)
+	}
+}
+
+func TestSessionManager_Pipeline_MultiParamDECSET(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "multi-param"})
+
+	// Send a multi-param DECSET: enable both bracketed paste (2004) and
+	// application cursor mode (1) in a single escape sequence.
+	session.readerCh <- []byte("\x1b[?2004;1h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if !snap.BracketedPaste {
+		t.Error("BracketedPaste = false, want true after CSI ?2004;1h")
+	}
+	if !snap.ApplicationCursor {
+		t.Error("ApplicationCursor = false, want true after CSI ?2004;1h")
+	}
+
+	// Now disable both with multi-param DECRST.
+	session.readerCh <- []byte("\x1b[?2004;1l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after DECRST")
+	}
+	if snap.BracketedPaste {
+		t.Error("BracketedPaste = true, want false after CSI ?2004;1l")
+	}
+	if snap.ApplicationCursor {
+		t.Error("ApplicationCursor = true, want false after CSI ?2004;1l")
+	}
+}
+
+func TestSessionManager_Pipeline_SecondRegisterDoesNotChangeActive(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+	id1, _ := m.Register(s1, SessionTarget{Name: "first"})
+	id2, _ := m.Register(s2, SessionTarget{Name: "second"})
+
+	// First registered session should be active.
+	infos := m.Sessions()
+	for _, info := range infos {
+		if info.ID == id1 && !info.IsActive {
+			t.Error("first registered session should be active by default")
+		}
+		if info.ID == id2 && info.IsActive {
+			t.Error("second registered session should NOT be active by default")
+		}
+	}
+
+	// Verify the first session is still the active one via Sessions().
+	activeID := SessionID(0)
+	for _, info := range infos {
+		if info.IsActive {
+			activeID = info.ID
+		}
+	}
+	if activeID != id1 {
+		t.Errorf("active session = %d, want %d", activeID, id1)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// VT mode flag integration tests
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Pipeline_BracketedPasteMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "bp-test"})
+
+	// Default: BracketedPaste should be false.
+	snap := m.Snapshot(id)
+	if snap != nil && snap.BracketedPaste {
+		t.Error("BracketedPaste should be false by default")
+	}
+
+	// Enable bracketed paste.
+	session.readerCh <- []byte("\x1b[?2004h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if !snap.BracketedPaste {
+		t.Error("BracketedPaste = false, want true after CSI ?2004h")
+	}
+
+	// Disable bracketed paste.
+	session.readerCh <- []byte("\x1b[?2004l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after disable")
+	}
+	if snap.BracketedPaste {
+		t.Error("BracketedPaste = true, want false after CSI ?2004l")
+	}
+}
+
+func TestSessionManager_Pipeline_ApplicationCursorMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "appcursor-test"})
+
+	// Enable application cursor mode.
+	session.readerCh <- []byte("\x1b[?1h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if !snap.ApplicationCursor {
+		t.Error("ApplicationCursor = false, want true after CSI ?1h")
+	}
+
+	// Disable.
+	session.readerCh <- []byte("\x1b[?1l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after disable")
+	}
+	if snap.ApplicationCursor {
+		t.Error("ApplicationCursor = true, want false after CSI ?1l")
+	}
+}
+
+func TestSessionManager_Pipeline_CursorShape(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "cursorshape-test"})
+
+	// Default cursor shape should be 0.
+	snap := m.Snapshot(id)
+	if snap != nil && snap.CursorShape != 0 {
+		t.Errorf("CursorShape = %d, want 0 by default", snap.CursorShape)
+	}
+
+	// Set cursor to blink-bar (5).
+	session.readerCh <- []byte("\x1b[5 q")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if snap.CursorShape != 5 {
+		t.Errorf("CursorShape = %d, want 5 after CSI 5 SP q", snap.CursorShape)
+	}
+
+	// Reset to default (0).
+	session.readerCh <- []byte("\x1b[0 q")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after reset")
+	}
+	if snap.CursorShape != 0 {
+		t.Errorf("CursorShape = %d, want 0 after CSI 0 SP q", snap.CursorShape)
+	}
+}
+
+func TestSessionManager_Pipeline_FocusReportingMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "focus-test"})
+
+	// Enable focus reporting.
+	session.readerCh <- []byte("\x1b[?1004h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if !snap.FocusReporting {
+		t.Error("FocusReporting = false, want true after CSI ?1004h")
+	}
+
+	// Disable.
+	session.readerCh <- []byte("\x1b[?1004l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after disable")
+	}
+	if snap.FocusReporting {
+		t.Error("FocusReporting = true, want false after CSI ?1004l")
+	}
+}
+
+func TestSessionManager_Pipeline_AutoWrapMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "autowrap-test"})
+
+	// Send some plain text first to transition to Running and get an
+	// initial snapshot. AutoWrap should be true by default.
+	session.readerCh <- []byte("initial")
+	waitForSnapshotContains(t, m, id, "initial", 2*time.Second)
+
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after initial output")
+	}
+	if !snap.AutoWrap {
+		t.Error("AutoWrap = false, want true by default")
+	}
+
+	// Disable auto-wrap.
+	session.readerCh <- []byte("\x1b[?7l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if snap.AutoWrap {
+		t.Error("AutoWrap = true, want false after CSI ?7l")
+	}
+
+	// Re-enable.
+	session.readerCh <- []byte("\x1b[?7h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after enable")
+	}
+	if !snap.AutoWrap {
+		t.Error("AutoWrap = false, want true after CSI ?7h")
+	}
+}
+
+func TestSessionManager_Pipeline_InsertMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "insertmode-test"})
+
+	// Default: InsertMode should be false.
+	snap := m.Snapshot(id)
+	if snap != nil && snap.InsertMode {
+		t.Error("InsertMode = true, want false by default")
+	}
+
+	// Enable insert mode (non-private SM).
+	session.readerCh <- []byte("\x1b[4h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if !snap.InsertMode {
+		t.Error("InsertMode = false, want true after CSI 4h")
+	}
+
+	// Disable.
+	session.readerCh <- []byte("\x1b[4l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after disable")
+	}
+	if snap.InsertMode {
+		t.Error("InsertMode = true, want false after CSI 4l")
+	}
+}
+
+func TestSessionManager_Pipeline_MouseTrackingMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "mouse-test"})
+
+	// Default: no mouse tracking.
+	snap := m.Snapshot(id)
+	if snap != nil && snap.MouseTracking != 0 {
+		t.Errorf("MouseTracking = %d, want 0 by default", snap.MouseTracking)
+	}
+
+	// Enable basic mouse tracking (mode 1000).
+	session.readerCh <- []byte("\x1b[?1000h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if snap.MouseTracking != 1 {
+		t.Errorf("MouseTracking = %d, want 1 after CSI ?1000h", snap.MouseTracking)
+	}
+
+	// Enable button-event tracking (mode 1002) — upgrades from basic.
+	session.readerCh <- []byte("\x1b[?1002h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after 1002h")
+	}
+	if snap.MouseTracking != 2 {
+		t.Errorf("MouseTracking = %d, want 2 after CSI ?1002h", snap.MouseTracking)
+	}
+
+	// Enable SGR mouse encoding (mode 1006).
+	session.readerCh <- []byte("\x1b[?1006h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after 1006h")
+	}
+	if !snap.MouseSGR {
+		t.Error("MouseSGR = false, want true after CSI ?1006h")
+	}
+}
+
+func TestSessionManager_Pipeline_SynchronizedOutputMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "sync-output-test"})
+
+	// Enable synchronized output.
+	session.readerCh <- []byte("\x1b[?2026h")
+	time.Sleep(200 * time.Millisecond)
+
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if !snap.SynchronizedOutput {
+		t.Error("SynchronizedOutput = false, want true after CSI ?2026h")
+	}
+
+	// Disable synchronized output.
+	session.readerCh <- []byte("\x1b[?2026l")
+	time.Sleep(200 * time.Millisecond)
+
+	snap = m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil after disable")
+	}
+	if snap.SynchronizedOutput {
+		t.Error("SynchronizedOutput = true, want false after CSI ?2026l")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Copy mode: SessionManager integration
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_IsCopyModeActive(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	id, _ := m.Register(newControllableSession(), SessionTarget{Name: "test"})
+
+	if m.IsCopyModeActive(id) {
+		t.Error("IsCopyModeActive = true, want false before entering copy mode")
+	}
+
+	if err := m.EnterCopyMode(id); err != nil {
+		t.Fatalf("EnterCopyMode error: %v", err)
+	}
+
+	if !m.IsCopyModeActive(id) {
+		t.Error("IsCopyModeActive = false, want true after entering copy mode")
+	}
+
+	if err := m.ExitCopyMode(id); err != nil {
+		t.Fatalf("ExitCopyMode error: %v", err)
+	}
+
+	if m.IsCopyModeActive(id) {
+		t.Error("IsCopyModeActive = true, want false after exiting copy mode")
+	}
+}
+
+func TestSessionManager_IsCopyModeActive_UnknownSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	if m.IsCopyModeActive(999) {
+		t.Error("IsCopyModeActive = true for unknown session, want false")
+	}
+}
+
+func TestSessionManager_ScrollCopyMode(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(5, 20))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "test"})
+
+	// Generate scrollback
+	for i := range 20 {
+		session.readerCh <- []byte(string(rune('A'+i%26)) + "\n")
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	// Scroll without copy mode → should return false
+	if m.ScrollCopyMode(id, 3) {
+		t.Error("ScrollCopyMode returned true when copy mode not active")
+	}
+
+	// Enter copy mode and scroll
+	if err := m.EnterCopyMode(id); err != nil {
+		t.Fatalf("EnterCopyMode error: %v", err)
+	}
+
+	if !m.ScrollCopyMode(id, 3) {
+		t.Error("ScrollCopyMode returned false when copy mode active")
+	}
+
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if snap.CursorRow < 0 || snap.CursorCol < 0 {
+		t.Errorf("cursor = (%d,%d), want non-negative", snap.CursorRow, snap.CursorCol)
+	}
+}
+
+func TestSessionManager_ScrollCopyMode_UnknownSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	if m.ScrollCopyMode(999, 3) {
+		t.Error("ScrollCopyMode returned true for unknown session")
+	}
+}
+
+func TestSessionManager_EnterCopyMode_UnknownSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	if err := m.EnterCopyMode(999); err == nil {
+		t.Error("EnterCopyMode should return error for unknown session")
+	}
+}
+
+func TestSessionManager_ExitCopyMode_UnknownSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	if err := m.ExitCopyMode(999); err == nil {
+		t.Error("ExitCopyMode should return error for unknown session")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Synchronized panes
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_SynchronizePanes_DefaultOff(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	if m.SynchronizePanes() {
+		t.Error("SynchronizePanes = true, want false by default")
+	}
+}
+
+func TestSessionManager_SetSynchronizePanes(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	if err := m.SetSynchronizePanes(true); err != nil {
+		t.Fatalf("SetSynchronizePanes(true): %v", err)
+	}
+	if !m.SynchronizePanes() {
+		t.Error("SynchronizePanes = false, want true after SetSynchronizePanes(true)")
+	}
+
+	if err := m.SetSynchronizePanes(false); err != nil {
+		t.Fatalf("SetSynchronizePanes(false): %v", err)
+	}
+	if m.SynchronizePanes() {
+		t.Error("SynchronizePanes = true, want false after SetSynchronizePanes(false)")
+	}
+}
+
+func TestSessionManager_SynchronizePanes_InputBroadcast(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+
+	if _, err := m.NewPane(s1, SessionTarget{Name: "pane1"}, SplitRight); err != nil {
+		t.Fatalf("NewPane s1: %v", err)
+	}
+	if _, err := m.NewPane(s2, SessionTarget{Name: "pane2"}, SplitRight); err != nil {
+		t.Fatalf("NewPane s2: %v", err)
+	}
+
+	s1.readerCh <- []byte("ready1\n")
+	s2.readerCh <- []byte("ready2\n")
+	time.Sleep(200 * time.Millisecond)
+
+	if err := m.SetSynchronizePanes(true); err != nil {
+		t.Fatalf("SetSynchronizePanes(true): %v", err)
+	}
+
+	if err := m.Input([]byte("test")); err != nil {
+		t.Fatalf("Input error: %v", err)
+	}
+
+	w1 := s1.Written()
+	w2 := s2.Written()
+
+	if string(w1) != "test" {
+		t.Errorf("s1.Written = %q, want %q", string(w1), "test")
+	}
+	if string(w2) != "test" {
+		t.Errorf("s2.Written = %q, want %q", string(w2), "test")
+	}
+}
+
+func TestSessionManager_SynchronizePanes_Off_OnlyActive(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+
+	if _, err := m.NewPane(s1, SessionTarget{Name: "pane1"}, SplitRight); err != nil {
+		t.Fatalf("NewPane s1: %v", err)
+	}
+	if _, err := m.NewPane(s2, SessionTarget{Name: "pane2"}, SplitRight); err != nil {
+		t.Fatalf("NewPane s2: %v", err)
+	}
+
+	s1.readerCh <- []byte("ready1\n")
+	s2.readerCh <- []byte("ready2\n")
+	time.Sleep(200 * time.Millisecond)
+
+	if err := m.Input([]byte("test")); err != nil {
+		t.Fatalf("Input error: %v", err)
+	}
+
+	w1 := s1.Written()
+	w2 := s2.Written()
+
+	// NewPane makes the most recently registered session active; verify only
+	// that session receives input while sync is off.
+	if string(w2) != "test" {
+		t.Errorf("s2.Written = %q, want %q", string(w2), "test")
+	}
+	if len(w1) != 0 {
+		t.Errorf("s1.Written = %q, want empty (not active)", string(w1))
+	}
 }

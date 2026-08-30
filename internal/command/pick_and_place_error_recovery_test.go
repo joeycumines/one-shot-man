@@ -44,7 +44,7 @@ func TestPickAndPlaceError_ER001_ModuleLoadingError(t *testing.T) {
 		}
 	`
 
-	script := engine.LoadScriptFromString("missing-module-test", scriptWithMissingModule)
+	script := engine.LoadScriptString("missing-module-test", scriptWithMissingModule)
 	err = engine.ExecuteScript(script)
 
 	// Verify that ExecuteScript returns an error (non-zero exit code)
@@ -87,7 +87,7 @@ func TestPickAndPlaceError_ER001_ModuleLoadingError(t *testing.T) {
 		defer engine2.Close()
 		engine2.SetTestMode(true)
 
-		script2 := engine2.LoadScriptFromString("modified-pickplace", modifiedContent)
+		script2 := engine2.LoadScriptString("modified-pickplace", modifiedContent)
 		err = engine2.ExecuteScript(script2)
 
 		if err == nil {
@@ -182,7 +182,7 @@ func TestPickAndPlaceError_ER002_RuntimeIntentionalError(t *testing.T) {
 			defer engine.Close()
 			engine.SetTestMode(true)
 
-			script := engine.LoadScriptFromString(tc.name, tc.script)
+			script := engine.LoadScriptString(tc.name, tc.script)
 			err = engine.ExecuteScript(script)
 
 			if tc.wantErr {
@@ -241,7 +241,7 @@ func TestPickAndPlaceError_ER003_NormalExecution(t *testing.T) {
 		}
 		t.Run("script_loads_without_syntax_errors", func(t *testing.T) {
 			// Load the script - syntax errors would be caught here
-			script := engine.LoadScriptFromString("pickplace-normal", string(content))
+			script := engine.LoadScriptString("pickplace-normal", string(content))
 			// Just verify the script can be loaded (parsed) without syntax errors.
 			// We do NOT execute the full script because it uses bubbletea which puts
 			// the terminal into raw mode and corrupts TTY state if not properly cleaned up.
@@ -314,7 +314,7 @@ func TestPickAndPlaceError_ER003_NormalExecution(t *testing.T) {
 		console.log('All core pick-and-place functionality works correctly!');
 		`
 
-		script := engine.LoadScriptFromString("normal-execution-test", moduleTestScript)
+		script := engine.LoadScriptString("normal-execution-test", moduleTestScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {
@@ -356,7 +356,7 @@ func TestPickAndPlaceError_ER003_NormalExecution(t *testing.T) {
 		console.log('✓ Program structure is valid');
 		`
 
-		script := engine.LoadScriptFromString("quit-key-test", minimalTUIScript)
+		script := engine.LoadScriptString("quit-key-test", minimalTUIScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {
@@ -501,7 +501,7 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 
 			t.Logf("Testing: %s", tc.description)
 
-			script := engine.LoadScriptFromString(tc.name, tc.script)
+			script := engine.LoadScriptString(tc.name, tc.script)
 			err = engine.ExecuteScript(script)
 
 			if tc.wantErr {
@@ -560,7 +560,7 @@ func TestPickAndPlaceError_PanicRecovery(t *testing.T) {
 		})();
 	`
 
-	script := engine.LoadScriptFromString("panic-test", panicScript)
+	script := engine.LoadScriptString("panic-test", panicScript)
 	err = engine.ExecuteScript(script)
 
 	if err == nil {
@@ -624,7 +624,7 @@ func TestPickAndPlaceError_MultipleErrors(t *testing.T) {
 		throw errors[0];
 		`
 
-		script := engine.LoadScriptFromString("multi-error", multiErrorScript)
+		script := engine.LoadScriptString("multi-error", multiErrorScript)
 		err = engine.ExecuteScript(script)
 
 		if err == nil {
@@ -683,7 +683,7 @@ func TestPickAndPlaceError_InvalidKeyboardInput(t *testing.T) {
 		console.log('✓ All invalid keys handled correctly');
 		`
 
-		script := engine.LoadScriptFromString("invalid-key-test", handlerScript)
+		script := engine.LoadScriptString("invalid-key-test", handlerScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {
@@ -726,7 +726,7 @@ func TestPickAndPlaceError_InvalidKeyboardInput(t *testing.T) {
 		console.log('✓ Rapid key sequence handled: ', bufferSize, ' keys processed');
 		`
 
-		script := engine.LoadScriptFromString("rapid-key-test", rapidKeyScript)
+		script := engine.LoadScriptString("rapid-key-test", rapidKeyScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {
@@ -765,7 +765,7 @@ func TestPickAndPlaceError_InvalidKeyboardInput(t *testing.T) {
 		console.log('✓ Null/undefined key handling is robust');
 		`
 
-		script := engine.LoadScriptFromString("null-key-test", nullKeyScript)
+		script := engine.LoadScriptString("null-key-test", nullKeyScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {
@@ -831,7 +831,7 @@ func TestPickAndPlaceError_StateCorruption(t *testing.T) {
 		}
 		`
 
-		script := engine.LoadScriptFromString("delete-test", deleteNonExistentScript)
+		script := engine.LoadScriptString("delete-test", deleteNonExistentScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {
@@ -868,7 +868,7 @@ func TestPickAndPlaceError_StateCorruption(t *testing.T) {
 		}
 		`
 
-		script := engine.LoadScriptFromString("pick-test", pickNonExistentScript)
+		script := engine.LoadScriptString("pick-test", pickNonExistentScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {
@@ -904,7 +904,7 @@ func TestPickAndPlaceError_StateCorruption(t *testing.T) {
 		}
 		`
 
-		script := engine.LoadScriptFromString("place-test", placeNoHeldScript)
+		script := engine.LoadScriptString("place-test", placeNoHeldScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {
@@ -942,7 +942,7 @@ func TestPickAndPlaceError_StateCorruption(t *testing.T) {
 		}
 		`
 
-		script := engine.LoadScriptFromString("double-pick-test", doublePickScript)
+		script := engine.LoadScriptString("double-pick-test", doublePickScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {
@@ -1006,7 +1006,7 @@ func TestPickAndPlaceError_StateCorruption(t *testing.T) {
 		console.log('✓ All coordinate validation tests passed');
 		`
 
-		script := engine.LoadScriptFromString("coord-test", invalidCoordScript)
+		script := engine.LoadScriptString("coord-test", invalidCoordScript)
 		err = engine.ExecuteScript(script)
 
 		if err != nil {

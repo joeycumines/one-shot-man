@@ -1,6 +1,6 @@
 package bubbletea
 
-import "github.com/dop251/goja"
+import "github.com/joeycumines/goja"
 
 // SyncJSRunner is a JSRunner implementation for unit tests.
 // It executes callbacks synchronously using the provided runtime.
@@ -13,7 +13,7 @@ type SyncJSRunner struct {
 	Runtime *goja.Runtime
 }
 
-// RunJSSync implements JSRunner by executing the callback synchronously.
-func (r *SyncJSRunner) RunJSSync(fn func(*goja.Runtime) error) error {
+// RunSync implements JSRunner by executing the callback synchronously.
+func (r *SyncJSRunner) RunSync(fn func(*goja.Runtime) error) error {
 	return fn(r.Runtime)
 }

@@ -1091,7 +1091,7 @@ func TestPromptFlow_Unix_ClipboardIntegration(t *testing.T) {
 	// Test copying meta-prompt
 	snap = cp.Snapshot()
 	cp.SendLine("copy meta")
-	expect(snap, "Meta prompt copied to clipboard.", 30*time.Second)
+	expect(snap, "tokens", 30*time.Second)
 
 	// Verify meta-prompt was copied
 	metaContent, err := os.ReadFile(clipboardFile)
@@ -1115,7 +1115,7 @@ func TestPromptFlow_Unix_ClipboardIntegration(t *testing.T) {
 	expect(snap, "Task prompt set.", 30*time.Second)
 	snap = cp.Snapshot()
 	cp.SendLine("copy")
-	expect(snap, "Final output copied to clipboard.", 30*time.Second)
+	expect(snap, "tokens", 30*time.Second)
 
 	// Verify final output was copied
 	finalContent, err := os.ReadFile(clipboardFile)
@@ -1370,7 +1370,7 @@ func testCompletePromptFlowWorkflow(t *testing.T, ctx context.Context, cp *termt
 	if err := cp.SendLine("copy"); err != nil {
 		t.Fatalf("Failed to send copy: %v\nBuffer: %q", err, cp.String())
 	}
-	expect(snap, "Final output copied to clipboard.", 2*time.Second)
+	expect(snap, "tokens", 2*time.Second)
 
 	if err := cp.SendLine("exit"); err != nil {
 		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.String())

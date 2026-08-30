@@ -137,7 +137,7 @@ _osm_completion() {
             return 0
             ;;
         pr-split)
-            COMPREPLY=($(compgen -W "--base --strategy --max --prefix --verify --dry-run --json --interactive --test --session --store --log-level --log-file --log-buffer --claude-command --claude-arg --claude-model --claude-config-dir --claude-env" -- ${cur}))
+            COMPREPLY=($(compgen -W "--base --strategy --max --prefix --verify --dry-run --json --interactive --test --session --store --log-level --log-file --log-buffer --agent-command --agent-arg --agent-model --agent-config-dir --agent-env" -- ${cur}))
             return 0
             ;;
         --strategy)
@@ -259,11 +259,11 @@ _osm() {
                         '--log-level[Log level]:level:(debug info warn error)' \
                         '--log-file[Log output file]:file:_files' \
                         '--log-buffer[Log buffer size]:size:' \
-                        '--claude-command[Claude binary path]:command:_command_names' \
-                        '--claude-arg[Additional Claude CLI argument (repeatable)]:arg:' \
-                        '--claude-model[Model name]:model:' \
-                        '--claude-config-dir[Claude config directory]:dir:_directories' \
-                        '--claude-env[Extra environment variables]:env:'
+                        '--agent-command[Agent binary path]:command:_command_names' \
+                        '--agent-arg[Additional Agent CLI argument (repeatable)]:arg:' \
+                        '--agent-model[Model name]:model:' \
+                        '--agent-config-dir[Agent config directory]:dir:_directories' \
+                        '--agent-env[Extra environment variables]:env:'
                     ;;
                 help)
                     _describe 'commands' commands
@@ -364,11 +364,11 @@ complete -c osm -n '__fish_seen_subcommand_from pr-split' -l store -a 'fs memory
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l log-level -a 'debug info warn error' -d 'Log level'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l log-file -d 'Log output file'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l log-buffer -d 'Log buffer size'
-complete -c osm -n '__fish_seen_subcommand_from pr-split' -l claude-command -d 'Claude binary path'
-complete -c osm -n '__fish_seen_subcommand_from pr-split' -l claude-arg -d 'Additional Claude CLI argument (repeatable)'
-complete -c osm -n '__fish_seen_subcommand_from pr-split' -l claude-model -d 'Model name'
-complete -c osm -n '__fish_seen_subcommand_from pr-split' -l claude-config-dir -d 'Claude config directory'
-complete -c osm -n '__fish_seen_subcommand_from pr-split' -l claude-env -d 'Extra environment variables'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l agent-command -d 'Agent binary path'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l agent-arg -d 'Additional Agent CLI argument (repeatable)'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l agent-model -d 'Model name'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l agent-config-dir -d 'Agent config directory'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l agent-env -d 'Extra environment variables'
 
 # Completion for 'help' subcommand (command names)
 complete -c osm -n '__fish_seen_subcommand_from help' -a '%s' -d 'Command'

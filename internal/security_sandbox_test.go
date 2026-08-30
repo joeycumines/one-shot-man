@@ -13,9 +13,11 @@ package internal_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
@@ -49,7 +51,7 @@ func TestSandbox_NodeBuiltinsNotAvailable(t *testing.T) {
 		t.Run(mod, func(t *testing.T) {
 			t.Parallel()
 			engine, _, _ := newSandboxTestEngine(t)
-			script := engine.LoadScriptFromString("node-builtin-"+mod, `
+			script := engine.LoadScriptString("node-builtin-"+mod, `
 				try {
 					require('`+mod+`');
 					throw new Error('SANDBOX_BREACH: require succeeded');
@@ -69,7 +71,7 @@ func TestSandbox_NodeBuiltinsNotAvailable(t *testing.T) {
 func TestSandbox_NoGoReflect(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("no-reflect", `
+	script := engine.LoadScriptString("no-reflect", `
 		if (typeof Reflect !== 'undefined' && typeof Reflect.construct === 'function') {
 			try {
 				function Foo() { this.x = 1; }
@@ -97,7 +99,7 @@ func TestSandbox_NoGoReflect(t *testing.T) {
 func TestSandbox_NoGoUnsafe(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("no-unsafe", `
+	script := engine.LoadScriptString("no-unsafe", `
 		if (typeof Buffer !== 'undefined') {
 			throw new Error('SANDBOX_BREACH: Buffer global exists');
 		}
@@ -124,7 +126,7 @@ func TestSandbox_NoGoUnsafe(t *testing.T) {
 func TestSandbox_NoGoLinkname(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("no-linkname", `
+	script := engine.LoadScriptString("no-linkname", `
 		var runtimeFuncs = [
 			'GOMAXPROCS', 'Goexit', 'GC', 'Gosched',
 			'NumCPU', 'NumGoroutine', 'ReadMemStats',
@@ -150,7 +152,7 @@ func TestSandbox_NoGoLinkname(t *testing.T) {
 func TestSandbox_GojaDefaultsAreSafe(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("goja-defaults", `
+	script := engine.LoadScriptString("goja-defaults", `
 		if (typeof process !== 'undefined') {
 			// process.nextTick is provided by goja-eventloop adapter — verify no dangerous members
 			if (typeof process.exit === 'function') throw new Error('SANDBOX_BREACH: process.exit');
@@ -175,7 +177,7 @@ func TestSandbox_GojaDefaultsAreSafe(t *testing.T) {
 func TestSandbox_NoOsExit(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("no-os-exit", `
+	script := engine.LoadScriptString("no-os-exit", `
 		if (typeof exit === 'function') throw new Error('SANDBOX_BREACH: global exit()');
 		var osmod = require('osm:os');
 		if (typeof osmod.exit === 'function') throw new Error('SANDBOX_BREACH: osm:os.exit()');
@@ -211,13 +213,13 @@ func TestSandbox_VMIsolation(t *testing.T) {
 	}
 	defer engine2.Close()
 
-	s1 := engine1.LoadScriptFromString("set-global", `
+	s1 := engine1.LoadScriptString("set-global", `
 		globalThis.__sandboxTest = 'engine1-secret';
 	`)
 	if err := engine1.ExecuteScript(s1); err != nil {
 		t.Fatalf("Engine 1 set-global failed: %v", err)
 	}
-	s2 := engine2.LoadScriptFromString("check-global", `
+	s2 := engine2.LoadScriptString("check-global", `
 		if (typeof globalThis.__sandboxTest !== 'undefined') {
 			throw new Error('ISOLATION_BREACH: engine1 global leaked to engine2');
 		}
@@ -226,13 +228,13 @@ func TestSandbox_VMIsolation(t *testing.T) {
 		t.Fatalf("VM isolation failed — engine1 global leaked: %v", err)
 	}
 
-	s3 := engine1.LoadScriptFromString("modify-proto", `
+	s3 := engine1.LoadScriptString("modify-proto", `
 		Array.prototype.__sandboxMarker = true;
 	`)
 	if err := engine1.ExecuteScript(s3); err != nil {
 		t.Fatalf("Engine 1 modify-proto failed: %v", err)
 	}
-	s4 := engine2.LoadScriptFromString("check-proto", `
+	s4 := engine2.LoadScriptString("check-proto", `
 		if ([].__sandboxMarker === true) {
 			throw new Error('ISOLATION_BREACH: prototype pollution leaked');
 		}
@@ -251,7 +253,7 @@ func TestSandbox_VMIsolation(t *testing.T) {
 func TestSandbox_PrototypePollutionWithinVM(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("proto-pollution", `
+	script := engine.LoadScriptString("proto-pollution", `
 		Object.prototype.__injected = 'polluted';
 		var obj = {};
 		if (obj.__injected !== 'polluted') throw new Error('Expected prototype pollution within VM');
@@ -267,9 +269,9 @@ func TestSandbox_PrototypePollutionWithinVM(t *testing.T) {
 func TestSandbox_ExecModuleAPIBoundary(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("exec-boundary", `
+	script := engine.LoadScriptString("exec-boundary", `
 		var execmod = require('osm:exec');
-		var expected = ['exec', 'execv', 'spawn', 'execStream'];
+		var expected = ['execv', 'spawn'];
 		for (var i = 0; i < expected.length; i++) {
 			if (typeof execmod[expected[i]] !== 'function') {
 				throw new Error('Missing expected export: ' + expected[i]);
@@ -291,7 +293,7 @@ func TestSandbox_ExecModuleAPIBoundary(t *testing.T) {
 func TestSandbox_OsModuleAPIBoundary(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("os-boundary", `
+	script := engine.LoadScriptString("os-boundary", `
 		var osmod = require('osm:os');
 		var expected = ['readFile', 'fileExists', 'openEditor', 'clipboardCopy', 'getenv', 'writeFile', 'appendFile'];
 		for (var i = 0; i < expected.length; i++) {
@@ -316,7 +318,7 @@ func TestSandbox_OsModuleAPIBoundary(t *testing.T) {
 func TestSandbox_FetchModuleAPIBoundary(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("fetch-boundary", `
+	script := engine.LoadScriptString("fetch-boundary", `
 		var fetchmod = require('osm:fetch');
 		var expected = ['fetch'];
 		for (var i = 0; i < expected.length; i++) {
@@ -340,7 +342,7 @@ func TestSandbox_FetchModuleAPIBoundary(t *testing.T) {
 func TestSandbox_GlobalScopeIsMinimal(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("global-scope", `
+	script := engine.LoadScriptString("global-scope", `
 		var expectedOSMGlobals = ['ctx', 'context', 'log', 'output', 'tui', 'require'];
 		for (var i = 0; i < expectedOSMGlobals.length; i++) {
 			if (typeof globalThis[expectedOSMGlobals[i]] === 'undefined') {
@@ -370,45 +372,67 @@ func TestSandbox_GlobalScopeIsMinimal(t *testing.T) {
 func TestSandbox_ReturnedObjectsDontExposeGoMethods(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("go-methods", `
-		var execmod = require('osm:exec');
-		var result = execmod.exec('echo', 'test');
-		var resultKeys = Object.keys(result).sort();
-		var expectedKeys = ['code', 'error', 'message', 'stderr', 'stdout'];
-		if (JSON.stringify(resultKeys) !== JSON.stringify(expectedKeys)) {
-			throw new Error('Unexpected exec result keys: ' + JSON.stringify(resultKeys));
-		}
-		var proto = Object.getPrototypeOf(result);
-		if (proto !== Object.prototype) {
-			var protoKeys = Object.getOwnPropertyNames(proto);
-			var goMethods = ['Close', 'Sync', 'Read', 'Write', 'Seek',
-				'Lock', 'Unlock', 'String', 'Error', 'GoString'];
-			for (var i = 0; i < goMethods.length; i++) {
-				if (protoKeys.indexOf(goMethods[i]) !== -1) {
-					throw new Error('SANDBOX_BREACH: Go method "' + goMethods[i] + '" on result');
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			var execmod = require('osm:exec');
+			execmod.execv(['echo', 'test']).then(function(result) {
+				var resultKeys = Object.keys(result).sort();
+				var expectedKeys = ['code', 'error', 'message', 'stderr', 'stdout'];
+				if (JSON.stringify(resultKeys) !== JSON.stringify(expectedKeys)) {
+					__testErr('Unexpected exec result keys: ' + JSON.stringify(resultKeys));
+					return;
 				}
-			}
+				var proto = Object.getPrototypeOf(result);
+				if (proto !== Object.prototype) {
+					var protoKeys = Object.getOwnPropertyNames(proto);
+					var goMethods = ['Close', 'Sync', 'Read', 'Write', 'Seek',
+						'Lock', 'Unlock', 'String', 'Error', 'GoString'];
+					for (var i = 0; i < goMethods.length; i++) {
+						if (protoKeys.indexOf(goMethods[i]) !== -1) {
+							__testErr('SANDBOX_BREACH: Go method "' + goMethods[i] + '" on result');
+							return;
+						}
+					}
+				}
+				var osmod = require('osm:os');
+				osmod.readFile('/nonexistent/path').then(function(fileResult) {
+					var fileKeys = Object.keys(fileResult).sort();
+					var expectedFileKeys = ['content', 'error', 'message'];
+					if (JSON.stringify(fileKeys) !== JSON.stringify(expectedFileKeys)) {
+						__testErr('Unexpected readFile result keys: ' + JSON.stringify(fileKeys));
+						return;
+					}
+					__testOK();
+				}).catch(function(e) { __testErr(e.message); });
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-		var osmod = require('osm:os');
-		var fileResult = osmod.readFile('/nonexistent/path');
-		var fileKeys = Object.keys(fileResult).sort();
-		var expectedFileKeys = ['content', 'error', 'message'];
-		if (JSON.stringify(fileKeys) !== JSON.stringify(expectedFileKeys)) {
-			throw new Error('Unexpected readFile result keys: ' + JSON.stringify(fileKeys));
-		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("Go methods exposure test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("Go methods exposure test failed: %v", testErr)
 	}
 }
 
 func TestSandbox_RequireOnlyLoadsRegisteredModules(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("require-osm", `
+	script := engine.LoadScriptString("require-osm", `
 		var modules = [
 			'osm:exec', 'osm:os', 'osm:fetch', 'osm:flag',
-			'osm:time', 'osm:argv', 'osm:ctxutil',
+			'osm:argv', 'osm:ctxutil',
 			'osm:text/template', 'osm:unicodetext',
 			'osm:bubbletea', 'osm:bubblezone',
 			'osm:bubbles/textarea', 'osm:bubbles/viewport',
@@ -436,7 +460,7 @@ func TestSandbox_RequireOnlyLoadsRegisteredModules(t *testing.T) {
 		t.Fatalf("osm: module loading test failed: %v", err)
 	}
 
-	script2 := engine.LoadScriptFromString("require-forbidden", `
+	script2 := engine.LoadScriptString("require-forbidden", `
 		var forbidden = [
 			'go:os', 'go:runtime', 'go:reflect', 'go:unsafe',
 			'go:syscall', 'go:net', 'go:io',
@@ -469,7 +493,7 @@ func TestSandbox_ContextCancellationStopsExecution(t *testing.T) {
 	}
 	defer engine.Close()
 	cancel()
-	script := engine.LoadScriptFromString("infinite-loop", `
+	script := engine.LoadScriptString("infinite-loop", `
 		while(true) {}
 	`)
 	err = engine.ExecuteScript(script)
@@ -488,23 +512,45 @@ func TestSandbox_ExecUsesCommandContextNotShell(t *testing.T) {
 	platform := testutil.DetectPlatform(t)
 	testutil.SkipIfWindows(t, platform, "echo is a shell builtin on Windows, not a standalone executable")
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("exec-no-shell", `
-		var execmod = require('osm:exec');
-		var result = execmod.exec('echo', '$(id)', '&&', 'rm', '-rf', '/');
-		if (result.error) throw new Error('exec failed: ' + result.message);
-		if (result.stdout.indexOf('$(id)') === -1) {
-			throw new Error('Shell expansion occurred — exec should not use shell');
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			var execmod = require('osm:exec');
+			execmod.execv(['echo', '$(id)', '&&', 'rm', '-rf', '/']).then(function(result) {
+				if (result.error) {
+					__testErr('exec failed: ' + result.message);
+					return;
+				}
+				if (result.stdout.indexOf('$(id)') === -1) {
+					__testErr('Shell expansion occurred — exec should not use shell');
+					return;
+				}
+				__testOK();
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("Exec no-shell test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("Exec no-shell test failed: %v", testErr)
 	}
 }
 
 func TestSandbox_OsModuleNoDestructiveOps(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("os-no-destructive", `
+	script := engine.LoadScriptString("os-no-destructive", `
 		var osmod = require('osm:os');
 		// writeFile and appendFile are intentionally exposed for file output.
 		// These destructive/system-level ops should NOT exist:
@@ -530,7 +576,7 @@ func TestSandbox_OsModuleNoDestructiveOps(t *testing.T) {
 func TestSandbox_GrpcModuleAPIBoundary(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("grpc-boundary", `
+	script := engine.LoadScriptString("grpc-boundary", `
 		var grpcmod = require('osm:grpc');
 		var expected = ['createClient', 'createServer', 'dial', 'status', 'metadata', 'enableReflection', 'createReflectionClient'];
 		for (var i = 0; i < expected.length; i++) {
@@ -554,7 +600,7 @@ func TestSandbox_GrpcModuleAPIBoundary(t *testing.T) {
 func TestSandbox_TemplateModuleNoArbitraryCodeExec(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("template-safe", `
+	script := engine.LoadScriptString("template-safe", `
 		var tmpl = require('osm:text/template');
 		var t1 = tmpl.new('test');
 		t1.parse('{{call .dangerous}}');
@@ -605,7 +651,7 @@ func TestSandbox_RequirePathTraversal_SystemFiles(t *testing.T) {
 				return s
 			}
 
-			script := engine.LoadScriptFromString("traversal-"+tc.name, `
+			script := engine.LoadScriptString("traversal-"+tc.name, `
 				var loaded = false;
 				try {
 					require("`+escapeJS(tc.path)+`");
@@ -645,7 +691,7 @@ func TestSandbox_RequirePathTraversal_OsmPrefixBypass(t *testing.T) {
 				return s
 			}
 
-			script := engine.LoadScriptFromString("osm-bypass-"+path, `
+			script := engine.LoadScriptString("osm-bypass-"+path, `
 				try {
 					require("`+escapeJS(path)+`");
 					throw new Error("SANDBOX_BREACH: osm: prefix bypass loaded: `+escapeJS(path)+`");
@@ -666,7 +712,7 @@ func TestSandbox_RequirePathTraversal_NullBytes(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
 
-	script := engine.LoadScriptFromString("null-bytes", `
+	script := engine.LoadScriptString("null-bytes", `
 		var nullPaths = [
 			"valid\x00../../etc/passwd",
 			"\x00/etc/passwd",
@@ -701,7 +747,7 @@ func TestSandbox_RequirePathTraversal_URLEncoded(t *testing.T) {
 
 	for _, path := range urlEncodedPaths {
 		t.Run(path, func(t *testing.T) {
-			script := engine.LoadScriptFromString("url-encoded-"+path, `
+			script := engine.LoadScriptString("url-encoded-"+path, `
 				try {
 					require("`+path+`");
 				} catch(e) {

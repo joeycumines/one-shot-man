@@ -168,8 +168,8 @@
         var lines = [];
 
         // Crash-specific header.
-        if (s.claudeCrashDetected) {
-            lines.push(styles.errorBadge().render(' Claude Process Crashed '));
+        if (s.agentCrashDetected) {
+            lines.push(styles.errorBadge().render(' Agent Process Crashed '));
         } else {
             lines.push(styles.errorBadge().render(' Error Resolution '));
         }
@@ -199,11 +199,11 @@
         var focusIdx = s.focusIndex || 0;
         var compact = layoutMode(s) === 'compact';
 
-        if (s.claudeCrashDetected) {
+        if (s.agentCrashDetected) {
             // Crash recovery options.
             var crashButtons = [
-                {id: 'resolve-restart-claude',     label: 'Restart Claude', desc: 'Re-spawn Claude process and resume', isPrimary: true},
-                {id: 'resolve-fallback-heuristic', label: 'Heuristic Mode', desc: 'Continue without Claude (local splitting)', isPrimary: false},
+                {id: 'resolve-restart-agent',     label: 'Restart Agent', desc: 'Re-spawn Agent process and resume', isPrimary: true},
+                {id: 'resolve-fallback-heuristic', label: 'Heuristic Mode', desc: 'Continue without Agent (local splitting)', isPrimary: false},
                 {id: 'resolve-abort',              label: 'Abort',          desc: 'Cancel the split',                      isPrimary: false}
             ];
             lines.push(styles.bold().render('Recovery Options:'));
@@ -229,8 +229,8 @@
         } else {
             // Standard resolution options.
             var resolveButtons = [
-                {id: 'resolve-auto',   label: 'Auto-Resolve', desc: 'Let Claude fix the issues',           isPrimary: true},
-                {id: 'resolve-manual', label: 'Manual Fix',   desc: 'Switch to Claude pane to fix manually', isPrimary: false},
+                {id: 'resolve-auto',   label: 'Auto-Resolve', desc: 'Let Agent fix the issues',           isPrimary: true},
+                {id: 'resolve-manual', label: 'Manual Fix',   desc: 'Switch to Agent pane to fix manually', isPrimary: false},
                 {id: 'resolve-skip',   label: 'Skip',         desc: 'Skip failed branches',               isPrimary: false},
                 {id: 'resolve-retry',  label: 'Retry',        desc: 'Regenerate plan from scratch',        isPrimary: false},
                 {id: 'resolve-abort',  label: 'Abort',        desc: 'Cancel the split',                   isPrimary: false}
@@ -256,19 +256,19 @@
                 if (ri < resolveButtons.length - 1) lines.push('');
             }
 
-            // "Ask Claude" interactive conversation button (T16).
-            // T5: Show when Claude binary is available, even without a spawned executor.
-            if (st.claudeExecutor || s.claudeCheckStatus === 'available') {
+            // "Ask Agent" interactive conversation button (T16).
+            // T5: Show when Agent binary is available, even without a spawned executor.
+            if (st.agentExecutor || s.agentCheckStatus === 'available') {
                 lines.push('');
                 lines.push(styles.dim().render(repeatStr('\u2500', Math.min(40, (s.width || 80) - 12))));
                 lines.push('');
-                var askClaudeFocused = (focusIdx === resolveButtons.length);
-                var askClaudeStyle = askClaudeFocused
+                var askAgentFocused = (focusIdx === resolveButtons.length);
+                var askAgentStyle = askAgentFocused
                     ? styles.focusedSecondaryButton()
                     : styles.secondaryButton();
-                lines.push('  ' + zone.mark('error-ask-claude',
-                    askClaudeStyle.render('\ud83e\udd16 Ask Claude')) +
-                    styles.dim().render('  Chat with Claude about this error'));
+                lines.push('  ' + zone.mark('error-ask-agent',
+                    askAgentStyle.render('\ud83e\udd16 Ask Agent')) +
+                    styles.dim().render('  Chat with Agent about this error'));
             }
         }
 
@@ -331,7 +331,7 @@
         lines.push(padRight('  Ctrl+L', 22) + 'Toggle split view');
         lines.push(padRight('  Ctrl+Tab', 22) + 'Focus wizard / terminal pane');
         // Task 8: Shell tab removed from tab cycle.
-        lines.push(padRight('  Ctrl+O', 22) + 'Cycle tabs (Claude, Output, Verify)');
+        lines.push(padRight('  Ctrl+O', 22) + 'Cycle tabs (Agent, Output, Verify)');
         lines.push(padRight('  Ctrl+]', 22) + 'Full passthrough (focused pane)');
         lines.push(padRight('  Ctrl+= / Ctrl+-', 22) + 'Resize split view');
         // Task 8: Verify terminal tab interaction hints.

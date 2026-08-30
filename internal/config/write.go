@@ -10,14 +10,14 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
-// SetKeyInFile updates or adds a global option key in the config file.
+// SetKeyFile updates or adds a global option key in the config file.
 // It preserves comments and formatting. If the key exists in the global
 // section, its line is replaced in-place. If not found, the key is inserted
 // before the first section header (or appended at the end if no sections exist).
 //
 // Only global-section keys are matched; keys inside [section] blocks are
 // ignored, ensuring command-specific options are never accidentally overwritten.
-func SetKeyInFile(path, key, value string) error {
+func SetKeyFile(path, key, value string) error {
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("reading config file: %w", err)
@@ -99,11 +99,11 @@ func SetKeyInFile(path, key, value string) error {
 	return storage.AtomicWriteFile(path, []byte(result), 0644)
 }
 
-// DeleteKeyInFile removes a global option key from the config file.
+// DeleteKeyFile removes a global option key from the config file.
 // It preserves comments, formatting, and section content. Only global-section
 // keys are matched; keys inside [section] blocks are left untouched.
 // If the key is not found or the file does not exist, no error is returned.
-func DeleteKeyInFile(path, key string) error {
+func DeleteKeyFile(path, key string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -158,11 +158,11 @@ func DeleteKeyInFile(path, key string) error {
 	return storage.AtomicWriteFile(path, []byte(result), 0644)
 }
 
-// DeleteAllGlobalKeysInFile removes all global option key lines from the
+// DeleteAllGlobalKeysFile removes all global option key lines from the
 // config file. Comments, empty lines, section headers, and section contents
 // are preserved. Returns the number of keys removed.
 // If the file does not exist, returns (0, nil).
-func DeleteAllGlobalKeysInFile(path string) (int, error) {
+func DeleteAllGlobalKeysFile(path string) (int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

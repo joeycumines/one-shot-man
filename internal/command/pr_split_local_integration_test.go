@@ -258,8 +258,8 @@ func TestIntegration_RefactoringBranch(t *testing.T) {
 	// Verify the diff statuses are captured.
 	// Use EvalJS to check the analysis directly.
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
-	val, err := evalJS(`(function() {
-		var a = globalThis.prSplit.analyzeDiff({ baseBranch: 'main' });
+	val, err := evalJS(`(async function() {
+		var a = await globalThis.prSplit.analyzeDiff({ baseBranch: 'main' });
 		return JSON.stringify({ files: a.files.length, statuses: a.fileStatuses });
 	})()`)
 	if err != nil {
@@ -350,22 +350,22 @@ func TestIntegration_BrokenSplitsResolution(t *testing.T) {
 	// the resolution path.
 	val, err := tp.EvalJS(`(async function() {
 		var ps = globalThis.prSplit;
-		var analysis = ps.analyzeDiff({ baseBranch: 'main' });
+		var analysis = await ps.analyzeDiff({ baseBranch: 'main' });
 		if (analysis.error) return JSON.stringify({ error: analysis.error });
 
-		var groups = ps.applyStrategy(analysis.files, 'directory', {
+		var groups = await ps.applyStrategy(analysis.files, 'directory', {
 			fileStatuses: analysis.fileStatuses,
 			maxFiles: 10,
 			baseBranch: 'main'
 		});
-		var plan = ps.createSplitPlan(groups, {
+		var plan = await ps.createSplitPlan(groups, {
 			baseBranch: analysis.baseBranch,
 			sourceBranch: analysis.currentBranch,
 			branchPrefix: 'split/',
 			maxFiles: 10,
 			fileStatuses: analysis.fileStatuses
 		});
-		var execResult = ps.executeSplit(plan);
+		var execResult = await ps.executeSplit(plan);
 		if (execResult.error) return JSON.stringify({ error: execResult.error });
 
 		// Call resolveConflicts with verify='false' (always fails).
@@ -459,24 +459,24 @@ func TestIntegration_IndependentChanges(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Analyze, plan, execute, then check independence.
-	val, err := tp.EvalJS(`(function() {
+	val, err := tp.EvalJS(`(async function() {
 		var ps = globalThis.prSplit;
-		var analysis = ps.analyzeDiff({ baseBranch: 'main' });
+		var analysis = await ps.analyzeDiff({ baseBranch: 'main' });
 		if (analysis.error) return JSON.stringify({ error: analysis.error });
 
-		var groups = ps.applyStrategy(analysis.files, 'directory', {
+		var groups = await ps.applyStrategy(analysis.files, 'directory', {
 			fileStatuses: analysis.fileStatuses,
 			maxFiles: 10,
 			baseBranch: 'main'
 		});
-		var plan = ps.createSplitPlan(groups, {
+		var plan = await ps.createSplitPlan(groups, {
 			baseBranch: analysis.baseBranch,
 			sourceBranch: analysis.currentBranch,
 			branchPrefix: 'split/',
 			maxFiles: 10,
 			fileStatuses: analysis.fileStatuses
 		});
-		var execResult = ps.executeSplit(plan);
+		var execResult = await ps.executeSplit(plan);
 		if (execResult.error) return JSON.stringify({ error: execResult.error });
 
 		// Build a classification from groups.
@@ -487,7 +487,7 @@ func TestIntegration_IndependentChanges(t *testing.T) {
 			}
 		}
 
-		var pairs = ps.assessIndependence(plan, classification);
+		var pairs = await ps.assessIndependence(plan, classification);
 		return JSON.stringify({
 			error: null,
 			splitCount: plan.splits.length,
@@ -523,7 +523,7 @@ func TestIntegration_IndependentChanges(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// T099: Heuristic fallback when Claude is unavailable
+// T099: Heuristic fallback when Agent is unavailable
 // ---------------------------------------------------------------------------
 
 func TestIntegration_HeuristicFallback(t *testing.T) {
@@ -535,8 +535,8 @@ func TestIntegration_HeuristicFallback(t *testing.T) {
 
 	tp := setupTestPipeline(t, TestPipelineOpts{
 		ConfigOverrides: map[string]any{
-			// Point at a nonexistent binary to ensure Claude fails to resolve.
-			"claudeCommand": "/nonexistent/claude-for-test-" + t.Name(),
+			// Point at a nonexistent binary to ensure Agent fails to resolve.
+			"agentCommand": "/nonexistent/agent-for-test-" + t.Name(),
 		},
 	})
 
@@ -559,7 +559,7 @@ func TestIntegration_HeuristicFallback(t *testing.T) {
 
 	// Should mention falling back.
 	if !contains(output, "falling back to heuristic") && !contains(output, "Heuristic Split Complete") {
-		// Both are valid — Claude fails → heuristic.
+		// Both are valid — Agent fails → heuristic.
 		// The "Heuristic Split Complete" message means heuristicFallback ran.
 		t.Error("expected heuristic fallback indication in output")
 	}
@@ -767,15 +767,15 @@ func TestIntegration_PRCreationMockGh(t *testing.T) {
 	}
 
 	// Test createPRs directly with push-only mode and a nonexistent remote.
-	val, err := tp.EvalJS(`(function() {
+	val, err := tp.EvalJS(`(async function() {
 		var ps = globalThis.prSplit;
 		// Get the cached plan.
-		var analysis = ps.analyzeDiff({ baseBranch: 'main' });
-		var groups = ps.applyStrategy(analysis.files, 'directory', {
+		var analysis = await ps.analyzeDiff({ baseBranch: 'main' });
+		var groups = await ps.applyStrategy(analysis.files, 'directory', {
 			fileStatuses: analysis.fileStatuses,
 			maxFiles: 10
 		});
-		var plan = ps.createSplitPlan(groups, {
+		var plan = await ps.createSplitPlan(groups, {
 			baseBranch: analysis.baseBranch,
 			sourceBranch: analysis.currentBranch,
 			branchPrefix: 'split/',
@@ -785,7 +785,7 @@ func TestIntegration_PRCreationMockGh(t *testing.T) {
 
 		// Without a remote, the push will fail — but verify the function's
 		// error handling is correct.
-		var result = ps.createPRs(plan, { pushOnly: true, remote: 'nonexistent' });
+		var result = await ps.createPRs(plan, { pushOnly: true, remote: 'nonexistent' });
 		return JSON.stringify({
 			error: result.error || null,
 			resultCount: (result.results || []).length,
@@ -953,13 +953,13 @@ func TestIntegration_TUICommandSequence(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// T104: End-to-end with real Claude Code (gated)
+// T104: End-to-end with real Agent Code (gated)
 // ---------------------------------------------------------------------------
 
-func TestIntegration_RealClaudeCode(t *testing.T) {
+func TestIntegration_RealAgentCode(t *testing.T) {
 	skipSlow(t)
-	skipIfNoClaude(t)
-	verifyClaudeAuth(t)
+	skipIfNoAgent(t)
+	verifyAgentAuth(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -984,8 +984,8 @@ func TestIntegration_RealClaudeCode(t *testing.T) {
 			{"config/default.yaml", "key: value\n"},
 		},
 		ConfigOverrides: map[string]any{
-			"claudeCommand": claudeTestCommand,
-			"claudeArgs":    []string(claudeTestArgs),
+			"agentCommand": agentTestCommand,
+			"agentArgs":    []string(agentTestArgs),
 		},
 	})
 
@@ -998,13 +998,13 @@ func TestIntegration_RealClaudeCode(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Run auto-split — this spawns real Claude.
+	// Run auto-split — this spawns real Agent.
 	if err := tp.Dispatch("auto-split", nil); err != nil {
 		t.Fatalf("auto-split returned error: %v", err)
 	}
 
 	output := tp.Stdout.String()
-	t.Logf("real Claude auto-split output:\n%s", output)
+	t.Logf("real Agent auto-split output:\n%s", output)
 
 	// At minimum, should complete (possibly with heuristic fallback).
 	if !contains(output, "Complete") && !contains(output, "complete") {
@@ -1013,13 +1013,13 @@ func TestIntegration_RealClaudeCode(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// T026: Deep integration test — auto-split with real Claude, deep verification
+// T026: Deep integration test — auto-split with real Agent, deep verification
 // ---------------------------------------------------------------------------
 
-func TestIntegration_AutoSplitWithClaude(t *testing.T) {
+func TestIntegration_AutoSplitWithAgent(t *testing.T) {
 	skipSlow(t)
-	skipIfNoClaude(t)
-	verifyClaudeAuth(t)
+	skipIfNoAgent(t)
+	verifyAgentAuth(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1064,8 +1064,8 @@ func TestIntegration_AutoSplitWithClaude(t *testing.T) {
 			{"configs/test.yaml", "port: 0\ndb_dsn: sqlite://test.db\n"},
 		},
 		ConfigOverrides: map[string]any{
-			"claudeCommand": claudeTestCommand,
-			"claudeArgs":    []string(claudeTestArgs),
+			"agentCommand": agentTestCommand,
+			"agentArgs":    []string(agentTestArgs),
 		},
 	})
 
@@ -1084,7 +1084,7 @@ func TestIntegration_AutoSplitWithClaude(t *testing.T) {
 	}
 
 	output := tp.Stdout.String()
-	t.Logf("deep Claude auto-split output:\n%s", output)
+	t.Logf("deep Agent auto-split output:\n%s", output)
 
 	// --- Deep verification ---
 
@@ -1111,7 +1111,7 @@ func TestIntegration_AutoSplitWithClaude(t *testing.T) {
 	if len(splitBranches) == 0 {
 		// Check if we fell back to heuristic (non-error).
 		if contains(output, "fallback") || contains(output, "heuristic") {
-			t.Log("Claude fell back to heuristic mode — verifying heuristic splits")
+			t.Log("Agent fell back to heuristic mode — verifying heuristic splits")
 		} else {
 			t.Error("expected at least one split/* branch")
 		}
@@ -1126,10 +1126,10 @@ func TestIntegration_AutoSplitWithClaude(t *testing.T) {
 		}
 	}
 
-	// 5. Verify non-zero Claude interactions if not fallback.
+	// 5. Verify non-zero Agent interactions if not fallback.
 	if !contains(output, "fallback") && !contains(output, "heuristic") {
-		if contains(output, "Claude interactions: 0") {
-			t.Error("expected non-zero Claude interactions in non-fallback mode")
+		if contains(output, "Agent interactions: 0") {
+			t.Error("expected non-zero Agent interactions in non-fallback mode")
 		}
 	}
 }
@@ -1140,8 +1140,8 @@ func TestIntegration_AutoSplitWithClaude(t *testing.T) {
 
 func TestIntegration_AutoSplitComplexEdits(t *testing.T) {
 	skipSlow(t)
-	skipIfNoClaude(t)
-	verifyClaudeAuth(t)
+	skipIfNoAgent(t)
+	verifyAgentAuth(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1182,8 +1182,8 @@ func TestIntegration_AutoSplitComplexEdits(t *testing.T) {
 			{"pkg/util/format.go", "package util\n\nfunc Format(s string) string { return \"[\" + s + \"]\" }\n"},
 		},
 		ConfigOverrides: map[string]any{
-			"claudeCommand": claudeTestCommand,
-			"claudeArgs":    []string(claudeTestArgs),
+			"agentCommand": agentTestCommand,
+			"agentArgs":    []string(agentTestArgs),
 		},
 	})
 
@@ -1274,8 +1274,8 @@ func TestIntegration_RealOllama(t *testing.T) {
 			{"docs/guide.md", "# Guide\n"},
 		},
 		ConfigOverrides: map[string]any{
-			"claudeCommand": ollamaCommand,
-			"claudeModel":   integrationModel,
+			"agentCommand": ollamaCommand,
+			"agentModel":   integrationModel,
 		},
 	})
 

@@ -6,69 +6,67 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
-// TestPrSplitChunksMatchesDiscoverChunks verifies that the hardcoded
-// prSplitChunks array in pr_split.go matches the chunk files discovered
-// on the filesystem by prsplittest.discoverChunks(). A mismatch means
-// production and tests load different code — a silent correctness hazard.
+// TestPrSplitChunksMatchesDiscoverChunks verifies that the manifest chunk IDs
+// match the chunk files discovered on the filesystem by prsplittest.
+// A mismatch means production and tests load different code — a silent
+// correctness hazard.
 func TestPrSplitChunksMatchesDiscoverChunks(t *testing.T) {
-	// Extract names from the production prSplitChunks array.
-	prodNames := make([]string, len(prSplitChunks))
-	for i, chunk := range prSplitChunks {
-		prodNames[i] = chunk.name
+	manifestNames := make([]string, len(prSplitManifestData.Chunks))
+	for i, entry := range prSplitManifestData.Chunks {
+		manifestNames[i] = entry.ID
 	}
 
-	// Get names from filesystem discovery (lexicographic sort).
 	fsNames := prsplittest.AllChunkNames()
 
-	// Verify same count.
-	if len(prodNames) != len(fsNames) {
-		t.Fatalf("chunk count mismatch: production has %d, filesystem has %d\n  production: %v\n  filesystem: %v",
-			len(prodNames), len(fsNames), prodNames, fsNames)
+	if len(manifestNames) != len(fsNames) {
+		t.Fatalf("chunk count mismatch: manifest has %d, filesystem has %d\n  manifest: %v\n  filesystem: %v",
+			len(manifestNames), len(fsNames), manifestNames, fsNames)
 	}
 
-	// Verify same names in same order.
-	for i := range prodNames {
-		if prodNames[i] != fsNames[i] {
-			t.Errorf("chunk order mismatch at index %d: production=%q, filesystem=%q",
-				i, prodNames[i], fsNames[i])
+	for i := range manifestNames {
+		if manifestNames[i] != fsNames[i] {
+			t.Errorf("chunk order mismatch at index %d: manifest=%q, filesystem=%q",
+				i, manifestNames[i], fsNames[i])
 		}
 	}
 
-	// Verify every production chunk has a non-nil source pointer.
-	for i, chunk := range prSplitChunks {
-		if chunk.source == nil {
-			t.Errorf("prSplitChunks[%d] (%q) has nil source pointer — embedded JS will be empty", i, chunk.name)
-		} else if *chunk.source == "" {
-			t.Errorf("prSplitChunks[%d] (%q) has empty source — //go:embed directive may be missing", i, chunk.name)
+	for _, entry := range prSplitManifestData.Chunks {
+		data, err := chunkFS.ReadFile(entry.File)
+		if err != nil {
+			t.Errorf("chunk %q (%s): not found in embedded FS: %v", entry.ID, entry.File, err)
+			continue
+		}
+		if len(data) == 0 {
+			t.Errorf("chunk %q (%s): empty source in embedded FS", entry.ID, entry.File)
 		}
 	}
 }
 
-// TestPrSplitChunksNoDuplicates verifies that no chunk name appears
-// twice in the prSplitChunks array — a typo could silently drop a chunk.
+// TestPrSplitChunksNoDuplicates verifies that no chunk ID appears
+// twice in the manifest — a typo could silently drop a chunk.
 func TestPrSplitChunksNoDuplicates(t *testing.T) {
-	seen := make(map[string]int, len(prSplitChunks))
-	for i, chunk := range prSplitChunks {
-		if prev, ok := seen[chunk.name]; ok {
-			t.Errorf("duplicate chunk name %q at indices %d and %d", chunk.name, prev, i)
+	seen := make(map[string]int, len(prSplitManifestData.Chunks))
+	for i, entry := range prSplitManifestData.Chunks {
+		if prev, ok := seen[entry.ID]; ok {
+			t.Errorf("duplicate chunk ID %q at indices %d and %d", entry.ID, prev, i)
 		}
-		seen[chunk.name] = i
+		seen[entry.ID] = i
 	}
 }
 
 // TestPrSplitChunksFileSystemNoOrphans verifies that every .js file on disk
-// is accounted for in the prSplitChunks array — no orphan chunks that are
-// loaded by tests but forgotten by production.
+// is accounted for in the manifest — no orphan chunks that are loaded by
+// tests but forgotten by production.
 func TestPrSplitChunksFileSystemNoOrphans(t *testing.T) {
 	fsNames := prsplittest.AllChunkNames()
-	prodSet := make(map[string]struct{}, len(prSplitChunks))
-	for _, chunk := range prSplitChunks {
-		prodSet[chunk.name] = struct{}{}
+	manifestSet := make(map[string]struct{}, len(prSplitManifestData.Chunks))
+	for _, entry := range prSplitManifestData.Chunks {
+		manifestSet[entry.ID] = struct{}{}
 	}
 
 	for _, name := range fsNames {
-		if _, ok := prodSet[name]; !ok {
-			t.Errorf("orphan chunk on filesystem not in prSplitChunks: %q (loaded by tests but NOT by production)", name)
+		if _, ok := manifestSet[name]; !ok {
+			t.Errorf("orphan chunk on filesystem not in manifest: %q (loaded by tests but NOT by production)", name)
 		}
 	}
 }

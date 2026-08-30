@@ -67,7 +67,7 @@ func TestShooterGame_Distance(t *testing.T) {
 			return particles;
 		}
 	`
-	script := engine.LoadScriptFromString("shooter-game-utils", scriptContent)
+	script := engine.LoadScriptString("shooter-game-utils", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load shooter game utilities: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestShooterGame_Distance(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Execute distance calculation and store result in a temporary variable for retrieval
 			jsCall := fmt.Sprintf("(() => { lastResult = distance(%v, %v, %v, %v); })()", tc.x1, tc.y1, tc.x2, tc.y2)
-			script := engine.LoadScriptFromString("distance-call", jsCall)
+			script := engine.LoadScriptString("distance-call", jsCall)
 			if err := engine.ExecuteScript(script); err != nil {
 				t.Fatalf("Failed to calculate distance: %v", err)
 			}
@@ -161,7 +161,7 @@ func TestShooterGame_Clamp(t *testing.T) {
 			return particles;
 		}
 	`
-	script := engine.LoadScriptFromString("shooter-game-utils", scriptContent)
+	script := engine.LoadScriptString("shooter-game-utils", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load shooter game utilities: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestShooterGame_Clamp(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Execute clamp and store result for retrieval
 			jsCall := fmt.Sprintf("(() => { lastResult = clamp(%v, %v, %v); })()", tc.value, tc.min, tc.max)
-			script := engine.LoadScriptFromString("clamp-call", jsCall)
+			script := engine.LoadScriptString("clamp-call", jsCall)
 			if err := engine.ExecuteScript(script); err != nil {
 				t.Fatalf("Failed to clamp value: %v", err)
 			}
@@ -258,7 +258,7 @@ func TestShooterGame_CreateExplosion(t *testing.T) {
 			return particles;
 		}
 	`
-	script := engine.LoadScriptFromString("shooter-game-utils", scriptContent)
+	script := engine.LoadScriptString("shooter-game-utils", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load shooter game utilities: %v", err)
 	}
@@ -280,14 +280,14 @@ func TestShooterGame_CreateExplosion(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Clear the explosions array before each test
-			clearScript := engine.LoadScriptFromString("clear-explosions", "explosions = []")
+			clearScript := engine.LoadScriptString("clear-explosions", "explosions = []")
 			if err := engine.ExecuteScript(clearScript); err != nil {
 				t.Fatalf("Failed to clear explosions array: %v", err)
 			}
 
 			// Execute createExplosion and store result for retrieval
 			jsCall := fmt.Sprintf("lastResult = createExplosion(%v, %v, %v)", tc.x, tc.y, tc.count)
-			script := engine.LoadScriptFromString("explosion-call", jsCall)
+			script := engine.LoadScriptString("explosion-call", jsCall)
 			if err := engine.ExecuteScript(script); err != nil {
 				t.Fatalf("Failed to create explosion: %v", err)
 			}
@@ -326,7 +326,7 @@ func TestShooterGame_CreateExplosion(t *testing.T) {
 			}
 
 			// Verify that the explosion was registered in the global explosions array
-			checkScript := engine.LoadScriptFromString("check-explosions-"+tc.name, "(() => { lastResult = explosions.length; })()")
+			checkScript := engine.LoadScriptString("check-explosions-"+tc.name, "(() => { lastResult = explosions.length; })()")
 			if err := engine.ExecuteScript(checkScript); err != nil {
 				t.Errorf("Failed to check explosions array: %v", err)
 			}
@@ -473,7 +473,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 			};
 		}
 	`
-	script := engine.LoadScriptFromString("shooter-game-constructors", scriptContent)
+	script := engine.LoadScriptString("shooter-game-constructors", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load shooter game constructors: %v", err)
 	}
@@ -481,13 +481,13 @@ func TestShooterGame_InitialState(t *testing.T) {
 	// TEST CASE 1: Game state initialization
 	t.Run("GameStateInitialization", func(t *testing.T) {
 		// Initialize game state
-		initScript := engine.LoadScriptFromString("init-game", "(() => { gameState = initializeGame(); gameState.player = createPlayer(); })()")
+		initScript := engine.LoadScriptString("init-game", "(() => { gameState = initializeGame(); gameState.player = createPlayer(); })()")
 		if err := engine.ExecuteScript(initScript); err != nil {
 			t.Fatalf("Failed to initialize game state: %v", err)
 		}
 
 		// Verify gameMode
-		resultScript := engine.LoadScriptFromString("get-gameMode", "(() => { lastResult = gameState.gameMode })()")
+		resultScript := engine.LoadScriptString("get-gameMode", "(() => { lastResult = gameState.gameMode })()")
 		if err := engine.ExecuteScript(resultScript); err != nil {
 			t.Fatalf("Failed to get gameMode: %v", err)
 		}
@@ -497,7 +497,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 		}
 
 		// Verify score
-		resultScript = engine.LoadScriptFromString("get-score", "(() => { lastResult = gameState.score })()")
+		resultScript = engine.LoadScriptString("get-score", "(() => { lastResult = gameState.score })()")
 		if err := engine.ExecuteScript(resultScript); err != nil {
 			t.Fatalf("Failed to get score: %v", err)
 		}
@@ -514,7 +514,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 		}
 
 		// Verify lives
-		resultScript = engine.LoadScriptFromString("get-lives", "(() => { lastResult = gameState.lives })()")
+		resultScript = engine.LoadScriptString("get-lives", "(() => { lastResult = gameState.lives })()")
 		if err := engine.ExecuteScript(resultScript); err != nil {
 			t.Fatalf("Failed to get lives: %v", err)
 		}
@@ -531,7 +531,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 		}
 
 		// Verify wave
-		resultScript = engine.LoadScriptFromString("get-wave", "(() => { lastResult = gameState.wave })()")
+		resultScript = engine.LoadScriptString("get-wave", "(() => { lastResult = gameState.wave })()")
 		if err := engine.ExecuteScript(resultScript); err != nil {
 			t.Fatalf("Failed to get wave: %v", err)
 		}
@@ -548,7 +548,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 		}
 
 		// Verify waveState.complete (initialized)
-		resultScript = engine.LoadScriptFromString("get-waveState-complete", "(() => { lastResult = gameState.waveState.complete; })()")
+		resultScript = engine.LoadScriptString("get-waveState-complete", "(() => { lastResult = gameState.waveState.complete; })()")
 		if err := engine.ExecuteScript(resultScript); err != nil {
 			t.Fatalf("Failed to get waveState.complete: %v", err)
 		}
@@ -561,7 +561,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 	// TEST CASE 2: Player creation
 	t.Run("PlayerCreation", func(t *testing.T) {
 		// Create player
-		createScript := engine.LoadScriptFromString("create-player", "(() => { lastResult = createPlayer(); })()")
+		createScript := engine.LoadScriptString("create-player", "(() => { lastResult = createPlayer(); })()")
 		if err := engine.ExecuteScript(createScript); err != nil {
 			t.Fatalf("Failed to create player: %v", err)
 		}
@@ -639,7 +639,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 	for _, enemyType := range enemyTypes {
 		t.Run("EnemyCreation_"+enemyType, func(t *testing.T) {
 			// Create enemy
-			createScript := engine.LoadScriptFromString("create-enemy-"+enemyType, fmt.Sprintf("(() => { lastResult = createEnemy('%s'); })()", enemyType))
+			createScript := engine.LoadScriptString("create-enemy-"+enemyType, fmt.Sprintf("(() => { lastResult = createEnemy('%s'); })()", enemyType))
 			if err := engine.ExecuteScript(createScript); err != nil {
 				t.Fatalf("Failed to create enemy: %v", err)
 			}
@@ -697,7 +697,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 	// TEST CASE 4: Projectile creation
 	t.Run("ProjectileCreation", func(t *testing.T) {
 		// Create projectile
-		createScript := engine.LoadScriptFromString("create-projectile", "(() => { lastResult = createProjectile(10, 20, 5, -3, 'player', 1, 25); })()")
+		createScript := engine.LoadScriptString("create-projectile", "(() => { lastResult = createProjectile(10, 20, 5, -3, 'player', 1, 25); })()")
 		if err := engine.ExecuteScript(createScript); err != nil {
 			t.Fatalf("Failed to create projectile: %v", err)
 		}
@@ -782,7 +782,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 	// TEST CASE 5: Particle creation
 	t.Run("ParticleCreation", func(t *testing.T) {
 		// Create particle
-		createScript := engine.LoadScriptFromString("create-particle", "(() => { lastResult = createParticle(15, 25, '*', '#FF0000'); })()")
+		createScript := engine.LoadScriptString("create-particle", "(() => { lastResult = createParticle(15, 25, '*', '#FF0000'); })()")
 		if err := engine.ExecuteScript(createScript); err != nil {
 			t.Fatalf("Failed to create particle: %v", err)
 		}
@@ -957,7 +957,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 			return particle.age >= particle.maxAge;
 		}
 	`
-	script := engine.LoadScriptFromString("collision-test", scriptContent)
+	script := engine.LoadScriptString("collision-test", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load collision test code: %v", err)
 	}
@@ -965,7 +965,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 	// TEST CASE 1: Player projectile vs enemy collision
 	t.Run("PlayerProjectileVsEnemy", func(t *testing.T) {
 		// Create enemy and projectile at same position (direct hit)
-		setupScript := engine.LoadScriptFromString("setup-collision", `
+		setupScript := engine.LoadScriptString("setup-collision", `
 			(() => {
 				const enemy = createEnemy(40, 15, 30);
 				const projectile = createProjectile(40, 15, 0, -5, 'player', 0, 25);
@@ -980,7 +980,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 		}
 
 		// Check collision and apply damage
-		collisionScript := engine.LoadScriptFromString("check-collision", `
+		collisionScript := engine.LoadScriptString("check-collision", `
 			(() => {
 				const enemyIndex = 0;
 				const projectileIndex = 0;
@@ -1065,7 +1065,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 	t.Run("EnemyProjectileVsPlayer", func(t *testing.T) {
 		// Test case A: Player takes damage (not invincible)
 		t.Run("NotInvincible", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-player-hit", `
+			setupScript := engine.LoadScriptString("setup-player-hit", `
 				(() => {
 					gameState.player.health = 100;
 					gameState.player.invincibleUntil = 0;
@@ -1078,7 +1078,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 				t.Fatalf("Failed to setup player hit test: %v", err)
 			}
 
-			hitScript := engine.LoadScriptFromString("check-player-hit", `
+			hitScript := engine.LoadScriptString("check-player-hit", `
 				(() => {
 					const now = 10000;
 					const player = gameState.player;
@@ -1129,7 +1129,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 
 		// Test case B: Player is invincible (no damage)
 		t.Run("Invincible", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-invincible", `
+			setupScript := engine.LoadScriptString("setup-invincible", `
 				(() => {
 					gameState.player.health = 100;
 					gameState.player.invincibleUntil = 15000;
@@ -1141,7 +1141,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 				t.Fatalf("Failed to setup invincible test: %v", err)
 			}
 
-			hitScript := engine.LoadScriptFromString("check-invincible-hit", `
+			hitScript := engine.LoadScriptString("check-invincible-hit", `
 				(() => {
 					const now = 10000;
 					const player = gameState.player;
@@ -1198,7 +1198,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 
 	// TEST CASE 3: Player vs enemy contact (both take damage)
 	t.Run("PlayerVsEnemyContact", func(t *testing.T) {
-		setupScript := engine.LoadScriptFromString("setup-contact", `
+		setupScript := engine.LoadScriptString("setup-contact", `
 			(() => {
 				gameState.player.x = 40;
 				gameState.player.y = 20;
@@ -1213,7 +1213,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 			t.Fatalf("Failed to setup contact test: %v", err)
 		}
 
-		contactScript := engine.LoadScriptFromString("check-contact", `
+		contactScript := engine.LoadScriptString("check-contact", `
 			(() => {
 				const player = gameState.player;
 				const enemy = gameState.enemies[0];
@@ -1298,7 +1298,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 
 		for _, tc := range subtests {
 			t.Run(tc.name, func(t *testing.T) {
-				setupScript := engine.LoadScriptFromString(fmt.Sprintf("setup-bounds-%s", tc.name), fmt.Sprintf(`
+				setupScript := engine.LoadScriptString(fmt.Sprintf("setup-bounds-%s", tc.name), fmt.Sprintf(`
 					(() => {
 						testProjectile = createProjectile(%v, %v, %v, %v, 'player', 0, 25);
 						testWidth = 80;
@@ -1309,7 +1309,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 					t.Fatalf("Failed to setup bounds test: %v", err)
 				}
 
-				boundsScript := engine.LoadScriptFromString(fmt.Sprintf("check-bounds-%s", tc.name), fmt.Sprintf(`
+				boundsScript := engine.LoadScriptString(fmt.Sprintf("check-bounds-%s", tc.name), fmt.Sprintf(`
 					(() => {
 						updateProjectile(testProjectile, %v);
 						const outOfBounds = isProjectileOutOfBounds(testProjectile, testWidth, testHeight);
@@ -1357,14 +1357,14 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 
 		for _, tc := range subtests {
 			t.Run(tc.name, func(t *testing.T) {
-				setupScript := engine.LoadScriptFromString(fmt.Sprintf("setup-particle-%s", tc.name), `
+				setupScript := engine.LoadScriptString(fmt.Sprintf("setup-particle-%s", tc.name), `
 						testParticle = createParticle(40, 10, '*', '#FF0000');
 				`)
 				if err := engine.ExecuteScript(setupScript); err != nil {
 					t.Fatalf("Failed to setup particle test: %v", err)
 				}
 
-				ageScript := engine.LoadScriptFromString(fmt.Sprintf("check-particle-age-%s", tc.name), fmt.Sprintf(`
+				ageScript := engine.LoadScriptString(fmt.Sprintf("check-particle-age-%s", tc.name), fmt.Sprintf(`
 					(() => {
 						updateParticle(testParticle, %v);
 						const expired = isParticleExpired(testParticle);
@@ -1574,7 +1574,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 			return { success: true, score: gameState.score, remaining: gameState.enemies.length };
 		}
 	`
-	script := engine.LoadScriptFromString("wave-management", scriptContent)
+	script := engine.LoadScriptString("wave-management", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load wave management code: %v", err)
 	}
@@ -1595,7 +1595,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 
 		for _, wt := range waveTests {
 			t.Run(fmt.Sprintf("Wave%d", wt.wave), func(t *testing.T) {
-				spawnScript := engine.LoadScriptFromString("spawn-wave", fmt.Sprintf(`
+				spawnScript := engine.LoadScriptString("spawn-wave", fmt.Sprintf(`
 					(() => {
 						const result = spawnWave(%d);
 						lastResult = result;
@@ -1651,7 +1651,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 	// TEST CASE 2: Wave completion when all enemies dead
 	t.Run("WaveCompletion", func(t *testing.T) {
 		// Initialize wave and get enemy IDs
-		initScript := engine.LoadScriptFromString("init-wave-completion", `
+		initScript := engine.LoadScriptString("init-wave-completion", `
 			(() => {
 				gameState.wave = 1;
 				gameState.waveState.inProgress = true;
@@ -1689,7 +1689,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 
 		// Kill enemies one by one and check wave state
 		for i, enemyId := range enemyIds {
-			killScript := engine.LoadScriptFromString(fmt.Sprintf("kill-enemy-%d", enemyId), fmt.Sprintf(`
+			killScript := engine.LoadScriptString(fmt.Sprintf("kill-enemy-%d", enemyId), fmt.Sprintf(`
 				(() => {
 					lastResult = killEnemy(%d);
 				})()
@@ -1719,7 +1719,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 		}
 
 		// Check wave completion status
-		checkScript := engine.LoadScriptFromString("check-wave-complete", `
+		checkScript := engine.LoadScriptString("check-wave-complete", `
 			(() => {
 				const complete = isWaveComplete();
 				lastResult = {
@@ -1767,7 +1767,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 	// TEST CASE 3: Victory when all waves complete
 	t.Run("VictoryCondition", func(t *testing.T) {
 		// Clear and reinitialize
-		resetScript := engine.LoadScriptFromString("reset-victory-test", `
+		resetScript := engine.LoadScriptString("reset-victory-test", `
 			(() => {
 				gameState.wave = 0;
 				gameState.gameMode = "playing";
@@ -1782,13 +1782,13 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 		// Start all waves one by one, kill all enemies, check final state
 		for waveNum := 1; waveNum <= 5; waveNum++ {
 			// Start wave
-			startScript := engine.LoadScriptFromString(fmt.Sprintf("start-wave-%d", waveNum), "lastResult = startNextWave()")
+			startScript := engine.LoadScriptString(fmt.Sprintf("start-wave-%d", waveNum), "lastResult = startNextWave()")
 			if err := engine.ExecuteScript(startScript); err != nil {
 				t.Fatalf("Failed to start wave: %v", err)
 			}
 
 			// Get enemy IDs and kill them
-			getIdsScript := engine.LoadScriptFromString(fmt.Sprintf("get-ids-wave-%d", waveNum), `
+			getIdsScript := engine.LoadScriptString(fmt.Sprintf("get-ids-wave-%d", waveNum), `
 				(() => {
 					lastResult = gameState.enemies.map(e => e.id);
 				})()
@@ -1815,7 +1815,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 
 			// Kill each enemy by actual ID
 			for _, enemyId := range enemyIds {
-				killScript := engine.LoadScriptFromString(fmt.Sprintf("kill-in-wave-%d-%d", waveNum, enemyId), fmt.Sprintf("killEnemy(%d)", enemyId))
+				killScript := engine.LoadScriptString(fmt.Sprintf("kill-in-wave-%d-%d", waveNum, enemyId), fmt.Sprintf("killEnemy(%d)", enemyId))
 				if err := engine.ExecuteScript(killScript); err != nil {
 					t.Fatalf("Failed to kill enemy: %v", err)
 				}
@@ -1823,7 +1823,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 		}
 
 		// Start wave 6 (should result in victory since all 5 waves are done)
-		startScript := engine.LoadScriptFromString("start-wave-final", "lastResult = startNextWave()")
+		startScript := engine.LoadScriptString("start-wave-final", "lastResult = startNextWave()")
 		if err := engine.ExecuteScript(startScript); err != nil {
 			t.Fatalf("Failed to attempt wave 6: %v", err)
 		}
@@ -1839,7 +1839,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 		}
 
 		// Check game mode
-		checkScript := engine.LoadScriptFromString("check-game-mode", `
+		checkScript := engine.LoadScriptString("check-game-mode", `
 			(() => {
 				lastResult = {
 					victory: isVictory(),
@@ -1881,7 +1881,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 	// TEST CASE 4: Score increment on enemy kill (+100)
 	t.Run("ScoreIncrement", func(t *testing.T) {
 		// Reset and setup
-		resetScript := engine.LoadScriptFromString("reset-score-test", `
+		resetScript := engine.LoadScriptString("reset-score-test", `
 			(() => {
 				gameState.score = 0;
 				gameState.enemies = [
@@ -1901,7 +1901,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 		for i, enemyId := range enemyIds {
 			expectedScore := (i + 1) * 100
 
-			killScript := engine.LoadScriptFromString(fmt.Sprintf("kill-enemy-%d", enemyId), fmt.Sprintf(`
+			killScript := engine.LoadScriptString(fmt.Sprintf("kill-enemy-%d", enemyId), fmt.Sprintf(`
 				(() => {
 					lastResult = killEnemy(%d);
 					lastResult.currentScore = gameState.score;
@@ -1937,7 +1937,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 		}
 
 		// Final score should be 300 (3 kills * 100)
-		checkScript := engine.LoadScriptFromString("final-score", "(() => { lastResult = gameState.score; })()")
+		checkScript := engine.LoadScriptString("final-score", "(() => { lastResult = gameState.score; })()")
 		if err := engine.ExecuteScript(checkScript); err != nil {
 			t.Fatalf("Failed to get final score: %v", err)
 		}
@@ -1997,7 +1997,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 			id: 'test-node'
 		};
 	`
-	script := engine.LoadScriptFromString("bt-leaf-test-setup", scriptContent)
+	script := engine.LoadScriptString("bt-leaf-test-setup", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load bt leaf test setup: %v", err)
 	}
@@ -2008,7 +2008,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 	t.Run("Grunt_Leaves", func(t *testing.T) {
 		// TEST: checkAlive - returns success when health > 0
 		t.Run("checkAlive_Success", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-checkalive-success", `
+			setupScript := engine.LoadScriptString("setup-checkalive-success", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2059,7 +2059,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: checkAlive - returns failure when health <= 0
 		t.Run("checkAlive_Failure", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-checkalive-failure", `
+			setupScript := engine.LoadScriptString("setup-checkalive-failure", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2095,7 +2095,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: checkInRange - returns success when distance < attackRange
 		t.Run("checkInRange_Success", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-checkinrange-success", `
+			setupScript := engine.LoadScriptString("setup-checkinrange-success", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2144,7 +2144,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: checkInRange - returns failure when distance >= attackRange
 		t.Run("checkInRange_Failure", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-checkinrange-failure", `
+			setupScript := engine.LoadScriptString("setup-checkinrange-failure", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2193,7 +2193,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: moveToward - updates moveToX/moveToY toward player
 		t.Run("moveToward", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-movetoward", `
+			setupScript := engine.LoadScriptString("setup-movetoward", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2255,7 +2255,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: shoot - sets fire=true and targets when cooldown expired
 		t.Run("shoot_CooldownExpired", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-shoot-coolexpired", `
+			setupScript := engine.LoadScriptString("setup-shoot-coolexpired", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2342,7 +2342,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: shoot - returns running when cooldown not expired
 		t.Run("shoot_CooldownNotExpired", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-shoot-coolnotexpired", `
+			setupScript := engine.LoadScriptString("setup-shoot-coolnotexpired", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2398,7 +2398,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 	t.Run("Sniper_Leaves", func(t *testing.T) {
 		// TEST: checkTooClose - returns success when distance < minRange
 		t.Run("checkTooClose_Success", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-checktooclose-success", `
+			setupScript := engine.LoadScriptString("setup-checktooclose-success", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2447,7 +2447,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: checkTooClose - returns failure when distance >= minRange
 		t.Run("checkTooClose_Failure", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-checktooclose-failure", `
+			setupScript := engine.LoadScriptString("setup-checktooclose-failure", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2496,7 +2496,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: retreat - updates moveToX/moveToY away from player
 		t.Run("retreat", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-retreat", `
+			setupScript := engine.LoadScriptString("setup-retreat", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2558,7 +2558,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: checkSniperRange - returns success when minRange <= distance <= maxRange
 		t.Run("checkSniperRange_Success", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-checksniperrange-success", `
+			setupScript := engine.LoadScriptString("setup-checksniperrange-success", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2609,7 +2609,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: checkSniperRange - returns failure when distance out of range
 		t.Run("checkSniperRange_Failure", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-checksniperrange-failure", `
+			setupScript := engine.LoadScriptString("setup-checksniperrange-failure", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2650,7 +2650,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: aimAndShoot - sets fire after long cooldown (2000ms)
 		t.Run("aimAndShoot_CooldownExpired", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-aimandshoot-coolexpired", `
+			setupScript := engine.LoadScriptString("setup-aimandshoot-coolexpired", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2717,7 +2717,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: aimAndShoot - returns running when cooldown not expired
 		t.Run("aimAndShoot_CooldownNotExpired", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-aimandshoot-coolnotexpired", `
+			setupScript := engine.LoadScriptString("setup-aimandshoot-coolnotexpired", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2773,7 +2773,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 	t.Run("Pursuer_Leaves", func(t *testing.T) {
 		// TEST: canDash - returns success when dash cooldown ready
 		t.Run("canDash_Success", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-candash-success", `
+			setupScript := engine.LoadScriptString("setup-candash-success", `
 				(() => {
 					const bb = new Map();
 					bb.set('lastDashTime', 0);
@@ -2809,7 +2809,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: canDash - returns failure when dash cooldown not ready
 		t.Run("canDash_Failure", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-candash-failure", `
+			setupScript := engine.LoadScriptString("setup-candash-failure", `
 				(() => {
 					const bb = new Map();
 					bb.set('lastDashTime', 2000);
@@ -2845,7 +2845,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: executeDash - sets dashing=true, dashTargetX/Y, returns bt.running
 		t.Run("executeDash_Start", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-executedash-start", `
+			setupScript := engine.LoadScriptString("setup-executedash-start", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -2946,7 +2946,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: executeDash - returns success when dash complete
 		t.Run("executeDash_Complete", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-executedash-complete", `
+			setupScript := engine.LoadScriptString("setup-executedash-complete", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -3011,7 +3011,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: checkDashCooldown - checks time since last dash
 		t.Run("checkDashCooldown", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-checkdashcooldown", `
+			setupScript := engine.LoadScriptString("setup-checkdashcooldown", `
 				(() => {
 					const bb = new Map();
 					bb.set('lastDashTime', 1500);
@@ -3068,7 +3068,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 	t.Run("Tank_Leaves", func(t *testing.T) {
 		// TEST: slowChase - always moves toward player slowly
 		t.Run("slowChase", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-slowchase", `
+			setupScript := engine.LoadScriptString("setup-slowchase", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -3134,7 +3134,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: checkBurstReady - returns success when burst cooldown expired
 		t.Run("checkBurstReady_Success", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-checkburstready-success", `
+			setupScript := engine.LoadScriptString("setup-checkburstready-success", `
 				(() => {
 					const bb = new Map();
 					bb.set('lastBurstTime', 0);
@@ -3170,7 +3170,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: checkBurstReady - returns failure when burst cooldown not expired
 		t.Run("checkBurstReady_Failure", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-checkburstready-failure", `
+			setupScript := engine.LoadScriptString("setup-checkburstready-failure", `
 				(() => {
 					const bb = new Map();
 					bb.set('lastBurstTime', 2000);
@@ -3206,7 +3206,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 
 		// TEST: fireBurst - fires 3 shots, returns bt.running until all fired
 		t.Run("fireBurst_Progress", func(t *testing.T) {
-			setupScript := engine.LoadScriptFromString("setup-fireburst-progress", `
+			setupScript := engine.LoadScriptString("setup-fireburst-progress", `
 				(() => {
 					const bb = new Map();
 					bb.set('x', 40);
@@ -3464,14 +3464,14 @@ func TestShooterGame_InputHandling(t *testing.T) {
 			};
 		}
 	`
-	script := engine.LoadScriptFromString("input-handling", scriptContent)
+	script := engine.LoadScriptString("input-handling", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load input handling code: %v", err)
 	}
 
 	// TEST CASE 1: WASD keys update player velocity correctly
 	t.Run("WASD_Keys", func(t *testing.T) {
-		initScript := engine.LoadScriptFromString("init-wasd", "initializePlayer()")
+		initScript := engine.LoadScriptString("init-wasd", "initializePlayer()")
 		if err := engine.ExecuteScript(initScript); err != nil {
 			t.Fatalf("Failed to initialize player: %v", err)
 		}
@@ -3492,7 +3492,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.key, func(t *testing.T) {
 				// Reset player velocity before each test
-				resetScript := engine.LoadScriptFromString(fmt.Sprintf("reset-before-%s", tc.key), `
+				resetScript := engine.LoadScriptString(fmt.Sprintf("reset-before-%s", tc.key), `
 					(() => {
 						gameState.player.vx = 0;
 						gameState.player.vy = 0;
@@ -3502,7 +3502,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 					t.Fatalf("Failed to reset player before key %s: %v", tc.key, err)
 				}
 
-				testScript := engine.LoadScriptFromString(fmt.Sprintf("test-key-%s", tc.key), fmt.Sprintf(`
+				testScript := engine.LoadScriptString(fmt.Sprintf("test-key-%s", tc.key), fmt.Sprintf(`
 					(() => {
 						const result = handleKeyPress('%s', 2000);
 						lastResult = {
@@ -3553,7 +3553,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 
 	// TEST CASE 2: Arrow keys update player velocity correctly
 	t.Run("Arrow_Keys", func(t *testing.T) {
-		initScript := engine.LoadScriptFromString("init-arrow", "initializePlayer()")
+		initScript := engine.LoadScriptString("init-arrow", "initializePlayer()")
 		if err := engine.ExecuteScript(initScript); err != nil {
 			t.Fatalf("Failed to initialize player: %v", err)
 		}
@@ -3574,7 +3574,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.key, func(t *testing.T) {
 				// Reset player velocity before each test
-				resetScript := engine.LoadScriptFromString(fmt.Sprintf("reset-before-arrow-%s", tc.key), `
+				resetScript := engine.LoadScriptString(fmt.Sprintf("reset-before-arrow-%s", tc.key), `
 					(() => {
 						gameState.player.vx = 0;
 						gameState.player.vy = 0;
@@ -3584,7 +3584,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 					t.Fatalf("Failed to reset player before arrow key %s: %v", tc.key, err)
 				}
 
-				testScript := engine.LoadScriptFromString(fmt.Sprintf("test-arrow-%s", tc.key), fmt.Sprintf(`
+				testScript := engine.LoadScriptString(fmt.Sprintf("test-arrow-%s", tc.key), fmt.Sprintf(`
 					(() => {
 						const result = handleKeyPress('%s', 2000);
 						lastResult = {
@@ -3636,13 +3636,13 @@ func TestShooterGame_InputHandling(t *testing.T) {
 	// TEST CASE 3: SPACE key fires projectile when cooldown expired
 	t.Run("SPACE_FireWhenCooldownExpired", func(t *testing.T) {
 		// Initialize player with lastShotTime = 1000, cooldown = 200ms
-		initScript := engine.LoadScriptFromString("init-shoot", "initializePlayer()")
+		initScript := engine.LoadScriptString("init-shoot", "initializePlayer()")
 		if err := engine.ExecuteScript(initScript); err != nil {
 			t.Fatalf("Failed to initialize player: %v", err)
 		}
 
 		// Reset projectile array
-		resetScript := engine.LoadScriptFromString("reset-projectiles", `
+		resetScript := engine.LoadScriptString("reset-projectiles", `
 			(() => {
 				gameState.projectiles = [];
 			})()
@@ -3652,7 +3652,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 		}
 
 		// Press SPACE at time = 2000 (cooldown should be expired: 2000 - 1000 = 1000ms >= 200ms)
-		shootScript := engine.LoadScriptFromString("test-shoot-expired", `
+		shootScript := engine.LoadScriptString("test-shoot-expired", `
 			(() => {
 				const result = handleKeyPress(' ', 2000);
 				lastResult = {
@@ -3715,13 +3715,13 @@ func TestShooterGame_InputHandling(t *testing.T) {
 	// TEST CASE 4: SPACE key does NOT fire when cooldown not expired
 	t.Run("SPACE_FireWhenCooldownNotExpired", func(t *testing.T) {
 		// Initialize player with lastShotTime = 1000, cooldown = 200ms
-		initScript := engine.LoadScriptFromString("init-noshoot", "initializePlayer()")
+		initScript := engine.LoadScriptString("init-noshoot", "initializePlayer()")
 		if err := engine.ExecuteScript(initScript); err != nil {
 			t.Fatalf("Failed to initialize player: %v", err)
 		}
 
 		// Reset projectile array to ensure clean state
-		resetScript := engine.LoadScriptFromString("reset-projectiles-before", `
+		resetScript := engine.LoadScriptString("reset-projectiles-before", `
 			(() => {
 				gameState.projectiles = [];
 			})()
@@ -3731,7 +3731,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 		}
 
 		// Press SPACE at time = 1100 (cooldown NOT expired: 1100 - 1000 = 100ms < 200ms)
-		noShootScript := engine.LoadScriptFromString("test-shoot-notexpired", `
+		noShootScript := engine.LoadScriptString("test-shoot-notexpired", `
 			(() => {
 				const result = handleKeyPress(' ', 1100);
 				lastResult = {
@@ -3798,7 +3798,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 	// TEST CASE 5: P key toggles pause state (playing→paused→playing)
 	t.Run("P_Key_TogglePause", func(t *testing.T) {
 		// Start in playing mode
-		resetScript := engine.LoadScriptFromString("reset-pause", `
+		resetScript := engine.LoadScriptString("reset-pause", `
 			(() => {
 				gameState.gameMode = 'playing';
 				initializePlayer();
@@ -3809,7 +3809,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 		}
 
 		// Press P to pause (playing→paused)
-		pauseScript := engine.LoadScriptFromString("test-p-pause", `
+		pauseScript := engine.LoadScriptString("test-p-pause", `
 			(() => {
 				const result = handleKeyPress('p', 2000);
 				lastResult = {
@@ -3841,7 +3841,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 		}
 
 		// Press P to unpause (paused→playing)
-		unpauseScript := engine.LoadScriptFromString("test-p-unpause", `
+		unpauseScript := engine.LoadScriptString("test-p-unpause", `
 			(() => {
 				const result = handleKeyPress('p', 2000);
 				lastResult = {
@@ -3875,7 +3875,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 
 	// TEST CASE 6: Q key sends quit command
 	t.Run("Q_Key_Quit", func(t *testing.T) {
-		initScript := engine.LoadScriptFromString("init-quit", `
+		initScript := engine.LoadScriptString("init-quit", `
 			(() => {
 				gameState.gameMode = 'playing';
 				initializePlayer();
@@ -3886,7 +3886,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 		}
 
 		// Press Q in playing mode
-		quitScript := engine.LoadScriptFromString("test-q-quit", `
+		quitScript := engine.LoadScriptString("test-q-quit", `
 			(() => {
 				const result = handleKeyPress('q', 2000);
 				lastResult = {
@@ -3917,7 +3917,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 	t.Run("R_Key_Restart", func(t *testing.T) {
 		// Test from gameOver
 		t.Run("FromGameOver", func(t *testing.T) {
-			resetScript := engine.LoadScriptFromString("restart-gameover", `
+			resetScript := engine.LoadScriptString("restart-gameover", `
 				(() => {
 					gameState.gameMode = 'gameOver';
 				})()
@@ -3926,7 +3926,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 				t.Fatalf("Failed to set gameOver: %v", err)
 			}
 
-			restartScript := engine.LoadScriptFromString("test-r-gameover", `
+			restartScript := engine.LoadScriptString("test-r-gameover", `
 				(() => {
 					const result = handleKeyPress('r', 2000);
 					lastResult = {
@@ -3959,7 +3959,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 
 		// Test from victory
 		t.Run("FromVictory", func(t *testing.T) {
-			resetScript := engine.LoadScriptFromString("restart-victory", `
+			resetScript := engine.LoadScriptString("restart-victory", `
 				(() => {
 					gameState.gameMode = 'victory';
 				})()
@@ -3968,7 +3968,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 				t.Fatalf("Failed to set victory: %v", err)
 			}
 
-			restartScript := engine.LoadScriptFromString("test-r-victory", `
+			restartScript := engine.LoadScriptString("test-r-victory", `
 				(() => {
 					const result = handleKeyPress('r', 2000);
 					lastResult = {
@@ -4142,7 +4142,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 			return { died: false };
 		}
 	`
-	script := engine.LoadScriptFromString("game-mode-sm", scriptContent)
+	script := engine.LoadScriptString("game-mode-sm", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load game mode state machine: %v", err)
 	}
@@ -4150,13 +4150,13 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 	// TEST CASE 1: menu→playing transition on valid input
 	t.Run("MenuToPlaying", func(t *testing.T) {
 		// Start in menu
-		initScript := engine.LoadScriptFromString("init-menu", "initializeGame()")
+		initScript := engine.LoadScriptString("init-menu", "initializeGame()")
 		if err := engine.ExecuteScript(initScript); err != nil {
 			t.Fatalf("Failed to initialize game: %v", err)
 		}
 
 		// Verify starting mode
-		checkScript := engine.LoadScriptFromString("check-start-mode", `
+		checkScript := engine.LoadScriptString("check-start-mode", `
 			(() => {
 				lastResult = {
 					gameMode: gameState.gameMode,
@@ -4200,7 +4200,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 
 	// TEST CASE 2: playing→paused on P key
 	t.Run("PlayingToPaused", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-playing", `
+		resetScript := engine.LoadScriptString("reset-playing", `
 			(() => {
 				gameState.gameMode = 'playing';
 			})()
@@ -4209,7 +4209,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 			t.Fatalf("Failed to set playing mode: %v", err)
 		}
 
-		pauseScript := engine.LoadScriptFromString("test-playing-paused", `
+		pauseScript := engine.LoadScriptString("test-playing-paused", `
 			(() => {
 				const fromMode = gameState.gameMode;
 				const result = pauseGame();
@@ -4240,7 +4240,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 
 	// TEST CASE 3: paused→playing on P key
 	t.Run("PausedToPlaying", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-paused", `
+		resetScript := engine.LoadScriptString("reset-paused", `
 			(() => {
 				gameState.gameMode = 'paused';
 			})()
@@ -4249,7 +4249,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 			t.Fatalf("Failed to set paused mode: %v", err)
 		}
 
-		resumeScript := engine.LoadScriptFromString("test-paused-playing", `
+		resumeScript := engine.LoadScriptString("test-paused-playing", `
 			(() => {
 				const fromMode = gameState.gameMode;
 				const result = resumeGame();
@@ -4280,7 +4280,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 
 	// TEST CASE 4: playing→gameOver when player health ≤ 0 and lives > 0
 	t.Run("PlayingToGameOver_HealthZero", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-gameover-health", `
+		resetScript := engine.LoadScriptString("reset-gameover-health", `
 			(() => {
 				gameState.gameMode = 'playing';
 				gameState.player.health = 100;
@@ -4292,7 +4292,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 		}
 
 		// Apply damage twice (set health to 0 each time → decrement lives → respawn)
-		damageScript := engine.LoadScriptFromString("test-gameover-health", `
+		damageScript := engine.LoadScriptString("test-gameover-health", `
 			(() => {
 				// First death: damage to 0
 				gameState.player.health = 0;
@@ -4332,7 +4332,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 		}
 
 		// After 2 more deaths (total 4), should be gameOver
-		damageScript2 := engine.LoadScriptFromString("test-gameover-health-2", `
+		damageScript2 := engine.LoadScriptString("test-gameover-health-2", `
 			(() => {
 				for (let i = 0; i < 2; i++) {
 					gameState.player.health = 0;
@@ -4371,7 +4371,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 
 	// TEST CASE 5: playing→victory when wave 5 complete
 	t.Run("PlayingToVictory", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-victory", `
+		resetScript := engine.LoadScriptString("reset-victory", `
 			(() => {
 				gameState.gameMode = 'playing';
 				gameState.wave = 5;
@@ -4385,7 +4385,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 			t.Fatalf("Failed to setup victory test: %v", err)
 		}
 
-		victoryScript := engine.LoadScriptFromString("test-victory", `
+		victoryScript := engine.LoadScriptString("test-victory", `
 			(() => {
 				const fromMode = gameState.gameMode;
 				setVictory();
@@ -4427,7 +4427,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 
 	// TEST CASE 6: playing→gameOver when lives = 0
 	t.Run("PlayingToGameOver_ZeroLives", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-gameover-lives", `
+		resetScript := engine.LoadScriptString("reset-gameover-lives", `
 			(() => {
 				gameState.gameMode = 'playing';
 				gameState.player.health = 0;
@@ -4438,7 +4438,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 			t.Fatalf("Failed to setup zero lives test: %v", err)
 		}
 
-		damageScript := engine.LoadScriptFromString("test-gameover-lives", `
+		damageScript := engine.LoadScriptString("test-gameover-lives", `
 			(() => {
 				const result = checkPlayerHealth();
 				lastResult = {
@@ -4498,7 +4498,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 
 		for _, tc := range invalidTransitions {
 			t.Run(fmt.Sprintf("%sTo%s", tc.fromMode, tc.toMode), func(t *testing.T) {
-				setupScript := engine.LoadScriptFromString(fmt.Sprintf("setup-invalid-%s-%s", tc.fromMode, tc.toMode), fmt.Sprintf(`
+				setupScript := engine.LoadScriptString(fmt.Sprintf("setup-invalid-%s-%s", tc.fromMode, tc.toMode), fmt.Sprintf(`
 					(() => {
 						gameState.gameMode = '%s';
 						lastResult = transitionGameMode('%s', 'invalid');
@@ -4519,7 +4519,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 				}
 
 				// gameMode should remain unchanged
-				checkModeScript := engine.LoadScriptFromString(fmt.Sprintf("check-mode-%s-%s", tc.fromMode, tc.toMode), `
+				checkModeScript := engine.LoadScriptString(fmt.Sprintf("check-mode-%s-%s", tc.fromMode, tc.toMode), `
 					(() => {
 						lastResult = gameState.gameMode;
 					})()
@@ -4649,14 +4649,14 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 			};
 		}
 	`
-	script := engine.LoadScriptFromString("ticker-lifecycle", scriptContent)
+	script := engine.LoadScriptString("ticker-lifecycle", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load ticker lifecycle code: %v", err)
 	}
 
 	// TEST CASE 1: bt.newTicker creates ticker without errors
 	t.Run("CreateTicker", func(t *testing.T) {
-		createScript := engine.LoadScriptFromString("test-create-ticker", `
+		createScript := engine.LoadScriptString("test-create-ticker", `
 			(() => {
 				const tree = createSimpleTree();
 				const ticker = createTicker(100, tree);
@@ -4696,7 +4696,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 
 	// TEST CASE 2: ticker.tick() executes behavior tree
 	t.Run("TickerTick", func(t *testing.T) {
-		createScript := engine.LoadScriptFromString("test-ticker-tick", `
+		createScript := engine.LoadScriptString("test-ticker-tick", `
 			(() => {
 				const tree = createSimpleTree();
 				const ticker = createTicker(100, tree);
@@ -4753,7 +4753,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 
 	// TEST CASE 3: ticker.stop() stops execution gracefully
 	t.Run("TickerStop", func(t *testing.T) {
-		createScript := engine.LoadScriptFromString("test-ticker-stop", `
+		createScript := engine.LoadScriptString("test-ticker-stop", `
 			(() => {
 				const tree = createSimpleTree();
 				const ticker = createTicker(100, tree);
@@ -4807,7 +4807,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 
 	// TEST CASE 4: ticker.done() completes after stop
 	t.Run("TickerDone", func(t *testing.T) {
-		createScript := engine.LoadScriptFromString("test-ticker-done", `
+		createScript := engine.LoadScriptString("test-ticker-done", `
 			(() => {
 				const tree = createSimpleTree();
 				const ticker = createTicker(100, tree);
@@ -4851,7 +4851,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 
 	// TEST CASE 5: ticker.err() reports errors
 	t.Run("TickerError", func(t *testing.T) {
-		createScript := engine.LoadScriptFromString("test-ticker-error", `
+		createScript := engine.LoadScriptString("test-ticker-error", `
 			(() => {
 				const failingTree = createFailingTree();
 				const ticker = createTicker(100, failingTree);
@@ -4891,7 +4891,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 
 	// TEST CASE 6: Multiple tickers can run concurrently
 	t.Run("MultipleTickers", func(t *testing.T) {
-		createScript := engine.LoadScriptFromString("test-multiple-tickers", `
+		createScript := engine.LoadScriptString("test-multiple-tickers", `
 			(() => {
 				// Create 3 tickers with different intervals
 				const tree1 = createSimpleTree();
@@ -4958,7 +4958,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 
 	// TEST CASE 7: Ticker cleanup doesn't leak goroutines (simulated)
 	t.Run("TickerCleanup", func(t *testing.T) {
-		createScript := engine.LoadScriptFromString("test-ticker-cleanup", `
+		createScript := engine.LoadScriptString("test-ticker-cleanup", `
 			(() => {
 				// Track ticker count before
 				const countBefore = tickers.length;
@@ -5200,14 +5200,14 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 			);
 		}
 	`
-	script := engine.LoadScriptFromString("game-loop-integration", scriptContent)
+	script := engine.LoadScriptString("game-loop-integration", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load game loop integration code: %v", err)
 	}
 
 	// TEST CASE 1: Delta time calculation between ticks
 	t.Run("DeltaTimeCalculation", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-deltatime", `
+		resetScript := engine.LoadScriptString("reset-deltatime", `
 			(() => {
 				gameState.lastTickTime = 1000;
 			})()
@@ -5221,7 +5221,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 		expectedDeltas := []float64{100, 100, 50, 50}
 
 		for i, tickNow := range tickTimes {
-			tickScript := engine.LoadScriptFromString(fmt.Sprintf("tick-delta-%d", i), fmt.Sprintf(`
+			tickScript := engine.LoadScriptString(fmt.Sprintf("tick-delta-%d", i), fmt.Sprintf(`
 				(() => {
 					const result = tick(%v);
 					lastResult = {
@@ -5250,7 +5250,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 
 	// TEST CASE 2: Player position updates with velocity application
 	t.Run("PlayerPositionUpdate", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-position", `
+		resetScript := engine.LoadScriptString("reset-position", `
 			(() => {
 				gameState.lastTickTime = 1000;
 				gameState.player.x = 40;
@@ -5264,7 +5264,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 		}
 
 		// Tick with 100ms delta
-		tickScript := engine.LoadScriptFromString("tick-position-100ms", `
+		tickScript := engine.LoadScriptString("tick-position-100ms", `
 			(() => {
 				const result = tick(1100);
 				lastResult = {
@@ -5307,7 +5307,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 
 	// TEST CASE 3: AI ticker integration with game loop
 	t.Run("AITickerIntegration", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-ai-tick", `
+		resetScript := engine.LoadScriptString("reset-ai-tick", `
 			(() => {
 				gameState.lastTickTime = 1000;
 				gameState.enemies = [
@@ -5323,7 +5323,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 
 		// Execute 3 ticks
 		for tickNum := range 3 {
-			tickScript := engine.LoadScriptFromString(fmt.Sprintf("ai-tick-%d", tickNum), fmt.Sprintf(`
+			tickScript := engine.LoadScriptString(fmt.Sprintf("ai-tick-%d", tickNum), fmt.Sprintf(`
 				(() => {
 					const now = Date.now();
 					const result = tick(%d);
@@ -5372,7 +5372,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 
 	// TEST CASE 4: Particle system cleanup
 	t.Run("ParticleCleanup", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-particles", `
+		resetScript := engine.LoadScriptString("reset-particles", `
 			(() => {
 				gameState.lastTickTime = 1000;
 				gameState.particles = [
@@ -5388,7 +5388,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 		}
 
 		// Initial particle count
-		checkScript := engine.LoadScriptFromString("check-initial-particles", `
+		checkScript := engine.LoadScriptString("check-initial-particles", `
 			(() => {
 				lastResult = {
 					initialCount: gameState.particles.length
@@ -5409,7 +5409,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 		}
 
 		// Tick 150ms - particle with maxAge=100 should be removed
-		tickScript := engine.LoadScriptFromString("tick-particles-150ms", `
+		tickScript := engine.LoadScriptString("tick-particles-150ms", `
 			(() => {
 				const now = Date.now();
 				const result = tick(1150);
@@ -5435,7 +5435,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 		}
 
 		// Tick another 400ms (total 550ms) - all should be removed
-		tickScript = engine.LoadScriptFromString("tick-particles-550ms", `
+		tickScript = engine.LoadScriptString("tick-particles-550ms", `
 			(() => {
 				const now = Date.now();
 				const result = tick(1550);
@@ -5548,7 +5548,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 			return { applied: true, health: gameState.player.health };
 		}
 	`
-	script := engine.LoadScriptFromString("edge-cases", scriptContent)
+	script := engine.LoadScriptString("edge-cases", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load edge case code: %v", err)
 	}
@@ -5571,7 +5571,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				resetScript := engine.LoadScriptFromString(fmt.Sprintf("reset-boundary-%s", tc.name), fmt.Sprintf(`
+				resetScript := engine.LoadScriptString(fmt.Sprintf("reset-boundary-%s", tc.name), fmt.Sprintf(`
 					(() => {
 						gameState.player.x = %v;
 						gameState.player.y = %v;
@@ -5581,7 +5581,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 					t.Fatalf("Failed to reset position: %v", err)
 				}
 
-				updateScript := engine.LoadScriptFromString(fmt.Sprintf("update-boundary-%s", tc.name), fmt.Sprintf(`
+				updateScript := engine.LoadScriptString(fmt.Sprintf("update-boundary-%s", tc.name), fmt.Sprintf(`
 					(() => {
 						updatePlayerPosition(%v, %v);
 						lastResult = {
@@ -5616,7 +5616,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 
 	// TEST CASE 2: Simultaneous enemy deaths (score += 200 for two kills)
 	t.Run("SimultaneousEnemyDeaths", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-score", `
+		resetScript := engine.LoadScriptString("reset-score", `
 			(() => {
 				gameState.score = 0;
 				// Simulate two enemies dying simultaneously
@@ -5645,7 +5645,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 
 	// TEST CASE 3: Player invincibility overlap (no damage during invincibility)
 	t.Run("PlayerInvincibilityOverlap", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-invincibility", `
+		resetScript := engine.LoadScriptString("reset-invincibility", `
 			(() => {
 				gameState.player.health = 100;
 				gameState.player.invincibleUntil = 2000;
@@ -5656,7 +5656,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 		}
 
 		// Try to apply damage while invincible (now = 1500 < invincibleUntil = 2000)
-		damageScript := engine.LoadScriptFromString("damage-invincible", `
+		damageScript := engine.LoadScriptString("damage-invincible", `
 			(() => {
 				const result1 = applyDamage(20, 1500);
 				const result2 = applyDamage(10, 1800);
@@ -5692,7 +5692,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 		}
 
 		// Now apply damage after invincibility expires (now = 2500 > invincibleUntil = 2000)
-		damageAfterScript := engine.LoadScriptFromString("damage-after-invincibility", `
+		damageAfterScript := engine.LoadScriptString("damage-after-invincibility", `
 			(() => {
 				const result = applyDamage(30, 2500);
 				lastResult = {
@@ -5727,7 +5727,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 
 		for _, key := range testKeys {
 			t.Run(key, func(t *testing.T) {
-				script := engine.LoadScriptFromString(fmt.Sprintf("read-empty-%s", key), fmt.Sprintf(`
+				script := engine.LoadScriptString(fmt.Sprintf("read-empty-%s", key), fmt.Sprintf(`
 					(() => {
 						const bb = new Map();
 						const result = readFromBlackboard(bb, '%s');
@@ -5760,7 +5760,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 
 	// TEST CASE 5: Terminal resize during gameplay (terminalSize updates correctly)
 	t.Run("TerminalResize", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-terminal", `
+		resetScript := engine.LoadScriptString("reset-terminal", `
 			(() => {
 				gameState.terminalSize.width = 80;
 				gameState.terminalSize.height = 24;
@@ -5780,7 +5780,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 		}
 
 		for i, resize := range resizes {
-			updateScript := engine.LoadScriptFromString(fmt.Sprintf("resize-terminal-%d", i), fmt.Sprintf(`
+			updateScript := engine.LoadScriptString(fmt.Sprintf("resize-terminal-%d", i), fmt.Sprintf(`
 				(() => {
 					updateTerminalSize(%v, %v);
 					lastResult = {
@@ -5813,7 +5813,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 
 	// TEST CASE 6: Zero lives edge case (no underflow below zero)
 	t.Run("ZeroLivesEdgeCase", func(t *testing.T) {
-		resetScript := engine.LoadScriptFromString("reset-lives", `
+		resetScript := engine.LoadScriptString("reset-lives", `
 			(() => {
 				gameState.player.lives = 3;
 			})()
@@ -5824,7 +5824,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 
 		// Lose lives one by one
 		for expectedLives := 2; expectedLives >= 0; expectedLives-- {
-			loseScript := engine.LoadScriptFromString(fmt.Sprintf("lose-life-to-%d", expectedLives), `
+			loseScript := engine.LoadScriptString(fmt.Sprintf("lose-life-to-%d", expectedLives), `
 				(() => {
 					const result = updateLives(-1);
 					lastResult = {
@@ -5850,7 +5850,7 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 		}
 
 		// Try to lose another life (should stay at 0)
-		script := engine.LoadScriptFromString("lose-life-at-zero", `
+		script := engine.LoadScriptString("lose-life-at-zero", `
 			(() => {
 				const result = updateLives(-1);
 				lastResult = {
@@ -5938,14 +5938,14 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 			return writeResults;
 		}
 	`
-	script := engine.LoadScriptFromString("blackboard-thread-safety-simple", scriptContent)
+	script := engine.LoadScriptString("blackboard-thread-safety-simple", scriptContent)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to load blackboard thread safety code: %v", err)
 	}
 
 	// TEST CASE 1: Create blackboard with initial data
 	t.Run("CreateBlackboard", func(t *testing.T) {
-		script := engine.LoadScriptFromString("check-blackboard", `
+		script := engine.LoadScriptString("check-blackboard", `
 			(() => {
 				lastResult = {
 					keyCount: testKeys.length,
@@ -5974,7 +5974,7 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 
 	// TEST CASE 2: Verify initial values are correct
 	t.Run("VerifyInitialValues", func(t *testing.T) {
-		script := engine.LoadScriptFromString("verify-initial-values", `
+		script := engine.LoadScriptString("verify-initial-values", `
 			(() => {
 				const initialValues = {};
 				for (let i = 0; i < testKeys.length; i++) {
@@ -6013,7 +6013,7 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 
 	// TEST CASE 3: Simulate concurrent reads (20 readers x 10 keys = 200 reads)
 	t.Run("ConcurrentReads", func(t *testing.T) {
-		script := engine.LoadScriptFromString("run-concurrent-reads", `
+		script := engine.LoadScriptString("run-concurrent-reads", `
 			(() => {
 				const readResults = simulateConcurrentReads();
 				lastResult = {
@@ -6052,7 +6052,7 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 	// TEST CASE 4: Simulate concurrent writes (20 writers x 10 keys = 200 writes)
 	t.Run("ConcurrentWrites", func(t *testing.T) {
 		// Reinitialize blackboard for write test
-		resetScript := engine.LoadScriptFromString("reset-for-writes", `
+		resetScript := engine.LoadScriptString("reset-for-writes", `
 			(() => {
 				bb.clear();
 				for (let i = 0; i < testKeys.length; i++) {
@@ -6064,7 +6064,7 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 			t.Fatalf("Failed to reset for writes: %v", err)
 		}
 
-		script := engine.LoadScriptFromString("run-concurrent-writes", `
+		script := engine.LoadScriptString("run-concurrent-writes", `
 			(() => {
 				const writeResults = simulateConcurrentWrites();
 				const finalValues = {};

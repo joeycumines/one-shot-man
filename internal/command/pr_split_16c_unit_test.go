@@ -1,20 +1,20 @@
 package command
 
-// T427: Unit tests for chunk 16c confirm-cancel and Claude conversation handlers.
+// T427: Unit tests for chunk 16c confirm-cancel and Agent conversation handlers.
 //
 // Covers:
 //   - updateConfirmCancel (9 tests): Tab/Shift+Tab focus cycling, Enter on Yes/No,
 //     y key confirms, n/esc dismisses, mouse click zones, focus auto-init,
 //     unknown key noop, session cleanup on confirm
-//   - closeClaudeConvo (1 test): active→false, clears input/scroll, preserves
+//   - closeAgentConvo (1 test): active→false, clears input/scroll, preserves
 //     history+context
-//   - updateClaudeConvo (5 tests): typing/backspace/ctrl+u/esc editing,
+//   - updateAgentConvo (5 tests): typing/backspace/ctrl+u/esc editing,
 //     scroll keys (up/pgup/down/pgdown + mouse wheel + floor clamp),
 //     enter non-empty submits (via stub), sending blocks all input
 //     (enter/char/bs/ctrl+u), mouse click consumption
-//   - pollClaudeConvo (3 tests): sending continues polling, plan-revised resets
+//   - pollAgentConvo (3 tests): sending continues polling, plan-revised resets
 //     selection, idle→null
-//   - openClaudeConvo (3 tests): no executor sets error, dead handle sets error,
+//   - openAgentConvo (3 tests): no executor sets error, dead handle sets error,
 //     live handle succeeds
 
 import (
@@ -356,18 +356,18 @@ func TestChunk16c_ConfirmCancel_CleanupSessions(t *testing.T) {
 	}
 }
 
-// ───────────────────────────── closeClaudeConvo ────────────────────────────
+// ───────────────────────────── closeAgentConvo ────────────────────────────
 
-// TestChunk16c_CloseClaudeConvo_PreservesHistory verifies that closing the
+// TestChunk16c_CloseAgentConvo_PreservesHistory verifies that closing the
 // conversation overlay sets active=false, clears input and scroll, but
 // preserves history and context for later reopening.
-func TestChunk16c_CloseClaudeConvo_PreservesHistory(t *testing.T) {
+func TestChunk16c_CloseAgentConvo_PreservesHistory(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var s = {
-			claudeConvo: {
+			agentConvo: {
 				active: true,
 				inputText: 'some draft',
 				scrollOffset: 7,
@@ -380,8 +380,8 @@ func TestChunk16c_CloseClaudeConvo_PreservesHistory(t *testing.T) {
 				sending: false,
 			},
 		};
-		var r = prSplit._closeClaudeConvo(s);
-		var c = r[0].claudeConvo;
+		var r = prSplit._closeAgentConvo(s);
+		var c = r[0].agentConvo;
 		return JSON.stringify({
 			activeFalse: c.active === false,
 			inputCleared: c.inputText === '',
@@ -400,24 +400,24 @@ func TestChunk16c_CloseClaudeConvo_PreservesHistory(t *testing.T) {
 		"historyPreserved", "contextPreserved", "nullCmd",
 	} {
 		if !strings.Contains(s, `"`+field+`":true`) {
-			t.Errorf("closeClaudeConvo: %s should be true: %s", field, s)
+			t.Errorf("closeAgentConvo: %s should be true: %s", field, s)
 		}
 	}
 }
 
-// ───────────────────────────── updateClaudeConvo ───────────────────────────
+// ───────────────────────────── updateAgentConvo ───────────────────────────
 
-// TestChunk16c_UpdateClaudeConvo_TypingAndEditing verifies the positive
+// TestChunk16c_UpdateAgentConvo_TypingAndEditing verifies the positive
 // functional paths for character input, backspace, and ctrl+u when
 // sending=false. Also verifies esc closes the overlay.
-func TestChunk16c_UpdateClaudeConvo_TypingAndEditing(t *testing.T) {
+func TestChunk16c_UpdateAgentConvo_TypingAndEditing(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		// Start with empty input.
 		var s = {
-			claudeConvo: {
+			agentConvo: {
 				active: true,
 				inputText: '',
 				sending: false,
@@ -428,24 +428,24 @@ func TestChunk16c_UpdateClaudeConvo_TypingAndEditing(t *testing.T) {
 		};
 
 		// Type 'h', 'i' — should accumulate.
-		prSplit._updateClaudeConvo({type:'Key', key:'h'}, s);
-		prSplit._updateClaudeConvo({type:'Key', key:'i'}, s);
-		var afterType = s.claudeConvo.inputText;
+		prSplit._updateAgentConvo({type:'Key', key:'h'}, s);
+		prSplit._updateAgentConvo({type:'Key', key:'i'}, s);
+		var afterType = s.agentConvo.inputText;
 
 		// Backspace — should remove last char.
-		prSplit._updateClaudeConvo({type:'Key', key:'backspace'}, s);
-		var afterBs = s.claudeConvo.inputText;
+		prSplit._updateAgentConvo({type:'Key', key:'backspace'}, s);
+		var afterBs = s.agentConvo.inputText;
 
 		// More typing then ctrl+u — should clear.
-		prSplit._updateClaudeConvo({type:'Key', key:'x'}, s);
-		prSplit._updateClaudeConvo({type:'Key', key:'ctrl+u'}, s);
-		var afterCtrlU = s.claudeConvo.inputText;
+		prSplit._updateAgentConvo({type:'Key', key:'x'}, s);
+		prSplit._updateAgentConvo({type:'Key', key:'ctrl+u'}, s);
+		var afterCtrlU = s.agentConvo.inputText;
 
 		// Esc — should close overlay, preserve history.
-		s.claudeConvo.inputText = 'draft';
-		s.claudeConvo.scrollOffset = 5;
-		var r = prSplit._updateClaudeConvo({type:'Key', key:'esc'}, s);
-		var c = r[0].claudeConvo;
+		s.agentConvo.inputText = 'draft';
+		s.agentConvo.scrollOffset = 5;
+		var r = prSplit._updateAgentConvo({type:'Key', key:'esc'}, s);
+		var c = r[0].agentConvo;
 
 		return JSON.stringify({
 			afterType: afterType,
@@ -488,15 +488,15 @@ func TestChunk16c_UpdateClaudeConvo_TypingAndEditing(t *testing.T) {
 	}
 }
 
-// TestChunk16c_UpdateClaudeConvo_ScrollKeys verifies that up/pgup/down/pgdown
+// TestChunk16c_UpdateAgentConvo_ScrollKeys verifies that up/pgup/down/pgdown
 // scroll the conversation history, including the floor-at-zero clamp.
-func TestChunk16c_UpdateClaudeConvo_ScrollKeys(t *testing.T) {
+func TestChunk16c_UpdateAgentConvo_ScrollKeys(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var s = {
-			claudeConvo: {
+			agentConvo: {
 				active: true,
 				inputText: '',
 				sending: false,
@@ -505,30 +505,30 @@ func TestChunk16c_UpdateClaudeConvo_ScrollKeys(t *testing.T) {
 		};
 
 		// Up: 0 → 3
-		prSplit._updateClaudeConvo({type:'Key', key:'up'}, s);
-		var afterUp = s.claudeConvo.scrollOffset;
+		prSplit._updateAgentConvo({type:'Key', key:'up'}, s);
+		var afterUp = s.agentConvo.scrollOffset;
 
 		// PgUp: 3 → 6
-		prSplit._updateClaudeConvo({type:'Key', key:'pgup'}, s);
-		var afterPgUp = s.claudeConvo.scrollOffset;
+		prSplit._updateAgentConvo({type:'Key', key:'pgup'}, s);
+		var afterPgUp = s.agentConvo.scrollOffset;
 
 		// Down: 6 → 3
-		prSplit._updateClaudeConvo({type:'Key', key:'down'}, s);
-		var afterDown = s.claudeConvo.scrollOffset;
+		prSplit._updateAgentConvo({type:'Key', key:'down'}, s);
+		var afterDown = s.agentConvo.scrollOffset;
 
 		// PgDown: 3 → 0
-		prSplit._updateClaudeConvo({type:'Key', key:'pgdown'}, s);
-		var afterPgDown = s.claudeConvo.scrollOffset;
+		prSplit._updateAgentConvo({type:'Key', key:'pgdown'}, s);
+		var afterPgDown = s.agentConvo.scrollOffset;
 
 		// Down at 0 should clamp to 0 (not go negative).
-		prSplit._updateClaudeConvo({type:'Key', key:'down'}, s);
-		var afterClamp = s.claudeConvo.scrollOffset;
+		prSplit._updateAgentConvo({type:'Key', key:'down'}, s);
+		var afterClamp = s.agentConvo.scrollOffset;
 
 		// Mouse wheel up/down.
-		prSplit._updateClaudeConvo({type:'MouseWheel', button:'wheel up', x:0, y:0, mod:[]}, s);
-		var afterWheelUp = s.claudeConvo.scrollOffset;
-		prSplit._updateClaudeConvo({type:'MouseWheel', button:'wheel down', x:0, y:0, mod:[]}, s);
-		var afterWheelDown = s.claudeConvo.scrollOffset;
+		prSplit._updateAgentConvo({type:'MouseWheel', button:'wheel up', x:0, y:0, mod:[]}, s);
+		var afterWheelUp = s.agentConvo.scrollOffset;
+		prSplit._updateAgentConvo({type:'MouseWheel', button:'wheel down', x:0, y:0, mod:[]}, s);
+		var afterWheelDown = s.agentConvo.scrollOffset;
 
 		return JSON.stringify({
 			afterUp: afterUp,
@@ -567,17 +567,17 @@ func TestChunk16c_UpdateClaudeConvo_ScrollKeys(t *testing.T) {
 	}
 }
 
-// TestChunk16c_UpdateClaudeConvo_SubmitNonEmpty verifies that enter submits
-// non-empty input text by calling submitClaudeMessage (stubbed to avoid
+// TestChunk16c_UpdateAgentConvo_SubmitNonEmpty verifies that enter submits
+// non-empty input text by calling submitAgentMessage (stubbed to avoid
 // actual async). Also tests that empty enter remains a no-op.
-func TestChunk16c_UpdateClaudeConvo_SubmitNonEmpty(t *testing.T) {
+func TestChunk16c_UpdateAgentConvo_SubmitNonEmpty(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
-		// Stub the dependencies that submitClaudeMessage needs.
+		// Stub the dependencies that submitAgentMessage needs.
 		var st = prSplit._state || {};
-		st.claudeExecutor = {
+		st.agentExecutor = {
 			handle: {
 				isAlive: function() { return true; },
 				sendMessage: function() { return {then: function(f,r) { f({text:'ok'}); }}; },
@@ -593,7 +593,7 @@ func TestChunk16c_UpdateClaudeConvo_SubmitNonEmpty(t *testing.T) {
 		};
 
 		var s = {
-			claudeConvo: {
+			agentConvo: {
 				active: true,
 				inputText: 'fix the bug',
 				scrollOffset: 3,
@@ -603,12 +603,12 @@ func TestChunk16c_UpdateClaudeConvo_SubmitNonEmpty(t *testing.T) {
 				lastError: null,
 			},
 		};
-		var r = prSplit._updateClaudeConvo({type:'Key', key:'enter'}, s);
-		var c = r[0].claudeConvo;
+		var r = prSplit._updateAgentConvo({type:'Key', key:'enter'}, s);
+		var c = r[0].agentConvo;
 
 		// Enter with empty text should be a no-op.
 		var s2 = {
-			claudeConvo: {
+			agentConvo: {
 				active: true,
 				inputText: '',
 				sending: false,
@@ -616,13 +616,13 @@ func TestChunk16c_UpdateClaudeConvo_SubmitNonEmpty(t *testing.T) {
 				context: 'plan-review',
 			},
 		};
-		var r2 = prSplit._updateClaudeConvo({type:'Key', key:'enter'}, s2);
+		var r2 = prSplit._updateAgentConvo({type:'Key', key:'enter'}, s2);
 
 		return JSON.stringify({
 			sending: c.sending === true,
 			inputCleared: c.inputText === '',
 			historyHasEntry: c.history.length > 0,
-			emptyNoOp: r2[0].claudeConvo.inputText === '' && r2[1] === null,
+			emptyNoOp: r2[0].agentConvo.inputText === '' && r2[1] === null,
 		});
 	})()`)
 	if err != nil {
@@ -643,17 +643,17 @@ func TestChunk16c_UpdateClaudeConvo_SubmitNonEmpty(t *testing.T) {
 	}
 }
 
-// TestChunk16c_UpdateClaudeConvo_SendingBlocksAllInput verifies that when
+// TestChunk16c_UpdateAgentConvo_SendingBlocksAllInput verifies that when
 // convo.sending=true, character input, backspace, ctrl+u, and enter are all
 // blocked but scroll keys still work.
-func TestChunk16c_UpdateClaudeConvo_SendingBlocksAllInput(t *testing.T) {
+func TestChunk16c_UpdateAgentConvo_SendingBlocksAllInput(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var base = function() {
 			return {
-				claudeConvo: {
+				agentConvo: {
 					active: true,
 					inputText: 'original',
 					sending: true,
@@ -665,29 +665,29 @@ func TestChunk16c_UpdateClaudeConvo_SendingBlocksAllInput(t *testing.T) {
 
 		// Char input blocked (key 'a' is single printable).
 		var s1 = base();
-		prSplit._updateClaudeConvo({type:'Key', key:'a'}, s1);
-		var charBlocked = s1.claudeConvo.inputText === 'original';
+		prSplit._updateAgentConvo({type:'Key', key:'a'}, s1);
+		var charBlocked = s1.agentConvo.inputText === 'original';
 
 		// Backspace blocked.
 		var s2 = base();
-		prSplit._updateClaudeConvo({type:'Key', key:'backspace'}, s2);
-		var bsBlocked = s2.claudeConvo.inputText === 'original';
+		prSplit._updateAgentConvo({type:'Key', key:'backspace'}, s2);
+		var bsBlocked = s2.agentConvo.inputText === 'original';
 
 		// Ctrl+U blocked.
 		var s3 = base();
-		prSplit._updateClaudeConvo({type:'Key', key:'ctrl+u'}, s3);
-		var ctrlUBlocked = s3.claudeConvo.inputText === 'original';
+		prSplit._updateAgentConvo({type:'Key', key:'ctrl+u'}, s3);
+		var ctrlUBlocked = s3.agentConvo.inputText === 'original';
 
 		// Enter blocked (would submit if not sending).
 		var s5 = base();
-		s5.claudeConvo.inputText = 'would submit';
-		var r5 = prSplit._updateClaudeConvo({type:'Key', key:'enter'}, s5);
-		var enterBlocked = s5.claudeConvo.inputText === 'would submit' && r5[1] === null;
+		s5.agentConvo.inputText = 'would submit';
+		var r5 = prSplit._updateAgentConvo({type:'Key', key:'enter'}, s5);
+		var enterBlocked = s5.agentConvo.inputText === 'would submit' && r5[1] === null;
 
 		// Scroll still works during sending.
 		var s4 = base();
-		prSplit._updateClaudeConvo({type:'Key', key:'up'}, s4);
-		var scrollWorks = s4.claudeConvo.scrollOffset === 8;
+		prSplit._updateAgentConvo({type:'Key', key:'up'}, s4);
+		var scrollWorks = s4.agentConvo.scrollOffset === 8;
 
 		return JSON.stringify({
 			charBlocked: charBlocked,
@@ -708,26 +708,26 @@ func TestChunk16c_UpdateClaudeConvo_SendingBlocksAllInput(t *testing.T) {
 	}
 }
 
-// TestChunk16c_UpdateClaudeConvo_MouseClickConsumption verifies that
+// TestChunk16c_UpdateAgentConvo_MouseClickConsumption verifies that
 // non-wheel mouse events are consumed (prevent leakage) and return [s, null].
-func TestChunk16c_UpdateClaudeConvo_MouseClickConsumption(t *testing.T) {
+func TestChunk16c_UpdateAgentConvo_MouseClickConsumption(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var s = {
-			claudeConvo: {
+			agentConvo: {
 				active: true,
 				inputText: 'test',
 				sending: false,
 				scrollOffset: 0,
 			},
 		};
-		var r = prSplit._updateClaudeConvo({
+		var r = prSplit._updateAgentConvo({
 			type:'MouseClick', button:'left', x:10, y:10, mod:[],
 		}, s);
 		return JSON.stringify({
-			inputUnchanged: r[0].claudeConvo.inputText === 'test',
+			inputUnchanged: r[0].agentConvo.inputText === 'test',
 			nullCmd: r[1] === null,
 		});
 	})()`)
@@ -740,25 +740,25 @@ func TestChunk16c_UpdateClaudeConvo_MouseClickConsumption(t *testing.T) {
 	}
 }
 
-// ──────────────────────────── pollClaudeConvo ──────────────────────────────
+// ──────────────────────────── pollAgentConvo ──────────────────────────────
 
-// TestChunk16c_PollClaudeConvo_SendingContinuesPolling verifies that when
-// convo.sending=true, pollClaudeConvo returns a tick command to continue.
-func TestChunk16c_PollClaudeConvo_SendingContinuesPolling(t *testing.T) {
+// TestChunk16c_PollAgentConvo_SendingContinuesPolling verifies that when
+// convo.sending=true, pollAgentConvo returns a tick command to continue.
+func TestChunk16c_PollAgentConvo_SendingContinuesPolling(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var s = {
-			claudeConvo: {
+			agentConvo: {
 				sending: true,
 				history: [{role:'user', text:'hello'}],
 			},
 		};
-		var r = prSplit._pollClaudeConvo(s);
+		var r = prSplit._pollAgentConvo(s);
 		return JSON.stringify({
 			hasTick: r[1] !== null,
-			stateUnchanged: r[0].claudeConvo.sending === true,
+			stateUnchanged: r[0].agentConvo.sending === true,
 		});
 	})()`)
 	if err != nil {
@@ -773,10 +773,10 @@ func TestChunk16c_PollClaudeConvo_SendingContinuesPolling(t *testing.T) {
 	}
 }
 
-// TestChunk16c_PollClaudeConvo_PlanRevisedResetsSelection verifies that
-// when st.planRevised=true, pollClaudeConvo resets selectedSplitIdx and
+// TestChunk16c_PollAgentConvo_PlanRevisedResetsSelection verifies that
+// when st.planRevised=true, pollAgentConvo resets selectedSplitIdx and
 // clears the flag.
-func TestChunk16c_PollClaudeConvo_PlanRevisedResetsSelection(t *testing.T) {
+func TestChunk16c_PollAgentConvo_PlanRevisedResetsSelection(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
@@ -786,10 +786,10 @@ func TestChunk16c_PollClaudeConvo_PlanRevisedResetsSelection(t *testing.T) {
 		if (!prSplit._state) prSplit._state = st;
 
 		var s = {
-			claudeConvo: {sending: false},
+			agentConvo: {sending: false},
 			selectedSplitIdx: 5,
 		};
-		var r = prSplit._pollClaudeConvo(s);
+		var r = prSplit._pollAgentConvo(s);
 		return JSON.stringify({
 			idxReset: r[0].selectedSplitIdx === 0,
 			flagCleared: st.planRevised === false,
@@ -811,9 +811,9 @@ func TestChunk16c_PollClaudeConvo_PlanRevisedResetsSelection(t *testing.T) {
 	}
 }
 
-// TestChunk16c_PollClaudeConvo_IdleReturnsNull verifies that when
+// TestChunk16c_PollAgentConvo_IdleReturnsNull verifies that when
 // sending=false and planRevised=false, poll returns [s, null].
-func TestChunk16c_PollClaudeConvo_IdleReturnsNull(t *testing.T) {
+func TestChunk16c_PollAgentConvo_IdleReturnsNull(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
@@ -822,8 +822,8 @@ func TestChunk16c_PollClaudeConvo_IdleReturnsNull(t *testing.T) {
 		st.planRevised = false;
 		if (!prSplit._state) prSplit._state = st;
 
-		var s = {claudeConvo: {sending: false}, selectedSplitIdx: 3};
-		var r = prSplit._pollClaudeConvo(s);
+		var s = {agentConvo: {sending: false}, selectedSplitIdx: 3};
+		var r = prSplit._pollAgentConvo(s);
 		return JSON.stringify({
 			idxUnchanged: r[0].selectedSplitIdx === 3,
 			nullCmd: r[1] === null,
@@ -838,25 +838,25 @@ func TestChunk16c_PollClaudeConvo_IdleReturnsNull(t *testing.T) {
 	}
 }
 
-// ──────────────────────────── openClaudeConvo ──────────────────────────────
+// ──────────────────────────── openAgentConvo ──────────────────────────────
 
-// TestChunk16c_OpenClaudeConvo_NoExecutor verifies that when no Claude
-// executor exists AND Claude is detected as unavailable, openClaudeConvo
+// TestChunk16c_OpenAgentConvo_NoExecutor verifies that when no Agent
+// executor exists AND Agent is detected as unavailable, openAgentConvo
 // sets lastError and still activates the overlay.
-func TestChunk16c_OpenClaudeConvo_NoExecutor(t *testing.T) {
+func TestChunk16c_OpenAgentConvo_NoExecutor(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var st = prSplit._state || {};
-		st.claudeExecutor = null;
+		st.agentExecutor = null;
 		if (!prSplit._state) prSplit._state = st;
 
-		// T5: With claudeCheckStatus='unavailable', openClaudeConvo shows
+		// T5: With agentCheckStatus='unavailable', openAgentConvo shows
 		// an immediate error instead of attempting on-demand spawn.
-		var s = {claudeConvo: {}, claudeCheckStatus: 'unavailable'};
-		var r = prSplit._openClaudeConvo(s, 'plan-review');
-		var c = r[0].claudeConvo;
+		var s = {agentConvo: {}, agentCheckStatus: 'unavailable'};
+		var r = prSplit._openAgentConvo(s, 'plan-review');
+		var c = r[0].agentConvo;
 		return JSON.stringify({
 			active: c.active === true,
 			hasError: typeof c.lastError === 'string' && c.lastError.length > 0,
@@ -875,30 +875,30 @@ func TestChunk16c_OpenClaudeConvo_NoExecutor(t *testing.T) {
 	}
 }
 
-// TestChunk16c_OpenClaudeConvo_OnDemandSpawn verifies that when no executor
-// exists but Claude is available, openClaudeConvo triggers on-demand spawn.
-func TestChunk16c_OpenClaudeConvo_OnDemandSpawn(t *testing.T) {
+// TestChunk16c_OpenAgentConvo_OnDemandSpawn verifies that when no executor
+// exists but Agent is available, openAgentConvo triggers on-demand spawn.
+func TestChunk16c_OpenAgentConvo_OnDemandSpawn(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var st = prSplit._state || {};
-		st.claudeExecutor = null;
+		st.agentExecutor = null;
 		if (!prSplit._state) prSplit._state = st;
 
-		// T5: When Claude status is not 'unavailable', openClaudeConvo
+		// T5: When Agent status is not 'unavailable', openAgentConvo
 		// starts an on-demand spawn (async) rather than erroring immediately.
-		var s = {claudeConvo: {}, claudeCheckStatus: 'available'};
-		var r = prSplit._openClaudeConvo(s, 'plan-review');
+		var s = {agentConvo: {}, agentCheckStatus: 'available'};
+		var r = prSplit._openAgentConvo(s, 'plan-review');
 		var state = r[0];
 		var cmd = r[1]; // tea.tick command
 		return JSON.stringify({
-			active: state.claudeConvo.active === true,
-			noError: !state.claudeConvo.lastError,
-			spawning: state.claudeOnDemandSpawning === true,
-			hasProgress: typeof state.claudeConvo.spawnProgress === 'string',
+			active: state.agentConvo.active === true,
+			noError: !state.agentConvo.lastError,
+			spawning: state.agentOnDemandSpawning === true,
+			hasProgress: typeof state.agentConvo.spawnProgress === 'string',
 			hasCmd: cmd !== null && cmd !== undefined,
-			contextSet: state.claudeConvo.context === 'plan-review',
+			contextSet: state.agentConvo.context === 'plan-review',
 		});
 	})()`)
 	if err != nil {
@@ -912,42 +912,42 @@ func TestChunk16c_OpenClaudeConvo_OnDemandSpawn(t *testing.T) {
 	}
 }
 
-// TestChunk16c_OpenClaudeConvo_ReopenDuringSpawn verifies that closing and
+// TestChunk16c_OpenAgentConvo_ReopenDuringSpawn verifies that closing and
 // re-opening the overlay while an on-demand spawn is in progress correctly
 // re-activates the overlay without launching a second spawn.
-func TestChunk16c_OpenClaudeConvo_ReopenDuringSpawn(t *testing.T) {
+func TestChunk16c_OpenAgentConvo_ReopenDuringSpawn(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var st = prSplit._state || {};
-		st.claudeExecutor = null;
+		st.agentExecutor = null;
 		if (!prSplit._state) prSplit._state = st;
 
 		// Step 1: Open — starts on-demand spawn.
-		var s = {claudeConvo: {}, claudeCheckStatus: 'available'};
-		var r = prSplit._openClaudeConvo(s, 'plan-review');
+		var s = {agentConvo: {}, agentCheckStatus: 'available'};
+		var r = prSplit._openAgentConvo(s, 'plan-review');
 		s = r[0];
-		// s.claudeOnDemandSpawning should be true, overlay active.
+		// s.agentOnDemandSpawning should be true, overlay active.
 
 		// Step 2: Close overlay (Escape). Spawn continues in background.
-		r = prSplit._closeClaudeConvo(s);
+		r = prSplit._closeAgentConvo(s);
 		s = r[0];
-		var closedActive = s.claudeConvo.active; // false
-		var stillSpawning = s.claudeOnDemandSpawning; // true
+		var closedActive = s.agentConvo.active; // false
+		var stillSpawning = s.agentOnDemandSpawning; // true
 
 		// Step 3: Re-open. Should NOT double-launch but SHOULD re-activate.
-		r = prSplit._openClaudeConvo(s, 'error-resolution');
+		r = prSplit._openAgentConvo(s, 'error-resolution');
 		s = r[0];
 		var cmd = r[1]; // null (no new tick — existing tick continues)
 
 		return JSON.stringify({
 			closedInactive: closedActive === false,
 			stillSpawning: stillSpawning === true,
-			reopenedActive: s.claudeConvo.active === true,
-			contextUpdated: s.claudeConvo.context === 'error-resolution',
+			reopenedActive: s.agentConvo.active === true,
+			contextUpdated: s.agentConvo.context === 'error-resolution',
 			noDoubleCmd: cmd === null,
-			spawningPreserved: s.claudeOnDemandSpawning === true,
+			spawningPreserved: s.agentOnDemandSpawning === true,
 		});
 	})()`)
 	if err != nil {
@@ -964,22 +964,22 @@ func TestChunk16c_OpenClaudeConvo_ReopenDuringSpawn(t *testing.T) {
 	}
 }
 
-// TestChunk16c_OpenClaudeConvo_DeadHandle verifies that when the executor
+// TestChunk16c_OpenAgentConvo_DeadHandle verifies that when the executor
 // handle reports isAlive()=false, an error about exited process is set.
-func TestChunk16c_OpenClaudeConvo_DeadHandle(t *testing.T) {
+func TestChunk16c_OpenAgentConvo_DeadHandle(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var st = prSplit._state || {};
-		st.claudeExecutor = {
+		st.agentExecutor = {
 			handle: {isAlive: function() { return false; }},
 		};
 		if (!prSplit._state) prSplit._state = st;
 
-		var s = {claudeConvo: {}};
-		var r = prSplit._openClaudeConvo(s, 'error-resolution');
-		var c = r[0].claudeConvo;
+		var s = {agentConvo: {}};
+		var r = prSplit._openAgentConvo(s, 'error-resolution');
+		var c = r[0].agentConvo;
 		return JSON.stringify({
 			active: c.active === true,
 			hasError: typeof c.lastError === 'string' && c.lastError.length > 0,
@@ -998,30 +998,30 @@ func TestChunk16c_OpenClaudeConvo_DeadHandle(t *testing.T) {
 	}
 }
 
-// TestChunk16c_OpenClaudeConvo_LiveHandle verifies that a live executor
+// TestChunk16c_OpenAgentConvo_LiveHandle verifies that a live executor
 // opens the conversation overlay successfully: active=true, no error,
 // inputText and scrollOffset reset.
-func TestChunk16c_OpenClaudeConvo_LiveHandle(t *testing.T) {
+func TestChunk16c_OpenAgentConvo_LiveHandle(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var st = prSplit._state || {};
-		st.claudeExecutor = {
+		st.agentExecutor = {
 			handle: {isAlive: function() { return true; }},
 		};
 		if (!prSplit._state) prSplit._state = st;
 
 		var s = {
-			claudeConvo: {
+			agentConvo: {
 				inputText: 'leftover',
 				scrollOffset: 10,
 				lastError: 'old error',
 				active: false,
 			},
 		};
-		var r = prSplit._openClaudeConvo(s, 'plan-review');
-		var c = r[0].claudeConvo;
+		var r = prSplit._openAgentConvo(s, 'plan-review');
+		var c = r[0].agentConvo;
 		return JSON.stringify({
 			active: c.active === true,
 			noError: c.lastError === null,

@@ -41,7 +41,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/lipgloss/v2"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	"github.com/rivo/uniseg"
 )
@@ -164,7 +164,7 @@ func setPositionInternal(model *textarea.Model, targetRow, targetCol int) {
 
 // parseStyleFromJS parses a JavaScript style object and returns a lipgloss.Style.
 // The JS object can have: foreground, background, bold, italic, underline, strikethrough, reverse, blink.
-func parseStyleFromJS(runtime *goja.Runtime, styleObj *goja.Object) lipgloss.Style {
+func parseStyleFromJS(_ *goja.Runtime, styleObj *goja.Object) lipgloss.Style {
 	style := lipgloss.NewStyle()
 	if v := styleObj.Get("foreground"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 		style = style.Foreground(lipgloss.Color(v.String()))
@@ -1363,7 +1363,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 			return arr
 		}
 
-		msg := bubbletea.JsToTeaMsg(runtime, msgObj)
+		msg := bubbletea.ParseMsg(runtime, msgObj)
 		if msg == nil {
 			return arr
 		}

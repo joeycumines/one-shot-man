@@ -3,8 +3,9 @@ package bubblezone
 import (
 	"runtime"
 	"testing"
+	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -37,11 +38,15 @@ func loadModuleClosed(t *testing.T) *goja.Runtime {
 
 // waitForZone waits for the bubblezone worker goroutine to process scanned
 // zones. Scan() is async (sends via channel), so Get() may not immediately
-// return zone info. This is NOT timing-dependent: it yields to the goroutine
-// scheduler until the bounded retry limit.
+// return zone info. This polls with a deadline, yielding the OS thread via
+// a short sleep each iteration so the worker goroutine gets scheduled even
+// under heavy parallel test load (full -race suite). A pure runtime.Gosched
+// busy-wait is unreliable under load because it does not release the OS
+// thread, starving the worker.
 func waitForZone(t *testing.T, mgr *Manager, id string) {
 	t.Helper()
-	for range 1000 {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
 		mgr.mu.RLock()
 		z := mgr.zone
 		mgr.mu.RUnlock()
@@ -51,9 +56,12 @@ func waitForZone(t *testing.T, mgr *Manager, id string) {
 		if info := z.Get(id); info != nil && !info.IsZero() {
 			return
 		}
+		if time.Now().After(deadline) {
+			t.Fatalf("zone %q not available after Scan", id)
+		}
 		runtime.Gosched()
+		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("zone %q not available after Scan", id)
 }
 
 // --- NewManager ---
@@ -471,14 +479,20 @@ func TestIntegration_RescanUpdatesZones(t *testing.T) {
 	_, err = rt.RunString("var rv2 = zone.mark('rz', 'MUCH LONGER CONTENT HERE'); zone.scan(rv2)")
 	require.NoError(t, err)
 
-	// Wait for zone info to actually change (not just exist)
-	for range 1000 {
+	// Wait for zone info to actually change (not just exist). Uses a
+	// deadline + sleep poll (same pattern as waitForZone) so the worker
+	// goroutine gets scheduled even under heavy parallel test load.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
 		if info := mgr.zone.Get("rz"); info != nil && info.EndX != endX1 {
 			return // zone updated — pass
 		}
+		if time.Now().After(deadline) {
+			t.Fatal("zone 'rz' did not update after rescan")
+		}
 		runtime.Gosched()
+		time.Sleep(time.Millisecond)
 	}
-	t.Fatal("zone 'rz' did not update after rescan")
 }
 
 func TestIntegration_PrefixedZoneIDs(t *testing.T) {

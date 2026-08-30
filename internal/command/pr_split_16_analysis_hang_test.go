@@ -50,7 +50,7 @@ func TestChunk16_AnalysisPipeline_GroupingThrow(t *testing.T) {
 			throw new Error('grouping exploded');
 		};
 
-		// Heuristic mode — no baseline verify, no Claude.
+		// Heuristic mode — no baseline verify, no Agent.
 		prSplit.runtime.mode = 'heuristic';
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.dir = '.';

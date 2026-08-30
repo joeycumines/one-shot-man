@@ -109,7 +109,7 @@ Source: [internal/command/registry.go](../internal/command/registry.go)
 
 ## Scripting engine
 
-The scripting engine is the core runtime for JavaScript execution, backed by [Goja](https://github.com/dop251/goja) (a pure-Go ES5.1+ engine).
+The scripting engine is the core runtime for JavaScript execution, backed by [Goja](https://github.com/joeycumines/goja) (a pure-Go ES5.1+ engine).
 
 ### Engine creation
 
@@ -196,7 +196,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 | `osm:os` | File I/O (read, write, append), environment variables, clipboard, editor |
 | `osm:path` | Path manipulation (join, dir, base, ext, abs, rel, glob) |
 | `osm:regexp` | RE2 regular expressions (match, find, replace, split, compile) |
-| `osm:time` | Sleep (millisecond-precision delay) |
+| `osm:gitops` | Git operations via go-git (isRepo, open, addAll, commit, push) |
 | `osm:fetch` | HTTP client (GET, POST, etc.) |
 | `osm:grpc` | Promise-based gRPC client/server (via goja-grpc, in-process channel) |
 | `osm:protobuf` | Protocol Buffers descriptor loading (via goja-protobuf) |
@@ -243,7 +243,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 
 | Module | Description |
 |--------|-------------|
-| `osm:mcp` | Promise-based MCP (Model Context Protocol) client |
+| `osm:mcp` | Promise-based MCP (Model Context Protocol) server |
 | `osm:mcpcallback` | MCP callback handler for tool invocation responses |
 | `osm:termmux` | Terminal multiplexer — pane management, visibility, events, BubbleTea integration |
 
@@ -251,7 +251,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 
 | Module | Description |
 |--------|-------------|
-| `osm:claudemux` | Claude Code process management — PTY output parsing, guard rails, error recovery, instance pooling, safety validation |
+| `osm:aimux` | Provider-agnostic agent process multiplexer — process registry, PTY spawn, output parser, used by `pr-split` |
 
 ### Context management
 
@@ -493,7 +493,7 @@ The PR Split TUI uses a split-view layout during branch building with four multi
 ┌─────────────────────────────────┐
 │  Wizard (top pane)              │  ← BubbleTea TUI
 ├─────────────────────────────────┤
-│  Tab Bar: Claude|Output|Verify|Shell  │
+│  Tab Bar: Agent|Output|Verify|Shell   │
 │  ┌─────────────────────────────┐│
 │  │  Active Tab Content         ││  ← CaptureSession or text
 │  │  (ANSI-rendered terminal)   ││

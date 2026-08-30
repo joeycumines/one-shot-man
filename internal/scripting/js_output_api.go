@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/joeycumines/goja"
 	builtinos "github.com/joeycumines/one-shot-man/internal/builtin/os"
 )
 
@@ -19,31 +20,47 @@ func (e *Engine) jsOutputPrintf(format string, args ...any) {
 	e.logger.PrintfToTUI(format, args...)
 }
 
+// outputClipboardTimeout caps a clipboard subprocess (pbcopy/xclip/clip).
+const outputClipboardTimeout = 10 * time.Second
+
 // jsOutputToClipboard copies text to the system clipboard.
-// Returns true on success, throws a JS error on failure.
-// T088: Platform-specific clipboard support via pbcopy/xclip/clip.
-func (e *Engine) jsOutputToClipboard(text string) {
-	ctx, cancel := context.WithTimeout(e.ctx, 10*time.Second)
-	defer cancel()
-
-	tuiSink := func(s string) {
-		e.logger.PrintToTUI(s)
-	}
-
-	if err := builtinos.ClipboardCopy(ctx, tuiSink, text); err != nil {
-		panic(e.vm.NewGoError(err))
-	}
+//
+// Returns a Promise<void> that resolves on success / rejects on failure. This
+// is ASYNC per the JS Binding Contract (CLAUDE.md): clipboard is subprocess
+// I/O and must run off the event loop via Promisify — the previous synchronous
+// form monopolized the loop for up to 10s. Mirrors osm:os.clipboardCopy.
+//
+// NOTE: callers in sync (Elm-style) update handlers must fire-and-forget the
+// returned Promise and handle the flash in a .then/.catch (see the pr-split
+// TUI handlers), since the handler cannot await.
+func (e *Engine) jsOutputToClipboard(text string) goja.Value {
+	return e.clipboardPromise(func(ctx context.Context) (any, error) {
+		tuiSink := func(s string) { e.logger.PrintToTUI(s) }
+		if err := builtinos.ClipboardCopy(ctx, tuiSink, text); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	})
 }
 
 // jsOutputFromClipboard reads text from the system clipboard.
-// Returns the clipboard content as a string, throws a JS error on failure.
-func (e *Engine) jsOutputFromClipboard() string {
-	ctx, cancel := context.WithTimeout(e.ctx, 10*time.Second)
-	defer cancel()
+//
+// Returns a Promise<string> (async per the JS Binding Contract; was sync).
+// Callers that need the value must await it (or consume it in a .then).
+func (e *Engine) jsOutputFromClipboard() goja.Value {
+	return e.clipboardPromise(func(ctx context.Context) (any, error) {
+		text, err := builtinos.ClipboardPaste(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return text, nil
+	})
+}
 
-	text, err := builtinos.ClipboardPaste(ctx)
-	if err != nil {
-		panic(e.vm.NewGoError(err))
-	}
-	return text
+func (e *Engine) clipboardPromise(fn func(ctx context.Context) (any, error)) goja.Value {
+	return e.Adapter().Promisify(e.ctx, func(ctx context.Context) (any, error) {
+		clipCtx, cancel := context.WithTimeout(ctx, outputClipboardTimeout)
+		defer cancel()
+		return fn(clipCtx)
+	})
 }

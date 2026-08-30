@@ -8,11 +8,11 @@
     var getCancellationError = prSplit._getCancellationError;
     var TRUNCATION_WIDTH = 120;
 
-    function readClaudePlainText() {
+    function readAgentPlainText() {
         if (typeof tuiMux === 'undefined' || !tuiMux || typeof tuiMux.snapshot !== 'function') {
             return null;
         }
-        var cid = prSplit._state && prSplit._state.claudeSessionID;
+        var cid = prSplit._state && prSplit._state.agentSessionID;
         if (!cid) {
             return null;
         }
@@ -20,12 +20,12 @@
         return snap ? String(snap.plainText || '') : null;
     }
 
-    function readClaudeActivityMs() {
+    function readAgentActivityMs() {
         if (typeof tuiMux === 'undefined' || !tuiMux ||
             typeof tuiMux.lastActivityMs !== 'function') {
             return -1;
         }
-        var cid = prSplit._state && prSplit._state.claudeSessionID;
+        var cid = prSplit._state && prSplit._state.agentSessionID;
         if (!cid) {
             return -1;
         }
@@ -34,7 +34,7 @@
 
     function captureScreenshot() {
         try {
-            return readClaudePlainText();
+            return readAgentPlainText();
         } catch (e) {
             log.printf('auto-split sendToHandle: screenshot read failed — %s', e.message || String(e));
             return null;
@@ -79,7 +79,7 @@
         var lower = String(screen || '').toLowerCase();
         if (lower.indexOf('choose the text style') !== -1 &&
             lower.indexOf("let's get started") !== -1) {
-            return 'Claude is waiting on first-run setup (theme selection); complete setup in Claude first.';
+            return 'Agent is waiting on first-run setup (theme selection); complete setup in Agent first.';
         }
         return '';
     }
@@ -172,6 +172,24 @@
     }
 
     async function waitForPromptReady(cfg) {
+        // Optional fast path: if the agentExecutor has a TUIStateMachine
+        // and it reports "Ready", skip screenshot polling entirely.
+        // This is an optimization — if the state machine is unavailable
+        // or not in "Ready" state, the existing screenshot-based
+        // detection below runs unchanged.
+        var agentExecutor = prSplit._state && prSplit._state.agentExecutor;
+        if (agentExecutor && agentExecutor.stateMachine &&
+            typeof agentExecutor.stateMachine.stateName === 'function') {
+            try {
+                var stateName = agentExecutor.stateMachine.stateName();
+                if (stateName === 'Ready') {
+                    return { error: null, observed: false, state: null, viaStateMachine: true };
+                }
+            } catch (e) {
+                log.debug('waitForPromptReady: stateMachine check failed', { error: e.message || String(e) });
+            }
+        }
+
         var startMs = Date.now();
         var lastKey = '';
         var stableCount = 0;
@@ -209,7 +227,7 @@
             await new Promise(function(resolve) { setTimeout(resolve, cfg.promptReadyPollMs); });
         }
         return {
-            error: 'Claude prompt not ready before send: prompt marker not found',
+            error: 'Agent prompt not ready before send: prompt marker not found',
             observed: true,
             state: lastState
         };
@@ -353,15 +371,15 @@
     // sendToHandle writes prompt text and submits it with Enter. It uses:
     //  1) chunked text writes (to reduce giant single-write fragility),
     //  2) newline as a distinct write (not text+\n in one write),
-    //  3) terminal-output observation via the pinned Claude snapshot to confirm
-    //     Claude reacted to submission, retrying newline if needed.
+    //  3) terminal-output observation via the pinned Agent snapshot to confirm
+    //     Agent reacted to submission, retrying newline if needed.
     //
     // Returns Promise<{ error: null }> on success,
     // Promise<{ error: "message" }> on failure.
     async function sendToHandle(handle, text) {
         if (!handle) {
             log.printf('auto-split sendToHandle: handle is null — process may have exited');
-            return { error: 'Claude process handle is null — process may have exited or failed to spawn. Check Claude CLI availability and MCP configuration.' };
+            return { error: 'Agent process handle is null — process may have exited or failed to spawn. Check Agent CLI availability and MCP configuration.' };
         }
         var config = resolveSendConfig();
         var truncated = text.length > TRUNCATION_WIDTH ? text.substring(0, TRUNCATION_WIDTH) + '...' : text;
@@ -499,7 +517,7 @@
     prSplit._detectPromptBlocker = detectPromptBlocker;
     prSplit._captureInputAnchors = captureInputAnchors;
     prSplit._captureScreenshot = captureScreenshot;
-    prSplit._readClaudePlainText = readClaudePlainText;
-    prSplit._readClaudeActivityMs = readClaudeActivityMs;
+    prSplit._readAgentPlainText = readAgentPlainText;
+    prSplit._readAgentActivityMs = readAgentActivityMs;
 
 })(globalThis.prSplit);

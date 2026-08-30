@@ -55,7 +55,7 @@ func TestFlatFormatPipelineLoading(t *testing.T) {
 		"pre_tokenizer": {"type": "Whitespace"}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestSpecialTokenParsingError(t *testing.T) {
 		}
 	}`
 
-	_, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	_, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err == nil {
 		t.Fatal("Expected error parsing malformed sep ID string, got nil")
 	}

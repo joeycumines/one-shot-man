@@ -19,6 +19,7 @@ type StringIOSession struct {
 	done      chan struct{}
 	readerCh  chan []byte
 	startOnce sync.Once
+	closeOnce sync.Once
 }
 
 // NewStringIOSession creates a session adapter from a [StringIO] handle.
@@ -44,9 +45,8 @@ func (s *StringIOSession) Write(p []byte) (int, error) {
 
 // Resize delegates to the underlying StringIO if it implements a
 // Resize(rows, cols int) error method. PTY-backed agent handles
-// (e.g., claudemux.ptyAgentHandle) carry a real PTY that supports
-// SIGWINCH delivery. Plain string-based handles lack Resize, so
-// the call is a safe no-op.
+// carry a real PTY that supports SIGWINCH delivery. Plain
+// string-based handles lack Resize, so the call is a safe no-op.
 func (s *StringIOSession) Resize(rows, cols int) error {
 	type resizer interface {
 		Resize(rows, cols int) error
@@ -60,11 +60,7 @@ func (s *StringIOSession) Resize(rows, cols int) error {
 // Close closes the underlying StringIO and signals done.
 func (s *StringIOSession) Close() error {
 	err := s.sio.Close()
-	select {
-	case <-s.done:
-	default:
-		close(s.done)
-	}
+	s.closeOnce.Do(func() { close(s.done) })
 	return err
 }
 

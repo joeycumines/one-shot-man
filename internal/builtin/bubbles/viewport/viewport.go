@@ -78,7 +78,7 @@ import (
 
 	"charm.land/bubbles/v2/viewport"
 	"charm.land/lipgloss/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	jslipgloss "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 )
@@ -389,7 +389,7 @@ func createViewportObject(runtime *goja.Runtime, vp *viewport.Model) goja.Value 
 		}
 
 		// Convert JS message to tea.Msg
-		msg := bubbletea.JsToTeaMsg(runtime, msgObj)
+		msg := bubbletea.ParseMsg(runtime, msgObj)
 		if msg == nil {
 			arr := runtime.NewArray()
 			_ = arr.Set("0", obj)

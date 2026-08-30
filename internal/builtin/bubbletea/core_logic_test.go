@@ -3,7 +3,7 @@ package bubbletea
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 )
 

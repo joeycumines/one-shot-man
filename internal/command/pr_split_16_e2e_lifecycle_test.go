@@ -70,7 +70,7 @@ func TestE2E_VerifyTabLifecycle(t *testing.T) {
         }
 
         // ── Phase 2: Degraded one-shot verify is read-only; scroll keys move the viewport ──
-        s.splitViewFocus = 'claude';  // focus bottom pane (verify tab)
+        s.splitViewFocus = 'agent';  // focus bottom pane (verify tab)
         r = sendKey(s, 'up');
         s = r[0];
         if (s.wizardState !== 'BRANCH_BUILDING') {
@@ -155,7 +155,7 @@ func TestE2E_VerifyFallbackLifecycle_T380(t *testing.T) {
         s.verifyViewportOffset = 3;
         s.splitViewEnabled = true;
         s.splitViewTab = 'verify';
-        s.splitViewFocus = 'claude';
+        s.splitViewFocus = 'agent';
 
         // Poll fallback — should complete since verifyFallbackRunning=false.
         var r = update({type: 'Tick', id: 'verify-fallback-poll'}, s);

@@ -3,7 +3,7 @@ package scripting
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // TestSymbolObjectAccess tests how goja handles Symbol objects stored as properties

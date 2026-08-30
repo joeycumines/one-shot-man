@@ -10,12 +10,13 @@ creating sessions and managers, plus event constants.
 |--------|------|-------------|
 | `newCaptureSession(cmd, args?, opts?)` | factory | Create a standalone PTY session |
 | `newSessionManager(opts?)` | factory | Create a new SessionManager |
+| `newBoundedSession(opts)` | factory | Create a CaptureSession + SessionManager in one call. Opts: `{cmd, args?, dir?, rows?, cols?, env?, name?, kind?}`. Returns `{mgr, session, id}`. |
 | `EXIT_TOGGLE` | `"toggle"` | Passthrough ended by toggle key |
 | `EXIT_CHILD_EXIT` | `"childExit"` | Passthrough ended by child process exit |
 | `EXIT_CONTEXT` | `"context"` | Passthrough ended by context cancellation |
 | `EXIT_ERROR` | `"error"` | Passthrough ended by error |
 | `SIDE_OSM` | `"osm"` | Constant for the OSM side identifier |
-| `SIDE_CLAUDE` | `"claude"` | Constant for the Claude side identifier |
+| `SIDE_AGENT` | `"agent"` | Constant for the agent side identifier |
 | `DEFAULT_TOGGLE_KEY` | `29` (0x1D) | Ctrl+] key code |
 | `EVENT_EXIT` | `"exit"` | Exit event name |
 | `EVENT_RESIZE` | `"resize"` | Resize event name |
@@ -26,6 +27,28 @@ creating sessions and managers, plus event constants.
 | `EVENT_ACTIVATED` | `"activated"` | Session activated event name |
 | `EVENT_CLOSED` | `"closed"` | Session closed event name |
 | `EVENT_TERMINAL_RESIZE` | `"terminal-resize"` | Terminal resize event name |
+| `EVENT_ACTIVITY` | `"activity"` | Session activity detected (new output) |
+| `EVENT_SILENCE` | `"silence"` | Session silence detected (no output for a period) |
+| `EVENT_TITLE` | `"title"` | Session title changed |
+| `EVENT_WORKING_DIRECTORY` | `"cwd"` | Working directory changed |
+| `EVENT_CWD` | `"cwd"` | Alias for `EVENT_WORKING_DIRECTORY` |
+| `EVENT_CLIPBOARD` | `"clipboard"` | Clipboard event |
+| `LAYOUT_TILED` | `"tiled"` | Tiled layout mode |
+| `LAYOUT_STACKED` | `"stacked"` | Stacked layout mode |
+| `LAYOUT_HORIZONTAL` | `"horizontal"` | Horizontal split layout mode |
+| `LAYOUT_VERTICAL` | `"vertical"` | Vertical split layout mode |
+| `LAYOUT_MAIN_HORIZONTAL` | `"main-horizontal"` | Main-horizontal layout mode |
+| `LAYOUT_MAIN_VERTICAL` | `"main-vertical"` | Main-vertical layout mode |
+| `enableMouseForward()` | function | Enable mouse forward emulation |
+| `mouseDrag()` | function | Create a mouse drag object |
+| `handleMouseDrag(msg, ...)` | function | Handle mouse drag events |
+| `newControlRouter(opts?)` | function | Create a control router for key dispatch |
+| `newPrefixKeyHandler(opts?)` | function | Create a prefix key handler |
+| `handlePrefixKey(mgr, key)` | function | Execute prefix action on a SessionManager |
+| `keyToTermBytes(key)` | function | Convert a key to terminal byte sequence |
+| `renderMessageBar(msg, width)` | function | Render a message bar string |
+| `mouseToSGR(x, y, button, press)` | function | Convert mouse coordinates to SGR format |
+| `splitLayout(...)` | function | Split layout operation |
 
 ---
 
@@ -63,7 +86,7 @@ Created via `newCaptureSession(command, args?, opts?)`.
 | `pid()` | `CaptureSession.Pid()` | — | `number` | silent |
 | `exitCode()` | `CaptureSession.ExitCode()` | — | `number` | silent |
 | `isDone()` | channel select on `Done()` | — | `boolean` | silent |
-| `passthrough(opts?)` | `CaptureSession.Passthrough()` | `{toggleKey?}` | `{reason, error?}` | error field |
+| `passthrough(opts?)` | `CaptureSession.Passthrough()` | `{toggleKey?}` | `Promise<{reason, error?}>` | async, error field |
 | `reader()` | `InteractiveSession.Reader()` | — | `string\|null` | blocks; null on close |
 | `readAvailable()` | drain `Reader()` channel | — | `string\|null` | non-blocking; null on close |
 | `write(data)` | `InteractiveSession.Write()` | `string` | `undefined` | throws |
@@ -140,8 +163,8 @@ should prefer pinned SessionID access: `snapshot(id)` /
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
-| `passthrough(opts)` | `SessionManager.Passthrough()` | `{stdin?,stdout?,termFd?,toggleKey?,statusBar?,restoreScreen?,resizeFn?}` | `{reason, error?}` | error field |
-| `switchTo()` | `SessionManager.Passthrough()` | — | `{reason, error?, childOutput?}` | error field |
+| `passthrough(opts)` | `SessionManager.Passthrough()` | `{stdin?,stdout?,termFd?,toggleKey?,statusBar?,restoreScreen?,resizeFn?}` | `Promise<{reason, error?}>` | async, error field |
+| `switchTo()` | `SessionManager.Passthrough()` | — | `Promise<{reason, error?, childOutput?}>` | async, error field |
 | `hasChild()` | `ActiveID() != 0` | — | `boolean` | silent |
 
 ### Configuration
@@ -155,23 +178,65 @@ should prefer pinned SessionID access: `snapshot(id)` /
 
 ### Events
 
+`osm:termmux` wraps each `SessionManager` in a standard DOM-style
+`EventTarget`. You may use either the modern `addEventListener` API or
+the legacy `on`/`off` aliases; both register listeners on the same
+underlying target. Listeners receive `CustomEvent` instances with a
+`detail` object containing event-specific data.
+
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
-| `on(event, callback)` | listener registration | `string, function` | `number` (listener ID) | throws TypeError if invalid |
-| `off(id)` | listener removal | `number` | `boolean` | silent |
-| `pollEvents()` | drain event queue | — | `number` (events delivered) | silent |
+| `addEventListener(event, callback)` | `EventTarget.addEventListener()` | `string, function` | `undefined` | throws TypeError if callback is not a function |
+| `removeEventListener(event, callback)` | `EventTarget.removeEventListener()` | `string, function` | `undefined` | silent |
+| `dispatchEvent(event)` | `EventTarget.dispatchEvent()` | `Event\|CustomEvent` | `boolean` | throws TypeError if the event is missing a `type` |
+| `on(event, callback)` | legacy wrapper | `string, function` | `number` (listener ID) | throws TypeError if invalid event or callback |
+| `off(id)` | legacy wrapper | `number` | `boolean` | silent |
+| `pollEvents()` | compatibility no-op | — | `number` (always `0`) | silent |
 | `subscribe(bufSize?)` | `EventBus.Subscribe()` | `number?` | `{id, pollEvents}` | silent |
 | `unsubscribe(id)` | `EventBus.Unsubscribe()` | `number` | `boolean` | silent |
 
-Valid event names: `exit`, `resize`, `focus`, `bell`, `output`,
-`registered`, `activated`, `closed`, `terminal-resize`.
+Valid legacy event names for `on`: `exit`, `resize`, `focus`, `bell`,
+`output`, `registered`, `activated`, `closed`, `terminal-resize`,
+`activity`, `silence`, `title`, `cwd`, `clipboard`.
+`addEventListener` accepts any event `type`.
+
+#### Event detail payload
+
+| Event type | `detail` fields |
+|------------|-----------------|
+| `exit` | `{ sessionId: number, pane?: string }` |
+| `resize` | `{ sessionId: number }` |
+| `focus` | `{ sessionId: number }` |
+| `bell` | `{ sessionId: number, pane?: string }` |
+| `output` | `{ sessionId: number, pane?: string, chunk?: string }` |
+| `registered` | `{ sessionId: number }` |
+| `activated` | `{ sessionId: number }` |
+| `closed` | `{ sessionId: number }` |
+| `terminal-resize` | `{ sessionId: number, rows: number, cols: number }` |
+| `activity` | `{ sessionId: number }` |
+| `silence` | `{ sessionId: number }` |
+| `title` | `{ sessionId: number, title?: string }` |
+| `cwd` | `{ sessionId: number, path?: string }` |
+| `clipboard` | `{ sessionId: number, data?: string }` |
+
+Example:
+
+```js
+var termmux = require('osm:termmux');
+var bounded = termmux.newBoundedSession({ cmd: '/bin/sh' });
+
+bounded.mgr.addEventListener('output', function (e) {
+  output.print('output from ' + e.detail.sessionId + ': ' + e.detail.chunk);
+});
+```
 
 ### BubbleTea Integration
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
-| `fromModel(model, opts?)` | model wrapper | `any, {altScreen?,toggleKey?}` | `{model, options}` | throws TypeError if no model |
-| `activeSide()` | hardcoded | — | `"osm"` | N/A |
+| `fromModel(model, opts?)` | model wrapper | `any, {altScreen?,toggleKey?,onToggle?}` | `{model, options}` | throws TypeError if no model |
+| `activeSide()` | passthrough state | — | `"osm"` or `"agent"` | N/A |
+| `isPassthrough()` | passthrough state | — | `boolean` | N/A |
 
 ---
 

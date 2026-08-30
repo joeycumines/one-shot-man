@@ -50,28 +50,28 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 		},
 	})
 
-	// Mock ClaudeCodeExecutor (pipeline requires it for classify+plan).
+	// Mock AgentCodeExecutor (pipeline requires it for classify+plan).
 	mockSetup := `
 		prSplit.SEND_TEXT_CHUNK_BYTES = 1000000;
 		var _mockSentPrompts = [];
-		ClaudeCodeExecutor = function(config) {
+		AgentCodeExecutor = function(config) {
 			this.config = config;
-			this.resolved = { command: 'mock-claude' };
+			this.resolved = { command: 'mock-agent' };
 			this.handle = {
 				send: function(text) { _mockSentPrompts.push(text); },
 				isAlive: function() { return true; }
 			};
 		};
-		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.spawn = function(sid, opts) {
+		AgentCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		AgentCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
+		AgentCodeExecutor.prototype.spawn = function(sid, opts) {
 			return { error: null, sessionId: 'mock-session-baseline-retry' };
 		};
-		ClaudeCodeExecutor.prototype.close = function() {};
-		ClaudeCodeExecutor.prototype.kill = function() {};
+		AgentCodeExecutor.prototype.close = function() {};
+		AgentCodeExecutor.prototype.kill = function() {};
 	`
 	if _, err := tp.EvalJS(mockSetup); err != nil {
-		t.Fatalf("inject mock ClaudeCodeExecutor: %v", err)
+		t.Fatalf("inject mock AgentCodeExecutor: %v", err)
 	}
 
 	// --- Step 1: dispatch auto-split → should hit BASELINE_FAIL ---
@@ -147,7 +147,7 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 	}
 
 	// Verify the pipeline actually ran (should mention steps or produce report).
-	// The pipeline sends prompts to the mock Claude, so there should be
+	// The pipeline sends prompts to the mock Agent, so there should be
 	// classification+plan interaction.
 	promptCount, err := tp.EvalJS(`_mockSentPrompts.length`)
 	if err != nil {
@@ -161,7 +161,7 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 		}
 	}
 	if pCount < 1 {
-		t.Errorf("expected at least 1 prompt sent to mock Claude, got %d", pCount)
+		t.Errorf("expected at least 1 prompt sent to mock Agent, got %d", pCount)
 	}
 }
 
@@ -195,7 +195,7 @@ func TestIntegration_WizardHandlerChain_PlanReject(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		var _cfgResult = prSplit._handleConfigState({
+		var _cfgResult = await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy: 'directory',
 			verifyCommand: 'true'
@@ -302,7 +302,7 @@ func TestIntegration_WizardHandlerChain_PlanReject(t *testing.T) {
 	}
 
 	// --- Execute branch building (real git operations) ---
-	buildResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("branch building: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestIntegration_WizardHandlerChain_PlanReject(t *testing.T) {
 	}
 
 	// --- Equivalence check ---
-	equivResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
+	equivResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("equiv check: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestIntegration_WizardHandlerChain_BranchFailSkip(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		var _cfgResult = prSplit._handleConfigState({
+		var _cfgResult = await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy: 'directory',
 			verifyCommand: 'true'
@@ -476,7 +476,7 @@ func TestIntegration_WizardHandlerChain_BranchFailSkip(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING: one branch should fail verification ---
-	buildResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("branch building: %v", err)
 	}
@@ -541,7 +541,7 @@ func TestIntegration_WizardHandlerChain_BranchFailSkip(t *testing.T) {
 	}
 
 	// --- EQUIV_CHECK ---
-	equivResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
+	equivResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("equiv check: %v", err)
 	}
@@ -649,7 +649,7 @@ func TestIntegration_WizardHandlerChain_HappyPath(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		var _cfgResult = prSplit._handleConfigState({
+		var _cfgResult = await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -700,7 +700,7 @@ func TestIntegration_WizardHandlerChain_HappyPath(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING → EQUIV_CHECK (all pass) ---
-	buildResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -735,7 +735,7 @@ func TestIntegration_WizardHandlerChain_HappyPath(t *testing.T) {
 	}
 
 	// --- EQUIV_CHECK → FINALIZATION ---
-	equivResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
+	equivResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("equiv: %v", err)
 	}
@@ -805,7 +805,7 @@ func TestIntegration_WizardHandlerChain_PlanEditRoundtrip(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		var _cfgResult = prSplit._handleConfigState({
+		var _cfgResult = await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -903,7 +903,7 @@ func TestIntegration_WizardHandlerChain_PlanEditRoundtrip(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING with the edited 2-split plan ---
-	buildResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -932,7 +932,7 @@ func TestIntegration_WizardHandlerChain_PlanEditRoundtrip(t *testing.T) {
 	}
 
 	// --- EQUIV_CHECK → FINALIZATION ---
-	equivResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
+	equivResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("equiv: %v", err)
 	}
@@ -994,7 +994,7 @@ func TestIntegration_WizardHandlerChain_ErrorRetry(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		var _cfgResult = prSplit._handleConfigState({
+		var _cfgResult = await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -1027,7 +1027,7 @@ func TestIntegration_WizardHandlerChain_ErrorRetry(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING (fail) → ERROR_RESOLUTION ---
-	buildResult1, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult1, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("build 1: %v", err)
 	}
@@ -1089,7 +1089,7 @@ func TestIntegration_WizardHandlerChain_ErrorRetry(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING (success) → EQUIV_CHECK ---
-	buildResult2, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult2, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("build 2: %v", err)
 	}
@@ -1105,7 +1105,7 @@ func TestIntegration_WizardHandlerChain_ErrorRetry(t *testing.T) {
 	}
 
 	// --- EQUIV_CHECK → FINALIZATION ---
-	equivResult, err := tp.EvalJS(`JSON.stringify(prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
+	equivResult, err := tp.EvalJS(`JSON.stringify(await prSplit._handleEquivCheckState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("equiv: %v", err)
 	}
@@ -1178,7 +1178,7 @@ func TestIntegration_WizardHandlerChain_ErrorAutoResolve(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		prSplit._handleConfigState({
+		await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -1206,7 +1206,7 @@ func TestIntegration_WizardHandlerChain_ErrorAutoResolve(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING (fail — flag file exists) → ERROR_RESOLUTION ---
-	buildResult1, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult1, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("build 1: %v", err)
 	}
@@ -1243,7 +1243,7 @@ func TestIntegration_WizardHandlerChain_ErrorAutoResolve(t *testing.T) {
 	}
 
 	// --- BRANCH_BUILDING (success) → EQUIV_CHECK ---
-	buildResult2, err := tp.EvalJS(`JSON.stringify(prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
+	buildResult2, err := tp.EvalJS(`JSON.stringify(await prSplit._handleBranchBuildingState(_tw, _tw.data.plan))`)
 	if err != nil {
 		t.Fatalf("build 2: %v", err)
 	}
@@ -1260,7 +1260,7 @@ func TestIntegration_WizardHandlerChain_ErrorAutoResolve(t *testing.T) {
 
 	// --- EQUIV_CHECK → FINALIZATION → DONE ---
 	_, err = tp.EvalJS(`
-		prSplit._handleEquivCheckState(_tw, _tw.data.plan);
+		await prSplit._handleEquivCheckState(_tw, _tw.data.plan);
 		prSplit._handleFinalizationState(_tw, 'done');
 	`)
 	if err != nil {
@@ -1727,7 +1727,7 @@ func TestIntegration_WizardHandlerChain_BaselineFailAbort(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		var _cfgResult = prSplit._handleConfigState({
+		var _cfgResult = await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'test -f .nonexistent-file'
@@ -1735,7 +1735,7 @@ func TestIntegration_WizardHandlerChain_BaselineFailAbort(t *testing.T) {
 		// T090: handleConfigState returns baselineVerifyConfig, not verify result.
 		// Perform deferred baseline verify using the config.
 		var _bvc = _cfgResult.baselineVerifyConfig;
-		var _verifyResult = prSplit.verifySplit(prSplit.runtime.baseBranch, _bvc);
+		var _verifyResult = await prSplit.verifySplit(prSplit.runtime.baseBranch, _bvc);
 		// Baseline should fail — .nonexistent-file doesn't exist.
 		if (_verifyResult.passed) throw new Error('expected baseline failure');
 		_tw.transition('BASELINE_FAIL');
@@ -1790,7 +1790,7 @@ func TestIntegration_WizardHandlerChain_FinalizationReport(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		prSplit._handleConfigState({
+		await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -1808,8 +1808,8 @@ func TestIntegration_WizardHandlerChain_FinalizationReport(t *testing.T) {
 		};
 		_tw.transition('PLAN_REVIEW');
 		prSplit._handlePlanReviewState(_tw, 'approve');
-		prSplit._handleBranchBuildingState(_tw, _tw.data.plan);
-		prSplit._handleEquivCheckState(_tw, _tw.data.plan);
+		await prSplit._handleBranchBuildingState(_tw, _tw.data.plan);
+		await prSplit._handleEquivCheckState(_tw, _tw.data.plan);
 	`)
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -1933,7 +1933,7 @@ func TestIntegration_WizardHandlerChain_ErrorAbort(t *testing.T) {
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
-		prSplit._handleConfigState({
+		await prSplit._handleConfigState({
 			baseBranch: 'main',
 			strategy:   'directory',
 			verifyCommand: 'true'
@@ -1956,7 +1956,7 @@ func TestIntegration_WizardHandlerChain_ErrorAbort(t *testing.T) {
 		};
 		_tw.transition('PLAN_REVIEW');
 		prSplit._handlePlanReviewState(_tw, 'approve');
-		prSplit._handleBranchBuildingState(_tw, _tw.data.plan);
+		await prSplit._handleBranchBuildingState(_tw, _tw.data.plan);
 	`)
 	if err != nil {
 		t.Fatalf("setup: %v", err)

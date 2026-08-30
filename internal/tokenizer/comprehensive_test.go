@@ -493,12 +493,12 @@ func TestUnigramOptimizedVsUnoptimized(t *testing.T) {
 	for _, input := range inputs {
 		t.Run(input, func(t *testing.T) {
 			u1, _ := NewUnigramBuilder().WithVocab(entries).WithUnkID(&unkID).Build()
-			u1.SetOptimized(true)
-			u1.SetFuseUnk(true)
+			u1.setOptimized(true)
+			u1.setFuseUnk(true)
 
 			u2, _ := NewUnigramBuilder().WithVocab(entries).WithUnkID(&unkID).Build()
-			u2.SetOptimized(false)
-			u2.SetFuseUnk(true)
+			u2.setOptimized(false)
+			u2.setFuseUnk(true)
 
 			r1, err1 := u1.Tokenize(input)
 			r2, err2 := u2.Tokenize(input)
@@ -649,7 +649,7 @@ func TestTrieClone(t *testing.T) {
 	trie.Insert([]byte("abc"))
 	trie.Insert([]byte("def"))
 
-	clone := trie.Clone()
+	clone := trie.clone()
 
 	// Verify clone has same entries
 	var tokens []string
@@ -771,9 +771,9 @@ func TestLogSumExpEdgeCases(t *testing.T) {
 func TestSerializationAllModelTypes(t *testing.T) {
 	t.Run("BPE_full", func(t *testing.T) {
 		jsonData := `{"type":"BPE","vocab":{"<unk>":0,"a":1,"b":2,"ab":3},"merges":["a b"],"unk_token":"<unk>","fuse_unk":true,"byte_fallback":false}`
-		tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+		tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 		if err != nil {
-			t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+			t.Fatalf("LoadTokenizerJSON failed: %v", err)
 		}
 		tokens, count, err := tok.Encode("ab")
 		if err != nil {
@@ -786,9 +786,9 @@ func TestSerializationAllModelTypes(t *testing.T) {
 
 	t.Run("WordPiece_full", func(t *testing.T) {
 		jsonData := `{"type":"WordPiece","vocab":{"[UNK]":0,"a":1,"##b":2,"ab":3},"unk_token":"[UNK]","continuing_subword_prefix":"##","max_input_chars_per_word":100}`
-		tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+		tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 		if err != nil {
-			t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+			t.Fatalf("LoadTokenizerJSON failed: %v", err)
 		}
 		tokens, count, err := tok.Encode("ab")
 		if err != nil {
@@ -801,9 +801,9 @@ func TestSerializationAllModelTypes(t *testing.T) {
 
 	t.Run("WordLevel_full", func(t *testing.T) {
 		jsonData := `{"type":"WordLevel","vocab":{"<unk>":0,"hello":1,"world":2},"unk_token":"<unk>"}`
-		tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+		tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 		if err != nil {
-			t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+			t.Fatalf("LoadTokenizerJSON failed: %v", err)
 		}
 		tokens, count, err := tok.Encode("hello")
 		if err != nil {
@@ -816,9 +816,9 @@ func TestSerializationAllModelTypes(t *testing.T) {
 
 	t.Run("Unigram_full", func(t *testing.T) {
 		jsonData := `{"type":"Unigram","vocab":{"<unk>":0,"a":1,"b":2,"ab":3},"unk_id":0}`
-		tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+		tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 		if err != nil {
-			t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+			t.Fatalf("LoadTokenizerJSON failed: %v", err)
 		}
 		tokens, count, err := tok.Encode("ab")
 		if err != nil {
@@ -834,14 +834,14 @@ func TestSerializationAllModelTypes(t *testing.T) {
 
 	t.Run("Unknown_type", func(t *testing.T) {
 		jsonData := `{"type":"FakeModel","vocab":{}}`
-		_, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+		_, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 		if err == nil || !strings.Contains(err.Error(), "unknown tokenizer type") {
 			t.Errorf("expected unknown type error, got %v", err)
 		}
 	})
 
 	t.Run("Bad_JSON", func(t *testing.T) {
-		_, err := LoadTokenizerFromJSON(strings.NewReader("not json"))
+		_, err := LoadTokenizerJSON(strings.NewReader("not json"))
 		if err == nil {
 			t.Error("expected error for bad JSON")
 		}
@@ -850,9 +850,9 @@ func TestSerializationAllModelTypes(t *testing.T) {
 
 func TestTokenizerTokenCountComprehensive(t *testing.T) {
 	jsonData := `{"type":"WordLevel","vocab":{"<unk>":0,"hello":1,"world":2},"unk_token":"<unk>"}`
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
-		t.Fatalf("LoadTokenizerFromJSON failed: %v", err)
+		t.Fatalf("LoadTokenizerJSON failed: %v", err)
 	}
 
 	count, err := tok.TokenCount("hello")
@@ -1365,14 +1365,14 @@ func BenchmarkUnigramTokenize(b *testing.B) {
 
 	for _, inp := range inputs {
 		b.Run(inp.name+"_optimized", func(b *testing.B) {
-			u.SetOptimized(true)
+			u.setOptimized(true)
 			b.SetBytes(int64(len(inp.input)))
 			for i := 0; i < b.N; i++ {
 				_, _ = u.Tokenize(inp.input)
 			}
 		})
 		b.Run(inp.name+"_unoptimized", func(b *testing.B) {
-			u.SetOptimized(false)
+			u.setOptimized(false)
 			b.SetBytes(int64(len(inp.input)))
 			for i := 0; i < b.N; i++ {
 				_, _ = u.Tokenize(inp.input)
@@ -1431,3 +1431,17 @@ func BenchmarkLatticeViterbi(b *testing.B) {
 // ──────────────────────────────────────────────────────────
 // Helper functions — ptr is defined in bpe_test.go
 // ──────────────────────────────────────────────────────────
+
+// clone returns a deep copy of the trie.
+func (t *Trie) clone() *Trie {
+	var cloneNode func(n *TrieNode) *TrieNode
+	cloneNode = func(n *TrieNode) *TrieNode {
+		c := newTrieNode()
+		c.isLeaf = n.isLeaf
+		for k, v := range n.children {
+			c.children[k] = cloneNode(v)
+		}
+		return c
+	}
+	return &Trie{root: cloneNode(t.root)}
+}

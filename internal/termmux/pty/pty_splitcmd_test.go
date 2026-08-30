@@ -22,15 +22,15 @@ func TestSplitCommand(t *testing.T) {
 		},
 		{
 			name:       "simple split",
-			input:      "ollama launch claude",
+			input:      "ollama launch my-agent",
 			wantBinary: "ollama",
-			wantArgs:   []string{"launch", "claude"},
+			wantArgs:   []string{"launch", "my-agent"},
 		},
 		{
 			name:       "with flags",
-			input:      "ollama launch claude --config /path/to/cfg",
+			input:      "ollama launch my-agent --config /path/to/cfg",
 			wantBinary: "ollama",
-			wantArgs:   []string{"launch", "claude", "--config", "/path/to/cfg"},
+			wantArgs:   []string{"launch", "my-agent", "--config", "/path/to/cfg"},
 		},
 		{
 			name:       "single quoted argument",

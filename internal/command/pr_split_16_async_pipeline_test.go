@@ -17,13 +17,13 @@ func TestChunk16_AnalysisPoll_StillRunning(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.isProcessing = true;
 		s.analysisRunning = true;
 		s.analysisError = null;
 
-		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
+		var r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 		if (!r[1]) return 'FAIL: should return a tick cmd when still running';
 		if (!r[0].analysisRunning) return 'FAIL: analysisRunning should still be true';
 		if (!r[0].isProcessing) return 'FAIL: isProcessing should still be true';
@@ -43,13 +43,13 @@ func TestChunk16_AnalysisPoll_Cancelled(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.isProcessing = false;
 		s.analysisRunning = false;
 		s.analysisError = null;
 
-		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
+		var r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 		if (r[1] !== null) return 'FAIL: should return null cmd on cancel, got: ' + r[1];
 		return 'OK';
 	})()`)
@@ -67,13 +67,13 @@ func TestChunk16_AnalysisPoll_ErrorFromPromise(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.isProcessing = true;
 		s.analysisRunning = false;
 		s.analysisError = 'git diff failed: permission denied';
 
-		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
+		var r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 		if (r[0].wizardState !== 'ERROR') return 'FAIL: wizardState should be ERROR, got: ' + r[0].wizardState;
 		if (r[0].isProcessing) return 'FAIL: isProcessing should be false';
 		if (r[0].splitViewEnabled) return 'FAIL: splitViewEnabled should be false in ERROR state';
@@ -99,7 +99,7 @@ func TestChunk16_AnalysisPoll_CompletedSuccess(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Simulate async pipeline having completed successfully:
 		// analysisRunning=false, analysisError=null, wizardState already
 		// transitioned to PLAN_REVIEW by runAnalysisAsync.
@@ -108,7 +108,7 @@ func TestChunk16_AnalysisPoll_CompletedSuccess(t *testing.T) {
 		s.analysisRunning = false;
 		s.analysisError = null;
 
-		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
+		var r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 		// Should return null cmd (stop polling), state unchanged.
 		if (r[1] !== null) return 'FAIL: should return null cmd on success';
 		if (r[0].wizardState !== 'PLAN_REVIEW') return 'FAIL: wizardState should be PLAN_REVIEW, got: ' + r[0].wizardState;
@@ -184,22 +184,24 @@ func TestChunk16_AnalysisAsync_HappyPath(t *testing.T) {
 			s.focusIndex = 4; // nav-next element (after toggle-advanced)
 
 			// Trigger startAnalysis via enter key on nav-next.
-			var r = sendKey(s, 'enter');
+			var r = await sendKey(s, 'enter');
 			s = r[0];
 
-			// startAnalysis launched the async pipeline.
-			if (!s.isProcessing) {
-				return 'FAIL: isProcessing should be true after startAnalysis, state=' + s.wizardState +
-					', error=' + s.errorDetails;
+			if (s._cfgPromise) {
+				// startAnalysis runs config validation (real git via exec.execv)
+				// in the background and returns [s, cmd] immediately. This engine
+				// only advances exec.execv when its Promise is awaited, so await
+				// the stashed config promise to drive config validation to
+				// completion before pumping the (mocked, microtask) analysis
+				// pipeline.
+				await s._cfgPromise;
+			}
+			if (s.isProcessing) {
+				for (var _i = 0; _i < 40; _i++) await Promise.resolve();
 			}
 
-			// Let microtasks resolve (mocked functions resolve immediately).
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
-
 			// Poll to finalize.
-			r = update({type: 'Tick', id: 'analysis-poll'}, s);
+			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 			s = r[0];
 
 			// After completion, should be PLAN_REVIEW.
@@ -261,18 +263,23 @@ func TestChunk16_AnalysisAsync_AnalyzeDiffError(t *testing.T) {
 			globalThis.prSplit.runtime.mode = 'heuristic';
 			s.focusIndex = 4; // nav-next element (after toggle-advanced)
 
-			var r = sendKey(s, 'enter');
+			var r = await sendKey(s, 'enter');
 			s = r[0];
 
-			if (!s.isProcessing) {
-				return 'FAIL: isProcessing should be true, state=' + s.wizardState + ', error=' + s.errorDetails;
+			if (s._cfgPromise) {
+				// startAnalysis runs config validation (real git via exec.execv)
+				// in the background and returns [s, cmd] immediately. This engine
+				// only advances exec.execv when its Promise is awaited, so await
+				// the stashed config promise to drive config validation to
+				// completion before pumping the (mocked, microtask) analysis
+				// pipeline.
+				await s._cfgPromise;
+			}
+			if (s.isProcessing) {
+				for (var _i = 0; _i < 40; _i++) await Promise.resolve();
 			}
 
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
-
-			r = update({type: 'Tick', id: 'analysis-poll'}, s);
+			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 			s = r[0];
 
 			if (s.wizardState !== 'ERROR') {
@@ -324,18 +331,23 @@ func TestChunk16_AnalysisAsync_NoChanges(t *testing.T) {
 			globalThis.prSplit.runtime.mode = 'heuristic';
 			s.focusIndex = 4; // nav-next element (after toggle-advanced)
 
-			var r = sendKey(s, 'enter');
+			var r = await sendKey(s, 'enter');
 			s = r[0];
 
-			if (!s.isProcessing) {
-				return 'FAIL: isProcessing should be true, state=' + s.wizardState + ', error=' + s.errorDetails;
+			if (s._cfgPromise) {
+				// startAnalysis runs config validation (real git via exec.execv)
+				// in the background and returns [s, cmd] immediately. This engine
+				// only advances exec.execv when its Promise is awaited, so await
+				// the stashed config promise to drive config validation to
+				// completion before pumping the (mocked, microtask) analysis
+				// pipeline.
+				await s._cfgPromise;
+			}
+			if (s.isProcessing) {
+				for (var _i = 0; _i < 40; _i++) await Promise.resolve();
 			}
 
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
-
-			r = update({type: 'Tick', id: 'analysis-poll'}, s);
+			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 			s = r[0];
 
 			if (s.wizardState !== 'CONFIG') {
@@ -408,18 +420,23 @@ func TestChunk16_AnalysisAsync_ValidationFailure(t *testing.T) {
 			globalThis.prSplit.runtime.mode = 'heuristic';
 			s.focusIndex = 4; // nav-next element (after toggle-advanced)
 
-			var r = sendKey(s, 'enter');
+			var r = await sendKey(s, 'enter');
 			s = r[0];
 
-			if (!s.isProcessing) {
-				return 'FAIL: isProcessing should be true, state=' + s.wizardState + ', error=' + s.errorDetails;
+			if (s._cfgPromise) {
+				// startAnalysis runs config validation (real git via exec.execv)
+				// in the background and returns [s, cmd] immediately. This engine
+				// only advances exec.execv when its Promise is awaited, so await
+				// the stashed config promise to drive config validation to
+				// completion before pumping the (mocked, microtask) analysis
+				// pipeline.
+				await s._cfgPromise;
+			}
+			if (s.isProcessing) {
+				for (var _i = 0; _i < 40; _i++) await Promise.resolve();
 			}
 
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
-
-			r = update({type: 'Tick', id: 'analysis-poll'}, s);
+			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
 			s = r[0];
 
 			if (s.wizardState !== 'ERROR') {
@@ -451,14 +468,14 @@ func TestChunk16_AnalysisAsync_NoSyncCallsRemain(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
 		s.isProcessing = true;
 
 		// Old tick IDs should be ignored (return [s, null]).
 		var oldTicks = ['analysis-step-0', 'analysis-step-1', 'analysis-step-2', 'analysis-step-3'];
 		for (var i = 0; i < oldTicks.length; i++) {
-			var r = update({type: 'Tick', id: oldTicks[i]}, s);
+			var r = await update({type: 'Tick', id: oldTicks[i]}, s);
 			if (r[1] !== null) return 'FAIL: old tick ' + oldTicks[i] + ' should return null cmd';
 		}
 		return 'OK';
@@ -481,13 +498,13 @@ func TestChunk16_ExecutionPoll_StillRunning(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
 		s.executionRunning = true;
 		s.executionError = null;
 
-		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		var r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		if (!r[1]) return 'FAIL: should return a tick cmd when still running';
 		if (!r[0].executionRunning) return 'FAIL: executionRunning should still be true';
 		if (!r[0].isProcessing) return 'FAIL: isProcessing should still be true';
@@ -507,13 +524,13 @@ func TestChunk16_ExecutionPoll_Cancelled(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = false;
 		s.executionRunning = false;
 		s.executionError = null;
 
-		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		var r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		if (r[1] !== null) return 'FAIL: should return null cmd on cancel, got: ' + r[1];
 		return 'OK';
 	})()`)
@@ -531,13 +548,13 @@ func TestChunk16_ExecutionPoll_ErrorFromPromise(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
 		s.executionRunning = false;
 		s.executionError = 'git worktree failed: permission denied';
 
-		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		var r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		if (r[0].wizardState !== 'ERROR_RESOLUTION') {
 			return 'FAIL: wizardState should be ERROR_RESOLUTION, got: ' + r[0].wizardState;
 		}
@@ -562,14 +579,14 @@ func TestChunk16_ExecutionPoll_CompletedToVerify(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
 		s.executionRunning = false;
 		s.executionError = null;
 		s.executionNextStep = 'verify';
 
-		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		var r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		// Should dispatch to verify-branch.
 		if (!r[1]) return 'FAIL: should return a tick cmd for verify-branch';
 		if (r[0].verifyingIdx !== 0) return 'FAIL: verifyingIdx should be 0, got: ' + r[0].verifyingIdx;
@@ -590,14 +607,14 @@ func TestChunk16_ExecutionPoll_CompletedToEquiv(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
 		s.executionRunning = false;
 		s.executionError = null;
 		s.executionNextStep = 'equiv';
 
-		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		var r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		// Should start equiv check — returns a tick cmd for equiv-poll.
 		if (!r[1]) return 'FAIL: should return a tick cmd for equiv-poll';
 		if (r[0].wizardState !== 'EQUIV_CHECK') {
@@ -620,13 +637,13 @@ func TestChunk16_EquivPoll_StillRunning(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('EQUIV_CHECK');
 		s.isProcessing = true;
 		s.equivRunning = true;
 		s.equivError = null;
 
-		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		var r = await update({type: 'Tick', id: 'equiv-poll'}, s);
 		if (!r[1]) return 'FAIL: should return a tick cmd when still running';
 		if (!r[0].equivRunning) return 'FAIL: equivRunning should still be true';
 		return 'OK';
@@ -645,13 +662,13 @@ func TestChunk16_EquivPoll_Cancelled(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('EQUIV_CHECK');
 		s.isProcessing = false;
 		s.equivRunning = false;
 		s.equivError = null;
 
-		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		var r = await update({type: 'Tick', id: 'equiv-poll'}, s);
 		if (r[1] !== null) return 'FAIL: should return null cmd on cancel';
 		return 'OK';
 	})()`)
@@ -669,13 +686,13 @@ func TestChunk16_EquivPoll_Error(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('EQUIV_CHECK');
 		s.isProcessing = true;
 		s.equivRunning = false;
 		s.equivError = 'failed to get split tree: fatal: not a valid object name';
 
-		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		var r = await update({type: 'Tick', id: 'equiv-poll'}, s);
 		if (r[0].wizardState !== 'ERROR') {
 			return 'FAIL: wizardState should be ERROR, got: ' + r[0].wizardState;
 		}
@@ -700,7 +717,7 @@ func TestChunk16_EquivPoll_CompletedSuccess(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Simulate async equiv complete: equivRunning=false, equivError=null,
 		// wizardState already transitioned to FINALIZATION by runEquivCheckAsync.
 		var s = initState('FINALIZATION');
@@ -708,7 +725,7 @@ func TestChunk16_EquivPoll_CompletedSuccess(t *testing.T) {
 		s.equivRunning = false;
 		s.equivError = null;
 
-		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		var r = await update({type: 'Tick', id: 'equiv-poll'}, s);
 		if (r[1] !== null) return 'FAIL: should return null cmd on success';
 		if (r[0].wizardState !== 'FINALIZATION') {
 			return 'FAIL: wizardState should be FINALIZATION, got: ' + r[0].wizardState;
@@ -729,14 +746,14 @@ func TestChunk16_ExecutionAsync_NoSyncCallsRemain(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
 
 		// Old tick IDs should be ignored (return [s, null]).
 		var oldTicks = ['exec-step-0', 'exec-step-1', 'exec-step-2'];
 		for (var i = 0; i < oldTicks.length; i++) {
-			var r = update({type: 'Tick', id: oldTicks[i]}, s);
+			var r = await update({type: 'Tick', id: oldTicks[i]}, s);
 			if (r[1] !== null) return 'FAIL: old tick ' + oldTicks[i] + ' should return null cmd';
 		}
 		return 'OK';
@@ -762,7 +779,7 @@ func TestChunk16_ExecutionAsync_HappyPath(t *testing.T) {
 		var origVerifyEquivalenceDetailedAsync = globalThis.prSplit.verifyEquivalenceDetailedAsync;
 
 		try {
-			// Mock verifyEquivalenceDetailedAsync (checked first by runEquivCheckAsync).
+			// Mock await verifyEquivalenceDetailedAsync(checked first by runEquivCheckAsync).
 			globalThis.prSplit.verifyEquivalenceDetailedAsync = async function(plan) {
 				return { equivalent: true, splitTree: 'aaa', sourceTree: 'aaa', error: null, diffFiles: [], diffSummary: '' };
 			};
@@ -783,8 +800,7 @@ func TestChunk16_ExecutionAsync_HappyPath(t *testing.T) {
 			];
 
 			// Poll execution → should transition to EQUIV_CHECK and start equiv async.
-			var r = update({type: 'Tick', id: 'execution-poll'}, s);
-			s = r[0];
+			update({type: 'Tick', id: 'execution-poll'}, s);
 
 			if (s.wizardState !== 'EQUIV_CHECK') {
 				return 'FAIL: expected EQUIV_CHECK after execution-poll, got ' + s.wizardState;
@@ -792,12 +808,10 @@ func TestChunk16_ExecutionAsync_HappyPath(t *testing.T) {
 			if (!s.equivRunning) return 'FAIL: equivRunning should be true';
 
 			// Let microtasks resolve (mocked verifyEquivalenceAsync resolves immediately).
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+		for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 
 			// Poll equiv check for completion.
-			r = update({type: 'Tick', id: 'equiv-poll'}, s);
+			var r = await update({type: 'Tick', id: 'equiv-poll'}, s);
 			s = r[0];
 
 			if (s.wizardState !== 'FINALIZATION') {
@@ -829,7 +843,7 @@ func TestChunk16_ExecutionAsync_ExecutionError(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Simulate execution error via the poll handler.
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
@@ -842,7 +856,7 @@ func TestChunk16_ExecutionAsync_ExecutionError(t *testing.T) {
 		s.isProcessing = false;
 
 		// Poll should see completed state and stop.
-		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		var r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		if (r[1] !== null) return 'FAIL: should return null cmd after error';
 		if (r[0].wizardState !== 'ERROR_RESOLUTION') {
 			return 'FAIL: wizardState should stay ERROR_RESOLUTION, got: ' + r[0].wizardState;
@@ -956,14 +970,14 @@ func TestChunk16_CancelDuringExecution(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('BRANCH_BUILDING');
 		s.isProcessing = true;
 		s.executionRunning = true;
 		s.showConfirmCancel = true;
 
 		// User confirms cancel.
-		var r = update({type: 'Key', key: 'y'}, s);
+		var r = await update({type: 'Key', key: 'y'}, s);
 		s = r[0];
 
 		// Cancel should:
@@ -979,7 +993,7 @@ func TestChunk16_CancelDuringExecution(t *testing.T) {
 
 		// Subsequent execution-poll should stop (isProcessing=false).
 		s.executionRunning = false;
-		r = update({type: 'Tick', id: 'execution-poll'}, s);
+		r = await update({type: 'Tick', id: 'execution-poll'}, s);
 		if (r[1] !== null) return 'FAIL: execution-poll should stop after cancel';
 
 		return 'OK';
@@ -998,13 +1012,13 @@ func TestChunk16_EquivPoll_ErrorWizardStateSync(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('EQUIV_CHECK');
 		s.isProcessing = true;
 		s.equivRunning = false;
 		s.equivError = 'tree mismatch';
 
-		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		var r = await update({type: 'Tick', id: 'equiv-poll'}, s);
 		s = r[0];
 		// Both wizardState and wizard.current must agree.
 		if (s.wizardState !== s.wizard.current) {
@@ -1025,28 +1039,28 @@ func TestChunk16_EquivPoll_ErrorWizardStateSync(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-//  T36: Async Claude Check Tests
+//  T36: Async Agent Check Tests
 // ---------------------------------------------------------------------------
 
-// TestChunk16_ClaudeCheck_NoPrSplitConfig verifies that handleClaudeCheck
+// TestChunk16_AgentCheck_NoPrSplitConfig verifies that handleAgentCheck
 // returns 'unavailable' when prSplitConfig is deleted (simulates missing config).
-func TestChunk16_ClaudeCheck_NoPrSplitConfig(t *testing.T) {
+func TestChunk16_AgentCheck_NoPrSplitConfig(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Save and delete prSplitConfig to simulate missing config.
 		var saved = globalThis.prSplitConfig;
 		delete globalThis.prSplitConfig;
 		try {
 			var s = initState('CONFIG');
-			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			var r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
-			if (s.claudeCheckStatus !== 'unavailable') {
-				return 'FAIL: expected unavailable, got: ' + JSON.stringify(s.claudeCheckStatus);
+			if (s.agentCheckStatus !== 'unavailable') {
+				return 'FAIL: expected unavailable, got: ' + JSON.stringify(s.agentCheckStatus);
 			}
-			if (!s.claudeCheckError || s.claudeCheckError.indexOf('test mode') < 0) {
-				return 'FAIL: expected test mode error, got: ' + s.claudeCheckError;
+			if (!s.agentCheckError || s.agentCheckError.indexOf('test mode') < 0) {
+				return 'FAIL: expected test mode error, got: ' + s.agentCheckError;
 			}
 			if (r[1] !== null) return 'FAIL: should return null cmd';
 			return 'OK';
@@ -1058,36 +1072,36 @@ func TestChunk16_ClaudeCheck_NoPrSplitConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude check no config: %v", raw)
+		t.Errorf("agent check no config: %v", raw)
 	}
 }
 
-// TestChunk16_ClaudeCheck_CachedExecutor verifies that handleClaudeCheck
-// returns cached result from st.claudeExecutor without launching async work.
-func TestChunk16_ClaudeCheck_CachedExecutor(t *testing.T) {
+// TestChunk16_AgentCheck_CachedExecutor verifies that handleAgentCheck
+// returns cached result from st.agentExecutor without launching async work.
+func TestChunk16_AgentCheck_CachedExecutor(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Set up prSplitConfig so we don't hit test mode guard.
-		globalThis.prSplitConfig = { claudeCommand: 'claude' };
+		globalThis.prSplitConfig = { agentCommand: 'agent' };
 
 		// Pre-cache an executor with resolved info.
-		globalThis.prSplit._state.claudeExecutor = {
-			resolved: { command: 'claude', type: 'claude-code' }
+		globalThis.prSplit._state.agentExecutor = {
+			resolved: { command: 'agent', type: 'agent-code' }
 		};
 
 		var s = initState('CONFIG');
-		var r = update({type: 'Tick', id: 'check-claude'}, s);
+		var r = await update({type: 'Tick', id: 'check-agent'}, s);
 		s = r[0];
 
-		if (s.claudeCheckStatus !== 'available') {
-			return 'FAIL: expected available, got: ' + s.claudeCheckStatus;
+		if (s.agentCheckStatus !== 'available') {
+			return 'FAIL: expected available, got: ' + s.agentCheckStatus;
 		}
-		if (!s.claudeResolvedInfo || s.claudeResolvedInfo.command !== 'claude') {
+		if (!s.agentResolvedInfo || s.agentResolvedInfo.command !== 'agent') {
 			return 'FAIL: expected resolved info from cache';
 		}
-		if (s.claudeCheckRunning) return 'FAIL: should not be running (cached)';
+		if (s.agentCheckRunning) return 'FAIL: should not be running (cached)';
 		if (r[1] !== null) return 'FAIL: should return null cmd (cached)';
 
 		// Clean up.
@@ -1098,28 +1112,28 @@ func TestChunk16_ClaudeCheck_CachedExecutor(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude check cached: %v", raw)
+		t.Errorf("agent check cached: %v", raw)
 	}
 }
 
-// TestChunk16_ClaudeCheck_LaunchesAsync verifies that handleClaudeCheck
+// TestChunk16_AgentCheck_LaunchesAsync verifies that handleAgentCheck
 // launches async resolveAsync and returns a poll tick when prSplitConfig exists.
-func TestChunk16_ClaudeCheck_LaunchesAsync(t *testing.T) {
+func TestChunk16_AgentCheck_LaunchesAsync(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Mock prSplitConfig.
-		globalThis.prSplitConfig = { claudeCommand: '' };
+		globalThis.prSplitConfig = { agentCommand: '' };
 
 		// Clear any cached executor.
-		globalThis.prSplit._state.claudeExecutor = null;
+		globalThis.prSplit._state.agentExecutor = null;
 
-		// Mock ClaudeCodeExecutor to track resolveAsync call.
-		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		// Mock AgentCodeExecutor to track resolveAsync call.
+		var origCtor = globalThis.prSplit.AgentCodeExecutor;
 		var asyncCalled = false;
 		var MockExecutor = function(config) {
-			this.command = config.claudeCommand || '';
+			this.command = config.agentCommand || '';
 			this.resolved = null;
 		};
 		MockExecutor.prototype.resolveAsync = async function(progressFn) {
@@ -1127,21 +1141,21 @@ func TestChunk16_ClaudeCheck_LaunchesAsync(t *testing.T) {
 			if (progressFn) progressFn('Resolving binary…');
 			return { error: null };
 		};
-		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+		globalThis.prSplit.AgentCodeExecutor = MockExecutor;
 
 		try {
 			var s = initState('CONFIG');
-			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			var r = update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
 
-			if (!s.claudeCheckRunning) return 'FAIL: claudeCheckRunning should be true';
-			if (s.claudeCheckStatus !== 'checking') {
-				return 'FAIL: expected checking status, got: ' + s.claudeCheckStatus;
+			if (!s.agentCheckRunning) return 'FAIL: agentCheckRunning should be true';
+			if (s.agentCheckStatus !== 'checking') {
+				return 'FAIL: expected checking status, got: ' + s.agentCheckStatus;
 			}
 			if (!r[1]) return 'FAIL: should return a poll tick cmd';
 			return 'OK';
 		} finally {
-			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			globalThis.prSplit.AgentCodeExecutor = origCtor;
 			delete globalThis.prSplitConfig;
 		}
 	})()`)
@@ -1149,50 +1163,50 @@ func TestChunk16_ClaudeCheck_LaunchesAsync(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude check launches async: %v", raw)
+		t.Errorf("agent check launches async: %v", raw)
 	}
 }
 
-// TestChunk16_ClaudeCheckPoll_StillRunning verifies that handleClaudeCheckPoll
+// TestChunk16_AgentCheckPoll_StillRunning verifies that handleAgentCheckPoll
 // continues polling when check is still running.
-func TestChunk16_ClaudeCheckPoll_StillRunning(t *testing.T) {
+func TestChunk16_AgentCheckPoll_StillRunning(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
-		s.claudeCheckRunning = true;
-		s.claudeCheckStatus = 'checking';
+		s.agentCheckRunning = true;
+		s.agentCheckStatus = 'checking';
 
-		var r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+		var r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 		if (!r[1]) return 'FAIL: should return a poll tick when still running';
-		if (!r[0].claudeCheckRunning) return 'FAIL: claudeCheckRunning should still be true';
+		if (!r[0].agentCheckRunning) return 'FAIL: agentCheckRunning should still be true';
 		return 'OK';
 	})()`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude-check-poll still running: %v", raw)
+		t.Errorf("agent-check-poll still running: %v", raw)
 	}
 }
 
-// TestChunk16_ClaudeCheckPoll_Completed verifies that handleClaudeCheckPoll
+// TestChunk16_AgentCheckPoll_Completed verifies that handleAgentCheckPoll
 // stops polling when check is complete.
-func TestChunk16_ClaudeCheckPoll_Completed(t *testing.T) {
+func TestChunk16_AgentCheckPoll_Completed(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var s = initState('CONFIG');
-		s.claudeCheckRunning = false;
-		s.claudeCheckStatus = 'available';
-		s.claudeResolvedInfo = { command: 'claude', type: 'claude-code' };
+		s.agentCheckRunning = false;
+		s.agentCheckStatus = 'available';
+		s.agentResolvedInfo = { command: 'agent', type: 'agent-code' };
 
-		var r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+		var r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 		if (r[1] !== null) return 'FAIL: should return null cmd when complete';
-		if (r[0].claudeCheckStatus !== 'available') {
-			return 'FAIL: status should be available, got: ' + r[0].claudeCheckStatus;
+		if (r[0].agentCheckStatus !== 'available') {
+			return 'FAIL: status should be available, got: ' + r[0].agentCheckStatus;
 		}
 		return 'OK';
 	})()`)
@@ -1200,24 +1214,24 @@ func TestChunk16_ClaudeCheckPoll_Completed(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude-check-poll completed: %v", raw)
+		t.Errorf("agent-check-poll completed: %v", raw)
 	}
 }
 
-// TestChunk16_ClaudeCheck_AsyncHappyPath exercises the full async
-// check-claude → claude-check-poll chain with a mocked resolveAsync.
-func TestChunk16_ClaudeCheck_AsyncHappyPath(t *testing.T) {
+// TestChunk16_AgentCheck_AsyncHappyPath exercises the full async
+// check-agent → agent-check-poll chain with a mocked resolveAsync.
+func TestChunk16_AgentCheck_AsyncHappyPath(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
-		globalThis.prSplitConfig = { claudeCommand: '' };
-		globalThis.prSplit._state.claudeExecutor = null;
+		globalThis.prSplitConfig = { agentCommand: '' };
+		globalThis.prSplit._state.agentExecutor = null;
 
-		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var origCtor = globalThis.prSplit.AgentCodeExecutor;
 		var progressMessages = [];
 		var MockExecutor = function(config) {
-			this.command = config.claudeCommand || '';
+			this.command = config.agentCommand || '';
 			this.resolved = null;
 		};
 		MockExecutor.prototype.resolveAsync = async function(progressFn) {
@@ -1227,36 +1241,34 @@ func TestChunk16_ClaudeCheck_AsyncHappyPath(t *testing.T) {
 				progressFn('Checking version…');
 				progressMessages.push('Checking version…');
 			}
-			this.resolved = { command: 'claude', type: 'claude-code' };
+			this.resolved = { command: 'agent', type: 'agent-code' };
 			return { error: null };
 		};
-		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+		globalThis.prSplit.AgentCodeExecutor = MockExecutor;
 
 		try {
 			var s = initState('CONFIG');
 
 			// Trigger check.
-			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			var r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
-			if (!s.claudeCheckRunning) return 'FAIL: should be running after check-claude';
+			if (!s.agentCheckRunning) return 'FAIL: should be running after check-agent';
 
 			// Let microtasks resolve.
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+		for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 
 			// Poll — should be complete.
-			r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+			r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			s = r[0];
 
-			if (s.claudeCheckRunning) return 'FAIL: should not be running after poll';
-			if (s.claudeCheckStatus !== 'available') {
-				return 'FAIL: expected available, got: ' + s.claudeCheckStatus;
+			if (s.agentCheckRunning) return 'FAIL: should not be running after poll';
+			if (s.agentCheckStatus !== 'available') {
+				return 'FAIL: expected available, got: ' + s.agentCheckStatus;
 			}
-			if (!s.claudeResolvedInfo || s.claudeResolvedInfo.command !== 'claude') {
+			if (!s.agentResolvedInfo || s.agentResolvedInfo.command !== 'agent') {
 				return 'FAIL: expected resolved info';
 			}
-			if (s.claudeCheckError) return 'FAIL: should have no error';
+			if (s.agentCheckError) return 'FAIL: should have no error';
 			if (progressMessages.length < 2) {
 				return 'FAIL: expected progress messages, got: ' + progressMessages.length;
 			}
@@ -1264,7 +1276,7 @@ func TestChunk16_ClaudeCheck_AsyncHappyPath(t *testing.T) {
 
 			return 'OK';
 		} finally {
-			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			globalThis.prSplit.AgentCodeExecutor = origCtor;
 			delete globalThis.prSplitConfig;
 		}
 	})()`)
@@ -1272,56 +1284,54 @@ func TestChunk16_ClaudeCheck_AsyncHappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude check async happy path: %v", raw)
+		t.Errorf("agent check async happy path: %v", raw)
 	}
 }
 
-// TestChunk16_ClaudeCheck_AsyncError exercises the error path when
+// TestChunk16_AgentCheck_AsyncError exercises the error path when
 // resolveAsync returns an error.
-func TestChunk16_ClaudeCheck_AsyncError(t *testing.T) {
+func TestChunk16_AgentCheck_AsyncError(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
-		globalThis.prSplitConfig = { claudeCommand: '' };
-		globalThis.prSplit._state.claudeExecutor = null;
+		globalThis.prSplitConfig = { agentCommand: '' };
+		globalThis.prSplit._state.agentExecutor = null;
 
-		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var origCtor = globalThis.prSplit.AgentCodeExecutor;
 		var MockExecutor = function(config) {
-			this.command = config.claudeCommand || '';
+			this.command = config.agentCommand || '';
 			this.resolved = null;
 		};
 		MockExecutor.prototype.resolveAsync = async function(progressFn) {
 			if (progressFn) progressFn('Resolving binary…');
-			return { error: 'No Claude-compatible binary found. Install Claude Code CLI (claude) or Ollama (ollama), or set --claude-command explicitly.' };
+			return { error: 'No Agent-compatible binary found. Install Agent Code CLI (agent) or Ollama (ollama), or set --agent-command explicitly.' };
 		};
-		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+		globalThis.prSplit.AgentCodeExecutor = MockExecutor;
 
 		try {
 			var s = initState('CONFIG');
-			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			var r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
 
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+		for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 
-			r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+			r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			s = r[0];
 
-			if (s.claudeCheckStatus !== 'unavailable') {
-				return 'FAIL: expected unavailable, got: ' + s.claudeCheckStatus;
+			if (s.agentCheckStatus !== 'unavailable') {
+				return 'FAIL: expected unavailable, got: ' + s.agentCheckStatus;
 			}
-			if (!s.claudeCheckError || s.claudeCheckError.indexOf('Install Claude Code CLI') < 0) {
-				return 'FAIL: expected actionable error, got: ' + s.claudeCheckError;
+			if (!s.agentCheckError || s.agentCheckError.indexOf('Install Agent Code CLI') < 0) {
+				return 'FAIL: expected actionable error, got: ' + s.agentCheckError;
 			}
-			if (s.claudeCheckRunning) return 'FAIL: should not be running';
+			if (s.agentCheckRunning) return 'FAIL: should not be running';
 			if (globalThis.prSplit.runtime.mode !== 'heuristic') {
 				return 'FAIL: should have fallen back to heuristic';
 			}
 			return 'OK';
 		} finally {
-			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			globalThis.prSplit.AgentCodeExecutor = origCtor;
 			delete globalThis.prSplitConfig;
 		}
 	})()`)
@@ -1329,52 +1339,50 @@ func TestChunk16_ClaudeCheck_AsyncError(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude check async error: %v", raw)
+		t.Errorf("agent check async error: %v", raw)
 	}
 }
 
-// TestChunk16_ClaudeCheck_AsyncThrows exercises the path where
+// TestChunk16_AgentCheck_AsyncThrows exercises the path where
 // resolveAsync throws an unexpected exception (not a result.error).
-func TestChunk16_ClaudeCheck_AsyncThrows(t *testing.T) {
+func TestChunk16_AgentCheck_AsyncThrows(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
-		globalThis.prSplitConfig = { claudeCommand: '' };
-		globalThis.prSplit._state.claudeExecutor = null;
+		globalThis.prSplitConfig = { agentCommand: '' };
+		globalThis.prSplit._state.agentExecutor = null;
 
-		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var origCtor = globalThis.prSplit.AgentCodeExecutor;
 		var MockExecutor = function(config) {
-			this.command = config.claudeCommand || '';
+			this.command = config.agentCommand || '';
 			this.resolved = null;
 		};
 		MockExecutor.prototype.resolveAsync = async function(progressFn) {
 			throw new Error('exec.spawn crashed: ENOENT');
 		};
-		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+		globalThis.prSplit.AgentCodeExecutor = MockExecutor;
 
 		try {
 			var s = initState('CONFIG');
-			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			var r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
 
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+		for (var _i = 0; _i < 20; _i++) await Promise.resolve();
 
-			r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+			r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			s = r[0];
 
-			if (s.claudeCheckStatus !== 'unavailable') {
-				return 'FAIL: expected unavailable, got: ' + s.claudeCheckStatus;
+			if (s.agentCheckStatus !== 'unavailable') {
+				return 'FAIL: expected unavailable, got: ' + s.agentCheckStatus;
 			}
-			if (!s.claudeCheckError || s.claudeCheckError.indexOf('ENOENT') < 0) {
-				return 'FAIL: expected ENOENT in error, got: ' + s.claudeCheckError;
+			if (!s.agentCheckError || s.agentCheckError.indexOf('ENOENT') < 0) {
+				return 'FAIL: expected ENOENT in error, got: ' + s.agentCheckError;
 			}
-			if (s.claudeCheckRunning) return 'FAIL: should not be running';
+			if (s.agentCheckRunning) return 'FAIL: should not be running';
 			return 'OK';
 		} finally {
-			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			globalThis.prSplit.AgentCodeExecutor = origCtor;
 			delete globalThis.prSplitConfig;
 		}
 	})()`)
@@ -1382,25 +1390,25 @@ func TestChunk16_ClaudeCheck_AsyncThrows(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude check async throws: %v", raw)
+		t.Errorf("agent check async throws: %v", raw)
 	}
 }
 
-// TestChunk16_ClaudeCheck_OldSyncRemoved verifies that the old synchronous
-// resolve() call is no longer used by handleClaudeCheck (it always goes async
+// TestChunk16_AgentCheck_OldSyncRemoved verifies that the old synchronous
+// resolve() call is no longer used by handleAgentCheck (it always goes async
 // or uses cache).
-func TestChunk16_ClaudeCheck_OldSyncRemoved(t *testing.T) {
+func TestChunk16_AgentCheck_OldSyncRemoved(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
-		globalThis.prSplitConfig = { claudeCommand: '' };
-		globalThis.prSplit._state.claudeExecutor = null;
+	raw, err := evalJS(`(async function() {
+		globalThis.prSplitConfig = { agentCommand: '' };
+		globalThis.prSplit._state.agentExecutor = null;
 
-		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var origCtor = globalThis.prSplit.AgentCodeExecutor;
 		var syncResolveCalled = false;
 		var MockExecutor = function(config) {
-			this.command = config.claudeCommand || '';
+			this.command = config.agentCommand || '';
 			this.resolved = null;
 		};
 		MockExecutor.prototype.resolve = function() {
@@ -1408,18 +1416,18 @@ func TestChunk16_ClaudeCheck_OldSyncRemoved(t *testing.T) {
 			return { error: null };
 		};
 		MockExecutor.prototype.resolveAsync = async function(progressFn) {
-			this.resolved = { command: 'claude', type: 'claude-code' };
+			this.resolved = { command: 'agent', type: 'agent-code' };
 			return { error: null };
 		};
-		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+		globalThis.prSplit.AgentCodeExecutor = MockExecutor;
 
 		try {
 			var s = initState('CONFIG');
-			update({type: 'Tick', id: 'check-claude'}, s);
-			if (syncResolveCalled) return 'FAIL: sync resolve() was called';
+			await update({type: 'Tick', id: 'check-agent'}, s);
+			if (syncResolveCalled) return 'FAIL: sync await resolve() was called';
 			return 'OK';
 		} finally {
-			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			globalThis.prSplit.AgentCodeExecutor = origCtor;
 			delete globalThis.prSplitConfig;
 		}
 	})()`)
@@ -1431,38 +1439,38 @@ func TestChunk16_ClaudeCheck_OldSyncRemoved(t *testing.T) {
 	}
 }
 
-// TestChunk16_ClaudeCheck_ReentryGuard verifies that calling handleClaudeCheck
+// TestChunk16_AgentCheck_ReentryGuard verifies that calling handleAgentCheck
 // while already running does NOT launch a second async operation.
-func TestChunk16_ClaudeCheck_ReentryGuard(t *testing.T) {
+func TestChunk16_AgentCheck_ReentryGuard(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
-		globalThis.prSplitConfig = { claudeCommand: '' };
-		globalThis.prSplit._state.claudeExecutor = null;
+	raw, err := evalJS(`(async function() {
+		globalThis.prSplitConfig = { agentCommand: '' };
+		globalThis.prSplit._state.agentExecutor = null;
 
-		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var origCtor = globalThis.prSplit.AgentCodeExecutor;
 		var launchCount = 0;
 		var MockExecutor = function(config) {
-			this.command = config.claudeCommand || '';
+			this.command = config.agentCommand || '';
 			this.resolved = null;
 		};
 		MockExecutor.prototype.resolveAsync = async function(progressFn) {
 			launchCount++;
-			this.resolved = { command: 'claude', type: 'claude-code' };
+			this.resolved = { command: 'agent', type: 'agent-code' };
 			return { error: null };
 		};
-		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+		globalThis.prSplit.AgentCodeExecutor = MockExecutor;
 
 		try {
 			var s = initState('CONFIG');
 			// First call — should launch async.
-			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			var r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
-			if (!s.claudeCheckRunning) return 'FAIL: should be running after first call';
+			if (!s.agentCheckRunning) return 'FAIL: should be running after first call';
 
 			// Second call while still running — should NOT launch again.
-			r = update({type: 'Tick', id: 'check-claude'}, s);
+			r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
 			if (launchCount !== 1) {
 				return 'FAIL: expected 1 launch, got: ' + launchCount;
@@ -1470,7 +1478,7 @@ func TestChunk16_ClaudeCheck_ReentryGuard(t *testing.T) {
 			if (!r[1]) return 'FAIL: should return poll tick even on re-entry';
 			return 'OK';
 		} finally {
-			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			globalThis.prSplit.AgentCodeExecutor = origCtor;
 			delete globalThis.prSplitConfig;
 		}
 	})()`)
@@ -1478,61 +1486,61 @@ func TestChunk16_ClaudeCheck_ReentryGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude check re-entry guard: %v", raw)
+		t.Errorf("agent check re-entry guard: %v", raw)
 	}
 }
 
-// TestChunk16_ClaudeCheck_SwitchAwayCleansUp verifies that switching from
+// TestChunk16_AgentCheck_SwitchAwayCleansUp verifies that switching from
 // 'auto' strategy to another clears all async check state fields.
-func TestChunk16_ClaudeCheck_SwitchAwayCleansUp(t *testing.T) {
+func TestChunk16_AgentCheck_SwitchAwayCleansUp(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
-		globalThis.prSplitConfig = { claudeCommand: '' };
-		globalThis.prSplit._state.claudeExecutor = null;
+	raw, err := evalJS(`(async function() {
+		globalThis.prSplitConfig = { agentCommand: '' };
+		globalThis.prSplit._state.agentExecutor = null;
 
-		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var origCtor = globalThis.prSplit.AgentCodeExecutor;
 		var MockExecutor = function(config) {
-			this.command = config.claudeCommand || '';
+			this.command = config.agentCommand || '';
 			this.resolved = null;
 		};
 		MockExecutor.prototype.resolveAsync = async function(progressFn) {
 			// Simulate slow resolution — won't complete in this test.
-			return new Promise(function() {});
+			return new Promise(async function() {});
 		};
-		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+		globalThis.prSplit.AgentCodeExecutor = MockExecutor;
 
 		try {
 			var s = initState('CONFIG');
 			// Launch async check.
-			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			var r = await update({type: 'Tick', id: 'check-agent'}, s);
 			s = r[0];
-			if (!s.claudeCheckRunning) return 'FAIL: should be running';
+			if (!s.agentCheckRunning) return 'FAIL: should be running';
 
 			// Simulate switching to 'heuristic' via mouse click on strategy zone.
 			var z = globalThis.prSplit._zone;
 			var origInBounds = z.inBounds;
 			z.inBounds = function(id) { return id === 'strategy-heuristic'; };
 			try {
-				r = update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
+				r = await update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
 			} finally {
 				z.inBounds = origInBounds;
 			}
 			s = r[0];
 
-			if (s.claudeCheckRunning !== false) {
-				return 'FAIL: claudeCheckRunning should be false after switch, got: ' + s.claudeCheckRunning;
+			if (s.agentCheckRunning !== false) {
+				return 'FAIL: agentCheckRunning should be false after switch, got: ' + s.agentCheckRunning;
 			}
-			if (s.claudeCheckProgressMsg !== '') {
-				return 'FAIL: claudeCheckProgressMsg should be empty after switch';
+			if (s.agentCheckProgressMsg !== '') {
+				return 'FAIL: agentCheckProgressMsg should be empty after switch';
 			}
-			if (s.claudeCheckStatus !== null) {
-				return 'FAIL: claudeCheckStatus should be null, got: ' + s.claudeCheckStatus;
+			if (s.agentCheckStatus !== null) {
+				return 'FAIL: agentCheckStatus should be null, got: ' + s.agentCheckStatus;
 			}
 			return 'OK';
 		} finally {
-			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			globalThis.prSplit.AgentCodeExecutor = origCtor;
 			delete globalThis.prSplitConfig;
 		}
 	})()`)
@@ -1540,6 +1548,128 @@ func TestChunk16_ClaudeCheck_SwitchAwayCleansUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude check switch away cleans up: %v", raw)
+		t.Errorf("agent check switch away cleans up: %v", raw)
+	}
+}
+
+// TestChunk16_AnalysisAsync_ConfigRejection verifies that when config
+// validation REJECTS (unexpected throw — e.g. git binary missing, resolveDir
+// threw), the error is surfaced on the CONFIG screen via
+// configValidationError + wizardState='CONFIG' — NOT silently dropped by the
+// poll handler's early !isProcessing exit.
+//
+// In normal operation exec.execv always resolves (never rejects), so
+// handleConfigStateAsync never rejects via git failures. This test overrides
+// prSplit._handleConfigState (dynamic dispatch) to inject a rejection,
+// exercising the handleConfigError → processConfigResult({error:...}) path.
+func TestChunk16_AnalysisAsync_ConfigRejection(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		var origHandleConfigState = globalThis.prSplit._handleConfigState;
+		try {
+			globalThis.prSplit._handleConfigState = async function(config) {
+				throw new Error('config validation crashed');
+			};
+
+			var s = initState('CONFIG');
+			globalThis.prSplit.runtime.baseBranch = 'main';
+			globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
+			globalThis.prSplit.runtime.strategy = 'directory';
+			globalThis.prSplit.runtime.mode = 'heuristic';
+			s.focusIndex = 4; // nav-next element (after toggle-advanced)
+
+			var r = await sendKey(s, 'enter');
+			s = r[0];
+
+			// startAnalysis stashed the rejecting config promise. Await it
+			// (with .catch) to drive the rejection through the event loop,
+			// which fires handleConfigError → processConfigResult({error:...}).
+			if (s._cfgPromise) {
+				await s._cfgPromise.catch(function() {});
+				for (var _i = 0; _i < 10; _i++) await Promise.resolve();
+			}
+
+			if (s.wizardState !== 'CONFIG') {
+				return 'FAIL: expected CONFIG, got ' + s.wizardState;
+			}
+			if (!s.configValidationError ||
+				s.configValidationError.indexOf('config validation crashed') < 0) {
+				return 'FAIL: configValidationError should contain error, got: ' + s.configValidationError;
+			}
+			if (s.isProcessing) return 'FAIL: isProcessing should be false';
+			if (s.analysisRunning) return 'FAIL: analysisRunning should be false';
+			return 'OK';
+		} finally {
+			globalThis.prSplit._handleConfigState = origHandleConfigState;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("config rejection: %v", raw)
+	}
+}
+
+// TestChunk16_AutoSplitAsync_ConfigRejection verifies that when config
+// validation rejects in the auto-analysis path (startAutoAnalysis), the error
+// is surfaced on the CONFIG screen via configValidationError +
+// wizardState='CONFIG' — NOT silently dropped by the poll handler's early
+// !isProcessing exit. Mirrors the 16b rejection test but exercises the 16d
+// handleAutoConfigError → processAutoConfigResult({error:...}) path.
+func TestChunk16_AutoSplitAsync_ConfigRejection(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		var origHandleConfigState = globalThis.prSplit._handleConfigState;
+		try {
+			globalThis.prSplit._handleConfigState = async function(config) {
+				throw new Error('auto config validation crashed');
+			};
+			globalThis.prSplitConfig = { cleanupOnFailure: false, timeoutMs: 0 };
+
+			var s = initState('CONFIG');
+			globalThis.prSplit.runtime.baseBranch = 'main';
+			globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
+			globalThis.prSplit.runtime.strategy = 'directory';
+			globalThis.prSplit.runtime.mode = 'auto';
+
+			// Call startAutoAnalysis directly (exposed as prSplit._startAutoAnalysis).
+			var r = prSplit._startAutoAnalysis(s);
+			s = r[0];
+
+			// startAutoAnalysis stashed the rejecting config promise. Await it
+			// (with .catch) to drive the rejection, which fires
+			// handleAutoConfigError → processAutoConfigResult({error:...}).
+			if (s._cfgPromise) {
+				await s._cfgPromise.catch(function() {});
+				for (var _i = 0; _i < 10; _i++) await Promise.resolve();
+			}
+
+			if (s.wizardState !== 'CONFIG') {
+				return 'FAIL: expected CONFIG, got ' + s.wizardState;
+			}
+			if (!s.configValidationError ||
+				s.configValidationError.indexOf('auto config validation crashed') < 0) {
+				return 'FAIL: configValidationError should contain error, got: ' + s.configValidationError;
+			}
+			if (s.isProcessing) return 'FAIL: isProcessing should be false';
+			if (s.autoConfigValidating) return 'FAIL: autoConfigValidating should be false';
+			return 'OK';
+		} finally {
+			globalThis.prSplit._handleConfigState = origHandleConfigState;
+			delete globalThis.prSplitConfig;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("auto config rejection: %v", raw)
 	}
 }

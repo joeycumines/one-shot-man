@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/dop251/goja"
 	bt "github.com/joeycumines/go-behaviortree"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/goroutineid"
 )
 
@@ -42,7 +42,7 @@ const (
 // Thread Safety:
 // The adapter is safe for concurrent Tick() calls. All state transitions are atomic
 // (under mutex), and generation counting prevents stale callbacks from corrupting state.
-// JavaScript execution happens on the event loop goroutine via Bridge.RunOnLoop.
+// JavaScript execution happens on the event loop goroutine via Bridge.Run.
 //
 // One-Shot Context Semantics:
 // JSLeafAdapter uses the parent context directly without creating child contexts.
@@ -146,7 +146,7 @@ type JSLeafAdapter struct {
 
 func NewJSLeafAdapter(ctx context.Context, bridge *Bridge, tick goja.Callable, getCtx func() any) bt.Node {
 	if ctx == nil {
-		ctx = context.Background()
+		panic("bt: nil context requires baseCtx threading")
 	}
 	adapter := &JSLeafAdapter{
 		bridge: bridge,
@@ -183,12 +183,10 @@ func (a *JSLeafAdapter) Tick(children []bt.Node) (bt.Status, error) {
 		a.state = StateRunning
 		a.mu.Unlock()
 
-		// CRITICAL FIX #3 (review.md): Double-check context cancellation
-		// BEFORE dispatching to JS loop. There's a race window between
-		// unlocking the mutex and calling dispatchJSWithGen where the
-		// context could be cancelled. If we dispatch after cancellation,
-		// we risk executing stale logic or corrupting state.
-		// CRIT-1 FIX: If cancelled, must reset state to prevent zombie
+		// Double-check context cancellation before dispatching to the JS loop.
+		// There is a race window between unlocking the mutex and calling
+		// dispatchJSWithGen where the context could be cancelled.
+		// If cancelled, reset state to prevent zombie tasks.
 		select {
 		case <-a.ctx.Done():
 			// Context was cancelled right after we unlocked
@@ -206,13 +204,11 @@ func (a *JSLeafAdapter) Tick(children []bt.Node) (bt.Status, error) {
 		return bt.Running, nil
 
 	case StateRunning:
-		// Check for cancellation while running
+		// Check for cancellation while running.
 		select {
 		case <-a.ctx.Done():
-			// CRITICAL FIX: Bump generation BEFORE changing state
-			// This prevents finalize() from applying stale result to new request
+			// Bump generation before changing state to invalidate pending callbacks.
 			a.generation++
-			// Now safe to move state
 			a.state = StateIdle
 			a.mu.Unlock()
 			return bt.Failure, errors.New("execution cancelled")
@@ -240,7 +236,7 @@ func (a *JSLeafAdapter) Tick(children []bt.Node) (bt.Status, error) {
 // dispatchJSWithGen sends the execution request to the JavaScript event loop.
 // The gen parameter is passed to finalize to ensure stale callbacks are ignored.
 func (a *JSLeafAdapter) dispatchJSWithGen(gen uint64) {
-	ok := a.bridge.RunOnLoop(func(vm *goja.Runtime) {
+	ok := a.bridge.Run(func(vm *goja.Runtime) {
 		defer func() {
 			if r := recover(); r != nil {
 				a.finalize(gen, bt.Failure, fmt.Errorf("panic in JS leaf: %v", r))
@@ -288,7 +284,7 @@ func (a *JSLeafAdapter) dispatchJSWithGen(gen uint64) {
 		} else {
 			ctxVal = goja.Undefined()
 		}
-		argsVal := goja.Undefined() // Reserved for future use
+		argsVal := goja.Undefined()
 
 		// Call runLeaf(fn, ctx, args, callback)
 		_, err := runLeafFn(
@@ -344,14 +340,14 @@ func mapJSStatus(s string) bt.Status {
 // from within event loop callbacks.
 //
 // Parameters:
-//   - ctx: Context for cancellation support (pass nil for context.Background())
+//   - ctx: Context for cancellation support (must be non-nil, threaded from baseCtx)
 //   - bridge: The Bridge managing the JavaScript runtime
 //   - vm: Optional VM reference for direct execution when on event loop (can be nil)
 //   - tick: The JavaScript callable (goja.Callable) to execute
 //   - getCtx: Function that returns the context/blackboard to pass to the JS function
 func BlockingJSLeaf(ctx context.Context, bridge *Bridge, vm *goja.Runtime, tick goja.Callable, getCtx func() any) bt.Node {
 	if ctx == nil {
-		ctx = context.Background()
+		panic("bt: nil context requires baseCtx threading")
 	}
 	return func() (bt.Tick, []bt.Node) {
 		return func(children []bt.Node) (bt.Status, error) {
@@ -435,19 +431,7 @@ func BlockingJSLeaf(ctx context.Context, bridge *Bridge, vm *goja.Runtime, tick 
 				once.Do(func() { ch <- r })
 			}
 
-			// MAJ-4 FIX PART 2: Install cleanup BEFORE RunOnLoop check.
-			// If bridge is stopped, RunOnLoop returns ok=false and we return early.
-			// The defer must be installed FIRST to guarantee cleanup runs on all paths.
-			defer func() {
-				select {
-				case <-ch:
-					// Drain if available
-				default:
-					// Not sent yet, safe to ignore
-				}
-			}()
-
-			ok := bridge.RunOnLoop(func(loopVM *goja.Runtime) {
+			ok := bridge.Run(func(loopVM *goja.Runtime) {
 				defer func() {
 					if r := recover(); r != nil {
 						send(result{bt.Failure, fmt.Errorf("panic: %v", r)})

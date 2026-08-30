@@ -19,13 +19,13 @@ import (
 var _ = []string{ // compile-time proof the list is valid
 	"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 	"05_execution", "06_verification", "07_prcreation", "08_conflict",
-	"09_claude",
+	"09_agent",
 	"10a_pipeline_config", "10b_pipeline_send", "10c_pipeline_resolve", "10d_pipeline_orchestrator",
 	"11_utilities", "12_exports",
 	"13_tui", "14a_tui_commands_core", "14b_tui_commands_ext",
 	"15a_tui_styles", "15b_tui_chrome", "15c_tui_screens", "15d_tui_dialogs",
 	"16a_tui_focus", "16b_tui_handlers_pipeline", "16c_tui_handlers_verify",
-	"16d_tui_handlers_claude", "16e_tui_update", "16f_tui_model",
+	"16d_tui_handlers_agent", "16e_tui_update", "16f_tui_model",
 }
 
 // TestChunk13_GuardSkipsWithoutTUI verifies that when tui/ctx/output are
@@ -46,27 +46,16 @@ func TestChunk13_GuardSkipsWithoutTUI(t *testing.T) {
 	}
 
 	// Chunks 13-16 should not crash even without tui/ctx/output.
-	tuiChunks := []struct {
-		name   string
-		source string
-	}{
-		{"13_tui", prSplitChunk13TUI},
-		{"14a_tui_commands_core", prSplitChunk14aTUICommandsCore},
-		{"14b_tui_commands_ext", prSplitChunk14bTUICommandsExt},
-		{"15a_tui_styles", prSplitChunk15aTUIStyles},
-		{"15b_tui_chrome", prSplitChunk15bTUIChrome},
-		{"15c_tui_screens", prSplitChunk15cTUIScreens},
-		{"15d_tui_dialogs", prSplitChunk15dTUIDialogs},
-		{"16a_tui_focus", prSplitChunk16aTUIFocus},
-		{"16b_tui_handlers_pipeline", prSplitChunk16bTUIHandlersPipeline},
-		{"16c_tui_handlers_verify", prSplitChunk16cTUIHandlersVerify},
-		{"16d_tui_handlers_claude", prSplitChunk16dTUIHandlersClaude},
-		{"16e_tui_update", prSplitChunk16eTUIUpdate},
-		{"16f_tui_model", prSplitChunk16fTUIModel},
+	tuiChunkNames := []string{
+		"13_tui", "14a_tui_commands_core", "14b_tui_commands_ext",
+		"15a_tui_styles", "15b_tui_chrome", "15c_tui_screens", "15d_tui_dialogs",
+		"16a_tui_focus", "16b_tui_handlers_pipeline", "16c_tui_handlers_verify",
+		"16d_tui_handlers_agent", "16e_tui_update", "16f_tui_model",
 	}
-	for _, chunk := range tuiChunks {
-		if _, err := evalJS(chunk.source); err != nil {
-			t.Fatalf("chunk %s should not error without TUI globals: %v", chunk.name, err)
+	for _, name := range tuiChunkNames {
+		src := prsplittest.ChunkSource(name)
+		if _, err := evalJS(src); err != nil {
+			t.Fatalf("chunk %s should not error without TUI globals: %v", name, err)
 		}
 	}
 
@@ -226,7 +215,7 @@ func TestChunk13_BuildReportStructure(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._buildReport())`)
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit._buildReport())`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1189,7 +1178,7 @@ func TestChunk13_HandleConfigState_MissingBaseBranch(t *testing.T) {
 		// Clear baseBranch.
 		prSplit.runtime.baseBranch = '';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({ hasError: !!result.error, errorContains: result.error ? result.error.indexOf('baseBranch') >= 0 : false });
 	`)
 	if err != nil {
@@ -1217,7 +1206,7 @@ func TestChunk13_HandleConfigState_OnBaseBranch(t *testing.T) {
 		prSplit.verifySplit = function() { return { passed: true }; };
 		prSplit.runtime.baseBranch = 'main';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({ hasError: !!result.error, mentionsBase: result.error ? result.error.indexOf('base branch') >= 0 : false });
 	`)
 	if err != nil {
@@ -1242,7 +1231,7 @@ func TestChunk13_HandleConfigState_GitFails(t *testing.T) {
 		};
 		prSplit.runtime.baseBranch = 'main';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({ hasError: !!result.error, mentionsBranch: result.error ? result.error.indexOf('current branch') >= 0 : false });
 	`)
 	if err != nil {
@@ -1278,7 +1267,7 @@ func TestChunk13_T43_EmptyRepoDetection(t *testing.T) {
 		};
 		prSplit.runtime.baseBranch = 'main';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			hasError: !!result.error,
 			mentionsCommit: result.error ? result.error.indexOf('No commits') >= 0 : false,
@@ -1315,7 +1304,7 @@ func TestChunk13_T43_DetachedHEAD(t *testing.T) {
 		};
 		prSplit.runtime.baseBranch = 'main';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			hasError: !!result.error,
 			mentionsDetached: result.error ? result.error.indexOf('Detached HEAD') >= 0 : false,
@@ -1349,7 +1338,7 @@ func TestChunk13_T43_TargetBranchNotExist(t *testing.T) {
 		};
 		prSplit.runtime.baseBranch = 'nonexistent-branch';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			hasError: !!result.error,
 			mentionsTarget: result.error ? result.error.indexOf('nonexistent-branch') >= 0 : false,
@@ -1392,7 +1381,7 @@ func TestChunk13_T43_TargetBranchExistsRemote(t *testing.T) {
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = '';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({ error: result.error });
 	`)
 	if err != nil {
@@ -1423,7 +1412,7 @@ func TestChunk13_HandleConfigState_BaselinePass(t *testing.T) {
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			error: result.error,
 			hasConfig: !!result.baselineVerifyConfig,
@@ -1458,7 +1447,7 @@ func TestChunk13_HandleConfigState_BaselineTimeoutDefaultAndProgress(t *testing.
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			error: result.error,
 			verifyTimeoutMs: result.baselineVerifyConfig.verifyTimeoutMs,
@@ -1489,7 +1478,7 @@ func TestChunk13_HandleConfigState_BaselineTimeoutOverride(t *testing.T) {
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
-		var result = prSplit._handleConfigState({ verifyTimeoutMs: 12345 });
+		var result = await prSplit._handleConfigState({ verifyTimeoutMs: 12345 });
 		JSON.stringify({
 			error: result.error,
 			verifyTimeoutMs: result.baselineVerifyConfig.verifyTimeoutMs
@@ -1526,7 +1515,7 @@ func TestChunk13_HandleConfigState_BaselineVerifyDeferred(t *testing.T) {
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			error: result.error,
 			hasConfig: !!result.baselineVerifyConfig,
@@ -1559,7 +1548,7 @@ func TestChunk13_HandleConfigState_ResumeWithCheckpoint(t *testing.T) {
 		};
 		prSplit.runtime.baseBranch = 'main';
 
-		var result = prSplit._handleConfigState({ resume: true });
+		var result = await prSplit._handleConfigState({ resume: true });
 		JSON.stringify({ resume: !!result.resume, hasCheckpoint: !!result.checkpoint });
 	`)
 	if err != nil {
@@ -1588,7 +1577,7 @@ func TestChunk13_HandleConfigState_ResumeNoCheckpoint(t *testing.T) {
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
-		var result = prSplit._handleConfigState({ resume: true });
+		var result = await prSplit._handleConfigState({ resume: true });
 		JSON.stringify({
 			error: result.error,
 			resume: !!result.resume,
@@ -1622,7 +1611,7 @@ func TestChunk13_HandleConfigState_SkipsBaselineForTrue(t *testing.T) {
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'true';
 
-		var result = prSplit._handleConfigState({});
+		var result = await prSplit._handleConfigState({});
 		JSON.stringify({
 			error: result.error,
 			verifyCalled: verifyCalled,
@@ -2123,7 +2112,7 @@ func TestChunk13_HandleBranchBuildingState_AllPass(t *testing.T) {
 			]
 		};
 
-		var result = prSplit._handleBranchBuildingState(wizard, plan);
+		var result = await prSplit._handleBranchBuildingState(wizard, plan);
 		JSON.stringify({
 			action: result.action,
 			state: result.state,
@@ -2176,7 +2165,7 @@ func TestChunk13_HandleBranchBuildingState_OneFail(t *testing.T) {
 			]
 		};
 
-		var result = prSplit._handleBranchBuildingState(wizard, plan);
+		var result = await prSplit._handleBranchBuildingState(wizard, plan);
 		JSON.stringify({
 			action: result.action,
 			state: result.state,
@@ -2207,7 +2196,7 @@ func TestChunk13_HandleBranchBuildingState_EmptyPlan(t *testing.T) {
 		wizard.transition('PLAN_REVIEW');
 		wizard.transition('BRANCH_BUILDING');
 
-		var result = prSplit._handleBranchBuildingState(wizard, { splits: [] });
+		var result = await prSplit._handleBranchBuildingState(wizard, { splits: [] });
 		JSON.stringify({ action: result.action, state: result.state, current: wizard.current, hasError: !!result.error });
 	`)
 	if err != nil {
@@ -2243,7 +2232,7 @@ func TestChunk13_HandleBranchBuildingState_Cancel(t *testing.T) {
 
 		// Cancel immediately after execution.
 		var cancelCount = 0;
-		var result = prSplit._handleBranchBuildingState(wizard, {
+		var result = await prSplit._handleBranchBuildingState(wizard, {
 			baseBranch: 'main', sourceBranch: 'feature', verifyCommand: 'make test',
 			splits: [{ name: 'split/01-a', files: ['a.go'], message: 'add a', order: 0 }]
 		}, { isCancelled: function() { cancelCount++; return cancelCount > 1; } });
@@ -2269,7 +2258,7 @@ func TestChunk13_HandleBranchBuildingState_WrongState(t *testing.T) {
 		var wizard = new prSplit.WizardState();
 		wizard.transition('CONFIG');
 
-		var result = prSplit._handleBranchBuildingState(wizard, {});
+		var result = await prSplit._handleBranchBuildingState(wizard, {});
 		JSON.stringify({ hasError: !!result.error });
 	`)
 	if err != nil {
@@ -2433,7 +2422,7 @@ func TestChunk13_HandleEquivCheckState_Pass(t *testing.T) {
 			return { equivalent: true, splitTree: 'abc123', sourceTree: 'abc123', error: null };
 		};
 
-		var result = prSplit._handleEquivCheckState(wizard, { baseBranch: 'main', splits: [] });
+		var result = await prSplit._handleEquivCheckState(wizard, { baseBranch: 'main', splits: [] });
 		JSON.stringify({
 			action: result.action,
 			state: result.state,
@@ -2468,7 +2457,7 @@ func TestChunk13_HandleEquivCheckState_Mismatch(t *testing.T) {
 			return { equivalent: false, splitTree: 'abc', sourceTree: 'def', error: null };
 		};
 
-		var result = prSplit._handleEquivCheckState(wizard, { baseBranch: 'main', splits: [] });
+		var result = await prSplit._handleEquivCheckState(wizard, { baseBranch: 'main', splits: [] });
 		JSON.stringify({
 			action: result.action,
 			state: result.state,
@@ -2499,7 +2488,7 @@ func TestChunk13_HandleEquivCheckState_NoPlan(t *testing.T) {
 		wizard.transition('BRANCH_BUILDING');
 		wizard.transition('EQUIV_CHECK');
 
-		var result = prSplit._handleEquivCheckState(wizard, null);
+		var result = await prSplit._handleEquivCheckState(wizard, null);
 		JSON.stringify({ action: result.action, state: result.state, hasError: !!result.error });
 	`)
 	if err != nil {
@@ -2669,7 +2658,7 @@ func TestChunk13_Wizard_HappyPath_E2E(t *testing.T) {
 
 		// CONFIG
 		wizard.transition('CONFIG');
-		var configResult = prSplit._handleConfigState({});
+		var configResult = await prSplit._handleConfigState({});
 		if (configResult.error) throw 'config error: ' + configResult.error;
 		wizard.transition('PLAN_GENERATION');
 
@@ -2685,10 +2674,10 @@ func TestChunk13_Wizard_HappyPath_E2E(t *testing.T) {
 				{ name: 'split/02-b', files: ['b.go'], message: 'add b', order: 1 }
 			]
 		};
-		var buildResult = prSplit._handleBranchBuildingState(wizard, plan);
+		var buildResult = await prSplit._handleBranchBuildingState(wizard, plan);
 
 		// EQUIV_CHECK
-		var equivResult = prSplit._handleEquivCheckState(wizard, plan);
+		var equivResult = await prSplit._handleEquivCheckState(wizard, plan);
 
 		// FINALIZATION → DONE
 		var finalResult = prSplit._handleFinalizationState(wizard, 'done');
@@ -2770,11 +2759,11 @@ func TestChunk13_Wizard_BaselineFailRecovery_E2E(t *testing.T) {
 
 		// CONFIG returns baselineVerifyConfig (T090: no verify inline).
 		wizard.transition('CONFIG');
-		var configResult = prSplit._handleConfigState({});
+		var configResult = await prSplit._handleConfigState({});
 
 		// Caller performs deferred baseline verify.
 		var bvc = configResult.baselineVerifyConfig;
-		var verifyResult = prSplit.verifySplit(prSplit.runtime.baseBranch, bvc);
+		var verifyResult = await prSplit.verifySplit(prSplit.runtime.baseBranch, bvc);
 
 		// Baseline fails → transition to BASELINE_FAIL.
 		wizard.transition('BASELINE_FAIL', {
@@ -2839,16 +2828,16 @@ func TestChunk13_Wizard_BranchFailRecovery_E2E(t *testing.T) {
 		};
 
 		// First build — fails.
-		var r1 = prSplit._handleBranchBuildingState(wizard, plan);
+		var r1 = await prSplit._handleBranchBuildingState(wizard, plan);
 
 		// Auto-resolve → re-enter BRANCH_BUILDING.
 		var r2 = prSplit._handleErrorResolutionState(wizard, 'auto-resolve');
 
 		// Second build — succeeds.
-		var r3 = prSplit._handleBranchBuildingState(wizard, plan);
+		var r3 = await prSplit._handleBranchBuildingState(wizard, plan);
 
 		// Equiv check.
-		var r4 = prSplit._handleEquivCheckState(wizard, plan);
+		var r4 = await prSplit._handleEquivCheckState(wizard, plan);
 
 		// Done.
 		var r5 = prSplit._handleFinalizationState(wizard, 'done');
@@ -2970,7 +2959,7 @@ func TestChunk13_HUD_RenderPanel(t *testing.T) {
 		t.Errorf("panel too short: %q", panel)
 	}
 	// Should contain key elements.
-	for _, needle := range []string{"Claude Process HUD", "Status:", "Wizard:"} {
+	for _, needle := range []string{"Agent Process HUD", "Status:", "Wizard:"} {
 		if !strings.Contains(panel, needle) {
 			t.Errorf("panel missing %q:\n%s", needle, panel)
 		}
@@ -3234,8 +3223,8 @@ func TestChunk13_RenderStatusBar_ContainsHints(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := raw.(string)
-	if !strings.Contains(s, "Claude") {
-		t.Errorf("statusBar should contain 'Claude', got %q", s)
+	if !strings.Contains(s, "Agent") {
+		t.Errorf("statusBar should contain 'Agent', got %q", s)
 	}
 	if !strings.Contains(s, "Help") {
 		t.Errorf("statusBar should contain 'Help', got %q", s)
@@ -4810,7 +4799,7 @@ func TestChunk13_WizardView_ErrorStateSuppressesSplitPane(t *testing.T) {
 		s.errorDetails = 'unexpected failure';
 		s.errorFromState = 'CONFIG';
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'verify';
 		s.activeVerifySession = {
 			screen: function() { return 'DUPLICATE_MARKER'; },
@@ -5009,8 +4998,8 @@ func TestChunk13_ViewErrorResolutionScreen_CrashMode(t *testing.T) {
 		var s = {
 			wizardState: 'ERROR_RESOLUTION',
 			width: 80,
-			claudeCrashDetected: true,
-			errorDetails: 'Claude process crashed unexpectedly.\n\nLast output:\nsegfault',
+			agentCrashDetected: true,
+			errorDetails: 'Agent process crashed unexpectedly.\n\nLast output:\nsegfault',
 			wizard: { data: {} }
 		};
 		var rendered = globalThis.prSplit._viewErrorResolutionScreen(s);
@@ -5021,8 +5010,8 @@ func TestChunk13_ViewErrorResolutionScreen_CrashMode(t *testing.T) {
 			errors.push('should contain "Crashed" header');
 		}
 		// Crash-specific buttons.
-		if (rendered.indexOf('Restart Claude') < 0) {
-			errors.push('should contain "Restart Claude" button');
+		if (rendered.indexOf('Restart Agent') < 0) {
+			errors.push('should contain "Restart Agent" button');
 		}
 		if (rendered.indexOf('Heuristic') < 0) {
 			errors.push('should contain "Heuristic" button');

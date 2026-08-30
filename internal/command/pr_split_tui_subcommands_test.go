@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPrSplitCommand_CopyCommand(t *testing.T) {
@@ -24,6 +25,12 @@ func TestPrSplitCommand_CopyCommand(t *testing.T) {
 	})
 
 	t.Run("with_plan", func(t *testing.T) {
+		// Isolation: the copy command calls the REAL output.toClipboard on a
+		// real engine, which would otherwise run pbcopy/xclip/clip and MUTATE
+		// the host clipboard (CLAUDE.md forbids host-state mutation in tests).
+		// Redirect to harmless no-op commands. (Not t.Parallel — safe with Setenv.)
+		t.Setenv("OSM_CLIPBOARD", "true")         // copy: discard stdin, exit 0
+		t.Setenv("OSM_CLIPBOARD_PASTE", "echo x") // paste: deterministic text
 		tp := chdirTestPipeline(t, TestPipelineOpts{})
 		runPlanPipeline(t, tp)
 		tp.Stdout.Reset()
@@ -31,7 +38,21 @@ func TestPrSplitCommand_CopyCommand(t *testing.T) {
 		if err := tp.Dispatch("copy", nil); err != nil {
 			t.Fatalf("copy: %v", err)
 		}
-		out := tp.Stdout.String()
+		// output.toClipboard is async (JS Binding Contract); the copy command
+		// fire-and-forgets it via an async IIFE. Poll the event loop until the
+		// deferred print lands (robust to clipboard subprocess timing).
+		var out string
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			out = tp.Stdout.String()
+			if strings.Contains(out, "copied to clipboard") || strings.Contains(out, "Plan copied") || strings.Contains(out, "Error copying") {
+				break
+			}
+			if _, err := tp.EvalJS(`await new Promise(function (r) { setTimeout(function () { r(); }, 25); })`); err != nil {
+				t.Fatalf("drain: %v", err)
+			}
+		}
+		out = tp.Stdout.String()
 		// The copy command either succeeds (clipboard available) or fails with a
 		// clipboard error. Both are valid: the template rendered successfully.
 		// In test env, output.toClipboard is typically unavailable.
@@ -46,22 +67,22 @@ func TestPrSplitCommand_CopyCommand(t *testing.T) {
 	})
 }
 
-func TestPrSplitCommand_ClaudeCommand(t *testing.T) {
+func TestPrSplitCommand_AgentCommand(t *testing.T) {
 	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
 
-	// T12: Verify 'claude' REPL command has been removed.
+	// T12: Verify 'agent' REPL command has been removed.
 	// The command was removed because it was never properly wired to
 	// mcpConfigPath from osm:mcpcallback, causing the regression described
 	// in scratch/current-state.md regression #1.
 	t.Run("command_removed", func(t *testing.T) {
 		tp := chdirTestPipeline(t, TestPipelineOpts{})
-		err := tp.Dispatch("claude", nil)
+		err := tp.Dispatch("agent", nil)
 		// Command should not be found.
 		if err == nil {
-			t.Fatal("expected error: 'claude' command should have been removed")
+			t.Fatal("expected error: 'agent' command should have been removed")
 		}
 		// The error should indicate command not found.
 		errStr := err.Error()
@@ -72,26 +93,26 @@ func TestPrSplitCommand_ClaudeCommand(t *testing.T) {
 
 	t.Run("spawn_also_removed", func(t *testing.T) {
 		tp := chdirTestPipeline(t, TestPipelineOpts{})
-		err := tp.Dispatch("claude", []string{"spawn"})
+		err := tp.Dispatch("agent", []string{"spawn"})
 		if err == nil {
-			t.Fatal("expected error: 'claude spawn' should fail (command removed)")
+			t.Fatal("expected error: 'agent spawn' should fail (command removed)")
 		}
 	})
 }
 
-func TestPrSplitCommand_ClaudeStatusCommand(t *testing.T) {
+func TestPrSplitCommand_AgentStatusCommand(t *testing.T) {
 	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
 
-	// T13: Verify 'claude-status' REPL command has been removed.
-	// This was the companion to the 'claude' command (T12).
+	// T13: Verify 'agent-status' REPL command has been removed.
+	// This was the companion to the 'agent' command (T12).
 	t.Run("command_removed", func(t *testing.T) {
 		tp := chdirTestPipeline(t, TestPipelineOpts{})
-		err := tp.Dispatch("claude-status", nil)
+		err := tp.Dispatch("agent-status", nil)
 		if err == nil {
-			t.Fatal("expected error: 'claude-status' command should have been removed")
+			t.Fatal("expected error: 'agent-status' command should have been removed")
 		}
 		errStr := err.Error()
 		if !contains(errStr, "not found") && !contains(errStr, "unknown command") {
@@ -207,7 +228,7 @@ func TestPrSplitCommand_ConversationCommand(t *testing.T) {
 			t.Fatalf("conversation: %v", err)
 		}
 		out := tp.Stdout.String()
-		if !contains(out, "No Claude conversations") {
+		if !contains(out, "No Agent conversations") {
 			t.Errorf("expected 'no conversations' message, got: %s", out)
 		}
 	})
@@ -363,7 +384,7 @@ func TestPrSplitCommand_BuildCommandsAllDispatchable(t *testing.T) {
 
 	// Every one of these commands should appear in help output,
 	// meaning buildCommands returned them and dispatch resolved them.
-	// Note: "claude" and "claude-status" are NOT buildCommands entries —
+	// Note: "agent" and "agent-status" are NOT buildCommands entries —
 	// they are handled separately by the TUI dispatcher, so we exclude
 	// them from this structural check.
 	// Note: "override" and "abort" are valid buildCommands entries but
@@ -1594,8 +1615,8 @@ func TestPrSplitCommand_RunCommand(t *testing.T) {
 		}
 		out := tp.Stdout.String()
 		// Should show the workflow steps.
-		if !contains(out, "Running full PR split workflow") && !contains(out, "Claude not available") {
-			t.Errorf("expected workflow header or Claude fallback, got: %s", out)
+		if !contains(out, "Running full PR split workflow") && !contains(out, "Agent not available") {
+			t.Errorf("expected workflow header or Agent fallback, got: %s", out)
 		}
 		// Should analyze files.
 		if !contains(out, "Analysis") && !contains(out, "changed files") {
@@ -1759,7 +1780,7 @@ func TestPrSplitCommand_ReportCommandEdgeCases(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// auto-split (async — falls back to heuristic w/o Claude)
+// auto-split (async — falls back to heuristic w/o Agent)
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_AutoSplitCommand(t *testing.T) {
@@ -1769,23 +1790,23 @@ func TestPrSplitCommand_AutoSplitCommand(t *testing.T) {
 	}
 
 	t.Run("heuristic_fallback", func(t *testing.T) {
-		// auto-split without Claude should run the heuristic path.
+		// auto-split without Agent should run the heuristic path.
 		tp := chdirTestPipeline(t, TestPipelineOpts{})
 		_, err := tp.EvalJS(`
-			prSplit._originalClaudeResolveAsync = prSplit.ClaudeCodeExecutor.prototype.resolveAsync;
-			prSplit.ClaudeCodeExecutor.prototype.resolveAsync = async function() {
-				return { error: "mocked: Claude unavailable in test" };
+			prSplit._originalAgentResolveAsync = prSplit.AgentCodeExecutor.prototype.resolveAsync;
+			prSplit.AgentCodeExecutor.prototype.resolveAsync = async function() {
+				return { error: "mocked: Agent unavailable in test" };
 			};
 		`)
 		if err != nil {
-			t.Fatalf("mock Claude resolveAsync: %v", err)
+			t.Fatalf("mock Agent resolveAsync: %v", err)
 		}
 		t.Cleanup(func() {
-			_, _ = tp.EvalJS(`prSplit.ClaudeCodeExecutor.prototype.resolveAsync = prSplit._originalClaudeResolveAsync`)
+			_, _ = tp.EvalJS(`prSplit.AgentCodeExecutor.prototype.resolveAsync = prSplit._originalAgentResolveAsync`)
 		})
 
 		if err := tp.Dispatch("auto-split", nil); err != nil {
-			// auto-split may error if Claude is not available and
+			// auto-split may error if Agent is not available and
 			// baseline verification fails. Accept non-nil errors.
 			t.Logf("auto-split error (may be expected): %v", err)
 		}
@@ -1951,7 +1972,7 @@ func TestPrSplitCommand_HudCommand(t *testing.T) {
 			t.Fatalf("hud detail: %v", err)
 		}
 		out := tp.Stdout.String()
-		if !contains(out, "Claude Process HUD") && !contains(out, "HUD unavailable") {
+		if !contains(out, "Agent Process HUD") && !contains(out, "HUD unavailable") {
 			t.Errorf("expected HUD panel or unavailable msg, got: %s", out)
 		}
 	})
@@ -1992,7 +2013,7 @@ func TestPrSplitCommand_HudCommand(t *testing.T) {
 			t.Fatalf("hud toggle: %v", err)
 		}
 		out := tp.Stdout.String()
-		if !contains(out, "Claude Process HUD") && !contains(out, "HUD overlay disabled") &&
+		if !contains(out, "Agent Process HUD") && !contains(out, "HUD overlay disabled") &&
 			!contains(out, "HUD unavailable") {
 			t.Errorf("expected HUD panel or status, got: %s", out)
 		}

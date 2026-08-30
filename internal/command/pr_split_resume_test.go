@@ -98,7 +98,7 @@ func TestChunk03_LoadPlan_MissingFile_ViaPipeline(t *testing.T) {
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "nonexistent-plan.json")
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.loadPlan('` + escapeJSPath(planPath) + `'))`)
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.loadPlan('` + escapeJSPath(planPath) + `'))`)
 	if err != nil {
 		t.Fatalf("evalJS error: %v", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	creackpty "github.com/creack/pty"
+	"golang.org/x/sys/unix"
 )
 
 // unixProcessHandle wraps *exec.Cmd for Unix platforms.
@@ -60,7 +61,7 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 
 	// When Command contains spaces and Args is empty, split Command
 	// into binary + args using POSIX shell word-splitting rules.
-	// This allows callers to pass "ollama launch claude --config" as
+	// This allows callers to pass "ollama launch my-agent --config" as
 	// a single Command string without pre-splitting.
 	binary, args := cfg.Command, cfg.Args
 	if len(cfg.Args) == 0 {
@@ -78,6 +79,13 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pty: failed to open pty: %w", err)
 	}
+
+	// Clear TOSTOP on the slave so that background process group members
+	// can write to the terminal without receiving SIGTTOU. Without this,
+	// child processes that call tcsetattr (e.g., shells setting raw mode)
+	// would be stopped by the kernel since they run in their own process
+	// group (Setpgid: true below) rather than the terminal's foreground group.
+	clearTOSTOP(int(tty.Fd()))
 
 	// Set initial window size.
 	if err := creackpty.Setsize(ptmx, &creackpty.Winsize{
@@ -109,10 +117,15 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 	cmd.Stdout = tty
 	cmd.Stderr = tty
 
-	// Create a new process group so that signals (especially SIGKILL)
-	// can be delivered to the entire process tree, not just the parent.
-	// This prevents orphaned child processes when force-killing.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Run the child in a new session and make the slave PTY its controlling
+	// terminal. This places the child in the foreground process group of its
+	// own terminal without relying on the parent to call tcsetpgrp, which may
+	// fail when the parent is not the session leader (e.g. under termtest).
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:  true,
+		Setctty: true,
+		Ctty:    0,
+	}
 
 	if err := cmd.Start(); err != nil {
 		ptmx.Close()
@@ -124,12 +137,14 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 	done := make(chan struct{})
 
 	proc := &Process{
-		ptyFile:      ptmx,
-		ttyFile:      tty, // keep slave alive until Close()
-		done:         done,
-		cmd:          handle,
-		exitCode:     -1,
-		writeTimeout: cfg.WriteTimeout,
+		ptyFile:           ptmx,
+		ttyFile:           tty, // keep slave alive until Close()
+		done:              done,
+		cmd:               handle,
+		exitCode:          -1,
+		writeTimeout:      cfg.WriteTimeout,
+		closeGracefulWait: cfg.CloseGracePeriod,
+		closeForceWait:    cfg.CloseForceWait,
 	}
 
 	// Background goroutine to wait for process exit.
@@ -181,6 +196,9 @@ func (p *Process) platformResize(rows, cols uint16) error {
 // platformClose is a no-op on Unix — all cleanup is handled by Close().
 func (p *Process) platformClose() {}
 
+// platformClosePseudoConsole is a no-op on Unix (no ConPTY).
+func (p *Process) platformClosePseudoConsole() {}
+
 // splitCommand splits a command string into a binary and arguments using
 // POSIX-like shell word rules. Single quotes preserve literal content,
 // double quotes allow backslash escaping of \, ", $, `, and newline.
@@ -190,8 +208,8 @@ func (p *Process) platformClose() {}
 // with a nil args slice.
 //
 // This function is used when cfg.Command contains spaces and cfg.Args is
-// empty — e.g., "ollama launch claude --config" becomes
-// binary="ollama", args=["launch", "claude", "--config"].
+// empty — e.g., "ollama launch my-agent --config" becomes
+// binary="ollama", args=["launch", "my-agent", "--config"].
 func splitCommand(s string) (binary string, args []string, err error) {
 	var words []string
 	var cur strings.Builder
@@ -259,4 +277,19 @@ func splitCommand(s string) (binary string, args []string, err error) {
 	}
 
 	return words[0], words[1:], nil
+}
+
+// clearTOSTOP clears the TOSTOP flag on the given terminal fd.
+// This prevents SIGTTOU from being sent to background process group
+// members that write to or call tcsetattr on the terminal.
+func clearTOSTOP(fd int) {
+	termios, err := unix.IoctlGetTermios(fd, tcgets)
+	if err != nil {
+		return
+	}
+	if termios.Lflag&unix.TOSTOP == 0 {
+		return // already clear
+	}
+	termios.Lflag &^= unix.TOSTOP
+	_ = unix.IoctlSetTermios(fd, tcsets, termios)
 }

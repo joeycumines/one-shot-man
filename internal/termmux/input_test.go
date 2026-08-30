@@ -41,12 +41,12 @@ func TestKeyToTermBytes_SpecialKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
-			got, ok := KeyToTermBytes(tt.key)
+			got, ok := KeyToTermBytes(tt.key, false, false)
 			if !ok {
-				t.Fatalf("KeyToTermBytes(%q): expected ok", tt.key)
+				t.Fatalf("KeyToTermBytes(%q, false): expected ok", tt.key)
 			}
 			if got != tt.want {
-				t.Errorf("KeyToTermBytes(%q) = %q, want %q", tt.key, got, tt.want)
+				t.Errorf("KeyToTermBytes(%q, false) = %q, want %q", tt.key, got, tt.want)
 			}
 		})
 	}
@@ -54,20 +54,20 @@ func TestKeyToTermBytes_SpecialKeys(t *testing.T) {
 
 func TestKeyToTermBytes_CtrlLetters(t *testing.T) {
 	// ctrl+a → 0x01, ctrl+z → 0x1A
-	got, ok := KeyToTermBytes("ctrl+a")
+	got, ok := KeyToTermBytes("ctrl+a", false, false)
 	if !ok || got != "\x01" {
 		t.Errorf("ctrl+a: got %q ok=%v", got, ok)
 	}
-	got, ok = KeyToTermBytes("ctrl+z")
+	got, ok = KeyToTermBytes("ctrl+z", false, false)
 	if !ok || got != "\x1a" {
 		t.Errorf("ctrl+z: got %q ok=%v", got, ok)
 	}
-	got, ok = KeyToTermBytes("ctrl+c")
+	got, ok = KeyToTermBytes("ctrl+c", false, false)
 	if !ok || got != "\x03" {
 		t.Errorf("ctrl+c: got %q ok=%v", got, ok)
 	}
 	// Uppercase should also work.
-	got, ok = KeyToTermBytes("ctrl+A")
+	got, ok = KeyToTermBytes("ctrl+A", false, false)
 	if !ok || got != "\x01" {
 		t.Errorf("ctrl+A: got %q ok=%v", got, ok)
 	}
@@ -98,12 +98,12 @@ func TestKeyToTermBytes_ModNav(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
-			got, ok := KeyToTermBytes(tt.key)
+			got, ok := KeyToTermBytes(tt.key, false, false)
 			if !ok {
-				t.Fatalf("KeyToTermBytes(%q): expected ok", tt.key)
+				t.Fatalf("KeyToTermBytes(%q, false): expected ok", tt.key)
 			}
 			if got != tt.want {
-				t.Errorf("KeyToTermBytes(%q) = %q, want %q", tt.key, got, tt.want)
+				t.Errorf("KeyToTermBytes(%q, false) = %q, want %q", tt.key, got, tt.want)
 			}
 		})
 	}
@@ -111,46 +111,68 @@ func TestKeyToTermBytes_ModNav(t *testing.T) {
 
 func TestKeyToTermBytes_Alt(t *testing.T) {
 	// alt+a → ESC + 'a'
-	got, ok := KeyToTermBytes("alt+a")
+	got, ok := KeyToTermBytes("alt+a", false, false)
 	if !ok || got != "\x1ba" {
 		t.Errorf("alt+a: got %q ok=%v", got, ok)
 	}
 	// alt+up → ESC + ESC[A
-	got, ok = KeyToTermBytes("alt+up")
+	got, ok = KeyToTermBytes("alt+up", false, false)
 	if !ok || got != "\x1b\x1b[A" {
 		t.Errorf("alt+up: got %q ok=%v", got, ok)
 	}
 }
 
 func TestKeyToTermBytes_Paste(t *testing.T) {
-	got, ok := KeyToTermBytes("[hello world]")
+	got, ok := KeyToTermBytes("[hello world]", false, false)
 	if !ok || got != "hello world" {
 		t.Errorf("paste: got %q ok=%v", got, ok)
 	}
 }
 
 func TestKeyToTermBytes_SingleChar(t *testing.T) {
-	got, ok := KeyToTermBytes("a")
+	got, ok := KeyToTermBytes("a", false, false)
 	if !ok || got != "a" {
 		t.Errorf("single char: got %q ok=%v", got, ok)
 	}
-	got, ok = KeyToTermBytes(" ")
+	got, ok = KeyToTermBytes(" ", false, false)
 	if !ok || got != " " {
 		t.Errorf("space: got %q ok=%v", got, ok)
 	}
 }
 
 func TestKeyToTermBytes_Unicode(t *testing.T) {
-	got, ok := KeyToTermBytes("日本語")
+	got, ok := KeyToTermBytes("日本語", false, false)
 	if !ok || got != "日本語" {
 		t.Errorf("unicode: got %q ok=%v", got, ok)
 	}
 }
 
 func TestKeyToTermBytes_Unknown(t *testing.T) {
-	_, ok := KeyToTermBytes("ctrl+shift+alt+x")
+	_, ok := KeyToTermBytes("ctrl+shift+alt+x", false, false)
 	if ok {
 		t.Error("expected !ok for unrecognized combo")
+	}
+}
+
+func TestKeyToTermBytes_SpaceKey(t *testing.T) {
+	got, ok := KeyToTermBytes("space", false, false)
+	if !ok {
+		t.Fatal("expected ok for space key name")
+	}
+	if got != " " {
+		t.Errorf("KeyToTermBytes(%q, false) = %q, want %q", "space", got, " ")
+	}
+}
+
+func TestKeyToTermBytes_UnrecognizedKeyNames(t *testing.T) {
+	tests := []string{"capslock", "numlock", "scrolllock", "num0", "num1", "printscreen"}
+	for _, key := range tests {
+		t.Run(key, func(t *testing.T) {
+			_, ok := KeyToTermBytes(key, false, false)
+			if ok {
+				t.Errorf("KeyToTermBytes(%q, false): expected !ok for unrecognized key name", key)
+			}
+		})
 	}
 }
 
@@ -251,6 +273,40 @@ func TestMouseToSGR_UnknownButton(t *testing.T) {
 	}
 }
 
+func TestMouseToSGR_ReleaseButton(t *testing.T) {
+	// Per the SGR mouse protocol, release events preserve the original
+	// button code (unlike legacy X10 mode which overwrites with code 3).
+	// The SGR protocol uses the lowercase 'm' suffix to distinguish
+	// release from press (uppercase 'M'). This test verifies that a
+	// left-button release produces button code 0 with 'm' suffix.
+	ev := MouseEvent{Type: MouseRelease, Button: MouseLeft, X: 10, Y: 5}
+	got, ok := MouseToSGR(ev, 0, 0)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	// Button code 0 (left), 1-based: cx=11, cy=6, lowercase 'm' for release
+	want := "\x1b[<0;11;6m"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestMouseToSGR_ReleaseButtonNone(t *testing.T) {
+	// When BubbleTea reports no specific button on release (e.g., the
+	// button field is "none"), MouseToSGR maps MouseNone to button code 3.
+	// This is the fallback for cases where the released button is unknown.
+	ev := MouseEvent{Type: MouseRelease, Button: MouseNone, X: 10, Y: 5}
+	got, ok := MouseToSGR(ev, 0, 0)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	// Button code 3 (none), 1-based: cx=11, cy=6, lowercase 'm' for release
+	want := "\x1b[<3;11;6m"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestMouseToSGR_AllButtons(t *testing.T) {
 	buttons := []struct {
 		btn  MouseButton
@@ -327,5 +383,69 @@ func TestMouseRoundTrip_WithOffset(t *testing.T) {
 	// After offset: x=10, y=10 → 1-based: 11, 11
 	if parsed.X != 11 || parsed.Y != 11 {
 		t.Errorf("round-trip offset: X=%d Y=%d, want 11,11", parsed.X, parsed.Y)
+	}
+}
+
+func TestKeyToTermBytes_ApplicationCursor(t *testing.T) {
+	tests := []struct {
+		key       string
+		normal    string
+		appCursor string
+	}{
+		{"up", "\x1b[A", "\x1bOA"},
+		{"down", "\x1b[B", "\x1bOB"},
+		{"right", "\x1b[C", "\x1bOC"},
+		{"left", "\x1b[D", "\x1bOD"},
+		{"home", "\x1b[H", "\x1bOH"},
+		{"end", "\x1b[F", "\x1bOF"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			// Normal mode (appCursor=false)
+			got, ok := KeyToTermBytes(tt.key, false, false)
+			if !ok {
+				t.Fatalf("KeyToTermBytes(%q, false): expected ok", tt.key)
+			}
+			if got != tt.normal {
+				t.Errorf("KeyToTermBytes(%q, false) = %q, want %q", tt.key, got, tt.normal)
+			}
+
+			// Application cursor mode (appCursor=true)
+			got, ok = KeyToTermBytes(tt.key, true, false)
+			if !ok {
+				t.Fatalf("KeyToTermBytes(%q, true): expected ok", tt.key)
+			}
+			if got != tt.appCursor {
+				t.Errorf("KeyToTermBytes(%q, true) = %q, want %q", tt.key, got, tt.appCursor)
+			}
+		})
+	}
+}
+
+func TestKeyToTermBytes_ApplicationCursor_UnaffectedKeys(t *testing.T) {
+	// Keys that should NOT be affected by appCursor mode.
+	tests := []struct {
+		key  string
+		want string
+	}{
+		{"enter", "\r"},
+		{"tab", "\t"},
+		{"delete", "\x1b[3~"},
+		{"pgup", "\x1b[5~"},
+		{"pgdown", "\x1b[6~"},
+		{"f1", "\x1bOP"},
+		{"f5", "\x1b[15~"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			gotFalse, _ := KeyToTermBytes(tt.key, false, false)
+			gotTrue, _ := KeyToTermBytes(tt.key, true, false)
+			if gotFalse != gotTrue {
+				t.Errorf("appCursor affected %q: false=%q, true=%q (should be same)", tt.key, gotFalse, gotTrue)
+			}
+			if gotFalse != tt.want {
+				t.Errorf("KeyToTermBytes(%q) = %q, want %q", tt.key, gotFalse, tt.want)
+			}
+		})
 	}
 }

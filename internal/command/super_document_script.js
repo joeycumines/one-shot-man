@@ -278,13 +278,13 @@ function updateDocument(id, content, label) {
     return false;
 }
 
-function buildContextTxtar() {
-    return buildContext(state.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
+async function buildContextTxtar() {
+    return await buildContext(state.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
 }
 
-function buildFinalPrompt() {
+async function buildFinalPrompt() {
     const docs = getDocuments();
-    const contextTxtar = buildContextTxtar();
+    const contextTxtar = await buildContextTxtar();
 
     // Execute template
     return template.execute(getTemplate(), {
@@ -742,7 +742,10 @@ function runVisualTui() {
 
         // Flag to force a full screen clear on first render
         // This ensures the title line is rendered correctly when re-entering TUI from shell
-        needsInitClear: true
+        needsInitClear: true,
+
+        clipboardCopyRunning: false,
+        fileLoadRunning: false
     };
 
     const model = tea.newModel({
@@ -786,6 +789,8 @@ function runVisualTui() {
                 const [newTa, taCmd] = tuiState.contentTextarea.update(msg);
                 tuiState.contentTextarea = newTa;
                 return [tuiState, taCmd];
+            } else if (msg.type === 'Tick') {
+                return handleTick(msg, tuiState);
             }
             return [tuiState, null];
         }, view: function (tuiState) {
@@ -880,6 +885,11 @@ function handleKeys(msg, s) {
         && msg.text.charCodeAt(0) >= 0x20
         && msg.text.charCodeAt(0) <= 0x7E)
         ? msg.text : msg.key;
+    // Fallback for space key: when msg.text is empty/missing, k resolves to
+    // the named key "space" instead of the literal " " character. For input
+    // fields (label, textarea), we need the literal space character. This
+    // fallback ensures space always works regardless of msg.text state.
+    const kForInput = (k === 'space') ? ' ' : k;
     const prevMode = s.mode; // Track mode before processing
     // Global quit from any mode if ctrl+c
     if (k === 'ctrl+c') {
@@ -887,241 +897,18 @@ function handleKeys(msg, s) {
     }
 
     if (s.mode === MODE_LIST) {
+        // Action hotkeys — bare keys work directly. The super-document is a
+        // pure TUI with no PTY passthrough, so printable letters are always
+        // interpreted as commands. Early returns keep the dispatch table
+        // explicit and prevent action keys from falling through to navigation.
         if (k === 'q') {
-            // User wants to exit completely - use module-level flag (NOT persistent state)
             _userRequestedShell = false;
             return [s, tea.quit()];
         }
         if (k === 's') {
-            // User explicitly requested to drop into shell - use module-level flag
             _userRequestedShell = true;
             return [s, tea.quit()];
         }
-
-        // Arrow key navigation with auto-scroll (documents + buttons)
-        if (k === 'up' || k === 'k') {
-            if (s.focusedButtonIdx >= 0) {
-                // Currently on buttons - up goes back to last document
-                s.focusedButtonIdx = -1;
-                if (s.documents.length > 0) {
-                    s.selectedIdx = s.documents.length - 1;
-                    ensureSelectionVisible(s);
-                }
-            } else if (s.selectedIdx > 0) {
-                // In document list - move up normally
-                s.selectedIdx = s.selectedIdx - 1;
-                ensureSelectionVisible(s);
-            } else if (s.selectedIdx === 0) {
-                // At first document - deselect and scroll to top
-                // This enables "de-highlight everything" to reach the document count area
-                s.selectedIdx = -1; // No document selected
-                if (s.vp) s.vp.setYOffset(0); // Scroll viewport to absolute top
-            } else if (s.selectedIdx < 0 && s.vp && s.vp.yOffset() > 0) {
-                // Already deselected - just ensure we're at the absolute top
-                s.vp.setYOffset(0);
-            }
-        }
-        if (k === 'down' || k === 'j') {
-            if (s.focusedButtonIdx >= 0) {
-                // Already on buttons - down doesn't do anything (buttons are at bottom)
-            } else if (s.selectedIdx < 0) {
-                // No document selected - select first document
-                if (s.documents.length > 0) {
-                    s.selectedIdx = 0;
-                    ensureSelectionVisible(s);
-                } else {
-                    // No documents - go to buttons
-                    s.focusedButtonIdx = 0;
-                    ensureSelectionVisible(s);
-                }
-            } else if (s.selectedIdx >= s.documents.length - 1) {
-                // At bottom of document list - move to first button
-                s.focusedButtonIdx = 0;
-                ensureSelectionVisible(s); // Holistic fix: ensure buttons are visible
-            } else {
-                // In document list - move down normally
-                s.selectedIdx = Math.min(s.documents.length - 1, s.selectedIdx + 1);
-                ensureSelectionVisible(s);
-            }
-        }
-        // Left/Right for button navigation
-        if (k === 'left' || k === 'h') {
-            if (s.focusedButtonIdx > 0) {
-                s.focusedButtonIdx--;
-            }
-        }
-        if (k === 'right' || k === 'l') {
-            if (s.focusedButtonIdx >= 0 && s.focusedButtonIdx < BUTTONS.length - 1) {
-                s.focusedButtonIdx++;
-            }
-        }
-        // Tab cycles: docs -> buttons (forward)
-        if (k === 'tab') {
-            if (s.focusedButtonIdx < 0) {
-                // From docs, go to first button
-                s.focusedButtonIdx = 0;
-                ensureSelectionVisible(s); // Ensure buttons visible
-            } else if (s.focusedButtonIdx < BUTTONS.length - 1) {
-                // Move to next button
-                s.focusedButtonIdx++;
-            } else {
-                // From last button, wrap to docs
-                s.focusedButtonIdx = -1;
-                s.selectedIdx = 0;
-                if (s.vp) s.vp.setYOffset(0);
-            }
-        }
-        // Shift+Tab cycles: buttons -> docs (backward)
-        if (k === 'shift+tab') {
-            if (s.focusedButtonIdx > 0) {
-                // Move to previous button
-                s.focusedButtonIdx--;
-            } else if (s.focusedButtonIdx === 0) {
-                // From first button, go to last doc
-                s.focusedButtonIdx = -1;
-                if (s.documents.length > 0) {
-                    s.selectedIdx = s.documents.length - 1;
-                    ensureSelectionVisible(s); // Scroll back to doc
-                }
-            } else {
-                // From docs, go to last button
-                s.focusedButtonIdx = BUTTONS.length - 1;
-                ensureSelectionVisible(s); // Ensure buttons visible
-            }
-        }
-        // Enter on focused button activates it
-        if (k === 'enter' && s.focusedButtonIdx >= 0) {
-            const btn = BUTTONS[s.focusedButtonIdx];
-            if (btn) {
-                if (btn.key === 'q') {
-                    _userRequestedShell = false;
-                    return [s, tea.quit()];
-                }
-                if (btn.key === 's') {
-                    _userRequestedShell = true;
-                    return [s, tea.quit()];
-                }
-                if (btn.key === 'a') {
-                    s.mode = MODE_INPUT;
-                    s.inputOperation = INPUT_ADD;
-                    s.inputFocus = FOCUS_LABEL;
-                    s.labelBuffer = '';
-                    s.contentTextarea = textareaLib.new();
-                    configureTextarea(s.contentTextarea, s.width);
-                    s.focusedButtonIdx = -1;
-                    s.inputViewportUnlocked = false;
-                    return [s, null];
-                }
-                if (btn.key === 'l') {
-                    s.mode = MODE_INPUT;
-                    s.inputOperation = INPUT_LOAD;
-                    s.inputFocus = FOCUS_LABEL;
-                    s.labelBuffer = '';
-                    s.contentTextarea = null;
-                    s.focusedButtonIdx = -1;
-                    s.inputViewportUnlocked = false;
-                    return [s, null];
-                }
-                if (btn.key === 'c') {
-                    const prompt = buildFinalPrompt();
-                    try {
-                        os.clipboardCopy(prompt);
-                        const tc = _tokenCount(prompt);
-                        const lc = _lineCount(prompt);
-                        const bc = _byteCount(prompt);
-                        s.statusMsg = "Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
-                        s.hasError = false;
-                    } catch (e) {
-                        s.statusMsg = 'Clipboard error: ' + e;
-                        s.hasError = true;
-                    }
-                    s.focusedButtonIdx = -1;
-                    return [s, null];
-                }
-                if (btn.key === 'r') {
-                    s.mode = MODE_CONFIRM;
-                    s.confirmPrompt = 'Reset the session (archive current state and clear all persisted state)? This cannot be undone. (y/n)';
-                    s.confirmDocId = -1;
-                    s.focusedButtonIdx = -1;
-                    return [s, null];
-                }
-            }
-        }
-
-        // MANUAL PAGE KEY HANDLING - DO NOT forward to vp.update()!
-        // PgDown: Move selection down by approximately a page worth of documents
-        // If already at last document, move focus to buttons
-        if (k === 'pgdown') {
-            if (s.focusedButtonIdx >= 0) {
-                // Already on buttons - no further down to go
-            } else if (s.documents.length > 0 && s.vp) {
-                const vpHeight = s.vp.height();
-                // Estimate ~5 lines per document box
-                const pageSize = Math.max(1, Math.floor(vpHeight / 5));
-                const newIdx = Math.min(s.documents.length - 1, s.selectedIdx + pageSize);
-                if (newIdx === s.selectedIdx && s.selectedIdx >= s.documents.length - 1) {
-                    // At last document and trying to go further - move to buttons
-                    s.focusedButtonIdx = 0;
-                } else {
-                    s.selectedIdx = newIdx;
-                }
-                ensureSelectionVisible(s);
-            } else if (s.documents.length === 0) {
-                // No documents - jump to buttons
-                s.focusedButtonIdx = 0;
-                ensureSelectionVisible(s);
-            }
-        }
-
-        // PgUp: Move selection up by approximately a page worth of documents
-        // If on buttons, return to document list
-        if (k === 'pgup') {
-            if (s.focusedButtonIdx >= 0) {
-                // On buttons - go back to last document
-                s.focusedButtonIdx = -1;
-                if (s.documents.length > 0) {
-                    s.selectedIdx = s.documents.length - 1;
-                    ensureSelectionVisible(s);
-                }
-            } else if (s.selectedIdx < 0) {
-                // Already deselected - just ensure we're at absolute top
-                if (s.vp) s.vp.setYOffset(0);
-            } else if (s.documents.length > 0 && s.vp) {
-                const vpHeight = s.vp.height();
-                const pageSize = Math.max(1, Math.floor(vpHeight / 5));
-                const newIdx = Math.max(0, s.selectedIdx - pageSize);
-                if (newIdx === 0 && s.selectedIdx === 0) {
-                    // Already at first document - deselect and scroll to top
-                    s.selectedIdx = -1;
-                    s.vp.setYOffset(0);
-                } else {
-                    s.selectedIdx = newIdx;
-                    ensureSelectionVisible(s);
-                }
-            } else if (s.documents.length === 0 && s.vp && s.vp.yOffset() > 0) {
-                // No documents but viewport scrolled - scroll to top
-                s.vp.setYOffset(0);
-            }
-        }
-
-        // Home: Go to first document and clear button focus
-        if (k === 'home') {
-            s.focusedButtonIdx = -1;
-            if (s.documents.length > 0) {
-                s.selectedIdx = 0;
-                if (s.vp) s.vp.setYOffset(0);
-            }
-        }
-
-        // End: Go to last button (truly the end of the page)
-        if (k === 'end') {
-            s.focusedButtonIdx = BUTTONS.length - 1;
-            ensureSelectionVisible(s); // Holistic fix ensures scroll to bottom
-        }
-
-        // Persist selection after any navigation
-        state.set(stateKeys.selectedIndex, s.selectedIdx);
-
         if (k === 'a') {
             s.mode = MODE_INPUT;
             s.inputOperation = INPUT_ADD;
@@ -1129,20 +916,22 @@ function handleKeys(msg, s) {
             s.labelBuffer = '';
             s.contentTextarea = textareaLib.new();
             configureTextarea(s.contentTextarea, s.width);
-            s.focusedButtonIdx = -1; // Clear button focus
-            s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
+            s.focusedButtonIdx = -1;
+            s.inputViewportUnlocked = false;
+            return [s, null];
         }
         if (k === 'l') {
             s.mode = MODE_INPUT;
             s.inputOperation = INPUT_LOAD;
             s.inputFocus = FOCUS_LABEL;
             s.labelBuffer = '';
-            s.contentTextarea = null; // No textarea for load mode
-            s.focusedButtonIdx = -1; // Clear button focus
-            s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
+            s.contentTextarea = null;
+            s.focusedButtonIdx = -1;
+            s.inputViewportUnlocked = false;
+            return [s, null];
         }
+        // 'e' or Enter on a document (no button focused) = edit
         if (k === 'e' || (k === 'enter' && s.focusedButtonIdx < 0)) {
-            // Edit document (only if no button is focused - 'enter' on button is handled above)
             const doc = s.documents[s.selectedIdx];
             if (doc) {
                 s.mode = MODE_INPUT;
@@ -1151,23 +940,21 @@ function handleKeys(msg, s) {
                 s.labelBuffer = doc.label;
                 s.contentTextarea = textareaLib.new();
                 configureTextarea(s.contentTextarea, s.width);
-
                 s.contentTextarea.setValue(doc.content);
                 s.contentTextarea.focus();
                 s.editingDocId = doc.id;
-                s.focusedButtonIdx = -1; // Clear button focus
-                s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
+                s.focusedButtonIdx = -1;
+                s.inputViewportUnlocked = false;
             }
+            return [s, null];
         }
-        // 'r' = Reset (clear all documents) per ASCII design
         if (k === 'r') {
-            // Reset (archive + clear session state) - show confirmation regardless of documents
             s.mode = MODE_CONFIRM;
             s.confirmPrompt = 'Reset the session (archive current state and clear all persisted state)? This cannot be undone. (y/n)';
-            s.confirmDocId = -1; // Special ID for reset-all
-            s.focusedButtonIdx = -1; // Clear button focus
+            s.confirmDocId = -1;
+            s.focusedButtonIdx = -1;
+            return [s, null];
         }
-        // 'R' (uppercase) = Rename selected document title
         if (k === 'R') {
             const doc = s.documents[s.selectedIdx];
             if (doc) {
@@ -1175,12 +962,14 @@ function handleKeys(msg, s) {
                 s.inputOperation = INPUT_RENAME;
                 s.inputFocus = FOCUS_LABEL;
                 s.labelBuffer = doc.label;
-                s.contentTextarea = null; // No textarea for rename mode
+                s.contentTextarea = null;
                 s.editingDocId = doc.id;
-                s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
+                s.inputViewportUnlocked = false;
             }
-            s.focusedButtonIdx = -1; // Clear button focus
+            s.focusedButtonIdx = -1;
+            return [s, null];
         }
+        // 'd' or Backspace on a document = delete confirm
         if (k === 'd' || k === 'backspace') {
             const doc = s.documents[s.selectedIdx];
             if (doc) {
@@ -1188,25 +977,181 @@ function handleKeys(msg, s) {
                 s.confirmPrompt = `Delete document #${doc.id} "${doc.label}"? (y/n)`;
                 s.confirmDocId = doc.id;
             }
-            s.focusedButtonIdx = -1; // Clear button focus
+            s.focusedButtonIdx = -1;
+            return [s, null];
         }
         if (k === 'c') {
-            const prompt = buildFinalPrompt();
-            try {
-                // Call the system clipboard via osm:os module
-                os.clipboardCopy(prompt);
-                const tc2 = _tokenCount(prompt);
-                const lc2 = _lineCount(prompt);
-                const bc2 = _byteCount(prompt);
-                s.statusMsg = "Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tc2) + " tokens \u00b7 " + lc2 + " lines \u00b7 " + _fmt.formatBytes(bc2) + " \u2502";
-                s.hasError = false;
-            } catch (e) {
-                s.statusMsg = "Clipboard error: " + e;
-                s.hasError = true;
+            if (s.clipboardCopyRunning) {
+                s.statusMsg = 'Clipboard copy in progress...';
+                s.focusedButtonIdx = -1;
+                return [s, null];
             }
-            s.focusedButtonIdx = -1; // Clear button focus
+            s.clipboardCopyRunning = true;
+            s.statusMsg = 'Copying to clipboard...';
+            s.hasError = false;
+            s.focusedButtonIdx = -1;
+            buildFinalPrompt().then(function(prompt) {
+                const tc = _tokenCount(prompt);
+                const lc = _lineCount(prompt);
+                const bc = _byteCount(prompt);
+                s.statusMsg = "\u2502 " + _fmt.formatNum(tc) + " tokens \u00b7 " + lc + " lines \u00b7 " + _fmt.formatBytes(bc) + " \u2502";
+                s.hasError = false;
+                return os.clipboardCopy(prompt).then(function() {
+                    s.clipboardCopyRunning = false;
+                }).catch(function(e) {
+                    s.statusMsg = 'Clipboard error: ' + e;
+                    s.hasError = true;
+                    s.clipboardCopyRunning = false;
+                });
+            }).catch(function(e) {
+                s.statusMsg = 'Clipboard error: ' + e;
+                s.hasError = true;
+                s.clipboardCopyRunning = false;
+            });
+            return [s, tea.tick(50, 'clipboard-copy-poll')];
         }
-        if (k === '?') s.statusMsg = 'a:add l:load e:edit R:rename d:del c:copy s:shell r:reset q:quit';
+        // Enter on focused button activates it (re-dispatch via the button's key)
+        if (k === 'enter' && s.focusedButtonIdx >= 0) {
+            const btn = BUTTONS[s.focusedButtonIdx];
+            if (btn) {
+                return handleKeys({key: btn.key}, s);
+            }
+        }
+        if (k === '?') {
+            s.statusMsg = 'a:add l:load e:edit R:rename d:del c:copy s:shell r:reset q:quit';
+            return [s, null];
+        }
+
+        // Navigation keys (vi-style: k/j/h, plus arrows, tab, page, home, end).
+        // Note: 'l' is NOT mapped to right-nav because it is the load action
+        // above; use the right arrow key for horizontal button navigation.
+        if (k === 'up' || k === 'k') {
+            if (s.focusedButtonIdx >= 0) {
+                s.focusedButtonIdx = -1;
+                if (s.documents.length > 0) {
+                    s.selectedIdx = s.documents.length - 1;
+                    ensureSelectionVisible(s);
+                }
+            } else if (s.selectedIdx > 0) {
+                s.selectedIdx = s.selectedIdx - 1;
+                ensureSelectionVisible(s);
+            } else if (s.selectedIdx === 0) {
+                s.selectedIdx = -1;
+                if (s.vp) s.vp.setYOffset(0);
+            } else if (s.selectedIdx < 0 && s.vp && s.vp.yOffset() > 0) {
+                s.vp.setYOffset(0);
+            }
+        }
+        if (k === 'down' || k === 'j') {
+            if (s.focusedButtonIdx >= 0) {
+                // Already on buttons - down doesn't do anything (buttons are at bottom)
+            } else if (s.selectedIdx < 0) {
+                if (s.documents.length > 0) {
+                    s.selectedIdx = 0;
+                    ensureSelectionVisible(s);
+                } else {
+                    s.focusedButtonIdx = 0;
+                    ensureSelectionVisible(s);
+                }
+            } else if (s.selectedIdx >= s.documents.length - 1) {
+                s.focusedButtonIdx = 0;
+                ensureSelectionVisible(s);
+            } else {
+                s.selectedIdx = Math.min(s.documents.length - 1, s.selectedIdx + 1);
+                ensureSelectionVisible(s);
+            }
+        }
+        if (k === 'left' || k === 'h') {
+            if (s.focusedButtonIdx > 0) {
+                s.focusedButtonIdx--;
+            }
+        }
+        if (k === 'right') {
+            if (s.focusedButtonIdx >= 0 && s.focusedButtonIdx < BUTTONS.length - 1) {
+                s.focusedButtonIdx++;
+            }
+        }
+        if (k === 'tab') {
+            if (s.focusedButtonIdx < 0) {
+                s.focusedButtonIdx = 0;
+                ensureSelectionVisible(s);
+            } else if (s.focusedButtonIdx < BUTTONS.length - 1) {
+                s.focusedButtonIdx++;
+            } else {
+                s.focusedButtonIdx = -1;
+                s.selectedIdx = 0;
+                if (s.vp) s.vp.setYOffset(0);
+            }
+        }
+        if (k === 'shift+tab') {
+            if (s.focusedButtonIdx > 0) {
+                s.focusedButtonIdx--;
+            } else if (s.focusedButtonIdx === 0) {
+                s.focusedButtonIdx = -1;
+                if (s.documents.length > 0) {
+                    s.selectedIdx = s.documents.length - 1;
+                    ensureSelectionVisible(s);
+                }
+            } else {
+                s.focusedButtonIdx = BUTTONS.length - 1;
+                ensureSelectionVisible(s);
+            }
+        }
+        if (k === 'pgdown') {
+            if (s.focusedButtonIdx >= 0) {
+                // Already on buttons - no further down to go
+            } else if (s.documents.length > 0 && s.vp) {
+                const vpHeight = s.vp.height();
+                const pageSize = Math.max(1, Math.floor(vpHeight / 5));
+                const newIdx = Math.min(s.documents.length - 1, s.selectedIdx + pageSize);
+                if (newIdx === s.selectedIdx && s.selectedIdx >= s.documents.length - 1) {
+                    s.focusedButtonIdx = 0;
+                } else {
+                    s.selectedIdx = newIdx;
+                }
+                ensureSelectionVisible(s);
+            } else if (s.documents.length === 0) {
+                s.focusedButtonIdx = 0;
+                ensureSelectionVisible(s);
+            }
+        }
+        if (k === 'pgup') {
+            if (s.focusedButtonIdx >= 0) {
+                s.focusedButtonIdx = -1;
+                if (s.documents.length > 0) {
+                    s.selectedIdx = s.documents.length - 1;
+                    ensureSelectionVisible(s);
+                }
+            } else if (s.selectedIdx < 0) {
+                if (s.vp) s.vp.setYOffset(0);
+            } else if (s.documents.length > 0 && s.vp) {
+                const vpHeight = s.vp.height();
+                const pageSize = Math.max(1, Math.floor(vpHeight / 5));
+                const newIdx = Math.max(0, s.selectedIdx - pageSize);
+                if (newIdx === 0 && s.selectedIdx === 0) {
+                    s.selectedIdx = -1;
+                    s.vp.setYOffset(0);
+                } else {
+                    s.selectedIdx = newIdx;
+                    ensureSelectionVisible(s);
+                }
+            } else if (s.documents.length === 0 && s.vp && s.vp.yOffset() > 0) {
+                s.vp.setYOffset(0);
+            }
+        }
+        if (k === 'home') {
+            s.focusedButtonIdx = -1;
+            if (s.documents.length > 0) {
+                s.selectedIdx = 0;
+                if (s.vp) s.vp.setYOffset(0);
+            }
+        }
+        if (k === 'end') {
+            s.focusedButtonIdx = BUTTONS.length - 1;
+            ensureSelectionVisible(s);
+        }
+
+        state.set(stateKeys.selectedIndex, s.selectedIdx);
     } else if (s.mode === MODE_INPUT) {
         // PRECISE SCROLL & EVENT PROPAGATION FOR INPUT MODE
 
@@ -1279,32 +1224,50 @@ function handleKeys(msg, s) {
                 updateDocument(s.editingDocId, undefined, s.labelBuffer.trim());
                 s.statusMsg = 'Renamed document';
             } else if (s.inputOperation === INPUT_LOAD) {
-                const res = os.readFile(s.labelBuffer.trim());
-                if (res.error) {
-                    s.statusMsg = 'Error: ' + res.message;
-                    s.hasError = true;
+                if (s.fileLoadRunning) {
+                    s.statusMsg = 'File load in progress...';
                     return [s, null];
                 }
-                const doc = addDocument(s.labelBuffer.trim(), res.content);
-                s.statusMsg = 'Loaded document #' + doc.id;
+                s.fileLoadRunning = true;
+                s.statusMsg = 'Loading file...';
+                s.hasError = false;
+                const loadPath = s.labelBuffer.trim();
+                os.readFile(loadPath).then(function(res) {
+                    if (res.error) {
+                        s.statusMsg = 'Error: ' + res.message;
+                        s.hasError = true;
+                        s.fileLoadRunning = false;
+                        return;
+                    }
+                    addDocument(loadPath, res.content);
+                    s.documents = getDocuments();
+                    s.statusMsg = 'Loaded document #' + s.documents[s.documents.length - 1].id;
+                    s.mode = MODE_LIST;
+                    s.hasError = false;
+                    s.inputViewportUnlocked = false;
+                    s.fileLoadRunning = false;
+                }).catch(function(e) {
+                    s.statusMsg = 'Error: ' + e.message;
+                    s.hasError = true;
+                    s.fileLoadRunning = false;
+                });
+                return [s, tea.tick(50, 'file-load-poll')];
             }
             // Refresh local state from global after mutation
             s.documents = getDocuments();
             s.mode = MODE_LIST;
             s.hasError = false;
-            s.inputViewportUnlocked = false; // Reset on mode exit
+            s.inputViewportUnlocked = false;
         } else {
             // Field input handling
 
             if (s.inputFocus === FOCUS_LABEL) {
-                // Use Go-based validation for label input
-                const validation = tea.isValidLabelInput(k);
+                const validation = tea.isValidLabelInput(kForInput);
                 if (validation.valid) {
-                    if (k === 'backspace') {
+                    if (kForInput === 'backspace') {
                         s.labelBuffer = s.labelBuffer.slice(0, -1);
                     } else {
-                        // Single printable character - add to label
-                        s.labelBuffer += k;
+                        s.labelBuffer += kForInput;
                     }
                 }
                 // Silently discard ALL invalid input (garbage escape sequences, etc.)
@@ -1321,17 +1284,25 @@ function handleKeys(msg, s) {
                 if (k === 'ctrl+a') {
                     const allContent = s.contentTextarea.value();
                     if (allContent) {
-                        try {
-                            os.clipboardCopy(allContent);
-                            const tc3 = _tokenCount(allContent);
-                            const lc3 = _lineCount(allContent);
-                            const bc3 = _byteCount(allContent);
-                            s.statusMsg = 'All content copied \u2502 ' + _fmt.formatNum(tc3) + ' tokens \u00b7 ' + lc3 + ' lines \u00b7 ' + _fmt.formatBytes(bc3) + ' \u2502';
+                        if (s.clipboardCopyRunning) {
+                            s.statusMsg = 'Clipboard copy in progress...';
                             s.hasError = false;
-                        } catch (e) {
+                            return [s, null];
+                        }
+                        s.clipboardCopyRunning = true;
+                        const tc3 = _tokenCount(allContent);
+                        const lc3 = _lineCount(allContent);
+                        const bc3 = _byteCount(allContent);
+                        s.statusMsg = 'All content copied \u2502 ' + _fmt.formatNum(tc3) + ' tokens \u00b7 ' + lc3 + ' lines \u00b7 ' + _fmt.formatBytes(bc3) + ' \u2502';
+                        s.hasError = false;
+                        os.clipboardCopy(allContent).then(function() {
+                            s.clipboardCopyRunning = false;
+                        }).catch(function(e) {
                             s.statusMsg = 'Clipboard error: ' + e;
                             s.hasError = true;
-                        }
+                            s.clipboardCopyRunning = false;
+                        });
+                        return [s, tea.tick(50, 'clipboard-copy-poll')];
                     } else {
                         s.statusMsg = 'No content to select';
                         s.hasError = false;
@@ -1406,6 +1377,25 @@ function handleKeys(msg, s) {
     // This ensures BubbleTea re-renders the entire screen including the title
     if (s.mode === MODE_LIST && prevMode !== MODE_LIST) {
         return [s, tea.clearScreen()];
+    }
+    return [s, null];
+}
+
+function handleTick(msg, s) {
+    if (msg.id === 'clipboard-copy-poll') {
+        if (s.clipboardCopyRunning) {
+            return [s, tea.tick(50, 'clipboard-copy-poll')];
+        }
+        return [s, null];
+    }
+    if (msg.id === 'file-load-poll') {
+        if (s.fileLoadRunning) {
+            return [s, tea.tick(50, 'file-load-poll')];
+        }
+        if (s.mode === MODE_LIST) {
+            return [s, tea.clearScreen()];
+        }
+        return [s, null];
     }
     return [s, null];
 }
@@ -2344,7 +2334,7 @@ function buildCommands() {
 
                 // Delegate to base list command for context items (files, diffs, notes)
                 // This shows the critical IDs that were missing per review.md
-                ctxmgr.commands.list.handler(args);
+                return ctxmgr.commands.list.handler(args);
 
                 // If both are empty, show helpful message
                 if (docs.length === 0) {
@@ -2359,16 +2349,20 @@ function buildCommands() {
         "doc-add": {
             description: "Add a new document",
             usage: "doc-add [content] OR doc-add --file <path>",
-            handler: function (args) {
+            handler: async function (args) {
                 if (args.length >= 2 && args[0] === "--file") {
                     const path = args[1];
-                    const res = os.readFile(path);
-                    if (res.error) {
-                        output.print("Error: " + res.message);
-                        return;
+                    try {
+                        const res = await os.readFile(path);
+                        if (res.error) {
+                            output.print("Error: " + res.message);
+                            return;
+                        }
+                        const doc = addDocument(path, res.content);
+                        output.print(`Added document #${doc.id} from ${path}`);
+                    } catch (e) {
+                        output.print("Error: " + (e && e.message ? e.message : e));
                     }
-                    const doc = addDocument(path, res.content);
-                    output.print(`Added document #${doc.id} from ${path}`);
                 } else {
                     const content = args.join(" ");
                     const doc = addDocument(null, content);
@@ -2403,16 +2397,16 @@ function buildCommands() {
                 output.print("All documents cleared.");
             }
         }, "copy": {
-            description: "Copy the final prompt to clipboard", handler: function () {
-                const txt = buildFinalPrompt();
+            description: "Copy the final prompt to clipboard", handler: async function () {
                 try {
-                    ctxmgr.clipboardCopy(txt);
+                    const txt = await buildFinalPrompt();
+                    await os.clipboardCopy(txt);
                     const tc4 = _tokenCount(txt);
                     const lc4 = _lineCount(txt);
                     const bc4 = _byteCount(txt);
-                    output.print("Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tc4) + " tokens \u00b7 " + lc4 + " lines \u00b7 " + _fmt.formatBytes(bc4) + " \u2502");
+                    output.print("\u2502 " + _fmt.formatNum(tc4) + " tokens \u00b7 " + lc4 + " lines \u00b7 " + _fmt.formatBytes(bc4) + " \u2502");
                 } catch (e) {
-                    output.print("Clipboard error: " + e);
+                    output.print("Error: " + (e && e.message ? e.message : e));
                 }
             }
         }, "tui": {

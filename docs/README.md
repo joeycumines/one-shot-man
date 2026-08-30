@@ -26,13 +26,13 @@ If you just want to try it, see the [root README](../README.md).
 - [NextIntegerId (sequential IDs)](reference/nextintegerid.md)
 - [Regexp (Go RE2)](reference/regexp.md)
 - [Scrollbar widget](reference/scrollbar.md)
-- [Time utilities](reference/time.md)
 - [UnicodeText (text measurement)](reference/unicodetext.md)
 
 ## Architecture & internals
 
 - [Architecture](architecture.md)
 - [PR-Split Chunk Architecture](architecture-pr-split-chunks.md)
+- [Terminal Multiplexer (termmux) Architecture](architecture-termmux.md)
 - [Terminal Multiplexer JS API Reference](reference/termmux-js-api.md)
 - [PR Split Integration Testing](pr-split-testing.md)
 - [Security posture](security.md)

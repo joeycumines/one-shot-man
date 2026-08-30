@@ -169,16 +169,16 @@ These are the builtin commands to generate prompts from your codebase.
 
 **Summary:** Splits a large feature branch into a sequence of small, reviewable PRs.
 
-**The Workflow:** Point it at a branch and a base. The tool analyzes the diff, groups files by directory/extension/dependency, generates a split plan, and can execute the plan — creating branches, cherry-picking changes, running verification, and optionally invoking Claude Code to resolve conflicts.
+**The Workflow:** Point it at a branch and a base. The tool analyzes the diff, groups files by directory/extension/dependency, generates a split plan, and can execute the plan — creating branches, cherry-picking changes, running verification, and optionally invoking the configured agent to resolve conflicts.
 
 **Modes:**
 
-- **Interactive TUI (`-interactive=true`, default):** Full-screen wizard with config, plan review, execution monitoring, verification panes, and Claude conversation support. Navigate with keyboard or mouse.
+- **Interactive TUI (`-interactive=true`, default):** Full-screen wizard with config, plan review, execution monitoring, verification panes, and agent conversation support. Navigate with keyboard or mouse.
 - **Automated (`-interactive=false`):** Headless pipeline that analyzes, plans, executes, and verifies without user interaction. Suitable for CI or scripted workflows.
 
-**Strategies:** `directory` (group by top-level directory), `directory-deep` (group by full directory path), `extension` (group by file type), `chunks` (fixed-size file chunks), `dependency` (Go import graph), `auto` (AI-assisted classification via Claude).
+**Strategies:** `directory` (group by top-level directory), `directory-deep` (group by full directory path), `extension` (group by file type), `chunks` (fixed-size file chunks), `dependency` (Go import graph), `auto` (AI-assisted classification via the configured agent).
 
-**Key flags:** `-base` (target branch), `-strategy`, `-max` (max files per PR), `-claude-command` (path to Claude CLI), `-verify` (run verification after each split), `-resume` (continue from a saved plan).
+**Key flags:** `-base` (target branch), `-strategy`, `-max` (max files per PR), `-agent-command` (path to agent CLI), `-verify` (run verification after each split), `-resume` (continue from a saved plan).
 
 See [docs/architecture-pr-split-chunks.md](docs/architecture-pr-split-chunks.md) for the internal chunk architecture.
 

@@ -18,6 +18,7 @@ package internal_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -68,7 +69,7 @@ func TestExecSecurity_NullBytesInArgs(t *testing.T) {
 
 	// exec passes args directly to exec.CommandContext (no shell),
 	// so null bytes are either handled by the OS or cause command failure.
-	script := engine.LoadScriptFromString("null-args", `
+	script := engine.LoadScriptString("null-args", `
 		const {exec} = require('osm:exec');
 		const result = exec('echo', 'hello\x00world');
 		if (result.error && result.code !== 0) {
@@ -86,7 +87,7 @@ func TestExecSecurity_ControlCharsInArgs(t *testing.T) {
 	engine, _, _ := newTestEngine(t)
 
 	// Control characters should be passed literally (no shell expansion)
-	script := engine.LoadScriptFromString("control-args", `
+	script := engine.LoadScriptString("control-args", `
 		const {exec} = require('osm:exec');
 		const result = exec('echo', '\x03\x04\x1b[31m');
 		// exec.CommandContext passes these as literal args, no shell processing
@@ -108,7 +109,7 @@ func TestExecSecurity_ShellMetacharsNotExpanded(t *testing.T) {
 
 	// Shell metacharacters passed as args should NOT be expanded because
 	// exec.CommandContext bypasses the shell entirely.
-	script := engine.LoadScriptFromString("metachar-args", `
+	script := engine.LoadScriptString("metachar-args", `
 		const {exec} = require('osm:exec');
 		const result = exec('echo', '$(whoami)', '&&', 'rm', '-rf', '/');
 		// The echo command should output the literal strings
@@ -132,7 +133,7 @@ func TestExecSecurity_NewlinesInArgs(t *testing.T) {
 	// Newlines in arguments should be passed literally (not interpreted as
 	// command separators). exec.CommandContext handles this correctly because
 	// it bypasses the shell, but we verify explicitly.
-	script := engine.LoadScriptFromString("newline-args", `
+	script := engine.LoadScriptString("newline-args", `
 		const {exec} = require('osm:exec');
 		// Newlines in args should NOT cause additional command execution.
 		const r1 = exec('echo', 'line1\nwhoami');
@@ -153,57 +154,103 @@ func TestExecSecurity_NewlinesInArgs(t *testing.T) {
 func TestExecSecurity_EmptyCommand(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
-
-	script := engine.LoadScriptFromString("empty-command", `
-		const {exec} = require('osm:exec');
-		const r1 = exec();
-		if (!r1.error || r1.message !== 'exec: missing command') {
-			throw new Error('expected "exec: missing command", got: ' + r1.message);
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			const {execv} = require('osm:exec');
+			execv().then(function(r1) {
+				if (!r1.error || r1.message !== 'execv: no argv') {
+					__testErr('expected "execv: no argv", got: ' + r1.message);
+					return;
+				}
+				execv(['']).then(function(r2) {
+					if (!r2.error) {
+						__testErr('expected error for empty command');
+						return;
+					}
+					__testOK();
+				}).catch(function(e) { __testErr(e.message); });
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-		const r2 = exec('');
-		if (!r2.error || r2.message !== 'exec: command must be a non-empty string') {
-			throw new Error('expected "exec: command must be a non-empty string", got: ' + r2.message);
-		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("Empty command test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("Empty command test failed: %v", testErr)
 	}
 }
 
 func TestExecvSecurity_Validation(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
-
-	script := engine.LoadScriptFromString("execv-validate", `
-		const {execv} = require('osm:exec');
-		// No args
-		const r1 = execv();
-		if (!r1.error || r1.message !== 'execv: no argv') {
-			throw new Error('expected "execv: no argv", got: ' + r1.message);
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			const {execv} = require('osm:exec');
+			// No args
+			execv().then(function(r1) {
+				if (!r1.error || r1.message !== 'execv: no argv') {
+					__testErr('expected "execv: no argv", got: ' + r1.message);
+					return;
+				}
+				// Null
+				execv(null).then(function(r2) {
+					if (!r2.error || r2.message !== 'execv: no argv') {
+						__testErr('expected "execv: no argv" for null, got: ' + r2.message);
+						return;
+					}
+					// Undefined
+					execv(undefined).then(function(r3) {
+						if (!r3.error || r3.message !== 'execv: no argv') {
+							__testErr('expected "execv: no argv" for undefined, got: ' + r3.message);
+							return;
+						}
+						// Empty array
+						execv([]).then(function(r4) {
+							if (!r4.error || r4.message !== 'execv: expects array of strings') {
+								__testErr('expected "execv: expects array of strings" for empty array, got: ' + r4.message);
+								return;
+							}
+							// Non-array
+							execv('echo hello').then(function(r5) {
+								if (!r5.error || r5.message !== 'execv: expects array of strings') {
+									__testErr('expected "execv: expects array of strings" for string, got: ' + r5.message);
+									return;
+								}
+								__testOK();
+							}).catch(function(e) { __testErr(e.message); });
+						}).catch(function(e) { __testErr(e.message); });
+					}).catch(function(e) { __testErr(e.message); });
+				}).catch(function(e) { __testErr(e.message); });
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-		// Null
-		const r2 = execv(null);
-		if (!r2.error || r2.message !== 'execv: no argv') {
-			throw new Error('expected "execv: no argv" for null, got: ' + r2.message);
-		}
-		// Undefined
-		const r3 = execv(undefined);
-		if (!r3.error || r3.message !== 'execv: no argv') {
-			throw new Error('expected "execv: no argv" for undefined, got: ' + r3.message);
-		}
-		// Empty array
-		const r4 = execv([]);
-		if (!r4.error || r4.message !== 'execv: expects array of strings') {
-			throw new Error('expected "execv: expects array of strings" for empty array, got: ' + r4.message);
-		}
-		// Non-array
-		const r5 = execv('echo hello');
-		if (!r5.error || r5.message !== 'execv: expects array of strings') {
-			throw new Error('expected "execv: expects array of strings" for string, got: ' + r5.message);
-		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("execv validation test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("execv validation test failed: %v", testErr)
 	}
 }
 
@@ -234,35 +281,72 @@ func TestExecSecurity_StdinExposureDocumented(t *testing.T) {
 func TestReadFileSecurity_EmptyPath(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
-
-	script := engine.LoadScriptFromString("readfile-empty", `
-		const {readFile} = require('osm:os');
-		const result = readFile('');
-		if (!result.error || result.message !== 'empty path') {
-			throw new Error('expected "empty path" error, got: ' + JSON.stringify(result));
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			const {readFile} = require('osm:os');
+			readFile('').then(function(result) {
+				if (!result.error || result.message !== 'empty path') {
+					__testErr('expected "empty path" error, got: ' + JSON.stringify(result));
+					return;
+				}
+				__testOK();
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("ReadFile empty path test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("ReadFile empty path test failed: %v", testErr)
 	}
 }
 
 func TestReadFileSecurity_NonexistentPath(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
-
-	script := engine.LoadScriptFromString("readfile-nonexist", `
-		const {readFile} = require('osm:os');
-		const result = readFile('/nonexistent/path/to/file');
-		if (!result.error) {
-			throw new Error('expected error for nonexistent path');
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			const {readFile} = require('osm:os');
+			readFile('/nonexistent/path/to/file').then(function(result) {
+				if (!result.error) {
+					__testErr('expected error for nonexistent path');
+					return;
+				}
+				if (result.content !== '') {
+					__testErr('expected empty content for nonexistent path');
+					return;
+				}
+				__testOK();
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-		if (result.content !== '') {
-			throw new Error('expected empty content for nonexistent path');
-		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("ReadFile nonexistent path test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("ReadFile nonexistent path test failed: %v", testErr)
 	}
 }
 
@@ -279,18 +363,38 @@ func TestReadFileSecurity_NoSandboxDocumented(t *testing.T) {
 	}
 
 	escaped := escapeJS(tmpFile)
-	script := engine.LoadScriptFromString("readfile-nosandbox", `
-		const {readFile} = require('osm:os');
-		const result = readFile('`+escaped+`');
-		if (result.error) {
-			throw new Error('readFile should read any accessible path: ' + result.message);
+	done := make(chan struct{})
+	var testErr error
+	engine.Loop().Submit(func() {
+		vm := engine.Runtime()
+		_ = vm.Set("__testOK", func() { close(done) })
+		_ = vm.Set("__testErr", func(msg string) { testErr = errors.New(msg); close(done) })
+		_, runErr := vm.RunString(`
+			const {readFile} = require('osm:os');
+			readFile('` + escaped + `').then(function(result) {
+				if (result.error) {
+					__testErr('readFile should read any accessible path: ' + result.message);
+					return;
+				}
+				if (result.content !== 'test content') {
+					__testErr('expected "test content", got: ' + result.content);
+					return;
+				}
+				__testOK();
+			}).catch(function(e) { __testErr(e.message); });
+		`)
+		if runErr != nil {
+			testErr = runErr
+			close(done)
 		}
-		if (result.content !== 'test content') {
-			throw new Error('expected "test content", got: ' + result.content);
-		}
-	`)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("ReadFile no-sandbox test failed: %v", err)
+	})
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async test")
+	}
+	if testErr != nil {
+		t.Fatalf("ReadFile no-sandbox test failed: %v", testErr)
 	}
 }
 
@@ -302,7 +406,7 @@ func TestConfigParserSecurity_NullBytesInConfigFile(t *testing.T) {
 	t.Parallel()
 
 	input := strings.NewReader("key1 value1\x00\nkey2 value2\n")
-	cfg, err := config.LoadFromReader(input)
+	cfg, err := config.LoadReader(input)
 	if err != nil {
 		t.Fatalf("LoadFromReader should not error on null bytes: %v", err)
 	}
@@ -323,7 +427,7 @@ func TestConfigParserSecurity_OversizedLines(t *testing.T) {
 	// return "token too long" — this is acceptable behavior, no panic or OOM.
 	bigValue := strings.Repeat("x", 1<<20)
 	input := strings.NewReader("bigkey " + bigValue + "\n")
-	cfg, err := config.LoadFromReader(input)
+	cfg, err := config.LoadReader(input)
 	if err != nil {
 		// Expected: bufio.Scanner returns "token too long" for lines > ~64KB
 		if !strings.Contains(err.Error(), "token too long") {
@@ -347,7 +451,7 @@ func TestConfigParserSecurity_ControlCharsInValues(t *testing.T) {
 
 	// Control characters in values should be stored as-is
 	input := strings.NewReader("key1 \x01\x02\x03value\n")
-	cfg, err := config.LoadFromReader(input)
+	cfg, err := config.LoadReader(input)
 	if err != nil {
 		t.Fatalf("LoadFromReader failed on control chars: %v", err)
 	}
@@ -376,7 +480,7 @@ func TestConfigParserSecurity_MalformedSections(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := config.LoadFromReader(strings.NewReader(tc.input))
+			cfg, err := config.LoadReader(strings.NewReader(tc.input))
 			if err != nil {
 				// Error is acceptable — no panic
 				t.Logf("Malformed section %q handled as error: %v", tc.name, err)
@@ -396,7 +500,7 @@ func TestConfigParserSecurity_BinaryInput(t *testing.T) {
 	for i := range binary {
 		binary[i] = byte(i)
 	}
-	cfg, err := config.LoadFromReader(bytes.NewReader(binary))
+	cfg, err := config.LoadReader(bytes.NewReader(binary))
 	if err != nil {
 		t.Logf("Binary input handled as error: %v", err)
 		return
@@ -417,7 +521,7 @@ maxSizeMB 1
 autoCleanupEnabled false
 cleanupIntervalHours 1
 `
-	cfg, err := config.LoadFromReader(strings.NewReader(input))
+	cfg, err := config.LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader failed: %v", err)
 	}
@@ -438,7 +542,7 @@ func TestConfigParserSecurity_HotSnippetInjection(t *testing.T) {
 shell-inject ; rm -rf /
 pipe-inject | cat /etc/passwd
 `
-	cfg, err := config.LoadFromReader(strings.NewReader(input))
+	cfg, err := config.LoadReader(strings.NewReader(input))
 	if err != nil {
 		t.Fatalf("LoadFromReader failed: %v", err)
 	}
@@ -462,9 +566,9 @@ func TestConfigParserSecurity_SymlinkRejection(t *testing.T) {
 		t.Skip("Symlinks not supported")
 	}
 
-	cfg, err := config.LoadFromPath(linkPath)
+	cfg, err := config.LoadFile(linkPath)
 	if err == nil {
-		t.Errorf("LoadFromPath should reject symlink, got config with %d global options", len(cfg.Global))
+		t.Errorf("LoadFile should reject symlink, got config with %d global options", len(cfg.Global))
 	} else if !strings.Contains(err.Error(), "symlink not allowed") {
 		t.Errorf("Expected symlink rejection error, got: %v", err)
 	}
@@ -473,9 +577,9 @@ func TestConfigParserSecurity_SymlinkRejection(t *testing.T) {
 func TestConfigParserSecurity_NullByteInPath(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFromPath("config\x00.txt")
+	cfg, err := config.LoadFile("config\x00.txt")
 	if err == nil {
-		t.Errorf("LoadFromPath should reject path with null byte, config has %d global options", len(cfg.Global))
+		t.Errorf("LoadFile should reject path with null byte, config has %d global options", len(cfg.Global))
 	}
 	// Error is expected — OS rejects null bytes in paths
 }
@@ -483,11 +587,11 @@ func TestConfigParserSecurity_NullByteInPath(t *testing.T) {
 func TestConfigParserSecurity_NonexistentPath(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFromPath("/nonexistent/path/config.txt")
+	cfg, err := config.LoadFile("/nonexistent/path/config.txt")
 	if err != nil {
 		t.Logf("Nonexistent path produces error: %v", err)
 	} else {
-		// LoadFromPath returns empty config for nonexistent files
+		// LoadFile returns empty config for nonexistent files
 		if len(cfg.Global) == 0 {
 			t.Log("Nonexistent path returns empty config (expected)")
 		}
@@ -540,7 +644,7 @@ func TestREPLSecurity_OversizedScript(t *testing.T) {
 
 	// 1MB of "var x=1;" repeated — should either execute or gracefully fail
 	bigScript := strings.Repeat("var x=1;", 1<<17) // ~1MB
-	script := engine.LoadScriptFromString("oversized", bigScript)
+	script := engine.LoadScriptString("oversized", bigScript)
 	err := engine.ExecuteScript(script)
 	// Either succeeds or returns error — no panic or OOM
 	_ = err
@@ -564,7 +668,7 @@ func TestREPLSecurity_DeepRecursion(t *testing.T) {
 	}
 	defer engine.Close()
 
-	script := engine.LoadScriptFromString("deep-recursion", `
+	script := engine.LoadScriptString("deep-recursion", `
 		function recurse(n) { return recurse(n + 1); }
 		try { recurse(0); } catch(e) {
 			// Expected: stack overflow or similar
@@ -591,7 +695,7 @@ func TestREPLSecurity_InfiniteLoopWithCancel(t *testing.T) {
 	}
 	defer engine.Close()
 
-	script := engine.LoadScriptFromString("infinite-loop", `
+	script := engine.LoadScriptString("infinite-loop", `
 		while(true) {}
 	`)
 	// The engine should respect context cancellation or Goja's interrupt mechanism
@@ -753,7 +857,7 @@ func TestRequireSecurity_TraversalAllowed(t *testing.T) {
 	}
 	defer engine.Close()
 
-	script := engine.LoadScriptFromString("require-test", `
+	script := engine.LoadScriptString("require-test", `
 		const mod = require('testmod');
 		if (mod.value !== 42) throw new Error('expected 42, got ' + mod.value);
 	`)
@@ -790,7 +894,7 @@ func TestRequireSecurity_NonJSFileContent(t *testing.T) {
 	}
 	defer engine.Close()
 
-	script := engine.LoadScriptFromString("require-bad", `
+	script := engine.LoadScriptString("require-bad", `
 		try {
 			require('notjs');
 			throw new Error('should have failed');
@@ -808,7 +912,7 @@ func TestRequireSecurity_NonexistentModule(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("require-missing", `
+	script := engine.LoadScriptString("require-missing", `
 		try {
 			require('nonexistent-module-that-does-not-exist');
 			throw new Error('should have failed');
@@ -851,7 +955,7 @@ func TestRequireSecurity_ShebangHandling(t *testing.T) {
 	}
 	defer engine.Close()
 
-	script := engine.LoadScriptFromString("require-shebang", `
+	script := engine.LoadScriptString("require-shebang", `
 		const mod = require('withshebang');
 		if (!mod.shebang) throw new Error('shebang module did not load correctly');
 	`)
@@ -869,7 +973,7 @@ func TestFetchSecurity_FileProtocolRejected(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("fetch-file", `
+	script := engine.LoadScriptString("fetch-file", `
 		const {fetch} = require('osm:fetch');
 		try {
 			const resp = fetch('file:///etc/passwd');
@@ -890,7 +994,7 @@ func TestFetchSecurity_InvalidURLs(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("fetch-invalid", `
+	script := engine.LoadScriptString("fetch-invalid", `
 		const {fetch} = require('osm:fetch');
 		const badURLs = [
 			'',
@@ -929,7 +1033,7 @@ func TestResourceLimits_LargeStrings(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("large-strings", `
+	script := engine.LoadScriptString("large-strings", `
 		// Create a ~4MB string inside the VM
 		var s = 'x';
 		for (var i = 0; i < 22; i++) { s = s + s; }
@@ -944,7 +1048,7 @@ func TestResourceLimits_ManyObjects(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("many-objects", `
+	script := engine.LoadScriptString("many-objects", `
 		var arr = [];
 		for (var i = 0; i < 100000; i++) {
 			arr.push({key: i, value: 'item-' + i});
@@ -961,7 +1065,7 @@ func TestResourceLimits_RegexBacktracking(t *testing.T) {
 	engine, _, _ := newTestEngine(t)
 
 	// ReDoS-style regex — should either complete or hit a timeout
-	script := engine.LoadScriptFromString("regex-backtrack", `
+	script := engine.LoadScriptString("regex-backtrack", `
 		try {
 			// This regex is susceptible to catastrophic backtracking
 			var evil = /^(a+)+$/;
@@ -1026,7 +1130,7 @@ func TestCrossModuleIsolation_RequireCaching(t *testing.T) {
 	defer engine2.Close()
 
 	// Increment counter in engine 1
-	s1 := engine1.LoadScriptFromString("cross-module-1", `
+	s1 := engine1.LoadScriptString("cross-module-1", `
 		const counter = require('counter');
 		counter.inc(); counter.inc(); counter.inc();
 		if (counter.inc() !== 4) throw new Error('engine1 counter should be 4');
@@ -1036,7 +1140,7 @@ func TestCrossModuleIsolation_RequireCaching(t *testing.T) {
 	}
 
 	// Engine 2's counter should start fresh at 1, not continue from 4
-	s2 := engine2.LoadScriptFromString("cross-module-2", `
+	s2 := engine2.LoadScriptString("cross-module-2", `
 		const counter = require('counter');
 		if (counter.inc() !== 1) throw new Error('engine2 counter should start at 1, not continue from engine1');
 	`)
@@ -1053,16 +1157,21 @@ func TestFileExistsSecurity_SpecialChars(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("fileexists-special", `
+	script := engine.LoadScriptString("fileexists-special", `
 		const {fileExists} = require('osm:os');
-		// Empty path
-		if (fileExists('')) throw new Error('empty path should return false');
-		// Null bytes
-		if (fileExists('file\x00.txt')) {
-			// Platform-dependent — some OS return false, some error
-		}
-		// Nonexistent
-		if (fileExists('/nonexistent/path')) throw new Error('nonexistent path should return false');
+		(async () => {
+			// Empty path — fileExists is async (Promise<{exists}>)
+			let result = await fileExists('');
+			if (result.exists) throw new Error('empty path should return false');
+			// Null bytes
+			result = await fileExists('file\x00.txt');
+			if (result && result.exists) {
+				// Platform-dependent — some OS return false, some error
+			}
+			// Nonexistent
+			result = await fileExists('/nonexistent/path');
+			if (result.exists) throw new Error('nonexistent path should return false');
+		})();
 	`)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("fileExists special chars test failed: %v", err)
@@ -1079,7 +1188,7 @@ func TestGitSpecSecurity_RefNameInjection(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newTestEngine(t)
 
-	script := engine.LoadScriptFromString("gitspec-inject", `
+	script := engine.LoadScriptString("gitspec-inject", `
 		const {exec} = require('osm:exec');
 		// Simulate what would happen if a git ref contained shell metacharacters
 		const result = exec('echo', 'refs/heads/$(whoami)');

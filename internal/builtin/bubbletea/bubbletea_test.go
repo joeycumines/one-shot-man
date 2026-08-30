@@ -10,7 +10,7 @@ import (
 
 	"charm.land/bubbles/v2/cursor"
 	tea "charm.land/bubbletea/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -740,7 +740,7 @@ func TestTickCommand_InvalidDuration(t *testing.T) {
 // - windowTitle → View.WindowTitle (set via tea.run options)
 // Calling any removed command produces a JavaScript TypeError (undefined function).
 //
-// Tests for the above were removed per the No-Shim directive in CLAUDE.md.
+// Tests for the above were removed per the No-Shim directive in AGENTS.md.
 // The only window-size command remaining is tea.requestWindowSize() (returns a command).
 
 func TestIsTTY(t *testing.T) {

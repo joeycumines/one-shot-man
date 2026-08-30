@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
 	bt "github.com/joeycumines/go-behaviortree"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/stretchr/testify/require"
 )
 
@@ -457,7 +458,7 @@ func TestBlockingJSLeaf_BridgeStopWhileWaiting(t *testing.T) {
 		}{status, err}
 	}()
 
-	// Wait for the tick to actually start - check if we're blocked in RunOnLoopSync
+	// Wait for the tick to actually start - check if we're blocked in RunSync
 	// We use a short timeout to verify the goroutine has entered the blocking call
 	// The actual test is the select below which confirms it unblocks correctly
 	require.Eventually(t, func() bool {
@@ -474,7 +475,7 @@ func TestBlockingJSLeaf_BridgeStopWhileWaiting(t *testing.T) {
 	case r := <-resultCh:
 		require.Equal(t, bt.Failure, r.status)
 		require.Error(t, r.err)
-		// Actual error is "event loop terminated" from RunOnLoop returning false, or "bridge stopped"
+		// Actual error is "event loop terminated" from Run returning false, or "bridge stopped"
 		// if the bridge context is cancelled while waiting.
 		require.True(t,
 			(r.err.Error() == "event loop terminated") ||
@@ -590,13 +591,13 @@ func TestJSLeafAdapter_PreCancelledContext(t *testing.T) {
 	// by staying in StateIdle
 }
 
-// TestBlockingJSLeaf_NoGoroutineLeak_OnRunOnLoopFalse verifies that C2 fix works:
-// when RunOnLoop returns false (bridge stopped), the channel is properly cleaned up
+// TestBlockingJSLeaf_NoGoroutineLeak_OnRunFalse verifies that C2 fix works:
+// when Run returns false (bridge stopped), the channel is properly cleaned up
 // and no goroutine leak occurs.
-func TestBlockingJSLeaf_NoGoroutineLeak_OnRunOnLoopFalse(t *testing.T) {
+func TestBlockingJSLeaf_NoGoroutineLeak_OnRunFalse(t *testing.T) {
 	t.Parallel()
 
-	// Create a bridge and stop it immediately to ensure RunOnLoop returns false
+	// Create a bridge and stop it immediately to ensure Run returns false
 	bridge, _ := testBridgeWithManualShutdown(t)
 
 	// Load a simple leaf
@@ -611,7 +612,7 @@ func TestBlockingJSLeaf_NoGoroutineLeak_OnRunOnLoopFalse(t *testing.T) {
 	require.NoError(t, err)
 
 	// Stop the bridge BEFORE calling BlockingJSLeaf
-	// This ensures RunOnLoop will return false
+	// This ensures Run will return false
 	bridge.Stop()
 
 	// Create the blocking leaf with the stopped bridge
@@ -684,6 +685,13 @@ func TestBridge_InitFailure_IsRunningFalse(t *testing.T) {
 		t.Fatal(err)
 	}
 	vm := goja.New()
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 	defer func() {
@@ -694,7 +702,7 @@ func TestBridge_InitFailure_IsRunningFalse(t *testing.T) {
 	ctx := t.Context()
 
 	// Create bridge - this should succeed
-	bridge := NewBridgeWithEventLoop(ctx, loop, vm, nil)
+	bridge := NewBridge(ctx, loop, vm, nil, adapter)
 
 	// Verify bridge is running
 	require.True(t, bridge.IsRunning(), "Bridge should be running after creation")
@@ -730,6 +738,13 @@ func TestBridge_LifecycleInvariant_DoneClosedImpliesNotRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	vm := goja.New()
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 	defer func() {
@@ -739,7 +754,7 @@ func TestBridge_LifecycleInvariant_DoneClosedImpliesNotRunning(t *testing.T) {
 
 	ctx := t.Context()
 
-	bridge := NewBridgeWithEventLoop(ctx, loop, vm, nil)
+	bridge := NewBridge(ctx, loop, vm, nil, adapter)
 
 	// Start multiple goroutines to stress-test the invariant
 	const numGoroutines = 20

@@ -161,7 +161,7 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 
 	// Execute script from -e flag AFTER file scripts.
 	if c.script != "" {
-		script := engine.LoadScriptFromString("command-line", c.script)
+		script := engine.LoadScriptString("command-line", c.script)
 		if err := engine.ExecuteScript(script); err != nil {
 			return err
 		}

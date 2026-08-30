@@ -9,17 +9,18 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"sync/atomic"
 
-	"github.com/dop251/goja"
-	_ "github.com/dop251/goja_nodejs/console" // init() registers "console" core module
-	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaEventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/joeycumines/goroutineid"
+	_ "github.com/joeycumines/goja_nodejs/console" // init() registers "console" core module
+	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
+	"github.com/joeycumines/one-shot-man/internal/eventlooputil"
 )
 
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.
@@ -79,8 +80,8 @@ type Engine struct {
 	globals              map[string]any
 	globalsMu            sync.RWMutex // Protects globals map access (C5 fix)
 	testMode             bool
-	threadCheckMode      bool  // If true, SetGlobal/GetGlobal panic on wrong goroutine
 	eventLoopGoroutineID int64 // Captured at initialization for thread checking (atomic)
+	closed               atomic.Bool
 	tuiManager           *TUIManager
 	contextManager       *ContextManager
 	logger               *TUILogger
@@ -89,6 +90,79 @@ type Engine struct {
 	btBridge             *bt.Bridge                // Behavior tree bridge for JS integration
 	bubblezoneManager    builtin.BubblezoneManager // Zone-based mouse hit-testing for BubbleTea
 	requireModule        *require.RequireModule    // CommonJS require module for file-based script execution
+	loopRunner           *eventlooputil.Runner     // Shared submit-and-wait substrate (lazy, see runner)
+	runnerOnce           sync.Once
+	stateRefreshDispatcher *stateRefreshDispatcher
+}
+
+// stateRefreshDispatcher coalesces rapid state refreshes per key into a single
+// SendStateRefresh, using one bounded goroutine. Latest wins deterministically.
+type stateRefreshDispatcher struct {
+	mu      sync.Mutex
+	pending map[string]struct{}
+	ch      chan struct{}
+	stop    chan struct{}
+	mgr     builtin.BubbleteaManager
+}
+
+func newStateRefreshDispatcher(mgr builtin.BubbleteaManager) *stateRefreshDispatcher {
+	d := &stateRefreshDispatcher{
+		pending: make(map[string]struct{}),
+		ch:      make(chan struct{}, 1),
+		stop:    make(chan struct{}),
+		mgr:     mgr,
+	}
+	go d.loop()
+	return d
+}
+
+func (d *stateRefreshDispatcher) Enqueue(key string) {
+	d.mu.Lock()
+	d.pending[key] = struct{}{}
+	select {
+	case d.ch <- struct{}{}:
+	default:
+	}
+	d.mu.Unlock()
+}
+
+func (d *stateRefreshDispatcher) loop() {
+	for {
+		select {
+		case <-d.ch:
+			d.mu.Lock()
+			keys := make([]string, 0, len(d.pending))
+			for k := range d.pending {
+				keys = append(keys, k)
+				delete(d.pending, k)
+			}
+			d.mu.Unlock()
+			for _, k := range keys {
+				d.mgr.SendStateRefresh(k)
+			}
+			// Drain coalesced signals that arrived while sending.
+			d.mu.Lock()
+			hasPending := len(d.pending) > 0
+			d.mu.Unlock()
+			if hasPending {
+				select {
+				case d.ch <- struct{}{}:
+				default:
+				}
+			}
+		case <-d.stop:
+			return
+		}
+	}
+}
+
+func (d *stateRefreshDispatcher) Close() {
+	select {
+	case <-d.stop:
+		return
+	default:
+		close(d.stop)
+	}
 }
 
 // Script represents a JavaScript script with metadata.
@@ -191,9 +265,7 @@ func NewEngine(
 		return nil, fmt.Errorf("failed to create runtime: %w", err)
 	}
 
-	// Get a direct reference to the VM for sync operations
-	// Note: All script execution should still go through the event loop for async safety
-	vm := runtime.VM()
+	vm := runtime.Runtime()
 
 	engine := &Engine{
 		runtime:        runtime,
@@ -224,7 +296,7 @@ func NewEngine(
 	// Enable the `require` function in the runtime (must be done on event loop).
 	// Store the RequireModule so we can use it for file-based script execution,
 	// which gives scripts proper __filename, __dirname, and relative require resolution.
-	err = runtime.RunOnLoopSync(func(r *goja.Runtime) error {
+	err = runtime.RunSync(func(r *goja.Runtime) error {
 		engine.requireModule = registry.Enable(r)
 
 		// Extend the console object (created by adapter.Bind() with timer methods)
@@ -255,15 +327,15 @@ func NewEngine(
 	// Pass the shared terminal reader/writer from terminalIO.
 	engine.tuiManager = NewTUIManagerWithConfig(ctx, engine, terminalIO.TUIReader, terminalIO.TUIWriter, sessionID, store)
 
-	// Wire StateManager to send state refresh messages to bubbletea when state changes.
-	// This enables the TUI to automatically re-render when external code modifies state.
-	// NOTE: The listener is invoked asynchronously (in a goroutine) to avoid blocking
-	// the update loop or causing issues with p.Send() being called from within updates.
+	// Wire StateManager to bubbletea with a coalescing dispatcher.
+	// Rapid 100 SetState calls for the same key collapse to a single
+	// SendStateRefresh for the latest value, using one bounded goroutine
+	// serialized per engine lifecycle. Latest wins deterministically.
 	if engine.bubbleteaManager != nil && engine.tuiManager.stateManager != nil {
-		bubbleteaMgr := engine.bubbleteaManager
+		dispatcher := newStateRefreshDispatcher(engine.bubbleteaManager)
+		engine.stateRefreshDispatcher = dispatcher
 		engine.tuiManager.stateManager.AddListener(func(key string) {
-			// Send state refresh asynchronously to avoid blocking
-			go bubbleteaMgr.SendStateRefresh(key)
+			dispatcher.Enqueue(key)
 		})
 	}
 
@@ -274,8 +346,8 @@ func NewEngine(
 	engine.setupGlobals()
 
 	// Interrupt JS execution when context is canceled.
-	// Capture vm locally to avoid racing with Close() which sets e.vm = nil.
-	// goja.Runtime.Interrupt is documented as safe to call from any goroutine.
+	// Capture vm locally for the context.AfterFunc callback. goja.Runtime.Interrupt
+	// is documented as safe to call from any goroutine.
 	vmForInterrupt := engine.vm
 	context.AfterFunc(ctx, func() {
 		if vmForInterrupt != nil {
@@ -291,41 +363,39 @@ func (e *Engine) SetTestMode(enabled bool) {
 	e.testMode = enabled
 }
 
-// QueueSetGlobal queues a SetGlobal operation to be executed on the event loop.
-// This is the thread-safe alternative to SetGlobal for use from arbitrary goroutines.
-//
-// The operation is asynchronous - it will be executed on the event loop but
-// this method returns immediately. If you need to wait for completion,
-// use Runtime.SetGlobal instead.
-//
-// For testing/debugging, you can enable strict thread-checking mode which
-// will cause SetGlobal/GetGlobal to panic if called from the wrong goroutine.
-// See SetThreadCheckMode.
 func (e *Engine) QueueSetGlobal(name string, value any) {
-	// Queue the VM and local cache update to the event loop for thread safety
-	// Also acquire lock to synchronize with GetGlobal's Lock()
-	vm := e.vm
-	e.runtime.loop.Submit(func() {
+	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
 		e.globalsMu.Lock()
 		e.globals[name] = value
-		vm.Set(name, value)
+		e.vm.Set(name, value)
+		e.globalsMu.Unlock()
+		return
+	}
+	e.runtime.adapter.Submit(func(rt *goja.Runtime) {
+		e.globalsMu.Lock()
+		e.globals[name] = value
+		rt.Set(name, value)
 		e.globalsMu.Unlock()
 	})
 }
 
-// QueueGetGlobal queues a GetGlobal operation to be executed on the event loop.
-// This is the thread-safe alternative to GetGlobal for use from arbitrary goroutines.
-//
-// The operation is asynchronous - the callback is invoked with the result
-// once the operation completes on the event loop.
-// If you need synchronous access, use Runtime.GetGlobal instead.
 func (e *Engine) QueueGetGlobal(name string, callback func(value any)) {
-	// Queue the VM read to the event loop for thread safety
-	// Also acquire lock to synchronize with QueueSetGlobal's vm.Set() calls
-	vm := e.vm
-	e.runtime.loop.Submit(func() {
+	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
 		e.globalsMu.Lock()
-		val := vm.Get(name)
+		val := e.vm.Get(name)
+		e.globalsMu.Unlock()
+		var result any
+		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+			result = nil
+		} else {
+			result = val.Export()
+		}
+		callback(result)
+		return
+	}
+	e.runtime.adapter.Submit(func(rt *goja.Runtime) {
+		e.globalsMu.Lock()
+		val := rt.Get(name)
 		e.globalsMu.Unlock()
 		var result any
 		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
@@ -337,80 +407,62 @@ func (e *Engine) QueueGetGlobal(name string, callback func(value any)) {
 	})
 }
 
-// SetThreadCheckMode enables or disables strict thread-checking mode.
-// When enabled, SetGlobal and GetGlobal will panic if called from a goroutine
-// other than the event loop goroutine. This helps catch threading bugs early.
-//
-// Default is disabled for performance. Enable during testing or debugging.
-func (e *Engine) SetThreadCheckMode(enabled bool) {
-	e.threadCheckMode = enabled
-	if enabled {
-		// Capture the event loop goroutine ID using atomic store
-		atomic.StoreInt64(&e.eventLoopGoroutineID, goroutineid.Get())
-	}
-}
-
-// checkEventLoopGoroutine panics if called from the wrong goroutine (when thread checking is enabled).
-func (e *Engine) checkEventLoopGoroutine(methodName string) {
-	currentID := goroutineid.Get()
-	// Use atomic load for thread-safe read of eventLoopGoroutineID
-	storedID := atomic.LoadInt64(&e.eventLoopGoroutineID)
-	if currentID != storedID {
-		panic(fmt.Sprintf("%s called from wrong goroutine: expected %d, got %d. "+
-			"Use QueueSetGlobal/QueueGetGlobal or Runtime.SetGlobal/Runtime.GetGlobal for thread-safe access.",
-			methodName, storedID, currentID))
-	}
-}
 
 // SetGlobal sets a global variable in the JavaScript runtime.
 //
-// THREADING: This method directly accesses the goja.Runtime without going through
-// the event loop. It must ONLY be called:
-//   - During engine initialization (before any async operations)
-//   - From within script execution context (already on event loop goroutine)
-//
-// For thread-safe global access from arbitrary goroutines, use QueueSetGlobal
-// or Runtime.SetGlobal instead.
-//
-// PANIC: In debug mode (when ThreadCheckMode is enabled), this will panic
-// if called from a goroutine other than the event loop goroutine.
+// THREADING: This method is now owner-safe and may be called from any goroutine.
+// When called on the event loop goroutine it executes inline; otherwise it
+// submits to the loop via adapter.Submit and returns immediately (fire-and-forget).
+// Ordering with subsequent ExecuteScript is preserved because both are queued
+// to the same loop in submission order. For synchronous thread-safe access
+// with result, use QueueSetGlobal or Runtime.SetGlobal.
 func (e *Engine) SetGlobal(name string, value any) {
-	if e.threadCheckMode {
-		e.checkEventLoopGoroutine("SetGlobal")
+	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
+		e.globalsMu.Lock()
+		e.globals[name] = value
+		e.vm.Set(name, value)
+		e.globalsMu.Unlock()
+		return
 	}
-	// Use mutex to protect globals map and VM access (C5 fix)
-	e.globalsMu.Lock()
-	e.globals[name] = value
-	e.vm.Set(name, value)
-	e.globalsMu.Unlock()
+	e.runtime.adapter.Submit(func(rt *goja.Runtime) {
+		e.globalsMu.Lock()
+		e.globals[name] = value
+		rt.Set(name, value)
+		e.globalsMu.Unlock()
+	})
 }
 
 // GetGlobal retrieves a global variable from the JavaScript runtime.
 // Returns nil if the variable is not defined or is undefined.
 //
-// THREADING: This method directly accesses the goja.Runtime without going through
-// the event loop. It must ONLY be called:
-//   - During engine initialization (before any async operations)
-//   - From within script execution context (already on event loop goroutine)
-//
-// For thread-safe global access from arbitrary goroutines, use QueueGetGlobal
-// or Runtime.GetGlobal instead.
-//
-// PANIC: In debug mode (when ThreadCheckMode is enabled), this will panic
-// if called from a goroutine other than the event loop goroutine.
+// THREADING: This method is now owner-safe and may be called from any goroutine.
+// When called on the event loop goroutine it executes inline; otherwise it
+// submits to the loop and blocks until the result is available. For callback-
+// based async access, use QueueGetGlobal.
 func (e *Engine) GetGlobal(name string) any {
-	if e.threadCheckMode {
-		e.checkEventLoopGoroutine("GetGlobal")
+	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
+		e.globalsMu.Lock()
+		val := e.vm.Get(name)
+		e.globalsMu.Unlock()
+		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+			return nil
+		}
+		return val.Export()
 	}
-	// Use mutex to protect both globals map and VM access (C5 fix)
-	// Using full Lock instead of RLock to synchronize with QueueSetGlobal's vm.Set() calls
-	e.globalsMu.Lock()
-	val := e.vm.Get(name)
-	e.globalsMu.Unlock()
-	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
-		return nil
-	}
-	return val.Export()
+	resultCh := make(chan any, 1)
+	e.runtime.adapter.Submit(func(rt *goja.Runtime) {
+		e.globalsMu.Lock()
+		val := rt.Get(name)
+		e.globalsMu.Unlock()
+		var result any
+		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+			result = nil
+		} else {
+			result = val.Export()
+		}
+		resultCh <- result
+	})
+	return <-resultCh
 }
 
 // Stdout returns the engine's stdout writer.
@@ -436,19 +488,23 @@ func (e *Engine) LoadScript(name, path string) (*Script, error) {
 		Content: content,
 	}
 
+	e.globalsMu.Lock()
 	e.scripts = append(e.scripts, script)
+	e.globalsMu.Unlock()
 	return script, nil
 }
 
-// LoadScriptFromString loads a JavaScript script from a string.
-func (e *Engine) LoadScriptFromString(name, content string) *Script {
+// LoadScriptString loads a JavaScript script from a string.
+func (e *Engine) LoadScriptString(name, content string) *Script {
 	script := &Script{
 		Name:    name,
 		Path:    "<string>",
 		Content: content,
 	}
 
+	e.globalsMu.Lock()
 	e.scripts = append(e.scripts, script)
+	e.globalsMu.Unlock()
 	return script
 }
 
@@ -467,9 +523,9 @@ func (e *Engine) LoadScriptFromString(name, content string) *Script {
 // use the VM via RunJSSync). Panic recovery and deferred function execution
 // also run on the event loop goroutine for the same reason.
 //
-// Uses executeOnLoop (no timeout) rather than RunOnLoopSync because scripts
+// Uses executeOnLoop (no timeout) rather than RunSync because scripts
 // may perform significant synchronous work (repeated exec.execv calls etc.)
-// that exceeds the 5-second RunOnLoopSync timeout.
+// that exceeds the 5-second RunSync timeout.
 //
 // If the script starts a BubbleTea program via tea.run() (which is
 // non-blocking), ExecuteScript automatically blocks on WaitForProgram()
@@ -595,7 +651,7 @@ func (e *Engine) Wait() {
 }
 
 // executeOnLoop submits a function to the event loop and blocks until it
-// completes. Unlike RunOnLoopSync this has NO timeout — scripts can take
+// completes. Unlike RunSync this has NO timeout — scripts can take
 // arbitrarily long to execute.
 //
 // If the caller is already on the event loop goroutine, fn is executed
@@ -607,27 +663,35 @@ func (e *Engine) executeOnLoop(fn func(*goja.Runtime) error) error {
 		return errors.New("event loop not available")
 	}
 
-	// Deadlock prevention: if we are already on the event loop goroutine,
-	// run directly. Submitting work and blocking for the result would
-	// deadlock the single-threaded event loop.
-	eventLoopID := e.runtime.eventLoopGoroutineID.Load()
-	if eventLoopID > 0 && goroutineid.Get() == eventLoopID {
-		return fn(e.vm)
-	}
+	// Capture vm locally to avoid racing with Close(). This is the same
+	// defense-in-depth pattern used at engine_core.go:279 (vmForInterrupt)
+	// and engine_core.go:308 (QueueSetGlobal). Even though Close() no longer
+	// nils e.vm, capturing locally ensures a stable pointer for the closure
+	// regardless of any future changes to Close()'s cleanup.
+	vm := e.vm
 
-	errCh := make(chan error, 1)
-	if submitErr := loop.Submit(func() {
-		errCh <- fn(e.vm)
-	}); submitErr != nil {
-		return fmt.Errorf("event loop not running: %w", submitErr)
-	}
+	return e.runner(loop).TrySync(func() error {
+		return fn(vm)
+	}, 0)
+}
 
-	select {
-	case err := <-errCh:
-		return err
-	case <-e.runtime.Done():
-		return errors.New("runtime stopped before script completion")
-	}
+// runner returns the shared submit-and-wait substrate for this engine,
+// wired to the loop's liveness via runtime.Done().
+func (e *Engine) runner(loop *goeventloop.Loop) *eventlooputil.Runner {
+	e.runnerOnce.Do(func() {
+		r, err := eventlooputil.NewRunner(eventlooputil.RunnerConfig{
+			Loop:          loop,
+			OnLoopThread:  func() bool { return eventlooputil.IsLoopThread(e.runtime.GoroutineID()) },
+			Done:          e.runtime.Done(),
+			NotRunningErr: errors.New("event loop not running"),
+			StoppedErr:    errors.New("runtime stopped before script completion"),
+		})
+		if err != nil {
+			panic(err)
+		}
+		e.loopRunner = r
+	})
+	return e.loopRunner
 }
 
 // Logger returns the engine's logger.
@@ -701,18 +765,29 @@ func (e *Engine) Adapter() *gojaEventloop.Adapter {
 // This implements builtin.EventLoopProvider.
 func (e *Engine) Promisify(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise {
 	if e.runtime == nil {
-		return nil
+		panic("engine runtime is nil")
 	}
 	return e.runtime.Promisify(ctx, fn)
 }
 
-// GetScripts returns all loaded scripts.
+// GetScripts returns a snapshot of all loaded scripts. The returned slice is
+// a copy — callers can safely iterate it without racing with LoadScript
+// appends. Protected by globalsMu to synchronize with LoadScript/LoadScriptString.
 func (e *Engine) GetScripts() []*Script {
-	return e.scripts
+	e.globalsMu.RLock()
+	defer e.globalsMu.RUnlock()
+	return slices.Clone(e.scripts)
 }
 
-// Close cleans up the engine resources.
+// Close cleans up the engine resources. It is idempotent — subsequent calls
+// return nil without re-cleaning.
 func (e *Engine) Close() error {
+	// Idempotency guard: ensure Close runs exactly once. Without this,
+	// a double-close would re-close the TUI manager, btBridge, etc.
+	if !e.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+
 	// Close TUI manager if it exists (this persists state)
 	if e.tuiManager != nil {
 		if err := e.tuiManager.Close(); err != nil {
@@ -735,6 +810,10 @@ func (e *Engine) Close() error {
 		e.bubblezoneManager.Close()
 	}
 
+	if e.stateRefreshDispatcher != nil {
+		e.stateRefreshDispatcher.Close()
+	}
+
 	// NOTE: We intentionally do NOT close terminalIO here.
 	// TerminalIO wraps stdin/stdout which are process-owned resources.
 	// Each subsystem (go-prompt, bubbletea) manages its own terminal
@@ -743,7 +822,8 @@ func (e *Engine) Close() error {
 	// been closed when the prompt loop exits.
 
 	// Close the runtime (this stops the event loop).
-	// Runtime.Close() cancels the loop context and shuts down cleanly.
+	// Runtime.Close() cancels the loop context and waits for the loop
+	// goroutine to exit (<-rt.done).
 	if e.runtime != nil {
 		if err := e.runtime.Close(); err != nil {
 			if e.stderr != nil {
@@ -752,9 +832,13 @@ func (e *Engine) Close() error {
 		}
 	}
 
-	// Clean up any resources
-	e.vm = nil
-	e.scripts = nil
+	// NOTE: We intentionally do NOT nil e.vm or e.scripts here. Setting
+	// e.vm = nil without synchronization races with executeOnLoop's closure
+	// which reads e.vm — the race detector flags this as a DATA RACE under
+	// concurrent test execution. The event loop is already stopped by
+	// runtime.Close(), so no new reads will occur after this point. Any
+	// in-flight executeOnLoop captures e.vm locally (defense-in-depth). The
+	// GC reclaims vm/scripts when the Engine is no longer referenced.
 	return nil
 }
 

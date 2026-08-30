@@ -13,10 +13,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 )
@@ -200,7 +201,7 @@ const chunkCompatShim = `
         'cleanupBranches',
         'createPRs',
         'resolveConflicts',
-        'ClaudeCodeExecutor',
+        'AgentCodeExecutor',
         'renderClassificationPrompt', 'renderSplitPlanPrompt', 'renderConflictPrompt',
         'renderPrompt',
         'detectLanguage',
@@ -279,7 +280,7 @@ const chunkCompatShim = `
     var stateNames = [
         'analysisCache', 'groupsCache', 'planCache',
         'executionResultCache', 'conversationHistory',
-        'claudeExecutor', 'mcpCallbackObj'
+        'agentExecutor', 'mcpCallbackObj'
     ];
     stateNames.forEach(function(k) {
         try {
@@ -340,7 +341,26 @@ func setupTestPipeline(t *testing.T, opts TestPipelineOpts) *TestPipeline {
 	}
 
 	dir := t.TempDir()
-	resultDir := filepath.Join(t.TempDir(), "mcp-results")
+	t.Cleanup(func() {
+		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err == nil {
+				_ = os.Chmod(path, 0o755)
+			}
+			return nil
+		})
+		_ = os.RemoveAll(dir)
+	})
+	resultParent := t.TempDir()
+	t.Cleanup(func() {
+		_ = filepath.Walk(resultParent, func(path string, info os.FileInfo, err error) error {
+			if err == nil {
+				_ = os.Chmod(path, 0o755)
+			}
+			return nil
+		})
+		_ = os.RemoveAll(resultParent)
+	})
+	resultDir := filepath.Join(resultParent, "mcp-results")
 	if err := os.MkdirAll(resultDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -555,8 +575,12 @@ func dispatchAwaitPromise(engine *scripting.Engine, tm *scripting.TUIManager, na
 // former monolith prSplitScript variable.
 func allChunkSources() string {
 	var b strings.Builder
-	for _, chunk := range prSplitChunks {
-		b.WriteString(*chunk.source)
+	for _, entry := range prSplitManifestData.Chunks {
+		data, err := chunkFS.ReadFile(entry.File)
+		if err != nil {
+			panic("allChunkSources: failed to read " + entry.File + ": " + err.Error())
+		}
+		b.Write(data)
 		b.WriteByte('\n')
 	}
 	return b.String()
@@ -614,7 +638,7 @@ func loadPrSplitEngine(t testing.TB, overrides map[string]any) (*bytes.Buffer, f
 	}
 
 	// Install compat shim: re-expose monolith globals for satellite tests.
-	shim := engine.LoadScriptFromString("pr-split/compat-shim", chunkCompatShim)
+	shim := engine.LoadScriptString("pr-split/compat-shim", chunkCompatShim)
 	if err := engine.ExecuteScript(shim); err != nil {
 		t.Fatalf("compat shim failed: %v", err)
 	}
@@ -686,7 +710,7 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuf
 	}
 
 	// Install compat shim: re-expose monolith globals for satellite tests.
-	shim := engine.LoadScriptFromString("pr-split/compat-shim", chunkCompatShim)
+	shim := engine.LoadScriptString("pr-split/compat-shim", chunkCompatShim)
 	if err := engine.ExecuteScript(shim); err != nil {
 		t.Fatalf("compat shim failed: %v", err)
 	}
@@ -708,15 +732,23 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuf
 			// All await-containing calls are expressions (not statements),
 			// so the `var __res = <js>` wrapping is safe for these.
 			if strings.Contains(js, "await ") {
-				_ = vm.Set("__evalResult", func(val any) {
+				// Convert IIFEs to async so `await` is valid inside them.
+				// Only convert top-level IIFEs: (function() {...})() → (async function() {...})()
+				// Do NOT convert callbacks like .map(function(...) {...}) — those must
+				// remain sync to return values, not Promises.
+				js = convertIIFEsToAsync(js)
+				callID := atomic.AddInt64(&evalJSCallID, 1)
+				resultVar := fmt.Sprintf("__evalResult_%d", callID)
+				errorVar := fmt.Sprintf("__evalError_%d", callID)
+				_ = vm.Set(resultVar, func(val any) {
 					result = val
 					close(done)
 				})
-				_ = vm.Set("__evalError", func(msg string) {
+				_ = vm.Set(errorVar, func(msg string) {
 					resultErr = errors.New(msg)
 					close(done)
 				})
-				wrapped := "(async function() {\n\ttry {\n\t\tvar __res = " + js + ";\n\t\tif (__res && typeof __res.then === 'function') { __res = await __res; }\n\t\t__evalResult(__res);\n\t} catch(e) {\n\t\t__evalError(e.message || String(e));\n\t}\n})();"
+				wrapped := "(async function() {\n\ttry {\n\t\tvar __res = " + js + ";\n\t\tif (__res && typeof __res.then === 'function') { __res = await __res; }\n\t\t" + resultVar + "(__res);\n\t} catch(e) {\n\t\t" + errorVar + "(e.message || String(e));\n\t}\n})();"
 				if _, runErr := vm.RunString(wrapped); runErr != nil {
 					resultErr = runErr
 					close(done)
@@ -808,20 +840,23 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuf
 
 			// If the JS contains 'await', wrap in async IIFE.
 			if strings.Contains(js, "await ") {
-				_ = vm.Set("__asyncResult", func(val any) {
+				callID := atomic.AddInt64(&evalJSCallID, 1)
+				resultVar := fmt.Sprintf("__asyncResult_%d", callID)
+				errorVar := fmt.Sprintf("__asyncError_%d", callID)
+				_ = vm.Set(resultVar, func(val any) {
 					result = val
 					close(done)
 				})
-				_ = vm.Set("__asyncError", func(msg string) {
+				_ = vm.Set(errorVar, func(msg string) {
 					resultErr = errors.New(msg)
 					close(done)
 				})
 				wrapped := `(async function() {
 				try {
 					var __res = ` + js + `;
-					__asyncResult(__res);
+					` + resultVar + `(__res);
 				} catch(e) {
-					__asyncError(e.message || String(e));
+					` + errorVar + `(e.message || String(e));
 				}
 			})();`
 				if _, runErr := vm.RunString(wrapped); runErr != nil {
@@ -899,6 +934,24 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuf
 // Compile-time assertion that scripting.Engine is used (to avoid unused import).
 var _ = (*scripting.Engine)(nil)
 
+// evalJSCallID generates unique callback names for concurrent evalJS calls.
+var evalJSCallID int64
+
+// convertIIFEsToAsync converts leading IIFEs from (function(...) to
+// (async function(...) so that `await` is valid inside them. It only
+// converts IIFEs at the START of the code — callbacks like .map(function)
+// are left alone so they return values, not Promises.
+func convertIIFEsToAsync(js string) string {
+	trimmed := strings.TrimLeft(js, " \t\n\r")
+	// Only convert if the code starts with (function (not already (async function)
+	if strings.HasPrefix(trimmed, "(function") && !strings.HasPrefix(trimmed, "(async function") {
+		// Find the offset of (function in the original string
+		idx := len(js) - len(trimmed)
+		return js[:idx] + "(async function" + js[idx+9:]
+	}
+	return js
+}
+
 // ===========================================================================
 // Vaporware audit: Tests for previously untested TUI commands
 // ===========================================================================
@@ -955,6 +1008,15 @@ func runGitCmdAllowFail(t *testing.T, dir string, args ...string) string {
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	t.Cleanup(func() {
+		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err == nil {
+				_ = os.Chmod(path, 0o755)
+			}
+			return nil
+		})
+		_ = os.RemoveAll(dir)
+	})
 	// Use init + symbolic-ref instead of init -b for compatibility
 	// with git versions older than 2.28 (e.g. Windows CI).
 	gitCmd(t, dir, "init")

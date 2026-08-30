@@ -134,20 +134,19 @@
     // working directory. Checks for Makefile, makefile, and GNUmakefile.
     // Prefers 'gmake' (GNU Make on macOS) over 'make' if available.
     // Returns the best make command, or '' if no Makefile found.
-    function discoverVerifyCommand(dir) {
+    async function discoverVerifyCommand(dir) {
         var sep = isWindows() ? '\\' : '/';
         var names = ['Makefile', 'makefile', 'GNUmakefile'];
         var hasMakefile = false;
         for (var i = 0; i < names.length; i++) {
             var path = dir ? (dir + sep + names[i]) : names[i];
-            if (osmod && osmod.fileExists(path)) {
+            if (osmod && (await osmod.fileExists(path)).exists) {
                 hasMakefile = true;
                 break;
             } else if (!osmod) {
-                // Fallback: use platform-aware file existence check.
                 var result = isWindows()
-                    ? exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)'])
-                    : exec.execv(['test', '-f', path]);
+                    ? await exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)'])
+                    : await exec.execv(['test', '-f', path]);
                 if (result.code === 0) { hasMakefile = true; break; }
             }
         }
@@ -296,7 +295,7 @@
         strategy:      cfg.strategy      || 'directory',
         maxFiles:      cfg.maxFiles      || 10,
         branchPrefix:  cfg.branchPrefix  || 'split/',
-        verifyCommand: cfg.verifyCommand || discoverVerifyCommand('.') || '',
+        verifyCommand: cfg.verifyCommand || '',
         dryRun:        cfg.dryRun        || false,
         jsonOutput:    cfg.jsonOutput    || false,
         mode:          cfg.mode          || 'heuristic',
@@ -310,7 +309,7 @@
 
     // gitExec runs a git command, optionally in the given directory.
     // Returns {stdout: string, stderr: string, code: number}.
-    function gitExec(dir, args) {
+    async function gitExec(dir, args) {
         var cmd = ['git'];
         if (dir && dir !== '' && dir !== '.') {
             cmd.push('-C');
@@ -319,7 +318,7 @@
         for (var i = 0; i < args.length; i++) {
             cmd.push(args[i]);
         }
-        return exec.execv(cmd);
+        return await exec.execv(cmd);
     }
 
     // gitExecAsync runs a git command asynchronously using exec.spawn().
@@ -354,7 +353,7 @@
             outputFn('\u276f git ' + args.join(' '));
         }
 
-        var child = exec.spawn('git', gitArgs);
+        var child = await exec.spawn('git', gitArgs);
 
         // Collect stdout and stderr in parallel to avoid deadlock
         // (process may fill stderr buffer before we finish reading stdout).
@@ -428,7 +427,7 @@
         }
 
         // Use platform shell for command dispatch.
-        var child = shellSpawnAsync(command);
+        var child = await shellSpawnAsync(command);
 
         // Collect stdout and stderr in parallel (same readAll pattern as gitExecAsync).
         async function readAll(stream, streamOutputFn) {
@@ -556,32 +555,31 @@
         return path.charAt(0) === '/';
     }
 
-    function fileExistsSync(path) {
+    async function fileExistsSync(path) {
         if (osmod && typeof osmod.fileExists === 'function') {
-            return osmod.fileExists(path);
+            var r = await osmod.fileExists(path);
+            return !!(r && r.exists);
         }
         return isWindows()
-            ? exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)']).code === 0
-            : exec.execv(['test', '-f', path]).code === 0;
+            ? (await exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)'])).code === 0
+            : (await exec.execv(['test', '-f', path])).code === 0;
     }
 
     // lookupBinary checks whether a named binary exists on PATH, or whether an
     // explicit absolute command path exists on disk.
     // Returns {found: bool, path: string} using 'where.exe' on Windows,
     // 'which' on Unix for PATH lookups.
-    function lookupBinary(name) {
+    async function lookupBinary(name) {
         if (absolutePath(name)) {
-            var exists = fileExistsSync(name);
+            var exists = await fileExistsSync(name);
             return {
                 found: exists,
                 path: exists ? name : ''
             };
         }
         var cmd = isWindows() ? 'where.exe' : 'which';
-        // Late-bind exec through prSplit._modules so test compat shims
-        // that reassign the global 'exec' are visible here.
         var e = (typeof prSplit !== 'undefined' && prSplit._modules && prSplit._modules.exec) || exec;
-        var result = e.execv([cmd, name]);
+        var result = await e.execv([cmd, name]);
         return {
             found: result.code === 0,
             path: (result.stdout || '').split('\n')[0].trim()
@@ -592,7 +590,7 @@
     // Returns a Promise<{found: bool, path: string}>.
     async function lookupBinaryAsync(name) {
         if (absolutePath(name)) {
-            var exists = fileExistsSync(name);
+            var exists = await fileExistsSync(name);
             return {
                 found: exists,
                 path: exists ? name : ''
@@ -602,7 +600,7 @@
         // Late-bind exec through prSplit._modules so test compat shims
         // that reassign the global 'exec' are visible here.
         var e = (typeof prSplit !== 'undefined' && prSplit._modules && prSplit._modules.exec) || exec;
-        var child = e.spawn(cmd, [name]);
+        var child = await e.spawn(cmd, [name]);
         var stdout = '';
         while (true) {
             var chunk = await child.stdout.read();
@@ -621,27 +619,31 @@
     // shellSpawnSync runs a shell command string synchronously through the
     // platform shell (sh -c on Unix, cmd.exe /C on Windows).
     // Returns the exec result object.
-    function shellSpawnSync(shellCmd, opts) {
-        if (isWindows()) {
-            return exec.execStream(['cmd.exe', '/C', shellCmd], opts || {});
-        }
-        return exec.execStream(['sh', '-c', shellCmd], opts || {});
+    async function shellSpawnSync(shellCmd, opts) {
+        opts = opts || {};
+        var argv = isWindows()
+            ? ['cmd.exe', '/C', shellCmd]
+            : ['sh', '-c', shellCmd];
+        var result = await exec.execv(argv);
+        if (opts.onStdout && result.stdout) { opts.onStdout(result.stdout); }
+        if (opts.onStderr && result.stderr) { opts.onStderr(result.stderr); }
+        return result;
     }
 
     // shellSpawnAsync runs a shell command string asynchronously through the
     // platform shell (sh -c on Unix, cmd.exe /C on Windows).
     // Returns the spawned child process.
-    function shellSpawnAsync(shellCmd) {
+    async function shellSpawnAsync(shellCmd) {
         if (isWindows()) {
-            return exec.spawn('cmd.exe', ['/C', shellCmd]);
+            return await exec.spawn('cmd.exe', ['/C', shellCmd]);
         }
-        return exec.spawn('sh', ['-c', shellCmd]);
+        return await exec.spawn('sh', ['-c', shellCmd]);
     }
 
     // gitAddChangedFiles stages modified, new, and deleted files while
     // filtering out known pr-split tool artifacts (e.g., .pr-split-plan.json).
-    function gitAddChangedFiles(dir) {
-        var status = gitExec(dir, ['status', '--porcelain']);
+    async function gitAddChangedFiles(dir) {
+        var status = await gitExec(dir, ['status', '--porcelain']);
         if (status.code !== 0 || status.stdout.trim() === '') {
             return;
         }
@@ -675,7 +677,7 @@
             for (var f = 0; f < files.length; f++) {
                 addArgs.push(files[f]);
             }
-            var addResult = gitExec(dir, addArgs);
+            var addResult = await gitExec(dir, addArgs);
             if (addResult.code !== 0 && typeof log !== 'undefined' && log.warn) {
                 log.warn('pr-split: git add failed in gitAddChangedFiles: ' + addResult.stderr.trim());
             }

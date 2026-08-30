@@ -2,7 +2,6 @@ package config
 
 import (
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -403,39 +402,43 @@ func TestGetDuration(t *testing.T) {
 }
 
 func TestGetWithEnv(t *testing.T) {
-	dir := t.TempDir() // avoid parallel due to Setenv
-	_ = dir
+	const envVar = "OSM_TEST_EDITOR_XYZ"
 
 	c := NewConfig()
 	c.SetGlobalOption("editor", "vim")
 
-	// Env not set: falls back to config.
-	if v := c.GetWithEnv("editor", "OSM_TEST_EDITOR_XYZ"); v != "vim" {
-		t.Fatalf("expected vim, got %q", v)
-	}
+	t.Run("FallbackToConfig", func(t *testing.T) {
+		if v := c.GetWithEnv("editor", envVar); v != "vim" {
+			t.Fatalf("expected vim, got %q", v)
+		}
+	})
 
-	// Env set: takes precedence.
-	t.Setenv("OSM_TEST_EDITOR_XYZ", "nano")
-	if v := c.GetWithEnv("editor", "OSM_TEST_EDITOR_XYZ"); v != "nano" {
-		t.Fatalf("expected nano from env, got %q", v)
-	}
+	t.Run("EnvOverridesConfig", func(t *testing.T) {
+		t.Setenv(envVar, "nano")
+		if v := c.GetWithEnv("editor", envVar); v != "nano" {
+			t.Fatalf("expected nano from env, got %q", v)
+		}
+	})
 
-	// Env set to empty string: still takes precedence.
-	t.Setenv("OSM_TEST_EDITOR_XYZ", "")
-	if v := c.GetWithEnv("editor", "OSM_TEST_EDITOR_XYZ"); v != "" {
-		t.Fatalf("expected empty from env, got %q", v)
-	}
+	t.Run("EmptyEnvOverridesConfig", func(t *testing.T) {
+		t.Setenv(envVar, "")
+		if v := c.GetWithEnv("editor", envVar); v != "" {
+			t.Fatalf("expected empty from env, got %q", v)
+		}
+	})
 
-	// Empty envVar means no env check.
-	if v := c.GetWithEnv("editor", ""); v != "vim" {
-		t.Fatalf("expected vim with empty envVar, got %q", v)
-	}
+	t.Run("EmptyEnvVarSkipsLookup", func(t *testing.T) {
+		if v := c.GetWithEnv("editor", ""); v != "vim" {
+			t.Fatalf("expected vim with empty envVar, got %q", v)
+		}
+	})
 
-	// Env set but for a different key; key not in config.
-	os.Unsetenv("OSM_TEST_EDITOR_XYZ")
-	if v := c.GetWithEnv("nonexistent", "OSM_TEST_EDITOR_XYZ"); v != "" {
-		t.Fatalf("expected empty for unset env and unset config, got %q", v)
-	}
+	t.Run("UnsetEnvAndConfigReturnsEmpty", func(t *testing.T) {
+		const otherEnvVar = "OSM_TEST_EDITOR_UNSET"
+		if v := c.GetWithEnv("nonexistent", otherEnvVar); v != "" {
+			t.Fatalf("expected empty for unset env and unset config, got %q", v)
+		}
+	})
 }
 
 // --- DefaultSchema tests ---
@@ -491,71 +494,6 @@ func TestDefaultSchema_ContainsDiscoveryOptions(t *testing.T) {
 	for _, key := range discoveryKeys {
 		if !s.IsKnown("", key) {
 			t.Errorf("discovery option %q not in DefaultSchema", key)
-		}
-	}
-}
-
-func TestDefaultSchema_ContainsClaudeMuxOptions(t *testing.T) {
-	t.Parallel()
-	s := DefaultSchema()
-
-	// Global claude-mux options
-	claudemuxGlobals := []string{
-		"claude-mux.provider",
-		"claude-mux.model",
-		"claude-mux.work-dir",
-		"claude-mux.env-inherit",
-		"claude-mux.env-profile",
-		"claude-mux.pre-spawn-hook",
-		"claude-mux.permission-policy",
-		"claude-mux.rate-limit-backoff-sec",
-		"claude-mux.max-agents",
-		"claude-mux.pty-rows",
-		"claude-mux.pty-cols",
-		"claude-mux.provider-command",
-		"claude-mux.mcp-servers",
-	}
-	for _, key := range claudemuxGlobals {
-		if !s.IsKnown("", key) {
-			t.Errorf("claude-mux global option %q not in DefaultSchema", key)
-		}
-	}
-
-	// Section options for [claude-mux]
-	claudemuxSection := []string{
-		"provider", "model", "work-dir", "env-inherit", "env",
-		"env-profile", "pre-spawn-hook", "permission-policy",
-		"rate-limit-backoff-sec", "max-agents", "pty-rows",
-		"pty-cols", "provider-command", "mcp-servers",
-	}
-	for _, key := range claudemuxSection {
-		if !s.IsKnown("claude-mux", key) {
-			t.Errorf("claude-mux section option %q not in DefaultSchema", key)
-		}
-	}
-}
-
-func TestDefaultSchema_ClaudeMuxOptionTypes(t *testing.T) {
-	t.Parallel()
-	s := DefaultSchema()
-
-	checks := map[string]OptionType{
-		"claude-mux.env-inherit":            TypeBool,
-		"claude-mux.rate-limit-backoff-sec": TypeInt,
-		"claude-mux.max-agents":             TypeInt,
-		"claude-mux.pty-rows":               TypeInt,
-		"claude-mux.pty-cols":               TypeInt,
-		"claude-mux.provider":               TypeString,
-		"claude-mux.model":                  TypeString,
-	}
-	for key, wantType := range checks {
-		opt := s.Lookup("", key)
-		if opt == nil {
-			t.Errorf("option %q not found", key)
-			continue
-		}
-		if opt.Type != wantType {
-			t.Errorf("option %q type = %q, want %q", key, opt.Type, wantType)
 		}
 	}
 }
@@ -746,7 +684,7 @@ timeout 30s
 [help]
 pager less`
 
-	cfg, err := LoadFromReader(strings.NewReader(configContent))
+	cfg, err := LoadReader(strings.NewReader(configContent))
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -763,7 +701,7 @@ func TestLoadAndValidateWithSchema_InvalidTypes(t *testing.T) {
 	configContent := `verbose notbool
 script.max-traversal-depth abc`
 
-	cfg, err := LoadFromReader(strings.NewReader(configContent))
+	cfg, err := LoadReader(strings.NewReader(configContent))
 	if err != nil {
 		t.Fatalf("failed to load: %v", err)
 	}
@@ -794,7 +732,7 @@ goal.paths /my/goals
 goal.path-patterns osm-goals,goals
 goal.debug-discovery false`
 
-	cfg, err := LoadFromReader(strings.NewReader(configContent))
+	cfg, err := LoadReader(strings.NewReader(configContent))
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -810,7 +748,7 @@ func TestSyncKeysNoLongerWarn(t *testing.T) {
 sync.auto-pull false
 sync.local-path /home/user/.osm-sync`
 
-	cfg, err := LoadFromReader(strings.NewReader(configContent))
+	cfg, err := LoadReader(strings.NewReader(configContent))
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -883,39 +821,41 @@ func TestSchemaResolve(t *testing.T) {
 	c.SetGlobalOption("editor", "vim")
 	c.SetGlobalOption("color", "always")
 
-	// Config value takes effect when env var is not set.
-	if v := s.Resolve(c, "editor"); v != "vim" {
-		t.Fatalf("expected vim from config, got %q", v)
-	}
+	t.Run("ConfigValueWhenEnvUnset", func(t *testing.T) {
+		if v := s.Resolve(c, "editor"); v != "vim" {
+			t.Fatalf("expected vim from config, got %q", v)
+		}
+	})
 
-	// Env var overrides config.
-	t.Setenv("OSM_TEST_RESOLVE_EDITOR", "nano")
-	if v := s.Resolve(c, "editor"); v != "nano" {
-		t.Fatalf("expected nano from env, got %q", v)
-	}
+	t.Run("EnvOverridesConfig", func(t *testing.T) {
+		t.Setenv("OSM_TEST_RESOLVE_EDITOR", "nano")
+		if v := s.Resolve(c, "editor"); v != "nano" {
+			t.Fatalf("expected nano from env, got %q", v)
+		}
+	})
 
-	// Env var set to empty still overrides.
-	t.Setenv("OSM_TEST_RESOLVE_EDITOR", "")
-	if v := s.Resolve(c, "editor"); v != "" {
-		t.Fatalf("expected empty from env, got %q", v)
-	}
+	t.Run("EmptyEnvOverridesConfig", func(t *testing.T) {
+		t.Setenv("OSM_TEST_RESOLVE_EDITOR", "")
+		if v := s.Resolve(c, "editor"); v != "" {
+			t.Fatalf("expected empty from env, got %q", v)
+		}
+	})
 
-	// Option without EnvVar: just config.
-	if v := s.Resolve(c, "color"); v != "always" {
-		t.Fatalf("expected always from config, got %q", v)
-	}
+	t.Run("OptionWithoutEnvVarUsesConfig", func(t *testing.T) {
+		if v := s.Resolve(c, "color"); v != "always" {
+			t.Fatalf("expected always from config, got %q", v)
+		}
+	})
 
-	// Unset key falls back to schema default.
-	c2 := NewConfig()
-	os.Unsetenv("OSM_TEST_RESOLVE_EDITOR")
-	if v := s.Resolve(c2, "editor"); v != "vi" {
-		t.Fatalf("expected vi default, got %q", v)
-	}
-
-	// Unknown key returns empty.
-	if v := s.Resolve(c2, "nonexistent"); v != "" {
-		t.Fatalf("expected empty for unknown key, got %q", v)
-	}
+	t.Run("UnsetKeyFallsBackToDefault", func(t *testing.T) {
+		c2 := NewConfig()
+		if v := s.Resolve(c2, "editor"); v != "vi" {
+			t.Fatalf("expected vi default, got %q", v)
+		}
+		if v := s.Resolve(c2, "nonexistent"); v != "" {
+			t.Fatalf("expected empty for unknown key, got %q", v)
+		}
+	})
 }
 
 // --- GlobalOptions returns copies ---

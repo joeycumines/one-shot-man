@@ -20,7 +20,7 @@ format detailed
 [version]
 format short`
 
-	config, err := LoadFromReader(strings.NewReader(configContent))
+	config, err := LoadReader(strings.NewReader(configContent))
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
@@ -56,7 +56,7 @@ format short`
 
 func TestEmptyConfig(t *testing.T) {
 	t.Parallel()
-	config, err := LoadFromReader(strings.NewReader(""))
+	config, err := LoadReader(strings.NewReader(""))
 	if err != nil {
 		t.Fatalf("Failed to load empty config: %v", err)
 	}
@@ -81,7 +81,7 @@ color auto
 # Command option comment
 pager less`
 
-	config, err := LoadFromReader(strings.NewReader(configContent))
+	config, err := LoadReader(strings.NewReader(configContent))
 	if err != nil {
 		t.Fatalf("Failed to load config with comments: %v", err)
 	}
@@ -116,11 +116,11 @@ func TestSetGlobalAndCommandOptions(t *testing.T) {
 	}
 }
 
-func TestLoadFromPathMissing(t *testing.T) {
+func TestLoadFileMissing(t *testing.T) {
 	t.Parallel()
 	path := t.TempDir() + "/missing-config"
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("expected no error loading missing config, got %v", err)
 	}
@@ -130,7 +130,7 @@ func TestLoadFromPathMissing(t *testing.T) {
 	}
 }
 
-func TestLoadFromPathExisting(t *testing.T) {
+func TestLoadFileExisting(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	path := dir + "/config"
@@ -139,7 +139,7 @@ func TestLoadFromPathExisting(t *testing.T) {
 		t.Fatalf("failed to write config file: %v", err)
 	}
 
-	cfg, err := LoadFromPath(path)
+	cfg, err := LoadFile(path)
 	if err != nil {
 		t.Fatalf("expected load success, got %v", err)
 	}
@@ -197,7 +197,7 @@ func TestMissingConfigFiles(t *testing.T) {
 			t.Fatalf("failed to create directory: %v", err)
 		}
 
-		cfg, err := LoadFromPath(configPath)
+		cfg, err := LoadFile(configPath)
 		if err == nil {
 			t.Fatalf("expected error when config file is a directory, got config: %+v", cfg)
 		}
@@ -210,7 +210,7 @@ func TestMissingConfigFiles(t *testing.T) {
 		longName := strings.Repeat("a", 300)
 		configPath := filepath.Join(dir, longName)
 
-		cfg, err := LoadFromPath(configPath)
+		cfg, err := LoadFile(configPath)
 		if err == nil {
 			t.Fatalf("expected error when config path is too long, got config: %+v", cfg)
 		}
@@ -221,7 +221,7 @@ func TestMissingConfigFiles(t *testing.T) {
 		// Some systems may not allow control characters in paths
 		configPath := filepath.Join(dir, "config\nwith\ttabs")
 
-		cfg, err := LoadFromPath(configPath)
+		cfg, err := LoadFile(configPath)
 		if err == nil {
 			// If it succeeded, verify the config is empty (file shouldn't exist)
 			if len(cfg.Global) != 0 || len(cfg.Commands) != 0 {
@@ -238,7 +238,7 @@ func TestInvalidConfigurationValues(t *testing.T) {
 		// Config can have empty values - this is allowed by the parser
 		// Empty values should be stored and retrievable
 		configContent := "session.id "
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error for empty value, got: %v", err)
 		}
@@ -255,7 +255,7 @@ func TestInvalidConfigurationValues(t *testing.T) {
 	t.Run("SessionIDWithSpecialCharacters", func(t *testing.T) {
 		// Config parser should accept special characters in values
 		configContent := "session.id test-session_2024.01+user@host"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error for special chars, got: %v", err)
 		}
@@ -272,7 +272,7 @@ func TestInvalidConfigurationValues(t *testing.T) {
 	t.Run("NegativeValues", func(t *testing.T) {
 		// Config parser accepts negative numeric values
 		configContent := "timeout -30\nretries -5"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error for negative values, got: %v", err)
 		}
@@ -287,7 +287,7 @@ func TestInvalidConfigurationValues(t *testing.T) {
 		largeValue := strings.Repeat("x", 10000)
 		configContent := "data " + largeValue
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error for large values, got: %v", err)
 		}
@@ -300,7 +300,7 @@ func TestInvalidConfigurationValues(t *testing.T) {
 	t.Run("UnicodeValues", func(t *testing.T) {
 		// Config parser should accept unicode characters
 		configContent := "description Hello 世界 🌍 Ñoño"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error for unicode, got: %v", err)
 		}
@@ -318,7 +318,7 @@ func TestInvalidConfigurationValues(t *testing.T) {
 option2 line2
 option3 line3`
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -466,7 +466,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		}
 		defer os.Remove(relPath)
 
-		cfg, err := LoadFromPath(relPath)
+		cfg, err := LoadFile(relPath)
 		if err != nil {
 			t.Fatalf("expected load success with relative path, got: %v", err)
 		}
@@ -492,7 +492,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		// This tests that the path resolution handles ".." components
 		relPath := filepath.Join(nested, "..", "level2", "config")
 
-		cfg, err := LoadFromPath(relPath)
+		cfg, err := LoadFile(relPath)
 		if err != nil {
 			t.Fatalf("expected load success with .. in path, got: %v", err)
 		}
@@ -524,7 +524,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 			t.Fatalf("failed to create config file: %v", err)
 		}
 
-		cfg, err := LoadFromPath(configPath)
+		cfg, err := LoadFile(configPath)
 		if err != nil {
 			t.Fatalf("expected load success with symlink path, got: %v", err)
 		}
@@ -534,7 +534,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		}
 	})
 
-	// T60: Direct symlink attack tests — verify LoadFromPath() rejects
+	// T60: Direct symlink attack tests — verify LoadFile() rejects
 	// config files that are themselves symlinks (not just intermediary dirs).
 	t.Run("DirectSymlink_Rejected", func(t *testing.T) {
 		t.Parallel()
@@ -550,7 +550,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 			t.Skip("symlinks not supported on this platform")
 		}
 
-		_, err := LoadFromPath(symlinkPath)
+		_, err := LoadFile(symlinkPath)
 		if err == nil {
 			t.Fatal("expected error for direct symlink config, got nil")
 		}
@@ -564,7 +564,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		dir := t.TempDir()
 
 		// Symlink pointing to /etc/passwd (or any existing file).
-		// LoadFromPath must reject before opening.
+		// LoadFile must reject before opening.
 		target := "/etc/passwd"
 		if _, err := os.Stat(target); err != nil {
 			t.Skip("target file not available on this platform")
@@ -574,7 +574,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 			t.Skip("symlinks not supported on this platform")
 		}
 
-		_, err := LoadFromPath(symlinkPath)
+		_, err := LoadFile(symlinkPath)
 		if err == nil {
 			t.Fatal("expected error for symlink to sensitive file, got nil")
 		}
@@ -600,7 +600,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 				continue
 			}
 
-			cfg, err := LoadFromPath(configPath)
+			cfg, err := LoadFile(configPath)
 			if err != nil {
 				t.Errorf("expected load success with %s, got: %v", name, err)
 				continue
@@ -619,7 +619,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 			t.Skip("whitespace-only filenames not supported")
 		}
 
-		cfg, err := LoadFromPath(configPath)
+		cfg, err := LoadFile(configPath)
 		if err != nil {
 			t.Fatalf("expected load success with whitespace path, got: %v", err)
 		}
@@ -636,7 +636,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 			t.Fatalf("failed to create config file: %v", err)
 		}
 
-		cfg, err := LoadFromPath(absPath)
+		cfg, err := LoadFile(absPath)
 		if err != nil {
 			t.Fatalf("expected load success with absolute path, got: %v", err)
 		}
@@ -649,7 +649,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 	t.Run("EmptyPath", func(t *testing.T) {
 		// Empty path handling - behavior depends on os.Open behavior
 		// On most systems, empty path returns an error or IsNotExist
-		cfg, err := LoadFromPath("")
+		cfg, err := LoadFile("")
 		if err != nil {
 			// Expected on most systems
 			t.Logf("got expected error for empty path: %v", err)
@@ -669,7 +669,7 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		}
 		defer os.Remove(dotConfig)
 
-		cfg, err := LoadFromPath("./.config")
+		cfg, err := LoadFile("./.config")
 		if err != nil {
 			t.Fatalf("expected load success with ./path, got: %v", err)
 		}
@@ -691,7 +691,7 @@ maxSizeMB 200
 autoCleanupEnabled false
 cleanupIntervalHours 12`
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -723,7 +723,7 @@ maxAgeDays 60
 [help]
 pager less`
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -758,7 +758,7 @@ pager less`
 		for _, tc := range invalidValues {
 			t.Run(tc.name, func(t *testing.T) {
 				configContent := "[sessions]\n" + tc.input
-				_, err := LoadFromReader(strings.NewReader(configContent))
+				_, err := LoadReader(strings.NewReader(configContent))
 				if err == nil {
 					t.Errorf("expected error for invalid value %q", tc.input)
 				}
@@ -768,7 +768,7 @@ pager less`
 
 	t.Run("InvalidBooleanValues", func(t *testing.T) {
 		configContent := "[sessions]\nautoCleanupEnabled maybe"
-		_, err := LoadFromReader(strings.NewReader(configContent))
+		_, err := LoadReader(strings.NewReader(configContent))
 		if err == nil {
 			t.Error("expected error for invalid boolean value")
 		}
@@ -787,7 +787,7 @@ pager less`
 		for _, tc := range negativeValues {
 			t.Run(tc.name, func(t *testing.T) {
 				configContent := "[sessions]\n" + tc.input
-				_, err := LoadFromReader(strings.NewReader(configContent))
+				_, err := LoadReader(strings.NewReader(configContent))
 				if err == nil {
 					t.Errorf("expected error for negative value %q", tc.input)
 				}
@@ -797,7 +797,7 @@ pager less`
 
 	t.Run("ZeroCleanupInterval", func(t *testing.T) {
 		configContent := "[sessions]\ncleanupIntervalHours 0"
-		_, err := LoadFromReader(strings.NewReader(configContent))
+		_, err := LoadReader(strings.NewReader(configContent))
 		if err == nil {
 			t.Error("expected error for cleanupIntervalHours=0")
 		}
@@ -805,7 +805,7 @@ pager less`
 
 	t.Run("UnknownSessionOption", func(t *testing.T) {
 		configContent := "[sessions]\nunknownOption value"
-		_, err := LoadFromReader(strings.NewReader(configContent))
+		_, err := LoadReader(strings.NewReader(configContent))
 		if err == nil {
 			t.Error("expected error for unknown session option")
 		}
@@ -816,7 +816,7 @@ pager less`
 
 		for _, val := range trueValues {
 			configContent := "[sessions]\nautoCleanupEnabled " + val
-			cfg, err := LoadFromReader(strings.NewReader(configContent))
+			cfg, err := LoadReader(strings.NewReader(configContent))
 			if err != nil {
 				t.Errorf("expected no error for %q, got: %v", val, err)
 				continue
@@ -832,7 +832,7 @@ pager less`
 
 		for _, val := range falseValues {
 			configContent := "[sessions]\nautoCleanupEnabled " + val
-			cfg, err := LoadFromReader(strings.NewReader(configContent))
+			cfg, err := LoadReader(strings.NewReader(configContent))
 			if err != nil {
 				t.Errorf("expected no error for %q, got: %v", val, err)
 				continue
@@ -845,7 +845,7 @@ pager less`
 
 	t.Run("EmptySessionsSection", func(t *testing.T) {
 		configContent := "[sessions]\n\n[global]\nverbose true"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -860,7 +860,7 @@ pager less`
 maxAgeDays 45
 autoCleanupEnabled true`
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -884,7 +884,7 @@ autoCleanupEnabled true`
 
 	t.Run("DefaultValuesWhenNoSessionsSection", func(t *testing.T) {
 		configContent := "verbose true"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -913,7 +913,7 @@ func TestConfigSchemaValidation_M1(t *testing.T) {
 
 	t.Run("UnknownGlobalOption", func(t *testing.T) {
 		configContent := "verbos true" // typo of "verbose"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -938,7 +938,7 @@ func TestConfigSchemaValidation_M1(t *testing.T) {
 	t.Run("UnknownCommandOption", func(t *testing.T) {
 		configContent := `[help]
 pagr less` // typo of "pager"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -962,7 +962,7 @@ pagr less` // typo of "pager"
 
 	t.Run("KnownGlobalOption", func(t *testing.T) {
 		configContent := "verbose true"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -975,7 +975,7 @@ pagr less` // typo of "pager"
 	t.Run("KnownCommandOption", func(t *testing.T) {
 		configContent := `[help]
 pager less`
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -989,7 +989,7 @@ pager less`
 		// Global options should be valid in command sections too
 		configContent := `[help]
 verbose true`
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1007,7 +1007,7 @@ colr auto
 pagr less
 formt detailed`
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1038,7 +1038,7 @@ formt detailed`
 		configContent := `[unknowncmd]
 weirdoption value`
 
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		cfg, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1061,7 +1061,7 @@ weirdoption value`
 	})
 
 	t.Run("NoWarningsForEmptyConfig", func(t *testing.T) {
-		cfg, err := LoadFromReader(strings.NewReader(""))
+		cfg, err := LoadReader(strings.NewReader(""))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1080,7 +1080,7 @@ weirdoption value`
 
 		// Loading config with unknown option should add warnings
 		configContent := "unknownoption value"
-		cfg2, err := LoadFromReader(strings.NewReader(configContent))
+		cfg2, err := LoadReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
@@ -1097,7 +1097,7 @@ func TestLoadFromReader_TypeValidation(t *testing.T) {
 	t.Parallel()
 
 	t.Run("InvalidBool", func(t *testing.T) {
-		cfg, err := LoadFromReader(strings.NewReader("verbose notabool"))
+		cfg, err := LoadReader(strings.NewReader("verbose notabool"))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1117,7 +1117,7 @@ func TestLoadFromReader_TypeValidation(t *testing.T) {
 	})
 
 	t.Run("InvalidInt", func(t *testing.T) {
-		cfg, err := LoadFromReader(strings.NewReader("script.max-traversal-depth abc"))
+		cfg, err := LoadReader(strings.NewReader("script.max-traversal-depth abc"))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1137,7 +1137,7 @@ func TestLoadFromReader_TypeValidation(t *testing.T) {
 	})
 
 	t.Run("InvalidDuration", func(t *testing.T) {
-		cfg, err := LoadFromReader(strings.NewReader("timeout notaduration"))
+		cfg, err := LoadReader(strings.NewReader("timeout notaduration"))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1157,7 +1157,7 @@ func TestLoadFromReader_TypeValidation(t *testing.T) {
 	})
 
 	t.Run("ValidTypes", func(t *testing.T) {
-		cfg, err := LoadFromReader(strings.NewReader("verbose true\nscript.max-traversal-depth 5\ntimeout 30s"))
+		cfg, err := LoadReader(strings.NewReader("verbose true\nscript.max-traversal-depth 5\ntimeout 30s"))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1167,7 +1167,7 @@ func TestLoadFromReader_TypeValidation(t *testing.T) {
 	})
 
 	t.Run("MixedUnknownAndTypeMismatch", func(t *testing.T) {
-		cfg, err := LoadFromReader(strings.NewReader("unknownkey hello\nverbose maybe"))
+		cfg, err := LoadReader(strings.NewReader("unknownkey hello\nverbose maybe"))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1188,7 +1188,7 @@ func TestLoadFromReader_TypeValidation(t *testing.T) {
 func TestHotSnippetConfigParsing(t *testing.T) {
 	t.Run("BasicSnippet", func(t *testing.T) {
 		input := "[hot-snippets]\nfollowup Continue with the same context."
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1209,7 +1209,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("SnippetWithDescription", func(t *testing.T) {
 		input := "[hot-snippets]\nfollowup Continue with the same context.\nfollowup.description Follow-up prompt"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1230,7 +1230,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("MultipleSnippets", func(t *testing.T) {
 		input := "[hot-snippets]\nfollowup Continue with the same context.\nkickoff You are an expert software engineer.\nkickoff.description Kickoff prompt"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1250,7 +1250,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("EscapedNewlines", func(t *testing.T) {
 		input := "[hot-snippets]\nmultiline First line\\nSecond line\\nThird line"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1265,7 +1265,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("EmptySection", func(t *testing.T) {
 		input := "[hot-snippets]\n\n[prompt-flow]\ntemplate default"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1276,7 +1276,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("DescriptionWithoutSnippet", func(t *testing.T) {
 		input := "[hot-snippets]\nnonexistent.description This should fail"
-		_, err := LoadFromReader(strings.NewReader(input))
+		_, err := LoadReader(strings.NewReader(input))
 		if err == nil {
 			t.Fatal("expected error for description targeting nonexistent snippet")
 		}
@@ -1288,7 +1288,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 	t.Run("SnippetNameOnly", func(t *testing.T) {
 		// A snippet with a name but no text
 		input := "[hot-snippets]\nemptytext"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1302,7 +1302,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("MixedWithOtherSections", func(t *testing.T) {
 		input := "verbose true\n\n[hot-snippets]\nsnip1 hello world\n\n[sessions]\nmaxAgeDays 30\n\n[prompt-flow]\ntemplate default"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1327,7 +1327,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 	t.Run("SnippetsNotInCommands", func(t *testing.T) {
 		// Verify [hot-snippets] section is NOT stored in Commands map
 		input := "[hot-snippets]\nsnip1 text"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1349,7 +1349,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 	t.Run("DuplicateSnippetNames", func(t *testing.T) {
 		// Duplicate names are allowed — both are added (contextManager handles dedup if needed)
 		input := "[hot-snippets]\ndup First text\ndup Second text"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1367,7 +1367,7 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 	t.Run("DescriptionAppliesToLastMatch", func(t *testing.T) {
 		// When there are duplicates, .description applies to the last one with that name
 		input := "[hot-snippets]\ndup First\ndup Second\ndup.description Applies to second"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1381,374 +1381,12 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 
 	t.Run("CommentsInHotSnippetsSection", func(t *testing.T) {
 		input := "[hot-snippets]\n# This is a comment\nsnip1 text\n# Another comment"
-		cfg, err := LoadFromReader(strings.NewReader(input))
+		cfg, err := LoadReader(strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(cfg.HotSnippets) != 1 {
 			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
-		}
-	})
-}
-
-func TestClaudeMuxConfigParsing(t *testing.T) {
-	t.Parallel()
-
-	t.Run("ValidClaudeMuxConfig", func(t *testing.T) {
-		t.Parallel()
-		configContent := `[claude-mux]
-provider claude-code
-model claude-sonnet-4-20250514
-work-dir /tmp/agents
-env-inherit false
-env API_KEY=secret123
-env REGION=us-west-2
-env-profile production
-pre-spawn-hook /path/to/hook.js
-permission-policy ask
-rate-limit-backoff-sec 60
-max-agents 8
-pty-rows 40
-pty-cols 120
-provider-command /usr/local/bin/claude
-mcp-servers mcp-server-github,mcp-server-filesystem`
-
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-
-		oc := cfg.ClaudeMux
-		if oc.Provider != "claude-code" {
-			t.Errorf("Provider = %q, want %q", oc.Provider, "claude-code")
-		}
-		if oc.Model != "claude-sonnet-4-20250514" {
-			t.Errorf("Model = %q, want %q", oc.Model, "claude-sonnet-4-20250514")
-		}
-		if oc.WorkDir != "/tmp/agents" {
-			t.Errorf("WorkDir = %q, want %q", oc.WorkDir, "/tmp/agents")
-		}
-		if oc.EnvInherit != false {
-			t.Errorf("EnvInherit = %v, want false", oc.EnvInherit)
-		}
-		if len(oc.EnvVars) != 2 {
-			t.Fatalf("EnvVars length = %d, want 2", len(oc.EnvVars))
-		}
-		if oc.EnvVars["API_KEY"] != "secret123" {
-			t.Errorf("EnvVars[API_KEY] = %q, want %q", oc.EnvVars["API_KEY"], "secret123")
-		}
-		if oc.EnvVars["REGION"] != "us-west-2" {
-			t.Errorf("EnvVars[REGION] = %q, want %q", oc.EnvVars["REGION"], "us-west-2")
-		}
-		if oc.EnvProfile != "production" {
-			t.Errorf("EnvProfile = %q, want %q", oc.EnvProfile, "production")
-		}
-		if oc.PreSpawnHook != "/path/to/hook.js" {
-			t.Errorf("PreSpawnHook = %q, want %q", oc.PreSpawnHook, "/path/to/hook.js")
-		}
-		if oc.PermissionPolicy != "ask" {
-			t.Errorf("PermissionPolicy = %q, want %q", oc.PermissionPolicy, "ask")
-		}
-		if oc.RateLimitBackoffSec != 60 {
-			t.Errorf("RateLimitBackoffSec = %d, want 60", oc.RateLimitBackoffSec)
-		}
-		if oc.MaxAgents != 8 {
-			t.Errorf("MaxAgents = %d, want 8", oc.MaxAgents)
-		}
-		if oc.PTYRows != 40 {
-			t.Errorf("PTYRows = %d, want 40", oc.PTYRows)
-		}
-		if oc.PTYCols != 120 {
-			t.Errorf("PTYCols = %d, want 120", oc.PTYCols)
-		}
-		if oc.ProviderCommand != "/usr/local/bin/claude" {
-			t.Errorf("ProviderCommand = %q, want %q", oc.ProviderCommand, "/usr/local/bin/claude")
-		}
-		if oc.MCPServers != "mcp-server-github,mcp-server-filesystem" {
-			t.Errorf("MCPServers = %q, want %q", oc.MCPServers, "mcp-server-github,mcp-server-filesystem")
-		}
-	})
-
-	t.Run("ClaudeMuxDefaults", func(t *testing.T) {
-		t.Parallel()
-		cfg := NewConfig()
-		oc := cfg.ClaudeMux
-
-		if oc.Provider != "claude-code" {
-			t.Errorf("default Provider = %q, want %q", oc.Provider, "claude-code")
-		}
-		if oc.Model != "" {
-			t.Errorf("default Model = %q, want empty", oc.Model)
-		}
-		if oc.WorkDir != "" {
-			t.Errorf("default WorkDir = %q, want empty", oc.WorkDir)
-		}
-		if oc.EnvInherit != true {
-			t.Errorf("default EnvInherit = %v, want true", oc.EnvInherit)
-		}
-		if oc.EnvVars == nil {
-			t.Error("default EnvVars should not be nil")
-		}
-		if len(oc.EnvVars) != 0 {
-			t.Errorf("default EnvVars should be empty, got %d entries", len(oc.EnvVars))
-		}
-		if oc.EnvProfile != "" {
-			t.Errorf("default EnvProfile = %q, want empty", oc.EnvProfile)
-		}
-		if oc.PreSpawnHook != "" {
-			t.Errorf("default PreSpawnHook = %q, want empty", oc.PreSpawnHook)
-		}
-		if oc.PermissionPolicy != "reject" {
-			t.Errorf("default PermissionPolicy = %q, want %q", oc.PermissionPolicy, "reject")
-		}
-		if oc.RateLimitBackoffSec != 30 {
-			t.Errorf("default RateLimitBackoffSec = %d, want 30", oc.RateLimitBackoffSec)
-		}
-		if oc.MaxAgents != 4 {
-			t.Errorf("default MaxAgents = %d, want 4", oc.MaxAgents)
-		}
-		if oc.PTYRows != 24 {
-			t.Errorf("default PTYRows = %d, want 24", oc.PTYRows)
-		}
-		if oc.PTYCols != 80 {
-			t.Errorf("default PTYCols = %d, want 80", oc.PTYCols)
-		}
-		if oc.ProviderCommand != "" {
-			t.Errorf("default ProviderCommand = %q, want empty", oc.ProviderCommand)
-		}
-		if oc.MCPServers != "" {
-			t.Errorf("default MCPServers = %q, want empty", oc.MCPServers)
-		}
-	})
-
-	t.Run("ClaudeMuxEnvVars", func(t *testing.T) {
-		t.Parallel()
-		configContent := `[claude-mux]
-env FOO=bar
-env BAZ=qux=quux
-env EMPTY=`
-
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-
-		oc := cfg.ClaudeMux
-		if len(oc.EnvVars) != 3 {
-			t.Fatalf("EnvVars length = %d, want 3", len(oc.EnvVars))
-		}
-		if oc.EnvVars["FOO"] != "bar" {
-			t.Errorf("EnvVars[FOO] = %q, want %q", oc.EnvVars["FOO"], "bar")
-		}
-		// Second = is part of the value
-		if oc.EnvVars["BAZ"] != "qux=quux" {
-			t.Errorf("EnvVars[BAZ] = %q, want %q", oc.EnvVars["BAZ"], "qux=quux")
-		}
-		// Empty value after =
-		if oc.EnvVars["EMPTY"] != "" {
-			t.Errorf("EnvVars[EMPTY] = %q, want empty", oc.EnvVars["EMPTY"])
-		}
-	})
-
-	t.Run("ClaudeMuxEnvVarInvalid", func(t *testing.T) {
-		t.Parallel()
-		configContent := "[claude-mux]\nenv NOEQUALSSIGN"
-		_, err := LoadFromReader(strings.NewReader(configContent))
-		if err == nil {
-			t.Fatal("expected error for env without = sign")
-		}
-		if !strings.Contains(err.Error(), "KEY=VALUE") {
-			t.Errorf("error = %q, want to contain 'KEY=VALUE'", err.Error())
-		}
-	})
-
-	t.Run("ClaudeMuxInvalidPermissionPolicy", func(t *testing.T) {
-		t.Parallel()
-		configContent := "[claude-mux]\npermission-policy allow"
-		_, err := LoadFromReader(strings.NewReader(configContent))
-		if err == nil {
-			t.Fatal("expected error for invalid permission-policy")
-		}
-		if !strings.Contains(err.Error(), "reject") || !strings.Contains(err.Error(), "ask") {
-			t.Errorf("error = %q, want to mention 'reject' and 'ask'", err.Error())
-		}
-	})
-
-	t.Run("ClaudeMuxInvalidIntOptions", func(t *testing.T) {
-		t.Parallel()
-		intOptions := []struct {
-			name  string
-			input string
-		}{
-			{"invalidRateLimitBackoff", "rate-limit-backoff-sec abc"},
-			{"invalidMaxAgents", "max-agents notanumber"},
-			{"invalidPtyRows", "pty-rows 12.5"},
-			{"invalidPtyCols", "pty-cols xyz"},
-		}
-
-		for _, tc := range intOptions {
-			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-				configContent := "[claude-mux]\n" + tc.input
-				_, err := LoadFromReader(strings.NewReader(configContent))
-				if err == nil {
-					t.Errorf("expected error for invalid value %q", tc.input)
-				}
-			})
-		}
-	})
-
-	t.Run("ClaudeMuxPartialConfig", func(t *testing.T) {
-		t.Parallel()
-		configContent := `[claude-mux]
-model gpt-4o
-max-agents 2`
-
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-
-		oc := cfg.ClaudeMux
-		// Specified values
-		if oc.Model != "gpt-4o" {
-			t.Errorf("Model = %q, want %q", oc.Model, "gpt-4o")
-		}
-		if oc.MaxAgents != 2 {
-			t.Errorf("MaxAgents = %d, want 2", oc.MaxAgents)
-		}
-
-		// Default values for unspecified options
-		if oc.Provider != "claude-code" {
-			t.Errorf("default Provider = %q, want %q", oc.Provider, "claude-code")
-		}
-		if oc.EnvInherit != true {
-			t.Errorf("default EnvInherit = %v, want true", oc.EnvInherit)
-		}
-		if oc.PermissionPolicy != "reject" {
-			t.Errorf("default PermissionPolicy = %q, want %q", oc.PermissionPolicy, "reject")
-		}
-		if oc.RateLimitBackoffSec != 30 {
-			t.Errorf("default RateLimitBackoffSec = %d, want 30", oc.RateLimitBackoffSec)
-		}
-		if oc.PTYRows != 24 {
-			t.Errorf("default PTYRows = %d, want 24", oc.PTYRows)
-		}
-		if oc.PTYCols != 80 {
-			t.Errorf("default PTYCols = %d, want 80", oc.PTYCols)
-		}
-	})
-
-	t.Run("ClaudeMuxWithOtherSections", func(t *testing.T) {
-		t.Parallel()
-		configContent := `verbose true
-
-[claude-mux]
-provider openai
-max-agents 6
-
-[sessions]
-maxAgeDays 45
-
-[help]
-pager less`
-
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-
-		// Check claude-mux
-		if cfg.ClaudeMux.Provider != "openai" {
-			t.Errorf("ClaudeMux.Provider = %q, want %q", cfg.ClaudeMux.Provider, "openai")
-		}
-		if cfg.ClaudeMux.MaxAgents != 6 {
-			t.Errorf("ClaudeMux.MaxAgents = %d, want 6", cfg.ClaudeMux.MaxAgents)
-		}
-
-		// Check other sections still work
-		if cfg.Sessions.MaxAgeDays != 45 {
-			t.Errorf("Sessions.MaxAgeDays = %d, want 45", cfg.Sessions.MaxAgeDays)
-		}
-		if cfg.GetString("verbose") != "true" {
-			t.Errorf("verbose = %q, want %q", cfg.GetString("verbose"), "true")
-		}
-		if v, ok := cfg.GetCommandOption("help", "pager"); !ok || v != "less" {
-			t.Errorf("help.pager = %q, want %q", v, "less")
-		}
-	})
-
-	t.Run("ClaudeMuxNotInCommands", func(t *testing.T) {
-		t.Parallel()
-		configContent := "[claude-mux]\nprovider test-provider"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-		if _, exists := cfg.Commands["claude-mux"]; exists {
-			t.Error("claude-mux should not appear in Commands map")
-		}
-	})
-
-	t.Run("ClaudeMuxUnknownOption", func(t *testing.T) {
-		t.Parallel()
-		configContent := "[claude-mux]\nunknown-option value"
-		_, err := LoadFromReader(strings.NewReader(configContent))
-		if err == nil {
-			t.Fatal("expected error for unknown claude-mux option")
-		}
-		if !strings.Contains(err.Error(), "unknown claude-mux option") {
-			t.Errorf("error = %q, want to contain 'unknown claude-mux option'", err.Error())
-		}
-	})
-
-	t.Run("ClaudeMuxPermissionPolicyReject", func(t *testing.T) {
-		t.Parallel()
-		configContent := "[claude-mux]\npermission-policy reject"
-		cfg, err := LoadFromReader(strings.NewReader(configContent))
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-		if cfg.ClaudeMux.PermissionPolicy != "reject" {
-			t.Errorf("PermissionPolicy = %q, want %q", cfg.ClaudeMux.PermissionPolicy, "reject")
-		}
-	})
-
-	t.Run("ClaudeMuxBooleanVariations", func(t *testing.T) {
-		t.Parallel()
-		trueValues := []string{"true", "1", "yes", "on", "TRUE", "Yes", "ON"}
-		for _, val := range trueValues {
-			configContent := "[claude-mux]\nenv-inherit " + val
-			cfg, err := LoadFromReader(strings.NewReader(configContent))
-			if err != nil {
-				t.Errorf("expected no error for %q, got: %v", val, err)
-				continue
-			}
-			if !cfg.ClaudeMux.EnvInherit {
-				t.Errorf("expected EnvInherit=true for value %q", val)
-			}
-		}
-
-		falseValues := []string{"false", "0", "no", "off", "FALSE", "No", "OFF"}
-		for _, val := range falseValues {
-			configContent := "[claude-mux]\nenv-inherit " + val
-			cfg, err := LoadFromReader(strings.NewReader(configContent))
-			if err != nil {
-				t.Errorf("expected no error for %q, got: %v", val, err)
-				continue
-			}
-			if cfg.ClaudeMux.EnvInherit {
-				t.Errorf("expected EnvInherit=false for value %q", val)
-			}
-		}
-	})
-
-	t.Run("ClaudeMuxInvalidBooleanValue", func(t *testing.T) {
-		t.Parallel()
-		configContent := "[claude-mux]\nenv-inherit maybe"
-		_, err := LoadFromReader(strings.NewReader(configContent))
-		if err == nil {
-			t.Fatal("expected error for invalid boolean value")
 		}
 	})
 }

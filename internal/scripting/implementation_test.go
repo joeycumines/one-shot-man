@@ -75,7 +75,7 @@ func TestAdvancedPromptAPIFunctionality(t *testing.T) {
 
 	t.Run("ModeCompletion", func(t *testing.T) {
 		// Register a test mode first
-		testScript := engine.LoadScriptFromString("test-completion", `
+		testScript := engine.LoadScriptString("test-completion", `
 			tui.registerMode({
 				name: "completion-test",
 				tui: {

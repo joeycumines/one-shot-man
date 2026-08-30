@@ -50,11 +50,12 @@ func TestSpawnShell_HappyPath(t *testing.T) {
 
 	dir := t.TempDir()
 
-	raw, err := evalJS(fmt.Sprintf(`(function() {
+	raw, err := evalJS(fmt.Sprintf(`(async function() {
 		var errors = [];
 		var session;
 		try {
 			session = globalThis.prSplit.spawnShellSession(%q, {rows: 24, cols: 80});
+			await new Promise(function(r) { setTimeout(r, 150); }); // allow async start
 
 			// Wait for shell prompt to appear (any output).
 			var output = '';
@@ -105,11 +106,12 @@ func TestSpawnShell_ExitDetection(t *testing.T) {
 
 	dir := t.TempDir()
 
-	raw, err := evalJS(fmt.Sprintf(`(function() {
+	raw, err := evalJS(fmt.Sprintf(`(async function() {
 		var errors = [];
 		var session;
 		try {
 			session = globalThis.prSplit.spawnShellSession(%q, {rows: 24, cols: 80});
+			await new Promise(function(r) { setTimeout(r, 150); }); // allow async start
 
 			// Wait for shell prompt (any output).
 			var deadline = Date.now() + 5000;
@@ -162,11 +164,13 @@ func TestSpawnShell_WorktreeDir(t *testing.T) {
 	}
 
 	raw, err := evalJS(fmt.Sprintf(`(function() {
+		await new Promise(function(r) { setTimeout(r, 150); }); // allow async start
 		var errors = [];
 		var session;
 		var dir = %q;
 		try {
 			session = globalThis.prSplit.spawnShellSession(dir, {rows: 24, cols: 200});
+			await new Promise(function(r) { setTimeout(r, 200); }); // allow async start
 
 			// Wait for shell prompt (any output).
 			var output = '';
@@ -219,11 +223,12 @@ func TestSpawnShell_Resize(t *testing.T) {
 
 	dir := t.TempDir()
 
-	raw, err := evalJS(fmt.Sprintf(`(function() {
+	raw, err := evalJS(fmt.Sprintf(`(async function() {
 		var errors = [];
 		var session;
 		try {
 			session = globalThis.prSplit.spawnShellSession(%q, {rows: 24, cols: 80});
+			await new Promise(function(r) { setTimeout(r, 150); }); // allow async start
 
 			// Wait for shell to start (any output).
 			var deadline = Date.now() + 5000;
@@ -260,10 +265,12 @@ func TestSpawnShell_CustomRowsCols(t *testing.T) {
 	dir := t.TempDir()
 
 	raw, err := evalJS(fmt.Sprintf(`(function() {
+		await new Promise(function(r) { setTimeout(r, 150); }); // allow async start
 		var errors = [];
 		var session;
 		try {
 			session = globalThis.prSplit.spawnShellSession(%q, {rows: 30, cols: 100});
+			await new Promise(function(r) { setTimeout(r, 200); }); // allow async start
 
 			// Wait for shell to start — success means spawn worked with custom dimensions.
 			var deadline = Date.now() + 5000;

@@ -7,7 +7,10 @@ package termmux
 //
 // Reference: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
 
-import "slices"
+// MaxCoord is the maximum reasonable terminal dimension (columns or rows).
+// Terminal emulators typically cap at a few thousand; 10000 is 100× a
+// typical maximum screen size and safely above any realistic coordinate.
+const MaxCoord = 10000
 
 // SGRMouseEvent holds a parsed SGR mouse escape sequence.
 type SGRMouseEvent struct {
@@ -107,6 +110,11 @@ func parseSGRMouse(buf []byte, start int) (ev SGRMouseEvent, consumed int, ok bo
 	}
 	i++
 
+	// Reject values that exceed reasonable terminal dimensions.
+	// SGR coordinates and button parameters should never exceed ~MaxCoord.
+	if btn > MaxCoord || px > MaxCoord || py > MaxCoord {
+		return ev, 0, false
+	}
 	ev.Button = btn
 	ev.X = px
 	ev.Y = py
@@ -119,6 +127,10 @@ func parseSGRMouse(buf []byte, start int) (ev SGRMouseEvent, consumed int, ok bo
 func parseDecimal(buf []byte, start, end int) (val int, next int, ok bool) {
 	i := start
 	for i < end && buf[i] >= '0' && buf[i] <= '9' {
+		// Overflow guard: prevent silent wrap-around on 32-bit platforms.
+		if val > (1<<31-1)/10 || (val == (1<<31-1)/10 && int(buf[i]-'0') > 7) {
+			return 0, start, false
+		}
 		val = val*10 + int(buf[i]-'0')
 		i++
 	}
@@ -187,13 +199,6 @@ func filterMouseForStatusBar(buf []byte, termRows, statusBarLines int) (out, par
 	//   termRows - statusBarLines + 1 .. termRows
 	statusBarTop := termRows - statusBarLines + 1
 
-	// Fast path: no ESC in buffer means no mouse sequences to filter.
-	hasEsc := slices.Contains(buf, 0x1b)
-	if !hasEsc {
-		return buf, nil, false
-	}
-
-	// Slow path: scan for SGR mouse sequences.
 	result := make([]byte, 0, len(buf))
 	i := 0
 	for i < len(buf) {

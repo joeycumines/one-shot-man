@@ -175,3 +175,43 @@ func TestTUILogger_FileLogging(t *testing.T) {
 		t.Errorf("output missing attributes: %s", got)
 	}
 }
+
+func TestJsNormalizePrintfFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"%s", "%v"},
+		{"hello %s world", "hello %v world"},
+		{"%d %s %f", "%d %v %f"},
+		{"%%", "%%"},
+		{"100%% %s", "100%% %v"},
+		{"%10s", "%10v"},
+		{"%-10s", "%-10v"},
+		{"%.5s", "%.5v"},
+		{"%[1]s", "%[1]v"},
+		{"%[2]s %s", "%[2]v %v"},
+		{"%#s", "%#v"},
+		{"%+s", "%+v"},
+		{"%0s", "%0v"},
+		{"%*s", "%*v"},
+		{"%.*s", "%.*v"},
+		{"%3.*s", "%3.*v"},
+		{"no format", "no format"},
+		{"%d %f %v %t %x", "%d %f %v %t %x"},
+		{"%s %s", "%v %v"},
+		{"%%s", "%%s"},
+		{"trail%", "trail%"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := jsNormalizePrintfFormat(tt.input)
+			if got != tt.want {
+				t.Errorf("jsNormalizePrintfFormat(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

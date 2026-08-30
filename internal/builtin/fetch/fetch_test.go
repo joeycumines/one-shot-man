@@ -1,6 +1,7 @@
 package fetch_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	fetchmod "github.com/joeycumines/one-shot-man/internal/builtin/fetch"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
@@ -35,7 +36,7 @@ func loadModule(t *testing.T, provider *testutil.TestEventLoopProvider) {
 	runOnLoop(t, provider, func() {
 		vm := provider.Runtime()
 		adapter := provider.Adapter()
-		loader := fetchmod.Require(adapter)
+		loader := fetchmod.Require(context.Background(), adapter, provider.Loop())
 		module := vm.NewObject()
 		exports := vm.NewObject()
 		_ = module.Set("exports", exports)

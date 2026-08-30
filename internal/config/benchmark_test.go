@@ -27,7 +27,7 @@ func BenchmarkSetKeyInFile(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if err := SetKeyInFile(path, "key2", "updated-value"); err != nil {
+			if err := SetKeyFile(path, "key2", "updated-value"); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -47,7 +47,7 @@ func BenchmarkSetKeyInFile(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if err := SetKeyInFile(path, "new-key", "new-value"); err != nil {
+			if err := SetKeyFile(path, "new-key", "new-value"); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -61,7 +61,7 @@ func BenchmarkSetKeyInFile(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			path := filepath.Join(dir, fmt.Sprintf("config-%d", i))
-			if err := SetKeyInFile(path, "key", "value"); err != nil {
+			if err := SetKeyFile(path, "key", "value"); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -75,15 +75,15 @@ func BenchmarkSetKeyInFile(b *testing.B) {
 		var sb strings.Builder
 		sb.WriteString("# Main configuration\n\n")
 		for j := range 30 {
-			sb.WriteString(fmt.Sprintf("option-%d value-%d\n", j, j))
+			fmt.Fprintf(&sb, "option-%d value-%d\n", j, j)
 		}
 		sb.WriteString("\n[section1]\n")
 		for j := range 20 {
-			sb.WriteString(fmt.Sprintf("sec1-opt%d value%d\n", j, j))
+			fmt.Fprintf(&sb, "sec1-opt%d value%d\n", j, j)
 		}
 		sb.WriteString("\n[section2]\n")
 		for j := range 20 {
-			sb.WriteString(fmt.Sprintf("sec2-opt%d value%d\n", j, j))
+			fmt.Fprintf(&sb, "sec2-opt%d value%d\n", j, j)
 		}
 		if err := os.WriteFile(path, []byte(sb.String()), 0644); err != nil {
 			b.Fatal(err)
@@ -92,7 +92,7 @@ func BenchmarkSetKeyInFile(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if err := SetKeyInFile(path, "option-15", "updated"); err != nil {
+			if err := SetKeyFile(path, "option-15", "updated"); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -235,7 +235,7 @@ format text
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			cfg, err := LoadFromReader(reader)
+			cfg, err := LoadReader(reader)
 			if err != nil {
 				b.Fatalf("failed to load config: %v", err)
 			}
@@ -254,7 +254,7 @@ format text
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, err := LoadFromReader(reader)
+			_, err := LoadReader(reader)
 			if err != nil {
 				b.Fatal(err)
 			}

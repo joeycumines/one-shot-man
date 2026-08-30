@@ -4,9 +4,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// MouseEventToJS converts a tea.MouseMsg to a JavaScript-compatible map.
+// EncodeMouseEvent converts a tea.MouseMsg to a JavaScript-compatible map.
 // In v2, MouseMsg is an interface. We handle each concrete type.
-func MouseEventToJS(msg tea.MouseMsg) map[string]any {
+func EncodeMouseEvent(msg tea.MouseMsg) map[string]any {
 	mouse := msg.Mouse()
 
 	// Get button string from generated defs

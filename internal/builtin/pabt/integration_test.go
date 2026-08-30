@@ -178,11 +178,6 @@ func TestStateActions_IsCalled(t *testing.T) {
 	bb.Set("done", false)
 	state := NewState(bb)
 
-	// Track whether actions were called
-	actionsCallCount := 0
-	var originalActions = state.actions
-	_ = originalActions // suppress unused warning - we're using the registry
-
 	// Create an action that sets done=true
 	moveNode := bt.New(func([]bt.Node) (bt.Status, error) {
 		bb.Set("done", true)
@@ -236,5 +231,5 @@ func TestStateActions_IsCalled(t *testing.T) {
 		t.Errorf("Expected done=true, got %v", doneVal)
 	}
 
-	t.Logf("Plan executed successfully, actionsCallCount=%d, done=%v", actionsCallCount, doneVal)
+	t.Logf("Plan executed successfully, done=%v", doneVal)
 }

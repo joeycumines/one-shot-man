@@ -28,7 +28,7 @@ import (
 // The heuristic test runs in every CI build. The AI test requires:
 //
 //   go test -race -v -count=1 -timeout=15m -integration \
-//     -claude-command=claude ./internal/command/... \
+//     -agent-command=agent ./internal/command/... \
 //     -run TestIntegration_AutoSplitComplexGoProject
 
 // ---------------------------------------------------------------------------
@@ -72,7 +72,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 	})
 
 	// --- Step 1: Analyze diff. ---
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeDiff({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.analyzeDiff({
 		baseBranch: 'main',
 		dir: ` + jsString(repoDir) + `
 	}))`)
@@ -97,7 +97,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 	t.Logf("Analyzed %d files: %v", len(analysis.Files), analysis.Files)
 
 	// --- Step 2: Apply directory strategy. ---
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.applyStrategy(
 		` + mustJSON(t, analysis.Files) + `,
 		'directory-deep',
 		{
@@ -122,7 +122,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 	}
 
 	// --- Step 3: Create split plan. ---
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.createSplitPlan(
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.createSplitPlan(
 		` + mustJSON(t, groups) + `,
 		{
 			baseBranch: 'main',
@@ -173,7 +173,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 	}
 
 	// --- Step 4: Execute split. ---
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: ` + jsString(repoDir) + `,
@@ -232,7 +232,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 	runGit(t, repoDir, "checkout", "feature")
 
 	// --- Step 6: Verify tree-hash equivalence. ---
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: ` + jsString(repoDir) + `,
@@ -265,7 +265,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// AI-Driven Split (requires -integration -claude-command=... flags)
+// AI-Driven Split (requires -integration -agent-command=... flags)
 // ---------------------------------------------------------------------------
 
 // TestIntegration_AutoSplitComplexGoProject runs the full AI-driven auto-split
@@ -281,7 +281,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 // Run with:
 //
 //	go test -race -v -count=1 -timeout=15m -integration \
-//	  -claude-command=claude ./internal/command/... \
+//	  -agent-command=agent ./internal/command/... \
 //	  -run TestIntegration_AutoSplitComplexGoProject
 //
 // Or via make:
@@ -289,8 +289,8 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 //	make integration-test-prsplit
 func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
 	skipSlow(t)
-	skipIfNoClaude(t)
-	verifyClaudeAuth(t)
+	skipIfNoAgent(t)
+	verifyAgentAuth(t)
 
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go not available")
@@ -299,7 +299,7 @@ func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
 	repoDir := initComplexGoRepo(t)
 	addComplexGoFeatureChanges(t, repoDir)
 
-	claudeArgsList := slices.Clone(claudeTestArgs)
+	agentArgsList := slices.Clone(agentTestArgs)
 
 	configOverrides := map[string]any{
 		"baseBranch":    "main",
@@ -307,20 +307,20 @@ func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
 		"maxFiles":      20,
 		"branchPrefix":  "split/",
 		"verifyCommand": "true",
-		"claudeCommand": claudeTestCommand,
-		"claudeArgs":    claudeArgsList,
+		"agentCommand":  agentTestCommand,
+		"agentArgs":     agentArgsList,
 		"timeoutMs":     int64(5 * 60 * 1000), // 5 minutes per step (JS layer)
 		"_evalTimeout":  25 * time.Minute,     // T32: Go-layer evalJS timeout (must exceed JS classifyTimeoutMs=5min + pipeline overhead)
 	}
 	if integrationModel != "" {
-		configOverrides["claudeModel"] = integrationModel
+		configOverrides["agentModel"] = integrationModel
 	}
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, configOverrides)
 
 	// Run the full auto-split pipeline with AI classification.
 	t.Log("Starting auto-split pipeline with real AI agent...")
-	t.Logf("Claude command: %s %v", claudeTestCommand, claudeArgsList)
+	t.Logf("Agent command: %s %v", agentTestCommand, agentArgsList)
 	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.automatedSplit({
 		baseBranch: 'main',
 		dir: ` + jsString(repoDir) + `,
@@ -339,13 +339,13 @@ func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
 	var result struct {
 		Error  *string `json:"error"`
 		Report struct {
-			Error              *string  `json:"error"`
-			ClaudeInteractions int      `json:"claudeInteractions"`
-			FallbackUsed       bool     `json:"fallbackUsed"`
-			SplitsCreated      int      `json:"splitsCreated"`
-			Classification     *string  `json:"classification"`
-			Plan               *string  `json:"plan"`
-			Groups             []string `json:"groups"`
+			Error             *string  `json:"error"`
+			AgentInteractions int      `json:"agentInteractions"`
+			FallbackUsed      bool     `json:"fallbackUsed"`
+			SplitsCreated     int      `json:"splitsCreated"`
+			Classification    *string  `json:"classification"`
+			Plan              *string  `json:"plan"`
+			Groups            []string `json:"groups"`
 		} `json:"report"`
 	}
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
@@ -361,15 +361,15 @@ func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
 	if result.Error != nil {
 		t.Fatalf("pipeline error: %s", *result.Error)
 	}
-	if result.Report.ClaudeInteractions == 0 && !result.Report.FallbackUsed {
-		t.Error("expected ≥1 Claude interaction in AI mode")
+	if result.Report.AgentInteractions == 0 && !result.Report.FallbackUsed {
+		t.Error("expected ≥1 Agent interaction in AI mode")
 	}
 	if result.Report.SplitsCreated == 0 {
 		t.Fatal("expected splits to be created")
 	}
 
 	t.Logf("AI created %d splits (interactions: %d, fallback: %v)",
-		result.Report.SplitsCreated, result.Report.ClaudeInteractions, result.Report.FallbackUsed)
+		result.Report.SplitsCreated, result.Report.AgentInteractions, result.Report.FallbackUsed)
 
 	// Log classification details if available.
 	if result.Report.Classification != nil {

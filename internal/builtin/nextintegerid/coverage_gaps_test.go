@@ -3,7 +3,7 @@ package nextintegerid
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // --- Edge cases for Require function ---
@@ -151,9 +151,10 @@ func TestNextID_NegativeIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call failed: %v", err)
 	}
-	// maxVal starts at 0, negative ids < 0, so maxVal stays 0, result = 1
-	if got := result.ToInteger(); got != 1 {
-		t.Fatalf("expected 1, got %d", got)
+	// maxVal initializes to MinInt64; max(-5,-1)=-1, so result = max+1 = 0.
+	// (Previously maxVal was floored at 0, returning 1 for all-negative lists — a bug.)
+	if got := result.ToInteger(); got != 0 {
+		t.Fatalf("expected 0 (max(-1)+1), got %d", got)
 	}
 }
 

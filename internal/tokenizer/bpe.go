@@ -186,10 +186,10 @@ func (b *BpeBuilder) Build() (*BPE, error) {
 	}, nil
 }
 
-// LoadBPEFromFiles reads a JSON vocab file and a merges text file.
+// LoadBPEFiles reads a JSON vocab file and a merges text file.
 // The vocab file is {token: id}. The merges file contains lines like
 // "a b" (space-separated pair tokens), with optional "#version: 0.2" header.
-func LoadBPEFromFiles(vocabReader, mergesReader io.Reader) (*BPE, error) {
+func LoadBPEFiles(vocabReader, mergesReader io.Reader) (*BPE, error) {
 	var vocab map[string]uint32
 	decoder := json.NewDecoder(vocabReader)
 	if err := decoder.Decode(&vocab); err != nil {

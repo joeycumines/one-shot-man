@@ -64,7 +64,7 @@ func TestNewCompletionLogic_Unit(t *testing.T) {
 
 	// Create a mock TUI manager to test the new completion logic
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"add": {
 				Name:          "add",
@@ -449,7 +449,7 @@ func TestCursorAwareCompletion(t *testing.T) {
 
 	// TUI manager with a file-arg command
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add files to context", ArgCompleters: []string{"file"}},
 		},
@@ -522,7 +522,7 @@ func TestCompletion_WithSpacesAndQuotes_Unit(t *testing.T) {
 
 	// TUI manager with a file-arg command
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add files to context", ArgCompleters: []string{"file"}},
 		},
@@ -562,7 +562,7 @@ func TestCompletion_WithSpacesAndQuotes_Unit(t *testing.T) {
 func TestCompletion_TildeInQuotes(t *testing.T) {
 	// Tilde-only case is special-cased to suggest "~/" ("~\" on Windows).
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add files to context", ArgCompleters: []string{"file"}},
 		},
@@ -615,7 +615,7 @@ func TestCompletion_EscapedQuoteInToken(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer:       NewTUIWriterFromIO(io.Discard),
+		writer:       NewTUIWriterIO(io.Discard),
 		commands:     map[string]Command{"add": {Name: "add", ArgCompleters: []string{"file"}}},
 		commandOrder: []string{"add"},
 		modes:        make(map[string]*ScriptMode),
@@ -666,7 +666,7 @@ func TestFallbackGuard_FirstSimpleArg_NoSpace_NoFallback(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -705,7 +705,7 @@ func TestFallbackGuard_FirstSimpleArg_WithSpace_AllowsFallback(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -734,7 +734,7 @@ func TestFallbackGuard_PathArg_WithoutSpace_AllowsFallback(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -766,7 +766,7 @@ func TestFallbackGuard_QuotedFirstArg_NoSpace_NoFallback(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -797,7 +797,7 @@ func TestFallbackGuard_SecondArg_NoSpace_AllowsFallback(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -828,7 +828,7 @@ func TestNoFileSuggestions_WhileTypingCommand_NoSpace(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -865,7 +865,7 @@ func TestNoFileSuggestions_WhileTypingCommandPrefix_NoSpace(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -902,7 +902,7 @@ func TestCommand_TrailingSpace_ShowsFileSuggestions_FirstArg(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -933,7 +933,7 @@ func TestNonFileCommand_TrailingSpace_NoFileSuggestions(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"noop": {Name: "noop", Description: "NoOp"}, // no ArgCompleters
 		},
@@ -1016,7 +1016,7 @@ func TestFilepathSuggestions_RootEdgeCase(t *testing.T) {
 // a "flag" argCompleter suggests all flags when the user types "--".
 func TestFlagCompletion_BasicFlagSuggestions(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"build": {
 				Name:          "build",
@@ -1067,7 +1067,7 @@ func TestFlagCompletion_BasicFlagSuggestions(t *testing.T) {
 // filters suggestions to only matching flags.
 func TestFlagCompletion_PrefixMatch(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"run": {
 				Name:          "run",
@@ -1115,7 +1115,7 @@ func TestFlagCompletion_PrefixMatch(t *testing.T) {
 // produces no flag suggestions even when "flag" is in argCompleters.
 func TestFlagCompletion_NoFlagDefs(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"empty": {
 				Name:          "empty",
@@ -1155,7 +1155,7 @@ func TestFlagCompletion_MixedWithFile(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"load": {
 				Name:          "load",
@@ -1223,7 +1223,7 @@ func TestFlagCompletion_MixedWithFile(t *testing.T) {
 // is case-insensitive.
 func TestFlagCompletion_CaseInsensitive(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"cmd": {
 				Name:          "cmd",
@@ -1252,7 +1252,7 @@ func TestFlagCompletion_CaseInsensitive(t *testing.T) {
 // when the current word is empty (cursor after a space).
 func TestFlagCompletion_EmptyCurrentWord(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"deploy": {
 				Name:          "deploy",
@@ -1285,7 +1285,7 @@ func TestFlagCompletion_EmptyCurrentWord(t *testing.T) {
 // commands registered on a mode, not just global commands.
 func TestFlagCompletion_ModeCommands(t *testing.T) {
 	tm := &TUIManager{
-		writer:       NewTUIWriterFromIO(io.Discard),
+		writer:       NewTUIWriterIO(io.Discard),
 		commands:     make(map[string]Command),
 		commandOrder: []string{},
 		modes:        make(map[string]*ScriptMode),
@@ -1570,7 +1570,7 @@ func TestGitRefCompletion_IntegrationWithTUIManager(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"diff": {
 				Name:          "diff",
@@ -2110,7 +2110,7 @@ func TestExecutableCompletion_NonexistentPATHDir(t *testing.T) {
 // "executable" argCompleter type.
 func TestExecutableCompletion_IntegrationWithTUIManager(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"exec": {
 				Name:          "exec",
@@ -2155,7 +2155,7 @@ func TestExecutableCompletion_MixedWithFile(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"run": {
 				Name:          "run",
@@ -2202,7 +2202,7 @@ func TestExecutableCompletion_PrefixWithPartialArg(t *testing.T) {
 	t.Setenv("PATH", tmp)
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"exec": {
 				Name:          "exec",
@@ -2237,7 +2237,7 @@ func TestExecutableCompletion_PrefixWithPartialArg(t *testing.T) {
 // as a flag definition on the diff command (not via gitref common refs).
 func TestDiffFlagCompletion_StagedViaFlagDefs(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"diff": {
 				Name:          "diff",
@@ -2281,7 +2281,7 @@ func TestDiffFlagCompletion_StagedViaFlagDefs(t *testing.T) {
 // filtered by the current prefix.
 func TestDiffFlagCompletion_PrefixFilter(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"diff": {
 				Name:          "diff",
@@ -2320,7 +2320,7 @@ func TestDiffFlagCompletion_PrefixFilter(t *testing.T) {
 // returns both gitref suggestions and flag suggestions simultaneously.
 func TestDiffFlagCompletion_GitrefAndFlagCombined(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"diff": {
 				Name:          "diff",
@@ -2359,7 +2359,7 @@ func TestDiffFlagCompletion_GitrefAndFlagCombined(t *testing.T) {
 // appear twice (once from gitref, once from flagDefs).
 func TestDiffFlagCompletion_NoDuplicateStaged(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"diff": {
 				Name:          "diff",
@@ -2391,7 +2391,7 @@ func TestDiffFlagCompletion_NoDuplicateStaged(t *testing.T) {
 // what goal.js does when passing flagDefs to custom commands).
 func TestFlagCompletion_GoalFlagDefsPassthrough(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"deploy": {
 				Name:          "deploy",
@@ -2428,7 +2428,7 @@ func TestFlagCompletion_GoalFlagDefsPassthrough(t *testing.T) {
 // produces no flag suggestions.
 func TestFlagCompletion_EmptyFlagDefsSlice(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"test": {
 				Name:          "test",
@@ -2453,7 +2453,7 @@ func TestFlagCompletion_EmptyFlagDefsSlice(t *testing.T) {
 // does not crash and produces no suggestions (it only logs a warning).
 func TestUnknownCompleter_DoesNotPanic(t *testing.T) {
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"custom": {
 				Name:          "custom",
@@ -2487,7 +2487,7 @@ func TestUnknownCompleter_MixedWithKnown(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		commands: map[string]Command{
 			"hybrid": {
 				Name:          "hybrid",

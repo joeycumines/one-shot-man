@@ -761,7 +761,7 @@ func TestConcurrentAccess(t *testing.T) {
 	tuiManager := engine.GetTUIManager()
 
 	// Register a test mode with state
-	script := engine.LoadScriptFromString("concurrent-test", `
+	script := engine.LoadScriptString("concurrent-test", `
         const stateKeys = {
             counter: Symbol("counter")
         };
@@ -941,7 +941,7 @@ func TestJavaScriptInteroperability(t *testing.T) {
 	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	// Test complex JavaScript integration with the TUI system
-	script := engine.LoadScriptFromString("interop-test", `
+	script := engine.LoadScriptString("interop-test", `
         // Create state for complex mode
         var stateKeys = {
             config: Symbol("config"),
@@ -1043,7 +1043,7 @@ func BenchmarkTUIPerformance(b *testing.B) {
 	engine := mustNewEngine(b, ctx, os.Stdout, os.Stderr)
 
 	// Register a test mode
-	script := engine.LoadScriptFromString("perf-test", `
+	script := engine.LoadScriptString("perf-test", `
         const stateKeys = {
             counter: Symbol("counter")
         };
@@ -1099,7 +1099,7 @@ func TestContextManagement(t *testing.T) {
 	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	// Test adding paths to context
-	testScript := engine.LoadScriptFromString("context-test", `
+	testScript := engine.LoadScriptString("context-test", `
         // Test context operations
         log.info("Testing context management");
 
@@ -1152,7 +1152,7 @@ func TestLoggingSystem(t *testing.T) {
 	engine := mustNewEngine(t, ctx, &logOutput, &logOutput)
 
 	// Test logging operations
-	testScript := engine.LoadScriptFromString("logging-test", `
+	testScript := engine.LoadScriptString("logging-test", `
         // Test different log levels
         log.debug("Debug message");
         log.info("Info message");
@@ -1205,7 +1205,7 @@ func TestTUIModeSystem(t *testing.T) {
 	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	// Test mode registration and switching
-	testScript := engine.LoadScriptFromString("tui-mode-test", `
+	testScript := engine.LoadScriptString("tui-mode-test", `
         // Create state contract for test mode
         var stateKeys = {
             testValue: Symbol("testValue"),
@@ -1330,7 +1330,7 @@ func TestFullIntegration(t *testing.T) {
 	engine := mustNewEngine(t, ctx, &output, &output)
 
 	// Integration test script
-	testScript := engine.LoadScriptFromString("full-integration", fmt.Sprintf(`
+	testScript := engine.LoadScriptString("full-integration", fmt.Sprintf(`
         // Full integration test combining all systems
         log.info("Starting full integration test");
 
@@ -1477,7 +1477,7 @@ func TestScriptCommandVerification(t *testing.T) {
 	engine := mustNewEngine(t, ctx, &output, &output)
 
 	// Test script with various command types
-	testScript := engine.LoadScriptFromString("command-verification", `
+	testScript := engine.LoadScriptString("command-verification", `
         // Create state for command test mode
         var stateKeys = {
             commandResults: Symbol("commandResults"),
@@ -1640,7 +1640,7 @@ func TestScriptStateVerification(t *testing.T) {
 	engine := mustNewEngine(t, ctx, &output, &output)
 
 	// Test state persistence and manipulation
-	testScript := engine.LoadScriptFromString("state-verification", `
+	testScript := engine.LoadScriptString("state-verification", `
         // Create state for state-test mode
         var stateKeys = {
             counter: Symbol("counter"),

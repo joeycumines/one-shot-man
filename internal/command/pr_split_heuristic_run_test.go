@@ -1181,7 +1181,7 @@ func TestPrSplitCommand_ConfigOverrides(t *testing.T) {
 		"max":      "5",
 		"prefix":   "pr/",
 		"verify":   "go test ./...",
-		"provider": "claude-code",
+		"provider": "agent-code",
 		"model":    "sonnet",
 	}
 

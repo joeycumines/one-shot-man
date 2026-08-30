@@ -4,11 +4,11 @@ package testutil
 import (
 	"context"
 
-	"github.com/dop251/goja"
-	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
-	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	gojanodejsconsole "github.com/joeycumines/goja_nodejs/console"
+	"github.com/joeycumines/goja_nodejs/require"
 )
 
 // TestEventLoopProvider implements builtin.EventLoopProvider for testing.
@@ -26,9 +26,7 @@ type TestEventLoopProvider struct {
 // The returned provider should be cleaned up by calling Stop() after the test.
 func NewTestEventLoopProvider() *TestEventLoopProvider {
 	registry := require.NewRegistry()
-	loop, err := goeventloop.New(
-		goeventloop.WithStrictMicrotaskOrdering(true),
-	)
+	loop, err := goeventloop.New()
 	if err != nil {
 		panic("failed to create event loop: " + err.Error())
 	}
@@ -36,44 +34,19 @@ func NewTestEventLoopProvider() *TestEventLoopProvider {
 	registry.Enable(vm)
 	gojanodejsconsole.Enable(vm)
 
-	// Pre-startup error channel for Submit callback (runs ON the loop goroutine
-	// when loop.Run() starts processing queued work).
-	errCh := make(chan error, 1)
-
-	var adapter *gojaeventloop.Adapter
-
-	// Schedule the goja adapter setup as a queued callback.
-	// This MUST be submitted BEFORE `go loop.Run(ctx)` so the callback
-	// executes when the loop first starts.
-	submitErr := loop.Submit(func() {
-		var bindErr error
-		adapter, bindErr = gojaeventloop.New(loop, vm)
-		if bindErr != nil {
-			errCh <- bindErr
-			return
-		}
-		if bindErr = adapter.Bind(); bindErr != nil {
-			errCh <- bindErr
-			return
-		}
-
-		errCh <- nil
-	})
-	if submitErr != nil {
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
 		loop.Shutdown(context.Background())
-		panic("failed to initialize event loop: " + submitErr.Error())
+		panic("failed to create goja adapter: " + err.Error())
+	}
+	if err := adapter.Bind(); err != nil {
+		loop.Shutdown(context.Background())
+		panic("failed to bind goja adapter: " + err.Error())
 	}
 
-	// Start the loop — it will process the queued Submit callback first.
+	// Start the loop — it will process queued work.
 	ctx, cancel := context.WithCancel(context.Background())
 	go loop.Run(ctx)
-
-	// Wait for the Submit callback to complete (adapter bound).
-	if initErr := <-errCh; initErr != nil {
-		cancel()
-		loop.Shutdown(context.Background())
-		panic("failed to initialize event loop: " + initErr.Error())
-	}
 
 	return &TestEventLoopProvider{
 		loop:     loop,

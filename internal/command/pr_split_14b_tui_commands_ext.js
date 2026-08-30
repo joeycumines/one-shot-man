@@ -12,7 +12,6 @@
     var tuiState = prSplit._tuiState;
     var buildReport = prSplit._buildReport;
     var WizardState = prSplit.WizardState;
-    var handleConfigState = prSplit._handleConfigState;
     var handleBaselineFailState = prSplit._handleBaselineFailState;
 
     // --- buildExtCommands ---
@@ -45,8 +44,18 @@
                             }),
                             verified: false
                         });
-                        output.toClipboard(text);
-                        output.print('Plan copied to clipboard.');
+                        // output.toClipboard() is async (binding contract);
+                        // prefer async/await over .then chaining. The command
+                        // handler is sync, so fire-and-forget an async IIFE and
+                        // print the outcome when the clipboard settles.
+                        (async function () {
+                            try {
+                                await output.toClipboard(text);
+                                output.print('Plan copied to clipboard.');
+                            } catch (e) {
+                                output.print('Error copying: ' + (e && e.message ? e.message : e));
+                            }
+                        })();
                     } catch (e) {
                         output.print('Error copying: ' + (e && e.message ? e.message : e));
                     }
@@ -56,9 +65,9 @@
             'save-plan': {
                 description: 'Save current plan to a JSON file',
                 usage: 'save-plan [path]',
-                handler: function(args) {
+                handler: async function(args) {
                     var path = (args && args.length > 0) ? args[0] : undefined;
-                    var result = prSplit.savePlan(path);
+                    var result = await prSplit.savePlan(path);
                     if (result.error) { output.print('Error: ' + result.error); return; }
                     output.print('Plan saved to ' + result.path);
                 }
@@ -67,9 +76,9 @@
             'load-plan': {
                 description: 'Load a previously-saved plan from a JSON file',
                 usage: 'load-plan [path]',
-                handler: function(args) {
+                handler: async function(args) {
                     var path = (args && args.length > 0) ? args[0] : undefined;
-                    var result = prSplit.loadPlan(path);
+                    var result = await prSplit.loadPlan(path);
                     if (result.error) { output.print('Error: ' + result.error); return; }
                     output.print('Plan loaded from ' + result.path);
                     output.print('  Total splits: ' + result.totalSplits + '  Executed: ' + result.executedSplits +
@@ -84,7 +93,7 @@
             },
 
             'auto-split': {
-                description: 'Automated split via Claude Code (falls back to heuristic)',
+                description: 'Automated split via Agent Code (falls back to heuristic)',
                 usage: 'auto-split [--resume]',
                 handler: async function(args) {
                     try {
@@ -126,7 +135,7 @@
                         };
 
                         wizard.transition('CONFIG', { config: autoConfig });
-                        var configResult = handleConfigState(autoConfig);
+                        var configResult = await prSplit._handleConfigState(autoConfig);
 
                         if (configResult.error) {
                             wizard.error(configResult.error);
@@ -321,14 +330,14 @@
             },
 
             conversation: {
-                description: 'Show Claude conversation history for this session',
+                description: 'Show Agent conversation history for this session',
                 usage: 'conversation',
                 handler: function() {
                     var history = prSplit.getConversationHistory();
                     if (history.length === 0) {
-                        output.print('No Claude conversations recorded in this session.'); return;
+                        output.print('No Agent conversations recorded in this session.'); return;
                     }
-                    output.print('Claude Conversation History (' + history.length + ' interactions):');
+                    output.print('Agent Conversation History (' + history.length + ' interactions):');
                     output.print('');
                     for (var i = 0; i < history.length; i++) {
                         var conv = history[i];
@@ -351,12 +360,12 @@
             graph: {
                 description: 'Show dependency graph between splits',
                 usage: 'graph',
-                handler: function() {
+                handler: async function() {
                     if (!st.planCache || !st.planCache.splits || st.planCache.splits.length === 0) {
                         output.print('No plan \u2014 run "plan" or "run" first.'); return;
                     }
                     output.print(prSplit.renderAsciiGraph(prSplit.buildDependencyGraph(st.planCache, null)));
-                    var indPairs = prSplit.assessIndependence(st.planCache, null);
+                    var indPairs = await prSplit.assessIndependence(st.planCache, null);
                     if (indPairs.length > 0) {
                         output.print('');
                         output.print('Independent pairs (can merge in parallel):');
@@ -370,9 +379,9 @@
             telemetry: {
                 description: 'Show session telemetry (local, never sent externally)',
                 usage: 'telemetry [save]',
-                handler: function(args) {
+                handler: async function(args) {
                     if (args && args[0] === 'save') {
-                        var saveResult = prSplit.saveTelemetry();
+                        var saveResult = await prSplit.saveTelemetry();
                         if (saveResult.error) output.print('Error: ' + saveResult.error);
                         else output.print('Telemetry saved to: ' + saveResult.path);
                         return;
@@ -381,7 +390,7 @@
                     output.print('Session Telemetry (local only):');
                     output.print('  Files analyzed:      ' + (summary.filesAnalyzed || 0));
                     output.print('  Splits created:      ' + (summary.splitCount || 0));
-                    output.print('  Claude interactions: ' + (summary.claudeInteractions || 0));
+                    output.print('  Agent interactions: ' + (summary.agentInteractions || 0));
                     output.print('  Conflicts resolved:  ' + (summary.conflictsResolved || 0));
                 }
             },
@@ -421,7 +430,7 @@
             },
 
             hud: {
-                description: 'Toggle HUD overlay showing Claude process state',
+                description: 'Toggle HUD overlay showing Agent process state',
                 usage: 'hud [on|off|detail|lines N]',
                 handler: function(args) {
                     var sub = (args && args.length > 0) ? args[0] : '';
@@ -493,10 +502,10 @@
                     output.print('  cleanup          Delete all split branches');
                     output.print('  create-prs       Push + create stacked GitHub PRs');
                     output.print('  run              Full workflow: analyze\u2192group\u2192plan\u2192execute');
-                    output.print('  auto-split       Automated split via Claude Code');
+                    output.print('  auto-split       Automated split via Agent Code');
                     output.print('  edit-plan        Interactive plan editor');
                     output.print('  diff <n|name>    Colorized diff for a split');
-                    output.print('  conversation     Claude conversation history');
+                    output.print('  conversation     Agent conversation history');
                     output.print('  graph            Dependency graph between splits');
                     output.print('  telemetry [save] Session telemetry (local only)');
                     output.print('  retro            Retrospective: insights and suggestions');
@@ -505,7 +514,7 @@
                     output.print('  report           Output current state as JSON');
                     output.print('  save-plan [path] Save plan to file');
                     output.print('  load-plan [path] Load plan from file');
-                    output.print('  hud [on|off]     Toggle Claude process HUD overlay');
+                    output.print('  hud [on|off]     Toggle Agent process HUD overlay');
                     output.print('  help             Show this help');
                 }
             }
@@ -524,9 +533,9 @@
 
     prSplit._buildCommands = buildCommands;
 
-    // --- HUD Overlay — Process state display when Claude pane is backgrounded ---
+    // --- HUD Overlay — Process state display when Agent pane is backgrounded ---
     //
-    //  Shows: (1) activity indicator (live/idle), (2) last N lines of Claude
+    //  Shows: (1) activity indicator (live/idle), (2) last N lines of Agent
     //  output from VTerm screenshot, (3) current wizard state.
     //  Rendered with lipgloss for clean terminal styling.
     //  Toggled via the "hud" command. When enabled, the status bar shows a
@@ -538,10 +547,10 @@
     // _getActivityInfo returns { icon, label, ms } describing child activity.
     function _getActivityInfo() {
         if (typeof tuiMux === 'undefined' || !tuiMux ||
-            typeof prSplit._readClaudeActivityMs !== 'function') {
+            typeof prSplit._readAgentActivityMs !== 'function') {
             return { icon: '\u2753', label: 'unknown', ms: -1 }; // ❓
         }
-        var ms = prSplit._readClaudeActivityMs();
+        var ms = prSplit._readAgentActivityMs();
         if (ms < 0) {
             return { icon: '\u23f8\ufe0f', label: 'no output yet', ms: ms }; // ⏸️
         }
@@ -559,11 +568,11 @@
 
     // _getLastOutputLines extracts the last N non-empty lines from VTerm.
     function _getLastOutputLines(n) {
-        if (typeof prSplit._readClaudePlainText !== 'function') {
+        if (typeof prSplit._readAgentPlainText !== 'function') {
             return [];
         }
         try {
-            var screen = prSplit._readClaudePlainText();
+            var screen = prSplit._readAgentPlainText();
             if (!screen) return [];
             var lines = screen.split('\n');
             // Remove trailing empty lines.
@@ -596,7 +605,7 @@
         var lastLines = _getLastOutputLines(_hudMaxLines);
 
         var lines = [];
-        lines.push(style.header('\u250c\u2500 Claude Process HUD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500'));
+        lines.push(style.header('\u250c\u2500 Agent Process HUD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500'));
         lines.push('\u2502 Status: ' + activity.icon + ' ' + style.bold(activity.label));
         lines.push('\u2502 Wizard: ' + style.info(String(wizState)));
         lines.push('\u2502');
@@ -663,10 +672,10 @@
 
     // --- Bell Event Handling ---
     //
-    //  When the Claude pane emits a BEL character (e.g., command completion,
+    //  When the Agent pane emits a BEL character (e.g., command completion,
     //  error, or explicit notification), flash the status bar and log the
     //  event. This provides feedback when the user is viewing the OSM TUI
-    //  and the Claude process needs attention.
+    //  and the Agent process needs attention.
 
     if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.on === 'function') {
         var _bellCount = 0;
@@ -684,7 +693,7 @@
                 var prevStatus = (_hudEnabled && typeof _renderHudStatusLine === 'function')
                     ? _renderHudStatusLine()
                     : 'idle';
-                tuiMux.setStatus('\u0007 BELL — Claude needs attention');
+                tuiMux.setStatus('\u0007 BELL — Agent needs attention');
 
                 // Restore status after 3 seconds (debounced).
                 if (_bellFlashTimer) {

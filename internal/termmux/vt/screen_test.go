@@ -1,6 +1,8 @@
 package vt
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestNewScreen(t *testing.T) {
 	s := NewScreen(24, 80)
@@ -15,7 +17,7 @@ func TestNewScreen(t *testing.T) {
 			t.Fatalf("row %d len = %d, want 80", r, len(row))
 		}
 		for c, cell := range row {
-			if cell != DefaultCell {
+			if cell != DefaultCell() {
 				t.Fatalf("cell[%d][%d] not default", r, c)
 			}
 		}
@@ -80,13 +82,13 @@ func TestScreen_Resize_grow(t *testing.T) {
 	}
 }
 
-func TestScreen_Resize_resetsScrollRegion(t *testing.T) {
+func TestScreen_Resize_preservesScrollRegion(t *testing.T) {
 	s := NewScreen(24, 80)
 	s.ScrollTop = 5
 	s.ScrollBot = 20
 	s.Resize(24, 80)
-	if s.ScrollTop != 0 || s.ScrollBot != 0 {
-		t.Errorf("scroll region = %d-%d, want 0-0 (reset)", s.ScrollTop, s.ScrollBot)
+	if s.ScrollTop != 5 || s.ScrollBot != 20 {
+		t.Errorf("scroll region = %d-%d, want 5-20 (preserved)", s.ScrollTop, s.ScrollBot)
 	}
 }
 
@@ -199,6 +201,172 @@ func TestScreen_DeleteLines(t *testing.T) {
 	}
 	if s.Cells[3][0].Ch != ' ' || s.Cells[4][0].Ch != ' ' {
 		t.Error("bottom rows should be blank after delete")
+	}
+}
+
+func TestScreen_InsertLines_OutsideScrollRegion(t *testing.T) {
+	// Use VTerm + CSI handler for proper scroll region setup.
+	v := NewVTerm(6, 3)
+	scr := v.active
+	for r := range 6 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+	// Set scroll region to rows 3-5 (1-indexed: CSI 3;5 r).
+	// ScrollRegion() converts to 0-indexed: top=2, bot=5.
+	v.csi.Dispatch(scr, 'r', []int{3, 5}, false)
+	top, bot := scr.ScrollRegion()
+	if top != 2 || bot != 5 {
+		t.Fatalf("scroll region = (%d,%d), want (2,5)", top, bot)
+	}
+
+	// Fill again (DECSTBM homes cursor and may clear).
+	for r := range 6 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+
+	// Cursor at row 0 (above scroll region which starts at row 2).
+	scr.CurRow = 0
+	scr.InsertLines(1)
+	// Should be a no-op — nothing changes.
+	for r := range 6 {
+		if scr.Cells[r][0].Ch != rune('A'+r) {
+			t.Errorf("row %d = %c, want %c (IL above scroll region should be no-op)", r, scr.Cells[r][0].Ch, rune('A'+r))
+		}
+	}
+	// Cursor at row 5 (at bot, which is exclusive boundary).
+	scr.CurRow = 5
+	scr.InsertLines(1)
+	for r := range 6 {
+		if scr.Cells[r][0].Ch != rune('A'+r) {
+			t.Errorf("row %d = %c, want %c (IL at ScrollBot should be no-op)", r, scr.Cells[r][0].Ch, rune('A'+r))
+		}
+	}
+}
+
+func TestScreen_DeleteLines_OutsideScrollRegion(t *testing.T) {
+	// Use VTerm + CSI handler for proper scroll region setup.
+	v := NewVTerm(6, 3)
+	scr := v.active
+	for r := range 6 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+	// Set scroll region to rows 3-5 (1-indexed).
+	v.csi.Dispatch(scr, 'r', []int{3, 5}, false)
+	top, bot := scr.ScrollRegion()
+	if top != 2 || bot != 5 {
+		t.Fatalf("scroll region = (%d,%d), want (2,5)", top, bot)
+	}
+
+	// Fill again (DECSTBM homes cursor and may clear).
+	for r := range 6 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+
+	// Cursor at row 0 (above scroll region).
+	scr.CurRow = 0
+	scr.DeleteLines(1)
+	// Should be a no-op.
+	for r := range 6 {
+		if scr.Cells[r][0].Ch != rune('A'+r) {
+			t.Errorf("row %d = %c, want %c (DL above scroll region should be no-op)", r, scr.Cells[r][0].Ch, rune('A'+r))
+		}
+	}
+	// Cursor at row 5 (at ScrollBot, which is exclusive).
+	scr.CurRow = 5
+	scr.DeleteLines(1)
+	for r := range 6 {
+		if scr.Cells[r][0].Ch != rune('A'+r) {
+			t.Errorf("row %d = %c, want %c (DL at ScrollBot should be no-op)", r, scr.Cells[r][0].Ch, rune('A'+r))
+		}
+	}
+}
+
+func TestScreen_InsertLines_WithScrollRegion(t *testing.T) {
+	// 8-row screen with scroll region rows 3-6 (1-indexed), i.e. rows 2-6 (0-indexed).
+	v := NewVTerm(8, 3)
+	scr := v.active
+	for r := range 8 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+	// Set scroll region: CSI 3;6 r => 0-indexed top=2, bot=6.
+	v.csi.Dispatch(scr, 'r', []int{3, 6}, false)
+	top, bot := scr.ScrollRegion()
+	if top != 2 || bot != 6 {
+		t.Fatalf("scroll region = (%d,%d), want (2,6)", top, bot)
+	}
+
+	// Fill again and set cursor inside scroll region.
+	for r := range 8 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+	scr.CurRow = 3
+
+	scr.InsertLines(1)
+
+	// Row 0-1: unchanged (A, B).
+	if scr.Cells[0][0].Ch != 'A' || scr.Cells[1][0].Ch != 'B' {
+		t.Error("rows above scroll region should be unchanged")
+	}
+	// Row 3: blank (inserted).
+	if scr.Cells[3][0].Ch != ' ' {
+		t.Errorf("inserted row = %c, want blank", scr.Cells[3][0].Ch)
+	}
+	// Row 4: old row 3 (D).
+	if scr.Cells[4][0].Ch != 'D' {
+		t.Errorf("shifted row 4 = %c, want D", scr.Cells[4][0].Ch)
+	}
+	// Row 5: old row 4 (E). Row 5 is the last in the scroll region.
+	if scr.Cells[5][0].Ch != 'E' {
+		t.Errorf("shifted row 5 = %c, want E", scr.Cells[5][0].Ch)
+	}
+	// Row 6-7: unchanged (G, H) — outside scroll region.
+	if scr.Cells[6][0].Ch != 'G' || scr.Cells[7][0].Ch != 'H' {
+		t.Error("rows below scroll region should be unchanged")
+	}
+	// Old row 5 (F) was pushed out of the scroll region (scrolled off).
+}
+
+func TestScreen_DeleteLines_WithScrollRegion(t *testing.T) {
+	// 8-row screen with scroll region rows 3-6 (1-indexed), i.e. rows 2-6 (0-indexed).
+	v := NewVTerm(8, 3)
+	scr := v.active
+	for r := range 8 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+	// Set scroll region: CSI 3;6 r => 0-indexed top=2, bot=6.
+	v.csi.Dispatch(scr, 'r', []int{3, 6}, false)
+	top, bot := scr.ScrollRegion()
+	if top != 2 || bot != 6 {
+		t.Fatalf("scroll region = (%d,%d), want (2,6)", top, bot)
+	}
+
+	// Fill again and set cursor inside scroll region.
+	for r := range 8 {
+		scr.Cells[r][0].Ch = rune('A' + r)
+	}
+	scr.CurRow = 3
+
+	scr.DeleteLines(1)
+
+	// Row 0-1: unchanged.
+	if scr.Cells[0][0].Ch != 'A' || scr.Cells[1][0].Ch != 'B' {
+		t.Error("rows above scroll region should be unchanged")
+	}
+	// Row 3: old row 4 (E).
+	if scr.Cells[3][0].Ch != 'E' {
+		t.Errorf("after delete, row 3 = %c, want E", scr.Cells[3][0].Ch)
+	}
+	// Row 4: old row 5 (F).
+	if scr.Cells[4][0].Ch != 'F' {
+		t.Errorf("after delete, row 4 = %c, want F", scr.Cells[4][0].Ch)
+	}
+	// Row 5: blank (bottom of scroll region fills with blank).
+	if scr.Cells[5][0].Ch != ' ' {
+		t.Errorf("bottom row = %c, want blank", scr.Cells[5][0].Ch)
+	}
+	// Row 6-7: unchanged.
+	if scr.Cells[6][0].Ch != 'G' || scr.Cells[7][0].Ch != 'H' {
+		t.Error("rows below scroll region should be unchanged")
 	}
 }
 
@@ -385,12 +553,405 @@ func TestScreen_ReverseIndex_AtTopOfRegion(t *testing.T) {
 
 // ── T122: Render idempotent (already tested, add consecutive test) ──
 
-func TestScreen_Resize_ResetsScrollRegion(t *testing.T) {
+func TestScreen_Resize_ClampsScrollBotOnShrink(t *testing.T) {
 	s := NewScreen(10, 40)
 	s.ScrollTop = 3
 	s.ScrollBot = 8
-	s.Resize(10, 40)
+	// Shrink to 5 rows — ScrollBot clamps to 5, ScrollTop=3 < 5, so region
+	// is preserved as 3-5.
+	s.Resize(5, 40)
+	if s.ScrollTop != 3 || s.ScrollBot != 5 {
+		t.Errorf("after shrink: scroll=%d-%d, want 3-5 (clamped bot)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+func TestScreen_Resize_ClampsScrollBot(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ScrollTop = 5
+	s.ScrollBot = 20
+	// Shrink to 15 rows — ScrollBot should be clamped to 15.
+	s.Resize(15, 80)
+	if s.ScrollTop != 5 || s.ScrollBot != 15 {
+		t.Errorf("scroll region = %d-%d, want 5-15 (clamped bot)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+func TestScreen_Resize_PreservesOnGrow(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ScrollTop = 5
+	s.ScrollBot = 20
+	// Grow to 48 rows — scroll region should be unchanged.
+	s.Resize(48, 80)
+	if s.ScrollTop != 5 || s.ScrollBot != 20 {
+		t.Errorf("scroll region = %d-%d, want 5-20 (preserved on grow)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+func TestScreen_Resize_ResetsWhenRegionInverted(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ScrollTop = 15
+	s.ScrollBot = 10
+	// Region is already inverted — resize should reset to defaults.
+	s.Resize(24, 80)
 	if s.ScrollTop != 0 || s.ScrollBot != 0 {
-		t.Errorf("after resize: scroll=%d-%d, want 0-0", s.ScrollTop, s.ScrollBot)
+		t.Errorf("scroll region = %d-%d, want 0-0 (inverted)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+func TestScreen_Resize_ResetsWhenTopExceedsBotAfterClamp(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ScrollTop = 20
+	s.ScrollBot = 22
+	// Shrink to 15 rows — ScrollBot clamps to 15, but ScrollTop=20 > 15, so reset.
+	s.Resize(15, 80)
+	if s.ScrollTop != 0 || s.ScrollBot != 0 {
+		t.Errorf("scroll region = %d-%d, want 0-0 (top > clamped bot)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+func TestScreen_Resize_ScrollRegionAtBottomEdge(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ScrollTop = 5
+	s.ScrollBot = 24 // exactly at bottom edge
+	// Shrink to 20 rows — ScrollBot clamps to 20, ScrollTop=5 < 20, preserved.
+	s.Resize(20, 80)
+	if s.ScrollTop != 5 || s.ScrollBot != 20 {
+		t.Errorf("scroll region = %d-%d, want 5-20 (clamped to edge)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+func TestScreen_Resize_ScrollRegionCollapseToZero(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ScrollTop = 5
+	s.ScrollBot = 6 // very small region
+	// Shrink to 3 rows — ScrollBot clamps to 3, ScrollTop=5 > 3, reset.
+	s.Resize(3, 80)
+	if s.ScrollTop != 0 || s.ScrollBot != 0 {
+		t.Errorf("scroll region = %d-%d, want 0-0 (region collapsed)", s.ScrollTop, s.ScrollBot)
+	}
+}
+
+// ── Dirty-region tracking tests ─────────────────────────────────────
+
+func TestScreen_DirtyRange_InitialClean(t *testing.T) {
+	s := NewScreen(24, 80)
+	min, max := s.DirtyRange()
+	if min != -1 || max != -1 {
+		t.Errorf("new screen dirty range = (%d,%d), want (-1,-1)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_PutChar(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.PutChar('A')
+	min, max := s.DirtyRange()
+	if min != 0 || max != 0 {
+		t.Errorf("after PutChar at row 0: dirty range = (%d,%d), want (0,0)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_PutCharSecondRow(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 5
+	s.PutChar('X')
+	min, max := s.DirtyRange()
+	if min != 5 || max != 5 {
+		t.Errorf("after PutChar at row 5: dirty range = (%d,%d), want (5,5)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_ClearDirty(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.PutChar('A')
+	s.ClearDirty()
+	min, max := s.DirtyRange()
+	if min != -1 || max != -1 {
+		t.Errorf("after ClearDirty: dirty range = (%d,%d), want (-1,-1)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_MultipleEdits(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 3
+	s.PutChar('A')
+	s.CurRow = 10
+	s.PutChar('B')
+	min, max := s.DirtyRange()
+	if min != 3 || max != 10 {
+		t.Errorf("after edits at rows 3 and 10: dirty range = (%d,%d), want (3,10)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_EraseDisplay(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.EraseDisplay(2)
+	min, max := s.DirtyRange()
+	if min != 0 || max != 23 {
+		t.Errorf("after EraseDisplay(2): dirty range = (%d,%d), want (0,23)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_EraseLine(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 7
+	s.ClearDirty()
+	s.EraseLine(2)
+	min, max := s.DirtyRange()
+	if min != 7 || max != 7 {
+		t.Errorf("after EraseLine at row 7: dirty range = (%d,%d), want (7,7)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_EraseDisplay_Mode3(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.EraseDisplay(3)
+	min, max := s.DirtyRange()
+	if min != -1 || max != -1 {
+		t.Errorf("after EraseDisplay(3): dirty range = (%d,%d), want (-1,-1)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_ScrollUp(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.ScrollUp(1)
+	min, max := s.DirtyRange()
+	if min != 0 || max != 23 {
+		t.Errorf("after ScrollUp: dirty range = (%d,%d), want (0,23)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_InsertLines(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 5
+	s.ClearDirty()
+	s.InsertLines(2)
+	min, _ := s.DirtyRange()
+	if min != 5 {
+		t.Errorf("after InsertLines at row 5: dirty min = %d, want 5", min)
+	}
+}
+
+func TestScreen_DirtyRange_DeleteChars(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 3
+	s.ClearDirty()
+	s.DeleteChars(1)
+	min, max := s.DirtyRange()
+	if min != 3 || max != 3 {
+		t.Errorf("after DeleteChars at row 3: dirty range = (%d,%d), want (3,3)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_InsertChars(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 3
+	s.ClearDirty()
+	s.InsertChars(1)
+	min, max := s.DirtyRange()
+	if min != 3 || max != 3 {
+		t.Errorf("after InsertChars at row 3: dirty range = (%d,%d), want (3,3)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_EraseChars(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 3
+	s.ClearDirty()
+	s.EraseChars(5)
+	min, max := s.DirtyRange()
+	if min != 3 || max != 3 {
+		t.Errorf("after EraseChars at row 3: dirty range = (%d,%d), want (3,3)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_FillScreen(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.FillScreen('X')
+	min, max := s.DirtyRange()
+	if min != 0 || max != 23 {
+		t.Errorf("after FillScreen: dirty range = (%d,%d), want (0,23)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_Clear(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.Clear()
+	min, max := s.DirtyRange()
+	if min != 0 || max != 23 {
+		t.Errorf("after Clear: dirty range = (%d,%d), want (0,23)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_Resize(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.Resize(12, 40)
+	min, max := s.DirtyRange()
+	if min != 0 || max != 11 {
+		t.Errorf("after Resize(12,40): dirty range = (%d,%d), want (0,11)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_PutASCII(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.ClearDirty()
+	s.PutASCII([]byte("Hello"))
+	min, max := s.DirtyRange()
+	if min != 0 || max != 0 {
+		t.Errorf("after PutASCII on row 0: dirty range = (%d,%d), want (0,0)", min, max)
+	}
+}
+
+func TestScreen_DirtyRange_ReverseIndex(t *testing.T) {
+	s := NewScreen(24, 80)
+	s.CurRow = 5
+	s.ClearDirty()
+	s.ReverseIndex()
+	min, max := s.DirtyRange()
+	if min != 4 || max != 4 {
+		t.Errorf("after ReverseIndex from row 5: dirty range = (%d,%d), want (4,4)", min, max)
+	}
+}
+
+func TestVTerm_Snapshot_DirtyRange(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.Write([]byte("Hello"))
+	snap := v.Snapshot()
+	if snap.DirtyMin < 0 || snap.DirtyMax < 0 {
+		t.Errorf("snapshot after Write: dirty range = (%d,%d), expected some rows dirty", snap.DirtyMin, snap.DirtyMax)
+	}
+	snap2 := v.Snapshot()
+	if snap2.DirtyMin != -1 || snap2.DirtyMax != -1 {
+		t.Errorf("snapshot after no changes: dirty range = (%d,%d), want (-1,-1)", snap2.DirtyMin, snap2.DirtyMax)
+	}
+	v.Write([]byte("X"))
+	snap3 := v.Snapshot()
+	if snap3.DirtyMin < 0 || snap3.DirtyMax < 0 {
+		t.Errorf("snapshot after single char: dirty range = (%d,%d), expected dirty", snap3.DirtyMin, snap3.DirtyMax)
+	}
+}
+
+func TestScreen_SnapshotIncremental_SingleDirtyRow(t *testing.T) {
+	scr := NewScreen(24, 80)
+	for r := range 24 {
+		for c := range 80 {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	prev := scr.Snapshot()
+	scr.ClearDirty()
+
+	scr.Cells[5][10].Ch = 'Z'
+	scr.markDirty(5)
+
+	snap := scr.SnapshotIncremental(prev)
+
+	for r := range 24 {
+		for c := range 80 {
+			want := rune('A' + (r+c)%26)
+			if r == 5 && c == 10 {
+				want = 'Z'
+			}
+			if snap.Cells[r][c].Ch != want {
+				t.Errorf("snap.Cells[%d][%d].Ch = %q, want %q", r, c, snap.Cells[r][c].Ch, want)
+			}
+		}
+	}
+}
+
+func TestScreen_SnapshotIncremental_CleanRowsShared(t *testing.T) {
+	scr := NewScreen(24, 80)
+	for r := range 24 {
+		for c := range 80 {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	prev := scr.Snapshot()
+	scr.ClearDirty()
+
+	scr.Cells[5][10].Ch = 'Z'
+	scr.markDirty(5)
+
+	snap := scr.SnapshotIncremental(prev)
+
+	for r := range 24 {
+		if r == 5 {
+			if &snap.Cells[r][0] == &prev.Cells[r][0] {
+				t.Errorf("dirty row %d should NOT be shared with prev", r)
+			}
+		} else {
+			if &snap.Cells[r][0] != &prev.Cells[r][0] {
+				t.Errorf("clean row %d should be shared with prev", r)
+			}
+		}
+	}
+}
+
+func TestScreen_SnapshotIncremental_NilPrev(t *testing.T) {
+	scr := NewScreen(24, 80)
+	for r := range 24 {
+		for c := range 80 {
+			scr.Cells[r][c].Ch = rune('A' + (r+c)%26)
+		}
+	}
+	snap := scr.SnapshotIncremental(nil)
+	full := scr.Snapshot()
+
+	for r := range 24 {
+		for c := range 80 {
+			if snap.Cells[r][c] != full.Cells[r][c] {
+				t.Errorf("nil prev: snap.Cells[%d][%d] = %v, want %v", r, c, snap.Cells[r][c], full.Cells[r][c])
+			}
+		}
+	}
+}
+
+func TestScreen_SnapshotIncremental_DimensionMismatch(t *testing.T) {
+	scr := NewScreen(24, 80)
+	prev := NewScreen(24, 80)
+	scr.Cells[0][0].Ch = 'X'
+	scr.markDirty(0)
+
+	wrongRows := NewScreen(12, 80)
+	snap := scr.SnapshotIncremental(wrongRows)
+	if snap.Cells[0][0].Ch != 'X' {
+		t.Errorf("dimension mismatch: should fall back to full copy, got %q", snap.Cells[0][0].Ch)
+	}
+
+	wrongCols := NewScreen(24, 40)
+	snap = scr.SnapshotIncremental(wrongCols)
+	if snap.Cells[0][0].Ch != 'X' {
+		t.Errorf("dimension mismatch: should fall back to full copy, got %q", snap.Cells[0][0].Ch)
+	}
+
+	_ = prev
+}
+
+func TestVTerm_ActiveScreen_IncrementalOptimization(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.Write([]byte("Hello World"))
+	snap1 := v.ActiveScreen()
+
+	v.Write([]byte("X"))
+	snap2 := v.ActiveScreen()
+
+	if snap2.Cells[0][0].Ch != 'H' {
+		t.Errorf("snap2 content incorrect: Cells[0][0] = %q", snap2.Cells[0][0].Ch)
+	}
+
+	for r := range 24 {
+		dirtyMin, dirtyMax := v.active.DirtyRange()
+		_ = dirtyMin
+		_ = dirtyMax
+		if r != 0 {
+			if &snap2.Cells[r][0] != &snap1.Cells[r][0] {
+				t.Errorf("clean row %d should be shared between snapshots", r)
+			}
+		}
 	}
 }

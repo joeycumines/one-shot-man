@@ -15,7 +15,7 @@ import (
 var allChunksThrough13 = []string{
 	"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 	"05_execution", "06_verification", "07_prcreation", "08_conflict",
-	"09_claude",
+	"09_agent",
 	"10a_pipeline_config", "10b_pipeline_send", "10c_pipeline_resolve", "10d_pipeline_orchestrator",
 	"11_utilities", "12_exports", "13_tui",
 }
@@ -105,7 +105,7 @@ func Test_ChunkedPipeline_HeuristicRun(t *testing.T) {
 	}, allChunksThrough13...)
 
 	// 1. Analyze diff
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeDiff({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.analyzeDiff({
 		baseBranch: 'main',
 		dir: '` + escaped + `'
 	}))`)
@@ -129,7 +129,7 @@ func Test_ChunkedPipeline_HeuristicRun(t *testing.T) {
 	t.Logf("analyze: %d files changed", len(analysis.Files))
 
 	// 2. Apply grouping strategy — returns {dirName: [files]} object.
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.applyStrategy(
 		` + mustMarshalJSON(t, analysis.Files) + `,
 		'directory',
 		{ baseBranch: 'main', dir: '` + escaped + `' }
@@ -147,7 +147,7 @@ func Test_ChunkedPipeline_HeuristicRun(t *testing.T) {
 	t.Logf("grouped into %d groups", len(groups))
 
 	// 3. Create split plan
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.createSplitPlan(
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.createSplitPlan(
 		` + mustMarshalJSON(t, groups) + `,
 		{
 			sourceBranch: 'feature',
@@ -175,7 +175,7 @@ func Test_ChunkedPipeline_HeuristicRun(t *testing.T) {
 	t.Logf("plan: %d splits", len(plan.Splits))
 
 	// 4. Execute split — creates branches
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: '` + escaped + `',
@@ -215,7 +215,7 @@ func Test_ChunkedPipeline_HeuristicRun(t *testing.T) {
 	t.Logf("execution: %d branches created", len(execResult.Results))
 
 	// 5. Verify equivalence
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence({
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalence({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: '` + escaped + `',
@@ -240,7 +240,7 @@ func Test_ChunkedPipeline_HeuristicRun(t *testing.T) {
 	t.Log("equivalence: PASS")
 
 	// 6. Cleanup branches
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.cleanupBranches({
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.cleanupBranches({
 		baseBranch: 'main',
 		dir: '` + escaped + `',
 		splits: ` + mustMarshalJSON(t, plan.Splits) + `
@@ -290,7 +290,7 @@ func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 	}, allChunksThrough13...)
 
 	// cmd: analyze
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeDiff({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.analyzeDiff({
 		baseBranch: 'main',
 		dir: '` + escaped + `'
 	}))`)
@@ -310,7 +310,7 @@ func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 	}
 
 	// cmd: group (using selectStrategy for auto-detection)
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.selectStrategy(
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.selectStrategy(
 		` + string(analysis.Files) + `,
 		{ baseBranch: 'main', dir: '` + escaped + `' }
 	))`)
@@ -325,7 +325,7 @@ func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 	}
 	t.Logf("selected strategy: %s", strategy.Strategy)
 
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.applyStrategy(
 		` + string(analysis.Files) + `,
 		'directory',
 		{ baseBranch: 'main', dir: '` + escaped + `' }
@@ -337,7 +337,7 @@ func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 	groupsJSON := raw.(string)
 
 	// cmd: plan
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.createSplitPlan(
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.createSplitPlan(
 		` + groupsJSON + `,
 		{
 			sourceBranch: 'feature',
@@ -384,7 +384,7 @@ func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 	if err := json.Unmarshal([]byte(planJSON), &plan); err != nil {
 		t.Fatalf("parse plan for execute: %v", err)
 	}
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: '` + escaped + `',
@@ -407,7 +407,7 @@ func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 	t.Log("execute: PASS")
 
 	// cmd: equivalence
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence({
+	raw, err = evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalence({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: '` + escaped + `',
@@ -432,7 +432,7 @@ func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 	t.Log("equivalence: PASS")
 
 	// cmd: cleanup
-	_, err = evalJS(`JSON.stringify(globalThis.prSplit.cleanupBranches({
+	_, err = evalJS(`JSON.stringify(await globalThis.prSplit.cleanupBranches({
 		baseBranch: 'main',
 		dir: '` + escaped + `',
 		splits: ` + string(plan.Splits) + `

@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/dop251/goja"
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
 	pabtpkg "github.com/joeycumines/go-pabt"
+	"github.com/joeycumines/goja"
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 )
 
@@ -194,7 +194,7 @@ func (c *ExprLRUCache) String() string {
 
 // EvaluationMode specifies how conditions are evaluated at runtime.
 // This is a critical performance decision: JavaScript evaluation requires
-// thread-safe marshalling via Bridge.RunOnLoopSync, while expr-lang
+// thread-safe marshalling via Bridge.RunSync, while expr-lang
 // evaluation runs natively in Go with zero Goja overhead.
 type EvaluationMode int
 
@@ -255,7 +255,7 @@ type JSCondition struct {
 var _ Condition = (*JSCondition)(nil)
 
 // NewJSCondition creates a new JavaScript-based condition.
-// The matcher function is called via Bridge.RunOnLoopSync for thread safety.
+// The matcher function is called via Bridge.RunSync for thread safety.
 func NewJSCondition(key any, matcher goja.Callable, bridge *btmod.Bridge) *JSCondition {
 	return &JSCondition{
 		key:     key,
@@ -284,21 +284,20 @@ func (c *JSCondition) Key() any {
 }
 
 // Match implements pabtpkg.Condition.Match(value any) bool.
-// It calls the JavaScript matcher function via Bridge.RunOnLoopSync.
+// It calls the JavaScript matcher function via Bridge.RunSync.
 //
 // CRITICAL: This method is called from the bt.Ticker goroutine, but goja.Runtime
-// is NOT thread-safe. We MUST use Bridge.RunOnLoopSync to marshal the call to
+// is NOT thread-safe. We MUST use Bridge.RunSync to marshal the call to
 // the event loop goroutine where goja operations are safe.
 //
 // IMPORTANT: If the bridge is stopping, we return false immediately to avoid
-// blocking on RunOnLoopSync. The bridge's Done() channel is closed when stopping,
-// so RunOnLoopSync would return an error anyway, but early exit improves shutdown
+// blocking on RunSync. The bridge's Done() channel is closed when stopping,
+// so RunSync would return an error anyway, but early exit improves shutdown
 // responsiveness.
 //
-// ERROR HANDLING (H8 fix): Errors are now logged to help distinguish from actual
+// Errors are logged to help distinguish from actual
 // false matches. This includes nil condition/bridge/matcher cases and bridge
-// stopped cases. Callers can use pabt.NewJSConditionWithValidation for stricter
-// error handling.
+// stopped cases.
 func (c *JSCondition) Match(value any) bool {
 	// Defensive: check if condition is valid before calling matcher
 	if c == nil {
@@ -311,13 +310,13 @@ func (c *JSCondition) Match(value any) bool {
 		return false
 	}
 
-	// Early exit if bridge is stopping - avoids blocking in RunOnLoopSync
+	// Early exit if bridge is stopping - avoids blocking in RunSync
 	if !c.bridge.IsRunning() {
 		return false
 	}
 
 	var result bool
-	err := c.bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err := c.bridge.RunSync(func(vm *goja.Runtime) error {
 		res, callErr := c.matcher(goja.Undefined(), vm.ToValue(value))
 		if callErr != nil {
 			return callErr
@@ -392,7 +391,7 @@ func (c *ExprCondition) SetJSObject(obj *goja.Object) {
 // NewExprCondition creates a new expr-lang based condition.
 // The expression is compiled lazily on first Match call and cached globally.
 //
-// Panics if expression is empty (m-3 fix).
+// Panics if expression is empty.
 //
 // Expression syntax follows expr-lang (github.com/expr-lang/expr):
 //   - Field access: Value.x, Value.name
@@ -431,7 +430,7 @@ type ExprEnv struct {
 // This provides 10-100x performance improvement over JavaScript evaluation
 // for equivalent conditions.
 //
-// ERROR HANDLING (M-3 fix): Compilation and evaluation errors are now tracked
+// Compilation and evaluation errors are tracked
 // and logged to help distinguish from actual false results. Use LastError()
 // to retrieve the most recent error.
 func (c *ExprCondition) Match(value any) bool {
@@ -450,7 +449,7 @@ func (c *ExprCondition) Match(value any) bool {
 		c.mu.Lock()
 		c.lastErr = fmt.Errorf("expression compilation failed: %w", err)
 		c.mu.Unlock()
-		slog.Error("[PA-BT] ExprCondition compilation error",
+		slog.Error("exprcondition compilation error",
 			"expression", c.expression,
 			"error", err)
 		return false
@@ -465,9 +464,9 @@ func (c *ExprCondition) Match(value any) bool {
 		c.mu.Lock()
 		c.lastErr = fmt.Errorf("expression evaluation failed: %w", err)
 		c.mu.Unlock()
-		slog.Error("[PA-BT] ExprCondition evaluation error",
+		slog.Error("exprcondition evaluation error",
 			"expression", c.expression,
-			"value", fmt.Sprintf("%v", value),
+			"value", value,
 			"error", err)
 		return false
 	}
@@ -480,10 +479,10 @@ func (c *ExprCondition) Match(value any) bool {
 	c.mu.Lock()
 	c.lastErr = fmt.Errorf("expression returned non-boolean result: %T", result)
 	c.mu.Unlock()
-	slog.Warn("[PA-BT] ExprCondition non-boolean result",
+	slog.Warn("exprcondition unexpected result type",
 		"expression", c.expression,
 		"resultType", fmt.Sprintf("%T", result),
-		"result", fmt.Sprintf("%v", result))
+		"result", result)
 	return false
 }
 

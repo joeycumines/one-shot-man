@@ -15,7 +15,7 @@ func TestCompletionPrecedenceLevels(t *testing.T) {
 	tuiManager := engine.GetTUIManager()
 
 	// Test all three levels of precedence
-	testScript := engine.LoadScriptFromString("precedence-test", `
+	testScript := engine.LoadScriptString("precedence-test", `
 		// Register a global command that should override built-in "help"
 		tui.registerCommand({
 			name: "help",
@@ -65,7 +65,7 @@ func TestCompletionPrecedenceLevels(t *testing.T) {
 
 	t.Run("ModeCommandOverridesEverything", func(t *testing.T) {
 		// Switch to the mode
-		switchScript := engine.LoadScriptFromString("switch-mode", `
+		switchScript := engine.LoadScriptString("switch-mode", `
 			tui.switchMode("precedence-mode");
 		`)
 		err := engine.ExecuteScript(switchScript)

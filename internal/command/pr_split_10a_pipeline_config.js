@@ -30,8 +30,8 @@
     //      → maxAttemptsPerBranch: min 0
     //
     //   6. Consumers: Each pipeline step reads its timeout from the resolved chain:
-    //      → mcpCallbackObj.waitFor(toolName, timeoutMs, opts)
-    //      → resolveConflictsWithClaude(..., { resolveWallClockTimeoutMs })
+    //      → mcpCallbackObj.waitForAsync(toolName, timeoutMs, opts)
+    //      → resolveConflictsWithAgent(..., { resolveWallClockTimeoutMs })
     //      → verifySplit(..., { verifyTimeoutMs })
     var AUTOMATED_DEFAULTS = {
         classifyTimeoutMs: 300000,  // 5 minutes for classification (generous for LLM analysis)
@@ -46,8 +46,8 @@
         pipelineTimeoutMs: 7200000, // 120 minutes overall pipeline timeout
         stepTimeoutMs: 3600000,     // 60 minutes per step
         watchdogIdleMs: 900000,     // 15 minutes no-progress watchdog
-        claudeHealthPollMs: 5000,   // TUI polls isAlive() every 5 seconds
-        claudeHeartbeatTimeoutMs: 60000, // 60 seconds heartbeat timeout
+        agentHealthPollMs: 5000,   // TUI polls isAlive() every 5 seconds
+        agentHeartbeatTimeoutMs: 60000, // 60 seconds heartbeat timeout
         resolveCommandTimeoutMs: 120000, // 2 minutes per resolution command
         resolveWallClockGraceMs: 60000, // Grace period added to computed wall-clock timeout
         resolveBackoffBaseMs: 2000,     // Exponential backoff base interval between retries
@@ -57,7 +57,7 @@
         launcherTimeoutMs: 10000,   // Max wait for launcher menu detection
         launcherStableNeed: 3,      // Stable polls before assuming no menu
         launcherPostDismissMs: 500, // Wait after sending dismiss/navigate keys
-        planPollTimeoutMs: 5000,    // Short poll for Claude-generated plan
+        planPollTimeoutMs: 5000,    // Short poll for Agent-generated plan
         planPollCheckIntervalMs: 1000 // Check interval for plan poll
     };
 
@@ -70,7 +70,7 @@
     // produce larger wire payloads per chunk.
     var SEND_TEXT_CHUNK_BYTES = 512;
     // Delay between chunk writes to reduce PTY coalescing into a single
-    // read burst on the Claude side.
+    // read burst on the Agent side.
     var SEND_TEXT_CHUNK_DELAY_MS = 2;
     // Wait for prompt/input anchors to stabilize before pressing Enter.
     // T203: Increased timeout from 1500→3000ms and reduced stable samples
@@ -85,7 +85,7 @@
     var SEND_SUBMIT_ACK_POLL_MS = 50;
     var SEND_SUBMIT_ACK_STABLE_SAMPLES = 2;
     var SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 3;
-    // Wait for Claude prompt marker before sending text. This prevents
+    // Wait for Agent prompt marker before sending text. This prevents
     // early writes into startup/setup screens where input is not ready.
     var SEND_PROMPT_READY_TIMEOUT_MS = 10000;
     var SEND_PROMPT_READY_POLL_MS = 100;
@@ -180,38 +180,38 @@
 
     // --- cleanupExecutor — resource cleanup ---
 
-    // Closes the Claude executor and cleans up resources. After close, the
+    // Closes the Agent executor and cleans up resources. After close, the
     // session model (isDone) signals the pipeline's aliveCheckFn and the
     // TUI health poll — no explicit detach needed.
     function cleanupExecutor() {
         var isForceCancelled = prSplit.isForceCancelled;
-        var claudeExec = prSplit._state.claudeExecutor;
+        var agentExec = prSplit._state.agentExecutor;
         var forceNow = false;
         try { forceNow = !!isForceCancelled(); } catch (e) { forceNow = false; }
-        log.printf('auto-split cleanupExecutor: start force=%s hasExecutor=%s', forceNow ? 'true' : 'false', claudeExec ? 'true' : 'false');
+        log.printf('auto-split cleanupExecutor: start force=%s hasExecutor=%s', forceNow ? 'true' : 'false', agentExec ? 'true' : 'false');
 
         // Close the executor FIRST so the child PTY fd is released.
-        if (claudeExec) {
-            if (forceNow && claudeExec.handle &&
-                typeof claudeExec.handle.signal === 'function') {
-                log.printf('auto-split cleanupExecutor: sending SIGKILL to Claude handle before close');
-                try { claudeExec.handle.signal('SIGKILL'); } catch (e) {
+        if (agentExec) {
+            if (forceNow && agentExec.handle &&
+                typeof agentExec.handle.signal === 'function') {
+                log.printf('auto-split cleanupExecutor: sending SIGKILL to Agent handle before close');
+                try { agentExec.handle.signal('SIGKILL'); } catch (e) {
                     log.printf('auto-split cleanupExecutor: pre-close SIGKILL error: %s', e.message || String(e));
                 }
             }
-            log.printf('auto-split cleanupExecutor: closing Claude executor');
+            log.printf('auto-split cleanupExecutor: closing Agent executor');
             try {
-                claudeExec.close();
-                log.printf('auto-split cleanupExecutor: Claude executor closed');
+                agentExec.close();
+                log.printf('auto-split cleanupExecutor: Agent executor closed');
             } catch (e) {
-                log.printf('auto-split cleanupExecutor: Claude close error: %s', e.message || String(e));
+                log.printf('auto-split cleanupExecutor: Agent close error: %s', e.message || String(e));
             }
         }
         // No synchronous detach. When the child PTY closes, the session
-        // model fires Done() (event-driven) and tuiMux.isDone(claudeSessionID)
+        // model fires Done() (event-driven) and tuiMux.isDone(agentSessionID)
         // returns true. The pipeline and TUI poll the pinned SessionManager
         // ID directly — the old
-        // st.claudeCrashDetected flag is no longer needed.
+        // st.agentCrashDetected flag is no longer needed.
         if (typeof tuiMux !== 'undefined' && tuiMux) {
             log.printf('auto-split cleanupExecutor: child closed — pinned isDone() will signal completion');
         }
@@ -231,7 +231,7 @@
         if (/timeout|timed?.?out|econnreset|econnrefused|epipe|socket hang up|enetunreach/i.test(lc)) return true;
         // Service unavailable.
         if (/503|502|500|service unavailable|internal server error|bad gateway/i.test(lc)) return true;
-        // Temporary Claude issues.
+        // Temporary Agent issues.
         if (/overloaded|capacity|try again/i.test(lc)) return true;
         // Likely permanent: validation, schema, argument errors.
         if (/invalid tool|malformed|schema|unknown tool|argument/i.test(lc)) return false;

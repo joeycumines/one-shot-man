@@ -1,12 +1,17 @@
 package pathmod
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
-	"github.com/dop251/goja"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
 func setup(t *testing.T) *goja.Runtime {
@@ -15,9 +20,78 @@ func setup(t *testing.T) *goja.Runtime {
 	module := vm.NewObject()
 	exports := vm.NewObject()
 	_ = module.Set("exports", exports)
-	Require(vm, module)
+	Require(context.Background(), nil)(vm, module)
 	_ = vm.Set("path", module.Get("exports"))
 	return vm
+}
+
+// asyncTestEnv creates a goja runtime with a running event loop and adapter.
+// Returns the runtime and a runJS helper that executes a script on the loop
+// and waits for JS to call __collect(value) or __collectErr(msg), returning
+// the value or error. This is thread-safe — the callbacks fire on the event
+// loop goroutine; the test goroutine blocks on a channel.
+func asyncTestEnv(t *testing.T) (*goja.Runtime, func(string) (goja.Value, error)) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping async path test in -short mode")
+	}
+	vm := goja.New()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
+	module := vm.NewObject()
+	exports := vm.NewObject()
+	_ = module.Set("exports", exports)
+	Require(context.Background(), adapter)(vm, module)
+	_ = vm.Set("path", module.Get("exports"))
+
+	resultCh := make(chan goja.Value, 1)
+	errCh := make(chan error, 1)
+	_ = vm.Set("__collect", func(call goja.FunctionCall) goja.Value {
+		resultCh <- call.Argument(0)
+		return goja.Undefined()
+	})
+	_ = vm.Set("__collectErr", func(call goja.FunctionCall) goja.Value {
+		errCh <- fmt.Errorf("%s", call.Argument(0).String())
+		return goja.Undefined()
+	})
+
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
+	t.Cleanup(func() {
+		loopCancel()
+		loop.Shutdown(context.Background())
+	})
+
+	runJS := func(script string) (goja.Value, error) {
+		t.Helper()
+		submitErr := loop.Submit(func() {
+			_, runErr := vm.RunString(script)
+			if runErr != nil {
+				errCh <- runErr
+			}
+		})
+		if submitErr != nil {
+			return goja.Undefined(), submitErr
+		}
+		select {
+		case val := <-resultCh:
+			return val, nil
+		case err := <-errCh:
+			return goja.Undefined(), err
+		case <-time.After(5 * time.Second):
+			return goja.Undefined(), fmt.Errorf("timeout waiting for async result")
+		}
+	}
+	return vm, runJS
 }
 
 // --- join ---
@@ -647,15 +721,19 @@ func TestGlobFindsFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vm := setup(t)
-	_ = vm.Set("testDir", dir)
-	_, err := vm.RunString(`
-		var pattern = path.join(testDir, "*.txt");
-		var r = path.glob(pattern);
-		if (r.error !== null) throw new Error("expected no error, got: " + r.error);
-		if (r.matches === null) throw new Error("expected matches array");
-		if (r.matches.length !== 2) throw new Error("expected 2 matches, got " + r.matches.length);
-	`)
+	_, runJS := asyncTestEnv(t)
+	_, err := runJS(fmt.Sprintf(`
+		var pattern = path.join(%q, "*.txt");
+		path.glob(pattern).then(
+			function(r) {
+				if (r.error !== null) { __collectErr("expected no error, got: " + r.error); return; }
+				if (r.matches === null) { __collectErr("expected matches array"); return; }
+				if (r.matches.length !== 2) { __collectErr("expected 2 matches, got " + r.matches.length); return; }
+				__collect(true);
+			},
+			function(err) { __collectErr(err.toString()); }
+		);
+	`, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -664,14 +742,18 @@ func TestGlobFindsFiles(t *testing.T) {
 func TestGlobNoMatches(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	vm := setup(t)
-	_ = vm.Set("testDir", dir)
-	_, err := vm.RunString(`
-		var pattern = path.join(testDir, "*.nonexistent");
-		var r = path.glob(pattern);
-		if (r.error !== null) throw new Error("expected no error");
-		if (r.matches !== null) throw new Error("expected null for no matches, got: " + JSON.stringify(r.matches));
-	`)
+	_, runJS := asyncTestEnv(t)
+	_, err := runJS(fmt.Sprintf(`
+		var pattern = path.join(%q, "*.nonexistent");
+		path.glob(pattern).then(
+			function(r) {
+				if (r.error !== null) { __collectErr("expected no error, got: " + r.error); return; }
+				if (r.matches !== null) { __collectErr("expected null for no matches, got: " + JSON.stringify(r.matches)); return; }
+				__collect(true);
+			},
+			function(err) { __collectErr(err.toString()); }
+		);
+	`, dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -679,11 +761,16 @@ func TestGlobNoMatches(t *testing.T) {
 
 func TestGlobBadPattern(t *testing.T) {
 	t.Parallel()
-	vm := setup(t)
-	_, err := vm.RunString(`
-		var r = path.glob("[");
-		if (r.error === null) throw new Error("expected error for bad pattern");
-		if (typeof r.error !== "string") throw new Error("expected error string");
+	_, runJS := asyncTestEnv(t)
+	_, err := runJS(`
+		path.glob("[").then(
+			function(r) {
+				if (r.error === null) { __collectErr("expected error for bad pattern"); return; }
+				if (typeof r.error !== "string") { __collectErr("expected error string"); return; }
+				__collect(true);
+			},
+			function(err) { __collectErr(err.toString()); }
+		);
 	`)
 	if err != nil {
 		t.Fatal(err)
@@ -698,15 +785,19 @@ func TestGlobAllFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	vm := setup(t)
-	_ = vm.Set("testDir", dir)
-	_, err := vm.RunString(`
-		var pattern = path.join(testDir, "*");
-		var r = path.glob(pattern);
-		if (r.error !== null) throw new Error("expected no error");
-		if (r.matches === null) throw new Error("expected matches");
-		if (r.matches.length < 2) throw new Error("expected at least 2 matches, got " + r.matches.length);
-	`)
+	_, runJS := asyncTestEnv(t)
+	_, err := runJS(fmt.Sprintf(`
+		var pattern = path.join(%q, "*");
+		path.glob(pattern).then(
+			function(r) {
+				if (r.error !== null) { __collectErr("expected no error, got: " + r.error); return; }
+				if (r.matches === null) { __collectErr("expected matches"); return; }
+				if (r.matches.length < 2) { __collectErr("expected at least 2 matches, got " + r.matches.length); return; }
+				__collect(true);
+			},
+			function(err) { __collectErr(err.toString()); }
+		);
+	`, dir))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,9 +15,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/argv"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/storage"
@@ -66,7 +66,7 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 	} else if input == nil {
 		reader = NewTUIReader() // lazily initializes to stdin
 	} else {
-		reader = NewTUIReaderFromIO(input)
+		reader = NewTUIReaderIO(input)
 	}
 
 	// Check if output is already a *TUIWriter (avoid double-wrapping)
@@ -75,7 +75,7 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 	} else if output == nil {
 		writer = NewTUIWriter() // lazily initializes to stdout
 	} else {
-		writer = NewTUIWriterFromIO(output)
+		writer = NewTUIWriterIO(output)
 	}
 
 	manager := &TUIManager{
@@ -295,9 +295,12 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 	// Release lock before calling OnExit to avoid deadlock when callback accesses state.
 	tm.mu.Unlock()
 
-	// Exit current mode (outside the lock).
+	// Exit current mode (outside the lock) — owner-safe via executeOnLoop (F4).
 	if onExitCallback != nil {
-		if _, err := onExitCallback(goja.Undefined()); err != nil {
+		if err := tm.engine.executeOnLoop(func(rt *goja.Runtime) error {
+			_, err := onExitCallback(goja.Undefined())
+			return err
+		}); err != nil {
 			_, _ = fmt.Fprintf(tm.writer, "Error exiting mode %s: %v\n", currentMode.Name, err)
 		}
 	}
@@ -358,8 +361,12 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 	}
 
 	// N.B. Similarly, mitigate deadlock risk - avoid holding locks while calling OnEnter.
+	// Owner-safe via executeOnLoop (F4) — direct callable invocation would race.
 	if onEnterCallback != nil {
-		if _, err := onEnterCallback(goja.Undefined(), goja.Undefined(), goja.Undefined()); err != nil {
+		if err := tm.engine.executeOnLoop(func(rt *goja.Runtime) error {
+			_, err := onEnterCallback(goja.Undefined(), goja.Undefined(), goja.Undefined())
+			return err
+		}); err != nil {
 			_, _ = fmt.Fprintf(tm.writer, "Error entering mode %s: %v\n", mode.Name, err)
 		}
 	}
@@ -419,11 +426,19 @@ func (tm *TUIManager) buildModeCommands(mode *ScriptMode) error {
 		return nil
 	}
 
-	// Call the CommandsBuilder function
-	// Scripts manage their own state through closures now
-	result, err := mode.CommandsBuilder(goja.Undefined(), goja.Undefined())
-	if err != nil {
+	// Call the CommandsBuilder function — owner-safe via executeOnLoop (F4).
+	var result goja.Value
+	var cbErr error
+	if err := tm.engine.executeOnLoop(func(rt *goja.Runtime) error {
+		var err error
+		result, err = mode.CommandsBuilder(goja.Undefined(), goja.Undefined())
+		cbErr = err
+		return err
+	}); err != nil {
 		return fmt.Errorf("CommandsBuilder failed: %w", err)
+	}
+	if cbErr != nil {
+		return fmt.Errorf("CommandsBuilder failed: %w", cbErr)
 	}
 
 	// Convert result to commands map
@@ -735,23 +750,19 @@ func (tm *TUIManager) ListCommands() []Command {
 	return commands
 }
 
-// Run starts the TUI manager.
+// Run starts the TUIManager.
 func (tm *TUIManager) Run() {
-	// Route engine output through a queue we flush at safe points
-	tm.engine.logger.SetTUISink(func(msg string) {
-		tm.outputMu.Lock()
-		tm.outputQueue = append(tm.outputQueue, msg)
-		tm.outputMu.Unlock()
-	})
-	// Flush any pending output (e.g., from onEnter) before starting prompt
-	tm.flushQueuedOutput()
+	tm.engine.logger.SetTUISink(tm.writeTerminal)
 
 	// Check if script wants to skip the REPL (e.g., after BubbleTea TUI exits in non-interactive mode).
 	// Scripts can set globalThis.__skipREPL = true in __postBubbleTeaExit to prevent REPL launch.
+	// Use owner-safe GetGlobal to avoid main-goroutine vs loop race (F3).
 	skipREPL := false
-	if tm.engine.vm != nil {
-		if skipVal := tm.engine.vm.Get("__skipREPL"); skipVal != nil && !goja.IsUndefined(skipVal) {
-			skipREPL = skipVal.ToBoolean()
+	if val := tm.engine.GetGlobal("__skipREPL"); val != nil {
+		if b, ok := val.(bool); ok {
+			skipREPL = b
+		} else {
+			skipREPL = true
 		}
 	}
 
@@ -793,7 +804,6 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		completer:               completer,
 		initialCommand:          tm.getInitialCommand(),
 		history:                 tm.commandHistory,
-		flushOutput:             true,
 		maxSuggestion:           10,
 		dynamicCompletion:       true,
 		executeHidesCompletions: true,
@@ -824,32 +834,9 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 	// When executor returns false, signal the exit checker to terminate the prompt.
 	// We do NOT call os.Exit here - exit is handled gracefully via ExitChecker.
 	executor := func(line string) {
-		if cfg.flushOutput {
-			tm.flushQueuedOutput()
-		}
-
-		// During command execution, bypass the output queue and write
-		// directly to the terminal. go-prompt is not rendering while the
-		// executor is running, so direct writes are safe and ensure the
-		// user sees output immediately (critical for long-running async
-		// pipeline commands like auto-split). This also ensures ANSI
-		// escape codes reach the terminal unmangled.
-		tm.engine.logger.SetTUISink(nil)
-
 		if !tm.executor(line) {
 			// Signal the prompt to exit via ExitChecker mechanism
 			tm.RequestExit()
-		}
-
-		// Restore output queuing for the prompt rendering cycle.
-		tm.engine.logger.SetTUISink(func(msg string) {
-			tm.outputMu.Lock()
-			tm.outputQueue = append(tm.outputQueue, msg)
-			tm.outputMu.Unlock()
-		})
-
-		if cfg.flushOutput {
-			tm.flushQueuedOutput()
 		}
 	}
 
@@ -1004,23 +991,17 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 	return prompt.New(executor, options...)
 }
 
-// flushQueuedOutput writes any buffered output messages to the terminal
-// using a syncWriter to ensure they hit the PTY immediately. Messages are
-// written verbatim as provided by PrintToTUI/PrintfToTUI, which are
-// responsible for ensuring trailing newlines as needed.
-func (tm *TUIManager) flushQueuedOutput() {
-	tm.outputMu.Lock()
-	queue := tm.outputQueue
-	tm.outputQueue = nil
-	tm.outputMu.Unlock()
-	if len(queue) == 0 {
-		return
-	}
-	for _, m := range queue {
-		// Messages already include any necessary trailing newline.
-		b := unsafe.Slice(unsafe.StringData(m), len(m))
-		_, _ = tm.writer.Write(b)
-	}
+// writeTerminal delivers engine output straight to the terminal writer. The
+// TUIWriter serializes through its dedicated writer goroutine, so this is
+// safe from any goroutine, including promise continuations that fire after
+// the REPL executor has returned. Output printed while go-prompt is mid-render
+// may transiently interleave with a frame; the next keystroke redraws it, and
+// deferring prints instead (the previous queue) silently dropped them for as
+// long as the prompt sat idle. Messages arrive with trailing newlines already
+// applied by PrintToTUI/PrintfToTUI.
+func (tm *TUIManager) writeTerminal(msg string) {
+	b := unsafe.Slice(unsafe.StringData(msg), len(msg))
+	_, _ = tm.writer.Write(b)
 }
 
 // === TEST HELPER METHODS ===

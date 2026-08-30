@@ -23,8 +23,8 @@ func TestChunk07_CreatePRs_NoSplits(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	result, err := evalJS(`
-		(function() {
-			var r = globalThis.prSplit.createPRs({ splits: [] });
+		(async function() {
+			var r = await globalThis.prSplit.createPRs({ splits: [] });
 			return r.error;
 		})()
 	`)
@@ -43,15 +43,15 @@ func TestChunk07_CreatePRs_PushOnly(t *testing.T) {
 
 	// Override _gitExec to track calls and return success.
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var calls = [];
 			var origGitExec = globalThis.prSplit._gitExec;
-			globalThis.prSplit._gitExec = function(dir, args) {
+			globalThis.prSplit._gitExec = async function(dir, args) {
 				calls.push(args.join(' '));
 				if (args[0] === 'push') {
 					return { code: 0, stdout: '', stderr: '' };
 				}
-				return origGitExec(dir, args);
+				return await origGitExec(dir, args);
 			};
 
 			var plan = {
@@ -61,7 +61,7 @@ func TestChunk07_CreatePRs_PushOnly(t *testing.T) {
 					{ name: 'split/02-b', files: ['b.go'], message: 'part 2' }
 				]
 			};
-			var r = globalThis.prSplit.createPRs(plan, { pushOnly: true });
+			var r = await globalThis.prSplit.createPRs(plan, { pushOnly: true });
 
 			// Restore.
 			globalThis.prSplit._gitExec = origGitExec;
@@ -107,20 +107,20 @@ func TestChunk07_CreatePRs_PushFailure(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var origGitExec = globalThis.prSplit._gitExec;
-			globalThis.prSplit._gitExec = function(dir, args) {
+			globalThis.prSplit._gitExec = async function(dir, args) {
 				if (args[0] === 'push') {
 					return { code: 1, stdout: '', stderr: 'remote not found' };
 				}
-				return origGitExec(dir, args);
+				return await origGitExec(dir, args);
 			};
 
 			var plan = {
 				baseBranch: 'main',
 				splits: [{ name: 'split/01-a', files: ['a.go'], message: 'part 1' }]
 			};
-			var r = globalThis.prSplit.createPRs(plan, { pushOnly: true });
+			var r = await globalThis.prSplit.createPRs(plan, { pushOnly: true });
 			globalThis.prSplit._gitExec = origGitExec;
 
 			return JSON.stringify({ error: r.error, pushed: r.results[0].pushed });
@@ -152,16 +152,16 @@ func TestChunk07_CreatePRs_StackingOrder(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var ghCreateCalls = [];
 			var origGitExec = globalThis.prSplit._gitExec;
 			var origExecv = globalThis.prSplit._modules.exec.execv;
 
-			globalThis.prSplit._gitExec = function(dir, args) {
+			globalThis.prSplit._gitExec = async function(dir, args) {
 				if (args[0] === 'push') return { code: 0, stdout: '', stderr: '' };
 				if (args[0] === 'ls-remote') return { code: 0, stdout: 'abc123\trefs/heads/main', stderr: '' };
 				if (args[0] === 'diff' && args.indexOf('--quiet') >= 0) return { code: 1, stdout: '', stderr: '' };
-				return origGitExec(dir, args);
+				return await origGitExec(dir, args);
 			};
 			globalThis.prSplit._modules.exec.execv = function(args) {
 				if (args[0] === 'gh' && args[1] === 'pr' && args[2] === 'create') {
@@ -182,7 +182,7 @@ func TestChunk07_CreatePRs_StackingOrder(t *testing.T) {
 					{ name: 'split/02-b', files: ['b.go'], message: 'second' }
 				]
 			};
-			var r = globalThis.prSplit.createPRs(plan, { draft: true });
+			var r = await globalThis.prSplit.createPRs(plan, { draft: true });
 
 			globalThis.prSplit._gitExec = origGitExec;
 			globalThis.prSplit._modules.exec.execv = origExecv;
@@ -258,7 +258,7 @@ func TestChunk07_CreatePRs_GhNotFound(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var origExecv = globalThis.prSplit._modules.exec.execv;
 			var origGitExec = globalThis.prSplit._gitExec;
 
@@ -270,9 +270,9 @@ func TestChunk07_CreatePRs_GhNotFound(t *testing.T) {
 				return origExecv(args);
 			};
 			// Ensure remote check doesn't block us.
-			globalThis.prSplit._gitExec = function(dir, args) {
+			globalThis.prSplit._gitExec = async function(dir, args) {
 				if (args[0] === 'push') return { code: 0, stdout: '', stderr: '' };
-				return origGitExec(dir, args);
+				return await origGitExec(dir, args);
 			};
 
 			var plan = {
@@ -280,7 +280,7 @@ func TestChunk07_CreatePRs_GhNotFound(t *testing.T) {
 				splits: [{ name: 'split/01-a', files: ['a.go'], message: 'part 1' }]
 			};
 			// NOT pushOnly → should check for gh CLI.
-			var r = globalThis.prSplit.createPRs(plan, { pushOnly: false });
+			var r = await globalThis.prSplit.createPRs(plan, { pushOnly: false });
 
 			globalThis.prSplit._modules.exec.execv = origExecv;
 			globalThis.prSplit._gitExec = origGitExec;
@@ -322,7 +322,7 @@ func TestChunk07_CreatePRs_RemoteBranchNotFound(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var origExecv = globalThis.prSplit._modules.exec.execv;
 			var origGitExec = globalThis.prSplit._gitExec;
 
@@ -332,18 +332,18 @@ func TestChunk07_CreatePRs_RemoteBranchNotFound(t *testing.T) {
 				}
 				return origExecv(args);
 			};
-			globalThis.prSplit._gitExec = function(dir, args) {
+			globalThis.prSplit._gitExec = async function(dir, args) {
 				if (args[0] === 'ls-remote') {
 					return { code: 0, stdout: '', stderr: '' }; // empty = not found
 				}
-				return origGitExec(dir, args);
+				return await origGitExec(dir, args);
 			};
 
 			var plan = {
 				baseBranch: 'nonexistent-branch',
 				splits: [{ name: 'split/01-a', files: ['a.go'], message: 'part 1' }]
 			};
-			var r = globalThis.prSplit.createPRs(plan, {});
+			var r = await globalThis.prSplit.createPRs(plan, {});
 
 			globalThis.prSplit._modules.exec.execv = origExecv;
 			globalThis.prSplit._gitExec = origGitExec;

@@ -18,20 +18,20 @@ import (
 //	  -ollama-command=ollama \
 //	  ./internal/command/...
 //
-// Or with Claude Code:
+// Or with Agent Code:
 //
 //	go test -race -v -count=1 -integration \
-//	  -claude-command=ollama -claude-arg=launch -claude-arg=claude \
-//	  -claude-arg=--model=minimax-m2.5:cloud -claude-arg=-- \
-//	  ./internal/command/... -run 'TestIntegration_.*Claude'
+//	  -agent-command=ollama -agent-arg=launch -agent-arg=agent \
+//	  -agent-arg=--model=minimax-m2.5:cloud -agent-arg=-- \
+//	  ./internal/command/... -run 'TestIntegration_.*Agent'
 var (
 	integrationEnabled bool
 	ollamaCommand      string
 	integrationModel   string
 
-	// Claude Code test configuration — passed to auto-split integration tests.
-	claudeTestCommand string          // path/name of the Claude binary
-	claudeTestArgs    stringSliceFlag // additional CLI arguments (repeatable)
+	// Agent Code test configuration — passed to auto-split integration tests.
+	agentTestCommand string          // path/name of the Agent binary
+	agentTestArgs    stringSliceFlag // additional CLI arguments (repeatable)
 )
 
 func TestMain(m *testing.M) {
@@ -41,10 +41,10 @@ func TestMain(m *testing.M) {
 		"path to ollama binary for integration tests (empty = skip ollama tests)")
 	flag.StringVar(&integrationModel, "integration-model", "minimax-m2.5:cloud",
 		"model to use for integration tests")
-	flag.StringVar(&claudeTestCommand, "claude-command", "",
-		"path to Claude binary for pr-split integration tests (empty = skip Claude tests)")
-	flag.Var(&claudeTestArgs, "claude-arg",
-		"additional CLI argument for Claude binary (repeatable, e.g. -claude-arg=launch -claude-arg=claude)")
+	flag.StringVar(&agentTestCommand, "agent-command", "",
+		"path to Agent binary for pr-split integration tests (empty = skip Agent tests)")
+	flag.Var(&agentTestArgs, "agent-arg",
+		"additional CLI argument for Agent binary (repeatable, e.g. -agent-arg=launch -agent-arg=agent)")
 	flag.Parse()
 	os.Exit(m.Run())
 }
@@ -77,33 +77,33 @@ func skipIfNoOllama(t *testing.T) {
 	}
 }
 
-// skipIfNoClaude skips the calling test if -claude-command was not provided.
-func skipIfNoClaude(t *testing.T) {
+// skipIfNoAgent skips the calling test if -agent-command was not provided.
+func skipIfNoAgent(t *testing.T) {
 	t.Helper()
 	skipIfNotIntegration(t)
-	if claudeTestCommand == "" {
-		t.Skip("Claude integration tests disabled; use -claude-command=<path> to enable")
+	if agentTestCommand == "" {
+		t.Skip("Agent integration tests disabled; use -agent-command=<path> to enable")
 	}
 }
 
-// verifyClaudeAuth runs a minimal Claude -p (print/headless) check to
-// verify the configured Claude command is authenticated and functional.
-// Skips the test if Claude cannot process a prompt (e.g., not logged in,
+// verifyAgentAuth runs a minimal Agent -p (print/headless) check to
+// verify the configured Agent command is authenticated and functional.
+// Skips the test if Agent cannot process a prompt (e.g., not logged in,
 // no API key, model unavailable).
 //
-// This catches the common failure mode where Claude Code's interactive TUI
-// shows "Not logged in · Run /login" — in TUI mode, authentication is
+// This catches the common failure mode where an agent CLI's interactive TUI
+// shows a "not logged in" prompt — in TUI mode, authentication is
 // required and prompts won't be processed without it.
-func verifyClaudeAuth(t *testing.T) {
+func verifyAgentAuth(t *testing.T) {
 	t.Helper()
 
 	args := []string{"-p", "Reply with exactly: AUTH_OK", "--max-turns", "1"}
 	if integrationModel != "" {
 		args = append(args, "--model", integrationModel)
 	}
-	// Copy any extra Claude args (but filter out --dangerously-skip-permissions
+	// Copy any extra Agent args (but filter out --dangerously-skip-permissions
 	// which is for interactive mode only).
-	for _, a := range claudeTestArgs {
+	for _, a := range agentTestArgs {
 		if a != "--dangerously-skip-permissions" {
 			args = append(args, a)
 		}
@@ -112,17 +112,17 @@ func verifyClaudeAuth(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	t.Logf("verifyClaudeAuth: running %s %s", claudeTestCommand, strings.Join(args, " "))
-	cmd := exec.CommandContext(ctx, claudeTestCommand, args...)
+	t.Logf("verifyAgentAuth: running %s %s", agentTestCommand, strings.Join(args, " "))
+	cmd := exec.CommandContext(ctx, agentTestCommand, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Skipf("Claude auth check failed (run 'claude login' or set ANTHROPIC_API_KEY):\n  command: %s %s\n  error: %v\n  output: %s",
-			claudeTestCommand, strings.Join(args, " "), err, string(out))
+		t.Skipf("Agent auth check failed (run 'agent login' or set ANTHROPIC_API_KEY):\n  command: %s %s\n  error: %v\n  output: %s",
+			agentTestCommand, strings.Join(args, " "), err, string(out))
 	}
 	if !strings.Contains(string(out), "AUTH_OK") {
-		t.Logf("verifyClaudeAuth: Claude responded but did not contain AUTH_OK: %s", string(out))
-		// Still proceed — Claude is at least functional even if it didn't follow
+		t.Logf("verifyAgentAuth: Agent responded but did not contain AUTH_OK: %s", string(out))
+		// Still proceed — Agent is at least functional even if it didn't follow
 		// the exact instruction. The important thing is that it responded at all.
 	}
-	t.Log("verifyClaudeAuth: Claude is authenticated and functional")
+	t.Log("verifyAgentAuth: Agent is authenticated and functional")
 }

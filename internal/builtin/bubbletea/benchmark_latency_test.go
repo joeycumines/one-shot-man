@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // ============================================================================
@@ -25,9 +25,9 @@ import (
 //   - allocs/op: Number of allocations per operation
 // ============================================================================
 
-// BenchmarkJsToTeaMsg_KeyMsg measures the time to convert a JS key event
+// BenchmarkParseMsg_KeyMsg measures the time to convert a JS key event
 // object to a Go tea.KeyPressMsg. This is called for EVERY key press.
-func BenchmarkJsToTeaMsg_KeyMsg(b *testing.B) {
+func BenchmarkParseMsg_KeyMsg(b *testing.B) {
 	runtime := goja.New()
 
 	// Create a realistic key event object (simulating what JS would send)
@@ -52,17 +52,17 @@ func BenchmarkJsToTeaMsg_KeyMsg(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		msg := JsToTeaMsg(runtime, obj)
+		msg := ParseMsg(runtime, obj)
 		if msg == nil {
-			b.Fatal("JsToTeaMsg returned nil")
+			b.Fatal("ParseMsg returned nil")
 		}
 		// Prevent compiler optimization
 		_ = msg
 	}
 }
 
-// BenchmarkJsToTeaMsg_MouseMsg measures mouse event conversion time.
-func BenchmarkJsToTeaMsg_MouseMsg(b *testing.B) {
+// BenchmarkParseMsg_MouseMsg measures mouse event conversion time.
+func BenchmarkParseMsg_MouseMsg(b *testing.B) {
 	runtime := goja.New()
 
 	mouseEventJS := `({
@@ -83,13 +83,13 @@ func BenchmarkJsToTeaMsg_MouseMsg(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		msg := JsToTeaMsg(runtime, obj)
+		msg := ParseMsg(runtime, obj)
 		_ = msg
 	}
 }
 
-// BenchmarkJsToTeaMsg_WindowSizeMsg measures window size event conversion.
-func BenchmarkJsToTeaMsg_WindowSizeMsg(b *testing.B) {
+// BenchmarkParseMsg_WindowSizeMsg measures window size event conversion.
+func BenchmarkParseMsg_WindowSizeMsg(b *testing.B) {
 	runtime := goja.New()
 
 	sizeEventJS := `({
@@ -108,7 +108,7 @@ func BenchmarkJsToTeaMsg_WindowSizeMsg(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		msg := JsToTeaMsg(runtime, obj)
+		msg := ParseMsg(runtime, obj)
 		_ = msg
 	}
 }
@@ -241,7 +241,7 @@ func BenchmarkValueToCmd_Batch(b *testing.B) {
 }
 
 // BenchmarkParseKey measures ParseKey performance for common keys.
-// ParseKey is called during JsToTeaMsg for every key event.
+// ParseKey is called during ParseMsg for every key event.
 func BenchmarkParseKey_Rune(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -275,7 +275,7 @@ func BenchmarkParseKey_Modifier(b *testing.B) {
 
 // BenchmarkFullKeyPipeline simulates the full path of a key event:
 // 1. Create JS key event object
-// 2. Convert to Go tea.KeyPressMsg (JsToTeaMsg)
+// 2. Convert to Go tea.KeyPressMsg (ParseMsg)
 // 3. Convert back to JS (msgToJS)
 // 4. Extract command from response (valueToCmd with tick)
 func BenchmarkFullKeyPipeline(b *testing.B) {
@@ -298,7 +298,7 @@ func BenchmarkFullKeyPipeline(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		// Step 1: JS object → Go tea.Msg (input direction)
-		msg := JsToTeaMsg(runtime, keyObj)
+		msg := ParseMsg(runtime, keyObj)
 
 		// Step 2: Go tea.Msg → JS object (for update callback)
 		jsMsg := model.msgToJS(msg)

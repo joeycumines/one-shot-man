@@ -11,7 +11,6 @@ internal/mouseharness/*
 internal\mouseharness\*
 internal/command/prsplittest/*
 internal\command\prsplittest\*
-
 # Cross-package test helpers — exported for use by external test packages.
 # ctxutil: used from ctxutil_test (external package).
 internal/builtin/ctxutil/ctxutil.go:*: unreachable func: SetRunGitDiffFn
@@ -32,8 +31,8 @@ internal\scripting\runtime.go:*: unreachable func: NewRuntime
 # Storage test helpers — used from scripting_test, benchmark_test, etc. (external packages).
 internal/storage/atomic_write.go:*: unreachable func: SetTestHookCrashBeforeRename
 internal\storage\atomic_write.go:*: unreachable func: SetTestHookCrashBeforeRename
-internal/storage/memory_backend.go:*: unreachable func: ClearAllInMemorySessions
-internal\storage\memory_backend.go:*: unreachable func: ClearAllInMemorySessions
+internal/storage/memory_backend.go:*: unreachable func: ClearAllMemorySessions
+internal\storage\memory_backend.go:*: unreachable func: ClearAllMemorySessions
 internal/storage/paths.go:*: unreachable func: SetTestPaths
 internal\storage\paths.go:*: unreachable func: SetTestPaths
 internal/storage/paths.go:*: unreachable func: ResetPaths
@@ -47,8 +46,8 @@ internal/scripting/debug_assertions_stub.go:*: unreachable func: TUIManager.debu
 internal\scripting\debug_assertions_stub.go:*: unreachable func: TUIManager.debugAssertInWriteContext
 
 # SyncJSRunner — test helper used across bubbletea, textarea, pickandplace packages.
-internal/builtin/bubbletea/testing.go:*: unreachable func: SyncJSRunner.RunJSSync
-internal\builtin\bubbletea\testing.go:*: unreachable func: SyncJSRunner.RunJSSync
+internal/builtin/bubbletea/testing.go:*: unreachable func: SyncJSRunner.RunSync
+internal\builtin\bubbletea\testing.go:*: unreachable func: SyncJSRunner.RunSync
 
 # PA-BT module exports — called from JavaScript via Goja runtime (not visible to deadcode analyzer).
 internal/builtin/pabt/*: unreachable func: *
@@ -62,4 +61,27 @@ internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: Handle.Injec
 internal/builtin/mcpcallbackmod/mcpcallback.go:*: unreachable func: Handle.Address
 internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: Handle.Address
 internal/builtin/mcpcallbackmod/mcpcallback.go:*: unreachable func: mcpCallback.injectToolResult
+
+# vtassert — visual regression helpers used from *_vtassert_test.go in other packages.
+internal/vtassert/*: unreachable func: *
+internal\vtassert\*: unreachable func: *
+
+# VHS tape builder, RecordingContext, InputCaptureRecorder — test helpers used from recording_demos_unix_test.go and vhs_record_test.go (external packages).
+internal/vhs/*: unreachable func: *
+internal\vhs\*: unreachable func: *
+
+# termui scrollbar — Go API methods called from JS binding layer via Goja runtime (not visible to deadcode).
+internal/termui/scrollbar/scrollbar.go:*: unreachable func: Model.*
+internal\termui\scrollbar\scrollbar.go:*: unreachable func: Model.*
+
+# termui coordinate — Go API methods called from JS binding layer via Goja runtime.
+internal/termui/coordinate/coordinate.go:*: unreachable func: FromPaneGeometry
+internal\termui\coordinate\coordinate.go:*: unreachable func: FromPaneGeometry
 internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: mcpCallback.injectToolResult
+internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: mcpCallback.injectToolResult
+
+# JS compliance harness — test-only quantified suites, not reachable from main without -test (see go doc deadcode -test).
+internal/jscompliance/test262/*: unreachable func: *
+internal\jscompliance\test262\*: unreachable func: *
+internal/jscompliance/goja_compat/*: unreachable func: *
+internal\jscompliance\goja_compat\*: unreachable func: *

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/dop251/goja"
 	bt "github.com/joeycumines/go-behaviortree"
+	"github.com/joeycumines/goja"
 )
 
 // nodeUnwrap extracts a bt.Node from a goja.Value.
@@ -23,7 +23,7 @@ import (
 // a native bt.Node, vm can be nil.
 //
 // Thread Safety: The returned bt.Node is safe to use from any goroutine.
-// JS execution happens on the event loop via Bridge.RunOnLoop.
+// JS execution happens on the event loop via Bridge.Run.
 func nodeUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Node, error) {
 	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 		return nil, errors.New("nodeUnwrap: value is nil or undefined")
@@ -60,15 +60,15 @@ func nodeUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Node, erro
 		var jsErr error
 
 		// Execute the JS function on the event loop synchronously
-		// Use TryRunOnLoopSync to avoid deadlock when called from within event loop
-		err := bridge.TryRunOnLoopSync(vm, func(loopVm *goja.Runtime) error {
+		// Use TryRunSync to avoid deadlock when called from within event loop
+		err := bridge.TryRunSync(vm, func(loopVm *goja.Runtime) error {
 			result, err := jsFn(goja.Undefined())
 			if err != nil {
 				return fmt.Errorf("JS node function error: %w", err)
 			}
 
 			// Result should be an array [tick, children]
-			resultObj := result.ToObject(loopVm) // LOW #11 FIX: Use loopVm
+			resultObj := result.ToObject(loopVm)
 			if resultObj == nil {
 				return errors.New("JS node function must return [tick, children] array")
 			}
@@ -79,7 +79,7 @@ func nodeUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Node, erro
 				return errors.New("JS node function must return tick as first element")
 			}
 
-			tick, jsErr = tickUnwrap(bridge, loopVm, tickVal) // LOW #11 FIX: Use loopVm
+			tick, jsErr = tickUnwrap(bridge, loopVm, tickVal)
 			if jsErr != nil {
 				return fmt.Errorf("failed to unwrap tick: %w", jsErr)
 			}
@@ -87,7 +87,7 @@ func nodeUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Node, erro
 			// Get children (index 1) - may be undefined/null for leaves
 			childrenVal := resultObj.Get("1")
 			if childrenVal != nil && !goja.IsUndefined(childrenVal) && !goja.IsNull(childrenVal) {
-				childrenObj := childrenVal.ToObject(loopVm) // LOW #11 FIX: Use loopVm
+				childrenObj := childrenVal.ToObject(loopVm)
 				if childrenObj != nil {
 					length := childrenObj.Get("length")
 					if length != nil && !goja.IsUndefined(length) {
@@ -95,7 +95,7 @@ func nodeUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Node, erro
 						children = make([]bt.Node, 0, n)
 						for i := range n {
 							childVal := childrenObj.Get(fmt.Sprintf("%d", i))
-							child, err := nodeUnwrap(bridge, loopVm, childVal) // LOW #11 FIX: Use loopVm
+							child, err := nodeUnwrap(bridge, loopVm, childVal)
 							if err != nil {
 								return fmt.Errorf("failed to unwrap child %d: %w", i, err)
 							}
@@ -142,7 +142,7 @@ func nodeUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Node, erro
 // on the event loop and blocks until the Promise resolves.
 //
 // Thread Safety: The returned bt.Tick is safe to use from any goroutine.
-// JS execution happens on the event loop via Bridge.RunOnLoop.
+// JS execution happens on the event loop via Bridge.Run.
 func tickUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Tick, error) {
 	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 		return nil, errors.New("tickUnwrap: value is nil or undefined")
@@ -169,10 +169,10 @@ func tickUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Tick, erro
 	// Per bt.d.ts: Tick = (children: Node[]) => Promise<Status>
 	// CRITICAL: This Tick may be called from Go Ticker goroutine, which is concurrent
 	// with the JS event loop. To avoid data races, all JS access MUST go through
-	// bridge.RunOnLoopSync to ensure it executes on the event loop thread.
+	// bridge.RunSync to ensure it executes on the event loop thread.
 	return func(children []bt.Node) (bt.Status, error) {
 		// Synchronous path: try calling the JS function directly on the event loop
-		// MUST use RunOnLoopSync to avoid data race - accessing vm* from concurrent goroutine
+		// MUST use RunSync to avoid data race - accessing vm* from concurrent goroutine
 		var syncResult bt.Status = bt.Running // Default to Running for async safety
 		var syncErr error
 
@@ -181,9 +181,9 @@ func tickUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Tick, erro
 			return bt.Failure, errors.New("vm is required for JS function unwrapping")
 		}
 
-		// All JS execution must happen on the event loop via RunOnLoopSync
-		// Use TryRunOnLoopSync to avoid deadlock when called from within event loop
-		err := bridge.TryRunOnLoopSync(vm, func(loopVm *goja.Runtime) error {
+		// All JS execution must happen on the event loop via RunSync
+		// Use TryRunSync to avoid deadlock when called from within event loop
+		err := bridge.TryRunSync(vm, func(loopVm *goja.Runtime) error {
 			defer func() {
 				if r := recover(); r != nil {
 					syncErr = fmt.Errorf("panic in JS tick: %v", r)
@@ -216,10 +216,10 @@ func tickUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Tick, erro
 				// It's an object - check if it has a callable 'then' property (Promise signature)
 				obj := retVal.ToObject(loopVm)
 				if thenProp := obj.Get("then"); thenProp != nil && !goja.IsUndefined(thenProp) {
-					// HIGH #1 FIX: Verify 'then' is actually callable (a function)
+					// Verify 'then' is actually callable (a function).
 					// This prevents false positives from objects like {then: "value"}
 					if _, callable := goja.AssertFunction(thenProp); callable {
-						// CRITICAL FIX: Reject async functions to prevent infinite Promise loop
+						// Reject async functions to prevent infinite Promise loop.
 						// Async functions return a Promise that would be discarded, creating
 						// a memory leak and infinite Running state. User must use bt.createLeafNode()
 						// for async behavior, not raw bt.node() with async functions.
@@ -244,7 +244,7 @@ func tickUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Tick, erro
 		})
 
 		if err != nil {
-			// TryRunOnLoopSync failed (bridge stopped, etc.)
+			// TryRunSync failed (bridge stopped, etc.)
 			return bt.Failure, err
 		}
 
@@ -253,8 +253,8 @@ func tickUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Tick, erro
 			return bt.Failure, syncErr
 		}
 
-		// CRITICAL FIX: No async path - we reject async functions explicitly above
-		// This prevents the infinite Promise loop bug where Promises were discarded
+		// No async path — we reject async functions explicitly above.
+		// This prevents the infinite Promise loop bug where Promises were discarded.
 
 		// Return the sync result (must be Success, Failure, or Running)
 		return syncResult, nil

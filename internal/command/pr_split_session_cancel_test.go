@@ -66,7 +66,7 @@ func TestSessionPersistence_ConversationHistory(t *testing.T) {
 	}
 
 	// Save plan (includes conversations in snapshot).
-	val, err = evalJS(`JSON.stringify(savePlan())`)
+	val, err = evalJS(`JSON.stringify(await savePlan())`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestSessionPersistence_ConversationHistory(t *testing.T) {
 	}
 
 	// Load plan (should restore conversations).
-	val, err = evalJS(`JSON.stringify(loadPlan())`)
+	val, err = evalJS(`JSON.stringify(await loadPlan())`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestVerifySplit_TUIOutput(t *testing.T) {
 	// Call verifySplit with an outputFn that captures lines.
 	val, err := evalJS(`(function() {
 		var captured = [];
-		var result = verifySplit('split/test', {
+		var result = await verifySplit('split/test', {
 			dir: '` + escapedDir + `',
 			verifyCommand: 'echo "line1" && echo "line2" && echo "line3"',
 			outputFn: function(line) { captured.push(line); }
@@ -371,7 +371,7 @@ func TestExecuteSplit_ProgressFeedback(t *testing.T) {
 				{ name: 'split/batch-2', files: [` + strings.Join(split2Files, ",") + `], message: 'batch 2' }
 			]
 		};
-		var result = executeSplit(plan, {
+		var result = await executeSplit(plan, {
 			progressFn: function(msg) { messages.push(msg); }
 		});
 		return JSON.stringify({ error: result.error, messages: messages });
@@ -499,7 +499,7 @@ func TestResolveConflicts_RestoresBranchOnError(t *testing.T) {
 			perBranchRetryBudget: 1
 		});
 		// Check which branch we're on now.
-		var currentBranch = gitExec('` + escapedDir + `', ['rev-parse', '--abbrev-ref', 'HEAD']);
+		var currentBranch = await gitExec('` + escapedDir + `', ['rev-parse', '--abbrev-ref', 'HEAD']);
 		return JSON.stringify({
 			errors: result.errors,
 			currentBranch: currentBranch.stdout.trim()
@@ -603,7 +603,7 @@ func TestResolveConflicts_CancellationDuringStrategyLoop(t *testing.T) {
 		});
 		isCancelled = origIsCancelled;
 		// Check which branch we're on.
-		var currentBranch = gitExec('` + escapedDir + `', ['rev-parse', '--abbrev-ref', 'HEAD']);
+		var currentBranch = await gitExec('` + escapedDir + `', ['rev-parse', '--abbrev-ref', 'HEAD']);
 		return JSON.stringify({
 			cancelledByUser: result.cancelledByUser || false,
 			totalRetries: result.totalRetries,
@@ -723,10 +723,10 @@ func TestExecuteSplit_CancellationMidFile(t *testing.T) {
 				{ name: 'split/big', files: [` + strings.Join(fileNames, ",") + `], message: 'big branch' }
 			]
 		};
-		var result = executeSplit(plan, {});
+		var result = await executeSplit(plan, {});
 		isCancelled = origIsCancelled;
 		// Check which branch we're on.
-		var currentBranch = gitExec('` + escapedDir + `', ['rev-parse', '--abbrev-ref', 'HEAD']);
+		var currentBranch = await gitExec('` + escapedDir + `', ['rev-parse', '--abbrev-ref', 'HEAD']);
 		return JSON.stringify({
 			error: result.error,
 			currentBranch: currentBranch.stdout.trim()
@@ -765,7 +765,7 @@ func TestExecuteSplit_CancellationMidFile(t *testing.T) {
 // cancellation. It verifies:
 //
 //  1. finishTUI emits resume instructions (plan path + osm pr-split --resume)
-//  2. The mock Claude executor's close() is NOT called (heuristic fallback
+//  2. The mock Agent executor's close() is NOT called (heuristic fallback
 //     path never spawns a process, so no process cleanup is needed)
 //  3. The pipeline exits with a cancellation-related error
 func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
@@ -791,24 +791,24 @@ func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Mock ClaudeCodeExecutor to track close() calls and fail resolve
+	// Mock AgentCodeExecutor to track close() calls and fail resolve
 	// (forcing heuristic fallback).
 	if _, err := tp.EvalJS(`
 		var _executorClosed = false;
-		ClaudeCodeExecutor = function(config) { this.config = config; };
-		ClaudeCodeExecutor.prototype.resolve = function() {
-			return { error: 'claude not found' };
+		AgentCodeExecutor = function(config) { this.config = config; };
+		AgentCodeExecutor.prototype.resolve = function() {
+			return { error: 'agent not found' };
 		};
-		ClaudeCodeExecutor.prototype.resolveAsync = async function() {
-			return { error: 'claude not found' };
+		AgentCodeExecutor.prototype.resolveAsync = async function() {
+			return { error: 'agent not found' };
 		};
-		ClaudeCodeExecutor.prototype.spawn = function() {
+		AgentCodeExecutor.prototype.spawn = function() {
 			return { error: 'not resolved' };
 		};
-		ClaudeCodeExecutor.prototype.close = function() {
+		AgentCodeExecutor.prototype.close = function() {
 			_executorClosed = true;
 		};
-		ClaudeCodeExecutor.prototype.kill = function() {};
+		AgentCodeExecutor.prototype.kill = function() {};
 	`); err != nil {
 		t.Fatalf("mock setup: %v", err)
 	}
@@ -902,7 +902,7 @@ func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
 	}
 
 	// Note: executor close() is NOT called on the heuristic fallback path
-	// because cleanupExecutor() is only invoked in the Claude execution
+	// because cleanupExecutor() is only invoked in the Agent execution
 	// loop (in the pipeline chunk). When resolve() fails
 	// and the pipeline falls back to heuristic mode, the executor object
 	// exists but was never spawned, so no process cleanup is needed.
@@ -955,7 +955,7 @@ func TestVerifySplits_CancellationMidIteration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 		dir: '/tmp/test',
 		sourceBranch: 'feature',
 		verifyCommand: 'make test',

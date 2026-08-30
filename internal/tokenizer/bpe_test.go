@@ -285,11 +285,6 @@ func TestBPETokenizeWithAndWithoutDropout(t *testing.T) {
 	}
 }
 
-//go:fix inline
-func ptr[T any](v T) *T {
-	return new(v)
-}
-
 func TestBPEWithDropout0(t *testing.T) {
 	bpe, err := NewBpeBuilder().WithDropout(0.0).Build()
 	if err != nil {
@@ -348,9 +343,9 @@ func TestBPEFromFile(t *testing.T) {
 	vocabReader := strings.NewReader(vocabJSON)
 	mergesReader := strings.NewReader(mergesText)
 
-	bpe, err := LoadBPEFromFiles(vocabReader, mergesReader)
+	bpe, err := LoadBPEFiles(vocabReader, mergesReader)
 	if err != nil {
-		t.Fatalf("LoadBPEFromFiles failed: %v", err)
+		t.Fatalf("LoadBPEFiles failed: %v", err)
 	}
 
 	// Check merge
@@ -386,7 +381,7 @@ func TestBPEFromFileMergeTokenOOV(t *testing.T) {
 	vocabReader := strings.NewReader(vocabJSON)
 	mergesReader := strings.NewReader(mergesText)
 
-	_, err := LoadBPEFromFiles(vocabReader, mergesReader)
+	_, err := LoadBPEFiles(vocabReader, mergesReader)
 	if err == nil {
 		t.Fatal("expected error for merge token out of vocabulary, got nil")
 	}
@@ -403,7 +398,7 @@ func TestBPEFromFileBadMerges(t *testing.T) {
 	vocabReader := strings.NewReader(vocabJSON)
 	mergesReader := strings.NewReader(mergesText)
 
-	_, err := LoadBPEFromFiles(vocabReader, mergesReader)
+	_, err := LoadBPEFiles(vocabReader, mergesReader)
 	if err == nil {
 		t.Fatal("expected error for bad merges, got nil")
 	}

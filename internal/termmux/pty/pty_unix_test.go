@@ -30,8 +30,7 @@ func TestPTYSpawn_ForceKill_OrphanSurvival(t *testing.T) {
 	// 2. Prints the background process PID
 	// 3. Waits a moment for output to flush
 	proc, err := Spawn(context.Background(), SpawnConfig{
-		Command: "sh",
-		Args:    []string{"-c", "sleep 3600 & echo CHILD_PID=$!; sleep 1"},
+		Command: buildChildPidProgram(t),
 	})
 	if err != nil {
 		t.Fatalf("Spawn failed: %v", err)
@@ -48,13 +47,13 @@ func TestPTYSpawn_ForceKill_OrphanSurvival(t *testing.T) {
 		default:
 		}
 		data, readErr := proc.Read()
-		if data != "" {
-			output.WriteString(data)
+		if len(data) > 0 {
+			output.Write(data)
 		}
 		if strings.Contains(output.String(), "CHILD_PID=") {
 			break
 		}
-		if readErr != nil && data == "" {
+		if readErr != nil && len(data) == 0 {
 			t.Fatalf("read error before CHILD_PID: %v, output so far: %q", readErr, output.String())
 		}
 	}

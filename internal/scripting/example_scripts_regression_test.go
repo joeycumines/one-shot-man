@@ -51,17 +51,93 @@ func loadExampleProgram(t *testing.T, engine *Engine, scriptName string) {
 		}
 	}
 
-	const modelStart = "const program = tea.newModel({"
+	// Script-specific modelStart patterns (variable name and declaration keyword vary).
+	modelStarts := map[string]string{
+		"example-15-bouncing-logo.js": "var program = tea.newModel({",
+	}
+	modelStart, ok := modelStarts[scriptName]
+	if !ok {
+		modelStart = "const program = tea.newModel({"
+	}
 	if !strings.Contains(source, modelStart) {
-		t.Fatalf("%s missing expected tea.newModel declaration", scriptName)
+		t.Fatalf("%s missing expected tea.newModel declaration %q", scriptName, modelStart)
 	}
 	source = strings.Replace(source, modelStart, "const __programConfig = {", 1)
+
+	// Script-specific source pre-processing before runMarker handling.
+	switch scriptName {
+	case "example-15-bouncing-logo.js":
+		// Stub flag.parse(args) — args is not available in test engine.
+		source = strings.Replace(source, "fs.parse(args)", "fs.parse([])", 1)
+		// Stub termmux session creation — PTY operations fail in test environment.
+		const termmuxStub = `var __regressionTermmux = (function() {
+	var sid = 'test-sid';
+	var session = { close: function() {}, resize: function() {} };
+	var mgr = {
+		resize: function() {},
+		resizeSession: function() {},
+		snapshot: function() { return { plainText: 'mock shell', rows: 10, cols: 30, mouseTracking: 0 }; },
+		input: function() {},
+		close: function() {},
+		activeID: function() { return sid; },
+		sessions: function() { return [{ target: {name:'',kind:'',id:''}, state:'attached', isActive:true, id:sid }]; },
+		enterCopyMode: function() {},
+		exitCopyMode: function() {},
+		isCopyModeActive: function() { return false; }
+	};
+	return { session: session, mgr: mgr, sid: sid };
+})();
+
+var __regressionTermpane = (function() {
+	var bounds = { x: 0, y: 0, width: 80, height: 24 };
+	function updatePaneBounds(b) {
+		bounds.x = b.x;
+		bounds.y = b.y;
+		bounds.width = b.width;
+		bounds.height = b.height;
+	}
+	function paneObj() {
+		return {
+			setBounds: function(r) { updatePaneBounds(r); return this; },
+			bounds: function() { return bounds; },
+			update: function(msg) { return [this, null]; },
+			view: function() {
+				return {
+					content: 'mock shell pane',
+					gen: Date.now(),
+					cursor: { x: 1, y: 1, shape: 'block', blink: false }
+				};
+			},
+			close: function() {},
+			asBubbleteaModel: function() { return { _type: 'bubbleteaGoModel' }; }
+		};
+	}
+	return { termpane: function() { return paneObj(); } };
+})();
+
+var __regressionRequire = require;
+require = function(name) {
+	if (name === 'osm:termmux') {
+		return {
+			newBoundedSession: function() { return Promise.resolve(__regressionTermmux); },
+			newControlRouter: function() { return { handleKey: function() { return {handled:false}; }, inChordMode: function() { return false; } }; },
+			handlePrefixKey: function() { return {action:'Cancel'}; }
+		};
+	}
+	if (name === 'osm:termui/termpane') {
+		return __regressionTermpane;
+	}
+	return __regressionRequire(name);
+};
+`
+		source = termmuxStub + "\n" + source
+	}
 
 	runMarker := "tea.run(program);"
 	switch scriptName {
 	case "minimal-bubbletea-test.js":
 		runMarker = "const result = tea.run(program);"
-	case "example-02-graphical-todo.js", "benchmark-input-latency.js":
+	case "example-02-graphical-todo.js", "benchmark-input-latency.js", "example-13-split-pane.js", "example-15-bouncing-logo.js":
 	default:
 		t.Fatalf("unsupported script %q", scriptName)
 	}
@@ -87,7 +163,7 @@ globalThis.__programConfig = __programConfig;`
 	}
 	source = strings.Replace(source, runMarker, replacement, 1)
 
-	script := engine.LoadScriptFromString(scriptName, source)
+	script := engine.LoadScriptString(scriptName, source)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript(%s) failed: %v", scriptName, err)
 	}
@@ -101,7 +177,7 @@ globalThis.__programConfig = __programConfig;`
 
 func runResultScript(t *testing.T, engine *Engine, name, source string) map[string]any {
 	t.Helper()
-	script := engine.LoadScriptFromString(name, source)
+	script := engine.LoadScriptString(name, source)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript(%s) failed: %v", name, err)
 	}
@@ -225,6 +301,97 @@ __result = {
 	}
 }
 
+func TestExample13SplitPane_InitCreatesCompositorAndStartsTick(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test")
+	}
+	engine := newExampleScriptEngine(t)
+	loadExampleProgram(t, engine, "example-13-split-pane.js")
+
+	result := runResultScript(t, engine, "example-13-regression", `
+var initRes = __programConfig.init();
+var model = initRes[0];
+var cmd = initRes[1];
+
+var viewRes = __programConfig.view(model);
+
+__result = {
+    initIsArray: Array.isArray(initRes),
+    initCmdType: cmd && cmd._cmdType || null,
+    modelHasTick: model.tick === 0,
+    modelHasFocusIdx: model.focusIdx === 0,
+    viewHasContent: typeof viewRes.content === 'string' && viewRes.content.length > 0,
+    viewAltScreen: viewRes.altScreen === true
+};
+`)
+
+	if got := result["initIsArray"]; got != true {
+		t.Fatalf("expected init to return [state, cmd], got %v", got)
+	}
+	if got := result["initCmdType"]; got != "tick" {
+		t.Fatalf("expected init to schedule tick, got %v", got)
+	}
+	if got := result["modelHasTick"]; got != true {
+		t.Fatalf("expected initial model.tick === 0, got %v", got)
+	}
+	if got := result["modelHasFocusIdx"]; got != true {
+		t.Fatalf("expected initial model.focusIdx === 0, got %v", got)
+	}
+	if got := result["viewHasContent"]; got != true {
+		t.Fatalf("expected view to produce non-empty content, got %v", got)
+	}
+	if got := result["viewAltScreen"]; got != true {
+		t.Fatalf("expected view altScreen=true, got %v", got)
+	}
+}
+
+func TestExample13SplitPane_TabCyclesFocusAndQuitExits(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test")
+	}
+	engine := newExampleScriptEngine(t)
+	loadExampleProgram(t, engine, "example-13-split-pane.js")
+
+	result := runResultScript(t, engine, "example-13-regression-tab", `
+var initRes = __programConfig.init();
+var model = initRes[0];
+
+var tickRes = __programConfig.update({ type: 'Tick' }, model);
+model = tickRes[0];
+
+var tabRes = __programConfig.update({ type: 'Key', key: 'tab' }, model);
+var tabModel = tabRes[0];
+
+var secondTabRes = __programConfig.update({ type: 'Key', key: 'tab' }, tabModel);
+
+var quitRes = __programConfig.update({ type: 'Key', key: 'q' }, tabModel);
+
+__result = {
+    tickIncrements: tickRes[0].tick === 1,
+    tabSwitchesFocus: tabModel.focusIdx === 1,
+    secondTabSwitchesBack: secondTabRes[0].focusIdx === 0,
+    quitCmdType: quitRes[1] && quitRes[1]._cmdType || null,
+    tickReschedulesTick: tickRes[1] && tickRes[1]._cmdType || null
+};
+`)
+
+	if got := result["tickIncrements"]; got != true {
+		t.Fatalf("expected tick to increment counter, got %v", got)
+	}
+	if got := result["tabSwitchesFocus"]; got != true {
+		t.Fatalf("expected tab to switch focus from 0 to 1, got %v", got)
+	}
+	if got := result["secondTabSwitchesBack"]; got != true {
+		t.Fatalf("expected second tab to switch focus back to 0, got %v", got)
+	}
+	if got := result["quitCmdType"]; got != "quit" {
+		t.Fatalf("expected q key to produce quit cmd, got %v", got)
+	}
+	if got := result["tickReschedulesTick"]; got != "tick" {
+		t.Fatalf("expected tick to reschedule tick, got %v", got)
+	}
+}
+
 func TestMinimalBubbleteaScript_InitStartsTick(t *testing.T) {
 	engine := newExampleScriptEngine(t)
 	loadExampleProgram(t, engine, "minimal-bubbletea-test.js")
@@ -251,5 +418,64 @@ __result = {
 	}
 	if got := result["tickCmdType"]; got != "tick" {
 		t.Fatalf("expected Tick update to reschedule tick, got %v", got)
+	}
+}
+
+func TestExample15BouncingLogo_InitStartsTick(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test")
+	}
+	engine := newExampleScriptEngine(t)
+	loadExampleProgram(t, engine, "example-15-bouncing-logo.js")
+
+	result := runResultScript(t, engine, "example-15-regression", `
+var initRes = __programConfig.init();
+var model = initRes[0];
+var cmd = initRes[1];
+var viewRes = __programConfig.view(model);
+
+__result = {
+    initIsArray: Array.isArray(initRes),
+    initCmdType: cmd && cmd._cmdType || null,
+    modelHasWidth: model.width === 80,
+    modelHasHeight: model.height === 24,
+    modelHasBounces: model.bounces === 0,
+    modelHasTickCount: model.tickCount === 0,
+    modelHasPaused: model.paused === false,
+    viewHasContent: typeof viewRes.content === 'string' && viewRes.content.length > 0,
+    viewAltScreen: viewRes.altScreen === true,
+    viewMouseMode: viewRes.mouseMode === 'allMotion'
+};
+`)
+
+	if got := result["initIsArray"]; got != true {
+		t.Fatalf("expected init to return [state, cmd], got %v", got)
+	}
+	if got := result["initCmdType"]; got != "tick" {
+		t.Fatalf("expected init to schedule tick, got %v", got)
+	}
+	if got := result["modelHasWidth"]; got != true {
+		t.Fatalf("expected initial model.width === 80, got %v", got)
+	}
+	if got := result["modelHasHeight"]; got != true {
+		t.Fatalf("expected initial model.height === 24, got %v", got)
+	}
+	if got := result["modelHasBounces"]; got != true {
+		t.Fatalf("expected initial model.bounces === 0, got %v", got)
+	}
+	if got := result["modelHasTickCount"]; got != true {
+		t.Fatalf("expected initial model.tickCount === 0, got %v", got)
+	}
+	if got := result["modelHasPaused"]; got != true {
+		t.Fatalf("expected initial model.paused === false, got %v", got)
+	}
+	if got := result["viewHasContent"]; got != true {
+		t.Fatalf("expected view to produce non-empty content, got %v", got)
+	}
+	if got := result["viewAltScreen"]; got != true {
+		t.Fatalf("expected view altScreen=true, got %v", got)
+	}
+	if got := result["viewMouseMode"]; got != true {
+		t.Fatalf("expected view mouseMode='allMotion', got %v", got)
 	}
 }

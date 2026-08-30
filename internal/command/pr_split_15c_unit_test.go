@@ -358,7 +358,7 @@ func TestChunk15c_LiveViewport_WithSessionHelper(t *testing.T) {
 				return {
 					screen: function() { return 'helper session output'; },
 					write: function() {},
-					target: function() { return {name: 'claude', kind: 'pty'}; }
+					target: function() { return {name: 'agent', kind: 'pty'}; }
 				};
 			}
 		};

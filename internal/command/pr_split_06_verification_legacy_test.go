@@ -141,7 +141,7 @@ func TestAnalyzeDiff_EdgeCases(t *testing.T) {
 				_gitResponses['merge-base main feature'] = _gitOk('abc123\n');
 				_gitResponses['diff --name-status abc123 feature'] = _gitOk('A\tpkg/new.go\nM\tcmd/main.go\nD\told/removed.go\n');
 			`,
-			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			call: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
 			checkFn: func(t *testing.T, r analyzeDiffResult) {
 				if len(r.Files) != 3 {
 					t.Fatalf("expected 3 files, got %d: %v", len(r.Files), r.Files)
@@ -167,7 +167,7 @@ func TestAnalyzeDiff_EdgeCases(t *testing.T) {
 				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
 				_gitResponses['diff --name-status base1 dev'] = _gitOk('R100\told/file.go\tnew/file.go\n');
 			`,
-			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			call: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
 			checkFn: func(t *testing.T, r analyzeDiffResult) {
 				if len(r.Files) != 1 {
 					t.Fatalf("expected 1 file, got %d: %v", len(r.Files), r.Files)
@@ -191,7 +191,7 @@ func TestAnalyzeDiff_EdgeCases(t *testing.T) {
 				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
 				_gitResponses['diff --name-status base1 dev'] = _gitOk('C095\tsrc/orig.go\tsrc/copy.go\n');
 			`,
-			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			call: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
 			checkFn: func(t *testing.T, r analyzeDiffResult) {
 				if len(r.Files) != 1 {
 					t.Fatalf("expected 1 file, got %d: %v", len(r.Files), r.Files)
@@ -211,7 +211,7 @@ func TestAnalyzeDiff_EdgeCases(t *testing.T) {
 				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
 				_gitResponses['diff --name-status base1 dev'] = _gitOk('A\tgood.go\nU\tconflict.go\nM\tother.go\n');
 			`,
-			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			call: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
 			checkFn: func(t *testing.T, r analyzeDiffResult) {
 				if r.Error == nil {
 					t.Fatal("expected error for unmerged path")
@@ -235,7 +235,7 @@ func TestAnalyzeDiff_EdgeCases(t *testing.T) {
 				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
 				_gitResponses['diff --name-status base1 dev'] = _gitOk('A\tknown.go\nX\tunknown.go\nM\talso_known.go\n');
 			`,
-			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			call: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
 			checkFn: func(t *testing.T, r analyzeDiffResult) {
 				// X status is not in KNOWN_STATUSES, so unknown.go is skipped.
 				if len(r.Files) != 2 {
@@ -256,7 +256,7 @@ func TestAnalyzeDiff_EdgeCases(t *testing.T) {
 				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
 				_gitResponses['diff --name-status base1 dev'] = _gitOk('T\tlink.txt\n');
 			`,
-			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			call: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
 			checkFn: func(t *testing.T, r analyzeDiffResult) {
 				if len(r.Files) != 1 {
 					t.Fatalf("expected 1 file, got %d", len(r.Files))
@@ -273,7 +273,7 @@ func TestAnalyzeDiff_EdgeCases(t *testing.T) {
 				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
 				_gitResponses['diff --name-status base1 dev'] = _gitOk('');
 			`,
-			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			call: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
 			checkFn: func(t *testing.T, r analyzeDiffResult) {
 				if len(r.Files) != 0 {
 					t.Errorf("expected empty files, got %v", r.Files)
@@ -288,7 +288,7 @@ func TestAnalyzeDiff_EdgeCases(t *testing.T) {
 			setup: `
 				_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitFail('fatal: not a git repo');
 			`,
-			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			call: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
 			checkFn: func(t *testing.T, r analyzeDiffResult) {
 				if r.Error == nil {
 					t.Fatal("expected error on rev-parse failure")
@@ -304,7 +304,7 @@ func TestAnalyzeDiff_EdgeCases(t *testing.T) {
 				_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('dev\n');
 				_gitResponses['merge-base main dev'] = _gitFail('fatal: no merge base');
 			`,
-			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			call: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
 			checkFn: func(t *testing.T, r analyzeDiffResult) {
 				if r.Error == nil {
 					t.Fatal("expected error on merge-base failure")
@@ -324,7 +324,7 @@ func TestAnalyzeDiff_EdgeCases(t *testing.T) {
 				_gitResponses['merge-base main dev'] = _gitOk('base1\n');
 				_gitResponses['diff --name-status base1 dev'] = _gitFail('fatal: ambiguous argument');
 			`,
-			call: `JSON.stringify(globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
+			call: `JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main', dir: '/tmp/test'}))`,
 			checkFn: func(t *testing.T, r analyzeDiffResult) {
 				if r.Error == nil {
 					t.Fatal("expected error on diff failure")
@@ -517,7 +517,7 @@ func TestVerifyEquivalence_EdgeCases(t *testing.T) {
 					t.Fatalf("mock setup failed: %v", err)
 				}
 			}
-			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + tt.planJS + `))`)
+			raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalence(` + tt.planJS + `))`)
 			if err != nil {
 				t.Fatalf("evalJS failed: %v", err)
 			}
@@ -550,7 +550,7 @@ func TestVerifyEquivalenceDetailed_EdgeCases(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			splits: [{name: 'split/last', files: ['a.go']}]
@@ -584,7 +584,7 @@ func TestVerifyEquivalenceDetailed_EdgeCases(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			splits: [{name: 'split/last', files: ['a.go']}]
@@ -610,7 +610,7 @@ func TestVerifyEquivalenceDetailed_EdgeCases(t *testing.T) {
 			t.Fatal(err)
 		}
 		// Empty splits → error from verifyEquivalence base.
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			splits: []
@@ -644,7 +644,7 @@ func TestVerifyEquivalenceDetailed_EdgeCases(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			splits: [{name: 'split/last', files: ['a.go']}]
@@ -682,7 +682,7 @@ func TestExecuteSplit_ValidationErrors(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 			dir: '/tmp/test',
 			baseBranch: 'main',
 			sourceBranch: 'feature',
@@ -706,7 +706,7 @@ func TestExecuteSplit_ValidationErrors(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 			dir: '/tmp/test',
 			baseBranch: 'main',
 			sourceBranch: 'feature',
@@ -740,7 +740,7 @@ func TestExecuteSplit_ValidationErrors(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 			dir: '/tmp/test',
 			baseBranch: 'main',
 			sourceBranch: 'feature',
@@ -769,7 +769,7 @@ func TestExecuteSplit_ValidationErrors(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 			dir: '/tmp/test',
 			baseBranch: 'main',
 			sourceBranch: 'feature',
@@ -793,7 +793,7 @@ func TestExecuteSplit_ValidationErrors(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 			dir: '/tmp/test',
 			baseBranch: 'main',
 			sourceBranch: 'feature',
@@ -841,7 +841,7 @@ func TestVerifySplits_MockExec(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -890,7 +890,7 @@ func TestVerifySplits_MockExec(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -956,7 +956,7 @@ func TestVerifySplits_MockExec(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			verifyCommand: 'true',
@@ -1002,7 +1002,7 @@ func TestVerifySplits_NullPlan(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits(` + tt.expr + `))`)
+			raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits(` + tt.expr + `))`)
 			if err != nil {
 				t.Fatalf("evalJS failed: %v", err)
 			}
@@ -1031,7 +1031,7 @@ func TestVerifyEquivalence_NullPlan(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + tt.expr + `))`)
+			raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalence(` + tt.expr + `))`)
 			if err != nil {
 				t.Fatalf("evalJS failed: %v", err)
 			}
@@ -1060,7 +1060,7 @@ func TestVerifyEquivalenceDetailed_NullPlan(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed(` + tt.expr + `))`)
+			raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed(` + tt.expr + `))`)
 			if err != nil {
 				t.Fatalf("evalJS failed: %v", err)
 			}
@@ -1112,7 +1112,7 @@ func TestVerifySplits_SkipsDependencyFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -1174,7 +1174,7 @@ func TestVerifySplits_SkipsDependencyFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -1226,7 +1226,7 @@ func TestVerifySplits_PerBranchTimeout(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			verifyCommand: 'sleep 999',
@@ -1260,7 +1260,7 @@ func TestVerifySplits_PerBranchTimeout(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -1295,7 +1295,7 @@ func TestVerifySplits_PerBranchTimeout(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -1356,7 +1356,7 @@ func TestVerifySplits_FailedBranch_AllPassedFalse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 		dir: '/tmp/test',
 		sourceBranch: 'feature',
 		verifyCommand: 'make',
@@ -1414,7 +1414,7 @@ func TestVerifyStepReportsErrorOnFailure(t *testing.T) {
 
 	// Simulate the verify step callback logic from automatedSplit.
 	// verifySplits returns allPassed:false with one branch failing.
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		// Set up git mock so verifySplits runs against two branches:
 		// branch 1 passes, branch 2 fails.
 		_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
@@ -1437,7 +1437,7 @@ func TestVerifyStepReportsErrorOnFailure(t *testing.T) {
 			]
 		};
 
-		var verifyObj = verifySplits(plan, {});
+		var verifyObj = await verifySplits(plan, {});
 
 		// This mirrors the code in automatedSplit "Verify splits" step callback.
 		var realFailures = [];
@@ -1526,12 +1526,12 @@ func TestVerifyStepNoErrorWhenAllPass(t *testing.T) {
 		t.Fatalf("failed to install git mock: %v", err)
 	}
 
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
 		_gitResponses['checkout'] = _gitOk('');
 		_gitResponses['!sh'] = _gitOk('all good');
 
-		var verifyObj = verifySplits({
+		var verifyObj = await verifySplits({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -1949,21 +1949,21 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(`
 			globalThis._testFileExists = {'./Makefile': true};
 			var _osmod = require('osm:os');
-			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
-			var _origLookup = globalThis.prSplit._lookupBinary;
-			globalThis.prSplit._lookupBinary = function(name) {
+			_osmod.fileExists = function(p) { var hit = !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); return { exists: !!hit }; };
+			globalThis._origLookup = globalThis.prSplit._lookupBinary;
+			globalThis.prSplit._lookupBinary = async function(name) {
 				if (name === 'gmake') return { found: false, path: '' };
-				return _origLookup(name);
+				return await globalThis._origLookup(name);
 			};
 		`); err != nil {
 			t.Fatal(err)
 		}
-		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
+		raw, err := evalJS(`await globalThis.prSplit.discoverVerifyCommand('.')`)
 		if err != nil {
 			t.Fatal(err)
 		}
 		// Restore lookup.
-		if _, err := evalJS(`globalThis.prSplit._lookupBinary = _origLookup;`); err != nil {
+		if _, err := evalJS(`globalThis.prSplit._lookupBinary = globalThis._origLookup;`); err != nil {
 			t.Fatal(err)
 		}
 		if raw != "make" {
@@ -1978,20 +1978,20 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(`
 			globalThis._testFileExists = {'./GNUmakefile': true};
 			var _osmod = require('osm:os');
-			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
-			var _origLookup2 = globalThis.prSplit._lookupBinary;
-			globalThis.prSplit._lookupBinary = function(name) {
+			_osmod.fileExists = function(p) { var hit = !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); return { exists: !!hit }; };
+			globalThis._origLookup2 = globalThis.prSplit._lookupBinary;
+			globalThis.prSplit._lookupBinary = async function(name) {
 				if (name === 'gmake') return { found: false, path: '' };
-				return _origLookup2(name);
+				return await globalThis._origLookup2(name);
 			};
 		`); err != nil {
 			t.Fatal(err)
 		}
-		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
+		raw, err := evalJS(`await globalThis.prSplit.discoverVerifyCommand('.')`)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := evalJS(`globalThis.prSplit._lookupBinary = _origLookup2;`); err != nil {
+		if _, err := evalJS(`globalThis.prSplit._lookupBinary = globalThis._origLookup2;`); err != nil {
 			t.Fatal(err)
 		}
 		if raw != "make" {
@@ -2006,20 +2006,20 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(`
 			globalThis._testFileExists = {'./makefile': true};
 			var _osmod = require('osm:os');
-			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
-			var _origLookup3 = globalThis.prSplit._lookupBinary;
-			globalThis.prSplit._lookupBinary = function(name) {
+			_osmod.fileExists = function(p) { var hit = !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); return { exists: !!hit }; };
+			globalThis._origLookup3 = globalThis.prSplit._lookupBinary;
+			globalThis.prSplit._lookupBinary = async function(name) {
 				if (name === 'gmake') return { found: false, path: '' };
-				return _origLookup3(name);
+				return await globalThis._origLookup3(name);
 			};
 		`); err != nil {
 			t.Fatal(err)
 		}
-		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
+		raw, err := evalJS(`await globalThis.prSplit.discoverVerifyCommand('.')`)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := evalJS(`globalThis.prSplit._lookupBinary = _origLookup3;`); err != nil {
+		if _, err := evalJS(`globalThis.prSplit._lookupBinary = globalThis._origLookup3;`); err != nil {
 			t.Fatal(err)
 		}
 		if raw != "make" {
@@ -2034,11 +2034,11 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(`
 			globalThis._testFileExists = {};
 			var _osmod = require('osm:os');
-			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
+			_osmod.fileExists = function(p) { var hit = !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); return { exists: !!hit }; };
 		`); err != nil {
 			t.Fatal(err)
 		}
-		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
+		raw, err := evalJS(`await globalThis.prSplit.discoverVerifyCommand('.')`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -2054,20 +2054,20 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(`
 			globalThis._testFileExists = {'/tmp/project/Makefile': true};
 			var _osmod = require('osm:os');
-			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
-			var _origLookup4 = globalThis.prSplit._lookupBinary;
-			globalThis.prSplit._lookupBinary = function(name) {
+			_osmod.fileExists = function(p) { var hit = !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); return { exists: !!hit }; };
+			globalThis._origLookup4 = globalThis.prSplit._lookupBinary;
+			globalThis.prSplit._lookupBinary = async function(name) {
 				if (name === 'gmake') return { found: false, path: '' };
-				return _origLookup4(name);
+				return await globalThis._origLookup4(name);
 			};
 		`); err != nil {
 			t.Fatal(err)
 		}
-		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('/tmp/project')`)
+		raw, err := evalJS(`await globalThis.prSplit.discoverVerifyCommand('/tmp/project')`)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := evalJS(`globalThis.prSplit._lookupBinary = _origLookup4;`); err != nil {
+		if _, err := evalJS(`globalThis.prSplit._lookupBinary = globalThis._origLookup4;`); err != nil {
 			t.Fatal(err)
 		}
 		if raw != "make" {
@@ -2101,7 +2101,7 @@ func TestVerifySplits_PreExistingFailure(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -2157,7 +2157,7 @@ func TestVerifySplits_PreExistingFailure(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -2198,7 +2198,7 @@ func TestVerifySplits_PreExistingFailure(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '/tmp/test',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -2261,7 +2261,7 @@ func TestVerifySplits_ScopedVerify(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '.',
 			sourceBranch: 'feature',
 			verifyCommand: 'go test ./...',
@@ -2323,7 +2323,7 @@ func TestVerifySplits_ScopedVerify(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplits({
 			dir: '.',
 			sourceBranch: 'feature',
 			verifyCommand: 'go test ./...',
@@ -2381,7 +2381,7 @@ func TestVerifySplits_CallbackSignatures(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err := evalJS(`globalThis.prSplit.verifySplits({
+		_, err := evalJS(`await globalThis.prSplit.verifySplits({
 			dir: '.',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -2428,7 +2428,7 @@ func TestVerifySplits_CallbackSignatures(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err := evalJS(`globalThis.prSplit.verifySplits({
+		_, err := evalJS(`await globalThis.prSplit.verifySplits({
 			dir: '.',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -2505,7 +2505,7 @@ func TestVerifySplits_CallbackSignatures(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err := evalJS(`globalThis.prSplit.verifySplits({
+		_, err := evalJS(`await globalThis.prSplit.verifySplits({
 			dir: '.',
 			sourceBranch: 'feature',
 			verifyCommand: 'make test',
@@ -3483,7 +3483,7 @@ func TestVerifyEquivalence_ThreeSplitCumulativeChain(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + threeSplitPlan + `))`)
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalence(` + threeSplitPlan + `))`)
 		if err != nil {
 			t.Fatalf("evalJS failed: %v", err)
 		}
@@ -3514,7 +3514,7 @@ func TestVerifyEquivalence_ThreeSplitCumulativeChain(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + threeSplitPlan + `))`)
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalence(` + threeSplitPlan + `))`)
 		if err != nil {
 			t.Fatalf("evalJS failed: %v", err)
 		}
@@ -3549,7 +3549,7 @@ func TestVerifyEquivalence_ThreeSplitCumulativeChain(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + threeSplitPlan + `))`)
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalence(` + threeSplitPlan + `))`)
 		if err != nil {
 			t.Fatalf("evalJS failed: %v", err)
 		}
@@ -3610,7 +3610,7 @@ func TestVerifyEquivalenceDetailed_ThreeSplitDiffInfo(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed(` + threeSplitPlan + `))`)
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed(` + threeSplitPlan + `))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -3642,7 +3642,7 @@ func TestVerifyEquivalenceDetailed_ThreeSplitDiffInfo(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed(` + threeSplitPlan + `))`)
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed(` + threeSplitPlan + `))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -3688,7 +3688,7 @@ func TestVerifyEquivalenceDetailed_ThreeSplitDiffInfo(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed(` + threeSplitPlan + `))`)
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed(` + threeSplitPlan + `))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -3744,7 +3744,7 @@ func TestBuildReport(t *testing.T) {
 		}
 
 		// buildReport is defined inside TUI guard — exposed via _buildReport.
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit._buildReport())`)
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit._buildReport())`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -3797,7 +3797,7 @@ func TestBuildReport(t *testing.T) {
 		}
 
 		// Now build the report — analysisCache and groupsCache should be populated.
-		raw, err := evalJS(`JSON.stringify(globalThis.prSplit._buildReport())`)
+		raw, err := evalJS(`JSON.stringify(await globalThis.prSplit._buildReport())`)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -128,8 +128,7 @@ func (h *tuiLogHandler) Handle(ctx context.Context, record slog.Record) error {
 
 	// Add source information if available
 	if record.PC != 0 {
-		// Extract source info from PC
-		entry.Source = "scripting" // simplified for now
+		entry.Source = "scripting"
 	}
 
 	h.shared.entries = append(h.shared.entries, entry)
@@ -140,13 +139,7 @@ func (h *tuiLogHandler) Handle(ctx context.Context, record slog.Record) error {
 		h.shared.entries = h.shared.entries[1:]
 	}
 
-	// Forward to file handler if configured
 	if h.fileHandler != nil {
-		// We can't hold the lock while calling the file handler as it might be slow
-		// OR we can hold it if we're sure it's fast enough.
-		// Detailed logging to file is IO-bound.
-		// Standard slog handlers are thread-safe.
-		// So we can unlock before calling file handler.
 		h.shared.mutex.Unlock()
 		return h.fileHandler.Handle(ctx, record)
 	}
@@ -226,7 +219,7 @@ func (l *TUILogger) Error(msg string, attrs ...slog.Attr) {
 
 // Printf logs a formatted message at info level.
 func (l *TUILogger) Printf(format string, args ...any) {
-	l.logger.Info(fmt.Sprintf(format, args...))
+	l.logger.Info(fmt.Sprintf(jsNormalizePrintfFormat(format), args...))
 }
 
 // PrintToTUI prints a message directly to the terminal interface.
@@ -264,7 +257,7 @@ func (l *TUILogger) PrintToTUI(msg string) {
 
 // PrintfToTUI prints a formatted message directly to the terminal interface.
 func (l *TUILogger) PrintfToTUI(format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
+	msg := fmt.Sprintf(jsNormalizePrintfFormat(format), args...)
 	l.PrintToTUI(msg)
 }
 
@@ -337,4 +330,61 @@ func (l *TUILogger) ClearLogs() {
 // This can be used to set the global slog default via slog.SetDefault().
 func (l *TUILogger) Logger() *slog.Logger {
 	return l.logger
+}
+
+// jsNormalizePrintfFormat replaces %s format verbs with %v in the format
+// string. Go's fmt.Sprintf("%s", ...) cannot format bool, int64, float64, and
+// other non-string types, producing errors like %!s(bool=true) or
+// %!s(int64=0). The %v verb produces identical output for strings but handles
+// all Go types correctly. This normalization is applied at the JS→Go boundary
+// so that JS printf calls work naturally with values originating from Go
+// structs (e.g., aimux module fields).
+func jsNormalizePrintfFormat(format string) string {
+	var b strings.Builder
+	b.Grow(len(format))
+	i := 0
+	for i < len(format) {
+		if format[i] == '%' {
+			if i+1 < len(format) && format[i+1] == '%' {
+				b.WriteString("%%")
+				i += 2
+				continue
+			}
+			// Scan past format components to find the verb character.
+			j := i + 1
+			// Skip argument index [n]
+			if j < len(format) && format[j] == '[' {
+				for j < len(format) && format[j] != ']' {
+					j++
+				}
+				if j < len(format) {
+					j++ // skip ']'
+				}
+			}
+			// Skip flags [#0+- ']
+			for j < len(format) && (format[j] == '#' || format[j] == '0' || format[j] == '+' || format[j] == '-' || format[j] == ' ' || format[j] == '\'') {
+				j++
+			}
+			// Skip width (digits or *)
+			for j < len(format) && ((format[j] >= '0' && format[j] <= '9') || format[j] == '*') {
+				j++
+			}
+			// Skip precision (.digits or .*)
+			if j < len(format) && format[j] == '.' {
+				j++
+				for j < len(format) && ((format[j] >= '0' && format[j] <= '9') || format[j] == '*') {
+					j++
+				}
+			}
+			if j < len(format) && format[j] == 's' {
+				b.WriteString(format[i:j])
+				b.WriteByte('v')
+				i = j + 1
+				continue
+			}
+		}
+		b.WriteByte(format[i])
+		i++
+	}
+	return b.String()
 }

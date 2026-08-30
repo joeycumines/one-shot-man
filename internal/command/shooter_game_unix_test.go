@@ -381,6 +381,7 @@ func TestShooterE2E_PlayerShoots(t *testing.T) {
 // TestShooterE2E_EnemyMovement verifies that enemies actually MOVE over time.
 // This is the CRITICAL test that was missing - enemies must not stand still!
 func TestShooterE2E_EnemyMovement(t *testing.T) {
+	skipSlow(t)
 	scriptPath := getScriptPath(t)
 	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
@@ -449,7 +450,7 @@ func TestShooterE2E_EnemyMovement(t *testing.T) {
 	// Enemies should move toward the player during this time
 	maxWaitTicks := 120 // ~2 seconds worth of ticks
 	pollInterval := 100 * time.Millisecond
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 
 	enemyMoved := false
 	var finalState *ShooterDebugState

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/dop251/goja"
 	bt "github.com/joeycumines/go-behaviortree"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +20,7 @@ func setupTestEnv(t *testing.T) (*Bridge, *goja.Runtime, *goja.Object) {
 	var btObj *goja.Object
 
 	// Initialize the JS environment on the loop
-	err := b.RunOnLoopSync(func(runtime *goja.Runtime) error {
+	err := b.RunSync(func(runtime *goja.Runtime) error {
 		vm = runtime
 		// Require the module and expose it as global 'bt' for easier testing
 		_, err := vm.RunString(`
@@ -46,7 +46,7 @@ func setupTestEnv(t *testing.T) (*Bridge, *goja.Runtime, *goja.Object) {
 // executeJS executes a JS string and returns the result export.
 func executeJS(t *testing.T, b *Bridge, script string) goja.Value {
 	var res goja.Value
-	err := b.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err := b.RunSync(func(vm *goja.Runtime) error {
 		var err error
 		res, err = vm.RunString(script)
 		return err
@@ -96,7 +96,7 @@ func TestNode_Construction(t *testing.T) {
 	})
 
 	t.Run("MissingTick", func(t *testing.T) {
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.node()`)
 			return err
 		})
@@ -105,7 +105,7 @@ func TestNode_Construction(t *testing.T) {
 	})
 
 	t.Run("InvalidChild", func(t *testing.T) {
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.node(() => bt.success, null)`)
 			return err
 		})
@@ -163,7 +163,7 @@ func TestUnwrap_Logic(t *testing.T) {
 	t.Run("NodeUnwrap_PureJS", func(t *testing.T) {
 		// 1. Define a pure JS node function: () => [tick, children]
 		var node bt.Node
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			val, err := vm.RunString(`
 				(() => [ (children) => bt.success, [] ])
 			`)
@@ -195,7 +195,7 @@ func TestUnwrap_Logic(t *testing.T) {
 		})
 
 		var unwrappedNode bt.Node
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			// Wrap it into Goja
 			val := vm.ToValue(originalNode)
 
@@ -218,7 +218,7 @@ func TestUnwrap_Logic(t *testing.T) {
 	t.Run("TickUnwrap_PureJS", func(t *testing.T) {
 		// Verify unwrapping a pure JS tick function: (children) => status
 		var tick bt.Tick
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			val, err := vm.RunString(`(children) => bt.running`)
 			if err != nil {
 				return err
@@ -238,7 +238,7 @@ func TestUnwrap_Logic(t *testing.T) {
 		// Verify that createLeafNode properly handles async functions
 		// Async ticks return Running on first tick, need second tick for result
 		var node bt.Node
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			val, err := vm.RunString(`
 				bt.createLeafNode(async () => {
 					return bt.success;
@@ -258,9 +258,13 @@ func TestUnwrap_Logic(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, bt.Running, status)
 
-		// Yield to event loop
-		err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error { return nil })
-		require.NoError(t, err)
+		// Yield to event loop — multiple yields needed because the test event
+		// loop now always uses strict microtask ordering, so the native-promise
+		// microtask may not drain in a single macrotask under -race.
+		for range 5 {
+			err = bridge.RunSync(func(vm *goja.Runtime) error { return nil })
+			require.NoError(t, err)
+		}
 
 		// Second tick: Success
 		status, err = tick(nil)
@@ -326,7 +330,7 @@ func TestLeaves_CreateLeafNode(t *testing.T) {
 
 		// Setup a node
 		var node bt.Node
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			val, err := vm.RunString(`
 				bt.createLeafNode(async () => {
 					return bt.success;
@@ -347,9 +351,13 @@ func TestLeaves_CreateLeafNode(t *testing.T) {
 		assert.Equal(t, bt.Running, status)
 
 		// 2. Wait for event loop to process the promise
-		// We simply yield or run a small no-op on the loop to allow microtasks to flush
-		err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error { return nil })
-		require.NoError(t, err)
+		// Multiple yields needed because the test event loop does not use
+		// strict ordering, so the native-promise microtask may
+		// not drain in a single macrotask under -race.
+		for range 5 {
+			err = bridge.RunSync(func(vm *goja.Runtime) error { return nil })
+			require.NoError(t, err)
+		}
 
 		// 3. Second Tick -> Success
 		status, err = tick(nil)
@@ -358,7 +366,7 @@ func TestLeaves_CreateLeafNode(t *testing.T) {
 	})
 
 	t.Run("Invalid_Args", func(t *testing.T) {
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.createLeafNode(null)`)
 			return err
 		})
@@ -373,7 +381,7 @@ func TestLeaves_BlockingLeaf(t *testing.T) {
 
 	t.Run("Blocks_Until_Resolve", func(t *testing.T) {
 		var node bt.Node
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			val, err := vm.RunString(`
 				bt.createBlockingLeafNode(async () => {
 					return bt.success;
@@ -424,7 +432,7 @@ func TestEdgeCases_InvalidTypes(t *testing.T) {
 	t.Run("Node_InvalidReturnShape", func(t *testing.T) {
 		// Pass a JS function that doesn't return an array
 		var node bt.Node
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			val, _ := vm.RunString(`
 				(() => "not-an-array")
 			`)
@@ -444,7 +452,7 @@ func TestEdgeCases_InvalidTypes(t *testing.T) {
 	t.Run("Tick_Panic", func(t *testing.T) {
 		// JS function panics
 		var tick bt.Tick
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			val, _ := vm.RunString(`(children) => { throw "JS Panic"; }`)
 			var unwrapErr error
 			tick, unwrapErr = tickUnwrap(bridge, vm, val)

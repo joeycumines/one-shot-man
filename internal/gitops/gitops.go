@@ -1,9 +1,11 @@
 // Package gitops provides wrapper utilities for go-git/v6 git operations.
 // It abstracts the go-git API to provide a simpler interface for common
-// sync operations: Clone, Open, AddAll, HasStagedChanges, Commit, Push.
+// sync operations: Clone, Open, AddAll, HasStagedChanges, Commit, Push,
+// plus branch inspection (DefaultBranch, BranchExists, IsWorkTree,
+// HeadBranchName).
 //
 // Design constraints:
-//   - go-git/v6 for clone, add, commit, push (no exec.Command)
+//   - go-git/v6 for clone, add, commit, push, branch/ref queries (no exec.Command)
 //   - Pull with rebase is NOT supported by go-git; PullRebase uses
 //     exec.Command("git", "pull", "--rebase", ...) as a consolidated
 //     shell-out wrapper — the only shell-out in this package
@@ -37,6 +39,9 @@ var (
 
 	// ErrConflict is returned when a pull --rebase encounters merge conflicts.
 	ErrConflict = errors.New("gitops: merge conflict")
+
+	// ErrDetachedHead is returned when HEAD is detached (not on a branch).
+	ErrDetachedHead = errors.New("gitops: detached HEAD")
 )
 
 // Repo wraps a go-git Repository with simplified operations.
@@ -77,6 +82,135 @@ func Open(path string) (*Repo, error) {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	return &Repo{repo: repo}, nil
+}
+
+// OpenDetect opens a git repository from the given path, walking up parent
+// directories until a .git directory or file is found (like git's
+// core.discoveryAcrossFs behaviour). This mirrors the semantics of
+// `git rev-parse --show-toplevel` — the caller may be in a subdirectory.
+//
+// As a fallback, if no .git is found in any ancestor, the path itself is
+// checked for a "HEAD" file — this handles bare repositories where the
+// directory contains HEAD/objects/refs directly (no .git subdirectory).
+//
+// Returns ErrNotRepo when no repository is found in the path or any ancestor.
+func OpenDetect(path string) (*Repo, error) {
+	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{
+		DetectDotGit: true,
+	})
+	if err != nil {
+		if errors.Is(err, git.ErrRepositoryNotExists) {
+			// The path might be a bare repo (no .git subdir, but the dir
+			// itself contains HEAD/objects/refs). Check for a HEAD file as
+			// a reliable indicator, then try PlainOpen without detection.
+			if _, statErr := os.Stat(filepath.Join(path, "HEAD")); statErr == nil {
+				if repo, err = git.PlainOpen(path); err == nil {
+					return &Repo{repo: repo}, nil
+				}
+			}
+			return nil, fmt.Errorf("%w: %s", ErrNotRepo, path)
+		}
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	return &Repo{repo: repo}, nil
+}
+
+// IsWorkTree reports whether the repository has a working tree (i.e. is not
+// bare). Bare repositories cannot be used for pr-split because they lack a
+// worktree for checkout operations.
+func (r *Repo) IsWorkTree() (bool, error) {
+	wt, err := r.repo.Worktree()
+	if err != nil {
+		if errors.Is(err, git.ErrIsBareRepository) {
+			return false, nil
+		}
+		return false, fmt.Errorf("worktree: %w", err)
+	}
+	_ = wt // wt is non-nil for non-bare repos
+	return true, nil
+}
+
+// BranchExists reports whether a branch with the given short name exists
+// locally (refs/heads/<name>) or as an origin remote tracking ref
+// (refs/remotes/origin/<name>).
+func (r *Repo) BranchExists(name string) (bool, error) {
+	// Check local branch first.
+	_, err := r.repo.Reference(plumbing.NewBranchReferenceName(name), false)
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return false, fmt.Errorf("check local branch %q: %w", name, err)
+	}
+
+	// Fall back to origin remote tracking ref.
+	_, err = r.repo.Reference(plumbing.NewRemoteReferenceName("origin", name), false)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return false, nil
+	}
+	return false, fmt.Errorf("check remote branch %q: %w", name, err)
+}
+
+// DefaultBranch auto-detects the default branch of the repository.
+//
+// Detection order (first match wins):
+//  1. refs/remotes/origin/HEAD symbolic ref — set automatically by `git clone`,
+//     points to the remote's actual default branch (e.g. refs/remotes/origin/main).
+//  2. Common branch names (main, master, develop) checked via BranchExists,
+//     which looks for both local (refs/heads/<name>) and remote tracking
+//     (refs/remotes/origin/<name>) refs.
+//  3. Ultimate fallback: "main".
+//
+// This uses only go-git plumbing — zero exec.Command calls.
+func (r *Repo) DefaultBranch() (string, error) {
+	// 1. Try the symbolic ref refs/remotes/origin/HEAD (unresolved).
+	headRef, err := r.repo.Reference(plumbing.NewRemoteHEADReferenceName("origin"), false)
+	if err == nil && headRef.Type() == plumbing.SymbolicReference {
+		target := headRef.Target()
+		if target.IsRemote() {
+			// target is like "refs/remotes/origin/main" — strip the
+			// "refs/remotes/origin/" prefix to get the bare branch name.
+			short := strings.TrimPrefix(target.String(), "refs/remotes/origin/")
+			if short != target.String() && short != "" && short != "HEAD" {
+				return short, nil
+			}
+		}
+	}
+
+	// 2. Check common branch names (local and remote) via BranchExists.
+	commonNames := []string{"main", "master", "develop"}
+	for _, name := range commonNames {
+		exists, err := r.BranchExists(name)
+		if err != nil {
+			return "", fmt.Errorf("default branch detection: %w", err)
+		}
+		if exists {
+			return name, nil
+		}
+	}
+
+	// 3. Ultimate fallback — "main" is the modern convention.
+	return "main", nil
+}
+
+// HeadBranchName returns the short name of the branch that HEAD currently
+// points to (e.g. "main", "feature/foo"). Returns ErrDetachedHead when HEAD
+// is not on a branch (detached HEAD state).
+func (r *Repo) HeadBranchName() (string, error) {
+	head, err := r.repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("head: %w", err)
+	}
+
+	name := head.Name()
+	if !name.IsBranch() {
+		return "", ErrDetachedHead
+	}
+
+	return name.Short(), nil
 }
 
 // AddAll stages all changes in the worktree (equivalent to "git add -A").

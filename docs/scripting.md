@@ -179,33 +179,35 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 
 | Module | Description | Key exports |
 |--------|-------------|-------------|
-| `osm:os` | OS interactions (files, clipboard, editor, environment) | `readFile(path) → {content, error, message}`, `fileExists(path) → bool`, `writeFile(path, content, options?) → undefined` (options: `{mode?: number, createDirs?: boolean}`), `appendFile(path, content, options?) → undefined` (same options), `openEditor(nameHint, initialContent) → string`, `clipboardCopy(text)` (supports `OSM_CLIPBOARD` override), `getenv(key) → string` |
-| `osm:exec` | Process execution | `exec(cmd, ...args) → {stdout, stderr, code, error, message}`, `execv(argv[]) → {stdout, stderr, code, error, message}` |
+| `osm:os` | OS interactions (files, clipboard, editor, environment) | `readFile(path) → Promise<{content, error, message}>`, `fileExists(path) → bool`, `writeFile(path, content, options?) → Promise<undefined>` (options: `{mode?: number, createDirs?: boolean}`), `appendFile(path, content, options?) → Promise<undefined>` (same options), `openEditor(nameHint, initialContent) → Promise<string>`, `clipboardCopy(text) → Promise<void>` (supports `OSM_CLIPBOARD` override), `clipboardPaste() → Promise<string>`, `getenv(key) → string`, `isAbsolute(path) → bool`, `join(...paths) → string`, `platform() → string` |
+| `osm:exec` | Process execution | `execv(argv[]) → Promise<{stdout, stderr, code, error, message}>`, `spawn(cmd, args[], opts?) → ChildHandle` |
 | `osm:flag` | Go `flag` package wrapper for argument parsing | `newFlagSet(name?) → FlagSet`; FlagSet methods: `.string(name, default, usage)`, `.int(…)`, `.bool(…)`, `.float64(…)`, `.parse(argv) → {error}`, `.get(name)`, `.args()`, `.nArg()`, `.nFlag()`, `.lookup(name)`, `.defaults()`, `.visit(fn)`, `.visitAll(fn)` |
-| `osm:path` | Go `path/filepath` wrapper for path manipulation | `join(...args) → string`, `dir(path) → string`, `base(path) → string`, `ext(path) → string`, `abs(path) → {result, error}`, `rel(basepath, targpath) → {result, error}`, `clean(path) → string`, `isAbs(path) → bool`, `match(pattern, name) → {matched, error}`, `glob(pattern) → {matches, error}`, `separator`, `listSeparator` |
+| `osm:path` | Go `path/filepath` wrapper for path manipulation | `join(...args) → string`, `dir(path) → string`, `base(path) → string`, `ext(path) → string`, `abs(path) → {result, error}`, `rel(basepath, targpath) → {result, error}`, `clean(path) → string`, `isAbs(path) → bool`, `match(pattern, name) → {matched, error}`, `glob(pattern) → Promise<{matches, error}>` (async; all others sync), `separator`, `listSeparator` |
 | `osm:regexp` | Go RE2 regular expressions | `match(pattern, str) → bool`, `find(pattern, str) → string\|null`, `findAll(pattern, str, n?) → string[]`, `findSubmatch(pattern, str) → string[]\|null`, `findAllSubmatch(pattern, str, n?) → string[][]`, `replace(pattern, str, repl) → string`, `replaceAll(pattern, str, repl) → string`, `split(pattern, str, n?) → string[]`, `compile(pattern) → RegexpObject` (with same methods bound). [Reference →](reference/regexp.md) |
 | `osm:crypto` | Cryptographic hash functions | `sha256(input) → string`, `sha1(input) → string`, `md5(input) → string`, `hmacSHA256(key, message) → string`, `hmacSHA1(key, message) → string` — all return hex-encoded lowercase strings; input accepts strings or byte arrays |
 | `osm:encoding` | Base64 and hex encoding/decoding | `base64Encode(input) → string`, `base64Decode(encoded) → string`, `base64URLEncode(input) → string`, `base64URLDecode(encoded) → string`, `hexEncode(input) → string`, `hexDecode(encoded) → string` — decode errors throw JS errors; input accepts strings or byte arrays. [Reference →](reference/encoding.md) |
 | `osm:json` | JSON utilities | `parse(str) → any`, `stringify(value, indent?) → string`, `query(obj, path) → any` (dot-notation, `[n]`, `[*]` wildcard), `mergePatch(target, patch) → any` (RFC 7386), `diff(a, b) → [{op, path, value?, oldValue?}]` (JSON Pointer paths), `flatten(obj, sep?) → object`, `unflatten(obj, sep?) → object` |
-| `osm:time` | Time utilities | `sleep(ms)` — synchronous sleep (milliseconds). [Reference →](reference/time.md) |
+| `osm:gitops` | Git operations (go-git) | `isRepo(path)`, `open(path)` / `openDetect(path)` → Repo, `defaultBranch(path)`, `branchExists(path, name)`, `isWorkTree(path)`, `headBranchName(path)`; Repo methods: `.defaultBranch()`, `.branchExists(name)`, `.isWorkTree()`, `.headBranchName()` (sync), `.addAll() → Promise<void>`, `.commit(msg) → Promise<string>`, `.push() → Promise<void>`, `.hasStagedChanges() → Promise<bool>` (async) |
 | `osm:argv` | Command-line string parsing | `parseArgv(cmdline) → string[]`, `formatArgv(argv[]) → string` |
+| `osm:format` | Number and byte formatting | `formatNum(n) → string` (comma grouping <10000, SI k/M/G above), `formatBytes(n) → string` (IEC binary B/kB/MB/GB/TB) |
 
 #### Data & text processing
 
 | Module | Description | Key exports |
 |--------|-------------|-------------|
 | `osm:text/template` | Go `text/template` wrapper | `new(name) → Template`, `execute(text, data) → string`; Template methods: `.parse(text)`, `.execute(data) → string`, `.funcs(funcMap)`, `.name()`, `.delims(left, right)`, `.option(...opts)` |
-| `osm:unicodetext` | Unicode text utilities | `width(s) → number` (monospace display width), `truncate(s, maxWidth, tail?) → string`. [Reference →](reference/unicodetext.md) |
+| `osm:unicodetext` | Unicode text utilities | `width(s) → number` (monospace display width), `truncate(s, maxWidth, tail?) → string`, `padLeft(s, width, pad?) → string`, `padRight(s, width, pad?) → string`, `padCenter(s, width, pad?) → string`. [Reference →](reference/unicodetext.md) |
 | `osm:fetch` | Promise-based HTTP client (browser Fetch API) | `fetch(url, opts?) → Promise<Response>`; Options: `method`, `headers`, `body`, `timeout`, `signal`; Response: `.status`, `.ok`, `.statusText`, `.url`, `.headers` (Headers object with `.get()`, `.has()`, `.entries()`, `.keys()`, `.values()`, `.forEach()`), `.text() → Promise<string>`, `.json() → Promise<any>` |
 | `osm:grpc` | Promise-based gRPC client and server (via [goja-grpc](https://github.com/joeycumines/goja-grpc)) | `createClient(service) → Client` (methods return `Promise`), `createServer(service, handler) → Server`, `dial(target, opts?) → Channel`, `status` (code constants: `OK`, `CANCELLED`, `NOT_FOUND`, etc.), `metadata`, `enableReflection(server)`, `createReflectionClient(channel)` |
 | `osm:protobuf` | Protocol Buffers for goja (via [goja-protobuf](https://github.com/joeycumines/goja-protobuf)) | `loadDescriptorSet(bytes)` — loads binary `FileDescriptorSet` for use with `osm:grpc` |
+| `osm:tokenizer` | Token counting and tokenizer loading | `tokenize(text) → {tokens, count}` (built-in char-level), `count(text) → number`, `loadFile(path) → Tokenizer`, `loadJSON(jsonStr) → Tokenizer`, `loadBPE(vocab, merges) → Tokenizer`, `loadWordPiece(json) → Tokenizer`, `loadWordLevel(json) → Tokenizer`; Tokenizer: `.encode(text) → {tokens, count}`, `.count(text) → number` |
 
 #### Workflow & state
 
 | Module | Description | Key exports |
 |--------|-------------|-------------|
-| `osm:ctxutil` | Context building helpers (used by built-ins) | `buildContext(items, options?) → string`, `contextManager` (factory for reusable context management patterns) |
-| `osm:mcpcallback` | Go-native MCP IPC channel for sub-process tool callbacks | `MCPCallback(opts) → callbackObj`; Methods: `.addTool(name, desc?, schema?)`, `.initSync()`, `.init() → Promise`, `.waitFor(toolName, timeoutMs?, opts?) → {data, error}`, `.resetWaiter(toolName)`, `.closeSync()`, `.close() → Promise`; Properties (after init): `.address`, `.scriptPath`, `.transport`, `.mcpConfigPath` |
+| `osm:ctxutil` | Context building helpers (used by built-ins) | `buildContext(items, options?) → Promise<string>` (async; resolves to rendered context string), `contextManager` (factory for reusable context management patterns) |
+| `osm:mcpcallback` | Go-native MCP IPC channel for sub-process tool callbacks | `MCPCallback(opts) → callbackObj`; Methods: `.addTool(name, desc?, schema?)`, `.initSync()`, `.init() → Promise`, `.waitForAsync(toolName, timeoutMs?, opts?) → Promise<{data, error}>`, `.resetWaiter(toolName)`, `.closeSync()`, `.close() → Promise`; Properties (after init): `.address`, `.scriptPath`, `.transport`, `.mcpConfigPath` |
 | `osm:nextIntegerID` | Simple ID generator | Default export is a function: `nextId(list) → number` — finds max `.id` in array and returns max+1. _(Deprecated alias: `osm:nextIntegerId`)_ [Reference →](reference/nextintegerid.md) |
 | `osm:sharedStateSymbols` | Cross-mode shared state symbols | Exports Symbol properties (e.g., `contextItems`) for use with `tui.createState("__shared__", …)` |
 
@@ -219,6 +221,31 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:bubbles/viewport` | Scrollable viewport component | `new(width?, height?) → Viewport`; Viewport: `.setContent(s)`, `.setWidth(n)`, `.setHeight(n)`, `.scrollDown(n)`, `.scrollUp(n)`, `.gotoTop()`, `.gotoBottom()`, `.pageUp()`, `.pageDown()`, `.setYOffset(n)`, `.yOffset()`, `.scrollPercent()`, `.atTop()`, `.atBottom()`, `.totalLineCount()`, `.visibleLineCount()`, `.setStyle(lipglossStyle)`, `.update(msg)`, `.view()` |
 | `osm:bubbles/textarea` | Multi-line text input component | `new() → Textarea`; Textarea: `.setValue(s)`, `.value()`, `.setWidth(n)`, `.setHeight(n)`, `.focus()`, `.blur()`, `.focused()`, `.insertString(s)`, `.setCursor(col)`, `.setPosition(row, col)`, `.lineCount()`, `.lineInfo()`, `.cursorVisualLine()`, `.visualLineCount()`, `.performHitTest(x, y)`, `.handleClickAtScreenCoords(x, y)`, `.getScrollSyncInfo()`, `.update(msg)`, `.view()` |
 | `osm:termui/scrollbar` | Thin vertical scrollbar | `new(viewportHeight?) → Scrollbar`; Scrollbar: `.setViewportHeight(n)`, `.setContentHeight(n)`, `.setYOffset(n)`, `.viewportHeight()`, `.contentHeight()`, `.yOffset()`, `.setChars(thumb, track)`, `.setThumbForeground(color)`, `.setThumbBackground(color)`, `.setTrackForeground(color)`, `.setTrackBackground(color)`, `.view()`. [Reference →](reference/scrollbar.md) |
+| `osm:termui/box` | Box container component | `new(opts?) → Box`; Box: `.setContent(str)`, `.setStyle(style)`, `.setWidth(n)`, `.setHeight(n)`, `.view() → string` |
+| `osm:termui/compositor` | Layer compositor for rendering | `new() → Compositor`; Compositor: `.addLayer(layer)`, `.removeLayer(id)`, `.clear()`, `.render() → string` |
+| `osm:termui/coordinate` | 2D coordinate geometry types | `position({x, y})`, `size({width, height})`, `rect({x, y, width, height})`, `layer({x, y, width, height, z})`, `paneGeometryRect({row, col, rows, cols})`, `lipglossLayer(lipglossLayerObj)` |
+| `osm:termui/divider` | Horizontal/vertical divider | `new() → Divider`; Divider: `.setHorizontal(bool)`, `.setStyle(style)`, `.view() → string` |
+| `osm:termui/label` | Text label component | `new(text?) → Label`; Label: `.setText(str)`, `.setStyle(style)`, `.view() → string` |
+| `osm:termui/layout` | Layout container component | `new() → Layout`; Layout: `.addItem(item)`, `.setDirection(dir)`, `.setSpacing(n)`, `.view() → string` |
+| `osm:termui/list` | Selectable list component | `new(items?) → List`; List: `.setItems(items)`, `.select(n)`, `.selected() → number`, `.setStyle(style)`, `.view() → string` |
+| `osm:termui/modal` | Modal overlay component | `new(content?) → Modal`; Modal: `.setContent(str)`, `.setStyle(style)`, `.show()`, `.hide()`, `.view() → string` |
+| `osm:termui/panel` | Panel container component | `new(opts?) → Panel`; Panel: `.setContent(str)`, `.setStyle(style)`, `.setTitle(str)`, `.view() → string` |
+| `osm:termui/splitlayout` | Split-pane layout manager | `new(manager, bounds) → SplitLayout`; SplitLayout: `.addPane(id)`, `.removePane(id)`, `.update(msg)`, `.view()`, `.close()` |
+
+> **Constructor names (`osm:termui/*`):** most `osm:termui/*` modules export a
+> factory named after the module (lowercase), not `new`. For example
+> `require('osm:termui/box').box(opts)`, `require('osm:termui/label').label(text)`,
+> `require('osm:termui/divider').divider('horizontal')`,
+> `require('osm:termui/compositor').compositor({width,height})`,
+> `require('osm:termui/splitview').splitView(opts)`,
+> `require('osm:termui/splitlayout').splitLayout(manager, bounds)`. The
+> `new(...)` form shown in the table above is shorthand for "construct with the
+> documented options"; the actual constructor is the lowercase module-name
+> function. (`osm:termui/scrollbar` exports `new`.)
+| `osm:termui/splitview` | Split-view component | `new(opts?) → SplitView`; SplitView: `.setLeft(view)`, `.setRight(view)`, `.setRatio(n)`, `.view() → string` |
+| `osm:termui/table` | Table component | `new() → Table`; Table: `.setHeaders(headers)`, `.setRows(rows)`, `.setStyle(style)`, `.view() → string` |
+| `osm:termui/termpane` | Terminal pane component | `new(manager, id, opts?) → TermPane`; TermPane: `.update(msg)`, `.view()`, `.resize(rows, cols)` |
+| `osm:termui/toast` | Toast notification component | `new(msg?) → Toast`; Toast: `.setMessage(str)`, `.setStyle(style)`, `.show()`, `.hide()`, `.view() → string` |
 
 #### Behavior trees & planning
 
@@ -227,13 +254,13 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:bt` | Behavior tree primitives ([go-behaviortree](https://github.com/joeycumines/go-behaviortree)) | Status: `success`, `failure`, `running`; Nodes: `node(tick, ...children)`, `createLeafNode(fn)`, `createBlockingLeafNode(fn)`; Composites: `sequence(children)`, `fallback(children)` / `selector(children)`, `fork()`; Decorators: `memorize(tick)`, `async(tick)`, `not(tick)`, `interval(ms)`; Execution: `tick(node)`, `newTicker(ms, node, opts?)`, `newManager()`; State: `new Blackboard()`, `exposeBlackboard(bb)` |
 | `osm:pabt` | Planning-Augmented Behavior Trees ([go-pabt](https://github.com/joeycumines/go-pabt)) | `newState(blackboard) → State`, `newAction(name, conditions, effects, node) → Action`, `newPlan(state, goals) → Plan`, `newExprCondition(key, expr, value?) → Condition`; State: `.variable(key)`, `.get(key)`, `.set(key, value)`, `.registerAction(name, action)`, `.getAction(name)`, `.setActionGenerator(fn)`; Plan: `.node()`, `.running()` |
 
-#### Claude Code orchestration
+#### Generic agent/multiplexer
 
 | Module | Description | Key exports |
 |--------|-------------|-------------|
-| `osm:claudemux` | Claude Code orchestration building blocks | Parser: `newParser()`, `eventTypeName(type)`, `KEY_*` constants; Guard: `newGuard(config)`, `defaultGuardConfig()`, `guardActionName(action)`, `GUARD_ACTION_*`/`PERMISSION_POLICY_*` constants; MCPGuard: `newMCPGuard(config)`, `defaultMCPGuardConfig()`; Supervisor: `newSupervisor(config)`, `defaultSupervisorConfig()`, error/action/state constants; Pool: `newPool(config)`, `defaultPoolConfig()`; Panel: `newPanel(config)`, `defaultPanelConfig()`; Session: `createSession(id, config?)`, `defaultManagedSessionConfig()`, `managedSessionStateName(state)`, `SESSION_*` constants; Safety: `newSafetyValidator(config)`, `defaultSafetyConfig()`, `newCompositeValidator()`, intent/scope/risk/policy constants; Choice: `newChoiceResolver(config)`, `defaultChoiceConfig()`; Instance: `newInstanceRegistry(baseDir)`; ModelNav: `parseModelMenu(lines)`, `navigateToModel(menu, target)`, `isLauncherMenu(menu)`, `dismissLauncherKeys(menu)` |
+| `osm:aimux` | Generic agent process multiplexer | `processProvider(opts)` → provider object; `newRegistry()` → registry object with `register(provider)`, `get(name)`, `list()`, `spawn(name, opts)`; `newParser()` → parser object with `.parse(line)`, `.patterns()`; parser event constants: `EVENT_TEXT`, `EVENT_RATE_LIMIT`, `EVENT_PERMISSION`, `EVENT_MODEL_SELECT`, `EVENT_SSO_LOGIN`, `EVENT_COMPLETION`, `EVENT_TOOL_USE`, `EVENT_ERROR`, `EVENT_THINKING`; `eventTypeName(type)`. Used by `osm pr-split` to spawn agent processes provider-agnostically. |
 | `osm:mcp` | Promise-based MCP (Model Context Protocol) server | `createServer(name, version?) → server`; Server methods: `.addTool(toolDef, handler)` where toolDef = `{name, description?, inputSchema?}`, `.run(transport?)` (default: "stdio"), `.close()` |
-| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, opts?)`, `.unregister(id)`, `.activate(id)`, `.attach(handle) → id`, `.detach()`, `.hasChild()`, `.passthrough(opts?)` (blocking — enters passthrough, returns `{reason, error?}`), `.switchTo()` (blocking, returns `{reason, error?}`), `.activeSide()`, `.activeID()`, `.sessions()`, `.snapshot(id)`, `.eventsDropped()`, `.input(data)`, `.resize(rows, cols)`, `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe(bufSize?)`, `.unsubscribe(id)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.snapshot(id)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `.activate(id)` + `.input(data)` for writes; `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_CLAUDE`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (9 event names). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
+| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, opts?)`, `.unregister(id)`, `.activate(id)`, `.attach(handle) → id`, `.detach()`, `.hasChild()`, `.passthrough(opts?)` (async — enters passthrough, returns `Promise<{reason, error?}>`), `.switchTo()` (async, returns `Promise<{reason, error?}>`), `.activeSide()`, `.activeID()`, `.sessions()`, `.snapshot(id)`, `.eventsDropped()`, `.input(data)`, `.resize(rows, cols)`, `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe(bufSize?)`, `.unsubscribe(id)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.snapshot(id)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `.activate(id)` + `.input(data)` for writes; `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_AGENT`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (9 event names). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
 
 ### osm:bt (Behavior Trees)
 
@@ -410,11 +437,28 @@ view: function(model) {
 
 **Input validation**: `tea.isValidTextareaInput(key)`, `tea.isValidLabelInput(key)` — whitelist-based input validators.
 
-### osm:time
+### osm:gitops
 
-Time utilities:
+Git repository operations via go-git (no git CLI required):
 
-- `time.sleep(ms)` — Synchronous sleep (milliseconds)
+```javascript
+const gitops = require('osm:gitops');
+const repo = gitops.open('/path/to/repo');
+
+// Sync (fast, bounded local lookups)
+gitops.isRepo('/path');              // bool
+repo.defaultBranch();                // string
+repo.branchExists('feature/foo');    // bool
+repo.headBranchName();               // string
+repo.isWorkTree();                   // bool
+
+// Async (return Promises, run off event loop)
+repo.hasStagedChanges().then(has => { /* bool */ });
+repo.addAll().then(() => repo.commit('msg')).then(hash => { /* string */ });
+repo.push().then(() => { /* done */ });
+```
+
+Error constants: `gitops.ERR_NOT_REPO`, `gitops.ERR_NOTHING_TO_COMMIT`, `gitops.ERR_CONFLICT`, `gitops.ERR_DETACHED_HEAD`.
 
 ### osm:mcpcallback (MCP Callback IPC)
 
@@ -434,7 +478,7 @@ The `server` must be created via `createServer()` and must **not** have `.run()`
 
 **Registering tools** (must be called before `init`/`initSync`):
 
-- `cb.addTool(name, description?, inputSchema?)` — Register a Go-native tool. The handler stores incoming call arguments in a buffered channel (capacity 1, last-write-wins). Handler runs on the MCP transport goroutine, not the JS event loop, so it is safe even when JS is blocked on `waitFor()`.
+- `cb.addTool(name, description?, inputSchema?)` — Register a Go-native tool. The handler stores incoming call arguments in a buffered channel (capacity 1, last-write-wins). Handler runs on the MCP transport goroutine, not the JS event loop, so it is safe even when JS is waiting on `waitForAsync()`.
 
 **Initialization:**
 
@@ -448,15 +492,15 @@ The `server` must be created via `createServer()` and must **not** have `.run()`
 | `cb.address` | `string` | Listener address. UDS: socket path. TCP: `127.0.0.1:<port>`. |
 | `cb.scriptPath` | `string` | Path to generated `bootstrap.js` (`module.exports = { transport, address }`). |
 | `cb.transport` | `string` | `"unix"` (Linux/macOS) or `"tcp"` (Windows). |
-| `cb.mcpConfigPath` | `string` | Path to generated `mcp-config.json` for Claude Code MCP server config. |
+| `cb.mcpConfigPath` | `string` | Path to generated `mcp-config.json` for the agent's MCP server config. |
 
 **Waiting for tool calls:**
 
-- `cb.waitFor(toolName, timeoutMs?, opts?) → {data, error}` — Blocking. Waits for the named tool to receive a call via the MCP transport, or timeout. Default timeout: `600000` ms (10 min, minimum 100 ms).
+- `cb.waitForAsync(toolName, timeoutMs?, opts?) → Promise<{data, error}>` — Non-blocking. Waits for the named tool to receive a call via the MCP transport, or timeout. Default timeout: `600000` ms (10 min, minimum 100 ms).
   - `opts.aliveCheck: () → bool` — Called periodically; return `false` to abort early (e.g., sub-process died).
   - `opts.onProgress: (elapsedMs, totalMs) → void` — Called periodically for TUI updates.
   - `opts.checkIntervalMs: number` — Polling interval for callbacks. Default: `5000`. Min: `100`.
-  - Returns `{data: <parsed JSON args>, error: null}` on success, or `{data: null, error: "..."}` on timeout/abort.
+  - Resolves with `{data: <parsed JSON args>, error: null}` on success, or `{data: null, error: "..."}` on timeout/abort.
 - `cb.resetWaiter(toolName)` — Drain any pending (unconsumed) data for this tool. Call before re-waiting across pipeline cycles.
 
 **Cleanup:**
@@ -471,85 +515,41 @@ cb.addTool('reportClassification', 'Report file classification.', schema);
 cb.addTool('reportSplitPlan', ...);
 cb.initSync();
 // spawn sub-process pointing at cb.mcpConfigPath
-var result = cb.waitFor('reportClassification', 300000, { aliveCheck, onProgress });
+var result = await cb.waitForAsync('reportClassification', 300000, { aliveCheck, onProgress });
 if (result.error) { throw new Error(result.error); }
 var categories = result.data.categories;
 // ... later ...
 cb.resetWaiter('reportResolution');
-result = cb.waitFor('reportResolution', 600000, { aliveCheck });
+result = await cb.waitForAsync('reportResolution', 600000, { aliveCheck });
 cb.closeSync();
 ```
 
-### osm:claudemux (Claude Code Orchestration)
+### osm:aimux (agent process multiplexer)
 
-Building blocks for multi-instance Claude Code management. Used by `osm pr-split` for communicating with Claude Code instances.
+`osm:aimux` is the provider-agnostic agent/process multiplexer. It provides
+provider-agnostic building blocks for starting, controlling, and parsing output from
+interactive agent processes. It is used by `osm pr-split` to spawn the configured
+agent executable without hard-coding any provider.
 
-**Parser** — PTY output classification:
-- `cm.newParser()` — Create a parser with built-in Claude Code output patterns
-- `parser.parse(line)` — Classify a line → `{type, line, fields, pattern}`
-- `parser.addPattern(name, regex, eventType, extractFn?)` — Register custom patterns
-- `parser.patterns()` — List registered patterns
-- `cm.eventTypeName(type)` — Human-readable event type name
-- Constants: `cm.EVENT_TEXT`, `cm.EVENT_RATE_LIMIT`, `cm.EVENT_PERMISSION`, `cm.EVENT_MODEL_SELECT`, `cm.EVENT_SSO_LOGIN`, `cm.EVENT_COMPLETION`, `cm.EVENT_TOOL_USE`, `cm.EVENT_ERROR`, `cm.EVENT_THINKING`
-- Key constants: `cm.KEY_UP`, `cm.KEY_DOWN`, `cm.KEY_ENTER`, `cm.KEY_Y`, `cm.KEY_N`
+**Provider/registry:**
+- `aimux.processProvider(opts)` — Build a process-backed provider (`name`, `command`, `defaultArgs`, `capabilities`).
+- `aimux.newRegistry()` — Build a registry with `.register(provider)`, `.get(name)`, `.list()`, `.spawn(name, opts)`.
+- `registry.spawn(name, opts)` — Start a process and return a handle (`command`, `args`, `env`, `dir`, `rows`, `cols`).
 
-**Guard** — PTY output monitors:
-- `cm.newGuard(config)` — Create a guard with rate-limit, permission, crash, and timeout monitors
-- `guard.processEvent(event, now)` — Evaluate an output event → `{action, reason, details}` or null
-- `guard.processCrash(exitCode, now)` — Report a crash → guard event
-- `guard.checkTimeout(now)` — Check for output timeout → guard event or null
-- `cm.defaultGuardConfig()` — Production defaults
-- `cm.guardActionName(action)` — Human-readable action name
-- Constants: `cm.GUARD_ACTION_NONE`, `cm.GUARD_ACTION_PAUSE`, `cm.GUARD_ACTION_REJECT`, `cm.GUARD_ACTION_RESTART`, `cm.GUARD_ACTION_ESCALATE`, `cm.GUARD_ACTION_TIMEOUT`; `cm.PERMISSION_POLICY_DENY`, `cm.PERMISSION_POLICY_ALLOW`
+**Handle:**
+- `handle.send(input)` — Send text to stdin.
+- `handle.receive()` / `handle.receiveAsync()` — Read output.
+- `handle.isAlive()` — Non-blocking liveness check.
+- `handle.resize(rows, cols)` — Resize the PTY.
+- `handle.close()` / `handle.drainOutput()` — Terminate and drain output.
+- `handle.wait()` — Block until exit.
 
-**MCPGuard** — MCP call monitors:
-- `cm.newMCPGuard(config)` — Create an MCP guard with frequency, repeat, allowlist, and timeout monitors
-- `mcpGuard.processToolCall(call)` — Evaluate a tool call → `{action, reason, details}` or null
-- `mcpGuard.checkNoCallTimeout(now)` — Check for no-call timeout
-- `cm.defaultMCPGuardConfig()` — Production defaults
-
-**Supervisor** — Error recovery:
-- `cm.newSupervisor(config)` — Create a supervisor state machine
-- `supervisor.start()` — Transition to Running
-- `supervisor.handleError(msg, errorClass)` — Get recovery decision
-- `supervisor.shutdown()` — Initiate graceful drain
-- `cm.defaultSupervisorConfig()` — Production defaults
-- Error class constants: `cm.ERROR_CLASS_*`; Recovery action constants: `cm.RECOVERY_*`
-
-**Pool** — Concurrent instance management:
-- `cm.newPool(config)` — Create a pool with acquire/release dispatch
-- `pool.start()`, `pool.addWorker(worker)`, `pool.acquire()`, `pool.tryAcquire()`, `pool.release(worker, err, now)`, `pool.drain()`, `pool.close()`, `pool.stats()`
-- `cm.defaultPoolConfig()` — Default max size 4
-
-**Panel** — TUI multi-instance display:
-- `cm.newPanel(config)` — Create a panel with Alt+1..9 switching
-- `panel.start()`, `panel.addPane(id, title)`, `panel.routeInput(key)`, `panel.appendOutput(id, text)`, `panel.updateHealth(id, health)`, `panel.statusBar()`, `panel.getVisibleLines(id, height)`, `panel.snapshot()`, `panel.close()`
-- `cm.defaultPanelConfig()` — Default 9 panes, 10000 scrollback
-
-**ManagedSession** — Unified monitoring pipeline:
-- `cm.createSession(id, config?)` — Create a session composing Parser+Guard+MCPGuard+Supervisor
-- `session.processLine(line, now)` → `{event, guardEvent, action}`
-- `session.processCrash(exitCode, now)` → `{guardEvent, recoveryDecision}`
-- `session.processToolCall(call)` → tool call result
-- `session.shutdown()`, `session.close()`
-- `session.onEvent(fn)`, `session.onGuardAction(fn)`, `session.onRecoveryDecision(fn)` — Callbacks
-- `cm.defaultManagedSessionConfig()`, `cm.managedSessionStateName(state)`
-- Constants: `cm.SESSION_IDLE`, `cm.SESSION_ACTIVE`, `cm.SESSION_PAUSED`, `cm.SESSION_FAILED`, `cm.SESSION_CLOSED`
-
-**Safety** — Intent/scope/risk classification:
-- `cm.newSafetyValidator(config)` — Create a rule-based safety validator
-- `validator.validate(toolName, args)` → `{intent, scope, risk, riskLevel, action, reason}`
-- `cm.defaultSafetyConfig()`, `cm.newCompositeValidator()`
-- Constants: `cm.INTENT_*`, `cm.SCOPE_*`, `cm.RISK_*`, `cm.POLICY_*`
-
-**Choice** — Multi-criteria decision analysis:
-- `cm.newChoiceResolver(config)` — Create a resolver with configurable criteria
-- `resolver.analyze(candidates, criteria?)` → `{recommendedID, rankings, justification, needsConfirm}`
-- `cm.defaultChoiceConfig()` — Default 4 criteria (complexity/risk/maintainability/performance)
-
-**Instance** — Session isolation:
-- `cm.newInstanceRegistry(baseDir)` — Create a registry for isolated instance state
-- `registry.create(id)`, `registry.get(id)`, `registry.close(id)`, `registry.closeAll()`, `registry.list()`, `registry.len()`, `registry.baseDir()`
+**Parser:**
+- `aimux.newParser()` — Create a parser.
+- `parser.parse(line)` — Classify a PTY output line.
+- `parser.addPattern(name, regex, eventType)` — Register custom detection patterns.
+- `parser.patterns()` — List registered patterns.
+- Event constants: `EVENT_TEXT`, `EVENT_RATE_LIMIT`, `EVENT_PERMISSION`, `EVENT_MODEL_SELECT`, `EVENT_SSO_LOGIN`, `EVENT_COMPLETION`, `EVENT_TOOL_USE`, `EVENT_ERROR`, `EVENT_THINKING`.
 
 ### osm:termmux CaptureSession
 
@@ -576,7 +576,7 @@ When registered with a SessionManager, screen output is available via
 - `wait()` — Block until process exits, returns `{exitCode, error?}`
 - `reader()` — Get next output chunk (blocking), returns `string | null`
 - `readAvailable()` — Drain buffered chunks (non-blocking), returns `string | null`
-- `passthrough(opts?)` — Enter passthrough mode, returns `{reason, error?}`
+- `passthrough(opts?) → Promise<{reason, error?}>` — Enter passthrough mode (async, returns Promise)
 
 See [termmux JS API reference](reference/termmux-js-api.md) for full details.
 
@@ -664,7 +664,7 @@ context.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `automatedSplit` | `(config?) → {report, error?}` | Full 10-step Claude-assisted pipeline |
+| `automatedSplit` | `(config?) → {report, error?}` | Full 10-step agent-assisted pipeline |
 | `heuristicFallback` | `(analysis, config, report) → {error?, report}` | Local-only splitting fallback |
 | `assessIndependence` | `(plan, classification?) → [[name, name]]` | Detect independent split pairs |
 | `classificationToGroups` | `(classification) → [{name, files}]` | Convert file→group map to groups array |
@@ -673,7 +673,7 @@ context.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `renderClassificationPrompt` | `(analysis, opts?) → {text, error?}` | Build Claude classification prompt |
+| `renderClassificationPrompt` | `(analysis, opts?) → {text, error?}` | Build agent classification prompt |
 | `renderSplitPlanPrompt` | `(classification, config) → {text, error?}` | Build split plan prompt from classification |
 | `renderConflictPrompt` | `(conflict) → {text, error?}` | Build conflict resolution prompt |
 | `detectLanguage` | `(files) → string` | Detect primary language from file extensions |
@@ -686,11 +686,11 @@ context.
 | `SPLIT_PLAN_PROMPT_TEMPLATE` | string | Template for split plan prompts |
 | `CONFLICT_RESOLUTION_PROMPT_TEMPLATE` | string | Template for conflict resolution prompts |
 
-### Claude Executor
+### Agent Executor
 
 | Symbol | Type | Description |
 |--------|------|-------------|
-| `ClaudeCodeExecutor` | constructor | `new ClaudeCodeExecutor(config)` — manages Claude Code lifecycle |
+| `AgentCodeExecutor` | constructor | `new AgentCodeExecutor(config)` — manages the configured agent process lifecycle |
 
 ### BT Node Factories
 
@@ -728,17 +728,17 @@ context.
 // my-split.js — custom splitting with dependency grouping
 var ps = globalThis.prSplit;
 
-var analysis = ps.analyzeDiff({ base: 'develop' });
+var analysis = await ps.analyzeDiff({ base: 'develop' });
 var groups = ps.groupByDependency(analysis.files, { modulePath: 'github.com/my/repo' });
-var plan = ps.createSplitPlan(groups, {
+var plan = await ps.createSplitPlan(groups, {
     baseBranch: 'develop',
     sourceBranch: analysis.currentBranch,
     branchPrefix: 'review/',
     maxFiles: 15
 });
 
-ps.executeSplit(plan);
-var equiv = ps.verifyEquivalence(plan);
+await ps.executeSplit(plan);
+var equiv = await ps.verifyEquivalence(plan);
 log.printf('Equivalence: %s', equiv.equivalent ? 'PASS' : 'FAIL');
 ```
 
@@ -874,7 +874,7 @@ those directories to untrusted code.
 
 ### ES module syntax (ESM) limitations
 
-The `osm` scripting runtime uses [Goja](https://github.com/dop251/goja), which
+The `osm` scripting runtime uses [Goja](https://github.com/joeycumines/goja), which
 implements a CommonJS module system via [goja_nodejs](https://github.com/nicois/goja_nodejs).
 
 **ESM is not supported.** The following ES module syntax will cause a parse error:
@@ -903,3 +903,38 @@ module system predates WHATWG ESM and uses the CommonJS `require`/`module.export
 conventions. ESM support (static `import`/`export` declarations) is tracked upstream
 in goja but is not yet implemented. If ESM support is added to goja in a future
 release, `osm` will evaluate adopting it.
+
+## Verified runtime behavior notes
+
+These details were confirmed by the JS runtime compliance suite
+(`internal/jscompliance`); they refine or qualify statements elsewhere in this
+document.
+
+- **`args` is bound by the command layer, not the engine.** In `osm script`,
+  `osm pr-split`, `osm code-review`, etc., the command binds `args` to the
+  post-filename arguments. A bare engine (e.g. inside another host) does not
+  set `args` until the host does. For inline `-e` snippets `args` is `[]`.
+- **`ctx` is a conditional global.** The testing-style execution context
+  (`ctx.run` / `ctx.defer` / `ctx.log` / …) is bound only while an
+  `ExecutionContext` is active (during script execution). It is not present on a
+  freshly constructed bare engine until execution begins.
+- **`console` routes to the process stdout/stderr**, not to the engine's
+  `io.Writer`. The adapter binds timer/inspection methods (`time`, `timeEnd`,
+  `count`, `group`, …); the standard `log`/`warn`/`error`/`info`/`debug` come
+  from the `goja_nodejs/console` module and write to the process's standard
+  streams via its default printer.
+- **Bare `crypto` is the WHATWG global**, not `osm:crypto`. The adapter binds a
+  WHATWG-style `crypto` global with `randomUUID()` and `getRandomValues()`
+  (no hashing). Use `require('osm:crypto')` for `sha256`/`sha1`/`md5`/`hmac*`.
+- **ES2024 globals are present:** `Promise.withResolvers`, `Promise.try`,
+  `AbortSignal.timeout`, `AbortSignal.any`, plus the broader WHATWG surface
+  (`TextEncoder`/`TextDecoder`, `URL`/`URLSearchParams`, `Blob`, `Headers`,
+  `FormData`, `DOMException`, `structuredClone`, `performance`, `setImmediate`,
+  `BigInt`).
+- **Async iteration is not supported.** `for await…of` and async generators are
+  rejected by the parser (a `SyntaxError`). `Symbol.asyncIterator` exists as a
+  symbol, but the syntax cannot be used. This is a Goja limitation.
+- **Unhandled Promise rejections are currently silent.** A rejected promise
+  with no `.catch`/`.then(_,reject)` is not surfaced to the host. Always attach
+  a rejection handler. (Tracked for an observability fix; see the compliance
+  suite's `TestUnhandledRejection_Observability`.)

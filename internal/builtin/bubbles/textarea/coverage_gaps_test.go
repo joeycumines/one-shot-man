@@ -3,7 +3,7 @@ package textarea
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // =============================================================================

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +15,7 @@ import (
 // errorJSRunner is a JSRunner that always returns an error.
 type errorJSRunner struct{}
 
-func (r *errorJSRunner) RunJSSync(func(*goja.Runtime) error) error {
+func (r *errorJSRunner) RunSync(func(*goja.Runtime) error) error {
 	return errors.New("event loop error")
 }
 
@@ -222,9 +222,13 @@ func TestNewManagerWithStderr_NilCtx(t *testing.T) {
 	vm := goja.New()
 	runner := &SyncJSRunner{Runtime: vm}
 
-	// nil ctx should default to context.Background()
-	m := NewManagerWithStderr(nil, nil, nil, nil, runner, nil, nil) //lint:ignore SA1012 testing nil-ctx fallback path
-	assert.NotNil(t, m.ctx)
+	// nil ctx now panics per context-severance fix (requires baseCtx threading)
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatalf("expected panic for nil ctx")
+		}
+	}()
+	_ = NewManagerWithStderr(nil, nil, nil, nil, runner, nil, nil) //lint:ignore SA1012 testing nil-ctx panic path
 }
 
 // ========================================================================
@@ -540,12 +544,12 @@ func TestValidateLabelInput_UnicodePrintable(t *testing.T) {
 }
 
 // ========================================================================
-// JsToTeaMsg — nil runtime path
+// ParseMsg — nil runtime path
 // ========================================================================
 
-func TestJsToTeaMsg_NilRuntime(t *testing.T) {
+func TestParseMsg_NilRuntime(t *testing.T) {
 	t.Parallel()
-	msg := JsToTeaMsg(nil, nil)
+	msg := ParseMsg(nil, nil)
 	assert.Nil(t, msg)
 }
 
@@ -902,10 +906,10 @@ func TestRequire_Run_InvalidModelID(t *testing.T) {
 }
 
 // ========================================================================
-// Init/Update/View — RunJSSync error paths
+// Init/Update/View — RunSync error paths
 // ========================================================================
 
-func TestInit_RunJSSyncError(t *testing.T) {
+func TestInit_RunSyncError(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 	model := &jsModel{
@@ -921,7 +925,7 @@ func TestInit_RunJSSyncError(t *testing.T) {
 	assert.Contains(t, model.initError, "event loop")
 }
 
-func TestUpdate_RunJSSyncError(t *testing.T) {
+func TestUpdate_RunSyncError(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 	model := &jsModel{
@@ -937,7 +941,7 @@ func TestUpdate_RunJSSyncError(t *testing.T) {
 	assert.Nil(t, cmd)
 }
 
-func TestView_RunJSSyncError(t *testing.T) {
+func TestView_RunSyncError(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 	model := &jsModel{

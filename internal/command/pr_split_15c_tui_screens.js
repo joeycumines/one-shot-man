@@ -14,7 +14,7 @@
     var zone = prSplit._zone;
     var truncate = prSplit._truncate;
     var renderProgressBar = prSplit._renderProgressBar;
-    var renderClaudeQuestionPrompt = prSplit._renderClaudeQuestionPrompt;
+    var renderAgentQuestionPrompt = prSplit._renderAgentQuestionPrompt;
     var getInteractivePaneSession = prSplit._getInteractivePaneSession;
 
     // --- Screen Renderers (T009-T017) ---
@@ -68,26 +68,26 @@
             lines.push(focusPointer + zone.mark(stratId, bullet + ' ' + label));
         }
 
-        // Claude availability status (shown after strategy buttons).
-        if (s.claudeCheckStatus === 'checking') {
-            var checkMsg = s.claudeCheckProgressMsg || 'Checking Claude availability\u2026';
+        // Agent availability status (shown after strategy buttons).
+        if (s.agentCheckStatus === 'checking') {
+            var checkMsg = s.agentCheckProgressMsg || 'Checking Agent availability\u2026';
             lines.push('');
             lines.push('  ' + styles.statusActive().render('\u23f3 ' + checkMsg));
         }
-        if (s.claudeCheckStatus === 'available' && s.claudeResolvedInfo) {
+        if (s.agentCheckStatus === 'available' && s.agentResolvedInfo) {
             lines.push('');
-            var claudeStatusMsg = s.userHasSelectedStrategy
-                ? ' \u2713 Claude available '
-                : ' \u2713 Claude available \u2014 using auto strategy ';
-            lines.push('  ' + styles.successBadge().render(claudeStatusMsg));
-            lines.push('    Command:  ' + styles.fieldValue().render(s.claudeResolvedInfo.command || '?'));
-            lines.push('    Provider: ' + styles.fieldValue().render(s.claudeResolvedInfo.type || '?'));
+            var agentStatusMsg = s.userHasSelectedStrategy
+                ? ' \u2713 Agent available '
+                : ' \u2713 Agent available \u2014 using auto strategy ';
+            lines.push('  ' + styles.successBadge().render(agentStatusMsg));
+            lines.push('    Command:  ' + styles.fieldValue().render(s.agentResolvedInfo.command || '?'));
+            lines.push('    Provider: ' + styles.fieldValue().render(s.agentResolvedInfo.type || '?'));
         }
-        if (s.claudeCheckStatus === 'unavailable') {
+        if (s.agentCheckStatus === 'unavailable') {
             lines.push('');
-            lines.push('  ' + styles.errorBadge().render(' \u2717 Claude unavailable '));
-            if (s.claudeCheckError) {
-                lines.push('    ' + styles.dim().render(s.claudeCheckError));
+            lines.push('  ' + styles.errorBadge().render(' \u2717 Agent unavailable '));
+            if (s.agentCheckError) {
+                lines.push('    ' + styles.dim().render(s.agentCheckError));
             }
             lines.push('    ' + styles.dim().render('\u2192 Using heuristic strategy'));
         }
@@ -96,10 +96,10 @@
         // Compute focused element using the actual focus system.
         var focusElems = prSplit._getFocusElements ? prSplit._getFocusElements(s) : [];
         var focusedElemId = (focusElems[focusIdx] || {}).id || '';
-        if (currentMode === 'auto' || s.claudeCheckStatus) {
-            var testFocused = (focusedElemId === 'test-claude');
+        if (currentMode === 'auto' || s.agentCheckStatus) {
+            var testFocused = (focusedElemId === 'test-agent');
             var testBtnStyle = testFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
-            lines.push('  ' + zone.mark('test-claude',
+            lines.push('  ' + zone.mark('test-agent',
                 testBtnStyle.render(' Test Connection ')));
         }
         lines.push('');
@@ -259,8 +259,8 @@
                 styles.errorCard().render(st.analysisCache.error));
         }
 
-        // T46: Inline Claude question prompt (during active analysis).
-        var questionPrompt = renderClaudeQuestionPrompt(s);
+        // T46: Inline Agent question prompt (during active analysis).
+        var questionPrompt = renderAgentQuestionPrompt(s);
         if (questionPrompt) {
             lines.push(questionPrompt);
         }
@@ -393,20 +393,20 @@
         var regenFocused = (focusIdx === splitCount + 1);
         var editBtnStyle = editFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
         var regenBtnStyle = regenFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
-        var askClaudeFocused = (focusIdx === splitCount + 2);
-        var askClaudeStyle = askClaudeFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
+        var askAgentFocused = (focusIdx === splitCount + 2);
+        var askAgentStyle = askAgentFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
         lines.push('');
         if (layoutMode(s) === 'compact') {
             lines.push(zone.mark('plan-edit', editBtnStyle.render('Edit \u270f')));
             lines.push(zone.mark('plan-regenerate', regenBtnStyle.render('Regen \ud83d\udd04')));
-            lines.push(zone.mark('ask-claude', askClaudeStyle.render('Ask Claude \ud83e\udd16')));
+            lines.push(zone.mark('ask-agent', askAgentStyle.render('Ask Agent \ud83e\udd16')));
         } else {
             lines.push(lipgloss.joinHorizontal(lipgloss.Center,
                 zone.mark('plan-edit', editBtnStyle.render('Edit Plan \u270f')),
                 '  ',
                 zone.mark('plan-regenerate', regenBtnStyle.render('Regenerate \ud83d\udd04')),
                 '  ',
-                zone.mark('ask-claude', askClaudeStyle.render('Ask Claude \ud83e\udd16'))
+                zone.mark('ask-agent', askAgentStyle.render('Ask Agent \ud83e\udd16'))
             ));
         }
 
@@ -927,8 +927,8 @@
             renderVerificationSummary(s, splits, lines);
         }
 
-        // T46: Inline Claude question prompt (during active execution).
-        var execQuestionPrompt = renderClaudeQuestionPrompt(s);
+        // T46: Inline Agent question prompt (during active execution).
+        var execQuestionPrompt = renderAgentQuestionPrompt(s);
         if (execQuestionPrompt) {
             lines.push(execQuestionPrompt);
         }

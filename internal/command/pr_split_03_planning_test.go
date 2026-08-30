@@ -38,7 +38,7 @@ func TestChunk03_CreateSplitPlan_BasicGroups(t *testing.T) {
 				'backend': { files: ['a.go', 'b.go'], description: 'Backend changes' },
 				'frontend': ['c.js', 'd.js']
 			};
-			return JSON.stringify(globalThis.prSplit.createSplitPlan(groups, {
+			return JSON.stringify(await globalThis.prSplit.createSplitPlan(groups, {
 				dir: '` + escapeJSPath(dir) + `',
 				sourceBranch: 'main'
 			}));
@@ -112,7 +112,7 @@ func TestChunk03_CreateSplitPlan_EmptyGroups(t *testing.T) {
 
 	result, err := evalJS(`
 		(function() {
-			var plan = globalThis.prSplit.createSplitPlan({}, { sourceBranch: 'main' });
+			var plan = await globalThis.prSplit.createSplitPlan({}, { sourceBranch: 'main' });
 			return plan.splits.length;
 		})()
 	`)
@@ -132,7 +132,7 @@ func TestChunk03_CreateSplitPlan_NilGroups(t *testing.T) {
 
 	result, err := evalJS(`
 		(function() {
-			var plan = globalThis.prSplit.createSplitPlan(null, { sourceBranch: 'main' });
+			var plan = await globalThis.prSplit.createSplitPlan(null, { sourceBranch: 'main' });
 			return plan.splits.length;
 		})()
 	`)
@@ -154,12 +154,12 @@ func TestChunk03_CreateSplitPlan_BranchNames(t *testing.T) {
 	}, "00_core", "01_analysis", "02_grouping", "03_planning")
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var groups = {
 				'feat/login page': ['login.go'],
 				'fix/bug #42': ['bug.go']
 			};
-			var plan = globalThis.prSplit.createSplitPlan(groups, { sourceBranch: 'main' });
+			var plan = await globalThis.prSplit.createSplitPlan(groups, { sourceBranch: 'main' });
 			return JSON.stringify(plan.splits.map(function(s) { return s.name; }));
 		})()
 	`)
@@ -197,7 +197,7 @@ func TestChunk03_SavePlan_NoPlan(t *testing.T) {
 
 	result, err := evalJS(`
 		(function() {
-			var r = globalThis.prSplit.savePlan();
+			var r = await globalThis.prSplit.savePlan();
 			return r.error;
 		})()
 	`)
@@ -235,7 +235,7 @@ func TestChunk03_SaveLoadPlan_RoundTrip(t *testing.T) {
 
 			// Create a plan and cache it.
 			var groups = { 'grp1': ['a.go'], 'grp2': ['b.go', 'c.go'] };
-			var plan = prSplit.createSplitPlan(groups, {
+			var plan = await prSplit.createSplitPlan(groups, {
 				dir: '` + escapeJSPath(dir) + `',
 				sourceBranch: 'main'
 			});
@@ -252,7 +252,7 @@ func TestChunk03_SaveLoadPlan_RoundTrip(t *testing.T) {
 			};
 
 			// Save.
-			var saveResult = prSplit.savePlan('` + escapeJSPath(planPath) + `');
+			var saveResult = await prSplit.savePlan('` + escapeJSPath(planPath) + `');
 			if (saveResult.error) return 'save error: ' + saveResult.error;
 
 			// Clear caches.
@@ -262,7 +262,7 @@ func TestChunk03_SaveLoadPlan_RoundTrip(t *testing.T) {
 			prSplit._state.executionResultCache = null;
 
 			// Load.
-			var loadResult = prSplit.loadPlan('` + escapeJSPath(planPath) + `');
+			var loadResult = await prSplit.loadPlan('` + escapeJSPath(planPath) + `');
 			if (loadResult.error) return 'load error: ' + loadResult.error;
 
 			return JSON.stringify({
@@ -334,7 +334,7 @@ func TestChunk03_LoadPlan_CorruptJSON(t *testing.T) {
 
 	result, err := evalJS(`
 		(function() {
-			var r = globalThis.prSplit.loadPlan('` + escapeJSPath(planPath) + `');
+			var r = await globalThis.prSplit.loadPlan('` + escapeJSPath(planPath) + `');
 			return r.error;
 		})()
 	`)
@@ -359,7 +359,7 @@ func TestChunk03_LoadPlan_MissingFile(t *testing.T) {
 
 	result, err := evalJS(`
 		(function() {
-			var r = globalThis.prSplit.loadPlan('/nonexistent/path/plan.json');
+			var r = await globalThis.prSplit.loadPlan('/nonexistent/path/plan.json');
 			return r.error;
 		})()
 	`)
@@ -401,7 +401,7 @@ func TestChunk03_LoadPlan_MissingSplits(t *testing.T) {
 
 	result, err := evalJS(`
 		(function() {
-			var r = globalThis.prSplit.loadPlan('` + escapeJSPath(planPath) + `');
+			var r = await globalThis.prSplit.loadPlan('` + escapeJSPath(planPath) + `');
 			return r.error;
 		})()
 	`)
@@ -432,7 +432,7 @@ func TestChunk03_LoadPlan_UnsupportedVersion(t *testing.T) {
 
 	result, err := evalJS(`
 		(function() {
-			var r = globalThis.prSplit.loadPlan('` + escapeJSPath(planPath) + `');
+			var r = await globalThis.prSplit.loadPlan('` + escapeJSPath(planPath) + `');
 			return r.error;
 		})()
 	`)
@@ -469,7 +469,7 @@ func TestChunk03_SavePlan_WithLastCompletedStep(t *testing.T) {
 				baseBranch: 'main',
 				splits: [{ name: 'split/01-test', files: ['a.go'] }]
 			};
-			var r = prSplit.savePlan('` + escapeJSPath(planPath) + `', 'classify');
+			var r = await prSplit.savePlan('` + escapeJSPath(planPath) + `', 'classify');
 			if (r.error) return 'error: ' + r.error;
 			return 'ok';
 		})()
@@ -536,7 +536,7 @@ func TestChunk03_LoadPlan_DoubleLoadNoDuplication(t *testing.T) {
 
 			// Create a plan.
 			var groups = { 'grp1': ['x.go'] };
-			var plan = prSplit.createSplitPlan(groups, {
+			var plan = await prSplit.createSplitPlan(groups, {
 				dir: '` + escapeJSPath(dir) + `',
 				sourceBranch: 'main'
 			});
@@ -554,13 +554,13 @@ func TestChunk03_LoadPlan_DoubleLoadNoDuplication(t *testing.T) {
 			};
 
 			// Save (includes conversations).
-			var saveResult = prSplit.savePlan('` + escapeJSPath(planPath) + `');
+			var saveResult = await prSplit.savePlan('` + escapeJSPath(planPath) + `');
 			if (saveResult.error) return 'save error: ' + saveResult.error;
 
 			// Load twice.
-			var r1 = prSplit.loadPlan('` + escapeJSPath(planPath) + `');
+			var r1 = await prSplit.loadPlan('` + escapeJSPath(planPath) + `');
 			if (r1.error) return 'load1 error: ' + r1.error;
-			var r2 = prSplit.loadPlan('` + escapeJSPath(planPath) + `');
+			var r2 = await prSplit.loadPlan('` + escapeJSPath(planPath) + `');
 			if (r2.error) return 'load2 error: ' + r2.error;
 
 			// Conversation history should NOT be doubled.
@@ -634,7 +634,7 @@ func TestChunk03_LoadPlan_PreservesFalsyRuntimeValues(t *testing.T) {
 			ps.runtime.verifyCommand = 'make';
 			ps.runtime.maxFiles = 10;
 			ps.runtime.branchPrefix = 'split/';
-			var r = ps.loadPlan('` + escapeJSPath(planPath) + `');
+			var r = await ps.loadPlan('` + escapeJSPath(planPath) + `');
 			if (r.error) return 'error: ' + r.error;
 			return JSON.stringify({
 				verifyCommand: ps.runtime.verifyCommand,

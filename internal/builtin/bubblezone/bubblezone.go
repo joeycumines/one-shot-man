@@ -46,7 +46,7 @@ import (
 	"sync/atomic"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	zone "github.com/lrstanley/bubblezone/v2"
 )
 
@@ -73,8 +73,8 @@ func (m *Manager) Close() {
 	}
 }
 
-// prefixCounter for generating unique prefixes
-var prefixCounter uint64
+// prefixCounter for generating unique prefixes when the zone manager is closed.
+var prefixCounter atomic.Uint64
 
 // Require returns a CommonJS native module under "osm:bubblezone".
 // It exposes bubblezone functionality for zone-based mouse hit-testing.
@@ -200,7 +200,7 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 			defer manager.mu.RUnlock()
 			if manager.zone == nil {
 				// Fallback to counter-based prefix
-				id := atomic.AddUint64(&prefixCounter, 1)
+				id := prefixCounter.Add(1)
 				return runtime.ToValue(string(rune('A'+int(id%26))) + "_")
 			}
 			return runtime.ToValue(manager.zone.NewPrefix())

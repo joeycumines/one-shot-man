@@ -128,10 +128,10 @@ func TestChunk16a_GetFocusElements_PLAN_REVIEW(t *testing.T) {
 	}
 	s, _ := val.(string)
 
-	// 3 split cards + plan-edit + plan-regenerate + ask-claude + nav-next + nav-cancel = 8.
+	// 3 split cards + plan-edit + plan-regenerate + ask-agent + nav-next + nav-cancel = 8.
 	expected := []string{
 		"split-card-0", "split-card-1", "split-card-2",
-		"plan-edit", "plan-regenerate", "ask-claude",
+		"plan-edit", "plan-regenerate", "ask-agent",
 		"nav-next", "nav-cancel",
 	}
 	for _, id := range expected {
@@ -265,10 +265,10 @@ func TestChunk16a_GetFocusElements_DoesNotExposeNavOnCrashedErrorView(t *testing
 			var s = {
 				wizardState: 'ERROR',
 				errorFromState: 'BRANCH_BUILDING',
-				errorSplitViewState: {enabled: true, focus: 'claude', tab: 'verify'},
+				errorSplitViewState: {enabled: true, focus: 'agent', tab: 'verify'},
 				splitViewEnabled: false,
 				splitViewFocus: 'wizard',
-				splitViewTab: 'claude'
+				splitViewTab: 'agent'
 			};
 			return JSON.stringify(prSplit._getFocusElements(s).map(function(e) { return e.id; }));
 		})()
@@ -707,7 +707,7 @@ func TestChunk16a_GetFocusElements_ERROR_RESOLUTION(t *testing.T) {
 	t.Run("crash_mode", func(t *testing.T) {
 		val, err := evalJS(`
 			(function() {
-				var s = { wizardState: 'ERROR_RESOLUTION', claudeCrashDetected: true, focusIndex: 0 };
+				var s = { wizardState: 'ERROR_RESOLUTION', agentCrashDetected: true, focusIndex: 0 };
 				var elems = prSplit._getFocusElements(s);
 				return JSON.stringify(elems.map(function(e) { return e.id; }));
 			})()
@@ -717,7 +717,7 @@ func TestChunk16a_GetFocusElements_ERROR_RESOLUTION(t *testing.T) {
 		}
 		s, _ := val.(string)
 		expected := []string{
-			"resolve-restart-claude", "resolve-fallback-heuristic",
+			"resolve-restart-agent", "resolve-fallback-heuristic",
 			"resolve-abort", "nav-next", "nav-cancel",
 		}
 		for _, id := range expected {
@@ -732,7 +732,7 @@ func TestChunk16a_GetFocusElements_ERROR_RESOLUTION(t *testing.T) {
 		// Count: 3 crash + nav-next + nav-cancel = 5.
 		cntVal, err := evalJS(`
 			prSplit._getFocusElements({
-				wizardState: 'ERROR_RESOLUTION', claudeCrashDetected: true
+				wizardState: 'ERROR_RESOLUTION', agentCrashDetected: true
 			}).length
 		`)
 		if err != nil {

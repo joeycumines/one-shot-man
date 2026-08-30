@@ -1,6 +1,7 @@
 package termmux
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -140,6 +141,106 @@ func TestParseSGRMouse_LargeCoords(t *testing.T) {
 		t.Fatal("expected ok")
 	}
 	if ev.X != 255 || ev.Y != 100 {
+		t.Errorf("ev=%+v", ev)
+	}
+}
+
+func TestParseSGRMouse_ZeroCoords(t *testing.T) {
+	buf := []byte("\x1b[<0;0;0M")
+	ev, _, ok := parseSGRMouse(buf, 0)
+	if !ok {
+		t.Fatal("expected ok for zero coords")
+	}
+	if ev.X != 0 || ev.Y != 0 {
+		t.Errorf("ev=%+v", ev)
+	}
+}
+
+func TestParseSGRMouse_MaxCoordBoundary(t *testing.T) {
+	buf := fmt.Appendf(nil, "\x1b[<0;%d;%dM", MaxCoord, MaxCoord)
+	ev, _, ok := parseSGRMouse(buf, 0)
+	if !ok {
+		t.Fatal("expected ok at MaxCoord boundary")
+	}
+	if ev.X != MaxCoord || ev.Y != MaxCoord {
+		t.Errorf("ev=%+v", ev)
+	}
+}
+
+func TestParseSGRMouse_ExceedsMaxCoord(t *testing.T) {
+	buf := fmt.Appendf(nil, "\x1b[<0;%d;%dM", MaxCoord+1, MaxCoord+1)
+	_, _, ok := parseSGRMouse(buf, 0)
+	if ok {
+		t.Error("expected !ok for coords exceeding MaxCoord")
+	}
+}
+
+func TestParseSGRMouse_ExceedsMaxCoordX(t *testing.T) {
+	buf := fmt.Appendf(nil, "\x1b[<0;%d;%dM", MaxCoord+100, 5)
+	_, _, ok := parseSGRMouse(buf, 0)
+	if ok {
+		t.Error("expected !ok for x exceeding MaxCoord")
+	}
+}
+
+func TestParseSGRMouse_ExceedsMaxCoordY(t *testing.T) {
+	buf := fmt.Appendf(nil, "\x1b[<0;%d;%dM", 5, MaxCoord+100)
+	_, _, ok := parseSGRMouse(buf, 0)
+	if ok {
+		t.Error("expected !ok for y exceeding MaxCoord")
+	}
+}
+
+func TestParseSGRMouse_ExceedsMaxCoordButton(t *testing.T) {
+	buf := fmt.Appendf(nil, "\x1b[<%d;5;10M", MaxCoord+1)
+	_, _, ok := parseSGRMouse(buf, 0)
+	if ok {
+		t.Error("expected !ok for button exceeding MaxCoord")
+	}
+}
+
+func TestParseSGRMouse_VeryLargeCoordsOverflow(t *testing.T) {
+	// 15-digit number exceeds both MaxCoord and parseDecimal overflow guard.
+	buf := []byte("\x1b[<0;999999999999999;10M")
+	_, _, ok := parseSGRMouse(buf, 0)
+	if ok {
+		t.Error("expected !ok for overflow-level coordinate")
+	}
+}
+
+func TestParseSGRMouse_ButtonOverflow(t *testing.T) {
+	buf := []byte("\x1b[<999999999999;5;10M")
+	_, _, ok := parseSGRMouse(buf, 0)
+	if ok {
+		t.Error("expected !ok for overflow-level button")
+	}
+}
+
+func TestParseSGRMouse_NegativeXRejected(t *testing.T) {
+	// SGR protocol doesn't support negative coordinates; minus sign
+	// is not a digit so parseDecimal returns (0, start, false).
+	buf := []byte("\x1b[<0;-5;10M")
+	_, _, ok := parseSGRMouse(buf, 0)
+	if ok {
+		t.Error("expected !ok for negative x coordinate")
+	}
+}
+
+func TestParseSGRMouse_NegativeYRejected(t *testing.T) {
+	buf := []byte("\x1b[<0;5;-10M")
+	_, _, ok := parseSGRMouse(buf, 0)
+	if ok {
+		t.Error("expected !ok for negative y coordinate")
+	}
+}
+
+func TestParseSGRMouse_FourDigitCoords(t *testing.T) {
+	buf := []byte("\x1b[<0;9999;9999M")
+	ev, _, ok := parseSGRMouse(buf, 0)
+	if !ok {
+		t.Fatal("expected ok for 4-digit coords")
+	}
+	if ev.X != 9999 || ev.Y != 9999 {
 		t.Errorf("ev=%+v", ev)
 	}
 }

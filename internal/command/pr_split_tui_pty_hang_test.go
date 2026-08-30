@@ -60,13 +60,13 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 
 	// Launch osm pr-split in interactive mode via PTY.
 	// -strategy controls GROUPING (directory, extension, etc.).
-	// -claude-command forces a nonexistent path so the auto-detect check
-	// determines Claude is unavailable, forcing the heuristic pipeline.
+	// -agent-command forces a nonexistent path so the auto-detect check
+	// determines Agent is unavailable, forcing the heuristic pipeline.
 	cmd := exec.CommandContext(ctx, osmBin,
 		"pr-split",
 		"-base=main",
 		"-strategy=directory",
-		"-claude-command=/nonexistent/claude",
+		"-agent-command=/nonexistent/agent",
 		"-verify=true",
 		"--store=memory",
 		"--session="+t.Name(),
@@ -139,8 +139,8 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 	}
 	t.Logf("CONFIG screen rendered successfully")
 
-	// Wait for Claude auto-detect to settle (fires 1ms after WindowSize,
-	// takes a few hundred ms to run `which claude` and fail). We wait until
+	// Wait for Agent auto-detect to settle (fires 1ms after WindowSize,
+	// takes a few hundred ms to run `which agent` and fail). We wait until
 	// the screen stabilises.
 	waitForScreenChange(t, &outputBuf, outputBuf.String(), 5*time.Second)
 

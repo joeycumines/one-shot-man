@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // ErrCommandNotFound is returned by [TUIManager.ExecuteCommand] when no
@@ -88,7 +88,7 @@ func (tm *TUIManager) executeJavaScript(code string) {
 	}
 
 	// Create a temporary script with the current mode's context
-	script := tm.engine.LoadScriptFromString(fmt.Sprintf("%s-repl", tm.currentMode.Name), code)
+	script := tm.engine.LoadScriptString(fmt.Sprintf("%s-repl", tm.currentMode.Name), code)
 
 	// Execute with mode state available
 	if err := tm.engine.ExecuteScript(script); err != nil {

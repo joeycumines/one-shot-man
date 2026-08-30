@@ -16,7 +16,7 @@
     //   pushOnly:    bool   - Push branches but don't create PRs
     //   autoMerge:   bool   - Enable auto-merge via merge queue
     //   mergeMethod: string - Merge method: squash, merge, rebase
-    function createPRs(plan, options) {
+    async function createPRs(plan, options) {
         options = options || {};
         var resolveDir = prSplit._resolveDir;
         var dir = resolveDir(plan.dir || '.');
@@ -56,7 +56,7 @@
 
         // Verify gh CLI is available (unless push-only mode).
         if (!pushOnly) {
-            var ghCheck = exec.execv(['gh', '--version']);
+            var ghCheck = await exec.execv(['gh', '--version']);
             if (ghCheck.code !== 0) {
                 return { error: 'gh CLI not found — install GitHub CLI (https://cli.github.com) or use --push-only', results: [] };
             }
@@ -65,7 +65,7 @@
         // Pre-flight: verify baseBranch exists on the remote so we don't
         // hit "Base sha can't be blank" from the GitHub GraphQL API.
         if (!pushOnly) {
-            var remoteCheck = gitExec(dir, ['ls-remote', '--heads', remote, plan.baseBranch]);
+            var remoteCheck = await gitExec(dir, ['ls-remote', '--heads', remote, plan.baseBranch]);
             if (remoteCheck.code !== 0 || remoteCheck.stdout.trim() === '') {
                 return {
                     error: 'base branch "' + plan.baseBranch + '" not found on remote "' + remote + '" — push it first or check the branch name',
@@ -79,7 +79,7 @@
         // Step 1: Push all split branches.
         for (var i = 0; i < plan.splits.length; i++) {
             var split = plan.splits[i];
-            var pushResult = gitExec(dir, ['push', '-f', remote, split.name]);
+            var pushResult = await gitExec(dir, ['push', '-f', remote, split.name]);
             if (pushResult.code !== 0) {
                 results.push({
                     name: split.name,
@@ -132,7 +132,7 @@
             // the base. This avoids the GraphQL error "No commits between
             // base and head" / "Head sha can't be blank" which occurs when
             // execute-split fell back to --allow-empty.
-            var diffCheck = gitExec(dir, ['diff', '--quiet', base, prSplit2.name]);
+            var diffCheck = await gitExec(dir, ['diff', '--quiet', base, prSplit2.name]);
             if (diffCheck.code === 0) {
                 // Exit code 0 means no diff — skip PR creation.
                 results[pi].error = null;
@@ -141,7 +141,7 @@
                 continue;
             }
 
-            var ghResult = exec.execv(ghArgs);
+            var ghResult = await exec.execv(ghArgs);
             if (ghResult.code !== 0) {
                 results[pi].error = 'gh pr create failed: ' + ghResult.stderr.trim();
             } else {
@@ -158,7 +158,7 @@
                     '--' + mergeMethod,
                     '--auto'
                 ];
-                var mergeResult = exec.execv(mergeArgs);
+                var mergeResult = await exec.execv(mergeArgs);
                 if (mergeResult.code !== 0) {
                     results[k].mergeError = 'auto-merge failed: ' + mergeResult.stderr.trim();
                 } else {
@@ -196,7 +196,7 @@
         }
         if (outputFn) outputFn('\u276f gh ' + args.join(' '));
 
-        var child = exec.spawn('gh', args);
+        var child = await exec.spawn('gh', args);
 
         async function readAll(stream, streamOutputFn) {
             var buf = '';

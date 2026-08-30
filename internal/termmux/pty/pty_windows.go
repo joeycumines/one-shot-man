@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -18,9 +19,26 @@ import (
 // windowsProcessHandle wraps a Windows process handle created via
 // CreateProcess with a ConPTY pseudoconsole attached.
 type windowsProcessHandle struct {
-	process windows.Handle
-	pid     uint32
-	conPTY  windows.Handle // pseudoconsole handle; zero when closed
+	process   windows.Handle
+	pid       uint32
+	conPTY    windows.Handle // pseudoconsole handle; zero when closed
+	inputRead windows.Handle // PTY-side input read handle; kept open for ConPTY's reader thread
+	mu        sync.Mutex     // guards conPTY against concurrent close/Signal
+}
+
+// closeConPTY closes the pseudoconsole handle if not already closed.
+// Thread-safe — callers do NOT need to hold any external lock.
+func (h *windowsProcessHandle) closeConPTY() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.conPTY != 0 {
+		windows.ClosePseudoConsole(h.conPTY)
+		h.conPTY = 0
+	}
+	if h.inputRead != 0 {
+		windows.CloseHandle(h.inputRead)
+		h.inputRead = 0
+	}
 }
 
 func (h *windowsProcessHandle) Wait() error {
@@ -38,14 +56,17 @@ func (h *windowsProcessHandle) Signal(sig os.Signal) error {
 	switch sig {
 	case syscall.SIGTERM:
 		// Graceful shutdown: close the pseudoconsole, which signals
-		// a console-close event to the child process.
-		if h.conPTY != 0 {
-			windows.ClosePseudoConsole(h.conPTY)
-			h.conPTY = 0
-			return nil
+		// a console-close event to the child process. If the ConPTY
+		// was already closed (e.g. by the process-exit watcher),
+		// escalate to terminate.
+		h.mu.Lock()
+		alreadyClosed := h.conPTY == 0
+		h.mu.Unlock()
+		h.closeConPTY()
+		if alreadyClosed {
+			return windows.TerminateProcess(h.process, 1)
 		}
-		// ConPTY already closed; escalate to terminate.
-		return windows.TerminateProcess(h.process, 1)
+		return nil
 	default:
 		// SIGKILL, SIGINT, SIGHUP, etc. — force terminate.
 		return windows.TerminateProcess(h.process, 1)
@@ -85,8 +106,7 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 	}
 
 	// Create the pseudoconsole. ConPTY reads from inputReadHandle and
-	// writes to outputWriteHandle; those pipe ends are now owned by
-	// the pseudoconsole and must not be used by the parent.
+	// writes to outputWriteHandle.
 	size := windows.Coord{X: int16(cfg.Cols), Y: int16(cfg.Rows)}
 	var pconsole windows.Handle
 	if err := windows.CreatePseudoConsole(size, inputReadHandle, outputWriteHandle, 0, &pconsole); err != nil {
@@ -97,13 +117,14 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 		return nil, fmt.Errorf("pty: CreatePseudoConsole: %w", err)
 	}
 
-	// These pipe ends are now owned by the pseudoconsole.
-	windows.CloseHandle(inputReadHandle)
+	// Close the PTY-end output handle — the ConPTY has its own copy.
+	// Keep inputReadHandle open for the ConPTY's input reader thread.
 	windows.CloseHandle(outputWriteHandle)
 
-	proc, err := spawnWithConPTY(ctx, cfg, pconsole, inputWriteHandle, outputReadHandle)
+	proc, err := spawnWithConPTY(ctx, cfg, pconsole, inputWriteHandle, outputReadHandle, inputReadHandle)
 	if err != nil {
 		windows.ClosePseudoConsole(pconsole)
+		windows.CloseHandle(inputReadHandle)
 		windows.CloseHandle(inputWriteHandle)
 		windows.CloseHandle(outputReadHandle)
 		return nil, err
@@ -113,8 +134,11 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 
 // spawnWithConPTY creates the child process attached to the given ConPTY.
 // On success, ownership of pconsole, inputWrite, and outputRead is
-// transferred to the returned Process.
-func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite, outputRead windows.Handle) (*Process, error) {
+// transferred to the returned Process. The inputRead handle is retained
+// (stored on the process handle) and closed later by closeConPTY() when the
+// pseudoconsole is torn down; keeping it open for the ConPTY's lifetime avoids
+// prematurely severing the input pipe (see the retention note in Spawn above).
+func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite, outputRead, inputRead windows.Handle) (*Process, error) {
 	// Set up the process thread attribute list with the pseudoconsole.
 	attrList, err := windows.NewProcThreadAttributeList(1)
 	if err != nil {
@@ -124,7 +148,11 @@ func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite,
 
 	if err := attrList.Update(
 		windows.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-		unsafe.Pointer(&pconsole),
+		// Pass the HPCON handle value as lpValue. HPCON is typedef VOID*,
+		// so the handle value IS a pointer. We use unsafe.Add to convert
+		// the handle to unsafe.Pointer without triggering go vet's
+		// unsafeptr analyzer (HPCON is a kernel handle, not a Go pointer).
+		unsafe.Add(unsafe.Pointer(nil), uintptr(pconsole)),
 		unsafe.Sizeof(pconsole),
 	); err != nil {
 		return nil, fmt.Errorf("pty: ProcThreadAttributeList.Update: %w", err)
@@ -158,19 +186,50 @@ func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite,
 	}
 
 	// Create the child process with the extended startup info.
+	//
+	// STARTF_USESTDHANDLES (with hStd* left NULL) is REQUIRED here, and the
+	// reason is subtle. With bInheritHandles=FALSE (below), Windows'
+	// NtCreateUserProcess applies a legacy fallback that DUPLICATES the
+	// parent's standard handles into a console-app child (a ConPTY child
+	// qualifies). ConPTY's own cleanup (CONSOLE_USING_PTY_REFERENCE ->
+	// ConsoleCloseIfConsoleHandle) only discards duplicated *console* handles,
+	// NOT pipe/file handles — so when the parent's stdout is a pipe or file
+	// (e.g. under `go test`, or any redirected/headless caller), the child
+	// would inherit a working handle to the PARENT's stdout, bypass the
+	// pseudoconsole entirely, and the ConPTY output pipe would never reach
+	// EOF — deadlocking the read on child exit (reproduced: TestConPTY_Smoke
+	// and TestCaptureAgentHandle_* fail/hang when this flag is removed).
+	//
+	// STARTF_USESTDHANDLES + NULL hStd* forces the child's standard-handle
+	// slots to NULL, bypassing the duplication fallback; the pseudoconsole
+	// attach then opens fresh ConDrv handles bound to conhost's screen buffer,
+	// restoring correct output capture and a clean EOF on exit. This is the
+	// canonical ConPTY pattern — Microsoft's own node-pty sets exactly this
+	// combination ("VERY IMPORTANT that [bInheritHandles] is false"), as does
+	// charmbracelet/x/conpty. The MS EchoCon sample omits the flag only
+	// because it assumes a console-attached parent whose handles the cleanup
+	// can discard. Refs: microsoft/terminal#15814 (DHowett, eryksun);
+	// rprichard/win32-console-docs (CreateProcess rule 4 vs 6); vim/vim#19589.
+	// Do NOT remove this flag without re-validating ConPTY capture on Windows.
 	si := windows.StartupInfoEx{
 		StartupInfo: windows.StartupInfo{
-			Cb: uint32(unsafe.Sizeof(windows.StartupInfoEx{})),
+			Cb:    uint32(unsafe.Sizeof(windows.StartupInfoEx{})),
+			Flags: windows.STARTF_USESTDHANDLES,
 		},
 		ProcThreadAttributeList: attrList.List(),
 	}
 	var pi windows.ProcessInformation
 
+	// SecurityAttributes with InheritHandle=1 for process/thread handles,
+	// matching the charmbracelet/x/conpty reference implementation.
+	pSec := &windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), InheritHandle: 1}
+	tSec := &windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), InheritHandle: 1}
+
 	if err := windows.CreateProcess(
 		nil,        // lpApplicationName — parsed from cmdLine
 		cmdLinePtr, // lpCommandLine
-		nil,        // lpProcessAttributes
-		nil,        // lpThreadAttributes
+		pSec,       // lpProcessAttributes
+		tSec,       // lpThreadAttributes
 		false,      // bInheritHandles
 		windows.CREATE_UNICODE_ENVIRONMENT|windows.EXTENDED_STARTUPINFO_PRESENT,
 		envBlock, // lpEnvironment
@@ -189,19 +248,22 @@ func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite,
 	inputFile := os.NewFile(uintptr(inputWrite), "|1")
 
 	handle := &windowsProcessHandle{
-		process: pi.Process,
-		pid:     pi.ProcessId,
-		conPTY:  pconsole,
+		process:   pi.Process,
+		pid:       pi.ProcessId,
+		conPTY:    pconsole,
+		inputRead: inputRead,
 	}
 	done := make(chan struct{})
 
 	proc := &Process{
-		ptyFile:      outputFile,
-		writeFile:    inputFile,
-		done:         done,
-		cmd:          handle,
-		exitCode:     -1,
-		writeTimeout: cfg.WriteTimeout,
+		ptyFile:           outputFile,
+		writeFile:         inputFile,
+		done:              done,
+		cmd:               handle,
+		exitCode:          -1,
+		writeTimeout:      cfg.WriteTimeout,
+		closeGracefulWait: cfg.CloseGracePeriod,
+		closeForceWait:    cfg.CloseForceWait,
 	}
 
 	// Background goroutine: wait for process exit and extract exit code.
@@ -243,7 +305,12 @@ func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite,
 // Must be called with p.mu held.
 func (p *Process) platformResize(rows, cols uint16) error {
 	h, ok := p.cmd.(*windowsProcessHandle)
-	if !ok || h.conPTY == 0 {
+	if !ok {
+		return ErrNotSupported
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.conPTY == 0 {
 		return ErrNotSupported
 	}
 	size := windows.Coord{X: int16(cols), Y: int16(rows)}
@@ -252,19 +319,25 @@ func (p *Process) platformResize(rows, cols uint16) error {
 
 // platformClose releases the ConPTY and process handles. Called by
 // Close() AFTER <-p.done ensures the wait goroutine has finished,
-// making the process handle safe to close. The ConPTY handle is
-// also safe because Signal(SIGTERM) via ClosePseudoConsole happens
-// before Close() reaches this point.
+// making the process handle safe to close.
 func (p *Process) platformClose() {
 	if h, ok := p.cmd.(*windowsProcessHandle); ok {
-		if h.conPTY != 0 {
-			windows.ClosePseudoConsole(h.conPTY)
-			h.conPTY = 0
-		}
+		h.closeConPTY()
 		if h.process != 0 {
 			_ = windows.CloseHandle(h.process)
 			h.process = 0
 		}
+	}
+}
+
+// platformClosePseudoConsole closes the ConPTY pseudoconsole handle
+// without closing the process or output file. This triggers the ConPTY
+// to flush its internal buffer to the output pipe and close the pipe's
+// write end, causing Read() to return remaining data followed by EOF.
+// Thread-safe via closeConPTY's internal mutex.
+func (p *Process) platformClosePseudoConsole() {
+	if h, ok := p.cmd.(*windowsProcessHandle); ok {
+		h.closeConPTY()
 	}
 }
 

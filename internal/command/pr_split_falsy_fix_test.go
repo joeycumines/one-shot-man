@@ -198,7 +198,7 @@ func TestFalsyFix_OrchestratorTimeoutsZero(t *testing.T) {
 				'classifyTimeoutMs', 'planTimeoutMs', 'resolveTimeoutMs',
 				'resolveCommandTimeoutMs', 'pollIntervalMs',
 				'pipelineTimeoutMs', 'stepTimeoutMs', 'watchdogIdleMs',
-				'claudeHeartbeatTimeoutMs', 'verifyTimeoutMs'
+				'agentHeartbeatTimeoutMs', 'verifyTimeoutMs'
 			];
 			for (var i = 0; i < fields.length; i++) {
 				if (typeof defs[fields[i]] !== 'number') {

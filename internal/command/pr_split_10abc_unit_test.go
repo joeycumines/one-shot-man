@@ -335,7 +335,7 @@ func TestChunk10c_ExportsAreFunctions(t *testing.T) {
 	exports := []string{
 		"prSplit.waitForLogged",
 		"prSplit.heuristicFallback",
-		"prSplit.resolveConflictsWithClaude",
+		"prSplit.resolveConflictsWithAgent",
 	}
 	for _, fn := range exports {
 		t.Run(fn, func(t *testing.T) {

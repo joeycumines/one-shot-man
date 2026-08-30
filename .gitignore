@@ -72,3 +72,6 @@ DIRECTIVE.txt
 /.claude/skills/takumi-prompting
 .mcp.json
 __pycache__
+/mockclaude
+
+.dbg/

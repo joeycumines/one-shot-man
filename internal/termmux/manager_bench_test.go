@@ -75,9 +75,9 @@ func BenchmarkPaneSwitching(b *testing.B) {
 	m, cleanup := startManagerB(b, WithTermSize(24, 80))
 	defer cleanup()
 
-	// Register two sessions simulating Claude and verify panes.
+	// Register two sessions simulating an agent and verify panes.
 	sess1 := newBenchSession(logLines)
-	id1, err := m.Register(sess1, SessionTarget{Name: "claude", Kind: SessionKindCapture})
+	id1, err := m.Register(sess1, SessionTarget{Name: "agent", Kind: SessionKindCapture})
 	if err != nil {
 		b.Fatalf("Register sess1: %v", err)
 	}
@@ -95,7 +95,7 @@ func BenchmarkPaneSwitching(b *testing.B) {
 	// Wait for output to be processed by reading a snapshot with content.
 	for {
 		snap := m.Snapshot(id1)
-		if snap != nil && snap.PlainText != "" {
+		if snap != nil && snap.GetPlainText() != "" {
 			break
 		}
 	}
@@ -135,7 +135,7 @@ func BenchmarkSnapshot(b *testing.B) {
 	// Wait for output to be processed.
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && snap.PlainText != "" {
+		if snap != nil && snap.GetPlainText() != "" {
 			break
 		}
 	}

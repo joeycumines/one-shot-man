@@ -362,17 +362,17 @@ func TestSwitchToAlt_SavesCursor(t *testing.T) {
 	v.active.CurRow = 2
 	v.active.CurCol = 7
 	v.active.CurAttr = Attr{Bold: true}
-	v.switchToAlt()
+	v.switchToAlt(1049)
 
 	if v.active != v.alternate {
 		t.Error("active should be alternate after switchToAlt")
 	}
-	// Primary should have saved cursor.
-	if v.primary.SavedRow != 2 || v.primary.SavedCol != 7 {
+	// Primary should have saved cursor to Saved1049* fields.
+	if v.primary.Saved1049Row != 2 || v.primary.Saved1049Col != 7 {
 		t.Errorf("saved cursor: row=%d col=%d, want 2,7",
-			v.primary.SavedRow, v.primary.SavedCol)
+			v.primary.Saved1049Row, v.primary.Saved1049Col)
 	}
-	if !v.primary.SavedAttr.Bold {
+	if !v.primary.Saved1049Attr.Bold {
 		t.Error("saved attr should have Bold")
 	}
 }
@@ -381,19 +381,19 @@ func TestSwitchToAlt_Idempotent(t *testing.T) {
 	v := NewVTerm(4, 10)
 	v.active.CurRow = 2
 	v.active.CurCol = 7
-	v.switchToAlt()
+	v.switchToAlt(1049)
 	// Move cursor on alt screen.
 	v.active.CurRow = 0
 	v.active.CurCol = 0
 	// Switch to alt again — should be no-op (already on alt).
-	v.switchToAlt()
+	v.switchToAlt(1049)
 	if v.active != v.alternate {
 		t.Error("should still be on alternate")
 	}
 	// Cursor should NOT be re-saved (it was already on alt).
-	if v.primary.SavedRow != 2 || v.primary.SavedCol != 7 {
+	if v.primary.Saved1049Row != 2 || v.primary.Saved1049Col != 7 {
 		t.Errorf("second switchToAlt should not re-save: row=%d col=%d",
-			v.primary.SavedRow, v.primary.SavedCol)
+			v.primary.Saved1049Row, v.primary.Saved1049Col)
 	}
 }
 
@@ -402,9 +402,9 @@ func TestSwitchToPrimary_RestoresCursor(t *testing.T) {
 	v.active.CurRow = 2
 	v.active.CurCol = 7
 	v.active.CurAttr = Attr{Italic: true}
-	v.switchToAlt()
+	v.switchToAlt(1049)
 	// Switch back to primary.
-	v.switchToPrimary()
+	v.switchToPrimary(1049)
 	if v.active != v.primary {
 		t.Error("active should be primary after switchToPrimary")
 	}
@@ -420,7 +420,7 @@ func TestSwitchToPrimary_RestoresCursor(t *testing.T) {
 func TestSwitchToPrimary_Idempotent(t *testing.T) {
 	v := NewVTerm(4, 10)
 	// Already on primary. Should be no-op.
-	v.switchToPrimary()
+	v.switchToPrimary(1049)
 	if v.active != v.primary {
 		t.Error("should still be on primary")
 	}

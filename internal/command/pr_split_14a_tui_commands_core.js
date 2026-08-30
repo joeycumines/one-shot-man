@@ -22,11 +22,11 @@
             analyze: {
                 description: 'Analyze diff between current branch and base',
                 usage: 'analyze [base-branch]',
-                handler: function(args) {
+                handler: async function(args) {
                     try {
                     var base = (args && args.length > 0) ? args[0] : runtime.baseBranch;
                     output.print('Analyzing diff against ' + base + '...');
-                    st.analysisCache = prSplit.analyzeDiff({ baseBranch: base });
+                    st.analysisCache = await prSplit.analyzeDiff({ baseBranch: base });
                     if (st.analysisCache.error) {
                         output.print('Error: ' + st.analysisCache.error);
                         return;
@@ -47,8 +47,8 @@
             stats: {
                 description: 'Show diff stats with addition/deletion counts',
                 usage: 'stats',
-                handler: function() {
-                    var stats = prSplit.analyzeDiffStats({ baseBranch: runtime.baseBranch });
+                handler: async function() {
+                    var stats = await prSplit.analyzeDiffStats({ baseBranch: runtime.baseBranch });
                     if (stats.error) {
                         output.print('Error: ' + stats.error);
                         return;
@@ -69,13 +69,13 @@
             group: {
                 description: 'Group files by strategy',
                 usage: 'group [strategy]',
-                handler: function(args) {
+                handler: async function(args) {
                     if (!st.analysisCache || !st.analysisCache.files || st.analysisCache.files.length === 0) {
                         output.print('Run "analyze" first.');
                         return;
                     }
                     var strategy = (args && args.length > 0) ? args[0] : runtime.strategy;
-                    st.groupsCache = prSplit.applyStrategy(st.analysisCache.files, strategy);
+                    st.groupsCache = await prSplit.applyStrategy(st.analysisCache.files, strategy);
                     var groupNames = Object.keys(st.groupsCache).sort();
                     output.print('Groups (' + strategy + '): ' + groupNames.length);
                     for (var i = 0; i < groupNames.length; i++) {
@@ -91,7 +91,7 @@
             plan: {
                 description: 'Create split plan from current groups',
                 usage: 'plan',
-                handler: function() {
+                handler: async function() {
                     if (!st.groupsCache) {
                         output.print('Run "group" first.');
                         return;
@@ -105,7 +105,7 @@
                         planConfig.sourceBranch = st.analysisCache.currentBranch;
                         planConfig.fileStatuses = st.analysisCache.fileStatuses;
                     }
-                    st.planCache = prSplit.createSplitPlan(st.groupsCache, planConfig);
+                    st.planCache = await prSplit.createSplitPlan(st.groupsCache, planConfig);
                     var validation = prSplit.validatePlan(st.planCache);
                     if (!validation.valid) {
                         output.print('Plan validation errors:');
@@ -270,7 +270,7 @@
             execute: {
                 description: 'Execute the split plan (creates branches)',
                 usage: 'execute',
-                handler: function() {
+                handler: async function() {
                     try {
                     if (!st.planCache) { output.print('Run "plan" first.'); return; }
                     if (runtime.dryRun) {
@@ -278,16 +278,17 @@
                         return;
                     }
                     output.print('Executing split plan (' + st.planCache.splits.length + ' splits)...');
-                    var result = prSplit.executeSplit(st.planCache);
+                    var result = await prSplit.executeSplit(st.planCache);
                     if (result.error) { output.print('Error: ' + result.error); return; }
                     st.executionResultCache = result.results;
-                    output.print(style.success('Split completed successfully!'));
+                    output.print(style.success('✓') + ' Split completed successfully!');
                     for (var i = 0; i < result.results.length; i++) {
                         var r = result.results[i];
-                        output.print('  ' + style.success('\u2713') + ' ' + r.name +
+                        output.print('  ' + style.success('✓') + ' ' + r.name +
                             ' (' + r.files.length + ' files, SHA: ' + style.dim(r.sha.substring(0, 8)) + ')');
                     }
-                    var equiv = prSplit.verifyEquivalence(st.planCache);
+                    var equiv = await prSplit.verifyEquivalence(st.planCache);
+                    st.equivalenceResult = equiv;
                     if (equiv.equivalent) {
                         output.print(style.success('\u2705 Tree hash equivalence verified'));
                     } else if (equiv.error) {
@@ -307,10 +308,10 @@
             verify: {
                 description: 'Verify all split branches (run tests on each)',
                 usage: 'verify',
-                handler: function() {
+                handler: async function() {
                     if (!st.planCache) { output.print('Run "plan" first.'); return; }
                     output.print('Verifying ' + st.planCache.splits.length + ' splits...');
-                    var result = prSplit.verifySplits(st.planCache);
+                    var result = await prSplit.verifySplits(st.planCache);
                     for (var i = 0; i < result.results.length; i++) {
                         var r = result.results[i];
                         var icon = r.passed ? style.success('\u2713') :
@@ -330,9 +331,9 @@
             equivalence: {
                 description: 'Check tree hash equivalence',
                 usage: 'equivalence',
-                handler: function() {
+                handler: async function() {
                     if (!st.planCache) { output.print('Run "plan" first.'); return; }
-                    var result = prSplit.verifyEquivalenceDetailed(st.planCache);
+                    var result = await prSplit.verifyEquivalenceDetailed(st.planCache);
                     if (result.error) { output.print('Error: ' + result.error); return; }
                     if (result.equivalent) {
                         output.print(style.success('\u2705 Trees are equivalent'));
@@ -354,9 +355,9 @@
             cleanup: {
                 description: 'Delete all split branches',
                 usage: 'cleanup',
-                handler: function() {
+                handler: async function() {
                     if (!st.planCache) { output.print('No plan to clean up.'); return; }
-                    var result = prSplit.cleanupBranches(st.planCache);
+                    var result = await prSplit.cleanupBranches(st.planCache);
                     if (result.deleted.length > 0) {
                         output.print('Deleted branches:');
                         for (var i = 0; i < result.deleted.length; i++) output.print('  ' + result.deleted[i]);
@@ -398,7 +399,7 @@
             'create-prs': {
                 description: 'Push branches and create stacked GitHub PRs',
                 usage: 'create-prs [--draft] [--push-only] [--auto-merge]',
-                handler: function(args) {
+                handler: async function(args) {
                     if (!st.planCache) { output.print('No plan \u2014 run "plan" or "run" first.'); return; }
                     if (!st.executionResultCache || st.executionResultCache.length === 0) {
                         output.print('No splits executed \u2014 run "execute" or "run" first.'); return;
@@ -435,7 +436,7 @@
                     }
 
                     output.print('Creating PRs for ' + effectivePlan.splits.length + ' splits...');
-                    var result = prSplit.createPRs(effectivePlan, {
+                    var result = await prSplit.createPRs(effectivePlan, {
                         draft: draft, pushOnly: pushOnly,
                         autoMerge: autoMerge, mergeMethod: mergeMethod,
                         dryRun: runtime.dryRun || false  // T077
@@ -527,11 +528,11 @@
                         }
                     }
                     if (useAuto) {
-                        if (!st.claudeExecutor) {
-                            st.claudeExecutor = new (prSplit.ClaudeCodeExecutor)(prSplitConfig);
+                        if (!st.agentExecutor) {
+                            st.agentExecutor = new (prSplit.AgentCodeExecutor)(prSplitConfig);
                         }
-                        if (st.claudeExecutor.isAvailable()) {
-                            output.print(style.info('Mode: automated (Claude detected)'));
+                        if (await st.agentExecutor.isAvailable()) {
+                            output.print(style.info('Mode: automated (Agent detected)'));
                             var autoConfig = {
                                 baseBranch: runtime.baseBranch,
                                 strategy: runtime.strategy,
@@ -548,7 +549,7 @@
                             if (runtime.jsonOutput && result.report) output.print(JSON.stringify(result.report, null, 2));
                             return;
                         }
-                        output.print(style.warning('Claude not available \u2014 using heuristic mode.'));
+                        output.print(style.warning('Agent not available \u2014 using heuristic mode.'));
                     }
                     var workflowStart = Date.now();
                     output.print(style.header('Running full PR split workflow...'));
@@ -558,7 +559,7 @@
                     output.print('');
 
                     // Step 1: Analyze
-                    st.analysisCache = prSplit.analyzeDiff({ baseBranch: runtime.baseBranch });
+                    st.analysisCache = await prSplit.analyzeDiff({ baseBranch: runtime.baseBranch });
                     if (st.analysisCache.error) {
                         output.print(style.error('Analysis failed: ' + st.analysisCache.error)); return;
                     }
@@ -568,14 +569,14 @@
                     output.print(style.success('\u2713 Analysis: ') + st.analysisCache.files.length + ' changed files');
 
                     // Step 2: Group
-                    st.groupsCache = prSplit.applyStrategy(st.analysisCache.files, runtime.strategy);
+                    st.groupsCache = await prSplit.applyStrategy(st.analysisCache.files, runtime.strategy);
                     var groupNames = Object.keys(st.groupsCache).sort();
                     if (groupNames.length === 0) { output.print('No groups created.'); return; }
                     output.print(style.success('\u2713 Grouped into ' + groupNames.length + ' groups') +
                         ' (' + runtime.strategy + ')');
 
                     // Step 3: Plan
-                    st.planCache = prSplit.createSplitPlan(st.groupsCache, {
+                    st.planCache = await prSplit.createSplitPlan(st.groupsCache, {
                         baseBranch: runtime.baseBranch,
                         sourceBranch: st.analysisCache.currentBranch,
                         branchPrefix: runtime.branchPrefix,
@@ -597,13 +598,14 @@
                         return;
                     }
                     output.print(style.info('Executing ' + st.planCache.splits.length + ' splits...'));
-                    var result = prSplit.executeSplit(st.planCache);
+                    var result = await prSplit.executeSplit(st.planCache);
                     if (result.error) { output.print(style.error('Execution failed: ' + result.error)); return; }
                     st.executionResultCache = result.results;
                     output.print(style.success('\u2713 Split executed: ' + result.results.length + ' branches created'));
 
                     // Step 5: Verify equivalence
-                    var equiv = prSplit.verifyEquivalence(st.planCache);
+                    var equiv = await prSplit.verifyEquivalence(st.planCache);
+                    st.equivalenceResult = equiv;
                     if (equiv.equivalent) {
                         output.print(style.success('\u2705 Tree hash equivalence verified'));
                     } else if (equiv.error) {

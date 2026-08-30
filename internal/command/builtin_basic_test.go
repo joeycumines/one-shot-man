@@ -179,7 +179,7 @@ func TestConfigCommandGetAndSet(t *testing.T) {
 	configPath := filepath.Join(dir, "config")
 	t.Setenv("OSM_CONFIG", configPath)
 
-	cfg, err := config.LoadFromPath(configPath)
+	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestConfigCommandPersistsToDisk(t *testing.T) {
 		t.Fatalf("failed to write initial config: %v", err)
 	}
 
-	cfg, err := config.LoadFromPath(configPath)
+	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -254,7 +254,7 @@ func TestConfigCommandPersistsToDisk(t *testing.T) {
 	}
 
 	// Verify the file was written
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatalf("failed to reload config: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestConfigCommandPersistsNewFile(t *testing.T) {
 		t.Fatalf("unexpected stderr: %s", stderr.String())
 	}
 
-	reloaded, err := config.LoadFromPath(configPath)
+	reloaded, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatalf("failed to reload config: %v", err)
 	}

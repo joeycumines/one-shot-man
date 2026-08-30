@@ -1,12 +1,33 @@
 package tokenizermod
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/dop251/goja"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/tokenizer"
 )
+
+// handleSettleErr handles settler/bridge settlement errors symmetrically.
+// ErrLoopTerminated, ErrAdapterInvalid and ErrPromiseSettled are expected
+// during shutdown/termination and are tolerated at debug level; other
+// errors are unexpected and would be logged. Documented tolerance: settlement
+// may be dropped if loop terminated before Submit, promise may remain pending
+// only for hard Close (stranded is defined behavior, see track.go).
+func handleSettleErr(err error) {
+    if err == nil {
+        return
+    }
+    if errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
+        return
+    }
+    _ = err
+}
+
 
 // Require is the Goja module loader for osm:tokenizer.
 // It registers under "osm:tokenizer" and exposes tokenization utilities.
@@ -21,135 +42,150 @@ import (
 //	const n = tok.count("hello world");
 //
 //	// Load a HuggingFace tokenizer from file (unified entry point)
-//	const t = tok.loadFromFile("/path/to/tokenizer.json");
+//	const t = tok.loadFile("/path/to/tokenizer.json");
 //	// t.encode(text) -> { tokens, count }
 //	// t.count(text) -> number
 //
 //	// Load from JSON string (unified entry point)
-//	const t2 = tok.loadFromJSON('{"type":"BPE","vocab":...}');
+//	const t2 = tok.loadJSON('{"type":"BPE","vocab":...}');
 //
 //	// Model-specific loaders
-//	const bpe = tok.loadBPEFromFiles(vocabJson, mergesStr);
-//	const wp = tok.loadWordPieceFromJSON(jsonStr);
-//	const wl = tok.loadWordLevelFromJSON(jsonStr);
-func Require(runtime *goja.Runtime, module *goja.Object) {
-	exports := module.Get("exports").(*goja.Object)
+//
+// const bpe = tok.loadBPE(vocabJson, mergesStr);
+// const wp = tok.loadWordPiece(jsonStr);
+// const wl = tok.loadWordLevel(jsonStr);
+// Require returns a module loader for `osm:tokenizer` that uses the provided
+// base context and event-loop adapter for async file I/O.
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(vm *goja.Runtime, module *goja.Object) {
+	return func(runtime *goja.Runtime, module *goja.Object) {
+		exports := module.Get("exports").(*goja.Object)
 
-	// ---- tokenize(text: string): { tokens: Array, count: number } ----
-	// Uses the built-in char-level tokenizer. Always available.
-	_ = exports.Set("tokenize", func(call goja.FunctionCall) goja.Value {
-		text := argString(call, 0)
-		tok := tokenizer.NewCharTokenizer()
-		tokens, count, err := tok.Encode(text)
-		if err != nil {
-			panic(runtime.NewGoError(fmt.Errorf("tokenize: %w", err)))
-		}
-		return tokenResult(runtime, tokens, count)
-	})
+		// ---- tokenize(text: string): { tokens: Array, count: number } ----
+		// Uses the built-in char-level tokenizer. Always available.
+		_ = exports.Set("tokenize", func(call goja.FunctionCall) goja.Value {
+			text := argString(call, 0)
+			tok := tokenizer.NewCharTokenizer()
+			tokens, count, err := tok.Encode(text)
+			if err != nil {
+				panic(runtime.NewGoError(fmt.Errorf("tokenize: %w", err)))
+			}
+			return tokenResult(runtime, tokens, count)
+		})
 
-	// ---- count(text: string): number ----
-	// Returns only the token count using the built-in char tokenizer.
-	// Returns -1 on error (distinguishing "zero tokens" from "error occurred").
-	_ = exports.Set("count", func(call goja.FunctionCall) goja.Value {
-		text := argString(call, 0)
-		tok := tokenizer.NewCharTokenizer()
-		count, err := tok.TokenCount(text)
-		if err != nil {
-			return runtime.ToValue(-1)
-		}
-		return runtime.ToValue(count)
-	})
+		// ---- count(text: string): number ----
+		// Returns only the token count using the built-in char tokenizer.
+		// Returns -1 on error (distinguishing "zero tokens" from "error occurred").
+		_ = exports.Set("count", func(call goja.FunctionCall) goja.Value {
+			text := argString(call, 0)
+			tok := tokenizer.NewCharTokenizer()
+			count, err := tok.TokenCount(text)
+			if err != nil {
+				return runtime.ToValue(-1)
+			}
+			return runtime.ToValue(count)
+		})
 
-	// ---- byteCount(text: string): number ----
-	// Returns the UTF-8 byte length of the string.
-	_ = exports.Set("byteCount", func(call goja.FunctionCall) goja.Value {
-		text := argString(call, 0)
-		return runtime.ToValue(len(text))
-	})
+		// ---- byteCount(text: string): number ----
+		// Returns the UTF-8 byte length of the string.
+		_ = exports.Set("byteCount", func(call goja.FunctionCall) goja.Value {
+			text := argString(call, 0)
+			return runtime.ToValue(len(text))
+		})
 
-	// ---- lineCount(text: string): number ----
-	// Returns the number of lines (newline count + 1). Empty text returns 0.
-	_ = exports.Set("lineCount", func(call goja.FunctionCall) goja.Value {
-		text := argString(call, 0)
-		if text == "" {
-			return runtime.ToValue(0)
-		}
-		return runtime.ToValue(strings.Count(text, "\n") + 1)
-	})
+		// ---- lineCount(text: string): number ----
+		// Returns the number of lines (newline count + 1). Empty text returns 0.
+		_ = exports.Set("lineCount", func(call goja.FunctionCall) goja.Value {
+			text := argString(call, 0)
+			if text == "" {
+				return runtime.ToValue(0)
+			}
+			return runtime.ToValue(strings.Count(text, "\n") + 1)
+		})
 
-	// ---- loadFromFile(path: string): TokenizerWrapper ----
-	// Loads a HuggingFace tokenizer.json from disk.
-	_ = exports.Set("loadFromFile", func(call goja.FunctionCall) goja.Value {
-		path := argString(call, 0)
-		if path == "" {
-			panic(runtime.NewGoError(fmt.Errorf("loadFromFile: path is required")))
-		}
-		tok, err := tokenizer.LoadTokenizerFromFile(path)
-		if err != nil {
-			panic(runtime.NewGoError(fmt.Errorf("loadFromFile: %w", err)))
-		}
-		return newTokenizerWrapper(runtime, tok)
-	})
+		// ---- loadFile(path: string): Promise<TokenizerWrapper> ----
+		// Loads a HuggingFace tokenizer.json from disk. Returns a Promise because
+		// file I/O runs off the event loop to avoid blocking JavaScript execution.
+		_ = exports.Set("loadFile", func(call goja.FunctionCall) goja.Value {
+			path := argString(call, 0)
+			if path == "" {
+				promise, settler := adapter.NewPromise()
+				handleSettleErr(settler.Resolve(func(rt *goja.Runtime) any { return goja.Null() }))
+				return promise
+			}
+			return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				tok, err := tokenizer.LoadTokenizerFile(path)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any {
+						return rt.NewGoError(fmt.Errorf("loadFile: %w", err))
+					})
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					return newTokenizerWrapper(rt, tok)
+				})
+			})
+		})
 
-	// ---- loadFromJSON(jsonStr: string): TokenizerWrapper ----
-	// Loads a HuggingFace tokenizer from a JSON string.
-	_ = exports.Set("loadFromJSON", func(call goja.FunctionCall) goja.Value {
-		jsonStr := argString(call, 0)
-		if jsonStr == "" {
-			panic(runtime.NewGoError(fmt.Errorf("loadFromJSON: json string is required")))
-		}
-		tok, err := tokenizer.LoadTokenizerFromJSON(strings.NewReader(jsonStr))
-		if err != nil {
-			panic(runtime.NewGoError(fmt.Errorf("loadFromJSON: %w", err)))
-		}
-		return newTokenizerWrapper(runtime, tok)
-	})
+		// ---- loadJSON(jsonStr: string): TokenizerWrapper ----
+		// Loads a HuggingFace tokenizer from a JSON string.
+		_ = exports.Set("loadJSON", func(call goja.FunctionCall) goja.Value {
+			jsonStr := argString(call, 0)
+			if jsonStr == "" {
+				panic(runtime.NewGoError(fmt.Errorf("loadJSON: json string is required")))
+			}
+			tok, err := tokenizer.LoadTokenizerJSON(strings.NewReader(jsonStr))
+			if err != nil {
+				panic(runtime.NewGoError(fmt.Errorf("loadJSON: %w", err)))
+			}
+			return newTokenizerWrapper(runtime, tok)
+		})
 
-	// ---- loadBPEFromFiles(vocabJson: string, mergesStr: string): TokenizerWrapper ----
-	// Loads a BPE tokenizer from separate vocab JSON and merges text.
-	_ = exports.Set("loadBPEFromFiles", func(call goja.FunctionCall) goja.Value {
-		vocabStr := argString(call, 0)
-		mergesStr := argString(call, 1)
-		if vocabStr == "" {
-			panic(runtime.NewGoError(fmt.Errorf("loadBPEFromFiles: vocab JSON is required")))
-		}
-		model, err := tokenizer.LoadBPEFromFiles(
-			strings.NewReader(vocabStr),
-			strings.NewReader(mergesStr),
-		)
-		if err != nil {
-			panic(runtime.NewGoError(fmt.Errorf("loadBPEFromFiles: %w", err)))
-		}
-		return newTokenizerWrapper(runtime, &tokenizer.Tokenizer{Model: model})
-	})
+		// ---- loadBPE(vocabJson: string, mergesStr: string): TokenizerWrapper ----
+		// Loads a BPE tokenizer from separate vocab JSON and merges text.
+		_ = exports.Set("loadBPE", func(call goja.FunctionCall) goja.Value {
+			vocabStr := argString(call, 0)
+			mergesStr := argString(call, 1)
+			if vocabStr == "" {
+				panic(runtime.NewGoError(fmt.Errorf("loadBPE: vocab JSON is required")))
+			}
+			model, err := tokenizer.LoadBPEFiles(
+				strings.NewReader(vocabStr),
+				strings.NewReader(mergesStr),
+			)
+			if err != nil {
+				panic(runtime.NewGoError(fmt.Errorf("loadBPE: %w", err)))
+			}
+			return newTokenizerWrapper(runtime, &tokenizer.Tokenizer{Model: model})
+		})
 
-	// ---- loadWordPieceFromJSON(jsonStr: string): TokenizerWrapper ----
-	// Loads a WordPiece tokenizer from a JSON string.
-	_ = exports.Set("loadWordPieceFromJSON", func(call goja.FunctionCall) goja.Value {
-		jsonStr := argString(call, 0)
-		if jsonStr == "" {
-			panic(runtime.NewGoError(fmt.Errorf("loadWordPieceFromJSON: json string is required")))
-		}
-		model, err := tokenizer.LoadWordPieceFromJSON(strings.NewReader(jsonStr))
-		if err != nil {
-			panic(runtime.NewGoError(fmt.Errorf("loadWordPieceFromJSON: %w", err)))
-		}
-		return newTokenizerWrapper(runtime, &tokenizer.Tokenizer{Model: model})
-	})
+		// ---- loadWordPiece(jsonStr: string): TokenizerWrapper ----
+		// Loads a WordPiece tokenizer from a JSON string.
+		_ = exports.Set("loadWordPiece", func(call goja.FunctionCall) goja.Value {
+			jsonStr := argString(call, 0)
+			if jsonStr == "" {
+				panic(runtime.NewGoError(fmt.Errorf("loadWordPiece: json string is required")))
+			}
+			model, err := tokenizer.LoadWordPieceJSON(strings.NewReader(jsonStr))
+			if err != nil {
+				panic(runtime.NewGoError(fmt.Errorf("loadWordPiece: %w", err)))
+			}
+			return newTokenizerWrapper(runtime, &tokenizer.Tokenizer{Model: model})
+		})
 
-	// ---- loadWordLevelFromJSON(jsonStr: string): TokenizerWrapper ----
-	// Loads a WordLevel tokenizer from a JSON string.
-	_ = exports.Set("loadWordLevelFromJSON", func(call goja.FunctionCall) goja.Value {
-		jsonStr := argString(call, 0)
-		if jsonStr == "" {
-			panic(runtime.NewGoError(fmt.Errorf("loadWordLevelFromJSON: json string is required")))
-		}
-		model, err := tokenizer.LoadWordLevelFromJSON(strings.NewReader(jsonStr))
-		if err != nil {
-			panic(runtime.NewGoError(fmt.Errorf("loadWordLevelFromJSON: %w", err)))
-		}
-		return newTokenizerWrapper(runtime, &tokenizer.Tokenizer{Model: model})
-	})
+		// ---- loadWordLevel(jsonStr: string): TokenizerWrapper ----
+		// Loads a WordLevel tokenizer from a JSON string.
+		_ = exports.Set("loadWordLevel", func(call goja.FunctionCall) goja.Value {
+			jsonStr := argString(call, 0)
+			if jsonStr == "" {
+				panic(runtime.NewGoError(fmt.Errorf("loadWordLevel: json string is required")))
+			}
+			model, err := tokenizer.LoadWordLevelJSON(strings.NewReader(jsonStr))
+			if err != nil {
+				panic(runtime.NewGoError(fmt.Errorf("loadWordLevel: %w", err)))
+			}
+			return newTokenizerWrapper(runtime, &tokenizer.Tokenizer{Model: model})
+		})
+	}
 }
 
 // newTokenizerWrapper creates a JS object wrapping a Go *tokenizer.Tokenizer

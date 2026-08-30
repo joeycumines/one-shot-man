@@ -30,8 +30,18 @@ type CleanupScheduler struct {
 // because cleanup is best-effort — the cleaner already handles lock contention
 // and concurrent access safely via the global cleanup lock.
 func (s *CleanupScheduler) Run(ctx context.Context) {
-	// Run once immediately on startup.
-	s.runOnce()
+	// Run once immediately on startup — but only if the context hasn't
+	// already been cancelled. This prevents a race where a test calls
+	// stop() before the goroutine starts, which would otherwise cause
+	// runOnce() to operate on a session directory overridden by a
+	// subsequent test's SetTestPaths. We still proceed to ticker setup
+	// below so that the stop function is properly called on exit.
+	select {
+	case <-ctx.Done():
+		// Skip initial cleanup; proceed to ticker setup.
+	default:
+		s.runOnce()
+	}
 
 	if s.Interval <= 0 {
 		// No recurring runs requested; wait for cancellation.

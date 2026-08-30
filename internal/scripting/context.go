@@ -920,8 +920,8 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 	return archive
 }
 
-// FromTxtar loads context from a txtar archive.
-func (cm *ContextManager) FromTxtar(archive *txtar.Archive) error {
+// LoadTxtar loads context from a txtar archive.
+func (cm *ContextManager) LoadTxtar(archive *txtar.Archive) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
@@ -953,10 +953,10 @@ func (cm *ContextManager) GetTxtarString() string {
 	return string(txtar.Format(archive))
 }
 
-// LoadFromTxtarString loads context from a txtar-formatted string.
-func (cm *ContextManager) LoadFromTxtarString(data string) error {
+// LoadTxtarString loads context from a txtar-formatted string.
+func (cm *ContextManager) LoadTxtarString(data string) error {
 	archive := txtar.Parse([]byte(data))
-	return cm.FromTxtar(archive)
+	return cm.LoadTxtar(archive)
 }
 
 // RefreshPath updates the content of a tracked path.

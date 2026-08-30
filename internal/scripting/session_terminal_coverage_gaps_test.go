@@ -659,9 +659,9 @@ func TestTerminalRun_NormalExit_WithStateManager(t *testing.T) {
 	// Replace the TUI I/O with in-memory adapters.
 	// bytes.NewReader(nil) returns EOF on every Read, causing go-prompt
 	// to synthesize Ctrl-D and exit cleanly (empty buffer → shouldExit).
-	engine.tuiManager.reader = NewTUIReaderFromIO(bytes.NewReader(nil))
+	engine.tuiManager.reader = NewTUIReaderIO(bytes.NewReader(nil))
 	var tuiOut bytes.Buffer
-	engine.tuiManager.writer = NewTUIWriterFromIO(&tuiOut)
+	engine.tuiManager.writer = NewTUIWriterIO(&tuiOut)
 
 	terminal := NewTerminal(ctx, engine)
 
@@ -700,9 +700,9 @@ func TestTerminalRun_NilStateManager(t *testing.T) {
 	t.Cleanup(func() { _ = engine.Close() })
 
 	// Replace TUI I/O with in-memory adapters.
-	engine.tuiManager.reader = NewTUIReaderFromIO(bytes.NewReader(nil))
+	engine.tuiManager.reader = NewTUIReaderIO(bytes.NewReader(nil))
 	var tuiOut bytes.Buffer
-	engine.tuiManager.writer = NewTUIWriterFromIO(&tuiOut)
+	engine.tuiManager.writer = NewTUIWriterIO(&tuiOut)
 
 	// Nil out stateManager. Terminal.Run() should skip persistence entirely.
 	engine.tuiManager.stateManager = nil
@@ -743,9 +743,9 @@ func TestTerminalRun_PersistAndCloseErrors(t *testing.T) {
 	t.Cleanup(func() { _ = engine.Close() })
 
 	// Replace TUI I/O with in-memory adapters.
-	engine.tuiManager.reader = NewTUIReaderFromIO(bytes.NewReader(nil))
+	engine.tuiManager.reader = NewTUIReaderIO(bytes.NewReader(nil))
 	var tuiOut bytes.Buffer
-	engine.tuiManager.writer = NewTUIWriterFromIO(&tuiOut)
+	engine.tuiManager.writer = NewTUIWriterIO(&tuiOut)
 
 	// Replace the backend with one whose SaveSession always fails.
 	// This triggers both the PersistSession error path AND the Close error

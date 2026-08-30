@@ -46,7 +46,7 @@ type forwardResult struct {
 // The result is sent to resultCh. If resultCh is nil, the goroutine runs
 // without reporting results (useful for fire-and-forget scenarios).
 func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg forwardConfig) {
-	buf := make([]byte, 4096)
+	buf := make([]byte, PassthroughReadBufferSize)
 	var carry []byte // carry-over for partial SGR mouse prefixes
 
 	for {
@@ -68,7 +68,12 @@ func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg for
 				if clicked {
 					// Write any data before the click.
 					if len(filtered) > 0 {
-						writeOrLog(cfg.Writer, filtered, "pre-toggle-click")
+						if err := writeOrLog(cfg.Writer, filtered, "pre-toggle-click"); err != nil {
+							if resultCh != nil {
+								resultCh <- forwardResult{ExitError, err}
+							}
+							return
+						}
 					}
 					if resultCh != nil {
 						resultCh <- forwardResult{ExitToggle, nil}
@@ -90,7 +95,12 @@ func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg for
 			for i := 0; i < len(data); i++ {
 				if data[i] == cfg.ToggleKey {
 					if i > 0 {
-						writeOrLog(cfg.Writer, data[:i], "pre-toggle-key")
+						if err := writeOrLog(cfg.Writer, data[:i], "pre-toggle-key"); err != nil {
+							if resultCh != nil {
+								resultCh <- forwardResult{ExitError, err}
+							}
+							return
+						}
 					}
 					if resultCh != nil {
 						resultCh <- forwardResult{ExitToggle, nil}

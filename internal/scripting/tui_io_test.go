@@ -41,7 +41,7 @@ func newTestTUIWriter(w prompt.Writer) *TUIWriter {
 // TestTUIWriterFromIO verifies NewTUIWriterFromIO wraps io.Writer correctly.
 func TestTUIWriterFromIO(t *testing.T) {
 	var buf bytes.Buffer
-	w := NewTUIWriterFromIO(&buf)
+	w := NewTUIWriterIO(&buf)
 
 	_, err := w.Write([]byte("test"))
 	if err != nil {
@@ -144,7 +144,7 @@ func TestNewTestTUIWriter(t *testing.T) {
 // TestTUIReaderFromIO verifies NewTUIReaderFromIO wraps io.Reader correctly.
 func TestTUIReaderFromIO(t *testing.T) {
 	input := bytes.NewReader([]byte("test input"))
-	r := NewTUIReaderFromIO(input)
+	r := NewTUIReaderIO(input)
 
 	buf := make([]byte, 10)
 	n, err := r.Read(buf)
@@ -158,7 +158,7 @@ func TestTUIReaderFromIO(t *testing.T) {
 
 func TestTUIReader_ReadDoesNotSplitCRLFData(t *testing.T) {
 	input := "line1\r\nline2\r\n"
-	r := NewTUIReaderFromIO(strings.NewReader(input))
+	r := NewTUIReaderIO(strings.NewReader(input))
 	buf := make([]byte, 64)
 
 	n, err := r.Read(buf)
@@ -396,8 +396,8 @@ func TestTerminalIO_MakeRawRestoreBalance(t *testing.T) {
 
 	// Create a TerminalIO with our fake terminal
 	// We need to wrap the fake in TUIReader/TUIWriter for TerminalIO
-	reader := NewTUIReaderFromIO(fake)
-	writer := NewTUIWriterFromIO(fake)
+	reader := NewTUIReaderIO(fake)
+	writer := NewTUIWriterIO(fake)
 
 	// Create a test TerminalIO that uses the fake for Fd
 	tio := NewTerminalIO(reader, writer)
@@ -430,8 +430,8 @@ func TestTerminalIO_CloseIsIdempotent(t *testing.T) {
 	t.Parallel()
 
 	// Test that Close is idempotent
-	reader := NewTUIReaderFromIO(bytes.NewReader(nil))
-	writer := NewTUIWriterFromIO(io.Discard)
+	reader := NewTUIReaderIO(bytes.NewReader(nil))
+	writer := NewTUIWriterIO(io.Discard)
 	tio := NewTerminalIO(reader, writer)
 
 	// First close should succeed
@@ -451,7 +451,7 @@ func TestTUIReader_FdReturnsInvalidForNonTerminal(t *testing.T) {
 	t.Parallel()
 
 	// Test with io.Reader wrapper (no Fd method)
-	r := NewTUIReaderFromIO(bytes.NewReader(nil))
+	r := NewTUIReaderIO(bytes.NewReader(nil))
 	fd := r.Fd()
 
 	if fd != ^uintptr(0) {
@@ -462,7 +462,7 @@ func TestTUIReader_FdReturnsInvalidForNonTerminal(t *testing.T) {
 func TestTUIReader_IsTerminalReturnsFalseForNonTerminal(t *testing.T) {
 	t.Parallel()
 
-	r := NewTUIReaderFromIO(bytes.NewReader(nil))
+	r := NewTUIReaderIO(bytes.NewReader(nil))
 	if r.IsTerminal() {
 		t.Error("IsTerminal should return false for non-terminal io.Reader")
 	}
@@ -471,7 +471,7 @@ func TestTUIReader_IsTerminalReturnsFalseForNonTerminal(t *testing.T) {
 func TestTUIReader_GetSizeReturnsErrorForNonTerminal(t *testing.T) {
 	t.Parallel()
 
-	r := NewTUIReaderFromIO(bytes.NewReader(nil))
+	r := NewTUIReaderIO(bytes.NewReader(nil))
 	w, h, err := r.GetSize()
 
 	if !errors.Is(err, io.EOF) {
@@ -485,7 +485,7 @@ func TestTUIReader_GetSizeReturnsErrorForNonTerminal(t *testing.T) {
 func TestTUIReader_MakeRawReturnsErrorForNonTerminal(t *testing.T) {
 	t.Parallel()
 
-	r := NewTUIReaderFromIO(bytes.NewReader(nil))
+	r := NewTUIReaderIO(bytes.NewReader(nil))
 	state, err := r.MakeRaw()
 
 	if !errors.Is(err, io.EOF) {
@@ -499,7 +499,7 @@ func TestTUIReader_MakeRawReturnsErrorForNonTerminal(t *testing.T) {
 func TestTUIReader_RestoreHandlesNilState(t *testing.T) {
 	t.Parallel()
 
-	r := NewTUIReaderFromIO(bytes.NewReader(nil))
+	r := NewTUIReaderIO(bytes.NewReader(nil))
 	err := r.Restore(nil)
 
 	if err != nil {
@@ -510,7 +510,7 @@ func TestTUIReader_RestoreHandlesNilState(t *testing.T) {
 func TestTUIWriter_FdReturnsInvalidForNonTerminal(t *testing.T) {
 	t.Parallel()
 
-	w := NewTUIWriterFromIO(io.Discard)
+	w := NewTUIWriterIO(io.Discard)
 	fd := w.Fd()
 
 	if fd != ^uintptr(0) {
@@ -521,7 +521,7 @@ func TestTUIWriter_FdReturnsInvalidForNonTerminal(t *testing.T) {
 func TestTUIWriter_IsTerminalReturnsFalseForNonTerminal(t *testing.T) {
 	t.Parallel()
 
-	w := NewTUIWriterFromIO(io.Discard)
+	w := NewTUIWriterIO(io.Discard)
 	if w.IsTerminal() {
 		t.Error("IsTerminal should return false for non-terminal io.Writer")
 	}
@@ -534,8 +534,8 @@ func TestTerminalIO_ReadWriteDelegation(t *testing.T) {
 	readBuf := bytes.NewReader([]byte("hello"))
 	writeBuf := &bytes.Buffer{}
 
-	reader := NewTUIReaderFromIO(readBuf)
-	writer := NewTUIWriterFromIO(writeBuf)
+	reader := NewTUIReaderIO(readBuf)
+	writer := NewTUIWriterIO(writeBuf)
 	tio := NewTerminalIO(reader, writer)
 
 	// Test Write

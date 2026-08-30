@@ -2,7 +2,7 @@
 // pr_split_08_conflict.js — Auto-fix strategies & local conflict resolution
 // Dependencies: chunks 00, 04 must be loaded first
 // Late-binds: renderConflictPrompt (09), sendToHandle (10), waitForLogged (10),
-//             AUTOMATED_DEFAULTS (10), _claudeExecutor (10), _mcpCallbackObj (10)
+//             AUTOMATED_DEFAULTS (10), _agentExecutor (10), _mcpCallbackObj (10)
 //
 // All external symbols are read from prSplit.* INSIDE function bodies for
 // late-binding. This allows mocking in tests and avoids capturing undefined
@@ -12,17 +12,21 @@
 
     // fileExistsSync checks file existence using osmod (preferred) or the
     // platform shell as fallback. Avoids hardcoded 'test -f' on Windows.
-    function fileExistsSync(path) {
+    async function fileExistsSync(path) {
         var osmod = prSplit._modules.osmod;
         if (osmod && typeof osmod.fileExists === 'function') {
-            return osmod.fileExists(path);
+            var r = await osmod.fileExists(path);
+            return !!(r && r.exists);
         }
-        var exec = prSplit._modules.exec;
-        var isWindows = prSplit._isWindows;
-        if (isWindows && isWindows()) {
-            return exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)']).code === 0;
+        // osmod.fileExists is a core module that should always be registered
+        // in production; reaching here means broken module wiring. Treat the
+        // file as not found (don't block) but warn loudly, otherwise every
+        // auto-fix strategy that uses fileExistsSync silently no-ops and the
+        // real cause (missing osmod) is invisible.
+        if (typeof log !== 'undefined' && log.warn) {
+            log.warn('fileExistsSync: osmod.fileExists unavailable; treating "' + path + '" as not found');
         }
-        return exec.execv(['test', '-f', path]).code === 0;
+        return false;
     }
 
     // AUTO_FIX_STRATEGIES: sequential repair strategies to try when a split
@@ -30,9 +34,9 @@
     var AUTO_FIX_STRATEGIES = [
         {
             name: 'go-mod-tidy',
-            detect: function(dir) {
+            detect: async function(dir) {
                 var path = (dir !== '.' ? dir + '/' : '') + 'go.mod';
-                return fileExistsSync(path);
+                return await fileExistsSync(path);
             },
             fix: async function(dir) {
                 var shellExecAsync = prSplit._shellExecAsync;
@@ -61,9 +65,9 @@
         },
         {
             name: 'go-generate-sum',
-            detect: function(dir) {
+            detect: async function(dir) {
                 var path = (dir !== '.' ? dir + '/' : '') + 'go.sum';
-                return fileExistsSync(path);
+                return await fileExistsSync(path);
             },
             fix: async function(dir) {
                 var shellExecAsync = prSplit._shellExecAsync;
@@ -164,7 +168,7 @@
         },
         {
             name: 'make-generate',
-            detect: function(dir) {
+            detect: async function(dir) {
                 var osmod = prSplit._modules.osmod;
                 var shellQuote = prSplit._shellQuote;
                 var makPath = (dir !== '.' ? dir + '/' : '') + 'Makefile';
@@ -174,7 +178,7 @@
                     // Prefer osmod.readFile to avoid shell-dependent grep.
                     if (osmod && typeof osmod.readFile === 'function') {
                         try {
-                            var readResult = osmod.readFile(makPath);
+                            var readResult = await osmod.readFile(makPath);
                             if (!readResult.error) {
                                 var fileContent = readResult.content;
                                 if (fileContent.indexOf('\ngenerate:') >= 0 || fileContent.indexOf('generate:') === 0) {
@@ -192,7 +196,7 @@
                             var grepCmd = (isWindows && isWindows())
                                 ? cdFallback + shellQuote(dir) + ' && findstr /b "generate:" Makefile'
                                 : cdFallback + shellQuote(dir) + ' && grep -q "^generate:" Makefile';
-                            var grep = shellSpawnSync(grepCmd);
+                            var grep = await shellSpawnSync(grepCmd);
                             if (grep.code === 0) return true;
                         }
                     }
@@ -206,7 +210,7 @@
                         for (var i = 0; i < entries.length; i++) {
                             if (entries[i].match && entries[i].match(/\.go$/)) {
                                 var goPath = (dir !== '.' ? dir + '/' : '') + entries[i];
-                                var goReadResult = osmod.readFile(goPath);
+                                var goReadResult = await osmod.readFile(goPath);
                                 if (!goReadResult.error && goReadResult.content.indexOf('//go:generate') >= 0) {
                                     return true;
                                 }
@@ -227,7 +231,7 @@
                     var shellArgs = (isWindows2 && isWindows2())
                         ? ['cmd.exe', '/C', 'cd /d ' + shellQuote(dir) + ' && ' + scanCmd]
                         : ['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + scanCmd];
-                    var goGen = execMod.execv(shellArgs);
+                    var goGen = await execMod.execv(shellArgs);
                     return goGen.code === 0 && (goGen.stdout || '').trim() !== '';
                 }
                 return false;
@@ -246,7 +250,7 @@
                 var makPath = (dir !== '.' ? dir + '/' : '') + 'Makefile';
                 if (osmod && typeof osmod.readFile === 'function') {
                     try {
-                        var readResult2 = osmod.readFile(makPath);
+                        var readResult2 = await osmod.readFile(makPath);
                         if (!readResult2.error) {
                             hasMakeTarget = readResult2.content.indexOf('\ngenerate:') >= 0 || readResult2.content.indexOf('generate:') === 0;
                         }
@@ -316,15 +320,32 @@
             }
         },
         {
-            name: 'claude-fix',
-            // Late-bound: claudeExecutor set by pipeline chunk (10)
+            name: 'agent-fix',
+            // Late-bound: agentExecutor set by pipeline chunk (10)
             detect: function() {
-                var claudeExecutor = prSplit._claudeExecutor;
-                return !!(claudeExecutor && claudeExecutor.handle && claudeExecutor.isAvailable());
+                var agentExecutor = prSplit._agentExecutor;
+                if (!agentExecutor || !agentExecutor.handle) return false;
+                // handle is set only after resolve()/resolveAsync() succeeds
+                // (chunk 09) and is cleared together with `resolved` (in
+                // close()/kill(), handle is nulled first), so handle != null
+                // implies resolved != null. With resolved set, isAvailable()
+                // short-circuits to true (chunk 09: `if (this.resolved) return
+                // true`), so the `resolved` proxy below is exactly equivalent
+                // to awaiting isAvailable() — without making detect async and
+                // without risking the sync resolve() path on an unresolved
+                // executor. Net effect: agent-fix is enabled precisely when an
+                // agent is actually running, never silently skipped. Sync mocks
+                // (tests) return a non-Promise from isAvailable() and take the
+                // !!avail path.
+                var avail = agentExecutor.isAvailable();
+                if (avail && typeof avail.then === 'function') {
+                    return !!agentExecutor.resolved;
+                }
+                return !!avail;
             },
             // Async: sendToHandle uses setTimeout delay for PTY write separation
             fix: async function(dir, failedBranch, plan, verifyOutput, options) {
-                var claudeExecutor = prSplit._claudeExecutor;
+                var agentExecutor = prSplit._agentExecutor;
                 var renderConflictPrompt = prSplit.renderConflictPrompt;
                 var sendToHandle = prSplit.sendToHandle;
                 var waitForLogged = prSplit.waitForLogged;
@@ -337,8 +358,8 @@
                 var osmod = prSplit._modules.osmod;
                 var AUTOMATED_DEFAULTS = prSplit.AUTOMATED_DEFAULTS || {};
 
-                if (!claudeExecutor || !claudeExecutor.handle) {
-                    return { fixed: false, error: 'Claude executor not available' };
+                if (!agentExecutor || !agentExecutor.handle) {
+                    return { fixed: false, error: 'Agent executor not available' };
                 }
                 options = options || {};
                 var resolveTimeoutMs = options.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs;
@@ -350,14 +371,14 @@
                     exitCode: 1,
                     errorOutput: verifyOutput || '',
                     goModContent: '',
-                    sessionId: claudeExecutor.sessionId || ''
+                    sessionId: agentExecutor.sessionId || ''
                 });
                 if (promptResult.error) {
                     return { fixed: false, error: 'render conflict prompt failed: ' + promptResult.error };
                 }
-                var sendResult = await sendToHandle(claudeExecutor.handle, promptResult.text);
+                var sendResult = await sendToHandle(agentExecutor.handle, promptResult.text);
                 if (sendResult.error) {
-                    return { fixed: false, error: 'failed to send to Claude: ' + sendResult.error };
+                    return { fixed: false, error: 'failed to send to Agent: ' + sendResult.error };
                 }
                 mcpCallbackObj.resetWaiter('reportResolution');
                 var resolutionPoll = await waitForLogged('reportResolution', resolveTimeoutMs, {
@@ -365,7 +386,7 @@
                     checkIntervalMs: pollIntervalMs
                 });
                 if (resolutionPoll.error) {
-                    return { fixed: false, error: 'Claude resolution timed out waiting for reportResolution tool call: ' + resolutionPoll.error + ' — check Claude process logs for errors' };
+                    return { fixed: false, error: 'Agent resolution timed out waiting for reportResolution tool call: ' + resolutionPoll.error + ' — check Agent process logs for errors' };
                 }
                 var resolution = resolutionPoll.data;
                 var resVal = validateResolution(resolution);
@@ -514,7 +535,7 @@
                         break;
                     }
                     var strategy = strategies[s];
-                    if (!strategy.detect(worktreeDir, verifyOutput)) {
+                    if (!(await strategy.detect(worktreeDir, verifyOutput))) {
                         continue;
                     }
 

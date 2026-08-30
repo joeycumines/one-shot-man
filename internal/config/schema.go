@@ -414,7 +414,7 @@ func (s *ConfigSchema) FormatHelp() string {
 		if len(opts) == 0 {
 			continue
 		}
-		b.WriteString(fmt.Sprintf("\n[%s] Options:\n", sec))
+		fmt.Fprintf(&b, "\n[%s] Options:\n", sec)
 		for _, o := range opts {
 			writeOptionHelp(&b, o)
 		}
@@ -424,7 +424,7 @@ func (s *ConfigSchema) FormatHelp() string {
 }
 
 func writeOptionHelp(b *strings.Builder, o ConfigOption) {
-	b.WriteString(fmt.Sprintf("  %-35s %s", o.Key, o.Description))
+	fmt.Fprintf(b, "  %-35s %s", o.Key, o.Description)
 	parts := make([]string, 0, 3)
 	if o.Type != "" && o.Type != TypeString {
 		parts = append(parts, fmt.Sprintf("type: %s", o.Type))
@@ -436,7 +436,7 @@ func writeOptionHelp(b *strings.Builder, o ConfigOption) {
 		parts = append(parts, fmt.Sprintf("env: %s", o.EnvVar))
 	}
 	if len(parts) > 0 {
-		b.WriteString(fmt.Sprintf(" (%s)", strings.Join(parts, ", ")))
+		fmt.Fprintf(b, " (%s)", strings.Join(parts, ", "))
 	}
 	b.WriteString("\n")
 }
@@ -534,21 +534,6 @@ func defaultGlobalOptions() []ConfigOption {
 		{Key: "log.max-size-mb", Type: TypeInt, Default: "10", Description: "Max log file size in MB before rotation"},
 		{Key: "log.max-files", Type: TypeInt, Default: "5", Description: "Max number of rotated log backup files"},
 		{Key: "log.buffer-size", Type: TypeInt, Default: "1000", Description: "In-memory log buffer size (entries)"},
-
-		// Claude-Mux options (AI agent management)
-		{Key: "claude-mux.provider", Type: TypeString, Default: "claude-code", Description: "Default AI provider name"},
-		{Key: "claude-mux.model", Type: TypeString, Default: "", Description: "Default model identifier"},
-		{Key: "claude-mux.work-dir", Type: TypeString, Default: "", Description: "Default working directory for agents (empty = CWD)"},
-		{Key: "claude-mux.env-inherit", Type: TypeBool, Default: "true", Description: "Agents inherit parent environment variables"},
-		{Key: "claude-mux.env-profile", Type: TypeString, Default: "", Description: "Active environment variable profile name"},
-		{Key: "claude-mux.pre-spawn-hook", Type: TypeString, Default: "", Description: "JS file path executed before agent spawn (for credential injection)"},
-		{Key: "claude-mux.permission-policy", Type: TypeString, Default: "reject", Description: "Permission prompt handling: reject (default) or ask"},
-		{Key: "claude-mux.rate-limit-backoff-sec", Type: TypeInt, Default: "30", Description: "Initial rate limit backoff in seconds"},
-		{Key: "claude-mux.max-agents", Type: TypeInt, Default: "4", Description: "Maximum concurrent agents"},
-		{Key: "claude-mux.pty-rows", Type: TypeInt, Default: "24", Description: "Default PTY row count"},
-		{Key: "claude-mux.pty-cols", Type: TypeInt, Default: "80", Description: "Default PTY column count"},
-		{Key: "claude-mux.provider-command", Type: TypeString, Default: "", Description: "Override provider executable path"},
-		{Key: "claude-mux.mcp-servers", Type: TypeString, Default: "", Description: "Comma-separated MCP server commands for agents"},
 	}
 }
 
@@ -584,21 +569,5 @@ func defaultCommandOptions() []ConfigOption {
 		{Key: "maxSizeMB", Section: "sessions", Type: TypeInt, Default: "500", Description: "Maximum total size of sessions in MB"},
 		{Key: "autoCleanupEnabled", Section: "sessions", Type: TypeBool, Default: "true", Description: "Enable automatic background session cleanup"},
 		{Key: "cleanupIntervalHours", Section: "sessions", Type: TypeInt, Default: "24", Description: "Hours between automatic cleanup runs"},
-
-		// [claude-mux] section — special keys parsed by parseClaudeMuxOption
-		{Key: "provider", Section: "claude-mux", Type: TypeString, Default: "claude-code", Description: "AI provider name"},
-		{Key: "model", Section: "claude-mux", Type: TypeString, Default: "", Description: "Model identifier"},
-		{Key: "work-dir", Section: "claude-mux", Type: TypeString, Default: "", Description: "Working directory for agents"},
-		{Key: "env-inherit", Section: "claude-mux", Type: TypeBool, Default: "true", Description: "Agents inherit parent env"},
-		{Key: "env", Section: "claude-mux", Type: TypeString, Default: "", Description: "Additional env var (KEY=VALUE)"},
-		{Key: "env-profile", Section: "claude-mux", Type: TypeString, Default: "", Description: "Active env profile name"},
-		{Key: "pre-spawn-hook", Section: "claude-mux", Type: TypeString, Default: "", Description: "Pre-spawn JS hook path"},
-		{Key: "permission-policy", Section: "claude-mux", Type: TypeString, Default: "reject", Description: "Permission handling policy"},
-		{Key: "rate-limit-backoff-sec", Section: "claude-mux", Type: TypeInt, Default: "30", Description: "Rate limit backoff seconds"},
-		{Key: "max-agents", Section: "claude-mux", Type: TypeInt, Default: "4", Description: "Max concurrent agents"},
-		{Key: "pty-rows", Section: "claude-mux", Type: TypeInt, Default: "24", Description: "PTY row count"},
-		{Key: "pty-cols", Section: "claude-mux", Type: TypeInt, Default: "80", Description: "PTY column count"},
-		{Key: "provider-command", Section: "claude-mux", Type: TypeString, Default: "", Description: "Override provider command"},
-		{Key: "mcp-servers", Section: "claude-mux", Type: TypeString, Default: "", Description: "MCP server commands"},
 	}
 }

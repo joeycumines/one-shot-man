@@ -41,3 +41,28 @@ func BenchmarkBufferedReader(b *testing.B) {
 	<-done
 	cancel()
 }
+
+// ── T089: Benchmark BufferedReader heap allocations per Read iteration ─
+
+type byteReader struct{}
+
+func (byteReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	p[0] = 'x'
+	return 1, io.EOF
+}
+
+func BenchmarkBufferedReaderAllocs(b *testing.B) {
+	b.ReportAllocs()
+	r := byteReader{}
+	for i := 0; i < b.N; i++ {
+		br := NewBufferedReader(r, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		go br.ReadLoop(ctx)
+		for range br.Output() {
+		}
+		cancel()
+	}
+}

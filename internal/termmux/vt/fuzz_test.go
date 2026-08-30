@@ -29,7 +29,7 @@ func FuzzParser(f *testing.F) {
 		// After processing, state must be a valid enum.
 		st := p.CurState()
 		switch st {
-		case StateGround, StateEscape, StateCSI, StateOSC, StateDCS:
+		case StateGround, StateEscape, StateCSI, StateOSC, StateDCS, StateESCIntermediate, StateCharset:
 			// valid
 		default:
 			t.Fatalf("invalid state %d after feeding %d bytes", st, len(data))

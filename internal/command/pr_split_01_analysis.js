@@ -26,7 +26,7 @@
     // Returns:
     //   {files: string[], fileStatuses: {[path]: status}, error: string|null,
     //    baseBranch: string, currentBranch: string}
-    function analyzeDiff(config) {
+    async function analyzeDiff(config) {
         config = config || {};
         var baseBranch = config.baseBranch || runtime.baseBranch;
         var dir = resolveDir(config.dir || '.');
@@ -42,19 +42,19 @@
             };
         };
 
-        var branchResult = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+        var branchResult = await gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
         if (branchResult.code !== 0) {
             return createEmptyResult('failed to get current branch: ' + branchResult.stderr.trim(), '');
         }
         var currentBranch = branchResult.stdout.trim();
 
-        var mergeBase = gitExec(dir, ['merge-base', baseBranch, currentBranch]);
+        var mergeBase = await gitExec(dir, ['merge-base', baseBranch, currentBranch]);
         if (mergeBase.code !== 0) {
             return createEmptyResult('merge-base failed: ' + mergeBase.stderr.trim(), currentBranch);
         }
 
         // Use --name-status to capture diff status (A/M/D/R/C) per file.
-        var diffResult = gitExec(dir, ['diff', '--name-status', mergeBase.stdout.trim(), currentBranch]);
+        var diffResult = await gitExec(dir, ['diff', '--name-status', mergeBase.stdout.trim(), currentBranch]);
         if (diffResult.code !== 0) {
             return createEmptyResult('git diff failed: ' + diffResult.stderr.trim(), currentBranch);
         }
@@ -224,12 +224,12 @@
     // Returns:
     //   {files: [{name, additions, deletions}], error: string|null,
     //    baseBranch: string, currentBranch: string}
-    function analyzeDiffStats(config) {
+    async function analyzeDiffStats(config) {
         config = config || {};
         var baseBranch = config.baseBranch || runtime.baseBranch;
         var dir = resolveDir(config.dir || '.');
 
-        var branchResult = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+        var branchResult = await gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
         if (branchResult.code !== 0) {
             return {
                 files: [],
@@ -240,7 +240,7 @@
         }
         var currentBranch = branchResult.stdout.trim();
 
-        var mergeBase = gitExec(dir, ['merge-base', baseBranch, currentBranch]);
+        var mergeBase = await gitExec(dir, ['merge-base', baseBranch, currentBranch]);
         if (mergeBase.code !== 0) {
             return {
                 files: [],
@@ -250,7 +250,7 @@
             };
         }
 
-        var statResult = gitExec(dir, ['diff', '--numstat', mergeBase.stdout.trim(), currentBranch]);
+        var statResult = await gitExec(dir, ['diff', '--numstat', mergeBase.stdout.trim(), currentBranch]);
         if (statResult.code !== 0) {
             return {
                 files: [],

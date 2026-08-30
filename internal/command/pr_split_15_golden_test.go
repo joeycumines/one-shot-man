@@ -64,7 +64,7 @@ func TestGolden_VerifyPane_Running(t *testing.T) {
 	raw, err := evalJS(`globalThis.prSplit._renderVerifyPane({
 		verifyScreen: 'Running tests...\ntest_utils.go:15: ok\ntest_main.go:42: ok\ntest_api.go:8: FAIL',
 		activeVerifySession: true,
-		splitViewFocus: 'claude',
+		splitViewFocus: 'agent',
 		splitViewTab: 'verify',
 		verifyPaused: false,
 		verifyViewportOffset: 0,
@@ -105,7 +105,7 @@ func TestGolden_VerifyPane_Paused(t *testing.T) {
 // Task 8: TestGolden_ShellPane_Active removed — shell tab unified into verify pane.
 
 // Task 8: TestGolden_TabBar_AllTabs renders the pane divider tab bar with
-// all 3 tabs (Claude, Output, Verify) visible and compares against the golden file.
+// all 3 tabs (Agent, Output, Verify) visible and compares against the golden file.
 func TestGolden_TabBar_AllTabs(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
@@ -114,7 +114,7 @@ func TestGolden_TabBar_AllTabs(t *testing.T) {
 		setupPlanCache();
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewTab = 'claude';
+		s.splitViewTab = 'agent';
 		s.splitViewFocus = 'wizard';
 		s.width = 80;
 		s.height = 24;
@@ -144,7 +144,7 @@ func TestGolden_TabBar_AllTabs(t *testing.T) {
 		s.verifyViewportOffset = 0;
 		s.verifyAutoScroll = true;
 
-		// Task 8: Shell tab removed — only Claude, Output, Verify tabs.
+		// Task 8: Shell tab removed — only Agent, Output, Verify tabs.
 
 		var view = globalThis.prSplit._wizardView(s);
 		var lines = view.split('\n');
@@ -166,7 +166,7 @@ func TestGolden_TabBar_AllTabs(t *testing.T) {
 }
 
 // TestGolden_TabBar_VerifyOnly renders the pane divider tab bar with only
-// Claude, Output, and Verify tabs (no Shell) and compares against the golden file.
+// Agent, Output, and Verify tabs (no Shell) and compares against the golden file.
 func TestGolden_TabBar_VerifyOnly(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
@@ -175,7 +175,7 @@ func TestGolden_TabBar_VerifyOnly(t *testing.T) {
 		setupPlanCache();
 		var s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
-		s.splitViewTab = 'claude';
+		s.splitViewTab = 'agent';
 		s.splitViewFocus = 'wizard';
 		s.width = 80;
 		s.height = 24;

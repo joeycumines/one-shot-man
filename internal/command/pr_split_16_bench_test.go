@@ -13,7 +13,7 @@ import (
 //  Benchmark tests for pr-split TUI view rendering performance.
 //
 //  Measures per-render cost of each wizard screen, the full composite
-//  _wizardView pipeline, split-view with Claude pane, and large plan
+//  _wizardView pipeline, split-view with Agent pane, and large plan
 //  scenarios. Verifies 60fps-capable rendering (<16ms for standard,
 //  <50ms for large).
 //
@@ -264,7 +264,7 @@ func BenchmarkViewRendering(b *testing.B) {
 			raw, err := evalJS(`(function() {
 				var s = initState('ERROR_RESOLUTION');
 				s.errorDetails = 'Something went horribly wrong during branch creation';
-				s.claudeCrashDetected = false;
+				s.agentCrashDetected = false;
 				return globalThis.prSplit._viewErrorResolutionScreen(s);
 			})()`)
 			if err != nil {
@@ -425,13 +425,13 @@ func BenchmarkViewRendering(b *testing.B) {
 
 	// --- Split-view rendering ---
 
-	b.Run("ClaudePane_ANSI", func(b *testing.B) {
+	b.Run("AgentPane_ANSI", func(b *testing.B) {
 		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		// Pre-create a realistic ANSI content buffer.
 		if _, err := evalJS(`
 			var _benchAnsi = '';
 			for (var i = 0; i < 50; i++) {
-				_benchAnsi += '\x1b[32m line ' + i + ': some Claude output with ANSI formatting\x1b[0m\n';
+				_benchAnsi += '\x1b[32m line ' + i + ': some Agent output with ANSI formatting\x1b[0m\n';
 			}
 		`); err != nil {
 			b.Fatal(err)
@@ -441,29 +441,29 @@ func BenchmarkViewRendering(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			raw, err := evalJS(`(function() {
 				var s = initState('PLAN_REVIEW');
-				s.claudeScreen = _benchAnsi;
-				s.claudeScreenshot = '';
+				s.agentScreen = _benchAnsi;
+				s.agentScreenshot = '';
 				s.splitViewEnabled = true;
-				s.splitViewFocus = 'claude';
-				s.claudeViewOffset = 0;
-				return globalThis.prSplit._renderClaudePane(s, 80, 12);
+				s.splitViewFocus = 'agent';
+				s.agentViewOffset = 0;
+				return globalThis.prSplit._renderAgentPane(s, 80, 12);
 			})()`)
 			if err != nil {
 				b.Fatal(err)
 			}
 			if raw == nil || raw == "" {
-				b.Fatal("ClaudePane_ANSI returned empty")
+				b.Fatal("AgentPane_ANSI returned empty")
 			}
 		}
 	})
 
-	b.Run("ClaudePane_LargeBuffer", func(b *testing.B) {
+	b.Run("AgentPane_LargeBuffer", func(b *testing.B) {
 		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		// 1000-line ANSI buffer — stress test.
 		if _, err := evalJS(`
 			var _benchLargeAnsi = '';
 			for (var i = 0; i < 1000; i++) {
-				_benchLargeAnsi += '\x1b[36m[' + i + '] ━━━ Claude is writing code: function process_' + i + '(data) { return data.map(x => x * 2); }\x1b[0m\n';
+				_benchLargeAnsi += '\x1b[36m[' + i + '] ━━━ Agent is writing code: function process_' + i + '(data) { return data.map(x => x * 2); }\x1b[0m\n';
 			}
 		`); err != nil {
 			b.Fatal(err)
@@ -473,18 +473,18 @@ func BenchmarkViewRendering(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			raw, err := evalJS(`(function() {
 				var s = initState('PLAN_REVIEW');
-				s.claudeScreen = _benchLargeAnsi;
-				s.claudeScreenshot = '';
+				s.agentScreen = _benchLargeAnsi;
+				s.agentScreenshot = '';
 				s.splitViewEnabled = true;
-				s.splitViewFocus = 'claude';
-				s.claudeViewOffset = 0;
-				return globalThis.prSplit._renderClaudePane(s, 120, 20);
+				s.splitViewFocus = 'agent';
+				s.agentViewOffset = 0;
+				return globalThis.prSplit._renderAgentPane(s, 120, 20);
 			})()`)
 			if err != nil {
 				b.Fatal(err)
 			}
 			if raw == nil || raw == "" {
-				b.Fatal("ClaudePane_Large returned empty")
+				b.Fatal("AgentPane_Large returned empty")
 			}
 		}
 	})
@@ -498,7 +498,7 @@ func BenchmarkViewRendering(b *testing.B) {
 		if _, err := evalJS(`
 			var _benchSplitAnsi = '';
 			for (var i = 0; i < 30; i++) {
-				_benchSplitAnsi += '\x1b[33m Claude output line ' + i + '\x1b[0m\n';
+				_benchSplitAnsi += '\x1b[33m Agent output line ' + i + '\x1b[0m\n';
 			}
 		`); err != nil {
 			b.Fatal(err)
@@ -510,10 +510,10 @@ func BenchmarkViewRendering(b *testing.B) {
 				var s = initState('PLAN_REVIEW');
 				s.splitViewEnabled = true;
 				s.splitViewFocus = 'wizard';
-				s.splitViewTab = 'claude';
-				s.claudeScreen = _benchSplitAnsi;
-				s.claudeScreenshot = '';
-				s.claudeViewOffset = 0;
+				s.splitViewTab = 'agent';
+				s.agentScreen = _benchSplitAnsi;
+				s.agentScreenshot = '';
+				s.agentViewOffset = 0;
 				s.width = 120;
 				s.height = 40;
 				return globalThis.prSplit._wizardView(s);
@@ -615,7 +615,7 @@ func BenchmarkViewRendering(b *testing.B) {
 			"BRANCH_BUILDING":  benchSetupExecutionResults(3) + "s.executingIdx=2;s.isProcessing=true;",
 			"EQUIV_CHECK":      "s.equivalenceResult={equivalent:true,expected:'abc',actual:'abc'};s.isProcessing=false;",
 			"FINALIZATION":     "s.equivalenceResult={equivalent:true};s.startTime=Date.now()-60000;",
-			"ERROR_RESOLUTION": "s.errorDetails='test error';s.claudeCrashDetected=false;",
+			"ERROR_RESOLUTION": "s.errorDetails='test error';s.agentCrashDetected=false;",
 		}
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -655,8 +655,8 @@ func BenchmarkViewRendering(b *testing.B) {
 //	PlanReview (50):    ~2-5ms      (threshold: 100ms)
 //	Full WizardView:    ~500-1000μs (threshold: 50ms)
 //	SplitView:          ~700-1500μs (threshold: 100ms)
-//	Claude pane (50L):  ~100-300μs  (threshold: 50ms)
-//	Claude pane (1000L):~500-2000μs (threshold: 100ms)
+//	Agent pane (50L):  ~100-300μs  (threshold: 50ms)
+//	Agent pane (1000L):~500-2000μs (threshold: 100ms)
 const (
 	// Standard view rendering — must be under 100ms.
 	// Raised from 50ms to accommodate CI runner load variability (2-4x
@@ -856,12 +856,12 @@ func TestViewPerformanceRegression(t *testing.T) {
 		}
 	})
 
-	t.Run("ClaudePane_LargeBuffer", func(t *testing.T) {
+	t.Run("AgentPane_LargeBuffer", func(t *testing.T) {
 		// 1000-line ANSI buffer.
 		if _, err := evalJS(`
 			var _perfLargeAnsi = '';
 			for (var i = 0; i < 1000; i++) {
-				_perfLargeAnsi += '\x1b[36m[' + i + '] Claude writing: function process_' + i + '() { return true; }\x1b[0m\n';
+				_perfLargeAnsi += '\x1b[36m[' + i + '] Agent writing: function process_' + i + '() { return true; }\x1b[0m\n';
 			}
 		`); err != nil {
 			t.Fatal(err)
@@ -869,12 +869,12 @@ func TestViewPerformanceRegression(t *testing.T) {
 
 		js := `(function() {
 			var s = initState('PLAN_REVIEW');
-			s.claudeScreen = _perfLargeAnsi;
-			s.claudeScreenshot = '';
+			s.agentScreen = _perfLargeAnsi;
+			s.agentScreenshot = '';
 			s.splitViewEnabled = true;
-			s.splitViewFocus = 'claude';
-			s.claudeViewOffset = 0;
-			return globalThis.prSplit._renderClaudePane(s, 120, 20);
+			s.splitViewFocus = 'agent';
+			s.agentViewOffset = 0;
+			return globalThis.prSplit._renderAgentPane(s, 120, 20);
 		})()`
 
 		// Warm up.
@@ -899,21 +899,21 @@ func TestViewPerformanceRegression(t *testing.T) {
 			totalUs += elapsed.Microseconds()
 		}
 		avgUs := totalUs / int64(measureIterations)
-		t.Logf("ClaudePane_LargeBuffer: avg %dμs (threshold: %dμs)", avgUs, thresholdLargeViewUs)
+		t.Logf("AgentPane_LargeBuffer: avg %dμs (threshold: %dμs)", avgUs, thresholdLargeViewUs)
 		if avgUs > thresholdLargeViewUs {
-			t.Errorf("ClaudePane_LargeBuffer too slow: %dμs > %dμs threshold", avgUs, thresholdLargeViewUs)
+			t.Errorf("AgentPane_LargeBuffer too slow: %dμs > %dμs threshold", avgUs, thresholdLargeViewUs)
 		}
 	})
 
 	t.Run("SplitView_Full", func(t *testing.T) {
-		// 3-split plan + ANSI Claude pane.
+		// 3-split plan + ANSI Agent pane.
 		if _, err := evalJS(benchSetupPlanCache(3, 3)); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := evalJS(`
 			var _perfSplitAnsi = '';
 			for (var i = 0; i < 50; i++) {
-				_perfSplitAnsi += '\x1b[33m Claude line ' + i + '\x1b[0m\n';
+				_perfSplitAnsi += '\x1b[33m Agent line ' + i + '\x1b[0m\n';
 			}
 		`); err != nil {
 			t.Fatal(err)
@@ -923,10 +923,10 @@ func TestViewPerformanceRegression(t *testing.T) {
 			var s = initState('PLAN_REVIEW');
 			s.splitViewEnabled = true;
 			s.splitViewFocus = 'wizard';
-			s.splitViewTab = 'claude';
-			s.claudeScreen = _perfSplitAnsi;
-			s.claudeScreenshot = '';
-			s.claudeViewOffset = 0;
+			s.splitViewTab = 'agent';
+			s.agentScreen = _perfSplitAnsi;
+			s.agentScreenshot = '';
+			s.agentViewOffset = 0;
 			s.width = 120;
 			s.height = 40;
 			return globalThis.prSplit._wizardView(s);

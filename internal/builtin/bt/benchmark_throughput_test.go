@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
-	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
-	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	gojanodejsconsole "github.com/joeycumines/goja_nodejs/console"
+	"github.com/joeycumines/goja_nodejs/require"
 )
 
 // ============================================================================
@@ -38,7 +38,7 @@ import (
 // ============================================================================
 //
 // Bridge overhead:
-//   - RunOnLoop (async):    ~101ns/op,    40B,    2 allocs
+//   - Run (async):    ~101ns/op,    40B,    2 allocs
 //   - RunJSSync (empty):    ~1.0µs/op,   424B,    7 allocs (make(chan error,1) dominates)
 //   - RunJSSync (1+1 JS):   ~1.1µs/op,   472B,    9 allocs (+130ns for trivial JS)
 //   - Concurrent RunJSSync: ~2.5µs/op,   424B,    7 allocs (serialized, no contention degradation)
@@ -53,7 +53,7 @@ import (
 //
 // pprof analysis:
 //   - Application code accounts for <1% of CPU time in all benchmarks
-//   - Bridge RunOnLoopSync: make(chan error,1) is the sole per-call alloc in our code
+//   - Bridge RunSync: make(chan error,1) is the sole per-call alloc in our code
 //   - View rendering allocations (128KB, 3870) are entirely Goja VM string operations
 //   - Tick update CPU is dominated by Goja VM executing JS game logic
 //
@@ -83,7 +83,7 @@ func setupBenchBridge(tb testing.TB) *Bridge {
 	}
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
-	bridge := NewBridgeWithEventLoop(context.Background(), loop, vm, registry)
+	bridge := NewBridge(context.Background(), loop, vm, registry, adapter)
 	tb.Cleanup(func() {
 		bridge.Stop()
 		loopCancel()
@@ -92,8 +92,8 @@ func setupBenchBridge(tb testing.TB) *Bridge {
 	return bridge
 }
 
-// BenchmarkRunOnLoop measures the throughput of scheduling callbacks on the event loop.
-func BenchmarkRunOnLoop(b *testing.B) {
+// BenchmarkRun measures the throughput of scheduling callbacks on the event loop.
+func BenchmarkRun(b *testing.B) {
 	bridge := setupBenchBridge(b)
 
 	b.ResetTimer()
@@ -103,11 +103,11 @@ func BenchmarkRunOnLoop(b *testing.B) {
 	wg.Add(b.N)
 
 	for i := 0; i < b.N; i++ {
-		ok := bridge.RunOnLoop(func(vm *goja.Runtime) {
+		ok := bridge.Run(func(vm *goja.Runtime) {
 			wg.Done()
 		})
 		if !ok {
-			b.Fatal("RunOnLoop failed")
+			b.Fatal("Run failed")
 		}
 	}
 
@@ -123,7 +123,7 @@ func BenchmarkRunJSSync(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		err := bridge.RunJSSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			return nil
 		})
 		if err != nil {
@@ -138,7 +138,7 @@ func BenchmarkRunJSSync_WithJSExecution(b *testing.B) {
 
 	// Pre-compile a simple script
 	var prg *goja.Program
-	bridge.RunJSSync(func(vm *goja.Runtime) error {
+	bridge.RunSync(func(vm *goja.Runtime) error {
 		var err error
 		prg, err = goja.Compile("test", "1 + 1", true)
 		return err
@@ -148,7 +148,7 @@ func BenchmarkRunJSSync_WithJSExecution(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		err := bridge.RunJSSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, err := vm.RunProgram(prg)
 			return err
 		})
@@ -189,7 +189,7 @@ func BenchmarkRunJSSync_RealisticUpdate(b *testing.B) {
 
 	// Get the update function
 	var updateFn goja.Callable
-	bridge.RunJSSync(func(vm *goja.Runtime) error {
+	bridge.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get("update")
 		var ok bool
 		updateFn, ok = goja.AssertFunction(val)
@@ -203,7 +203,7 @@ func BenchmarkRunJSSync_RealisticUpdate(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		err := bridge.RunJSSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			// Create the message (simulating msgToJS)
 			msg := map[string]any{
 				"type": "Key",
@@ -261,7 +261,7 @@ func BenchmarkRunJSSync_RealisticView(b *testing.B) {
 
 	// Get the view function
 	var viewFn goja.Callable
-	bridge.RunJSSync(func(vm *goja.Runtime) error {
+	bridge.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get("view")
 		var ok bool
 		viewFn, ok = goja.AssertFunction(val)
@@ -275,7 +275,7 @@ func BenchmarkRunJSSync_RealisticView(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		err := bridge.RunJSSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			result, err := viewFn(goja.Undefined())
 			if err != nil {
 				return err
@@ -323,7 +323,7 @@ func BenchmarkRunJSSync_OriginalView(b *testing.B) {
 
 	// Get the view function
 	var viewFn goja.Callable
-	bridge.RunJSSync(func(vm *goja.Runtime) error {
+	bridge.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get("view")
 		var ok bool
 		viewFn, ok = goja.AssertFunction(val)
@@ -337,7 +337,7 @@ func BenchmarkRunJSSync_OriginalView(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		err := bridge.RunJSSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			result, err := viewFn(goja.Undefined())
 			if err != nil {
 				return err
@@ -360,7 +360,7 @@ func BenchmarkConcurrentRunJSSync(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			err := bridge.RunJSSync(func(vm *goja.Runtime) error {
+			err := bridge.RunSync(func(vm *goja.Runtime) error {
 				return nil
 			})
 			if err != nil {
@@ -428,7 +428,7 @@ func BenchmarkInputLatency_KeyToStateChange(b *testing.B) {
 
 	// Get the update function
 	var updateFn goja.Callable
-	bridge.RunJSSync(func(vm *goja.Runtime) error {
+	bridge.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get("update")
 		var ok bool
 		updateFn, ok = goja.AssertFunction(val)
@@ -442,7 +442,7 @@ func BenchmarkInputLatency_KeyToStateChange(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		err := bridge.RunJSSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			// Simulate KeyPressMsg conversion (step 2)
 			msg := vm.NewObject()
 			msg.Set("type", "Key")
@@ -486,7 +486,7 @@ func BenchmarkInputLatency_TickContention(b *testing.B) {
 	}
 
 	var updateFn goja.Callable
-	bridge.RunJSSync(func(vm *goja.Runtime) error {
+	bridge.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get("update")
 		updateFn, _ = goja.AssertFunction(val)
 		return nil
@@ -501,7 +501,7 @@ func BenchmarkInputLatency_TickContention(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// Process 60 tick messages (simulating 1 second of ticks)
 		for range ticksPerKey {
-			bridge.RunJSSync(func(vm *goja.Runtime) error {
+			bridge.RunSync(func(vm *goja.Runtime) error {
 				msg := vm.NewObject()
 				msg.Set("type", "Tick")
 				msg.Set("id", "tick")
@@ -511,7 +511,7 @@ func BenchmarkInputLatency_TickContention(b *testing.B) {
 		}
 
 		// Then process ONE key input
-		bridge.RunJSSync(func(vm *goja.Runtime) error {
+		bridge.RunSync(func(vm *goja.Runtime) error {
 			msg := vm.NewObject()
 			msg.Set("type", "Key")
 			msg.Set("key", "w")
@@ -562,7 +562,7 @@ func BenchmarkInputLatency_FullFrameCycle(b *testing.B) {
 	}
 
 	var updateFn, viewFn goja.Callable
-	bridge.RunJSSync(func(vm *goja.Runtime) error {
+	bridge.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get("update")
 		updateFn, _ = goja.AssertFunction(val)
 		val = vm.Get("view")
@@ -575,7 +575,7 @@ func BenchmarkInputLatency_FullFrameCycle(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		// Full frame cycle: key press → update → view
-		bridge.RunJSSync(func(vm *goja.Runtime) error {
+		bridge.RunSync(func(vm *goja.Runtime) error {
 			// Process key input
 			msg := vm.NewObject()
 			msg.Set("type", "Key")
@@ -622,7 +622,7 @@ func BenchmarkInputLatency_AIContention(b *testing.B) {
 	}
 
 	var updateFn, aiTickFn goja.Callable
-	bridge.RunJSSync(func(vm *goja.Runtime) error {
+	bridge.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get("update")
 		updateFn, _ = goja.AssertFunction(val)
 		val = vm.Get("aiTick")
@@ -640,14 +640,14 @@ func BenchmarkInputLatency_AIContention(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// AI tickers execute first (they were scheduled before input)
 		for range numEnemies * aiTicksPerFrame {
-			bridge.RunJSSync(func(vm *goja.Runtime) error {
+			bridge.RunSync(func(vm *goja.Runtime) error {
 				_, err := aiTickFn(goja.Undefined())
 				return err
 			})
 		}
 
 		// Then input arrives and must wait
-		bridge.RunJSSync(func(vm *goja.Runtime) error {
+		bridge.RunSync(func(vm *goja.Runtime) error {
 			msg := vm.NewObject()
 			msg.Set("type", "Key")
 			msg.Set("key", "w")
@@ -788,7 +788,7 @@ func BenchmarkInputLatency_RealisticTickUpdate(b *testing.B) {
 	}
 
 	var tickUpdateFn, keyUpdateFn goja.Callable
-	bridge.RunJSSync(func(vm *goja.Runtime) error {
+	bridge.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get("tickUpdate")
 		tickUpdateFn, _ = goja.AssertFunction(val)
 		val = vm.Get("keyUpdate")
@@ -802,7 +802,7 @@ func BenchmarkInputLatency_RealisticTickUpdate(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// Simulate: Key arrives but tick is already processing
 		// First, the tick update runs (this is the blocking work)
-		bridge.RunJSSync(func(vm *goja.Runtime) error {
+		bridge.RunSync(func(vm *goja.Runtime) error {
 			msg := vm.NewObject()
 			msg.Set("type", "Tick")
 			msg.Set("id", "tick")
@@ -811,7 +811,7 @@ func BenchmarkInputLatency_RealisticTickUpdate(b *testing.B) {
 		})
 
 		// Then key update runs (fast)
-		bridge.RunJSSync(func(vm *goja.Runtime) error {
+		bridge.RunSync(func(vm *goja.Runtime) error {
 			msg := vm.NewObject()
 			msg.Set("type", "Key")
 			msg.Set("key", "w")
@@ -840,7 +840,7 @@ func TestRunJSSync_Throughput(t *testing.T) {
 
 	var ops int64
 	for time.Now().Before(deadline) {
-		err := bridge.RunJSSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			return nil
 		})
 		if err != nil {
@@ -881,28 +881,28 @@ func TestRunJSSync_SimulatedGameLoop(t *testing.T) {
 		frameStart := time.Now()
 
 		// Simulate tick message processing
-		bridge.RunJSSync(func(vm *goja.Runtime) error {
+		bridge.RunSync(func(vm *goja.Runtime) error {
 			atomic.AddInt64(&tickCount, 1)
 			return nil
 		})
 
 		// Simulate key message processing (every 5th frame)
 		if i%5 == 0 {
-			bridge.RunJSSync(func(vm *goja.Runtime) error {
+			bridge.RunSync(func(vm *goja.Runtime) error {
 				atomic.AddInt64(&keyCount, 1)
 				return nil
 			})
 		}
 
 		// Simulate view rendering
-		bridge.RunJSSync(func(vm *goja.Runtime) error {
+		bridge.RunSync(func(vm *goja.Runtime) error {
 			// Generate some output
 			return nil
 		})
 
 		// Simulate 3 AI tickers (enemy updates)
 		for range 3 {
-			bridge.RunJSSync(func(vm *goja.Runtime) error {
+			bridge.RunSync(func(vm *goja.Runtime) error {
 				return nil
 			})
 		}
@@ -970,7 +970,7 @@ func TestEventLoopContention(t *testing.T) {
 			defer wg.Done()
 			for range opsPerCaller {
 				start := time.Now()
-				err := bridge.RunJSSync(func(vm *goja.Runtime) error {
+				err := bridge.RunSync(func(vm *goja.Runtime) error {
 					// Simulate some work
 					time.Sleep(100 * time.Microsecond)
 					return nil

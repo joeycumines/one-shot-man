@@ -5,115 +5,11 @@ import (
 	"context"
 	"io"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
-	"golang.org/x/term"
 )
-
-// syncBuffer is a goroutine-safe bytes.Buffer for concurrent test writes
-// and reads.
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
-// ptTestTermState implements ptyio.TermState for passthrough testing.
-type ptTestTermState struct {
-	rawCalled     bool
-	restoreCalled bool
-	width, height int
-}
-
-func (m *ptTestTermState) MakeRaw(fd int) (*term.State, error) {
-	m.rawCalled = true
-	return nil, nil // nil state is fine for tests
-}
-
-func (m *ptTestTermState) Restore(fd int, state *term.State) error {
-	m.restoreCalled = true
-	return nil
-}
-
-func (m *ptTestTermState) GetSize(fd int) (width, height int, err error) {
-	w, h := m.width, m.height
-	if w == 0 {
-		w = 80
-	}
-	if h == 0 {
-		h = 24
-	}
-	return w, h, nil
-}
-
-// ptTestBlockingGuard implements ptyio.BlockingGuard for passthrough testing.
-type ptTestBlockingGuard struct {
-	ensureCalled  bool
-	restoreCalled bool
-}
-
-func (m *ptTestBlockingGuard) EnsureBlocking(fd int) (origFlags int, err error) {
-	m.ensureCalled = true
-	return 0, nil
-}
-
-func (m *ptTestBlockingGuard) Restore(fd int, origFlags int) {
-	m.restoreCalled = true
-}
-
-// passthroughTestManager creates a SessionManager with a registered
-// controllable session and returns everything needed for passthrough testing.
-func passthroughTestManager(t *testing.T) (*SessionManager, *controllableSession, SessionID) {
-	t.Helper()
-	m := NewSessionManager(WithTermSize(24, 80))
-	ctx, cancel := context.WithCancel(context.Background())
-	errCh := make(chan error, 1)
-	go func() { errCh <- m.Run(ctx) }()
-	<-m.Started()
-
-	session := newControllableSession()
-	id, err := m.Register(session, SessionTarget{Name: "test-pt", Kind: SessionKindPTY})
-	if err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-
-	// Pump some output to transition to Running state.
-	session.readerCh <- []byte("ready")
-	// Wait for the output to be processed.
-	deadline := time.After(2 * time.Second)
-	for {
-		snap := m.Snapshot(id)
-		if snap != nil && strings.Contains(snap.PlainText, "ready") {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for session to reach Running state")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
-
-	t.Cleanup(func() {
-		cancel()
-		<-errCh
-	})
-
-	return m, session, id
-}
 
 func TestSessionManager_Passthrough_ToggleKey(t *testing.T) {
 	if testing.Short() {
@@ -130,10 +26,14 @@ func TestSessionManager_Passthrough_ToggleKey(t *testing.T) {
 	stdout := &bytes.Buffer{}
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		Stdin:     stdin,
-		Stdout:    stdout,
-		TermFd:    -1,
-		ToggleKey: toggleKey,
+		TerminalIO: TerminalIO{
+			Stdin:  stdin,
+			Stdout: stdout,
+			TermFd: -1,
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: toggleKey,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -162,10 +62,14 @@ func TestSessionManager_Passthrough_ChildExit(t *testing.T) {
 	}, 1)
 	go func() {
 		reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-			Stdin:     stdinR,
-			Stdout:    stdout,
-			TermFd:    -1,
-			ToggleKey: 0x1D,
+			TerminalIO: TerminalIO{
+				Stdin:  stdinR,
+				Stdout: stdout,
+				TermFd: -1,
+			},
+			PassthroughOptions: PassthroughOptions{
+				ToggleKey: 0x1D,
+			},
 		})
 		resultCh <- struct {
 			reason ExitReason
@@ -173,9 +77,10 @@ func TestSessionManager_Passthrough_ChildExit(t *testing.T) {
 		}{reason, err}
 	}()
 
-	// Wait briefly to ensure passthrough is running, then close session.
+	// Wait briefly to ensure passthrough is running, then simulate session exit.
 	time.Sleep(100 * time.Millisecond)
 	close(session.readerCh) // EOF on reader → session exits
+	close(session.doneCh)   // Signal session Done channel
 
 	select {
 	case r := <-resultCh:
@@ -210,10 +115,14 @@ func TestSessionManager_Passthrough_Context(t *testing.T) {
 	}, 1)
 	go func() {
 		reason, err := m.Passthrough(ctx, PassthroughConfig{
-			Stdin:     stdinR,
-			Stdout:    stdout,
-			TermFd:    -1,
-			ToggleKey: 0x1D,
+			TerminalIO: TerminalIO{
+				Stdin:  stdinR,
+				Stdout: stdout,
+				TermFd: -1,
+			},
+			PassthroughOptions: PassthroughOptions{
+				ToggleKey: 0x1D,
+			},
 		})
 		resultCh <- struct {
 			reason ExitReason
@@ -251,10 +160,14 @@ func TestSessionManager_Passthrough_InputForwarding(t *testing.T) {
 	stdout := &bytes.Buffer{}
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		Stdin:     stdin,
-		Stdout:    stdout,
-		TermFd:    -1,
-		ToggleKey: toggleKey,
+		TerminalIO: TerminalIO{
+			Stdin:  stdin,
+			Stdout: stdout,
+			TermFd: -1,
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: toggleKey,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -291,10 +204,14 @@ func TestSessionManager_Passthrough_OutputForwarding(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		reason, err := m.Passthrough(ctx, PassthroughConfig{
-			Stdin:     stdinR,
-			Stdout:    stdout,
-			TermFd:    -1,
-			ToggleKey: 0x1D,
+			TerminalIO: TerminalIO{
+				Stdin:  stdinR,
+				Stdout: stdout,
+				TermFd: -1,
+			},
+			PassthroughOptions: PassthroughOptions{
+				ToggleKey: 0x1D,
+			},
 		})
 		resultCh <- struct {
 			reason ExitReason
@@ -344,12 +261,16 @@ func TestSessionManager_Passthrough_TerminalRestore(t *testing.T) {
 
 	// TermFd=999 is a fake fd; MakeRaw/Restore just record calls.
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		Stdin:         stdin,
-		Stdout:        stdout,
-		TermFd:        999,
-		ToggleKey:     toggleKey,
-		TermState:     ts,
-		BlockingGuard: bg,
+		TerminalIO: TerminalIO{
+			Stdin:         stdin,
+			Stdout:        stdout,
+			TermFd:        999,
+			BlockingGuard: bg,
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: toggleKey,
+			TermState: ts,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -359,17 +280,29 @@ func TestSessionManager_Passthrough_TerminalRestore(t *testing.T) {
 	}
 
 	// Verify terminal state was saved and restored.
-	if !ts.rawCalled {
+	if !ts.isRawCalled() {
 		t.Error("MakeRaw was not called")
 	}
-	if !ts.restoreCalled {
+	if ts.getRawFd() != 999 {
+		t.Errorf("MakeRaw fd = %d, want 999", ts.getRawFd())
+	}
+	if !ts.isRestoreCalled() {
 		t.Error("Restore was not called")
 	}
-	if !bg.ensureCalled {
+	if ts.getRestoreFd() != 999 {
+		t.Errorf("Restore fd = %d, want 999", ts.getRestoreFd())
+	}
+	if !bg.isEnsureCalled() {
 		t.Error("EnsureBlocking was not called")
 	}
-	if !bg.restoreCalled {
+	if bg.getEnsureFd() != 999 {
+		t.Errorf("EnsureBlocking fd = %d, want 999", bg.getEnsureFd())
+	}
+	if !bg.isRestoreCalled() {
 		t.Error("BlockingGuard.Restore was not called")
+	}
+	if bg.getRestoreFd() != 999 {
+		t.Errorf("BlockingGuard.Restore fd = %d, want 999", bg.getRestoreFd())
 	}
 }
 
@@ -383,16 +316,88 @@ func TestSessionManager_Passthrough_BeforeRun(t *testing.T) {
 	stdout := &bytes.Buffer{}
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		Stdin:     stdin,
-		Stdout:    stdout,
-		TermFd:    -1,
-		ToggleKey: 0x1D,
+		TerminalIO: TerminalIO{
+			Stdin:  stdin,
+			Stdout: stdout,
+			TermFd: -1,
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: 0x1D,
+		},
 	})
 	if reason != ExitError {
 		t.Errorf("reason = %v, want ExitError", reason)
 	}
 	if err == nil {
 		t.Error("expected error, got nil")
+	}
+}
+
+func TestSessionManager_Passthrough_NoActiveSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	t.Cleanup(cleanup)
+
+	// Manager is running but has no registered sessions.
+	stdin := bytes.NewReader([]byte("hello"))
+	stdout := &bytes.Buffer{}
+
+	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+		TerminalIO: TerminalIO{
+			Stdin:  stdin,
+			Stdout: stdout,
+			TermFd: -1,
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: 0x1D,
+		},
+	})
+	if reason != ExitError {
+		t.Errorf("reason = %v, want ExitError", reason)
+	}
+	if err == nil {
+		t.Error("expected error when no active session exists, got nil")
+	}
+}
+
+func TestSessionManager_Passthrough_UnregisteredDuringPassthrough(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, session, id := passthroughTestManager(t)
+
+	// Unregister the session so ActiveID() returns 0.
+	m.Unregister(id)
+
+	// Verify the session is gone.
+	session.writeMu.Lock()
+	closed := session.closeCalled.Load()
+	session.writeMu.Unlock()
+	if !closed {
+		t.Fatal("session should have been closed by Unregister")
+	}
+
+	stdin := bytes.NewReader([]byte("hello"))
+	stdout := &bytes.Buffer{}
+
+	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+		TerminalIO: TerminalIO{
+			Stdin:  stdin,
+			Stdout: stdout,
+			TermFd: -1,
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: 0x1D,
+		},
+	})
+	if reason != ExitError {
+		t.Errorf("reason = %v, want ExitError", reason)
+	}
+	if err == nil {
+		t.Error("expected error when active session was unregistered, got nil")
 	}
 }
 
@@ -409,7 +414,7 @@ func TestSessionManager_Passthrough_RestoreScreen(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && strings.Contains(snap.PlainText, "screen-content") {
+		if snap != nil && strings.Contains(snap.GetPlainText(), "screen-content") {
 			break
 		}
 		select {
@@ -424,11 +429,17 @@ func TestSessionManager_Passthrough_RestoreScreen(t *testing.T) {
 	stdout := &bytes.Buffer{}
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		Stdin:         stdin,
-		Stdout:        stdout,
-		TermFd:        -1,
-		ToggleKey:     toggleKey,
-		RestoreScreen: true,
+		TerminalIO: TerminalIO{
+			Stdin:  stdin,
+			Stdout: stdout,
+			TermFd: -1,
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: toggleKey,
+		},
+		ResizeConfig: ResizeConfig{
+			RestoreScreen: true,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -442,6 +453,14 @@ func TestSessionManager_Passthrough_RestoreScreen(t *testing.T) {
 	got := stdout.String()
 	if !strings.Contains(got, "screen-content") {
 		t.Errorf("stdout did not contain restored screen content; got %q", got)
+	}
+
+	// Verify that the erase-below sequence is emitted after FullScreen.
+	// This clears rows beyond the VTerm's height to prevent ghost content.
+	// The manager was created with WithTermSize(24, 80), so snap.Rows=24.
+	// The erase sequence is: CUP(row 25, col 1) + ED(0).
+	if !strings.Contains(got, "\x1b[25;1H\x1b[0J") {
+		t.Errorf("stdout missing erase-below sequence (ghost row clear); got %q", got)
 	}
 }
 
@@ -461,12 +480,18 @@ func TestPassthroughStatusBar_ScrollRegionSetup(t *testing.T) {
 	sb := statusbar.New(stdout) // writes to stdout so we can inspect
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		Stdin:     stdin,
-		Stdout:    stdout,
-		TermFd:    3, // non-negative enables terminal state
-		TermState: ts,
-		ToggleKey: toggleKey,
-		StatusBar: sb,
+		TerminalIO: TerminalIO{
+			Stdin:  stdin,
+			Stdout: stdout,
+			TermFd: 3, // non-negative enables terminal state
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: toggleKey,
+			TermState: ts,
+		},
+		UIConfig: UIConfig{
+			StatusBar: sb,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -476,7 +501,7 @@ func TestPassthroughStatusBar_ScrollRegionSetup(t *testing.T) {
 	}
 
 	// Verify TermState.MakeRaw was called (proves TermFd was used).
-	if !ts.rawCalled {
+	if !ts.isRawCalled() {
 		t.Error("MakeRaw not called")
 	}
 
@@ -494,7 +519,7 @@ func TestPassthroughStatusBar_ScrollRegionSetup(t *testing.T) {
 	}
 
 	// Verify that status bar content was rendered (generic title, no product branding).
-	if strings.Contains(got, "[Claude]") {
+	if strings.Contains(got, "[Agent]") {
 		t.Errorf("stdout should not contain product-specific branding; got %q", got)
 	}
 	// The status bar should contain the toggle key hint.
@@ -522,12 +547,18 @@ func TestPassthroughStatusBar_MouseRouting(t *testing.T) {
 	sb := statusbar.New(stdout)
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		Stdin:     stdin,
-		Stdout:    stdout,
-		TermFd:    3,
-		TermState: ts,
-		ToggleKey: 0x1D,
-		StatusBar: sb,
+		TerminalIO: TerminalIO{
+			Stdin:  stdin,
+			Stdout: stdout,
+			TermFd: 3,
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: 0x1D,
+			TermState: ts,
+		},
+		UIConfig: UIConfig{
+			StatusBar: sb,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -552,7 +583,7 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && strings.Contains(snap.PlainText, "restore-me") {
+		if snap != nil && strings.Contains(snap.GetPlainText(), "restore-me") {
 			break
 		}
 		select {
@@ -570,13 +601,21 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 	sb := statusbar.New(stdout)
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		Stdin:         stdin,
-		Stdout:        stdout,
-		TermFd:        3,
-		TermState:     ts,
-		ToggleKey:     toggleKey,
-		StatusBar:     sb,
-		RestoreScreen: true,
+		TerminalIO: TerminalIO{
+			Stdin:  stdin,
+			Stdout: stdout,
+			TermFd: 3,
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: toggleKey,
+			TermState: ts,
+		},
+		ResizeConfig: ResizeConfig{
+			RestoreScreen: true,
+		},
+		UIConfig: UIConfig{
+			StatusBar: sb,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -592,6 +631,14 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 		t.Errorf("stdout missing restored screen content; got %q", got)
 	}
 
+	// Verify erase-below sequence is emitted. With status bar (1 line)
+	// on a 24-row terminal, the VTerm is resized to 23 rows, so erase
+	// starts at row 24 (the row after VTerm content). This clears any
+	// ghost rows below the restored VTerm screen.
+	if !strings.Contains(got, "\x1b[24;1H\x1b[0J") {
+		t.Errorf("stdout missing erase-below sequence (ghost row clear with status bar); got %q", got)
+	}
+
 	// After RestoreScreen, the status bar should be re-rendered
 	// (passthrough.go line 85-86: if cfg.StatusBar != nil && statusBarLines > 0).
 	// The status bar toggle hint should appear more than once
@@ -601,12 +648,12 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 		t.Errorf("status bar toggle hint count = %d, want >= 2 (initial + post-restore); got %q", switchCount, got)
 	}
 	// Verify no product-specific branding leaked.
-	if strings.Contains(got, "[Claude]") {
+	if strings.Contains(got, "[Agent]") {
 		t.Errorf("stdout should not contain product-specific branding; got %q", got)
 	}
 }
 
-func TestPassthrough_ResizeDuringPassthrough(t *testing.T) {
+func TestPassthrough_InitialResizeOnSetup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
@@ -621,11 +668,15 @@ func TestPassthrough_ResizeDuringPassthrough(t *testing.T) {
 	ts := &ptTestTermState{width: 80, height: 24}
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		Stdin:     stdin,
-		Stdout:    stdout,
-		TermFd:    3,
-		TermState: ts,
-		ToggleKey: toggleKey,
+		TerminalIO: TerminalIO{
+			Stdin:  stdin,
+			Stdout: stdout,
+			TermFd: 3,
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: toggleKey,
+			TermState: ts,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -672,17 +723,25 @@ func TestPassthrough_ResizeFnCallback(t *testing.T) {
 	var resizeFnRows, resizeFnCols uint16
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		Stdin:     stdin,
-		Stdout:    stdout,
-		TermFd:    3,
-		TermState: ts,
-		ToggleKey: toggleKey,
-		StatusBar: sb,
-		ResizeFn: func(rows, cols uint16) error {
-			resizeFnCalled = true
-			resizeFnRows = rows
-			resizeFnCols = cols
-			return nil
+		TerminalIO: TerminalIO{
+			Stdin:  stdin,
+			Stdout: stdout,
+			TermFd: 3,
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: toggleKey,
+			TermState: ts,
+		},
+		ResizeConfig: ResizeConfig{
+			ResizeFn: func(rows, cols uint16) error {
+				resizeFnCalled = true
+				resizeFnRows = rows
+				resizeFnCols = cols
+				return nil
+			},
+		},
+		UIConfig: UIConfig{
+			StatusBar: sb,
 		},
 	})
 	if err != nil {
@@ -702,5 +761,214 @@ func TestPassthrough_ResizeFnCallback(t *testing.T) {
 	}
 	if resizeFnCols != 80 {
 		t.Errorf("ResizeFn cols = %d, want 80", resizeFnCols)
+	}
+}
+
+func TestSessionManager_Passthrough_SessionClosedEvent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, _, id := passthroughTestManager(t)
+
+	// Use blocking stdin so passthrough stays running.
+	stdinR, stdinW := io.Pipe()
+	stdout := &syncBuffer{}
+
+	// Subscribe to events so we can verify the EventSessionClosed event
+	// was actually received.
+	subID, evtCh := m.Subscribe(16)
+	defer m.Unsubscribe(subID)
+
+	resultCh := make(chan struct {
+		reason ExitReason
+		err    error
+	}, 1)
+	go func() {
+		reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+			TerminalIO: TerminalIO{
+				Stdin:  stdinR,
+				Stdout: stdout,
+				TermFd: -1,
+			},
+			PassthroughOptions: PassthroughOptions{
+				ToggleKey: 0x1D,
+			},
+		})
+		resultCh <- struct {
+			reason ExitReason
+			err    error
+		}{reason, err}
+	}()
+
+	// Wait for passthrough to start.
+	time.Sleep(200 * time.Millisecond)
+
+	// Unregister the session — this should trigger EventSessionClosed
+	// which passthrough should detect and exit with ExitChildExit.
+	m.Unregister(id)
+
+	select {
+	case r := <-resultCh:
+		if r.reason != ExitChildExit {
+			t.Errorf("reason = %v, want ExitChildExit", r.reason)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for passthrough to return after session closed")
+	}
+
+	// Verify that the EventSessionClosed event was actually emitted
+	// (not some other event that happened to unblock passthrough).
+	// The event may not have been buffered yet, so poll with a timeout.
+	var sawClosed bool
+	drainDeadline := time.After(2 * time.Second)
+	for !sawClosed {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventSessionClosed && evt.SessionID == id {
+				sawClosed = true
+			}
+		case <-drainDeadline:
+			goto done
+		}
+	}
+done:
+	if !sawClosed {
+		t.Error("EventSessionClosed event was not received for the unregistered session")
+	}
+
+	// Close stdinW to prevent goroutine leak (Pipe read-side in passthrough
+	// is now done, but the write-side goroutine inside io.Pipe is still
+	// waiting if we don't close it).
+	stdinW.Close()
+}
+
+func TestSessionManager_Passthrough_ContextCancel_RestoresTerminal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, _, _ := passthroughTestManager(t)
+
+	stdinR, stdinW := io.Pipe()
+	defer stdinW.Close()
+	stdout := &syncBuffer{}
+
+	ts := &ptTestTermState{width: 80, height: 24}
+	bg := &ptTestBlockingGuard{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	resultCh := make(chan struct {
+		reason ExitReason
+		err    error
+	}, 1)
+	go func() {
+		reason, err := m.Passthrough(ctx, PassthroughConfig{
+			TerminalIO: TerminalIO{
+				Stdin:         stdinR,
+				Stdout:        stdout,
+				TermFd:        999,
+				BlockingGuard: bg,
+			},
+			PassthroughOptions: PassthroughOptions{
+				ToggleKey: 0x1D,
+				TermState: ts,
+			},
+		})
+		resultCh <- struct {
+			reason ExitReason
+			err    error
+		}{reason, err}
+	}()
+
+	// Wait for passthrough to enter raw mode (poll instead of fixed sleep
+	// to avoid flakiness under load).
+	rawDeadline := time.After(5 * time.Second)
+	for !ts.isRawCalled() {
+		select {
+		case <-rawDeadline:
+			t.Fatal("timed out waiting for MakeRaw to be called")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Cancel the context — passthrough must restore terminal state even on
+	// context cancellation (deferred Restore in passthrough.go).
+	cancel()
+
+	select {
+	case r := <-resultCh:
+		if r.reason != ExitContext {
+			t.Errorf("reason = %v, want ExitContext", r.reason)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for passthrough to return after context cancel")
+	}
+
+	// Verify terminal state was restored even though exit was via context.
+	if !ts.isRestoreCalled() {
+		t.Error("Restore was not called after context cancellation")
+	}
+	if !bg.isRestoreCalled() {
+		t.Error("BlockingGuard.Restore was not called after context cancellation")
+	}
+}
+
+func TestCaptureSession_Passthrough_WithTerminalState(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	skipIfWindows(t)
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "sleep",
+		Args:    []string{"5"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer cs.Close()
+
+	ts := &ptTestTermState{width: 80, height: 24}
+	bg := &ptTestBlockingGuard{}
+	toggleKey := byte(0x1D)
+	stdin := bytes.NewReader([]byte{toggleKey})
+	stdout := &syncBuffer{}
+
+	reason, err := cs.Passthrough(context.Background(), PassthroughConfig{
+		TerminalIO: TerminalIO{
+			Stdin:         stdin,
+			Stdout:        stdout,
+			TermFd:        3,
+			BlockingGuard: bg,
+		},
+		PassthroughOptions: PassthroughOptions{
+			ToggleKey: toggleKey,
+			TermState: ts,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Passthrough error: %v", err)
+	}
+	if reason != ExitToggle {
+		t.Errorf("reason = %v, want ExitToggle", reason)
+	}
+
+	// Verify terminal state was set and restored.
+	if !ts.isRawCalled() {
+		t.Error("MakeRaw was not called")
+	}
+	if !ts.isRestoreCalled() {
+		t.Error("Restore was not called")
+	}
+	if !bg.isEnsureCalled() {
+		t.Error("EnsureBlocking was not called")
+	}
+	if !bg.isRestoreCalled() {
+		t.Error("BlockingGuard.Restore was not called")
 	}
 }

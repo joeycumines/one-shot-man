@@ -29,7 +29,7 @@ import (
 // sync.Once). Tests create isolated temp git repos and verify git state
 // after the binary exits.
 //
-// These tests do NOT require the -integration flag, Claude, or any external
+// These tests do NOT require the -integration flag, Agent, or any external
 // services. They test the heuristic (non-AI) flow exclusively via the
 // batch command dispatch path (positional args after flags).
 // ---------------------------------------------------------------------------
@@ -535,35 +535,35 @@ func TestBinaryE2E_HelpOutput(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TestBinaryE2E_ClaudeCommandFlags
+// TestBinaryE2E_AgentCommandFlags
 //
-// T368: Verifies that -claude-command and -claude-arg flags are correctly
+// T368: Verifies that -agent-command and -agent-arg flags are correctly
 // parsed and wired through the binary to the JS engine.
 //
-// Strategy: Create a mock "claude" shell script that logs its argv to a file,
+// Strategy: Create a mock "agent" shell script that logs its argv to a file,
 // then run the auto-split binary pointing at it. The auto-split pipeline
-// will resolve the explicit claude command path, then attempt to spawn it.
+// will resolve the explicit agent command path, then attempt to spawn it.
 // The spawn invokes the mock script, which logs its actual argv — proving
 // the flag passthrough works end-to-end.
 //
-// Because the mock is not a real Claude MCP server, the pipeline will fail
+// Because the mock is not a real Agent MCP server, the pipeline will fail
 // after spawning (MCP handshake timeout). That's expected. We only need to
 // verify the mock was invoked with the correct arguments.
 // ---------------------------------------------------------------------------
 
-func TestBinaryE2E_ClaudeCommandFlags(t *testing.T) {
+func TestBinaryE2E_AgentCommandFlags(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
 	osmBin := buildOSMBinary(t)
 	repoDir := setupBinaryTestRepo(t)
 
-	// Create a mock "claude" script that logs its arguments.
+	// Create a mock "agent" script that logs its arguments.
 	mockDir := t.TempDir()
-	argLogFile := filepath.Join(mockDir, "claude-args.log")
-	mockScript := filepath.Join(mockDir, "mock-claude")
+	argLogFile := filepath.Join(mockDir, "agent-args.log")
+	mockScript := filepath.Join(mockDir, "mock-agent")
 
 	// The mock script writes all arguments (one per line) to the log file,
-	// then exits 0. The binary thinks it found a valid Claude executable.
+	// then exits 0. The binary thinks it found a valid Agent executable.
 	scriptContent := "#!/bin/sh\n" +
 		"printf '%s\\n' \"$@\" > " + argLogFile + "\n" +
 		"# Sleep briefly so the spawner can see the process is alive\n" +
@@ -573,12 +573,12 @@ func TestBinaryE2E_ClaudeCommandFlags(t *testing.T) {
 		t.Fatalf("write mock script: %v", err)
 	}
 
-	// Run the binary with explicit -claude-command and multiple -claude-arg flags.
+	// Run the binary with explicit -agent-command and multiple -agent-arg flags.
 	// We use "auto-split" mode (just "run") which triggers the auto-split pipeline.
 	// The pipeline will:
 	//   1. Analyze diff → succeed (heuristic)
-	//   2. Resolve claude command → succeed (explicit, mock exists)
-	//   3. Spawn claude via MCP → invoke the mock script → mock exits → spawn fails
+	//   2. Resolve agent command → succeed (explicit, mock exists)
+	//   3. Spawn agent via MCP → invoke the mock script → mock exits → spawn fails
 	// We don't care about the pipeline outcome — only that the mock was invoked
 	// with the correct arguments.
 	stdout, stderr, _ := runBinary(t, osmBin, repoDir,
@@ -586,10 +586,10 @@ func TestBinaryE2E_ClaudeCommandFlags(t *testing.T) {
 		"-interactive=false",
 		"-base=main",
 		"-strategy=directory",
-		"-claude-command="+mockScript,
-		"-claude-arg=--custom-flag",
-		"-claude-arg=--model=test-model",
-		"-claude-arg=--verbose",
+		"-agent-command="+mockScript,
+		"-agent-arg=--custom-flag",
+		"-agent-arg=--model=test-model",
+		"-agent-arg=--verbose",
 		"--store=memory",
 		"--session="+t.Name(),
 		"run",
@@ -599,27 +599,27 @@ func TestBinaryE2E_ClaudeCommandFlags(t *testing.T) {
 		t.Logf("stderr:\n%s", stderr)
 	}
 
-	// The auto-split pipeline may fail (mock isn't a real Claude), but the
+	// The auto-split pipeline may fail (mock isn't a real Agent), but the
 	// binary should NOT panic. Check for reasonable error handling.
 	combined := stdout + stderr
 	if strings.Contains(combined, "panic:") {
-		t.Fatal("binary panicked with custom claude flags")
+		t.Fatal("binary panicked with custom agent flags")
 	}
 
 	// --- Verify flag parsing ---
-	// Even though auto-split may fall back to heuristic mode (no Claude),
+	// Even though auto-split may fall back to heuristic mode (no Agent),
 	// the flag parsing should have accepted all flags without error.
 	// A flag parsing error produces: "flag provided but not defined: ..."
 	if strings.Contains(combined, "flag provided but not defined") {
-		t.Errorf("flag parsing rejected a claude flag:\n%s", combined)
+		t.Errorf("flag parsing rejected a agent flag:\n%s", combined)
 	}
 
 	// --- Verify the mock was invoked (if auto-split reached the spawn step) ---
 	// The mock may or may not have been invoked depending on whether the pipeline
-	// chose auto-split (Claude) or fell back to heuristic. Read the log if it exists.
+	// chose auto-split (Agent) or fell back to heuristic. Read the log if it exists.
 	if data, err := os.ReadFile(argLogFile); err == nil {
 		args := strings.Split(strings.TrimSpace(string(data)), "\n")
-		t.Logf("mock claude invoked with %d args: %v", len(args), args)
+		t.Logf("mock agent invoked with %d args: %v", len(args), args)
 
 		// Verify our custom flags appear in the arguments.
 		// The auto-split pipeline prepends its own flags (--mcp-config, etc.)
@@ -638,35 +638,35 @@ func TestBinaryE2E_ClaudeCommandFlags(t *testing.T) {
 			}
 		}
 		if !foundCustom {
-			t.Error("mock claude args missing --custom-flag")
+			t.Error("mock agent args missing --custom-flag")
 		}
 		if !foundModel {
-			t.Error("mock claude args missing --model=test-model")
+			t.Error("mock agent args missing --model=test-model")
 		}
 		if !foundVerbose {
-			t.Error("mock claude args missing --verbose")
+			t.Error("mock agent args missing --verbose")
 		}
 	} else {
 		// Mock was not invoked — pipeline fell back to heuristic mode.
 		// This is acceptable IF the output shows heuristic execution.
-		t.Log("mock claude was not invoked (pipeline likely used heuristic fallback)")
+		t.Log("mock agent was not invoked (pipeline likely used heuristic fallback)")
 		// Verify the heuristic path completed instead.
 		assertContainsAny(t, stdout, "heuristic or error output",
 			"Split executed", "Split completed", "branches created",
-			"Analysis", "failed", "error", "Claude",
+			"Analysis", "failed", "error", "Agent",
 			"heuristic", "Heuristic")
 	}
 }
 
 // ---------------------------------------------------------------------------
-// TestBinaryE2E_ClaudeProcessLifecycle
+// TestBinaryE2E_AgentProcessLifecycle
 //
-// T12: Verifies Claude process management end-to-end with a mock binary.
+// T12: Verifies Agent process management end-to-end with a mock binary.
 //
-// Strategy: Create a mock "claude" shell script that stays alive (reads
+// Strategy: Create a mock "agent" shell script that stays alive (reads
 // stdin until EOF), records its PID, and exits cleanly. Run the osm binary
 // in auto-split mode pointing at this mock. The pipeline will:
-//   1. Resolve the explicit claude command path
+//   1. Resolve the explicit agent command path
 //   2. Spawn the mock via PTY (full pty.Spawn codepath)
 //   3. Attempt MCP handshake → timeout (mock isn't MCP-aware)
 //   4. Pipeline fails → cleanup → kill mock process
@@ -678,17 +678,17 @@ func TestBinaryE2E_ClaudeCommandFlags(t *testing.T) {
 //   - Clean error handling for the pipeline timeout
 // ---------------------------------------------------------------------------
 
-func TestBinaryE2E_ClaudeProcessLifecycle(t *testing.T) {
+func TestBinaryE2E_AgentProcessLifecycle(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
 	osmBin := buildOSMBinary(t)
 	repoDir := setupBinaryTestRepo(t)
 
-	// --- Create mock Claude binary ---
+	// --- Create mock Agent binary ---
 	mockDir := t.TempDir()
-	pidFile := filepath.Join(mockDir, "mock-claude.pid")
-	exitFile := filepath.Join(mockDir, "mock-claude.exited")
-	mockScript := filepath.Join(mockDir, "mock-claude")
+	pidFile := filepath.Join(mockDir, "mock-agent.pid")
+	exitFile := filepath.Join(mockDir, "mock-agent.exited")
+	mockScript := filepath.Join(mockDir, "mock-agent")
 
 	// The mock stays alive by reading stdin until EOF (which happens when
 	// the PTY master closes). On exit, writes a marker file so we can
@@ -706,20 +706,20 @@ func TestBinaryE2E_ClaudeProcessLifecycle(t *testing.T) {
 	}
 
 	// --- Run binary ---
-	// The auto-split pipeline resolves the explicit claude command,
+	// The auto-split pipeline resolves the explicit agent command,
 	// spawns it via PTY, then fails because the mock doesn't speak MCP.
 	// The binary should handle this gracefully: clean up the spawned
 	// process and exit with a non-zero status.
 	//
 	// We dispatch "auto-split" (not "run") because "run" checks
 	// runtime.mode which defaults to 'heuristic' and would never spawn
-	// Claude. "auto-split" always attempts the automatedSplit pipeline.
+	// Agent. "auto-split" always attempts the automatedSplit pipeline.
 	stdout, stderr, _ := runBinary(t, osmBin, repoDir,
 		"pr-split",
 		"-interactive=false",
 		"-base=main",
 		"-strategy=auto",
-		"-claude-command="+mockScript,
+		"-agent-command="+mockScript,
 		"--store=memory",
 		"--session="+t.Name(),
 		"auto-split",
@@ -732,7 +732,7 @@ func TestBinaryE2E_ClaudeProcessLifecycle(t *testing.T) {
 
 	// --- Verify: no panics ---
 	if strings.Contains(combined, "panic:") {
-		t.Fatalf("binary panicked during Claude lifecycle:\n%s", combined)
+		t.Fatalf("binary panicked during Agent lifecycle:\n%s", combined)
 	}
 
 	// --- Verify: mock was spawned ---
@@ -751,7 +751,7 @@ func TestBinaryE2E_ClaudeProcessLifecycle(t *testing.T) {
 	if parseErr != nil || pid == 0 {
 		t.Fatalf("invalid PID in file: %q (err: %v)", string(pidData), parseErr)
 	}
-	t.Logf("mock claude spawned with PID %d", pid)
+	t.Logf("mock agent spawned with PID %d", pid)
 
 	// --- Verify: no orphan process ---
 	// After the binary exits, the mock child should have been terminated.
@@ -831,7 +831,7 @@ func startPTYBinary(t *testing.T, repoDir string, extraArgs ...string) (ptmx *os
 		"pr-split",
 		"-base=main",
 		"-strategy=directory",
-		"-claude-command=/nonexistent/claude",
+		"-agent-command=/nonexistent/agent",
 		"--store=memory",
 		"--session=" + t.Name(),
 	}
@@ -907,13 +907,13 @@ func navigateToAnalysis(t *testing.T, ptmx *os.File, buf *threadSafeBuffer) bool
 	}
 	t.Logf("CONFIG screen rendered")
 
-	// Wait for Claude auto-detect to settle (fires 1ms after WindowSize,
-	// takes a few hundred ms to run `which claude` and fail).
+	// Wait for Agent auto-detect to settle (fires 1ms after WindowSize,
+	// takes a few hundred ms to run `which agent` and fail).
 	waitForScreenChange(t, buf, buf.String(), 5*time.Second)
 
 	// Focus nav-next ("Start Analysis") using Shift+Tab×2, then Enter.
 	// This is robust regardless of CONFIG's element count (which varies
-	// depending on Claude check status).
+	// depending on Agent check status).
 	focusNavNext(t, ptmx, buf)
 	snap := buf.String()
 	_, _ = ptmx.Write([]byte{'\r'}) // Enter
@@ -1083,7 +1083,7 @@ func TestBinaryE2E_ConfigScreenNavigation(t *testing.T) {
 	}
 	t.Logf("CONFIG screen rendered")
 
-	// Wait for Claude auto-detect to settle
+	// Wait for Agent auto-detect to settle
 	waitForScreenChange(t, buf, buf.String(), 5*time.Second)
 
 	// Step 1: Tab through strategy options (first 3 focus elements)
@@ -1103,9 +1103,9 @@ func TestBinaryE2E_ConfigScreenNavigation(t *testing.T) {
 	t.Logf("Navigated to directory strategy and pressed Enter")
 
 	// Step 2: Tab to Advanced Options toggle and press Enter
-	// After strategy-directory(2) → test-claude(3) → toggle-advanced(4)
+	// After strategy-directory(2) → test-agent(3) → toggle-advanced(4)
 	snap = buf.String()
-	_, _ = ptmx.Write([]byte{0x09}) // Tab → test-claude
+	_, _ = ptmx.Write([]byte{0x09}) // Tab → test-agent
 	waitForScreenChange(t, buf, snap, 3*time.Second)
 	snap = buf.String()
 	_, _ = ptmx.Write([]byte{0x09}) // Tab → toggle-advanced

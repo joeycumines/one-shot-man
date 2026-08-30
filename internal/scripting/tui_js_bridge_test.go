@@ -11,7 +11,7 @@ func TestRegisterModeValidation(t *testing.T) {
 	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	t.Run("InvalidTitleType", func(t *testing.T) {
-		script := engine.LoadScriptFromString("invalid-title", `
+		script := engine.LoadScriptString("invalid-title", `
             tui.registerMode({
                 name: "bad-title",
                 tui: { title: 123 }

@@ -190,7 +190,7 @@ func TestCreatePRs_EmptySplits(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// No mock needed — createPRs short-circuits before exec calls.
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs({splits: []}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs({splits: []}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestCreatePRs_NilSplits(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs({}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs({}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestCreatePRs_GhCLINotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + testPlanJS("main", ".") + `))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + testPlanJS("main", ".") + `))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestCreatePRs_PushOnlyMode(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {pushOnly: true}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, {pushOnly: true}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestCreatePRs_NormalFlow_StackedPRs(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,7 @@ func TestCreatePRs_NonDraftMode(t *testing.T) {
 
 	plan := testPlanJS("main", ".")
 	// draft: false explicitly disables draft mode.
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {draft: false}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, {draft: false}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +445,7 @@ func TestCreatePRs_CustomRemote(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {remote: 'upstream', pushOnly: true}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, {remote: 'upstream', pushOnly: true}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -487,7 +487,7 @@ func TestCreatePRs_PushFailure(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +534,7 @@ func TestCreatePRs_GhPrCreateFailure_ContinuesOtherPRs(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,7 +575,7 @@ func TestCreatePRs_AutoMerge(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {autoMerge: true}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, {autoMerge: true}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -626,7 +626,7 @@ func TestCreatePRs_AutoMerge_CustomMethod(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {autoMerge: true, mergeMethod: 'rebase'}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, {autoMerge: true, mergeMethod: 'rebase'}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -671,7 +671,7 @@ func TestCreatePRs_AutoMerge_SkipsFailedPRs(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {autoMerge: true}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, {autoMerge: true}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -721,7 +721,7 @@ func TestCreatePRs_AutoMerge_Failure(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {autoMerge: true}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, {autoMerge: true}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -758,7 +758,7 @@ func TestCreatePRs_PushOnlySkipsGhVersionCheck(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {pushOnly: true}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, {pushOnly: true}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -788,7 +788,7 @@ func TestCreatePRs_SingleSplit(t *testing.T) {
 		]
 	}`
 
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + singlePlan + `))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + singlePlan + `))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -842,7 +842,7 @@ func TestCreatePRs_OptionsDefaults(t *testing.T) {
 
 	// Call with nil options — should use defaults.
 	plan := testPlanJS("develop", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, null))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, null))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -879,7 +879,7 @@ func TestCreatePRs_PushForceFlag(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	_, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {pushOnly: true}))`)
+	_, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, {pushOnly: true}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -924,7 +924,7 @@ func TestCreatePRs_FirstPushFailure_ImmediateAbort(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1012,7 +1012,7 @@ func TestCreatePRs_BaseBranchNotOnRemote(t *testing.T) {
 	}
 
 	plan := testPlanJS("nonexistent-branch", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1046,7 +1046,7 @@ func TestCreatePRs_BaseBranchCheckSkippedForPushOnly(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {pushOnly: true}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, {pushOnly: true}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1082,7 +1082,7 @@ func TestCreatePRs_EmptyDiffSkipsPR(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1137,7 +1137,7 @@ func TestCreatePRs_DryRunMode(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {dryRun: true}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, {dryRun: true}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1208,7 +1208,7 @@ func TestCreatePRs_DryRunPushOnly(t *testing.T) {
 	}
 
 	plan := testPlanJS("main", ".")
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {dryRun: true, pushOnly: true}))`)
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRs(` + plan + `, {dryRun: true, pushOnly: true}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1243,13 +1243,13 @@ func TestCreatePRs_WidePadding_12Splits(t *testing.T) {
 	}
 
 	// Build a plan with 12 splits.
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		var splits = [];
 		for (var i = 0; i < 12; i++) {
 			splits.push({name: 'split/' + (i < 9 ? '0' : '') + (i+1) + '-part', message: 'Part ' + (i+1), files: ['file' + i + '.go']});
 		}
 		var plan = {baseBranch: 'main', dir: '.', splits: splits};
-		return JSON.stringify(globalThis.prSplit.createPRs(plan, {dryRun: true}));
+		return JSON.stringify(await globalThis.prSplit.createPRs(plan, {dryRun: true}));
 	})()`)
 	if err != nil {
 		t.Fatal(err)

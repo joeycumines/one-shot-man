@@ -4,28 +4,21 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 )
 
-// MakeEvalJS creates an evalJS function from a [scripting.Engine] with a
-// custom timeout. This is the exported version of makeEvalJS for tests that
-// need direct access to the raw engine (e.g., pr_split_tui_hang_test.go).
+var evalJSCallID int64
+
 func MakeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) func(string) (any, error) {
 	t.Helper()
 	return makeEvalJS(t, engine, timeout)
 }
 
-// makeEvalJS creates an evalJS function from a [scripting.Engine].
-// This is a direct port of the makeEvalJS helper from pr_split_00_core_test.go.
-//
-// The returned function:
-//   - Detects async JS (contains "await ") and wraps in async IIFE
-//   - Handles Promise results via .then/.catch chaining
-//   - Times out after the specified duration
 func makeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) func(string) (any, error) {
 	t.Helper()
 
@@ -34,36 +27,56 @@ func makeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) f
 		var result any
 		var resultErr error
 
+		// Pre-generate the unique global-callback names so the timeout path
+		// below can neutralize them on the event loop if the await-path
+		// registers them and the promise then never settles. Without this, a
+		// timed-out EvalJS leaks the __evalResult_N/__evalError_N globals —
+		// and the Go state they capture (vm, result, done) — on the VM for
+		// the lifetime of the engine.
+		callID := atomic.AddInt64(&evalJSCallID, 1)
+		resultVar := fmt.Sprintf("__evalResult_%d", callID)
+		errorVar := fmt.Sprintf("__evalError_%d", callID)
+
 		submitErr := engine.Loop().Submit(func() {
 			vm := engine.Runtime()
 
-			// Async path: if JS contains 'await', wrap in async IIFE.
-			if strings.Contains(js, "await ") {
-				_ = vm.Set("__evalResult", func(val any) {
-					result = val
-					close(done)
-				})
-				_ = vm.Set("__evalError", func(msg string) {
-					resultErr = errors.New(msg)
-					close(done)
-				})
-				wrapped := "(async function() {\n\ttry {\n\t\tvar __res = " + js + ";\n\t\tif (__res && typeof __res.then === 'function') { __res = await __res; }\n\t\t__evalResult(__res);\n\t} catch(e) {\n\t\t__evalError(e.message || String(e));\n\t}\n})();"
-				if _, runErr := vm.RunString(wrapped); runErr != nil {
-					resultErr = runErr
-					close(done)
-				}
-				return
-			}
-
-			// Synchronous: run directly.
 			val, err := vm.RunString(js)
 			if err != nil {
+				errMsg := err.Error()
+				if strings.Contains(errMsg, "await") || strings.Contains(errMsg, "Unexpected identifier") || strings.Contains(errMsg, "Unexpected token") {
+					// callID/resultVar/errorVar are hoisted to the enclosing
+					// closure so the timeout path can also neutralize them.
+					// cleanup removes the uniquely-named global callbacks
+					// after they fire, so repeated EvalJS calls on the same
+					// engine don't accumulate Go closures (and the local
+					// state they capture) on the global object forever.
+					cleanup := func() {
+						vm.GlobalObject().Delete(resultVar)
+						vm.GlobalObject().Delete(errorVar)
+					}
+					_ = vm.Set(resultVar, func(val any) {
+						result = val
+						cleanup()
+						close(done)
+					})
+					_ = vm.Set(errorVar, func(msg string) {
+						resultErr = errors.New(msg)
+						cleanup()
+						close(done)
+					})
+					wrapped := "(async function() {\n" + insertReturnBeforeLastExpr(js) + "\n})().then(function(v) {\n\t" + resultVar + "(v);\n}, function(e) {\n\t" + errorVar + "(e && e.message ? e.message : String(e));\n});"
+					if _, runErr := vm.RunString(wrapped); runErr != nil {
+						cleanup()
+						resultErr = runErr
+						close(done)
+					}
+					return
+				}
 				resultErr = err
 				close(done)
 				return
 			}
 
-			// Check if result is a Promise (duck-type via .then).
 			if val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
 				obj := val.ToObject(vm)
 				if obj != nil {
@@ -113,7 +126,69 @@ func makeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) f
 		case <-done:
 			return result, resultErr
 		case <-time.After(timeout):
+			// The await-path's promise never settled. Replace its global
+			// callbacks with no-ops on the event loop — NOT delete — so that
+			// a late settlement doesn't dereference a removed global and
+			// throw. The original closures (capturing vm/result/done) are
+			// released; the no-ops left behind capture nothing, bounding
+			// what would otherwise be a per-timed-out-call leak.
+			_ = engine.Loop().Submit(func() {
+				vm := engine.Runtime()
+				_ = vm.Set(resultVar, func(any) {})
+				_ = vm.Set(errorVar, func(_ string) {})
+			})
 			return nil, fmt.Errorf("evalJS timed out after %s", timeout)
 		}
 	}
+}
+
+func insertReturnBeforeLastExpr(js string) string {
+	trimmed := strings.TrimRight(js, " \t\n\r;")
+
+	// Convert leading IIFE (function(...) to (async function(...) so `await`
+	// is valid inside. Only the leading IIFE — NOT callbacks like .map(function).
+	if strings.Contains(js, "await ") {
+		leadingTrimmed := strings.TrimLeft(trimmed, " \t\n\r")
+		if strings.HasPrefix(leadingTrimmed, "(function") && !strings.HasPrefix(leadingTrimmed, "(async function") {
+			idx := len(trimmed) - len(leadingTrimmed)
+			trimmed = trimmed[:idx] + "(async function" + trimmed[idx+9:]
+		}
+	}
+
+	depth := 0
+	inStr := false
+	strCh := byte(0)
+	lastTopSemi := -1
+
+	for i := 0; i < len(trimmed); i++ {
+		c := trimmed[i]
+		if inStr {
+			if c == '\\' && i+1 < len(trimmed) {
+				i++
+				continue
+			}
+			if c == strCh {
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '\'', '"', '`':
+			inStr = true
+			strCh = c
+		case '{', '(', '[':
+			depth++
+		case '}', ')', ']':
+			depth--
+		case ';':
+			if depth == 0 {
+				lastTopSemi = i
+			}
+		}
+	}
+
+	if lastTopSemi >= 0 {
+		return trimmed[:lastTopSemi+1] + " return (" + trimmed[lastTopSemi+1:] + ");"
+	}
+	return "return (" + trimmed + ");"
 }

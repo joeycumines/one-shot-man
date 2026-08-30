@@ -278,7 +278,7 @@ func TestParseSimpleYAML_MultiLineListWithQuotedItems(t *testing.T) {
 
 func TestParseSimpleYAML_AllFrontmatterFields(t *testing.T) {
 	t.Parallel()
-	raw := "name: full\ndescription: all fields\nmodel: claude-3\nmode: agent\ntools: [codebase, terminal]"
+	raw := "name: full\ndescription: all fields\nmodel: agent-3\nmode: agent\ntools: [codebase, terminal]"
 	pf := &PromptFile{}
 	if err := parseSimpleYAML(raw, pf); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -289,8 +289,8 @@ func TestParseSimpleYAML_AllFrontmatterFields(t *testing.T) {
 	if pf.Description != "all fields" {
 		t.Errorf("description = %q, want %q", pf.Description, "all fields")
 	}
-	if pf.Model != "claude-3" {
-		t.Errorf("model = %q, want %q", pf.Model, "claude-3")
+	if pf.Model != "agent-3" {
+		t.Errorf("model = %q, want %q", pf.Model, "agent-3")
 	}
 	if pf.Mode != "agent" {
 		t.Errorf("mode = %q, want %q", pf.Mode, "agent")

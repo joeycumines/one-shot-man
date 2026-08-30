@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
@@ -35,7 +35,7 @@ func TestEngine_BasicExecution(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("test", `
+	script := engine.LoadScriptString("test", `
 		ctx.log("Hello from JavaScript");
 		ctx.logf("Number: %d", 42);
 	`)
@@ -62,7 +62,7 @@ func TestEngine_DeferredExecution(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("test_defer", `
+	script := engine.LoadScriptString("test_defer", `
 		ctx.log("Before defer");
 		ctx.defer(function() {
 			ctx.log("Deferred 2");
@@ -103,7 +103,7 @@ func TestEngine_SubTests(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("test_subtests", `
+	script := engine.LoadScriptString("test_subtests", `
 		ctx.run("subtest1", function() {
 			ctx.log("In subtest 1");
 		});
@@ -141,7 +141,7 @@ func TestEngine_ErrorHandling(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	script := engine.LoadScriptFromString("test_error", `
+	script := engine.LoadScriptString("test_error", `
 		ctx.error("This is an error");
 		ctx.errorf("Formatted error: %s", "test");
 	`)
@@ -170,7 +170,7 @@ func TestEngine_GlobalVariables(t *testing.T) {
 	engine.SetGlobal("testVar", "test value")
 	engine.SetGlobal("testNum", 123)
 
-	script := engine.LoadScriptFromString("test_globals", `
+	script := engine.LoadScriptString("test_globals", `
 		ctx.log("testVar: " + testVar);
 		ctx.log("testNum: " + testNum);
 	`)
@@ -196,7 +196,7 @@ func TestEngine_OutputAPI(t *testing.T) {
 
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 
-	script := engine.LoadScriptFromString("test_output", `
+	script := engine.LoadScriptString("test_output", `
 		output.print("stdout message");
 		log.error("error message");
 		output.printf("formatted: %s %d", "test", 42);
@@ -233,9 +233,7 @@ func TestEngine_ComplexScenario(t *testing.T) {
 		"retries": 3,
 	})
 
-	script := engine.LoadScriptFromString("complex_test", `
-		const {sleep} = require('osm:time');
-
+	script := engine.LoadScriptString("complex_test", `
 		ctx.run("setup", function() {
 			ctx.log("Setting up test environment");
 			ctx.defer(function() {
@@ -249,8 +247,6 @@ func TestEngine_ComplexScenario(t *testing.T) {
 
 			ctx.run("sub_operation", function() {
 				ctx.log("Performing sub-operation");
-				// Simulate some work
-				sleep(10);
 				ctx.log("Sub-operation completed");
 			});
 		});
@@ -327,28 +323,6 @@ func TestSetGlobal_QueueSafeFromGoroutine(t *testing.T) {
 	// Verify all values were retrieved
 	if len(results) != 10 {
 		t.Errorf("Expected 10 values, got %d", len(results))
-	}
-}
-
-// TestSetGlobal_ThreadCheckMode verifies that SetThreadCheckMode enables panic on wrong goroutine.
-func TestSetGlobal_ThreadCheckMode(t *testing.T) {
-	t.Parallel()
-	var stdout, stderr bytes.Buffer
-	ctx := context.Background()
-
-	engine := newTestEngine(t, ctx, &stdout, &stderr)
-	engine.SetTestMode(true)
-
-	// Enable thread check mode
-	engine.SetThreadCheckMode(true)
-
-	// Set a value from the main goroutine (should be the event loop goroutine after SetThreadCheckMode)
-	engine.SetGlobal("testKey", "testValue")
-
-	// Get the value
-	value := engine.GetGlobal("testKey")
-	if value != "testValue" {
-		t.Errorf("Expected 'testValue', got: %v", value)
 	}
 }
 
@@ -642,8 +616,10 @@ func TestQueueSetGlobal_ValueTypes(t *testing.T) {
 	}
 }
 
-// TestThreadCheckMode_PanicDetection verifies SetThreadCheckMode causes panic on wrong goroutine.
-func TestThreadCheckMode_PanicDetection(t *testing.T) {
+// TestThreadCheckMode_OffLoopOwnerSafe verifies SetGlobal/GetGlobal remain
+// owner-safe when called from a non-event-loop goroutine: no panic occurs and
+// values round-trip through the loop-serialized path.
+func TestThreadCheckMode_OffLoopOwnerSafe(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
@@ -651,57 +627,54 @@ func TestThreadCheckMode_PanicDetection(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	// Enable thread check mode - this captures the current goroutine ID
-	engine.SetThreadCheckMode(true)
-
 	// Calling SetGlobal from the same goroutine should work
 	engine.SetGlobal("testKey", "testValue")
 
-	// Now verify that calling from a different goroutine would panic
-	// We use a subtest to catch the expected panic
-	t.Run("SetGlobal_panics_on_wrong_goroutine", func(t *testing.T) {
-		panicChan := make(chan any, 1)
+	t.Run("SetGlobal_off_loop_does_not_panic", func(t *testing.T) {
+		done := make(chan error, 1)
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					panicChan <- r
+					done <- fmt.Errorf("unexpected panic: %v", r)
 				}
 			}()
-			// This should panic because we're not on the event loop goroutine
 			engine.SetGlobal("wrongGoroutineKey", "value")
+			done <- nil
 		}()
-		// Wait for the goroutine to complete
 		select {
-		case r := <-panicChan:
-			// Panic was caught as expected
-			if r == nil {
-				t.Error("Expected non-nil panic value")
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
 			}
-		case <-time.After(time.Second):
-			t.Error("Timeout waiting for panic from goroutine")
+		case <-time.After(2 * time.Second):
+			t.Fatal("Timeout waiting for off-loop SetGlobal")
 		}
 	})
 
-	t.Run("GetGlobal_panics_on_wrong_goroutine", func(t *testing.T) {
-		panicChan := make(chan any, 1)
+	t.Run("GetGlobal_off_loop_returns_value", func(t *testing.T) {
+		type result struct {
+			value any
+			err   error
+		}
+		done := make(chan result, 1)
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					panicChan <- r
+					done <- result{err: fmt.Errorf("unexpected panic: %v", r)}
 				}
 			}()
-			// This should panic because we're not on the event loop goroutine
-			_ = engine.GetGlobal("testKey")
+			done <- result{value: engine.GetGlobal("testKey")}
 		}()
-		// Wait for the goroutine to complete
 		select {
-		case r := <-panicChan:
-			// Panic was caught as expected
-			if r == nil {
-				t.Error("Expected non-nil panic value")
+		case r := <-done:
+			if r.err != nil {
+				t.Fatal(r.err)
 			}
-		case <-time.After(time.Second):
-			t.Error("Timeout waiting for panic from goroutine")
+			if r.value != "testValue" {
+				t.Fatalf("GetGlobal round-trip = %v, want testValue", r.value)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("Timeout waiting for off-loop GetGlobal")
 		}
 	})
 }
@@ -715,13 +688,13 @@ func TestQueueSetGlobal_FromEventLoop(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
-	// QueueSetGlobal from event loop context (via RunOnLoopSync)
-	err := engine.runtime.RunOnLoopSync(func(r *goja.Runtime) error {
+	// QueueSetGlobal from event loop context (via RunSync)
+	err := engine.runtime.RunSync(func(r *goja.Runtime) error {
 		engine.QueueSetGlobal("eventLoopKey", "eventLoopValue")
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("RunOnLoopSync failed: %v", err)
+		t.Fatalf("RunSync failed: %v", err)
 	}
 
 	// Verify the value was set
@@ -753,12 +726,12 @@ func TestGetGlobal_FromEventLoop(t *testing.T) {
 
 	// GetGlobal from event loop context
 	var result any
-	err := engine.runtime.RunOnLoopSync(func(r *goja.Runtime) error {
+	err := engine.runtime.RunSync(func(r *goja.Runtime) error {
 		result = engine.GetGlobal("eventLoopGetKey")
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("RunOnLoopSync failed: %v", err)
+		t.Fatalf("RunSync failed: %v", err)
 	}
 
 	if result != "eventLoopGetValue" {
@@ -779,7 +752,7 @@ func TestSetGlobal_BeforeAndAfterEventLoopStart(t *testing.T) {
 	engine.SetGlobal("beforeKey", "beforeValue")
 
 	// Execute a script to start the event loop
-	script := engine.LoadScriptFromString("test_before_after", `
+	script := engine.LoadScriptString("test_before_after", `
 		ctx.log("Event loop started");
 	`)
 	if err := engine.ExecuteScript(script); err != nil {

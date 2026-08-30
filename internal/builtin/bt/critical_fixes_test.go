@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,9 +15,9 @@ func TestCompositeExportStrings(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	// NOTE: We cannot test bt.sequence/bt.selector/bt.fallback with actual leaves
-	// inside RunOnLoopSync because:
+	// inside RunSync because:
 	// 1. Async leaves return "running" immediately (won't show final status)
-	// 2. Blocking leaves create a deadlock (they try to RunOnLoop while we're on the loop)
+	// 2. Blocking leaves create a deadlock (they try to Run while we're on the loop)
 	//
 	// The composite functions are tested separately in TestComposites_Sequence, etc.
 	// which use appropriate async patterns.
@@ -25,7 +25,7 @@ func TestCompositeExportStrings(t *testing.T) {
 	t.Run("status constants are strings", func(t *testing.T) {
 		var runningType, successType, failureType string
 		var runningValue, successValue, failureValue string
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, runErr := vm.RunString(`
 				globalThis.runningType = typeof bt.running;
 				globalThis.successType = typeof bt.success;
@@ -62,7 +62,7 @@ func TestCompositeExportStrings(t *testing.T) {
 	t.Run("composite functions exist", func(t *testing.T) {
 		// Just verify the composite exports exist and are functions
 		var seqType, selType, fbType string
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, runErr := vm.RunString(`
 				globalThis.seqType = typeof bt.sequence;
 				globalThis.selType = typeof bt.selector;

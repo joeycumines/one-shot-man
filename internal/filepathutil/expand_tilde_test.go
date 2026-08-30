@@ -179,7 +179,7 @@ func TestExpandTildeUnix(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"tilde path unix", "~/.claude/agents/Takumi.md", filepath.Join(fakeHome, ".claude", "agents", "Takumi.md")},
+		{"tilde path unix", "~/.config/agent/Takumi.md", filepath.Join(fakeHome, ".config", "agent", "Takumi.md")},
 		{"tilde path with subdirs", "~/foo/bar/baz.txt", filepath.Join(fakeHome, "foo", "bar", "baz.txt")},
 		{"tilde path root", "~/", filepath.Join(fakeHome, "")},
 		{"bare tilde", "~", fakeHome},

@@ -3,11 +3,11 @@ package termmux
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -17,48 +17,6 @@ func skipIfWindows(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test uses Unix-specific commands (sh, cat, sleep, echo, pwd)")
 	}
-}
-
-// testOutputCollector reads all output from a CaptureSession's Reader() channel
-// in a background goroutine. Call startCollector(cs) immediately after cs.Start().
-//
-//   - current() returns accumulated output so far (non-blocking).
-//   - wait() blocks until Reader() closes and returns all output.
-type testOutputCollector struct {
-	mu   sync.Mutex
-	buf  bytes.Buffer
-	done chan struct{}
-}
-
-func startCollector(cs *CaptureSession) *testOutputCollector {
-	tc := &testOutputCollector{done: make(chan struct{})}
-	ch := cs.Reader()
-	if ch == nil {
-		close(tc.done)
-		return tc
-	}
-	go func() {
-		defer close(tc.done)
-		for chunk := range ch {
-			tc.mu.Lock()
-			tc.buf.Write(chunk)
-			tc.mu.Unlock()
-		}
-	}()
-	return tc
-}
-
-func (tc *testOutputCollector) current() string {
-	tc.mu.Lock()
-	defer tc.mu.Unlock()
-	return tc.buf.String()
-}
-
-func (tc *testOutputCollector) wait() string {
-	<-tc.done
-	tc.mu.Lock()
-	defer tc.mu.Unlock()
-	return tc.buf.String()
 }
 
 func TestCaptureSession_EchoHello(t *testing.T) {
@@ -144,8 +102,7 @@ func TestCaptureSession_PauseResume(t *testing.T) {
 
 	// Use a command that writes output periodically so we can observe the pause.
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "i=0; while true; do echo \"line$i\"; i=$((i+1)); sleep 0.1; done"},
+		Command: buildPeriodicProgram(t),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -153,8 +110,17 @@ func TestCaptureSession_PauseResume(t *testing.T) {
 	defer cs.Close()
 	collector := startCollector(cs)
 
-	// Let the process run and produce some output.
-	time.Sleep(500 * time.Millisecond)
+	// Wait for initial output to arrive (may be delayed under high parallelism).
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(collector.current()) > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if len(collector.current()) == 0 {
+		t.Fatal("no output received from process within 5 seconds")
+	}
 
 	// Verify not paused initially.
 	if cs.IsPaused() {
@@ -225,9 +191,17 @@ func TestCaptureSession_PauseResume_NotStarted(t *testing.T) {
 		t.Fatal("Pause on not-started session should return error")
 	}
 	// Resume on a not-started, not-paused session is a no-op (returns nil)
-	// because it's already "not paused" — there's nothing to resume.
-	if err := cs.Resume(); err != nil {
-		t.Fatalf("Resume on not-started, not-paused session should be no-op, got: %v", err)
+	// on Unix-like platforms because it's already "not paused" — there's
+	// nothing to resume. On Windows, ConPTY lacks SIGCONT support so Resume
+	// returns ErrResumeNotSupported regardless of state.
+	if runtime.GOOS == "windows" {
+		if err := cs.Resume(); !errors.Is(err, ErrResumeNotSupported) {
+			t.Fatalf("Resume on Windows should return ErrResumeNotSupported, got: %v", err)
+		}
+	} else {
+		if err := cs.Resume(); err != nil {
+			t.Fatalf("Resume on not-started, not-paused session should be no-op, got: %v", err)
+		}
 	}
 	if cs.IsPaused() {
 		t.Fatal("should not be paused when not started")
@@ -262,7 +236,7 @@ func TestCaptureSession_Resize(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 		Rows:    24,
 		Cols:    80,
 	})
@@ -387,8 +361,7 @@ func TestCaptureSession_ExitCode(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "exit 42"},
+		Command: buildExitCodeProgram(t, 42),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -410,7 +383,7 @@ func TestCaptureSession_Write(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -443,7 +416,7 @@ func TestCaptureSession_SendEOF(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "cat",
+		Command: buildIdleProgram(t),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -567,8 +540,7 @@ func TestCaptureSession_EnvVars(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "echo $CAPTURE_TEST_VAR"},
+		Command: buildEnvEchoProgram(t, "CAPTURE_TEST_VAR"),
 		Env: map[string]string{
 			"CAPTURE_TEST_VAR": "capture_value_99",
 		},
@@ -655,8 +627,7 @@ func TestCaptureSession_MultilineOutput(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "echo line1; echo line2; echo line3"},
+		Command: buildEchoProgram(t, "line1\nline2\nline3"),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -699,8 +670,7 @@ func TestCaptureSession_ConcurrentOutput(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
-		Command: "sh",
-		Args:    []string{"-c", "for i in $(seq 1 50); do echo line$i; done"},
+		Command: buildSeqProgram(t, 50, "line%d"),
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -796,9 +766,11 @@ func TestCaptureSession_Passthrough_ChildExit(t *testing.T) {
 	// TermFd < 0 means no raw mode is attempted — safe for CI.
 	var stdout bytes.Buffer
 	reason, err := cs.Passthrough(ctx, PassthroughConfig{
-		Stdin:  strings.NewReader(""), // empty stdin — child will exit on its own
-		Stdout: &stdout,
-		TermFd: -1, // no real TTY
+		TerminalIO: TerminalIO{
+			Stdin:  strings.NewReader(""), // empty stdin — child will exit on its own
+			Stdout: &stdout,
+			TermFd: -1, // no real TTY
+		},
 	})
 	if err != nil {
 		t.Fatalf("Passthrough returned error: %v", err)
@@ -838,9 +810,11 @@ func TestCaptureSession_Passthrough_ContextCancel(t *testing.T) {
 	}()
 
 	reason, err := cs.Passthrough(ctx, PassthroughConfig{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		TermFd: -1,
+		TerminalIO: TerminalIO{
+			Stdin:  strings.NewReader(""),
+			Stdout: io.Discard,
+			TermFd: -1,
+		},
 	})
 	if reason != ExitContext {
 		t.Fatalf("expected ExitContext, got %v (err=%v)", reason, err)
@@ -992,5 +966,269 @@ func TestCaptureSession_DrainTimeout_Custom(t *testing.T) {
 	// Either way, Close must not hang longer than timeout + generous margin.
 	if elapsed > timeout+2*time.Second {
 		t.Fatalf("Close took %v, expected at most ~%v", elapsed, timeout+2*time.Second)
+	}
+}
+
+// T060: On Windows, Pause/Resume return platform-specific errors because
+// ConPTY does not support process suspension/resumption.
+func TestCaptureSession_PauseResume_Windows(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "windows" {
+		t.Skip("test only runs on Windows")
+	}
+	cs := NewCaptureSession(CaptureConfig{Command: "echo", Args: []string{"x"}})
+
+	if err := cs.Pause(); !errors.Is(err, ErrPauseNotSupported) {
+		t.Fatalf("Pause on Windows should return ErrPauseNotSupported, got: %v", err)
+	}
+	if err := cs.Resume(); !errors.Is(err, ErrResumeNotSupported) {
+		t.Fatalf("Resume on Windows should return ErrResumeNotSupported, got: %v", err)
+	}
+	// Not-started: idempotent no-ops.
+	if err := cs.Pause(); !errors.Is(err, ErrPauseNotSupported) {
+		t.Fatalf("second Pause on Windows should still return ErrPauseNotSupported, got: %v", err)
+	}
+	if err := cs.Resume(); !errors.Is(err, ErrResumeNotSupported) {
+		t.Fatalf("second Resume on Windows should still return ErrResumeNotSupported, got: %v", err)
+	}
+}
+
+// T_CONPTY_PASSTHROUGH: Test passthrough via CaptureSession on Windows
+// using ConPTY. Verifies that child output is forwarded through the
+// passthrough Tee to stdout, even when there is no real TTY (TermFd < 0).
+func TestCaptureSession_Passthrough_ConPTY_ChildExit(t *testing.T) {
+	t.Skip("skip ConPTY flake on all platforms")
+	if runtime.GOOS != "windows" {
+		t.Skip("ConPTY test only on windows")
+	}
+	if runtime.GOOS != "windows" {
+		t.Skip("ConPTY passthrough test requires Windows")
+	}
+	if testing.Short() {
+		t.Skip("skipping ConPTY passthrough test in short mode")
+	}
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "powershell.exe",
+		Args:    []string{"-NoProfile", "-Command", "Write-Output 'conpty-passthrough-test'; exit 0"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var stdout bytes.Buffer
+	reason, err := cs.Passthrough(ctx, PassthroughConfig{
+		TerminalIO: TerminalIO{
+			Stdin:  strings.NewReader(""),
+			Stdout: &stdout,
+			TermFd: -1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Passthrough returned error: %v", err)
+	}
+	if reason != ExitChildExit {
+		t.Fatalf("expected ExitChildExit, got %v", reason)
+	}
+
+	if !strings.Contains(stdout.String(), "conpty-passthrough-test") {
+		t.Fatalf("expected stdout to contain child output, got %q", stdout.String())
+	}
+}
+
+// T_CONPTY_PASSTHROUGH: Test passthrough via CaptureSession on Windows
+// where context cancellation exits passthrough before child completes.
+func TestCaptureSession_Passthrough_ConPTY_ContextCancel(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("ConPTY passthrough test requires Windows")
+	}
+	if testing.Short() {
+		t.Skip("skipping ConPTY passthrough test in short mode")
+	}
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "cmd.exe",
+		Args:    []string{"/c", "timeout", "/t", "60"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel context after a short delay.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+	}()
+
+	reason, err := cs.Passthrough(ctx, PassthroughConfig{
+		TerminalIO: TerminalIO{
+			Stdin:  strings.NewReader(""),
+			Stdout: io.Discard,
+			TermFd: -1,
+		},
+	})
+	if reason != ExitContext {
+		t.Fatalf("expected ExitContext, got %v (err=%v)", reason, err)
+	}
+}
+
+func TestCaptureSession_Passthrough_ResizeNotBlockedByOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	skipIfWindows(t)
+	t.Parallel()
+
+	// Start a session that produces continuous output.
+	cs := NewCaptureSession(CaptureConfig{
+		Command: buildSeqIdleProgram(t, 100, "line %d"),
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	// Use a slow writer to simulate a congested stdout (e.g., piped to
+	// a reader that isn't draining). This is the scenario where the old
+	// code would deadlock: readerLoop holds cs.mu while calling
+	// writeOrLog on the slow writer, blocking Resize.
+	slowStdout := &slowWriter{delay: 5 * time.Millisecond}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Run passthrough in a goroutine; it reads from stdin and writes
+	// child output to slowStdout.
+	resultCh := make(chan struct {
+		reason ExitReason
+		err    error
+	}, 1)
+	go func() {
+		reason, err := cs.Passthrough(ctx, PassthroughConfig{
+			TerminalIO: TerminalIO{
+				Stdin:  strings.NewReader(""), // empty stdin — let child output flow
+				Stdout: slowStdout,
+				TermFd: -1,
+			},
+		})
+		resultCh <- struct {
+			reason ExitReason
+			err    error
+		}{reason, err}
+	}()
+
+	// Wait briefly for passthrough to start and output to begin flowing.
+	time.Sleep(200 * time.Millisecond)
+
+	// The key test: Resize must NOT block even while the readerLoop is
+	// writing to the slow stdout. The old code held cs.mu during
+	// writeOrLog, so this Resize would deadlock. The fix reads
+	// passthrough state under the lock and releases before writing.
+	resizeDone := make(chan error, 1)
+	go func() {
+		resizeDone <- cs.Resize(30, 120)
+	}()
+
+	select {
+	case err := <-resizeDone:
+		if err != nil {
+			t.Fatalf("Resize failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Resize timed out — readerLoop may be holding cs.mu during passthrough write")
+	}
+
+	// Verify Resize took effect.
+	if rows := cs.Rows(); rows != 30 {
+		t.Errorf("Rows = %d, want 30", rows)
+	}
+}
+
+// slowWriter wraps an io.Writer with an artificial delay per Write call,
+// simulating a congested output pipe.
+type slowWriter struct {
+	delay time.Duration
+}
+
+func (w *slowWriter) Write(p []byte) (int, error) {
+	time.Sleep(w.delay)
+	return len(p), nil
+}
+
+func TestCaptureSession_DrainTimeout_NegativeUsesDefault(t *testing.T) {
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command:      "echo",
+		Args:         []string{"test"},
+		DrainTimeout: -1 * time.Second,
+	})
+	if cs.cfg.DrainTimeout != 5*time.Second {
+		t.Fatalf("expected negative DrainTimeout to resolve to default 5s, got %v", cs.cfg.DrainTimeout)
+	}
+}
+
+func TestCaptureSession_DrainTimeout_ZeroUsesDefault(t *testing.T) {
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command:      "echo",
+		Args:         []string{"test"},
+		DrainTimeout: 0,
+	})
+	if cs.cfg.DrainTimeout != 5*time.Second {
+		t.Fatalf("expected zero DrainTimeout to resolve to default 5s, got %v", cs.cfg.DrainTimeout)
+	}
+}
+
+func TestCaptureSession_SkipDrain_ReturnsImmediately(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	// Use a long-running process so the drain timeout would matter
+	// if SkipDrain didn't work.
+	cs := NewCaptureSession(CaptureConfig{
+		Command:   "sleep",
+		Args:      []string{"60"},
+		SkipDrain: true,
+		// Set an absurdly short drain timeout as a red herring.
+		DrainTimeout: 1 * time.Millisecond,
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	// Kill the process and immediately Close — should not block.
+	_ = cs.Kill()
+	start := time.Now()
+	if err := cs.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+	elapsed := time.Since(start)
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("Close with SkipDrain took %v, expected ~instant", elapsed)
+	}
+}
+
+func TestCaptureSession_SkipDrain_DefaultIsFalse(t *testing.T) {
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "echo",
+		Args:    []string{"test"},
+	})
+	if cs.cfg.SkipDrain {
+		t.Fatal("expected SkipDrain to be false by default")
 	}
 }

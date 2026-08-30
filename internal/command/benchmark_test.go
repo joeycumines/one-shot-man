@@ -178,7 +178,7 @@ Review the code for bugs and issues.
 		data := []byte(`---
 name: full-review
 description: Comprehensive code review with security analysis
-model: claude-3.5-sonnet
+model: agent-3.5-sonnet
 tools:
   - codebase
   - terminal
@@ -243,7 +243,7 @@ Review the code and provide feedback.
 		pf := &PromptFile{
 			Name:        "code-review",
 			Description: "Comprehensive code review assistant",
-			Model:       "claude-3.5-sonnet",
+			Model:       "agent-3.5-sonnet",
 			Tools:       []string{"codebase", "terminal"},
 			Body:        "Review the following code changes for bugs and security issues.\n\n## Context\n\nFocus on Go code quality.",
 			SourcePath:  "/home/user/prompts/code-review.prompt.md",

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -137,7 +137,7 @@ func TestGraphJS_PlanExecution(t *testing.T) {
 	// Wait for ticker to reach goal (deterministic polling replaces heuristic sleep)
 	err := testutil.Poll(context.Background(), func() bool {
 		var actor string
-		_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		_ = bridge.RunSync(func(vm *goja.Runtime) error {
 			bbObj := vm.Get("graphTestBB").ToObject(vm)
 			getFn, ok := goja.AssertFunction(bbObj.Get("get"))
 			if !ok {
@@ -156,7 +156,7 @@ func TestGraphJS_PlanExecution(t *testing.T) {
 
 	// Check final state
 	var finalActor string
-	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(func(vm *goja.Runtime) error {
 		bbObj := vm.Get("graphTestBB").ToObject(vm)
 		getFn, ok := goja.AssertFunction(bbObj.Get("get"))
 		if !ok {
@@ -172,7 +172,7 @@ func TestGraphJS_PlanExecution(t *testing.T) {
 	require.NoError(t, err)
 
 	// Stop the ticker
-	_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	_ = bridge.RunSync(func(vm *goja.Runtime) error {
 		tickerObj := vm.Get("graphTestTicker").ToObject(vm)
 		stopFn, ok := goja.AssertFunction(tickerObj.Get("stop"))
 		if ok {
@@ -239,7 +239,7 @@ func TestGraphJS_PathValidation(t *testing.T) {
 	// Wait for actor to reach goal (deterministic polling replaces heuristic sleep)
 	err := testutil.Poll(context.Background(), func() bool {
 		var actor string
-		_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		_ = bridge.RunSync(func(vm *goja.Runtime) error {
 			bbObj := vm.Get("pathTestBB").ToObject(vm)
 			getFn, ok := goja.AssertFunction(bbObj.Get("get"))
 			if !ok {
@@ -258,7 +258,7 @@ func TestGraphJS_PathValidation(t *testing.T) {
 
 	// Get the path
 	var path []any
-	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(func(vm *goja.Runtime) error {
 		pathVal := vm.Get("pathTaken")
 		path = pathVal.Export().([]any)
 		return nil
@@ -266,7 +266,7 @@ func TestGraphJS_PathValidation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Stop ticker
-	_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	_ = bridge.RunSync(func(vm *goja.Runtime) error {
 		tickerObj := vm.Get("pathTestTicker").ToObject(vm)
 		if stopFn, ok := goja.AssertFunction(tickerObj.Get("stop")); ok {
 			_, _ = stopFn(tickerObj)
@@ -346,7 +346,7 @@ func TestGraphJS_UnreachableGoal(t *testing.T) {
 	// Wait for ticker to complete (deterministic polling replaces heuristic sleep)
 	err := testutil.Poll(context.Background(), func() bool {
 		var done bool
-		_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		_ = bridge.RunSync(func(vm *goja.Runtime) error {
 			v := vm.Get("unreachableDone")
 			done = v != nil && !goja.IsUndefined(v) && v.ToBoolean()
 			return nil
@@ -357,7 +357,7 @@ func TestGraphJS_UnreachableGoal(t *testing.T) {
 
 	// Check that actor didn't reach goal
 	var actorPos string
-	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(func(vm *goja.Runtime) error {
 		bbObj := vm.Get("unreachableBB").ToObject(vm)
 		getFn, _ := goja.AssertFunction(bbObj.Get("get"))
 		res, _ := getFn(bbObj, vm.ToValue("actor"))
@@ -367,7 +367,7 @@ func TestGraphJS_UnreachableGoal(t *testing.T) {
 	require.NoError(t, err)
 
 	// Stop ticker
-	_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	_ = bridge.RunSync(func(vm *goja.Runtime) error {
 		tickerObj := vm.Get("unreachableTicker").ToObject(vm)
 		if stopFn, ok := goja.AssertFunction(tickerObj.Get("stop")); ok {
 			_, _ = stopFn(tickerObj)
@@ -432,7 +432,7 @@ func TestGraphJS_MultipleGoals(t *testing.T) {
 	// Wait for actor to reach a goal node (deterministic polling replaces heuristic sleep)
 	err := testutil.Poll(context.Background(), func() bool {
 		var actor string
-		_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		_ = bridge.RunSync(func(vm *goja.Runtime) error {
 			bbObj := vm.Get("multiGoalBB").ToObject(vm)
 			getFn, ok := goja.AssertFunction(bbObj.Get("get"))
 			if !ok {
@@ -451,7 +451,7 @@ func TestGraphJS_MultipleGoals(t *testing.T) {
 
 	// Check final position
 	var finalActor string
-	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(func(vm *goja.Runtime) error {
 		bbObj := vm.Get("multiGoalBB").ToObject(vm)
 		getFn, _ := goja.AssertFunction(bbObj.Get("get"))
 		res, _ := getFn(bbObj, vm.ToValue("actor"))
@@ -461,7 +461,7 @@ func TestGraphJS_MultipleGoals(t *testing.T) {
 	require.NoError(t, err)
 
 	// Stop ticker
-	_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	_ = bridge.RunSync(func(vm *goja.Runtime) error {
 		tickerObj := vm.Get("multiGoalTicker").ToObject(vm)
 		if stopFn, ok := goja.AssertFunction(tickerObj.Get("stop")); ok {
 			_, _ = stopFn(tickerObj)
@@ -528,7 +528,7 @@ func TestGraphJS_PlanIdempotent(t *testing.T) {
 	// succeeds immediately (no actions needed). We poll once to confirm state is stable.
 	err := testutil.Poll(context.Background(), func() bool {
 		var actor string
-		_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		_ = bridge.RunSync(func(vm *goja.Runtime) error {
 			bbObj := vm.Get("idempotentBB").ToObject(vm)
 			getFn, ok := goja.AssertFunction(bbObj.Get("get"))
 			if !ok {
@@ -547,7 +547,7 @@ func TestGraphJS_PlanIdempotent(t *testing.T) {
 
 	// Check state - should still be at sg
 	var actorPos string
-	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(func(vm *goja.Runtime) error {
 		bbObj := vm.Get("idempotentBB").ToObject(vm)
 		getFn, _ := goja.AssertFunction(bbObj.Get("get"))
 		res, _ := getFn(bbObj, vm.ToValue("actor"))
@@ -557,7 +557,7 @@ func TestGraphJS_PlanIdempotent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Stop ticker
-	_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	_ = bridge.RunSync(func(vm *goja.Runtime) error {
 		tickerObj := vm.Get("idempotentTicker").ToObject(vm)
 		if stopFn, ok := goja.AssertFunction(tickerObj.Get("stop")); ok {
 			_, _ = stopFn(tickerObj)

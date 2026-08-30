@@ -5,9 +5,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 )
 
@@ -62,10 +62,7 @@ type TUIManager struct {
 	// defaults and can be overridden by configuration (e.g., config file).
 	defaultColors PromptColors
 
-	// outputQueue buffers script output so it can be written at safe points
 	// in the prompt lifecycle, preventing races with go-prompt redraws.
-	outputQueue []string
-	outputMu    sync.Mutex
 
 	// stateManager orchestrates all persistence logic for this TUI instance
 	// Use the builtin.StateManager interface to avoid tight coupling to the
@@ -204,8 +201,6 @@ type promptBuildConfig struct {
 	initialCommand string
 	// history provides command history entries for up-arrow recall.
 	history []string
-	// flushOutput wraps the executor to flush queued output before/after execution.
-	flushOutput bool
 	// maxSuggestion sets the maximum number of completion suggestions shown.
 	// A value of 0 uses go-prompt's default.
 	maxSuggestion uint16

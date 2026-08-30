@@ -14,7 +14,7 @@
     //
     // All branch operations run in a temporary git worktree so the user's
     // working directory remains completely untouched.
-    function executeSplit(plan, options) {
+    async function executeSplit(plan, options) {
         options = options || {};
         var dir = resolveDir(plan.dir || '.');
         var results = [];
@@ -51,7 +51,7 @@
             // created from base, these files won't be tracked, so git add
             // would silently skip them.
             var checkArgs = ['check-ignore', '--no-index'].concat(allPlanFiles);
-            var checkResult = gitExec(dir, checkArgs);
+            var checkResult = await gitExec(dir, checkArgs);
             // exit 0 = at least one file is ignored; exit 1 = none ignored
             if (checkResult.code === 0 && checkResult.stdout.trim()) {
                 var ignoreLines = checkResult.stdout.trim().split('\n');
@@ -70,9 +70,9 @@
 
         // Pre-flight: delete any pre-existing split branches to allow re-runs.
         for (var k = 0; k < plan.splits.length; k++) {
-            var existCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + plan.splits[k].name]);
+            var existCheck = await gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + plan.splits[k].name]);
             if (existCheck.code === 0) {
-                gitExec(dir, ['branch', '-D', plan.splits[k].name]);
+                await gitExec(dir, ['branch', '-D', plan.splits[k].name]);
             }
         }
 
@@ -80,13 +80,13 @@
         // The user's CWD remains completely untouched.
         // T103: Use system temp dir to avoid fragile dir + '/../' pattern.
         var worktreePath = worktreeTmpPath('osm-worktree-');
-        var wtAdd = gitExec(dir, ['worktree', 'add', '--detach', worktreePath, plan.baseBranch]);
+        var wtAdd = await gitExec(dir, ['worktree', 'add', '--detach', worktreePath, plan.baseBranch]);
         if (wtAdd.code !== 0) {
             return { error: 'create worktree failed: ' + wtAdd.stderr.trim(), results: [] };
         }
 
-        function cleanupWorktree() {
-            gitExec(dir, ['worktree', 'remove', '--force', worktreePath]);
+        async function cleanupWorktree() {
+            await gitExec(dir, ['worktree', 'remove', '--force', worktreePath]);
         }
 
         // INVARIANT (T108): Split branches form a CUMULATIVE CHAIN.
@@ -99,7 +99,7 @@
 
         for (var i = 0; i < plan.splits.length; i++) {
             if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
-                cleanupWorktree();
+                await cleanupWorktree();
                 return { error: 'cancelled by user after ' + i + ' of ' + plan.splits.length + ' branches', results: results };
             }
 
@@ -110,11 +110,11 @@
                 progressFn('Creating branch ' + (i + 1) + '/' + plan.splits.length + ': ' + split.name);
             }
 
-            var co = gitExec(worktreePath, ['checkout', '-b', split.name, currentBase]);
+            var co = await gitExec(worktreePath, ['checkout', '-b', split.name, currentBase]);
             if (co.code !== 0) {
                 splitResult.error = 'create branch ' + split.name + ' from ' + currentBase + ' failed: ' + co.stderr.trim();
                 results.push(splitResult);
-                cleanupWorktree();
+                await cleanupWorktree();
                 return { error: splitResult.error, results: results };
             }
 
@@ -122,7 +122,7 @@
                 if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
                     splitResult.error = 'cancelled by user after ' + j + ' of ' + split.files.length + ' files in ' + split.name;
                     results.push(splitResult);
-                    cleanupWorktree();
+                    await cleanupWorktree();
                     return { error: splitResult.error, results: results };
                 }
 
@@ -147,16 +147,16 @@
                     splitResult.error = 'file "' + file + '" has no entry in plan.fileStatuses — '
                         + 'ensure analyzeDiff() results are passed to createSplitPlan()';
                     results.push(splitResult);
-                    cleanupWorktree();
+                    await cleanupWorktree();
                     return { error: splitResult.error, results: results };
                 }
 
                 if (status === 'D') {
-                    var rm = gitExec(worktreePath, ['rm', '--ignore-unmatch', '-f', file]);
+                    var rm = await gitExec(worktreePath, ['rm', '--ignore-unmatch', '-f', file]);
                     if (rm.code !== 0) {
                         splitResult.error = 'git rm ' + file + ': ' + rm.stderr.trim();
                         results.push(splitResult);
-                        cleanupWorktree();
+                        await cleanupWorktree();
                         return { error: splitResult.error, results: results };
                     }
                 } else {
@@ -164,11 +164,11 @@
                     if (status === 'T' && typeof log !== 'undefined' && log.warn) {
                         log.warn('pr-split: file type change for ' + file + ' — checkout from source will restore new type');
                     }
-                    var checkout = gitExec(worktreePath, ['checkout', plan.sourceBranch, '--', file]);
+                    var checkout = await gitExec(worktreePath, ['checkout', plan.sourceBranch, '--', file]);
                     if (checkout.code !== 0) {
                         splitResult.error = 'checkout file ' + file + ': ' + checkout.stderr.trim();
                         results.push(splitResult);
-                        cleanupWorktree();
+                        await cleanupWorktree();
                         return { error: splitResult.error, results: results };
                     }
                 }
@@ -184,25 +184,25 @@
             }
             if (addFiles.length > 0) {
                 var addArgs = ['add', '--'].concat(addFiles);
-                var add = gitExec(worktreePath, addArgs);
+                var add = await gitExec(worktreePath, addArgs);
                 if (add.code !== 0) {
                     splitResult.error = 'git add failed: ' + add.stderr.trim();
                     results.push(splitResult);
-                    cleanupWorktree();
+                    await cleanupWorktree();
                     return { error: splitResult.error, results: results };
                 }
             }
 
             var msg = split.message || 'split: ' + split.name;
-            var commit = gitExec(worktreePath, ['commit', '-m', msg]);
+            var commit = await gitExec(worktreePath, ['commit', '-m', msg]);
             if (commit.code !== 0) {
                 splitResult.error = 'git commit failed: ' + commit.stderr.trim();
                 results.push(splitResult);
-                cleanupWorktree();
+                await cleanupWorktree();
                 return { error: splitResult.error, results: results };
             }
 
-            var sha = gitExec(worktreePath, ['rev-parse', 'HEAD']);
+            var sha = await gitExec(worktreePath, ['rev-parse', 'HEAD']);
             splitResult.sha = sha.code === 0 ? sha.stdout.trim() : '';
 
             results.push(splitResult);
@@ -214,7 +214,7 @@
             currentBase = split.name;
         }
 
-        cleanupWorktree();
+        await cleanupWorktree();
 
         // T107: Collect all git-ignored files across all splits for top-level reporting.
         var overallSkipped = [];

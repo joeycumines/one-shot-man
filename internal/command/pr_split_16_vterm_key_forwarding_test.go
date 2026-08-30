@@ -7,10 +7,10 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// VTerm Integration Tests: Claude Pane Keyboard Input Forwarding
+// VTerm Integration Tests: Agent Pane Keyboard Input Forwarding
 //
-// These tests verify the keyboard input pipeline when Claude pane is focused:
-//   key event → _wizardUpdate → splitViewFocus check → CLAUDE_RESERVED_KEYS
+// These tests verify the keyboard input pipeline when Agent pane is focused:
+//   key event → _wizardUpdate → splitViewFocus check → AGENT_RESERVED_KEYS
 //   → keyToTermBytes → tuiMux.writeToChild
 //
 // Tests cover: printable chars, enter/tab/backspace, arrow keys, Ctrl combos,
@@ -19,17 +19,17 @@ import (
 // ---------------------------------------------------------------------------
 
 // wtcMuxSetup creates a mock tuiMux that records all writes (via pinned
-// Claude SessionID proxy). The proxy uses activate+input, so we track
+// Agent SessionID proxy). The proxy uses activate+input, so we track
 // __writtenBytes through tuiMux.input() — matching the production path.
 const wtcMuxSetup = `
 var __savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 var __writtenBytes = [];
 var __mockCID = 42;
 prSplit._state = prSplit._state || {};
-prSplit._state.claudeSessionID = __mockCID;
+prSplit._state.agentSessionID = __mockCID;
 globalThis.tuiMux = {
 	hasChild: function() { return true; },
-	session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; }, write: function(data) { __writtenBytes.push(data); }, screen: function() { return 'mock screen'; }, output: function() { return 'mock screenshot'; }, resize: function() { return null; }, target: function() { return { name: 'claude', kind: 'pty' }; }, close: function() {} }; },
+	session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; }, write: function(data) { __writtenBytes.push(data); }, screen: function() { return 'mock screen'; }, output: function() { return 'mock screenshot'; }, resize: function() { return null; }, target: function() { return { name: 'agent', kind: 'pty' }; }, close: function() {} }; },
 	childScreen: function() { return 'mock screen'; },
 	screenshot: function() { return 'mock screenshot'; },
 	snapshot: function(id) { return { fullScreen: 'mock screen', plainText: 'mock screenshot' }; },
@@ -45,7 +45,7 @@ globalThis.tuiMux = {
 const wtcMuxRestore = `
 if (__savedMux !== undefined) globalThis.tuiMux = __savedMux;
 else delete globalThis.tuiMux;
-if (prSplit._state) prSplit._state.claudeSessionID = null;
+if (prSplit._state) prSplit._state.agentSessionID = null;
 `
 
 // -- keyToTermBytes unit tests (exported as prSplit._keyToTermBytes) ---------
@@ -251,17 +251,17 @@ func TestChunk16_VTerm_KeyToTermBytes_FunctionKeys(t *testing.T) {
 	}
 }
 
-// -- CLAUDE_RESERVED_KEYS tests ---------------------------------------------
+// -- AGENT_RESERVED_KEYS tests ---------------------------------------------
 
 func TestChunk16_VTerm_ReservedKeys_ExpectedEntries(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		var reserved = globalThis.prSplit._CLAUDE_RESERVED_KEYS;
+		var reserved = globalThis.prSplit._AGENT_RESERVED_KEYS;
 		var errors = [];
 
-		// These keys MUST be reserved (not forwarded to Claude).
+		// These keys MUST be reserved (not forwarded to Agent).
 		var expected = ['ctrl+tab', 'ctrl+l', 'ctrl+o', 'ctrl+]',
 			'ctrl++', 'ctrl+=', 'ctrl+-',
 			'up', 'down', 'k', 'j', 'pgup', 'pgdown', 'home', 'end', 'f1'];
@@ -303,9 +303,9 @@ func TestChunk16_VTerm_KeyForwarding_PrintableCharsSentToMux(t *testing.T) {
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'claude';
-		s.claudeScreen = 'mock content';
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
+		s.agentScreen = 'mock content';
 
 		// Send 'h', 'e', 'l', 'l', 'o'.
 		var keys = ['h', 'e', 'l', 'l', 'o'];
@@ -343,9 +343,9 @@ func TestChunk16_VTerm_KeyForwarding_EnterSendsCarriageReturn(t *testing.T) {
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'claude';
-		s.claudeScreen = 'mock content';
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
+		s.agentScreen = 'mock content';
 
 		sendKey(s, 'enter');
 
@@ -373,15 +373,15 @@ func TestChunk16_VTerm_KeyForwarding_CtrlCForwardedToChild(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	// ctrl+c is NOT in CLAUDE_RESERVED_KEYS — it should be forwarded as 0x03.
+	// ctrl+c is NOT in AGENT_RESERVED_KEYS — it should be forwarded as 0x03.
 	raw, err := evalJS(`(function() {
 		` + wtcMuxSetup + `
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'claude';
-		s.claudeScreen = 'mock content';
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
+		s.agentScreen = 'mock content';
 
 		sendKey(s, 'ctrl+c');
 
@@ -414,9 +414,9 @@ func TestChunk16_VTerm_KeyForwarding_CtrlACtrlEForwarded(t *testing.T) {
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'claude';
-		s.claudeScreen = 'mock content';
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
+		s.agentScreen = 'mock content';
 
 		sendKey(s, 'ctrl+a');
 		sendKey(s, 'ctrl+e');
@@ -453,9 +453,9 @@ func TestChunk16_VTerm_KeyForwarding_ReservedKeysNotForwarded(t *testing.T) {
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'claude';
-		s.claudeScreen = 'mock content';
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
+		s.agentScreen = 'mock content';
 
 		// These keys are all reserved — should NOT reach writeToChild.
 		// Note: up/down/k/j/pgup/pgdown/home/end are handled as scroll keys
@@ -492,10 +492,10 @@ func TestChunk16_VTerm_KeyForwarding_ScrollKeysChangeOffsetNotForward(t *testing
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'claude';
-		s.claudeViewOffset = 0;
-		s.claudeScreen = Array(60).fill('line').join('\n');
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
+		s.agentViewOffset = 0;
+		s.agentScreen = Array(60).fill('line').join('\n');
 
 		// PgUp should scroll, not forward.
 		var r = sendKey(s, 'pgup');
@@ -503,8 +503,8 @@ func TestChunk16_VTerm_KeyForwarding_ScrollKeysChangeOffsetNotForward(t *testing
 
 		var errors = [];
 
-		if (s.claudeViewOffset !== 5) {
-			errors.push('pgup should change offset to 5, got: ' + s.claudeViewOffset);
+		if (s.agentViewOffset !== 5) {
+			errors.push('pgup should change offset to 5, got: ' + s.agentViewOffset);
 		}
 		if (__writtenBytes.length !== 0) {
 			errors.push('scroll keys should not writeToChild, got: ' + __writtenBytes.length);
@@ -530,11 +530,11 @@ func TestChunk16_VTerm_KeyForwarding_AutoScrollOnInput(t *testing.T) {
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'claude';
-		s.claudeScreen = 'mock content';
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
+		s.agentScreen = 'mock content';
 		// Scrolled up 10 lines.
-		s.claudeViewOffset = 10;
+		s.agentViewOffset = 10;
 
 		// Send printable char — should reset offset to 0 (auto-scroll to live).
 		var r = sendKey(s, 'x');
@@ -542,8 +542,8 @@ func TestChunk16_VTerm_KeyForwarding_AutoScrollOnInput(t *testing.T) {
 
 		var errors = [];
 
-		if (ns.claudeViewOffset !== 0) {
-			errors.push('input should reset claudeViewOffset to 0, got: ' + ns.claudeViewOffset);
+		if (ns.agentViewOffset !== 0) {
+			errors.push('input should reset agentViewOffset to 0, got: ' + ns.agentViewOffset);
 		}
 		if (__writtenBytes.length !== 1 || __writtenBytes[0] !== 'x') {
 			errors.push('x should be forwarded');
@@ -571,9 +571,9 @@ func TestChunk16_VTerm_KeyForwarding_NoMuxSafeNoOp(t *testing.T) {
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'claude';
-		s.claudeScreen = 'mock content';
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
+		s.agentScreen = 'mock content';
 
 		// Send key with no mux — should not crash.
 		var r = sendKey(s, 'x');
@@ -606,7 +606,7 @@ func TestChunk16_VTerm_KeyForwarding_WriteToChildThrowsSwallowed(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; }, write: function(bytes) { throw new Error('child process ended'); }, screen: function() { return 'mock'; }, output: function() { return 'mock'; }, resize: function() { return null; }, target: function() { return { name: 'claude', kind: 'pty' }; }, close: function() {} }; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; }, write: function(bytes) { throw new Error('child process ended'); }, screen: function() { return 'mock'; }, output: function() { return 'mock'; }, resize: function() { return null; }, target: function() { return { name: 'agent', kind: 'pty' }; }, close: function() {} }; },
 			childScreen: function() { return 'mock'; },
 			screenshot: function() { return 'mock'; },
 			lastActivityMs: function() { return 100; },
@@ -615,9 +615,9 @@ func TestChunk16_VTerm_KeyForwarding_WriteToChildThrowsSwallowed(t *testing.T) {
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'claude';
-		s.claudeScreen = 'mock content';
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
+		s.agentScreen = 'mock content';
 
 		// Should NOT throw — error is swallowed.
 		var r = sendKey(s, 'x');
@@ -650,9 +650,9 @@ func TestChunk16_VTerm_KeyForwarding_WizardFocusedNotForwarded(t *testing.T) {
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'wizard';  // NOT claude-focused.
-		s.splitViewTab = 'claude';
-		s.claudeScreen = 'mock content';
+		s.splitViewFocus = 'wizard';  // NOT agent-focused.
+		s.splitViewTab = 'agent';
+		s.agentScreen = 'mock content';
 
 		// Send printable chars — should NOT reach writeToChild.
 		sendKey(s, 'x');
@@ -684,9 +684,9 @@ func TestChunk16_VTerm_KeyForwarding_OutputTabReadOnly(t *testing.T) {
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
+		s.splitViewFocus = 'agent';
 		s.splitViewTab = 'output';  // Output tab is read-only.
-		s.claudeScreen = 'mock content';
+		s.agentScreen = 'mock content';
 
 		// Send printable chars — should NOT reach writeToChild.
 		sendKey(s, 'x');
@@ -709,7 +709,7 @@ func TestChunk16_VTerm_KeyForwarding_OutputTabReadOnly(t *testing.T) {
 	}
 }
 
-func TestChunk16_VTerm_KeyForwarding_CtrlLInterceptedBeforeClaude(t *testing.T) {
+func TestChunk16_VTerm_KeyForwarding_CtrlLInterceptedBeforeAgent(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -718,9 +718,9 @@ func TestChunk16_VTerm_KeyForwarding_CtrlLInterceptedBeforeClaude(t *testing.T) 
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'claude';
-		s.claudeScreen = 'mock content';
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
+		s.agentScreen = 'mock content';
 
 		// Ctrl+L should toggle split-view OFF, NOT forward to child.
 		var r = sendKey(s, 'ctrl+l');
@@ -755,9 +755,9 @@ func TestChunk16_VTerm_KeyForwarding_CtrlTabInterceptedForFocus(t *testing.T) {
 		try {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'claude';
-		s.claudeScreen = 'mock content';
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
+		s.agentScreen = 'mock content';
 
 		// Ctrl+Tab should cycle to next tab, NOT forward to child.
 		var r = sendKey(s, 'ctrl+tab');
@@ -765,8 +765,8 @@ func TestChunk16_VTerm_KeyForwarding_CtrlTabInterceptedForFocus(t *testing.T) {
 
 		var errors = [];
 
-		// T61: From claude tab, cycles to output (not back to wizard).
-		if (ns.splitViewFocus !== 'claude') {
+		// T61: From agent tab, cycles to output (not back to wizard).
+		if (ns.splitViewFocus !== 'agent') {
 			errors.push('ctrl+tab should stay on pane (got focus=' + ns.splitViewFocus + ')');
 		}
 		if (ns.splitViewTab !== 'output') {

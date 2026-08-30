@@ -172,7 +172,7 @@ func TestResetCommand_WithArchive(t *testing.T) {
 
 	// Create a TUI manager with in-memory backend for testing
 	sessionID := testutil.NewTestSessionID("test-reset-cmd-session", t.Name())
-	backend, err := storage.NewInMemoryBackend(sessionID)
+	backend, err := storage.NewMemoryBackend(sessionID)
 	if err != nil {
 		t.Fatalf("Failed to create backend: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestResetCommand_WithArchive(t *testing.T) {
 	var buf bytes.Buffer
 	tuiMgr := &TUIManager{
 		stateManager: stateManager,
-		writer:       NewTUIWriterFromIO(&buf),
+		writer:       NewTUIWriterIO(&buf),
 	}
 
 	// Set some state before reset

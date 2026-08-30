@@ -15,28 +15,19 @@ generate-tapes-and-gifs: ## Generate all recording tapes and GIFs
 	@echo "Generating all recording tapes and GIFs..."
 	$(GO) -C $(PROJECT_ROOT)/internal/scripting test -v -count=1 -timeout=10m -run "^TestRecording_" -record -execute-vhs
 
-.PHONY: integration-test-claudemux
-integration-test-claudemux: ## Run claudemux integration tests (requires real agent infrastructure)
-integration-test-claudemux: PROVIDER ?= ollama
-integration-test-claudemux: MODEL ?= minimax-m2.5:cloud
-integration-test-claudemux:
-	$(GO) test -race -v -count=1 -timeout=10m \
-		-integration -provider=$(PROVIDER) -model=$(MODEL) \
-		./internal/builtin/claudemux/...
-
 .PHONY: integration-test-prsplit
-integration-test-prsplit: ## Run pr-split integration tests with real Claude/AI (requires agent infrastructure)
-integration-test-prsplit: CLAUDE_COMMAND ?= claude
-integration-test-prsplit: CLAUDE_ARGS ?=
+integration-test-prsplit: ## Run pr-split integration tests with a real agent (requires agent infrastructure)
+integration-test-prsplit: AGENT_COMMAND ?=
+integration-test-prsplit: AGENT_ARGS ?=
 integration-test-prsplit: INTEGRATION_MODEL ?= minimax-m2.5:cloud
-integration-test-prsplit: PRSPLIT_TEST_RUN ?= TestIntegration_(.*Claude|AutoSplitComplex|PrSplit_VTerm)
+integration-test-prsplit: PRSPLIT_TEST_RUN ?= TestIntegration_(.*Agent|AutoSplitComplex|PrSplit_VTerm)
 integration-test-prsplit:
 	$(GO) test -race -count=1 -timeout=15m \
 		./internal/command/... \
 		-run '$(PRSPLIT_TEST_RUN)' \
 		-integration \
-		-claude-command=$(CLAUDE_COMMAND) \
-		$(foreach arg,$(CLAUDE_ARGS),-claude-arg=$(arg)) \
+		-agent-command=$(AGENT_COMMAND) \
+		$(foreach arg,$(AGENT_ARGS),-agent-arg=$(arg)) \
 		-integration-model=$(INTEGRATION_MODEL)
 
 .PHONY: integration-test-prsplit-mcp

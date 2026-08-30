@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -450,9 +450,9 @@ func TestTextareaLargeDocument(t *testing.T) {
 	var content strings.Builder
 	for i := range 150 {
 		if i > 0 {
-			content.WriteString("\n")
+			content.WriteByte('\n')
 		}
-		content.WriteString("Line " + string(rune('A'+i%26)) + " number " + string(rune('0'+i/100)) + string(rune('0'+(i/10)%10)) + string(rune('0'+i%10)))
+		fmt.Fprintf(&content, "Line %c number %03d", 'A'+i%26, i)
 	}
 
 	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
@@ -2431,7 +2431,7 @@ func TestHandleClickAtScreenCoords_PrefersVpCtxOverArg(t *testing.T) {
 
 // TestTextareaUpdateWithKeyInsertsCharacter verifies that calling textarea.update()
 // with a Key message inserts the character into the textarea value.
-// This tests the critical path: JS update → JsToTeaMsg → textarea.Update(msg) → value changes.
+// This tests the critical path: JS update → ParseMsg → textarea.Update(msg) → value changes.
 func TestTextareaUpdateWithKeyInsertsCharacter(t *testing.T) {
 	runtime := goja.New()
 

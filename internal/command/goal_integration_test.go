@@ -89,7 +89,7 @@ func TestGoalScript_DocGenerator_PromptContainsTypeInstructions(t *testing.T) {
 		t.Fatalf("failed to marshal goal config: %v", err)
 	}
 
-	script := engine.LoadScriptFromString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
+	script := engine.LoadScriptString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute goal script: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
@@ -137,7 +137,7 @@ func TestGoalScript_TestGenerator_PromptContainsTypeInstructions(t *testing.T) {
 		t.Fatalf("failed to marshal goal config: %v", err)
 	}
 
-	script := engine.LoadScriptFromString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
+	script := engine.LoadScriptString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute goal script: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
@@ -205,7 +205,7 @@ func TestGoalScript_MoraleImprover_LoadsAndInitializes(t *testing.T) {
 		t.Fatalf("failed to marshal goal config: %v", err)
 	}
 
-	script := engine.LoadScriptFromString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
+	script := engine.LoadScriptString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute goal script: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
@@ -245,7 +245,7 @@ func TestGoalScript_MoraleImprover_ContextManagerCommands(t *testing.T) {
 		t.Fatalf("failed to marshal goal config: %v", err)
 	}
 
-	script := engine.LoadScriptFromString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
+	script := engine.LoadScriptString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute goal script: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
@@ -326,7 +326,7 @@ func TestGoalScript_MoraleImprover_StateVariableCommands(t *testing.T) {
 		t.Fatalf("failed to marshal goal config: %v", err)
 	}
 
-	script := engine.LoadScriptFromString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
+	script := engine.LoadScriptString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute goal script: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
@@ -403,7 +403,7 @@ func TestGoalScript_MoraleImprover_PromptTemplateRendering(t *testing.T) {
 		t.Fatalf("failed to marshal goal config: %v", err)
 	}
 
-	script := engine.LoadScriptFromString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
+	script := engine.LoadScriptString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute goal script: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
@@ -481,7 +481,7 @@ func TestGoalScript_MoraleImprover_ErrorHandling(t *testing.T) {
 		t.Fatalf("failed to marshal goal config: %v", err)
 	}
 
-	script := engine.LoadScriptFromString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
+	script := engine.LoadScriptString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute goal script: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
@@ -557,7 +557,7 @@ func TestGoalScript_MoraleImprover_TUIElements(t *testing.T) {
 		t.Fatalf("failed to marshal goal config: %v", err)
 	}
 
-	script := engine.LoadScriptFromString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
+	script := engine.LoadScriptString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute goal script: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}
@@ -611,7 +611,7 @@ func TestGoalScript_MoraleImprover_EmbeddedHotSnippets(t *testing.T) {
 		t.Fatalf("failed to marshal goal config: %v", err)
 	}
 
-	script := engine.LoadScriptFromString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
+	script := engine.LoadScriptString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute goal script: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
 	}

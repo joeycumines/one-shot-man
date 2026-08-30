@@ -4,15 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/argv"
 )
 
 func Require(runtime *goja.Runtime, module *goja.Object) {
 	exports := module.Get("exports").(*goja.Object)
 
-	// parseArgv(argv: string): string[]
-	// Parse a command line string into an argv array (naive implementation).
 	_ = exports.Set("parseArgv", func(call goja.FunctionCall) goja.Value {
 		cmdline, ok := call.Argument(0).Export().(string)
 		if !ok {
@@ -21,8 +19,6 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 		return runtime.ToValue(argv.ParseSlice(cmdline))
 	})
 
-	// formatArgv(argv: string[]): string
-	// Format argv array into an exec-safe, POSIX-shell-quoted command line.
 	_ = exports.Set("formatArgv", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 {
 			return runtime.ToValue("")
@@ -32,7 +28,7 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 			return runtime.ToValue("")
 		}
 
-		// Try to export as []string for the main path, which uses exec-safe shell quoting.
+		// Main path: export as string array for safe shell quoting.
 		var argvStr []string
 		err := runtime.ExportTo(arg, &argvStr)
 		if err == nil {

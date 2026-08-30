@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 )
 
 // Model defines the state of the scrollbar.
@@ -31,8 +33,8 @@ type Model struct {
 type Option func(*Model)
 
 // New creates a new scrollbar model with default settings.
-func New(opts ...Option) Model {
-	m := Model{
+func New(opts ...Option) *Model {
+	m := &Model{
 		ThumbChar: " ",
 		TrackChar: "│",
 		ThumbStyle: lipgloss.NewStyle().
@@ -42,7 +44,7 @@ func New(opts ...Option) Model {
 	}
 
 	for _, opt := range opts {
-		opt(&m)
+		opt(m)
 	}
 
 	return m
@@ -50,7 +52,7 @@ func New(opts ...Option) Model {
 
 // View renders the scrollbar component strictly adhering to the calculated logic.
 // It returns a string exactly ViewportHeight tall.
-func (m Model) View() string {
+func (m *Model) View() string {
 	if m.ViewportHeight <= 0 {
 		return ""
 	}
@@ -93,7 +95,7 @@ func (m Model) View() string {
 
 }
 
-func render(viewportHeight, thumbTop, thumbHeight int, m Model) string {
+func render(viewportHeight, thumbTop, thumbHeight int, m *Model) string {
 
 	// 4. Render
 	var s strings.Builder
@@ -129,8 +131,51 @@ func render(viewportHeight, thumbTop, thumbHeight int, m Model) string {
 	return s.String()
 }
 
+// SetTotal sets the total content height and returns the model for chaining.
+func (m *Model) SetTotal(n int) *Model {
+	m.ContentHeight = n
+	return m
+}
+
+// SetPosition sets the current vertical scroll offset and returns the model for chaining.
+func (m *Model) SetPosition(n int) *Model {
+	m.YOffset = n
+	return m
+}
+
+// SetWidth sets the viewport height (visual dimension along the scroll axis)
+// and returns the model for chaining.
+func (m *Model) SetWidth(n int) *Model {
+	m.ViewportHeight = n
+	return m
+}
+
+// SetStyle sets the default (track) style and returns the model for chaining.
+func (m *Model) SetStyle(s lipgloss.Style) *Model {
+	m.TrackStyle = s
+	return m
+}
+
+// SetThumbStyle sets the thumb style and returns the model for chaining.
+func (m *Model) SetThumbStyle(s lipgloss.Style) *Model {
+	m.ThumbStyle = s
+	return m
+}
+
+// SetTrackStyle sets the track style and returns the model for chaining.
+func (m *Model) SetTrackStyle(s lipgloss.Style) *Model {
+	m.TrackStyle = s
+	return m
+}
+
+// RenderBounds renders the scrollbar within a coordinate.Rect, extracting the
+// viewport height from the rectangle's size and delegating to View().
+func (m *Model) RenderBounds(bounds coordinate.Rect) string {
+	m.ViewportHeight = bounds.Size.Height
+	return m.View()
+}
+
 // clamp restricts x to be between low and high.
-// Signature adheres to the plan: func clamp(high, low, x float64) float64.
 func clamp(high, low, x float64) float64 {
 	switch {
 	case high < x:

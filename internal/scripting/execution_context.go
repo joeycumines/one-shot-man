@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // ExecutionContext provides the execution environment for scripts, similar to testing.T.

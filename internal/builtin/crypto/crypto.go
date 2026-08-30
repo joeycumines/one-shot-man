@@ -10,7 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // Require is the Goja module loader for osm:crypto.

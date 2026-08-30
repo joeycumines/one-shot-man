@@ -5,16 +5,82 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaEventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/goroutineid"
+	"github.com/joeycumines/logiface"
+	"github.com/joeycumines/one-shot-man/internal/eventlooputil"
 )
+
+// runtimeLogEvent bridges go-eventloop structured diagnostics (Loop.Log) to
+// the host's slog. It implements logiface.Event via UnimplementedEvent so
+// future logiface fields remain compatible. Panics in callbacks and promise
+// jobs that would otherwise silently hang are now observed as structured
+// errors on this logger's writer, which forwards to slog at LevelError.
+type runtimeLogEvent struct {
+	logiface.UnimplementedEvent
+	level   logiface.Level
+	message string
+	err     error
+	fields  map[string]any
+}
+
+func (e *runtimeLogEvent) Level() logiface.Level { return e.level }
+func (e *runtimeLogEvent) AddField(key string, val any) {
+	if e.fields == nil {
+		e.fields = make(map[string]any)
+	}
+	e.fields[key] = val
+}
+func (e *runtimeLogEvent) AddMessage(msg string) bool { e.message = msg; return true }
+func (e *runtimeLogEvent) AddError(err error) bool { e.err = err; return true }
+func (e *runtimeLogEvent) AddString(key string, val string) bool { e.AddField(key, val); return true }
+
+type runtimeLogEventFactory struct{}
+
+func (runtimeLogEventFactory) NewEvent(level logiface.Level) logiface.Event {
+	return &runtimeLogEvent{level: level}
+}
+
+func newRuntimeLogger() *logiface.Logger[logiface.Event] {
+	return logiface.New[logiface.Event](
+		logiface.WithEventFactory[logiface.Event](runtimeLogEventFactory{}),
+		logiface.WithWriter[logiface.Event](logiface.NewWriterFunc(func(e logiface.Event) error {
+			// e is *runtimeLogEvent in practice; extract via type assertion.
+			if re, ok := e.(*runtimeLogEvent); ok {
+				args := []any{"level", re.level.String()}
+				if re.message != "" {
+					args = append(args, "msg", re.message)
+				}
+				if re.err != nil {
+					args = append(args, "error", re.err)
+				}
+				for k, v := range re.fields {
+					args = append(args, k, v)
+				}
+				// Use slog at appropriate level; Loop.Log already filters by level.
+				// Map logiface.Level to slog level roughly; default to Error.
+				slog.Error("eventloop diagnostic", args...)
+			} else {
+				slog.Error("eventloop diagnostic (unknown event type)", "event", e)
+			}
+			return nil
+		})),
+	).Logger()
+}
+
+// RegisterFD is deliberately unused. The event loop's RegisterFD is a
+// channel-based readiness API that on Windows, Plan 9, js/wasm and wasip1/wasm
+// returns ErrReadinessUnsupported by design (see go-eventloop README and
+// adapter docs). Our bindings are channel and timer based, not FD based, so
+// the lack of use is intentional and legitimate.
 
 // Runtime wraps a goja.Runtime with an integrated event loop and module registry.
 // It provides thread-safe execution of JavaScript by running all JS code
@@ -27,7 +93,7 @@ type Runtime struct {
 	// registry is the CommonJS require registry for native modules.
 	registry *require.Registry
 
-	// timeout is the maximum duration to wait for RunOnLoopSync operations.
+	// timeout is the maximum duration to wait for RunSync operations.
 	// Default is defaultSyncTimeout. Set to 0 to disable timeout (not recommended).
 	timeout time.Duration
 
@@ -50,12 +116,16 @@ type Runtime struct {
 	started bool
 	stopped bool
 
+	// loopRunner is the shared submit-and-wait substrate (lazy, see runner).
+	loopRunner *eventlooputil.Runner
+	runnerOnce sync.Once
+
 	// ctx is the lifecycle context for Done() channel
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
-// defaultSyncTimeout is the maximum duration to wait for RunOnLoopSync operations.
+// defaultSyncTimeout is the maximum duration to wait for RunSync operations.
 const defaultSyncTimeout = 5 * time.Second
 
 // NewRuntime creates a new Runtime with an initialized event loop.
@@ -75,17 +145,18 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 		registry = require.NewRegistry()
 	}
 
-	// Create the Go event loop.
-	// WithStrictMicrotaskOrdering ensures Promise .then() callbacks
-	// (microtasks) are drained after EVERY macrotask, matching standard
-	// JavaScript event-loop semantics.
+	// Create the Go event loop. Strict microtask ordering (microtasks drained after
+	// every macrotask, per Node.js semantics) is now always-on in the 20260823
+	// surface — no option needed.
 	//
 	// WithAutoExit(true) allows the loop to exit naturally when no tasks,
 	// timers, or Promisify tokens remain. This is the primary shutdown
 	// signal for the application.
 	loop, err := goeventloop.New(
-		goeventloop.WithStrictMicrotaskOrdering(true),
 		goeventloop.WithAutoExit(true),
+		goeventloop.WithLogger(newRuntimeLogger()),
+		goeventloop.WithMetrics(true),
+		goeventloop.WithDebugMode(true),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create event loop: %w", err)
@@ -118,34 +189,42 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 		return nil, nil
 	})
 
-	// Create goja adapter and bind JS globals (setTimeout, Promise, etc.)
-	// This must happen on the event loop goroutine.
-	// We submit this work BEFORE starting the loop goroutine to avoid the
-	// auto-exit race where an empty loop exits immediately.
-	errCh := make(chan error, 1)
-	err = loop.Submit(func() {
-		// Capture event loop goroutine ID for deadlock prevention
-		rt.eventLoopGoroutineID.Store(goroutineid.Get())
-
-		var bindErr error
-		rt.adapter, bindErr = gojaEventloop.New(loop, vm)
-		if bindErr != nil {
-			errCh <- fmt.Errorf("failed to create goja adapter: %w", bindErr)
-			return
-		}
-
-		if bindErr = rt.adapter.Bind(); bindErr != nil {
-			errCh <- fmt.Errorf("failed to bind JS globals: %w", bindErr)
-			return
-		}
-
-		errCh <- nil
-	})
-	if err != nil {
+	// Create goja adapter and bind JS globals before starting the loop.
+	// New in 20260823: New/Bind must be called while the loop is awake (before Run),
+	// not from inside a Submit callback (which would be Running).
+	var err2 error
+	rt.adapter, err2 = gojaEventloop.New(loop, vm)
+	if err2 != nil {
 		close(rt.bootstrapDone)
 		loopCancel()
-		return nil, fmt.Errorf("failed to submit initialization task: %w", err)
+		return nil, fmt.Errorf("failed to create goja adapter: %w", err2)
 	}
+	if err2 = rt.adapter.Bind(); err2 != nil {
+		close(rt.bootstrapDone)
+		loopCancel()
+		return nil, fmt.Errorf("failed to bind JS globals: %w", err2)
+	}
+	rt.adapter.SetConsoleOutput(os.Stderr)
+
+	// H0 SECURITY: neutralize dangerous process globals installed by goja-eventloop Bind.
+	// Bind installs Node v26.5 process lifecycle globals (process.exit/exitCode etc.)
+	// which would allow user scripts to terminate the host. The sandbox tests assert
+	// these are absent, and main at 498102f proves they were absent before the fork.
+	// We keep process.nextTick and event emitter methods, but delete exit-related and
+	// env/pid surface. Also scrub Buffer/Deno/quit globals that must not leak.
+	if procVal := vm.Get("process"); procVal != nil && !goja.IsUndefined(procVal) && !goja.IsNull(procVal) {
+		if procObj, ok := procVal.(*goja.Object); ok {
+			_ = procObj.Delete("exit")
+			_ = procObj.Delete("exitCode")
+			_ = procObj.Delete("env")
+			_ = procObj.Delete("pid")
+			_ = procObj.Delete("_exiting")
+		}
+	}
+	_ = vm.Set("Buffer", goja.Undefined())
+	_ = vm.Set("Deno", goja.Undefined())
+	_ = vm.Set("exit", goja.Undefined())
+	_ = vm.Set("quit", goja.Undefined())
 
 	// Start the event loop in background goroutine
 	go func() {
@@ -157,15 +236,15 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 		}
 	}()
 
+	// Capture event loop goroutine ID for deadlock prevention via a Submit
+	// trampoline (runs on the loop goroutine once it starts).
+	_ = loop.Submit(func() {
+		rt.eventLoopGoroutineID.Store(goroutineid.Get())
+	})
+
 	rt.mu.Lock()
 	rt.started = true
 	rt.mu.Unlock()
-
-	// Wait for the initialization task to complete
-	if initErr := <-errCh; initErr != nil {
-		_ = rt.Close()
-		return nil, initErr
-	}
 
 	// Handle external context cancellation
 	if ctx.Done() != nil {
@@ -207,6 +286,9 @@ func (rt *Runtime) Close() error {
 	if rt.done != nil {
 		<-rt.done
 	}
+	if rt.adapter != nil {
+		<-rt.adapter.Done()
+	}
 
 	return nil
 }
@@ -222,10 +304,18 @@ func (rt *Runtime) Wait() {
 	}
 	rt.mu.Unlock()
 	<-rt.done
+	if rt.adapter != nil {
+		<-rt.adapter.Done()
+	}
 }
 
-// Done returns a channel that is closed when the runtime is stopped.
+// Done returns the terminal completion signal from the adapter when bound,
+// otherwise the internal lifecycle context. The adapter signal closes only
+// after terminal cleanup when no callback accepted can still execute.
 func (rt *Runtime) Done() <-chan struct{} {
+	if rt.adapter != nil {
+		return rt.adapter.Done()
+	}
 	return rt.ctx.Done()
 }
 
@@ -239,11 +329,6 @@ func (rt *Runtime) Runtime() *goja.Runtime {
 	return rt.vm
 }
 
-// VM returns the underlying goja.Runtime.
-func (rt *Runtime) VM() *goja.Runtime {
-	return rt.vm
-}
-
 // Registry returns the require.Registry for native modules.
 func (rt *Runtime) Registry() *require.Registry {
 	return rt.registry
@@ -252,6 +337,11 @@ func (rt *Runtime) Registry() *require.Registry {
 // Adapter returns the goja-eventloop adapter.
 func (rt *Runtime) Adapter() *gojaEventloop.Adapter {
 	return rt.adapter
+}
+
+// GoroutineID returns the stored event-loop goroutine ID for reentrancy checks.
+func (rt *Runtime) GoroutineID() int64 {
+	return rt.eventLoopGoroutineID.Load()
 }
 
 // Promisify implements EventLoopProvider. It wraps a Go function in a
@@ -267,7 +357,7 @@ func (rt *Runtime) IsRunning() bool {
 	return rt.started && !rt.stopped
 }
 
-// SetTimeout sets the timeout for RunOnLoopSync operations.
+// SetTimeout sets the timeout for RunSync operations.
 func (rt *Runtime) SetTimeout(timeout time.Duration) {
 	rt.mu.Lock()
 	rt.timeout = timeout
@@ -281,9 +371,9 @@ func (rt *Runtime) GetTimeout() time.Duration {
 	return rt.timeout
 }
 
-// RunOnLoop schedules a function to run on the event loop goroutine.
+// Run schedules a function to run on the event loop goroutine.
 // Returns true if the function was successfully scheduled.
-func (rt *Runtime) RunOnLoop(fn func(vm *goja.Runtime)) bool {
+func (rt *Runtime) Run(fn func(vm *goja.Runtime)) bool {
 	rt.mu.RLock()
 	if !rt.started || rt.stopped {
 		rt.mu.RUnlock()
@@ -291,15 +381,15 @@ func (rt *Runtime) RunOnLoop(fn func(vm *goja.Runtime)) bool {
 	}
 	rt.mu.RUnlock()
 
-	err := rt.loop.Submit(func() {
+	return rt.runner().Go(func() error {
 		fn(rt.vm)
-	})
-	return err == nil
+		return nil
+	}) == nil
 }
 
-// RunOnLoopSync schedules a function on the event loop and waits for completion.
+// RunSync schedules a function on the event loop and waits for completion.
 // Returns an error if the event loop is not running or stops while waiting.
-func (rt *Runtime) RunOnLoopSync(fn func(vm *goja.Runtime) error) error {
+func (rt *Runtime) RunSync(fn func(vm *goja.Runtime) error) error {
 	rt.mu.RLock()
 	if !rt.started || rt.stopped {
 		rt.mu.RUnlock()
@@ -308,41 +398,15 @@ func (rt *Runtime) RunOnLoopSync(fn func(vm *goja.Runtime) error) error {
 	timeout := rt.timeout
 	rt.mu.RUnlock()
 
-	done := make(chan struct{})
-	var resErr error
-	err := rt.loop.Submit(func() {
-		defer close(done)
-		resErr = fn(rt.vm)
-	})
-	if err != nil {
-		return errors.New("event loop not running")
-	}
-
-	if timeout > 0 {
-		timer := time.NewTimer(timeout)
-		defer timer.Stop()
-		select {
-		case <-done:
-			return resErr
-		case <-rt.ctx.Done():
-			return errors.New("runtime stopped while waiting for synchronous task")
-		case <-timer.C:
-			return fmt.Errorf("operation timed out after %v", timeout)
-		}
-	}
-
-	select {
-	case <-done:
-		return resErr
-	case <-rt.ctx.Done():
-		return errors.New("runtime stopped while waiting for synchronous task")
-	}
+	return rt.runner().Sync(func() error {
+		return fn(rt.vm)
+	}, timeout)
 }
 
-// TryRunOnLoopSync attempts to run a function on the event loop synchronously.
+// TryRunSync attempts to run a function on the event loop synchronously.
 // If we're already on the event loop goroutine, the function is executed
 // directly to avoid deadlock. Otherwise, it posts to the loop and waits.
-func (rt *Runtime) TryRunOnLoopSync(currentVM *goja.Runtime, fn func(vm *goja.Runtime) error) error {
+func (rt *Runtime) TryRunSync(currentVM *goja.Runtime, fn func(vm *goja.Runtime) error) error {
 	rt.mu.RLock()
 	if !rt.started || rt.stopped {
 		rt.mu.RUnlock()
@@ -350,22 +414,34 @@ func (rt *Runtime) TryRunOnLoopSync(currentVM *goja.Runtime, fn func(vm *goja.Ru
 	}
 	rt.mu.RUnlock()
 
-	// Capture current goroutine ID
-	currentID := goroutineid.Get()
-	loopID := rt.eventLoopGoroutineID.Load()
+	return rt.runner().TrySyncBranch(
+		func() error { return fn(currentVM) },
+		func() error { return fn(rt.vm) },
+		rt.timeout,
+	)
+}
 
-	if currentID == loopID {
-		// We are already on the loop thread, run directly
-		return fn(currentVM)
-	}
-
-	// Different thread, use synchronous submission
-	return rt.RunOnLoopSync(fn)
+// runner lazily builds the shared submit-and-wait substrate for this runtime.
+func (rt *Runtime) runner() *eventlooputil.Runner {
+	rt.runnerOnce.Do(func() {
+		r, err := eventlooputil.NewRunner(eventlooputil.RunnerConfig{
+			Loop:          rt.loop,
+			OnLoopThread:  func() bool { return eventlooputil.IsLoopThread(rt.eventLoopGoroutineID.Load()) },
+			Done:          rt.ctx.Done(),
+			NotRunningErr: errors.New("event loop not running"),
+			StoppedErr:    errors.New("runtime stopped while waiting for synchronous task"),
+		})
+		if err != nil {
+			panic(err)
+		}
+		rt.loopRunner = r
+	})
+	return rt.loopRunner
 }
 
 // LoadScript loads and executes JavaScript code in the runtime.
 func (rt *Runtime) LoadScript(name, code string) error {
-	return rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	return rt.RunSync(func(vm *goja.Runtime) error {
 		prg, err := goja.Compile(name, code, true)
 		if err != nil {
 			return fmt.Errorf("failed to compile %s: %w", name, err)
@@ -380,7 +456,7 @@ func (rt *Runtime) LoadScript(name, code string) error {
 
 // SetGlobal sets a global variable in the JavaScript runtime.
 func (rt *Runtime) SetGlobal(name string, value any) error {
-	return rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	return rt.RunSync(func(vm *goja.Runtime) error {
 		return vm.Set(name, value)
 	})
 }
@@ -388,7 +464,7 @@ func (rt *Runtime) SetGlobal(name string, value any) error {
 // GetGlobal retrieves a global variable from the JavaScript runtime.
 func (rt *Runtime) GetGlobal(name string) (any, error) {
 	var result any
-	err := rt.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err := rt.RunSync(func(vm *goja.Runtime) error {
 		val := vm.Get(name)
 		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 			result = nil
@@ -403,7 +479,7 @@ func (rt *Runtime) GetGlobal(name string) (any, error) {
 // GetCallable retrieves a global function from the JavaScript runtime.
 func (rt *Runtime) GetCallable(name string) (goja.Callable, error) {
 	var result goja.Callable
-	err := rt.TryRunOnLoopSync(nil, func(vm *goja.Runtime) error {
+	err := rt.TryRunSync(nil, func(vm *goja.Runtime) error {
 		val := vm.Get(name)
 		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 			return nil

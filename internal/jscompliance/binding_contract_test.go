@@ -1,0 +1,121 @@
+package jscompliance
+
+import (
+	"context"
+	"path/filepath"
+	"runtime"
+	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/scripting"
+)
+
+// returnsPromise evaluates js (which must call an I/O export) and asserts the
+// result is a Promise (the JS Binding Contract: I/O bindings MUST be async).
+func returnsPromise(t *testing.T, engine *scripting.Engine, js string) {
+	t.Helper()
+	v, err := evalJS(t, engine, `(function(){ var p = `+js+`; return (p !== null && p !== undefined && typeof p === 'object' && typeof p.then === 'function'); })()`, defaultEvalTimeout)
+	if err != nil {
+		t.Fatalf("%s: %v", js, err)
+	}
+	if b, ok := v.(bool); !ok || !b {
+		t.Errorf("BINDING CONTRACT: %s did NOT return a Promise (I/O must be async)", js)
+	}
+}
+
+// TestBindingContract_IOExportsAreAsync asserts the documented I/O exports
+// return Promises (not sync values) — the core JS Binding Contract (CLAUDE.md).
+// Targets are chosen to reject fast so the tier stays quick and side-effect-free.
+func TestBindingContract_IOExportsAreAsync(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	nope := filepath.Join(t.TempDir(), "does-not-exist")
+
+	// Use a fresh engine per check to avoid loop auto-exit between checks
+	// when the previous promise has already settled and the loop has no
+	// pending liveness tokens. Reusing one engine for 6 sequential checks
+	// is flaky under -p=1 and linux timing.
+	checks := []string{
+		`require('osm:os').readFile(` + jsStringLit(nope) + `)`,
+		`require('osm:exec').execv(['this-binary-does-not-exist-xyz'])`,
+		`require('osm:path').glob(` + jsStringLit(filepath.Join(t.TempDir(), "*.nosuchext")) + `)`,
+		`require('osm:fetch').fetch(` + jsStringLit("http://127.0.0.1:1/jscompliance-bindingcontract") + `)`,
+		`require('osm:tokenizer').loadFile(` + jsStringLit(filepath.Join(t.TempDir(), "no-tokenizer.json")) + `)`,
+		`require('osm:ctxutil').buildContext([])`,
+	}
+	for _, js := range checks {
+		engine, _, _ := newComplianceEngine(t, ctx)
+		returnsPromise(t, engine, js)
+	}
+}
+
+// TestBindingContract_LoopLivenessDuringIO asserts the event loop is NOT
+// monopolized by an async I/O op's background goroutine: a setTimeout callback
+// fires WHILE a long async exec is pending. If exec.execv blocked the loop
+// synchronously, the timer could not fire until it returned — failing this.
+//
+// Uses `sleep 1` (unix) as a reliably-slow async op; the event-loop machinery
+// is platform-agnostic, so unix coverage (macOS + Linux gates) is sufficient
+// evidence. skipSlow (1s exec). Skipped on Windows + short mode.
+func TestBindingContract_LoopLivenessDuringIO(t *testing.T) {
+	skipSlow(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("liveness-via-sleep uses unix `sleep`; loop machinery is platform-agnostic")
+	}
+	t.Parallel()
+	ctx := context.Background()
+	engine, _, _ := newComplianceEngine(t, ctx)
+
+	v, err := evalJS(t, engine, `(function(){
+		return new Promise(function(resolve){
+			var timerFired = false;
+			require('osm:exec').execv(['sleep','1']).then(function(){ resolve(timerFired); });
+			setTimeout(function(){ timerFired = true; }, 100);
+		});
+	})()`, defaultEvalTimeout)
+	if err != nil {
+		t.Fatalf("liveness probe failed: %v", err)
+	}
+	if b, ok := v.(bool); !ok || !b {
+		t.Errorf("BINDING CONTRACT: event loop was monopolized — 100ms setTimeout did not fire during the 1s async exec")
+	}
+}
+
+// TestBindingContract_TermmuxWaitShouldBeAsync encodes WAIT-1: termmux
+// CaptureSession.wait() is SYNCHRONOUS/blocking (internal/builtin/termmux/
+// module.go:615 returns a map, blocks on cs.Wait()), unlike exec.spawn.wait()
+// which is async (exec.go:150 returns a Promise). This violates the JS Binding
+// Contract (a subprocess wait is I/O that must be async).
+//
+// This is FIXABLE-IN-REPO (the termmux package is in this repo). The fix is
+// concrete: rebind wait to Promisify, mirroring exec.go:154-171 AND the
+// existing async termmux passthrough binding at module.go:674-701. pr-split
+// (the only termmux consumer) NEVER calls CaptureSession.wait() — it polls
+// isDone()/exitCode() — so there are ZERO production callers. The cost is in
+// the termmux PACKAGE tests (module_capture_test.go, ~6 sites) which call
+// cs.wait() synchronously on a runtime with NO event loop; making it async
+// requires adding loop+adapter infra to those tests + migrating the sites.
+//
+// Per the compliance directive: this test FAILS (not skips) on Unix until the
+// fix lands. The Windows guard remains a skip (termmux requires a Unix PTY).
+func TestBindingContract_TermmuxWaitShouldBeAsync(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("termmux requires Unix PTY")
+	}
+	skipSlow(t) // real PTY subprocess
+	ctx := context.Background()
+	engine, _, _ := newComplianceEngine(t, ctx)
+	dir := t.TempDir()
+	// A CaptureSession that exits immediately (echo).
+	v, err := evalJS(t, engine, `(function(){
+		var tm = require('osm:termmux');
+		var cs = tm.newCaptureSession('echo', ['wait1-probe'], { dir: `+jsStringLit(dir)+` });
+		var w = cs.wait(); // should be a Promise when fixed
+		return (w !== null && w !== undefined && typeof w === 'object' && typeof w.then === 'function');
+	})()`, defaultEvalTimeout)
+	if err != nil {
+		t.Fatalf("termmux.wait probe: %v", err)
+	}
+	if b, _ := v.(bool); !b {
+		t.Errorf("WAIT-1: termmux CaptureSession.wait() must return a Promise (binding contract); got %v", v)
+	}
+}

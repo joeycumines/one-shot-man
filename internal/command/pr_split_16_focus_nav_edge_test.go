@@ -26,7 +26,7 @@ func TestChunk16_FocusActivate_Strategy(t *testing.T) {
 		s.focusIndex = 0; // strategy-auto
 		r = sendKey(s, 'enter');
 		if (globalThis.prSplit.runtime.mode !== 'auto') return 'FAIL: enter on auto did not select';
-		if (r[0].claudeCheckStatus !== 'checking') return 'FAIL: auto did not start claude check';
+		if (r[0].agentCheckStatus !== 'checking') return 'FAIL: auto did not start agent check';
 
 		return 'OK';
 	})()`)
@@ -38,17 +38,17 @@ func TestChunk16_FocusActivate_Strategy(t *testing.T) {
 	}
 }
 
-func TestChunk16_FocusActivate_TestClaude(t *testing.T) {
+func TestChunk16_FocusActivate_TestAgent(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
-		// Set mode to auto so test-claude button appears (index 3).
+		// Set mode to auto so test-agent button appears (index 3).
 		globalThis.prSplit.runtime.mode = 'auto';
-		s.focusIndex = 3; // test-claude
+		s.focusIndex = 3; // test-agent
 		var r = sendKey(s, 'enter');
-		if (r[0].claudeCheckStatus !== 'checking') return 'FAIL: enter on test-claude did not start check';
+		if (r[0].agentCheckStatus !== 'checking') return 'FAIL: enter on test-agent did not start check';
 
 		return 'OK';
 	})()`)
@@ -56,7 +56,7 @@ func TestChunk16_FocusActivate_TestClaude(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("focus activate test-claude: %v", raw)
+		t.Errorf("focus activate test-agent: %v", raw)
 	}
 }
 
@@ -79,11 +79,11 @@ func TestChunk16_FocusActivate_PlanReviewButtons(t *testing.T) {
 		r = sendKey(s, 'enter');
 		if (r[0].wizardState !== 'CONFIG') return 'FAIL: enter on plan-regenerate: state=' + r[0].wizardState;
 
-		// ask-claude button is at index 5.
+		// ask-agent button is at index 5.
 		s = initState('PLAN_REVIEW');
-		s.focusIndex = 5; // ask-claude
+		s.focusIndex = 5; // ask-agent
 		r = sendKey(s, 'enter');
-		if (!r[0].claudeConvo.active) return 'FAIL: enter on ask-claude did not open convo';
+		if (!r[0].agentConvo.active) return 'FAIL: enter on ask-agent did not open convo';
 
 		return 'OK';
 	})()`)
@@ -190,7 +190,7 @@ func TestChunk16_FocusActivate_ErrorBackRestoresSplitView(t *testing.T) {
 		s.wizard.transition('ERROR');
 		s.wizardState = 'ERROR';
 		s.errorFromState = 'CONFIG';
-		s.errorSplitViewState = {enabled: true, focus: 'claude', tab: 'verify'};
+		s.errorSplitViewState = {enabled: true, focus: 'agent', tab: 'verify'};
 		s.splitViewEnabled = false;
 		s.splitViewFocus = 'wizard';
 		s.splitViewTab = 'output';
@@ -204,7 +204,7 @@ func TestChunk16_FocusActivate_ErrorBackRestoresSplitView(t *testing.T) {
 		var r = sendKey(s, 'enter');
 		if (r[0].wizardState !== 'CONFIG') return 'FAIL: back should restore CONFIG, got: ' + r[0].wizardState;
 		if (!r[0].splitViewEnabled) return 'FAIL: splitViewEnabled should be restored';
-		if (r[0].splitViewFocus !== 'claude') return 'FAIL: splitViewFocus should be restored, got: ' + r[0].splitViewFocus;
+		if (r[0].splitViewFocus !== 'agent') return 'FAIL: splitViewFocus should be restored, got: ' + r[0].splitViewFocus;
 		if (r[0].splitViewTab !== 'verify') return 'FAIL: splitViewTab should be restored, got: ' + r[0].splitViewTab;
 		if (r[0].errorFromState) return 'FAIL: errorFromState should be cleared, got: ' + r[0].errorFromState;
 		if (r[0].errorSplitViewState !== null) return 'FAIL: errorSplitViewState should be cleared';
@@ -219,20 +219,20 @@ func TestChunk16_FocusActivate_ErrorBackRestoresSplitView(t *testing.T) {
 	}
 }
 
-func TestChunk16_FocusActivate_ErrorAskClaude(t *testing.T) {
+func TestChunk16_FocusActivate_ErrorAskAgent(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		// error-ask-claude only appears when claudeExecutor exists.
-		globalThis.prSplit._state.claudeExecutor = {};
+		// error-ask-agent only appears when agentExecutor exists.
+		globalThis.prSplit._state.agentExecutor = {};
 
 		var s = initState('ERROR_RESOLUTION');
-		// With claudeExecutor set, focus elements are: 5 resolve buttons + error-ask-claude.
-		s.focusIndex = 5; // error-ask-claude
+		// With agentExecutor set, focus elements are: 5 resolve buttons + error-ask-agent.
+		s.focusIndex = 5; // error-ask-agent
 		var r = sendKey(s, 'enter');
-		if (!r[0].claudeConvo.active) return 'FAIL: enter on error-ask-claude did not open convo';
-		if (r[0].claudeConvo.context !== 'error-resolution') return 'FAIL: context wrong';
+		if (!r[0].agentConvo.active) return 'FAIL: enter on error-ask-agent did not open convo';
+		if (r[0].agentConvo.context !== 'error-resolution') return 'FAIL: context wrong';
 
 		return 'OK';
 	})()`)
@@ -240,7 +240,7 @@ func TestChunk16_FocusActivate_ErrorAskClaude(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("focus activate error-ask-claude: %v", raw)
+		t.Errorf("focus activate error-ask-agent: %v", raw)
 	}
 }
 
@@ -553,14 +553,14 @@ func TestChunk16_ViewportScroll_Keys(t *testing.T) {
 }
 
 // TestChunk16_CtrlBracketTermmux verifies that the _onToggle callback
-// (used by the toggleModel wrapper) dispatches through the Claude proxy's
+// (used by the toggleModel wrapper) dispatches through the Agent proxy's
 // passthrough (activate → switchTo → restore) when a pinned SessionID exists.
 // Task 5: Updated to use session-specific passthrough pattern.
 func TestChunk16_CtrlBracketTermmux(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var activateCalls = [];
 		var switchCalled = false;
 		globalThis.tuiMux = {
@@ -570,15 +570,15 @@ func TestChunk16_CtrlBracketTermmux(t *testing.T) {
 			switchTo: function() { switchCalled = true; return {reason: 'toggle'}; },
 			snapshot: function(id) { return { fullScreen: '', plainText: '' }; }
 		};
-		// Set pinned Claude SessionID.
-		var savedCID = prSplit._state.claudeSessionID;
-		prSplit._state.claudeSessionID = 5;
+		// Set pinned Agent SessionID.
+		var savedCID = prSplit._state.agentSessionID;
+		prSplit._state.agentSessionID = 5;
 
-		var result = globalThis.prSplit._onToggle();
+		var result = await globalThis.prSplit._onToggle();
 
 		delete globalThis.tuiMux;
-		if (savedCID !== undefined) prSplit._state.claudeSessionID = savedCID;
-		else delete prSplit._state.claudeSessionID;
+		if (savedCID !== undefined) prSplit._state.agentSessionID = savedCID;
+		else delete prSplit._state.agentSessionID;
 
 		if (!switchCalled) return 'FAIL: _onToggle did not call switchTo';
 		if (result.skipped) return 'FAIL: should not be skipped';
@@ -611,11 +611,11 @@ func TestChunk16_TickPassthroughOverlay(t *testing.T) {
 		// Should not crash and should still have help open.
 		if (!r[0].showHelp) return 'FAIL: tick closed help overlay';
 
-		// Claude convo overlay should also let ticks through.
+		// Agent convo overlay should also let ticks through.
 		s.showHelp = false;
-		s.claudeConvo.active = true;
+		s.agentConvo.active = true;
 		r = update({type: 'Tick', id: 'unknown-tick'}, s);
-		if (!r[0].claudeConvo.active) return 'FAIL: tick closed claude convo';
+		if (!r[0].agentConvo.active) return 'FAIL: tick closed agent convo';
 
 		return 'OK';
 	})()`)
@@ -717,11 +717,11 @@ func TestChunk16_OverlayPriority(t *testing.T) {
 		r = sendKey(s, '?');
 		if (r[0].showHelp) return 'FAIL: ? leaked through editor dialog';
 
-		// Claude convo intercepts all.
+		// Agent convo intercepts all.
 		s = initState('PLAN_REVIEW');
-		s.claudeConvo.active = true;
+		s.agentConvo.active = true;
 		r = sendKey(s, '?');
-		if (r[0].showHelp) return 'FAIL: ? leaked through claude convo';
+		if (r[0].showHelp) return 'FAIL: ? leaked through agent convo';
 
 		// Inline title editing intercepts all keys.
 		s = initState('PLAN_EDITOR');
@@ -753,7 +753,7 @@ func TestChunk16_GetFocusElements_AllStates(t *testing.T) {
 		function check(state, minCount, label) {
 			var s = initState(state);
 			if (state === 'ERROR_RESOLUTION') {
-				globalThis.prSplit._state.claudeExecutor = {};
+				globalThis.prSplit._state.agentExecutor = {};
 			}
 			var elems = globalThis.prSplit._getFocusElements(s);
 			if (!elems || elems.length < minCount) {
@@ -763,11 +763,11 @@ func TestChunk16_GetFocusElements_AllStates(t *testing.T) {
 
 		// CONFIG: auto, heuristic, directory, toggle-advanced, nav-next = 5 minimum.
 		check('CONFIG', 5, 'CONFIG');
-		// PLAN_REVIEW: 3 cards + plan-edit + plan-regenerate + ask-claude + nav-next = 7.
+		// PLAN_REVIEW: 3 cards + plan-edit + plan-regenerate + ask-agent + nav-next = 7.
 		check('PLAN_REVIEW', 7, 'PLAN_REVIEW');
 		// PLAN_EDITOR: 3 cards + editor-move + editor-rename + editor-merge + nav-next = 7.
 		check('PLAN_EDITOR', 7, 'PLAN_EDITOR');
-		// ERROR_RESOLUTION: 5 buttons + error-ask-claude + nav-next = 7.
+		// ERROR_RESOLUTION: 5 buttons + error-ask-agent + nav-next = 7.
 		check('ERROR_RESOLUTION', 7, 'ERROR_RESOLUTION');
 		// FINALIZATION: final-report + final-create-prs + final-done + nav-next = 4.
 		check('FINALIZATION', 4, 'FINALIZATION');

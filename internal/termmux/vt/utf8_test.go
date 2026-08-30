@@ -130,3 +130,39 @@ func TestUTF8Accum_NewSequenceInterrupts(t *testing.T) {
 		t.Fatalf("re-feed complete: got (%U, %v), want ('é', true)", r, ok)
 	}
 }
+
+func TestUTF8Accum_InvalidStartC0(t *testing.T) {
+	var a UTF8Accum
+	r, ok := a.Feed(0xC0)
+	if !ok || r != utf8.RuneError {
+		t.Fatalf("0xC0 start: got (%U, %v), want (RuneError, true)", r, ok)
+	}
+}
+
+func TestUTF8Accum_InvalidStartC1(t *testing.T) {
+	var a UTF8Accum
+	r, ok := a.Feed(0xC1)
+	if !ok || r != utf8.RuneError {
+		t.Fatalf("0xC1 start: got (%U, %v), want (RuneError, true)", r, ok)
+	}
+}
+
+func TestUTF8Accum_TruncatedTwoByte(t *testing.T) {
+	var a UTF8Accum
+	r, ok := a.Feed(0xC3)
+	if ok {
+		t.Fatalf("first byte should not complete: got (%U, true)", r)
+	}
+	if !a.Pending() {
+		t.Fatal("should be pending after start byte")
+	}
+}
+
+func TestUTF8Accum_TruncatedThreeByte(t *testing.T) {
+	var a UTF8Accum
+	_, _ = a.Feed(0xE6)
+	_, _ = a.Feed(0xBC)
+	if !a.Pending() {
+		t.Fatal("should be pending after 2 of 3 bytes")
+	}
+}

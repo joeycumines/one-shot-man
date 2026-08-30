@@ -9,25 +9,25 @@ import (
 // ---------------------------------------------------------------------------
 //  T113: startAutoAnalysis must NOT call synchronous isAvailable()
 //
-//  Verifies that when the Claude executor is unresolved, startAutoAnalysis
-//  defers to the async check-claude tick instead of blocking the BubbleTea
-//  event loop. Also verifies handleClaudeCheckPoll correctly resumes or
+//  Verifies that when the Agent executor is unresolved, startAutoAnalysis
+//  defers to the async check-agent tick instead of blocking the BubbleTea
+//  event loop. Also verifies handleAgentCheckPoll correctly resumes or
 //  falls back when pendingAutoAnalysis is set.
 //
 //  Access pattern: st = prSplit._state (closure-scoped in chunk 16 IIFE),
 //  so tests use globalThis.prSplit._state to manipulate the executor.
 //  startAutoAnalysis is triggered via handleNext (Enter key on CONFIG with
-//  mode=auto). handleClaudeCheckPoll is triggered via Tick id=claude-check-poll.
+//  mode=auto). handleAgentCheckPoll is triggered via Tick id=agent-check-poll.
 // ---------------------------------------------------------------------------
 
 // TestChunk16_StartAutoAnalysis_DefersWhenUnresolved verifies that
-// startAutoAnalysis returns a check-claude tick when the executor is
+// startAutoAnalysis returns a check-agent tick when the executor is
 // freshly created and not yet resolved (resolved === null).
 func TestChunk16_StartAutoAnalysis_DefersWhenUnresolved(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		if (typeof prSplitConfig === 'undefined') {
 			prSplitConfig = {
 				cleanupOnFailure: false,
@@ -55,10 +55,10 @@ func TestChunk16_StartAutoAnalysis_DefersWhenUnresolved(t *testing.T) {
 			s.configFieldEditing = null;
 
 			// Create an executor that is NOT resolved.
-			globalThis.prSplit._state.claudeExecutor = { resolved: null };
+			globalThis.prSplit._state.agentExecutor = { resolved: null };
 
 			// Trigger via Enter key on CONFIG → handleNext → startAutoAnalysis.
-			var r = sendKey(s, 'enter');
+			var r = await sendKey(s, 'enter');
 			var state = r[0];
 			var cmd = r[1];
 
@@ -86,7 +86,7 @@ func TestChunk16_StartAutoAnalysis_ProceedsWhenResolved(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		if (typeof prSplitConfig === 'undefined') {
 			prSplitConfig = {
 				cleanupOnFailure: false,
@@ -116,12 +116,12 @@ func TestChunk16_StartAutoAnalysis_ProceedsWhenResolved(t *testing.T) {
 		s.configFieldEditing = null;
 
 		// Create a RESOLVED executor.
-		globalThis.prSplit._state.claudeExecutor = {
-			resolved: { command: 'claude', type: 'claude-code' },
+		globalThis.prSplit._state.agentExecutor = {
+			resolved: { command: 'agent', type: 'agent-code' },
 			isAvailable: function() { return true; }
 		};
 
-		var r = sendKey(s, 'enter');
+		var r = await sendKey(s, 'enter');
 		var state = r[0];
 
 		if (state.pendingAutoAnalysis) {
@@ -144,14 +144,14 @@ func TestChunk16_StartAutoAnalysis_ProceedsWhenResolved(t *testing.T) {
 	}
 }
 
-// TestChunk16_HandleClaudeCheckPoll_ResumesPendingAutoAnalysis verifies
-// handleClaudeCheckPoll dispatches startAutoAnalysis when the async check
+// TestChunk16_HandleAgentCheckPoll_ResumesPendingAutoAnalysis verifies
+// handleAgentCheckPoll dispatches startAutoAnalysis when the async check
 // completes successfully and pendingAutoAnalysis is true.
-func TestChunk16_HandleClaudeCheckPoll_ResumesPendingAutoAnalysis(t *testing.T) {
+func TestChunk16_HandleAgentCheckPoll_ResumesPendingAutoAnalysis(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		if (typeof prSplitConfig === 'undefined') {
 			prSplitConfig = {
 				cleanupOnFailure: false,
@@ -166,7 +166,7 @@ func TestChunk16_HandleClaudeCheckPoll_ResumesPendingAutoAnalysis(t *testing.T) 
 		prSplit.runtime.verifyCommand = '';
 		prSplit.runtime.mode = 'auto';
 
-		// Mock gitExec - handleClaudeCheckPoll calls startAutoAnalysis which calls handleConfigState.
+		// Mock gitExec - handleAgentCheckPoll calls startAutoAnalysis which calls handleConfigState.
 		var restoreGit = setupGitMock();
 		try {
 			setupPlanCache();
@@ -178,15 +178,15 @@ func TestChunk16_HandleClaudeCheckPoll_ResumesPendingAutoAnalysis(t *testing.T) 
 			s.autoSplitRunning = false;
 			s.autoSplitResult = null;
 
-			s.claudeCheckRunning = false;
-			s.claudeCheckStatus = 'available';
+			s.agentCheckRunning = false;
+			s.agentCheckStatus = 'available';
 			s.pendingAutoAnalysis = true;
-			globalThis.prSplit._state.claudeExecutor = {
-				resolved: { command: 'claude', type: 'claude-code' },
+			globalThis.prSplit._state.agentExecutor = {
+				resolved: { command: 'agent', type: 'agent-code' },
 				isAvailable: function() { return true; }
 			};
 
-			var r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+			var r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			var state = r[0];
 
 			if (state.pendingAutoAnalysis) {
@@ -205,18 +205,18 @@ func TestChunk16_HandleClaudeCheckPoll_ResumesPendingAutoAnalysis(t *testing.T) 
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("handleClaudeCheckPoll resumes pending: %v", raw)
+		t.Errorf("handleAgentCheckPoll resumes pending: %v", raw)
 	}
 }
 
-// TestChunk16_HandleClaudeCheckPoll_FallsBackWhenUnavailable verifies
-// handleClaudeCheckPoll falls back to heuristic analysis when the async
-// check completes with Claude unavailable and pendingAutoAnalysis is true.
-func TestChunk16_HandleClaudeCheckPoll_FallsBackWhenUnavailable(t *testing.T) {
+// TestChunk16_HandleAgentCheckPoll_FallsBackWhenUnavailable verifies
+// handleAgentCheckPoll falls back to heuristic analysis when the async
+// check completes with Agent unavailable and pendingAutoAnalysis is true.
+func TestChunk16_HandleAgentCheckPoll_FallsBackWhenUnavailable(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		if (typeof prSplitConfig === 'undefined') {
 			prSplitConfig = {
 				cleanupOnFailure: false,
@@ -231,7 +231,7 @@ func TestChunk16_HandleClaudeCheckPoll_FallsBackWhenUnavailable(t *testing.T) {
 		prSplit.runtime.verifyCommand = '';
 		prSplit.runtime.mode = 'auto';
 
-		// Mock gitExec - handleClaudeCheckPoll calls startAnalysis which calls handleConfigState.
+		// Mock gitExec - handleAgentCheckPoll calls startAnalysis which calls handleConfigState.
 		var restoreGit = setupGitMock();
 		try {
 			setupPlanCache();
@@ -241,12 +241,12 @@ func TestChunk16_HandleClaudeCheckPoll_FallsBackWhenUnavailable(t *testing.T) {
 			s.outputLines = [];
 			s.outputAutoScroll = true;
 
-			s.claudeCheckRunning = false;
-			s.claudeCheckStatus = 'unavailable';
+			s.agentCheckRunning = false;
+			s.agentCheckStatus = 'unavailable';
 			s.pendingAutoAnalysis = true;
-			globalThis.prSplit._state.claudeExecutor = { resolved: null };
+			globalThis.prSplit._state.agentExecutor = { resolved: null };
 
-			var r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+			var r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			var state = r[0];
 
 			if (state.pendingAutoAnalysis) {
@@ -265,7 +265,7 @@ func TestChunk16_HandleClaudeCheckPoll_FallsBackWhenUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("handleClaudeCheckPoll fallback: %v", raw)
+		t.Errorf("handleAgentCheckPoll fallback: %v", raw)
 	}
 }
 
@@ -277,7 +277,7 @@ func TestChunk16_StartAutoAnalysis_NoSyncIsAvailableCall(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		if (typeof prSplitConfig === 'undefined') {
 			prSplitConfig = {
 				cleanupOnFailure: false,
@@ -305,7 +305,7 @@ func TestChunk16_StartAutoAnalysis_NoSyncIsAvailableCall(t *testing.T) {
 			s.configFieldEditing = null;
 
 			// Create an unresolved executor with a TRAP on isAvailable.
-			globalThis.prSplit._state.claudeExecutor = {
+			globalThis.prSplit._state.agentExecutor = {
 				resolved: null,
 				isAvailable: function() {
 					throw new Error('TRAP: sync isAvailable was called');
@@ -314,7 +314,7 @@ func TestChunk16_StartAutoAnalysis_NoSyncIsAvailableCall(t *testing.T) {
 
 			// Should NOT throw — deferral via .resolved check happens first.
 			try {
-				var r = sendKey(s, 'enter');
+				var r = await sendKey(s, 'enter');
 				var state = r[0];
 				if (!state.pendingAutoAnalysis) {
 					return 'FAIL: expected deferral (pendingAutoAnalysis), got ' + state.pendingAutoAnalysis;
@@ -335,22 +335,22 @@ func TestChunk16_StartAutoAnalysis_NoSyncIsAvailableCall(t *testing.T) {
 	}
 }
 
-// TestChunk16_HandleClaudeCheckPoll_NoPendingNoAction verifies that
-// handleClaudeCheckPoll returns [s, null] when there is no pending
+// TestChunk16_HandleAgentCheckPoll_NoPendingNoAction verifies that
+// handleAgentCheckPoll returns [s, null] when there is no pending
 // auto analysis — normal non-deferred completion path.
-func TestChunk16_HandleClaudeCheckPoll_NoPendingNoAction(t *testing.T) {
+func TestChunk16_HandleAgentCheckPoll_NoPendingNoAction(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		setupPlanCache();
 		var s = initState('CONFIG');
 
-		s.claudeCheckRunning = false;
-		s.claudeCheckStatus = 'available';
+		s.agentCheckRunning = false;
+		s.agentCheckStatus = 'available';
 		s.pendingAutoAnalysis = false;
 
-		var r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+		var r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 		var state = r[0];
 		var cmd = r[1];
 

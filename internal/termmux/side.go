@@ -14,6 +14,9 @@ const (
 	ExitContext
 	// ExitError means an I/O error occurred.
 	ExitError
+	// ExitSuspended means the child process was stopped (SIGTSTP) and
+	// passthrough exited so the parent can resume the child later.
+	ExitSuspended
 )
 
 // String returns a human-readable exit reason name.
@@ -27,6 +30,8 @@ func (r ExitReason) String() string {
 		return "context"
 	case ExitError:
 		return "error"
+	case ExitSuspended:
+		return "suspended"
 	default:
 		return fmt.Sprintf("unknown(%d)", int(r))
 	}

@@ -23,7 +23,7 @@
     var renderTitleBar = prSplit._renderTitleBar;
     var renderNavBar = prSplit._renderNavBar;
     var renderStatusBar = prSplit._renderStatusBar;
-    var renderClaudePane = prSplit._renderClaudePane;
+    var renderAgentPane = prSplit._renderAgentPane;
     var renderOutputPane = prSplit._renderOutputPane;
     var renderVerifyPane = prSplit._renderVerifyPane;
     var viewForState = prSplit._viewForState;
@@ -31,7 +31,7 @@
     var viewConfirmCancelOverlay = prSplit._viewConfirmCancelOverlay;
     var viewReportOverlay = prSplit._viewReportOverlay;
     var syncReportOverlay = prSplit._syncReportOverlay;
-    var viewClaudeConvoOverlay = prSplit._viewClaudeConvoOverlay;
+    var viewAgentConvoOverlay = prSplit._viewAgentConvoOverlay;
 
     // Cross-chunk imports — state from chunks 13-14.
     var st = prSplit._state;
@@ -59,7 +59,7 @@
     var startPRCreation = prSplit._startPRCreation;
     var formatReportForDisplay = prSplit._formatReportForDisplay;
     var handleErrorResolutionChoice = prSplit._handleErrorResolutionChoice;
-    var openClaudeConvo = prSplit._openClaudeConvo;
+    var openAgentConvo = prSplit._openAgentConvo;
 
     // Cross-chunk imports — from chunk 16e (mouse helpers).
     var mouseToTermBytes = prSplit._mouseToTermBytes;
@@ -96,31 +96,31 @@
         if (zone.inBounds('nav-next', msg)) {
             return handleNext(s);
         }
-        // Claude status badge — T45: click to re-open split-view if closed.
+        // Agent status badge — T45: click to re-open split-view if closed.
         // Task 5: Use pinned SessionID proxy instead of raw session() check.
-        if (zone.inBounds('claude-status', msg)) {
-            var claudePane = getInteractivePaneSession(s, 'claude');
-            if (claudePane && typeof claudePane.isRunning === 'function' &&
-                claudePane.isRunning()) {
+        if (zone.inBounds('agent-status', msg)) {
+            var agentPane = getInteractivePaneSession(s, 'agent');
+            if (agentPane && typeof agentPane.isRunning === 'function' &&
+                agentPane.isRunning()) {
                 // T45: If split-view is not open, open it (re-clears manual dismiss).
                 if (!s.splitViewEnabled) {
                     s.splitViewEnabled = true;
                     s.splitViewFocus = 'wizard';
-                    s.splitViewTab = 'claude';
-                    s.claudeManuallyDismissed = false;
+                    s.splitViewTab = 'agent';
+                    s.agentManuallyDismissed = false;
                     syncMainViewport(s); // T120: sync dimensions after toggle.
-                    return [s, tea.tick(C.TICK_INTERVAL_MS, 'claude-screenshot')];
+                    return [s, tea.tick(C.TICK_INTERVAL_MS, 'agent-screenshot')];
                 }
-                // Already open — switch to Claude tab.
-                s.splitViewTab = 'claude';
-                s.splitViewFocus = 'claude';
+                // Already open — switch to Agent tab.
+                s.splitViewTab = 'agent';
+                s.splitViewFocus = 'agent';
             }
             return [s, null];
         }
         // T44: Split-view tab bar clicks.
         if (s.splitViewEnabled) {
-            if (zone.inBounds('split-tab-claude', msg)) {
-                s.splitViewTab = 'claude';
+            if (zone.inBounds('split-tab-agent', msg)) {
+                s.splitViewTab = 'agent';
                 return [s, null];
             }
             if (zone.inBounds('split-tab-output', msg)) {
@@ -132,13 +132,13 @@
                 return [s, null];
             }
         }
-        // T46: Claude question prompt click — activate input.
-        if (s.claudeQuestionDetected && zone.inBounds('claude-question-input', msg)) {
-            s.claudeQuestionInputActive = true;
+        // T46: Agent question prompt click — activate input.
+        if (s.agentQuestionDetected && zone.inBounds('agent-question-input', msg)) {
+            s.agentQuestionInputActive = true;
             return [s, null];
         }
         // T327/T328: Forward unmatched press to focused child terminal.
-        if (s.splitViewEnabled && s.splitViewFocus === 'claude' &&
+        if (s.splitViewEnabled && s.splitViewFocus === 'agent' &&
             s.splitViewTab !== 'output') {
             var ofs = computeSplitPaneContentOffset(s);
             var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
@@ -167,27 +167,27 @@
                 if (zone.inBounds('strategy-' + strategies[si], msg)) {
                     prSplit.runtime.mode = strategies[si];
                     s.userHasSelectedStrategy = true; // T42: manual selection overrides auto-detect
-                    // Trigger Claude check for 'auto'.
+                    // Trigger Agent check for 'auto'.
                     if (strategies[si] === 'auto') {
-                        s.claudeCheckStatus = 'checking';
-                        return [s, tea.tick(1, 'check-claude')];
+                        s.agentCheckStatus = 'checking';
+                        return [s, tea.tick(1, 'check-agent')];
                     }
                     // Clear check status when switching away.
-                    s.claudeCheckStatus = null;
-                    s.claudeResolvedInfo = null;
-                    s.claudeCheckError = null;
-                    s.claudeCheckRunning = false;
-                    s.claudeCheckProgressMsg = '';
+                    s.agentCheckStatus = null;
+                    s.agentResolvedInfo = null;
+                    s.agentCheckError = null;
+                    s.agentCheckRunning = false;
+                    s.agentCheckProgressMsg = '';
                     return [s, null];
                 }
             }
             // Test Connection button.
-            if (zone.inBounds('test-claude', msg)) {
-                if (s.claudeCheckStatus === 'checking') return [s, null];
-                s.claudeCheckStatus = 'checking';
+            if (zone.inBounds('test-agent', msg)) {
+                if (s.agentCheckStatus === 'checking') return [s, null];
+                s.agentCheckStatus = 'checking';
                 prSplit.runtime.mode = 'auto';
                 s.userHasSelectedStrategy = true; // T42: manual action overrides auto-detect
-                return [s, tea.tick(1, 'check-claude')];
+                return [s, tea.tick(1, 'check-agent')];
             }
             if (zone.inBounds('toggle-advanced', msg)) {
                 s.showAdvanced = !s.showAdvanced;
@@ -327,9 +327,9 @@
                 s.wizard.transition('CONFIG');
                 return [s, null];
             }
-            // Ask Claude: open conversation overlay for plan review feedback.
-            if (zone.inBounds('ask-claude', msg) && !s.isProcessing) {
-                return openClaudeConvo(s, 'plan-review');
+            // Ask Agent: open conversation overlay for plan review feedback.
+            if (zone.inBounds('ask-agent', msg) && !s.isProcessing) {
+                return openAgentConvo(s, 'plan-review');
             }
         }
 
@@ -397,9 +397,9 @@
         // Error resolution: resolution choice buttons.
         if (s.wizardState === 'ERROR_RESOLUTION') {
             // Crash-specific recovery buttons.
-            if (s.claudeCrashDetected) {
-                if (zone.inBounds('resolve-restart-claude', msg)) {
-                    return handleErrorResolutionChoice(s, 'restart-claude');
+            if (s.agentCrashDetected) {
+                if (zone.inBounds('resolve-restart-agent', msg)) {
+                    return handleErrorResolutionChoice(s, 'restart-agent');
                 }
                 if (zone.inBounds('resolve-fallback-heuristic', msg)) {
                     return handleErrorResolutionChoice(s, 'fallback-heuristic');
@@ -415,9 +415,9 @@
                     return handleErrorResolutionChoice(s, resolveChoices[ri] === 'auto' ? 'auto-resolve' : resolveChoices[ri]);
                 }
             }
-            // Ask Claude about error resolution.
-            if (zone.inBounds('error-ask-claude', msg)) {
-                return openClaudeConvo(s, 'error-resolution');
+            // Ask Agent about error resolution.
+            if (zone.inBounds('error-ask-agent', msg)) {
+                return openAgentConvo(s, 'error-resolution');
             }
         }
 
@@ -520,18 +520,18 @@
             // without mutating s.splitViewEnabled (view purity).
             var splitViewViable = s.splitViewEnabled && s.wizardState !== 'ERROR';
             var wizardH = 0;
-            var claudeH = 0;
+            var agentH = 0;
             if (splitViewViable) {
-                // Split-view: wizard top, Claude bottom.
+                // Split-view: wizard top, Agent bottom.
                 // -1 for the pane divider between them.
                 // Minimum split requires 3 + 1 + 3 = 7 lines.
                 var minPaneH = 3;
                 wizardH = Math.max(minPaneH, Math.floor(vpHeight * s.splitViewRatio));
-                // Clamp wizardH so Claude pane gets at least minPaneH.
+                // Clamp wizardH so Agent pane gets at least minPaneH.
                 wizardH = Math.min(wizardH, vpHeight - minPaneH - 1);
-                claudeH = vpHeight - wizardH - 1;
+                agentH = vpHeight - wizardH - 1;
 
-                if (wizardH < minPaneH || claudeH < minPaneH) {
+                if (wizardH < minPaneH || agentH < minPaneH) {
                     // Terminal too small for split view; render normal
                     // but don't mutate state — restored on next resize.
                     splitViewViable = false;
@@ -557,10 +557,10 @@
                 var wizardPane = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
 
                 // Pane divider with tab bar and split-view hint.
-                // T44: Tab bar: [Claude] [Output] with active/inactive styling.
-                var claudeTabLabel = s.splitViewTab === 'claude'
-                    ? styles.primaryButton().render(' Claude ')
-                    : styles.dim().render(' Claude ');
+                // T44: Tab bar: [Agent] [Output] with active/inactive styling.
+                var agentTabLabel = s.splitViewTab === 'agent'
+                    ? styles.primaryButton().render(' Agent ')
+                    : styles.dim().render(' Agent ');
                 var outputTabLabel = s.splitViewTab === 'output'
                     ? styles.primaryButton().render(' Output ')
                     : styles.dim().render(' Output ');
@@ -574,14 +574,14 @@
                         : styles.dim().render(' Verify ');
                 }
                 // Task 8: Shell tab removed from tab bar.
-                var tabBar = zone.mark('split-tab-claude', claudeTabLabel) + ' ' +
+                var tabBar = zone.mark('split-tab-agent', agentTabLabel) + ' ' +
                     zone.mark('split-tab-output', outputTabLabel) +
                     (outputCount ? ' ' + outputCount : '') +
                     (verifyTabLabel ? ' ' + zone.mark('split-tab-verify', verifyTabLabel) : '');
                 var focusLabel = s.splitViewFocus === 'wizard'
                     ? '\u25b2 Wizard'
                     : (s.splitViewTab === 'output' ? '\u25bc Output'
-                       : (s.splitViewTab === 'verify' ? '\u25bc Verify' : '\u25bc Claude'));
+                       : (s.splitViewTab === 'verify' ? '\u25bc Verify' : '\u25bc Agent'));
                 var splitHint = 'Ctrl+Tab: cycle  Ctrl+O: tab  Ctrl+L: close';
                 // T44: labelW must include tabBar visual width + all separator decorators.
                 // Template: leftFill + '┤ ' + tabBar + ' · ' + focusLabel + ' · ' + splitHint + ' ├' + rightFill
@@ -593,14 +593,14 @@
                 var paneDivider = styles.dim().render(
                     leftFill + '\u2524 ' + tabBar + ' \u00b7 ' + focusLabel + ' \u00b7 ' + splitHint + ' \u251c' + rightFill);
 
-                // Task 8: Bottom pane — Claude, Output, Verify tabs only.
+                // Task 8: Bottom pane — Agent, Output, Verify tabs only.
                 var bottomPane;
                 if (s.splitViewTab === 'output') {
-                    bottomPane = renderOutputPane(s, w, claudeH);
+                    bottomPane = renderOutputPane(s, w, agentH);
                 } else if (s.splitViewTab === 'verify') {
-                    bottomPane = renderVerifyPane(s, w, claudeH);
+                    bottomPane = renderVerifyPane(s, w, agentH);
                 } else {
-                    bottomPane = renderClaudePane(s, w, claudeH);
+                    bottomPane = renderAgentPane(s, w, agentH);
                 }
 
                 screenContent = lipgloss.joinVertical(lipgloss.Left,
@@ -672,9 +672,9 @@
             }
         }
 
-        // Overlay: Claude Conversation (T16).
-        if (s.claudeConvo.active) {
-            var convoPanel = viewClaudeConvoOverlay(s);
+        // Overlay: Agent Conversation (T16).
+        if (s.agentConvo.active) {
+            var convoPanel = viewAgentConvoOverlay(s);
             fullView = lipgloss.place(w, h,
                 lipgloss.Center, lipgloss.Center,
                 convoPanel,
@@ -755,12 +755,12 @@
                 focusIndex: 0,
                 _prevWizardState: null,
 
-                // Claude availability (CONFIG screen).
-                claudeCheckStatus: null,   // null | 'checking' | 'available' | 'unavailable'
-                claudeResolvedInfo: null,  // null | { command, type }
-                claudeCheckError: null,    // null | error string
-                claudeCheckRunning: false, // true while async resolveAsync is running
-                claudeCheckProgressMsg: '', // progress message from resolveAsync
+                // Agent availability (CONFIG screen).
+                agentCheckStatus: null,   // null | 'checking' | 'available' | 'unavailable'
+                agentResolvedInfo: null,  // null | { command, type }
+                agentCheckError: null,    // null | error string
+                agentCheckRunning: false, // true while async resolveAsync is running
+                agentCheckProgressMsg: '', // progress message from resolveAsync
                 userHasSelectedStrategy: false, // T42: true when user manually selects a strategy
 
                 // T43: Config validation state.
@@ -824,20 +824,20 @@
                 verifyFallbackRunning: false,  // true while async verifySplitAsync is running
                 verifyFallbackError: null,     // error string from fallback verification
 
-                // Split-view (Claude window-in-window).
+                // Split-view (Agent window-in-window).
                 splitViewEnabled: false,       // true when split-view is active
                 splitViewRatio: 0.6,           // wizard gets this fraction of content height
-                splitViewFocus: 'wizard',      // 'wizard' or 'claude' — which pane is focused
-                splitViewTab: 'claude',        // Task 8: 'claude' | 'output' | 'verify' — active tab
-                claudeScreenshot: '',          // cached plain-text screenshot from tuiMux
-                claudeScreen: '',              // cached ANSI-styled screen from tuiMux (T28)
-                claudeViewOffset: 0,           // scroll offset in Claude pane (lines from bottom)
+                splitViewFocus: 'wizard',      // 'wizard' or 'agent' — which pane is focused
+                splitViewTab: 'agent',        // Task 8: 'agent' | 'output' | 'verify' — active tab
+                agentScreenshot: '',          // cached plain-text screenshot from tuiMux
+                agentScreen: '',              // cached ANSI-styled screen from tuiMux (T28)
+                agentViewOffset: 0,           // scroll offset in Agent pane (lines from bottom)
 
-                // T45: Auto-attach Claude pane state.
-                claudeAutoAttached: false,     // true once auto-attach has fired (prevents re-trigger)
-                claudeManuallyDismissed: false, // true when user explicitly closed split-view via Ctrl+L
-                claudeAutoAttachNotif: '',     // transient notification text (auto-dismissed after 5s)
-                claudeAutoAttachNotifAt: 0,    // Date.now() when notification was set
+                // T45: Auto-attach Agent pane state.
+                agentAutoAttached: false,     // true once auto-attach has fired (prevents re-trigger)
+                agentManuallyDismissed: false, // true when user explicitly closed split-view via Ctrl+L
+                agentAutoAttachNotif: '',     // transient notification text (auto-dismissed after 5s)
+                agentAutoAttachNotifAt: 0,    // Date.now() when notification was set
 
                 // T073: Clipboard flash notification (Report overlay copy).
                 clipboardFlash: '',             // transient flash text after copy attempt
@@ -845,7 +845,7 @@
 
                 // T62: Split-view copy/paste selection state.
                 selectionActive: false,         // true when text selection is in progress
-                selectionPane: '',              // pane with active selection: 'claude' | 'output' | 'verify'
+                selectionPane: '',              // pane with active selection: 'agent' | 'output' | 'verify'
                 selectionStartRow: 0,           // selection anchor row (0-indexed)
                 selectionStartCol: 0,           // selection anchor column (0-indexed)
                 selectionEndRow: 0,             // selection end row (0-indexed, moves with keyboard/mouse)
@@ -853,23 +853,23 @@
                 selectionByMouse: false,        // true if selection was initiated by mouse drag
                 selectedText: '',               // extracted plain text of current selection
 
-                // T46: Claude question detection state.
-                claudeQuestionDetected: false,  // true when question pattern detected in Claude output
-                claudeQuestionLine: '',         // the detected question line from Claude's output
-                claudeQuestionInputText: '',    // user's response text buffer
-                claudeQuestionInputActive: false, // user has focused the inline response input
-                claudeConversations: [],        // Q&A history [{question: string, answer: string, ts: number}]
+                // T46: Agent question detection state.
+                agentQuestionDetected: false,  // true when question pattern detected in Agent output
+                agentQuestionLine: '',         // the detected question line from Agent's output
+                agentQuestionInputText: '',    // user's response text buffer
+                agentQuestionInputActive: false, // user has focused the inline response input
+                agentConversations: [],        // Q&A history [{question: string, answer: string, ts: number}]
 
                 // T44: Process output capture state.
                 outputLines: [],               // accumulated output buffer (strings, may contain ANSI)
                 outputViewOffset: 0,           // scroll offset in output pane (lines from bottom)
                 outputAutoScroll: true,        // auto-scroll to latest output
 
-                // Claude conversation (T16).
-                claudeConvo: {
+                // Agent conversation (T16).
+                agentConvo: {
                     active: false,             // conversation overlay is visible
                     context: null,             // 'plan-review' | 'error-resolution' | null
-                    history: [],               // [{ role: 'user'|'claude', text: string, ts: number }]
+                    history: [],               // [{ role: 'user'|'agent', text: string, ts: number }]
                     inputText: '',             // current text buffer
                     sending: false,            // async send in flight
                     waitingForTool: null,       // MCP tool being waited on (or null)
@@ -877,15 +877,15 @@
                     scrollOffset: 0,           // scroll offset in history view
                     spawnProgress: null        // T5: on-demand spawn progress message
                 },
-                claudeOnDemandSpawning: false, // T5: async Claude spawn in flight
+                agentOnDemandSpawning: false, // T5: async Agent spawn in flight
 
                 // Auto-split pipeline state.
                 autoSplitRunning: false,
                 autoSplitResult: null,
 
-                // Claude crash detection.
-                claudeCrashDetected: false,
-                lastClaudeHealthCheckMs: 0,
+                // Agent crash detection.
+                agentCrashDetected: false,
+                lastAgentHealthCheckMs: 0,
 
                 // Results.
                 equivalenceResult: null,
@@ -912,32 +912,47 @@
 
         // Model init returns a startup heartbeat command so the update loop
         // can keep draining mux events even when the TUI is otherwise idle.
+        var applyResumeState = function(state) {
+            var prev = prSplit.previousState;
+            if (!prev) return;
+            var meta = prev._resumeMeta || {};
+            state.resumeFound = true;
+            state.resumeStale = !!meta.stale;
+            state.resumeAgeMs = meta.ageMs || 0;
+            var sessions = prev.sessions || [];
+            state.resumeSessions = [];
+            for (var ri = 0; ri < sessions.length; ri++) {
+                var rs = sessions[ri];
+                state.resumeSessions.push({
+                    name: (rs.target && rs.target.name) || 'unnamed',
+                    kind: (rs.target && rs.target.kind) || 'unknown',
+                    status: rs.status || 'unknown',
+                    pid: rs.pid || 0
+                });
+            }
+            log.info('resume: previous state detected', {
+                sessionCount: sessions.length,
+                stale: state.resumeStale,
+                ageMs: state.resumeAgeMs
+            });
+        };
+
         var _initModelFn = function() {
             var state = _initStateFn();
 
             // Task 10: Populate resume state from previousState if available.
-            if (prSplit.previousState) {
-                var prev = prSplit.previousState;
-                var meta = prev._resumeMeta || {};
-                state.resumeFound = true;
-                state.resumeStale = !!meta.stale;
-                state.resumeAgeMs = meta.ageMs || 0;
-                var sessions = prev.sessions || [];
-                state.resumeSessions = [];
-                for (var ri = 0; ri < sessions.length; ri++) {
-                    var rs = sessions[ri];
-                    state.resumeSessions.push({
-                        name: (rs.target && rs.target.name) || 'unnamed',
-                        kind: (rs.target && rs.target.kind) || 'unknown',
-                        status: rs.status || 'unknown',
-                        pid: rs.pid || 0
-                    });
-                }
-                log.info('resume: previous state detected', {
-                    sessionCount: sessions.length,
-                    stale: state.resumeStale,
-                    ageMs: state.resumeAgeMs
+            // previousState loads asynchronously now; when it lands after
+            // init, applyResumeState applies it and schedules a re-render.
+            if (!prSplit.previousState && typeof prSplit.previousStatePromise === 'object' && prSplit.previousStatePromise) {
+                prSplit.previousStatePromise.then(function(prev) {
+                    if (!prev) return;
+                    prSplit.previousState = prev;
+                    applyResumeState(state);
+                    prSplit._stateRefresh && prSplit._stateRefresh();
                 });
+            }
+            if (prSplit.previousState) {
+                applyResumeState(state);
             }
 
             // T10: Store current model state reference so _onToggle can
@@ -999,20 +1014,15 @@
     // T10: Now dispatches to any focused interactive pane, not only mux.
     // Task 5: Session-specific — uses pinned SessionID via proxy passthrough
     // instead of raw tuiMux.switchTo() which targets the active session.
-    prSplit._onToggle = function() {
-        // Read current model state (stored by _initModelFn on each init).
+    prSplit._onToggle = async function() {
         var tuiState = prSplit._toggleModelState;
-        var focusTab = tuiState && tuiState.splitViewTab || 'claude';
+        var focusTab = tuiState && tuiState.splitViewTab || 'agent';
         var focusPane = tuiState && tuiState.splitViewFocus || 'wizard';
 
         log.printf('ctrl+] toggle: focusPane=%s focusTab=%s', focusPane, focusTab);
 
-        // Determine which pane to passthrough to. When wizard is focused
-        // (no split or split with wizard selected), default to Claude.
-        var targetTab = (focusPane === 'wizard') ? 'claude' : focusTab;
+        var targetTab = (focusPane === 'wizard') ? 'agent' : focusTab;
 
-        // Obtain the proxy for the target session — returns null if no
-        // pinned SessionID or no interactive session exists.
         var session = (typeof prSplit._getInteractivePaneSession === 'function')
             ? prSplit._getInteractivePaneSession(tuiState, targetTab)
             : null;
@@ -1020,12 +1030,9 @@
         if (session && typeof session.passthrough === 'function' &&
             typeof session.isRunning === 'function' && session.isRunning()) {
             log.printf('ctrl+] toggle: dispatching to %s session passthrough', targetTab);
-            // Focus events are emitted by tuiMux.switchTo() inside the proxy,
-            // so no additional tui.emit calls needed here.
-            return session.passthrough();
+            return await session.passthrough();
         }
 
-        // No interactive session — return indicator for ToggleReturn handler.
         log.printf('ctrl+] toggle: no child available, skipping');
         return {skipped: true, reason: 'no_child'};
     };

@@ -23,21 +23,75 @@ type color struct {
 
 // Attr holds text attributes (colors, flags) for a terminal cell.
 type Attr struct {
-	FG      color
-	BG      color
-	Bold    bool
-	Dim     bool
-	Italic  bool
-	Under   bool
-	Blink   bool
-	Inverse bool
-	Hidden  bool
-	Strike  bool
+	FG          color
+	BG          color
+	Bold        bool
+	Dim         bool
+	Italic      bool
+	Under       bool
+	Blink       bool
+	Inverse     bool
+	Hidden      bool
+	Strike      bool
+	SearchMatch bool
 }
 
 // IsZero reports whether a is the default (zero-value) attribute.
+// SearchMatch is a virtual rendering hint and does not affect IsZero.
 func (a Attr) IsZero() bool {
-	return a == Attr{}
+	return a.sgr() == Attr{}
+}
+
+// sgr returns a copy of the attribute with SearchMatch cleared.
+// SearchMatch is a virtual rendering hint (not a real SGR attribute)
+// and must be excluded from SGR comparison and output.
+func (a Attr) sgr() Attr {
+	a.SearchMatch = false
+	return a
+}
+
+func (a Attr) SGR() string {
+	return SGRDiff(Attr{}, a.sgr())
+}
+
+// SGRString returns the SGR parameter string representing the attribute
+// state from default. The returned string contains only numeric parameters
+// (e.g., "0", "1", "1;31"), without the ESC[ prefix or m suffix.
+func (a Attr) SGRString() string {
+	if a.sgr() == (Attr{}) {
+		return "0"
+	}
+	var parts []string
+	if a.Bold {
+		parts = append(parts, "1")
+	}
+	if a.Dim {
+		parts = append(parts, "2")
+	}
+	if a.Italic {
+		parts = append(parts, "3")
+	}
+	if a.Under {
+		parts = append(parts, "4")
+	}
+	if a.Blink {
+		parts = append(parts, "5")
+	}
+	if a.Inverse {
+		parts = append(parts, "7")
+	}
+	if a.Hidden {
+		parts = append(parts, "8")
+	}
+	if a.Strike {
+		parts = append(parts, "9")
+	}
+	parts = append(parts, colorSGR(a.FG, false)...)
+	parts = append(parts, colorSGR(a.BG, true)...)
+	if len(parts) == 0 {
+		return "0"
+	}
+	return strings.Join(parts, ";")
 }
 
 // ParseSGR processes a slice of CSI 'm' parameters and returns the
@@ -149,8 +203,9 @@ func ParseSGR(params []int, current Attr) Attr {
 // SGRDiff generates the minimal ANSI escape sequence to transition from
 // prev to next attributes. Returns empty string if no change needed.
 func SGRDiff(prev, next Attr) string {
-	if next == (Attr{}) {
-		if prev == (Attr{}) {
+	ps, ns := prev.sgr(), next.sgr()
+	if ns == (Attr{}) {
+		if ps == (Attr{}) {
 			return ""
 		}
 		return "\x1b[0m"
@@ -158,49 +213,48 @@ func SGRDiff(prev, next Attr) string {
 
 	var parts []string
 
-	// Start with reset if any flags turned off or colors reverted to default.
-	needsReset := (prev.Bold && !next.Bold) ||
-		(prev.Dim && !next.Dim) ||
-		(prev.Italic && !next.Italic) ||
-		(prev.Under && !next.Under) ||
-		(prev.Blink && !next.Blink) ||
-		(prev.Inverse && !next.Inverse) ||
-		(prev.Hidden && !next.Hidden) ||
-		(prev.Strike && !next.Strike) ||
-		(prev.FG != next.FG && next.FG.kind == kindDefault) ||
-		(prev.BG != next.BG && next.BG.kind == kindDefault)
+	needsReset := (ps.Bold && !ns.Bold) ||
+		(ps.Dim && !ns.Dim) ||
+		(ps.Italic && !ns.Italic) ||
+		(ps.Under && !ns.Under) ||
+		(ps.Blink && !ns.Blink) ||
+		(ps.Inverse && !ns.Inverse) ||
+		(ps.Hidden && !ns.Hidden) ||
+		(ps.Strike && !ns.Strike) ||
+		(ps.FG != ns.FG && ns.FG.kind == kindDefault) ||
+		(ps.BG != ns.BG && ns.BG.kind == kindDefault)
 
-	if needsReset || prev == (Attr{}) {
+	if needsReset || ps == (Attr{}) {
 		parts = append(parts, "0")
 	}
 
-	if next.Bold {
+	if ns.Bold {
 		parts = append(parts, "1")
 	}
-	if next.Dim {
+	if ns.Dim {
 		parts = append(parts, "2")
 	}
-	if next.Italic {
+	if ns.Italic {
 		parts = append(parts, "3")
 	}
-	if next.Under {
+	if ns.Under {
 		parts = append(parts, "4")
 	}
-	if next.Blink {
+	if ns.Blink {
 		parts = append(parts, "5")
 	}
-	if next.Inverse {
+	if ns.Inverse {
 		parts = append(parts, "7")
 	}
-	if next.Hidden {
+	if ns.Hidden {
 		parts = append(parts, "8")
 	}
-	if next.Strike {
+	if ns.Strike {
 		parts = append(parts, "9")
 	}
 
-	parts = append(parts, colorSGR(next.FG, false)...)
-	parts = append(parts, colorSGR(next.BG, true)...)
+	parts = append(parts, colorSGR(ns.FG, false)...)
+	parts = append(parts, colorSGR(ns.BG, true)...)
 
 	if len(parts) == 0 {
 		return ""

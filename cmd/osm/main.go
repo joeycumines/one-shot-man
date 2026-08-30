@@ -23,10 +23,10 @@ func main() {
 }
 
 func run() error {
-	// Load configuration
+	// Load configuration; fall back to empty config if missing.
 	cfg, err := config.Load()
 	if err != nil {
-		// LoadFromPath already returns NewConfig() for os.IsNotExist,
+		// LoadFile already returns NewConfig() for os.IsNotExist,
 		// so any error here is a real problem (permissions, parse,
 		// symlink attack). Warn but continue with empty config.
 		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to load config: %v\n", err)

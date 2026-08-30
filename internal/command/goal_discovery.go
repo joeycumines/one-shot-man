@@ -126,7 +126,7 @@ func NewGoalDiscovery(cfg *config.Config) *GoalDiscovery {
 	if val, exists := cfg.GetGlobalOption("goal.debug-discovery"); exists {
 		if parsed, _ := strconv.ParseBool(val); parsed {
 			discoveryConfig.DebugLogFunc = func(format string, args ...any) {
-				slog.Debug("goal-discovery: "+format, "args", args)
+				slog.Debug("goal discovery", "message", fmt.Sprintf(format, args...))
 			}
 		}
 	}
@@ -391,7 +391,7 @@ func (gd *GoalDiscovery) traverseForGoalDirs(startDir string) []string {
 		if err != nil {
 			// If we can't resolve symlinks (e.g., permission denied), log and stop traversal
 			if errors.Is(err, os.ErrPermission) {
-				slog.Warn("permission denied resolving symlinks, stopping upward traversal", "directory", dir)
+				slog.Warn("permission denied resolving symlinks stopping upward traversal", "directory", dir)
 				gd.debugf("traversal: permission denied at %s: %v", dir, err)
 			} else {
 				gd.debugf("traversal: symlink resolution failed at %s: %v", dir, err)

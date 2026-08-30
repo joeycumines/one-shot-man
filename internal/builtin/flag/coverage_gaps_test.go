@@ -3,22 +3,12 @@ package flag
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// ─── Edge-case tests for osm:flag module ────────────────────────────────────
-//
-// Starting coverage: 99.2% (Require 100%, newFlagSetWrapper 99.2%).
-// The sole uncovered block is the `default:` case in get() (flag.go:143-144),
-// a defensive dead-code path — kind is always "string"/"int"/"bool"/"float64"
-// as set by the corresponding definition methods, so the default case is
-// unreachable through the JS API.
-//
-// These tests exercise edge-case inputs (minimal args, undefined/null values,
-// multiple parses) to improve test robustness without moving the coverage
-// needle.
+// ─── Edge-case tests for osm:flag module
 
 func setupRuntime(t *testing.T) *goja.Runtime {
 	t.Helper()

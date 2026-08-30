@@ -31,7 +31,7 @@
     function startExecution(s) { return prSplit._startExecution(s); }
     function startEquivCheck(s) { return prSplit._startEquivCheck(s); }
     function startPRCreation(s) { return prSplit._startPRCreation(s); }
-    function openClaudeConvo(s, context) { return prSplit._openClaudeConvo(s, context); }
+    function openAgentConvo(s, context) { return prSplit._openAgentConvo(s, context); }
     function handleErrorResolutionChoice(s, choice) { return prSplit._handleErrorResolutionChoice(s, choice); }
     function formatReportForDisplay(report) { return prSplit._formatReportForDisplay(report); }
     var C = prSplit._TUI_CONSTANTS;
@@ -77,7 +77,7 @@
             s.errorSplitViewState = {
                 enabled: !!s.splitViewEnabled,
                 focus: s.splitViewFocus || 'wizard',
-                tab: s.splitViewTab || 'claude'
+                tab: s.splitViewTab || 'agent'
             };
         }
 
@@ -472,7 +472,7 @@
                 if (restore) {
                     s.splitViewEnabled = !!restore.enabled;
                     s.splitViewFocus = restore.focus || 'wizard';
-                    s.splitViewTab = restore.tab || 'claude';
+                    s.splitViewTab = restore.tab || 'agent';
                     s.errorSplitViewState = null;
                 }
                 s.errorFromState = '';
@@ -528,7 +528,7 @@
                 s.configFieldEditing = null;
                 s.configFieldValue = '';
                 // If mode is 'auto' (AI-assisted), dispatch the full
-                // automated pipeline (Claude classification → plan → execute).
+                // automated pipeline (Agent classification → plan → execute).
                 if (prSplit.runtime.mode === 'auto') {
                     return startAutoAnalysis(s);
                 }
@@ -595,8 +595,8 @@
                 // Show Test Connection button when auto is selected or
                 // a previous check result is visible.
                 if ((prSplit.runtime.mode || 'heuristic') === 'auto' ||
-                    s.claudeCheckStatus) {
-                    elems.push({id: 'test-claude', type: 'button'});
+                    s.agentCheckStatus) {
+                    elems.push({id: 'test-agent', type: 'button'});
                 }
                 // Advanced options toggle — always reachable by Tab.
                 elems.push({id: 'toggle-advanced', type: 'button'});
@@ -619,7 +619,7 @@
                 }
                 elems.push({id: 'plan-edit',       type: 'button'});
                 elems.push({id: 'plan-regenerate',  type: 'button'});
-                elems.push({id: 'ask-claude',       type: 'button'});
+                elems.push({id: 'ask-agent',       type: 'button'});
                 elems.push({id: 'nav-next',         type: 'nav'});
                 elems.push({id: 'nav-cancel', type: 'nav'});  // T012
                 return elems;
@@ -639,9 +639,9 @@
             }
             case 'ERROR_RESOLUTION': {
                 var elems = [];
-                if (s.claudeCrashDetected) {
+                if (s.agentCrashDetected) {
                     // Crash-specific recovery options.
-                    elems.push({id: 'resolve-restart-claude',     type: 'button'});
+                    elems.push({id: 'resolve-restart-agent',     type: 'button'});
                     elems.push({id: 'resolve-fallback-heuristic', type: 'button'});
                     elems.push({id: 'resolve-abort',              type: 'button'});
                 } else {
@@ -653,9 +653,9 @@
                         {id: 'resolve-abort',  type: 'button'}
                     ];
                 }
-                // T5: Show Ask Claude when Claude binary is available (on-demand spawn).
-                if ((st.claudeExecutor || s.claudeCheckStatus === 'available') && !s.claudeCrashDetected) {
-                    elems.push({id: 'error-ask-claude', type: 'button'});
+                // T5: Show Ask Agent when Agent binary is available (on-demand spawn).
+                if ((st.agentExecutor || s.agentCheckStatus === 'available') && !s.agentCrashDetected) {
+                    elems.push({id: 'error-ask-agent', type: 'button'});
                 }
                 elems.push({id: 'nav-next', type: 'nav'});
                 elems.push({id: 'nav-cancel', type: 'nav'});  // T012
@@ -826,27 +826,27 @@
             var stratName = focused.id.replace('strategy-', '');
             prSplit.runtime.mode = stratName;
             s.userHasSelectedStrategy = true; // T42: manual selection overrides auto-detect
-            // Trigger Claude availability check for 'auto' strategy.
+            // Trigger Agent availability check for 'auto' strategy.
             if (stratName === 'auto') {
-                s.claudeCheckStatus = 'checking';
-                return [s, tea.tick(1, 'check-claude')];
+                s.agentCheckStatus = 'checking';
+                return [s, tea.tick(1, 'check-agent')];
             }
             // Clear check status when switching away from 'auto'.
-            s.claudeCheckStatus = null;
-            s.claudeResolvedInfo = null;
-            s.claudeCheckError = null;
-            s.claudeCheckRunning = false;
-            s.claudeCheckProgressMsg = '';
+            s.agentCheckStatus = null;
+            s.agentResolvedInfo = null;
+            s.agentCheckError = null;
+            s.agentCheckRunning = false;
+            s.agentCheckProgressMsg = '';
             return [s, null];
         }
 
-        // Test Connection button re-triggers Claude check.
-        if (focused.id === 'test-claude') {
-            if (s.claudeCheckStatus === 'checking') return [s, null];
-            s.claudeCheckStatus = 'checking';
+        // Test Connection button re-triggers Agent check.
+        if (focused.id === 'test-agent') {
+            if (s.agentCheckStatus === 'checking') return [s, null];
+            s.agentCheckStatus = 'checking';
             prSplit.runtime.mode = 'auto';
             s.userHasSelectedStrategy = true; // T42: manual action overrides auto-detect
-            return [s, tea.tick(1, 'check-claude')];
+            return [s, tea.tick(1, 'check-agent')];
         }
 
         // Split card selection.
@@ -868,8 +868,8 @@
                 s.wizard.transition('CONFIG');
                 return [s, null];
             }
-            if (focused.id === 'ask-claude' && !s.isProcessing) {
-                return openClaudeConvo(s, 'plan-review');
+            if (focused.id === 'ask-agent' && !s.isProcessing) {
+                return openAgentConvo(s, 'plan-review');
             }
             // Plan editor buttons — open dialogs.
             if (focused.id === 'editor-move') {
@@ -910,9 +910,9 @@
                 return handleErrorResolutionChoice(s,
                     choice === 'auto' ? 'auto-resolve' : choice);
             }
-            // Ask Claude about error.
-            if (focused.id === 'error-ask-claude') {
-                return openClaudeConvo(s, 'error-resolution');
+            // Ask Agent about error.
+            if (focused.id === 'error-ask-agent') {
+                return openAgentConvo(s, 'error-resolution');
             }
             // Toggle advanced options on CONFIG screen.
             if (focused.id === 'toggle-advanced') {

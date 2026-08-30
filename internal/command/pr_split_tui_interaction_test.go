@@ -95,8 +95,8 @@ func testState(splitEnabled bool, focus, tab string) string {
 		showConfirmCancel: false,
 		showingReport: false,
 		activeEditorDialog: null,
-		claudeConvo: { active: false },
-		claudeQuestionInputActive: false,
+		agentConvo: { active: false },
+		agentQuestionInputActive: false,
 		splitViewEnabled: ` + enabled + `,
 		splitViewFocus: '` + focus + `',
 		splitViewTab: '` + tab + `',
@@ -104,20 +104,20 @@ func testState(splitEnabled bool, focus, tab string) string {
 		needsInitClear: false,
 		activeVerifySession: null,
 		focusIndex: 0,
-		claudeViewOffset: 0,
+		agentViewOffset: 0,
 		verifyViewportOffset: 0,
 		verifyAutoScroll: true,
 		selectionActive: false,
 		selectedText: '',
 		clipboardFlash: '',
 		clipboardFlashAt: 0,
-		claudeScreenshot: '',
-		claudeScreen: '',
+		agentScreenshot: '',
+		agentScreen: '',
 		outputLines: [],
-		claudeManuallyDismissed: false,
-		claudeAutoAttached: false,
-		claudeAutoAttachNotif: '',
-		claudeAutoAttachNotifAt: 0,
+		agentManuallyDismissed: false,
+		agentAutoAttached: false,
+		agentAutoAttachNotif: '',
+		agentAutoAttachNotifAt: 0,
 		lastVerifyInterruptTime: 0,
 		verifyScreen: '',
 		verifyPaused: false
@@ -130,7 +130,7 @@ func testState(splitEnabled bool, focus, tab string) string {
 // InteractiveSession.Write.
 //
 // Verifies that a printable key ('x') and a special key ('enter') are
-// correctly translated and delivered to the mock PTY when the Claude pane
+// correctly translated and delivered to the mock PTY when the Agent pane
 // is focused in split-view mode.
 func TestKeystrokeForwardingToPTY(t *testing.T) {
 	skipSlow(t)
@@ -142,7 +142,7 @@ func TestKeystrokeForwardingToPTY(t *testing.T) {
 	t.Cleanup(func() { _ = rec.Close() })
 
 	id, err := mgr.Register(rec, termmux.SessionTarget{
-		Name: "claude",
+		Name: "agent",
 		Kind: termmux.SessionKindPTY,
 	})
 	if err != nil {
@@ -152,14 +152,14 @@ func TestKeystrokeForwardingToPTY(t *testing.T) {
 		t.Fatalf("activate mock session: %v", err)
 	}
 
-	// Task 5: Set pinned Claude SessionID so getInteractivePaneSession works.
-	_, err = evalJS(fmt.Sprintf(`prSplit._state.claudeSessionID = %d`, id))
+	// Task 5: Set pinned Agent SessionID so getInteractivePaneSession works.
+	_, err = evalJS(fmt.Sprintf(`prSplit._state.agentSessionID = %d`, id))
 	if err != nil {
-		t.Fatalf("set claudeSessionID: %v", err)
+		t.Fatalf("set agentSessionID: %v", err)
 	}
 
-	// Build state with split-view enabled, claude focused.
-	state := testState(true, "claude", "claude")
+	// Build state with split-view enabled, agent focused.
+	state := testState(true, "agent", "agent")
 
 	// ── Forward printable key 'x' ────────────────────────────────────
 	_, err = evalJS(`
@@ -198,13 +198,13 @@ func TestKeystrokeForwardingToPTY(t *testing.T) {
 		prSplit._wizardUpdateImpl(__msg3, __s3);
 	`)
 	if err != nil {
-		// 'up' is actually in CLAUDE_RESERVED_KEYS as a scroll key.
+		// 'up' is actually in AGENT_RESERVED_KEYS as a scroll key.
 		// This is expected — reserved keys are NOT forwarded.
 		// Verify by checking that no additional write was recorded.
 		t.Logf("up key returned error (expected for reserved key): %v", err)
 	}
 
-	// 'up' is reserved: used for Claude pane scrolling, not PTY forwarding.
+	// 'up' is reserved: used for Agent pane scrolling, not PTY forwarding.
 	// Verify no additional write was sent.
 	writes = rec.getWrites()
 	if len(writes) != 2 {
@@ -232,7 +232,7 @@ func TestKeystrokeForwardingToPTY(t *testing.T) {
 // → mouseToTermBytes → writeMouseToPane → pinned session proxy write() → mgr.Input →
 // InteractiveSession.Write.
 //
-// Verifies that a mouse motion event in the Claude pane generates the
+// Verifies that a mouse motion event in the Agent pane generates the
 // correct SGR mouse escape sequence and delivers it to the mock PTY.
 func TestMouseForwardingToPTY(t *testing.T) {
 	skipSlow(t)
@@ -244,7 +244,7 @@ func TestMouseForwardingToPTY(t *testing.T) {
 	t.Cleanup(func() { _ = rec.Close() })
 
 	id, err := mgr.Register(rec, termmux.SessionTarget{
-		Name: "claude",
+		Name: "agent",
 		Kind: termmux.SessionKindPTY,
 	})
 	if err != nil {
@@ -254,14 +254,14 @@ func TestMouseForwardingToPTY(t *testing.T) {
 		t.Fatalf("activate mock session: %v", err)
 	}
 
-	// Task 5: Set pinned Claude SessionID so getInteractivePaneSession works.
-	_, err = evalJS(fmt.Sprintf(`prSplit._state.claudeSessionID = %d`, id))
+	// Task 5: Set pinned Agent SessionID so getInteractivePaneSession works.
+	_, err = evalJS(fmt.Sprintf(`prSplit._state.agentSessionID = %d`, id))
 	if err != nil {
-		t.Fatalf("set claudeSessionID: %v", err)
+		t.Fatalf("set agentSessionID: %v", err)
 	}
 
-	// Build state with split-view enabled, claude focused.
-	state := testState(true, "claude", "claude")
+	// Build state with split-view enabled, agent focused.
+	state := testState(true, "agent", "agent")
 
 	// Send a mouse motion event at (x=5, y=30). The handler computes an
 	// offset from the pane position and generates an SGR mouse escape
@@ -322,7 +322,7 @@ func TestResizePropagation(t *testing.T) {
 	t.Cleanup(func() { _ = rec.Close() })
 
 	id, err := mgr.Register(rec, termmux.SessionTarget{
-		Name: "claude",
+		Name: "agent",
 		Kind: termmux.SessionKindPTY,
 	})
 	if err != nil {
@@ -332,13 +332,13 @@ func TestResizePropagation(t *testing.T) {
 		t.Fatalf("activate mock session: %v", err)
 	}
 
-	// Task 5: Set pinned Claude SessionID so getInteractivePaneSession works.
-	_, err = evalJS(fmt.Sprintf(`prSplit._state.claudeSessionID = %d`, id))
+	// Task 5: Set pinned Agent SessionID so getInteractivePaneSession works.
+	_, err = evalJS(fmt.Sprintf(`prSplit._state.agentSessionID = %d`, id))
 	if err != nil {
-		t.Fatalf("set claudeSessionID: %v", err)
+		t.Fatalf("set agentSessionID: %v", err)
 	}
 
-	state := testState(true, "claude", "claude")
+	state := testState(true, "agent", "agent")
 
 	// Send a WindowSize message to trigger handleWindowResize.
 	// handleWindowResize calculates pane dimensions and calls:
@@ -361,7 +361,7 @@ func TestResizePropagation(t *testing.T) {
 	}
 
 	// The JS handler calls resize(paneRows, paneCols) on the pinned
-	// Claude session proxy via getInteractivePaneSession.
+	// Agent session proxy via getInteractivePaneSession.
 	// That proxy uses explicit activation + mgr.Resize, which propagates to all
 	// sessions, including our recording session.
 	resizes := rec.getResizes()
@@ -472,8 +472,8 @@ func TestSessionSwitchInput(t *testing.T) {
 }
 
 // ── TestSplitViewFocusTracking ───────────────────────────────────────────────
-// End-to-end: Verifies that keystrokes are forwarded to the Claude PTY only
-// when splitViewFocus is 'claude', and NOT forwarded when focus is 'wizard'.
+// End-to-end: Verifies that keystrokes are forwarded to the Agent PTY only
+// when splitViewFocus is 'agent', and NOT forwarded when focus is 'wizard'.
 //
 // This exercises the full dispatch path through wizardUpdateImpl →
 // handleKeyMessage and proves the focus guard works correctly.
@@ -487,7 +487,7 @@ func TestSplitViewFocusTracking(t *testing.T) {
 	t.Cleanup(func() { _ = rec.Close() })
 
 	id, err := mgr.Register(rec, termmux.SessionTarget{
-		Name: "claude",
+		Name: "agent",
 		Kind: termmux.SessionKindPTY,
 	})
 	if err != nil {
@@ -497,14 +497,14 @@ func TestSplitViewFocusTracking(t *testing.T) {
 		t.Fatalf("activate mock session: %v", err)
 	}
 
-	// Task 5: Set pinned Claude SessionID so getInteractivePaneSession works.
-	_, err = evalJS(fmt.Sprintf(`prSplit._state.claudeSessionID = %d`, id))
+	// Task 5: Set pinned Agent SessionID so getInteractivePaneSession works.
+	_, err = evalJS(fmt.Sprintf(`prSplit._state.agentSessionID = %d`, id))
 	if err != nil {
-		t.Fatalf("set claudeSessionID: %v", err)
+		t.Fatalf("set agentSessionID: %v", err)
 	}
 
 	// ── Focus on wizard: keystrokes should NOT reach PTY ─────────────
-	wizardState := testState(true, "wizard", "claude")
+	wizardState := testState(true, "wizard", "agent")
 
 	_, err = evalJS(`
 		var __fs1 = ` + wizardState + `;
@@ -520,21 +520,21 @@ func TestSplitViewFocusTracking(t *testing.T) {
 		t.Errorf("wizard focus: expected no PTY writes, got %v", writes)
 	}
 
-	// ── Switch focus to claude: keystrokes SHOULD reach PTY ──────────
-	claudeState := testState(true, "claude", "claude")
+	// ── Switch focus to agent: keystrokes SHOULD reach PTY ──────────
+	agentState := testState(true, "agent", "agent")
 
 	_, err = evalJS(`
-		var __fs2 = ` + claudeState + `;
+		var __fs2 = ` + agentState + `;
 		var __fm2 = { type: 'Key', key: 'y' };
 		prSplit._wizardUpdateImpl(__fm2, __fs2);
 	`)
 	if err != nil {
-		t.Fatalf("wizardUpdateImpl(Key 'y', claude focus): %v", err)
+		t.Fatalf("wizardUpdateImpl(Key 'y', agent focus): %v", err)
 	}
 
 	writes = rec.getWrites()
 	if len(writes) != 1 || writes[0] != "y" {
-		t.Errorf("claude focus: got %v, want [\"y\"]", writes)
+		t.Errorf("agent focus: got %v, want [\"y\"]", writes)
 	}
 
 	// ── Back to wizard: another keystroke should not forward ──────────
@@ -554,21 +554,21 @@ func TestSplitViewFocusTracking(t *testing.T) {
 }
 
 // ── TestCtrlTabCyclesThroughTargets ──────────────────────────────────────────
-// End-to-end: Ctrl+Tab cycles through wizard → claude → output → wizard,
+// End-to-end: Ctrl+Tab cycles through wizard → agent → output → wizard,
 // updating splitViewFocus and splitViewTab at each step.
 //
 // When a verify session is active, the cycle extends:
-// wizard → claude → output → verify → wizard.
+// wizard → agent → output → verify → wizard.
 func TestCtrlTabCyclesThroughTargets(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
 
 	_, evalJS := newPrSplitEvalWithMgr(t)
 
-	// ── Phase 1: Without verify — cycle wizard → claude → output → wizard ──
-	startState := testState(true, "wizard", "claude")
+	// ── Phase 1: Without verify — cycle wizard → agent → output → wizard ──
+	startState := testState(true, "wizard", "agent")
 
-	// Press 1: wizard → claude
+	// Press 1: wizard → agent
 	res, err := evalJS(`
 		var __cs1 = ` + startState + `;
 		var __cm1 = { type: 'Key', key: 'ctrl+tab' };
@@ -578,13 +578,13 @@ func TestCtrlTabCyclesThroughTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ctrl+tab press 1: %v", err)
 	}
-	if got, want := fmt.Sprintf("%v", res), `{"focus":"claude","tab":"claude"}`; got != want {
+	if got, want := fmt.Sprintf("%v", res), `{"focus":"agent","tab":"agent"}`; got != want {
 		t.Errorf("press 1: got %s, want %s", got, want)
 	}
 
-	// Press 2: claude → output
+	// Press 2: agent → output
 	res, err = evalJS(`
-		var __cs2 = ` + testState(true, "claude", "claude") + `;
+		var __cs2 = ` + testState(true, "agent", "agent") + `;
 		var __cm2 = { type: 'Key', key: 'ctrl+tab' };
 		prSplit._wizardUpdateImpl(__cm2, __cs2);
 		JSON.stringify({ focus: __cs2.splitViewFocus, tab: __cs2.splitViewTab });
@@ -592,13 +592,13 @@ func TestCtrlTabCyclesThroughTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ctrl+tab press 2: %v", err)
 	}
-	if got, want := fmt.Sprintf("%v", res), `{"focus":"claude","tab":"output"}`; got != want {
+	if got, want := fmt.Sprintf("%v", res), `{"focus":"agent","tab":"output"}`; got != want {
 		t.Errorf("press 2: got %s, want %s", got, want)
 	}
 
 	// Press 3: output → wizard (no verify session, so wraps)
 	res, err = evalJS(`
-		var __cs3 = ` + testState(true, "claude", "output") + `;
+		var __cs3 = ` + testState(true, "agent", "output") + `;
 		var __cm3 = { type: 'Key', key: 'ctrl+tab' };
 		prSplit._wizardUpdateImpl(__cm3, __cs3);
 		JSON.stringify({ focus: __cs3.splitViewFocus, tab: __cs3.splitViewTab });
@@ -623,29 +623,29 @@ func TestCtrlTabCyclesThroughTargets(t *testing.T) {
 		showConfirmCancel: false,
 		showingReport: false,
 		activeEditorDialog: null,
-		claudeConvo: { active: false },
-		claudeQuestionInputActive: false,
+		agentConvo: { active: false },
+		agentQuestionInputActive: false,
 		splitViewEnabled: true,
-		splitViewFocus: 'claude',
+		splitViewFocus: 'agent',
 		splitViewTab: 'output',
 		splitViewRatio: 0.6,
 		needsInitClear: false,
 		activeVerifySession: null,
 		focusIndex: 0,
-		claudeViewOffset: 0,
+		agentViewOffset: 0,
 		verifyViewportOffset: 0,
 		verifyAutoScroll: true,
 		selectionActive: false,
 		selectedText: '',
 		clipboardFlash: '',
 		clipboardFlashAt: 0,
-		claudeScreenshot: '',
-		claudeScreen: '',
+		agentScreenshot: '',
+		agentScreen: '',
 		outputLines: [],
-		claudeManuallyDismissed: false,
-		claudeAutoAttached: false,
-		claudeAutoAttachNotif: '',
-		claudeAutoAttachNotifAt: 0,
+		agentManuallyDismissed: false,
+		agentAutoAttached: false,
+		agentAutoAttachNotif: '',
+		agentAutoAttachNotifAt: 0,
 		lastVerifyInterruptTime: 0,
 		verifyScreen: '$ running verify...',
 		verifyPaused: false
@@ -661,7 +661,7 @@ func TestCtrlTabCyclesThroughTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ctrl+tab with verify (output→verify): %v", err)
 	}
-	if got, want := fmt.Sprintf("%v", res), `{"focus":"claude","tab":"verify"}`; got != want {
+	if got, want := fmt.Sprintf("%v", res), `{"focus":"agent","tab":"verify"}`; got != want {
 		t.Errorf("with verify: got %s, want %s", got, want)
 	}
 
@@ -677,29 +677,29 @@ func TestCtrlTabCyclesThroughTargets(t *testing.T) {
 		showConfirmCancel: false,
 		showingReport: false,
 		activeEditorDialog: null,
-		claudeConvo: { active: false },
-		claudeQuestionInputActive: false,
+		agentConvo: { active: false },
+		agentQuestionInputActive: false,
 		splitViewEnabled: true,
-		splitViewFocus: 'claude',
+		splitViewFocus: 'agent',
 		splitViewTab: 'verify',
 		splitViewRatio: 0.6,
 		needsInitClear: false,
 		activeVerifySession: null,
 		focusIndex: 0,
-		claudeViewOffset: 0,
+		agentViewOffset: 0,
 		verifyViewportOffset: 0,
 		verifyAutoScroll: true,
 		selectionActive: false,
 		selectedText: '',
 		clipboardFlash: '',
 		clipboardFlashAt: 0,
-		claudeScreenshot: '',
-		claudeScreen: '',
+		agentScreenshot: '',
+		agentScreen: '',
 		outputLines: [],
-		claudeManuallyDismissed: false,
-		claudeAutoAttached: false,
-		claudeAutoAttachNotif: '',
-		claudeAutoAttachNotifAt: 0,
+		agentManuallyDismissed: false,
+		agentAutoAttached: false,
+		agentAutoAttachNotif: '',
+		agentAutoAttachNotifAt: 0,
 		lastVerifyInterruptTime: 0,
 		verifyScreen: '$ running verify...',
 		verifyPaused: false

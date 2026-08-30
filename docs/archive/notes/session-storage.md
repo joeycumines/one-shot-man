@@ -746,12 +746,12 @@ The StateManager maintains:
 - Provides `GetBackend(name, sessionID string)` to retrieve a backend instance.
 
 ### `memory_backend.go`
-- Implements the `InMemoryBackend` for ephemeral storage.
+- Implements the `MemoryBackend` for ephemeral storage.
 - Key methods:
-  - `NewInMemoryBackend(sessionID string)`: Creates a new backend with a global in-memory store.
+  - `NewMemoryBackend(sessionID string)`: Creates a new backend with a global in-memory store.
   - `LoadSession(sessionID string)`: Retrieves a deep copy of the session from memory.
   - `SaveSession(session *Session)`: Stores a deep copy of the session in memory.
-- Includes `ClearAllInMemorySessions()` for testing.
+- Includes `ClearAllMemorySessions()` for testing.
 
 ### `schema.go`
 - Defines the `Session` structure for serialized state:

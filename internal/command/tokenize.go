@@ -83,7 +83,7 @@ func (c *TokenizeCommand) Execute(args []string, stdout, stderr io.Writer) error
 		text = string(data)
 	}
 
-	tok, err := tokenizer.LoadTokenizerFromFile(tokenizerPath)
+	tok, err := tokenizer.LoadTokenizerFile(tokenizerPath)
 	if err != nil {
 		return fmt.Errorf("loading tokenizer: %w", err)
 	}

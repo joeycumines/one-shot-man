@@ -6,7 +6,7 @@
 
 (function(prSplit) {
 
-    // --- validateClassification — validates Claude classification output ---
+    // --- validateClassification — validates Agent classification output ---
     // Accepts the categories array format: [{name, description, files}, ...].
     // Optionally cross-checks file paths against knownFiles (array of paths).
     // Returns {valid: true} or {valid: false, errors: [...]}.
@@ -142,7 +142,7 @@
         return { valid: errors.length === 0, errors: errors };
     }
 
-    // --- validateSplitPlan — validates Claude-generated split plan (stages) ---
+    // --- validateSplitPlan — validates Agent-generated split plan (stages) ---
     // The plan has a stages/splits array where each element has
     // {name, files, ...}.
     function validateSplitPlan(stages) {
@@ -196,7 +196,7 @@
         return { valid: errors.length === 0, errors: errors };
     }
 
-    // --- validateResolution — validates Claude conflict resolution output ---
+    // --- validateResolution — validates Agent conflict resolution output ---
     // A valid resolution has at least one of:
     //   - patches: non-empty array of {file, content} objects
     //   - commands: non-empty array of {command, ...} objects

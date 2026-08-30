@@ -6,8 +6,8 @@ import (
 	"sync"
 )
 
-// InMemoryBackend implements StorageBackend using in-memory storage (for testing).
-type InMemoryBackend struct {
+// MemoryBackend implements StorageBackend using in-memory storage (for testing).
+type MemoryBackend struct {
 	sessionID string
 	sessions  map[string]*Session
 }
@@ -20,20 +20,20 @@ var globalInMemoryStore = struct {
 	sessions: make(map[string]*Session),
 }
 
-// NewInMemoryBackend creates a new in-memory storage backend (for testing).
-func NewInMemoryBackend(sessionID string) (*InMemoryBackend, error) {
+// NewMemoryBackend creates a new in-memory storage backend (for testing).
+func NewMemoryBackend(sessionID string) (*MemoryBackend, error) {
 	if sessionID == "" {
 		return nil, ErrEmptySessionID
 	}
 
-	return &InMemoryBackend{
+	return &MemoryBackend{
 		sessionID: sessionID,
 		sessions:  globalInMemoryStore.sessions,
 	}, nil
 }
 
 // LoadSession retrieves a session by its unique ID.
-func (b *InMemoryBackend) LoadSession(sessionID string) (*Session, error) {
+func (b *MemoryBackend) LoadSession(sessionID string) (*Session, error) {
 	if sessionID != b.sessionID {
 		return nil, fmt.Errorf("session ID mismatch: backend is for %q, requested %q", b.sessionID, sessionID)
 	}
@@ -61,7 +61,7 @@ func (b *InMemoryBackend) LoadSession(sessionID string) (*Session, error) {
 }
 
 // SaveSession atomically persists the entire session state.
-func (b *InMemoryBackend) SaveSession(session *Session) error {
+func (b *MemoryBackend) SaveSession(session *Session) error {
 	if session.ID != b.sessionID {
 		return fmt.Errorf("session ID mismatch: backend is for %q, session has %q", b.sessionID, session.ID)
 	}
@@ -86,7 +86,7 @@ func (b *InMemoryBackend) SaveSession(session *Session) error {
 
 // ArchiveSession is a no-op for in-memory backend (for testing).
 // In real tests, archived sessions would be tracked in memory if needed.
-func (b *InMemoryBackend) ArchiveSession(sessionID string, destPath string) error {
+func (b *MemoryBackend) ArchiveSession(sessionID string, destPath string) error {
 	if sessionID != b.sessionID {
 		return fmt.Errorf("session ID mismatch: backend is for %q, archive requested for %q", b.sessionID, sessionID)
 	}
@@ -95,16 +95,16 @@ func (b *InMemoryBackend) ArchiveSession(sessionID string, destPath string) erro
 }
 
 // Close releases any resources (no-op for in-memory backend).
-func (b *InMemoryBackend) Close() error {
+func (b *MemoryBackend) Close() error {
 	return nil
 }
 
-// ClearAllInMemorySessions clears all sessions from the in-memory store (for testing).
-func ClearAllInMemorySessions() {
+// ClearAllMemorySessions clears all sessions from the in-memory store (for testing).
+func ClearAllMemorySessions() {
 	globalInMemoryStore.Lock()
 	globalInMemoryStore.sessions = make(map[string]*Session)
 	globalInMemoryStore.Unlock()
 }
 
-// Ensure InMemoryBackend implements StorageBackend at compile time
-var _ StorageBackend = (*InMemoryBackend)(nil)
+// Ensure MemoryBackend implements StorageBackend at compile time
+var _ StorageBackend = (*MemoryBackend)(nil)

@@ -12,7 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dop251/goja"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/filepathutil"
 )
 
@@ -42,13 +44,13 @@ func expandTildeOnly(path string) (string, error) {
 	return expanded, nil
 }
 
-// Require returns a module loader for `osm:os` that uses the provided base context
-// and a TUI sink for fallback messaging (may be nil).
-func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, module *goja.Object) {
+// Require returns a module loader for `osm:os` that uses the provided base context,
+// event-loop adapter for Promise support, and a TUI sink for fallback messaging (may be nil).
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, tuiSink func(string)) func(vm *goja.Runtime, module *goja.Object) {
 	return func(vm *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
-		// readFile(path: string): { content: string, error: bool, message: string }
+		// readFile(path: string): Promise<{ content: string, error: bool, message: string }>
 		// Automatically expands ~ to the user's home directory before reading.
 		_ = exports.Set("readFile", func(call goja.FunctionCall) goja.Value {
 			var path string
@@ -56,22 +58,58 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 				path = call.Argument(0).String()
 			}
 			if path == "" {
-				return vm.ToValue(map[string]any{"error": true, "message": "empty path", "content": ""})
+				return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(_ context.Context) (any, error) {
+					return map[string]any{"error": true, "message": "empty path", "content": ""}, nil
+				}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 			}
 
 			expanded, err := expandTildeOnly(path)
 			if err != nil {
-				return vm.ToValue(map[string]any{"error": true, "message": err.Error(), "content": ""})
+				return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(_ context.Context) (any, error) {
+					return map[string]any{"error": true, "message": err.Error(), "content": ""}, nil
+				}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 			}
 
-			data, err := os.ReadFile(expanded)
-			if err != nil {
-				return vm.ToValue(map[string]any{"error": true, "message": err.Error(), "content": ""})
-			}
-			return vm.ToValue(map[string]any{"error": false, "message": "", "content": string(data)})
+			return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(_ context.Context) (any, error) {
+				data, err := os.ReadFile(expanded)
+				if err != nil {
+					return map[string]any{"error": true, "message": err.Error(), "content": ""}, nil
+				}
+				return map[string]any{"error": false, "message": "", "content": string(data)}, nil
+			}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 		})
 
-		// fileExists(path: string): boolean
+		// fileExists(path: string): Promise<{ exists: boolean }>
 		// Automatically expands ~ to the user's home directory before checking.
 		_ = exports.Set("fileExists", func(call goja.FunctionCall) goja.Value {
 			var path string
@@ -79,7 +117,19 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 				path = call.Argument(0).String()
 			}
 			if path == "" {
-				return vm.ToValue(false)
+				return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(_ context.Context) (any, error) {
+					return map[string]any{"exists": false}, nil
+				}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 			}
 
 			expanded, err := expandTildeOnly(path)
@@ -91,8 +141,20 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 				panic(vm.NewGoError(fmt.Errorf("fileExists: %w", err)))
 			}
 
-			_, err = os.Stat(expanded)
-			return vm.ToValue(err == nil)
+			return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(_ context.Context) (any, error) {
+				_, err := os.Stat(expanded)
+				return map[string]any{"exists": err == nil}, nil
+			}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 		})
 
 		// isAbsolute(path: string): boolean
@@ -132,7 +194,7 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 			return vm.ToValue(goruntime.GOOS)
 		})
 
-		// openEditor(title, initialContent)
+		// openEditor(title, initialContent): Promise<string>
 		_ = exports.Set("openEditor", func(call goja.FunctionCall) goja.Value {
 			var nameHint, initialContent string
 			if len(call.Arguments) > 0 {
@@ -141,34 +203,70 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 			if len(call.Arguments) > 1 {
 				initialContent = call.Argument(1).String()
 			}
-			ctx, cancel := context.WithCancel(ctx)
-			defer cancel()
-			return vm.ToValue(openEditor(ctx, nameHint, initialContent))
+			return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(ctx context.Context) (any, error) {
+				editorCtx, cancel := context.WithCancel(ctx)
+				defer cancel()
+				return openEditor(editorCtx, nameHint, initialContent), nil
+			}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 		})
 
-		// clipboardCopy(text)
+		// clipboardCopy(text): Promise<void>
 		_ = exports.Set("clipboardCopy", func(call goja.FunctionCall) goja.Value {
 			var text string
 			if len(call.Arguments) > 0 {
 				text = call.Argument(0).String()
 			}
-			ctx, cancel := context.WithTimeout(ctx, clipboardTimeout)
-			defer cancel()
-			if err := ClipboardCopy(ctx, tuiSink, text); err != nil {
-				panic(vm.NewGoError(err))
-			}
-			return goja.Undefined()
+			return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(ctx context.Context) (any, error) {
+				clipCtx, cancel := context.WithTimeout(ctx, clipboardTimeout)
+				defer cancel()
+				if err := ClipboardCopy(clipCtx, tuiSink, text); err != nil {
+					return nil, err
+				}
+				return nil, nil
+			}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 		})
 
-		// clipboardPaste(): string
+		// clipboardPaste(): Promise<string>
 		_ = exports.Set("clipboardPaste", func(call goja.FunctionCall) goja.Value {
-			ctx, cancel := context.WithTimeout(ctx, clipboardTimeout)
-			defer cancel()
-			text, err := ClipboardPaste(ctx)
-			if err != nil {
-				panic(vm.NewGoError(err))
-			}
-			return vm.ToValue(text)
+			return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(ctx context.Context) (any, error) {
+				clipCtx, cancel := context.WithTimeout(ctx, clipboardTimeout)
+				defer cancel()
+				text, err := ClipboardPaste(clipCtx)
+				if err != nil {
+					return nil, err
+				}
+				return text, nil
+			}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 		})
 
 		// getenv(key: string): string
@@ -179,59 +277,131 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 			return vm.ToValue(os.Getenv(call.Argument(0).String()))
 		})
 
-		// writeFile(path, content, options?): undefined
+		// writeFile(path, content, options?): Promise<undefined>
 		// options: { mode?: number (default 0644), createDirs?: boolean (default false) }
 		// Automatically expands ~ to the user's home directory before writing.
 		// Panics on tilde expansion failure to prevent data loss from silent fallback.
 		_ = exports.Set("writeFile", func(call goja.FunctionCall) goja.Value {
 			path, content, mode, createDirs := parseWriteArgs(vm, call)
 			if path == "" {
-				panic(vm.NewGoError(fmt.Errorf("writeFile: path is required")))
+				return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(_ context.Context) (any, error) {
+					return nil, fmt.Errorf("writeFile: path is required")
+				}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 			}
 			expanded, err := expandTildeOnly(path)
 			if err != nil {
-				panic(vm.NewGoError(fmt.Errorf("writeFile: %w", err)))
+				return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(_ context.Context) (any, error) {
+					return nil, fmt.Errorf("writeFile: %w", err)
+				}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 			}
 			path = expanded
-			if createDirs {
-				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-					panic(vm.NewGoError(fmt.Errorf("writeFile: %w", err)))
+			return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(_ context.Context) (any, error) {
+				if createDirs {
+					if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+						return nil, fmt.Errorf("writeFile: %w", err)
+					}
 				}
-			}
-			if err := os.WriteFile(path, []byte(content), mode); err != nil {
-				panic(vm.NewGoError(fmt.Errorf("writeFile: %w", err)))
-			}
-			return goja.Undefined()
+				if err := os.WriteFile(path, []byte(content), mode); err != nil {
+					return nil, fmt.Errorf("writeFile: %w", err)
+				}
+				return nil, nil
+			}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 		})
 
-		// appendFile(path, content, options?): undefined
+		// appendFile(path, content, options?): Promise<undefined>
 		// options: { mode?: number (default 0644), createDirs?: boolean (default false) }
 		// Automatically expands ~ to the user's home directory before appending.
 		// Panics on tilde expansion failure to prevent data corruption from silent fallback.
 		_ = exports.Set("appendFile", func(call goja.FunctionCall) goja.Value {
 			path, content, mode, createDirs := parseWriteArgs(vm, call)
 			if path == "" {
-				panic(vm.NewGoError(fmt.Errorf("appendFile: path is required")))
+				return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(_ context.Context) (any, error) {
+					return nil, fmt.Errorf("appendFile: path is required")
+				}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 			}
 			resolved, err := expandTildeOnly(path)
 			if err != nil {
-				panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
+				return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(_ context.Context) (any, error) {
+					return nil, fmt.Errorf("appendFile: %w", err)
+				}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 			}
 			path = resolved
-			if createDirs {
-				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-					panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
+			return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(_ context.Context) (any, error) {
+				if createDirs {
+					if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+						return nil, fmt.Errorf("appendFile: %w", err)
+					}
 				}
-			}
-			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, mode)
-			if err != nil {
-				panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
-			}
-			defer f.Close()
-			if _, err := f.WriteString(content); err != nil {
-				panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
-			}
-			return goja.Undefined()
+				f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, mode)
+				if err != nil {
+					return nil, fmt.Errorf("appendFile: %w", err)
+				}
+				defer f.Close()
+				if _, err := f.WriteString(content); err != nil {
+					return nil, fmt.Errorf("appendFile: %w", err)
+				}
+				return nil, nil
+			}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 		})
 	}
 }

@@ -110,7 +110,7 @@ func TestFixture_SelectStrategy_StableChoices(t *testing.T) {
 				t.Fatalf("marshal files: %v", err)
 			}
 
-			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.selectStrategy(` +
+			raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.selectStrategy(` +
 				string(filesJSON) + `))`)
 			if err != nil {
 				t.Fatalf("selectStrategy: %v", err)
@@ -184,7 +184,7 @@ func TestFixture_SelectStrategy_GroupCountBounds(t *testing.T) {
 				t.Fatalf("marshal files: %v", err)
 			}
 
-			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.selectStrategy(` +
+			raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.selectStrategy(` +
 				string(filesJSON) + `))`)
 			if err != nil {
 				t.Fatalf("selectStrategy: %v", err)
@@ -223,7 +223,7 @@ func TestFixture_SelectStrategy_ScoresAreWellOrdered(t *testing.T) {
 				t.Fatalf("marshal files: %v", err)
 			}
 
-			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.selectStrategy(` +
+			raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.selectStrategy(` +
 				string(filesJSON) + `))`)
 			if err != nil {
 				t.Fatalf("selectStrategy: %v", err)
@@ -287,9 +287,9 @@ func TestFixture_CreateSplitPlan_FromFixtures(t *testing.T) {
 			}
 
 			// Run selectStrategy then pipe groups into createSplitPlan.
-			js := `(function() {
-				var sel = globalThis.prSplit.selectStrategy(` + string(filesJSON) + `);
-				var plan = globalThis.prSplit.createSplitPlan(sel.groups, {
+			js := `(async function() {
+				var sel = await globalThis.prSplit.selectStrategy(` + string(filesJSON) + `);
+				var plan = await globalThis.prSplit.createSplitPlan(sel.groups, {
 					baseBranch: 'main',
 					branchPrefix: 'split/',
 					dir: '` + escapeJSPath(dir) + `',
@@ -404,7 +404,7 @@ func TestFixture_SelectStrategy_NeedsConfirmCloseScores(t *testing.T) {
 		t.Fatalf("marshal files: %v", err)
 	}
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.selectStrategy(` +
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.selectStrategy(` +
 		string(filesJSON) + `))`)
 	if err != nil {
 		t.Fatalf("selectStrategy: %v", err)
@@ -441,7 +441,7 @@ func TestFixture_SelectStrategy_SingleFileDegenerate(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping")
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.selectStrategy(['README.md']))`)
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.selectStrategy(['README.md']))`)
 	if err != nil {
 		t.Fatalf("selectStrategy: %v", err)
 	}
@@ -483,7 +483,7 @@ func TestFixture_SelectStrategy_AllSameDirectory(t *testing.T) {
 		t.Fatalf("marshal files: %v", err)
 	}
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.selectStrategy(` +
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.selectStrategy(` +
 		string(filesJSON) + `))`)
 	if err != nil {
 		t.Fatalf("selectStrategy: %v", err)

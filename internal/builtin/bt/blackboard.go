@@ -10,7 +10,7 @@ import (
 	"maps"
 	"sync"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // Blackboard provides a thread-safe key-value store for behavior tree state.
@@ -25,7 +25,7 @@ type Blackboard struct {
 }
 
 // init initializes the blackboard's internal map if needed.
-// Called automatically on write operations. Thread-safe.
+// Called automatically on write operations. Must be called under the write lock.
 func (b *Blackboard) init() {
 	if b.data == nil {
 		b.data = make(map[string]any)

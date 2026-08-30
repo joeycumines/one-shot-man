@@ -5,29 +5,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
+	"github.com/joeycumines/goja"
 
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 )
-
-// testRequire sets up a goja.Runtime with the osm:termmux module registered
-// (using nil TerminalOpsProvider so it falls back to os.Stdin/os.Stdout).
-func testRequire(t *testing.T) (*goja.Runtime, *goja.Object) {
-	t.Helper()
-	runtime := goja.New()
-	registry := require.NewRegistry()
-
-	registry.RegisterNativeModule("osm:termmux", Require(context.Background(), nil, nil))
-	registry.Enable(runtime)
-
-	v, err := runtime.RunString(`require('osm:termmux')`)
-	if err != nil {
-		t.Fatalf("require osm:termmux: %v", err)
-	}
-	obj := v.(*goja.Object)
-	return runtime, obj
-}
 
 func TestModule_Constants(t *testing.T) {
 	_, exports := testRequire(t)
@@ -41,7 +22,7 @@ func TestModule_Constants(t *testing.T) {
 		{"EXIT_CONTEXT", "context"},
 		{"EXIT_ERROR", "error"},
 		{"SIDE_OSM", "osm"},
-		{"SIDE_CLAUDE", "claude"},
+		{"SIDE_AGENT", "agent"},
 		{"DEFAULT_TOGGLE_KEY", int64(0x1D)},
 		// Event name constants (T08).
 		{"EVENT_EXIT", "exit"},
@@ -49,6 +30,16 @@ func TestModule_Constants(t *testing.T) {
 		{"EVENT_FOCUS", "focus"},
 		{"EVENT_BELL", "bell"},
 		{"EVENT_OUTPUT", "output"},
+		{"EVENT_REGISTERED", "registered"},
+		{"EVENT_ACTIVATED", "activated"},
+		{"EVENT_CLOSED", "closed"},
+		{"EVENT_TERMINAL_RESIZE", "terminal-resize"},
+		{"EVENT_ACTIVITY", "activity"},
+		{"EVENT_SILENCE", "silence"},
+		{"EVENT_TITLE", "title"},
+		{"EVENT_WORKING_DIRECTORY", "cwd"},
+		{"EVENT_CWD", "cwd"},
+		{"EVENT_CLIPBOARD", "clipboard"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -81,382 +72,32 @@ func TestExitReasonString(t *testing.T) {
 	}
 }
 
-// ── Event system tests (T08) ────────────────────────────
+// ── Event system tests ────────────────────────────
 
-func TestMuxEvents_OnOff(t *testing.T) {
-	e := newMuxEvents()
+func TestEventTarget_OnOffCompatibility(t *testing.T) {
+	ctx := t.Context()
+
+	mgr := parent.NewSessionManager()
 	runtime := goja.New()
+	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	_ = runtime.Set("mux", wrapper)
 
-	cb, _ := goja.AssertFunction(runtime.ToValue(func() {}))
-
-	id1 := e.on("exit", cb)
-	id2 := e.on("exit", cb)
-	id3 := e.on("resize", cb)
-
-	if id1 == id2 || id2 == id3 {
-		t.Error("IDs should be unique")
-	}
-	if id1 <= 0 || id2 <= 0 || id3 <= 0 {
-		t.Error("IDs should be positive")
-	}
-
-	if !e.off(id1) {
-		t.Error("off(id1) should return true")
-	}
-	if e.off(id1) {
-		t.Error("off(id1) second call should return false")
-	}
-	if !e.off(id2) {
-		t.Error("off(id2) should return true")
-	}
-	if !e.off(id3) {
-		t.Error("off(id3) should return true")
-	}
-}
-
-func TestMuxEvents_Emit(t *testing.T) {
-	e := newMuxEvents()
-	runtime := goja.New()
-
-	var received []string
-	cb, _ := goja.AssertFunction(runtime.ToValue(func(call goja.FunctionCall) goja.Value {
-		data := call.Argument(0).Export()
-		if m, ok := data.(map[string]any); ok {
-			if side, ok := m["side"].(string); ok {
-				received = append(received, side)
-			}
-		}
-		return goja.Undefined()
-	}))
-
-	e.on("focus", cb)
-	e.on("focus", cb) // Two listeners for same event.
-
-	e.emit(runtime, "focus", map[string]any{"side": "claude"})
-
-	if len(received) != 2 {
-		t.Fatalf("expected 2 callbacks, got %d", len(received))
-	}
-	for i, s := range received {
-		if s != "claude" {
-			t.Errorf("received[%d] = %q, want %q", i, s, "claude")
-		}
-	}
-}
-
-func TestMuxEvents_EmitNoListeners(t *testing.T) {
-	e := newMuxEvents()
-	runtime := goja.New()
-
-	// Should not panic with no listeners.
-	e.emit(runtime, "exit", map[string]any{"reason": "toggle"})
-}
-
-func TestMuxEvents_EmitWrongEvent(t *testing.T) {
-	e := newMuxEvents()
-	runtime := goja.New()
-
-	called := false
-	cb, _ := goja.AssertFunction(runtime.ToValue(func() goja.Value {
-		called = true
-		return goja.Undefined()
-	}))
-
-	e.on("exit", cb)
-	e.emit(runtime, "resize", map[string]any{"rows": 24, "cols": 80})
-
-	if called {
-		t.Error("exit listener should not fire for resize event")
-	}
-}
-
-func TestMuxEvents_Queue_Drain(t *testing.T) {
-	e := newMuxEvents()
-	runtime := goja.New()
-
-	var received []map[string]any
-	cb, _ := goja.AssertFunction(runtime.ToValue(func(call goja.FunctionCall) goja.Value {
-		data := call.Argument(0).Export()
-		if m, ok := data.(map[string]any); ok {
-			received = append(received, m)
-		}
-		return goja.Undefined()
-	}))
-
-	e.on("resize", cb)
-
-	// Queue 3 events.
-	e.queue("resize", map[string]any{"rows": 24, "cols": 80})
-	e.queue("resize", map[string]any{"rows": 50, "cols": 120})
-	e.queue("resize", map[string]any{"rows": 30, "cols": 100})
-
-	count := e.drain(runtime)
-	if count != 3 {
-		t.Errorf("drain returned %d, want 3", count)
-	}
-	if len(received) != 3 {
-		t.Fatalf("received %d events, want 3", len(received))
-	}
-	// Verify first and last.
-	if got := fmt.Sprintf("%v", received[0]["rows"]); got != "24" {
-		t.Errorf("first event rows = %v, want 24", received[0]["rows"])
-	}
-	if got := fmt.Sprintf("%v", received[2]["rows"]); got != "30" {
-		t.Errorf("third event rows = %v, want 30", received[2]["rows"])
-	}
-}
-
-func TestMuxEvents_DrainEmpty(t *testing.T) {
-	e := newMuxEvents()
-	runtime := goja.New()
-
-	count := e.drain(runtime)
-	if count != 0 {
-		t.Errorf("drain on empty = %d, want 0", count)
-	}
-}
-
-func TestMuxEvents_QueueFull_Drops(t *testing.T) {
-	e := newMuxEvents()
-
-	// Fill the channel (capacity 64).
-	for i := range 64 {
-		e.queue("resize", map[string]any{"i": i})
+	if _, err := runtime.RunString(`
+		var events = [];
+		var id = mux.on('registered', function(evt) { events.push(evt.detail); });
+		mux.dispatchEvent(new CustomEvent('registered', { detail: { id: 1 } }));
+		mux.off(id);
+		mux.dispatchEvent(new CustomEvent('registered', { detail: { id: 2 } }));
+	`); err != nil {
+		t.Fatalf("on/off compatibility: %v", err)
 	}
 
-	// 65th should not block (dropped).
-	e.queue("resize", map[string]any{"i": 64})
-
-	// Drain should get exactly 64.
-	runtime := goja.New()
-	count := e.drain(runtime)
-	if count != 64 {
-		t.Errorf("drain after overflow = %d, want 64", count)
+	v, err := runtime.RunString(`events.length`)
+	if err != nil {
+		t.Fatalf("events.length: %v", err)
 	}
-}
-
-func TestMuxEvents_OffDuringEmit(t *testing.T) {
-	e := newMuxEvents()
-	runtime := goja.New()
-
-	// Listener that removes itself during callback. Should not panic.
-	var selfID int
-	cb, _ := goja.AssertFunction(runtime.ToValue(func() goja.Value {
-		e.off(selfID)
-		return goja.Undefined()
-	}))
-	selfID = e.on("exit", cb)
-
-	// Should not deadlock or panic.
-	e.emit(runtime, "exit", map[string]any{"reason": "toggle"})
-}
-
-func TestMuxEvents_EmitToJSCallback(t *testing.T) {
-	runtime := goja.New()
-	events := newMuxEvents()
-
-	// Register a JS callback via on()
-	called := false
-	var receivedData map[string]any
-	callback := func(fc goja.FunctionCall) goja.Value {
-		called = true
-		if len(fc.Arguments) > 0 {
-			receivedData, _ = fc.Arguments[0].Export().(map[string]any)
-		}
-		return goja.Undefined()
-	}
-	fn, ok := goja.AssertFunction(runtime.ToValue(callback))
-	if !ok {
-		t.Fatal("failed to create callable")
-	}
-
-	events.on("focus", fn)
-	events.emit(runtime, "focus", map[string]any{"side": "claude"})
-
-	if !called {
-		t.Error("callback not called")
-	}
-	if receivedData["side"] != "claude" {
-		t.Errorf("side = %v, want claude", receivedData["side"])
-	}
-}
-
-func TestMuxEvents_QueueDrainToCallback(t *testing.T) {
-	runtime := goja.New()
-	events := newMuxEvents()
-
-	calls := 0
-	callback := func(fc goja.FunctionCall) goja.Value {
-		calls++
-		return goja.Undefined()
-	}
-	fn, _ := goja.AssertFunction(runtime.ToValue(callback))
-	events.on("resize", fn)
-
-	// Queue 3 resize events from a "non-JS goroutine"
-	events.queue("resize", map[string]any{"rows": 24, "cols": 80})
-	events.queue("resize", map[string]any{"rows": 25, "cols": 100})
-	events.queue("resize", map[string]any{"rows": 30, "cols": 120})
-
-	// Drain — should deliver all 3
-	count := events.drain(runtime)
-	if count != 3 {
-		t.Errorf("drain count = %d, want 3", count)
-	}
-	if calls != 3 {
-		t.Errorf("callback called %d times, want 3", calls)
-	}
-}
-
-func TestMuxEvents_MultipleListenersSameEvent(t *testing.T) {
-	runtime := goja.New()
-	events := newMuxEvents()
-
-	calls1, calls2 := 0, 0
-	fn1, _ := goja.AssertFunction(runtime.ToValue(func(goja.FunctionCall) goja.Value {
-		calls1++
-		return goja.Undefined()
-	}))
-	fn2, _ := goja.AssertFunction(runtime.ToValue(func(goja.FunctionCall) goja.Value {
-		calls2++
-		return goja.Undefined()
-	}))
-
-	events.on("exit", fn1)
-	events.on("exit", fn2)
-
-	events.emit(runtime, "exit", map[string]any{"reason": "toggle"})
-
-	if calls1 != 1 || calls2 != 1 {
-		t.Errorf("calls = (%d, %d), want (1, 1)", calls1, calls2)
-	}
-}
-
-func TestMuxEvents_OffRemovesOnlyTarget(t *testing.T) {
-	runtime := goja.New()
-	events := newMuxEvents()
-
-	calls1, calls2 := 0, 0
-	fn1, _ := goja.AssertFunction(runtime.ToValue(func(goja.FunctionCall) goja.Value {
-		calls1++
-		return goja.Undefined()
-	}))
-	fn2, _ := goja.AssertFunction(runtime.ToValue(func(goja.FunctionCall) goja.Value {
-		calls2++
-		return goja.Undefined()
-	}))
-
-	id1 := events.on("exit", fn1)
-	events.on("exit", fn2)
-
-	// Remove first, emit — only second should fire
-	events.off(id1)
-	events.emit(runtime, "exit", map[string]any{"reason": "toggle"})
-
-	if calls1 != 0 {
-		t.Errorf("removed listener called %d times", calls1)
-	}
-	if calls2 != 1 {
-		t.Errorf("remaining listener called %d times, want 1", calls2)
-	}
-}
-
-// Concurrent event system tests
-
-func TestMuxEvents_ConcurrentOnOff(t *testing.T) {
-	runtime := goja.New()
-	events := newMuxEvents()
-
-	fn, _ := goja.AssertFunction(runtime.ToValue(func(goja.FunctionCall) goja.Value {
-		return goja.Undefined()
-	}))
-
-	// Register and remove many listeners concurrently
-	// Note: on() and off() use sync.Mutex — safe across goroutines.
-	// But emit/drain MUST only be called from the JS goroutine.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for range 100 {
-			id := events.on("resize", fn)
-			events.off(id)
-		}
-	}()
-
-	// Concurrently add/remove from main goroutine
-	for range 100 {
-		id := events.on("resize", fn)
-		events.off(id)
-	}
-	<-done
-}
-
-func TestMuxEvents_ConcurrentQueue(t *testing.T) {
-	events := newMuxEvents()
-
-	// Queue events from multiple goroutines (queue is thread-safe via channel)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for i := range 50 {
-			events.queue("resize", map[string]any{"rows": i})
-		}
-	}()
-	for range 50 {
-		events.queue("focus", map[string]any{"side": "osm"})
-	}
-	<-done
-
-	// Drain from JS goroutine
-	runtime := goja.New()
-	calls := 0
-	fn, _ := goja.AssertFunction(runtime.ToValue(func(goja.FunctionCall) goja.Value {
-		calls++
-		return goja.Undefined()
-	}))
-	events.on("resize", fn)
-	events.on("focus", fn)
-
-	count := events.drain(runtime)
-	// At least some events should be delivered (exact count depends on ordering)
-	if count == 0 {
-		t.Error("expected at least some events from concurrent queuing")
-	}
-	if count > 100 {
-		t.Errorf("count %d exceeds expected max 100", count)
-	}
-}
-
-func TestMuxEvents_BellQueueDrain(t *testing.T) {
-	// Unit test: bell events can be queued and drained through the event system.
-	e := newMuxEvents()
-	runtime := goja.New()
-
-	var received []map[string]any
-	cb, _ := goja.AssertFunction(runtime.ToValue(func(call goja.FunctionCall) goja.Value {
-		data := call.Argument(0).Export()
-		if m, ok := data.(map[string]any); ok {
-			received = append(received, m)
-		}
-		return goja.Undefined()
-	}))
-
-	e.on("bell", cb)
-
-	// Queue 3 bell events.
-	e.queue("bell", map[string]any{"pane": "claude"})
-	e.queue("bell", map[string]any{"pane": "claude"})
-	e.queue("bell", map[string]any{"pane": "claude"})
-
-	count := e.drain(runtime)
-	if count != 3 {
-		t.Errorf("drain returned %d, want 3", count)
-	}
-	if len(received) != 3 {
-		t.Fatalf("received %d bell events, want 3", len(received))
-	}
-	if got := received[0]["pane"]; got != "claude" {
-		t.Errorf("bell event pane = %v, want claude", got)
+	if got, want := int(v.ToInteger()), 1; got != want {
+		t.Errorf("events.length = %d, want %d", got, want)
 	}
 }
 
@@ -499,7 +140,7 @@ func (r *recordingStringIO) Close() error {
 //
 // This is the core regression test for GAP-C01/C02 from the pr-split
 // autopsy: the session() wrapper was missing write/resize methods,
-// causing all inline Claude interactivity to silently fail.
+// causing all inline agent interactivity to silently fail.
 func TestSessionWrapper_WriteResize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
@@ -527,7 +168,7 @@ func TestSessionWrapper_WriteResize(t *testing.T) {
 
 	// 3. Wrap the SessionManager for JS access.
 	runtime := goja.New()
-	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1)
+	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
 
 	// 4. Verify session().write exists and is callable.
@@ -789,4 +430,331 @@ func TestModule_SplitLayout_OffsetMouse(t *testing.T) {
 	if !goja.IsNull(v) {
 		t.Errorf("outside: expected null, got %v", v)
 	}
+}
+
+// ── UnwrapSessionManager tests ──────────────────────────
+
+func TestUnwrapSessionManager_ValidWrapper(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+
+	runtime := goja.New()
+	mgr := parent.NewSessionManager()
+	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	obj := wrapper.(*goja.Object)
+
+	got := UnwrapSessionManager(obj)
+	if got == nil {
+		t.Fatal("UnwrapSessionManager returned nil for valid wrapper")
+	}
+	if got != mgr {
+		t.Error("UnwrapSessionManager returned different *SessionManager pointer")
+	}
+}
+
+func TestUnwrapSessionManager_MissingKey(t *testing.T) {
+	t.Parallel()
+
+	runtime := goja.New()
+	obj := runtime.NewObject()
+
+	got := UnwrapSessionManager(obj)
+	if got != nil {
+		t.Errorf("UnwrapSessionManager returned %v for object without _goSessionManager, want nil", got)
+	}
+}
+
+func TestUnwrapSessionManager_WrongType(t *testing.T) {
+	t.Parallel()
+
+	runtime := goja.New()
+	obj := runtime.NewObject()
+	_ = obj.Set("_goSessionManager", "not-a-session-manager")
+
+	got := UnwrapSessionManager(obj)
+	if got != nil {
+		t.Errorf("UnwrapSessionManager returned %v for wrong-type key, want nil", got)
+	}
+}
+
+// ── _goSessionManager property protection tests ─────────
+
+func TestSessionManager_NonEnumerableKey(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+
+	runtime := goja.New()
+	mgr := parent.NewSessionManager()
+	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	_ = runtime.Set("mux", wrapper)
+
+	v, err := runtime.RunString(`Object.keys(mux).indexOf('_goSessionManager')`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if v.ToInteger() >= 0 {
+		t.Error("_goSessionManager should not appear in Object.keys()")
+	}
+}
+
+func TestSessionManager_NonWritableKey(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+
+	runtime := goja.New()
+	mgr := parent.NewSessionManager()
+	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	_ = runtime.Set("mux", wrapper)
+
+	_, err := runtime.RunString(`mux._goSessionManager = 'overwritten'`)
+	if err == nil {
+		v := wrapper.(*goja.Object).Get("_goSessionManager")
+		if v == nil || goja.IsUndefined(v) || v.Export() == "overwritten" {
+			t.Error("_goSessionManager should not be overwritable from JS")
+		}
+	}
+}
+
+// ── newSessionManager JS binding tests ───────────────────
+
+func TestNewSessionManager_CreatesManager(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns Goja runtime")
+	}
+
+	ctx := t.Context()
+
+	runtime, exports, env := testRequireCtx(t, ctx)
+	defer env.stop()
+	_ = runtime.Set("tm", exports)
+
+	v, err := runtime.RunString(`tm.newSessionManager()`)
+	if err != nil {
+		t.Fatalf("newSessionManager(): %v", err)
+	}
+	obj, ok := v.(*goja.Object)
+	if !ok {
+		t.Fatalf("newSessionManager() returned %T, want *goja.Object", v)
+	}
+
+	methods := []string{
+		"run", "close", "started",
+		"register", "unregister", "activate",
+		"input", "resize", "termSize",
+		"activeID", "sessions",
+		"on", "off", "pollEvents",
+		"session", "attach", "detach", "hasChild",
+	}
+	for _, m := range methods {
+		prop := obj.Get(m)
+		if prop == nil || goja.IsUndefined(prop) {
+			t.Errorf("missing method %q on SessionManager wrapper", m)
+		}
+	}
+}
+
+func TestNewSessionManager_WithOptions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns Goja runtime and SessionManager")
+	}
+
+	ctx := t.Context()
+
+	runtime, exports, env := testRequireCtx(t, ctx)
+	defer env.stop()
+	_ = runtime.Set("tm", exports)
+
+	v, err := runtime.RunString(`tm.newSessionManager({rows: 40, cols: 120})`)
+	if err != nil {
+		t.Fatalf("newSessionManager({rows:40,cols:120}): %v", err)
+	}
+	_ = runtime.Set("mux", v)
+
+	_, err = runtime.RunString(`mux.run()`)
+	if err != nil {
+		t.Fatalf("run(): %v", err)
+	}
+	started, err := runtime.RunString(`mux.started()`)
+	if err != nil {
+		t.Fatalf("started(): %v", err)
+	}
+	if !started.ToBoolean() {
+		t.Fatal("manager did not start")
+	}
+
+	ts, err := runtime.RunString(`mux.termSize()`)
+	if err != nil {
+		t.Fatalf("termSize(): %v", err)
+	}
+	tsObj := ts.ToObject(runtime)
+	rows := tsObj.Get("rows").ToInteger()
+	cols := tsObj.Get("cols").ToInteger()
+	if rows != 40 || cols != 120 {
+		t.Errorf("termSize = (%d, %d), want (40, 120)", rows, cols)
+	}
+}
+
+func TestNewSessionManager_NoArgs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns Goja runtime and SessionManager")
+	}
+
+	ctx := t.Context()
+
+	runtime, exports, env := testRequireCtx(t, ctx)
+	defer env.stop()
+	_ = runtime.Set("tm", exports)
+
+	v, err := runtime.RunString(`tm.newSessionManager()`)
+	if err != nil {
+		t.Fatalf("newSessionManager(): %v", err)
+	}
+	_ = runtime.Set("mux", v)
+
+	_, err = runtime.RunString(`mux.run()`)
+	if err != nil {
+		t.Fatalf("run(): %v", err)
+	}
+	started, err := runtime.RunString(`mux.started()`)
+	if err != nil {
+		t.Fatalf("started(): %v", err)
+	}
+	if !started.ToBoolean() {
+		t.Fatal("manager did not start")
+	}
+
+	ts, err := runtime.RunString(`mux.termSize()`)
+	if err != nil {
+		t.Fatalf("termSize(): %v", err)
+	}
+	tsObj := ts.ToObject(runtime)
+	rows := tsObj.Get("rows").ToInteger()
+	cols := tsObj.Get("cols").ToInteger()
+	if rows == 0 || cols == 0 {
+		t.Errorf("default termSize = (%d, %d), expected non-zero defaults", rows, cols)
+	}
+}
+
+// ── Event bridge tests ──────────────────────────────────
+
+func TestEventBridge_GoEventsToJSCallbacks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mgr := parent.NewSessionManager()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+
+	runtime := goja.New()
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	_ = runtime.Set("mux", wrapper)
+
+	_, err := runJS(t, runtime, `
+		var registeredEvents = [];
+		mux.addEventListener('registered', function(evt) {
+			registeredEvents.push(evt.detail);
+		});
+	`)
+	if err != nil {
+		t.Fatalf("setup addEventListener: %v", err)
+	}
+
+	rec := newRecordingStringIO()
+	sio := parent.NewStringIOSession(rec)
+	sio.Start()
+	id, err := mgr.Register(sio, parent.SessionTarget{Name: "test", Kind: "pty"})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	waitForEvents(t, runtime, "registeredEvents", 1)
+
+	v, err := runJS(t, runtime, `registeredEvents[0].sessionId`)
+	if err != nil {
+		t.Fatalf("check sessionId: %v", err)
+	}
+	if v.ToInteger() != int64(id) {
+		t.Errorf("sessionId = %d, want %d", v.ToInteger(), id)
+	}
+
+	cancel()
+	<-errCh
+}
+
+// ── Session lifecycle through JS ─────────────────────────
+
+func TestSessionManager_BasicLifecycle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mgr := parent.NewSessionManager()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+
+	runtime := goja.New()
+	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+	_ = runtime.Set("mux", wrapper)
+
+	rec := newRecordingStringIO()
+	sio := parent.NewStringIOSession(rec)
+	sio.Start()
+	sessionWrapper := wrapInteractiveSession(runtime, sio, parent.SessionKindCapture)
+	_ = runtime.Set("session", sessionWrapper)
+
+	v, err := runtime.RunString(`mux.register(session, {name: 'test', kind: 'pty'})`)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	sessionID := v.ToInteger()
+	if sessionID == 0 {
+		t.Fatal("register returned 0")
+	}
+
+	_, err = runtime.RunString(fmt.Sprintf(`mux.activate(%d)`, sessionID))
+	if err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+
+	_, err = runtime.RunString(`session.write('hello world')`)
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if len(rec.sent) != 1 || rec.sent[0] != "hello world" {
+		t.Errorf("expected sent=['hello world'], got %v", rec.sent)
+	}
+
+	_, err = runtime.RunString(`mux.resize(50, 120)`)
+	if err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+
+	ts, err := runtime.RunString(`mux.termSize()`)
+	if err != nil {
+		t.Fatalf("termSize: %v", err)
+	}
+	tsObj := ts.ToObject(runtime)
+	if tsObj.Get("rows").ToInteger() != 50 || tsObj.Get("cols").ToInteger() != 120 {
+		t.Errorf("termSize = (%d, %d), want (50, 120)", tsObj.Get("rows").ToInteger(), tsObj.Get("cols").ToInteger())
+	}
+
+	_, err = runtime.RunString(`session.close()`)
+	if err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	cancel()
+	<-errCh
 }

@@ -101,7 +101,7 @@ func TestChunk16_AutoSplitPoll_WithoutEquivalence(t *testing.T) {
 		];
 		s.analysisProgress = 0;
 
-		// Report WITHOUT equivalence data (edge case: step() was cancelled).
+		// Report WITHOUT equivalence data (edge case: await step() was cancelled).
 		s.autoSplitResult = {
 			report: {
 				plan: globalThis.prSplit._state.planCache,

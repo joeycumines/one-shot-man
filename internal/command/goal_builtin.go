@@ -171,11 +171,13 @@ Maintain all functionality and behavior of the original code while improving its
 					Description: "Set documentation type",
 					Usage:       "type <comprehensive|api|readme|inline|tutorial>",
 					Handler: `function (args) {
+                        // Guard: no args provided - show current state.
                         if (args.length === 0) {
                             output.print("Current type: " + (state.get(stateKeys.type) || "comprehensive"));
                             output.print("Available types: comprehensive, api, readme, inline, tutorial");
                             return;
                         }
+                        // Extract and normalize the requested type.
                         const type = args[0].toLowerCase();
                         const validTypes = ["comprehensive", "api", "readme", "inline", "tutorial"];
                         if (!validTypes.includes(type)) {
@@ -513,11 +515,11 @@ There is no "I'll do it later." There is no "that's good enough." There is no "c
 					Type:        "custom",
 					Description: "Set the original instructions that were ignored",
 					Usage:       "set-original <text>",
-					Handler: `function (args) {
+					Handler: `async function (args) {
                         const current = state.get(stateKeys.originalInstructions) || "";
                         let text;
                         if (args.length === 0) {
-                            const edited = ctxmgr.openEditor("original-instructions", current);
+                            const edited = await ctxmgr.openEditor("original-instructions", current);
                             text = (edited || "").trim();
                         } else {
                             text = args.join(" ").trim();
@@ -545,11 +547,11 @@ There is no "I'll do it later." There is no "that's good enough." There is no "c
 					Type:        "custom",
 					Description: "Set the plan that was disregarded",
 					Usage:       "set-plan <text>",
-					Handler: `function (args) {
+					Handler: `async function (args) {
                         const current = state.get(stateKeys.failedPlan) || "";
                         let text;
                         if (args.length === 0) {
-                            const edited = ctxmgr.openEditor("failed-plan", current);
+                            const edited = await ctxmgr.openEditor("failed-plan", current);
                             text = (edited || "").trim();
                         } else {
                             text = args.join(" ").trim();
@@ -577,11 +579,11 @@ There is no "I'll do it later." There is no "that's good enough." There is no "c
 					Type:        "custom",
 					Description: "Set specific failures and gaps",
 					Usage:       "set-failures <text>",
-					Handler: `function (args) {
+					Handler: `async function (args) {
                         const current = state.get(stateKeys.specificFailures) || "";
                         let text;
                         if (args.length === 0) {
-                            const edited = ctxmgr.openEditor("specific-failures", current);
+                            const edited = await ctxmgr.openEditor("specific-failures", current);
                             text = (edited || "").trim();
                         } else {
                             text = args.join(" ").trim();
@@ -751,8 +753,8 @@ Type 'help' for commands.`,
 					Type:        "custom",
 					Description: "Set the core goal text for the plan",
 					Usage:       "goal <new goal text...>",
-					Handler: `function (args) {
-  state.set(stateKeys.goalText, (args.length === 0 ? ctxmgr.openEditor("goal", state.get(stateKeys.goalText)) : args.join(' ')).replace(/[\r\n]+$/, ''));
+					Handler: `async function (args) {
+  state.set(stateKeys.goalText, (args.length === 0 ? await ctxmgr.openEditor("goal", state.get(stateKeys.goalText)) : args.join(' ')).replace(/[\r\n]+$/, ''));
   output.print("Goal text updated. Use 'reset' to apply it to the context.");
 }`,
 				},
@@ -2425,11 +2427,11 @@ These are examples of instructions you should be able to handle:
 					Type:        "custom",
 					Description: "Set the rewriting instruction",
 					Usage:       "instruct <instruction text>",
-					Handler: `function (args) {
+					Handler: `async function (args) {
                         var current = state.get(stateKeys.instruction) || "";
                         var text;
                         if (args.length === 0) {
-                            var edited = ctxmgr.openEditor("rewriting-instruction", current);
+                            var edited = await ctxmgr.openEditor("rewriting-instruction", current);
                             text = (edited || "").trim();
                         } else {
                             text = args.join(" ").trim();

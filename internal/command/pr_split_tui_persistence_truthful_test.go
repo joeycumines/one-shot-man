@@ -57,11 +57,14 @@ func newPersistenceIntegrationEval(t *testing.T, state *termmux.PersistedManager
 
 	eng.SetGlobal("tuiMux", termmuxmod.WrapSessionManager(
 		ctx,
+		eng.ScriptingEngine().Adapter(),
+		eng.ScriptingEngine().Loop(),
 		eng.ScriptingEngine().Runtime(),
 		mgr,
 		nil,
 		io.Discard,
 		-1,
+		"",
 	))
 	eng.LoadChunks(t, prsplittest.ChunkNamesAfter("12")...)
 	if _, err := eng.EvalJS(t)(prsplittest.Chunk16Helpers); err != nil {
@@ -92,7 +95,7 @@ func TestPersistence_TruthfulAnnotation(t *testing.T) {
 			version: '1',
 			activeId: 1,
 			sessions: [
-				{ sessionId: 1, pid: 12345, target: { name: 'claude', kind: 'capture' }, state: 'running' },
+				{ sessionId: 1, pid: 12345, target: { name: 'agent', kind: 'capture' }, state: 'running' },
 				{ sessionId: 2, pid: 99999, target: { name: 'verify', kind: 'capture' }, state: 'running' },
 				{ sessionId: 3, pid: 0, target: { name: 'agent', kind: 'stringio' }, state: 'running' }
 			],
@@ -111,7 +114,7 @@ func TestPersistence_TruthfulAnnotation(t *testing.T) {
 			off: function() {}
 		};
 
-		var result = prSplit.persistence.loadPrevious();
+		var result = await prSplit.persistence.loadPrevious();
 		if (!result) {
 			errors.push('loadPrevious should return state');
 		}
@@ -198,7 +201,7 @@ func TestPersistence_StaleDetection(t *testing.T) {
 			off: function() {}
 		};
 
-		var result = prSplit.persistence.loadPrevious();
+		var result = await prSplit.persistence.loadPrevious();
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
 
@@ -261,7 +264,7 @@ func TestPersistence_ResumeStatePopulatedByModelInit(t *testing.T) {
 			{
 				SessionID: 1,
 				PID:       os.Getpid(),
-				Target:    termmux.SessionTarget{Name: "claude", Kind: termmux.SessionKindCapture},
+				Target:    termmux.SessionTarget{Name: "agent", Kind: termmux.SessionKindCapture},
 			},
 			{
 				SessionID: 2,
@@ -274,7 +277,8 @@ func TestPersistence_ResumeStatePopulatedByModelInit(t *testing.T) {
 		SavedAt:  time.Now().Add(-48 * time.Hour),
 	})
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
+		await (prSplit.previousStatePromise || Promise.resolve());
 		var errors = [];
 		if (!prSplit.previousState) {
 			errors.push('previousState should load from the real persisted file at startup');
@@ -335,7 +339,7 @@ func TestPersistence_ConfirmCancelRemovesRealStateFile(t *testing.T) {
 		Sessions: []termmux.PersistedSession{{
 			SessionID: 1,
 			PID:       os.Getpid(),
-			Target:    termmux.SessionTarget{Name: "claude", Kind: termmux.SessionKindCapture},
+			Target:    termmux.SessionTarget{Name: "agent", Kind: termmux.SessionKindCapture},
 		}},
 		TermRows: 24,
 		TermCols: 80,
@@ -343,9 +347,9 @@ func TestPersistence_ConfirmCancelRemovesRealStateFile(t *testing.T) {
 	})
 
 	raw, err := evalJS(`(function() {
-		var origUnwire = prSplit._unwireClaudeLifecycleEvents;
+		var origUnwire = prSplit._unwireAgentLifecycleEvents;
 		var unwireCalled = false;
-		prSplit._unwireClaudeLifecycleEvents = function() { unwireCalled = true; };
+		prSplit._unwireAgentLifecycleEvents = function() { unwireCalled = true; };
 
 		var s = initState('PLAN_REVIEW');
 		s.showConfirmCancel = true;
@@ -353,10 +357,10 @@ func TestPersistence_ConfirmCancelRemovesRealStateFile(t *testing.T) {
 
 		var r = update({ type: 'Key', key: 'enter' }, s);
 		s = r[0];
-		prSplit._unwireClaudeLifecycleEvents = origUnwire;
+		prSplit._unwireAgentLifecycleEvents = origUnwire;
 
 		var errors = [];
-		if (!unwireCalled) errors.push('unwireClaudeLifecycleEvents should be called on quit');
+		if (!unwireCalled) errors.push('unwireAgentLifecycleEvents should be called on quit');
 		if (s.wizardState !== 'CANCELLED') errors.push('wizardState should be CANCELLED, got ' + s.wizardState);
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 	})()`)
@@ -403,7 +407,7 @@ func TestPersistence_CleanupExported(t *testing.T) {
 }
 
 // TestPersistence_ConfirmCancelCallsCleanup proves that the confirmCancel
-// quit handler calls persistence.cleanup and unwireClaudeLifecycleEvents.
+// quit handler calls persistence.cleanup and unwireAgentLifecycleEvents.
 func TestPersistence_ConfirmCancelCallsCleanup(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
@@ -419,9 +423,9 @@ func TestPersistence_ConfirmCancelCallsCleanup(t *testing.T) {
 		if (prSplit.persistence) {
 			prSplit.persistence.cleanup = function() { cleanupCalled = true; };
 		}
-		// Mock unwireClaudeLifecycleEvents to track calls.
-		var origUnwire = prSplit._unwireClaudeLifecycleEvents;
-		prSplit._unwireClaudeLifecycleEvents = function() { unwireCalled = true; };
+		// Mock unwireAgentLifecycleEvents to track calls.
+		var origUnwire = prSplit._unwireAgentLifecycleEvents;
+		prSplit._unwireAgentLifecycleEvents = function() { unwireCalled = true; };
 
 		globalThis.tuiMux = {
 			isDone: function() { return false; },
@@ -445,7 +449,7 @@ func TestPersistence_ConfirmCancelCallsCleanup(t *testing.T) {
 			errors.push('persistence.cleanup should be called on quit');
 		}
 		if (!unwireCalled) {
-			errors.push('unwireClaudeLifecycleEvents should be called on quit');
+			errors.push('unwireAgentLifecycleEvents should be called on quit');
 		}
 		if (s.wizardState !== 'CANCELLED') {
 			errors.push('wizardState should be CANCELLED, got ' + s.wizardState);
@@ -453,7 +457,7 @@ func TestPersistence_ConfirmCancelCallsCleanup(t *testing.T) {
 
 		// Restore.
 		if (prSplit.persistence && origCleanup) prSplit.persistence.cleanup = origCleanup;
-		if (origUnwire) prSplit._unwireClaudeLifecycleEvents = origUnwire;
+		if (origUnwire) prSplit._unwireAgentLifecycleEvents = origUnwire;
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
@@ -485,7 +489,7 @@ func TestPersistence_ResumeNotificationInStatusBar(t *testing.T) {
 		s.resumeFound = true;
 		s.resumeStale = false;
 		s.resumeSessions = [
-			{ name: 'claude', kind: 'capture', status: 'alive', pid: 12345 },
+			{ name: 'agent', kind: 'capture', status: 'alive', pid: 12345 },
 			{ name: 'verify', kind: 'capture', status: 'dead', pid: 99999 }
 		];
 		var bar = prSplit._renderStatusBar(s);
@@ -528,7 +532,7 @@ func TestPersistence_ResumeNotifDismissedHidesNotification(t *testing.T) {
 		s.resumeFound = true;
 		s.resumeNotifDismissed = true;
 		s.resumeSessions = [
-			{ name: 'claude', kind: 'capture', status: 'alive', pid: 12345 }
+			{ name: 'agent', kind: 'capture', status: 'alive', pid: 12345 }
 		];
 		var bar = prSplit._renderStatusBar(s);
 
@@ -567,7 +571,7 @@ func TestPersistence_StaleResumeShowsLabel(t *testing.T) {
 		s.resumeFound = true;
 		s.resumeStale = true;
 		s.resumeSessions = [
-			{ name: 'claude', kind: 'capture', status: 'dead', pid: 12345 }
+			{ name: 'agent', kind: 'capture', status: 'dead', pid: 12345 }
 		];
 		var bar = prSplit._renderStatusBar(s);
 
@@ -606,7 +610,7 @@ func TestPersistence_NoPreviousState(t *testing.T) {
 			off: function() {}
 		};
 
-		var result = prSplit.persistence.loadPrevious();
+		var result = await prSplit.persistence.loadPrevious();
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
 
@@ -637,7 +641,7 @@ func TestPersistence_UnknownPIDSessions(t *testing.T) {
 			version: '1',
 			activeId: 1,
 			sessions: [
-				{ sessionId: 1, pid: 0, target: { name: 'claude', kind: 'stringio' }, state: 'running' },
+				{ sessionId: 1, pid: 0, target: { name: 'agent', kind: 'stringio' }, state: 'running' },
 				{ sessionId: 2, pid: 0, target: { name: 'other', kind: 'stringio' }, state: 'running' }
 			],
 			savedAt: new Date().toISOString()
@@ -656,7 +660,7 @@ func TestPersistence_UnknownPIDSessions(t *testing.T) {
 			off: function() {}
 		};
 
-		var result = prSplit.persistence.loadPrevious();
+		var result = await prSplit.persistence.loadPrevious();
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
 
@@ -703,7 +707,7 @@ func TestPersistence_StatusBarWithUnknownSessions(t *testing.T) {
 		s.width = 80;
 		s.resumeFound = true;
 		s.resumeSessions = [
-			{ name: 'claude', kind: 'stringio', status: 'unknown', pid: 0 }
+			{ name: 'agent', kind: 'stringio', status: 'unknown', pid: 0 }
 		];
 		var bar = prSplit._renderStatusBar(s);
 
@@ -775,7 +779,7 @@ func TestPersistence_ResumeMetaCounts(t *testing.T) {
 					on: function() { return 0; },
 					off: function() {}
 				};
-				var result = prSplit.persistence.loadPrevious();
+				var result = await prSplit.persistence.loadPrevious();
 				if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 				else delete globalThis.tuiMux;
 				if (!result || !result._resumeMeta) return 'FAIL: no meta';

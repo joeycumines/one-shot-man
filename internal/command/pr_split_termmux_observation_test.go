@@ -46,23 +46,23 @@ func readFileForDiag(path string) string {
 }
 
 // ---------------------------------------------------------------------------
-// TestIntegration_AutoSplitClaude_VTermObservation
+// TestIntegration_AutoSplitAgent_VTermObservation
 //
-// Spawns the REAL osm binary in a PTY with a REAL Claude command, triggers
+// Spawns the REAL osm binary in a PTY with a REAL Agent command, triggers
 // the auto-split pipeline via the TUI, and observes terminal output using
 // termtest.Console. This is the definitive end-to-end test: no mocks, no JS
 // engine shortcuts — the actual user experience.
 //
 // Run with:
 //   go test -race -v -count=1 -timeout=15m -integration \
-//     -claude-command=claude ./internal/command/... \
-//     -run TestIntegration_AutoSplitClaude_VTermObservation
+//     -agent-command=agent ./internal/command/... \
+//     -run TestIntegration_AutoSplitAgent_VTermObservation
 // ---------------------------------------------------------------------------
 
-func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
+func TestIntegration_AutoSplitAgent_VTermObservation(t *testing.T) {
 	skipSlow(t)
-	skipIfNoClaude(t)
-	verifyClaudeAuth(t)
+	skipIfNoAgent(t)
+	verifyAgentAuth(t)
 
 	osmBin := buildOSMBinary(t)
 	repoDir := initIntegrationRepo(t)
@@ -75,13 +75,13 @@ func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
 		"-strategy=directory",
 		"-verify=true", // always-pass verify command for testing
 		"-interactive=false",
-		"-claude-command=" + claudeTestCommand,
+		"-agent-command=" + agentTestCommand,
 	}
-	for _, a := range claudeTestArgs {
-		args = append(args, "-claude-arg="+a)
+	for _, a := range agentTestArgs {
+		args = append(args, "-agent-arg="+a)
 	}
 	if integrationModel != "" {
-		args = append(args, "-claude-model="+integrationModel)
+		args = append(args, "-agent-model="+integrationModel)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -138,7 +138,7 @@ func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
 		timeout time.Duration
 	}{
 		{"Analyze diff", 30 * time.Second},
-		{"Spawn Claude", 60 * time.Second},
+		{"Spawn Agent", 60 * time.Second},
 		{"Send classification", 120 * time.Second},
 		{"Receive classification", 300 * time.Second},
 	}
@@ -238,13 +238,13 @@ func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
 	autoSplitSeen := strings.Contains(output, "Auto-Split") ||
 		strings.Contains(output, "auto-split") ||
 		strings.Contains(output, "Analyze diff") ||
-		strings.Contains(output, "Spawn Claude")
+		strings.Contains(output, "Spawn Agent")
 	if !autoSplitSeen {
 		t.Error("auto-split TUI was never visible in output")
 	}
 
 	// 7b. Summary of observed pipeline steps.
-	stepNames := []string{"Analyze diff", "Spawn Claude", "Send classification", "Receive classification", "Generate plan", "Execute splits"}
+	stepNames := []string{"Analyze diff", "Spawn Agent", "Send classification", "Receive classification", "Generate plan", "Execute splits"}
 	t.Logf("--- Pipeline Step Summary ---")
 	for _, step := range stepNames {
 		if strings.Contains(output, step) {
@@ -269,12 +269,12 @@ func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
 // exact user-reported invocation path:
 //
 //	osm pr-split --log-file=<temp> --log-level=debug \
-//	  -claude-command=ollama -claude-arg=launch -claude-arg=claude \
-//	  -claude-arg=--model=minimax-m2.5:cloud -claude-arg=--
+//	  -agent-command=ollama -agent-arg=launch -agent-arg=agent \
+//	  -agent-arg=--model=minimax-m2.5:cloud -agent-arg=--
 //
 // It captures textual terminal screenshots via VTerm and asserts:
-//  1. Auto-split progresses beyond Analyze diff into Spawn Claude.
-//  2. Ctrl+] does not report "No Claude process attached".
+//  1. Auto-split progresses beyond Analyze diff into Spawn Agent.
+//  2. Ctrl+] does not report "No Agent process attached".
 //  3. q / q force-cancel returns to (pr-split) prompt.
 func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
 	skipSlow(t)
@@ -298,11 +298,11 @@ func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
 		"--log-file=" + logPath,
 		"--log-level=debug",
 		"-interactive=false",
-		"-claude-command=ollama",
-		"-claude-arg=launch",
-		"-claude-arg=claude",
-		"-claude-arg=--model=minimax-m2.5:cloud",
-		"-claude-arg=--",
+		"-agent-command=ollama",
+		"-agent-arg=launch",
+		"-agent-arg=agent",
+		"-agent-arg=--model=minimax-m2.5:cloud",
+		"-agent-arg=--",
 	}
 
 	const (
@@ -347,29 +347,29 @@ func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
 
 	snap = cp.Snapshot()
 	spawnCtx, spawnCancel := context.WithTimeout(ctx, 60*time.Second)
-	if err := cp.Expect(spawnCtx, snap, termtest.Contains("Spawn Claude"), "spawn step"); err != nil {
+	if err := cp.Expect(spawnCtx, snap, termtest.Contains("Spawn Agent"), "spawn step"); err != nil {
 		spawnCancel()
-		t.Fatalf("Spawn Claude step never appeared: %v\nOutput:\n%s\nLog:\n%s", err, cp.String(), readFileForDiag(logPath))
+		t.Fatalf("Spawn Agent step never appeared: %v\nOutput:\n%s\nLog:\n%s", err, cp.String(), readFileForDiag(logPath))
 	}
 	spawnCancel()
 
 	snap = cp.Snapshot()
 	spawnOKCtx, spawnOKCancel := context.WithTimeout(ctx, 30*time.Second)
-	if err := cp.Expect(spawnOKCtx, snap, termtest.Contains("Spawn Claude OK"), "spawn OK"); err != nil {
+	if err := cp.Expect(spawnOKCtx, snap, termtest.Contains("Spawn Agent OK"), "spawn OK"); err != nil {
 		spawnOKCancel()
-		t.Fatalf("Spawn Claude never reached OK: %v\nOutput:\n%s\nLog:\n%s", err, cp.String(), readFileForDiag(logPath))
+		t.Fatalf("Spawn Agent never reached OK: %v\nOutput:\n%s\nLog:\n%s", err, cp.String(), readFileForDiag(logPath))
 	}
 	spawnOKCancel()
 
-	// Toggle to Claude pane once (Ctrl+]) and ensure we don't get the
-	// "No Claude process attached" error spam.
+	// Toggle to Agent pane once (Ctrl+]) and ensure we don't get the
+	// "No Agent process attached" error spam.
 	if err := cp.Send("ctrl+]"); err != nil {
 		t.Logf("Failed to send Ctrl+]: %v", err)
 	}
 	time.Sleep(1200 * time.Millisecond)
 	output := cp.String()
-	if strings.Contains(output, "No Claude process attached") {
-		t.Fatalf("toggle reported no attached Claude process.\nOutput:\n%s\nLog:\n%s", output, readFileForDiag(logPath))
+	if strings.Contains(output, "No Agent process attached") {
+		t.Fatalf("toggle reported no attached Agent process.\nOutput:\n%s\nLog:\n%s", output, readFileForDiag(logPath))
 	}
 
 	// Toggle back to auto-split TUI before issuing q/q cancel.
@@ -380,12 +380,12 @@ func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
 	backCtx, backCancel := context.WithTimeout(ctx, 10*time.Second)
 	if err := cp.Expect(backCtx, snap, termtest.Contains("Auto-Split"), "toggle back"); err != nil {
 		backCancel()
-		t.Fatalf("failed to toggle back from Claude pane: %v\nOutput:\n%s\nLog:\n%s", err, cp.String(), readFileForDiag(logPath))
+		t.Fatalf("failed to toggle back from Agent pane: %v\nOutput:\n%s\nLog:\n%s", err, cp.String(), readFileForDiag(logPath))
 	}
 	backCancel()
 
 	// Ensure Step 3 does not hang indefinitely. It may end as OK or FAILED
-	// depending on local Claude readiness/auth/setup, but it must terminate.
+	// depending on local Agent readiness/auth/setup, but it must terminate.
 	snap = cp.Snapshot()
 	sendStartCtx, sendStartCancel := context.WithTimeout(ctx, 30*time.Second)
 	if err := cp.Expect(sendStartCtx, snap, termtest.Contains("Send classification request..."), "send classification start"); err != nil {
@@ -445,7 +445,7 @@ func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
 //
 // Minimal subprocess test: starts osm pr-split via termtest.Console, verifies
 // the prompt appears, sends "exit", and verifies the process exits cleanly.
-// This catches basic startup/shutdown issues without requiring Claude.
+// This catches basic startup/shutdown issues without requiring Agent.
 //
 // Run with:
 //   go test -race -v -count=1 -timeout=5m -integration \
@@ -551,7 +551,7 @@ func TestIntegration_PrSplit_VTermCleanExit(t *testing.T) {
 // TestIntegration_PrSplit_VTermHeuristicRun
 //
 // Subprocess test with termtest.Console: runs the TUI heuristic "run"
-// command (no Claude required). Verifies pipeline steps appear in the
+// command (no Agent required). Verifies pipeline steps appear in the
 // terminal and the process behaves correctly.
 //
 // Run with:
@@ -606,7 +606,7 @@ func TestIntegration_PrSplit_VTermHeuristicRun(t *testing.T) {
 	}
 	t.Log("Prompt appeared")
 
-	// Run the "run" command (heuristic, no Claude).
+	// Run the "run" command (heuristic, no Agent).
 	snap = cp.Snapshot()
 	if err := cp.SendLine("run"); err != nil {
 		t.Fatalf("failed to send run command: %v", err)
@@ -710,12 +710,12 @@ func TestIntegration_PrSplit_VTermHeuristicRun(t *testing.T) {
 // TestIntegration_PrSplit_VTermAutoSplitFallback
 //
 // Full-stack test: runs the "auto-split" command through a real PTY with
-// -claude-command pointing to a nonexistent binary. This forces Claude spawn
+// -agent-command pointing to a nonexistent binary. This forces Agent spawn
 // to fail and the pipeline to fall back to heuristic mode.
 //
 // Validates:
 //  1. "auto-split" command is accepted via go-prompt (no PTY input batching)
-//  2. Pipeline shows "Claude unavailable" fallback message
+//  2. Pipeline shows "Agent unavailable" fallback message
 //  3. Heuristic fallback creates split branches
 //  4. Process exits cleanly
 //
@@ -753,8 +753,8 @@ func TestIntegration_PrSplit_VTermAutoSplitFallback(t *testing.T) {
 			"-strategy=directory",
 			"-verify=true",
 			"-interactive=false",
-			// Force Claude spawn failure → heuristic fallback.
-			"-claude-command=/nonexistent-claude-binary-for-test",
+			// Force Agent spawn failure → heuristic fallback.
+			"-agent-command=/nonexistent-agent-binary-for-test",
 		),
 		termtest.WithDir(repoDir),
 		termtest.WithEnv([]string{
@@ -779,17 +779,17 @@ func TestIntegration_PrSplit_VTermAutoSplitFallback(t *testing.T) {
 	t.Log("Prompt appeared")
 
 	// Send "auto-split" — this is the key difference from VTermHeuristicRun
-	// which uses "run". The auto-split command goes through the Claude spawn
+	// which uses "run". The auto-split command goes through the Agent spawn
 	// path, which will fail and fall back to heuristic.
 	snap = cp.Snapshot()
 	if err := cp.SendLine("auto-split"); err != nil {
 		t.Fatalf("failed to send auto-split command: %v", err)
 	}
 
-	// Wait for the pipeline to complete. With -claude-command=/nonexistent,
+	// Wait for the pipeline to complete. With -agent-command=/nonexistent,
 	// the pipeline should:
 	// 1. Analyze diff (succeeds)
-	// 2. Spawn Claude (fails)
+	// 2. Spawn Agent (fails)
 	// 3. Fall back to heuristic mode
 	// 4. Complete with "Done in" marker.
 	doneCond := termtest.Any(
@@ -821,7 +821,7 @@ func TestIntegration_PrSplit_VTermAutoSplitFallback(t *testing.T) {
 	if fallbackSeen {
 		t.Log("Heuristic fallback detected in output (expected)")
 	} else {
-		t.Log("No explicit heuristic fallback message seen — Claude resolve may have succeeded")
+		t.Log("No explicit heuristic fallback message seen — Agent resolve may have succeeded")
 	}
 
 	// Verify no multiline dots (PTY input batching bug).
@@ -1034,7 +1034,7 @@ func TestIntegration_PrSplit_VTermMultiCommand(t *testing.T) {
 // command output. They exercise analyze, plan, preview, config, and plan
 // manipulation commands through a real PTY, verifying that the terminal
 // renders expected elements (file lists, status markers, split names, config
-// values). All tests use the heuristic path only — no Claude required.
+// values). All tests use the heuristic path only — no Agent required.
 // ---------------------------------------------------------------------------
 
 // vtermStartConsole creates a termtest.Console for the osm pr-split REPL

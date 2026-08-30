@@ -16,11 +16,11 @@ import (
 //
 // These tests use the MCP callback mock infrastructure to inject
 // classification, plan, and resolution results into the automatedSplit
-// pipeline, verifying specific pipeline paths without a real Claude binary.
+// pipeline, verifying specific pipeline paths without a real Agent binary.
 // ---------------------------------------------------------------------------
 
 // mockMCPSetup is a shared helper that sets up a test pipeline with mock
-// ClaudeCodeExecutor, injects classification via MCP callback, and returns
+// AgentCodeExecutor, injects classification via MCP callback, and returns
 // the pipeline and injection channel.
 func mockMCPSetup(t *testing.T, classData map[string]any) (*TestPipeline, <-chan *mcpcallbackmod.Handle) {
 	t.Helper()
@@ -36,20 +36,20 @@ func mockMCPSetup(t *testing.T, classData map[string]any) (*TestPipeline, <-chan
 		},
 	})
 
-	// Mock ClaudeCodeExecutor.
+	// Mock AgentCodeExecutor.
 	if _, err := tp.EvalJS(`
-		ClaudeCodeExecutor = function(config) {
+		AgentCodeExecutor = function(config) {
 			this.config = config;
-			this.resolved = { command: 'mock-claude' };
+			this.resolved = { command: 'mock-agent' };
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
-		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+		AgentCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		AgentCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
+		AgentCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-session' };
 		};
-		ClaudeCodeExecutor.prototype.close = function() {};
-		ClaudeCodeExecutor.prototype.kill = function() {};
+		AgentCodeExecutor.prototype.close = function() {};
+		AgentCodeExecutor.prototype.kill = function() {};
 	`); err != nil {
 		t.Fatal(err)
 	}

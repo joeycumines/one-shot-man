@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/joeycumines/one-shot-man/internal/storage"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 	"golang.org/x/tools/txtar"
@@ -21,8 +21,8 @@ import (
 // context.go coverage gaps
 // ============================================================================
 
-// TestFromTxtar tests FromTxtar (0% covered).
-func TestFromTxtar(t *testing.T) {
+// TestLoadTxtar tests LoadTxtar (0% covered).
+func TestLoadTxtar(t *testing.T) {
 	t.Parallel()
 
 	t.Run("basic_archive", func(t *testing.T) {
@@ -38,8 +38,8 @@ func TestFromTxtar(t *testing.T) {
 				{Name: "README.md", Data: []byte("# Hello\n")},
 			},
 		}
-		if err := cm.FromTxtar(archive); err != nil {
-			t.Fatalf("FromTxtar: %v", err)
+		if err := cm.LoadTxtar(archive); err != nil {
+			t.Fatalf("LoadTxtar: %v", err)
 		}
 
 		paths := cm.ListPaths()
@@ -74,8 +74,8 @@ func TestFromTxtar(t *testing.T) {
 		_ = cm.AddPath(f)
 
 		archive := &txtar.Archive{}
-		if err := cm.FromTxtar(archive); err != nil {
-			t.Fatalf("FromTxtar: %v", err)
+		if err := cm.LoadTxtar(archive); err != nil {
+			t.Fatalf("LoadTxtar: %v", err)
 		}
 		paths := cm.ListPaths()
 		if len(paths) != 0 {
@@ -99,19 +99,19 @@ func TestFromTxtar(t *testing.T) {
 				{Name: "new.go", Data: []byte("new content")},
 			},
 		}
-		_ = cm.FromTxtar(archive)
+		_ = cm.LoadTxtar(archive)
 
 		if _, exists := cm.GetPath("old.txt"); exists {
-			t.Error("old.txt should have been cleared by FromTxtar")
+			t.Error("old.txt should have been cleared by LoadTxtar")
 		}
 		if _, exists := cm.GetPath("new.go"); !exists {
-			t.Error("new.go should exist after FromTxtar")
+			t.Error("new.go should exist after LoadTxtar")
 		}
 	})
 }
 
-// TestLoadFromTxtarString tests LoadFromTxtarString (0% covered).
-func TestLoadFromTxtarString(t *testing.T) {
+// TestLoadTxtarString tests LoadTxtarString (0% covered).
+func TestLoadTxtarString(t *testing.T) {
 	t.Parallel()
 	cm, err := NewContextManager(t.TempDir())
 	if err != nil {
@@ -119,8 +119,8 @@ func TestLoadFromTxtarString(t *testing.T) {
 	}
 
 	txtarData := "-- hello.txt --\nHello, world!\n-- sub/nested.go --\npackage sub\n"
-	if err := cm.LoadFromTxtarString(txtarData); err != nil {
-		t.Fatalf("LoadFromTxtarString: %v", err)
+	if err := cm.LoadTxtarString(txtarData); err != nil {
+		t.Fatalf("LoadTxtarString: %v", err)
 	}
 
 	cp, exists := cm.GetPath("hello.txt")
@@ -620,7 +620,7 @@ func TestJsContextGetPath(t *testing.T) {
 	}
 
 	// Add the path via JS
-	script := eng.LoadScriptFromString("setup", fmt.Sprintf(`context.addPath(%q);`, f))
+	script := eng.LoadScriptString("setup", fmt.Sprintf(`context.addPath(%q);`, f))
 	if err := eng.ExecuteScript(script); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
@@ -786,7 +786,7 @@ func TestJsCreateState_EmptyCommandName(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		try {
 			tui.createState("", {});
 			throw new Error("should have thrown");
@@ -807,7 +807,7 @@ func TestJsCreateState_ColonInName(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		try {
 			tui.createState("cmd:name", {});
 			throw new Error("should have thrown");
@@ -828,7 +828,7 @@ func TestJsCreateState_NilDefs(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		try {
 			tui.createState("cmd", undefined);
 			throw new Error("should have thrown");
@@ -847,7 +847,7 @@ func TestJsCreateState_GetSetUnregisteredKey(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		const s = tui.createState("test-unreg", {
 			[Symbol("k1")]: { defaultValue: "default" }
 		});
@@ -883,7 +883,7 @@ func TestJsCreateState_SharedSymbol(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		// The shared symbols module should already be loaded
 		const shared = require('osm:sharedStateSymbols');
 
@@ -916,7 +916,7 @@ func TestJsCreateState_DefaultFallback(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		const k = Symbol("testKey");
 		const s = tui.createState("fallback-test", {
 			[k]: { defaultValue: "myDefault" }
@@ -939,7 +939,7 @@ func TestJsCreateState_DefaultFallback(t *testing.T) {
 	tm.stateManager.ClearAllState()
 
 	// After clear, get should fallback to default
-	script2 := eng.LoadScriptFromString("check", `
+	script2 := eng.LoadScriptString("check", `
 		// Re-run to re-register state definitions
 		const k2 = Symbol("testKey");
 		const s2 = tui.createState("fallback-test", {
@@ -960,7 +960,7 @@ func TestJsCreateState_EmptySymbolDesc(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		try {
 			// Symbol() without description has description "undefined" in goja
 			// We need to test the normalizeSymbolDescription returning empty string
@@ -992,7 +992,7 @@ func TestJsCreateState_NullDefEntry(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		// Test with definition that has no defaultValue
 		const k = Symbol("noDefault");
 		const s = tui.createState("test-no-default", {
@@ -1012,10 +1012,10 @@ func TestJsCreateState_NullDefEntry(t *testing.T) {
 // state_manager.go coverage gaps
 // ============================================================================
 
-// newTestBackend creates a test InMemoryBackend with consistent session ID.
+// newTestBackend creates a test MemoryBackend with consistent session ID.
 func newTestBackend(t *testing.T, sessionID string) storage.StorageBackend {
 	t.Helper()
-	backend, err := storage.NewInMemoryBackend(sessionID)
+	backend, err := storage.NewMemoryBackend(sessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1412,7 +1412,7 @@ func TestJsCreateState_NoTUIManager(t *testing.T) {
 
 	defer func() { eng.tuiManager = savedTM }()
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		try {
 			tui.createState("cmd", { [Symbol("k")]: { defaultValue: 1 } });
 			throw new Error("should have thrown");
@@ -1439,7 +1439,7 @@ func TestJsCreateState_NoStateManager(t *testing.T) {
 	tm.stateManager = nil
 	defer func() { tm.stateManager = savedSM }()
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		try {
 			tui.createState("cmd", { [Symbol("k")]: { defaultValue: 1 } });
 			throw new Error("should have thrown");
@@ -1460,7 +1460,7 @@ func TestJsCreateState_ExistingState(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	script := eng.LoadScriptFromString("test", `
+	script := eng.LoadScriptString("test", `
 		const k = Symbol("persist-test");
 		const s1 = tui.createState("persist-cmd", {
 			[k]: { defaultValue: "initial" }
@@ -1557,7 +1557,7 @@ func TestContextManager_NormalizeOwnerPath_OutsideBase(t *testing.T) {
 // tilde ONLY for existence verification, while preserving the original tilde
 // form as the returned owner (so TUI state labels remain user-friendly).
 // This is a regression test for: when a user adds a file like
-// ~/.claude/agents/Takumi.md, the raw tilde path is stored as the TUI state
+// ~/.config/agent/Takumi.md, the raw tilde path is stored as the TUI state
 // label. On rehydration, AddRelativePath must expand tilde to verify the file
 // exists but must return the original tilde label unchanged.
 func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
@@ -1565,7 +1565,7 @@ func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
 	// Set up a fake home directory with a real file inside it so that
 	// the lstat check in AddRelativePath succeeds.
 	fakeHome := t.TempDir()
-	fileDir := filepath.Join(fakeHome, ".claude", "agents")
+	fileDir := filepath.Join(fakeHome, ".config", "agent")
 	if err := os.MkdirAll(fileDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -1585,12 +1585,12 @@ func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
 
 	// Test 1: AddRelativePath with tilde label succeeds and returns the
 	// ORIGINAL tilde form (not the expanded absolute path).
-	owner, err := cm.AddRelativePath("~/.claude/agents/Takumi.md")
+	owner, err := cm.AddRelativePath("~/.config/agent/Takumi.md")
 	if err != nil {
 		t.Fatalf("AddRelativePath with tilde label: %v", err)
 	}
-	if owner != "~/.claude/agents/Takumi.md" {
-		t.Errorf("expected tilde form %q, got %q — owner should preserve tilde", "~/.claude/agents/Takumi.md", owner)
+	if owner != "~/.config/agent/Takumi.md" {
+		t.Errorf("expected tilde form %q, got %q — owner should preserve tilde", "~/.config/agent/Takumi.md", owner)
 	}
 
 	// Test 2: The file is tracked internally under the normalized absolute
@@ -1632,7 +1632,7 @@ func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
 	}
 
 	// Test 5: Non-existent tilde path returns error (file truly missing).
-	_, err = cm.AddRelativePath("~/.claude/nonexistent.md")
+	_, err = cm.AddRelativePath("~/.config/agent/nonexistent.md")
 	if err == nil {
 		t.Fatal("expected error for nonexistent tilde path")
 	}
@@ -1641,9 +1641,9 @@ func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
 	}
 
 	// Test 6: RemovePath round-trips through tilde expansion correctly.
-	// After RemovePath("~/.claude/agents/Takumi.md"), the file should no
+	// After RemovePath("~/.config/agent/Takumi.md"), the file should no
 	// longer be tracked internally.
-	err = cm.RemovePath("~/.claude/agents/Takumi.md")
+	err = cm.RemovePath("~/.config/agent/Takumi.md")
 	if err != nil {
 		t.Fatalf("RemovePath with tilde label: %v", err)
 	}
@@ -1653,16 +1653,16 @@ func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
 	}
 
 	// Test 7: RefreshPath round-trips through tilde expansion after re-adding.
-	_, err = cm.AddRelativePath("~/.claude/agents/Takumi.md")
+	_, err = cm.AddRelativePath("~/.config/agent/Takumi.md")
 	if err != nil {
 		t.Fatalf("re-add after remove: %v", err)
 	}
 	// Modify the file on disk so RefreshPath has observable effect
-	updatedPath := filepath.Join(fakeHome, ".claude", "agents", "Takumi.md")
+	updatedPath := filepath.Join(fakeHome, ".config", "agent", "Takumi.md")
 	if err := os.WriteFile(updatedPath, []byte("# Updated Takumi"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	err = cm.RefreshPath("~/.claude/agents/Takumi.md")
+	err = cm.RefreshPath("~/.config/agent/Takumi.md")
 	if err != nil {
 		t.Fatalf("RefreshPath with tilde label: %v", err)
 	}

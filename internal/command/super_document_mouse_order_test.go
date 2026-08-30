@@ -46,7 +46,7 @@ func TestHandleMouse_CallsSetViewportContextBeforeHandleClickAtScreenCoords(t *t
 	engine.SetGlobal("superDocumentTemplate", "dummy template")
 
 	// Load and execute the embedded command script
-	script := engine.LoadScriptFromString("super-document", superDocumentScript)
+	script := engine.LoadScriptString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("failed to execute super-document script: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestHandleMouse_CallsSetViewportContextBeforeHandleClickAtScreenCoords(t *t
 	// Expose the call order for the Go test to inspect deterministically
 	__calls_json = JSON.stringify(calls);
 	`
-	testScriptObj := engine.LoadScriptFromString("call-order-test", testScript)
+	testScriptObj := engine.LoadScriptString("call-order-test", testScript)
 	if err := engine.ExecuteScript(testScriptObj); err != nil {
 		t.Fatalf("call-order test script execution failed: %v", err)
 	}

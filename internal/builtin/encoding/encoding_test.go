@@ -3,7 +3,7 @@ package encodingmod
 import (
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 func setup(t *testing.T) *goja.Runtime {

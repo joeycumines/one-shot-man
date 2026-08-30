@@ -82,8 +82,8 @@ func TestRender_NoTitleByDefault(t *testing.T) {
 	sb := New(&buf)
 	sb.Render()
 	got := buf.String()
-	if strings.Contains(got, "[Claude]") {
-		t.Errorf("default render should not contain [Claude]; got %q", got)
+	if strings.Contains(got, "[Agent]") {
+		t.Errorf("default render should not contain [Agent]; got %q", got)
 	}
 	// Positive assertion: the no-title fallback should be present.
 	if !strings.Contains(got, " ready │ Ctrl+] to switch ") {
@@ -408,4 +408,215 @@ func (b *safeBuffer) Len() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.Len()
+}
+
+func TestStatusBar_LeftSegments(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.SetLeftSegments([]Segment{{Text: "session:main"}, {Text: "2 windows"}})
+	sb.Render()
+	got := buf.String()
+	if !strings.Contains(got, "session:main │ 2 windows") {
+		t.Errorf("left segments not rendered; got %q", got)
+	}
+}
+
+func TestStatusBar_RightSegments(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.SetRightSegments([]Segment{{Text: "host:local"}, {Text: "2024-01-01"}})
+	sb.Render()
+	got := buf.String()
+	if !strings.Contains(got, "host:local │ 2024-01-01") {
+		t.Errorf("right segments not rendered; got %q", got)
+	}
+}
+
+func TestStatusBar_WindowName(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.SetWindowName("editor")
+	sb.SetWindowIndex(0)
+	sb.Render()
+	got := buf.String()
+	if !strings.Contains(got, "0:editor") {
+		t.Errorf("window name not rendered; got %q", got)
+	}
+}
+
+func TestStatusBar_SegmentsOverrideDefaults(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.SetStatus("working")
+	sb.SetLeftSegments([]Segment{{Text: "custom-left"}})
+	sb.Render()
+	got := buf.String()
+	if !strings.Contains(got, "custom-left") {
+		t.Errorf("custom left segment missing; got %q", got)
+	}
+	if strings.Contains(got, "working") {
+		t.Errorf("status text should be overridden by segments; got %q", got)
+	}
+}
+
+func TestStatusBar_PadLine(t *testing.T) {
+	got := padLine("left", "right", 20)
+	if len(got) != 20 {
+		t.Errorf("padLine length = %d, want 20; got %q", len(got), got)
+	}
+}
+
+func TestStatusBar_JoinSegments(t *testing.T) {
+	got := joinSegments([]string{"a", "b", "c"})
+	if got != "a │ b │ c" {
+		t.Errorf("joinSegments = %q, want %q", got, "a │ b │ c")
+	}
+}
+
+// ── T73: StatusBar configurable colors and position ─────────────────
+
+func TestStatusBar_Defaults_ReverseVideoBottom(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.Render()
+	got := buf.String()
+	if !strings.Contains(got, "\x1b[24;1H") {
+		t.Errorf("default position should be bottom row 24; got %q", got)
+	}
+	if !strings.Contains(got, "\x1b[7m") {
+		t.Errorf("default render should use reverse video; got %q", got)
+	}
+}
+
+func TestStatusBar_SetColors_Custom(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	if err := sb.SetColors("#ff5733", "#1a1a2e"); err != nil {
+		t.Fatalf("SetColors: %v", err)
+	}
+	sb.Render()
+	got := buf.String()
+	if strings.Contains(got, "\x1b[7m") {
+		t.Errorf("custom colors should not use reverse video; got %q", got)
+	}
+	if !strings.Contains(got, "\x1b[38;2;255;87;51m") {
+		t.Errorf("custom foreground SGR missing; got %q", got)
+	}
+	if !strings.Contains(got, "\x1b[48;2;26;26;46m") {
+		t.Errorf("custom background SGR missing; got %q", got)
+	}
+}
+
+func TestStatusBar_SetPosition_Top(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.SetHeight(40)
+	sb.SetPosition(PositionTop)
+	sb.Render()
+	got := buf.String()
+	if !strings.Contains(got, "\x1b[1;1H") {
+		t.Errorf("top position should render at row 1; got %q", got)
+	}
+	if strings.Contains(got, "\x1b[40;1H") {
+		t.Errorf("top position should not render at bottom row; got %q", got)
+	}
+}
+
+func TestStatusBar_SetPosition_Bottom(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.SetHeight(40)
+	sb.SetPosition(PositionBottom)
+	sb.Render()
+	got := buf.String()
+	if !strings.Contains(got, "\x1b[40;1H") {
+		t.Errorf("bottom position should render at last row; got %q", got)
+	}
+}
+
+func TestStatusBar_SetColors_InvalidResetsToDefault(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	if err := sb.SetColors("#not-a-color", "#alsobad"); err == nil {
+		t.Fatal("SetColors with invalid hex should return an error")
+	}
+	sb.Render()
+	got := buf.String()
+	if !strings.Contains(got, "\x1b[7m") {
+		t.Errorf("invalid colors should fall back to reverse video; got %q", got)
+	}
+	if strings.Contains(got, "\x1b[38;2;") {
+		t.Errorf("invalid colors should not emit foreground SGR; got %q", got)
+	}
+}
+
+func TestStatusBar_PositionFromString(t *testing.T) {
+	tests := []struct {
+		in     string
+		want   Position
+		wantOK bool
+	}{
+		{"top", PositionTop, true},
+		{"TOP", PositionTop, true},
+		{"  bottom  ", PositionBottom, true},
+		{"foo", DefaultPosition, false},
+	}
+	for _, tt := range tests {
+		got, ok := ParsePosition(tt.in)
+		if ok != tt.wantOK || got != tt.want {
+			t.Errorf("PositionFromString(%q) = (%v, %v); want (%v, %v)", tt.in, got, ok, tt.want, tt.wantOK)
+		}
+	}
+}
+
+func TestStatusBar_ScrollRegion_Top(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.SetHeight(24)
+	sb.SetPosition(PositionTop)
+	sb.SetScrollRegion()
+	got := buf.String()
+	if !strings.Contains(got, "\x1b[2;24r") {
+		t.Errorf("top status bar should reserve row 1; got %q", got)
+	}
+}
+
+func TestStatusBar_RenderLine_Width(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	line := sb.RenderLine(20, "left", "right")
+	if len(line) < 20 {
+		t.Fatalf("RenderLine returned short output: %q", line)
+	}
+	contentStart := strings.IndexByte(line, 'l')
+	if contentStart < 0 {
+		t.Fatalf("missing content in %q", line)
+	}
+	contentEnd := strings.LastIndex(line, "\x1b[0m")
+	if contentEnd < 0 {
+		t.Fatalf("missing reset in %q", line)
+	}
+	content := stripEscapeSequences(line[contentStart:contentEnd])
+	if len([]rune(content)) != 20 {
+		t.Errorf("rendered content width = %d, want 20; got %q", len([]rune(content)), content)
+	}
+}
+
+func stripEscapeSequences(s string) string {
+	var b strings.Builder
+	inEsc := false
+	for _, r := range s {
+		if inEsc {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEsc = false
+			}
+			continue
+		}
+		if r == '\x1b' {
+			inEsc = true
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

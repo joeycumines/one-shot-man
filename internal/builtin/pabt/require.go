@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
 	bt "github.com/joeycumines/go-behaviortree"
 	pabtpkg "github.com/joeycumines/go-pabt"
+	"github.com/joeycumines/goja"
+	"github.com/joeycumines/goja_nodejs/require"
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 )
 
@@ -24,7 +24,7 @@ import (
 //
 // The bridge parameter is required for thread-safe goja.Runtime access.
 // JSCondition.Match is called from the bt.Ticker goroutine and must use
-// Bridge.RunOnLoopSync to marshal calls to the event loop goroutine.
+// Bridge.RunSync to marshal calls to the event loop goroutine.
 func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
@@ -143,7 +143,7 @@ func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 
 				// Create a Go ActionGeneratorFunc that calls the JS function
 				generator := func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
-					// Early exit if bridge is stopping - avoids blocking in RunOnLoopSync
+					// Early exit if bridge is stopping - avoids blocking in RunSync
 					// during shutdown. This prevents deadlock where manager.Stop() waits
 					// for tickers while tickers are blocked here.
 					if !bridge.IsRunning() {
@@ -153,8 +153,8 @@ func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 					var actions []pabtpkg.IAction
 					var genErr error
 
-					// CRITICAL: Must use RunOnLoopSync for thread-safe goja access
-					err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+					// CRITICAL: Must use RunSync for thread-safe goja access
+					err := bridge.RunSync(func(vm *goja.Runtime) error {
 						// Pass the original JS object back unchanged if available.
 						// This preserves ALL properties (including .value) for action templating,
 						// equivalent to Go's type assertion for accessing internal state.
@@ -378,8 +378,7 @@ func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 						}
 					}
 
-					// DEBUG: Log condition creation
-					slog.Debug("[PA-BT COND CREATE]", "action", name, "conditionKey", keyVal.Export())
+					slog.Debug("pabt condition create", "action", name, "conditionKey", keyVal.Export())
 
 					// Extract match function
 					matchVal := condObj.Get("match")
@@ -422,32 +421,32 @@ func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 				length := int(effectsArray.Get("length").ToInteger())
 				effects = make([]pabtpkg.Effect, 0, length)
 
-				slog.Debug("[PA-BT EFFECT PARSE] Starting effect parsing", "action", name, "effectCount", length)
+				slog.Debug("pabt effect parse start", "action", name, "effectCount", length)
 
 				for i := range length {
 					effectVal := effectsArray.Get(fmt.Sprintf("%d", i))
 					if goja.IsUndefined(effectVal) || goja.IsNull(effectVal) {
-						slog.Debug("[PA-BT EFFECT PARSE] Effect undefined/null", "action", name, "index", i)
+						slog.Debug("pabt effect parse skipped undefined", "action", name, "index", i)
 						continue
 					}
 
 					effectObj := effectVal.ToObject(runtime)
 					if effectObj == nil {
-						slog.Debug("[PA-BT EFFECT PARSE] Effect not object", "action", name, "index", i)
+						slog.Debug("pabt effect parse skipped not object", "action", name, "index", i)
 						continue
 					}
 
 					// Extract key
 					keyVal := effectObj.Get("key")
 					if keyVal == nil || goja.IsUndefined(keyVal) {
-						slog.Debug("[PA-BT EFFECT PARSE] Effect key undefined", "action", name, "index", i)
+						slog.Debug("pabt effect parse skipped key undefined", "action", name, "index", i)
 						continue
 					}
 
 					// Extract value
 					valueVal := effectObj.Get("value")
 					if valueVal == nil || goja.IsUndefined(valueVal) {
-						slog.Debug("[PA-BT EFFECT PARSE] Effect Value undefined", "action", name, "index", i, "key", keyVal.Export())
+						slog.Debug("pabt effect parse skipped value undefined", "action", name, "index", i, "key", keyVal.Export())
 						continue
 					}
 
@@ -457,10 +456,10 @@ func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 						value: valueVal.Export(),
 					}
 
-					slog.Debug("[PA-BT EFFECT PARSE] Effect created", "action", name, "key", effect.key, "value", effect.value)
+					slog.Debug("pabt effect parse created", "action", name, "key", effect.key, "value", effect.value)
 					effects = append(effects, pabtpkg.Effect(effect))
 				}
-				slog.Debug("[PA-BT EFFECT PARSE] Finished effect parsing", "action", name, "totalEffects", len(effects))
+				slog.Debug("pabt effect parse finished", "action", name, "totalEffects", len(effects))
 			} else {
 				// No effects provided - explicitly initialize as empty slice
 				effects = []pabtpkg.Effect{}

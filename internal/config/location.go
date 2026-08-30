@@ -16,9 +16,9 @@ const (
 
 // GetConfigPath returns the configuration file path using kubectl-style behavior.
 // It first checks the OSM_CONFIG environment variable, then falls back
-// to the default location (~/.osm/config). If ~/.osm/ does not exist
-// but ~/.one-shot-man/config does, the legacy path is used for backward
-// compatibility.
+// to the default location under the user's home directory
+// ({UserHomeDir}/.osm/config). If the new directory does not exist but the
+// legacy config file does, the legacy path is used for backward compatibility.
 func GetConfigPath() (string, error) {
 	// Check for environment variable override
 	if configPath := os.Getenv("OSM_CONFIG"); configPath != "" {
@@ -50,8 +50,8 @@ func GetConfigPath() (string, error) {
 	return newConfigPath, nil
 }
 
-// EnsureConfigDir ensures that the configuration directory exists.
-// Creates ~/.osm/ (the new default), not the legacy ~/.one-shot-man/.
+// EnsureConfigDir ensures that the configuration directory for the active
+// config path exists, creating parent directories as needed.
 func EnsureConfigDir() error {
 	configPath, err := GetConfigPath()
 	if err != nil {

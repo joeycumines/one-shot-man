@@ -103,7 +103,7 @@ func NewScriptDiscovery(cfg *config.Config) *ScriptDiscovery {
 	if val, exists := cfg.GetGlobalOption("script.debug-discovery"); exists {
 		if parsed, _ := strconv.ParseBool(val); parsed {
 			discoveryConfig.DebugLogFunc = func(format string, args ...any) {
-				slog.Debug("script-discovery: "+format, "args", args)
+				slog.Debug("script discovery", "message", fmt.Sprintf(format, args...))
 			}
 		}
 	}
@@ -377,7 +377,7 @@ func (sd *ScriptDiscovery) traverseForGitRepos(startDir string) []string {
 		realDir, err := filepath.EvalSymlinks(dir)
 		if err != nil {
 			if errors.Is(err, os.ErrPermission) {
-				slog.Warn("permission denied resolving symlinks, stopping git traversal", "directory", dir)
+				slog.Warn("permission denied resolving symlinks stopping git traversal", "directory", dir)
 				sd.debugf("git-traversal: permission denied at %s: %v", dir, err)
 			} else {
 				sd.debugf("git-traversal: symlink resolution failed at %s: %v", dir, err)
@@ -450,7 +450,7 @@ func (sd *ScriptDiscovery) traverseForScriptDirs(startDir string) []string {
 		realDir, err := filepath.EvalSymlinks(dir)
 		if err != nil {
 			if errors.Is(err, os.ErrPermission) {
-				slog.Warn("permission denied resolving symlinks, stopping upward traversal", "directory", dir)
+				slog.Warn("permission denied resolving symlinks stopping upward traversal", "directory", dir)
 				sd.debugf("traversal: permission denied at %s: %v", dir, err)
 			} else {
 				sd.debugf("traversal: symlink resolution failed at %s: %v", dir, err)

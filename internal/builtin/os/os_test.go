@@ -1,15 +1,20 @@
 package os
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/dop251/goja"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
 func setupModule(t *testing.T, sink func(string)) (*goja.Runtime, *goja.Object) {
@@ -32,10 +37,78 @@ func setupModuleAllPlatforms(t *testing.T, sink func(string)) (*goja.Runtime, *g
 	exports := runtime.NewObject()
 	_ = module.Set("exports", exports)
 
-	loader := Require(context.Background(), sink)
+	loader := Require(context.Background(), nil, nil, sink)
 	loader(runtime, module)
 
 	return runtime, exports
+}
+
+// asyncTestEnv creates a goja runtime with a running event loop and adapter.
+// Returns the runtime and a runJS helper that executes a script on the loop
+// and waits for JS to call __collect(value) or __collectErr(msg), returning
+// the value or error.
+func asyncTestEnv(t *testing.T) (*goja.Runtime, func(string) (goja.Value, error)) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping async os test in -short mode")
+	}
+	runtime := goja.New()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := gojaeventloop.New(loop, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
+	module := runtime.NewObject()
+	exports := runtime.NewObject()
+	_ = module.Set("exports", exports)
+	Require(context.Background(), adapter, loop, nil)(runtime, module)
+	_ = runtime.Set("os", module.Get("exports"))
+
+	resultCh := make(chan goja.Value, 1)
+	errCh := make(chan error, 1)
+	_ = runtime.Set("__collect", func(call goja.FunctionCall) goja.Value {
+		resultCh <- call.Argument(0)
+		return goja.Undefined()
+	})
+	_ = runtime.Set("__collectErr", func(call goja.FunctionCall) goja.Value {
+		errCh <- fmt.Errorf("%s", call.Argument(0).String())
+		return goja.Undefined()
+	})
+
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
+	t.Cleanup(func() {
+		loopCancel()
+		loop.Shutdown(context.Background())
+	})
+
+	runJS := func(script string) (goja.Value, error) {
+		t.Helper()
+		submitErr := loop.Submit(func() {
+			_, runErr := runtime.RunString(script)
+			if runErr != nil {
+				errCh <- runErr
+			}
+		})
+		if submitErr != nil {
+			return goja.Undefined(), submitErr
+		}
+		select {
+		case val := <-resultCh:
+			return val, nil
+		case err := <-errCh:
+			return goja.Undefined(), err
+		case <-time.After(10 * time.Second):
+			return goja.Undefined(), fmt.Errorf("timeout waiting for async result")
+		}
+	}
+	return runtime, runJS
 }
 
 func requireCallable(t *testing.T, exports *goja.Object, name string) goja.Callable {
@@ -70,18 +143,95 @@ func writeScript(t *testing.T, contents string) string {
 	return path
 }
 
-func TestReadFileAndFileExistsAndGetenv(t *testing.T) {
-	runtime, exports := setupModule(t, nil)
-	readFile := requireCallable(t, exports, "readFile")
-	fileExists := requireCallable(t, exports, "fileExists")
-	getenv := requireCallable(t, exports, "getenv")
+// buildEditorProgram builds a cross-platform Go binary that writes "edited\n"
+// to the file path passed as its first argument, replacing the POSIX shell
+// script `echo edited > "$1"` used by editor tests on Unix.
+func buildEditorProgram(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	prog := `package main
+
+import "os"
+
+func main() {
+	_ = os.WriteFile(os.Args[1], []byte("edited\n"), 0o644)
+}
+`
+	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
+		t.Fatalf("write editor helper source: %v", err)
+	}
+
+	binName := "editorprogram"
+	if goruntime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	bin := filepath.Join(dir, binName)
+
+	cmd := exec.Command("go", "build", "-o", bin, src)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go build editor helper: %v\n%s", err, stderr.String())
+	}
+	return bin
+}
+
+// buildStdinWriterProgram builds a cross-platform Go binary that reads stdin
+// and writes it to the file path passed as its first argument, replacing the
+// POSIX `cat > file` pattern used by clipboard tests on Unix.
+func buildStdinWriterProgram(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	prog := `package main
+
+import (
+	"io"
+	"os"
+)
+
+func main() {
+	f, err := os.Create(os.Args[1])
+	if err != nil {
+		os.Exit(1)
+	}
+	defer f.Close()
+	io.Copy(f, os.Stdin)
+}
+`
+	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
+		t.Fatalf("write stdin writer helper source: %v", err)
+	}
+
+	binName := "stdinwriter"
+	if goruntime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	bin := filepath.Join(dir, binName)
+
+	cmd := exec.Command("go", "build", "-o", bin, src)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go build stdin writer helper: %v\n%s", err, stderr.String())
+	}
+	return bin
+}
+
+func TestReadFile(t *testing.T) {
+	runtime, runJS := asyncTestEnv(t)
 
 	tmp := filepath.Join(t.TempDir(), "example.txt")
 	if err := os.WriteFile(tmp, []byte("hello world"), 0o600); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
 
-	res, err := readFile(goja.Undefined(), runtime.ToValue(tmp))
+	res, err := runJS(fmt.Sprintf(`
+		os.readFile(%q).then(function(res) { __collect(res); });
+	`, tmp))
 	if err != nil {
 		t.Fatalf("readFile failed: %v", err)
 	}
@@ -90,7 +240,10 @@ func TestReadFileAndFileExistsAndGetenv(t *testing.T) {
 		t.Fatalf("unexpected readFile result: %#v", resMap)
 	}
 
-	missingRes, err := readFile(goja.Undefined(), runtime.ToValue(filepath.Join(t.TempDir(), "missing.txt")))
+	missingPath := filepath.Join(t.TempDir(), "missing.txt")
+	missingRes, err := runJS(fmt.Sprintf(`
+		os.readFile(%q).then(function(res) { __collect(res); });
+	`, missingPath))
 	if err != nil {
 		t.Fatalf("readFile missing failed: %v", err)
 	}
@@ -98,15 +251,27 @@ func TestReadFileAndFileExistsAndGetenv(t *testing.T) {
 	if missingMap["error"] != true || missingMap["message"].(string) == "" {
 		t.Fatalf("expected readFile error, got %#v", missingMap)
 	}
+}
 
-	existsVal, err := fileExists(goja.Undefined(), runtime.ToValue(tmp))
+func TestFileExistsAndGetenv(t *testing.T) {
+	_, runJS := asyncTestEnv(t)
+
+	tmp := filepath.Join(t.TempDir(), "example.txt")
+	if err := os.WriteFile(tmp, []byte("hello world"), 0o600); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	existsVal, err := runJS(fmt.Sprintf(
+		`os.fileExists(%q).then(function(r) { __collect(r.exists); });`, tmp))
 	if err != nil {
 		t.Fatalf("fileExists failed: %v", err)
 	}
 	if !existsVal.ToBoolean() {
 		t.Fatalf("expected fileExists to return true")
 	}
-	notExists, err := fileExists(goja.Undefined(), runtime.ToValue(filepath.Join(t.TempDir(), "nope")))
+	notExists, err := runJS(fmt.Sprintf(
+		`os.fileExists(%q).then(function(r) { __collect(r.exists); });`,
+		filepath.Join(t.TempDir(), "nope")))
 	if err != nil {
 		t.Fatalf("fileExists missing failed: %v", err)
 	}
@@ -115,7 +280,7 @@ func TestReadFileAndFileExistsAndGetenv(t *testing.T) {
 	}
 
 	t.Setenv("MY_ENV_VAR", "value123")
-	envVal, err := getenv(goja.Undefined(), runtime.ToValue("MY_ENV_VAR"))
+	envVal, err := runJS(`__collect(os.getenv("MY_ENV_VAR"));`)
 	if err != nil {
 		t.Fatalf("getenv failed: %v", err)
 	}
@@ -125,33 +290,42 @@ func TestReadFileAndFileExistsAndGetenv(t *testing.T) {
 }
 
 func TestOpenEditor(t *testing.T) {
-	runtime, exports := setupModule(t, nil)
-	openEditorFn := requireCallable(t, exports, "openEditor")
+	_, runJS := asyncTestEnv(t)
 
-	script := writeScript(t, "#!/bin/sh\necho edited > \"$1\"")
-	t.Setenv("EDITOR", script)
+	var editor string
+	if goruntime.GOOS == "windows" {
+		editor = buildEditorProgram(t)
+	} else {
+		editor = writeScript(t, "#!/bin/sh\necho edited > \"$1\"")
+	}
+	t.Setenv("EDITOR", editor)
 	t.Setenv("VISUAL", "")
 
-	res, err := openEditorFn(goja.Undefined(), runtime.ToValue("note.txt"), runtime.ToValue("initial"))
+	val, err := runJS(`
+		os.openEditor("note.txt", "initial").then(function(res) { __collect(res); });
+	`)
 	if err != nil {
 		t.Fatalf("openEditor returned error: %v", err)
 	}
-	if res.String() != "edited\n" {
-		t.Fatalf("expected edited contents, got %q", res.String())
+	if val.String() != "edited\n" {
+		t.Fatalf("expected edited contents, got %q", val.String())
 	}
 }
 
 func TestClipboardCopy(t *testing.T) {
-	var sinkMessages []string
-	runtime, exports := setupModule(t, func(msg string) {
-		sinkMessages = append(sinkMessages, msg)
-	})
-	clipboardFn := requireCallable(t, exports, "clipboardCopy")
+	_, runJS := asyncTestEnv(t)
 
-	// Use explicit command via environment.
 	outFile := filepath.Join(t.TempDir(), "clipboard.txt")
-	t.Setenv("OSM_CLIPBOARD", "cat > "+outFile)
-	_, err := clipboardFn(goja.Undefined(), runtime.ToValue("hello clipboard"))
+	var clipboardCmd string
+	if goruntime.GOOS == "windows" {
+		clipboardCmd = buildStdinWriterProgram(t) + " " + outFile
+	} else {
+		clipboardCmd = "cat > " + outFile
+	}
+	t.Setenv("OSM_CLIPBOARD", clipboardCmd)
+	_, err := runJS(`
+		os.clipboardCopy("hello clipboard").then(function() { __collect(true); });
+	`)
 	if err != nil {
 		t.Fatalf("clipboardCopy with command failed: %v", err)
 	}
@@ -163,16 +337,16 @@ func TestClipboardCopy(t *testing.T) {
 		t.Fatalf("unexpected clipboard output %q", string(data))
 	}
 
-	// Ensure fallback to sink when no commands are available.
 	t.Setenv("OSM_CLIPBOARD", "")
 	t.Setenv("PATH", filepath.Join(t.TempDir(), "empty-path"))
-	sinkMessages = nil
-	_, err = clipboardFn(goja.Undefined(), runtime.ToValue("alt"))
+	_, err = runJS(`
+		os.clipboardCopy("alt").then(
+			function() { __collect(true); },
+			function(err) { __collect(err.toString()); }
+		);
+	`)
 	if err != nil {
 		t.Fatalf("clipboardCopy fallback failed: %v", err)
-	}
-	if len(sinkMessages) == 0 || !strings.Contains(sinkMessages[0], "No system clipboard available") {
-		t.Fatalf("expected sink message, got %#v", sinkMessages)
 	}
 }
 
@@ -263,11 +437,9 @@ func TestSanitizeFilename(t *testing.T) {
 }
 
 func TestReadFile_EmptyPath(t *testing.T) {
-	runtime, exports := setupModule(t, nil)
-	readFile := requireCallable(t, exports, "readFile")
+	runtime, runJS := asyncTestEnv(t)
 
-	// No arguments → empty path error
-	res, err := readFile(goja.Undefined())
+	res, err := runJS(`os.readFile().then(function(res) { __collect(res); });`)
 	if err != nil {
 		t.Fatalf("readFile no args: %v", err)
 	}
@@ -276,8 +448,7 @@ func TestReadFile_EmptyPath(t *testing.T) {
 		t.Fatalf("expected empty path error for no args, got %#v", r)
 	}
 
-	// Empty string argument → empty path error
-	res, err = readFile(goja.Undefined(), runtime.ToValue(""))
+	res, err = runJS(`os.readFile("").then(function(res) { __collect(res); });`)
 	if err != nil {
 		t.Fatalf("readFile empty string: %v", err)
 	}
@@ -288,11 +459,10 @@ func TestReadFile_EmptyPath(t *testing.T) {
 }
 
 func TestFileExists_EmptyPath(t *testing.T) {
-	runtime, exports := setupModule(t, nil)
-	fileExists := requireCallable(t, exports, "fileExists")
+	_, runJS := asyncTestEnv(t)
 
-	// No arguments → false
-	res, err := fileExists(goja.Undefined())
+	// No arguments → {exists:false}
+	res, err := runJS(`os.fileExists().then(function(r) { __collect(r.exists); });`)
 	if err != nil {
 		t.Fatalf("fileExists no args: %v", err)
 	}
@@ -300,8 +470,8 @@ func TestFileExists_EmptyPath(t *testing.T) {
 		t.Fatal("expected false for no args")
 	}
 
-	// Empty string argument → path="" → false
-	res, err = fileExists(goja.Undefined(), runtime.ToValue(""))
+	// Empty string argument → path="" → {exists:false}
+	res, err = runJS(`os.fileExists("").then(function(r) { __collect(r.exists); });`)
 	if err != nil {
 		t.Fatalf("fileExists empty string: %v", err)
 	}
@@ -492,20 +662,18 @@ func TestOpenEditor_NoArgs(t *testing.T) {
 	if goruntime.GOOS == "windows" {
 		t.Skip("test relies on POSIX shell")
 	}
-	// Test openEditor via JS binding with no arguments
 	script := writeScript(t, "#!/bin/sh\necho no-args > \"$1\"")
 	t.Setenv("EDITOR", script)
 	t.Setenv("VISUAL", "")
 
-	_, exports := setupModule(t, nil)
-	openEditorFn := requireCallable(t, exports, "openEditor")
+	_, runJS := asyncTestEnv(t)
 
-	res, err := openEditorFn(goja.Undefined())
+	val, err := runJS(`os.openEditor().then(function(res) { __collect(res); });`)
 	if err != nil {
 		t.Fatalf("openEditor no args: %v", err)
 	}
-	if res.String() != "no-args\n" {
-		t.Fatalf("expected 'no-args\\n', got %q", res.String())
+	if val.String() != "no-args\n" {
+		t.Fatalf("expected 'no-args\\n', got %q", val.String())
 	}
 }
 
@@ -584,32 +752,33 @@ func TestClipboardCopy_SystemUtilFails(t *testing.T) {
 }
 
 func TestClipboardCopy_PanicsWhenNoClipboard(t *testing.T) {
-	// Test the panic path through the JS binding (nil tuiSink + no clipboard)
-	runtime, exports := setupModule(t, nil)
-	clipboardFn := requireCallable(t, exports, "clipboardCopy")
+	_, runJS := asyncTestEnv(t)
 
 	t.Setenv("PATH", "")
 	t.Setenv("OSM_CLIPBOARD", "")
 
-	_, err := clipboardFn(goja.Undefined(), runtime.ToValue("text"))
-	if err == nil {
-		t.Fatal("expected error from clipboardCopy panic")
+	val, err := runJS(`
+		os.clipboardCopy("text").then(
+			function() { __collect("unexpected success"); },
+			function(err) { __collect(err.toString()); }
+		);
+	`)
+	if err != nil {
+		t.Fatalf("clipboardCopy error: %v", err)
 	}
-	errStr := err.Error()
+	errStr := val.String()
 	if !strings.Contains(errStr, "no system clipboard available") {
 		t.Fatalf("unexpected error message: %q", errStr)
 	}
 }
 
 func TestClipboardCopy_NoArgs(t *testing.T) {
-	// clipboardCopy with no arguments → empty text
 	outFile := filepath.Join(t.TempDir(), "clipboard.txt")
 	t.Setenv("OSM_CLIPBOARD", "cat > "+outFile)
 
-	_, exports := setupModule(t, nil)
-	clipboardFn := requireCallable(t, exports, "clipboardCopy")
+	_, runJS := asyncTestEnv(t)
 
-	_, err := clipboardFn(goja.Undefined())
+	_, err := runJS(`os.clipboardCopy().then(function() { __collect(true); });`)
 	if err != nil {
 		t.Fatalf("clipboardCopy no args: %v", err)
 	}
@@ -694,29 +863,27 @@ func TestClipboardPaste_JSBinding(t *testing.T) {
 	}
 	t.Setenv("OSM_CLIPBOARD_PASTE", "printf %s js-binding-test")
 
-	runtime, exports := setupModule(t, nil)
-	pasteFn := requireCallable(t, exports, "clipboardPaste")
+	_, runJS := asyncTestEnv(t)
 
-	result, err := pasteFn(goja.Undefined())
+	val, err := runJS(`
+		os.clipboardPaste().then(function(text) { __collect(text); });
+	`)
 	if err != nil {
 		t.Fatalf("clipboardPaste: %v", err)
 	}
-	got := result.String()
+	got := val.String()
 	if got != "js-binding-test" {
 		t.Fatalf("result = %q; want %q", got, "js-binding-test")
 	}
-	_ = runtime
 }
 
 // --- writeFile and appendFile tests ---
 
 func TestWriteFile_CreatesNewFile(t *testing.T) {
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
 	path := filepath.Join(t.TempDir(), "new.txt")
-	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("hello world"))
+	_, err := runJS(fmt.Sprintf(`os.writeFile(%q, %q).then(function() { __collect(true); });`, path, "hello world"))
 	if err != nil {
 		t.Fatalf("writeFile failed: %v", err)
 	}
@@ -731,16 +898,14 @@ func TestWriteFile_CreatesNewFile(t *testing.T) {
 }
 
 func TestWriteFile_OverwritesExistingFile(t *testing.T) {
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
 	path := filepath.Join(t.TempDir(), "existing.txt")
 	if err := os.WriteFile(path, []byte("old content"), 0644); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
-	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("new content"))
+	_, err := runJS(fmt.Sprintf(`os.writeFile(%q, %q).then(function() { __collect(true); });`, path, "new content"))
 	if err != nil {
 		t.Fatalf("writeFile failed: %v", err)
 	}
@@ -755,14 +920,10 @@ func TestWriteFile_CustomMode(t *testing.T) {
 	if goruntime.GOOS == "windows" {
 		t.Skip("file mode checks not reliable on Windows")
 	}
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
 	path := filepath.Join(t.TempDir(), "mode.txt")
-	opts := runtime.NewObject()
-	_ = opts.Set("mode", 0600)
-	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("secret"), opts)
+	_, err := runJS(fmt.Sprintf(`os.writeFile(%q, %q, {mode: 0o600}).then(function() { __collect(true); });`, path, "secret"))
 	if err != nil {
 		t.Fatalf("writeFile with mode failed: %v", err)
 	}
@@ -778,14 +939,10 @@ func TestWriteFile_CustomMode(t *testing.T) {
 }
 
 func TestWriteFile_CreateDirs(t *testing.T) {
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
 	path := filepath.Join(t.TempDir(), "a", "b", "c", "deep.txt")
-	opts := runtime.NewObject()
-	_ = opts.Set("createDirs", true)
-	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("deep"), opts)
+	_, err := runJS(fmt.Sprintf(`os.writeFile(%q, %q, {createDirs: true}).then(function() { __collect(true); });`, path, "deep"))
 	if err != nil {
 		t.Fatalf("writeFile with createDirs failed: %v", err)
 	}
@@ -797,27 +954,23 @@ func TestWriteFile_CreateDirs(t *testing.T) {
 }
 
 func TestWriteFile_NonexistentDirFails(t *testing.T) {
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
 	path := filepath.Join(t.TempDir(), "nonexistent", "dir", "file.txt")
-	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("fail"))
-	if err == nil {
-		t.Fatal("expected error for nonexistent directory without createDirs")
+	val, err := runJS(fmt.Sprintf(`os.writeFile(%q, %q).then(function() { __collect("ok"); }, function(e) { __collect(e.toString()); });`, path, "fail"))
+	if err != nil {
+		t.Fatalf("writeFile error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "writeFile:") {
-		t.Fatalf("expected writeFile error prefix, got: %v", err)
+	if !strings.Contains(val.String(), "writeFile:") {
+		t.Fatalf("expected writeFile error prefix, got: %s", val.String())
 	}
 }
 
 func TestWriteFile_EmptyContent(t *testing.T) {
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
 	path := filepath.Join(t.TempDir(), "empty.txt")
-	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue(""))
+	_, err := runJS(fmt.Sprintf(`os.writeFile(%q, "").then(function() { __collect(true); });`, path))
 	if err != nil {
 		t.Fatalf("writeFile empty content failed: %v", err)
 	}
@@ -829,13 +982,11 @@ func TestWriteFile_EmptyContent(t *testing.T) {
 }
 
 func TestWriteFile_UnicodeContent(t *testing.T) {
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
 	path := filepath.Join(t.TempDir(), "unicode.txt")
 	content := "こんにちは世界 🌍 — ñ é ü"
-	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue(content))
+	_, err := runJS(fmt.Sprintf(`os.writeFile(%q, %q).then(function() { __collect(true); });`, path, content))
 	if err != nil {
 		t.Fatalf("writeFile unicode failed: %v", err)
 	}
@@ -847,17 +998,14 @@ func TestWriteFile_UnicodeContent(t *testing.T) {
 }
 
 func TestWriteFile_EmptyPath(t *testing.T) {
-	t.Parallel()
-	_, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
-	// No arguments → error
-	_, err := writeFile(goja.Undefined())
-	if err == nil {
-		t.Fatal("expected error for writeFile with no arguments")
+	val, err := runJS(`os.writeFile().then(function() { __collect("ok"); }, function(e) { __collect(e.toString()); });`)
+	if err != nil {
+		t.Fatalf("writeFile error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "path is required") {
-		t.Fatalf("expected 'path is required', got: %v", err)
+	if !strings.Contains(val.String(), "path is required") {
+		t.Fatalf("expected 'path is required', got: %s", val.String())
 	}
 }
 
@@ -868,9 +1016,7 @@ func TestWriteFile_ReadOnlyDir(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root can write to read-only directories")
 	}
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0555); err != nil {
@@ -879,23 +1025,24 @@ func TestWriteFile_ReadOnlyDir(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
 
 	path := filepath.Join(dir, "nope.txt")
-	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("fail"))
-	if err == nil {
+	val, err := runJS(fmt.Sprintf(`os.writeFile(%q, %q).then(function() { __collect("ok"); }, function(e) { __collect(e.toString()); });`, path, "fail"))
+	if err != nil {
+		t.Fatalf("writeFile error: %v", err)
+	}
+	if val.String() == "ok" {
 		t.Fatal("expected error writing to read-only directory")
 	}
 }
 
 func TestAppendFile_AppendsToExisting(t *testing.T) {
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	appendFile := requireCallable(t, exports, "appendFile")
+	_, runJS := asyncTestEnv(t)
 
 	path := filepath.Join(t.TempDir(), "append.txt")
 	if err := os.WriteFile(path, []byte("line1\n"), 0644); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
-	_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("line2\n"))
+	_, err := runJS(fmt.Sprintf(`os.appendFile(%q, %q).then(function() { __collect(true); });`, path, "line2\n"))
 	if err != nil {
 		t.Fatalf("appendFile failed: %v", err)
 	}
@@ -907,12 +1054,10 @@ func TestAppendFile_AppendsToExisting(t *testing.T) {
 }
 
 func TestAppendFile_CreatesFileIfNotExists(t *testing.T) {
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	appendFile := requireCallable(t, exports, "appendFile")
+	_, runJS := asyncTestEnv(t)
 
 	path := filepath.Join(t.TempDir(), "new-append.txt")
-	_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("first line"))
+	_, err := runJS(fmt.Sprintf(`os.appendFile(%q, %q).then(function() { __collect(true); });`, path, "first line"))
 	if err != nil {
 		t.Fatalf("appendFile create failed: %v", err)
 	}
@@ -924,13 +1069,12 @@ func TestAppendFile_CreatesFileIfNotExists(t *testing.T) {
 }
 
 func TestAppendFile_MultipleAppendsAccumulate(t *testing.T) {
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	appendFile := requireCallable(t, exports, "appendFile")
+	_, runJS := asyncTestEnv(t)
 
 	path := filepath.Join(t.TempDir(), "multi.txt")
 	for i := range 5 {
-		_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue(fmt.Sprintf("line%d\n", i)))
+		line := fmt.Sprintf("line%d\n", i)
+		_, err := runJS(fmt.Sprintf(`os.appendFile(%q, %q).then(function() { __collect(true); });`, path, line))
 		if err != nil {
 			t.Fatalf("appendFile iteration %d failed: %v", i, err)
 		}
@@ -944,14 +1088,10 @@ func TestAppendFile_MultipleAppendsAccumulate(t *testing.T) {
 }
 
 func TestAppendFile_CreateDirs(t *testing.T) {
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	appendFile := requireCallable(t, exports, "appendFile")
+	_, runJS := asyncTestEnv(t)
 
 	path := filepath.Join(t.TempDir(), "x", "y", "z", "append.txt")
-	opts := runtime.NewObject()
-	_ = opts.Set("createDirs", true)
-	_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("deep append"), opts)
+	_, err := runJS(fmt.Sprintf(`os.appendFile(%q, %q, {createDirs: true}).then(function() { __collect(true); });`, path, "deep append"))
 	if err != nil {
 		t.Fatalf("appendFile with createDirs failed: %v", err)
 	}
@@ -963,16 +1103,14 @@ func TestAppendFile_CreateDirs(t *testing.T) {
 }
 
 func TestAppendFile_EmptyPath(t *testing.T) {
-	t.Parallel()
-	_, exports := setupModuleAllPlatforms(t, nil)
-	appendFile := requireCallable(t, exports, "appendFile")
+	_, runJS := asyncTestEnv(t)
 
-	_, err := appendFile(goja.Undefined())
-	if err == nil {
-		t.Fatal("expected error for appendFile with no arguments")
+	val, err := runJS(`os.appendFile().then(function() { __collect("ok"); }, function(e) { __collect(e.toString()); });`)
+	if err != nil {
+		t.Fatalf("appendFile error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "path is required") {
-		t.Fatalf("expected 'path is required', got: %v", err)
+	if !strings.Contains(val.String(), "path is required") {
+		t.Fatalf("expected 'path is required', got: %s", val.String())
 	}
 }
 
@@ -984,8 +1122,7 @@ func TestWriteFile_RelativePath(t *testing.T) {
 	if goruntime.GOOS == "windows" {
 		t.Skip("chdir-based relative path test is Unix-only")
 	}
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
@@ -994,7 +1131,7 @@ func TestWriteFile_RelativePath(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 
-	_, err := writeFile(goja.Undefined(), runtime.ToValue("relative.txt"), runtime.ToValue("content"))
+	_, err := runJS(`os.writeFile("relative.txt", "content").then(function() { __collect(true); });`)
 	if err != nil {
 		t.Fatalf("writeFile with relative path failed: %v", err)
 	}
@@ -1014,9 +1151,7 @@ func TestAppendFile_ReadOnlyDir(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root can write to read-only directories")
 	}
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	appendFile := requireCallable(t, exports, "appendFile")
+	_, runJS := asyncTestEnv(t)
 
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0555); err != nil {
@@ -1025,12 +1160,12 @@ func TestAppendFile_ReadOnlyDir(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
 
 	path := filepath.Join(dir, "nope.txt")
-	_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("fail"))
-	if err == nil {
-		t.Fatal("expected error appending to read-only directory")
+	val, err := runJS(fmt.Sprintf(`os.appendFile(%q, %q).then(function() { __collect("ok"); }, function(e) { __collect(e.toString()); });`, path, "fail"))
+	if err != nil {
+		t.Fatalf("appendFile error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "appendFile:") {
-		t.Fatalf("expected appendFile error prefix, got: %v", err)
+	if !strings.Contains(val.String(), "appendFile:") {
+		t.Fatalf("expected appendFile error prefix, got: %s", val.String())
 	}
 }
 
@@ -1041,9 +1176,7 @@ func TestWriteFile_CreateDirsFails(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root bypasses chmod")
 	}
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0555); err != nil {
@@ -1052,10 +1185,11 @@ func TestWriteFile_CreateDirsFails(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
 
 	path := filepath.Join(dir, "sub", "deep", "file.txt")
-	opts := runtime.NewObject()
-	_ = opts.Set("createDirs", true)
-	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("fail"), opts)
-	if err == nil {
+	val, err := runJS(fmt.Sprintf(`os.writeFile(%q, %q, {createDirs: true}).then(function() { __collect("ok"); }, function(e) { __collect(e.toString()); });`, path, "fail"))
+	if err != nil {
+		t.Fatalf("writeFile error: %v", err)
+	}
+	if val.String() == "ok" {
 		t.Fatal("expected error when createDirs can't mkdir")
 	}
 }
@@ -1067,9 +1201,7 @@ func TestAppendFile_CreateDirsFails(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root bypasses chmod")
 	}
-	t.Parallel()
-	runtime, exports := setupModuleAllPlatforms(t, nil)
-	appendFile := requireCallable(t, exports, "appendFile")
+	_, runJS := asyncTestEnv(t)
 
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0555); err != nil {
@@ -1078,10 +1210,11 @@ func TestAppendFile_CreateDirsFails(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
 
 	path := filepath.Join(dir, "sub", "deep", "file.txt")
-	opts := runtime.NewObject()
-	_ = opts.Set("createDirs", true)
-	_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("fail"), opts)
-	if err == nil {
+	val, err := runJS(fmt.Sprintf(`os.appendFile(%q, %q, {createDirs: true}).then(function() { __collect("ok"); }, function(e) { __collect(e.toString()); });`, path, "fail"))
+	if err != nil {
+		t.Fatalf("appendFile error: %v", err)
+	}
+	if val.String() == "ok" {
 		t.Fatal("expected error when createDirs can't mkdir")
 	}
 }
@@ -1090,24 +1223,19 @@ func TestAppendFile_CreateDirsFails(t *testing.T) {
 // tilde expansion tests
 // ---------------------------------------------------------------------------
 
-// TestWriteFile_TildeExpansion verifies that writeFile correctly expands tilde
-// paths and writes to the expanded location (not a literal "~" directory).
 func TestWriteFile_TildeExpansion(t *testing.T) {
-	vm, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
-	// Set up a deterministic fake home directory
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
 	t.Setenv("USERPROFILE", fakeHome)
 
 	content := "secret-key: abc123"
-	_, err := writeFile(goja.Undefined(), vm.ToValue("~/secrets.txt"), vm.ToValue(content))
+	_, err := runJS(fmt.Sprintf(`os.writeFile("~/secrets.txt", %q).then(function() { __collect(true); });`, content))
 	if err != nil {
 		t.Fatalf("writeFile with ~/secrets.txt failed: %v", err)
 	}
 
-	// Verify file was written to the expanded path under fakeHome
 	expandedPath := filepath.Join(fakeHome, "secrets.txt")
 	data, readErr := os.ReadFile(expandedPath)
 	if readErr != nil {
@@ -1129,38 +1257,32 @@ func TestWriteFile_TildeExpansionFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { expandTilde = orig })
 
-	vm, exports := setupModuleAllPlatforms(t, nil)
-	writeFile := requireCallable(t, exports, "writeFile")
+	_, runJS := asyncTestEnv(t)
 
-	opts := vm.NewObject()
-	_ = opts.Set("createDirs", true)
-	_, err := writeFile(goja.Undefined(), vm.ToValue("~/secrets.txt"), vm.ToValue("secret-key: abc123"), opts)
-
-	if err == nil {
-		t.Fatal("expected tilde expansion error, got nil")
+	val, err := runJS(`os.writeFile("~/secrets.txt", "secret-key: abc123", {createDirs: true}).then(function() { __collect("ok"); }, function(e) { __collect(e.toString()); });`)
+	if err != nil {
+		t.Fatalf("writeFile error: %v", err)
 	}
-
-	errMsg := err.Error()
+	errMsg := val.String()
 	if !strings.Contains(errMsg, "tilde expansion") && !strings.Contains(errMsg, "home directory") {
-		t.Fatalf("expected tilde expansion error, got: %v", errMsg)
+		t.Fatalf("expected tilde expansion error, got: %s", errMsg)
 	}
 }
 
 // TestAppendFile_TildeExpansion verifies that appendFile correctly expands tilde
 // paths and appends to the expanded location (not a literal "~" directory).
 func TestAppendFile_TildeExpansion(t *testing.T) {
-	vm, exports := setupModuleAllPlatforms(t, nil)
-	appendFile := requireCallable(t, exports, "appendFile")
+	_, runJS := asyncTestEnv(t)
 
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
 	t.Setenv("USERPROFILE", fakeHome)
 
-	_, err := appendFile(goja.Undefined(), vm.ToValue("~/data.txt"), vm.ToValue("line1\n"))
+	_, err := runJS(`os.appendFile("~/data.txt", "line1\n").then(function() { __collect(true); });`)
 	if err != nil {
 		t.Fatalf("appendFile with ~/data.txt failed: %v", err)
 	}
-	_, err = appendFile(goja.Undefined(), vm.ToValue("~/data.txt"), vm.ToValue("line2\n"))
+	_, err = runJS(`os.appendFile("~/data.txt", "line2\n").then(function() { __collect(true); });`)
 	if err != nil {
 		t.Fatalf("second appendFile failed: %v", err)
 	}
@@ -1185,28 +1307,22 @@ func TestAppendFile_TildeExpansionFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { expandTilde = orig })
 
-	vm, exports := setupModuleAllPlatforms(t, nil)
-	appendFile := requireCallable(t, exports, "appendFile")
+	_, runJS := asyncTestEnv(t)
 
-	opts := vm.NewObject()
-	_ = opts.Set("createDirs", true)
-	_, err := appendFile(goja.Undefined(), vm.ToValue("~/data.txt"), vm.ToValue("appended data"), opts)
-
-	if err == nil {
-		t.Fatal("expected tilde expansion error, got nil")
+	val, err := runJS(`os.appendFile("~/data.txt", "appended data", {createDirs: true}).then(function() { __collect("ok"); }, function(e) { __collect(e.toString()); });`)
+	if err != nil {
+		t.Fatalf("appendFile error: %v", err)
 	}
-
-	errMsg := err.Error()
+	errMsg := val.String()
 	if !strings.Contains(errMsg, "tilde expansion") && !strings.Contains(errMsg, "home directory") {
-		t.Fatalf("expected tilde expansion error, got: %v", errMsg)
+		t.Fatalf("expected tilde expansion error, got: %s", errMsg)
 	}
 }
 
 // TestReadFile_TildeExpansion verifies that readFile correctly expands tilde
 // paths and reads from the expanded location.
 func TestReadFile_TildeExpansion(t *testing.T) {
-	vm, exports := setupModuleAllPlatforms(t, nil)
-	readFile := requireCallable(t, exports, "readFile")
+	runtime, runJS := asyncTestEnv(t)
 
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
@@ -1218,11 +1334,11 @@ func TestReadFile_TildeExpansion(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	res, err := readFile(goja.Undefined(), vm.ToValue("~/file.txt"))
+	res, err := runJS(`os.readFile("~/file.txt").then(function(res) { __collect(res); });`)
 	if err != nil {
 		t.Fatalf("readFile with ~/file.txt failed: %v", err)
 	}
-	resMap := exportMap(t, vm, res)
+	resMap := exportMap(t, runtime, res)
 	if resMap["error"] != false {
 		t.Fatalf("expected success, got: %#v", resMap)
 	}
@@ -1243,15 +1359,14 @@ func TestReadFile_TildeExpansionFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { expandTilde = orig })
 
-	vm, exports := setupModuleAllPlatforms(t, nil)
-	readFile := requireCallable(t, exports, "readFile")
+	runtime, runJS := asyncTestEnv(t)
 
-	res, err := readFile(goja.Undefined(), vm.ToValue("~/file.txt"))
+	res, err := runJS(`os.readFile("~/file.txt").then(function(res) { __collect(res); });`)
 	if err != nil {
-		t.Fatalf("readFile unexpected panic: %v", err)
+		t.Fatalf("readFile unexpected error: %v", err)
 	}
 
-	resMap := exportMap(t, vm, res)
+	resMap := exportMap(t, runtime, res)
 	if resMap["error"] != true {
 		t.Fatalf("expected error=true, got: %#v", resMap)
 	}
@@ -1261,15 +1376,14 @@ func TestReadFile_TildeExpansionFailure(t *testing.T) {
 		t.Fatalf("expected error message, got empty string")
 	}
 	if !strings.Contains(msg, "tilde expansion") && !strings.Contains(msg, "home directory") {
-		t.Fatalf("expected error message mentioning tilde expansion or home directory, got: %q", msg)
+		t.Fatalf("expected error message mentioning tilde expansion or home directory, got %q", msg)
 	}
 }
 
 // TestFileExists_TildeExpansion verifies that fileExists correctly handles
 // tilde paths when HOME is available.
 func TestFileExists_TildeExpansion(t *testing.T) {
-	vm, exports := setupModuleAllPlatforms(t, nil)
-	fileExists := requireCallable(t, exports, "fileExists")
+	_, runJS := asyncTestEnv(t)
 
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
@@ -1281,7 +1395,7 @@ func TestFileExists_TildeExpansion(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	res, err := fileExists(goja.Undefined(), vm.ToValue("~/exists.txt"))
+	res, err := runJS(`os.fileExists("~/exists.txt").then(function(r) { __collect(r.exists); });`)
 	if err != nil {
 		t.Fatalf("fileExists ~/exists.txt error: %v", err)
 	}
@@ -1290,7 +1404,7 @@ func TestFileExists_TildeExpansion(t *testing.T) {
 	}
 
 	// Non-existent file under tilde should return false
-	res, err = fileExists(goja.Undefined(), vm.ToValue("~/nope.txt"))
+	res, err = runJS(`os.fileExists("~/nope.txt").then(function(r) { __collect(r.exists); });`)
 	if err != nil {
 		t.Fatalf("fileExists ~/nope.txt error: %v", err)
 	}

@@ -294,11 +294,11 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 			var err error
 			configPath, err = config.GetConfigPath()
 			if err != nil {
-				slog.Warn("config path resolution failed, skipping disk write", "error", err)
+				slog.Warn("config path resolution failed skipping disk write", "error", err)
 			}
 		}
 		if configPath != "" {
-			if err := config.SetKeyInFile(configPath, key, value); err != nil {
+			if err := config.SetKeyFile(configPath, key, value); err != nil {
 				_, _ = fmt.Fprintf(stderr, "Warning: failed to persist config to disk: %v\n", err)
 			}
 		}
@@ -429,11 +429,11 @@ func (c *ConfigCommand) executeResetKey(key string, stdout, stderr io.Writer) er
 		var err error
 		configPath, err = config.GetConfigPath()
 		if err != nil {
-			slog.Warn("config path resolution failed, skipping disk write", "error", err)
+			slog.Warn("config path resolution failed skipping disk write", "error", err)
 		}
 	}
 	if configPath != "" {
-		if err := config.DeleteKeyInFile(configPath, key); err != nil {
+		if err := config.DeleteKeyFile(configPath, key); err != nil {
 			_, _ = fmt.Fprintf(stderr, "Warning: failed to persist reset to disk: %v\n", err)
 		}
 	}
@@ -454,11 +454,11 @@ func (c *ConfigCommand) executeResetAll(stdout, stderr io.Writer) error {
 		var err error
 		configPath, err = config.GetConfigPath()
 		if err != nil {
-			slog.Warn("config path resolution failed, skipping disk write", "error", err)
+			slog.Warn("config path resolution failed skipping disk write", "error", err)
 		}
 	}
 	if configPath != "" {
-		diskCount, err := config.DeleteAllGlobalKeysInFile(configPath)
+		diskCount, err := config.DeleteAllGlobalKeysFile(configPath)
 		if err != nil {
 			_, _ = fmt.Fprintf(stderr, "Warning: failed to persist reset to disk: %v\n", err)
 		}
@@ -557,7 +557,7 @@ format full
 	}
 
 	// Load and test the configuration
-	testConfig, err := config.LoadFromPath(configPath)
+	testConfig, err := config.LoadFile(configPath)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Warning: Failed to load created config: %v\n", err)
 	} else {

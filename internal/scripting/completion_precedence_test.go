@@ -15,7 +15,7 @@ func TestCompletionPrecedence(t *testing.T) {
 	tuiManager := engine.GetTUIManager()
 
 	// Register a mode with a help command that should override the built-in help
-	testScript := engine.LoadScriptFromString("test-mode-help", `
+	testScript := engine.LoadScriptString("test-mode-help", `
 		tui.registerMode({
 			name: "test-mode",
 			tui: {
@@ -80,7 +80,7 @@ func TestCompletionPrecedence(t *testing.T) {
 		// This should continue to work as before
 
 		// Register a JS completer for the custom prompt
-		completersScript := engine.LoadScriptFromString("test-completer", `
+		completersScript := engine.LoadScriptString("test-completer", `
 			tui.registerCompleter('helpCompleter', function(document) {
 				var word = document.getWordBeforeCursor();
 				if ('help'.startsWith(word)) {

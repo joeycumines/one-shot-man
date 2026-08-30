@@ -6,9 +6,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
+	"github.com/joeycumines/goja"
 )
 
 // TestMultilinePromptConfig_DefaultFalse verifies that multiline defaults to false.
@@ -29,8 +29,8 @@ func TestMultilinePromptConfig_Enabled(t *testing.T) {
 	t.Parallel()
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
-		reader: NewTUIReaderFromIO(&bytes.Reader{}),
+		writer: NewTUIWriterIO(io.Discard),
+		reader: NewTUIReaderIO(&bytes.Reader{}),
 	}
 
 	p := tm.buildGoPrompt(promptBuildConfig{
@@ -51,8 +51,8 @@ func TestMultilineDisabled_NoASCIIBind(t *testing.T) {
 	t.Parallel()
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
-		reader: NewTUIReaderFromIO(&bytes.Reader{}),
+		writer: NewTUIWriterIO(io.Discard),
+		reader: NewTUIReaderIO(&bytes.Reader{}),
 	}
 
 	p := tm.buildGoPrompt(promptBuildConfig{
@@ -73,8 +73,8 @@ func TestMultilineAltEnterInsertNewline(t *testing.T) {
 	t.Parallel()
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
-		reader: NewTUIReaderFromIO(&bytes.Reader{}),
+		writer: NewTUIWriterIO(io.Discard),
+		reader: NewTUIReaderIO(&bytes.Reader{}),
 	}
 
 	p := tm.buildGoPrompt(promptBuildConfig{
@@ -102,14 +102,14 @@ func TestMultilineNewLineMethod(t *testing.T) {
 
 	vm := goja.New()
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		engine: &Engine{vm: vm},
 	}
 
 	// Create a prompt with minimal options.
 	p := prompt.New(
 		func(s string) {},
-		prompt.WithWriter(NewTUIWriterFromIO(io.Discard)),
+		prompt.WithWriter(NewTUIWriterIO(io.Discard)),
 	)
 	obj := tm.buildPromptJSObject(p)
 
@@ -202,7 +202,7 @@ func TestMultilineRegisterMode(t *testing.T) {
 	tm := eng.GetTUIManager()
 
 	// Register a mode with multiline=true
-	script := eng.LoadScriptFromString("setup", `
+	script := eng.LoadScriptString("setup", `
 		tui.registerMode({
 			name: "ml-mode",
 			multiline: true,
@@ -228,7 +228,7 @@ func TestMultilineRegisterMode(t *testing.T) {
 	}
 
 	// Register a mode without multiline (should default to false)
-	script2 := eng.LoadScriptFromString("setup2", `
+	script2 := eng.LoadScriptString("setup2", `
 		tui.registerMode({
 			name: "no-ml-mode",
 			tui: { prompt: "[no-ml]> " }

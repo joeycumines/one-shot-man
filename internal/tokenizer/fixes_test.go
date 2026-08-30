@@ -72,7 +72,7 @@ func TestMetaspaceDefaults(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestMetaspaceDefaults(t *testing.T) {
 			"add_prefix_space": false
 		}
 	}`
-	tok2, _ := LoadTokenizerFromJSON(strings.NewReader(jsonData2))
+	tok2, _ := LoadTokenizerJSON(strings.NewReader(jsonData2))
 	ms2 := tok2.PreTokenizer.(*Metaspace)
 	if ms2.PrependScheme != PrependNever {
 		t.Errorf("expected prepend_scheme 'never' for add_prefix_space: false, got %q", ms2.PrependScheme)
@@ -107,7 +107,7 @@ func TestMetaspaceDefaults(t *testing.T) {
 			"add_prefix_space": true
 		}
 	}`
-	tok3, _ := LoadTokenizerFromJSON(strings.NewReader(jsonData3))
+	tok3, _ := LoadTokenizerJSON(strings.NewReader(jsonData3))
 	ms3 := tok3.PreTokenizer.(*Metaspace)
 	if ms3.PrependScheme != PrependFirst {
 		t.Errorf("expected prepend_scheme 'first' for add_prefix_space: true, got %q", ms3.PrependScheme)
@@ -127,7 +127,7 @@ func TestPostProcessorInjection(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestRobertaPostProcessor(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,10 +202,6 @@ func TestRobertaPostProcessor(t *testing.T) {
 		t.Errorf("missing special tokens: %+v", tokens)
 	}
 }
-
-// ──────────────────────────────────────────────────────────
-// review-4 and review-5 regression tests
-// ──────────────────────────────────────────────────────────
 
 // TestSplitMergesLineNullByte verifies that null bytes in merge tokens
 // are not treated as delimiters (review-5 #4).
@@ -246,7 +242,7 @@ func TestMetaspaceSplitDefault(t *testing.T) {
 		"model": {"type": "WordLevel", "vocab": {"a": 0, "<unk>": 1}},
 		"pre_tokenizer": {"type": "Metaspace"}
 	}`
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +256,7 @@ func TestMetaspaceSplitDefault(t *testing.T) {
 		"model": {"type": "WordLevel", "vocab": {"a": 0, "<unk>": 1}},
 		"pre_tokenizer": {"type": "Metaspace", "split": false}
 	}`
-	tok2, err := LoadTokenizerFromJSON(strings.NewReader(jsonData2))
+	tok2, err := LoadTokenizerJSON(strings.NewReader(jsonData2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +272,7 @@ func TestByteLevelDefaults(t *testing.T) {
 		"model": {"type": "WordLevel", "vocab": {"a": 0, "<unk>": 1}},
 		"pre_tokenizer": {"type": "ByteLevel"}
 	}`
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +292,7 @@ func TestByteLevelDefaults(t *testing.T) {
 		"pre_tokenizer": {"type": "ByteLevel", "use_regex": false, "trim_offsets": false},
 		"model": {"type": "WordLevel", "vocab": {"a": 0, "<unk>": 1}}
 	}`
-	tok2, _ := LoadTokenizerFromJSON(strings.NewReader(jsonData2))
+	tok2, _ := LoadTokenizerJSON(strings.NewReader(jsonData2))
 	bl2 := tok2.PreTokenizer.(*ByteLevel)
 	if bl2.TrimOffsets {
 		t.Error("ByteLevel.TrimOffsets should be false when explicitly set")
@@ -404,7 +400,7 @@ func TestTemplatePostProcessor(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +450,7 @@ func TestTemplatePostProcessorStringFormat(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,7 +536,7 @@ func TestSpecialTokenContamination(t *testing.T) {
 		"pre_tokenizer": {"type": "Whitespace"}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -597,7 +593,7 @@ func TestFlatFormatErrorPropagation(t *testing.T) {
 		"vocab": {"a": 0, "<unk>": 1},
 		"normalizer": {"type": "NonExistent"}
 	}`
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatalf("unknown normalizer type should log warning, not error: %v", err)
 	}
@@ -611,7 +607,7 @@ func TestFlatFormatErrorPropagation(t *testing.T) {
 		"vocab": {"a": 0, "<unk>": 1},
 		"normalizer": {{broken}}
 	}`
-	_, err = LoadTokenizerFromJSON(strings.NewReader(jsonData2))
+	_, err = LoadTokenizerJSON(strings.NewReader(jsonData2))
 	if err == nil {
 		t.Error("expected error for broken JSON normalizer, got nil")
 	}
@@ -663,7 +659,7 @@ func TestEncodeWithAddedTokens(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -749,7 +745,7 @@ func TestIsolateUnnormalizedTokensDeterministic(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -944,7 +940,7 @@ func TestTemplatePostProcessorMismatchedArrays(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -966,11 +962,6 @@ func TestTemplatePostProcessorMismatchedArrays(t *testing.T) {
 	}
 }
 
-// ──────────────────────────────────────────────────────────
-// review-1 regression tests: Normalized token isolation (bug #1),
-// SingleWord/LStrip/RStrip constraints (bug #4), IsFirst propagation
-// ──────────────────────────────────────────────────────────
-
 // TestNormalizedTokenIsolation verifies that added tokens with
 // Normalized=true are extracted after normalization but before
 // pre-tokenization (review-1 bug #1).
@@ -991,7 +982,7 @@ func TestNormalizedTokenIsolation(t *testing.T) {
 		"normalizer": {"type": "Lowercase"}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1030,7 +1021,7 @@ func TestAddedTokenSingleWord(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1090,7 +1081,7 @@ func TestAddedTokenSingleWordPunctuation(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1141,7 +1132,7 @@ func TestAddedTokenLStrip(t *testing.T) {
 		"pre_tokenizer": {"type": "Whitespace"}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1186,7 +1177,7 @@ func TestAddedTokenRStrip(t *testing.T) {
 		"pre_tokenizer": {"type": "Whitespace"}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1226,7 +1217,7 @@ func TestAddedTokenLStripRStripCombined(t *testing.T) {
 		"pre_tokenizer": {"type": "Whitespace"}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1266,7 +1257,7 @@ func TestAddedTokenNormalizedSingleWord(t *testing.T) {
 		"normalizer": {"type": "Lowercase"}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1315,7 +1306,7 @@ func TestIsFirstAfterAddedTokenIsolation(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1351,7 +1342,7 @@ func TestIsFirstAfterAddedTokenIsolation(t *testing.T) {
 		}
 	}`
 
-	tok2, err := LoadTokenizerFromJSON(strings.NewReader(jsonData2))
+	tok2, err := LoadTokenizerJSON(strings.NewReader(jsonData2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1393,7 +1384,7 @@ func TestNormalizedTokenMatchedViaNormalizedForm(t *testing.T) {
 		"normalizer": {"type": "Lowercase"}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1432,7 +1423,7 @@ func TestNormalizedTokenNotMatchInNonNormalizedText(t *testing.T) {
 		"normalizer": {"type": "Lowercase"}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1466,7 +1457,7 @@ func TestEmptySplitFiltering(t *testing.T) {
 		}
 	}`
 
-	tok, err := LoadTokenizerFromJSON(strings.NewReader(jsonData))
+	tok, err := LoadTokenizerJSON(strings.NewReader(jsonData))
 	if err != nil {
 		t.Fatal(err)
 	}

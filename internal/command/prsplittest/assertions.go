@@ -60,8 +60,8 @@ const ChunkCompatShim = `
         'verifySplit', 'verifySplits', 'verifyEquivalence', 'verifyEquivalenceDetailed',
         'cleanupBranches',
         'createPRs',
-        'resolveConflicts',
-        'ClaudeCodeExecutor',
+        'resolveConflicts', 'resolveConflictsWithAgent',
+        'AgentCodeExecutor',
         'renderClassificationPrompt', 'renderSplitPlanPrompt', 'renderConflictPrompt',
         'renderPrompt',
         'detectLanguage',
@@ -74,7 +74,6 @@ const ChunkCompatShim = `
         'buildDependencyGraph', 'renderAsciiGraph',
         'analyzeRetrospective',
         'cleanupExecutor',
-        'resolveConflictsWithClaude',
         'startVerifySession', 'cleanupVerifyWorktree',
         'extractDirs', 'extractGoImports', 'extractGoPkgs',
         'analyzeDiffAsync', 'createSplitPlanAsync', 'executeSplitAsync',
@@ -143,7 +142,7 @@ const ChunkCompatShim = `
     var stateNames = [
         'analysisCache', 'groupsCache', 'planCache',
         'executionResultCache', 'conversationHistory',
-        'claudeExecutor', 'mcpCallbackObj'
+        'mcpCallbackObj'
     ];
     stateNames.forEach(function(k) {
         try {
@@ -267,15 +266,6 @@ func GitMockSetupJS() string {
         return ok('');
     };
 
-    // execStream delegates to the execv mock but adapts the interface.
-    execMod.execStream = function(argv, opts) {
-        var r = execMod.execv(argv);
-        opts = opts || {};
-        if (opts.onStdout && r.stdout) opts.onStdout(r.stdout);
-        if (opts.onStderr && r.stderr) opts.onStderr(r.stderr);
-        return {code: r.code, error: r.error, message: r.message};
-    };
-
     // Mock exec.spawn to route through the same mock dispatcher as execv.
     // Returns a ChildHandle-compatible object with ReadableStream stdout/stderr
     // and an async wait() method. Used by verifySplitAsync (exec.spawn('sh',...)).
@@ -290,6 +280,7 @@ func GitMockSetupJS() string {
                 read: function() {
                     if (!stdoutRead) {
                         stdoutRead = true;
+                        // Read stdout: first access only.
                         if (r.stdout) return Promise.resolve({done: false, value: r.stdout});
                     }
                     return Promise.resolve({done: true});
@@ -299,6 +290,7 @@ func GitMockSetupJS() string {
                 read: function() {
                     if (!stderrRead) {
                         stderrRead = true;
+                        // Read stderr: first access only.
                         if (r.stderr) return Promise.resolve({done: false, value: r.stderr});
                     }
                     return Promise.resolve({done: true});
@@ -312,7 +304,7 @@ func GitMockSetupJS() string {
     };
 
     // Mock _gitExecAsync to route through the same mock dispatcher as execv.
-    // This ensures async git calls in resolveConflictsWithClaude, strategies,
+    // This ensures async git calls in resolveConflictsWithAgent, strategies,
     // heuristicFallback, etc. hit the same mock responses.
     if (globalThis.prSplit) {
         globalThis.prSplit._gitExecAsync = function(dir, args) {

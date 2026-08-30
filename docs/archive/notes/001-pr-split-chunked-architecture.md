@@ -52,7 +52,7 @@ attaches exports to `globalThis.prSplit`.
 | 06b | `pr_split_06b_verify_shell.js` | Interactive shell in verify worktree via CaptureSession |
 | 07 | `pr_split_07_prcreation.js` | `createPRs` — push, `gh pr create`, stacking support |
 | 08 | `pr_split_08_conflict.js` | `AUTO_FIX_STRATEGIES`, `resolveConflicts` |
-| 09 | `pr_split_09_claude.js` | `ClaudeCodeExecutor`, prompt templates |
+| 09 | `pr_split_09_agent.js` | `AgentCodeExecutor`, prompt templates |
 | 10a | `pr_split_10a_pipeline_config.js` | `AUTOMATED_DEFAULTS`, `SEND_*` constants, utility functions |
 | 10b | `pr_split_10b_pipeline_send.js` | `captureScreenshot`, prompt detection, anchor stability, `sendToHandle` |
 | 10c | `pr_split_10c_pipeline_resolve.js` | `waitForLogged`, `heuristicFallback`, `resolveConflictsWithClaude` |

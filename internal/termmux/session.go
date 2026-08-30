@@ -18,7 +18,7 @@ const (
 
 // SessionTarget identifies a named interactive session endpoint.
 //
-// It intentionally carries only generic metadata so callers can label Claude,
+// It intentionally carries only generic metadata so callers can label agent,
 // verification shells, or future interactive panes without baking product
 // concepts into the mux core.
 type SessionTarget struct {

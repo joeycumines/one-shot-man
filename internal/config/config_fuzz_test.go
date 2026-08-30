@@ -35,7 +35,7 @@ func FuzzLoadFromReader(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, data string) {
 		// Must not panic
-		cfg, err := LoadFromReader(strings.NewReader(data))
+		cfg, err := LoadReader(strings.NewReader(data))
 		if err != nil {
 			// Errors are fine — just must not panic
 			return

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
@@ -37,7 +38,7 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 	engine.SetGlobal("config", map[string]any{"name": "code-review"})
 
 	// Load the script
-	script := engine.LoadScriptFromString("code-review", codeReviewScript)
+	script := engine.LoadScriptString("code-review", codeReviewScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("Failed to execute script: %v", err)
 	}
@@ -63,9 +64,7 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 		output.print("ADDED_LAZY_DIFF");
 
 		// Build prompt which should execute the git diff
-		try {
-			const prompt = buildPrompt();
-
+		Promise.resolve(buildPrompt()).then(function(prompt) {
 			// Check if the lazy diff was executed within the prompt output
 			if (prompt.includes("### Diff:")) {
 				output.print("GIT_DIFF_EXECUTED_SUCCESS");
@@ -88,15 +87,29 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 				output.print("PROMPT_CONTAINS_TEMPLATE");
 			}
 
-		} catch (e) {
-			output.print("BUILD_PROMPT_ERROR: " + e.message);
-		}
+			__signalDone();
+		}).catch(function(e) {
+			output.print("BUILD_PROMPT_ERROR: " + (e && e.message ? e.message : String(e)));
+			__signalDone();
+		});
 	`
 
-	testScriptObj := engine.LoadScriptFromString("git-diff-test", testScript)
+	testScriptObj := engine.LoadScriptString("git-diff-test", testScript)
+
+	done := make(chan struct{})
+	_ = engine.Runtime().Set("__signalDone", func() {
+		close(done)
+	})
+
 	err = engine.ExecuteScript(testScriptObj)
 	if err != nil {
 		t.Fatalf("Test script execution failed: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for async script completion")
 	}
 
 	output := stdout.String()

@@ -12,9 +12,7 @@ from the bt.js integration specification:
   - Go-owned Blackboard provides thread-safe state management
   - Event-driven bridge for optimal performance
 
-Note: This is Variant C.2 (Go-centric with JS leaves) as the baseline. Full interoperability
-with bt.js composites (status translation, module compatibility, mixed Go/JS composites)
-requires additional implementation work documented in the architecture specification.
+Note: This is Variant C.2 (Go-centric with JS leaves) as the baseline.
 
 CRITICAL CONSTRAINT: All composite nodes MUST be implemented in Go (go-behaviortree).
 JavaScript nodes are ONLY for leaves. This prevents cyclic references and memory leaks.
@@ -27,10 +25,10 @@ Tick functions may return either Status or Promise<Status>:
 
 	type Tick = (children: Node[]) => Status | Promise<Status>
 
-SYNCHRONOUS OPTIMIZATION: This runtime does NOT provide a JavaScript microtask queue.
-Returning a Promise defers resolution to the macrotask queue, adding latency. Tick
-implementations SHOULD return Status directly whenever the result is immediately
-available, and only return Promise<Status> when genuinely async work is required.
+SYNCHRONOUS OPTIMIZATION: Strict microtask ordering is always-on, so Promise
+microtasks drain after each macrotask. Returning Status directly still avoids
+Promise allocation and is preferred when result is immediately available; only
+return Promise<Status> for genuinely async work.
 
 COMPOSITE TICK BEHAVIOR: The Go-backed composite functions (sequence, fallback,
 etc.) return Status synchronously. They dynamically detect when children
@@ -62,7 +60,7 @@ This is critical for proper lifecycle management and avoiding memory leaks:
 # Core Components
 
 Bridge: Manages the goja runtime and event loop. All JavaScript operations must
-happen within RunOnLoop callbacks to maintain thread safety. The Done() channel
+happen within Run callbacks to maintain thread safety. The Done() channel
 can be used to detect bridge shutdown. Use GetCallable() to retrieve JS functions
 for use with the adapters.
 

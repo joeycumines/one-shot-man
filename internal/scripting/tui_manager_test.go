@@ -18,17 +18,11 @@ func TestFlushQueuedOutput_WithSinkAndWriter_Newlines(t *testing.T) {
 	// Create a manager instance that writes to our buffer (not stdout)
 	tm := NewTUIManagerWithConfig(context.Background(), eng, nil, &out, testutil.NewTestSessionID("test-flush", t.Name()), "memory")
 
-	// Manually set a sink that appends to queue like Run() would do
-	tm.engine.logger.SetTUISink(func(msg string) {
-		tm.outputMu.Lock()
-		defer tm.outputMu.Unlock()
-		tm.outputQueue = append(tm.outputQueue, msg)
-	})
+	// Route output through the same sink Run() installs.
+	tm.engine.logger.SetTUISink(tm.writeTerminal)
 
 	eng.logger.PrintToTUI("line1")
 	eng.logger.PrintToTUI("line2\n")
-
-	tm.flushQueuedOutput()
 
 	got := out.String()
 	want := "line1\nline2\n"
@@ -59,7 +53,7 @@ func TestResetCommand_EndToEnd(t *testing.T) {
 	}
 
 	// Register modes with mode-specific state
-	modesScript := engine.LoadScriptFromString("modes-setup", `
+	modesScript := engine.LoadScriptString("modes-setup", `
 		// Import shared symbols
 		const shared = require('osm:sharedStateSymbols');
 

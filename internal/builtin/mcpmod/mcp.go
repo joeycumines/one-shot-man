@@ -11,35 +11,31 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const toolHandlerTimeout = 30 * time.Second
 
-// PromisifyFunc is the signature for the event loop's Promisify method.
-// Stored in internal data structures for easier mocking in tests.
-type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
-
 // Require returns a module loader for the osm:mcp module.
 // The adapter is used for thread-safe JS callback invocation and Promisify support.
 // If adapter is nil, the module loads but createServer is unavailable — matching exec.go behavior.
-func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 		// Guard against nil adapter to prevent segfault at module load time.
 		// exec.go uses the same pattern: the module loads but spawn is unavailable.
 		if adapter != nil {
-			_ = exports.Set("createServer", jsCreateServer(runtime, adapter, adapter.Loop().Promisify))
+			_ = exports.Set("createServer", jsCreateServer(ctx, runtime, adapter, loop))
 		}
 	}
 }
 
 // jsCreateServer returns the JS function: createServer(name, version) → server object
-func jsCreateServer(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
+func jsCreateServer(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		name := call.Argument(0).String()
 		version := ""
@@ -55,7 +51,9 @@ func jsCreateServer(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promi
 		s := &mcpServer{
 			server:  srv,
 			adapter: adapter,
+			loop:    loop,
 			runtime: runtime,
+			ctx:     ctx,
 		}
 
 		obj := runtime.NewObject()
@@ -84,11 +82,12 @@ type handlerResult struct {
 }
 
 // mcpServer wraps a Go MCP server for JS access.
-// adapter is required; loop and promisify are derived at call time.
 type mcpServer struct {
 	server  *mcp.Server
 	adapter *gojaeventloop.Adapter
+	loop    *goeventloop.Loop
 	runtime *goja.Runtime
+	ctx     context.Context
 
 	mu      sync.Mutex
 	running bool
@@ -153,7 +152,7 @@ func (s *mcpServer) makeToolHandler(handler goja.Callable) mcp.ToolHandler {
 		resultCh := make(chan handlerResult, 1)
 
 		// Schedule JS callback on event loop thread (goja.Runtime is not thread-safe)
-		if err := s.adapter.Loop().Submit(func() {
+		if err := s.adapter.Submit(func(_ *goja.Runtime) {
 			// Parse raw arguments to a JS object
 			var args any
 			if req.Params.Arguments != nil {
@@ -338,31 +337,27 @@ func (s *mcpServer) jsRun() func(call goja.FunctionCall) goja.Value {
 		}
 
 		s.running = true
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(s.ctx)
 		s.cancel = cancel
 		s.mu.Unlock()
 
-		// Create promise for async run
-		promise, resolve, reject := s.adapter.JS().NewChainedPromise()
-
-		s.adapter.Loop().Promisify(context.Background(), func(_ context.Context) (any, error) {
+		return s.adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				res, err := func(ctx context.Context) (any, error) {
 			err := s.server.Run(ctx, &mcp.StdioTransport{})
 			if err != nil && !errors.Is(err, context.Canceled) {
-				_ = s.adapter.Loop().Submit(func() {
-					reject(err)
-				})
 				return nil, err
-			} else {
-				if submitErr := s.adapter.Loop().Submit(func() {
-					resolve(goja.Undefined())
-				}); submitErr != nil {
-					// Event loop gone — nothing to do
-				}
 			}
 			return nil, nil
-		})
-
-		return s.adapter.GojaWrapPromise(promise)
+		}(ctx)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if res == nil { return goja.Undefined() }
+					return res
+				})
+			})
 	}
 }
 

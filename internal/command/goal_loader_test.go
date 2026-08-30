@@ -43,7 +43,7 @@ func TestLoadGoalFromFile_ValidJSON(t *testing.T) {
 	}
 
 	// Load the goal
-	goal, err := LoadGoalFromFile(goalFile)
+	goal, err := LoadGoalFile(goalFile)
 	if err != nil {
 		t.Fatalf("LoadGoalFromFile failed: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestLoadGoalFromFile_MissingName(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	_, err = LoadGoalFromFile(goalFile)
+	_, err = LoadGoalFile(goalFile)
 	if err == nil {
 		t.Fatal("Expected error for missing Name, got nil")
 	}
@@ -102,7 +102,7 @@ func TestLoadGoalFromFile_InvalidName(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	_, err = LoadGoalFromFile(goalFile)
+	_, err = LoadGoalFile(goalFile)
 	if err == nil {
 		t.Fatal("Expected error for invalid Name, got nil")
 	}
@@ -121,7 +121,7 @@ func TestLoadGoalFromFile_MissingDescription(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	_, err = LoadGoalFromFile(goalFile)
+	_, err = LoadGoalFile(goalFile)
 	if err == nil {
 		t.Fatal("Expected error for missing Description, got nil")
 	}
@@ -136,14 +136,14 @@ func TestLoadGoalFromFile_InvalidJSON(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	_, err = LoadGoalFromFile(goalFile)
+	_, err = LoadGoalFile(goalFile)
 	if err == nil {
 		t.Fatal("Expected error for invalid JSON, got nil")
 	}
 }
 
 func TestLoadGoalFromFile_NonExistent(t *testing.T) {
-	_, err := LoadGoalFromFile("/nonexistent/file.json")
+	_, err := LoadGoalFile("/nonexistent/file.json")
 	if err == nil {
 		t.Fatal("Expected error for non-existent file, got nil")
 	}
@@ -254,7 +254,7 @@ func TestLoadGoalFromFile_TooLarge(t *testing.T) {
 		t.Fatalf("Failed to write large file: %v", err)
 	}
 
-	_, err := LoadGoalFromFile(goalFile)
+	_, err := LoadGoalFile(goalFile)
 	if err == nil {
 		t.Fatal("Expected error for oversized goal file, got nil")
 	}
@@ -302,7 +302,7 @@ func TestLoadGoalFromFile_ErrorContainsPath(t *testing.T) {
 				t.Fatalf("Failed to write file: %v", err)
 			}
 
-			_, err := LoadGoalFromFile(goalFile)
+			_, err := LoadGoalFile(goalFile)
 			if err == nil {
 				t.Fatal("Expected error, got nil")
 			}
@@ -396,7 +396,7 @@ func TestLoadGoalFromFile_StatFailure(t *testing.T) {
 	t.Parallel()
 
 	// Test what happens when the file path is completely invalid
-	_, err := LoadGoalFromFile("")
+	_, err := LoadGoalFile("")
 	if err == nil {
 		t.Fatal("Expected error for empty path, got nil")
 	}

@@ -152,17 +152,17 @@ Split a large PR into reviewable stacked branches. Supports heuristic grouping s
   - `-log-level <level>`: log level (`debug`, `info`, `warn`, `error`; default `info`)
   - `-log-file <path>`: path to log file (JSON output)
   - `-log-buffer <n>`: size of in-memory log buffer (default `1000`)
-  - `-claude-command <path>`: Claude binary path (empty = auto-detect `claude` → `ollama`)
-  - `-claude-arg <arg>`: additional Claude CLI argument (repeatable, e.g. `-claude-arg --verbose -claude-arg --no-color`)
-  - `-claude-model <model>`: model name (provider-dependent)
-  - `-claude-config-dir <dir>`: Claude config directory override
-  - `-claude-env <vars>`: extra environment variables (`KEY=VALUE,KEY=VALUE`)
+  - `-agent-command <path>`: agent binary path (empty = auto-detects a supported agent on PATH)
+  - `-agent-arg <arg>`: additional agent CLI argument (repeatable, e.g. `-agent-arg --verbose -agent-arg --no-color`)
+  - `-agent-model <model>`: model name (provider-dependent)
+  - `-agent-config-dir <dir>`: agent config directory override
+  - `-agent-env <vars>`: extra environment variables (`KEY=VALUE,KEY=VALUE`)
 
 Config keys (in `[pr-split]` section or global):
   - `pr-split.base`, `pr-split.strategy`, `pr-split.max`, `pr-split.prefix`
   - `pr-split.verify`, `pr-split.dry-run`
-  - `pr-split.claude-command`, `pr-split.claude-arg`, `pr-split.claude-model`
-  - `pr-split.claude-config-dir`, `pr-split.claude-env`
+  - `pr-split.agent-command`, `pr-split.agent-arg`, `pr-split.agent-model`
+  - `pr-split.agent-config-dir`, `pr-split.agent-env`
 
 #### Grouping strategies
 
@@ -188,7 +188,7 @@ Workflow commands:
   - `equivalence` — check tree hash equivalence
   - `cleanup` — delete all split branches
   - `run` — full workflow: analyze → group → plan → execute → verify
-  - `auto-split` — automated pipeline: spawn Claude → classify → plan → execute → verify → resolve (falls back to heuristic mode if Claude unavailable)
+  - `auto-split` — automated pipeline: spawn agent → classify → plan → execute → verify → resolve (falls back to heuristic mode if agent unavailable)
 
 Plan editing commands:
   - `move <file> <from-index> <to-index>` — move a file between splits (1-based indexes)
@@ -212,21 +212,21 @@ General:
 
 #### Usage examples
 
-**Heuristic mode** (default, no Claude):
+**Heuristic mode** (default, no agent):
 ```
 $ osm pr-split -i --base main --strategy directory
 > run
 ```
 
-**Automated mode** (with Claude Code):
+**Automated mode** (with an agent CLI):
 ```
-$ osm pr-split -i --base main --claude-command claude
+$ osm pr-split -i --base main --agent-command /path/to/agent
 > auto-split
 ```
 
 **Mixed mode** — start automated, then refine manually:
 ```
-$ osm pr-split -i --base main --claude-command claude
+$ osm pr-split -i --base main --agent-command /path/to/agent
 > auto-split
 > preview
 > move internal/util.go 3 1
@@ -235,7 +235,7 @@ $ osm pr-split -i --base main --claude-command claude
 
 #### Troubleshooting
 
-- **"Claude unavailable"** — ensure `claude` (or `--claude-command`) is on PATH.
+- **"Agent unavailable"** — ensure the agent binary (or `--agent-command`) is on PATH.
   Auto-split falls back to heuristic mode automatically.
 - **Tree hash mismatch** — a file rename's old path wasn't deleted from the split
   branch. Use `fix` to attempt auto-repair, or manually adjust with `move`.
@@ -248,7 +248,7 @@ When the split-view is open during branch building, three tabs are available:
 
 | Tab | Description |
 |-----|-------------|
-| Claude | Claude AI assistant output |
+| Agent | Agent output |
 | Output | Raw pipeline output log |
 | Verify | Live interactive verify pane; canonical mode is the interactive worktree shell, with explicit degraded one-shot or text-only fallback when PTY support is unavailable |
 
@@ -257,8 +257,8 @@ When the split-view is open during branch building, three tabs are available:
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+L` | Toggle split-view panel |
-| `Ctrl+Tab` | Cycle focus target (wizard → Claude → Output → Verify → wizard; Verify only when present) |
-| `Ctrl+O` | Cycle visible bottom tabs (Claude ↔ Output, adding Verify when present) |
+| `Ctrl+Tab` | Cycle focus target (wizard → Agent → Output → Verify → wizard; Verify only when present) |
+| `Ctrl+O` | Cycle visible bottom tabs (Agent ↔ Output, adding Verify when present) |
 | `Ctrl+]` | Full passthrough for the focused interactive pane |
 | `Ctrl+= / Ctrl+-` | Resize split-view ratio |
 

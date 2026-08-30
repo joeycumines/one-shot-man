@@ -25,9 +25,9 @@ const maxDirEntries = 10000
 // start with an alphanumeric character.
 var goalNameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]*$`)
 
-// LoadGoalFromFile loads a goal definition from a JSON file.
+// LoadGoalFile loads a goal definition from a JSON file.
 // It validates required fields and resolves script content from embedded or external files.
-func LoadGoalFromFile(path string) (*Goal, error) {
+func LoadGoalFile(path string) (*Goal, error) {
 	// Check file size before reading to reject obviously oversized files
 	info, err := os.Stat(path)
 	if err != nil {
@@ -131,7 +131,7 @@ func FindGoalFiles(dir string) ([]GoalFileCandidate, error) {
 
 	// Protect against extremely large directories
 	if len(entries) > maxDirEntries {
-		slog.Warn("goal directory contains excess entries, truncating scan",
+		slog.Warn("goal directory contains excess entries truncating scan",
 			"directory", dir,
 			"entryCount", len(entries),
 			"limit", maxDirEntries)

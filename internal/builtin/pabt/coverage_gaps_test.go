@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dop251/goja"
 	"github.com/expr-lang/expr"
 	bt "github.com/joeycumines/go-behaviortree"
 	"github.com/joeycumines/go-pabt"
+	"github.com/joeycumines/goja"
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -911,10 +911,10 @@ func TestRequire_NewAction_InvalidNodeArg(t *testing.T) {
 }
 
 // ========================================================================
-// Integration: JSCondition.Match with RunOnLoopSync error
+// Integration: JSCondition.Match with RunSync error
 // ========================================================================
 
-func TestJSCondition_Match_RunOnLoopSync_Error(t *testing.T) {
+func TestJSCondition_Match_RunSync_Error(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -993,14 +993,6 @@ func TestVariable_NumericKeys(t *testing.T) {
 	val, err = state.Variable(stringerKey("sym"))
 	require.NoError(t, err)
 	assert.Equal(t, "stringer-val", val)
-}
-
-// testBridgeLocal is an alternative bridge setup if testBridge from require_test.go
-// is not visible. Since we're in the same package, testBridge IS visible.
-// This function only serves as documentation that testBridge is reused.
-func init() {
-	// Compile-time check: testBridge must be visible from this file
-	_ = testBridge
 }
 
 // ========================================================================

@@ -152,10 +152,10 @@
     }
 
     // detectGoModulePath reads go.mod and returns the module path, or ''.
-    function detectGoModulePath() {
+    async function detectGoModulePath() {
         var content = '';
         if (osmod) {
-            var result = osmod.readFile('go.mod');
+            var result = await osmod.readFile('go.mod');
             if (result.error) {
                 return '';
             }
@@ -164,9 +164,9 @@
             var readCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'type' : 'cat';
             var result;
             if (readCmd === 'type') {
-                result = exec.execv(['cmd.exe', '/C', 'type "go.mod"']);
+                result = await exec.execv(['cmd.exe', '/C', 'type "go.mod"']);
             } else {
-                result = exec.execv(['cat', 'go.mod']);
+                result = await exec.execv(['cat', 'go.mod']);
             }
             if (result.code !== 0) {
                 return '';
@@ -185,7 +185,7 @@
 
     // groupByDependency groups Go files by package+import relationships
     // using union-find. Non-Go files are placed in nearest matching group.
-    function groupByDependency(files, options) {
+    async function groupByDependency(files, options) {
         if (!files || !files.length) return {};
         options = options || {};
 
@@ -214,7 +214,7 @@
         }
         var pkgDirs = Object.keys(pkgFiles);
 
-        var modulePath = detectGoModulePath();
+        var modulePath = await detectGoModulePath();
 
         // Union-Find.
         var parent = {};
@@ -251,7 +251,7 @@
 
                 var fileContent = '';
                 if (osmod) {
-                    var readResult = osmod.readFile(goFiles[i]);
+                    var readResult = await osmod.readFile(goFiles[i]);
                     if (readResult.error) {
                         continue;
                     }
@@ -259,9 +259,9 @@
                 } else {
                     var catResult;
                     if (prSplit._isWindows && prSplit._isWindows()) {
-                        catResult = exec.execv(['cmd.exe', '/C', 'type "' + goFiles[i] + '"']);
+                        catResult = await exec.execv(['cmd.exe', '/C', 'type "' + goFiles[i] + '"']);
                     } else {
-                        catResult = exec.execv(['cat', goFiles[i]]);
+                        catResult = await exec.execv(['cat', goFiles[i]]);
                     }
                     if (catResult.code !== 0) {
                         continue;
@@ -329,7 +329,7 @@
     }
 
     // applyStrategy selects and applies a grouping strategy.
-    function applyStrategy(files, strategy, options) {
+    async function applyStrategy(files, strategy, options) {
         if (!files || !files.length) return {};
         options = options || {};
         switch (strategy) {
@@ -342,9 +342,9 @@
             case 'chunks':
                 return groupByChunks(files, options.maxPerGroup || runtime.maxFiles);
             case 'dependency':
-                return groupByDependency(files, options);
+                return await groupByDependency(files, options);
             case 'auto':
-                return selectStrategy(files, options).groups;
+                return (await selectStrategy(files, options)).groups;
             default:
                 // T102: Warn on unknown strategy — silent fallback masks typos.
                 log.warn('pr-split: unknown strategy "' + strategy + '" — falling back to directory. Valid: auto, heuristic, directory, directory-deep, extension, chunks, dependency');
@@ -358,7 +358,7 @@
     }
 
     // selectStrategy auto-detects the best grouping strategy by scoring.
-    function selectStrategy(files, options) {
+    async function selectStrategy(files, options) {
         options = options || {};
         var maxPerGroup = options.maxPerGroup || runtime.maxFiles;
 
@@ -367,7 +367,7 @@
             { name: 'directory-deep', groups: groupByDirectory(files, 2) },
             { name: 'extension', groups: groupByExtension(files) },
             { name: 'chunks', groups: groupByChunks(files, maxPerGroup) },
-            { name: 'dependency', groups: groupByDependency(files, options) }
+            { name: 'dependency', groups: await groupByDependency(files, options) }
         ];
 
         var candidates = [];
@@ -463,7 +463,7 @@
         }
         var pkgDirs = Object.keys(pkgFiles);
 
-        var modulePath = detectGoModulePath();
+        var modulePath = await detectGoModulePath();
 
         // Union-Find (same as sync version).
         var parent = {};
@@ -502,7 +502,7 @@
                 var fileContent = '';
                 if (osmod) {
                     // osmod.readFile is a fast Go syscall (~0.1 ms per file).
-                    var readResult = osmod.readFile(goFiles[i]);
+                    var readResult = await osmod.readFile(goFiles[i]);
                     if (readResult.error) { continue; }
                     fileContent = readResult.content;
                 } else if (shellExecAsync) {
@@ -514,7 +514,7 @@
                 } else {
                     // Last resort: sync exec (only if neither osmod nor spawn available).
                     var catCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'type' : 'cat';
-                    var catResult2 = exec.execv([catCmd, goFiles[i]]);
+                    var catResult2 = await exec.execv([catCmd, goFiles[i]]);
                     if (catResult2.code !== 0) { continue; }
                     fileContent = catResult2.stdout;
                 }

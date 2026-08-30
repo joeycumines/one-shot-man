@@ -104,7 +104,7 @@ func TestVerifySplits_EmptyPlan(t *testing.T) {
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	t.Run("null_plan", func(t *testing.T) {
-		val, err := evalJS(`JSON.stringify(verifySplits(null, {}))`)
+		val, err := evalJS(`JSON.stringify(await verifySplits(null, {}))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -124,7 +124,7 @@ func TestVerifySplits_EmptyPlan(t *testing.T) {
 	})
 
 	t.Run("undefined_plan", func(t *testing.T) {
-		val, err := evalJS(`JSON.stringify(verifySplits(undefined, {}))`)
+		val, err := evalJS(`JSON.stringify(await verifySplits(undefined, {}))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -147,7 +147,7 @@ func TestVerifySplits_EmptyPlan(t *testing.T) {
 			var origExec = exec.execv;
 			exec.execv = function() { return { code: 0, stdout: "main\n", stderr: "" }; };
 			try {
-				return JSON.stringify(verifySplits({ splits: [] }, {}));
+				return JSON.stringify(await verifySplits({ splits: [] }, {}));
 			} finally {
 				exec.execv = origExec;
 			}
@@ -438,14 +438,14 @@ func TestAutoSplit_EmptyDiff(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Mock ClaudeCodeExecutor to avoid real AI.
+	// Mock AgentCodeExecutor to avoid real AI.
 	if _, err := tp.EvalJS(`
-		ClaudeCodeExecutor = function(config) { this.config = config; };
-		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
-		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
-		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
-		ClaudeCodeExecutor.prototype.close = function() {};
-		ClaudeCodeExecutor.prototype.kill = function() {};
+		AgentCodeExecutor = function(config) { this.config = config; };
+		AgentCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		AgentCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
+		AgentCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
+		AgentCodeExecutor.prototype.close = function() {};
+		AgentCodeExecutor.prototype.kill = function() {};
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -500,14 +500,14 @@ func TestAutoSplit_SingleFile(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Mock ClaudeCodeExecutor.
+	// Mock AgentCodeExecutor.
 	if _, err := tp.EvalJS(`
-		ClaudeCodeExecutor = function(config) { this.config = config; };
-		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
-		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
-		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
-		ClaudeCodeExecutor.prototype.close = function() {};
-		ClaudeCodeExecutor.prototype.kill = function() {};
+		AgentCodeExecutor = function(config) { this.config = config; };
+		AgentCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		AgentCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
+		AgentCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
+		AgentCodeExecutor.prototype.close = function() {};
+		AgentCodeExecutor.prototype.kill = function() {};
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -574,14 +574,14 @@ func TestAutoSplit_LargeDiff(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Mock ClaudeCodeExecutor.
+	// Mock AgentCodeExecutor.
 	if _, err := tp.EvalJS(`
-		ClaudeCodeExecutor = function(config) { this.config = config; };
-		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
-		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
-		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
-		ClaudeCodeExecutor.prototype.close = function() {};
-		ClaudeCodeExecutor.prototype.kill = function() {};
+		AgentCodeExecutor = function(config) { this.config = config; };
+		AgentCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		AgentCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
+		AgentCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
+		AgentCodeExecutor.prototype.close = function() {};
+		AgentCodeExecutor.prototype.kill = function() {};
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -645,21 +645,21 @@ func TestAutoSplit_BinaryFiles(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Mock ClaudeCodeExecutor.
+	// Mock AgentCodeExecutor.
 	if _, err := tp.EvalJS(`
-		ClaudeCodeExecutor = function(config) { this.config = config; };
-		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
-		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
-		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
-		ClaudeCodeExecutor.prototype.close = function() {};
-		ClaudeCodeExecutor.prototype.kill = function() {};
+		AgentCodeExecutor = function(config) { this.config = config; };
+		AgentCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		AgentCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
+		AgentCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
+		AgentCodeExecutor.prototype.close = function() {};
+		AgentCodeExecutor.prototype.kill = function() {};
 	`); err != nil {
 		t.Fatal(err)
 	}
 
 	// Verify git sees the binary files.
-	diffOut, err := tp.EvalJS(`gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
-		['diff', '--numstat', 'main...feature']).stdout`)
+	diffOut, err := tp.EvalJS(`(await gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
+		['diff', '--numstat', 'main...feature'])).stdout`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -843,7 +843,7 @@ func TestAnalyzeDiff_SpecialCharPaths(t *testing.T) {
 	}
 
 	val, err := evalJS(`(function() {
-		var analysis = globalThis.prSplit.analyzeDiff({baseBranch: 'main'});
+		var analysis = await globalThis.prSplit.analyzeDiff({baseBranch: 'main'});
 		var errors = [];
 
 		// All 5 files should be detected.
@@ -925,16 +925,16 @@ func TestAutoSplit_BranchCollision(t *testing.T) {
 	// Create pre-existing split branches that would collide.
 	if _, err := tp.EvalJS(`(function() {
 		var dir = '` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `';
-		gitExec(dir, ['checkout', '-b', 'split/pkg1', 'main']);
-		gitExec(dir, ['checkout', '-b', 'split/pkg2', 'main']);
-		gitExec(dir, ['checkout', 'feature']); // back to feature
+		await gitExec(dir, ['checkout', '-b', 'split/pkg1', 'main']);
+		await gitExec(dir, ['checkout', '-b', 'split/pkg2', 'main']);
+		await gitExec(dir, ['checkout', 'feature']); // back to feature
 	})()`); err != nil {
 		t.Fatal(err)
 	}
 
 	// Verify pre-existing branches exist.
-	verifyBranch, err := tp.EvalJS(`gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
-		['branch', '--list', 'split/*']).stdout`)
+	verifyBranch, err := tp.EvalJS(`(await gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
+		['branch', '--list', 'split/*'])).stdout`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -942,14 +942,14 @@ func TestAutoSplit_BranchCollision(t *testing.T) {
 		t.Fatal("pre-existing split/pkg1 branch not created")
 	}
 
-	// Mock ClaudeCodeExecutor.
+	// Mock AgentCodeExecutor.
 	if _, err := tp.EvalJS(`
-		ClaudeCodeExecutor = function(config) { this.config = config; };
-		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
-		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
-		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
-		ClaudeCodeExecutor.prototype.close = function() {};
-		ClaudeCodeExecutor.prototype.kill = function() {};
+		AgentCodeExecutor = function(config) { this.config = config; };
+		AgentCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		AgentCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
+		AgentCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
+		AgentCodeExecutor.prototype.close = function() {};
+		AgentCodeExecutor.prototype.kill = function() {};
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -980,8 +980,8 @@ func TestAutoSplit_BranchCollision(t *testing.T) {
 	}
 
 	// Verify split branches exist again (re-created after pre-flight delete).
-	branchOut, err := tp.EvalJS(`gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
-		['branch', '--list', 'split/*']).stdout`)
+	branchOut, err := tp.EvalJS(`(await gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
+		['branch', '--list', 'split/*'])).stdout`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1027,14 +1027,14 @@ func TestAutoSplit_OnlyDeletions(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Mock ClaudeCodeExecutor.
+	// Mock AgentCodeExecutor.
 	if _, err := tp.EvalJS(`
-		ClaudeCodeExecutor = function(config) { this.config = config; };
-		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
-		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
-		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
-		ClaudeCodeExecutor.prototype.close = function() {};
-		ClaudeCodeExecutor.prototype.kill = function() {};
+		AgentCodeExecutor = function(config) { this.config = config; };
+		AgentCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		AgentCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
+		AgentCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
+		AgentCodeExecutor.prototype.close = function() {};
+		AgentCodeExecutor.prototype.kill = function() {};
 	`); err != nil {
 		t.Fatal(err)
 	}

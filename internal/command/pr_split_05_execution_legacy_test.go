@@ -40,7 +40,7 @@ func TestExecuteSplit(t *testing.T) {
 		{
 			name:  "invalid plan returns error",
 			setup: ``,
-			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
+			invoke: `JSON.stringify(await globalThis.prSplit.executeSplit({
 				baseBranch: 'main',
 				sourceBranch: 'feat',
 				splits: []
@@ -57,7 +57,7 @@ func TestExecuteSplit(t *testing.T) {
 		{
 			name:  "missing fileStatuses returns error",
 			setup: ``,
-			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
+			invoke: `JSON.stringify(await globalThis.prSplit.executeSplit({
 				baseBranch: 'main',
 				sourceBranch: 'feat',
 				splits: [{name: 's1', files: ['a.go'], message: 'm', order: 0}]
@@ -89,7 +89,7 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['commit -m split: session'] = _gitOk('');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
+			invoke: `JSON.stringify(await globalThis.prSplit.executeSplit({
 				baseBranch: 'main',
 				sourceBranch: 'feature',
 				fileStatuses: {'config.go': 'M', 'session.go': 'A'},
@@ -128,7 +128,7 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['rev-parse HEAD'] = _gitOk('def456');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
+			invoke: `JSON.stringify(await globalThis.prSplit.executeSplit({
 				baseBranch: 'main',
 				sourceBranch: 'feature',
 				fileStatuses: {'old.go': 'D'},
@@ -156,7 +156,7 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['checkout -b split/01-x main'] = _gitOk('');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
+			invoke: `JSON.stringify(await globalThis.prSplit.executeSplit({
 				baseBranch: 'main',
 				sourceBranch: 'feature',
 				fileStatuses: {},
@@ -181,7 +181,7 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['checkout -b split/01-fail main'] = _gitFail('branch exists');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
+			invoke: `JSON.stringify(await globalThis.prSplit.executeSplit({
 				baseBranch: 'main',
 				sourceBranch: 'feature',
 				fileStatuses: {'a.go': 'A'},
@@ -209,7 +209,7 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['commit -m empty'] = _gitFail('nothing to commit');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
+			invoke: `JSON.stringify(await globalThis.prSplit.executeSplit({
 				baseBranch: 'main',
 				sourceBranch: 'feature',
 				fileStatuses: {'no-change.go': 'M'},
@@ -258,7 +258,7 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['rev-parse HEAD'] = _gitOk('jkl012');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
+			invoke: `JSON.stringify(await globalThis.prSplit.executeSplit({
 				baseBranch: 'main',
 				sourceBranch: 'feature',
 				fileStatuses: {'a.go': 'A'},
@@ -285,7 +285,7 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['rm --ignore-unmatch -f deleted.go'] = _gitFail('permission denied');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
+			invoke: `JSON.stringify(await globalThis.prSplit.executeSplit({
 				baseBranch: 'main',
 				sourceBranch: 'feature',
 				fileStatuses: {'deleted.go': 'D'},
@@ -325,7 +325,7 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['rev-parse HEAD'] = _gitOk('ghi789');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
+			invoke: `JSON.stringify(await globalThis.prSplit.executeSplit({
 				baseBranch: 'main',
 				sourceBranch: 'feature',
 				fileStatuses: {'broken.go': 'M'},
@@ -411,7 +411,7 @@ func TestExecuteSplit_TypeChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		fileStatuses: {'link.txt': 'T'},
@@ -503,7 +503,7 @@ func TestVerifySplit(t *testing.T) {
 					return _gitOk('all tests passed');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.verifySplit('split/01-config', {verifyCommand: 'make test'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.verifySplit('split/01-config', {verifyCommand: 'make test'}))`,
 			check: func(t *testing.T, r verifySplitResult) {
 				if !r.Passed {
 					t.Error("expected passed=true")
@@ -524,7 +524,7 @@ func TestVerifySplit(t *testing.T) {
 					return _gitFail('test failed: config_test.go:42');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.verifySplit('split/01-config', {verifyCommand: 'make test'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.verifySplit('split/01-config', {verifyCommand: 'make test'}))`,
 			check: func(t *testing.T, r verifySplitResult) {
 				if r.Passed {
 					t.Error("expected passed=false")
@@ -546,7 +546,7 @@ func TestVerifySplit(t *testing.T) {
 					return _gitOk('');
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.verifySplit('missing-branch', {}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.verifySplit('missing-branch', {}))`,
 			check: func(t *testing.T, r verifySplitResult) {
 				if r.Passed {
 					t.Error("expected passed=false on worktree creation failure")
@@ -573,7 +573,7 @@ func TestVerifySplit(t *testing.T) {
 					return _gitFail('wrong command: ' + cmd);
 				};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.verifySplit('split/01-x'))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.verifySplit('split/01-x'))`,
 			check: func(t *testing.T, r verifySplitResult) {
 				if !r.Passed {
 					t.Errorf("expected passed=true, error: %v", r.Error)
@@ -585,7 +585,7 @@ func TestVerifySplit(t *testing.T) {
 			setup: `
 				runtime.verifyCommand = '';
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.verifySplit('split/01-noverify', {verifyCommand: ''}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.verifySplit('split/01-noverify', {verifyCommand: ''}))`,
 			check: func(t *testing.T, r verifySplitResult) {
 				if !r.Passed {
 					t.Error("expected passed=true when verifyCommand is empty")
@@ -641,7 +641,7 @@ func TestVerifyEquivalence(t *testing.T) {
 		{
 			name:  "empty splits returns error",
 			setup: ``,
-			invoke: `JSON.stringify(globalThis.prSplit.verifyEquivalence({
+			invoke: `JSON.stringify(await globalThis.prSplit.verifyEquivalence({
 				sourceBranch: 'feat',
 				splits: []
 			}))`,
@@ -663,7 +663,7 @@ func TestVerifyEquivalence(t *testing.T) {
 				globalThis._gitResponses['rev-parse split/02-session^{tree}'] = _gitOk('aaa111');
 				globalThis._gitResponses['rev-parse feat^{tree}'] = _gitOk('aaa111');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.verifyEquivalence({
+			invoke: `JSON.stringify(await globalThis.prSplit.verifyEquivalence({
 				sourceBranch: 'feat',
 				splits: [
 					{name: 'split/01-config'},
@@ -688,7 +688,7 @@ func TestVerifyEquivalence(t *testing.T) {
 				globalThis._gitResponses['rev-parse split/02-session^{tree}'] = _gitOk('aaa111');
 				globalThis._gitResponses['rev-parse feat^{tree}'] = _gitOk('bbb222');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.verifyEquivalence({
+			invoke: `JSON.stringify(await globalThis.prSplit.verifyEquivalence({
 				sourceBranch: 'feat',
 				splits: [
 					{name: 'split/01-config'},
@@ -709,7 +709,7 @@ func TestVerifyEquivalence(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['rev-parse split/01-x^{tree}'] = _gitFail('bad ref');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.verifyEquivalence({
+			invoke: `JSON.stringify(await globalThis.prSplit.verifyEquivalence({
 				sourceBranch: 'feat',
 				splits: [{name: 'split/01-x'}]
 			}))`,
@@ -731,7 +731,7 @@ func TestVerifyEquivalence(t *testing.T) {
 				globalThis._gitResponses['rev-parse split/01-x^{tree}'] = _gitOk('aaa');
 				globalThis._gitResponses['rev-parse feat^{tree}'] = _gitFail('bad ref');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.verifyEquivalence({
+			invoke: `JSON.stringify(await globalThis.prSplit.verifyEquivalence({
 				sourceBranch: 'feat',
 				splits: [{name: 'split/01-x'}]
 			}))`,
@@ -793,7 +793,7 @@ func TestVerifyEquivalenceDetailed(t *testing.T) {
 				globalThis._gitResponses['rev-parse split/01-x^{tree}'] = _gitOk('same');
 				globalThis._gitResponses['rev-parse feat^{tree}'] = _gitOk('same');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+			invoke: `JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed({
 				sourceBranch: 'feat',
 				splits: [{name: 'split/01-x'}]
 			}))`,
@@ -817,7 +817,7 @@ func TestVerifyEquivalenceDetailed(t *testing.T) {
 				globalThis._gitResponses['diff --stat split/02-b feat'] = _gitOk(' config.go | 10 ++++\n 1 file changed');
 				globalThis._gitResponses['diff --name-only split/02-b feat'] = _gitOk('config.go\nsession.go\n');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+			invoke: `JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed({
 				sourceBranch: 'feat',
 				splits: [{name: 'split/01-a'}, {name: 'split/02-b'}]
 			}))`,
@@ -836,7 +836,7 @@ func TestVerifyEquivalenceDetailed(t *testing.T) {
 		{
 			name:  "error from base verification propagates",
 			setup: ``,
-			invoke: `JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
+			invoke: `JSON.stringify(await globalThis.prSplit.verifyEquivalenceDetailed({
 				sourceBranch: 'feat',
 				splits: []
 			}))`,
@@ -913,7 +913,7 @@ func TestCleanupBranches(t *testing.T) {
 				globalThis._gitResponses['branch -D split/01-config'] = _gitOk('');
 				globalThis._gitResponses['branch -D split/02-session'] = _gitOk('');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.cleanupBranches({
+			invoke: `JSON.stringify(await globalThis.prSplit.cleanupBranches({
 				baseBranch: 'main',
 				splits: [
 					{name: 'split/01-config'},
@@ -936,7 +936,7 @@ func TestCleanupBranches(t *testing.T) {
 				globalThis._gitResponses['branch -D split/01-ok'] = _gitOk('');
 				globalThis._gitResponses['branch -D split/02-missing'] = _gitFail('not found');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.cleanupBranches({
+			invoke: `JSON.stringify(await globalThis.prSplit.cleanupBranches({
 				baseBranch: 'main',
 				splits: [{name: 'split/01-ok'}, {name: 'split/02-missing'}]
 			}))`,
@@ -954,7 +954,7 @@ func TestCleanupBranches(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['checkout main'] = _gitOk('');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.cleanupBranches({
+			invoke: `JSON.stringify(await globalThis.prSplit.cleanupBranches({
 				baseBranch: 'main',
 				splits: []
 			}))`,
@@ -977,7 +977,7 @@ func TestCleanupBranches(t *testing.T) {
 				globalThis._gitResponses['branch -D split/01-fix'] = _gitOk('');
 				globalThis._gitResponses['branch -D split/02-feat'] = _gitOk('');
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.cleanupBranches({
+			invoke: `JSON.stringify(await globalThis.prSplit.cleanupBranches({
 				baseBranch: 'main',
 				splits: [
 					{name: 'split/01-fix'},
@@ -1032,7 +1032,7 @@ func TestCleanupBranches_NullPlan(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.cleanupBranches(` + tt.expr + `))`)
+			raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.cleanupBranches(` + tt.expr + `))`)
 			if err != nil {
 				t.Fatalf("evalJS failed: %v", err)
 			}
@@ -1087,7 +1087,7 @@ func TestExecuteSplit_RenamedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		fileStatuses: {'pkg/new_name.go': 'R'},
@@ -1154,7 +1154,7 @@ func TestExecuteSplit_CopiedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.executeSplit({
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		fileStatuses: {'src/copy.go': 'C'},

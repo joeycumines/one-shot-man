@@ -83,7 +83,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // Error codes for lipgloss operations.
@@ -760,6 +760,13 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 				return runtime.ToValue(true) // fallback
 			}
 			return runtime.ToValue(*manager.detectedDarkBackground)
+		})
+
+		_ = exports.Set("hasLightBackground", func(call goja.FunctionCall) goja.Value {
+			if manager.detectedDarkBackground == nil {
+				return runtime.ToValue(false)
+			}
+			return runtime.ToValue(!*manager.detectedDarkBackground)
 		})
 	}
 }

@@ -10,10 +10,10 @@ const defaultBufSize = 32 * 1024 // 32KB
 // BufferedReader wraps an io.Reader with a blocking read loop that sends
 // chunks on an output channel. Backpressure is provided by channel capacity.
 type BufferedReader struct {
-	r       io.Reader
-	bufSize int
-	out     chan []byte
-	done    chan struct{}
+	r    io.Reader
+	buf  []byte
+	out  chan []byte
+	done chan struct{}
 }
 
 // NewBufferedReader creates a reader with the given channel capacity.
@@ -24,10 +24,10 @@ func NewBufferedReader(r io.Reader, chanCap int) *BufferedReader {
 		chanCap = 1
 	}
 	return &BufferedReader{
-		r:       r,
-		bufSize: defaultBufSize,
-		out:     make(chan []byte, chanCap),
-		done:    make(chan struct{}),
+		r:    r,
+		buf:  make([]byte, defaultBufSize),
+		out:  make(chan []byte, chanCap),
+		done: make(chan struct{}),
 	}
 }
 
@@ -44,17 +44,16 @@ func (br *BufferedReader) ReadLoop(ctx context.Context) {
 	defer close(br.out)
 
 	for {
-		buf := make([]byte, br.bufSize)
-		n, err := br.r.Read(buf)
+		n, err := br.r.Read(br.buf)
 		if n > 0 {
 			// Copy the read data to a new slice sized exactly to the
-			// read length. Sending buf[:n] directly would pin the full
+			// read length. Sending br.buf[:n] directly would pin the full
 			// 32KB backing array in memory for every chunk held by the
 			// channel consumer — for many small reads (common in PTY
 			// workloads), this causes ~3.2MB of pinned memory per 100
 			// buffered chunks instead of ~100 bytes.
 			chunk := make([]byte, n)
-			copy(chunk, buf[:n])
+			copy(chunk, br.buf[:n])
 			select {
 			case br.out <- chunk:
 			case <-ctx.Done():

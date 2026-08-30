@@ -166,8 +166,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
-	"github.com/dop251/goja"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	"golang.org/x/term"
 )
 
@@ -244,15 +244,15 @@ type TerminalChecker interface {
 // requirements.
 //
 // CRITICAL: goja.Runtime is NOT thread-safe. All JS calls MUST go through
-// RunJSSync when called from goroutines other than the event loop goroutine.
+// RunSync when called from goroutines other than the event loop goroutine.
 // This is especially important for BubbleTea's Init/Update/View methods
 // which run on the BubbleTea goroutine, not the event loop goroutine.
 type JSRunner interface {
-	// RunJSSync schedules a function on the event loop and waits for completion.
+	// RunSync schedules a function on the event loop and waits for completion.
 	// The provided goja.Runtime is the event loop's runtime instance.
 	// Returns an error if the event loop is not running or stops while waiting.
 	// This method blocks until the callback completes.
-	RunJSSync(fn func(*goja.Runtime) error) error
+	RunSync(fn func(*goja.Runtime) error) error
 }
 
 // AsyncJSRunner extends JSRunner with non-blocking async execution.
@@ -261,18 +261,18 @@ type JSRunner interface {
 // the BubbleTea program finishes.
 type AsyncJSRunner interface {
 	JSRunner
-	// RunOnLoop schedules a function on the event loop WITHOUT blocking.
+	// Run schedules a function on the event loop WITHOUT blocking.
 	// Returns true if the function was successfully scheduled.
 	// Returns false if the event loop is not running.
-	RunOnLoop(fn func(*goja.Runtime)) bool
+	Run(fn func(*goja.Runtime)) bool
 }
 
 // TrySyncJSRunner extends JSRunner with deadlock-safe synchronous execution.
-// TryRunOnLoopSync executes the callback directly when already on the event
+// TryRunSync executes the callback directly when already on the event
 // loop goroutine, and otherwise schedules-and-waits on the loop.
 type TrySyncJSRunner interface {
 	JSRunner
-	TryRunOnLoopSync(currentVM *goja.Runtime, fn func(*goja.Runtime) error) error
+	TryRunSync(currentVM *goja.Runtime, fn func(*goja.Runtime) error) error
 }
 
 // Manager holds bubbletea-related state per engine instance.
@@ -339,7 +339,7 @@ func NewManagerWithStderr(
 		panic("bubbletea.NewManagerWithStderr: jsRunner is REQUIRED - cannot be nil; provide a JSRunner implementation (e.g., *bt.Bridge)")
 	}
 	if ctx == nil {
-		ctx = context.Background()
+		panic("bubbletea: nil context requires baseCtx threading")
 	}
 	// Track if we received nil inputs - if so, skip TTY detection entirely.
 	// This avoids triggering stdin access during engine construction in tests.
@@ -484,11 +484,11 @@ func (m *Manager) WaitForProgram() error {
 	return err
 }
 
-// JsToTeaMsg converts a JavaScript message object to a tea.Msg.
+// ParseMsg converts a JavaScript message object to a tea.Msg.
 // This provides a standard way to decode events sent from JS components to Go models.
 // It handles standard "Key", "Mouse", and "WindowSize" event types.
 // Returns nil if the message cannot be converted (invalid object, unknown type, etc.)
-func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
+func ParseMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
 	if obj == nil || runtime == nil {
 		return nil
 	}
@@ -601,16 +601,16 @@ type jsModel struct {
 }
 
 // runJSSync executes fn on the JS event loop and waits for completion.
-// If the runner supports TryRunOnLoopSync, recursion on the event-loop
+// If the runner supports TryRunSync, recursion on the event-loop
 // goroutine is executed directly to avoid self-deadlock.
 func (m *jsModel) runJSSync(fn func(*goja.Runtime) error) error {
 	if m.jsRunner == nil {
 		return fmt.Errorf("bubbletea: js runner is nil")
 	}
 	if tr, ok := m.jsRunner.(TrySyncJSRunner); ok {
-		return tr.TryRunOnLoopSync(m.runtime, fn)
+		return tr.TryRunSync(m.runtime, fn)
 	}
-	return m.jsRunner.RunJSSync(fn)
+	return m.jsRunner.RunSync(fn)
 }
 
 // Init implements tea.Model.
@@ -735,7 +735,7 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	})
 	if err != nil {
 		// Event loop error - return current state unchanged
-		slog.Error("bubbletea: Update: RunJSSync error, returning nil cmd (breaks tick loop!)", "error", err, "msgType", jsMsg["type"])
+		slog.Error("bubbletea: Update: RunSync error, returning nil cmd (breaks tick loop!)", "error", err, "msgType", jsMsg["type"])
 		return m, nil
 	}
 	return m, cmd
@@ -1030,8 +1030,8 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 		}
 
 	case tea.MouseMsg:
-		// Use the generated MouseEventToJS which ensures consistency with tea.Mouse.String()
-		return MouseEventToJS(msg)
+		// Use the generated EncodeMouseEvent which ensures consistency with tea.Mouse.String()
+		return EncodeMouseEvent(msg)
 
 	case tea.WindowSizeMsg:
 		return map[string]any{
@@ -1584,7 +1584,7 @@ type toggleReturnMsg struct {
 // When the toggle key is pressed:
 //  1. ReleaseTerminal — pauses BubbleTea renderer/input
 //  2. Sync write \x1b[?1049l — exit alt-screen (idempotent belt)
-//  3. Call JS onToggle via RunJSSync — typically mux.switchTo() which blocks
+//  3. Call JS onToggle via RunSync — typically mux.switchTo() which blocks
 //  4. Sync write \x1b[?1049h\x1b[2J\x1b[H — enter alt-screen (idempotent belt)
 //  5. RestoreTerminal — resume BubbleTea renderer/input
 //
@@ -1654,18 +1654,50 @@ func (m *toggleModel) toggleCmd() tea.Cmd {
 		// Capture the return value to forward to the model (e.g., exit reason).
 		var toggleResult map[string]any
 		if m.jsRunner != nil && m.onToggle != nil {
-			_ = m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
+			done := make(chan struct{})
+			_ = m.jsRunner.RunSync(func(vm *goja.Runtime) error {
 				val, err := m.onToggle(goja.Undefined())
 				if err != nil {
+					close(done)
 					return err
 				}
 				if val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
+					obj := val.ToObject(vm)
+					if obj != nil {
+						thenProp := obj.Get("then")
+						if thenProp != nil && !goja.IsUndefined(thenProp) {
+							if thenFn, ok := goja.AssertFunction(thenProp); ok {
+								onFulfilled := vm.ToValue(func(call goja.FunctionCall) goja.Value {
+									resolved := call.Argument(0)
+									if resolved != nil && !goja.IsUndefined(resolved) && !goja.IsNull(resolved) {
+										if exported, ok2 := resolved.Export().(map[string]any); ok2 {
+											toggleResult = exported
+										}
+									}
+									close(done)
+									return goja.Undefined()
+								})
+								onRejected := vm.ToValue(func(call goja.FunctionCall) goja.Value {
+									close(done)
+									return goja.Undefined()
+								})
+								thenFn(val, onFulfilled, onRejected)
+								return nil
+							}
+						}
+					}
 					if exported, ok := val.Export().(map[string]any); ok {
 						toggleResult = exported
 					}
 				}
+				close(done)
 				return nil
 			})
+			select {
+			case <-done:
+			case <-time.After(30 * time.Second):
+				slog.Error("bubbletea: onToggle Promise timed out")
+			}
 		}
 
 		// Sync enter alt-screen + clear — idempotent belt for async RestoreTerminal
@@ -2027,14 +2059,14 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 
 			// Start the program NON-BLOCKING. BubbleTea runs in a separate
 			// goroutine so this function returns immediately — the Goja event
-			// loop goroutine is NOT blocked and can process RunJSSync
+			// loop goroutine is NOT blocked and can process RunSync
 			// callbacks from BubbleTea's Init/Update/View.
 			//
 			// Threading model:
 			// - ExecuteScript routes scripts through the event loop so ALL
 			//   Goja VM access happens on a single goroutine.
 			// - tea.run() returns immediately; BubbleTea runs on its own goroutines.
-			// - BubbleTea calls Init/Update/View via JSRunner.RunJSSync()
+			// - BubbleTea calls Init/Update/View via JSRunner.RunSync()
 			//   which schedules on the event loop goroutine.
 			// - ExecuteScript and the REPL command dispatcher automatically
 			//   call WaitForProgram() to block until BubbleTea exits.
@@ -2062,7 +2094,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				panic("bubbletea.Manager.promisify is REQUIRED - ensure Engine.Register was called")
 			}
 
-			manager.promisify(context.Background(), func(_ context.Context) (any, error) {
+			manager.promisify(baseCtx, func(_ context.Context) (any, error) {
 				err := manager.runProgram(programModel)
 				// Also send to done channel for WaitForProgram compatibility.
 				// This is safe because done is buffered (capacity 1).

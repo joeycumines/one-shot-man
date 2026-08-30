@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 )
 
 // TestRuntime_PersistentLoop_SurvivesMultipleExecuteScript verifies that the
@@ -23,7 +23,7 @@ func TestRuntime_PersistentLoop_SurvivesMultipleExecuteScript(t *testing.T) {
 	engine := newTestEngine(t, ctx, &stdout, &stdout)
 
 	for i := 0; i < 3; i++ {
-		script := engine.LoadScriptFromString("persistent-test",
+		script := engine.LoadScriptString("persistent-test",
 			`output.print("exec-ok");`)
 		if err := engine.ExecuteScript(script); err != nil {
 			t.Fatalf("ExecuteScript call %d failed: %v", i+1, err)
@@ -38,7 +38,7 @@ func TestRuntime_PersistentLoop_SurvivesMultipleExecuteScript(t *testing.T) {
 }
 
 // TestRuntime_Close_TerminatesLoop verifies that Close() makes the loop
-// unavailable for further work. After Close(), RunOnLoopSync must return an
+// unavailable for further work. After Close(), RunSync must return an
 // error rather than blocking forever.
 func TestRuntime_Close_TerminatesLoop(t *testing.T) {
 	t.Parallel()
@@ -49,10 +49,10 @@ func TestRuntime_Close_TerminatesLoop(t *testing.T) {
 	}
 
 	// Verify it works before Close.
-	if runErr := rt.RunOnLoopSync(func(_ *goja.Runtime) error {
+	if runErr := rt.RunSync(func(_ *goja.Runtime) error {
 		return nil
 	}); runErr != nil {
-		t.Fatalf("RunOnLoopSync before Close failed: %v", runErr)
+		t.Fatalf("RunSync before Close failed: %v", runErr)
 	}
 
 	if closeErr := rt.Close(); closeErr != nil {
@@ -64,20 +64,20 @@ func TestRuntime_Close_TerminatesLoop(t *testing.T) {
 		t.Error("IsRunning() returned true after Close()")
 	}
 
-	// RunOnLoopSync must fail, not block.
+	// RunSync must fail, not block.
 	done := make(chan error, 1)
 	go func() {
-		done <- rt.RunOnLoopSync(func(_ *goja.Runtime) error {
+		done <- rt.RunSync(func(_ *goja.Runtime) error {
 			return nil
 		})
 	}()
 	select {
 	case err := <-done:
 		if err == nil {
-			t.Error("RunOnLoopSync after Close() unexpectedly succeeded")
+			t.Error("RunSync after Close() unexpectedly succeeded")
 		}
 	case <-time.After(2 * time.Second):
-		t.Error("RunOnLoopSync blocked after Close() — loop did not terminate")
+		t.Error("RunSync blocked after Close() — loop did not terminate")
 	}
 }
 
@@ -101,9 +101,9 @@ func TestRuntime_AutoExitWithBootstrapToken_IdleLoopSurvives(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// The loop must still be alive and accept work.
-	if err := rt.RunOnLoopSync(func(_ *goja.Runtime) error {
+	if err := rt.RunSync(func(_ *goja.Runtime) error {
 		return nil
 	}); err != nil {
-		t.Errorf("RunOnLoopSync on idle loop failed: %v (bootstrap token may not be working)", err)
+		t.Errorf("RunSync on idle loop failed: %v (bootstrap token may not be working)", err)
 	}
 }

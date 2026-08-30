@@ -227,8 +227,8 @@ func TestChunk00_GitExec(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	// Success case: git rev-parse --git-dir in the temp repo.
-	js := fmt.Sprintf(`(function() {
-		var r = globalThis.prSplit._gitExec(%q, ['rev-parse', '--git-dir']);
+	js := fmt.Sprintf(`(async function() {
+		var r = await globalThis.prSplit._gitExec(%q, ['rev-parse', '--git-dir']);
 		return JSON.stringify({code: r.code, stdout: r.stdout.trim()});
 	})()`, dir)
 
@@ -248,8 +248,8 @@ func TestChunk00_GitExec(t *testing.T) {
 	}
 
 	// Failure case: git command that should fail.
-	js = fmt.Sprintf(`(function() {
-		var r = globalThis.prSplit._gitExec(%q, ['log', '--oneline', '-1']);
+	js = fmt.Sprintf(`(async function() {
+		var r = await globalThis.prSplit._gitExec(%q, ['log', '--oneline', '-1']);
 		return r.code;
 	})()`, dir)
 	val, err = evalJS(js)
@@ -298,7 +298,7 @@ func TestChunk00_GitAddChangedFiles(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	// Call gitAddChangedFiles.
-	_, err := evalJS(fmt.Sprintf(`globalThis.prSplit._gitAddChangedFiles(%q)`, dir))
+	_, err := evalJS(fmt.Sprintf(`await globalThis.prSplit._gitAddChangedFiles(%q)`, dir))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -45,8 +45,10 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	parent := filepath.Dir(sessionsDir)
-	globalLockPath := filepath.Join(parent, "cleanup.lock")
+	// Keep the lock inside the sessions directory so tests that override
+	// the session directory with SetTestPaths do not contend on a shared
+	// parent directory (e.g. /tmp/cleanup.lock) across concurrent tests.
+	globalLockPath := filepath.Join(sessionsDir, "cleanup.lock")
 
 	globalLock, err := acquireFileLock(globalLockPath)
 	if err != nil {
@@ -183,8 +185,6 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 		report.Removed = append(report.Removed, s.ID)
 	}
 
-	// list toRemove entries
-
 	// Orphaned locks: remove any *.lock files that have no corresponding .session.json
 	// Read directory entries directly
 	dir := sessionsDir
@@ -196,7 +196,6 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 		}
 		return nil, fmt.Errorf("failed to read sessions directory %q: %w", dir, err)
 	}
-	// debug: show directory entries in logs when needed
 
 	for _, e := range entries {
 		if e.IsDir() {
@@ -262,7 +261,6 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 		}
 
 		// Session is missing — try to acquire the lock handle and remove
-		// About to attempt locking and removal for orphan candidate
 		// the orphaned artifact if we can safely lock it.
 		if c.DryRun {
 			// Don't modify filesystem in dry-run mode; just report the orphan

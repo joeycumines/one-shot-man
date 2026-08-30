@@ -16,12 +16,12 @@ package fetch
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/dop251/goja"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
@@ -213,43 +213,19 @@ func (p *SSEParser) processLine(line string) {
 
 // wrapSSEParserJS returns a goja.Object wrapping the SSEParser for JS use.
 // The read() method returns Promise<{value: {event, data, id}, done: boolean}>.
-func wrapSSEParserJS(rt *goja.Runtime, adapter *gojaeventloop.Adapter, parser *SSEParser, promisify PromisifyFunc) *goja.Object {
+func wrapSSEParserJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, parser *SSEParser) *goja.Object {
 	obj := rt.NewObject()
-
 	_ = obj.Set("read", func(call goja.FunctionCall) goja.Value {
-		promise, resolve, reject := adapter.JS().NewChainedPromise()
-
-		promisify(context.Background(), func(ctx context.Context) (any, error) {
+		return adapter.Promisify(ctx, func(ctx context.Context) (any, error) {
 			ev, done, err := parser.Next()
 			if err != nil {
-				_ = adapter.Loop().Submit(func() {
-					reject(err)
-				})
 				return nil, err
 			}
-			if submitErr := adapter.Loop().Submit(func() {
-				result := rt.NewObject()
-				if done {
-					_ = result.Set("value", goja.Undefined())
-					_ = result.Set("done", true)
-				} else {
-					evObj := rt.NewObject()
-					_ = evObj.Set("event", ev.Event)
-					_ = evObj.Set("data", ev.Data)
-					_ = evObj.Set("id", ev.ID)
-					_ = result.Set("value", evObj)
-					_ = result.Set("done", false)
-				}
-				resolve(result)
-			}); submitErr != nil {
-				_ = adapter.Loop().Submit(func() {
-					reject(fmt.Errorf("event loop not running"))
-				})
+			if done {
+				return map[string]any{"value": nil, "done": true}, nil
 			}
-			return nil, nil
+			return map[string]any{"value": map[string]any{"event": ev.Event, "data": ev.Data, "id": ev.ID}, "done": false}, nil
 		})
-
-		return adapter.GojaWrapPromise(promise)
 	})
 
 	return obj

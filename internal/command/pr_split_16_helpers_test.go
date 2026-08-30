@@ -3,7 +3,7 @@ package command
 // ---------------------------------------------------------------------------
 //  T020: Comprehensive keyboard & mouse event handling tests for chunk 16
 //
-//  Covers: overlays (report, editor dialogs, Claude conversation, inline
+//  Covers: overlays (report, editor dialogs, Agent conversation, inline
 //  title edit), live verify session, split-view, all mouse zone clicks,
 //  focus activation, plan editor keys, navigation handlers, and edge cases.
 //

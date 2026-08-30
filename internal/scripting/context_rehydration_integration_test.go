@@ -82,7 +82,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 			tui.switchMode("ctx-test");
 		`
 
-		scriptObj := engine.LoadScriptFromString("test-setup", script)
+		scriptObj := engine.LoadScriptString("test-setup", script)
 		if err := engine.ExecuteScript(scriptObj); err != nil {
 			t.Fatalf("Failed to setup mode: %v", err)
 		}
@@ -186,7 +186,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 			tui.switchMode("ctx-test");
 		`
 
-		scriptObj := engine.LoadScriptFromString("test-restore", script)
+		scriptObj := engine.LoadScriptString("test-restore", script)
 		if err := engine.ExecuteScript(scriptObj); err != nil {
 			t.Fatalf("Failed to setup mode: %v", err)
 		}
@@ -322,7 +322,7 @@ func TestContextRehydrationWithSharedState(t *testing.T) {
 		tui.switchMode("shared-test");
 	`
 
-	scriptObj := engine.LoadScriptFromString("test-shared", script)
+	scriptObj := engine.LoadScriptString("test-shared", script)
 	if err := engine.ExecuteScript(scriptObj); err != nil {
 		t.Fatalf("Failed to setup mode: %v", err)
 	}

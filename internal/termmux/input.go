@@ -3,13 +3,19 @@ package termmux
 import (
 	"strconv"
 	"strings"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // KeyToTermBytes converts a BubbleTea-style key name to terminal byte
 // sequence for PTY forwarding. Key names match BubbleTea's KeyMsg.String()
-// output (keys_gen.go). Returns the byte sequence and true if the key was
-// recognized, or an empty string and false otherwise.
-func KeyToTermBytes(key string) (string, bool) {
+// output (keys_gen.go). When appCursor is true, arrow keys and home/end
+// use application cursor mode (SS3 sequences: ESC O{A-D/H/F instead of
+// CSI A/B/C/D/H/F). When appKeypad is true, keypad keys use application
+// mode (SS3 sequences: ESC O p–y for digits, ESC O M for enter, etc.)
+// instead of their ASCII equivalents. Returns the byte sequence and true
+// if the key was recognized, or an empty string and false otherwise.
+func KeyToTermBytes(key string, appCursor bool, appKeypad bool) (string, bool) {
 	// Named special keys → terminal escape sequences.
 	switch key {
 	case "enter":
@@ -20,21 +26,41 @@ func KeyToTermBytes(key string) (string, bool) {
 		return "\x1b[Z", true
 	case "backspace":
 		return "\x7f", true
+	case "space":
+		return " ", true
 	case "esc":
 		return "\x1b", true
 	case "delete":
 		return "\x1b[3~", true
 	case "up":
+		if appCursor {
+			return "\x1bOA", true
+		}
 		return "\x1b[A", true
 	case "down":
+		if appCursor {
+			return "\x1bOB", true
+		}
 		return "\x1b[B", true
 	case "right":
+		if appCursor {
+			return "\x1bOC", true
+		}
 		return "\x1b[C", true
 	case "left":
+		if appCursor {
+			return "\x1bOD", true
+		}
 		return "\x1b[D", true
 	case "home":
+		if appCursor {
+			return "\x1bOH", true
+		}
 		return "\x1b[H", true
 	case "end":
+		if appCursor {
+			return "\x1bOF", true
+		}
 		return "\x1b[F", true
 	case "pgup":
 		return "\x1b[5~", true
@@ -68,6 +94,100 @@ func KeyToTermBytes(key string) (string, bool) {
 		return "\x1b[24~", true
 	}
 
+	// Keypad keys: application mode sends SS3 sequences, normal mode sends ASCII.
+	switch key {
+	case "kp0":
+		if appKeypad {
+			return "\x1bOp", true
+		}
+		return "0", true
+	case "kp1":
+		if appKeypad {
+			return "\x1bOq", true
+		}
+		return "1", true
+	case "kp2":
+		if appKeypad {
+			return "\x1bOr", true
+		}
+		return "2", true
+	case "kp3":
+		if appKeypad {
+			return "\x1bOs", true
+		}
+		return "3", true
+	case "kp4":
+		if appKeypad {
+			return "\x1bOt", true
+		}
+		return "4", true
+	case "kp5":
+		if appKeypad {
+			return "\x1bOu", true
+		}
+		return "5", true
+	case "kp6":
+		if appKeypad {
+			return "\x1bOv", true
+		}
+		return "6", true
+	case "kp7":
+		if appKeypad {
+			return "\x1bOw", true
+		}
+		return "7", true
+	case "kp8":
+		if appKeypad {
+			return "\x1bOx", true
+		}
+		return "8", true
+	case "kp9":
+		if appKeypad {
+			return "\x1bOy", true
+		}
+		return "9", true
+	case "kp_enter":
+		if appKeypad {
+			return "\x1bOM", true
+		}
+		return "\r", true
+	case "kp_plus":
+		if appKeypad {
+			return "\x1bOk", true
+		}
+		return "+", true
+	case "kp_minus":
+		if appKeypad {
+			return "\x1bOm", true
+		}
+		return "-", true
+	case "kp_asterisk", "kp_star":
+		if appKeypad {
+			return "\x1bOj", true
+		}
+		return "*", true
+	case "kp_slash":
+		if appKeypad {
+			return "\x1bOo", true
+		}
+		return "/", true
+	case "kp_dot", "kp_period":
+		if appKeypad {
+			return "\x1bOn", true
+		}
+		return ".", true
+	case "kp_comma":
+		if appKeypad {
+			return "\x1bOl", true
+		}
+		return ",", true
+	case "kp_equal":
+		if appKeypad {
+			return "\x1bOX", true
+		}
+		return "=", true
+	}
+
 	// Ctrl+letter → control character (0x01–0x1A for a-z).
 	if rest, ok := strings.CutPrefix(key, "ctrl+"); ok && len(rest) == 1 {
 		ch := rest[0]
@@ -86,7 +206,7 @@ func KeyToTermBytes(key string) (string, bool) {
 
 	// Alt+key → ESC prefix + inner key bytes.
 	if rest, ok := strings.CutPrefix(key, "alt+"); ok {
-		if inner, ok := KeyToTermBytes(rest); ok {
+		if inner, ok := KeyToTermBytes(rest, appCursor, appKeypad); ok {
 			return "\x1b" + inner, true
 		}
 	}
@@ -101,9 +221,17 @@ func KeyToTermBytes(key string) (string, bool) {
 		return key, true
 	}
 
-	// Multi-character unknown keys (e.g., Unicode) → send as-is.
+	// Multi-character unknown keys containing non-ASCII runes (e.g., Unicode
+	// text) → send as-is. ASCII-only multi-character strings that didn't match
+	// any known key name are unrecognized → return false so the caller can
+	// fall back to msg.text or other handling.
 	if len(key) > 1 && !strings.Contains(key, "+") {
-		return key, true
+		for _, r := range key {
+			if r > 0x7F {
+				return key, true
+			}
+		}
+		return "", false
 	}
 
 	return "", false
@@ -160,6 +288,24 @@ const (
 	MouseForward    MouseButton = "forward"
 	MouseNone       MouseButton = "none"
 )
+
+// MouseButtonTea converts a bubbletea tea.MouseButton to a termmux MouseButton.
+func MouseButtonTea(b tea.MouseButton) MouseButton {
+	switch b {
+	case tea.MouseLeft:
+		return MouseLeft
+	case tea.MouseMiddle:
+		return MouseMiddle
+	case tea.MouseRight:
+		return MouseRight
+	case tea.MouseWheelUp:
+		return MouseWheelUp
+	case tea.MouseWheelDown:
+		return MouseWheelDown
+	default:
+		return MouseNone
+	}
+}
 
 // MouseEventType identifies the type of mouse event.
 type MouseEventType string

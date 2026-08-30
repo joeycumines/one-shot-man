@@ -31,7 +31,7 @@ func FuzzClassificationParsing(f *testing.F) {
 	evalJS := prsplittest.NewChunkEngine(f, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning",
 		"04_validation", "05_execution", "06_verification",
-		"07_prcreation", "08_conflict", "09_claude", "10a_pipeline_config",
+		"07_prcreation", "08_conflict", "09_agent", "10a_pipeline_config",
 	)
 
 	// Seed: valid array format.
@@ -307,7 +307,7 @@ func FuzzIsTransientError(f *testing.F) {
 	evalJS := prsplittest.NewChunkEngine(f, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning",
 		"04_validation", "05_execution", "06_verification",
-		"07_prcreation", "08_conflict", "09_claude", "10a_pipeline_config",
+		"07_prcreation", "08_conflict", "09_agent", "10a_pipeline_config",
 	)
 
 	// Seed: transient errors.

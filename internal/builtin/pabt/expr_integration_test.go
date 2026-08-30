@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dop251/goja"
+	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -198,7 +198,7 @@ func TestExprCondition_ErrorHandling(t *testing.T) {
 
 	t.Run("MissingArguments", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`pabt.newExprCondition()`)
 			return err
 		})
@@ -257,7 +257,7 @@ func TestExprCondition_ZeroGojaCallsGuarantee(t *testing.T) {
 	}
 
 	// If we get here without panic/crash, Goja was not involved
-	// (A real test would instrument Bridge.RunOnLoopSync, but the
+	// (A real test would instrument Bridge.RunSync, but the
 	// architecture makes this impossible - ExprCondition has no bridge reference)
 	assert.True(t, true, "ExprCondition runs without Goja")
 }

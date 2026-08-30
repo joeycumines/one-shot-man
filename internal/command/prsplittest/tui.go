@@ -46,7 +46,10 @@ const SetupTUIMocks = `
 
     globalThis.output = {
         print: function(s) { globalThis._prints.push(String(s)); },
-        toClipboard: function(s) { globalThis._clipboardContent = s; }
+        // toClipboard/fromClipboard are async in production (binding contract);
+        // the mock returns resolved Promises so callers' .then() chains work.
+        toClipboard: function(s) { globalThis._clipboardContent = s; return Promise.resolve(); },
+        fromClipboard: function() { return Promise.resolve(globalThis._clipboardContent || ''); }
     };
 
     globalThis.log = {
@@ -186,7 +189,7 @@ function setupPlanCache() {
 
 // NewTUIEngineE loads chunks 00–12, injects TUI mocks, then loads chunks
 // 13–16f. Returns the [Engine] wrapper so callers can access the underlying
-// [scripting.Engine] (e.g. for RunOnLoopSync in hang-reproducer tests).
+// [scripting.Engine] (e.g. for RunSync in hang-reproducer tests).
 //
 // Most tests should prefer [NewTUIEngine] or [NewTUIEngineWithHelpers].
 func NewTUIEngineE(t testing.TB) *Engine {

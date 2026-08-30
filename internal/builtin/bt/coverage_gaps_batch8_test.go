@@ -4,24 +4,24 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dop251/goja"
-	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
-	gojarequire "github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	gojanodejsconsole "github.com/joeycumines/goja_nodejs/console"
+	gojarequire "github.com/joeycumines/goja_nodejs/require"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // ==========================================================================
-// bridge.go — NewBridgeWithEventLoop nil VM panic (line 84-85)
+// bridge.go — NewBridge nil VM panic (line 84-85)
 // ==========================================================================
 
-// TestBridge_NewBridgeWithEventLoop_NilVMPanic verifies that passing a non-nil
+// TestBridge_NewBridge_NilVMPanic verifies that passing a non-nil
 // loop with a nil VM triggers the "goja runtime must not be nil" panic.
 // The existing NilLoopPanic test passes nil for both, hitting the loop
 // check first — this test isolates the VM nil-guard specifically.
-func TestBridge_NewBridgeWithEventLoop_NilVMPanic(t *testing.T) {
+func TestBridge_NewBridge_NilVMPanic(t *testing.T) {
 	t.Parallel()
 
 	loop, err := goeventloop.New()
@@ -41,6 +41,6 @@ func TestBridge_NewBridgeWithEventLoop_NilVMPanic(t *testing.T) {
 	})
 
 	assert.PanicsWithValue(t, "goja runtime must not be nil", func() {
-		NewBridgeWithEventLoop(context.Background(), loop, nil, nil)
+		NewBridge(context.Background(), loop, nil, nil, nil)
 	})
 }

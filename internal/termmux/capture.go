@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,13 +29,18 @@ type CaptureConfig struct {
 	Dir string
 	// Env contains additional environment variables merged with os.Environ().
 	Env map[string]string
-	// Rows is the virtual terminal row count (default: 24).
+	// Rows is the virtual terminal row count (default: DefaultRows).
 	Rows int
-	// Cols is the virtual terminal column count (default: 80).
+	// Cols is the virtual terminal column count (default: DefaultCols).
 	Cols int
 	// DrainTimeout is the maximum time Close() waits for the reader loop
 	// to finish after the PTY is closed. Defaults to 5 seconds.
+	// A negative value means "use default" (disables the override).
 	DrainTimeout time.Duration
+	// SkipDrain, when true, causes Close() to return immediately without
+	// waiting for the reader loop to finish. This is useful when the caller
+	// does not need to capture remaining output (e.g., after Kill()).
+	SkipDrain bool
 }
 
 // CaptureSession manages a PTY-attached command with real-time output capture.
@@ -98,11 +104,11 @@ type CaptureSession struct {
 func NewCaptureSession(cfg CaptureConfig) *CaptureSession {
 	rows := cfg.Rows
 	if rows <= 0 {
-		rows = 24
+		rows = DefaultRows
 	}
 	cols := cfg.Cols
 	if cols <= 0 {
-		cols = 80
+		cols = DefaultCols
 	}
 	if cfg.DrainTimeout <= 0 {
 		cfg.DrainTimeout = 5 * time.Second
@@ -158,15 +164,32 @@ func (cs *CaptureSession) Start(ctx context.Context) error {
 	// This provides a channel-based output stream that the readerLoop
 	// consumes, allowing passthrough to route output to stdout without
 	// racing on the PTY file descriptor. Uses the raw PTY fd (proc.File())
-	// rather than proc itself because BufferedReader requires io.Reader
-	// (Read([]byte)) while Process.Read returns (string, error).
+	// rather than proc.Read for higher throughput via BufferedReader's
+	// buffered channel-based architecture.
 	readerCtx, readerCancel := context.WithCancel(childCtx)
 	cs.mu.Lock()
 	cs.reader = ptyio.NewBufferedReader(proc.File(), 16)
 	cs.readerCancel = readerCancel
-	cs.outputCh = make(chan []byte, 64)
+	cs.outputCh = make(chan []byte, DefaultChannelBuffer)
 	cs.mu.Unlock()
 	go cs.reader.ReadLoop(readerCtx)
+
+	// On Windows (ConPTY), the output pipe is not automatically closed
+	// when the child process exits, so ReadLoop blocks on Read() forever.
+	// Start a watcher that calls ClosePseudoConsole on process exit.
+	// ClosePseudoConsole flushes the ConPTY's internal buffer to the
+	// output pipe and closes the pipe's write end, causing Read() to
+	// return remaining data followed by EOF — no data is lost.
+	// This unblocks ReadLoop, which cascades to readerLoop closing
+	// outputCh and cs.done, satisfying both SessionManager and
+	// passthrough consumers.
+	// On Unix, ClosePseudoConsole is a no-op (PTY closes naturally).
+	if runtime.GOOS == "windows" {
+		go func() {
+			_, _ = proc.Wait()
+			proc.ClosePseudoConsole()
+		}()
+	}
 
 	// Start the background reader that forwards PTY output to the
 	// Reader() channel. The reader goroutine also captures exit status
@@ -214,11 +237,17 @@ func (cs *CaptureSession) readerLoop() {
 		}
 
 		// During passthrough, also forward raw output to stdout.
+		// Read passthrough state under the lock, then release before
+		// writing to avoid blocking Resize/Close/Pause/Resume while
+		// the passthrough write completes. One extra write after
+		// deactivation is harmless.
 		cs.mu.Lock()
-		if cs.passthroughActive && cs.passthroughOutput != nil {
-			writeOrLog(cs.passthroughOutput, chunk, "capture-passthrough-output")
-		}
+		active := cs.passthroughActive
+		output := cs.passthroughOutput
 		cs.mu.Unlock()
+		if active && output != nil {
+			_ = writeOrLog(output, chunk, "capture-passthrough-output")
+		}
 	}
 
 	// Capture exit status. proc.Wait() returns immediately here because
@@ -257,6 +286,11 @@ func (cs *CaptureSession) Kill() error {
 // can be resumed with Resume(). On platforms that do not support SIGSTOP,
 // Pause returns an error. Use IsPaused() to check the pause state.
 func (cs *CaptureSession) Pause() error {
+	// ConPTY on Windows does not support process suspension, regardless of
+	// whether the session has been started or is already paused.
+	if runtime.GOOS == "windows" {
+		return ErrPauseNotSupported
+	}
 	cs.mu.Lock()
 	proc := cs.proc
 	if cs.paused {
@@ -279,6 +313,11 @@ func (cs *CaptureSession) Pause() error {
 // Resume sends SIGCONT to the child process, resuming it after a Pause().
 // On platforms that do not support SIGCONT, Resume returns an error.
 func (cs *CaptureSession) Resume() error {
+	// ConPTY on Windows does not support process resumption, regardless of
+	// state.
+	if runtime.GOOS == "windows" {
+		return ErrResumeNotSupported
+	}
 	cs.mu.Lock()
 	proc := cs.proc
 	if !cs.paused {
@@ -384,14 +423,16 @@ func (cs *CaptureSession) Close() error {
 	}
 	if proc != nil {
 		err := proc.Close()
-		// Wait for reader loop to finish so all output is captured.
-		// proc.Close() closes the PTY fd, which causes the BufferedReader's
-		// ReadLoop to exit, which closes the output channel, which causes
-		// readerLoop to exit. The timeout is a safety net for edge cases
-		// where fd closure doesn't unblock immediately.
-		select {
-		case <-cs.done:
-		case <-time.After(cs.cfg.DrainTimeout):
+		if !cs.cfg.SkipDrain {
+			// Wait for reader loop to finish so all output is captured.
+			// proc.Close() closes the PTY fd, which causes the BufferedReader's
+			// ReadLoop to exit, which closes the output channel, which causes
+			// readerLoop to exit. The timeout is a safety net for edge cases
+			// where fd closure doesn't unblock immediately.
+			select {
+			case <-cs.done:
+			case <-time.After(cs.cfg.DrainTimeout):
+			}
 		}
 		return err
 	}
@@ -512,7 +553,9 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 			return ExitError, err
 		}
 		defer func() {
-			_ = cfg.TermState.Restore(cfg.TermFd, savedState)
+			if err := cfg.TermState.Restore(cfg.TermFd, savedState); err != nil {
+				slog.Debug("capture terminal restore failed", "error", err)
+			}
 		}()
 
 		// Ensure stdin fd is in blocking mode.
@@ -526,7 +569,7 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 
 	// Clear screen and resize child to full terminal dimensions.
 	if cfg.Stdout != nil {
-		writeOrLog(cfg.Stdout, []byte("\x1b[2J\x1b[H"), "capture-passthrough-clear")
+		_ = writeOrLog(cfg.Stdout, []byte("\x1b[2J\x1b[H"), "capture-passthrough-clear")
 	}
 	if cfg.TermFd >= 0 && cfg.TermState != nil {
 		if w, h, err := cfg.TermState.GetSize(cfg.TermFd); err == nil {
@@ -569,6 +612,11 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 		ToggleKey: cfg.ToggleKey,
 	})
 
+	// Signal forwarding (SIGINT, SIGQUIT, SIGTSTP).
+	sigResultCh := make(chan signalResult, 1)
+	sigCancel := watchSignals(ctx, sigResultCh, cfg.SignalChild)
+	defer sigCancel()
+
 	// Wait for any goroutine to signal completion. Context cancellation
 	// takes priority: when the parent context is cancelled, the child
 	// process is killed and cs.done closes, so resultCh may fire
@@ -577,12 +625,18 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 	select {
 	case r := <-resultCh:
 		cancel()
+		sigCancel()
 		if ctx.Err() != nil {
 			return ExitContext, ctx.Err()
 		}
 		return r.reason, r.err
+	case sr := <-sigResultCh:
+		cancel()
+		sigCancel()
+		return sr.reason, sr.err
 	case <-ctx.Done():
 		cancel()
+		sigCancel()
 		return ExitContext, ctx.Err()
 	}
 }

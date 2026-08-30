@@ -238,7 +238,11 @@
         // against it not being available (e.g. minimal test environments).
         if (typeof prSplit.savePlan === 'function') {
             try {
-                prSplit.savePlan(null, 'checkpoint:' + this.current);
+                prSplit.savePlan(null, 'checkpoint:' + this.current).catch(function(e) {
+                    if (typeof log !== 'undefined' && log.warn) {
+                        log.warn('saveCheckpoint: savePlan failed: ' + (e.message || e));
+                    }
+                });
             } catch (e) {
                 // Best-effort — checkpoint still succeeds in-memory.
                 if (typeof log !== 'undefined' && log.warn) {
@@ -294,10 +298,12 @@
                     };
                 })
             };
-            // T089: Use cached equivalence result from TUI pipeline if available,
-            // avoiding a synchronous verifyEquivalence() call that blocks the
-            // event loop on final-branch tree comparison.
-            var equiv = st.equivalenceResult || prSplit.verifyEquivalence(st.planCache);
+            // T089: Use cached equivalence result from TUI pipeline.
+            // buildReport is synchronous — callers that need a fresh
+            // equivalence check must run verifyEquivalence beforehand
+            // (e.g. via handleEquivCheckState) and cache the result in
+            // st.equivalenceResult before calling buildReport().
+            var equiv = st.equivalenceResult || { equivalent: false, splitTree: null, sourceTree: null, error: 'not verified' };
             report.equivalence = {
                 verified: equiv.equivalent,
                 splitTree: equiv.splitTree,
@@ -310,18 +316,18 @@
 
     prSplit._buildReport = buildReport;
 
-    // Build a pinned proxy for Claude's session, modeled after
+    // Build a pinned proxy for Agent's session, modeled after
     // _buildVerifyProxy. Uses tuiMux.snapshot(sessionID) for reads and
     // explicit activate/restore for writes, so no code path can confuse
-    // Claude's pane with verify's when ActiveID changes temporarily.
-    function _buildClaudeProxy(sessionID) {
+    // Agent's pane with verify's when ActiveID changes temporarily.
+    function _buildAgentProxy(sessionID) {
         return {
             screen: function() {
                 try {
                     var snap = tuiMux.snapshot(sessionID);
                     return snap ? (snap.fullScreen || '') : '';
                 } catch (e) {
-                    log.debug('claudeProxy.screen failed', { sessionID: sessionID, error: e.message || String(e) });
+                    log.debug('agentProxy.screen failed', { sessionID: sessionID, error: e.message || String(e) });
                     return '';
                 }
             },
@@ -330,7 +336,7 @@
                     var snap = tuiMux.snapshot(sessionID);
                     return snap ? (snap.plainText || '') : '';
                 } catch (e) {
-                    log.debug('claudeProxy.output failed', { sessionID: sessionID, error: e.message || String(e) });
+                    log.debug('agentProxy.output failed', { sessionID: sessionID, error: e.message || String(e) });
                     return '';
                 }
             },
@@ -340,7 +346,7 @@
                 if (typeof tuiMux.isDone === 'function') {
                     return tuiMux.isDone(sessionID);
                 }
-                var exec = prSplit._state && prSplit._state.claudeExecutor;
+                var exec = prSplit._state && prSplit._state.agentExecutor;
                 if (exec && exec.handle && typeof exec.handle.isAlive === 'function') {
                     return !exec.handle.isAlive();
                 }
@@ -360,47 +366,80 @@
                     }
                 }
             },
+            writeAsync: function(data) {
+                var prevID = tuiMux.activeID();
+                return tuiMux.activateAsync(sessionID).then(function() {
+                    return tuiMux.inputAsync(typeof data === 'string' ? data : String(data));
+                }).then(function() {
+                    if (prevID && prevID !== sessionID) {
+                        return tuiMux.activateAsync(prevID).catch(function(e) { log.debug('restore prev session failed', { prevID: prevID, error: e.message || String(e) }); });
+                    }
+                }).catch(function(e) {
+                    log.debug('agentProxy.writeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
+                });
+            },
             resize: function(rows, cols) {
                 // SessionManager.Resize broadcasts to ALL managed sessions.
                 tuiMux.resize(rows, cols);
             },
+            resizeAsync: function(rows, cols) {
+                return tuiMux.resizeAsync(rows, cols).catch(function(e) {
+                    log.debug('agentProxy.resizeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
+                });
+            },
             passthrough: function() {
-                // Task 5: Activate Claude session in SessionManager, enter
+                // Task 5: Activate Agent session in SessionManager, enter
                 // passthrough via tuiMux.switchTo, then restore previous active.
                 var prevID = tuiMux.activeID();
                 try {
                     tuiMux.activate(sessionID);
                 } catch (e) {
-                    log.debug('claudeProxy.passthrough: activate failed', { sessionID: sessionID, error: e.message || String(e) });
+                    log.debug('agentProxy.passthrough: activate failed', { sessionID: sessionID, error: e.message || String(e) });
                     return { skipped: true, reason: 'activate_failed' };
                 }
                 var result = tuiMux.switchTo();
                 if (prevID && prevID !== sessionID) {
                     try { tuiMux.activate(prevID); } catch (e) {
-                        log.debug('claudeProxy.passthrough: restore failed', { prevID: prevID, error: e.message || String(e) });
+                        log.debug('agentProxy.passthrough: restore failed', { prevID: prevID, error: e.message || String(e) });
                     }
                 }
                 return result;
             },
-            target: function() { return { name: 'claude', kind: 'pty' }; },
-            setTarget: function() { /* no-op: Claude target is fixed */ }
+            passthroughAsync: function() {
+                var prevID = tuiMux.activeID();
+                return tuiMux.activateAsync(sessionID).then(function() {
+                    return tuiMux.switchToAsync();
+                }).then(function(result) {
+                    if (prevID && prevID !== sessionID) {
+                        return tuiMux.activateAsync(prevID).catch(function(e) {
+                            log.debug('agentProxy.passthroughAsync: restore failed', { prevID: prevID, error: e.message || String(e) });
+                        }).then(function() { return result; });
+                    }
+                    return result;
+                }).catch(function(e) {
+                    log.debug('agentProxy.passthroughAsync: activate failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return { skipped: true, reason: 'activate_failed' };
+                });
+            },
+            target: function() { return { name: 'agent', kind: 'pty' }; },
+            setTarget: function() { /* no-op: Agent target is fixed */ }
         };
     }
 
-    function getClaudePaneSession() {
+    function getAgentPaneSession() {
         if (typeof tuiMux === 'undefined' || !tuiMux) return null;
-        var cid = prSplit._state && prSplit._state.claudeSessionID;
+        var cid = prSplit._state && prSplit._state.agentSessionID;
         if (cid) {
-            return _buildClaudeProxy(cid);
+            return _buildAgentProxy(cid);
         }
-        // No pinned SessionID yet — Claude not attached.
+        // No pinned SessionID yet — Agent not attached.
         return null;
     }
 
     function getInteractivePaneSession(s, tab) {
         if (!s && !tab) return null;
-        var pane = tab || (s && s.splitViewTab) || 'claude';
-        if (pane === 'claude') return getClaudePaneSession();
+        var pane = tab || (s && s.splitViewTab) || 'agent';
+        if (pane === 'agent') return getAgentPaneSession();
         if (pane === 'verify') {
             if (!s) return null;
             var val = s.activeVerifySession;
@@ -456,8 +495,6 @@
                 return captureRef ? !captureRef.isDone() : false;
             },
             passthrough: function() {
-                // Task 48: Activate verify session in SessionManager, enter
-                // passthrough via tuiMux.switchTo, then re-activate Claude.
                 var prevID = tuiMux.activeID();
                 try {
                     tuiMux.activate(sessionID);
@@ -473,14 +510,28 @@
                 }
                 return result;
             },
+            passthroughAsync: function() {
+                var prevID = tuiMux.activeID();
+                return tuiMux.activateAsync(sessionID).then(function() {
+                    return tuiMux.switchToAsync();
+                }).then(function(result) {
+                    if (prevID && prevID !== sessionID) {
+                        return tuiMux.activateAsync(prevID).catch(function(e) {
+                            log.debug('verifyProxy.passthroughAsync: re-activate failed', { prevID: prevID, error: e.message || String(e) });
+                        }).then(function() { return result; });
+                    }
+                    return result;
+                }).catch(function(e) {
+                    log.debug('verifyProxy.passthroughAsync: activate failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return { skipped: true, reason: 'activate_failed' };
+                });
+            },
             interrupt: function() { if (captureRef && captureRef.interrupt) captureRef.interrupt(); },
             kill: function() { if (captureRef && captureRef.kill) captureRef.kill(); },
             pause: function() { if (captureRef && captureRef.pause) captureRef.pause(); },
             resume: function() { if (captureRef && captureRef.resume) captureRef.resume(); },
             isPaused: function() { return captureRef && captureRef.isPaused ? captureRef.isPaused() : false; },
             write: function(data) {
-                // Task 48: Route through SessionManager. Temporarily activate the
-                // verify session, send input, then restore the prior active session.
                 var prevID = tuiMux.activeID();
                 try {
                     tuiMux.activate(sessionID);
@@ -491,9 +542,25 @@
                     }
                 }
             },
+            writeAsync: function(data) {
+                var prevID = tuiMux.activeID();
+                return tuiMux.activateAsync(sessionID).then(function() {
+                    return tuiMux.inputAsync(typeof data === 'string' ? data : String(data));
+                }).then(function() {
+                    if (prevID && prevID !== sessionID) {
+                        return tuiMux.activateAsync(prevID).catch(function(e) { log.debug('restore prev session failed', { prevID: prevID, error: e.message || String(e) }); });
+                    }
+                }).catch(function(e) {
+                    log.debug('verifyProxy.writeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
+                });
+            },
             resize: function(rows, cols) {
-                // SessionManager.Resize broadcasts to ALL managed sessions.
                 tuiMux.resize(rows, cols);
+            },
+            resizeAsync: function(rows, cols) {
+                return tuiMux.resizeAsync(rows, cols).catch(function(e) {
+                    log.debug('verifyProxy.resizeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
+                });
             }
         };
     }
@@ -562,15 +629,15 @@
         return !!getInteractivePaneSession(s, tab);
     }
 
-    // Task 8: Shell tab removed — only claude, output, verify tabs remain.
+    // Task 8: Shell tab removed — only agent, output, verify tabs remain.
     function listSplitViewTabs(s) {
-        var tabs = ['claude', 'output'];
+        var tabs = ['agent', 'output'];
         if (hasInteractivePaneSession(s, 'verify') || s.verifyFallbackRunning || s.verifyScreen) tabs.push('verify');
         return tabs;
     }
 
-    prSplit._buildClaudeProxy = _buildClaudeProxy;
-    prSplit._getClaudePaneSession = getClaudePaneSession;
+    prSplit._buildAgentProxy = _buildAgentProxy;
+    prSplit._getAgentPaneSession = getAgentPaneSession;
     prSplit._getInteractivePaneSession = getInteractivePaneSession;
     prSplit._closeInteractivePaneSession = closeInteractivePaneSession;
     prSplit._clearVerifyPaneSession = clearVerifyPaneSession;
@@ -583,7 +650,114 @@
     // handleConfigState validates configuration and prepares baseline verify
     // config. T090: Actual baseline verification is deferred to the async
     // pipeline so the TUI event loop is never blocked.
+    //
+    // This function is dual-mode: when gitExec returns synchronous values
+    // (e.g. mocked in tests), it runs synchronously. When gitExec returns
+    // Promises (production), it falls back to the async version.
     function handleConfigState(config) {
+        var runtime = prSplit.runtime;
+        var gitExec = prSplit._gitExec;
+        var resolveDir = prSplit._resolveDir;
+        var dir = resolveDir(config.dir || '.');
+
+        // Probe: if the first gitExec call returns a Promise, use async path.
+        // The probe is reused by handleConfigStateAsync (awaited there) so the
+        // rev-parse runs exactly once and is never left as an unhandled
+        // rejection.
+        var probe = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+        if (probe && typeof probe.then === 'function') {
+            return handleConfigStateAsync(config, probe);
+        }
+
+        // --- Sync path ---
+        var automatedDefaults = prSplit.AUTOMATED_DEFAULTS || {};
+        var loadPlan = prSplit.loadPlan;
+
+        var errors = [];
+        var availableBranches = null;
+
+        if (!runtime.baseBranch) {
+            errors.push('baseBranch is required (set via config or "set baseBranch <name>")');
+        }
+
+        var branchResult = probe;
+        if (branchResult.code !== 0) {
+            var stderrMsg = (branchResult.stderr || '').trim();
+            if (stderrMsg.indexOf('ambiguous argument') !== -1 ||
+                stderrMsg.indexOf('bad default revision') !== -1 ||
+                stderrMsg.indexOf('unknown revision') !== -1) {
+                errors.push('No commits on current branch. Please make at least one commit before splitting.');
+            } else {
+                errors.push('Cannot determine current branch: ' + stderrMsg);
+            }
+            var branchListResult = gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
+            if (branchListResult.code === 0 && branchListResult.stdout.trim()) {
+                availableBranches = branchListResult.stdout.trim().split('\n');
+            }
+        } else {
+            var sourceBranch = branchResult.stdout.trim();
+            if (sourceBranch === 'HEAD') {
+                errors.push('Detached HEAD state detected. Please checkout a branch before splitting (git checkout <branch>).');
+                var detachedBranchList = gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
+                if (detachedBranchList.code === 0 && detachedBranchList.stdout.trim()) {
+                    availableBranches = detachedBranchList.stdout.trim().split('\n');
+                }
+            } else if (sourceBranch === runtime.baseBranch) {
+                errors.push('Currently on base branch (' + runtime.baseBranch + '); checkout a feature branch first');
+            }
+        }
+
+        if (runtime.baseBranch) {
+            var targetCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + runtime.baseBranch]);
+            if (targetCheck.code !== 0) {
+                var remoteCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/remotes/origin/' + runtime.baseBranch]);
+                if (remoteCheck.code !== 0) {
+                    errors.push('Target branch "' + runtime.baseBranch + '" does not exist locally or as origin remote');
+                }
+            }
+        }
+
+        if (errors.length > 0) {
+            var result = { error: errors.join('; ') };
+            if (availableBranches) {
+                result.availableBranches = availableBranches;
+            }
+            return result;
+        }
+
+        if (config.resume) {
+            var checkpoint = loadPlan();
+            if (checkpoint && !checkpoint.error && checkpoint.plan) {
+                return { resume: true, checkpoint: checkpoint };
+            }
+            log.printf('wizard: --resume specified but no valid checkpoint found; starting fresh');
+        }
+
+        var verifyCommand = runtime.verifyCommand;
+        var verifyTimeoutMs = 0;
+        if (typeof config.verifyTimeoutMs === 'number' && config.verifyTimeoutMs > 0) {
+            verifyTimeoutMs = config.verifyTimeoutMs;
+        } else if (typeof automatedDefaults.verifyTimeoutMs === 'number' &&
+                   automatedDefaults.verifyTimeoutMs > 0) {
+            verifyTimeoutMs = automatedDefaults.verifyTimeoutMs;
+        }
+
+        return {
+            error: null,
+            baselineVerifyConfig: {
+                verifyCommand: verifyCommand,
+                dir: dir,
+                verifyTimeoutMs: verifyTimeoutMs
+            }
+        };
+    }
+
+    // handleConfigStateAsync is the async version used when gitExec returns
+    // Promises (production runtime with real git operations). The `probe`
+    // argument is the already-issued `rev-parse --abbrev-ref HEAD` result from
+    // handleConfigState; it is awaited rather than re-executed so the branch
+    // lookup runs exactly once.
+    async function handleConfigStateAsync(config, probe) {
         var runtime = prSplit.runtime;
         var gitExec = prSplit._gitExec;
         var resolveDir = prSplit._resolveDir;
@@ -599,8 +773,9 @@
             errors.push('baseBranch is required (set via config or "set baseBranch <name>")');
         }
 
-        // Detect source branch (current branch).
-        var branchResult = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+        // Detect source branch (current branch). Reuse the probe issued in
+        // handleConfigState instead of re-running rev-parse.
+        var branchResult = await probe;
         if (branchResult.code !== 0) {
             // T43: Distinguish empty repo from other failures.
             var stderrMsg = (branchResult.stderr || '').trim();
@@ -612,7 +787,7 @@
                 errors.push('Cannot determine current branch: ' + stderrMsg);
             }
             // T43: Try to list available branches as fallback.
-            var branchListResult = gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
+            var branchListResult = await gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
             if (branchListResult.code === 0 && branchListResult.stdout.trim()) {
                 availableBranches = branchListResult.stdout.trim().split('\n');
             }
@@ -622,7 +797,7 @@
             if (sourceBranch === 'HEAD') {
                 errors.push('Detached HEAD state detected. Please checkout a branch before splitting (git checkout <branch>).');
                 // T43: List available branches for reference.
-                var detachedBranchList = gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
+                var detachedBranchList = await gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
                 if (detachedBranchList.code === 0 && detachedBranchList.stdout.trim()) {
                     availableBranches = detachedBranchList.stdout.trim().split('\n');
                 }
@@ -633,10 +808,10 @@
 
         // T43: Validate target (base) branch exists.
         if (runtime.baseBranch) {
-            var targetCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + runtime.baseBranch]);
+            var targetCheck = await gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + runtime.baseBranch]);
             if (targetCheck.code !== 0) {
                 // Also check for remote tracking branch.
-                var remoteCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/remotes/origin/' + runtime.baseBranch]);
+                var remoteCheck = await gitExec(dir, ['rev-parse', '--verify', 'refs/remotes/origin/' + runtime.baseBranch]);
                 if (remoteCheck.code !== 0) {
                     errors.push('Target branch "' + runtime.baseBranch + '" does not exist locally or as origin remote');
                 }
@@ -653,7 +828,7 @@
 
         // --- Step 2: Check for --resume flag ---
         if (config.resume) {
-            var checkpoint = loadPlan();
+            var checkpoint = await loadPlan();
             if (checkpoint && !checkpoint.error && checkpoint.plan) {
                 return { resume: true, checkpoint: checkpoint };
             }
@@ -662,9 +837,6 @@
         }
 
         // --- Step 3: Baseline verification config ---
-        // T090: Actual verification moved to async pipeline (runAnalysisAsync /
-        // automatedSplit pre-step) so the TUI event loop is never blocked.
-        // We just resolve the config here and pass it back to the caller.
         var verifyCommand = runtime.verifyCommand;
         var verifyTimeoutMs = 0;
         if (typeof config.verifyTimeoutMs === 'number' && config.verifyTimeoutMs > 0) {
@@ -770,7 +942,7 @@
 
     // handleBranchBuildingState executes plan splits and verifies each branch.
     // Transitions to EQUIV_CHECK (all pass) or ERROR_RESOLUTION (any fail).
-    function handleBranchBuildingState(wizard, plan, opts) {
+    async function handleBranchBuildingState(wizard, plan, opts) {
         if (wizard.current !== 'BRANCH_BUILDING') {
             return { error: 'wizard is not in BRANCH_BUILDING state (current: ' + wizard.current + ')' };
         }
@@ -785,7 +957,7 @@
         }
 
         // Execute splits.
-        var execResult = prSplit.executeSplit(plan);
+        var execResult = await prSplit.executeSplit(plan);
         if (execResult.error) {
             wizard.error(execResult.error);
             return { error: execResult.error, action: 'error', state: 'ERROR' };
@@ -821,7 +993,7 @@
                 status.verifyError = 'skipped — execution failed: ' + branch.error;
                 failedBranches.push(status);
             } else if (plan.verifyCommand && plan.verifyCommand !== 'true') {
-                var verifyResult = prSplit.verifySplit(branch.name, {
+                var verifyResult = await prSplit.verifySplit(branch.name, {
                     verifyCommand: plan.verifyCommand,
                     dir: plan.dir || '.'
                 });
@@ -907,12 +1079,12 @@
         }
 
         if (choice === 'manual') {
-            // Manual fix: user interacts with Claude pane to fix branches,
+            // Manual fix: user interacts with Agent pane to fix branches,
             // then re-enters BRANCH_BUILDING for re-verification.
             // NOTE: Do NOT call output.print() here — this runs inside
             // BubbleTea context and would corrupt the terminal. The caller
             // (handleErrorResolutionChoice in chunk 16) handles switching
-            // to the Claude pane and storing context for the view.
+            // to the Agent pane and storing context for the view.
             var failedBranches = (wizard.data && wizard.data.failedBranches) || [];
             wizard.transition('BRANCH_BUILDING');
             return { action: 'manual', state: 'BRANCH_BUILDING', failedBranches: failedBranches };
@@ -926,7 +1098,7 @@
     prSplit._handleErrorResolutionState = handleErrorResolutionState;
 
     // handleEquivCheckState runs equivalence check and transitions to FINALIZATION.
-    function handleEquivCheckState(wizard, plan) {
+    async function handleEquivCheckState(wizard, plan) {
         if (wizard.current !== 'EQUIV_CHECK') {
             return { error: 'wizard is not in EQUIV_CHECK state (current: ' + wizard.current + ')' };
         }
@@ -937,7 +1109,7 @@
         }
 
         // T089: Prefer cached result from TUI pipeline to avoid sync git calls.
-        var equivResult = st.equivalenceResult || prSplit.verifyEquivalence(plan);
+        var equivResult = st.equivalenceResult || await prSplit.verifyEquivalence(plan);
         st.equivalenceResult = equivResult; // cache for buildReport()
 
         // Annotate with skip information so callers understand the context.

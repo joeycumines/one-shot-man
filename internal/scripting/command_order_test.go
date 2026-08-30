@@ -77,7 +77,7 @@ func TestCommandCompletionOrder(t *testing.T) {
 func TestCommandCompletionSuggestionOrder(t *testing.T) {
 	// Create a minimal TUIManager for testing completion
 	tm := &TUIManager{
-		writer:   NewTUIWriterFromIO(io.Discard),
+		writer:   NewTUIWriterIO(io.Discard),
 		commands: make(map[string]Command),
 		modes:    make(map[string]*ScriptMode),
 	}

@@ -7,8 +7,8 @@ import (
 	"unicode/utf8"
 )
 
-// KUnkPenalty is subtracted from min_score to compute the unk token score.
-const KUnkPenalty = 10.0
+// kUnkPenalty is subtracted from min_score to compute the unk token score.
+const kUnkPenalty = 10.0
 
 // Unigram implements the Unigram tokenization model using Viterbi
 // decoding over a lattice of token scores. It supports both an
@@ -143,21 +143,6 @@ func (b *UnigramBuilder) Build() (*Unigram, error) {
 	}, nil
 }
 
-// SetFuseUnk (for tests) sets whether consecutive unk tokens are fused.
-func (u *Unigram) SetFuseUnk(fuseUnk bool) {
-	u.fuseUnk = fuseUnk
-}
-
-// SetOptimized (for tests) sets whether the optimized DP path is used.
-func (u *Unigram) SetOptimized(isOptimized bool) {
-	u.isOptimized = isOptimized
-}
-
-// ByteFallback returns whether byte fallback is enabled.
-func (u *Unigram) ByteFallback() bool {
-	return u.byteFallback
-}
-
 // Encode tokenizes the sentence using the Unigram model and returns
 // the best token strings (not Token structs — call Tokenize for that).
 func (u *Unigram) Encode(sentence string) ([]string, error) {
@@ -179,7 +164,7 @@ func (u *Unigram) Encode(sentence string) ([]string, error) {
 // encodeOptimized implements the DP-based best path algorithm from
 // SentencePiece's unigram_model.cc.
 func (u *Unigram) encodeOptimized(sentence string) ([]string, error) {
-	unkScore := u.minScore - KUnkPenalty
+	unkScore := u.minScore - kUnkPenalty
 
 	type bestPathNode struct {
 		id            int
@@ -364,7 +349,7 @@ func (u *Unigram) encodeUnoptimized(sentence string) ([]string, error) {
 // populateNodes inserts all possible token nodes into the lattice
 // using the trie's common prefix search.
 func (u *Unigram) populateNodes(lattice *Lattice) {
-	unkScore := u.minScore - KUnkPenalty
+	unkScore := u.minScore - kUnkPenalty
 
 	beginPos := 0
 	slen := lattice.Len

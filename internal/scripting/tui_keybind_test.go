@@ -4,9 +4,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
+	"github.com/joeycumines/goja"
 )
 
 func TestBuildKeyBinds_PassesPromptObject(t *testing.T) {
@@ -25,7 +25,7 @@ func TestBuildKeyBinds_PassesPromptObject(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		engine: &Engine{vm: vm},
 		keyBindings: map[string]goja.Callable{
 			"ctrl-a": callable,
@@ -50,7 +50,7 @@ func TestBuildPromptJSObject_Methods(t *testing.T) {
 
 	vm := goja.New()
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		engine: &Engine{vm: vm},
 	}
 
@@ -78,7 +78,7 @@ func TestBuildPromptJSObject_Methods(t *testing.T) {
 	// Create a prompt with minimal options for structure testing.
 	p := prompt.New(
 		func(s string) {},
-		prompt.WithWriter(NewTUIWriterFromIO(io.Discard)),
+		prompt.WithWriter(NewTUIWriterIO(io.Discard)),
 	)
 	obj := tm.buildPromptJSObject(p)
 
@@ -299,7 +299,7 @@ func TestDocumentAPI_EnrichedMethods(t *testing.T) {
 
 	vm := goja.New()
 	tm := &TUIManager{
-		writer: NewTUIWriterFromIO(io.Discard),
+		writer: NewTUIWriterIO(io.Discard),
 		engine: &Engine{vm: vm},
 	}
 

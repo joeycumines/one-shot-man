@@ -7,26 +7,26 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// VTerm Integration Tests: Claude Pane Auto-Attach and Lifecycle
+// VTerm Integration Tests: Agent Pane Auto-Attach and Lifecycle
 //
-// These tests verify the complete lifecycle of the Claude pane:
-//   auto-attach on Claude spawn → split-view opens → notification shown →
+// These tests verify the complete lifecycle of the Agent pane:
+//   auto-attach on Agent spawn → split-view opens → notification shown →
 //   Ctrl+L dismiss → no re-open → child exit auto-close → cleanup
 //
 // Tests cover: auto-attach positive case, one-shot guard, dismiss prevents
-// re-open, small terminal prevention, Claude badge rendering, notification
+// re-open, small terminal prevention, Agent badge rendering, notification
 // set/auto-dismiss, auto-close on child exit, auto-close blocked during
 // pipeline, crash detection closes split-view.
 // ---------------------------------------------------------------------------
 
-// lifecycleMuxSetup provides a standard mock with Claude active and pinned SessionID.
+// lifecycleMuxSetup provides a standard mock with Agent active and pinned SessionID.
 const lifecycleMuxSetup = `
 var __savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 var __mockCID = 42;
 prSplit._state = prSplit._state || {};
-prSplit._state.claudeSessionID = __mockCID;
+prSplit._state.agentSessionID = __mockCID;
 globalThis.tuiMux = {
-	snapshot: function(id) { return { fullScreen: 'claude output', plainText: 'claude screenshot' }; },
+	snapshot: function(id) { return { fullScreen: 'agent output', plainText: 'agent screenshot' }; },
 	isDone: function(id) { return false; },
 	activeID: function() { return __mockCID; },
 	activate: function(id) {},
@@ -39,14 +39,14 @@ globalThis.tuiMux = {
 const lifecycleMuxRestore = `
 if (__savedMux !== undefined) globalThis.tuiMux = __savedMux;
 else delete globalThis.tuiMux;
-if (prSplit._state) prSplit._state.claudeSessionID = null;
+if (prSplit._state) prSplit._state.agentSessionID = null;
 `
 
-// lifecycleExecutorSetup mocks claudeExecutor on prSplit._state so
+// lifecycleExecutorSetup mocks agentExecutor on prSplit._state so
 // the auto-poll crash-detection check sees an alive process.
 const lifecycleExecutorSetup = `
-var __savedExecutor = globalThis.prSplit._state.claudeExecutor;
-globalThis.prSplit._state.claudeExecutor = {
+var __savedExecutor = globalThis.prSplit._state.agentExecutor;
+globalThis.prSplit._state.agentExecutor = {
 	handle: {
 		isAlive: function() { return true; },
 		receive: function() { return null; }
@@ -57,9 +57,9 @@ globalThis.prSplit._state.claudeExecutor = {
 
 const lifecycleExecutorRestore = `
 if (__savedExecutor !== undefined) {
-	globalThis.prSplit._state.claudeExecutor = __savedExecutor;
+	globalThis.prSplit._state.agentExecutor = __savedExecutor;
 } else {
-	delete globalThis.prSplit._state.claudeExecutor;
+	delete globalThis.prSplit._state.agentExecutor;
 }
 `
 
@@ -75,8 +75,8 @@ func TestChunk16_VTerm_Lifecycle_AutoAttachFires(t *testing.T) {
 		try {
 			var s = initState('PLAN_REVIEW');
 			s.splitViewEnabled = false;
-			s.claudeAutoAttached = false;
-			s.claudeManuallyDismissed = false;
+			s.agentAutoAttached = false;
+			s.agentManuallyDismissed = false;
 			s.autoSplitRunning = true;
 			s.isProcessing = true;
 			s.height = 24;  // >= 12 threshold
@@ -95,20 +95,20 @@ func TestChunk16_VTerm_Lifecycle_AutoAttachFires(t *testing.T) {
 			if (ns.splitViewFocus !== 'wizard') {
 				errors.push('focus should stay on wizard, got: ' + ns.splitViewFocus);
 			}
-			// Tab should be claude.
-			if (ns.splitViewTab !== 'claude') {
-				errors.push('tab should be claude, got: ' + ns.splitViewTab);
+			// Tab should be agent.
+			if (ns.splitViewTab !== 'agent') {
+				errors.push('tab should be agent, got: ' + ns.splitViewTab);
 			}
 			// One-shot flag set.
-			if (ns.claudeAutoAttached !== true) {
-				errors.push('claudeAutoAttached should be true');
+			if (ns.agentAutoAttached !== true) {
+				errors.push('agentAutoAttached should be true');
 			}
 			// Notification text set.
-			if (!ns.claudeAutoAttachNotif || ns.claudeAutoAttachNotif.length === 0) {
+			if (!ns.agentAutoAttachNotif || ns.agentAutoAttachNotif.length === 0) {
 				errors.push('notification text should be non-empty');
 			}
 			// Notification timestamp set.
-			if (!ns.claudeAutoAttachNotifAt || ns.claudeAutoAttachNotifAt <= 0) {
+			if (!ns.agentAutoAttachNotifAt || ns.agentAutoAttachNotifAt <= 0) {
 				errors.push('notification timestamp should be positive');
 			}
 			// Command should be a batch (screenshot + auto-poll) — not null.
@@ -142,8 +142,8 @@ func TestChunk16_VTerm_Lifecycle_AutoAttachOneShot(t *testing.T) {
 		try {
 			var s = initState('PLAN_REVIEW');
 			s.splitViewEnabled = false;  // disabled but was previously attached
-			s.claudeAutoAttached = true; // one-shot already fired
-			s.claudeManuallyDismissed = false;
+			s.agentAutoAttached = true; // one-shot already fired
+			s.agentManuallyDismissed = false;
 			s.autoSplitRunning = true;
 			s.isProcessing = true;
 			s.height = 24;
@@ -151,11 +151,15 @@ func TestChunk16_VTerm_Lifecycle_AutoAttachOneShot(t *testing.T) {
 			// Fire auto-poll tick — should NOT re-trigger.
 			var r = update({type: 'Tick', id: 'auto-poll'}, s);
 			var ns = r[0];
+			// Crash diagnostics resolve asynchronously; flush microtasks
+			// so finishCrash applies its transitions before assertions.
+			await Promise.resolve();
+			ns = r[0];
 			var errors = [];
 
 			// Split-view should remain disabled.
 			if (ns.splitViewEnabled === true) {
-				errors.push('should NOT re-attach when claudeAutoAttached is already true');
+				errors.push('should NOT re-attach when agentAutoAttached is already true');
 			}
 
 			return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
@@ -185,8 +189,8 @@ func TestChunk16_VTerm_Lifecycle_DismissPreventsReOpen(t *testing.T) {
 			// Step 1: Auto-attach fires.
 			var s = initState('PLAN_REVIEW');
 			s.splitViewEnabled = false;
-			s.claudeAutoAttached = false;
-			s.claudeManuallyDismissed = false;
+			s.agentAutoAttached = false;
+			s.agentManuallyDismissed = false;
 			s.autoSplitRunning = true;
 			s.isProcessing = true;
 			s.height = 24;
@@ -205,14 +209,14 @@ func TestChunk16_VTerm_Lifecycle_DismissPreventsReOpen(t *testing.T) {
 			if (s.splitViewEnabled !== false) {
 				return 'FAIL: step 2 ctrl+l did not disable split-view';
 			}
-			if (s.claudeManuallyDismissed !== true) {
-				return 'FAIL: step 2 claudeManuallyDismissed should be true';
+			if (s.agentManuallyDismissed !== true) {
+				return 'FAIL: step 2 agentManuallyDismissed should be true';
 			}
 
 			// Step 3: Reset one-shot flag to simulate another auto-poll check.
-			// The claudeAutoAttached is already true, which also blocks.
-			// But even if it weren't, claudeManuallyDismissed should block.
-			s.claudeAutoAttached = false;  // force clear to test dismiss guard
+			// The agentAutoAttached is already true, which also blocks.
+			// But even if it weren't, agentManuallyDismissed should block.
+			s.agentAutoAttached = false;  // force clear to test dismiss guard
 
 			r = update({type: 'Tick', id: 'auto-poll'}, s);
 			s = r[0];
@@ -253,8 +257,8 @@ func TestChunk16_VTerm_Lifecycle_SmallTerminalBlocks(t *testing.T) {
 			for (var hi = 0; hi < heights.length; hi++) {
 				var s = initState('PLAN_REVIEW');
 				s.splitViewEnabled = false;
-				s.claudeAutoAttached = false;
-				s.claudeManuallyDismissed = false;
+				s.agentAutoAttached = false;
+				s.agentManuallyDismissed = false;
 				s.autoSplitRunning = true;
 				s.isProcessing = true;
 				s.height = heights[hi];
@@ -270,8 +274,8 @@ func TestChunk16_VTerm_Lifecycle_SmallTerminalBlocks(t *testing.T) {
 			// Height exactly 12 SHOULD work.
 			var s12 = initState('PLAN_REVIEW');
 			s12.splitViewEnabled = false;
-			s12.claudeAutoAttached = false;
-			s12.claudeManuallyDismissed = false;
+			s12.agentAutoAttached = false;
+			s12.agentManuallyDismissed = false;
 			s12.autoSplitRunning = true;
 			s12.isProcessing = true;
 			s12.height = 12;
@@ -308,14 +312,18 @@ func TestChunk16_VTerm_Lifecycle_NoMuxNoAutoAttach(t *testing.T) {
 		try {
 			var s = initState('PLAN_REVIEW');
 			s.splitViewEnabled = false;
-			s.claudeAutoAttached = false;
-			s.claudeManuallyDismissed = false;
+			s.agentAutoAttached = false;
+			s.agentManuallyDismissed = false;
 			s.autoSplitRunning = true;
 			s.isProcessing = true;
 			s.height = 24;
 
 			var r = update({type: 'Tick', id: 'auto-poll'}, s);
 			var ns = r[0];
+			// Crash diagnostics resolve asynchronously; flush microtasks
+			// so finishCrash applies its transitions before assertions.
+			await Promise.resolve();
+			ns = r[0];
 			var errors = [];
 
 			if (ns.splitViewEnabled === true) {
@@ -354,14 +362,18 @@ func TestChunk16_VTerm_Lifecycle_NoChildNoAutoAttach(t *testing.T) {
 		try {
 			var s = initState('PLAN_REVIEW');
 			s.splitViewEnabled = false;
-			s.claudeAutoAttached = false;
-			s.claudeManuallyDismissed = false;
+			s.agentAutoAttached = false;
+			s.agentManuallyDismissed = false;
 			s.autoSplitRunning = true;
 			s.isProcessing = true;
 			s.height = 24;
 
 			var r = update({type: 'Tick', id: 'auto-poll'}, s);
 			var ns = r[0];
+			// Crash diagnostics resolve asynchronously; flush microtasks
+			// so finishCrash applies its transitions before assertions.
+			await Promise.resolve();
+			ns = r[0];
 			var errors = [];
 
 			if (ns.splitViewEnabled === true) {
@@ -393,7 +405,7 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseOnChildExit(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		var __mockCID = 42;
 		prSplit._state = prSplit._state || {};
-		prSplit._state.claudeSessionID = __mockCID;
+		prSplit._state.agentSessionID = __mockCID;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },  // child exited
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
@@ -410,11 +422,11 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseOnChildExit(t *testing.T) {
 		try {
 			var s = initState('PLAN_REVIEW');
 			s.splitViewEnabled = true;        // was open
-			s.claudeAutoAttached = true;      // was auto-attached
+			s.agentAutoAttached = true;      // was auto-attached
 			s.autoSplitRunning = false;       // pipeline not running
 
-			// claude-screenshot tick detects child gone.
-			var r = update({type: 'Tick', id: 'claude-screenshot'}, s);
+			// agent-screenshot tick detects child gone.
+			var r = update({type: 'Tick', id: 'agent-screenshot'}, s);
 			var ns = r[0];
 			var cmd = r[1];
 			var errors = [];
@@ -428,22 +440,22 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseOnChildExit(t *testing.T) {
 				errors.push('focus should reset to wizard');
 			}
 			// Notification text set.
-			if (!ns.claudeAutoAttachNotif || ns.claudeAutoAttachNotif.indexOf('ended') === -1) {
-				errors.push('notification should mention session ended, got: ' + ns.claudeAutoAttachNotif);
+			if (!ns.agentAutoAttachNotif || ns.agentAutoAttachNotif.indexOf('ended') === -1) {
+				errors.push('notification should mention session ended, got: ' + ns.agentAutoAttachNotif);
 			}
 			// Notification timestamp set.
-			if (!ns.claudeAutoAttachNotifAt || ns.claudeAutoAttachNotifAt <= 0) {
+			if (!ns.agentAutoAttachNotifAt || ns.agentAutoAttachNotifAt <= 0) {
 				errors.push('notification timestamp should be positive');
 			}
-			// T028: pollClaudeScreenshot now returns a dismiss-attach-notif
+			// T028: pollAgentScreenshot now returns a dismiss-attach-notif
 			// tick to auto-dismiss the notification. Screenshot polling still
-			// stops (no further claude-screenshot ticks are scheduled).
+			// stops (no further agent-screenshot ticks are scheduled).
 
 			return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 		} finally {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
-			if (prSplit._state) prSplit._state.claudeSessionID = null;
+			if (prSplit._state) prSplit._state.agentSessionID = null;
 		}
 	})()`)
 	if err != nil {
@@ -464,7 +476,7 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseBlockedDuringPipeline(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		var __mockCID = 42;
 		prSplit._state = prSplit._state || {};
-		prSplit._state.claudeSessionID = __mockCID;
+		prSplit._state.agentSessionID = __mockCID;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },  // child exited
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
@@ -481,10 +493,10 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseBlockedDuringPipeline(t *testing.T) {
 		try {
 			var s = initState('PLAN_REVIEW');
 			s.splitViewEnabled = true;
-			s.claudeAutoAttached = true;
+			s.agentAutoAttached = true;
 			s.autoSplitRunning = true;  // pipeline still running!
 
-			var r = update({type: 'Tick', id: 'claude-screenshot'}, s);
+			var r = update({type: 'Tick', id: 'agent-screenshot'}, s);
 			var ns = r[0];
 			var cmd = r[1];
 			var errors = [];
@@ -503,7 +515,7 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseBlockedDuringPipeline(t *testing.T) {
 		} finally {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
-			if (prSplit._state) prSplit._state.claudeSessionID = null;
+			if (prSplit._state) prSplit._state.agentSessionID = null;
 		}
 	})()`)
 	if err != nil {
@@ -514,9 +526,9 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseBlockedDuringPipeline(t *testing.T) {
 	}
 }
 
-// -- Claude Badge in Status Bar Rendering -----------------------------------
+// -- Agent Badge in Status Bar Rendering -----------------------------------
 
-func TestChunk16_VTerm_Lifecycle_ClaudeBadgeLive(t *testing.T) {
+func TestChunk16_VTerm_Lifecycle_AgentBadgeLive(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -544,11 +556,11 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude badge live: %v", raw)
+		t.Errorf("agent badge live: %v", raw)
 	}
 }
 
-func TestChunk16_VTerm_Lifecycle_ClaudeBadgeIdle(t *testing.T) {
+func TestChunk16_VTerm_Lifecycle_AgentBadgeIdle(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -556,7 +568,7 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeIdle(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		var __mockCID = 42;
 		prSplit._state = prSplit._state || {};
-		prSplit._state.claudeSessionID = __mockCID;
+		prSplit._state.agentSessionID = __mockCID;
 		globalThis.tuiMux = {
 			snapshot: function(id) { return { fullScreen: 'output', plainText: 'output' }; },
 			isDone: function(id) { return false; },
@@ -583,18 +595,18 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeIdle(t *testing.T) {
 		} finally {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
-			if (prSplit._state) prSplit._state.claudeSessionID = null;
+			if (prSplit._state) prSplit._state.agentSessionID = null;
 		}
 	})()`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude badge idle: %v", raw)
+		t.Errorf("agent badge idle: %v", raw)
 	}
 }
 
-func TestChunk16_VTerm_Lifecycle_ClaudeBadgeNA(t *testing.T) {
+func TestChunk16_VTerm_Lifecycle_AgentBadgeNA(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -623,11 +635,11 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeNA(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude badge N/A: %v", raw)
+		t.Errorf("agent badge N/A: %v", raw)
 	}
 }
 
-func TestChunk16_VTerm_Lifecycle_ClaudeBadgeQuiet(t *testing.T) {
+func TestChunk16_VTerm_Lifecycle_AgentBadgeQuiet(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -635,7 +647,7 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeQuiet(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		var __mockCID = 42;
 		prSplit._state = prSplit._state || {};
-		prSplit._state.claudeSessionID = __mockCID;
+		prSplit._state.agentSessionID = __mockCID;
 		globalThis.tuiMux = {
 			snapshot: function(id) { return { fullScreen: 'output', plainText: 'output' }; },
 			isDone: function(id) { return false; },
@@ -662,18 +674,18 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeQuiet(t *testing.T) {
 		} finally {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
-			if (prSplit._state) prSplit._state.claudeSessionID = null;
+			if (prSplit._state) prSplit._state.agentSessionID = null;
 		}
 	})()`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude badge quiet: %v", raw)
+		t.Errorf("agent badge quiet: %v", raw)
 	}
 }
 
-func TestChunk16_VTerm_Lifecycle_ClaudeBadgeHiddenNarrow(t *testing.T) {
+func TestChunk16_VTerm_Lifecycle_AgentBadgeHiddenNarrow(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -687,10 +699,10 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeHiddenNarrow(t *testing.T) {
 			var bar = globalThis.prSplit._renderStatusBar(s);
 			var errors = [];
 
-			// Narrow terminal hides the Claude badge.
+			// Narrow terminal hides the Agent badge.
 			if (bar.indexOf('LIVE') !== -1 || bar.indexOf('N/A') !== -1 ||
 				bar.indexOf('idle') !== -1 || bar.indexOf('quiet') !== -1) {
-				errors.push('narrow terminal should hide Claude badge, got: ' + bar.substring(0, 200));
+				errors.push('narrow terminal should hide Agent badge, got: ' + bar.substring(0, 200));
 			}
 
 			return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
@@ -702,7 +714,7 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeHiddenNarrow(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("claude badge hidden narrow: %v", raw)
+		t.Errorf("agent badge hidden narrow: %v", raw)
 	}
 }
 
@@ -718,14 +730,14 @@ func TestChunk16_VTerm_Lifecycle_NotificationRendered(t *testing.T) {
 			var s = initState('PLAN_REVIEW');
 			s.width = 80;
 			s.height = 24;
-			s.claudeAutoAttachNotif = 'Claude connected';
-			s.claudeAutoAttachNotifAt = Date.now();  // just set → < 5s
+			s.agentAutoAttachNotif = 'Agent connected';
+			s.agentAutoAttachNotifAt = Date.now();  // just set → < 5s
 
 			var bar = globalThis.prSplit._renderStatusBar(s);
 			var errors = [];
 
 			// Notification should be rendered.
-			if (bar.indexOf('Claude connected') === -1) {
+			if (bar.indexOf('Agent connected') === -1) {
 				errors.push('notification text should appear in status bar, got: ' + bar.substring(0, 300));
 			}
 
@@ -752,25 +764,25 @@ func TestChunk16_VTerm_Lifecycle_NotificationAutoDismissed(t *testing.T) {
 			var s = initState('PLAN_REVIEW');
 			s.width = 80;
 			s.height = 24;
-			s.claudeAutoAttachNotif = 'Claude connected';
+			s.agentAutoAttachNotif = 'Agent connected';
 			// Set timestamp to 6 seconds ago → expired.
-			s.claudeAutoAttachNotifAt = Date.now() - 6000;
+			s.agentAutoAttachNotifAt = Date.now() - 6000;
 
 			var bar = globalThis.prSplit._renderStatusBar(s);
 			var errors = [];
 
 			// Notification should be auto-dismissed (not rendered).
-			if (bar.indexOf('Claude connected') !== -1) {
+			if (bar.indexOf('Agent connected') !== -1) {
 				errors.push('expired notification should NOT appear in status bar');
 			}
 			// T028: State clearing is handled by dismiss-attach-notif tick,
 			// not by the view function. Send the tick to verify the dismiss path.
 			var dr = update({type: 'Tick', id: 'dismiss-attach-notif'}, s);
 			s = dr[0];
-			if (s.claudeAutoAttachNotif !== '') {
-				errors.push('notification text should be cleared, got: ' + s.claudeAutoAttachNotif);
+			if (s.agentAutoAttachNotif !== '') {
+				errors.push('notification text should be cleared, got: ' + s.agentAutoAttachNotif);
 			}
-			if (s.claudeAutoAttachNotifAt !== 0) {
+			if (s.agentAutoAttachNotifAt !== 0) {
 				errors.push('notification timestamp should be cleared to 0');
 			}
 
@@ -799,21 +811,25 @@ func TestChunk16_VTerm_Lifecycle_AutoAttachNotificationText(t *testing.T) {
 		try {
 			var s = initState('PLAN_REVIEW');
 			s.splitViewEnabled = false;
-			s.claudeAutoAttached = false;
-			s.claudeManuallyDismissed = false;
+			s.agentAutoAttached = false;
+			s.agentManuallyDismissed = false;
 			s.autoSplitRunning = true;
 			s.isProcessing = true;
 			s.height = 24;
 
 			var r = update({type: 'Tick', id: 'auto-poll'}, s);
 			var ns = r[0];
+			// Crash diagnostics resolve asynchronously; flush microtasks
+			// so finishCrash applies its transitions before assertions.
+			await Promise.resolve();
+			ns = r[0];
 			var errors = [];
 
 			// Notification should contain helpful keybinding info.
-			if (!ns.claudeAutoAttachNotif) {
+			if (!ns.agentAutoAttachNotif) {
 				errors.push('notification should be set on auto-attach');
 			} else {
-				if (ns.claudeAutoAttachNotif.indexOf('Ctrl+L') === -1) {
+				if (ns.agentAutoAttachNotif.indexOf('Ctrl+L') === -1) {
 					errors.push('notification should mention Ctrl+L toggle');
 				}
 			}
@@ -841,8 +857,8 @@ func TestChunk16_VTerm_Lifecycle_CrashClosesPane(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `
 		// Executive with dead process.
-		var savedExecutor = globalThis.prSplit._state.claudeExecutor;
-		globalThis.prSplit._state.claudeExecutor = {
+		var savedExecutor = globalThis.prSplit._state.agentExecutor;
+		globalThis.prSplit._state.agentExecutor = {
 			handle: {
 				isAlive: function() { return false; },
 				receive: function() { return null; }
@@ -852,33 +868,37 @@ func TestChunk16_VTerm_Lifecycle_CrashClosesPane(t *testing.T) {
 		try {
 			var s = initState('BRANCH_BUILDING');
 			s.splitViewEnabled = true;
-			s.splitViewFocus = 'claude';
-			s.claudeScreen = 'last output';
+			s.splitViewFocus = 'agent';
+			s.agentScreen = 'last output';
 			s.autoSplitRunning = true;
 			s.isProcessing = true;
 			s.height = 24;
 			// Ensure health check runs immediately.
-			s.lastClaudeHealthCheckMs = 0;
+			s.lastAgentHealthCheckMs = 0;
 
 			var r = update({type: 'Tick', id: 'auto-poll'}, s);
 			var ns = r[0];
+			// Crash diagnostics resolve asynchronously; flush microtasks
+			// so finishCrash applies its transitions before assertions.
+			await Promise.resolve();
+			ns = r[0];
 			var errors = [];
 
 			// Split-view should close.
 			if (ns.splitViewEnabled !== false) {
 				errors.push('crash should close split-view');
 			}
-			// Claude screen should be cleared.
-			if (ns.claudeScreen !== '') {
-				errors.push('claudeScreen should be cleared after crash');
+			// Agent screen should be cleared.
+			if (ns.agentScreen !== '') {
+				errors.push('agentScreen should be cleared after crash');
 			}
 			// Focus reset to wizard.
 			if (ns.splitViewFocus !== 'wizard') {
 				errors.push('focus should reset to wizard');
 			}
 			// Crash detected flag set.
-			if (ns.claudeCrashDetected !== true) {
-				errors.push('claudeCrashDetected should be true');
+			if (ns.agentCrashDetected !== true) {
+				errors.push('agentCrashDetected should be true');
 			}
 			// Error details should contain crash info.
 			if (!ns.errorDetails || ns.errorDetails.indexOf('crashed') === -1) {
@@ -888,9 +908,9 @@ func TestChunk16_VTerm_Lifecycle_CrashClosesPane(t *testing.T) {
 			return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 		} finally {
 			if (savedExecutor !== undefined) {
-				globalThis.prSplit._state.claudeExecutor = savedExecutor;
+				globalThis.prSplit._state.agentExecutor = savedExecutor;
 			} else {
-				delete globalThis.prSplit._state.claudeExecutor;
+				delete globalThis.prSplit._state.agentExecutor;
 			}
 			` + lifecycleMuxRestore + `
 		}
@@ -912,7 +932,7 @@ func TestChunk16_VTerm_Lifecycle_CtrlLReOpenClearsDismissFlag(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = false;
-		s.claudeManuallyDismissed = true;  // was dismissed
+		s.agentManuallyDismissed = true;  // was dismissed
 
 		// Ctrl+L toggles ON.
 		var r = sendKey(s, 'ctrl+l');
@@ -923,8 +943,8 @@ func TestChunk16_VTerm_Lifecycle_CtrlLReOpenClearsDismissFlag(t *testing.T) {
 			errors.push('ctrl+l should re-enable split-view');
 		}
 		// The dismiss flag should be cleared when user explicitly re-opens.
-		if (ns.claudeManuallyDismissed !== false) {
-			errors.push('claudeManuallyDismissed should be cleared on Ctrl+L re-open');
+		if (ns.agentManuallyDismissed !== false) {
+			errors.push('agentManuallyDismissed should be cleared on Ctrl+L re-open');
 		}
 
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
@@ -952,8 +972,8 @@ func TestChunk16_VTerm_Lifecycle_FullFlow(t *testing.T) {
 			// Phase 1: Pipeline starts, auto-poll fires, auto-attach triggers.
 			var s = initState('PLAN_REVIEW');
 			s.splitViewEnabled = false;
-			s.claudeAutoAttached = false;
-			s.claudeManuallyDismissed = false;
+			s.agentAutoAttached = false;
+			s.agentManuallyDismissed = false;
 			s.autoSplitRunning = true;
 			s.isProcessing = true;
 			s.height = 24;
@@ -962,22 +982,22 @@ func TestChunk16_VTerm_Lifecycle_FullFlow(t *testing.T) {
 			s = r[0];
 
 			if (!s.splitViewEnabled) errors.push('phase1: auto-attach should fire');
-			if (!s.claudeAutoAttached) errors.push('phase1: one-shot flag not set');
+			if (!s.agentAutoAttached) errors.push('phase1: one-shot flag not set');
 
-			// Phase 2: User interacts with Claude pane.
-			s.splitViewFocus = 'claude';
-			s.claudeScreen = 'Claude is working...';
+			// Phase 2: User interacts with Agent pane.
+			s.splitViewFocus = 'agent';
+			s.agentScreen = 'Agent is working...';
 
 			// Phase 3: User dismisses via Ctrl+L.
 			r = sendKey(s, 'ctrl+l');
 			s = r[0];
 
 			if (s.splitViewEnabled) errors.push('phase3: should be disabled after Ctrl+L');
-			if (!s.claudeManuallyDismissed) errors.push('phase3: dismiss flag not set');
+			if (!s.agentManuallyDismissed) errors.push('phase3: dismiss flag not set');
 
 			// Phase 4: Auto-poll continues (pipeline still running).
 			// Should NOT re-open.
-			s.claudeAutoAttached = false;  // hypothetical re-trigger attempt
+			s.agentAutoAttached = false;  // hypothetical re-trigger attempt
 			r = update({type: 'Tick', id: 'auto-poll'}, s);
 			s = r[0];
 
@@ -988,19 +1008,19 @@ func TestChunk16_VTerm_Lifecycle_FullFlow(t *testing.T) {
 			s = r[0];
 
 			if (!s.splitViewEnabled) errors.push('phase5: Ctrl+L should re-enable');
-			if (s.claudeManuallyDismissed) errors.push('phase5: dismiss flag should clear');
+			if (s.agentManuallyDismissed) errors.push('phase5: dismiss flag should clear');
 
 			// Phase 6: Pipeline ends, child exits, auto-close fires.
 			s.autoSplitRunning = false;
-			s.claudeAutoAttached = true;
+			s.agentAutoAttached = true;
 			globalThis.tuiMux.isDone = function(id) { return true; };
 			globalThis.tuiMux.snapshot = function(id) { return { fullScreen: '', plainText: '' }; };
 
-			r = update({type: 'Tick', id: 'claude-screenshot'}, s);
+			r = update({type: 'Tick', id: 'agent-screenshot'}, s);
 			s = r[0];
 
 			if (s.splitViewEnabled) errors.push('phase6: should auto-close after child exit');
-			if (!s.claudeAutoAttachNotif) errors.push('phase6: notification should be set');
+			if (!s.agentAutoAttachNotif) errors.push('phase6: notification should be set');
 
 			return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 		} finally {
@@ -1035,10 +1055,10 @@ func TestChunk16_VTerm_Lifecycle_ManualOpenNotAutoClosed(t *testing.T) {
 		try {
 			var s = initState('PLAN_REVIEW');
 			s.splitViewEnabled = true;
-			s.claudeAutoAttached = false;  // NOT auto-attached → manual open
+			s.agentAutoAttached = false;  // NOT auto-attached → manual open
 			s.autoSplitRunning = false;
 
-			var r = update({type: 'Tick', id: 'claude-screenshot'}, s);
+			var r = update({type: 'Tick', id: 'agent-screenshot'}, s);
 			var ns = r[0];
 			var errors = [];
 

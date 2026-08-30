@@ -149,6 +149,19 @@
 
         // Build standard commands
         function buildCommands() {
+            function _printCopySuccess(text) {
+                var tokCnt = _tokenCount(text);
+                var lineCnt = _lineCount(text);
+                var byteCnt = _byteCount(text);
+                var byteStr = _fmt.formatBytes(byteCnt);
+                output.print(
+                    "Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tokCnt) + " tokens \u00b7 " +
+                    lineCnt + " lines \u00b7 " + byteStr + " \u2502"
+                );
+                if (postCopyHint) {
+                    output.print(postCopyHint);
+                }
+            }
             var cmds = {
                 add: {
                     description: "Add file content to context",
@@ -157,14 +170,14 @@
                     flagDefs: [
                         {name: "from-diff", description: "Add all files changed in a git diff"}
                     ],
-                    handler: function (args) {
+                    handler: async function (args) {
                         // Handle --from-diff flag
                         if (args.length > 0 && args[0] === "--from-diff") {
                             var argv = ["git", "diff", "--name-only"];
                             for (var i = 1; i < args.length; i++) {
                                 argv.push(args[i]);
                             }
-                            var result = execv(argv);
+                            var result = await execv(argv);
                             if (result.error) {
                                 output.print("git diff --name-only failed: " + result.message);
                                 return;
@@ -192,8 +205,8 @@
                             return;
                         }
                         if (args.length === 0) {
-                            const edited = openEditor("paths", "\n# one path per line\n");
-                            args = edited.split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('#'));
+                            const edited = await openEditor("paths", "\n# one path per line\n");
+                            args = (edited || "").split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('#'));
                         }
                         for (const p of args) {
                             try {
@@ -252,20 +265,27 @@
                 note: {
                     description: "Add a freeform note",
                     usage: "note [text]",
-                    handler: function (args) {
+                    handler: async function (args) {
                         let text = args.join(" ");
-                        if (!text) text = openEditor("note", "");
+                        if (!text) text = await openEditor("note", "");
                         const id = addItem("note", "note", text);
                         output.print("Added note [" + id + "]");
                     }
                 },
                 list: {
                     description: "List context items",
-                    handler: function () {
+                    handler: async function () {
                         for (const it of getItems()) {
                             let line = "[" + it.id + "] [" + it.type + "] " + (it.label || "");
-                            if (it.type === 'file' && it.label && !fileExists(it.label)) {
-                                line += " (missing)";
+                            if (it.type === 'file' && it.label) {
+                                try {
+                                    const fe = await fileExists(it.label);
+                                    if (!(fe && fe.exists)) {
+                                        line += " (missing)";
+                                    }
+                                } catch (e) {
+                                    line += " (unverifiable: " + ((e && e.message) || e) + ")";
+                                }
                             }
                             output.print(line);
                         }
@@ -274,7 +294,7 @@
                 edit: {
                     description: "Edit context item by id",
                     usage: "edit <id>",
-                    handler: function (args) {
+                    handler: async function (args) {
                         if (args.length < 1) {
                             output.print("Usage: edit <id>");
                             return;
@@ -298,7 +318,7 @@
                             const isExec = list[idx].type === 'lazy-exec';
                             const initial = Array.isArray(list[idx].payload) ? formatArgv(list[idx].payload) : (list[idx].payload || "");
                             const editorTitle = (isExec ? "exec" : "diff") + "-spec-" + id;
-                            const edited = openEditor(editorTitle, initial);
+                            const edited = await openEditor(editorTitle, initial);
                             const argv = parseArgv((edited || "").trim());
                             if (isExec && argv.length === 0) {
                                 output.print("Command cannot be empty");
@@ -317,7 +337,7 @@
                             output.print("Updated " + (isExec ? "exec" : "diff") + " specification [" + id + "]");
                             return;
                         }
-                        const edited = openEditor("item-" + id, list[idx].payload || "");
+                        const edited = await openEditor("item-" + id, list[idx].payload || "");
                         list[idx].payload = edited;
                         setItems(list);
                         output.print("Edited [" + id + "]");
@@ -380,30 +400,32 @@
                     description: "Show the prompt",
                     handler: function () {
                         _refreshFileItems(getItems);
-                        output.print(buildPrompt());
+                        return Promise.resolve(buildPrompt()).then(function(text) {
+                            output.print(text);
+                        });
                     }
                 },
                 copy: {
                     description: "Copy prompt to clipboard",
                     handler: function () {
                         _refreshFileItems(getItems);
-                        const text = buildPrompt();
-                        try {
-                            clipboardCopy(text);
-                            const tokCnt = _tokenCount(text);
-                            const lineCnt = _lineCount(text);
-                            const byteCnt = _byteCount(text);
-                            const byteStr = _fmt.formatBytes(byteCnt);
-                            output.print(
-                                "Prompt copied to clipboard. \u2502 " + _fmt.formatNum(tokCnt) + " tokens \u00b7 " +
-                                lineCnt + " lines \u00b7 " + byteStr + " \u2502"
-                            );
-                            if (postCopyHint) {
-                                output.print(postCopyHint);
+                        return Promise.resolve(buildPrompt()).then(function(text) {
+                            try {
+                                var result = clipboardCopy(text);
+                                if (result && typeof result.then === 'function') {
+                                    return result.then(function() {
+                                        _printCopySuccess(text);
+                                    }).catch(function(e) {
+                                        output.print("Clipboard error: " + (e && e.message ? e.message : e));
+                                    });
+                                }
+                                _printCopySuccess(text);
+                            } catch (e) {
+                                output.print("Clipboard error: " + (e && e.message ? e.message : e));
                             }
-                        } catch (e) {
-                            output.print("Clipboard error: " + (e && e.message ? e.message : e));
-                        }
+                        }).catch(function(e) {
+                            output.print("Prompt error: " + (e && e.message ? e.message : e));
+                        });
                     }
                 }
             };
@@ -414,12 +436,12 @@
                     var cmdName = "hot-" + snippet.name;
                     cmds[cmdName] = {
                         description: snippet.description || ("Hot snippet: " + snippet.name),
-                        handler: function () {
+                        handler: async function () {
                             if (snippet.builtin && !noSnippetWarning) {
                                 output.print("Note: Using embedded snippet '" + snippet.name + "'. Override in config to customize.");
                             }
                             try {
-                                clipboardCopy(snippet.text);
+                                await clipboardCopy(snippet.text);
                                 output.print("Copied snippet '" + snippet.name + "' to clipboard.");
                             } catch (e) {
                                 output.print("Clipboard error: " + (e && e.message ? e.message : e));

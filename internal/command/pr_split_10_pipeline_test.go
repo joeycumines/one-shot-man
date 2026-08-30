@@ -37,7 +37,7 @@ func parseJSONMap(s string) (map[string]any, error) {
 var allPipelineChunks = []string{
 	"00_core", "01_analysis", "02_grouping", "03_planning",
 	"04_validation", "05_execution", "06_verification",
-	"07_prcreation", "08_conflict", "09_claude",
+	"07_prcreation", "08_conflict", "09_agent",
 	"10a_pipeline_config", "10b_pipeline_send", "10c_pipeline_resolve", "10d_pipeline_orchestrator",
 }
 
@@ -399,7 +399,7 @@ func toInt64(v any) int64 {
 // ---------------------------------------------------------------------------
 //
 // These tests exercise the pure functions in the PTY anchor subsystem
-// (pr_split_10b_pipeline_send.js) that are responsible for detecting the Claude
+// (pr_split_10b_pipeline_send.js) that are responsible for detecting the Agent
 // prompt marker and input anchor positions in terminal screenshots.
 //
 // Functions under test (all exported as prSplit._*):
@@ -507,7 +507,7 @@ func TestAnchorPipeline_DetectPromptBlocker(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	t.Run("first-run setup detected", func(t *testing.T) {
-		screen := "Welcome to Claude!\nChoose the text style\nLet's get started\n❯ 1. Dark mode"
+		screen := "Welcome to Agent!\nChoose the text style\nLet's get started\n❯ 1. Dark mode"
 		escaped := strings.ReplaceAll(screen, "\n", `\n`)
 		escaped = strings.ReplaceAll(escaped, "'", `\'`)
 		val, err := evalJS(fmt.Sprintf("prSplit._detectPromptBlocker('%s')", escaped))
@@ -524,7 +524,7 @@ func TestAnchorPipeline_DetectPromptBlocker(t *testing.T) {
 	})
 
 	t.Run("normal prompt no blocker", func(t *testing.T) {
-		screen := "Claude Code v1.0\n\n❯ "
+		screen := "Agent Code v1.0\n\n❯ "
 		escaped := strings.ReplaceAll(screen, "\n", `\n`)
 		val, err := evalJS(fmt.Sprintf("prSplit._detectPromptBlocker('%s')", escaped))
 		if err != nil {
@@ -608,7 +608,7 @@ func TestAnchorPipeline_FindPromptMarker(t *testing.T) {
 	})
 }
 
-// --- captureInputAnchors (with mocked pinned Claude snapshots) ---
+// --- captureInputAnchors (with mocked pinned Agent snapshots) ---
 
 func TestAnchorPipeline_CaptureInputAnchors(t *testing.T) {
 	t.Parallel()
@@ -618,7 +618,7 @@ func TestAnchorPipeline_CaptureInputAnchors(t *testing.T) {
 	_, err := evalJS(`
 		globalThis.prSplit = globalThis.prSplit || {};
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
-		globalThis.prSplit._state.claudeSessionID = 42;
+		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			_screen: '',
 			snapshot: function(id) {
@@ -658,7 +658,7 @@ func TestAnchorPipeline_CaptureInputAnchors(t *testing.T) {
 	t.Run("finds prompt and tail anchor co-located", func(t *testing.T) {
 		// Screen with prompt marker and the text tail on adjacent line.
 		_, err := evalJS(`
-			tuiMux._screen = 'Claude Code v1.0\n❯ hello world\nhello world';
+			tuiMux._screen = 'Agent Code v1.0\n❯ hello world\nhello world';
 			true
 		`)
 		if err != nil {
@@ -684,7 +684,7 @@ func TestAnchorPipeline_CaptureInputAnchors(t *testing.T) {
 
 	t.Run("finds paste indicator", func(t *testing.T) {
 		_, err := evalJS(`
-			tuiMux._screen = 'Claude Code v1.0\n❯ [Pasted text...]\n';
+			tuiMux._screen = 'Agent Code v1.0\n❯ [Pasted text...]\n';
 			true
 		`)
 		if err != nil {
@@ -829,7 +829,7 @@ func TestAnchorPipeline_SendToHandle_MockedTuiMux_Stable(t *testing.T) {
 		var __mockHandle = { send: function(d) { __sends.push(d); } };
 		globalThis.prSplit = globalThis.prSplit || {};
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
-		globalThis.prSplit._state.claudeSessionID = 42;
+		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			_screen: '❯ ',
 			snapshot: function(id) {
@@ -900,7 +900,7 @@ func TestAnchorPipeline_SendToHandle_Timeout_UnstableAnchors(t *testing.T) {
 		var __jitterCount = 0;
 		globalThis.prSplit = globalThis.prSplit || {};
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
-		globalThis.prSplit._state.claudeSessionID = 42;
+		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			snapshot: function(id) {
 				if (id !== 42) return null;
@@ -977,7 +977,7 @@ func TestAnchorPipeline_CaptureScreenshot_ThrowingMux(t *testing.T) {
 	_, err := evalJS(`
 		globalThis.prSplit = globalThis.prSplit || {};
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
-		globalThis.prSplit._state.claudeSessionID = 42;
+		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			snapshot: function(id) {
 				if (id !== 42) return null;
@@ -1006,7 +1006,7 @@ func TestAnchorPipeline_CaptureScreenshot_ValidMux(t *testing.T) {
 	_, err := evalJS(`
 		globalThis.prSplit = globalThis.prSplit || {};
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
-		globalThis.prSplit._state.claudeSessionID = 42;
+		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			snapshot: function(id) {
 				if (id !== 42) return null;
@@ -1029,14 +1029,14 @@ func TestAnchorPipeline_CaptureScreenshot_ValidMux(t *testing.T) {
 	}
 }
 
-func TestAnchorPipeline_CaptureScreenshot_NoFallbackWithoutPinnedClaudeSession(t *testing.T) {
+func TestAnchorPipeline_CaptureScreenshot_NoFallbackWithoutPinnedAgentSession(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	_, err := evalJS(`
 		globalThis.prSplit = globalThis.prSplit || {};
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
-		globalThis.prSplit._state.claudeSessionID = null;
+		globalThis.prSplit._state.agentSessionID = null;
 		globalThis.tuiMux = {
 			screenshot: function() { throw new Error('legacy fallback should not be used'); }
 		};
@@ -1051,7 +1051,7 @@ func TestAnchorPipeline_CaptureScreenshot_NoFallbackWithoutPinnedClaudeSession(t
 		t.Fatal(err)
 	}
 	if val != nil {
-		t.Errorf("expected null without pinned Claude session, got: %v", val)
+		t.Errorf("expected null without pinned Agent session, got: %v", val)
 	}
 }
 
@@ -1075,7 +1075,7 @@ func TestAnchorPipeline_BestAnchorsStateFallback(t *testing.T) {
 		var __anchorCount = 0;
 		globalThis.prSplit = globalThis.prSplit || {};
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
-		globalThis.prSplit._state.claudeSessionID = 42;
+		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			snapshot: function(id) {
 				if (id !== 42) return null;
@@ -1156,7 +1156,7 @@ func TestAnchorPipeline_PromptOnlyFallback(t *testing.T) {
 		var __phase = 'ready';
 		globalThis.prSplit = globalThis.prSplit || {};
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
-		globalThis.prSplit._state.claudeSessionID = 42;
+		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			snapshot: function(id) {
 				if (id !== 42) return null;
@@ -1221,11 +1221,11 @@ func TestAnchorPipeline_NoPromptMarker_HardFailure(t *testing.T) {
 	_, err := evalJS(`
 		globalThis.prSplit = globalThis.prSplit || {};
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
-		globalThis.prSplit._state.claudeSessionID = 42;
+		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			snapshot: function(id) {
 				if (id !== 42) return null;
-				return { plainText: 'Loading Claude...\nPlease wait...' };
+				return { plainText: 'Loading Agent...\nPlease wait...' };
 			}
 		};
 		var __mockHandle = { send: function(d) {} };

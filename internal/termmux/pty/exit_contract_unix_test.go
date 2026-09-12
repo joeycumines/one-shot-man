@@ -37,15 +37,13 @@ func TestUnixExitError_ExitCode(t *testing.T) {
 		{"continued", unix.WaitStatus(0xffff), -1},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			e := &unixExitError{status: tc.status}
 			if got := e.ExitCode(); got != tc.want {
 				t.Fatalf("ExitCode() = %d, want %d for status %#x (exited=%v signaled=%v stopped=%v)", got, tc.want, tc.status, tc.status.Exited(), tc.status.Signaled(), tc.status.Stopped())
 			}
-			var target *unixExitError
-			if !errors.As(e, &target) {
+			if _, ok := errors.AsType[*unixExitError](e); !ok {
 				t.Fatalf("errors.As failed for *unixExitError")
 			}
 			if e.Error() == "" {
@@ -146,8 +144,7 @@ func TestProcess_Wait_ExitModes(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error from waitWithSlaveRelease with invalid pid")
 		}
-		var ue *unixExitError
-		if errors.As(err, &ue) {
+		if _, ok := errors.AsType[*unixExitError](err); ok {
 			t.Fatalf("expected non-unixExitError for invalid pid, got unixExitError %v", err)
 		}
 		r, w, pipeErr := os.Pipe()
@@ -196,7 +193,7 @@ func TestProcess_Wait_Concurrent(t *testing.T) {
 	errs := make([]error, callers)
 	var wg sync.WaitGroup
 	wg.Add(callers)
-	for i := 0; i < callers; i++ {
+	for i := range callers {
 		i := i
 		go func() {
 			defer wg.Done()
@@ -204,7 +201,7 @@ func TestProcess_Wait_Concurrent(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	for i := 0; i < callers; i++ {
+	for i := range callers {
 		if errs[i] != nil {
 			t.Fatalf("caller %d: expected nil error, got %v", i, errs[i])
 		}
@@ -239,7 +236,7 @@ func TestProcess_ClosePseudoConsole_IsNoopOnUnix(t *testing.T) {
 	proc.ClosePseudoConsole()
 	var wg sync.WaitGroup
 	wg.Add(10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			defer wg.Done()
 			proc.ClosePseudoConsole()

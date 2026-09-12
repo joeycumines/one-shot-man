@@ -128,7 +128,7 @@ func setupPassthroughState(t *testing.T) (runtime *goja.Runtime, s *muxState, st
 	}
 
 	tuiMux, state := wrapSessionManager(ctx, adapter, loop, runtime, mgr, stdinR, &bytes.Buffer{}, -1, "")
-	_ = runtime.Set( "tuiMux", tuiMux)
+	_ = runtime.Set("tuiMux", tuiMux)
 
 	loopDone := make(chan struct{})
 	go func() {

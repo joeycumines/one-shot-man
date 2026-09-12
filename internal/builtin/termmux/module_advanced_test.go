@@ -13,7 +13,7 @@ func TestMouseToSGR_AllButtons(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	tests := []struct {
 		name string
@@ -88,7 +88,7 @@ func TestMouseToSGR_MotionEvent(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// MouseMotion adds 32 to the button code.
 	v, err := sessionRun(t, runtime, `
@@ -108,7 +108,7 @@ func TestMouseToSGR_AllModifiers(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	tests := []struct {
 		name string
@@ -168,7 +168,7 @@ func TestMouseToSGR_ReleaseSuffix(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// MouseRelease uses lowercase 'm' suffix.
 	v, err := sessionRun(t, runtime, `
@@ -188,7 +188,7 @@ func TestMouseToSGR_UnknownButton(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// Unknown button string → null.
 	v, err := sessionRun(t, runtime, `
@@ -206,7 +206,7 @@ func TestMouseToSGR_NoArgs(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// Calling with no arguments should throw TypeError.
 	v, err := sessionRun(t, runtime, `
@@ -230,7 +230,7 @@ func TestMouseToSGR_LargeCoordinates(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// Large coordinates should work (1-based after conversion).
 	v, err := sessionRun(t, runtime, `
@@ -251,7 +251,7 @@ func TestKeyToTermBytes_AppCursorMode(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	tests := []struct {
 		name string
@@ -288,7 +288,7 @@ func TestKeyToTermBytes_AppKeypadMode(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	tests := []struct {
 		name string
@@ -327,7 +327,7 @@ func TestKeyToTermBytes_AllFunctionKeys(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	tests := []struct {
 		name string
@@ -364,7 +364,7 @@ func TestKeyToTermBytes_ModifierNavKeys(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	tests := []struct {
 		name string
@@ -401,7 +401,7 @@ func TestKeyToTermBytes_CtrlLetters(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	tests := []struct {
 		name string
@@ -430,7 +430,7 @@ func TestKeyToTermBytes_AltCombinations(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	tests := []struct {
 		name string
@@ -460,7 +460,7 @@ func TestKeyToTermBytes_SpecialKeysAndUnknown(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	tests := []struct {
 		name string
@@ -528,7 +528,7 @@ func TestSplitLayout_Compute(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// splitLayout(config) → {compute(rows, cols, ratio) → {top, bottom}}
 	v, err := sessionRun(t, runtime, `
@@ -564,7 +564,7 @@ func TestSplitLayout_OffsetMouse(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// PaneGeometry.offsetMouse should return {row, col} when inside, null when outside.
 	v, err := sessionRun(t, runtime, `
@@ -593,7 +593,7 @@ func TestSplitLayout_NoArgs(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// splitLayout() with no args should throw TypeError.
 	v, err := sessionRun(t, runtime, `
@@ -619,7 +619,7 @@ func TestMouseToSGR_WithOffset(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// mouseToSGR(event, offsetRow, offsetCol) subtracts offsets from coordinates.
 	// x=10, y=5, offsetRow=2, offsetCol=3 → local x=7, y=3 → SGR col=8, row=4.
@@ -639,7 +639,7 @@ func TestMouseToSGR_NegativeOffsetReturnsNull(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// When offset makes coordinates negative, the event is outside the pane → null.
 	v, err := sessionRun(t, runtime, `
@@ -723,7 +723,7 @@ func TestMuxEvents_CallbackInvocation(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// Verify that the muxEvents on/off/emit cycle works through JS.
 	// We test the module-level event constants are exported correctly.
@@ -761,7 +761,7 @@ func TestModuleConstants(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	tests := []struct {
 		name string
@@ -803,7 +803,7 @@ func TestNewCaptureSession_NoArgs(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// newCaptureSession() with no args should throw TypeError.
 	v, err := sessionRun(t, runtime, `
@@ -827,7 +827,7 @@ func TestNewCaptureSession_EmptyCommand(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// newCaptureSession('') with empty command should throw TypeError.
 	v, err := sessionRun(t, runtime, `
@@ -851,7 +851,7 @@ func TestNewCaptureSession_ValidCommand(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// newCaptureSession('echo') should return an object with expected methods.
 	v, err := sessionRun(t, runtime, `
@@ -886,7 +886,7 @@ func TestNewCaptureSession_WithArgsAndOptions(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// newCaptureSession with args array and options object should not throw.
 	v, err := sessionRun(t, runtime, `
@@ -907,7 +907,7 @@ func TestKeyToTermBytes_UnrecognizedReturnsNull(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	// ASCII-only multi-char strings with '+' that don't match any pattern → null.
 	v, err := sessionRun(t, runtime, `tm.keyToTermBytes('ctrl+1')`)
@@ -934,7 +934,7 @@ func TestKeyToTermBytes_KeypadAdditionalKeys(t *testing.T) {
 	t.Parallel()
 
 	runtime, exports := testRequire(t)
-	_ = runtime.Set("tm", exports)
+	setOnLoop(t, runtime, "tm", exports)
 
 	tests := []struct {
 		name string

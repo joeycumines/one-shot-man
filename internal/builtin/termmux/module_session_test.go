@@ -1290,7 +1290,7 @@ func TestNewBoundedSession(t *testing.T) {
 		t.Skip("slow: spawns child process and SessionManager")
 	}
 
-	runtime, exp := testRequireLooped(t)
+	runtime, exp := testRequire(t)
 	setOnLoop(t, runtime, "exports", exp)
 
 	echoBin := buildEchoProgram(t, "hello")
@@ -1861,9 +1861,9 @@ func TestWrapInteractiveSession_HappyPath(t *testing.T) {
 	sess.readerCh <- []byte("beta")
 
 	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set( "s", wrapped)
+	_ = runtime.Set("s", wrapped)
 
-	_, err := runtime.RunString( `
+	_, err := runtime.RunString(`
 		s.resize(25, 100);
 		s.write("hello");
 		s.isDone();
@@ -1885,9 +1885,9 @@ func TestWrapInteractiveSession_Close(t *testing.T) {
 	runtime := goja.New()
 	sess := &mockInteractiveSession{done: make(chan struct{})}
 	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set( "s", wrapped)
+	_ = runtime.Set("s", wrapped)
 
-	_, err := runtime.RunString( `s.close()`)
+	_, err := runtime.RunString(`s.close()`)
 	if err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -1903,9 +1903,9 @@ func TestWrapInteractiveSession_ResizeError(t *testing.T) {
 	runtime := goja.New()
 	sess := &mockInteractiveSession{resizeErr: errors.New("resize fail")}
 	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set( "s", wrapped)
+	_ = runtime.Set("s", wrapped)
 
-	_, err := runtime.RunString( `s.resize(10, 20)`)
+	_, err := runtime.RunString(`s.resize(10, 20)`)
 	if err == nil {
 		t.Error("expected error from resize failure")
 	}
@@ -1915,9 +1915,9 @@ func TestWrapInteractiveSession_WriteError(t *testing.T) {
 	runtime := goja.New()
 	sess := &mockInteractiveSession{writeErr: errors.New("write fail")}
 	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set( "s", wrapped)
+	_ = runtime.Set("s", wrapped)
 
-	_, err := runtime.RunString( `s.write("x")`)
+	_, err := runtime.RunString(`s.write("x")`)
 	if err == nil {
 		t.Error("expected error from write failure")
 	}
@@ -1927,9 +1927,9 @@ func TestWrapInteractiveSession_CloseError(t *testing.T) {
 	runtime := goja.New()
 	sess := &mockInteractiveSession{closeErr: errors.New("close fail")}
 	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set( "s", wrapped)
+	_ = runtime.Set("s", wrapped)
 
-	_, err := runtime.RunString( `s.close()`)
+	_, err := runtime.RunString(`s.close()`)
 	if err == nil {
 		t.Error("expected error from close failure")
 	}

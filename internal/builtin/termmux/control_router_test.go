@@ -1,6 +1,7 @@
 package termmux
 
 import (
+	"context"
 	"testing"
 
 	"github.com/joeycumines/goja"
@@ -8,7 +9,7 @@ import (
 
 func setupControlRouter(t *testing.T) *goja.Runtime {
 	t.Helper()
-	runtime, exp := testRequire(t)
+	runtime, exp, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("exports", exp)
 
 	_, err := runtime.RunString(`
@@ -158,7 +159,7 @@ func TestControlRouter_ChordUnknownKey(t *testing.T) {
 }
 
 func TestControlRouter_NoChordMode(t *testing.T) {
-	runtime, exp := testRequire(t)
+	runtime, exp, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("exports", exp)
 
 	v, err := runtime.RunString(`
@@ -176,7 +177,7 @@ func TestControlRouter_NoChordMode(t *testing.T) {
 }
 
 func TestControlRouter_EmptyConfig(t *testing.T) {
-	runtime, exp := testRequire(t)
+	runtime, exp, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("exports", exp)
 
 	v, err := runtime.RunString(`
@@ -247,7 +248,7 @@ func TestControlRouter_HandleChordNotInChord(t *testing.T) {
 }
 
 func TestControlRouter_ChordModePrefixOnly(t *testing.T) {
-	runtime, exp := testRequire(t)
+	runtime, exp, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("exports", exp)
 
 	v, err := runtime.RunString(`

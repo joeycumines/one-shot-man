@@ -1,6 +1,7 @@
 package termmux
 
 import (
+	"context"
 	"testing"
 
 	"github.com/joeycumines/goja"
@@ -8,7 +9,7 @@ import (
 
 func setupMouseForwardEnv(t *testing.T) *goja.Runtime {
 	t.Helper()
-	runtime, exp := testRequire(t)
+	runtime, exp, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("exports", exp)
 	return runtime
 }

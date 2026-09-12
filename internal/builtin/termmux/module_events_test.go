@@ -69,9 +69,9 @@ func TestEventBridge_UnknownEventRejected(t *testing.T) {
 	mgr := parent.NewSessionManager()
 	runtime := goja.New()
 	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set( "mux", wrapper)
+	_ = runtime.Set("mux", wrapper)
 
-	_, err := runtime.RunString( `mux.on('not-a-real-event', function() {})`)
+	_, err := runtime.RunString(`mux.on('not-a-real-event', function() {})`)
 	if err == nil {
 		t.Fatal("expected error for unknown event")
 	}
@@ -451,9 +451,9 @@ func TestEventBridge_CustomEventDetail(t *testing.T) {
 	mgr := parent.NewSessionManager()
 	runtime := goja.New()
 	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set( "mux", wrapper)
+	_ = runtime.Set("mux", wrapper)
 
-	_, err := runtime.RunString( `
+	_, err := runtime.RunString(`
 		var detail = null;
 		mux.addEventListener('registered', function(evt) {
 			detail = evt.detail;
@@ -467,7 +467,7 @@ func TestEventBridge_CustomEventDetail(t *testing.T) {
 		t.Fatalf("setup and dispatch custom event: %v", err)
 	}
 
-	v, err := runtime.RunString( `JSON.stringify(detail)`)
+	v, err := runtime.RunString(`JSON.stringify(detail)`)
 	if err != nil {
 		t.Fatalf("read detail: %v", err)
 	}
@@ -482,9 +482,9 @@ func TestEventBridge_OnOffCompatibility(t *testing.T) {
 	mgr := parent.NewSessionManager()
 	runtime := goja.New()
 	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set( "mux", wrapper)
+	_ = runtime.Set("mux", wrapper)
 
-	_, err := runtime.RunString( `
+	_, err := runtime.RunString(`
 		var events = [];
 		var handle = mux.on('registered', function(evt) { events.push(evt.detail); });
 		mux.dispatchEvent(new CustomEvent('registered', { detail: { id: 1 } }));
@@ -495,7 +495,7 @@ func TestEventBridge_OnOffCompatibility(t *testing.T) {
 		t.Fatalf("run on/off test: %v", err)
 	}
 
-	v, err := runtime.RunString( `events.length`)
+	v, err := runtime.RunString(`events.length`)
 	if err != nil {
 		t.Fatalf("events.length: %v", err)
 	}
@@ -510,9 +510,9 @@ func TestEventBridge_PollEventsIsNoOp(t *testing.T) {
 	mgr := parent.NewSessionManager()
 	runtime := goja.New()
 	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set( "mux", wrapper)
+	_ = runtime.Set("mux", wrapper)
 
-	v, err := runtime.RunString( `mux.pollEvents()`)
+	v, err := runtime.RunString(`mux.pollEvents()`)
 	if err != nil {
 		t.Fatalf("pollEvents: %v", err)
 	}

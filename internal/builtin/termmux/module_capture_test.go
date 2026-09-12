@@ -66,15 +66,13 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 	t.Parallel()
 
 	e := newTestEnv(t)
-	go e.loop.Run(e.ctx)
-	t.Cleanup(func() { e.stop() })
 	rt := e.runtime
 	_ = rt
 
 	// Create a CaptureSession that runs `echo "hello T004"` and exits.
 	v, err := runOnEnvLoop(t, e, `
 		var tm = require('osm:termmux');
-		var cs = tm.newCaptureSession('echo', ['hello T004']);
+		globalThis.cs = tm.newCaptureSession('echo', ['hello T004']);
 
 		// Verify all 16 methods exist and are functions.
 		var methods = [
@@ -178,13 +176,13 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 	}
 
 	// close() should not error on completed session (idempotent).
-	_, err = runOnEnvLoop(t, e, `cs.close()`)
+	_, err = awaitJSValue(t, e.runtime, `await cs.close()`)
 	if err != nil {
 		t.Fatalf("close() failed: %v", err)
 	}
 
 	// Double close should also not error.
-	_, err = runOnEnvLoop(t, e, `cs.close()`)
+	_, err = awaitJSValue(t, e.runtime, `await cs.close()`)
 	if err != nil {
 		t.Fatalf("double close() failed: %v", err)
 	}
@@ -194,16 +192,14 @@ func TestCaptureSession_JSBinding_Interrupt(t *testing.T) {
 	t.Parallel()
 
 	e := newTestEnv(t)
-	go e.loop.Run(e.ctx)
-	t.Cleanup(func() { e.stop() })
 	rt := e.runtime
 	_ = rt
 
 	// Start a long-running sleep process and interrupt it.
-	_, err := runOnEnvLoop(t, e, `
+	_, err := awaitJSValue(t, e.runtime, `
 		var tm = require('osm:termmux');
-		var cs = tm.newCaptureSession('sleep', ['60']);
-		cs.start();
+		globalThis.cs = tm.newCaptureSession('sleep', ['60']);
+		await cs.start();
 	`)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
@@ -223,7 +219,7 @@ func TestCaptureSession_JSBinding_Interrupt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wait() after interrupt failed: %v", err)
 	}
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		time.Sleep(50 * time.Millisecond)
 		v2, _ := runOnEnvLoop(t, e, `globalThis.__waitDone2`)
 		if v2.ToBoolean() {
@@ -243,7 +239,7 @@ func TestCaptureSession_JSBinding_Interrupt(t *testing.T) {
 		t.Error("isDone() should be true after interrupt + wait")
 	}
 
-	_, err = runOnEnvLoop(t, e, `cs.close()`)
+	_, err = awaitJSValue(t, e.runtime, `await cs.close()`)
 	if err != nil {
 		t.Fatalf("close() after interrupt failed: %v", err)
 	}
@@ -252,13 +248,13 @@ func TestCaptureSession_JSBinding_Interrupt(t *testing.T) {
 func TestCaptureSession_JSBinding_Kill(t *testing.T) {
 	t.Parallel()
 
-	rt, _ := testRequire(t)
+	e := newTestEnv(t)
 
 	// Start a long-running process and kill it.
-	_, err := rt.RunString(`
+	_, err := awaitJSValue(t, e.runtime, `
 		var tm = require('osm:termmux');
-		var cs = tm.newCaptureSession('sleep', ['60']);
-		cs.start();
+		globalThis.cs = tm.newCaptureSession('sleep', ['60']);
+		await cs.start();
 	`)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
@@ -267,19 +263,19 @@ func TestCaptureSession_JSBinding_Kill(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// kill() should not error.
-	_, err = rt.RunString(`cs.kill()`)
+	_, err = runOnEnvLoop(t, e, `cs.kill()`)
 	if err != nil {
 		t.Fatalf("kill() failed: %v", err)
 	}
 
 	// Wait should complete (SIGKILL causes immediate exit).
-	_, err = rt.RunString(`cs.wait()`)
+	_, err = runOnEnvLoop(t, e, `cs.wait()`)
 	if err != nil {
 		t.Fatalf("wait() after kill failed: %v", err)
 	}
 
 	// exitCode() after kill — should be non-zero.
-	v, err := rt.RunString(`cs.exitCode()`)
+	v, err := runOnEnvLoop(t, e, `cs.exitCode()`)
 	if err != nil {
 		t.Fatalf("exitCode() after kill failed: %v", err)
 	}
@@ -287,7 +283,7 @@ func TestCaptureSession_JSBinding_Kill(t *testing.T) {
 		t.Error("exitCode() should be non-zero after kill")
 	}
 
-	_, err = rt.RunString(`cs.close()`)
+	_, err = awaitJSValue(t, e.runtime, `await cs.close()`)
 	if err != nil {
 		t.Fatalf("close() after kill failed: %v", err)
 	}
@@ -296,12 +292,12 @@ func TestCaptureSession_JSBinding_Kill(t *testing.T) {
 func TestCaptureSession_JSBinding_Resize(t *testing.T) {
 	t.Parallel()
 
-	rt, _ := testRequire(t)
+	e := newTestEnv(t)
 
-	_, err := rt.RunString(`
+	_, err := awaitJSValue(t, e.runtime, `
 		var tm = require('osm:termmux');
-		var cs = tm.newCaptureSession('sleep', ['60']);
-		cs.start();
+		globalThis.cs = tm.newCaptureSession('sleep', ['60']);
+		await cs.start();
 	`)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
@@ -310,13 +306,13 @@ func TestCaptureSession_JSBinding_Resize(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// resize() should not error.
-	_, err = rt.RunString(`cs.resize(40, 100)`)
+	_, err = runOnEnvLoop(t, e, `cs.resize(40, 100)`)
 	if err != nil {
 		t.Fatalf("resize() failed: %v", err)
 	}
 
 	// Clean up.
-	_, err = rt.RunString(`cs.kill(); cs.wait(); cs.close()`)
+	_, err = awaitJSValue(t, e.runtime, `cs.kill(); await cs.wait(); await cs.close()`)
 	if err != nil {
 		t.Fatalf("cleanup failed: %v", err)
 	}
@@ -326,16 +322,14 @@ func TestCaptureSession_JSBinding_WriteAndSendEOF(t *testing.T) {
 	t.Parallel()
 
 	e := newTestEnv(t)
-	go e.loop.Run(e.ctx)
-	t.Cleanup(func() { e.stop() })
 	rt := e.runtime
 	_ = rt
 
 	// Use cat which reads stdin and echoes to stdout.
-	_, err := runOnEnvLoop(t, e, `
+	_, err := awaitJSValue(t, e.runtime, `
 		var tm = require('osm:termmux');
-		var cs = tm.newCaptureSession('cat', []);
-		cs.start();
+		globalThis.cs = tm.newCaptureSession('cat', []);
+		await cs.start();
 	`)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
@@ -363,7 +357,7 @@ func TestCaptureSession_JSBinding_WriteAndSendEOF(t *testing.T) {
 		t.Fatalf("wait() after sendEOF failed: %v", err)
 	}
 	waitResult3 := ""
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		time.Sleep(50 * time.Millisecond)
 		v2, _ := runOnEnvLoop(t, e, `globalThis.__waitDone3`)
 		if v2.ToBoolean() {
@@ -388,7 +382,7 @@ func TestCaptureSession_JSBinding_WriteAndSendEOF(t *testing.T) {
 		t.Error("isDone() should be true after wait")
 	}
 
-	_, err = runOnEnvLoop(t, e, `cs.close()`)
+	_, err = awaitJSValue(t, e.runtime, `await cs.close()`)
 	if err != nil {
 		t.Fatalf("close() failed: %v", err)
 	}
@@ -397,12 +391,12 @@ func TestCaptureSession_JSBinding_WriteAndSendEOF(t *testing.T) {
 func TestCaptureSession_JSBinding_isDoneBeforeStart(t *testing.T) {
 	t.Parallel()
 
-	rt, _ := testRequire(t)
+	e := newTestEnv(t)
 
 	// isDone() before start() should be false.
-	v, err := rt.RunString(`
+	v, err := runOnEnvLoop(t, e, `
 		var tm = require('osm:termmux');
-		var cs = tm.newCaptureSession('echo', ['test']);
+		globalThis.cs = tm.newCaptureSession('echo', ['test']);
 		cs.isDone();
 	`)
 	if err != nil {
@@ -417,24 +411,23 @@ func TestCaptureSession_JSBinding_isDoneBeforeStart(t *testing.T) {
 func TestCaptureSession_JSBinding_PauseResume(t *testing.T) {
 	t.Parallel()
 
-	rt, ctx := testRequire(t)
+	e := newTestEnv(t)
 
-	val, err := rt.RunString(`
+	_, err := runOnEnvLoop(t, e, `
 		var tm = require('osm:termmux');
-		var cs = tm.newCaptureSession('sh', ['-c', 'i=0; while true; do echo "line$i"; i=$((i+1)); sleep 0.1; done']);
+		globalThis.cs = tm.newCaptureSession('sh', ['-c', 'i=0; while true; do echo "line$i"; i=$((i+1)); sleep 0.1; done']);
 		cs.start();
 		cs;
 	`)
 	if err != nil {
 		t.Fatalf("start CaptureSession: %v", err)
 	}
-	_ = ctx
 
 	// Let it produce output.
 	time.Sleep(500 * time.Millisecond)
 
 	// isPaused() should be false initially.
-	v, err := rt.RunString(`cs.isPaused()`)
+	v, err := runOnEnvLoop(t, e, `cs.isPaused()`)
 	if err != nil {
 		t.Fatalf("isPaused: %v", err)
 	}
@@ -443,13 +436,13 @@ func TestCaptureSession_JSBinding_PauseResume(t *testing.T) {
 	}
 
 	// pause() should succeed.
-	_, err = rt.RunString(`cs.pause()`)
+	_, err = runOnEnvLoop(t, e, `cs.pause()`)
 	if err != nil {
 		t.Fatalf("pause: %v", err)
 	}
 
 	// isPaused() should be true.
-	v, err = rt.RunString(`cs.isPaused()`)
+	v, err = runOnEnvLoop(t, e, `cs.isPaused()`)
 	if err != nil {
 		t.Fatalf("isPaused after pause: %v", err)
 	}
@@ -458,13 +451,13 @@ func TestCaptureSession_JSBinding_PauseResume(t *testing.T) {
 	}
 
 	// resume() should succeed.
-	_, err = rt.RunString(`cs.resume()`)
+	_, err = runOnEnvLoop(t, e, `cs.resume()`)
 	if err != nil {
 		t.Fatalf("resume: %v", err)
 	}
 
 	// isPaused() should be false again.
-	v, err = rt.RunString(`cs.isPaused()`)
+	v, err = runOnEnvLoop(t, e, `cs.isPaused()`)
 	if err != nil {
 		t.Fatalf("isPaused after resume: %v", err)
 	}
@@ -473,20 +466,18 @@ func TestCaptureSession_JSBinding_PauseResume(t *testing.T) {
 	}
 
 	// Clean up.
-	_, _ = rt.RunString(`cs.kill()`)
+	_, _ = runOnEnvLoop(t, e, `cs.kill()`)
 	time.Sleep(200 * time.Millisecond)
-	_, _ = rt.RunString(`cs.close()`)
-
-	_ = val
+	_, _ = awaitJSValue(t, e.runtime, `await cs.close()`)
 }
 
 func TestCaptureSession_JSBinding_NewCaptureSessionError(t *testing.T) {
 	t.Parallel()
 
-	rt, _ := testRequire(t)
+	e := newTestEnv(t)
 
 	// Missing command should throw TypeError.
-	_, err := rt.RunString(`
+	_, err := runOnEnvLoop(t, e, `
 		var tm = require('osm:termmux');
 		tm.newCaptureSession();
 	`)
@@ -494,15 +485,15 @@ func TestCaptureSession_JSBinding_NewCaptureSessionError(t *testing.T) {
 		t.Fatal("expected error for newCaptureSession with no args")
 	}
 	var jsErr *goja.Exception
-	if e, ok := err.(*goja.Exception); ok {
-		jsErr = e
+	if ex, ok := err.(*goja.Exception); ok {
+		jsErr = ex
 	}
 	if jsErr == nil || !strings.Contains(jsErr.Error(), "command") {
 		t.Errorf("expected TypeError mentioning 'command', got %v", err)
 	}
 
 	// Empty string command should also throw.
-	_, err = rt.RunString(`
+	_, err = runOnEnvLoop(t, e, `
 		var tm = require('osm:termmux');
 		tm.newCaptureSession('');
 	`)

@@ -29,7 +29,12 @@ import (
 // Object.Set, so concurrent wrapping from production scripts (which run on the
 // event loop) and tests (which call runtime.RunString directly) can corrupt
 // Goja's internal state. Reusing the existing wrapper is safe.
-var managerWrapperCache sync.Map // key: *parent.SessionManager
+var managerWrapperCache sync.Map // key: manager plus runtime identity
+
+type wrapperCacheKey struct {
+	manager *parent.SessionManager
+	runtime *goja.Runtime
+}
 
 type wrapperCacheEntry struct {
 	obj   *goja.Object
@@ -561,11 +566,19 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 	// CaptureSession wrapper. All JS call sites use SessionManager
 	// wrappers (tuiMux.session()) for these operations.
 
-	// ── start() ──────────────────────────────────────────
-	_ = obj.Set("start", func() {
-		if err := cs.Start(ctx); err != nil {
-			panic(runtime.NewGoError(err))
-		}
+	// ── start() → Promise<void> ───────────────────────────
+	// PTY/process startup can block, so it must never execute on the Goja
+	// event-loop goroutine. Track the worker so shutdown joins it and settles
+	// the promise on the owning runtime.
+	_ = obj.Set("start", func(call goja.FunctionCall) goja.Value {
+		return adapter.TrackPromise(ctx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+			err := cs.Start(workerCtx)
+			if err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
+			}
+			_ = settle.Settle(false, func(*goja.Runtime) any { return goja.Undefined() })
+		})
 	})
 
 	// ── interrupt() ──────────────────────────────────────
@@ -614,24 +627,28 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 	// ── wait() → Promise<{ code, error? }> ─────────────────
 	// Async per JS Binding Contract: waits until child process exits and output is drained.
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
-		return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-				res, err := func(ctx context.Context) (any, error) {
-			code, err := cs.Wait()
-			result := map[string]any{"code": code}
-			if err != nil {
-				result["error"] = err.Error()
-			}
-			return result, nil
-		}(ctx)
+		return adapter.TrackPromise(ctx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+			stop := context.AfterFunc(workerCtx, func() { _ = cs.Kill() })
+			defer stop()
+			res, err := func(ctx context.Context) (any, error) {
+				code, err := cs.WaitContext(workerCtx)
+				result := map[string]any{"code": code}
 				if err != nil {
-					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-					return
+					result["error"] = err.Error()
 				}
-				_ = settle.Settle(false, func(rt *goja.Runtime) any {
-					if res == nil { return goja.Undefined() }
-					return res
-				})
+				return result, nil
+			}(workerCtx)
+			if err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
+			}
+			_ = settle.Settle(false, func(rt *goja.Runtime) any {
+				if res == nil {
+					return goja.Undefined()
+				}
+				return res
 			})
+		})
 	})
 
 	// ── sendEOF() ────────────────────────────────────────
@@ -641,11 +658,18 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 		}
 	})
 
-	// ── close() ──────────────────────────────────────────
-	_ = obj.Set("close", func() {
-		if err := cs.Close(); err != nil {
-			panic(runtime.NewGoError(err))
-		}
+	// ── close() → Promise<void> ───────────────────────────
+	// Closing a PTY may signal a process and wait for reader shutdown, so keep
+	// it off the Goja event-loop goroutine and join it through the adapter.
+	_ = obj.Set("close", func(call goja.FunctionCall) goja.Value {
+		return adapter.TrackPromise(ctx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+			err := cs.Close()
+			if err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
+			}
+			_ = settle.Settle(false, func(*goja.Runtime) any { return goja.Undefined() })
+		})
 	})
 
 	// ── pid() → number ──────────────────────────────────
@@ -685,37 +709,35 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 		}
 
 		return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-				res, err := func(ctx context.Context) (any, error) {
-			termFd := int(os.Stdin.Fd())
-			reason, err := cs.Passthrough(ctx, parent.PassthroughConfig{
-				TerminalIO: parent.TerminalIO{
+			res, err := func(ctx context.Context) (any, error) {
+				termFd := int(os.Stdin.Fd())
+				reason, err := cs.Passthrough(ctx, parent.PassthroughConfig{
 					Stdin:         os.Stdin,
 					Stdout:        os.Stdout,
 					TermFd:        termFd,
 					BlockingGuard: parent.DefaultBlockingGuard(),
-				},
-				PassthroughOptions: parent.PassthroughOptions{
-					ToggleKey: toggleKey,
-					TermState: ptyio.RealTermState{},
-				},
-			})
-			result := map[string]any{
-				"reason": exitReasonString(reason),
-			}
-			if err != nil {
-				result["error"] = err.Error()
-			}
-			return result, nil
-		}(ctx)
-				if err != nil {
-					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-					return
-				}
-				_ = settle.Settle(false, func(rt *goja.Runtime) any {
-					if res == nil { return goja.Undefined() }
-					return res
+					ToggleKey:     toggleKey,
+					TermState:     ptyio.RealTermState{},
 				})
+				result := map[string]any{
+					"reason": exitReasonString(reason),
+				}
+				if err != nil {
+					result["error"] = err.Error()
+				}
+				return result, nil
+			}(ctx)
+			if err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
+			}
+			_ = settle.Settle(false, func(rt *goja.Runtime) any {
+				if res == nil {
+					return goja.Undefined()
+				}
+				return res
 			})
+		})
 	})
 
 	return obj
@@ -992,7 +1014,7 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 		var localMgr *parent.SessionManager
 		if mgr == nil {
 			localMgr = parent.NewSessionManager(parent.WithTermSize(rows, cols))
-			go localMgr.Run(baseCtx)
+			go localMgr.Run(trackCtx)
 			<-localMgr.Started()
 		} else {
 			localMgr = mgr
@@ -1003,12 +1025,16 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 			Kind: kind,
 		})
 		if err != nil {
-			_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(fmt.Errorf("newBoundedSession: register failed: %w", err)) })
+			_ = settle.Settle(true, func(rt *goja.Runtime) any {
+				return rt.NewGoError(fmt.Errorf("newBoundedSession: register failed: %w", err))
+			})
 			return
 		}
 
 		if err := cs.Start(trackCtx); err != nil {
-			_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(fmt.Errorf("newBoundedSession: start failed: %w", err)) })
+			_ = settle.Settle(true, func(rt *goja.Runtime) any {
+				return rt.NewGoError(fmt.Errorf("newBoundedSession: start failed: %w", err))
+			})
 			return
 		}
 
@@ -1042,7 +1068,7 @@ func WrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 // also returns the backing *muxState for package-internal test assertions.
 func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int, title string) (*goja.Object, *muxState) {
 	if adapter != nil && mgr != nil {
-		if cached, ok := managerWrapperCache.Load(mgr); ok {
+		if cached, ok := managerWrapperCache.Load(wrapperCacheKey{manager: mgr, runtime: runtime}); ok {
 			entry := cached.(*wrapperCacheEntry)
 			if entry.state != nil && entry.state.runtime == runtime {
 				return entry.obj, entry.state
@@ -1055,17 +1081,23 @@ func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 	_ = obj.DefineDataProperty("_goSessionManager", runtime.ToValue(mgr),
 		goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
 
+	lifecycleCtx, lifecycleCancel := context.WithCancel(ctx)
 	s := &muxState{
-		ctx:       ctx,
-		runtime:   runtime,
-		mgr:       mgr,
-		loop:      loop,
-		stdin:     stdin,
-		stdout:    stdout,
-		termFd:    termFd,
-		adapter:   adapter,
-		sb:        statusbar.New(stdout),
-		toggleKey: parent.DefaultToggleKey,
+		ctx:              ctx,
+		lifecycleCtx:     lifecycleCtx,
+		lifecycleCancel:  lifecycleCancel,
+		runtime:          runtime,
+		mgr:              mgr,
+		lifecycleDone:    make(chan struct{}),
+		managerRunDone:   make(chan struct{}),
+		managerCloseDone: make(chan struct{}),
+		loop:             loop,
+		stdin:            stdin,
+		stdout:           stdout,
+		termFd:           termFd,
+		adapter:          adapter,
+		sb:               statusbar.New(stdout),
+		toggleKey:        parent.DefaultToggleKey,
 	}
 	s.sb.SetToggleKey(s.toggleKey)
 	if title != "" {
@@ -1113,12 +1145,15 @@ func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 	registerChooserMethods(obj, s)
 
 	if adapter != nil && mgr != nil {
-		managerWrapperCache.Store(mgr, &wrapperCacheEntry{obj: obj, state: s})
+		managerWrapperCache.Store(wrapperCacheKey{manager: mgr, runtime: runtime}, &wrapperCacheEntry{obj: obj, state: s})
 		// Clean up the cache entry when the context is cancelled so stale
 		// entries don't leak across test runs or manager lifecycles.
 		go func() {
-			<-ctx.Done()
-			managerWrapperCache.Delete(mgr)
+			select {
+			case <-ctx.Done():
+			case <-s.lifecycleDone:
+			}
+			managerWrapperCache.Delete(wrapperCacheKey{manager: mgr, runtime: runtime})
 		}()
 	}
 
@@ -1188,9 +1223,7 @@ func buildEventData(evt parent.Event) *eventDispatchData {
 // resizeSession.
 func registerSessionMethods(obj *goja.Object, s *muxState) {
 	_ = obj.Set("run", func() {
-		go func() {
-			_ = s.mgr.Run(s.ctx)
-		}()
+		s.managerRunOnce()
 	})
 
 	_ = obj.Set("started", func() bool {
@@ -1202,8 +1235,8 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 		}
 	})
 
-	_ = obj.Set("close", func() {
-		s.mgr.Close()
+	_ = obj.Set("close", func() goja.Value {
+		return s.closeManagerPromise()
 	})
 
 	_ = obj.Set("subscribe", func(call goja.FunctionCall) goja.Value {
@@ -1946,14 +1979,10 @@ func registerSnapshotMethods(obj *goja.Object, s *muxState) {
 func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 	_ = obj.Set("passthrough", func(call goja.FunctionCall) goja.Value {
 		cfg := parent.PassthroughConfig{
-			TerminalIO: parent.TerminalIO{
-				TermFd:        -1,
-				BlockingGuard: parent.DefaultBlockingGuard(),
-			},
-			PassthroughOptions: parent.PassthroughOptions{
-				ToggleKey: 0x1D,
-				TermState: ptyio.RealTermState{},
-			},
+			TermFd:        -1,
+			BlockingGuard: parent.DefaultBlockingGuard(),
+			ToggleKey:     0x1D,
+			TermState:     ptyio.RealTermState{},
 		}
 
 		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
@@ -2004,25 +2033,27 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 		}
 
 		return s.adapter.TrackPromise(s.ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-				res, err := func(ctx context.Context) (any, error) {
-			reason, err := s.mgr.Passthrough(s.ctx, cfg)
-			result := map[string]any{
-				"reason": exitReasonString(reason),
-			}
-			if err != nil {
-				result["error"] = err.Error()
-			}
-			return result, nil
-		}(ctx)
-				if err != nil {
-					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-					return
+			res, err := func(ctx context.Context) (any, error) {
+				reason, err := s.mgr.Passthrough(ctx, cfg)
+				result := map[string]any{
+					"reason": exitReasonString(reason),
 				}
-				_ = settle.Settle(false, func(rt *goja.Runtime) any {
-					if res == nil { return goja.Undefined() }
-					return res
-				})
+				if err != nil {
+					result["error"] = err.Error()
+				}
+				return result, nil
+			}(ctx)
+			if err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
+			}
+			_ = settle.Settle(false, func(rt *goja.Runtime) any {
+				if res == nil {
+					return goja.Undefined()
+				}
+				return res
 			})
+		})
 	})
 
 	_ = obj.Set("attach", func(call goja.FunctionCall) goja.Value {
@@ -2106,19 +2137,13 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 		})
 
 		cfg := parent.PassthroughConfig{
-			TerminalIO: parent.TerminalIO{
-				Stdin:         s.stdin,
-				Stdout:        s.stdout,
-				TermFd:        s.termFd,
-				BlockingGuard: parent.DefaultBlockingGuard(),
-			},
-			PassthroughOptions: parent.PassthroughOptions{
-				ToggleKey: s.toggleKey,
-				TermState: ptyio.RealTermState{},
-			},
-			ResizeConfig: parent.ResizeConfig{
-				RestoreScreen: s.swappedOnce,
-			},
+			Stdin:         s.stdin,
+			Stdout:        s.stdout,
+			TermFd:        s.termFd,
+			BlockingGuard: parent.DefaultBlockingGuard(),
+			ToggleKey:     s.toggleKey,
+			TermState:     ptyio.RealTermState{},
+			RestoreScreen: s.swappedOnce,
 		}
 		if s.statusEnabled {
 			cfg.StatusBar = s.sb
@@ -2130,42 +2155,42 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 		var reason parent.ExitReason
 		var passthroughErr error
 		return s.adapter.TrackPromise(s.ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-				_, err := func(ctx context.Context) (any, error) {
-			reason, passthroughErr = s.mgr.Passthrough(s.ctx, cfg)
-			return nil, nil
-		}(ctx)
-				if err != nil {
-					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-					return
+			_, err := func(ctx context.Context) (any, error) {
+				reason, passthroughErr = s.mgr.Passthrough(ctx, cfg)
+				return nil, nil
+			}(ctx)
+			if err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
+			}
+			_ = settle.Settle(false, func(rt *goja.Runtime) any {
+				s.swappedOnce = true
+				s.SetInPassthrough(false)
+
+				s.dispatchEventOnLoop(EventFocus, map[string]any{
+					"side": "osm", "action": "return",
+				})
+
+				res := map[string]any{
+					"reason": exitReasonString(reason),
 				}
-				_ = settle.Settle(false, func(rt *goja.Runtime) any {
-			s.swappedOnce = true
-			s.SetInPassthrough(false)
-
-			s.dispatchEventOnLoop(EventFocus, map[string]any{
-				"side": "osm", "action": "return",
-			})
-
-			res := map[string]any{
-				"reason": exitReasonString(reason),
-			}
-			if passthroughErr != nil {
-				res["error"] = passthroughErr.Error()
-			}
-
-			s.dispatchEventOnLoop(EventExit, map[string]any{
-				"reason": exitReasonString(reason),
-				"pane":   "agent",
-			})
-
-			if id := s.mgr.ActiveID(); id != 0 {
-				if snap := s.mgr.Snapshot(id); snap != nil {
-					res["childOutput"] = snap.GetPlainText()
+				if passthroughErr != nil {
+					res["error"] = passthroughErr.Error()
 				}
-			}
-			return res
+
+				s.dispatchEventOnLoop(EventExit, map[string]any{
+					"reason": exitReasonString(reason),
+					"pane":   "agent",
+				})
+
+				if id := s.mgr.ActiveID(); id != 0 {
+					if snap := s.mgr.Snapshot(id); snap != nil {
+						res["childOutput"] = snap.GetPlainText()
+					}
+				}
+				return res
+			})
 		})
-			})
 	})
 
 	_ = obj.Set("screenshot", func() string {
@@ -2340,19 +2365,13 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			})
 
 			cfg := parent.PassthroughConfig{
-				TerminalIO: parent.TerminalIO{
-					Stdin:         s.stdin,
-					Stdout:        s.stdout,
-					TermFd:        s.termFd,
-					BlockingGuard: parent.DefaultBlockingGuard(),
-				},
-				PassthroughOptions: parent.PassthroughOptions{
-					ToggleKey: byte(toggleKeyByte),
-					TermState: ptyio.RealTermState{},
-				},
-				ResizeConfig: parent.ResizeConfig{
-					RestoreScreen: s.swappedOnce,
-				},
+				Stdin:         s.stdin,
+				Stdout:        s.stdout,
+				TermFd:        s.termFd,
+				BlockingGuard: parent.DefaultBlockingGuard(),
+				ToggleKey:     byte(toggleKeyByte),
+				TermState:     ptyio.RealTermState{},
+				RestoreScreen: s.swappedOnce,
 			}
 			if s.statusEnabled {
 				cfg.StatusBar = s.sb
@@ -2365,30 +2384,30 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			var passthroughErr error
 			return s.adapter.TrackPromise(s.ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 				_, err := func(ctx context.Context) (any, error) {
-				reason, passthroughErr = s.mgr.Passthrough(s.ctx, cfg)
-				return nil, nil
-			}(ctx)
+					reason, passthroughErr = s.mgr.Passthrough(ctx, cfg)
+					return nil, nil
+				}(ctx)
 				if err != nil {
 					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
 					return
 				}
 				_ = settle.Settle(false, func(rt *goja.Runtime) any {
-				s.swappedOnce = true
-				s.SetInPassthrough(false)
+					s.swappedOnce = true
+					s.SetInPassthrough(false)
 
-				res := map[string]any{
-					"reason": exitReasonString(reason),
-				}
-				if passthroughErr != nil {
-					res["error"] = passthroughErr.Error()
-				}
+					res := map[string]any{
+						"reason": exitReasonString(reason),
+					}
+					if passthroughErr != nil {
+						res["error"] = passthroughErr.Error()
+					}
 
-				s.dispatchEventOnLoop(EventFocus, map[string]any{
-					"side": "osm", "action": "return",
+					s.dispatchEventOnLoop(EventFocus, map[string]any{
+						"side": "osm", "action": "return",
+					})
+
+					return res
 				})
-
-				return res
-			})
 			})
 		})
 

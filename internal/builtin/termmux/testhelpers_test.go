@@ -98,20 +98,22 @@ func newTestEnv(t *testing.T) *testEnv {
 	}
 }
 
-// testRequire is retained for tests that only need module exports and do not
-// create a SessionManager. It returns the runtime and module exports and starts
-// an event loop which callers must stop by invoking e.stop() on the returned
-// testEnv.
+// testRequire returns the runtime and module exports for a test. It starts an
+// event loop (newTestEnv registers the runtime in testLoops), so JS execution
+// in tests that use it MUST be routed through runJS/awaitJS*/runOnEnvLoop (or
+// setOnLoop for global assignment) to avoid data races on the goja runtime.
+// Tests that only call synchronous bindings and never need a running loop
+// should prefer testRequireCtx (loop not started).
 func testRequire(t *testing.T) (*goja.Runtime, *goja.Object) {
 	t.Helper()
 	e := newTestEnv(t)
-	t.Cleanup(e.stop)
 	return e.runtime, e.exports
 }
 
 func newTestEnvCtx(t *testing.T, ctx context.Context) *testEnv {
 	t.Helper()
 
+	ctx, cancel := context.WithCancel(ctx)
 	loop, err := goeventloop.New()
 	if err != nil {
 		t.Fatalf("create event loop: %v", err)
@@ -136,40 +138,22 @@ func newTestEnvCtx(t *testing.T, ctx context.Context) *testEnv {
 		t.Fatalf("require osm:termmux: %v", err)
 	}
 
-	return &testEnv{
+	e := &testEnv{
 		ctx:     ctx,
+		cancel:  cancel,
 		loop:    loop,
 		adapter: adapter,
 		runtime: runtime,
 		exports: v.(*goja.Object),
 	}
+	t.Cleanup(e.stop)
+	return e
 }
 
 func testRequireCtx(t *testing.T, ctx context.Context) (*goja.Runtime, *goja.Object, *testEnv) {
 	t.Helper()
 	e := newTestEnvCtx(t, ctx)
 	return e.runtime, e.exports, e
-}
-
-// testRequireLooped is testRequire with a running event loop registered in
-// testLoops, for tests whose scripts must await promises.
-func testRequireLooped(t *testing.T) (*goja.Runtime, *goja.Object) {
-	t.Helper()
-	e := newTestEnv(t)
-	loopDone := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		defer close(loopDone)
-		_ = e.loop.Run(ctx)
-	}()
-	testLoops.Store(e.runtime, e.loop)
-	t.Cleanup(func() {
-		cancel()
-		testLoops.Delete(e.runtime)
-		e.stop()
-		<-loopDone
-	})
-	return e.runtime, e.exports
 }
 
 // wrapTestSessionManager creates a fresh event loop, binds EventTarget/CustomEvent
@@ -367,5 +351,3 @@ func setOnLoop(t *testing.T, runtime *goja.Runtime, name string, value any) {
 		t.Fatalf("setOnLoop(%s) timed out", name)
 	}
 }
-
-

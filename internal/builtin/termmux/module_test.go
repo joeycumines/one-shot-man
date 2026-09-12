@@ -11,7 +11,7 @@ import (
 )
 
 func TestModule_Constants(t *testing.T) {
-	_, exports := testRequire(t)
+	_, exports, _ := testRequireCtx(t, context.Background())
 
 	tests := []struct {
 		name string
@@ -231,7 +231,7 @@ func TestSessionWrapper_WriteResize(t *testing.T) {
 // ── Input encoding binding tests ────────────────────────
 
 func TestModule_KeyToTermBytes(t *testing.T) {
-	runtime, exports := testRequire(t)
+	runtime, exports, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("tm", exports)
 
 	tests := []struct {
@@ -264,7 +264,7 @@ func TestModule_KeyToTermBytes(t *testing.T) {
 }
 
 func TestModule_KeyToTermBytes_Null(t *testing.T) {
-	runtime, exports := testRequire(t)
+	runtime, exports, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("tm", exports)
 
 	v, err := runtime.RunString(`tm.keyToTermBytes('ctrl+shift+alt+x')`)
@@ -277,7 +277,7 @@ func TestModule_KeyToTermBytes_Null(t *testing.T) {
 }
 
 func TestModule_MouseToSGR(t *testing.T) {
-	runtime, exports := testRequire(t)
+	runtime, exports, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("tm", exports)
 
 	// Basic left click at (10, 5) → SGR: ESC[<0;11;6M
@@ -294,7 +294,7 @@ func TestModule_MouseToSGR(t *testing.T) {
 }
 
 func TestModule_MouseToSGR_WithOffset(t *testing.T) {
-	runtime, exports := testRequire(t)
+	runtime, exports, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("tm", exports)
 
 	v, err := runtime.RunString(`
@@ -310,7 +310,7 @@ func TestModule_MouseToSGR_WithOffset(t *testing.T) {
 }
 
 func TestModule_MouseToSGR_Modifiers(t *testing.T) {
-	runtime, exports := testRequire(t)
+	runtime, exports, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("tm", exports)
 
 	v, err := runtime.RunString(`
@@ -327,7 +327,7 @@ func TestModule_MouseToSGR_Modifiers(t *testing.T) {
 }
 
 func TestModule_MouseToSGR_Release(t *testing.T) {
-	runtime, exports := testRequire(t)
+	runtime, exports, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("tm", exports)
 
 	v, err := runtime.RunString(`
@@ -343,7 +343,7 @@ func TestModule_MouseToSGR_Release(t *testing.T) {
 }
 
 func TestModule_MouseToSGR_Null(t *testing.T) {
-	runtime, exports := testRequire(t)
+	runtime, exports, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("tm", exports)
 
 	// Negative coordinate after offset → null.
@@ -359,7 +359,7 @@ func TestModule_MouseToSGR_Null(t *testing.T) {
 }
 
 func TestModule_SplitLayout(t *testing.T) {
-	runtime, exports := testRequire(t)
+	runtime, exports, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("tm", exports)
 
 	v, err := runtime.RunString(`
@@ -391,7 +391,7 @@ func TestModule_SplitLayout(t *testing.T) {
 }
 
 func TestModule_SplitLayout_OffsetMouse(t *testing.T) {
-	runtime, exports := testRequire(t)
+	runtime, exports, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("tm", exports)
 
 	// Inside bottom pane.

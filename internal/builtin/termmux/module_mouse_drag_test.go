@@ -43,9 +43,11 @@ func setupMouseDragMgr(t *testing.T) (*goja.Runtime, *parent.SessionManager, fun
 	_ = runtime.Set("termmux", termmux)
 
 	cleanup := func() {
-		env.stop()
+		// Stop the manager before shutting down the loop: the wrapper's event
+		// bridge is a tracked worker and loop shutdown joins tracked workers.
 		cancel()
 		<-errCh
+		env.stop()
 	}
 	return runtime, mgr, cleanup
 }

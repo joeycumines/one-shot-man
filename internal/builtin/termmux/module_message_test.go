@@ -104,7 +104,7 @@ func TestModule_MessageBindings_Expiry(t *testing.T) {
 }
 
 func TestModule_MessageBindings_RenderBar(t *testing.T) {
-	runtime, exports := testRequire(t)
+	runtime, exports, _ := testRequireCtx(t, context.Background())
 	_ = runtime.Set("tm", exports)
 
 	v, err := runtime.RunString(`tm.renderMessageBar('hello world', 23, 80)`)

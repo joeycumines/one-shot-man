@@ -62,7 +62,7 @@ func (s *Screen) mapCharset(ch rune) rune {
 	if s.GL == 1 {
 		charset = s.G1Charset
 	}
-	if charset == 1 { // line-drawing
+	if charset == 1 {
 		if mapped, ok := lineDrawingMap[ch]; ok {
 			return mapped
 		}
@@ -100,6 +100,8 @@ type Screen struct {
 	SavedAttr                   Attr
 	SavedG0Charset              int
 	SavedG1Charset              int
+	SavedG2Charset              int
+	SavedG3Charset              int
 	SavedGL                     int
 	SavedOriginMode             bool
 	SavedPendingWrap            bool
@@ -113,11 +115,15 @@ type Screen struct {
 	SavedKeypadApplication      bool
 	SavedLineFeedNewLine        bool
 	SavedHighlightTracking      bool
+	SavedMouseTracking          MouseTrackingMode
+	SavedMouseSGR               bool
 	Saved1049Row                int
 	Saved1049Col                int
 	Saved1049Attr               Attr
 	Saved1049G0Charset          int
 	Saved1049G1Charset          int
+	Saved1049G2Charset          int
+	Saved1049G3Charset          int
 	Saved1049GL                 int
 	Saved1049OriginMode         bool
 	Saved1049PendingWrap        bool
@@ -131,7 +137,10 @@ type Screen struct {
 	Saved1049KeypadApplication  bool
 	Saved1049LineFeedNewLine    bool
 	Saved1049HighlightTracking  bool
+	Saved1049MouseTracking      MouseTrackingMode
+	Saved1049MouseSGR           bool
 	PendingWrap                 bool
+	LastChar                    rune
 	CursorVisible               bool
 	TabStops                    []bool
 	Rows, Cols                  int
@@ -197,11 +206,12 @@ type Screen struct {
 	// Scrollback holds lines that have scrolled off the top of the visible
 	// screen. It is a ring buffer: Scrollback[0] is the oldest line when
 	// ScrollbackHead == 0, otherwise the oldest line is at ScrollbackHead.
-	Scrollback     [][]Cell
-	ScrollbackLen  int // current number of lines in scrollback
-	ScrollbackHead int // ring buffer head (next write position)
-	MaxScrollback  int // maximum scrollback lines (0 = unlimited, default 10000)
-	ScrollOffset   int // lines scrolled back from bottom (0 = normal view)
+	Scrollback        [][]Cell
+	ScrollbackWrapped []bool
+	ScrollbackLen     int // current number of lines in scrollback
+	ScrollbackHead    int // ring buffer head (next write position)
+	MaxScrollback     int // maximum scrollback lines (0 = unlimited, default 10000)
+	ScrollOffset      int // lines scrolled back from bottom (0 = normal view)
 
 	// InsertMode (IRM, ANSI mode 4) controls whether printable characters
 	// are inserted at the cursor position, shifting existing text right,
@@ -220,6 +230,11 @@ type Screen struct {
 	// 0 = ASCII (default), 1 = VT100 line-drawing (Special Graphics).
 	G0Charset int
 	G1Charset int
+	// G2Charset and G3Charset are designations for G2/G3 (ESC * and ESC + etc.).
+	// Stored for completeness; GL shifting via SO/SI still toggles G0/G1 only,
+	// but DECSC/DECRC and 1049 save/restore must preserve them.
+	G2Charset int
+	G3Charset int
 
 	// GL indicates which character set is currently active for GL (left).
 	// 0 = G0 is active, 1 = G1 is active. Shifted by SO (0x0E) and SI (0x0F).
@@ -337,6 +352,7 @@ func (s *Screen) Resize(rows, cols int) {
 	}
 	oldRows := s.Rows
 	oldCols := s.Cols
+	wasPendingWrap := s.PendingWrap
 
 	if s.ReflowOnResize && len(s.RowWrapped) >= oldRows {
 		s.resizeReflow(rows, cols, oldRows, oldCols)
@@ -373,13 +389,9 @@ func (s *Screen) Resize(rows, cols int) {
 			s.ScrollBot = 0
 		}
 	}
-	// PendingWrap is cleared by resize unless the cursor ended up at the
-	// last column (which means the next character should wrap).
-	if s.CurCol >= cols-1 {
-		s.PendingWrap = true
-	} else {
-		s.PendingWrap = false
-	}
+	// Preserve pending-wrap state across resize; being positioned at the
+	// right margin alone does not imply that the previous character wrapped.
+	s.PendingWrap = wasPendingWrap && s.CurCol >= cols-1
 	if cols > len(s.TabStops) {
 		prev := len(s.TabStops)
 		ext := make([]bool, cols-prev)
@@ -436,17 +448,89 @@ func trimRightCells(cells []Cell) []Cell {
 // re-breaks them at the new column width. Lines that overflow the screen
 // are pushed into scrollback.
 func (s *Screen) resizeReflow(rows, cols, oldRows, oldCols int) {
-	// Step 1: Reconstruct logical lines from visible rows.
+	if s.ScrollbackLen > 0 && s.MaxScrollback > 0 {
+		type sbLine struct {
+			cells []Cell
+		}
+		var sbLines []sbLine
+		cur := sbLine{}
+		for i := 0; i < s.ScrollbackLen; i++ {
+			row := s.ScrollbackRow(i)
+			var w bool
+			if s.ScrollbackLen == s.MaxScrollback && len(s.ScrollbackWrapped) == s.MaxScrollback {
+				phys := (s.ScrollbackHead + i) % s.MaxScrollback
+				w = s.ScrollbackWrapped[phys]
+			} else if i < len(s.ScrollbackWrapped) {
+				w = s.ScrollbackWrapped[i]
+			}
+			if i > 0 && w {
+				cur.cells = append(cur.cells, trimRightCells(row)...)
+			} else {
+				if i > 0 {
+					sbLines = append(sbLines, cur)
+				}
+				cur = sbLine{cells: append([]Cell(nil), trimRightCells(row)...)}
+			}
+		}
+		sbLines = append(sbLines, cur)
+		var newSB [][]Cell
+		var newSBWrapped []bool
+		for _, l := range sbLines {
+			off := 0
+			first := true
+			for off < len(l.cells) || (first && len(l.cells) == 0) {
+				end := min(off+cols, len(l.cells))
+				row := makeAttrLine(cols, Attr{})
+				copy(row, l.cells[off:end])
+				if cols >= 2 && end > off && end < len(l.cells) && l.cells[end-1].Ch != 0 && !l.cells[end-1].SecondHalf && l.cells[end].SecondHalf {
+					row[cols-1] = Cell{Ch: ' ', Attr: l.cells[end-1].Attr}
+				}
+				if cols < 2 && off < len(l.cells) && l.cells[off].SecondHalf {
+					row[0] = Cell{Ch: ' ', Attr: row[0].Attr}
+				}
+				if off > 0 && off < len(l.cells) && l.cells[off].SecondHalf {
+					if len(newSB) > 0 {
+						prev := newSB[len(newSB)-1]
+						if len(prev) > 0 && prev[cols-1].Ch != 0 && !prev[cols-1].SecondHalf {
+							prev[cols-1] = Cell{Ch: ' ', Attr: prev[cols-1].Attr}
+						}
+					}
+					row[0] = Cell{Ch: ' ', Attr: row[0].Attr}
+				}
+				newSB = append(newSB, row)
+				newSBWrapped = append(newSBWrapped, !first)
+				off += cols
+				first = false
+				if len(l.cells) == 0 {
+					break
+				}
+			}
+		}
+		for len(newSB) > s.MaxScrollback {
+			newSB = newSB[1:]
+			newSBWrapped = newSBWrapped[1:]
+		}
+		s.Scrollback = newSB
+		s.ScrollbackWrapped = newSBWrapped
+		s.ScrollbackLen = len(newSB)
+		if s.ScrollbackLen == s.MaxScrollback {
+			s.ScrollbackHead = 0
+		} else {
+			s.ScrollbackHead = s.ScrollbackLen % s.MaxScrollback
+		}
+		if s.ScrollOffset > s.ScrollbackLen {
+			s.ScrollOffset = s.ScrollbackLen
+		}
+	}
 	type logicalLine struct {
 		cells        []Cell
-		cursorOffset int // -1 if cursor not in this line
+		cursorOffset int
 	}
 	var lines []logicalLine
 	current := logicalLine{cursorOffset: -1}
-
 	for r := range oldRows {
 		isContinuation := r > 0 && s.RowWrapped[r]
-		var rowCells []Cell // trimmed cells from this row
+		var rowCells []Cell
 		if isContinuation {
 			rowCells = trimRightCells(s.Cells[r])
 			current.cells = append(current.cells, rowCells...)
@@ -459,21 +543,13 @@ func (s *Screen) resizeReflow(rows, cols, oldRows, oldCols int) {
 			current.cells = make([]Cell, len(rowCells))
 			copy(current.cells, rowCells)
 		}
-		// Track cursor position within the logical line.
-		// The cursor column (CurCol) is relative to the full row width,
-		// but we only appended len(rowCells) trimmed cells. The cursor
-		// offset is: position after previous rows + min(CurCol, len(rowCells)).
 		if r == s.CurRow {
 			prevLen := len(current.cells) - len(rowCells)
 			col := min(s.CurCol, len(rowCells))
 			offset := prevLen + col
-			// When PendingWrap is true, the cursor is logically past the
-			// last column (it would wrap on the next char). Account for
-			// this by advancing the offset by 1.
 			if s.PendingWrap && r == s.CurRow {
 				offset++
 			}
-			// Clamp to end of content if cursor is past trailing whitespace.
 			if offset > len(current.cells) {
 				offset = len(current.cells)
 			}
@@ -501,11 +577,12 @@ func (s *Screen) resizeReflow(rows, cols, oldRows, oldCols int) {
 			// row, blank the first half and back up offset so the wide char
 			// starts the next row instead. Skip when cols < 2 (wide char
 			// cannot fit on any row — just blank both halves below).
+			rewindWide := false
 			if cols >= 2 && end > offset && end < len(line.cells) &&
 				line.cells[end-1].Ch != 0 && !line.cells[end-1].SecondHalf &&
 				line.cells[end].SecondHalf {
 				row[cols-1] = Cell{Ch: ' ', Attr: line.cells[end-1].Attr}
-				offset-- // re-include the wide char in the next row
+				rewindWide = true // re-include the wide char in the next row
 			}
 			// When cols==1, wide chars cannot fit. Blank any SecondHalf at
 			// the start of this row and the first half on the previous row.
@@ -559,19 +636,20 @@ func (s *Screen) resizeReflow(rows, cols, oldRows, oldCols int) {
 			}
 
 			offset += cols
+			if rewindWide {
+				offset -= 1
+			}
 			firstRowOfLine = false
 		}
 	}
 
-	// Step 3: Push excess rows to scrollback.
 	for len(newCells) > rows {
-		s.pushScrollback(newCells[0])
+		s.pushScrollbackWrapped(newCells[0], newWrapped[0])
 		newCells = newCells[1:]
 		newWrapped = newWrapped[1:]
 		if newCurRow > 0 {
 			newCurRow--
 		} else {
-			// Cursor was in an overflowed line — clamp to top of screen.
 			newCurCol = 0
 		}
 	}
@@ -627,11 +705,10 @@ func (s *Screen) scrollRegionUp(top, bot, n int) {
 	if n > bot-top {
 		n = bot - top
 	}
-	// Push evicted rows into scrollback (only for the primary screen's
-	// top-level scroll region — top == 0 means scrolling the full screen).
 	if top == 0 && s.MaxScrollback != 0 {
 		for i := 0; i < n; i++ {
-			s.pushScrollback(s.Cells[i])
+			wrapped := i < len(s.RowWrapped) && s.RowWrapped[i]
+			s.pushScrollbackWrapped(s.Cells[i], wrapped)
 		}
 	}
 	copy(s.Cells[top:], s.Cells[top+n:bot])
@@ -669,9 +746,7 @@ func (s *Screen) scrollRegionDown(top, bot, n int) {
 	s.markDirtyRange(top, bot-1)
 }
 
-// pushScrollback adds a row to the scrollback ring buffer. The row is copied
-// so that subsequent mutations to Cells do not affect scrollback content.
-func (s *Screen) pushScrollback(row []Cell) {
+func (s *Screen) pushScrollbackWrapped(row []Cell, wrapped bool) {
 	if s.MaxScrollback <= 0 {
 		return // no scrollback when max is 0 or unlimited (not yet supported)
 	}
@@ -679,14 +754,14 @@ func (s *Screen) pushScrollback(row []Cell) {
 	copied := make([]Cell, len(row))
 	copy(copied, row)
 
-	// Grow the ring buffer if not yet at capacity.
 	if s.ScrollbackLen < s.MaxScrollback {
 		s.Scrollback = append(s.Scrollback, nil)
+		s.ScrollbackWrapped = append(s.ScrollbackWrapped, false)
 		s.ScrollbackLen++
 	}
 
-	// Write at head position and advance.
 	s.Scrollback[s.ScrollbackHead] = copied
+	s.ScrollbackWrapped[s.ScrollbackHead] = wrapped
 	s.ScrollbackHead = (s.ScrollbackHead + 1) % s.MaxScrollback
 }
 
@@ -695,13 +770,10 @@ func (s *Screen) ScrollbackLines() int {
 	return s.ScrollbackLen
 }
 
-// MaxScrollOffset returns the maximum valid ScrollOffset value, which is the
-// total number of scrollback lines plus the number of visible rows.
 func (s *Screen) MaxScrollOffset() int {
-	return s.ScrollbackLen + s.Rows
+	return s.ScrollbackLen
 }
 
-// ClampScrollOffset clamps ScrollOffset to [0, ScrollbackLines+Rows].
 func (s *Screen) ClampScrollOffset() {
 	max := s.MaxScrollOffset()
 	if s.ScrollOffset < 0 {
@@ -990,10 +1062,8 @@ func (s *Screen) EraseDisplay(mode int) {
 			s.RowWrapped[i] = false
 		}
 	case 3:
-		// ED mode 3: erase scrollback only (xterm extension).
-		// Per xterm spec, CSI 3J clears saved lines (scrollback)
-		// but does NOT clear the visible display.
 		s.Scrollback = nil
+		s.ScrollbackWrapped = nil
 		s.ScrollbackLen = 0
 		s.ScrollbackHead = 0
 		s.ScrollOffset = 0
@@ -1151,22 +1221,16 @@ func (s *Screen) SnapshotIncremental(prev *Screen) *Screen {
 	tabStops := make([]bool, len(s.TabStops))
 	copy(tabStops, s.TabStops)
 
-	scrollbackDirty := !canReuse ||
-		prev.ScrollbackLen != s.ScrollbackLen ||
-		prev.ScrollbackHead != s.ScrollbackHead
-	var scrollback [][]Cell
-	if !scrollbackDirty && len(s.Scrollback) == len(prev.Scrollback) {
-		scrollback = make([][]Cell, len(s.Scrollback))
-		copy(scrollback, prev.Scrollback)
-	} else {
-		scrollback = make([][]Cell, len(s.Scrollback))
-		for i, row := range s.Scrollback {
-			if row != nil {
-				scrollback[i] = make([]Cell, len(row))
-				copy(scrollback[i], row)
-			}
+	// Scrollback row contents can change while length and ring head remain
+	// equal after a full wrap. Always copy them instead of reusing stale rows.
+	scrollback := make([][]Cell, len(s.Scrollback))
+	for i, row := range s.Scrollback {
+		if row != nil {
+			scrollback[i] = make([]Cell, len(row))
+			copy(scrollback[i], row)
 		}
 	}
+	scrollbackWrapped := append([]bool(nil), s.ScrollbackWrapped...)
 
 	return &Screen{
 		Cells:              cells,
@@ -1180,8 +1244,11 @@ func (s *Screen) SnapshotIncremental(prev *Screen) *Screen {
 		SavedAttr:          s.SavedAttr,
 		SavedG0Charset:     s.SavedG0Charset,
 		SavedG1Charset:     s.SavedG1Charset,
+		SavedG2Charset:     s.SavedG2Charset,
+		SavedG3Charset:     s.SavedG3Charset,
 		SavedGL:            s.SavedGL,
 		PendingWrap:        s.PendingWrap,
+		LastChar:           s.LastChar,
 		CursorVisible:      s.CursorVisible,
 		TabStops:           tabStops,
 		Rows:               s.Rows,
@@ -1198,6 +1265,7 @@ func (s *Screen) SnapshotIncremental(prev *Screen) *Screen {
 		SynchronizedOutput: s.SynchronizedOutput,
 
 		Scrollback:                  scrollback,
+		ScrollbackWrapped:           scrollbackWrapped,
 		ScrollbackLen:               s.ScrollbackLen,
 		ScrollbackHead:              s.ScrollbackHead,
 		MaxScrollback:               s.MaxScrollback,
@@ -1206,6 +1274,8 @@ func (s *Screen) SnapshotIncremental(prev *Screen) *Screen {
 		LineFeedNewLine:             s.LineFeedNewLine,
 		G0Charset:                   s.G0Charset,
 		G1Charset:                   s.G1Charset,
+		G2Charset:                   s.G2Charset,
+		G3Charset:                   s.G3Charset,
 		GL:                          s.GL,
 		OriginMode:                  s.OriginMode,
 		SavedOriginMode:             s.SavedOriginMode,
@@ -1222,6 +1292,8 @@ func (s *Screen) SnapshotIncremental(prev *Screen) *Screen {
 		Saved1049Attr:               s.Saved1049Attr,
 		Saved1049G0Charset:          s.Saved1049G0Charset,
 		Saved1049G1Charset:          s.Saved1049G1Charset,
+		Saved1049G2Charset:          s.Saved1049G2Charset,
+		Saved1049G3Charset:          s.Saved1049G3Charset,
 		Saved1049GL:                 s.Saved1049GL,
 		Saved1049OriginMode:         s.Saved1049OriginMode,
 		Saved1049PendingWrap:        s.Saved1049PendingWrap,
@@ -1238,6 +1310,10 @@ func (s *Screen) SnapshotIncremental(prev *Screen) *Screen {
 		SavedKeypadApplication:      s.SavedKeypadApplication,
 		SavedLineFeedNewLine:        s.SavedLineFeedNewLine,
 		SavedHighlightTracking:      s.SavedHighlightTracking,
+		SavedMouseTracking:          s.SavedMouseTracking,
+		SavedMouseSGR:               s.SavedMouseSGR,
+		Saved1049MouseTracking:      s.Saved1049MouseTracking,
+		Saved1049MouseSGR:           s.Saved1049MouseSGR,
 		RowWrapped:                  append([]bool(nil), s.RowWrapped...),
 		ReflowOnResize:              s.ReflowOnResize,
 		dirtyRowMin:                 -1,
@@ -1288,8 +1364,8 @@ func runeWidth(r rune) int {
 // advancing the cursor. Wide characters (width 2) occupy two cells.
 // Uses github.com/rivo/uniseg for width calculation.
 func (s *Screen) PutChar(ch rune) {
-	// Apply charset mapping before width calculation and placement.
 	ch = s.mapCharset(ch)
+	s.LastChar = ch
 
 	width := runeWidth(ch)
 	if width <= 0 {
@@ -1363,13 +1439,13 @@ func (s *Screen) PutChar(ch rune) {
 // into the cell buffer, advancing the cursor. It is a batch-optimized
 // fast path for the common case of sequential ground-state text that
 // bypasses charset mapping, width calculation, and per-char wrap checks.
-// The caller MUST ensure: GL==0, G0Charset==0, InsertMode==false, and
-// all bytes are in [0x20, 0x7E].
 func (s *Screen) PutASCII(data []byte) {
 	attr := s.CurAttr
+	if len(data) > 0 {
+		s.LastChar = rune(data[len(data)-1])
+	}
 	i := 0
 	for i < len(data) {
-		// Handle pending wrap once per row.
 		if s.PendingWrap && s.AutoWrap {
 			s.CurCol = 0
 			s.LineFeed()
@@ -1379,8 +1455,6 @@ func (s *Screen) PutASCII(data []byte) {
 			}
 			s.markDirty(s.CurRow)
 		}
-
-		// Write as many chars as fit on the current row.
 		row := s.CurRow
 		col := s.CurCol
 		avail := s.Cols - col
@@ -1394,7 +1468,6 @@ func (s *Screen) PutASCII(data []byte) {
 		}
 		i += n
 		col += n
-
 		if col >= s.Cols {
 			if s.AutoWrap {
 				s.PendingWrap = true
@@ -1435,12 +1508,15 @@ func (s *Screen) Clear() {
 	s.CurCol = 0
 	s.CurAttr = Attr{}
 	s.PendingWrap = false
+	s.LastChar = 0
 
 	s.SavedRow = 0
 	s.SavedCol = 0
 	s.SavedAttr = Attr{}
 	s.SavedG0Charset = 0
 	s.SavedG1Charset = 0
+	s.SavedG2Charset = 0
+	s.SavedG3Charset = 0
 	s.SavedGL = 0
 	s.SavedOriginMode = false
 	s.SavedPendingWrap = false
@@ -1454,12 +1530,16 @@ func (s *Screen) Clear() {
 	s.SavedKeypadApplication = false
 	s.SavedLineFeedNewLine = false
 	s.SavedHighlightTracking = false
+	s.SavedMouseTracking = MouseTrackingNone
+	s.SavedMouseSGR = false
 
 	s.Saved1049Row = 0
 	s.Saved1049Col = 0
 	s.Saved1049Attr = Attr{}
 	s.Saved1049G0Charset = 0
 	s.Saved1049G1Charset = 0
+	s.Saved1049G2Charset = 0
+	s.Saved1049G3Charset = 0
 	s.Saved1049GL = 0
 	s.Saved1049OriginMode = false
 	s.Saved1049PendingWrap = false
@@ -1473,6 +1553,8 @@ func (s *Screen) Clear() {
 	s.Saved1049KeypadApplication = false
 	s.Saved1049LineFeedNewLine = false
 	s.Saved1049HighlightTracking = false
+	s.Saved1049MouseTracking = MouseTrackingNone
+	s.Saved1049MouseSGR = false
 
 	s.ScrollTop = 0
 	s.ScrollBot = 0
@@ -1493,9 +1575,12 @@ func (s *Screen) Clear() {
 	s.HighlightTracking = false
 	s.G0Charset = 0
 	s.G1Charset = 0
+	s.G2Charset = 0
+	s.G3Charset = 0
 	s.GL = 0
 
 	s.Scrollback = nil
+	s.ScrollbackWrapped = nil
 	s.ScrollbackLen = 0
 	s.ScrollbackHead = 0
 	s.ScrollOffset = 0

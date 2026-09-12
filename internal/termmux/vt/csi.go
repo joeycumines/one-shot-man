@@ -29,6 +29,7 @@ type csiHandlerImpl struct {
 	HasInterSp     func() bool
 	HasInterBang   func() bool
 	HasInterDollar func() bool
+	SubParamsFn    func(idx int) []int
 }
 
 // NewCSIHandler returns a CSIHandler with the given callbacks.
@@ -72,6 +73,10 @@ func WithHasInterBang(fn func() bool) CSIHandlerOption {
 
 func WithHasInterDollar(fn func() bool) CSIHandlerOption {
 	return csiHandlerOptionFunc(func(h *csiHandlerImpl) { h.HasInterDollar = fn })
+}
+
+func WithSubParams(fn func(idx int) []int) CSIHandlerOption {
+	return csiHandlerOptionFunc(func(h *csiHandlerImpl) { h.SubParamsFn = fn })
 }
 
 func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPrivate bool) {
@@ -157,6 +162,9 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 		scr.CurRow = row
 		scr.CurCol = col
 	case 'J': // ED — erase display
+		if isPrivate {
+			return
+		}
 		mode := paramDefault(params, 0, 0)
 		scr.EraseDisplay(mode)
 	case 'K': // EL — erase line
@@ -203,13 +211,52 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 		}
 		scr.PendingWrap = false
 		scr.CurRow = row
+	case 'b': // REP — repeat preceding graphic character
+		n := paramDefault(params, 0, 1)
+		if scr.LastChar != 0 {
+			for range n {
+				scr.PutChar(scr.LastChar)
+			}
+		}
+	case 'a': // HPR — horizontal position relative (forward)
+		n := paramDefault(params, 0, 1)
+		scr.PendingWrap = false
+		scr.CurCol += n
+		if scr.CurCol >= scr.Cols {
+			scr.CurCol = scr.Cols - 1
+		}
+	case 'e': // VPR — vertical position relative (down)
+		n := paramDefault(params, 0, 1)
+		scr.PendingWrap = false
+		scr.CurRow += n
+		if scr.CurRow >= scr.Rows {
+			scr.CurRow = scr.Rows - 1
+		}
+	case '`': // HPA — horizontal position absolute (1-indexed)
+		col := max(paramDefault(params, 0, 1)-1, 0)
+		if col >= scr.Cols {
+			col = scr.Cols - 1
+		}
+		scr.PendingWrap = false
+		scr.CurCol = col
+	case '^', '_': // SD / APC passthrough — no-op, silently consumed
 	case 'I': // CHT — cursor horizontal tabulation (CSI Ps I)
 		ps := paramDefault(params, 0, 1)
 		col := scr.CurCol
 		maxCol := scr.Cols - 1
 		for i := 0; i < ps && col < maxCol; i++ {
-			nextTab := ((col / 8) + 1) * 8
-			col = min(nextTab, maxCol)
+			next := -1
+			for c := col + 1; c <= maxCol; c++ {
+				if scr.TabStopAt(c) {
+					next = c
+					break
+				}
+			}
+			if next < 0 {
+				col = maxCol
+			} else {
+				col = next
+			}
 		}
 		scr.CurCol = col
 		scr.PendingWrap = false
@@ -217,10 +264,14 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 		ps := paramDefault(params, 0, 1)
 		col := scr.CurCol
 		for i := 0; i < ps && col > 0; i++ {
-			col--
-			for col > 0 && col%8 != 0 {
-				col--
+			prev := -1
+			for c := col - 1; c >= 0; c-- {
+				if scr.TabStopAt(c) {
+					prev = c
+					break
+				}
 			}
+			col = max(prev, 0)
 		}
 		scr.CurCol = col
 		scr.PendingWrap = false
@@ -237,10 +288,40 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 			}
 		}
 	case 'm': // SGR — set graphic rendition
-		if len(params) == 0 {
-			params = []int{0}
+		if h.SubParamsFn != nil {
+			var groups [][]int
+			if len(params) == 0 {
+				groups = [][]int{{0}}
+			} else {
+				for i := range params {
+					if subs := h.SubParamsFn(i); subs != nil {
+						groups = append(groups, subs)
+					} else {
+						groups = append(groups, []int{params[i]})
+					}
+				}
+			}
+			hasColon := false
+			for _, g := range groups {
+				if len(g) > 1 {
+					hasColon = true
+					break
+				}
+			}
+			if hasColon {
+				scr.CurAttr = ParseSGRWithSubParams(groups, scr.CurAttr)
+			} else {
+				if len(params) == 0 {
+					params = []int{0}
+				}
+				scr.CurAttr = ParseSGR(params, scr.CurAttr)
+			}
+		} else {
+			if len(params) == 0 {
+				params = []int{0}
+			}
+			scr.CurAttr = ParseSGR(params, scr.CurAttr)
 		}
-		scr.CurAttr = ParseSGR(params, scr.CurAttr)
 	case 'r': // DECSTBM — set scrolling region (top;bottom, 1-indexed)
 		top := paramDefault(params, 0, 1)
 		bot := paramDefault(params, 1, scr.Rows)
@@ -271,6 +352,8 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 		scr.SavedAttr = scr.CurAttr
 		scr.SavedG0Charset = scr.G0Charset
 		scr.SavedG1Charset = scr.G1Charset
+		scr.SavedG2Charset = scr.G2Charset
+		scr.SavedG3Charset = scr.G3Charset
 		scr.SavedGL = scr.GL
 		scr.SavedOriginMode = scr.OriginMode
 		scr.SavedPendingWrap = scr.PendingWrap
@@ -284,11 +367,15 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 		scr.SavedKeypadApplication = scr.KeypadApplication
 		scr.SavedLineFeedNewLine = scr.LineFeedNewLine
 		scr.SavedHighlightTracking = scr.HighlightTracking
+		scr.SavedMouseTracking = scr.MouseTracking
+		scr.SavedMouseSGR = scr.MouseSGR
 	case 'u': // RCP — restore cursor position
 		scr.PendingWrap = scr.SavedPendingWrap
 		scr.CurAttr = scr.SavedAttr
 		scr.G0Charset = scr.SavedG0Charset
 		scr.G1Charset = scr.SavedG1Charset
+		scr.G2Charset = scr.SavedG2Charset
+		scr.G3Charset = scr.SavedG3Charset
 		scr.GL = scr.SavedGL
 		scr.OriginMode = scr.SavedOriginMode
 		scr.ApplicationCursor = scr.SavedApplicationCursor
@@ -301,6 +388,8 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 		scr.KeypadApplication = scr.SavedKeypadApplication
 		scr.LineFeedNewLine = scr.SavedLineFeedNewLine
 		scr.HighlightTracking = scr.SavedHighlightTracking
+		scr.MouseTracking = scr.SavedMouseTracking
+		scr.MouseSGR = scr.SavedMouseSGR
 		if scr.OriginMode {
 			scrollTop, scrollBot := scr.ScrollRegion()
 			scr.CurRow = max(scrollTop, min(scr.SavedRow, scrollBot-1))

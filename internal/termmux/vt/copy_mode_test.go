@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// helper: write n lines to a VTerm to generate scrollback
 func writeLines(v *VTerm, n int) {
 	for i := range n {
 		v.Write([]byte(string(rune('A'+i%26)) + "\n"))
@@ -15,7 +14,7 @@ func writeLines(v *VTerm, n int) {
 func TestScrollUp_AdjustsOffset(t *testing.T) {
 	v := NewVTerm(5, 20)
 	v.SetScrollback(100)
-	writeLines(v, 20) // 20 lines → 15 scrollback + 5 visible
+	writeLines(v, 20)
 
 	if got := v.ScrollbackLines(); got < 10 {
 		t.Fatalf("ScrollbackLines = %d, want >= 10", got)
@@ -52,7 +51,7 @@ func TestScrollOffset_Clamped(t *testing.T) {
 	writeLines(v, 20)
 
 	sb := v.ScrollbackLines()
-	maxOffset := sb + 5
+	maxOffset := sb
 
 	// ScrollUp beyond max should clamp
 	v.ScrollUp(maxOffset + 50)
@@ -317,11 +316,11 @@ func TestClampScrollOffset(t *testing.T) {
 	scr := NewScreen(5, 10)
 	scr.MaxScrollback = 10
 
-	// No scrollback: max offset = 0 + 5 = 5
+	// No scrollback: max offset = 0
 	scr.ScrollOffset = 100
 	scr.ClampScrollOffset()
-	if scr.ScrollOffset != 5 {
-		t.Errorf("ScrollOffset = %d, want 5", scr.ScrollOffset)
+	if scr.ScrollOffset != 0 {
+		t.Errorf("ScrollOffset = %d, want 0", scr.ScrollOffset)
 	}
 
 	scr.ScrollOffset = -5
@@ -335,9 +334,8 @@ func TestMaxScrollOffset(t *testing.T) {
 	scr := NewScreen(5, 10)
 	scr.MaxScrollback = 10
 
-	// No scrollback yet
-	if got := scr.MaxScrollOffset(); got != 5 {
-		t.Errorf("MaxScrollOffset = %d, want 5", got)
+	if got := scr.MaxScrollOffset(); got != 0 {
+		t.Errorf("MaxScrollOffset = %d, want 0", got)
 	}
 
 	// Add some scrollback
@@ -348,9 +346,9 @@ func TestMaxScrollOffset(t *testing.T) {
 	}
 
 	sb := scr.ScrollbackLines()
-	want := sb + 5
+	want := sb
 	if got := scr.MaxScrollOffset(); got != want {
-		t.Errorf("MaxScrollOffset = %d, want %d (scrollback=%d + rows=5)", got, want, sb)
+		t.Errorf("MaxScrollOffset = %d, want %d (scrollback=%d)", got, want, sb)
 	}
 }
 
@@ -463,9 +461,9 @@ func TestScrollUpScrollDown_Integration(t *testing.T) {
 	sb := v.ScrollbackLines()
 
 	// Scroll up to max
-	v.ScrollUp(sb + 5 + 10) // try to go beyond max
+	v.ScrollUp(sb + 10) // try to go beyond max
 	snap := v.ActiveScreen()
-	maxOff := sb + 5
+	maxOff := sb
 	if snap.ScrollOffset > maxOff {
 		t.Errorf("ScrollOffset = %d, exceeds max %d", snap.ScrollOffset, maxOff)
 	}
@@ -612,7 +610,7 @@ func TestScrollCopyMode_Clamped(t *testing.T) {
 		t.Error("ScrollCopyMode returned false")
 	}
 	snap := v.ActiveScreen()
-	maxOff := v.ScrollbackLines() + 5
+	maxOff := v.ScrollbackLines()
 	if snap.ScrollOffset > maxOff {
 		t.Errorf("ScrollOffset = %d, exceeds max %d", snap.ScrollOffset, maxOff)
 	}

@@ -94,13 +94,9 @@ func (a Attr) SGRString() string {
 	return strings.Join(parts, ";")
 }
 
-// ParseSGR processes a slice of CSI 'm' parameters and returns the
-// updated attribute. It handles SGR codes 0-9, 21-29, 30-37, 38, 39,
-// 40-47, 48, 49, 90-97, 100-107 including 256-color and truecolor
-// extended sequences. Unknown parameters are silently ignored.
 func ParseSGR(params []int, current Attr) Attr {
 	if len(params) == 0 {
-		return Attr{} // ESC[m = reset all
+		return Attr{}
 	}
 	a := current
 	i := 0
@@ -145,16 +141,15 @@ func ParseSGR(params []int, current Attr) Attr {
 		case p >= 30 && p <= 37:
 			a.FG = color{kind: kind8, value: uint32(p - 30)}
 		case p == 38:
-			// Extended foreground: 38;5;N or 38;2;R;G;B
 			i++
 			if i < len(params) {
 				switch params[i] {
-				case 5: // 256-color
+				case 5:
 					i++
 					if i < len(params) {
 						a.FG = color{kind: kind256, value: uint32(params[i])}
 					}
-				case 2: // truecolor
+				case 2:
 					if i+3 < len(params) {
 						r, g, b := params[i+1], params[i+2], params[i+3]
 						a.FG = color{kind: kindRGB, value: uint32(r)<<16 | uint32(g)<<8 | uint32(b)}
@@ -165,11 +160,10 @@ func ParseSGR(params []int, current Attr) Attr {
 				}
 			}
 		case p == 39:
-			a.FG = color{} // default fg
+			a.FG = color{}
 		case p >= 40 && p <= 47:
 			a.BG = color{kind: kind8, value: uint32(p - 40)}
 		case p == 48:
-			// Extended background: 48;5;N or 48;2;R;G;B
 			i++
 			if i < len(params) {
 				switch params[i] {
@@ -189,7 +183,7 @@ func ParseSGR(params []int, current Attr) Attr {
 				}
 			}
 		case p == 49:
-			a.BG = color{} // default bg
+			a.BG = color{}
 		case p >= 90 && p <= 97:
 			a.FG = color{kind: kind8, value: uint32(p - 90 + 8)}
 		case p >= 100 && p <= 107:
@@ -198,6 +192,48 @@ func ParseSGR(params []int, current Attr) Attr {
 		i++
 	}
 	return a
+}
+
+func ParseSGRWithSubParams(groups [][]int, current Attr) Attr {
+	if len(groups) == 0 {
+		return Attr{}
+	}
+	var flat []int
+	for _, subs := range groups {
+		if len(subs) == 0 {
+			continue
+		}
+		if len(subs) == 1 {
+			flat = append(flat, subs[0])
+			continue
+		}
+		if subs[0] == 38 || subs[0] == 48 {
+			if len(subs) >= 3 && subs[1] == 5 {
+				flat = append(flat, subs[0], 5, subs[2])
+				if len(subs) > 3 {
+					flat = append(flat, subs[3:]...)
+				}
+				continue
+			}
+			if subs[1] == 2 {
+				if len(subs) == 6 {
+					flat = append(flat, subs[0], 2, subs[3], subs[4], subs[5])
+					continue
+				}
+				if len(subs) == 5 {
+					flat = append(flat, subs[0], 2, subs[2], subs[3], subs[4])
+					continue
+				}
+				if len(subs) >= 5 {
+					n := len(subs)
+					flat = append(flat, subs[0], 2, subs[n-3], subs[n-2], subs[n-1])
+					continue
+				}
+			}
+		}
+		flat = append(flat, subs[0])
+	}
+	return ParseSGR(flat, current)
 }
 
 // SGRDiff generates the minimal ANSI escape sequence to transition from

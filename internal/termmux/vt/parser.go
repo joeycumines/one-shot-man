@@ -122,8 +122,7 @@ func (p *Parser) feedEscape(b byte) (Action, byte) {
 	case b == 'P':
 		p.cur = StateDCS
 		return ActionNone, b
-	case b == '(' || b == ')':
-		// Charset designation: ESC ( or ESC ) followed by designator byte.
+	case b == '(' || b == ')' || b == '*' || b == '+' || b == '-' || b == '.' || b == '/':
 		p.cur = StateCharset
 		p.charsetSlot = b
 		return ActionNone, b

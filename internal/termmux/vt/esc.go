@@ -41,6 +41,8 @@ func (h *escHandlerImpl) Dispatch(scr *Screen, final byte) {
 		scr.SavedAttr = scr.CurAttr.sgr()
 		scr.SavedG0Charset = scr.G0Charset
 		scr.SavedG1Charset = scr.G1Charset
+		scr.SavedG2Charset = scr.G2Charset
+		scr.SavedG3Charset = scr.G3Charset
 		scr.SavedGL = scr.GL
 		scr.SavedOriginMode = scr.OriginMode
 		scr.SavedPendingWrap = scr.PendingWrap
@@ -54,11 +56,15 @@ func (h *escHandlerImpl) Dispatch(scr *Screen, final byte) {
 		scr.SavedKeypadApplication = scr.KeypadApplication
 		scr.SavedLineFeedNewLine = scr.LineFeedNewLine
 		scr.SavedHighlightTracking = scr.HighlightTracking
+		scr.SavedMouseTracking = scr.MouseTracking
+		scr.SavedMouseSGR = scr.MouseSGR
 	case '8': // DECRC — restore cursor
 		scr.PendingWrap = scr.SavedPendingWrap
 		scr.CurAttr = scr.SavedAttr.sgr()
 		scr.G0Charset = scr.SavedG0Charset
 		scr.G1Charset = scr.SavedG1Charset
+		scr.G2Charset = scr.SavedG2Charset
+		scr.G3Charset = scr.SavedG3Charset
 		scr.GL = scr.SavedGL
 		scr.OriginMode = scr.SavedOriginMode
 		scr.ApplicationCursor = scr.SavedApplicationCursor
@@ -71,6 +77,8 @@ func (h *escHandlerImpl) Dispatch(scr *Screen, final byte) {
 		scr.KeypadApplication = scr.SavedKeypadApplication
 		scr.LineFeedNewLine = scr.SavedLineFeedNewLine
 		scr.HighlightTracking = scr.SavedHighlightTracking
+		scr.MouseTracking = scr.SavedMouseTracking
+		scr.MouseSGR = scr.SavedMouseSGR
 		if scr.OriginMode {
 			scrollTop, scrollBot := scr.ScrollRegion()
 			scr.CurRow = max(scrollTop, min(scr.SavedRow, scrollBot-1))

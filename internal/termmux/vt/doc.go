@@ -32,9 +32,13 @@
 //	SU  (CSI S)     Scroll up                        Supported (region-aware)
 //	SD  (CSI T)     Scroll down                      Supported (region-aware)
 //	VPA (CSI d)     Vertical position absolute       Supported (1-indexed, respects DECOM)
+//	HPR (CSI a)     Horizontal position relative     Supported
+//	VPR (CSI e)     Vertical position relative       Supported
+//	HPA (CSI `)     Horizontal position absolute     Supported (1-indexed)
+//	REP (CSI b)     Repeat preceding graphic char    Supported
 //	HTS (CSI g)     Tab stop clear                   Supported (modes 0, 3)
-//	CHT (CSI I)     Cursor horizontal tab (forward)  Supported
-//	CBT (CSI Z)     Cursor backward tab              Supported
+//	CHT (CSI I)     Cursor horizontal tab (forward)  Supported (custom tabs)
+//	CBT (CSI Z)     Cursor backward tab              Supported (custom tabs)
 //	DECSCUSR CSI q  Cursor style                     Supported (xterm: CSI Ps SP q; DECs: CSI Ps q ignored)
 //	XTWINOPS CSI t   Window manipulation            Partial (subcmds 8, 18 only)
 //	DECSTR  CSI ! p  Soft reset                      Supported
@@ -74,8 +78,8 @@
 //	Default FG/BG 39, 49                Supported
 //	Extended FG 38;5;N (256-color)      Supported
 //	Extended BG 48;5;N (256-color)      Supported
-//	Extended FG 38;2;R;G;B (truecolor)  Supported
-//	Extended BG 48;2;R;G;B (truecolor)  Supported
+//	Extended FG 38;2;R;G;B (truecolor)  Supported (semicolon and colon 38:2::R:G:B)
+//	Extended BG 48;2;R;G;B (truecolor)  Supported (semicolon and colon 48:2::R:G:B)
 //
 // OSC (Operating System Command — ESC ] ... BEL/ST)
 //
@@ -139,6 +143,9 @@
 //
 //	ESC ( B / ESC ) B    G0/G1 to ASCII            Supported (default)
 //	ESC ( 0 / ESC ) 0    G0/G1 to VT100 line-drawing  Supported (Special Graphics map)
+//	ESC * B / ESC + B  G2/G3 to ASCII              Supported
+//	ESC * 0 / ESC + 0  G2/G3 to line-drawing       Supported
+//	ESC - / . / /      G1/G2/G3 alt designators    Supported
 //	SO/SI toggle         G0/G1 swap                 Supported
 //
 // CHARACTER FEATURES

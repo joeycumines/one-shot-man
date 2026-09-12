@@ -1,6 +1,7 @@
 package vt
 
 import (
+	"slices"
 	"sync"
 	"unicode/utf8"
 )
@@ -21,6 +22,8 @@ type VTerm struct {
 	mu         sync.Mutex
 
 	lastSnapshot *Screen
+	oscOverflow  int
+	dcsOverflow  int
 
 	copyMode copyModeState
 
@@ -92,6 +95,9 @@ func NewVTerm(rows, cols int) *VTerm {
 		}),
 		WithHasInterDollar(func() bool {
 			return v.parser.HasIntermediate('$')
+		}),
+		WithSubParams(func(idx int) []int {
+			return v.parser.SubParams(idx)
 		}),
 	)
 	v.esc = NewESCHandler(
@@ -201,11 +207,18 @@ func (v *VTerm) processByte(b byte) {
 	case ActionEscInterDispatch:
 		v.esc.InterDispatch(scr, final, v.parser.HasIntermediate('#'))
 	case ActionOSCEnd:
+		if v.parser.OSCOverflow > 0 {
+			v.oscOverflow += v.parser.OSCOverflow
+		}
 		if v.OSCHandler != nil {
 			code, data := v.parser.OSCData()
 			v.OSCHandler(code, data)
 		}
+		v.parser.OSCOverflow = 0
 	case ActionDCSEnd:
+		if v.parser.DCSOverflow > 0 {
+			v.dcsOverflow += v.parser.DCSOverflow
+		}
 		data := v.parser.DCSData()
 		if len(data) >= 2 && data[0] == '$' && data[1] == 'q' {
 			v.handleDECRQSS(data[2:])
@@ -213,6 +226,7 @@ func (v *VTerm) processByte(b byte) {
 		if v.DCSHandler != nil {
 			v.DCSHandler(data)
 		}
+		v.parser.DCSOverflow = 0
 	case ActionCharsetDesignation:
 		v.handleCharsetDesignation(final)
 	}
@@ -260,18 +274,30 @@ func (v *VTerm) handleControl(b byte) {
 func (v *VTerm) handleCharsetDesignation(designator byte) {
 	scr := v.active
 	slot := v.parser.CharsetSlot()
-	charset := 0 // default: ASCII
+	charset := 0
 	switch designator {
-	case '0': // VT100 Special Graphics (line-drawing)
+	case '0':
 		charset = 1
-	case 'B', '@': // ASCII
+	case 'B', '@':
 		charset = 0
+	default:
+		return
 	}
 	switch slot {
 	case '(':
 		scr.G0Charset = charset
 	case ')':
 		scr.G1Charset = charset
+	case '*':
+		scr.G2Charset = charset
+	case '+':
+		scr.G3Charset = charset
+	case '-':
+		scr.G1Charset = charset
+	case '.':
+		scr.G2Charset = charset
+	case '/':
+		scr.G3Charset = charset
 	}
 }
 
@@ -306,6 +332,8 @@ func (v *VTerm) switchToAlt(mode int) {
 		v.primary.Saved1049Attr = v.primary.CurAttr
 		v.primary.Saved1049G0Charset = v.primary.G0Charset
 		v.primary.Saved1049G1Charset = v.primary.G1Charset
+		v.primary.Saved1049G2Charset = v.primary.G2Charset
+		v.primary.Saved1049G3Charset = v.primary.G3Charset
 		v.primary.Saved1049GL = v.primary.GL
 		v.primary.Saved1049OriginMode = v.primary.OriginMode
 		v.primary.Saved1049PendingWrap = v.primary.PendingWrap
@@ -319,18 +347,16 @@ func (v *VTerm) switchToAlt(mode int) {
 		v.primary.Saved1049KeypadApplication = v.primary.KeypadApplication
 		v.primary.Saved1049LineFeedNewLine = v.primary.LineFeedNewLine
 		v.primary.Saved1049HighlightTracking = v.primary.HighlightTracking
-		// Clear alternate screen on entry.
+		v.primary.Saved1049MouseTracking = v.primary.MouseTracking
+		v.primary.Saved1049MouseSGR = v.primary.MouseSGR
 		v.alternate.EraseDisplay(2)
 		v.active = v.alternate
 		v.active.CurRow = 0
 		v.active.CurCol = 0
 		v.active.PendingWrap = false
 	case 1047:
-		// Switch to alternate screen, no cursor save, no clear on entry.
-		// Per xterm spec, mode 1047 clears the alternate screen on EXIT only.
 		v.active = v.alternate
-	default: // mode 47
-		// Switch without saving cursor or clearing.
+	default:
 		v.active = v.alternate
 	}
 }
@@ -343,11 +369,11 @@ func (v *VTerm) switchToPrimary(mode int) {
 	v.active = v.primary
 	switch mode {
 	case 1049:
-		// Restore cursor on primary from Saved1049* fields, clamped to screen bounds.
-		// Restore mode state first so cursor clamping respects origin mode.
 		v.primary.CurAttr = v.primary.Saved1049Attr
 		v.primary.G0Charset = v.primary.Saved1049G0Charset
 		v.primary.G1Charset = v.primary.Saved1049G1Charset
+		v.primary.G2Charset = v.primary.Saved1049G2Charset
+		v.primary.G3Charset = v.primary.Saved1049G3Charset
 		v.primary.GL = v.primary.Saved1049GL
 		v.primary.OriginMode = v.primary.Saved1049OriginMode
 		v.primary.PendingWrap = v.primary.Saved1049PendingWrap
@@ -361,6 +387,8 @@ func (v *VTerm) switchToPrimary(mode int) {
 		v.primary.KeypadApplication = v.primary.Saved1049KeypadApplication
 		v.primary.LineFeedNewLine = v.primary.Saved1049LineFeedNewLine
 		v.primary.HighlightTracking = v.primary.Saved1049HighlightTracking
+		v.primary.MouseTracking = v.primary.Saved1049MouseTracking
+		v.primary.MouseSGR = v.primary.Saved1049MouseSGR
 		if v.primary.OriginMode {
 			scrollTop, scrollBot := v.primary.ScrollRegion()
 			v.primary.CurRow = max(scrollTop, min(v.primary.Saved1049Row, scrollBot-1))
@@ -489,8 +517,8 @@ func (v *VTerm) String() string {
 		row := v.active.Cells[r]
 		// Find last non-blank cell.
 		last := -1
-		for c := len(row) - 1; c >= 0; c-- {
-			if row[c].Ch != ' ' && row[c].Ch != 0 {
+		for c, r := range slices.Backward(row) {
+			if r.Ch != ' ' && r.Ch != 0 {
 				last = c
 				break
 			}
@@ -624,9 +652,11 @@ func (v *VTerm) SynchronizedOutput() bool {
 // the call is a no-op. Thread-safe.
 func (v *VTerm) FocusIn() {
 	v.mu.Lock()
-	defer v.mu.Unlock()
-	if v.active.FocusReporting && v.ResponseWriter != nil {
-		v.ResponseWriter([]byte("\x1b[I"))
+	writer := v.ResponseWriter
+	enabled := v.active.FocusReporting
+	v.mu.Unlock()
+	if enabled && writer != nil {
+		writer([]byte("\x1b[I"))
 	}
 }
 
@@ -636,9 +666,11 @@ func (v *VTerm) FocusIn() {
 // the call is a no-op. Thread-safe.
 func (v *VTerm) FocusOut() {
 	v.mu.Lock()
-	defer v.mu.Unlock()
-	if v.active.FocusReporting && v.ResponseWriter != nil {
-		v.ResponseWriter([]byte("\x1b[O"))
+	writer := v.ResponseWriter
+	enabled := v.active.FocusReporting
+	v.mu.Unlock()
+	if enabled && writer != nil {
+		writer([]byte("\x1b[O"))
 	}
 }
 
@@ -674,6 +706,18 @@ func (v *VTerm) ScrollbackRow(i int) []Cell {
 	return v.primary.ScrollbackRow(i)
 }
 
+func (v *VTerm) OSCOverflow() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.oscOverflow
+}
+
+func (v *VTerm) DCSOverflow() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.dcsOverflow
+}
+
 // SetScrollback sets the maximum scrollback buffer size for the primary screen.
 // A value of 0 disables scrollback entirely. The existing scrollback is trimmed
 // if it exceeds the new maximum, or cleared if n==0. Thread-safe.
@@ -682,32 +726,42 @@ func (v *VTerm) SetScrollback(n int) {
 	defer v.mu.Unlock()
 
 	if n <= 0 {
-		// Disable scrollback entirely.
 		v.primary.Scrollback = nil
+		v.primary.ScrollbackWrapped = nil
 		v.primary.ScrollbackLen = 0
 		v.primary.ScrollbackHead = 0
 		v.primary.MaxScrollback = 0
 		return
 	}
 
-	v.primary.MaxScrollback = n
-
-	// Rebuild scrollback into a fresh linear buffer when the max changes.
-	// This avoids ring-buffer corruption when growing (head position becomes
-	// invalid relative to the new capacity).
-	if v.primary.ScrollbackLen > 0 {
-		// Determine how many lines to keep.
-		keep := min(v.primary.ScrollbackLen, n)
-		// Copy the most recent 'keep' lines in logical order.
+	oldMax := v.primary.MaxScrollback
+	oldLen := v.primary.ScrollbackLen
+	oldHead := v.primary.ScrollbackHead
+	if oldLen > 0 {
+		keep := min(oldLen, n)
 		newBuf := make([][]Cell, keep)
-		start := v.primary.ScrollbackLen - keep
+		newWrapped := make([]bool, keep)
+		start := oldLen - keep
 		for i := range keep {
-			newBuf[i] = v.primary.ScrollbackRow(start + i)
+			logical := start + i
+			physical := logical
+			if oldMax > 0 && oldLen == oldMax {
+				physical = (oldHead + logical) % oldMax
+			}
+			newBuf[i] = append([]Cell(nil), v.primary.Scrollback[physical]...)
+			if physical < len(v.primary.ScrollbackWrapped) {
+				newWrapped[i] = v.primary.ScrollbackWrapped[physical]
+			}
 		}
 		v.primary.Scrollback = newBuf
+		v.primary.ScrollbackWrapped = newWrapped
 		v.primary.ScrollbackLen = keep
-		v.primary.ScrollbackHead = keep % n // next write position
+		v.primary.ScrollbackHead = keep % n
+	} else {
+		v.primary.ScrollbackHead = 0
 	}
+	v.primary.MaxScrollback = n
+
 }
 
 // ScrollUp moves the viewport up by n lines in the scrollback buffer,

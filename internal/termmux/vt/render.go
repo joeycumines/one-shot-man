@@ -1,6 +1,7 @@
 package vt
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -153,8 +154,8 @@ func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 
 		// Find last non-blank cell (for plain text).
 		plainLast := -1
-		for c := len(row) - 1; c >= 0; c-- {
-			if row[c].Ch != ' ' && row[c].Ch != 0 {
+		for c, r := range slices.Backward(row) {
+			if r.Ch != ' ' && r.Ch != 0 {
 				plainLast = c
 				break
 			}
@@ -216,8 +217,9 @@ func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 			ansiPrev = Attr{}
 		}
 
-		// Plain text: newline between rows (not after last row with content).
-		if r < scr.Rows-1 && plainLast >= 0 {
+		// Plain text preserves every row boundary; trailing newlines are
+		// trimmed after all rows so interior and leading blank rows remain.
+		if r < scr.Rows-1 {
 			pb = append(pb, '\n')
 		}
 	}

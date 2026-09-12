@@ -44,6 +44,8 @@ go.work.sum
 test-scripts/
 /scratch/*
 !/scratch/.gitkeep
+/WIP.md
+/blueprint.json
 .pr-split-plan.json
 
 # Log file for use w/ custom targets

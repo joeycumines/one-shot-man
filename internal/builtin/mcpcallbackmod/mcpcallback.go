@@ -35,15 +35,14 @@ import (
 // may be dropped if loop terminated before Submit, promise may remain pending
 // only for hard Close (stranded is defined behavior, see track.go).
 func handleSettleErr(err error) {
-    if err == nil {
-        return
-    }
-    if errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
-        return
-    }
-    _ = err
+	if err == nil {
+		return
+	}
+	if errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
+		return
+	}
+	_ = err
 }
-
 
 // ---------------------------------------------------------------------------
 // Test injection infrastructure
@@ -314,65 +313,67 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 		cb.mu.Unlock()
 
 		return cb.adapter.TrackPromise(cb.baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-				res, err := func(ctx context.Context) (any, error) {
-			if err := cb.startListener(); err != nil {
-				cb.cleanup()
-				cb.mu.Lock()
-				cb.initialized = false
-				cb.mu.Unlock()
-				return nil, err
-			}
-
-			if err := cb.generateFiles(); err != nil {
-				cb.cleanup()
-				cb.mu.Lock()
-				cb.initialized = false
-				cb.mu.Unlock()
-				return nil, err
-			}
-
-			// Start accept loop for MCP connections.
-			// Use signal.NotifyContext for automatic cleanup on SIGINT/SIGTERM.
-			parent := cb.parentCtx
-			if parent == nil {
-				parent = cb.baseCtx
-			}
-			nctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
-			cb.mu.Lock()
-			cb.stop = stop
-			cb.ctx = nctx
-			listener := cb.listener
-			cb.mu.Unlock()
-
-			go func() {
-				cb.acceptLoop(nctx, listener)
-			}()
-
-			// Watch for context cancellation (signal or parent cancel) and auto-cleanup.
-			go func() {
-				<-nctx.Done()
-				cb.mu.Lock()
-				alreadyClosed := cb.closed
-				cb.closed = true
-				cb.mu.Unlock()
-				if !alreadyClosed {
+			res, err := func(ctx context.Context) (any, error) {
+				if err := cb.startListener(); err != nil {
 					cb.cleanup()
+					cb.mu.Lock()
+					cb.initialized = false
+					cb.mu.Unlock()
+					return nil, err
 				}
-			}()
 
-			// Notify test watchers that a callback is ready for injection.
-			notifyWatchers(cb)
-			return nil, nil
-		}(ctx)
-				if err != nil {
-					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-					return
+				if err := cb.generateFiles(); err != nil {
+					cb.cleanup()
+					cb.mu.Lock()
+					cb.initialized = false
+					cb.mu.Unlock()
+					return nil, err
 				}
-				_ = settle.Settle(false, func(rt *goja.Runtime) any {
-					if res == nil { return goja.Undefined() }
-					return res
-				})
+
+				// Start accept loop for MCP connections.
+				// Use signal.NotifyContext for automatic cleanup on SIGINT/SIGTERM.
+				parent := cb.parentCtx
+				if parent == nil {
+					parent = cb.baseCtx
+				}
+				nctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+				cb.mu.Lock()
+				cb.stop = stop
+				cb.ctx = nctx
+				listener := cb.listener
+				cb.mu.Unlock()
+
+				go func() {
+					cb.acceptLoop(nctx, listener)
+				}()
+
+				// Watch for context cancellation (signal or parent cancel) and auto-cleanup.
+				go func() {
+					<-nctx.Done()
+					cb.mu.Lock()
+					alreadyClosed := cb.closed
+					cb.closed = true
+					cb.mu.Unlock()
+					if !alreadyClosed {
+						cb.cleanup()
+					}
+				}()
+
+				// Notify test watchers that a callback is ready for injection.
+				notifyWatchers(cb)
+				return nil, nil
+			}(ctx)
+			if err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
+			}
+			_ = settle.Settle(false, func(rt *goja.Runtime) any {
+				if res == nil {
+					return goja.Undefined()
+				}
+				return res
 			})
+		})
 	}
 }
 
@@ -576,19 +577,21 @@ func (cb *mcpCallback) jsClose() func(call goja.FunctionCall) goja.Value {
 		cb.mu.Unlock()
 
 		return cb.adapter.TrackPromise(cb.baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-				res, err := func(ctx context.Context) (any, error) {
-			cb.cleanup()
-			return goja.Undefined(), nil
-		}(ctx)
-				if err != nil {
-					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-					return
+			res, err := func(ctx context.Context) (any, error) {
+				cb.cleanup()
+				return goja.Undefined(), nil
+			}(ctx)
+			if err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
+			}
+			_ = settle.Settle(false, func(rt *goja.Runtime) any {
+				if res == nil {
+					return goja.Undefined()
 				}
-				_ = settle.Settle(false, func(rt *goja.Runtime) any {
-					if res == nil { return goja.Undefined() }
-					return res
-				})
+				return res
 			})
+		})
 	}
 }
 
@@ -771,97 +774,99 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 		cb.mu.Unlock()
 
 		return cb.adapter.TrackPromise(cb.baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-				res, err := func(ctx context.Context) (any, error) {
-			timeout := time.Duration(timeoutMs) * time.Millisecond
-			deadline := time.NewTimer(timeout)
-			defer deadline.Stop()
+			res, err := func(ctx context.Context) (any, error) {
+				timeout := time.Duration(timeoutMs) * time.Millisecond
+				deadline := time.NewTimer(timeout)
+				defer deadline.Stop()
 
-			interval := time.Duration(checkIntervalMs) * time.Millisecond
-			ticker := time.NewTicker(interval)
-			defer ticker.Stop()
+				interval := time.Duration(checkIntervalMs) * time.Millisecond
+				ticker := time.NewTicker(interval)
+				defer ticker.Stop()
 
-			startTime := time.Now()
-			capturedTimeoutMs := timeoutMs // capture for closures
+				startTime := time.Now()
+				capturedTimeoutMs := timeoutMs // capture for closures
 
-			// Pre-compute context done channel to avoid IIFE per iteration
-			var ctxDone <-chan struct{}
-			if nctx != nil {
-				ctxDone = nctx.Done()
-			} else {
-				ctxDone = make(chan struct{}) // never fires
-			}
-
-			waitResult := func(data any, errMsg string) map[string]any {
-				result := map[string]any{"data": nil, "error": nil}
-				if data != nil {
-					result["data"] = data
+				// Pre-compute context done channel to avoid IIFE per iteration
+				var ctxDone <-chan struct{}
+				if nctx != nil {
+					ctxDone = nctx.Done()
+				} else {
+					ctxDone = make(chan struct{}) // never fires
 				}
-				if errMsg != "" {
-					result["error"] = errMsg
-				}
-				return result
-			}
 
-			for {
-				select {
-				case data := <-waiter.ch:
-					var parsed any
-					if len(data) > 0 {
-						if err := json.Unmarshal(data, &parsed); err != nil {
-							return waitResult(nil, "waitForAsync: failed to parse tool data: "+err.Error()), nil
-						}
+				waitResult := func(data any, errMsg string) map[string]any {
+					result := map[string]any{"data": nil, "error": nil}
+					if data != nil {
+						result["data"] = data
 					}
-					return waitResult(parsed, ""), nil
+					if errMsg != "" {
+						result["error"] = errMsg
+					}
+					return result
+				}
 
-				case <-ticker.C:
-					// Alive check — trampoline to event loop goroutine for Goja safety
-					if aliveCheckFn != nil {
-						aliveCh := make(chan bool, 1)
-						if submitErr := cb.adapter.Submit(func(_ *goja.Runtime) {
-							ret, callErr := aliveCheckFn(goja.Undefined())
-							aliveCh <- (callErr != nil || ret.ToBoolean())
-						}); submitErr != nil {
-							return waitResult(nil, "event loop terminated during wait for "+name), nil
-						}
-						select {
-						case alive := <-aliveCh:
-							if !alive {
-								return waitResult(nil, "process exited during wait for "+name), nil
+				for {
+					select {
+					case data := <-waiter.ch:
+						var parsed any
+						if len(data) > 0 {
+							if err := json.Unmarshal(data, &parsed); err != nil {
+								return waitResult(nil, "waitForAsync: failed to parse tool data: "+err.Error()), nil
 							}
-						case <-deadline.C:
-							return waitResult(nil, fmt.Sprintf("timeout waiting for %s after %dms", name, capturedTimeoutMs)), nil
-						case <-ctxDone:
-							return waitResult(nil, "MCPCallback closed during wait for "+name), nil
 						}
+						return waitResult(parsed, ""), nil
+
+					case <-ticker.C:
+						// Alive check — trampoline to event loop goroutine for Goja safety
+						if aliveCheckFn != nil {
+							aliveCh := make(chan bool, 1)
+							if submitErr := cb.adapter.Submit(func(_ *goja.Runtime) {
+								ret, callErr := aliveCheckFn(goja.Undefined())
+								aliveCh <- (callErr != nil || ret.ToBoolean())
+							}); submitErr != nil {
+								return waitResult(nil, "event loop terminated during wait for "+name), nil
+							}
+							select {
+							case alive := <-aliveCh:
+								if !alive {
+									return waitResult(nil, "process exited during wait for "+name), nil
+								}
+							case <-deadline.C:
+								return waitResult(nil, fmt.Sprintf("timeout waiting for %s after %dms", name, capturedTimeoutMs)), nil
+							case <-ctxDone:
+								return waitResult(nil, "MCPCallback closed during wait for "+name), nil
+							}
+						}
+
+						// Progress callback — fire-and-forget on event loop
+						if progressFn != nil {
+							elapsed := time.Since(startTime).Milliseconds()
+							handleSettleErr(cb.adapter.Submit(func(_ *goja.Runtime) {
+								_, _ = progressFn(goja.Undefined(),
+									cb.runtime.ToValue(elapsed),
+									cb.runtime.ToValue(capturedTimeoutMs))
+							}))
+						}
+
+					case <-deadline.C:
+						return waitResult(nil, fmt.Sprintf("timeout waiting for %s after %dms", name, capturedTimeoutMs)), nil
+
+					case <-ctxDone:
+						return waitResult(nil, "MCPCallback closed during wait for "+name), nil
 					}
-
-					// Progress callback — fire-and-forget on event loop
-					if progressFn != nil {
-						elapsed := time.Since(startTime).Milliseconds()
-						handleSettleErr(cb.adapter.Submit(func(_ *goja.Runtime) {
-							_, _ = progressFn(goja.Undefined(),
-								cb.runtime.ToValue(elapsed),
-								cb.runtime.ToValue(capturedTimeoutMs))
-						}))
-					}
-
-				case <-deadline.C:
-					return waitResult(nil, fmt.Sprintf("timeout waiting for %s after %dms", name, capturedTimeoutMs)), nil
-
-				case <-ctxDone:
-					return waitResult(nil, "MCPCallback closed during wait for "+name), nil
 				}
+			}(ctx)
+			if err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
 			}
-		}(ctx)
-				if err != nil {
-					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-					return
+			_ = settle.Settle(false, func(rt *goja.Runtime) any {
+				if res == nil {
+					return goja.Undefined()
 				}
-				_ = settle.Settle(false, func(rt *goja.Runtime) any {
-					if res == nil { return goja.Undefined() }
-					return res
-				})
+				return res
 			})
+		})
 	}
 }
 

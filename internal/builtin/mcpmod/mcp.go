@@ -342,22 +342,24 @@ func (s *mcpServer) jsRun() func(call goja.FunctionCall) goja.Value {
 		s.mu.Unlock()
 
 		return s.adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-				res, err := func(ctx context.Context) (any, error) {
-			err := s.server.Run(ctx, &mcp.StdioTransport{})
-			if err != nil && !errors.Is(err, context.Canceled) {
-				return nil, err
-			}
-			return nil, nil
-		}(ctx)
-				if err != nil {
-					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-					return
+			res, err := func(ctx context.Context) (any, error) {
+				err := s.server.Run(ctx, &mcp.StdioTransport{})
+				if err != nil && !errors.Is(err, context.Canceled) {
+					return nil, err
 				}
-				_ = settle.Settle(false, func(rt *goja.Runtime) any {
-					if res == nil { return goja.Undefined() }
-					return res
-				})
+				return nil, nil
+			}(ctx)
+			if err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+				return
+			}
+			_ = settle.Settle(false, func(rt *goja.Runtime) any {
+				if res == nil {
+					return goja.Undefined()
+				}
+				return res
 			})
+		})
 	}
 }
 

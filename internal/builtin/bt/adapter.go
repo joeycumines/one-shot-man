@@ -8,7 +8,6 @@ import (
 
 	bt "github.com/joeycumines/go-behaviortree"
 	"github.com/joeycumines/goja"
-	"github.com/joeycumines/goroutineid"
 )
 
 // JS status string constants - single source of truth for status string values.
@@ -49,13 +48,6 @@ const (
 // This prevents memory leaks from unbounded context derivation in high-churn
 // environments. The adapter can be stopped by cancelling the parent context or
 // creating a new adapter instance.
-//
-// MEDIUM #10 FIX: Stop() method is only accessible from Go side
-// The Stop() method exists on *JSLeafAdapter for Go consumers, but the
-// NewJSLeafAdapter returns a closure for bt.Node interface. There is no
-// way to call Stop() from JavaScript code. This is intentional - JS nodes
-// are designed as one-shot resources. If you need explicit cancellation from JS,
-// use context cancellation patterns or create new nodes instead.
 type JSLeafAdapter struct {
 	bridge *Bridge
 	tick   goja.Callable // The JS tick function to call
@@ -358,8 +350,7 @@ func BlockingJSLeaf(ctx context.Context, bridge *Bridge, vm *goja.Runtime, tick 
 
 			// Check if we're already on the event loop goroutine
 			// If so and we have a VM reference, execute directly to avoid deadlock
-			eventLoopID := bridge.eventLoopGoroutineID.Load()
-			onEventLoop := eventLoopID > 0 && goroutineid.Get() == eventLoopID && vm != nil
+			onEventLoop := bridge != nil && bridge.loop != nil && bridge.loop.IsCallbackOwner() && vm != nil
 
 			if onEventLoop {
 				// We're on the event loop - execute directly (SYNC ONLY)

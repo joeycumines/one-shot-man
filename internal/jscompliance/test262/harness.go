@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -112,12 +113,7 @@ type tc39Meta struct {
 }
 
 func (m *tc39Meta) hasFlag(flag string) bool {
-	for _, f := range m.Flags {
-		if f == flag {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m.Flags, flag)
 }
 
 // parseTestFile parses yaml frontmatter and returns meta + full source.

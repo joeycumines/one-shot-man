@@ -70,7 +70,7 @@ type EventLoopProvider interface {
 	Runtime() *goja.Runtime
 	Registry() *require.Registry
 	Adapter() *gojaeventloop.Adapter
-	Promisify(ctx context.Context, fn func(context.Context) (any, error)) goeventloop.Promise
+	Promisify(ctx context.Context, fn func(context.Context) (any, error)) goeventloop.Future
 }
 
 // BubbleteaManager is the bubbletea manager returned by Register.
@@ -78,16 +78,6 @@ type BubbleteaManager = *bubbleteamod.Manager
 
 // BubblezoneManager is the bubblezone manager returned by Register.
 type BubblezoneManager = *bubblezonemod.Manager
-
-// bridgeJSRunner adapts *bt.Bridge to bubbletea.JSRunner (and TrySyncJSRunner) without
-// requiring Bridge itself to expose an alias.
-type bridgeJSRunner struct{ *bt.Bridge }
-
-func (b *bridgeJSRunner) RunSync(fn func(*goja.Runtime) error) error { return b.Bridge.RunSync(fn) }
-
-func (b *bridgeJSRunner) TryRunSync(currentVM *goja.Runtime, fn func(*goja.Runtime) error) error {
-	return b.Bridge.TryRunSync(currentVM, fn)
-}
 
 // RegisterResult holds the managers created during registration.
 type RegisterResult struct {
@@ -153,7 +143,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	btBridge := bt.NewBridge(ctx, eventLoopProvider.Loop(), eventLoopProvider.Runtime(), registry, eventLoopProvider.Adapter())
 	registry.RegisterNativeModule(prefix+"pabt", pabtmod.Require(ctx, btBridge))
 
-	bubbleteaMgr := bubbleteamod.NewManager(ctx, terminalReader(terminalProvider), terminalWriter(terminalProvider), &bridgeJSRunner{btBridge}, nil, nil)
+	bubbleteaMgr := bubbleteamod.NewManager(ctx, terminalReader(terminalProvider), terminalWriter(terminalProvider), btBridge, nil, nil)
 	bubbleteaMgr.SetPromisify(eventLoopProvider.Promisify)
 	registry.RegisterNativeModule(prefix+"bubbletea", bubbleteamod.Require(ctx, bubbleteaMgr))
 

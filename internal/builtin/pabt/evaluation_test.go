@@ -1,6 +1,7 @@
 package pabt
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -359,7 +360,7 @@ type mockPanicBridge struct {
 	t *testing.T
 }
 
-func (m *mockPanicBridge) RunSync(fn func(*goja.Runtime) error) error {
+func (m *mockPanicBridge) RunSync(ctx context.Context, fn func(*goja.Runtime) error) error {
 	m.t.Fatal("ExprCondition should NOT call RunSync - this indicates Goja is being used incorrectly!")
 	return nil
 }

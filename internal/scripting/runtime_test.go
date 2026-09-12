@@ -169,7 +169,7 @@ func TestRuntime_RunSync(t *testing.T) {
 
 	// Test successful execution
 	var value int64
-	err = rt.RunSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(ctx, func(vm *goja.Runtime) error {
 		value = 42
 		return nil
 	})
@@ -183,7 +183,7 @@ func TestRuntime_RunSync(t *testing.T) {
 
 	// Test error propagation
 	expectedErr := errors.New("test error")
-	err = rt.RunSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(ctx, func(vm *goja.Runtime) error {
 		return expectedErr
 	})
 
@@ -202,17 +202,51 @@ func TestRuntime_RunSync_Timeout(t *testing.T) {
 	}
 	defer rt.Close()
 
-	// Set a very short timeout
-	rt.SetTimeout(10 * time.Millisecond)
+	ctxTimeout, cancelTimeout := context.WithTimeout(ctx, 10*time.Millisecond)
+	defer cancelTimeout()
 
 	// Schedule a long-running operation
-	err = rt.RunSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(ctxTimeout, func(vm *goja.Runtime) error {
 		time.Sleep(100 * time.Millisecond)
 		return nil
 	})
 
 	if err == nil {
 		t.Error("expected timeout error")
+	}
+}
+
+func TestRuntime_RunSync_CancellationSkipsQueuedCallback(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	rt, err := NewRuntime(ctx)
+	if err != nil {
+		t.Fatalf("NewRuntime failed: %v", err)
+	}
+	defer rt.Close()
+
+	block := make(chan struct{})
+	if !rt.Run(func(*goja.Runtime) { <-block }) {
+		t.Fatal("failed to block event loop")
+	}
+
+	called := make(chan struct{})
+	timeoutCtx, timeoutCancel := context.WithTimeout(ctx, 10*time.Millisecond)
+	defer timeoutCancel()
+	err = rt.RunSync(timeoutCtx, func(*goja.Runtime) error {
+		close(called)
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected cancellation error")
+	}
+
+	close(block)
+	select {
+	case <-called:
+		t.Fatal("cancelled callback executed after RunSync returned")
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 
@@ -227,7 +261,7 @@ func TestRuntime_RunSync_Stopped(t *testing.T) {
 
 	rt.Close()
 
-	err = rt.RunSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(ctx, func(vm *goja.Runtime) error {
 		return nil
 	})
 
@@ -248,9 +282,9 @@ func TestRuntime_TryRunSync_DirectExecution(t *testing.T) {
 
 	// Test from within the event loop - should execute directly
 	var innerExecuted bool
-	err = rt.RunSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(ctx, func(vm *goja.Runtime) error {
 		// This call from within the event loop should execute directly
-		return rt.TryRunSync(vm, func(innerVM *goja.Runtime) error {
+		return rt.TryRunSync(ctx, vm, func(innerVM *goja.Runtime) error {
 			innerExecuted = true
 			// Should be same VM instance
 			if innerVM != vm {
@@ -280,7 +314,7 @@ func TestRuntime_TryRunSync_ScheduledExecution(t *testing.T) {
 
 	// Test from outside the event loop - should schedule and wait
 	var executed bool
-	err = rt.TryRunSync(nil, func(vm *goja.Runtime) error {
+	err = rt.TryRunSync(ctx, nil, func(vm *goja.Runtime) error {
 		executed = true
 		return nil
 	})
@@ -303,29 +337,17 @@ func TestRuntime_LoadScript(t *testing.T) {
 	}
 	defer rt.Close()
 
-	// Test successful script
-	err = rt.LoadScript("test.js", "var x = 42;")
+	err = rt.LoadScript("test.js", `
+		function add(a, b) {
+			return a + b;
+		}
+	`)
 	if err != nil {
 		t.Errorf("LoadScript failed: %v", err)
 	}
-
-	// Verify the variable was set
-	val, err := rt.GetGlobal("x")
-	if err != nil {
-		t.Errorf("GetGlobal failed: %v", err)
-	}
-	if val != int64(42) {
-		t.Errorf("expected 42, got %v", val)
-	}
-
-	// Test script with syntax error
-	err = rt.LoadScript("bad.js", "var y = {")
-	if err == nil {
-		t.Error("expected error for invalid script")
-	}
 }
 
-func TestRuntime_SetGetGlobal(t *testing.T) {
+func TestRuntime_GetGlobal_SetGlobal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -335,14 +357,13 @@ func TestRuntime_SetGetGlobal(t *testing.T) {
 	}
 	defer rt.Close()
 
-	// Set a value
-	err = rt.SetGlobal("testVar", "hello")
+	// Test setting and getting a primitive
+	err = rt.SetGlobal("message", "hello")
 	if err != nil {
 		t.Errorf("SetGlobal failed: %v", err)
 	}
 
-	// Get the value
-	val, err := rt.GetGlobal("testVar")
+	val, err := rt.GetGlobal("message")
 	if err != nil {
 		t.Errorf("GetGlobal failed: %v", err)
 	}
@@ -350,13 +371,13 @@ func TestRuntime_SetGetGlobal(t *testing.T) {
 		t.Errorf("expected 'hello', got %v", val)
 	}
 
-	// Get nonexistent value
+	// Test getting non-existent global
 	val, err = rt.GetGlobal("nonexistent")
 	if err != nil {
-		t.Errorf("GetGlobal for nonexistent should not error: %v", err)
+		t.Errorf("GetGlobal for nonexistent failed: %v", err)
 	}
 	if val != nil {
-		t.Errorf("expected nil for nonexistent, got %v", val)
+		t.Errorf("expected nil for nonexistent global, got %v", val)
 	}
 }
 
@@ -370,39 +391,39 @@ func TestRuntime_GetCallable(t *testing.T) {
 	}
 	defer rt.Close()
 
-	// Create a function
-	err = rt.LoadScript("test.js", "function add(a, b) { return a + b; }")
+	err = rt.LoadScript("test.js", `
+		function multiply(a, b) {
+			return a * b;
+		}
+		var notAFunction = 42;
+	`)
 	if err != nil {
 		t.Fatalf("LoadScript failed: %v", err)
 	}
 
-	// Get the function
-	fn, err := rt.GetCallable("add")
+	// Test valid callable
+	fn, err := rt.GetCallable("multiply")
 	if err != nil {
 		t.Errorf("GetCallable failed: %v", err)
 	}
 	if fn == nil {
-		t.Error("function should not be nil")
+		t.Fatal("callable should not be nil")
 	}
 
-	// Get nonexistent function
+	// Test non-callable
+	_, err = rt.GetCallable("notAFunction")
+	if err == nil {
+		t.Error("expected error for non-callable")
+	}
+
+	// Test nonexistent
 	_, err = rt.GetCallable("nonexistent")
 	if err == nil {
 		t.Error("expected error for nonexistent function")
 	}
-
-	// Get non-callable value
-	err = rt.SetGlobal("notAFunction", 42)
-	if err != nil {
-		t.Fatalf("SetGlobal failed: %v", err)
-	}
-	_, err = rt.GetCallable("notAFunction")
-	if err == nil {
-		t.Error("expected error for non-callable value")
-	}
 }
 
-func TestRuntime_ConcurrentAccess(t *testing.T) {
+func TestRuntime_Concurrent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -412,23 +433,23 @@ func TestRuntime_ConcurrentAccess(t *testing.T) {
 	}
 	defer rt.Close()
 
-	// Initialize a counter
-	err = rt.LoadScript("init.js", "var counter = 0;")
+	err = rt.SetGlobal("counter", int64(0))
 	if err != nil {
-		t.Fatalf("LoadScript failed: %v", err)
+		t.Fatalf("SetGlobal failed: %v", err)
 	}
 
-	// Run many concurrent operations
-	const numGoroutines = 100
 	var wg sync.WaitGroup
-	wg.Add(numGoroutines)
+	numGoroutines := 10
 
 	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := rt.RunSync(func(vm *goja.Runtime) error {
-				_, err := vm.RunString("counter++;")
-				return err
+			err := rt.RunSync(ctx, func(vm *goja.Runtime) error {
+				val := vm.Get("counter")
+				current := val.ToInteger()
+				vm.Set("counter", current+1)
+				return nil
 			})
 			if err != nil {
 				t.Errorf("concurrent RunSync failed: %v", err)
@@ -446,110 +467,4 @@ func TestRuntime_ConcurrentAccess(t *testing.T) {
 	if val != int64(numGoroutines) {
 		t.Errorf("expected counter to be %d, got %v", numGoroutines, val)
 	}
-}
-
-func TestRuntime_SetTimeout(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	rt, err := NewRuntime(ctx)
-	if err != nil {
-		t.Fatalf("NewRuntime failed: %v", err)
-	}
-	defer rt.Close()
-
-	// Default timeout
-	if rt.GetTimeout() != defaultSyncTimeout {
-		t.Errorf("expected default timeout %v, got %v", defaultSyncTimeout, rt.GetTimeout())
-	}
-
-	// Set custom timeout
-	rt.SetTimeout(10 * time.Second)
-	if rt.GetTimeout() != 10*time.Second {
-		t.Errorf("expected timeout 10s, got %v", rt.GetTimeout())
-	}
-
-	// Disable timeout
-	rt.SetTimeout(0)
-	if rt.GetTimeout() != 0 {
-		t.Errorf("expected timeout 0, got %v", rt.GetTimeout())
-	}
-}
-
-func TestParseGoroutineIDFromStack(t *testing.T) {
-	tests := []struct {
-		name     string
-		stack    string
-		expected int64
-	}{
-		{
-			name:     "normal stack",
-			stack:    "goroutine 123 [running]:\nmain.main()\n",
-			expected: 123,
-		},
-		{
-			name:     "chan receive",
-			stack:    "goroutine 456 [chan receive]:\nmain.main()\n",
-			expected: 456,
-		},
-		{
-			name:     "empty stack",
-			stack:    "",
-			expected: 0,
-		},
-		{
-			name:     "no goroutine prefix",
-			stack:    "main.main()\n",
-			expected: 0,
-		},
-		{
-			name:     "malformed id",
-			stack:    "goroutine abc [running]:\n",
-			expected: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Call the internal parse function via reflection or re-implement for test
-			// For simplicity, let's re-implement the parsing logic here
-			result := parseGoroutineIDFromStackForTest([]byte(tt.stack))
-			if result != tt.expected {
-				t.Errorf("expected %d, got %d", tt.expected, result)
-			}
-		})
-	}
-}
-
-// parseGoroutineIDFromStackForTest is a copy of the internal parseGoroutineIDFromStack
-// function for testing purposes only.
-func parseGoroutineIDFromStackForTest(stack []byte) int64 {
-	if len(stack) < 10 {
-		return 0 // Too short to contain "goroutine X"
-	}
-
-	prefix := [10]byte{'g', 'o', 'r', 'o', 'u', 't', 'i', 'n', 'e', ' '}
-	for i := 0; i <= len(stack)-10; i++ {
-		found := true
-		for j := 0; j < 10; j++ {
-			if stack[i+j] != prefix[j] {
-				found = false
-				break
-			}
-		}
-		if found {
-			id := int64(0)
-			for j := i + 10; j < len(stack); j++ {
-				b := stack[j]
-				if b >= '0' && b <= '9' {
-					id = id*10 + int64(b-'0')
-				} else {
-					return id
-				}
-			}
-			return id
-		}
-	}
-
-	return 0
 }

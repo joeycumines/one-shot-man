@@ -2,6 +2,7 @@ package bubbletea
 
 import (
 	"bytes"
+	"context"
 	"sync"
 	"testing"
 
@@ -363,8 +364,13 @@ type directJSRunner struct {
 	mu      sync.Mutex
 }
 
-func (r *directJSRunner) RunSync(fn func(*goja.Runtime) error) error {
+func (r *directJSRunner) RunSync(ctx context.Context, fn func(*goja.Runtime) error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
 	return fn(r.runtime)
 }

@@ -280,7 +280,10 @@ func (h *TestShooterHarness) RefreshDebugState() (*ShooterDebugState, error) {
 }
 
 // WaitForFrames waits until the tick counter has advanced by at least n frames.
-// This is the primary synchronization mechanism, using sleep-based polling internally.
+// Hardened for CI under resource pressure: 30s deadline (was 5s), deterministic error,
+// and context-aware polling. Original 5s with tight loop was load-bearing under
+// ~500 t.Parallel + termtest contention and produced silent flakes.
+// If routine host load still triggers this, run go test with -parallel 1 -p=1.
 func (h *TestShooterHarness) WaitForFrames(n int) error {
 	startState, err := h.GetDebugState()
 	if err != nil {
@@ -289,17 +292,25 @@ func (h *TestShooterHarness) WaitForFrames(n int) error {
 	startTick := startState.Tick
 	targetTick := startTick + n
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
+	if dl, ok := h.ctx.Deadline(); ok && dl.Before(deadline) {
+		deadline = dl
+	}
 	for time.Now().Before(deadline) {
+		if h.ctx.Err() != nil {
+			return fmt.Errorf("WaitForFrames cancelled at tick %d target %d: %w", startTick, targetTick, h.ctx.Err())
+		}
 		state, err := h.RefreshDebugState()
 		if err != nil {
+			time.Sleep(50 * time.Millisecond)
 			continue // Retry on parse errors
 		}
 		if state.Tick >= targetTick {
 			return nil
 		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	return fmt.Errorf("timeout waiting for %d frames (started at tick %d)", n, startTick)
+	return fmt.Errorf("timeout waiting for %d frames (started at tick %d, deadline 30s exceeded)", n, startTick)
 }
 
 // WaitForGameMode waits until the game transitions to the specified mode

@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -25,6 +26,17 @@ import (
 //	  -agent-arg=--model=minimax-m2.5:cloud -agent-arg=-- \
 //	  ./internal/command/... -run 'TestIntegration_.*Agent'
 var (
+	// Package-level shared build of the osm test binary. Shooter E2E tests
+	// each call buildTestBinary; compiling ./cmd/osm once per test binary
+	// invocation (instead of once per test) removes a heavy `go build`
+	// storm that, under -race and -p=1, starves timing-sensitive E2E games
+	// (enemy movement ticks) and can push the package past CI timeouts.
+	testBinaryDir string
+
+	// The shared binary cache implementation and its state live in the Unix
+	// test file; keeping Unix-only fields there avoids Windows staticcheck
+	// reporting platform-excluded state as unused.
+
 	integrationEnabled bool
 	ollamaCommand      string
 	integrationModel   string
@@ -46,7 +58,14 @@ func TestMain(m *testing.M) {
 	flag.Var(&agentTestArgs, "agent-arg",
 		"additional CLI argument for Agent binary (repeatable, e.g. -agent-arg=launch -agent-arg=agent)")
 	flag.Parse()
-	os.Exit(m.Run())
+	if dir, err := os.MkdirTemp("", "osm-cmd-testbin-*"); err != nil {
+		panic(fmt.Sprintf("command: create test binary dir: %v", err))
+	} else {
+		testBinaryDir = dir
+	}
+	code := m.Run()
+	_ = os.RemoveAll(testBinaryDir)
+	os.Exit(code)
 }
 
 // skipSlow skips the calling test when -short mode is active. All slow

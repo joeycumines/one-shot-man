@@ -51,7 +51,7 @@ func eventStreamTestEnv(t *testing.T) (*goja.Runtime, func(string) goja.Value) {
 	runJS := func(script string) goja.Value {
 		t.Helper()
 		var res goja.Value
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(ctx, func(vm *goja.Runtime) error {
 			var e error
 			res, e = vm.RunString(script)
 			return e

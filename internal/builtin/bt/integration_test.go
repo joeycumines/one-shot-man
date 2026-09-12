@@ -371,7 +371,7 @@ func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
 	var promiseError error
 
 	// Attach .then() callback with Go-native notification
-	err = bridge.RunSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		managerObj := vm.Get("testManager").ToObject(vm)
 		doneFn := managerObj.Get("done")
 		doneCallable, ok := goja.AssertFunction(doneFn)
@@ -514,7 +514,7 @@ func TestIntegration_SharedModeTickerShutdown(t *testing.T) {
 	var promiseError error
 
 	// Get the ticker's done promise and attach .then() callback with Go notification
-	err = bridge.RunSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		tickerObj := vm.Get("testTicker").ToObject(vm)
 		doneFn := tickerObj.Get("done")
 		doneCallable, ok := goja.AssertFunction(doneFn)
@@ -563,7 +563,7 @@ func TestIntegration_SharedModeTickerShutdown(t *testing.T) {
 	// Stop the ticker directly via the event loop. This settles the
 	// done promise while the event loop is still running, allowing
 	// the promise callbacks to be dispatched.
-	err = bridge.RunSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		tickerObj := vm.Get("testTicker").ToObject(vm)
 		stopFn := tickerObj.Get("stop")
 		if stopCallable, ok := goja.AssertFunction(stopFn); ok {

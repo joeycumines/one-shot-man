@@ -20,6 +20,9 @@ type Terminal struct {
 
 // NewTerminal creates a new terminal interface for the scripting engine.
 func NewTerminal(ctx context.Context, engine *Engine) *Terminal {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return &Terminal{
 		engine:     engine,
 		tuiManager: engine.GetTUIManager(),
@@ -72,15 +75,25 @@ func (t *Terminal) Run() {
 
 	// Wait for the event loop to naturally quiesce (or be canceled by signal).
 	// This replaces the manual done channel and select loop.
+	signalCtx, signalCancel := context.WithCancel(context.Background())
+	signalDone := make(chan struct{})
+	defer signalCancel()
 	go func() {
-		sig := <-sigChan
-		// Signal received. Trigger a graceful exit of the prompt.
-		traceExit(fmt.Sprintf("signal received: %v", sig))
-		_, _ = fmt.Fprintf(t.tuiManager.writer, "\n\nReceived signal %v, shutting down...\n", sig)
-		t.tuiManager.TriggerExit()
+		defer close(signalDone)
+		select {
+		case sig := <-sigChan:
+			// Signal received. Trigger a graceful exit of the prompt.
+			traceExit(fmt.Sprintf("signal received: %v", sig))
+			_, _ = fmt.Fprintf(t.tuiManager.writer, "\n\nReceived signal %v, shutting down...\n", sig)
+			t.tuiManager.TriggerExit()
+		case <-signalCtx.Done():
+		}
 	}()
 
 	t.engine.Wait()
+	signalCancel()
+	signal.Stop(sigChan)
+	<-signalDone
 	traceExit("Engine wait complete (loop exited)")
 
 	// Persist session on ANY exit path (clean or signal-based).

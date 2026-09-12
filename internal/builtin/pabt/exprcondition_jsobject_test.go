@@ -1,6 +1,7 @@
 package pabt
 
 import (
+	"context"
 	"testing"
 
 	"github.com/joeycumines/goja"
@@ -165,7 +166,7 @@ func TestExprCondition_JSObjectPassthroughToGenerator(t *testing.T) {
 
 	// Verify the generator received the original JS object
 	var hasValueField bool
-	_ = bridge.RunSync(func(vm *goja.Runtime) error {
+	_ = bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val := vm.Get("receivedCondition")
 		if val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
 			obj := val.ToObject(vm)

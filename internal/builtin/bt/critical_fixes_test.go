@@ -1,6 +1,7 @@
 package bt
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func TestCompositeExportStrings(t *testing.T) {
 	t.Run("status constants are strings", func(t *testing.T) {
 		var runningType, successType, failureType string
 		var runningValue, successValue, failureValue string
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, runErr := vm.RunString(`
 				globalThis.runningType = typeof bt.running;
 				globalThis.successType = typeof bt.success;
@@ -62,7 +63,7 @@ func TestCompositeExportStrings(t *testing.T) {
 	t.Run("composite functions exist", func(t *testing.T) {
 		// Just verify the composite exports exist and are functions
 		var seqType, selType, fbType string
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, runErr := vm.RunString(`
 				globalThis.seqType = typeof bt.sequence;
 				globalThis.selType = typeof bt.selector;
@@ -85,37 +86,18 @@ func TestCompositeExportStrings(t *testing.T) {
 	})
 }
 
-// TestTimeoutProtection verifies that Bridge has timeout configuration
-// This tests the fix for the timeout protection requirement
+// TestTimeoutProtection verifies that Bridge respects caller context cancellation/timeout
 func TestTimeoutProtection(t *testing.T) {
 	bridge := testBridge(t)
 
-	// Test that default timeout is set
-	assert.Equal(t, DefaultTimeout, bridge.GetTimeout(),
-		"bridge should have default timeout")
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
 
-	// Test setting custom timeout
-	bridge.SetTimeout(100 * time.Millisecond)
-	assert.Equal(t, 100*time.Millisecond, bridge.GetTimeout(),
-		"bridge should respect custom timeout")
-
-	// Test disabling timeout
-	bridge.SetTimeout(0)
-	assert.Equal(t, time.Duration(0), bridge.GetTimeout(),
-		"bridge should allow disabling timeout")
-
-	// Restore default timeout
-	bridge.SetTimeout(DefaultTimeout)
-}
-
-// TestCancellationGenerationOrder verifies that bridge doesn't expose dead code
-// This confirms that b.vm field has been removed (dead code fix)
-func TestCancellationGenerationOrder(t *testing.T) {
-	bridge := testBridge(t)
-
-	// The bridge should have timeout methods
-	assert.NotNil(t, bridge.GetTimeout)
-	assert.NotNil(t, bridge.SetTimeout)
+	err := bridge.RunSync(ctx, func(vm *goja.Runtime) error {
+		time.Sleep(100 * time.Millisecond)
+		return nil
+	})
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 // TestNewTickerReturnsTicker verifies that bt.newTicker returns a Ticker object

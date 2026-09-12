@@ -181,11 +181,11 @@ const (
 )
 
 // commandIDCounter generates unique IDs for command objects.
-var commandIDCounter uint64
+var commandIDCounter atomic.Uint64
 
 // generateCommandID creates a unique command ID.
 func generateCommandID() uint64 {
-	return atomic.AddUint64(&commandIDCounter, 1)
+	return commandIDCounter.Add(1)
 }
 
 // WrapCmd wraps a tea.Cmd as an opaque JavaScript value.
@@ -252,7 +252,7 @@ type JSRunner interface {
 	// The provided goja.Runtime is the event loop's runtime instance.
 	// Returns an error if the event loop is not running or stops while waiting.
 	// This method blocks until the callback completes.
-	RunSync(fn func(*goja.Runtime) error) error
+	RunSync(ctx context.Context, fn func(*goja.Runtime) error) error
 }
 
 // AsyncJSRunner extends JSRunner with non-blocking async execution.
@@ -272,7 +272,7 @@ type AsyncJSRunner interface {
 // loop goroutine, and otherwise schedules-and-waits on the loop.
 type TrySyncJSRunner interface {
 	JSRunner
-	TryRunSync(currentVM *goja.Runtime, fn func(*goja.Runtime) error) error
+	TryRunSync(ctx context.Context, currentVM *goja.Runtime, fn func(*goja.Runtime) error) error
 }
 
 // Manager holds bubbletea-related state per engine instance.
@@ -292,9 +292,9 @@ type Manager struct {
 	programDone  chan error    // Signals program exit; used by WaitForProgram()
 }
 
-// PromisifyFunc is a function that executes work in a goroutine and returns a Promise.
+// PromisifyFunc is a function that executes work in a goroutine and returns a Future.
 // This is used to keep the event loop alive while BubbleTea programs run.
-type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
+type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Future
 
 // NewManager creates a new bubbletea manager for an engine instance.
 // Input and output can be nil to use os.Stdin and os.Stdout.
@@ -607,10 +607,14 @@ func (m *jsModel) runJSSync(fn func(*goja.Runtime) error) error {
 	if m.jsRunner == nil {
 		return fmt.Errorf("bubbletea: js runner is nil")
 	}
-	if tr, ok := m.jsRunner.(TrySyncJSRunner); ok {
-		return tr.TryRunSync(m.runtime, fn)
+	ctx := m.throttleCtx
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	return m.jsRunner.RunSync(fn)
+	if tr, ok := m.jsRunner.(TrySyncJSRunner); ok {
+		return tr.TryRunSync(ctx, m.runtime, fn)
+	}
+	return m.jsRunner.RunSync(ctx, fn)
 }
 
 // Init implements tea.Model.
@@ -1655,7 +1659,7 @@ func (m *toggleModel) toggleCmd() tea.Cmd {
 		var toggleResult map[string]any
 		if m.jsRunner != nil && m.onToggle != nil {
 			done := make(chan struct{})
-			_ = m.jsRunner.RunSync(func(vm *goja.Runtime) error {
+			_ = m.jsRunner.RunSync(context.Background(), func(vm *goja.Runtime) error {
 				val, err := m.onToggle(goja.Undefined())
 				if err != nil {
 					close(done)
@@ -2296,9 +2300,13 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	var opts []tea.ProgramOption
 	if f := unwrapOSFile(input); f != nil {
 		opts = append(opts, tea.WithInput(f))
+	} else if input != nil {
+		opts = append(opts, tea.WithInput(input))
 	}
 	if f := unwrapOSFile(output); f != nil {
 		opts = append(opts, tea.WithOutput(f))
+	} else if output != nil {
+		opts = append(opts, tea.WithOutput(output))
 	}
 
 	p := tea.NewProgram(model, opts...)

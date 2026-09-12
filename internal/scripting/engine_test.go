@@ -689,7 +689,7 @@ func TestQueueSetGlobal_FromEventLoop(t *testing.T) {
 	engine.SetTestMode(true)
 
 	// QueueSetGlobal from event loop context (via RunSync)
-	err := engine.runtime.RunSync(func(r *goja.Runtime) error {
+	err := engine.runtime.RunSync(ctx, func(r *goja.Runtime) error {
 		engine.QueueSetGlobal("eventLoopKey", "eventLoopValue")
 		return nil
 	})
@@ -726,7 +726,7 @@ func TestGetGlobal_FromEventLoop(t *testing.T) {
 
 	// GetGlobal from event loop context
 	var result any
-	err := engine.runtime.RunSync(func(r *goja.Runtime) error {
+	err := engine.runtime.RunSync(ctx, func(r *goja.Runtime) error {
 		result = engine.GetGlobal("eventLoopGetKey")
 		return nil
 	})

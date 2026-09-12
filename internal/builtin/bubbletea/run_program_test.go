@@ -28,17 +28,12 @@ func openPty(t *testing.T) (*os.File, *os.File) {
 	return master, slave
 }
 
-// skipIfNoTTY skips the test if /dev/tty is not available.
-// This is needed for tests that use tea.Program which may try to open /dev/tty internally.
+// skipIfNoTTY skips the test in short mode.
 func skipIfNoTTY(t *testing.T) {
 	t.Helper()
-	// Try to open /dev/tty to see if it's actually accessible.
-	// The file might exist but not be openable in certain environments (e.g., Docker without /dev/tty access).
-	f, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-	if err != nil {
-		t.Skipf("/dev/tty is not available: %v", err)
+	if testing.Short() {
+		t.Skip("skipping TUI program test in short mode")
 	}
-	f.Close()
 }
 
 // TestRunProgram_Lifecycle verifies the full lifecycle of a bubbletea program execution using a PTY.
@@ -87,10 +82,6 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 
 	model.jsRunner = &SyncJSRunner{Runtime: vm}
 
-	var input bytes.Buffer
-	var output bytes.Buffer
-	manager := NewManager(context.Background(), &input, &output, model.jsRunner, nil, nil)
-
 	master, slave := openPty(t)
 	defer master.Close()
 	// NOTE: slave is NOT closed via defer to avoid a data race with bubbletea's
@@ -101,6 +92,8 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 	require.NoError(t, dupErr)
 	slaveForBT := os.NewFile(uintptr(slaveFd), slave.Name())
 	slave.Close() // Close original immediately; bubbletea uses the dup
+
+	manager := NewManager(context.Background(), slaveForBT, slaveForBT, model.jsRunner, nil, nil)
 
 	// Run program in goroutine using dup'd PTY slave for input/output
 	errCh := make(chan error, 1)
@@ -265,10 +258,6 @@ func TestRunProgram_AlreadyRunning(t *testing.T) {
 	}
 	model.jsRunner = &SyncJSRunner{Runtime: vm}
 
-	var input bytes.Buffer
-	var output bytes.Buffer
-	manager := NewManager(context.Background(), &input, &output, model.jsRunner, nil, nil)
-
 	master, slave := openPty(t)
 	defer master.Close()
 	// Use dup'd FD for bubbletea to avoid data race between Close and
@@ -277,6 +266,8 @@ func TestRunProgram_AlreadyRunning(t *testing.T) {
 	require.NoError(t, dupErr)
 	slaveForBT := os.NewFile(uintptr(slaveFd), slave.Name())
 	slave.Close()
+
+	manager := NewManager(context.Background(), slaveForBT, slaveForBT, model.jsRunner, nil, nil)
 
 	startErrCh := make(chan error, 1)
 	go func() {
@@ -337,8 +328,6 @@ func TestSendStateRefresh_Integration(t *testing.T) {
 	}
 	model.jsRunner = &SyncJSRunner{Runtime: vm}
 
-	manager := NewManager(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, model.jsRunner, nil, nil)
-
 	master, slave := openPty(t)
 	defer master.Close()
 	// Use dup'd FD for bubbletea to avoid data race between Close and
@@ -347,6 +336,8 @@ func TestSendStateRefresh_Integration(t *testing.T) {
 	require.NoError(t, dupErr)
 	slaveForBT := os.NewFile(uintptr(slaveFd), slave.Name())
 	slave.Close()
+
+	manager := NewManager(context.Background(), slaveForBT, slaveForBT, model.jsRunner, nil, nil)
 
 	startErrCh := make(chan error, 1)
 	go func() {

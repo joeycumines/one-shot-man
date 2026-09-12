@@ -1,6 +1,7 @@
 package bt
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -263,7 +264,7 @@ func TestBlackboard_ExposeToJS(t *testing.T) {
 	bridge := testBridge(t)
 
 	// All goja.Runtime operations must happen inside RunSync
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		jsObj := bb.ExposeToJS(vm)
 		if err := vm.Set("blackboard", jsObj); err != nil {
 			return err

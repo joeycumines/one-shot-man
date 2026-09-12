@@ -688,11 +688,8 @@ func TestRuntime_RunSync_NoTimeout_Success(t *testing.T) {
 	}
 	defer rt.Close()
 
-	// Set timeout to 0 (no timeout)
-	rt.SetTimeout(0)
-
 	var value int
-	err = rt.RunSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(ctx, func(vm *goja.Runtime) error {
 		value = 99
 		return nil
 	})
@@ -723,13 +720,10 @@ func TestRuntime_RunSync_NoTimeout_RuntimeStopped(t *testing.T) {
 		t.Fatal("Run should succeed")
 	}
 
-	// Set no timeout
-	rt.SetTimeout(0)
-
 	// Start a goroutine that will try RunSync (will block because event loop is busy)
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- rt.RunSync(func(vm *goja.Runtime) error {
+		errCh <- rt.RunSync(ctx, func(vm *goja.Runtime) error {
 			return nil // This will never execute due to close
 		})
 	}()
@@ -761,12 +755,9 @@ func TestRuntime_RunSync_RuntimeStoppedDuringWait(t *testing.T) {
 		<-blockCh
 	})
 
-	// Set a long timeout to ensure the "runtime stopped" path hits, not timeout
-	rt.SetTimeout(30 * 1000_000_000) // 30s
-
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- rt.RunSync(func(vm *goja.Runtime) error {
+		errCh <- rt.RunSync(ctx, func(vm *goja.Runtime) error {
 			return nil
 		})
 	}()
@@ -791,7 +782,7 @@ func TestRuntime_TryRunSync_Stopped(t *testing.T) {
 
 	rt.Close()
 
-	err = rt.TryRunSync(nil, func(vm *goja.Runtime) error {
+	err = rt.TryRunSync(ctx, nil, func(vm *goja.Runtime) error {
 		return nil
 	})
 	if err == nil {
@@ -850,12 +841,9 @@ func TestRuntime_RunSync_RuntimeStoppedWithTimeout(t *testing.T) {
 		<-blockCh
 	})
 
-	// Use a long timeout so the "stopped" path fires before timeout
-	rt.SetTimeout(30 * 1000_000_000) // 30s
-
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- rt.RunSync(func(vm *goja.Runtime) error {
+		errCh <- rt.RunSync(ctx, func(vm *goja.Runtime) error {
 			return nil
 		})
 	}()
@@ -893,7 +881,7 @@ func TestRuntime_RunSync_SecondRunFails(t *testing.T) {
 	// returns false check by calling RunSync after Close.
 	rt.Close()
 
-	err = rt.RunSync(func(vm *goja.Runtime) error {
+	err = rt.RunSync(ctx, func(vm *goja.Runtime) error {
 		return nil
 	})
 	if err == nil {

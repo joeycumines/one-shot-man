@@ -78,7 +78,7 @@ func (p *TestEventLoopProvider) Adapter() *gojaeventloop.Adapter {
 }
 
 // Promisify implements builtin.EventLoopProvider.
-func (p *TestEventLoopProvider) Promisify(ctx context.Context, fn func(context.Context) (any, error)) goeventloop.Promise {
+func (p *TestEventLoopProvider) Promisify(ctx context.Context, fn func(context.Context) (any, error)) goeventloop.Future {
 	return p.loop.Promisify(ctx, fn)
 }
 

@@ -2,6 +2,7 @@ package pabt
 
 import (
 	"container/list"
+	"context"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -316,7 +317,7 @@ func (c *JSCondition) Match(value any) bool {
 	}
 
 	var result bool
-	err := c.bridge.RunSync(func(vm *goja.Runtime) error {
+	err := c.bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		res, callErr := c.matcher(goja.Undefined(), vm.ToValue(value))
 		if callErr != nil {
 			return callErr

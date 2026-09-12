@@ -154,7 +154,7 @@ func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 					var genErr error
 
 					// CRITICAL: Must use RunSync for thread-safe goja access
-					err := bridge.RunSync(func(vm *goja.Runtime) error {
+					err := bridge.RunSync(ctx, func(vm *goja.Runtime) error {
 						// Pass the original JS object back unchanged if available.
 						// This preserves ALL properties (including .value) for action templating,
 						// equivalent to Go's type assertion for accessing internal state.

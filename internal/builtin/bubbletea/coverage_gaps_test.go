@@ -15,7 +15,7 @@ import (
 // errorJSRunner is a JSRunner that always returns an error.
 type errorJSRunner struct{}
 
-func (r *errorJSRunner) RunSync(func(*goja.Runtime) error) error {
+func (r *errorJSRunner) RunSync(context.Context, func(*goja.Runtime) error) error {
 	return errors.New("event loop error")
 }
 

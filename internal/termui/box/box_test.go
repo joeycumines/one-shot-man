@@ -37,7 +37,7 @@ func TestBox_WithTitle(t *testing.T) {
 	if !strings.Contains(got, "Test") {
 		t.Errorf("expected output to contain 'Test', got %q", got)
 	}
-	topLine := strings.Split(got, "\n")[0]
+	topLine, _, _ := strings.Cut(got, "\n")
 	topRunes := []rune(topLine)
 	if topRunes[0] != '╭' || topRunes[len(topRunes)-1] != '╮' {
 		t.Errorf("expected rounded corners in titled top line, got %q", topLine)

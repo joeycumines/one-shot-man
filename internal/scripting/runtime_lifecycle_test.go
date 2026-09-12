@@ -49,7 +49,7 @@ func TestRuntime_Close_TerminatesLoop(t *testing.T) {
 	}
 
 	// Verify it works before Close.
-	if runErr := rt.RunSync(func(_ *goja.Runtime) error {
+	if runErr := rt.RunSync(context.Background(), func(_ *goja.Runtime) error {
 		return nil
 	}); runErr != nil {
 		t.Fatalf("RunSync before Close failed: %v", runErr)
@@ -67,7 +67,7 @@ func TestRuntime_Close_TerminatesLoop(t *testing.T) {
 	// RunSync must fail, not block.
 	done := make(chan error, 1)
 	go func() {
-		done <- rt.RunSync(func(_ *goja.Runtime) error {
+		done <- rt.RunSync(context.Background(), func(_ *goja.Runtime) error {
 			return nil
 		})
 	}()
@@ -101,7 +101,7 @@ func TestRuntime_AutoExitWithBootstrapToken_IdleLoopSurvives(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// The loop must still be alive and accept work.
-	if err := rt.RunSync(func(_ *goja.Runtime) error {
+	if err := rt.RunSync(context.Background(), func(_ *goja.Runtime) error {
 		return nil
 	}); err != nil {
 		t.Errorf("RunSync on idle loop failed: %v (bootstrap token may not be working)", err)

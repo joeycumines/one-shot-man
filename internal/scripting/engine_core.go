@@ -20,7 +20,6 @@ import (
 	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
-	"github.com/joeycumines/one-shot-man/internal/eventlooputil"
 )
 
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.
@@ -70,47 +69,58 @@ func (e *scriptPanicError) Unwrap() error {
 }
 
 type Engine struct {
-	runtime              *Runtime          // Shared runtime with event loop
-	vm                   *goja.Runtime     // Direct VM reference (for sync operations)
-	registry             *require.Registry // CommonJS require registry
-	scripts              []*Script
-	ctx                  context.Context
-	stdout               io.Writer
-	stderr               io.Writer
-	globals              map[string]any
-	globalsMu            sync.RWMutex // Protects globals map access (C5 fix)
-	testMode             bool
-	eventLoopGoroutineID int64 // Captured at initialization for thread checking (atomic)
-	closed               atomic.Bool
-	tuiManager           *TUIManager
-	contextManager       *ContextManager
-	logger               *TUILogger
-	terminalIO           *TerminalIO               // Shared terminal I/O for all TUI subsystems
-	bubbleteaManager     builtin.BubbleteaManager  // For sending state refresh messages to running TUI
-	btBridge             *bt.Bridge                // Behavior tree bridge for JS integration
-	bubblezoneManager    builtin.BubblezoneManager // Zone-based mouse hit-testing for BubbleTea
-	requireModule        *require.RequireModule    // CommonJS require module for file-based script execution
-	loopRunner           *eventlooputil.Runner     // Shared submit-and-wait substrate (lazy, see runner)
-	runnerOnce           sync.Once
+	runtime                *Runtime          // Shared runtime with event loop
+	vm                     *goja.Runtime     // Direct VM reference (for sync operations)
+	registry               *require.Registry // CommonJS require registry
+	scripts                []*Script
+	ctx                    context.Context
+	stdout                 io.Writer
+	stderr                 io.Writer
+	globals                map[string]any
+	globalsMu              sync.RWMutex // Protects globals map access (C5 fix)
+	testMode               bool
+	closed                 atomic.Bool
+	tuiManager             *TUIManager
+	contextManager         *ContextManager
+	logger                 *TUILogger
+	terminalIO             *TerminalIO               // Shared terminal I/O for all TUI subsystems
+	bubbleteaManager       builtin.BubbleteaManager  // For sending state refresh messages to running TUI
+	btBridge               *bt.Bridge                // Behavior tree bridge for JS integration
+	bubblezoneManager      builtin.BubblezoneManager // Zone-based mouse hit-testing for BubbleTea
+	requireModule          *require.RequireModule    // CommonJS require module for file-based script execution
 	stateRefreshDispatcher *stateRefreshDispatcher
 }
 
 // stateRefreshDispatcher coalesces rapid state refreshes per key into a single
 // SendStateRefresh, using one bounded goroutine. Latest wins deterministically.
 type stateRefreshDispatcher struct {
-	mu      sync.Mutex
-	pending map[string]struct{}
-	ch      chan struct{}
-	stop    chan struct{}
-	mgr     builtin.BubbleteaManager
+	mu           sync.Mutex
+	closed       bool
+	pending      map[string]struct{}
+	ch           chan struct{}
+	stop         chan struct{}
+	mgr          builtin.BubbleteaManager
+	stateManager builtin.StateManager
+	listenerID   int
+	listenerSet  bool
+	done         chan struct{}
+	closeOnce    sync.Once
 }
 
-func newStateRefreshDispatcher(mgr builtin.BubbleteaManager) *stateRefreshDispatcher {
+func newStateRefreshDispatcher(mgr builtin.BubbleteaManager, stateManager builtin.StateManager) *stateRefreshDispatcher {
 	d := &stateRefreshDispatcher{
-		pending: make(map[string]struct{}),
-		ch:      make(chan struct{}, 1),
-		stop:    make(chan struct{}),
-		mgr:     mgr,
+		pending:      make(map[string]struct{}),
+		ch:           make(chan struct{}, 1),
+		stop:         make(chan struct{}),
+		done:         make(chan struct{}),
+		mgr:          mgr,
+		stateManager: stateManager,
+	}
+	if stateManager != nil {
+		d.listenerID = stateManager.AddListener(func(key string) {
+			d.Enqueue(key)
+		})
+		d.listenerSet = true
 	}
 	go d.loop()
 	return d
@@ -118,19 +128,27 @@ func newStateRefreshDispatcher(mgr builtin.BubbleteaManager) *stateRefreshDispat
 
 func (d *stateRefreshDispatcher) Enqueue(key string) {
 	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed {
+		return
+	}
 	d.pending[key] = struct{}{}
 	select {
 	case d.ch <- struct{}{}:
 	default:
 	}
-	d.mu.Unlock()
 }
 
 func (d *stateRefreshDispatcher) loop() {
+	defer close(d.done)
 	for {
 		select {
 		case <-d.ch:
 			d.mu.Lock()
+			if d.closed {
+				d.mu.Unlock()
+				return
+			}
 			keys := make([]string, 0, len(d.pending))
 			for k := range d.pending {
 				keys = append(keys, k)
@@ -142,7 +160,7 @@ func (d *stateRefreshDispatcher) loop() {
 			}
 			// Drain coalesced signals that arrived while sending.
 			d.mu.Lock()
-			hasPending := len(d.pending) > 0
+			hasPending := !d.closed && len(d.pending) > 0
 			d.mu.Unlock()
 			if hasPending {
 				select {
@@ -157,12 +175,17 @@ func (d *stateRefreshDispatcher) loop() {
 }
 
 func (d *stateRefreshDispatcher) Close() {
-	select {
-	case <-d.stop:
-		return
-	default:
+	d.closeOnce.Do(func() {
+		d.mu.Lock()
+		d.closed = true
+		clear(d.pending)
+		if d.stateManager != nil && d.listenerSet {
+			d.stateManager.RemoveListener(d.listenerID)
+		}
+		d.mu.Unlock()
 		close(d.stop)
-	}
+	})
+	<-d.done
 }
 
 // Script represents a JavaScript script with metadata.
@@ -203,6 +226,10 @@ func NewEngine(
 	logBufferSize int,
 	logLevel slog.Level,
 	opts ...EngineOption) (*Engine, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	// Apply options
 	var eopts engineOptions
 	for _, o := range opts {
@@ -280,9 +307,6 @@ func NewEngine(
 		terminalIO:     terminalIO,
 	}
 
-	// Capture event loop goroutine ID using atomic store for thread-safe access (C5 fix)
-	atomic.StoreInt64(&engine.eventLoopGoroutineID, runtime.eventLoopGoroutineID.Load())
-
 	// Register native Go modules. These are all prefixed with "osm:".
 	// Pass through the engine's context and a TUI sink for modules that need them.
 	// Pass 'engine' as terminalProvider so bubbletea uses the unified TerminalIO
@@ -296,7 +320,7 @@ func NewEngine(
 	// Enable the `require` function in the runtime (must be done on event loop).
 	// Store the RequireModule so we can use it for file-based script execution,
 	// which gives scripts proper __filename, __dirname, and relative require resolution.
-	err = runtime.RunSync(func(r *goja.Runtime) error {
+	err = runtime.RunSync(ctx, func(r *goja.Runtime) error {
 		engine.requireModule = registry.Enable(r)
 
 		// Extend the console object (created by adapter.Bind() with timer methods)
@@ -332,18 +356,23 @@ func NewEngine(
 	// SendStateRefresh for the latest value, using one bounded goroutine
 	// serialized per engine lifecycle. Latest wins deterministically.
 	if engine.bubbleteaManager != nil && engine.tuiManager.stateManager != nil {
-		dispatcher := newStateRefreshDispatcher(engine.bubbleteaManager)
-		engine.stateRefreshDispatcher = dispatcher
-		engine.tuiManager.stateManager.AddListener(func(key string) {
-			dispatcher.Enqueue(key)
-		})
+		engine.stateRefreshDispatcher = newStateRefreshDispatcher(engine.bubbleteaManager, engine.tuiManager.stateManager)
 	}
 
 	// Register the shared symbols module properly through the require registry
 	engine.registry.RegisterNativeModule("osm:sharedStateSymbols", builtin.GetSharedSymbolsLoader(engine.tuiManager))
 
 	// Set up the global context and APIs
-	engine.setupGlobals()
+	if err := engine.executeOnLoop(func(*goja.Runtime) error {
+		engine.setupGlobals()
+		return nil
+	}); err != nil {
+		if engine.stateRefreshDispatcher != nil {
+			engine.stateRefreshDispatcher.Close()
+		}
+		_ = runtime.Close()
+		return nil, fmt.Errorf("failed to set up globals: %w", err)
+	}
 
 	// Interrupt JS execution when context is canceled.
 	// Capture vm locally for the context.AfterFunc callback. goja.Runtime.Interrupt
@@ -364,7 +393,7 @@ func (e *Engine) SetTestMode(enabled bool) {
 }
 
 func (e *Engine) QueueSetGlobal(name string, value any) {
-	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
+	if e.Loop() != nil && e.Loop().IsCallbackOwner() {
 		e.globalsMu.Lock()
 		e.globals[name] = value
 		e.vm.Set(name, value)
@@ -380,7 +409,7 @@ func (e *Engine) QueueSetGlobal(name string, value any) {
 }
 
 func (e *Engine) QueueGetGlobal(name string, callback func(value any)) {
-	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
+	if e.Loop() != nil && e.Loop().IsCallbackOwner() {
 		e.globalsMu.Lock()
 		val := e.vm.Get(name)
 		e.globalsMu.Unlock()
@@ -407,7 +436,6 @@ func (e *Engine) QueueGetGlobal(name string, callback func(value any)) {
 	})
 }
 
-
 // SetGlobal sets a global variable in the JavaScript runtime.
 //
 // THREADING: This method is now owner-safe and may be called from any goroutine.
@@ -417,7 +445,7 @@ func (e *Engine) QueueGetGlobal(name string, callback func(value any)) {
 // to the same loop in submission order. For synchronous thread-safe access
 // with result, use QueueSetGlobal or Runtime.SetGlobal.
 func (e *Engine) SetGlobal(name string, value any) {
-	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
+	if e.Loop() != nil && e.Loop().IsCallbackOwner() {
 		e.globalsMu.Lock()
 		e.globals[name] = value
 		e.vm.Set(name, value)
@@ -440,7 +468,7 @@ func (e *Engine) SetGlobal(name string, value any) {
 // submits to the loop and blocks until the result is available. For callback-
 // based async access, use QueueGetGlobal.
 func (e *Engine) GetGlobal(name string) any {
-	if eventlooputil.IsLoopThread(e.runtime.GoroutineID()) {
+	if e.Loop() != nil && e.Loop().IsCallbackOwner() {
 		e.globalsMu.Lock()
 		val := e.vm.Get(name)
 		e.globalsMu.Unlock()
@@ -449,20 +477,22 @@ func (e *Engine) GetGlobal(name string) any {
 		}
 		return val.Export()
 	}
-	resultCh := make(chan any, 1)
-	e.runtime.adapter.Submit(func(rt *goja.Runtime) {
+	var result any
+	if err := e.executeOnLoop(func(rt *goja.Runtime) error {
 		e.globalsMu.Lock()
 		val := rt.Get(name)
 		e.globalsMu.Unlock()
-		var result any
 		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 			result = nil
 		} else {
 			result = val.Export()
 		}
-		resultCh <- result
-	})
-	return <-resultCh
+		return nil
+	}); err != nil {
+		slog.Debug("engine global lookup failed", "name", name, "error", err)
+		return nil
+	}
+	return result
 }
 
 // Stdout returns the engine's stdout writer.
@@ -662,36 +692,67 @@ func (e *Engine) executeOnLoop(fn func(*goja.Runtime) error) error {
 	if loop == nil {
 		return errors.New("event loop not available")
 	}
+	ctx := e.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if loop.IsCallbackOwner() {
+		return executeEngineCallback(fn, e.vm)
+	}
 
-	// Capture vm locally to avoid racing with Close(). This is the same
-	// defense-in-depth pattern used at engine_core.go:279 (vmForInterrupt)
-	// and engine_core.go:308 (QueueSetGlobal). Even though Close() no longer
-	// nils e.vm, capturing locally ensures a stable pointer for the closure
-	// regardless of any future changes to Close()'s cleanup.
-	vm := e.vm
+	errCh := make(chan error, 1)
+	var state atomic.Uint32 // 0 pending, 1 running, 2 cancelled
+	submitErr := loop.Submit(func() {
+		if !state.CompareAndSwap(0, 1) {
+			if err := ctx.Err(); err != nil {
+				errCh <- err
+			} else {
+				errCh <- errors.New("engine stopped before script started")
+			}
+			return
+		}
+		errCh <- executeEngineCallback(fn, e.vm)
+	})
+	if submitErr != nil {
+		return submitErr
+	}
 
-	return e.runner(loop).TrySync(func() error {
-		return fn(vm)
-	}, 0)
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		// Cancellation may skip a queued callback, but once the callback has
+		// acquired the VM this caller must wait for ownership to be released.
+		if state.CompareAndSwap(0, 2) {
+			return ctx.Err()
+		}
+		err := <-errCh
+		if err == nil {
+			return ctx.Err()
+		}
+		return err
+	case <-e.runtime.Done():
+		if state.CompareAndSwap(0, 2) {
+			return errors.New("runtime stopped before script completion")
+		}
+		err := <-errCh
+		if err == nil {
+			return errors.New("runtime stopped before script completion")
+		}
+		return err
+	}
 }
 
-// runner returns the shared submit-and-wait substrate for this engine,
-// wired to the loop's liveness via runtime.Done().
-func (e *Engine) runner(loop *goeventloop.Loop) *eventlooputil.Runner {
-	e.runnerOnce.Do(func() {
-		r, err := eventlooputil.NewRunner(eventlooputil.RunnerConfig{
-			Loop:          loop,
-			OnLoopThread:  func() bool { return eventlooputil.IsLoopThread(e.runtime.GoroutineID()) },
-			Done:          e.runtime.Done(),
-			NotRunningErr: errors.New("event loop not running"),
-			StoppedErr:    errors.New("runtime stopped before script completion"),
-		})
-		if err != nil {
-			panic(err)
+func executeEngineCallback(fn func(*goja.Runtime) error, vm *goja.Runtime) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("engine callback panicked: %v", recovered)
 		}
-		e.loopRunner = r
-	})
-	return e.loopRunner
+	}()
+	return fn(vm)
 }
 
 // Logger returns the engine's logger.
@@ -758,12 +819,12 @@ func (e *Engine) Adapter() *gojaEventloop.Adapter {
 	return e.runtime.Adapter()
 }
 
-// Promisify executes a function in a goroutine and returns a Promise.
+// Promisify executes a function in a goroutine and returns a Future.
 // This is the preferred way to keep the event loop alive during async operations.
-// The promise resolution/rejection happens on the event loop goroutine.
-// The returned promise is NOT exposed to JavaScript - it's for Go-level async coordination.
+// The future resolution/rejection happens on the event loop goroutine.
+// The returned future is NOT exposed to JavaScript - it's for Go-level async coordination.
 // This implements builtin.EventLoopProvider.
-func (e *Engine) Promisify(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise {
+func (e *Engine) Promisify(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Future {
 	if e.runtime == nil {
 		panic("engine runtime is nil")
 	}

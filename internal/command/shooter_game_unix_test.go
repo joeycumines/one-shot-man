@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,26 +17,46 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
+var (
+	testBinaryOnce   sync.Once
+	testBinaryPath   string
+	testBinaryErr    error
+	testBinaryStderr string
+)
+
 // buildTestBinary builds the osm test binary for command package tests
 func buildTestBinary(t *testing.T) string {
 	t.Helper()
 	skipSlow(t)
-	// Get the working directory and compute project root
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get working directory: %v", err)
-	}
-	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+	testBinaryOnce.Do(func() {
+		if testBinaryDir == "" {
+			testBinaryErr = errors.New("test binary dir not initialized by TestMain")
+			return
+		}
+		// Get the working directory and compute project root
+		wd, err := os.Getwd()
+		if err != nil {
+			testBinaryErr = err
+			return
+		}
+		projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
 
-	binaryPath := filepath.Join(t.TempDir(), "osm-test")
-	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/osm")
-	cmd.Dir = projectDir // Critical: set working directory to project root
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Failed to build test binary: %v\nStderr: %s", err, stderr.String())
+		binaryPath := filepath.Join(testBinaryDir, "osm-test")
+		cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/osm")
+		cmd.Dir = projectDir // Critical: set working directory to project root
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			testBinaryErr = err
+			testBinaryStderr = stderr.String()
+			return
+		}
+		testBinaryPath = binaryPath
+	})
+	if testBinaryErr != nil {
+		t.Fatalf("Failed to build test binary: %v\nStderr: %s", testBinaryErr, testBinaryStderr)
 	}
-	return binaryPath
+	return testBinaryPath
 }
 
 // newTestProcessEnv creates an isolated environment for subprocess tests.

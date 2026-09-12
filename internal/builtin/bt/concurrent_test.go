@@ -1,6 +1,7 @@
 package bt
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,7 +22,7 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 
 	// Verify runLeaf exists
 	var runLeafExists bool
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val := vm.Get("runLeaf")
 		runLeafExists = val != nil && !goja.IsUndefined(val)
 		return nil
@@ -34,7 +35,7 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 	var btTickCount atomic.Int32
 	var leafCalls atomic.Int32
 	var node bt.Node
-	err = bridge.RunSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		// Create a tree matching the shooter grunt structure:
 		// sequence(checkAlive, fallback(sequence(checkAlive, checkInRange, shoot), moveToward))
 		val, err := vm.RunString(`
@@ -135,7 +136,7 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 	}
 
 	var tickers []bt.Ticker
-	err = bridge.RunSync(func(vm *goja.Runtime) error {
+	err = bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		for range 3 {
 			ticker := bt.NewTicker(ctx, 50*time.Millisecond, wrappedNode)
 			tickers = append(tickers, ticker)
@@ -149,7 +150,7 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		for range 50 {
-			err := bridge.RunSync(func(vm *goja.Runtime) error {
+			err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 				// Simulate Update - quick JS operation
 				_, err := vm.RunString(`1 + 1`)
 				return err

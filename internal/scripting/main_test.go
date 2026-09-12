@@ -156,7 +156,7 @@ func TestRuntimeInitializationFailures(t *testing.T) {
 		engine.runtime.Close()
 
 		// Try to run on loop sync - should return error
-		err := engine.runtime.RunSync(func(r *goja.Runtime) error {
+		err := engine.runtime.RunSync(ctx, func(r *goja.Runtime) error {
 			return nil
 		})
 		if err == nil {

@@ -55,12 +55,12 @@ type result struct {
 }
 
 type Report struct {
-	Total  int      `json:"total"`
-	Passed int      `json:"passed"`
-	Failed int      `json:"failed"`
-	Rate   float64  `json:"passRate"`
-	Suite  map[string]int `json:"suitePassed,omitempty"`
-	Results []result `json:"results"`
+	Total   int            `json:"total"`
+	Passed  int            `json:"passed"`
+	Failed  int            `json:"failed"`
+	Rate    float64        `json:"passRate"`
+	Suite   map[string]int `json:"suitePassed,omitempty"`
+	Results []result       `json:"results"`
 }
 
 func (r *Report) finalize() {

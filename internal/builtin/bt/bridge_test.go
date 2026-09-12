@@ -14,7 +14,6 @@ import (
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	gojanodejsconsole "github.com/joeycumines/goja_nodejs/console"
 	gojarequire "github.com/joeycumines/goja_nodejs/require"
-	"github.com/joeycumines/goroutineid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -422,10 +421,10 @@ func TestBridge_TryRunSync(t *testing.T) {
 		executed := make(chan bool, 1)
 		vmCaptured := make(chan *goja.Runtime, 1)
 
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			// We're on the event loop now, call TryRunSync with this VM
 			// This should take the direct path, executing fn directly
-			err := bridge.TryRunSync(vm, func(passedVM *goja.Runtime) error {
+			err := bridge.TryRunSync(context.Background(), vm, func(passedVM *goja.Runtime) error {
 				vmCaptured <- passedVM
 				executed <- true
 				return nil
@@ -462,7 +461,7 @@ func TestBridge_TryRunSync(t *testing.T) {
 
 		go func() {
 			defer close(done)
-			err := bridge.TryRunSync(nil, func(vm *goja.Runtime) error {
+			err := bridge.TryRunSync(context.Background(), nil, func(vm *goja.Runtime) error {
 				// This should execute on the event loop via scheduling
 				// The VM parameter comes from the event loop callback
 				require.NotNil(t, vm, "VM should be provided by event loop in scheduled path")
@@ -533,7 +532,7 @@ func TestBridge_TryRunSync(t *testing.T) {
 		// Test the deadlock prevention scenario: TryRunSync called
 		// from within the event loop (e.g., from a JS callback)
 		// This is the critical scenario that would cause deadlock without the
-		// goroutine ID check
+		// callback owner check
 		depth := 0
 		maxDepth := 3
 
@@ -545,11 +544,11 @@ func TestBridge_TryRunSync(t *testing.T) {
 				return nil
 			}
 			// Call TryRunSync again - should NOT deadlock
-			return bridge.TryRunSync(currentVM, recursiveTest)
+			return bridge.TryRunSync(context.Background(), currentVM, recursiveTest)
 		}
 
 		// Start recursive calls from the event loop
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			return recursiveTest(vm)
 		})
 		require.NoError(t, err)
@@ -560,13 +559,13 @@ func TestBridge_TryRunSync(t *testing.T) {
 		t.Parallel()
 
 		// Test calling TryRunSync from event loop with nil currentVM
-		// This is an edge case - function should be called with nil
+		// Function should receive bridge.vm
 		executed := make(chan bool, 1)
 		vmWasNil := make(chan bool, 1)
 
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
-			// Call TryRunSync with nil currentVM (should still work)
-			err := bridge.TryRunSync(nil, func(passedVM *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
+			// Call TryRunSync with nil currentVM (defaults to bridge.vm)
+			err := bridge.TryRunSync(context.Background(), nil, func(passedVM *goja.Runtime) error {
 				vmWasNil <- (passedVM == nil)
 				executed <- true
 				return nil
@@ -583,10 +582,9 @@ func TestBridge_TryRunSync(t *testing.T) {
 			t.Fatal("Callback not executed with nil currentVM")
 		}
 
-		// Verify that passedVM was indeed nil
 		select {
 		case isNil := <-vmWasNil:
-			require.True(t, isNil, "Passed VM should be nil when currentVM is nil")
+			require.False(t, isNil, "Passed VM should not be nil (bridge.vm fallback)")
 		case <-time.After(time.Second):
 			t.Fatal("VM nil status not captured")
 		}
@@ -607,7 +605,7 @@ func TestBridge_TryRunSync(t *testing.T) {
 			defer close(done)
 			// Call from non-event-loop with a dummy VM
 			// The dummyVM should be ignored; function should receive real event loop VM
-			err := bridge.TryRunSync(dummyVM, func(vm *goja.Runtime) error {
+			err := bridge.TryRunSync(context.Background(), dummyVM, func(vm *goja.Runtime) error {
 				executed <- vm
 				return nil
 			})
@@ -632,6 +630,18 @@ func TestBridge_TryRunSync(t *testing.T) {
 	})
 }
 
+func TestBridge_RunSyncScheduledPanicReturnsError(t *testing.T) {
+	bridge := testBridge(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	err := bridge.RunSync(ctx, func(vm *goja.Runtime) error {
+		panic("scheduled callback panic")
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "synchronous bridge callback panicked")
+}
+
 // TestBridge_RunSyncTimeout tests the timeout mechanism of RunSync.
 // It verifies:
 //   - Slow JS operations trigger timeout with appropriate error message
@@ -643,27 +653,52 @@ func TestBridge_TryRunSync(t *testing.T) {
 func TestBridge_RunSyncTimeout(t *testing.T) {
 	t.Parallel()
 
-	// Test 1: Verify slow blocking operation triggers timeout
-	t.Run("slow operation triggers timeout", func(t *testing.T) {
+	t.Run("cancellation waits for callback ownership release", func(t *testing.T) {
+		bridge := testBridge(t)
+		started := make(chan struct{})
+		release := make(chan struct{})
+		finished := make(chan struct{})
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		result := make(chan error, 1)
+		go func() {
+			result <- bridge.RunSync(ctx, func(*goja.Runtime) error {
+				close(started)
+				<-release
+				close(finished)
+				return nil
+			})
+		}()
+		<-started
+		cancel()
+		// RunSync retains VM ownership until the callback returns. Release it
+		// before asserting the cancellation result.
+		close(release)
+		select {
+		case <-finished:
+		case <-time.After(time.Second):
+			t.Fatal("scheduled callback did not finish")
+		}
+		select {
+		case err := <-result:
+			require.ErrorIs(t, err, context.Canceled)
+		case <-time.After(time.Second):
+			t.Fatal("RunSync did not return after callback release")
+		}
+	})
+
+	// Test 1: Verify slow blocking operation triggers context deadline exceeded
+	t.Run("slow operation triggers context deadline exceeded", func(t *testing.T) {
 		t.Parallel()
 
 		bridge := testBridge(t)
 
-		// Set a short timeout for this test
-		// Default is 5 seconds, but we want faster test execution
-		shortTimeout := 100 * time.Millisecond
-		bridge.SetTimeout(shortTimeout)
-
 		// Load a script with a blocking operation using a busy-wait loop
-		// This will block the event loop for longer than the timeout
 		err := bridge.LoadScript("slow.js", `
-			// This function blocks for the specified milliseconds using a busy-wait loop
-			// Note: This is intentionally blocking to test timeout behavior
 			globalThis.busyWait = function(ms) {
 				var start = Date.now();
 				while (Date.now() - start < ms) {
-					// Busy wait - this blocks the JavaScript execution
-					// We do some work in the loop to prevent optimization
 					var x = 0;
 					for (var i = 0; i < 1000; i++) {
 						x += i;
@@ -674,32 +709,27 @@ func TestBridge_RunSyncTimeout(t *testing.T) {
 		`)
 		require.NoError(t, err, "Failed to load slow operation script")
 
-		// Call RunSync with a slow operation (200ms, longer than 100ms timeout)
-		// This should timeout
-		err = bridge.RunSync(func(vm *goja.Runtime) error {
-			// Call the busy wait function for 200ms
-			_, err := vm.RunString("busyWait(200);")
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		// Call RunSync with a slow operation (500ms, longer than 100ms timeout)
+		err = bridge.RunSync(ctx, func(vm *goja.Runtime) error {
+			_, err := vm.RunString("busyWait(500);")
 			return err
 		})
 
-		// Verify we got a timeout error
 		require.Error(t, err, "RunSync should return error for long blocking operation")
-		require.Contains(t, err.Error(), "timed out", "Error should mention timeout")
+		require.ErrorIs(t, err, context.DeadlineExceeded)
 	})
 
-	// Test 2: Verify timeout error message includes configured timeout value
-	t.Run("timeout error message includes timeout duration", func(t *testing.T) {
+	// Test 2: Verify explicit context cancellation triggers context.Canceled
+	t.Run("explicit context cancellation", func(t *testing.T) {
 		t.Parallel()
 
 		bridge := testBridge(t)
 
-		// Set a specific timeout to verify error message
-		shortTimeout := 250 * time.Millisecond
-		bridge.SetTimeout(shortTimeout)
-
-		// Load script with busy-wait that will exceed timeout
-		err := bridge.LoadScript("message_test.js", `
-			globalThis.slowOp = function(ms) {
+		err := bridge.LoadScript("slow.js", `
+			globalThis.busyWait = function(ms) {
 				var start = Date.now();
 				while (Date.now() - start < ms) {
 					var x = 0;
@@ -712,32 +742,27 @@ func TestBridge_RunSyncTimeout(t *testing.T) {
 		`)
 		require.NoError(t, err)
 
-		// Trigger timeout with a 500ms wait (longer than 250ms timeout)
-		err = bridge.RunSync(func(vm *goja.Runtime) error {
-			_, err := vm.RunString("slowOp(500);")
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			cancel()
+		}()
+
+		err = bridge.RunSync(ctx, func(vm *goja.Runtime) error {
+			_, err := vm.RunString("busyWait(1000);")
 			return err
 		})
 		require.Error(t, err)
-
-		// Verify error message includes the timeout value
-		// The error message format: "operation timed out after %v (consider increasing timeout...)"
-		require.Contains(t, err.Error(), "250ms", "Error message should include configured timeout duration")
+		require.ErrorIs(t, err, context.Canceled)
 	})
 
 	// Test 3: Verify bridge remains functional after timeout on a SEPARATE bridge
-	// We can't test this on the same bridge because a timeout leaves the event loop
-	// in an indeterminate state (we don't know what operation was running)
 	t.Run("separate bridge functional after timeout on another", func(t *testing.T) {
 		t.Parallel()
 
-		// Create two separate bridges
 		bridge1 := testBridge(t)
 		bridge2 := testBridge(t)
 
-		// Set short timeout on first bridge
-		bridge1.SetTimeout(100 * time.Millisecond)
-
-		// Load slow operation on first bridge
 		err := bridge1.LoadScript("slow.js", `
 			globalThis.slowOp = function(ms) {
 				var start = Date.now();
@@ -752,15 +777,16 @@ func TestBridge_RunSyncTimeout(t *testing.T) {
 		`)
 		require.NoError(t, err)
 
-		// Trigger timeout on first bridge
-		err = bridge1.RunSync(func(vm *goja.Runtime) error {
-			_, err := vm.RunString("slowOp(200);") // 200ms longer than 100ms timeout
+		ctx1, cancel1 := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel1()
+
+		err = bridge1.RunSync(ctx1, func(vm *goja.Runtime) error {
+			_, err := vm.RunString("slowOp(500);")
 			return err
 		})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "timed out")
+		require.ErrorIs(t, err, context.DeadlineExceeded)
 
-		// Now verify second bridge (which wasn't involved in timeout) is functional
 		err = bridge2.LoadScript("functional_test.js", `
 			globalThis.simpleAdd = function(a, b) {
 				return a + b;
@@ -768,8 +794,7 @@ func TestBridge_RunSyncTimeout(t *testing.T) {
 		`)
 		require.NoError(t, err, "Should be able to load script on second bridge")
 
-		// Verify the function works on second bridge
-		err = bridge2.RunSync(func(vm *goja.Runtime) error {
+		err = bridge2.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			val, err := vm.RunString("simpleAdd(2, 3);")
 			if err != nil {
 				return err
@@ -789,10 +814,6 @@ func TestBridge_RunSyncTimeout(t *testing.T) {
 
 		bridge := testBridge(t)
 
-		// Use a very short timeout to prove our quick operation is fast enough
-		bridge.SetTimeout(50 * time.Millisecond)
-
-		// Load a quick operation script
 		err := bridge.LoadScript("quick.js", `
 			globalThis.quickOp = function(x) {
 				return x * 2;
@@ -800,8 +821,10 @@ func TestBridge_RunSyncTimeout(t *testing.T) {
 		`)
 		require.NoError(t, err)
 
-		// Call the quick operation
-		err = bridge.RunSync(func(vm *goja.Runtime) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		err = bridge.RunSync(ctx, func(vm *goja.Runtime) error {
 			val, err := vm.RunString("quickOp(21);")
 			if err != nil {
 				return err
@@ -815,45 +838,19 @@ func TestBridge_RunSyncTimeout(t *testing.T) {
 		require.NoError(t, err, "Quick operation should succeed without timeout")
 	})
 
-	// Test 5: Verify SetTimeout and GetTimeout work correctly
-	t.Run("SetTimeout and GetTimeout work correctly", func(t *testing.T) {
+	// Test 5: Verify operation on stopped bridge returns error
+	t.Run("operation on stopped bridge returns appropriate error", func(t *testing.T) {
 		t.Parallel()
 
 		bridge := testBridge(t)
-
-		// Verify default timeout
-		require.Equal(t, bridge.GetTimeout(), DefaultTimeout, "Default timeout should match DefaultTimeout constant")
-
-		// Verify SetTimeout works
-		customTimeout := 123 * time.Millisecond
-		bridge.SetTimeout(customTimeout)
-		require.Equal(t, customTimeout, bridge.GetTimeout(), "GetTimeout should return the value we set")
-
-		// Verify setting to zero works (disables timeout)
-		bridge.SetTimeout(0)
-		require.Equal(t, time.Duration(0), bridge.GetTimeout(), "Setting to zero should work")
-
-		// Restore default
-		bridge.SetTimeout(DefaultTimeout)
-		require.Equal(t, DefaultTimeout, bridge.GetTimeout(), "Restoring default should work")
-	})
-
-	// Test 6: Verify timeout after bridge stop also works
-	t.Run("timeout on stopped bridge returns appropriate error", func(t *testing.T) {
-		t.Parallel()
-
-		bridge := testBridge(t)
-
-		// Stop the bridge
 		bridge.Stop()
 
-		// Try to run an operation - should fail with "bridge stopped" not timeout
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			return nil
 		})
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "not running", "Should mention event loop not running, not timeout")
+		require.Contains(t, err.Error(), "not running", "Should mention event loop not running")
 	})
 }
 
@@ -1080,7 +1077,7 @@ func TestBridge_GetCallable(t *testing.T) {
 		require.NotNil(t, fn, "Returned function should not be nil")
 
 		// Verify we can actually call it
-		err = bridge.RunSync(func(vm *goja.Runtime) error {
+		err = bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			result, err := fn(nil)
 			if err != nil {
 				return err
@@ -1285,7 +1282,7 @@ func TestBridge_ConcurrentStopAndSchedule(t *testing.T) {
 	require.False(t, postStopOK, "Run should return false after stop")
 
 	// Try RunSync after stop - should return error
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		t.Error("This should never execute after bridge is stopped")
 		return nil
 	})
@@ -1403,9 +1400,8 @@ func TestBridge_C3_StopLockOrdering(t *testing.T) {
 
 	// Create a custom bridge that tracks operation ordering
 	type op struct {
-		name        string
-		goroutineID int64
-		timestamp   time.Time
+		name      string
+		timestamp time.Time
 	}
 
 	ops := &struct {
@@ -1421,9 +1417,8 @@ func TestBridge_C3_StopLockOrdering(t *testing.T) {
 		time.Sleep(10 * time.Millisecond) // Let observers start
 		ops.mu.Lock()
 		ops.operations = append(ops.operations, op{
-			name:        "stop_called",
-			goroutineID: goroutineid.Get(),
-			timestamp:   time.Now(),
+			name:      "stop_called",
+			timestamp: time.Now(),
 		})
 		ops.mu.Unlock()
 
@@ -1431,9 +1426,8 @@ func TestBridge_C3_StopLockOrdering(t *testing.T) {
 
 		ops.mu.Lock()
 		ops.operations = append(ops.operations, op{
-			name:        "stop_returned",
-			goroutineID: goroutineid.Get(),
-			timestamp:   time.Now(),
+			name:      "stop_returned",
+			timestamp: time.Now(),
 		})
 		ops.mu.Unlock()
 	}()

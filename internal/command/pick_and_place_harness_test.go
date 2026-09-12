@@ -972,31 +972,54 @@ func (h *PickAndPlaceHarness) WaitForManualPathEmpty(timeout time.Duration) bool
 	return false
 }
 
-// WaitForFrames waits for simulator tick counter to advance by specified number
+// WaitForFrames waits for simulator tick counter to advance by specified number.
+// Hardened for CI under resource pressure: 30s deadline (was 10s), waitSnapshot-style
+// handshake via GetDebugState, and deterministic timeout logging. The deadline adapts
+// to the harness context if sooner. Under heavy parallel load (~500 t.Parallel,
+// termtest readLoop), the original 10s/200ms sleeps were load-bearing and could
+// silently return before tick advanced, causing stuck-loop flakes. This version
+// either advances deterministically or logs a clear diagnostic for /tmp/loom-clean-head-*.log.
+// If flakes persist under routine host load, run with -parallel 1 (-p=1) as documented fallback.
 func (h *PickAndPlaceHarness) WaitForFrames(frames int64) {
-	deadline := time.Now().Add(10 * time.Second)
+	// 30s covers heavily contended CI (parallel builds, -race). Original 10s was tight.
+	deadline := time.Now().Add(30 * time.Second)
+	if dl, ok := h.ctx.Deadline(); ok && dl.Before(deadline) {
+		deadline = dl
+	}
 	initialState := h.GetDebugState()
 	initialTick := initialState.Tick
 
-	// Wait for the TUI to render at least one frame with debug overlay
-	// Try up to 5 seconds for the debug overlay to appear
+	// waitSnapshot-style handshake: poll tick/mode instead of raw buffer sleep.
 	for time.Now().Before(deadline) {
-		buffer := h.GetScreenBuffer()
-		if strings.Contains(buffer, "__place_debug_start__") || strings.Contains(buffer, `"m":"`) {
-			h.t.Logf("WaitForFrames: debug overlay found, buffer len=%d", len(buffer))
+		s := h.GetDebugState()
+		if s.Tick > 0 || s.Mode != "" {
 			break
 		}
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	// Now wait for frames to advance
-	for time.Now().Before(deadline) {
-		currentState := h.GetDebugState()
-		if currentState.Tick >= initialTick+int64(frames) {
+		buf := h.GetScreenBuffer()
+		if strings.Contains(buf, "__place_debug_start__") || strings.Contains(buf, `"m":"`) {
+			h.t.Logf("WaitForFrames: debug overlay found, buffer len=%d", len(buf))
+			break
+		}
+		if h.ctx.Err() != nil {
+			h.t.Logf("WaitForFrames: context cancelled during overlay wait at tick %d", s.Tick)
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+
+	for time.Now().Before(deadline) {
+		cur := h.GetDebugState()
+		if cur.Tick >= initialTick+int64(frames) {
+			return
+		}
+		if h.ctx.Err() != nil {
+			h.t.Logf("WaitForFrames: context cancelled at tick %d target %d", cur.Tick, initialTick+int64(frames))
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	cur := h.GetDebugState()
+	h.t.Logf("WaitForFrames: deadline exceeded after %v, initial=%d current=%d target=%d", time.Until(deadline), initialTick, cur.Tick, initialTick+int64(frames))
 }
 
 // WaitForManualPathEmptyWithMinTicks waits for the manual path to be empty (mpl=0)

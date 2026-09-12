@@ -6,12 +6,10 @@ import (
 	"io"
 	"sort"
 	"sync"
-	"sync/atomic"
 
-	"github.com/joeycumines/goja"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/joeycumines/goroutineid"
 
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
@@ -21,31 +19,41 @@ import (
 // method groups. Each registration function receives a pointer to this
 // struct so it can access and mutate the shared state.
 type muxState struct {
-	ctx                  context.Context
-	runtime              *goja.Runtime
-	mgr                  *parent.SessionManager
-	stdin                io.Reader
-	stdout               io.Writer
-	termFd               int
-	adapter              *gojaeventloop.Adapter
-	loop                 *goeventloop.Loop
-	eventTarget          *goeventloop.EventTarget
-	jsEventTarget        goja.Value
-	addListener          goja.Callable
-	removeListener       goja.Callable
-	dispatch             goja.Callable
-	customEventCtor      goja.Constructor
-	eventLoopGoroutineID atomic.Int64
-	sb                   *statusbar.StatusBar
-	toggleKey            byte
-	statusEnabled        bool
-	resizeFn             func(rows, cols uint16) error
-	activeSessionTarget  parent.SessionTarget
-	swappedOnce          bool
-	mu                   sync.RWMutex
-	inPassthrough        bool
-	onListeners          map[int]*onListener
-	nextOnID             int
+	ctx                   context.Context
+	lifecycleCtx          context.Context
+	lifecycleCancel       context.CancelFunc
+	runtime               *goja.Runtime
+	mgr                   *parent.SessionManager
+	lifecycleOnce         sync.Once
+	lifecycleDone         chan struct{} // closed when the manager lifecycle ends
+	managerRunDone        chan struct{} // closed after Run returns
+	managerRunErr         error
+	managerRunMu          sync.Mutex
+	managerRunStarted     bool
+	managerCloseRequested bool
+	managerCloseDone      chan struct{}
+	runOnce               sync.Once
+	stdin                 io.Reader
+	stdout                io.Writer
+	termFd                int
+	adapter               *gojaeventloop.Adapter
+	loop                  *goeventloop.Loop
+	eventTarget           *goeventloop.EventTarget
+	jsEventTarget         goja.Value
+	addListener           goja.Callable
+	removeListener        goja.Callable
+	dispatch              goja.Callable
+	customEventCtor       goja.Constructor
+	sb                    *statusbar.StatusBar
+	toggleKey             byte
+	statusEnabled         bool
+	resizeFn              func(rows, cols uint16) error
+	activeSessionTarget   parent.SessionTarget
+	swappedOnce           bool
+	mu                    sync.RWMutex
+	inPassthrough         bool
+	onListeners           map[int]*onListener
+	nextOnID              int
 }
 
 type onListener struct {
@@ -109,12 +117,10 @@ func detailToValue(r *goja.Runtime, v any) goja.Value {
 }
 
 func (s *muxState) isOnEventLoopGoroutine() bool {
-	id := s.eventLoopGoroutineID.Load()
-	if id <= 0 {
+	if s.loop == nil {
 		return false
 	}
-	current := goroutineid.Get()
-	return current > 0 && current == id
+	return s.loop.IsCallbackOwner()
 }
 
 // initEventTarget must be called on the event-loop goroutine.
@@ -150,7 +156,6 @@ func (s *muxState) initEventTarget() error {
 		s.customEventCtor, _ = goja.AssertConstructor(customEventVal)
 	}
 
-	s.eventLoopGoroutineID.Store(goroutineid.Get())
 	s.onListeners = make(map[int]*onListener)
 
 	return nil

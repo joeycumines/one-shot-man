@@ -61,7 +61,7 @@ func setupTestEnv(t *testing.T) (*btmod.Bridge, *goja.Runtime, *goja.Object) {
 	var vm *goja.Runtime
 	var pabtObj *goja.Object
 
-	err := b.RunSync(func(runtime *goja.Runtime) error {
+	err := b.RunSync(context.Background(), func(runtime *goja.Runtime) error {
 		vm = runtime
 		_, err := vm.RunString(`
 			const bt = require('osm:bt');
@@ -88,7 +88,7 @@ func setupTestEnv(t *testing.T) (*btmod.Bridge, *goja.Runtime, *goja.Object) {
 // executeJS executes a JS string and returns the result.
 func executeJS(t *testing.T, b *btmod.Bridge, script string) goja.Value {
 	var res goja.Value
-	err := b.RunSync(func(vm *goja.Runtime) error {
+	err := b.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		var err error
 		res, err = vm.RunString(script)
 		return err
@@ -150,7 +150,7 @@ func TestNewState_Creation(t *testing.T) {
 
 	t.Run("MissingBlackboard", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`pabt.newState()`)
 			return err
 		})
@@ -160,7 +160,7 @@ func TestNewState_Creation(t *testing.T) {
 
 	t.Run("InvalidBlackboard", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`pabt.newState({})`)
 			return err
 		})
@@ -232,7 +232,7 @@ func TestNewAction_Creation(t *testing.T) {
 
 	t.Run("MissingArguments", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`pabt.newAction("test", [], [])`)
 			return err
 		})
@@ -242,7 +242,7 @@ func TestNewAction_Creation(t *testing.T) {
 
 	t.Run("InvalidNode", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`
 				pabt.newAction("test", [], [], "not a node")
 			`)
@@ -286,7 +286,7 @@ func TestRegisterAction(t *testing.T) {
 
 	t.Run("InvalidAction", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`
 				(() => {
 					const bb = new bt.Blackboard();
@@ -399,7 +399,7 @@ func TestNewPlan_Creation(t *testing.T) {
 
 	t.Run("MissingState", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`pabt.newPlan()`)
 			return err
 		})
@@ -409,7 +409,7 @@ func TestNewPlan_Creation(t *testing.T) {
 
 	t.Run("InvalidState", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`pabt.newPlan({}, [])`)
 			return err
 		})

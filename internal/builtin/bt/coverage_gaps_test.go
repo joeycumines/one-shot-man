@@ -21,7 +21,7 @@ func TestModuleLoader_TickNoArgs(t *testing.T) {
 	t.Parallel()
 	bridge, _, _ := setupTestEnv(t)
 
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		_, err := vm.RunString(`bt.tick()`)
 		return err
 	})
@@ -34,7 +34,7 @@ func TestModuleLoader_TickNonNode(t *testing.T) {
 	t.Parallel()
 	bridge, _, _ := setupTestEnv(t)
 
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		_, err := vm.RunString(`bt.tick("not a node")`)
 		return err
 	})
@@ -121,7 +121,7 @@ func TestModuleLoader_Selector(t *testing.T) {
 	})
 
 	t.Run("InvalidChild", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.selector(["not a node"])`)
 			return err
 		})
@@ -135,7 +135,7 @@ func TestModuleLoader_SequenceInvalidChild(t *testing.T) {
 	t.Parallel()
 	bridge, _, _ := setupTestEnv(t)
 
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		_, err := vm.RunString(`bt.sequence(["not a node"])`)
 		return err
 	})
@@ -148,7 +148,7 @@ func TestModuleLoader_FallbackInvalidChild(t *testing.T) {
 	t.Parallel()
 	bridge, _, _ := setupTestEnv(t)
 
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		_, err := vm.RunString(`bt.fallback(["not a node"])`)
 		return err
 	})
@@ -173,7 +173,7 @@ func TestModuleLoader_Interval(t *testing.T) {
 	})
 
 	t.Run("NoArgs", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.interval()`)
 			return err
 		})
@@ -188,7 +188,7 @@ func TestModuleLoader_MemorizeErrors(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	t.Run("NoArgs", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.memorize()`)
 			return err
 		})
@@ -197,7 +197,7 @@ func TestModuleLoader_MemorizeErrors(t *testing.T) {
 	})
 
 	t.Run("InvalidTick", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.memorize("not a tick")`)
 			return err
 		})
@@ -212,7 +212,7 @@ func TestModuleLoader_AsyncErrors(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	t.Run("NoArgs", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.async()`)
 			return err
 		})
@@ -221,7 +221,7 @@ func TestModuleLoader_AsyncErrors(t *testing.T) {
 	})
 
 	t.Run("InvalidTick", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.async(42)`)
 			return err
 		})
@@ -236,7 +236,7 @@ func TestModuleLoader_NotErrors(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	t.Run("NoArgs", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.not()`)
 			return err
 		})
@@ -245,7 +245,7 @@ func TestModuleLoader_NotErrors(t *testing.T) {
 	})
 
 	t.Run("InvalidTick", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.not(null)`)
 			return err
 		})
@@ -259,7 +259,7 @@ func TestModuleLoader_NodeInvalidTick(t *testing.T) {
 	t.Parallel()
 	bridge, _, _ := setupTestEnv(t)
 
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		_, err := vm.RunString(`bt.node(42)`)
 		return err
 	})
@@ -273,7 +273,7 @@ func TestModuleLoader_CreateLeafNodeErrors(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	t.Run("NoArgs", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.createLeafNode()`)
 			return err
 		})
@@ -282,7 +282,7 @@ func TestModuleLoader_CreateLeafNodeErrors(t *testing.T) {
 	})
 
 	t.Run("NullArg", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.createLeafNode(null)`)
 			return err
 		})
@@ -291,7 +291,7 @@ func TestModuleLoader_CreateLeafNodeErrors(t *testing.T) {
 	})
 
 	t.Run("UndefinedArg", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.createLeafNode(undefined)`)
 			return err
 		})
@@ -300,7 +300,7 @@ func TestModuleLoader_CreateLeafNodeErrors(t *testing.T) {
 	})
 
 	t.Run("NonCallable", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.createLeafNode(42)`)
 			return err
 		})
@@ -315,7 +315,7 @@ func TestModuleLoader_CreateBlockingLeafNodeErrors(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	t.Run("NoArgs", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.createBlockingLeafNode()`)
 			return err
 		})
@@ -324,7 +324,7 @@ func TestModuleLoader_CreateBlockingLeafNodeErrors(t *testing.T) {
 	})
 
 	t.Run("NullArg", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.createBlockingLeafNode(null)`)
 			return err
 		})
@@ -333,7 +333,7 @@ func TestModuleLoader_CreateBlockingLeafNodeErrors(t *testing.T) {
 	})
 
 	t.Run("UndefinedArg", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.createBlockingLeafNode(undefined)`)
 			return err
 		})
@@ -342,7 +342,7 @@ func TestModuleLoader_CreateBlockingLeafNodeErrors(t *testing.T) {
 	})
 
 	t.Run("NonCallable", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.createBlockingLeafNode("hello")`)
 			return err
 		})
@@ -372,7 +372,7 @@ func TestModuleLoader_ExposeBlackboard(t *testing.T) {
 	})
 
 	t.Run("WrongArgCount", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.exposeBlackboard()`)
 			return err
 		})
@@ -381,7 +381,7 @@ func TestModuleLoader_ExposeBlackboard(t *testing.T) {
 	})
 
 	t.Run("InvalidArg", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.exposeBlackboard("not a blackboard")`)
 			return err
 		})
@@ -396,7 +396,7 @@ func TestModuleLoader_NewTickerErrors(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	t.Run("NoArgs", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.newTicker()`)
 			return err
 		})
@@ -405,7 +405,7 @@ func TestModuleLoader_NewTickerErrors(t *testing.T) {
 	})
 
 	t.Run("ZeroDuration", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.newTicker(0, bt.node(() => bt.success))`)
 			return err
 		})
@@ -414,7 +414,7 @@ func TestModuleLoader_NewTickerErrors(t *testing.T) {
 	})
 
 	t.Run("NegativeDuration", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.newTicker(-1, bt.node(() => bt.success))`)
 			return err
 		})
@@ -423,7 +423,7 @@ func TestModuleLoader_NewTickerErrors(t *testing.T) {
 	})
 
 	t.Run("InvalidNode", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.newTicker(100, "not a node")`)
 			return err
 		})
@@ -464,7 +464,7 @@ func TestModuleLoader_NewManager(t *testing.T) {
 	})
 
 	t.Run("AddInvalidArg", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`
 				{
 					const mgr = bt.newManager();
@@ -478,7 +478,7 @@ func TestModuleLoader_NewManager(t *testing.T) {
 	})
 
 	t.Run("AddNull", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`
 				{
 					const mgr = bt.newManager();
@@ -491,7 +491,7 @@ func TestModuleLoader_NewManager(t *testing.T) {
 	})
 
 	t.Run("AddNoArgs", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`
 				{
 					const mgr = bt.newManager();
@@ -505,7 +505,7 @@ func TestModuleLoader_NewManager(t *testing.T) {
 	})
 
 	t.Run("AddWithoutNative", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`
 				{
 					const m = bt.newManager();
@@ -519,7 +519,7 @@ func TestModuleLoader_NewManager(t *testing.T) {
 	})
 
 	t.Run("AddWithWrongNative", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`
 				{
 					const m2 = bt.newManager();
@@ -603,7 +603,7 @@ func TestTickUnwrap_GoFunctionDirect(t *testing.T) {
 	}
 
 	var tick bt.Tick
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val := vm.ToValue(goTick)
 		var unwrapErr error
 		tick, unwrapErr = tickUnwrap(bridge, vm, val)
@@ -622,7 +622,7 @@ func TestTickUnwrap_NilUndefinedNull(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		// nil
 		_, err := tickUnwrap(bridge, vm, nil)
 		assert.Error(t, err)
@@ -653,7 +653,7 @@ func TestTickUnwrap_AsyncFunctionRejection(t *testing.T) {
 	// Promise.resolve(x) may export as x directly. An async function
 	// creates a proper Promise that should trigger the detection code.
 	var tick bt.Tick
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`(async (children) => "success")`)
 		if err != nil {
 			return err
@@ -682,7 +682,7 @@ func TestTickUnwrap_NonPromiseObjectReturn(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	var tick bt.Tick
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`(children) => ({foo: "bar"})`)
 		if err != nil {
 			return err
@@ -706,7 +706,7 @@ func TestTickUnwrap_ObjectWithNonCallableThen(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	var tick bt.Tick
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`(children) => ({then: "not a function"})`)
 		if err != nil {
 			return err
@@ -730,7 +730,7 @@ func TestTickUnwrap_NullReturn(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	var tick bt.Tick
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`(children) => null`)
 		if err != nil {
 			return err
@@ -753,7 +753,7 @@ func TestTickUnwrap_VmNilError(t *testing.T) {
 	bridge := testBridge(t)
 
 	var tick bt.Tick
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`(children) => "success"`)
 		if err != nil {
 			return err
@@ -778,7 +778,7 @@ func TestTickUnwrap_NonCallable(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val := vm.ToValue(42)
 		_, err := tickUnwrap(bridge, vm, val)
 		assert.Error(t, err)
@@ -795,7 +795,7 @@ func TestTickUnwrap_JSWithChildren(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	var tick bt.Tick
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`
 			(children) => {
 				// If children array exists and has length, success
@@ -837,7 +837,7 @@ func TestNodeUnwrap_GoFunctionDirect(t *testing.T) {
 	}
 
 	var node bt.Node
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val := vm.ToValue(goNodeFn)
 		var unwrapErr error
 		node, unwrapErr = nodeUnwrap(bridge, vm, val)
@@ -860,7 +860,7 @@ func TestNodeUnwrap_NilUndefinedNull(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		_, err := nodeUnwrap(bridge, vm, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "nil or undefined")
@@ -882,7 +882,7 @@ func TestNodeUnwrap_VmNilForJSFunction(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`() => [(children) => "success", []]`)
 		if err != nil {
 			return err
@@ -902,7 +902,7 @@ func TestNodeUnwrap_JSNodeWithChildren(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	var node bt.Node
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`
 			() => {
 				const childNode = bt.node(() => bt.success);
@@ -941,10 +941,9 @@ func TestBridge_RunSync_NoTimeout(t *testing.T) {
 	t.Parallel()
 
 	bridge := testBridge(t)
-	bridge.SetTimeout(0) // Disable timeout
 
 	var result int64
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`1 + 2`)
 		if err != nil {
 			return err
@@ -963,7 +962,7 @@ func TestBridge_RunSync_BridgeStopped(t *testing.T) {
 	bridge := testBridge(t)
 	bridge.Stop()
 
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		return nil
 	})
 	require.Error(t, err)
@@ -971,12 +970,11 @@ func TestBridge_RunSync_BridgeStopped(t *testing.T) {
 }
 
 // TestBridge_RunSync_DoneDuringWait verifies RunSync returns error
-// when bridge is stopped while waiting (without timeout).
+// when bridge is stopped while waiting.
 func TestBridge_RunSync_DoneDuringWait(t *testing.T) {
 	t.Parallel()
 
 	bridge, loop := testBridgeWithManualShutdown(t)
-	bridge.SetTimeout(0) // Disable timeout to test the Done() path
 
 	// Load a slow operation (500ms is plenty — bridge.Stop() fires after 50ms)
 	err := bridge.LoadScript("slow.js", `
@@ -992,7 +990,7 @@ func TestBridge_RunSync_DoneDuringWait(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- bridge.RunSync(func(vm *goja.Runtime) error {
+		errCh <- bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString("blockForever()")
 			return err
 		})
@@ -1022,7 +1020,7 @@ func TestBridge_TryRunSync_BridgeStopped(t *testing.T) {
 	bridge := testBridge(t)
 	bridge.Stop()
 
-	err := bridge.TryRunSync(nil, func(vm *goja.Runtime) error {
+	err := bridge.TryRunSync(context.Background(), nil, func(vm *goja.Runtime) error {
 		return nil
 	})
 	require.Error(t, err)
@@ -1036,7 +1034,7 @@ func TestBridge_RunSync(t *testing.T) {
 	bridge := testBridge(t)
 
 	var result int64
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`21 * 2`)
 		if err != nil {
 			return err
@@ -1183,7 +1181,7 @@ func TestBlockingJSLeaf_OnEventLoopWithGetCtx(t *testing.T) {
 
 	var fn goja.Callable
 	var vm *goja.Runtime
-	err = bridge.RunSync(func(runtime *goja.Runtime) error {
+	err = bridge.RunSync(context.Background(), func(runtime *goja.Runtime) error {
 		vm = runtime
 		val := runtime.Get("syncCtxLeaf")
 		var ok bool
@@ -1222,7 +1220,7 @@ func TestBlockingJSLeaf_OnEventLoopDirect(t *testing.T) {
 
 	var fn goja.Callable
 	var vm *goja.Runtime
-	err = bridge.RunSync(func(runtime *goja.Runtime) error {
+	err = bridge.RunSync(context.Background(), func(runtime *goja.Runtime) error {
 		vm = runtime
 		val := runtime.Get("directLeaf")
 		var ok bool
@@ -1240,7 +1238,7 @@ func TestBlockingJSLeaf_OnEventLoopDirect(t *testing.T) {
 	// Call Tick from WITHIN the event loop to exercise the direct execution path
 	var status bt.Status
 	var tickErr error
-	err = bridge.RunSync(func(runtime *goja.Runtime) error {
+	err = bridge.RunSync(context.Background(), func(runtime *goja.Runtime) error {
 		tick, _ := node()
 		status, tickErr = tick(nil)
 		return nil
@@ -1272,7 +1270,7 @@ func TestBlockingJSLeaf_OnEventLoopAsyncFails(t *testing.T) {
 
 	var fn goja.Callable
 	var vm *goja.Runtime
-	err = bridge.RunSync(func(runtime *goja.Runtime) error {
+	err = bridge.RunSync(context.Background(), func(runtime *goja.Runtime) error {
 		vm = runtime
 		val := runtime.Get("deferredAsyncOnLoop")
 		var ok bool
@@ -1291,7 +1289,7 @@ func TestBlockingJSLeaf_OnEventLoopAsyncFails(t *testing.T) {
 	// complete synchronously because it needs the next macrotask to resolve.
 	var status bt.Status
 	var tickErr error
-	err = bridge.RunSync(func(runtime *goja.Runtime) error {
+	err = bridge.RunSync(context.Background(), func(runtime *goja.Runtime) error {
 		tick, _ := node()
 		status, tickErr = tick(nil)
 		return nil
@@ -1396,7 +1394,7 @@ func TestNodeUnwrap_JSFunction_ThrowsError(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	var node bt.Node
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`(function() { throw new Error("boom"); })`)
 		if err != nil {
 			return err
@@ -1425,7 +1423,7 @@ func TestNodeUnwrap_JSFunction_ReturnsNonArray(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	var node bt.Node
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val, err := vm.RunString(`(function() { return {}; })`)
 		if err != nil {
 			return err
@@ -1450,7 +1448,7 @@ func TestNodeUnwrap_JSFunction_InvalidTickElement(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	var node bt.Node
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		// Returns [42, []] — 42 is not a valid tick
 		val, err := vm.RunString(`(function() { return [42, []]; })`)
 		if err != nil {
@@ -1476,7 +1474,7 @@ func TestNodeUnwrap_JSFunction_InvalidChildElement(t *testing.T) {
 	bridge, _, _ := setupTestEnv(t)
 
 	var node bt.Node
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		// Returns [validTick, [42]] — 42 is not a valid child node
 		val, err := vm.RunString(`(function() { return [function(children) { return "success"; }, [42]]; })`)
 		if err != nil {
@@ -1502,7 +1500,7 @@ func TestNodeUnwrap_NonCallableNonNode(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
-	err := bridge.RunSync(func(vm *goja.Runtime) error {
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		val := vm.ToValue(42) // plain number
 		_, err := nodeUnwrap(bridge, vm, val)
 		assert.Error(t, err)

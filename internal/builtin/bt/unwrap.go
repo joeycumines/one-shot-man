@@ -61,7 +61,7 @@ func nodeUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Node, erro
 
 		// Execute the JS function on the event loop synchronously
 		// Use TryRunSync to avoid deadlock when called from within event loop
-		err := bridge.TryRunSync(vm, func(loopVm *goja.Runtime) error {
+		err := bridge.TryRunSync(bridge.ctx, vm, func(loopVm *goja.Runtime) error {
 			result, err := jsFn(goja.Undefined())
 			if err != nil {
 				return fmt.Errorf("JS node function error: %w", err)
@@ -183,7 +183,7 @@ func tickUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Tick, erro
 
 		// All JS execution must happen on the event loop via RunSync
 		// Use TryRunSync to avoid deadlock when called from within event loop
-		err := bridge.TryRunSync(vm, func(loopVm *goja.Runtime) error {
+		err := bridge.TryRunSync(bridge.ctx, vm, func(loopVm *goja.Runtime) error {
 			defer func() {
 				if r := recover(); r != nil {
 					syncErr = fmt.Errorf("panic in JS tick: %v", r)

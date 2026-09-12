@@ -1,6 +1,7 @@
 package pabt
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -198,7 +199,7 @@ func TestExprCondition_ErrorHandling(t *testing.T) {
 
 	t.Run("MissingArguments", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`pabt.newExprCondition()`)
 			return err
 		})

@@ -84,7 +84,7 @@ func classifyFile(name, content string) (TriageKind, string) {
 }
 
 func containsAddedLines(content string, re *regexp.Regexp) bool {
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		if strings.HasPrefix(line, "+") && re.MatchString(line) {
 			return true
 		}

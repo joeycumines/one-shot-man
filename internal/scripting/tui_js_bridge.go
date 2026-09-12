@@ -315,7 +315,7 @@ func (tm *TUIManager) jsCreatePrompt(config any) (string, error) {
 			// must use RunSync to execute the JS function on the
 			// event loop goroutine and block until it completes.
 			var sugg []prompt.Suggest
-			err := tm.engine.runtime.RunSync(func(vm *goja.Runtime) error {
+			err := tm.engine.runtime.RunSync(tm.engine.ctx, func(vm *goja.Runtime) error {
 				var callErr error
 				sugg, callErr = tm.tryCallJSCompleter(jsCompleter, document)
 				return callErr
@@ -664,7 +664,7 @@ func (tm *TUIManager) buildKeyBinds() []prompt.KeyBind {
 					// not goroutine-safe. go-prompt invokes key binding
 					// handlers from its own goroutine.
 					var result goja.Value
-					err := tm.engine.runtime.RunSync(func(vm *goja.Runtime) error {
+					err := tm.engine.runtime.RunSync(tm.engine.ctx, func(vm *goja.Runtime) error {
 						promptObj := tm.buildPromptJSObject(p)
 						var callErr error
 						result, callErr = jsHandler(goja.Undefined(), promptObj)

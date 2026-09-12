@@ -3,6 +3,7 @@ package bt
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -308,27 +309,37 @@ func (b *Bridge) ModuleLoader(ctx context.Context) require.ModuleLoader {
 				}
 			}
 
-			// Create the ticker
+			// Construct and admit the ticker while holding the bridge lifecycle
+			// lock. This closes the check/add race with Bridge.Stop: either the
+			// ticker is admitted before shutdown publishes stopped, or shutdown
+			// wins and the ticker is immediately released below.
 			var ticker bt.Ticker
+			var addErr error
+			b.mu.Lock()
+			if !b.started || b.stopped {
+				b.mu.Unlock()
+				return goja.Undefined()
+			}
 			if stopOnFailure {
 				ticker = bt.NewTickerStopOnFailure(ctx, durationFromMs(durationMs), node)
 			} else {
 				ticker = bt.NewTicker(ctx, durationFromMs(durationMs), node)
 			}
-
-			// Register with the bridge's internal manager
 			if b.manager != nil {
-				if err := b.manager.Add(ticker); err != nil {
-					panic(runtime.NewGoError(fmt.Errorf("failed to add ticker to manager: %w", err)))
+				addErr = b.manager.Add(ticker)
+			}
+			b.mu.Unlock()
+
+			if addErr != nil {
+				ticker.Stop()
+				if !errors.Is(addErr, bt.ErrManagerStopped) {
+					panic(runtime.NewGoError(fmt.Errorf("failed to add ticker to manager: %w", addErr)))
 				}
+				// Shutdown won the admission race. Return a terminal wrapper so
+				// callers can still observe done/err without an uncaught JS throw.
+				return createTickerJSWrapper(b, runtime, ticker)
 			}
 
-			b.loop.Promisify(ctx, func(ctx context.Context) (any, error) {
-				<-ticker.Done()
-				return nil, ticker.Err()
-			})
-
-			// Create a JS wrapper object
 			return createTickerJSWrapper(b, runtime, ticker)
 		})
 
@@ -350,8 +361,12 @@ func createTickerJSWrapper(bridge *Bridge, runtime *goja.Runtime, ticker bt.Tick
 	_ = obj.Set("done", func(call goja.FunctionCall) goja.Value {
 		doneOnce.Do(func() {
 			donePromise = bridge.adapter.Promisify(bridge.ctx, func(ctx context.Context) (any, error) {
-				<-ticker.Done()
-				return nil, ticker.Err()
+				select {
+				case <-ticker.Done():
+					return nil, ticker.Err()
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
 			})
 		})
 		return donePromise
@@ -412,8 +427,12 @@ func createManagerJSWrapper(bridge *Bridge, runtime *goja.Runtime, manager bt.Ma
 	_ = obj.Set("done", func(call goja.FunctionCall) goja.Value {
 		doneOnce.Do(func() {
 			donePromise = bridge.adapter.Promisify(bridge.ctx, func(ctx context.Context) (any, error) {
-				<-manager.Done()
-				return nil, manager.Err()
+				select {
+				case <-manager.Done():
+					return nil, manager.Err()
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
 			})
 		})
 		return donePromise

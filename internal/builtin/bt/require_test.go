@@ -1,8 +1,10 @@
 package bt
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 
 	bt "github.com/joeycumines/go-behaviortree"
 	"github.com/joeycumines/goja"
@@ -20,7 +22,7 @@ func setupTestEnv(t *testing.T) (*Bridge, *goja.Runtime, *goja.Object) {
 	var btObj *goja.Object
 
 	// Initialize the JS environment on the loop
-	err := b.RunSync(func(runtime *goja.Runtime) error {
+	err := b.RunSync(context.Background(), func(runtime *goja.Runtime) error {
 		vm = runtime
 		// Require the module and expose it as global 'bt' for easier testing
 		_, err := vm.RunString(`
@@ -46,7 +48,7 @@ func setupTestEnv(t *testing.T) (*Bridge, *goja.Runtime, *goja.Object) {
 // executeJS executes a JS string and returns the result export.
 func executeJS(t *testing.T, b *Bridge, script string) goja.Value {
 	var res goja.Value
-	err := b.RunSync(func(vm *goja.Runtime) error {
+	err := b.RunSync(context.Background(), func(vm *goja.Runtime) error {
 		var err error
 		res, err = vm.RunString(script)
 		return err
@@ -96,7 +98,7 @@ func TestNode_Construction(t *testing.T) {
 	})
 
 	t.Run("MissingTick", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.node()`)
 			return err
 		})
@@ -105,7 +107,7 @@ func TestNode_Construction(t *testing.T) {
 	})
 
 	t.Run("InvalidChild", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.node(() => bt.success, null)`)
 			return err
 		})
@@ -163,7 +165,7 @@ func TestUnwrap_Logic(t *testing.T) {
 	t.Run("NodeUnwrap_PureJS", func(t *testing.T) {
 		// 1. Define a pure JS node function: () => [tick, children]
 		var node bt.Node
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			val, err := vm.RunString(`
 				(() => [ (children) => bt.success, [] ])
 			`)
@@ -195,7 +197,7 @@ func TestUnwrap_Logic(t *testing.T) {
 		})
 
 		var unwrappedNode bt.Node
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			// Wrap it into Goja
 			val := vm.ToValue(originalNode)
 
@@ -218,7 +220,7 @@ func TestUnwrap_Logic(t *testing.T) {
 	t.Run("TickUnwrap_PureJS", func(t *testing.T) {
 		// Verify unwrapping a pure JS tick function: (children) => status
 		var tick bt.Tick
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			val, err := vm.RunString(`(children) => bt.running`)
 			if err != nil {
 				return err
@@ -238,7 +240,7 @@ func TestUnwrap_Logic(t *testing.T) {
 		// Verify that createLeafNode properly handles async functions
 		// Async ticks return Running on first tick, need second tick for result
 		var node bt.Node
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			val, err := vm.RunString(`
 				bt.createLeafNode(async () => {
 					return bt.success;
@@ -262,7 +264,7 @@ func TestUnwrap_Logic(t *testing.T) {
 		// loop now always uses strict microtask ordering, so the native-promise
 		// microtask may not drain in a single macrotask under -race.
 		for range 5 {
-			err = bridge.RunSync(func(vm *goja.Runtime) error { return nil })
+			err = bridge.RunSync(context.Background(), func(vm *goja.Runtime) error { return nil })
 			require.NoError(t, err)
 		}
 
@@ -330,7 +332,7 @@ func TestLeaves_CreateLeafNode(t *testing.T) {
 
 		// Setup a node
 		var node bt.Node
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			val, err := vm.RunString(`
 				bt.createLeafNode(async () => {
 					return bt.success;
@@ -355,7 +357,7 @@ func TestLeaves_CreateLeafNode(t *testing.T) {
 		// strict ordering, so the native-promise microtask may
 		// not drain in a single macrotask under -race.
 		for range 5 {
-			err = bridge.RunSync(func(vm *goja.Runtime) error { return nil })
+			err = bridge.RunSync(context.Background(), func(vm *goja.Runtime) error { return nil })
 			require.NoError(t, err)
 		}
 
@@ -366,7 +368,7 @@ func TestLeaves_CreateLeafNode(t *testing.T) {
 	})
 
 	t.Run("Invalid_Args", func(t *testing.T) {
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			_, err := vm.RunString(`bt.createLeafNode(null)`)
 			return err
 		})
@@ -381,7 +383,7 @@ func TestLeaves_BlockingLeaf(t *testing.T) {
 
 	t.Run("Blocks_Until_Resolve", func(t *testing.T) {
 		var node bt.Node
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			val, err := vm.RunString(`
 				bt.createBlockingLeafNode(async () => {
 					return bt.success;
@@ -432,7 +434,7 @@ func TestEdgeCases_InvalidTypes(t *testing.T) {
 	t.Run("Node_InvalidReturnShape", func(t *testing.T) {
 		// Pass a JS function that doesn't return an array
 		var node bt.Node
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			val, _ := vm.RunString(`
 				(() => "not-an-array")
 			`)
@@ -452,7 +454,7 @@ func TestEdgeCases_InvalidTypes(t *testing.T) {
 	t.Run("Tick_Panic", func(t *testing.T) {
 		// JS function panics
 		var tick bt.Tick
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
 			val, _ := vm.RunString(`(children) => { throw "JS Panic"; }`)
 			var unwrapErr error
 			tick, unwrapErr = tickUnwrap(bridge, vm, val)
@@ -468,6 +470,53 @@ func TestEdgeCases_InvalidTypes(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "JS Panic")
 	})
+}
+
+func TestNewTickerAfterBridgeManagerStopReturnsTerminalTicker(t *testing.T) {
+	bridge, _, _ := setupTestEnv(t)
+	bridge.Manager().Stop()
+
+	value := executeJS(t, bridge, `bt.newTicker(10, bt.node(() => bt.success))`)
+	require.NotNil(t, value)
+	require.False(t, goja.IsUndefined(value))
+
+	value = executeJS(t, bridge, `bt.newTicker(10, bt.node(() => bt.success)).done()`)
+	require.NotNil(t, value)
+	require.False(t, goja.IsUndefined(value))
+}
+
+func TestNewManagerDoneSettlesWhenBridgeStops(t *testing.T) {
+	bridge, _, _ := setupTestEnv(t)
+	settled := make(chan struct{})
+
+	err := bridge.RunSync(context.Background(), func(vm *goja.Runtime) error {
+		if err := vm.Set("notifyManagerDone", func(goja.FunctionCall) goja.Value {
+			select {
+			case <-settled:
+			default:
+				close(settled)
+			}
+			return goja.Undefined()
+		}); err != nil {
+			return err
+		}
+		_, err := vm.RunString(`
+			(() => {
+				const manager = bt.newManager();
+				manager.done().then(notifyManagerDone, notifyManagerDone);
+			})()
+		`)
+		return err
+	})
+	require.NoError(t, err)
+
+	bridge.Stop()
+
+	select {
+	case <-settled:
+	case <-time.After(2 * time.Second):
+		require.FailNow(t, "manager done promise did not settle after bridge shutdown")
+	}
 }
 
 // TestRequiresNewTicker verifies that the 'run' export has been removed

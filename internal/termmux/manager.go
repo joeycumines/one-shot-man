@@ -1002,6 +1002,13 @@ type SessionManager struct {
 	// stopped and all resources have been released.
 	done chan struct{}
 
+	// closeCh is closed by Close (or Run's ctx cancellation) to signal
+	// the worker to shut down. It is never closed while a send to reqChan
+	// may be in flight — reqChan itself is never closed, which avoids the
+	// send-on-closed race entirely. Senders waiting on reqChan are
+	// unblocked by done when the worker exits.
+	closeCh chan struct{}
+
 	// started is closed by Run when the worker goroutine begins
 	// processing. Used by sendRequest to detect calls before Run.
 	started chan struct{}
@@ -1116,6 +1123,7 @@ func NewSessionManager(opts ...ManagerOption) *SessionManager {
 		mergedOutput:       make(chan sessionOutput, DefaultChannelBuffer),
 		eventBus:           NewEventBus(),
 		done:               make(chan struct{}),
+		closeCh:            make(chan struct{}),
 		started:            make(chan struct{}),
 		sessions:           make(map[SessionID]*managedSession),
 		nextID:             1,
@@ -1151,28 +1159,38 @@ func (m *SessionManager) Run(ctx context.Context) error {
 	defer close(m.done)
 	defer m.eventBus.Close()
 
+	m.reqMu.Lock()
+	if m.closed {
+		m.reqMu.Unlock()
+		close(m.started)
+		return nil
+	}
+	// Publish startup while holding the admission lock so Close cannot race
+	// with this transition.
+	close(m.started)
+	m.reqMu.Unlock()
+
 	// Create a reader context for per-session goroutines. Cancelled
 	// during shutdown to ensure they exit promptly.
 	m.readerCtx, m.readerCancel = context.WithCancel(ctx)
 	defer m.readerCancel()
 
-	// Signal that the worker has started. This unblocks sendRequest
-	// callers that were waiting for the worker to be ready.
-	close(m.started)
-
 	for {
 		select {
 		case <-ctx.Done():
+			// Publish the admission barrier before draining. sendRequest holds
+			// reqMu while admitting a request, so closing closeCh first wakes
+			// any sender that is blocked on a full request queue and prevents a
+			// request from arriving after the drain.
+			m.signalClose()
 			m.shutdownSessions()
-			// Close reqChan so any callers blocked on sendRequest
-			// will panic-recover with ErrManagerNotRunning.
-			m.closeReqChan()
+			m.rejectQueuedRequests()
 			return ctx.Err()
-		case req, ok := <-m.reqChan:
-			if !ok {
-				m.shutdownSessions()
-				return nil
-			}
+		case <-m.closeCh:
+			m.shutdownSessions()
+			m.rejectQueuedRequests()
+			return nil
+		case req := <-m.reqChan:
 			m.dispatch(req)
 		case so := <-m.mergedOutput:
 			m.handleSessionOutput(so)
@@ -1180,12 +1198,21 @@ func (m *SessionManager) Run(ctx context.Context) error {
 	}
 }
 
-// Close signals the worker goroutine to stop by closing the request channel.
+// Close signals the worker goroutine to stop by closing closeCh.
 // It blocks until the worker has finished processing. Safe to call multiple
 // times — subsequent calls are no-ops.
 func (m *SessionManager) Close() {
-	m.closeReqChan()
-	<-m.done
+	m.reqMu.Lock()
+	if !m.closed {
+		m.closed = true
+		close(m.closeCh)
+	}
+	m.reqMu.Unlock()
+	select {
+	case <-m.started:
+		<-m.done
+	default:
+	}
 }
 
 // Started returns a channel that is closed when the worker goroutine has
@@ -1199,15 +1226,24 @@ func (m *SessionManager) Started() <-chan struct{} {
 	return m.started
 }
 
-// closeReqChan idempotently closes reqChan.
-func (m *SessionManager) closeReqChan() {
+// Done returns a channel that is closed when Run returns and all manager
+// resources have been released. It is safe to observe from any goroutine.
+func (m *SessionManager) Done() <-chan struct{} {
+	return m.done
+}
+
+// signalClose idempotently closes closeCh, which prompts the worker
+// goroutine (in Run) to shut down. reqChan is intentionally never closed:
+// closing it while a send from another goroutine is in flight would be a
+// data race and a potential send-on-closed panic, even with a recover guard.
+func (m *SessionManager) signalClose() {
 	m.reqMu.Lock()
 	defer m.reqMu.Unlock()
 	if m.closed {
 		return
 	}
 	m.closed = true
-	close(m.reqChan)
+	close(m.closeCh)
 }
 
 // Subscribe registers a subscriber for events produced by this manager.
@@ -1234,7 +1270,7 @@ func (m *SessionManager) EventsDropped() int64 {
 
 // sendRequest sends a request to the worker goroutine and blocks until the
 // worker replies. Returns ErrManagerNotRunning if the worker has not started
-// (Run not called) or has stopped (reqChan closed).
+// (Run not called) or has stopped (closed signalled or done closed).
 func (m *SessionManager) sendRequest(kind requestKind, payload any) (resp response) {
 	// Fast-path guard: worker must have started.
 	select {
@@ -1243,23 +1279,35 @@ func (m *SessionManager) sendRequest(kind requestKind, payload any) (resp respon
 		return response{err: ErrManagerNotRunning}
 	}
 
-	m.reqMu.Lock()
-	if m.closed {
-		m.reqMu.Unlock()
-		return response{err: ErrManagerNotRunning}
-	}
 	reply := make(chan response, 1)
 	req := request{kind: kind, payload: payload, reply: reply}
-	// Hold reqMu across the send to linearize with closeReqChan.
-	// Use select with done to avoid blocking forever if worker stopped
-	// while we were waiting to send.
-	select {
-	case m.reqChan <- req:
-		m.reqMu.Unlock()
-	case <-m.done:
-		m.reqMu.Unlock()
-		return response{err: ErrManagerNotRunning}
+
+	// Admission and shutdown are linearized by reqMu. A full request queue is
+	// handled by retrying outside the lock; no request can be enqueued after
+	// Close publishes the shutdown barrier.
+	for {
+		m.reqMu.Lock()
+		if m.closed {
+			m.reqMu.Unlock()
+			return response{err: ErrManagerNotRunning}
+		}
+		select {
+		case m.reqChan <- req:
+			m.reqMu.Unlock()
+			goto admitted
+		default:
+			m.reqMu.Unlock()
+		}
+		select {
+		case <-m.closeCh:
+			return response{err: ErrManagerNotRunning}
+		case <-m.done:
+			return response{err: ErrManagerNotRunning}
+		case <-time.After(time.Millisecond):
+		}
 	}
+
+admitted:
 
 	// Wait for the worker's response. Also select on done to prevent
 	// deadlock if the worker exits before processing this request
@@ -1269,6 +1317,19 @@ func (m *SessionManager) sendRequest(kind requestKind, payload any) (resp respon
 		return resp
 	case <-m.done:
 		return response{err: ErrManagerNotRunning}
+	}
+}
+
+func (m *SessionManager) rejectQueuedRequests() {
+	for {
+		select {
+		case req := <-m.reqChan:
+			if req.reply != nil {
+				req.reply <- response{err: ErrManagerNotRunning}
+			}
+		default:
+			return
+		}
 	}
 }
 

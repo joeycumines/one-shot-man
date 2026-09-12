@@ -33,21 +33,13 @@ func TestPassthrough_MessageBarRendered(t *testing.T) {
 	sb := statusbar.New(stdout)
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: 3,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: toggleKey,
-			TermState: ts,
-		},
-		ResizeConfig: ResizeConfig{
-			RestoreScreen: false,
-		},
-		UIConfig: UIConfig{
-			StatusBar: sb,
-		},
+		Stdin:         stdin,
+		Stdout:        stdout,
+		TermFd:        3,
+		ToggleKey:     toggleKey,
+		TermState:     ts,
+		RestoreScreen: false,
+		StatusBar:     sb,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -81,18 +73,12 @@ func TestPassthrough_MessageBarAbsentWhenEmpty(t *testing.T) {
 	sb := statusbar.New(stdout)
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: 3,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: toggleKey,
-			TermState: ts,
-		},
-		UIConfig: UIConfig{
-			StatusBar: sb,
-		},
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    3,
+		ToggleKey: toggleKey,
+		TermState: ts,
+		StatusBar: sb,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -133,25 +119,17 @@ func TestPassthrough_MessageBarResizeAccounting(t *testing.T) {
 	resizeCalled := false
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: 3,
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    3,
+		ToggleKey: toggleKey,
+		TermState: ts,
+		ResizeFn: func(rows, cols uint16) error {
+			resizeRows, resizeCols = int(rows), int(cols)
+			resizeCalled = true
+			return nil
 		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: toggleKey,
-			TermState: ts,
-		},
-		ResizeConfig: ResizeConfig{
-			ResizeFn: func(rows, cols uint16) error {
-				resizeRows, resizeCols = int(rows), int(cols)
-				resizeCalled = true
-				return nil
-			},
-		},
-		UIConfig: UIConfig{
-			StatusBar: sb,
-		},
+		StatusBar: sb,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)

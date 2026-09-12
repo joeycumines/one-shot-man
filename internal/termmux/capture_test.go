@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"path/filepath"
 	"runtime"
@@ -440,8 +441,32 @@ func TestCaptureSession_SendEOF(t *testing.T) {
 	}
 }
 
-func TestCaptureSession_ReaderOutput(t *testing.T) {
-	t.Parallel()
+func TestCaptureSession_WaitCompletesBeforeLateReader(t *testing.T) {
+	skipIfWindows(t)
+	cs := NewCaptureSession(CaptureConfig{Command: "sh", Args: []string{"-c", "for i in $(seq 1 256); do printf 'late-%03d\\n' $i; done"}})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+	waitDone := make(chan struct{})
+	go func() { _, _ = cs.Wait(); close(waitDone) }()
+	select {
+	case <-waitDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Wait blocked without Reader consumer")
+	}
+	var output strings.Builder
+	for chunk := range cs.Reader() {
+		output.Write(chunk)
+	}
+	for i := 1; i <= 256; i++ {
+		if !strings.Contains(output.String(), fmt.Sprintf("late-%03d", i)) {
+			t.Fatalf("missing late output chunk %d", i)
+		}
+	}
+}
+
+func TestCaptureSession_ReaderOutputLosslessWhenConsumerDelayed(t *testing.T) {
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
@@ -810,20 +835,16 @@ func TestCaptureSession_Passthrough_ContextCancel(t *testing.T) {
 	}()
 
 	reason, err := cs.Passthrough(ctx, PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  strings.NewReader(""),
-			Stdout: io.Discard,
-			TermFd: -1,
-		},
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		TermFd: -1,
 	})
 	if reason != ExitContext {
 		t.Fatalf("expected ExitContext, got %v (err=%v)", reason, err)
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Reader() channel tests
-// ---------------------------------------------------------------------------
 
 func TestCaptureSession_Reader_BeforeStart(t *testing.T) {
 	t.Parallel()
@@ -1024,11 +1045,9 @@ func TestCaptureSession_Passthrough_ConPTY_ChildExit(t *testing.T) {
 
 	var stdout bytes.Buffer
 	reason, err := cs.Passthrough(ctx, PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  strings.NewReader(""),
-			Stdout: &stdout,
-			TermFd: -1,
-		},
+		Stdin:  strings.NewReader(""),
+		Stdout: &stdout,
+		TermFd: -1,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough returned error: %v", err)
@@ -1072,11 +1091,9 @@ func TestCaptureSession_Passthrough_ConPTY_ContextCancel(t *testing.T) {
 	}()
 
 	reason, err := cs.Passthrough(ctx, PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  strings.NewReader(""),
-			Stdout: io.Discard,
-			TermFd: -1,
-		},
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		TermFd: -1,
 	})
 	if reason != ExitContext {
 		t.Fatalf("expected ExitContext, got %v (err=%v)", reason, err)
@@ -1116,11 +1133,9 @@ func TestCaptureSession_Passthrough_ResizeNotBlockedByOutput(t *testing.T) {
 	}, 1)
 	go func() {
 		reason, err := cs.Passthrough(ctx, PassthroughConfig{
-			TerminalIO: TerminalIO{
-				Stdin:  strings.NewReader(""), // empty stdin — let child output flow
-				Stdout: slowStdout,
-				TermFd: -1,
-			},
+			Stdin:  strings.NewReader(""), // empty stdin — let child output flow
+			Stdout: slowStdout,
+			TermFd: -1,
 		})
 		resultCh <- struct {
 			reason ExitReason
@@ -1164,6 +1179,97 @@ type slowWriter struct {
 func (w *slowWriter) Write(p []byte) (int, error) {
 	time.Sleep(w.delay)
 	return len(p), nil
+}
+
+// TestCaptureSession_Passthrough_NoDuplicateOrLostOutput verifies that
+// activating passthrough while a child is producing output neither drops nor
+// duplicates any chunk on stdout. Regression for the activation drain:
+// readerLoop's outputCh push and passthrough-flag read must be atomic against
+// the drain (previously a chunk could be both drained and forwarded, or
+// lost), otherwise a fast-exiting child's output is corrupted.
+func TestCaptureSession_Passthrough_NoDuplicateOrLostOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	skipIfWindows(t)
+	t.Parallel()
+
+	const lineCount = 200
+	cs := NewCaptureSession(CaptureConfig{
+		Command: buildSeqProgram(t, lineCount, "line %d"),
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var stdout bytes.Buffer
+	reason, err := cs.Passthrough(ctx, PassthroughConfig{
+		Stdin:  strings.NewReader(""),
+		Stdout: &stdout,
+		TermFd: -1,
+	})
+	if err != nil {
+		t.Fatalf("Passthrough returned error: %v", err)
+	}
+	if reason != ExitChildExit {
+		t.Fatalf("reason = %v, want ExitChildExit", reason)
+	}
+
+	got := stdout.String()
+	// Passthrough clears the screen on entry; the first forwarded chunk may
+	// be fused after the escape sequence on the same physical line.
+	got = strings.TrimPrefix(got, "\x1b[2J\x1b[H")
+	seen := make(map[string]int)
+	for line := range strings.SplitSeq(got, "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if line == "" {
+			continue
+		}
+		seen[line]++
+	}
+	for i := 1; i <= lineCount; i++ {
+		want := fmt.Sprintf("line %d", i)
+		if n := seen[want]; n != 1 {
+			t.Errorf("line %q occurrence = %d, want exactly 1 (duplicate or lost output)\nstdout:\n%s", want, n, got)
+		}
+	}
+}
+
+// TestCaptureSession_Passthrough_NilStdout verifies passthrough with a nil
+// stdout (no output sink) does not panic in the activation drain.
+func TestCaptureSession_Passthrough_NilStdout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	skipIfWindows(t)
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: buildEchoProgram(t, "nil-stdout-test"),
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	reason, err := cs.Passthrough(ctx, PassthroughConfig{
+		Stdin:  strings.NewReader(""),
+		Stdout: nil,
+		TermFd: -1,
+	})
+	if err != nil {
+		t.Fatalf("Passthrough returned error: %v", err)
+	}
+	if reason != ExitChildExit {
+		t.Fatalf("reason = %v, want ExitChildExit", reason)
+	}
 }
 
 func TestCaptureSession_DrainTimeout_NegativeUsesDefault(t *testing.T) {

@@ -41,7 +41,13 @@ func watchSignals(ctx context.Context, resultCh chan<- signalResult, signalChild
 			case sig := <-ch:
 				name := signalName(sig)
 				if signalChild != nil {
-					_ = signalChild(name)
+					if err := signalChild(name); err != nil {
+						select {
+						case resultCh <- signalResult{ExitError, err}:
+						case <-sigCtx.Done():
+						}
+						return
+					}
 				}
 				if sig == syscall.SIGTSTP {
 					select {

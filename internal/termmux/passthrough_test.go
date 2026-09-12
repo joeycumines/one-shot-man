@@ -19,21 +19,16 @@ func TestSessionManager_Passthrough_ToggleKey(t *testing.T) {
 
 	m, _, _ := passthroughTestManager(t)
 
-	// Create stdin that sends some bytes then the toggle key.
 	toggleKey := byte(0x1D) // Ctrl+]
 	stdinData := append([]byte("hello"), toggleKey)
 	stdin := bytes.NewReader(stdinData)
 	stdout := &bytes.Buffer{}
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: -1,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: toggleKey,
-		},
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    -1,
+		ToggleKey: toggleKey,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -62,14 +57,10 @@ func TestSessionManager_Passthrough_ChildExit(t *testing.T) {
 	}, 1)
 	go func() {
 		reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-			TerminalIO: TerminalIO{
-				Stdin:  stdinR,
-				Stdout: stdout,
-				TermFd: -1,
-			},
-			PassthroughOptions: PassthroughOptions{
-				ToggleKey: 0x1D,
-			},
+			Stdin:     stdinR,
+			Stdout:    stdout,
+			TermFd:    -1,
+			ToggleKey: 0x1D,
 		})
 		resultCh <- struct {
 			reason ExitReason
@@ -79,8 +70,7 @@ func TestSessionManager_Passthrough_ChildExit(t *testing.T) {
 
 	// Wait briefly to ensure passthrough is running, then simulate session exit.
 	time.Sleep(100 * time.Millisecond)
-	close(session.readerCh) // EOF on reader → session exits
-	close(session.doneCh)   // Signal session Done channel
+	session.exit() // idempotent: reader EOF + Done signalled, races with manager Close safely
 
 	select {
 	case r := <-resultCh:
@@ -115,14 +105,10 @@ func TestSessionManager_Passthrough_Context(t *testing.T) {
 	}, 1)
 	go func() {
 		reason, err := m.Passthrough(ctx, PassthroughConfig{
-			TerminalIO: TerminalIO{
-				Stdin:  stdinR,
-				Stdout: stdout,
-				TermFd: -1,
-			},
-			PassthroughOptions: PassthroughOptions{
-				ToggleKey: 0x1D,
-			},
+			Stdin:     stdinR,
+			Stdout:    stdout,
+			TermFd:    -1,
+			ToggleKey: 0x1D,
 		})
 		resultCh <- struct {
 			reason ExitReason
@@ -160,14 +146,10 @@ func TestSessionManager_Passthrough_InputForwarding(t *testing.T) {
 	stdout := &bytes.Buffer{}
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: -1,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: toggleKey,
-		},
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    -1,
+		ToggleKey: toggleKey,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -204,14 +186,10 @@ func TestSessionManager_Passthrough_OutputForwarding(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		reason, err := m.Passthrough(ctx, PassthroughConfig{
-			TerminalIO: TerminalIO{
-				Stdin:  stdinR,
-				Stdout: stdout,
-				TermFd: -1,
-			},
-			PassthroughOptions: PassthroughOptions{
-				ToggleKey: 0x1D,
-			},
+			Stdin:     stdinR,
+			Stdout:    stdout,
+			TermFd:    -1,
+			ToggleKey: 0x1D,
 		})
 		resultCh <- struct {
 			reason ExitReason
@@ -261,16 +239,12 @@ func TestSessionManager_Passthrough_TerminalRestore(t *testing.T) {
 
 	// TermFd=999 is a fake fd; MakeRaw/Restore just record calls.
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:         stdin,
-			Stdout:        stdout,
-			TermFd:        999,
-			BlockingGuard: bg,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: toggleKey,
-			TermState: ts,
-		},
+		Stdin:         stdin,
+		Stdout:        stdout,
+		TermFd:        999,
+		BlockingGuard: bg,
+		ToggleKey:     toggleKey,
+		TermState:     ts,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -316,14 +290,10 @@ func TestSessionManager_Passthrough_BeforeRun(t *testing.T) {
 	stdout := &bytes.Buffer{}
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: -1,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: 0x1D,
-		},
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    -1,
+		ToggleKey: 0x1D,
 	})
 	if reason != ExitError {
 		t.Errorf("reason = %v, want ExitError", reason)
@@ -344,14 +314,10 @@ func TestSessionManager_Passthrough_NoActiveSession(t *testing.T) {
 	stdout := &bytes.Buffer{}
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: -1,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: 0x1D,
-		},
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    -1,
+		ToggleKey: 0x1D,
 	})
 	if reason != ExitError {
 		t.Errorf("reason = %v, want ExitError", reason)
@@ -384,14 +350,10 @@ func TestSessionManager_Passthrough_UnregisteredDuringPassthrough(t *testing.T) 
 	stdout := &bytes.Buffer{}
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: -1,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: 0x1D,
-		},
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    -1,
+		ToggleKey: 0x1D,
 	})
 	if reason != ExitError {
 		t.Errorf("reason = %v, want ExitError", reason)
@@ -429,17 +391,11 @@ func TestSessionManager_Passthrough_RestoreScreen(t *testing.T) {
 	stdout := &bytes.Buffer{}
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: -1,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: toggleKey,
-		},
-		ResizeConfig: ResizeConfig{
-			RestoreScreen: true,
-		},
+		Stdin:         stdin,
+		Stdout:        stdout,
+		TermFd:        -1,
+		ToggleKey:     toggleKey,
+		RestoreScreen: true,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -485,13 +441,9 @@ func TestPassthroughStatusBar_ScrollRegionSetup(t *testing.T) {
 			Stdout: stdout,
 			TermFd: 3, // non-negative enables terminal state
 		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: toggleKey,
-			TermState: ts,
-		},
-		UIConfig: UIConfig{
-			StatusBar: sb,
-		},
+		ToggleKey: toggleKey,
+		TermState: ts,
+		StatusBar: sb,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -547,18 +499,12 @@ func TestPassthroughStatusBar_MouseRouting(t *testing.T) {
 	sb := statusbar.New(stdout)
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: 3,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: 0x1D,
-			TermState: ts,
-		},
-		UIConfig: UIConfig{
-			StatusBar: sb,
-		},
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    3,
+		ToggleKey: 0x1D,
+		TermState: ts,
+		StatusBar: sb,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -601,21 +547,13 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 	sb := statusbar.New(stdout)
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: 3,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: toggleKey,
-			TermState: ts,
-		},
-		ResizeConfig: ResizeConfig{
-			RestoreScreen: true,
-		},
-		UIConfig: UIConfig{
-			StatusBar: sb,
-		},
+		Stdin:         stdin,
+		Stdout:        stdout,
+		TermFd:        3,
+		ToggleKey:     toggleKey,
+		TermState:     ts,
+		RestoreScreen: true,
+		StatusBar:     sb,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -668,15 +606,11 @@ func TestPassthrough_InitialResizeOnSetup(t *testing.T) {
 	ts := &ptTestTermState{width: 80, height: 24}
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: 3,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: toggleKey,
-			TermState: ts,
-		},
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    3,
+		ToggleKey: toggleKey,
+		TermState: ts,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -723,26 +657,18 @@ func TestPassthrough_ResizeFnCallback(t *testing.T) {
 	var resizeFnRows, resizeFnCols uint16
 
 	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:  stdin,
-			Stdout: stdout,
-			TermFd: 3,
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    3,
+		ToggleKey: toggleKey,
+		TermState: ts,
+		ResizeFn: func(rows, cols uint16) error {
+			resizeFnCalled = true
+			resizeFnRows = rows
+			resizeFnCols = cols
+			return nil
 		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: toggleKey,
-			TermState: ts,
-		},
-		ResizeConfig: ResizeConfig{
-			ResizeFn: func(rows, cols uint16) error {
-				resizeFnCalled = true
-				resizeFnRows = rows
-				resizeFnCols = cols
-				return nil
-			},
-		},
-		UIConfig: UIConfig{
-			StatusBar: sb,
-		},
+		StatusBar: sb,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)
@@ -787,14 +713,10 @@ func TestSessionManager_Passthrough_SessionClosedEvent(t *testing.T) {
 	}, 1)
 	go func() {
 		reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-			TerminalIO: TerminalIO{
-				Stdin:  stdinR,
-				Stdout: stdout,
-				TermFd: -1,
-			},
-			PassthroughOptions: PassthroughOptions{
-				ToggleKey: 0x1D,
-			},
+			Stdin:     stdinR,
+			Stdout:    stdout,
+			TermFd:    -1,
+			ToggleKey: 0x1D,
 		})
 		resultCh <- struct {
 			reason ExitReason
@@ -867,16 +789,12 @@ func TestSessionManager_Passthrough_ContextCancel_RestoresTerminal(t *testing.T)
 	}, 1)
 	go func() {
 		reason, err := m.Passthrough(ctx, PassthroughConfig{
-			TerminalIO: TerminalIO{
-				Stdin:         stdinR,
-				Stdout:        stdout,
-				TermFd:        999,
-				BlockingGuard: bg,
-			},
-			PassthroughOptions: PassthroughOptions{
-				ToggleKey: 0x1D,
-				TermState: ts,
-			},
+			Stdin:         stdinR,
+			Stdout:        stdout,
+			TermFd:        999,
+			BlockingGuard: bg,
+			ToggleKey:     0x1D,
+			TermState:     ts,
 		})
 		resultCh <- struct {
 			reason ExitReason
@@ -940,16 +858,12 @@ func TestCaptureSession_Passthrough_WithTerminalState(t *testing.T) {
 	stdout := &syncBuffer{}
 
 	reason, err := cs.Passthrough(context.Background(), PassthroughConfig{
-		TerminalIO: TerminalIO{
-			Stdin:         stdin,
-			Stdout:        stdout,
-			TermFd:        3,
-			BlockingGuard: bg,
-		},
-		PassthroughOptions: PassthroughOptions{
-			ToggleKey: toggleKey,
-			TermState: ts,
-		},
+		Stdin:         stdin,
+		Stdout:        stdout,
+		TermFd:        3,
+		BlockingGuard: bg,
+		ToggleKey:     toggleKey,
+		TermState:     ts,
 	})
 	if err != nil {
 		t.Fatalf("Passthrough error: %v", err)

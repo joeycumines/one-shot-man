@@ -6,10 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"strings"
 	"syscall"
+	"time"
 
 	creackpty "github.com/creack/pty"
 	"golang.org/x/sys/unix"
@@ -18,6 +20,48 @@ import (
 // unixProcessHandle wraps *exec.Cmd for Unix platforms.
 type unixProcessHandle struct {
 	cmd *exec.Cmd
+}
+
+type unixExitError struct {
+	status unix.WaitStatus
+}
+
+func (e *unixExitError) Error() string {
+	return "pty: process exited unsuccessfully"
+}
+
+func (e *unixExitError) ExitCode() int {
+	if e.status.Exited() {
+		return e.status.ExitStatus()
+	}
+	if e.status.Signaled() {
+		return 128 + int(e.status.Signal())
+	}
+	return -1
+}
+
+func (h *unixProcessHandle) waitWithSlaveRelease(release func()) error {
+	pid := h.cmd.Process.Pid
+	for {
+		var status unix.WaitStatus
+		var usage unix.Rusage
+		waited, err := unix.Wait4(pid, &status, unix.WNOHANG, &usage)
+		if err != nil {
+			if errors.Is(err, unix.EINTR) {
+				continue
+			}
+			return err
+		}
+		if waited == 0 {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		release()
+		if status.Exited() && status.ExitStatus() == 0 {
+			return nil
+		}
+		return &unixExitError{status: status}
+	}
 }
 
 func (h *unixProcessHandle) Wait() error {
@@ -54,6 +98,9 @@ func (h *unixProcessHandle) Pid() int {
 // behavior when the last slave fd closes (e.g., fast-exiting commands
 // like echo or pwd).
 func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if cfg.Command == "" {
 		return nil, errors.New("pty: command is required")
 	}
@@ -98,16 +145,37 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, binary, args...)
+	// CommandContext otherwise kills only the direct process. The PTY child
+	// starts a new session, so cancellation must target its process group to
+	// avoid orphaning descendants that retain the terminal and its resources.
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
 
 	// Set working directory.
 	if cfg.Dir != "" {
 		cmd.Dir = cfg.Dir
 	}
 
-	// Build environment: inherit parent env + overrides.
+	// Build environment: inherit parent env and replace configured keys.
 	env := os.Environ()
-	env = append(env, "TERM="+cfg.Term)
-	for k, v := range cfg.Env {
+	overrides := make(map[string]string, len(cfg.Env)+1)
+	overrides["TERM"] = cfg.Term
+	maps.Copy(overrides, cfg.Env)
+	for i, entry := range env {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		if value, exists := overrides[key]; exists {
+			env[i] = key + "=" + value
+			delete(overrides, key)
+		}
+	}
+	for k, v := range overrides {
 		env = append(env, k+"="+v)
 	}
 	cmd.Env = env
@@ -147,38 +215,37 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 		closeForceWait:    cfg.CloseForceWait,
 	}
 
-	// Background goroutine to wait for process exit.
+	// Poll for child termination without waiting on the retained slave. Once
+	// the kernel reports exit, release the duplicate so the PTY reader can
+	// drain buffered bytes and terminate; wait4 also provides final status.
 	go func() {
 		defer close(done)
-		waitErr := handle.Wait()
-
-		// Close slave fd after the child exits. While the child was
-		// running, our duplicate slave reference kept the PTY alive,
-		// preventing macOS from discarding buffered data with EIO.
-		// Now that the child is done and all its output is in the
-		// kernel buffer, closing the slave triggers clean EOF on the
-		// master side so the caller's Read loop terminates normally.
-		proc.mu.Lock()
-		ttyToClose := proc.ttyFile
-		proc.ttyFile = nil
-		proc.mu.Unlock()
-		if ttyToClose != nil {
-			_ = ttyToClose.Close()
-		}
+		waitErr := handle.waitWithSlaveRelease(func() {
+			proc.mu.Lock()
+			ttyToClose := proc.ttyFile
+			proc.ttyFile = nil
+			proc.mu.Unlock()
+			if ttyToClose != nil {
+				_ = ttyToClose.Close()
+			}
+		})
 
 		proc.mu.Lock()
 		defer proc.mu.Unlock()
-		if waitErr != nil {
-			var exitErr *exec.ExitError
-			if errors.As(waitErr, &exitErr) {
-				proc.exitCode = exitErr.ExitCode()
-			} else {
-				proc.exitCode = -1
-				proc.exitErr = waitErr
-			}
-		} else {
-			proc.exitCode = 0
+		if exitErr, ok := errors.AsType[*unixExitError](waitErr); ok {
+			proc.exitCode = exitErr.ExitCode()
+			// A non-zero exit status is not an operational error; callers
+			// (e.g. CaptureSession.Wait) expect the exit code with a nil
+			// error so they can distinguish expected non-zero exits from
+			// genuine wait failures.
+			return
 		}
+		if waitErr != nil {
+			proc.exitCode = -1
+			proc.exitErr = waitErr
+			return
+		}
+		proc.exitCode = 0
 	}()
 
 	return proc, nil
@@ -198,86 +265,6 @@ func (p *Process) platformClose() {}
 
 // platformClosePseudoConsole is a no-op on Unix (no ConPTY).
 func (p *Process) platformClosePseudoConsole() {}
-
-// splitCommand splits a command string into a binary and arguments using
-// POSIX-like shell word rules. Single quotes preserve literal content,
-// double quotes allow backslash escaping of \, ", $, `, and newline.
-// Outside quotes, backslash escapes the next character.
-//
-// If the command contains no unquoted whitespace, it is returned as-is
-// with a nil args slice.
-//
-// This function is used when cfg.Command contains spaces and cfg.Args is
-// empty — e.g., "ollama launch my-agent --config" becomes
-// binary="ollama", args=["launch", "my-agent", "--config"].
-func splitCommand(s string) (binary string, args []string, err error) {
-	var words []string
-	var cur strings.Builder
-	inSingle := false
-	inDouble := false
-	escaped := false
-
-	for i := 0; i < len(s); i++ {
-		ch := s[i]
-
-		if escaped {
-			if inDouble {
-				// In double quotes, backslash only escapes: \ " $ ` \n
-				switch ch {
-				case '\\', '"', '$', '`', '\n':
-					cur.WriteByte(ch)
-				default:
-					// Preserve the backslash for other characters.
-					cur.WriteByte('\\')
-					cur.WriteByte(ch)
-				}
-			} else {
-				cur.WriteByte(ch)
-			}
-			escaped = false
-			continue
-		}
-
-		if ch == '\\' && !inSingle {
-			escaped = true
-			continue
-		}
-
-		if ch == '\'' && !inDouble {
-			inSingle = !inSingle
-			continue
-		}
-
-		if ch == '"' && !inSingle {
-			inDouble = !inDouble
-			continue
-		}
-
-		if (ch == ' ' || ch == '\t' || ch == '\n') && !inSingle && !inDouble {
-			if cur.Len() > 0 {
-				words = append(words, cur.String())
-				cur.Reset()
-			}
-			continue
-		}
-
-		cur.WriteByte(ch)
-	}
-
-	if inSingle || inDouble {
-		return "", nil, errors.New("pty: unterminated quote in command string")
-	}
-
-	if cur.Len() > 0 {
-		words = append(words, cur.String())
-	}
-
-	if len(words) == 0 {
-		return "", nil, errors.New("pty: empty command after splitting")
-	}
-
-	return words[0], words[1:], nil
-}
 
 // clearTOSTOP clears the TOSTOP flag on the given terminal fd.
 // This prevents SIGTTOU from being sent to background process group

@@ -2,6 +2,8 @@ package pty
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,12 +18,15 @@ func buildProgram(t *testing.T, src string) string {
 	if testing.Short() {
 		t.Skip("spawns process to build test helper")
 	}
+	sum := sha256.Sum256([]byte(src))
+	key := hex.EncodeToString(sum[:12])
 	dir := t.TempDir()
-	sourceFile := filepath.Join(dir, "main.go")
+
+	sourceFile := filepath.Join(dir, key+".go")
 	if err := os.WriteFile(sourceFile, []byte(src), 0o644); err != nil {
 		t.Fatalf("write helper source: %v", err)
 	}
-	binName := "testprog"
+	binName := "testprog-" + key
 	if runtime.GOOS == "windows" {
 		binName += ".exe"
 	}

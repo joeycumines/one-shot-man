@@ -79,14 +79,15 @@ func (mockSession) Reader() <-chan []byte     { ch := make(chan []byte); close(c
 // controllableSession is a richer mock that records calls and allows
 // controlling behavior from tests.
 type controllableSession struct {
-	writtenData []byte
-	writeMu     sync.Mutex
-	writeErr    error
-	resizeCalls []resizePayload
-	closeCalled atomic.Bool
-	closeOnce   sync.Once
-	doneCh      chan struct{}
-	readerCh    chan []byte
+	writtenData     []byte
+	writeMu         sync.Mutex
+	writeErr        error
+	resizeCalls     []resizePayload
+	closeCalled     atomic.Bool
+	closeOnce       sync.Once
+	readerCloseOnce sync.Once
+	doneCh          chan struct{}
+	readerCh        chan []byte
 }
 
 func newControllableSession() *controllableSession {
@@ -98,6 +99,22 @@ func newControllableSession() *controllableSession {
 
 func (s *controllableSession) Done() <-chan struct{} { return s.doneCh }
 func (s *controllableSession) Reader() <-chan []byte { return s.readerCh }
+
+// closeReader simulates EOF on the session reader exactly once. The manager
+// observes reader EOF and transitions the session; the reader channel itself
+// is only ever closed by test code, hence this idempotent guard.
+func (s *controllableSession) closeReader() {
+	s.readerCloseOnce.Do(func() { close(s.readerCh) })
+}
+
+// exit simulates child exit: reader EOF plus the Done channel signalled.
+// Idempotent — safe even if the manager's lifecycle already closed doneCh
+// via Close() (e.g. when reader EOF triggers session shutdown), which is why
+// tests must NOT close session.doneCh directly (double-close panic).
+func (s *controllableSession) exit() {
+	s.Close()
+	s.closeReader()
+}
 
 func (s *controllableSession) Write(data []byte) (int, error) {
 	s.writeMu.Lock()
@@ -331,14 +348,20 @@ var _ ptyio.BlockingGuard = (*ptTestBlockingGuard)(nil)
 // Cross-platform test program builders
 // ---------------------------------------------------------------------------
 
-var ()
+// helperBuildMu serializes concurrent Go compiler invocations without sharing
+// any generated files or cache entries between tests.
+var helperBuildMu sync.Mutex
 
-// buildProgram compiles a Go source string into a binary and returns its path.
+// buildProgram compiles a Go source string into a test-owned binary.
+// Each test receives an isolated directory so parallel tests cannot share
+// mutable helper files or retain process artifacts beyond t.Cleanup.
 func buildProgram(t *testing.T, src string) string {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("spawns process to build test helper")
 	}
+	helperBuildMu.Lock()
+	defer helperBuildMu.Unlock()
 	dir := t.TempDir()
 	sourceFile := filepath.Join(dir, "main.go")
 	if err := os.WriteFile(sourceFile, []byte(src), 0o644); err != nil {
@@ -493,14 +516,13 @@ func buildSeqIdleProgram(t *testing.T, count int, format string) string {
 // every 10ms indefinitely, replacing "sh -c 'while true; do echo line$i;
 // i=$((i+1)); sleep 0.1; done'" patterns. A brief startup delay lets the
 // PTY reader pipeline initialize before the first write. The binary is
-// cached at the package level to avoid concurrent go build contention.
+// cached at the package level (via buildProgram) to avoid concurrent
+// go build contention.
 func buildPeriodicProgram(t *testing.T) string {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("spawns process to build test helper")
 	}
-	dir := t.TempDir()
-	src := filepath.Join(dir, "main.go")
 	prog := `package main
 
 import (
@@ -518,19 +540,5 @@ func main() {
 	}
 }
 `
-	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
-		t.Fatalf("write helper source: %v", err)
-	}
-	binName := "periodicprogram"
-	if runtime.GOOS == "windows" {
-		binName += ".exe"
-	}
-	bin := filepath.Join(dir, binName)
-	cmd := exec.Command("go", "build", "-o", bin, src)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("go build helper: %v\n%s", err, stderr.String())
-	}
-	return bin
+	return buildProgram(t, prog)
 }

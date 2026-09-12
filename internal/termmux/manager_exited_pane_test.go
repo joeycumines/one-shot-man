@@ -27,7 +27,7 @@ func TestSessionManager_PaneExited_RemainOnExit(t *testing.T) {
 	session.readerCh <- []byte("ready")
 	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
 
-	close(session.readerCh)
+	session.closeReader()
 	waitForSessionExited(t, m, id, 10*time.Second)
 
 	if !m.PaneExited(paneID) {
@@ -57,7 +57,7 @@ func TestSessionManager_PaneExited_ClosePane_CleansBinding(t *testing.T) {
 	session.readerCh <- []byte("ready")
 	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
 
-	close(session.readerCh)
+	session.closeReader()
 	waitForSessionExited(t, m, id, 10*time.Second)
 
 	if err := m.ClosePane(paneID); err != nil {
@@ -97,7 +97,7 @@ func TestSessionManager_PaneExited_NoRemainOnExit(t *testing.T) {
 	// EventSessionClosed before Subscribe is called, causing the test
 	// to miss the event and time out.
 	_, closedCh := m.Subscribe(16)
-	close(session.readerCh)
+	session.closeReader()
 	waitForEventKindCh(t, closedCh, EventSessionClosed, 10*time.Second)
 
 	if m.PaneExited(paneID) {
@@ -136,7 +136,7 @@ func TestSessionManager_RespawnSession_ClearsPaneExited(t *testing.T) {
 		t.Fatalf("SetPaneRemainOnExit: %v", err)
 	}
 
-	close(session.readerCh)
+	session.closeReader()
 	waitForSessionExited(t, m, id, 10*time.Second)
 
 	if !m.PaneExited(paneID) {

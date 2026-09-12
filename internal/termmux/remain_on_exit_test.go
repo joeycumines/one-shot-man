@@ -49,7 +49,7 @@ func TestSessionManager_RemainOnExit_KeepsSessionAfterExit(t *testing.T) {
 	subID, evtCh := m.Subscribe(16)
 	defer m.Unsubscribe(subID)
 
-	close(session.readerCh)
+	session.closeReader()
 
 	deadline := time.After(2 * time.Second)
 	for {
@@ -104,7 +104,7 @@ func TestSessionManager_RemainOnExit_Off_ClosesOnExit(t *testing.T) {
 	subID, evtCh := m.Subscribe(16)
 	defer m.Unsubscribe(subID)
 
-	close(session.readerCh)
+	session.closeReader()
 
 	waitForEventKindCh(t, evtCh, EventSessionClosed, 10*time.Second)
 }
@@ -128,7 +128,7 @@ func TestSessionManager_RespawnSession(t *testing.T) {
 	subID, evtCh := m.Subscribe(16)
 	defer m.Unsubscribe(subID)
 
-	close(session.readerCh)
+	session.closeReader()
 
 	waitForEventKindCh(t, evtCh, EventSessionExited, 10*time.Second)
 

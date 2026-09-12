@@ -1,11 +1,7 @@
 package termmux
 
 import (
-	"bytes"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 )
@@ -18,8 +14,6 @@ func buildExitProgram(t *testing.T) string {
 		t.Skip("spawns process to build test helper")
 	}
 
-	dir := t.TempDir()
-	src := filepath.Join(dir, "main.go")
 	prog := `package main
 import (
 	"fmt"
@@ -33,23 +27,7 @@ func main() {
 	fmt.Println("hello respawn")
 }
 `
-	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
-		t.Fatalf("write helper source: %v", err)
-	}
-
-	binName := "exitprogram"
-	if runtime.GOOS == "windows" {
-		binName += ".exe"
-	}
-	bin := filepath.Join(dir, binName)
-
-	cmd := exec.Command("go", "build", "-o", bin, src)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("go build helper: %v\n%s", err, stderr.String())
-	}
-	return bin
+	return buildProgram(t, prog)
 }
 
 func waitForSessionExited(t *testing.T, m *SessionManager, id SessionID, timeout time.Duration) {

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	osexec "os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -28,6 +30,12 @@ type windowsProcessHandle struct {
 
 // closeConPTY closes the pseudoconsole handle if not already closed.
 // Thread-safe — callers do NOT need to hold any external lock.
+// It intentionally leaves inputRead open: the ConPTY input pipe must remain
+// alive until the child has terminated, otherwise a pre-Wait
+// ClosePseudoConsole severs the pipe and the child fails to initialize
+// (STATUS_DLL_INIT_FAILED 0xC0000142, observed as exit 3221225794 in
+// TestProcess_ClosePseudoConsole_ConPTY). inputRead is closed only during
+// final teardown after <-done (see platformClose).
 func (h *windowsProcessHandle) closeConPTY() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -35,6 +43,17 @@ func (h *windowsProcessHandle) closeConPTY() {
 		windows.ClosePseudoConsole(h.conPTY)
 		h.conPTY = 0
 	}
+}
+
+// closeInputRead closes the ConPTY input read handle kept for the ConPTY's
+// reader thread. It is separated from closeConPTY so that
+// platformClosePseudoConsole can flush the ConPTY output pipe (via
+// ClosePseudoConsole) without severing the input pipe while the child is
+// still running. Only platformClose (after <-p.done) should close
+// inputRead to avoid premature STATUS_DLL_INIT_FAILED.
+func (h *windowsProcessHandle) closeInputRead() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if h.inputRead != 0 {
 		windows.CloseHandle(h.inputRead)
 		h.inputRead = 0
@@ -85,6 +104,9 @@ func (h *windowsProcessHandle) Pid() int {
 // child. Process.ptyFile is the output read end; Process.writeFile is
 // the input write end.
 func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if cfg.Command == "" {
 		return nil, errors.New("pty: command is required")
 	}
@@ -158,8 +180,43 @@ func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite,
 		return nil, fmt.Errorf("pty: ProcThreadAttributeList.Update: %w", err)
 	}
 
-	// Build the command line string.
-	cmdLine := buildCommandLine(cfg.Command, cfg.Args)
+	// Keep ordinary executable paths opaque on Windows. A command without
+	// explicit arguments may be an absolute or cfg.Dir-relative path containing
+	// spaces. Only parse it as a command line when it is not an existing path;
+	// use Windows' own CommandLineToArgvW rules so backslashes in paths remain
+	// literal rather than being treated as POSIX escapes.
+	command, args := cfg.Command, cfg.Args
+	if len(args) == 0 && strings.ContainsAny(command, " \t\n") {
+		pathName := strings.TrimSpace(command)
+		if len(pathName) >= 2 && ((pathName[0] == '"' && pathName[len(pathName)-1] == '"') || (pathName[0] == '\'' && pathName[len(pathName)-1] == '\'')) {
+			pathName = pathName[1 : len(pathName)-1]
+		}
+		if cfg.Dir != "" && !filepath.IsAbs(pathName) {
+			pathName = filepath.Join(cfg.Dir, pathName)
+		}
+		pathExists := false
+		if _, statErr := os.Stat(pathName); statErr == nil {
+			pathExists = true
+		} else if _, lookErr := osexec.LookPath(pathName); lookErr == nil {
+			// LookPath covers bare executable names resolved through PATH and PATHEXT.
+			pathExists = true
+		}
+		if !pathExists {
+			parts, parseErr := windows.DecomposeCommandLine(command)
+			if parseErr != nil {
+				return nil, fmt.Errorf("pty: invalid command line: %w", parseErr)
+			}
+			if len(parts) == 0 || parts[0] == "" {
+				return nil, errors.New("pty: empty command after splitting")
+			}
+			command, args = parts[0], parts[1:]
+		}
+	}
+
+	if command == "" {
+		return nil, errors.New("pty: command is required")
+	}
+	cmdLine := buildCommandLine(command, args)
 	cmdLinePtr, err := syscall.UTF16PtrFromString(cmdLine)
 	if err != nil {
 		return nil, fmt.Errorf("pty: invalid command line: %w", err)
@@ -319,10 +376,14 @@ func (p *Process) platformResize(rows, cols uint16) error {
 
 // platformClose releases the ConPTY and process handles. Called by
 // Close() AFTER <-p.done ensures the wait goroutine has finished,
-// making the process handle safe to close.
+// making the process handle safe to close. It closes the pseudoconsole
+// first and then the retained inputRead handle; deferring inputRead until
+// after the child has terminated avoids severing the input pipe while
+// the ConPTY's reader thread is still active (see closeConPTY).
 func (p *Process) platformClose() {
 	if h, ok := p.cmd.(*windowsProcessHandle); ok {
 		h.closeConPTY()
+		h.closeInputRead()
 		if h.process != 0 {
 			_ = windows.CloseHandle(h.process)
 			h.process = 0
@@ -335,20 +396,33 @@ func (p *Process) platformClose() {
 // to flush its internal buffer to the output pipe and close the pipe's
 // write end, causing Read() to return remaining data followed by EOF.
 // Thread-safe via closeConPTY's internal mutex.
+//
+// If the child is still running, closing the pseudoconsole can abort its
+// initialization with STATUS_DLL_INIT_FAILED (0xC0000142, observed as
+// exit 3221225794 in TestProcess_ClosePseudoConsole_ConPTY). The flush is
+// only required after the child has exited, when the ConPTY output pipe
+// otherwise remains open and ReadLoop would block forever. Callers such
+// as capture.go already invoke ClosePseudoConsole after Wait; this guard
+// makes pre-Wait calls (and concurrent idempotent calls) a no-op in the
+// running state, deferring the close to platformClose after <-done, while
+// preserving immediate close semantics for the post-exit flush.
 func (p *Process) platformClosePseudoConsole() {
+	select {
+	case <-p.done:
+	default:
+		return
+	}
 	if h, ok := p.cmd.(*windowsProcessHandle); ok {
 		h.closeConPTY()
 	}
 }
 
-// buildCommandLine constructs a Windows command line string.
-// When args is empty, name is returned as-is so that callers can
-// pass pre-formed command lines like "cmd.exe /c echo hello".
-// When args is provided, each element is escaped per Windows rules.
+// buildCommandLine constructs a Windows command line string. The executable
+// is always escaped, including when there are no arguments: CreateProcess is
+// called without lpApplicationName, so an unquoted absolute path containing
+// spaces would otherwise be parsed as multiple tokens. Callers that need a
+// pre-formed command line must split it into Command and Args first.
 func buildCommandLine(name string, args []string) string {
-	if len(args) == 0 {
-		return name
-	}
 	var b strings.Builder
 	b.WriteString(syscall.EscapeArg(name))
 	for _, a := range args {

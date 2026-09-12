@@ -14,10 +14,6 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
 
-// ---------------------------------------------------------------------------
-// SessionState transition tests
-// ---------------------------------------------------------------------------
-
 func TestSessionState_String(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -83,9 +79,7 @@ func TestSessionState_ValidTransitions(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // ScreenSnapshot immutability under concurrent access
-// ---------------------------------------------------------------------------
 
 func TestScreenSnapshot_ConcurrentReadSafe(t *testing.T) {
 	t.Parallel()
@@ -139,9 +133,7 @@ func TestScreenSnapshot_ConcurrentReadSafe(t *testing.T) {
 	wg.Wait()
 }
 
-// ---------------------------------------------------------------------------
 // SessionInfo construction
-// ---------------------------------------------------------------------------
 
 func TestSessionInfo_Construction(t *testing.T) {
 	t.Parallel()
@@ -203,9 +195,7 @@ func TestSessionInfo_IsValueCopy(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Request/response protocol types
-// ---------------------------------------------------------------------------
 
 func TestRequest_RoundTrip(t *testing.T) {
 	t.Parallel()
@@ -308,9 +298,7 @@ func TestRequestKind_AllValues(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // sessionOutput sentinel
-// ---------------------------------------------------------------------------
 
 func TestSessionOutput_NilDataIsEOF(t *testing.T) {
 	t.Parallel()
@@ -326,9 +314,7 @@ func TestSessionOutput_NilDataIsEOF(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // resizePayload
-// ---------------------------------------------------------------------------
 
 func TestResizePayload(t *testing.T) {
 	t.Parallel()
@@ -339,9 +325,7 @@ func TestResizePayload(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // NewSessionManager
-// ---------------------------------------------------------------------------
 
 func TestNewSessionManager_Defaults(t *testing.T) {
 	t.Parallel()
@@ -401,9 +385,7 @@ func TestNewSessionManager_WithOptions(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Event construction
-// ---------------------------------------------------------------------------
 
 func TestEvent_Construction(t *testing.T) {
 	t.Parallel()
@@ -431,9 +413,7 @@ func TestEvent_Construction(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // managedSession snapshot publishing
-// ---------------------------------------------------------------------------
 
 func TestManagedSession_SnapshotLoadStore(t *testing.T) {
 	t.Parallel()
@@ -512,9 +492,7 @@ func TestScreenSnapshot_CursorFields(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // managedSession field coverage
-// ---------------------------------------------------------------------------
 
 func TestManagedSession_AllFields(t *testing.T) {
 	t.Parallel()
@@ -572,9 +550,7 @@ func TestManagedSession_AllFields(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // SessionManager field coverage (worker-owned fields)
-// ---------------------------------------------------------------------------
 
 func TestNewSessionManager_WorkerFields(t *testing.T) {
 	t.Parallel()
@@ -597,9 +573,7 @@ func TestNewSessionManager_WorkerFields(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Run / Close / dispatch integration
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_RegisterViaWorker(t *testing.T) {
 	t.Parallel()
@@ -666,9 +640,7 @@ func TestSessionManager_ContextCancellation(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Public API: Register
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_Register(t *testing.T) {
 	t.Parallel()
@@ -712,9 +684,7 @@ func TestSessionManager_Register_FirstBecomesActive(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Public API: Activate
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_Activate(t *testing.T) {
 	t.Parallel()
@@ -746,9 +716,7 @@ func TestSessionManager_Activate_InvalidID(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Public API: Input
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_Input(t *testing.T) {
 	t.Parallel()
@@ -783,9 +751,7 @@ func TestSessionManager_Input_NoActiveSession(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Public API: Resize
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_Resize(t *testing.T) {
 	t.Parallel()
@@ -897,9 +863,7 @@ func TestSessionManager_TermSize_AfterResize(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Public API: Snapshot
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_Snapshot(t *testing.T) {
 	t.Parallel()
@@ -929,9 +893,7 @@ func TestSessionManager_Snapshot_Unknown(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Public API: Sessions
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_Sessions(t *testing.T) {
 	t.Parallel()
@@ -959,9 +921,7 @@ func TestSessionManager_Sessions(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Public API: Unregister
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_Unregister(t *testing.T) {
 	t.Parallel()
@@ -1014,9 +974,7 @@ func TestSessionManager_Unregister_NotFound(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Public API: Close (graceful shutdown)
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_Close_ClosesAllSessions(t *testing.T) {
 	t.Parallel()
@@ -1050,9 +1008,7 @@ func TestSessionManager_Close_ClosesAllSessions(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // mergedOutput: session output processing
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_MergedOutput_VTerm(t *testing.T) {
 	t.Parallel()
@@ -1161,9 +1117,7 @@ done:
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Event delivery via public API
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_Events_Register(t *testing.T) {
 	t.Parallel()
@@ -1220,9 +1174,7 @@ func TestSessionManager_Events_Activate(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // sortSessionIDs
-// ---------------------------------------------------------------------------
 
 func TestSortSessionIDs(t *testing.T) {
 	t.Parallel()
@@ -1252,9 +1204,7 @@ func TestSortSessionIDs_Single(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Concurrent access under race detector
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_ConcurrentAccess(t *testing.T) {
 	t.Parallel()
@@ -1305,9 +1255,7 @@ func TestSessionManager_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
-// ---------------------------------------------------------------------------
 // Register→Activate→Input→Snapshot round-trip
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_RoundTrip(t *testing.T) {
 	t.Parallel()
@@ -1347,13 +1295,9 @@ func TestSessionManager_RoundTrip(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Post-shutdown: ErrManagerNotRunning
-// ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
 // Methods before Run / after Close / after context cancel
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_MethodsBeforeRun(t *testing.T) {
 	t.Parallel()
@@ -1384,6 +1328,30 @@ func TestSessionManager_MethodsBeforeRun(t *testing.T) {
 	}
 	if got := m.Snapshot(1); got != nil {
 		t.Errorf("Snapshot before Run = %v, want nil", got)
+	}
+}
+
+func TestSessionManager_CloseBeforeRunIsTerminal(t *testing.T) {
+	t.Parallel()
+	m := NewSessionManager()
+	m.Close()
+	if _, err := m.Register(newControllableSession(), SessionTarget{Name: "closed"}); err != ErrManagerNotRunning {
+		t.Fatalf("Register after pre-run Close: %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- m.Run(context.Background()) }()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("Run after pre-run Close: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not terminate after pre-run Close")
+	}
+	select {
+	case <-m.Done():
+	default:
+		t.Fatal("Done not closed after pre-run Close")
 	}
 }
 
@@ -1443,7 +1411,7 @@ func TestSessionManager_MethodsAfterContextCancel(t *testing.T) {
 	cancel()
 	<-errCh
 
-	// API should return ErrManagerNotRunning (reqChan is closed by Run on ctx cancel).
+	// API should return ErrManagerNotRunning (closed flag set by Run on ctx cancel).
 	if _, err := m.Register(newControllableSession(), SessionTarget{Name: "post-cancel"}); err != ErrManagerNotRunning {
 		t.Errorf("Register after cancel: err = %v, want ErrManagerNotRunning", err)
 	}
@@ -1465,9 +1433,7 @@ func TestSessionManager_CloseIdempotent(t *testing.T) {
 	m.Close()
 }
 
-// ---------------------------------------------------------------------------
 // EOF on Created-state session
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_MergedOutput_EOF_Created(t *testing.T) {
 	t.Parallel()
@@ -1516,9 +1482,7 @@ done:
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Merged output pipeline: session.Reader() → reader goroutine → worker
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_Pipeline_OutputFlowsToSnapshot(t *testing.T) {
 	t.Parallel()
@@ -1583,7 +1547,7 @@ func TestSessionManager_Pipeline_EOFTransition(t *testing.T) {
 	session.readerCh <- []byte("data")
 	time.Sleep(50 * time.Millisecond)
 
-	close(session.readerCh)
+	session.closeReader()
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify state transitioned to Exited.
@@ -2066,9 +2030,7 @@ func TestSessionManager_EventsDropped(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Fuzz testing
-// ---------------------------------------------------------------------------
 
 // fuzzSession is a minimal InteractiveSession for fuzz testing.
 // It accepts writes, ignores resizes, and produces initial output
@@ -2251,9 +2213,7 @@ func FuzzSessionRouter(f *testing.F) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // activeWriter tests
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_ActiveWriter(t *testing.T) {
 	t.Parallel()
@@ -2303,9 +2263,7 @@ func TestSessionManager_ActiveWriter_NoActiveSession(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // passthroughTee tests
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_EnablePassthroughTee(t *testing.T) {
 	if testing.Short() {
@@ -2421,9 +2379,7 @@ func TestSessionManager_DisablePassthroughTee_Idempotent(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // CaptureSession.Rows/Cols tests
-// ---------------------------------------------------------------------------
 
 func TestCaptureSession_RowsCols(t *testing.T) {
 	if testing.Short() {
@@ -2466,9 +2422,7 @@ func TestCaptureSession_RowsCols(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Session lifecycle edge case tests
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_Pipeline_CreatedToClosedOnEOF(t *testing.T) {
 	t.Parallel()
@@ -2492,7 +2446,7 @@ func TestSessionManager_Pipeline_CreatedToClosedOnEOF(t *testing.T) {
 
 	// Close the reader channel immediately — simulates process that exits
 	// before producing any output.
-	close(session.readerCh)
+	session.closeReader()
 	time.Sleep(200 * time.Millisecond)
 
 	// Session should have been removed from the map (Created -> Closed
@@ -2677,9 +2631,7 @@ func TestSessionManager_Pipeline_SecondRegisterDoesNotChangeActive(t *testing.T)
 	}
 }
 
-// ---------------------------------------------------------------------------
 // VT mode flag integration tests
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_Pipeline_BracketedPasteMode(t *testing.T) {
 	t.Parallel()
@@ -3002,9 +2954,7 @@ func TestSessionManager_Pipeline_SynchronizedOutputMode(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Copy mode: SessionManager integration
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_IsCopyModeActive(t *testing.T) {
 	t.Parallel()
@@ -3117,9 +3067,7 @@ func TestSessionManager_ExitCopyMode_UnknownSession(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Synchronized panes
-// ---------------------------------------------------------------------------
 
 func TestSessionManager_SynchronizePanes_DefaultOff(t *testing.T) {
 	t.Parallel()

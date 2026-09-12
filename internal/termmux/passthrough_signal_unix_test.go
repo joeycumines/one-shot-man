@@ -227,15 +227,11 @@ func TestSessionManager_Passthrough_SignalChildSIGTSTP(t *testing.T) {
 	}, 1)
 	go func() {
 		reason, err := m.Passthrough(context.Background(), PassthroughConfig{
-			TerminalIO: TerminalIO{
-				Stdin:  stdinR,
-				Stdout: stdout,
-				TermFd: -1,
-			},
-			PassthroughOptions: PassthroughOptions{
-				ToggleKey:   0x1D,
-				SignalChild: signalChild,
-			},
+			Stdin:       stdinR,
+			Stdout:      stdout,
+			TermFd:      -1,
+			ToggleKey:   0x1D,
+			SignalChild: signalChild,
 		})
 		resultCh <- struct {
 			reason ExitReason

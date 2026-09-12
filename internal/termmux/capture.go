@@ -8,7 +8,6 @@ import (
 	"maps"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/pty"
@@ -71,6 +70,7 @@ type CaptureSession struct {
 	closed   bool
 	paused   bool
 	done     chan struct{} // closed when reader goroutine exits
+	doneOnce sync.Once
 	cancel   context.CancelFunc
 	exitCode int
 	exitErr  error
@@ -82,21 +82,35 @@ type CaptureSession struct {
 	// Buffered reader for PTY output. Set during Start; used by
 	// readerLoop which consumes from reader.Output() channel.
 	reader       *ptyio.BufferedReader
+	readerCtx    context.Context
 	readerCancel context.CancelFunc // cancels BufferedReader.ReadLoop
 
-	// outputCh streams raw PTY output for consumption by SessionManager
-	// via the Reader() method. Each chunk is a copy of what the
-	// BufferedReader produces. The channel is closed on EOF.
-	outputCh chan []byte
+	// outputCh streams raw PTY output for consumption by SessionManager via
+	// Reader(). An unbounded, synchronized queue sits in front of the public
+	// channel so a slow or absent consumer cannot make the PTY reader drop data.
+	outputCh           chan []byte
+	outputMu           sync.Mutex
+	outputQueue        [][]byte
+	outputWake         chan struct{}
+	outputClosed       bool
+	outputDispatchDone chan struct{}
 
-	// Passthrough state: when passthroughActive is true, the readerLoop
-	// also writes output chunks to passthroughOutput (typically os.Stdout).
-	passthroughActive bool
-	passthroughOutput io.Writer // set before activating passthrough
+	// outputModeWake interrupts a public-channel send when passthrough changes
+	// ownership. Mode 1 pauses dispatch so Passthrough can drain chunks already
+	// delivered to outputCh; mode 2 routes all subsequent queued chunks directly
+	// to passthroughOutput.
+	outputModeWake    chan struct{}
+	outputModeAck     chan struct{}
+	outputModeAckSent bool
 
-	// droppedOutput counts output chunks silently dropped by the readerLoop
-	// when outputCh is full. Atomic for lock-free reads.
-	droppedOutput atomic.Int64
+	// Passthrough state is consumed by outputLoop, which is the sole owner of
+	// forwarding queued chunks. readerLoop only appends to outputQueue; this
+	// prevents a chunk from being split between the public channel and stdout
+	// during activation.
+	passthroughActive  bool
+	passthroughOutput  io.Writer  // set before activating passthrough
+	passthroughWriteMu sync.Mutex // serializes activation flush and live forwarding
+
 }
 
 // NewCaptureSession creates a new capture session with the given configuration.
@@ -121,11 +135,18 @@ func NewCaptureSession(cfg CaptureConfig) *CaptureSession {
 	}
 }
 
+func (cs *CaptureSession) closeDone() {
+	cs.doneOnce.Do(func() { close(cs.done) })
+}
+
 // Start spawns the command in a PTY and begins capturing output. The context
 // controls the lifetime of the underlying process — cancelling it sends
 // SIGKILL to the child. Start may be called only once; subsequent calls
 // return an error.
 func (cs *CaptureSession) Start(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cs.mu.Lock()
 	if cs.started {
 		cs.mu.Unlock()
@@ -150,40 +171,59 @@ func (cs *CaptureSession) Start(ctx context.Context) error {
 	if err != nil {
 		cancel()
 		cs.mu.Lock()
-		cs.started = false
+		// Start is a one-shot operation. Keep started set so the already-closed
+		// completion channel cannot be reused by a later successful attempt.
+		// Preserve the failed lifecycle result so Wait cannot report success.
+		cs.exitCode = -1
+		cs.exitErr = err
+		cs.closeDone()
 		cs.mu.Unlock()
 		return err
 	}
 
+	// Finish installing the process and reader under one lock. Close may race
+	// with Spawn; once proc is visible it must also be able to cancel the
+	// reader before returning.
+	readerCtx, readerCancel := context.WithCancel(childCtx)
+	reader := ptyio.NewBufferedReader(proc.File(), 16)
 	cs.mu.Lock()
+	if cs.closed {
+		// Close may have observed the pre-spawn state, leaving no reader loop
+		// to close done. Roll back the started state and publish completion so
+		// Wait and Done remain well-defined for this failed start.
+		cs.closeDone()
+		cs.mu.Unlock()
+		readerCancel()
+		cancel()
+		_ = proc.Close()
+		_, _ = proc.Wait()
+		return errors.New("capture: session was closed while starting")
+	}
 	cs.proc = proc
 	cs.cancel = cancel
-	cs.mu.Unlock()
-
-	// Start a buffered reader that wraps the PTY process file descriptor.
-	// This provides a channel-based output stream that the readerLoop
-	// consumes, allowing passthrough to route output to stdout without
-	// racing on the PTY file descriptor. Uses the raw PTY fd (proc.File())
-	// rather than proc.Read for higher throughput via BufferedReader's
-	// buffered channel-based architecture.
-	readerCtx, readerCancel := context.WithCancel(childCtx)
-	cs.mu.Lock()
-	cs.reader = ptyio.NewBufferedReader(proc.File(), 16)
+	cs.reader = reader
+	cs.readerCtx = readerCtx
 	cs.readerCancel = readerCancel
 	cs.outputCh = make(chan []byte, DefaultChannelBuffer)
+	cs.outputWake = make(chan struct{}, 1)
+	cs.outputDispatchDone = make(chan struct{})
+	cs.outputModeWake = make(chan struct{}, 1)
+	cs.outputModeAck = make(chan struct{})
+	cs.outputModeAckSent = false
 	cs.mu.Unlock()
-	go cs.reader.ReadLoop(readerCtx)
+	go reader.ReadLoop(readerCtx)
+	go cs.outputLoop(readerCtx)
 
-	// On Windows (ConPTY), the output pipe is not automatically closed
-	// when the child process exits, so ReadLoop blocks on Read() forever.
-	// Start a watcher that calls ClosePseudoConsole on process exit.
-	// ClosePseudoConsole flushes the ConPTY's internal buffer to the
-	// output pipe and closes the pipe's write end, causing Read() to
-	// return remaining data followed by EOF — no data is lost.
-	// This unblocks ReadLoop, which cascades to readerLoop closing
-	// outputCh and cs.done, satisfying both SessionManager and
-	// passthrough consumers.
-	// On Unix, ClosePseudoConsole is a no-op (PTY closes naturally).
+	// The buffered reader wraps the PTY descriptor so readerLoop can consume
+	// output without racing passthrough access to the descriptor.
+	// On Windows (ConPTY), the output pipe is not closed automatically when the
+	// child exits, so ReadLoop would block on Read() forever. ClosePseudoConsole
+	// flushes ConPTY's internal buffer, closes the pipe's write end, and lets
+	// Read() return remaining data followed by EOF — no data is lost — which
+	// unblocks ReadLoop and cascades to readerLoop closing outputCh and cs.done
+	// for SessionManager and passthrough consumers. On Unix it is a no-op
+	// (PTY closes naturally).
+
 	if runtime.GOOS == "windows" {
 		go func() {
 			_, _ = proc.Wait()
@@ -206,58 +246,174 @@ func (cs *CaptureSession) Start(ctx context.Context) error {
 // passthroughOutput (typically os.Stdout). After the channel closes
 // (PTY EOF), it captures the process exit status and closes cs.done.
 func (cs *CaptureSession) readerLoop() {
-	defer close(cs.done)
+	defer cs.closeDone()
 
 	cs.mu.Lock()
 	reader := cs.reader
-	outputCh := cs.outputCh
 	cs.mu.Unlock()
 
-	defer func() {
-		if outputCh != nil {
-			close(outputCh)
-		}
-	}()
-
-	// Drain all output from the BufferedReader into outputCh.
+	// Drain all output from the BufferedReader into the owned queue. Queueing
+	// is deliberately independent of the public channel: a consumer that has
+	// not attached yet must not apply backpressure to the PTY reader.
 	for chunk := range reader.Output() {
-		// Forward to Reader() channel for SessionManager consumption.
-		// Non-blocking send avoids stalling the readerLoop which would
-		// block the PTY and potentially deadlock the child process.
-		if outputCh != nil {
-			// Copy chunk to avoid aliasing with BufferedReader's buffer.
-			cp := make([]byte, len(chunk))
-			copy(cp, chunk)
-			select {
-			case outputCh <- cp:
-			default:
-				n := cs.droppedOutput.Add(1)
-				slog.Debug("capture output chunk dropped", "droppedTotal", n, "chunkLen", len(chunk))
-			}
-		}
-
-		// During passthrough, also forward raw output to stdout.
-		// Read passthrough state under the lock, then release before
-		// writing to avoid blocking Resize/Close/Pause/Resume while
-		// the passthrough write completes. One extra write after
-		// deactivation is harmless.
-		cs.mu.Lock()
-		active := cs.passthroughActive
-		output := cs.passthroughOutput
-		cs.mu.Unlock()
-		if active && output != nil {
-			_ = writeOrLog(output, chunk, "capture-passthrough-output")
+		cp := make([]byte, len(chunk))
+		copy(cp, chunk)
+		cs.outputMu.Lock()
+		cs.outputQueue = append(cs.outputQueue, cp)
+		wake := cs.outputWake
+		cs.outputMu.Unlock()
+		select {
+		case wake <- struct{}{}:
+		default:
 		}
 	}
 
-	// Capture exit status. proc.Wait() returns immediately here because
-	// the process has already exited (Read returned error/EOF).
+	// BufferedReader has reached EOF, so process exit can be collected now.
 	code, err := cs.proc.Wait()
 	cs.mu.Lock()
 	cs.exitCode = code
 	cs.exitErr = err
 	cs.mu.Unlock()
-	// done is closed by the deferred close(cs.done) after this returns.
+
+	cs.outputMu.Lock()
+	cs.outputClosed = true
+	wake := cs.outputWake
+	cs.outputMu.Unlock()
+	select {
+	case wake <- struct{}{}:
+	default:
+	}
+	// Done tracks PTY/process completion. The dispatcher remains available for a
+	// consumer that attaches after natural exit; Close cancels it explicitly when
+	// a caller wants to abandon any still-queued output.
+	cs.closeDone()
+}
+
+// outputLoop forwards queued output either to Reader or, after activation,
+// directly to passthroughOutput. It owns that choice for every queued chunk,
+// so activation cannot leave stale queue entries stranded on outputCh.
+func (cs *CaptureSession) outputLoop(ctx context.Context) {
+	defer close(cs.outputDispatchDone)
+	defer close(cs.outputCh)
+
+	for {
+		cs.mu.Lock()
+		active := cs.passthroughActive
+		output := cs.passthroughOutput
+		ackSent := cs.outputModeAckSent
+		ack := cs.outputModeAck
+		cs.mu.Unlock()
+
+		if active {
+			// Chunks already delivered to outputCh precede chunks still in the
+			// owned queue. Drain those first so activation preserves order. A nil
+			// output intentionally discards the public stream during passthrough.
+			for {
+				select {
+				case chunk, ok := <-cs.outputCh:
+					if !ok {
+						goto publicDrained
+					}
+					if output != nil {
+						cs.passthroughWriteMu.Lock()
+						_ = writeOrLog(output, chunk, "capture-passthrough-output")
+						cs.passthroughWriteMu.Unlock()
+					}
+				default:
+					goto publicDrained
+				}
+			}
+		publicDrained:
+			if !ackSent {
+				cs.mu.Lock()
+				if cs.passthroughActive && !cs.outputModeAckSent {
+					cs.outputModeAckSent = true
+					close(ack)
+				}
+				cs.mu.Unlock()
+			}
+		}
+
+		cs.outputMu.Lock()
+		if len(cs.outputQueue) > 0 {
+			chunk := cs.outputQueue[0]
+			cs.outputQueue = cs.outputQueue[1:]
+			cs.outputMu.Unlock()
+
+			cs.mu.Lock()
+			active = cs.passthroughActive
+			output = cs.passthroughOutput
+			cs.mu.Unlock()
+			if active {
+				if output != nil {
+					cs.passthroughWriteMu.Lock()
+					_ = writeOrLog(output, chunk, "capture-passthrough-output")
+					cs.passthroughWriteMu.Unlock()
+				}
+				continue
+			}
+
+			select {
+			case cs.outputCh <- chunk:
+			case <-cs.outputModeWake:
+				cs.outputMu.Lock()
+				cs.outputQueue = append([][]byte{chunk}, cs.outputQueue...)
+				cs.outputMu.Unlock()
+			case <-ctx.Done():
+				return
+			}
+			continue
+		}
+		closed := cs.outputClosed
+		wake := cs.outputWake
+		cs.outputMu.Unlock()
+		if closed {
+			return
+		}
+		select {
+		case <-wake:
+		case <-cs.outputModeWake:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (cs *CaptureSession) signalOutputMode() {
+	select {
+	case cs.outputModeWake <- struct{}{}:
+	default:
+	}
+}
+
+func (cs *CaptureSession) activatePassthrough(ctx context.Context, output io.Writer) error {
+	cs.mu.Lock()
+	cs.passthroughOutput = output
+	cs.passthroughActive = true
+	cs.outputModeAck = make(chan struct{})
+	cs.outputModeAckSent = false
+	ack := cs.outputModeAck
+	cs.mu.Unlock()
+	cs.signalOutputMode()
+	select {
+	case <-ack:
+		return nil
+	case <-ctx.Done():
+		cs.mu.Lock()
+		cs.passthroughActive = false
+		cs.passthroughOutput = nil
+		cs.mu.Unlock()
+		cs.signalOutputMode()
+		return ctx.Err()
+	}
+}
+
+func (cs *CaptureSession) deactivatePassthrough() {
+	cs.mu.Lock()
+	cs.passthroughActive = false
+	cs.passthroughOutput = nil
+	cs.mu.Unlock()
+	cs.signalOutputMode()
 }
 
 // Interrupt sends SIGINT to the child process.
@@ -379,20 +535,35 @@ func (cs *CaptureSession) Reader() <-chan []byte {
 	return cs.outputCh
 }
 
-// Wait blocks until the child process exits and the output has been fully
-// drained. Returns the exit code and any process error. Returns an error
-// immediately if the session has not been started.
+// Wait blocks until the child process exits and the PTY reader has captured
+// all available output. The returned Reader channel may still contain queued
+// chunks when no consumer was attached; callers may drain it after Wait.
+// Returns the exit code and any process error. Returns an error immediately
+// if the session has not been started.
 func (cs *CaptureSession) Wait() (int, error) {
+	return cs.WaitContext(context.Background())
+}
+
+// WaitContext waits for completion or context cancellation. The caller can
+// pair cancellation with Kill to interrupt the underlying process.
+func (cs *CaptureSession) WaitContext(ctx context.Context) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cs.mu.Lock()
 	started := cs.started
 	cs.mu.Unlock()
 	if !started {
 		return -1, errors.New("capture: not started")
 	}
-	<-cs.done // wait for reader loop to finish (all output captured)
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	return cs.exitCode, cs.exitErr
+	select {
+	case <-cs.done:
+		cs.mu.Lock()
+		defer cs.mu.Unlock()
+		return cs.exitCode, cs.exitErr
+	case <-ctx.Done():
+		return -1, ctx.Err()
+	}
 }
 
 // Done returns a channel that is closed when the child process exits and
@@ -411,6 +582,10 @@ func (cs *CaptureSession) Close() error {
 	}
 	cs.closed = true
 	cancel := cs.cancel
+	started := cs.started
+	if !started {
+		cs.closeDone()
+	}
 	readerCancel := cs.readerCancel
 	proc := cs.proc
 	cs.mu.Unlock()
@@ -577,20 +752,36 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 		}
 	}
 
-	// Activate passthrough: readerLoop will forward output to stdout.
-	cs.mu.Lock()
-	cs.passthroughOutput = cfg.Stdout
-	cs.passthroughActive = true
-	cs.mu.Unlock()
-	defer func() {
-		cs.mu.Lock()
-		cs.passthroughActive = false
-		cs.passthroughOutput = nil
-		cs.mu.Unlock()
-	}()
-
+	// Activate passthrough through the output dispatcher. The dispatcher first
+	// observes the mode change and drains its internal queue into stdout; only
+	// then do we flush chunks already delivered to the public channel. This
+	// creates one ordering barrier for both queue ownership and activation.
 	fwdCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if err := cs.activatePassthrough(fwdCtx, cfg.Stdout); err != nil {
+		return ExitContext, err
+	}
+	var pending [][]byte
+drainLoop:
+	for {
+		select {
+		case b, ok := <-cs.outputCh:
+			if !ok {
+				break drainLoop
+			}
+			pending = append(pending, b)
+		default:
+			break drainLoop
+		}
+	}
+	cs.passthroughWriteMu.Lock()
+	for _, b := range pending {
+		_ = writeOrLog(cfg.Stdout, b, "capture-passthrough-flush")
+	}
+	cs.passthroughWriteMu.Unlock()
+	defer cs.deactivatePassthrough()
+
+	// The output dispatcher owns all subsequent forwarding.
 
 	resultCh := make(chan forwardResult, 1)
 

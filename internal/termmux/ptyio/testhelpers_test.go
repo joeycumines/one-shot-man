@@ -2,6 +2,8 @@ package ptyio
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,18 +12,22 @@ import (
 	"testing"
 )
 
-// buildProgram compiles a Go source string into a binary and returns its path.
+// buildProgram compiles a Go source string into a binary in the owning test's
+// temporary directory. This keeps helper files isolated and automatically
+// cleaned up with the test, including when the package exits abnormally.
 func buildProgram(t *testing.T, src string) string {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("spawns process to build test helper")
 	}
+	keyBytes := sha256.Sum256([]byte(src))
+	key := hex.EncodeToString(keyBytes[:12])
 	dir := t.TempDir()
-	sourceFile := filepath.Join(dir, "main.go")
+	sourceFile := filepath.Join(dir, key+".go")
 	if err := os.WriteFile(sourceFile, []byte(src), 0o644); err != nil {
 		t.Fatalf("write helper source: %v", err)
 	}
-	binName := "testprog"
+	binName := "testprog-" + key
 	if runtime.GOOS == "windows" {
 		binName += ".exe"
 	}

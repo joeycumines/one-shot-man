@@ -142,7 +142,7 @@ func TestSessionManager_PipePaneCommand_PaneExitTerminatesProcess(t *testing.T) 
 	session.readerCh <- []byte("before exit")
 	readPipeOutput(t, outPath, "before exit", 30*time.Second)
 
-	close(session.readerCh)
+	session.closeReader()
 	// Give the manager time to process EOF and close the pipe.
 	time.Sleep(100 * time.Millisecond)
 

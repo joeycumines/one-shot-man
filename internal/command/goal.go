@@ -113,8 +113,8 @@ func NewGoalCommand(cfg *config.Config, registry GoalRegistry) *GoalCommand {
 			description: "Access pre-written goals for common development tasks",
 			usage:       "goal [options] [goal-name]",
 		},
-		scriptCommandBase: scriptCommandBase{config: cfg},
-		registry:          registry,
+		config:   cfg,
+		registry: registry,
 	}
 }
 

@@ -3,6 +3,8 @@ package command
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
@@ -14,6 +16,41 @@ import (
 //  Tests for all grouping strategies and auto-selection scorer, loaded via
 //  prsplittest.NewChunkEngine with chunks 00_core + 01_analysis + 02_grouping.
 // ===========================================================================
+
+func TestChunk02_GroupByDependency_UsesConfiguredRepositoryDir(t *testing.T) {
+	t.Parallel()
+	repoDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoDir, "internal", "dep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repoDir, "internal", "app"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "go.mod"), []byte("module example.com/project\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "internal", "dep", "dep.go"), []byte("package dep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "internal", "app", "app.go"), []byte("package app\nimport \"example.com/project/internal/dep\"\nvar _ = dep.X\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	evalJS := prsplittest.NewChunkEngine(t, map[string]any{"dir": repoDir}, "00_core", "02_grouping")
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.groupByDependency([
+		'internal/app/app.go', 'internal/dep/dep.go'
+	], {}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var groups map[string][]string
+	if err := json.Unmarshal([]byte(raw.(string)), &groups); err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 {
+		t.Fatalf("expected configured repository dependency files to share one group, got %v", groups)
+	}
+}
 
 func TestChunk02_GroupByDirectory(t *testing.T) {
 	t.Parallel()

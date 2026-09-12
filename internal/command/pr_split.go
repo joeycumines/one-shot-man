@@ -1,10 +1,10 @@
 package command
 
 import (
-	"errors"
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -141,7 +141,7 @@ func NewPrSplitCommand(cfg *config.Config) *PrSplitCommand {
 			"Split a large PR into reviewable stacked branches",
 			"pr-split [options]",
 		),
-		scriptCommandBase: scriptCommandBase{config: cfg},
+		config: cfg,
 
 		// Defaults — mirrored in SetupFlags for flag-based parsing.
 		interactive:   true,
@@ -217,6 +217,10 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	if err != nil {
 		return err
 	}
+	// The session manager owns a worker and per-session I/O goroutines. Close
+	// it before the scripting engine so its event-bus bridge can observe the
+	// closed subscription and leave the event loop's tracked work quiescent.
+	defer tuiMgr.Close()
 
 	// Clean up the persistence state file on normal exit so the next
 	// startup doesn't offer stale resume data. Crash exits leave the
@@ -330,10 +334,16 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		}
 	}
 
-	// Wait for any asynchronous work (timers, fetch, etc.) to complete naturally.
-	// This uses the WithAutoExit(true) feature of the event loop.
-	engine.Wait()
+	// The command owns the manager worker independently of the scripting
+	// runtime. Stop it before waiting for the runtime: its event-bus bridge is
+	// tracked by the same event loop, so leaving the manager open would keep a
+	// live Promisify worker from allowing auto-exit to complete.
+	tuiMgr.Close()
 
+	// Wait for any remaining asynchronous work (timers, fetch, etc.) to
+	// complete naturally. This uses the WithAutoExit(true) feature of the event
+	// loop.
+	engine.Wait()
 	return nil
 }
 

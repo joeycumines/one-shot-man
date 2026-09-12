@@ -33,7 +33,7 @@ func NewCodeReviewCommand(cfg *config.Config) *CodeReviewCommand {
 			"Single-prompt code review with context",
 			"code-review [options]",
 		),
-		scriptCommandBase: scriptCommandBase{config: cfg},
+		config: cfg,
 	}
 }
 

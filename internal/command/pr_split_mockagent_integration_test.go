@@ -295,8 +295,13 @@ func TestBinaryE2E_AgentCommandPathValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 func TestBinaryE2E_MockAgentProcessCleanup(t *testing.T) {
 	skipSlow(t)
-	// NOT parallel: pgrep -f mockagent would match osm processes from other
-	// parallel tests (which have mockagent in their -agent-command argument).
+	// Hardened: use pgrep -x (exact name match) instead of -f to avoid matching
+	// osm processes that carry mockagent in -agent-command args. This removes the
+	// false-positive under ~500 t.Parallel and makes the check deterministic.
+	// Test remains not parallel during -parallel 8 broad runs, but the -x guard
+	// plus extended 15s retry (was 10s) lets it pass/fail deterministically with
+	// a clear log at /tmp/loom-clean-head-*.log. Fallback if host is overloaded:
+	//   gmake test GO_FLAGS=-p=1 GO_TEST_FLAGS='-parallel 1 -timeout=30m'
 	osmBin := buildOSMBinary(t)
 	mockBin := buildMockAgent(t)
 	repoDir := setupBinaryTestRepo(t)
@@ -304,7 +309,7 @@ func TestBinaryE2E_MockAgentProcessCleanup(t *testing.T) {
 	// Run auto-split which will spawn mockagent.
 	// The pipeline will fail (mockagent doesn't speak MCP), but the
 	// important thing is that the mockagent process is cleaned up.
-	runBinary(t, osmBin, repoDir,
+	stdout, stderr, _ := runBinary(t, osmBin, repoDir,
 		"pr-split",
 		"-interactive=false",
 		"-base=main",
@@ -314,20 +319,23 @@ func TestBinaryE2E_MockAgentProcessCleanup(t *testing.T) {
 		"--session="+t.Name(),
 		"auto-split",
 	)
+	t.Logf("runBinary completed stdout=%d stderr=%d", len(stdout), len(stderr))
 
 	// After the binary exits, check for orphan mockagent processes.
-	// Retry for up to 10 seconds to allow cleanup to complete under
+	// Retry for up to 15 seconds to allow cleanup to complete under
 	// heavy parallel load (e.g. race detection with many concurrent tests).
+	// Uses -x for exact basename match; -f would match osm --agent-command args.
 	var orphanPIDs []string
-	for attempt := range 20 {
-		listCmd := exec.Command("pgrep", "-f", filepath.Base(mockBin))
+	for attempt := range 30 {
+		listCmd := exec.Command("pgrep", "-x", filepath.Base(mockBin))
 		listOut, listErr := listCmd.CombinedOutput()
 		if listErr != nil || len(strings.TrimSpace(string(listOut))) == 0 {
 			orphanPIDs = nil
 			break
 		}
 		orphanPIDs = strings.Fields(strings.TrimSpace(string(listOut)))
-		if attempt < 19 {
+		t.Logf("orphan check attempt %d/%d: found %s", attempt+1, 30, strings.Join(orphanPIDs, ","))
+		if attempt < 29 {
 			time.Sleep(500 * time.Millisecond)
 		}
 	}

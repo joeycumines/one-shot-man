@@ -73,16 +73,16 @@ Created via `newCaptureSession(command, args?, opts?)`.
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
-| `start()` | `CaptureSession.Start()` | — | `undefined` | throws |
+| `start()` | `CaptureSession.Start()` | — | `Promise<void>` | rejects on error |
 | `interrupt()` | `CaptureSession.Interrupt()` | — | `undefined` | throws |
 | `kill()` | `CaptureSession.Kill()` | — | `undefined` | throws |
 | `pause()` | `CaptureSession.Pause()` | — | `undefined` | throws |
 | `resume()` | `CaptureSession.Resume()` | — | `undefined` | throws |
 | `isPaused()` | `CaptureSession.IsPaused()` | — | `boolean` | silent |
 | `resize(rows, cols)` | `CaptureSession.Resize()` | `number, number` | `undefined` | throws |
-| `wait()` | `CaptureSession.Wait()` | — | `{code, error?}` | error field |
+| `wait()` | `CaptureSession.WaitContext()` | — | `Promise<{code, error?}>` | rejects on cancellation/error |
 | `sendEOF()` | `CaptureSession.SendEOF()` | — | `undefined` | throws |
-| `close()` | `CaptureSession.Close()` | — | `undefined` | throws |
+| `close()` | `CaptureSession.Close()` | — | `Promise<void>` | rejects on error |
 | `pid()` | `CaptureSession.Pid()` | — | `number` | silent |
 | `exitCode()` | `CaptureSession.ExitCode()` | — | `number` | silent |
 | `isDone()` | channel select on `Done()` | — | `boolean` | silent |

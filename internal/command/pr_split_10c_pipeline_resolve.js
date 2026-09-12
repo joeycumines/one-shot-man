@@ -114,7 +114,8 @@
         var groups = await applyStrategy(analysis.files, strategy, {
             fileStatuses: analysis.fileStatuses,
             maxFiles: runtime.maxFiles,
-            baseBranch: analysis.baseBranch
+            baseBranch: analysis.baseBranch,
+            dir: runtime.dir
         });
         state.groupsCache = groups;
 

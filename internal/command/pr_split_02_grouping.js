@@ -151,11 +151,26 @@
         return imports;
     }
 
-    // detectGoModulePath reads go.mod and returns the module path, or ''.
-    async function detectGoModulePath() {
+    // resolveRepositoryPath converts a repository-relative path to the path used
+    // for I/O. Grouping output remains repository-relative.
+    function resolveRepositoryPath(path, dir) {
+        if (!dir || dir === '' || dir === '.') return path;
+        if (osmod && typeof osmod.isAbsolute === 'function' && osmod.isAbsolute(path)) {
+            return path;
+        }
+        if (osmod && typeof osmod.join === 'function') {
+            return osmod.join(dir, path);
+        }
+        var sep = (prSplit._isWindows && prSplit._isWindows()) ? '\\' : '/';
+        return dir.replace(/[\\/]+$/, '') + sep + path;
+    }
+
+    // detectGoModulePath reads go.mod in the configured repository directory.
+    async function detectGoModulePath(dir) {
+        var goModPath = resolveRepositoryPath('go.mod', dir || runtime.dir || '.');
         var content = '';
         if (osmod) {
-            var result = await osmod.readFile('go.mod');
+            var result = await osmod.readFile(goModPath);
             if (result.error) {
                 return '';
             }
@@ -164,9 +179,9 @@
             var readCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'type' : 'cat';
             var result;
             if (readCmd === 'type') {
-                result = await exec.execv(['cmd.exe', '/C', 'type "go.mod"']);
+                result = await exec.execv(['cmd.exe', '/C', 'type "' + goModPath + '"']);
             } else {
-                result = await exec.execv(['cat', 'go.mod']);
+                result = await exec.execv(['cat', goModPath]);
             }
             if (result.code !== 0) {
                 return '';
@@ -188,6 +203,7 @@
     async function groupByDependency(files, options) {
         if (!files || !files.length) return {};
         options = options || {};
+        var repositoryDir = prSplit._resolveDir(options.dir || runtime.dir || '.');
 
         var goFiles = [];
         var otherFiles = [];
@@ -214,7 +230,7 @@
         }
         var pkgDirs = Object.keys(pkgFiles);
 
-        var modulePath = await detectGoModulePath();
+        var modulePath = await detectGoModulePath(repositoryDir);
 
         // Union-Find.
         var parent = {};
@@ -251,7 +267,7 @@
 
                 var fileContent = '';
                 if (osmod) {
-                    var readResult = await osmod.readFile(goFiles[i]);
+                    var readResult = await osmod.readFile(resolveRepositoryPath(goFiles[i], repositoryDir));
                     if (readResult.error) {
                         continue;
                     }
@@ -259,9 +275,9 @@
                 } else {
                     var catResult;
                     if (prSplit._isWindows && prSplit._isWindows()) {
-                        catResult = await exec.execv(['cmd.exe', '/C', 'type "' + goFiles[i] + '"']);
+                        catResult = await exec.execv(['cmd.exe', '/C', 'type "' + resolveRepositoryPath(goFiles[i], repositoryDir) + '"']);
                     } else {
-                        catResult = await exec.execv(['cat', goFiles[i]]);
+                        catResult = await exec.execv(['cat', resolveRepositoryPath(goFiles[i], repositoryDir)]);
                     }
                     if (catResult.code !== 0) {
                         continue;
@@ -434,6 +450,7 @@
     async function groupByDependencyAsync(files, options) {
         if (!files || !files.length) return {};
         options = options || {};
+        var repositoryDir = prSplit._resolveDir(options.dir || runtime.dir || '.');
 
         var shellExecAsync = prSplit._shellExecAsync;
         var shellQuote = prSplit._shellQuote;
@@ -463,7 +480,7 @@
         }
         var pkgDirs = Object.keys(pkgFiles);
 
-        var modulePath = await detectGoModulePath();
+        var modulePath = await detectGoModulePath(repositoryDir);
 
         // Union-Find (same as sync version).
         var parent = {};
@@ -502,19 +519,19 @@
                 var fileContent = '';
                 if (osmod) {
                     // osmod.readFile is a fast Go syscall (~0.1 ms per file).
-                    var readResult = await osmod.readFile(goFiles[i]);
+                    var readResult = await osmod.readFile(resolveRepositoryPath(goFiles[i], repositoryDir));
                     if (readResult.error) { continue; }
                     fileContent = readResult.content;
                 } else if (shellExecAsync) {
                     // Async fallback: platform-aware file read.
                     // Genuinely non-blocking — yields to event loop during I/O.
-                    var catResult = await shellExecAsync((prSplit._isWindows && prSplit._isWindows() ? 'type ' : 'cat ') + shellQuote(goFiles[i]));
+                    var catResult = await shellExecAsync((prSplit._isWindows && prSplit._isWindows() ? 'type ' : 'cat ') + shellQuote(resolveRepositoryPath(goFiles[i], repositoryDir)));
                     if (catResult.error) { continue; }
                     fileContent = catResult.stdout;
                 } else {
                     // Last resort: sync exec (only if neither osmod nor spawn available).
                     var catCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'type' : 'cat';
-                    var catResult2 = await exec.execv([catCmd, goFiles[i]]);
+                    var catResult2 = await exec.execv([catCmd, resolveRepositoryPath(goFiles[i], repositoryDir)]);
                     if (catResult2.code !== 0) { continue; }
                     fileContent = catResult2.stdout;
                 }

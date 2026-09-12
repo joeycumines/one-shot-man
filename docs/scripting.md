@@ -188,6 +188,8 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:encoding` | Base64 and hex encoding/decoding | `base64Encode(input) → string`, `base64Decode(encoded) → string`, `base64URLEncode(input) → string`, `base64URLDecode(encoded) → string`, `hexEncode(input) → string`, `hexDecode(encoded) → string` — decode errors throw JS errors; input accepts strings or byte arrays. [Reference →](reference/encoding.md) |
 | `osm:json` | JSON utilities | `parse(str) → any`, `stringify(value, indent?) → string`, `query(obj, path) → any` (dot-notation, `[n]`, `[*]` wildcard), `mergePatch(target, patch) → any` (RFC 7386), `diff(a, b) → [{op, path, value?, oldValue?}]` (JSON Pointer paths), `flatten(obj, sep?) → object`, `unflatten(obj, sep?) → object` |
 | `osm:gitops` | Git operations (go-git) | `isRepo(path)`, `open(path)` / `openDetect(path)` → Repo, `defaultBranch(path)`, `branchExists(path, name)`, `isWorkTree(path)`, `headBranchName(path)`; Repo methods: `.defaultBranch()`, `.branchExists(name)`, `.isWorkTree()`, `.headBranchName()` (sync), `.addAll() → Promise<void>`, `.commit(msg) → Promise<string>`, `.push() → Promise<void>`, `.hasStagedChanges() → Promise<bool>` (async) |
+| `osm:astpack` | AST context extraction and token packing | `pack(files) → Promise<Package>`, `packDiff(diff) → Promise<Package>` |
+| `osm:diff_triage` | Diff triage and file impact analysis | `triage(diff) → Promise<TriageResult[]>`, `triageSummary(diff) → Promise<map<string, number>>` |
 | `osm:argv` | Command-line string parsing | `parseArgv(cmdline) → string[]`, `formatArgv(argv[]) → string` |
 | `osm:format` | Number and byte formatting | `formatNum(n) → string` (comma grouping <10000, SI k/M/G above), `formatBytes(n) → string` (IEC binary B/kB/MB/GB/TB) |
 
@@ -220,32 +222,23 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:bubblezone` | Zone-based mouse hit-testing | `mark(id, content) → string`, `scan(renderedView) → string`, `inBounds(id, mouseMsg) → bool`, `get(id) → {startX, startY, endX, endY, width, height}`, `newPrefix() → string`, `close()` |
 | `osm:bubbles/viewport` | Scrollable viewport component | `new(width?, height?) → Viewport`; Viewport: `.setContent(s)`, `.setWidth(n)`, `.setHeight(n)`, `.scrollDown(n)`, `.scrollUp(n)`, `.gotoTop()`, `.gotoBottom()`, `.pageUp()`, `.pageDown()`, `.setYOffset(n)`, `.yOffset()`, `.scrollPercent()`, `.atTop()`, `.atBottom()`, `.totalLineCount()`, `.visibleLineCount()`, `.setStyle(lipglossStyle)`, `.update(msg)`, `.view()` |
 | `osm:bubbles/textarea` | Multi-line text input component | `new() → Textarea`; Textarea: `.setValue(s)`, `.value()`, `.setWidth(n)`, `.setHeight(n)`, `.focus()`, `.blur()`, `.focused()`, `.insertString(s)`, `.setCursor(col)`, `.setPosition(row, col)`, `.lineCount()`, `.lineInfo()`, `.cursorVisualLine()`, `.visualLineCount()`, `.performHitTest(x, y)`, `.handleClickAtScreenCoords(x, y)`, `.getScrollSyncInfo()`, `.update(msg)`, `.view()` |
-| `osm:termui/scrollbar` | Thin vertical scrollbar | `new(viewportHeight?) → Scrollbar`; Scrollbar: `.setViewportHeight(n)`, `.setContentHeight(n)`, `.setYOffset(n)`, `.viewportHeight()`, `.contentHeight()`, `.yOffset()`, `.setChars(thumb, track)`, `.setThumbForeground(color)`, `.setThumbBackground(color)`, `.setTrackForeground(color)`, `.setTrackBackground(color)`, `.view()`. [Reference →](reference/scrollbar.md) |
-| `osm:termui/box` | Box container component | `new(opts?) → Box`; Box: `.setContent(str)`, `.setStyle(style)`, `.setWidth(n)`, `.setHeight(n)`, `.view() → string` |
-| `osm:termui/compositor` | Layer compositor for rendering | `new() → Compositor`; Compositor: `.addLayer(layer)`, `.removeLayer(id)`, `.clear()`, `.render() → string` |
+| `osm:termui/scrollbar` | Thin vertical scrollbar | `scrollbar(viewportHeight?)` / `new(viewportHeight?) → Scrollbar`; Scrollbar: `.setViewportHeight(n)`, `.setContentHeight(n)`, `.setYOffset(n)`, `.viewportHeight()`, `.contentHeight()`, `.yOffset()`, `.setChars(thumb, track)`, `.setThumbForeground(color)`, `.setThumbBackground(color)`, `.setTrackForeground(color)`, `.setTrackBackground(color)`, `.view()`. [Reference →](reference/scrollbar.md) |
+| `osm:termui/box` | Box container component | `box(opts?) → Box`; Box: `.setContent(str)`, `.setStyle(style)`, `.setWidth(n)`, `.setHeight(n)`, `.view() → string` |
+| `osm:termui/compositor` | Layer compositor for rendering | `compositor(opts?) → Compositor`; Compositor: `.addLayer(layer)`, `.removeLayer(id)`, `.clear()`, `.render() → string` |
 | `osm:termui/coordinate` | 2D coordinate geometry types | `position({x, y})`, `size({width, height})`, `rect({x, y, width, height})`, `layer({x, y, width, height, z})`, `paneGeometryRect({row, col, rows, cols})`, `lipglossLayer(lipglossLayerObj)` |
-| `osm:termui/divider` | Horizontal/vertical divider | `new() → Divider`; Divider: `.setHorizontal(bool)`, `.setStyle(style)`, `.view() → string` |
-| `osm:termui/label` | Text label component | `new(text?) → Label`; Label: `.setText(str)`, `.setStyle(style)`, `.view() → string` |
-| `osm:termui/layout` | Layout container component | `new() → Layout`; Layout: `.addItem(item)`, `.setDirection(dir)`, `.setSpacing(n)`, `.view() → string` |
-| `osm:termui/list` | Selectable list component | `new(items?) → List`; List: `.setItems(items)`, `.select(n)`, `.selected() → number`, `.setStyle(style)`, `.view() → string` |
-| `osm:termui/modal` | Modal overlay component | `new(content?) → Modal`; Modal: `.setContent(str)`, `.setStyle(style)`, `.show()`, `.hide()`, `.view() → string` |
-| `osm:termui/panel` | Panel container component | `new(opts?) → Panel`; Panel: `.setContent(str)`, `.setStyle(style)`, `.setTitle(str)`, `.view() → string` |
-| `osm:termui/splitlayout` | Split-pane layout manager | `new(manager, bounds) → SplitLayout`; SplitLayout: `.addPane(id)`, `.removePane(id)`, `.update(msg)`, `.view()`, `.close()` |
+| `osm:termui/divider` | Horizontal/vertical divider | `divider(orientation?) → Divider`; Divider: `.setHorizontal(bool)`, `.setStyle(style)`, `.view() → string` |
+| `osm:termui/label` | Text label component | `label(text?) → Label`; Label: `.setText(str)`, `.setStyle(style)`, `.view() → string` |
+| `osm:termui/layout` | Layout container component | `layout(opts?) → Layout`; Layout: `.addItem(item)`, `.setDirection(dir)`, `.setSpacing(n)`, `.view() → string` |
+| `osm:termui/list` | Selectable list component | `list(items?) → List`; List: `.setItems(items)`, `.select(n)`, `.selected() → number`, `.setStyle(style)`, `.view() → string` |
+| `osm:termui/modal` | Modal overlay component | `modal(content?) → Modal`; Modal: `.setContent(str)`, `.setStyle(style)`, `.show()`, `.hide()`, `.view() → string` |
+| `osm:termui/panel` | Panel container component | `panel(opts?) → Panel`; Panel: `.setContent(str)`, `.setStyle(style)`, `.setTitle(str)`, `.view() → string` |
+| `osm:termui/splitlayout` | Split-pane layout manager | `splitLayout(manager, bounds) → SplitLayout`; SplitLayout: `.addPane(id)`, `.removePane(id)`, `.update(msg)`, `.view()`, `.close()` |
+| `osm:termui/splitview` | Split-view component | `splitView(opts?) → SplitView`; SplitView: `.setLeft(view)`, `.setRight(view)`, `.setRatio(n)`, `.view() → string` |
+| `osm:termui/table` | Table component | `table(opts?) → Table`; Table: `.setHeaders(headers)`, `.setRows(rows)`, `.setStyle(style)`, `.view() → string` |
+| `osm:termui/termpane` | Terminal pane component | `termpane(manager, id, opts?) → TermPane`; TermPane: `.update(msg)`, `.view()`, `.resize(rows, cols)` |
+| `osm:termui/toast` | Toast notification component | `toast(msg?) → Toast`; Toast: `.setMessage(str)`, `.setStyle(style)`, `.show()`, `.hide()`, `.view() → string` |
 
-> **Constructor names (`osm:termui/*`):** most `osm:termui/*` modules export a
-> factory named after the module (lowercase), not `new`. For example
-> `require('osm:termui/box').box(opts)`, `require('osm:termui/label').label(text)`,
-> `require('osm:termui/divider').divider('horizontal')`,
-> `require('osm:termui/compositor').compositor({width,height})`,
-> `require('osm:termui/splitview').splitView(opts)`,
-> `require('osm:termui/splitlayout').splitLayout(manager, bounds)`. The
-> `new(...)` form shown in the table above is shorthand for "construct with the
-> documented options"; the actual constructor is the lowercase module-name
-> function. (`osm:termui/scrollbar` exports `new`.)
-| `osm:termui/splitview` | Split-view component | `new(opts?) → SplitView`; SplitView: `.setLeft(view)`, `.setRight(view)`, `.setRatio(n)`, `.view() → string` |
-| `osm:termui/table` | Table component | `new() → Table`; Table: `.setHeaders(headers)`, `.setRows(rows)`, `.setStyle(style)`, `.view() → string` |
-| `osm:termui/termpane` | Terminal pane component | `new(manager, id, opts?) → TermPane`; TermPane: `.update(msg)`, `.view()`, `.resize(rows, cols)` |
-| `osm:termui/toast` | Toast notification component | `new(msg?) → Toast`; Toast: `.setMessage(str)`, `.setStyle(style)`, `.show()`, `.hide()`, `.view() → string` |
+> **Constructor names (`osm:termui/*`):** `osm:termui/*` modules export a lowercase factory function named after the component (e.g. `require('osm:termui/box').box(opts)`, `require('osm:termui/label').label(text)`, `require('osm:termui/divider').divider('horizontal')`, `require('osm:termui/compositor').compositor({width,height})`, `require('osm:termui/splitview').splitView(opts)`, `require('osm:termui/splitlayout').splitLayout(manager, bounds)`). (`osm:termui/scrollbar` exports both `scrollbar` and `new`.)
 
 #### Behavior trees & planning
 
@@ -260,7 +253,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 |--------|-------------|-------------|
 | `osm:aimux` | Generic agent process multiplexer | `processProvider(opts)` → provider object; `newRegistry()` → registry object with `register(provider)`, `get(name)`, `list()`, `spawn(name, opts)`; `newParser()` → parser object with `.parse(line)`, `.patterns()`; parser event constants: `EVENT_TEXT`, `EVENT_RATE_LIMIT`, `EVENT_PERMISSION`, `EVENT_MODEL_SELECT`, `EVENT_SSO_LOGIN`, `EVENT_COMPLETION`, `EVENT_TOOL_USE`, `EVENT_ERROR`, `EVENT_THINKING`; `eventTypeName(type)`. Used by `osm pr-split` to spawn agent processes provider-agnostically. |
 | `osm:mcp` | Promise-based MCP (Model Context Protocol) server | `createServer(name, version?) → server`; Server methods: `.addTool(toolDef, handler)` where toolDef = `{name, description?, inputSchema?}`, `.run(transport?)` (default: "stdio"), `.close()` |
-| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, opts?)`, `.unregister(id)`, `.activate(id)`, `.attach(handle) → id`, `.detach()`, `.hasChild()`, `.passthrough(opts?)` (async — enters passthrough, returns `Promise<{reason, error?}>`), `.switchTo()` (async, returns `Promise<{reason, error?}>`), `.activeSide()`, `.activeID()`, `.sessions()`, `.snapshot(id)`, `.eventsDropped()`, `.input(data)`, `.resize(rows, cols)`, `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe(bufSize?)`, `.unsubscribe(id)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.snapshot(id)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `.activate(id)` + `.input(data)` for writes; `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_AGENT`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (9 event names). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
+| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, opts?)`, `.unregister(id)`, `.activate(id)`, `.attach(handle) → id`, `.detach()`, `.hasChild()`, `.passthrough(opts?)` (async — enters passthrough, returns `Promise<{reason, error?}>`), `.switchTo()` (async, returns `Promise<{reason, error?}>`), `.activeSide()`, `.activeID()`, `.sessions()`, `.snapshot(id)`, `.eventsDropped()`, `.input(data)`, `.resize(rows, cols)`, `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe(bufSize?)`, `.unsubscribe(id)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.snapshot(id)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `.activate(id)` + `.input(data)` for writes; `.screenshot()`, `.childScreen()`, `.writeToChild(data)`, and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_AGENT`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (14 event names: `EXIT`, `RESIZE`, `FOCUS`, `BELL`, `OUTPUT`, `REGISTERED`, `ACTIVATED`, `CLOSED`, `TERMINAL_RESIZE`, `ACTIVITY`, `SILENCE`, `TITLE`, `CWD`/`WORKING_DIRECTORY`, `CLIPBOARD`). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
 
 ### osm:bt (Behavior Trees)
 
@@ -561,19 +554,19 @@ When registered with a SessionManager, screen output is available via
 
 **Methods (17 total):**
 
-- `start()` — Start the process (throws on error)
+- `start()` — Start the process asynchronously; returns `Promise<void>` (rejects on error)
 - `write(str)` — Write string to process stdin (throws on error)
 - `isDone()` — Check if process has exited (non-blocking)
 - `exitCode()` — Get exit code (only valid after `isDone()`)
 - `resize(rows, cols)` — Resize the PTY (throws on error)
-- `close()` — Close the session and kill the process
+- `close()` — Close the session and kill the process asynchronously; returns `Promise<void>`
 - `pause()` / `resume()` — Suspend/resume process (SIGSTOP/SIGCONT)
 - `isPaused()` — Check if paused
 - `interrupt()` — Send SIGINT
 - `kill()` — Send SIGKILL
 - `sendEOF()` — Send EOF (Ctrl+D)
 - `pid()` — Get process PID
-- `wait()` — Block until process exits, returns `{exitCode, error?}`
+- `wait()` — Wait asynchronously until process exits; returns `Promise<{code, error?}>`
 - `reader()` — Get next output chunk (blocking), returns `string | null`
 - `readAvailable()` — Drain buffered chunks (non-blocking), returns `string | null`
 - `passthrough(opts?) → Promise<{reason, error?}>` — Enter passthrough mode (async, returns Promise)
@@ -589,8 +582,8 @@ var session = tm.newCaptureSession('/bin/bash', ['-i'], {
     rows: 24,
     cols: 80
 });
-session.start();
-session.write('echo hello\n');
+await session.start();
+await session.write('echo hello\n');
 // stream output via reader() or readAvailable()
 var chunk = session.readAvailable();
 // ... poll session.isDone()

@@ -113,3 +113,21 @@ test('Reflect is a namespace object (not a function)', function () {
 	assert.equal('Reflect typeof', typeof Reflect, 'object');
 });
 presentDefined('BigInt');
+
+// --- process sandbox hardening ---
+test('process sandbox restricts dangerous lifecycle and system methods', function () {
+	assert.equal('process present', typeof process, 'object');
+	assert.equal('process.nextTick is function', typeof process.nextTick, 'function');
+	assert.equal('process.exit is undefined', typeof process.exit, 'undefined');
+	assert.equal('process.exitCode is undefined', typeof process.exitCode, 'undefined');
+	assert.equal('process.kill is undefined', typeof process.kill, 'undefined');
+	assert.equal('process.abort is undefined', typeof process.abort, 'undefined');
+	assert.equal('process.chdir is undefined', typeof process.chdir, 'undefined');
+	assert.equal('process.cwd is undefined', typeof process.cwd, 'undefined');
+	assert.equal('process.argv is undefined', typeof process.argv, 'undefined');
+	assert.equal('process.binding is undefined', typeof process.binding, 'undefined');
+	assert.equal('process._rawDebug is undefined', typeof process._rawDebug, 'undefined');
+	assert.equal('process.env is undefined', typeof process.env, 'undefined');
+	assert.equal('process.pid is undefined', typeof process.pid, 'undefined');
+	assert.throws(function () { process.kill(1, 9); });
+});

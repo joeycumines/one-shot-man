@@ -748,13 +748,11 @@ func TestPrSplitCommand_PrepareEngineFailure(t *testing.T) {
 	// Trigger PrepareEngine failure by providing an invalid log level.
 	// resolveLogConfig returns error for unknown levels.
 	cmd := &PrSplitCommand{
-		scriptCommandBase: scriptCommandBase{
-			logLevel: "INVALID_LEVEL_XYZ",
-			testMode: true,
-			config:   config.NewConfig(),
-			store:    "memory",
-			session:  t.Name(),
-		},
+		logLevel:       "INVALID_LEVEL_XYZ",
+		testMode:       true,
+		config:         config.NewConfig(),
+		store:          "memory",
+		session:        t.Name(),
 		testWorkingDir: dir,
 		baseBranch:     "main",
 		strategy:       "directory",

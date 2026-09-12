@@ -33,7 +33,7 @@ func NewPromptFlowCommand(cfg *config.Config) *PromptFlowCommand {
 			"Interactive prompt builder: goal/context/template -> generate -> assemble",
 			"prompt-flow [options]",
 		),
-		scriptCommandBase: scriptCommandBase{config: cfg},
+		config: cfg,
 	}
 }
 

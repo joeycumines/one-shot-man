@@ -34,7 +34,7 @@ func NewSuperDocumentCommand(cfg *config.Config) *SuperDocumentCommand {
 			"TUI for merging documents into a single internally consistent super-document",
 			"super-document [options]",
 		),
-		scriptCommandBase: scriptCommandBase{config: cfg},
+		config: cfg,
 	}
 }
 

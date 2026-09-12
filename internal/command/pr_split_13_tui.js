@@ -570,13 +570,19 @@
 
     function closeInteractivePaneSession(s, tab, debugPrefix) {
         var session = getInteractivePaneSession(s, tab);
-        if (!session || typeof session.close !== 'function') return false;
+        if (!session || typeof session.close !== 'function') return Promise.resolve(false);
         try {
-            session.close();
-            return true;
+            var result = session.close();
+            if (!result || typeof result.then !== 'function') return true;
+            return Promise.resolve(result).then(function() {
+                return true;
+            }, function(e) {
+                log.debug((debugPrefix || 'interactivePane') + ': ' + tab + 'Session.close failed: ' + (e.message || e));
+                return false;
+            });
         } catch (e) {
             log.debug((debugPrefix || 'interactivePane') + ': ' + tab + 'Session.close failed: ' + (e.message || e));
-            return false;
+            return Promise.resolve(false);
         }
     }
 
@@ -588,15 +594,26 @@
         var keepDisplay = options.keepDisplay === true;
         var cleanupWorktree = options.cleanupWorktree !== false;
 
-        closeInteractivePaneSession(s, 'verify', options.debugPrefix || 'verifyCleanup');
+        var closePromise = closeInteractivePaneSession(s, 'verify', options.debugPrefix || 'verifyCleanup');
+        var verifyWorktree = s.activeVerifyWorktree;
+        var verifyDir = s.activeVerifyDir;
 
-        if (cleanupWorktree && s.activeVerifyWorktree && s.activeVerifyDir) {
-            try {
-                prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree);
-            } catch (e) {
-                log.debug((options.debugPrefix || 'verifyCleanup') + ': verifyWorktree cleanup failed: ' + (e.message || e));
+        var finishCleanup = function() {
+            if (cleanupWorktree && verifyWorktree && verifyDir) {
+                try {
+                    prSplit.cleanupVerifyWorktree(verifyDir, verifyWorktree);
+                } catch (e) {
+                    log.debug((options.debugPrefix || 'verifyCleanup') + ': verifyWorktree cleanup failed: ' + (e.message || e));
+                }
             }
+        };
+        if (closePromise && typeof closePromise.then === 'function') {
+            closePromise.then(finishCleanup);
+        } else {
+            finishCleanup();
         }
+
+
 
         s.activeVerifySession = null;
         s._verifySessionRef = null; // Task 48: clear CaptureSession reference

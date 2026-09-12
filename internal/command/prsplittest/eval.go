@@ -12,7 +12,7 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 )
 
-var evalJSCallID int64
+var evalJSCallID atomic.Int64
 
 func MakeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) func(string) (any, error) {
 	t.Helper()
@@ -33,7 +33,7 @@ func makeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) f
 		// timed-out EvalJS leaks the __evalResult_N/__evalError_N globals —
 		// and the Go state they capture (vm, result, done) — on the VM for
 		// the lifetime of the engine.
-		callID := atomic.AddInt64(&evalJSCallID, 1)
+		callID := evalJSCallID.Add(1)
 		resultVar := fmt.Sprintf("__evalResult_%d", callID)
 		errorVar := fmt.Sprintf("__evalError_%d", callID)
 

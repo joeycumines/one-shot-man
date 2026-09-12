@@ -25,7 +25,6 @@ func TestCanSpawnInteractiveShell_Unix(t *testing.T) {
 	if testing.Short() {
 		t.Skip("PTY test requires spawning real processes")
 	}
-	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
@@ -45,7 +44,6 @@ func TestSpawnShell_HappyPath(t *testing.T) {
 	if testing.Short() {
 		t.Skip("PTY test requires spawning real processes")
 	}
-	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	dir := t.TempDir()
@@ -101,7 +99,6 @@ func TestSpawnShell_ExitDetection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("PTY test requires spawning real processes")
 	}
-	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	dir := t.TempDir()
@@ -152,7 +149,6 @@ func TestSpawnShell_WorktreeDir(t *testing.T) {
 	if testing.Short() {
 		t.Skip("PTY test requires spawning real processes")
 	}
-	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	dir := t.TempDir()
@@ -218,7 +214,6 @@ func TestSpawnShell_Resize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("PTY test requires spawning real processes")
 	}
-	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	dir := t.TempDir()
@@ -259,7 +254,6 @@ func TestSpawnShell_CustomRowsCols(t *testing.T) {
 	if testing.Short() {
 		t.Skip("PTY test requires spawning real processes")
 	}
-	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	dir := t.TempDir()

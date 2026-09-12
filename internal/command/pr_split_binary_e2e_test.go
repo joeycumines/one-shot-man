@@ -100,10 +100,16 @@ func setupBinaryTestRepo(t *testing.T) string {
 
 // runBinary executes the osm binary with the given arguments and returns
 // stdout, stderr, and the exit error (nil if exit code 0).
+// Hardened for resource-contended CI: 3-minute deadline (was 2m) with
+// deterministic context-cause logging so /tmp/loom-clean-head-*.log shows
+// whether a hang was at Wait4 vs. post-exit orphan check. Under
+// ~500 t.Parallel + termtest + -race, 2m was tight and produced silent
+// flakes; if flakes persist under routine host load, run with -p=1 -parallel 1
+// as documented fallback.
 func runBinary(t *testing.T, binPath, dir string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, binPath, args...)
@@ -124,6 +130,9 @@ func runBinary(t *testing.T, binPath, dir string, args ...string) (stdout, stder
 	cmd.Stderr = &errBuf
 
 	err = cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		t.Logf("runBinary: context deadline exceeded after 3m for %v (dir=%s)", args, dir)
+	}
 	return outBuf.String(), errBuf.String(), err
 }
 

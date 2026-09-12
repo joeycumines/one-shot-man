@@ -41,10 +41,8 @@ func newJSScriptCommand(name, scriptPath string, cfg *config.Config, peek script
 			fmt.Sprintf("JavaScript script: %s", name),
 			fmt.Sprintf("%s [options] [args...]", name),
 		),
-		scriptCommandBase: scriptCommandBase{
-			config:   cfg,
-			logLevel: "info",
-		},
+		config:             cfg,
+		logLevel:           "info",
 		scriptPath:         scriptPath,
 		shebangInteractive: peek.interactive,
 		shebangTestMode:    peek.testMode,

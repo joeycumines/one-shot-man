@@ -124,11 +124,14 @@ go test -race -count=5 ./internal/jscompliance/...  # determinism
   call it on-loop in `runtime.go`); the assertion activates once the fix lands.
   `TestUnhandledRejection_DoesNotCrash` is the actionable stopgap (an unhandled
   rejection must not crash the runtime or stall the loop).
-- **termmux `CaptureSession.wait()` is synchronous (WAIT-1).** Unlike
-  `exec.spawn.wait()` (async), the termmux wait blocks the event loop. It has
-  zero production callers (pr-split polls `isDone()`/`exitCode()` instead);
-  making it async requires adding event-loop infrastructure to the termmux
-  package tests. `TestBindingContract_TermmuxWaitShouldBeAsync` is a tracked
-  `t.Skip` with the concrete fix path.
+- **termmux `CaptureSession.wait()` is asynchronous (WAIT-1 resolved).** The
+  binding returns a tracked Promise and uses cancellation-aware waiting, so it
+  does not block the Goja event loop. The former skipped
+  `TestBindingContract_TermmuxWaitShouldBeAsync` should be promoted when the
+  compliance harness is migrated to an event-loop-backed CaptureSession test.
+- **termmux `CaptureSession.close()` is asynchronous.** PTY teardown and reader
+  draining run in a tracked worker and callers must await the returned Promise.
+  The native SessionManager close API remains synchronous.
+
 
 See `WIP.md` for the live drift register and resolutions.

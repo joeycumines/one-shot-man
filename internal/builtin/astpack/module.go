@@ -25,7 +25,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.Run
 					files = obj
 				} else {
 					// Try generic map[string]interface{} then convert.
-					if m, ok := arg.Export().(map[string]interface{}); ok {
+					if m, ok := arg.Export().(map[string]any); ok {
 						files = make(map[string]string, len(m))
 						for k, v := range m {
 							if s, ok := v.(string); ok {

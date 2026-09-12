@@ -84,11 +84,14 @@ func (p *ProcessProvider) Spawn(ctx context.Context, opts SpawnOpts) (AgentHandl
 
 // captureAgentHandle adapts a termmux.CaptureSession to the AgentHandle interface.
 type captureAgentHandle struct {
-	cs       *termmux.CaptureSession
-	ch       chan []byte
-	eventsCh chan LineEvent
-	ready    chan struct{}
-	once     sync.Once
+	cs        *termmux.CaptureSession
+	eventsCh  chan LineEvent
+	rawMu     sync.Mutex
+	raw       [][]byte
+	rawWake   chan struct{}
+	rawClosed bool
+	ready     chan struct{}
+	once      sync.Once
 
 	healthMu  sync.RWMutex
 	lastEvent time.Time
@@ -98,8 +101,8 @@ type captureAgentHandle struct {
 func newCaptureAgentHandle(cs *termmux.CaptureSession) *captureAgentHandle {
 	h := &captureAgentHandle{
 		cs:       cs,
-		ch:       make(chan []byte, 1024),
 		eventsCh: make(chan LineEvent, 256),
+		rawWake:  make(chan struct{}, 1),
 		ready:    make(chan struct{}),
 	}
 	if r := cs.Reader(); r != nil {
@@ -109,12 +112,20 @@ func newCaptureAgentHandle(cs *termmux.CaptureSession) *captureAgentHandle {
 }
 
 func (h *captureAgentHandle) forwardOutput(src <-chan []byte) {
-	defer close(h.ch)
+	defer func() {
+		h.rawMu.Lock()
+		h.rawClosed = true
+		h.signalRawWakeLocked()
+		h.rawMu.Unlock()
+	}()
 	defer close(h.eventsCh)
 
 	var lineBuf []byte
 	for chunk := range src {
-		h.ch <- chunk
+		h.rawMu.Lock()
+		h.raw = append(h.raw, append([]byte(nil), chunk...))
+		h.signalRawWakeLocked()
+		h.rawMu.Unlock()
 		h.once.Do(func() { close(h.ready) })
 
 		lineBuf = append(lineBuf, chunk...)
@@ -128,6 +139,26 @@ func (h *captureAgentHandle) forwardOutput(src <-chan []byte) {
 
 	h.emitLineEvent(LineEvent{Err: io.EOF})
 }
+
+func (h *captureAgentHandle) signalRawWakeLocked() {
+	select {
+	case h.rawWake <- struct{}{}:
+	default:
+	}
+}
+
+func (h *captureAgentHandle) readRaw() (chunk []byte, present, open bool) {
+	h.rawMu.Lock()
+	defer h.rawMu.Unlock()
+	if len(h.raw) > 0 {
+		chunk = h.raw[0]
+		h.raw = h.raw[1:]
+		return chunk, true, true
+	}
+	return nil, false, !h.rawClosed
+}
+
+func (h *captureAgentHandle) waitRaw() <-chan struct{} { return h.rawWake }
 
 // drainLines splits buf on \n (stripping preceding \r) and emits a LineEvent
 // for each complete line. Returns the remaining incomplete tail.
@@ -174,17 +205,25 @@ func (h *captureAgentHandle) Receive() (string, error) {
 	if h.cs == nil {
 		return "", errors.New("aimux: handle closed")
 	}
-	if h.ch == nil {
-		return "", errors.New("aimux: session not started")
-	}
-	select {
-	case chunk, ok := <-h.ch:
-		if !ok {
+	for {
+		chunk, present, open := h.readRaw()
+		if present {
+			return string(chunk), nil
+		}
+		if !open {
 			return "", io.EOF
 		}
-		return string(chunk), nil
-	case <-h.cs.Done():
-		return "", io.EOF
+		select {
+		case <-h.waitRaw():
+		case <-h.cs.Done():
+			chunk, present, open = h.readRaw()
+			if present {
+				return string(chunk), nil
+			}
+			if !open {
+				return "", io.EOF
+			}
+		}
 	}
 }
 

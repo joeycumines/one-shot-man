@@ -99,5 +99,3 @@ func Helper() {}
 		t.Fatalf("expected 2 tests, got %d", len(pkg.Tests))
 	}
 }
-
-

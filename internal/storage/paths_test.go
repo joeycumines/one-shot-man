@@ -67,13 +67,14 @@ func TestPaths(t *testing.T) {
 		// This is critical for persistence to work in headless/CI environments.
 
 		// Clear environment variables that os.UserConfigDir depends on.
-		// t.Setenv automatically saves and restores the original values.
-		t.Setenv("HOME", "")
-		// XDG_CONFIG_HOME is also consulted on Unix-like systems.
-		t.Setenv("XDG_CONFIG_HOME", "")
-		t.Setenv("USERPROFILE", "")
-		t.Setenv("AppData", "")
-		t.Setenv("LocalAppData", "")
+		for _, v := range []string{"HOME", "XDG_CONFIG_HOME", "USERPROFILE", "AppData", "LocalAppData"} {
+			if old, ok := os.LookupEnv(v); ok {
+				t.Cleanup(func() { os.Setenv(v, old) })
+			} else {
+				t.Cleanup(func() { os.Unsetenv(v) })
+			}
+			os.Unsetenv(v)
+		}
 
 		// Call SessionDirectory multiple times
 		dir1, err1 := SessionDirectory()

@@ -49,13 +49,29 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 	// the session directory with SetTestPaths do not contend on a shared
 	// parent directory (e.g. /tmp/cleanup.lock) across concurrent tests.
 	globalLockPath := filepath.Join(sessionsDir, "cleanup.lock")
+	// Fresh installations have no session directories yet; create lock parents
+	// so cleanup is a safe no-op rather than an ENOENT failure.
+	if err := os.MkdirAll(filepath.Dir(globalLockPath), 0o700); err != nil {
+		return nil, fmt.Errorf("failed to create cleanup lock directory: %w", err)
+	}
+
+	// During upgrades, older binaries may still coordinate through the
+	// parent-directory lock. Always acquire that legacy lock, even when its
+	// artifact is absent, so an older binary cannot create it after the
+	// existence check and race the current lock.
+	oldLockPath := filepath.Join(filepath.Dir(sessionsDir), "cleanup.lock")
+	legacyLock, err := acquireFileLock(oldLockPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to acquire legacy cleanup lock: %w", err)
+	}
+	defer func() { _ = releaseFileLock(legacyLock) }()
 
 	globalLock, err := acquireFileLock(globalLockPath)
 	if err != nil {
-		// If we can't acquire the global lock, bail out to avoid race.
+		// If we can't acquire the current lock, bail out to avoid race.
 		return nil, fmt.Errorf("failed to acquire global cleanup lock: %w", err)
 	}
-	defer releaseFileLock(globalLock)
+	defer func() { _ = releaseFileLock(globalLock) }()
 
 	sessions, err := ScanSessions()
 	if err != nil {
@@ -270,7 +286,16 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 		}
 
 		if f, ok, err := AcquireLockHandle(lockPath); err == nil && ok {
-			if rerr := ReleaseLockHandle(f); rerr == nil {
+			// Recheck while holding the lock. A creator may have written the
+			// session between the initial stat and lock acquisition; in that
+			// case close only and preserve the live session's lock artifact.
+			if _, statErr := os.Stat(sessionPath); statErr == nil {
+				_ = f.Close()
+				report.Skipped = append(report.Skipped, base)
+			} else if !errors.Is(statErr, os.ErrNotExist) {
+				_ = f.Close()
+				report.Skipped = append(report.Skipped, base)
+			} else if rerr := ReleaseLockHandle(f); rerr == nil {
 				report.Removed = append(report.Removed, base)
 			} else {
 				report.Skipped = append(report.Skipped, base)

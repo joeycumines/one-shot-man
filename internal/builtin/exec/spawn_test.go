@@ -29,6 +29,61 @@ func shSpawn(t *testing.T, ctx context.Context, script string) *ChildProcess {
 	return child
 }
 
+func TestSpawnChild_ConcurrentStdoutReaders(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	child := shSpawn(t, context.Background(), `printf 'one\\ntwo\\n'`)
+	results := make(chan string, 2)
+	for range 2 {
+		go func() {
+			data, done, err := child.ReadStdout()
+			if err != nil {
+				results <- fmt.Sprintf("error:%v", err)
+				return
+			}
+			if done {
+				results <- "done"
+				return
+			}
+			results <- data
+		}()
+	}
+	seen := map[string]bool{}
+	for range 2 {
+		select {
+		case value := <-results:
+			seen[strings.TrimSpace(value)] = true
+		case <-time.After(5 * time.Second):
+			t.Fatal("concurrent stdout reader stranded")
+		}
+	}
+	var output string
+	for value := range seen {
+		output += value
+	}
+	if !strings.Contains(output, "one") || !strings.Contains(output, "two") {
+		t.Fatalf("unexpected concurrent output: %v", seen)
+	}
+	_ = child.Kill()
+	_, _ = child.Wait()
+}
+
+func TestSpawnChild_WriteStdinContextCancellation(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	child := shSpawn(t, context.Background(), `sleep 30`)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err := child.WriteStdinContext(ctx, strings.Repeat("x", 32<<20))
+	if err == nil {
+		t.Fatal("WriteStdinContext succeeded despite cancellation")
+	}
+	_ = child.Kill()
+	_, _ = child.Wait()
+}
+
 func TestSpawnChild_BasicStdout(t *testing.T) {
 	t.Parallel()
 	skipIfWindows(t)
@@ -106,10 +161,10 @@ func TestSpawnChild_Stdin(t *testing.T) {
 
 	child := shSpawn(t, context.Background(), `cat`)
 
-	if err := child.WriteStdin("ping\n"); err != nil {
+	if err := child.WriteStdinContext(context.Background(), "ping\n"); err != nil {
 		t.Fatalf("WriteStdin: %v", err)
 	}
-	if err := child.CloseStdin(); err != nil {
+	if err := child.CloseStdinContext(context.Background()); err != nil {
 		t.Fatalf("CloseStdin: %v", err)
 	}
 
@@ -440,11 +495,11 @@ func TestSpawnChild_CloseStdinIdempotent(t *testing.T) {
 
 	child := shSpawn(t, context.Background(), `cat`)
 
-	if err := child.CloseStdin(); err != nil {
+	if err := child.CloseStdinContext(context.Background()); err != nil {
 		t.Fatalf("CloseStdin 1: %v", err)
 	}
 	// Second close should be no-op (nil pipe).
-	if err := child.CloseStdin(); err != nil {
+	if err := child.CloseStdinContext(context.Background()); err != nil {
 		t.Errorf("CloseStdin 2: %v", err)
 	}
 
@@ -457,11 +512,11 @@ func TestSpawnChild_WriteAfterClose(t *testing.T) {
 
 	child := shSpawn(t, context.Background(), `cat`)
 
-	if err := child.CloseStdin(); err != nil {
+	if err := child.CloseStdinContext(context.Background()); err != nil {
 		t.Fatalf("CloseStdin: %v", err)
 	}
 
-	err := child.WriteStdin("should fail")
+	err := child.WriteStdinContext(context.Background(), "should fail")
 	if err == nil {
 		t.Error("WriteStdin after close should return error")
 	}
@@ -513,10 +568,10 @@ func TestSpawnChild_BinaryData(t *testing.T) {
 	for i := range input {
 		input[i] = byte(i)
 	}
-	if err := child.WriteStdin(string(input[:])); err != nil {
+	if err := child.WriteStdinContext(context.Background(), string(input[:])); err != nil {
 		t.Fatalf("WriteStdin: %v", err)
 	}
-	if err := child.CloseStdin(); err != nil {
+	if err := child.CloseStdinContext(context.Background()); err != nil {
 		t.Fatalf("CloseStdin: %v", err)
 	}
 

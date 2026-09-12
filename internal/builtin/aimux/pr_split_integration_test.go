@@ -77,7 +77,7 @@ func prSplitTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	runJS := func(script string) goja.Value {
 		t.Helper()
 		var res goja.Value
-		err := bridge.RunSync(func(vm *goja.Runtime) error {
+		err := bridge.RunSync(ctx, func(vm *goja.Runtime) error {
 			var e error
 			res, e = vm.RunString(script)
 			return e
@@ -120,7 +120,7 @@ func runAsyncJS(t *testing.T, bridge *btmod.Bridge, script string) {
 	select {
 	case err := <-done:
 		require.NoError(t, err, "async script error")
-	case <-time.After(120 * time.Second):
+	case <-time.After(60 * time.Second):
 		t.Fatalf("timeout waiting for async script")
 	}
 }
@@ -875,9 +875,6 @@ func TestPRSplit_EndToEnd_WithCompilation(t *testing.T) {
 	// issues from stale /tmp/.git directories left by other processes.
 	t.Setenv("TMPDIR", t.TempDir())
 	bridge, runJS := prSplitTestEnv(t)
-
-	// E2E test with real compilation; increase timeout to avoid flakes.
-	bridge.SetTimeout(60 * time.Second)
 
 	sp := prSplitScriptPath(t)
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	goeventloop "github.com/joeycumines/go-eventloop"
@@ -12,22 +13,14 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/tokenizer"
 )
 
-// handleSettleErr handles settler/bridge settlement errors symmetrically.
-// ErrLoopTerminated, ErrAdapterInvalid and ErrPromiseSettled are expected
-// during shutdown/termination and are tolerated at debug level; other
-// errors are unexpected and would be logged. Documented tolerance: settlement
-// may be dropped if loop terminated before Submit, promise may remain pending
-// only for hard Close (stranded is defined behavior, see track.go).
+// handleSettleErr records unexpected settlement failures. Shutdown races can
+// produce the expected terminal errors, while other failures need visibility.
 func handleSettleErr(err error) {
-    if err == nil {
-        return
-    }
-    if errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
-        return
-    }
-    _ = err
+	if err == nil || errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
+		return
+	}
+	slog.Error("tokenizer promise settlement failed", "error", err)
 }
-
 
 // Require is the Goja module loader for osm:tokenizer.
 // It registers under "osm:tokenizer" and exposes tokenization utilities.

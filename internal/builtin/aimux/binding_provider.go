@@ -176,14 +176,17 @@ func newHandleObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaev
 
 	// close may block waiting for the child to exit.
 	_ = obj.Set("close", func() goja.Value {
-		cancel()
-		return asyncHandleVoid(ctx, runtime, adapter, loop, func() error { return h.Close() })
+		return asyncHandleVoid(ctx, runtime, adapter, loop, func(context.Context) error {
+			err := h.Close()
+			cancel()
+			return err
+		}, nil)
 	})
 
 	// receiveAsync blocks until output is available or the handle closes.
 	// Resolves to the line string, or null on EOF.
 	_ = obj.Set("receiveAsync", func() goja.Value {
-		return asyncHandleValue(ctx, runtime, adapter, loop, func() (any, error) {
+		return asyncHandleValue(ctx, runtime, adapter, loop, func(context.Context) (any, error) {
 			out, err := h.Receive()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
@@ -195,13 +198,13 @@ func newHandleObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaev
 				return goja.Null(), nil
 			}
 			return out, nil
-		})
+		}, h.Close)
 	})
 
 	// receiveEventAsync blocks until a line event is available or the handle
 	// closes. Resolves to the line string, or null on EOF / unsupported.
 	_ = obj.Set("receiveEventAsync", func() goja.Value {
-		return asyncHandleValue(ctx, runtime, adapter, loop, func() (any, error) {
+		return asyncHandleValue(ctx, runtime, adapter, loop, func(context.Context) (any, error) {
 			eventsCh := h.Events()
 			if eventsCh == nil {
 				return goja.Null(), nil
@@ -211,7 +214,7 @@ func newHandleObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaev
 				return goja.Null(), nil
 			}
 			return le.Line, nil
-		})
+		}, h.Close)
 	})
 
 	// health returns a snapshot of the handle's current health state.
@@ -234,33 +237,33 @@ func newHandleObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaev
 	// drainOutputAsync blocks until the handle reaches EOF and resolves with
 	// all captured output. Rejects on non-EOF read errors.
 	_ = obj.Set("drainOutputAsync", func() goja.Value {
-		return asyncHandleValue(ctx, runtime, adapter, loop, func() (any, error) {
+		return asyncHandleValue(ctx, runtime, adapter, loop, func(context.Context) (any, error) {
 			out, err := drainHandleOutput(h)
 			if err != nil {
 				return nil, err
 			}
 			return out, nil
-		})
+		}, h.Close)
 	})
 
 	// waitAsync blocks until process exit and resolves with {code, error?}.
 	_ = obj.Set("waitAsync", func() goja.Value {
-		return asyncHandleValue(ctx, runtime, adapter, loop, func() (any, error) {
+		return asyncHandleValue(ctx, runtime, adapter, loop, func(context.Context) (any, error) {
 			code, err := h.Wait()
 			result := map[string]any{"code": code}
 			if err != nil {
 				result["error"] = err.Error()
 			}
 			return result, nil
-		})
+		}, h.Close)
 	})
 
 	_ = obj.Set("waitReadyAsync", func(timeoutMs int) goja.Value {
-		return asyncHandleVoid(ctx, runtime, adapter, loop, func() error {
-			ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+		return asyncHandleVoid(ctx, runtime, adapter, loop, func(workerCtx context.Context) error {
+			waitCtx, cancel := context.WithTimeout(workerCtx, time.Duration(timeoutMs)*time.Millisecond)
 			defer cancel()
-			return h.WaitReady(ctx)
-		})
+			return h.WaitReady(waitCtx)
+		}, h.Close)
 	})
 
 	return obj
@@ -275,9 +278,6 @@ func drainHandleOutput(h aimuxcore.AgentHandle) (string, error) {
 				break
 			}
 			return strings.Join(out, ""), fmt.Errorf("drain output: %w", err)
-		}
-		if chunk == "" {
-			break
 		}
 		out = append(out, chunk)
 	}
@@ -312,26 +312,32 @@ func spawnOptsFromJS(runtime *goja.Runtime, v goja.Value) aimuxcore.SpawnOpts {
 	return opts
 }
 
-func asyncHandleValue(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, fn func() (any, error)) goja.Value {
-	return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-				res, err := func(ctx context.Context) (any, error) {
-		return fn()
-	}(ctx)
-				if err != nil {
-					_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-					return
-				}
-				_ = settle.Settle(false, func(rt *goja.Runtime) any {
-					if res == nil { return goja.Undefined() }
-					return res
-				})
-			})
+func asyncHandleValue(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, fn func(context.Context) (any, error), cancel func() error) goja.Value {
+	return adapter.TrackPromise(ctx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+		stop := func() {}
+		if cancel != nil {
+			stopFunc := context.AfterFunc(workerCtx, func() { _ = cancel() })
+			stop = func() { _ = stopFunc() }
+		}
+		defer stop()
+		res, err := fn(workerCtx)
+		if err != nil {
+			_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
+			return
+		}
+		_ = settle.Settle(false, func(rt *goja.Runtime) any {
+			if res == nil {
+				return goja.Undefined()
+			}
+			return res
+		})
+	})
 }
 
-func asyncHandleVoid(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, fn func() error) goja.Value {
-	return asyncHandleValue(ctx, runtime, adapter, loop, func() (any, error) {
-		return goja.Undefined(), fn()
-	})
+func asyncHandleVoid(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, fn func(context.Context) error, cancel func() error) goja.Value {
+	return asyncHandleValue(ctx, runtime, adapter, loop, func(ctx context.Context) (any, error) {
+		return goja.Undefined(), fn(ctx)
+	}, cancel)
 }
 
 func isAbsent(v goja.Value) bool {

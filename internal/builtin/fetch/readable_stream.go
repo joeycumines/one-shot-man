@@ -12,7 +12,6 @@ import (
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
-
 const (
 	defaultChunkSize  = 65536
 	defaultBufferSize = 4
@@ -24,20 +23,30 @@ type readResult struct {
 }
 
 type ReadableStream struct {
-	ctx       context.Context
-	source    io.ReadCloser
-	chunkSize int
-	mu        sync.Mutex
-	locked    bool
-	started   bool
-	closed    bool
-	chunks    chan readResult
-	done      chan struct{}
+	ctx        context.Context
+	cancel     context.CancelFunc
+	loop       *goeventloop.Loop
+	source     io.ReadCloser
+	chunkSize  int
+	mu         sync.Mutex
+	locked     bool
+	started    bool
+	closed     bool
+	chunks     chan readResult
+	done       chan struct{}
+	pumpWG     sync.WaitGroup
+	sourceOnce sync.Once
+	sourceErr  error
 }
 
 func NewReadableStream(ctx context.Context, src io.ReadCloser) *ReadableStream {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	streamCtx, cancel := context.WithCancel(ctx)
 	return &ReadableStream{
-		ctx:       ctx,
+		ctx:       streamCtx,
+		cancel:    cancel,
 		source:    src,
 		chunkSize: defaultChunkSize,
 		chunks:    make(chan readResult, defaultBufferSize),
@@ -63,31 +72,83 @@ func (rs *ReadableStream) GetReader() (*ReadableStreamDefaultReader, error) {
 	rs.locked = true
 	if !rs.started {
 		rs.started = true
-		go rs.pump()
+		if rs.loop != nil {
+			rs.loop.Promisify(rs.ctx, func(_ context.Context) (any, error) {
+				rs.pump()
+				return nil, nil
+			})
+		} else {
+			// The standalone Go API has no event-loop lifecycle to join. Own
+			// this worker through the stream and join it from Cancel instead
+			// of launching an untracked I/O goroutine.
+			rs.pumpWG.Go(func() {
+				rs.pump()
+			})
+		}
 	}
 	return &ReadableStreamDefaultReader{stream: rs}, nil
 }
 
-func (rs *ReadableStream) Cancel() error {
+// beginCancel publishes the closed state and returns ownership of source
+// cleanup. The state transition is synchronous so JavaScript observes a closed
+// stream immediately, while arbitrary source.Close work can run off the event
+// loop.
+func (rs *ReadableStream) closeSource() error {
+	rs.sourceOnce.Do(func() { rs.sourceErr = rs.source.Close() })
+	return rs.sourceErr
+}
+
+func (rs *ReadableStream) beginCancel() (bool, bool) {
 	rs.mu.Lock()
 	if rs.closed {
 		rs.mu.Unlock()
-		return nil
+		return false, true
 	}
 	rs.closed = true
+	cancel := rs.cancel
 	started := rs.started
 	rs.mu.Unlock()
-	err := rs.source.Close()
+	if cancel != nil {
+		cancel()
+	}
 	if started {
 		go func() {
 			for range rs.chunks {
 			}
 		}()
 	}
+	return true, false
+}
+
+func (rs *ReadableStream) Cancel() error {
+	owned, alreadyClosed := rs.beginCancel()
+	if alreadyClosed || !owned {
+		return nil
+	}
+	// This Go API is synchronous by contract; JavaScript uses cancelJS below
+	// so arbitrary source.Close work never blocks the event loop.
+	err := rs.closeSource()
+	// Standalone streams own their pump goroutine directly. Join it after
+	// closing the source so cancellation cannot return with blocking I/O alive.
+	if rs.loop == nil && rs.started {
+		rs.pumpWG.Wait()
+	}
 	return err
 }
 
+func (rs *ReadableStream) cancelJS(ctx context.Context, adapter *gojaeventloop.Adapter) goja.Value {
+	owned, alreadyClosed := rs.beginCancel()
+	if alreadyClosed || !owned {
+		return adapter.Promisify(ctx, func(context.Context) (any, error) { return nil, nil })
+	}
+	return adapter.Promisify(ctx, func(context.Context) (any, error) {
+		return nil, rs.closeSource()
+	})
+}
+
 func (rs *ReadableStream) pump() {
+	stop := context.AfterFunc(rs.ctx, func() { _ = rs.closeSource() })
+	defer stop()
 	defer close(rs.done)
 	defer close(rs.chunks)
 	buf := make([]byte, rs.chunkSize)
@@ -96,11 +157,18 @@ func (rs *ReadableStream) pump() {
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
-			rs.chunks <- readResult{data: chunk}
+			select {
+			case rs.chunks <- readResult{data: chunk}:
+			case <-rs.ctx.Done():
+				return
+			}
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				rs.chunks <- readResult{err: err}
+				select {
+				case rs.chunks <- readResult{err: err}:
+				case <-rs.ctx.Done():
+				}
 			}
 			return
 		}
@@ -116,14 +184,18 @@ func (r *ReadableStreamDefaultReader) Read() (data []byte, done bool, err error)
 	if r.released {
 		return nil, false, fmt.Errorf("reader has been released")
 	}
-	result, ok := <-r.stream.chunks
-	if !ok {
-		return nil, true, nil
+	select {
+	case result, ok := <-r.stream.chunks:
+		if !ok {
+			return nil, true, nil
+		}
+		if result.err != nil {
+			return nil, false, result.err
+		}
+		return result.data, false, nil
+	case <-r.stream.ctx.Done():
+		return nil, false, r.stream.ctx.Err()
 	}
-	if result.err != nil {
-		return nil, false, result.err
-	}
-	return result.data, false, nil
 }
 
 func (r *ReadableStreamDefaultReader) ReleaseLock() {
@@ -137,6 +209,7 @@ func (r *ReadableStreamDefaultReader) ReleaseLock() {
 }
 
 func wrapReadableStreamJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, rs *ReadableStream, loop *goeventloop.Loop) *goja.Object {
+	rs.loop = loop
 	obj := rt.NewObject()
 	_ = obj.Set("_goStream", rs)
 	getter := rt.ToValue(func(goja.FunctionCall) goja.Value {
@@ -151,10 +224,10 @@ func wrapReadableStreamJS(ctx context.Context, rt *goja.Runtime, adapter *gojaev
 		return wrapReaderJS(ctx, rt, adapter, reader, loop)
 	})
 	_ = obj.Set("cancel", func(call goja.FunctionCall) goja.Value {
-		if err := rs.Cancel(); err != nil {
-			panic(rt.NewGoError(err))
+		if adapter == nil {
+			panic(rt.NewGoError(errors.New("fetch: event loop adapter is required")))
 		}
-		return goja.Undefined()
+		return rs.cancelJS(ctx, adapter)
 	})
 	return obj
 }
@@ -165,19 +238,19 @@ func wrapReaderJS(ctx context.Context, rt *goja.Runtime, adapter *gojaeventloop.
 	}
 	obj := rt.NewObject()
 	_ = obj.Set("read", func(call goja.FunctionCall) goja.Value {
-		promise, settler := adapter.NewPromise()
-		loop.Promisify(ctx, func(_ context.Context) (any, error) {
+		if adapter == nil {
+			panic(rt.NewGoError(errors.New("fetch: event loop adapter is required")))
+		}
+		return adapter.Promisify(ctx, func(_ context.Context) (any, error) {
 			data, done, err := reader.Read()
 			if err != nil {
-				handleSettleErr(settler.Reject(func(rt *goja.Runtime) any { return rt.NewGoError(err) }))
-			} else if done {
-				handleSettleErr(settler.Resolve(func(*goja.Runtime) any { return map[string]any{"value": nil, "done": true} }))
-			} else {
-				handleSettleErr(settler.Resolve(func(*goja.Runtime) any { return map[string]any{"value": string(data), "done": false} }))
+				return nil, err
 			}
-			return nil, nil
+			if done {
+				return map[string]any{"value": nil, "done": true}, nil
+			}
+			return map[string]any{"value": string(data), "done": false}, nil
 		})
-		return promise
 	})
 	_ = obj.Set("releaseLock", func(call goja.FunctionCall) goja.Value {
 		reader.ReleaseLock()

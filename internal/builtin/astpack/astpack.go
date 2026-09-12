@@ -28,10 +28,10 @@ type Symbol struct {
 
 // Package is the minimal AST context package.
 type Package struct {
-	Symbols []Symbol `json:"symbols"`
-	Calls   []Call   `json:"calls"`
-	Tests   []Symbol `json:"tests"`
-	TokenEstimate int `json:"tokenEstimate"`
+	Symbols       []Symbol `json:"symbols"`
+	Calls         []Call   `json:"calls"`
+	Tests         []Symbol `json:"tests"`
+	TokenEstimate int      `json:"tokenEstimate"`
 }
 
 // Call represents a caller -> callee edge.
@@ -71,32 +71,58 @@ func Pack(files map[string]string) Package {
 		}
 		return pkg.Calls[i].Caller < pkg.Calls[j].Caller
 	})
-	// Token estimate: ~4 chars per token.
-	budget := 0
-	for _, s := range pkg.Symbols {
-		budget += len(s.Sig) / 4
+	// Token estimate: ~4 chars per token. Every returned collection contributes
+	// to the estimate so the public bound describes the complete package.
+	packageCost := func() int {
+		total := 0
+		for _, s := range pkg.Symbols {
+			total += len(s.Sig)/4 + 1
+		}
+		for _, c := range pkg.Calls {
+			total += (len(c.Caller)+len(c.Callee))/4 + 1
+		}
+		for _, test := range pkg.Tests {
+			total += len(test.Sig)/4 + 1
+		}
+		return total
 	}
-	for _, c := range pkg.Calls {
-		budget += (len(c.Caller) + len(c.Callee)) / 4
-	}
-	pkg.TokenEstimate = budget
-	// Enforce <4k tokens by truncating symbols if needed.
-	if pkg.TokenEstimate > 4000 {
-		// Trim to fit: keep first N symbols that stay under budget.
-		accum := 0
-		keep := 0
-		for i, s := range pkg.Symbols {
+	pkg.TokenEstimate = packageCost()
+	const maxTokens = 3900
+	if pkg.TokenEstimate > maxTokens {
+		remaining := maxTokens
+		trimSymbols := pkg.Symbols[:0]
+		for _, s := range pkg.Symbols {
 			cost := len(s.Sig)/4 + 1
-			if accum+cost > 3900 {
-				keep = i
+			if cost > remaining {
 				break
 			}
-			accum += cost
+			remaining -= cost
+			trimSymbols = append(trimSymbols, s)
 		}
-		if keep > 0 {
-			pkg.Symbols = pkg.Symbols[:keep]
-			pkg.TokenEstimate = accum
+		pkg.Symbols = trimSymbols
+		trimCalls := pkg.Calls[:0]
+		for _, c := range pkg.Calls {
+			cost := (len(c.Caller)+len(c.Callee))/4 + 1
+			if cost > remaining {
+				break
+			}
+			remaining -= cost
+			trimCalls = append(trimCalls, c)
 		}
+		pkg.Calls = trimCalls
+		trimTests := pkg.Tests[:0]
+		for _, test := range pkg.Tests {
+			cost := len(test.Sig)/4 + 1
+			if cost > remaining {
+				break
+			}
+			remaining -= cost
+			trimTests = append(trimTests, test)
+		}
+		pkg.Tests = trimTests
+		pkg.TokenEstimate = maxTokens - remaining
+		// The estimate is intentionally recomputed from all retained collections.
+		pkg.TokenEstimate = packageCost()
 	}
 	return pkg
 }
@@ -107,12 +133,14 @@ func PackDiff(diff string) Package {
 	return Pack(files)
 }
 
-func isGoFile(p string) bool      { return strings.HasSuffix(p, ".go") }
-func isJSFile(p string) bool      { return strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".jsx") }
-func isTSFile(p string) bool      { return strings.HasSuffix(p, ".ts") || strings.HasSuffix(p, ".tsx") }
-func isPythonFile(p string) bool  { return strings.HasSuffix(p, ".py") }
-func isRustFile(p string) bool    { return strings.HasSuffix(p, ".rs") }
-func isCppFile(p string) bool     { return strings.HasSuffix(p, ".cc") || strings.HasSuffix(p, ".cpp") || strings.HasSuffix(p, ".c") || strings.HasSuffix(p, ".h") || strings.HasSuffix(p, ".hpp") }
+func isGoFile(p string) bool     { return strings.HasSuffix(p, ".go") }
+func isJSFile(p string) bool     { return strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".jsx") }
+func isTSFile(p string) bool     { return strings.HasSuffix(p, ".ts") || strings.HasSuffix(p, ".tsx") }
+func isPythonFile(p string) bool { return strings.HasSuffix(p, ".py") }
+func isRustFile(p string) bool   { return strings.HasSuffix(p, ".rs") }
+func isCppFile(p string) bool {
+	return strings.HasSuffix(p, ".cc") || strings.HasSuffix(p, ".cpp") || strings.HasSuffix(p, ".c") || strings.HasSuffix(p, ".h") || strings.HasSuffix(p, ".hpp")
+}
 
 var (
 	jsFuncRe  = regexp.MustCompile(`(?m)(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(|(\w+)\s*:\s*function|def\s+(\w+)\s*\()`)

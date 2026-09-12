@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -48,17 +49,19 @@ func TestCleanupScheduler_RunsOnStartup(t *testing.T) {
 		close(done)
 	}()
 
-	// Give the startup cleanup a moment to complete, then cancel.
-	// We don't use time.Sleep because the startup cleanup runs synchronously
-	// before entering the ticker loop. Instead, wait briefly and check.
-	time.Sleep(50 * time.Millisecond)
+	// Poll with deadline for startup cleanup to complete.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected session to be removed by startup cleanup, stat err: %v", func() error { _, e := os.Stat(p); return e }())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	cancel()
 	<-done
-
-	// Session should have been removed by the startup cleanup.
-	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("expected session to be removed by startup cleanup, stat err: %v", err)
-	}
 }
 
 // TestCleanupScheduler_RunsOnTick verifies that the scheduler runs cleanup
@@ -193,12 +196,16 @@ func TestCleanupScheduler_ZeroInterval(t *testing.T) {
 		close(done)
 	}()
 
-	// Startup cleanup runs synchronously, so brief wait is sufficient.
-	time.Sleep(50 * time.Millisecond)
-
-	// Old session should be removed by startup cleanup.
-	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("expected session removed by startup cleanup with 0 interval, stat err: %v", err)
+	// Poll with deadline for startup cleanup to complete.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected session removed by startup cleanup with 0 interval, stat err: %v", func() error { _, e := os.Stat(p); return e }())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	cancel()
@@ -240,17 +247,23 @@ func TestCleanupScheduler_ExcludeID(t *testing.T) {
 		close(done)
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	// Poll with deadline for startup cleanup to remove p2.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(p2); errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected non-excluded session to be removed, stat err: %v", func() error { _, e := os.Stat(p2); return e }())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	cancel()
 	<-done
 
 	// exclude-keep should still exist.
 	if _, err := os.Stat(p1); err != nil {
 		t.Fatalf("expected excluded session to remain, stat err: %v", err)
-	}
-	// exclude-remove should be deleted.
-	if _, err := os.Stat(p2); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("expected non-excluded session to be removed, stat err: %v", err)
 	}
 }
 
@@ -428,8 +441,8 @@ func TestCleanupScheduler_LogsCleanupErrors(t *testing.T) {
 	SetTestPaths(fakePath)
 	defer ResetPaths()
 
-	// Capture slog output at debug level.
-	var buf bytes.Buffer
+	// Capture slog output at debug level using a thread-safe buffer.
+	var buf syncBuffer
 	oldDefault := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() { slog.SetDefault(oldDefault) })
@@ -448,8 +461,17 @@ func TestCleanupScheduler_LogsCleanupErrors(t *testing.T) {
 		close(done)
 	}()
 
-	// Let the startup cleanup run, then cancel.
-	time.Sleep(50 * time.Millisecond)
+	// Poll with deadline for the startup cleanup error log.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if strings.Contains(buf.String(), "cleanup cycle failed") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected error log before deadline, got: %s", buf.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	cancel()
 	<-done
 
@@ -460,4 +482,21 @@ func TestCleanupScheduler_LogsCleanupErrors(t *testing.T) {
 	if !strings.Contains(logOutput, "test-session") {
 		t.Fatalf("expected excludeID 'test-session' in log output, got: %s", logOutput)
 	}
+}
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
 }

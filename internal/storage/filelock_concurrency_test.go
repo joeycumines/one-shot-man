@@ -154,7 +154,7 @@ func TestFileLock_ConcurrentAcquireRelease(t *testing.T) {
 	var (
 		wg        sync.WaitGroup
 		gate      = make(chan struct{})
-		successes int64
+		successes atomic.Int64
 	)
 
 	wg.Add(numGoroutines)
@@ -168,7 +168,7 @@ func TestFileLock_ConcurrentAcquireRelease(t *testing.T) {
 					// Lock held by another goroutine — expected.
 					continue
 				}
-				atomic.AddInt64(&successes, 1)
+				successes.Add(1)
 				// Hold briefly (no sleep — just do the bookkeeping).
 				if err := releaseFileLock(f); err != nil {
 					t.Errorf("releaseFileLock: %v", err)
@@ -181,7 +181,7 @@ func TestFileLock_ConcurrentAcquireRelease(t *testing.T) {
 	close(gate)
 	wg.Wait()
 
-	total := atomic.LoadInt64(&successes)
+	total := successes.Load()
 	if total == 0 {
 		t.Fatal("expected at least 1 successful acquisition across all goroutines, got 0")
 	}

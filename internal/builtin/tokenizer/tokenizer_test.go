@@ -2,16 +2,16 @@ package tokenizermod_test
 
 import (
 	"context"
-	"time"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"bytes"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
-	"bytes"
 	"log/slog"
 )
 
@@ -59,13 +59,13 @@ func TestLoadFile_Success(t *testing.T) {
 	}
 	// Wait a bit for async Promise to settle via loop
 	// Use ExecuteScript to check flag
-	for i := 0; i < 20; i++ {
-		time.Sleep(50*time.Millisecond)
+	for range 20 {
+		time.Sleep(50 * time.Millisecond)
 		chk := engine.LoadScriptString("check-ok", `if (!globalThis.__testOK) throw new Error('not ok yet:'+(globalThis.__testErr||'pending'))`)
 		if err := engine.ExecuteScript(chk); err == nil {
 			return
 		}
-		
+
 	}
 	t.Fatalf("loadFile success did not settle")
 }
@@ -84,8 +84,8 @@ func TestLoadFile_Error(t *testing.T) {
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript: %v", err)
 	}
-	for i := 0; i < 20; i++ {
-		time.Sleep(50*time.Millisecond)
+	for range 20 {
+		time.Sleep(50 * time.Millisecond)
 		chk := engine.LoadScriptString("check-err", `if (!globalThis.__testOK) throw new Error(globalThis.__testErr||'pending')`)
 		if err := engine.ExecuteScript(chk); err == nil {
 			return
@@ -101,7 +101,7 @@ func TestLoadFile_ConcurrentHammer(t *testing.T) {
 	engine := newTestEngine(t)
 	var wg sync.WaitGroup
 	errs := make(chan error, 4)
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -118,15 +118,13 @@ func TestLoadFile_ConcurrentHammer(t *testing.T) {
 		}(i)
 	}
 	// Concurrent other JS activity
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 50; i++ {
+	wg.Go(func() {
+		for i := range 50 {
 			script := engine.LoadScriptString("other-"+string(rune('0'+i)), `var x = 1+1;`)
 			_ = engine.ExecuteScript(script)
 		}
 		errs <- nil
-	}()
+	})
 	wg.Wait()
 	close(errs)
 	for err := range errs {
@@ -153,8 +151,8 @@ func TestLoadFile_EmptyPath(t *testing.T) {
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript: %v", err)
 	}
-	for i := 0; i < 20; i++ {
-		time.Sleep(50*time.Millisecond)
+	for range 20 {
+		time.Sleep(50 * time.Millisecond)
 		chk := engine.LoadScriptString("check-empty", `if (!globalThis.__testOK) throw new Error(globalThis.__testErr||'pending')`)
 		if err := engine.ExecuteScript(chk); err == nil {
 			return

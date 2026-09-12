@@ -2,11 +2,60 @@ package aimuxcore
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/joeycumines/one-shot-man/internal/termmux"
 )
+
+func TestCaptureAgentHandle_RawOutputIsLosslessWithoutConsumer(t *testing.T) {
+	t.Parallel()
+	cs := termmux.NewCaptureSession(termmux.CaptureConfig{})
+	h := &captureAgentHandle{cs: cs, eventsCh: make(chan LineEvent, 16), rawWake: make(chan struct{}, 1), ready: make(chan struct{})}
+	src := make(chan []byte)
+	done := make(chan struct{})
+	go func() { h.forwardOutput(src); close(done) }()
+	for i := range 2048 {
+		src <- []byte(fmt.Sprintf("chunk-%d\\n", i))
+	}
+	close(src)
+	<-done
+	for i := range 2048 {
+		got, err := h.Receive()
+		if err != nil || got != fmt.Sprintf("chunk-%d\\n", i) {
+			t.Fatalf("raw chunk %d = %q, %v", i, got, err)
+		}
+	}
+}
+
+func TestCaptureAgentHandle_EmptyRawChunkIsPreserved(t *testing.T) {
+	t.Parallel()
+	cs := termmux.NewCaptureSession(termmux.CaptureConfig{})
+	h := &captureAgentHandle{
+		cs:       cs,
+		eventsCh: make(chan LineEvent, 4),
+		rawWake:  make(chan struct{}, 1),
+		ready:    make(chan struct{}),
+	}
+	src := make(chan []byte)
+	done := make(chan struct{})
+	go func() { h.forwardOutput(src); close(done) }()
+	empty := []byte{}
+	src <- empty
+	close(src)
+	<-done
+
+	got, err := h.Receive()
+	if err != nil {
+		t.Fatalf("Receive returned error for empty chunk: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("expected empty chunk, got %q", got)
+	}
+}
 
 func TestCaptureAgentHandle_WaitReady_DoesNotConsumeFirstChunk(t *testing.T) {
 	if runtime.GOOS == "windows" {

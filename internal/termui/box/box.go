@@ -5,6 +5,7 @@ package box
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -166,8 +167,8 @@ func splitANSI(s string) (prefix, visible, suffix string) {
 	prefix = s[:visStart]
 
 	visEnd := len(s)
-	for i := len(locs) - 1; i >= 0; i-- {
-		loc := locs[i]
+	for _, loc := range slices.Backward(locs) {
+
 		if loc[1] == visEnd {
 			visEnd = loc[0]
 		} else {

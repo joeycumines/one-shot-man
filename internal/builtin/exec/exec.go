@@ -21,15 +21,14 @@ import (
 // may be dropped if loop terminated before Submit, promise may remain pending
 // only for hard Close (stranded is defined behavior, see track.go).
 func handleSettleErr(err error) {
-    if err == nil {
-        return
-    }
-    if errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
-        return
-    }
-    _ = err
+	if err == nil {
+		return
+	}
+	if errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
+		return
+	}
+	_ = err
 }
-
 
 // Require returns a module loader for `osm:exec` that uses the provided base context
 // (typically the TUI manager's context). Each invocation wraps the base context
@@ -141,16 +140,24 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 			panic(rt.NewTypeError("stdin.write: missing data"))
 		}
 		data := call.Argument(0).String()
-		if err := child.WriteStdin(data); err != nil {
-			panic(rt.NewGoError(err))
-		}
-		return goja.Undefined()
+		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+			err := child.WriteStdinContext(ctx, data)
+			if err != nil {
+				handleSettleErr(settle.Settle(true, func(owner *goja.Runtime) any { return owner.NewGoError(err) }))
+				return
+			}
+			handleSettleErr(settle.Settle(false, func(*goja.Runtime) any { return goja.Undefined() }))
+		})
 	})
 	_ = stdinObj.Set("close", func(call goja.FunctionCall) goja.Value {
-		if err := child.CloseStdin(); err != nil {
-			panic(rt.NewGoError(err))
-		}
-		return goja.Undefined()
+		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+			err := child.CloseStdinContext(ctx)
+			if err != nil {
+				handleSettleErr(settle.Settle(true, func(owner *goja.Runtime) any { return owner.NewGoError(err) }))
+				return
+			}
+			handleSettleErr(settle.Settle(false, func(*goja.Runtime) any { return goja.Undefined() }))
+		})
 	})
 	_ = obj.Set("stdin", stdinObj)
 

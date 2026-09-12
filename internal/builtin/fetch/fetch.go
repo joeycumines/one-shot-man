@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -25,15 +27,14 @@ import (
 // may be dropped if loop terminated before Submit, promise may remain pending
 // only for hard Close (stranded is defined behavior, see track.go).
 func handleSettleErr(err error) {
-    if err == nil {
-        return
-    }
-    if errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
-        return
-    }
-    _ = err
+	if err == nil {
+		return
+	}
+	if errors.Is(err, goeventloop.ErrLoopTerminated) || errors.Is(err, gojaeventloop.ErrAdapterInvalid) || errors.Is(err, gojaeventloop.ErrPromiseSettled) {
+		return
+	}
+	slog.Debug("unexpected settlement error", "error", err)
 }
-
 
 const defaultMaxResponseSize int64 = 10 << 20
 
@@ -51,6 +52,9 @@ func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.
 	return func(call goja.FunctionCall) goja.Value {
 		url := call.Argument(0).String()
 		method, timeout, bodyReader, reqHeaders, signalVal, maxBody := parseOptions(call)
+		if maxBody <= 0 || maxBody == math.MaxInt64 {
+			panic(runtime.NewTypeError("maxResponseSize must be a positive integer below MaxInt64"))
+		}
 		req, err := http.NewRequest(method, url, bodyReader)
 		if err != nil {
 			panic(runtime.NewGoError(err))
@@ -73,14 +77,14 @@ func jsFetch(ctx context.Context, runtime *goja.Runtime, adapter *gojaeventloop.
 						}
 					}
 					cancel()
-					promise, settler := adapter.NewPromise()
-					handleSettleErr(settler.Reject(func(rt *goja.Runtime) any {
-						if reason != nil {
-							return reason
-						}
-						return rt.NewGoError(fmt.Errorf("aborted"))
-					}))
-					return promise
+					return adapter.TrackPromise(reqCtx, func(_ context.Context, settle gojaeventloop.TrackedSettlement) {
+						handleSettleErr(settle.Settle(true, func(rt *goja.Runtime) any {
+							if reason != nil {
+								return reason
+							}
+							return rt.NewGoError(fmt.Errorf("aborted"))
+						}))
+					})
 				}
 			}
 		}

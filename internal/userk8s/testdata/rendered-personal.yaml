@@ -1,0 +1,166 @@
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: alpha
+spec:
+  display_name: Alpha
+  country: us
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: beta
+spec:
+  display_name: Beta
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  name: alpha-direct
+  labels:
+    one-shot-man/provider: alpha
+    one-shot-man/mode: direct
+    one-shot-man/surface-chat: "true"
+spec:
+  provider: alpha
+  mode: direct
+  auth:
+    scheme: bearer
+    requiredEnv:
+      - ALPHA_API_KEY
+  endpoints:
+    chat: http://127.0.0.1:9/alpha/v1
+  order: 10
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  name: beta-shaper
+  labels:
+    one-shot-man/provider: beta
+    one-shot-man/mode: shaper
+    one-shot-man/surface-chat: "true"
+    one-shot-man/surface-responses: "true"
+spec:
+  provider: beta
+  mode: shaper
+  auth:
+    scheme: bearer
+    requiredEnv:
+      - BETA_API_KEY
+  endpoints:
+    chat: http://127.0.0.1:11239/beta/v1
+    responses: http://127.0.0.1:11239/beta/v1
+  order: 5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: alpha-model
+  annotations:
+    one-shot-man/registry-name: alpha-model
+spec:
+  provider: alpha
+  access: alpha-direct
+  context_window: 100000
+  max_output_tokens: 1000
+  can_reason: true
+  input_modalities:
+    - text
+    - image
+  reasoning_efforts:
+    - low
+    - high
+  default: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: beta-model
+spec:
+  provider: beta
+  access: beta-shaper
+  context_window: 200000
+  max_output_tokens: 2000
+  can_reason: false
+  input_modalities:
+    - text
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-alpha
+  namespace: model-access-test
+spec:
+  selector:
+    matchLabels:
+      one-shot-man/provider: alpha
+  secretRef:
+    name: creds
+    key: ALPHA_API_KEY
+  envVar: ALPHA_API_KEY
+  resolvers:
+    - command:
+        argv:
+          - fake-op
+          - item
+          - get
+          - alpha
+        timeout: 5s
+    - env:
+        name: SHELL_AI_ALPHA_API_KEY
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-beta
+  namespace: model-access-test
+spec:
+  selector:
+    matchLabels:
+      one-shot-man/provider: beta
+  secretRef:
+    name: creds
+    key: BETA_API_KEY
+  envVar: BETA_API_KEY
+  resolvers:
+    - env:
+        name: SHELL_AI_BETA_API_KEY
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Tool
+metadata:
+  name: claude
+spec:
+  display_name: Claude Code
+  surfaces:
+    - anthropic
+  credential_channels:
+    - gateway
+    - env
+  identifiers:
+    provider_slug:
+      pattern: ^[a-z0-9][a-z0-9-]*$
+    model_slug:
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:\[\]-]*$
+  budget_profile: claude-margin
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Tool
+metadata:
+  name: opencode
+spec:
+  display_name: OpenCode
+  surfaces:
+    - anthropic
+    - chat
+  credential_channels:
+    - gateway
+    - envRef
+    - env
+  identifiers:
+    provider_slug:
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+    model_slug:
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+  budget_profile: sdk-limits

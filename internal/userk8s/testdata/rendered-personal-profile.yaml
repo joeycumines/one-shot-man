@@ -1,0 +1,4086 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: model-access-personal
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: personal-model-credentials
+  namespace: model-access-personal
+stringData:
+  CAMEL_API_KEY: structural-placeholder
+  DEEPSEEK_API_KEY: structural-placeholder
+  DIALAGRAM_API_KEY: structural-placeholder
+  ELECTRONHUB_API_KEY: structural-placeholder
+  MINIMAX_API_KEY: structural-placeholder
+  OPENCODE_API_KEY: structural-placeholder
+  OPENROUTER_API_KEY: structural-placeholder
+  UMANS_API_KEY: structural-placeholder
+  VERBOO_API_KEY: structural-placeholder
+  WAFER_API_KEY: structural-placeholder
+  YOLO_API_KEY: structural-placeholder
+  ZHIPU_API_KEY: structural-placeholder
+type: Opaque
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-camel-shaper
+  namespace: model-access-personal
+spec:
+  envVar: CAMEL_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - 4v6bzjb2lprdaqtgjxrrg4wlga
+      - --reveal
+      - --fields
+      - label=API Key
+      timeout: 5s
+  - env:
+      name: SHELL_AI_CAMEL_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/camel_api_key.key
+  secretRef:
+    key: CAMEL_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: camel
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-deepseek-direct
+  namespace: model-access-personal
+spec:
+  envVar: DEEPSEEK_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - zpe7yymcr3raechpnhah3l32lq
+      - --reveal
+      - --fields
+      - label=API Key
+      timeout: 5s
+  - env:
+      name: SHELL_AI_DEEPSEEK_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/deepseek_api_key.key
+  secretRef:
+    key: DEEPSEEK_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: deepseek
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-dialagram-shaper
+  namespace: model-access-personal
+spec:
+  envVar: DIALAGRAM_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - nomvv636hnqhyp74hdyu2dcnoq
+      - --reveal
+      - --fields
+      - label=API Key
+      timeout: 5s
+  - env:
+      name: SHELL_AI_DIALAGRAM_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/dialagram_api_key.key
+  secretRef:
+    key: DIALAGRAM_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-electronhub-shaper
+  namespace: model-access-personal
+spec:
+  envVar: ELECTRONHUB_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - ykgloeclbme7q6hymjpqayg5du
+      - --reveal
+      - --fields
+      - label=API Key
+      timeout: 5s
+  - env:
+      name: SHELL_AI_ELECTRONHUB_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/electronhub_api_key.key
+  secretRef:
+    key: ELECTRONHUB_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: electronhub
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-minimax-direct
+  namespace: model-access-personal
+spec:
+  envVar: MINIMAX_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - w2sogl2mtieka6m6fdwf7q3h3a
+      - --reveal
+      - --fields
+      - label=password
+      timeout: 5s
+  - env:
+      name: SHELL_AI_MINIMAX_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/minimax_api_key.key
+  secretRef:
+    key: MINIMAX_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: minimax
+      one-shot-man/surface-anthropic: "true"
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-opencode-go-shaper-anthropic
+  namespace: model-access-personal
+spec:
+  envVar: OPENCODE_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - v7hmsl3sp5xxgysevdfimdasu4
+      - --reveal
+      - --fields
+      - label=API Key
+      timeout: 5s
+  - env:
+      name: SHELL_AI_OPENCODE_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/opencode_api_key.key
+  secretRef:
+    key: OPENCODE_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: opencode-go
+      one-shot-man/surface-anthropic: "true"
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-opencode-go-shaper-chat
+  namespace: model-access-personal
+spec:
+  envVar: OPENCODE_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - v7hmsl3sp5xxgysevdfimdasu4
+      - --reveal
+      - --fields
+      - label=API Key
+      timeout: 5s
+  - env:
+      name: SHELL_AI_OPENCODE_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/opencode_api_key.key
+  secretRef:
+    key: OPENCODE_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: opencode-go
+      one-shot-man/surface-chat: "true"
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-opencode-go-shaper-responses
+  namespace: model-access-personal
+spec:
+  envVar: OPENCODE_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - v7hmsl3sp5xxgysevdfimdasu4
+      - --reveal
+      - --fields
+      - label=API Key
+      timeout: 5s
+  - env:
+      name: SHELL_AI_OPENCODE_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/opencode_api_key.key
+  secretRef:
+    key: OPENCODE_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: opencode-go
+      one-shot-man/surface-responses: "true"
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-openrouter-direct
+  namespace: model-access-personal
+spec:
+  envVar: OPENROUTER_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - bstvobojmh44d3hibcdgkwumqm
+      - --reveal
+      - --fields
+      - label=password
+      timeout: 5s
+  - env:
+      name: SHELL_AI_OPENROUTER_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/openrouter_api_key.key
+  secretRef:
+    key: OPENROUTER_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: openrouter
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-umans-shaper
+  namespace: model-access-personal
+spec:
+  envVar: UMANS_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - zmm6eza33qnnrnym33vluvgdj4
+      - --reveal
+      - --fields
+      - label=password
+      timeout: 5s
+  - env:
+      name: SHELL_AI_UMANS_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/umans_api_key.key
+  secretRef:
+    key: UMANS_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: umans
+      one-shot-man/surface-anthropic: "true"
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-verboo-shaper
+  namespace: model-access-personal
+spec:
+  envVar: VERBOO_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - 23ernxqsw3ruxa33gpllspdq4y
+      - --reveal
+      - --fields
+      - label=API Key
+      timeout: 5s
+  - env:
+      name: SHELL_AI_VERBOO_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/verboo_api_key.key
+  secretRef:
+    key: VERBOO_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: verboo
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-wafer-direct
+  namespace: model-access-personal
+spec:
+  envVar: WAFER_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - kriipp4762lkd45aa6tr2jibgq
+      - --reveal
+      - --fields
+      - label=password
+      timeout: 5s
+  - env:
+      name: SHELL_AI_WAFER_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/wafer_api_key.key
+  secretRef:
+    key: WAFER_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: wafer
+      one-shot-man/surface-anthropic: "true"
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-yolo-auto-shaper
+  namespace: model-access-personal
+spec:
+  envVar: YOLO_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - 4kwsl77ddoynlf46stelvdw7ma
+      - --reveal
+      - --fields
+      - label=API Key
+      timeout: 5s
+  - env:
+      name: SHELL_AI_YOLO_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/yolo_api_key.key
+  secretRef:
+    key: YOLO_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: yolo-auto
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-zen-shaper
+  namespace: model-access-personal
+spec:
+  envVar: OPENCODE_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - v7hmsl3sp5xxgysevdfimdasu4
+      - --reveal
+      - --fields
+      - label=API Key
+      timeout: 5s
+  - env:
+      name: SHELL_AI_OPENCODE_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/opencode_api_key.key
+  secretRef:
+    key: OPENCODE_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-zhipu-direct
+  namespace: model-access-personal
+spec:
+  envVar: ZHIPU_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - op
+      - item
+      - get
+      - 4uh7et4ap72knf463qdvdu7po4
+      - --reveal
+      - --fields
+      - label=password
+      timeout: 5s
+  - env:
+      name: SHELL_AI_ZHIPU_API_KEY
+  - file:
+      path: $HOME/.config/osm/secrets/zhipu_api_key.key
+  secretRef:
+    key: ZHIPU_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: zhipu
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: big-pickle
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 200000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32000
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-fable-5
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-fable-5-1
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-haiku-4-5
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 200000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 64000
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-4-5
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 200000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 64000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-4-6
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-4-7
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-4-8
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-5
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-sonnet-4
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 64000
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-sonnet-4-5
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 64000
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-sonnet-4-6
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 64000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-sonnet-5
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: deepseek-v4.1-flash
+  name: deepseek-v4-1-flash
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 384000
+  provider: opencode-go
+  reasoning_efforts:
+  - low
+  - high
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: deepseek-v4-flash
+spec:
+  access: deepseek-direct
+  can_reason: true
+  context_window: 1000000
+  equivalent_to:
+  - name: deepseek-v4-flash:camel
+    provider: camel
+  - name: deepseek-v4-flash:dev
+    provider: electronhub
+  input_modalities:
+  - text
+  max_output_tokens: 384000
+  provider: deepseek
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: deepseek-v4-flash-0731
+spec:
+  access: verboo-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 384000
+  provider: verboo
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: deepseek-v4-flash-0731:dev
+  name: deepseek-v4-flash-0731-dev
+spec:
+  access: electronhub-shaper
+  can_reason: true
+  context_window: 400000
+  input_modalities:
+  - text
+  max_output_tokens: 12288
+  provider: electronhub
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: deepseek-v4-flash:camel
+  name: deepseek-v4-flash-camel
+spec:
+  access: camel-shaper
+  can_reason: true
+  context_window: 262144
+  default: true
+  equivalent_to:
+  - name: deepseek-v4-flash:dev
+    provider: electronhub
+  - name: deepseek-v4-flash
+    provider: deepseek
+  input_modalities:
+  - text
+  max_output_tokens: 16384
+  provider: camel
+  upstream_id: deepseek-v4-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: deepseek-v4-flash:dev
+  name: deepseek-v4-flash-dev
+spec:
+  access: electronhub-shaper
+  can_reason: true
+  context_window: 1000000
+  equivalent_to:
+  - name: deepseek-v4-flash:camel
+    provider: camel
+  - name: deepseek-v4-flash
+    provider: deepseek
+  input_modalities:
+  - text
+  max_output_tokens: 32000
+  provider: electronhub
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: deepseek-v4-flash-free
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 200000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - high
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: deepseek-v4-flash:opencode-go
+  name: deepseek-v4-flash-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 384000
+  provider: opencode-go
+  reasoning_efforts:
+  - low
+  - high
+  - max
+  upstream_id: deepseek-v4-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: deepseek-v4-flash:verboo
+  name: deepseek-v4-flash-verboo
+spec:
+  access: verboo-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 384000
+  provider: verboo
+  reasoning_efforts:
+  - high
+  - max
+  upstream_id: deepseek-v4-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: deepseek-v4-flash-vision-exp
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 384000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - high
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: deepseek-v4-flash-vision-exp:opencode-go
+  name: deepseek-v4-flash-vision-exp-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 384000
+  provider: opencode-go
+  reasoning_efforts:
+  - low
+  - high
+  - max
+  upstream_id: deepseek-v4-flash-vision-exp
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: deepseek-v4-flash:zen
+  name: deepseek-v4-flash-zen
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 384000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - high
+  - max
+  upstream_id: deepseek-v4-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: DeepSeek-V4-Pro
+  name: deepseek-v4-pro
+spec:
+  access: wafer-direct
+  can_reason: true
+  context_window: 1000000
+  default: true
+  equivalent_to:
+  - name: deepseek-v4-pro
+    provider: deepseek
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: wafer
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: deepseek-v4-pro
+  name: deepseek-v4-pro-2
+spec:
+  access: deepseek-direct
+  can_reason: true
+  context_window: 1000000
+  default: true
+  equivalent_to:
+  - name: DeepSeek-V4-Pro
+    provider: wafer
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 384000
+  provider: deepseek
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: deepseek-v4-pro:opencode-go
+  name: deepseek-v4-pro-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 384000
+  provider: opencode-go
+  reasoning_efforts:
+  - high
+  - max
+  upstream_id: deepseek-v4-pro
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: deepseek-v4-pro:zen
+  name: deepseek-v4-pro-zen
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 384000
+  provider: zen
+  reasoning_efforts:
+  - high
+  - max
+  upstream_id: deepseek-v4-pro
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gemini-3.1-pro
+  name: gemini-3-1-pro
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gemini-3.5-flash
+  name: gemini-3-5-flash
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  provider: zen
+  reasoning_efforts:
+  - minimal
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gemini-3.5-flash-lite
+  name: gemini-3-5-flash-lite
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  provider: zen
+  reasoning_efforts:
+  - minimal
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gemini-3.6-flash
+  name: gemini-3-6-flash
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  provider: zen
+  reasoning_efforts:
+  - minimal
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gemini-3.7-flash
+  name: gemini-3-7-flash
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gemini-3.8-flash
+  name: gemini-3-8-flash
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gemini-3-flash
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  provider: zen
+  reasoning_efforts:
+  - minimal
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-4.5-air
+  name: glm-4-5-air
+spec:
+  access: zhipu-direct
+  can_reason: false
+  context_window: 128000
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: zhipu
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-4.7
+  name: glm-4-7
+spec:
+  access: zhipu-direct
+  can_reason: true
+  context_window: 202000
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: zhipu
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: glm-5
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 204800
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 131072
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.1
+  name: glm-5-1
+spec:
+  access: zhipu-direct
+  can_reason: true
+  context_window: 200000
+  equivalent_to:
+  - name: GLM-5.1
+    provider: wafer
+  - name: umans-glm-5.1
+    provider: umans
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: zhipu
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: GLM-5.1
+  name: glm-5-1-2
+spec:
+  access: wafer-direct
+  can_reason: true
+  context_window: 203000
+  equivalent_to:
+  - name: glm-5.1
+    provider: zhipu
+  - name: umans-glm-5.1
+    provider: umans
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: wafer
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.1:opencode-go
+  name: glm-5-1-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 202752
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: opencode-go
+  upstream_id: glm-5.1
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.1:zen
+  name: glm-5-1-zen
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 204800
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 131072
+  provider: zen
+  upstream_id: glm-5.1
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.2
+  name: glm-5-2
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 131072
+  provider: zen
+  reasoning_efforts:
+  - high
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.2:opencode-go
+  name: glm-5-2-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 131072
+  provider: opencode-go
+  reasoning_efforts:
+  - high
+  - max
+  upstream_id: glm-5.2
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.3
+  name: glm-5-3
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 131072
+  provider: zen
+  reasoning_efforts:
+  - low
+  - high
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.3[1m]
+  name: glm-5-3-1m
+spec:
+  access: zhipu-direct
+  can_reason: true
+  context_window: 1000000
+  default: true
+  equivalent_to:
+  - name: umans-glm-5.3
+    provider: umans
+  - name: glm-5.3:dev
+    provider: electronhub
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: zhipu
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.3:dev
+  name: glm-5-3-dev
+spec:
+  access: electronhub-shaper
+  can_reason: true
+  context_window: 262000
+  default: true
+  equivalent_to:
+  - name: glm-5.3[1m]
+    provider: zhipu
+  - name: umans-glm-5.3
+    provider: umans
+  input_modalities:
+  - text
+  max_output_tokens: 16384
+  provider: electronhub
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.3-flash
+  name: glm-5-3-flash
+spec:
+  access: verboo-shaper
+  can_reason: true
+  context_window: 1048576
+  default: true
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 131072
+  provider: verboo
+  reasoning_efforts:
+  - low
+  - high
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.3-flash[1m]
+  name: glm-5-3-flash-1m
+spec:
+  access: zhipu-direct
+  can_reason: true
+  context_window: 1000000
+  default: false
+  equivalent_to:
+  - name: glm-5.3-flash:dev
+    provider: electronhub
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: zhipu
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.3-flash:dev
+  name: glm-5-3-flash-dev
+spec:
+  access: electronhub-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  equivalent_to:
+  - name: glm-5.3-flash[1m]
+    provider: zhipu
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32000
+  provider: electronhub
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.3-flash:opencode-go
+  name: glm-5-3-flash-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 131072
+  provider: opencode-go
+  reasoning_efforts:
+  - low
+  - high
+  - max
+  upstream_id: glm-5.3-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.3-flash:zen
+  name: glm-5-3-flash-zen
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 131072
+  provider: zen
+  reasoning_efforts:
+  - low
+  - high
+  - max
+  upstream_id: glm-5.3-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5.3:opencode-go
+  name: glm-5-3-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 131072
+  provider: opencode-go
+  reasoning_efforts:
+  - low
+  - high
+  - max
+  upstream_id: glm-5.3
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: glm-5:opencode-go
+  name: glm-5-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 202752
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: opencode-go
+  upstream_id: glm-5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 400000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - minimal
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.1
+  name: gpt-5-1
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 400000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - none
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.1-codex
+  name: gpt-5-1-codex
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 400000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.1-codex-max
+  name: gpt-5-1-codex-max
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 400000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.1-codex-mini
+  name: gpt-5-1-codex-mini
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 400000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.2
+  name: gpt-5-2
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 400000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - none
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.2-codex
+  name: gpt-5-2-codex
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 400000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.3-codex
+  name: gpt-5-3-codex
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 400000
+  default: true
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - none
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.3-codex-spark
+  name: gpt-5-3-codex-spark
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 128000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.4
+  name: gpt-5-4
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1050000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - none
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.4-mini
+  name: gpt-5-4-mini
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 400000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - none
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.4-nano
+  name: gpt-5-4-nano
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 400000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - none
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.4-pro
+  name: gpt-5-4-pro
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1050000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.5
+  name: gpt-5-5
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1050000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - none
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.5-pro
+  name: gpt-5-5-pro
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1050000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.6-luna
+  name: gpt-5-6-luna
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1050000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - none
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.6-luna:opencode-go
+  name: gpt-5-6-luna-opencode-go
+spec:
+  access: opencode-go-shaper-responses
+  can_reason: true
+  context_window: 1050000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: opencode-go
+  reasoning_efforts:
+  - none
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+  upstream_id: gpt-5.6-luna
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.6-sol
+  name: gpt-5-6-sol
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1050000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - none
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: gpt-5.6-terra
+  name: gpt-5-6-terra
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1050000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - none
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-codex
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 400000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-nano
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 400000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - minimal
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-6-astra
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1050000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: grok-4.5
+  name: grok-4-5
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 500000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: grok-4.5:opencode-go
+  name: grok-4-5-opencode-go
+spec:
+  access: opencode-go-shaper-responses
+  can_reason: true
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 500000
+  provider: opencode-go
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  upstream_id: grok-4.5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: grok-4.6
+  name: grok-4-6
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 500000
+  provider: zen
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: grok-4.6:opencode-go
+  name: grok-4-6-opencode-go
+spec:
+  access: opencode-go-shaper-responses
+  can_reason: true
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 500000
+  provider: opencode-go
+  reasoning_efforts:
+  - low
+  - medium
+  - high
+  - xhigh
+  upstream_id: grok-4.6
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: grok-build-0.1
+  name: grok-build-0-1
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 256000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 256000
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: hy3
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 256000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 128000
+  provider: opencode-go
+  reasoning_efforts:
+  - none
+  - low
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: hy4-preview
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1024000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 64000
+  provider: opencode-go
+  reasoning_efforts:
+  - none
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: kimi-k2.5
+  name: kimi-k2-5
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: kimi-k2.5:opencode-go
+  name: kimi-k2-5-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: opencode-go
+  upstream_id: kimi-k2.5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: kimi-k2.6
+  name: kimi-k2-6
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: kimi-k2.6:dev
+  name: kimi-k2-6-dev
+spec:
+  access: electronhub-shaper
+  can_reason: true
+  context_window: 240000
+  equivalent_to:
+  - name: umans-kimi-k2.6
+    provider: umans
+  input_modalities:
+  - text
+  max_output_tokens: 15360
+  provider: electronhub
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: kimi-k2.6:opencode-go
+  name: kimi-k2-6-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: opencode-go
+  upstream_id: kimi-k2.6
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: kimi-k2.7-code
+  name: kimi-k2-7-code
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 262144
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: kimi-k2.7-code:dev
+  name: kimi-k2-7-code-dev
+spec:
+  access: electronhub-shaper
+  can_reason: true
+  context_window: 262000
+  equivalent_to:
+  - name: umans-kimi-k2.7
+    provider: umans
+  input_modalities:
+  - text
+  max_output_tokens: 16384
+  provider: electronhub
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: kimi-k2.7-code:opencode-go
+  name: kimi-k2-7-code-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 262144
+  provider: opencode-go
+  upstream_id: kimi-k2.7-code
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: kimi-k3
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 131072
+  provider: zen
+  reasoning_efforts:
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: kimi-k3:opencode-go
+  name: kimi-k3-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1048576
+  default: true
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 131072
+  provider: opencode-go
+  reasoning_efforts:
+  - max
+  upstream_id: kimi-k3
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: ling-3.0-flash-fin-free
+  name: ling-3-0-flash-fin-free
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: longcat-2.0
+  name: longcat-2-0
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 131072
+  provider: opencode-go
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: meta-muse-spark-1.2
+  name: meta-muse-spark-1-2
+spec:
+  access: dialagram-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: meta-muse-spark-1.3
+  name: meta-muse-spark-1-3
+spec:
+  access: dialagram-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: mimo-v2.5
+  name: mimo-v2-5
+spec:
+  access: verboo-shaper
+  can_reason: false
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 131072
+  provider: verboo
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: mimo-v2.5:dev
+  name: mimo-v2-5-dev
+spec:
+  access: electronhub-shaper
+  can_reason: true
+  context_window: 1000000
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32000
+  provider: electronhub
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: mimo-v2.5-free
+  name: mimo-v2-5-free
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 200000
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 32000
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: mimo-v2.5:opencode-go
+  name: mimo-v2-5-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 128000
+  provider: opencode-go
+  upstream_id: mimo-v2.5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: mimo-v2.5-pro
+  name: mimo-v2-5-pro
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 128000
+  provider: opencode-go
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: mimo-v2-omni
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 128000
+  provider: opencode-go
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: mimo-v2-pro
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 128000
+  provider: opencode-go
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: minimax-m2.5
+  name: minimax-m2-5
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 204800
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 131072
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: minimax-m2.5:opencode-go
+  name: minimax-m2-5-opencode-go
+spec:
+  access: opencode-go-shaper-anthropic
+  can_reason: true
+  context_window: 204800
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 65536
+  provider: opencode-go
+  upstream_id: minimax-m2.5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: MiniMax-M2.7
+  name: minimax-m2-7
+spec:
+  access: minimax-direct
+  can_reason: true
+  context_window: 204800
+  default: true
+  equivalent_to:
+  - name: minimax-m2.7:dev
+    provider: electronhub
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: minimax
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: minimax-m2.7:dev
+  name: minimax-m2-7-dev
+spec:
+  access: electronhub-shaper
+  can_reason: true
+  context_window: 180000
+  equivalent_to:
+  - name: MiniMax-M2.7
+    provider: minimax
+  input_modalities:
+  - text
+  max_output_tokens: 11264
+  provider: electronhub
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: minimax-m2.7:opencode-go
+  name: minimax-m2-7-opencode-go
+spec:
+  access: opencode-go-shaper-anthropic
+  can_reason: true
+  context_window: 204800
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 131072
+  provider: opencode-go
+  upstream_id: minimax-m2.7
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: minimax-m2.7:zen
+  name: minimax-m2-7-zen
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 204800
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 131072
+  provider: zen
+  upstream_id: minimax-m2.7
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: minimax-m3
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 512000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: minimax-m3:opencode-go
+  name: minimax-m3-opencode-go
+spec:
+  access: opencode-go-shaper-anthropic
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 131072
+  provider: opencode-go
+  upstream_id: minimax-m3
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: muse-spark-1.2
+  name: muse-spark-1-2
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 131072
+  provider: zen
+  reasoning_efforts:
+  - minimal
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: muse-spark-1.2-contributor
+  name: muse-spark-1-2-contributor
+spec:
+  access: opencode-go-shaper-responses
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 131072
+  provider: opencode-go
+  reasoning_efforts:
+  - minimal
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: muse-spark-1.2-contributor-free
+  name: muse-spark-1-2-contributor-free
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 131072
+  provider: zen
+  reasoning_efforts:
+  - minimal
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: muse-spark-1.3
+  name: muse-spark-1-3
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 131072
+  provider: zen
+  reasoning_efforts:
+  - minimal
+  - low
+  - medium
+  - high
+  - xhigh
+  - max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: muse-spark-1.3-contributor
+  name: muse-spark-1-3-contributor
+spec:
+  access: opencode-go-shaper-responses
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 131072
+  provider: opencode-go
+  reasoning_efforts:
+  - minimal
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: muse-spark-1.3-contributor-free
+  name: muse-spark-1-3-contributor-free
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 131072
+  provider: zen
+  reasoning_efforts:
+  - minimal
+  - low
+  - medium
+  - high
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: nemotron-3.5-lightning-free
+  name: nemotron-3-5-lightning-free
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 262144
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: nemotron-3-ultra-free
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 128000
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: nexum-router
+spec:
+  access: dialagram-shaper
+  can_reason: true
+  context_window: 200000
+  default: true
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: omen-alpha
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  provider: opencode-go
+  reasoning_efforts:
+  - low
+  - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: ~openai/gpt-latest
+  name: openai-gpt-latest
+spec:
+  access: openrouter-direct
+  can_reason: true
+  context_window: 400000
+  default: true
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: openrouter
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: openrouter/owl-alpha
+  name: openrouter-owl-alpha
+spec:
+  access: openrouter-direct
+  can_reason: true
+  context_window: 262144
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 16384
+  provider: openrouter
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.5-omni-plus
+  name: qwen-3-5-omni-plus
+spec:
+  access: dialagram-shaper
+  can_reason: false
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.5-plus
+  name: qwen-3-5-plus
+spec:
+  access: dialagram-shaper
+  can_reason: false
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.5-plus-thinking
+  name: qwen-3-5-plus-thinking
+spec:
+  access: dialagram-shaper
+  can_reason: true
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.6-max-preview
+  name: qwen-3-6-max-preview
+spec:
+  access: dialagram-shaper
+  can_reason: false
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.6-max-preview-thinking
+  name: qwen-3-6-max-preview-thinking
+spec:
+  access: dialagram-shaper
+  can_reason: true
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.6-plus
+  name: qwen-3-6-plus
+spec:
+  access: dialagram-shaper
+  can_reason: false
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.6-plus-thinking
+  name: qwen-3-6-plus-thinking
+spec:
+  access: dialagram-shaper
+  can_reason: true
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.7-max
+  name: qwen-3-7-max
+spec:
+  access: dialagram-shaper
+  can_reason: false
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.7-max-thinking
+  name: qwen-3-7-max-thinking
+spec:
+  access: dialagram-shaper
+  can_reason: true
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.7-plus
+  name: qwen-3-7-plus
+spec:
+  access: dialagram-shaper
+  can_reason: false
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.7-plus-thinking
+  name: qwen-3-7-plus-thinking
+spec:
+  access: dialagram-shaper
+  can_reason: true
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.8-max
+  name: qwen-3-8-max
+spec:
+  access: dialagram-shaper
+  can_reason: false
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen-3.8-max-thinking
+  name: qwen-3-8-max-thinking
+spec:
+  access: dialagram-shaper
+  can_reason: true
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: qwen-image
+spec:
+  access: dialagram-shaper
+  can_reason: false
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: Qwen3.5-397B-A17B
+  name: qwen3-5-397b-a17b
+spec:
+  access: wafer-direct
+  can_reason: true
+  context_window: 262144
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: wafer
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen3.5-plus
+  name: qwen3-5-plus
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen3.5-plus:opencode-go
+  name: qwen3-5-plus-opencode-go
+spec:
+  access: opencode-go-shaper-chat
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: opencode-go
+  upstream_id: qwen3.5-plus
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen3.6-plus
+  name: qwen3-6-plus
+spec:
+  access: zen-shaper
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen3.6-plus:opencode-go
+  name: qwen3-6-plus-opencode-go
+spec:
+  access: opencode-go-shaper-anthropic
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: opencode-go
+  upstream_id: qwen3.6-plus
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen3.7-max
+  name: qwen3-7-max
+spec:
+  access: opencode-go-shaper-anthropic
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 65536
+  provider: opencode-go
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen3.7-plus
+  name: qwen3-7-plus
+spec:
+  access: opencode-go-shaper-anthropic
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: opencode-go
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen3.8-27b
+  name: qwen3-8-27b
+spec:
+  access: yolo-auto-shaper
+  can_reason: true
+  context_window: 131072
+  default: true
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: yolo-auto
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen3.8-27b:verboo
+  name: qwen3-8-27b-verboo
+spec:
+  access: verboo-shaper
+  can_reason: true
+  context_window: 262144
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: verboo
+  reasoning_efforts:
+  - none
+  - low
+  - medium
+  - xhigh
+  upstream_id: qwen3.8-27b
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen3.8-flash
+  name: qwen3-8-flash
+spec:
+  access: opencode-go-shaper-anthropic
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 131072
+  provider: opencode-go
+  reasoning_efforts:
+  - low
+  - medium
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: qwen3.8-max
+  name: qwen3-8-max
+spec:
+  access: opencode-go-shaper-anthropic
+  can_reason: true
+  context_window: 1000000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 131072
+  provider: opencode-go
+  reasoning_efforts:
+  - low
+  - medium
+  - xhigh
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: umans-coder
+spec:
+  access: umans-shaper
+  can_reason: true
+  context_window: 262000
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: umans
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: umans-flash
+spec:
+  access: umans-shaper
+  can_reason: false
+  context_window: 262000
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: umans
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: umans-glm-5.1
+  name: umans-glm-5-1
+spec:
+  access: umans-shaper
+  can_reason: true
+  context_window: 203000
+  equivalent_to:
+  - name: glm-5.1
+    provider: zhipu
+  - name: GLM-5.1
+    provider: wafer
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: umans
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: umans-glm-5.3
+  name: umans-glm-5-3
+spec:
+  access: umans-shaper
+  can_reason: true
+  context_window: 1000000
+  default: true
+  equivalent_to:
+  - name: glm-5.3[1m]
+    provider: zhipu
+  - name: glm-5.3:dev
+    provider: electronhub
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
+  provider: umans
+  toolSettings:
+    claude:
+      auto_compact_window: 996000
+      effort_level: max
+      max_output_tokens: 32000
+    claude-agent-acp:
+      auto_compact_window: 996000
+      effort_level: max
+      max_output_tokens: 32000
+    crush:
+      max_output_tokens: 32768
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: umans-kimi-k2.6
+  name: umans-kimi-k2-6
+spec:
+  access: umans-shaper
+  can_reason: true
+  context_window: 262000
+  equivalent_to:
+  - name: kimi-k2.6:dev
+    provider: electronhub
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: umans
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: umans-kimi-k2.7
+  name: umans-kimi-k2-7
+spec:
+  access: umans-shaper
+  can_reason: true
+  context_window: 262000
+  equivalent_to:
+  - name: kimi-k2.7-code:dev
+    provider: electronhub
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: umans
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: wan-2.0
+  name: wan-2-0
+spec:
+  access: dialagram-shaper
+  can_reason: false
+  context_window: 500000
+  default: false
+  input_modalities:
+  - text
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    one-shot-man/registry-name: xiaomi-mimo-2.5
+  name: xiaomi-mimo-2-5
+spec:
+  access: dialagram-shaper
+  can_reason: false
+  context_window: 200000
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32768
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: shaper
+    one-shot-man/provider: camel
+    one-shot-man/surface-anthropic: "true"
+    one-shot-man/surface-chat: "true"
+    one-shot-man/surface-responses: "true"
+  name: camel-shaper
+spec:
+  auth:
+    requiredEnv:
+    - CAMEL_API_KEY
+    scheme: bearer
+  endpoints:
+    anthropic: http://127.0.0.1:11239/camel
+    chat: http://127.0.0.1:11239/camel/v1
+    responses: http://127.0.0.1:11239/camel/v1
+  mode: shaper
+  order: 10
+  provider: camel
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: direct
+    one-shot-man/provider: deepseek
+    one-shot-man/surface-anthropic: "true"
+    one-shot-man/surface-chat: "true"
+  name: deepseek-direct
+spec:
+  auth:
+    requiredEnv:
+    - DEEPSEEK_API_KEY
+    scheme: bearer
+  endpoints:
+    anthropic: https://api.deepseek.com/anthropic
+    chat: https://api.deepseek.com
+  mode: direct
+  order: 10
+  provider: deepseek
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: shaper
+    one-shot-man/provider: dialagram
+    one-shot-man/surface-anthropic: "true"
+    one-shot-man/surface-chat: "true"
+    one-shot-man/surface-responses: "true"
+  name: dialagram-shaper
+spec:
+  auth:
+    requiredEnv:
+    - DIALAGRAM_API_KEY
+    scheme: bearer
+  endpoints:
+    anthropic: http://127.0.0.1:11239/dialagram
+    chat: http://127.0.0.1:11239/dialagram/v1
+    responses: http://127.0.0.1:11239/dialagram/v1
+  mode: shaper
+  order: 10
+  provider: dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: shaper
+    one-shot-man/provider: electronhub
+    one-shot-man/surface-anthropic: "true"
+    one-shot-man/surface-chat: "true"
+    one-shot-man/surface-responses: "true"
+  name: electronhub-shaper
+spec:
+  auth:
+    requiredEnv:
+    - ELECTRONHUB_API_KEY
+    scheme: bearer
+  endpoints:
+    anthropic: http://127.0.0.1:11239/electronhub
+    chat: http://127.0.0.1:11239/electronhub/v1
+    responses: http://127.0.0.1:11239/electronhub/v1
+  mode: shaper
+  order: 10
+  provider: electronhub
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: direct
+    one-shot-man/provider: minimax
+    one-shot-man/surface-anthropic: "true"
+  name: minimax-direct
+spec:
+  auth:
+    requiredEnv:
+    - MINIMAX_API_KEY
+    scheme: bearer
+  endpoints:
+    anthropic: https://api.minimax.io/anthropic
+  mode: direct
+  order: 10
+  provider: minimax
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: shaper
+    one-shot-man/provider: opencode-go
+    one-shot-man/surface-anthropic: "true"
+  name: opencode-go-shaper-anthropic
+spec:
+  auth:
+    requiredEnv:
+    - OPENCODE_API_KEY
+    scheme: bearer
+  endpoints:
+    anthropic: http://127.0.0.1:11239/zen/go
+  mode: shaper
+  order: 30
+  provider: opencode-go
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: shaper
+    one-shot-man/provider: opencode-go
+    one-shot-man/surface-chat: "true"
+  name: opencode-go-shaper-chat
+spec:
+  auth:
+    requiredEnv:
+    - OPENCODE_API_KEY
+    scheme: bearer
+  endpoints:
+    chat: http://127.0.0.1:11239/zen/go/v1
+  mode: shaper
+  order: 10
+  provider: opencode-go
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: shaper
+    one-shot-man/provider: opencode-go
+    one-shot-man/surface-responses: "true"
+  name: opencode-go-shaper-responses
+spec:
+  auth:
+    requiredEnv:
+    - OPENCODE_API_KEY
+    scheme: bearer
+  endpoints:
+    responses: http://127.0.0.1:11239/zen/go/v1
+  mode: shaper
+  order: 20
+  provider: opencode-go
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: direct
+    one-shot-man/provider: openrouter
+    one-shot-man/surface-chat: "true"
+    one-shot-man/surface-responses: "true"
+  name: openrouter-direct
+spec:
+  auth:
+    requiredEnv:
+    - OPENROUTER_API_KEY
+    scheme: bearer
+  endpoints:
+    chat: https://openrouter.ai/api/v1
+    responses: https://openrouter.ai/api/v1
+  mode: direct
+  order: 10
+  provider: openrouter
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: shaper
+    one-shot-man/provider: umans
+    one-shot-man/surface-anthropic: "true"
+  name: umans-shaper
+spec:
+  auth:
+    requiredEnv:
+    - UMANS_API_KEY
+    scheme: bearer
+  endpoints:
+    anthropic: http://127.0.0.1:11239/umans
+  mode: shaper
+  order: 10
+  provider: umans
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: shaper
+    one-shot-man/provider: verboo
+    one-shot-man/surface-anthropic: "true"
+    one-shot-man/surface-chat: "true"
+    one-shot-man/surface-responses: "true"
+  name: verboo-shaper
+spec:
+  auth:
+    requiredEnv:
+    - VERBOO_API_KEY
+    scheme: bearer
+  endpoints:
+    anthropic: http://127.0.0.1:11239/verboo
+    chat: http://127.0.0.1:11239/verboo/v1
+    responses: http://127.0.0.1:11239/verboo/v1
+  mode: shaper
+  order: 10
+  provider: verboo
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: direct
+    one-shot-man/provider: wafer
+    one-shot-man/surface-anthropic: "true"
+  name: wafer-direct
+spec:
+  auth:
+    requiredEnv:
+    - WAFER_API_KEY
+    scheme: bearer
+  endpoints:
+    anthropic: https://pass.wafer.ai
+  mode: direct
+  order: 10
+  provider: wafer
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: shaper
+    one-shot-man/provider: yolo-auto
+    one-shot-man/surface-anthropic: "true"
+    one-shot-man/surface-chat: "true"
+    one-shot-man/surface-responses: "true"
+  name: yolo-auto-shaper
+spec:
+  auth:
+    requiredEnv:
+    - YOLO_API_KEY
+    scheme: bearer
+  endpoints:
+    anthropic: http://127.0.0.1:11239/yolo
+    chat: http://127.0.0.1:11239/yolo/v1
+    responses: http://127.0.0.1:11239/yolo/v1
+  mode: shaper
+  order: 10
+  provider: yolo-auto
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: shaper
+    one-shot-man/provider: zen
+    one-shot-man/surface-anthropic: "true"
+    one-shot-man/surface-chat: "true"
+    one-shot-man/surface-responses: "true"
+  name: zen-shaper
+spec:
+  auth:
+    requiredEnv:
+    - OPENCODE_API_KEY
+    scheme: bearer
+  endpoints:
+    anthropic: http://127.0.0.1:11239/zen
+    chat: http://127.0.0.1:11239/zen/v1
+    responses: http://127.0.0.1:11239/zen/v1
+  mode: shaper
+  order: 10
+  provider: zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
+    one-shot-man/mode: direct
+    one-shot-man/provider: zhipu
+    one-shot-man/surface-anthropic: "true"
+    one-shot-man/surface-chat: "true"
+  name: zhipu-direct
+spec:
+  auth:
+    requiredEnv:
+    - ZHIPU_API_KEY
+    scheme: bearer
+  endpoints:
+    anthropic: https://api.z.ai/api/anthropic
+    chat: https://api.z.ai/api/coding/paas/v4
+  mode: direct
+  order: 10
+  provider: zhipu
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: camel
+spec:
+  display_name: Camel AI
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: deepseek
+spec:
+  country: cn
+  display_name: DeepSeek
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: dialagram
+spec:
+  display_name: Dialagram
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: electronhub
+spec:
+  display_name: Electron Hub
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: minimax
+spec:
+  country: cn
+  display_name: MiniMax
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: opencode-go
+spec:
+  display_name: OpenCode Go
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: openrouter
+spec:
+  display_name: OpenRouter
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: umans
+spec:
+  display_name: Umans
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: verboo
+spec:
+  display_name: Verboo
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: wafer
+spec:
+  display_name: Wafer
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: yolo-auto
+spec:
+  display_name: Yolo-Auto
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: zen
+spec:
+  display_name: OpenCode Zen
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: zhipu
+spec:
+  country: cn
+  display_name: Zhipu / Z.AI
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Tool
+metadata:
+  name: claude
+spec:
+  budget_profile: claude-margin
+  credential_channels:
+  - gateway
+  - env
+  display_name: Claude Code
+  identifiers:
+    model_slug:
+      description: Model identifier grammar accepted by Claude Code.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:\[\]-]*$
+    provider_slug:
+      description: Provider identifier grammar accepted by Claude Code.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+  surfaces:
+  - anthropic
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Tool
+metadata:
+  name: claude-agent-acp
+spec:
+  budget_profile: claude-margin
+  credential_channels:
+  - gateway
+  - env
+  display_name: Claude Code (Agent ACP)
+  identifiers:
+    model_slug:
+      description: Model identifier grammar accepted by Claude Code (Agent ACP).
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:\[\]-]*$
+    provider_slug:
+      description: Provider identifier grammar accepted by Claude Code (Agent ACP).
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+  surfaces:
+  - anthropic
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Tool
+metadata:
+  name: codex
+spec:
+  budget_profile: sdk-limits
+  credential_channels:
+  - gateway
+  - env
+  display_name: Codex CLI
+  identifiers:
+    model_slug:
+      description: Model identifier grammar accepted by Codex CLI.
+      pattern: ^[A-Za-z0-9~][A-Za-z0-9._~/+-]*$
+    provider_slug:
+      description: Provider identifier grammar accepted by Codex CLI.
+      pattern: ^[a-z0-9][a-z0-9-]*$
+  surfaces:
+  - chat
+  - responses
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Tool
+metadata:
+  name: copilot
+spec:
+  budget_profile: sdk-limits
+  credential_channels:
+  - gateway
+  - env
+  display_name: GitHub Copilot CLI
+  identifiers:
+    model_slug:
+      description: Model identifier grammar accepted by GitHub Copilot CLI.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:\[\]-]*$
+    provider_slug:
+      description: Provider identifier grammar accepted by GitHub Copilot CLI.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+  surfaces:
+  - anthropic
+  - chat
+  - responses
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Tool
+metadata:
+  name: crush
+spec:
+  budget_profile: sdk-limits
+  credential_channels:
+  - gateway
+  - envRef
+  - env
+  display_name: Crush
+  identifiers:
+    model_slug:
+      description: Model identifier grammar accepted by Crush.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+    provider_slug:
+      description: Provider identifier grammar accepted by Crush.
+      pattern: ^[a-z0-9][a-z0-9-]*$
+  surfaces:
+  - chat
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Tool
+metadata:
+  name: gemini
+spec:
+  budget_profile: sdk-limits
+  credential_channels:
+  - gateway
+  - env
+  display_name: Gemini CLI
+  identifiers:
+    model_slug:
+      description: Model identifier grammar accepted by Gemini CLI.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+    provider_slug:
+      description: Provider identifier grammar accepted by Gemini CLI.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+  surfaces:
+  - chat
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Tool
+metadata:
+  name: opencode
+spec:
+  budget_profile: sdk-limits
+  credential_channels:
+  - gateway
+  - envRef
+  - env
+  display_name: OpenCode
+  identifiers:
+    model_slug:
+      description: Model identifier grammar accepted by OpenCode.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+    provider_slug:
+      description: Provider identifier grammar accepted by OpenCode.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+  surfaces:
+  - anthropic
+  - chat
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Tool
+metadata:
+  name: pi
+spec:
+  budget_profile: sdk-limits
+  credential_channels:
+  - gateway
+  - env
+  display_name: Pi
+  identifiers:
+    model_slug:
+      description: Model identifier grammar accepted by Pi.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:\[\]-]*$
+    provider_slug:
+      description: Provider identifier grammar accepted by Pi.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+  surfaces:
+  - chat
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Tool
+metadata:
+  name: reasonix
+spec:
+  budget_profile: sdk-limits
+  credential_channels:
+  - gateway
+  - env
+  display_name: Reasonix
+  identifiers:
+    model_slug:
+      description: Model identifier grammar accepted by Reasonix.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+    provider_slug:
+      description: Provider identifier grammar accepted by Reasonix.
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+  surfaces:
+  - chat

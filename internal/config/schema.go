@@ -24,6 +24,8 @@ const (
 	TypeDuration OptionType = "duration"
 	// TypePathList is a colon-separated (or semicolon on Windows) list of paths.
 	TypePathList OptionType = "path-list"
+	// TypeEnum is a value restricted to the option's Allowed list.
+	TypeEnum OptionType = "enum"
 )
 
 // ConfigOption declares a single configuration option with its type, default,
@@ -41,6 +43,9 @@ type ConfigOption struct {
 	Section string
 	// EnvVar is the environment variable that overrides this option, or "".
 	EnvVar string
+	// Allowed lists the accepted values when Type is TypeEnum; it is ignored
+	// for every other type.
+	Allowed []string
 }
 
 // ConfigSchema declares the expected configuration options for the application.
@@ -187,7 +192,7 @@ func ValidateConfig(c *Config, s *ConfigSchema) []string {
 			issues = append(issues, fmt.Sprintf("unknown global option: %q (value: %q)", key, value))
 			continue
 		}
-		if err := validateType(opt.Type, value); err != nil {
+		if err := ValidateConfigOption(opt, value); err != nil {
 			issues = append(issues, fmt.Sprintf("global option %q: %v", key, err))
 		}
 	}
@@ -205,7 +210,7 @@ func ValidateConfig(c *Config, s *ConfigSchema) []string {
 				opt = s.Lookup("", key)
 			}
 			if opt != nil {
-				if err := validateType(opt.Type, value); err != nil {
+				if err := ValidateConfigOption(opt, value); err != nil {
 					issues = append(issues, fmt.Sprintf("option %q in [%s]: %v", key, section, err))
 				}
 			}
@@ -222,6 +227,26 @@ func ValidateConfig(c *Config, s *ConfigSchema) []string {
 // value before setting it (e.g., the config command).
 func ValidateOptionValue(t OptionType, value string) error {
 	return validateType(t, value)
+}
+
+// ValidateConfigOption checks a value against one option, including its
+// Allowed list when the option is an enum. Callers that hold the option
+// definition must prefer this over ValidateOptionValue, which cannot see the
+// accepted values.
+func ValidateConfigOption(opt *ConfigOption, value string) error {
+	if opt == nil {
+		return fmt.Errorf("no option definition to validate against")
+	}
+	if opt.Type == TypeEnum {
+		if len(opt.Allowed) == 0 {
+			return fmt.Errorf("option %q is an enum without any allowed values", opt.Key)
+		}
+		if !slices.Contains(opt.Allowed, value) {
+			return fmt.Errorf("expected one of %s, got %q", strings.Join(opt.Allowed, ", "), value)
+		}
+		return nil
+	}
+	return validateType(opt.Type, value)
 }
 
 // validateType checks that a string value matches the expected OptionType.
@@ -242,6 +267,10 @@ func validateType(t OptionType, value string) error {
 		if _, err := time.ParseDuration(value); err != nil {
 			return fmt.Errorf("expected duration, got %q", value)
 		}
+	case TypeEnum:
+		// An enum cannot be validated from its type alone; callers holding the
+		// option must use ValidateConfigOption so the allowed values apply.
+		return fmt.Errorf("enum option requires its allowed values to be validated")
 	default:
 		return fmt.Errorf("unknown option type %q", t)
 	}
@@ -425,9 +454,12 @@ func (s *ConfigSchema) FormatHelp() string {
 
 func writeOptionHelp(b *strings.Builder, o ConfigOption) {
 	fmt.Fprintf(b, "  %-35s %s", o.Key, o.Description)
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 4)
 	if o.Type != "" && o.Type != TypeString {
 		parts = append(parts, fmt.Sprintf("type: %s", o.Type))
+	}
+	if len(o.Allowed) > 0 {
+		parts = append(parts, fmt.Sprintf("one of: %s", strings.Join(o.Allowed, ", ")))
 	}
 	if o.Default != "" {
 		parts = append(parts, fmt.Sprintf("default: %s", o.Default))
@@ -443,12 +475,13 @@ func writeOptionHelp(b *strings.Builder, o ConfigOption) {
 
 // SchemaEntry is a JSON-serializable representation of a ConfigOption.
 type SchemaEntry struct {
-	Key         string `json:"key"`
-	Type        string `json:"type"`
-	Default     string `json:"default"`
-	Description string `json:"description"`
-	Section     string `json:"section,omitempty"`
-	EnvVar      string `json:"envVar,omitempty"`
+	Key         string   `json:"key"`
+	Type        string   `json:"type"`
+	Default     string   `json:"default"`
+	Description string   `json:"description"`
+	Section     string   `json:"section,omitempty"`
+	EnvVar      string   `json:"envVar,omitempty"`
+	Allowed     []string `json:"allowed,omitempty"`
 }
 
 // FormatSchemaJSON returns a JSON representation of all registered options.
@@ -462,6 +495,7 @@ func (s *ConfigSchema) FormatSchemaJSON() ([]byte, error) {
 			Description: o.Description,
 			Section:     o.Section,
 			EnvVar:      o.EnvVar,
+			Allowed:     o.Allowed,
 		})
 	}
 	return json.MarshalIndent(entries, "", "  ")
@@ -527,6 +561,13 @@ func defaultGlobalOptions() []ConfigOption {
 		{Key: "sync.local-path", Type: TypeString, Default: "", Description: "Local path for sync repository"},
 		{Key: "sync.config-sync", Type: TypeBool, Default: "false", Description: "Enable shared config syncing"},
 		{Key: "sync.config-sha", Type: TypeString, Default: "", Description: "SHA256 of last synced shared config (internal)"},
+
+		// Model catalog (osm:userk8s) options
+		{Key: "userk8s.source", Type: TypeEnum, Default: "files", Allowed: []string{"files", "cluster"}, Description: "Model catalog backend: files (rendered profile artifacts) or cluster (Kubernetes API server)", EnvVar: "OSM_USERK8S_SOURCE"},
+		{Key: "userk8s.artifacts", Type: TypePathList, Default: "", Description: "Rendered profile artifacts the files backend loads (files or directories)", EnvVar: "OSM_USERK8S_ARTIFACTS"},
+		{Key: "userk8s.namespace", Type: TypeString, Default: "", Description: "Namespace for namespaced catalog kinds (LocalSecretBinding, Secret)", EnvVar: "OSM_USERK8S_NAMESPACE"},
+		{Key: "userk8s.kubeconfig", Type: TypeString, Default: "", Description: "Kubeconfig path for the cluster backend (empty uses KUBECONFIG then the default)", EnvVar: "OSM_USERK8S_KUBECONFIG"},
+		{Key: "userk8s.context", Type: TypeString, Default: "", Description: "Kubeconfig context for the cluster backend", EnvVar: "OSM_USERK8S_CONTEXT"},
 
 		// Logging options
 		{Key: "log.file", Type: TypeString, Default: "", Description: "Default log file path (JSON output)", EnvVar: "OSM_LOG_FILE"},

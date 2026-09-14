@@ -56,6 +56,7 @@ import (
 	toastmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/toast"
 	tokenizermod "github.com/joeycumines/one-shot-man/internal/builtin/tokenizer"
 	unicodetextmod "github.com/joeycumines/one-shot-man/internal/builtin/unicodetext"
+	userk8smod "github.com/joeycumines/one-shot-man/internal/builtin/userk8s"
 )
 
 // TerminalOpsProvider exposes the host terminal reader and writer.
@@ -86,6 +87,27 @@ type RegisterResult struct {
 	BubblezoneManager BubblezoneManager
 }
 
+// RegisterOption configures optional builtin registrations.
+type RegisterOption func(*registerOptions)
+
+type registerOptions struct {
+	userK8s         userk8smod.Options
+	userK8sProvider userk8smod.Provider
+}
+
+// WithUserK8sOptions supplies the resolved osm:userk8s configuration. Without
+// it the module registers with the schema defaults, which makes its backend
+// fail on first use rather than at registration.
+func WithUserK8sOptions(options userk8smod.Options) RegisterOption {
+	return func(o *registerOptions) { o.userK8s = options }
+}
+
+// WithUserK8sProvider supplies an alternative catalog backend, so the cluster
+// backend can be wired without the builtin package importing client-go.
+func WithUserK8sProvider(provider userk8smod.Provider) RegisterOption {
+	return func(o *registerOptions) { o.userK8sProvider = provider }
+}
+
 // Register wires every builtin JS module into registry.
 //
 // ctx is threaded into every I/O module for cancellation propagation.
@@ -93,7 +115,14 @@ type RegisterResult struct {
 // terminalProvider is optional; if nil, bubbletea and termmux fall back to
 // os.Stdin and os.Stdout.
 // eventLoopProvider is mandatory and supplies the event loop, runtime and adapter.
-func Register(ctx context.Context, tuiSink func(string), registry *require.Registry, terminalProvider TerminalOpsProvider, eventLoopProvider EventLoopProvider) RegisterResult {
+// options add optional registrations, such as the osm:userk8s backend.
+func Register(ctx context.Context, tuiSink func(string), registry *require.Registry, terminalProvider TerminalOpsProvider, eventLoopProvider EventLoopProvider, options ...RegisterOption) RegisterResult {
+	configured := registerOptions{}
+	for _, option := range options {
+		if option != nil {
+			option(&configured)
+		}
+	}
 	if eventLoopProvider == nil {
 		panic("builtin.Register: eventLoopProvider is required")
 	}
@@ -168,6 +197,12 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"termui/toast", toastmod.Require())
 	registry.RegisterNativeModule(prefix+"termui/compositor", compositormod.Require())
 	registry.RegisterNativeModule(prefix+"termui/splitlayout", splitlayoutmod.Require())
+
+	if configured.userK8sProvider != nil {
+		registry.RegisterNativeModule(prefix+"userk8s", userk8smod.RequireWithProvider(ctx, configured.userK8s, configured.userK8sProvider))
+	} else {
+		registry.RegisterNativeModule(prefix+"userk8s", userk8smod.Require(ctx, configured.userK8s))
+	}
 
 	return RegisterResult{
 		BubbleteaManager:  bubbleteaMgr,

@@ -36,6 +36,8 @@ type Resolution struct {
 type Projection struct {
 	ProviderSlug  string         `json:"providerSlug"`
 	ModelSlug     string         `json:"modelSlug"`
+	ProviderID    string         `json:"providerId"`
+	ModelID       string         `json:"modelId"`
 	BudgetProfile string         `json:"budgetProfile"`
 	Access        string         `json:"access,omitempty"`
 	Surfaces      []string       `json:"surfaces,omitempty"`

@@ -1125,3 +1125,51 @@ func TestDefaultSchema_ContainsSchemaVersion(t *testing.T) {
 		t.Errorf("expected default '1', got %q", opt.Default)
 	}
 }
+
+func TestValidateConfigEnumOptions(t *testing.T) {
+	s := NewSchema()
+	s.RegisterAll([]ConfigOption{
+		{Key: "userk8s.source", Type: TypeEnum, Default: "files", Allowed: []string{"files", "cluster"}, EnvVar: "OSM_USERK8S_SOURCE"},
+	})
+
+	invalid := NewConfig()
+	invalid.SetGlobalOption("userk8s.source", "bogus")
+	issues := ValidateConfig(invalid, s)
+	if len(issues) == 0 || !strings.Contains(issues[0], "expected one of files, cluster") {
+		t.Fatalf("ValidateConfig(bogus): got %v, want an allowed-values issue", issues)
+	}
+
+	for _, value := range []string{"files", "cluster"} {
+		valid := NewConfig()
+		valid.SetGlobalOption("userk8s.source", value)
+		if issues := ValidateConfig(valid, s); len(issues) != 0 {
+			t.Fatalf("ValidateConfig(%q): got %v, want no issues", value, issues)
+		}
+	}
+
+	if err := ValidateConfigOption(&ConfigOption{Key: "enum-without-values", Type: TypeEnum}, "anything"); err == nil {
+		t.Fatal("ValidateConfigOption: want an error for an enum that declares no allowed values")
+	}
+	if err := ValidateOptionValue(TypeEnum, "anything"); err == nil {
+		t.Fatal("ValidateOptionValue(TypeEnum): want an error, the type alone cannot be validated")
+	}
+
+	t.Setenv("OSM_USERK8S_SOURCE", "cluster")
+	overridden := NewConfig()
+	overridden.SetGlobalOption("userk8s.source", "files")
+	resolved := map[string]string{}
+	for _, option := range s.ResolveAll(overridden) {
+		resolved[option.Key] = option.Value
+	}
+	if resolved["userk8s.source"] != "cluster" {
+		t.Fatalf("ResolveAll: got %q, want the environment value cluster", resolved["userk8s.source"])
+	}
+
+	encoded, err := s.FormatSchemaJSON()
+	if err != nil {
+		t.Fatalf("FormatSchemaJSON: %v", err)
+	}
+	if !strings.Contains(string(encoded), "cluster") {
+		t.Fatalf("FormatSchemaJSON: %s does not expose the allowed values", encoded)
+	}
+}

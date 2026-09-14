@@ -93,18 +93,22 @@ func (b *FilesBackend) projectResolved(tool *v1alpha1.Tool, model *v1alpha1.Mode
 		return Projection{}, fmt.Errorf("Model %q references undeclared ModelProvider %q", model.Name, model.Spec.Provider)
 	}
 
-	providerSlug := registryName(provider)
-	modelSlug := registryName(model)
-	if err := validateSlug(tool, "provider", tool.Spec.Identifiers.ProviderSlug, providerSlug); err != nil {
+	providerID := registryName(provider)
+	modelID := registryName(model)
+	providerSlug, err := deriveSlug(tool, "provider", tool.Spec.Identifiers.ProviderSlug, providerID)
+	if err != nil {
 		return Projection{}, err
 	}
-	if err := validateSlug(tool, "model", tool.Spec.Identifiers.ModelSlug, modelSlug); err != nil {
+	modelSlug, err := deriveSlug(tool, "model", tool.Spec.Identifiers.ModelSlug, modelID)
+	if err != nil {
 		return Projection{}, err
 	}
 
 	projection := Projection{
 		ProviderSlug:  providerSlug,
 		ModelSlug:     modelSlug,
+		ProviderID:    providerID,
+		ModelID:       modelID,
 		BudgetProfile: tool.Spec.BudgetProfile,
 		Settings:      modelSettings(model, tool.Name),
 	}
@@ -119,17 +123,38 @@ func (b *FilesBackend) projectResolved(tool *v1alpha1.Tool, model *v1alpha1.Mode
 	return projection, nil
 }
 
-// validateSlug rejects a slug the tool's grammar cannot express; the failure
-// is reported with the tool, class, slug, and pattern so the fix is obvious.
-func validateSlug(tool *v1alpha1.Tool, class string, grammar v1alpha1.ToolIdentifierGrammar, slug string) error {
-	pattern, err := regexp.Compile(grammar.Pattern)
+// slugDisallowed matches every non-alphanumeric character. The live tool
+// configurations spell a derived key by replacing each separator with an
+// underscore, which is stricter than any single tool grammar (opencode accepts
+// dots and dashes yet its configuration still pairs the key "glm_5_3_dev" with
+// the id "glm-5.3:dev").
+var slugDisallowed = regexp.MustCompile(`[^A-Za-z0-9]`)
+
+// deriveSlug returns the identifier a tool accepts for one registry name. The
+// raw registry spelling is kept whenever the tool's grammar accepts it, so a
+// tool that takes raw identifiers keeps them verbatim; otherwise every
+// non-alphanumeric character becomes "_", the spelling the live configurations
+// use (opencode pairs the key "glm_5_3_dev" with the id "glm-5.3:dev"). A
+// grammar the derivation cannot satisfy is an error, never a silent
+// substitution.
+func deriveSlug(tool *v1alpha1.Tool, class string, grammar v1alpha1.ToolIdentifierGrammar, raw string) (string, error) {
+	if grammar.Pattern == "" {
+		return "", fmt.Errorf("Tool %q declares no identifiers.%s_slug pattern", tool.Name, class)
+	}
+	// The declared grammar is anchored: an unanchored pattern would accept a
+	// substring of a name the tool cannot actually take.
+	pattern, err := regexp.Compile("^(?:" + grammar.Pattern + ")$")
 	if err != nil {
-		return fmt.Errorf("Tool %q identifiers.%s_slug pattern: %w", tool.Name, class, err)
+		return "", fmt.Errorf("Tool %q identifiers.%s_slug pattern: %w", tool.Name, class, err)
 	}
-	if !pattern.MatchString(slug) {
-		return fmt.Errorf("Tool %q cannot express %s slug %q: it does not match %s", tool.Name, class, slug, grammar.Pattern)
+	if pattern.MatchString(raw) {
+		return raw, nil
 	}
-	return nil
+	derived := slugDisallowed.ReplaceAllString(raw, "_")
+	if pattern.MatchString(derived) {
+		return derived, nil
+	}
+	return "", fmt.Errorf("Tool %q cannot derive a %s identifier from %q: neither it nor %q matches %s", tool.Name, class, raw, derived, grammar.Pattern)
 }
 
 // servedSurfaces is the intersection of the surfaces the tool speaks and the

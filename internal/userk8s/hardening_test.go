@@ -453,3 +453,29 @@ func TestServedSurfacesIntersectsToolAndAccess(t *testing.T) {
 		t.Fatalf("selectorMatches(empty selector): %v", err)
 	}
 }
+
+func TestProjectDerivesToolIdentifiers(t *testing.T) {
+	backend, err := NewFilesBackend(FilesBackendOptions{Paths: []string{renderedPersonalProfile}})
+	if err != nil {
+		t.Fatalf("NewFilesBackend: %v", err)
+	}
+
+	opencode, err := backend.Project(context.Background(), "opencode", "electronhub", "glm-5.3:dev")
+	if err != nil {
+		t.Fatalf("Project(opencode): %v", err)
+	}
+	if opencode.ModelSlug != "glm_5_3_dev" {
+		t.Fatalf("opencode model slug: got %q, want the derived key glm_5_3_dev", opencode.ModelSlug)
+	}
+	if opencode.ModelID != "glm-5.3:dev" {
+		t.Fatalf("opencode model id: got %q, want the raw registry spelling", opencode.ModelID)
+	}
+
+	claude, err := backend.Project(context.Background(), "claude", "electronhub", "glm-5.3:dev")
+	if err != nil {
+		t.Fatalf("Project(claude): %v", err)
+	}
+	if claude.ModelSlug != "glm-5.3:dev" || claude.ModelID != "glm-5.3:dev" {
+		t.Fatalf("claude identifiers: got slug %q id %q, want the raw spelling kept verbatim", claude.ModelSlug, claude.ModelID)
+	}
+}

@@ -190,6 +190,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:gitops` | Git operations (go-git) | `isRepo(path)`, `open(path)` / `openDetect(path)` → Repo, `defaultBranch(path)`, `branchExists(path, name)`, `isWorkTree(path)`, `headBranchName(path)`; Repo methods: `.defaultBranch()`, `.branchExists(name)`, `.isWorkTree()`, `.headBranchName()` (sync), `.addAll() → Promise<void>`, `.commit(msg) → Promise<string>`, `.push() → Promise<void>`, `.hasStagedChanges() → Promise<bool>` (async) |
 | `osm:astpack` | AST context extraction and token packing | `pack(files) → Promise<Package>`, `packDiff(diff) → Promise<Package>` |
 | `osm:diff_triage` | Diff triage and file impact analysis | `triage(diff) → Promise<TriageResult[]>`, `triageSummary(diff) → Promise<map<string, number>>` |
+| `osm:userk8s` | Model catalog and credential resolution from rendered profile artifacts or a cluster | `load() → {source, providers, models, accesses, tools, secretsPresent}`, `resolveCredential(accessRef) → {status, reason?, credentials}`, `project(tool, provider, model) → {providerSlug, modelSlug, providerId, modelId, budgetProfile, access?, surfaces?, settings}`, `backendStatus() → {source, artifacts, providers, accesses, models, tools, bindings}` |
 | `osm:argv` | Command-line string parsing | `parseArgv(cmdline) → string[]`, `formatArgv(argv[]) → string` |
 | `osm:format` | Number and byte formatting | `formatNum(n) → string` (comma grouping <10000, SI k/M/G above), `formatBytes(n) → string` (IEC binary B/kB/MB/GB/TB) |
 
@@ -931,3 +932,56 @@ document.
   with no `.catch`/`.then(_,reject)` is not surfaced to the host. Always attach
   a rejection handler. (Tracked for an observability fix; see the compliance
   suite's `TestUnhandledRejection_Observability`.)
+
+### osm:userk8s
+
+The typed model catalog the launcher and tool adapters read. Credential values
+cross into JavaScript only as the `value` field of a resolved credential;
+nothing else exposes credential material, and resolver failures are reported as
+classes (`unset`, `unreadable`, `empty`, `failed`, `timed out`, `canceled`,
+`empty argv`) rather than as error text.
+
+| Configuration key | Env var | Default | Meaning |
+| --- | --- | --- | --- |
+| `userk8s.source` | `OSM_USERK8S_SOURCE` | `files` | Catalog backend: `files` (rendered profile artifacts) or `cluster` (Kubernetes API server) |
+| `userk8s.artifacts` | `OSM_USERK8S_ARTIFACTS` | *(empty)* | Path list of rendered profile files or directories the files backend loads |
+| `userk8s.namespace` | `OSM_USERK8S_NAMESPACE` | *(empty)* | Namespace for namespaced catalog kinds (LocalSecretBinding, Secret) |
+| `userk8s.kubeconfig` | `OSM_USERK8S_KUBECONFIG` | *(empty)* | Kubeconfig for the cluster backend; empty follows `KUBECONFIG` then the default |
+| `userk8s.context` | `OSM_USERK8S_CONTEXT` | *(empty)* | Kubeconfig context for the cluster backend |
+
+An unknown `userk8s.source` value is rejected by configuration validation
+(`osm config userk8s.source bogus` fails; `osm config validate` reports it) and
+again where the value is consumed, so an `OSM_USERK8S_SOURCE` override cannot
+bypass the schema. Asking for `cluster` before a cluster backend is wired fails
+loudly at first use rather than silently serving rendered files.
+
+The catalog is built on first use, not at registration, so a missing artifact
+or an unknown source surfaces as the error of the call that needed it.
+
+```js
+const userk8s = require('osm:userk8s');
+
+const loaded = userk8s.load();
+// loaded.providers[0] → { name, registryName, displayName, country? }
+// loaded.accesses[0]  → { name, registryName, provider, mode, scheme, requiredEnv, endpoints, labels, order, deprecated? }
+// loaded.models[0]    → { name, registryName, provider, access?, contextWindow, maxOutputTokens, canReason, inputModalities, reasoningEfforts, default?, deprecated? }
+// loaded.tools[0]     → { name, displayName, surfaces, credentialChannels, budgetProfile }
+// loaded.secretsPresent counts the LocalSecretBindings this machine declares.
+
+const resolution = userk8s.resolveCredential('electronhub-shaper');
+// { status: 'resolved' | 'missingCredentials' | 'unsupportedScheme',
+//   reason?, credentials: [{ envVar, value, provenance }] }
+
+const projection = userk8s.project('opencode', 'electronhub', 'glm-5.3:dev');
+// { providerSlug: 'electronhub', modelSlug: 'glm_5_3_dev', modelId: 'glm-5.3:dev',
+//   budgetProfile: 'sdk-limits', access: 'electronhub-shaper', surfaces: ['chat'], settings: {...} }
+```
+
+`modelSlug` is the identifier the tool accepts and `modelId` is the raw
+registry spelling. The raw spelling is kept whenever the tool's grammar accepts
+it; otherwise every non-alphanumeric character becomes `_`, which is how the
+live tool configurations spell such names (opencode pairs the key
+`glm_5_3_dev` with the id `glm-5.3:dev`). `budgetProfile` only names the tool's
+budget derivation rule: the derivation lives in adapter code. A tool/provider/
+model combination whose identifier cannot be expressed is an error, never a
+silent substitution.

@@ -281,7 +281,7 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		opt := schema.Lookup("", key)
 		if opt == nil {
 			_, _ = fmt.Fprintf(stderr, "Warning: %q is not a known configuration key (use 'config schema' to list known keys)\n", key)
-		} else if err := config.ValidateOptionValue(opt.Type, value); err != nil {
+		} else if err := config.ValidateConfigOption(opt, value); err != nil {
 			_, _ = fmt.Fprintf(stderr, "Error: invalid value for %q: %v\n", key, err)
 			return &SilentError{Err: fmt.Errorf("invalid value for %q: %w", key, err)}
 		}

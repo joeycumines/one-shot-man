@@ -20,6 +20,7 @@ import (
 	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
+	userk8smod "github.com/joeycumines/one-shot-man/internal/builtin/userk8s"
 )
 
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.
@@ -199,10 +200,18 @@ type Script struct {
 // engineOptions holds optional configuration for engine creation.
 type engineOptions struct {
 	modulePaths []string
+	userK8s     userk8smod.Options
 }
 
 // EngineOption configures optional Engine settings.
 type EngineOption func(*engineOptions)
+
+// WithUserK8sOptions supplies the resolved osm:userk8s configuration, so the
+// model catalog the module exposes comes from the caller's configuration
+// rather than this package's defaults.
+func WithUserK8sOptions(options userk8smod.Options) EngineOption {
+	return func(o *engineOptions) { o.userK8s = options }
+}
 
 // WithModulePaths configures additional module search paths for require().
 // These paths are searched when a bare module name is used (e.g., require('mylib')),
@@ -312,7 +321,7 @@ func NewEngine(
 	// Pass 'engine' as terminalProvider so bubbletea uses the unified TerminalIO
 	// instead of defaulting to raw os.Stdin (which would violate Single Source of Truth).
 	// Pass 'engine' as eventLoopProvider so bt shares the event loop.
-	registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine)
+	registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine, builtin.WithUserK8sOptions(eopts.userK8s))
 	engine.bubbleteaManager = registerResult.BubbleteaManager
 	engine.btBridge = registerResult.BTBridge
 	engine.bubblezoneManager = registerResult.BubblezoneManager

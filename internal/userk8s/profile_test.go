@@ -107,7 +107,7 @@ func TestRealRenderedProfileProjectsEveryToolSelection(t *testing.T) {
 				// A registry slug that a tool's grammar cannot express is a
 				// legitimate incompatibility (for example claude cannot take
 				// codex's "~openai/gpt-latest"); anything else is a defect.
-				if strings.Contains(err.Error(), "cannot express") {
+				if strings.Contains(err.Error(), "cannot derive") {
 					grammarRejections++
 					continue
 				}
@@ -131,5 +131,8 @@ func TestRealRenderedProfileProjectsEveryToolSelection(t *testing.T) {
 	}
 	if grammarRejections == 0 {
 		t.Fatal("Project: expected some tool/model pairs to be inexpressible; the sweep may not be exercising the real catalog")
+	}
+	if grammarRejections > 300 {
+		t.Fatalf("Project: %d selections are inexpressible; derivation regressed", grammarRejections)
 	}
 }

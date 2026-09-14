@@ -31,10 +31,13 @@ type Catalog interface {
 	Status(ctx context.Context) (BackendStatus, error)
 }
 
-// FilesBackend serves the catalog from rendered profile artifacts on disk.
+// FilesBackend serves the catalog from rendered profile artifacts on disk. It
+// also carries the catalog logic every backend shares: the cluster backend
+// serves the same objects and therefore reuses these methods verbatim.
 type FilesBackend struct {
 	objects *Objects
 	runner  CommandRunner
+	source  string
 }
 
 // Compile-time proof that the files backend satisfies the shared interface.
@@ -68,10 +71,25 @@ func NewFilesBackendFromObjects(objects *Objects, runner CommandRunner) (*FilesB
 	if objects == nil {
 		return nil, errors.New("userk8s: files backend requires loaded objects")
 	}
+	return newBackendFromObjects(objects, runner, SourceFiles)
+}
+
+// Source names the catalog origin a backend reports in Status.
+const (
+	SourceFiles   = "files"
+	SourceCluster = "cluster"
+)
+
+// newBackendFromObjects is the shared constructor; source distinguishes the
+// files and cluster backends in status output while every behavior is shared.
+func newBackendFromObjects(objects *Objects, runner CommandRunner, source string) (*FilesBackend, error) {
+	if objects == nil {
+		return nil, errors.New("userk8s: files backend requires loaded objects")
+	}
 	if runner == nil {
 		runner = ExecRunner{}
 	}
-	return &FilesBackend{objects: objects, runner: runner}, nil
+	return &FilesBackend{objects: objects, runner: runner, source: source}, nil
 }
 
 // ListProviders returns every provider, ordered by name.
@@ -105,9 +123,15 @@ func (b *FilesBackend) ListTools(context.Context) ([]v1alpha1.Tool, error) {
 
 // Status reports what the backend loaded.
 func (b *FilesBackend) Status(context.Context) (BackendStatus, error) {
+	source := b.source
+	if source == "" {
+		source = SourceFiles
+	}
 	return BackendStatus{
-		Source:    "files",
-		Artifacts: append([]string(nil), b.objects.Artifacts...),
+		Source: source,
+		// Non-nil so an absent artifact list encodes as [] rather than null;
+		// every backend must expose the same shape.
+		Artifacts: append([]string{}, b.objects.Artifacts...),
 		Providers: len(b.objects.Providers),
 		Accesses:  len(b.objects.Accesses),
 		Models:    len(b.objects.Models),

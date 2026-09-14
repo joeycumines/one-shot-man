@@ -190,7 +190,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:gitops` | Git operations (go-git) | `isRepo(path)`, `open(path)` / `openDetect(path)` → Repo, `defaultBranch(path)`, `branchExists(path, name)`, `isWorkTree(path)`, `headBranchName(path)`; Repo methods: `.defaultBranch()`, `.branchExists(name)`, `.isWorkTree()`, `.headBranchName()` (sync), `.addAll() → Promise<void>`, `.commit(msg) → Promise<string>`, `.push() → Promise<void>`, `.hasStagedChanges() → Promise<bool>` (async) |
 | `osm:astpack` | AST context extraction and token packing | `pack(files) → Promise<Package>`, `packDiff(diff) → Promise<Package>` |
 | `osm:diff_triage` | Diff triage and file impact analysis | `triage(diff) → Promise<TriageResult[]>`, `triageSummary(diff) → Promise<map<string, number>>` |
-| `osm:userk8s` | Model catalog and credential resolution from rendered profile artifacts or a cluster | `load() → {source, providers, models, accesses, tools, secretsPresent}`, `resolveCredential(accessRef) → {status, reason?, credentials}`, `project(tool, provider, model) → {providerSlug, modelSlug, providerId, modelId, budgetProfile, access?, surfaces?, settings}`, `backendStatus() → {source, artifacts, providers, accesses, models, tools, bindings}` |
+| `osm:userk8s` | Model catalog and credential resolution from rendered profile artifacts or a cluster; the `userk8s.*` keys select the backend, its artifacts, and its namespace, kubeconfig, and context; the catalog is read once on first use, and a cluster backend reports no artifacts and reads namespaced kinds from the configured namespace, falling back to the context namespace | `load() → {source, providers, models, accesses, tools, secretsPresent}`, `resolveCredential(accessRef) → {status, reason?, credentials}`, `project(tool, provider, model) → {providerSlug, modelSlug, providerId, modelId, budgetProfile, access?, surfaces?, settings}`, `backendStatus() → {source, artifacts, providers, accesses, models, tools, bindings}` |
 | `osm:argv` | Command-line string parsing | `parseArgv(cmdline) → string[]`, `formatArgv(argv[]) → string` |
 | `osm:format` | Number and byte formatting | `formatNum(n) → string` (comma grouping <10000, SI k/M/G above), `formatBytes(n) → string` (IEC binary B/kB/MB/GB/TB) |
 
@@ -945,7 +945,7 @@ classes (`unset`, `unreadable`, `empty`, `failed`, `timed out`, `canceled`,
 | --- | --- | --- | --- |
 | `userk8s.source` | `OSM_USERK8S_SOURCE` | `files` | Catalog backend: `files` (rendered profile artifacts) or `cluster` (Kubernetes API server) |
 | `userk8s.artifacts` | `OSM_USERK8S_ARTIFACTS` | *(empty)* | Path list of rendered profile files or directories the files backend loads |
-| `userk8s.namespace` | `OSM_USERK8S_NAMESPACE` | *(empty)* | Namespace for namespaced catalog kinds (LocalSecretBinding, Secret) |
+| `userk8s.namespace` | `OSM_USERK8S_NAMESPACE` | *(empty)* | Namespace the namespaced catalog kind is read from (LocalSecretBinding); empty uses the selected kubeconfig context |
 | `userk8s.kubeconfig` | `OSM_USERK8S_KUBECONFIG` | *(empty)* | Kubeconfig for the cluster backend; empty follows `KUBECONFIG` then the default |
 | `userk8s.context` | `OSM_USERK8S_CONTEXT` | *(empty)* | Kubeconfig context for the cluster backend |
 
@@ -955,8 +955,20 @@ again where the value is consumed, so an `OSM_USERK8S_SOURCE` override cannot
 bypass the schema. Asking for `cluster` before a cluster backend is wired fails
 loudly at first use rather than silently serving rendered files.
 
-The catalog is built on first use, not at registration, so a missing artifact
-or an unknown source surfaces as the error of the call that needed it.
+The `cluster` backend lists the five catalog kinds from the Kubernetes API
+server once, on its first catalog call, and then serves that cached catalog:
+there is no watch and no informer, so a long-running script sees the catalog as
+of its first call and must start again to observe a change. Namespaced
+kinds are read from `userk8s.namespace`, which falls back to the namespace of
+the selected kubeconfig context, and reading a namespaced kind without a
+namespace is an error. Switching `userk8s.source` flips the backend with no
+JavaScript-visible difference: the same functions with the same shapes, and
+`backendStatus().source` reports which backend served the call. Credential
+values are never read from Kubernetes Secrets: resolution runs the matched
+bindings' local resolver chains, so the engine itself needs no Secret read
+permission. `backendStatus().artifacts` names the rendered files a files
+backend read and is an empty list for a cluster backend, because artifacts name
+files and a cluster read has none.
 
 ```js
 const userk8s = require('osm:userk8s');

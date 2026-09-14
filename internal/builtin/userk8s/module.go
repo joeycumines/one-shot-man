@@ -80,9 +80,26 @@ func stringArg(call goja.FunctionCall, index int) (string, bool) {
 	return trimmed, trimmed != ""
 }
 
-// Require returns the Goja module loader for osm:userk8s.
+// clusterProvider builds the cluster backend, which reads the same catalog
+// kinds from a Kubernetes API server and reuses the shared catalog logic.
+func clusterProvider(_ context.Context, options Options) (userk8s.Catalog, error) {
+	return userk8s.NewClusterBackend(userk8s.ClusterBackendOptions{
+		Namespace:  options.Namespace,
+		Kubeconfig: options.Kubeconfig,
+		Context:    options.Context,
+		Runner:     options.Runner,
+	})
+}
+
+// Require returns the Goja module loader for osm:userk8s, dispatching on the
+// configured source so a source change flips the backend without any
+// JavaScript-visible difference.
 func Require(ctx context.Context, options Options) func(runtime *goja.Runtime, module *goja.Object) {
-	return RequireWithProvider(ctx, options, filesProvider)
+	build := filesProvider
+	if options.Source == SourceCluster {
+		build = clusterProvider
+	}
+	return RequireWithProvider(ctx, options, build)
 }
 
 // RequireWithProvider is Require with an injectable backend, so the cluster

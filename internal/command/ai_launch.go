@@ -142,6 +142,10 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 		return errors.New("a launch needs --tool, --provider and --model; see --help")
 	}
 
+	// Start each invocation with no remembered directory: a reused command
+	// instance must not be able to clean up a previous launch's directory.
+	c.workDir = ""
+
 	launcher, err := c.launcherPath()
 	if err != nil {
 		return err

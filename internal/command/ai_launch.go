@@ -9,9 +9,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -141,7 +143,10 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 		return err
 	}
 
-	ctx := context.Background()
+	// Mirror the gateway: an interrupt must reach the launcher and the tool it
+	// supervises, which is the point of supervising them.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 	plan, err := c.composePlan(ctx, launcher, args)
 	if err != nil {
 		return err

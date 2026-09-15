@@ -45,6 +45,10 @@ type AILaunchCommand struct {
 	preferGateway bool
 	launcher      string
 	gracePeriod   time.Duration
+
+	// workDir is the private directory holding a plan's materialized files.
+	// It outlives composition and is removed when the command returns.
+	workDir string
 }
 
 // launchPlan mirrors the value-free plan the launcher emits.
@@ -147,6 +151,11 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 	// supervises, which is the point of supervising them.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	defer func() {
+		if c.workDir != "" {
+			_ = os.RemoveAll(c.workDir)
+		}
+	}()
 	plan, err := c.composePlan(ctx, launcher, args)
 	if err != nil {
 		return err
@@ -258,6 +267,9 @@ func (c *AILaunchCommand) materialize(ctx context.Context, plan launchPlan) ([]s
 			return nil, fmt.Errorf("creating the launch directory: %w", err)
 		}
 		directory = created
+		// The directory must outlive the tool, which reads the materialized
+		// files, so it is recorded here and removed once the tool has exited.
+		c.workDir = created
 	}
 	for _, file := range plan.Files {
 		target := filepath.Join(directory, filepath.Base(file.Path))

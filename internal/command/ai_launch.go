@@ -102,7 +102,7 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 	fs := flag.NewFlagSet("ai-launch", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	c.SetupFlags(fs)
-	if err := fs.Parse(trimSeparators(args)); err != nil {
+	if err := fs.Parse(commandArgs(args)); err != nil {
 		return err
 	}
 	launcher, err := c.launcherPath(fs)
@@ -157,14 +157,36 @@ func (c *AILaunchCommand) composePlan(ctx context.Context, launcher string, fs *
 	}
 
 	command := exec.CommandContext(ctx, executable, argv...)
-	var stdout, stderr strings.Builder
-	command.Stdout = &stdout
+	command.WaitDelay = 5 * time.Second
+
+	// Capture the plan through a real file rather than a pipe: os/exec has to
+	// copy a pipe into a plain io.Writer, and that copy also waits on every
+	// descendant the launcher leaves behind, so Wait blocks on a command that
+	// has already written its output. A file is handed to the child directly.
+	output, err := os.CreateTemp("", "osm-ai-launch-plan-*")
+	if err != nil {
+		return launchPlan{}, fmt.Errorf("creating the plan output file: %w", err)
+	}
+	defer func() {
+		_ = output.Close()
+		_ = os.Remove(output.Name())
+	}()
+	var stderr strings.Builder
+	command.Stdout = output
 	command.Stderr = &stderr
-	if err := command.Run(); err != nil {
-		return launchPlan{}, fmt.Errorf("composing the launch plan: %w (%s)", err, strings.TrimSpace(stderr.String()))
+	runErr := command.Run()
+	if closeErr := output.Close(); closeErr != nil && runErr == nil {
+		return launchPlan{}, fmt.Errorf("closing the plan output file: %w", closeErr)
+	}
+	if runErr != nil {
+		return launchPlan{}, fmt.Errorf("composing the launch plan: %w (%s)", runErr, strings.TrimSpace(stderr.String()))
+	}
+	captured, err := os.ReadFile(output.Name())
+	if err != nil {
+		return launchPlan{}, fmt.Errorf("reading the launch plan: %w", err)
 	}
 
-	body := stdout.String()
+	body := string(captured)
 	start := strings.Index(body, "{")
 	if start < 0 {
 		return launchPlan{}, fmt.Errorf("the launcher produced no plan: %s", strings.TrimSpace(body))
@@ -338,12 +360,19 @@ func (c *AILaunchCommand) flagDuration(fs *flag.FlagSet, name string) time.Durat
 	return parsed
 }
 
-// trimSeparators drops the separator the engine uses to introduce a command's
-// arguments; leaving it in place makes the flag package treat every flag as a
-// positional argument.
-func trimSeparators(args []string) []string {
+// NOTE: dropping the command name and separator is correct hygiene, but it is
+// NOT the reason the flags were empty: the engine parses a command's flags
+// itself (cmd/osm/main.go:136-146) and hands Execute only fs.Args(), so a
+// command must bind its values with fs.StringVar/BoolVar/DurationVar in
+// SetupFlags and read those fields in Execute.
+// commandArgs drops the leading elements the engine puts in front of a
+// command's own flags: the command name itself and any separator it uses to
+// introduce the arguments. flag.Parse stops at the first element that is not a
+// flag, so leaving either in place silently parses NO flags, which for these
+// commands means an empty selection rather than an error.
+func commandArgs(args []string) []string {
 	trimmed := args
-	for len(trimmed) > 0 && trimmed[0] == "--" {
+	for len(trimmed) > 0 && (trimmed[0] == "--" || !strings.HasPrefix(trimmed[0], "-")) {
 		trimmed = trimmed[1:]
 	}
 	return trimmed

@@ -53,7 +53,7 @@ func (c *AIGatewayCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	fs := flag.NewFlagSet("ai-gateway", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	c.SetupFlags(fs)
-	if err := fs.Parse(trimSeparators(args)); err != nil {
+	if err := fs.Parse(commandArgs(args)); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {

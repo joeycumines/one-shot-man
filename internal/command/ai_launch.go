@@ -112,6 +112,14 @@ func (c *AILaunchCommand) launcherPath() (string, error) {
 // Execute composes the plan, resolves its credentials, materializes its files
 // and supervises the tool.
 func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error {
+	// Reject an incomplete selection here. Composing it would hand the launcher
+	// an empty tool/provider/model, and the launcher answers an empty selection
+	// by opening its interactive dashboard, which reads as a hang rather than a
+	// usage error.
+	if c.tool == "" || c.provider == "" || c.model == "" {
+		return errors.New("a launch needs --tool, --provider and --model; see --help")
+	}
+
 	launcher, err := c.launcherPath()
 	if err != nil {
 		return err

@@ -121,7 +121,10 @@ func (c *AIGatewayCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		return runErr
 	}
 	if code != 0 {
-		return fmt.Errorf("the shaper exited with status %d", code)
+		// Carry the shaper's own status, as ai-launch does for its tool: a
+		// supervisor that flattens every failure to 1 hides the distinction the
+		// caller needs.
+		return &ExitError{Code: code, Err: fmt.Errorf("the shaper exited with status %d", code)}
 	}
 	return nil
 }

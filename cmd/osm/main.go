@@ -55,6 +55,7 @@ func run() error {
 	registry.Register(helpCmd)
 	registry.Register(command.NewVersionCommand(version))
 	registry.Register(command.NewConfigCommand(cfg, configPath))
+	registry.Register(command.NewAIGatewayCommand(cfg))
 	registry.Register(command.NewInitCommand())
 	registry.Register(command.NewScriptingCommand(cfg))
 	registry.Register(command.NewSessionCommand(cfg))

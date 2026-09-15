@@ -94,12 +94,22 @@ func (c *AILaunchCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&c.gracePeriod, "grace-period", 5*time.Second, "how long the tool may take to exit after an interrupt")
 }
 
+// waitBound is the single grace period the command uses, both to bound the wait
+// for pipes a descendant may hold open and to give the tool time to exit after
+// an interrupt. A non-positive value falls back rather than disabling the bound.
+func (c *AILaunchCommand) waitBound() time.Duration {
+	if c.gracePeriod <= 0 {
+		return 5 * time.Second
+	}
+	return c.gracePeriod
+}
+
 func (c *AILaunchCommand) launcherPath() (string, error) {
 	if path := c.launcher; path != "" {
 		// The default path is checked below; an explicitly named launcher must
 		// be checked too, or the failure surfaces later as an opaque scripting
 		// error from the engine rather than as a missing launcher.
-		if _, err := os.Stat(path); err != nil {
+		if err := readableFile(path); err != nil {
 			return "", fmt.Errorf("the launcher named by --launcher is unreadable at %s: %w", path, err)
 		}
 		return path, nil
@@ -109,7 +119,7 @@ func (c *AILaunchCommand) launcherPath() (string, error) {
 		return "", fmt.Errorf("resolving the home directory for the launcher: %w", err)
 	}
 	path := filepath.Join(home, ".osm", "scripts", "ai-tool.js")
-	if _, err := os.Stat(path); err != nil {
+	if err := readableFile(path); err != nil {
 		return "", fmt.Errorf("the launcher is not installed at %s: %w", path, err)
 	}
 	return path, nil
@@ -151,7 +161,7 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 		Stdin:       os.Stdin,
 		Stdout:      stdout,
 		Stderr:      stderr,
-		GracePeriod: c.gracePeriod,
+		GracePeriod: c.waitBound(),
 	})
 	if err != nil {
 		return err
@@ -188,13 +198,7 @@ func (c *AILaunchCommand) composePlan(ctx context.Context, launcher string, tool
 	}
 
 	command := exec.CommandContext(ctx, executable, argv...)
-	// Bound the wait for inherited pipes with the configured grace period, and
-	// keep a sane bound if a caller disables it with a non-positive value.
-	waitDelay := c.gracePeriod
-	if waitDelay <= 0 {
-		waitDelay = 5 * time.Second
-	}
-	command.WaitDelay = waitDelay
+	command.WaitDelay = c.waitBound()
 
 	// Capture the plan through a real file rather than a pipe: os/exec has to
 	// copy a pipe into a plain io.Writer, and that copy also waits on every
@@ -376,4 +380,25 @@ func sortedKeys[V any](values map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// readableFile reports whether path names a readable, non-directory file. A
+// bare existence check accepts a path that the process cannot actually open.
+func readableFile(path string) error {
+	handle, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	info, statErr := handle.Stat()
+	closeErr := handle.Close()
+	if statErr != nil {
+		return statErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if info.IsDir() {
+		return fmt.Errorf("%s is a directory", path)
+	}
+	return nil
 }

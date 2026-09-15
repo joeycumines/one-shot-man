@@ -62,6 +62,9 @@ func (c *AIGatewayCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	if len(args) > 0 {
 		return fmt.Errorf("unexpected arguments: %v", args)
 	}
+	if c.shaper == "" {
+		return fmt.Errorf("--shaper must name the transcode shaper binary")
+	}
 
 	discoveryPath := c.discovery
 	if discoveryPath == "" {

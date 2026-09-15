@@ -4002,6 +4002,7 @@ spec:
       pattern: ^[a-z0-9][a-z0-9-]*$
   surfaces:
   - chat
+  - anthropic
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: Tool

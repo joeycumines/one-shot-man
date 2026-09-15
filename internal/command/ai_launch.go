@@ -284,13 +284,10 @@ func (c *AILaunchCommand) materialize(ctx context.Context, plan launchPlan) ([]s
 	}
 	materialized := map[string]bool{}
 	for _, file := range plan.Files {
-		target := filepath.Join(directory, filepath.Base(file.Path))
-		// Two entries can collapse to the same name once reduced to a base
-		// name; silently letting the second win would hide a broken plan.
-		if materialized[target] {
-			return nil, fmt.Errorf("the plan materializes two files to the same name: %s", filepath.Base(file.Path))
+		target, err := targetPath(directory, file.Path, materialized)
+		if err != nil {
+			return nil, err
 		}
-		materialized[target] = true
 		mode := os.FileMode(file.Mode)
 		if mode == 0 {
 			mode = 0o600
@@ -441,4 +438,16 @@ func readableFile(path string) error {
 		return fmt.Errorf("%s is a directory", path)
 	}
 	return nil
+}
+
+// targetPath returns the path a plan file is written to, refusing a name another
+// entry already claimed: two entries can collapse to the same name once reduced
+// to a base name, and letting the second win silently would hide a broken plan.
+func targetPath(directory, path string, seen map[string]bool) (string, error) {
+	target := filepath.Join(directory, filepath.Base(path))
+	if seen[target] {
+		return "", fmt.Errorf("the plan materializes two files to the same name: %s", filepath.Base(path))
+	}
+	seen[target] = true
+	return target, nil
 }

@@ -126,7 +126,7 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 	}
 
 	ctx := context.Background()
-	plan, err := c.composePlan(ctx, launcher)
+	plan, err := c.composePlan(ctx, launcher, args)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 }
 
 // composePlan asks the JavaScript launcher for the value-free plan.
-func (c *AILaunchCommand) composePlan(ctx context.Context, launcher string) (launchPlan, error) {
+func (c *AILaunchCommand) composePlan(ctx context.Context, launcher string, toolArgs []string) (launchPlan, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return launchPlan{}, fmt.Errorf("resolving this executable: %w", err)
@@ -172,6 +172,13 @@ func (c *AILaunchCommand) composePlan(ctx context.Context, launcher string) (lau
 	}
 	if c.preferGateway {
 		argv = append(argv, "--prefer-gateway")
+	}
+	// The command's own usage is `ai-launch [flags] -- [tool args]`, so the
+	// positional arguments belong to the tool; they are passed after a separator
+	// and the launcher folds them into the plan's arguments.
+	if len(toolArgs) > 0 {
+		argv = append(argv, "--")
+		argv = append(argv, toolArgs...)
 	}
 
 	command := exec.CommandContext(ctx, executable, argv...)

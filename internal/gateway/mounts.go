@@ -64,10 +64,7 @@ func Mounts(accesses []v1alpha1.ModelAccess) []Mount {
 
 // ShaperEnvVar maps a declared credential variable to the one the shaper reads.
 func ShaperEnvVar(declared string) string {
-	suffix := declared
-	if strings.HasSuffix(suffix, shaperEnvSuffix) {
-		suffix = strings.TrimSuffix(suffix, shaperEnvSuffix)
-	}
+	suffix := strings.TrimSuffix(declared, shaperEnvSuffix)
 	return shaperEnvPrefix + suffix + shaperEnvSuffix
 }
 

@@ -282,8 +282,15 @@ func (c *AILaunchCommand) materialize(ctx context.Context, plan launchPlan) ([]s
 		// files, so it is recorded here and removed once the tool has exited.
 		c.workDir = created
 	}
+	materialized := map[string]bool{}
 	for _, file := range plan.Files {
 		target := filepath.Join(directory, filepath.Base(file.Path))
+		// Two entries can collapse to the same name once reduced to a base
+		// name; silently letting the second win would hide a broken plan.
+		if materialized[target] {
+			return nil, fmt.Errorf("the plan materializes two files to the same name: %s", filepath.Base(file.Path))
+		}
+		materialized[target] = true
 		mode := os.FileMode(file.Mode)
 		if mode == 0 {
 			mode = 0o600
@@ -322,6 +329,11 @@ func (c *AILaunchCommand) materialize(ctx context.Context, plan launchPlan) ([]s
 func substitutePlaceholders(name, value, directory string) (string, error) {
 	if !strings.Contains(value, "${") {
 		return value, nil
+	}
+	for _, key := range placeholderNames {
+		if strings.Contains(value, "${"+key+"}") && directory == "" {
+			return "", fmt.Errorf("the plan sets %s to a value using ${%s} but materialized no files for it", name, key)
+		}
 	}
 	resolved := value
 	for _, key := range placeholderNames {

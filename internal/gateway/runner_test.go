@@ -52,8 +52,10 @@ func TestRunKeepsCredentialsInTheChildEnvironmentOnly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gateway.discovery")
 	child := &fakeChild{code: 7}
 	var environment, args []string
-	readinessChecked := false
-	discoveryExistedAtReadiness := false
+	// Readiness runs on the runner's goroutine, so whether the advertisement
+	// existed at that moment comes back over a channel rather than a shared
+	// flag.
+	readiness := make(chan bool, 1)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	deps := Dependencies{
@@ -62,9 +64,8 @@ func TestRunKeepsCredentialsInTheChildEnvironmentOnly(t *testing.T) {
 			return child, nil
 		},
 		WaitReady: func(context.Context) error {
-			readinessChecked = true
 			_, err := os.Stat(path)
-			discoveryExistedAtReadiness = err == nil
+			readiness <- err == nil
 			return nil
 		},
 		NewToken: func() (string, error) { return "ephemeral-token", nil },
@@ -81,10 +82,7 @@ func TestRunKeepsCredentialsInTheChildEnvironmentOnly(t *testing.T) {
 	}()
 
 	waitForFile(t, path)
-	if !readinessChecked {
-		t.Fatal("readiness was never checked before advertising")
-	}
-	if discoveryExistedAtReadiness {
+	if existedAtReadiness := <-readiness; existedAtReadiness {
 		t.Fatal("the advertisement existed before readiness was checked")
 	}
 

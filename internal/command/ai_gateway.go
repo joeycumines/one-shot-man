@@ -69,10 +69,15 @@ func (c *AIGatewayCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		discoveryPath = filepath.Join(home, ".osm", "gateway.discovery")
 	}
 
+	host := c.flagString(fs, "host")
+	port := c.flagInt(fs, "port")
 	cfg := gateway.Config{
-		ShaperBinary:  c.flagString(fs, "shaper"),
-		Host:          c.flagString(fs, "host"),
-		Port:          c.flagInt(fs, "port"),
+		ShaperBinary: c.flagString(fs, "shaper"),
+		Host:         host,
+		Port:         port,
+		// The shaper must be told where to bind, or readiness could never
+		// succeed: the bind address is the same one clients dial.
+		ShaperArgs:    []string{"-bind=" + host + ":" + strconv.Itoa(port)},
 		DiscoveryPath: discoveryPath,
 		ReadyTimeout:  c.flagDuration(fs, "ready-timeout"),
 	}

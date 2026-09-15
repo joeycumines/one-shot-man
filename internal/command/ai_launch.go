@@ -205,8 +205,8 @@ func (c *AILaunchCommand) composePlan(ctx context.Context, launcher string) (lau
 	if err := json.Unmarshal([]byte(body[start:]), &plan); err != nil {
 		return launchPlan{}, fmt.Errorf("decoding the launch plan: %w", err)
 	}
-	if len(plan.Args) == 0 {
-		return launchPlan{}, errors.New("the plan names no command to launch")
+	if plan.Tool == "" {
+		return launchPlan{}, errors.New("the plan names no tool to launch")
 	}
 	return plan, nil
 }
@@ -349,22 +349,4 @@ func sortedKeys[V any](values map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-// NOTE: dropping the command name and separator is correct hygiene, but it is
-// NOT the reason the flags were empty: the engine parses a command's flags
-// itself (cmd/osm/main.go:136-146) and hands Execute only fs.Args(), so a
-// command must bind its values with fs.StringVar/BoolVar/DurationVar in
-// SetupFlags and read those fields in Execute.
-// commandArgs drops the leading elements the engine puts in front of a
-// command's own flags: the command name itself and any separator it uses to
-// introduce the arguments. flag.Parse stops at the first element that is not a
-// flag, so leaving either in place silently parses NO flags, which for these
-// commands means an empty selection rather than an error.
-func commandArgs(args []string) []string {
-	trimmed := args
-	for len(trimmed) > 0 && (trimmed[0] == "--" || !strings.HasPrefix(trimmed[0], "-")) {
-		trimmed = trimmed[1:]
-	}
-	return trimmed
 }

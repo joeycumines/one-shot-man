@@ -264,27 +264,46 @@ func (c *AILaunchCommand) resolveReferences(references map[string]string) (map[s
 		return nil, fmt.Errorf("reading the catalog accesses: %w", err)
 	}
 	for _, name := range sortedKeys(needed) {
-		resolved := ""
+		// Only the access that DECLARES this variable is asked, so the command
+		// never runs another provider's resolver chain (which may block on an
+		// interactive prompt) looking for a name that access cannot supply.
+		owner := ""
 		for _, access := range accesses {
-			resolution, err := backend.ResolveCredential(context.Background(), access.Name)
-			if err != nil {
+			if access.Spec.Auth == nil {
 				continue
 			}
-			if resolution.Status != userk8s.StatusResolved {
-				continue
-			}
-			for _, credential := range resolution.Credentials {
-				if credential.EnvVar == name {
-					resolved = credential.Value
+			for _, declared := range access.Spec.Auth.RequiredEnv {
+				if declared == name {
+					owner = access.Name
 					break
 				}
 			}
-			if resolved != "" {
+			if owner != "" {
+				break
+			}
+		}
+		if owner == "" {
+			return nil, fmt.Errorf("no access declares the credential %s the plan needs", name)
+		}
+
+		resolveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		resolution, err := backend.ResolveCredential(resolveCtx, owner)
+		cancel()
+		if err != nil {
+			return nil, fmt.Errorf("resolving %s: %w", owner, err)
+		}
+		if resolution.Status != userk8s.StatusResolved {
+			return nil, fmt.Errorf("credentials unavailable for %s: %s", owner, resolution.Reason)
+		}
+		resolved := ""
+		for _, credential := range resolution.Credentials {
+			if credential.EnvVar == name {
+				resolved = credential.Value
 				break
 			}
 		}
 		if resolved == "" {
-			return nil, fmt.Errorf("credentials unavailable: no access resolved %s", name)
+			return nil, fmt.Errorf("the resolution of %s did not cover %s", owner, name)
 		}
 		values[name] = resolved
 	}

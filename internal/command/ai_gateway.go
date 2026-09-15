@@ -25,6 +25,15 @@ import (
 type AIGatewayCommand struct {
 	*BaseCommand
 	config *config.Config
+
+	// Bound in SetupFlags, which the engine parses for the command; Execute
+	// receives only the positional arguments left over, so a FlagSet created
+	// here would parse nothing and every value would read as its zero value.
+	shaper       string
+	host         string
+	port         int
+	discovery    string
+	readyTimeout time.Duration
 }
 
 // NewAIGatewayCommand creates the ai-gateway command.
@@ -41,26 +50,20 @@ func NewAIGatewayCommand(cfg *config.Config) *AIGatewayCommand {
 
 // SetupFlags configures the command's flags.
 func (c *AIGatewayCommand) SetupFlags(fs *flag.FlagSet) {
-	fs.String("shaper", "ai-concurrency-shaper", "transcode shaper binary to run")
-	fs.String("host", "127.0.0.1", "address the shaper binds and clients dial")
-	fs.Int("port", 11239, "port the shaper binds and clients dial")
-	fs.String("discovery", "", "discovery file path (default: $HOME/.osm/gateway.discovery)")
-	fs.Duration("ready-timeout", 30*time.Second, "how long the shaper may take to accept connections")
+	fs.StringVar(&c.shaper, "shaper", "ai-concurrency-shaper", "transcode shaper binary to run")
+	fs.StringVar(&c.host, "host", "127.0.0.1", "address the shaper binds and clients dial")
+	fs.IntVar(&c.port, "port", 11239, "port the shaper binds and clients dial")
+	fs.StringVar(&c.discovery, "discovery", "", "discovery file path (default: $HOME/.osm/gateway.discovery)")
+	fs.DurationVar(&c.readyTimeout, "ready-timeout", 30*time.Second, "how long the shaper may take to accept connections")
 }
 
 // Execute runs the gateway until it is signalled.
 func (c *AIGatewayCommand) Execute(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("ai-gateway", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	c.SetupFlags(fs)
-	if err := fs.Parse(commandArgs(args)); err != nil {
-		return err
-	}
-	if fs.NArg() > 0 {
-		return fmt.Errorf("unexpected arguments: %v", fs.Args())
+	if len(args) > 0 {
+		return fmt.Errorf("unexpected arguments: %v", args)
 	}
 
-	discoveryPath := c.flagString(fs, "discovery")
+	discoveryPath := c.discovery
 	if discoveryPath == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -69,17 +72,17 @@ func (c *AIGatewayCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		discoveryPath = filepath.Join(home, ".osm", "gateway.discovery")
 	}
 
-	host := c.flagString(fs, "host")
-	port := c.flagInt(fs, "port")
+	host := c.host
+	port := c.port
 	cfg := gateway.Config{
-		ShaperBinary: c.flagString(fs, "shaper"),
+		ShaperBinary: c.shaper,
 		Host:         host,
 		Port:         port,
 		// The shaper must be told where to bind, or readiness could never
 		// succeed: the bind address is the same one clients dial.
 		ShaperArgs:    []string{"-bind=" + host + ":" + strconv.Itoa(port)},
 		DiscoveryPath: discoveryPath,
-		ReadyTimeout:  c.flagDuration(fs, "ready-timeout"),
+		ReadyTimeout:  c.readyTimeout,
 	}
 
 	options := userK8sConfig(c.config)
@@ -148,36 +151,4 @@ func resolveMountCredentials(ctx context.Context, backend *userk8s.FilesBackend,
 		}
 	}
 	return credentials, nil
-}
-
-func (c *AIGatewayCommand) flagString(fs *flag.FlagSet, name string) string {
-	value := fs.Lookup(name)
-	if value == nil {
-		return ""
-	}
-	return value.Value.String()
-}
-
-func (c *AIGatewayCommand) flagInt(fs *flag.FlagSet, name string) int {
-	value := fs.Lookup(name)
-	if value == nil {
-		return 0
-	}
-	parsed, err := strconv.Atoi(value.Value.String())
-	if err != nil {
-		return 0
-	}
-	return parsed
-}
-
-func (c *AIGatewayCommand) flagDuration(fs *flag.FlagSet, name string) time.Duration {
-	value := fs.Lookup(name)
-	if value == nil {
-		return 0
-	}
-	parsed, err := time.ParseDuration(value.Value.String())
-	if err != nil {
-		return 0
-	}
-	return parsed
 }

@@ -172,6 +172,13 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 
 	// The plan carries the tool and its extra arguments; the executable is the
 	// tool's own command, which is what the launcher resolved for this mode.
+	// An interrupt may have arrived while the plan was being composed or its
+	// credentials resolved; launching the tool with an already-cancelled
+	// context would start it only for it to be stopped immediately.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	argv := append([]string{plan.Tool}, plan.Args...)
 	code, err := gateway.Supervise(ctx, gateway.SuperviseOptions{
 		Argv:        argv,

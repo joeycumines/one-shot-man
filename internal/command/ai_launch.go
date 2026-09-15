@@ -152,7 +152,7 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 		return err
 	}
 
-	environment, err := c.materialize(plan)
+	environment, err := c.materialize(ctx, plan)
 	if err != nil {
 		return err
 	}
@@ -250,7 +250,7 @@ func (c *AILaunchCommand) composePlan(ctx context.Context, launcher string, tool
 // materialize creates the private directory a plan's files belong in, writes
 // them at their declared modes, resolves the environment and substitutes the
 // placeholders with that directory.
-func (c *AILaunchCommand) materialize(plan launchPlan) ([]string, error) {
+func (c *AILaunchCommand) materialize(ctx context.Context, plan launchPlan) ([]string, error) {
 	directory := ""
 	if len(plan.Files) > 0 {
 		created, err := os.MkdirTemp("", "osm-launch-")
@@ -270,7 +270,7 @@ func (c *AILaunchCommand) materialize(plan launchPlan) ([]string, error) {
 		}
 	}
 
-	values, err := c.resolveReferences(plan.EnvRefs)
+	values, err := c.resolveReferences(ctx, plan.EnvRefs)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +312,7 @@ func substitutePlaceholders(name, value, directory string) (string, error) {
 
 // resolveReferences resolves the catalog credential names a plan asks for,
 // through the same engine path the other commands use.
-func (c *AILaunchCommand) resolveReferences(references map[string]string) (map[string]string, error) {
+func (c *AILaunchCommand) resolveReferences(ctx context.Context, references map[string]string) (map[string]string, error) {
 	needed := map[string]bool{}
 	for _, reference := range references {
 		needed[reference] = true
@@ -327,7 +327,7 @@ func (c *AILaunchCommand) resolveReferences(references map[string]string) (map[s
 	if err != nil {
 		return nil, fmt.Errorf("loading the catalog: %w", err)
 	}
-	accesses, err := backend.ListAccesses(context.Background())
+	accesses, err := backend.ListAccesses(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("reading the catalog accesses: %w", err)
 	}
@@ -354,7 +354,7 @@ func (c *AILaunchCommand) resolveReferences(references map[string]string) (map[s
 			return nil, fmt.Errorf("no access declares the credential %s the plan needs", name)
 		}
 
-		resolveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		resolveCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		resolution, err := backend.ResolveCredential(resolveCtx, owner)
 		cancel()
 		if err != nil {

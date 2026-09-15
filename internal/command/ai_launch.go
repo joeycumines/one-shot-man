@@ -102,7 +102,7 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 	fs := flag.NewFlagSet("ai-launch", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	c.SetupFlags(fs)
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(trimSeparators(args)); err != nil {
 		return err
 	}
 	launcher, err := c.launcherPath(fs)
@@ -336,4 +336,15 @@ func (c *AILaunchCommand) flagDuration(fs *flag.FlagSet, name string) time.Durat
 		return 0
 	}
 	return parsed
+}
+
+// trimSeparators drops the separator the engine uses to introduce a command's
+// arguments; leaving it in place makes the flag package treat every flag as a
+// positional argument.
+func trimSeparators(args []string) []string {
+	trimmed := args
+	for len(trimmed) > 0 && trimmed[0] == "--" {
+		trimmed = trimmed[1:]
+	}
+	return trimmed
 }

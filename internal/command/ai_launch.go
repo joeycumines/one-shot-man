@@ -96,6 +96,12 @@ func (c *AILaunchCommand) SetupFlags(fs *flag.FlagSet) {
 
 func (c *AILaunchCommand) launcherPath() (string, error) {
 	if path := c.launcher; path != "" {
+		// The default path is checked below; an explicitly named launcher must
+		// be checked too, or the failure surfaces later as an opaque scripting
+		// error from the engine rather than as a missing launcher.
+		if _, err := os.Stat(path); err != nil {
+			return "", fmt.Errorf("the launcher named by --launcher is unreadable at %s: %w", path, err)
+		}
 		return path, nil
 	}
 	home, err := os.UserHomeDir()
@@ -182,7 +188,13 @@ func (c *AILaunchCommand) composePlan(ctx context.Context, launcher string, tool
 	}
 
 	command := exec.CommandContext(ctx, executable, argv...)
-	command.WaitDelay = 5 * time.Second
+	// Bound the wait for inherited pipes with the configured grace period, and
+	// keep a sane bound if a caller disables it with a non-positive value.
+	waitDelay := c.gracePeriod
+	if waitDelay <= 0 {
+		waitDelay = 5 * time.Second
+	}
+	command.WaitDelay = waitDelay
 
 	// Capture the plan through a real file rather than a pipe: os/exec has to
 	// copy a pipe into a plain io.Writer, and that copy also waits on every

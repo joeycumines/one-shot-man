@@ -30,6 +30,19 @@ import (
 type AILaunchCommand struct {
 	*BaseCommand
 	config *config.Config
+
+	// The engine registers a command's flags on the FlagSet it hands to
+	// SetupFlags and parses them itself, then passes Execute only the
+	// positional arguments left over. Values are therefore bound here and
+	// read back from the struct; re-parsing the arguments inside Execute
+	// silently yields empty values.
+	tool          string
+	provider      string
+	model         string
+	directEnv     bool
+	preferGateway bool
+	launcher      string
+	gracePeriod   time.Duration
 }
 
 // launchPlan mirrors the value-free plan the launcher emits.
@@ -72,17 +85,17 @@ func NewAILaunchCommand(cfg *config.Config) *AILaunchCommand {
 
 // SetupFlags configures the command's flags.
 func (c *AILaunchCommand) SetupFlags(fs *flag.FlagSet) {
-	fs.String("tool", "", "launch target")
-	fs.String("provider", "", "provider to use")
-	fs.String("model", "", "model to use")
-	fs.Bool("direct-env", false, "compose for direct credentials instead of a discovered gateway")
-	fs.Bool("prefer-gateway", false, "refuse to fall back to direct credentials")
-	fs.String("launcher", "", "path to the installed ai-tool.js (default: $HOME/.osm/scripts/ai-tool.js)")
-	fs.Duration("grace-period", 5*time.Second, "how long the tool may take to exit after an interrupt")
+	fs.StringVar(&c.tool, "tool", "", "launch target")
+	fs.StringVar(&c.provider, "provider", "", "provider to use")
+	fs.StringVar(&c.model, "model", "", "model to use")
+	fs.BoolVar(&c.directEnv, "direct-env", false, "compose for direct credentials instead of a discovered gateway")
+	fs.BoolVar(&c.preferGateway, "prefer-gateway", false, "refuse to fall back to direct credentials")
+	fs.StringVar(&c.launcher, "launcher", "", "path to the installed ai-tool.js (default: $HOME/.osm/scripts/ai-tool.js)")
+	fs.DurationVar(&c.gracePeriod, "grace-period", 5*time.Second, "how long the tool may take to exit after an interrupt")
 }
 
-func (c *AILaunchCommand) launcherPath(fs *flag.FlagSet) (string, error) {
-	if path := c.flagString(fs, "launcher"); path != "" {
+func (c *AILaunchCommand) launcherPath() (string, error) {
+	if path := c.launcher; path != "" {
 		return path, nil
 	}
 	home, err := os.UserHomeDir()
@@ -99,19 +112,13 @@ func (c *AILaunchCommand) launcherPath(fs *flag.FlagSet) (string, error) {
 // Execute composes the plan, resolves its credentials, materializes its files
 // and supervises the tool.
 func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("ai-launch", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	c.SetupFlags(fs)
-	if err := fs.Parse(commandArgs(args)); err != nil {
-		return err
-	}
-	launcher, err := c.launcherPath(fs)
+	launcher, err := c.launcherPath()
 	if err != nil {
 		return err
 	}
 
 	ctx := context.Background()
-	plan, err := c.composePlan(ctx, launcher, fs)
+	plan, err := c.composePlan(ctx, launcher)
 	if err != nil {
 		return err
 	}
@@ -121,13 +128,16 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 		return err
 	}
 
+	// The plan carries the tool and its extra arguments; the executable is the
+	// tool's own command, which is what the launcher resolved for this mode.
+	argv := append([]string{plan.Tool}, plan.Args...)
 	code, err := gateway.Supervise(ctx, gateway.SuperviseOptions{
-		Argv:        plan.Args,
+		Argv:        argv,
 		Environment: environment,
 		Stdin:       os.Stdin,
 		Stdout:      stdout,
 		Stderr:      stderr,
-		GracePeriod: c.flagDuration(fs, "grace-period"),
+		GracePeriod: c.gracePeriod,
 	})
 	if err != nil {
 		return err
@@ -139,20 +149,20 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 }
 
 // composePlan asks the JavaScript launcher for the value-free plan.
-func (c *AILaunchCommand) composePlan(ctx context.Context, launcher string, fs *flag.FlagSet) (launchPlan, error) {
+func (c *AILaunchCommand) composePlan(ctx context.Context, launcher string) (launchPlan, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return launchPlan{}, fmt.Errorf("resolving this executable: %w", err)
 	}
 	argv := []string{"script", launcher, "--", "--print-plan",
-		"--tool", c.flagString(fs, "tool"),
-		"--provider", c.flagString(fs, "provider"),
-		"--model", c.flagString(fs, "model"),
+		"--tool", c.tool,
+		"--provider", c.provider,
+		"--model", c.model,
 	}
-	if c.flagBool(fs, "direct-env") {
+	if c.directEnv {
 		argv = append(argv, "--direct-env")
 	}
-	if c.flagBool(fs, "prefer-gateway") {
+	if c.preferGateway {
 		argv = append(argv, "--prefer-gateway")
 	}
 
@@ -339,25 +349,6 @@ func sortedKeys[V any](values map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func (c *AILaunchCommand) flagString(fs *flag.FlagSet, name string) string {
-	if value := fs.Lookup(name); value != nil {
-		return value.Value.String()
-	}
-	return ""
-}
-
-func (c *AILaunchCommand) flagBool(fs *flag.FlagSet, name string) bool {
-	return c.flagString(fs, name) == "true"
-}
-
-func (c *AILaunchCommand) flagDuration(fs *flag.FlagSet, name string) time.Duration {
-	parsed, err := time.ParseDuration(c.flagString(fs, name))
-	if err != nil {
-		return 0
-	}
-	return parsed
 }
 
 // NOTE: dropping the command name and separator is correct hygiene, but it is

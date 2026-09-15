@@ -76,7 +76,9 @@ func Run(ctx context.Context, cfg Config, mounts []Mount, credentials map[string
 		return 0, err
 	}
 
-	args := append([]string{}, cfg.ShaperArgs...)
+	// The spawner receives the full command line, binary first, exactly as it
+	// would be invoked from a shell.
+	args := append([]string{cfg.ShaperBinary}, cfg.ShaperArgs...)
 	for _, mount := range mounts {
 		// The mount order is already deterministic; the args carry the prefix
 		// and the variable the child reads, never the value.

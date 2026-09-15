@@ -143,7 +143,7 @@ func (c *AILaunchCommand) Execute(args []string, stdout, stderr io.Writer) error
 		return err
 	}
 	if code != 0 {
-		return fmt.Errorf("%s exited with status %d", plan.Tool, code)
+		return &ExitError{Code: code, Err: fmt.Errorf("%s exited with status %d", plan.Tool, code)}
 	}
 	return nil
 }

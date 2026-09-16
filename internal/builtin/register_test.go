@@ -26,6 +26,7 @@ var allBuiltinModules = []string{
 	"osm:fetch",
 	"osm:flag",
 	"osm:format",
+	"osm:freezeterm",
 	"osm:gitops",
 	"osm:grpc",
 	"osm:json",

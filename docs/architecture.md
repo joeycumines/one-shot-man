@@ -245,7 +245,8 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 |--------|-------------|
 | `osm:mcp` | Promise-based MCP (Model Context Protocol) server |
 | `osm:mcpcallback` | MCP callback handler for tool invocation responses |
-| `osm:termmux` | Terminal multiplexer — pane management, visibility, events, BubbleTea integration |
+| `osm:termmux` | Terminal multiplexer — pane management, visibility, events, BubbleTea integration, and the `capture(id, opts?)` read surface |
+| `osm:freezeterm` | Renders captured terminal text as SVG/PNG via the external freeze CLI; no termmux dependency, compose in scripts |
 
 ### Agent orchestration
 
@@ -501,11 +502,11 @@ The PR Split TUI uses a split-view layout during branch building with four multi
 └─────────────────────────────────┘
 ```
 
-**Pipeline:** `CaptureSession → SessionManager.Register → snapshot() → renderPane() → split-view`
+**Pipeline:** `CaptureSession → SessionManager.Register → capture() → renderPane() → split-view`
 
 - **CaptureSession** wraps a PTY process with streaming output via `Reader()`
 - **SessionManager** owns all sessions; the worker goroutine feeds output through an internal VTerm for each session
-- `snapshot(id)` returns the current screen content (plainText, ANSI, dimensions) via copy-on-write
+- `capture(id, opts?)` returns the current screen content (`plain`, `ansi`, `fullScreen`, dimensions) from the published snapshot
 - `input(data)` / `session().write(data)` forwards keyboard and mouse input to the active session
 - Mouse events are translated to SGR 1006 escape sequences before forwarding
 - The TUI polls at 100ms intervals for screen updates

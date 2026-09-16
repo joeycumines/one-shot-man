@@ -33,6 +33,9 @@ go.work.sum
 /.idea
 *.iml
 
+# makefile overrides
+/config.mk
+
 # Built binaries
 /cmd/osm/osm
 /osm

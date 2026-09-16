@@ -35,8 +35,6 @@ integration-test-prsplit-mcp: ## Run pr-split MCP mock integration tests (no rea
 	$(GO) test -race -v -count=1 -timeout=10m \
 		./internal/command/... -run 'TestIntegration_(AutoSplitMockMCP|MockMCP_)'
 
-# ---
-
 .PHONY: integration-test-termmux
 integration-test-termmux: ## Run termmux integration tests with real PTY processes
 	$(GO) test -race -v -count=1 -timeout=5m -run 'TestIntegration_' ./internal/termmux/... ./internal/termmux/ptyio/...
@@ -58,3 +56,63 @@ fuzz-termmux:
 test-tilde-paths: ## Run tilde path handling regression tests (filepathutil + scripting)
 	$(GO) test -v -count=1 -timeout=120s ./internal/filepathutil/...
 	$(GO) test -v -count=1 -timeout=300s -run 'Tilde|AddRelativePath|Canonicalize|FindOwner|ContextPaths|GetPath_|CrossPlatform' ./internal/scripting/...
+
+.PHONY: cross-build
+cross-build: ## Cross-compile for Linux, macOS, Windows
+	GOOS=linux GOARCH=amd64 $(GO) -C . build ./...
+	GOOS=darwin GOARCH=amd64 $(GO) -C . build ./...
+	GOOS=darwin GOARCH=arm64 $(GO) -C . build ./...
+	GOOS=windows GOARCH=amd64 $(GO) -C . build ./...
+
+##@ JS Compliance Suite
+
+.PHONY: test-jscompliance
+test-jscompliance: ## Run the FAST tier of the JS Runtime compliance suite (always-on subset, excludes fork-blocked)
+	$(GO) -C . test -race -count=1 -timeout=300s \
+		-run 'TestHarness|TestEngine_Integration|TestModuleContract|TestESM|TestResolution|TestSecurity|TestGlobalSurface|TestConsole|TestCoreES$$|TestCorePromises|TestCoreMicrotask|TestCoreTimers|TestCoreAbort$$' \
+		./internal/jscompliance/...
+
+.PHONY: test-jscompliance-all
+test-jscompliance-all: ## Run the FULL JS Runtime compliance suite (fast + slow behavioral tiers, excludes fork-blocked via skip)
+	$(GO) -C . test -race -count=1 -timeout=20m ./internal/jscompliance/...
+
+.PHONY: test-test262
+test-test262: ## Run test262 quantified suite (fast tier, go:embed, 1000+ cases)
+	$(GO) -C . test -race -count=1 -timeout=300s -run 'TestTest262' ./internal/jscompliance/test262/...
+
+.PHONY: test-goja-compat
+test-goja-compat: ## Run goja compat quantified suite (slow tier, 500+ cases)
+	$(GO) -C . test -race -count=1 -timeout=300s -run 'TestGojaCompat' ./internal/jscompliance/goja_compat/...
+
+.PHONY: fuzz
+fuzz: ## Run jscompliance fuzz targets (10s each, deterministic check)
+	@for pkg in $$($(GO) -C . list ./internal/jscompliance/...); do \
+		echo "Fuzzing $$pkg..."; \
+		for fuzz in FuzzHarness FuzzParseTC39 FuzzNextInteger FuzzContext; do \
+			if $(GO) -C . test -list ".*$$fuzz.*" $$pkg 2>&1 | grep -q "$$fuzz"; then \
+				echo "  Running $$fuzz in $$pkg..."; \
+				$(GO) -C . test -run "^$$fuzz$$" -fuzz="^$$fuzz$$" -fuzztime=10s $$pkg || exit 1; \
+			fi; \
+		done; \
+	done; \
+	echo "Fuzz done (10s per target, deterministic check)"
+
+.PHONY: report
+report: ## Generate quantified compliance report (test262 + goja compat vs goja baseline)
+	@mkdir -p scratch
+	@$(GO) -C . test -run TestTest262 -count=1 -timeout=300s ./internal/jscompliance/test262/... -json 2>&1 | tee scratch/report-test262-raw.json | tail -n 5
+	@$(GO) -C . test -run TestGojaCompat -count=1 -timeout=300s ./internal/jscompliance/goja_compat/... -json 2>&1 | tee scratch/report-goja-compat-raw.json | tail -n 5
+	@$(GO) -C . run ./internal/jscompliance/report/... 2>&1 | tee scratch/report.json | tail -n 20
+	@echo "report generated: scratch/report.json scratch/report.md"
+
+.PHONY: test-engine
+test-engine: ## Run -race tier for engine and builtin packages (future-proof, -p=1 for determinism)
+	$(GO) -C . test -p=1 -race -count=1 -timeout=300s ./internal/scripting ./internal/builtin/...
+
+.PHONY: cover-engine
+cover-engine: ## Coverage for engine packages (>80% on compliance-critical paths)
+	$(GO) -C . test -covermode=count -coverprofile=scratch/cover-engine.out -count=1 -timeout=300s ./internal/scripting ./internal/builtin/...
+	@$(GO) -C . tool cover -func=scratch/cover-engine.out 2>&1 | tee scratch/cover-engine-func.log | tail -n 20
+	@echo "cover-engine generated: scratch/cover-engine.out"
+
+# ---

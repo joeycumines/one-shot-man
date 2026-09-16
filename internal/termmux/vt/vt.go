@@ -416,8 +416,8 @@ func (v *VTerm) reset() {
 
 // VTermSnapshot holds a point-in-time capture of all VTerm state produced
 // by a single lock acquisition and cell-grid traversal. It replaces the
-// pattern of calling String(), ContentANSI(), RenderFullScreen(), and
-// individual mode queries — each of which acquires the mutex independently.
+// pattern of calling String(), RenderCapture, and individual mode queries —
+// each of which acquires the mutex independently.
 type VTermSnapshot struct {
 	PlainText  string // plain-text content (no ANSI sequences)
 	ANSI       string // SGR-styled content (no positioning/erase sequences)
@@ -450,8 +450,8 @@ type VTermSnapshot struct {
 // Snapshot acquires v.mu once, walks the cell grid once (producing plain
 // text, ANSI, and full-screen representations in a single pass), and reads
 // all mode state under the same lock. This eliminates the 14+ independent
-// mutex acquisitions that result from calling String(), ContentANSI(),
-// RenderFullScreen(), and individual mode queries separately.
+// mutex acquisitions that result from calling String(), RenderCapture, and
+// individual mode queries separately.
 func (v *VTerm) Snapshot() *VTermSnapshot {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -480,29 +480,10 @@ func (v *VTerm) Snapshot() *VTermSnapshot {
 		SynchronizedOutput: scr.SynchronizedOutput,
 	}
 
-	snap.PlainText, snap.ANSI, snap.FullScreen = RenderAll(scr)
+	snap.PlainText, snap.ANSI, snap.FullScreen = RenderCapture(scr, 0, 0, false)
 
 	scr.ClearDirty()
 	return snap
-}
-
-// RenderFullScreen returns ANSI output that overwrites every row in-place
-// without first clearing the screen. This is the flicker-free path for
-// restoring a VTerm buffer to the terminal during panel/mode toggle.
-func (v *VTerm) RenderFullScreen() string {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	return RenderFullScreen(v.active)
-}
-
-// ContentANSI returns the active screen as ANSI-styled lines suitable for
-// embedding in a TUI pane (e.g., inside a lipgloss border). Unlike
-// RenderFullScreen, this omits cursor-positioning, erase, and cursor-visibility
-// sequences — only SGR color/style attributes are preserved. Thread-safe.
-func (v *VTerm) ContentANSI() string {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	return RenderContentANSI(v.active)
 }
 
 // String returns a plain-text representation of the active screen for
@@ -765,7 +746,7 @@ func (v *VTerm) SetScrollback(n int) {
 }
 
 // ScrollUp moves the viewport up by n lines in the scrollback buffer,
-// increasing ScrollOffset. Clamped to [0, ScrollbackLines+Rows]. Thread-safe.
+// increasing ScrollOffset. Clamped to [0, MaxScrollOffset]. Thread-safe.
 func (v *VTerm) ScrollUp(n int) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -774,7 +755,7 @@ func (v *VTerm) ScrollUp(n int) {
 }
 
 // ScrollDown moves the viewport down by n lines in the scrollback buffer,
-// decreasing ScrollOffset. Clamped to [0, ScrollbackLines+Rows]. Thread-safe.
+// decreasing ScrollOffset. Clamped to [0, MaxScrollOffset]. Thread-safe.
 func (v *VTerm) ScrollDown(n int) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -798,7 +779,7 @@ type copyModeState struct {
 }
 
 // EnterCopyMode enters copy/scroll mode: saves the cursor position and
-// sets ScrollOffset to 0 (top of scrollback). Thread-safe.
+// resets ScrollOffset to 0 (live view). Thread-safe.
 func (v *VTerm) EnterCopyMode() {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -923,6 +904,15 @@ func (v *VTerm) SetCopyModeCursorCol(col int) bool {
 	return true
 }
 
+// CopyModeCursorAbsoluteRow converts a visible viewport row to the absolute
+// row coordinates shared by VisibleLines, selection and search (0 = oldest
+// scrollback line). Thread-safe.
+func (v *VTerm) CopyModeCursorAbsoluteRow(row int) int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.primary.ScrollbackLen - v.primary.ScrollOffset + row
+}
+
 // CopyModeScrollOffset returns the copy-mode scroll offset.
 func (v *VTerm) CopyModeScrollOffset() int {
 	v.mu.Lock()
@@ -974,7 +964,7 @@ func (v *VTerm) ScrollCopyMode(delta int) bool {
 func (v *VTerm) SelectStart(row, col int) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	absRow := v.primary.ScrollOffset + row
+	absRow := v.primary.ScrollbackLen - v.primary.ScrollOffset + row
 	v.copyMode.selStart = absRow
 	v.copyMode.selStartC = col
 	v.copyMode.hasStart = true
@@ -986,7 +976,7 @@ func (v *VTerm) SelectStart(row, col int) {
 func (v *VTerm) SelectEnd(row, col int) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	absRow := v.primary.ScrollOffset + row
+	absRow := v.primary.ScrollbackLen - v.primary.ScrollOffset + row
 	v.copyMode.selEnd = absRow
 	v.copyMode.selEndC = col
 	v.copyMode.hasEnd = true

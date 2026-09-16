@@ -430,7 +430,7 @@ func TestPersistence_ConfirmCancelCallsCleanup(t *testing.T) {
 		globalThis.tuiMux = {
 			isDone: function() { return false; },
 			activeID: function() { return 0; },
-			snapshot: function() { return null; },
+			capture: function() { return null; },
 			on: function() { return 0; },
 			off: function() {},
 			pollEvents: function() { return 0; }
@@ -480,7 +480,7 @@ func TestPersistence_ResumeNotificationInStatusBar(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
-			snapshot: function() { return null; },
+			capture: function() { return null; },
 			isDone: function() { return false; }
 		};
 
@@ -523,7 +523,7 @@ func TestPersistence_ResumeNotifDismissedHidesNotification(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
-			snapshot: function() { return null; },
+			capture: function() { return null; },
 			isDone: function() { return false; }
 		};
 
@@ -562,7 +562,7 @@ func TestPersistence_StaleResumeShowsLabel(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
-			snapshot: function() { return null; },
+			capture: function() { return null; },
 			isDone: function() { return false; }
 		};
 
@@ -699,7 +699,7 @@ func TestPersistence_StatusBarWithUnknownSessions(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
-			snapshot: function() { return null; },
+			capture: function() { return null; },
 			isDone: function() { return false; }
 		};
 

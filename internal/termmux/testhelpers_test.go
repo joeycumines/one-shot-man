@@ -44,6 +44,25 @@ func startManager(t *testing.T, opts ...ManagerOption) (*SessionManager, func())
 	return m, cleanup
 }
 
+// captureOf renders one capture representation of snap, ignoring errors.
+func captureOf(snap *ScreenSnapshot, kind CaptureKind) string {
+	var b strings.Builder
+	_ = snap.WriteCapture(&b, kind)
+	return b.String()
+}
+
+// captureOfChecked renders one capture representation of snap, fataling the
+// test on error. writeCapture in capture_screen_test.go delegates here so
+// the string-from-snapshot helper exists exactly once.
+func captureOfChecked(t *testing.T, snap *ScreenSnapshot, kind CaptureKind) string {
+	t.Helper()
+	var b strings.Builder
+	if err := snap.WriteCapture(&b, kind); err != nil {
+		t.Fatalf("WriteCapture(%v): %v", kind, err)
+	}
+	return b.String()
+}
+
 // waitForSnapshotContains polls the SessionManager for a snapshot that
 // contains the given substring. Fatals on timeout.
 func waitForSnapshotContains(t *testing.T, m *SessionManager, id SessionID, substr string, timeout time.Duration) {
@@ -51,7 +70,7 @@ func waitForSnapshotContains(t *testing.T, m *SessionManager, id SessionID, subs
 	deadline := time.After(timeout)
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && strings.Contains(snap.GetPlainText(), substr) {
+		if snap != nil && strings.Contains(captureOf(snap, CapturePlain), substr) {
 			return
 		}
 		select {

@@ -56,7 +56,7 @@ func TestAgentLifecycle_EventWiring(t *testing.T) {
 			},
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
-			snapshot: function(id) { return { fullScreen: 'test', plainText: 'test' }; },
+			capture: function(id) { return { fullScreen: 'test', plain: 'test' }; },
 			activate: function(id) {},
 			input: function(data) {},
 			pollEvents: function() { return 0; }
@@ -173,7 +173,7 @@ func TestAgentLifecycle_IdempotentWiring(t *testing.T) {
 			off: function(id) { return true; },
 			isDone: function() { return false; },
 			activeID: function() { return __mockCID; },
-			snapshot: function() { return null; },
+			capture: function() { return null; },
 			pollEvents: function() { return 0; }
 		};
 
@@ -318,7 +318,7 @@ func TestAgentLifecycle_AdaptivePolling(t *testing.T) {
 			off: function(id) { return true; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
-			snapshot: function(id) { return { fullScreen: 'test', plainText: 'test' }; },
+			capture: function(id) { return { fullScreen: 'test', plain: 'test' }; },
 			activate: function(id) {},
 			input: function(data) {},
 			pollEvents: function() { return 0; },
@@ -402,9 +402,9 @@ func TestAgentLifecycle_GenSkipsRedundantSnapshot(t *testing.T) {
 			off: function(id) { return true; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
-			snapshot: function(id) {
+			capture: function(id) {
 				snapshotCalls++;
-				return { gen: 5, fullScreen: 'screen-gen5', plainText: 'plain-gen5' };
+				return { gen: 5, fullScreen: 'screen-gen5', plain: 'plain-gen5' };
 			},
 			activate: function(id) {},
 			input: function(data) {},
@@ -470,7 +470,7 @@ func TestAgentLifecycle_WriteErrorSurfacing(t *testing.T) {
 			off: function(id) { return true; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
-			snapshot: function(id) { return { fullScreen: 'screen', plainText: 'plain' }; },
+			capture: function(id) { return { fullScreen: 'screen', plain: 'plain' }; },
 			activate: function(id) {},
 			input: function(data) {
 				if (writeFails) throw new Error('session closed');
@@ -547,7 +547,7 @@ func TestAgentLifecycle_BellFlashIndicator(t *testing.T) {
 			off: function(id) { return true; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
-			snapshot: function(id) { return { fullScreen: 'screen', plainText: 'plain' }; },
+			capture: function(id) { return { fullScreen: 'screen', plain: 'plain' }; },
 			activate: function(id) {},
 			input: function(data) {},
 			pollEvents: function() { return 0; },
@@ -613,7 +613,7 @@ func TestAgentLifecycle_LifecycleStateInTitle(t *testing.T) {
 					prSplit._state = prSplit._state || {};
 					prSplit._state.agentSessionID = 42;
 				globalThis.tuiMux = {
-						snapshot: function(id) { if (id !== 42) throw new Error('wrong session id: ' + id); return null; },
+						capture: function(id) { if (id !== 42) throw new Error('wrong session id: ' + id); return null; },
 					isDone: function() { return false; }
 				};
 				var s = initState('PLAN_REVIEW');
@@ -660,7 +660,7 @@ func TestAgentLifecycle_WriteErrorInTitle(t *testing.T) {
 		prSplit._state = prSplit._state || {};
 		prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
-			snapshot: function(id) { if (id !== 42) throw new Error('wrong session id: ' + id); return null; },
+			capture: function(id) { if (id !== 42) throw new Error('wrong session id: ' + id); return null; },
 			isDone: function() { return false; }
 		};
 		var s = initState('PLAN_REVIEW');
@@ -716,7 +716,7 @@ func TestAgentLifecycle_PlaceholderStates(t *testing.T) {
 					prSplit._state = prSplit._state || {};
 					prSplit._state.agentSessionID = 42;
 				globalThis.tuiMux = {
-						snapshot: function(id) { if (id !== 42) throw new Error('wrong session id: ' + id); return null; },
+						capture: function(id) { if (id !== 42) throw new Error('wrong session id: ' + id); return null; },
 					isDone: function() { return false; }
 				};
 				var s = initState('PLAN_REVIEW');

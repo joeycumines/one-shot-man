@@ -3,9 +3,9 @@
 // and FocusGroup packages. Each pane is a lightweight struct tracking a
 // session ID, bounds, and last generation — NOT a full termpane.Model.
 //
-// Pane content uses snap.GetANSI() (NOT GetFullScreen()) to avoid CUP sequences that
-// break compositing. Only the focused pane's cursor is rendered as a
-// tea.Cursor; unfocused pane cursors are rendered as dim block characters
+// Pane content uses the ANSI capture (NOT the full-screen capture) to avoid CUP
+// sequences that break compositing. Only the focused pane's cursor is rendered
+// as a tea.Cursor; unfocused pane cursors are rendered as dim block characters
 // within the cell content.
 package splitlayout
 
@@ -34,6 +34,12 @@ type Pane struct {
 	ID      termmux.SessionID
 	Bounds  coordinate.Rect
 	LastGen uint64
+	// cursorRow/cursorCol/cursorVisible mirror the capture the pane content
+	// came from, so View pairs content with its own generation's cursor
+	// instead of a torn read from a newer snapshot.
+	cursorRow     int
+	cursorCol     int
+	cursorVisible bool
 }
 
 // SplitLayout is a bubbletea v2 Model that composites multiple termmux
@@ -543,6 +549,22 @@ func (sl *SplitLayout) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	return nil
 }
 
+// capturePane fetches one ANSI capture and records its content plus cursor
+// state on the pane. Content and cursor always come from the same capture,
+// so frames are never torn across generations.
+func (sl *SplitLayout) capturePane(i int) {
+	// Use ANSI (NOT FullScreen) — FullScreen has CUP sequences that break compositing.
+	capture, err := sl.manager.CaptureScreen(sl.panes[i].ID, termmux.CaptureOptions{Kind: termmux.CaptureANSI})
+	if err != nil {
+		return
+	}
+	sl.comp.UpdatePaneIfNew(sessionIDStr(sl.panes[i].ID), capture.Text, capture.Snapshot.Gen)
+	sl.panes[i].LastGen = capture.Snapshot.Gen
+	sl.panes[i].cursorRow = capture.Snapshot.CursorRow
+	sl.panes[i].cursorCol = capture.Snapshot.CursorCol
+	sl.panes[i].cursorVisible = capture.Snapshot.CursorVisible
+}
+
 // refreshPanes updates all pane snapshots from the manager and pushes them
 // into the compositor.
 func (sl *SplitLayout) refreshPanes() {
@@ -550,14 +572,23 @@ func (sl *SplitLayout) refreshPanes() {
 	defer sl.mu.Unlock()
 
 	for i := range sl.panes {
-		snap := sl.manager.Snapshot(sl.panes[i].ID)
-		if snap == nil {
-			continue
-		}
-		// Use ANSI (NOT FullScreen) — FullScreen has CUP sequences that break compositing.
-		sl.comp.UpdatePaneIfNew(sessionIDStr(sl.panes[i].ID), snap.GetANSI(), snap.Gen)
-		sl.panes[i].LastGen = snap.Gen
+		sl.capturePane(i)
 	}
+}
+
+// capturePaneIfStale re-fetches pane i only when the manager holds a newer
+// generation than the pane last rendered. The Gen probe is itself one cheap
+// Snapshot round-trip per pane per View; only the heavier CaptureScreen
+// render is skipped when nothing changed.
+func (sl *SplitLayout) capturePaneIfStale(i int) {
+	snap := sl.manager.Snapshot(sl.panes[i].ID)
+	if snap == nil {
+		return
+	}
+	if snap.Gen == sl.panes[i].LastGen {
+		return
+	}
+	sl.capturePane(i)
 }
 
 // View implements tea.Model. It renders all pane content through the
@@ -566,14 +597,10 @@ func (sl *SplitLayout) View() tea.View {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
-	// Push latest snapshots into compositor.
+	// Push only stale panes into the compositor; unchanged generations keep
+	// the refreshPanes result (one Gen-probe Snapshot per pane, no re-render).
 	for i := range sl.panes {
-		snap := sl.manager.Snapshot(sl.panes[i].ID)
-		if snap == nil {
-			continue
-		}
-		sl.comp.UpdatePaneIfNew(sessionIDStr(sl.panes[i].ID), snap.GetANSI(), snap.Gen)
-		sl.panes[i].LastGen = snap.Gen
+		sl.capturePaneIfStale(i)
 	}
 
 	rendered := sl.comp.Render()
@@ -591,19 +618,28 @@ func (sl *SplitLayout) View() tea.View {
 		return v
 	}
 
-	snap := sl.manager.Snapshot(sessionID)
-	if snap == nil {
+	var cursorRow, cursorCol int
+	var cursorVisible bool
+	found := false
+	for i := range sl.panes {
+		if sl.panes[i].ID == sessionID {
+			b := sl.panes[i].Bounds
+			cursorRow = sl.panes[i].cursorRow + b.Position.Y
+			cursorCol = sl.panes[i].cursorCol + b.Position.X
+			// The cursor shows only when the child left it visible and its
+			// position falls within the pane's bounds.
+			cursorVisible = sl.panes[i].cursorVisible &&
+				cursorRow >= b.Position.Y &&
+				cursorRow < b.Position.Y+b.Size.Height &&
+				cursorCol >= b.Position.X &&
+				cursorCol < b.Position.X+b.Size.Width
+			found = true
+			break
+		}
+	}
+	if !found {
 		return v
 	}
-
-	cursorRow := snap.CursorRow + active.Bounds.Position.Y
-	cursorCol := snap.CursorCol + active.Bounds.Position.X
-
-	// Cursor is visible only if it falls within the pane's bounds.
-	cursorVisible := cursorRow >= active.Bounds.Position.Y &&
-		cursorRow < active.Bounds.Position.Y+active.Bounds.Size.Height &&
-		cursorCol >= active.Bounds.Position.X &&
-		cursorCol < active.Bounds.Position.X+active.Bounds.Size.Width
 
 	if cursorVisible {
 		v.Cursor = tea.NewCursor(cursorCol, cursorRow)

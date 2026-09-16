@@ -166,7 +166,7 @@ func TestChunk16e_GetCursorInPane_AgentUsesPinnedSessionID(t *testing.T) {
 			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = {
 				activeID: function() { return 99; },
-				snapshot: function(id) {
+				capture: function(id) {
 					snapshots.push(id);
 					if (id === 42) return { cursorRow: 7, cursorCol: 11 };
 					return { cursorRow: 90, cursorCol: 91 };
@@ -202,7 +202,7 @@ func TestChunk16e_GetCursorInPane_VerifyUsesNumericSessionID(t *testing.T) {
 			var snapshots = [];
 			globalThis.tuiMux = {
 				activeID: function() { return 99; },
-				snapshot: function(id) {
+				capture: function(id) {
 					snapshots.push(id);
 					if (id === 55) return { cursorRow: 3, cursorCol: 4 };
 					return { cursorRow: 90, cursorCol: 91 };
@@ -241,7 +241,7 @@ func TestChunk16e_WriteMouseToPane_AgentTab(t *testing.T) {
 			prSplit._state = prSplit._state || {};
 			prSplit._state.agentSessionID = __mockCID;
 			globalThis.tuiMux = {
-				snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+				capture: function(id) { return { fullScreen: '', plain: '' }; },
 				isDone: function(id) { return false; },
 				activeID: function() { return active; },
 				activate: function(id) { activations.push(id); active = id; },
@@ -287,7 +287,7 @@ func TestChunk16e_WriteMouseToPane_AgentTabWriteFailure(t *testing.T) {
 			prSplit._state = prSplit._state || {};
 			prSplit._state.agentSessionID = __mockCID;
 			globalThis.tuiMux = {
-				snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+				capture: function(id) { return { fullScreen: '', plain: '' }; },
 				isDone: function(id) { return false; },
 				activeID: function() { return active; },
 				activate: function(id) { activations.push(id); active = id; },
@@ -385,7 +385,7 @@ func TestChunk16e_WriteMouseToPane_WriteThrows(t *testing.T) {
 			prSplit._state = prSplit._state || {};
 			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = {
-				snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+				capture: function(id) { return { fullScreen: '', plain: '' }; },
 				isDone: function(id) { return false; },
 				activeID: function() { return active; },
 				activate: function(id) { activations.push(id); active = id; },

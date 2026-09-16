@@ -313,7 +313,6 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 			prSplit._state = prSplit._state || {};
 			prSplit._state.agentSessionID = null;
 			globalThis.tuiMux = {
-				screenshot: function() { throw new Error('legacy fallback should not run'); }
 			};
 		`)
 		if err != nil {
@@ -333,7 +332,7 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 			prSplit._state = prSplit._state || {};
 			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = {
-				snapshot: function(id) { return { plainText: 'line1\nline2\nline3\n\n\n' }; }
+				capture: function(id) { return { plain: 'line1\nline2\nline3\n\n\n' }; }
 			};
 		`)
 		if err != nil {
@@ -354,7 +353,7 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 			prSplit._state = prSplit._state || {};
 			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = {
-				snapshot: function(id) { return { plainText: 'a\nb\nc\nd\ne' }; }
+				capture: function(id) { return { plain: 'a\nb\nc\nd\ne' }; }
 			};
 		`)
 		if err != nil {
@@ -375,7 +374,7 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 			prSplit._state = prSplit._state || {};
 			prSplit._state.agentSessionID = 42;
 			globalThis.tuiMux = {
-				snapshot: function(id) { throw new Error('fail'); }
+				capture: function(id) { throw new Error('fail'); }
 			};
 		`)
 		if err != nil {
@@ -423,7 +422,7 @@ func TestChunk14b_RenderHudStatusLine(t *testing.T) {
 		prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			lastActivityMs: function() { return 500; },
-			snapshot: function(id) { return { plainText: 'hello world\n' }; }
+			capture: function(id) { return { plain: 'hello world\n' }; }
 		};
 	`)
 	if err != nil {
@@ -459,9 +458,9 @@ func TestChunk14b_RenderHudStatusLine_Truncation(t *testing.T) {
 		prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			lastActivityMs: function() { return 100; },
-			snapshot: function(id) {
+			capture: function(id) {
 				var s = ''; for (var i = 0; i < 50; i++) s += 'X';
-				return { plainText: s };
+				return { plain: s };
 			}
 		};
 	`)

@@ -9,15 +9,15 @@
     var TRUNCATION_WIDTH = 120;
 
     function readAgentPlainText() {
-        if (typeof tuiMux === 'undefined' || !tuiMux || typeof tuiMux.snapshot !== 'function') {
+        if (typeof tuiMux === 'undefined' || !tuiMux || typeof tuiMux.capture !== 'function') {
             return null;
         }
         var cid = prSplit._state && prSplit._state.agentSessionID;
         if (!cid) {
             return null;
         }
-        var snap = tuiMux.snapshot(cid);
-        return snap ? String(snap.plainText || '') : null;
+        var snap = tuiMux.capture(cid);
+        return snap ? String(snap.plain || '') : null;
     }
 
     function readAgentActivityMs() {

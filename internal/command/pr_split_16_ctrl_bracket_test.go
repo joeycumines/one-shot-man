@@ -47,7 +47,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 				activeID: function() { return 99; },
 				activate: function(id) { activateCalls.push(id); },
 				switchTo: function() { switchCalled = true; return {reason: 'toggle'}; },
-				snapshot: function(id) { return { fullScreen: '', plainText: '' }; }
+				capture: function(id) { return { fullScreen: '', plain: '' }; }
 			};
 			// Set pinned Agent SessionID.
 			prSplit._state.agentSessionID = 42;
@@ -87,7 +87,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 				activeID: function() { return 0; },
 				activate: function(id) {},
 				switchTo: function() { switchCalled = true; },
-				snapshot: function(id) { return null; }
+				capture: function(id) { return null; }
 			};
 			// No agentSessionID set — Agent not attached.
 			delete prSplit._state.agentSessionID;
@@ -120,7 +120,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 				activeID: function() { return 42; },
 				activate: function(id) {},
 				switchTo: function() { switchCalled = true; },
-				snapshot: function(id) { return null; }
+				capture: function(id) { return null; }
 			};
 			// Agent SessionID set but session is done.
 			prSplit._state.agentSessionID = 42;
@@ -224,7 +224,7 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 				isDone: function(id) { return false; },
 				activeID: function() { return 1; },
 				activate: function(id) {},
-				snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+				capture: function(id) { return { fullScreen: '', plain: '' }; },
 				lastActivityMs: function() { return Date.now(); }
 			};
 			prSplit._state.agentSessionID = 1;
@@ -255,7 +255,7 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 				isDone: function(id) { return true; },
 				activeID: function() { return 0; },
 				activate: function(id) {},
-				snapshot: function(id) { return null; },
+				capture: function(id) { return null; },
 				lastActivityMs: function() { return Date.now(); }
 			};
 			// No agentSessionID — Agent not attached.
@@ -307,7 +307,7 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 				isDone: function(id) { return true; },
 				activeID: function() { return 0; },
 				activate: function(id) {},
-				snapshot: function(id) { return null; }
+				capture: function(id) { return null; }
 			};
 			// No agentSessionID — Agent not attached.
 			delete prSplit._state.agentSessionID;
@@ -484,7 +484,7 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 				isDone: function(id) { return false; },
 				activeID: function() { return 1; },
 				activate: function(id) {},
-				snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+				capture: function(id) { return { fullScreen: '', plain: '' }; },
 				lastActivityMs: function() { return 500; }
 			};
 			prSplit._state.agentSessionID = 1;

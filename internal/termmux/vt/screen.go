@@ -12,9 +12,8 @@ type CellRow []Cell
 // Cell represents a single terminal cell with a character and attributes.
 // SecondHalf is true when this cell is the right half of a double-width
 // (CJK) character. The actual character lives in the preceding cell and
-// this cell acts as a placeholder. It is used by RenderRaster to correctly
-// skip placeholder cells without misinterpreting literal NUL bytes (Ch==0)
-// that are not wide-char placeholders.
+// this cell acts as a placeholder that rendering must skip without
+// misinterpreting literal NUL bytes (Ch==0) as wide-char placeholders.
 type Cell struct {
 	Ch         rune
 	Attr       Attr
@@ -814,38 +813,100 @@ func (s *Screen) ScrollToBottom() {
 	s.ClampScrollOffset()
 }
 
-// VisibleLines returns the visible content based on ScrollOffset. When
-// ScrollOffset is 0, only the active screen rows are returned. When
-// ScrollOffset > 0, scrollback lines replace the top of the visible area.
-// The returned slice has exactly Rows elements.
+// visibleSrcIdx maps a visible viewport row to an absolute row index where 0
+// is the oldest scrollback line and screen rows occupy
+// [ScrollbackLen, ScrollbackLen+Rows). ScrollOffset counts lines scrolled
+// back from the live view: 0 shows the live screen tail, and the window
+// slides toward older scrollback as the offset grows.
+func (s *Screen) visibleSrcIdx(r int) int {
+	return r + s.ScrollbackLen - s.ScrollOffset
+}
+
+// blankRow returns an empty visible row for the viewport width.
+func (s *Screen) blankRow() CellRow {
+	row := make(CellRow, s.Cols)
+	for i := range row {
+		row[i] = Cell{Ch: ' '}
+	}
+	return row
+}
+
+// VisibleLines returns the visible content based on ScrollOffset, the number
+// of lines the viewport is scrolled back from the live view. When
+// ScrollOffset is 0 the viewport shows the live (non-scrolled) screen tail;
+// larger offsets reveal older scrollback lines at the top of the visible
+// area. The returned slice has exactly Rows elements.
 func (s *Screen) VisibleLines() []CellRow {
 	result := make([]CellRow, s.Rows)
 	total := s.ScrollbackLen + s.Rows
 
 	for r := 0; r < s.Rows; r++ {
-		srcIdx := r + s.ScrollOffset
+		srcIdx := s.visibleSrcIdx(r)
+		if srcIdx < 0 || srcIdx >= total {
+			result[r] = s.blankRow()
+			continue
+		}
 		if srcIdx < s.ScrollbackLen {
 			result[r] = s.ScrollbackRow(srcIdx)
-		} else if srcIdx < total {
+		} else {
 			screenRow := srcIdx - s.ScrollbackLen
 			if screenRow >= 0 && screenRow < s.Rows {
 				row := make([]Cell, s.Cols)
 				copy(row, s.Cells[screenRow])
 				result[r] = row
 			} else {
-				result[r] = make([]Cell, s.Cols)
-				for i := range result[r] {
-					result[r][i] = Cell{Ch: ' '}
-				}
-			}
-		} else {
-			result[r] = make([]Cell, s.Cols)
-			for i := range result[r] {
-				result[r][i] = Cell{Ch: ' '}
+				result[r] = s.blankRow()
 			}
 		}
 	}
 	return result
+}
+
+// visibleSourceRow maps a visible viewport row to its underlying source: it
+// reports the scrollback logical index (isScrollback=true) or the live
+// screen row (isScrollback=false), in absolute coordinates where 0 is the
+// oldest scrollback line and screen rows occupy
+// [ScrollbackLen, ScrollbackLen+Rows). The third return is false when r
+// falls outside the visible area or beyond the available content. Both
+// VisibleLines and VisibleRowWrapped share this mapping so a ring-buffer
+// indexing fix cannot desynchronize wrapped-row joins from content.
+func (s *Screen) visibleSourceRow(r int) (idx int, isScrollback bool, ok bool) {
+	if r < 0 || r >= s.Rows {
+		return 0, false, false
+	}
+	srcIdx := s.visibleSrcIdx(r)
+	if srcIdx < 0 || srcIdx >= s.ScrollbackLen+s.Rows {
+		return 0, false, false
+	}
+	if srcIdx < s.ScrollbackLen {
+		return srcIdx, true, true
+	}
+	return srcIdx - s.ScrollbackLen, false, true
+}
+
+// VisibleRowWrapped reports whether visible row r is a wrapped continuation
+// of the row above it. It maps the visible row through ScrollOffset and the
+// scrollback ring buffer so wrapped joins remain correct while scrolled back.
+// Rows outside the visible area report false.
+func (s *Screen) VisibleRowWrapped(r int) bool {
+	idx, isScrollback, ok := s.visibleSourceRow(r)
+	if !ok {
+		return false
+	}
+	if isScrollback {
+		phys := idx
+		if s.MaxScrollback > 0 && s.ScrollbackLen == s.MaxScrollback {
+			phys = (s.ScrollbackHead + idx) % s.MaxScrollback
+		}
+		if phys < 0 || phys >= len(s.ScrollbackWrapped) {
+			return false
+		}
+		return s.ScrollbackWrapped[phys]
+	}
+	if idx < 0 || idx >= len(s.RowWrapped) {
+		return false
+	}
+	return s.RowWrapped[idx]
 }
 
 // ScrollbackRow returns the i-th line from the scrollback buffer (0 = oldest).
@@ -965,8 +1026,11 @@ func (s *Screen) HighlightMatch(row, col, patLen int) {
 	}
 }
 
-// ScrollToMatch adjusts ScrollOffset so that the given match row is visible.
-// Returns true if the scroll position changed.
+// ScrollToMatch adjusts ScrollOffset so that the given absolute match row
+// (0 = oldest scrollback line, screen rows at [ScrollbackLen,
+// ScrollbackLen+Rows), the same coordinates used by VisibleLines,
+// SelectStart/SelectEnd and SearchForward/SearchBackward) is visible at the
+// top of the viewport. Returns true if the scroll position changed.
 func (s *Screen) ScrollToMatch(matchRow int) bool {
 	screenRow := matchRow - s.ScrollbackLen
 	targetOffset := max(s.ScrollbackLen-matchRow, 0)

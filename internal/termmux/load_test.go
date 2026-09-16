@@ -111,7 +111,7 @@ func BenchmarkMultiSessionOutput(b *testing.B) {
 	// Wait for at least one session to have processed output.
 	for {
 		snap := m.Snapshot(sessions[0].id)
-		if snap != nil && snap.GetPlainText() != "" {
+		if snap != nil && captureOf(snap, CapturePlain) != "" {
 			break
 		}
 		runtime.Gosched()
@@ -285,7 +285,7 @@ func BenchmarkSnapshotReadDuringWrite(b *testing.B) {
 	// Wait for content to appear in snapshots.
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && snap.GetPlainText() != "" {
+		if snap != nil && captureOf(snap, CapturePlain) != "" {
 			break
 		}
 		runtime.Gosched()

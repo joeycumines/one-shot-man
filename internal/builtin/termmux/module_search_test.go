@@ -18,8 +18,8 @@ func TestSearchForwardBackwardBindings_DefaultSearcher(t *testing.T) {
 		function waitSnapshot(substr, deadlineMs) {
 			return new Promise(function(resolve, reject) {
 				(function poll() {
-					var snap = s.mgr.snapshot(s.sid);
-					if (snap && snap.plainText && snap.plainText.indexOf(substr) >= 0) return resolve();
+					var snap = s.mgr.capture(s.sid);
+					if (snap && snap.plain && snap.plain.indexOf(substr) >= 0) return resolve();
 					if (Date.now() > deadlineMs) return reject(new Error('timeout waiting for ' + substr));
 					setTimeout(poll, 10);
 				})();
@@ -70,8 +70,8 @@ func TestNewCopyModeSearcher_OptionalCallback(t *testing.T) {
 		function waitSnapshot(substr, deadlineMs) {
 			return new Promise(function(resolve, reject) {
 				(function poll() {
-					var snap = s.mgr.snapshot(s.sid);
-					if (snap && snap.plainText && snap.plainText.indexOf(substr) >= 0) return resolve();
+					var snap = s.mgr.capture(s.sid);
+					if (snap && snap.plain && snap.plain.indexOf(substr) >= 0) return resolve();
 					if (Date.now() > deadlineMs) return reject(new Error('timeout waiting for ' + substr));
 					setTimeout(poll, 10);
 				})();
@@ -120,8 +120,8 @@ func TestNewCopyModeSearcher_BackwardNoCallback(t *testing.T) {
 		function waitSnapshot(substr, deadlineMs) {
 			return new Promise(function(resolve, reject) {
 				(function poll() {
-					var snap = s.mgr.snapshot(s.sid);
-					if (snap && snap.plainText && snap.plainText.indexOf(substr) >= 0) return resolve();
+					var snap = s.mgr.capture(s.sid);
+					if (snap && snap.plain && snap.plain.indexOf(substr) >= 0) return resolve();
 					if (Date.now() > deadlineMs) return reject(new Error('timeout waiting for ' + substr));
 					setTimeout(poll, 10);
 				})();

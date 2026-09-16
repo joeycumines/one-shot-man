@@ -955,7 +955,7 @@
     //
     // Task 9: Replaces blind 500ms polling with event-driven updates.
     // Event handlers (wireAgentLifecycleEvents) set dirty flags; this
-    // function reads them and skips redundant snapshots when nothing
+    // function reads them and skips redundant captures when nothing
     // changed. Uses adaptive tick intervals: fast when Agent is outputting,
     // slow when idle.
 
@@ -1024,8 +1024,8 @@
         // snapshot to maintain backward compatibility with tests.
         var snapshotChanged = false;
         try {
-            if (typeof tuiMux.snapshot === 'function') {
-                var snap = tuiMux.snapshot(cid);
+            if (typeof tuiMux.capture === 'function') {
+                var snap = tuiMux.capture(cid);
                 if (snap) {
                     // Compare generation to detect actual screen changes.
                     // If gen is absent (mocks), always update.
@@ -1035,8 +1035,8 @@
                         if (snap.fullScreen) {
                             s.agentScreen = String(snap.fullScreen);
                         }
-                        if (snap.plainText) {
-                            s.agentScreenshot = String(snap.plainText);
+                        if (snap.plain) {
+                            s.agentScreenshot = String(snap.plain);
                         }
                     }
                 }

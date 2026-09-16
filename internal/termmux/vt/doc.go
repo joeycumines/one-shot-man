@@ -159,9 +159,7 @@
 //	Cell grid (rows x cols)         Supported
 //	Scrollback buffer               Supported (ring buffer, configurable max, default 10000)
 //	Resize with reflow              Supported (primary screen only; alternate screen fixed)
-//	RenderFullScreen                Supported (flicker-free CUP+EL+SGR)
-//	RenderContentANSI               Supported (SGR-only, no positioning)
-//	RenderAll                       Supported (plain text + ANSI + full screen in one pass)
+//	RenderCapture                  Supported (one-pass plain/ANSI/full screen, ranged, wrap joining)
 //	Screen snapshot                 Supported (deep copy under single mutex lock)
 //
 // COPY MODE & NAVIGATION

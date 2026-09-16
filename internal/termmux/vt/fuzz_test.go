@@ -64,10 +64,10 @@ func FuzzVTermWrite(f *testing.F) {
 		if n != len(data) {
 			t.Fatalf("Write returned %d; want %d", n, len(data))
 		}
-		// RenderFullScreen must not panic and produce valid UTF-8.
-		rendered := vt.RenderFullScreen()
+		// Snapshot().FullScreen must not panic and produce valid UTF-8.
+		rendered := vt.Snapshot().FullScreen
 		if !utf8.ValidString(rendered) {
-			t.Fatal("RenderFullScreen() produced invalid UTF-8")
+			t.Fatal("Snapshot().FullScreen produced invalid UTF-8")
 		}
 	})
 }

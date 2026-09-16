@@ -6,9 +6,10 @@ package termmux
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"image"
 	"io"
+	"math"
 	"os"
 	"strings"
 	"sync"
@@ -130,6 +131,70 @@ func errToStr(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// captureOptions validates the optional JS options object accepted by
+// capture(). Unknown keys and non-boolean or non-finite-number values are
+// rejected with a TypeError.
+func (s *muxState) captureOptions(value goja.Value) parent.CaptureOptions {
+	opts := parent.CaptureOptions{Kind: parent.CapturePlain}
+	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
+		return opts
+	}
+	obj := value.ToObject(s.runtime)
+	for _, key := range obj.Keys() {
+		switch key {
+		case "start":
+			opts.Start = int(finiteNumberOption(s.runtime, obj.Get(key), "start"))
+		case "end":
+			opts.End = int(finiteNumberOption(s.runtime, obj.Get(key), "end"))
+		case "joinWrapped":
+			b, ok := obj.Get(key).Export().(bool)
+			if !ok {
+				panic(s.runtime.NewTypeError("capture: joinWrapped must be a boolean"))
+			}
+			opts.JoinWrapped = b
+		default:
+			panic(s.runtime.NewTypeError(fmt.Sprintf("capture: unknown option %q", key)))
+		}
+	}
+	return opts
+}
+
+// finiteNumberOption returns value as a finite number or panics with a
+// TypeError naming the offending option. Values must be integral: capture
+// rows are integers, so 1.9 is rejected rather than silently truncated.
+func finiteNumberOption(runtime *goja.Runtime, value goja.Value, name string) float64 {
+	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
+		panic(runtime.NewTypeError("capture: " + name + " must be a finite number"))
+	}
+	switch value.Export().(type) {
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+	default:
+		panic(runtime.NewTypeError("capture: " + name + " must be a finite number"))
+	}
+	f := value.ToFloat()
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		panic(runtime.NewTypeError("capture: " + name + " must be a finite number"))
+	}
+	if f != math.Trunc(f) {
+		panic(runtime.NewTypeError("capture: " + name + " must be an integer"))
+	}
+	return f
+}
+
+// activeCaptureText renders one representation of the active session, or ""
+// when no session is active or its snapshot is unavailable.
+func (s *muxState) activeCaptureText(kind parent.CaptureKind) string {
+	id := s.mgr.ActiveID()
+	if id == 0 {
+		return ""
+	}
+	capture, err := s.mgr.CaptureScreen(id, parent.CaptureOptions{Kind: kind})
+	if err != nil {
+		return ""
+	}
+	return capture.Text
 }
 
 func (s *muxState) activeScreenSearcher() parent.ScreenSearcher {
@@ -1732,10 +1797,6 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 		return s.mgr.ActiveMessage(parent.SessionID(sessionID))
 	})
 
-	_ = obj.Set("capturePane", func(sessionID uint64, startLine, endLine int) string {
-		return s.mgr.CapturePane(parent.SessionID(sessionID), startLine, endLine)
-	})
-
 	_ = obj.Set("copyPaneToClipboard", func(sessionID uint64) string {
 		return s.mgr.CopyPaneToClipboard(parent.SessionID(sessionID))
 	})
@@ -1841,9 +1902,8 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 
 }
 
-// registerSnapshotMethods registers query/snapshot methods: termSize,
-// snapshot, renderRaster, activeID, isDone, sessions, eventsDropped,
-// lastActivityMs.
+// registerSnapshotMethods registers query/capture methods: termSize,
+// capture, activeID, isDone, sessions, eventsDropped, lastActivityMs.
 func registerSnapshotMethods(obj *goja.Object, s *muxState) {
 	_ = obj.Set("termSize", func() goja.Value {
 		rows, cols := s.mgr.TermSize()
@@ -1853,72 +1913,72 @@ func registerSnapshotMethods(obj *goja.Object, s *muxState) {
 		return result
 	})
 
-	_ = obj.Set("snapshot", func(id uint64) goja.Value {
-		snap := s.mgr.Snapshot(parent.SessionID(id))
-		if snap == nil {
-			return goja.Null()
-		}
-		result := s.runtime.NewObject()
-		_ = result.Set("gen", snap.Gen)
-		_ = result.Set("plainText", snap.GetPlainText())
-		_ = result.Set("ansi", snap.GetANSI())
-		_ = result.Set("fullScreen", snap.GetFullScreen())
-		_ = result.Set("rows", snap.Rows)
-		_ = result.Set("cols", snap.Cols)
-		_ = result.Set("cursorRow", snap.CursorRow)
-		_ = result.Set("cursorCol", snap.CursorCol)
-		_ = result.Set("mouseTracking", snap.MouseTracking)
-		_ = result.Set("mouseSGR", snap.MouseSGR)
-		_ = result.Set("locked", snap.Locked)
-		_ = result.Set("message", snap.Message)
-		_ = result.Set("timestamp", snap.Timestamp.UnixMilli())
-		return result
-	})
-
-	_ = obj.Set("renderRaster", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			panic(s.runtime.NewTypeError("renderRaster: session ID argument is required"))
+	_ = obj.Set("capture", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+			panic(s.runtime.NewTypeError("capture: session ID argument is required"))
 		}
 		id := parent.SessionID(call.Argument(0).ToInteger())
-		cellW := 8
-		cellH := 16
-		optsVal := call.Argument(1)
-		if optsVal != nil && optsVal != goja.Undefined() && optsVal != goja.Null() {
-			opts := optsVal.ToObject(s.runtime)
-			if v := opts.Get("cellW"); v != nil && !goja.IsUndefined(v) {
-				cellW = int(v.ToInteger())
-			}
-			if v := opts.Get("cellH"); v != nil && !goja.IsUndefined(v) {
-				cellH = int(v.ToInteger())
-			}
-		}
-		if cellW <= 0 || cellH <= 0 {
-			panic(s.runtime.NewTypeError("renderRaster: cell dimensions must be positive"))
-		}
-		scr := s.mgr.Screen(id)
-		if scr == nil {
-			return goja.Null()
-		}
-		var img *image.RGBA
-		if cellW == 8 && cellH == 16 {
-			img = vt.RenderRasterDefault(scr)
-		} else {
-			img = vt.RenderRaster(scr, cellW, cellH)
-		}
-		tmpDir := os.TempDir()
-		f, err := os.CreateTemp(tmpDir, fmt.Sprintf("osm-raster-%d-*.png", id))
+		opts := s.captureOptions(call.Argument(1))
+		capture, err := s.mgr.CaptureScreen(id, opts)
 		if err != nil {
+			if errors.Is(err, parent.ErrSessionNotFound) || errors.Is(err, parent.ErrSnapshotUnavailable) {
+				return goja.Null()
+			}
 			panic(s.runtime.NewGoError(err))
 		}
-		path := f.Name()
-		_ = f.Close()
-		if err := vt.SaveRasterPNG(img, path); err != nil {
-			panic(s.runtime.NewGoError(err))
+		// CaptureScreen already ran the snapshot's single-traversal render, so
+		// all three representations are cached; reuse the requested kind's
+		// text directly and read the other two from the same warm cache.
+		// capture.Text is exactly WriteCapture(kind) output for this range.
+		var plain, ansi, fullScreen string
+		var needPlain, needANSI, needFull bool
+		switch opts.Kind {
+		case parent.CaptureANSI:
+			ansi = capture.Text
+			needPlain, needFull = true, true
+		case parent.CaptureFullScreen:
+			fullScreen = capture.Text
+			needPlain, needANSI = true, true
+		default:
+			plain = capture.Text
+			needANSI, needFull = true, true
+		}
+		if needPlain {
+			var b strings.Builder
+			if err := capture.Snapshot.WriteCapture(&b, parent.CapturePlain); err != nil {
+				panic(s.runtime.NewGoError(err))
+			}
+			plain = b.String()
+		}
+		if needANSI {
+			var b strings.Builder
+			if err := capture.Snapshot.WriteCapture(&b, parent.CaptureANSI); err != nil {
+				panic(s.runtime.NewGoError(err))
+			}
+			ansi = b.String()
+		}
+		if needFull {
+			var b strings.Builder
+			if err := capture.Snapshot.WriteCapture(&b, parent.CaptureFullScreen); err != nil {
+				panic(s.runtime.NewGoError(err))
+			}
+			fullScreen = b.String()
 		}
 		result := s.runtime.NewObject()
-		_ = result.Set("width", img.Bounds().Dx())
-		_ = result.Set("height", img.Bounds().Dy())
-		_ = result.Set("path", path)
+		_ = result.Set("plain", plain)
+		_ = result.Set("ansi", ansi)
+		_ = result.Set("fullScreen", fullScreen)
+		_ = result.Set("gen", capture.Snapshot.Gen)
+		_ = result.Set("rows", capture.Snapshot.Rows)
+		_ = result.Set("cols", capture.Snapshot.Cols)
+		_ = result.Set("cursorRow", capture.Snapshot.CursorRow)
+		_ = result.Set("cursorCol", capture.Snapshot.CursorCol)
+		_ = result.Set("cursorVisible", capture.Snapshot.CursorVisible)
+		_ = result.Set("mouseTracking", capture.Snapshot.MouseTracking)
+		_ = result.Set("mouseSGR", capture.Snapshot.MouseSGR)
+		_ = result.Set("locked", capture.Snapshot.Locked)
+		_ = result.Set("message", capture.Snapshot.Message)
+		_ = result.Set("timestamp", capture.Snapshot.Timestamp.UnixMilli())
 		return result
 	})
 
@@ -1974,7 +2034,7 @@ func registerSnapshotMethods(obj *goja.Object, s *muxState) {
 }
 
 // registerPassthroughMethods registers passthrough and convenience methods:
-// passthrough, attach, detach, hasChild, switchTo, screenshot, childScreen,
+// passthrough, attach, detach, hasChild, switchTo,
 // writeToChild, session, fromModel, activeSide.
 func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 	_ = obj.Set("passthrough", func(call goja.FunctionCall) goja.Value {
@@ -2184,37 +2244,13 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 				})
 
 				if id := s.mgr.ActiveID(); id != 0 {
-					if snap := s.mgr.Snapshot(id); snap != nil {
-						res["childOutput"] = snap.GetPlainText()
+					if capture, err := s.mgr.CaptureScreen(id, parent.CaptureOptions{Kind: parent.CapturePlain}); err == nil {
+						res["childOutput"] = capture.Text
 					}
 				}
 				return res
 			})
 		})
-	})
-
-	_ = obj.Set("screenshot", func() string {
-		id := s.mgr.ActiveID()
-		if id == 0 {
-			return ""
-		}
-		snap := s.mgr.Snapshot(id)
-		if snap == nil {
-			return ""
-		}
-		return snap.GetPlainText()
-	})
-
-	_ = obj.Set("childScreen", func() string {
-		id := s.mgr.ActiveID()
-		if id == 0 {
-			return ""
-		}
-		snap := s.mgr.Snapshot(id)
-		if snap == nil {
-			return ""
-		}
-		return snap.GetANSI()
 	})
 
 	_ = obj.Set("writeToChild", func(call goja.FunctionCall) goja.Value {
@@ -2249,27 +2285,11 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 		})
 
 		_ = sessionObj.Set("output", func() string {
-			id := s.mgr.ActiveID()
-			if id == 0 {
-				return ""
-			}
-			snap := s.mgr.Snapshot(id)
-			if snap == nil {
-				return ""
-			}
-			return snap.GetPlainText()
+			return s.activeCaptureText(parent.CapturePlain)
 		})
 
 		_ = sessionObj.Set("screen", func() string {
-			id := s.mgr.ActiveID()
-			if id == 0 {
-				return ""
-			}
-			snap := s.mgr.Snapshot(id)
-			if snap == nil {
-				return ""
-			}
-			return snap.GetANSI()
+			return s.activeCaptureText(parent.CaptureANSI)
 		})
 
 		_ = sessionObj.Set("target", func() goja.Value {

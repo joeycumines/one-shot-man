@@ -817,9 +817,9 @@ func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
 				}
 			};
 			globalThis.tuiMux = {
-				snapshot: function(id) {
+				capture: function(id) {
 					if (id !== 42) return null;
-					return { plainText: screen };
+					return { plain: screen };
 				}
 			};
 
@@ -900,9 +900,9 @@ func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
 				}
 			};
 			globalThis.tuiMux = {
-				snapshot: function(id) {
+				capture: function(id) {
 					if (id !== 42) return null;
-					return { plainText: screen };
+					return { plain: screen };
 				}
 			};
 
@@ -975,9 +975,9 @@ func TestIntegration_SendToHandle_PromptReadyTimeout(t *testing.T) {
 				}
 			};
 			globalThis.tuiMux = {
-				snapshot: function(id) {
+				capture: function(id) {
 					if (id !== 42) return null;
-					return { plainText: screen };
+					return { plain: screen };
 				}
 			};
 
@@ -1043,9 +1043,9 @@ func TestIntegration_SendToHandle_PromptSetupBlocker(t *testing.T) {
 				}
 			};
 			globalThis.tuiMux = {
-				snapshot: function(id) {
+				capture: function(id) {
 					if (id !== 42) return null;
-					return { plainText: screen };
+					return { plain: screen };
 				}
 			};
 
@@ -1100,7 +1100,7 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 	raw, err := evalJS(`
 		(async function() {
 			var calls = [];
-			var screenshotCalls = 0;
+			var captureCalls = 0;
 			var screen = 'Agent booting...';
 			prSplit._state = prSplit._state || {};
 			prSplit._state.agentSessionID = 42;
@@ -1116,13 +1116,13 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 				}
 			};
 			globalThis.tuiMux = {
-				snapshot: function(id) {
+				capture: function(id) {
 					if (id !== 42) return null;
-					screenshotCalls++;
-					if (screenshotCalls >= 3 && screen === 'Agent booting...') {
+					captureCalls++;
+					if (captureCalls >= 3 && screen === 'Agent booting...') {
 						screen = 'Agent shell\n❯ ';
 					}
-					return { plainText: screen };
+					return { plain: screen };
 				}
 			};
 
@@ -1145,7 +1145,7 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 			return JSON.stringify({
 				error: result.error,
 				calls: calls,
-				screenshotCalls: screenshotCalls
+				captureCalls: captureCalls
 			});
 		})()
 	`)
@@ -1154,9 +1154,9 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 	}
 
 	var result struct {
-		Error           *string  `json:"error"`
-		Calls           []string `json:"calls"`
-		ScreenshotCalls int      `json:"screenshotCalls"`
+		Error        *string  `json:"error"`
+		Calls        []string `json:"calls"`
+		CaptureCalls int      `json:"captureCalls"`
 	}
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatalf("parse error: %v", err)
@@ -1170,8 +1170,8 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 	if result.Calls[0] != "classify these files" || result.Calls[1] != "\r" {
 		t.Fatalf("unexpected send sequence: %+v", result.Calls)
 	}
-	if result.ScreenshotCalls < 3 {
-		t.Fatalf("expected multiple screenshot polls before prompt readiness, got %d", result.ScreenshotCalls)
+	if result.CaptureCalls < 3 {
+		t.Fatalf("expected multiple screenshot polls before prompt readiness, got %d", result.CaptureCalls)
 	}
 }
 

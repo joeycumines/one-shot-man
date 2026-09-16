@@ -402,8 +402,6 @@ func TestChunk16_CrashDetection_SessionModel(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
-			screenshot: function() { return ''; },
-			childScreen: function() { return ''; }
 		};
 		globalThis.prSplit._state.agentExecutor = {
 			handle: { isAlive: function() { return false; } },
@@ -1018,8 +1016,6 @@ func TestChunk16_PollAgentScreenshot_NoChild(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
-			screenshot: function() { return 'should-not-be-called'; },
-			childScreen: function() { return 'should-not-be-called'; }
 		};
 
 		var s = initState('PLAN_REVIEW');
@@ -1063,9 +1059,7 @@ func TestChunk16_PollAgentScreenshot_WithChild(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			childScreen: function() { return 'ansi-content-here'; },
-			screenshot: function() { return 'plain-content-here'; },
-			snapshot: function(id) { return { fullScreen: 'ansi-content-here', plainText: 'plain-content-here' }; },
+			capture: function(id) { return { fullScreen: 'ansi-content-here', plain: 'plain-content-here' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -1140,7 +1134,7 @@ func TestChunk16_SwitchTo_NoChild(t *testing.T) {
 			activeID: function() { return 0; },
 			activate: function(id) {},
 			switchTo: function() { switchCalled = true; },
-			snapshot: function(id) { return null; }
+			capture: function(id) { return null; }
 		};
 		// No agentSessionID — Agent not attached.
 		var savedCID = prSplit._state.agentSessionID;
@@ -1183,7 +1177,7 @@ func TestChunk16_SwitchTo_WithChild(t *testing.T) {
 			activeID: function() { return 99; },
 			activate: function(id) { activateCalls.push(id); },
 			switchTo: function() { switchCalled = true; return {reason: 'toggle'}; },
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; }
+			capture: function(id) { return { fullScreen: '', plain: '' }; }
 		};
 		// Set pinned Agent SessionID.
 		var savedCID = prSplit._state.agentSessionID;

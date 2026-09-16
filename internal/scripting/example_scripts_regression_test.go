@@ -76,7 +76,7 @@ func loadExampleProgram(t *testing.T, engine *Engine, scriptName string) {
 	var mgr = {
 		resize: function() {},
 		resizeSession: function() {},
-		snapshot: function() { return { plainText: 'mock shell', rows: 10, cols: 30, mouseTracking: 0 }; },
+		capture: function() { return { plain: 'mock shell', rows: 10, cols: 30, mouseTracking: 0 }; },
 		input: function() {},
 		close: function() {},
 		activeID: function() { return sid; },

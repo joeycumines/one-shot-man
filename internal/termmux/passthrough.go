@@ -2,8 +2,10 @@ package termmux
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
 )
@@ -96,11 +98,21 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 
 	// ── Screen display: clear or restore ────────────────────────────
 	if cfg.RestoreScreen {
-		// Restore the active session's VTerm screen in-place.
+		// Restore the active session's VTerm screen in-place. Best-effort:
+		// a session with no published snapshot yet (normal at startup, or
+		// a persistence-restored literal with a nil screen) has nothing to
+		// restore, so skip it. Only a real stdout write failure aborts.
 		snap := m.Snapshot(activeID)
-		if snap != nil && snap.GetFullScreen() != "" {
-			if err := writeOrLog(cfg.Stdout, []byte(snap.GetFullScreen()), "vterm-restore"); err != nil {
-				return ExitError, err
+		if snap != nil {
+			var b strings.Builder
+			if err := snap.WriteCapture(&b, CaptureFullScreen); err != nil {
+				if !errors.Is(err, ErrSnapshotUnavailable) {
+					return ExitError, err
+				}
+			} else if b.Len() > 0 {
+				if err := writeOrLog(cfg.Stdout, []byte(b.String()), "vterm-restore"); err != nil {
+					return ExitError, err
+				}
 			}
 		}
 		// Erase rows beyond the VTerm's height to prevent ghost

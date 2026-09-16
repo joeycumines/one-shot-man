@@ -29,8 +29,8 @@ func TestActivityReset_JSBinding(t *testing.T) {
 		function waitOutput(text, deadlineMs) {
 			return new Promise(function(resolve, reject) {
 				(function poll() {
-					var snap = mgr.snapshot(sid);
-					if (snap && snap.plainText && snap.plainText.indexOf(text) >= 0) return resolve();
+					var snap = mgr.capture(sid);
+					if (snap && snap.plain && snap.plain.indexOf(text) >= 0) return resolve();
 					if (Date.now() > deadlineMs) return reject(new Error('timeout waiting output ' + text));
 					setTimeout(poll, 10);
 				})();

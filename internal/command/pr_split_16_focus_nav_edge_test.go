@@ -568,7 +568,7 @@ func TestChunk16_CtrlBracketTermmux(t *testing.T) {
 			activeID: function() { return 99; },
 			activate: function(id) { activateCalls.push(id); },
 			switchTo: function() { switchCalled = true; return {reason: 'toggle'}; },
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; }
+			capture: function(id) { return { fullScreen: '', plain: '' }; }
 		};
 		// Set pinned Agent SessionID.
 		var savedCID = prSplit._state.agentSessionID;

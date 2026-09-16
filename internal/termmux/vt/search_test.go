@@ -179,6 +179,55 @@ func TestScreen_ScrollToMatch(t *testing.T) {
 	}
 }
 
+func TestScreen_ScrollToMatch_RoundTrip(t *testing.T) {
+	s := NewScreen(3, 5)
+	s.MaxScrollback = 10
+	for i := range 6 {
+		s.PutChar(rune('0' + i))
+		s.CurCol = 0
+		s.LineFeed()
+	}
+	if s.ScrollbackLen != 4 {
+		t.Fatalf("ScrollbackLen = %d, want 4", s.ScrollbackLen)
+	}
+
+	// Absolute row 1 must become visible: the viewport window at the
+	// resulting offset must contain it, using the same coordinates as
+	// VisibleLines, SelectStart/SelectEnd and SearchForward/SearchBackward
+	// (0 = oldest scrollback line).
+	if !s.ScrollToMatch(1) {
+		t.Fatalf("ScrollToMatch(1) reported no change (offset=%d)", s.ScrollOffset)
+	}
+	lines := s.VisibleLines()
+	found := false
+	for r := 0; r < s.Rows; r++ {
+		if lines[r][0].Ch == '1' {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("absolute row '1' not visible after ScrollToMatch (offset=%d)", s.ScrollOffset)
+	}
+
+	// Wrapped-flag coherence: a wrapped absolute scrollback row scrolled
+	// into view must agree between VisibleLines and VisibleRowWrapped.
+	s.ScrollbackWrapped[1] = true
+	s.ScrollToMatch(1)
+	lines = s.VisibleLines()
+	idx := -1
+	for r := 0; r < s.Rows; r++ {
+		if lines[r][0].Ch == '1' {
+			idx = r
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("absolute row '1' lost after re-scroll")
+	}
+	if !s.VisibleRowWrapped(idx) {
+		t.Errorf("VisibleRowWrapped(%d)=false but window shows wrapped absolute row 1", idx)
+	}
+}
+
 func TestScreen_ScrollToMatch_AlreadyVisible(t *testing.T) {
 	s := newTestScreen(5, 20, 0)
 	changed := s.ScrollToMatch(2)
@@ -332,5 +381,41 @@ func TestScreen_ScrollToBottom(t *testing.T) {
 	s.ScrollToBottom()
 	if s.ScrollOffset != 0 {
 		t.Errorf("ScrollToBottom offset = %d, want 0", s.ScrollOffset)
+	}
+}
+
+func TestScreen_ScrollClampHonorsMaxScrollOffset(t *testing.T) {
+	s := newTestScreen(5, 20, 100)
+	for range 20 {
+		for j, ch := range "line" {
+			s.Cells[0][j].Ch = ch
+		}
+		s.ScrollUp(1)
+	}
+	max := s.MaxScrollOffset()
+	if max <= 0 {
+		t.Fatalf("MaxScrollOffset = %d, want > 0", max)
+	}
+	// PageUp/PageDown adjust ScrollOffset (Screen.ScrollUp scrolls the region
+	// instead, so it must not be used here).
+	for range 10 {
+		s.PageUp()
+	}
+	if s.ScrollOffset != max {
+		t.Errorf("PageUp beyond max: offset = %d, want %d", s.ScrollOffset, max)
+	}
+	for range 10 {
+		s.PageDown()
+	}
+	if s.ScrollOffset != 0 {
+		t.Errorf("PageDown below zero: offset = %d, want 0", s.ScrollOffset)
+	}
+	s.ScrollToTop()
+	if s.ScrollOffset != max {
+		t.Errorf("ScrollToTop: offset = %d, want %d", s.ScrollOffset, max)
+	}
+	s.ScrollToBottom()
+	if s.ScrollOffset != 0 {
+		t.Errorf("ScrollToBottom: offset = %d, want 0", s.ScrollOffset)
 	}
 }

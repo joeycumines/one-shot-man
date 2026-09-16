@@ -950,9 +950,9 @@ func TestViews_AgentPane_WithPinnedSession(t *testing.T) {
 		prSplit._state = prSplit._state || {};
 		prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
-			snapshot: function(id) {
+			capture: function(id) {
 				if (id !== 42) return null;
-				return { plainText: 'mock screenshot' };
+				return { plain: 'mock screenshot' };
 			},
 			isDone: function(id) { return false; },
 			activeID: function() { return 0; },

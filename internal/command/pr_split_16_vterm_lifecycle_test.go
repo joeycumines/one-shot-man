@@ -26,7 +26,7 @@ var __mockCID = 42;
 prSplit._state = prSplit._state || {};
 prSplit._state.agentSessionID = __mockCID;
 globalThis.tuiMux = {
-	snapshot: function(id) { return { fullScreen: 'agent output', plainText: 'agent screenshot' }; },
+	capture: function(id) { return { fullScreen: 'agent output', plain: 'agent screenshot' }; },
 	isDone: function(id) { return false; },
 	activeID: function() { return __mockCID; },
 	activate: function(id) {},
@@ -354,8 +354,6 @@ func TestChunk16_VTerm_Lifecycle_NoChildNoAutoAttach(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return false; } }; },
-			childScreen: function() { return ''; },
-			screenshot: function() { return ''; },
 			lastActivityMs: function() { return -1; }
 		};
 		` + lifecycleExecutorSetup + `
@@ -409,9 +407,7 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseOnChildExit(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },  // child exited
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
-			childScreen: function() { return ''; },
-			screenshot: function() { return ''; },
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			isDone: function(id) { return true; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -480,9 +476,7 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseBlockedDuringPipeline(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },  // child exited
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
-			childScreen: function() { return ''; },
-			screenshot: function() { return ''; },
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			isDone: function(id) { return true; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -570,7 +564,7 @@ func TestChunk16_VTerm_Lifecycle_AgentBadgeIdle(t *testing.T) {
 		prSplit._state = prSplit._state || {};
 		prSplit._state.agentSessionID = __mockCID;
 		globalThis.tuiMux = {
-			snapshot: function(id) { return { fullScreen: 'output', plainText: 'output' }; },
+			capture: function(id) { return { fullScreen: 'output', plain: 'output' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -649,7 +643,7 @@ func TestChunk16_VTerm_Lifecycle_AgentBadgeQuiet(t *testing.T) {
 		prSplit._state = prSplit._state || {};
 		prSplit._state.agentSessionID = __mockCID;
 		globalThis.tuiMux = {
-			snapshot: function(id) { return { fullScreen: 'output', plainText: 'output' }; },
+			capture: function(id) { return { fullScreen: 'output', plain: 'output' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -1014,7 +1008,6 @@ func TestChunk16_VTerm_Lifecycle_FullFlow(t *testing.T) {
 			s.autoSplitRunning = false;
 			s.agentAutoAttached = true;
 			globalThis.tuiMux.isDone = function(id) { return true; };
-			globalThis.tuiMux.snapshot = function(id) { return { fullScreen: '', plainText: '' }; };
 
 			r = update({type: 'Tick', id: 'agent-screenshot'}, s);
 			s = r[0];
@@ -1047,8 +1040,6 @@ func TestChunk16_VTerm_Lifecycle_ManualOpenNotAutoClosed(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
-			childScreen: function() { return ''; },
-			screenshot: function() { return ''; },
 			lastActivityMs: function() { return -1; },
 			writeToChild: function() {}
 		};

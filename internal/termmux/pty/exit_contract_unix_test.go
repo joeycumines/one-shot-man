@@ -194,7 +194,6 @@ func TestProcess_Wait_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(callers)
 	for i := range callers {
-		i := i
 		go func() {
 			defer wg.Done()
 			codes[i], errs[i] = proc.Wait()

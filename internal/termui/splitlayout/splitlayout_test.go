@@ -110,7 +110,7 @@ func startTestManager(t *testing.T, sessionCount int) (*termmux.SessionManager, 
 		deadline := time.After(2 * time.Second)
 		for {
 			snap := m.Snapshot(id)
-			if snap != nil && strings.Contains(snap.GetPlainText(), "ready") {
+			if snap != nil && strings.Contains(snapshotPlainText(snap), "ready") {
 				break
 			}
 			select {
@@ -703,3 +703,83 @@ func TestWithRatios(t *testing.T) {
 var _ tea.Model = (*SplitLayout)(nil)
 var _ SplitLayoutOption = (*DirectionOption)(nil)
 var _ SplitLayoutOption = (*RatiosOption)(nil)
+
+// snapshotPlainText renders the plain-text capture of snap.
+func snapshotPlainText(snap *termmux.ScreenSnapshot) string {
+	var b strings.Builder
+	if err := snap.WriteCapture(&b, termmux.CapturePlain); err != nil {
+		return ""
+	}
+	return b.String()
+}
+
+func TestSplitLayout_View_HidesCursorWhenChildHidIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	mgr, _, ids, cleanup := startTestManager(t, 1)
+	defer cleanup()
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	}
+	sl := NewSplitLayout(mgr, bounds)
+	defer sl.Close()
+	sl.AddPane(ids[0])
+	sl.mu.Lock()
+	sl.panes[0].cursorVisible = false
+	sl.panes[0].cursorRow = 0
+	sl.panes[0].cursorCol = 0
+	sl.panes[0].LastGen = mgr.Snapshot(ids[0]).Gen
+	sl.mu.Unlock()
+	if v := sl.View(); v.Cursor != nil {
+		t.Errorf("View drew cursor for hidden child cursor: %+v", v.Cursor)
+	}
+	sl.mu.Lock()
+	sl.panes[0].cursorVisible = true
+	sl.mu.Unlock()
+	if v := sl.View(); v.Cursor == nil {
+		t.Error("View hid cursor for visible child cursor")
+	}
+}
+
+func TestSplitLayout_View_PairsCursorWithContentGeneration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	mgr, _, ids, cleanup := startTestManager(t, 1)
+	defer cleanup()
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	}
+	sl := NewSplitLayout(mgr, bounds)
+	defer sl.Close()
+	sl.AddPane(ids[0])
+	// Pin LastGen to the manager's current snapshot Gen so capturePaneIfStale
+	// does not refetch and overwrites the planted cursor values. This makes
+	// the test exercise the stored-cursor path and fail if the View reads
+	// cursor from a fresh Snapshot instead of the pane's stored state.
+	sl.mu.Lock()
+	sl.panes[0].LastGen = mgr.Snapshot(ids[0]).Gen
+	sl.mu.Unlock()
+
+	// Simulate a stale pane refreshed at an older generation, then prove the
+	// cursor stored alongside content (not a fresh Snapshot read) wins.
+	sl.mu.Lock()
+	sl.panes[0].cursorRow = 7
+	sl.panes[0].cursorCol = 9
+	sl.panes[0].cursorVisible = true
+	sl.mu.Unlock()
+	v := sl.View()
+	if v.Cursor == nil {
+		t.Fatal("expected cursor from stored pane state")
+	}
+	sl.mu.Lock()
+	row, col := sl.panes[0].cursorRow, sl.panes[0].cursorCol
+	b := sl.panes[0].Bounds
+	sl.mu.Unlock()
+	if v.Cursor.Position.X != col+b.Position.X || v.Cursor.Position.Y != row+b.Position.Y {
+		t.Errorf("cursor = (%d,%d), want stored (%d,%d) offset by pane origin", v.Cursor.Position.X, v.Cursor.Position.Y, col, row)
+	}
+}

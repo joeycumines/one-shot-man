@@ -10,7 +10,7 @@ import (
 // VTerm Integration Tests: Agent Pane Rendering
 //
 // These tests verify the Agent pane rendering pipeline:
-//   tuiMux.snapshot(agentSessionID) → pollAgentScreenshot → state fields →
+//   tuiMux.capture(agentSessionID) → pollAgentScreenshot → state fields →
 //   renderAgentPane → _wizardView (split-view layout)
 //
 // All tests use mock tuiMux objects at the JS layer — no real process, no
@@ -27,7 +27,7 @@ var __mockCID = 42;
 prSplit._state = prSplit._state || {};
 prSplit._state.agentSessionID = __mockCID;
 globalThis.tuiMux = {
-	snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+	capture: function(id) { return { fullScreen: '', plain: '' }; },
 	isDone: function(id) { return false; },
 	activeID: function() { return __mockCID; },
 	activate: function(id) {},
@@ -169,8 +169,6 @@ func TestChunk16_VTerm_RenderAgentPane_Placeholder_EmptyContent(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			childScreen: function() { return ''; },
-			screenshot: function() { return ''; }
 		};
 		try {
 			var s = initState('PLAN_REVIEW');
@@ -332,9 +330,7 @@ func TestChunk16_VTerm_PollAgentScreenshot_DrainsMuxEvents(t *testing.T) {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			pollEvents: function() { pollCalls++; return 1; },
-			childScreen: function() { return 'ANSI screen'; },
-			screenshot: function() { return 'plain screen'; },
-			snapshot: function(id) { return { fullScreen: 'ANSI screen', plainText: 'plain screen' }; },
+			capture: function(id) { return { fullScreen: 'ANSI screen', plain: 'plain screen' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -382,9 +378,7 @@ func TestChunk16_VTerm_PollScreenshot_CapturesFromMux(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			childScreen: function() { return '\x1b[33mANSI yellow\x1b[0m'; },
-			screenshot: function() { return 'plain screenshot output'; },
-			snapshot: function(id) { return { fullScreen: '\x1b[33mANSI yellow\x1b[0m', plainText: 'plain screenshot output' }; },
+			capture: function(id) { return { fullScreen: '\x1b[33mANSI yellow\x1b[0m', plain: 'plain screenshot output' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -436,8 +430,6 @@ func TestChunk16_VTerm_PollScreenshot_NoChild_ClearsState(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
-			childScreen: function() { return ''; },
-			screenshot: function() { return ''; },
 			lastActivityMs: function() { return 0; },
 			writeToChild: function() {}
 		};
@@ -522,9 +514,7 @@ func TestChunk16_VTerm_PollScreenshot_AutoCloseOnChildExit(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
-			childScreen: function() { return ''; },
-			screenshot: function() { return ''; },
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			isDone: function(id) { return true; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -929,8 +919,6 @@ func TestChunk16_VTerm_AutoAttach_SmallTerminalPrevented(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			childScreen: function() { return 'content'; },
-			screenshot: function() { return 'content'; },
 			lastActivityMs: function() { return 100; }
 		};
 		try {
@@ -993,9 +981,7 @@ func TestChunk16_VTerm_FullRenderPipeline_MuxToView(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			childScreen: function() { return ansiContent; },
-			screenshot: function() { return plainContent; },
-			snapshot: function(id) { return { fullScreen: ansiContent, plainText: plainContent }; },
+			capture: function(id) { return { fullScreen: ansiContent, plain: plainContent }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},

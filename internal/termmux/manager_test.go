@@ -95,15 +95,11 @@ func TestScreenSnapshot_ConcurrentReadSafe(t *testing.T) {
 	// Writer goroutine (simulates the worker).
 	wg.Go(func() {
 		for i := range iterations {
-			snap := &ScreenSnapshot{
-				Gen:             uint64(i),
-				plainTextCache:  "hello",
-				ansiCache:       "\x1b[32mhello\x1b[0m",
-				fullScreenCache: "\x1b[1;1Hhello",
-				Rows:            24,
-				Cols:            80,
-				Timestamp:       time.Now(),
+			scr := vt.NewScreen(24, 80)
+			for c, ch := range "hello" {
+				scr.Cells[0][c].Ch = ch
 			}
+			snap := NewScreenSnapshot(uint64(i), scr, 24, 80, time.Now())
 			ms.snapshot.Store(snap)
 		}
 	})
@@ -120,9 +116,9 @@ func TestScreenSnapshot_ConcurrentReadSafe(t *testing.T) {
 				}
 				// Access all fields — the race detector would catch sharing.
 				_ = snap.Gen
-				_ = snap.GetPlainText()
-				_ = snap.GetANSI()
-				_ = snap.GetFullScreen()
+				_ = captureOf(snap, CapturePlain)
+				_ = captureOf(snap, CaptureANSI)
+				_ = captureOf(snap, CaptureFullScreen)
 				_ = snap.Rows
 				_ = snap.Cols
 				_ = snap.Timestamp
@@ -429,26 +425,20 @@ func TestManagedSession_SnapshotLoadStore(t *testing.T) {
 	}
 
 	// Publish a snapshot.
-	snap1 := &ScreenSnapshot{
-		Gen:            1,
-		plainTextCache: "gen1",
-		Rows:           24,
-		Cols:           80,
-		Timestamp:      time.Now(),
-	}
+	snap1 := NewScreenSnapshot(1, newTestScreen("gen1"), 24, 80, time.Now())
 	ms.snapshot.Store(snap1)
 
 	loaded := ms.snapshot.Load()
 	if loaded == nil {
 		t.Fatal("loaded snapshot is nil after Store")
 	}
-	if loaded.Gen != 1 || loaded.GetPlainText() != "gen1" {
+	if loaded.Gen != 1 || captureOf(loaded, CapturePlain) != "gen1" {
 		t.Errorf("snapshot = {Gen: %d, PlainText: %q}, want {1, gen1}",
-			loaded.Gen, loaded.GetPlainText())
+			loaded.Gen, captureOf(loaded, CapturePlain))
 	}
 
 	// Overwrite with a new generation.
-	snap2 := &ScreenSnapshot{Gen: 2, plainTextCache: "gen2"}
+	snap2 := NewScreenSnapshot(2, newTestScreen("gen2"), 24, 80, time.Now())
 	ms.snapshot.Store(snap2)
 
 	loaded = ms.snapshot.Load()
@@ -457,7 +447,7 @@ func TestManagedSession_SnapshotLoadStore(t *testing.T) {
 	}
 
 	// Original snap1 is unaffected (immutability).
-	if snap1.Gen != 1 || snap1.GetPlainText() != "gen1" {
+	if snap1.Gen != 1 || captureOf(snap1, CapturePlain) != "gen1" {
 		t.Error("snap1 was mutated after publishing snap2")
 	}
 }
@@ -1031,13 +1021,13 @@ func TestSessionManager_MergedOutput_VTerm(t *testing.T) {
 	if snap == nil {
 		t.Fatal("Snapshot is nil after output")
 	}
-	if snap.GetPlainText() != "hello world" {
-		t.Errorf("PlainText = %q, want %q", snap.GetPlainText(), "hello world")
+	if captureOf(snap, CapturePlain) != "hello world" {
+		t.Errorf("PlainText = %q, want %q", captureOf(snap, CapturePlain), "hello world")
 	}
-	if snap.GetANSI() == "" {
+	if captureOf(snap, CaptureANSI) == "" {
 		t.Error("ANSI is empty, want non-empty")
 	}
-	if snap.GetFullScreen() == "" {
+	if captureOf(snap, CaptureFullScreen) == "" {
 		t.Error("FullScreen should not be empty after output")
 	}
 	if snap.Gen < 2 {
@@ -1290,8 +1280,8 @@ func TestSessionManager_RoundTrip(t *testing.T) {
 	if snap == nil {
 		t.Fatal("Snapshot is nil after output")
 	}
-	if snap.GetPlainText() != "total 42" {
-		t.Errorf("PlainText = %q, want %q", snap.GetPlainText(), "total 42")
+	if captureOf(snap, CapturePlain) != "total 42" {
+		t.Errorf("PlainText = %q, want %q", captureOf(snap, CapturePlain), "total 42")
 	}
 }
 
@@ -1503,25 +1493,25 @@ func TestSessionManager_Pipeline_OutputFlowsToSnapshot(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && snap.GetPlainText() == "pipeline output" {
+		if snap != nil && captureOf(snap, CapturePlain) == "pipeline output" {
 			break
 		}
 		select {
 		case <-deadline:
 			snap := m.Snapshot(id)
-			t.Fatalf("timed out waiting for snapshot; PlainText = %q", snap.GetPlainText())
+			t.Fatalf("timed out waiting for snapshot; PlainText = %q", captureOf(snap, CapturePlain))
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
 
 	snap := m.Snapshot(id)
-	if snap.GetPlainText() != "pipeline output" {
-		t.Errorf("PlainText = %q, want %q", snap.GetPlainText(), "pipeline output")
+	if captureOf(snap, CapturePlain) != "pipeline output" {
+		t.Errorf("PlainText = %q, want %q", captureOf(snap, CapturePlain), "pipeline output")
 	}
-	if snap.GetANSI() == "" {
+	if captureOf(snap, CaptureANSI) == "" {
 		t.Error("ANSI should not be empty")
 	}
-	if snap.GetFullScreen() == "" {
+	if captureOf(snap, CaptureFullScreen) == "" {
 		t.Error("FullScreen should not be empty")
 	}
 }
@@ -1894,11 +1884,11 @@ func TestSessionManager_Pipeline_MultipleSessionsIndependent(t *testing.T) {
 
 	snap1 := m.Snapshot(id1)
 	snap2 := m.Snapshot(id2)
-	if snap1 == nil || snap1.GetPlainText() != "output-a" {
-		t.Errorf("session 1 PlainText = %q, want %q", snap1.GetPlainText(), "output-a")
+	if snap1 == nil || captureOf(snap1, CapturePlain) != "output-a" {
+		t.Errorf("session 1 PlainText = %q, want %q", captureOf(snap1, CapturePlain), "output-a")
 	}
-	if snap2 == nil || snap2.GetPlainText() != "output-b" {
-		t.Errorf("session 2 PlainText = %q, want %q", snap2.GetPlainText(), "output-b")
+	if snap2 == nil || captureOf(snap2, CapturePlain) != "output-b" {
+		t.Errorf("session 2 PlainText = %q, want %q", captureOf(snap2, CapturePlain), "output-b")
 	}
 }
 
@@ -1930,10 +1920,10 @@ func TestSessionManager_Pipeline_DelayedStart(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	snap := m.Snapshot(id)
-	if snap == nil || snap.GetPlainText() != "delayed output" {
+	if snap == nil || captureOf(snap, CapturePlain) != "delayed output" {
 		plain := ""
 		if snap != nil {
-			plain = snap.GetPlainText()
+			plain = captureOf(snap, CapturePlain)
 		}
 		t.Errorf("PlainText = %q, want %q", plain, "delayed output")
 	}
@@ -2508,11 +2498,11 @@ func TestSessionManager_Pipeline_SessionSwitchingOutputRouted(t *testing.T) {
 	// Verify both sessions have independent content.
 	snap1 := m.Snapshot(id1)
 	snap2 := m.Snapshot(id2)
-	if snap1 == nil || !strings.Contains(snap1.GetPlainText(), "output-a") {
-		t.Errorf("session 1 PlainText = %q, want containing %q", snap1.GetPlainText(), "output-a")
+	if snap1 == nil || !strings.Contains(captureOf(snap1, CapturePlain), "output-a") {
+		t.Errorf("session 1 PlainText = %q, want containing %q", captureOf(snap1, CapturePlain), "output-a")
 	}
-	if snap2 == nil || !strings.Contains(snap2.GetPlainText(), "output-b") {
-		t.Errorf("session 2 PlainText = %q, want containing %q", snap2.GetPlainText(), "output-b")
+	if snap2 == nil || !strings.Contains(captureOf(snap2, CapturePlain), "output-b") {
+		t.Errorf("session 2 PlainText = %q, want containing %q", captureOf(snap2, CapturePlain), "output-b")
 	}
 
 	// Verify session B is now active.

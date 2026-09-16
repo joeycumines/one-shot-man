@@ -637,8 +637,8 @@ func TestWindowSwitch_JSRouting(t *testing.T) {
 		// SessionManager pipeline can deliver PTY bytes to the VTerm.
 		return new Promise(function(resolve, reject) {
 			(function poll() {
-				var snap = tuiMux.snapshot(active.id);
-				var text = snap && snap.plainText ? snap.plainText : '';
+				var snap = tuiMux.capture(active.id);
+				var text = snap && snap.plain ? snap.plain : '';
 				if (text.indexOf('routed') >= 0) return resolve(text);
 				if (Date.now() > (poll.deadline || (poll.deadline = Date.now() + 10000))) {
 					return reject(new Error('input did not reach active session; snapshot=' + text));
@@ -820,26 +820,26 @@ func TestRespawnSession_JSBinding_RebindsPane(t *testing.T) {
 
 	_, err := awaitJSValue(t, runtime, `
 		var sess = termmux.newCaptureSession(exitBin);
-		sess.start();
+		await sess.start();
 		tuiMux.setRemainOnExit(true);
 		var paneId = tuiMux.splitHorizontal({ session: sess, target: { name: "respawn-js", kind: "capture" } });
 		if (paneId === 0) { throw new Error("expected valid pane id"); }
 
-		var sid = 1;
-		var deadline = Date.now() + 5000;
-		var exited = false;
-		while (Date.now() < deadline) {
-			var list = tuiMux.sessions();
-			for (var i = 0; i < list.length; i++) {
-				if (list[i].state === "exited") {
-					exited = true;
-					break;
-				}
-			}
-			if (exited) break;
+		function waitExited(deadlineMs) {
+			return new Promise(function(resolve, reject) {
+				(function poll() {
+					var list = tuiMux.sessions();
+					for (var i = 0; i < list.length; i++) {
+						if (list[i].state === "exited") return resolve();
+					}
+					if (Date.now() > deadlineMs) return reject(new Error("timeout waiting for session exit"));
+					setTimeout(poll, 10);
+				})();
+			});
 		}
-		if (!exited) { throw new Error("timeout waiting for session exit"); }
+		await waitExited(Date.now() + 5000);
 
+		var sid = 1;
 		var newSid = tuiMux.respawnSession(sid);
 		if (newSid === 0 || newSid === sid) {
 			throw new Error("expected valid new session id, got " + newSid);

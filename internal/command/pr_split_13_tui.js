@@ -317,14 +317,14 @@
     prSplit._buildReport = buildReport;
 
     // Build a pinned proxy for Agent's session, modeled after
-    // _buildVerifyProxy. Uses tuiMux.snapshot(sessionID) for reads and
+    // _buildVerifyProxy. Uses tuiMux.capture(sessionID) for reads and
     // explicit activate/restore for writes, so no code path can confuse
     // Agent's pane with verify's when ActiveID changes temporarily.
     function _buildAgentProxy(sessionID) {
         return {
             screen: function() {
                 try {
-                    var snap = tuiMux.snapshot(sessionID);
+                    var snap = tuiMux.capture(sessionID);
                     return snap ? (snap.fullScreen || '') : '';
                 } catch (e) {
                     log.debug('agentProxy.screen failed', { sessionID: sessionID, error: e.message || String(e) });
@@ -333,8 +333,8 @@
             },
             output: function() {
                 try {
-                    var snap = tuiMux.snapshot(sessionID);
-                    return snap ? (snap.plainText || '') : '';
+                    var snap = tuiMux.capture(sessionID);
+                    return snap ? (snap.plain || '') : '';
                 } catch (e) {
                     log.debug('agentProxy.output failed', { sessionID: sessionID, error: e.message || String(e) });
                     return '';
@@ -445,7 +445,7 @@
             var val = s.activeVerifySession;
             if (val == null) return null;
             // Task 48: If val is a number (SessionManager ID), build a proxy
-            // that routes screen/output through tuiMux.snapshot. Otherwise
+            // that routes screen/output through tuiMux.capture. Otherwise
             // (legacy tests or mocks), return the object directly.
             if (typeof val === 'number') {
                 return _buildVerifyProxy(val, s._verifySessionRef);
@@ -463,7 +463,7 @@
         return {
             screen: function() {
                 try {
-                    var snap = tuiMux.snapshot(sessionID);
+                    var snap = tuiMux.capture(sessionID);
                     return snap ? (snap.fullScreen || '') : '';
                 } catch (e) {
                     log.debug('verifyProxy.screen failed', { sessionID: sessionID, error: e.message || String(e) });
@@ -472,8 +472,8 @@
             },
             output: function() {
                 try {
-                    var snap = tuiMux.snapshot(sessionID);
-                    return snap ? (snap.plainText || '') : '';
+                    var snap = tuiMux.capture(sessionID);
+                    return snap ? (snap.plain || '') : '';
                 } catch (e) {
                     log.debug('verifyProxy.output failed', { sessionID: sessionID, error: e.message || String(e) });
                     return '';

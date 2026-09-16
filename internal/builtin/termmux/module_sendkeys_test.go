@@ -29,8 +29,8 @@ func TestSendKeys_JSBinding(t *testing.T) {
 
 		return new Promise(function(resolve, reject) {
 			(function poll() {
-				var snap = tuiMux.snapshot(s.sid);
-				var text = snap && snap.plainText ? snap.plainText : "";
+				var snap = tuiMux.capture(s.sid);
+				var text = snap && snap.plain ? snap.plain : "";
 				if (text.indexOf("hello") >= 0 && text.indexOf("world") >= 0) return resolve(text);
 				if (Date.now() > (poll.deadline || (poll.deadline = Date.now() + 5000))) return reject(new Error("timeout waiting for output"));
 				setTimeout(poll, 50);

@@ -6,6 +6,7 @@ package termpane
 
 import (
 	"log/slog"
+	"strings"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
@@ -62,9 +63,14 @@ type Model struct {
 	// outputCh to avoid "send on closed channel" panics.
 	wg sync.WaitGroup
 
-	// snap holds the most recent ScreenSnapshot from the session manager.
-	// Updated in Update when an outputMsg arrives.
-	snap *termmux.ScreenSnapshot
+	// snap holds the metadata of the most recent capture from the session
+	// manager, text holds that capture's full-screen representation, and
+	// ansiText holds its ANSI representation for compositor embedding.
+	// All three are updated together when an outputMsg arrives; View and
+	// ANSIView render from these caches without manager IPC.
+	snap     *termmux.ScreenSnapshot
+	text     string
+	ansiText string
 
 	// cachedView is the rendered Content string from the last View call.
 	cachedView string
@@ -114,14 +120,35 @@ func NewModel(sessionID termmux.SessionID, manager *termmux.SessionManager, boun
 	m.wg.Add(1)
 	go m.bridgeEvents()
 
-	// Get initial snapshot.
-	m.snap = manager.Snapshot(sessionID)
+	// Get initial capture.
+	m.refreshCapture()
 	if m.snap != nil {
 		m.appCursor = m.snap.ApplicationCursor
 		m.appKeypad = m.snap.KeypadApplication
 	}
 
 	return m
+}
+
+// refreshCapture fetches the pane session's capture and stores its metadata
+// plus both rendered variants on the model: text holds the full-screen
+// representation for View, ansiText holds the ANSI representation for
+// ANSIView. Called on NewModel, outputMsg, and RefreshSnapshot — never from
+// the render path, so View/ANSIView perform no manager IPC under m.mu.
+func (m *Model) refreshCapture() {
+	full, err := m.manager.CaptureScreen(m.sessionID, termmux.CaptureOptions{Kind: termmux.CaptureFullScreen})
+	if err != nil {
+		m.snap, m.text, m.ansiText = nil, "", ""
+		return
+	}
+	m.snap = full.Snapshot
+	m.text = full.Text
+	var b strings.Builder
+	if werr := full.Snapshot.WriteCapture(&b, termmux.CaptureANSI); werr == nil {
+		m.ansiText = b.String()
+	} else {
+		m.ansiText = ""
+	}
 }
 
 // bridgeEvents reads events from the EventBus subscription channel and
@@ -184,9 +211,9 @@ func (m *Model) waitForOutput() tea.Msg {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case outputMsg:
-		// Refresh snapshot from the manager (authoritative source).
+		// Refresh capture from the manager (authoritative source).
 		m.mu.Lock()
-		m.snap = m.manager.Snapshot(m.sessionID)
+		m.refreshCapture()
 		if m.snap != nil {
 			m.appCursor = m.snap.ApplicationCursor
 			m.appKeypad = m.snap.KeypadApplication
@@ -291,7 +318,9 @@ func (m *Model) forwardMouse(msg tea.MouseMsg) {
 	}
 }
 
-// viewContentAndCursor renders the view while the caller holds m.mu.
+// viewContentAndCursor renders the view while the caller holds m.mu. The
+// cursor is drawn only when the child left it visible (CursorVisible from
+// DECTCEM) and its position falls inside the pane bounds.
 func (m *Model) viewContentAndCursor(contentFunc func() string) tea.View {
 	if m.snap == nil {
 		return tea.NewView("")
@@ -302,7 +331,8 @@ func (m *Model) viewContentAndCursor(contentFunc func() string) tea.View {
 	cursorRow := m.snap.CursorRow + m.bounds.Position.Y
 	cursorCol := m.snap.CursorCol + m.bounds.Position.X
 
-	cursorVisible := cursorRow >= m.bounds.Position.Y &&
+	cursorVisible := m.snap.CursorVisible &&
+		cursorRow >= m.bounds.Position.Y &&
 		cursorRow < m.bounds.Position.Y+m.bounds.Size.Height &&
 		cursorCol >= m.bounds.Position.X &&
 		cursorCol < m.bounds.Position.X+m.bounds.Size.Width
@@ -337,12 +367,11 @@ func (m *Model) View() tea.View {
 		return v
 	}
 
-	// Render the full screen content.
-	content := m.snap.GetFullScreen()
-	if content == "" {
-		// Fallback to ANSI if FullScreen is empty.
-		content = m.snap.GetANSI()
-	}
+	// Render the cached full-screen content. No manager IPC here: refreshCapture
+	// (on outputMsg) is the sole fetcher. An empty capture renders empty;
+	// falling back to a different representation would cache ANSI content
+	// under the fullscreen generation.
+	content := m.text
 
 	v := m.viewContentAndCursor(func() string { return content })
 
@@ -357,6 +386,8 @@ func (m *Model) View() tea.View {
 // compositor layer. The content contains SGR escape sequences but no absolute
 // cursor-positioning (CUP) sequences, so it can be composited at arbitrary
 // coordinates. The cursor is positioned relative to the pane's bounds.
+// Content comes from the cached ANSI capture; when it is empty the view is
+// empty rather than the full-screen CUP patch, which would misplace content.
 func (m *Model) ANSIView() tea.View {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -365,11 +396,7 @@ func (m *Model) ANSIView() tea.View {
 		if m.snap == nil {
 			return ""
 		}
-		content := m.snap.GetANSI()
-		if content == "" {
-			content = m.snap.GetFullScreen()
-		}
-		return content
+		return m.ansiText
 	})
 }
 
@@ -431,7 +458,7 @@ func (m *Model) RefreshSnapshot() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.snap = m.manager.Snapshot(m.sessionID)
+	m.refreshCapture()
 	if m.snap != nil {
 		m.appCursor = m.snap.ApplicationCursor
 		m.appKeypad = m.snap.KeypadApplication

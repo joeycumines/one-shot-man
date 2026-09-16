@@ -376,7 +376,7 @@ func TestSessionManager_Passthrough_RestoreScreen(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && strings.Contains(snap.GetPlainText(), "screen-content") {
+		if snap != nil && strings.Contains(captureOf(snap, CapturePlain), "screen-content") {
 			break
 		}
 		select {
@@ -529,7 +529,7 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && strings.Contains(snap.GetPlainText(), "restore-me") {
+		if snap != nil && strings.Contains(captureOf(snap, CapturePlain), "restore-me") {
 			break
 		}
 		select {
@@ -884,5 +884,102 @@ func TestCaptureSession_Passthrough_WithTerminalState(t *testing.T) {
 	}
 	if !bg.isRestoreCalled() {
 		t.Error("BlockingGuard.Restore was not called")
+	}
+}
+
+func TestSessionManager_Passthrough_RestoreScreen_NoSnapshot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	// Register but publish no output, so no snapshot exists yet.
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "test-pt-nosnap", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if err := m.Activate(id); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+
+	toggleKey := byte(0x1D)
+	stdin := bytes.NewReader([]byte{toggleKey})
+	stdout := &bytes.Buffer{}
+
+	// Best-effort restore: no snapshot must skip the restore and continue
+	// the session, not abort with ExitError.
+	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+		Stdin:         stdin,
+		Stdout:        stdout,
+		TermFd:        -1,
+		ToggleKey:     toggleKey,
+		RestoreScreen: true,
+	})
+	if err != nil {
+		t.Fatalf("Passthrough with no snapshot error: %v", err)
+	}
+	if reason != ExitToggle {
+		t.Errorf("reason = %v, want ExitToggle", reason)
+	}
+}
+
+func TestSessionManager_Passthrough_RestoreScreen_NilScreenSnapshot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	// Register with output so the session is running, then swap in a
+	// persistence-style snapshot literal with a nil screen. The old code
+	// returned "" from GetFullScreen and skipped; WriteCapture returns
+	// ErrSnapshotUnavailable, which the restore must treat as skip — not
+	// ExitError. Reverting passthrough.go to `return ExitError, err` on any
+	// WriteCapture error fails this test.
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "test-pt-nilscreen", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	session.readerCh <- []byte("ready")
+	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
+	if err := m.Activate(id); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+	published := m.Snapshot(id)
+	if published == nil {
+		t.Fatal("published snapshot is nil")
+	}
+	nilScreen := published.Clone()
+	nilScreen.SetTestScreen(nil)
+	if err := m.ReplaceSnapshotForTest(id, nilScreen); err != nil {
+		t.Fatalf("ReplaceSnapshotForTest: %v", err)
+	}
+	if got := m.Snapshot(id); got == nil || got.SnapshotScreenForTest() != nil {
+		t.Fatal("test setup failed to install nil-screen snapshot")
+	}
+
+	toggleKey := byte(0x1D)
+	stdin := bytes.NewReader([]byte{toggleKey})
+	stdout := &bytes.Buffer{}
+
+	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+		Stdin:         stdin,
+		Stdout:        stdout,
+		TermFd:        -1,
+		ToggleKey:     toggleKey,
+		RestoreScreen: true,
+	})
+	if err != nil {
+		t.Fatalf("Passthrough with nil-screen snapshot error: %v", err)
+	}
+	if reason != ExitToggle {
+		t.Errorf("reason = %v, want ExitToggle", reason)
 	}
 }

@@ -10,14 +10,9 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
 
-// PlainTextSnapshot is satisfied by values that can vend plain-text rows.
-type PlainTextSnapshot interface {
-	GetPlainText() string
-}
-
-// ScreenSearcher implements parent.ScreenSearcher over a snapshot's plain text.
+// ScreenSearcher implements parent.ScreenSearcher over captured plain-text rows.
 type ScreenSearcher struct {
-	snapshot  PlainTextSnapshot
+	rows      []string
 	pattern   string
 	direction int
 	row       int
@@ -29,100 +24,160 @@ const (
 	SearchDirectionBackward = -1
 )
 
-// NewScreenSearcher creates a ScreenSearcher from a snapshot-like value. It
-// accepts *parent.ScreenSnapshot, any value with a GetPlainText() string
-// method, or a Goja object/Go map with a "plainText" key. Returns nil if no
-// usable snapshot can be extracted.
+// NewScreenSearcher creates a ScreenSearcher from a capture-like value. It
+// accepts *parent.ScreenSnapshot, *parent.Capture (via its Text or Snapshot),
+// any pointer value with a Snapshot() *parent.ScreenSnapshot method, a Goja
+// object/Go map carrying a "plain" or "plainText" field, or a struct with a
+// matching string field. Returns nil if no usable snapshot can be extracted.
+//
+// Rows are frozen at construction (snapshot isolation): output arriving
+// after construction is invisible to the search. Coordinates are absolute
+// screen rows for canonical captures and *ScreenSnapshot inputs: a ranged
+// clone searches its full screen, not the range, so matches line up with
+// copy-mode navigation. The single exception is an empty ranged *Capture
+// (empty Text on a non-canonical snapshot), which searches no rows — there
+// is no text to match and no row base the range could supply.
 func NewScreenSearcher(snapshot any, pattern string) *ScreenSearcher {
-	if snapshot == nil {
-		return nil
-	}
-	var rows []string
-	if s, ok := snapshot.(PlainTextSnapshot); ok {
-		rows = splitRows(s.GetPlainText())
-	} else if snap, ok := snapshot.(*parent.ScreenSnapshot); ok {
-		rows = splitRows(snap.GetPlainText())
-	} else if s, ok := snapshot.(interface{ Snapshot() *parent.ScreenSnapshot }); ok {
-		if snap := s.Snapshot(); snap != nil {
-			rows = splitRows(snap.GetPlainText())
-		}
-	} else if v := reflect.ValueOf(snapshot); v.Kind() == reflect.Pointer && !v.IsNil() {
-		if m := v.MethodByName("GetPlainText"); m.IsValid() && m.Type().NumIn() == 0 && m.Type().NumOut() == 1 && m.Type().Out(0).Kind() == reflect.String {
-			rows = splitRows(m.Call(nil)[0].String())
-		}
-	}
-	if rows == nil {
-		if obj := tryExtractPlainText(snapshot); obj != "" || isPlainTextFieldPresent(snapshot) {
-			rows = splitRows(obj)
-		}
-	}
-	if rows == nil {
+	rows, ok := extractRows(snapshot)
+	if !ok {
 		return nil
 	}
 	return &ScreenSearcher{
-		snapshot:  snapshotWrapper{rows: rows},
+		rows:      rows,
 		pattern:   pattern,
 		direction: SearchDirectionForward,
 	}
 }
 
-type snapshotWrapper struct {
-	rows []string
-}
-
-func (s snapshotWrapper) GetPlainText() string { return strings.Join(s.rows, "\n") }
-
-func isPlainTextFieldPresent(v any) bool {
-	if m, ok := v.(map[string]any); ok {
-		_, ok := m["plainText"]
-		return ok
+// extractRows extracts plain-text rows from the capture-like value.
+func extractRows(snapshot any) ([]string, bool) {
+	if snapshot == nil {
+		return nil, false
 	}
-	rv := reflect.ValueOf(v)
-	if rv.Kind() == reflect.Map {
-		for _, key := range rv.MapKeys() {
-			if key.String() == "plainText" {
-				return true
-			}
+	switch s := snapshot.(type) {
+	case *parent.ScreenSnapshot:
+		text, ok := writeFullPlainText(s)
+		if !ok {
+			return nil, false
 		}
-	}
-	return false
-}
-
-func tryExtractPlainText(v any) string {
-	switch m := v.(type) {
-	case map[string]any:
-		if pt, ok := m["plainText"]; ok {
-			if s, ok := pt.(string); ok {
-				return s
-			}
+		return splitRows(text), true
+	case *parent.Capture:
+		if s == nil {
+			return nil, false
 		}
+		// An empty render on a ranged capture searches no rows: the capture
+		// is empty, so there is nothing to match. Without this, the snapshot
+		// fallback below would search the full screen and report matches
+		// from outside the (empty) range.
+		if s.Text == "" && s.Snapshot != nil && !s.Snapshot.IsCanonicalRange() {
+			return []string{}, true
+		}
+		// Prefer the already-rendered text only for canonical (full-screen)
+		// captures, where the snapshot range is the whole screen and the
+		// text coordinates are already absolute. Ranged captures fall
+		// through to the snapshot path, which absolutizes via Clone +
+		// ResetRange so matches line up with copy-mode navigation.
+		if s.Text != "" && s.Kind == parent.CapturePlain &&
+			(s.Snapshot == nil || s.Snapshot.IsCanonicalRange()) {
+			return splitRows(s.Text), true
+		}
+		if s.Snapshot != nil {
+			text, ok := writeFullPlainText(s.Snapshot)
+			if !ok {
+				return nil, false
+			}
+			return splitRows(text), true
+		}
+		return nil, false
+	case interface{ Snapshot() *parent.ScreenSnapshot }:
+		snap := s.Snapshot()
+		if snap == nil {
+			return nil, false
+		}
+		text, ok := writeFullPlainText(snap)
+		if !ok {
+			return nil, false
+		}
+		return splitRows(text), true
 	case *goja.Object:
-		if pt := m.Get("plainText"); pt != nil && !goja.IsUndefined(pt) && !goja.IsNull(pt) {
-			return pt.String()
+		text, present := objectPlainText(s)
+		if !present {
+			return nil, false
 		}
+		return splitRows(text), true
+	case map[string]any:
+		text, present := mapPlainText(s)
+		if !present {
+			return nil, false
+		}
+		return splitRows(text), true
 	}
-	rv := reflect.ValueOf(v)
+
+	rv := reflect.ValueOf(snapshot)
 	if rv.Kind() == reflect.Pointer && !rv.IsNil() {
 		rv = rv.Elem()
 	}
 	switch rv.Kind() {
 	case reflect.Struct:
-		if pt := rv.FieldByName("PlainText"); pt.IsValid() && pt.Kind() == reflect.String {
-			return pt.String()
-		}
-		if pt := rv.FieldByName("plainText"); pt.IsValid() && pt.Kind() == reflect.String {
-			return pt.String()
+		for _, name := range []string{"PlainText", "plainText", "Plain", "plain"} {
+			if f := rv.FieldByName(name); f.IsValid() && f.Kind() == reflect.String {
+				return splitRows(f.String()), true
+			}
 		}
 	case reflect.Map:
 		for _, key := range rv.MapKeys() {
-			if key.String() == "plainText" {
+			if key.Kind() != reflect.String {
+				continue
+			}
+			if key.String() == "plain" || key.String() == "plainText" {
 				if s, ok := rv.MapIndex(key).Interface().(string); ok {
-					return s
+					return splitRows(s), true
 				}
 			}
 		}
 	}
-	return ""
+	return nil, false
+}
+
+// writeFullPlainText renders the snapshot's full-screen plain-text capture.
+// It clones away any ranged-capture range first so search coordinates stay
+// absolute screen rows even when handed a ranged clone.
+func writeFullPlainText(snap *parent.ScreenSnapshot) (string, bool) {
+	if snap == nil {
+		return "", false
+	}
+	full := snap
+	if !snap.IsCanonicalRange() {
+		full = snap.Clone()
+		full.ResetRange()
+	}
+	var b strings.Builder
+	if err := full.WriteCapture(&b, parent.CapturePlain); err != nil {
+		return "", false
+	}
+	return b.String(), true
+}
+
+// objectPlainText extracts a plain-text field from a Goja object, accepting
+// both the capture ("plain") and legacy snapshot ("plainText") field names.
+func objectPlainText(obj *goja.Object) (string, bool) {
+	for _, key := range []string{"plain", "plainText"} {
+		v := obj.Get(key)
+		if v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			return v.String(), true
+		}
+	}
+	return "", false
+}
+
+// mapPlainText extracts a plain-text field from a Go map.
+func mapPlainText(m map[string]any) (string, bool) {
+	for _, key := range []string{"plain", "plainText"} {
+		if s, ok := m[key].(string); ok {
+			return s, true
+		}
+	}
+	return "", false
 }
 
 func splitRows(text string) []string {
@@ -133,7 +188,7 @@ func splitRows(text string) []string {
 }
 
 func (s *ScreenSearcher) SearchForward(pattern string, startRow, startCol int) *vt.SearchMatch {
-	if pattern == "" || startRow < 0 || startCol < 0 || s.snapshot == nil {
+	if pattern == "" || startRow < 0 || startCol < 0 || s.rows == nil {
 		return nil
 	}
 	p0, d0, r0, c0 := s.pattern, s.direction, s.row, s.col
@@ -149,10 +204,10 @@ func (s *ScreenSearcher) SearchForward(pattern string, startRow, startCol int) *
 }
 
 func (s *ScreenSearcher) SearchBackwardFromEnd(pattern string) *vt.SearchMatch {
-	if pattern == "" || s.snapshot == nil {
+	if pattern == "" || s.rows == nil {
 		return nil
 	}
-	rows := splitRows(s.snapshot.GetPlainText())
+	rows := s.rows
 	if len(rows) == 0 {
 		return nil
 	}
@@ -177,10 +232,10 @@ func (s *ScreenSearcher) SearchBackward(pattern string, startRow, startCol int) 
 
 // Next searches forward from the current position, returning 0-based coordinates.
 func (s *ScreenSearcher) Next() (row, col int, ok bool) {
-	if s.pattern == "" || s.snapshot == nil {
+	if s.pattern == "" || s.rows == nil {
 		return s.row, s.col, false
 	}
-	rows := splitRows(s.snapshot.GetPlainText())
+	rows := s.rows
 	startRow, startCol := s.row, s.col
 	if s.direction == SearchDirectionBackward {
 		startRow, startCol = s.row, s.col-1
@@ -219,10 +274,10 @@ func (s *ScreenSearcher) Next() (row, col int, ok bool) {
 
 // Prev searches backward from the current position, returning 0-based coordinates.
 func (s *ScreenSearcher) Prev() (row, col int, ok bool) {
-	if s.pattern == "" || s.snapshot == nil {
+	if s.pattern == "" || s.rows == nil {
 		return s.row, s.col, false
 	}
-	rows := splitRows(s.snapshot.GetPlainText())
+	rows := s.rows
 	startRow, startCol := s.row, s.col
 	if s.direction == SearchDirectionForward {
 		startCol--

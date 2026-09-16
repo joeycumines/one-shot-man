@@ -3,7 +3,6 @@ package termmux
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
@@ -226,9 +225,9 @@ func TestSessionManager_SessionsAndSnapshot(t *testing.T) {
 	// StringIOSession — that's fine, we verify the shape).
 	v, err = sessionRun(t, runtime, `
 		var id = tuiMux.activeID();
-		var snap = tuiMux.snapshot(id);
+		var snap = tuiMux.capture(id);
 		snap !== null && typeof snap.gen === 'number' &&
-			typeof snap.plainText === 'string' &&
+			typeof snap.plain === 'string' &&
 			typeof snap.ansi === 'string' &&
 			typeof snap.fullScreen === 'string' &&
 			typeof snap.rows === 'number' &&
@@ -239,12 +238,12 @@ func TestSessionManager_SessionsAndSnapshot(t *testing.T) {
 		t.Fatalf("snapshot(): %v", err)
 	}
 	if !v.ToBoolean() {
-		raw, _ := sessionRun(t, runtime, `JSON.stringify(tuiMux.snapshot(tuiMux.activeID()))`)
+		raw, _ := sessionRun(t, runtime, `JSON.stringify(tuiMux.capture(tuiMux.activeID()))`)
 		t.Fatalf("snapshot() shape check failed, got: %s", raw)
 	}
 
 	// snapshot for a non-existent session returns null.
-	v, err = sessionRun(t, runtime, `tuiMux.snapshot(999999) === null`)
+	v, err = sessionRun(t, runtime, `tuiMux.capture(999999) === null`)
 	if err != nil {
 		t.Fatalf("snapshot(999999): %v", err)
 	}
@@ -317,9 +316,9 @@ func TestSessionManager_HasChildWithSession(t *testing.T) {
 	}
 }
 
-// ── Screenshot / ChildScreen / WriteToChild ──────────────
+// ── Capture / WriteToChild ───────────────────────────────
 
-func TestSessionManager_ScreenshotAndChildScreen(t *testing.T) {
+func TestSessionManager_CaptureBinding(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow: spawns SessionManager worker goroutine")
 	}
@@ -327,34 +326,78 @@ func TestSessionManager_ScreenshotAndChildScreen(t *testing.T) {
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()
 
-	// screenshot() should return a string.
-	v, err := sessionRun(t, runtime, `typeof tuiMux.screenshot()`)
-	if err != nil {
-		t.Fatalf("screenshot(): %v", err)
-	}
-	if v.String() != "string" {
-		t.Fatalf("screenshot() type = %q, want 'string'", v.String())
-	}
-
-	// childScreen() should return a string.
-	v, err = sessionRun(t, runtime, `typeof tuiMux.childScreen()`)
-	if err != nil {
-		t.Fatalf("childScreen(): %v", err)
-	}
-	if v.String() != "string" {
-		t.Fatalf("childScreen() type = %q, want 'string'", v.String())
-	}
-
-	// With no active session:
-	v, err = sessionRun(t, runtime, `
-		tuiMux.detach();
-		tuiMux.screenshot() === '' && tuiMux.childScreen() === '';
+	// capture(id) returns an object with every representation and metadata.
+	v, err := sessionRun(t, runtime, `
+		var id = tuiMux.activeID();
+		var c = tuiMux.capture(id);
+		typeof c === 'object' && c !== null &&
+			typeof c.plain === 'string' &&
+			typeof c.ansi === 'string' &&
+			typeof c.fullScreen === 'string' &&
+			typeof c.gen === 'number' &&
+			typeof c.cursorRow === 'number' &&
+			typeof c.cursorCol === 'number' &&
+			typeof c.cursorVisible === 'boolean' &&
+			typeof c.mouseTracking === 'number' &&
+			typeof c.locked === 'boolean';
 	`)
 	if err != nil {
-		t.Fatalf("screenshot/childScreen after detach: %v", err)
+		t.Fatalf("capture(): %v", err)
 	}
 	if !v.ToBoolean() {
-		t.Fatal("screenshot/childScreen should be empty after detach")
+		t.Fatal("capture() result is missing fields")
+	}
+
+	// A ranged capture restricts only the representations.
+	v, err = sessionRun(t, runtime, `
+		var r = tuiMux.capture(tuiMux.activeID(), {start: 0, end: 1});
+		typeof r.plain === 'string' && typeof r.fullScreen === 'string' &&
+			r.gen === tuiMux.capture(tuiMux.activeID()).gen;
+	`)
+	if err != nil {
+		t.Fatalf("ranged capture(): %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("ranged capture() should preserve metadata")
+	}
+
+	// Missing sessions return null.
+	v, err = sessionRun(t, runtime, `tuiMux.capture(999999) === null`)
+	if err != nil {
+		t.Fatalf("capture(999999): %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("capture(999999) should be null")
+	}
+
+	// Malformed options fail clearly before any render.
+	v, err = sessionRun(t, runtime, `
+		var threw = 0;
+		try { tuiMux.capture(tuiMux.activeID(), {start: 'nope'}); } catch (e) { threw++; }
+		try { tuiMux.capture(tuiMux.activeID(), {end: Infinity}); } catch (e) { threw++; }
+		try { tuiMux.capture(tuiMux.activeID(), {start: 1.9}); } catch (e) { threw++; }
+		try { tuiMux.capture(tuiMux.activeID(), {joinWrapped: 1}); } catch (e) { threw++; }
+		try { tuiMux.capture(tuiMux.activeID(), {bogus: 1}); } catch (e) { threw++; }
+		try { tuiMux.capture(); } catch (e) { threw++; }
+		threw === 6;
+	`)
+	if err != nil {
+		t.Fatalf("capture option validation: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("malformed capture options must throw")
+	}
+
+	// With no active session the ID 0 lookup returns null.
+	v, err = sessionRun(t, runtime, `
+		tuiMux.detach();
+		tuiMux.capture(0) === null;
+	`)
+	if err != nil {
+		t.Fatalf("capture after detach: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("capture after detach should be null")
 	}
 }
 
@@ -1016,9 +1059,9 @@ func TestSessionManager_MethodPresence(t *testing.T) {
 			'register', 'unregister', 'activate',
 			'attach', 'detach',
 			'input', 'resize',
-			'snapshot', 'activeID', 'isDone', 'sessions', 'eventsDropped',
+			'capture', 'activeID', 'isDone', 'sessions', 'eventsDropped',
 			'hasChild',
-			'screenshot', 'childScreen', 'writeToChild', 'lastActivityMs',
+			'writeToChild', 'lastActivityMs',
 			'passthrough', 'switchTo',
 			'setStatus', 'setToggleKey', 'setStatusEnabled', 'setResizeFunc',
 			'on', 'off', 'pollEvents',
@@ -1710,7 +1753,7 @@ func TestSessionManager_LockedInputGate_JS(t *testing.T) {
 		t.Fatalf("lock/write: %v", err)
 	}
 
-	v, err := sessionRun(t, runtime, `tuiMux.snapshot(tuiMux.activeID()).locked`)
+	v, err := sessionRun(t, runtime, `tuiMux.capture(tuiMux.activeID()).locked`)
 	if err != nil {
 		t.Fatalf("snapshot locked: %v", err)
 	}
@@ -1730,7 +1773,7 @@ func TestSessionManager_LockedInputGate_JS(t *testing.T) {
 		t.Fatalf("unlock/write: %v", err)
 	}
 
-	v, err = sessionRun(t, runtime, `tuiMux.snapshot(tuiMux.activeID()).locked`)
+	v, err = sessionRun(t, runtime, `tuiMux.capture(tuiMux.activeID()).locked`)
 	if err != nil {
 		t.Fatalf("snapshot locked after unlock: %v", err)
 	}
@@ -1979,30 +2022,17 @@ func TestSnapshotMethods(t *testing.T) {
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()
 
-	var rasterPath string
-	setOnLoop(t, runtime, "recordRasterPath", func(p string) { rasterPath = p })
-	setOnLoop(t, runtime, "removeFile", func(p string) error {
-		return os.Remove(p)
-	})
-
 	err := awaitJSErr(t, runtime, `
 		var ts = tuiMux.termSize();
 		var list = tuiMux.sessions();
 		var id = list[0].id;
-		var snap = tuiMux.snapshot(id);
-		var none = tuiMux.snapshot(999999);
+		var snap = tuiMux.capture(id);
+		var none = tuiMux.capture(999999);
 		var aid = tuiMux.activeID();
 		var done = tuiMux.isDone(id);
 		var missingDone = tuiMux.isDone(999999);
 		var dropped = tuiMux.eventsDropped();
 		var last = tuiMux.lastActivityMs(id);
-		var raster = await tuiMux.renderRaster(id);
-		recordRasterPath(raster.path);
-		var raster2 = await tuiMux.renderRaster(id, {cellW: 10, cellH: 20});
-		removeFile(raster2.path);
-		try { tuiMux.renderRaster(); } catch (e) {}
-		try { tuiMux.renderRaster(id, {cellW: 0}); } catch (e) {}
-		var nullRaster = await tuiMux.renderRaster(999999);
 		var ok = typeof ts === 'object' &&
 			snap !== null &&
 			typeof aid === 'number' &&
@@ -2010,16 +2040,10 @@ func TestSnapshotMethods(t *testing.T) {
 			typeof missingDone === 'boolean' &&
 			Array.isArray(list) &&
 			typeof dropped === 'number' &&
-			typeof last === 'number' &&
-			raster !== null &&
-			raster2 !== null &&
-			nullRaster === null;
+			typeof last === 'number';
 	`)
 	if err != nil {
 		t.Fatalf("snapshot methods: %v", err)
-	}
-	if rasterPath != "" {
-		_ = os.Remove(rasterPath)
 	}
 }
 

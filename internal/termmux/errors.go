@@ -18,4 +18,10 @@ var (
 	ErrWindowNotClosable = errors.New("termmux: window not closable")
 
 	ErrInvalidPayload = errors.New("termmux: invalid request payload")
+
+	ErrInvalidCaptureKind = errors.New("termmux: invalid capture kind")
+
+	ErrSnapshotUnavailable = errors.New("termmux: session has no published snapshot")
+
+	ErrNilCaptureWriter = errors.New("termmux: capture writer is nil")
 )

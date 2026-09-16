@@ -146,7 +146,7 @@
     }
 
     // getCursorInPane returns {row, col} of the cursor within the active pane's
-    // content space. For Agent and verify tabs, reads from the snapshot's cursor
+    // content space. For Agent and verify tabs, reads from the capture's cursor
     // position. For the output tab, defaults to the end of the last line.
     function getCursorInPane(s) {
         var tab = s.splitViewTab;
@@ -156,9 +156,9 @@
             var lastCol = ol.length > 0 ? (ol[lastRow] || '').length : 0;
             return { row: lastRow, col: lastCol };
         }
-        // Agent / verify: read cursor from snapshot.
+        // Agent / verify: read cursor from capture.
         if (typeof tuiMux !== 'undefined' && tuiMux &&
-            typeof tuiMux.snapshot === 'function') {
+            typeof tuiMux.capture === 'function') {
             var sid = 0;
             if (tab === 'verify' && s.activeVerifySession) {
                 sid = (typeof s.activeVerifySession === 'number')
@@ -168,7 +168,7 @@
                 sid = prSplit._state && prSplit._state.agentSessionID;
             }
             if (sid) {
-                var snap = tuiMux.snapshot(sid);
+                var snap = tuiMux.capture(sid);
                 if (snap && snap.cursorRow !== undefined) {
                     return { row: snap.cursorRow, col: snap.cursorCol };
                 }
@@ -300,7 +300,7 @@
                 }
             }
             // Task 44: Sync SessionManager's internal VTerm dimensions so
-            // childScreen()/snapshot() return properly-sized ANSI output.
+            // capture() returns properly-sized ANSI output.
             if (typeof tuiMux !== 'undefined' && tuiMux &&
                 typeof tuiMux.resizeAsync === 'function') {
                 tuiMux.resizeAsync(paneRows, paneCols).catch(function(e) {

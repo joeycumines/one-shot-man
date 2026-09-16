@@ -25,7 +25,11 @@ func (s *screenSnapshotSearcher) rows() []string {
 	if s.snap == nil {
 		return nil
 	}
-	plain := s.snap.GetPlainText()
+	var b strings.Builder
+	if err := s.snap.WriteCapture(&b, CapturePlain); err != nil {
+		return nil
+	}
+	plain := b.String()
 	if plain == "" {
 		return nil
 	}

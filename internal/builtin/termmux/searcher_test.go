@@ -122,7 +122,7 @@ func TestScreenSearcher_FromJSWrappedSnapshot(t *testing.T) {
 
 	runtime := goja.New()
 	wrapped := runtime.NewObject()
-	_ = wrapped.Set("plainText", snap.GetPlainText())
+	_ = wrapped.Set("plain", snapshotPlainText(snap))
 
 	s := NewScreenSearcher(wrapped, "def")
 	if s == nil {
@@ -173,9 +173,9 @@ func TestScreenSearcher_BackwardStartCol(t *testing.T) {
 	}
 }
 
-func TestScreenSearcher_GetPlainTextRows(t *testing.T) {
+func TestScreenSearcher_PlainTextRows(t *testing.T) {
 	snap := makeTextSnapshot([]string{"line1", "line2"})
-	text := snap.GetPlainText()
+	text := snapshotPlainText(snap)
 	if !strings.Contains(text, "line1") || !strings.Contains(text, "line2") {
 		t.Fatalf("unexpected plain text: %q", text)
 	}
@@ -184,4 +184,94 @@ func TestScreenSearcher_GetPlainTextRows(t *testing.T) {
 func TestScreenSearcher_SatisfiesInterface(t *testing.T) {
 	snap := makeTextSnapshot([]string{"find this"})
 	var _ parent.ScreenSearcher = NewScreenSearcher(snap, "this")
+}
+
+// snapshotPlainText renders the plain-text capture of snap.
+func snapshotPlainText(snap *parent.ScreenSnapshot) string {
+	var b strings.Builder
+	if err := snap.WriteCapture(&b, parent.CapturePlain); err != nil {
+		return ""
+	}
+	return b.String()
+}
+
+func TestScreenSearcher_FromCapture(t *testing.T) {
+	snap := makeTextSnapshot([]string{"hello world", "second row"})
+	cap := &parent.Capture{Kind: parent.CapturePlain, Text: "hello world\nsecond row", Snapshot: snap}
+	s := NewScreenSearcher(cap, "world")
+	if s == nil {
+		t.Fatal("expected searcher from *parent.Capture")
+	}
+	s.MoveTo(0, 0)
+	row, col, ok := s.Next()
+	if !ok || row != 0 || col != 6 {
+		t.Fatalf("match = (%d,%d,%v), want (0,6,true)", row, col, ok)
+	}
+}
+
+func TestScreenSearcher_RangedCloneReportsAbsoluteRows(t *testing.T) {
+	snap := makeTextSnapshot([]string{"row0", "row1 target", "row2"})
+	ranged := snap.Clone()
+	ranged.SetTestRange(1, 2, false)
+	if ranged.IsCanonicalRange() {
+		t.Fatal("ranged clone should be non-canonical")
+	}
+	s := NewScreenSearcher(ranged, "target")
+	if s == nil {
+		t.Fatal("expected searcher from ranged clone")
+	}
+	s.MoveTo(0, 0)
+	row, col, ok := s.Next()
+	if !ok || row != 1 || col != 5 {
+		t.Fatalf("match = (%d,%d,%v), want absolute (1,5,true)", row, col, ok)
+	}
+}
+
+func TestScreenSearcher_RangedCaptureSearchesAbsoluteRows(t *testing.T) {
+	rows := []string{"row0 nomatch", "row1 target", "row2 nomatch"}
+	scr := vt.NewScreen(len(rows), 80)
+	for r, line := range rows {
+		for c, ch := range line {
+			if c >= scr.Cols {
+				break
+			}
+			scr.Cells[r][c].Ch = ch
+		}
+	}
+	full := parent.NewScreenSnapshot(1, scr, len(rows), 80, time.Now())
+	ranged := full.Clone()
+	// Simulate CaptureScreen({Start:1, End:2}) without a manager: give the
+	// clone the ranged render range plus a realistic ranged Text payload.
+	ranged.SetTestRange(1, 2, false)
+	cap := &parent.Capture{Kind: parent.CapturePlain, Text: "row1 target", Snapshot: ranged}
+	if cap.Snapshot.IsCanonicalRange() {
+		t.Fatal("ranged capture snapshot should be non-canonical")
+	}
+	s := NewScreenSearcher(cap, "target")
+	if s == nil {
+		t.Fatal("expected searcher from ranged *parent.Capture")
+	}
+	s.MoveTo(0, 0)
+	row, col, ok := s.Next()
+	if !ok || row != 1 || col != 5 {
+		t.Fatalf("ranged capture match = (%d,%d,%v), want absolute (1,5,true)", row, col, ok)
+	}
+}
+
+func TestScreenSearcher_RangedCaptureEmptySearchesNoRows(t *testing.T) {
+	snap := makeTextSnapshot([]string{"row0 target", "row1 target"})
+	ranged := snap.Clone()
+	ranged.SetTestRange(1, 1, false) // start >= end normalizes to empty
+	cap := &parent.Capture{Kind: parent.CapturePlain, Text: "", Snapshot: ranged}
+	if cap.Snapshot.IsCanonicalRange() {
+		t.Fatal("empty-range capture snapshot should be non-canonical")
+	}
+	s := NewScreenSearcher(cap, "target")
+	if s == nil {
+		t.Fatal("expected searcher from empty ranged *parent.Capture")
+	}
+	s.MoveTo(0, 0)
+	if _, _, ok := s.Next(); ok {
+		t.Fatal("empty ranged capture must report no match, not full-screen rows")
+	}
 }

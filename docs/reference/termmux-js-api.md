@@ -136,26 +136,62 @@ typically available as `tuiMux` in pr-split scripts.
 |--------|-------------|------------|--------|----------------|
 | `activeID()` | `SessionManager.ActiveID()` | — | `number` | silent |
 | `sessions()` | `SessionManager.Sessions()` | — | `[{id,target,state,isActive}]` | silent |
-| `snapshot(id)` | `SessionManager.Snapshot()` | `number` | `{gen,plainText,...}\|null` | null if not found |
+| `capture(id, opts?)` | `SessionManager.CaptureScreen()` | `number, {start?,end?,joinWrapped?}` | `{plain,ansi,fullScreen,gen,rows,cols,cursorRow,cursorCol,cursorVisible,mouseTracking,mouseSGR,locked,message,timestamp}\|null` | `null` if session missing or unpublished |
 | `lastActivityMs(id?)` | `SessionManager.Snapshot() + time.Since()` | `number?` (session ID) | `number` | `-1` if session/snapshot missing |
 | `eventsDropped()` | `SessionManager.EventsDropped()` | — | `number` | silent |
 
+#### capture(id, opts?)
+
+`capture` is the single terminal read surface. It returns all three
+representations of one immutable snapshot plus that snapshot's metadata.
+Representations are rendered once per call and cached on the snapshot.
+
+Options are validated strictly; a malformed option throws a `TypeError`:
+
+| Option | Type | Meaning |
+|--------|------|---------|
+| `start` | integral finite `number` | Zero-based inclusive first visible row; negative values clamp to `0`; fractional values throw `TypeError` |
+| `end` | integral finite `number` | Zero-based exclusive last visible row; values `<= 0` mean the last visible row; fractional values throw `TypeError` |
+| `joinWrapped` | `boolean` | Join wrapped continuation rows with no newline (`plain`/`ansi` only) |
+
+Ranges are zero-based and end-exclusive. `fullScreen` never joins rows: each
+selected row keeps its 1-based `CUP` coordinate plus `EL`, followed by the
+cursor-position and visibility tail (`cursorRow`/`cursorCol` are 0-based,
+`timestamp` is Unix milliseconds). Ranged captures preserve every metadata
+field of the source snapshot; only the representation bytes are restricted to
+the requested rows. An empty range yields empty strings. Scrollback content is
+included whenever the session is scrolled back. At a range's start boundary a
+wrapped continuation joins to its out-of-range predecessor only as a
+separator decision (no out-of-range text is emitted).
+
+`capture` returns `null` for an unknown session or a session with no published
+snapshot — the documented "empty" result, not a throw.
+
+```js
+var termmux = require('osm:termmux');
+
+(async function () {
+  var runtime = await termmux.newBoundedSession({ cmd: '/bin/sh', args: ['-c', 'printf hello'] });
+  var cap = runtime.mgr.capture(runtime.sid);
+  output.print(cap.plain);                          // whole screen
+  output.print(cap.fullScreen);                     // CUP+EL patch
+  var line = runtime.mgr.capture(runtime.sid, {start: 0, end: 1, joinWrapped: true});
+  output.print(line.plain);                         // first logical line
+})();
+```
+
 ### I/O and Display
 
-The compatibility helpers below (`screenshot()`, `childScreen()`,
-`writeToChild(data)`, and `session()`) operate on the current active
-session via `SessionManager.ActiveID()`. They remain available for
-backwards compatibility and ad-hoc scripts, but production pr-split code
-should prefer pinned SessionID access: `snapshot(id)` /
-`lastActivityMs(id?)` for reads and explicit `activate(id)` +
-`input(data)` for writes.
+`writeToChild(data)` and the `session()` wrapper operate on the current active
+session via `SessionManager.ActiveID()`. They remain available for backwards
+compatibility and ad-hoc scripts, but production pr-split code should prefer
+pinned SessionID access: `capture(id)` / `lastActivityMs(id?)` for reads and
+explicit `activate(id)` + `input(data)` for writes.
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
 | `input(data)` | `SessionManager.Input()` | `string` | `undefined` | throws |
 | `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `undefined` | throws |
-| `screenshot()` | `Snapshot()` → plainText | — | `string` | empty if no session; active-session compatibility helper |
-| `childScreen()` | `Snapshot()` → ANSI | — | `string` | empty if no session; active-session compatibility helper |
 | `writeToChild(data)` | `SessionManager.Input()` | `string` | `number` (bytes) | throws; active-session compatibility helper |
 | `lastActivityMs(id?)` | `time.Since(snapshot)` | `number?` (session ID) | `number` (ms, -1 if none) | silent |
 
@@ -251,8 +287,8 @@ prefer pinned SessionIDs over ActiveID-backed convenience access.
 |--------|-------------|------------|--------|----------------|
 | `isRunning()` | `ActiveID() != 0` | — | `boolean` | silent |
 | `isDone()` | loop `Sessions()` | — | `boolean` | silent |
-| `output()` | `Snapshot()` → plainText | — | `string` | empty if none |
-| `screen()` | `Snapshot()` → ANSI | — | `string` | empty if none |
+| `output()` | `CaptureScreen()` → plain | — | `string` | empty if none |
+| `screen()` | `CaptureScreen()` → ANSI | — | `string` | empty if none |
 | `target()` | closure read | — | `{id, name, kind}` | silent |
 | `setTarget(t)` | closure mutation | `{name?,kind?,id?}` | `undefined` | throws TypeError |
 | `write(data)` | `SessionManager.Input()` | `string` | `undefined` | throws |
@@ -273,6 +309,6 @@ Three patterns are used consistently:
    where "not found" is a normal condition, not an error.
 
 Mutation operations (write, resize, register, start, kill, etc.)
-throw. Query operations (snapshot, sessions, activeID, etc.) use
+throw. Query operations (capture, sessions, activeID, etc.) use
 silent returns. Compound operations (passthrough, wait, switchTo)
 use error fields.

@@ -54,7 +54,7 @@ fails — a spec that asserts nothing is a false-confidence trap.
 ## What it covers
 
 - **Module contract (`TestModuleContract` / `TestModuleSurface`):** every one of
-  the 47 `osm:*` modules loads; headline exports exist; documented async
+  the 48 `osm:*` modules loads; headline exports exist; documented async
   exports are functions; pure modules are *invoked* with value-smokes (closing
   the "typeof passes but the function throws" trap). The live export surface is
   captured per module and logged for doc-drift triage. Adding a module or export
@@ -107,7 +107,7 @@ Run:
 gmake test-test262        # 1000+ cases via go:embed, json + stdout quantified, harness integrity proven
 gmake test-goja-compat    # 500+ builtin cases vs goja baseline, quantified
 gmake report              # generates scratch/report.json/md and checks osm >= goja
-gmake fuzz                # fuzz 30s per target, no crashers
+gmake fuzz                # fuzz 10s per target, no crashers
 go test -race -count=5 ./internal/jscompliance/...  # determinism
 ```
 

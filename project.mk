@@ -10,7 +10,10 @@ GO_TEST_FLAGS ?= -timeout=30m
 CATALOG_API_PKG ?= ./internal/userk8s/api/v1alpha1/...
 CATALOG_CRD_DIR ?= internal/userk8s/api/config/crd
 
-all: check-crds
+generate: check-crds
+
+.PHONY: gen
+gen: generate
 
 ##@ Project Targets
 

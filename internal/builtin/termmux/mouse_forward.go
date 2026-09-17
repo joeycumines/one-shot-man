@@ -94,7 +94,7 @@ func enableMouseForward(runtime *goja.Runtime, call goja.FunctionCall) goja.Valu
 			}
 		}
 
-		snapVal := mgrObj.Get("snapshot")
+		snapVal := mgrObj.Get("capture")
 		if snapVal == nil || goja.IsUndefined(snapVal) {
 			return goja.Undefined()
 		}

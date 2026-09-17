@@ -83,8 +83,7 @@ internal/termmux/                    # Main package (termmux)
     ├── csi.go                       # CSI dispatch: cursor, erasure, scrolling, modes, DA, DSR
     ├── esc.go                       # ESC dispatch: DECSC/DECRC, RI/IND/NEL/RIS/HTS/DECALN
     ├── utf8.go                      # UTF-8 byte-by-byte accumulator
-    ├── render.go                    # RenderFullScreen, RenderContentANSI, RenderAll
-    ├── render_raster.go             # PNG image generation (16+256color+RGB palette) + SaveRasterPNG
+    ├── render.go                    # RenderCapture: one-pass plain/ANSI/full-screen, ranged, wrap joining
     ├── defaults.go                  # DefaultRows=24, DefaultCols=80, MaxScrollback=10000, MaxProtocolLength=4096
     └── [24 test files covering each feature area]
 ```
@@ -117,8 +116,6 @@ VTerm
 | `Write([]byte) (int, error)` | Processes bytes through ANSI state machine (fast path for printable ASCII runs) |
 | `Resize(rows, cols)` | Resizes both screens in-place |
 | `Snapshot() *VTermSnapshot` | Single-lock capture of plain text + ANSI + full screen + all mode state |
-| `RenderFullScreen() string` | Flicker-free CUP+EL+SGR output for terminal restore |
-| `ContentANSI() string` | SGR-only rendering (no positioning) for TUI embedding |
 | `String() string` | Plain text representation for diagnostics |
 | `CursorPosition() (row, col)` | Cursor position under lock |
 | `EnterCopyMode()` / `ExitCopyMode()` | Copy/scroll mode with selection support |
@@ -174,7 +171,7 @@ type Cell struct {
 
 **Key methods**: `NewScreen(rows, cols)`, `Resize(rows, cols)` (reflow for primary, simple for alternate), `DirtyRange()`, `ClearDirty()`, `Clear()`, `SoftReset()`, `LineFeed()`, `ReverseIndex()`, `EraseDisplay(mode)`, `EraseLine(mode)`, `InsertLines()`, `DeleteLines()`, `InsertChars()`, `DeleteChars()`, `EraseChars()`, `PutChar(rune)`, `PutASCII([]byte)` (fast path for ASCII runs), `CurrentSGR()`, `CurrentScrollRegion()`.
 
-**Dirty region tracking**: Every cell write marks the cell as dirty. `DirtyRange()` returns the inclusive `[minRow, maxRow]` range of modified rows. `ClearDirty()` resets the tracking. Used by `RenderContentANSIDirty()` for incremental rendering.
+**Dirty region tracking**: Every cell write marks the cell as dirty. `DirtyRange()` returns the inclusive `[minRow, maxRow]` range of modified rows. `ClearDirty()` resets the tracking; `VTerm.Snapshot()` consumes it so incremental copies can reuse clean rows.
 
 ### 3.3 Parser (`vt/parser.go`)
 
@@ -264,7 +261,8 @@ NewSessionManager(opts ...ManagerOption) *SessionManager
 | `Input(data)` | Sends bytes to the active session's writer |
 | `Resize(rows, cols)` | Resizes all sessions' VTerms and PTYs |
 | `ResizeSession(id, rows, cols)` | Resizes a specific session |
-| `Snapshot(id)` | Returns an immutable `*ScreenSnapshot` |
+| `Snapshot(id)` | Returns the immutable published `*ScreenSnapshot` (metadata and cell grid) |
+| `CaptureScreen(id, opts)` | Renders one representation of the published snapshot; ranged requests clone it |
 | `Screen(id)` | Returns a deep copy of the active screen (`*vt.Screen`) |
 | `Sessions()` | Returns `[]SessionInfo` with state and target metadata |
 | `Subscribe(bufSize)` | Subscribes to EventBus, returns `(id, <-chan Event)` |
@@ -294,9 +292,10 @@ An immutable, concurrent-safe point-in-time capture of a VTerm screen:
 ```go
 type ScreenSnapshot struct {
     Gen uint64                    // Monotonic snapshot counter
-    screen *vt.Screen             // Pointer to the live screen (read-only from this point)
+    screen *vt.Screen             // Deep copy of the screen at publish time
     Rows, Cols int
     CursorRow, CursorCol int
+    CursorVisible bool
 
     // Mode state snapshot
     MouseTracking int             // 0/1/2/3
@@ -305,16 +304,66 @@ type ScreenSnapshot struct {
     CursorShape int               // 0=default, 1=blink-block, 2=steady-block, 3=blink-underline, 4=steady-underline, 5=blink-bar, 6=steady-bar
     FocusReporting, AutoWrap, SynchronizedOutput, LineFeedNewLine bool
 
-    // Lazy rendering with sync.Once
-    plainText, ansi, fullScreen string
-    oncePlainText, onceANSI, onceFullScreen sync.Once
+    // Single-traversal lazy render cache; one RenderCapture populates all three
+    renderOnce sync.Once
+    plainTextCache, ansiCache, fullScreenCache string
+
+    // Ranged-clone render range (zero for the canonical full screen)
+    captureRange captureRange // start, end, joinWrapped (no Kind)
+
+    // Lock overlay and message overlay at publish time
+    Locked bool
+    Message string
 
     // Timestamp of capture
     Timestamp time.Time
 }
 ```
 
-Lazy rendering methods (`GetPlainText()`, `GetANSI()`, `GetFullScreen()`) each use `sync.Once` for thread-safe computation. The `Gen` field increments with each snapshot, enabling consumers to detect stale data.
+`WriteCapture(w, kind)` streams exactly one representation of the snapshot:
+`CapturePlain`, `CaptureANSI` or `CaptureFullScreen` (a non-bitmask enum). It
+reports `ErrInvalidCaptureKind` for unknown kinds, `ErrNilCaptureWriter` for
+nil or typed-nil writers, `ErrSnapshotUnavailable` when the snapshot has no
+screen, and wraps `io.ErrShortWrite` when the writer accepts fewer bytes than
+the representation. `Clone()` copies every non-render field and resets the
+caches, so a ranged clone can render a different range without disturbing the
+published snapshot. The `Gen` field increments with each snapshot, enabling
+consumers to detect stale data.
+
+### 3.7 Capture semantics (`CaptureScreen`)
+
+`SessionManager.CaptureScreen(id, CaptureOptions)` is the single read surface:
+
+- `Kind` selects exactly one representation per call.
+- `Start`/`End` are zero-based, end-exclusive visible-row coordinates,
+  normalized as: `Start < 0` clamps to `0`; `End <= 0` means the last visible
+  row; `End` clamps to the visible row count; `Start >= End` yields empty
+  strings. Scrollback participates whenever the session is scrolled back.
+- `JoinWrapped` joins a wrapped continuation row to its predecessor with no
+  newline. It applies to `plain` and `ansi` only.
+- Full-screen output never joins: each selected row is emitted as CUP (1-based)
+  + content + SGR reset + EL, followed by the unchanged cursor-position and
+  cursor-visibility tail.
+- A canonical full request renders from the published snapshot and shares its
+  caches. Any ranged or wrapped request clones the published snapshot first,
+  preserving generation, dimensions, cursor, modes, lock state, message and
+  timestamp while giving the clone independent caches.
+- A missing session reports `ErrSessionNotFound`; a session without a
+  published snapshot reports `ErrSnapshotUnavailable`.
+
+### 3.8 freezeterm composition
+
+`internal/freezeterm` and `internal/builtin/freezeterm` never import termmux.
+The Go package discovers and runs the external `freeze` CLI (feeding captured
+bytes on stdin, always passing an explicit `--output`, mapping exit codes and
+cancellation to typed errors), and the JS module exposes it as
+`osm:freezeterm`. Composition lives in consumers and in one test-only
+integration test:
+
+```js
+var cap = termmux.capture(id);                 // osm:termmux read
+var svg = await freezeterm.renderText(cap.ansi); // osm:freezeterm render
+```
 
 ## 4. Data Flow
 
@@ -896,13 +945,11 @@ const mgr = termmux.newSessionManager({
 
 ### 10.5 SessionManager JS Wrapper (35+ methods)
 
-**Core session management**: `run`, `started`, `close`, `register`, `unregister`, `activate`, `input`, `resize`, `resizeSession`, `termSize`, `snapshot`, `activeID`, `isDone`, `sessions`, `eventsDropped`, `subscribe`, `unsubscribe`, `passthrough`
+**Core session management**: `run`, `started`, `close`, `register`, `unregister`, `activate`, `input`, `resize`, `resizeSession`, `termSize`, `capture`, `activeID`, `isDone`, `sessions`, `eventsDropped`, `subscribe`, `unsubscribe`, `passthrough`
 
-**Mux-equivalent convenience**: `attach`, `detach`, `hasChild`, `switchTo`, `screenshot`, `childScreen`, `writeToChild`, `session`, `lastActivityMs`, `setStatus`, `setToggleKey`, `setStatusEnabled`, `setResizeFunc`, `on`, `off`, `pollEvents`, `activeSide`, `fromModel`
+**Mux-equivalent convenience**: `attach`, `detach`, `hasChild`, `switchTo`, `writeToChild`, `session`, `lastActivityMs`, `setStatus`, `setToggleKey`, `setStatusEnabled`, `setResizeFunc`, `on`, `off`, `pollEvents`, `activeSide`, `fromModel`
 
 **Persistence**: `exportState`, `saveState`, `loadState`, `restoreState`, `removeState`, `processAlive`
-
-**Raster**: `renderRaster(id, options?)` → `{width, height, path}` — Generates PNG image of VTerm screen
 
 ### 10.6 Event Bus → JS Bridge
 
@@ -1005,6 +1052,6 @@ const { top, bottom } = layout.compute(rows, cols, 0.5);
 | `CaptureConfig` | `{ command, args[], dir, rows, cols, env{}` | Object passed to factory |
 | `ExitReason` | `"toggle" \| "childExit" \| "context" \| "error"` | camelCase strings |
 | `EventKind` | `"exit" \| "resize" \| "focus" \| "bell" \| "output" \| "registered" \| "activated" \| "closed" \| "terminal-resize"` | String constants |
-| `ScreenSnapshot` | `{ gen, plainText, ansi, fullScreen, rows, cols, cursorRow, cursorCol, timestamp }` | Lazy rendering on JS side |
+| `Capture` | `{ plain, ansi, fullScreen, gen, rows, cols, cursorRow, cursorCol, cursorVisible, mouseTracking, mouseSGR, locked, message, timestamp }` (or `null`) | Rendered per `capture(id, {start?,end?,joinWrapped?})`; metadata always preserved |
 | `PaneGeometry` | `{ row, col, rows, cols, offsetMouse(row, col) }` | JS object with method |
 | `*goja.Object` | JavaScript object | `_goSession` / `_goSessionManager` data properties store Go pointers |

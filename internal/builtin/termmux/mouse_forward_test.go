@@ -20,7 +20,7 @@ func TestMouseForward_ClickInPane(t *testing.T) {
 	v, err := runtime.RunString(`
 		var inputCalls = [];
 		var mockMgr = {
-			snapshot: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
+			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
 			input: function(data) { inputCalls.push(data); },
 			mouseToSGR: exports.mouseToSGR
 		};
@@ -46,7 +46,7 @@ func TestMouseForward_ClickOutsidePane(t *testing.T) {
 	v, err := runtime.RunString(`
 		var inputCalls = [];
 		var mockMgr = {
-			snapshot: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
+			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
 			input: function(data) { inputCalls.push(data); },
 			mouseToSGR: exports.mouseToSGR
 		};
@@ -72,7 +72,7 @@ func TestMouseForward_NoTracking(t *testing.T) {
 	v, err := runtime.RunString(`
 		var inputCalls = [];
 		var mockMgr = {
-			snapshot: function(id) { return { mouseTracking: 0, mouseSGR: false, gen: 1 }; },
+			capture: function(id) { return { mouseTracking: 0, mouseSGR: false, gen: 1 }; },
 			input: function(data) { inputCalls.push(data); },
 			mouseToSGR: exports.mouseToSGR
 		};
@@ -98,7 +98,7 @@ func TestMouseForward_MotionEvent(t *testing.T) {
 	v, err := runtime.RunString(`
 		var inputCalls = [];
 		var mockMgr = {
-			snapshot: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
+			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
 			input: function(data) { inputCalls.push(data); },
 			mouseToSGR: exports.mouseToSGR
 		};
@@ -124,7 +124,7 @@ func TestMouseForward_ReleaseEvent(t *testing.T) {
 	v, err := runtime.RunString(`
 		var inputCalls = [];
 		var mockMgr = {
-			snapshot: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
+			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
 			input: function(data) { inputCalls.push(data); },
 			mouseToSGR: exports.mouseToSGR
 		};
@@ -150,7 +150,7 @@ func TestMouseForward_WheelEvent(t *testing.T) {
 	v, err := runtime.RunString(`
 		var inputCalls = [];
 		var mockMgr = {
-			snapshot: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
+			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
 			input: function(data) { inputCalls.push(data); },
 			mouseToSGR: exports.mouseToSGR
 		};
@@ -176,7 +176,7 @@ func TestMouseForward_NonMouseEvent(t *testing.T) {
 	v, err := runtime.RunString(`
 		var inputCalls = [];
 		var mockMgr = {
-			snapshot: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
+			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
 			input: function(data) { inputCalls.push(data); },
 			mouseToSGR: exports.mouseToSGR
 		};
@@ -202,7 +202,7 @@ func TestMouseForward_CoordinateTranslation(t *testing.T) {
 	v, err := runtime.RunString(`
 		var inputCalls = [];
 		var mockMgr = {
-			snapshot: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
+			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
 			input: function(data) { inputCalls.push(data); },
 			mouseToSGR: exports.mouseToSGR
 		};
@@ -228,7 +228,7 @@ func TestMouseForward_WrongPaneId(t *testing.T) {
 	v, err := runtime.RunString(`
 		var inputCalls = [];
 		var mockMgr = {
-			snapshot: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
+			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
 			input: function(data) { inputCalls.push(data); },
 			mouseToSGR: exports.mouseToSGR
 		};
@@ -254,7 +254,7 @@ func TestMouseForward_PaneXAsFunction(t *testing.T) {
 	v, err := runtime.RunString(`
 		var inputCalls = [];
 		var mockMgr = {
-			snapshot: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
+			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
 			input: function(data) { inputCalls.push(data); },
 			mouseToSGR: exports.mouseToSGR
 		};
@@ -292,7 +292,7 @@ func TestMouseForward_CopyModeWheel(t *testing.T) {
 		var inputCalls = [];
 		var scrollCalls = [];
 		var mockMgr = {
-			snapshot: function(id) { return { mouseTracking: 0, mouseSGR: false, gen: 1 }; },
+			capture: function(id) { return { mouseTracking: 0, mouseSGR: false, gen: 1 }; },
 			input: function(data) { inputCalls.push(data); },
 			mouseToSGR: exports.mouseToSGR,
 			isCopyModeActive: function(id) { return true; },
@@ -320,7 +320,7 @@ func TestMouseForward_UnknownButton(t *testing.T) {
 	v, err := runtime.RunString(`
 		var inputCalls = [];
 		var mockMgr = {
-			snapshot: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
+			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
 			input: function(data) { inputCalls.push(data); },
 			mouseToSGR: exports.mouseToSGR
 		};

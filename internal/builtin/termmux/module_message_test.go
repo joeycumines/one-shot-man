@@ -45,7 +45,7 @@ func TestModule_MessageBindings_Basic(t *testing.T) {
 		t.Errorf("activeMessage = %q, want %q", v.String(), "hello")
 	}
 
-	v, err = runtime.RunString(`mux.snapshot(sid).message`)
+	v, err = runtime.RunString(`mux.capture(sid).message`)
 	if err != nil {
 		t.Fatalf("snapshot().message: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestModule_MessageBindings_Expiry(t *testing.T) {
 
 	time.Sleep(20 * time.Millisecond)
 
-	v, err := runtime.RunString(`mux.snapshot(sid).message`)
+	v, err := runtime.RunString(`mux.capture(sid).message`)
 	if err != nil {
 		t.Fatalf("snapshot().message: %v", err)
 	}

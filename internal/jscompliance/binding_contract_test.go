@@ -41,6 +41,7 @@ func TestBindingContract_IOExportsAreAsync(t *testing.T) {
 		`require('osm:fetch').fetch(` + jsStringLit("http://127.0.0.1:1/jscompliance-bindingcontract") + `)`,
 		`require('osm:tokenizer').loadFile(` + jsStringLit(filepath.Join(t.TempDir(), "no-tokenizer.json")) + `)`,
 		`require('osm:ctxutil').buildContext([])`,
+		`require('osm:freezeterm').renderText('x', {executable: ` + jsStringLit(nope) + `})`,
 	}
 	for _, js := range checks {
 		engine, _, _ := newComplianceEngine(t, ctx)

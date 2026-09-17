@@ -139,6 +139,18 @@ func (cs *CaptureSession) closeDone() {
 	cs.doneOnce.Do(func() { close(cs.done) })
 }
 
+// waitClosed reports whether ch closed before ctx was cancelled. It stages
+// multi-signal completion barriers (e.g. child exit, then output drain)
+// without duplicating the cancellation branch at every stage.
+func waitClosed(ctx context.Context, ch <-chan struct{}) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-ch:
+		return true
+	}
+}
+
 // Start spawns the command in a PTY and begins capturing output. The context
 // controls the lifetime of the underlying process — cancelling it sends
 // SIGKILL to the child. Start may be called only once; subsequent calls
@@ -785,15 +797,22 @@ drainLoop:
 
 	resultCh := make(chan forwardResult, 1)
 
-	// Monitor for child exit: when the readerLoop's channel closes,
-	// the child has exited.
+	// Monitor for child exit: when the readerLoop's channel closes, the
+	// child has exited. The readerLoop queues the child's final chunks
+	// before closing done, so wait for the output dispatcher to forward
+	// them before reporting the exit; otherwise a fast-exiting child's
+	// output can still be in flight when Passthrough returns. Completion
+	// is intentionally two staged signals (done, then outputDispatchDone)
+	// because Done must stay responsive while queued output drains; this
+	// call-site is the one consumer that needs the drained barrier.
 	go func() {
-		select {
-		case <-fwdCtx.Done():
+		if !waitClosed(fwdCtx, cs.done) {
 			return
-		case <-cs.done:
-			resultCh <- forwardResult{ExitChildExit, nil}
 		}
+		if !waitClosed(fwdCtx, cs.outputDispatchDone) {
+			return
+		}
+		resultCh <- forwardResult{ExitChildExit, nil}
 	}()
 
 	// Stdin → PTY forwarding (shared with SessionManager.Passthrough).

@@ -56,7 +56,7 @@ func TestChunk16_T45_AutoAttachOnAutoPoll(t *testing.T) {
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};
@@ -120,7 +120,7 @@ func TestChunk16_T45_AutoAttachSkippedSmallTerminal(t *testing.T) {
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};
@@ -180,7 +180,7 @@ func TestChunk16_T45_ManualDismissPreventsAutoReopen(t *testing.T) {
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};
@@ -304,7 +304,7 @@ func TestChunk16_T45_AgentStatusBadgeOpensView(t *testing.T) {
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};
@@ -359,9 +359,7 @@ func TestChunk16_T45_ExitAutoClosesSplitView(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
-			screenshot: function() { return ''; },
-			childScreen: function() { return ''; },
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			isDone: function(id) { return true; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -416,9 +414,7 @@ func TestChunk16_T45_NoAutoCloseWhenPipelineRunning(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
-			screenshot: function() { return ''; },
-			childScreen: function() { return ''; },
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			isDone: function(id) { return true; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -523,7 +519,7 @@ func TestChunk16_T45_AutoAttachFiresOnlyOnce(t *testing.T) {
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};
@@ -892,9 +888,7 @@ func TestChunk16_T46_PollDetectsQuestion(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return 'Do you want to continue? (y/n)'; },
-			childScreen: function() { return 'screen-data'; },
-			snapshot: function(id) { return { fullScreen: 'screen-data', plainText: 'Do you want to continue? (y/n)' }; },
+			capture: function(id) { return { fullScreen: 'screen-data', plain: 'Do you want to continue? (y/n)' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -943,11 +937,11 @@ func TestChunk16_T46_PollDetectsQuestion_UsesPinnedSessionActivity(t *testing.T)
 		prSplit._state.agentExecutor = { handle: { isAlive: function() { return true; } } };
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
-			snapshot: function(id) {
-				if (id !== __mockCID) return { fullScreen: '', plainText: '' };
+			capture: function(id) {
+				if (id !== __mockCID) return { fullScreen: '', plain: '' };
 				return {
 					fullScreen: 'screen-data',
-					plainText: 'Do you want to continue? (y/n)'
+					plain: 'Do you want to continue? (y/n)'
 				};
 			},
 			isDone: function(id) { return false; },
@@ -995,8 +989,6 @@ func TestChunk16_T46_PollThrottlesDetection(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return 'Would you like to proceed?'; },
-			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 5000; }
 		};
 
@@ -1034,8 +1026,6 @@ func TestChunk16_T46_PollNonProcessingSkipsDetection(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return 'Do you want to continue? (y/n)'; },
-			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 5000; }
 		};
 
@@ -1077,9 +1067,7 @@ func TestChunk16_T46_PollAutoDismissesOnResume(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return 'Working on it...'; },
-			childScreen: function() { return ''; },
-			snapshot: function(id) { return { fullScreen: '', plainText: 'Working on it...' }; },
+			capture: function(id) { return { fullScreen: '', plain: 'Working on it...' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -1124,8 +1112,6 @@ func TestChunk16_T46_PollDoesNotDismissWhileTyping(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return 'Working on it...'; },
-			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 100; }
 		};
 
@@ -1295,7 +1281,7 @@ func TestChunk16_T46_EnterSendsToAgentSession(t *testing.T) {
 		prSplit._state = prSplit._state || {};
 		prSplit._state.agentSessionID = __mockCID;
 		globalThis.tuiMux = {
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return active; },
 			activate: function(id) { activations.push(id); active = id; },
@@ -1356,7 +1342,7 @@ func TestChunk16_T46_EnterEmptyDoesNotSend(t *testing.T) {
 		prSplit._state = prSplit._state || {};
 		prSplit._state.agentSessionID = __mockCID;
 		globalThis.tuiMux = {
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return 0; },
 			activate: function(id) {},
@@ -1399,7 +1385,7 @@ func TestChunk16_T46_ConversationHistoryAccumulates(t *testing.T) {
 		prSplit._state = prSplit._state || {};
 		prSplit._state.agentSessionID = __mockCID;
 		globalThis.tuiMux = {
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return 0; },
 			activate: function(id) {},
@@ -1570,7 +1556,7 @@ func TestChunk16_T46_EnterResetsThrottleTimestamp(t *testing.T) {
 		prSplit._state = prSplit._state || {};
 		prSplit._state.agentSessionID = __mockCID;
 		globalThis.tuiMux = {
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return 0; },
 			activate: function(id) {},
@@ -1744,7 +1730,7 @@ func TestChunk16_T46_ConversationHistoryCap(t *testing.T) {
 		prSplit._state = prSplit._state || {};
 		prSplit._state.agentSessionID = __mockCID;
 		globalThis.tuiMux = {
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return 0; },
 			activate: function(id) {},
@@ -1819,9 +1805,7 @@ func TestChunk16_T393_QuestionDetectedWithLiveHandle(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return 'Do you want to continue? (y/n)'; },
-			childScreen: function() { return 'screen-data'; },
-			snapshot: function(id) { return { fullScreen: 'screen-data', plainText: 'Do you want to continue? (y/n)' }; },
+			capture: function(id) { return { fullScreen: 'screen-data', plain: 'Do you want to continue? (y/n)' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -1873,9 +1857,7 @@ func TestChunk16_T393_QuestionNotDetectedIfHandleDead(t *testing.T) {
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return 'Do you want to continue? (y/n)'; },
-			childScreen: function() { return 'screen-data'; },
-			snapshot: function(id) { return { fullScreen: 'screen-data', plainText: 'Do you want to continue? (y/n)' }; },
+			capture: function(id) { return { fullScreen: 'screen-data', plain: 'Do you want to continue? (y/n)' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
@@ -1992,7 +1974,7 @@ func TestChunk16_T393_AgentWriteErrorSurfaced(t *testing.T) {
 		prSplit._state = prSplit._state || {};
 		prSplit._state.agentSessionID = __mockCID;
 		globalThis.tuiMux = {
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return active; },
 			activate: function(id) { activations.push(id); active = id; },
@@ -2043,7 +2025,7 @@ func TestChunk16_T393_AgentSessionMissingSurfaced(t *testing.T) {
 		prSplit._state.agentSessionID = null;
 		// tuiMux exists, but Agent has no pinned session.
 		globalThis.tuiMux = {
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			isDone: function(id) { return false; },
 			activeID: function() { return 0; },
 			activate: function(id) {},

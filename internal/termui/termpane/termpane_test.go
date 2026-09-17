@@ -101,7 +101,7 @@ func startTestManager(t *testing.T) (*termmux.SessionManager, *controllableSessi
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := m.Snapshot(id)
-		if snap != nil && strings.Contains(snap.GetPlainText(), "ready") {
+		if snap != nil && strings.Contains(snapshotPlainText(snap), "ready") {
 			break
 		}
 		select {
@@ -220,7 +220,7 @@ func TestView_UpdatedContent(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		snap := mgr.Snapshot(sid)
-		if snap != nil && strings.Contains(snap.GetPlainText(), "updated") {
+		if snap != nil && strings.Contains(snapshotPlainText(snap), "updated") {
 			break
 		}
 		select {
@@ -230,9 +230,9 @@ func TestView_UpdatedContent(t *testing.T) {
 		}
 	}
 
-	// Simulate an outputMsg arriving via Update to refresh the snapshot.
+	// Simulate an outputMsg arriving via Update to refresh the capture.
 	model.mu.Lock()
-	model.snap = mgr.Snapshot(sid)
+	model.refreshCapture()
 	model.mu.Unlock()
 
 	// View should now re-render with new content.
@@ -623,5 +623,97 @@ func TestMouseForwarding(t *testing.T) {
 	s := string(written)
 	if !strings.HasPrefix(s, "\x1b[<") {
 		t.Errorf("expected SGR mouse sequence, got %q", s)
+	}
+}
+
+// snapshotPlainText renders the plain-text capture of snap.
+func snapshotPlainText(snap *termmux.ScreenSnapshot) string {
+	var b strings.Builder
+	if err := snap.WriteCapture(&b, termmux.CapturePlain); err != nil {
+		return ""
+	}
+	return b.String()
+}
+
+func TestANSIView_NeverReturnsPositioningSequences(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	mgr, session, sid, cleanup := startTestManager(t)
+	defer cleanup()
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	}
+	model := NewModel(sid, mgr, bounds)
+	defer model.Close()
+	session.readerCh <- []byte("ansi content")
+	deadline := time.After(2 * time.Second)
+	for {
+		snap := mgr.Snapshot(sid)
+		if snap != nil && strings.Contains(snapshotPlainText(snap), "ansi content") {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for snapshot")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	model.mu.Lock()
+	model.refreshCapture()
+	model.mu.Unlock()
+	v := model.ANSIView()
+	for _, seq := range []string{"\x1b[1;1H", "\x1b[K", "\x1b[?25h", "\x1b[?25l", "\x1b[2J"} {
+		if strings.Contains(v.Content, seq) {
+			t.Errorf("ANSIView content contains positioning sequence %q: %q", seq, v.Content)
+		}
+	}
+	// Empty ANSI capture renders empty, never the fullscreen CUP patch.
+	model.mu.Lock()
+	model.ansiText = ""
+	model.mu.Unlock()
+	v = model.ANSIView()
+	if strings.Contains(v.Content, "\x1b[") {
+		t.Errorf("ANSIView with empty ANSI capture leaked escapes: %q", v.Content)
+	}
+}
+
+func TestView_HidesCursorWhenChildHidIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	mgr, _, sid, cleanup := startTestManager(t)
+	defer cleanup()
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	}
+	model := NewModel(sid, mgr, bounds)
+	defer model.Close()
+	scr := vt.NewScreen(24, 80)
+	scr.CurRow, scr.CurCol = 2, 3
+	scr.CursorVisible = false
+	model.mu.Lock()
+	model.snap = termmux.NewScreenSnapshot(1001, scr, 24, 80, time.Now())
+	model.text = "hidden cursor content"
+	model.ansiText = "hidden cursor content"
+	model.cachedGen = 0
+	model.mu.Unlock()
+	if v := model.View(); v.Cursor != nil {
+		t.Errorf("View drew cursor for hidden child cursor: %+v", v.Cursor)
+	}
+	if v := model.ANSIView(); v.Cursor != nil {
+		t.Errorf("ANSIView drew cursor for hidden child cursor: %+v", v.Cursor)
+	}
+	scr.CursorVisible = true
+	model.mu.Lock()
+	model.snap = termmux.NewScreenSnapshot(1002, scr, 24, 80, time.Now())
+	model.text = "visible cursor content"
+	model.ansiText = "visible cursor content"
+	model.cachedGen = 0
+	model.mu.Unlock()
+	if v := model.View(); v.Cursor == nil {
+		t.Error("View hid cursor for visible child cursor")
 	}
 }

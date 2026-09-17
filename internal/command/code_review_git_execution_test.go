@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
@@ -20,6 +21,19 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 	if !isGitRepository() {
 		t.Skip("Skipping git diff test - not in a git repository")
 	}
+
+	// Isolate the diff content from the live repository: stub the git diff
+	// runner with a small deterministic diff so the test verifies lazy-diff
+	// plumbing (add -> buildPrompt -> prompt markers -> still-lazy state)
+	// without depending on working-tree state or git performance under load.
+	restoreRunGitDiff := ctxutil.SetRunGitDiffFn(func(_ context.Context, _ []string) (string, string, bool) {
+		return "diff --git a/demo.go b/demo.go\n--- a/demo.go\n+++ b/demo.go\n@@ -1 +1 @@\n-old\n+new\n", "", false
+	})
+	defer restoreRunGitDiff()
+	restoreDefaultGitDiffArgs := ctxutil.SetGetDefaultGitDiffArgsFn(func(_ context.Context) []string {
+		return []string{"HEAD"}
+	})
+	defer restoreDefaultGitDiffArgs()
 
 	// Test with real git diff execution
 	ctx := context.Background()

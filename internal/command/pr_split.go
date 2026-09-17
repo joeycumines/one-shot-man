@@ -434,7 +434,7 @@ func (c *PrSplitCommand) setupEngineGlobalsOnLoop(ctx context.Context, engine *s
 	// tuiMux.register() in pr_split_16c_tui_handlers_verify.js and
 	// accessed through a pinned SessionID proxy built by
 	// _buildVerifyProxy() in pr_split_13_tui.js. The proxy uses
-	// tuiMux.snapshot(sessionID) for reads, tuiMux.activate(sessionID)
+	// tuiMux.capture(sessionID) for reads, tuiMux.activate(sessionID)
 	// + tuiMux.input() for writes, and tuiMux.unregister(sessionID)
 	// for cleanup.
 	//

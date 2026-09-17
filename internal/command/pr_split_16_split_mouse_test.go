@@ -1106,7 +1106,7 @@ func TestChunk16_MouseClick_AgentStatusBadge(t *testing.T) {
 			isDone: function(id) { return false; },
 			activeID: function() { return __mockCID; },
 			activate: function(id) {},
-			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			capture: function(id) { return { fullScreen: '', plain: '' }; },
 			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};

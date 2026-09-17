@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -93,11 +94,11 @@ func (s SessionState) validTransition(next SessionState) bool {
 // goroutine and may be read concurrently by any number of goroutines without
 // synchronization.
 //
-// The cell grid is stored as a *vt.Screen and rendered representations
-// (plain text, ANSI, full screen) are computed lazily on first access via
-// GetPlainText, GetANSI, and GetFullScreen. This avoids rendering work on
-// output chunks where no consumer reads the snapshot, reducing memory
-// footprint for unconsumed snapshots to cell-grid size only.
+// The cell grid is stored as a *vt.Screen and the textual representations
+// (plain text, ANSI, full screen) are rendered lazily on first access through
+// WriteCapture. This avoids rendering work on output chunks where no consumer
+// reads the snapshot, reducing memory footprint for unconsumed snapshots to
+// cell-grid size only.
 type ScreenSnapshot struct {
 	// Gen is a monotonically increasing generation counter, incremented
 	// each time the worker publishes a new snapshot for this session.
@@ -108,14 +109,12 @@ type ScreenSnapshot struct {
 	// traverse this grid lazily on first access.
 	screen *vt.Screen
 
-	// Cached render outputs, guarded by sync.Once for thread-safe lazy init.
-	plainTextOnce  sync.Once
-	plainTextCache string
-
-	ansiOnce  sync.Once
-	ansiCache string
-
-	fullScreenOnce  sync.Once
+	// Cached render outputs, guarded by renderOnce for thread-safe lazy init.
+	// A single RenderCapture traversal populates all three representations
+	// together; per-kind selection is a cache read after the first render.
+	renderOnce      sync.Once
+	plainTextCache  string
+	ansiCache       string
 	fullScreenCache string
 
 	// Rows is the terminal height at the time of capture.
@@ -129,6 +128,10 @@ type ScreenSnapshot struct {
 
 	// CursorCol is the cursor's column position (0-indexed) at capture time.
 	CursorCol int
+
+	// CursorVisible reports whether the child's cursor was visible at capture
+	// time.
+	CursorVisible bool
 
 	// Locked reports whether the session was locked when this snapshot
 	// was published.
@@ -191,48 +194,255 @@ type ScreenSnapshot struct {
 
 	// Timestamp records when this snapshot was created.
 	Timestamp time.Time
+
+	// captureRange holds the visible-row range this snapshot renders with. It
+	// is the zero value for published snapshots (the canonical full screen)
+	// and carries the requested range on clones returned by CaptureScreen.
+	// Kind is deliberately not stored: captureText takes it per call.
+	captureRange captureRange
 }
 
-// GetPlainText lazily computes and returns the screen content without ANSI
-// escape sequences. Suitable for text search, clipboard copy, and plain-text
-// capture. The result is cached after the first call.
-func (s *ScreenSnapshot) GetPlainText() string {
-	s.plainTextOnce.Do(func() {
+// CaptureKind selects exactly one textual representation of a screen
+// snapshot. It is a plain enum rather than a bitmask: every capture accepts
+// exactly one kind per call.
+type CaptureKind uint8
+
+const (
+	// CapturePlain selects the plain-text representation with no escape
+	// sequences.
+	CapturePlain CaptureKind = iota + 1
+	// CaptureANSI selects SGR-styled content without cursor positioning.
+	CaptureANSI
+	// CaptureFullScreen selects the CUP+EL patch used for flicker-free
+	// terminal restoration.
+	CaptureFullScreen
+)
+
+// String returns the JavaScript-facing name of the kind.
+func (k CaptureKind) String() string {
+	switch k {
+	case CapturePlain:
+		return "plain"
+	case CaptureANSI:
+		return "ansi"
+	case CaptureFullScreen:
+		return "fullScreen"
+	default:
+		return "unknown"
+	}
+}
+
+// Valid reports whether k is one of the defined capture kinds.
+func (k CaptureKind) Valid() bool {
+	return k >= CapturePlain && k <= CaptureFullScreen
+}
+
+// CaptureOptions selects one representation and an optional visible-row range.
+// Start and End are zero-based and end-exclusive; End <= 0 means the last
+// visible row. JoinWrapped joins wrapped continuations for the plain and ANSI
+// representations only. Kind is required.
+type CaptureOptions struct {
+	Kind        CaptureKind
+	Start       int
+	End         int
+	JoinWrapped bool
+}
+
+// captureRange selects the visible-row range a snapshot renders with.
+// Start and End are zero-based and end-exclusive; End <= 0 means the last
+// visible row. JoinWrapped joins wrapped continuations for the plain and ANSI
+// representations only.
+type captureRange struct {
+	Start       int
+	End         int
+	JoinWrapped bool
+}
+
+// rangeOf extracts the render range from full capture options.
+func rangeOf(o CaptureOptions) captureRange {
+	return captureRange{Start: o.Start, End: o.End, JoinWrapped: o.JoinWrapped}
+}
+
+// canonical reports whether the options request a full, unjoined capture,
+// which can be served directly from the published snapshot. Ranges that
+// normalize to the full screen (Start <= 0 with End <= 0) are canonical too,
+// matching RenderCapture normalization (start < 0 clamps to 0, end <= 0
+// means the visible row count).
+func (o CaptureOptions) canonical() bool {
+	return o.Start <= 0 && o.End <= 0 && !o.JoinWrapped
+}
+
+// IsCanonicalRange reports whether the snapshot renders the canonical full
+// screen (no range, no wrapped joining). Searchers and other absolute-row
+// consumers use it to detect ranged clones.
+func (s *ScreenSnapshot) IsCanonicalRange() bool {
+	if s == nil {
+		return true
+	}
+	r := s.captureRange
+	return r.Start <= 0 && r.End <= 0 && !r.JoinWrapped
+}
+
+// ResetRange clears the snapshot's render range back to the canonical full
+// screen. It also resets the render caches, which may hold ranged output.
+func (s *ScreenSnapshot) ResetRange() {
+	s.captureRange = captureRange{}
+	s.renderOnce = sync.Once{}
+	s.plainTextCache = ""
+	s.ansiCache = ""
+	s.fullScreenCache = ""
+}
+
+// SetTestRange sets the snapshot's render range for tests that build ranged
+// clones without going through CaptureScreen.
+func (s *ScreenSnapshot) SetTestRange(start, end int, joinWrapped bool) {
+	s.captureRange = captureRange{Start: start, End: end, JoinWrapped: joinWrapped}
+	s.renderOnce = sync.Once{}
+	s.plainTextCache = ""
+	s.ansiCache = ""
+	s.fullScreenCache = ""
+}
+
+// SetTestScreen swaps the snapshot's cell grid. Tests use it with nil to
+// install a persistence-style snapshot literal with no screen.
+func (s *ScreenSnapshot) SetTestScreen(scr *vt.Screen) {
+	s.screen = scr
+	s.renderOnce = sync.Once{}
+	s.plainTextCache = ""
+	s.ansiCache = ""
+	s.fullScreenCache = ""
+}
+
+// SnapshotScreenForTest reports the snapshot's cell grid for test assertions.
+func (s *ScreenSnapshot) SnapshotScreenForTest() *vt.Screen {
+	if s == nil {
+		return nil
+	}
+	return s.screen
+}
+
+// ReplaceSnapshotForTest stores snap as the session's published snapshot.
+// Tests use it to install edge-case snapshots such as a persistence-restored
+// literal with a nil screen (see persistence.go, which publishes exactly
+// such a literal). It returns the worker's response error, if any.
+func (m *SessionManager) ReplaceSnapshotForTest(id SessionID, snap *ScreenSnapshot) error {
+	resp := m.sendRequest(reqReplaceSnapshotForTest, snapshotReplaceForTest{id: id, snap: snap})
+	return resp.err
+}
+
+// Capture is a rendered snapshot representation together with the snapshot it
+// came from. The snapshot preserves every non-render field (generation,
+// dimensions, cursor position and visibility, mouse modes, lock state, active
+// message, timestamp); CaptureScreen clones it for ranged requests so its
+// render caches are independent.
+type Capture struct {
+	Kind     CaptureKind
+	Text     string
+	Snapshot *ScreenSnapshot
+}
+
+func isNilWriter(w io.Writer) bool {
+	if w == nil {
+		return true
+	}
+	rv := reflect.ValueOf(w)
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+		return rv.IsNil()
+	default:
+		return false
+	}
+}
+
+// CaptureScreen renders one representation of the session's published
+// snapshot. Requests that select a partial visible-row range or wrapped
+// joining render against a metadata-preserving clone with independent render
+// caches, leaving the published snapshot untouched.
+//
+// It returns ErrSessionNotFound when the session does not exist and
+// ErrSnapshotUnavailable when the session has not published a snapshot yet.
+func (m *SessionManager) CaptureScreen(id SessionID, opts CaptureOptions) (*Capture, error) {
+	if !opts.Kind.Valid() {
+		return nil, fmt.Errorf("%w: %d", ErrInvalidCaptureKind, opts.Kind)
+	}
+	resp := m.sendRequest(reqSnapshot, id)
+	if resp.err != nil {
+		return nil, resp.err
+	}
+	snap, _ := resp.value.(*ScreenSnapshot)
+	if snap == nil || snap.screen == nil {
+		return nil, fmt.Errorf("%w: %d", ErrSnapshotUnavailable, id)
+	}
+	if !opts.canonical() {
+		snap = snap.Clone()
+		snap.captureRange = rangeOf(opts)
+	}
+	return &Capture{Kind: opts.Kind, Text: snap.captureText(opts.Kind), Snapshot: snap}, nil
+}
+
+// captureText returns the representation of the snapshot selected by kind,
+// rendered once and cached. A single RenderCapture traversal populates all
+// three representations together, so requesting plain then ANSI then
+// fullScreen costs one grid walk, not three. The snapshot's capture range
+// (zero for published snapshots, meaning the full screen) determines the
+// visible-row range.
+func (s *ScreenSnapshot) captureText(kind CaptureKind) string {
+	s.renderOnce.Do(func() {
 		if s.screen != nil {
-			s.plainTextCache, _, _ = vt.RenderAll(s.screen)
+			r := s.captureRange
+			s.plainTextCache, s.ansiCache, s.fullScreenCache = vt.RenderCapture(s.screen, r.Start, r.End, r.JoinWrapped)
 		}
 	})
-	return s.plainTextCache
+	switch kind {
+	case CapturePlain:
+		return s.plainTextCache
+	case CaptureANSI:
+		return s.ansiCache
+	case CaptureFullScreen:
+		return s.fullScreenCache
+	default:
+		return ""
+	}
 }
 
-// GetANSI lazily computes and returns the screen content with SGR escape
-// sequences preserved. Suitable for embedding in a TUI component (e.g.,
-// lipgloss pane). The result is cached after the first call.
-func (s *ScreenSnapshot) GetANSI() string {
-	s.ansiOnce.Do(func() {
-		if s.screen != nil {
-			_, s.ansiCache, _ = vt.RenderAll(s.screen)
-		}
-	})
-	return s.ansiCache
+// WriteCapture streams exactly one representation of the snapshot to w. It
+// returns ErrInvalidCaptureKind for unknown or combined kinds,
+// ErrNilCaptureWriter for nil or typed-nil writers and ErrSnapshotUnavailable
+// when the snapshot has no screen; a short write wraps io.ErrShortWrite. The
+// representation is the full screen for published snapshots and the captured
+// range for clones returned by CaptureScreen.
+func (s *ScreenSnapshot) WriteCapture(w io.Writer, kind CaptureKind) error {
+	if !kind.Valid() {
+		return fmt.Errorf("%w: %d", ErrInvalidCaptureKind, kind)
+	}
+	if isNilWriter(w) {
+		return ErrNilCaptureWriter
+	}
+	if s == nil || s.screen == nil {
+		return ErrSnapshotUnavailable
+	}
+	text := s.captureText(kind)
+	n, err := io.WriteString(w, text)
+	if err != nil {
+		return err
+	}
+	if n != len(text) {
+		return fmt.Errorf("%w: wrote %d of %d bytes", io.ErrShortWrite, n, len(text))
+	}
+	return nil
 }
 
-// GetFullScreen lazily computes and returns the screen content with CUP
-// (cursor position) escape sequences for full terminal restoration. Used
-// during passthrough re-entry for flicker-free screen redraw. The result
-// is cached after the first call.
-func (s *ScreenSnapshot) GetFullScreen() string {
-	s.fullScreenOnce.Do(func() {
-		if s.screen != nil {
-			_, _, s.fullScreenCache = vt.RenderAll(s.screen)
-		}
-	})
-	return s.fullScreenCache
-}
-
-// Clone returns a shallow copy of s with fresh sync.Once fields. The returned
-// snapshot shares the underlying screen and may have its metadata mutated
-// before publication.
+// Clone returns a copy of s with fresh render caches. The returned snapshot
+// shares the underlying screen, preserves every non-render field (including
+// the capture range) and receives independent render caches, so a ranged
+// clone renders a different range without disturbing the published snapshot.
+//
+// The copy is field-by-field so go vet's copylocks check keeps passing:
+// ScreenSnapshot contains a sync.Once (noCopy) and a plain struct assignment
+// would copy the lock. Every field added to ScreenSnapshot must also be
+// added here; the compiler enforces nothing, so keep this literal in sync
+// with the struct definition, NewScreenSnapshot, handleSessionOutput, and
+// the persistence restore literal.
 func (s *ScreenSnapshot) Clone() *ScreenSnapshot {
 	return &ScreenSnapshot{
 		Gen:                s.Gen,
@@ -241,6 +451,7 @@ func (s *ScreenSnapshot) Clone() *ScreenSnapshot {
 		Cols:               s.Cols,
 		CursorRow:          s.CursorRow,
 		CursorCol:          s.CursorCol,
+		CursorVisible:      s.CursorVisible,
 		MouseTracking:      s.MouseTracking,
 		MouseSGR:           s.MouseSGR,
 		InsertMode:         s.InsertMode,
@@ -255,21 +466,23 @@ func (s *ScreenSnapshot) Clone() *ScreenSnapshot {
 		Locked:             s.Locked,
 		Message:            s.Message,
 		Timestamp:          s.Timestamp,
+		captureRange:       s.captureRange,
 	}
 }
 
 // NewScreenSnapshot creates a ScreenSnapshot backed by the given cell grid.
-// Rendering is deferred until GetPlainText, GetANSI, or GetFullScreen is
-// called. This is the primary constructor for production snapshots.
+// Rendering is deferred until WriteCapture or captureText is called. This is
+// the primary constructor for production snapshots.
 func NewScreenSnapshot(gen uint64, scr *vt.Screen, rows, cols int, ts time.Time) *ScreenSnapshot {
 	return &ScreenSnapshot{
-		Gen:       gen,
-		screen:    scr,
-		Rows:      rows,
-		Cols:      cols,
-		CursorRow: scr.CurRow,
-		CursorCol: scr.CurCol,
-		Timestamp: ts,
+		Gen:           gen,
+		screen:        scr,
+		Rows:          rows,
+		Cols:          cols,
+		CursorRow:     scr.CurRow,
+		CursorCol:     scr.CurCol,
+		CursorVisible: scr.CursorVisible,
+		Timestamp:     ts,
 	}
 }
 
@@ -557,10 +770,6 @@ const (
 	// Payload: SessionID. Reply value: string.
 	reqActiveMessage
 
-	// reqCapturePane returns region text from a session's snapshot.
-	// Payload: capturePanePayload. Reply value: string.
-	reqCapturePane
-
 	// reqCopySelection returns the current copy-mode selection as an OSC 52
 	// clipboard sequence for the given session.
 	// Payload: SessionID. Reply value: string.
@@ -605,6 +814,11 @@ const (
 	// reqLayoutMode asks the worker for the layout mode of a window.
 	// Payload: WindowID. Reply value: string.
 	reqLayoutMode
+
+	// reqReplaceSnapshotForTest stores a test-constructed snapshot as the
+	// session's published snapshot. Payload: snapshotReplaceForTest. Reply
+	// value: none. Test-only; never used in production paths.
+	reqReplaceSnapshotForTest
 )
 
 // registerPayload carries the arguments for a reqRegister request.
@@ -653,11 +867,10 @@ type displayMessagePayload struct {
 	duration  time.Duration
 }
 
-// capturePanePayload carries the session ID and row range.
-type capturePanePayload struct {
-	sessionID SessionID
-	startLine int
-	endLine   int
+// snapshotReplaceForTest carries a test-constructed snapshot to publish.
+type snapshotReplaceForTest struct {
+	id   SessionID
+	snap *ScreenSnapshot
 }
 
 // selectPayload carries the session ID and selection coordinates.
@@ -1817,20 +2030,19 @@ func (m *SessionManager) ActiveMessage(id SessionID) string {
 	return resp.value.(string)
 }
 
-func (m *SessionManager) CapturePane(id SessionID, startLine, endLine int) string {
-	resp := m.sendRequest(reqCapturePane, capturePanePayload{sessionID: id, startLine: startLine, endLine: endLine})
-	if resp.err != nil {
-		return ""
-	}
-	return resp.value.(string)
-}
-
+// CopyPaneToClipboard returns an OSC 52 clipboard sequence carrying the
+// session's published plain-text capture, or an empty string when the capture
+// is unavailable or empty.
 func (m *SessionManager) CopyPaneToClipboard(id SessionID) string {
-	text := m.CapturePane(id, 0, -1)
-	if text == "" {
+	snap := m.Snapshot(id)
+	if snap == nil {
 		return ""
 	}
-	return encodeOSC52(text)
+	var b strings.Builder
+	if err := snap.WriteCapture(&b, CapturePlain); err != nil || b.Len() == 0 {
+		return ""
+	}
+	return encodeOSC52(b.String())
 }
 
 func encodeOSC52(text string) string {
@@ -2100,8 +2312,6 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleDisplayMessage(req.payload)
 	case reqActiveMessage:
 		resp = m.handleActiveMessage(req.payload)
-	case reqCapturePane:
-		resp = m.handleCapturePane(req.payload)
 	case reqCopySelection:
 		resp = m.handleCopySelection(req.payload)
 	case reqLockSession:
@@ -2124,6 +2334,8 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleSetLayoutMode(req.payload)
 	case reqLayoutMode:
 		resp = m.handleLayoutMode(req.payload)
+	case reqReplaceSnapshotForTest:
+		resp = m.handleReplaceSnapshotForTest(req.payload)
 	default:
 		resp = response{err: fmt.Errorf("termmux: unknown request kind %d", req.kind)}
 	}
@@ -2453,7 +2665,7 @@ func (m *SessionManager) handleResizeSession(p *resizeSessionPayload) response {
 func (m *SessionManager) handleSnapshot(id SessionID) response {
 	ms, ok := m.sessions[id]
 	if !ok {
-		return response{}
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
 	}
 	snap := ms.snapshot.Load()
 	if snap == nil {
@@ -2782,14 +2994,14 @@ func (m *SessionManager) handleCopyModeKey(p handleCopyModeKeyPayload) response 
 			ms.copySearcher = NewCopyModeSearcher()
 		}
 		row, col := ms.vterm.CopyModeCursorPosition()
-		absRow := ms.vterm.CopyModeScrollOffset() + row
+		absRow := ms.vterm.CopyModeCursorAbsoluteRow(row)
 		ms.copySearcher.StartSearch(SearchForward, absRow, col)
 	case CopyModeActionSearchBackward:
 		if ms.copySearcher == nil {
 			ms.copySearcher = NewCopyModeSearcher()
 		}
 		row, col := ms.vterm.CopyModeCursorPosition()
-		absRow := ms.vterm.CopyModeScrollOffset() + row
+		absRow := ms.vterm.CopyModeCursorAbsoluteRow(row)
 		ms.copySearcher.StartSearch(SearchBackward, absRow, col)
 	case CopyModeActionNextMatch, CopyModeActionPrevMatch:
 		// Search execution is intentionally delegated to the JS search bindings.
@@ -3340,35 +3552,6 @@ func (m *SessionManager) handleActiveMessage(payload any) response {
 	return response{value: m.activeMessageForSession(id, time.Now())}
 }
 
-func (m *SessionManager) handleCapturePane(payload any) response {
-	p, ok := payload.(capturePanePayload)
-	if !ok {
-		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
-	}
-	ms, exists := m.sessions[p.sessionID]
-	if !exists {
-		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.sessionID)}
-	}
-	snap := ms.snapshot.Load()
-	if snap == nil {
-		return response{value: ""}
-	}
-	text := snap.GetPlainText()
-	if text == "" {
-		return response{value: ""}
-	}
-	lines := strings.Split(text, "\n")
-	start := max(p.startLine, 0)
-	end := p.endLine
-	if end < 0 || end > len(lines) {
-		end = len(lines)
-	}
-	if start >= end {
-		return response{value: ""}
-	}
-	return response{value: strings.Join(lines[start:end], "\n")}
-}
-
 func (m *SessionManager) handleCopySelection(payload any) response {
 	id, ok := payload.(SessionID)
 	if !ok {
@@ -3656,6 +3839,22 @@ func (m *SessionManager) handleLayoutMode(payload any) response {
 	return response{value: pm.mode()}
 }
 
+// handleReplaceSnapshotForTest stores a test-constructed snapshot as the
+// session's published snapshot. It runs on the worker so the atomic pointer
+// swap is ordered with concurrent publishes.
+func (m *SessionManager) handleReplaceSnapshotForTest(payload any) response {
+	p, ok := payload.(snapshotReplaceForTest)
+	if !ok {
+		return response{err: fmt.Errorf("%w: invalid payload type", ErrInvalidPayload)}
+	}
+	ms, exists := m.sessions[p.id]
+	if !exists {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.id)}
+	}
+	ms.snapshot.Store(p.snap)
+	return response{}
+}
+
 // handleSessions builds a list of SessionInfo values from the sessions map.
 func (m *SessionManager) handleSessions() response {
 	infos := make([]SessionInfo, 0, len(m.sessions))
@@ -3751,6 +3950,7 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 		Cols:               m.termCols,
 		CursorRow:          scr.CurRow,
 		CursorCol:          scr.CurCol,
+		CursorVisible:      scr.CursorVisible,
 		MouseTracking:      int(scr.MouseTracking),
 		MouseSGR:           scr.MouseSGR,
 		InsertMode:         scr.InsertMode,

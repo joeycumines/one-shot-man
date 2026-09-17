@@ -13,7 +13,7 @@ import (
 //	 BenchmarkVTermWrite_ANSI-10         4441   247536 ns/op   20.20 MB/s   1083392 B/op    899 allocs/op
 //	 BenchmarkVTermWrite_ASCII-10        7683   140293 ns/op   29.51 MB/s   483951 B/op     179 allocs/op
 //	 BenchmarkVTermWrite_UTF8-10         7596   143228 ns/op   28.84 MB/s   376432 B/op     139 allocs/op
-//	 BenchmarkVTermRenderFullScreen-10   74031    37906 ns/op    5379 B/op     109 allocs/op
+//	 BenchmarkVTermSnapshotFullScreen-10   74031    37906 ns/op    5379 B/op     109 allocs/op
 //
 // Throughput (T018):
 //
@@ -91,13 +91,13 @@ func BenchmarkVTermWrite_UTF8(b *testing.B) {
 	}
 }
 
-func BenchmarkVTermRenderFullScreen(b *testing.B) {
+func BenchmarkVTermSnapshotFullScreen(b *testing.B) {
 	vt := NewVTerm(24, 80)
 	// Fill screen with content.
 	vt.Write(benchInputANSI)
 	b.ResetTimer()
 	for b.Loop() {
-		_ = vt.RenderFullScreen()
+		_ = vt.Snapshot().FullScreen
 	}
 }
 
@@ -364,17 +364,17 @@ func BenchmarkAlloc_ScrollUp(b *testing.B) {
 
 // ── Snapshot benchmarks: old (triple-call) vs new (Snapshot()) ─────
 
-// BenchmarkVTerm_Snapshot_Old measures the cost of the old pattern:
-// String() + ContentANSI() + RenderFullScreen() + individual mode queries,
-// each acquiring the mutex independently.
+// BenchmarkVTerm_Snapshot_Old measures the cost of the per-accessor
+// pattern: String() plus a Snapshot() call per representation and individual
+// mode queries, each acquiring the mutex independently.
 func BenchmarkVTerm_Snapshot_Old(b *testing.B) {
 	v := NewVTerm(24, 80)
 	v.Write(benchInputANSI)
 	b.ResetTimer()
 	for b.Loop() {
 		_ = v.String()
-		_ = v.ContentANSI()
-		_ = v.RenderFullScreen()
+		_ = v.Snapshot().ANSI
+		_ = v.Snapshot().FullScreen
 		_, _ = v.CursorPosition()
 		_ = v.MouseTracking()
 		_ = v.MouseSGR()

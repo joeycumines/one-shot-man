@@ -467,7 +467,7 @@
         // The session target was pre-configured as sessionTypes.agent at
         // bootstrap (setupEngineGlobals) — no lazy assignment needed.
         // attach() returns the pinned SessionID; store it in state so all
-        // Agent reads/writes use tuiMux.snapshot(cid) rather than ActiveID.
+        // Agent reads/writes use tuiMux.capture(cid) rather than ActiveID.
         // SYNCHRONOUS INVARIANT: state.agentSessionID MUST be written in the
         // same synchronous JS turn as the attach() call. pollAgentScreenshot
         // depends on this — if a tick fires between attach and state write,

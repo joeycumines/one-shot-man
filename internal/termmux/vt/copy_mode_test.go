@@ -104,23 +104,28 @@ func TestVisibleLines_WithScrollOffset(t *testing.T) {
 		t.Fatalf("ScrollbackLen = %d, want >= 3", scr.ScrollbackLen)
 	}
 
-	// ScrollOffset=0: visible rows are the screen rows
+	// ScrollOffset=0: the viewport shows the live tail. The last screen row
+	// holds the newest content ('5' area); assert the window is the live one.
 	scr.ScrollOffset = 0
 	lines := scr.VisibleLines()
 	if len(lines) != 3 {
 		t.Fatalf("len(VisibleLines) = %d, want 3", len(lines))
 	}
+	live := string([]rune{lines[0][0].Ch, lines[1][0].Ch, lines[2][0].Ch})
+	if live != "45 " {
+		t.Errorf("offset 0 window = %q, want live tail %q", live, "45 ")
+	}
 
-	// ScrollOffset=3: should show scrollback rows
-	scr.ScrollOffset = 3
+	// ScrollOffset=ScrollbackLen: the viewport shows the oldest window.
+	scr.ScrollOffset = scr.ScrollbackLen
 	lines = scr.VisibleLines()
 	if len(lines) != 3 {
 		t.Fatalf("len(VisibleLines) = %d, want 3", len(lines))
 	}
 
-	// First visible row should be from scrollback
-	if lines[0][0].Ch == ' ' || lines[0][0].Ch == 0 {
-		t.Errorf("lines[0][0].Ch = %c, expected scrollback content", lines[0][0].Ch)
+	// First visible row should be the oldest scrollback line.
+	if got := lines[0][0].Ch; got != '0' {
+		t.Errorf("lines[0][0].Ch = %c, want oldest scrollback '0'", got)
 	}
 }
 
@@ -257,13 +262,14 @@ func TestSelectedText_WithScrollback(t *testing.T) {
 	// Enter copy mode to see scrollback
 	v.EnterCopyMode()
 
-	// Select from scrollback row 0 (visible row 0 when ScrollOffset=0)
+	// Select visible rows 0-1; at offset 0 these are the live tail, so the
+	// selection must be non-empty live content (not scrollback row 0).
 	v.SelectStart(0, 0)
 	v.SelectEnd(1, 2)
 
 	got := v.SelectedText()
 	if got == "" {
-		t.Error("SelectedText empty, expected scrollback content")
+		t.Error("SelectedText empty, expected live-tail content")
 	}
 }
 
@@ -365,23 +371,23 @@ func TestRenderRespectsScrollOffset(t *testing.T) {
 
 	// Render with ScrollOffset=0
 	scr.ScrollOffset = 0
-	plain0, _, _ := RenderAll(scr)
+	plain0, _, _ := RenderCapture(scr, 0, 0, false)
 
 	// Render with ScrollOffset=3 (showing scrollback)
 	scr.ScrollOffset = 3
-	plain3, _, _ := RenderAll(scr)
+	plain3, _, _ := RenderCapture(scr, 0, 0, false)
 
 	// They should be different since scrollback content differs from visible
 	if plain0 == plain3 {
 		// Could happen if scrollback and visible are identical, but unlikely
 		// with our setup. Just verify they're both non-empty.
 		if plain0 == "" {
-			t.Error("RenderAll returned empty plain text")
+			t.Error("RenderCapture returned empty plain text")
 		}
 	}
 }
 
-func TestRenderContentANSI_RespectsScrollOffset(t *testing.T) {
+func TestRenderCaptureANSI_RespectsScrollOffset(t *testing.T) {
 	scr := NewScreen(3, 10)
 	scr.MaxScrollback = 50
 
@@ -392,23 +398,23 @@ func TestRenderContentANSI_RespectsScrollOffset(t *testing.T) {
 	}
 
 	scr.ScrollOffset = 0
-	ansi0 := RenderContentANSI(scr)
+	_, ansi0, _ := RenderCapture(scr, 0, 0, false)
 
 	scr.ScrollOffset = 3
-	ansi3 := RenderContentANSI(scr)
+	_, ansi3, _ := RenderCapture(scr, 0, 0, false)
 
 	// Both should be non-empty
 	if ansi0 == "" || ansi3 == "" {
-		t.Error("RenderContentANSI returned empty")
+		t.Error("RenderCapture returned empty ANSI")
 	}
 
 	// They should differ (scrollback vs visible content)
 	if ansi0 == ansi3 {
-		t.Log("RenderContentANSI same at offset 0 and 3 — may be identical content")
+		t.Log("RenderCapture ANSI same at offset 0 and 3 — may be identical content")
 	}
 }
 
-func TestRenderFullScreen_RespectsScrollOffset(t *testing.T) {
+func TestRenderCaptureFullScreen_RespectsScrollOffset(t *testing.T) {
 	scr := NewScreen(3, 10)
 	scr.MaxScrollback = 50
 
@@ -419,13 +425,13 @@ func TestRenderFullScreen_RespectsScrollOffset(t *testing.T) {
 	}
 
 	scr.ScrollOffset = 0
-	fs0 := RenderFullScreen(scr)
+	_, _, fs0 := RenderCapture(scr, 0, 0, false)
 
 	scr.ScrollOffset = 3
-	fs3 := RenderFullScreen(scr)
+	_, _, fs3 := RenderCapture(scr, 0, 0, false)
 
 	if fs0 == "" || fs3 == "" {
-		t.Error("RenderFullScreen returned empty")
+		t.Error("RenderCapture returned empty full screen")
 	}
 }
 
@@ -541,10 +547,12 @@ func TestSelectedText_ScrollbackContent(t *testing.T) {
 		t.Fatalf("ScrollbackLines = %d, want >= 3", sb)
 	}
 
-	// Enter copy mode and scroll to top
+	// Enter copy mode (offset 0 = live tail), then scroll to the oldest
+	// window so visible row 0 is absolute scrollback row 0 ('AAAAA').
 	v.EnterCopyMode()
+	v.ScrollCopyModeToTop()
 
-	// Select from first visible row (which is scrollback row 0)
+	// Select from first visible row (absolute scrollback row 0).
 	v.SelectStart(0, 0)
 	v.SelectEnd(0, 4)
 

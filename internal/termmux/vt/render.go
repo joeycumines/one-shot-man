@@ -17,119 +17,40 @@ func appendCUP(buf []byte, row, col int) []byte {
 	return buf
 }
 
-// RenderFullScreen produces ANSI output that overwrites every row in-place.
-// It emits CUP + content + EL (erase-to-EOL) for ALL rows, including blank
-// ones. This avoids the flash-to-black caused by ESC[2J (erase display)
-// when restoring screen content, because the previous screen's content is
-// overwritten line by line instead of cleared first.
-// When ScrollOffset > 0, visible lines include scrollback content.
-func RenderFullScreen(scr *Screen) string {
-	var buf []byte
-	var prevAttr Attr
-
-	lines := scr.VisibleLines()
-
-	for r := 0; r < scr.Rows; r++ {
-		buf = appendCUP(buf, r+1, 1)
-
-		row := lines[r]
-
-		// Find last non-default cell in this row.
-		last := -1
-		for c := scr.Cols - 1; c >= 0; c-- {
-			cell := row[c]
-			if cell.Ch != ' ' || !cell.Attr.IsZero() {
-				last = c
-				break
-			}
-		}
-
-		if last >= 0 {
-			for c := 0; c <= last; c++ {
-				cell := row[c]
-				if cell.SecondHalf {
-					continue
-				}
-				diff := SGRDiff(prevAttr, cell.Attr)
-				if diff != "" {
-					buf = append(buf, diff...)
-				}
-				prevAttr = cell.Attr
-				buf = utf8.AppendRune(buf, cell.Ch)
-			}
-		}
-
-		buf = append(buf, "\x1b[0m\x1b[K"...)
-		prevAttr = Attr{}
+// RenderCapture renders the zero-based, end-exclusive visible-row range
+// [start, end) of scr in a single cell-grid traversal, producing plain text,
+// ANSI-styled content, and a full-screen CUP+EL patch.
+//
+// The range is normalized in order: a start below zero clamps to zero, an end
+// at or below zero means the visible row count, an end above the visible row
+// count clamps, and start >= end yields empty output for all three
+// representations.
+//
+// Plain and ANSI rows are joined with '\n' unless joinWrapped is true and the
+// row is a wrapped continuation of its physical predecessor (see
+// Screen.VisibleRowWrapped). Full-screen output never joins rows: it emits
+// CUP + content + EL for every selected visible row using that row's 1-based
+// terminal coordinate, then the unchanged cursor-position and visibility tail.
+// When ScrollOffset > 0, visible rows include scrollback content.
+func RenderCapture(scr *Screen, start, end int, joinWrapped bool) (plainText, ansi, fullScreen string) {
+	if scr == nil {
+		return "", "", ""
 	}
 
-	buf = appendCUP(buf, scr.CurRow+1, scr.CurCol+1)
-	if scr.CursorVisible {
-		buf = append(buf, "\x1b[?25h"...)
-	} else {
-		buf = append(buf, "\x1b[?25l"...)
+	rows := scr.Rows
+	if start < 0 {
+		start = 0
 	}
-	return string(buf)
-}
-
-// RenderContentANSI produces ANSI-styled content suitable for embedding inside
-// another terminal UI component (e.g., a BubbleTea pane with a lipgloss border).
-// Unlike RenderFullScreen, this does NOT emit cursor positioning (CUP), erase
-// (EL), or cursor visibility sequences. Each row is rendered with SGR color/style
-// attributes, trailing blank cells are stripped, and rows are joined by newlines.
-// An SGR reset (\x1b[0m) is inserted at the end of each non-empty row.
-// When ScrollOffset > 0, visible lines include scrollback content.
-func RenderContentANSI(scr *Screen) string {
-	var b strings.Builder
-	var prevAttr Attr
-
-	lines := scr.VisibleLines()
-
-	for r := 0; r < scr.Rows; r++ {
-		if r > 0 {
-			b.WriteByte('\n')
-		}
-
-		row := lines[r]
-
-		// Find last non-default cell in this row (same logic as RenderFullScreen).
-		last := -1
-		for c := scr.Cols - 1; c >= 0; c-- {
-			cell := row[c]
-			if cell.Ch != ' ' || !cell.Attr.IsZero() {
-				last = c
-				break
-			}
-		}
-
-		if last >= 0 {
-			for c := 0; c <= last; c++ {
-				cell := row[c]
-				if cell.SecondHalf {
-					continue // wide-char placeholder
-				}
-				diff := SGRDiff(prevAttr, cell.Attr)
-				if diff != "" {
-					b.WriteString(diff)
-				}
-				prevAttr = cell.Attr
-				b.WriteRune(cell.Ch)
-			}
-			// Reset attributes at end of row to prevent color bleeding.
-			b.WriteString("\x1b[0m")
-			prevAttr = Attr{}
-		}
+	if end <= 0 {
+		end = rows
+	}
+	if end > rows {
+		end = rows
+	}
+	if start >= end {
+		return "", "", ""
 	}
 
-	return b.String()
-}
-
-// RenderAll produces all three screen representations in a single cell-grid
-// traversal: plain text, ANSI-styled content, and full-screen CUP+EL output.
-// This avoids the 3× cell-grid walk of calling String(), RenderContentANSI(),
-// and RenderFullScreen() separately.
-// When ScrollOffset > 0, visible lines include scrollback content.
-func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 	var pb []byte          // plain text
 	var ab strings.Builder // ANSI
 	var fbb []byte         // full screen
@@ -139,7 +60,7 @@ func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 
 	lines := scr.VisibleLines()
 
-	for r := 0; r < scr.Rows; r++ {
+	for r := start; r < end; r++ {
 		row := lines[r]
 
 		// Find last non-default cell (for ANSI and full screen).
@@ -161,12 +82,14 @@ func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 			}
 		}
 
-		// Full screen: CUP to row start (1-indexed).
+		// Full screen: CUP to the row start (1-indexed).
 		fbb = appendCUP(fbb, r+1, 1)
 
-		// ANSI: newline between rows.
-		if r > 0 {
+		// Plain/ANSI: join wrapped continuations instead of separating them.
+		joined := joinWrapped && scr.VisibleRowWrapped(r)
+		if r > start && !joined {
 			ab.WriteByte('\n')
+			pb = append(pb, '\n')
 		}
 
 		// Walk cells for this row.
@@ -215,12 +138,6 @@ func RenderAll(scr *Screen) (plainText, ansi, fullScreen string) {
 		if last >= 0 {
 			ab.WriteString("\x1b[0m")
 			ansiPrev = Attr{}
-		}
-
-		// Plain text preserves every row boundary; trailing newlines are
-		// trimmed after all rows so interior and leading blank rows remain.
-		if r < scr.Rows-1 {
-			pb = append(pb, '\n')
 		}
 	}
 

@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.5.0] - 2026-09-17
+
+### Added
+- `osm:freezeterm` and `internal/freezeterm`: render captured terminal text as SVG or PNG through the external [freeze](https://github.com/charmbracelet/freeze) CLI. The Go package discovers and supervises the binary (explicit `--output`, typed errors for unavailable/cancelled/non-zero runs, temporary-output cleanup) and never imports termmux; the JS module exposes async `info`, `render` and `renderText` with strict option validation. See `internal/freezeterm`, `internal/builtin/freezeterm`, and `scripts/example-16-freeze-capture.js`.
+
+### Changed
+- `osm:termmux` reads now go through one capture surface. `capture(id, opts?)` returns `{plain, ansi, fullScreen, gen, rows, cols, cursorRow, cursorCol, cursorVisible, mouseTracking, mouseSGR, locked, message, timestamp}` (or `null`), with `{start?, end?}` selecting a zero-based end-exclusive visible-row range and `joinWrapped` joining wrapped continuations. Ranged captures preserve every metadata field and clone render caches. The `snapshot`, `capturePane`, `screenshot` and `childScreen` JS methods and the Go `CapturePane`/`GetPlainText`/`GetANSI`/`GetFullScreen` accessors are gone; Go callers use `CaptureScreen` and `ScreenSnapshot.WriteCapture`. See `docs/reference/termmux-js-api.md`.
+- Build helpers relocated out of the tracked tree. User-local make overrides live in the gitignored `config.mk`, the shared helpers stay in the `example.config.mk` template, and the project-wide runners (`cross-build`, `test-jscompliance`, `test-jscompliance-all`, `test-test262`, `test-goja-compat`, `fuzz`, `report`, `test-engine`, `cover-engine`) move to `project.mk`; see `Makefile` and `project.mk`. The personal `test-prsplit-*` runners and the fork-blocked fuzz shortcut are dropped, and the previously committed `config.mk` is removed.
+- Documentation updated for the ranged capture surface and the `osm:freezeterm` composition across `docs/architecture-termmux.md`, `docs/reference/termmux-js-api.md`, `docs/scripting.md` and `docs/reference/js-compliance-suite.md`.
+
+### Removed
+- `renderRaster` and the terminal-to-PNG raster renderer (`RenderRaster`, `RenderRasterDefault`, `SaveRasterPNG` in `internal/termmux/vt`) are removed, with the `VTerm.RenderFullScreen`/`ContentANSI` wrappers and the `RenderContentANSI`/`RenderAll` helpers going with them. Terminal content is exposed through the terminal capture API instead.
+
+### Fixed
+- Viewport offset semantics fixed so offset 0 is the live tail (previously the oldest scrollback); selection, search and copy-mode math moved to absolute rows. `termui` split-layout and termpane pair content with its own generation cursor and honour `CursorVisible`.
+
+## [v0.4.1] - 2026-09-13
+
+### Added
+- VT coverage for CSI REP (repeat preceding character), HPR/VPR (relative cursor movement) and HPA (absolute horizontal positioning), G2/G3 charset designation with save and restore across DECSC/DECRC and alternate-screen transitions, and mouse tracking preservation across alternate-screen switches. See `internal/termmux/vt`.
+- `osm:os` gains `isAbsolute`, `join`, `platform` and `getenv` helpers.
+- POSIX shell word splitting for multiplexer spawn: compound commands are parsed into binary plus args (`internal/termmux/pty/command.go`), with BSD-specific termios handling.
+- JS compliance coverage for sandbox stripping of dangerous Node process globals and for the JS global surface.
+
+### Changed
+- Upstream `go-eventloop`, `goja-eventloop` and `goja-grpc` promoted to v0.1.0. The provider interface renames `Promise` to `Future`, `JSRunner`/`TrySyncJSRunner` take `context.Context`, the `eventlooputil` package is deleted in favour of inline state machines in `Bridge`, `Runtime` and `Engine`, and ownership checks use `loop.IsCallbackOwner()`. See `go.mod`.
+- `osm:termmux` lifecycle is async: `start()`, `wait()` and `close()` return tracked promises via the new `lifecycle.go` instead of blocking the event loop. Embedded `pr_split` scripts updated for the new API.
+- `osm:exec` spawn uses an unbounded synchronized pipe queue so slow JS consumers no longer lose output, and `osm:fetch` `ReadableStream` pumps integrate with the event loop via `Promisify`. `osm:astpack` token estimation and the tokenizer bindings are refactored.
+
+### Fixed
+- Multiplexer capture delivery no longer drops output when consumers are slow (the reader loop always queues copied chunks; the output loop delivers in order and owns passthrough activation), and manager shutdown no longer races request admission (close-channel handshake drains pending requests cleanly). PTY, `ptyio` and multiplexer tests use `t.TempDir()` isolation.
+- Behavior-tree ticker admission race with `Bridge.Stop` closed: tickers are constructed and admitted under lock, orphaned untracked settlement is removed, and ticker/manager JS wrappers select on `ctx.Done()` so `.done()` settles after shutdown instead of hanging or leaking goroutines. `RunSync` call sites pass `context.Context`.
+- Scripting engine `executeOnLoop` no longer uses the Goja runtime after return when cancellation fires while a callback owns it.
+- VT rendering fixes: `MaxScrollOffset` formula corrected, dynamic tab stops for CHT/CBT, no deadlock on focus in/out responses, no spurious pending wrap on resize, private-ED guard against `CSI ? J` erasing the display, SGR colon subparameters, and scrollback wrap tracking for correct resize reflow.
+- Storage cleanup hardening: lock parent directories are created, legacy locks are acquired for upgrade compatibility, and the session path is re-statted while holding the lock (TOCTOU fix).
+- `osm pr-split` closes the termmux manager before `engine.Wait()` so tracked workers no longer block event-loop auto-exit; test harnesses use deterministic deadlines and failure logging. Windows PTY signal forwarding is real (SIGINT via `os/signal`) instead of a no-op stub.
+
+## [v0.4.0] - 2026-08-30
+
 ### Added
 - Terminal emulator coverage for insert mode (SM 4), line feed/new line mode (SM 20), and private modes 1, 6, 7, 25, 47, 66, 1000, 1001, 1002, 1003, 1004, 1006, 1047, 1049, 2004 and 2026, plus device attributes (DA), status reports (DSR), cursor shape (DECSCUSR), window ops (XTWINOPS), soft reset (DECSTR), and mode queries (DECRQM, DECRQSS). Includes charset handling (G0/G1, line drawing), colon subparameters, OSC and DCS dispatch, scrollback with reflow, dirty-row tracking, batched ASCII output, search, copy mode, and alt-screen variants. See `internal/termmux/vt` and `docs/architecture-termmux.md`.
 - Session and window management for the multiplexer: per-pane creation, focus, resize, swapping and zoom, per-window layout modes (tiled, stacked, horizontal, vertical, main-*), break and join between windows, copy mode key handling, search, monitoring for activity, silence and bell, remain-on-exit with respawn, pipe to file or command, message overlay, capture region, session lock, synchronize-panes, chooser, pane borders, and status bar positioning. See `internal/termmux/manager.go`, `pane_manager.go`, `window.go`, `layout.go`, `monitor.go` and `docs/termmux-architecture.md`.
@@ -85,7 +124,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Config file loading rejects symlinks to prevent path traversal attacks
 
-[Unreleased]: https://github.com/joeycumines/one-shot-man/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/joeycumines/one-shot-man/compare/v0.5.0...HEAD
+[v0.5.0]: https://github.com/joeycumines/one-shot-man/compare/v0.4.1...v0.5.0
+[v0.4.1]: https://github.com/joeycumines/one-shot-man/compare/v0.4.0...v0.4.1
+[v0.4.0]: https://github.com/joeycumines/one-shot-man/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/joeycumines/one-shot-man/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/joeycumines/one-shot-man/compare/v0.1.0...v0.2.0
 [v0.1.0]: https://github.com/joeycumines/one-shot-man/releases/tag/v0.1.0

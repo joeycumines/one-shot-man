@@ -667,10 +667,10 @@ func TestSnapshot_AccessorFields(t *testing.T) {
 	// Verify all documented snapshot fields are present and correct types.
 	v, err := sessionRun(t, runtime, `
 		var id = tuiMux.activeID();
-		var snap = tuiMux.snapshot(id);
+		var snap = tuiMux.capture(id);
 		snap !== null &&
 			typeof snap.gen === 'number' &&
-			typeof snap.plainText === 'string' &&
+			typeof snap.plain === 'string' &&
 			typeof snap.ansi === 'string' &&
 			typeof snap.fullScreen === 'string' &&
 			typeof snap.rows === 'number' &&
@@ -685,7 +685,7 @@ func TestSnapshot_AccessorFields(t *testing.T) {
 		t.Fatalf("RunString: %v", err)
 	}
 	if !v.ToBoolean() {
-		raw, _ := sessionRun(t, runtime, `JSON.stringify(tuiMux.snapshot(tuiMux.activeID()))`)
+		raw, _ := sessionRun(t, runtime, `JSON.stringify(tuiMux.capture(tuiMux.activeID()))`)
 		t.Fatalf("snapshot field check failed, got: %s", raw)
 	}
 }

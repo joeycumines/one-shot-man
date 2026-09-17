@@ -229,15 +229,15 @@ func TestVTerm_ConcurrentWriteResize(t *testing.T) {
 func TestVTerm_Render(t *testing.T) {
 	v := NewVTerm(24, 80)
 	v.Write([]byte("Hi"))
-	out := v.RenderFullScreen()
+	out := v.Snapshot().FullScreen
 	if !strings.Contains(out, "Hi") {
-		t.Errorf("RenderFullScreen() missing text; got %q", out)
+		t.Errorf("Snapshot().FullScreen missing text; got %q", out)
 	}
 	if !strings.Contains(out, "\x1b[0m") {
-		t.Error("RenderFullScreen() missing SGR reset")
+		t.Error("Snapshot().FullScreen missing SGR reset")
 	}
 	if !strings.Contains(out, "\x1b[?25h") {
-		t.Error("RenderFullScreen() missing cursor show")
+		t.Error("Snapshot().FullScreen missing cursor show")
 	}
 }
 
@@ -254,7 +254,7 @@ func TestVTerm_RenderConcurrent(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for range 500 {
-			_ = v.RenderFullScreen()
+			_ = v.Snapshot().FullScreen
 		}
 	}()
 	wg.Wait()
@@ -282,7 +282,7 @@ func TestVTerm_RenderRoundTrip(t *testing.T) {
 			v1 := NewVTerm(10, 40)
 			v1.Write([]byte(tc.input))
 
-			rendered := v1.RenderFullScreen()
+			rendered := v1.Snapshot().FullScreen
 
 			v2 := NewVTerm(10, 40)
 			v2.Write([]byte(rendered))
@@ -639,10 +639,10 @@ func TestVTerm_RealAgentCodeOutput(t *testing.T) {
 		t.Fatalf("Write returned %d; want %d", n, len(data))
 	}
 
-	// RenderFullScreen must not panic and produce valid UTF-8.
-	rendered := v.RenderFullScreen()
+	// Snapshot().FullScreen must not panic and produce valid UTF-8.
+	rendered := v.Snapshot().FullScreen
 	if !utf8.ValidString(rendered) {
-		t.Error("RenderFullScreen() produced invalid UTF-8")
+		t.Error("Snapshot().FullScreen produced invalid UTF-8")
 	}
 
 	// Verify some recognizable fragments made it through.
@@ -692,9 +692,9 @@ func TestVTerm_TestDataFixtures_NoPanic(t *testing.T) {
 			if n != len(data) {
 				t.Fatalf("Write returned %d; want %d", n, len(data))
 			}
-			rendered := v.RenderFullScreen()
+			rendered := v.Snapshot().FullScreen
 			if !utf8.ValidString(rendered) {
-				t.Errorf("RenderFullScreen() produced invalid UTF-8 for %s", e.Name())
+				t.Errorf("Snapshot().FullScreen produced invalid UTF-8 for %s", e.Name())
 			}
 		})
 	}

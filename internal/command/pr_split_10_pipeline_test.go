@@ -621,9 +621,9 @@ func TestAnchorPipeline_CaptureInputAnchors(t *testing.T) {
 		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			_screen: '',
-			snapshot: function(id) {
+			capture: function(id) {
 				if (id !== 42) return null;
-				return { plainText: tuiMux._screen };
+				return { plain: tuiMux._screen };
 			}
 		};
 		true
@@ -832,9 +832,9 @@ func TestAnchorPipeline_SendToHandle_MockedTuiMux_Stable(t *testing.T) {
 		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
 			_screen: '❯ ',
-			snapshot: function(id) {
+			capture: function(id) {
 				if (id !== 42) return null;
-				return { plainText: tuiMux._screen };
+				return { plain: tuiMux._screen };
 			}
 		};
 		// Fast timeouts for testing.
@@ -902,12 +902,12 @@ func TestAnchorPipeline_SendToHandle_Timeout_UnstableAnchors(t *testing.T) {
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
 		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
-			snapshot: function(id) {
+			capture: function(id) {
 				if (id !== 42) return null;
 				__jitterCount++;
 				// Pad to different lengths so bottom offsets never stabilize.
 				var pad = new Array(__jitterCount + 1).join('x');
-				return { plainText: pad + '\n❯ prompt' };
+				return { plain: pad + '\n❯ prompt' };
 			}
 		};
 		var __mockHandle = { send: function(d) {} };
@@ -979,7 +979,7 @@ func TestAnchorPipeline_CaptureScreenshot_ThrowingMux(t *testing.T) {
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
 		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
-			snapshot: function(id) {
+			capture: function(id) {
 				if (id !== 42) return null;
 				throw new Error('PTY disconnected');
 			}
@@ -1008,9 +1008,9 @@ func TestAnchorPipeline_CaptureScreenshot_ValidMux(t *testing.T) {
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
 		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
-			snapshot: function(id) {
+			capture: function(id) {
 				if (id !== 42) return null;
-				return { plainText: 'Hello\n❯ ' };
+				return { plain: 'Hello\n❯ ' };
 			}
 		};
 		true
@@ -1038,7 +1038,6 @@ func TestAnchorPipeline_CaptureScreenshot_NoFallbackWithoutPinnedAgentSession(t 
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
 		globalThis.prSplit._state.agentSessionID = null;
 		globalThis.tuiMux = {
-			screenshot: function() { throw new Error('legacy fallback should not be used'); }
 		};
 		true
 	`)
@@ -1077,19 +1076,19 @@ func TestAnchorPipeline_BestAnchorsStateFallback(t *testing.T) {
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
 		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
-			snapshot: function(id) {
+			capture: function(id) {
 				if (id !== 42) return null;
 				if (__phase === 'ready') {
-					return { plainText: 'loading...\n❯ ' };
+					return { plain: 'loading...\n❯ ' };
 				}
 				if (__phase === 'anchor') {
 					__anchorCount++;
 					// Jitter: alternate input line length so stableKey oscillates.
 					var pad = (__anchorCount % 2 === 0) ? 'xx' : 'xxxx';
-					return { plainText: pad + 'test prompt tail\n❯ ' };
+					return { plain: pad + 'test prompt tail\n❯ ' };
 				}
 				// After submit: shift prompt position.
-				return { plainText: '❯ working on it...' };
+				return { plain: '❯ working on it...' };
 			}
 		};
 		var __mockHandle = {
@@ -1158,12 +1157,12 @@ func TestAnchorPipeline_PromptOnlyFallback(t *testing.T) {
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
 		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
-			snapshot: function(id) {
+			capture: function(id) {
 				if (id !== 42) return null;
 				if (__phase === 'ack') {
-					return { plainText: '❯ thinking...' };
+					return { plain: '❯ thinking...' };
 				}
-				return { plainText: 'some other content\nmore content\n❯ ' };
+				return { plain: 'some other content\nmore content\n❯ ' };
 			}
 		};
 		var __mockHandle = {
@@ -1223,9 +1222,9 @@ func TestAnchorPipeline_NoPromptMarker_HardFailure(t *testing.T) {
 		globalThis.prSplit._state = globalThis.prSplit._state || {};
 		globalThis.prSplit._state.agentSessionID = 42;
 		globalThis.tuiMux = {
-			snapshot: function(id) {
+			capture: function(id) {
 				if (id !== 42) return null;
-				return { plainText: 'Loading Agent...\nPlease wait...' };
+				return { plain: 'Loading Agent...\nPlease wait...' };
 			}
 		};
 		var __mockHandle = { send: function(d) {} };

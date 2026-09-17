@@ -13,8 +13,8 @@ const copyModeWait = `
 		function waitSnapshot(substr, deadlineMs) {
 			return new Promise(function(resolve, reject) {
 				(function poll() {
-					var snap = s.mgr.snapshot(s.sid);
-					if (snap && snap.plainText && snap.plainText.indexOf(substr) >= 0) return resolve();
+					var snap = s.mgr.capture(s.sid);
+					if (snap && snap.plain && snap.plain.indexOf(substr) >= 0) return resolve();
 					if (Date.now() > deadlineMs) return reject(new Error('timeout waiting for ' + substr));
 					setTimeout(poll, 10);
 				})();
@@ -150,8 +150,8 @@ func TestCopyModeKey_JS_SelectAndCopy(t *testing.T) {
 			throw new Error("enter should exit copy mode");
 		}
 
-		var snap = mgr.snapshot(sid);
-		if (!snap || !snap.plainText || snap.plainText.indexOf("hello copy mode world") < 0) {
+		var snap = mgr.capture(sid);
+		if (!snap || !snap.plain || snap.plain.indexOf("hello copy mode world") < 0) {
 			throw new Error("snapshot missing expected text after copy");
 		}
 	`)

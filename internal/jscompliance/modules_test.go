@@ -29,7 +29,7 @@ type moduleContract struct {
 	smokeWant    string
 }
 
-// moduleContracts enumerates all 47 production osm: modules (45 in
+// moduleContracts enumerates all 48 production osm: modules (46 in
 // register.go + osm:sharedStateSymbols + osm:bt) cross-checked against
 // docs/scripting.md AND each module's module.go exports. nextIntegerID and
 // nextIntegerId are aliases (deprecated) of one module.
@@ -65,6 +65,7 @@ var moduleContracts = []moduleContract{
 	{name: "mcpcallback", mustExist: []string{"MCPCallback"}},
 	{name: "aimux", mustExist: []string{"EVENT_COMPLETION", "EVENT_ERROR", "EVENT_MODEL_SELECT", "EVENT_PERMISSION", "EVENT_RATE_LIMIT", "EVENT_SSO_LOGIN", "EVENT_TEXT", "EVENT_THINKING", "EVENT_TOOL_USE", "STATE_ERROR", "STATE_INITIALIZING", "STATE_PERMISSION_PROMPT", "STATE_PROCESSING", "STATE_RATE_LIMITED", "STATE_READY", "STATE_RESPONDING", "defaultTUIStateConfig", "eventTypeName", "newEventStream", "newHealthMonitor", "newParser", "newRegistry", "newTUIStateMachine", "processProvider", "tuiStateName"}},
 	{name: "termmux", unixOnly: true, mustExist: []string{"DEFAULT_TOGGLE_KEY", "EVENT_ACTIVATED", "EVENT_ACTIVITY", "EVENT_BELL", "EVENT_CLIPBOARD", "EVENT_CLOSED", "EVENT_CWD", "EVENT_EXIT", "EVENT_FOCUS", "EVENT_OUTPUT", "EVENT_REGISTERED", "EVENT_RESIZE", "EVENT_SILENCE", "EVENT_TERMINAL_RESIZE", "EVENT_TITLE", "EVENT_WORKING_DIRECTORY", "EXIT_CHILD_EXIT", "EXIT_CONTEXT", "EXIT_ERROR", "EXIT_TOGGLE", "LAYOUT_HORIZONTAL", "LAYOUT_MAIN_HORIZONTAL", "LAYOUT_MAIN_VERTICAL", "LAYOUT_STACKED", "LAYOUT_TILED", "LAYOUT_VERTICAL", "SIDE_AGENT", "SIDE_OSM", "enableMouseForward", "handleMouseDrag", "handlePrefixKey", "keyToTermBytes", "mouseDrag", "mouseToSGR", "newBoundedSession", "newCaptureSession", "newControlRouter", "newPrefixKeyHandler", "newSessionManager", "renderMessageBar", "splitLayout"}},
+	{name: "freezeterm", asyncExports: []string{"info", "render", "renderText"}, mustExist: []string{"info", "render", "renderText"}},
 
 	// --- Workflow & state ---
 	{name: "sharedStateSymbols", mustExist: []string{"contextItems"}},

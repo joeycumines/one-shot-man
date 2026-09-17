@@ -26,6 +26,7 @@ import (
 	fetchmod "github.com/joeycumines/one-shot-man/internal/builtin/fetch"
 	flagmod "github.com/joeycumines/one-shot-man/internal/builtin/flag"
 	formatmod "github.com/joeycumines/one-shot-man/internal/builtin/format"
+	freezetermmod "github.com/joeycumines/one-shot-man/internal/builtin/freezeterm"
 	gitopsmod "github.com/joeycumines/one-shot-man/internal/builtin/gitops"
 	grpcmod "github.com/joeycumines/one-shot-man/internal/builtin/grpc"
 	jsonmod "github.com/joeycumines/one-shot-man/internal/builtin/json"
@@ -153,6 +154,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"gitops", gitopsmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"astpack", astpackmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"diff_triage", difftriagemod.Require(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"freezeterm", freezetermmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"termmux", termmuxmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop(), terminalReader(terminalProvider), terminalWriter(terminalProvider)))
 
 	pbMod, err := gojaprotobuf.New(eventLoopProvider.Runtime())

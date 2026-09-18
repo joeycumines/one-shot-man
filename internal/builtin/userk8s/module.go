@@ -5,6 +5,15 @@
 // (tool, provider, model) selection into the slug pair and settings a tool
 // adapter launches with.
 //
+// The async contract: load() returns Promise<Snapshot>, resolveCredential
+// (accessRef, signal?) returns Promise<Resolution> honoring an optional
+// AbortSignal, and project(tool, provider, model) stays a pure synchronous
+// projection over loaded data. Rejections carry typed .code values
+// (catalog-not-found, credential-unresolved, resolver-failure-class, and the
+// ABORT_ERR abort); resolver failures surface only as their class, never raw
+// error text, and credential values cross into JS only as the value field of
+// a resolved credential.
+//
 // Credential values cross into JS only as the value field of a resolved
 // credential; nothing else in the surface exposes credential material, and
 // resolver failures are reported as classes rather than error text.
@@ -13,11 +22,13 @@ package userk8smod
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
 
 	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/userk8s"
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
 )
@@ -94,53 +105,124 @@ func clusterProvider(_ context.Context, options Options) (userk8s.Catalog, error
 
 // Require returns the Goja module loader for osm:userk8s, dispatching on the
 // configured source so a source change flips the backend without any
-// JavaScript-visible difference.
-func Require(ctx context.Context, options Options) func(runtime *goja.Runtime, module *goja.Object) {
+// JavaScript-visible difference. adapter supplies the async machinery
+// (TrackPromise / TrackAbortSignal / NewPromise); the async surface
+// (load, resolveCredential) panics at call time when it is nil.
+func Require(ctx context.Context, options Options, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
 	build := filesProvider
 	if options.Source == SourceCluster {
 		build = clusterProvider
 	}
-	return RequireWithProvider(ctx, options, build)
+	return RequireWithProvider(ctx, options, build, adapter)
 }
 
 // RequireWithProvider is Require with an injectable backend, so the cluster
 // backend can be wired without this package importing client-go.
-func RequireWithProvider(ctx context.Context, options Options, build Provider) func(runtime *goja.Runtime, module *goja.Object) {
+//
+// The async contract: load() and resolveCredential() return promises (their
+// I/O settles through Adapter.TrackPromise; load's files-backend reads and
+// resolveCredential's resolver execution are the blocking parts), project()
+// stays a pure synchronous projection over the loaded state, and an optional
+// AbortSignal aborts resolveCredential with the standard AbortError.
+// Rejections carry typed .code values: catalog-not-found,
+// access-not-found, credential-unresolved, resolver-failure-class — and
+// resolver failures are always reported as classes, never raw error text.
+func RequireWithProvider(ctx context.Context, options Options, build Provider, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 		lazy := &lazyCatalog{ctx: ctx, options: options, build: build}
 
-		// load(): {providers, models, accesses, tools, secretsPresent}
+		// load() -> Promise<Snapshot>: {source, providers, models, accesses,
+		// tools, secretsPresent}
 		_ = exports.Set("load", func(call goja.FunctionCall) goja.Value {
-			catalog, err := lazy.get()
-			if err != nil {
-				panic(runtime.NewTypeError(err.Error()))
+			if adapter == nil {
+				panic(runtime.NewTypeError("osm:userk8s: load requires the async runtime wiring"))
 			}
-			loaded, err := loadCatalog(lazy.ctx, catalog)
-			if err != nil {
-				panic(runtime.NewTypeError(err.Error()))
-			}
-			return toJS(runtime, loaded)
+			return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				catalog, err := lazy.get()
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return catalogError(rt, "catalog-not-found", err) })
+					return
+				}
+				loaded, err := loadCatalog(ctx, catalog)
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return catalogError(rt, "catalog-not-found", err) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any { return toJS(rt, loaded) })
+			})
 		})
 
-		// resolveCredential(accessRef): {status, reason?, credentials}
+		// resolveCredential(accessRef, signal?) -> Promise<Resolution>
 		_ = exports.Set("resolveCredential", func(call goja.FunctionCall) goja.Value {
+			if adapter == nil {
+				panic(runtime.NewTypeError("osm:userk8s: resolveCredential requires the async runtime wiring"))
+			}
 			accessRef, ok := stringArg(call, 0)
 			if !ok {
-				panic(runtime.NewTypeError("osm:userk8s: resolveCredential requires an access reference"))
+				promise, settler := adapter.NewPromise()
+				_ = settler.Reject(func(rt *goja.Runtime) any {
+					return rt.NewTypeError("osm:userk8s: resolveCredential requires an access reference")
+				})
+				return promise
 			}
-			catalog, err := lazy.get()
-			if err != nil {
-				panic(runtime.NewTypeError(err.Error()))
+			signalVal := signalArg(call, 1)
+
+			reqCtx, cancel := context.WithCancel(ctx)
+			var abortCleanup func()
+			if signalVal != nil {
+				if cleanup, aborted, ok := adapter.TrackAbortSignal(signalVal, func() { cancel() }); ok {
+					abortCleanup = cleanup
+					if aborted {
+						cancel()
+						return abortedPromise(adapter, signalVal)
+					}
+				}
 			}
-			resolution, err := catalog.ResolveCredential(lazy.ctx, accessRef)
-			if err != nil {
-				panic(runtime.NewTypeError(err.Error()))
-			}
-			return toJS(runtime, resolution)
+
+			return adapter.TrackPromise(reqCtx, func(trackCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+				defer cancel()
+				if abortCleanup != nil {
+					defer abortCleanup()
+				}
+				catalog, err := lazy.get()
+				if err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return catalogError(rt, "catalog-not-found", err) })
+					return
+				}
+				if err := trackCtx.Err(); err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return abortError(rt) })
+					return
+				}
+				resolution, err := catalog.ResolveCredential(trackCtx, accessRef)
+				if err != nil {
+					// An abort that landed mid-resolution wins over every
+					// classification: the resolver's context cancellation IS
+					// the abort.
+					if trackCtx.Err() != nil {
+						_ = settle.Settle(true, func(rt *goja.Runtime) any { return abortError(rt) })
+						return
+					}
+					// An unknown access reference is its own typed code; any
+					// other error is a resolver failure reported as the class
+					// alone — never raw resolver output.
+					code := "resolver-failure-class"
+					if strings.Contains(err.Error(), "unknown ModelAccess") {
+						code = "access-not-found"
+					}
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return catalogError(rt, code, err) })
+					return
+				}
+				if resolution.Status == userk8s.StatusMissingCredentials {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return credentialUnresolved(rt, resolution) })
+					return
+				}
+				_ = settle.Settle(false, func(rt *goja.Runtime) any { return toJS(rt, resolution) })
+			})
 		})
 
-		// project(toolName, providerName, modelName): {providerSlug, modelSlug, settings}
+		// project(toolName, providerName, modelName): pure synchronous
+		// projection over the loaded catalog: {providerSlug, modelSlug, settings}
 		_ = exports.Set("project", func(call goja.FunctionCall) goja.Value {
 			toolName, toolOK := stringArg(call, 0)
 			providerName, providerOK := stringArg(call, 1)
@@ -172,6 +254,68 @@ func RequireWithProvider(ctx context.Context, options Options, build Provider) f
 			return toJS(runtime, status)
 		})
 	}
+}
+
+// errResolverClass is the only text a resolver failure surfaces: the class
+// name, with no resolver output, exit status, or environment detail.
+var errResolverClass = errors.New("credential resolver failed")
+
+// catalogError builds a rejected reason with a typed code and a message that
+// is safe for resolver classes.
+func catalogError(rt *goja.Runtime, code string, err error) *goja.Object {
+	obj := rt.NewGoError(errors.New(code + ": " + err.Error()))
+	_ = obj.Set("code", code)
+	return obj
+}
+
+// credentialUnresolved rejects with the typed missing-credentials code while
+// preserving the documented resolution fields (status, reason) — but never
+// credential values, because there are none.
+func credentialUnresolved(rt *goja.Runtime, resolution userk8s.Resolution) *goja.Object {
+	reason := resolution.Reason
+	if reason == "" {
+		reason = "required credentials are missing"
+	}
+	obj := rt.NewGoError(errors.New("credential-unresolved: " + reason))
+	_ = obj.Set("code", "credential-unresolved")
+	_ = obj.Set("status", string(resolution.Status))
+	_ = obj.Set("reason", reason)
+	return obj
+}
+
+// abortError builds the standard AbortError DOMException-shaped rejection.
+func abortError(rt *goja.Runtime) *goja.Object {
+	obj := rt.NewGoError(errors.New("This operation was aborted"))
+	_ = obj.Set("code", "ABORT_ERR")
+	_ = obj.Set("name", "AbortError")
+	return obj
+}
+
+// abortedPromise settles immediately with the signal's own reason (Node
+// semantics: reject with signal.reason when present, AbortError otherwise).
+func abortedPromise(adapter *gojaeventloop.Adapter, signalVal goja.Value) goja.Value {
+	promise, settler := adapter.NewPromise()
+	_ = settler.Reject(func(rt *goja.Runtime) any {
+		if sigObj, ok := signalVal.(*goja.Object); ok {
+			if reason := sigObj.Get("reason"); reason != nil && !goja.IsUndefined(reason) && !goja.IsNull(reason) {
+				return reason
+			}
+		}
+		return abortError(rt)
+	})
+	return promise
+}
+
+// signalArg reads an optional AbortSignal argument.
+func signalArg(call goja.FunctionCall, index int) goja.Value {
+	if index >= len(call.Arguments) {
+		return nil
+	}
+	value := call.Arguments[index]
+	if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
+		return nil
+	}
+	return value
 }
 
 // toJS converts a typed payload into a plain JavaScript object that honors the

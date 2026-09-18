@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
 // renderedProfile is the engine package's frozen copy of a real rendered
@@ -21,26 +24,81 @@ func (failingRunner) Run(context.Context, []string, time.Duration) (string, erro
 	return "", errors.New("test runner never resolves")
 }
 
-func newRuntime(t *testing.T, options Options) *goja.Runtime {
+// newRuntime builds the module against a live event loop and returns the
+// runtime plus a runAsync helper that executes an async script body and
+// collects either the awaited value (delivered to __collect) or the first
+// rejection (__collectErr). The loop runs until the helper's deadline.
+func newRuntime(t *testing.T, options Options) (*goja.Runtime, func(string) (goja.Value, error)) {
 	t.Helper()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatalf("event loop: %v", err)
+	}
 	vm := goja.New()
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		t.Fatalf("adapter: %v", err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatalf("adapter bind: %v", err)
+	}
 	module := vm.NewObject()
 	exports := vm.NewObject()
 	if err := module.Set("exports", exports); err != nil {
 		t.Fatalf("setting module exports: %v", err)
 	}
-	Require(context.Background(), options)(vm, module)
+	Require(context.Background(), options, adapter)(vm, module)
 	if err := vm.Set("userk8s", exports); err != nil {
 		t.Fatalf("exposing the module: %v", err)
 	}
-	return vm
+
+	resultCh := make(chan goja.Value, 1)
+	errCh := make(chan error, 1)
+	if err := vm.Set("__collect", func(call goja.FunctionCall) goja.Value {
+		resultCh <- call.Argument(0)
+		return goja.Undefined()
+	}); err != nil {
+		t.Fatalf("wiring __collect: %v", err)
+	}
+	if err := vm.Set("__collectErr", func(call goja.FunctionCall) goja.Value {
+		errCh <- errors.New(call.Argument(0).String())
+		return goja.Undefined()
+	}); err != nil {
+		t.Fatalf("wiring __collectErr: %v", err)
+	}
+
+	runDone := make(chan error, 1)
+	go func() { runDone <- loop.Run(context.Background()) }()
+	t.Cleanup(func() {
+		_ = loop.Shutdown(context.Background())
+		select {
+		case <-runDone:
+		case <-time.After(5 * time.Second):
+		}
+	})
+
+	runAsync := func(body string) (goja.Value, error) {
+		t.Helper()
+		if _, err := vm.RunString("(async () => {" + body + "})().catch(e => __collectErr(String(e && e.code ? e.code + \": \" + e.message : e)))"); err != nil {
+			return goja.Undefined(), err
+		}
+		select {
+		case val := <-resultCh:
+			return val, nil
+		case err := <-errCh:
+			return goja.Undefined(), err
+		case <-time.After(10 * time.Second):
+			return goja.Undefined(), errors.New("timeout waiting for async result")
+		}
+	}
+	return vm, runAsync
 }
 
 func TestModuleLoadsCatalogFromArtifacts(t *testing.T) {
-	vm := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
-	value, err := vm.RunString(`
-		const loaded = userk8s.load();
-		({
+	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
+	value, err := runAsync(`
+		const loaded = await userk8s.load();
+		__collect(({
 			source: loaded.source,
 			countsOk: loaded.providers.length === 13 && loaded.models.length === 158
 				&& loaded.accesses.length === 15 && loaded.tools.length === 9 && loaded.secretsPresent === 15,
@@ -53,7 +111,7 @@ func TestModuleLoadsCatalogFromArtifacts(t *testing.T) {
 			noSecretMaterial: loaded.accesses.every(function (access) {
 				return access.value === undefined && access.credentials === undefined;
 			})
-		})
+		}))
 	`)
 	if err != nil {
 		t.Fatalf("load(): %v", err)
@@ -77,10 +135,10 @@ func TestModuleLoadsCatalogFromArtifacts(t *testing.T) {
 }
 
 func TestModuleProjectsSelection(t *testing.T) {
-	vm := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
-	value, err := vm.RunString(`
+	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
+	value, err := runAsync(`
 		const projection = userk8s.project("claude", "electronhub", "glm-5.3:dev");
-		({
+		__collect(({
 			providerSlug: projection.providerSlug,
 			modelSlug: projection.modelSlug,
 			budgetProfile: projection.budgetProfile,
@@ -89,7 +147,7 @@ func TestModuleProjectsSelection(t *testing.T) {
 			numbersOk: projection.settings.context_window === 262000
 				&& projection.settings.max_output_tokens === 16384
 				&& projection.settings.can_reason === true
-		})
+		}))
 	`)
 	if err != nil {
 		t.Fatalf("project(): %v", err)
@@ -112,38 +170,36 @@ func TestModuleProjectsSelection(t *testing.T) {
 	}
 }
 
-func TestModuleResolveCredentialReportsStatus(t *testing.T) {
+func TestModuleResolveCredentialRejectsTypedCode(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	vm := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}, Runner: failingRunner{}})
-	value, err := vm.RunString(`
-		const resolution = userk8s.resolveCredential("electronhub-shaper");
-		({
-			status: resolution.status,
-			hasReason: typeof resolution.reason === "string" && resolution.reason.length > 0,
-			noCredentials: (resolution.credentials || []).length === 0,
-			namesSlot: resolution.reason.indexOf("ELECTRONHUB_API_KEY") >= 0 || resolution.reason.indexOf("API_KEY") >= 0
-		})
+	vm, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}, Runner: failingRunner{}})
+	_ = vm
+	// With no resolvable credentials the resolution is missingCredentials;
+	// the async contract rejects with the typed code and preserves the
+	// documented status and slot-naming reason — never resolver output.
+	_, err := runAsync(`
+		await userk8s.resolveCredential("electronhub-shaper");
+		__collect("UNEXPECTED-RESOLVE");
 	`)
-	if err != nil {
-		t.Fatalf("resolveCredential(): %v", err)
+	if err == nil {
+		t.Fatal("resolveCredential with failing runner: want a rejection")
 	}
-	got := value.Export().(map[string]any)
-	if got["status"] != "missingCredentials" {
-		t.Errorf("resolveCredential().status: got %v, want missingCredentials", got["status"])
+	if !strings.Contains(err.Error(), "credential-unresolved") {
+		t.Errorf("rejection = %v, want the credential-unresolved code", err)
 	}
-	if got["hasReason"] != true || got["noCredentials"] != true {
-		t.Errorf("resolveCredential(): got %v", got)
+	if strings.Contains(err.Error(), "test runner never resolves") {
+		t.Errorf("rejection leaked raw resolver error text: %v", err)
 	}
 }
 
 func TestModuleBackendStatus(t *testing.T) {
-	vm := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
-	value, err := vm.RunString(`
+	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
+	value, err := runAsync(`
 		const status = userk8s.backendStatus();
-		({
+		__collect(({
 			source: status.source,
 			ok: status.providers === 13 && status.models === 158 && status.bindings === 15 && status.artifacts.length === 1
-		})
+		}))
 	`)
 	if err != nil {
 		t.Fatalf("backendStatus(): %v", err)
@@ -155,15 +211,36 @@ func TestModuleBackendStatus(t *testing.T) {
 }
 
 func TestModuleResolveCredentialRequiresReference(t *testing.T) {
-	vm := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
-	if _, err := vm.RunString(`userk8s.resolveCredential("")`); err == nil {
-		t.Fatal("resolveCredential(\"\"): want an error")
-	}
-	if _, err := vm.RunString(`userk8s.project("claude", "electronhub", "")`); err == nil {
-		t.Fatal("project with an empty model: want an error")
-	}
-	if _, err := vm.RunString(`userk8s.resolveCredential("no-such-access")`); err == nil {
-		t.Fatal("resolveCredential(unknown): want an error")
+	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
+	_, err := runAsync(`
+		try {
+			await userk8s.resolveCredential("");
+			__collectErr("empty reference resolved unexpectedly");
+			return;
+		} catch (e) {
+			if (!(e instanceof TypeError)) { __collectErr("empty reference: want TypeError, got " + e); return; }
+		}
+		try {
+			userk8s.project("claude", "electronhub", "");
+			__collectErr("empty model projected unexpectedly");
+			return;
+		} catch (e) {
+			// project stays a synchronous throw (pure, no promise machinery).
+		}
+		try {
+			await userk8s.resolveCredential("no-such-access");
+			__collectErr("unknown access resolved unexpectedly");
+			return;
+		} catch (e) {
+			if (!e.code || (e.code !== "access-not-found" && e.code !== "credential-unresolved")) {
+				__collectErr("unknown access: want a typed code, got " + (e.code || e));
+				return;
+			}
+		}
+		__collect("ALL-REJECTIONS-OK");
+	`)
+	if err != nil {
+		t.Fatalf("rejection surface: %v", err)
 	}
 }
 
@@ -172,16 +249,16 @@ func TestMain(m *testing.M) {
 }
 
 func TestModuleProjectsReconciledSlug(t *testing.T) {
-	vm := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
-	value, err := vm.RunString(`
+	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
+	value, err := runAsync(`
 		const projection = userk8s.project("opencode", "electronhub", "glm-5.3:dev");
-		({
+		__collect(({
 			providerSlug: projection.providerSlug,
 			modelSlug: projection.modelSlug,
 			modelId: projection.modelId,
 			budgetProfile: projection.budgetProfile,
 			settingsOk: projection.settings.context_window === 262000 && projection.settings.max_output_tokens === 16384
-		})
+		}))
 	`)
 	if err != nil {
 		t.Fatalf("project(): %v", err)
@@ -211,17 +288,18 @@ func (resolvingRunner) Run(context.Context, []string, time.Duration) (string, er
 
 func TestModuleResolvesBearerCredentialThroughJS(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	vm := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}, Runner: resolvingRunner{}})
-	value, err := vm.RunString(`
-		const resolution = userk8s.resolveCredential("electronhub-shaper");
+	vm, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}, Runner: resolvingRunner{}})
+	_ = vm
+	value, err := runAsync(`
+		const resolution = await userk8s.resolveCredential("electronhub-shaper");
 		const credential = (resolution.credentials || [])[0];
-		({
+		__collect(({
 			status: resolution.status,
 			envVar: credential && credential.envVar,
 			valuePresent: !!credential && credential.value.length > 0,
 			provenanceOk: !!credential && credential.provenance.indexOf("command:") === 0
-		})
-	`)
+		}))`)
+	_ = value
 	if err != nil {
 		t.Fatalf("resolveCredential(): %v", err)
 	}
@@ -246,10 +324,85 @@ func TestModuleRejectsUnserviceableSources(t *testing.T) {
 		{name: "cluster without a backend", options: Options{Source: SourceCluster, Artifacts: []string{renderedProfile}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			vm := newRuntime(t, test.options)
-			if _, err := vm.RunString(`userk8s.load()`); err == nil {
-				t.Fatalf("load(): want an error for %s", test.name)
+			_, runAsync := newRuntime(t, test.options)
+			_, err := runAsync(`
+				await userk8s.load();
+				__collect("UNEXPECTED-LOAD");
+			`)
+			if err == nil {
+				t.Fatalf("load(): want a rejection for %s", test.name)
+			}
+			if !strings.Contains(err.Error(), "catalog-not-found") {
+				t.Errorf("rejection = %v, want the catalog-not-found code", err)
 			}
 		})
+	}
+}
+
+// slowRunner delays before answering, so an abort can land mid-resolution.
+type slowRunner struct{}
+
+func (slowRunner) Run(ctx context.Context, _ []string, _ time.Duration) (string, error) {
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-time.After(2 * time.Second):
+		return "slow-value", nil
+	}
+}
+
+// TestModuleResolveCredentialAbortsOnSignal proves the optional AbortSignal
+// aborts a pending resolution: the promise rejects with ABORT_ERR / AbortError
+// and the underlying resolver's context is cancelled (slowRunner returns on
+// ctx.Done rather than completing its 2s wait).
+func TestModuleResolveCredentialAbortsOnSignal(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	vm, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}, Runner: slowRunner{}})
+	_ = vm
+	start := time.Now()
+	_, err := runAsync(`
+		const controller = new AbortController();
+		const pending = userk8s.resolveCredential("electronhub-shaper", controller.signal);
+		controller.abort();
+		try {
+			await pending;
+			__collectErr("UNEXPECTED-RESOLVE");
+		} catch (e) {
+			if (!e.code || (e.code !== "ABORT_ERR" && e.name !== "AbortError")) {
+				__collectErr("want an AbortError / ABORT_ERR, got " + (e.code || e.name || e));
+				return;
+			}
+			__collect("ABORTED-OK");
+		}
+	`)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("aborted resolveCredential: %v", err)
+	}
+	if elapsed >= 2*time.Second {
+		t.Errorf("abort took %v; the resolver was not cancelled by the signal", elapsed)
+	}
+}
+
+// TestModuleLoadIsAsync proves load() returns a promise: calling .then on it
+// resolves with the snapshot, and the synchronous style of the old API no
+// longer applies (load() itself returns a promise object, not the snapshot).
+func TestModuleLoadIsAsync(t *testing.T) {
+	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
+	value, err := runAsync(`
+		const pending = userk8s.load();
+		const isPromise = typeof pending.then === "function";
+		const loaded = await pending;
+		__collect({ isPromise: isPromise, source: loaded.source, providers: loaded.providers.length });
+	`)
+	if err != nil {
+		t.Fatalf("load(): %v", err)
+	}
+	got := value.Export().(map[string]any)
+	if got["isPromise"] != true {
+		t.Errorf("load() isPromise: got %v, want true", got["isPromise"])
+	}
+	if got["source"] != "files" {
+		t.Errorf("load() source: got %v, want files", got["source"])
 	}
 }

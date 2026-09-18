@@ -208,9 +208,9 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"termui/splitlayout", splitlayoutmod.Require())
 
 	if configured.userK8sProvider != nil {
-		registry.RegisterNativeModule(prefix+"userk8s", userk8smod.RequireWithProvider(ctx, configured.userK8s, configured.userK8sProvider))
+		registry.RegisterNativeModule(prefix+"userk8s", userk8smod.RequireWithProvider(ctx, configured.userK8s, configured.userK8sProvider, eventLoopProvider.Adapter()))
 	} else {
-		registry.RegisterNativeModule(prefix+"userk8s", userk8smod.Require(ctx, configured.userK8s))
+		registry.RegisterNativeModule(prefix+"userk8s", userk8smod.Require(ctx, configured.userK8s, eventLoopProvider.Adapter()))
 	}
 
 	return RegisterResult{

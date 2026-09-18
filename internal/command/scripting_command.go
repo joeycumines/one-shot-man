@@ -73,14 +73,19 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	}
 
 	// Create execution context. Use injected factory if available (for tests),
-	// otherwise use signal.NotifyContext for proper signal handling.
+	// otherwise plain cancellation with Node-style signal delivery below
+	// (interactive runs keep the blunt NotifyContext lifecycle).
 	var ctx context.Context
 	var cancel context.CancelFunc
+	var startSignals func(*scripting.Engine, context.CancelFunc) (func() int, func())
 	if c.ctxFactory != nil {
 		ctx, cancel = c.ctxFactory()
-	} else {
-		// Production: cancel on interrupt signals (SIGINT, SIGTERM)
+	} else if c.interactive {
+		// Interactive (TUI) runs keep the terminal-driven lifecycle.
 		ctx, cancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	} else {
+		ctx, cancel = context.WithCancel(context.Background())
+		startSignals = startNodeSignalDelivery
 	}
 	defer cancel()
 
@@ -198,10 +203,33 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		return &SilentError{Err: fmt.Errorf("no script specified")}
 	}
 
+	// Deliver SIGINT/SIGTERM to the script the way Node would (plain runs
+	// only): first signal reaches process listeners, an unlistened signal
+	// terminates with the default status, a second of the same kind forces.
+	var signalFallback func() int
+	if startSignals != nil {
+		var stopSignals func()
+		signalFallback, stopSignals = startSignals(engine, cancel)
+		defer stopSignals()
+	}
+
 	// Wait for any asynchronous work (timers, fetch, etc.) to complete naturally.
 	// This uses the WithAutoExit(true) feature of the event loop.
 	engine.Wait()
 
+	// An unlistened signal terminated the run: Node's default status is
+	// 128 plus the signal number.
+	if signalFallback != nil {
+		if code := signalFallback(); code != 0 {
+			return &SilentError{Err: &ExitError{Code: code}}
+		}
+	}
+	// Node exit channel: a script-settled process.exit / process.exitCode
+	// becomes this process's status, silently — Node prints nothing for a
+	// nonzero exit.
+	if code, ok := engine.ExitCode(); ok && code != 0 {
+		return &SilentError{Err: &ExitError{Code: code}}
+	}
 	return nil
 }
 

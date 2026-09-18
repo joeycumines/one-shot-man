@@ -634,10 +634,23 @@ func (e *Engine) ExecuteScript(script *Script) error {
 				return fmt.Errorf("script compilation failed: %w", compileErr)
 			}
 			if _, runErr := vm.RunProgram(prg); runErr != nil {
+				// process.exit interrupts the running program with a
+				// processExitSignal sentinel carrying the Node exit code.
+				// That is a clean stop, not a script failure: the code is
+				// settled on the adapter and readable after Wait.
+				var exitSignal gojaEventloop.ProcessExitSignal
+				if errors.As(runErr, &exitSignal) {
+					return nil
+				}
 				return fmt.Errorf("script execution failed: %w", runErr)
 			}
 		} else {
-			if _, runErr := vm.RunString(script.Content); runErr != nil {
+			_, runErr := vm.RunString(script.Content)
+			if runErr != nil {
+				var exitSignal gojaEventloop.ProcessExitSignal
+				if errors.As(runErr, &exitSignal) {
+					return nil
+				}
 				return fmt.Errorf("script execution failed: %w", runErr)
 			}
 		}
@@ -674,7 +687,11 @@ func (e *Engine) ExecuteScript(script *Script) error {
 				}
 			}
 			return nil
-		}); cbErr != nil {
+		}); cbErr != nil && !errors.Is(cbErr, goeventloop.ErrLoopTerminated) {
+			// A script that settled an exit code (process.exit /
+			// process.exitCode) terminated the loop by design; the
+			// post-exit callback then has nothing to run on. Node's
+			// process.exit behaves the same way — pending work is dropped.
 			return cbErr
 		}
 	}
@@ -826,6 +843,58 @@ func (e *Engine) Adapter() *gojaEventloop.Adapter {
 		return nil
 	}
 	return e.runtime.Adapter()
+}
+
+// ExitCode reports the script's settled Node exit status: the code published
+// by process.exit, by an assignment to process.exitCode, or by a fatal path.
+// The ok result is false when the script never set an exit code, in which case
+// the process should exit with whatever the caller's own outcome dictates.
+// Call it after Wait.
+func (e *Engine) ExitCode() (code int, ok bool) {
+	adapter := e.Adapter()
+	if adapter == nil {
+		return 0, false
+	}
+	return adapter.ExitCode()
+}
+
+// DeliverSignal delivers a POSIX-style signal name ("SIGINT", "SIGTERM") to
+// the script the way Node would: it submits a loop job that calls
+// process.emit(name) and reports whether any listener received it. The emit
+// dispatch is synchronous, so by the time this returns the script's own
+// signal handler has already run and any process.exit it performed has taken
+// effect. When no listener exists Node would terminate the process by
+// default — the caller implements that fallback (plus the second-signal force
+// close) itself. A false result also covers a missing or unusable process
+// object and submit failures, which are all no-listener cases from the
+// script's point of view.
+func (e *Engine) DeliverSignal(name string) bool {
+	delivered := false
+	err := e.executeOnLoop(func(rt *goja.Runtime) error {
+		procVal := rt.Get("process")
+		if procVal == nil || goja.IsUndefined(procVal) || goja.IsNull(procVal) {
+			return nil
+		}
+		procObj, ok := procVal.(*goja.Object)
+		if !ok {
+			return nil
+		}
+		emit, ok := goja.AssertFunction(procObj.Get("emit"))
+		if !ok {
+			return nil
+		}
+		result, err := emit(procObj, rt.ToValue(name))
+		if err != nil {
+			return err
+		}
+		delivered = result != nil && result.ToBoolean()
+		return nil
+	})
+	if err != nil {
+		e.Logger().Debug("signal delivery failed", "signal", name, "error", err)
+		return false
+	}
+	return delivered
 }
 
 // Promisify executes a function in a goroutine and returns a Future.

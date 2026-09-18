@@ -3,12 +3,15 @@ package command
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -590,5 +593,199 @@ func TestRegistry_Get_ThenExecute_JSScript(t *testing.T) {
 	output := stdout.String()
 	if !strings.Contains(output, "e2e ok") {
 		t.Fatalf("expected 'e2e ok' in output, got stdout=%q stderr=%q", output, stderr.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Node exit channel and Node-style signal handling
+// ---------------------------------------------------------------------------
+
+func newExitChannelScriptCommand(t *testing.T, content string) *jsScriptCommand {
+	t.Helper()
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "exit-channel.js")
+	if err := os.WriteFile(scriptPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := newJSScriptCommand("exit-channel.js", scriptPath, nil, scriptPeekInfo{kind: scriptKindJS})
+	cmd.store = "memory"
+	cmd.session = t.Name()
+	cmd.testMode = true
+	return cmd
+}
+
+func TestJSScriptCommand_Execute_ExitCodePropagates(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime")
+	}
+
+	cmd := newExitChannelScriptCommand(t, "process.exitCode = 7;")
+	var stdout, stderr bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd.ctxFactory = func() (context.Context, context.CancelFunc) { return ctx, cancel }
+
+	err := cmd.Execute(nil, &stdout, &stderr)
+	var silent *SilentError
+	if !errors.As(err, &silent) {
+		t.Fatalf("Execute error = %v, want a SilentError wrapping the exit status\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 7 {
+		t.Fatalf("Execute error = %v, want exit status 7", err)
+	}
+}
+
+func TestJSScriptCommand_Execute_ProcessExitPropagates(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime")
+	}
+
+	cmd := newExitChannelScriptCommand(t, "process.exit(3);")
+	var stdout, stderr bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd.ctxFactory = func() (context.Context, context.CancelFunc) { return ctx, cancel }
+
+	err := cmd.Execute(nil, &stdout, &stderr)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 3 {
+		t.Fatalf("Execute error = %v, want exit status 3\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
+	}
+}
+
+func TestJSScriptCommand_Execute_ExitCodeZeroIsSuccess(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime")
+	}
+
+	cmd := newExitChannelScriptCommand(t, "process.exitCode = 0;")
+	var stdout, stderr bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd.ctxFactory = func() (context.Context, context.CancelFunc) { return ctx, cancel }
+
+	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
+		t.Fatalf("Execute error = %v, want nil for exitCode 0\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
+	}
+}
+
+func TestJSScriptCommand_Execute_ScriptGlobalsAvailable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime")
+	}
+
+	// The scrub deletion must leave the Node process lifecycle surface in
+	// place: process.exit callable, exitCode settable, emit/on available.
+	cmd := newExitChannelScriptCommand(t, `
+		if (typeof process.exit !== 'function') { throw new Error('process.exit missing'); }
+		process.exitCode = 5;
+		if (process.exitCode !== 5) { throw new Error('process.exitCode assignment failed'); }
+		if (typeof process.on !== 'function') { throw new Error('process.on missing'); }
+		if (typeof process.emit !== 'function') { throw new Error('process.emit missing'); }
+		process.exitCode = 0;
+	`)
+	var stdout, stderr bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd.ctxFactory = func() (context.Context, context.CancelFunc) { return ctx, cancel }
+
+	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
+		t.Fatalf("Execute error = %v, want nil (script globals intact)\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
+	}
+}
+
+func TestJSScriptCommand_Execute_SigintWithListenerScriptDecides(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime and delivers real signals")
+	}
+
+	cmd := newExitChannelScriptCommand(t, `
+		var handle = setInterval(function () {}, 100);
+		process.on("SIGINT", function () {
+			process.exitCode = 42;
+			clearInterval(handle);
+		});
+	`)
+
+	// Deliver a real SIGINT while Execute is blocked in Wait.
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		if err := syscall.Kill(syscall.Getpid(), syscall.SIGINT); err != nil {
+			t.Logf("Kill: %v", err)
+		}
+	}()
+
+	// The listener ran (it decided the exit), proving first-signal delivery to
+	// a script listener — Node's semantic is that the script's exitCode wins.
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute(nil, &stdout, &stderr)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 42 {
+		t.Fatalf("Execute error = %v, want exit status 42 (the script's listener decided)\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
+	}
+}
+
+func TestJSScriptCommand_Execute_SigintWithoutListenerExits130(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime and delivers real signals")
+	}
+
+	cmd := newExitChannelScriptCommand(t, `
+		// No SIGINT listener. Keep the loop alive until the signal arrives.
+		var deadline = Date.now() + 10000;
+		setInterval(function () {
+			if (Date.now() > deadline) { process.exit(0); }
+		}, 100);
+	`)
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		if err := syscall.Kill(syscall.Getpid(), syscall.SIGINT); err != nil {
+			t.Logf("Kill: %v", err)
+		}
+	}()
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute(nil, &stdout, &stderr)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 130 {
+		t.Fatalf("Execute error = %v, want exit status 130 for unlistened SIGINT\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
+	}
+}
+
+func TestJSScriptCommand_Execute_DoubleSigintForcesTermination(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime and delivers real signals")
+	}
+
+	cmd := newExitChannelScriptCommand(t, `
+		// A listener that ignores the first signal and keeps running.
+		process.on("SIGINT", function () { globalThis.interrupts = (globalThis.interrupts || 0) + 1; });
+		var deadline = Date.now() + 10000;
+		setInterval(function () {
+			if (Date.now() > deadline) { process.exit(0); }
+		}, 100);
+	`)
+
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		_ = syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+		time.Sleep(200 * time.Millisecond)
+		_ = syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+	}()
+
+	var stdout, stderr bytes.Buffer
+	start := time.Now()
+	err := cmd.Execute(nil, &stdout, &stderr)
+	elapsed := time.Since(start)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 130 {
+		t.Fatalf("Execute error = %v, want exit status 130 for forced double SIGINT\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
+	}
+	// The second signal must force termination well before the script's own
+	// 10-second deadline.
+	if elapsed > 5*time.Second {
+		t.Fatalf("double SIGINT took %v to terminate; force path did not fire", elapsed)
 	}
 }

@@ -29,8 +29,7 @@ func (e *ExitError) Unwrap() error {
 
 // ExitCode reports the status an error asks the process to exit with, if any.
 func ExitCode(err error) (int, bool) {
-	var target *ExitError
-	if errors.As(err, &target) {
+	if target, ok := errors.AsType[*ExitError](err); ok {
 		return target.Code, true
 	}
 	return 0, false

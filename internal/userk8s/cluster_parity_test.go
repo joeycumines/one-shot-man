@@ -240,9 +240,9 @@ func TestClusterBackendReadsTheCatalogOnce(t *testing.T) {
 	}
 
 	added := &v1alpha1.Model{
-		TypeMeta:   metav1.TypeMeta{APIVersion: v1alpha1.GroupVersion.String(), Kind: "Model"},
-		ObjectMeta: metav1.ObjectMeta{Name: "added-after-the-first-read"},
-		Spec:       v1alpha1.ModelSpec{Provider: objects.Providers[0].Name, ContextWindow: 1000, MaxOutputTokens: 10},
+		APIVersion: v1alpha1.GroupVersion.String(), Kind: "Model",
+		Name: "added-after-the-first-read",
+		Spec: v1alpha1.ModelSpec{Provider: objects.Providers[0].Name, ContextWindow: 1000, MaxOutputTokens: 10},
 	}
 	content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(added)
 	if err != nil {

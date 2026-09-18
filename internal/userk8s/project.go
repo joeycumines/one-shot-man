@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"sort"
 
@@ -207,9 +208,7 @@ func modelSettings(model *v1alpha1.Model, tool string) map[string]any {
 	}
 	if len(override.Flags) > 0 {
 		flags := make(map[string]string, len(override.Flags))
-		for key, value := range override.Flags {
-			flags[key] = value
-		}
+		maps.Copy(flags, override.Flags)
 		settings["flags"] = flags
 	}
 	if override.Waive != "" {

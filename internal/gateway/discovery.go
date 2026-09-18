@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -44,9 +45,7 @@ var ErrAlreadyRunning = errors.New("a gateway is already advertised by a live pr
 // provider secret.
 func NewDiscovery(pid, port int, host string, prefixes map[string]string, token string, started time.Time) Discovery {
 	copied := make(map[string]string, len(prefixes))
-	for access, prefix := range prefixes {
-		copied[access] = prefix
-	}
+	maps.Copy(copied, prefixes)
 	return Discovery{
 		Version:   DiscoveryVersion,
 		PID:       pid,

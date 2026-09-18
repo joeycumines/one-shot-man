@@ -4,8 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
 )
 
@@ -19,7 +17,7 @@ func surfaceEndpoints(endpoints map[string]string) map[string]v1alpha1.SurfaceEn
 
 func shaperAccess(name, provider string, endpoints map[string]string, required ...string) v1alpha1.ModelAccess {
 	return v1alpha1.ModelAccess{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Name: name,
 		Spec: v1alpha1.ModelAccessSpec{
 			Provider:  provider,
 			Mode:      "shaper",
@@ -76,7 +74,7 @@ func TestMountsMatchTheLiveShaperArguments(t *testing.T) {
 
 	// A direct-mode access and a shaper access without a declared credential
 	// contribute nothing.
-	direct := v1alpha1.ModelAccess{ObjectMeta: metav1.ObjectMeta{Name: "zhipu-direct"}, Spec: v1alpha1.ModelAccessSpec{
+	direct := v1alpha1.ModelAccess{Name: "zhipu-direct", Spec: v1alpha1.ModelAccessSpec{
 		Provider: "zhipu", Mode: "direct", Endpoints: surfaceEndpoints(map[string]string{"chat": "https://api.z.ai/api/coding/paas/v4"}),
 	}}
 	noCredential := shaperAccess("mystery-shaper", "mystery", map[string]string{"chat": "http://127.0.0.1:11239/mystery/v1"})

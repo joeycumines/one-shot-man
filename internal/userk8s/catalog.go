@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -280,12 +281,8 @@ func attemptSummary(notes []string) string {
 // metadata labels merged with the mirroring spec labels.
 func labelSet(access *v1alpha1.ModelAccess) labels.Set {
 	set := labels.Set{}
-	for key, value := range access.Spec.Labels {
-		set[key] = value
-	}
-	for key, value := range access.Labels {
-		set[key] = value
-	}
+	maps.Copy(set, access.Spec.Labels)
+	maps.Copy(set, access.Labels)
 	return set
 }
 

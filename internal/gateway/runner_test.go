@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
 )
 
@@ -26,7 +24,7 @@ func (c *fakeChild) Terminate(context.Context) int {
 
 func umansMounts() []Mount {
 	return Mounts([]v1alpha1.ModelAccess{{
-		ObjectMeta: metav1.ObjectMeta{Name: "umans-shaper"},
+		Name: "umans-shaper",
 		Spec: v1alpha1.ModelAccessSpec{
 			Provider:  "umans",
 			Mode:      "shaper",

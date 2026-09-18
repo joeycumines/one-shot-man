@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/joeycumines/goja"
@@ -339,9 +340,7 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 		for surface, endpoint := range access.Spec.Endpoints {
 			view.Endpoints[surface] = string(endpoint)
 		}
-		for key, value := range access.Labels {
-			view.Labels[key] = value
-		}
+		maps.Copy(view.Labels, access.Labels)
 		loaded.Accesses = append(loaded.Accesses, view)
 	}
 	for i := range models {

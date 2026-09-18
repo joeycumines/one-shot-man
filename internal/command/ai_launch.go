@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -372,11 +373,8 @@ func (c *AILaunchCommand) resolveReferences(ctx context.Context, references map[
 			if access.Spec.Auth == nil {
 				continue
 			}
-			for _, declared := range access.Spec.Auth.RequiredEnv {
-				if declared == name {
-					owner = access.Name
-					break
-				}
+			if slices.Contains(access.Spec.Auth.RequiredEnv, name) {
+				owner = access.Name
 			}
 			if owner != "" {
 				break

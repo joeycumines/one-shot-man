@@ -84,8 +84,7 @@ func exitCodeOf(err error) int {
 	if err == nil {
 		return 0
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
 			// A child killed by a signal reports 128+signal, the shell
 			// convention a caller can reason about.

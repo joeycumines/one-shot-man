@@ -14,3 +14,12 @@ func killProcess(cmd *osexec.Cmd) error {
 	}
 	return cmd.Process.Kill()
 }
+
+// signalProcess is a Windows approximation: only terminate-style names are
+// meaningful, and Process.Kill is the strongest available delivery.
+func signalProcess(cmd *osexec.Cmd, name string) error {
+	if cmd.Process == nil {
+		return nil
+	}
+	return cmd.Process.Kill()
+}

@@ -59,6 +59,10 @@ var allBuiltinModules = []string{
 	"osm:text/template",
 	"osm:tokenizer",
 	"osm:unicodetext",
+	// Node-standard modules under bare Node names.
+	"crypto",
+	"fs",
+	"net",
 }
 
 func TestRegister(t *testing.T) {

@@ -34,6 +34,7 @@ import (
 	mcpcallbackmod "github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
 	mcpmod "github.com/joeycumines/one-shot-man/internal/builtin/mcpmod"
 	"github.com/joeycumines/one-shot-man/internal/builtin/nextintegerid"
+	nodemod "github.com/joeycumines/one-shot-man/internal/builtin/node"
 	osmod "github.com/joeycumines/one-shot-man/internal/builtin/os"
 	pabtmod "github.com/joeycumines/one-shot-man/internal/builtin/pabt"
 	pathmod "github.com/joeycumines/one-shot-man/internal/builtin/path"
@@ -142,6 +143,12 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"tokenizer", tokenizermod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 
 	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
+	// Node-standard modules under bare Node names: async-only necessary
+	// subsets with Node-26 behavior. The osm: prefix stays reserved for
+	// domain modules.
+	registry.RegisterNativeModule("fs", nodemod.FsRequire(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule("net", nodemod.NetRequire(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule("crypto", nodemod.CryptoRequire(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 	registry.RegisterNativeModule(prefix+"mcpcallback", mcpcallbackmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))

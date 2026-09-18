@@ -190,6 +190,25 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 		return goja.Undefined()
 	})
 
+	// child.signal(name): Promise<void> — deliver the named POSIX signal
+	// ("SIGTERM", "SIGINT", ...) to the child, mirroring kill's process-group
+	// semantics. Unlike kill, it does not cancel the handle context: a
+	// graceful signal lets the child decide, and wait() still reports its
+	// status.
+	_ = obj.Set("signal", func(call goja.FunctionCall) goja.Value {
+		name := ""
+		if len(call.Arguments) > 0 {
+			name = call.Argument(0).String()
+		}
+		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+			if err := child.Signal(name); err != nil {
+				handleSettleErr(settle.Settle(true, func(owner *goja.Runtime) any { return owner.NewGoError(err) }))
+				return
+			}
+			handleSettleErr(settle.Settle(false, func(*goja.Runtime) any { return goja.Undefined() }))
+		})
+	})
+
 	return obj
 }
 

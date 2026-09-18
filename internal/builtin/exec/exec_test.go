@@ -7,6 +7,7 @@ import (
 	osexec "os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -364,4 +365,41 @@ func TestRunExec_NilContext(t *testing.T) {
 		}
 	}()
 	_ = runExec(nilCtx, "echo", "hello-nil-ctx")
+}
+
+// TestSpawn_SignalTerminatesChild proves child.signal("SIGTERM") terminates a
+// spawned child gracefully and wait() reports the signal outcome — the path
+// the gateway lifecycle uses to stop the shaper.
+func TestSpawn_SignalTerminatesChild(t *testing.T) {
+	runtime, runJS := asyncTestEnv(t)
+
+	// A child that traps SIGTERM and exits 0 on receiving it, then would
+	// otherwise sleep for 30s.
+	scriptPath := writeScript(t, `#!/bin/sh
+trap 'exit 0' TERM
+echo ready
+while true; do sleep 1; done
+`)
+	_ = runtime
+
+	value, err := runJS(`
+		const child = exec.spawn("/bin/sh", [` + gojaStringLit(scriptPath) + `]);
+		const line = await child.stdout.read();
+		if (!line.value.includes("ready")) { __collectErr("expected ready line, got: " + JSON.stringify(line)); return; }
+		await child.signal("SIGTERM");
+		const result = await child.wait();
+		__collect(JSON.stringify({exited: result.code === 0 || result.code === 143 || result.signal !== null, code: result.code, signal: result.signal}));
+	`)
+	if err != nil {
+		t.Fatalf("runJS: %v", err)
+	}
+	const want = `"exited":true`
+	if !strings.Contains(value.String(), want) {
+		t.Fatalf("signal result = %s, want containing %s", value.String(), want)
+	}
+}
+
+// gojaStringLit quotes a path as a JS single-quoted string literal.
+func gojaStringLit(s string) string {
+	return "'" + strings.ReplaceAll(strings.ReplaceAll(s, `\\`, `\\\\`), `'`, `\'`) + "'"
 }

@@ -3,6 +3,7 @@
 package exec
 
 import (
+	"os"
 	osexec "os/exec"
 	"syscall"
 )
@@ -19,4 +20,19 @@ func killProcess(cmd *osexec.Cmd) error {
 		return nil
 	}
 	return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+}
+
+// signalProcess delivers the named POSIX signal ("SIGTERM", "SIGINT", ...)
+// to the child's process group, mirroring killProcess's tree semantics. A
+// signal without the SIG prefix is accepted, as os.SignalByName accepts both
+// forms.
+func signalProcess(cmd *osexec.Cmd, name string) error {
+	if cmd.Process == nil {
+		return nil
+	}
+	sig := signalFromName(name)
+	if sig == nil {
+		return os.ErrInvalid
+	}
+	return syscall.Kill(-cmd.Process.Pid, sig.(syscall.Signal))
 }

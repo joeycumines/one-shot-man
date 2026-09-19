@@ -3524,6 +3524,7 @@ metadata:
     one-shot-man/mode: shaper
     one-shot-man/preferred-surface: responses
     one-shot-man/provider: camel
+    one-shot-man/shaper-upstream: https://stream.camelai.com
     one-shot-man/surface-anthropic: "true"
     one-shot-man/surface-chat: "true"
     one-shot-man/surface-responses: "true"
@@ -3568,6 +3569,7 @@ metadata:
   labels:
     one-shot-man/mode: shaper
     one-shot-man/provider: dialagram
+    one-shot-man/shaper-upstream: https://dialagram.me/router
     one-shot-man/surface-anthropic: "true"
     one-shot-man/surface-chat: "true"
     one-shot-man/surface-responses: "true"
@@ -3591,6 +3593,7 @@ metadata:
   labels:
     one-shot-man/mode: shaper
     one-shot-man/provider: electronhub
+    one-shot-man/shaper-upstream: https://api.electronhub.ai
     one-shot-man/surface-anthropic: "true"
     one-shot-man/surface-chat: "true"
     one-shot-man/surface-responses: "true"
@@ -3633,6 +3636,7 @@ metadata:
   labels:
     one-shot-man/mode: shaper
     one-shot-man/provider: opencode-go
+    one-shot-man/shaper-upstream: https://opencode.ai/zen
     one-shot-man/surface-anthropic: "true"
   name: opencode-go-shaper-anthropic
 spec:
@@ -3652,6 +3656,7 @@ metadata:
   labels:
     one-shot-man/mode: shaper
     one-shot-man/provider: opencode-go
+    one-shot-man/shaper-upstream: https://opencode.ai/zen
     one-shot-man/surface-chat: "true"
   name: opencode-go-shaper-chat
 spec:
@@ -3671,6 +3676,7 @@ metadata:
   labels:
     one-shot-man/mode: shaper
     one-shot-man/provider: opencode-go
+    one-shot-man/shaper-upstream: https://opencode.ai/zen
     one-shot-man/surface-responses: "true"
   name: opencode-go-shaper-responses
 spec:
@@ -3713,6 +3719,7 @@ metadata:
     one-shot-man/preferred-surface: anthropic
     one-shot-man/provider: umans
     one-shot-man/shaper-auth-mode: x-api-key
+    one-shot-man/shaper-upstream: https://api.code.umans.ai
     one-shot-man/surface-anthropic: "true"
     one-shot-man/surface-chat: "true"
     one-shot-man/surface-responses: "true"
@@ -3736,6 +3743,7 @@ metadata:
   labels:
     one-shot-man/mode: shaper
     one-shot-man/provider: verboo
+    one-shot-man/shaper-upstream: https://code.verboo.ai/router
     one-shot-man/surface-anthropic: "true"
     one-shot-man/surface-chat: "true"
     one-shot-man/surface-responses: "true"
@@ -3778,6 +3786,7 @@ metadata:
   labels:
     one-shot-man/mode: shaper
     one-shot-man/provider: yolo-auto
+    one-shot-man/shaper-upstream: https://yolo-auto.com
     one-shot-man/surface-anthropic: "true"
     one-shot-man/surface-chat: "true"
     one-shot-man/surface-responses: "true"
@@ -3801,6 +3810,7 @@ metadata:
   labels:
     one-shot-man/mode: shaper
     one-shot-man/provider: zen
+    one-shot-man/shaper-upstream: https://opencode.ai/zen
     one-shot-man/surface-anthropic: "true"
     one-shot-man/surface-chat: "true"
     one-shot-man/surface-responses: "true"

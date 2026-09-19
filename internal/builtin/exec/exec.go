@@ -112,6 +112,11 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 					cfg.Env = envMap
 				}
 			}
+			// envReplace: the child's environment is exactly opts.env — no
+			// inheritance of the caller's shell state (credential custody).
+			if v := optsObj.Get("envReplace"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				cfg.EnvReplace = v.ToBoolean()
+			}
 		}
 
 		ctx, cancel := context.WithCancel(baseCtx)

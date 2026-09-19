@@ -8,6 +8,7 @@ import (
 	"os"
 	osexec "os/exec"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,11 @@ type SpawnConfig struct {
 	Args    []string
 	Cwd     string
 	Env     map[string]string // merged with os.Environ()
+	// EnvReplace replaces the environment entirely: when true, cmd.Env is
+	// exactly Env (sorted), never merged with os.Environ(). A supervisor
+	// that injects credentials uses this so the child carries an explicit,
+	// auditable environment instead of the caller's whole shell state.
+	EnvReplace bool
 }
 
 // ChildProcess represents a running child process with piped I/O.
@@ -133,7 +139,14 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 
 	// Merge environment, replacing inherited values with overrides rather than
 	// appending duplicate keys whose first occurrence would still win on Unix.
-	if len(cfg.Env) > 0 {
+	if cfg.EnvReplace {
+		env := make([]string, 0, len(cfg.Env))
+		for key, value := range cfg.Env {
+			env = append(env, key+"="+value)
+		}
+		sort.Strings(env)
+		cmd.Env = env
+	} else if len(cfg.Env) > 0 {
 		env := os.Environ()
 		overrides := make(map[string]string, len(cfg.Env))
 		maps.Copy(overrides, cfg.Env)

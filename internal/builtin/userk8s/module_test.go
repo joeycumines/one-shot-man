@@ -100,7 +100,7 @@ func TestModuleLoadsCatalogFromArtifacts(t *testing.T) {
 		const loaded = await userk8s.load();
 		__collect(({
 			source: loaded.source,
-			countsOk: loaded.providers.length === 13 && loaded.models.length === 158
+			countsOk: loaded.providers.length === 13 && loaded.models.length === 159
 				&& loaded.accesses.length === 15 && loaded.tools.length === 9 && loaded.secretsPresent === 15,
 			namesOk: loaded.providers[0].name.length > 0 && loaded.providers[0].displayName.length > 0
 				&& loaded.tools[0].name.length > 0 && loaded.tools[0].budgetProfile.length > 0,
@@ -192,13 +192,47 @@ func TestModuleResolveCredentialRejectsTypedCode(t *testing.T) {
 	}
 }
 
+// failingOnceRunner fails every resolver execution with a raw error whose
+// text (a fake resolver stdout/env detail) must never reach JavaScript.
+type failingOnceRunner struct{}
+
+const rawResolverSecret = "resolver-stdout: token=hunter2 env=AWS_SESSION_TOKEN=..."
+
+func (failingOnceRunner) Run(context.Context, []string, time.Duration) (string, error) {
+	return "", errors.New(rawResolverSecret)
+}
+
+// TestModuleResolveCredentialRedactsResolverFailure drives resolver failure
+// redaction: the FilesBackend reports a failed command attempt through its
+// sanitized attempts detail (status missingCredentials), so the module rejects
+// with credential-unresolved — and by construction the raw resolver output
+// (stdout/env text) never reaches JavaScript, whichever typed code the path
+// produces.
+func TestModuleResolveCredentialRedactsResolverFailure(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}, Runner: failingOnceRunner{}})
+	_, err := runAsync(`
+		await userk8s.resolveCredential("electronhub-shaper");
+		__collect("UNEXPECTED-RESOLVE");
+	`)
+	if err == nil {
+		t.Fatal("resolveCredential with failing resolver: want a rejection")
+	}
+	if !strings.Contains(err.Error(), "credential-unresolved") {
+		t.Errorf("rejection = %v, want the credential-unresolved code", err)
+	}
+	if strings.Contains(err.Error(), rawResolverSecret) {
+		t.Errorf("rejection leaked raw resolver output: %v", err)
+	}
+}
+
 func TestModuleBackendStatus(t *testing.T) {
 	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
 	value, err := runAsync(`
 		const status = userk8s.backendStatus();
 		__collect(({
 			source: status.source,
-			ok: status.providers === 13 && status.models === 158 && status.bindings === 15 && status.artifacts.length === 1
+			ok: status.providers === 13 && status.models === 159 && status.bindings === 15 && status.artifacts.length === 1
 		}))
 	`)
 	if err != nil {

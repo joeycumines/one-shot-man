@@ -84,6 +84,37 @@ func TestSpawnChild_WriteStdinContextCancellation(t *testing.T) {
 	_, _ = child.Wait()
 }
 
+// TestSpawnChild_SignalAfterExitIsNoOp covers the reaped-child guard: a
+// signal delivered after the child exited and Wait reaped it must be a
+// no-op (nil error, no hang), never a delivery to a recycled PID.
+func TestSpawnChild_SignalAfterExitIsNoOp(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	child := shSpawn(t, context.Background(), `exit 0`)
+
+	code, err := child.Wait()
+	if code != 0 || err != nil {
+		t.Fatalf("Wait = (%d, %v), want (0, nil)", code, err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- child.Signal("SIGTERM") }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Signal on reaped child = %v, want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Signal on reaped child hung")
+	}
+
+	// Unknown names still reject, exited or not.
+	if err := child.Signal("SIGBOGUS"); err == nil {
+		t.Fatal("Signal(SIGBOGUS) on reaped child = nil, want os.ErrInvalid")
+	}
+}
+
 func TestSpawnChild_BasicStdout(t *testing.T) {
 	t.Parallel()
 	skipIfWindows(t)

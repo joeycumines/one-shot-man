@@ -42,19 +42,19 @@ func CryptoRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*go
 	}
 }
 
-// bytesToUint8Array exposes random bytes as a Uint8Array, which is the
-// Buffer view scripts need for token material (length, byte indexing, hex
-// conversion on the JS side).
+// bytesToUint8Array exposes bytes as a Uint8Array, which is the Buffer view
+// scripts need for token material (length, byte indexing, hex conversion on
+// the JS side). TypedArray constructors require `new` — invoking Uint8Array
+// as a plain function throws in goja — so construction goes through rt.New.
+// The plain-array fallback stays only for a genuinely absent global.
 func bytesToUint8Array(rt *goja.Runtime, buf []byte) goja.Value {
 	constructor := rt.GlobalObject().Get("Uint8Array")
-	if fn, ok := goja.AssertFunction(constructor); ok {
-		if value, err := fn(goja.Undefined(), rt.ToValue(len(buf))); err == nil {
-			if obj, ok := value.(*goja.Object); ok {
-				for i, b := range buf {
-					_ = obj.Set(itoa(i), b)
-				}
-				return value
+	if constructor != nil && !goja.IsUndefined(constructor) {
+		if obj, err := rt.New(constructor, rt.ToValue(len(buf))); err == nil {
+			for i, b := range buf {
+				_ = obj.Set(itoa(i), b)
 			}
+			return obj
 		}
 	}
 	// Uint8Array unavailable: fall back to a plain byte array.

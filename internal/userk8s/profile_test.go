@@ -27,7 +27,7 @@ func TestLoadRealRenderedProfile(t *testing.T) {
 	}{
 		{"providers", len(objects.Providers), 13},
 		{"accesses", len(objects.Accesses), 15},
-		{"models", len(objects.Models), 158},
+		{"models", len(objects.Models), 159},
 		{"tools", len(objects.Tools), 9},
 		{"bindings", len(objects.Bindings), 15},
 		{"skipped", objects.Skipped, 2},

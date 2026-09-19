@@ -42,16 +42,19 @@ func TestAdapterRequestedSelectionsProject(t *testing.T) {
 			model:        "glm-5.3:dev",
 			wantSlug:     "glm_5_3_dev",
 			wantID:       "glm-5.3:dev",
-			wantSurfaces: []string{"anthropic", "chat"},
+			wantSurfaces: []string{"anthropic", "chat", "responses"},
 		},
 		{
+			// The umans access declares chat alongside anthropic since the
+			// registry gained the chat/responses endpoints (T7): crush, which
+			// speaks chat, now has a served surface for umans.
 			name:         "crush resolves the umans metadata name to the raw registry id",
 			tool:         "crush",
 			provider:     "umans",
 			model:        "umans-glm-5-3",
 			wantSlug:     "umans-glm-5.3",
 			wantID:       "umans-glm-5.3",
-			wantSurfaces: []string{"anthropic"},
+			wantSurfaces: []string{"anthropic", "chat"},
 		},
 		{
 			name:         "codex takes the openrouter id its wrapper passes",
@@ -92,11 +95,12 @@ func TestAdapterRequestedSelectionsProject(t *testing.T) {
 	}
 }
 
-// TestUmansShaperServesOnlyTheAnthropicSurface records that the umans gateway
-// is anthropic-only - the shaper runs it without the response/chat transcoding
-// the other shaper providers use - so a chat-speaking tool must, and crush
-// does, declare the anthropic surface to reach it.
-func TestUmansShaperServesOnlyTheAnthropicSurface(t *testing.T) {
+// TestUmansShaperServesChatAndAnthropic records the registry change that gave
+// the umans access chat/responses endpoints alongside anthropic: the shaper
+// forwards chat to the umans upstream, so a chat-speaking tool (crush) now has
+// a served surface instead of the empty set that forced the anthropic-only
+// declaration before.
+func TestUmansShaperServesChatAndAnthropic(t *testing.T) {
 	backend, err := NewFilesBackend(FilesBackendOptions{Paths: []string{renderedPersonalProfile}})
 	if err != nil {
 		t.Fatalf("NewFilesBackend: %v", err)
@@ -105,8 +109,8 @@ func TestUmansShaperServesOnlyTheAnthropicSurface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}
-	if len(projection.Surfaces) != 1 || projection.Surfaces[0] != "anthropic" {
-		t.Fatalf("surfaces: got %v, want [anthropic]", projection.Surfaces)
+	if len(projection.Surfaces) != 2 || projection.Surfaces[0] != "anthropic" || projection.Surfaces[1] != "chat" {
+		t.Fatalf("surfaces: got %v, want [anthropic chat]", projection.Surfaces)
 	}
 }
 

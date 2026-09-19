@@ -7,9 +7,11 @@ import (
 )
 
 // TestSandbox_ProcessRestricted verifies that dangerous Node process globals
-// (process.kill, process.exit, process.abort, process.chdir, process.env, etc.)
+// (process.kill, process.abort, process.chdir, process.env, etc.)
 // are stripped from the sandbox environment, preventing untrusted scripts
-// from terminating the host or manipulating process state.
+// from terminating the host or manipulating process state. The Node exit
+// channel (process.exit / process.exitCode) is deliberately retained: osm
+// scripts are first-party and the launcher requires Node exit semantics.
 func TestSandbox_ProcessRestricted(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -21,7 +23,8 @@ func TestSandbox_ProcessRestricted(t *testing.T) {
 	}{
 		{"process.kill throws", `try { process.kill(); throw new Error("kill did not throw"); } catch (e) { if (e.message === "kill did not throw") throw e; }`},
 		{"process.abort is undefined", `if (typeof process.abort !== 'undefined') throw new Error("process.abort defined");`},
-		{"process.exit is undefined", `if (typeof process.exit !== 'undefined') throw new Error("process.exit defined");`},
+		{"process.exit is the Node exit channel", `if (typeof process.exit !== 'function') throw new Error("process.exit missing");`},
+		{"process.exitCode is settable", `process.exitCode = 0; if (process.exitCode !== 0) throw new Error("process.exitCode unsettable");`},
 		{"process.chdir is undefined", `if (typeof process.chdir !== 'undefined') throw new Error("process.chdir defined");`},
 		{"process.cwd is undefined", `if (typeof process.cwd !== 'undefined') throw new Error("process.cwd defined");`},
 		{"process.argv is undefined", `if (typeof process.argv !== 'undefined') throw new Error("process.argv defined");`},

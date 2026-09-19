@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"sync"
 
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
@@ -16,7 +18,11 @@ import (
 // with "connect", "data", "error" and "close" events, plus write and end.
 // Bytes are exposed as strings (UTF-8), which is what the gateway's readiness
 // probe and the launcher's socket flows need.
-func NetRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.Runtime, *goja.Object) {
+//
+// A connected socket holds the event loop alive from net.connect() until the
+// socket dispatches "close" (loop.Promisify future released on every exit
+// path), so WithAutoExit(true) loops cannot terminate mid-exchange.
+func NetRequire(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(*goja.Runtime, *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -60,14 +66,57 @@ func NetRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.
 			// loop while the reader owns the value.
 			var mu sync.Mutex
 			var conn net.Conn
-			setConn := func(c net.Conn) { mu.Lock(); conn = c; mu.Unlock() }
+			var pending []string
+			setConn := func(c net.Conn) {
+				mu.Lock()
+				conn = c
+				flushed := pending
+				pending = nil
+				mu.Unlock()
+				// Node buffers writes issued before the connection
+				// establishes and flushes them on connect; drop nothing.
+				for _, data := range flushed {
+					if _, err := c.Write([]byte(data)); err != nil {
+						// The reader's next read observes the failed
+						// connection and emits "error"/"close"; the
+						// caller's write already returned true, matching
+						// Node's asynchronous failure surface.
+						slog.Warn("node.net: flushing pre-connect write failed", "error", err)
+					}
+				}
+			}
 			getConn := func() net.Conn { mu.Lock(); defer mu.Unlock(); return conn }
+			// bufferWrite appends data while unconnected. The caller wrote
+			// synchronously from JS, so the data MUST reach the wire — the
+			// reader goroutine flushes it after setConn installs the conn.
+			bufferWrite := func(data string) bool {
+				mu.Lock()
+				defer mu.Unlock()
+				if conn != nil {
+					return false
+				}
+				pending = append(pending, data)
+				return true
+			}
+
+			// socketDone closes when the reader goroutine finishes (after
+			// the close event, the dial error, or a loop-submit failure).
+			// The keepalive Promisify future waits on it, so the loop cannot
+			// auto-exit while the socket may still produce events. When no
+			// loop was supplied (test harnesses that keep the loop alive
+			// themselves), the keepalive is skipped.
+			socketDone := make(chan struct{})
+			if loop != nil {
+				_ = loop.Promisify(ctx, func(ctx context.Context) (any, error) {
+					<-socketDone
+					return nil, nil
+				})
+			}
 
 			// The reader goroutine funnels socket events through the loop via
 			// Submit, preserving the single-threaded JS execution contract.
-			readerDone := make(chan struct{})
 			go func() {
-				defer close(readerDone)
+				defer close(socketDone)
 				select {
 				case c := <-connCh:
 					setConn(c)
@@ -109,6 +158,7 @@ func NetRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.
 						socket.emit(rt, "error", rt.NewGoError(err))
 						socket.emit(rt, "close", nil)
 					})
+					return
 				}
 			}()
 
@@ -121,7 +171,9 @@ func NetRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.
 					if _, err := c.Write([]byte(data)); err != nil {
 						panic(runtime.NewGoError(err))
 					}
+					return goja.Undefined()
 				}
+				bufferWrite(data)
 				return goja.Undefined()
 			})
 			_ = socket.obj.Set("end", func(call goja.FunctionCall) goja.Value {
@@ -146,49 +198,64 @@ func NetRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.
 // importing io twice in one expression; io.EOF's Error() is "EOF".
 var errEOFPlaceholder = errors.New("EOF")
 
+// socketListener is one registered event listener. A once listener is
+// removed after its first invocation; registered listeners are plain
+// callables wrapped by the socket's once wrapper.
+type socketListener struct {
+	fn   goja.Callable
+	once bool
+}
+
 // jsSocket carries the emitter plumbing shared by the socket object.
 type jsSocket struct {
 	obj        *goja.Object
-	listeners  map[string][]goja.Value
+	listeners  map[string][]socketListener
 	runtimeRef *goja.Runtime
 }
 
 func newJSSocket(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) *jsSocket {
-	s := &jsSocket{obj: runtime.NewObject(), listeners: map[string][]goja.Value{}, runtimeRef: runtime}
-	_ = s.obj.Set("on", func(call goja.FunctionCall) goja.Value { return s.on(call) })
-	_ = s.obj.Set("once", func(call goja.FunctionCall) goja.Value { return s.on(call) })
+	s := &jsSocket{obj: runtime.NewObject(), listeners: map[string][]socketListener{}, runtimeRef: runtime}
+	_ = s.obj.Set("on", func(call goja.FunctionCall) goja.Value { return s.on(call, false) })
+	_ = s.obj.Set("once", func(call goja.FunctionCall) goja.Value { return s.on(call, true) })
 	return s
 }
 
-func (s *jsSocket) on(call goja.FunctionCall) goja.Value {
+func (s *jsSocket) on(call goja.FunctionCall, once bool) goja.Value {
 	if len(call.Arguments) < 2 {
 		panic(s.runtimeRef.NewTypeError("socket.on: event and listener required"))
 	}
 	event := call.Argument(0).String()
 	listener := call.Argument(1)
-	if _, ok := goja.AssertFunction(listener); !ok {
+	fn, ok := goja.AssertFunction(listener)
+	if !ok {
 		panic(s.runtimeRef.NewTypeError("socket.on: listener must be a function"))
 	}
-	s.listeners[event] = append(s.listeners[event], listener)
+	s.listeners[event] = append(s.listeners[event], socketListener{fn: fn, once: once})
 	return s.obj
 }
 
 // emit dispatches to registered listeners on the loop goroutine. It returns
 // whether any listener ran, which mirrors Node's process.emit contract.
+// once listeners remove themselves after their first invocation. Listener
+// errors are logged at Warn level — they must not propagate into the loop's
+// uncaught path (that would kill the run) — and never silently swallowed.
 func (s *jsSocket) emit(rt *goja.Runtime, event string, arg goja.Value) bool {
 	handled := false
+	live := s.listeners[event][:0]
 	for _, listener := range s.listeners[event] {
-		if fn, ok := goja.AssertFunction(listener); ok {
-			args := []goja.Value{}
-			if arg != nil {
-				args = append(args, arg)
-			}
-			if _, err := fn(s.obj, args...); err != nil {
-				_ = rt
-			}
-			handled = true
+		args := []goja.Value{}
+		if arg != nil {
+			args = append(args, arg)
+		}
+		if _, err := listener.fn(s.obj, args...); err != nil {
+			slog.Warn("node.net: socket listener error", "event", event, "error", err)
+		}
+		handled = true
+		if !listener.once {
+			live = append(live, listener)
 		}
 	}
+	s.listeners[event] = live
 	return handled
 }
 

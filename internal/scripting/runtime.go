@@ -194,6 +194,35 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 	}
 	rt.adapter.SetConsoleOutput(os.Stderr)
 
+	// SECURITY SCRUB: neutralize the process-control and host-state surface
+	// that goja-eventloop's Bind installs. Scope decision (settled with Hana):
+	// the process lifecycle surface scripts need is the Node exit channel —
+	// process.exit / process.exitCode stay available because osm scripts are
+	// first-party and the launcher requires Node exit semantics — while the
+	// process-control and host-state surface (kill, abort, chdir, cwd,
+	// argv/argv0, execArgv/execPath, env, pid/ppid, binding, _rawDebug,
+	// _fatalException, dlopen, umask, setuid/setgid/seteuid/setegid,
+	// setgroups, initgroups, and the host escape hatches Deno/exit/quit) is
+	// deleted. process.on/emit/nextTick survive, so signal listeners and the
+	// exit channel work; Buffer was never provided by Bind and is not
+	// blanked here.
+	if procVal := vm.Get("process"); procVal != nil && !goja.IsUndefined(procVal) && !goja.IsNull(procVal) {
+		if procObj, ok := procVal.(*goja.Object); ok {
+			for _, dangerous := range []string{
+				"_exiting", "reallyExit",
+				"kill", "abort", "chdir", "cwd", "argv", "argv0", "execArgv", "execPath",
+				"env", "pid", "ppid",
+				"binding", "_rawDebug", "_fatalException", "dlopen", "umask",
+				"setuid", "setgid", "seteuid", "setegid", "setgroups", "initgroups",
+			} {
+				_ = procObj.Delete(dangerous)
+			}
+		}
+	}
+	_ = vm.Set("Deno", goja.Undefined())
+	_ = vm.Set("exit", goja.Undefined())
+	_ = vm.Set("quit", goja.Undefined())
+
 	// Start the event loop in background goroutine
 	go func() {
 		defer close(rt.done)

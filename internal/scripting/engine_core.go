@@ -868,6 +868,12 @@ func (e *Engine) ExitCode() (code int, ok bool) {
 // close) itself. A false result also covers a missing or unusable process
 // object and submit failures, which are all no-listener cases from the
 // script's point of view.
+//
+// A listener that calls process.exit interrupts the emit with a
+// gojaEventloop.ProcessExitSignal. That is a delivered signal — the
+// listener ran and decided the process should stop with its own exit code —
+// so it reports true instead of the no-listener fallback, whose force
+// cancel would otherwise override the script's exit status with 128+N.
 func (e *Engine) DeliverSignal(name string) bool {
 	delivered := false
 	err := e.executeOnLoop(func(rt *goja.Runtime) error {
@@ -885,6 +891,14 @@ func (e *Engine) DeliverSignal(name string) bool {
 		}
 		result, err := emit(procObj, rt.ToValue(name))
 		if err != nil {
+			// The only interrupt an emit listener can raise is a
+			// process.exit from inside the handler; anything else is a
+			// genuine delivery failure.
+			var exitSignal gojaEventloop.ProcessExitSignal
+			if errors.As(err, &exitSignal) {
+				delivered = true
+				return nil
+			}
 			return err
 		}
 		delivered = result != nil && result.ToBoolean()

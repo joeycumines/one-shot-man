@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,7 @@ func runScript(t *testing.T, script string) string {
 	runtime := provider.Runtime()
 	ctx := context.Background()
 	registry.RegisterNativeModule("fs", FsRequire(ctx, provider.Adapter()))
-	registry.RegisterNativeModule("net", NetRequire(ctx, provider.Adapter()))
+	registry.RegisterNativeModule("net", NetRequire(ctx, provider.Adapter(), provider.Loop()))
 	registry.RegisterNativeModule("crypto", CryptoRequire(ctx, provider.Adapter()))
 
 	_ = registry.Enable(runtime)
@@ -60,10 +61,31 @@ func TestFsWriteReadRoundTrip(t *testing.T) {
 	got := runScript(t, reportScript(`
 			const fs = require("fs");
 			await fs.promises.writeFile(`+pathLit(path)+`, "gateway payload");
-			report(await fs.promises.readFile(`+pathLit(path)+`));
+			report(await fs.promises.readFile(`+pathLit(path)+`, {encoding: "utf8"}));
 	`))
 	if got != "gateway payload" {
 		t.Fatalf("round trip = %q, want %q", got, "gateway payload")
+	}
+}
+
+// TestFsReadFileDefaultResolvesUint8Array covers Node's null default
+// encoding: with no options the promise resolves to a Uint8Array whose
+// length matches the file's byte count.
+func TestFsReadFileDefaultResolvesUint8Array(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bytes.bin")
+	payload := "byte-count-check"
+	if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := runScript(t, reportScript(`
+			const fs = require("fs");
+			const data = await fs.promises.readFile(`+pathLit(path)+`);
+			if (!(data instanceof Uint8Array)) { report("NOT-UINT8ARRAY"); return; }
+			report("LEN:" + data.length + ":" + data[0]);
+	`))
+	if got != "LEN:"+itoaLit(len(payload))+":"+itoaLit(int(payload[0])) {
+		t.Fatalf("default readFile = %q, want Uint8Array of length %d with first byte %d", got, len(payload), payload[0])
 	}
 }
 
@@ -101,6 +123,9 @@ func TestFsWriteFileWxSucceedsOnFreshFile(t *testing.T) {
 }
 
 func TestFsWriteFileMode0600StatVerified(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits do not map reliably on Windows")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "secret.txt")
 	got := runScript(t, reportScript(`
@@ -215,6 +240,105 @@ func TestNetConnectFiresConnectAndDeliversBytes(t *testing.T) {
 	}
 }
 
+// TestNetWriteBeforeConnectFlushesAfterConnect covers Node's buffered-write
+// semantics: bytes written before the "connect" event fires must reach the
+// server, not drop. No connect handler is registered; the write happens
+// synchronously right after net.connect returns.
+func TestNetWriteBeforeConnectFlushesAfterConnect(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	accepted := make(chan string, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		buf := make([]byte, 256)
+		n, _ := conn.Read(buf)
+		accepted <- string(buf[:n])
+		_, _ = conn.Write([]byte("ack"))
+	}()
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	got := runScript(t, reportScript(`
+			const net = require("net");
+			const socket = net.connect({host: "127.0.0.1", port: `+itoaLit(port)+`});
+			// No connect handler: the write is buffered pre-connect.
+			socket.write("early-bird");
+			let received = "";
+			socket.on("data", (chunk) => { received += chunk; socket.end(); report("GOT:" + received); });
+			socket.on("error", (e) => report("ERROR: " + e.message));
+	`))
+	if !strings.HasPrefix(got, "GOT:ack") {
+		t.Fatalf("net exchange = %q, want GOT:ack", got)
+	}
+	select {
+	case written := <-accepted:
+		if written != "early-bird" {
+			t.Fatalf("server received %q, want the pre-connect write flushed", written)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server never received the pre-connect bytes")
+	}
+}
+
+// TestNetOnceListenerFiresExactlyOnce verifies real once semantics: a once
+// listener runs on its first event and is removed, so a second emission
+// does not re-run it.
+func TestNetOnceListenerFiresExactlyOnce(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		// Echo every write: the script needs a second delivery to prove the
+		// once listener was removed.
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := conn.Read(buf)
+			if n > 0 {
+				if _, err := conn.Write(buf[:n]); err != nil {
+					return
+				}
+			}
+			if readErr != nil {
+				return
+			}
+		}
+	}()
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	got := runScript(t, reportScript(`
+			const net = require("net");
+			const socket = net.connect({host: "127.0.0.1", port: `+itoaLit(port)+`});
+			let onceCount = 0;
+			let dataCount = 0;
+			socket.once("data", () => { onceCount += 1; });
+			socket.on("data", () => { dataCount += 1; });
+			socket.on("connect", () => { socket.write("echo"); });
+			socket.on("close", () => report("ONCE:" + onceCount + ":DATA:" + dataCount));
+			// The server echoes every write, so a second delivery proves
+			// the once listener was removed; then end the socket to settle.
+			setInterval(() => {
+				if (dataCount >= 2) { socket.end(); return; }
+				if (dataCount === 1) { socket.write("echo"); }
+			}, 30);
+	`))
+	if got != "ONCE:1:DATA:2" {
+		t.Fatalf("once listener = %q, want ONCE:1:DATA:2", got)
+	}
+}
+
 func TestCryptoRandomBytesResolvesNBytes(t *testing.T) {
 	got := runScript(t, reportScript(`
 			const crypto = require("crypto");
@@ -242,7 +366,9 @@ func TestCryptoRandomBytesAreDistinctAndHexable(t *testing.T) {
 }
 
 func pathLit(p string) string {
-	return "`" + p + "`"
+	// Escape backslashes so Windows paths (C:\temp\a) survive JS string
+	// evaluation; on POSIX the replacement is a no-op.
+	return "`" + strings.ReplaceAll(p, "\\", "\\\\") + "`"
 }
 
 func itoaLit(n int) string {

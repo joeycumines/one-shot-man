@@ -82,7 +82,7 @@ func WriteDiscovery(path string, discovery Discovery, alive func(pid int) bool) 
 
 	// O_EXCL refuses an existing file; O_NOFOLLOW refuses to follow a symlink
 	// left where the advertisement belongs.
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|openNoFollow, 0o600)
 	if err != nil {
 		return fmt.Errorf("creating the discovery file: %w", err)
 	}

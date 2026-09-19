@@ -467,6 +467,29 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
+  annotations:
+    one-shot-man/registry-name: auto:camel
+  name: auto-camel
+spec:
+  access: camel-shaper
+  can_reason: false
+  context_window: 262144
+  default: true
+  equivalent_to:
+  - name: deepseek-v4-flash:dev
+    provider: electronhub
+  - name: deepseek-v4-flash
+    provider: deepseek
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 16384
+  provider: camel
+  upstream_id: auto
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
   name: big-pickle
 spec:
   access: zen-shaper
@@ -732,13 +755,36 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
+  annotations:
+    one-shot-man/registry-name: deepseek-v4.1-flash:verboo
+  name: deepseek-v4-1-flash-verboo
+spec:
+  access: verboo-shaper
+  can_reason: true
+  context_window: 1048576
+  default: false
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 384000
+  provider: verboo
+  reasoning_efforts:
+  - "1"
+  - "25"
+  - "50"
+  - "100"
+  upstream_id: deepseek-v4.1-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
   name: deepseek-v4-flash
 spec:
   access: deepseek-direct
   can_reason: true
   context_window: 1000000
   equivalent_to:
-  - name: deepseek-v4-flash:camel
+  - name: auto:camel
     provider: camel
   - name: deepseek-v4-flash:dev
     provider: electronhub
@@ -766,6 +812,7 @@ spec:
   - high
   - xhigh
   - max
+  upstream_id: deepseek-v4-flash-0731
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: Model
@@ -786,28 +833,6 @@ apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
   annotations:
-    one-shot-man/registry-name: deepseek-v4-flash:camel
-  name: deepseek-v4-flash-camel
-spec:
-  access: camel-shaper
-  can_reason: true
-  context_window: 262144
-  default: true
-  equivalent_to:
-  - name: deepseek-v4-flash:dev
-    provider: electronhub
-  - name: deepseek-v4-flash
-    provider: deepseek
-  input_modalities:
-  - text
-  max_output_tokens: 16384
-  provider: camel
-  upstream_id: deepseek-v4-flash
----
-apiVersion: one-shot-man/v1alpha1
-kind: Model
-metadata:
-  annotations:
     one-shot-man/registry-name: deepseek-v4-flash:dev
   name: deepseek-v4-flash-dev
 spec:
@@ -815,7 +840,7 @@ spec:
   can_reason: true
   context_window: 1000000
   equivalent_to:
-  - name: deepseek-v4-flash:camel
+  - name: auto:camel
     provider: camel
   - name: deepseek-v4-flash
     provider: deepseek
@@ -1425,6 +1450,7 @@ spec:
   - low
   - high
   - max
+  upstream_id: glm-5.3-flash
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: Model
@@ -2432,6 +2458,7 @@ spec:
   - image
   max_output_tokens: 131072
   provider: verboo
+  upstream_id: mimo-v2.5
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: Model
@@ -3495,6 +3522,7 @@ kind: ModelAccess
 metadata:
   labels:
     one-shot-man/mode: shaper
+    one-shot-man/preferred-surface: responses
     one-shot-man/provider: camel
     one-shot-man/surface-anthropic: "true"
     one-shot-man/surface-chat: "true"
@@ -3682,8 +3710,11 @@ kind: ModelAccess
 metadata:
   labels:
     one-shot-man/mode: shaper
+    one-shot-man/preferred-surface: anthropic
     one-shot-man/provider: umans
     one-shot-man/surface-anthropic: "true"
+    one-shot-man/surface-chat: "true"
+    one-shot-man/surface-responses: "true"
   name: umans-shaper
 spec:
   auth:
@@ -3692,6 +3723,8 @@ spec:
     scheme: bearer
   endpoints:
     anthropic: http://127.0.0.1:11239/umans
+    chat: http://127.0.0.1:11239/umans/v1
+    responses: http://127.0.0.1:11239/umans/v1
   mode: shaper
   order: 10
   provider: umans
@@ -4045,6 +4078,7 @@ spec:
   surfaces:
   - anthropic
   - chat
+  - responses
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: Tool
@@ -4065,6 +4099,7 @@ spec:
       pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
   surfaces:
   - chat
+  - responses
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: Tool

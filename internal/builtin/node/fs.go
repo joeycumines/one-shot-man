@@ -26,9 +26,10 @@ func FsRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.R
 		promises := runtime.NewObject()
 
 		// readFile(path[, options]) -> Promise<Buffer|string>
-		// With an options.encoding string (Node's default is null → Buffer),
-		// the promise resolves to a string in that encoding; UTF-8 is the
-		// supported named encoding, everything else is rejected.
+		// With no options (Node's default encoding is null) the promise
+		// resolves to a Uint8Array of the file's bytes. With an
+		// options.encoding string, UTF-8 is the supported named encoding and
+		// the promise resolves to a string; everything else is rejected.
 		_ = promises.Set("readFile", func(call goja.FunctionCall) goja.Value {
 			path, ok := stringArg(call, 0)
 			if !ok {
@@ -54,6 +55,9 @@ func FsRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.R
 					return
 				}
 				_ = settle.Settle(false, func(rt *goja.Runtime) any {
+					if encoding == "" {
+						return bytesToUint8Array(rt, data)
+					}
 					return rt.ToValue(string(data))
 				})
 			})
@@ -333,9 +337,7 @@ func statsObject(rt *goja.Runtime, info fs.FileInfo) *goja.Object {
 	_ = obj.Set("isSymbolicLink", func(goja.FunctionCall) goja.Value { return rt.ToValue(info.Mode()&fs.ModeSymlink != 0) })
 	_ = obj.Set("size", info.Size())
 	_ = obj.Set("mode", uint32(info.Mode().Perm()))
-	if st, ok := info.Sys().(*syscall.Stat_t); ok {
-		_ = obj.Set("mtimeMs", float64(st.Mtimespec.Sec)*1000+float64(st.Mtimespec.Nsec)/1e6)
-	}
+	_ = obj.Set("mtimeMs", float64(info.ModTime().UnixNano())/1e6)
 	return obj
 }
 

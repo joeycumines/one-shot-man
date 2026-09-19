@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -388,28 +387,11 @@ func (c *ChildProcess) Pid() int {
 	return -1
 }
 
-// signalFromName resolves a signal name to an os.Signal, accepting the
-// "SIG"-prefixed and bare forms.
-func signalFromName(name string) os.Signal {
-	if sig, ok := map[string]os.Signal{
-		"SIGHUP": syscall.SIGHUP, "SIGINT": syscall.SIGINT, "SIGQUIT": syscall.SIGQUIT,
-		"SIGTERM": syscall.SIGTERM, "SIGUSR1": syscall.SIGUSR1, "SIGUSR2": syscall.SIGUSR2,
-	}[name]; ok {
-		return sig
-	}
-	if sig, ok := map[string]os.Signal{
-		"HUP": syscall.SIGHUP, "INT": syscall.SIGINT, "QUIT": syscall.SIGQUIT,
-		"TERM": syscall.SIGTERM, "USR1": syscall.SIGUSR1, "USR2": syscall.SIGUSR2,
-	}[name]; ok {
-		return sig
-	}
-	return nil
-}
-
 // Signal delivers the named signal to the child's process group without
 // tearing down the child's bookkeeping: wait() still reports the resulting
 // status. An empty or unknown name is rejected with os.ErrInvalid so a
-// typo'd signal never degrades into a kill.
+// typo'd signal never degrades into a kill. A signal to an already-reaped
+// child is a no-op, never a delivery to a recycled PID.
 func (c *ChildProcess) Signal(name string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -420,5 +402,14 @@ func (c *ChildProcess) Signal(name string) error {
 	if sig == nil {
 		return fmt.Errorf("signal %q: %w", name, os.ErrInvalid)
 	}
-	return signalProcess(c.cmd, name)
+	select {
+	case <-c.done:
+		// The child exited and was reaped by Wait. cmd.Process.Signal on a
+		// reaped PID is already an error-returning no-op on Unix, but the
+		// guard keeps the contract explicit: signaling an exited child is a
+		// no-op, not a delivery to a PID the OS may have recycled.
+		return nil
+	default:
+	}
+	return signalProcess(c.cmd, sig)
 }

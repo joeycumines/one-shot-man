@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"sync"
 
 	"github.com/joeycumines/goja"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
@@ -260,9 +261,15 @@ func RequireWithProvider(ctx context.Context, options Options, build Provider, a
 // name, with no resolver output, exit status, or environment detail.
 var errResolverClass = errors.New("credential resolver failed")
 
-// catalogError builds a rejected reason with a typed code and a message that
-// is safe for resolver classes.
+// catalogError builds a rejected reason with a typed code. The
+// resolver-failure-class code never carries the underlying error: resolver
+// stdout, stderr, exit status, and environment detail stay in Go. The other
+// codes (catalog-not-found, access-not-found) keep the underlying message —
+// those errors name catalog objects and configuration, not resolver output.
 func catalogError(rt *goja.Runtime, code string, err error) *goja.Object {
+	if code == "resolver-failure-class" {
+		err = errResolverClass
+	}
 	obj := rt.NewGoError(errors.New(code + ": " + err.Error()))
 	_ = obj.Set("code", code)
 	return obj
@@ -335,16 +342,22 @@ func toJS(runtime *goja.Runtime, value any) goja.Value {
 
 // lazyCatalog builds the backend on first use and reuses it afterwards, so a
 // configuration or filesystem error surfaces at the call site rather than
-// aborting module registration.
+// aborting module registration. get() is safe for concurrent callers: load()
+// builds the catalog from a tracked-promise goroutine while project() and
+// backendStatus() call in synchronously from the loop.
 type lazyCatalog struct {
 	ctx     context.Context
 	options Options
 	build   Provider
+
+	mu      sync.Mutex
 	catalog userk8s.Catalog
 	err     error
 }
 
 func (l *lazyCatalog) get() (userk8s.Catalog, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	if l.catalog != nil || l.err != nil {
 		return l.catalog, l.err
 	}

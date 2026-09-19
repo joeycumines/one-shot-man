@@ -147,7 +147,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	// subsets with Node-26 behavior. The osm: prefix stays reserved for
 	// domain modules.
 	registry.RegisterNativeModule("fs", nodemod.FsRequire(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule("net", nodemod.NetRequire(ctx, eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule("net", nodemod.NetRequire(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 	registry.RegisterNativeModule("crypto", nodemod.CryptoRequire(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))

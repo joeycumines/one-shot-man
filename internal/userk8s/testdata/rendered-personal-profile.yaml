@@ -3712,6 +3712,7 @@ metadata:
     one-shot-man/mode: shaper
     one-shot-man/preferred-surface: anthropic
     one-shot-man/provider: umans
+    one-shot-man/shaper-auth-mode: x-api-key
     one-shot-man/surface-anthropic: "true"
     one-shot-man/surface-chat: "true"
     one-shot-man/surface-responses: "true"

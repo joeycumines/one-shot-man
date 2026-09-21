@@ -197,6 +197,31 @@ func TestSandbox_NoOsExit(t *testing.T) {
 	}
 }
 
+// TestSandbox_ProcessHostStateStillDeleted pins the scrub's host-state delete
+// list (runtime.go) — process.exit/exitCode are the deliberate exit channel,
+// but the process-control and host-state surface must stay absent even if a
+// future goja-eventloop upgrade widens what Bind installs.
+func TestSandbox_ProcessHostStateStillDeleted(t *testing.T) {
+	t.Parallel()
+	engine, _, _ := newSandboxTestEngine(t)
+	script := engine.LoadScriptString("process-host-state-deleted", `
+		var scrubbed = [
+			'kill', 'abort', 'chdir', 'cwd', 'argv', 'argv0', 'execArgv', 'execPath',
+			'env', 'pid', 'ppid', 'binding', '_rawDebug', '_fatalException', 'dlopen',
+			'umask', 'setuid', 'setgid', 'seteuid', 'setegid', 'setgroups', 'initgroups',
+			'_exiting', 'reallyExit',
+		];
+		for (var i = 0; i < scrubbed.length; i++) {
+			if (typeof process[scrubbed[i]] !== 'undefined') {
+				throw new Error('SANDBOX_BREACH: process.' + scrubbed[i] + ' is reachable');
+			}
+		}
+	`)
+	if err := engine.ExecuteScript(script); err != nil {
+		t.Fatalf("process host-state scrub test failed: %v", err)
+	}
+}
+
 func TestSandbox_VMIsolation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

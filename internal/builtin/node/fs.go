@@ -151,22 +151,28 @@ func FsRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.R
 		// mkdir(path[, options]) -> Promise<string|undefined>
 		// With {recursive: true} Node resolves the first created directory
 		// (or undefined when nothing was created); without it the leaf only.
+		// options.mode is the permission bits for the created directories
+		// (Node default 0o777; the process umask applies as in Node).
 		_ = promises.Set("mkdir", func(call goja.FunctionCall) goja.Value {
 			path, ok := stringArg(call, 0)
 			if !ok {
 				return rejectTypeError(adapter, "mkdir", "The \"path\" argument must be of type string")
 			}
 			recursive := false
+			mode := os.FileMode(0o777)
 			if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
 				if opts, isObj := call.Argument(1).(*goja.Object); isObj {
 					if v := opts.Get("recursive"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 						recursive = v.ToBoolean()
 					}
+					if v := opts.Get("mode"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+						mode = os.FileMode(v.ToInteger())
+					}
 				}
 			}
 			return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 				if recursive {
-					created, err := mkdirAll(path)
+					created, err := mkdirAllMode(path, mode)
 					if err != nil {
 						_ = settle.Settle(true, func(rt *goja.Runtime) any { return nodeFSError(rt, "mkdir", path, err) })
 						return
@@ -179,7 +185,7 @@ func FsRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.R
 					})
 					return
 				}
-				if err := os.Mkdir(path, 0o777); err != nil {
+				if err := os.Mkdir(path, mode); err != nil {
 					_ = settle.Settle(true, func(rt *goja.Runtime) any { return nodeFSError(rt, "mkdir", path, err) })
 					return
 				}
@@ -212,7 +218,7 @@ func parseWriteFlag(flag string) (int, error) {
 
 // mkdirAll wraps filepath.MkdirAll to report Node's recursive-mkdir result:
 // the first directory path created, or "" when the tree already existed.
-func mkdirAll(path string) (string, error) {
+func mkdirAllMode(path string, mode os.FileMode) (string, error) {
 	// Find the deepest existing ancestor to identify what we created.
 	var missing []string
 	current := path
@@ -230,7 +236,7 @@ func mkdirAll(path string) (string, error) {
 	if len(missing) == 0 {
 		return "", nil
 	}
-	if err := os.MkdirAll(path, 0o777); err != nil {
+	if err := os.MkdirAll(path, mode); err != nil {
 		return "", err
 	}
 	// missing[len-1] is the shallowest missing ancestor: the first created.

@@ -199,6 +199,34 @@ func TestFsMkdirExistingNonRecursiveRejectsEEXIST(t *testing.T) {
 	}
 }
 
+// TestFsMkdirHonorsMode pins options.mode on both mkdir paths: the created
+// directory carries the requested permission bits after the umask (Node
+// semantics; the default is 0o777, i.e. 0755 under the usual umask).
+func TestFsMkdirHonorsMode(t *testing.T) {
+	dir := t.TempDir()
+	private := filepath.Join(dir, "private")
+	got := runScript(t, reportScript(`
+			const fs = require("fs");
+			await fs.promises.mkdir(`+pathLit(private)+`, {mode: 0o700});
+			const stats = await fs.promises.lstat(`+pathLit(private)+`);
+			report("MODE:" + (stats.mode & 0o777).toString(8));
+	`))
+	// 0700 & ^umask(022) stays 0700 (no bits removed that the umask keeps).
+	if got != "MODE:700" {
+		t.Fatalf("mkdir mode = %q, want MODE:700", got)
+	}
+	recursive := filepath.Join(dir, "r1", "r2")
+	got = runScript(t, reportScript(`
+			const fs = require("fs");
+			await fs.promises.mkdir(`+pathLit(recursive)+`, {recursive: true, mode: 0o750});
+			const stats = await fs.promises.lstat(`+pathLit(recursive)+`);
+			report("MODE:" + (stats.mode & 0o777).toString(8));
+	`))
+	if got != "MODE:750" {
+		t.Fatalf("recursive mkdir mode = %q, want MODE:750", got)
+	}
+}
+
 func TestNetConnectFiresConnectAndDeliversBytes(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

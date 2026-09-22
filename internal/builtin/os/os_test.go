@@ -512,6 +512,20 @@ func TestGetenv_EdgeCases(t *testing.T) {
 	}
 }
 
+func TestGetpid_ReturnsCurrentProcess(t *testing.T) {
+	_, exports := setupModule(t, nil)
+	getpid := requireCallable(t, exports, "getpid")
+
+	res, err := getpid(goja.Undefined())
+	if err != nil {
+		t.Fatalf("getpid: %v", err)
+	}
+	got := res.ToInteger()
+	if got != int64(os.Getpid()) || got <= 0 {
+		t.Fatalf("expected getpid to return %d, got %d", os.Getpid(), got)
+	}
+}
+
 func TestOpenEditor_EmptyNameHint(t *testing.T) {
 	if goruntime.GOOS == "windows" {
 		t.Skip("test relies on POSIX shell")

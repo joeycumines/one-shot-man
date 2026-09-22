@@ -255,60 +255,82 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		return c.executeDiff(stdout)
 	case "reset":
 		return c.executeReset(args[1:], stdout, stderr)
+	case "get":
+		if len(args) != 2 {
+			_, _ = fmt.Fprintf(stderr, "usage: config get <key>\n")
+			return &SilentError{Err: ErrUnexpectedArguments}
+		}
+		return c.executeGet(args[1], stdout)
+	case "set":
+		if len(args) != 3 {
+			_, _ = fmt.Fprintf(stderr, "usage: config set <key> <value>\n")
+			return &SilentError{Err: ErrUnexpectedArguments}
+		}
+		return c.executeSet(args[1], args[2], stdout, stderr)
 	}
 
 	if len(args) == 1 {
-		// Get configuration value (schema-aware: checks env → config → default).
-		key := args[0]
-		value := config.DefaultSchema().Resolve(c.config, key)
-		if value != "" {
-			_, _ = fmt.Fprintf(stdout, "%s: %s\n", key, value)
-		} else if _, exists := c.config.GetGlobalOption(key); exists {
-			// Value exists but is empty string.
-			_, _ = fmt.Fprintf(stdout, "%s: \n", key)
-		} else {
-			_, _ = fmt.Fprintf(stdout, "Configuration key '%s' not found\n", key)
-		}
-		return nil
+		return c.executeGet(args[0], stdout)
 	}
 
 	if len(args) == 2 {
-		// Set configuration value
-		key, value := args[0], args[1]
-
-		// Schema-aware validation before setting.
-		schema := config.DefaultSchema()
-		opt := schema.Lookup("", key)
-		if opt == nil {
-			_, _ = fmt.Fprintf(stderr, "Warning: %q is not a known configuration key (use 'config schema' to list known keys)\n", key)
-		} else if err := config.ValidateConfigOption(opt, value); err != nil {
-			_, _ = fmt.Fprintf(stderr, "Error: invalid value for %q: %v\n", key, err)
-			return &SilentError{Err: fmt.Errorf("invalid value for %q: %w", key, err)}
-		}
-
-		c.config.SetGlobalOption(key, value)
-
-		// Persist to disk if a config path is available
-		configPath := c.configPath
-		if configPath == "" {
-			var err error
-			configPath, err = config.GetConfigPath()
-			if err != nil {
-				slog.Warn("config path resolution failed skipping disk write", "error", err)
-			}
-		}
-		if configPath != "" {
-			if err := config.SetKeyFile(configPath, key, value); err != nil {
-				_, _ = fmt.Fprintf(stderr, "Warning: failed to persist config to disk: %v\n", err)
-			}
-		}
-
-		_, _ = fmt.Fprintf(stdout, "Set configuration: %s = %s\n", key, value)
-		return nil
+		return c.executeSet(args[0], args[1], stdout, stderr)
 	}
 
 	_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
 	return &SilentError{Err: ErrUnexpectedArguments}
+}
+
+// executeGet resolves one key through the schema (env → config → default) and
+// prints it. An unknown key is reported and returns an error WITHOUT touching
+// the config file — `config get <key>` must never be able to persist anything.
+func (c *ConfigCommand) executeGet(key string, stdout io.Writer) error {
+	value := config.DefaultSchema().Resolve(c.config, key)
+	if value != "" {
+		_, _ = fmt.Fprintf(stdout, "%s: %s\n", key, value)
+		return nil
+	}
+	if _, exists := c.config.GetGlobalOption(key); exists {
+		_, _ = fmt.Fprintf(stdout, "%s: \n", key)
+		return nil
+	}
+	_, _ = fmt.Fprintf(stdout, "Configuration key '%s' not found\n", key)
+	return nil
+}
+
+// executeSet validates and persists one key. An UNKNOWN key is refused with a
+// non-zero status and is NEVER written — the historical behavior warned and
+// then persisted garbage (the `config get <key>` footgun wrote `get <value>`).
+func (c *ConfigCommand) executeSet(key, value string, stdout, stderr io.Writer) error {
+	schema := config.DefaultSchema()
+	opt := schema.Lookup("", key)
+	if opt == nil {
+		_, _ = fmt.Fprintf(stderr, "Error: %q is not a known configuration key (use 'config schema' to list known keys)\n", key)
+		return &SilentError{Err: fmt.Errorf("unknown configuration key: %q", key)}
+	}
+	if err := config.ValidateConfigOption(opt, value); err != nil {
+		_, _ = fmt.Fprintf(stderr, "Error: invalid value for %q: %v\n", key, err)
+		return &SilentError{Err: fmt.Errorf("invalid value for %q: %w", key, err)}
+	}
+
+	c.config.SetGlobalOption(key, value)
+
+	configPath := c.configPath
+	if configPath == "" {
+		var err error
+		configPath, err = config.GetConfigPath()
+		if err != nil {
+			slog.Warn("config path resolution failed skipping disk write", "error", err)
+		}
+	}
+	if configPath != "" {
+		if err := config.SetKeyFile(configPath, key, value); err != nil {
+			_, _ = fmt.Fprintf(stderr, "Warning: failed to persist config to disk: %v\n", err)
+		}
+	}
+
+	_, _ = fmt.Fprintf(stdout, "Set configuration: %s = %s\n", key, value)
+	return nil
 }
 
 // executeValidate validates the current config against the schema.

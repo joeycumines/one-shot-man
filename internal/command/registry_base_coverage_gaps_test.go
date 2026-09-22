@@ -559,11 +559,11 @@ func TestConfigCommand_SetWithoutConfigPath_FallbackResolve(t *testing.T) {
 	cmd := NewConfigCommand(cfg) // no configPath
 
 	var stdout, stderr bytes.Buffer
-	if err := cmd.Execute([]string{"testkey", "testval"}, &stdout, &stderr); err != nil {
+	if err := cmd.Execute([]string{"color", "green"}, &stdout, &stderr); err != nil {
 		t.Fatalf("config set: %v", err)
 	}
 
-	if !strings.Contains(stdout.String(), "Set configuration: testkey = testval") {
+	if !strings.Contains(stdout.String(), "Set configuration: color = green") {
 		t.Fatalf("expected confirmation, got: %q", stdout.String())
 	}
 }
@@ -591,12 +591,12 @@ func TestConfigCommand_SetPersistFailure(t *testing.T) {
 	cmd := NewConfigCommand(cfg, configPath)
 
 	var stdout, stderr bytes.Buffer
-	if err := cmd.Execute([]string{"broken", "value"}, &stdout, &stderr); err != nil {
+	if err := cmd.Execute([]string{"color", "red"}, &stdout, &stderr); err != nil {
 		t.Fatalf("config set should not return error (persist is best-effort): %v", err)
 	}
 
 	// Should still confirm the in-memory set
-	if !strings.Contains(stdout.String(), "Set configuration: broken = value") {
+	if !strings.Contains(stdout.String(), "Set configuration: color = red") {
 		t.Fatalf("expected confirmation, got: %q", stdout.String())
 	}
 	// Should warn about persistence failure

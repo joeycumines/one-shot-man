@@ -7,12 +7,13 @@ import (
 )
 
 // renderedPersonalProfile is a byte-exact copy of the personal profile that
-// `gmake render-model-profiles` produces in the joeyc-ai repository, frozen on
-// 2026-09-15. It exercises the real registry vocabulary: sanitized
+// `gmake render-model-profiles` produces in the joeyc-ai repository, refreshed
+// 2026-09-22. It exercises the real registry vocabulary: sanitized
 // metadata names carrying one-shot-man/registry-name annotations,
 // equivalent_to references written in raw registry spelling, cluster-scoped
 // catalog kinds alongside the Namespace and Secret, and 15 selector-matched
-// bindings with 1Password-backed resolver chains.
+// bindings whose local chains are command (1Password, optional) + env only —
+// no file resolvers, per the local no-secret-files policy.
 const renderedPersonalProfile = "testdata/rendered-personal-profile.yaml"
 
 func TestLoadRealRenderedProfile(t *testing.T) {

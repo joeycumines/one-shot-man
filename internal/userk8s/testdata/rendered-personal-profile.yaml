@@ -43,8 +43,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_CAMEL_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/camel_api_key.key
   secretRef:
     key: CAMEL_API_KEY
     name: personal-model-credentials
@@ -72,8 +70,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_DEEPSEEK_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/deepseek_api_key.key
   secretRef:
     key: DEEPSEEK_API_KEY
     name: personal-model-credentials
@@ -101,8 +97,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_DIALAGRAM_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/dialagram_api_key.key
   secretRef:
     key: DIALAGRAM_API_KEY
     name: personal-model-credentials
@@ -130,8 +124,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_ELECTRONHUB_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/electronhub_api_key.key
   secretRef:
     key: ELECTRONHUB_API_KEY
     name: personal-model-credentials
@@ -159,8 +151,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_MINIMAX_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/minimax_api_key.key
   secretRef:
     key: MINIMAX_API_KEY
     name: personal-model-credentials
@@ -189,8 +179,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_OPENCODE_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/opencode_api_key.key
   secretRef:
     key: OPENCODE_API_KEY
     name: personal-model-credentials
@@ -219,8 +207,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_OPENCODE_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/opencode_api_key.key
   secretRef:
     key: OPENCODE_API_KEY
     name: personal-model-credentials
@@ -249,8 +235,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_OPENCODE_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/opencode_api_key.key
   secretRef:
     key: OPENCODE_API_KEY
     name: personal-model-credentials
@@ -279,8 +263,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_OPENROUTER_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/openrouter_api_key.key
   secretRef:
     key: OPENROUTER_API_KEY
     name: personal-model-credentials
@@ -308,8 +290,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_UMANS_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/umans_api_key.key
   secretRef:
     key: UMANS_API_KEY
     name: personal-model-credentials
@@ -338,8 +318,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_VERBOO_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/verboo_api_key.key
   secretRef:
     key: VERBOO_API_KEY
     name: personal-model-credentials
@@ -367,8 +345,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_WAFER_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/wafer_api_key.key
   secretRef:
     key: WAFER_API_KEY
     name: personal-model-credentials
@@ -397,8 +373,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_YOLO_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/yolo_api_key.key
   secretRef:
     key: YOLO_API_KEY
     name: personal-model-credentials
@@ -426,8 +400,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_OPENCODE_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/opencode_api_key.key
   secretRef:
     key: OPENCODE_API_KEY
     name: personal-model-credentials
@@ -455,8 +427,6 @@ spec:
       timeout: 5s
   - env:
       name: SHELL_AI_ZHIPU_API_KEY
-  - file:
-      path: $HOME/.config/osm/secrets/zhipu_api_key.key
   secretRef:
     key: ZHIPU_API_KEY
     name: personal-model-credentials

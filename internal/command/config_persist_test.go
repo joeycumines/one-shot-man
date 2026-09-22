@@ -142,7 +142,7 @@ func TestConfigSet_SchemaValidation_KnownDurationKey_ValidValue(t *testing.T) {
 	}
 }
 
-func TestConfigSet_SchemaValidation_UnknownKey_Warning(t *testing.T) {
+func TestConfigSet_SchemaValidation_UnknownKey_Refused(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config")
@@ -150,27 +150,32 @@ func TestConfigSet_SchemaValidation_UnknownKey_Warning(t *testing.T) {
 	cmd := NewConfigCommand(cfg, configPath)
 
 	var stdout, stderr bytes.Buffer
-	if err := cmd.Execute([]string{"my-custom-key", "myvalue"}, &stdout, &stderr); err != nil {
-		t.Fatalf("unknown key should not return error: %v", err)
+	err := cmd.Execute([]string{"my-custom-key", "myvalue"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("unknown key must return a non-zero error")
 	}
 
-	// Should warn on stderr
+	// Should refuse on stderr
 	if !strings.Contains(stderr.String(), "not a known configuration key") {
-		t.Fatalf("expected unknown key warning in stderr, got: %q", stderr.String())
+		t.Fatalf("expected unknown key refusal in stderr, got: %q", stderr.String())
 	}
 
-	// Should still set the value in memory
-	if v, ok := cfg.GetGlobalOption("my-custom-key"); !ok || v != "myvalue" {
-		t.Fatalf("expected in-memory my-custom-key=myvalue, got %q exists=%v", v, ok)
+	// Should NOT set the value in memory
+	if v, ok := cfg.GetGlobalOption("my-custom-key"); ok {
+		t.Fatalf("unknown key must not be set in memory, got %q", v)
 	}
 
-	// Should still persist to disk
-	reloaded, err := config.LoadFile(configPath)
-	if err != nil {
-		t.Fatalf("failed to reload: %v", err)
-	}
-	if v, ok := reloaded.GetGlobalOption("my-custom-key"); !ok || v != "myvalue" {
-		t.Fatalf("expected disk my-custom-key=myvalue, got %q exists=%v", v, ok)
+	// Should NOT persist to disk (config file stays absent)
+	if _, err := os.Stat(configPath); err == nil {
+		reloaded, loadErr := config.LoadFile(configPath)
+		if loadErr != nil {
+			t.Fatalf("config file appeared but failed to load: %v", loadErr)
+		}
+		if v, ok := reloaded.GetGlobalOption("my-custom-key"); ok {
+			t.Fatalf("unknown key must not persist to disk, got %q", v)
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("unexpected stat error on config path: %v", err)
 	}
 }
 

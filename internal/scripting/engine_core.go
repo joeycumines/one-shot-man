@@ -16,7 +16,7 @@ import (
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaEventloop "github.com/joeycumines/goja-eventloop"
-	_ "github.com/joeycumines/goja_nodejs/console" // init() registers "console" core module
+	console "github.com/joeycumines/goja_nodejs/console"
 	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
@@ -336,12 +336,19 @@ func NewEngine(
 		// with console.log/warn/error/info/debug from goja_nodejs/console module.
 		// adapter.Bind() only provides console.time/timeEnd/timeLog/count/etc.
 		// The goja_nodejs/console module provides the standard logging methods.
-		// We load the module and copy its methods to the existing console object
-		// so both sets of methods coexist.
-		consoleModule := require.Require(r, "console").(*goja.Object)
+		// The console module is ALSO loaded with a PLAIN printer: the
+		// registered default wraps console.log in log.LstdFlags timestamps,
+		// which corrupts every machine-readable output a script emits
+		// (`--list --json` was unparseable). log/info/debug print verbatim to
+		// stdout; warn/error go to stderr through the same printer so they
+		// carry no timestamp either.
 		existingConsole := r.Get("console").ToObject(r)
-		for _, method := range []string{"log", "warn", "error", "info", "debug"} {
-			existingConsole.Set(method, consoleModule.Get(method))
+		plainModule := r.NewObject()
+		plainModule.Set("exports", r.NewObject())
+		console.RequireWithPrinter(newPlainStdPrinter())(r, plainModule)
+		plainExports := plainModule.Get("exports").ToObject(r)
+		for _, method := range []string{"log", "info", "debug", "warn", "error"} {
+			existingConsole.Set(method, plainExports.Get(method))
 		}
 
 		// Install circular dependency detection by wrapping the require function.
@@ -1117,3 +1124,20 @@ func shebangStrippingLoader(filename string) ([]byte, error) {
 	}
 	return data, nil
 }
+
+// plainStdPrinter is a console.Printer whose stdout channel writes verbatim
+// (no log.LstdFlags timestamp), so machine-readable script output stays
+// parseable; warnings and errors go to stderr through the default logger so
+// they remain attributed. Constructed per runtime via newPlainStdPrinter —
+// no package-level state.
+type plainStdPrinter struct {
+	log func(string)
+}
+
+func newPlainStdPrinter() console.Printer {
+	return plainStdPrinter{log: func(s string) { _, _ = fmt.Fprintln(os.Stdout, s) }}
+}
+
+func (p plainStdPrinter) Log(s string)   { p.log(s) }
+func (p plainStdPrinter) Warn(s string)  { _, _ = fmt.Fprintln(os.Stderr, s) }
+func (p plainStdPrinter) Error(s string) { _, _ = fmt.Fprintln(os.Stderr, s) }

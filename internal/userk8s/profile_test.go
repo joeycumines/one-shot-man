@@ -8,7 +8,7 @@ import (
 
 // renderedPersonalProfile is a byte-exact copy of the personal profile that
 // `gmake render-model-profiles` produces in the joeyc-ai repository, refreshed
-// 2026-09-22. It exercises the real registry vocabulary: sanitized
+// 2026-09-23. It exercises the real registry vocabulary: sanitized
 // metadata names carrying one-shot-man/registry-name annotations,
 // equivalent_to references written in raw registry spelling, cluster-scoped
 // catalog kinds alongside the Namespace and Secret, and 15 selector-matched

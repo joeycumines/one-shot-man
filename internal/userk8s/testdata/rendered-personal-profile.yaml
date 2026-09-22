@@ -53,7 +53,7 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: LocalSecretBinding
 metadata:
-  name: bind-deepseek-direct
+  name: bind-deepseek-shaper
   namespace: model-access-personal
 spec:
   envVar: DEEPSEEK_API_KEY
@@ -134,7 +134,7 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: LocalSecretBinding
 metadata:
-  name: bind-minimax-direct
+  name: bind-minimax-shaper
   namespace: model-access-personal
 spec:
   envVar: MINIMAX_API_KEY
@@ -246,7 +246,7 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: LocalSecretBinding
 metadata:
-  name: bind-openrouter-direct
+  name: bind-openrouter-shaper
   namespace: model-access-personal
 spec:
   envVar: OPENROUTER_API_KEY
@@ -328,7 +328,7 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: LocalSecretBinding
 metadata:
-  name: bind-wafer-direct
+  name: bind-wafer-shaper
   namespace: model-access-personal
 spec:
   envVar: WAFER_API_KEY
@@ -410,7 +410,7 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: LocalSecretBinding
 metadata:
-  name: bind-zhipu-direct
+  name: bind-zhipu-shaper
   namespace: model-access-personal
 spec:
   envVar: ZHIPU_API_KEY
@@ -750,7 +750,7 @@ kind: Model
 metadata:
   name: deepseek-v4-flash
 spec:
-  access: deepseek-direct
+  access: deepseek-shaper
   can_reason: true
   context_window: 1000000
   equivalent_to:
@@ -947,7 +947,7 @@ metadata:
     one-shot-man/registry-name: DeepSeek-V4-Pro
   name: deepseek-v4-pro
 spec:
-  access: wafer-direct
+  access: wafer-shaper
   can_reason: true
   context_window: 1000000
   default: true
@@ -967,7 +967,7 @@ metadata:
     one-shot-man/registry-name: deepseek-v4-pro
   name: deepseek-v4-pro-2
 spec:
-  access: deepseek-direct
+  access: deepseek-shaper
   can_reason: true
   context_window: 1000000
   default: true
@@ -1183,7 +1183,7 @@ metadata:
     one-shot-man/registry-name: glm-4.5-air
   name: glm-4-5-air
 spec:
-  access: zhipu-direct
+  access: zhipu-shaper
   can_reason: false
   context_window: 128000
   input_modalities:
@@ -1199,7 +1199,7 @@ metadata:
     one-shot-man/registry-name: glm-4.7
   name: glm-4-7
 spec:
-  access: zhipu-direct
+  access: zhipu-shaper
   can_reason: true
   context_window: 202000
   input_modalities:
@@ -1229,7 +1229,7 @@ metadata:
     one-shot-man/registry-name: glm-5.1
   name: glm-5-1
 spec:
-  access: zhipu-direct
+  access: zhipu-shaper
   can_reason: true
   context_window: 200000
   equivalent_to:
@@ -1250,7 +1250,7 @@ metadata:
     one-shot-man/registry-name: GLM-5.1
   name: glm-5-1-2
 spec:
-  access: wafer-direct
+  access: wafer-shaper
   can_reason: true
   context_window: 203000
   equivalent_to:
@@ -1364,7 +1364,7 @@ metadata:
     one-shot-man/registry-name: glm-5.3[1m]
   name: glm-5-3-1m
 spec:
-  access: zhipu-direct
+  access: zhipu-shaper
   can_reason: true
   context_window: 1000000
   default: true
@@ -1429,7 +1429,7 @@ metadata:
     one-shot-man/registry-name: glm-5.3-flash[1m]
   name: glm-5-3-flash-1m
 spec:
-  access: zhipu-direct
+  access: zhipu-shaper
   can_reason: true
   context_window: 1000000
   default: false
@@ -2569,7 +2569,7 @@ metadata:
     one-shot-man/registry-name: MiniMax-M2.7
   name: minimax-m2-7
 spec:
-  access: minimax-direct
+  access: minimax-shaper
   can_reason: true
   context_window: 204800
   default: true
@@ -2881,7 +2881,7 @@ metadata:
     one-shot-man/registry-name: ~openai/gpt-latest
   name: openai-gpt-latest
 spec:
-  access: openrouter-direct
+  access: openrouter-shaper
   can_reason: true
   context_window: 400000
   default: true
@@ -2898,7 +2898,7 @@ metadata:
     one-shot-man/registry-name: openrouter/owl-alpha
   name: openrouter-owl-alpha
 spec:
-  access: openrouter-direct
+  access: openrouter-shaper
   can_reason: true
   context_window: 262144
   input_modalities:
@@ -3141,7 +3141,7 @@ metadata:
     one-shot-man/registry-name: Qwen3.5-397B-A17B
   name: qwen3-5-397b-a17b
 spec:
-  access: wafer-direct
+  access: wafer-shaper
   can_reason: true
   context_window: 262144
   input_modalities:
@@ -3516,20 +3516,21 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelAccess
 metadata:
   labels:
-    one-shot-man/mode: direct
+    one-shot-man/mode: shaper
     one-shot-man/provider: deepseek
+    one-shot-man/shaper-upstream: https://api.deepseek.com
     one-shot-man/surface-anthropic: "true"
     one-shot-man/surface-chat: "true"
-  name: deepseek-direct
+  name: deepseek-shaper
 spec:
   auth:
     requiredEnv:
     - DEEPSEEK_API_KEY
     scheme: bearer
   endpoints:
-    anthropic: https://api.deepseek.com/anthropic
-    chat: https://api.deepseek.com
-  mode: direct
+    anthropic: http://127.0.0.1:11239/deepseek
+    chat: http://127.0.0.1:11239/deepseek/v1
+  mode: shaper
   order: 10
   provider: deepseek
 ---
@@ -3585,18 +3586,20 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelAccess
 metadata:
   labels:
-    one-shot-man/mode: direct
+    one-shot-man/mode: shaper
     one-shot-man/provider: minimax
+    one-shot-man/shaper-transcode: none
+    one-shot-man/shaper-upstream: https://api.minimax.io/anthropic
     one-shot-man/surface-anthropic: "true"
-  name: minimax-direct
+  name: minimax-shaper
 spec:
   auth:
     requiredEnv:
     - MINIMAX_API_KEY
     scheme: bearer
   endpoints:
-    anthropic: https://api.minimax.io/anthropic
-  mode: direct
+    anthropic: http://127.0.0.1:11239/minimax
+  mode: shaper
   order: 10
   provider: minimax
 ---
@@ -3664,20 +3667,21 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelAccess
 metadata:
   labels:
-    one-shot-man/mode: direct
+    one-shot-man/mode: shaper
     one-shot-man/provider: openrouter
+    one-shot-man/shaper-upstream: https://openrouter.ai/api/v1
     one-shot-man/surface-chat: "true"
     one-shot-man/surface-responses: "true"
-  name: openrouter-direct
+  name: openrouter-shaper
 spec:
   auth:
     requiredEnv:
     - OPENROUTER_API_KEY
     scheme: bearer
   endpoints:
-    chat: https://openrouter.ai/api/v1
-    responses: https://openrouter.ai/api/v1
-  mode: direct
+    chat: http://127.0.0.1:11239/openrouter/v1
+    responses: http://127.0.0.1:11239/openrouter/v1
+  mode: shaper
   order: 10
   provider: openrouter
 ---
@@ -3735,18 +3739,20 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelAccess
 metadata:
   labels:
-    one-shot-man/mode: direct
+    one-shot-man/mode: shaper
     one-shot-man/provider: wafer
+    one-shot-man/shaper-transcode: none
+    one-shot-man/shaper-upstream: https://pass.wafer.ai
     one-shot-man/surface-anthropic: "true"
-  name: wafer-direct
+  name: wafer-shaper
 spec:
   auth:
     requiredEnv:
     - WAFER_API_KEY
     scheme: bearer
   endpoints:
-    anthropic: https://pass.wafer.ai
-  mode: direct
+    anthropic: http://127.0.0.1:11239/wafer
+  mode: shaper
   order: 10
   provider: wafer
 ---
@@ -3802,20 +3808,20 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelAccess
 metadata:
   labels:
-    one-shot-man/mode: direct
+    one-shot-man/mode: shaper
     one-shot-man/provider: zhipu
+    one-shot-man/shaper-transcode: none
+    one-shot-man/shaper-upstream: https://api.z.ai/api/anthropic
     one-shot-man/surface-anthropic: "true"
-    one-shot-man/surface-chat: "true"
-  name: zhipu-direct
+  name: zhipu-shaper
 spec:
   auth:
     requiredEnv:
     - ZHIPU_API_KEY
     scheme: bearer
   endpoints:
-    anthropic: https://api.z.ai/api/anthropic
-    chat: https://api.z.ai/api/coding/paas/v4
-  mode: direct
+    anthropic: http://127.0.0.1:11239/zhipu
+  mode: shaper
   order: 10
   provider: zhipu
 ---

@@ -1117,6 +1117,9 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 			"key":  msg.key,
 		}
 
+	case ComponentMsg:
+		return map[string]any(msg)
+
 	case tea.PasteMsg:
 		return map[string]any{
 			"type":    "Paste",
@@ -1614,6 +1617,13 @@ type quitMsg struct{}
 
 // clearScreenMsg is a custom message type for clear screen.
 type clearScreenMsg struct{}
+
+// ComponentMsg is a JS-visible message that a Go-backed component's wrapped
+// command may return to the program (see WrapCmd). The map reaches the JS
+// update function unchanged, so components can wake an embedder's model on
+// their own events (e.g. termpane's waitOutput delivering PaneOutput) without
+// the embedder polling.
+type ComponentMsg map[string]any
 
 // stateRefreshMsg is a custom message type for state refresh notifications.
 // This message is sent when external code modifies shared state and wants the TUI to re-render.

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -58,6 +59,10 @@ type Model struct {
 
 	// done is closed by Close to signal the subscription goroutine to exit.
 	done chan struct{}
+
+	// waiting guards WaitForOutput so at most one waiter consumes outputCh.
+	// It is set by the waiter's goroutine, never held across a channel wait.
+	waiting atomic.Bool
 
 	// wg tracks the bridge goroutine. Close waits on it before closing
 	// outputCh to avoid "send on closed channel" panics.
@@ -398,6 +403,43 @@ func (m *Model) ANSIView() tea.View {
 		}
 		return m.ansiText
 	})
+}
+
+// WaitForOutput blocks until the next terminal event for this pane's session
+// is delivered (or the pane closes), then drains any events already queued so
+// a burst produces one wakeup instead of one per chunk. It reports false when
+// the pane is closed or another waiter is already active; callers must not
+// retry a false result in a tight loop because the active waiter is still
+// armed.
+//
+// Embedders use this instead of polling: a caller that wakes on each event and
+// renders from the latest published snapshot (ANSIView) sees every visible
+// change with no tick quantisation, and drained events carry no information
+// that is lost because the render always reads the current snapshot.
+func (m *Model) WaitForOutput() bool {
+	if !m.waiting.CompareAndSwap(false, true) {
+		return false
+	}
+	defer m.waiting.Store(false)
+
+	select {
+	case _, ok := <-m.outputCh:
+		if !ok {
+			return false
+		}
+	case <-m.done:
+		return false
+	}
+	for {
+		select {
+		case _, ok := <-m.outputCh:
+			if !ok {
+				return true
+			}
+		default:
+			return true
+		}
+	}
 }
 
 // Close unsubscribes from the EventBus, signals the bridge goroutine to

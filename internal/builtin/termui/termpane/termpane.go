@@ -213,6 +213,23 @@ func createTermpaneObject(runtime *goja.Runtime, m *termpane.Model) goja.Value {
 		return runtime.NewArray(obj, bubbletea.WrapCmd(runtime, cmd))
 	})
 
+	// waitOutput() — a wrapped tea.Cmd that resolves with a
+	// {type:'PaneOutput', sessionId} message on the next terminal event for
+	// this pane's session (output, resize, or exit), coalescing bursts. It
+	// runs on bubbletea's command goroutine, never on the JS event loop, so a
+	// JS update function can re-arm it directly.
+	_ = obj.Set("waitOutput", func(call goja.FunctionCall) goja.Value {
+		return bubbletea.WrapCmd(runtime, func() tea.Msg {
+			if !m.WaitForOutput() {
+				return nil
+			}
+			return bubbletea.ComponentMsg{
+				"type":      "PaneOutput",
+				"sessionId": uint64(m.SessionID()),
+			}
+		})
+	})
+
 	_ = obj.Set("view", func(call goja.FunctionCall) goja.Value {
 		m.RefreshSnapshot()
 		v := m.ANSIView()

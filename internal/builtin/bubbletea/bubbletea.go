@@ -2390,6 +2390,14 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	} else if output != nil {
 		opts = append(opts, tea.WithOutput(output))
 	}
+	// Signal ownership belongs to the embedding runtime, not the program:
+	// bubbletea's own handler turns SIGTERM into QuitMsg and SIGINT into
+	// InterruptMsg, stopping the program behind the script's back. A script
+	// that listens (the engine delivers SIGINT/SIGTERM to process listeners,
+	// Node-style) then never gets to run its event-driven drain, and a script
+	// that does not is still covered because the engine cancels the runtime,
+	// which lands on the ctx.Done() arm of the watchdog goroutine below.
+	opts = append(opts, tea.WithoutSignalHandler())
 
 	p := tea.NewProgram(model, opts...)
 
@@ -2449,9 +2457,22 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 			// Program finished naturally, no need to call Quit
 			return
 		case <-ctx.Done():
-			// Context cancelled externally
-		case <-sigCh:
-			// OS Signal received
+			// Context cancelled externally: the runtime is being torn down
+			// (engine shutdown, or the engine's unhandled-signal fallback),
+			// so end the program and restore the terminal.
+		case sig := <-sigCh:
+			// SIGINT/SIGTERM belong to the script: the engine delivers them
+			// to the script's Node-style listener, and the script decides
+			// when the program ends (typically after an event-driven drain).
+			// Quitting here would stop the program behind the script's back,
+			// so its drain never observes the child exit and the process
+			// lingers. A script with no listener is force-cancelled by the
+			// engine instead, which lands on the ctx.Done() arm above.
+			// SIGQUIT has no engine contract; keep the terminal-restoring
+			// quit.
+			if sig != syscall.SIGQUIT {
+				return
+			}
 		}
 		p.Quit()
 	})

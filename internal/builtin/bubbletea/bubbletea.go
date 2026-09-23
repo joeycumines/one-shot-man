@@ -63,6 +63,7 @@
 //	tea.sequence(...cmds);         // Execute commands in sequence
 //	tea.tick(durationMs, id);      // Timer command (returns tickMsg with id)
 //	tea.requestWindowSize();       // Query current window size
+//	tea.requestBackgroundColor();  // Query the terminal background colour
 //
 //	// Key events — msg.type === 'Key'
 //	// msg.key    - key name ('q', 'enter', 'space', 'ctrl+c', etc.)
@@ -95,6 +96,13 @@
 //	// msg.type === 'Paste'     with msg.content
 //	// msg.type === 'PasteStart' — paste sequence started
 //	// msg.type === 'PasteEnd'   — paste sequence ended
+//
+//	// Background colour events — answer to tea.requestBackgroundColor()
+//	// msg.type === 'BackgroundColor' with msg.isDark and msg.rgb, where rgb is
+//	// the OSC 11 payload form "RRRR/GGGG/BBBB" ("" when the terminal reported
+//	// no colour). The view-side {backgroundColor} field is unrelated: it sets
+//	// the colour this program renders with, while this message reports what
+//	// the terminal said about itself.
 //
 // # View Return Value
 //
@@ -1066,6 +1074,16 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 			"height": msg.Height,
 		}
 
+	case tea.BackgroundColorMsg:
+		// A terminal answered tea.RequestBackgroundColor. Expose the
+		// light/dark decision plus the OSC 11 reply payload so an embedder can
+		// forward the answer verbatim into a child PTY.
+		return map[string]any{
+			"type":   "BackgroundColor",
+			"isDark": msg.IsDark(),
+			"rgb":    backgroundRGB(msg),
+		}
+
 	case tea.FocusMsg:
 		return map[string]any{
 			"type": "Focus",
@@ -1130,6 +1148,17 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 	default:
 		return nil
 	}
+}
+
+// backgroundRGB formats a terminal background colour as the OSC 11 reply
+// payload: four hex digits per channel, e.g. "ffff/ffff/ffff". It returns ""
+// when the terminal reported no colour; callers fall back to the isDark flag.
+func backgroundRGB(msg tea.BackgroundColorMsg) string {
+	if msg.Color == nil {
+		return ""
+	}
+	r, g, b, _ := msg.Color.RGBA()
+	return fmt.Sprintf("%04x/%04x/%04x", r, g, b)
 }
 
 // modToStrings converts a KeyMod to a slice of modifier name strings.
@@ -1499,6 +1528,9 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 
 	case "requestWindowSize":
 		return tea.RequestWindowSize
+
+	case "requestBackgroundColor":
+		return tea.RequestBackgroundColor
 	}
 
 	return nil
@@ -2214,6 +2246,13 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 		// Returns tea.RequestWindowSize — the program will receive a WindowSizeMsg.
 		_ = exports.Set("requestWindowSize", func(call goja.FunctionCall) goja.Value {
 			return createCommand("requestWindowSize", nil)
+		})
+
+		// requestBackgroundColor queries the terminal background colour (v2 API).
+		// Returns tea.RequestBackgroundColor — the program will receive a
+		// BackgroundColor message with { isDark, rgb }.
+		_ = exports.Set("requestBackgroundColor", func(call goja.FunctionCall) goja.Value {
+			return createCommand("requestBackgroundColor", nil)
 		})
 	}
 }

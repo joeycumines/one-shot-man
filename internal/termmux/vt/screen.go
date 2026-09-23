@@ -378,12 +378,19 @@ func (s *Screen) Resize(rows, cols int) {
 	if s.Saved1049Col >= cols {
 		s.Saved1049Col = cols - 1
 	}
-	// Preserve scroll region if it fits within new dimensions.
-	if s.ScrollTop > 0 || s.ScrollBot > 0 {
-		if s.ScrollBot > rows {
-			s.ScrollBot = rows
-		}
-		if s.ScrollTop >= s.ScrollBot || s.ScrollTop < 1 {
+	if rows != oldRows {
+		// A height change resets the scrolling region to the full screen,
+		// matching xterm/tmux (tmux screen_resize_y: "Set the new size, and
+		// reset the scroll region"). A stale region would confine a resized
+		// child's repaint to the old bounds — the child advances lines with
+		// CRLF and the region scrolls instead — so the new screen would stay
+		// blank below the old height.
+		s.ScrollTop = 0
+		s.ScrollBot = 0
+	} else if s.ScrollTop > 0 || s.ScrollBot > 0 {
+		// Height unchanged: keep a still-valid region, drop anything that is
+		// not a region for this screen.
+		if s.ScrollBot > rows || s.ScrollTop < 1 || s.ScrollTop >= s.ScrollBot {
 			s.ScrollTop = 0
 			s.ScrollBot = 0
 		}

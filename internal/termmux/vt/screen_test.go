@@ -553,37 +553,26 @@ func TestScreen_ReverseIndex_AtTopOfRegion(t *testing.T) {
 
 // ── T122: Render idempotent (already tested, add consecutive test) ──
 
-func TestScreen_Resize_ClampsScrollBotOnShrink(t *testing.T) {
-	s := NewScreen(10, 40)
-	s.ScrollTop = 3
-	s.ScrollBot = 8
-	// Shrink to 5 rows — ScrollBot clamps to 5, ScrollTop=3 < 5, so region
-	// is preserved as 3-5.
-	s.Resize(5, 40)
-	if s.ScrollTop != 3 || s.ScrollBot != 5 {
-		t.Errorf("after shrink: scroll=%d-%d, want 3-5 (clamped bot)", s.ScrollTop, s.ScrollBot)
-	}
-}
-
-func TestScreen_Resize_ClampsScrollBot(t *testing.T) {
-	s := NewScreen(24, 80)
-	s.ScrollTop = 5
-	s.ScrollBot = 20
-	// Shrink to 15 rows — ScrollBot should be clamped to 15.
-	s.Resize(15, 80)
-	if s.ScrollTop != 5 || s.ScrollBot != 15 {
-		t.Errorf("scroll region = %d-%d, want 5-15 (clamped bot)", s.ScrollTop, s.ScrollBot)
-	}
-}
-
-func TestScreen_Resize_PreservesOnGrow(t *testing.T) {
-	s := NewScreen(24, 80)
-	s.ScrollTop = 5
-	s.ScrollBot = 20
-	// Grow to 48 rows — scroll region should be unchanged.
-	s.Resize(48, 80)
-	if s.ScrollTop != 5 || s.ScrollBot != 20 {
-		t.Errorf("scroll region = %d-%d, want 5-20 (preserved on grow)", s.ScrollTop, s.ScrollBot)
+func TestScreen_Resize_ResetsRegionOnHeightChange(t *testing.T) {
+	// A height change resets the scrolling region to the full screen on
+	// grow and shrink alike, matching xterm/tmux (tmux screen_resize_y:
+	// "Set the new size, and reset the scroll region"). Preserving or
+	// clamping the old bounds is the resize artifact this terminal must not
+	// reproduce: a child that set a full-height region on the old geometry
+	// would have its CRLF-driven repaint confined to the old height.
+	for _, tc := range []struct{ oldRows, newRows, top, bot int }{
+		{24, 48, 5, 20}, // grow
+		{24, 15, 5, 20}, // shrink
+		{10, 5, 3, 8},   // shrink past the top
+	} {
+		s := NewScreen(tc.oldRows, 80)
+		s.ScrollTop = tc.top
+		s.ScrollBot = tc.bot
+		s.Resize(tc.newRows, 80)
+		if s.ScrollTop != 0 || s.ScrollBot != 0 {
+			t.Errorf("%d→%d rows: region = %d-%d, want 0-0 (height change resets)",
+				tc.oldRows, tc.newRows, s.ScrollTop, s.ScrollBot)
+		}
 	}
 }
 
@@ -613,10 +602,14 @@ func TestScreen_Resize_ScrollRegionAtBottomEdge(t *testing.T) {
 	s := NewScreen(24, 80)
 	s.ScrollTop = 5
 	s.ScrollBot = 24 // exactly at bottom edge
-	// Shrink to 20 rows — ScrollBot clamps to 20, ScrollTop=5 < 20, preserved.
+	// Shrink to 20 rows — the height changed, and a height change resets the
+	// scroll region to the full screen, matching xterm/tmux (tmux
+	// screen_resize_y: "Set the new size, and reset the scroll region").
+	// Preserving a clamped region here would leave the app confined to
+	// bounds it no longer owns.
 	s.Resize(20, 80)
-	if s.ScrollTop != 5 || s.ScrollBot != 20 {
-		t.Errorf("scroll region = %d-%d, want 5-20 (clamped to edge)", s.ScrollTop, s.ScrollBot)
+	if s.ScrollTop != 0 || s.ScrollBot != 0 {
+		t.Errorf("scroll region = %d-%d, want 0-0 (height change resets)", s.ScrollTop, s.ScrollBot)
 	}
 }
 

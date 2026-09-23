@@ -27,7 +27,11 @@ type CaptureConfig struct {
 	// Dir is the working directory (default: caller's CWD).
 	Dir string
 	// Env contains additional environment variables merged with os.Environ().
+	// When EnvReplace is true the child receives only Env plus TERM.
 	Env map[string]string
+	// EnvReplace, when true, replaces the parent environment instead of
+	// merging with it. Threaded through to pty.SpawnConfig.
+	EnvReplace bool
 	// Rows is the virtual terminal row count (default: DefaultRows).
 	Rows int
 	// Cols is the virtual terminal column count (default: DefaultCols).
@@ -173,12 +177,13 @@ func (cs *CaptureSession) Start(ctx context.Context) error {
 
 	childCtx, cancel := context.WithCancel(ctx)
 	proc, err := pty.Spawn(childCtx, pty.SpawnConfig{
-		Command: cs.cfg.Command,
-		Args:    cs.cfg.Args,
-		Dir:     cs.cfg.Dir,
-		Env:     cs.cfg.Env,
-		Rows:    uint16(cs.rows),
-		Cols:    uint16(cs.cols),
+		Command:    cs.cfg.Command,
+		Args:       cs.cfg.Args,
+		Dir:        cs.cfg.Dir,
+		Env:        cs.cfg.Env,
+		EnvReplace: cs.cfg.EnvReplace,
+		Rows:       uint16(cs.rows),
+		Cols:       uint16(cs.cols),
 	})
 	if err != nil {
 		cancel()
@@ -437,6 +442,20 @@ func (cs *CaptureSession) Interrupt() error {
 		return errors.New("capture: not started")
 	}
 	return proc.Signal("SIGINT")
+}
+
+// Signal delivers a named signal (e.g. "SIGINT", "SIGQUIT", "SIGTSTP") to
+// the child process. It is the passthrough signal-forwarding hook: while the
+// real terminal is handed over, the host process receives these signals and
+// must forward them to the child rather than absorb them.
+func (cs *CaptureSession) Signal(name string) error {
+	cs.mu.Lock()
+	proc := cs.proc
+	cs.mu.Unlock()
+	if proc == nil {
+		return errors.New("capture: not started")
+	}
+	return proc.Signal(name)
 }
 
 // Kill sends SIGKILL to the child process.
@@ -762,6 +781,21 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 		if w, h, err := cfg.TermState.GetSize(cfg.TermFd); err == nil {
 			_ = proc.Resize(uint16(h), uint16(w))
 		}
+	}
+
+	// ── SIGWINCH resize watcher ─────────────────────────────────────
+	// The resize above covers the hand-over moment; this covers every live
+	// terminal resize while handed over, the way a tmux handover delivers
+	// SIGWINCH to the pane's child. There is no status bar or other chrome
+	// in this path, so the child always takes the full terminal size.
+	resizeCtx, resizeCancel := context.WithCancel(ctx)
+	defer resizeCancel()
+	if cfg.TermFd >= 0 && cfg.TermState != nil {
+		go watchResize(resizeCtx, cfg.TermFd, cfg.TermState, func(rows, cols int) {
+			if err := proc.Resize(uint16(rows), uint16(cols)); err != nil {
+				slog.Debug("capture passthrough sigwinch resize failed", "error", err)
+			}
+		})
 	}
 
 	// Activate passthrough through the output dispatcher. The dispatcher first

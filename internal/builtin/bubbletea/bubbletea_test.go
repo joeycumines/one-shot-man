@@ -66,6 +66,7 @@ func TestRequire_ExportsCorrectAPI(t *testing.T) {
 	for _, fn := range []string{
 		"newModel",
 		"run",
+		"waitForProgram",
 		"quit",
 		"clearScreen",
 		"batch",

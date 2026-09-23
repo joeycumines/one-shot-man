@@ -1381,6 +1381,82 @@ func TestNewBoundedSession_NoArgs(t *testing.T) {
 	}
 }
 
+// TestNewBoundedSession_RemainOnExitOption pins the birth-option contract:
+// remainOnExit is applied to the manager BEFORE registration, so this
+// session's state captures it (a session captures the manager default at
+// register time — a post-hoc setRemainOnExit would only affect future
+// registrations). With the option the exited session is retained with its
+// snapshot; without it the session is removed on exit. This is the
+// tmux-class retention the launcher scripts' final frame depends on.
+func TestNewBoundedSession_RemainOnExitOption(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns child process and SessionManager")
+	}
+
+	runtime, exp := testRequire(t)
+	setOnLoop(t, runtime, "exports", exp)
+
+	exitBin := buildExitProgram(t)
+	setOnLoop(t, runtime, "exitBin", exitBin)
+
+	_, err := awaitJSValue(t, runtime, `
+		function findSession(mgr, id) {
+			var list = mgr.sessions();
+			for (var i = 0; i < list.length; i++) {
+				if (list[i].id === id) return list[i];
+			}
+			return null;
+		}
+		function waitFor(label, fn, deadlineMs) {
+			return new Promise(function(resolve, reject) {
+				(function poll() {
+					var v = fn();
+					if (v) return resolve(v);
+					if (Date.now() > deadlineMs) return reject(new Error('timeout waiting for ' + label));
+					setTimeout(poll, 10);
+				})();
+			});
+		}
+
+		var kept = await exports.newBoundedSession({ cmd: exitBin, remainOnExit: true });
+		if (kept.mgr.remainOnExit() !== true) {
+			throw new Error('remainOnExit option did not set the manager default');
+		}
+		var lastState = '(none)';
+		await kept.session.wait();
+		await waitFor('retained exited session', function() {
+			var list = kept.mgr.sessions();
+			var s = null;
+			for (var i = 0; i < list.length; i++) {
+				if (Number(list[i].id) === Number(kept.sid)) s = list[i];
+			}
+			lastState = s ? s.state + '/' + typeof list[0].id + '/' + typeof kept.sid + '/' + String(kept.sid) : 'missing/' + typeof kept.sid + '/' + String(kept.sid);
+			if (s && s.state === 'exited') return s;
+			return null;
+		}, Date.now() + 5000).catch(function(e) {
+			throw new Error(String(e.message) + '; lastState=' + lastState + '; sessions=' + JSON.stringify(kept.mgr.sessions()) + '; remain=' + kept.mgr.remainOnExit());
+		});
+
+		var dropped = await exports.newBoundedSession({ cmd: exitBin });
+		if (dropped.mgr.remainOnExit() !== false) {
+			throw new Error('default remainOnExit should stay false');
+		}
+		await dropped.session.wait();
+		await waitFor('session removed on exit', function() {
+			return findSession(dropped.mgr, dropped.sid) === null;
+		}, Date.now() + 5000);
+
+		try { kept.session.close(); } catch (e) {}
+		try { kept.mgr.close(); } catch (e) {}
+		try { dropped.session.close(); } catch (e) {}
+		try { dropped.mgr.close(); } catch (e) {}
+		return 'ok';
+	`)
+	if err != nil {
+		t.Fatalf("newBoundedSession remainOnExit: %v", err)
+	}
+}
+
 // ── Chooser ──────────────────────────────────────────────
 
 func TestChooser_Creation(t *testing.T) {

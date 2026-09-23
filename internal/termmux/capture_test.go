@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -69,6 +71,41 @@ func TestCaptureSession_Interrupt(t *testing.T) {
 	case <-cs.Done():
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for process to exit after Interrupt")
+	}
+}
+
+func TestCaptureSession_Signal_NotStarted(t *testing.T) {
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "true",
+	})
+	if err := cs.Signal("SIGINT"); err == nil {
+		t.Fatal("expected an error signaling a session that was never started")
+	}
+}
+
+func TestCaptureSession_Signal_ForwardsToChild(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "sleep",
+		Args:    []string{"60"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	if err := cs.Signal("SIGINT"); err != nil {
+		t.Fatalf("Signal failed: %v", err)
+	}
+
+	select {
+	case <-cs.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for process to exit after Signal(SIGINT)")
 	}
 }
 
@@ -841,6 +878,104 @@ func TestCaptureSession_Passthrough_ContextCancel(t *testing.T) {
 	})
 	if reason != ExitContext {
 		t.Fatalf("expected ExitContext, got %v (err=%v)", reason, err)
+	}
+}
+
+// countingTermState counts GetSize queries so a test can observe the
+// passthrough SIGWINCH watcher firing without a real terminal. MakeRaw and
+// Restore are promoted from the shared fake: the fd is never touched by a
+// real syscall.
+type countingTermState struct {
+	*ptTestTermState
+	sizeCalls atomic.Int32
+}
+
+func (t *countingTermState) GetSize(fd int) (int, int, error) {
+	t.sizeCalls.Add(1)
+	return t.ptTestTermState.GetSize(fd)
+}
+
+// TestCaptureSession_Passthrough_SigwinchResize proves a live terminal
+// resize while the terminal is handed over reaches the child: the watcher
+// observes SIGWINCH and re-queries terminal size (the entry resize is the
+// first query). Without the watcher, a resize during passthrough would be
+// silently dropped — a tmux handover never does that.
+func TestCaptureSession_Passthrough_SigwinchResize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping passthrough integration test in short mode")
+	}
+	t.Parallel()
+	skipIfWindows(t)
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "sleep",
+		Args:    []string{"60"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	ts := &countingTermState{ptTestTermState: &ptTestTermState{width: 120, height: 40}}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	done := make(chan struct {
+		reason ExitReason
+		err    error
+	}, 1)
+	go func() {
+		reason, err := cs.Passthrough(ctx, PassthroughConfig{
+			Stdin:     strings.NewReader(""),
+			Stdout:    io.Discard,
+			TermFd:    3,
+			TermState: ts,
+		})
+		done <- struct {
+			reason ExitReason
+			err    error
+		}{reason, err}
+	}()
+
+	// The entry resize is the first GetSize; wait until passthrough reaches
+	// the watcher registration point.
+	deadlineEntry := time.Now().Add(10 * time.Second)
+	for ts.sizeCalls.Load() == 0 {
+		if time.Now().After(deadlineEntry) {
+			cancel()
+			<-done
+			t.Fatal("entry resize never queried terminal size")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// The watcher registers its signal.Notify asynchronously after the
+	// entry resize; re-send SIGWINCH until the count grows.
+	before := ts.sizeCalls.Load()
+	deadlineWinch := time.Now().Add(5 * time.Second)
+	observed := false
+	for !observed && time.Now().Before(deadlineWinch) {
+		if err := syscall.Kill(syscall.Getpid(), syscall.SIGWINCH); err != nil {
+			cancel()
+			<-done
+			t.Fatalf("delivering SIGWINCH failed: %v", err)
+		}
+		for i := 0; i < 10 && ts.sizeCalls.Load() == before; i++ {
+			time.Sleep(50 * time.Millisecond)
+		}
+		observed = ts.sizeCalls.Load() > before
+	}
+	if !observed {
+		cancel()
+		<-done
+		t.Fatal("passthrough did not re-query terminal size after SIGWINCH")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("passthrough did not return after context cancel")
 	}
 }
 

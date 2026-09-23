@@ -183,6 +183,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 
 	bubbleteaMgr := bubbleteamod.NewManager(ctx, terminalReader(terminalProvider), terminalWriter(terminalProvider), btBridge, nil, nil)
 	bubbleteaMgr.SetPromisify(eventLoopProvider.Promisify)
+	bubbleteaMgr.SetAdapter(eventLoopProvider.Adapter())
 	registry.RegisterNativeModule(prefix+"bubbletea", bubbleteamod.Require(ctx, bubbleteaMgr))
 
 	bubblezoneMgr := bubblezonemod.NewManager()

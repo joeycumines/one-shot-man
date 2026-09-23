@@ -19,7 +19,12 @@ type SpawnConfig struct {
 	// Args are the command arguments.
 	Args []string
 	// Env contains additional environment variables merged with os.Environ().
+	// When EnvReplace is true the child receives only Env plus TERM and
+	// inherits nothing from the parent process environment.
 	Env map[string]string
+	// EnvReplace, when true, replaces the parent environment instead of
+	// merging with it. The child receives exactly Env plus TERM.
+	EnvReplace bool
 	// Dir is the working directory (default: caller's CWD).
 	Dir string
 	// Rows is the terminal row count (default: 24).

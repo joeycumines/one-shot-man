@@ -53,6 +53,9 @@
 //	tea.run(model);                          // basic inline screen
 //	tea.run(model, { toggleKey: 29, onToggle: fn }); // with Termux passthrough
 //
+//	// Wait for the program started by run() to fully exit (Promise)
+//	tea.waitForProgram().then(function () { /* safe to start the next one */ });
+//
 //	// Commands - all return opaque command objects
 //	tea.quit();                    // Quit the program
 //	tea.clearScreen();             // Clear the screen
@@ -168,6 +171,7 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"golang.org/x/term"
 )
 
@@ -284,12 +288,13 @@ type Manager struct {
 	stderr       io.Writer // Stderr for logging panics/errors
 	signalNotify func(c chan<- os.Signal, sig ...os.Signal)
 	signalStop   func(c chan<- os.Signal)
-	isTTY        bool          // Whether input is a TTY
-	ttyFd        int           // TTY file descriptor (if available)
-	program      *tea.Program  // Currently running program (if any)
-	jsRunner     JSRunner      // REQUIRED: thread-safe JS execution via event loop
-	promisify    PromisifyFunc // Optional: keeps loop alive while program runs
-	programDone  chan error    // Signals program exit; used by WaitForProgram()
+	isTTY        bool                   // Whether input is a TTY
+	ttyFd        int                    // TTY file descriptor (if available)
+	program      *tea.Program           // Currently running program (if any)
+	jsRunner     JSRunner               // REQUIRED: thread-safe JS execution via event loop
+	promisify    PromisifyFunc          // Optional: keeps loop alive while program runs
+	programDone  chan error             // Signals program exit; used by WaitForProgram()
+	adapter      *gojaeventloop.Adapter // Optional: JS-promise exports (waitForProgram)
 }
 
 // PromisifyFunc is a function that executes work in a goroutine and returns a Future.
@@ -451,6 +456,23 @@ func (m *Manager) SetPromisify(fn PromisifyFunc) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.promisify = fn
+}
+
+// SetAdapter records the engine's goja-eventloop adapter so exports that must
+// return JS promises can Promisify through it (the same pattern ctxutil,
+// difftriage, and path use). Optional until such an export is called;
+// waitForProgram panics with a TypeError when it is unset.
+func (m *Manager) SetAdapter(a *gojaeventloop.Adapter) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.adapter = a
+}
+
+// getAdapter returns the configured adapter, or nil when none was set.
+func (m *Manager) getAdapter() *gojaeventloop.Adapter {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.adapter
 }
 
 // IsTTY returns whether the manager has access to a TTY.
@@ -2115,6 +2137,27 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 		// quit returns a quit command
 		_ = exports.Set("quit", func(call goja.FunctionCall) goja.Value {
 			return createCommand("quit", nil)
+		})
+
+		// waitForProgram() → Promise<void>
+		// Resolves once the current BubbleTea program has fully exited
+		// (immediately when none is running), rejects if it exited with an
+		// error. run() is non-blocking and reserves the program slot
+		// synchronously — call this AFTER run() from an ASYNC CHAIN when the
+		// next step must not race the dying program (the engine's own
+		// WaitForProgram runs after the script body settles and shares this
+		// slot: a bare top-level call in a synchronous script can race it —
+		// one buffered send, two consumers). Blocked work runs off the event
+		// loop via Adapter.Promisify, which also keeps the loop alive while
+		// a program it is waiting on still needs RunSync callbacks.
+		_ = exports.Set("waitForProgram", func() goja.Value {
+			a := manager.getAdapter()
+			if a == nil {
+				panic(runtime.NewTypeError("waitForProgram: engine adapter is not configured"))
+			}
+			return a.Promisify(baseCtx, func(_ context.Context) (any, error) {
+				return nil, manager.WaitForProgram()
+			})
 		})
 
 		// clearScreen returns a clear screen command

@@ -538,7 +538,7 @@ func paneGeoToJS(runtime *goja.Runtime, g parent.PaneGeometry) *goja.Object {
 //
 // JS signature:
 //
-//	termmux.newCaptureSession(command, args?, { dir?, rows?, cols?, env? }?)
+//	termmux.newCaptureSession(command, args?, { dir?, rows?, cols?, env?, envReplace? }?)
 func newCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	if len(call.Arguments) == 0 {
 		panic(runtime.NewTypeError("newCaptureSession: command argument is required"))
@@ -594,6 +594,9 @@ func newCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 					cfg.Env[key] = val.String()
 				}
 			}
+		}
+		if v := optObj.Get("envReplace"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			cfg.EnvReplace = v.ToBoolean()
 		}
 	}
 
@@ -783,6 +786,11 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 					BlockingGuard: parent.DefaultBlockingGuard(),
 					ToggleKey:     toggleKey,
 					TermState:     ptyio.RealTermState{},
+					// Host signals received while the terminal is handed over
+					// (SIGINT/SIGQUIT/SIGTSTP) reach the child instead of being
+					// absorbed by the notify channel — tmux-class passthrough
+					// behavior; without this, watchSignals swallows them.
+					SignalChild: func(sig string) error { return cs.Signal(sig) },
 				})
 				result := map[string]any{
 					"reason": exitReasonString(reason),
@@ -969,7 +977,13 @@ func newSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 //
 // JS signature:
 //
-//	termmux.newBoundedSession({ cmd, args?, dir?, rows?, cols?, env?, name?, kind? })
+//	termmux.newBoundedSession({ cmd, args?, dir?, rows?, cols?, env?, envReplace?, name?, kind?, remainOnExit? })
+//
+// remainOnExit, when present, is applied to this session's manager BEFORE
+// registration: a session's state captures the manager default at register
+// time, so this is the only point where the option can bind to the session
+// it creates. true keeps the session (and its snapshot) after the child
+// exits — tmux-class pane retention; the default stays false.
 //
 // Returns { session, mgr, sid } where session is the wrapped CaptureSession,
 // mgr is the wrapped SessionManager, and sid is the session ID.
@@ -1030,6 +1044,9 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 			}
 		}
 	}
+	if v := cfgObj.Get("envReplace"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		captureCfg.EnvReplace = v.ToBoolean()
+	}
 
 	var name string
 	if v := cfgObj.Get("name"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
@@ -1038,6 +1055,12 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 	var kind parent.SessionKind
 	if v := cfgObj.Get("kind"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 		kind = parent.SessionKind(v.String())
+	}
+	var remainOnExitSet bool
+	var remainOnExit bool
+	if v := cfgObj.Get("remainOnExit"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		remainOnExit = v.ToBoolean()
+		remainOnExitSet = true
 	}
 
 	baseCtx := ctx
@@ -1048,6 +1071,9 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 			mgr = parent.NewSessionManager(parent.WithTermSize(rows, cols))
 			go mgr.Run(baseCtx)
 			<-mgr.Started()
+		}
+		if remainOnExitSet {
+			mgr.SetRemainOnExit(remainOnExit)
 		}
 
 		sid, err := mgr.Register(cs, parent.SessionTarget{
@@ -1083,6 +1109,9 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 			<-localMgr.Started()
 		} else {
 			localMgr = mgr
+		}
+		if remainOnExitSet {
+			localMgr.SetRemainOnExit(remainOnExit)
 		}
 
 		sid, err := localMgr.Register(cs, parent.SessionTarget{

@@ -222,8 +222,12 @@ func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite,
 		return nil, fmt.Errorf("pty: invalid command line: %w", err)
 	}
 
-	// Build the UTF-16 environment block.
+	// Build the UTF-16 environment block: parent env plus overrides, or
+	// exactly the configured keys plus TERM when EnvReplace is set.
 	env := os.Environ()
+	if cfg.EnvReplace {
+		env = nil
+	}
 	env = append(env, "TERM="+cfg.Term)
 	for k, v := range cfg.Env {
 		env = append(env, k+"="+v)

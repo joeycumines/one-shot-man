@@ -3903,6 +3903,16 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 			m.eventBus.emit(EventSessionClosed, so.id)
 		} else if ms.state == SessionCreated {
 			m.closePipeForSession(ms)
+			// Silent child + remainOnExit: take the same retained-Exited
+			// shape as the Running path (state + event first, then keep) —
+			// returning with state still Created left watchers waiting for
+			// an 'exited' that never came (harness kept-silent case).
+			if ms.remainOnExit {
+				ms.state = SessionExited
+				m.eventBus.emit(EventSessionExited, so.id)
+				m.markSessionPaneExited(so.id)
+				return
+			}
 			if err := ms.session.Close(); err != nil {
 				slog.Warn("session close failed during immediate exit", "sessionID", so.id, "error", err)
 			}

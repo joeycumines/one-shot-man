@@ -134,19 +134,23 @@ func (c *jsScriptCommand) Execute(args []string, stdout, stderr io.Writer) error
 		return nil
 	}
 
-	// Wait for any asynchronous work (timers, fetch, etc.) to complete naturally.
-	// This uses the WithAutoExit(true) feature of the event loop.
-	engine.Wait()
-
 	// An unlistened signal terminated the run: Node's default status is
 	// 128 plus the signal number (130 for SIGINT, 143 for SIGTERM), and it
 	// wins over any script-settled exit code because signal death is what
-	// Node's default disposition would have produced.
+	// Node's default disposition would have produced. Check it BEFORE the
+	// async drain: an unhandled signal terminates immediately in Node, so a
+	// pending timer must not keep the process alive after the fallback fires
+	// (observed: a probe with a 60s timer lingered for the full minute after
+	// SIGTERM even though the runtime had already been cancelled).
 	if signalFallback != nil {
 		if code := signalFallback(); code != 0 {
 			return &SilentError{Err: &ExitError{Code: code}}
 		}
 	}
+
+	// Wait for any asynchronous work (timers, fetch, etc.) to complete naturally.
+	// This uses the WithAutoExit(true) feature of the event loop.
+	engine.Wait()
 	// Node exit channel: a script-settled process.exit / process.exitCode
 	// becomes this process's status, silently — Node prints nothing for a
 	// nonzero exit.

@@ -54,7 +54,7 @@ func TestWaitForOutput_WakesOnOutputAndCoalescesBursts(t *testing.T) {
 	m, session := newWaiterTestPane(t)
 
 	// A burst of chunks must produce a single wakeup that reports true.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		session.readerCh <- []byte(fmt.Sprintf("burst-%d\n", i))
 	}
 	result := make(chan bool, 1)

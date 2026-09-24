@@ -482,10 +482,7 @@ func TestNetWriteOrderingIsPreserved(t *testing.T) {
 // firstDifference returns the index of the first differing byte, or the length
 // of the shorter string when one is a prefix of the other.
 func firstDifference(a, b string) int {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
+	n := min(len(b), len(a))
 	for i := 0; i < n; i++ {
 		if a[i] != b[i] {
 			return i

@@ -41,14 +41,12 @@ func TestSerialRunnerSerializesResolves(t *testing.T) {
 	wrapped := newSerialRunner(inner)
 
 	var wg sync.WaitGroup
-	for i := 0; i < callers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range callers {
+		wg.Go(func() {
 			if _, err := wrapped.Run(context.Background(), []string{"resolver"}, time.Minute); err != nil {
 				t.Errorf("Run: %v", err)
 			}
-		}()
+		})
 	}
 
 	// Wait until one caller is inside Run, then give the rest a chance to

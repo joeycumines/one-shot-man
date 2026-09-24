@@ -49,8 +49,7 @@ func TestExport_WaitForProgram_RequiresAdapter(t *testing.T) {
 func TestExport_WaitForProgram_ResolvesWithoutProgram(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	loop, err := goeventloop.New()
 	require.NoError(t, err)
 	vm := goja.New()

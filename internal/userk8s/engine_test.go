@@ -498,8 +498,8 @@ func TestFilesBackendResolvesCredentials(t *testing.T) {
 		if len(runner.calls) != 1 {
 			t.Fatalf("calls: got %+v, want one", runner.calls)
 		}
-		if runner.calls[0].timeout != 5*time.Second {
-			t.Fatalf("timeout: got %s, want the declared 5s", runner.calls[0].timeout)
+		if runner.calls[0].timeout != 60*time.Second {
+			t.Fatalf("timeout: got %s, want the declared 60s", runner.calls[0].timeout)
 		}
 	})
 

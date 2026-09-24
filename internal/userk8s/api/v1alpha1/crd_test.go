@@ -417,8 +417,8 @@ func TestLocalSecretBindingSchema(t *testing.T) {
 		t.Fatalf("resolver argv items must be non-empty")
 	}
 	timeout := asMap(t, at(t, command, "properties", "timeout"))
-	if asString(t, timeout["type"]) != "string" || asString(t, timeout["default"]) != "5s" {
-		t.Fatalf("resolver timeout = %v, want string default 5s", timeout)
+	if asString(t, timeout["type"]) != "string" || asString(t, timeout["default"]) != "60s" {
+		t.Fatalf("resolver timeout = %v, want string default 60s", timeout)
 	}
 	env := asMap(t, resolverProps["env"])
 	if asInt(t, asMap(t, asMap(t, env["properties"])["name"])["minLength"]) != 1 {

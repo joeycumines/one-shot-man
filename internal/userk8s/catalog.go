@@ -7,6 +7,8 @@ import (
 	"maps"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -83,6 +85,9 @@ const (
 
 // newBackendFromObjects is the shared constructor; source distinguishes the
 // files and cluster backends in status output while every behavior is shared.
+// Command resolvers run under a serializing wrapper so concurrent
+// resolveCredential calls never fire multiple Touch ID / desktop prompts at
+// once (the gateway resolves every mount before spawn).
 func newBackendFromObjects(objects *Objects, runner CommandRunner, source string) (*FilesBackend, error) {
 	if objects == nil {
 		return nil, errors.New("userk8s: files backend requires loaded objects")
@@ -90,7 +95,21 @@ func newBackendFromObjects(objects *Objects, runner CommandRunner, source string
 	if runner == nil {
 		runner = ExecRunner{}
 	}
-	return &FilesBackend{objects: objects, runner: runner, source: source}, nil
+	return &FilesBackend{objects: objects, runner: &serialRunner{inner: runner}, source: source}, nil
+}
+
+// serialRunner runs one resolver command at a time. It is a struct field
+// wrapper, not package-level mutable state (one-shot-man-2 standard).
+type serialRunner struct {
+	inner CommandRunner
+	mu    sync.Mutex
+}
+
+// Run executes argv with exclusive access to the inner runner.
+func (s *serialRunner) Run(ctx context.Context, argv []string, timeout time.Duration) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.inner.Run(ctx, argv, timeout)
 }
 
 // ListProviders returns every provider, ordered by name.

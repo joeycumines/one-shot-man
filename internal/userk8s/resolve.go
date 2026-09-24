@@ -17,9 +17,9 @@ import (
 )
 
 // defaultCommandTimeout bounds one resolver command when the step omits a
-// timeout. The CRD default is 5s; this guards against objects that predate
-// defaulting.
-const defaultCommandTimeout = 5 * time.Second
+// timeout. It must outlast a human Touch ID / desktop approval on `op item
+// get` (Hana: the old 5s default killed approvable prompts as "failed").
+const defaultCommandTimeout = 60 * time.Second
 
 // maxResolverBytes bounds every byte a resolver may hand the engine: command
 // stdout and stderr are captured up to this many bytes, and a credential file
@@ -51,6 +51,8 @@ const (
 type ExecRunner struct{}
 
 // Run executes argv and returns the first line of stdout, trimmed.
+// Stdin is left unset (/dev/null): resolvers are non-interactive secret
+// printers — interactive approval is not delivered on this process's stdin.
 func (ExecRunner) Run(ctx context.Context, argv []string, timeout time.Duration) (string, error) {
 	if len(argv) == 0 {
 		return "", errors.New("resolver command has an empty argv")

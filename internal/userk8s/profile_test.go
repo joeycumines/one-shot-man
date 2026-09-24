@@ -28,7 +28,7 @@ func TestLoadRealRenderedProfile(t *testing.T) {
 	}{
 		{"providers", len(objects.Providers), 13},
 		{"accesses", len(objects.Accesses), 15},
-		{"models", len(objects.Models), 159},
+		{"models", len(objects.Models), 156},
 		{"tools", len(objects.Tools), 9},
 		{"bindings", len(objects.Bindings), 15},
 		{"skipped", objects.Skipped, 2},
@@ -94,6 +94,13 @@ func TestRealRenderedProfileProjectsEveryToolSelection(t *testing.T) {
 
 	projected := 0
 	grammarRejections := 0
+	attempted := 0
+	nonDeprecated := 0
+	for _, model := range objects.Models {
+		if !model.Spec.Deprecated {
+			nonDeprecated++
+		}
+	}
 	for _, tool := range objects.Tools {
 		if tool.Spec.BudgetProfile == "" {
 			t.Fatalf("Tool %q declares no budget profile", tool.Name)
@@ -103,11 +110,16 @@ func TestRealRenderedProfileProjectsEveryToolSelection(t *testing.T) {
 			if model.Spec.Deprecated {
 				continue
 			}
+			attempted++
 			projection, err := backend.ProjectModel(ctx, tool.Name, model)
 			if err != nil {
 				// A registry slug that a tool's grammar cannot express is a
-				// legitimate incompatibility (for example claude cannot take
-				// codex's "~openai/gpt-latest"); anything else is a defect.
+				// legitimate incompatibility; anything else is a defect. (The
+				// historical example, codex's "~openai/gpt-latest", left the
+				// catalog on 2026-09-23 when it was removed as unserveable
+				// through the shaper; the guard below now pins sweep coverage
+				// directly instead of depending on an inexpressible pair
+				// existing.)
 				if strings.Contains(err.Error(), "cannot derive") {
 					grammarRejections++
 					continue
@@ -130,8 +142,11 @@ func TestRealRenderedProfileProjectsEveryToolSelection(t *testing.T) {
 	if projected == 0 {
 		t.Fatal("Project: no tool/selection pair projected successfully")
 	}
-	if grammarRejections == 0 {
-		t.Fatal("Project: expected some tool/model pairs to be inexpressible; the sweep may not be exercising the real catalog")
+	if attempted != len(objects.Tools)*nonDeprecated {
+		t.Fatalf("Project: sweep attempted %d pairs, want every tool x non-deprecated model (%d x %d); the sweep is not exercising the real catalog", attempted, len(objects.Tools), nonDeprecated)
+	}
+	if projected+grammarRejections != attempted {
+		t.Fatalf("Project: %d projected + %d grammar rejections != %d attempted", projected, grammarRejections, attempted)
 	}
 	if grammarRejections > 300 {
 		t.Fatalf("Project: %d selections are inexpressible; derivation regressed", grammarRejections)

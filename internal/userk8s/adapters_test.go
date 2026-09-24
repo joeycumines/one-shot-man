@@ -56,15 +56,12 @@ func TestAdapterRequestedSelectionsProject(t *testing.T) {
 			wantID:       "umans-glm-5.3",
 			wantSurfaces: []string{"anthropic", "chat"},
 		},
-		{
-			name:         "codex takes the openrouter id its wrapper passes",
-			tool:         "codex",
-			provider:     "openrouter",
-			model:        "~openai/gpt-latest",
-			wantSlug:     "~openai/gpt-latest",
-			wantID:       "~openai/gpt-latest",
-			wantSurfaces: []string{"chat", "responses"},
-		},
+		// The former codex case "~openai/gpt-latest" was removed with the model
+		// itself (2026-09-23): its wire id is not expressible in the shaper's
+		// -model-table grammar, so the catalog no longer carries it. Codex's
+		// acceptance of slash-bearing ids stays covered by the full-catalog
+		// sweep in profile_test (codex x openrouter/owl-alpha) and by the
+		// remaining cases here.
 	}
 
 	for _, test := range tests {

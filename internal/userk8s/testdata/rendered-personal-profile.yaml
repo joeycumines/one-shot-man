@@ -40,7 +40,7 @@ spec:
       - --reveal
       - --fields
       - label=API Key
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_CAMEL_API_KEY
   secretRef:
@@ -67,7 +67,7 @@ spec:
       - --reveal
       - --fields
       - label=API Key
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_DEEPSEEK_API_KEY
   secretRef:
@@ -94,7 +94,7 @@ spec:
       - --reveal
       - --fields
       - label=API Key
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_DIALAGRAM_API_KEY
   secretRef:
@@ -121,7 +121,7 @@ spec:
       - --reveal
       - --fields
       - label=API Key
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_ELECTRONHUB_API_KEY
   secretRef:
@@ -148,7 +148,7 @@ spec:
       - --reveal
       - --fields
       - label=password
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_MINIMAX_API_KEY
   secretRef:
@@ -176,7 +176,7 @@ spec:
       - --reveal
       - --fields
       - label=API Key
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_OPENCODE_API_KEY
   secretRef:
@@ -204,7 +204,7 @@ spec:
       - --reveal
       - --fields
       - label=API Key
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_OPENCODE_API_KEY
   secretRef:
@@ -232,7 +232,7 @@ spec:
       - --reveal
       - --fields
       - label=API Key
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_OPENCODE_API_KEY
   secretRef:
@@ -260,7 +260,7 @@ spec:
       - --reveal
       - --fields
       - label=password
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_OPENROUTER_API_KEY
   secretRef:
@@ -287,7 +287,7 @@ spec:
       - --reveal
       - --fields
       - label=password
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_UMANS_API_KEY
   secretRef:
@@ -315,7 +315,7 @@ spec:
       - --reveal
       - --fields
       - label=API Key
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_VERBOO_API_KEY
   secretRef:
@@ -342,7 +342,7 @@ spec:
       - --reveal
       - --fields
       - label=password
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_WAFER_API_KEY
   secretRef:
@@ -370,7 +370,7 @@ spec:
       - --reveal
       - --fields
       - label=API Key
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_YOLO_API_KEY
   secretRef:
@@ -397,7 +397,7 @@ spec:
       - --reveal
       - --fields
       - label=API Key
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_OPENCODE_API_KEY
   secretRef:
@@ -424,7 +424,7 @@ spec:
       - --reveal
       - --fields
       - label=password
-      timeout: 5s
+      timeout: 60s
   - env:
       name: SHELL_AI_ZHIPU_API_KEY
   secretRef:
@@ -1361,28 +1361,6 @@ apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
   annotations:
-    one-shot-man/registry-name: glm-5.3[1m]
-  name: glm-5-3-1m
-spec:
-  access: zhipu-shaper
-  can_reason: true
-  context_window: 1000000
-  default: true
-  equivalent_to:
-  - name: umans-glm-5.3
-    provider: umans
-  - name: glm-5.3:dev
-    provider: electronhub
-  input_modalities:
-  - text
-  - image
-  max_output_tokens: 65536
-  provider: zhipu
----
-apiVersion: one-shot-man/v1alpha1
-kind: Model
-metadata:
-  annotations:
     one-shot-man/registry-name: glm-5.3:dev
   name: glm-5-3-dev
 spec:
@@ -1391,8 +1369,6 @@ spec:
   context_window: 262000
   default: true
   equivalent_to:
-  - name: glm-5.3[1m]
-    provider: zhipu
   - name: umans-glm-5.3
     provider: umans
   input_modalities:
@@ -1426,26 +1402,6 @@ apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
   annotations:
-    one-shot-man/registry-name: glm-5.3-flash[1m]
-  name: glm-5-3-flash-1m
-spec:
-  access: zhipu-shaper
-  can_reason: true
-  context_window: 1000000
-  default: false
-  equivalent_to:
-  - name: glm-5.3-flash:dev
-    provider: electronhub
-  input_modalities:
-  - text
-  - image
-  max_output_tokens: 65536
-  provider: zhipu
----
-apiVersion: one-shot-man/v1alpha1
-kind: Model
-metadata:
-  annotations:
     one-shot-man/registry-name: glm-5.3-flash:dev
   name: glm-5-3-flash-dev
 spec:
@@ -1453,9 +1409,6 @@ spec:
   can_reason: true
   context_window: 1000000
   default: false
-  equivalent_to:
-  - name: glm-5.3-flash[1m]
-    provider: zhipu
   input_modalities:
   - text
   - image
@@ -2878,23 +2831,6 @@ apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
   annotations:
-    one-shot-man/registry-name: ~openai/gpt-latest
-  name: openai-gpt-latest
-spec:
-  access: openrouter-shaper
-  can_reason: true
-  context_window: 400000
-  default: true
-  input_modalities:
-  - text
-  - image
-  max_output_tokens: 32768
-  provider: openrouter
----
-apiVersion: one-shot-man/v1alpha1
-kind: Model
-metadata:
-  annotations:
     one-shot-man/registry-name: openrouter/owl-alpha
   name: openrouter-owl-alpha
 spec:
@@ -3395,8 +3331,6 @@ spec:
   context_window: 1000000
   default: true
   equivalent_to:
-  - name: glm-5.3[1m]
-    provider: zhipu
   - name: glm-5.3:dev
     provider: electronhub
   input_modalities:

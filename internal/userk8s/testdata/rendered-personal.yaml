@@ -106,7 +106,7 @@ spec:
           - item
           - get
           - alpha
-        timeout: 5s
+        timeout: 60s
     - env:
         name: SHELL_AI_ALPHA_API_KEY
 ---

@@ -54,8 +54,9 @@ type CommandResolver struct {
 	// +kubebuilder:validation:items:MinLength=1
 	Argv []string `json:"argv"`
 
-	// Timeout bounds one execution attempt (e.g. "5s").
-	// +kubebuilder:default="5s"
+	// Timeout bounds one execution attempt (e.g. "60s"). The default must
+	// outlast a human Touch ID / desktop approval on a command resolver.
+	// +kubebuilder:default="60s"
 	// +optional
 	Timeout *metav1.Duration `json:"timeout,omitempty"`
 }

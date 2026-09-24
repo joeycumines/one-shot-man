@@ -100,7 +100,7 @@ func TestModuleLoadsCatalogFromArtifacts(t *testing.T) {
 		const loaded = await userk8s.load();
 		__collect(({
 			source: loaded.source,
-			countsOk: loaded.providers.length === 13 && loaded.models.length === 159
+			countsOk: loaded.providers.length === 13 && loaded.models.length === 156
 				&& loaded.accesses.length === 15 && loaded.tools.length === 9 && loaded.secretsPresent === 15,
 			namesOk: loaded.providers[0].name.length > 0 && loaded.providers[0].displayName.length > 0
 				&& loaded.tools[0].name.length > 0 && loaded.tools[0].budgetProfile.length > 0,
@@ -232,7 +232,7 @@ func TestModuleBackendStatus(t *testing.T) {
 		const status = userk8s.backendStatus();
 		__collect(({
 			source: status.source,
-			ok: status.providers === 13 && status.models === 159 && status.bindings === 15 && status.artifacts.length === 1
+			ok: status.providers === 13 && status.models === 156 && status.bindings === 15 && status.artifacts.length === 1
 		}))
 	`)
 	if err != nil {

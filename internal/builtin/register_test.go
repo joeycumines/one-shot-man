@@ -59,10 +59,14 @@ var allBuiltinModules = []string{
 	"osm:text/template",
 	"osm:tokenizer",
 	"osm:unicodetext",
-	// Node-standard modules under bare Node names.
+	// Node-standard modules under bare Node names and their node:-prefixed
+	// aliases (both spellings resolve to the same loader).
 	"crypto",
 	"fs",
 	"net",
+	"node:crypto",
+	"node:fs",
+	"node:net",
 }
 
 func TestRegister(t *testing.T) {

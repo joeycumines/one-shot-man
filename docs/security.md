@@ -35,13 +35,17 @@ These properties are continuously verified by `internal/security_sandbox_test.go
 
 ### Registered Modules
 
-All native modules use the `osm:` prefix and are registered in
-`internal/builtin/register.go`. The JS `require()` system only loads:
+Native modules are registered in `internal/builtin/register.go`. The JS
+`require()` system only loads:
 
 1. **`osm:` prefixed modules** — explicitly registered Go functions
-2. **File-based modules** — `.js` files from configured module paths
+2. **Node-standard modules** — the async-only `fs`, `net` and `crypto`
+   subsets, loadable under both their bare names and their `node:`-prefixed
+   aliases (`require('fs')` and `require('node:fs')` both resolve)
+3. **File-based modules** — `.js` files from configured module paths
 
-Attempts to `require('go:os')`, `require('node:fs')`, or other prefixes fail.
+Attempts to `require('go:os')` or any other prefix fail, and a `node:` name
+outside the registered set (for example `require('node:test')`) fails too.
 
 ### Module-by-Module Analysis
 
@@ -151,13 +155,15 @@ The Goja VM exposes exactly these globals:
 
 The `require()` function resolves modules in this order:
 
-1. Check registered `osm:` native modules
+1. Check registered native modules (`osm:` plus the Node-standard
+   `fs`/`net`/`crypto` under both their bare and `node:`-prefixed names)
 2. Check file paths relative to the requiring module
 3. Check configured module search paths (`WithModulePaths`)
 4. Walk parent directories for `node_modules/` folders
 
-Unknown prefixes (`go:`, `node:`, etc.) are rejected. The `shebangStrippingLoader`
-removes `#!` lines from loaded files for Unix compatibility.
+Unknown prefixes (`go:`, and any `node:` name outside the registered
+fs/net/crypto set) are rejected. The `shebangStrippingLoader` removes `#!`
+lines from loaded files for Unix compatibility.
 
 `__dirname` and `__filename` are set per-module by the CommonJS loader, not
 globally. They are not available in the top-level script scope.

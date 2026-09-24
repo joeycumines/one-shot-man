@@ -491,10 +491,21 @@ func TestSandbox_RequireOnlyLoadsRegisteredModules(t *testing.T) {
 	}
 
 	script2 := engine.LoadScriptString("require-forbidden", `
+		// The Node-standard modules resolve under BOTH their bare name and
+		// their node:-prefixed alias.
+		var aliased = ['fs', 'net', 'crypto', 'node:fs', 'node:net', 'node:crypto'];
+		for (var i = 0; i < aliased.length; i++) {
+			var mod = require(aliased[i]);
+			if (mod === null || mod === undefined) {
+				throw new Error('Module ' + aliased[i] + ' loaded as null/undefined');
+			}
+		}
+		// Everything else stays rejected: unknown prefixes, and node: names
+		// outside the registered fs/net/crypto set.
 		var forbidden = [
 			'go:os', 'go:runtime', 'go:reflect', 'go:unsafe',
 			'go:syscall', 'go:net', 'go:io',
-			'node:os', 'node:fs', 'node:path',
+			'node:os', 'node:path', 'node:test',
 		];
 		for (var i = 0; i < forbidden.length; i++) {
 			try {
@@ -506,7 +517,7 @@ func TestSandbox_RequireOnlyLoadsRegisteredModules(t *testing.T) {
 		}
 	`)
 	if err := engine.ExecuteScript(script2); err != nil {
-		t.Fatalf("Forbidden module rejection test failed: %v", err)
+		t.Fatalf("Node-alias loading / forbidden module rejection test failed: %v", err)
 	}
 }
 

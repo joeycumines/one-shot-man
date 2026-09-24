@@ -143,12 +143,22 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"tokenizer", tokenizermod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 
 	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
-	// Node-standard modules under bare Node names: async-only necessary
-	// subsets with Node-26 behavior. The osm: prefix stays reserved for
-	// domain modules.
-	registry.RegisterNativeModule("fs", nodemod.FsRequire(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule("net", nodemod.NetRequire(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
-	registry.RegisterNativeModule("crypto", nodemod.CryptoRequire(ctx, eventLoopProvider.Adapter()))
+	// Node-standard modules under bare Node names AND their node:-prefixed
+	// aliases (Node accepts both spellings for its builtins): async-only
+	// necessary subsets with Node-26 behavior. The osm: prefix stays reserved
+	// for domain modules. The aliasing follows this repo's existing convention
+	// (osm:nextIntegerID / osm:nextIntegerId register the same loader twice);
+	// unlike Node the two spellings are distinct module objects, which is not
+	// observable for a function-only surface.
+	fsLoader := nodemod.FsRequire(ctx, eventLoopProvider.Adapter())
+	registry.RegisterNativeModule("fs", fsLoader)
+	registry.RegisterNativeModule("node:fs", fsLoader)
+	netLoader := nodemod.NetRequire(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop())
+	registry.RegisterNativeModule("net", netLoader)
+	registry.RegisterNativeModule("node:net", netLoader)
+	cryptoLoader := nodemod.CryptoRequire(ctx, eventLoopProvider.Adapter())
+	registry.RegisterNativeModule("crypto", cryptoLoader)
+	registry.RegisterNativeModule("node:crypto", cryptoLoader)
 	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 	registry.RegisterNativeModule(prefix+"mcpcallback", mcpcallbackmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))

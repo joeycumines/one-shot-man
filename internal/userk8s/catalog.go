@@ -7,7 +7,6 @@ import (
 	"maps"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
@@ -95,20 +94,31 @@ func newBackendFromObjects(objects *Objects, runner CommandRunner, source string
 	if runner == nil {
 		runner = ExecRunner{}
 	}
-	return &FilesBackend{objects: objects, runner: &serialRunner{inner: runner}, source: source}, nil
+	return &FilesBackend{objects: objects, runner: newSerialRunner(runner), source: source}, nil
 }
 
 // serialRunner runs one resolver command at a time. It is a struct field
 // wrapper, not package-level mutable state (one-shot-man-2 standard).
 type serialRunner struct {
 	inner CommandRunner
-	mu    sync.Mutex
+	gate  chan struct{}
 }
 
-// Run executes argv with exclusive access to the inner runner.
+func newSerialRunner(inner CommandRunner) *serialRunner {
+	return &serialRunner{inner: inner, gate: make(chan struct{}, 1)}
+}
+
+// Run executes argv with exclusive access to the inner runner. The gate wait is
+// context-aware, so a caller cancelled while another command is in flight
+// returns promptly instead of blocking for that command's whole timeout (which
+// can be 60s for a human Touch ID approval).
 func (s *serialRunner) Run(ctx context.Context, argv []string, timeout time.Duration) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	select {
+	case s.gate <- struct{}{}:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	defer func() { <-s.gate }()
 	return s.inner.Run(ctx, argv, timeout)
 }
 

@@ -2,6 +2,7 @@ package userk8s
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -37,7 +38,7 @@ func (c *concurrencyProbeRunner) Run(ctx context.Context, argv []string, timeout
 func TestSerialRunnerSerializesResolves(t *testing.T) {
 	const callers = 4
 	inner := &concurrencyProbeRunner{release: make(chan struct{})}
-	wrapped := &serialRunner{inner: inner}
+	wrapped := newSerialRunner(inner)
 
 	var wg sync.WaitGroup
 	for i := 0; i < callers; i++ {
@@ -70,5 +71,57 @@ func TestSerialRunnerSerializesResolves(t *testing.T) {
 	wg.Wait()
 	if got := inner.total.Load(); got != callers {
 		t.Fatalf("resolver runs = %d, want %d", got, callers)
+	}
+}
+
+// TestSerialRunnerWaitsCancellably covers the context-aware gate: a caller
+// cancelled while another command holds the gate returns promptly with the
+// context error instead of blocking for the in-flight command's whole timeout
+// (which can be 60s for a human Touch ID approval).
+func TestSerialRunnerWaitsCancellably(t *testing.T) {
+	inner := &concurrencyProbeRunner{release: make(chan struct{})}
+	wrapped := newSerialRunner(inner)
+
+	// Hold the gate with a first call that blocks inside the runner.
+	first := make(chan error, 1)
+	go func() {
+		_, err := wrapped.Run(context.Background(), []string{"resolver"}, time.Minute)
+		first <- err
+	}()
+	deadline := time.After(5 * time.Second)
+	for inner.current.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("the first resolver run never started")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	// A second caller with a cancellable context must return promptly.
+	ctx, cancel := context.WithCancel(context.Background())
+	second := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		_, err := wrapped.Run(ctx, []string{"resolver"}, time.Minute)
+		second <- err
+	}()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-second:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancelled waiter error = %v, want context.Canceled", err)
+		}
+		if elapsed := time.Since(start); elapsed > 2*time.Second {
+			t.Fatalf("cancelled waiter took %v to return", elapsed)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("cancelled waiter did not return; the gate wait is not context-aware")
+	}
+
+	close(inner.release)
+	if err := <-first; err != nil {
+		t.Fatalf("first run: %v", err)
 	}
 }

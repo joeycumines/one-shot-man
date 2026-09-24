@@ -113,6 +113,20 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	}
 	defer cleanup()
 
+	// Deliver SIGINT/SIGTERM to the script the way Node would (plain runs
+	// only): the first signal reaches process listeners, an unlistened signal
+	// terminates with the default status, and a second of the same kind
+	// forces. Installed BEFORE any script runs: a script that blocks in
+	// tea.run() (WaitForProgram) never reaches a later installation point,
+	// and the bubbletea binding defers SIGINT/SIGTERM to the engine — without
+	// delivery here the process would swallow them and hang.
+	var signalFallback func() int
+	if startSignals != nil {
+		var stopSignals func()
+		signalFallback, stopSignals = startSignals(engine, cancel)
+		defer stopSignals()
+	}
+
 	// Set global default logger
 	// Note: We access the internal logger getter. This is the "modular wiring" part -
 	// the engine provides the logger, and the command (entrypoint logic) wires it up.
@@ -160,6 +174,15 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 			return fmt.Errorf("failed to load script %s: %w", resolvedPath, err)
 		}
 		if err := engine.ExecuteScript(script); err != nil {
+			// An unlistened signal force-cancels the runtime, which surfaces as
+			// a context-cancellation error from the in-flight script (a running
+			// program is aborted via WaitForProgram). Node's default
+			// disposition still applies: report 128+N, not a generic failure.
+			if signalFallback != nil {
+				if code := signalFallback(); code != 0 {
+					return &SilentError{Err: &ExitError{Code: code}}
+				}
+			}
 			return fmt.Errorf("failed to evaluate script %s: %w", resolvedPath, err)
 		}
 	}
@@ -168,6 +191,11 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	if c.script != "" {
 		script := engine.LoadScriptString("command-line", c.script)
 		if err := engine.ExecuteScript(script); err != nil {
+			if signalFallback != nil {
+				if code := signalFallback(); code != 0 {
+					return &SilentError{Err: &ExitError{Code: code}}
+				}
+			}
 			return err
 		}
 	}
@@ -201,16 +229,6 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	if scriptFile == "" && c.script == "" {
 		_, _ = fmt.Fprintln(stderr, "No script file specified. Use -i for interactive mode, -e for direct execution, or provide a script file.")
 		return &SilentError{Err: fmt.Errorf("no script specified")}
-	}
-
-	// Deliver SIGINT/SIGTERM to the script the way Node would (plain runs
-	// only): first signal reaches process listeners, an unlistened signal
-	// terminates with the default status, a second of the same kind forces.
-	var signalFallback func() int
-	if startSignals != nil {
-		var stopSignals func()
-		signalFallback, stopSignals = startSignals(engine, cancel)
-		defer stopSignals()
 	}
 
 	// Wait for any asynchronous work (timers, fetch, etc.) to complete naturally.

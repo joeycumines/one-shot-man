@@ -624,8 +624,7 @@ func TestJSScriptCommand_Execute_ExitCodePropagates(t *testing.T) {
 	cmd.ctxFactory = func() (context.Context, context.CancelFunc) { return ctx, cancel }
 
 	err := cmd.Execute(nil, &stdout, &stderr)
-	var silent *SilentError
-	if !errors.As(err, &silent) {
+	if _, ok := errors.AsType[*SilentError](err); !ok {
 		t.Fatalf("Execute error = %v, want a SilentError wrapping the exit status\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
 	}
 	var exitErr *ExitError

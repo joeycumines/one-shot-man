@@ -104,6 +104,44 @@ func TestJSScriptCommand_Execute_SigintListenerExitWins(t *testing.T) {
 	}
 }
 
+// TestJSScriptCommand_Execute_SigtermWithoutListenerRunningProgram covers a
+// signal that arrives while a bubbletea program is live (tea.run blocks in
+// WaitForProgram). With no listener the engine force-cancels, the program is
+// quit through the binding's ctx.Done arm, and the run must still report
+// Node's default status (143) promptly rather than a generic failure.
+func TestJSScriptCommand_Execute_SigtermWithoutListenerRunningProgram(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime and delivers real signals")
+	}
+
+	cmd := newExitChannelScriptCommand(t, `
+		var tea = require("osm:bubbletea");
+		function init() { return [{ n: 0 }, tea.tick(60000, "tick")]; }
+		function update(msg, m) { return [m, tea.tick(60000, "tick")]; }
+		function view(m) { return { content: "probe " + m.n }; }
+		tea.run(tea.newModel({ init: init, update: update, view: view }));
+	`)
+
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		if err := syscall.Kill(syscall.Getpid(), syscall.SIGTERM); err != nil {
+			t.Logf("Kill: %v", err)
+		}
+	}()
+
+	var stdout, stderr bytes.Buffer
+	start := time.Now()
+	err := cmd.Execute(nil, &stdout, &stderr)
+	elapsed := time.Since(start)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 143 {
+		t.Fatalf("Execute error = %v, want exit status 143 for unlistened SIGTERM with a running program\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("SIGTERM with a running program took %v; the program was not quit promptly", elapsed)
+	}
+}
+
 func TestJSScriptCommand_Execute_DoubleSigintForcesTermination(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns JS runtime and delivers real signals")

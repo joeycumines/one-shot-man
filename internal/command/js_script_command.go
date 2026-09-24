@@ -124,6 +124,15 @@ func (c *jsScriptCommand) Execute(args []string, stdout, stderr io.Writer) error
 	}
 
 	if err := engine.ExecuteScript(script); err != nil {
+		// An unlistened signal force-cancels the runtime, which surfaces as a
+		// context-cancellation error from the in-flight script (a running
+		// program is aborted via WaitForProgram). Node's default disposition
+		// still applies: report 128+N, not a generic failure.
+		if signalFallback != nil {
+			if code := signalFallback(); code != 0 {
+				return &SilentError{Err: &ExitError{Code: code}}
+			}
+		}
 		return fmt.Errorf("failed to execute script %s: %w", c.scriptPath, err)
 	}
 

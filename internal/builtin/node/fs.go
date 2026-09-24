@@ -272,8 +272,7 @@ func nodeFSError(rt *goja.Runtime, syscallName, path string, err error) *goja.Ob
 
 // errnoCode maps a Go filesystem error to Node's UV-style code string.
 func errnoCode(err error) string {
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
+	if errno, ok := errors.AsType[syscall.Errno](err); ok {
 		switch errno {
 		case syscall.ENOENT:
 			return "ENOENT"
@@ -293,20 +292,17 @@ func errnoCode(err error) string {
 			return "EINVAL"
 		}
 	}
-	var pathErr *os.PathError
-	if errors.As(err, &pathErr) {
+	if pathErr, ok := errors.AsType[*os.PathError](err); ok {
 		return errnoCode(pathErr.Err)
 	}
 	return "EUNKNOWN"
 }
 
 func errnoMessage(err error) string {
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
+	if errno, ok := errors.AsType[syscall.Errno](err); ok {
 		return errno.Error()
 	}
-	var pathErr *os.PathError
-	if errors.As(err, &pathErr) {
+	if pathErr, ok := errors.AsType[*os.PathError](err); ok {
 		return errnoMessage(pathErr.Err)
 	}
 	return err.Error()

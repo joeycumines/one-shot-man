@@ -100,11 +100,9 @@ type PrSplitCommand struct {
 	testWorkingDir string
 
 	// Agent execution configuration
-	agentCommand   string          // explicit path/name of agent binary (empty = auto-detect)
-	agentArgs      stringSliceFlag // additional CLI arguments for the agent (repeatable --agent-arg flags)
-	agentModel     string          // model to use (provider-dependent)
-	agentConfigDir string          // config directory override
-	agentEnv       string          // extra environment variables (KEY=VALUE,KEY=VALUE)
+	agentCommand string          // explicit path or name of agent binary (empty means unset, must be provided via flag or config)
+	agentArgs    stringSliceFlag // additional CLI arguments for the agent (repeatable --agent-arg flags)
+	agentEnv     string          // extra environment variables (KEY=VALUE,KEY=VALUE, commas in values unsupported)
 
 	// Timeout for agent communication steps (classify, plan, resolve).
 	timeout time.Duration
@@ -169,13 +167,11 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.jsonOutput, "json", false, "Output results as JSON (combine with run or --dry-run)")
 
 	// Agent execution
-	fs.StringVar(&c.agentCommand, "agent-command", "", "Agent binary path (empty = auto-detect)")
+	fs.StringVar(&c.agentCommand, "agent-command", "", "Agent binary path or name (required: set flag or pr-split.agent-command config)")
 	fs.Var(&c.agentArgs, "agent-arg", "Additional agent CLI argument (repeatable)")
-	fs.StringVar(&c.agentModel, "agent-model", "", "Model name (provider-dependent)")
-	fs.StringVar(&c.agentConfigDir, "agent-config-dir", "", "Agent config directory override")
-	fs.StringVar(&c.agentEnv, "agent-env", "", "Extra environment variables (KEY=VALUE,KEY=VALUE)")
+	fs.StringVar(&c.agentEnv, "agent-env", "", "Extra environment variables (KEY=VALUE,KEY=VALUE; values must not contain commas)")
 
-	fs.DurationVar(&c.timeout, "timeout", 0, "Timeout for agent communication steps (e.g. 5m); 0 = defaults")
+	fs.DurationVar(&c.timeout, "timeout", 0, "Deadline for agent MCP waits and verify steps (classify, plan, resolve, verify); 0 selects built-in defaults; does not bound the agent PTY lifetime itself")
 	fs.BoolVar(&c.resume, "resume", false, "Resume a previously saved auto-split session")
 	fs.BoolVar(&c.cleanupOnFailure, "cleanup-on-failure", false, "Delete split branches if the pipeline fails")
 
@@ -393,8 +389,10 @@ func (c *PrSplitCommand) setupEngineGlobalsOnLoop(ctx context.Context, engine *s
 	// Uses the same session directory as the storage backend so
 	// state files live alongside session data.
 	persistStatePath := ""
+	transcriptDirPath := ""
 	if dir, dirErr := storage.SessionDirectory(); dirErr == nil {
 		persistStatePath = filepath.Join(dir, "pr-split-mux.state.json")
+		transcriptDirPath = dir
 	}
 
 	// Expose split configuration to JS.
@@ -411,13 +409,12 @@ func (c *PrSplitCommand) setupEngineGlobalsOnLoop(ctx context.Context, engine *s
 		"jsonOutput":       c.jsonOutput,
 		"agentCommand":     c.agentCommand,
 		"agentArgs":        agentArgsList,
-		"agentModel":       c.agentModel,
-		"agentConfigDir":   c.agentConfigDir,
 		"agentEnv":         agentEnvMap,
 		"timeoutMs":        int64(c.timeout / time.Millisecond),
 		"resumeFromPlan":   c.resume,
 		"cleanupOnFailure": c.cleanupOnFailure,
 		"persistStatePath": persistStatePath,
+		"transcriptDir":    transcriptDirPath,
 	})
 
 	// ── Session lifecycle: tuiMux ────────────────────────────────────
@@ -443,12 +440,16 @@ func (c *PrSplitCommand) setupEngineGlobalsOnLoop(ctx context.Context, engine *s
 	// passthrough. stdout is injected for testability.
 	termFd = int(os.Stdin.Fd())
 
-	// Create a SessionManager with default terminal dimensions. JS
-	// chunks call run() to start the worker goroutine and register/
-	// activate sessions as needed. The WrapSessionManager binding
-	// provides the same API surface (attach, switchTo, session, etc.)
-	// that JS scripts expect.
-	tuiMgr := termmux.NewSessionManager()
+	// Seed the manager with the controlling terminal dimensions. JS chunks
+	// call attach() before the first BubbleTea WindowSize message can always
+	// be observed, so using the package default here can shrink an attached
+	// interactive provider to the fallback 24x80 geometry.
+	rows, cols := 24, 80
+	if detectedCols, detectedRows, sizeErr := term.GetSize(termFd); sizeErr == nil &&
+		detectedRows > 0 && detectedCols > 0 {
+		rows, cols = detectedRows, detectedCols
+	}
+	tuiMgr := termmux.NewSessionManager(termmux.WithTermSize(rows, cols))
 	tuiMux := termmuxmod.WrapSessionManager(ctx, engine.Adapter(), engine.Loop(), engine.Runtime(), tuiMgr, os.Stdin, stdout, termFd, "")
 
 	// Pre-configure session target metadata so attach() registers with
@@ -533,8 +534,6 @@ func (c *PrSplitCommand) applyConfigDefaults() {
 	if v, ok := c.config.GetCommandOption("pr-split", "agent-arg"); ok && len(c.agentArgs) == 0 {
 		c.agentArgs = append(c.agentArgs, v)
 	}
-	applyStr("agent-model", &c.agentModel, "")
-	applyStr("agent-config-dir", &c.agentConfigDir, "")
 	applyStr("agent-env", &c.agentEnv, "")
 	if v, ok := c.config.GetCommandOption("pr-split", "timeout"); ok && c.timeout == 0 {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
@@ -565,6 +564,15 @@ func (c *PrSplitCommand) validateFlags() error {
 	}
 	if c.timeout < 0 {
 		return fmt.Errorf("invalid --timeout %s: must be non-negative", c.timeout)
+	}
+	// --mcp-config is managed: buildAgentArgv appends exactly one pair, so
+	// any user-supplied occurrence (bare or --mcp-config=x form) would
+	// duplicate it at the provider boundary. Fail fast with the same
+	// contract the JS builder enforces.
+	for _, a := range c.agentArgs {
+		if a == "--mcp-config" || strings.HasPrefix(a, "--mcp-config=") {
+			return fmt.Errorf("invalid --agent-arg %q: --mcp-config is managed (remove it from --agent-arg)", a)
+		}
 	}
 	return nil
 }

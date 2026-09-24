@@ -152,17 +152,16 @@ Split a large PR into reviewable stacked branches. Supports heuristic grouping s
   - `-log-level <level>`: log level (`debug`, `info`, `warn`, `error`; default `info`)
   - `-log-file <path>`: path to log file (JSON output)
   - `-log-buffer <n>`: size of in-memory log buffer (default `1000`)
-  - `-agent-command <path>`: agent binary path (empty = auto-detects a supported agent on PATH)
+  - `-agent-command <path>`: agent binary path or name (required: set flag or `pr-split.agent-command` config)
   - `-agent-arg <arg>`: additional agent CLI argument (repeatable, e.g. `-agent-arg --verbose -agent-arg --no-color`)
-  - `-agent-model <model>`: model name (provider-dependent)
-  - `-agent-config-dir <dir>`: agent config directory override
-  - `-agent-env <vars>`: extra environment variables (`KEY=VALUE,KEY=VALUE`)
+  - `-agent-env <vars>`: extra environment variables (`KEY=VALUE,KEY=VALUE`; values must not contain commas)
+  - `-timeout <duration>`: deadline for agent MCP waits and verify steps (classify, plan, resolve, verify); `0` selects built-in defaults; does not bound the agent PTY lifetime itself
+  - `-resume`: resume a previously saved auto-split session (replays the plan file, not the mux state file)
 
 Config keys (in `[pr-split]` section or global):
   - `pr-split.base`, `pr-split.strategy`, `pr-split.max`, `pr-split.prefix`
   - `pr-split.verify`, `pr-split.dry-run`
-  - `pr-split.agent-command`, `pr-split.agent-arg`, `pr-split.agent-model`
-  - `pr-split.agent-config-dir`, `pr-split.agent-env`
+  - `pr-split.agent-command`, `pr-split.agent-arg`, `pr-split.agent-env`
 
 #### Grouping strategies
 
@@ -248,7 +247,7 @@ When the split-view is open during branch building, three tabs are available:
 
 | Tab | Description |
 |-----|-------------|
-| Agent | Agent output |
+| Agent | Live interactive agent terminal (keyboard and mouse reach the agent PTY; falls back to captured output text when detached) |
 | Output | Raw pipeline output log |
 | Verify | Live interactive verify pane; canonical mode is the interactive worktree shell, with explicit degraded one-shot or text-only fallback when PTY support is unavailable |
 
@@ -263,6 +262,8 @@ When the split-view is open during branch building, three tabs are available:
 | `Ctrl+= / Ctrl+-` | Resize split-view ratio |
 
 When focused on the Verify tab in canonical interactive mode, keyboard input is forwarded to the terminal process. Mouse events (clicks, wheel, motion) are forwarded using SGR 1006 encoding there as well. Degraded verify modes stay read-only and use scroll controls instead of PTY input forwarding.
+
+On classification timeout (or heartbeat-stale timeout) the agent session is preserved for diagnosis instead of destroyed: the wizard shows the ERROR state with the checkpoint, the evidence screen text, and the transcript path. Transcripts land under the storage session directory (same family as `pr-split-mux.state.json`). From ERROR, `a` shows the agent tab, `f` focuses it for interaction, and `d` discards the session and quits after teardown settles.
 
 ### `osm log`
 

@@ -302,10 +302,17 @@
                 }
                 var candidates = diffFiles.stdout.trim().split('\n');
                 var added = 0;
-                for (var f = 0; f < candidates.length; f++) {
-                    var co = await gitExecAsync(dir, ['checkout', plan.sourceBranch, '--', candidates[f]]);
-                    if (co.code === 0) {
-                        added++;
+                // Batch checkout candidates in one command to avoid per-file command churn.
+                var batchCo = await gitExecAsync(dir, ['checkout', plan.sourceBranch, '--'].concat(candidates));
+                if (batchCo.code === 0) {
+                    added = candidates.length;
+                } else {
+                    // Fall back to per-file checkout if batch failed.
+                    for (var f = 0; f < candidates.length; f++) {
+                        var co = await gitExecAsync(dir, ['checkout', plan.sourceBranch, '--', candidates[f]]);
+                        if (co.code === 0) {
+                            added++;
+                        }
                     }
                 }
                 if (added === 0) {

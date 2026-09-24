@@ -56,7 +56,7 @@ const (
 	thresholdConcurrentSessionAccess    = 20000
 
 	// Scripting engine thresholds
-	thresholdRuntimeCreation        = 100000
+	thresholdRuntimeCreation        = 200000 // 100ms was too tight for virtualized container / CI environments (115ms observed in Linux Docker VM)
 	thresholdRuntimeCreationWindows = 200000 // Windows: ~155ms observed on CI
 	thresholdSimpleScriptExec       = 10000
 )

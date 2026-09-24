@@ -3139,10 +3139,10 @@ func TestChunk13_RenderTitleBar_ContainsWizardName(t *testing.T) {
 
 	// Test at different wizard states.
 	states := map[string]string{
-		"CONFIG":          "Step 1/7: Configure",
-		"PLAN_GENERATION": "Step 2/7: Analysis",
-		"PLAN_REVIEW":     "Step 3/7: Review Plan",
-		"FINALIZATION":    "Step 7/7: Finalization",
+		"CONFIG":          "Phase 1 of 5: Configure",
+		"PLAN_GENERATION": "Phase 2 of 5: Analyze",
+		"PLAN_REVIEW":     "Phase 3 of 5: Review Plan",
+		"FINALIZATION":    "Phase 5 of 5: Finalization",
 	}
 
 	for state, expectedStep := range states {
@@ -3161,6 +3161,111 @@ func TestChunk13_RenderTitleBar_ContainsWizardName(t *testing.T) {
 		if !strings.Contains(s, expectedStep) {
 			t.Errorf("titleBar(%s) missing %q: %q", state, expectedStep, s)
 		}
+	}
+}
+
+func TestChunk13_RenderTitleBar_UsesExplicitTerminalStatus(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	cases := []struct {
+		name   string
+		state  string
+		extra  string
+		want   string
+		forbid string
+	}{
+		{name: "done", state: "DONE", want: "Complete", forbid: "Step 7/7"},
+		{name: "finalization", state: "FINALIZATION", want: "Finalization", forbid: "Step 7/7"},
+		{name: "equivalence pass", state: "EQUIV_CHECK", extra: ",isProcessing:false,equivalenceResult:{equivalent:true}", want: "Equivalence Verified"},
+		{name: "equivalence fail", state: "EQUIV_CHECK", extra: ",isProcessing:false,equivalenceResult:{equivalent:false}", want: "Equivalence Mismatch"},
+		{name: "cancelled", state: "CANCELLED", want: "Cancelled"},
+		{name: "failed", state: "ERROR", want: "Error"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := evalJS(`globalThis.prSplit._renderTitleBar({
+				wizardState:'` + tc.state + `', width:80, startTime:Date.now()` + tc.extra + `})`)
+			if err != nil {
+				t.Fatalf("renderTitleBar(%s): %v", tc.state, err)
+			}
+			got := raw.(string)
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("title bar = %q, want %q", got, tc.want)
+			}
+			if tc.forbid != "" && strings.Contains(got, tc.forbid) {
+				t.Fatalf("title bar = %q, must not contain %q", got, tc.forbid)
+			}
+		})
+	}
+}
+
+func TestChunk13_TuiOutputRouting_CapsAndAutoScrolls(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		prSplit._stateRefresh = function() {};
+		prSplit._toggleModelState = {
+			outputLines: [],
+			outputAutoScroll: true,
+			outputViewOffset: 11
+		};
+		prSplit._tuiOutputActive = true;
+		prSplit._routeTuiOutput("first\nsecond\n");
+		for (var i = 0; i < prSplit._TUI_CONSTANTS.OUTPUT_BUFFER_CAP + 3; i++) {
+			prSplit._routeTuiOutput("line-" + i);
+		}
+		return JSON.stringify({
+			first: prSplit._toggleModelState.outputLines[0],
+			last: prSplit._toggleModelState.outputLines[
+				prSplit._toggleModelState.outputLines.length - 1
+			],
+			length: prSplit._toggleModelState.outputLines.length,
+			offset: prSplit._toggleModelState.outputViewOffset
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	if !strings.Contains(got, `"first":"line-3"`) ||
+		!strings.Contains(got, `"last":"line-5002"`) ||
+		!strings.Contains(got, `"length":5000`) ||
+		!strings.Contains(got, `"offset":0`) {
+		t.Fatalf("unexpected routed output state: %s", got)
+	}
+}
+
+func TestChunk13_FinalizationScreen_StatesAndNextAction(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var pending = globalThis.prSplit._viewFinalizationScreen({
+			wizardState:'FINALIZATION',
+			width:120,
+			startTime:Date.now(),
+			equivalenceResult:{equivalent:true}
+		});
+		var complete = globalThis.prSplit._viewFinalizationScreen({
+			wizardState:'DONE',
+			width:120,
+			startTime:Date.now(),
+			equivalenceResult:{equivalent:true}
+		});
+		return JSON.stringify({pending:pending, complete:complete});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	if !strings.Contains(got, "FINALIZATION PENDING") ||
+		!strings.Contains(got, "choose Done to mark the workflow complete") ||
+		!strings.Contains(got, " COMPLETE ") ||
+		!strings.Contains(got, "review the report or exit the wizard") {
+		t.Fatalf("finalization state copy is incomplete: %s", got)
 	}
 }
 
@@ -5535,5 +5640,70 @@ func TestChunk13_VerifyPhase_InitStateIncludesField(t *testing.T) {
 	got, ok := raw.(string)
 	if !ok || got != "not-started" {
 		t.Errorf("initState verifyPhase = %v, want %q", raw, "not-started")
+	}
+}
+
+func TestPrSplitSyncProxyVerbs(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	raw, err := evalJS(`(function() {
+		var calls = [];
+		var mux = {
+			activeID: function() { return 1; },
+			activate: function(id) { calls.push('activate:' + id); },
+			input: function(data) { calls.push('input:' + data); },
+			resize: function(r, c) { calls.push('resize:' + r + 'x' + c); },
+			resizeSession: function(id, r, c) { calls.push('resizeSession:' + id); },
+			capture: function() { return { plain: 'p', fullScreen: 'f', ansi: 'a' }; },
+			isDone: function() { return false; },
+			lastActivityMs: function() { return 0; },
+			switchTo: function() { return Promise.resolve('switched'); },
+			pollEvents: function() { return 0; },
+			termSize: function() { return { rows: 24, cols: 80 }; },
+			sessions: function() { return []; },
+			register: function() { return 1; },
+			unregister: function() {}
+		};
+		var saved = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		tuiMux = mux;
+		var out = {};
+		try {
+			var st = globalThis.prSplit._state || {};
+			var prevID = mux.activeID();
+			mux.activate(7);
+			mux.input('hello');
+			mux.resize(3, 76);
+			var sw = mux.switchTo();
+			out.hasAsync = ('activateAsync' in mux) || ('inputAsync' in mux) || ('resizeAsync' in mux) || ('switchToAsync' in mux) || ('attachAsync' in mux) || ('captureAsync' in mux);
+			out.calls = calls;
+			out.switchIsPromise = !!(sw && typeof sw.then === 'function');
+			out.prevID = prevID;
+			out.state = !!st;
+		} finally {
+			if (typeof saved !== 'undefined') tuiMux = saved;
+		}
+		return JSON.stringify(out);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res struct {
+		HasAsync        bool     `json:"hasAsync"`
+		Calls           []string `json:"calls"`
+		SwitchIsPromise bool     `json:"switchIsPromise"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &res); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, raw)
+	}
+	if res.HasAsync {
+		t.Fatal("mock mux must expose no *Async verbs on the sync path")
+	}
+	if len(res.Calls) != 3 {
+		t.Fatalf("sync verbs not all called: %v", res.Calls)
+	}
+	if !res.SwitchIsPromise {
+		t.Fatal("switchTo Promise must pass through unchanged")
 	}
 }

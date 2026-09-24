@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -650,15 +651,14 @@ func BenchmarkViewRendering(b *testing.B) {
 //
 // Profiling baseline (macOS Apple M-series):
 //
-//	Config screen:      ~200-400μs  (threshold: 50ms)
-//	PlanReview (3):     ~300-600μs  (threshold: 50ms)
-//	PlanReview (50):    ~2-5ms      (threshold: 100ms)
-//	Full WizardView:    ~500-1000μs (threshold: 50ms)
-//	SplitView:          ~700-1500μs (threshold: 100ms)
-//	Agent pane (50L):  ~100-300μs  (threshold: 50ms)
-//	Agent pane (1000L):~500-2000μs (threshold: 100ms)
+//	Config screen:      ~200-400μs  (threshold: 200ms)
+//	PlanReview (3):     ~300-600μs  (threshold: 200ms)
+//	PlanReview (50):    ~2-5ms      (threshold: 1s)
+//	Full WizardView:    ~500-1000μs (threshold: 200ms)
+//	SplitView:          ~700-1500μs (threshold: 1s)
+//	Agent pane (1000L): ~500-2000μs (threshold: 1s)
 const (
-	// Standard view rendering — must be under 100ms.
+	// Standard view rendering — must be under 200ms.
 	// Raised from 50ms to accommodate CI runner load variability (2-4x
 	// slowdown under concurrent test load) and -race detector overhead.
 	thresholdStandardViewUs = 200_000
@@ -672,9 +672,14 @@ const (
 	// Number of warm-up iterations before measuring.
 	warmUpIterations = 3
 
-	// Number of measured iterations to average.
-	measureIterations = 10
+	// Use an odd sample count so the median is not split between two values.
+	measureIterations = 11
 )
+
+func medianMicros(samples []int64) int64 {
+	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
+	return samples[len(samples)/2]
+}
 
 func TestViewPerformanceRegression(t *testing.T) {
 	if testing.Short() {
@@ -761,7 +766,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 			}
 
 			// Measure.
-			var totalUs int64
+			samples := make([]int64, 0, measureIterations)
 			for range measureIterations {
 				if tc.setup != "" {
 					if _, err := evalJS(tc.setup); err != nil {
@@ -777,12 +782,12 @@ func TestViewPerformanceRegression(t *testing.T) {
 				if raw == nil || raw == "" {
 					t.Fatal("render returned empty")
 				}
-				totalUs += elapsed.Microseconds()
+				samples = append(samples, elapsed.Microseconds())
 			}
-			avgUs := totalUs / int64(measureIterations)
-			t.Logf("%s: avg %dμs (threshold: %dμs)", tc.name, avgUs, tc.threshold)
-			if avgUs > tc.threshold {
-				t.Errorf("%s too slow: %dμs > %dμs threshold", tc.name, avgUs, tc.threshold)
+			medianUs := medianMicros(samples)
+			t.Logf("%s: median %dμs (threshold: %dμs)", tc.name, medianUs, tc.threshold)
+			if medianUs > tc.threshold {
+				t.Errorf("%s too slow: %dμs > %dμs threshold", tc.name, medianUs, tc.threshold)
 			}
 		})
 	}
@@ -804,7 +809,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 		}
 
 		// Measure.
-		var totalUs int64
+		samples := make([]int64, 0, measureIterations)
 		for range measureIterations {
 			start := time.Now()
 			raw, err := evalJS(js)
@@ -815,12 +820,12 @@ func TestViewPerformanceRegression(t *testing.T) {
 			if raw == nil || raw == "" {
 				t.Fatal("render returned empty")
 			}
-			totalUs += elapsed.Microseconds()
+			samples = append(samples, elapsed.Microseconds())
 		}
-		avgUs := totalUs / int64(measureIterations)
-		t.Logf("PlanReview_50Splits: avg %dμs (threshold: %dμs)", avgUs, thresholdLargeViewUs)
-		if avgUs > thresholdLargeViewUs {
-			t.Errorf("PlanReview_50Splits too slow: %dμs > %dμs threshold", avgUs, thresholdLargeViewUs)
+		medianUs := medianMicros(samples)
+		t.Logf("PlanReview_50Splits: median %dμs (threshold: %dμs)", medianUs, thresholdLargeViewUs)
+		if medianUs > thresholdLargeViewUs {
+			t.Errorf("PlanReview_50Splits too slow: %dμs > %dμs threshold", medianUs, thresholdLargeViewUs)
 		}
 	})
 
@@ -836,7 +841,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 		}
 
 		// Measure.
-		var totalUs int64
+		samples := make([]int64, 0, measureIterations)
 		for range measureIterations {
 			start := time.Now()
 			raw, err := evalJS(js)
@@ -847,12 +852,12 @@ func TestViewPerformanceRegression(t *testing.T) {
 			if raw == nil || raw == "" {
 				t.Fatal("render returned empty")
 			}
-			totalUs += elapsed.Microseconds()
+			samples = append(samples, elapsed.Microseconds())
 		}
-		avgUs := totalUs / int64(measureIterations)
-		t.Logf("WizardView_50Splits: avg %dμs (threshold: %dμs)", avgUs, thresholdLargeViewUs)
-		if avgUs > thresholdLargeViewUs {
-			t.Errorf("WizardView_50Splits too slow: %dμs > %dμs threshold", avgUs, thresholdLargeViewUs)
+		medianUs := medianMicros(samples)
+		t.Logf("WizardView_50Splits: median %dμs (threshold: %dμs)", medianUs, thresholdLargeViewUs)
+		if medianUs > thresholdLargeViewUs {
+			t.Errorf("WizardView_50Splits too slow: %dμs > %dμs threshold", medianUs, thresholdLargeViewUs)
 		}
 	})
 
@@ -885,7 +890,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 		}
 
 		// Measure.
-		var totalUs int64
+		samples := make([]int64, 0, measureIterations)
 		for range measureIterations {
 			start := time.Now()
 			raw, err := evalJS(js)
@@ -896,12 +901,12 @@ func TestViewPerformanceRegression(t *testing.T) {
 			if raw == nil || raw == "" {
 				t.Fatal("render returned empty")
 			}
-			totalUs += elapsed.Microseconds()
+			samples = append(samples, elapsed.Microseconds())
 		}
-		avgUs := totalUs / int64(measureIterations)
-		t.Logf("AgentPane_LargeBuffer: avg %dμs (threshold: %dμs)", avgUs, thresholdLargeViewUs)
-		if avgUs > thresholdLargeViewUs {
-			t.Errorf("AgentPane_LargeBuffer too slow: %dμs > %dμs threshold", avgUs, thresholdLargeViewUs)
+		medianUs := medianMicros(samples)
+		t.Logf("AgentPane_LargeBuffer: median %dμs (threshold: %dμs)", medianUs, thresholdLargeViewUs)
+		if medianUs > thresholdLargeViewUs {
+			t.Errorf("AgentPane_LargeBuffer too slow: %dμs > %dμs threshold", medianUs, thresholdLargeViewUs)
 		}
 	})
 
@@ -940,7 +945,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 		}
 
 		// Measure.
-		var totalUs int64
+		samples := make([]int64, 0, measureIterations)
 		for range measureIterations {
 			start := time.Now()
 			raw, err := evalJS(js)
@@ -951,12 +956,12 @@ func TestViewPerformanceRegression(t *testing.T) {
 			if raw == nil || raw == "" {
 				t.Fatal("render returned empty")
 			}
-			totalUs += elapsed.Microseconds()
+			samples = append(samples, elapsed.Microseconds())
 		}
-		avgUs := totalUs / int64(measureIterations)
-		t.Logf("SplitView_Full: avg %dμs (threshold: %dμs)", avgUs, thresholdLargeViewUs)
-		if avgUs > thresholdLargeViewUs {
-			t.Errorf("SplitView_Full too slow: %dμs > %dμs threshold", avgUs, thresholdLargeViewUs)
+		medianUs := medianMicros(samples)
+		t.Logf("SplitView_Full: median %dμs (threshold: %dμs)", medianUs, thresholdLargeViewUs)
+		if medianUs > thresholdLargeViewUs {
+			t.Errorf("SplitView_Full too slow: %dμs > %dμs threshold", medianUs, thresholdLargeViewUs)
 		}
 	})
 }

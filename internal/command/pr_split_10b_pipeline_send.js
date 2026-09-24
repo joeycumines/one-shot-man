@@ -7,7 +7,6 @@
     var resolveSendConfig = prSplit._resolveSendConfig;
     var getCancellationError = prSplit._getCancellationError;
     var TRUNCATION_WIDTH = 120;
-
     function readAgentPlainText() {
         if (typeof tuiMux === 'undefined' || !tuiMux || typeof tuiMux.capture !== 'function') {
             return null;
@@ -67,6 +66,17 @@
     function isPromptMarkerLine(line) {
         var trimmed = trimLeadingPromptSpace(line);
         if (!trimmed) return false;
+        // OpenCode's current TUI renders its empty composer as an
+        // "Ask anything…" line instead of a leading prompt glyph.
+        if (trimmed.indexOf('Ask anything') !== -1) return true;
+        // At the minimum embedded pane height, the composer label can be
+        // clipped while OpenCode's footer remains visible. The footer is
+        // emitted only by the interactive composer, so it is a safe
+        // provider-specific readiness marker.
+        var lower = trimmed.toLowerCase();
+        if (lower.indexOf('tab agents') !== -1 &&
+            lower.indexOf('ctrl+p') !== -1 &&
+            lower.indexOf('commands') !== -1) return true;
         var first = trimmed.charAt(0);
         if (first !== '❯' && first !== '>') return false;
         var rest = trimLeadingPromptSpace(trimmed.substring(1));
@@ -82,6 +92,15 @@
             return 'Agent is waiting on first-run setup (theme selection); complete setup in Agent first.';
         }
         return '';
+    }
+
+    function looksLikeOpenCodeReadyScreen(screen) {
+        var lower = String(screen || '').toLowerCase();
+        return (lower.indexOf('tab agents') !== -1 &&
+                lower.indexOf('ctrl+p') !== -1) ||
+            (lower.indexOf('mcp') !== -1 &&
+             lower.indexOf('status') !== -1 &&
+             lower.indexOf('1.18.') !== -1);
     }
 
     function findPromptMarker(screen) {
@@ -147,6 +166,20 @@
             candidate = lastTailCandidate || lastPasteCandidate;
         }
 
+        // OpenCode keeps the active composer inside a boxed line rather than
+        // preserving a prompt glyph after text is entered. When the submitted
+        // text is visible in that line, use it as the prompt anchor.
+        if (!prompt && lastTailCandidate) {
+            var tailLine = lines[lastTailCandidate.lineIndex] || '';
+            if (tailLine.indexOf('┃') !== -1) {
+                prompt = {
+                    bottom: lastTailCandidate.bottom,
+                    lineIndex: lastTailCandidate.lineIndex,
+                    lineText: tailLine
+                };
+            }
+        }
+
         var inputBottom = -1;
         var inputType = '';
         var inputLineIndex = -1;
@@ -191,10 +224,16 @@
         }
 
         var startMs = Date.now();
+        var agentExecutor = prSplit._state && prSplit._state.agentExecutor;
+        var isOpenCode = !!(agentExecutor && agentExecutor.provider === 'opencode');
+        var timeoutMs = isOpenCode
+            ? Math.max(cfg.promptReadyTimeoutMs, cfg.openCodePromptReadyTimeoutMs)
+            : cfg.promptReadyTimeoutMs;
         var lastKey = '';
         var stableCount = 0;
         var lastState = null;
-        while (Date.now() - startMs < cfg.promptReadyTimeoutMs) {
+        var openCodeIdentityLogged = false;
+        while (Date.now() - startMs < timeoutMs) {
             var cancelErr = getCancellationError();
             if (cancelErr) {
                 return { error: cancelErr, observed: true, state: null };
@@ -207,6 +246,28 @@
             lastState = state;
             if (state.blocker) {
                 return { error: state.blocker, observed: true, state: state };
+            }
+            // OpenCode can render its interactive composer while the
+            // embedded three-row capture clips the prompt label. Once its
+            // own footer/header is present and the process is still alive,
+            // the composer is ready even though the generic marker is not
+            // searchable in the clipped snapshot.
+            if (isOpenCode &&
+                Date.now() - startMs >= cfg.promptReadyTimeoutMs &&
+                looksLikeOpenCodeReadyScreen(state.screen) &&
+                agentExecutor && agentExecutor.handle &&
+                typeof agentExecutor.handle.isAlive === 'function' &&
+                agentExecutor.handle.isAlive()) {
+                log.printf('auto-split sendToHandle: OpenCode ready via live TUI identity after clipped prompt marker');
+                return { error: null, observed: true, state: state, viaOpenCodeIdentity: true };
+            }
+            if (isOpenCode &&
+                !openCodeIdentityLogged &&
+                Date.now() - startMs >= cfg.promptReadyTimeoutMs) {
+                openCodeIdentityLogged = true;
+                log.printf('auto-split sendToHandle: OpenCode readiness diagnostics — screenChars=%d tail=%s',
+                    String(state.screen || '').length,
+                    getTextTailAnchor(state.screen, 160).replace(/\n/g, '\\n'));
             }
             if (state.promptBottom !== -1) {
                 var key = String(state.promptBottom) + '|' + String(state.promptLineIndex);
@@ -226,8 +287,14 @@
 
             await new Promise(function(resolve) { setTimeout(resolve, cfg.promptReadyPollMs); });
         }
+        if (isOpenCode && lastState) {
+            log.printf('auto-split sendToHandle: OpenCode prompt timeout diagnostics — screenChars=%d tail=%s',
+                String(lastState.screen || '').length,
+                getTextTailAnchor(lastState.screen, 160).replace(/\n/g, '\\n'));
+        }
         return {
-            error: 'Agent prompt not ready before send: prompt marker not found',
+            error: 'Agent prompt not ready before send: prompt marker not found after ' +
+                timeoutMs + 'ms',
             observed: true,
             state: lastState
         };
@@ -384,6 +451,8 @@
         var config = resolveSendConfig();
         var truncated = text.length > TRUNCATION_WIDTH ? text.substring(0, TRUNCATION_WIDTH) + '...' : text;
         log.printf('auto-split sendToHandle: sending %d chars — %s', text.length, truncated);
+        var agentExecutor = prSplit._state && prSplit._state.agentExecutor;
+        var isOpenCode = !!(agentExecutor && agentExecutor.provider === 'opencode');
 
         var EAGAIN_MAX_RETRIES = 3;
         var EAGAIN_RETRY_DELAY_MS = 10;
@@ -398,7 +467,7 @@
             var lastErr;
             for (var attempt = 0; attempt <= EAGAIN_MAX_RETRIES; attempt++) {
                 try {
-                    handle.send(data);
+                    await handle.send(data);
                     return { error: null };
                 } catch (e) {
                     lastErr = e.message || String(e);
@@ -417,6 +486,17 @@
                 return { error: lastErr };
             }
             return { error: lastErr };
+        }
+
+        // OpenCode's composer supports terminal bracketed paste. Without it,
+        // every character is handled as an individual editor key event, which
+        // makes large file lists spend minutes re-rendering the TUI and can
+        // fill the PTY input buffer before the submission newline is written.
+        if (isOpenCode) {
+            var pasteStart = await sendWithRetry('\x1b[200~');
+            if (pasteStart.error) {
+                return pasteStart;
+            }
         }
 
         // Step 1: Send text in chunks.
@@ -440,18 +520,35 @@
             }
         }
         if (text.length === 0) sentChunks = 1;
+        if (isOpenCode) {
+            var pasteEnd = await sendWithRetry('\x1b[201~');
+            if (pasteEnd.error) {
+                return pasteEnd;
+            }
+        }
         log.printf('auto-split sendToHandle: text written in %d chunk(s)', sentChunks);
 
         // Step 2: Wait for stable prompt/input anchors before Enter.
-        var stableAnchors = await waitForStableInputAnchors(text, config);
-        if (stableAnchors.error) {
-            return { error: stableAnchors.error };
-        }
-        observedTransport = observedTransport || stableAnchors.observed;
-        var baselineState = stableAnchors.state;
-        if (observedTransport && baselineState) {
-            log.printf('auto-split sendToHandle: stable anchors ready (promptBottom=%d inputBottom=%d type=%s)',
-                baselineState.promptBottom, baselineState.inputBottom, baselineState.inputType || '?');
+        // OpenCode keeps its composer in a fixed boxed line, including after
+        // text is written. Its screen therefore cannot provide the generic
+        // pre-submit anchor transition without making the TUI wait until it
+        // times out. The prompt-ready check above still proves that the
+        // interactive composer exists; for OpenCode, a successful newline
+        // write is the submission acknowledgement.
+        var baselineState = null;
+        if (!isOpenCode) {
+            var stableAnchors = await waitForStableInputAnchors(text, config);
+            if (stableAnchors.error) {
+                return { error: stableAnchors.error };
+            }
+            observedTransport = observedTransport || stableAnchors.observed;
+            baselineState = stableAnchors.state;
+            if (observedTransport && baselineState) {
+                log.printf('auto-split sendToHandle: stable anchors ready (promptBottom=%d inputBottom=%d type=%s)',
+                    baselineState.promptBottom, baselineState.inputBottom, baselineState.inputType || '?');
+            }
+        } else {
+            log.printf('auto-split sendToHandle: OpenCode composer detected — skipping generic input-anchor stabilization');
         }
 
         // Step 3: Non-blocking delay using event-loop-integrated setTimeout.
@@ -475,9 +572,12 @@
             }
 
             // If no screenshot transport is available, we cannot observe acceptance.
-            // Keep existing behavior: a successful newline write is considered success.
-            if (!observedTransport) {
-                log.printf('auto-split sendToHandle: screenshot transport unavailable; submit acknowledged by successful write only');
+            // OpenCode's composer keeps the submitted text in the scrollback,
+            // so its input anchor does not reliably move even after Enter is
+            // accepted. A successful newline is the correct acknowledgement
+            // for that provider.
+            if (!observedTransport || (agentExecutor && agentExecutor.provider === 'opencode')) {
+                log.printf('auto-split sendToHandle: submit acknowledged by successful write');
                 return { error: null };
             }
 

@@ -177,6 +177,24 @@ func TestPipelineChunk_ClassificationToGroups_MalformedItems(t *testing.T) {
 	}
 }
 
+func TestPipelineChunk_ClassificationToGroups_DeduplicatesFiles(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
+
+	val, err := evalJS(`JSON.stringify(prSplit.classificationToGroups([
+		{ name: 'docs', description: 'Documentation', files: ['README.md', 'Server/README.md'] },
+		{ name: 'server', description: 'Server changes', files: ['Server/README.md', 'Server/main.go'] },
+		{ name: 'docs', description: 'Additional documentation', files: ['README.md', 'CONTRIBUTING.md'] }
+	]))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := val.(string); !strings.Contains(got, `"docs":{"files":["README.md","Server/README.md","CONTRIBUTING.md"]`) ||
+		!strings.Contains(got, `"server":{"files":["Server/main.go"]`) {
+		t.Fatalf("expected first classification to own duplicate files, got %s", got)
+	}
+}
+
 // TestPipelineChunk_WaitForLogged_MissingCallback verifies that waitForLogged
 // in the ACTUAL embedded code (pr_split_10c_pipeline_resolve.js) returns a
 // structured error when the MCP callback is missing or lacks waitForAsync.
@@ -473,15 +491,17 @@ func TestAnchorPipeline_IsPromptMarkerLine(t *testing.T) {
 		{"> ", true},
 		{"  ❯ type here", true},
 		{"  > type here", true},
-		{"❯ 1. Dark mode", false},  // setup selector excluded
-		{"> 2. Light mode", false}, // setup selector excluded
-		{"hello world", false},     // no marker
-		{"", false},                // empty
-		{"   ", false},             // whitespace only
-		{"❯", true},                // bare marker
-		{">", true},                // bare marker
-		{">> nested quote", true},  // first char is >
-		{"3. Item three", false},   // no marker
+		{"❯ 1. Dark mode", false},               // setup selector excluded
+		{"> 2. Light mode", false},              // setup selector excluded
+		{"hello world", false},                  // no marker
+		{"", false},                             // empty
+		{"   ", false},                          // whitespace only
+		{"❯", true},                             // bare marker
+		{">", true},                             // bare marker
+		{">> nested quote", true},               // first char is >
+		{"Ask anything…", true},                 // OpenCode composer
+		{"  tab agents  ctrl+p commands", true}, // OpenCode footer
+		{"3. Item three", false},                // no marker
 	}
 
 	for _, tt := range tests {
@@ -604,6 +624,20 @@ func TestAnchorPipeline_FindPromptMarker(t *testing.T) {
 		s := fmt.Sprintf("%v", val)
 		if !strings.Contains(s, `"lineIndex":1`) {
 			t.Errorf("expected lineIndex 1, got: %s", s)
+		}
+	})
+
+	t.Run("OpenCode composer marker", func(t *testing.T) {
+		screen := "OpenCode\nAsk anything… \"Fix a TODO in the codebase\""
+		escaped := strings.ReplaceAll(screen, "\n", `\n`)
+		escaped = strings.ReplaceAll(escaped, "'", `\'`)
+		val, err := evalJS(fmt.Sprintf("JSON.stringify(prSplit._findPromptMarker('%s'))", escaped))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		if !strings.Contains(s, `"lineIndex":1`) {
+			t.Errorf("expected OpenCode marker at lineIndex 1, got: %s", s)
 		}
 	})
 }
@@ -740,6 +774,26 @@ func TestAnchorPipeline_CaptureInputAnchors(t *testing.T) {
 		// stableKey is "promptBottom|inputBottom"
 		if !strings.Contains(s, "|") {
 			t.Errorf("stableKey should contain '|', got: %q", s)
+		}
+	})
+
+	t.Run("OpenCode boxed composer uses text tail as prompt anchor", func(t *testing.T) {
+		_, err := evalJS(`
+			tuiMux._screen = 'header\n┃  hello';
+			true
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(prSplit._captureInputAnchors('hello', prSplit._resolveSendConfig()))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		if !strings.Contains(s, `"promptLineIndex":1`) ||
+			!strings.Contains(s, `"inputLineIndex":1`) {
+			t.Errorf("expected boxed composer to provide prompt and input anchors, got: %s", s)
 		}
 	})
 }
@@ -887,6 +941,67 @@ func TestAnchorPipeline_SendToHandle_MockedTuiMux_Stable(t *testing.T) {
 	}
 	if m["error"] != nil {
 		t.Fatalf("expected no error, got: %v", m["error"])
+	}
+}
+
+func TestAnchorPipeline_SendToHandle_OpenCodeSkipsGenericInputAnchors(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
+
+	_, err := evalJS(`
+		var __openCodeSends = [];
+		var __openCodeHandle = {
+			send: function(d) {
+				__openCodeSends.push(d);
+				if (d !== '\r') {
+					tuiMux._screen = '┃ ' + d;
+				}
+			}
+		};
+		globalThis.prSplit = globalThis.prSplit || {};
+		globalThis.prSplit._state = {
+			agentSessionID: 42,
+			agentExecutor: { provider: 'opencode' }
+		};
+		globalThis.tuiMux = {
+			_screen: 'Ask anything…',
+			capture: function(id) {
+				if (id !== 42) return null;
+				return { plain: tuiMux._screen };
+			}
+		};
+		prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 20;
+		prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 5;
+		prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 100;
+		prSplit.SEND_OPENCODE_PROMPT_READY_TIMEOUT_MS = 100;
+		prSplit.SEND_PROMPT_READY_POLL_MS = 5;
+		prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
+		prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 1;
+		prSplit.SEND_TEXT_CHUNK_DELAY_MS = 0;
+		true
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`await prSplit.sendToHandle(__openCodeHandle, 'classification request')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := val.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map, got %T: %v", val, val)
+	}
+	if m["error"] != nil {
+		t.Fatalf("expected OpenCode submission to succeed, got: %v", m["error"])
+	}
+
+	val, err = evalJS(`JSON.stringify(__openCodeSends)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprintf("%v", val); got != `["\u001b[200~","classification request","\u001b[201~","\r"]` {
+		t.Fatalf("expected bracketed paste and newline writes, got %s", got)
 	}
 }
 

@@ -1,6 +1,8 @@
 package command
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
@@ -780,5 +782,51 @@ func TestChunk16_VTerm_KeyForwarding_CtrlTabInterceptedForFocus(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("ctrl+tab intercepted: %v", raw)
+	}
+}
+
+func liveRouteMaxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func liveRouteMinInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func TestPrSplitAgentLiveKeyRouting(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	src, err := os.ReadFile("pr_split_16e_tui_update.js")
+	if err != nil {
+		t.Fatalf("read update chunk: %v", err)
+	}
+	s := string(src)
+	if !strings.Contains(s, "typeof prSplit._agentLiveActive === 'function' && prSplit._agentLiveActive()") {
+		t.Error("16e live key route missing liveActive guard")
+	}
+	if !strings.Contains(s, "prSplit._routeKeyToAgentTermpane(msg)") {
+		t.Error("16e live key route missing routeKeyToAgentTermpane dispatch")
+	}
+	if !strings.Contains(s, "if (!AGENT_RESERVED_KEYS[k])") {
+		t.Error("16e live key route must honor the full AGENT_RESERVED_KEYS set")
+	}
+	if !strings.Contains(s, "tea.tick(C.TICK_INTERVAL_MS, 'agent-screenshot')") {
+		t.Error("16e live key route must keep the agent-screenshot tick")
+	}
+	idx := strings.Index(s, "_routeKeyToAgentTermpane(msg)")
+	if idx >= 0 {
+		window := s[liveRouteMaxInt(0, idx-2000):liveRouteMinInt(idx+2000, len(s))]
+		if strings.Contains(window, "tea.batch(") {
+			// The pane update cmd is always Null for input; batching it
+			// would corrupt tick routing.
+			t.Error("16e live key route must not tea.batch a termpane cmd")
+		}
 	}
 }

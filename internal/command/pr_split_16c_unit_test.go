@@ -860,7 +860,7 @@ func TestChunk16c_OpenAgentConvo_NoExecutor(t *testing.T) {
 		return JSON.stringify({
 			active: c.active === true,
 			hasError: typeof c.lastError === 'string' && c.lastError.length > 0,
-			errorMentionsInstall: (c.lastError || '').indexOf('not installed') >= 0,
+			errorMentionsInstall: (c.lastError || '').indexOf('No agent command configured') >= 0,
 			contextSet: c.context === 'plan-review',
 		});
 	})()`)

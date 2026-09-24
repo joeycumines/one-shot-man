@@ -238,11 +238,9 @@ The `[pr-split]` section configures default options for `osm pr-split`. All keys
 | `prefix` | string | `split/` | `--prefix` | Branch name prefix |
 | `verify` | string | `make test` | `--verify` | Verification command run after each split |
 | `dry-run` | bool | `false` | `--dry-run` | Plan without creating branches |
-| `agent-command` | string | _(auto-detect)_ | `--agent-command` | Agent binary path. Empty value triggers auto-detection of a supported agent on PATH |
-| `agent-arg` | string (repeatable) | _(empty)_ | `--agent-arg` | Additional CLI argument for the agent (repeatable — one arg per entry) |
-| `agent-model` | string | _(empty)_ | `--agent-model` | Model name (provider-dependent) |
-| `agent-config-dir` | string | _(empty)_ | `--agent-config-dir` | Agent config directory override |
-| `agent-env` | string | _(empty)_ | `--agent-env` | Extra environment variables (`KEY=VALUE,KEY=VALUE`) |
+| `agent-command` | string | _(empty, required)_ | `--agent-command` | Agent binary path or name. Must be set via flag or config for agent flows; heuristic, batch, and REPL flows run without it |
+| `agent-arg` | string (repeatable on CLI, single in config) | _(empty)_ | `--agent-arg` | Additional CLI argument for the agent (repeatable on CLI; config holds one entry) |
+| `agent-env` | string | _(empty)_ | `--agent-env` | Extra environment variables (`KEY=VALUE,KEY=VALUE`; values must not contain commas) |
 
 ### Runtime-only settings
 
@@ -264,7 +262,6 @@ max 8
 prefix feature-split/
 verify go test ./...
 agent-command /path/to/agent
-agent-model llama3
 ```
 
 ## Global options

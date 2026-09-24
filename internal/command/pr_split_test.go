@@ -199,7 +199,7 @@ const chunkCompatShim = `
         'executeSplit',
         'verifySplit', 'verifySplits', 'verifyEquivalence', 'verifyEquivalenceDetailed',
         'cleanupBranches',
-        'createPRs',
+        'createPRs', 'formatPRTitle', 'formatPRBody',
         'resolveConflicts',
         'AgentCodeExecutor',
         'renderClassificationPrompt', 'renderSplitPlanPrompt', 'renderConflictPrompt',
@@ -217,7 +217,8 @@ const chunkCompatShim = `
         // T31 async versions — proxied so tests can override via bare globals.
         'analyzeDiffAsync', 'createSplitPlanAsync', 'executeSplitAsync',
         'verifySplitAsync', 'verifySplitsAsync', 'verifyEquivalenceAsync',
-        'cleanupBranchesAsync'
+        'cleanupBranchesAsync',
+        'isCancelled', 'isPaused', 'isForceCancelled'
     ];
 
     funcNames.forEach(function(k) {

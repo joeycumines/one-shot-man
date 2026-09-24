@@ -10,6 +10,96 @@
     var validatePlan = prSplit.validatePlan;
     var worktreeTmpPath = prSplit._worktreeTmpPath;
 
+    function isCancelledHelper() {
+        if (typeof isCancelled === 'function' && isCancelled()) return true;
+        if (typeof prSplit !== 'undefined' && typeof prSplit.isCancelled === 'function' && prSplit.isCancelled()) return true;
+        return false;
+    }
+
+    function isForceCancelledHelper() {
+        if (typeof isForceCancelled === 'function' && isForceCancelled()) return true;
+        if (typeof prSplit !== 'undefined' && typeof prSplit.isForceCancelled === 'function' && prSplit.isForceCancelled()) return true;
+        return false;
+    }
+
+    function collectSplitFileActions(split, fileStatuses, fileRenames, ignoredFiles, splitResult, progressFn) {
+        var removeFiles = [];
+        var checkoutFiles = [];
+        var addFiles = [];
+        var seenRemove = {};
+        var seenCheckout = {};
+
+        for (var i = 0; i < split.files.length; i++) {
+            if (isCancelledHelper() || isForceCancelledHelper()) {
+                return {
+                    error: 'cancelled by user after ' + i + ' of ' + split.files.length + ' files in ' + split.name,
+                    cancelled: true
+                };
+            }
+
+            var file = split.files[i];
+            if (ignoredFiles[file]) {
+                splitResult.skippedFiles.push(file);
+                if (typeof log !== 'undefined' && log.warn) {
+                    log.warn('pr-split: skipping git-ignored file in ' + split.name + ': ' + file);
+                }
+                continue;
+            }
+
+            var status = fileStatuses[file];
+
+            if (progressFn && split.files.length > 5) {
+                progressFn('  ' + split.name + ': file ' + (i + 1) + '/' + split.files.length);
+            }
+
+            if (!status) {
+                return {
+                    error: 'file "' + file + '" has no entry in plan.fileStatuses — '
+                        + 'ensure analyzeDiff() results are passed to createSplitPlan()'
+                };
+            }
+
+            if (status === 'R') {
+                var renameSource = fileRenames[file];
+                if (!renameSource) {
+                    return {
+                        error: 'rename source missing for "' + file + '" in plan.fileRenames'
+                    };
+                }
+                if (!seenRemove[renameSource]) {
+                    seenRemove[renameSource] = true;
+                    removeFiles.push(renameSource);
+                }
+                if (!seenCheckout[file]) {
+                    seenCheckout[file] = true;
+                    checkoutFiles.push(file);
+                }
+                addFiles.push(file);
+            } else if (status === 'D') {
+                if (!seenRemove[file]) {
+                    seenRemove[file] = true;
+                    removeFiles.push(file);
+                }
+            } else {
+                if (status === 'T' && typeof log !== 'undefined' && log.warn) {
+                    log.warn('pr-split: file type change for ' + file + ' — checkout from source will restore new type');
+                }
+                if (!seenCheckout[file]) {
+                    seenCheckout[file] = true;
+                    checkoutFiles.push(file);
+                }
+                addFiles.push(file);
+            }
+        }
+
+        return {
+            error: null,
+            removeFiles: removeFiles,
+            checkoutFiles: checkoutFiles,
+            addFiles: addFiles
+        };
+    }
+
     // --- executeSplit — creates branches for each split in a plan ---
     //
     // All branch operations run in a temporary git worktree so the user's
@@ -35,6 +125,7 @@
             };
         }
         var fileStatuses = plan.fileStatuses;
+        var fileRenames = plan.fileRenames || {};
 
         // Pre-validate: detect git-ignored files in the plan.
         // Files matching .gitignore rules won't be processable via git add
@@ -98,7 +189,7 @@
         var currentBase = plan.baseBranch;
 
         for (var i = 0; i < plan.splits.length; i++) {
-            if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
+            if (isCancelledHelper() || isForceCancelledHelper()) {  // T117: honor force-cancel
                 await cleanupWorktree();
                 return { error: 'cancelled by user after ' + i + ' of ' + plan.splits.length + ' branches', results: results };
             }
@@ -118,72 +209,38 @@
                 return { error: splitResult.error, results: results };
             }
 
-            for (var j = 0; j < split.files.length; j++) {
-                if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
-                    splitResult.error = 'cancelled by user after ' + j + ' of ' + split.files.length + ' files in ' + split.name;
+            var actions = collectSplitFileActions(split, fileStatuses, fileRenames, ignoredFiles, splitResult, progressFn);
+            if (actions.error) {
+                splitResult.error = actions.error;
+                results.push(splitResult);
+                await cleanupWorktree();
+                return { error: splitResult.error, results: results };
+            }
+
+            if (actions.removeFiles.length > 0) {
+                var remove = await gitExec(worktreePath,
+                    ['rm', '--ignore-unmatch', '-f'].concat(actions.removeFiles));
+                if (remove.code !== 0) {
+                    splitResult.error = 'git rm ' + actions.removeFiles.join(' ') + ': ' + remove.stderr.trim();
                     results.push(splitResult);
                     await cleanupWorktree();
                     return { error: splitResult.error, results: results };
                 }
+            }
 
-                var file = split.files[j];
-
-                // Skip git-ignored files detected during pre-validation.
-                if (ignoredFiles[file]) {
-                    splitResult.skippedFiles.push(file);
-                    if (typeof log !== 'undefined' && log.warn) {
-                        log.warn('pr-split: skipping git-ignored file in ' + split.name + ': ' + file);
-                    }
-                    continue;
-                }
-
-                var status = fileStatuses[file];
-
-                if (progressFn && split.files.length > 5) {
-                    progressFn('  ' + split.name + ': file ' + (j + 1) + '/' + split.files.length);
-                }
-
-                if (!status) {
-                    splitResult.error = 'file "' + file + '" has no entry in plan.fileStatuses — '
-                        + 'ensure analyzeDiff() results are passed to createSplitPlan()';
+            if (actions.checkoutFiles.length > 0) {
+                var checkout = await gitExec(worktreePath,
+                    ['checkout', plan.sourceBranch, '--'].concat(actions.checkoutFiles));
+                if (checkout.code !== 0) {
+                    splitResult.error = 'checkout files for ' + split.name + ': ' + checkout.stderr.trim();
                     results.push(splitResult);
                     await cleanupWorktree();
                     return { error: splitResult.error, results: results };
                 }
-
-                if (status === 'D') {
-                    var rm = await gitExec(worktreePath, ['rm', '--ignore-unmatch', '-f', file]);
-                    if (rm.code !== 0) {
-                        splitResult.error = 'git rm ' + file + ': ' + rm.stderr.trim();
-                        results.push(splitResult);
-                        await cleanupWorktree();
-                        return { error: splitResult.error, results: results };
-                    }
-                } else {
-                    // File was added, modified, renamed-to, copied-to, or type-changed.
-                    if (status === 'T' && typeof log !== 'undefined' && log.warn) {
-                        log.warn('pr-split: file type change for ' + file + ' — checkout from source will restore new type');
-                    }
-                    var checkout = await gitExec(worktreePath, ['checkout', plan.sourceBranch, '--', file]);
-                    if (checkout.code !== 0) {
-                        splitResult.error = 'checkout file ' + file + ': ' + checkout.stderr.trim();
-                        results.push(splitResult);
-                        await cleanupWorktree();
-                        return { error: splitResult.error, results: results };
-                    }
-                }
             }
 
-            // Stage only this split's files defensively (skip ignored + deleted).
-            var addFiles = [];
-            for (var af = 0; af < split.files.length; af++) {
-                var afFile = split.files[af];
-                if (fileStatuses[afFile] !== 'D' && !ignoredFiles[afFile]) {
-                    addFiles.push(afFile);
-                }
-            }
-            if (addFiles.length > 0) {
-                var addArgs = ['add', '--'].concat(addFiles);
+            if (actions.addFiles.length > 0) {
+                var addArgs = ['add', '--'].concat(actions.addFiles);
                 var add = await gitExec(worktreePath, addArgs);
                 if (add.code !== 0) {
                     splitResult.error = 'git add failed: ' + add.stderr.trim();
@@ -249,6 +306,7 @@
             };
         }
         var fileStatuses = plan.fileStatuses;
+        var fileRenames = plan.fileRenames || {};
 
         // Pre-validate: detect git-ignored files in the plan.
         var allPlanFiles = [];
@@ -305,7 +363,7 @@
         var currentBase = plan.baseBranch;
 
         for (var i = 0; i < plan.splits.length; i++) {
-            if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
+            if (isCancelledHelper() || isForceCancelledHelper()) {  // T117: honor force-cancel
                 await cleanupWorktreeAsync();
                 return { error: 'cancelled by user after ' + i + ' of ' + plan.splits.length + ' branches', results: results };
             }
@@ -324,70 +382,36 @@
                 return { error: splitResult.error, results: results };
             }
 
-            for (var j = 0; j < split.files.length; j++) {
-                if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
-                    splitResult.error = 'cancelled by user after ' + j + ' of ' + split.files.length + ' files in ' + split.name;
+            var actions = collectSplitFileActions(split, fileStatuses, fileRenames, ignoredFiles, splitResult, progressFn);
+            if (actions.error) {
+                splitResult.error = actions.error;
+                results.push(splitResult);
+                await cleanupWorktreeAsync();
+                return { error: splitResult.error, results: results };
+            }
+
+            if (actions.removeFiles.length > 0) {
+                var rmRes = await gitExecAsync(worktreePath, ['rm', '--ignore-unmatch', '-f'].concat(actions.removeFiles));
+                if (rmRes.code !== 0) {
+                    splitResult.error = 'git rm ' + actions.removeFiles.join(' ') + ': ' + rmRes.stderr.trim();
                     results.push(splitResult);
                     await cleanupWorktreeAsync();
                     return { error: splitResult.error, results: results };
                 }
+            }
 
-                var file = split.files[j];
-
-                if (ignoredFiles[file]) {
-                    splitResult.skippedFiles.push(file);
-                    if (typeof log !== 'undefined' && log.warn) {
-                        log.warn('pr-split: skipping git-ignored file in ' + split.name + ': ' + file);
-                    }
-                    continue;
-                }
-
-                var status = fileStatuses[file];
-
-                if (progressFn && split.files.length > 5) {
-                    progressFn('  ' + split.name + ': file ' + (j + 1) + '/' + split.files.length);
-                }
-
-                if (!status) {
-                    splitResult.error = 'file "' + file + '" has no entry in plan.fileStatuses — '
-                        + 'ensure analyzeDiff() results are passed to createSplitPlan()';
+            if (actions.checkoutFiles.length > 0) {
+                var checkoutRes = await gitExecAsync(worktreePath, ['checkout', plan.sourceBranch, '--'].concat(actions.checkoutFiles));
+                if (checkoutRes.code !== 0) {
+                    splitResult.error = 'checkout files failed: ' + checkoutRes.stderr.trim();
                     results.push(splitResult);
                     await cleanupWorktreeAsync();
                     return { error: splitResult.error, results: results };
                 }
-
-                if (status === 'D') {
-                    var rm = await gitExecAsync(worktreePath, ['rm', '--ignore-unmatch', '-f', file]);
-                    if (rm.code !== 0) {
-                        splitResult.error = 'git rm ' + file + ': ' + rm.stderr.trim();
-                        results.push(splitResult);
-                        await cleanupWorktreeAsync();
-                        return { error: splitResult.error, results: results };
-                    }
-                } else {
-                    if (status === 'T' && typeof log !== 'undefined' && log.warn) {
-                        log.warn('pr-split: file type change for ' + file + ' — checkout from source will restore new type');
-                    }
-                    var checkout = await gitExecAsync(worktreePath, ['checkout', plan.sourceBranch, '--', file]);
-                    if (checkout.code !== 0) {
-                        splitResult.error = 'checkout file ' + file + ': ' + checkout.stderr.trim();
-                        results.push(splitResult);
-                        await cleanupWorktreeAsync();
-                        return { error: splitResult.error, results: results };
-                    }
-                }
             }
 
-            // Stage only this split's files defensively.
-            var addFiles = [];
-            for (var af = 0; af < split.files.length; af++) {
-                var afFile = split.files[af];
-                if (fileStatuses[afFile] !== 'D' && !ignoredFiles[afFile]) {
-                    addFiles.push(afFile);
-                }
-            }
-            if (addFiles.length > 0) {
-                var addArgs = ['add', '--'].concat(addFiles);
+            if (actions.addFiles.length > 0) {
+                var addArgs = ['add', '--'].concat(actions.addFiles);
                 var add = await gitExecAsync(worktreePath, addArgs);
                 if (add.code !== 0) {
                     splitResult.error = 'git add failed: ' + add.stderr.trim();

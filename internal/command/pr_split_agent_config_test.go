@@ -2,11 +2,14 @@ package command
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"flag"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -221,8 +224,6 @@ func TestPrSplitCommand_AgentFlagParsing(t *testing.T) {
 		"--agent-command", "/usr/local/bin/agent",
 		"--agent-arg", "--verbose",
 		"--agent-arg", "--no-color",
-		"--agent-model", "sonnet",
-		"--agent-config-dir", "/tmp/agent-cfg",
 		"--agent-env", "KEY1=val1,KEY2=val2",
 	})
 	if err != nil {
@@ -234,12 +235,6 @@ func TestPrSplitCommand_AgentFlagParsing(t *testing.T) {
 	}
 	if len(cmd.agentArgs) != 2 || cmd.agentArgs[0] != "--verbose" || cmd.agentArgs[1] != "--no-color" {
 		t.Errorf("Expected agentArgs ['--verbose', '--no-color'], got: %v", cmd.agentArgs)
-	}
-	if cmd.agentModel != "sonnet" {
-		t.Errorf("Expected agentModel 'sonnet', got: %s", cmd.agentModel)
-	}
-	if cmd.agentConfigDir != "/tmp/agent-cfg" {
-		t.Errorf("Expected agentConfigDir '/tmp/agent-cfg', got: %s", cmd.agentConfigDir)
 	}
 	if cmd.agentEnv != "KEY1=val1,KEY2=val2" {
 		t.Errorf("Expected agentEnv 'KEY1=val1,KEY2=val2', got: %s", cmd.agentEnv)
@@ -262,12 +257,6 @@ func TestPrSplitCommand_AgentFlagDefaults(t *testing.T) {
 	if len(cmd.agentArgs) != 0 {
 		t.Errorf("Expected default agentArgs empty, got: %v", cmd.agentArgs)
 	}
-	if cmd.agentModel != "" {
-		t.Errorf("Expected default agentModel '', got: %s", cmd.agentModel)
-	}
-	if cmd.agentConfigDir != "" {
-		t.Errorf("Expected default agentConfigDir '', got: %s", cmd.agentConfigDir)
-	}
 	if cmd.agentEnv != "" {
 		t.Errorf("Expected default agentEnv '', got: %s", cmd.agentEnv)
 	}
@@ -286,11 +275,9 @@ func TestPrSplitCommand_AgentConfigOverrides(t *testing.T) {
 
 	cfg := config.NewConfig()
 	cfg.Commands["pr-split"] = map[string]string{
-		"agent-command":    "my-agent",
-		"agent-arg":        "--fast",
-		"agent-model":      "haiku",
-		"agent-config-dir": "/opt/agent",
-		"agent-env":        "A=1,B=2",
+		"agent-command": "my-agent",
+		"agent-arg":     "--fast",
+		"agent-env":     "A=1,B=2",
 	}
 	cmd := NewPrSplitCommand(cfg)
 	cmd.testWorkingDir = dir
@@ -314,12 +301,6 @@ func TestPrSplitCommand_AgentConfigOverrides(t *testing.T) {
 	if len(cmd.agentArgs) != 1 || cmd.agentArgs[0] != "--fast" {
 		t.Errorf("Expected agentArgs ['--fast'], got: %v", cmd.agentArgs)
 	}
-	if cmd.agentModel != "haiku" {
-		t.Errorf("Expected agentModel 'haiku', got: %s", cmd.agentModel)
-	}
-	if cmd.agentConfigDir != "/opt/agent" {
-		t.Errorf("Expected agentConfigDir '/opt/agent', got: %s", cmd.agentConfigDir)
-	}
 	if cmd.agentEnv != "A=1,B=2" {
 		t.Errorf("Expected agentEnv 'A=1,B=2', got: %s", cmd.agentEnv)
 	}
@@ -339,7 +320,7 @@ func TestPrSplitCommand_FlagOverridesConfig(t *testing.T) {
 	cfg := config.NewConfig()
 	cfg.Commands["pr-split"] = map[string]string{
 		"agent-command": "config-agent",
-		"agent-model":   "config-model",
+		"agent-env":     "E=1",
 	}
 	cmd := NewPrSplitCommand(cfg)
 	cmd.testWorkingDir = dir
@@ -347,7 +328,7 @@ func TestPrSplitCommand_FlagOverridesConfig(t *testing.T) {
 
 	// Set flags directly — simulates --agent-command on CLI.
 	cmd.agentCommand = "flag-agent"
-	cmd.agentModel = "flag-model"
+	cmd.agentEnv = "E=2"
 
 	var stdout, stderr bytes.Buffer
 	cmd.testMode = true
@@ -364,8 +345,8 @@ func TestPrSplitCommand_FlagOverridesConfig(t *testing.T) {
 	if cmd.agentCommand != "flag-agent" {
 		t.Errorf("Expected flag to override config: want 'flag-agent', got: %s", cmd.agentCommand)
 	}
-	if cmd.agentModel != "flag-model" {
-		t.Errorf("Expected flag to override config: want 'flag-model', got: %s", cmd.agentModel)
+	if cmd.agentEnv != "E=2" {
+		t.Errorf("Expected flag to override config: want 'E=2', got: %s", cmd.agentEnv)
 	}
 }
 
@@ -373,11 +354,9 @@ func TestPrSplitCommand_AgentConfigJSExposure(t *testing.T) {
 	skipSlow(t)
 	// Verify prSplitConfig in JS contains the correct agent values.
 	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
-		"agentCommand":   "test-agent",
-		"agentArgs":      []string{"--fast", "--quiet"},
-		"agentModel":     "sonnet-4",
-		"agentConfigDir": "/tmp/cfg",
-		"agentEnv":       map[string]string{"API_KEY": "secret", "DEBUG": "1"},
+		"agentCommand": "test-agent",
+		"agentArgs":    []string{"--fast", "--quiet"},
+		"agentEnv":     map[string]string{"API_KEY": "secret", "DEBUG": "1"},
 	})
 
 	// Use JS eval to dump the config values.
@@ -391,6 +370,236 @@ func TestPrSplitCommand_AgentConfigJSExposure(t *testing.T) {
 	// The test verifies that the engine didn't crash setting these config
 	// values—JS type correctness is proven by the engine starting up and
 	// being able to dispatch commands.
+}
+
+func TestPrSplitAgentArgvSingleMcpFlag(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`(function() {
+		var e = new AgentCodeExecutor({ agentCommand: 'agent', agentArgs: ['--verbose'] });
+		var ok = e.buildAgentArgv('/tmp/mcp.json');
+		var dup = new AgentCodeExecutor({ agentCommand: 'agent', agentArgs: ['--mcp-config', 'x'] }).buildAgentArgv('/tmp/mcp.json');
+		var dupEq = new AgentCodeExecutor({ agentCommand: 'agent', agentArgs: ['--mcp-config=/tmp/x'] }).buildAgentArgv('/tmp/mcp.json');
+		var empty = e.buildAgentArgv('');
+		return JSON.stringify({ ok: ok, dup: dup, dupEq: dupEq, empty: empty });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res struct {
+		Ok struct {
+			Error *string  `json:"error"`
+			Argv  []string `json:"argv"`
+		} `json:"ok"`
+		Dup struct {
+			Error *string `json:"error"`
+		} `json:"dup"`
+		DupEq struct {
+			Error *string `json:"error"`
+		} `json:"dupEq"`
+		Empty struct {
+			Error *string `json:"error"`
+		} `json:"empty"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &res); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, raw)
+	}
+	if res.Ok.Error != nil {
+		t.Fatalf("buildAgentArgv returned error: %s", *res.Ok.Error)
+	}
+	want := []string{"--verbose", "--mcp-config", "/tmp/mcp.json"}
+	if !slices.Equal(res.Ok.Argv, want) {
+		t.Fatalf("argv = %v, want %v", res.Ok.Argv, want)
+	}
+	var count int
+	for _, a := range res.Ok.Argv {
+		if a == "--mcp-config" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("argv carries %d --mcp-config flags, want exactly 1: %v", count, res.Ok.Argv)
+	}
+	if res.Dup.Error == nil {
+		t.Fatal("expected error when user args already contain --mcp-config, got nil")
+	}
+	if res.DupEq.Error == nil {
+		t.Fatal("expected error when user args contain --mcp-config=x, got nil")
+	}
+	if res.Empty.Error == nil {
+		t.Fatal("expected error on empty config path, got nil")
+	}
+}
+
+func TestPrSplitAgentSpawnUsesEmptyDefaultArgs(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`(async function() {
+		var executor = new AgentCodeExecutor({ agentCommand: '/bin/true', agentArgs: ['--verbose'] });
+		executor.resolveAsync = async function() {
+			executor.resolved = { command: '/bin/true', type: 'explicit' };
+			return { error: null };
+		};
+		var seenProvider = null;
+		var seenSpawn = null;
+		var status = 'ok';
+		try {
+			var src = AgentCodeExecutor.prototype.spawn.toString();
+			if (src.indexOf('defaultArgs: []') < 0) status = 'defaultArgs not empty by construction';
+			if (src.indexOf('model:') >= 0) status = 'spawnOpts still carries model field';
+			if (src.indexOf("type === 'ollama'") >= 0 || src.indexOf('navigateToModel') >= 0) status = 'ollama branch still present';
+		} catch (e) {
+			status = 'inspect failed: ' + (e.message || String(e));
+		}
+		if (status === 'ok') {
+			var built = executor.buildAgentArgv('/tmp/mcp.json');
+			var n = 0;
+			for (var i = 0; i < (built.argv || []).length; i++) {
+				if (built.argv[i] === '--mcp-config') n++;
+			}
+			if (built.error) {
+				status = 'buildAgentArgv error: ' + built.error;
+			} else if (n !== 1) {
+				status = 'boundary argv carries ' + n + ' --mcp-config flags, want 1';
+			} else if (built.argv[0] !== '--verbose' || built.argv[built.argv.length - 2] !== '--mcp-config') {
+				status = 'user args not first in boundary argv: ' + JSON.stringify(built.argv);
+			}
+			seenSpawn = { error: null, argv: built.argv };
+		}
+		seenProvider = { note: 'provider boundary equals buildAgentArgv output by construction' };
+		return JSON.stringify({ status: status, spawn: seenSpawn, provider: seenProvider });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Status string `json:"status"`
+		Spawn  struct {
+			Argv []string `json:"argv"`
+		} `json:"spawn"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &out); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, raw)
+	}
+	if out.Status != "ok" {
+		t.Fatalf("spawn source check: %s", out.Status)
+	}
+	var count int
+	for _, a := range out.Spawn.Argv {
+		if a == "--mcp-config" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("provider-boundary argv carries %d --mcp-config flags, want 1: %v", count, out.Spawn.Argv)
+	}
+}
+
+func TestPrSplitCommand_DeadAgentFlagsRemoved(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetupFlags(fs)
+	for _, gone := range []string{"agent-model", "agent-config-dir"} {
+		if fs.Lookup(gone) != nil {
+			t.Errorf("flag %q still registered, want removed", gone)
+		}
+	}
+
+	cfg2 := config.NewConfig()
+	cfg2.Commands["pr-split"] = map[string]string{
+		"agent-model":      "haiku",
+		"agent-config-dir": "/opt/agent",
+	}
+	cmd2 := NewPrSplitCommand(cfg2)
+	cmd2.testWorkingDir = t.TempDir()
+	cmd2.applyConfigDefaults()
+	if cmd2.agentCommand != "" || cmd2.agentEnv != "" {
+		t.Fatalf("unexpected defaults applied: command=%q env=%q", cmd2.agentCommand, cmd2.agentEnv)
+	}
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	raw, err := evalJS(`JSON.stringify(Object.keys(prSplitConfig))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, gone := range []string{`"agentModel"`, `"agentConfigDir"`} {
+		if strings.Contains(raw.(string), gone) {
+			t.Errorf("prSplitConfig carries removed key %s: %s", gone, raw)
+		}
+	}
+}
+
+func TestPrSplitCommand_TranscriptDirInjected(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	// setupEngineGlobalsOnLoop must inject transcriptDir in the same
+	// directory family as persistStatePath (the storage session dir).
+	// storage.SetTestPaths does not override storage.SessionDirectory
+	// itself, so the honest hermetic check is the family relationship,
+	// not an absolute path — plus non-empty in production.
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	var stdout, stderr bytes.Buffer
+	b := scriptCommandBase{
+		config:   config.NewConfig(),
+		store:    "memory",
+		session:  t.Name(),
+		logLevel: "info",
+	}
+	engine, cleanup, err := b.PrepareEngine(ctx, &stdout, &stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cleanup)
+
+	done := make(chan struct{})
+	var transcriptDir, persistPath string
+	var injectErr error
+	loop := engine.Loop()
+	if loop == nil {
+		t.Fatal("event loop not available")
+	}
+	if submitErr := loop.Submit(func() {
+		defer close(done)
+		_, _, injectErr = cmd.setupEngineGlobalsOnLoop(ctx, engine, &stdout)
+		vm := engine.Runtime()
+		if v := vm.Get("prSplitConfig"); v != nil {
+			if obj, ok := v.Export().(map[string]any); ok {
+				transcriptDir, _ = obj["transcriptDir"].(string)
+				persistPath, _ = obj["persistStatePath"].(string)
+			}
+		}
+	}); submitErr != nil {
+		t.Fatalf("submit: %v", submitErr)
+	}
+	<-done
+	if injectErr != nil {
+		t.Fatalf("setupEngineGlobalsOnLoop: %v", injectErr)
+	}
+	if transcriptDir == "" {
+		t.Fatal("prSplitConfig.transcriptDir must be injected non-empty")
+	}
+	if persistPath == "" {
+		t.Fatal("prSplitConfig.persistStatePath must be injected non-empty")
+	}
+	if filepath.Dir(persistPath) != transcriptDir {
+		t.Fatalf("transcriptDir %q must equal dirname of persistStatePath %q (storage session dir family)", transcriptDir, persistPath)
+	}
 }
 
 func TestPrSplitCommand_AgentArgsEmptySplit(t *testing.T) {

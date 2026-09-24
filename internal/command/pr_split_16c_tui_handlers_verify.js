@@ -44,27 +44,111 @@
             s.autoSplitRunning = false; // T001: same for auto-split pipeline
             cleanupActiveSession();
             // T393: Clean up Agent executor and MCP callback on wizard exit.
+            // Deferred quit: confirmCancel is sync so async teardown
+            // (executor close, MCP close) runs on the promise chain and the
+            // wizard quits on the next tick after close settles.
+            s.wizardQuitting = true;
+            var mcpDone = false;
+            var execDone = false;
+            var persistenceDone = false;
+            function maybeQuit() {
+                if (execDone && mcpDone && persistenceDone && !s.wizardQuitSent) {
+                    s.wizardQuitSent = true;
+                }
+            }
             if (st && st.agentExecutor) {
-                try { st.agentExecutor.close(); } catch (e) { log.debug('cleanup: agentExec.close failed: ' + (e.message || e)); }
+                try {
+                    var closeResult = st.agentExecutor.close();
+                    if (closeResult && typeof closeResult.catch === 'function') {
+                        closeResult.then(function() {
+                            execDone = true;
+                            maybeQuit();
+                        }, function(e) {
+                            log.debug('cleanup agentExec close failed', { error: e.message || String(e) });
+                            execDone = true;
+                            maybeQuit();
+                        });
+                    } else {
+                        execDone = true;
+                    }
+                } catch (e) {
+                    log.debug('cleanup agentExec close failed', { error: e.message || String(e) });
+                    execDone = true;
+                }
+            } else {
+                execDone = true;
+            }
+            if (typeof prSplit._destroyAgentTermpane === 'function') {
+                try { prSplit._destroyAgentTermpane(); } catch (e) {
+                    log.debug('cleanup live pane close failed', { error: e.message || String(e) });
+                }
             }
             var mcpCb = prSplit._mcpCallbackObj;
             if (mcpCb) {
-                try { mcpCb.close().catch(function(e) { log.debug('cleanup: mcpCb.close failed: ' + (e.message || e)); }); } catch (e) { log.debug('cleanup: mcpCb.close failed: ' + (e.message || e)); }
-                prSplit._mcpCallbackObj = null;
-                if (st) st.mcpCallbackObj = null;
+                try {
+                    var mcpResult = mcpCb.close();
+                    if (mcpResult && typeof mcpResult.catch === 'function') {
+                        mcpResult.then(function() {
+                            prSplit._mcpCallbackObj = null;
+                            if (st) st.mcpCallbackObj = null;
+                            mcpDone = true;
+                            maybeQuit();
+                        }, function(e) {
+                            log.debug('cleanup mcp close failed', { error: e.message || String(e) });
+                            prSplit._mcpCallbackObj = null;
+                            if (st) st.mcpCallbackObj = null;
+                            mcpDone = true;
+                            maybeQuit();
+                        });
+                    } else {
+                        prSplit._mcpCallbackObj = null;
+                        if (st) st.mcpCallbackObj = null;
+                        mcpDone = true;
+                    }
+                } catch (e) {
+                    log.debug('cleanup mcp close failed', { error: e.message || String(e) });
+                    prSplit._mcpCallbackObj = null;
+                    if (st) st.mcpCallbackObj = null;
+                    mcpDone = true;
+                }
+            } else {
+                mcpDone = true;
             }
             // Task 10: Clean exit removes state file so next startup
             // doesn't offer stale resume data.
             if (prSplit.persistence && typeof prSplit.persistence.cleanup === 'function') {
-                try { prSplit.persistence.cleanup(); } catch (e) { log.debug('cleanup: persistence.cleanup failed: ' + (e.message || e)); }
+                try {
+                    var persistenceResult = prSplit.persistence.cleanup();
+                    if (persistenceResult && typeof persistenceResult.then === 'function') {
+                        persistenceResult.then(function() {
+                            persistenceDone = true;
+                            maybeQuit();
+                        }, function(e) {
+                            log.debug('cleanup persistence cleanup failed', { error: e.message || String(e) });
+                            persistenceDone = true;
+                            maybeQuit();
+                        });
+                    } else {
+                        persistenceDone = true;
+                    }
+                } catch (e) {
+                    log.debug('cleanup persistence cleanup failed', { error: e.message || String(e) });
+                    persistenceDone = true;
+                }
+            } else {
+                persistenceDone = true;
             }
+            maybeQuit();
             // Task 9: Unwire Agent lifecycle event handlers.
             if (typeof prSplit._unwireAgentLifecycleEvents === 'function') {
-                try { prSplit._unwireAgentLifecycleEvents(); } catch (e) { log.debug('cleanup: unwireAgentLifecycleEvents failed: ' + (e.message || e)); }
+                try { prSplit._unwireAgentLifecycleEvents(); } catch (e) { log.debug('cleanup unwireAgentLifecycleEvents failed', { error: e.message || String(e) }); }
             }
             s.wizard.cancel();
             s.wizardState = 'CANCELLED';
-            return [s, tea.quit()];
+            if (s.wizardQuitSent) {
+                return [s, tea.quit()];
+            }
+            return [s, tea.tick(C.TICK_INTERVAL_MS, 'wizard-quit')];
         }
 
         // T031: Helper to dismiss overlay (keep going).
@@ -760,7 +844,7 @@
             var mcpCallbackObj = MCPCallbackMod.MCPCallback({ server: srv });
 
             mcpCallbackObj.addTool('reportSplitPlan',
-                'Report a split plan for PR splitting.',
+                'Report a split plan for PR splitting following Commit-Loom discipline.',
                 {
                     type: 'object',
                     properties: {
@@ -772,7 +856,12 @@
                                     name: { type: 'string', description: 'Branch name suffix' },
                                     files: { type: 'array', items: { type: 'string' } },
                                     message: { type: 'string', description: 'Commit message' },
-                                    order: { type: 'number', description: 'Execution order' }
+                                    order: { type: 'number', description: 'Execution order' },
+                                    title: { type: 'string', description: 'Imperative PR title' },
+                                    summary: { type: 'string', description: 'Architectural summary of this PR layer' },
+                                    keyChanges: { type: 'array', items: { type: 'string' }, description: 'Key changes / bullet points' },
+                                    verificationSteps: { type: 'string', description: 'Commands to verify this layer in isolation' },
+                                    rationale: { type: 'string', description: 'Why this PR is self-contained and layering rationale' }
                                 },
                                 required: ['name', 'files']
                             }
@@ -904,7 +993,7 @@
         // No executor or no handle — try on-demand spawn.
         // Gate: Agent binary was already checked and is unavailable.
         if (s.agentCheckStatus === 'unavailable') {
-            s.agentConvo.lastError = 'Agent is not installed. Install Agent Code CLI (agent) or Ollama (ollama).';
+            s.agentConvo.lastError = 'No agent command configured. Set --agent-command to the agent CLI executable.';
             s.agentConvo.active = true;
             s.agentConvo.context = context;
             return [s, null];
@@ -1301,11 +1390,7 @@
             };
             // Task 5: Use pinned Agent SessionID proxy for passthrough.
             var agentPaneSession = getInteractivePaneSession(s, 'agent');
-            if (agentPaneSession && typeof agentPaneSession.passthroughAsync === 'function' &&
-                typeof agentPaneSession.isRunning === 'function' &&
-                agentPaneSession.isRunning()) {
-                agentPaneSession.passthroughAsync();
-            } else if (agentPaneSession && typeof agentPaneSession.passthrough === 'function' &&
+            if (agentPaneSession && typeof agentPaneSession.passthrough === 'function' &&
                 typeof agentPaneSession.isRunning === 'function' &&
                 agentPaneSession.isRunning()) {
                 (async function() { await agentPaneSession.passthrough(); })();

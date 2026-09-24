@@ -832,7 +832,9 @@ func TestPickAndPlaceE2E_PauseResume(t *testing.T) {
 	if err := h.SendKey(" "); err != nil {
 		t.Fatalf("Failed to send SPACE to pause: %v", err)
 	}
-	h.WaitForFrames(3)
+	if !h.WaitForOutputContains("PAUSED", 5*time.Second) {
+		t.Fatal("pause indicator did not appear")
+	}
 
 	// Get state while paused
 	statePaused := h.GetDebugState()
@@ -848,17 +850,15 @@ func TestPickAndPlaceE2E_PauseResume(t *testing.T) {
 
 	// Verify tick did not advance significantly during pause
 	tickAdvancementWhilePaused := stateStillPaused.Tick - statePaused.Tick
-	if tickAdvancementWhilePaused < 3 {
-		t.Logf("✓ Pause effective - only %d ticks advanced while paused", tickAdvancementWhilePaused)
-	} else {
-		t.Logf("Note: %d ticks advanced while paused - pause may not be fully blocking", tickAdvancementWhilePaused)
+	if tickAdvancementWhilePaused >= 3 {
+		t.Errorf("simulation advanced %d ticks while paused", tickAdvancementWhilePaused)
 	}
 
 	// Resume (SPACE key again)
 	if err := h.SendKey(" "); err != nil {
 		t.Fatalf("Failed to send SPACE to resume: %v", err)
 	}
-	time.Sleep(500 * time.Millisecond)
+	h.WaitForFrames(3)
 
 	// Get state after resume
 	stateAfterResume := h.GetDebugState()
@@ -867,8 +867,8 @@ func TestPickAndPlaceE2E_PauseResume(t *testing.T) {
 
 	// Tick should advance again after resume
 	tickAdvancementAfterResume := stateAfterResume.Tick - stateStillPaused.Tick
-	if tickAdvancementAfterResume > 2 {
-		t.Logf("✓ Resume effective - %d ticks advanced after resume", tickAdvancementAfterResume)
+	if tickAdvancementAfterResume < 3 {
+		t.Fatalf("simulation advanced only %d ticks after resume", tickAdvancementAfterResume)
 	}
 
 	if err := h.Quit(); err != nil {
@@ -1977,26 +1977,34 @@ func TestPickAndPlace_MousePlace_NonTargetInGoal(t *testing.T) {
 	defer h.Close()
 
 	h.WaitForFrames(3)
-	h.SendKey("m")
-	h.WaitForMode("m", 5*time.Second)
+	if err := h.SendKey("m"); err != nil {
+		t.Fatalf("Failed to switch to manual mode: %v", err)
+	}
+	if !h.WaitForMode("m", 30*time.Second) {
+		t.Fatal("simulator did not enter manual mode")
+	}
 
 	// Navigate actor near the blockade cube at (7, 18)
 	// Use direct clicking to trigger pathfinding instead of keypresses,
 	// as keypresses may not be reliably processed in all environments
-	h.ClickGrid(7, 18)
+	if err := h.ClickGrid(7, 18); err != nil {
+		t.Fatalf("Failed to send navigation click: %v", err)
+	}
+	h.WaitForFrames(1)
 	// Wait for the actor to reach the target location
-	time.Sleep(500 * time.Millisecond)
-	if !h.WaitForManualPathEmpty(3 * time.Second) {
+	if !h.WaitForManualPathEmpty(30 * time.Second) {
 		t.Fatalf("Timeout waiting for actor to reach position near cube at (7, 18)")
 	}
 	// The pathfinding will stop at the blockade wall.
 	// Actor should be at (5, 18) or similar, need to move right to be adjacent to cube.
 	// Send 2 right keys to get to (7, 18) or adjacent position.
-	h.SendKey("d")
-	time.Sleep(200 * time.Millisecond)
-	h.SendKey("d")
-	time.Sleep(200 * time.Millisecond)
-	if !h.WaitForManualPathEmpty(3 * time.Second) {
+	for range 2 {
+		if err := h.SendKey("d"); err != nil {
+			t.Fatalf("Failed to move actor right: %v", err)
+		}
+		h.WaitForFrames(1)
+	}
+	if !h.WaitForManualPathEmpty(30 * time.Second) {
 		t.Fatalf("Timeout waiting for actor to move adjacent to cube")
 	}
 
@@ -2007,8 +2015,13 @@ func TestPickAndPlace_MousePlace_NonTargetInGoal(t *testing.T) {
 
 	// If not already holding a cube, click to pick up the cube at (7, 18)
 	if stateAfterNav.HeldItemID < 100 {
-		h.ClickGrid(7, 18)
-		time.Sleep(500 * time.Millisecond)
+		if err := h.ClickGrid(7, 18); err != nil {
+			t.Fatalf("Failed to send blockade cube click: %v", err)
+		}
+		h.WaitForFrames(1)
+		if h.WaitForHeldItem(100, 30*time.Second) < 100 {
+			t.Fatal("Timed out waiting to pick up the blockade cube")
+		}
 	}
 
 	stateAfterPick := h.GetDebugState()
@@ -2019,55 +2032,18 @@ func TestPickAndPlace_MousePlace_NonTargetInGoal(t *testing.T) {
 	heldId := stateAfterPick.HeldItemID
 	t.Logf("Holding non-target cube id=%d", heldId)
 
-	// [FIXED] Navigate to goal area via mouse click and place at actor's position.
-	// ClickGrid sets a path towards (9, 15); the actor moves there.
-	// We poll until the actor is close, then place at its current position.
-	t.Logf("Moving actor towards (9, 15) via mouse click")
-	if err := h.ClickGrid(9, 15); err != nil {
-		t.Fatalf("Failed to send navigation click: %v", err)
-	}
-	// Wait for the actor to reach near the target.
-	for range 100 {
-		s := h.GetDebugState()
-		if s.ActorY <= 16 && s.ActorX >= 8 {
-			break
-		}
-		h.WaitForFrames(5)
-	}
-
-	stateBeforePlace := h.GetDebugState()
-	t.Logf("Actor before place: (%.1f, %.1f)", stateBeforePlace.ActorX, stateBeforePlace.ActorY)
-
-	// [FIXED] Place cube at actor's position (within PICK_THRESHOLD)
-	// Original test clicked (8, 18) from far distance, may fail threshold check or cell occupancy check
-	clickX := int(stateBeforePlace.ActorX)
-	clickY := int(stateBeforePlace.ActorY)
-	t.Logf("Clicking at (%d, %d) to place non-target cube", clickX, clickY)
-	if err := h.ClickGrid(clickX, clickY); err != nil {
+	t.Log("Placing the non-target cube in the goal area")
+	if err := h.ClickGrid(8, 18); err != nil {
 		t.Fatalf("Failed to send place click: %v", err)
 	}
-
-	// Poll for placement to take effect (timing-resilient).
-	placed := false
-	placeDeadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(placeDeadline) {
-		stateAfter := h.GetDebugState()
-		if stateAfter.HeldItemID == -1 {
-			placed = true
-			t.Logf("✓ Non-target cube placed (heldItemId=-1)")
-			if stateAfter.WinCond == 1 {
-				t.Error("Expected winCond=0 (non-target), but got 1")
-			} else {
-				t.Logf("✓ Win condition not set (correct)")
-			}
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
+	if h.WaitForHeldItem(-1, 30*time.Second) != -1 {
+		state := h.GetDebugState()
+		t.Fatalf("Timed out placing non-target cube; heldItem=%d actor=(%.1f, %.1f)",
+			state.HeldItemID, state.ActorX, state.ActorY)
 	}
-	if !placed {
-		stateAfter := h.GetDebugState()
-		t.Errorf("Expected -1 (cube placed), got %d at actor (%.1f, %.1f)",
-			stateAfter.HeldItemID, stateAfter.ActorX, stateAfter.ActorY)
+	stateAfterPlace := h.GetDebugState()
+	if stateAfterPlace.WinCond != 0 {
+		t.Errorf("Expected winCond=0 after placing non-target cube, got %d", stateAfterPlace.WinCond)
 	}
 }
 
@@ -2376,7 +2352,7 @@ func TestPickAndPlace_MouseNoAction_NoValidPlacement(t *testing.T) {
 	heldId := h.WaitForHeldItem(100, 3*time.Second)
 	if heldId < 100 {
 		stateAfterPick := h.GetDebugState()
-		t.Fatalf("Failed to pick up cube after 3s, held item is %d", stateAfterPick.HeldItemID)
+		t.Fatalf("Failed to pick up cube within 30s, held item is %d", stateAfterPick.HeldItemID)
 	}
 
 	// Navigate to a surrounded position inside blockade ring via mouse click.
@@ -2544,25 +2520,32 @@ func TestPickAndPlace_MouseNoAction_AlreadyHeldCube(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	h.WaitForMode("m", 5*time.Second)
+	if !h.WaitForMode("m", 30*time.Second) {
+		t.Fatal("simulator did not enter manual mode")
+	}
 
-	// Navigate actor near the blockade cube at (7, 18)
+	// Navigate with one acknowledged tick per input so load cannot drop key events.
 	for range 2 {
-		h.SendKey("d") // Move right
-		time.Sleep(200 * time.Millisecond)
+		if err := h.SendKey("d"); err != nil {
+			t.Fatalf("Failed to move actor right: %v", err)
+		}
+		h.WaitForFrames(1)
 	}
-	for range 7 {
-		h.SendKey("s") // Move down
-		time.Sleep(200 * time.Millisecond)
+	for range 6 {
+		if err := h.SendKey("s"); err != nil {
+			t.Fatalf("Failed to move actor down: %v", err)
+		}
+		h.WaitForFrames(1)
 	}
-	h.WaitForFrames(5)
-	time.Sleep(300 * time.Millisecond)
 
 	// Pick up cube 100
-	h.ClickGrid(7, 18) // Cube 100 at (7, 18)
+	if err := h.ClickGrid(7, 18); err != nil { // Cube 100 at (7, 18)
+		t.Fatalf("Failed to click blockade cube: %v", err)
+	}
+	h.WaitForFrames(1)
 
 	// Wait for item to be picked up (poll instead of fixed sleep to avoid flakiness)
-	heldId := h.WaitForHeldItem(100, 3*time.Second)
+	heldId := h.WaitForHeldItem(100, 30*time.Second)
 	if heldId < 100 {
 		stateAfterPick := h.GetDebugState()
 		t.Fatalf("Failed to pick up cube after 3s, held item is %d", stateAfterPick.HeldItemID)
@@ -2574,7 +2557,7 @@ func TestPickAndPlace_MouseNoAction_AlreadyHeldCube(t *testing.T) {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	h.WaitForFrames(1)
 	stateAfter := h.GetDebugState()
 
 	// Verify only one cube is held (can't pick multiple)

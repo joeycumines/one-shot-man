@@ -1,6 +1,8 @@
 package command
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
@@ -1105,5 +1107,31 @@ func TestChunk16_VTerm_Lifecycle_StopPollingWhenNotProcessing(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("stop polling when not processing: %v", raw)
+	}
+}
+
+func TestPrSplitAgentLivePollLifecycle(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	src, err := os.ReadFile("pr_split_16d_tui_handlers_agent.js")
+	if err != nil {
+		t.Fatalf("read agent handlers chunk: %v", err)
+	}
+	s := string(src)
+	// Live refresh runs on tick while the cached strings stop driving the
+	// agent tab; exit detection via isDone still closes split-view and the
+	// agent-screenshot tick ID is retained.
+	if !strings.Contains(s, "prSplit._refreshAgentLiveView()") {
+		t.Error("poll missing live refresh while active")
+	}
+	if !strings.Contains(s, "if (!liveRendering)") {
+		t.Error("poll must skip capture overwrite while live")
+	}
+	if !strings.Contains(s, "tuiMux.isDone") {
+		t.Error("poll missing isDone exit detection")
+	}
+	if !strings.Contains(s, "'agent-screenshot'") {
+		t.Error("poll must retain the agent-screenshot tick ID")
 	}
 }

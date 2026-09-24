@@ -161,9 +161,13 @@ func newHandleObject(ctx context.Context, runtime *goja.Runtime, adapter *gojaev
 	obj := runtime.NewObject()
 	_ = obj.Set("_handle", runtime.ToValue(h))
 
-	// send and resize are generally fast PTY/syscall operations and may stay synchronous.
-	_ = obj.Set("send", func(input string) error {
-		return h.Send(input)
+	// PTY writes can block when the child is busy processing a large paste.
+	// Keep them off the Goja event loop so timers, cancellation, and TUI
+	// rendering continue while the kernel drains the input.
+	_ = obj.Set("send", func(input string) goja.Value {
+		return asyncHandleVoid(ctx, runtime, adapter, loop, func(context.Context) error {
+			return h.Send(input)
+		}, nil)
 	})
 	_ = obj.Set("resize", func(rows, cols int) error {
 		return h.Resize(rows, cols)

@@ -1126,8 +1126,8 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 				}
 			};
 
-			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 200;
-			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
+			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 2000;
+			prSplit.SEND_PROMPT_READY_POLL_MS = 10;
 			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
 			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
 			prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 25;
@@ -1239,8 +1239,7 @@ func TestIntegration_SendToHandle_LargePayload(t *testing.T) {
 				}
 			};
 			// Generate 100KB of text (25K repetitions of "abcd").
-			var largeText = '';
-			for (var i = 0; i < 25000; i++) largeText += 'abcd';
+			var largeText = new Array(25001).join('abcd');
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, largeText);
 			return JSON.stringify({
 				error: result.error,
@@ -1420,21 +1419,6 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 					return { send: function() {} };
 				}
 			};
-			executor.cm = {
-				agentCode: function() { return { name: function() { return 'mock'; } }; },
-				ollama: function() { return { name: function() { return 'mock'; } }; },
-				newRegistry: function() { return mockRegistry; },
-				newMCPInstance: function() {
-					return {
-						configPath: function() { return tmpDir + '/mcp-config.json'; },
-						resultDir: function() { return tmpDir + '/results'; },
-						configDir: function() { return tmpDir; },
-						setResultDir: function() {},
-						writeConfigFile: function() {},
-						close: function() {}
-					};
-				}
-			};
 
 			// Call spawn with mcpConfigPath (mandatory since mcpcallback is sole IPC).
 			var originalSpawn = AgentCodeExecutor.prototype.spawn;
@@ -1521,21 +1505,6 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 					return { send: function() {} };
 				}
 			};
-			executor.cm = {
-				agentCode: function() { return { name: function() { return 'mock'; } }; },
-				ollama: function() { return { name: function() { return 'mock'; } }; },
-				newRegistry: function() { return mockRegistry; },
-				newMCPInstance: function() {
-					return {
-						configPath: function() { return tmpDir + '/mcp-config.json'; },
-						resultDir: function() { return tmpDir + '/results'; },
-						configDir: function() { return tmpDir; },
-						setResultDir: function() {},
-						writeConfigFile: function() {},
-						close: function() {}
-					};
-				}
-			};
 
 			var originalSpawn = AgentCodeExecutor.prototype.spawn;
 			await originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
@@ -1595,21 +1564,6 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 				spawn: function(name, opts) {
 					capturedArgs = opts.args;
 					return { send: function() {} };
-				}
-			};
-			executor.cm = {
-				agentCode: function() { return { name: function() { return 'mock'; } }; },
-				ollama: function() { return { name: function() { return 'mock'; } }; },
-				newRegistry: function() { return mockRegistry; },
-				newMCPInstance: function() {
-					return {
-						configPath: function() { return tmpDir + '/mcp-config.json'; },
-						resultDir: function() { return tmpDir + '/results'; },
-						configDir: function() { return tmpDir; },
-						setResultDir: function() {},
-						writeConfigFile: function() {},
-						close: function() {}
-					};
 				}
 			};
 
@@ -1672,21 +1626,6 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 					return { send: function() {} };
 				}
 			};
-			executor.cm = {
-				agentCode: function() { return { name: function() { return 'mock'; } }; },
-				ollama: function() { return { name: function() { return 'mock'; } }; },
-				newRegistry: function() { return mockRegistry; },
-				newMCPInstance: function() {
-					return {
-						configPath: function() { return tmpDir + '/mcp-config.json'; },
-						resultDir: function() { return tmpDir + '/results'; },
-						configDir: function() { return tmpDir; },
-						setResultDir: function() {},
-						writeConfigFile: function() {},
-						close: function() {}
-					};
-				}
-			};
 
 			var originalSpawn = AgentCodeExecutor.prototype.spawn;
 			await originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
@@ -1743,7 +1682,6 @@ func TestIntegration_AgentCLIFlags_EndToEndToSpawn(t *testing.T) {
 		"--agent-arg", "launch",
 		"--agent-arg", "agent",
 		"--agent-arg", "--verbose",
-		"--agent-model", "sonnet",
 	)
 
 	if cmd.agentCommand != commandPath {
@@ -1751,9 +1689,6 @@ func TestIntegration_AgentCLIFlags_EndToEndToSpawn(t *testing.T) {
 	}
 	if got, want := []string(cmd.agentArgs), []string{"launch", "agent", "--verbose"}; !slices.Equal(got, want) {
 		t.Fatalf("agentArgs = %v, want %v", got, want)
-	}
-	if cmd.agentModel != "sonnet" {
-		t.Fatalf("agentModel = %q, want sonnet", cmd.agentModel)
 	}
 
 	rawConfig, err := evalJS(`JSON.stringify(prSplitConfig)`)
@@ -1764,7 +1699,6 @@ func TestIntegration_AgentCLIFlags_EndToEndToSpawn(t *testing.T) {
 	var cfgOut struct {
 		AgentCommand string   `json:"agentCommand"`
 		AgentArgs    []string `json:"agentArgs"`
-		AgentModel   string   `json:"agentModel"`
 	}
 	if err := json.Unmarshal([]byte(rawConfig.(string)), &cfgOut); err != nil {
 		t.Fatalf("parse prSplitConfig: %v", err)
@@ -1775,8 +1709,15 @@ func TestIntegration_AgentCLIFlags_EndToEndToSpawn(t *testing.T) {
 	if !slices.Equal(cfgOut.AgentArgs, []string{"launch", "agent", "--verbose"}) {
 		t.Fatalf("prSplitConfig.agentArgs = %v, want [launch agent --verbose]", cfgOut.AgentArgs)
 	}
-	if cfgOut.AgentModel != "sonnet" {
-		t.Fatalf("prSplitConfig.agentModel = %q, want sonnet", cfgOut.AgentModel)
+	var cfgKeys map[string]any
+	if err := json.Unmarshal([]byte(rawConfig.(string)), &cfgKeys); err != nil {
+		t.Fatalf("parse prSplitConfig keys: %v", err)
+	}
+	if _, ok := cfgKeys["agentModel"]; ok {
+		t.Fatalf("prSplitConfig carries removed agentModel key: %v", cfgKeys["agentModel"])
+	}
+	if _, ok := cfgKeys["agentConfigDir"]; ok {
+		t.Fatalf("prSplitConfig carries removed agentConfigDir key: %v", cfgKeys["agentConfigDir"])
 	}
 
 	rawSpawn, err := evalJS(`(async function() {
@@ -1820,33 +1761,6 @@ func TestIntegration_AgentCLIFlags_EndToEndToSpawn(t *testing.T) {
 			throw new Error('unexpected exec.spawn call during resolveAsync: ' + cmd + ' ' + JSON.stringify(args || []));
 		};
 
-		executor.cm = {
-			agentCode: function(opts) {
-				providerCommand = opts && opts.command || '';
-				return { name: function() { return 'mock-agent'; }, opts: opts };
-			},
-			ollama: function(opts) {
-				return { name: function() { return 'mock-ollama'; }, opts: opts };
-			},
-			newRegistry: function() {
-				return {
-					register: function() {},
-					spawn: function(name, opts) {
-						captured = {
-							name: name,
-							args: opts.args,
-							model: opts.model
-						};
-						return {
-							send: function() {},
-							isAlive: function() { return true; },
-							receive: function() { return ''; },
-							close: function() {}
-						};
-					}
-				};
-			}
-		};
 
 		var result;
 		try {
@@ -1962,21 +1876,6 @@ func TestIntegration_SpawnHealthCheck_DeadProcess(t *testing.T) {
 					};
 				}
 			};
-			executor.cm = {
-				agentCode: function() { return { name: function() { return 'mock'; } }; },
-				ollama: function() { return { name: function() { return 'mock'; } }; },
-				newRegistry: function() { return mockRegistry; },
-				newMCPInstance: function() {
-					return {
-						configPath: function() { return tmpDir + '/mcp-config.json'; },
-						resultDir: function() { return tmpDir + '/results'; },
-						configDir: function() { return tmpDir; },
-						setResultDir: function() {},
-						writeConfigFile: function() {},
-						close: function() {}
-					};
-				}
-			};
 
 			var originalSpawn = AgentCodeExecutor.prototype.spawn;
 			var result = await originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
@@ -2041,21 +1940,6 @@ func TestIntegration_SpawnHealthCheck_AliveProcess(t *testing.T) {
 						receive: function() { return ''; },
 						close: function() {},
 						send: function() {}
-					};
-				}
-			};
-			executor.cm = {
-				agentCode: function() { return { name: function() { return 'mock'; } }; },
-				ollama: function() { return { name: function() { return 'mock'; } }; },
-				newRegistry: function() { return mockRegistry; },
-				newMCPInstance: function() {
-					return {
-						configPath: function() { return tmpDir + '/mcp-config.json'; },
-						resultDir: function() { return tmpDir + '/results'; },
-						configDir: function() { return tmpDir; },
-						setResultDir: function() {},
-						writeConfigFile: function() {},
-						close: function() {}
 					};
 				}
 			};
@@ -2446,9 +2330,6 @@ func TestIntegration_AutoSplitWithAgent_Pipeline(t *testing.T) {
 		"agentArgs":     agentArgsList,
 		"timeoutMs":     int64(5 * 60 * 1000), // 5 minutes per step (JS layer)
 		"_evalTimeout":  10 * time.Minute,     // T37: Go-layer evalJS timeout
-	}
-	if integrationModel != "" {
-		configOverrides["agentModel"] = integrationModel
 	}
 
 	stdoutBuf, _, evalJS, _ := loadPrSplitEngineWithEval(t, configOverrides)
@@ -3222,21 +3103,6 @@ func TestAgentCodeExecutor_SpawnHealthCheck_DeadProcess(t *testing.T) {
 				spawn: function(name, opts) { return mockHandle; }
 			};
 
-			executor.cm = {
-				agentCode: function() { return { name: function() { return 'mock-provider'; } }; },
-				ollama: function() { return { name: function() { return 'mock-provider'; } }; },
-				newRegistry: function() { return mockRegistry; },
-				newMCPInstance: function() {
-					return {
-						configPath: function() { return tmpDir + '/mcp.json'; },
-						resultDir: function() { return tmpDir + '/results'; },
-						configDir: function() { return tmpDir; },
-						setResultDir: function() {},
-						writeConfigFile: function() {},
-						close: function() {}
-					};
-				}
-			};
 
 			var originalSpawn = AgentCodeExecutor.prototype.spawn;
 			var result = await originalSpawn.call(executor, null, {

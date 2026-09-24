@@ -12,7 +12,8 @@ import (
 
 func setupModule(t *testing.T) (*goja.Runtime, *goja.Object) {
 	t.Helper()
-	manager := NewManager()
+	manager, err := NewManager()
+	require.NoError(t, err)
 	vm := goja.New()
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))

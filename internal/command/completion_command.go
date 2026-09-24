@@ -137,7 +137,7 @@ _osm_completion() {
             return 0
             ;;
         pr-split)
-            COMPREPLY=($(compgen -W "--base --strategy --max --prefix --verify --dry-run --json --interactive --test --session --store --log-level --log-file --log-buffer --agent-command --agent-arg --agent-model --agent-config-dir --agent-env" -- ${cur}))
+            COMPREPLY=($(compgen -W "--base --strategy --max --prefix --verify --dry-run --json --interactive --test --session --store --log-level --log-file --log-buffer --agent-command --agent-arg --agent-env" -- ${cur}))
             return 0
             ;;
         --strategy)
@@ -261,8 +261,6 @@ _osm() {
                         '--log-buffer[Log buffer size]:size:' \
                         '--agent-command[Agent binary path]:command:_command_names' \
                         '--agent-arg[Additional Agent CLI argument (repeatable)]:arg:' \
-                        '--agent-model[Model name]:model:' \
-                        '--agent-config-dir[Agent config directory]:dir:_directories' \
                         '--agent-env[Extra environment variables]:env:'
                     ;;
                 help)
@@ -366,8 +364,6 @@ complete -c osm -n '__fish_seen_subcommand_from pr-split' -l log-file -d 'Log ou
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l log-buffer -d 'Log buffer size'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l agent-command -d 'Agent binary path'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l agent-arg -d 'Additional Agent CLI argument (repeatable)'
-complete -c osm -n '__fish_seen_subcommand_from pr-split' -l agent-model -d 'Model name'
-complete -c osm -n '__fish_seen_subcommand_from pr-split' -l agent-config-dir -d 'Agent config directory'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l agent-env -d 'Extra environment variables'
 
 # Completion for 'help' subcommand (command names)

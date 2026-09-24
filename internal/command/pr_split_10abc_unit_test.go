@@ -223,10 +223,6 @@ func TestChunk10a_AUTOMATED_DEFAULTS_NewKeys(t *testing.T) {
 	// T410 keys (orchestrator extraction)
 	newKeys := []string{
 		`"minPollIntervalMs":50`,
-		`"launcherPollMs":200`,
-		`"launcherTimeoutMs":10000`,
-		`"launcherStableNeed":3`,
-		`"launcherPostDismissMs":500`,
 		`"planPollTimeoutMs":5000`,
 		`"planPollCheckIntervalMs":1000`,
 		// T411 keys (09/10c/15b extraction)

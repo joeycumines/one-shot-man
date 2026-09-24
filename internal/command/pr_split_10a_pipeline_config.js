@@ -33,6 +33,12 @@
     //      → mcpCallbackObj.waitForAsync(toolName, timeoutMs, opts)
     //      → resolveConflictsWithAgent(..., { resolveWallClockTimeoutMs })
     //      → verifySplit(..., { verifyTimeoutMs })
+    //
+    //   SCOPE: prSplitConfig.timeoutMs fans out to classifyTimeoutMs,
+    //   planTimeoutMs, resolveTimeoutMs, and verifyTimeoutMs only. It bounds
+    //   waitForAsync MCP waits and the verify wrapper. It does not bound the
+    //   spawned agent PTY lifetime, which is governed by pipeline, wall-clock,
+    //   and watchdog timers plus explicit user cancel.
     var AUTOMATED_DEFAULTS = {
         classifyTimeoutMs: 300000,  // 5 minutes for classification (generous for LLM analysis)
         planTimeoutMs: 300000,      // 5 minutes for plan generation
@@ -53,10 +59,6 @@
         resolveBackoffBaseMs: 2000,     // Exponential backoff base interval between retries
         resolveBackoffCapMs: 30000,     // Maximum backoff cap (30 seconds)
         spawnHealthCheckDelayMs: 300,   // Post-spawn delay before isAlive() check
-        launcherPollMs: 200,        // Ollama launcher menu poll interval
-        launcherTimeoutMs: 10000,   // Max wait for launcher menu detection
-        launcherStableNeed: 3,      // Stable polls before assuming no menu
-        launcherPostDismissMs: 500, // Wait after sending dismiss/navigate keys
         planPollTimeoutMs: 5000,    // Short poll for Agent-generated plan
         planPollCheckIntervalMs: 1000 // Check interval for plan poll
     };
@@ -88,6 +90,10 @@
     // Wait for Agent prompt marker before sending text. This prevents
     // early writes into startup/setup screens where input is not ready.
     var SEND_PROMPT_READY_TIMEOUT_MS = 10000;
+    // OpenCode may spend longer initializing its interactive TUI (provider
+    // loading, project scan, and first-run state) before drawing the composer.
+    // Keep this provider-specific so generic CLIs retain the shorter bound.
+    var SEND_OPENCODE_PROMPT_READY_TIMEOUT_MS = 60000;
     var SEND_PROMPT_READY_POLL_MS = 100;
     var SEND_PROMPT_READY_STABLE_SAMPLES = 2;
 
@@ -115,6 +121,7 @@
             submitAckStableSamples: resolveNumber(prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES, SEND_SUBMIT_ACK_STABLE_SAMPLES, 1),
             submitMaxNewlineAttempts: resolveNumber(prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, 1),
             promptReadyTimeoutMs: resolveNumber(prSplit.SEND_PROMPT_READY_TIMEOUT_MS, SEND_PROMPT_READY_TIMEOUT_MS, 1),
+            openCodePromptReadyTimeoutMs: resolveNumber(prSplit.SEND_OPENCODE_PROMPT_READY_TIMEOUT_MS, SEND_OPENCODE_PROMPT_READY_TIMEOUT_MS, 1),
             promptReadyPollMs: resolveNumber(prSplit.SEND_PROMPT_READY_POLL_MS, SEND_PROMPT_READY_POLL_MS, 1),
             promptReadyStableSamples: resolveNumber(prSplit.SEND_PROMPT_READY_STABLE_SAMPLES, SEND_PROMPT_READY_STABLE_SAMPLES, 1)
         };
@@ -136,8 +143,41 @@
     // (category→{files: [...], description: "..."}).
     // Accepts both new format (array of {name, description, files}) and
     // legacy format ({file: category} map) for backwards compatibility.
-    function classificationToGroups(classification) {
-        var groups = {};
+    function classificationToGroups(classification, preserveDuplicates) {
+        var groups = Object.create(null);
+        var assignedFiles = Object.create(null);
+
+        function addCategory(name, files, description, title, summary, keyChanges, verificationSteps, rationale) {
+            if (!name) return;
+            if (!Object.prototype.hasOwnProperty.call(groups, name)) {
+                var groupObj = {
+                    files: [],
+                    description: description || ''
+                };
+                if (title) groupObj.title = title;
+                if (summary) groupObj.summary = summary;
+                if (keyChanges) groupObj.keyChanges = keyChanges;
+                if (verificationSteps) groupObj.verificationSteps = verificationSteps;
+                if (rationale) groupObj.rationale = rationale;
+                groups[name] = groupObj;
+            } else {
+                if (!groups[name].description && description) groups[name].description = description;
+                if (!groups[name].title && title) groups[name].title = title;
+                if (!groups[name].summary && summary) groups[name].summary = summary;
+                if (!groups[name].keyChanges && keyChanges) groups[name].keyChanges = keyChanges;
+                if (!groups[name].verificationSteps && verificationSteps) groups[name].verificationSteps = verificationSteps;
+                if (!groups[name].rationale && rationale) groups[name].rationale = rationale;
+            }
+            if (!Array.isArray(files)) return;
+            for (var fi = 0; fi < files.length; fi++) {
+                var file = files[fi];
+                if (typeof file !== 'string' || !file) continue;
+                if (!preserveDuplicates && assignedFiles[file]) continue;
+                assignedFiles[file] = true;
+                groups[name].files.push(file);
+            }
+        }
+
         if (Array.isArray(classification)) {
             for (var i = 0; i < classification.length; i++) {
                 var cat = classification[i];
@@ -147,43 +187,41 @@
                 if (typeof cat === 'string') continue;
                 // Object with a name field — standard format
                 if (typeof cat === 'object' && cat.name) {
-                    groups[cat.name] = {
-                        files: cat.files || [],
-                        description: cat.description || ''
-                    };
+                    addCategory(cat.name, cat.files, cat.description, cat.title, cat.summary, cat.keyChanges, cat.verificationSteps, cat.rationale);
                     continue;
                 }
                 // Object without name but with files — synthetic group
                 // Only synthetic if name doesn't exist (undefined/null); empty string '' means skip
                 if (typeof cat === 'object' && cat.name !== '' && !cat.name && cat.files) {
-                    groups['group' + (i + 1)] = {
-                        files: Array.isArray(cat.files) ? cat.files : [cat.files],
-                        description: cat.description || ''
-                    };
+                    addCategory('group' + (i + 1),
+                        Array.isArray(cat.files) ? cat.files : [cat.files],
+                        cat.description, cat.title, cat.summary, cat.keyChanges, cat.verificationSteps, cat.rationale);
                     continue;
                 }
                 // Plain array — treat as a list of files in a synthetic group
                 if (Array.isArray(cat)) {
-                    groups['group' + (i + 1)] = { files: cat, description: '' };
+                    addCategory('group' + (i + 1), cat, '');
                     continue;
                 }
             }
         } else if (classification && typeof classification === 'object') {
             for (var path in classification) {
                 var catName = classification[path];
-                if (!groups[catName]) groups[catName] = { files: [], description: '' };
-                groups[catName].files.push(path);
+                addCategory(catName, [path], '');
             }
         }
         return groups;
     }
 
     // --- cleanupExecutor — resource cleanup ---
-
     // Closes the Agent executor and cleans up resources. After close, the
     // session model (isDone) signals the pipeline's aliveCheckFn and the
-    // TUI health poll — no explicit detach needed.
-    function cleanupExecutor() {
+    // TUI health poll — no explicit detach needed. Async: awaits the handle
+    // close (TrackPromise Promise); every async call site awaits it. The two
+    // sync discard paths (16e d-key, 16f mouse) plus the wizard-exit path
+    // (16c confirmCancel) fire-and-forget the same chain because a sync
+    // BubbleTea update cannot await; process exit owns teardown there.
+    async function cleanupExecutor() {
         var isForceCancelled = prSplit.isForceCancelled;
         var agentExec = prSplit._state.agentExecutor;
         var forceNow = false;
@@ -201,7 +239,7 @@
             }
             log.printf('auto-split cleanupExecutor: closing Agent executor');
             try {
-                agentExec.close();
+                await agentExec.close();
                 log.printf('auto-split cleanupExecutor: Agent executor closed');
             } catch (e) {
                 log.printf('auto-split cleanupExecutor: Agent close error: %s', e.message || String(e));
@@ -252,6 +290,7 @@
     prSplit.SEND_SUBMIT_ACK_POLL_MS = SEND_SUBMIT_ACK_POLL_MS;
     prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = SEND_SUBMIT_ACK_STABLE_SAMPLES;
     prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS;
+    prSplit.SEND_OPENCODE_PROMPT_READY_TIMEOUT_MS = SEND_OPENCODE_PROMPT_READY_TIMEOUT_MS;
 
     // Cross-chunk exports — utility functions.
     prSplit._resolveSendConfig = resolveSendConfig;

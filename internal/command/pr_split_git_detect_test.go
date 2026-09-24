@@ -241,8 +241,6 @@ func TestValidateGitRepo_BareRepo(t *testing.T) {
 		}
 	}
 	git("init", "--bare")
-	git("config", "user.email", "test@test.com")
-	git("config", "user.name", "Test User")
 
 	cmd := &PrSplitCommand{
 		baseBranch: "main",
@@ -285,8 +283,6 @@ func TestValidateGitRepo_RemoteBaseBranch(t *testing.T) {
 		}
 	}
 	git(remoteDir, "init", "--bare")
-	git(remoteDir, "config", "user.email", "test@test.com")
-	git(remoteDir, "config", "user.name", "Test User")
 
 	// Add remote and push.
 	git(localDir, "remote", "add", "origin", remoteDir)

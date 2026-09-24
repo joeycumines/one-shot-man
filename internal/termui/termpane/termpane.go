@@ -178,6 +178,11 @@ func (m *Model) bridgeEvents() {
 			case m.outputCh <- evt:
 			case <-m.done:
 				return
+			default:
+				// A pane may be embedded as a passive view without a
+				// BubbleTea model consuming outputCh. Never let that
+				// backpressure the bridge: the next consumed event refreshes
+				// the current snapshot from the manager.
 			}
 		}
 	}
@@ -272,7 +277,7 @@ func (m *Model) forwardKey(msg tea.KeyPressMsg) {
 			return
 		}
 	}
-	if err := m.manager.Input([]byte(seq)); err != nil {
+	if err := m.manager.InputSession(m.sessionID, []byte(seq)); err != nil {
 		slog.Debug("termpane key forward failed", "key", keyStr, "error", err)
 	}
 }
@@ -318,7 +323,7 @@ func (m *Model) forwardMouse(msg tea.MouseMsg) {
 	if !ok {
 		return
 	}
-	if err := m.manager.Input([]byte(seq)); err != nil {
+	if err := m.manager.InputSession(m.sessionID, []byte(seq)); err != nil {
 		slog.Debug("termpane mouse forward failed", "error", err)
 	}
 }

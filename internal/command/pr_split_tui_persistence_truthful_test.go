@@ -346,7 +346,7 @@ func TestPersistence_ConfirmCancelRemovesRealStateFile(t *testing.T) {
 		SavedAt:  time.Now(),
 	})
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var origUnwire = prSplit._unwireAgentLifecycleEvents;
 		var unwireCalled = false;
 		prSplit._unwireAgentLifecycleEvents = function() { unwireCalled = true; };
@@ -357,11 +357,16 @@ func TestPersistence_ConfirmCancelRemovesRealStateFile(t *testing.T) {
 
 		var r = update({ type: 'Key', key: 'enter' }, s);
 		s = r[0];
+		for (var i = 0; i < 20 && !s.wizardQuitSent; i++) {
+			await new Promise(function(resolve) { setTimeout(resolve, 5); });
+		}
+
 		prSplit._unwireAgentLifecycleEvents = origUnwire;
 
 		var errors = [];
 		if (!unwireCalled) errors.push('unwireAgentLifecycleEvents should be called on quit');
 		if (s.wizardState !== 'CANCELLED') errors.push('wizardState should be CANCELLED, got ' + s.wizardState);
+		if (!s.wizardQuitSent) errors.push('wizardQuitSent should wait for cleanup completion');
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 	})()`)
 	if err != nil {

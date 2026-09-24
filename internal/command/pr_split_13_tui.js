@@ -362,30 +362,15 @@
                     tuiMux.input(typeof data === 'string' ? data : String(data));
                 } finally {
                     if (prevID && prevID !== sessionID) {
-                        try { tuiMux.activate(prevID); } catch (e) {}
+                        try { tuiMux.activate(prevID); } catch (e) {
+                            log.debug('agent proxy write restore failed', { prevId: prevID, error: e.message || String(e) });
+                        }
                     }
                 }
-            },
-            writeAsync: function(data) {
-                var prevID = tuiMux.activeID();
-                return tuiMux.activateAsync(sessionID).then(function() {
-                    return tuiMux.inputAsync(typeof data === 'string' ? data : String(data));
-                }).then(function() {
-                    if (prevID && prevID !== sessionID) {
-                        return tuiMux.activateAsync(prevID).catch(function(e) { log.debug('restore prev session failed', { prevID: prevID, error: e.message || String(e) }); });
-                    }
-                }).catch(function(e) {
-                    log.debug('agentProxy.writeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
-                });
             },
             resize: function(rows, cols) {
                 // SessionManager.Resize broadcasts to ALL managed sessions.
                 tuiMux.resize(rows, cols);
-            },
-            resizeAsync: function(rows, cols) {
-                return tuiMux.resizeAsync(rows, cols).catch(function(e) {
-                    log.debug('agentProxy.resizeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
-                });
             },
             passthrough: function() {
                 // Task 5: Activate Agent session in SessionManager, enter
@@ -400,26 +385,10 @@
                 var result = tuiMux.switchTo();
                 if (prevID && prevID !== sessionID) {
                     try { tuiMux.activate(prevID); } catch (e) {
-                        log.debug('agentProxy.passthrough: restore failed', { prevID: prevID, error: e.message || String(e) });
+                        log.debug('agent proxy passthrough restore failed', { prevId: prevID, error: e.message || String(e) });
                     }
                 }
                 return result;
-            },
-            passthroughAsync: function() {
-                var prevID = tuiMux.activeID();
-                return tuiMux.activateAsync(sessionID).then(function() {
-                    return tuiMux.switchToAsync();
-                }).then(function(result) {
-                    if (prevID && prevID !== sessionID) {
-                        return tuiMux.activateAsync(prevID).catch(function(e) {
-                            log.debug('agentProxy.passthroughAsync: restore failed', { prevID: prevID, error: e.message || String(e) });
-                        }).then(function() { return result; });
-                    }
-                    return result;
-                }).catch(function(e) {
-                    log.debug('agentProxy.passthroughAsync: activate failed', { sessionID: sessionID, error: e.message || String(e) });
-                    return { skipped: true, reason: 'activate_failed' };
-                });
             },
             target: function() { return { name: 'agent', kind: 'pty' }; },
             setTarget: function() { /* no-op: Agent target is fixed */ }
@@ -439,7 +408,10 @@
     function getInteractivePaneSession(s, tab) {
         if (!s && !tab) return null;
         var pane = tab || (s && s.splitViewTab) || 'agent';
-        if (pane === 'agent') return getAgentPaneSession();
+        if (pane === 'agent') {
+            if (s && s.activeAgentSession) return s.activeAgentSession;
+            return getAgentPaneSession();
+        }
         if (pane === 'verify') {
             if (!s) return null;
             var val = s.activeVerifySession;
@@ -505,26 +477,10 @@
                 var result = tuiMux.switchTo();
                 if (prevID && prevID !== sessionID) {
                     try { tuiMux.activate(prevID); } catch (e) {
-                        log.debug('verifyProxy.passthrough: re-activate failed', { prevID: prevID, error: e.message || String(e) });
+                        log.debug('verify proxy passthrough restore failed', { prevId: prevID, error: e.message || String(e) });
                     }
                 }
                 return result;
-            },
-            passthroughAsync: function() {
-                var prevID = tuiMux.activeID();
-                return tuiMux.activateAsync(sessionID).then(function() {
-                    return tuiMux.switchToAsync();
-                }).then(function(result) {
-                    if (prevID && prevID !== sessionID) {
-                        return tuiMux.activateAsync(prevID).catch(function(e) {
-                            log.debug('verifyProxy.passthroughAsync: re-activate failed', { prevID: prevID, error: e.message || String(e) });
-                        }).then(function() { return result; });
-                    }
-                    return result;
-                }).catch(function(e) {
-                    log.debug('verifyProxy.passthroughAsync: activate failed', { sessionID: sessionID, error: e.message || String(e) });
-                    return { skipped: true, reason: 'activate_failed' };
-                });
             },
             interrupt: function() { if (captureRef && captureRef.interrupt) captureRef.interrupt(); },
             kill: function() { if (captureRef && captureRef.kill) captureRef.kill(); },
@@ -538,30 +494,15 @@
                     tuiMux.input(typeof data === 'string' ? data : String(data));
                 } finally {
                     if (prevID && prevID !== sessionID) {
-                        try { tuiMux.activate(prevID); } catch (e) {}
+                        try { tuiMux.activate(prevID); } catch (e) {
+                            log.debug('verify proxy write restore failed', { prevId: prevID, error: e.message || String(e) });
+                        }
                     }
                 }
-            },
-            writeAsync: function(data) {
-                var prevID = tuiMux.activeID();
-                return tuiMux.activateAsync(sessionID).then(function() {
-                    return tuiMux.inputAsync(typeof data === 'string' ? data : String(data));
-                }).then(function() {
-                    if (prevID && prevID !== sessionID) {
-                        return tuiMux.activateAsync(prevID).catch(function(e) { log.debug('restore prev session failed', { prevID: prevID, error: e.message || String(e) }); });
-                    }
-                }).catch(function(e) {
-                    log.debug('verifyProxy.writeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
-                });
             },
             resize: function(rows, cols) {
                 tuiMux.resize(rows, cols);
             },
-            resizeAsync: function(rows, cols) {
-                return tuiMux.resizeAsync(rows, cols).catch(function(e) {
-                    log.debug('verifyProxy.resizeAsync failed', { sessionID: sessionID, error: e.message || String(e) });
-                });
-            }
         };
     }
 

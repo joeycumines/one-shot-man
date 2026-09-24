@@ -29,30 +29,23 @@
         var runtime = prSplit.runtime;
         var lines = [];
 
-        // Repository info.
-        lines.push(styles.bold().render('Repository'));
-        lines.push('  ' + styles.fieldValue().render(runtime.dir || '.'));
-        lines.push('');
-
-        // Config form (non-editable display for now, wizard sets these).
+        // Repository and branch configuration.
+        lines.push(styles.bold().render('Repository & Branch Settings'));
         var srcBranch = (st.analysisCache && st.analysisCache.currentBranch) || '(auto-detect)';
-        var srcLabel = styles.bold().render('Source Branch');
-        var indent = lipgloss.newStyle().paddingLeft(2);
-        var srcField = styles.activeCard().width(
-            Math.max(20, (s.width || 80) - lipgloss.width(srcLabel) - 6)
-        ).render(styles.fieldValue().render(srcBranch));
-        lines.push(indent.render(lipgloss.joinHorizontal(lipgloss.Left, srcLabel, '  ', srcField)));
-        lines.push('');
+        var repoDir = runtime.dir || '.';
+        var targetBranch = runtime.baseBranch || 'main';
 
-        var targetLabel = styles.bold().render('Target Branch');
-        var targetField = styles.activeCard().width(
-            Math.max(20, (s.width || 80) - lipgloss.width(targetLabel) - 6)
-        ).render(styles.fieldValue().render(runtime.baseBranch || 'main'));
-        lines.push(indent.render(lipgloss.joinHorizontal(lipgloss.Left, targetLabel, '  ', targetField)));
+        var cardWidth = Math.min(74, Math.max(30, (s.width || 80) - 6));
+        var configCardLines = [
+            '  ' + styles.dim().render('Repository:    ') + styles.fieldValue().render(repoDir),
+            '  ' + styles.dim().render('Source Branch: ') + styles.fieldValue().render(srcBranch),
+            '  ' + styles.dim().render('Target Branch: ') + styles.fieldValue().render(targetBranch)
+        ];
+        lines.push(styles.inactiveCard().width(cardWidth).render(configCardLines.join('\n')));
         lines.push('');
 
         // Strategy selection.
-        lines.push(styles.bold().render('Strategy'));
+        lines.push(styles.bold().render('Split Strategy'));
         var strategies = ['auto', 'heuristic', 'directory'];
         var currentMode = runtime.mode || 'heuristic';
         // Focus: indices 0-2 map to strategies in CONFIG screen.
@@ -61,9 +54,11 @@
             var strat = strategies[si];
             var selected = (strat === currentMode);
             var isFocused = (focusIdx === si);
-            var bullet = selected ? styles.primaryButton().render(' \u25cf ') : '  \u25cb ';
+            var bullet = selected ? styles.primaryButton().render(' \u25cf ') : styles.dim().render('   \u25cb   ');
             var focusPointer = isFocused ? styles.statusActive().render('\u25b8 ') : '  ';
-            var label = styles.label().render(strat.charAt(0).toUpperCase() + strat.slice(1));
+            var stratLabel = strat.charAt(0).toUpperCase() + strat.slice(1);
+            var desc = strat === 'auto' ? ' (AI-assisted plan generation)' : (strat === 'heuristic' ? ' (dependency & coupling analysis)' : ' (directory hierarchy clustering)');
+            var label = (selected ? styles.bold().render(stratLabel) : styles.label().render(stratLabel)) + styles.dim().render(desc);
             var stratId = 'strategy-' + strat;
             lines.push(focusPointer + zone.mark(stratId, bullet + ' ' + label));
         }
@@ -99,8 +94,8 @@
         if (currentMode === 'auto' || s.agentCheckStatus) {
             var testFocused = (focusedElemId === 'test-agent');
             var testBtnStyle = testFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
-            lines.push('  ' + zone.mark('test-agent',
-                testBtnStyle.render(' Test Connection ')));
+            lines.push(zone.mark('test-agent',
+                testBtnStyle.marginLeft(2).render(' Test Connection ')));
         }
         lines.push('');
 
@@ -147,7 +142,7 @@
                     displayVal = styles.fieldValue().render(fd.value);
                 }
                 lines.push(fieldPrefix + zone.mark(fd.id,
-                    padLabel(fd.label) + ':  ' + displayVal));
+                    styles.label().render(padLabel(fd.label) + ':') + '  ' + displayVal));
             }
 
             // Dry run checkbox with zone mark and focus indicator.
@@ -156,7 +151,7 @@
             var dryCheck = runtime.dryRun ? '\u2611' : '\u2610';
             var dryLabel = dryFocused
                 ? styles.focusedButton().render(' ' + dryCheck + ' Dry run ')
-                : dryCheck + ' Dry run';
+                : styles.label().render(dryCheck + ' Dry run');
             lines.push(dryPrefix + zone.mark('config-dryRun', dryLabel));
         } else {
             lines.push(advPrefix + zone.mark('toggle-advanced',
@@ -282,8 +277,9 @@
         var plan = st.planCache;
         var mode = layoutMode(s);
         lines.push(styles.bold().render('Split Plan Overview'));
-        lines.push('  Splits: ' + styles.fieldValue().render(String(plan.splits.length)));
-        lines.push('  Base: ' + styles.fieldValue().render(plan.baseBranch || 'main'));
+        lines.push('  ' + styles.label().render('Splits:') + ' ' + styles.fieldValue().render(String(plan.splits.length)));
+        lines.push('  ' + styles.label().render('Base:') + '   ' + styles.fieldValue().render(plan.baseBranch || 'main'));
+        lines.push('  ' + styles.dim().render('x: execute plan \u00b7 e: edit plan \u00b7 Tab: navigate'));
 
         // T099: Show amber warning when auto-strategy selection has low
         // confidence (score gap < 0.15 between winner and runner-up).
@@ -321,15 +317,19 @@
                 var split = plan.splits[i];
                 var isSelected = (i === selectedIdx);
                 var isFocused = (focusIdx === i);
-                var bullet = isSelected ? styles.primaryButton().render(' \u25b6 ')
-                    : '  ' + (i + 1) + '.';
-                var nameStr = truncate(split.name || 'split-' + i, leftW - 8);
+                var numStr = (i + 1 < 10 ? ' ' : '') + (i + 1) + '.';
+                var prefix = isSelected
+                    ? styles.statusActive().render('\u25b8 ' + numStr + ' ')
+                    : styles.dim().render('  ' + numStr + ' ');
+                var filesRaw = ' (' + split.files.length + ')';
+                var maxNameW = Math.max(8, leftW - 6 - filesRaw.length);
+                var nameStr = truncate(split.name || 'split-' + i, maxNameW);
                 var label = isFocused
                     ? styles.statusActive().render(nameStr)
                     : (isSelected ? styles.bold().render(nameStr) : styles.label().render(nameStr));
-                var filesStr = styles.dim().render(' (' + split.files.length + ')');
+                var filesStr = styles.dim().render(filesRaw);
                 var cardId = 'split-card-' + i;
-                leftLines.push(zone.mark(cardId, bullet + ' ' + label + filesStr));
+                leftLines.push(zone.mark(cardId, prefix + label + filesStr));
             }
 
             // Right: detail for selected split.
@@ -338,6 +338,15 @@
                 rightLines.push(styles.bold().render(sel.name || 'split-' + selectedIdx));
                 if (sel.message) {
                     rightLines.push(styles.dim().render(sel.message));
+                }
+                if (sel.title && sel.title !== sel.message) {
+                    rightLines.push(styles.label().render('Title: ') + truncate(sel.title, rightW - 8));
+                }
+                if (sel.summary) {
+                    rightLines.push(styles.dim().render('Summary: ' + truncate(sel.summary, rightW - 10)));
+                }
+                if (sel.rationale) {
+                    rightLines.push(styles.dim().render('Rationale: ' + truncate(sel.rationale, rightW - 12)));
                 }
                 rightLines.push(styles.fieldValue().render(
                     sel.files.length + ' file' + (sel.files.length !== 1 ? 's' : '')));
@@ -372,6 +381,12 @@
                 cardContent += styles.bold().render(
                     (i + 1) + '. ' + (split.name || 'split-' + i)) + '\n';
                 cardContent += styles.dim().render(split.message || '') + '\n';
+                if (split.title && split.title !== split.message) {
+                    cardContent += styles.dim().render('Title: ' + split.title) + '\n';
+                }
+                if (isSelected && split.summary) {
+                    cardContent += styles.dim().render('Summary: ' + split.summary) + '\n';
+                }
                 cardContent += styles.fieldValue().render(
                     split.files.length + ' file' + (split.files.length !== 1 ? 's' : ''));
 
@@ -426,11 +441,11 @@
         lines.push(styles.bold().render('Edit Split Plan'));
         var compact = layoutMode(s) === 'compact';
         if (compact) {
-            lines.push(styles.dim().render('Tab: splits  j/k: files  Space: check  e: rename  Shift+\u2191\u2193: move'));
+            lines.push(styles.dim().render('Tab: splits \u00b7 j/k: files \u00b7 Space: check \u00b7 m: move \u00b7 r: rename \u00b7 g: merge'));
         } else {
             lines.push(styles.dim().render(
-                'Tab: cycle splits  j/k: select file  Space: check  ' +
-                'e: rename split  Shift+\u2191/\u2193: reorder'));
+                'Tab: cycle splits \u00b7 j/k: select file \u00b7 Space: check \u00b7 ' +
+                'm: move file \u00b7 r: rename \u00b7 g: merge \u00b7 Shift+\u2191/\u2193: reorder'));
         }
         lines.push('');
 
@@ -455,9 +470,10 @@
             var isSelected = (i === selectedIdx);
 
             // Split header: badge + name (or inline edit) + file count.
+            var numStr = (i + 1 < 10 ? ' ' : '') + (i + 1) + '.';
             var badge = isSelected
-                ? styles.primaryButton().render(' \u25b6 ')
-                : '  ' + (i + 1) + '. ';
+                ? styles.statusActive().render('\u25b8 ' + numStr + ' ')
+                : styles.dim().render('  ' + numStr + ' ');
 
             var nameDisplay;
             if (s.editorTitleEditing && s.editorTitleEditingIdx === i) {
@@ -501,11 +517,11 @@
                     lines.push('');
                     lines.push('    ' + styles.dim().render('\u2500\u2500\u2500 File Detail \u2500\u2500\u2500'));
                     lines.push('    ' + styles.bold().render('Path: ') +
-                        styles.dim().render(detailFile));
+                        styles.fieldValue().render(detailFile));
                     lines.push('    ' + styles.bold().render('Split: ') +
-                        styles.dim().render(split.name || 'split-' + i));
+                        styles.fieldValue().render(split.name || 'split-' + i));
                     lines.push('    ' + styles.bold().render('Position: ') +
-                        styles.dim().render((selectedFileIdx + 1) + ' of ' + split.files.length));
+                        styles.fieldValue().render((selectedFileIdx + 1) + ' of ' + split.files.length));
 
                     // Checked file count for this split.
                     var checkedCount = 0;
@@ -955,21 +971,21 @@
             var equiv = s.equivalenceResult;
             if (equiv.equivalent) {
                 lines.push('  ' + styles.successBadge().render(' PASS ') +
-                    ' Tree hashes match!');
+                    ' ' + styles.bold().render('Tree hashes match!'));
                 lines.push('');
-                lines.push(styles.dim().render(
+                lines.push(styles.label().render(
                     '  All splits merge to produce identical content as the source branch.'));
             } else if (equiv.error) {
                 lines.push('  ' + styles.errorBadge().render(' ERROR ') + ' ' + equiv.error);
             } else {
                 // T118: Fix field names (was equiv.expected/equiv.actual — always undefined).
                 lines.push('  ' + styles.errorBadge().render(' FAIL ') +
-                    ' Tree hash mismatch');
+                    ' ' + styles.bold().render('Tree hash mismatch'));
                 if (equiv.splitTree) {
-                    lines.push('    Split tree:  ' + styles.fieldValue().render(equiv.splitTree));
+                    lines.push('    ' + styles.label().render('Split tree:  ') + styles.fieldValue().render(equiv.splitTree));
                 }
                 if (equiv.sourceTree) {
-                    lines.push('    Source tree: ' + styles.fieldValue().render(equiv.sourceTree));
+                    lines.push('    ' + styles.label().render('Source tree: ') + styles.fieldValue().render(equiv.sourceTree));
                 }
 
                 // T118/T064: Display diffFiles list when available.

@@ -67,7 +67,62 @@
     var writeMouseToPane = prSplit._writeMouseToPane;
     var C = prSplit._TUI_CONSTANTS;
 
+    function appendTuiOutput(state, text) {
+        var normalized = text == null ? '' : String(text);
+        normalized = normalized.replace(/\r\n?/g, '\n');
+        var lines = normalized.split('\n');
+        if (lines.length > 1 && lines[lines.length - 1] === '') {
+            lines.pop();
+        }
+        if (lines.length === 0) {
+            lines.push('');
+        }
+
+        for (var i = 0; i < lines.length; i++) {
+            state.outputLines.push(lines[i]);
+        }
+
+        var cap = (C && C.OUTPUT_BUFFER_CAP) || 5000;
+        if (state.outputLines.length > cap) {
+            state.outputLines = state.outputLines.slice(-cap);
+        }
+        if (state.outputAutoScroll) {
+            state.outputViewOffset = 0;
+        }
+    }
+
+    prSplit._tuiOutputActive = false;
+    prSplit._pendingTuiOutput = [];
+    prSplit._routeTuiOutput = function(text) {
+        if (!prSplit._tuiOutputActive) {
+            return false;
+        }
+        var state = prSplit._toggleModelState;
+        if (!state || !state.outputLines) {
+            prSplit._pendingTuiOutput.push(text == null ? '' : String(text));
+            return true;
+        }
+        appendTuiOutput(state, text);
+        if (typeof prSplit._stateRefresh === 'function') {
+            prSplit._stateRefresh();
+        }
+        return true;
+    };
+
     // --- Mouse Handlers ---
+
+    function isPointOnDivider(s, msg) {
+        if (!s || !s.splitViewEnabled) return false;
+        var h = s.height || C.DEFAULT_ROWS;
+        var chromeH = prSplit._CHROME_ESTIMATE || 8;
+        var vpH = Math.max(3, h - chromeH);
+        var minP = 3;
+        var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
+        wH = Math.min(wH, vpH - minP - 1);
+        var vpHt = (s.vp && typeof s.vp.height === 'function') ? s.vp.height() : wH;
+        var divY = 2 + vpHt;
+        return Math.abs(msg.y - divY) <= 1;
+    }
 
     function handleMouseClick(msg, s) {
         // Navigation bar clicks.
@@ -121,6 +176,7 @@
         if (s.splitViewEnabled) {
             if (zone.inBounds('split-tab-agent', msg)) {
                 s.splitViewTab = 'agent';
+                s.splitViewFocus = 'agent';
                 return [s, null];
             }
             if (zone.inBounds('split-tab-output', msg)) {
@@ -132,17 +188,49 @@
                 return [s, null];
             }
         }
+        // Split-view divider click -> initiate drag.
+        if (s.splitViewEnabled && (zone.inBounds('split-divider', msg) || isPointOnDivider(s, msg))) {
+            s.dividerDragging = true;
+            s.dragStartY = msg.y;
+            return [s, null];
+        }
         // T46: Agent question prompt click — activate input.
         if (s.agentQuestionDetected && zone.inBounds('agent-question-input', msg)) {
             s.agentQuestionInputActive = true;
             return [s, null];
         }
         // T327/T328: Forward unmatched press to focused child terminal.
-        if (s.splitViewEnabled && s.splitViewFocus === 'agent' &&
-            s.splitViewTab !== 'output') {
-            var ofs = computeSplitPaneContentOffset(s);
-            var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
-            if (mb && writeMouseToPane(mb, s)) {
+        // While the live pane is active on the agent tab, unmatched presses
+        // inside the rendered pane box go to the termpane first; everything
+        // else keeps the legacy byte-forwarding path.
+        if (s.splitViewEnabled && s.splitViewTab !== 'output') {
+            var liveInside = false;
+            if (s.splitViewTab === 'agent' && typeof prSplit._agentLiveActive === 'function' && prSplit._agentLiveActive()) {
+                try { liveInside = prSplit._isPointInAgentPane(msg.x, msg.y); } catch (e) {}
+            }
+            var h = s.height || C.DEFAULT_ROWS;
+            var vpH = Math.max(3, h - 8);
+            var minP = 3;
+            var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
+            wH = Math.min(wH, vpH - minP - 1);
+            var divRow = 2 + wH;
+            var insideBottom = liveInside || (msg.y > divRow && msg.y < (h - 4));
+            if (insideBottom) {
+                if (s.splitViewFocus !== 'agent') {
+                    s.splitViewFocus = 'agent';
+                }
+                if (liveInside && typeof prSplit._routeMouseToAgentTermpane === 'function') {
+                    var liveOk = false;
+                    try { liveOk = prSplit._routeMouseToAgentTermpane(msg); } catch (e) {
+                        log.debug('agent live press dispatch failed', { error: e.message || String(e) });
+                    }
+                    if (liveOk) return [s, null];
+                }
+                var ofs = computeSplitPaneContentOffset(s);
+                var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
+                if (mb && writeMouseToPane(mb, s)) {
+                    return [s, null];
+                }
                 return [s, null];
             }
         }
@@ -151,6 +239,69 @@
     }
 
     function handleScreenMouseClick(msg, s) {
+        // Preserved-session ERROR actions mirror the a/f/d key dispatch.
+        if (s.wizardState === 'ERROR' && prSplit._agentEvidence &&
+            (s.errorDetails || '').indexOf('reportClassification') >= 0) {
+            if (zone.inBounds('err-show-agent', msg)) {
+                s.splitViewEnabled = true;
+                s.splitViewTab = 'agent';
+                return [s, null];
+            }
+            if (zone.inBounds('err-focus-agent', msg)) {
+                s.splitViewEnabled = true;
+                s.splitViewTab = 'agent';
+                s.splitViewFocus = 'agent';
+                return [s, null];
+            }
+            if (zone.inBounds('err-discard-session', msg)) {
+                if (typeof prSplit._noteAgentDetached === 'function') {
+                    try { prSplit._noteAgentDetached(); } catch (e) {
+                        log.debug('error discard detach failed', { error: e.message || String(e) });
+                    }
+                }
+                // Same deferred-quit ordering as the key-path discard:
+                // detach now, cleanup on the promise chain, quit on the
+                // next error-discard-quit tick after close settles.
+                var stt = prSplit._state;
+                s.errorDiscardPending = true;
+                prSplit._agentEvidence = null;
+                if (stt) stt.agentEvidence = null;
+                if (typeof prSplit._destroyAgentTermpane === 'function') {
+                    try { prSplit._destroyAgentTermpane(); } catch (e) {
+                        log.debug('error discard destroy failed', { error: e.message || String(e) });
+                    }
+                }
+                try {
+                    if (typeof prSplit.cleanupExecutor !== 'function') {
+                        throw new Error('cleanupExecutor missing');
+                    }
+                    prSplit.cleanupExecutor().then(function() {
+                        var mcpCb = prSplit._mcpCallbackObj;
+                        if (!mcpCb || typeof mcpCb.close !== 'function') return null;
+                        return mcpCb.close().catch(function(e) {
+                            log.debug('error discard mcp close failed', { error: e.message || String(e) });
+                        }).then(function() {
+                            prSplit._mcpCallbackObj = null;
+                            var inner = prSplit._state;
+                            if (inner) inner.mcpCallbackObj = null;
+                        });
+                    }).catch(function(e) {
+                        log.debug('error discard cleanup failed', { error: e.message || String(e) });
+                    }).then(function() {
+                        s.errorDiscardPending = false;
+                        s.errorDiscardReady = true;
+                    }, function() {
+                        s.errorDiscardPending = false;
+                        s.errorDiscardReady = true;
+                    });
+                } catch (e) {
+                    log.debug('error discard cleanup failed', { error: e.message || String(e) });
+                    s.errorDiscardPending = false;
+                    s.errorDiscardReady = true;
+                }
+                return [s, tea.tick(C.TICK_INTERVAL_MS, 'error-discard-quit')];
+            }
+        }
         // Config screen: strategy selection, advanced toggle, Test Connection.
         if (s.wizardState === 'CONFIG' || s.wizardState === 'IDLE') {
             // If a config field is being edited and the click is outside that field,
@@ -467,6 +618,11 @@
             if (zone.inBounds('final-done', msg)) {
                 handleFinalizationState(s.wizard, 'done');
                 s.wizardState = 'DONE';
+                if (typeof prSplit._destroyAgentTermpane === 'function') {
+                    try { prSplit._destroyAgentTermpane(); } catch (e) {
+                        log.debug('quit pane close failed', { error: e.message || String(e) });
+                    }
+                }
                 return [s, tea.quit()];
             }
         }
@@ -582,16 +738,50 @@
                     ? '\u25b2 Wizard'
                     : (s.splitViewTab === 'output' ? '\u25bc Output'
                        : (s.splitViewTab === 'verify' ? '\u25bc Verify' : '\u25bc Agent'));
-                var splitHint = 'Ctrl+Tab: cycle  Ctrl+O: tab  Ctrl+L: close';
-                // T44: labelW must include tabBar visual width + all separator decorators.
-                // Template: leftFill + '┤ ' + tabBar + ' · ' + focusLabel + ' · ' + splitHint + ' ├' + rightFill
-                // Decorators: ┤(1)+space(1) + ' · '(3) + ' · '(3) + space(1)+├(1) = 10
+
+                var metaStyled;
+                var metaRaw;
+                var fillChar;
+                var junctionLeft;
+                var junctionRight;
+
+                if (s.dividerDragging) {
+                    var tabName = s.splitViewTab === 'output' ? 'Output'
+                        : (s.splitViewTab === 'verify' ? 'Verify' : 'Agent');
+                    var pct = Math.round((agentH / Math.max(1, vpHeight - 1)) * 100);
+                    var resizeBadge = '[ \u2195 Resizing: ' + tabName + ' ' + pct + '% (' + agentH + ' rows) ]';
+                    metaRaw = ' ' + resizeBadge;
+                    metaStyled = ' ' + styles.statusActive().render(resizeBadge);
+                    fillChar = '\u2550';      // ═
+                    junctionLeft = '\u2561 '; // ╡
+                    junctionRight = ' \u255e';// ╞
+                } else {
+                    var splitHint = '\u2195 Drag to resize  Ctrl+Tab: cycle  Ctrl+O: tab  Ctrl+L: close';
+                    if (w < 115) {
+                        splitHint = '\u2195 Drag  Ctrl+Tab: cycle  Ctrl+O: tab';
+                    }
+                    metaRaw = ' \u00b7 ' + focusLabel + ' \u00b7 ' + splitHint;
+                    metaStyled = styles.dim().render(metaRaw);
+                    fillChar = '\u2500';      // ─
+                    junctionLeft = '\u2524 '; // ┤
+                    junctionRight = ' \u251c';// ├
+                }
+
                 var tabBarW = lipgloss.width(tabBar);
-                var labelW = tabBarW + focusLabel.length + splitHint.length + 10;
-                var leftFill = repeatStr('\u2500', Math.max(1, Math.floor((w - labelW) / 2)));
-                var rightFill = repeatStr('\u2500', Math.max(1, Math.ceil((w - labelW) / 2)));
-                var paneDivider = styles.dim().render(
-                    leftFill + '\u2524 ' + tabBar + ' \u00b7 ' + focusLabel + ' \u00b7 ' + splitHint + ' \u251c' + rightFill);
+                var labelW = tabBarW + lipgloss.width(metaRaw) + 4;
+                var leftLen = Math.max(1, Math.floor((w - labelW) / 2));
+                var rightLen = Math.max(1, Math.ceil((w - labelW) / 2));
+                var leftFill = repeatStr(fillChar, leftLen);
+                var rightFill = repeatStr(fillChar, rightLen);
+
+                var leftStyled = s.dividerDragging
+                    ? styles.statusActive().render(leftFill + junctionLeft)
+                    : styles.divider().render(leftFill + junctionLeft);
+                var rightStyled = s.dividerDragging
+                    ? styles.statusActive().render(junctionRight + rightFill)
+                    : styles.divider().render(junctionRight + rightFill);
+
+                var paneDivider = zone.mark('split-divider', leftStyled + tabBar + metaStyled + rightStyled);
 
                 // Task 8: Bottom pane — Agent, Output, Verify tabs only.
                 var bottomPane;
@@ -599,6 +789,14 @@
                     bottomPane = renderOutputPane(s, w, agentH);
                 } else if (s.splitViewTab === 'verify') {
                     bottomPane = renderVerifyPane(s, w, agentH);
+                } else if (typeof prSplit._agentLiveActive === 'function' && prSplit._agentLiveActive()) {
+                    try {
+                        bottomPane = renderAgentPane(s, w, agentH);
+                        if (!bottomPane) bottomPane = prSplit._renderAgentLivePane(s, w, agentH);
+                    } catch (e) {
+                        log.debug('agent live render fallback', { error: e.message || String(e) });
+                        bottomPane = renderAgentPane(s, w, agentH);
+                    }
                 } else {
                     bottomPane = renderAgentPane(s, w, agentH);
                 }
@@ -958,6 +1156,11 @@
             // T10: Store current model state reference so _onToggle can
             // access focused pane and active sessions for passthrough dispatch.
             prSplit._toggleModelState = state;
+            var pendingOutput = prSplit._pendingTuiOutput || [];
+            prSplit._pendingTuiOutput = [];
+            for (var pi = 0; pi < pendingOutput.length; pi++) {
+                appendTuiOutput(state, pendingOutput[pi]);
+            }
             return [ state, tea.tick(C.TICK_INTERVAL_MS, 'mux-poll') ];
         };
 
@@ -974,10 +1177,22 @@
         };
 
         var _viewFn = function(s) {
+            var cursor = null;
+            try {
+                if (s.splitViewEnabled && s.splitViewFocus === 'agent' && s.splitViewTab === 'agent' &&
+                    typeof prSplit._agentLiveActive === 'function' && prSplit._agentLiveActive() &&
+                    typeof prSplit._agentLiveCursor === 'function') {
+                    cursor = prSplit._agentLiveCursor();
+                }
+            } catch (e) {
+                log.debug('agent live cursor read failed', { error: e.message || String(e) });
+                cursor = null;
+            }
             return {
                 content: wizardViewImpl(s),
                 altScreen: true,
-                mouseMode: 'all'
+                mouseMode: 'allMotion',
+                cursor: cursor
             };
         };
 
@@ -1045,10 +1260,37 @@
     // BubbleTea's cancelreader before RunPassthrough reads stdin, avoiding
     // data corruption from concurrent stdin readers.
     prSplit.startWizard = function() {
-        return tea.run(_wizardModel, {
-            toggleKey: 0x1D, // Ctrl+]
-            onToggle: prSplit._onToggle
-        });
+        prSplit._tuiOutputActive = true;
+        prSplit._pendingTuiOutput = [];
+        if (typeof output._setTUIOutputActive === 'function') {
+            output._setTUIOutputActive(true);
+        }
+
+        var previousExit = globalThis.__postBubbleTeaExit;
+        globalThis.__postBubbleTeaExit = function() {
+            prSplit._tuiOutputActive = false;
+            prSplit._pendingTuiOutput = [];
+            if (typeof output._setTUIOutputActive === 'function') {
+                output._setTUIOutputActive(false);
+            }
+            if (typeof previousExit === 'function') {
+                return previousExit();
+            }
+        };
+
+        try {
+            return tea.run(_wizardModel, {
+                toggleKey: 0x1D, // Ctrl+]
+                onToggle: prSplit._onToggle
+            });
+        } catch (e) {
+            prSplit._tuiOutputActive = false;
+            prSplit._pendingTuiOutput = [];
+            if (typeof output._setTUIOutputActive === 'function') {
+                output._setTUIOutputActive(false);
+            }
+            throw e;
+        }
     };
 
     // --- Mode Registration ---

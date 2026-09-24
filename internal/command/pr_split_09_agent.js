@@ -20,13 +20,11 @@
     function AgentCodeExecutor(config) {
         this.command = config.agentCommand || '';
         this.args = config.agentArgs || [];
-        this.model = config.agentModel || '';
-        this.configDir = config.agentConfigDir || '';
         this.env = config.agentEnv || {};
         this.resolved = null;
+        this.provider = '';
         this.handle = null;
         this.sessionId = null;
-        this.cm = aimux;
         // Optional TUIStateMachine integration for event-driven state tracking.
         // These are created in initEventTracking() after spawn succeeds.
         // If aimux does not provide the constructors (e.g. stripped test
@@ -130,6 +128,155 @@
         };
     };
 
+    // buildAgentArgv is the single source for the agent argv. userArgs come
+    // first, then exactly one --mcp-config pair. defaultArgs is empty by
+    // construction so provider concatenation (defaultArgs plus opts.Args at
+    // provider_process.go:57) cannot duplicate the flag.
+    // Matches both --mcp-config forms: bare ('--mcp-config', value in the
+    // next argv element) and attached ('--mcp-config=/path'). Exact-element
+    // counting alone would miss the attached form, letting a user-supplied
+    // --mcp-config=x slip past the exactly-one assertion and produce a
+    // duplicate MCP config pair at spawn.
+    function isMcpConfigArg(arg) {
+        return arg === '--mcp-config' || (typeof arg === 'string' && arg.indexOf('--mcp-config=') === 0);
+    }
+
+    function countMcpConfig(argv) {
+        var n = 0;
+        for (var i = 0; i < (argv || []).length; i++) {
+            if (isMcpConfigArg(argv[i])) n++;
+        }
+        return n;
+    }
+
+    AgentCodeExecutor.prototype.buildAgentArgv = function(mcpConfigPath) {
+        if (!mcpConfigPath) return { error: 'mcpConfigPath is required (provided by osm:mcpcallback)', argv: null };
+        var userArgs = this.args || [];
+        for (var i = 0; i < userArgs.length; i++) {
+            if (isMcpConfigArg(userArgs[i])) {
+                return { error: 'agent argv must contain exactly one --mcp-config (remove --mcp-config from --agent-arg; it is managed)', argv: null };
+            }
+        }
+        var argv = userArgs.concat(['--mcp-config', mcpConfigPath]);
+        if (countMcpConfig(argv) !== 1) {
+            return { error: 'agent argv must contain exactly one --mcp-config', argv: null };
+        }
+        return { error: null, argv: argv };
+    };
+
+    function commandBaseName(command) {
+        var value = String(command || '').replace(/\\/g, '/');
+        var slash = value.lastIndexOf('/');
+        return slash >= 0 ? value.substring(slash + 1) : value;
+    }
+
+    function isOpenCodeCommand(command) {
+        var name = commandBaseName(command).toLowerCase();
+        return name === 'opencode' || name === 'opencode.exe';
+    }
+
+    async function buildOpenCodeConfigContent(mcpConfigPath, existingContent) {
+        var osmod = prSplit._modules && prSplit._modules.osmod;
+        if (!osmod || typeof osmod.readFile !== 'function') {
+            return { error: 'Unable to read MCP config for opencode: osm:os module is unavailable' };
+        }
+        var readResult;
+        try {
+            readResult = await osmod.readFile(mcpConfigPath);
+        } catch (e) {
+            return { error: 'Unable to read MCP config for opencode: ' + (e.message || String(e)) };
+        }
+        if (!readResult || readResult.error || typeof readResult.content !== 'string') {
+            return {
+                error: 'Unable to read MCP config for opencode: ' +
+                    ((readResult && readResult.error) || 'empty config')
+            };
+        }
+
+        var source;
+        try {
+            source = JSON.parse(readResult.content);
+        } catch (e) {
+            return { error: 'Invalid MCP config for opencode: ' + (e.message || String(e)) };
+        }
+        var legacyServers = source && source.mcpServers;
+        var callback = legacyServers && legacyServers['osm-callback'];
+        if (!callback || (typeof callback.command !== 'string' && !Array.isArray(callback.command))) {
+            return { error: 'MCP config for opencode is missing the osm-callback command' };
+        }
+        var command = Array.isArray(callback.command)
+            ? callback.command.slice()
+            : [callback.command];
+        if (Array.isArray(callback.args)) {
+            command = command.concat(callback.args);
+        }
+        if (command.length === 0 || command[0] === '') {
+            return { error: 'MCP config for opencode is missing the osm-callback command' };
+        }
+
+        var config = {};
+        if (existingContent !== undefined && existingContent !== null && existingContent !== '') {
+            try {
+                config = JSON.parse(existingContent);
+            } catch (e) {
+                return { error: 'Invalid OPENCODE_CONFIG_CONTENT: ' + (e.message || String(e)) };
+            }
+            if (!config || typeof config !== 'object' || Array.isArray(config)) {
+                return { error: 'OPENCODE_CONFIG_CONTENT must be a JSON object' };
+            }
+        }
+        if (!config.mcp) config.mcp = {};
+        if (typeof config.mcp !== 'object' || Array.isArray(config.mcp)) {
+            return { error: 'OPENCODE_CONFIG_CONTENT.mcp must be a JSON object' };
+        }
+        config.mcp['osm-callback'] = {
+            type: 'local',
+            command: command
+        };
+        return { error: null, content: JSON.stringify(config) };
+    }
+
+    AgentCodeExecutor.prototype.buildAgentInvocation = async function(mcpConfigPath) {
+        if (!this.resolved || !this.resolved.command) {
+            return { error: 'Agent command must be resolved before building its invocation' };
+        }
+
+        if (!isOpenCodeCommand(this.resolved.command)) {
+            var generic = this.buildAgentArgv(mcpConfigPath);
+            return {
+                error: generic.error,
+                argv: generic.argv,
+                env: this.env || {},
+                provider: 'generic'
+            };
+        }
+
+        var userArgs = this.args || [];
+        for (var i = 0; i < userArgs.length; i++) {
+            if (isMcpConfigArg(userArgs[i])) {
+                return { error: 'agent argv must contain exactly one managed MCP configuration (remove --mcp-config from --agent-arg)' };
+            }
+        }
+        var existingContent = this.env && this.env.OPENCODE_CONFIG_CONTENT;
+        var configResult = await buildOpenCodeConfigContent(mcpConfigPath, existingContent);
+        if (configResult.error) return { error: configResult.error };
+
+        var env = {};
+        var configuredEnv = this.env || {};
+        for (var key in configuredEnv) {
+            if (Object.prototype.hasOwnProperty.call(configuredEnv, key)) {
+                env[key] = configuredEnv[key];
+            }
+        }
+        env.OPENCODE_CONFIG_CONTENT = configResult.content;
+        return {
+            error: null,
+            argv: userArgs.slice(),
+            env: env,
+            provider: 'opencode'
+        };
+    };
+
     // spawn creates a process-backed agent handle through osm:aimux.
     AgentCodeExecutor.prototype.spawn = async function(sessionId, opts) {
         var exec = prSplit._modules.exec;
@@ -146,33 +293,22 @@
             return { error: 'mcpConfigPath is required (provided by osm:mcpcallback)' };
         }
 
-        var provider;
-        var baseArgs = (this.args || []).concat(['--mcp-config', opts.mcpConfigPath]);
-        var providerName;
-        if (this.resolved.type === 'agent' || this.resolved.type === 'agent-code' || this.resolved.type === 'explicit') {
-            providerName = 'agent';
-            provider = aimux.processProvider({
-                name: providerName,
-                command: this.resolved.command,
-                defaultArgs: baseArgs,
-                capabilities: { mcp: true, streaming: true, multiTurn: true, resizable: true }
-            });
-        } else if (this.resolved.type === 'ollama') {
-            providerName = 'ollama';
-            provider = aimux.processProvider({
-                name: providerName,
-                command: this.resolved.command,
-                defaultArgs: baseArgs,
-                capabilities: { mcp: true, streaming: true, multiTurn: true, resizable: true }
-            });
-        } else {
-            return { error: 'unknown provider type: ' + this.resolved.type };
+        var invocation = await this.buildAgentInvocation(opts.mcpConfigPath);
+        if (invocation.error) {
+            return { error: invocation.error };
         }
+        this.provider = invocation.provider || 'generic';
+        var baseArgs = invocation.argv;
+        var provider = aimux.processProvider({
+            name: 'agent',
+            command: this.resolved.command,
+            defaultArgs: [],
+            capabilities: { mcp: true, streaming: true, multiTurn: true, resizable: true }
+        });
 
         var spawnOpts = {
             args: baseArgs,
-            env: this.env || {},
-            model: this.model || undefined
+            env: invocation.env
         };
         if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.termSize === 'function') {
             var sz = tuiMux.termSize();
@@ -187,10 +323,16 @@
             cmdDesc += ' ' + baseArgs.join(' ');
         }
 
+        // Generic providers receive one managed --mcp-config pair. Opencode
+        // receives the same callback through OPENCODE_CONFIG_CONTENT instead.
+        if (invocation.provider === 'generic' && countMcpConfig(baseArgs) !== 1) {
+            return { error: 'agent argv must contain exactly one --mcp-config at provider boundary' };
+        }
+
         try {
             var registry = aimux.newRegistry();
             registry.register(provider);
-            this.handle = await registry.spawn(providerName, spawnOpts);
+            this.handle = await registry.spawn('agent', spawnOpts);
         } catch (e) {
             return {
                 error: 'Agent spawn failed: ' + (e.message || String(e)) +
@@ -215,7 +357,7 @@
                         if (chunk) { lastOutput = chunk; }
                     } catch (readErr) { log.debug('drain: read failed (expected for dead process): ' + (readErr.message || readErr)); }
                 }
-                try { this.handle.close(); } catch (closeErr) { log.debug('drain: handle.close failed: ' + (closeErr.message || closeErr)); }
+                try { await this.handle.close(); } catch (closeErr) { log.debug('drain handle close failed', { error: closeErr.message || String(closeErr) }); }
                 this.handle = null;
 
                 var diagnostic = 'Agent process exited immediately after spawn.';
@@ -230,7 +372,7 @@
 
         this.initEventTracking();
 
-        return { error: null, sessionId: this.sessionId };
+        return { error: null, sessionId: this.sessionId, argv: baseArgs };
     };
 
     // initEventTracking creates the optional TUIStateMachine, EventStream,
@@ -251,7 +393,7 @@
 
         try {
             if (typeof aimux.newEventStream === 'function' && this.handle) {
-                this.eventStream = aimux.newEventStream(this.handle, parser);
+                this.eventStream = aimux.newEventStream(this.handle, aimux.newParser());
             }
         } catch (e) {
             log.debug('initEventTracking: eventStream creation failed', { error: e.message || String(e) });
@@ -341,23 +483,23 @@
         return !result.error;
     };
 
-    AgentCodeExecutor.prototype.close = function() {
+    AgentCodeExecutor.prototype.close = async function() {
         this.stopEventLoop();
 
         if (this.eventStream && typeof this.eventStream.close === 'function') {
-            try { this.eventStream.close(); } catch (e) { log.debug('close: eventStream.close failed', { error: e.message || String(e) }); }
+            try { this.eventStream.close(); } catch (e) { log.debug('close eventstream close failed', { error: e.message || String(e) }); }
         }
         this.eventStream = null;
 
         if (this.healthMonitor && typeof this.healthMonitor.close === 'function') {
-            try { this.healthMonitor.close(); } catch (e) { log.debug('close: healthMonitor.close failed', { error: e.message || String(e) }); }
+            try { this.healthMonitor.close(); } catch (e) { log.debug('close healthmonitor close failed', { error: e.message || String(e) }); }
         }
         this.healthMonitor = null;
 
         this.stateMachine = null;
 
         if (this.handle && typeof this.handle.close === 'function') {
-            try { this.handle.close(); } catch (e) { log.debug('close: handle.close failed', { error: e.message || String(e) }); }
+            try { await this.handle.close(); } catch (e) { log.debug('close handle close failed', { error: e.message || String(e) }); }
         }
         this.handle = null;
         this.sessionId = null;
@@ -378,7 +520,7 @@
 
     AgentCodeExecutor.prototype.restart = async function(sessionId, opts) {
         log.printf('AgentCodeExecutor.restart: closing existing session');
-        this.close();
+        await this.close();
         var resolveResult = await this.resolveAsync();
         if (resolveResult.error) {
             return { error: 'restart resolve failed: ' + resolveResult.error };
@@ -387,109 +529,34 @@
         return await this.spawn(sessionId, opts);
     };
 
-    AgentCodeExecutor.prototype.kill = function() {
+    AgentCodeExecutor.prototype.kill = async function() {
         this.stopEventLoop();
 
         if (this.eventStream && typeof this.eventStream.close === 'function') {
-            try { this.eventStream.close(); } catch (e) { log.debug('kill: eventStream.close failed', { error: e.message || String(e) }); }
+            try { this.eventStream.close(); } catch (e) { log.debug('kill eventstream close failed', { error: e.message || String(e) }); }
         }
         this.eventStream = null;
 
         if (this.healthMonitor && typeof this.healthMonitor.close === 'function') {
-            try { this.healthMonitor.close(); } catch (e) { log.debug('kill: healthMonitor.close failed', { error: e.message || String(e) }); }
+            try { this.healthMonitor.close(); } catch (e) { log.debug('kill healthmonitor close failed', { error: e.message || String(e) }); }
         }
         this.healthMonitor = null;
 
         this.stateMachine = null;
 
         if (this.handle && typeof this.handle.close === 'function') {
-            try { this.handle.close(); } catch (e) { log.debug('kill: handle.close failed', { error: e.message || String(e) }); }
+            try { await this.handle.close(); } catch (e) { log.debug('kill handle close failed', { error: e.message || String(e) }); }
         }
         this.handle = null;
         this.resolved = null;
     };
 
-    // --- Ollama / model menu helpers (aimux does not provide provider-specific UI) ---
-
-    var parser = aimux.newParser();
-
-    function parseModelMenu(lines) {
-        var models = [];
-        var selected = null;
-        for (var i = 0; i < (lines || []).length; i++) {
-            var ev = parser.parse(lines[i]);
-            if (ev.type === aimux.EVENT_MODEL_SELECT) {
-                var itemEv = parser.parse(lines[i]);
-                var fields = itemEv.fields || {};
-                var name = fields.modelName || lines[i].replace(/^\s*[❯>]\s+/, '').trim();
-                var sel = fields.selected === 'true';
-                models.push(name);
-                if (sel) selected = name;
-            }
-        }
-        return { models: models, selected: selected, lines: lines };
-    }
-
-    function isLauncherMenu(menu) {
-        if (!menu || !menu.models || menu.models.length === 0) return false;
-        return menu.models.length > 3 && !menu.selected;
-    }
-
-    function navigateToModel(menu, target) {
-        if (!menu || !menu.models || menu.models.length === 0) return null;
-        var idx = menu.models.indexOf(target);
-        if (idx < 0) {
-            for (var i = 0; i < menu.models.length; i++) {
-                if (menu.models[i].indexOf(target) !== -1) {
-                    idx = i;
-                    break;
-                }
-            }
-        }
-        if (idx < 0) return null;
-        var current = menu.models.indexOf(menu.selected);
-        if (current < 0) current = 0;
-        var steps = idx - current;
-        var keys = '';
-        var key = steps < 0 ? '\x1b[A' : '\x1b[B';
-        for (var s = 0; s < Math.abs(steps); s++) {
-            keys += key;
-        }
-        keys += '\r';
-        return keys;
-    }
-
-    function dismissLauncherKeys(menu) {
-        if (!isLauncherMenu(menu)) return null;
-        // Ollama launchers typically quit with 'q' and accept Enter.
-        return 'q\r';
-    }
-
-    // Attach helpers to the module-style object the pipeline expects.
-    var cmProxy = {
-        newParser: function() { return aimux.newParser(); },
-        eventTypeName: aimux.eventTypeName,
-        parseModelMenu: parseModelMenu,
-        isLauncherMenu: isLauncherMenu,
-        navigateToModel: navigateToModel,
-        dismissLauncherKeys: dismissLauncherKeys
-    };
-    // Expose constants on the proxy for backwards-compatible tests.
-    cmProxy.EVENT_TEXT = aimux.EVENT_TEXT;
-    cmProxy.EVENT_RATE_LIMIT = aimux.EVENT_RATE_LIMIT;
-    cmProxy.EVENT_PERMISSION = aimux.EVENT_PERMISSION;
-    cmProxy.EVENT_MODEL_SELECT = aimux.EVENT_MODEL_SELECT;
-    cmProxy.EVENT_SSO_LOGIN = aimux.EVENT_SSO_LOGIN;
-    cmProxy.EVENT_COMPLETION = aimux.EVENT_COMPLETION;
-    cmProxy.EVENT_TOOL_USE = aimux.EVENT_TOOL_USE;
-    cmProxy.EVENT_ERROR = aimux.EVENT_ERROR;
-    cmProxy.EVENT_THINKING = aimux.EVENT_THINKING;
-
     // --- Prompt Templates ---
 
     var CLASSIFICATION_PROMPT_TEMPLATE =
-        'You are a code reviewer helping split a large pull request into smaller, ' +
-        'reviewable stacked PRs.\n\n' +
+        'You are a solo staff engineer acting as a weaver at a loom (Commit-Loom methodology), ' +
+        'responsible for splitting a large pull request into an ordered sequence of maintainer-grade, ' +
+        'self-contained stacked PRs that a strict reviewer would happily merge one at a time.\n\n' +
         'The repository uses {{.Language}}' +
         '{{if .ModulePath}} with module path `{{.ModulePath}}`{{end}}.\n' +
         'The base branch is `{{.BaseBranch}}`.\n\n' +
@@ -498,20 +565,30 @@
         '{{range $path, $status := .FileStatuses}}' +
         '- `{{$path}}` ({{$status}})\n' +
         '{{end}}\n' +
-        '## Task\n\n' +
-        'Classify each file into a logical group for PR splitting. Group related changes together:\n' +
-        '- Files in the same package/module that are tightly coupled\n' +
-        '- Test files with the code they test\n' +
-        '- Documentation with the features they document\n' +
-        '- Refactoring changes separate from feature additions\n' +
-        '- Infrastructure/config changes separate from application code\n\n' +
+        '## Commit-Loom Principles\n\n' +
+        '1. **Self-Contained Units over Atomic Micro-Splits**: Group tightly coupled changes together. ' +
+        'A PR should be the largest coherent unit a strict reviewer can evaluate in one sitting. ' +
+        'Rolling up interdependent changes into a single PR avoids intermediate compilation failures, ' +
+        'broken tests, and artificial temporary shims. Never split coupled changes merely to achieve "atomic" commits.\n' +
+        '2. **Strict Dependency Layering**:\n' +
+        '   - Layer 1 (Foundations & Models): Core types, data schemas, migrations, configuration primitives.\n' +
+        '   - Layer 2 (Mechanics & Domain Logic): Core algorithms, domain services, internal packages building on Layer 1.\n' +
+        '   - Layer 3 (Callers & User Interfaces): Public APIs, CLI commands, HTTP handlers, TUI components exposing Layer 2.\n' +
+        '   - Layer 4 (Validation & Documentation): Integration/E2E tests, documentation, examples.\n' +
+        '   Earlier layers must never depend on later layers.\n' +
+        '3. **Independent Self-Sufficiency**: Every PR in the stack must build, pass linters, and pass tests cleanly.\n\n' +
         '{{if gt .MaxGroups 0}}Use at most {{.MaxGroups}} groups.{{end}}\n\n' +
         '## Output Format\n\n' +
         'Use the `reportClassification` MCP tool to report your results. ' +
         'The `categories` parameter is an array of category objects. Each category has:\n' +
-        '- `name`: Short identifier for the group (e.g., "types", "impl", "docs")\n' +
+        '- `name`: Short identifier for the group (e.g., "01-foundation-models", "02-auth-core")\n' +
         '- `description`: Git commit message for the split branch. This MUST be specific to the actual code changes — not generic.\n' +
-        '- `files`: Array of file paths belonging to this category\n\n' +
+        '- `files`: Array of file paths belonging to this category\n' +
+        '- `title`: (Optional) Imperative PR title in conventional commit format (e.g., "feat(auth): implement token validation")\n' +
+        '- `summary`: (Optional) Architectural summary of why this PR exists and its role in the overall change\n' +
+        '- `keyChanges`: (Optional) Array of bullet points highlighting key decisions and notable changes\n' +
+        '- `verificationSteps`: (Optional) Command or instructions to verify this layer in isolation (e.g., "gmake test")\n' +
+        '- `rationale`: (Optional) Why this PR is self-contained and why it is placed at this layer in the stack\n\n' +
         '### Commit Message Requirements\n\n' +
         'Each category description becomes the git commit message for that split branch. Follow these rules:\n' +
         '- Be specific: "Add user authentication middleware" not "misc changes"\n' +
@@ -523,7 +600,8 @@
         'If any groups can merge independently, mention this in your response.\n';
 
     var SPLIT_PLAN_PROMPT_TEMPLATE =
-        'Based on the file classification below, create an ordered split plan for stacked PRs.\n\n' +
+        'You are a solo staff engineer ordering a series of stacked pull requests following Commit-Loom discipline.\n' +
+        'Based on the file classification below, create an ordered split plan for native GitHub Stacked PRs.\n\n' +
         '## Classification\n\n' +
         '{{range $path, $category := .Classification}}' +
         '- `{{$path}}` → {{$category}}\n' +
@@ -532,14 +610,22 @@
         '- Branch prefix: `{{.BranchPrefix}}`\n' +
         '{{if gt .MaxFilesPerSplit 0}}- Maximum {{.MaxFilesPerSplit}} files per split\n{{end}}' +
         '{{if .PreferIndependent}}- Prefer independently mergeable splits when possible\n{{end}}\n' +
-        '## Task\n\n' +
-        'Create an ordered plan where:\n' +
-        '1. Each stage is a coherent, reviewable unit\n' +
-        '2. Earlier stages should be foundations that later stages build on\n' +
-        '3. Minimize cross-stage dependencies to reduce merge conflicts\n' +
-        '4. Each stage should build and pass tests independently (when stacked)\n\n' +
-        'Use the `reportSplitPlan` MCP tool. ' +
-        'Each stage needs: name, files array, commit message, and order (0-based).\n';
+        '## Commit-Loom Planning Principles\n\n' +
+        '1. **Self-Contained Units over Atomic Micro-Splits**: Group tightly coupled changes together. Each PR must be a coherent, reviewable unit that can be understood and merged without requiring broken intermediate states.\n' +
+        '2. **Strict Dependency Layering**: Order from foundational layers (models, schemas, types) to domain mechanics, then caller surfaces/APIs, and finally integration tests and docs. Earlier stages must not depend on later stages.\n' +
+        '3. **Independent Self-Sufficiency**: Each stage when stacked must build, pass linters, and pass tests cleanly.\n' +
+        '4. **Stacked PR Visibility**: Each stage will become a layer in a native GitHub Stacked PR chain with dedicated Stack Map navigation.\n\n' +
+        '## Output Format\n\n' +
+        'Use the `reportSplitPlan` MCP tool. Each stage in the `stages` array needs:\n' +
+        '- `name`: Branch name suffix (e.g., "01-models", "02-auth")\n' +
+        '- `files`: Array of file paths in this split\n' +
+        '- `message`: Git commit message (imperative sentence)\n' +
+        '- `order`: 0-based execution order\n' +
+        '- `title`: (Optional) Imperative PR title\n' +
+        '- `summary`: (Optional) Architectural summary of this PR layer\n' +
+        '- `keyChanges`: (Optional) Array of key changes / bullet points\n' +
+        '- `verificationSteps`: (Optional) Test/build commands to independently verify this layer\n' +
+        '- `rationale`: (Optional) Layering rationale and why it is self-contained\n';
 
     var CONFLICT_RESOLUTION_PROMPT_TEMPLATE =
         'A split branch failed verification. Help fix it.\n\n' +

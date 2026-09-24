@@ -1,6 +1,7 @@
 package command
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
@@ -1039,5 +1040,157 @@ func TestChunk16_VTerm_FullRenderPipeline_MuxToView(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("full render pipeline: %v", raw)
+	}
+}
+
+func TestPrSplitAgentLivePaneLifecycle(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	raw, err := evalJS(`(function() {
+		var names = ['_agentLiveAvailable','_agentLiveActive','_agentLiveSessionAlive','_ensureAgentTermpane','_destroyAgentTermpane','_syncAgentTermpaneBounds','_refreshAgentLiveView','_renderAgentLivePane','_agentLiveCursor','_routeKeyToAgentTermpane','_routeMouseToAgentTermpane','_noteAgentAttached','_noteAgentDetached','_agentPaneBox','_agentPaneInnerSize','_clipAnsiToBox','_isPointInAgentPane','_agentPaneHeight','_agentEvidence','_classifyCheckpoint','_stateRefresh'];
+		var missing = [];
+		for (var i = 0; i < names.length; i++) {
+			if (typeof globalThis.prSplit[names[i]] === 'undefined') missing.push(names[i]);
+		}
+		var box = globalThis.prSplit._agentPaneBox({ width: 80, height: 24, splitViewRatio: 0.6 });
+		var inner = globalThis.prSplit._agentPaneInnerSize({ width: 80, height: 24, splitViewRatio: 0.6 }, 80, 6);
+		var clipped = globalThis.prSplit._clipAnsiToBox('a\nb\nc\nd', 80, 2);
+		var wide = globalThis.prSplit._clipAnsiToBox('abcdefghij\nxy', 4, 5);
+		var ansiWide = globalThis.prSplit._clipAnsiToBox('\x1b[31mabcdefghij\x1b[0m', 4, 1);
+		return JSON.stringify({
+			missing: missing,
+			liveActive: globalThis.prSplit._agentLiveActive(),
+			box: box,
+			inner: inner,
+			clipped: clipped,
+			wide: wide,
+			wideWidth: (function() {
+				try { return globalThis.prSplit._lipgloss.width(wide); }
+				catch (e) { return -1; }
+			})(),
+			ansiWide: ansiWide,
+			ansiWidth: (function() {
+				try { return globalThis.prSplit._lipgloss.width(ansiWide); }
+				catch (e) { return -1; }
+			})(),
+			stateRefresh: typeof globalThis.prSplit._stateRefresh
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res struct {
+		Missing []string `json:"missing"`
+		Active  bool     `json:"liveActive"`
+		Box     struct {
+			X      int `json:"x"`
+			Y      int `json:"y"`
+			Width  int `json:"width"`
+			Height int `json:"height"`
+		} `json:"box"`
+		Inner struct {
+			Rows int `json:"rows"`
+			Cols int `json:"cols"`
+		} `json:"inner"`
+		Clipped      string `json:"clipped"`
+		Wide         string `json:"wide"`
+		WideWidth    int    `json:"wideWidth"`
+		AnsiWide     string `json:"ansiWide"`
+		AnsiWidth    int    `json:"ansiWidth"`
+		StateRefresh string `json:"stateRefresh"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &res); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, raw)
+	}
+	if len(res.Missing) > 0 {
+		t.Fatalf("missing chunk-17 exports: %v", res.Missing)
+	}
+	if res.Active {
+		t.Fatal("liveActive must be false with no session")
+	}
+	if res.Inner.Rows != 3 || res.Inner.Cols != 76 {
+		t.Fatalf("inner size = %+v, want rows=3 cols=76", res.Inner)
+	}
+	if res.Clipped != "a\nb" {
+		t.Fatalf("clip = %q, want %q", res.Clipped, "a\nb")
+	}
+	if res.WideWidth != 4 {
+		t.Fatalf("wide clip visual width = %d, want 4 (got %q)", res.WideWidth, res.Wide)
+	}
+	if res.AnsiWidth != 4 {
+		t.Fatalf("ansi wide clip visual width = %d, want 4 (got %q)", res.AnsiWidth, res.AnsiWide)
+	}
+	if res.StateRefresh != "function" {
+		t.Fatal("_stateRefresh must be defined (fixes 16f:951 dangling reference)")
+	}
+	if res.Box.Width != 76 || res.Box.Height != 3 {
+		t.Fatalf("box = %+v, want width=76 height=3", res.Box)
+	}
+}
+
+func TestPrSplitAgentLiveHeadlessDisabled(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	raw, err := evalJS(`(function() {
+		// liveAvailable is false without a pinned session even when tuiMux
+		// exists: chunk 17 gates on tp require plus tuiMux presence, and
+		// liveActive is false until ensureAgentTermpane pins a session.
+		return JSON.stringify({ active: globalThis.prSplit._agentLiveActive() });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res struct {
+		Active bool `json:"active"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &res); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, raw)
+	}
+	if res.Active {
+		t.Fatal("liveActive must be false headless/without session")
+	}
+}
+
+func TestPrSplitAgentLiveNoteNoStateFields(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	// noteAgentAttached/Detached must not write per-state fields: liveness
+	// stays with _agentLiveActive/_agentLiveSessionAlive and the pinned id
+	// with _state.agentSessionID. The note* functions return the pane
+	// outcome and leave the passed state object untouched.
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	raw, err := evalJS(`(function() {
+		var s = { width: 80, height: 24 };
+		var attached = globalThis.prSplit._noteAgentAttached(0, s);
+		globalThis.prSplit._noteAgentDetached();
+		return JSON.stringify({
+			attached: attached,
+			keys: Object.keys(s),
+			hasAttached: ('agentLiveAttached' in s),
+			hasSessionId: ('agentLiveSessionId' in s)
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res struct {
+		Attached     bool     `json:"attached"`
+		Keys         []string `json:"keys"`
+		HasAttached  bool     `json:"hasAttached"`
+		HasSessionID bool     `json:"hasSessionId"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &res); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, raw)
+	}
+	if res.Attached {
+		t.Fatal("noteAgentAttached(0) must return false (falsy cid guard)")
+	}
+	if res.HasAttached || res.HasSessionID {
+		t.Fatalf("note* wrote state fields %v, want none", res.Keys)
 	}
 }

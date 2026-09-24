@@ -1948,7 +1948,7 @@ func TestChunk16_T393_OpenAgentConvoWithNullHandle(t *testing.T) {
 		var errors = [];
 		if (!s.agentConvo.active) errors.push('agentConvo.active should be true (shows error)');
 		if (!s.agentConvo.lastError) errors.push('lastError should be set');
-		if (s.agentConvo.lastError && s.agentConvo.lastError.indexOf('not installed') < 0)
+		if (s.agentConvo.lastError && s.agentConvo.lastError.indexOf('No agent command configured') < 0)
 			errors.push('wrong error: ' + s.agentConvo.lastError);
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 	})()`)

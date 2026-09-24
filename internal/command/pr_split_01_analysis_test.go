@@ -277,6 +277,7 @@ func TestChunk01_AnalyzeDiff_Rename(t *testing.T) {
 	var result struct {
 		Files        []string          `json:"files"`
 		FileStatuses map[string]string `json:"fileStatuses"`
+		FileRenames  map[string]string `json:"fileRenames"`
 		Error        *string           `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
@@ -298,6 +299,9 @@ func TestChunk01_AnalyzeDiff_Rename(t *testing.T) {
 		t.Error("new.txt missing from fileStatuses")
 	} else if status != "R" {
 		t.Errorf("expected status 'R', got %q", status)
+	}
+	if got := result.FileRenames["new.txt"]; got != "old.txt" {
+		t.Errorf("fileRenames[new.txt] = %q, want old.txt", got)
 	}
 }
 

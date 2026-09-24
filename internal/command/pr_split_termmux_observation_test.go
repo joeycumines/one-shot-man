@@ -80,9 +80,6 @@ func TestIntegration_AutoSplitAgent_VTermObservation(t *testing.T) {
 	for _, a := range agentTestArgs {
 		args = append(args, "-agent-arg="+a)
 	}
-	if integrationModel != "" {
-		args = append(args, "-agent-model="+integrationModel)
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()

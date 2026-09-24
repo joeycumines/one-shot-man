@@ -29,20 +29,29 @@
 
     function viewFinalizationScreen(s) {
         var lines = [];
+        var complete = s.wizardState === 'DONE';
 
-        lines.push(styles.bold().render('PR Split Complete'));
+        lines.push(styles.bold().render(complete
+            ? 'PR Split Complete'
+            : 'PR Split Complete - Ready to Finish'));
         lines.push('');
+        lines.push('  ' + (complete
+            ? styles.successBadge().render(' COMPLETE ')
+            : styles.warningBadge().render(' FINALIZATION PENDING ')));
+        lines.push(complete
+            ? styles.label().render('  Verification passed and the split is complete.')
+            : styles.label().render('  Verification passed. Finalization is the remaining step.'));
 
         // Summary stats.
         var plan = st.planCache;
         if (plan && plan.splits) {
-            lines.push('  Splits created: ' +
+            lines.push('  ' + styles.label().render('Splits created: ') +
                 styles.successBadge().render(' ' + plan.splits.length + ' '));
             lines.push('');
 
             for (var i = 0; i < plan.splits.length; i++) {
                 var split = plan.splits[i];
-                lines.push('    ' + (i + 1) + '. ' +
+                lines.push('    ' + styles.label().render((i + 1) + '. ') +
                     styles.fieldValue().render(split.name) +
                     styles.dim().render(' (' + split.files.length + ' files)'));
             }
@@ -125,6 +134,11 @@
             if (failed > 0) summary += ', ' + failed + ' failed';
             lines.push(styles.dim().render(summary));
         }
+
+        lines.push('');
+        lines.push(styles.label().render(complete
+            ? '  Next: review the report or exit the wizard.'
+            : '  Next: choose Done to mark the workflow complete.'));
 
         // Actions.
         var compact = layoutMode(s) === 'compact';
@@ -219,10 +233,10 @@
                 } else {
                     crashBtnStyle = styles.secondaryButton();
                 }
-                var crashLine = '  ' + zone.mark(cb.id, crashBtnStyle.render(cb.label));
-                if (!compact) {
-                    crashLine += styles.dim().render('  ' + cb.desc);
-                }
+                var crashBtn = zone.mark(cb.id, crashBtnStyle.marginLeft(2).render(cb.label));
+                var crashLine = (!compact && cb.desc)
+                    ? lipgloss.joinHorizontal(lipgloss.Center, crashBtn, styles.dim().render('  ' + cb.desc))
+                    : crashBtn;
                 lines.push(crashLine);
                 if (ci < crashButtons.length - 1) lines.push('');
             }
@@ -248,10 +262,10 @@
                 } else {
                     btnStyle = styles.secondaryButton();
                 }
-                var line = '  ' + zone.mark(rb.id, btnStyle.render(rb.label));
-                if (!compact) {
-                    line += styles.dim().render('  ' + rb.desc);
-                }
+                var renderedBtn = zone.mark(rb.id, btnStyle.marginLeft(2).render(rb.label));
+                var line = (!compact && rb.desc)
+                    ? lipgloss.joinHorizontal(lipgloss.Center, renderedBtn, styles.dim().render('  ' + rb.desc))
+                    : renderedBtn;
                 lines.push(line);
                 if (ri < resolveButtons.length - 1) lines.push('');
             }
@@ -266,9 +280,10 @@
                 var askAgentStyle = askAgentFocused
                     ? styles.focusedSecondaryButton()
                     : styles.secondaryButton();
-                lines.push('  ' + zone.mark('error-ask-agent',
-                    askAgentStyle.render('\ud83e\udd16 Ask Agent')) +
-                    styles.dim().render('  Chat with Agent about this error'));
+                var askBtn = zone.mark('error-ask-agent',
+                    askAgentStyle.marginLeft(2).render('\ud83e\udd16 Ask Agent'));
+                lines.push(lipgloss.joinHorizontal(lipgloss.Center, askBtn,
+                    styles.dim().render('  Chat with Agent about this error')));
             }
         }
 
@@ -285,59 +300,61 @@
         lines.push(styles.bold().render('Keyboard Shortcuts'));
         lines.push('');
 
+        function formatShortcut(key, desc) {
+            return '  ' + styles.fieldValue().render(padRight(key, 18)) + ' ' + styles.dim().render(desc);
+        }
+
         // -- Global Navigation (always shown) --
-        lines.push(styles.label().render('Navigation'));
-        lines.push(padRight('  ? / F1', 22) + 'Toggle this help');
-        lines.push(padRight('  Tab', 22) + 'Next field / option');
-        lines.push(padRight('  Shift+Tab', 22) + 'Previous field / option');
-        lines.push(padRight('  Enter', 22) + 'Confirm / select');
-        lines.push(padRight('  Esc', 22) + 'Back / close overlay');
-        lines.push(padRight('  Ctrl+C', 22) + 'Cancel wizard');
+        lines.push(styles.bold().render('Navigation'));
+        lines.push(formatShortcut('? / F1', 'Toggle this help'));
+        lines.push(formatShortcut('Tab', 'Next field / option'));
+        lines.push(formatShortcut('Shift+Tab', 'Previous field / option'));
+        lines.push(formatShortcut('Enter', 'Confirm / select'));
+        lines.push(formatShortcut('Esc', 'Back / close overlay'));
+        lines.push(formatShortcut('Ctrl+C', 'Cancel wizard'));
         lines.push('');
 
         // -- Scrolling (always shown) --
-        lines.push(styles.label().render('Scrolling'));
-        lines.push(padRight('  j / \u2193', 22) + 'Move down / scroll');
-        lines.push(padRight('  k / \u2191', 22) + 'Move up / scroll');
-        lines.push(padRight('  PgUp / PgDn', 22) + 'Scroll page');
-        lines.push(padRight('  Home / End', 22) + 'Jump to top / bottom');
+        lines.push(styles.bold().render('Scrolling'));
+        lines.push(formatShortcut('j / \u2193', 'Move down / scroll'));
+        lines.push(formatShortcut('k / \u2191', 'Move up / scroll'));
+        lines.push(formatShortcut('PgUp / PgDn', 'Scroll page'));
+        lines.push(formatShortcut('Home / End', 'Jump to top / bottom'));
         lines.push('');
 
         // -- Plan Editor (PLAN_EDITOR / PLAN_REVIEW only) --
         if (ws === 'PLAN_EDITOR' || ws === 'PLAN_REVIEW') {
-            lines.push(styles.label().render('Plan Editor'));
-            lines.push(padRight('  e', 22) + 'Edit / rename split');
-            lines.push(padRight('  Space', 22) + 'Toggle file checkbox');
-            lines.push(padRight('  Shift+\u2191 / \u2193', 22) + 'Reorder files');
+            lines.push(styles.bold().render('Plan Editor'));
+            lines.push(formatShortcut('e', 'Edit / rename split'));
+            lines.push(formatShortcut('Space', 'Toggle file checkbox'));
+            lines.push(formatShortcut('Shift+\u2191 / \u2193', 'Reorder files'));
             lines.push('');
         }
 
         // -- Branch Building (BRANCH_BUILDING / EQUIV_CHECK only) --
         if (ws === 'BRANCH_BUILDING' || ws === 'EQUIV_CHECK') {
-            lines.push(styles.label().render('Branch Building'));
-            lines.push(padRight('  e', 22) + 'Expand / collapse verify output');
+            lines.push(styles.bold().render('Branch Building'));
+            lines.push(formatShortcut('e', 'Expand / collapse verify output'));
             if (ws === 'BRANCH_BUILDING') {
-                lines.push(padRight('  z', 22) + 'Pause / resume verify (SIGSTOP/SIGCONT)');
-                lines.push(padRight('  Ctrl+C', 22) + 'Interrupt current verify (2x = force kill)');
-                lines.push(padRight('  p', 22) + 'Mark branch as passed (override)');
-                lines.push(padRight('  f', 22) + 'Mark branch as failed');
-                lines.push(padRight('  c', 22) + 'Continue / skip branch');
+                lines.push(formatShortcut('z', 'Pause / resume verify'));
+                lines.push(formatShortcut('Ctrl+C', 'Interrupt verify (2x = kill)'));
+                lines.push(formatShortcut('p', 'Mark branch as passed'));
+                lines.push(formatShortcut('f', 'Mark branch as failed'));
+                lines.push(formatShortcut('c', 'Continue / skip branch'));
             }
             lines.push('');
         }
 
         // -- Split View (always shown) --
-        lines.push(styles.label().render('Split View'));
-        lines.push(padRight('  Ctrl+L', 22) + 'Toggle split view');
-        lines.push(padRight('  Ctrl+Tab', 22) + 'Focus wizard / terminal pane');
-        // Task 8: Shell tab removed from tab cycle.
-        lines.push(padRight('  Ctrl+O', 22) + 'Cycle tabs (Agent, Output, Verify)');
-        lines.push(padRight('  Ctrl+]', 22) + 'Full passthrough (focused pane)');
-        lines.push(padRight('  Ctrl+= / Ctrl+-', 22) + 'Resize split view');
-        // Task 8: Verify terminal tab interaction hints.
+        lines.push(styles.bold().render('Split View'));
+        lines.push(formatShortcut('Ctrl+L', 'Toggle split view'));
+        lines.push(formatShortcut('Ctrl+Tab', 'Focus wizard / terminal pane'));
+        lines.push(formatShortcut('Ctrl+O', 'Cycle tabs (Agent, Output, Verify)'));
+        lines.push(formatShortcut('Ctrl+]', 'Full passthrough (focused pane)'));
+        lines.push(formatShortcut('Ctrl+= / Ctrl+-', 'Resize split view (or mouse drag)'));
         if (ws === 'BRANCH_BUILDING' || ws === 'EQUIV_CHECK') {
-            lines.push(padRight('  (type in pane)', 22) + 'Keys forwarded to focused terminal');
-            lines.push(padRight('  Mouse in pane', 22) + 'Clicks forwarded (SGR mouse)');
+            lines.push(formatShortcut('(type in pane)', 'Keys forwarded to terminal'));
+            lines.push(formatShortcut('Mouse in pane', 'Clicks forwarded (SGR mouse)'));
         }
 
         var content = lines.join('\n');
@@ -347,31 +364,25 @@
     // ----- Confirm Cancel Overlay -----
 
     function viewConfirmCancelOverlay(s) {
-        var w = Math.min(50, (s.width || 80) - 4);
+        var w = Math.min(52, (s.width || 80) - 4);
         var lines = [];
 
         lines.push(styles.warningBadge().render(' Cancel Wizard? '));
         lines.push('');
-        // T031: contextual text — defensive: if a verify session is still
-        // referenced when the overlay opens (e.g. race between SIGINT cleanup
-        // and user interaction), show a verification-specific warning.
         if (getInteractivePaneSession(s, 'verify')) {
-            lines.push('A verification is in progress.');
-            lines.push('Cancelling will abort it and clean up the worktree.');
+            lines.push(styles.label().render('A verification is in progress.'));
+            lines.push(styles.dim().render('Cancelling will abort it and clean up the worktree.'));
         } else {
-            lines.push('Are you sure you want to cancel the PR split?');
-            // T081: Context-aware warning — branches already created persist
-            // in the repo after cancel.  Tell the user so they aren't
-            // surprised by orphaned split branches.
+            lines.push(styles.label().render('Are you sure you want to cancel the PR split?'));
             var createdCount = (s.executionResults || []).filter(function(r) {
                 return r && !r.error && r.sha;
             }).length;
             if (createdCount > 0) {
-                lines.push(createdCount + ' branch' + (createdCount === 1 ? '' : 'es') +
-                    ' already created \u2014 ' + styles.dim().render('these will remain in your repo.'));
+                lines.push(styles.label().render(createdCount + ' branch' + (createdCount === 1 ? '' : 'es') + ' already created \u2014 ') +
+                    styles.dim().render('these will remain in your repo.'));
                 lines.push(styles.dim().render('Clean up with: osm pr-split --cleanup'));
             } else {
-                lines.push('All progress will be lost.');
+                lines.push(styles.dim().render('All progress will be lost.'));
             }
         }
         lines.push('');
@@ -389,7 +400,7 @@
             zone.mark('confirm-no', noBtn)
         );
         lines.push('');
-        lines.push(styles.dim().render('Tab to switch  ·  Enter to confirm  ·  Esc to dismiss'));
+        lines.push(styles.dim().render('Tab to switch  \u00b7  Enter to confirm  \u00b7  Esc to dismiss'));
 
         var content = lines.join('\n');
         return styles.activeCard().width(w).render(content);
@@ -494,7 +505,7 @@
             if (i === splitIdx) continue;
             var isActive = (ti === targetCursor);
             var bullet = isActive
-                ? styles.primaryButton().render(' \u25b6 ')
+                ? styles.statusActive().render(' \u25b6 ')
                 : '   ';
             var splitName = styles.label().render(splits[i].name || 'split-' + i);
             var fileCount = styles.dim().render(
@@ -637,8 +648,8 @@
                 return viewFinalizationScreen(s);
             case 'CANCELLED':
             case 'FORCE_CANCEL':
-                return styles.warningBadge().render(' Cancelled ') +
-                    '\n\nThe PR split was cancelled.';
+                return styles.warningBadge().render(' CANCELLED ') +
+                    '\n\nThe PR split was Cancelled. No further pipeline steps will run.';
             case 'PAUSED': {  // T084: dedicated PAUSED screen with resume/quit buttons
                 var pausedFrom = (s.wizard && s.wizard.data && s.wizard.data.pausedFrom) || 'unknown';
                 var lines = [];
@@ -668,13 +679,30 @@
             }
             case 'ERROR':
                 var lines = [];
-                lines.push(styles.errorBadge().render(' Error '));
+                lines.push(styles.errorBadge().render(' FAILED / ERROR '));
+                lines.push('');
+                lines.push(styles.bold().render('PR Split Failed (Error)'));
                 lines.push('');
                 if (s.errorFromState) {
                     lines.push('Previous state: ' + styles.fieldValue().render(s.errorFromState));
                     lines.push('');
                 }
                 lines.push(s.errorDetails || 'An unexpected error occurred.');
+                if (prSplit._agentEvidence && (s.errorDetails || '').indexOf('reportClassification') >= 0) {
+                    var ck = prSplit._classifyCheckpoint || null;
+                    lines.push('');
+                    lines.push('Agent session preserved. No plan was produced so resume does not apply.');
+                    if (ck) {
+                        var el = Math.round((ck.elapsedMs || 0) / 1000);
+                        var rem = Math.round((ck.remainingMs || 0) / 1000);
+                        lines.push('Checkpoint: waited ' + el + 's, ' + rem + 's remained at timeout. Session ' + String(ck.sessionId || '') + '.');
+                    }
+                    if (prSplit._agentEvidence.transcriptPath) {
+                        lines.push('Transcript: ' + prSplit._agentEvidence.transcriptPath);
+                    }
+                    lines.push('');
+                    lines.push(zone.mark('err-show-agent', '[a] show Agent tab') + '  ' + zone.mark('err-focus-agent', '[f] focus Agent for input') + '  ' + zone.mark('err-discard-session', '[d] discard session and close'));
+                }
                 return lines.join('\n');
             default:
                 return 'Unknown state: ' + s.wizardState;

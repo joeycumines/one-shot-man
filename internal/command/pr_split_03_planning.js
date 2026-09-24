@@ -41,6 +41,7 @@
         var commitPrefix = config.commitPrefix || '';
         var verifyCommand = config.verifyCommand || runtime.verifyCommand;
         var fileStatuses = config.fileStatuses || {};
+        var fileRenames = config.fileRenames || {};
 
         var sourceBranch = config.sourceBranch;
         if (!sourceBranch) {
@@ -65,7 +66,12 @@
                 files: files.slice().sort(),
                 message: description || (commitPrefix + name),
                 order: i,
-                dependencies: i === 0 ? [] : [splits[i - 1].name]
+                dependencies: i === 0 ? [] : [splits[i - 1].name],
+                title: (typeof groupData === 'object' && !Array.isArray(groupData) && groupData.title) ? groupData.title : '',
+                summary: (typeof groupData === 'object' && !Array.isArray(groupData) && groupData.summary) ? groupData.summary : '',
+                keyChanges: (typeof groupData === 'object' && !Array.isArray(groupData) && groupData.keyChanges) ? groupData.keyChanges : null,
+                verificationSteps: (typeof groupData === 'object' && !Array.isArray(groupData) && groupData.verificationSteps) ? groupData.verificationSteps : '',
+                rationale: (typeof groupData === 'object' && !Array.isArray(groupData) && groupData.rationale) ? groupData.rationale : ''
             });
         }
 
@@ -75,6 +81,7 @@
             dir: dir,
             verifyCommand: verifyCommand,
             fileStatuses: fileStatuses,
+            fileRenames: fileRenames,
             splits: splits
         };
     }
@@ -92,6 +99,7 @@
         var commitPrefix = config.commitPrefix || '';
         var verifyCommand = config.verifyCommand || runtime.verifyCommand;
         var fileStatuses = config.fileStatuses || {};
+        var fileRenames = config.fileRenames || {};
 
         var sourceBranch = config.sourceBranch;
         if (!sourceBranch) {
@@ -114,7 +122,12 @@
                 files: files.slice().sort(),
                 message: description || (commitPrefix + name),
                 order: i,
-                dependencies: i === 0 ? [] : [splits[i - 1].name]
+                dependencies: i === 0 ? [] : [splits[i - 1].name],
+                title: (typeof groupData === 'object' && !Array.isArray(groupData) && groupData.title) ? groupData.title : '',
+                summary: (typeof groupData === 'object' && !Array.isArray(groupData) && groupData.summary) ? groupData.summary : '',
+                keyChanges: (typeof groupData === 'object' && !Array.isArray(groupData) && groupData.keyChanges) ? groupData.keyChanges : null,
+                verificationSteps: (typeof groupData === 'object' && !Array.isArray(groupData) && groupData.verificationSteps) ? groupData.verificationSteps : '',
+                rationale: (typeof groupData === 'object' && !Array.isArray(groupData) && groupData.rationale) ? groupData.rationale : ''
             });
         }
 
@@ -124,6 +137,7 @@
             dir: dir,
             verifyCommand: verifyCommand,
             fileStatuses: fileStatuses,
+            fileRenames: fileRenames,
             splits: splits
         };
     }
@@ -159,6 +173,7 @@
             analysis: state.analysisCache ? {
                 files:          state.analysisCache.files,
                 fileStatuses:   state.analysisCache.fileStatuses,
+                fileRenames:    state.analysisCache.fileRenames || {},
                 baseBranch:     state.analysisCache.baseBranch,
                 currentBranch:  state.analysisCache.currentBranch
             } : null,

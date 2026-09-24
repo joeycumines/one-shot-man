@@ -22,17 +22,17 @@
     // WCAG AA compliant: all text-on-background pairs >= 4.5:1 contrast.
     // textOnColor is the inverse text for colored (non-surface) backgrounds.
     var COLORS = {
-        primary:     {light: '#6D28D9', dark: '#A78BFA'},  // Purple accent
-        secondary:   {light: '#4338CA', dark: '#818CF8'},  // Indigo
-        success:     {light: '#15803D', dark: '#4ADE80'},  // Green
-        warning:     {light: '#A16207', dark: '#FACC15'},  // Amber
-        error:       {light: '#DC2626', dark: '#F87171'},  // Red
-        muted:       {light: '#6B7280', dark: '#9CA3AF'},  // Gray
-        surface:     {light: '#F3F4F6', dark: '#1F2937'},  // Card bg
-        border:      {light: '#D1D5DB', dark: '#4B5563'},  // Borders
-        text:        {light: '#111827', dark: '#F9FAFB'},  // Primary text
-        textDim:     {light: '#6B7280', dark: '#9CA3AF'},  // Secondary text
-        textOnColor: {light: '#FFFFFF', dark: '#000000'}   // Text on colored bg (WCAG AA)
+        primary:     {light: '#1D4ED8', dark: '#3B82F6'},  // Blue 700 / 500
+        secondary:   {light: '#4338CA', dark: '#818CF8'},  // Indigo 700 / 400
+        success:     {light: '#047857', dark: '#10B981'},  // Emerald 700 / 500
+        warning:     {light: '#B45309', dark: '#F59E0B'},  // Amber 700 / 500
+        error:       {light: '#B91C1C', dark: '#EF4444'},  // Red 700 / 500
+        muted:       {light: '#64748B', dark: '#64748B'},  // Slate gray
+        surface:     {light: '#E2E8F0', dark: '#1E293B'},  // Slate card surface / button fill
+        border:      {light: '#94A3B8', dark: '#334155'},  // Slate border
+        text:        {light: '#0F172A', dark: '#F8FAFC'},  // Slate 900 / 50 text
+        textDim:     {light: '#334155', dark: '#94A3B8'},  // Slate 700 / 400 text (high contrast)
+        textOnColor: {light: '#FFFFFF', dark: '#000000'}   // High-contrast text on saturated badges
     };
 
     // Braille spinner frames for processing animation (T051).
@@ -63,19 +63,19 @@
             return lipgloss.newStyle()
                 .border(lipgloss.roundedBorder())
                 .borderForeground(COLORS.primary)
-                .padding(1, 2);
+                .padding(0, 1);
         },
         inactiveCard: function() {
             return lipgloss.newStyle()
                 .border(lipgloss.roundedBorder())
                 .borderForeground(COLORS.border)
-                .padding(1, 2);
+                .padding(0, 1);
         },
         errorCard: function() {
             return lipgloss.newStyle()
                 .border(lipgloss.normalBorder())
                 .borderForeground(COLORS.error)
-                .padding(1, 2);
+                .padding(0, 1);
         },
         successBadge: function() {
             return lipgloss.newStyle()
@@ -146,6 +146,7 @@
         },
         fieldValue: function() {
             return lipgloss.newStyle()
+                .bold(true)
                 .foreground(COLORS.secondary);
         },
         statusIdle: function() {
@@ -163,9 +164,9 @@
         },
         focusedCard: function() {
             return lipgloss.newStyle()
-                .border(lipgloss.doubleBorder())
+                .border(lipgloss.roundedBorder())
                 .borderForeground(COLORS.warning)
-                .padding(1, 2);
+                .padding(0, 1);
         },
         focusedButton: function() {
             return lipgloss.newStyle()
@@ -174,10 +175,7 @@
                 .background(COLORS.warning)
                 .padding(0, 2);
         },
-        // T011: Width-stable focus style for secondaryButton elements.
-        // secondaryButton has roundedBorder() (adds +2 H chars, +2 V lines).
-        // focusedSecondaryButton ALSO has roundedBorder() so the dimensions
-        // remain identical when focus toggles between the two.
+        // Width- and height-stable focus style for secondary buttons.
         focusedSecondaryButton: function() {
             return lipgloss.newStyle()
                 .bold(true)
@@ -187,8 +185,7 @@
                 .border(lipgloss.roundedBorder())
                 .borderForeground(COLORS.warning);
         },
-        // T031: Width-stable focus style for errorBadge elements.
-        // errorBadge uses padding(0,1), so focusedErrorBadge must match.
+        // Width-stable focus style for errorBadge elements.
         focusedErrorBadge: function() {
             return lipgloss.newStyle()
                 .bold(true)

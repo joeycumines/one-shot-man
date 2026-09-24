@@ -50,6 +50,7 @@ type muxState struct {
 	resizeFn              func(rows, cols uint16) error
 	activeSessionTarget   parent.SessionTarget
 	swappedOnce           bool
+	persistenceMu         sync.Mutex
 	mu                    sync.RWMutex
 	inPassthrough         bool
 	onListeners           map[int]*onListener

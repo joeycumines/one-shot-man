@@ -1,6 +1,8 @@
 package command
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
@@ -1297,5 +1299,40 @@ func TestChunk16_EquivCheck_BackNavigation(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("equiv check back navigation: %v", raw)
+	}
+}
+
+func TestPrSplitAgentLiveMouseRouting(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	update, err := os.ReadFile("pr_split_16e_tui_update.js")
+	if err != nil {
+		t.Fatalf("read update chunk: %v", err)
+	}
+	model, err := os.ReadFile("pr_split_16f_tui_model.js")
+	if err != nil {
+		t.Fatalf("read model chunk: %v", err)
+	}
+	u, m := string(update), string(model)
+	if !strings.Contains(u, "prSplit._isPointInAgentPane(msg.x, msg.y)") {
+		t.Error("16e live mouse route missing rendered-pane hit test")
+	}
+	if !strings.Contains(u, "prSplit._routeMouseToAgentTermpane(msg)") {
+		t.Error("16e live mouse route missing termpane dispatch")
+	}
+	if !strings.Contains(m, "prSplit._routeMouseToAgentTermpane(msg)") {
+		t.Error("16f unmatched-press path missing live termpane dispatch")
+	}
+	if !strings.Contains(m, "prSplit._isPointInAgentPane(msg.x, msg.y)") {
+		t.Error("16f unmatched-press path missing live hit test")
+	}
+	// Verify tab keeps its own path: writeMouseToPane must still exist and
+	// the live route must be agent-tab scoped.
+	if !strings.Contains(u, "writeMouseToPane") {
+		t.Error("verify-tab writeMouseToPane path must be preserved")
+	}
+	if !strings.Contains(u, "s.splitViewTab === 'agent'") {
+		t.Error("live mouse route must be agent-tab scoped")
 	}
 }

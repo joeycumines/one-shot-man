@@ -89,6 +89,57 @@ func TestFsReadFileDefaultResolvesUint8Array(t *testing.T) {
 	}
 }
 
+// TestFsWriteFileAcceptsUint8Array covers Node's Buffer/TypedArray input: a
+// readFile -> writeFile round trip must preserve the bytes. Previously the
+// data argument was stringified, so a Uint8Array was written as a comma-joined
+// list of numbers.
+func TestFsWriteFileAcceptsUint8Array(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.bin")
+	dst := filepath.Join(dir, "dst.bin")
+	payload := []byte{0x00, 0x01, 0x7f, 0x80, 0xff, 0x41, 0x0a}
+	if err := os.WriteFile(src, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := runScript(t, reportScript(`
+			const fs = require("fs");
+			const data = await fs.promises.readFile(`+pathLit(src)+`);
+			if (!(data instanceof Uint8Array)) { report("NOT-UINT8ARRAY"); return; }
+			await fs.promises.writeFile(`+pathLit(dst)+`, data);
+			report("WROTE");
+	`))
+	if got != "WROTE" {
+		t.Fatalf("writeFile(repoReadFile) = %q, want WROTE", got)
+	}
+	written, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(written) != string(payload) {
+		t.Fatalf("readFile -> writeFile round trip = %v, want %v", written, payload)
+	}
+}
+
+// TestRequireProcessThrows pins the module surface: only fs, net and crypto
+// are registered, so require("process") must throw rather than resolve a
+// half-built module. (The process globals the sandbox keeps are separate from
+// a require("process") module.)
+func TestRequireProcessThrows(t *testing.T) {
+	got := runScript(t, reportScript(`
+			let outcome = "NO-THROW";
+			try {
+				const proc = require("process");
+				outcome = "RESOLVED:" + (typeof proc);
+			} catch (err) {
+				outcome = "THREW";
+			}
+			report(outcome);
+	`))
+	if got != "THREW" {
+		t.Fatalf("require(\"process\") = %q, want THREW", got)
+	}
+}
+
 func TestFsWriteFileWxRejectsExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "existing.txt")

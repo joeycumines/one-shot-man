@@ -73,7 +73,10 @@ func FsRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.R
 			if !ok {
 				return rejectTypeError(adapter, "writeFile", "The \"path\" argument must be of type string")
 			}
-			data := call.Argument(1).String()
+			data, dataErr := writeFileBytes(call.Argument(1))
+			if dataErr != nil {
+				return rejectTypeError(adapter, "writeFile", dataErr.Error())
+			}
 			mode := fs.FileMode(0o666)
 			flag := "w"
 			if len(call.Arguments) > 2 && !goja.IsUndefined(call.Argument(2)) && !goja.IsNull(call.Argument(2)) {
@@ -103,7 +106,7 @@ func FsRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.R
 					return
 				}
 				defer f.Close()
-				if _, err := f.WriteString(data); err != nil {
+				if _, err := f.Write(data); err != nil {
 					_ = settle.Settle(true, func(rt *goja.Runtime) any { return nodeFSError(rt, "write", path, err) })
 					return
 				}
@@ -254,6 +257,48 @@ func stringArg(call goja.FunctionCall, index int) (string, bool) {
 	}
 	s, ok := value.Export().(string)
 	return s, ok && s != ""
+}
+
+// writeFileBytes extracts the bytes a writeFile call should write. Node
+// accepts a string, a Buffer/TypedArray, or a DataView; goja's Export yields
+// the typed array's Go slice or an ArrayBuffer directly, and any other
+// typed-array view is read element by element. Without this a Uint8Array
+// argument stringified to a comma-joined list of numbers, so a
+// readFile -> writeFile round trip corrupted the bytes.
+func writeFileBytes(v goja.Value) ([]byte, error) {
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return nil, errors.New("The \"data\" argument must be of type string or an instance of Buffer, TypedArray, or DataView. Received null")
+	}
+	switch data := v.Export().(type) {
+	case string:
+		return []byte(data), nil
+	case []byte:
+		return data, nil
+	case goja.ArrayBuffer:
+		return data.Bytes(), nil
+	}
+	obj, ok := v.(*goja.Object)
+	if !ok {
+		return nil, errors.New("The \"data\" argument must be of type string or an instance of Buffer, TypedArray, or DataView")
+	}
+	// A TypedArray exposes `length`; a DataView exposes `byteLength`. Both
+	// index their bytes 0..n-1 through the object, which goja projects for
+	// the byte-sized views this surface produces.
+	length := -1
+	for _, key := range []string{"length", "byteLength"} {
+		if raw := obj.Get(key); raw != nil && !goja.IsUndefined(raw) {
+			length = int(raw.ToInteger())
+			break
+		}
+	}
+	if length < 0 {
+		return nil, errors.New("The \"data\" argument must be of type string or an instance of Buffer, TypedArray, or DataView")
+	}
+	out := make([]byte, length)
+	for i := 0; i < length; i++ {
+		out[i] = byte(obj.Get(itoa(i)).ToInteger())
+	}
+	return out, nil
 }
 
 // nodeFSError builds a Node-shaped error: an Error subclass carrying .code

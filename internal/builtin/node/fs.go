@@ -196,6 +196,24 @@ func FsRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.R
 			})
 		})
 
+		// rmdir(path) -> Promise<void>. Node's simple form: remove an EMPTY
+		// directory (ENOTEMPTY/ENOENT surface with their codes). The
+		// recursive form is deprecated upstream in favour of rm, so this
+		// surface implements the necessary subset only.
+		_ = promises.Set("rmdir", func(call goja.FunctionCall) goja.Value {
+			path, ok := stringArg(call, 0)
+			if !ok {
+				return rejectTypeError(adapter, "rmdir", "The \"path\" argument must be of type string")
+			}
+			return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+				if err := os.Remove(path); err != nil {
+					_ = settle.Settle(true, func(rt *goja.Runtime) any { return nodeFSError(rt, "rmdir", path, err) })
+					return
+				}
+				_ = settle.Settle(false, func(*goja.Runtime) any { return goja.Undefined() })
+			})
+		})
+
 		_ = exports.Set("promises", promises)
 	}
 }

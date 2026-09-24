@@ -140,6 +140,39 @@ func TestRequireProcessThrows(t *testing.T) {
 	}
 }
 
+// TestFsRmdirRemovesEmptyDirectory covers Node's fs.promises.rmdir simple
+// form: an empty directory is removed, a non-empty one rejects with ENOTEMPTY,
+// and a missing one with ENOENT.
+func TestFsRmdirRemovesEmptyDirectory(t *testing.T) {
+	dir := t.TempDir()
+	empty := filepath.Join(dir, "empty")
+	if err := os.Mkdir(empty, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	full := filepath.Join(dir, "full")
+	if err := os.Mkdir(full, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(full, "f"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := runScript(t, reportScript(`
+			const fs = require("fs");
+			await fs.promises.rmdir(`+pathLit(empty)+`);
+			let notEmpty = "NO-THROW";
+			try { await fs.promises.rmdir(`+pathLit(full)+`); } catch (err) { notEmpty = err.code; }
+			let missing = "NO-THROW";
+			try { await fs.promises.rmdir(`+pathLit(filepath.Join(dir, "gone"))+`); } catch (err) { missing = err.code; }
+			report(notEmpty + "/" + missing);
+	`))
+	if got != "ENOTEMPTY/ENOENT" {
+		t.Fatalf("rmdir rejections = %q, want ENOTEMPTY/ENOENT", got)
+	}
+	if _, err := os.Stat(empty); !os.IsNotExist(err) {
+		t.Fatalf("empty directory still present after rmdir: %v", err)
+	}
+}
+
 func TestFsWriteFileWxRejectsExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "existing.txt")

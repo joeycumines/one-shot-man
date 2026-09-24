@@ -2462,29 +2462,33 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		select {
-		case <-programFinished:
-			// Program finished naturally, no need to call Quit
-			return
-		case <-ctx.Done():
-			// Context cancelled externally: the runtime is being torn down
-			// (engine shutdown, or the engine's unhandled-signal fallback),
-			// so end the program and restore the terminal.
-		case sig := <-sigCh:
-			// SIGINT/SIGTERM belong to the script: the engine delivers them
-			// to the script's Node-style listener, and the script decides
-			// when the program ends (typically after an event-driven drain).
-			// Quitting here would stop the program behind the script's back,
-			// so its drain never observes the child exit and the process
-			// lingers. A script with no listener is force-cancelled by the
-			// engine instead, which lands on the ctx.Done() arm above.
-			// SIGQUIT has no engine contract; keep the terminal-restoring
-			// quit.
-			if sig != syscall.SIGQUIT {
+		for {
+			select {
+			case <-programFinished:
+				// Program finished naturally, no need to call Quit
 				return
+			case <-ctx.Done():
+				// Context cancelled externally: the runtime is being torn down
+				// (engine shutdown, or the engine's unhandled-signal fallback),
+				// so end the program and restore the terminal.
+			case sig := <-sigCh:
+				// SIGINT/SIGTERM belong to the script: the engine delivers them
+				// to the script's Node-style listener, and the script decides
+				// when the program ends (typically after an event-driven drain).
+				// Quitting here would stop the program behind the script's back,
+				// so its drain never observes the child exit and the process
+				// lingers. A script with no listener is force-cancelled by the
+				// engine instead, which lands on the ctx.Done() arm above — so
+				// keep watching rather than returning, or that arm is lost.
+				// SIGQUIT has no engine contract; keep the terminal-restoring
+				// quit.
+				if sig != syscall.SIGQUIT {
+					continue
+				}
 			}
+			p.Quit()
+			return
 		}
-		p.Quit()
 	})
 
 	_, runErr := p.Run()

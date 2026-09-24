@@ -151,6 +151,16 @@ func (c *jsScriptCommand) Execute(args []string, stdout, stderr io.Writer) error
 	// Wait for any asynchronous work (timers, fetch, etc.) to complete naturally.
 	// This uses the WithAutoExit(true) feature of the event loop.
 	engine.Wait()
+
+	// Re-check the fallback after the drain: a signal that arrived while Wait
+	// was blocked sets the status and force-cancels, and Wait then returns —
+	// without this the run would fall through to success (exit 0) instead of
+	// Node's 128+N for an unlistened signal.
+	if signalFallback != nil {
+		if code := signalFallback(); code != 0 {
+			return &SilentError{Err: &ExitError{Code: code}}
+		}
+	}
 	// Node exit channel: a script-settled process.exit / process.exitCode
 	// becomes this process's status, silently — Node prints nothing for a
 	// nonzero exit.

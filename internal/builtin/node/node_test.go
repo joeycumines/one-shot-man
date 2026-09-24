@@ -401,6 +401,99 @@ func TestNetWriteBeforeConnectFlushesAfterConnect(t *testing.T) {
 // TestNetOnceListenerFiresExactlyOnce verifies real once semantics: a once
 // listener runs on its first event and is removed, so a second emission
 // does not re-run it.
+// TestNetWriteOrderingIsPreserved covers the end-to-end contract over a real
+// socket: writes issued before the connection establishes are buffered and
+// flushed on connect, and post-connect writes follow, so the server receives
+// every write exactly once and in issue order. (The deterministic coverage of
+// the connect race itself is TestSocketWriteQueueSerializesAcrossConnect,
+// which fails on the old unlocked-flush shape.)
+func TestNetWriteOrderingIsPreserved(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	// The server reads until the terminator and reports the raw wire order.
+	received := make(chan string, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		// Delay the read so the pre-connect flush blocks on the socket
+		// buffer; that is the window in which a post-connect write used to
+		// reach the wire ahead of the buffered bytes.
+		time.Sleep(300 * time.Millisecond)
+		buf := make([]byte, 0, 1<<20)
+		tmp := make([]byte, 4096)
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+			n, readErr := conn.Read(tmp)
+			buf = append(buf, tmp[:n]...)
+			if strings.Contains(string(buf), "\n") {
+				break
+			}
+			if readErr != nil {
+				break
+			}
+		}
+		_, _ = conn.Write([]byte("ack"))
+		received <- string(buf)
+	}()
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	got := runScript(t, reportScript(`
+			const net = require("net");
+			const socket = net.connect({host: "127.0.0.1", port: `+itoaLit(port)+`});
+			let issued = "";
+			const w = (chunk) => { issued += chunk; socket.write(chunk); };
+			// A pre-connect burst larger than the socket buffer, so the flush
+			// blocks until the server reads ...
+			for (let i = 0; i < 64; i++) { w("a".repeat(4096)); }
+			// ... while timer writes straddle the connect.
+			let ticks = 0;
+			const timer = setInterval(() => {
+				w("b");
+				if (++ticks >= 60) { clearInterval(timer); setTimeout(() => { socket.write("\n"); }, 150); }
+			}, 0);
+			socket.on("connect", () => { w("c"); w("c"); w("c"); });
+			socket.on("data", (chunk) => { socket.end(); report("ISSUED:" + issued); });
+			socket.on("error", (e) => report("ERROR: " + e.message));
+	`))
+	if !strings.HasPrefix(got, "ISSUED:") {
+		t.Fatalf("net exchange = %q, want ISSUED:", got)
+	}
+	issued := strings.TrimPrefix(got, "ISSUED:")
+	select {
+	case wire := <-received:
+		wire = strings.TrimSuffix(wire, "\n")
+		if wire != issued {
+			t.Fatalf("wire order differs from issue order (wire %d bytes, issued %d bytes): first difference at %d",
+				len(wire), len(issued), firstDifference(wire, issued))
+		}
+	case <-time.After(11 * time.Second):
+		t.Fatal("server never received the writes")
+	}
+}
+
+// firstDifference returns the index of the first differing byte, or the length
+// of the shorter string when one is a prefix of the other.
+func firstDifference(a, b string) int {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
+}
+
 func TestNetOnceListenerFiresExactlyOnce(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

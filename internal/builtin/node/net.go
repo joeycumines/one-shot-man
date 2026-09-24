@@ -60,44 +60,20 @@ func NetRequire(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeve
 				connCh <- conn
 			}()
 
-			// connHolder carries the established connection between the
-			// reader goroutine and the write/end closures with proper
-			// synchronization; the connect event is dispatched through the
-			// loop while the reader owns the value.
-			var mu sync.Mutex
-			var conn net.Conn
-			var pending []string
+			// The connection and the pre-connect buffer live in one queue so
+			// the reader goroutine (which installs the connection) and the JS
+			// write path share a single lock; see socketWriteQueue.
+			queue := &socketWriteQueue{}
 			setConn := func(c net.Conn) {
-				mu.Lock()
-				conn = c
-				flushed := pending
-				pending = nil
-				mu.Unlock()
-				// Node buffers writes issued before the connection
-				// establishes and flushes them on connect; drop nothing.
-				for _, data := range flushed {
-					if _, err := c.Write([]byte(data)); err != nil {
-						// The reader's next read observes the failed
-						// connection and emits "error"/"close"; the
-						// caller's write already returned true, matching
-						// Node's asynchronous failure surface.
-						slog.Warn("node.net: flushing pre-connect write failed", "error", err)
-					}
+				if err := queue.setConn(c); err != nil {
+					// The reader's next read observes the failed connection
+					// and emits "error"/"close"; the caller's write already
+					// returned, matching Node's asynchronous failure surface.
+					slog.Warn("node.net: flushing pre-connect write failed", "error", err)
 				}
 			}
-			getConn := func() net.Conn { mu.Lock(); defer mu.Unlock(); return conn }
-			// bufferWrite appends data while unconnected. The caller wrote
-			// synchronously from JS, so the data MUST reach the wire — the
-			// reader goroutine flushes it after setConn installs the conn.
-			bufferWrite := func(data string) bool {
-				mu.Lock()
-				defer mu.Unlock()
-				if conn != nil {
-					return false
-				}
-				pending = append(pending, data)
-				return true
-			}
+			getConn := queue.current
+			writeBytes := queue.write
 
 			// socketDone closes when the reader goroutine finishes (after
 			// the close event, the dial error, or a loop-submit failure).
@@ -167,13 +143,9 @@ func NetRequire(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeve
 				if len(call.Arguments) > 0 {
 					data = call.Argument(0).String()
 				}
-				if c := getConn(); c != nil {
-					if _, err := c.Write([]byte(data)); err != nil {
-						panic(runtime.NewGoError(err))
-					}
-					return goja.Undefined()
+				if err := writeBytes(data); err != nil {
+					panic(runtime.NewGoError(err))
 				}
-				bufferWrite(data)
 				return goja.Undefined()
 			})
 			_ = socket.obj.Set("end", func(call goja.FunctionCall) goja.Value {
@@ -197,6 +169,55 @@ func NetRequire(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeve
 // errEOFPlaceholder exists so the reader can compare a plain EOF without
 // importing io twice in one expression; io.EOF's Error() is "EOF".
 var errEOFPlaceholder = errors.New("EOF")
+
+// socketWriteQueue serializes one socket's writes. Node buffers writes issued
+// before the connection establishes and flushes them on connect, and drop
+// nothing; keeping the connection, the buffer, and the flush under ONE lock
+// makes issue order the wire order and closes the connect race (the earlier
+// shape took the lock to read the connection, released it, then took it again
+// to buffer, so a write landing in between was dropped, and the flush ran
+// unlocked on the reader goroutine so a post-connect write could overtake an
+// earlier buffered one).
+type socketWriteQueue struct {
+	mu      sync.Mutex
+	conn    net.Conn
+	pending []string
+}
+
+// write buffers data while unconnected and writes it directly once connected.
+func (q *socketWriteQueue) write(data string) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.conn == nil {
+		q.pending = append(q.pending, data)
+		return nil
+	}
+	_, err := q.conn.Write([]byte(data))
+	return err
+}
+
+// setConn installs the connection and flushes the buffered writes under the
+// same lock write takes, returning the first flush error if any.
+func (q *socketWriteQueue) setConn(c net.Conn) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.conn = c
+	flushed := q.pending
+	q.pending = nil
+	for _, data := range flushed {
+		if _, err := c.Write([]byte(data)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// current returns the installed connection, if any.
+func (q *socketWriteQueue) current() net.Conn {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.conn
+}
 
 // socketListener is one registered event listener. A once listener is
 // removed after its first invocation; registered listeners are plain

@@ -71,4 +71,4 @@ JS bindings are guests on the event loop. No binding may monopolize it.
 ### Node compatibility (direction)
 
 - **`node:` aliases are an invariant:** every Node-compatible module registered under a bare name (currently `fs`, `net`, `crypto`) must also resolve under its `node:`-prefixed alias, registered with the same loader in `internal/builtin/register.go`.
-- **Node compatibility is the intended direction:** prefer a Node-compatible global namespace and exposed behavior wherever possible and factor it into new bindings and modules — no concrete decision has been made yet, so treat it as a strong design default rather than a settled mandate.
+- **Node compatibility is the intended direction:** prefer a Node-compatible global namespace and exposed behavior wherever possible and factor it into new bindings and modules. The one open question is whether the existing osm-specific globals (e.g. `ctx`) will be removed as a breaking change — no decision on that yet; Node compatibility itself is a strong design default regardless.

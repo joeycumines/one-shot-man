@@ -134,6 +134,54 @@ func TestChunk05_ExecuteSplit_BasicExecution(t *testing.T) {
 	gitCmd(t, dir, "checkout", "feature")
 }
 
+func TestChunk05_ExecuteSplit_RenameRemovesSourcePath(t *testing.T) {
+	t.Parallel()
+	dir := initGitRepo(t)
+	writeFile(t, filepath.Join(dir, "old.txt"), "renamed content\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "base")
+	gitCmd(t, dir, "checkout", "-b", "feature")
+	gitCmd(t, dir, "mv", "old.txt", "new.txt")
+	gitCmd(t, dir, "commit", "-m", "rename")
+
+	evalJS := prsplittest.NewChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
+	result, err := evalJS(`
+		(async function() {
+			var r = await globalThis.prSplit.executeSplit({
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				dir: '` + escapeJSPath(dir) + `',
+				fileStatuses: { 'new.txt': 'R' },
+				fileRenames: { 'new.txt': 'old.txt' },
+				splits: [{ name: 'split/01-rename', files: ['new.txt'], message: 'rename' }]
+			});
+			return JSON.stringify(r);
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var execResult struct {
+		Error *string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &execResult); err != nil {
+		t.Fatal(err)
+	}
+	if execResult.Error != nil {
+		t.Fatalf("executeSplit error: %s", *execResult.Error)
+	}
+
+	gitCmd(t, dir, "checkout", "split/01-rename")
+	if got := gitCmdAllowFail(t, dir, "show", "HEAD:old.txt"); got.err == nil {
+		t.Fatal("old.txt should not exist on rename split")
+	}
+	if got := gitCmd(t, dir, "show", "HEAD:new.txt"); !strings.Contains(got, "renamed content") {
+		t.Fatalf("new.txt has unexpected content: %q", got)
+	}
+}
+
 func TestChunk05_ExecuteSplit_InvalidPlan(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil,

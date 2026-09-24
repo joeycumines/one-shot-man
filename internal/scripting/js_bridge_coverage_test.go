@@ -249,6 +249,39 @@ func TestJsOutputPrintf(t *testing.T) {
 	}
 }
 
+func TestJsOutput_RoutesThroughActiveTUI(t *testing.T) {
+	ctx := context.Background()
+	var stdout, stderr bytes.Buffer
+	eng := mustNewEngine(t, ctx, &stdout, &stderr)
+
+	script := eng.LoadScriptString("active_tui_output", `
+		globalThis.prSplit = {
+			_tuiOutputActive: true,
+			lines: [],
+			_routeTuiOutput: function(msg) { globalThis.prSplit.lines.push(msg); }
+		};
+		output._setTUIOutputActive(true);
+		output.print("line one");
+		output.printf("value=%d", 42);
+		globalThis.routedOutput = globalThis.prSplit.lines.slice();
+		output._setTUIOutputActive(false);
+	`)
+	if err := eng.ExecuteScript(script); err != nil {
+		t.Fatalf("ExecuteScript failed: %v", err)
+	}
+
+	if got := stdout.String(); got != "" {
+		t.Fatalf("active TUI output bypassed the model and wrote %q", got)
+	}
+	got, ok := eng.GetGlobal("routedOutput").([]any)
+	if !ok {
+		t.Fatalf("routedOutput type = %T, want []any", eng.GetGlobal("routedOutput"))
+	}
+	if len(got) != 2 || got[0] != "line one" || got[1] != "value=42" {
+		t.Fatalf("routedOutput = %#v, want two model-owned messages", got)
+	}
+}
+
 // ============================================================================
 // js_logging_api.go — direct Go-level unit tests
 // ============================================================================

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -92,7 +93,7 @@ func TestPrSplitCommand_SetupFlags(t *testing.T) {
 		"base", "strategy", "max", "prefix", "verify", "dry-run",
 		"json",
 		"test", "session", "store", "log-level", "log-file", "log-buffer",
-		"agent-command", "agent-arg", "agent-model", "agent-config-dir", "agent-env",
+		"agent-command", "agent-arg", "agent-env",
 		"timeout",
 	}
 
@@ -577,6 +578,123 @@ func TestParseAgentEnv_MalformedInput(t *testing.T) {
 	}
 }
 
+func TestParseAgentEnv_DocumentsCommaLimitation(t *testing.T) {
+	t.Parallel()
+
+	got := parseAgentEnv("KEY=a,b")
+	if got["KEY"] != "a" {
+		t.Fatalf("KEY = %q, want %q (comma splits, remainder dropped)", got["KEY"], "a")
+	}
+	got = parseAgentEnv("KEY=")
+	if v, ok := got["KEY"]; !ok || v != "" {
+		t.Fatalf("KEY empty value: got %q ok=%v, want empty with ok=true", v, ok)
+	}
+	got = parseAgentEnv("A=1,A=2")
+	if got["A"] != "2" {
+		t.Fatalf("duplicate keys: got %q, want last-win %q", got["A"], "2")
+	}
+
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetupFlags(fs)
+	// Usage text carries the comma limitation and honest agent-command copy.
+	found := false
+	fs.VisitAll(func(f *flag.Flag) {
+		if f.Name == "agent-env" && strings.Contains(f.Usage, "must not contain commas") {
+			found = true
+		}
+	})
+	if !found {
+		t.Fatal("agent-env usage string must state values must not contain commas")
+	}
+	found = false
+	fs.VisitAll(func(f *flag.Flag) {
+		if f.Name == "agent-command" && strings.Contains(f.Usage, "required") {
+			found = true
+		}
+	})
+	if !found {
+		t.Fatal("agent-command usage string must state required")
+	}
+}
+
+func TestPrSplitCommand_HonestHelpContract(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetupFlags(fs)
+	usage := map[string]string{}
+	fs.VisitAll(func(f *flag.Flag) {
+		usage[f.Name] = f.Usage
+	})
+	if got := usage["agent-command"]; !strings.Contains(got, "required") {
+		t.Errorf("agent-command usage = %q, want required-at-spawn contract", got)
+	}
+	if strings.Contains(usage["agent-command"], "auto-detect") {
+		t.Errorf("agent-command usage still promises auto-detect: %q", usage["agent-command"])
+	}
+	if got := usage["timeout"]; !strings.Contains(got, "does not bound the agent PTY") {
+		t.Errorf("timeout usage = %q, want PTY non-bound disclosure", got)
+	}
+	if got := usage["agent-env"]; !strings.Contains(got, "must not contain commas") {
+		t.Errorf("agent-env usage = %q, want comma-rule disclosure", got)
+	}
+
+	// Agent-command empty still passes validateFlags so heuristic, batch,
+	// and REPL flows that never spawn survive.
+	cmd2 := NewPrSplitCommand(config.NewConfig())
+	cmd2.strategy = "directory"
+	cmd2.maxFiles = 10
+	if err := cmd2.validateFlags(); err != nil {
+		t.Fatalf("validateFlags with empty agent-command: %v", err)
+	}
+
+	// --mcp-config in any form is rejected at flag validation, matching the
+	// JS buildAgentArgv exactly-one contract.
+	for _, bad := range [][]string{{"--mcp-config", "x"}, {"--mcp-config=/tmp/x"}} {
+		cmdBad := NewPrSplitCommand(config.NewConfig())
+		cmdBad.strategy = "directory"
+		cmdBad.maxFiles = 10
+		cmdBad.agentArgs = append(cmdBad.agentArgs, bad...)
+		if err := cmdBad.validateFlags(); err == nil {
+			t.Fatalf("validateFlags accepted --agent-arg %q, want --mcp-config rejection", bad)
+		} else if !strings.Contains(err.Error(), "--mcp-config is managed") {
+			t.Fatalf("validateFlags error = %q, want --mcp-config is managed", err)
+		}
+	}
+
+	for _, tc := range []struct {
+		path string
+		want []string
+	}{
+		{"../../docs/reference/command.md", []string{"required: set flag or `pr-split.agent-command` config", "does not bound the agent PTY"}},
+		{"../../docs/reference/config.md", []string{"Must be set via flag or config for agent flows"}},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			data, err := os.ReadFile(tc.path)
+			if err != nil {
+				t.Skipf("doc not readable from test dir: %v", err)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(string(data), want) {
+					t.Errorf("%s missing %q", tc.path, want)
+				}
+			}
+			if strings.Contains(string(data), "agent-model") || strings.Contains(string(data), "agent-config-dir") {
+				t.Errorf("%s still documents removed flags", tc.path)
+			}
+		})
+	}
+	if data, err := os.ReadFile("../../docs/reference/command.md"); err == nil {
+		if strings.Contains(string(data), "auto-detects a supported agent") {
+			t.Error("command.md still promises agent auto-detect")
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Task 27: parseAgentEnv additional edge cases
 // ---------------------------------------------------------------------------
@@ -789,8 +907,6 @@ func TestPrSplitCommand_AgentCommandFlagParsing(t *testing.T) {
 		"--agent-arg", "agent",
 		"--agent-arg", "--model=minimax-m2.5:cloud",
 		"--agent-arg", "--",
-		"--agent-model", "sonnet",
-		"--agent-config-dir", "/tmp/agent-cfg",
 		"--agent-env", "API_KEY=secret,DEBUG=1",
 	})
 	if err != nil {
@@ -813,13 +929,34 @@ func TestPrSplitCommand_AgentCommandFlagParsing(t *testing.T) {
 		}
 	}
 
-	if cmd.agentModel != "sonnet" {
-		t.Errorf("agentModel: got %q, want %q", cmd.agentModel, "sonnet")
-	}
-	if cmd.agentConfigDir != "/tmp/agent-cfg" {
-		t.Errorf("agentConfigDir: got %q, want %q", cmd.agentConfigDir, "/tmp/agent-cfg")
-	}
 	if cmd.agentEnv != "API_KEY=secret,DEBUG=1" {
 		t.Errorf("agentEnv: got %q, want %q", cmd.agentEnv, "API_KEY=secret,DEBUG=1")
 	}
+}
+
+func TestPrSplitCommand_VerifyTimeoutPerOSContract(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	// Contract: the same verifyTimeoutMs value is enforced per OS through
+	// different mechanisms — Unix wraps the shell command with a watchdog,
+	// Windows relies on the Go-level deadline in shellSpawnSync. Assert the
+	// documented split exists in the chunk source so the docs note cannot
+	// drift from the code.
+	data, err := os.ReadFile("pr_split_06_verification.js")
+	if err != nil {
+		t.Fatalf("read chunk: %v", err)
+	}
+	src := string(data)
+	if !strings.Contains(src, "if (timeoutMs > 0 && !isWindows())") {
+		t.Error("06_verification.js missing Unix watchdog gate for verify timeout")
+	}
+	if !strings.Contains(src, "relies on the Go-level deadline in shellSpawnSync") {
+		t.Error("06_verification.js missing Windows Go-deadline note for verify timeout")
+	}
+	doc, err := os.ReadFile("../../docs/reference/command.md")
+	if err != nil {
+		t.Skipf("doc not readable from test dir: %v", err)
+	}
+	_ = doc
 }

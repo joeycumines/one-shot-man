@@ -104,6 +104,7 @@
                     if (st.analysisCache) {
                         planConfig.sourceBranch = st.analysisCache.currentBranch;
                         planConfig.fileStatuses = st.analysisCache.fileStatuses;
+                        planConfig.fileRenames = st.analysisCache.fileRenames;
                     }
                     st.planCache = await prSplit.createSplitPlan(st.groupsCache, planConfig);
                     var validation = prSplit.validatePlan(st.planCache);
@@ -581,7 +582,8 @@
                         sourceBranch: st.analysisCache.currentBranch,
                         branchPrefix: runtime.branchPrefix,
                         verifyCommand: runtime.verifyCommand,
-                        fileStatuses: st.analysisCache.fileStatuses
+                        fileStatuses: st.analysisCache.fileStatuses,
+                        fileRenames: st.analysisCache.fileRenames
                     });
                     var validation = prSplit.validatePlan(st.planCache);
                     if (!validation.valid) { output.print('Plan invalid: ' + validation.errors.join('; ')); return; }

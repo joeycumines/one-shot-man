@@ -270,17 +270,11 @@
     // --- Per-message-type handler functions ---
     // Extracted from wizardUpdateImpl for modularity and testability.
 
-    // handleWindowResize processes WindowSize messages: sets dimensions,
-    // syncs viewports, resizes interactive CaptureSession terminals, and
-    // handles first-render initialization.
-    function handleWindowResize(msg, s) {
-        s.width = msg.width;
-        s.height = msg.height;
-
-        // T120: Sync viewport dimensions from update, not view.
+    // syncSplitViewDimensions synchronizes main viewport, active split pane sizes,
+    // termmux virtual terminal dimensions, and live agent termpane bounds.
+    function syncSplitViewDimensions(s) {
+        if (!s) return;
         syncMainViewport(s);
-
-        // T336: Resize interactive CaptureSession terminals.
         if (s.splitViewEnabled) {
             var h = s.height || C.DEFAULT_ROWS;
             var vpH = Math.max(3, h - CHROME_ESTIMATE);
@@ -290,29 +284,38 @@
             var cH = vpH - wH - 1;
             var paneRows = Math.max(3, cH - 3);
             var paneCols = Math.max(20, (s.width || 80) - 4);
-            // Task 8: Shell tab removed from interactive tabs.
             var interactiveTabs = ['agent', 'verify'];
             for (var ti = 0; ti < interactiveTabs.length; ti++) {
                 var resizeTab = interactiveTabs[ti];
                 var resizeSession = getInteractivePaneSession(s, resizeTab);
                 if (resizeSession && typeof resizeSession.resize === 'function') {
-                    try { resizeSession.resize(paneRows, paneCols); } catch (e) { log.debug('resize: ' + resizeTab + ' session.resize failed: ' + (e.message || e)); }
+                    try { resizeSession.resize(paneRows, paneCols); } catch (e) {
+                        log.debug('resize: ' + resizeTab + ' session.resize failed: ' + (e.message || e));
+                    }
                 }
             }
-            // Task 44: Sync SessionManager's internal VTerm dimensions so
-            // capture() returns properly-sized ANSI output.
             if (typeof tuiMux !== 'undefined' && tuiMux &&
-                typeof tuiMux.resizeAsync === 'function') {
-                tuiMux.resizeAsync(paneRows, paneCols).catch(function(e) {
-                    log.debug("session manager resizeAsync failed", { error: e.message || String(e) });
-                });
-            } else if (typeof tuiMux !== 'undefined' && tuiMux &&
                 typeof tuiMux.resize === 'function') {
                 try { tuiMux.resize(paneRows, paneCols); } catch (e) {
-                    log.debug("session manager resize failed", { error: e.message || String(e) });
+                    log.debug('session manager resize failed', { error: e.message || String(e) });
+                }
+            }
+            if (typeof prSplit._syncAgentTermpaneBounds === 'function') {
+                try { prSplit._syncAgentTermpaneBounds(s); } catch (e) {
+                    log.debug('resize agent live sync failed', { error: e.message || String(e) });
                 }
             }
         }
+    }
+
+    // handleWindowResize processes WindowSize messages: sets dimensions,
+    // syncs viewports, resizes interactive CaptureSession terminals, and
+    // handles first-render initialization.
+    function handleWindowResize(msg, s) {
+        s.width = msg.width;
+        s.height = msg.height;
+
+        syncSplitViewDimensions(s);
 
         // Sync report overlay dimensions if currently open.
         if (s.showingReport) {
@@ -643,6 +646,84 @@
         var k = msg.key;
         var activeVerifySession = getInteractivePaneSession(s, 'verify');
 
+        // Preserved-session ERROR actions: classification timeout kept the
+        // agent session alive for diagnosis. a/f/d act on it here, before
+        // any generic ERROR handling.
+        if (s.wizardState === 'ERROR' && prSplit._agentEvidence &&
+            (s.errorDetails || '').indexOf('reportClassification') >= 0) {
+            if (k === 'a') {
+                s.splitViewEnabled = true;
+                s.splitViewTab = 'agent';
+                if (typeof prSplit._syncMainViewport === 'function') {
+                    try { prSplit._syncMainViewport(s); } catch (e) {
+                        log.debug('error action viewport sync failed', { error: e.message || String(e) });
+                    }
+                }
+                return [s, tea.tick(C.TICK_INTERVAL_MS, 'agent-screenshot')];
+            }
+            if (k === 'f') {
+                s.splitViewEnabled = true;
+                s.splitViewTab = 'agent';
+                s.splitViewFocus = 'agent';
+                if (typeof prSplit._syncMainViewport === 'function') {
+                    try { prSplit._syncMainViewport(s); } catch (e) {
+                        log.debug('error action viewport sync failed', { error: e.message || String(e) });
+                    }
+                }
+                return [s, tea.tick(C.TICK_INTERVAL_MS, 'agent-screenshot')];
+            }
+            if (k === 'd') {
+                if (typeof prSplit._noteAgentDetached === 'function') {
+                    try { prSplit._noteAgentDetached(); } catch (e) {
+                        log.debug('error discard detach failed', { error: e.message || String(e) });
+                    }
+                }
+                // Deferred quit: the sync update cannot await async teardown
+                // (cleanupExecutor awaits handle.close; mcpCb.close is a
+                // TrackPromise), and quitting now would let Shutdown/auto-exit
+                // fire mid-I/O with the settler Submit silently dropped. Mark
+                // the session discarded, schedule cleanup on the promise
+                // chain, and quit on the next tick after close settles.
+                var stt = prSplit._state;
+                s.errorDiscardPending = true;
+                prSplit._agentEvidence = null;
+                if (stt) stt.agentEvidence = null;
+                if (typeof prSplit._destroyAgentTermpane === 'function') {
+                    try { prSplit._destroyAgentTermpane(); } catch (e) {
+                        log.debug('error discard destroy failed', { error: e.message || String(e) });
+                    }
+                }
+                try {
+                    if (typeof prSplit.cleanupExecutor !== 'function') {
+                        throw new Error('cleanupExecutor missing');
+                    }
+                    prSplit.cleanupExecutor().then(function() {
+                    var mcpCb = prSplit._mcpCallbackObj;
+                    if (!mcpCb || typeof mcpCb.close !== 'function') return null;
+                    return mcpCb.close().catch(function(e) {
+                        log.debug('error discard mcp close failed', { error: e.message || String(e) });
+                    }).then(function() {
+                        prSplit._mcpCallbackObj = null;
+                        if (stt) stt.mcpCallbackObj = null;
+                    });
+                }).catch(function(e) {
+                    log.debug('error discard cleanup failed', { error: e.message || String(e) });
+                }).then(function() {
+                    s.errorDiscardPending = false;
+                    s.errorDiscardReady = true;
+                }, function() {
+                    s.errorDiscardPending = false;
+                    s.errorDiscardReady = true;
+                });
+                } catch (e) {
+                    log.debug('error discard cleanup failed', { error: e.message || String(e) });
+                    s.errorDiscardPending = false;
+                    s.errorDiscardReady = true;
+                }
+                return [s, tea.tick(C.TICK_INTERVAL_MS, 'error-discard-quit')];
+            }
+        }
+
         // Live verify session: intercept Ctrl+C to stop verification
         // instead of showing the cancel dialog.
         // First Ctrl+C sends SIGINT; second within 2s sends SIGKILL
@@ -824,15 +905,25 @@
                 clearSelection(s);
                 return [s, null];
             }
-            // Ctrl+= / Ctrl+- to adjust ratio.
+            // Ctrl+= / Ctrl+- (coarse ±0.1) and Ctrl+Up / Ctrl+Down (fine ±0.05) to adjust ratio.
             if (k === 'ctrl++' || k === 'ctrl+=') {
-                s.splitViewRatio = Math.min(0.8, s.splitViewRatio + 0.1);
-                syncMainViewport(s); // T120: sync dimensions after ratio change.
+                s.splitViewRatio = Math.min(0.8, Math.round(((s.splitViewRatio || 0.6) + 0.1) * 10) / 10);
+                syncSplitViewDimensions(s);
                 return [s, null];
             }
             if (k === 'ctrl+-') {
-                s.splitViewRatio = Math.max(0.2, s.splitViewRatio - 0.1);
-                syncMainViewport(s); // T120: sync dimensions after ratio change.
+                s.splitViewRatio = Math.max(0.2, Math.round(((s.splitViewRatio || 0.6) - 0.1) * 10) / 10);
+                syncSplitViewDimensions(s);
+                return [s, null];
+            }
+            if (k === 'ctrl+down' || k === 'alt+down') {
+                s.splitViewRatio = Math.min(0.85, Math.round(((s.splitViewRatio || 0.6) + 0.05) * 100) / 100);
+                syncSplitViewDimensions(s);
+                return [s, null];
+            }
+            if (k === 'ctrl+up' || k === 'alt+up') {
+                s.splitViewRatio = Math.max(0.15, Math.round(((s.splitViewRatio || 0.6) - 0.05) * 100) / 100);
+                syncSplitViewDimensions(s);
                 return [s, null];
             }
             // T44+T322+T380+T388: Ctrl+O cycles through available tabs in split-view bottom pane.
@@ -955,6 +1046,21 @@
                             }
                         }
                         return [s, null];
+                    }
+                }
+                // Live agent terminal: when the agent tab is focused and the
+                // live pane is active, the PTY owns scrolling, cursor
+                // addressing, and alternate screen, so the viewport scroll
+                // branches below are bypassed and scroll keys go to the
+                // termpane. Reserved keys stay with the wizard.
+                if (s.splitViewTab === 'agent' &&
+                    typeof prSplit._agentLiveActive === 'function' && prSplit._agentLiveActive()) {
+                    if (!AGENT_RESERVED_KEYS[k]) {
+                        try { prSplit._routeKeyToAgentTermpane(msg); } catch (e) {
+                            log.debug('agent live key dispatch failed', { error: e.message || String(e) });
+                        }
+                        s.agentViewOffset = 0;
+                        return [s, tea.tick(C.TICK_INTERVAL_MS, 'agent-screenshot')];
                     }
                 }
                 // Viewport scroll keys — scroll the Agent pane output.
@@ -1119,6 +1225,10 @@
             // Enter plan editor.
             return enterPlanEditor(s);
         }
+        if (k === 'x' && s.wizardState === 'PLAN_REVIEW' && !s.isProcessing) {
+            // Execute plan.
+            return handleNext(s);
+        }
         // PLAN_EDITOR: inline title rename (T17).
         if (k === 'e' && s.wizardState === 'PLAN_EDITOR') {
             var eidx = s.selectedSplitIdx || 0;
@@ -1182,6 +1292,37 @@
             }
             return [s, null];
         }
+        // PLAN_EDITOR: direct dialog shortcuts (m: move file, r: rename split dialog, g: merge splits).
+        if (k === 'm' && s.wizardState === 'PLAN_EDITOR' && !s.editorTitleEditing) {
+            var midx = s.selectedSplitIdx || 0;
+            var mfidx = s.selectedFileIdx || 0;
+            if (st.planCache && st.planCache.splits &&
+                st.planCache.splits[midx] &&
+                st.planCache.splits[midx].files &&
+                st.planCache.splits[midx].files[mfidx] &&
+                st.planCache.splits.length > 1) {
+                s.activeEditorDialog = 'move';
+                s.editorDialogState = { targetIdx: 0 };
+            }
+            return [s, null];
+        }
+        if (k === 'r' && s.wizardState === 'PLAN_EDITOR' && !s.editorTitleEditing) {
+            var ridx = s.selectedSplitIdx || 0;
+            if (st.planCache && st.planCache.splits && st.planCache.splits[ridx]) {
+                s.activeEditorDialog = 'rename';
+                s.editorDialogState = {
+                    inputText: st.planCache.splits[ridx].name || ''
+                };
+            }
+            return [s, null];
+        }
+        if (k === 'g' && s.wizardState === 'PLAN_EDITOR' && !s.editorTitleEditing) {
+            if (st.planCache && st.planCache.splits && st.planCache.splits.length > 1) {
+                s.activeEditorDialog = 'merge';
+                s.editorDialogState = { selected: {}, cursorIdx: 0 };
+            }
+            return [s, null];
+        }
         // T394: Ctrl+] passthrough is now handled by toggleModel wrapper
         // in BubbleTea (see startWizard). The wrapper properly calls
         // ReleaseTerminal before RunPassthrough, preventing stdin
@@ -1206,6 +1347,30 @@
     function handleMouseMessage(msg, s) {
         // v2 split mouse types: MouseClick, MouseRelease, MouseMotion, MouseWheel.
         // Type-based dispatch replaces the v1 isWheel/action pattern.
+
+        // Split-view divider drag resize handling.
+        // Sticky-drag protection: terminate dragging on explicit MouseRelease OR
+        // when MouseMotion arrives without an active pressed button ('none' / empty).
+        if (s.dividerDragging && (msg.type === 'MouseRelease' || (msg.type === 'MouseMotion' && (msg.button === 'none' || !msg.button)))) {
+            s.dividerDragging = false;
+            return [s, null];
+        }
+        if (msg.type === 'MouseMotion' && s.dividerDragging && s.splitViewEnabled) {
+            var h = s.height || C.DEFAULT_ROWS;
+            var vpH = Math.max(3, h - CHROME_ESTIMATE);
+            if (vpH > 6) {
+                var contentTopY = 2; // title(1) + divider(1)
+                var newWizardH = msg.y - contentTopY;
+                var minPaneH = 3;
+                var maxWizardH = Math.max(minPaneH, vpH - minPaneH - 1);
+                var clampedWizardH = Math.max(minPaneH, Math.min(maxWizardH, newWizardH));
+                var newRatio = clampedWizardH / vpH;
+                newRatio = Math.max(0.15, Math.min(0.85, newRatio));
+                s.splitViewRatio = Math.round(newRatio * 100) / 100;
+                syncSplitViewDimensions(s);
+            }
+            return [s, null];
+        }
 
         // T62: Mouse-based text selection in split-view pane.
         // Intercept Shift+Click to initiate/extend selection, and motion
@@ -1338,6 +1503,33 @@
             }
         }
 
+        // Live agent terminal: route AFTER shift-selection, release-guard,
+        // nav, zone, and tab handling, using rendered-pane offsets. Only
+        // unmatched events inside the agent content box reach the termpane;
+        // the verify tab keeps writeMouseToPane. Motion/release/wheel keep
+        // the existing child-forwarding path above; this block covers press
+        // fallback plus any event the child path did not consume while live.
+        if (s.splitViewEnabled && s.splitViewTab === 'agent' &&
+            typeof prSplit._agentLiveActive === 'function' && prSplit._agentLiveActive() &&
+            typeof prSplit._isPointInAgentPane === 'function' &&
+            (msg.type === 'MouseClick' || msg.type === 'MouseRelease' ||
+             msg.type === 'MouseMotion' || msg.type === 'MouseWheel')) {
+            var inside = false;
+            try { inside = prSplit._isPointInAgentPane(msg.x, msg.y); } catch (e) {
+                log.debug('agent live hit test failed', { error: e.message || String(e) });
+            }
+            if (inside) {
+                if (s.splitViewFocus !== 'agent') {
+                    s.splitViewFocus = 'agent';
+                }
+                var liveHandled = false;
+                try { liveHandled = prSplit._routeMouseToAgentTermpane(msg); } catch (e) {
+                    log.debug('agent live mouse dispatch failed', { error: e.message || String(e) });
+                }
+                if (liveHandled) return [s, null];
+            }
+        }
+
         if (msg.type === 'MouseClick') {
             return handleMouseClick(msg, s);
         }
@@ -1411,6 +1603,33 @@
         // Split-view: poll Agent screenshot.
         if (msg.id === 'agent-screenshot') {
             return pollAgentScreenshot(s);
+        }
+        // Deferred error-discard quit: fires after the cleanup chain
+        // settles. Re-arm while pending; quit once ready.
+        if (msg.id === 'error-discard-quit') {
+            if (s.errorDiscardReady) {
+                s.errorDiscardReady = false;
+                return [s, tea.quit()];
+            }
+            if (s.errorDiscardPending) {
+                return [s, tea.tick(C.TICK_INTERVAL_MS, 'error-discard-quit')];
+            }
+            return [s, null];
+        }
+        // Deferred wizard quit: fires after confirmCancel teardown
+        // (executor close plus MCP close) settles. Re-arm while the
+        // teardown chain is still pending (wizardQuitting set, sent not
+        // yet); quit once sent. Without the re-arm, a tick arriving
+        // between confirmCancel and close settlement would return null
+        // and drop the only scheduled quit.
+        if (msg.id === 'wizard-quit') {
+            if (s.wizardQuitSent) {
+                return [s, tea.quit()];
+            }
+            if (s.wizardQuitting) {
+                return [s, tea.tick(C.TICK_INTERVAL_MS, 'wizard-quit')];
+            }
+            return [s, null];
         }
         // Agent conversation: poll for async send/wait completion.
         if (msg.id === 'agent-convo-poll') {
@@ -1499,6 +1718,7 @@
 
     // Cross-chunk export.
     prSplit._wizardUpdateImpl = wizardUpdateImpl;
+    prSplit._syncSplitViewDimensions = syncSplitViewDimensions;
     prSplit._computeSplitPaneContentOffset = computeSplitPaneContentOffset;
     prSplit._writeMouseToPane = writeMouseToPane;
 

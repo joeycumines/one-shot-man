@@ -437,9 +437,16 @@ func TestHealthMonitor_UpdatesOnInterval(t *testing.T) {
 	handle.lastEvent = time.Now()
 	handle.healthMu.Unlock()
 
-	time.Sleep(50 * time.Millisecond)
+	var snap HealthSnapshot
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		snap = hm.Snapshot()
+		if !snap.LastEvent.IsZero() {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
-	snap := hm.Snapshot()
 	if snap.LastEvent.IsZero() {
 		t.Error("expected LastEvent to be updated after polling interval")
 	}

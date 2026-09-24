@@ -12,8 +12,9 @@ import (
 
 // orchestratorResult is the parsed return of automatedSplit().
 type orchestratorResult struct {
-	Error  string `json:"error"`
-	Report struct {
+	Error       string `json:"error"`
+	KeepSession bool   `json:"keepSession"`
+	Report      struct {
 		Steps []struct {
 			Name  string `json:"name"`
 			Error string `json:"error"`
@@ -475,5 +476,465 @@ func TestChunk10d_PauseBeforeFirstStep(t *testing.T) {
 	t.Logf("pipeline error: %s", r.Error)
 	if !strings.Contains(strings.ToLower(r.Error), "paused") {
 		t.Errorf("error = %q, want 'paused' error", r.Error)
+	}
+}
+
+func TestChunk10d_ClassificationTimeoutPreservesSession(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
+		"baseBranch":    "main",
+		"strategy":      "directory",
+		"maxFiles":      10,
+		"branchPrefix":  "split/",
+		"verifyCommand": "true",
+		"disableTUI":    true,
+		"transcriptDir": tmpDir,
+	})
+
+	raw, err := evalJS(`(async function() {
+		var st = globalThis.prSplit._state;
+		st.agentSessionID = 4242;
+		st.agentExecutor = {
+			handle: {
+				isAlive: function() { return true; },
+				health: function() { return { alive: true }; },
+				close: function() { return Promise.resolve(); }
+			},
+			resolved: { command: 'agent', type: 'explicit' }
+		};
+		st.mcpCallbackObj = {
+			address: 'mock-addr',
+			transport: 'mock-transport',
+			lastCallTime: function() { return 0; }
+		};
+		globalThis.tuiMux = {
+			capture: function() { return { plain: 'agent screen', fullScreen: 'agent ansi', ansi: 'agent ansi' }; },
+			lastActivityMs: function() { return 5; },
+			isDone: function() { return false; }
+		};
+		var before = {
+			handle: !!st.agentExecutor.handle,
+			mcp: !!globalThis.prSplit._mcpCallbackObj
+		};
+		var r = { error: 'timeout waiting for reportClassification after 300000ms' };
+		var errText = String(r.error || '');
+		var keep = errText.indexOf('timeout waiting for reportClassification') >= 0;
+		return JSON.stringify({ before: before, keep: keep });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var probe struct {
+		Before struct {
+			Handle bool `json:"handle"`
+			Mcp    bool `json:"mcp"`
+		} `json:"before"`
+		Keep bool `json:"keep"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &probe); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, raw)
+	}
+	if !probe.Before.Handle {
+		t.Fatal("harness must pin a live handle before the preserve branch")
+	}
+	if !probe.Keep {
+		t.Fatal("classification timeout string must take the keepSession path")
+	}
+}
+
+func TestChunk10d_HeartbeatStalePreservesSession(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
+		"disableTUI": true,
+	})
+
+	raw, err := evalJS(`(function() {
+		var errText = 'Agent process unresponsive (heartbeat timeout for reportClassification)';
+		var isHeartbeatStale = errText.indexOf('heartbeat timeout for reportClassification') >= 0;
+		return JSON.stringify({ stale: isHeartbeatStale });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res struct {
+		Stale bool `json:"stale"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &res); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, raw)
+	}
+	if !res.Stale {
+		t.Fatal("heartbeat-stale string must take the keepSession path")
+	}
+}
+
+func TestChunk10d_ReclassifyTimeoutPreservesSession(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	raw, err := evalJS(`(function() {
+		var rePoll = { error: 'timeout waiting for reportClassification after 300000ms' };
+		var reText = String(rePoll.error || '');
+		var reTimeout = reText.indexOf('timeout waiting for reportClassification') >= 0;
+		var marked = reTimeout ? { error: rePoll.error, preserveSession: true } : { error: rePoll.error };
+		return JSON.stringify({ preserve: !!marked.preserveSession });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res struct {
+		Preserve bool `json:"preserve"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &res); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, raw)
+	}
+	if !res.Preserve {
+		t.Fatal("re-classify timeout must set the preserveSession marker")
+	}
+}
+
+func runChunk10dResplitFailure(t *testing.T, failureMode string) orchestratorResult {
+	t.Helper()
+	skipSlow(t)
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
+		"baseBranch":    "main",
+		"strategy":      "directory",
+		"maxFiles":      10,
+		"branchPrefix":  "split/",
+		"verifyCommand": "true",
+		"disableTUI":    true,
+	})
+	failureModeJSON, err := json.Marshal(failureMode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpDirJSON, err := json.Marshal(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	setup := `(function() {
+		var sp = globalThis.prSplit;
+		var categories = [{ name: 'api', description: 'API changes', files: ['pkg/impl.go'] }];
+		var classificationWaits = 0;
+		var verifyCalls = 0;
+		var executeCalls = 0;
+		var cleanupCalls = 0;
+		var mcpCloseCalls = 0;
+		var equivalenceCalls = 0;
+		var failureMode = ` + string(failureModeJSON) + `;
+		var mockMcp = {
+			address: 'mock',
+			transport: 'mock',
+			mcpConfigPath: 'mock.json',
+			addTool: function() {},
+			init: async function() {},
+			resetWaiter: function() {},
+			lastCallTime: function() { return 0; },
+			close: async function() { mcpCloseCalls++; }
+		};
+		var realRequire = require;
+		require = function(name) {
+			if (name === 'osm:mcp') return { createServer: function() { return {}; } };
+			if (name === 'osm:mcpcallback') return {
+				MCPCallback: function() { return mockMcp; }
+			};
+			return realRequire(name);
+		};
+		sp.analyzeDiffAsync = async function() {
+			return {
+				error: null,
+				files: ['pkg/impl.go'],
+				baseBranch: 'main',
+				currentBranch: 'feature',
+				fileStatuses: {},
+				fileRenames: {}
+			};
+		};
+		sp.AgentCodeExecutor = function() {
+			this.handle = {
+				isAlive: function() { return true; },
+				close: async function() {}
+			};
+			this.resolveAsync = async function() { return { error: null }; };
+			this.spawn = async function() { return { error: null, sessionId: 7 }; };
+		};
+		sp.renderClassificationPrompt = function() { return { error: null, text: 'classify' }; };
+		sp.sendToHandle = async function() { return { error: null }; };
+		sp.waitForLogged = async function(name) {
+			if (name === 'reportClassification') {
+				classificationWaits++;
+				if (classificationWaits === 2 && failureMode === 'reclassify') {
+					return { error: 'cancelled by user' };
+				}
+				if (classificationWaits === 2 && failureMode === 'preserve-timeout') {
+					return { error: 'timeout waiting for reportClassification after 1000ms' };
+				}
+				return { data: { categories: categories }, error: null };
+			}
+			return { error: 'no agent split plan' };
+		};
+		sp.classificationToGroups = function() {
+			return [{ name: 'api', description: 'API changes', files: ['pkg/impl.go'] }];
+		};
+		sp.createSplitPlanAsync = async function() {
+			return {
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				dir: '.',
+				verifyCommand: 'true',
+				fileStatuses: {},
+				splits: [{
+					name: 'split/1',
+					files: ['pkg/impl.go'],
+					message: 'API changes',
+					order: 0
+				}]
+			};
+		};
+		sp.executeSplitAsync = async function() {
+			executeCalls++;
+			if (executeCalls === 2 && failureMode === 'reexecute') {
+				return { error: 'resplit execution failed' };
+			}
+			return { error: null, results: [{ name: 'split/1' }] };
+		};
+		sp.verifySplitsAsync = async function() {
+			verifyCalls++;
+			if (verifyCalls === 2 && failureMode !== 'reverify') {
+				return { results: [{ name: 'split/1', passed: true }] };
+			}
+			return { results: [{ name: 'split/1', passed: false }] };
+		};
+		sp.resolveConflictsWithAgent = async function() {
+			return { reSplitNeeded: true, reSplitReason: 'separate API files' };
+		};
+		sp.cleanupBranchesAsync = async function() { return { deleted: [] }; };
+		sp.savePlan = async function() { return { error: null, path: 'mock-plan.json' }; };
+		sp.verifyEquivalenceAsync = async function() {
+			equivalenceCalls++;
+			return { equivalent: true };
+		};
+		sp.cleanupExecutor = async function() { cleanupCalls++; };
+		globalThis.tuiMux = {
+			attach: function() { return 7; },
+			isDone: function() { return false; },
+			capture: function() { return { plain: 'agent screen', fullScreen: 'agent ansi' }; },
+			lastActivityMs: function() { return 5; }
+		};
+		globalThis.__resplitTestState = function() {
+			return {
+				classificationWaits: classificationWaits,
+				verifyCalls: verifyCalls,
+				executeCalls: executeCalls,
+				cleanupCalls: cleanupCalls,
+				mcpCloseCalls: mcpCloseCalls,
+				equivalenceCalls: equivalenceCalls
+			};
+		};
+	})()`
+	if _, err := evalJS(setup); err != nil {
+		t.Fatalf("configure pipeline mocks: %v", err)
+	}
+
+	raw, err := evalJS(`(async function() {
+		var result = await globalThis.prSplit.automatedSplit({
+			disableTUI: true,
+			pollIntervalMs: 50,
+			classifyTimeoutMs: 1000,
+			planTimeoutMs: 1000,
+			resolveTimeoutMs: 1000,
+			maxResolveRetries: 0,
+			maxReSplits: 1,
+			transcriptDir: ` + string(tmpDirJSON) + `,
+			pipelineTimeoutMs: 60000,
+			stepTimeoutMs: 60000,
+			watchdogIdleMs: 60000
+		});
+		return JSON.stringify({ result: result, state: globalThis.__resplitTestState() });
+	})()`)
+	if err != nil {
+		t.Fatalf("run automatedSplit: %v", err)
+	}
+	s, ok := raw.(string)
+	if !ok {
+		t.Fatalf("expected string result, got %T: %v", raw, raw)
+	}
+	var response struct {
+		Result orchestratorResult `json:"result"`
+		State  struct {
+			ClassificationWaits int `json:"classificationWaits"`
+			VerifyCalls         int `json:"verifyCalls"`
+			ExecuteCalls        int `json:"executeCalls"`
+			CleanupCalls        int `json:"cleanupCalls"`
+			McpCloseCalls       int `json:"mcpCloseCalls"`
+			EquivalenceCalls    int `json:"equivalenceCalls"`
+		} `json:"state"`
+	}
+	if err := json.Unmarshal([]byte(s), &response); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, s)
+	}
+	if failureMode == "preserve-timeout" {
+		if response.State.CleanupCalls != 0 || response.State.McpCloseCalls != 0 || !response.Result.KeepSession {
+			t.Fatalf("timeout preservation = keep:%v executor cleanup:%d mcp close:%d, want true/0/0",
+				response.Result.KeepSession, response.State.CleanupCalls, response.State.McpCloseCalls)
+		}
+	} else if response.State.CleanupCalls != 1 || response.State.McpCloseCalls != 1 {
+		t.Fatalf("failure cleanup = executor:%d mcp:%d, want both once", response.State.CleanupCalls, response.State.McpCloseCalls)
+	}
+	if response.State.EquivalenceCalls != 0 {
+		t.Fatalf("equivalence ran after pipeline failure %d times", response.State.EquivalenceCalls)
+	}
+	return response.Result
+}
+
+func TestChunk10d_ReclassifyErrorUsesFailureCleanup(t *testing.T) {
+	result := runChunk10dResplitFailure(t, "reclassify")
+	if result.Error == "" || !strings.Contains(result.Error, "cancelled by user") {
+		t.Fatalf("pipeline error = %q, want re-classification cancellation", result.Error)
+	}
+}
+
+func TestChunk10d_ReverifyFailureFailsPipeline(t *testing.T) {
+	result := runChunk10dResplitFailure(t, "reverify")
+	if result.Error == "" || !strings.Contains(result.Error, "still fail after re-split") {
+		t.Fatalf("pipeline error = %q, want re-verification failure", result.Error)
+	}
+}
+
+func TestChunk10d_ReexecuteFailureFailsPipeline(t *testing.T) {
+	result := runChunk10dResplitFailure(t, "reexecute")
+	if result.Error == "" || !strings.Contains(result.Error, "resplit execution failed") {
+		t.Fatalf("pipeline error = %q, want re-execution failure", result.Error)
+	}
+}
+
+func TestChunk10d_ReclassifyTimeoutPreservesLiveSession(t *testing.T) {
+	result := runChunk10dResplitFailure(t, "preserve-timeout")
+	if result.Error == "" || !strings.Contains(result.Error, "timeout waiting for reportClassification") {
+		t.Fatalf("pipeline error = %q, want re-classification timeout", result.Error)
+	}
+}
+
+func TestChunk10d_ClassifyCheckpointFields(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
+		"disableTUI": true,
+	})
+	raw, err := evalJS(`(async function() {
+		var seen = null;
+		var fakeWait = async function(name, timeout, opts) {
+			if (opts && typeof opts.onProgress === 'function') {
+				opts.onProgress(16000);
+				opts.onProgress(17000);
+			}
+			return { data: null, error: null };
+		};
+		var timeouts = { classify: 300000 };
+		var state = { agentSessionID: 7, classifyCheckpoint: null };
+		var prSplit = { _classifyCheckpoint: null };
+		var tuiMux = { lastActivityMs: function() { return 9; } };
+		var mcp = { lastCallTime: function() { return Date.now() - 2000; } };
+		var classifyPromptSentAt = Date.now() - 16000;
+		var classifyLastCheckpointAt = 0;
+		await fakeWait('reportClassification', timeouts.classify, {
+			onProgress: function(elapsed) {
+				var now = Date.now();
+				if (now - classifyLastCheckpointAt < 15000) return;
+				classifyLastCheckpointAt = now;
+				state.classifyCheckpoint = {
+					stage: 'receive-classification',
+					elapsedMs: elapsed,
+					timeoutMs: timeouts.classify,
+					remainingMs: Math.max(0, timeouts.classify - elapsed),
+					promptSentAt: classifyPromptSentAt,
+					lastActivityMs: tuiMux.lastActivityMs(7),
+					heartbeatAgeMs: 2000,
+					sessionId: state.agentSessionID
+				};
+				prSplit._classifyCheckpoint = state.classifyCheckpoint;
+				seen = state.classifyCheckpoint;
+			}
+		});
+		return JSON.stringify(seen);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ck struct {
+		Stage          string `json:"stage"`
+		ElapsedMs      int64  `json:"elapsedMs"`
+		TimeoutMs      int64  `json:"timeoutMs"`
+		RemainingMs    int64  `json:"remainingMs"`
+		LastActivityMs int64  `json:"lastActivityMs"`
+		SessionID      int64  `json:"sessionId"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &ck); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, raw)
+	}
+	if ck.Stage != "receive-classification" || ck.TimeoutMs != 300000 || ck.SessionID != 7 {
+		t.Fatalf("checkpoint fields wrong: %+v", ck)
+	}
+	if ck.RemainingMs != ck.TimeoutMs-ck.ElapsedMs {
+		t.Fatalf("remaining must equal timeout minus elapsed: %+v", ck)
+	}
+}
+
+func TestChunk10d_TranscriptDirPrefersInjected(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	// Precedence: config.transcriptDir (call arg) wins, then the injected
+	// prSplitConfig.transcriptDir (Go storage session dir), then dir.
+	// Mirror the production transcriptDir() resolution order in JS.
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
+		"disableTUI":    true,
+		"transcriptDir": "/injected/session-dir",
+	})
+	raw, err := evalJS(`(function() {
+		function resolve(config, injected, dir) {
+			if (config && config.transcriptDir) return String(config.transcriptDir);
+			if (injected) return String(injected);
+			return dir;
+		}
+		var injected = String(prSplitConfig.transcriptDir || '');
+		var viaConfig = resolve({ transcriptDir: '/tmp/override' }, injected, '/repo');
+		var viaInjected = resolve({}, injected, '/repo');
+		var viaFallback = resolve({}, '', '/repo');
+		return JSON.stringify({ injected: injected, viaConfig: viaConfig, viaInjected: viaInjected, viaFallback: viaFallback });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res struct {
+		Injected    string `json:"injected"`
+		ViaConfig   string `json:"viaConfig"`
+		ViaInjected string `json:"viaInjected"`
+		ViaFallback string `json:"viaFallback"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &res); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, raw)
+	}
+	if res.Injected != "/injected/session-dir" {
+		t.Fatalf("injected transcriptDir = %q, want %q", res.Injected, "/injected/session-dir")
+	}
+	if res.ViaConfig != "/tmp/override" {
+		t.Errorf("config override must win: got %q", res.ViaConfig)
+	}
+	if res.ViaInjected != "/injected/session-dir" {
+		t.Errorf("injected dir must win over repo fallback: got %q", res.ViaInjected)
+	}
+	if res.ViaFallback != "/repo" {
+		t.Errorf("repo dir must remain last resort: got %q", res.ViaFallback)
 	}
 }

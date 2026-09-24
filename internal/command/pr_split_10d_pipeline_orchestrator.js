@@ -110,10 +110,9 @@
         var pipelineStartTime = Date.now();
         var lastProgressTime = Date.now();
 
-        // Detect the auto-split BubbleTea TUI (injected from Go).
-        // NOTE: The Go BubbleTea TUI was removed in the Go→JS TUI migration (T27).
-        // Progress is now reported via output.print() directly.
-        var hasTUI = false;
+        // Detect the active Goja/BubbleTea wizard. Output is routed through
+        // the model while the fullscreen wizard owns the terminal.
+        var hasTUI = !!prSplit._tuiOutputActive;
 
         var report = {
             mode: 'automated',
@@ -130,7 +129,11 @@
         };
 
         function emitOutput(text) {
-            output.print(text);
+            if (hasTUI && typeof prSplit._routeTuiOutput === 'function') {
+                prSplit._routeTuiOutput(text);
+            } else {
+                output.print(text);
+            }
             lastProgressTime = Date.now();
         }
 
@@ -138,6 +141,136 @@
             // Placeholder: TUI detail display removed in T27 migration.
             // detail is logged for diagnostics.
             log.printf('auto-split detail [%s]: %s', stepName, detail);
+        }
+
+        // Transcript dir: production log dir comes from the Go layer via
+        // prSplitConfig.transcriptDir (same storage session dir family as
+        // persistStatePath); tests override via config.transcriptDir; the
+        // repo dir is the last resort for headless-no-storage runs.
+        function transcriptDir() {
+            try {
+                if (config && config.transcriptDir) return String(config.transcriptDir);
+            } catch (e) {
+                log.debug('transcript dir config read failed', { error: e.message || String(e) });
+            }
+            try {
+                if (typeof prSplitConfig !== 'undefined' && prSplitConfig && prSplitConfig.transcriptDir) {
+                    return String(prSplitConfig.transcriptDir);
+                }
+            } catch (e) {
+                log.debug('transcript dir injected read failed', { error: e.message || String(e) });
+            }
+            return dir;
+        }
+
+        async function captureAgentEvidence(reason) {
+            var evidence = {
+                reason: reason || 'classification-timeout',
+                at: new Date().toISOString(),
+                sessionId: state.agentSessionID || null,
+                argv: null,
+                mcpAddress: null,
+                mcpTransport: null,
+                screenPlain: '',
+                screenAnsi: '',
+                lastActivityMs: -1,
+                handleAlive: false,
+                handleHealth: null,
+                heartbeatMs: 0,
+                transcriptPath: ''
+            };
+            try {
+                if (state.agentExecutor && state.agentExecutor.handle &&
+                    typeof state.agentExecutor.handle.isAlive === 'function') {
+                    evidence.handleAlive = !!state.agentExecutor.handle.isAlive();
+                }
+            } catch (e) {
+                log.debug('evidence handle alive check failed', { error: e.message || String(e) });
+            }
+            try {
+                if (state.agentExecutor && state.agentExecutor.handle &&
+                    typeof state.agentExecutor.handle.health === 'function') {
+                    evidence.handleHealth = state.agentExecutor.handle.health();
+                }
+            } catch (e) {
+                log.debug('evidence handle health read failed', { error: e.message || String(e) });
+            }
+            // Capture-before-unregister: CaptureScreen fails after Unregister
+            // (manager.go:364-380) and isDone is true for unknown IDs, so this
+            // read happens while the session is live. No unregister runs on the
+            // preserve path.
+            try {
+                if (typeof tuiMux !== 'undefined' && tuiMux && state.agentSessionID &&
+                    typeof tuiMux.capture === 'function') {
+                    var snap = tuiMux.capture(state.agentSessionID);
+                    if (snap) {
+                        evidence.screenPlain = String(snap.plain || '');
+                        evidence.screenAnsi = String(snap.fullScreen || snap.ansi || '');
+                    }
+                }
+            } catch (e) {
+                log.debug('evidence screen capture failed', { error: e.message || String(e) });
+            }
+            try {
+                if (typeof tuiMux !== 'undefined' && tuiMux &&
+                    typeof tuiMux.lastActivityMs === 'function' && state.agentSessionID) {
+                    evidence.lastActivityMs = tuiMux.lastActivityMs(state.agentSessionID);
+                }
+            } catch (e) {
+                log.debug('evidence activity read failed', { error: e.message || String(e) });
+            }
+            try {
+                if (state.mcpCallbackObj) {
+                    evidence.mcpAddress = state.mcpCallbackObj.address || null;
+                    evidence.mcpTransport = state.mcpCallbackObj.transport || null;
+                    if (typeof state.mcpCallbackObj.lastCallTime === 'function') {
+                        evidence.heartbeatMs = state.mcpCallbackObj.lastCallTime('heartbeat') || 0;
+                    }
+                }
+            } catch (e) {
+                log.debug('evidence mcp state read failed', { error: e.message || String(e) });
+            }
+            try {
+                if (state.agentExecutor && state.agentExecutor.resolved) {
+                    evidence.argv = {
+                        command: state.agentExecutor.resolved.command,
+                        type: state.agentExecutor.resolved.type
+                    };
+                }
+            } catch (e) {
+                log.debug('evidence argv read failed', { error: e.message || String(e) });
+            }
+            state.agentEvidence = evidence;
+            prSplit._agentEvidence = evidence;
+            return evidence;
+        }
+
+        async function writeAgentTranscript(evidence, targetDir) {
+            if (!evidence) return '';
+            var outDir = targetDir || transcriptDir();
+            try {
+                var osmod = prSplit._modules && prSplit._modules.osmod;
+                if (osmod && typeof osmod.writeFile === 'function') {
+                    var stamp = Date.now();
+                    var path = outDir + '/pr-split-agent-' + stamp + '.log';
+                    var body = 'reason: ' + evidence.reason + '\n' +
+                        'at: ' + evidence.at + '\n' +
+                        'sessionId: ' + String(evidence.sessionId) + '\n' +
+                        'handleAlive: ' + String(evidence.handleAlive) + '\n' +
+                        'lastActivityMs: ' + String(evidence.lastActivityMs) + '\n' +
+                        'heartbeatMs: ' + String(evidence.heartbeatMs) + '\n' +
+                        'mcpAddress: ' + String(evidence.mcpAddress) + '\n' +
+                        'mcpTransport: ' + String(evidence.mcpTransport) + '\n' +
+                        '--- screen ---\n' + (evidence.screenPlain || '(empty)') + '\n';
+                    var wr = osmod.writeFile(path, body);
+                    if (wr && typeof wr.then === 'function') { await wr; }
+                    evidence.transcriptPath = path;
+                    return path;
+                }
+            } catch (e) {
+                log.debug('evidence transcript write failed', { error: e.message || String(e) });
+            }
+            return '';
         }
 
         // step() wrapper for pipeline steps. Supports both sync and async callbacks.
@@ -213,27 +346,52 @@
 
         // finishTUI signals the auto-split TUI is done.
         async function finishTUI(result) {
+            var keepSession = !!(result && result.keepSession);
             // T393: Only clean up MCP callback on error — keep alive for "Ask
             // Agent" conversation overlay on PLAN_REVIEW/ERROR_RESOLUTION.
             // On success, the wizard's quit handler handles cleanup.
-            if (result.error) {
+            // keepSession (evidence preservation) never closes MCP or executor:
+            // closure runs at discard, quit, or process exit instead.
+            if (result && result.error && !keepSession) {
                 var mcpCb = prSplit._mcpCallbackObj;
                 if (mcpCb) {
-                    try { await mcpCb.close(); } catch (e) { log.debug('cleanup: mcpCb.close failed: ' + (e.message || e)); }
+                    try { await mcpCb.close(); } catch (e) { log.debug('cleanup mcp close failed', { error: e.message || String(e) }); }
                     prSplit._mcpCallbackObj = null;
                     state.mcpCallbackObj = null;
                 }
             }
 
+            if (result && result.error && keepSession) {
+                try {
+                    var kept = await captureAgentEvidence(result.evidenceReason || 'classification-timeout');
+                    await writeAgentTranscript(kept);
+                    result.evidence = kept;
+                    report.agentEvidence = kept;
+                    state.classifyCheckpoint = state.classifyCheckpoint || null;
+                } catch (e) {
+                    log.debug('cleanup evidence capture failed', { error: e.message || String(e) });
+                }
+                emitOutput('[auto-split] Agent session preserved for diagnosis.');
+                emitOutput('[auto-split] Open the Agent tab to inspect the live session.');
+                if (result.evidence && result.evidence.transcriptPath) {
+                    emitOutput('[auto-split] Transcript: ' + result.evidence.transcriptPath);
+                }
+                emitOutput('[auto-split] No plan was produced so resume does not apply to this stage.');
+            }
+
             // On error, emit resume instructions if a plan was saved.
-            if (result.error && state.planCache && state.planCache.splits && state.planCache.splits.length > 0) {
+            if (result && result.error && !keepSession && state.planCache && state.planCache.splits && state.planCache.splits.length > 0) {
                 try {
                     await savePlan(resolvedPlanPath, report.lastCompletedStep || 'error');
-                } catch (e) { log.debug('cleanup: savePlan failed: ' + (e.message || e)); }
+                } catch (e) { log.debug('cleanup saveplan failed', { error: e.message || String(e) }); }
 
                 emitOutput('\n[auto-split] Pipeline failed: ' + result.error);
                 emitOutput('[auto-split] Plan saved to: ' + resolvedPlanPath);
                 emitOutput('[auto-split] To resume: osm pr-split --resume\n');
+            }
+
+            if (result && result.error && !keepSession && !(state.planCache && state.planCache.splits && state.planCache.splits.length > 0)) {
+                emitOutput('\n[auto-split] Pipeline failed: ' + result.error);
             }
 
             if (hasTUI && !config.disableTUI) {
@@ -303,7 +461,12 @@
                                 properties: {
                                     name: { type: 'string', description: 'Category name (e.g., types, impl, docs)' },
                                     description: { type: 'string', description: 'Git commit message for the split branch. Must be specific to actual changes.' },
-                                    files: { type: 'array', items: { type: 'string' }, description: 'File paths belonging to this category' }
+                                    files: { type: 'array', items: { type: 'string' }, description: 'File paths belonging to this category' },
+                                    title: { type: 'string', description: 'Imperative PR title in conventional commit format' },
+                                    summary: { type: 'string', description: 'Concise architectural summary of this PR layer' },
+                                    keyChanges: { type: 'array', items: { type: 'string' }, description: 'Key changes and architectural decisions' },
+                                    verificationSteps: { type: 'string', description: 'Commands or steps to independently verify this PR layer' },
+                                    rationale: { type: 'string', description: 'Why this PR is self-contained and why it is placed at this layer' }
                                 },
                                 required: ['name', 'description', 'files']
                             },
@@ -314,7 +477,7 @@
                 });
 
             mcpCallbackObj.addTool('reportSplitPlan',
-                'Report a split plan for PR splitting. Optional — if not provided, plan is generated locally from classification.',
+                'Report a split plan for PR splitting following Commit-Loom discipline. Optional — if not provided, plan is generated locally from classification.',
                 {
                     type: 'object',
                     properties: {
@@ -326,7 +489,12 @@
                                     name: { type: 'string', description: 'Branch name suffix' },
                                     files: { type: 'array', items: { type: 'string' } },
                                     message: { type: 'string', description: 'Commit message' },
-                                    order: { type: 'number', description: 'Execution order' }
+                                    order: { type: 'number', description: 'Execution order' },
+                                    title: { type: 'string', description: 'Imperative PR title' },
+                                    summary: { type: 'string', description: 'Architectural summary of this PR layer' },
+                                    keyChanges: { type: 'array', items: { type: 'string' }, description: 'Key changes / bullet points' },
+                                    verificationSteps: { type: 'string', description: 'Commands to verify this layer in isolation' },
+                                    rationale: { type: 'string', description: 'Why this PR is self-contained and layering rationale' }
                                 },
                                 required: ['name', 'files']
                             }
@@ -478,13 +646,18 @@
 	                emitOutput('[auto-split] Warning: Agent process exited unexpectedly. Toggle (Ctrl+]) unavailable.');
 	            } else {
                 try {
-                    var cid = await tuiMux.attachAsync(agentExecutor.handle);
+                    var cid = tuiMux.attach(agentExecutor.handle);
                     state.agentSessionID = cid;
+                    if (typeof prSplit._noteAgentAttached === 'function') {
+                        try { prSplit._noteAgentAttached(cid, null); } catch (e) {
+                            log.debug('auto-split noteAgentAttached failed', { error: e.message || String(e) });
+                        }
+                    }
                     log.printf('auto-split: attached Agent (%s) handle to tuiMux, sessionID=%d',
                         typeof sessionTypes !== 'undefined' && sessionTypes.agent ? sessionTypes.agent.name : 'agent',
                         cid || 0);
                 } catch (e) {
-                    log.printf('auto-split: tuiMux attachAsync warning: %s', e.message || String(e));
+                    log.printf('auto-split: tuiMux attach warning: %s', e.message || String(e));
                 }
             }
         } else if (agentExecutor && agentExecutor.handle &&
@@ -495,108 +668,6 @@
                 log.debug('auto-split: PTY drain failed: ' + (e && e.message ? e.message : String(e)));
             });
             log.printf('auto-split: no tuiMux — started PTY output drain to prevent deadlock');
-        }
-
-        // Step 2b: Dismiss Ollama launcher menu if present.
-        // Ollama shows a "Run a model" launcher screen before the model
-        // selection menu.  We detect it via the pinned Agent snapshot and send
-        // the appropriate dismissal keystrokes.  For non-Ollama providers
-        // this block is a no-op.
-        if (agentExecutor && agentExecutor.resolved &&
-            agentExecutor.resolved.type === 'ollama' &&
-            agentExecutor.handle && agentExecutor.cm) {
-            var launcherResult = await step('Dismiss launcher', async function() {
-                var LAUNCHER_POLL_MS     = AUTOMATED_DEFAULTS.launcherPollMs;
-                var LAUNCHER_TIMEOUT_MS  = AUTOMATED_DEFAULTS.launcherTimeoutMs;
-                var LAUNCHER_STABLE_NEED = AUTOMATED_DEFAULTS.launcherStableNeed;
-                var cm = agentExecutor.cm;
-                var handle = agentExecutor.handle;
-                var startMs = Date.now();
-                var stableCount = 0;
-                var dismissed = false;
-
-                while (Date.now() - startMs < LAUNCHER_TIMEOUT_MS) {
-                    var cancelErr = getCancellationError();
-                    if (cancelErr) { return { error: cancelErr }; }
-
-                    var shot = captureScreenshot();
-                    if (!shot) {
-                        // tuiMux not available — nothing to dismiss.
-                        log.printf('auto-split launcher: no screenshot available, skipping');
-                        return { error: null, dismissed: false };
-                    }
-
-                    var lines = shot.split('\n');
-                    var menu;
-                    try { menu = cm.parseModelMenu(lines); }
-                    catch (e) {
-                        log.printf('auto-split launcher: parseModelMenu error: %s', e.message || String(e));
-                        await new Promise(function(r) { setTimeout(r, LAUNCHER_POLL_MS); });
-                        continue;
-                    }
-
-                    if (!menu || !menu.models || menu.models.length === 0) {
-                        // No menu detected yet — screen might still be loading.
-                        stableCount++;
-                        if (stableCount >= LAUNCHER_STABLE_NEED) {
-                            // No menu after stable polls — not a menu-based provider.
-                            log.printf('auto-split launcher: no menu detected after %d stable polls, proceeding', stableCount);
-                            return { error: null, dismissed: false };
-                        }
-                        await new Promise(function(r) { setTimeout(r, LAUNCHER_POLL_MS); });
-                        continue;
-                    }
-
-                    // Reset stable counter — we have menu content.
-                    stableCount = 0;
-
-                    if (cm.isLauncherMenu(menu)) {
-                        var keys = cm.dismissLauncherKeys(menu);
-                        if (keys) {
-                            log.printf('auto-split launcher: detected launcher menu (%d items), dismissing',
-                                menu.models.length);
-                            try { handle.send(keys); }
-                            catch (e) {
-                                return { error: 'failed to dismiss launcher: ' + (e.message || String(e)) };
-                            }
-                            // Wait briefly for screen to update after dismissal.
-                            await new Promise(function(r) { setTimeout(r, AUTOMATED_DEFAULTS.launcherPostDismissMs); });
-                            dismissed = true;
-                            continue;  // Re-poll to check for model selection menu.
-                        }
-                    }
-
-                    // Not a launcher menu — might be model selection.
-                    // If we have a target model, navigate to it.
-                    if (agentExecutor.model && !dismissed) {
-                        try {
-                            var navKeys = cm.navigateToModel(menu, agentExecutor.model);
-                            if (navKeys) {
-                                log.printf('auto-split launcher: navigating to model %s', agentExecutor.model);
-                                handle.send(navKeys);
-                                await new Promise(function(r) { setTimeout(r, AUTOMATED_DEFAULTS.launcherPostDismissMs); });
-                            }
-                        } catch (e) {
-                            log.printf('auto-split launcher: model navigation error: %s — proceeding with selected model',
-                                e.message || String(e));
-                        }
-                    }
-
-                    // Menu is present but not a launcher — we're past the
-                    // launcher stage (or it was never shown).  Done.
-                    log.printf('auto-split launcher: menu resolved (dismissed=%s)', String(dismissed));
-                    return { error: null, dismissed: dismissed };
-                }
-
-                // Timeout — proceed anyway (best effort).
-                log.printf('auto-split launcher: timeout after %dms — proceeding', LAUNCHER_TIMEOUT_MS);
-                return { error: null, dismissed: false };
-            });
-            if (launcherResult.error) {
-                report.error = launcherResult.error;
-                cleanupExecutor();
-                return finishTUI({ error: launcherResult.error, report: report });
-            }
         }
 
         // Step 3: Send classification request.
@@ -620,20 +691,57 @@
         });
         if (classifyResult.error) {
             report.error = classifyResult.error;
-            cleanupExecutor();
+            await cleanupExecutor();
             return finishTUI({ error: classifyResult.error, report: report });
         }
 
         // Step 4: Receive classification.
         var classification = await step('Receive classification', async function() {
             updateDetail('Receive classification', 'Waiting for classification...');
+            var classifyPromptSentAt = Date.now();
+            var classifyLastCheckpointAt = 0;
             var pollResult = await waitForLogged('reportClassification', timeouts.classify, {
                 aliveCheck: aliveCheckFn,
                 heartbeatTool: 'heartbeat',
                 heartbeatTimeoutMs: heartbeatTimeoutMs,
                 onProgress: function(elapsed) {
                     var sec = Math.round(elapsed / 1000);
-                    updateDetail('Receive classification', 'Waiting... ' + sec + 's');
+                    updateDetail('Receive classification', 'Waiting ' + sec + 's');
+                    var now = Date.now();
+                    if (now - classifyLastCheckpointAt < 15000) return;
+                    classifyLastCheckpointAt = now;
+                    var checkpoint = {
+                        stage: 'receive-classification',
+                        elapsedMs: elapsed,
+                        timeoutMs: timeouts.classify,
+                        remainingMs: Math.max(0, timeouts.classify - elapsed),
+                        promptSentAt: classifyPromptSentAt,
+                        lastActivityMs: -1,
+                        heartbeatAgeMs: -1,
+                        sessionId: state.agentSessionID || null
+                    };
+                    try {
+                        if (typeof tuiMux !== 'undefined' && tuiMux &&
+                            typeof tuiMux.lastActivityMs === 'function' && state.agentSessionID) {
+                            checkpoint.lastActivityMs = tuiMux.lastActivityMs(state.agentSessionID);
+                        }
+                    } catch (e) {
+                        log.debug('checkpoint activity read failed', { error: e.message || String(e) });
+                    }
+                    try {
+                        if (state.mcpCallbackObj && typeof state.mcpCallbackObj.lastCallTime === 'function') {
+                            var hb = state.mcpCallbackObj.lastCallTime('heartbeat') || 0;
+                            checkpoint.heartbeatAgeMs = hb > 0 ? (now - hb) : -1;
+                        }
+                    } catch (e) {
+                        log.debug('checkpoint heartbeat read failed', { error: e.message || String(e) });
+                    }
+                    state.classifyCheckpoint = checkpoint;
+                    prSplit._classifyCheckpoint = checkpoint;
+                    var remainSec = Math.round(checkpoint.remainingMs / 1000);
+                    var act = checkpoint.lastActivityMs < 0 ? 'no pty output yet' : ('pty idle ' + Math.round(checkpoint.lastActivityMs / 1000) + 's');
+                    var hbText = checkpoint.heartbeatAgeMs < 0 ? 'no heartbeat yet' : ('heartbeat ' + Math.round(checkpoint.heartbeatAgeMs / 1000) + 's ago');
+                    emitOutput('[auto-split] Waiting for reportClassification: ' + sec + 's elapsed, ' + remainSec + 's remain (' + act + ', ' + hbText + '). Open the Agent tab to inspect, type to intervene, or cancel to abort with evidence kept.');
                 },
                 checkIntervalMs: pollInterval
             });
@@ -692,7 +800,13 @@
         });
         if (classification.error) {
             report.error = classification.error;
-            cleanupExecutor();
+            var errText = String(classification.error || '');
+            var isClassifyTimeout = errText.indexOf('timeout waiting for reportClassification') >= 0;
+            var isHeartbeatStale = errText.indexOf('heartbeat timeout for reportClassification') >= 0;
+            if (isClassifyTimeout || isHeartbeatStale) {
+                return finishTUI({ error: classification.error, report: report, keepSession: true, evidenceReason: isHeartbeatStale ? 'heartbeat-stale' : 'classification-timeout' });
+            }
+            await cleanupExecutor();
             return finishTUI({ error: classification.error, report: report });
         }
 
@@ -728,7 +842,12 @@
                                 name: s.name || (runtime.branchPrefix + padIndex(i, agentPlan.length)),
                                 files: s.files || [],
                                 message: s.message || ('Split ' + (i + 1)),
-                                order: typeof s.order === 'number' ? s.order : i
+                                order: typeof s.order === 'number' ? s.order : i,
+                                title: s.title || '',
+                                summary: s.summary || '',
+                                keyChanges: s.keyChanges || null,
+                                verificationSteps: s.verificationSteps || '',
+                                rationale: s.rationale || ''
                             };
                         })
                     };
@@ -742,20 +861,23 @@
             }
 
             // Generate plan locally from classification.
-            var groups = classificationToGroups(classification.classification);
+            // Preserve duplicate assignments here so validatePlan can reject
+            // an ambiguous model result with a file-specific diagnostic.
+            var groups = classificationToGroups(classification.classification, true);
             var plan = await createSplitPlan(groups, {
                 baseBranch: analysis.baseBranch,
                 sourceBranch: analysis.currentBranch,
                 branchPrefix: runtime.branchPrefix,
                 maxFiles: runtime.maxFiles,
-                fileStatuses: analysis.fileStatuses
+                fileStatuses: analysis.fileStatuses,
+                fileRenames: analysis.fileRenames
             });
             report.plan = plan;
             return { error: null, plan: plan };
         });
         if (planResult.error) {
             report.error = planResult.error;
-            cleanupExecutor();
+            await cleanupExecutor();
             return finishTUI({ error: planResult.error, report: report });
         }
 
@@ -790,12 +912,12 @@
                     emitOutput('[auto-split] Deleted ' + cleanResult.deleted.length + ' branches');
                 }
             }
-            cleanupExecutor();
+            await cleanupExecutor();
             return finishTUI({ error: execResult.error, report: report });
         }
         if (runtime.dryRun) {
             emitOutput('[auto-split] Dry run — skipping verification.');
-            cleanupExecutor();
+            await cleanupExecutor();
             // T393: Dry-run has no interactive session after — clean up MCP
             // callback inline since finishTUI only cleans on error.
             var mcpCbDry = prSplit._mcpCallbackObj;
@@ -854,11 +976,16 @@
                         typeof tuiMux !== 'undefined' && tuiMux &&
                         typeof tuiMux.attach === 'function') {
                         try {
-                            var resumeCid = await tuiMux.attachAsync(agentExecutor.handle);
+                            var resumeCid = tuiMux.attach(agentExecutor.handle);
                             state.agentSessionID = resumeCid;
+                            if (typeof prSplit._noteAgentAttached === 'function') {
+                                try { prSplit._noteAgentAttached(resumeCid, null); } catch (e) {
+                                    log.debug('auto-split resume noteAgentAttached failed', { error: e.message || String(e) });
+                                }
+                            }
                             log.printf('auto-split resume: attached Agent handle to tuiMux, sessionID=%d', resumeCid || 0);
                         } catch (e) {
-                            log.printf('auto-split resume: tuiMux attachAsync warning: %s', e.message || String(e));
+                            log.printf('auto-split resume: tuiMux attach warning: %s', e.message || String(e));
                         }
                     }
                 } else {
@@ -897,7 +1024,7 @@
                 for (var j = 0; j < skippedResults.length; j++) {
                     skippedNames.push(skippedResults[j].name);
                 }
-                output.print('[auto-split] Skipped ' + skippedResults.length +
+                emitOutput('[auto-split] Skipped ' + skippedResults.length +
                     ' branches due to dependency failures: ' + skippedNames.join(', '));
             }
             if (preExistingResults.length > 0) {
@@ -905,7 +1032,7 @@
                 for (var p = 0; p < preExistingResults.length; p++) {
                     preExNames.push(preExistingResults[p].name);
                 }
-                output.print('[auto-split] ' + preExistingResults.length +
+                emitOutput('[auto-split] ' + preExistingResults.length +
                     ' branch(es) have pre-existing failures: ' + preExNames.join(', '));
             }
             report.skippedDueToDepFailure = skippedResults;
@@ -941,7 +1068,7 @@
             // Step 9: Re-split fallback if needed.
             if (resolved.reSplitNeeded && reSplitCount < maxReSplits) {
                 reSplitCount++;
-                output.print('[auto-split] Re-split requested — re-classifying...');
+                emitOutput('[auto-split] Re-split requested — re-classifying...');
                 await cleanupBranches(plan);
                 var reClassifyResult = await step('Re-classify (retry ' + reSplitCount + ')', async function() {
                     var constraintPrompt = 'Re-classify these files with the constraint: ' +
@@ -966,18 +1093,32 @@
                         rePoll = { data: rePoll.data.categories || rePoll.data, error: null };
                     }
                     if (rePoll.error) {
+                        var reText = String(rePoll.error || '');
+                        var reTimeout = reText.indexOf('timeout waiting for reportClassification') >= 0;
+                        var reStale = reText.indexOf('heartbeat timeout for reportClassification') >= 0;
+                        if (reTimeout || reStale) {
+                            return { error: rePoll.error, preserveSession: true, evidenceReason: reStale ? 'heartbeat-stale' : 'classification-timeout' };
+                        }
                         return { error: rePoll.error };
                     }
                     return { error: null, classification: rePoll.data };
                 });
+                if (reClassifyResult.error) {
+                    if (reClassifyResult.preserveSession) {
+                        report.error = reClassifyResult.error;
+                        return finishTUI({ error: reClassifyResult.error, report: report, keepSession: true, evidenceReason: reClassifyResult.evidenceReason || 'classification-timeout' });
+                    }
+                    report.error = reClassifyResult.error;
+                }
                 if (!reClassifyResult.error) {
-                    var newGroups = classificationToGroups(reClassifyResult.classification);
+                    var newGroups = classificationToGroups(reClassifyResult.classification, true);
                     plan = await createSplitPlan(newGroups, {
                         baseBranch: analysis.baseBranch,
                         sourceBranch: analysis.currentBranch,
                         branchPrefix: runtime.branchPrefix,
                         maxFiles: runtime.maxFiles,
-                        fileStatuses: analysis.fileStatuses
+                        fileStatuses: analysis.fileStatuses,
+                        fileRenames: analysis.fileRenames
                     });
                     state.planCache = plan;
                     report.plan = plan;
@@ -987,8 +1128,10 @@
                         report.splits = result.results || [];
                         return { error: null };
                     });
-                    if (!reExec.error) {
-                        await step('Re-verify splits', async function() {
+                    if (reExec.error) {
+                        report.error = reExec.error;
+                    } else {
+                        var reVerifyResult = await step('Re-verify splits', async function() {
                             // T104: Actually check whether re-verified branches pass.
                             // Previously this always returned { error: null }.
                             var rv = await verifySplits(plan, {
@@ -1010,16 +1153,21 @@
                             }
                             return { error: null };
                         });
+                        if (reVerifyResult.error) {
+                            report.error = reVerifyResult.error;
+                        }
                     }
                 }
             }
 
             // Checkpoint after resolve/re-split.
-            await savePlan(null, 'Resolve conflicts');
+            if (!report.error) {
+                await savePlan(null, 'Resolve conflicts');
+            }
         }
 
         // Step 10: Equivalence check and report.
-        var equivResult = await step('Verify equivalence', async function() {
+        var equivResult = report.error ? { error: report.error } : await step('Verify equivalence', async function() {
             var result = await verifyEquivalence(plan);
             return { error: result.equivalent ? null : 'tree hash mismatch', result: result };
         });
@@ -1031,14 +1179,16 @@
         }
 
         // Assess independence.
-        report.independencePairs = await assessIndependence(plan, classification.classification || {});
+        report.independencePairs = report.error ? [] : await assessIndependence(plan, classification.classification || {});
 
         // Summary.
         emitOutput('');
-        emitOutput('=== Auto-Split Complete ===');
+        emitOutput(report.error ? '=== Auto-Split Failed ===' : '=== Auto-Split Complete ===');
         emitOutput('Splits: ' + plan.splits.length);
         emitOutput('Agent interactions: ' + report.agentInteractions);
-        emitOutput('Equivalence: ' + (equivResult.result && equivResult.result.equivalent ? 'PASS' : 'FAIL'));
+        emitOutput(equivResult.result ?
+            'Equivalence: ' + (equivResult.result.equivalent ? 'PASS' : 'FAIL') :
+            (report.error ? 'Equivalence: SKIPPED (pipeline failed)' : 'Equivalence: FAIL'));
         if (report.independencePairs.length > 0) {
             emitOutput('Independent pairs: ' + report.independencePairs.map(function(p) {
                 return p[0] + ' + ' + p[1];
@@ -1053,7 +1203,7 @@
         // handles cleanup on success/cancel paths, and Go context cancellation
         // handles cleanup on process exit.
         if (report.error) {
-            cleanupExecutor();
+            await cleanupExecutor();
         }
 
         // Clean up split branches on pipeline failure if configured.

@@ -35,6 +35,7 @@
             return {
                 files: [],
                 fileStatuses: {},
+                fileRenames: {},
                 skippedFiles: [],   // T098
                 error: error,
                 baseBranch: baseBranch,
@@ -62,6 +63,7 @@
         var raw = diffResult.stdout.trim();
         var files = [];
         var fileStatuses = {};
+        var fileRenames = {};
         var skippedFiles = [];  // T098: files with unknown git status codes
 
         // Valid status codes that executeSplit knows how to handle.
@@ -104,6 +106,9 @@
                     var newPath = parts[2];
                     files.push(newPath);
                     fileStatuses[newPath] = status;
+                    if (status === 'R') {
+                        fileRenames[newPath] = parts[1];
+                    }
                 } else {
                     var path = parts[1];
                     files.push(path);
@@ -115,6 +120,7 @@
         return {
             files: files,
             fileStatuses: fileStatuses,
+            fileRenames: fileRenames,
             skippedFiles: skippedFiles,
             error: null,
             baseBranch: baseBranch,
@@ -135,6 +141,7 @@
             return {
                 files: [],
                 fileStatuses: {},
+                fileRenames: {},
                 skippedFiles: [],   // T098
                 error: error,
                 baseBranch: baseBranch,
@@ -161,6 +168,7 @@
         var raw = diffResult.stdout.trim();
         var files = [];
         var fileStatuses = {};
+        var fileRenames = {};
         var skippedFiles = [];  // T098
 
         // A=Added, M=Modified, D=Deleted, R=Renamed, C=Copied, T=Type-changed.
@@ -196,6 +204,9 @@
                     var newPath = parts[2];
                     files.push(newPath);
                     fileStatuses[newPath] = status;
+                    if (status === 'R') {
+                        fileRenames[newPath] = parts[1];
+                    }
                 } else {
                     var path = parts[1];
                     files.push(path);
@@ -207,6 +218,7 @@
         return {
             files: files,
             fileStatuses: fileStatuses,
+            fileRenames: fileRenames,
             skippedFiles: skippedFiles,
             error: null,
             baseBranch: baseBranch,

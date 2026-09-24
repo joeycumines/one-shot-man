@@ -46,7 +46,7 @@
         'startVerifySession', 'cleanupVerifyWorktree',
 
         // Chunk 07: PR creation
-        'createPRs',
+        'createPRs', 'formatPRTitle', 'formatPRBody',
 
         // Chunk 08: Conflict resolution
         'resolveConflicts', 'AUTO_FIX_STRATEGIES',

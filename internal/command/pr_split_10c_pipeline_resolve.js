@@ -9,6 +9,15 @@
     var sendToHandle = prSplit.sendToHandle;
     var resolveNumber = prSplit._resolveNumber;
 
+    function emitOutput(text) {
+        if (typeof prSplit._routeTuiOutput === 'function' &&
+            prSplit._tuiOutputActive) {
+            prSplit._routeTuiOutput(text);
+            return;
+        }
+        output.print(text);
+    }
+
     // --- waitForLogged — logged wrapper around mcpCallbackObj.waitFor ---
 
     // Emits before/after log entries so IPC timeouts can be diagnosed
@@ -124,7 +133,8 @@
             sourceBranch: analysis.currentBranch,
             branchPrefix: runtime.branchPrefix,
             maxFiles: runtime.maxFiles,
-            fileStatuses: analysis.fileStatuses
+            fileStatuses: analysis.fileStatuses,
+            fileRenames: analysis.fileRenames
         });
         state.planCache = plan;
         report.plan = plan;
@@ -151,8 +161,8 @@
             }
         }
 
-        output.print('=== Heuristic Split Complete ===');
-        output.print('Splits: ' + plan.splits.length);
+        emitOutput('=== Heuristic Split Complete ===');
+        emitOutput('Splits: ' + plan.splits.length);
 
         return { error: report.error, report: report };
     }
@@ -297,7 +307,7 @@
                         details: resolution.preExistingDetails || ''
                     });
                     fixed = true;
-                    output.print('[auto-split] Pre-existing failure: ' + (fail.branch || fail.name) +
+                    emitOutput('[auto-split] Pre-existing failure: ' + (fail.branch || fail.name) +
                         (resolution.preExistingDetails ? ' (' + resolution.preExistingDetails + ')' : ''));
                     break;
                 }
@@ -374,7 +384,7 @@
                 var reVerify = await verifySplitAsync(fail.branch || fail.name, { verifyCommand: runtime.verifyCommand });
                 if (reVerify.passed) {
                     fixed = true;
-                    output.print('[auto-split] Fixed: ' + (fail.branch || fail.name));
+                    emitOutput('[auto-split] Fixed: ' + (fail.branch || fail.name));
                 }
             }
 

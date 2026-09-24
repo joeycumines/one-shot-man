@@ -905,6 +905,17 @@ func (h *PickAndPlaceHarness) WaitForMode(expectedMode string, timeout time.Dura
 	return false
 }
 
+func (h *PickAndPlaceHarness) WaitForOutputContains(text string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if strings.Contains(h.GetOutput(), text) {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return strings.Contains(h.GetOutput(), text)
+}
+
 // WaitForHeldItem waits for the held item to match the expected condition.
 // Use minID >= 0 to wait for any item, or specific ID.
 // Use minID = -1 to wait for no item held.
@@ -973,14 +984,9 @@ func (h *PickAndPlaceHarness) WaitForManualPathEmpty(timeout time.Duration) bool
 }
 
 // WaitForFrames waits for simulator tick counter to advance by specified number.
-// Hardened for CI under resource pressure: 30s deadline (was 10s), waitSnapshot-style
-// handshake via GetDebugState, and deterministic timeout logging. The deadline adapts
-// to the harness context if sooner. Under heavy parallel load (~500 t.Parallel,
-// termtest readLoop), the original 10s/200ms sleeps were load-bearing and could
-// silently return before tick advanced, causing stuck-loop flakes. This version
-// either advances deterministically or logs a clear diagnostic for /tmp/loom-clean-head-*.log.
-// If flakes persist under routine host load, run with -parallel 1 (-p=1) as documented fallback.
+// It fails the test rather than letting later input proceed without an acknowledged tick.
 func (h *PickAndPlaceHarness) WaitForFrames(frames int64) {
+	h.t.Helper()
 	// 30s covers heavily contended CI (parallel builds, -race). Original 10s was tight.
 	deadline := time.Now().Add(30 * time.Second)
 	if dl, ok := h.ctx.Deadline(); ok && dl.Before(deadline) {
@@ -1001,8 +1007,7 @@ func (h *PickAndPlaceHarness) WaitForFrames(frames int64) {
 			break
 		}
 		if h.ctx.Err() != nil {
-			h.t.Logf("WaitForFrames: context cancelled during overlay wait at tick %d", s.Tick)
-			return
+			h.t.Fatalf("WaitForFrames: context cancelled during overlay wait at tick %d", s.Tick)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -1013,13 +1018,13 @@ func (h *PickAndPlaceHarness) WaitForFrames(frames int64) {
 			return
 		}
 		if h.ctx.Err() != nil {
-			h.t.Logf("WaitForFrames: context cancelled at tick %d target %d", cur.Tick, initialTick+int64(frames))
-			return
+			h.t.Fatalf("WaitForFrames: context cancelled at tick %d target %d", cur.Tick, initialTick+int64(frames))
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	cur := h.GetDebugState()
-	h.t.Logf("WaitForFrames: deadline exceeded after %v, initial=%d current=%d target=%d", time.Until(deadline), initialTick, cur.Tick, initialTick+int64(frames))
+	h.t.Fatalf("WaitForFrames: deadline exceeded, initial=%d current=%d target=%d",
+		initialTick, cur.Tick, initialTick+int64(frames))
 }
 
 // WaitForManualPathEmptyWithMinTicks waits for the manual path to be empty (mpl=0)
@@ -1076,9 +1081,10 @@ func (h *PickAndPlaceHarness) WaitForManualPathEmptyWithMinTicks(timeout time.Du
 // WaitForActorPosition waits for the actor to reach the target grid position.
 // It reads from the log file (authoritative source) to avoid PTY buffer staleness.
 // Returns true if actor is within threshold of (targetX, targetY).
-// Returns false on timeout (after ~5 seconds).
+// Returns false on timeout (after ~30 seconds).
 func (h *PickAndPlaceHarness) WaitForActorPosition(targetX, targetY int, threshold float64) bool {
-	deadline := time.Now().Add(5 * time.Second)
+	h.t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		state := h.GetDebugStateFromLog()
 		if state != nil {

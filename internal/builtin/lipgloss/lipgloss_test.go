@@ -9,13 +9,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewManager(t *testing.T) {
-	manager := NewManager()
-	assert.NotNil(t, manager)
+func mustNewManager(t *testing.T, opts ...ManagerOption) *Manager {
+	t.Helper()
+	m, err := NewManager(opts...)
+	require.NoError(t, err)
+	return m
 }
 
 func TestRequire_ExportsCorrectAPI(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -61,7 +63,7 @@ func TestRequire_ExportsCorrectAPI(t *testing.T) {
 }
 
 func TestNewStyle_ReturnsStyleObject(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -99,7 +101,7 @@ func TestNewStyle_ReturnsStyleObject(t *testing.T) {
 }
 
 func TestStyleRender(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -121,7 +123,7 @@ func TestStyleRender(t *testing.T) {
 }
 
 func TestStyleCopy(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -144,7 +146,7 @@ func TestStyleCopy(t *testing.T) {
 }
 
 func TestStyleChaining(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -173,7 +175,7 @@ func TestStyleChaining(t *testing.T) {
 }
 
 func TestBorderFunctions(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -211,7 +213,7 @@ func TestBorderFunctions(t *testing.T) {
 }
 
 func TestNoBorder(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -228,7 +230,7 @@ func TestNoBorder(t *testing.T) {
 }
 
 func TestStyleWithBorder(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -251,7 +253,7 @@ func TestStyleWithBorder(t *testing.T) {
 }
 
 func TestJoinHorizontal(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -271,7 +273,7 @@ func TestJoinHorizontal(t *testing.T) {
 }
 
 func TestJoinVertical(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -291,7 +293,7 @@ func TestJoinVertical(t *testing.T) {
 }
 
 func TestPlace(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -311,7 +313,7 @@ func TestPlace(t *testing.T) {
 }
 
 func TestSizeWidthHeight(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -346,7 +348,7 @@ func TestSizeWidthHeight(t *testing.T) {
 }
 
 func TestDimensionMethods(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -370,7 +372,7 @@ func TestDimensionMethods(t *testing.T) {
 }
 
 func TestPaddingVariants(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -395,7 +397,7 @@ func TestPaddingVariants(t *testing.T) {
 }
 
 func TestMarginVariants(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -420,7 +422,7 @@ func TestMarginVariants(t *testing.T) {
 }
 
 func TestBorderSides(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -447,7 +449,7 @@ func TestBorderSides(t *testing.T) {
 }
 
 func TestAlignmentMethods(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -472,7 +474,7 @@ func TestAlignmentMethods(t *testing.T) {
 }
 
 func TestTextFormattingMethods(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -499,7 +501,7 @@ func TestTextFormattingMethods(t *testing.T) {
 }
 
 func TestColorMethods(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -528,7 +530,7 @@ func TestColorMethods(t *testing.T) {
 }
 
 func TestEdgeCases(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -570,7 +572,7 @@ func TestEdgeCases(t *testing.T) {
 }
 
 func TestRenderMultipleStrings(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -592,7 +594,7 @@ func TestRenderMultipleStrings(t *testing.T) {
 }
 
 func TestStyleImmutability(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -644,7 +646,7 @@ func TestParseWhitespaceOptions_IgnoresNullWhitespaceChars(t *testing.T) {
 }
 
 func TestWhitespaceChars_NullIgnoredInPlace(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 	vm := goja.New()
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
@@ -663,7 +665,7 @@ func TestWhitespaceChars_NullIgnoredInPlace(t *testing.T) {
 }
 
 func TestWhitespaceChars_StringIsAccepted(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 	vm := goja.New()
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
@@ -681,7 +683,7 @@ func TestWhitespaceChars_StringIsAccepted(t *testing.T) {
 }
 
 func TestInvalidDimension_Negative(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -706,7 +708,7 @@ func TestInvalidDimension_Negative(t *testing.T) {
 }
 
 func TestValidDimensions(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -733,7 +735,7 @@ func TestValidDimensions(t *testing.T) {
 }
 
 func TestInvalidPadding_Negative(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -758,7 +760,7 @@ func TestInvalidPadding_Negative(t *testing.T) {
 }
 
 func TestInvalidMargin_Negative(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -783,7 +785,7 @@ func TestInvalidMargin_Negative(t *testing.T) {
 }
 
 func TestStyleHasErrorProperty(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -804,7 +806,7 @@ func TestStyleHasErrorProperty(t *testing.T) {
 }
 
 func TestValidColorsAccepted(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -832,7 +834,7 @@ func TestValidColorsAccepted(t *testing.T) {
 }
 
 func TestStyleImmutabilityWithMultipleModifications(t *testing.T) {
-	manager := NewManager()
+	manager := mustNewManager(t)
 
 	vm := goja.New()
 	module := vm.NewObject()

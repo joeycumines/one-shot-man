@@ -2289,11 +2289,14 @@ func TestSuperDocument_JumpButtonsUnlockViewport(t *testing.T) {
 	}
 
 	// Cancel and quit
+	snap = cp.Snapshot()
 	sendKey(t, cp, "\x1b") // ESC to cancel
-	time.Sleep(100 * time.Millisecond)
+	expect(snap, "Cancelled", 15*time.Second)
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
+	waitCtx, waitCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer waitCancel()
+	if code, err := cp.WaitExit(waitCtx); err != nil || code != 0 {
 		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
 	}
 }

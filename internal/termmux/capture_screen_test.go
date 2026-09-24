@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,6 +41,27 @@ func writeCapture(t *testing.T, snap *ScreenSnapshot, kind CaptureKind) string {
 	return captureOfChecked(t, snap, kind)
 }
 
+type blockingWriteSession struct {
+	*controllableSession
+	writeStarted chan struct{}
+	writeRelease chan struct{}
+	writeOnce    sync.Once
+}
+
+func newBlockingWriteSession() *blockingWriteSession {
+	return &blockingWriteSession{
+		controllableSession: newControllableSession(),
+		writeStarted:        make(chan struct{}),
+		writeRelease:        make(chan struct{}),
+	}
+}
+
+func (s *blockingWriteSession) Write(data []byte) (int, error) {
+	s.writeOnce.Do(func() { close(s.writeStarted) })
+	<-s.writeRelease
+	return s.controllableSession.Write(data)
+}
+
 func TestSessionManager_CaptureScreen_PlainFull(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
@@ -66,6 +88,48 @@ func TestSessionManager_CaptureScreen_PlainFull(t *testing.T) {
 	if capture.Kind != CapturePlain {
 		t.Errorf("Kind = %v, want CapturePlain", capture.Kind)
 	}
+}
+
+func TestSessionManager_CaptureScreen_DoesNotWaitForWorkerOutput(t *testing.T) {
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newBlockingWriteSession()
+	id, err := m.Register(session, SessionTarget{Name: "test", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	session.readerCh <- []byte("\x1b[5n")
+	select {
+	case <-session.writeStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("worker did not reach the blocked terminal response write")
+	}
+
+	type captureResult struct {
+		capture *Capture
+		err     error
+	}
+	resultCh := make(chan captureResult, 1)
+	go func() {
+		capture, captureErr := m.CaptureScreen(id, CaptureOptions{Kind: CapturePlain})
+		resultCh <- captureResult{capture: capture, err: captureErr}
+	}()
+
+	select {
+	case result := <-resultCh:
+		if result.err != nil {
+			t.Fatalf("CaptureScreen: %v", result.err)
+		}
+		if result.capture == nil {
+			t.Fatal("CaptureScreen returned a nil capture")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("CaptureScreen waited for the blocked worker")
+	}
+
+	close(session.writeRelease)
 }
 
 func TestSessionManager_CaptureScreen_Range(t *testing.T) {

@@ -725,18 +725,15 @@
         // Re-attach to tuiMux if available — capture pinned SessionID.
         var executor = st.agentExecutor;
         if (executor && executor.handle && typeof tuiMux !== 'undefined' && tuiMux &&
-            typeof tuiMux.attachAsync === 'function') {
-            tuiMux.attachAsync(executor.handle).then(function(cid) {
-                st.agentSessionID = cid;
-                log.debug('agent restart re-attached', { sessionID: cid });
-            }).catch(function(e) {
-                log.debug('agent spawn tuiMux attachAsync failed', { error: e.message || String(e) });
-            });
-        } else if (executor && executor.handle && typeof tuiMux !== 'undefined' && tuiMux &&
             typeof tuiMux.attach === 'function') {
             try {
                 var cid = tuiMux.attach(executor.handle);
                 st.agentSessionID = cid;
+                if (typeof prSplit._noteAgentAttached === 'function') {
+                    try { prSplit._noteAgentAttached(cid, s); } catch (e) {
+                        log.debug('agent restart noteAgentAttached failed', { error: e.message || String(e) });
+                    }
+                }
                 log.debug('agent restart re-attached', { sessionID: cid });
             } catch (e) { log.debug('agent spawn tuiMux attach failed', { error: e.message || String(e) }); }
         }
@@ -777,6 +774,10 @@
         'ctrl++': true,     // adjust split ratio
         'ctrl+=': true,     // adjust split ratio
         'ctrl+-': true,     // adjust split ratio
+        'ctrl+up': true,    // adjust split ratio (move divider up)
+        'ctrl+down': true,  // adjust split ratio (move divider down)
+        'alt+up': true,     // adjust split ratio (move divider up)
+        'alt+down': true,   // adjust split ratio (move divider down)
         'up': true,         // scroll Agent pane viewport up
         'down': true,       // scroll Agent pane viewport down
         'k': true,          // scroll Agent pane viewport up (vim)
@@ -806,6 +807,10 @@
         'ctrl++': true,     // adjust split ratio
         'ctrl+=': true,     // adjust split ratio
         'ctrl+-': true,     // adjust split ratio
+        'ctrl+up': true,    // adjust split ratio
+        'ctrl+down': true,  // adjust split ratio
+        'alt+up': true,     // adjust split ratio
+        'alt+down': true,   // adjust split ratio
         'f1': true,         // help
         // T62: Selection and clipboard keys.
         'shift+up': true,
@@ -1019,10 +1024,23 @@
             }
         }
 
+        // Live terminal owns the agent tab while active: refresh the pane
+        // via tick-driven snapshot reads (one per tick, budgeted), but stop
+        // overwriting the cached strings that drive the tab. Question
+        // detection and lifecycle flags below keep running.
+        var liveRendering = (typeof prSplit._agentLiveActive === 'function' && prSplit._agentLiveActive());
+        if (liveRendering && typeof prSplit._refreshAgentLiveView === 'function') {
+            try { prSplit._refreshAgentLiveView(); } catch (e) {
+                log.debug('agent live refresh failed', { error: e.message || String(e) });
+            }
+        }
+
         // Snapshot with generation tracking: skip if nothing changed.
         // When gen is undefined/null (mock without gen field), always
         // snapshot to maintain backward compatibility with tests.
+        // While live, the pane owns the tab so the capture block is skipped.
         var snapshotChanged = false;
+        if (!liveRendering) {
         try {
             if (typeof tuiMux.capture === 'function') {
                 var snap = tuiMux.capture(cid);
@@ -1046,6 +1064,7 @@
                 sessionId: cid,
                 error: e.message || String(e)
             });
+        }
         }
 
         // Clear the dirty flag after processing.

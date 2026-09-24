@@ -27,7 +27,10 @@ func setupRuntime(t *testing.T) *goja.Runtime {
 			return mod.Get("exports")
 		case "osm:lipgloss":
 			mod := rt.NewObject()
-			lm := jslipgloss.NewManager()
+			lm, err := jslipgloss.NewManager()
+			if err != nil {
+				panic(err)
+			}
 			jslipgloss.Require(lm)(rt, mod)
 			return mod.Get("exports")
 		}

@@ -85,31 +85,29 @@
 
     var STEP_LABELS = [
         'Configure',
-        'Analysis',
+        'Analyze',
         'Review Plan',
-        'Edit Plan',
-        'Execution',
-        'Verification',
-        'Finalization'
+        'Execute Split',
+        'Verify & Complete'
     ];
 
-    // Map wizard states to step indices (0-based).
+    // Map wizard states to step indices (0-based, 5 phases total).
     var STATE_TO_STEP = {
         'IDLE':             0,
         'CONFIG':           0,
         'BASELINE_FAIL':    0,
         'PLAN_GENERATION':  1,
         'PLAN_REVIEW':      2,
-        'PLAN_EDITOR':      3,
-        'BRANCH_BUILDING':  4,
-        'ERROR_RESOLUTION': 4,
-        'EQUIV_CHECK':      5,
-        'FINALIZATION':     6,
-        'DONE':             6,
-        'CANCELLED':        6,
-        'FORCE_CANCEL':     6,
-        'PAUSED':           6,
-        'ERROR':            6
+        'PLAN_EDITOR':      2,
+        'BRANCH_BUILDING':  3,
+        'ERROR_RESOLUTION': 3,
+        'EQUIV_CHECK':      4,
+        'FINALIZATION':     4,
+        'DONE':             4,
+        'CANCELLED':        4,
+        'FORCE_CANCEL':     4,
+        'PAUSED':           4,
+        'ERROR':            4
     };
 
     // T025: Terminal/non-pipeline states override the step label to avoid
@@ -123,11 +121,45 @@
         'ERROR':        'Error'
     };
 
+    function renderPhaseText(s, stepNum, totalSteps, stepLabel) {
+        if (s.wizardState === 'DONE') {
+            return '\u2714 Complete \u00b7 Splits Verified';
+        }
+        if (s.wizardState === 'FINALIZATION') {
+            return 'Phase 5 of 5: Finalization';
+        }
+        if (s.wizardState === 'CANCELLED' || s.wizardState === 'FORCE_CANCEL') {
+            return '\u2298 Cancelled';
+        }
+        if (s.wizardState === 'ERROR') {
+            return '\u2716 Error \u00b7 Action Required';
+        }
+        if (s.wizardState === 'PAUSED') {
+            return '\u23f8 Paused';
+        }
+        if (s.wizardState === 'EQUIV_CHECK') {
+            if (s.isProcessing) {
+                return 'Phase 5 of 5: Verifying Equivalence\u2026';
+            }
+            if (s.equivalenceResult) {
+                if (s.equivalenceResult.equivalent) {
+                    return 'Phase 5 of 5: Equivalence Verified';
+                }
+                if (s.equivalenceResult.error) {
+                    return 'Phase 5 of 5: Equivalence Error';
+                }
+                return 'Phase 5 of 5: Equivalence Mismatch';
+            }
+            return 'Phase 5 of 5: Verification';
+        }
+        return 'Phase ' + stepNum + ' of ' + totalSteps + ': ' + stepLabel;
+    }
+
     function renderTitleBar(s) {
         var stepIdx = STATE_TO_STEP[s.wizardState] || 0;
         var stepLabel = STATE_LABEL_OVERRIDE[s.wizardState] || STEP_LABELS[stepIdx] || 'Unknown';
         var stepNum = stepIdx + 1;
-        var totalSteps = 7;
+        var totalSteps = 5;
         var mode = layoutMode(s);
 
         // Elapsed time.
@@ -139,8 +171,19 @@
         var w = s.width || 80;
 
         if (mode === 'compact') {
-            // Compact: dots + timer only, no title or step label.
-            var dots = renderStepDots(s);
+            // Compact: preserve the status text for terminal states so a
+            // completed or failed run cannot be mistaken for an in-progress
+            // dot sequence.
+            var terminalStatus = (s.wizardState === 'DONE' ||
+                s.wizardState === 'FINALIZATION' ||
+                s.wizardState === 'CANCELLED' ||
+                s.wizardState === 'FORCE_CANCEL' ||
+                s.wizardState === 'ERROR' ||
+                s.wizardState === 'PAUSED' ||
+                (s.wizardState === 'EQUIV_CHECK' && !s.isProcessing && s.equivalenceResult));
+            var dots = terminalStatus
+                ? styles.stepIndicator().render(renderPhaseText(s, stepNum, totalSteps, stepLabel))
+                : renderStepDots(s);
             var right = styles.dim().render('\u23f1 ' + timeStr);
             var leftW = lipgloss.width(dots);
             var rightW = lipgloss.width(right);
@@ -152,7 +195,7 @@
 
         var left = styles.titleBar().render('\ud83d\udd00 PR Split Wizard');
         var right = styles.stepIndicator().render(
-            'Step ' + stepNum + '/' + totalSteps + ': ' + stepLabel + '  \u23f1 ' + timeStr
+            renderPhaseText(s, stepNum, totalSteps, stepLabel) + '  \u23f1 ' + timeStr
         );
 
         var leftW = lipgloss.width(left);
@@ -170,7 +213,7 @@
         // T027: At narrow widths, omit spaces between dots to save columns.
         var compact = w < 50;
         var dots = '';
-        for (var i = 0; i < 7; i++) {
+        for (var i = 0; i < 5; i++) {
             if (i > 0 && !compact) dots += ' ';
             if (i <= stepIdx) {
                 dots += styles.progressFull().render('\u25cf');
@@ -459,22 +502,31 @@
 
     // --- Split-View: Agent Pane Renderer (T15) ---
     function renderAgentPane(s, width, height) {
-        // T28: Prefer ANSI-styled content (agentScreen), fall back to plain text.
-        var ansiContent = s.agentScreen || '';
+        var isLive = (typeof prSplit._agentLiveActive === 'function' && prSplit._agentLiveActive());
+        var liveContent = '';
+        if (isLive && typeof prSplit._renderAgentLivePane === 'function') {
+            try {
+                liveContent = prSplit._renderAgentLivePane(s, width, height) || '';
+            } catch (e) {
+                log.debug('agent pane live delegate failed', { error: e.message || String(e) });
+            }
+        }
+        // T28: Prefer live content, then ANSI-styled content (agentScreen), fall back to plain text.
+        var ansiContent = liveContent || s.agentScreen || '';
         var plainContent = s.agentScreenshot || '';
         var content = ansiContent || plainContent;
         var isANSI = !!ansiContent;
         var agentSession = getInteractivePaneSession(s, 'agent');
-        var hasMux = !!agentSession;
+        var hasMux = !!agentSession || isLive;
 
         // Height budget: border adds 2 lines (top + bottom).
         // Content height = height - 2. First content line is the title.
         var contentH = Math.max(1, height - 2);
         var viewH = Math.max(1, contentH - 1); // lines for content text
-        var viewW = Math.max(10, width - 6);    // border(2) + padding(2) + safety(2)
+        var viewW = Math.max(10, width - 4);    // border(2) + inner width
 
         // Focus indicator.
-        var isFocused = (s.splitViewFocus === 'agent');
+        var isFocused = (s.splitViewFocus === 'agent' && (s.splitViewTab === 'agent' || !s.splitViewTab));
         var borderColor = isFocused ? COLORS.primary : COLORS.border;
 
         // Placeholder when no Agent session is available.
@@ -519,7 +571,9 @@
 
         // Scroll indicator.
         var scrollInfo = '';
-        if (totalLines > viewH) {
+        if (isLive) {
+            scrollInfo = ' [live]';
+        } else if (totalLines > viewH) {
             if (s.agentViewOffset <= 0) {
                 scrollInfo = ' [live]';
             } else {
@@ -536,7 +590,9 @@
         // Task 9: Lifecycle state indicator.
         var lifecycleTag = '';
         var lcs = s.agentLifecycleState || '';
-        if (lcs === 'active') {
+        if (isLive && !lcs) {
+            lifecycleTag = ' \u25cf'; // ● (filled circle — live active)
+        } else if (lcs === 'active') {
             lifecycleTag = ' \u25cf'; // ● (filled circle — actively outputting)
         } else if (lcs === 'idle') {
             lifecycleTag = ' \u25cb'; // ○ (open circle — idle)
@@ -557,12 +613,17 @@
 
         // Determine visible window based on scroll offset.
         var startLine;
-        if (s.agentViewOffset <= 0) {
+        var endLine;
+        if (isLive) {
+            startLine = 0;
+            endLine = Math.min(totalLines, viewH);
+        } else if (s.agentViewOffset <= 0) {
             startLine = Math.max(0, totalLines - viewH);
+            endLine = Math.min(totalLines, startLine + viewH);
         } else {
             startLine = Math.max(0, totalLines - viewH - s.agentViewOffset);
+            endLine = Math.min(totalLines, startLine + viewH);
         }
-        var endLine = Math.min(totalLines, startLine + viewH);
 
         // Build viewport content with ANSI-aware line truncation.
         // T62: When selection is active on the Agent pane and content is ANSI,
@@ -805,6 +866,7 @@
         var paneStyle = lipgloss.newStyle()
             .border(lipgloss.roundedBorder())
             .borderForeground(borderColor)
+            .foreground(COLORS.text)
             .width(width - 2)
             .height(contentH);
 

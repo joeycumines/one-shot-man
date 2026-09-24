@@ -61,7 +61,7 @@
     {
       "id": "07_prcreation",
       "file": "pr_split_07_prcreation.js",
-      "exports": ["createPRs"]
+      "exports": ["createPRs", "formatPRTitle", "formatPRBody"]
     },
     {
       "id": "08_conflict",
@@ -195,6 +195,33 @@
       "id": "16g_persistence",
       "file": "pr_split_16g_persistence.js",
       "exports": []
+    },
+    {
+      "id": "17_agent_termpane",
+      "file": "pr_split_17_agent_termpane.js",
+      "exports": [
+        "_agentLiveAvailable",
+        "_agentLiveActive",
+        "_agentLiveSessionAlive",
+        "_ensureAgentTermpane",
+        "_destroyAgentTermpane",
+        "_syncAgentTermpaneBounds",
+        "_refreshAgentLiveView",
+        "_renderAgentLivePane",
+        "_agentLiveCursor",
+        "_routeKeyToAgentTermpane",
+        "_routeMouseToAgentTermpane",
+        "_noteAgentAttached",
+        "_noteAgentDetached",
+        "_agentPaneBox",
+        "_agentPaneInnerSize",
+        "_clipAnsiToBox",
+        "_isPointInAgentPane",
+        "_agentPaneHeight",
+        "_agentEvidence",
+        "_classifyCheckpoint",
+        "_stateRefresh"
+      ]
     }
   ]
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
@@ -224,4 +225,64 @@ func TestGolden_TabBar_VerifyOnly(t *testing.T) {
 		t.Fatal(got)
 	}
 	testGolden(t, "tab-bar-verify-only", got)
+}
+
+func TestPrSplitAgentLiveRenderCursor(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	model, err := os.ReadFile("pr_split_16f_tui_model.js")
+	if err != nil {
+		t.Fatalf("read model chunk: %v", err)
+	}
+	chrome, err := os.ReadFile("pr_split_15b_tui_chrome.js")
+	if err != nil {
+		t.Fatalf("read chrome chunk: %v", err)
+	}
+	update, err := os.ReadFile("pr_split_16e_tui_update.js")
+	if err != nil {
+		t.Fatalf("read update chunk: %v", err)
+	}
+	handlers, err := os.ReadFile("pr_split_16d_tui_handlers_agent.js")
+	if err != nil {
+		t.Fatalf("read agent handlers chunk: %v", err)
+	}
+	m, c, u, h := string(model), string(chrome), string(update), string(handlers)
+	// Agent tab renders clipped pane content with screenshot fallback.
+	if !strings.Contains(m, "prSplit._renderAgentLivePane(s, w, agentH)") {
+		t.Error("16f agent tab missing live render branch")
+	}
+	if !strings.Contains(m, "bottomPane = renderAgentPane(s, w, agentH)") {
+		t.Error("16f agent tab missing screenshot fallback")
+	}
+	// View exports the termpane cursor unchanged; out-of-box clips to null
+	// inside chunk 17 (assert the passthrough contract, not the geometry).
+	if !strings.Contains(m, "prSplit._agentLiveCursor()") {
+		t.Error("16f view missing live cursor export")
+	}
+	if !strings.Contains(m, "mouseMode: 'allMotion'") {
+		t.Error("16f view must set mouseMode allMotion")
+	}
+	// Direct renderAgentPane callers also prefer live.
+	if !strings.Contains(c, "prSplit._renderAgentLivePane(s, width, height)") {
+		t.Error("15b renderAgentPane missing live delegate")
+	}
+	// Resize flows through the single authority with prSplit scoping.
+	if !strings.Contains(u, "prSplit._syncAgentTermpaneBounds(s)") {
+		t.Error("16e resize missing live bounds sync")
+	}
+	if strings.Contains(u, "agentPaneHeight(s)") && !strings.Contains(u, "prSplit._agentPaneHeight") {
+		t.Error("16e resize must scope the height helper to prSplit")
+	}
+	// Poll keeps lifecycle running while live owns the tab.
+	if !strings.Contains(h, "prSplit._refreshAgentLiveView()") {
+		t.Error("16d poll missing live refresh while active")
+	}
+	if !strings.Contains(h, "if (!liveRendering)") {
+		t.Error("16d poll must skip capture overwrite while live")
+	}
+	// Quit paths destroy the pane.
+	if !strings.Contains(m, "prSplit._destroyAgentTermpane()") {
+		t.Error("16f quit paths missing pane destroy")
+	}
 }

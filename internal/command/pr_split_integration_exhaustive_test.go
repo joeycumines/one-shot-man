@@ -916,7 +916,7 @@ func TestBinaryE2E_RenamedFilesEquivalence(t *testing.T) {
 	if countSplitBranches(t, repoDir) == 0 {
 		t.Fatalf("no split/* branches with renamed files, branches: %v", gitBranches(t, repoDir))
 	}
-	assertContainsAny(t, stdout, "equivalence", "Tree hash mismatch", "equivalent", "Trees are equivalent")
+	assertContainsAny(t, stdout, "equivalence", "equivalence", "Tree hash mismatch", "equivalent", "Trees are equivalent")
 }
 
 // ---------------------------------------------------------------------------

@@ -483,26 +483,18 @@ func TestShooterE2E_EnemyMovement(t *testing.T) {
 			continue
 		}
 
-		// Check if enough ticks have passed
-		ticksElapsed := state.Tick - initialTick
-		if ticksElapsed < maxWaitTicks/2 {
-			// Keep waiting for more ticks
-			time.Sleep(pollInterval)
-			continue
-		}
+		finalState = state
 
 		// Check if enemy position has changed
 		if state.EnemyX != initialEnemyX || state.EnemyY != initialEnemyY {
 			enemyMoved = true
-			finalState = state
 			t.Logf("✓ Enemy MOVED! Initial (%d, %d) -> Final (%d, %d) after %d ticks",
-				initialEnemyX, initialEnemyY, state.EnemyX, state.EnemyY, ticksElapsed)
+				initialEnemyX, initialEnemyY, state.EnemyX, state.EnemyY, state.Tick-initialTick)
 			break
 		}
 
 		// If lots of ticks passed but no movement, check if enemy is stuck
-		if ticksElapsed >= maxWaitTicks {
-			finalState = state
+		if state.Tick-initialTick >= maxWaitTicks {
 			break
 		}
 

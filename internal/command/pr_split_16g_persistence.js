@@ -147,15 +147,21 @@
 
     function cleanupStateFile() {
         var mux = (typeof tuiMux !== 'undefined') ? tuiMux : null;
-        if (!mux) return;
+        if (!mux || !statePath) return null;
         try {
-            mux.removeState(statePath).then(function() {
+            var removal = mux.removeState(statePath);
+            if (!removal || typeof removal.then !== 'function') {
+                log.debug('persistence: state file removed on clean exit', { path: statePath });
+                return null;
+            }
+            return removal.then(function() {
                 log.debug('persistence: state file removed on clean exit', { path: statePath });
             }, function(e) {
                 log.debug('persistence: remove failed on exit', { error: (e && e.message) || String(e) });
             });
         } catch (e) {
             log.debug('persistence: remove failed on exit', { error: e.message || String(e) });
+            return null;
         }
     }
 

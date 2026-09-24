@@ -365,19 +365,37 @@ func (m *SessionManager) CaptureScreen(id SessionID, opts CaptureOptions) (*Capt
 	if !opts.Kind.Valid() {
 		return nil, fmt.Errorf("%w: %d", ErrInvalidCaptureKind, opts.Kind)
 	}
-	resp := m.sendRequest(reqSnapshot, id)
-	if resp.err != nil {
-		return nil, resp.err
+	raw, ok := m.snapshotIndex.Load(id)
+	if !ok {
+		return nil, fmt.Errorf("%w: %d", ErrSessionNotFound, id)
 	}
-	snap, _ := resp.value.(*ScreenSnapshot)
+	ms, ok := raw.(*managedSession)
+	if !ok || ms == nil {
+		return nil, fmt.Errorf("%w: %d", ErrSessionNotFound, id)
+	}
+	snap := ms.snapshot.Load()
 	if snap == nil || snap.screen == nil {
 		return nil, fmt.Errorf("%w: %d", ErrSnapshotUnavailable, id)
+	}
+	// Lock state changes do not necessarily produce terminal output, so the
+	// immutable screen snapshot may lag the manager's current lock gate. Read
+	// the synchronized lock state directly while keeping capture off the
+	// worker queue.
+	locked := ms.lock.IsLocked()
+	now := time.Now()
+	message := m.publishedActiveMessage(id, now)
+	if snap.Locked != locked || snap.Message != message {
+		snap = snap.Clone()
+		snap.Locked = locked
+		snap.Message = message
+		snap.Timestamp = now
 	}
 	if !opts.canonical() {
 		snap = snap.Clone()
 		snap.captureRange = rangeOf(opts)
 	}
-	return &Capture{Kind: opts.Kind, Text: snap.captureText(opts.Kind), Snapshot: snap}, nil
+	text := snap.captureText(opts.Kind)
+	return &Capture{Kind: opts.Kind, Text: text, Snapshot: snap}, nil
 }
 
 // captureText returns the representation of the snapshot selected by kind,
@@ -523,6 +541,10 @@ const (
 	// reqInput asks the worker to write data to the active session.
 	// Payload: []byte. Reply value: nil.
 	reqInput
+
+	// reqInputSession asks the worker to write data to a specific session.
+	// Payload: inputSessionPayload. Reply value: nil.
+	reqInputSession
 
 	reqSendKeys
 
@@ -856,6 +878,12 @@ type displayMessage struct {
 	expiresAt time.Time
 }
 
+// displayMessageSnapshot is an immutable publication of a session's message
+// queue for direct, non-blocking captures.
+type displayMessageSnapshot struct {
+	messages []displayMessage
+}
+
 // maxDisplayMessages caps the per-session display-message queue to prevent
 // unbounded growth if callers enqueue faster than messages expire.
 const maxDisplayMessages = 32
@@ -1169,6 +1197,8 @@ type managedSession struct {
 	// messageQueue holds queued display messages for this session.
 	// It is only accessed by the worker goroutine; no synchronization is needed.
 	messageQueue []displayMessage
+	// messageSnapshot publishes a copy of messageQueue for direct captures.
+	messageSnapshot atomic.Pointer[displayMessageSnapshot]
 
 	lock SessionLock
 
@@ -1203,6 +1233,12 @@ type SessionManager struct {
 	reqChan chan request
 	reqMu   sync.Mutex
 	closed  bool
+
+	// snapshotIndex provides lock-free access to published session snapshots.
+	// CaptureScreen uses this path because snapshots are immutable and already
+	// published atomically; routing a read-only capture through the worker can
+	// otherwise block behind a slow PTY output chunk.
+	snapshotIndex sync.Map // map[SessionID]*managedSession
 
 	// mergedOutput receives raw PTY output from all per-session reader
 	// goroutines. The worker is the sole consumer.
@@ -1569,6 +1605,16 @@ func (m *SessionManager) Activate(id SessionID) error {
 // Input writes data to the active session's PTY.
 func (m *SessionManager) Input(data []byte) error {
 	return m.sendRequest(reqInput, data).err
+}
+
+type inputSessionPayload struct {
+	id   SessionID
+	data []byte
+}
+
+// InputSession writes data to the specified session's PTY.
+func (m *SessionManager) InputSession(id SessionID, data []byte) error {
+	return m.sendRequest(reqInputSession, inputSessionPayload{id: id, data: data}).err
 }
 
 // SendKeys converts named keys to terminal bytes and writes them to the
@@ -2191,6 +2237,8 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleActivate(req.payload.(SessionID))
 	case reqInput:
 		resp = m.handleInput(req.payload.([]byte))
+	case reqInputSession:
+		resp = m.handleInputSession(req.payload.(inputSessionPayload))
 	case reqSendKeys:
 		resp = m.handleSendKeys(req.payload.(sendKeysPayload))
 	case reqResetActivity:
@@ -2417,6 +2465,7 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 	// Initial snapshot has cursor at origin (0,0).
 	ms.snapshot.Store(snap)
 	m.sessions[id] = ms
+	m.snapshotIndex.Store(id, ms)
 	m.monitors[id] = NewMonitorState(MonitorConfig{})
 
 	if m.activeID == 0 {
@@ -2452,6 +2501,7 @@ func (m *SessionManager) handleUnregister(id SessionID) response {
 	}
 	ms.state = SessionClosed
 	delete(m.sessions, id)
+	m.snapshotIndex.Delete(id)
 
 	if m.activeID == id {
 		m.activeID = 0
@@ -2531,6 +2581,21 @@ func (m *SessionManager) handleInput(data []byte) response {
 		return m.handleLockedInput(data, ms, activeSession)
 	}
 	_, err := ms.session.Write(data)
+	return response{err: err}
+}
+
+func (m *SessionManager) handleInputSession(p inputSessionPayload) response {
+	ms, ok := m.sessions[p.id]
+	if !ok {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.id)}
+	}
+	if ms.state != SessionRunning && ms.state != SessionCreated {
+		return response{err: fmt.Errorf("%w: session %d in state %s", ErrInvalidTransition, p.id, ms.state)}
+	}
+	if ms.lock.IsLocked() {
+		return m.handleLockedInput(p.data, ms, p.id)
+	}
+	_, err := ms.session.Write(p.data)
 	return response{err: err}
 }
 
@@ -3313,6 +3378,7 @@ func (m *SessionManager) handleRespawnSession(payload any) response {
 	snap := NewScreenSnapshot(m.snapshotGen, &vt.Screen{}, m.termRows, m.termCols, time.Now())
 	newMS.snapshot.Store(snap)
 	m.sessions[newID] = newMS
+	m.snapshotIndex.Store(newID, newMS)
 	m.monitors[newID] = NewMonitorState(MonitorConfig{})
 
 	m.snapshotGen++
@@ -3327,6 +3393,7 @@ func (m *SessionManager) handleRespawnSession(payload any) response {
 	}
 
 	delete(m.sessions, oldID)
+	m.snapshotIndex.Delete(oldID)
 
 	m.eventBus.emit(EventSessionRegistered, newID)
 	if wasActive {
@@ -3535,11 +3602,42 @@ func (m *SessionManager) activeMessageForSession(id SessionID, now time.Time) st
 	if !exists {
 		return ""
 	}
-	for len(ms.messageQueue) > 0 && now.After(ms.messageQueue[0].expiresAt) {
+	for len(ms.messageQueue) > 0 && !now.Before(ms.messageQueue[0].expiresAt) {
 		ms.messageQueue = ms.messageQueue[1:]
 	}
+	m.publishMessageSnapshot(ms)
 	if len(ms.messageQueue) > 0 {
 		return ms.messageQueue[0].text
+	}
+	return ""
+}
+
+func (m *SessionManager) publishMessageSnapshot(ms *managedSession) {
+	if len(ms.messageQueue) == 0 {
+		ms.messageSnapshot.Store(nil)
+		return
+	}
+	messages := append([]displayMessage(nil), ms.messageQueue...)
+	ms.messageSnapshot.Store(&displayMessageSnapshot{messages: messages})
+}
+
+func (m *SessionManager) publishedActiveMessage(id SessionID, now time.Time) string {
+	raw, ok := m.snapshotIndex.Load(id)
+	if !ok {
+		return ""
+	}
+	ms, ok := raw.(*managedSession)
+	if !ok || ms == nil {
+		return ""
+	}
+	state := ms.messageSnapshot.Load()
+	if state == nil {
+		return ""
+	}
+	for _, message := range state.messages {
+		if now.Before(message.expiresAt) {
+			return message.text
+		}
 	}
 	return ""
 }
@@ -3900,6 +3998,7 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 				m.activeID = 0
 			}
 			delete(m.sessions, so.id)
+			m.snapshotIndex.Delete(so.id)
 			m.eventBus.emit(EventSessionClosed, so.id)
 		} else if ms.state == SessionCreated {
 			m.closePipeForSession(ms)
@@ -3911,6 +4010,7 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 				m.activeID = 0
 			}
 			delete(m.sessions, so.id)
+			m.snapshotIndex.Delete(so.id)
 			m.eventBus.emit(EventSessionClosed, so.id)
 		}
 		return
@@ -4194,6 +4294,7 @@ func (m *SessionManager) shutdownSessions() {
 			m.eventBus.emit(EventSessionClosed, id)
 		}
 		delete(m.sessions, id)
+		m.snapshotIndex.Delete(id)
 	}
 	m.activeID = 0
 	m.paneMgr.Close()

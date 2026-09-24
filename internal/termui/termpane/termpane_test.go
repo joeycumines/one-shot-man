@@ -717,3 +717,170 @@ func TestView_HidesCursorWhenChildHidIt(t *testing.T) {
 		t.Error("View hid cursor for visible child cursor")
 	}
 }
+
+func startTestManagerTwoSessions(t *testing.T) (*termmux.SessionManager, *controllableSession, termmux.SessionID, *controllableSession, termmux.SessionID, func()) {
+	t.Helper()
+
+	m := termmux.NewSessionManager(termmux.WithTermSize(24, 80))
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- m.Run(ctx) }()
+	<-m.Started()
+
+	s1 := newControllableSession()
+	id1, err := m.Register(s1, termmux.SessionTarget{Name: "s1", Kind: termmux.SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register s1: %v", err)
+	}
+
+	s2 := newControllableSession()
+	id2, err := m.Register(s2, termmux.SessionTarget{Name: "s2", Kind: termmux.SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register s2: %v", err)
+	}
+
+	s1.readerCh <- []byte("ready1")
+	s2.readerCh <- []byte("ready2")
+
+	cleanup := func() {
+		cancel()
+		<-errCh
+	}
+	return m, s1, id1, s2, id2, cleanup
+}
+
+func TestBridgeEvents_PassiveViewNoBackpressure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+
+	mgr, session, sid, cleanup := startTestManager(t)
+	defer cleanup()
+
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	}
+
+	// Create a Model as a passive view (outputCh is NOT read by BubbleTea Init/Update).
+	model := NewModel(sid, mgr, bounds)
+	defer model.Close()
+
+	// outputCh buffer size is 64. Sending 100 events exceeds the buffer.
+	// Without the default: branch in bridgeEvents, this would block the bridge
+	// goroutine on m.outputCh <- evt, causing m.eventCh to backpressure.
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		for range 100 {
+			session.readerCh <- []byte("a")
+		}
+	}()
+
+	select {
+	case <-doneCh:
+		// Succeeded without deadlock or backpressure.
+	case <-time.After(2 * time.Second):
+		t.Fatal("bridgeEvents backpressured or deadlocked when outputCh was unconsumed")
+	}
+}
+
+func TestUpdate_KeyPressForwarding_RoutesToModelSessionEvenIfInactive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+
+	mgr, s1, id1, s2, id2, cleanup := startTestManagerTwoSessions(t)
+	defer cleanup()
+
+	// Activate session 1 so it is the active session in the manager.
+	if err := mgr.Activate(id1); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	}
+
+	// Model is tied to session 2 (the inactive session).
+	model := NewModel(id2, mgr, bounds)
+	defer model.Close()
+
+	// Clear any initialization writes.
+	s1.writeMu.Lock()
+	s1.writtenData = nil
+	s1.writeMu.Unlock()
+	s2.writeMu.Lock()
+	s2.writtenData = nil
+	s2.writeMu.Unlock()
+
+	// Forward a key press to model.
+	key := tea.Key{Text: "z", Code: 'z'}
+	model.Update(tea.KeyPressMsg(key))
+
+	time.Sleep(20 * time.Millisecond)
+
+	// Session 2 should have received the keypress.
+	if got := string(s2.Written()); got != "z" {
+		t.Errorf("session 2 (model session) received %q, want %q", got, "z")
+	}
+
+	// Session 1 (active session) should have received NOTHING.
+	if got := string(s1.Written()); got != "" {
+		t.Errorf("session 1 (active session) received %q, want empty", got)
+	}
+}
+
+func TestMouseForwarding_RoutesToModelSessionEvenIfInactive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+
+	mgr, s1, id1, s2, id2, cleanup := startTestManagerTwoSessions(t)
+	defer cleanup()
+
+	// Activate session 1 so it is the active session in the manager.
+	if err := mgr.Activate(id1); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 10, Y: 5},
+		Size:     coordinate.Size{Width: 40, Height: 10},
+	}
+
+	// Model is tied to session 2 (the inactive session).
+	model := NewModel(id2, mgr, bounds)
+	defer model.Close()
+
+	// Clear any initialization writes.
+	s1.writeMu.Lock()
+	s1.writtenData = nil
+	s1.writeMu.Unlock()
+	s2.writeMu.Lock()
+	s2.writtenData = nil
+	s2.writeMu.Unlock()
+
+	// Click inside bounds (at 12, 7 -> local 3, 3).
+	clickMsg := tea.MouseClickMsg{
+		X:      12,
+		Y:      7,
+		Button: tea.MouseLeft,
+	}
+	model.Update(clickMsg)
+
+	time.Sleep(20 * time.Millisecond)
+
+	// Session 2 should have received the mouse sequence.
+	if written := s2.Written(); len(written) == 0 {
+		t.Fatal("session 2 received no mouse input")
+	} else if !strings.HasPrefix(string(written), "\x1b[<") {
+		t.Errorf("expected SGR sequence on session 2, got %q", string(written))
+	}
+
+	// Session 1 (active session) should have received NOTHING.
+	if got := string(s1.Written()); got != "" {
+		t.Errorf("session 1 (active session) received %q, want empty", got)
+	}
+}

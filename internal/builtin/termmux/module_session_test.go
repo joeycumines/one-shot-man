@@ -1245,6 +1245,31 @@ func TestSessionManager_AttachReturnsSessionID(t *testing.T) {
 	}
 }
 
+func TestSessionManager_AttachWrappedStringIOReturnsSessionID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	runtime, cleanup := setupMgr(t, false)
+	defer cleanup()
+
+	rec := newRecordingStringIO()
+	handle := runtime.NewObject()
+	_ = handle.Set("_handle", rec)
+	setOnLoop(t, runtime, "testHandle", handle)
+
+	v, err := sessionRun(t, runtime, `
+		var id = tuiMux.attach(testHandle);
+		typeof id === 'number' && id > 0 ? id : -1;
+	`)
+	if err != nil {
+		t.Fatalf("attach(wrapped StringIO): %v", err)
+	}
+	if v.ToInteger() <= 0 {
+		t.Fatalf("attach(wrapped StringIO) should return SessionID > 0, got %v", v.Export())
+	}
+}
+
 // ── isDone(id) ───────────────────────────────────────────
 
 func TestSessionManager_IsDone(t *testing.T) {

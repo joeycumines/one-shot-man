@@ -654,3 +654,38 @@ func TestCompletionCommandHelpSubcommand(t *testing.T) {
 		})
 	}
 }
+
+func TestCompletionCommandPrSplitOmitsDeadAgentFlags(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
+	registry.Register(NewHelpCommand(registry))
+	registry.Register(NewVersionCommand("1.0.0"))
+	registry.Register(NewPrSplitCommand(cfg))
+
+	goalRegistry := newTestGoalRegistry()
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
+
+	for _, shell := range []string{"bash", "zsh", "fish"} {
+		t.Run(shell, func(t *testing.T) {
+			t.Parallel()
+			var output strings.Builder
+			var stderr strings.Builder
+			if err := completionCmd.Execute([]string{shell}, &output, &stderr); err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			out := output.String()
+			for _, want := range []string{"agent-command", "agent-arg", "agent-env"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("%s completion missing %q", shell, want)
+				}
+			}
+			for _, gone := range []string{"agent-model", "agent-config-dir"} {
+				if strings.Contains(out, gone) {
+					t.Errorf("%s completion still contains removed %q", shell, gone)
+				}
+			}
+		})
+	}
+}

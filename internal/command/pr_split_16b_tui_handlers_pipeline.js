@@ -405,7 +405,8 @@
                 sourceBranch: st.analysisCache.currentBranch,
                 branchPrefix: prSplit.runtime.branchPrefix,
                 verifyCommand: prSplit.runtime.verifyCommand,
-                fileStatuses: st.analysisCache.fileStatuses
+                fileStatuses: st.analysisCache.fileStatuses,
+                fileRenames: st.analysisCache.fileRenames
             });
         } catch (e) {
             if (s.wizard.current === 'CANCELLED') return; // T001: guard
@@ -611,6 +612,9 @@
                     // T44: Pipe progress message to Output tab.
                     if (s.outputLines) {
                         s.outputLines.push('\u25b6 ' + msg);
+                        if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
+                            s.outputLines = s.outputLines.slice(-C.OUTPUT_BUFFER_CAP);
+                        }
                         if (s.outputAutoScroll) s.outputViewOffset = 0;
                     }
                 }

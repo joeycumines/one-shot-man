@@ -34,7 +34,14 @@ func maybeStartCleanupScheduler(cfg *config.Config, excludeID string) (stop func
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go scheduler.Run(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		scheduler.Run(ctx)
+	}()
 
-	return cancel
+	return func() {
+		cancel()
+		<-done
+	}
 }

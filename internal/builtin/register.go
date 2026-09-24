@@ -3,6 +3,7 @@ package builtin
 import (
 	"context"
 	"io"
+	"os"
 
 	goeventloop "github.com/joeycumines/go-eventloop"
 	inprocgrpc "github.com/joeycumines/go-inprocgrpc"
@@ -139,7 +140,15 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	})
 	registry.RegisterNativeModule(prefix+"grpc", grpcmod.Require(ctx, ch, pbMod, eventLoopProvider.Adapter()))
 
-	lipglossMgr := lipglossmod.NewManager()
+	lipglossMgr, err := lipglossmod.NewManager(
+		lipglossmod.WithFiles(
+			terminalFile(terminalReader(terminalProvider)),
+			terminalFile(terminalWriter(terminalProvider)),
+		),
+	)
+	if err != nil {
+		panic("builtin.Register: failed to create lipgloss manager: " + err.Error())
+	}
 	registry.RegisterNativeModule(prefix+"lipgloss", lipglossmod.Require(lipglossMgr))
 
 	btBridge := bt.NewBridge(ctx, eventLoopProvider.Loop(), eventLoopProvider.Runtime(), registry, eventLoopProvider.Adapter())
@@ -190,4 +199,14 @@ func terminalWriter(provider TerminalOpsProvider) io.Writer {
 		return nil
 	}
 	return provider.GetTerminalWriter()
+}
+
+func terminalFile(value any) *os.File {
+	if file, ok := value.(*os.File); ok {
+		return file
+	}
+	if unwrap, ok := value.(interface{ UnwrapFile() *os.File }); ok {
+		return unwrap.UnwrapFile()
+	}
+	return nil
 }

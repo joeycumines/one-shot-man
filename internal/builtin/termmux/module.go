@@ -2132,7 +2132,11 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 
 		if session == nil {
 			if m, ok := raw.(map[string]any); ok {
-				if goHandle, exists := m["_goHandle"]; exists && goHandle != nil {
+				goHandle, exists := m["_goHandle"]
+				if !exists {
+					goHandle, exists = m["_handle"]
+				}
+				if exists && goHandle != nil {
 					switch h := goHandle.(type) {
 					case parent.StringIO:
 						sio := parent.NewStringIOSession(h)
@@ -2624,14 +2628,29 @@ func registerPersistenceMethods(obj *goja.Object, s *muxState) {
 		if path == "" {
 			panic(s.runtime.NewTypeError("saveState: path must be non-empty"))
 		}
-		state, err := s.mgr.ExportState()
-		if err != nil {
-			panic(s.runtime.NewGoError(err))
-		}
-		if err := parent.SaveManagerState(path, state); err != nil {
-			panic(s.runtime.NewGoError(err))
-		}
-		return goja.Undefined()
+		return s.adapter.TrackPromise(s.ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+			if err := ctx.Err(); err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any {
+					return rt.NewGoError(err)
+				})
+				return
+			}
+			s.persistenceMu.Lock()
+			defer s.persistenceMu.Unlock()
+			state, err := s.mgr.ExportState()
+			if err == nil {
+				err = parent.SaveManagerState(path, state)
+			}
+			if err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any {
+					return rt.NewGoError(err)
+				})
+				return
+			}
+			_ = settle.Settle(false, func(*goja.Runtime) any {
+				return goja.Undefined()
+			})
+		})
 	})
 
 	_ = obj.Set("loadState", func(call goja.FunctionCall) goja.Value {
@@ -2642,14 +2661,29 @@ func registerPersistenceMethods(obj *goja.Object, s *muxState) {
 		if path == "" {
 			panic(s.runtime.NewTypeError("loadState: path must be non-empty"))
 		}
-		state, err := parent.LoadManagerState(path)
-		if err != nil {
-			panic(s.runtime.NewGoError(err))
-		}
-		if state == nil {
-			return goja.Null()
-		}
-		return s.runtime.ToValue(persistedStateToJS(state))
+		return s.adapter.TrackPromise(s.ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+			if err := ctx.Err(); err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any {
+					return rt.NewGoError(err)
+				})
+				return
+			}
+			s.persistenceMu.Lock()
+			defer s.persistenceMu.Unlock()
+			state, err := parent.LoadManagerState(path)
+			if err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any {
+					return rt.NewGoError(err)
+				})
+				return
+			}
+			_ = settle.Settle(false, func(rt *goja.Runtime) any {
+				if state == nil {
+					return goja.Null()
+				}
+				return rt.ToValue(persistedStateToJS(state))
+			})
+		})
 	})
 
 	_ = obj.Set("restoreState", func(call goja.FunctionCall) goja.Value {
@@ -2802,10 +2836,25 @@ func registerPersistenceMethods(obj *goja.Object, s *muxState) {
 		if path == "" {
 			panic(s.runtime.NewTypeError("removeState: path must be non-empty"))
 		}
-		if err := parent.RemoveManagerState(path); err != nil {
-			panic(s.runtime.NewGoError(err))
-		}
-		return goja.Undefined()
+		return s.adapter.TrackPromise(s.ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
+			if err := ctx.Err(); err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any {
+					return rt.NewGoError(err)
+				})
+				return
+			}
+			s.persistenceMu.Lock()
+			defer s.persistenceMu.Unlock()
+			if err := parent.RemoveManagerState(path); err != nil {
+				_ = settle.Settle(true, func(rt *goja.Runtime) any {
+					return rt.NewGoError(err)
+				})
+				return
+			}
+			_ = settle.Settle(false, func(*goja.Runtime) any {
+				return goja.Undefined()
+			})
+		})
 	})
 
 	_ = obj.Set("processAlive", func(call goja.FunctionCall) goja.Value {

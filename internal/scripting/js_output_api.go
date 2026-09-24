@@ -2,6 +2,8 @@ package scripting
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/joeycumines/goja"
@@ -10,14 +12,53 @@ import (
 
 // JavaScript API functions for terminal output
 
+func (e *Engine) jsSetTUIOutputActive(active bool) {
+	e.tuiOutputActive.Store(active)
+}
+
 // jsOutputPrint prints to terminal output.
 func (e *Engine) jsOutputPrint(msg string) {
+	if e.routeActiveTUIOutput(msg) {
+		return
+	}
 	e.logger.PrintToTUI(msg)
 }
 
 // jsOutputPrintf prints formatted text to terminal output.
 func (e *Engine) jsOutputPrintf(format string, args ...any) {
-	e.logger.PrintfToTUI(format, args...)
+	msg := fmt.Sprintf(jsNormalizePrintfFormat(format), args...)
+	if e.routeActiveTUIOutput(msg) {
+		return
+	}
+	e.logger.PrintToTUI(msg)
+}
+
+// routeActiveTUIOutput hands user-visible output to the active pr-split
+// model. The binding is normally called by Goja on the event-loop owner;
+// direct Go-level tests and non-Goja callers retain the logger fallback.
+func (e *Engine) routeActiveTUIOutput(msg string) bool {
+	if !e.tuiOutputActive.Load() || e.vm == nil {
+		return false
+	}
+
+	root := e.vm.Get("prSplit")
+	if root == nil || goja.IsUndefined(root) || goja.IsNull(root) {
+		return false
+	}
+	obj := root.ToObject(e.vm)
+	if !obj.Get("_tuiOutputActive").ToBoolean() {
+		return false
+	}
+
+	route, ok := goja.AssertFunction(obj.Get("_routeTuiOutput"))
+	if !ok {
+		e.logger.Error("tui output route unavailable")
+		return true
+	}
+	if _, err := route(goja.Undefined(), e.vm.ToValue(msg)); err != nil {
+		e.logger.Error("tui output route failed", slog.String("error", err.Error()))
+	}
+	return true
 }
 
 // outputClipboardTimeout caps a clipboard subprocess (pbcopy/xclip/clip).
@@ -35,7 +76,11 @@ const outputClipboardTimeout = 10 * time.Second
 // TUI handlers), since the handler cannot await.
 func (e *Engine) jsOutputToClipboard(text string) goja.Value {
 	return e.clipboardPromise(func(ctx context.Context) (any, error) {
-		tuiSink := func(s string) { e.logger.PrintToTUI(s) }
+		tuiSink := func(msg string) {
+			if e.logger != nil {
+				e.logger.PrintToTUI(msg)
+			}
+		}
 		if err := builtinos.ClipboardCopy(ctx, tuiSink, text); err != nil {
 			return nil, err
 		}

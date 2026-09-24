@@ -59,7 +59,7 @@ const ChunkCompatShim = `
         'executeSplit',
         'verifySplit', 'verifySplits', 'verifyEquivalence', 'verifyEquivalenceDetailed',
         'cleanupBranches',
-        'createPRs',
+        'createPRs', 'formatPRTitle', 'formatPRBody',
         'resolveConflicts', 'resolveConflictsWithAgent',
         'AgentCodeExecutor',
         'renderClassificationPrompt', 'renderSplitPlanPrompt', 'renderConflictPrompt',

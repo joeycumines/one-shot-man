@@ -48,11 +48,11 @@
         var w = s.width || 80;
         var h = s.height || C.DEFAULT_ROWS;
         var vpHeight = Math.max(3, h - CHROME_ESTIMATE);
-        s.vp.setWidth(w);
+        s.vp.setWidth(s.scrollbar ? Math.max(10, w - 1) : w);
 
         if (s.splitViewEnabled) {
             var minPaneH = 3;
-            var wizardH = Math.max(minPaneH, Math.floor(vpHeight * (s.splitViewRatio || 0.5)));
+            var wizardH = Math.max(minPaneH, Math.floor(vpHeight * (s.splitViewRatio || 0.6)));
             wizardH = Math.min(wizardH, vpHeight - minPaneH - 1);
             if (wizardH >= minPaneH) {
                 s.vp.setHeight(wizardH);
@@ -511,6 +511,11 @@
     function handlePauseQuit(s) {
         try { s.wizard.cancel(); } catch (te) { log.debug('cancelPipeline: wizard.cancel failed: ' + (te.message || te)); }
         s.wizardState = s.wizard.current;
+        if (typeof prSplit._destroyAgentTermpane === 'function') {
+            try { prSplit._destroyAgentTermpane(); } catch (e) {
+                log.debug('quit pane close failed', { error: e.message || String(e) });
+            }
+        }
         return [s, tea.quit()];
     }
 
@@ -571,6 +576,11 @@
             case 'FINALIZATION':
                 handleFinalizationState(s.wizard, 'done');
                 s.wizardState = 'DONE';
+                if (typeof prSplit._destroyAgentTermpane === 'function') {
+                    try { prSplit._destroyAgentTermpane(); } catch (e) {
+                        log.debug('quit pane close failed', { error: e.message || String(e) });
+                    }
+                }
                 return [s, tea.quit()];
             default:
                 return [s, null];
@@ -966,6 +976,11 @@
             if (focused.id === 'final-done') {
                 handleFinalizationState(s.wizard, 'done');
                 s.wizardState = 'DONE';
+                if (typeof prSplit._destroyAgentTermpane === 'function') {
+                    try { prSplit._destroyAgentTermpane(); } catch (e) {
+                        log.debug('quit pane close failed', { error: e.message || String(e) });
+                    }
+                }
                 return [s, tea.quit()];
             }
             // T084: PAUSED screen buttons.

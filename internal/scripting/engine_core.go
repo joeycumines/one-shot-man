@@ -83,6 +83,7 @@ type Engine struct {
 	tuiManager             *TUIManager
 	contextManager         *ContextManager
 	logger                 *TUILogger
+	tuiOutputActive        atomic.Bool
 	terminalIO             *TerminalIO               // Shared terminal I/O for all TUI subsystems
 	bubbleteaManager       builtin.BubbleteaManager  // For sending state refresh messages to running TUI
 	btBridge               *bt.Bridge                // Behavior tree bridge for JS integration
@@ -958,10 +959,11 @@ func (e *Engine) setupGlobals() {
 
 	// Terminal output functions (separate from logs)
 	_ = e.vm.Set("output", map[string]any{
-		"print":         e.jsOutputPrint,
-		"printf":        e.jsOutputPrintf,
-		"toClipboard":   e.jsOutputToClipboard,
-		"fromClipboard": e.jsOutputFromClipboard,
+		"print":               e.jsOutputPrint,
+		"printf":              e.jsOutputPrintf,
+		"_setTUIOutputActive": e.jsSetTUIOutputActive,
+		"toClipboard":         e.jsOutputToClipboard,
+		"fromClipboard":       e.jsOutputFromClipboard,
 	})
 
 	// TUI and Mode management functions

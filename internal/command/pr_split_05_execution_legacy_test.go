@@ -1078,6 +1078,7 @@ func TestExecuteSplit_RenamedFile(t *testing.T) {
 		globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
 		globalThis._gitResponses['rev-parse --verify refs/heads/split/01-rename'] = _gitFail('not found');
 		globalThis._gitResponses['checkout -b split/01-rename main'] = _gitOk('');
+		globalThis._gitResponses['rm --ignore-unmatch -f pkg/old_name.go'] = _gitOk('');
 		globalThis._gitResponses['checkout feature -- pkg/new_name.go'] = _gitOk('');
 		globalThis._gitResponses['add --'] = _gitOk('');
 		globalThis._gitResponses['commit -m rename file'] = _gitOk('');
@@ -1091,6 +1092,7 @@ func TestExecuteSplit_RenamedFile(t *testing.T) {
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		fileStatuses: {'pkg/new_name.go': 'R'},
+		fileRenames: {'pkg/new_name.go': 'pkg/old_name.go'},
 		splits: [
 			{name: 'split/01-rename', files: ['pkg/new_name.go'], message: 'rename file', order: 0}
 		]

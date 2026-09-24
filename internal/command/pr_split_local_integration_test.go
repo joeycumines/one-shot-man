@@ -1275,7 +1275,6 @@ func TestIntegration_RealOllama(t *testing.T) {
 		},
 		ConfigOverrides: map[string]any{
 			"agentCommand": ollamaCommand,
-			"agentModel":   integrationModel,
 		},
 	})
 

@@ -123,7 +123,7 @@ func (s *muxState) initializeManagerCache() int {
 	if s == nil || s.mgr == nil || !managerStarted(s.mgr) {
 		return 0
 	}
-	for attempt := 0; attempt < maxCacheInitAttempts; attempt++ {
+	for attempt := range maxCacheInitAttempts {
 		epoch := s.cacheEpoch.Load()
 		activeID := uint64(s.mgr.ActiveID())
 		rows, cols := s.mgr.TermSize()

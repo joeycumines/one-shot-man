@@ -57,7 +57,7 @@ func ensureScopedParent(root *os.Root, relative string, createDirs bool) (string
 }
 
 func createScopedTemp(root *os.Root, parent string) (*os.File, string, error) {
-	for attempt := 0; attempt < 10; attempt++ {
+	for range 10 {
 		var random [16]byte
 		if _, err := rand.Read(random[:]); err != nil {
 			return nil, "", fmt.Errorf("create temporary file name: %w", err)

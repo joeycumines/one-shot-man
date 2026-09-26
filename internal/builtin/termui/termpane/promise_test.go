@@ -262,7 +262,7 @@ func TestTermPaneViewStaysLiveForPassivePane(t *testing.T) {
 	// larger than the 64-slot output queue, so a passive pane has dropped
 	// most of it by the time JS renders.
 	go func() {
-		for i := 0; i < 200; i++ {
+		for i := range 200 {
 			session.readerCh <- []byte(fmt.Sprintf("line%03d\\n", i))
 		}
 		session.readerCh <- []byte("TAILMARKER\\n")
@@ -298,10 +298,8 @@ func TestTermpane_Update_DoesNotBlockEventLoop(t *testing.T) {
 	defer mgrCleanup()
 
 	session := &blockingSession{
-		controllableSession: controllableSession{
-			doneCh:   make(chan struct{}),
-			readerCh: make(chan []byte, 16),
-		},
+		doneCh:       make(chan struct{}),
+		readerCh:     make(chan []byte, 16),
 		writeStarted: make(chan struct{}),
 		releaseWrite: make(chan struct{}),
 	}

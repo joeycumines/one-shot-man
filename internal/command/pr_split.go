@@ -193,7 +193,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	defer stop()
 
 	// Apply config-file defaults (flags take precedence) and validate.
-	c.applyConfigDefaults()
+	c.applyConfigDefaults(args)
 	if err := c.validateFlags(); err != nil {
 		return err
 	}
@@ -499,6 +499,23 @@ func (c *PrSplitCommand) setupEngineGlobalsOnLoop(ctx context.Context, engine *s
 	return termFd, tuiMgr, nil
 }
 
+// flagProvided reports whether a boolean flag was explicitly present in the
+// raw command arguments. A false boolean flag is meaningful and must not be
+// mistaken for the flag's zero value when config defaults are applied.
+func flagProvided(args []string, name string) bool {
+	shortName := "-" + strings.TrimPrefix(name, "--")
+	for _, arg := range args {
+		if arg == "--" {
+			return false
+		}
+		if arg == name || strings.HasPrefix(arg, name+"=") ||
+			arg == shortName || strings.HasPrefix(arg, shortName+"=") {
+			return true
+		}
+	}
+	return false
+}
+
 // applyConfigDefaults applies config-file values to command fields where the
 // field still holds its flag default. Flags override config values —
 // config keys are namespaced under the "pr-split" command section:
@@ -509,7 +526,7 @@ func (c *PrSplitCommand) setupEngineGlobalsOnLoop(ctx context.Context, engine *s
 //	pr-split.prefix=split/
 //	pr-split.verify=make
 //	pr-split.dry-run=true
-func (c *PrSplitCommand) applyConfigDefaults() {
+func (c *PrSplitCommand) applyConfigDefaults(args []string) {
 	if c.config == nil {
 		return
 	}
@@ -527,9 +544,15 @@ func (c *PrSplitCommand) applyConfigDefaults() {
 	}
 	applyStr("prefix", &c.branchPrefix, "split/")
 	applyStr("verify", &c.verifyCommand, "")
-	if v, ok := c.config.GetCommandOption("pr-split", "dry-run"); ok && !c.dryRun {
-		c.dryRun = v == "true" || v == "1" || v == "yes"
+	applyBool := func(key string, target *bool) {
+		if flagProvided(args, "--"+key) {
+			return
+		}
+		if _, ok := c.config.GetCommandOption("pr-split", key); ok {
+			*target = c.config.GetCommandBool("pr-split", key)
+		}
 	}
+	applyBool("dry-run", &c.dryRun)
 	applyStr("agent-command", &c.agentCommand, "")
 	if v, ok := c.config.GetCommandOption("pr-split", "agent-arg"); ok && len(c.agentArgs) == 0 {
 		c.agentArgs = append(c.agentArgs, v)
@@ -540,12 +563,8 @@ func (c *PrSplitCommand) applyConfigDefaults() {
 			c.timeout = d
 		}
 	}
-	if v, ok := c.config.GetCommandOption("pr-split", "resume"); ok && !c.resume {
-		c.resume = v == "true" || v == "1" || v == "yes"
-	}
-	if v, ok := c.config.GetCommandOption("pr-split", "cleanup-on-failure"); ok && !c.cleanupOnFailure {
-		c.cleanupOnFailure = v == "true" || v == "1" || v == "yes"
-	}
+	applyBool("resume", &c.resume)
+	applyBool("cleanup-on-failure", &c.cleanupOnFailure)
 }
 
 // validateFlags checks that command flags hold valid values after config

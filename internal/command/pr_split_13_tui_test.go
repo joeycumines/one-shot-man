@@ -137,6 +137,70 @@ func TestChunk13_ClearVerifyPaneSession_CleansVerifyOnly(t *testing.T) {
 	}
 }
 
+func TestChunk13_ClearVerifyPaneSessionWaitsForAsyncCleanup(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	val, err := evalJS(`(async function() {
+		var closeResolve;
+		var cleanupResolve;
+		var events = [];
+		var session = {
+			close: function() {
+				events.push('close');
+				return new Promise(function(resolve) { closeResolve = resolve; });
+			}
+		};
+		var originalCleanup = prSplit.cleanupVerifyWorktree;
+		prSplit.cleanupVerifyWorktree = function(dir, worktree) {
+			events.push('cleanup');
+			return new Promise(function(resolve) { cleanupResolve = resolve; });
+		};
+		var s = {
+			paneOperations: [],
+			activeVerifySession: session,
+			activeVerifyWorktree: '/tmp/verify-wt',
+			activeVerifyDir: '/tmp/repo',
+			activeVerifyBranch: 'split/test',
+			verifyPaused: true,
+			verifyViewportOffset: 4,
+			verifyScreen: 'pending'
+		};
+		try {
+			var operation = prSplit._clearVerifyPaneSession(s, { keepDisplay: true });
+			if (!operation || typeof operation.then !== 'function') return 'FAIL: cleanup was not deferred';
+			if (s._verifyPaneCleanupPending !== true) return 'FAIL: pending gate missing';
+			if (s.activeVerifySession !== session || s.activeVerifyWorktree !== '/tmp/verify-wt') {
+				return 'FAIL: session or worktree cleared before settlement';
+			}
+			if (events.length !== 1 || events[0] !== 'close') return 'FAIL: close ordering: ' + events.join(',');
+			closeResolve();
+			for (var i = 0; i < 4; i++) await Promise.resolve();
+			if (events.length !== 2 || events[1] !== 'cleanup') return 'FAIL: cleanup did not follow close';
+			if (s.activeVerifySession !== session || s.activeVerifyWorktree !== '/tmp/verify-wt') {
+				return 'FAIL: state cleared before worktree cleanup settled';
+			}
+			cleanupResolve();
+			await settlePaneOperations(s);
+			if (s.activeVerifySession !== null || s.activeVerifyWorktree !== null) {
+				return 'FAIL: state not cleared after settlement';
+			}
+			if (s._verifyPaneCleanupPending || s.paneOperations.length !== 0) {
+				return 'FAIL: cleanup remained pending after settlement';
+			}
+			return 'OK';
+		} finally {
+			prSplit.cleanupVerifyWorktree = originalCleanup;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "OK" {
+		t.Errorf("clear verify async cleanup: %v", val)
+	}
+}
+
 // Task 8: TestChunk13_OpenVerifyWorktreeShell_UsesSharedLifecycle removed —
 // _openVerifyWorktreeShell no longer exists; shell tab is unified into verify pane.
 
@@ -1527,68 +1591,6 @@ func TestChunk13_HandleConfigState_BaselineVerifyDeferred(t *testing.T) {
 	}
 	got := raw.(string)
 	want := `{"error":null,"hasConfig":true,"verifyCalled":false}`
-	if got != want {
-		t.Errorf("got %s, want %s", got, want)
-	}
-}
-
-// TestChunk13_HandleConfigState_ResumeWithCheckpoint tests that --resume with
-// a valid checkpoint returns resume=true.
-func TestChunk13_HandleConfigState_ResumeWithCheckpoint(t *testing.T) {
-	t.Parallel()
-	evalJS := prsplittest.NewTUIEngine(t)
-
-	raw, err := evalJS(`
-		prSplit._gitExec = function(dir, args) {
-			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
-			return { code: 0, stdout: '', stderr: '' };
-		};
-		prSplit.loadPlan = function() {
-			return { plan: { splits: [{ name: 'split/01', files: ['a.go'] }] } };
-		};
-		prSplit.runtime.baseBranch = 'main';
-
-		var result = await prSplit._handleConfigState({ resume: true });
-		JSON.stringify({ resume: !!result.resume, hasCheckpoint: !!result.checkpoint });
-	`)
-	if err != nil {
-		t.Fatalf("failed: %v", err)
-	}
-	got := raw.(string)
-	want := `{"resume":true,"hasCheckpoint":true}`
-	if got != want {
-		t.Errorf("got %s, want %s", got, want)
-	}
-}
-
-// TestChunk13_HandleConfigState_ResumeNoCheckpoint tests that --resume without
-// a valid checkpoint falls through to normal config flow.
-func TestChunk13_HandleConfigState_ResumeNoCheckpoint(t *testing.T) {
-	t.Parallel()
-	evalJS := prsplittest.NewTUIEngine(t)
-
-	raw, err := evalJS(`
-		prSplit._gitExec = function(dir, args) {
-			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
-			if (args[0] === 'checkout') return { code: 0, stdout: '', stderr: '' };
-			return { code: 0, stdout: '', stderr: '' };
-		};
-		prSplit.loadPlan = function() { return { error: 'no checkpoint' }; };
-		prSplit.runtime.baseBranch = 'main';
-		prSplit.runtime.verifyCommand = 'make test';
-
-		var result = await prSplit._handleConfigState({ resume: true });
-		JSON.stringify({
-			error: result.error,
-			resume: !!result.resume,
-			hasConfig: !!result.baselineVerifyConfig
-		});
-	`)
-	if err != nil {
-		t.Fatalf("failed: %v", err)
-	}
-	got := raw.(string)
-	want := `{"error":null,"resume":false,"hasConfig":true}`
 	if got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}

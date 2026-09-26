@@ -76,6 +76,46 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 		}
 	})
 
+	t.Run("onToggle_keeps_session_active_until_async_passthrough_settles", func(t *testing.T) {
+		t.Parallel()
+		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+		raw, err := evalJS(`(async function() {
+            var activateCalls = [];
+            var resolveSwitch;
+            var switchPromise = new Promise(function(resolve) { resolveSwitch = resolve; });
+            globalThis.tuiMux = {
+                isDone: function(id) { return false; },
+                activeID: function() { return 99; },
+                activate: function(id) { activateCalls.push(id); },
+                switchTo: function() { return switchPromise; },
+                capture: function(id) { return { fullScreen: '', plain: '' }; }
+            };
+            prSplit._state.agentSessionID = 42;
+            try {
+                var pending = globalThis.prSplit._onToggle();
+                await Promise.resolve();
+                if (activateCalls.length !== 1 || activateCalls[0] !== 42)
+                    return 'FAIL: active session was not pinned before switch: ' + JSON.stringify(activateCalls);
+                resolveSwitch({reason: 'toggle'});
+                var result = await pending;
+                if (result.reason !== 'toggle') return 'FAIL: unexpected result: ' + JSON.stringify(result);
+                if (activateCalls.length !== 2 || activateCalls[1] !== 99)
+                    return 'FAIL: previous session restored too early: ' + JSON.stringify(activateCalls);
+                return 'OK';
+            } finally {
+                delete globalThis.tuiMux;
+                delete prSplit._state.agentSessionID;
+            }
+        })()`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "OK" {
+			t.Errorf("async passthrough session pinning: %v", raw)
+		}
+	})
+
 	t.Run("onToggle_skipped_when_no_agent_session_id", func(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngineWithHelpers(t)

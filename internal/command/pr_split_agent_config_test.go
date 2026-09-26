@@ -522,7 +522,7 @@ func TestPrSplitCommand_DeadAgentFlagsRemoved(t *testing.T) {
 	}
 	cmd2 := NewPrSplitCommand(cfg2)
 	cmd2.testWorkingDir = t.TempDir()
-	cmd2.applyConfigDefaults()
+	cmd2.applyConfigDefaults(nil)
 	if cmd2.agentCommand != "" || cmd2.agentEnv != "" {
 		t.Fatalf("unexpected defaults applied: command=%q env=%q", cmd2.agentCommand, cmd2.agentEnv)
 	}

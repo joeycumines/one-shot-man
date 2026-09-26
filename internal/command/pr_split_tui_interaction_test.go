@@ -124,6 +124,51 @@ func testState(splitEnabled bool, focus, tab string) string {
 	})`
 }
 
+const tuiPaneAsyncProbeJS = `
+function __runTUIUpdateAndWait(state, message) {
+	var pending = [];
+	var agentPane = prSplit._getInteractivePaneSession(state, 'agent');
+	var verifyPane = prSplit._getInteractivePaneSession(state, 'verify');
+	state.activeAgentSession = agentPane;
+	state.activeVerifySession = verifyPane;
+	var wrapPane = function(pane) {
+		if (!pane) return;
+		var methods = [
+			'write', 'resize', 'interrupt', 'kill', 'pause', 'resume',
+			'close', 'passthrough', 'isDone', 'isRunning'
+		];
+		for (var i = 0; i < methods.length; i++) {
+			(function(methodName, original) {
+				if (typeof original !== 'function') return;
+				pane[methodName] = function() {
+					var result = original.apply(pane, arguments);
+					if (result && typeof result.then === 'function') {
+						pending.push(result);
+					}
+					return result;
+				};
+			})(methods[i], pane[methods[i]]);
+		}
+	};
+	wrapPane(agentPane);
+	wrapPane(verifyPane);
+	prSplit._wizardUpdateImpl(message, state);
+	return Promise.all(pending);
+}
+`
+
+func runTUIUpdateAndWait(evalJS func(string) (any, error), state, message string) error {
+	_, err := evalJS(`
+		(async function() {
+			var __state = ` + state + `;
+			var __message = ` + message + `;
+			` + tuiPaneAsyncProbeJS + `
+			await __runTUIUpdateAndWait(__state, __message);
+		})()
+	`)
+	return err
+}
+
 // ── TestKeystrokeForwardingToPTY ─────────────────────────────────────────────
 // End-to-end: BubbleTea Key message → wizardUpdateImpl → handleKeyMessage →
 // keyToTermBytes → getInteractivePaneSession → pinned session proxy write() → mgr.Input →
@@ -148,7 +193,7 @@ func TestKeystrokeForwardingToPTY(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register mock session: %v", err)
 	}
-	if err := mgr.Activate(id); err != nil {
+	if _, err := evalJS(fmt.Sprintf(`await tuiMux.activate(%d)`, id)); err != nil {
 		t.Fatalf("activate mock session: %v", err)
 	}
 
@@ -162,11 +207,7 @@ func TestKeystrokeForwardingToPTY(t *testing.T) {
 	state := testState(true, "agent", "agent")
 
 	// ── Forward printable key 'x' ────────────────────────────────────
-	_, err = evalJS(`
-		var __s = ` + state + `;
-		var __msg = { type: 'Key', key: 'x' };
-		prSplit._wizardUpdateImpl(__msg, __s);
-	`)
+	err = runTUIUpdateAndWait(evalJS, state, `{ type: 'Key', key: 'x' }`)
 	if err != nil {
 		t.Fatalf("wizardUpdateImpl(Key 'x'): %v", err)
 	}
@@ -177,11 +218,7 @@ func TestKeystrokeForwardingToPTY(t *testing.T) {
 	}
 
 	// ── Forward special key 'enter' → should produce '\r' ────────────
-	_, err = evalJS(`
-		var __s2 = ` + state + `;
-		var __msg2 = { type: 'Key', key: 'enter' };
-		prSplit._wizardUpdateImpl(__msg2, __s2);
-	`)
+	err = runTUIUpdateAndWait(evalJS, state, `{ type: 'Key', key: 'enter' }`)
 	if err != nil {
 		t.Fatalf("wizardUpdateImpl(Key 'enter'): %v", err)
 	}
@@ -192,11 +229,7 @@ func TestKeystrokeForwardingToPTY(t *testing.T) {
 	}
 
 	// ── Forward escape sequence key 'up' → should produce '\x1b[A' ──
-	_, err = evalJS(`
-		var __s3 = ` + state + `;
-		var __msg3 = { type: 'Key', key: 'up' };
-		prSplit._wizardUpdateImpl(__msg3, __s3);
-	`)
+	err = runTUIUpdateAndWait(evalJS, state, `{ type: 'Key', key: 'up' }`)
 	if err != nil {
 		// 'up' is actually in AGENT_RESERVED_KEYS as a scroll key.
 		// This is expected — reserved keys are NOT forwarded.
@@ -212,11 +245,7 @@ func TestKeystrokeForwardingToPTY(t *testing.T) {
 	}
 
 	// ── Forward arrow-down alternative: use 'a' (definitely not reserved) ──
-	_, err = evalJS(`
-		var __s4 = ` + state + `;
-		var __msg4 = { type: 'Key', key: 'a' };
-		prSplit._wizardUpdateImpl(__msg4, __s4);
-	`)
+	err = runTUIUpdateAndWait(evalJS, state, `{ type: 'Key', key: 'a' }`)
 	if err != nil {
 		t.Fatalf("wizardUpdateImpl(Key 'a'): %v", err)
 	}
@@ -250,7 +279,7 @@ func TestMouseForwardingToPTY(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register mock session: %v", err)
 	}
-	if err := mgr.Activate(id); err != nil {
+	if _, err := evalJS(fmt.Sprintf(`await tuiMux.activate(%d)`, id)); err != nil {
 		t.Fatalf("activate mock session: %v", err)
 	}
 
@@ -271,18 +300,7 @@ func TestMouseForwardingToPTY(t *testing.T) {
 	// 5 + floor((40-8)*0.6) ≈ 5+19 = 24, offset col = 1.
 	// Adjusted coords: x=5-1=4, y=30-24=6 → SGR coords: 5, 7 (1-based).
 	// Button for 'left' is 0, +32 for motion = 32.
-	_, err = evalJS(`
-		var __ms = ` + state + `;
-		var __mmsg = {
-			type: 'MouseMotion',
-			button: 'left',
-			x: 5,
-			y: 30,
-			mod: [],
-			string: ''
-		};
-		prSplit._wizardUpdateImpl(__mmsg, __ms);
-	`)
+	err = runTUIUpdateAndWait(evalJS, state, `{ type: 'MouseMotion', button: 'left', x: 5, y: 30, mod: [], string: '' }`)
 	if err != nil {
 		t.Fatalf("wizardUpdateImpl(Mouse motion): %v", err)
 	}
@@ -328,7 +346,7 @@ func TestResizePropagation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register mock session: %v", err)
 	}
-	if err := mgr.Activate(id); err != nil {
+	if _, err := evalJS(fmt.Sprintf(`await tuiMux.activate(%d)`, id)); err != nil {
 		t.Fatalf("activate mock session: %v", err)
 	}
 
@@ -351,11 +369,7 @@ func TestResizePropagation(t *testing.T) {
 	//   cH = 42 - 25 - 1 = 16
 	//   paneRows = max(3, 16 - 3) = 13
 	//   paneCols = max(20, 160 - 4) = 156
-	_, err = evalJS(`
-		var __rs = ` + state + `;
-		var __rmsg = { type: 'WindowSize', width: 160, height: 50 };
-		prSplit._wizardUpdateImpl(__rmsg, __rs);
-	`)
+	err = runTUIUpdateAndWait(evalJS, state, `{ type: 'WindowSize', width: 160, height: 50 }`)
 	if err != nil {
 		t.Fatalf("wizardUpdateImpl(WindowSize): %v", err)
 	}
@@ -418,21 +432,21 @@ func TestSessionSwitchInput(t *testing.T) {
 	}
 
 	// Activate A and send input.
-	if err := mgr.Activate(idA); err != nil {
+	if _, err := evalJS(fmt.Sprintf(`await tuiMux.activate(%d)`, idA)); err != nil {
 		t.Fatalf("activate A: %v", err)
 	}
 
-	_, err = evalJS(`tuiMux.session().write('for-A')`)
+	_, err = evalJS(`await tuiMux.session().write('for-A')`)
 	if err != nil {
 		t.Fatalf("write to A: %v", err)
 	}
 
 	// Switch to B and send input.
-	if err := mgr.Activate(idB); err != nil {
+	if _, err := evalJS(fmt.Sprintf(`await tuiMux.activate(%d)`, idB)); err != nil {
 		t.Fatalf("activate B: %v", err)
 	}
 
-	_, err = evalJS(`tuiMux.session().write('for-B')`)
+	_, err = evalJS(`await tuiMux.session().write('for-B')`)
 	if err != nil {
 		t.Fatalf("write to B: %v", err)
 	}
@@ -450,11 +464,11 @@ func TestSessionSwitchInput(t *testing.T) {
 	}
 
 	// Switch back to A and send more data.
-	if err := mgr.Activate(idA); err != nil {
+	if _, err := evalJS(fmt.Sprintf(`await tuiMux.activate(%d)`, idA)); err != nil {
 		t.Fatalf("re-activate A: %v", err)
 	}
 
-	_, err = evalJS(`tuiMux.session().write('more-A')`)
+	_, err = evalJS(`await tuiMux.session().write('more-A')`)
 	if err != nil {
 		t.Fatalf("write more to A: %v", err)
 	}
@@ -493,7 +507,7 @@ func TestSplitViewFocusTracking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register mock session: %v", err)
 	}
-	if err := mgr.Activate(id); err != nil {
+	if _, err := evalJS(fmt.Sprintf(`await tuiMux.activate(%d)`, id)); err != nil {
 		t.Fatalf("activate mock session: %v", err)
 	}
 
@@ -506,11 +520,7 @@ func TestSplitViewFocusTracking(t *testing.T) {
 	// ── Focus on wizard: keystrokes should NOT reach PTY ─────────────
 	wizardState := testState(true, "wizard", "agent")
 
-	_, err = evalJS(`
-		var __fs1 = ` + wizardState + `;
-		var __fm1 = { type: 'Key', key: 'x' };
-		prSplit._wizardUpdateImpl(__fm1, __fs1);
-	`)
+	err = runTUIUpdateAndWait(evalJS, wizardState, `{ type: 'Key', key: 'x' }`)
 	if err != nil {
 		t.Fatalf("wizardUpdateImpl(Key 'x', wizard focus): %v", err)
 	}
@@ -523,11 +533,7 @@ func TestSplitViewFocusTracking(t *testing.T) {
 	// ── Switch focus to agent: keystrokes SHOULD reach PTY ──────────
 	agentState := testState(true, "agent", "agent")
 
-	_, err = evalJS(`
-		var __fs2 = ` + agentState + `;
-		var __fm2 = { type: 'Key', key: 'y' };
-		prSplit._wizardUpdateImpl(__fm2, __fs2);
-	`)
+	err = runTUIUpdateAndWait(evalJS, agentState, `{ type: 'Key', key: 'y' }`)
 	if err != nil {
 		t.Fatalf("wizardUpdateImpl(Key 'y', agent focus): %v", err)
 	}
@@ -538,11 +544,7 @@ func TestSplitViewFocusTracking(t *testing.T) {
 	}
 
 	// ── Back to wizard: another keystroke should not forward ──────────
-	_, err = evalJS(`
-		var __fs3 = ` + wizardState + `;
-		var __fm3 = { type: 'Key', key: 'z' };
-		prSplit._wizardUpdateImpl(__fm3, __fs3);
-	`)
+	err = runTUIUpdateAndWait(evalJS, wizardState, `{ type: 'Key', key: 'z' }`)
 	if err != nil {
 		t.Fatalf("wizardUpdateImpl(Key 'z', wizard focus again): %v", err)
 	}

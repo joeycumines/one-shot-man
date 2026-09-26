@@ -383,7 +383,7 @@ while true; do sleep 1; done
 	_ = runtime
 
 	value, err := runJS(`
-		const child = exec.spawn("/bin/sh", [` + gojaStringLit(scriptPath) + `]);
+		const child = await exec.spawn("/bin/sh", [` + gojaStringLit(scriptPath) + `]);
 		const line = await child.stdout.read();
 		if (!line.value.includes("ready")) { __collectErr("expected ready line, got: " + JSON.stringify(line)); return; }
 		await child.signal("SIGTERM");

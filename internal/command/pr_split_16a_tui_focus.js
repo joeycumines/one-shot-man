@@ -507,16 +507,57 @@
         return handlePauseQuit(s);
     }
 
+    function quitAfterAgentTermpane(s) {
+        s.wizardQuitting = true;
+        s.wizardQuitSent = false;
+        s.wizardQuitPaneReady = false;
+        // Marks this quit as gated on the pane close alone, which is what
+        // lets the wizard-quit tick send the quit once the pane settles.
+        // The confirmCancel path gates on four teardown steps and must not
+        // be short-circuited here.
+        s.wizardQuitPaneGated = true;
+        var paneClose = null;
+        var paneReady = function() {
+            s.wizardQuitPaneReady = true;
+        };
+        var paneFailed = function(e) {
+            log.debug('quit pane close failed', { error: e.message || String(e) });
+            s.wizardQuitPaneReady = true;
+        };
+        if (typeof prSplit._destroyAgentTermpane === 'function') {
+            try {
+                var pendingPaneUpdates = typeof prSplit._waitForPaneOperations === 'function' ?
+                    prSplit._waitForPaneOperations(s) : Promise.resolve();
+                paneClose = Promise.resolve(pendingPaneUpdates).then(function() {
+                    return prSplit._destroyAgentTermpane({skipWait: true});
+                });
+                prSplit._trackPaneOutcome(s, paneClose, paneReady, paneFailed);
+            } catch (e) {
+                paneFailed(e);
+            }
+        } else {
+            paneReady();
+        }
+        return [s, tea.tick(C.TICK_INTERVAL_MS, 'wizard-quit')];
+    }
+
     // T084: Quit from PAUSED — cancel the wizard and exit.
     function handlePauseQuit(s) {
+        if (typeof prSplit._invalidateAsyncConfig === 'function') {
+            prSplit._invalidateAsyncConfig(s);
+        }
+        if (typeof prSplit._resetVerifyRunState === 'function') {
+            prSplit._resetVerifyRunState(s);
+        }
+        if (typeof prSplit._invalidateVerifySetup === 'function') {
+            prSplit._invalidateVerifySetup(s);
+        }
+        if (typeof prSplit._clearVerifyPaneSession === 'function') {
+            prSplit._clearVerifyPaneSession(s, { debugPrefix: 'pauseQuit', keepDisplay: false });
+        }
         try { s.wizard.cancel(); } catch (te) { log.debug('cancelPipeline: wizard.cancel failed: ' + (te.message || te)); }
         s.wizardState = s.wizard.current;
-        if (typeof prSplit._destroyAgentTermpane === 'function') {
-            try { prSplit._destroyAgentTermpane(); } catch (e) {
-                log.debug('quit pane close failed', { error: e.message || String(e) });
-            }
-        }
-        return [s, tea.quit()];
+        return quitAfterAgentTermpane(s);
     }
 
     function handleNext(s) {
@@ -534,7 +575,8 @@
                 s.configFieldValue = '';
                 // If mode is 'auto' (AI-assisted), dispatch the full
                 // automated pipeline (Agent classification → plan → execute).
-                if (prSplit.runtime.mode === 'auto') {
+                if (prSplit.runtime.mode === 'auto' ||
+                    (typeof prSplitConfig !== 'undefined' && prSplitConfig.resumeFromPlan)) {
                     return startAutoAnalysis(s);
                 }
                 return startAnalysis(s);
@@ -576,12 +618,7 @@
             case 'FINALIZATION':
                 handleFinalizationState(s.wizard, 'done');
                 s.wizardState = 'DONE';
-                if (typeof prSplit._destroyAgentTermpane === 'function') {
-                    try { prSplit._destroyAgentTermpane(); } catch (e) {
-                        log.debug('quit pane close failed', { error: e.message || String(e) });
-                    }
-                }
-                return [s, tea.quit()];
+                return quitAfterAgentTermpane(s);
             default:
                 return [s, null];
         }
@@ -811,9 +848,19 @@
             if (activeVerifySession) {
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
-                    try { activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
+                    try {
+                        var killResult = activeVerifySession.kill();
+                        prSplit._trackPaneOutcome(s, killResult, null, function(e) {
+                            log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e));
+                        });
+                    } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
-                    try { activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
+                    try {
+                        var interruptResult = activeVerifySession.interrupt();
+                        prSplit._trackPaneOutcome(s, interruptResult, null, function(e) {
+                            log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e));
+                        });
+                    } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
                 }
                 s.lastVerifyInterruptTime = now;
                 return [s, null];
@@ -976,12 +1023,7 @@
             if (focused.id === 'final-done') {
                 handleFinalizationState(s.wizard, 'done');
                 s.wizardState = 'DONE';
-                if (typeof prSplit._destroyAgentTermpane === 'function') {
-                    try { prSplit._destroyAgentTermpane(); } catch (e) {
-                        log.debug('quit pane close failed', { error: e.message || String(e) });
-                    }
-                }
-                return [s, tea.quit()];
+                return quitAfterAgentTermpane(s);
             }
             // T084: PAUSED screen buttons.
             if (focused.id === 'pause-resume') {
@@ -1031,6 +1073,7 @@
     prSplit._enterErrorState = enterErrorState;
     prSplit._handlePauseResume = handlePauseResume;
     prSplit._handlePauseQuit = handlePauseQuit;
+    prSplit._quitAfterAgentTermpane = quitAfterAgentTermpane;
     prSplit._handleNext = handleNext;
     prSplit._getFocusElements = getFocusElements;
     prSplit._handleListNav = handleListNav;

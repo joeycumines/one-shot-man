@@ -6,6 +6,8 @@ import (
 	"io"
 	"runtime"
 	"syscall"
+
+	uv "github.com/charmbracelet/ultraviolet"
 )
 
 // forwardConfig configures the stdin→PTY forwarding loop used by both
@@ -31,6 +33,69 @@ type forwardResult struct {
 	err    error
 }
 
+func sendForwardResult(ctx context.Context, resultCh chan<- forwardResult, result forwardResult) {
+	if resultCh == nil {
+		return
+	}
+	select {
+	case resultCh <- result:
+	case <-ctx.Done():
+	}
+}
+
+// newForwardReader wraps the terminal input with the platform-aware
+// cancel-reader used by BubbleTea/U.V. The wrapper watches fwdCtx while the
+// forward loop is blocked in Read, then closes only non-file fallback readers
+// that cannot interrupt their own read. Shared os.Stdin is never closed.
+func newForwardReader(ctx context.Context, input io.Reader) (io.Reader, func()) {
+	if input == nil {
+		return nil, func() {}
+	}
+
+	reader := input
+	var cancelReader interface {
+		io.Reader
+		Cancel() bool
+		Close() error
+	}
+	if cr, err := uv.NewCancelReader(input); err == nil && cr != nil {
+		reader = cr
+		cancelReader = cr
+	}
+
+	stopWatcher := make(chan struct{})
+	watcherDone := make(chan struct{})
+	go func() {
+		defer close(watcherDone)
+		select {
+		case <-ctx.Done():
+			canceled := false
+			if cancelReader != nil {
+				canceled = cancelReader.Cancel()
+			}
+			if !canceled {
+				if closer, ok := input.(io.Closer); ok {
+					// Do not close a shared file/terminal. File-backed readers
+					// use ultraviolet's native cancellation when available.
+					if _, isFile := input.(interface{ Fd() uintptr }); !isFile {
+						_ = closer.Close()
+					}
+				}
+			}
+		case <-stopWatcher:
+		}
+	}()
+
+	cleanup := func() {
+		close(stopWatcher)
+		<-watcherDone
+		if cancelReader != nil {
+			_ = cancelReader.Close()
+		}
+	}
+	return reader, cleanup
+}
+
 // forwardStdin runs the stdin→PTY forwarding loop. It reads from stdin,
 // applies optional pre-processing (SGR mouse filtering), scans for the
 // toggle key, and writes data to the PTY writer.
@@ -46,6 +111,11 @@ type forwardResult struct {
 // The result is sent to resultCh. If resultCh is nil, the goroutine runs
 // without reporting results (useful for fire-and-forget scenarios).
 func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg forwardConfig) {
+	reader, cleanupReader := newForwardReader(fwdCtx, cfg.Stdin)
+	defer cleanupReader()
+	if reader == nil {
+		return
+	}
 	buf := make([]byte, PassthroughReadBufferSize)
 	var carry []byte // carry-over for partial SGR mouse prefixes
 
@@ -56,7 +126,12 @@ func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg for
 		default:
 		}
 
-		n, readErr := cfg.Stdin.Read(buf)
+		n, readErr := reader.Read(buf)
+		// A cancel may race with a successful read. Never forward bytes after
+		// passthrough has begun its terminal teardown.
+		if fwdCtx.Err() != nil {
+			return
+		}
 		// Process data first: io.Reader contract allows n > 0
 		// alongside a non-nil error (commonly io.EOF).
 		if n > 0 {
@@ -70,13 +145,13 @@ func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg for
 					if len(filtered) > 0 {
 						if err := writeOrLog(cfg.Writer, filtered, "pre-toggle-click"); err != nil {
 							if resultCh != nil {
-								resultCh <- forwardResult{ExitError, err}
+								sendForwardResult(fwdCtx, resultCh, forwardResult{ExitError, err})
 							}
 							return
 						}
 					}
 					if resultCh != nil {
-						resultCh <- forwardResult{ExitToggle, nil}
+						sendForwardResult(fwdCtx, resultCh, forwardResult{ExitToggle, nil})
 					}
 					return
 				}
@@ -97,13 +172,13 @@ func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg for
 					if i > 0 {
 						if err := writeOrLog(cfg.Writer, data[:i], "pre-toggle-key"); err != nil {
 							if resultCh != nil {
-								resultCh <- forwardResult{ExitError, err}
+								sendForwardResult(fwdCtx, resultCh, forwardResult{ExitError, err})
 							}
 							return
 						}
 					}
 					if resultCh != nil {
-						resultCh <- forwardResult{ExitToggle, nil}
+						sendForwardResult(fwdCtx, resultCh, forwardResult{ExitToggle, nil})
 					}
 					return
 				}
@@ -115,7 +190,7 @@ func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg for
 					return
 				}
 				if resultCh != nil {
-					resultCh <- forwardResult{ExitError, writeErr}
+					sendForwardResult(fwdCtx, resultCh, forwardResult{ExitError, writeErr})
 				}
 				return
 			}
@@ -141,7 +216,7 @@ func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg for
 				return
 			}
 			if resultCh != nil {
-				resultCh <- forwardResult{ExitError, readErr}
+				sendForwardResult(fwdCtx, resultCh, forwardResult{ExitError, readErr})
 			}
 			return
 		}

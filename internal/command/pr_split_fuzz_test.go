@@ -260,7 +260,7 @@ func FuzzValidateResolution(f *testing.F) {
 	// Seed: valid with patches.
 	f.Add(`{"patches":[{"file":"a.go","content":"package a"}]}`)
 	// Seed: valid with commands.
-	f.Add(`{"commands":[{"command":"go mod tidy"}]}`)
+	f.Add(`{"commands":["go mod tidy"]}`)
 	// Seed: valid preExistingFailure.
 	f.Add(`{"preExistingFailure":true,"reason":"Build was already broken on main"}`)
 	// Seed: preExistingFailure without reason (invalid).
@@ -275,7 +275,10 @@ func FuzzValidateResolution(f *testing.F) {
 	// Seed: invalid patch (missing file).
 	f.Add(`{"patches":[{"content":"x"}]}`)
 	// Seed: invalid command (empty).
-	f.Add(`{"commands":[{"command":""}]}`)
+	f.Add(`{"commands":[""]}`)
+	// Seed: unsafe patch paths.
+	f.Add(`{"patches":[{"file":"../escape.go","content":"x"}]}`)
+	f.Add(`{"patches":[{"file":"/absolute.go","content":"x"}]}`)
 
 	f.Fuzz(func(t *testing.T, data string) {
 		script := `(function() {

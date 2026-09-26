@@ -872,7 +872,7 @@ func (e *Event) DataAsDims() ([2]int, bool)     // For EventResize
 The package is registered as the native module `osm:termmux` via the `Require` function:
 
 ```go
-func Require(ctx context.Context, input io.Reader, output io.Writer) func(*goja.Runtime, *goja.Object)
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, input io.Reader, output io.Writer) func(*goja.Runtime, *goja.Object)
 ```
 
 ### 10.2 Constants Exposed to JS
@@ -925,23 +925,23 @@ const mgr = termmux.newSessionManager({
 
 | Method | Description |
 |---|---|
-| `start()` | Spawn command in PTY, start output capture |
-| `interrupt()` | Send SIGINT |
-| `kill()` | Send SIGKILL |
-| `pause()` | Send SIGSTOP (Unix only) |
-| `resume()` | Send SIGCONT (Unix only) |
+| `start()` | Spawn command in PTY, start output capture; returns `Promise<void>` |
+| `interrupt()` | Send SIGINT; returns `Promise<void>` |
+| `kill()` | Send SIGKILL; returns `Promise<void>` |
+| `pause()` | Send SIGSTOP; returns `Promise<void>` |
+| `resume()` | Send SIGCONT; returns `Promise<void>` |
 | `isPaused()` → `boolean` | Check pause state |
-| `resize(rows, cols)` | Resize PTY |
-| `wait()` → `{code, error?}` | Block until exit + drain |
-| `write(data)` | Send raw bytes to PTY stdin |
-| `sendEOF()` | Send Ctrl-D |
-| `close()` | Terminate and release |
+| `resize(rows, cols)` | Resize PTY; returns `Promise<void>` |
+| `wait()` → `Promise<{code, error?}>` | Wait until exit and drain |
+| `write(data)` | Send raw bytes to PTY stdin; returns `Promise<void>` |
+| `sendEOF()` | Send Ctrl-D; returns `Promise<void>` |
+| `close()` | Terminate and release; returns `Promise<void>` |
 | `pid()` → `number` | Child PID |
 | `exitCode()` → `number` | Exit code (-1 if not exited) |
 | `isDone()` → `boolean` | Non-blocking completion check |
 | `passthrough(cfg?)` → `Promise<{reason, error?}>` | Enter raw terminal mode (async) |
-| `reader()` → `string|null` | Blocking read next chunk |
 | `readAvailable()` → `string|null` | Non-blocking drain of buffered chunks |
+| `sendKeys(...keys)` → `Promise<void>` | Translate and write key sequences |
 
 ### 10.5 SessionManager JS Wrapper (35+ methods)
 
@@ -953,10 +953,11 @@ const mgr = termmux.newSessionManager({
 
 ### 10.6 Event Bus → JS Bridge
 
-A goroutine subscribes to the `SessionManager`'s `EventBus` and maps Go events to JS events:
+A goroutine subscribes to the `SessionManager`'s `EventBus`, updates the
+wrapper caches, and submits translated `CustomEvent`s to the event-loop
+adapter:
 
 ```go
-// goroutine started by WrapSessionManager
 go func() {
     defer mgr.Unsubscribe(busID)
     for {
@@ -964,9 +965,16 @@ go func() {
         case <-ctx.Done():
             return
         case evt, ok := <-busCh:
-            // Map Go Event → JS event via events.queue()
-            // events.queue() writes to a buffered channel (capacity 64)
-            // Events are drained on the JS goroutine by pollEvents()
+            if !ok {
+                return
+            }
+            s.cacheEvent(evt)
+            data := buildEventData(evt)
+            if data != nil {
+                adapter.Submit(func(_ *goja.Runtime) {
+                    s.dispatchCustomEvent(data.eventType, data.detail)
+                })
+            }
         }
     }
 }()
@@ -977,34 +985,32 @@ The bridge handles:
 - `EventSessionActivated` → JS event `"activated"` with `sessionId`
 - `EventSessionExited` → JS event `"exit"` with `pane: "agent"`, `sessionId`
 - `EventSessionClosed` → JS event `"closed"` with `sessionId`
-- `EventResize` → JS event `"terminal-resize"` with `rows`, `cols`
+- `EventResize` → JS event `"terminal-resize"` with `sessionId`, `rows`, `cols`
 - `EventBell` → JS event `"bell"` with `pane: "agent"`, `sessionId`
 - `EventSessionOutput` → JS event `"output"` with `pane: "agent"`, `sessionId`, `chunk`
 
-**Non-blocking delivery**: If the `pending` channel is full (64 buffered), events are dropped silently. This prevents blocking non-JS goroutines.
+**Delivery**: the EventBus subscription is buffered independently; event
+translation is submitted to the JS event loop and does not block the manager
+worker. The legacy `pollEvents()` wrapper method is a compatibility no-op.
 
 ### 10.7 JS Event Listener System
 
-```
-on(event, callback) → id          // Register callback, returns numeric ID
-off(id) → boolean                 // Remove listener by ID
-pollEvents() → number              // Drain pending async events, return count delivered
-```
+The wrapper exposes both DOM-style listeners and the legacy numeric-ID API:
 
-The `muxEvents` struct manages listeners and the pending queue:
-
-```go
-type muxEvents struct {
-    mu        sync.Mutex
-    listeners map[int]*eventListener
-    nextID    int
-    pending   chan pendingEvent  // Buffered channel (cap 64)
-}
+```text
+addEventListener(type, callback) → undefined
+removeEventListener(type, callback) → undefined
+on(type, callback) → id
+off(id) → boolean
+subscribe(bufferSize?) → {id, pollEvents()}
+unsubscribe(id) → boolean
+pollEvents() → 0                 // compatibility no-op
 ```
 
-- `emit()` — Called on the JS goroutine. Snapshots matching listeners under lock, releases lock, then invokes callbacks (Goja is not thread-safe).
-- `queue()` — Called from non-JS goroutines. Non-blocking send to `pending` channel. Drops if full.
-- `drain()` — Called from `pollEvents()` on JS goroutine. Drains all pending events, delivers to matching listeners.
+The event bridge translates `SessionManager` events to `CustomEvent`s on
+the event-loop goroutine. `subscribe()` exposes a bounded, pollable event
+buffer; `pollEvents()` on the manager wrapper is retained only as a
+compatibility no-op and does not drain that buffer.
 
 ### 10.8 Input Encoding Utilities
 

@@ -53,8 +53,8 @@ outside the registered set (for example `require('node:test')`) fails too.
 
 | API | Security Notes |
 |---|---|
-| `execv(argv[])` | Uses `exec.CommandContext` — **no shell**. Arguments are passed directly, not interpreted. Returns a Promise. |
-| `spawn(cmd, args[], opts?)` | Returns a streaming `ChildHandle` for real-time output. Uses `exec.CommandContext`. |
+| `execv(argv[], opts?)` | Uses `exec.CommandContext` — **no shell**. Arguments are passed directly, not interpreted. Returns a Promise; `opts.timeoutMs` bounds execution. |
+| `spawn(cmd, args[], opts?)` | Returns a Promise that resolves to a streaming `ChildHandle` for real-time output. Uses `exec.CommandContext`; `opts.timeoutMs` bounds the child lifetime. |
 
 - **Stdin:** Wired to `os.Stdin` (by design — the user is the operator)
 - **No shell expansion:** `execv(['echo', '$(id)'])` outputs the literal `$(id)`
@@ -66,6 +66,7 @@ outside the registered set (for example `require('node:test')`) fails too.
 | `readFile(path)` | Reads any file accessible to the user. **No path restrictions** — by design. |
 | `fileExists(path)` | Checks existence. No restrictions. |
 | `writeFile(path, content, opts?)` | Writes/creates files. Path resolved to absolute. No path restrictions. |
+| `writeFileScoped(root, relativePath, content, opts?)` | Promise-based confined write. Uses `os.Root` for traversal-resistant path resolution, rejects symlink/junction parent components, and writes a same-directory temporary file before a platform replace-existing rename. This avoids truncating hard-linked files; replacement atomicity and durability remain platform/filesystem-dependent. |
 | `appendFile(path, content, opts?)` | Appends to files. Same behavior as `writeFile`. |
 | `openEditor(path)` | Opens `$EDITOR`. Wires stdin/stdout/stderr. |
 | `clipboardCopy(text)` | Uses `pbcopy`/`clip`/`xclip` via `exec.CommandContext`. |

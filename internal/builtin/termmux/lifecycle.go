@@ -35,6 +35,7 @@ func (s *muxState) managerRunOnce() {
 		if managerStarted(s.mgr) {
 			s.managerRunStarted = true
 			s.managerRunMu.Unlock()
+			go s.initializeManagerCache()
 			go s.observeManagerRun()
 			return
 		}
@@ -48,6 +49,14 @@ func (s *muxState) managerRunOnce() {
 				s.finishManagerRun(nil)
 				return
 			}
+			go func() {
+				select {
+				case <-s.mgr.Started():
+					s.initializeManagerCache()
+				case <-s.mgr.Done():
+				case <-s.lifecycleCtx.Done():
+				}
+			}()
 			err := s.mgr.Run(s.lifecycleCtx)
 			s.finishManagerRun(err)
 		}()

@@ -139,11 +139,11 @@ Split a large PR into reviewable stacked branches. Supports heuristic grouping s
 - Usage: `osm pr-split [options]`
 - Flags:
   - `-i` / `-interactive`: start interactive TUI mode (default true)
-  - `-base <branch>`: base branch to split against (default `main`)
+  - `-base <branch>`: base branch to split against (default empty: auto-detect the repository default)
   - `-strategy <name>`: grouping strategy: `directory`, `directory-deep`, `extension`, `chunks`, `dependency`, `auto` (default `directory`)
   - `-max <n>`: maximum files per split (default `10`)
   - `-prefix <prefix>`: branch name prefix for splits (default `split/`)
-  - `-verify <command>`: command to verify each split (default `make test`)
+  - `-verify <command>`: command to verify each split (default empty: auto-detect `gmake`/`make` when a Makefile exists; otherwise skip verification)
   - `-dry-run`: show plan without executing
   - `-json`: output results as JSON
   - `-test`: enable test mode
@@ -162,6 +162,7 @@ Config keys (in `[pr-split]` section or global):
   - `pr-split.base`, `pr-split.strategy`, `pr-split.max`, `pr-split.prefix`
   - `pr-split.verify`, `pr-split.dry-run`
   - `pr-split.agent-command`, `pr-split.agent-arg`, `pr-split.agent-env`
+  - `pr-split.timeout`, `pr-split.resume`, `pr-split.cleanup-on-failure`
 
 #### Grouping strategies
 

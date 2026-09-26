@@ -128,6 +128,14 @@
     var COMMAND_NAME = (typeof config !== 'undefined' && config.name) ? config.name : 'pr-split';
     var MODE_NAME = 'pr-split';
 
+    function effectiveVerifyTimeoutMs(value) {
+        if (typeof value === 'number' && value > 0) return value;
+        var defaults = prSplit.AUTOMATED_DEFAULTS || {};
+        return (typeof defaults.verifyTimeoutMs === 'number' && defaults.verifyTimeoutMs > 0)
+            ? defaults.verifyTimeoutMs
+            : 600000;
+    }
+
     // --- Discovery & Scoping ---
 
     // discoverVerifyCommand auto-detects the verification command for the
@@ -156,7 +164,7 @@
         // the system 'make' is BSD Make 3.81 which cannot run GNU Makefiles.
         // Late-bind through prSplit._lookupBinary so tests can override.
         var lbFn = (typeof prSplit !== 'undefined' && prSplit._lookupBinary) || lookupBinary;
-        var gmakeLookup = lbFn('gmake');
+        var gmakeLookup = await lbFn('gmake');
         if (gmakeLookup.found) return 'gmake';
 
         return 'make';
@@ -166,6 +174,31 @@
     // Each detector returns the scoped test command for a homogeneous set of
     // files of that language, or null if the file set is not exclusively that
     // language. Detectors are tried in order; first match wins.
+
+    function scopedShellArg(value) {
+        return /^[A-Za-z0-9_./-]+$/.test(value) ? value : shellQuote(value);
+    }
+
+    function scopedRegexArg(value) {
+        return /^[A-Za-z0-9_./-]+$/.test(value) ? JSON.stringify(value) : shellQuote(value);
+    }
+
+    function safeScopedPath(value) {
+        if (typeof value !== 'string' || value.trim() === '' ||
+            value.indexOf(String.fromCharCode(0)) !== -1) {
+            return false;
+        }
+        var normalized = value.split(String.fromCharCode(92)).join('/');
+        if (normalized.charAt(0) === '/' || /^[A-Za-z]:\//.test(normalized) ||
+            normalized.indexOf(':') !== -1) {
+            return false;
+        }
+        var parts = normalized.split('/');
+        for (var i = 0; i < parts.length; i++) {
+            if (parts[i] === '..') return false;
+        }
+        return true;
+    }
 
     var _langDetectors = [
         {
@@ -182,7 +215,7 @@
                     pkgDirs[dir] = true;
                 }
                 var pkgs = Object.keys(pkgDirs).sort();
-                return pkgs.length > 0 ? 'go test -race ' + pkgs.join(' ') : null;
+                return pkgs.length > 0 ? 'go test -race ' + pkgs.map(scopedShellArg).join(' ') : null;
             }
         },
         {
@@ -202,7 +235,7 @@
                 var pattern = dirList.length === 1
                     ? dirList[0]
                     : '(' + dirList.join('|') + ')';
-                return 'npx jest --passWithNoTests --testPathPattern ' + JSON.stringify(pattern);
+                return 'npx jest --passWithNoTests --testPathPattern ' + scopedRegexArg(pattern);
             }
         },
         {
@@ -218,7 +251,7 @@
                     dirs[dir] = true;
                 }
                 var dirList = Object.keys(dirs).sort();
-                return 'python -m pytest ' + dirList.join(' ');
+                return 'python -m pytest ' + dirList.map(scopedShellArg).join(' ');
             }
         },
         {
@@ -242,6 +275,11 @@
     function scopedVerifyCommand(files, fallbackCommand) {
         if (!files || files.length === 0) {
             return fallbackCommand;
+        }
+        for (var safeIndex = 0; safeIndex < files.length; safeIndex++) {
+            if (!safeScopedPath(files[safeIndex])) {
+                return fallbackCommand;
+            }
         }
 
         // Only scope when the fallback is a known build/test runner.
@@ -412,9 +450,12 @@
     //
     // Options:
     //   outputFn(line) — callback to stream each output line (for TUI Output tab)
+    //   timeoutMs — native child-process deadline; the binding owns termination
     async function shellExecAsync(command, options) {
         options = options || {};
         var outputFn = (options && typeof options.outputFn === 'function') ? options.outputFn : null;
+        var timeoutMs = (options && typeof options.timeoutMs === 'number' && options.timeoutMs > 0) ? options.timeoutMs : 0;
+        var startedAt = Date.now();
 
         // Fall back to global output capture function (same as gitExecAsync).
         if (!outputFn && typeof prSplit._outputCaptureFn === 'function') {
@@ -427,7 +468,9 @@
         }
 
         // Use platform shell for command dispatch.
-        var child = await shellSpawnAsync(command);
+        var child = await shellSpawnAsync(command, {
+            timeoutMs: (typeof options.timeoutMs === 'number' && options.timeoutMs > 0) ? options.timeoutMs : 0
+        });
 
         // Collect stdout and stderr in parallel (same readAll pattern as gitExecAsync).
         async function readAll(stream, streamOutputFn) {
@@ -461,13 +504,22 @@
         var stderr = results[1];
         var waitResult = results[2];
         var code = (waitResult && waitResult.code !== undefined) ? waitResult.code : 0;
+        var elapsedMs = Date.now() - startedAt;
+        var message = code !== 0 ? 'exit status ' + code : '';
+        if (waitResult && waitResult.signal) {
+            message = String(waitResult.signal);
+        }
+        var timedOut = timeoutMs > 0 && elapsedMs >= timeoutMs;
+        if (timedOut) {
+            message = 'timed out after ' + timeoutMs + 'ms';
+        }
 
         return {
             stdout: stdout,
             stderr: stderr,
             code: code,
-            error: code !== 0,
-            message: code !== 0 ? 'exit status ' + code : ''
+            error: code !== 0 || timedOut,
+            message: message
         };
     }
 
@@ -624,7 +676,13 @@
         var argv = isWindows()
             ? ['cmd.exe', '/C', shellCmd]
             : ['sh', '-c', shellCmd];
-        var result = await exec.execv(argv);
+        var execOpts = null;
+        if (typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0) {
+            execOpts = { timeoutMs: opts.timeoutMs };
+        }
+        var result = execOpts
+            ? await exec.execv(argv, execOpts)
+            : await exec.execv(argv);
         if (opts.onStdout && result.stdout) { opts.onStdout(result.stdout); }
         if (opts.onStderr && result.stderr) { opts.onStderr(result.stderr); }
         return result;
@@ -633,11 +691,20 @@
     // shellSpawnAsync runs a shell command string asynchronously through the
     // platform shell (sh -c on Unix, cmd.exe /C on Windows).
     // Returns the spawned child process.
-    async function shellSpawnAsync(shellCmd) {
-        if (isWindows()) {
-            return await exec.spawn('cmd.exe', ['/C', shellCmd]);
+    async function shellSpawnAsync(shellCmd, opts) {
+        opts = opts || {};
+        var spawnOpts = null;
+        if (typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0) {
+            spawnOpts = { timeoutMs: opts.timeoutMs };
         }
-        return await exec.spawn('sh', ['-c', shellCmd]);
+        if (isWindows()) {
+            return spawnOpts
+                ? await exec.spawn('cmd.exe', ['/C', shellCmd], spawnOpts)
+                : await exec.spawn('cmd.exe', ['/C', shellCmd]);
+        }
+        return spawnOpts
+            ? await exec.spawn('sh', ['-c', shellCmd], spawnOpts)
+            : await exec.spawn('sh', ['-c', shellCmd]);
     }
 
     // gitAddChangedFiles stages modified, new, and deleted files while
@@ -847,6 +914,7 @@
     prSplit._fileExtension = fileExtension;
     prSplit._sanitizeBranchName = sanitizeBranchName;
     prSplit._padIndex = padIndex;
+    prSplit._effectiveVerifyTimeoutMs = effectiveVerifyTimeoutMs;
 
     // Discovery functions.
     prSplit.discoverVerifyCommand = discoverVerifyCommand;

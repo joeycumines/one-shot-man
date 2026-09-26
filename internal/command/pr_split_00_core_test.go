@@ -467,6 +467,40 @@ func TestChunk00_ScopedVerifyCommand(t *testing.T) {
 	if val != "gmake" {
 		t.Errorf("gmake mixed: expected fallback 'gmake', got: %v", val)
 	}
+
+	// Shell metacharacters in a scoped directory must remain quoted.
+	val, err = evalJS(`globalThis.prSplit.scopedVerifyCommand(
+		['internal/pkg;touch-pwn/foo.go'],
+		'make'
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok = val.(string)
+	if !ok {
+		t.Fatalf("unsafe path: expected string, got %T", val)
+	}
+	wantQuoted := "'./internal/pkg;touch-pwn/...'"
+	if runtime.GOOS == "windows" {
+		wantQuoted = "\"./internal/pkg;touch-pwn/...\""
+	}
+	if !strings.Contains(s, wantQuoted) {
+		t.Fatalf("unsafe path was not shell-quoted: %s", s)
+	}
+
+	// Traversal paths must never be turned into a scoped command. Quoting
+	// prevents shell injection, but running a test package outside the repo is
+	// still outside the requested verification boundary.
+	val, err = evalJS(`globalThis.prSplit.scopedVerifyCommand(
+		['../../outside/foo.go'],
+		'make'
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "make" {
+		t.Fatalf("traversal path should use fallback command, got: %v", val)
+	}
 }
 
 // TestChunk00_StyleDegracesGracefully tests that style helpers work

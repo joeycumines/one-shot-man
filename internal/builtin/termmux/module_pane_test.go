@@ -128,7 +128,7 @@ func TestPaneMethods_PanesEmpty(t *testing.T) {
 	runtime, cleanup := setupPaneMgr(t)
 	defer cleanup()
 
-	v, err := awaitJSValue(t, runtime, `return JSON.stringify(tuiMux.panes())`)
+	v, err := awaitJSValue(t, runtime, `return JSON.stringify(await tuiMux.panes())`)
 	if err != nil {
 		t.Fatalf("panes(): %v", err)
 	}
@@ -141,7 +141,7 @@ func TestPaneMethods_ActivePaneIdZero(t *testing.T) {
 	runtime, cleanup := setupPaneMgr(t)
 	defer cleanup()
 
-	v, err := awaitJSValue(t, runtime, `return tuiMux.activePaneId()`)
+	v, err := awaitJSValue(t, runtime, `return await tuiMux.activePaneId()`)
 	if err != nil {
 		t.Fatalf("activePaneId(): %v", err)
 	}
@@ -171,7 +171,7 @@ func TestPaneMethods_ClosePaneInvalid(t *testing.T) {
 
 	_, err := awaitJSValue(t, runtime, `
 		try {
-			tuiMux.closePane(999);
+			await tuiMux.closePane(999);
 			throw new Error("expected error");
 		} catch (e) {
 			if (e.message === "expected error") throw e;
@@ -188,7 +188,7 @@ func TestPaneMethods_ResizePaneInvalid(t *testing.T) {
 
 	_, err := awaitJSValue(t, runtime, `
 		try {
-			tuiMux.resizePane(999, 0.5);
+			await tuiMux.resizePane(999, 0.5);
 			throw new Error("expected error");
 		} catch (e) {
 			if (e.message === "expected error") throw e;
@@ -205,7 +205,7 @@ func TestPaneMethods_SplitHorizontalNoArgs(t *testing.T) {
 
 	_, err := awaitJSValue(t, runtime, `
 		try {
-			tuiMux.splitHorizontal();
+			await tuiMux.splitHorizontal();
 			throw new Error("expected error");
 		} catch (e) {
 			if (e.message === "expected error") throw e;
@@ -222,7 +222,7 @@ func TestPaneMethods_SplitVerticalNoArgs(t *testing.T) {
 
 	_, err := awaitJSValue(t, runtime, `
 		try {
-			tuiMux.splitVertical();
+			await tuiMux.splitVertical();
 			throw new Error("expected error");
 		} catch (e) {
 			if (e.message === "expected error") throw e;
@@ -239,7 +239,7 @@ func TestPaneMethods_ResizePaneArgCount(t *testing.T) {
 
 	_, err := awaitJSValue(t, runtime, `
 		try {
-			tuiMux.resizePane(1);
+			await tuiMux.resizePane(1);
 			throw new Error("expected error");
 		} catch (e) {
 			if (e.message === "expected error") throw e;
@@ -256,7 +256,7 @@ func TestPaneMethods_ClosePaneArgCount(t *testing.T) {
 
 	_, err := awaitJSValue(t, runtime, `
 		try {
-			tuiMux.closePane();
+			await tuiMux.closePane();
 			throw new Error("expected error");
 		} catch (e) {
 			if (e.message === "expected error") throw e;
@@ -320,16 +320,16 @@ func TestBreakPane_CreatesNewWindow(t *testing.T) {
 
 	err := awaitJSErr(t, runtime, `
 		var sess = await termmux.newBoundedSession({ cmd: idleBin });
-		tuiMux.register(sess.session, { name: "test" });
-		var winId = tuiMux.newWindow("win1");
-		tuiMux.addPaneToWindow(sess.session, { name: "test", windowId: winId });
+		await tuiMux.register(sess.session, { name: "test" });
+		var winId = await tuiMux.newWindow("win1");
+		await tuiMux.addPaneToWindow(sess.session, { name: "test", windowId: winId });
 	`)
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
 	_, err = awaitJSValue(t, runtime, `
-		var newWin = tuiMux.breakPane(1);
+		var newWin = await tuiMux.breakPane(1);
 		if (newWin <= 0) {
 			throw new Error("breakPane should return new window ID > 0, got " + newWin);
 		}
@@ -339,7 +339,7 @@ func TestBreakPane_CreatesNewWindow(t *testing.T) {
 	}
 
 	_, err = awaitJSValue(t, runtime, `
-		var wins = tuiMux.windows();
+		var wins = await tuiMux.windows();
 		if (wins.length !== 2) {
 			throw new Error("expected 2 windows, got " + wins.length);
 		}
@@ -362,22 +362,22 @@ func TestJoinPane_MovesPaneBetweenWindows(t *testing.T) {
 
 	err := awaitJSErr(t, runtime, `
 		globalThis.sess1 = await termmux.newBoundedSession({ cmd: idleBin });
-		tuiMux.register(sess1.session, { name: "test" });
+		await tuiMux.register(sess1.session, { name: "test" });
 	`)
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 
 	_, err = awaitJSValue(t, runtime, `
-		var winId = tuiMux.newWindow("win1");
-		tuiMux.addPaneToWindow(sess1.session, { name: "test", windowId: winId });
+		var winId = await tuiMux.newWindow("win1");
+		await tuiMux.addPaneToWindow(sess1.session, { name: "test", windowId: winId });
 	`)
 	if err != nil {
 		t.Fatalf("addPaneToWindow: %v", err)
 	}
 
 	_, err = awaitJSValue(t, runtime, `
-		var newWin = tuiMux.breakPane(1);
+		var newWin = await tuiMux.breakPane(1);
 		if (newWin.windowID !== 2) {
 			throw new Error("expected window 2, got " + newWin.windowID);
 		}
@@ -387,7 +387,7 @@ func TestJoinPane_MovesPaneBetweenWindows(t *testing.T) {
 	}
 
 	_, err = awaitJSValue(t, runtime, `
-		var result = tuiMux.joinPane(1, 1);
+		var result = await tuiMux.joinPane(1, 1);
 		if (!result || !result.paneID) {
 			throw new Error("joinPane failed: returned " + JSON.stringify(result));
 		}
@@ -404,7 +404,7 @@ func TestBreakPane_InvalidPaneId(t *testing.T) {
 	// Break with a non-existent pane ID should error.
 	_, err := awaitJSValue(t, runtime, `
 		try {
-			tuiMux.breakPane(999);
+			await tuiMux.breakPane(999);
 			throw new Error("expected error");
 		} catch (e) {
 			if (e.message === "expected error") throw e;
@@ -422,7 +422,7 @@ func TestJoinPane_InvalidPaneId(t *testing.T) {
 	// Join with a non-existent pane ID should error.
 	_, err := awaitJSValue(t, runtime, `
 		try {
-			tuiMux.joinPane(999, 1);
+			await tuiMux.joinPane(999, 1);
 			throw new Error("expected error");
 		} catch (e) {
 			if (e.message === "expected error") throw e;
@@ -444,10 +444,10 @@ func TestJoinPane_InvalidTargetWindow(t *testing.T) {
 	// Register a session and split to create panes.
 	err := awaitJSErr(t, runtime, `
 		var sess = await termmux.newBoundedSession({ cmd: idleBin });
-		tuiMux.register(sess.session, { name: "test" });
+		await tuiMux.register(sess.session, { name: "test" });
 		var sess2 = await termmux.newBoundedSession({ cmd: idleBin });
-		tuiMux.register(sess2.session, { name: "test2" });
-		tuiMux.splitVertical({ session: sess2.session, target: { name: "test2" } });
+		await tuiMux.register(sess2.session, { name: "test2" });
+		await tuiMux.splitVertical({ session: sess2.session, target: { name: "test2" } });
 	`)
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -456,7 +456,7 @@ func TestJoinPane_InvalidTargetWindow(t *testing.T) {
 	// Join to a non-existent window should error.
 	_, err = awaitJSValue(t, runtime, `
 		try {
-			tuiMux.joinPane(1, 999);
+			await tuiMux.joinPane(1, 999);
 			throw new Error("expected error");
 		} catch (e) {
 			if (e.message === "expected error") throw e;
@@ -481,9 +481,9 @@ func TestZoomSwap_StillWork(t *testing.T) {
 	// Register sessions and create panes via splitVertical.
 	_, err := awaitJSValue(t, runtime, `
 		var sess = await termmux.newBoundedSession({ cmd: idleBin });
-		tuiMux.splitVertical({ session: sess.session, target: { name: "test" } });
+		await tuiMux.splitVertical({ session: sess.session, target: { name: "test" } });
 		var sess2 = await termmux.newBoundedSession({ cmd: idleBin });
-		tuiMux.splitVertical({ session: sess2.session, target: { name: "test2" } });
+		await tuiMux.splitVertical({ session: sess2.session, target: { name: "test2" } });
 		return true;
 	`)
 	if err != nil {
@@ -492,7 +492,7 @@ func TestZoomSwap_StillWork(t *testing.T) {
 
 	// Zoom should not error.
 	_, err = awaitJSValue(t, runtime, `
-		tuiMux.zoomPane(1);
+		await tuiMux.zoomPane(1);
 	`)
 	if err != nil {
 		t.Fatalf("zoomPane: %v", err)
@@ -500,7 +500,7 @@ func TestZoomSwap_StillWork(t *testing.T) {
 
 	// Swap panes should not error.
 	_, err = awaitJSValue(t, runtime, `
-		tuiMux.swapPanes(1, 2);
+		await tuiMux.swapPanes(1, 2);
 	`)
 	if err != nil {
 		t.Fatalf("swapPanes: %v", err)
@@ -511,13 +511,14 @@ func TestRespawnSession_StillWorks(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	idleBin := buildIdleProgram(t)
-	setOnLoop(t, runtime, "idleBin", idleBin)
+	exitBin := buildExitProgram(t)
+	setOnLoop(t, runtime, "exitBin", exitBin)
 
 	// Register a session.
 	_, err := awaitJSValue(t, runtime, `
-		var sess = await termmux.newBoundedSession({ cmd: idleBin });
-		tuiMux.register(sess.session, { name: "test" });
+		await tuiMux.setRemainOnExit(true);
+		var sess = await termmux.newBoundedSession({ cmd: exitBin });
+		await sess.session.wait();
 	`)
 	if err != nil {
 		t.Fatalf("setup: %v", err)
@@ -525,7 +526,7 @@ func TestRespawnSession_StillWorks(t *testing.T) {
 
 	// Respawn should not error.
 	_, err = awaitJSValue(t, runtime, `
-		var newSid = tuiMux.respawnSession(1);
+		var newSid = await tuiMux.respawnSession(1);
 	`)
 	if err != nil {
 		t.Fatalf("respawnSession: %v", err)
@@ -542,28 +543,28 @@ func TestPaneMethodBindings(t *testing.T) {
 	_, err := awaitJSValue(t, runtime, `
 		async function mkSession(name) {
 			var s = await termmux.newBoundedSession({ cmd: idleBin });
-			tuiMux.register(s.session, { name: name });
+			await tuiMux.register(s.session, { name: name });
 			return s.session;
 		}
 		await mkSession("test");
-		var pid = tuiMux.splitHorizontal({ session: (await mkSession("sp")), target: { name: "sp" } });
+		var pid = await tuiMux.splitHorizontal({ session: (await mkSession("sp")), target: { name: "sp" } });
 		if (typeof pid !== "bigint" && typeof pid !== "number") { throw new Error("splitHorizontal returned non-numeric"); }
-		pid = tuiMux.splitVertical({ session: (await mkSession("sv")), target: { name: "sv" } });
+		pid = await tuiMux.splitVertical({ session: (await mkSession("sv")), target: { name: "sv" } });
 		if (typeof pid !== "bigint" && typeof pid !== "number") { throw new Error("splitVertical returned non-numeric"); }
-		tuiMux.focusPaneUp();
-		tuiMux.focusPaneDown();
-		tuiMux.focusPaneLeft();
-		tuiMux.focusPaneRight();
-		var activeId = tuiMux.activePaneId();
-		var paneList = tuiMux.panes();
+		await tuiMux.focusPaneUp();
+		await tuiMux.focusPaneDown();
+		await tuiMux.focusPaneLeft();
+		await tuiMux.focusPaneRight();
+		var activeId = await tuiMux.activePaneId();
+		var paneList = await tuiMux.panes();
 		if (paneList.length === 0) { throw new Error("expected panes"); }
-		tuiMux.resizePane(1, 0.7);
-		var winId = tuiMux.newWindow("winAdded");
-		tuiMux.addPaneToWindow((await mkSession("added")), { target: { name: "added" }, windowId: winId });
-		tuiMux.zoomPane(1);
-		tuiMux.zoomPane(1);
-		tuiMux.swapPanes(1, 2);
-		tuiMux.closePane(2);
+		await tuiMux.resizePane(1, 0.7);
+		var winId = await tuiMux.newWindow("winAdded");
+		await tuiMux.addPaneToWindow((await mkSession("added")), { target: { name: "added" }, windowId: winId });
+		await tuiMux.zoomPane(1);
+		await tuiMux.zoomPane(1);
+		await tuiMux.swapPanes(1, 2);
+		await tuiMux.closePane(2);
 	`)
 	if err != nil {
 		t.Fatalf("pane method binding test: %v", err)
@@ -594,34 +595,36 @@ func TestWindowSwitch_JSRouting(t *testing.T) {
 		}
 
 		var s1 = await mkSession("s1");
-		var w1 = tuiMux.newWindow("w1");
-		var p1 = tuiMux.addPaneToWindow(s1, { windowId: w1, target: { name: "w1p1" } });
+		var w1 = await tuiMux.newWindow("w1");
+		var p1 = await tuiMux.addPaneToWindow(s1, { windowId: w1, target: { name: "w1p1" } });
 		if (p1 === 0) { throw new Error("expected valid pane id for s1"); }
 
 		var s2 = await mkSession("s2");
-		var w2 = tuiMux.newWindow("w2");
-		var p2 = tuiMux.addPaneToWindow(s2, { windowId: w2, target: { name: "w2p1" } });
+		var w2 = await tuiMux.newWindow("w2");
+		var p2 = await tuiMux.addPaneToWindow(s2, { windowId: w2, target: { name: "w2p1" } });
 		if (p2 === 0) { throw new Error("expected valid pane id for s2"); }
 
+		var beforePanes = await tuiMux.panes();
 		var before = {
-			activeWindow: tuiMux.activeWindowID(),
-			activePane: tuiMux.activePaneId(),
-			panes: tuiMux.panes().length
+			activeWindow: await tuiMux.activeWindowID(),
+			activePane: await tuiMux.activePaneId(),
+			panes: beforePanes.length
 		};
 
-		var next = tuiMux.nextWindow();
+		var next = await tuiMux.nextWindow();
 		if (next !== w2) { throw new Error("nextWindow = " + next + ", want " + w2); }
 
+		var afterPanes = await tuiMux.panes();
 		var after = {
-			activeWindow: tuiMux.activeWindowID(),
-			activePane: tuiMux.activePaneId(),
-			panes: tuiMux.panes().length
+			activeWindow: await tuiMux.activeWindowID(),
+			activePane: await tuiMux.activePaneId(),
+			panes: afterPanes.length
 		};
 		if (after.activeWindow !== w2) { throw new Error("activeWindow after switch = " + after.activeWindow + ", want " + w2); }
 		if (after.activePane !== p2) { throw new Error("activePane after switch = " + after.activePane + ", want " + p2); }
 		if (after.panes !== 1) { throw new Error("expected 1 pane after switch, got " + after.panes); }
 
-		var sessions = tuiMux.sessions();
+		var sessions = await tuiMux.sessions();
 		var active = sessions.filter(function(s) { return s.isActive; })[0];
 		if (!active) { throw new Error("no active session after switch"); }
 		if (active.target.name !== "w2p1") { throw new Error("active session = " + active.target.name + ", want w2p1"); }
@@ -631,7 +634,7 @@ func TestWindowSwitch_JSRouting(t *testing.T) {
 		// issues with cmd.exe on Windows (which requires \r not \n).
 		var keys = ("echo routed").split("");
 		keys.push("enter");
-		tuiMux.sendKeys.apply(tuiMux, [active.id].concat(keys));
+		await tuiMux.sendKeys.apply(tuiMux, [active.id].concat(keys));
 
 		// Cooperative poll for routed output — yields to the loop so the
 		// SessionManager pipeline can deliver PTY bytes to the VTerm.
@@ -821,31 +824,29 @@ func TestRespawnSession_JSBinding_RebindsPane(t *testing.T) {
 	_, err := awaitJSValue(t, runtime, `
 		var sess = termmux.newCaptureSession(exitBin);
 		await sess.start();
-		tuiMux.setRemainOnExit(true);
-		var paneId = tuiMux.splitHorizontal({ session: sess, target: { name: "respawn-js", kind: "capture" } });
+		await tuiMux.setRemainOnExit(true);
+		var paneId = await tuiMux.splitHorizontal({ session: sess, target: { name: "respawn-js", kind: "capture" } });
 		if (paneId === 0) { throw new Error("expected valid pane id"); }
 
-		function waitExited(deadlineMs) {
-			return new Promise(function(resolve, reject) {
-				(function poll() {
-					var list = tuiMux.sessions();
-					for (var i = 0; i < list.length; i++) {
-						if (list[i].state === "exited") return resolve();
-					}
-					if (Date.now() > deadlineMs) return reject(new Error("timeout waiting for session exit"));
-					setTimeout(poll, 10);
-				})();
-			});
+		async function waitExited(deadlineMs) {
+			while (Date.now() <= deadlineMs) {
+				var list = await tuiMux.sessions();
+				for (var i = 0; i < list.length; i++) {
+					if (list[i].state === "exited") return;
+				}
+				await new Promise(function(resolve) { setTimeout(resolve, 10); });
+			}
+			throw new Error("timeout waiting for session exit");
 		}
 		await waitExited(Date.now() + 5000);
 
 		var sid = 1;
-		var newSid = tuiMux.respawnSession(sid);
+		var newSid = await tuiMux.respawnSession(sid);
 		if (newSid === 0 || newSid === sid) {
 			throw new Error("expected valid new session id, got " + newSid);
 		}
 
-		var panes = tuiMux.panes();
+		var panes = await tuiMux.panes();
 		if (panes.length === 0) { throw new Error("expected at least one pane"); }
 		if (panes[0].sessionId !== newSid) {
 			throw new Error("pane sessionId = " + panes[0].sessionId + ", want " + newSid);

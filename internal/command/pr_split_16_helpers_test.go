@@ -48,8 +48,9 @@ func TestPrSplitErrorActionsDispatch(t *testing.T) {
 			t.Errorf("16f ERROR mouse branch missing zone mark %q", mark)
 		}
 	}
-	if !strings.Contains(string(model), "prSplit.cleanupExecutor().then(") {
-		t.Error("16f ERROR discard must chain cleanupExecutor before MCP close")
+	if !strings.Contains(string(model), "paneClose.then(function()") ||
+		!strings.Contains(string(model), "return prSplit.cleanupExecutor();") {
+		t.Error("16f ERROR discard must join pane close before cleanupExecutor")
 	}
 	// Key/mouse parity: key path clears both prSplit._agentEvidence and
 	// prSplit._state.agentEvidence (via stt); mouse path must match.

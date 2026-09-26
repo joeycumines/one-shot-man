@@ -180,7 +180,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | Module | Description | Key exports |
 |--------|-------------|-------------|
 | `osm:os` | OS interactions (files, clipboard, editor, environment) | `readFile(path) → Promise<{content, error, message}>`, `fileExists(path) → bool`, `writeFile(path, content, options?) → Promise<undefined>` (options: `{mode?: number, createDirs?: boolean}`), `appendFile(path, content, options?) → Promise<undefined>` (same options), `openEditor(nameHint, initialContent) → Promise<string>`, `clipboardCopy(text) → Promise<void>` (supports `OSM_CLIPBOARD` override), `clipboardPaste() → Promise<string>`, `getenv(key) → string`, `getpid() → number`, `isAbsolute(path) → bool`, `join(...paths) → string`, `platform() → string` |
-| `osm:exec` | Process execution | `execv(argv[]) → Promise<{stdout, stderr, code, error, message}>`, `spawn(cmd, args[], opts?) → ChildHandle` |
+| `osm:exec` | Process execution | `execv(argv[], opts?) → Promise<{stdout, stderr, code, error, message}>` (`opts.timeoutMs`), `spawn(cmd, args[], opts?) → Promise<ChildHandle>` (`opts.cwd`, `opts.env`, `opts.envReplace`, `opts.timeoutMs`) |
 | `osm:flag` | Go `flag` package wrapper for argument parsing | `newFlagSet(name?) → FlagSet`; FlagSet methods: `.string(name, default, usage)`, `.int(…)`, `.bool(…)`, `.float64(…)`, `.parse(argv) → {error}`, `.get(name)`, `.args()`, `.nArg()`, `.nFlag()`, `.lookup(name)`, `.defaults()`, `.visit(fn)`, `.visitAll(fn)` |
 | `osm:path` | Go `path/filepath` wrapper for path manipulation | `join(...args) → string`, `dir(path) → string`, `base(path) → string`, `ext(path) → string`, `abs(path) → {result, error}`, `rel(basepath, targpath) → {result, error}`, `clean(path) → string`, `isAbs(path) → bool`, `match(pattern, name) → {matched, error}`, `glob(pattern) → Promise<{matches, error}>` (async; all others sync), `separator`, `listSeparator` |
 | `osm:regexp` | Go RE2 regular expressions | `match(pattern, str) → bool`, `find(pattern, str) → string\|null`, `findAll(pattern, str, n?) → string[]`, `findSubmatch(pattern, str) → string[]\|null`, `findAllSubmatch(pattern, str, n?) → string[][]`, `replace(pattern, str, repl) → string`, `replaceAll(pattern, str, repl) → string`, `split(pattern, str, n?) → string[]`, `compile(pattern) → RegexpObject` (with same methods bound). [Reference →](reference/regexp.md) |
@@ -236,10 +236,12 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:termui/splitlayout` | Split-pane layout manager | `splitLayout(manager, bounds) → SplitLayout`; SplitLayout: `.addPane(id)`, `.removePane(id)`, `.update(msg)`, `.view()`, `.close()` |
 | `osm:termui/splitview` | Split-view component | `splitView(opts?) → SplitView`; SplitView: `.setLeft(view)`, `.setRight(view)`, `.setRatio(n)`, `.view() → string` |
 | `osm:termui/table` | Table component | `table(opts?) → Table`; Table: `.setHeaders(headers)`, `.setRows(rows)`, `.setStyle(style)`, `.view() → string` |
-| `osm:termui/termpane` | Terminal pane component | `termpane(manager, id, opts?) → TermPane`; TermPane: `.update(msg)`, `.view()`, `.resize(rows, cols)` |
+| `osm:termui/termpane` | Terminal pane component | `termpane({manager, sessionId, bounds}) → TermPane`; TermPane: `.setBounds(rect)`, `.update(msg) → Promise<[TermPane, tea.Cmd \| null]>`, `.view()`, `.waitOutput() → tea.Cmd`, `.close() → Promise<void>` |
 | `osm:termui/toast` | Toast notification component | `toast(msg?) → Toast`; Toast: `.setMessage(str)`, `.setStyle(style)`, `.show()`, `.hide()`, `.view() → string` |
 
 > **Constructor names (`osm:termui/*`):** `osm:termui/*` modules export a lowercase factory function named after the component (e.g. `require('osm:termui/box').box(opts)`, `require('osm:termui/label').label(text)`, `require('osm:termui/divider').divider('horizontal')`, `require('osm:termui/compositor').compositor({width,height})`, `require('osm:termui/splitview').splitView(opts)`, `require('osm:termui/splitlayout').splitLayout(manager, bounds)`). (`osm:termui/scrollbar` exports both `scrollbar` and `new`.)
+
+`TermPane.update(msg)` returns a lifecycle-tracked `Promise` that resolves to `[pane, cmd]` after the native model update completes. The JavaScript message is parsed on the event-loop owner; manager resize and input work runs off-loop. Callers must await the Promise or attach a rejection handler and track its settlement.
 
 #### Behavior trees & planning
 
@@ -254,7 +256,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 |--------|-------------|-------------|
 | `osm:aimux` | Generic agent process multiplexer | `processProvider(opts)` → provider object; `newRegistry()` → registry object with `register(provider)`, `get(name)`, `list()`, `spawn(name, opts)`; `newParser()` → parser object with `.parse(line)`, `.patterns()`; parser event constants: `EVENT_TEXT`, `EVENT_RATE_LIMIT`, `EVENT_PERMISSION`, `EVENT_MODEL_SELECT`, `EVENT_SSO_LOGIN`, `EVENT_COMPLETION`, `EVENT_TOOL_USE`, `EVENT_ERROR`, `EVENT_THINKING`; `eventTypeName(type)`. Used by `osm pr-split` to spawn agent processes provider-agnostically. |
 | `osm:mcp` | Promise-based MCP (Model Context Protocol) server | `createServer(name, version?) → server`; Server methods: `.addTool(toolDef, handler)` where toolDef = `{name, description?, inputSchema?}`, `.run(transport?)` (default: "stdio"), `.close()` |
-| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, opts?)`, `.unregister(id)`, `.activate(id)`, `.attach(handle) → id`, `.detach()`, `.hasChild()`, `.passthrough(opts?)` (async — enters passthrough, returns `Promise<{reason, error?}>`), `.switchTo()` (async, returns `Promise<{reason, error?}>`), `.activeSide()`, `.activeID()`, `.sessions()`, `.capture(id, opts?)` (returns `{plain, ansi, fullScreen, gen, rows, cols, cursorRow, cursorCol, cursorVisible, mouseTracking, mouseSGR, locked, message, timestamp}` or `null`; opts `{start?, end?, joinWrapped?}` select a zero-based end-exclusive visible-row range and wrapped-line joining), `.eventsDropped()`, `.input(data)`, `.resize(rows, cols)`, `.writeToChild(data)`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe(bufSize?)`, `.unsubscribe(id)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.capture(id, opts?)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `.activate(id)` + `.input(data)` for writes; `.writeToChild(data)` and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_AGENT`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (14 event names: `EXIT`, `RESIZE`, `FOCUS`, `BELL`, `OUTPUT`, `REGISTERED`, `ACTIVATED`, `CLOSED`, `TERMINAL_RESIZE`, `ACTIVITY`, `SILENCE`, `TITLE`, `CWD`/`WORKING_DIRECTORY`, `CLIPBOARD`). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
+| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, opts?) → Promise<number>`, `.unregister(id) → Promise<void>`, `.activate(id) → Promise<void>`, `.attach(handle) → Promise<number>`, `.detach() → Promise<void>`, `.hasChild()`, `.passthrough(opts?)` (async — enters passthrough, returns `Promise<{reason, error?}>`), `.switchTo()` (async, returns `Promise<{reason, error?}>`), `.activeSide()`, `.activeID()`, `.sessions() → Promise<[...]>`, `.capture(id, opts?)` (returns `{plain, ansi, fullScreen, gen, rows, cols, cursorRow, cursorCol, cursorVisible, mouseTracking, mouseSGR, locked, message, timestamp}` or `null`; opts `{start?, end?, joinWrapped?}` select a zero-based end-exclusive visible-row range and wrapped-line joining), `.eventsDropped()`, `.input(data) → Promise<void>`, `.resize(rows, cols) → Promise<void>`, `.writeToChild(data) → Promise<number>`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe(bufSize?)`, `.unsubscribe(id)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.capture(id, opts?)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `await .activate(id)` + `await .input(data)` for writes; `.writeToChild(data)` and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_AGENT`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (14 event names: `EXIT`, `RESIZE`, `FOCUS`, `BELL`, `OUTPUT`, `REGISTERED`, `ACTIVATED`, `CLOSED`, `TERMINAL_RESIZE`, `ACTIVITY`, `SILENCE`, `TITLE`, `CWD`/`WORKING_DIRECTORY`, `CLIPBOARD`). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
 | `osm:freezeterm` | Render captured terminal text as an SVG or PNG artifact via the external [freeze](https://github.com/charmbracelet/freeze) CLI | `info(opts?) → Promise<{available, executable, version, commit, raw, error?}>` (resolves `available:false` when the binary is missing); `render(text, opts?) → Promise<{path, format, temporary, text?}>` (caller-owned `output` path or a temporary file the caller owns; PNG results expose only a path); `renderText(text, opts?) → Promise<string>` (temporary SVG text, file removed). Opts mirror freeze flags: `{executable?, output?, format? ('svg'|'png'), language?, theme?, background?, window?, width?, height?, margin?, padding?, wrap?, lineHeight?, lines?, showLineNumbers?, font?{family,file,size,ligatures}, border?{radius,width,color}, shadow?{blur,x,y}, args?, dir?}`. Every call is asynchronous and validated strictly; unknown options throw `TypeError`. Compose with `osm:termmux`: `freezeterm.renderText(termmux.capture(id).ansi)`. |
 
 ### osm:bt (Behavior Trees)
@@ -549,27 +551,27 @@ agent executable without hard-coding any provider.
 ### osm:termmux CaptureSession
 
 `newCaptureSession(command, args?, opts?)` creates a non-blocking PTY-backed
-process. CaptureSession runs in the background and provides `reader()` /
-`readAvailable()` for streaming output and `write()` for stdin input.
+process. CaptureSession runs in the background. All process and terminal
+mutations return Promises so they do not block the JavaScript event loop.
 When registered with a SessionManager, screen output is available via
 `mgr.capture(id)`.
 
 **Methods (17 total):**
 
 - `start()` — Start the process asynchronously; returns `Promise<void>` (rejects on error)
-- `write(str)` — Write string to process stdin (throws on error)
+- `write(str)` — Write string to process stdin; returns `Promise<void>` (rejects on error)
+- `sendKeys(...keys)` — Translate key names and write them to process stdin; returns `Promise<void>` (rejects on error)
 - `isDone()` — Check if process has exited (non-blocking)
 - `exitCode()` — Get exit code (only valid after `isDone()`)
-- `resize(rows, cols)` — Resize the PTY (throws on error)
+- `resize(rows, cols)` — Resize the PTY; returns `Promise<void>` (rejects on error)
 - `close()` — Close the session and kill the process asynchronously; returns `Promise<void>`
-- `pause()` / `resume()` — Suspend/resume process (SIGSTOP/SIGCONT)
+- `pause()` / `resume()` — Suspend/resume process; each returns `Promise<void>` (rejects on error)
 - `isPaused()` — Check if paused
-- `interrupt()` — Send SIGINT
-- `kill()` — Send SIGKILL
-- `sendEOF()` — Send EOF (Ctrl+D)
+- `interrupt()` — Send SIGINT; returns `Promise<void>` (rejects on error)
+- `kill()` — Send SIGKILL; returns `Promise<void>` (rejects on error)
+- `sendEOF()` — Send EOF (Ctrl+D); returns `Promise<void>` (rejects on error)
 - `pid()` — Get process PID
 - `wait()` — Wait asynchronously until process exits; returns `Promise<{code, error?}>`
-- `reader()` — Get next output chunk (blocking), returns `string | null`
 - `readAvailable()` — Drain buffered chunks (non-blocking), returns `string | null`
 - `passthrough(opts?) → Promise<{reason, error?}>` — Enter passthrough mode (async, returns Promise)
 
@@ -586,13 +588,13 @@ var session = tm.newCaptureSession('/bin/bash', ['-i'], {
 });
 await session.start();
 await session.write('echo hello\n');
-// stream output via reader() or readAvailable()
+// stream output via readAvailable()
 var chunk = session.readAvailable();
 // ... poll session.isDone()
-session.kill(); // cleanup
+await session.kill(); // cleanup
 ```
 
-**Platform:** Unix only (Linux/macOS). Uses real PTY; not available on Windows.
+**Platform:** Uses the native PTY implementation (ConPTY on Windows, Unix PTY on Linux/macOS).
 
 ## Where to look for examples
 

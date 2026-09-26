@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/goja"
 
@@ -168,11 +169,11 @@ func TestSessionWrapper_WriteResize(t *testing.T) {
 
 	// 3. Wrap the SessionManager for JS access.
 	runtime := goja.New()
-	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("tuiMux", tuiMux)
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
 
 	// 4. Verify session().write exists and is callable.
-	v, err := runtime.RunString(`typeof tuiMux.session().write`)
+	v, err := runJS(t, runtime, `typeof tuiMux.session().write`)
 	if err != nil {
 		t.Fatalf("typeof session().write: %v", err)
 	}
@@ -181,7 +182,7 @@ func TestSessionWrapper_WriteResize(t *testing.T) {
 	}
 
 	// 5. Verify session().resize exists and is callable.
-	v, err = runtime.RunString(`typeof tuiMux.session().resize`)
+	v, err = runJS(t, runtime, `typeof tuiMux.session().resize`)
 	if err != nil {
 		t.Fatalf("typeof session().resize: %v", err)
 	}
@@ -190,7 +191,7 @@ func TestSessionWrapper_WriteResize(t *testing.T) {
 	}
 
 	// 6. Call session().write('hello') — bytes should reach the StringIOSession.
-	_, err = runtime.RunString(`tuiMux.session().write('hello')`)
+	_, err = awaitJSValue(t, runtime, `return tuiMux.session().write('hello')`)
 	if err != nil {
 		t.Fatalf("session().write('hello'): %v", err)
 	}
@@ -199,13 +200,13 @@ func TestSessionWrapper_WriteResize(t *testing.T) {
 	}
 
 	// 7. Call session().resize(40, 120) — should not error.
-	_, err = runtime.RunString(`tuiMux.session().resize(40, 120)`)
+	_, err = awaitJSValue(t, runtime, `return tuiMux.session().resize(40, 120)`)
 	if err != nil {
 		t.Fatalf("session().resize(40, 120): %v", err)
 	}
 
 	// 8. Verify all other session() methods still work.
-	v, err = runtime.RunString(`
+	v, err = runJS(t, runtime, `
 		var s = tuiMux.session();
 		var methods = ['isRunning', 'isDone', 'output', 'screen', 'target', 'setTarget', 'write', 'resize'];
 		var missing = [];
@@ -705,16 +706,16 @@ func TestSessionManager_BasicLifecycle(t *testing.T) {
 	<-mgr.Started()
 
 	runtime := goja.New()
-	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("mux", wrapper)
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "mux", wrapper)
 
 	rec := newRecordingStringIO()
 	sio := parent.NewStringIOSession(rec)
 	sio.Start()
-	sessionWrapper := wrapInteractiveSession(runtime, sio, parent.SessionKindCapture)
-	_ = runtime.Set("session", sessionWrapper)
+	sessionWrapper := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sio, parent.SessionKindCapture)
+	setOnLoop(t, runtime, "session", sessionWrapper)
 
-	v, err := runtime.RunString(`mux.register(session, {name: 'test', kind: 'pty'})`)
+	v, err := awaitJSValue(t, runtime, `return mux.register(session, {name: 'test', kind: 'pty'})`)
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -723,12 +724,12 @@ func TestSessionManager_BasicLifecycle(t *testing.T) {
 		t.Fatal("register returned 0")
 	}
 
-	_, err = runtime.RunString(fmt.Sprintf(`mux.activate(%d)`, sessionID))
+	_, err = awaitJSValue(t, runtime, fmt.Sprintf(`return mux.activate(%d)`, sessionID))
 	if err != nil {
 		t.Fatalf("activate: %v", err)
 	}
 
-	_, err = runtime.RunString(`session.write('hello world')`)
+	_, err = awaitJSValue(t, runtime, `return session.write('hello world')`)
 	if err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -736,12 +737,12 @@ func TestSessionManager_BasicLifecycle(t *testing.T) {
 		t.Errorf("expected sent=['hello world'], got %v", rec.sent)
 	}
 
-	_, err = runtime.RunString(`mux.resize(50, 120)`)
+	_, err = awaitJSValue(t, runtime, `return mux.resize(50, 120)`)
 	if err != nil {
 		t.Fatalf("resize: %v", err)
 	}
 
-	ts, err := runtime.RunString(`mux.termSize()`)
+	ts, err := awaitJSValue(t, runtime, `return mux.termSize()`)
 	if err != nil {
 		t.Fatalf("termSize: %v", err)
 	}
@@ -750,11 +751,102 @@ func TestSessionManager_BasicLifecycle(t *testing.T) {
 		t.Errorf("termSize = (%d, %d), want (50, 120)", tsObj.Get("rows").ToInteger(), tsObj.Get("cols").ToInteger())
 	}
 
-	_, err = runtime.RunString(`session.close()`)
+	_, err = awaitJSValue(t, runtime, `return session.close()`)
 	if err != nil {
 		t.Fatalf("close: %v", err)
 	}
 
 	cancel()
 	<-errCh
+}
+
+func TestMuxStateClosedEventEvictsSessionCache(t *testing.T) {
+	state := &muxState{}
+	state.cacheKnownSession(42)
+	state.cacheActiveID(42)
+
+	state.cacheEvent(parent.Event{Kind: parent.EventSessionClosed, SessionID: 42})
+
+	if state.cachedSessionDone(42) != true {
+		t.Fatal("closed session should not remain known")
+	}
+	if state.cachedActiveID() != 0 {
+		t.Fatalf("closed active session cached as %d", state.cachedActiveID())
+	}
+	if _, ok := state.knownSessions.Load(uint64(42)); ok {
+		t.Fatal("closed session remained in known-session cache")
+	}
+	if _, ok := state.doneSessions.Load(uint64(42)); ok {
+		t.Fatal("closed session remained in done-session cache")
+	}
+}
+
+func TestMuxStateResizeCacheIgnoresSessionResize(t *testing.T) {
+	state := &muxState{}
+	state.cacheTermSize(24, 80)
+
+	state.cacheEvent(parent.Event{
+		Kind:      parent.EventResize,
+		SessionID: 42,
+		Data:      [2]int{50, 100},
+	})
+	if rows, cols := state.termRowsCached.Load(), state.termColsCached.Load(); rows != 24 || cols != 80 {
+		t.Fatalf("session resize changed global cache to %dx%d", rows, cols)
+	}
+
+	state.cacheEvent(parent.Event{
+		Kind: parent.EventResize,
+		Data: [2]int{50, 100},
+	})
+	if rows, cols := state.termRowsCached.Load(), state.termColsCached.Load(); rows != 50 || cols != 100 {
+		t.Fatalf("global resize cache = %dx%d, want 50x100", rows, cols)
+	}
+}
+
+func TestWrapSessionManagerCacheLifecycle(t *testing.T) {
+	t.Run("does not cache an unstarted manager", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		mgr := parent.NewSessionManager()
+		runtime := goja.New()
+		_ = wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+
+		if _, ok := managerWrapperCache.Load(wrapperCacheKey{manager: mgr, runtime: runtime}); ok {
+			t.Fatal("unstarted manager was cached")
+		}
+	})
+
+	t.Run("drops an externally closed manager", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		mgr := parent.NewSessionManager()
+		errCh := make(chan error, 1)
+		go func() { errCh <- mgr.Run(ctx) }()
+		<-mgr.Started()
+		defer func() { <-errCh }()
+
+		runtime := goja.New()
+		_ = wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
+		key := wrapperCacheKey{manager: mgr, runtime: runtime}
+		if _, ok := managerWrapperCache.Load(key); !ok {
+			t.Fatal("started manager was not cached")
+		}
+
+		mgr.Close()
+		<-mgr.Done()
+		deadline := time.NewTimer(time.Second)
+		defer deadline.Stop()
+		for {
+			if _, ok := managerWrapperCache.Load(key); !ok {
+				return
+			}
+			select {
+			case <-deadline.C:
+				t.Fatal("closed manager remained cached")
+			case <-time.After(time.Millisecond):
+			}
+		}
+	})
 }

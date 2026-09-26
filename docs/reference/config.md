@@ -232,15 +232,18 @@ The `[pr-split]` section configures default options for `osm pr-split`. All keys
 
 | Key | Type | Default | CLI flag | Description |
 |-----|------|---------|----------|-------------|
-| `base` | string | `main` | `--base` | Base branch to diff against |
+| `base` | string | `auto` | `--base` | Base branch to diff against; `auto` selects the repository default |
 | `strategy` | string | `directory` | `--strategy` | Grouping strategy: `directory`, `directory-deep`, `extension`, `chunks`, `dependency`, `auto` |
 | `max` | int | `10` | `--max` | Maximum files per split branch |
 | `prefix` | string | `split/` | `--prefix` | Branch name prefix |
-| `verify` | string | `make test` | `--verify` | Verification command run after each split |
+| `verify` | string | _(empty)_ | `--verify` | Verification command run after each split; empty auto-detects from the project |
 | `dry-run` | bool | `false` | `--dry-run` | Plan without creating branches |
 | `agent-command` | string | _(empty, required)_ | `--agent-command` | Agent binary path or name. Must be set via flag or config for agent flows; heuristic, batch, and REPL flows run without it |
 | `agent-arg` | string (repeatable on CLI, single in config) | _(empty)_ | `--agent-arg` | Additional CLI argument for the agent (repeatable on CLI; config holds one entry) |
 | `agent-env` | string | _(empty)_ | `--agent-env` | Extra environment variables (`KEY=VALUE,KEY=VALUE`; values must not contain commas) |
+| `timeout` | duration | _(empty)_ | `--timeout` | Deadline for agent MCP waits and verify steps; `0` selects built-in defaults |
+| `resume` | bool | `false` | `--resume` | Resume a previously saved auto-split session |
+| `cleanup-on-failure` | bool | `false` | `--cleanup-on-failure` | Delete split branches if the pipeline fails |
 
 ### Runtime-only settings
 

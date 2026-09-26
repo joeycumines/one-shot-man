@@ -2,12 +2,13 @@
 package exec
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	osexec "os/exec"
+	"time"
 
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
@@ -30,6 +31,15 @@ func handleSettleErr(err error) {
 	_ = err
 }
 
+const maxTimeoutMilliseconds = int64(1<<63-1) / int64(time.Millisecond)
+
+func timeoutFromMilliseconds(ms int64) time.Duration {
+	if ms <= 0 || ms > maxTimeoutMilliseconds {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
 // Require returns a module loader for `osm:exec` that uses the provided base context
 // (typically the TUI manager's context). Each invocation wraps the base context
 // with context.WithCancel and uses exec.CommandContext to ensure proper
@@ -42,7 +52,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 		exports := module.Get("exports").(*goja.Object)
 
 		if adapter != nil {
-			// execv(argv: string[]): Promise<{stdout, stderr, code, error, message}>
+			// execv(argv: string[], opts?: {timeoutMs?: number}): Promise<{stdout, stderr, code, error, message}>
 			_ = exports.Set("execv", func(call goja.FunctionCall) goja.Value {
 				if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
 					promise, settler := adapter.NewPromise()
@@ -66,20 +76,34 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 				if len(parts) > 1 {
 					args = parts[1:]
 				}
-				return adapter.TrackPromise(ctx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-					result := runExec(ctx, cmd, args...)
+				var timeout time.Duration
+				if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+					opts := call.Argument(1).ToObject(runtime)
+					if v := opts.Get("timeoutMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+						timeout = timeoutFromMilliseconds(v.ToInteger())
+					}
+				}
+				return adapter.TrackPromise(ctx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+					if timeout > 0 {
+						var cancel context.CancelFunc
+						workerCtx, cancel = context.WithTimeout(workerCtx, timeout)
+						defer cancel()
+					}
+					result := runExec(workerCtx, cmd, args...)
 					_ = settle.Settle(false, func(rt *goja.Runtime) any { return result })
 				})
 			})
 
-			// spawn(command: string, args: string[], opts?: {cwd?, env?}): ChildHandle
-			// Returns a child process handle with streaming stdout/stderr read().
+			// spawn(command: string, args: string[], opts?: {cwd?, env?, envReplace?, timeoutMs?}): Promise<ChildHandle>
+			// Resolves after process startup with a handle exposing streaming stdout/stderr read().
 			_ = exports.Set("spawn", jsSpawn(ctx, runtime, adapter, loop))
 		}
 	}
 }
 
-// jsSpawn creates the spawn() JS function binding.
+// jsSpawn creates the spawn() JS function binding. Process startup is a
+// blocking operation, so it runs in a tracked worker and resolves a native
+// Promise with the child handle.
 func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 {
@@ -91,7 +115,8 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			panic(rt.NewTypeError("spawn: command must be a non-empty string"))
 		}
 
-		// Parse args array.
+		// Parse args array on the event-loop goroutine before starting the
+		// worker. No Goja value is touched after the worker begins.
 		var args []string
 		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
 			if err := rt.ExportTo(call.Argument(1), &args); err != nil {
@@ -99,8 +124,8 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			}
 		}
 
-		// Parse options object.
 		cfg := SpawnConfig{Command: cmdStr, Args: args}
+		var timeout time.Duration
 		if len(call.Arguments) > 2 && !goja.IsUndefined(call.Argument(2)) && !goja.IsNull(call.Argument(2)) {
 			optsObj := call.Argument(2).ToObject(rt)
 			if v := optsObj.Get("cwd"); v != nil && !goja.IsUndefined(v) {
@@ -117,17 +142,43 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			if v := optsObj.Get("envReplace"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 				cfg.EnvReplace = v.ToBoolean()
 			}
+			if v := optsObj.Get("timeoutMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				timeout = timeoutFromMilliseconds(v.ToInteger())
+			}
 		}
 
-		ctx, cancel := context.WithCancel(baseCtx)
+		return adapter.TrackPromise(baseCtx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+			childCtx := workerCtx
+			var cancel context.CancelFunc
+			if timeout > 0 {
+				childCtx, cancel = context.WithTimeout(workerCtx, timeout)
+			} else {
+				childCtx, cancel = context.WithCancel(workerCtx)
+			}
 
-		child, err := SpawnChild(ctx, cfg)
-		if err != nil {
-			cancel()
-			panic(rt.NewGoError(fmt.Errorf("spawn failed: %w", err)))
-		}
+			child, err := SpawnChild(childCtx, cfg)
+			if err != nil {
+				cancel()
+				_ = settle.Settle(true, func(owner *goja.Runtime) any {
+					return owner.NewGoError(fmt.Errorf("spawn failed: %w", err))
+				})
+				return
+			}
 
-		return wrapChildProcess(baseCtx, rt, adapter, loop, child, cancel)
+			// Release a timeout context once the child has been reaped. Without
+			// this, a long timeout retains its timer until the deadline even when
+			// the child exits immediately.
+			go func() {
+				<-child.done
+				cancel()
+			}()
+
+			if err := settle.Settle(false, func(owner *goja.Runtime) any {
+				return wrapChildProcess(baseCtx, owner, adapter, loop, child, cancel)
+			}); err != nil {
+				cancel()
+			}
+		})
 	}
 }
 
@@ -242,31 +293,222 @@ func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *goja
 	return streamObj
 }
 
+const outputDrainTimeout = 250 * time.Millisecond
+
+type commandPipeEndpoint interface {
+	io.Reader
+	io.Writer
+	io.Closer
+}
+
+type commandPipeFactory func() (commandPipeEndpoint, commandPipeEndpoint, error)
+
+func newCommandPipe() (commandPipeEndpoint, commandPipeEndpoint, error) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	return reader, writer, nil
+}
+
+func closeCommandPipe(pipe *commandPipeEndpoint) error {
+	if pipe == nil || *pipe == nil {
+		return nil
+	}
+	endpoint := *pipe
+	*pipe = nil
+	return endpoint.Close()
+}
+
+func closeCommandPipes(stdoutReader, stdoutWriter, stderrReader, stderrWriter *commandPipeEndpoint) error {
+	return errors.Join(
+		closeCommandPipe(stdoutReader),
+		closeCommandPipe(stdoutWriter),
+		closeCommandPipe(stderrReader),
+		closeCommandPipe(stderrWriter),
+	)
+}
+
+func cleanupFailedRunExec(primaryErr error, kill, closeTree, wait, closePipes func() error) error {
+	killErr := kill()
+	closeTreeErr := closeTree()
+	waitErr := wait()
+	closePipesErr := closePipes()
+	return errors.Join(
+		primaryErr,
+		nonBenignRunExecCleanupError(killErr),
+		nonBenignRunExecCleanupError(closeTreeErr),
+		nonBenignRunExecCleanupError(waitErr),
+		nonBenignRunExecCleanupError(closePipesErr),
+	)
+}
+
+func nonBenignRunExecCleanupError(err error) error {
+	if err == nil {
+		return nil
+	}
+	switch unwrapper := err.(type) {
+	case interface{ Unwrap() []error }:
+		parts := unwrapper.Unwrap()
+		filtered := make([]error, 0, len(parts))
+		for _, part := range parts {
+			if partErr := nonBenignRunExecCleanupError(part); partErr != nil {
+				filtered = append(filtered, partErr)
+			}
+		}
+		return errors.Join(filtered...)
+	case interface{ Unwrap() error }:
+		return nonBenignRunExecCleanupError(unwrapper.Unwrap())
+	default:
+		if errors.Is(err, os.ErrProcessDone) {
+			return nil
+		}
+		return err
+	}
+}
+
+type commandOutputResult struct {
+	index int
+	data  []byte
+	err   error
+}
+
+func readCommandOutput(index int, r io.ReadCloser, results chan<- commandOutputResult) {
+	data, err := io.ReadAll(r)
+	closeErr := r.Close()
+	if closeErr != nil {
+		err = errors.Join(err, fmt.Errorf("close command output pipe: %w", closeErr))
+	}
+	results <- commandOutputResult{index: index, data: data, err: err}
+}
+
+func startCommandOutputReaders(stdout, stderr io.ReadCloser) <-chan commandOutputResult {
+	results := make(chan commandOutputResult, 2)
+	go readCommandOutput(0, stdout, results)
+	go readCommandOutput(1, stderr, results)
+	return results
+}
+
+func collectCommandOutput(results <-chan commandOutputResult, stdout, stderr io.ReadCloser) (string, string, error) {
+	var output [2][]byte
+	var outputErr error
+	timer := time.NewTimer(outputDrainTimeout)
+	defer timer.Stop()
+	for received := 0; received < 2; received++ {
+		select {
+		case result := <-results:
+			output[result.index] = result.data
+			outputErr = errors.Join(outputErr, result.err)
+		case <-timer.C:
+			_ = stdout.Close()
+			_ = stderr.Close()
+			timeoutErr := errors.New("command output pipes did not close after process-tree termination")
+			grace := time.NewTimer(100 * time.Millisecond)
+			defer grace.Stop()
+			for received < 2 {
+				select {
+				case result := <-results:
+					output[result.index] = result.data
+					outputErr = errors.Join(outputErr, result.err)
+					received++
+				case <-grace.C:
+					return string(output[0]), string(output[1]), errors.Join(outputErr, timeoutErr)
+				}
+			}
+			return string(output[0]), string(output[1]), errors.Join(outputErr, timeoutErr)
+		}
+	}
+	return string(output[0]), string(output[1]), outputErr
+}
+
 func runExec(ctx context.Context, cmd string, args ...string) map[string]any {
+	return runExecWithPipeFactory(ctx, cmd, args, newCommandPipe)
+}
+
+func runExecWithPipeFactory(ctx context.Context, cmd string, args []string, newPipe commandPipeFactory) map[string]any {
 	if ctx == nil {
 		panic("exec: nil context requires baseCtx threading")
 	}
-	c := osexec.CommandContext(ctx, cmd, args...)
-	var stdout, stderr bytes.Buffer
-	c.Stdout = &stdout
-	c.Stderr = &stderr
-	c.Stdin = os.Stdin
-	err := c.Run()
-	code := 0
-	errStr := ""
+	tree, err := newProcessTree()
 	if err != nil {
-		if exitErr, ok := err.(*osexec.ExitError); ok {
-			code = exitErr.ExitCode()
-		} else {
-			code = -1
+		return map[string]any{
+			"stdout": "", "stderr": "", "code": -1,
+			"error": true, "message": err.Error(),
 		}
-		errStr = err.Error()
 	}
-	return map[string]any{
-		"stdout":  stdout.String(),
-		"stderr":  stderr.String(),
-		"code":    code,
-		"error":   err != nil,
-		"message": errStr,
+
+	var stdoutData, stderrData []byte
+	result := func(runErr error) map[string]any {
+		code := 0
+		errStr := ""
+		if runErr != nil {
+			if exitErr, ok := errors.AsType[*osexec.ExitError](runErr); ok {
+				code = exitErr.ExitCode()
+			} else {
+				code = -1
+			}
+			errStr = runErr.Error()
+		}
+		return map[string]any{
+			"stdout":  string(stdoutData),
+			"stderr":  string(stderrData),
+			"code":    code,
+			"error":   runErr != nil,
+			"message": errStr,
+		}
 	}
+
+	var stdoutReader, stdoutWriter, stderrReader, stderrWriter commandPipeEndpoint
+	closePipes := func() error {
+		return closeCommandPipes(&stdoutReader, &stdoutWriter, &stderrReader, &stderrWriter)
+	}
+
+	stdoutReader, stdoutWriter, err = newPipe()
+	if err != nil {
+		return result(errors.Join(err, tree.close(nil), closePipes()))
+	}
+	stderrReader, stderrWriter, err = newPipe()
+	if err != nil {
+		return result(errors.Join(err, tree.close(nil), closePipes()))
+	}
+
+	c := osexec.CommandContext(ctx, cmd, args...)
+	c.Stdout = stdoutWriter
+	c.Stderr = stderrWriter
+	c.Stdin = os.Stdin
+	setProcAttr(c)
+	c.Cancel = func() error {
+		return tree.kill(c)
+	}
+
+	if err := c.Start(); err != nil {
+		return result(errors.Join(err, tree.close(c), closePipes()))
+	}
+	writerErr := errors.Join(closeCommandPipe(&stdoutWriter), closeCommandPipe(&stderrWriter))
+	if writerErr != nil {
+		return result(cleanupFailedRunExec(
+			writerErr,
+			func() error { return c.Process.Kill() },
+			func() error { return tree.close(c) },
+			c.Wait,
+			closePipes,
+		))
+	}
+
+	if err := tree.attach(c); err != nil {
+		return result(cleanupFailedRunExec(
+			err,
+			func() error { return c.Process.Kill() },
+			func() error { return tree.close(c) },
+			c.Wait,
+			closePipes,
+		))
+	}
+
+	outputResults := startCommandOutputReaders(stdoutReader, stderrReader)
+	waitErr, closeErr := waitAndCloseProcessTree(c, tree)
+	stdoutText, stderrText, outputErr := collectCommandOutput(outputResults, stdoutReader, stderrReader)
+	stdoutData = []byte(stdoutText)
+	stderrData = []byte(stderrText)
+	return result(errors.Join(waitErr, closeErr, outputErr))
 }

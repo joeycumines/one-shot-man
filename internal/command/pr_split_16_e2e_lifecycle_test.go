@@ -17,9 +17,10 @@ func TestE2E_VerifyTabLifecycle(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
         var errors = [];
         setupPlanCache();
+        prSplit.cleanupVerifyWorktree = function() { return Promise.resolve(); };
         var s = initState('BRANCH_BUILDING');
         s.isProcessing = true;
         s.verifyingIdx = 0;
@@ -85,6 +86,17 @@ func TestE2E_VerifyTabLifecycle(t *testing.T) {
         done = true;
         r = update({type: 'Tick', id: 'verify-poll'}, s);
         s = r[0];
+        if (s._verifyPaneCleanupPending) {
+            if (s.activeVerifySession === null) {
+                errors.push('Phase3: session cleared before async cleanup settled');
+            }
+            if (s.verifyingIdx !== 0) {
+                errors.push('Phase3: branch advanced before async cleanup settled');
+            }
+            await settlePaneOperations(s);
+            r = update({type: 'Tick', id: 'verify-poll'}, s);
+            s = r[0];
+        }
         if (s.activeVerifySession !== null) {
             errors.push('Phase3: session should be null after completion');
         }

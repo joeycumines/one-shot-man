@@ -207,8 +207,6 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 	defer m.Unsubscribe(subID)
 
 	fwdCtx, fwdCancel := context.WithCancel(ctx)
-	defer fwdCancel()
-
 	resultCh := make(chan forwardResult, 1)
 
 	// Build pre-processor chain: pane key interception → SGR mouse filtering.
@@ -246,12 +244,20 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 		}
 	}
 
-	go forwardStdin(fwdCtx, resultCh, forwardConfig{
-		Stdin:      cfg.Stdin,
-		Writer:     w,
-		ToggleKey:  cfg.ToggleKey,
-		PreProcess: preProcess,
-	})
+	forwardDone := make(chan struct{})
+	go func() {
+		defer close(forwardDone)
+		forwardStdin(fwdCtx, resultCh, forwardConfig{
+			Stdin:      cfg.Stdin,
+			Writer:     w,
+			ToggleKey:  cfg.ToggleKey,
+			PreProcess: preProcess,
+		})
+	}()
+	defer func() {
+		fwdCancel()
+		<-forwardDone
+	}()
 
 	// ── Signal forwarding (SIGINT, SIGQUIT, SIGTSTP) ────────────────
 	sigResultCh := make(chan signalResult, 1)

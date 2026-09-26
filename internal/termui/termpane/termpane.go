@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -21,6 +22,13 @@ import (
 // this package can produce it — external code cannot inject fake output
 // messages.
 type outputMsg termmux.Event
+
+// outputBurstWindow gives the SessionManager worker and the subscription
+// bridge a bounded grace period to publish the rest of an already-started
+// output burst. Without it, WaitForOutput can consume the first forwarded
+// event while later chunks are still in flight and wake the next waiter for
+// the same burst.
+const outputBurstWindow = 5 * time.Millisecond
 
 // Model implements tea.Model and bridges a single termmux session into the
 // bubbletea rendering pipeline. Each Model owns one session and one
@@ -85,8 +93,12 @@ type Model struct {
 	// re-rendering.
 	cachedGen uint64
 
-	// closed tracks whether Close has been called (idempotent guard).
-	closed bool
+	// closed reports that Close has run. closeOnce guards the teardown
+	// itself; closed additionally keeps RefreshSnapshot from resurrecting the
+	// capture cache after the bridge goroutine is gone.
+	closed    bool
+	closeOnce sync.Once
+	closeDone chan struct{}
 
 	// appCursor mirrors the active screen's ApplicationCursor mode flag.
 	// When true, arrow keys and home/end are encoded using SS3 sequences
@@ -115,22 +127,25 @@ func NewModel(sessionID termmux.SessionID, manager *termmux.SessionManager, boun
 		bounds:    bounds,
 		outputCh:  make(chan termmux.Event, 64),
 		done:      make(chan struct{}),
+		closeDone: make(chan struct{}),
 	}
 
 	// Subscribe to the manager's EventBus for output events.
 	m.subID, m.eventCh = manager.Subscribe(64)
 
-	// Start the bridge goroutine: reads from EventBus subscription,
-	// filters by sessionID, and forwards to outputCh for the tea.Cmd.
-	m.wg.Add(1)
-	go m.bridgeEvents()
-
-	// Get initial capture.
+	// Get initial capture before the bridge starts so the two writers never
+	// race during construction.
 	m.refreshCapture()
 	if m.snap != nil {
 		m.appCursor = m.snap.ApplicationCursor
 		m.appKeypad = m.snap.KeypadApplication
 	}
+
+	// Start the bridge goroutine: reads from EventBus subscription,
+	// filters by sessionID, refreshes the cached snapshot, and forwards to
+	// outputCh for the tea.Cmd.
+	m.wg.Add(1)
+	go m.bridgeEvents()
 
 	return m
 }
@@ -170,12 +185,15 @@ func (m *Model) bridgeEvents() {
 				// Subscription channel closed (unsubscribed or bus closed).
 				return
 			}
-			// Filter: only forward events for our session.
+			// Filter: only forward events for this Model's sessionID.
 			if evt.SessionID != m.sessionID {
 				continue
 			}
 			select {
 			case m.outputCh <- evt:
+				// Refresh only for events that were actually delivered. JS
+				// rendering reads this cache and never performs manager IPC.
+				m.RefreshSnapshot()
 			case <-m.done:
 				return
 			default:
@@ -223,11 +241,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case outputMsg:
 		// Refresh capture from the manager (authoritative source).
 		m.mu.Lock()
-		m.refreshCapture()
-		if m.snap != nil {
-			m.appCursor = m.snap.ApplicationCursor
-			m.appKeypad = m.snap.KeypadApplication
-		}
+		m.refreshCaptureLocked()
 		m.mu.Unlock()
 		// Re-subscribe for the next event.
 		return m, m.waitForOutput
@@ -267,7 +281,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // them to the session's PTY via the manager.
 func (m *Model) forwardKey(msg tea.KeyPressMsg) {
 	keyStr := msg.String()
-	seq, ok := termmux.KeyToTermBytes(keyStr, m.appCursor, m.appKeypad)
+	m.mu.Lock()
+	appCursor := m.appCursor
+	appKeypad := m.appKeypad
+	m.mu.Unlock()
+	seq, ok := termmux.KeyToTermBytes(keyStr, appCursor, appKeypad)
 	if !ok {
 		// Unrecognized key — try the text field for printable characters.
 		if msg.Key().Text != "" {
@@ -411,15 +429,16 @@ func (m *Model) ANSIView() tea.View {
 }
 
 // WaitForOutput blocks until the next terminal event for this pane's session
-// is delivered (or the pane closes), then drains any events already queued so
-// a burst produces one wakeup instead of one per chunk. It reports false when
-// the pane is closed or another waiter is already active; callers must not
-// retry a false result in a tight loop because the active waiter is still
-// armed.
+// is delivered (or the pane closes), then coalesces events that arrive during
+// a short grace window so one output burst produces one wakeup. It reports
+// false when the pane is closed before an event arrives or another waiter is
+// already active; callers must not retry a false result in a tight loop
+// because the active waiter is still armed.
 //
-// Embedders use this instead of polling: a caller that wakes on each event and
-// renders from the latest published snapshot (ANSIView) sees every visible
-// change with no tick quantisation, and drained events carry no information
+// The grace window closes the hand-off race between the SessionManager worker,
+// which publishes output events, and bridgeEvents, which forwards them to the
+// pane. It runs on Bubble Tea's command goroutine, not the JavaScript event
+// loop, and does not block rendering. Drained events carry no information
 // that is lost because the render always reads the current snapshot.
 func (m *Model) WaitForOutput() bool {
 	if !m.waiting.CompareAndSwap(false, true) {
@@ -435,43 +454,52 @@ func (m *Model) WaitForOutput() bool {
 	case <-m.done:
 		return false
 	}
+
+	// A fixed, bounded window preserves single-flight semantics: a continuous
+	// stream cannot starve the waiter, while chunks already in the manager or
+	// bridge pipeline are folded into this wakeup.
+	timer := time.NewTimer(outputBurstWindow)
+	defer timer.Stop()
 	for {
 		select {
 		case _, ok := <-m.outputCh:
 			if !ok {
 				return true
 			}
-		default:
+		case <-timer.C:
+			return true
+		case <-m.done:
+			// The first event already woke this call. A concurrent Close
+			// must not turn that delivered event into a false result.
 			return true
 		}
 	}
 }
 
 // Close unsubscribes from the EventBus, signals the bridge goroutine to
-// exit, and closes outputCh. It is safe to call multiple times.
+// exit, and closes outputCh. It is safe to call multiple times. JavaScript
+// bindings must invoke this native method from a tracked worker.
 func (m *Model) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.closeOnce.Do(func() {
+		defer close(m.closeDone)
+		m.mu.Lock()
+		m.closed = true
+		// Signal the bridge goroutine to stop.
+		close(m.done)
+		m.mu.Unlock()
 
-	if m.closed {
-		return nil
-	}
-	m.closed = true
+		// Unsubscribe from the EventBus (closes the subscription channel).
+		m.manager.Unsubscribe(m.subID)
 
-	// Signal the bridge goroutine to stop.
-	close(m.done)
+		// Wait for the bridge goroutine to exit before closing outputCh.
+		// Without this, the goroutine could write to outputCh after it's
+		// closed, causing a "send on closed channel" panic.
+		m.wg.Wait()
 
-	// Unsubscribe from the EventBus (closes the subscription channel).
-	m.manager.Unsubscribe(m.subID)
-
-	// Wait for the bridge goroutine to exit before closing outputCh.
-	// Without this, the goroutine could write to outputCh after it's
-	// closed, causing a "send on closed channel" panic.
-	m.wg.Wait()
-
-	// Close outputCh so any pending waitForOutput Cmd returns nil.
-	close(m.outputCh)
-
+		// Close outputCh so any pending waitForOutput Cmd returns nil.
+		close(m.outputCh)
+	})
+	<-m.closeDone
 	return nil
 }
 
@@ -500,11 +528,24 @@ func (m *Model) Bounds() coordinate.Rect {
 // RefreshSnapshot fetches the latest screen snapshot from the session manager
 // and updates the cached application cursor/keypad flags. It is safe to call
 // from outside the BubbleTea Update loop (for example, from a JS wrapper that
-// composes the pane as a sub-component).
+// composes the pane as a sub-component). It is a no-op once Close has run:
+// the bridge is gone, so nothing would invalidate the cache again.
 func (m *Model) RefreshSnapshot() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.refreshCaptureLocked()
+}
+
+// refreshCaptureLocked is the single capture path shared by the bridge
+// refresh, the BubbleTea outputMsg branch, and external refreshes. It must be
+// called with m.mu held. Once Close has run there is no bridge left to
+// invalidate the cache, so a late refresh would only resurrect stale content
+// in a pane nobody is rendering.
+func (m *Model) refreshCaptureLocked() {
+	if m.closed {
+		return
+	}
 	m.refreshCapture()
 	if m.snap != nil {
 		m.appCursor = m.snap.ApplicationCursor

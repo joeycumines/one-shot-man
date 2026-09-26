@@ -846,15 +846,23 @@ drainLoop:
 		if !waitClosed(fwdCtx, cs.outputDispatchDone) {
 			return
 		}
-		resultCh <- forwardResult{ExitChildExit, nil}
+		sendForwardResult(fwdCtx, resultCh, forwardResult{ExitChildExit, nil})
 	}()
 
 	// Stdin → PTY forwarding (shared with SessionManager.Passthrough).
-	go forwardStdin(fwdCtx, resultCh, forwardConfig{
-		Stdin:     cfg.Stdin,
-		Writer:    proc,
-		ToggleKey: cfg.ToggleKey,
-	})
+	forwardDone := make(chan struct{})
+	go func() {
+		defer close(forwardDone)
+		forwardStdin(fwdCtx, resultCh, forwardConfig{
+			Stdin:     cfg.Stdin,
+			Writer:    proc,
+			ToggleKey: cfg.ToggleKey,
+		})
+	}()
+	defer func() {
+		cancel()
+		<-forwardDone
+	}()
 
 	// Signal forwarding (SIGINT, SIGQUIT, SIGTSTP).
 	sigResultCh := make(chan signalResult, 1)

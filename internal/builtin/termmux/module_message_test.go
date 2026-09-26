@@ -25,8 +25,8 @@ func TestModule_MessageBindings_Basic(t *testing.T) {
 	<-mgr.Started()
 
 	runtime := goja.New()
-	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("mux", wrapper)
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "mux", wrapper)
 
 	rec := newRecordingStringIO()
 	sio := parent.NewStringIOSession(rec)
@@ -35,9 +35,9 @@ func TestModule_MessageBindings_Basic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	_ = runtime.Set("sid", id)
+	setOnLoop(t, runtime, "sid", id)
 
-	v, err := runtime.RunString(`mux.displayMessage(sid, 'hello', 5000); mux.activeMessage(sid);`)
+	v, err := awaitJSValue(t, runtime, `await mux.displayMessage(sid, 'hello', 5000); return await mux.activeMessage(sid);`)
 	if err != nil {
 		t.Fatalf("displayMessage/activeMessage: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestModule_MessageBindings_Basic(t *testing.T) {
 		t.Errorf("activeMessage = %q, want %q", v.String(), "hello")
 	}
 
-	v, err = runtime.RunString(`mux.capture(sid).message`)
+	v, err = awaitJSValue(t, runtime, `return mux.capture(sid).message`)
 	if err != nil {
 		t.Fatalf("snapshot().message: %v", err)
 	}
@@ -72,8 +72,8 @@ func TestModule_MessageBindings_Expiry(t *testing.T) {
 	<-mgr.Started()
 
 	runtime := goja.New()
-	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("mux", wrapper)
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "mux", wrapper)
 
 	rec := newRecordingStringIO()
 	sio := parent.NewStringIOSession(rec)
@@ -82,16 +82,16 @@ func TestModule_MessageBindings_Expiry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	_ = runtime.Set("sid", sid)
+	setOnLoop(t, runtime, "sid", sid)
 
-	_, err = runtime.RunString(`mux.displayMessage(sid, 'expires fast', 1);`)
+	_, err = awaitJSValue(t, runtime, `return await mux.displayMessage(sid, 'expires fast', 1);`)
 	if err != nil {
 		t.Fatalf("displayMessage: %v", err)
 	}
 
 	time.Sleep(20 * time.Millisecond)
 
-	v, err := runtime.RunString(`mux.capture(sid).message`)
+	v, err := awaitJSValue(t, runtime, `return mux.capture(sid).message`)
 	if err != nil {
 		t.Fatalf("snapshot().message: %v", err)
 	}
@@ -135,8 +135,8 @@ func TestModule_MessageBindings_Queue(t *testing.T) {
 	<-mgr.Started()
 
 	runtime := goja.New()
-	wrapper := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("mux", wrapper)
+	wrapper := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "mux", wrapper)
 
 	rec := newRecordingStringIO()
 	sio := parent.NewStringIOSession(rec)
@@ -145,14 +145,14 @@ func TestModule_MessageBindings_Queue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	_ = runtime.Set("sid", id)
+	setOnLoop(t, runtime, "sid", id)
 
-	_, err = runtime.RunString(`mux.displayMessage(sid, 'first', 60000); mux.displayMessage(sid, 'second', 60000);`)
+	_, err = awaitJSValue(t, runtime, `await mux.displayMessage(sid, 'first', 60000); return await mux.displayMessage(sid, 'second', 60000);`)
 	if err != nil {
 		t.Fatalf("displayMessage queue: %v", err)
 	}
 
-	v, err := runtime.RunString(`mux.activeMessage(sid)`)
+	v, err := awaitJSValue(t, runtime, `return await mux.activeMessage(sid)`)
 	if err != nil {
 		t.Fatalf("activeMessage: %v", err)
 	}

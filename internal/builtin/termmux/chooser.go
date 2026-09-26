@@ -1,11 +1,13 @@
 package termmux
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/rivo/uniseg"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
@@ -33,19 +35,18 @@ type chooseTreeModel struct {
 // newChooseTreeModel creates a choose-tree overlay model backed by mgr.
 func newChooseTreeModel(
 	runtime *goja.Runtime,
-	mgr *parent.SessionManager,
-	active parent.SessionID,
+	chooser *parent.Chooser,
 	onSelect, onCancel goja.Callable,
 ) *chooseTreeModel {
 	if runtime == nil {
 		panic("newChooseTreeModel: runtime is required")
 	}
-	if mgr == nil {
-		panic("newChooseTreeModel: manager is required")
+	if chooser == nil {
+		panic("newChooseTreeModel: chooser is required")
 	}
 	return &chooseTreeModel{
 		runtime:  runtime,
-		chooser:  mgr.NewChooser(active),
+		chooser:  chooser,
 		onSelect: onSelect,
 		onCancel: onCancel,
 	}
@@ -251,98 +252,47 @@ func jsToTeaMsg(runtime *goja.Runtime, msgObj *goja.Object) tea.Msg {
 //   - newChooser(activeSessionID) - the existing data model export.
 //   - chooseTree(opts) - the ready-to-run BubbleTea overlay model.
 func registerChooserMethods(obj *goja.Object, s *muxState) {
-	_ = obj.Set("newChooser", func(activeSessionID uint64) map[string]any {
-		c := s.mgr.NewChooser(parent.SessionID(activeSessionID))
-		return map[string]any{
-			"show":    func() { c.Show() },
-			"hide":    func() { c.Hide() },
-			"visible": func() bool { return c.Visible() },
-			"up":      func() { c.Up() },
-			"down":    func() { c.Down() },
-			"selected": func() map[string]any {
-				item, ok := c.Selected()
-				if !ok {
-					return nil
-				}
-				return map[string]any{
-					"id":    uint64(item.ID),
-					"name":  item.Name,
-					"kind":  string(item.Kind),
-					"index": item.Index,
-				}
-			},
-			"render": func(width int) string { return c.Render(width) },
+	_ = obj.Set("newChooser", func(activeSessionID uint64) goja.Value {
+		if s.adapter == nil {
+			panic(s.runtime.NewGoError(fmt.Errorf("newChooser: event loop adapter is required")))
 		}
+		return s.adapter.TrackPromise(s.ctx, func(_ context.Context, settle gojaeventloop.TrackedSettlement) {
+			chooser := s.mgr.NewChooser(parent.SessionID(activeSessionID))
+			_ = settle.Settle(false, func(owner *goja.Runtime) any {
+				return chooserObject(owner, chooser)
+			})
+		})
 	})
 
 	_ = obj.Set("chooseTree", func(call goja.FunctionCall) goja.Value {
-		return chooseTreeFactory(s.runtime, call)
+		return chooseTreeFactory(s.ctx, s.adapter, s.runtime, call)
 	})
 }
 
-// chooseTreeFactory validates options and constructs the choose-tree overlay.
-//
-// JS signature:
-//
-//	termmux.chooseTree({
-//	  manager,        // required SessionManager wrapper (or raw SessionManager)
-//	  tea,            // required osm:bubbletea module object
-//	  onSelect?,      // optional callback(selectedID)
-//	  onCancel?,      // optional callback()
-//	})
-//
-// Returns an object with:
-//   - model: a BubbleTea model wrapper usable with tea.run
-//   - selected(): returns the currently selected ID (null on cancel)
-//   - visible(): returns whether the popup is visible
-func chooseTreeFactory(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
-	if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
-		panic(runtime.NewTypeError("chooseTree: options object is required"))
-	}
-	opts := call.Argument(0).ToObject(runtime)
-
-	mgrVal := opts.Get("manager")
-	if mgrVal == nil || goja.IsUndefined(mgrVal) || goja.IsNull(mgrVal) {
-		panic(runtime.NewTypeError("chooseTree: manager is required"))
-	}
-	manager := UnwrapSessionManager(mgrVal.ToObject(runtime))
-	if manager == nil {
-		panic(runtime.NewTypeError("chooseTree: manager must be a SessionManager wrapper"))
-	}
-
-	active := manager.ActiveID()
-	if v := opts.Get("activeSessionID"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-		active = parent.SessionID(v.ToInteger())
-	}
-
-	var onSelect, onCancel goja.Callable
-	if v := opts.Get("onSelect"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-		fn, ok := goja.AssertFunction(v)
+func chooserObject(runtime *goja.Runtime, chooser *parent.Chooser) *goja.Object {
+	result := runtime.NewObject()
+	_ = result.Set("show", func() { chooser.Show() })
+	_ = result.Set("hide", func() { chooser.Hide() })
+	_ = result.Set("visible", func() bool { return chooser.Visible() })
+	_ = result.Set("up", func() { chooser.Up() })
+	_ = result.Set("down", func() { chooser.Down() })
+	_ = result.Set("selected", func() map[string]any {
+		item, ok := chooser.Selected()
 		if !ok {
-			panic(runtime.NewTypeError("chooseTree: onSelect must be a function"))
+			return nil
 		}
-		onSelect = fn
-	}
-	if v := opts.Get("onCancel"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-		fn, ok := goja.AssertFunction(v)
-		if !ok {
-			panic(runtime.NewTypeError("chooseTree: onCancel must be a function"))
+		return map[string]any{
+			"id":    uint64(item.ID),
+			"name":  item.Name,
+			"kind":  string(item.Kind),
+			"index": item.Index,
 		}
-		onCancel = fn
-	}
+	})
+	_ = result.Set("render", func(width int) string { return chooser.Render(width) })
+	return result
+}
 
-	teaObjVal := opts.Get("tea")
-	if teaObjVal == nil || goja.IsUndefined(teaObjVal) || goja.IsNull(teaObjVal) {
-		panic(runtime.NewTypeError("chooseTree: tea module is required"))
-	}
-	teaObj := teaObjVal.ToObject(runtime)
-	newModelFn, ok := goja.AssertFunction(teaObj.Get("newModel"))
-	if !ok {
-		panic(runtime.NewTypeError("chooseTree: tea.newModel is not a function"))
-	}
-
-	model := newChooseTreeModel(runtime, manager, active, onSelect, onCancel)
-
+func buildChooseTreeResult(runtime *goja.Runtime, model *chooseTreeModel, teaObj *goja.Object, newModelFn goja.Callable) (*goja.Object, error) {
 	// Build a JS BubbleTea model config whose methods delegate to the Go model.
 	update := runtime.ToValue(func(call goja.FunctionCall) goja.Value {
 		var state goja.Value
@@ -374,9 +324,8 @@ func chooseTreeFactory(runtime *goja.Runtime, call goja.FunctionCall) goja.Value
 
 	modelWrapper, err := newModelFn(teaObj, cfg)
 	if err != nil {
-		panic(runtime.NewGoError(err))
+		return nil, err
 	}
-
 	result := runtime.NewObject()
 	_ = result.Set("model", modelWrapper)
 	_ = result.Set("selected", runtime.ToValue(func(goja.FunctionCall) goja.Value {
@@ -385,10 +334,86 @@ func chooseTreeFactory(runtime *goja.Runtime, call goja.FunctionCall) goja.Value
 	_ = result.Set("visible", runtime.ToValue(func(goja.FunctionCall) goja.Value {
 		return runtime.ToValue(model.Visible())
 	}))
-
-	// Expose the raw update closure for tests so they can drive the model
-	// directly without starting a full BubbleTea program.
 	_ = result.Set("_update", update)
+	return result, nil
+}
 
-	return result
+// chooseTreeFactory validates options and constructs the choose-tree overlay.
+// Manager state is loaded in a tracked worker; all Goja values are built on
+// the owning event-loop goroutine during settlement.
+//
+// JS signature:
+//
+//	termmux.chooseTree({
+//	  manager,        // required SessionManager wrapper
+//	  tea,            // required osm:bubbletea module object
+//	  onSelect?,      // optional callback(selectedID)
+//	  onCancel?       // optional callback()
+//	})
+func chooseTreeFactory(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+		panic(runtime.NewTypeError("chooseTree: options object is required"))
+	}
+	opts := call.Argument(0).ToObject(runtime)
+
+	mgrVal := opts.Get("manager")
+	if mgrVal == nil || goja.IsUndefined(mgrVal) || goja.IsNull(mgrVal) {
+		panic(runtime.NewTypeError("chooseTree: manager is required"))
+	}
+	manager := UnwrapSessionManager(mgrVal.ToObject(runtime))
+	if manager == nil {
+		panic(runtime.NewTypeError("chooseTree: manager must be a SessionManager wrapper"))
+	}
+
+	activeSet := false
+	active := parent.SessionID(0)
+	if v := opts.Get("activeSessionID"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		active = parent.SessionID(v.ToInteger())
+		activeSet = true
+	}
+
+	var onSelect, onCancel goja.Callable
+	if v := opts.Get("onSelect"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		fn, ok := goja.AssertFunction(v)
+		if !ok {
+			panic(runtime.NewTypeError("chooseTree: onSelect must be a function"))
+		}
+		onSelect = fn
+	}
+	if v := opts.Get("onCancel"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		fn, ok := goja.AssertFunction(v)
+		if !ok {
+			panic(runtime.NewTypeError("chooseTree: onCancel must be a function"))
+		}
+		onCancel = fn
+	}
+
+	teaObjVal := opts.Get("tea")
+	if teaObjVal == nil || goja.IsUndefined(teaObjVal) || goja.IsNull(teaObjVal) {
+		panic(runtime.NewTypeError("chooseTree: tea module is required"))
+	}
+	teaObj := teaObjVal.ToObject(runtime)
+	newModelFn, ok := goja.AssertFunction(teaObj.Get("newModel"))
+	if !ok {
+		panic(runtime.NewTypeError("chooseTree: tea.newModel is not a function"))
+	}
+	if adapter == nil {
+		panic(runtime.NewGoError(fmt.Errorf("chooseTree: event loop adapter is required")))
+	}
+
+	return adapter.TrackPromise(ctx, func(_ context.Context, settle gojaeventloop.TrackedSettlement) {
+		chooserActive := active
+		if !activeSet {
+			chooserActive = manager.ActiveID()
+		}
+		chooser := manager.NewChooser(chooserActive)
+		_ = settle.Settle(false, func(owner *goja.Runtime) any {
+			model := newChooseTreeModel(owner, chooser, onSelect, onCancel)
+			result, err := buildChooseTreeResult(owner, model, teaObj, newModelFn)
+			if err != nil {
+				return owner.NewGoError(err)
+			}
+			return result
+		})
+	})
 }

@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -40,10 +41,51 @@ type SpawnConfig struct {
 	EnvReplace bool
 }
 
+// processTree owns the platform-specific lifetime of a spawned process tree.
+// Cancellation and normal child completion both release the tree; keeping
+// this behind one interface prevents platform behavior from leaking into the
+// JS binding.
+var errProcessObservationUnsupported = errors.New("pre-reap process observation is unavailable on this platform")
+
+type processTree interface {
+	attach(*osexec.Cmd) error
+	kill(*osexec.Cmd) error
+	close(*osexec.Cmd) error
+}
+
+func waitAndCloseProcessTree(cmd *osexec.Cmd, tree processTree) (waitErr, closeErr error) {
+	preClose, probeErr := waitProcessBeforeReap(cmd)
+	if probeErr != nil {
+		// The leader remains unreaped while the tree is closed, so this
+		// ordering remains safe even when the platform cannot observe exit
+		// state before reap. Unsupported observation is not a command
+		// failure; it only means the conservative close-before-wait fallback
+		// was required.
+		closeErr = tree.close(cmd)
+		waitErr = cmd.Wait()
+		if errors.Is(probeErr, errProcessObservationUnsupported) {
+			return waitErr, closeErr
+		}
+		return waitErr, errors.Join(fmt.Errorf("observe process before reap: %w", probeErr), closeErr)
+	}
+	if preClose {
+		// On Unix the zombie leader still pins the process-group ID, so
+		// descendants can be closed before cmd.Wait reaps that leader.
+		closeErr = tree.close(cmd)
+		waitErr = cmd.Wait()
+		return waitErr, closeErr
+	}
+	// Windows Job Objects remain owned until after Wait.
+	waitErr = cmd.Wait()
+	closeErr = tree.close(cmd)
+	return waitErr, closeErr
+}
+
 // ChildProcess represents a running child process with piped I/O.
 type ChildProcess struct {
 	mu       sync.Mutex
 	cmd      *osexec.Cmd
+	tree     processTree
 	closed   bool
 	done     chan struct{} // closed when process exits
 	exitCode int
@@ -177,16 +219,9 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 		cmd.Env = env
 	}
 
-	// Platform-specific process group setup (enables tree-kill on Unix).
+	// Platform-specific process setup. The process tree is attached after
+	// Start, when a platform handle for the child is available.
 	setProcAttr(cmd)
-
-	// Override default context cancellation to kill the entire process group.
-	// Go's default CommandContext kills only the parent PID; since we set
-	// Setpgid, child processes would survive. This ensures the entire tree
-	// is killed when the context is cancelled.
-	cmd.Cancel = func() error {
-		return killProcess(cmd)
-	}
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -209,13 +244,45 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 	}
 	cmd.Stderr = stderrWriter
 
+	tree, err := newProcessTree()
+	if err != nil {
+		cleanupErr := errors.Join(
+			stdinPipe.Close(),
+			stdoutReader.Close(),
+			stdoutWriter.Close(),
+			stderrReader.Close(),
+			stderrWriter.Close(),
+		)
+		return nil, errors.Join(err, cleanupErr)
+	}
+	// CommandContext's default cancellation kills only the direct child.
+	// Route cancellation through the platform tree owner instead.
+	cmd.Cancel = func() error {
+		return tree.kill(cmd)
+	}
+
 	if err := cmd.Start(); err != nil {
+		cleanupErr := errors.Join(
+			tree.close(cmd),
+			stdinPipe.Close(),
+			stdoutReader.Close(),
+			stdoutWriter.Close(),
+			stderrReader.Close(),
+			stderrWriter.Close(),
+		)
+		return nil, errors.Join(err, cleanupErr)
+	}
+	if err := tree.attach(cmd); err != nil {
+		killErr := cmd.Process.Kill()
+		waitErr := cmd.Wait()
+		closeErr := tree.close(cmd)
+		cleanupErr := errors.Join(killErr, waitErr, closeErr)
 		_ = stdinPipe.Close()
 		_ = stdoutReader.Close()
 		_ = stdoutWriter.Close()
 		_ = stderrReader.Close()
 		_ = stderrWriter.Close()
-		return nil, err
+		return nil, errors.Join(err, cleanupErr)
 	}
 	// The child owns the duplicated writer descriptors after Start. Retain only
 	// the parent-side readers so Wait cannot close the streams before pumps drain.
@@ -226,6 +293,7 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 
 	child := &ChildProcess{
 		cmd:       cmd,
+		tree:      tree,
 		done:      make(chan struct{}),
 		stdinPipe: stdinPipe,
 		stdout:    newPipeQueue(),
@@ -248,7 +316,26 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 	// the pipes and keep them open after the direct child exits, so waiting for
 	// pumps first would make Wait depend on unrelated descendant lifetimes.
 	go func() {
-		err := cmd.Wait()
+		waitErr, closeErr := waitAndCloseProcessTree(cmd, tree)
+
+		// Mark the direct child reaped before releasing the tree owner. This
+		// makes later Kill calls no-ops and prevents any platform fallback from
+		// targeting a recycled process ID.
+		child.mu.Lock()
+		child.closed = true
+		if waitErr != nil {
+			if exitErr, ok := waitErr.(*osexec.ExitError); ok {
+				child.exitCode = exitErr.ExitCode()
+			} else {
+				child.exitCode = -1
+			}
+			child.exitErr = waitErr
+		}
+		if closeErr != nil {
+			child.exitErr = errors.Join(child.exitErr, fmt.Errorf("close process tree: %w", closeErr))
+		}
+		child.mu.Unlock()
+
 		pumpDone := make(chan struct{})
 		go func() {
 			pumpWg.Wait()
@@ -261,16 +348,6 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 			_ = stderrPipe.Close()
 			pumpWg.Wait()
 		}
-		child.mu.Lock()
-		if err != nil {
-			if exitErr, ok := err.(*osexec.ExitError); ok {
-				child.exitCode = exitErr.ExitCode()
-			} else {
-				child.exitCode = -1
-			}
-			child.exitErr = err
-		}
-		child.mu.Unlock()
 		close(child.done)
 	}()
 
@@ -280,6 +357,7 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 // pumpPipe reads from r in chunks and sends to ch. Closes ch on EOF or error.
 func (c *ChildProcess) pumpPipe(r io.ReadCloser, q *pipeQueue) {
 	defer q.close()
+	defer r.Close()
 	buf := make([]byte, DefaultBufSize)
 	for {
 		n, err := r.Read(buf)
@@ -378,7 +456,7 @@ func (c *ChildProcess) Wait() (int, error) {
 	return c.exitCode, c.exitErr
 }
 
-// Kill terminates the process. On Unix, kills the entire process group.
+// Kill terminates the process and its platform-owned descendants.
 func (c *ChildProcess) Kill() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -386,10 +464,14 @@ func (c *ChildProcess) Kill() error {
 		return nil
 	}
 	if c.cmd.Process == nil {
+		c.closed = true
 		return nil
 	}
+	if err := c.tree.kill(c.cmd); err != nil {
+		return err
+	}
 	c.closed = true
-	return killProcess(c.cmd)
+	return nil
 }
 
 // Pid returns the process ID.
@@ -408,12 +490,12 @@ func (c *ChildProcess) Pid() int {
 func (c *ChildProcess) Signal(name string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.closed {
-		return nil
-	}
 	sig := signalFromName(name)
 	if sig == nil {
 		return fmt.Errorf("signal %q: %w", name, os.ErrInvalid)
+	}
+	if c.closed {
+		return nil
 	}
 	select {
 	case <-c.done:
@@ -424,5 +506,5 @@ func (c *ChildProcess) Signal(name string) error {
 		return nil
 	default:
 	}
-	return signalProcess(c.cmd, sig)
+	return signalProcess(c.cmd, c.tree, sig)
 }

@@ -146,7 +146,7 @@
     // An optional second argument specifies the lastCompletedStep name for
     // crash recovery.  When provided, the snapshot version is bumped to 2.
     async function savePlan(path, lastCompletedStep) {
-        path = resolvePlanPath(path);
+        path = resolvePlanPath(path, state.planCache && state.planCache.dir);
         if (!osmod) {
             return { error: 'osm:os module not available — cannot persist plan' };
         }
@@ -196,7 +196,7 @@
 
     // --- loadPlan — reads a previously-saved plan snapshot from disk ---
     async function loadPlan(path) {
-        path = resolvePlanPath(path);
+        path = resolvePlanPath(path, runtime.dir);
         if (!osmod) {
             return { error: 'osm:os module not available — cannot load plan' };
         }

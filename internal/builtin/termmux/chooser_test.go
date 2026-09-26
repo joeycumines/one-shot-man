@@ -40,7 +40,7 @@ func setupChooseTreeModel(t *testing.T) (*parent.SessionManager, *chooseTreeMode
 	}
 
 	runtime := goja.New()
-	model := newChooseTreeModel(runtime, mgr, mgr.ActiveID(), nil, nil)
+	model := newChooseTreeModel(runtime, mgr.NewChooser(mgr.ActiveID()), nil, nil)
 
 	cleanup := func() {
 		cancel()

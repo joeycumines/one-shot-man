@@ -29,22 +29,22 @@ func TestSearchForwardBackwardBindings_DefaultSearcher(t *testing.T) {
 
 		var sid = s.sid;
 		var mgr = s.mgr;
-		var fwd = mgr.searchForward(sid, "hello");
+		var fwd = await mgr.searchForward(sid, "hello");
 		if (!fwd.found || fwd.row !== 1 || fwd.col !== 1) {
 			throw new Error("searchForward = " + JSON.stringify(fwd));
 		}
 
-		var bwd = mgr.searchBackward(sid, "world");
+		var bwd = await mgr.searchBackward(sid, "world");
 		if (!bwd.found || bwd.row !== 1 || bwd.col !== 7) {
 			throw new Error("searchBackward = " + JSON.stringify(bwd));
 		}
 
-		var none = mgr.searchForward(sid, "xyz");
+		var none = await mgr.searchForward(sid, "xyz");
 		if (none.found) {
 			throw new Error("expected no match");
 		}
 
-		var empty = mgr.searchForward(sid, "");
+		var empty = await mgr.searchForward(sid, "");
 		if (empty.found) {
 			throw new Error("empty pattern must not match");
 		}
@@ -80,7 +80,7 @@ func TestNewCopyModeSearcher_OptionalCallback(t *testing.T) {
 		await waitSnapshot("alpha", Date.now() + 5000);
 
 		var searcher = s.mgr.newCopyModeSearcher();
-		s.mgr.activate(s.sid);
+		await s.mgr.activate(s.sid);
 		searcher.startSearch(0, 0, 0);
 		searcher.appendChar("a");
 		searcher.appendChar("l");
@@ -130,7 +130,7 @@ func TestNewCopyModeSearcher_BackwardNoCallback(t *testing.T) {
 		await waitSnapshot("one", Date.now() + 5000);
 
 		var searcher = s.mgr.newCopyModeSearcher();
-		s.mgr.activate(s.sid);
+		await s.mgr.activate(s.sid);
 		searcher.startSearch(1, 0, 10);
 		searcher.appendChar("o");
 		searcher.appendChar("n");
@@ -156,13 +156,13 @@ func TestSearchForwardBackwardBindings_InvalidSession(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := sessionRun(t, runtime, `
-		var fwd = tuiMux.searchForward(999999, "hello");
+	_, err := awaitJSValue(t, runtime, `
+		var fwd = await tuiMux.searchForward(999999, "hello");
 		if (fwd.found) {
 			throw new Error("expected no match for invalid session");
 		}
 
-		var bwd = tuiMux.searchBackward(999999, "hello");
+		var bwd = await tuiMux.searchBackward(999999, "hello");
 		if (bwd.found) {
 			throw new Error("expected no match for invalid session");
 		}

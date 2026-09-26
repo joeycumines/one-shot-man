@@ -61,6 +61,7 @@ func TestChunk16_StartAutoAnalysis_DefersWhenUnresolved(t *testing.T) {
 			var r = await sendKey(s, 'enter');
 			var state = r[0];
 			var cmd = r[1];
+			await settleConfigValidation(state);
 
 			if (!state.pendingAutoAnalysis) {
 				return 'FAIL: expected pendingAutoAnalysis=true, got ' + state.pendingAutoAnalysis;
@@ -105,33 +106,34 @@ func TestChunk16_StartAutoAnalysis_ProceedsWhenResolved(t *testing.T) {
 		var restoreGit = setupGitMock();
 		try {
 			setupPlanCache();
-		var s = initState('CONFIG');
-		s.configValidationError = null;
-		s.availableBranches = [];
-		s.outputLines = [];
-		s.outputAutoScroll = true;
-		s.autoSplitRunning = false;
-		s.autoSplitResult = null;
-		s.focusIndex = -1;
-		s.configFieldEditing = null;
+			var s = initState('CONFIG');
+			s.configValidationError = null;
+			s.availableBranches = [];
+			s.outputLines = [];
+			s.outputAutoScroll = true;
+			s.autoSplitRunning = false;
+			s.autoSplitResult = null;
+			s.focusIndex = -1;
+			s.configFieldEditing = null;
 
-		// Create a RESOLVED executor.
-		globalThis.prSplit._state.agentExecutor = {
-			resolved: { command: 'agent', type: 'agent-code' },
-			isAvailable: function() { return true; }
-		};
+			// Create a RESOLVED executor.
+			globalThis.prSplit._state.agentExecutor = {
+				resolved: { command: 'agent', type: 'agent-code' },
+				isAvailable: function() { return true; }
+			};
 
-		var r = await sendKey(s, 'enter');
-		var state = r[0];
+			var r = await sendKey(s, 'enter');
+			var state = r[0];
+			await settleConfigValidation(state);
 
-		if (state.pendingAutoAnalysis) {
-			return 'FAIL: should not have pendingAutoAnalysis when executor is resolved';
-		}
-		if (!state.autoSplitRunning) {
-			return 'FAIL: expected autoSplitRunning=true (pipeline launched)';
-		}
+			if (state.pendingAutoAnalysis) {
+				return 'FAIL: should not have pendingAutoAnalysis when executor is resolved';
+			}
+			if (!state.autoSplitRunning) {
+				return 'FAIL: expected autoSplitRunning=true (pipeline launched)';
+			}
 
-		return 'OK';
+			return 'OK';
 		} finally {
 			restoreGit();
 		}
@@ -180,6 +182,7 @@ func TestChunk16_HandleAgentCheckPoll_ResumesPendingAutoAnalysis(t *testing.T) {
 
 			s.agentCheckRunning = false;
 			s.agentCheckStatus = 'available';
+			s.isProcessing = true;
 			s.pendingAutoAnalysis = true;
 			globalThis.prSplit._state.agentExecutor = {
 				resolved: { command: 'agent', type: 'agent-code' },
@@ -188,6 +191,7 @@ func TestChunk16_HandleAgentCheckPoll_ResumesPendingAutoAnalysis(t *testing.T) {
 
 			var r = await update({type: 'Tick', id: 'agent-check-poll'}, s);
 			var state = r[0];
+			await settleConfigValidation(state);
 
 			if (state.pendingAutoAnalysis) {
 				return 'FAIL: pendingAutoAnalysis should be cleared';
@@ -243,6 +247,7 @@ func TestChunk16_HandleAgentCheckPoll_FallsBackWhenUnavailable(t *testing.T) {
 
 			s.agentCheckRunning = false;
 			s.agentCheckStatus = 'unavailable';
+			s.isProcessing = true;
 			s.pendingAutoAnalysis = true;
 			globalThis.prSplit._state.agentExecutor = { resolved: null };
 
@@ -316,6 +321,7 @@ func TestChunk16_StartAutoAnalysis_NoSyncIsAvailableCall(t *testing.T) {
 			try {
 				var r = await sendKey(s, 'enter');
 				var state = r[0];
+				await settleConfigValidation(state);
 				if (!state.pendingAutoAnalysis) {
 					return 'FAIL: expected deferral (pendingAutoAnalysis), got ' + state.pendingAutoAnalysis;
 				}

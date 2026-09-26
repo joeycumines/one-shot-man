@@ -35,29 +35,29 @@ func TestCopyModeKey_JS_NotInCopyMode(t *testing.T) {
 		var sid = s.sid;
 		var mgr = s.mgr;
 
-		var unknown = mgr.copyModeKey(sid, "h");
+		var unknown = await mgr.copyModeKey(sid, "h");
 		if (unknown.error === "") {
 			throw new Error("expected error for movement key outside copy mode");
 		}
 
-		var esc = mgr.copyModeKey(sid, "esc");
+		var esc = await mgr.copyModeKey(sid, "esc");
 		if (esc.error !== "") {
 			throw new Error("esc outside copy mode should be a no-op: " + esc.error);
 		}
 
-		var colon = mgr.copyModeKey(sid, ":");
+		var colon = await mgr.copyModeKey(sid, ":");
 		if (colon.error !== "") {
 			throw new Error("colon failed: " + colon.error);
 		}
-		if (!mgr.isCopyModeActive(sid)) {
+		if (!await mgr.isCopyModeActive(sid)) {
 			throw new Error("colon should enter copy mode");
 		}
 
-		var q = mgr.copyModeKey(sid, "q");
+		var q = await mgr.copyModeKey(sid, "q");
 		if (q.error !== "") {
 			throw new Error("q failed: " + q.error);
 		}
-		if (mgr.isCopyModeActive(sid)) {
+		if (await mgr.isCopyModeActive(sid)) {
 			throw new Error("q should exit copy mode");
 		}
 	`)
@@ -82,28 +82,28 @@ func TestCopyModeKey_JS_ScrollMovement(t *testing.T) {
 
 		var sid = s.sid;
 		var mgr = s.mgr;
-		mgr.enterCopyMode(sid);
+		await mgr.enterCopyMode(sid);
 
-		var g = mgr.copyModeKey(sid, "g");
+		var g = await mgr.copyModeKey(sid, "g");
 		if (g.error !== "") throw new Error("g: " + g.error);
 
-		var k = mgr.copyModeKey(sid, "k");
+		var k = await mgr.copyModeKey(sid, "k");
 		if (k.error !== "") throw new Error("k: " + k.error);
 		if (k.action !== "MoveUp(1)") throw new Error("unexpected action for k: " + k.action);
 
-		var j = mgr.copyModeKey(sid, "j");
+		var j = await mgr.copyModeKey(sid, "j");
 		if (j.error !== "") throw new Error("j: " + j.error);
 		if (j.action !== "MoveDown(1)") throw new Error("unexpected action for j: " + j.action);
 
-		var pg = mgr.copyModeKey(sid, "pageUp");
+		var pg = await mgr.copyModeKey(sid, "pageUp");
 		if (pg.error !== "") throw new Error("pageUp: " + pg.error);
 		if (pg.action !== "PageUp") throw new Error("unexpected action for pageUp: " + pg.action);
 
-		var pd = mgr.copyModeKey(sid, "pageDown");
+		var pd = await mgr.copyModeKey(sid, "pageDown");
 		if (pd.error !== "") throw new Error("pageDown: " + pd.error);
 		if (pd.action !== "PageDown") throw new Error("unexpected action for pageDown: " + pd.action);
 
-		if (!mgr.isCopyModeActive(sid)) throw new Error("copy mode should remain active");
+		if (!await mgr.isCopyModeActive(sid)) throw new Error("copy mode should remain active");
 	`)
 	if err != nil {
 		t.Fatalf("scroll test: %v", err)
@@ -127,26 +127,26 @@ func TestCopyModeKey_JS_SelectAndCopy(t *testing.T) {
 		var sid = s.sid;
 		var mgr = s.mgr;
 
-		mgr.enterCopyMode(sid);
-		if (!mgr.isCopyModeActive(sid)) {
+		await mgr.enterCopyMode(sid);
+		if (!await mgr.isCopyModeActive(sid)) {
 			throw new Error("enterCopyMode did not activate copy mode");
 		}
 
-		var fwd0 = mgr.copyModeKey(sid, "k");
+		var fwd0 = await mgr.copyModeKey(sid, "k");
 		if (!fwd0.consumed) { throw new Error("k not consumed"); }
-		fwd0 = mgr.copyModeKey(sid, "0");
+		fwd0 = await mgr.copyModeKey(sid, "0");
 		if (!fwd0.consumed) { throw new Error("0 not consumed"); }
-		fwd0 = mgr.copyModeKey(sid, " ");
+		fwd0 = await mgr.copyModeKey(sid, " ");
 		if (!fwd0.consumed) { throw new Error("space not consumed"); }
 
-		fwd0 = mgr.copyModeKey(sid, "end");
+		fwd0 = await mgr.copyModeKey(sid, "end");
 		if (!fwd0.consumed) { throw new Error("end not consumed"); }
 
-		fwd0 = mgr.copyModeKey(sid, "enter");
+		fwd0 = await mgr.copyModeKey(sid, "enter");
 		if (!fwd0.consumed) { throw new Error("enter not consumed"); }
 		if (fwd0.action !== "CopyAndExit") { throw new Error("expected CopyAndExit, got " + fwd0.action); }
 
-		if (mgr.isCopyModeActive(sid)) {
+		if (await mgr.isCopyModeActive(sid)) {
 			throw new Error("enter should exit copy mode");
 		}
 
@@ -172,17 +172,17 @@ func TestCopyModeKey_JS_SearchKeys(t *testing.T) {
 
 		var sid = s.sid;
 		var mgr = s.mgr;
-		mgr.enterCopyMode(sid);
+		await mgr.enterCopyMode(sid);
 
-		var fwd = mgr.copyModeKey(sid, "/");
+		var fwd = await mgr.copyModeKey(sid, "/");
 		if (fwd.error !== "") throw new Error("/: " + fwd.error);
 		if (fwd.action !== "SearchForward") throw new Error("unexpected action: " + fwd.action);
 
-		var bwd = mgr.copyModeKey(sid, "?");
+		var bwd = await mgr.copyModeKey(sid, "?");
 		if (bwd.error !== "") throw new Error("?: " + bwd.error);
 		if (bwd.action !== "SearchBackward") throw new Error("unexpected action: " + bwd.action);
 
-		var n = mgr.copyModeKey(sid, "n");
+		var n = await mgr.copyModeKey(sid, "n");
 		if (n.error !== "") throw new Error("n: " + n.error);
 	`)
 	if err != nil {

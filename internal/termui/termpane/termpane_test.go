@@ -884,3 +884,128 @@ func TestMouseForwarding_RoutesToModelSessionEvenIfInactive(t *testing.T) {
 		t.Errorf("session 1 (active session) received %q, want empty", got)
 	}
 }
+
+// TestRefreshSnapshot_AfterOutputQueueSaturation covers the passive-embedder
+// case that bridgeEvents cannot serve on its own. Nothing consumes outputCh
+// here (no BubbleTea model is running), so once the queue is full the bridge
+// drops every further event and the cached snapshot goes stale while the
+// manager keeps advancing. RefreshSnapshot is the only path that resynchronizes
+// the pane, which is why the JavaScript view binding calls it before rendering.
+func TestRefreshSnapshot_AfterOutputQueueSaturation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+
+	mgr, session, sid, cleanup := startTestManager(t)
+	defer cleanup()
+
+	model := NewModel(sid, mgr, coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	})
+	defer model.Close()
+
+	// Fill the pane's output queue; the bridge refreshes on delivery, so this
+	// also pins the cached snapshot to a known-stale point.
+	go func() {
+		for i := 0; i < cap(model.outputCh); i++ {
+			session.readerCh <- []byte("filler\r\n")
+		}
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(model.outputCh) < cap(model.outputCh) {
+		if time.Now().After(deadline) {
+			t.Fatal("output queue never filled")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	session.readerCh <- []byte("TAILMARKER\r\n")
+	for {
+		snap := mgr.Snapshot(sid)
+		if snap != nil && strings.Contains(snapshotPlainText(snap), "TAILMARKER") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("manager snapshot did not reach the marker")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// The marker event was dropped by the bridge, so the pane stays stale.
+	// Hold the assertion open briefly so a stray refresh is caught rather
+	// than raced past.
+	staleDeadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(staleDeadline) {
+		if strings.Contains(model.ANSIView().Content, "TAILMARKER") {
+			t.Fatal("pane refreshed without a delivered event; saturation precondition lost")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	model.RefreshSnapshot()
+	if got := model.ANSIView().Content; !strings.Contains(got, "TAILMARKER") {
+		t.Error("RefreshSnapshot did not resynchronize the cached view after saturation")
+	}
+}
+
+// TestRefreshSnapshot_AfterCloseIsNoOp pins the post-close contract: once
+// Close has run there is no bridge left to invalidate the cache, so a late
+// refresh must not resurrect content in a pane nobody renders.
+func TestRefreshSnapshot_AfterCloseIsNoOp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+
+	mgr, session, sid, cleanup := startTestManager(t)
+	defer cleanup()
+
+	model := NewModel(sid, mgr, coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	})
+
+	session.readerCh <- []byte("BEFORE\r\n")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if strings.Contains(snapshotPlainText(mgr.Snapshot(sid)), "BEFORE") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("manager snapshot did not reach the pre-close marker")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	model.RefreshSnapshot()
+	before := model.ANSIView().Content
+	if !strings.Contains(before, "BEFORE") {
+		t.Fatal("pre-close view did not capture the marker")
+	}
+
+	if err := model.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	session.readerCh <- []byte("AFTER\r\n")
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		if strings.Contains(snapshotPlainText(mgr.Snapshot(sid)), "AFTER") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("manager snapshot did not reach the post-close marker")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	model.RefreshSnapshot()
+	if after := model.ANSIView().Content; after != before {
+		t.Error("RefreshSnapshot updated the cache after Close")
+	}
+	// The BubbleTea output branch shares the guarded capture path.
+	if _, cmd := model.Update(outputMsg{}); cmd == nil {
+		t.Error("outputMsg branch must still re-arm the output wait")
+	}
+	if after := model.ANSIView().Content; after != before {
+		t.Error("outputMsg updated the cache after Close")
+	}
+}

@@ -1,13 +1,15 @@
 package termmux
 
 import (
+	"sync/atomic"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
 // SessionLock manages the locked state of a session.
 type SessionLock struct {
 	hashedPassword []byte
-	locked         bool
+	locked         atomic.Bool
 }
 
 // LockSession locks the session with the given plaintext password.
@@ -18,7 +20,7 @@ func (l *SessionLock) Lock(password string) error {
 		return err
 	}
 	l.hashedPassword = hash
-	l.locked = true
+	l.locked.Store(true)
 	return nil
 }
 
@@ -26,18 +28,18 @@ func (l *SessionLock) Lock(password string) error {
 // Returns true if the password matches, false otherwise.
 // A failed attempt does not change the locked state.
 func (l *SessionLock) Unlock(password string) bool {
-	if !l.locked {
+	if !l.locked.Load() {
 		return true
 	}
 	if err := bcrypt.CompareHashAndPassword(l.hashedPassword, []byte(password)); err != nil {
 		return false
 	}
-	l.locked = false
+	l.locked.Store(false)
 	l.hashedPassword = nil
 	return true
 }
 
 // IsLocked returns whether the session is currently locked.
 func (l *SessionLock) IsLocked() bool {
-	return l.locked
+	return l.locked.Load()
 }

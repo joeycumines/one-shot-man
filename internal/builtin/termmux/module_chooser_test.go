@@ -34,19 +34,20 @@ func setupChooseTreeJS(t *testing.T) (*goja.Runtime, *parent.SessionManager, []p
 		}
 		ids[i] = id
 	}
-	if err := mgr.Activate(ids[0]); err != nil {
-		t.Fatalf("Activate: %v", err)
-	}
-
-	runtime := goja.New()
+	runtime, termmux := testRequire(t)
 
 	btMgr := bubbletea.NewManager(ctx, nil, nil, &bubbletea.SyncJSRunner{Runtime: runtime}, nil, nil)
 	teaModuleObj := runtime.NewObject()
 	bubbletea.Require(ctx, btMgr)(runtime, teaModuleObj)
-	_ = runtime.Set("tea", teaModuleObj.Get("exports"))
+	setOnLoop(t, runtime, "tea", teaModuleObj.Get("exports"))
 
-	tuiMux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("tuiMux", tuiMux)
+	tuiMux := WrapSessionManager(ctx, adapterForRuntime(t, runtime), loopForRuntime(t, runtime), runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
+	setOnLoop(t, runtime, "termmux", termmux)
+	setOnLoop(t, runtime, "activeID", uint64(ids[0]))
+	if _, err := awaitJSValue(t, runtime, `return await tuiMux.activate(activeID)`); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
 
 	cleanup := func() {
 		cancel()
@@ -63,17 +64,17 @@ func TestChooseTree_JSBinding_API(t *testing.T) {
 	runtime, _, ids, cleanup := setupChooseTreeJS(t)
 	defer cleanup()
 
-	_ = runtime.Set("id1", uint64(ids[0]))
+	setOnLoop(t, runtime, "id1", uint64(ids[0]))
 
-	v, err := runtime.RunString(`
-		var tree = tuiMux.chooseTree({manager: tuiMux, tea: tea});
-		tree &&
-		tree.model &&
-		tree.model._type === 'bubbleteaModel' &&
-		typeof tree.selected === 'function' &&
-		typeof tree.visible === 'function' &&
-		tree.selected() === id1 &&
-		tree.visible() === true;
+	v, err := awaitJSValue(t, runtime, `
+		var tree = await tuiMux.chooseTree({manager: tuiMux, tea: tea});
+		return tree &&
+			tree.model &&
+			tree.model._type === 'bubbleteaModel' &&
+			typeof tree.selected === 'function' &&
+			typeof tree.visible === 'function' &&
+			tree.selected() === id1 &&
+			tree.visible() === true;
 	`)
 	if err != nil {
 		t.Fatalf("chooseTree API check: %v", err)
@@ -91,12 +92,12 @@ func TestChooseTree_JSBinding_Selection(t *testing.T) {
 	runtime, _, ids, cleanup := setupChooseTreeJS(t)
 	defer cleanup()
 
-	_ = runtime.Set("id1", uint64(ids[0]))
-	_ = runtime.Set("id2", uint64(ids[1]))
+	setOnLoop(t, runtime, "id1", uint64(ids[0]))
+	setOnLoop(t, runtime, "id2", uint64(ids[1]))
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var selectedID = null;
-		var tree = tuiMux.chooseTree({
+		var tree = await tuiMux.chooseTree({
 			manager: tuiMux,
 			tea: tea,
 			onSelect: function(id) { selectedID = id; }
@@ -109,7 +110,7 @@ func TestChooseTree_JSBinding_Selection(t *testing.T) {
 		ok = ok && tree.selected() === id2;
 		ok = ok && tree.visible() === false;
 		ok = ok && selectedID === id2;
-		ok;
+		return ok;
 	`)
 	if err != nil {
 		t.Fatalf("chooseTree selection: %v", err)
@@ -127,12 +128,12 @@ func TestChooseTree_JSBinding_Cancel(t *testing.T) {
 	runtime, _, ids, cleanup := setupChooseTreeJS(t)
 	defer cleanup()
 
-	_ = runtime.Set("id1", uint64(ids[0]))
-	_ = runtime.Set("id2", uint64(ids[1]))
+	setOnLoop(t, runtime, "id1", uint64(ids[0]))
+	setOnLoop(t, runtime, "id2", uint64(ids[1]))
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var canceled = false;
-		var tree = tuiMux.chooseTree({
+		var tree = await tuiMux.chooseTree({
 			manager: tuiMux,
 			tea: tea,
 			onCancel: function() { canceled = true; }
@@ -145,7 +146,7 @@ func TestChooseTree_JSBinding_Cancel(t *testing.T) {
 		ok = ok && tree.selected() === null;
 		ok = ok && tree.visible() === false;
 		ok = ok && canceled === true;
-		ok;
+		return ok;
 	`)
 	if err != nil {
 		t.Fatalf("chooseTree cancel: %v", err)
@@ -163,12 +164,12 @@ func TestChooseTree_JSBinding_CancelQ(t *testing.T) {
 	runtime, _, ids, cleanup := setupChooseTreeJS(t)
 	defer cleanup()
 
-	_ = runtime.Set("id1", uint64(ids[0]))
+	setOnLoop(t, runtime, "id1", uint64(ids[0]))
 
-	v, err := runtime.RunString(`
-		var tree = tuiMux.chooseTree({manager: tuiMux, tea: tea});
+	v, err := awaitJSValue(t, runtime, `
+		var tree = await tuiMux.chooseTree({manager: tuiMux, tea: tea});
 		tree._update({type: 'Key', key: 'q'});
-		tree.selected() === null && tree.visible() === false;
+		return tree.selected() === null && tree.visible() === false;
 	`)
 	if err != nil {
 		t.Fatalf("chooseTree cancel q: %v", err)

@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
@@ -49,12 +50,157 @@ type muxState struct {
 	statusEnabled         bool
 	resizeFn              func(rows, cols uint16) error
 	activeSessionTarget   parent.SessionTarget
+	activeIDCached        atomic.Uint64
+	knownSessions         sync.Map
+	doneSessions          sync.Map
+	cacheMu               sync.Mutex
+	cacheEpoch            atomic.Uint64
+	termRowsCached        atomic.Int64
+	termColsCached        atomic.Int64
 	swappedOnce           bool
 	persistenceMu         sync.Mutex
 	mu                    sync.RWMutex
 	inPassthrough         bool
 	onListeners           map[int]*onListener
 	nextOnID              int
+}
+
+func (s *muxState) cacheEvent(event parent.Event) {
+	if s == nil {
+		return
+	}
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	switch event.Kind {
+	case parent.EventSessionRegistered, parent.EventSessionActivated,
+		parent.EventSessionExited, parent.EventSessionClosed:
+		s.cacheEpoch.Add(1)
+	case parent.EventResize:
+		if event.SessionID == 0 {
+			s.cacheEpoch.Add(1)
+		}
+	}
+	switch event.Kind {
+	case parent.EventSessionRegistered:
+		s.knownSessions.Store(uint64(event.SessionID), struct{}{})
+	case parent.EventSessionActivated:
+		s.activeIDCached.Store(uint64(event.SessionID))
+		s.knownSessions.Store(uint64(event.SessionID), struct{}{})
+		s.doneSessions.Delete(uint64(event.SessionID))
+	case parent.EventSessionExited:
+		s.doneSessions.Store(uint64(event.SessionID), struct{}{})
+		if s.activeIDCached.Load() == uint64(event.SessionID) {
+			s.activeIDCached.Store(0)
+		}
+	case parent.EventSessionClosed:
+		// A closed session is no longer discoverable through the manager.
+		// Do not retain its ID indefinitely in the wrapper caches.
+		s.forgetSessionLocked(uint64(event.SessionID))
+		if s.activeIDCached.Load() == uint64(event.SessionID) {
+			s.activeIDCached.Store(0)
+		}
+	case parent.EventResize:
+		if event.SessionID == 0 {
+			if size, ok := event.Data.([2]int); ok {
+				s.termRowsCached.Store(int64(size[0]))
+				s.termColsCached.Store(int64(size[1]))
+			}
+		}
+	}
+}
+
+func (s *muxState) initializeManagerCache() {
+	if s == nil || s.mgr == nil || !managerStarted(s.mgr) {
+		return
+	}
+	for {
+		epoch := s.cacheEpoch.Load()
+		activeID := uint64(s.mgr.ActiveID())
+		rows, cols := s.mgr.TermSize()
+		sessions := s.mgr.Sessions()
+
+		s.cacheMu.Lock()
+		if s.cacheEpoch.Load() != epoch {
+			s.cacheMu.Unlock()
+			continue
+		}
+		s.activeIDCached.Store(activeID)
+		s.termRowsCached.Store(int64(rows))
+		s.termColsCached.Store(int64(cols))
+		for _, info := range sessions {
+			s.knownSessions.Store(uint64(info.ID), struct{}{})
+			if info.State == parent.SessionExited || info.State == parent.SessionClosed {
+				s.doneSessions.Store(uint64(info.ID), struct{}{})
+			}
+		}
+		s.cacheMu.Unlock()
+		return
+	}
+}
+
+func (s *muxState) cachedActiveID() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.activeIDCached.Load()
+}
+
+func (s *muxState) cachedSessionDone(id uint64) bool {
+	if s == nil || id == 0 {
+		return true
+	}
+	if _, done := s.doneSessions.Load(id); done {
+		return true
+	}
+	_, known := s.knownSessions.Load(id)
+	return !known
+}
+
+func (s *muxState) cacheKnownSession(id uint64) {
+	if s == nil || id == 0 {
+		return
+	}
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	s.cacheEpoch.Add(1)
+	s.knownSessions.Store(id, struct{}{})
+}
+
+func (s *muxState) forgetSession(id uint64) {
+	if s == nil || id == 0 {
+		return
+	}
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	s.cacheEpoch.Add(1)
+	s.forgetSessionLocked(id)
+}
+
+func (s *muxState) forgetSessionLocked(id uint64) {
+	if id != 0 {
+		s.knownSessions.Delete(id)
+		s.doneSessions.Delete(id)
+	}
+}
+
+func (s *muxState) cacheActiveID(id uint64) {
+	if s == nil {
+		return
+	}
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	s.cacheEpoch.Add(1)
+	s.activeIDCached.Store(id)
+	if id != 0 {
+		s.doneSessions.Delete(id)
+	}
+}
+
+func (s *muxState) cacheTermSize(rows, cols int) {
+	if s != nil {
+		s.termRowsCached.Store(int64(rows))
+		s.termColsCached.Store(int64(cols))
+	}
 }
 
 type onListener struct {
@@ -122,6 +268,50 @@ func (s *muxState) isOnEventLoopGoroutine() bool {
 		return false
 	}
 	return s.loop.IsCallbackOwner()
+}
+
+// resizeCallback returns the current JS resize callback under the state lock.
+// Passthrough invokes the callback from its signal-watcher goroutine, so the
+// callback value itself must never be read or invoked there without routing
+// through callResizeOnLoop.
+func (s *muxState) resizeCallback() func(rows, cols uint16) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.resizeFn
+}
+
+// callResizeOnLoop invokes a JS resize callback on the owning Goja goroutine.
+// The watcher may be running on a worker, but goja.Runtime and its values are
+// not safe to touch there.
+func (s *muxState) callResizeOnLoop(fn goja.Callable, rows, cols uint16) error {
+	if fn == nil {
+		return nil
+	}
+	if s == nil || s.adapter == nil {
+		return errors.New("termmux: event loop adapter unavailable for resize callback")
+	}
+	if s.isOnEventLoopGoroutine() {
+		_, err := fn(goja.Undefined(), s.runtime.ToValue(rows), s.runtime.ToValue(cols))
+		return err
+	}
+
+	result := make(chan error, 1)
+	if err := s.adapter.Submit(func(rt *goja.Runtime) {
+		_, callErr := fn(goja.Undefined(), rt.ToValue(rows), rt.ToValue(cols))
+		result <- callErr
+	}); err != nil {
+		return err
+	}
+
+	if s.ctx == nil {
+		return <-result
+	}
+	select {
+	case err := <-result:
+		return err
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	}
 }
 
 // initEventTarget must be called on the event-loop goroutine.

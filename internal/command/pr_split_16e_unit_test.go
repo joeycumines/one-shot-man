@@ -155,6 +155,165 @@ func TestChunk16e_ComputeOffset_VeryLargeTerminal(t *testing.T) {
 
 // ────────────────────── writeMouseToPane ──────────────────────
 
+func TestChunk16e_PaneOperationTrackerDefersOutcomes(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	val, err := evalJS(`(async function() {
+		var resolveWrite;
+		var pendingWrite = new Promise(function(resolve) { resolveWrite = resolve; });
+		var s = {splitViewTab: 'agent', paneOperations: []};
+		s.activeAgentSession = {write: function() { return pendingWrite; }};
+
+		var result = prSplit._writeMouseToPane('x', s);
+		if (!result || typeof result.then !== 'function') return 'FAIL: async dispatch did not return a Promise';
+		if (s.paneOperations.length !== 1) return 'FAIL: pending operation was not tracked';
+		resolveWrite();
+		if (await result !== true) return 'FAIL: async dispatch did not resolve true';
+		await settlePaneOperations(s);
+		if (s.paneOperations.length !== 0) return 'FAIL: settled operation was not removed';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "OK" {
+		t.Errorf("pane operation tracker: %v", val)
+	}
+}
+
+func TestChunk16e_AgentWriteOutcomesWaitForSettlement(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	val, err := evalJS(`(async function() {
+		var resolveWrite;
+		var pendingWrite = new Promise(function(resolve) { resolveWrite = resolve; });
+		var s = initState('PLAN_REVIEW');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'agent';
+		s.agentViewOffset = 10;
+		s.agentWriteError = 'previous';
+		s.activeAgentSession = {write: function() { return pendingWrite; }};
+
+		prSplit._wizardUpdate({type: 'Key', key: 'x'}, s);
+		if (s.agentViewOffset !== 10) return 'FAIL: input auto-scrolled before settlement';
+		if (s.agentWriteError !== 'previous') return 'FAIL: prior error cleared before settlement';
+		resolveWrite();
+		await settlePaneOperations(s);
+		if (s.agentViewOffset !== 0) return 'FAIL: input did not auto-scroll after settlement';
+		if (s.agentWriteError !== '') return 'FAIL: error did not clear after settlement';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "OK" {
+		t.Errorf("agent write settlement: %v", val)
+	}
+}
+
+func TestChunk16e_VerifyWriteOutcomesWaitForSettlement(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	val, err := evalJS(`(async function() {
+		var rejectWrite;
+		var pendingWrite = new Promise(function(resolve, reject) { rejectWrite = reject; });
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'agent';
+		s.splitViewTab = 'verify';
+		s.verifyViewportOffset = 4;
+		s.verifyAutoScroll = false;
+		s.verifyWriteError = 'previous';
+		s.activeVerifySession = {write: function() { return pendingWrite; }};
+
+		prSplit._wizardUpdate({type: 'Key', key: 'a'}, s);
+		if (s.verifyViewportOffset !== 4) return 'FAIL: verify viewport moved before settlement';
+		if (s.verifyWriteError !== 'previous') return 'FAIL: verify error cleared before settlement';
+		rejectWrite(new Error('verify write failed'));
+		await settlePaneOperations(s);
+		if (s.verifyWriteError !== 'verify write failed') return 'FAIL: verify rejection was not surfaced';
+		if (s.verifyViewportOffset !== 4) return 'FAIL: verify viewport moved after rejection';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "OK" {
+		t.Errorf("verify write settlement: %v", val)
+	}
+}
+
+func TestChunk16e_ResizeAndInterruptOutcomesAreTracked(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	val, err := evalJS(`(async function() {
+		var resolveResize;
+		var rejectInterrupt;
+		var pendingResize = new Promise(function(resolve) { resolveResize = resolve; });
+		var pendingInterrupt = new Promise(function(resolve, reject) { rejectInterrupt = reject; });
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewTab = 'verify';
+		s.splitViewFocus = 'agent';
+		s.activeAgentSession = {resize: function() { return pendingResize; }};
+		s.activeVerifySession = {interrupt: function() { return pendingInterrupt; }};
+
+		prSplit._syncSplitViewDimensions(s);
+		if (s.paneOperations.length !== 1) return 'FAIL: resize was not tracked';
+		prSplit._wizardUpdate({type: 'Key', key: 'ctrl+c'}, s);
+		if (s.paneOperations.length !== 2) return 'FAIL: interrupt was not tracked';
+		resolveResize();
+		rejectInterrupt(new Error('interrupt failed'));
+		await settlePaneOperations(s);
+		if (s.paneOperations.length !== 0) return 'FAIL: settled controls were not removed';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "OK" {
+		t.Errorf("resize and interrupt tracking: %v", val)
+	}
+}
+
+func TestChunk16e_AgentQuestionWriteSettlesBeforeSuccess(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	val, err := evalJS(`(async function() {
+		var resolveWrite;
+		var pendingWrite = new Promise(function(resolve) { resolveWrite = resolve; });
+		var s = initState('PLAN_GENERATION');
+		s.agentQuestionDetected = true;
+		s.agentQuestionInputActive = true;
+		s.agentQuestionInputText = 'yes';
+		s.agentQuestionLine = 'Continue?';
+		s.activeAgentSession = {write: function() { return pendingWrite; }};
+
+		prSplit._wizardUpdate({type: 'Key', key: 'enter'}, s);
+		if (!s.agentQuestionDetected) return 'FAIL: question cleared before settlement';
+		if (!s.agentQuestionInputActive) return 'FAIL: input closed before settlement';
+		if (s.agentConversations.length !== 0) return 'FAIL: conversation recorded before settlement';
+		resolveWrite();
+		await settlePaneOperations(s);
+		if (s.agentQuestionDetected) return 'FAIL: question not cleared after settlement';
+		if (s.agentQuestionInputActive) return 'FAIL: input remained active after settlement';
+		if (s.agentConversations.length !== 1) return 'FAIL: conversation not recorded after settlement';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "OK" {
+		t.Errorf("agent question settlement: %v", val)
+	}
+}
+
 func TestChunk16e_GetCursorInPane_AgentUsesPinnedSessionID(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
@@ -233,7 +392,7 @@ func TestChunk16e_WriteMouseToPane_AgentTab(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`
-		(function() {
+		(async function() {
 			var written = [];
 			var activations = [];
 			var active = 7;
@@ -250,6 +409,8 @@ func TestChunk16e_WriteMouseToPane_AgentTab(t *testing.T) {
 			try {
 				var s = {splitViewTab: 'agent'};
 				var ok = prSplit._writeMouseToPane('test-bytes', s);
+				if (ok && typeof ok.then === 'function') ok = await ok;
+				await prSplit._waitForPaneOperations(s);
 				return JSON.stringify({ok: ok, written: written, activations: activations, active: active});
 			} finally {
 				delete globalThis.tuiMux;
@@ -280,7 +441,7 @@ func TestChunk16e_WriteMouseToPane_AgentTabWriteFailure(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`
-		(function() {
+		(async function() {
 			var activations = [];
 			var active = 7;
 			var __mockCID = 42;
@@ -296,6 +457,8 @@ func TestChunk16e_WriteMouseToPane_AgentTabWriteFailure(t *testing.T) {
 			try {
 				var s = {splitViewTab: 'agent'};
 				var ok = prSplit._writeMouseToPane('wrapped-bytes', s);
+				if (ok && typeof ok.then === 'function') ok = await ok;
+				await prSplit._waitForPaneOperations(s);
 				return JSON.stringify({ok: ok, activations: activations, active: active});
 			} finally {
 				delete globalThis.tuiMux;
@@ -323,14 +486,18 @@ func TestChunk16e_WriteMouseToPane_VerifyTab(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`
-		(function() {
+		(async function() {
 			var written = [];
 			var s = {
 				splitViewTab: 'verify',
 				activeVerifySession: {write: function(b) { written.push(b); }},
 			};
-			var ok = prSplit._writeMouseToPane('verify-bytes', s);
-			return JSON.stringify({ok: ok, written: written});
+			var result = prSplit._writeMouseToPane('verify-bytes', s);
+			var wasPromise = !!(result && typeof result.then === 'function');
+			var ok = result;
+			if (wasPromise) ok = await result;
+			await prSplit._waitForPaneOperations(s);
+			return JSON.stringify({ok: ok, wasPromise: wasPromise, written: written});
 		})()
 	`)
 	if err != nil {
@@ -342,6 +509,9 @@ func TestChunk16e_WriteMouseToPane_VerifyTab(t *testing.T) {
 	}
 	if !strings.Contains(s, `"written":["verify-bytes"]`) {
 		t.Errorf("bytes should be written to verify session: %s", s)
+	}
+	if !strings.Contains(s, `"wasPromise":false`) {
+		t.Errorf("sync verify write should retain boolean result: %s", s)
 	}
 }
 
@@ -377,7 +547,7 @@ func TestChunk16e_WriteMouseToPane_WriteThrows(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`
-		(function() {
+		(async function() {
 			var results = [];
 			var activations = [];
 			var active = 7;
@@ -391,15 +561,19 @@ func TestChunk16e_WriteMouseToPane_WriteThrows(t *testing.T) {
 				activate: function(id) { activations.push(id); active = id; },
 				input: function() { throw new Error('agent-fail'); },
 			};
-			results.push(prSplit._writeMouseToPane('x', {splitViewTab: 'agent'}));
+			var agentResult = prSplit._writeMouseToPane('x', {splitViewTab: 'agent'});
+			if (agentResult && typeof agentResult.then === 'function') agentResult = await agentResult;
+			results.push(agentResult);
 			delete globalThis.tuiMux;
 			prSplit._state.agentSessionID = null;
 
 			// verify tab with throwing write.
-			results.push(prSplit._writeMouseToPane('x', {
+			var verifyResult = prSplit._writeMouseToPane('x', {
 				splitViewTab: 'verify',
 				activeVerifySession: {write: function() { throw new Error('verify-fail'); }},
-			}));
+			});
+			if (verifyResult && typeof verifyResult.then === 'function') verifyResult = await verifyResult;
+			results.push(verifyResult);
 
 			return JSON.stringify({results: results, activations: activations, active: active});
 		})()

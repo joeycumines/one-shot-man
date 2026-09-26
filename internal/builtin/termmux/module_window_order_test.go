@@ -14,24 +14,24 @@ func TestMoveWindow_JSBinding_Reorders(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	res, err := sessionRun(t, runtime, `
-		const w1 = tuiMux.newWindow("a");
-		const w2 = tuiMux.newWindow("b");
-		const w3 = tuiMux.newWindow("c");
+	res, err := awaitJSValue(t, runtime, `
+		const w1 = await tuiMux.newWindow("a");
+		const w2 = await tuiMux.newWindow("b");
+		const w3 = await tuiMux.newWindow("c");
 
-		tuiMux.moveWindow(w3, 0);
-		const afterMove = tuiMux.windows();
+		await tuiMux.moveWindow(w3, 0);
+		const afterMove = await tuiMux.windows();
 
-		tuiMux.swapWindow(w1, w2);
-		const afterSwap = tuiMux.windows();
+		await tuiMux.swapWindow(w1, w2);
+		const afterSwap = await tuiMux.windows();
 
-		({
+		return ({
 			w1,
 			w2,
 			w3,
 			moveIds: afterMove.map(w => w.id),
 			swapIds: afterSwap.map(w => w.id)
-		})
+		});
 	`)
 	if err != nil {
 		t.Fatalf("script: %v", err)

@@ -96,7 +96,53 @@ var state = {
     message: '',
     messageUntil: 0,
     cursor: null,
+    cleanupPromise: null,
+    cleanupReady: false,
 };
+
+var paneOperations = [];
+
+function reportPaneOperationFailure(label, error) {
+    try {
+        log.debug('termpane ' + label + ' failed', {
+            error: error && error.message ? error.message : String(error)
+        });
+    } catch (_) {}
+}
+
+function removePaneOperation(operation) {
+    var index = paneOperations.indexOf(operation);
+    if (index >= 0) paneOperations.splice(index, 1);
+}
+
+function trackPaneOperation(operation, label) {
+    var promise;
+    try {
+        promise = Promise.resolve(operation);
+    } catch (e) {
+        reportPaneOperationFailure(label || 'operation', e);
+        return Promise.resolve(null);
+    }
+    paneOperations.push(promise);
+    promise.then(function() {
+        removePaneOperation(promise);
+    }, function(e) {
+        reportPaneOperationFailure(label || 'operation', e);
+        removePaneOperation(promise);
+    });
+    return promise;
+}
+
+function waitForPaneOperations() {
+    // Snapshot only: cleanup tracks its own close Promise after this call.
+    if (paneOperations.length === 0) return Promise.resolve();
+    var pending = paneOperations.slice();
+    var waits = [];
+    for (var i = 0; i < pending.length; i++) {
+        waits.push(Promise.resolve(pending[i]).then(function() {}, function() {}));
+    }
+    return Promise.all(waits);
+}
 
 var c = comp.compositor({ width: state.width, height: state.height });
 
@@ -152,9 +198,18 @@ function paneOuterBounds() {
 }
 
 function resizePane() {
+    if (!pane) return Promise.resolve();
     var inner = paneInnerSize();
-    pane.setBounds(paneOuterBounds());
-    pane.update({ type: 'WindowSize', width: inner.w, height: inner.h });
+    try {
+        pane.setBounds(paneOuterBounds());
+        return trackPaneOperation(
+            pane.update({ type: 'WindowSize', width: inner.w, height: inner.h }),
+            'resize'
+        );
+    } catch (e) {
+        reportPaneOperationFailure('resize', e);
+        return Promise.resolve();
+    }
 }
 
 function bigger() {
@@ -289,9 +344,11 @@ function handleKey(msg) {
     if (state.muxPrefix) {
         state.muxPrefix = false;
         var dispatch = termmux.handlePrefixKey({ manager: mgr, key: msg.key });
-        if (dispatch && dispatch.action && dispatch.action !== 'Cancel') {
-            setMessage(dispatch.action);
-        }
+        trackPaneOperation(Promise.resolve(dispatch).then(function(result) {
+            if (result && result.action && result.action !== 'Cancel') {
+                setMessage(result.action);
+            }
+        }), 'prefix');
         return true;
     }
     if (msg.key === 'ctrl+a') {
@@ -314,11 +371,11 @@ function handleKey(msg) {
                 smaller();
                 return true;
             case 'copyMode':
-                try {
-                    if (mgr.isCopyModeActive(sid)) mgr.exitCopyMode(sid);
-                    else mgr.enterCopyMode(sid);
-                } catch (_) {}
-                setMessage('copyMode');
+                trackPaneOperation(Promise.resolve(mgr.isCopyModeActive(sid)).then(function(active) {
+                    return active ? mgr.exitCopyMode(sid) : mgr.enterCopyMode(sid);
+                }).then(function() {
+                    setMessage('copyMode');
+                }), 'copyMode');
                 return true;
             case 'quit':
                 state.quit = true;
@@ -328,14 +385,22 @@ function handleKey(msg) {
     }
 
     // Forward all other keys to the bouncing terminal pane.
-    pane.update(msg);
+    try {
+        trackPaneOperation(pane.update(msg), 'key');
+    } catch (e) {
+        reportPaneOperationFailure('key', e);
+    }
     return false;
 }
 
 function handleMouse(msg) {
     var hit = c.hit(msg.x, msg.y);
     if (hit.hit && hit.id === 'pty') {
-        pane.update(msg);
+        try {
+            trackPaneOperation(pane.update(msg), 'mouse');
+        } catch (e) {
+            reportPaneOperationFailure('mouse', e);
+        }
     }
 }
 
@@ -348,9 +413,40 @@ function handleResize(width, height) {
 }
 
 function cleanup() {
-    try { pane.close(); } catch (_) {}
-    try { bounded.session.close(); } catch (_) {}
-    try { bounded.mgr.close(); } catch (_) {}
+    var closePromise = waitForPaneOperations().then(function() {
+        if (!pane) return null;
+        try {
+            return Promise.resolve(pane.close()).catch(function(e) {
+                reportPaneOperationFailure('close', e);
+            });
+        } catch (e) {
+            reportPaneOperationFailure('close', e);
+            return null;
+        }
+    }).then(function() {
+        if (!bounded) return null;
+        try {
+            if (bounded.session && typeof bounded.session.close === 'function') {
+                return Promise.resolve(bounded.session.close()).catch(function(e) {
+                    reportPaneOperationFailure('session close', e);
+                });
+            }
+        } catch (e) {
+            reportPaneOperationFailure('session close', e);
+        }
+        return null;
+    }).then(function() {
+        if (!bounded || !bounded.mgr || typeof bounded.mgr.close !== 'function') return null;
+        try {
+            return Promise.resolve(bounded.mgr.close()).catch(function(e) {
+                reportPaneOperationFailure('manager close', e);
+            });
+        } catch (e) {
+            reportPaneOperationFailure('manager close', e);
+            return null;
+        }
+    });
+    return trackPaneOperation(closePromise, 'cleanup');
 }
 
 // ── Bubble Tea callbacks ────────────────────────────────────────────────────────
@@ -384,6 +480,24 @@ function initModel() {
 }
 
 function updateModel(msg, model) {
+    if (state.quit) {
+        if (!state.cleanupPromise) {
+            try {
+                state.cleanupPromise = cleanup();
+                state.cleanupPromise.then(function() {
+                    state.cleanupReady = true;
+                }, function(e) {
+                    reportPaneOperationFailure('cleanup', e);
+                    state.cleanupReady = true;
+                });
+            } catch (e) {
+                reportPaneOperationFailure('cleanup', e);
+                state.cleanupReady = true;
+            }
+        }
+        if (state.cleanupReady) return [state, tea.quit()];
+        return [state, tea.tick(CONFIG.tickMs, 'cleanup')];
+    }
     if (msg.type === 'Tick') {
         tick();
         updateCompositor();
@@ -396,8 +510,7 @@ function updateModel(msg, model) {
     if (msg.type === 'Key') {
         handleKey(msg);
         if (state.quit) {
-            cleanup();
-            return [state, tea.quit()];
+            return updateModel({ type: 'Tick', id: 'cleanup' }, state);
         }
         return [state, null];
     }
@@ -424,7 +537,7 @@ function viewModel(model) {
 
 // ── Smoke test ─────────────────────────────────────────────────────────────────
 
-function runSmoke() {
+async function runSmoke() {
     handleResize(80, 24);
     initModel();
     for (var i = 0; i < 20; i++) {
@@ -433,7 +546,16 @@ function runSmoke() {
     }
 
     // Pump one dummy input so the pane has a chance to let the PTY child output.
-    pane.update({ type: 'Key', key: 'enter' });
+    try {
+        await trackPaneOperation(
+            pane.update({ type: 'Key', key: 'enter' }),
+            'smoke key'
+        );
+    } catch (e) {
+        reportPaneOperationFailure('smoke key', e);
+        throw e;
+    }
+    await waitForPaneOperations();
     updateCompositor();
 
     var view = viewModel({});
@@ -446,20 +568,22 @@ function runSmoke() {
     output.print('smoke: ansi=' + (content.indexOf('\x1b[') >= 0));
     output.print('smoke: controls=' + (content.indexOf('Pause') >= 0 && content.indexOf('Quit') >= 0));
     if (state.bounces <= 0) throw new Error('smoke: expected bounces after ticks');
-    cleanup();
+    await cleanup();
 }
 
 // ── Entry point ─────────────────────────────────────────────────────────────
 
 sessionReady.then(function() {
     if (SMOKE) {
-        runSmoke();
-    } else {
-        var program = tea.newModel({
-            init: initModel,
-            update: updateModel,
-            view: viewModel,
-        });
-        tea.run(program);
+        return runSmoke();
     }
+    var program = tea.newModel({
+        init: initModel,
+        update: updateModel,
+        view: viewModel,
+    });
+    tea.run(program);
+}).catch(function(e) {
+    reportPaneOperationFailure('startup', e);
+    if (typeof process !== 'undefined') process.exitCode = 1;
 });

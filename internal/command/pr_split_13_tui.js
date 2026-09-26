@@ -43,12 +43,15 @@
     // See scratch/w01-state-machine.md for full design.
 
     // Valid transitions: { fromState: { toState: true, ... }, ... }
+    // PLAN_REVIEW can reach ERROR: execution is deferred from this state
+    // while the verify pane tears down, and a teardown that never settles
+    // must surface a diagnosable error rather than a silent stall.
     var VALID_TRANSITIONS = {
         'IDLE':             { 'CONFIG': true },
         'CONFIG':           { 'PLAN_GENERATION': true, 'BASELINE_FAIL': true, 'BRANCH_BUILDING': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'ERROR': true },
         'BASELINE_FAIL':    { 'PLAN_GENERATION': true, 'CANCELLED': true },
         'PLAN_GENERATION':  { 'PLAN_REVIEW': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'FORCE_CANCEL': true, 'PAUSED': true, 'ERROR': true },
-        'PLAN_REVIEW':      { 'PLAN_EDITOR': true, 'BRANCH_BUILDING': true, 'PLAN_GENERATION': true, 'CANCELLED': true },
+        'PLAN_REVIEW':      { 'PLAN_EDITOR': true, 'BRANCH_BUILDING': true, 'PLAN_GENERATION': true, 'CANCELLED': true, 'ERROR': true },
         'PLAN_EDITOR':      { 'PLAN_REVIEW': true },
         'BRANCH_BUILDING':  { 'EQUIV_CHECK': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'FORCE_CANCEL': true, 'PAUSED': true, 'ERROR': true },
         'ERROR_RESOLUTION': { 'EQUIV_CHECK': true, 'BRANCH_BUILDING': true, 'PLAN_GENERATION': true, 'CANCELLED': true, 'FORCE_CANCEL': true },
@@ -124,8 +127,58 @@
 
     // resetVerifyPhase unconditionally resets to NOT_STARTED (used by
     // retry and wizard reset paths that bypass normal transitions).
+    function resetVerifyRunState(s) {
+        if (typeof s._verifyRunEpoch !== 'number' || s._verifyRunEpoch !== s._verifyRunEpoch) {
+            s._verifyRunEpoch = 0;
+        }
+        s._verifyRunEpoch++;
+        s._baselineVerifyStarted = false;
+        s._baselineVerifyResult = null;
+        s._verifyAdvanceAfterCleanup = false;
+        s._executionStartPending = false;
+    }
+
+    function bumpAsyncConfigEpoch(s, key) {
+        if (typeof s[key] !== 'number' || s[key] !== s[key]) {
+            s[key] = 0;
+        }
+        s[key]++;
+        return s[key];
+    }
+
+    function beginAsyncConfig(s, key) {
+        return bumpAsyncConfigEpoch(s, key);
+    }
+
+    function invalidateAsyncConfig(s) {
+        bumpAsyncConfigEpoch(s, '_analysisConfigEpoch');
+        bumpAsyncConfigEpoch(s, '_autoConfigEpoch');
+        s.autoConfigValidating = false;
+        s.pendingAutoAnalysis = false;
+    }
+
+    function asyncConfigCurrent(s, key, epoch) {
+        return s[key] === epoch &&
+            s.isProcessing === true &&
+            (!s.wizard || s.wizard.current !== 'CANCELLED');
+    }
+
+    function installCancellationSource(s) {
+        var source = function(query) {
+            if (!s || !s.wizard) return false;
+            if (query === 'cancelled') return s.wizard.current === 'CANCELLED';
+            if (query === 'forceCancelled') return s.wizard.current === 'FORCE_CANCEL';
+            if (query === 'paused') return s.wizard.current === 'PAUSED';
+            return false;
+        };
+        s._cancelSource = source;
+        prSplit._cancelSource = source;
+        return source;
+    }
+
     function resetVerifyPhase(s) {
         s.verifyPhase = verifyPhases.NOT_STARTED;
+        resetVerifyRunState(s);
     }
 
     // WizardState is the pr-split wizard state machine.
@@ -340,11 +393,11 @@
                     return '';
                 }
             },
-            isDone: function() {
+            isDone: async function() {
                 // Pinned liveness: check via tuiMux.isDone(id) first, then
                 // fall back to the direct handle check for headless mode.
                 if (typeof tuiMux.isDone === 'function') {
-                    return tuiMux.isDone(sessionID);
+                    return await tuiMux.isDone(sessionID);
                 }
                 var exec = prSplit._state && prSplit._state.agentExecutor;
                 if (exec && exec.handle && typeof exec.handle.isAlive === 'function') {
@@ -353,16 +406,32 @@
                 return true;
             },
             isRunning: function() {
-                return !this.isDone();
+                if (typeof tuiMux.isDone === 'function') {
+                    try {
+                        var done = tuiMux.isDone(sessionID);
+                        if (done && typeof done.then === 'function') {
+                            return done.then(function(value) { return !value; });
+                        }
+                        return !done;
+                    } catch (e) {
+                        log.debug('agentProxy.isRunning failed', { sessionID: sessionID, error: e.message || String(e) });
+                        return false;
+                    }
+                }
+                var exec = prSplit._state && prSplit._state.agentExecutor;
+                if (exec && exec.handle && typeof exec.handle.isAlive === 'function') {
+                    return !exec.handle.isAlive();
+                }
+                return false;
             },
-            write: function(data) {
-                var prevID = tuiMux.activeID();
+            write: async function(data) {
+                var prevID = await tuiMux.activeID();
                 try {
-                    tuiMux.activate(sessionID);
-                    tuiMux.input(typeof data === 'string' ? data : String(data));
+                    await tuiMux.activate(sessionID);
+                    await tuiMux.input(typeof data === 'string' ? data : String(data));
                 } finally {
                     if (prevID && prevID !== sessionID) {
-                        try { tuiMux.activate(prevID); } catch (e) {
+                        try { await tuiMux.activate(prevID); } catch (e) {
                             log.debug('agent proxy write restore failed', { prevId: prevID, error: e.message || String(e) });
                         }
                     }
@@ -370,25 +439,35 @@
             },
             resize: function(rows, cols) {
                 // SessionManager.Resize broadcasts to ALL managed sessions.
-                tuiMux.resize(rows, cols);
+                var result = tuiMux.resize(rows, cols);
+                if (result && typeof result.catch === 'function') {
+                    return result.catch(function(e) {
+                        log.debug('agent proxy resize failed', { error: e.message || String(e) });
+                    });
+                }
+                return result;
             },
-            passthrough: function() {
+            passthrough: async function(options) {
                 // Task 5: Activate Agent session in SessionManager, enter
                 // passthrough via tuiMux.switchTo, then restore previous active.
-                var prevID = tuiMux.activeID();
+                // switchTo is asynchronous; keep the selected session active until
+                // its Promise settles or passthrough can capture the wrong writer.
+                var prevID = await tuiMux.activeID();
                 try {
-                    tuiMux.activate(sessionID);
+                    await tuiMux.activate(sessionID);
                 } catch (e) {
                     log.debug('agentProxy.passthrough: activate failed', { sessionID: sessionID, error: e.message || String(e) });
                     return { skipped: true, reason: 'activate_failed' };
                 }
-                var result = tuiMux.switchTo();
-                if (prevID && prevID !== sessionID) {
-                    try { tuiMux.activate(prevID); } catch (e) {
-                        log.debug('agent proxy passthrough restore failed', { prevId: prevID, error: e.message || String(e) });
+                try {
+                    return await tuiMux.switchTo(options);
+                } finally {
+                    if (prevID && prevID !== sessionID) {
+                        try { await tuiMux.activate(prevID); } catch (e) {
+                            log.debug('agent proxy passthrough restore failed', { prevId: prevID, error: e.message || String(e) });
+                        }
                     }
                 }
-                return result;
             },
             target: function() { return { name: 'agent', kind: 'pty' }; },
             setTarget: function() { /* no-op: Agent target is fixed */ }
@@ -413,7 +492,7 @@
             return getAgentPaneSession();
         }
         if (pane === 'verify') {
-            if (!s) return null;
+            if (!s || s._verifyPaneCleanupPending || s._verifyTimeoutKillPending) return null;
             var val = s.activeVerifySession;
             if (val == null) return null;
             // Task 48: If val is a number (SessionManager ID), build a proxy
@@ -459,55 +538,91 @@
                     ? captureRef.exitCode() : -1;
             },
             close: function() {
-                try { tuiMux.unregister(sessionID); } catch (e) {
+                try {
+                    var result = tuiMux.unregister(sessionID);
+                    if (result && typeof result.catch === 'function') {
+                        return result.catch(function(e) {
+                            log.debug('verifyProxy.close failed', { sessionID: sessionID, error: e.message || String(e) });
+                        });
+                    }
+                    return result;
+                } catch (e) {
                     log.debug('verifyProxy.close failed', { sessionID: sessionID, error: e.message || String(e) });
                 }
             },
             isRunning: function() {
                 return captureRef ? !captureRef.isDone() : false;
             },
-            passthrough: function() {
-                var prevID = tuiMux.activeID();
+            passthrough: async function(options) {
+                var prevID = await tuiMux.activeID();
                 try {
-                    tuiMux.activate(sessionID);
+                    await tuiMux.activate(sessionID);
                 } catch (e) {
                     log.debug('verifyProxy.passthrough: activate failed', { sessionID: sessionID, error: e.message || String(e) });
                     return { skipped: true, reason: 'activate_failed' };
                 }
-                var result = tuiMux.switchTo();
-                if (prevID && prevID !== sessionID) {
-                    try { tuiMux.activate(prevID); } catch (e) {
-                        log.debug('verify proxy passthrough restore failed', { prevId: prevID, error: e.message || String(e) });
-                    }
-                }
-                return result;
-            },
-            interrupt: function() { if (captureRef && captureRef.interrupt) captureRef.interrupt(); },
-            kill: function() { if (captureRef && captureRef.kill) captureRef.kill(); },
-            pause: function() { if (captureRef && captureRef.pause) captureRef.pause(); },
-            resume: function() { if (captureRef && captureRef.resume) captureRef.resume(); },
-            isPaused: function() { return captureRef && captureRef.isPaused ? captureRef.isPaused() : false; },
-            write: function(data) {
-                var prevID = tuiMux.activeID();
                 try {
-                    tuiMux.activate(sessionID);
-                    tuiMux.input(typeof data === 'string' ? data : String(data));
+                    return await tuiMux.switchTo(options);
                 } finally {
                     if (prevID && prevID !== sessionID) {
-                        try { tuiMux.activate(prevID); } catch (e) {
+                        try { await tuiMux.activate(prevID); } catch (e) {
+                            log.debug('verify proxy passthrough restore failed', { prevId: prevID, error: e.message || String(e) });
+                        }
+                    }
+                }
+            },
+            interrupt: async function() {
+                if (captureRef && typeof captureRef.interrupt === 'function') {
+                    await captureRef.interrupt();
+                }
+            },
+            kill: async function() {
+                if (captureRef && typeof captureRef.kill === 'function') {
+                    await captureRef.kill();
+                }
+            },
+            pause: async function() {
+                if (captureRef && typeof captureRef.pause === 'function') {
+                    await captureRef.pause();
+                }
+            },
+            resume: async function() {
+                if (captureRef && typeof captureRef.resume === 'function') {
+                    await captureRef.resume();
+                }
+            },
+            isPaused: function() { return captureRef && captureRef.isPaused ? captureRef.isPaused() : false; },
+            write: async function(data) {
+                var prevID = await tuiMux.activeID();
+                try {
+                    await tuiMux.activate(sessionID);
+                    await tuiMux.input(typeof data === 'string' ? data : String(data));
+                } finally {
+                    if (prevID && prevID !== sessionID) {
+                        try { await tuiMux.activate(prevID); } catch (e) {
                             log.debug('verify proxy write restore failed', { prevId: prevID, error: e.message || String(e) });
                         }
                     }
                 }
             },
             resize: function(rows, cols) {
-                tuiMux.resize(rows, cols);
+                var result = tuiMux.resize(rows, cols);
+                if (result && typeof result.catch === 'function') {
+                    return result.catch(function(e) {
+                        log.debug('verify proxy resize failed', { error: e.message || String(e) });
+                    });
+                }
+                return result;
             },
         };
     }
 
     // Task 8: Shell tab removed — verify pane IS the interactive shell.
     // No separate shell pane state to reset.
+
+    function isThenable(value) {
+        return !!value && typeof value.then === 'function';
+    }
 
     function closeInteractivePaneSession(s, tab, debugPrefix) {
         var session = getInteractivePaneSession(s, tab);
@@ -532,55 +647,96 @@
 
     function clearVerifyPaneSession(s, opts) {
         var options = opts || {};
+        if (s._verifyPaneCleanupPending && s._verifyPaneCleanupPromise) {
+            return s._verifyPaneCleanupPromise;
+        }
+        if (typeof prSplit._invalidateVerifySetup === 'function') {
+            prSplit._invalidateVerifySetup(s);
+        }
         var keepDisplay = options.keepDisplay === true;
         var cleanupWorktree = options.cleanupWorktree !== false;
-
-        var closePromise = closeInteractivePaneSession(s, 'verify', options.debugPrefix || 'verifyCleanup');
+        var session = getInteractivePaneSession(s, 'verify');
         var verifyWorktree = s.activeVerifyWorktree;
         var verifyDir = s.activeVerifyDir;
+        var token = {};
+        var settled = false;
 
-        var finishCleanup = function() {
-            if (cleanupWorktree && verifyWorktree && verifyDir) {
-                try {
-                    prSplit.cleanupVerifyWorktree(verifyDir, verifyWorktree);
-                } catch (e) {
-                    log.debug((options.debugPrefix || 'verifyCleanup') + ': verifyWorktree cleanup failed: ' + (e.message || e));
-                }
+        var clearState = function() {
+            if (settled || s._verifyPaneCleanupToken !== token) return;
+            settled = true;
+            s._verifyPaneCleanupPending = false;
+            s._verifyPaneCleanupPromise = null;
+            s._verifyPaneCleanupToken = null;
+            s.activeVerifySession = null;
+            s._verifySessionRef = null;
+            s.activeVerifyWorktree = null;
+            s.activeVerifyDir = null;
+            s.activeVerifyStartTime = 0;
+            s.verifyViewportOffset = 0;
+            s.verifyAutoScroll = true;
+            s.lastVerifyInterruptTime = 0;
+            s.verifyPaused = false;
+
+            if (!keepDisplay) {
+                s.activeVerifyBranch = null;
+                s.verifyElapsedMs = 0;
+                s.verifyScreen = '';
+                s.verifyMode = null;
+                s.verifyShellExited = false;
+                s.verifyHint = '';
             }
         };
-        if (closePromise && typeof closePromise.then === 'function') {
-            closePromise.then(finishCleanup);
+
+        var runCleanup = function() {
+            if (!cleanupWorktree || !verifyWorktree || !verifyDir ||
+                typeof prSplit.cleanupVerifyWorktree !== 'function') {
+                return null;
+            }
+            try {
+                return prSplit.cleanupVerifyWorktree(verifyDir, verifyWorktree);
+            } catch (e) {
+                log.debug((options.debugPrefix || 'verifyCleanup') + ': verifyWorktree cleanup failed: ' + (e.message || e));
+                return null;
+            }
+        };
+
+        var closeResult = null;
+        if (session && typeof session.close === 'function') {
+            try {
+                closeResult = closeInteractivePaneSession(s, 'verify', options.debugPrefix || 'verifyCleanup');
+            } catch (e) {
+                log.debug((options.debugPrefix || 'verifyCleanup') + ': verifySession close failed: ' + (e.message || e));
+            }
+        }
+
+        s._verifyPaneCleanupToken = token;
+        s._verifyPaneCleanupPending = true;
+
+        var cleanupResult = null;
+        if (isThenable(closeResult)) {
+            cleanupResult = closeResult.then(runCleanup, function(e) {
+                log.debug((options.debugPrefix || 'verifyCleanup') + ': verifySession close failed: ' + (e.message || e));
+                return runCleanup();
+            });
         } else {
-            finishCleanup();
+            cleanupResult = runCleanup();
         }
 
-
-
-        s.activeVerifySession = null;
-        s._verifySessionRef = null; // Task 48: clear CaptureSession reference
-        s.activeVerifyWorktree = null;
-        s.activeVerifyDir = null;
-        s.activeVerifyStartTime = 0;
-        s.verifyViewportOffset = 0;
-        s.verifyAutoScroll = true;
-        s.lastVerifyInterruptTime = 0;
-        s.verifyPaused = false;
-
-        if (!keepDisplay) {
-            s.activeVerifyBranch = null;
-            s.verifyElapsedMs = 0;
-            s.verifyScreen = '';
+        if (isThenable(cleanupResult)) {
+            var operation = Promise.resolve(cleanupResult).then(function() {
+                clearState();
+            }, function(e) {
+                log.debug((options.debugPrefix || 'verifyCleanup') + ': verify cleanup failed: ' + (e.message || e));
+                clearState();
+            });
+            s._verifyPaneCleanupPromise = typeof prSplit._trackPaneOperation === 'function'
+                ? prSplit._trackPaneOperation(s, operation)
+                : operation;
+            return s._verifyPaneCleanupPromise;
         }
-        // T007 (Task 7): Also preserve display state for the persistent shell
-        // user-signal fields (so p/f/c footer stays visible until next branch).
-        if (keepDisplay) {
-            // Keep verifySignal state for the footer to remain active
-            // (it will be cleared by pollVerifySession after recording result).
-        } else {
-            s.verifyMode = null;
-            s.verifyShellExited = false;
-            s.verifyHint = '';
-        }
+
+        clearState();
+        return null;
     }
 
     function hasInteractivePaneSession(s, tab) {
@@ -625,6 +781,12 @@
         var probe = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
         if (probe && typeof probe.then === 'function') {
             return handleConfigStateAsync(config, probe);
+        }
+        // Discovery itself is asynchronous. Keep the empty-verify auto-detect
+        // contract consistent even when git probes are synchronous in tests or
+        // embedded callers by routing this case through the async validator.
+        if (!runtime.verifyCommand && typeof prSplit.discoverVerifyCommand === 'function') {
+            return handleConfigStateAsync(config, Promise.resolve(probe));
         }
 
         // --- Sync path ---
@@ -683,11 +845,22 @@
             return result;
         }
 
-        if (config.resume) {
+        if (config.resumeFromPlan) {
             var checkpoint = loadPlan();
-            if (checkpoint && !checkpoint.error && checkpoint.plan) {
-                return { resume: true, checkpoint: checkpoint };
+            if (checkpoint && typeof checkpoint.then === 'function') {
+                return checkpoint.then(function(resolved) {
+                    if (resolved && !resolved.error && resolved.path) {
+                        return { resume: true, checkpoint: resolved, resumePlanPath: resolved.path };
+                    }
+                    config.resumeFromPlan = false;
+                    log.printf('wizard: --resume specified but no valid checkpoint found; starting fresh');
+                    return handleConfigState(config);
+                });
             }
+            if (checkpoint && !checkpoint.error && checkpoint.path) {
+                return { resume: true, checkpoint: checkpoint, resumePlanPath: checkpoint.path };
+            }
+            config.resumeFromPlan = false;
             log.printf('wizard: --resume specified but no valid checkpoint found; starting fresh');
         }
 
@@ -785,17 +958,22 @@
         }
 
         // --- Step 2: Check for --resume flag ---
-        if (config.resume) {
+        if (config.resumeFromPlan) {
             var checkpoint = await loadPlan();
-            if (checkpoint && !checkpoint.error && checkpoint.plan) {
-                return { resume: true, checkpoint: checkpoint };
+            if (checkpoint && !checkpoint.error && checkpoint.path) {
+                return { resume: true, checkpoint: checkpoint, resumePlanPath: checkpoint.path };
             }
+            config.resumeFromPlan = false;
             // No valid checkpoint found — fall through to normal flow.
             log.printf('wizard: --resume specified but no valid checkpoint found; starting fresh');
         }
 
         // --- Step 3: Baseline verification config ---
         var verifyCommand = runtime.verifyCommand;
+        if (!verifyCommand && typeof prSplit.discoverVerifyCommand === 'function') {
+            verifyCommand = await prSplit.discoverVerifyCommand(dir);
+            if (verifyCommand) runtime.verifyCommand = verifyCommand;
+        }
         var verifyTimeoutMs = 0;
         if (typeof config.verifyTimeoutMs === 'number' && config.verifyTimeoutMs > 0) {
             verifyTimeoutMs = config.verifyTimeoutMs;
@@ -953,7 +1131,11 @@
             } else if (plan.verifyCommand && plan.verifyCommand !== 'true') {
                 var verifyResult = await prSplit.verifySplit(branch.name, {
                     verifyCommand: plan.verifyCommand,
-                    dir: plan.dir || '.'
+                    dir: plan.dir || '.',
+                    verifyTimeoutMs: typeof prSplit._effectiveVerifyTimeoutMs === 'function'
+                        ? prSplit._effectiveVerifyTimeoutMs(
+                            (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0)
+                        : (prSplit.AUTOMATED_DEFAULTS || {}).verifyTimeoutMs
                 });
                 status.verifyPassed = verifyResult.passed;
                 status.verifyOutput = verifyResult.output || '';
@@ -1120,6 +1302,11 @@
     prSplit._branchStatuses = branchStatuses;
     prSplit._transitionVerifyPhase = transitionVerifyPhase;
     prSplit._resetVerifyPhase = resetVerifyPhase;
+    prSplit._resetVerifyRunState = resetVerifyRunState;
+    prSplit._beginAsyncConfig = beginAsyncConfig;
+    prSplit._installCancellationSource = installCancellationSource;
+    prSplit._invalidateAsyncConfig = invalidateAsyncConfig;
+    prSplit._asyncConfigCurrent = asyncConfigCurrent;
 
     // Cross-chunk export — tuiState for command and core chunks.
     prSplit._tuiState = tuiState;

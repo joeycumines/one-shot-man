@@ -3,6 +3,7 @@ package termmux
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -42,12 +43,10 @@ func setupMgr(t *testing.T, withSession bool) (*goja.Runtime, func()) {
 		rec := newRecordingStringIO()
 		sio := parent.NewStringIOSession(rec)
 		sio.Start()
-		id, err := mgr.Register(sio, parent.SessionTarget{Name: "test", Kind: "pty"})
-		if err != nil {
+		session := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sio, parent.SessionKindPTY)
+		setOnLoop(t, runtime, "testSession", session)
+		if _, err := awaitJSValue(t, runtime, `return await tuiMux.register(testSession, {name: "test", kind: "pty"})`); err != nil {
 			t.Fatalf("Register: %v", err)
-		}
-		if err := mgr.Activate(id); err != nil {
-			t.Fatalf("Activate: %v", err)
 		}
 	}
 
@@ -78,7 +77,7 @@ func TestSessionManager_RunStartedClose(t *testing.T) {
 	}
 
 	// close() should not error.
-	_, err = sessionRun(t, runtime, `tuiMux.close()`)
+	_, err = awaitJSValue(t, runtime, `return await tuiMux.close()`)
 	if err != nil {
 		t.Fatalf("close(): %v", err)
 	}
@@ -100,7 +99,7 @@ func TestSessionManager_RunViaJS(t *testing.T) {
 	setOnLoop(t, runtime, "tuiMux", tuiMux)
 
 	// Call run() from JS — this starts the worker goroutine.
-	_, err := sessionRun(t, runtime, `tuiMux.run()`)
+	_, err := awaitJSValue(t, runtime, `await tuiMux.run()`)
 	if err != nil {
 		t.Fatalf("run(): %v", err)
 	}
@@ -148,7 +147,7 @@ func TestSessionManager_RegisterUnregister(t *testing.T) {
 	setOnLoop(t, runtime, "sessionID", uint64(id))
 
 	// activate(id) should succeed.
-	_, err = sessionRun(t, runtime, `tuiMux.activate(sessionID)`)
+	_, err = awaitJSValue(t, runtime, `return await tuiMux.activate(sessionID)`)
 	if err != nil {
 		t.Fatalf("activate: %v", err)
 	}
@@ -163,7 +162,7 @@ func TestSessionManager_RegisterUnregister(t *testing.T) {
 	}
 
 	// unregister(id) should succeed.
-	_, err = sessionRun(t, runtime, `tuiMux.unregister(sessionID)`)
+	_, err = awaitJSValue(t, runtime, `return await tuiMux.unregister(sessionID)`)
 	if err != nil {
 		t.Fatalf("unregister: %v", err)
 	}
@@ -189,11 +188,10 @@ func TestSessionManager_SessionsAndSnapshot(t *testing.T) {
 	}
 
 	runtime, cleanup := setupMgr(t, true)
-	time.Sleep(100 * time.Millisecond) // allow session output to reach VTerm
 	defer cleanup()
 
 	// sessions() should return an array with one entry.
-	v, err := sessionRun(t, runtime, `JSON.stringify(tuiMux.sessions())`)
+	v, err := awaitJSValue(t, runtime, `return JSON.stringify(await tuiMux.sessions())`)
 	if err != nil {
 		t.Fatalf("sessions(): %v", err)
 	}
@@ -205,9 +203,9 @@ func TestSessionManager_SessionsAndSnapshot(t *testing.T) {
 	}
 
 	// sessions() entry should have expected fields.
-	v, err = sessionRun(t, runtime, `
-		var ss = tuiMux.sessions();
-		ss.length === 1 && typeof ss[0].id === 'number' &&
+	v, err = awaitJSValue(t, runtime, `
+		var ss = await tuiMux.sessions();
+		return ss.length === 1 && typeof ss[0].id === 'number' &&
 			typeof ss[0].target === 'object' &&
 			ss[0].target.name === 'test' &&
 			typeof ss[0].state === 'string' &&
@@ -217,7 +215,7 @@ func TestSessionManager_SessionsAndSnapshot(t *testing.T) {
 		t.Fatalf("sessions() field check: %v", err)
 	}
 	if !v.ToBoolean() {
-		raw, _ := sessionRun(t, runtime, `JSON.stringify(tuiMux.sessions())`)
+		raw, _ := awaitJSValue(t, runtime, `return JSON.stringify(await tuiMux.sessions())`)
 		t.Fatalf("sessions() field check failed, got: %s", raw)
 	}
 
@@ -389,9 +387,9 @@ func TestSessionManager_CaptureBinding(t *testing.T) {
 	}
 
 	// With no active session the ID 0 lookup returns null.
-	v, err = sessionRun(t, runtime, `
-		tuiMux.detach();
-		tuiMux.capture(0) === null;
+	v, err = awaitJSValue(t, runtime, `
+		await tuiMux.detach();
+		return tuiMux.capture(0) === null;
 	`)
 	if err != nil {
 		t.Fatalf("capture after detach: %v", err)
@@ -410,7 +408,7 @@ func TestSessionManager_WriteToChild(t *testing.T) {
 	defer cleanup()
 
 	// writeToChild returns byte count.
-	v, err := sessionRun(t, runtime, `tuiMux.writeToChild('hello')`)
+	v, err := awaitJSValue(t, runtime, `return await tuiMux.writeToChild('hello')`)
 	if err != nil {
 		t.Fatalf("writeToChild: %v", err)
 	}
@@ -419,11 +417,11 @@ func TestSessionManager_WriteToChild(t *testing.T) {
 	}
 
 	// With no session, writeToChild throws (consistent with session().write()).
-	v, err = sessionRun(t, runtime, `
-		tuiMux.detach();
+	v, err = awaitJSValue(t, runtime, `
+		await tuiMux.detach();
 		var threw = false;
-		try { tuiMux.writeToChild('fail'); } catch(e) { threw = true; }
-		threw;
+		try { await tuiMux.writeToChild('fail'); } catch(e) { threw = true; }
+		return threw;
 	`)
 	if err != nil {
 		t.Fatalf("writeToChild after detach: %v", err)
@@ -444,13 +442,13 @@ func TestSessionManager_InputResize(t *testing.T) {
 	defer cleanup()
 
 	// input(data) should not throw with an active session.
-	_, err := sessionRun(t, runtime, `tuiMux.input('test data')`)
+	_, err := awaitJSValue(t, runtime, `return await tuiMux.input('test data')`)
 	if err != nil {
 		t.Fatalf("input: %v", err)
 	}
 
 	// resize(rows, cols) should not throw with an active session.
-	_, err = sessionRun(t, runtime, `tuiMux.resize(40, 120)`)
+	_, err = awaitJSValue(t, runtime, `return await tuiMux.resize(40, 120)`)
 	if err != nil {
 		t.Fatalf("resize: %v", err)
 	}
@@ -532,7 +530,7 @@ func TestSessionManager_Detach(t *testing.T) {
 	defer cleanup()
 
 	// Detach with active session should succeed.
-	_, err := sessionRun(t, runtime, `tuiMux.detach()`)
+	_, err := awaitJSValue(t, runtime, `return await tuiMux.detach()`)
 	if err != nil {
 		t.Fatalf("detach: %v", err)
 	}
@@ -547,7 +545,7 @@ func TestSessionManager_Detach(t *testing.T) {
 	}
 
 	// Detach again (idempotent) should also not throw.
-	_, err = sessionRun(t, runtime, `tuiMux.detach()`)
+	_, err = awaitJSValue(t, runtime, `return await tuiMux.detach()`)
 	if err != nil {
 		t.Fatal("double detach should not throw")
 	}
@@ -715,7 +713,7 @@ func TestSessionManager_SessionWrapper_OutputScreen(t *testing.T) {
 	defer cleanup()
 
 	// output() returns a string (may be empty for StringIO).
-	v, err := sessionRun(t, runtime, `typeof tuiMux.session().output()`)
+	v, err := awaitJSValue(t, runtime, `return typeof await tuiMux.session().output()`)
 	if err != nil {
 		t.Fatalf("output(): %v", err)
 	}
@@ -724,7 +722,7 @@ func TestSessionManager_SessionWrapper_OutputScreen(t *testing.T) {
 	}
 
 	// screen() returns a string.
-	v, err = sessionRun(t, runtime, `typeof tuiMux.session().screen()`)
+	v, err = awaitJSValue(t, runtime, `return typeof await tuiMux.session().screen()`)
 	if err != nil {
 		t.Fatalf("screen(): %v", err)
 	}
@@ -733,9 +731,9 @@ func TestSessionManager_SessionWrapper_OutputScreen(t *testing.T) {
 	}
 
 	// No session → both return empty string.
-	v, err = sessionRun(t, runtime, `
-		tuiMux.detach();
-		tuiMux.session().output() === '' && tuiMux.session().screen() === '';
+	v, err = awaitJSValue(t, runtime, `
+		await tuiMux.detach();
+		return await tuiMux.session().output() === '' && await tuiMux.session().screen() === '';
 	`)
 	if err != nil {
 		t.Fatalf("output/screen after detach: %v", err)
@@ -812,21 +810,9 @@ func TestSessionManager_ActivateInvalidID(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	// activate a non-existent session should throw.
-	v, err := sessionRun(t, runtime, `
-		var threw = false;
-		try {
-			tuiMux.activate(99999);
-		} catch (e) {
-			threw = true;
-		}
-		threw;
-	`)
-	if err != nil {
-		t.Fatalf("activate(99999): %v", err)
-	}
-	if !v.ToBoolean() {
-		t.Fatal("activate(invalid) should throw")
+	// activate a non-existent session should reject.
+	if err := awaitJSErr(t, runtime, `await tuiMux.activate(99999)`); err == nil {
+		t.Fatal("activate(invalid) should reject")
 	}
 }
 
@@ -838,21 +824,9 @@ func TestSessionManager_UnregisterInvalidID(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	// unregister a non-existent session should throw.
-	v, err := sessionRun(t, runtime, `
-		var threw = false;
-		try {
-			tuiMux.unregister(99999);
-		} catch (e) {
-			threw = true;
-		}
-		threw;
-	`)
-	if err != nil {
-		t.Fatalf("unregister(99999): %v", err)
-	}
-	if !v.ToBoolean() {
-		t.Fatal("unregister(invalid) should throw")
+	// unregister a non-existent session should reject.
+	if err := awaitJSErr(t, runtime, `await tuiMux.unregister(99999)`); err == nil {
+		t.Fatal("unregister(invalid) should reject")
 	}
 }
 
@@ -864,21 +838,9 @@ func TestSessionManager_InputNoSession(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	// input with no active session should throw.
-	v, err := sessionRun(t, runtime, `
-		var threw = false;
-		try {
-			tuiMux.input('hello');
-		} catch (e) {
-			threw = true;
-		}
-		threw;
-	`)
-	if err != nil {
-		t.Fatalf("input(no session): %v", err)
-	}
-	if !v.ToBoolean() {
-		t.Fatal("input with no active session should throw")
+	// input with no active session should reject.
+	if err := awaitJSErr(t, runtime, `await tuiMux.input('hello')`); err == nil {
+		t.Fatal("input with no active session should reject")
 	}
 }
 
@@ -1115,7 +1077,7 @@ func TestSessionManager_SwitchToNoChild(t *testing.T) {
 	defer cleanup()
 
 	// switchTo() with no child returns undefined (guard clause).
-	v, err := sessionRun(t, runtime, `tuiMux.switchTo()`)
+	v, err := awaitJSValue(t, runtime, `return await tuiMux.switchTo()`)
 	if err != nil {
 		t.Fatalf("switchTo(): %v", err)
 	}
@@ -1223,11 +1185,8 @@ func TestSessionManager_AttachReturnsSessionID(t *testing.T) {
 	rec := newRecordingStringIO()
 	setOnLoop(t, runtime, "testSIO", rec)
 
-	// attach(sio) should return a number > 0 (the SessionID).
-	v, err := sessionRun(t, runtime, `
-		var id = tuiMux.attach(testSIO);
-		typeof id === 'number' && id > 0 ? id : -1;
-	`)
+	// attach(sio) should resolve to a number > 0 (the SessionID).
+	v, err := awaitJSValue(t, runtime, `return await tuiMux.attach(testSIO)`)
 	if err != nil {
 		t.Fatalf("attach(sio): %v", err)
 	}
@@ -1258,10 +1217,7 @@ func TestSessionManager_AttachWrappedStringIOReturnsSessionID(t *testing.T) {
 	_ = handle.Set("_handle", rec)
 	setOnLoop(t, runtime, "testHandle", handle)
 
-	v, err := sessionRun(t, runtime, `
-		var id = tuiMux.attach(testHandle);
-		typeof id === 'number' && id > 0 ? id : -1;
-	`)
+	v, err := awaitJSValue(t, runtime, `return await tuiMux.attach(testHandle)`)
 	if err != nil {
 		t.Fatalf("attach(wrapped StringIO): %v", err)
 	}
@@ -1366,14 +1322,19 @@ func TestNewBoundedSession(t *testing.T) {
 
 	v, err := awaitJSValue(t, runtime, `
 		var result = await exports.newBoundedSession({ cmd: echoBin, rows: 10, cols: 30, name: 'test', kind: 'capture' });
-		return JSON.stringify({ hasSession: typeof result.session === 'object', hasMgr: typeof result.mgr === 'object', hasSid: result.sid > 0 });
+		try {
+			return JSON.stringify({ hasSession: typeof result.session === 'object', hasMgr: typeof result.mgr === 'object', hasSid: result.sid > 0, activeMatches: Number(result.mgr.activeID()) === Number(result.sid) });
+		} finally {
+			await result.session.close();
+			await result.mgr.close();
+		}
 	`)
 	if err != nil {
 		t.Fatalf("newBoundedSession: %v", err)
 	}
 
 	got := v.String()
-	if got != `{"hasSession":true,"hasMgr":true,"hasSid":true}` {
+	if got != `{"hasSession":true,"hasMgr":true,"hasSid":true,"activeMatches":true}` {
 		t.Errorf("newBoundedSession result = %s, want all true", got)
 	}
 }
@@ -1425,17 +1386,17 @@ func TestNewBoundedSession_RemainOnExitOption(t *testing.T) {
 	setOnLoop(t, runtime, "exitBin", exitBin)
 
 	_, err := awaitJSValue(t, runtime, `
-		function findSession(mgr, id) {
-			var list = mgr.sessions();
+		async function findSession(mgr, id) {
+			var list = await mgr.sessions();
 			for (var i = 0; i < list.length; i++) {
-				if (list[i].id === id) return list[i];
+				if (Number(list[i].id) === Number(id)) return list[i];
 			}
 			return null;
 		}
 		function waitFor(label, fn, deadlineMs) {
 			return new Promise(function(resolve, reject) {
-				(function poll() {
-					var v = fn();
+				(async function poll() {
+					var v = await fn();
 					if (v) return resolve(v);
 					if (Date.now() > deadlineMs) return reject(new Error('timeout waiting for ' + label));
 					setTimeout(poll, 10);
@@ -1443,38 +1404,45 @@ func TestNewBoundedSession_RemainOnExitOption(t *testing.T) {
 			});
 		}
 
-		var kept = await exports.newBoundedSession({ cmd: exitBin, remainOnExit: true });
-		if (kept.mgr.remainOnExit() !== true) {
-			throw new Error('remainOnExit option did not set the manager default');
-		}
-		var lastState = '(none)';
-		await kept.session.wait();
-		await waitFor('retained exited session', function() {
-			var list = kept.mgr.sessions();
-			var s = null;
-			for (var i = 0; i < list.length; i++) {
-				if (Number(list[i].id) === Number(kept.sid)) s = list[i];
+		var kept;
+		var dropped;
+		try {
+			kept = await exports.newBoundedSession({ cmd: exitBin, remainOnExit: true });
+			if (await kept.mgr.remainOnExit() !== true) {
+				throw new Error('remainOnExit option did not set the manager default');
 			}
-			lastState = s ? s.state + '/' + typeof list[0].id + '/' + typeof kept.sid + '/' + String(kept.sid) : 'missing/' + typeof kept.sid + '/' + String(kept.sid);
-			if (s && s.state === 'exited') return s;
-			return null;
-		}, Date.now() + 5000).catch(function(e) {
-			throw new Error(String(e.message) + '; lastState=' + lastState + '; sessions=' + JSON.stringify(kept.mgr.sessions()) + '; remain=' + kept.mgr.remainOnExit());
-		});
+			var lastState = '(none)';
+			await kept.session.wait();
+			await waitFor('retained exited session', async function() {
+				var list = await kept.mgr.sessions();
+				var s = null;
+				for (var i = 0; i < list.length; i++) {
+					if (Number(list[i].id) === Number(kept.sid)) s = list[i];
+				}
+				lastState = s ? s.state + '/' + typeof list[0].id + '/' + typeof kept.sid + '/' + String(kept.sid) : 'missing/' + typeof kept.sid + '/' + String(kept.sid);
+				if (s && s.state === 'exited') return s;
+				return null;
+			}, Date.now() + 5000).catch(async function(e) {
+				throw new Error(String(e.message) + '; lastState=' + lastState + '; sessions=' + JSON.stringify(await kept.mgr.sessions()) + '; remain=' + await kept.mgr.remainOnExit());
+			});
 
-		var dropped = await exports.newBoundedSession({ cmd: exitBin });
-		if (dropped.mgr.remainOnExit() !== false) {
-			throw new Error('default remainOnExit should stay false');
+			dropped = await exports.newBoundedSession({ cmd: exitBin });
+			if (await dropped.mgr.remainOnExit() !== false) {
+				throw new Error('default remainOnExit should stay false');
+			}
+			await dropped.session.wait();
+			await waitFor('session removed on exit', async function() {
+				return await findSession(dropped.mgr, dropped.sid) === null;
+			}, Date.now() + 5000).catch(async function(e) {
+				var list = await dropped.mgr.sessions();
+				throw new Error(String(e.message) + '; sid=' + dropped.sid + '; sessions=' + JSON.stringify(list) + '; remain=' + await dropped.mgr.remainOnExit());
+			});
+		} finally {
+			if (kept) await kept.session.close();
+			if (kept) await kept.mgr.close();
+			if (dropped) await dropped.session.close();
+			if (dropped) await dropped.mgr.close();
 		}
-		await dropped.session.wait();
-		await waitFor('session removed on exit', function() {
-			return findSession(dropped.mgr, dropped.sid) === null;
-		}, Date.now() + 5000);
-
-		try { kept.session.close(); } catch (e) {}
-		try { kept.mgr.close(); } catch (e) {}
-		try { dropped.session.close(); } catch (e) {}
-		try { dropped.mgr.close(); } catch (e) {}
 		return 'ok';
 	`)
 	if err != nil {
@@ -1501,9 +1469,9 @@ func TestChooser_Creation(t *testing.T) {
 	setOnLoop(t, runtime, "activeID", activeID)
 
 	// newChooser should return an object with the expected methods.
-	v, err = sessionRun(t, runtime, `
-		var c = tuiMux.newChooser(activeID);
-		typeof c.show === 'function' &&
+	v, err = awaitJSValue(t, runtime, `
+		var c = await tuiMux.newChooser(activeID);
+		return typeof c.show === 'function' &&
 			typeof c.hide === 'function' &&
 			typeof c.visible === 'function' &&
 			typeof c.up === 'function' &&
@@ -1534,10 +1502,10 @@ func TestChooser_Visibility(t *testing.T) {
 	setOnLoop(t, runtime, "activeID", v.ToInteger())
 
 	// After show(), visible() should be true.
-	v, err = sessionRun(t, runtime, `
-		var c = tuiMux.newChooser(activeID);
+	v, err = awaitJSValue(t, runtime, `
+		var c = await tuiMux.newChooser(activeID);
 		c.show();
-		c.visible();
+		return c.visible();
 	`)
 	if err != nil {
 		t.Fatalf("visible after show: %v", err)
@@ -1547,10 +1515,10 @@ func TestChooser_Visibility(t *testing.T) {
 	}
 
 	// After hide(), visible() should be false.
-	v, err = sessionRun(t, runtime, `
-		var c = tuiMux.newChooser(activeID);
+	v, err = awaitJSValue(t, runtime, `
+		var c = await tuiMux.newChooser(activeID);
 		c.hide();
-		c.visible();
+		return c.visible();
 	`)
 	if err != nil {
 		t.Fatalf("visible after hide: %v", err)
@@ -1589,22 +1557,20 @@ func TestChooser_Navigation(t *testing.T) {
 		ids[i] = uint64(id)
 	}
 
-	// Activate the second session so it becomes the active ID.
-	if err := mgr.Activate(parent.SessionID(ids[1])); err != nil {
-		t.Fatalf("Activate: %v", err)
-	}
-
 	runtime := goja.New()
 	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
 	setOnLoop(t, runtime, "tuiMux", tuiMux)
+	if _, err := awaitJSValue(t, runtime, fmt.Sprintf(`return await tuiMux.activate(%d)`, ids[1])); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
 
 	// newChooser(activeID) should default to cursor at active session.
-	v, err := sessionRun(t, runtime, `
+	v, err := awaitJSValue(t, runtime, `
 		var active = tuiMux.activeID();
-		var c = tuiMux.newChooser(active);
+		var c = await tuiMux.newChooser(active);
 		var sel = c.selected();
 		// Selected should have id, name, kind, index fields.
-		typeof sel.id === 'number' &&
+		return typeof sel.id === 'number' &&
 			typeof sel.name === 'string' &&
 			typeof sel.kind === 'string' &&
 			typeof sel.index === 'number' &&
@@ -1618,11 +1584,11 @@ func TestChooser_Navigation(t *testing.T) {
 	}
 
 	// down() should move cursor to gamma.
-	v, err = sessionRun(t, runtime, `
-		var c = tuiMux.newChooser(tuiMux.activeID());
+	v, err = awaitJSValue(t, runtime, `
+		var c = await tuiMux.newChooser(tuiMux.activeID());
 		c.down();
 		var sel = c.selected();
-		sel.name === 'gamma';
+		return sel.name === 'gamma';
 	`)
 	if err != nil {
 		t.Fatalf("selected after down: %v", err)
@@ -1632,12 +1598,12 @@ func TestChooser_Navigation(t *testing.T) {
 	}
 
 	// up() should move cursor back to beta.
-	v, err = sessionRun(t, runtime, `
-		var c = tuiMux.newChooser(tuiMux.activeID());
+	v, err = awaitJSValue(t, runtime, `
+		var c = await tuiMux.newChooser(tuiMux.activeID());
 		c.down();
 		c.up();
 		var sel = c.selected();
-		sel.name === 'beta';
+		return sel.name === 'beta';
 	`)
 	if err != nil {
 		t.Fatalf("selected after down+up: %v", err)
@@ -1647,13 +1613,13 @@ func TestChooser_Navigation(t *testing.T) {
 	}
 
 	// At bottom, down() should stay on gamma.
-	v, err = sessionRun(t, runtime, `
-		var c = tuiMux.newChooser(tuiMux.activeID());
+	v, err = awaitJSValue(t, runtime, `
+		var c = await tuiMux.newChooser(tuiMux.activeID());
 		c.down();
 		c.down();
 		c.down();
 		var sel = c.selected();
-		sel.name === 'gamma';
+		return sel.name === 'gamma';
 	`)
 	if err != nil {
 		t.Fatalf("selected after extra down: %v", err)
@@ -1663,15 +1629,15 @@ func TestChooser_Navigation(t *testing.T) {
 	}
 
 	// At top, up() should stay on alpha.
-	v, err = sessionRun(t, runtime, `
-		var c = tuiMux.newChooser(tuiMux.activeID());
+	v, err = awaitJSValue(t, runtime, `
+		var c = await tuiMux.newChooser(tuiMux.activeID());
 		c.down();
 		c.down();
 		c.up();
 		c.up();
 		c.up();
 		var sel = c.selected();
-		sel.name === 'alpha';
+		return sel.name === 'alpha';
 	`)
 	if err != nil {
 		t.Fatalf("selected after extra up: %v", err)
@@ -1692,12 +1658,12 @@ func TestChooser_Render(t *testing.T) {
 	runtime, cleanup := setupMgr(t, true)
 	defer cleanup()
 
-	v, err := sessionRun(t, runtime, `
+	v, err := awaitJSValue(t, runtime, `
 		var id = tuiMux.activeID();
-		var c = tuiMux.newChooser(id);
+		var c = await tuiMux.newChooser(id);
 		c.show();
 		var out = c.render(60);
-		typeof out === 'string' && out.length > 0;
+		return typeof out === 'string' && out.length > 0;
 	`)
 	if err != nil {
 		t.Fatalf("render: %v", err)
@@ -1707,10 +1673,10 @@ func TestChooser_Render(t *testing.T) {
 	}
 
 	// Render when hidden should return empty string.
-	v, err = sessionRun(t, runtime, `
-		var c = tuiMux.newChooser(tuiMux.activeID());
+	v, err = awaitJSValue(t, runtime, `
+		var c = await tuiMux.newChooser(tuiMux.activeID());
 		c.hide();
-		c.render(60) === '';
+		return c.render(60) === '';
 	`)
 	if err != nil {
 		t.Fatalf("render hidden: %v", err)
@@ -1737,13 +1703,13 @@ func TestLockSession(t *testing.T) {
 	setOnLoop(t, runtime, "sid", v.ToInteger())
 
 	// lockSession should not throw and should succeed.
-	_, err = sessionRun(t, runtime, `tuiMux.lockSession(sid, 'testpass')`)
+	_, err = awaitJSValue(t, runtime, `return await tuiMux.lockSession(sid, 'testpass')`)
 	if err != nil {
 		t.Fatalf("lockSession: %v", err)
 	}
 
 	// isLocked should return true.
-	v, err = sessionRun(t, runtime, `tuiMux.isLocked(sid)`)
+	v, err = awaitJSValue(t, runtime, `return await tuiMux.isLocked(sid)`)
 	if err != nil {
 		t.Fatalf("isLocked: %v", err)
 	}
@@ -1767,13 +1733,13 @@ func TestUnlockSession(t *testing.T) {
 	setOnLoop(t, runtime, "sid", v.ToInteger())
 
 	// Lock with password.
-	_, err = sessionRun(t, runtime, `tuiMux.lockSession(sid, 'correctpass')`)
+	_, err = awaitJSValue(t, runtime, `return await tuiMux.lockSession(sid, 'correctpass')`)
 	if err != nil {
 		t.Fatalf("lockSession: %v", err)
 	}
 
 	// Unlock with correct password should return true.
-	v, err = sessionRun(t, runtime, `tuiMux.unlockSession(sid, 'correctpass')`)
+	v, err = awaitJSValue(t, runtime, `return await tuiMux.unlockSession(sid, 'correctpass')`)
 	if err != nil {
 		t.Fatalf("unlockSession correct: %v", err)
 	}
@@ -1782,7 +1748,7 @@ func TestUnlockSession(t *testing.T) {
 	}
 
 	// isLocked should now be false.
-	v, err = sessionRun(t, runtime, `tuiMux.isLocked(sid)`)
+	v, err = awaitJSValue(t, runtime, `return await tuiMux.isLocked(sid)`)
 	if err != nil {
 		t.Fatalf("isLocked after correct unlock: %v", err)
 	}
@@ -1791,13 +1757,13 @@ func TestUnlockSession(t *testing.T) {
 	}
 
 	// Lock again.
-	_, err = sessionRun(t, runtime, `tuiMux.lockSession(sid, 'otherpass')`)
+	_, err = awaitJSValue(t, runtime, `return await tuiMux.lockSession(sid, 'otherpass')`)
 	if err != nil {
 		t.Fatalf("lockSession: %v", err)
 	}
 
 	// Unlock with wrong password should return false.
-	v, err = sessionRun(t, runtime, `tuiMux.unlockSession(sid, 'wrongpass')`)
+	v, err = awaitJSValue(t, runtime, `return await tuiMux.unlockSession(sid, 'wrongpass')`)
 	if err != nil {
 		t.Fatalf("unlockSession wrong: %v", err)
 	}
@@ -1806,7 +1772,7 @@ func TestUnlockSession(t *testing.T) {
 	}
 
 	// isLocked should still be true.
-	v, err = sessionRun(t, runtime, `tuiMux.isLocked(sid)`)
+	v, err = awaitJSValue(t, runtime, `return await tuiMux.isLocked(sid)`)
 	if err != nil {
 		t.Fatalf("isLocked after wrong unlock: %v", err)
 	}
@@ -1834,27 +1800,24 @@ func TestSessionManager_LockedInputGate_JS(t *testing.T) {
 	rec := newRecordingStringIO()
 	sio := parent.NewStringIOSession(rec)
 	sio.Start()
-	id, err := mgr.Register(sio, parent.SessionTarget{Name: "gate-test", Kind: "pty"})
-	if err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-	if err := mgr.Activate(id); err != nil {
-		t.Fatalf("Activate: %v", err)
-	}
-
 	runtime := goja.New()
 	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
 	setOnLoop(t, runtime, "tuiMux", tuiMux)
+	gateSession := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sio, parent.SessionKindPTY)
+	setOnLoop(t, runtime, "gateSession", gateSession)
+	if _, err := awaitJSValue(t, runtime, `return await tuiMux.register(gateSession, {name: "gate-test", kind: "pty"})`); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
 
-	_, err = sessionRun(t, runtime, `
-		tuiMux.lockSession(tuiMux.activeID(), 'gatepass');
-		tuiMux.session().write('should not reach child');
+	_, err := awaitJSValue(t, runtime, `
+		await tuiMux.lockSession(tuiMux.activeID(), 'gatepass');
+		await tuiMux.session().write('should not reach child');
 	`)
 	if err != nil {
 		t.Fatalf("lock/write: %v", err)
 	}
 
-	v, err := sessionRun(t, runtime, `tuiMux.capture(tuiMux.activeID()).locked`)
+	v, err := awaitJSValue(t, runtime, `return tuiMux.capture(tuiMux.activeID()).locked`)
 	if err != nil {
 		t.Fatalf("snapshot locked: %v", err)
 	}
@@ -1866,15 +1829,15 @@ func TestSessionManager_LockedInputGate_JS(t *testing.T) {
 		t.Fatalf("child received gated input: %v", rec.sent)
 	}
 
-	_, err = sessionRun(t, runtime, `
-		tuiMux.unlockSession(tuiMux.activeID(), 'gatepass');
-		tuiMux.session().write('after unlock');
+	_, err = awaitJSValue(t, runtime, `
+		await tuiMux.unlockSession(tuiMux.activeID(), 'gatepass');
+		await tuiMux.session().write('after unlock');
 	`)
 	if err != nil {
 		t.Fatalf("unlock/write: %v", err)
 	}
 
-	v, err = sessionRun(t, runtime, `tuiMux.capture(tuiMux.activeID()).locked`)
+	v, err = awaitJSValue(t, runtime, `return tuiMux.capture(tuiMux.activeID()).locked`)
 	if err != nil {
 		t.Fatalf("snapshot locked after unlock: %v", err)
 	}
@@ -1893,7 +1856,7 @@ func TestSessionStatusMethodBindings(t *testing.T) {
 	err := awaitJSErr(t, runtime, `
 		async function mkSession(name) {
 			var s = await termmux.newBoundedSession({ cmd: idleBin });
-			tuiMux.register(s.session, { name: name });
+			await tuiMux.register(s.session, { name: name });
 			return s;
 		}
 		var base = await mkSession("base");
@@ -1904,23 +1867,22 @@ func TestSessionStatusMethodBindings(t *testing.T) {
 		var tid = tuiMux.on("exit", function() {});
 		tuiMux.off(tid);
 		tuiMux.pollEvents();
-		var w1 = tuiMux.newWindow("w1");
-		var w2 = tuiMux.newWindow("w2");
-		tuiMux.nextWindow();
-		tuiMux.renameWindow(w1, "renamed");
-		tuiMux.setSynchronizePanes(true);
-		var sync = tuiMux.synchronizePanes();
-		tuiMux.setRemainOnExit(true);
-		var roe = tuiMux.remainOnExit();
-		tuiMux.setMonitorConfig(base.id, { bell: true });
-		var mc = tuiMux.monitorConfig(base.id);
-		tuiMux.setPaneRemainOnExit(1, true);
-		var proe = tuiMux.paneRemainOnExit(1);
-		tuiMux.checkSilenceMonitors();
-		var windows = tuiMux.windows();
-		var winpanes = tuiMux.windowPanes();
-		var activeWin = tuiMux.activeWindowID();
-		tuiMux.closeWindow(w1);
+		var w1 = await tuiMux.newWindow("w1");
+		var w2 = await tuiMux.newWindow("w2");
+		await tuiMux.nextWindow();
+		await tuiMux.renameWindow(w1, "renamed");
+		await tuiMux.setSynchronizePanes(true);
+		var sync = await tuiMux.synchronizePanes();
+		await tuiMux.setRemainOnExit(true);
+		var roe = await tuiMux.remainOnExit();
+		await tuiMux.setMonitorConfig(base.sid, { bell: true });
+		var mc = await tuiMux.monitorConfig(base.sid);
+		await tuiMux.checkSilenceMonitors();
+		var windows = await tuiMux.windows();
+		var winpanes = await tuiMux.windowPanes();
+		var activeWin = await tuiMux.activeWindowID();
+		await tuiMux.closeWindow(w1);
+		await base.session.close();
 	`)
 	if err != nil {
 		t.Fatalf("session/status binding test: %v", err)
@@ -1940,7 +1902,7 @@ func TestSearchForwardBackwardBindings(t *testing.T) {
 
 	err := awaitJSErr(t, runtime, `
 		var s = await termmux.newBoundedSession({ cmd: idleBin });
-		tuiMux.register(s.session, { name: "search" });
+		await tuiMux.register(s.session, { name: "search" });
 		function mySearch(pattern, row, col) {
 			if (pattern === "hello") {
 				return { found: true, row: 0, col: 0 };
@@ -1954,6 +1916,7 @@ func TestSearchForwardBackwardBindings(t *testing.T) {
 		var match = searcher.execute(mySearch);
 		var next = searcher.nextMatch(0, 0, mySearch);
 		var prev = searcher.prevMatch(0, 0, mySearch);
+		await s.session.close();
 	`)
 	if err != nil {
 		t.Fatalf("search binding test: %v", err)
@@ -1995,8 +1958,17 @@ func (m *mockInteractiveSession) Close() error {
 func (m *mockInteractiveSession) Done() <-chan struct{} { return m.done }
 func (m *mockInteractiveSession) Reader() <-chan []byte { return m.readerCh }
 
-func TestWrapInteractiveSession_HappyPath(t *testing.T) {
+func setupInteractiveSessionRuntime(t *testing.T) (*goja.Runtime, context.Context, context.CancelFunc) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
 	runtime := goja.New()
+	_ = wrapTestSessionManagerWithLoop(t, ctx, runtime, parent.NewSessionManager(), nil, nil, -1, "")
+	return runtime, ctx, cancel
+}
+
+func TestWrapInteractiveSession_HappyPath(t *testing.T) {
+	runtime, ctx, cancel := setupInteractiveSessionRuntime(t)
+	defer cancel()
 	sess := &mockInteractiveSession{
 		done:     make(chan struct{}),
 		readerCh: make(chan []byte, 2),
@@ -2004,14 +1976,14 @@ func TestWrapInteractiveSession_HappyPath(t *testing.T) {
 	sess.readerCh <- []byte("alpha")
 	sess.readerCh <- []byte("beta")
 
-	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set("s", wrapped)
+	wrapped := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+	setOnLoop(t, runtime, "s", wrapped)
 
-	_, err := runtime.RunString(`
-		s.resize(25, 100);
-		s.write("hello");
+	_, err := awaitJSValue(t, runtime, `
+		await s.resize(25, 100);
+		await s.write("hello");
 		s.isDone();
-		var r2 = s.readAvailable();
+		return s.readAvailable();
 	`)
 	if err != nil {
 		t.Fatalf("happy path: %v", err)
@@ -2026,12 +1998,13 @@ func TestWrapInteractiveSession_HappyPath(t *testing.T) {
 }
 
 func TestWrapInteractiveSession_Close(t *testing.T) {
-	runtime := goja.New()
+	runtime, ctx, cancel := setupInteractiveSessionRuntime(t)
+	defer cancel()
 	sess := &mockInteractiveSession{done: make(chan struct{})}
-	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set("s", wrapped)
+	wrapped := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+	setOnLoop(t, runtime, "s", wrapped)
 
-	_, err := runtime.RunString(`s.close()`)
+	_, err := awaitJSValue(t, runtime, `return await s.close()`)
 	if err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -2044,36 +2017,39 @@ func TestWrapInteractiveSession_Close(t *testing.T) {
 }
 
 func TestWrapInteractiveSession_ResizeError(t *testing.T) {
-	runtime := goja.New()
+	runtime, ctx, cancel := setupInteractiveSessionRuntime(t)
+	defer cancel()
 	sess := &mockInteractiveSession{resizeErr: errors.New("resize fail")}
-	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set("s", wrapped)
+	wrapped := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+	setOnLoop(t, runtime, "s", wrapped)
 
-	_, err := runtime.RunString(`s.resize(10, 20)`)
+	_, err := awaitJSValue(t, runtime, `return await s.resize(10, 20)`)
 	if err == nil {
 		t.Error("expected error from resize failure")
 	}
 }
 
 func TestWrapInteractiveSession_WriteError(t *testing.T) {
-	runtime := goja.New()
+	runtime, ctx, cancel := setupInteractiveSessionRuntime(t)
+	defer cancel()
 	sess := &mockInteractiveSession{writeErr: errors.New("write fail")}
-	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set("s", wrapped)
+	wrapped := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+	setOnLoop(t, runtime, "s", wrapped)
 
-	_, err := runtime.RunString(`s.write("x")`)
+	_, err := awaitJSValue(t, runtime, `return await s.write("x")`)
 	if err == nil {
 		t.Error("expected error from write failure")
 	}
 }
 
 func TestWrapInteractiveSession_CloseError(t *testing.T) {
-	runtime := goja.New()
+	runtime, ctx, cancel := setupInteractiveSessionRuntime(t)
+	defer cancel()
 	sess := &mockInteractiveSession{closeErr: errors.New("close fail")}
-	wrapped := wrapInteractiveSession(runtime, sess, parent.SessionKindPTY)
-	_ = runtime.Set("s", wrapped)
+	wrapped := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+	setOnLoop(t, runtime, "s", wrapped)
 
-	_, err := runtime.RunString(`s.close()`)
+	_, err := awaitJSValue(t, runtime, `return await s.close()`)
 	if err == nil {
 		t.Error("expected error from close failure")
 	}
@@ -2125,7 +2101,7 @@ func TestSnapshotMethods(t *testing.T) {
 
 	err := awaitJSErr(t, runtime, `
 		var ts = tuiMux.termSize();
-		var list = tuiMux.sessions();
+		var list = await tuiMux.sessions();
 		var id = list[0].id;
 		var snap = tuiMux.capture(id);
 		var none = tuiMux.capture(999999);

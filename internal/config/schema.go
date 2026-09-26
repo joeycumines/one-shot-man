@@ -381,6 +381,20 @@ func (c *Config) GetBool(key string) bool {
 	return b
 }
 
+// GetCommandBool returns the command option value parsed as a boolean. It
+// returns false when the option is absent or invalid.
+func (c *Config) GetCommandBool(command, key string) bool {
+	v, ok := c.GetCommandOption(command, key)
+	if !ok {
+		return false
+	}
+	b, err := parseBool(v)
+	if err != nil {
+		return false
+	}
+	return b
+}
+
 // GetInt returns the global option value for key parsed as an integer. Returns
 // 0 if the key is not set or the value cannot be parsed.
 func (c *Config) GetInt(key string) int {
@@ -610,5 +624,22 @@ func defaultCommandOptions() []ConfigOption {
 		{Key: "maxSizeMB", Section: "sessions", Type: TypeInt, Default: "500", Description: "Maximum total size of sessions in MB"},
 		{Key: "autoCleanupEnabled", Section: "sessions", Type: TypeBool, Default: "true", Description: "Enable automatic background session cleanup"},
 		{Key: "cleanupIntervalHours", Section: "sessions", Type: TypeInt, Default: "24", Description: "Hours between automatic cleanup runs"},
+
+		// [pr-split] section
+		// These options are consumed by PrSplitCommand.applyConfigDefaults and
+		// must remain in the canonical schema so config validation and schema
+		// documentation agree with the command implementation.
+		{Key: "base", Section: "pr-split", Type: TypeString, Default: "auto", Description: "Base branch to split against; auto selects the repository default"},
+		{Key: "strategy", Section: "pr-split", Type: TypeEnum, Default: "directory", Allowed: []string{"directory", "directory-deep", "extension", "chunks", "dependency", "auto"}, Description: "Grouping strategy for generated split branches"},
+		{Key: "max", Section: "pr-split", Type: TypeInt, Default: "10", Description: "Maximum files per split branch"},
+		{Key: "prefix", Section: "pr-split", Type: TypeString, Default: "split/", Description: "Branch name prefix for splits"},
+		{Key: "verify", Section: "pr-split", Type: TypeString, Default: "", Description: "Command used to verify each split; empty auto-detects from the project"},
+		{Key: "dry-run", Section: "pr-split", Type: TypeBool, Default: "false", Description: "Plan without creating branches"},
+		{Key: "agent-command", Section: "pr-split", Type: TypeString, Default: "", Description: "Agent binary path or name for agent-backed flows"},
+		{Key: "agent-arg", Section: "pr-split", Type: TypeString, Default: "", Description: "Additional agent CLI argument"},
+		{Key: "agent-env", Section: "pr-split", Type: TypeString, Default: "", Description: "Comma-separated environment overrides for the agent"},
+		{Key: "timeout", Section: "pr-split", Type: TypeDuration, Default: "", Description: "Deadline for agent waits and verification steps"},
+		{Key: "resume", Section: "pr-split", Type: TypeBool, Default: "false", Description: "Resume a previously saved auto-split session"},
+		{Key: "cleanup-on-failure", Section: "pr-split", Type: TypeBool, Default: "false", Description: "Delete split branches when the pipeline fails"},
 	}
 }

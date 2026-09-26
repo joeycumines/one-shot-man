@@ -18,30 +18,33 @@ func TestSendKeys_JSBinding(t *testing.T) {
 
 	snapVal, snapErr := awaitJSValue(t, runtime, `
 		var s = await termmux.newBoundedSession({ cmd: idleBin });
-		tuiMux.activate(s.sid);
+		try {
+			await tuiMux.activate(s.sid);
 
-		tuiMux.sendKeys(s.sid, "h", "e", "l", "l", "o", "enter");
+			await tuiMux.sendKeys(s.sid, "h", "e", "l", "l", "o", "enter");
 
-		if (typeof s.session.sendKeys !== "function") {
-			throw new Error("session wrapper missing sendKeys method");
+			if (typeof s.session.sendKeys !== "function") {
+				throw new Error("session wrapper missing sendKeys method");
+			}
+			await s.session.sendKeys("w", "o", "r", "l", "d", "enter");
+
+			return await new Promise(function(resolve, reject) {
+				(function poll() {
+					var snap = tuiMux.capture(s.sid);
+					var text = snap && snap.plain ? snap.plain : "";
+					if (text.indexOf("hello") >= 0 && text.indexOf("world") >= 0) return resolve(text);
+					if (Date.now() > (poll.deadline || (poll.deadline = Date.now() + 5000))) return reject(new Error("timeout waiting for output"));
+					setTimeout(poll, 50);
+				})();
+			});
+		} finally {
+			await s.session.close();
 		}
-		s.session.sendKeys("w", "o", "r", "l", "d", "enter");
-
-		return new Promise(function(resolve, reject) {
-			(function poll() {
-				var snap = tuiMux.capture(s.sid);
-				var text = snap && snap.plain ? snap.plain : "";
-				if (text.indexOf("hello") >= 0 && text.indexOf("world") >= 0) return resolve(text);
-				if (Date.now() > (poll.deadline || (poll.deadline = Date.now() + 5000))) return reject(new Error("timeout waiting for output"));
-				setTimeout(poll, 50);
-			})();
-		});
 	`)
 	if snapErr != nil {
 		t.Fatalf("sendKeys script: %v", snapErr)
 	}
 	snapText := snapVal.String()
-	_ = snapErr
 
 	if !strings.Contains(snapText, "world") {
 		t.Errorf("output missing world: %q", snapText)

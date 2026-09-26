@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/joeycumines/goja"
+
+	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 )
@@ -331,6 +333,16 @@ type TestPipeline struct {
 	Dispatch    func(string, []string) error // TUI command dispatch
 	EvalJS      func(string) (any, error)    // evaluate JS in engine
 	EvalJSAsync func(string) (any, error)    // evaluate async JS (await)
+	Runtime     *goja.Runtime                // this pipeline's JS runtime
+}
+
+// WatchMCPInit returns a channel that receives a Handle to the next
+// mcpCallback initialized by THIS pipeline's engine, so a test can inject a
+// tool result while its own JS waits. The runtime scoping is what keeps
+// parallel tests from injecting each other's payloads; register before
+// starting the pipeline.
+func (tp *TestPipeline) WatchMCPInit() <-chan *mcpcallbackmod.Handle {
+	return mcpcallbackmod.WatchForInit(tp.Runtime)
 }
 
 // setupTestPipeline creates a test pipeline with configurable initial files,
@@ -441,15 +453,16 @@ func setupTestPipeline(t *testing.T, opts TestPipelineOpts) *TestPipeline {
 	}
 	maps.Copy(overrides, opts.ConfigOverrides)
 
-	stdout, dispatch, evalJS, evalJSAsync := loadPrSplitEngineWithEval(t, overrides)
+	eng := loadPrSplitEngineWithRuntime(t, overrides)
 
 	return &TestPipeline{
 		Dir:         dir,
 		ResultDir:   resultDir,
-		Stdout:      stdout,
-		Dispatch:    dispatch,
-		EvalJS:      evalJS,
-		EvalJSAsync: evalJSAsync,
+		Stdout:      eng.Stdout,
+		Dispatch:    eng.Dispatch,
+		EvalJS:      eng.EvalJS,
+		EvalJSAsync: eng.EvalJSAsync,
+		Runtime:     eng.Runtime,
 	}
 }
 
@@ -657,7 +670,28 @@ func loadPrSplitEngine(t testing.TB, overrides map[string]any) (*bytes.Buffer, f
 	return &stdout, dispatch
 }
 
+// prSplitTestEngine bundles the handles a test needs from a loaded pr-split
+// engine. Runtime is included so tests can scope test-only injection
+// channels (see TestPipeline.WatchMCPInit) to their own engine instead of a
+// process-global watcher list.
+type prSplitTestEngine struct {
+	Stdout      *safeBuffer
+	Dispatch    func(string, []string) error
+	EvalJS      func(string) (any, error)
+	EvalJSAsync func(string) (any, error)
+	Runtime     *goja.Runtime
+}
+
+// loadPrSplitEngineWithEval keeps the historical 4-value signature used by
+// satellite tests that only need to evaluate JS.
 func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuffer, func(string, []string) error, func(string) (any, error), func(string) (any, error)) {
+	t.Helper()
+
+	eng := loadPrSplitEngineWithRuntime(t, overrides)
+	return eng.Stdout, eng.Dispatch, eng.EvalJS, eng.EvalJSAsync
+}
+
+func loadPrSplitEngineWithRuntime(t testing.TB, overrides map[string]any) prSplitTestEngine {
 	t.Helper()
 
 	// T32: Extract optional eval timeout from overrides.
@@ -929,7 +963,13 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuf
 		}
 	}
 
-	return &stdout, dispatch, evalJS, evalJSAsync
+	return prSplitTestEngine{
+		Stdout:      &stdout,
+		Dispatch:    dispatch,
+		EvalJS:      evalJS,
+		EvalJSAsync: evalJSAsync,
+		Runtime:     engine.Runtime(),
+	}
 }
 
 // Compile-time assertion that scripting.Engine is used (to avoid unused import).

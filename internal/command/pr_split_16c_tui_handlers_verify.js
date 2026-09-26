@@ -15,6 +15,10 @@
     var C = prSplit._TUI_CONSTANTS;
     var getInteractivePaneSession = prSplit._getInteractivePaneSession;
     var clearVerifyPaneSession = prSplit._clearVerifyPaneSession;
+    var nextPaneCleanupDelay = prSplit._nextPaneCleanupDelay;
+    var paneCleanupPending = prSplit._paneCleanupPending;
+    var paneCleanupExpired = prSplit._paneCleanupExpired;
+    var paneCleanupErrorDetail = prSplit._paneCleanupErrorDetail;
     var handleErrorResolutionState = prSplit._handleErrorResolutionState;
     // Late-bound cross-chunk references (defined in later chunks, resolved at call time).
     function startAnalysis(s) { return prSplit._startAnalysis(s); }
@@ -22,6 +26,21 @@
     function getVerifyMode(s, activeVerifySession) {
         if (s.verifyMode) return s.verifyMode;
         return activeVerifySession ? 'interactive' : 'textonly';
+    }
+
+    function effectiveVerifyTimeoutMs(value) {
+        if (typeof prSplit._effectiveVerifyTimeoutMs === 'function') {
+            return prSplit._effectiveVerifyTimeoutMs(value);
+        }
+        var defaults = prSplit.AUTOMATED_DEFAULTS || {};
+        return (typeof value === 'number' && value > 0) ? value : defaults.verifyTimeoutMs;
+    }
+
+    function currentVerifyRunEpoch(s) {
+        if (typeof s._verifyRunEpoch !== 'number' || s._verifyRunEpoch !== s._verifyRunEpoch) {
+            s._verifyRunEpoch = 0;
+        }
+        return s._verifyRunEpoch;
     }
 
     // --- Update Handlers — screen-specific input handling ---
@@ -42,17 +61,30 @@
             s.isProcessing = false;
             s.analysisRunning = false; // T001: stop orphaned analysis poll ticks
             s.autoSplitRunning = false; // T001: same for auto-split pipeline
+            if (typeof prSplit._resetVerifyRunState === 'function') {
+                prSplit._resetVerifyRunState(s);
+            }
+            if (typeof prSplit._invalidateAsyncConfig === 'function') {
+                prSplit._invalidateAsyncConfig(s);
+            }
             cleanupActiveSession();
             // T393: Clean up Agent executor and MCP callback on wizard exit.
             // Deferred quit: confirmCancel is sync so async teardown
             // (executor close, MCP close) runs on the promise chain and the
             // wizard quits on the next tick after close settles.
             s.wizardQuitting = true;
+            s.wizardQuitSent = false;
+            // This path gates on four teardown steps (executor, MCP,
+            // persistence, pane) and publishes its own result through
+            // wizardQuitSent, so the wizard-quit tick must not treat it as
+            // pane-gated.
+            s.wizardQuitPaneGated = false;
             var mcpDone = false;
             var execDone = false;
             var persistenceDone = false;
+            var paneDone = false;
             function maybeQuit() {
-                if (execDone && mcpDone && persistenceDone && !s.wizardQuitSent) {
+                if (execDone && mcpDone && persistenceDone && paneDone && !s.wizardQuitSent) {
                     s.wizardQuitSent = true;
                 }
             }
@@ -79,9 +111,22 @@
                 execDone = true;
             }
             if (typeof prSplit._destroyAgentTermpane === 'function') {
-                try { prSplit._destroyAgentTermpane(); } catch (e) {
+                try {
+                    var paneResult = prSplit._destroyAgentTermpane();
+                    var paneSettled = function() {
+                        paneDone = true;
+                        maybeQuit();
+                    };
+                    prSplit._trackPaneOutcome(s, paneResult, paneSettled, function(e) {
+                        log.debug('cleanup live pane close failed', { error: e.message || String(e) });
+                        paneSettled();
+                    });
+                } catch (e) {
                     log.debug('cleanup live pane close failed', { error: e.message || String(e) });
+                    paneDone = true;
                 }
+            } else {
+                paneDone = true;
             }
             var mcpCb = prSplit._mcpCallbackObj;
             if (mcpCb) {
@@ -209,6 +254,171 @@
         return ' (pre-existing on ' + s._baselineVerifyResult.sourceBranch + ')';
     }
 
+    function isThenable(value) {
+        return value && typeof value.then === 'function';
+    }
+
+    function advanceVerifyIfReady(s) {
+        if (!s._verifyAdvanceAfterCleanup) return 'none';
+        if (s._verifyPaneCleanupPending || s._verifyTimeoutKillPending) return 'waiting';
+        s._verifyAdvanceAfterCleanup = false;
+        s.verifyingIdx++;
+        return 'advanced';
+    }
+
+    function nextVerifySetupEpoch(s) {
+        if (typeof s._verifySetupEpoch !== 'number') s._verifySetupEpoch = 0;
+        s._verifySetupEpoch++;
+        return s._verifySetupEpoch;
+    }
+
+    function disposeVerifySetupResult(result) {
+        if (!result) return;
+        var cleaned = false;
+        var cleanupWorktree = function() {
+            if (cleaned) return null;
+            cleaned = true;
+            if (!result.worktreeDir || !result.dir ||
+                typeof prSplit.cleanupVerifyWorktree !== 'function') {
+                return null;
+            }
+            try {
+                return prSplit.cleanupVerifyWorktree(result.dir, result.worktreeDir);
+            } catch (e) {
+                log.debug('verifySetup: stale worktree cleanup failed', { error: e.message || String(e) });
+                return null;
+            }
+        };
+
+        var closeResult = null;
+        if (result.session && typeof result.session.close === 'function') {
+            try {
+                closeResult = result.session.close();
+            } catch (e) {
+                log.debug('verifySetup: stale session close failed', { error: e.message || String(e) });
+            }
+        }
+        var disposeResult = null;
+        if (isThenable(closeResult)) {
+            disposeResult = Promise.resolve(closeResult).then(cleanupWorktree, cleanupWorktree);
+        } else {
+            disposeResult = cleanupWorktree();
+        }
+        if (isThenable(disposeResult) && typeof prSplit._trackPaneOperation === 'function') {
+            prSplit._trackPaneOperation(s, disposeResult);
+        }
+    }
+
+
+    function invalidateVerifySetup(s) {
+        // Bump the epoch even when no promise is pending so a late callback
+        // from an earlier run cannot attach a result to a replacement run.
+        nextVerifySetupEpoch(s);
+        var state = s._verifySetup;
+        s._verifySetup = null;
+        if (!state || state.cancelled) return;
+        state.cancelled = true;
+        if (!state.pending) {
+            disposeVerifySetupResult(state.result);
+        }
+    }
+
+    function deferVerifySetup(s, kind, branchName, promise) {
+        invalidateVerifySetup(s);
+        var state = {
+            kind: kind,
+            branchName: branchName,
+            epoch: s._verifySetupEpoch,
+            pending: true,
+            cancelled: false,
+            result: null,
+            promise: promise
+        };
+        s._verifySetup = state;
+        var settle = function(result) {
+            if (!state.cancelled && s._verifySetup === state && s._verifySetupEpoch === state.epoch) {
+                state.result = result;
+                state.pending = false;
+                return;
+            }
+            disposeVerifySetupResult(result);
+        };
+        try {
+            promise.then(settle, function(err) {
+                settle({ error: (err && err.message) ? err.message : String(err) });
+            });
+            if (typeof prSplit._trackPaneOperation === 'function') {
+                prSplit._trackPaneOperation(s, promise);
+            }
+        } catch (err) {
+            settle({ error: (err && err.message) ? err.message : String(err) });
+        }
+    }
+
+    function pendingVerifySetup(s, kind, branchName) {
+        var state = s._verifySetup;
+        if (!state || state.cancelled || state.kind !== kind || state.branchName !== branchName) {
+            return null;
+        }
+        if (state.pending) {
+            return { pending: true, result: null };
+        }
+        s._verifySetup = null;
+        return { pending: false, result: state.result };
+    }
+
+    function startInteractiveSession(session, worktreeDir, dir) {
+        if (!session) {
+            return { pending: false, result: { error: 'interactive shell unavailable' } };
+        }
+        if (typeof session.start !== 'function') {
+            return { pending: false, result: { session: session } };
+        }
+
+        var started;
+        try {
+            started = session.start();
+        } catch (e) {
+            return {
+                pending: false,
+                result: {
+                    error: (e && e.message) ? e.message : String(e),
+                    worktreeDir: worktreeDir,
+                    dir: dir
+                }
+            };
+        }
+        if (!isThenable(started)) {
+            return { pending: false, result: { session: session } };
+        }
+        return {
+            pending: true,
+            promise: started.then(function() {
+                return { session: session, worktreeDir: worktreeDir, dir: dir };
+            }, function(e) {
+                var failure = {
+                    error: (e && e.message) ? e.message : String(e),
+                    worktreeDir: worktreeDir,
+                    dir: dir
+                };
+                var closeResult = null;
+                if (session && typeof session.close === 'function') {
+                    try {
+                        closeResult = session.close();
+                    } catch (closeErr) {
+                        log.debug('startInteractiveSession: failed to close failed session', {
+                            error: closeErr.message || String(closeErr)
+                        });
+                    }
+                }
+                if (isThenable(closeResult)) {
+                    return closeResult.then(function() { return failure; }, function() { return failure; });
+                }
+                return failure;
+            })
+        };
+    }
+
     // --- Per-branch verification (persistent shell, Task 7) ---
     // Verifies one branch at a time using a PERSISTENT INTERACTIVE SHELL
     // in the branch worktree — NOT a one-shot verify command.
@@ -223,12 +433,61 @@
     //   - The worktree persists for the duration of the session, so the
     //     user can run commands, fix code, and re-verify iteratively
     //
+    // failVerifyOnStuckTeardown escalates a verify wait that outlived the
+    // teardown budget. Every verify loop calls this instead of re-arming
+    // forever: the branch is recorded as failed with a diagnosable error and
+    // polling stops, so the wizard reaches a terminal outcome the user can act
+    // on rather than a permanent spinner.
+    function failVerifyOnStuckTeardown(s) {
+        var branch = s.activeVerifyBranch || '';
+        var detail = paneCleanupErrorDetail('Verification of ' + (branch || 'the current branch') + ' was abandoned.');
+        log.warn('verify abandoned after stuck teardown', { branch: branch });
+        try {
+            if (s.outputLines) s.outputLines.push(detail);
+            if (branch && s.verificationResults) {
+                s.verificationResults.push({
+                    name: branch,
+                    status: prSplit._branchStatuses.FAILED,
+                    passed: false,
+                    skipped: false,
+                    error: detail,
+                    output: '',
+                    duration: s.verifyElapsedMs || 0,
+                    preExisting: false
+                });
+            }
+        } catch (e) {
+            log.debug('verify teardown escalation failed', { error: e.message || String(e) });
+        }
+        s._verifyAdvanceAfterCleanup = true;
+        s.verifyDeadline = 0;
+        s.activeVerifyBranch = null;
+        s.isProcessing = false;
+        s.verifyShellExited = false;
+        return prSplit._enterErrorState(s, detail);
+    }
+
     // Platform support:
     //   - PTY platforms (Unix/Linux/macOS): persistent shell via spawnShellSession
     //   - Non-PTY platforms (Windows fallback): uses async verifySplitAsync
     //     which still runs one-shot commands (persistent shell is a Unix feature)
     function runVerifyBranch(s) {
         if (!s.isProcessing) return [s, null];
+        var advanceState = advanceVerifyIfReady(s);
+        if (advanceState === 'advanced') return [s, tea.tick(1, 'verify-branch')];
+        if (advanceState !== 'advanced' && paneCleanupExpired(s)) {
+            return failVerifyOnStuckTeardown(s);
+        }
+        if (advanceState === 'waiting' || paneCleanupPending(s)) {
+            return [s, tea.tick(nextPaneCleanupDelay(s), 'verify-branch')];
+        }
+        if (s.wizard && s.wizard.current === 'CANCELLED') {
+            invalidateVerifySetup(s);
+            if (typeof prSplit._resetVerifyRunState === 'function') {
+                prSplit._resetVerifyRunState(s);
+            }
+            return [s, null];
+        }
 
         // Guard: clean up any existing verify session before starting a new one.
         // Prevents session leaks if runVerifyBranch is called while a previous
@@ -236,6 +495,9 @@
         // recovery, pipeline restarts, or duplicate tick scheduling).
         if (s.activeVerifySession) {
             clearVerifyPaneSession(s, { keepDisplay: false, debugPrefix: 'runVerifyBranch-guard' });
+            if (s._verifyPaneCleanupPending) {
+                return [s, tea.tick(10, 'verify-branch')];
+            }
         }
 
         var splits = st.planCache.splits;
@@ -260,19 +522,31 @@
                 s._baselineVerifyStarted = true;
                 s._baselineVerifyResult = null;
                 var baseDir = prSplit.runtime.dir || '.';
-                var baseTimeoutMs = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs)
-                    ? prSplitConfig.timeoutMs : 0;
+                var baselineEpoch = currentVerifyRunEpoch(s);
+                var baseTimeoutMs = effectiveVerifyTimeoutMs(
+                    (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0
+                );
+                var baselineStillCurrent = function() {
+                    return s._verifyRunEpoch === baselineEpoch &&
+                        s.isProcessing &&
+                        (!s.wizard || s.wizard.current !== 'CANCELLED');
+                };
                 prSplit.verifySplitAsync(sourceBranch, {
                     dir: baseDir,
                     verifyCommand: prSplit.runtime.verifyCommand,
                     verifyTimeoutMs: baseTimeoutMs,
+                    isCancelled: function() {
+                        return !baselineStillCurrent();
+                    },
                     outputFn: null
                 }).then(function(result) {
+                    if (!baselineStillCurrent()) return;
                     s._baselineVerifyResult = {
                         failed: !result.passed,
                         sourceBranch: sourceBranch
                     };
                 }, function() {
+                    if (!baselineStillCurrent()) return;
                     // Baseline check errored — conservatively treat as no info.
                     s._baselineVerifyResult = { failed: false, sourceBranch: sourceBranch };
                 });
@@ -325,6 +599,7 @@
         s.verifyShellExited = false;
         s.verifyFallbackRunning = false;
         s.verifyFallbackError = null;
+        s.verifyDeadline = 0;
 
         // --- Canonical mode selection ---
         // Determine the verify mode BEFORE creating any sessions.
@@ -339,12 +614,20 @@
 
         // --- Interactive path (canonical): prepare worktree, spawn shell ---
         if (wantInteractive) {
-            var wt = prSplit.prepareVerifyWorktree(branchName, {
+            var setup = pendingVerifySetup(s, 'interactive', branchName);
+            if (setup && setup.pending) {
+                return [s, tea.tick(10, 'verify-branch')];
+            }
+            var wt = setup ? setup.result : prSplit.prepareVerifyWorktree(branchName, {
                 dir: dir,
                 verifyCommand: scopedCmd
             });
+            if (isThenable(wt)) {
+                deferVerifySetup(s, 'interactive', branchName, wt);
+                return [s, tea.tick(10, 'verify-branch')];
+            }
 
-            if (wt.skipped) {
+            if (wt && wt.skipped) {
                 s.verificationResults.push({
                     name: branchName,
                     status: prSplit._branchStatuses.SKIPPED,
@@ -359,13 +642,13 @@
                 return [s, tea.tick(1, 'verify-branch')];
             }
 
-            if (wt.error) {
+            if (!wt || wt.error) {
                 s.verificationResults.push({
                     name: branchName,
                     status: prSplit._branchStatuses.FAILED,
                     passed: false,
                     skipped: false,
-                    error: wt.error,
+                    error: wt && wt.error ? wt.error : 'prepare verify worktree returned no result',
                     output: '',
                     duration: 0,
                     preExisting: false
@@ -389,35 +672,83 @@
             var paneRows = C.DEFAULT_ROWS;
             var paneCols = Math.max(80, (s.width || 80) - 8);
             var persistentShell = null;
-            try {
-                persistentShell = spawnShellFn(wt.worktreeDir, {
-                    rows: paneRows,
-                    cols: paneCols
-                });
-            } catch (e) {
-                log.debug('runVerifyBranch: spawnShellSession failed', { error: e.message || String(e) });
-                persistentShell = null;
+            var startSetup = pendingVerifySetup(s, 'interactive-start', branchName);
+            if (startSetup && startSetup.pending) {
+                return [s, tea.tick(10, 'verify-branch')];
+            }
+            if (startSetup) {
+                if (startSetup.result && !startSetup.result.error) {
+                    persistentShell = startSetup.result.session;
+                } else {
+                    log.debug('runVerifyBranch: interactive shell startup failed', {
+                        error: startSetup.result && startSetup.result.error
+                    });
+                }
+            } else {
+                try {
+                    var spawnedShell = spawnShellFn(wt.worktreeDir, {
+                        rows: paneRows,
+                        cols: paneCols,
+                        deferStart: true
+                    });
+                    if (isThenable(spawnedShell)) {
+                        var creation = Promise.resolve(spawnedShell).then(function(session) {
+                            return startInteractiveSession(session, wt.worktreeDir, wt.dir);
+                        }, function(e) {
+                            return {
+                                pending: false,
+                                result: {
+                                    error: (e && e.message) ? e.message : String(e),
+                                    worktreeDir: wt.worktreeDir,
+                                    dir: wt.dir
+                                }
+                            };
+                        });
+                        deferVerifySetup(s, 'interactive-start', branchName, creation.then(function(startState) {
+                            return startState.pending ? startState.promise : startState.result;
+                        }));
+                        return [s, tea.tick(10, 'verify-branch')];
+                    }
+                    var startState = startInteractiveSession(spawnedShell, wt.worktreeDir, wt.dir);
+                    if (startState.pending) {
+                        deferVerifySetup(s, 'interactive-start', branchName, startState.promise);
+                        return [s, tea.tick(10, 'verify-branch')];
+                    }
+                    if (startState.result && !startState.result.error) {
+                        persistentShell = startState.result.session;
+                    } else {
+                        log.debug('runVerifyBranch: interactive shell startup failed', {
+                            error: startState.result && startState.result.error
+                        });
+                    }
+                } catch (e) {
+                    log.debug('runVerifyBranch: spawnShellSession failed', { error: e.message || String(e) });
+                    persistentShell = null;
+                }
             }
 
             if (persistentShell) {
+                var registrationEpoch = currentVerifyRunEpoch(s);
                 s.verifyMode = 'interactive';
                 s.activeVerifySession = persistentShell;
                 s._verifySessionRef = persistentShell;
 
-                // Task 48: Register persistent shell with SessionManager async.
-                if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.registerAsync === 'function') {
-                    tuiMux.registerAsync(persistentShell, { kind: 'verify', name: branchName }).then(function(id) {
-                        if (s.activeVerifySession === persistentShell) {
-                            s.activeVerifySession = id;
-                        }
-                    }).catch(function(e) {
-                        log.debug('runVerifyBranch: tuiMux.registerAsync shell failed', { error: e.message || String(e) });
-                    });
-                } else if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
+                // Register persistent shell with SessionManager off the JS loop.
+                if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
                     try {
-                        var shellSessionID = tuiMux.register(persistentShell, { kind: 'verify', name: branchName });
-                        if (shellSessionID != null) {
-                            s.activeVerifySession = shellSessionID;
+                        var registration = tuiMux.register(persistentShell, { kind: 'verify', name: branchName });
+                        if (registration && typeof registration.then === 'function') {
+                            registration.then(function(id) {
+                                if (s._verifyRunEpoch === registrationEpoch &&
+                                    (!s.wizard || s.wizard.current !== 'CANCELLED') &&
+                                    s.activeVerifySession === persistentShell) {
+                                    s.activeVerifySession = id;
+                                }
+                            }).catch(function(e) {
+                                log.debug('runVerifyBranch: tuiMux.register shell failed', { error: e.message || String(e) });
+                            });
+                        } else if (registration != null && s.activeVerifySession === persistentShell) {
+                            s.activeVerifySession = registration;
                         }
                     } catch (e) {
                         log.debug('runVerifyBranch: tuiMux.register shell failed', { error: e.message || String(e) });
@@ -455,14 +786,25 @@
         }
 
         // --- One-shot path (degraded fallback): worktree + CaptureSession ---
-        var sessionResult = prSplit.startVerifySession(branchName, {
+        var sessionSetup = pendingVerifySetup(s, 'oneshot', branchName);
+        if (sessionSetup && sessionSetup.pending) {
+            return [s, tea.tick(10, 'verify-branch')];
+        }
+        var sessionResult = sessionSetup ? sessionSetup.result : prSplit.startVerifySession(branchName, {
             dir: dir,
             verifyCommand: scopedCmd,
+            timeoutMs: effectiveVerifyTimeoutMs(
+                (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0
+            ),
             rows: C.DEFAULT_ROWS,
             cols: Math.max(80, (s.width || 80) - 8)
         });
+        if (isThenable(sessionResult)) {
+            deferVerifySetup(s, 'oneshot', branchName, sessionResult);
+            return [s, tea.tick(10, 'verify-branch')];
+        }
 
-        if (sessionResult.skipped) {
+        if (sessionResult && sessionResult.skipped) {
             s.verificationResults.push({
                 name: branchName,
                 status: prSplit._branchStatuses.SKIPPED,
@@ -477,7 +819,7 @@
             return [s, tea.tick(1, 'verify-branch')];
         }
 
-        if (sessionResult.error && !sessionResult.session) {
+        if (!sessionResult || (sessionResult.error && !sessionResult.session)) {
             // CaptureSession failed — use async text-only fallback.
             s.verifyMode = 'textonly';
             s.verifyFallbackRunning = true;
@@ -503,12 +845,18 @@
                 s.splitViewTab = 'verify';
             }
 
-            var timeoutMs = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0;
+            var timeoutMs = effectiveVerifyTimeoutMs(
+                (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0
+            );
+            var fallbackEpoch = currentVerifyRunEpoch(s);
             runVerifyFallbackAsync(s, branchName, dir, scopedCmd, timeoutMs).then(
                 function() {
-                    s.verifyFallbackRunning = false;
+                    if (s._verifyRunEpoch === fallbackEpoch && s.activeVerifyBranch === branchName) {
+                        s.verifyFallbackRunning = false;
+                    }
                 },
                 function(err) {
+                    if (s._verifyRunEpoch !== fallbackEpoch || s.activeVerifyBranch !== branchName) return;
                     s.verifyFallbackRunning = false;
                     s.verifyFallbackError = (err && err.message) ? err.message : String(err);
                 }
@@ -523,19 +871,22 @@
         s.activeVerifySession = sessionResult.session;
         s._verifySessionRef = sessionResult.session;
 
-        if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.registerAsync === 'function') {
-            tuiMux.registerAsync(sessionResult.session, { kind: 'verify', name: branchName }).then(function(id) {
-                if (s.activeVerifySession === sessionResult.session) {
-                    s.activeVerifySession = id;
-                }
-            }).catch(function(e) {
-                log.debug('runVerifyBranch: tuiMux.registerAsync oneshot failed', { error: e.message || String(e) });
-            });
-        } else if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
+        var oneShotRegistrationEpoch = currentVerifyRunEpoch(s);
+        if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
             try {
-                var verifySessionID = tuiMux.register(sessionResult.session, { kind: 'verify', name: branchName });
-                if (verifySessionID != null) {
-                    s.activeVerifySession = verifySessionID;
+                var registration = tuiMux.register(sessionResult.session, { kind: 'verify', name: branchName });
+                if (registration && typeof registration.then === 'function') {
+                    registration.then(function(id) {
+                        if (s._verifyRunEpoch === oneShotRegistrationEpoch &&
+                            (!s.wizard || s.wizard.current !== 'CANCELLED') &&
+                            s.activeVerifySession === sessionResult.session) {
+                            s.activeVerifySession = id;
+                        }
+                    }).catch(function(e) {
+                        log.debug('runVerifyBranch: tuiMux.register oneshot failed', { error: e.message || String(e) });
+                    });
+                } else if (registration != null) {
+                    s.activeVerifySession = registration;
                 }
             } catch (e) {
                 log.debug('runVerifyBranch: tuiMux.register oneshot failed', { error: e.message || String(e) });
@@ -545,6 +896,10 @@
         s.activeVerifyBranch = branchName;
         s.activeVerifyDir = sessionResult.dir;
         s.activeVerifyStartTime = sessionResult.startTime;
+        var oneShotTimeoutMs = effectiveVerifyTimeoutMs(
+            (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0
+        );
+        s.verifyDeadline = oneShotTimeoutMs > 0 ? s.activeVerifyStartTime + oneShotTimeoutMs : 0;
         s.verifyElapsedMs = 0;
         s.verifyScreen = '';
         s.verifyViewportOffset = 0;
@@ -572,6 +927,14 @@
         //   - oneshot: degraded CaptureSession fallback, command exit decides
         //   - textonly: handled by handleVerifyFallbackPoll, not here
         function pollVerifySession(s) {
+        var advanceState = advanceVerifyIfReady(s);
+        if (advanceState === 'advanced') return [s, tea.tick(1, 'verify-branch')];
+        if (advanceState !== 'advanced' && paneCleanupExpired(s)) {
+            return failVerifyOnStuckTeardown(s);
+        }
+        if (advanceState === 'waiting' || paneCleanupPending(s)) {
+            return [s, tea.tick(nextPaneCleanupDelay(s), 'verify-poll')];
+        }
         var activeVerifySession = getInteractivePaneSession(s, 'verify');
         if (!activeVerifySession) return [s, null];
         var verifyMode = getVerifyMode(s, activeVerifySession);
@@ -632,6 +995,7 @@
             });
 
             // T380: Preserve display state for post-mortem viewing.
+            s._verifyAdvanceAfterCleanup = true;
             clearVerifyPaneSession(s, { debugPrefix: 'verifyDone', keepDisplay: true });
 
             // T007: Clear user signal state.
@@ -639,8 +1003,69 @@
             s.verifySignalChoice = null;
             s.verifySignalBranch = null;
 
-            s.verifyingIdx++;
-            return [s, tea.tick(1, 'verify-branch')];
+            if (advanceVerifyIfReady(s) === 'advanced') {
+                return [s, tea.tick(1, 'verify-branch')];
+            }
+            return [s, tea.tick(1, 'verify-poll')];
+        }
+
+        if (verifyMode === 'oneshot' && s.verifyDeadline && Date.now() >= s.verifyDeadline) {
+            var timedOutBranch = s.activeVerifyBranch;
+            var timeoutState = {
+                branch: timedOutBranch,
+                epoch: s._verifyRunEpoch,
+                done: false
+            };
+            s._verifyTimeoutKill = timeoutState;
+            s._verifyTimeoutKillPending = true;
+            var finishTimeout = function() {
+                if (timeoutState.done) return;
+                timeoutState.done = true;
+                if (s._verifyTimeoutKill !== timeoutState) return;
+                s._verifyTimeoutKill = null;
+                s._verifyTimeoutKillPending = false;
+                if (s._verifyRunEpoch !== timeoutState.epoch ||
+                    s._verifyPaneCleanupPending ||
+                    s.activeVerifyBranch !== timedOutBranch ||
+                    (s.wizard && s.wizard.current === 'CANCELLED')) {
+                    return;
+                }
+                var timedOutOutput = '';
+                try { timedOutOutput = activeVerifySession.output(); } catch (e) { /* best effort */ }
+                if (s.outputLines && timedOutOutput) s.outputLines.push('Verify timed out: ' + timedOutBranch);
+                s.verificationResults.push({
+                    name: timedOutBranch,
+                    status: prSplit._branchStatuses.FAILED,
+                    passed: false,
+                    skipped: false,
+                    error: 'verify timeout after ' + s.verifyElapsedMs + 'ms',
+                    output: timedOutOutput,
+                    duration: s.verifyElapsedMs,
+                    preExisting: false
+                });
+                s._verifyAdvanceAfterCleanup = true;
+                s.verifyDeadline = 0;
+                clearVerifyPaneSession(s, { debugPrefix: 'verifyTimeout', keepDisplay: true });
+            };
+            var timeoutKill = null;
+            try {
+                timeoutKill = activeVerifySession.kill();
+            } catch (e) {
+                log.debug('pollVerify: one-shot timeout kill failed', { error: e.message || String(e) });
+            }
+            if (isThenable(timeoutKill)) {
+                var onTimeoutKillFailure = function(e) {
+                    log.debug('pollVerify: one-shot timeout kill failed', { error: e.message || String(e) });
+                    finishTimeout();
+                };
+                prSplit._trackPaneOutcome(s, timeoutKill, finishTimeout, onTimeoutKillFailure);
+            } else {
+                finishTimeout();
+            }
+            if (advanceVerifyIfReady(s) === 'advanced') {
+                return [s, tea.tick(1, 'verify-branch')];
+            }
+            return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-poll')];
         }
 
         var shellExited = false;
@@ -703,10 +1128,13 @@
             });
 
             // T380: Preserve display state for post-mortem viewing.
+            s._verifyAdvanceAfterCleanup = true;
             clearVerifyPaneSession(s, { debugPrefix: 'verifyDone', keepDisplay: true });
 
-            s.verifyingIdx++;
-            return [s, tea.tick(1, 'verify-branch')];
+            if (advanceVerifyIfReady(s) === 'advanced') {
+                return [s, tea.tick(1, 'verify-branch')];
+            }
+            return [s, tea.tick(1, 'verify-poll')];
         }
 
         // Still running — schedule next poll.
@@ -718,7 +1146,14 @@
     // Uses verifySplitAsync for non-blocking verification. The result
     // is stored directly on s so the poll handler can consume it.
     async function runVerifyFallbackAsync(s, branchName, dir, scopedCmd, timeoutMs) {
-        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
+        var runEpoch = currentVerifyRunEpoch(s);
+        var fallbackCurrent = function() {
+            return s._verifyRunEpoch === runEpoch &&
+                s.isProcessing &&
+                s.activeVerifyBranch === branchName &&
+                (!s.wizard || s.wizard.current !== 'CANCELLED');
+        };
+        if (!fallbackCurrent()) return;
 
         // T352: Use the pre-initialized array on state so the poll handler
         // can read accumulated output for live display.
@@ -730,6 +1165,7 @@
             verifyCommand: scopedCmd,
             verifyTimeoutMs: timeoutMs,
             outputFn: function(line) {
+                if (!fallbackCurrent()) return;
                 outputLines.push(line);
                 // T352: Populate verifyScreen with latest fallback output so
                 // the inline terminal and Verify tab show live output.
@@ -739,7 +1175,7 @@
         });
         var duration = Date.now() - branchStart;
 
-        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
+        if (!fallbackCurrent()) return;
 
         s.verifyOutput[branchName] = outputLines;
 
@@ -1366,6 +1802,9 @@
 
             var resolveOpts = {
                 verifyCommand: prSplit.runtime.verifyCommand,
+                verifyTimeoutMs: effectiveVerifyTimeoutMs(
+                    (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0
+                ),
                 retryBudget: prSplit.runtime.retryBudget
             };
             prSplit.resolveConflicts(st.planCache, resolveOpts).then(
@@ -1452,5 +1891,7 @@
     prSplit._updateAgentConvo = updateAgentConvo;
     prSplit._pollAgentConvo = pollAgentConvo;
     prSplit._handleErrorResolutionChoice = handleErrorResolutionChoice;
+    prSplit._invalidateVerifySetup = invalidateVerifySetup;
+    prSplit._disposeVerifySetupResult = disposeVerifySetupResult;
 
 })(globalThis.prSplit);

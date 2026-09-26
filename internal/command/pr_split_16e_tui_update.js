@@ -33,6 +33,11 @@
     var handleEquivPoll = prSplit._handleEquivPoll;
     var handleResolvePoll = prSplit._handleResolvePoll;
     var handlePRCreationPoll = prSplit._handlePRCreationPoll;
+    var nextPaneCleanupDelay = prSplit._nextPaneCleanupDelay;
+    var paneCleanupTickReset = prSplit._paneCleanupTickReset;
+    var paneCleanupExpired = prSplit._paneCleanupExpired;
+    var paneCleanupPending = prSplit._paneCleanupPending;
+    var paneCleanupErrorDetail = prSplit._paneCleanupErrorDetail;
 
     // Cross-chunk imports — verify + convo handlers (from chunk 16c).
     var updateConfirmCancel = prSplit._updateConfirmCancel;
@@ -72,6 +77,85 @@
         minPaneRows: 3
     });
 
+    function isPromiseLike(value) {
+        return !!value && typeof value.then === 'function';
+    }
+
+    function paneStateFor(s) {
+        return s || prSplit._toggleModelState || null;
+    }
+
+    function paneOperationsFor(s) {
+        s = paneStateFor(s);
+        if (!s) return null;
+        if (!Array.isArray(s.paneOperations)) s.paneOperations = [];
+        return s.paneOperations;
+    }
+
+    function removePaneOperation(s, operation) {
+        var operations = paneOperationsFor(s);
+        if (!operations) return;
+        var index = operations.indexOf(operation);
+        if (index >= 0) operations.splice(index, 1);
+    }
+
+    function trackPaneOperation(s, operation) {
+        if (!isPromiseLike(operation)) return operation;
+        var state = paneStateFor(s);
+        var tracked = Promise.resolve(operation);
+        var operations = paneOperationsFor(state);
+        if (operations) {
+            operations.push(tracked);
+            tracked.then(function() {
+                removePaneOperation(state, tracked);
+            }, function() {
+                removePaneOperation(state, tracked);
+            });
+        } else {
+            tracked.then(function() {}, function() {});
+        }
+        return tracked;
+    }
+
+    function invokePaneOutcome(handler, value) {
+        if (typeof handler !== 'function') return;
+        try {
+            handler(value);
+        } catch (e) {
+            log.debug('pane operation outcome failed', { error: e.message || String(e) });
+        }
+    }
+
+    function trackPaneOutcome(s, operation, onSuccess, onFailure) {
+        if (!isPromiseLike(operation)) {
+            invokePaneOutcome(onSuccess, operation);
+            return true;
+        }
+        var outcome = Promise.resolve(operation).then(function(value) {
+            invokePaneOutcome(onSuccess, value);
+            return true;
+        }, function(error) {
+            invokePaneOutcome(onFailure, error);
+            return false;
+        });
+        return trackPaneOperation(s, outcome);
+    }
+
+    function waitForPaneOperations(s) {
+        s = paneStateFor(s);
+        // Snapshot the operations that exist when cleanup starts. A caller
+        // commonly tracks its own teardown Promise after calling this helper;
+        // recursively re-reading the list would make that Promise await
+        // itself.
+        var operations = s && Array.isArray(s.paneOperations) ? s.paneOperations.slice() : [];
+        if (operations.length === 0) return Promise.resolve();
+        var waits = [];
+        for (var i = 0; i < operations.length; i++) {
+            waits.push(Promise.resolve(operations[i]).then(function() {}, function() {}));
+        }
+        return Promise.all(waits);
+    }
+
     // T327/T328: Compute screen offset where bottom pane terminal content begins.
     function computeSplitPaneContentOffset(s) {
         var h = s.height || C.DEFAULT_ROWS;
@@ -89,7 +173,18 @@
         }
         var session = getInteractivePaneSession(s, tab);
         if (session && typeof session.write === 'function') {
-            try { session.write(bytes); return true; } catch (e) { log.debug('writeInput: ' + tab + ' session.write failed: ' + (e.message || e)); return false; }
+            try {
+                var result = session.write(bytes);
+                if (isPromiseLike(result)) {
+                    return trackPaneOutcome(s, result, null, function(e) {
+                        log.debug('writeInput: ' + tab + ' session.write failed: ' + (e.message || e));
+                    });
+                }
+                return true;
+            } catch (e) {
+                log.debug('writeInput: ' + tab + ' session.write failed: ' + (e.message || e));
+                return false;
+            }
         }
         return false;
     }
@@ -289,19 +384,34 @@
                 var resizeTab = interactiveTabs[ti];
                 var resizeSession = getInteractivePaneSession(s, resizeTab);
                 if (resizeSession && typeof resizeSession.resize === 'function') {
-                    try { resizeSession.resize(paneRows, paneCols); } catch (e) {
+                    try {
+                        var paneResizeResult = resizeSession.resize(paneRows, paneCols);
+                        trackPaneOutcome(s, paneResizeResult, null, function(e) {
+                            log.debug('resize: ' + resizeTab + ' session.resize failed: ' + (e.message || e));
+                        });
+                    } catch (e) {
                         log.debug('resize: ' + resizeTab + ' session.resize failed: ' + (e.message || e));
                     }
                 }
             }
             if (typeof tuiMux !== 'undefined' && tuiMux &&
                 typeof tuiMux.resize === 'function') {
-                try { tuiMux.resize(paneRows, paneCols); } catch (e) {
+                try {
+                    var resizeResult = tuiMux.resize(paneRows, paneCols);
+                    trackPaneOutcome(s, resizeResult, null, function(e) {
+                        log.debug('session manager resize failed', { error: e.message || String(e) });
+                    });
+                } catch (e) {
                     log.debug('session manager resize failed', { error: e.message || String(e) });
                 }
             }
             if (typeof prSplit._syncAgentTermpaneBounds === 'function') {
-                try { prSplit._syncAgentTermpaneBounds(s); } catch (e) {
+                try {
+                    var boundsResult = prSplit._syncAgentTermpaneBounds(s);
+                    trackPaneOutcome(s, boundsResult, null, function(e) {
+                        log.debug('resize agent live sync failed', { error: e.message || String(e) });
+                    });
+                } catch (e) {
                     log.debug('resize agent live sync failed', { error: e.message || String(e) });
                 }
             }
@@ -436,6 +546,9 @@
         // Exception: Ctrl+L passes through so user can toggle split-view.
         if (s.agentQuestionInputActive && msg.type === 'Key' && msg.key !== 'ctrl+l') {
             var qk = msg.key;
+            if (s.agentQuestionSendPending) {
+                if (qk === 'enter' || qk === 'esc') return [s, null];
+            }
 
             // Escape — dismiss the question prompt entirely.
             if (qk === 'esc') {
@@ -450,29 +563,48 @@
             if (qk === 'enter') {
                 var responseText = (s.agentQuestionInputText || '').trim();
                 if (responseText.length > 0) {
-                    // Record in conversation history.
-                    s.agentConversations.push({
-                        question: s.agentQuestionLine,
-                        answer: responseText,
-                        ts: Date.now()
-                    });
-                    if (s.agentConversations.length > C.CONVO_HISTORY_CAP) {
-                        s.agentConversations = s.agentConversations.slice(-C.CONVO_HISTORY_TRIM);
-                    }
+                    var questionText = s.agentQuestionLine;
+                    var recordQuestionResponse = function() {
+                        s.agentConversations.push({
+                            question: questionText,
+                            answer: responseText,
+                            ts: Date.now()
+                        });
+                        if (s.agentConversations.length > C.CONVO_HISTORY_CAP) {
+                            s.agentConversations = s.agentConversations.slice(-C.CONVO_HISTORY_TRIM);
+                        }
+                    };
+                    var clearQuestionState = function() {
+                        s.agentQuestionDetected = false;
+                        s.agentQuestionLine = '';
+                        s.agentQuestionInputText = '';
+                        s.agentQuestionInputActive = false;
+                        s.agentQuestionSendPending = false;
+                        s.agentLastQuestionCheckMs = Date.now();
+                    };
+                    var failQuestionWrite = function(e) {
+                        log.printf('T46: Agent write failed: %s', String(e));
+                        s.agentQuestionLine = 'Error sending response: ' + String(e);
+                        s.agentQuestionInputActive = false;
+                        s.agentQuestionInputText = '';
+                        s.agentQuestionSendPending = false;
+                    };
 
                     // Send to Agent PTY via the pinned Agent pane proxy.
                     var agentQuestionSession = getInteractivePaneSession(s, 'agent');
                     if (agentQuestionSession && typeof agentQuestionSession.write === 'function') {
                         try {
-                            agentQuestionSession.write(responseText + '\r');
-                            log.printf('T46: sent response to Agent: %s', responseText);
+                            s.agentQuestionSendPending = true;
+                            var responseWrite = agentQuestionSession.write(responseText + '\r');
+                            trackPaneOutcome(s, responseWrite, function() {
+                                recordQuestionResponse();
+                                log.printf('T46: sent response to Agent: %s', responseText);
+                                clearQuestionState();
+                            }, failQuestionWrite);
                         } catch (e) {
                             // T393: Surface error to user — keep agentQuestionDetected
                             // true so renderAgentQuestionPrompt renders the error line.
-                            log.printf('T46: Agent write failed: %s', String(e));
-                            s.agentQuestionLine = 'Error sending response: ' + String(e);
-                            s.agentQuestionInputActive = false;
-                            s.agentQuestionInputText = '';
+                            failQuestionWrite(e);
                             return [s, null];
                         }
                     } else {
@@ -484,15 +616,6 @@
                         s.agentQuestionInputText = '';
                         return [s, null];
                     }
-
-                    // Clear question state.
-                    s.agentQuestionDetected = false;
-                    s.agentQuestionLine = '';
-                    s.agentQuestionInputText = '';
-                    s.agentQuestionInputActive = false;
-                    // Reset throttle so we don't immediately re-detect
-                    // the same question before Agent starts streaming.
-                    s.agentLastQuestionCheckMs = Date.now();
                 }
                 return [s, null];
             }
@@ -645,6 +768,13 @@
     function handleKeyMessage(msg, s) {
         var k = msg.key;
         var activeVerifySession = getInteractivePaneSession(s, 'verify');
+        var verifyPaneFocused = s.splitViewEnabled &&
+            s.splitViewFocus === 'agent' && s.splitViewTab === 'verify';
+        // Verify is a surface-level session: while it is visible, Ctrl+C must
+        // stop it even when the wizard owns split-view focus. Pane key routing
+        // remains focus-scoped so Agent and wizard navigation are not stolen.
+        var verifySurfaceActive = !s.splitViewEnabled || s.splitViewTab === 'verify';
+        var verifyScrollSurface = verifyPaneFocused || !s.splitViewEnabled;
 
         // Preserved-session ERROR actions: classification timeout kept the
         // agent session alive for diagnosis. a/f/d act on it here, before
@@ -673,8 +803,11 @@
                 return [s, tea.tick(C.TICK_INTERVAL_MS, 'agent-screenshot')];
             }
             if (k === 'd') {
+                var paneClose = Promise.resolve();
                 if (typeof prSplit._noteAgentDetached === 'function') {
-                    try { prSplit._noteAgentDetached(); } catch (e) {
+                    try {
+                        paneClose = Promise.resolve(prSplit._noteAgentDetached());
+                    } catch (e) {
                         log.debug('error discard detach failed', { error: e.message || String(e) });
                     }
                 }
@@ -688,33 +821,30 @@
                 s.errorDiscardPending = true;
                 prSplit._agentEvidence = null;
                 if (stt) stt.agentEvidence = null;
-                if (typeof prSplit._destroyAgentTermpane === 'function') {
-                    try { prSplit._destroyAgentTermpane(); } catch (e) {
-                        log.debug('error discard destroy failed', { error: e.message || String(e) });
-                    }
-                }
                 try {
                     if (typeof prSplit.cleanupExecutor !== 'function') {
                         throw new Error('cleanupExecutor missing');
                     }
-                    prSplit.cleanupExecutor().then(function() {
-                    var mcpCb = prSplit._mcpCallbackObj;
-                    if (!mcpCb || typeof mcpCb.close !== 'function') return null;
-                    return mcpCb.close().catch(function(e) {
-                        log.debug('error discard mcp close failed', { error: e.message || String(e) });
+                    var finishDiscard = function() {
+                        s.errorDiscardPending = false;
+                        s.errorDiscardReady = true;
+                    };
+                    var discardCleanup = paneClose.then(function() {
+                        return prSplit.cleanupExecutor();
                     }).then(function() {
-                        prSplit._mcpCallbackObj = null;
-                        if (stt) stt.mcpCallbackObj = null;
+                        var mcpCb = prSplit._mcpCallbackObj;
+                        if (!mcpCb || typeof mcpCb.close !== 'function') return null;
+                        return mcpCb.close().catch(function(e) {
+                            log.debug('error discard mcp close failed', { error: e.message || String(e) });
+                        }).then(function() {
+                            prSplit._mcpCallbackObj = null;
+                            if (stt) stt.mcpCallbackObj = null;
+                        });
                     });
-                }).catch(function(e) {
-                    log.debug('error discard cleanup failed', { error: e.message || String(e) });
-                }).then(function() {
-                    s.errorDiscardPending = false;
-                    s.errorDiscardReady = true;
-                }, function() {
-                    s.errorDiscardPending = false;
-                    s.errorDiscardReady = true;
-                });
+                    prSplit._trackPaneOutcome(s, discardCleanup, finishDiscard, function(e) {
+                        log.debug('error discard cleanup failed', { error: e.message || String(e) });
+                        finishDiscard();
+                    });
                 } catch (e) {
                     log.debug('error discard cleanup failed', { error: e.message || String(e) });
                     s.errorDiscardPending = false;
@@ -728,21 +858,31 @@
         // instead of showing the cancel dialog.
         // First Ctrl+C sends SIGINT; second within 2s sends SIGKILL
         // (handles processes that ignore SIGINT).
-        if (k === 'ctrl+c' && activeVerifySession && !s.verifyShellExited) {
+        if (k === 'ctrl+c' && verifySurfaceActive && activeVerifySession && !s.verifyShellExited) {
             var now = Date.now();
             if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
                 // Double Ctrl+C — force kill.
-                try { activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
+                try {
+                    var killResult = activeVerifySession.kill();
+                    trackPaneOutcome(s, killResult, null, function(e) {
+                        log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e));
+                    });
+                } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
             } else {
                 // First Ctrl+C — graceful interrupt.
-                try { activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
+                try {
+                    var interruptResult = activeVerifySession.interrupt();
+                    trackPaneOutcome(s, interruptResult, null, function(e) {
+                        log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e));
+                    });
+                } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
             }
             s.lastVerifyInterruptTime = now;
             return [s, null];
         }
 
         // Live verify session: ↑/↓ scroll the output viewport.
-        if (activeVerifySession) {
+        if (verifyScrollSurface && activeVerifySession) {
             if (k === 'up' || k === 'k') {
                 s.verifyAutoScroll = false;
                 s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 1;
@@ -863,7 +1003,7 @@
                             if (pastedText) {
                                 var pasteSession = getInteractivePaneSession(s, tab);
                                 if (pasteSession && typeof pasteSession.write === 'function') {
-                                    pasteSession.write(pastedText);
+                                    await pasteSession.write(pastedText);
                                     s.clipboardFlash = 'Pasted ' + pastedText.length + ' chars';
                                     s.clipboardFlashAt = Date.now();
                                 }
@@ -1029,12 +1169,18 @@
                         if (vBytes !== null && verifySession &&
                             typeof verifySession.write === 'function') {
                             try {
-                                verifySession.write(vBytes);
-                                s.verifyViewportOffset = 0;
-                                s.verifyAutoScroll = true;
-                                if (s.verifyWriteError) {
-                                    s.verifyWriteError = '';
-                                }
+                                var verifyWrite = verifySession.write(vBytes);
+                                trackPaneOutcome(s, verifyWrite, function() {
+                                    s.verifyViewportOffset = 0;
+                                    s.verifyAutoScroll = true;
+                                    if (s.verifyWriteError) {
+                                        s.verifyWriteError = '';
+                                    }
+                                }, function(e) {
+                                    s.verifyWriteError = e.message || String(e);
+                                    s.verifyWriteErrorAt = Date.now();
+                                    log.warn('verify write failed', { key: k, error: e.message || String(e) });
+                                });
                             } catch (e) {
                                 // Task 9: Surface verify write errors.
                                 s.verifyWriteError = e.message || String(e);
@@ -1055,8 +1201,16 @@
                 // termpane. Reserved keys stay with the wizard.
                 if (s.splitViewTab === 'agent' &&
                     typeof prSplit._agentLiveActive === 'function' && prSplit._agentLiveActive()) {
-                    if (!AGENT_RESERVED_KEYS[k]) {
-                        try { prSplit._routeKeyToAgentTermpane(msg); } catch (e) {
+                    // A live PTY owns navigation keys just like the interactive
+                    // verify pane. Only pane-management and selection keys stay
+                    // with the wizard; j/k and arrows must reach the agent.
+                    if (!INTERACTIVE_RESERVED_KEYS[k]) {
+                        try {
+                            var liveUpdate = prSplit._routeKeyToAgentTermpane(msg);
+                            trackPaneOutcome(s, liveUpdate, null, function(e) {
+                                log.debug('agent live key dispatch failed', { error: e.message || String(e) });
+                            });
+                        } catch (e) {
                             log.debug('agent live key dispatch failed', { error: e.message || String(e) });
                         }
                         s.agentViewOffset = 0;
@@ -1095,13 +1249,19 @@
                     if (bytes !== null && agentSession &&
                         typeof agentSession.write === 'function') {
                         try {
-                            agentSession.write(bytes);
-                            // Auto-scroll to bottom on input (follow live output).
-                            s.agentViewOffset = 0;
-                            // Clear any previous write error on success.
-                            if (s.agentWriteError) {
-                                s.agentWriteError = '';
-                            }
+                            var agentWrite = agentSession.write(bytes);
+                            trackPaneOutcome(s, agentWrite, function() {
+                                // Auto-scroll to bottom on input (follow live output).
+                                s.agentViewOffset = 0;
+                                // Clear any previous write error on success.
+                                if (s.agentWriteError) {
+                                    s.agentWriteError = '';
+                                }
+                            }, function(e) {
+                                s.agentWriteError = e.message || String(e);
+                                s.agentWriteErrorAt = Date.now();
+                                log.warn('agent write failed', { key: k, error: e.message || String(e) });
+                            });
                         } catch (e) {
                             // Task 9: Surface write errors instead of silently
                             // swallowing — user sees a transient indicator.
@@ -1197,11 +1357,23 @@
         // the active verify session. Only when a verify is running.
         if (k === 'z' && s.wizardState === 'BRANCH_BUILDING' && activeVerifySession && !s.verifyShellExited) {
             if (s.verifyPaused) {
-                try { activeVerifySession.resume(); s.verifyPaused = false; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.RUNNING); } catch (e) {
+                try {
+                    var resumeResult = activeVerifySession.resume();
+                    var markRunning = function() { s.verifyPaused = false; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.RUNNING); };
+                    trackPaneOutcome(s, resumeResult, markRunning, function(e) {
+                        log.printf('verify: resume failed: %s', e.message || String(e));
+                    });
+                } catch (e) {
                     log.printf('verify: resume failed: %s', e.message || String(e));
                 }
             } else {
-                try { activeVerifySession.pause(); s.verifyPaused = true; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.PAUSED); } catch (e) {
+                try {
+                    var pauseResult = activeVerifySession.pause();
+                    var markPaused = function() { s.verifyPaused = true; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.PAUSED); };
+                    trackPaneOutcome(s, pauseResult, markPaused, function(e) {
+                        log.printf('verify: pause failed: %s', e.message || String(e));
+                    });
+                } catch (e) {
                     log.printf('verify: pause failed: %s', e.message || String(e));
                 }
             }
@@ -1523,7 +1695,12 @@
                     s.splitViewFocus = 'agent';
                 }
                 var liveHandled = false;
-                try { liveHandled = prSplit._routeMouseToAgentTermpane(msg); } catch (e) {
+                try {
+                    liveHandled = prSplit._routeMouseToAgentTermpane(msg);
+                    trackPaneOutcome(s, liveHandled, null, function(e) {
+                        log.debug('agent live mouse dispatch failed', { error: e.message || String(e) });
+                    });
+                } catch (e) {
                     log.debug('agent live mouse dispatch failed', { error: e.message || String(e) });
                 }
                 if (liveHandled) return [s, null];
@@ -1547,6 +1724,26 @@
         // Heuristic analysis polling (async Promise+poll pattern).
         if (msg.id === 'analysis-poll') {
             return handleAnalysisPoll(s);
+        }
+        if (msg.id === 'execution-start') {
+            if (!s._executionStartPending) return [s, null];
+            if (s.wizard && s.wizard.current === 'CANCELLED') {
+                s._executionStartPending = false;
+                paneCleanupTickReset(s);
+                return [s, null];
+            }
+            // Bounded deferral: a teardown that never settles fails the
+            // wizard instead of spinning silently forever.
+            if (paneCleanupExpired(s)) {
+                s._executionStartPending = false;
+                return prSplit._enterErrorState(s, paneCleanupErrorDetail('Execution was not started.'));
+            }
+            if (paneCleanupPending(s)) {
+                return [s, tea.tick(nextPaneCleanupDelay(s), 'execution-start')];
+            }
+            paneCleanupTickReset(s);
+            s._executionStartPending = false;
+            return prSplit._startExecution(s);
         }
         // Execution polling (async Promise+poll pattern).
         if (msg.id === 'execution-poll') {
@@ -1623,11 +1820,29 @@
         // between confirmCancel and close settlement would return null
         // and drop the only scheduled quit.
         if (msg.id === 'wizard-quit') {
-            if (s.wizardQuitSent) {
-                return [s, tea.quit()];
+            // Quitting must never be blocked indefinitely. The verify-pane
+            // teardown flags sequence the quit behind in-flight teardown, but
+            // those waits are bounded (see _paneCleanupExpired), so an expired
+            // budget clears the flags and the quit proceeds. Without this the
+            // user could be left unable to leave a wizard whose teardown
+            // Promise never settles.
+            if (!paneCleanupExpired(s) && paneCleanupPending(s)) {
+                return [s, tea.tick(nextPaneCleanupDelay(s), 'wizard-quit')];
             }
             if (s.wizardQuitting) {
+                // Only the agent-pane quit path is gated on the pane close
+                // alone; confirmCancel publishes its own four-gate result via
+                // wizardQuitSent and must not be short-circuited here.
+                if (s.wizardQuitPaneGated === true && s.wizardQuitPaneReady && !s.wizardQuitSent) {
+                    s.wizardQuitSent = true;
+                }
+                if (s.wizardQuitSent) {
+                    return [s, tea.quit()];
+                }
                 return [s, tea.tick(C.TICK_INTERVAL_MS, 'wizard-quit')];
+            }
+            if (s.wizardQuitSent) {
+                return [s, tea.quit()];
             }
             return [s, null];
         }
@@ -1721,6 +1936,9 @@
     prSplit._syncSplitViewDimensions = syncSplitViewDimensions;
     prSplit._computeSplitPaneContentOffset = computeSplitPaneContentOffset;
     prSplit._writeMouseToPane = writeMouseToPane;
+    prSplit._trackPaneOperation = trackPaneOperation;
+    prSplit._trackPaneOutcome = trackPaneOutcome;
+    prSplit._waitForPaneOperations = waitForPaneOperations;
 
     // T62: Selection helpers (exported for chrome rendering and testing).
     prSplit._getPaneContentLines = getPaneContentLines;

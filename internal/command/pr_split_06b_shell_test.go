@@ -17,7 +17,6 @@ import (
 // 06b_verify_shell. They spawn actual shell processes and therefore:
 //   - MUST NOT run on Windows (build tag enforced above)
 //   - Are skipped in -short mode
-//   - Use busy-wait polling (Goja has no setTimeout/sleep)
 //   - Always kill sessions in JS finally blocks
 // ---------------------------------------------------------------------------
 
@@ -53,37 +52,32 @@ func TestSpawnShell_HappyPath(t *testing.T) {
 		var session;
 		try {
 			session = globalThis.prSplit.spawnShellSession(%q, {rows: 24, cols: 80});
-			await new Promise(function(r) { setTimeout(r, 150); }); // allow async start
+			await session._startPromise;
 
-			// Wait for shell prompt to appear (any output).
-			var output = '';
-			var deadline = Date.now() + 5000;
-			while (Date.now() < deadline) {
-				var chunk = session.readAvailable();
-				if (chunk === null) break;
-				output += chunk;
-				if (output) break;
-			}
-
-			session.write('echo hello_test_marker\n');
+			await session.write('echo hello_test_marker\n');
 
 			// Poll for marker in accumulated output.
-			deadline = Date.now() + 5000;
+			var output = '';
+			var deadline = Date.now() + 5000;
 			var found = false;
 			while (Date.now() < deadline) {
 				var chunk = session.readAvailable();
-				if (chunk === null) break;
-				output += chunk;
+				if (chunk !== null) output += chunk;
 				if (output.indexOf('hello_test_marker') >= 0) {
 					found = true;
 					break;
 				}
+				await new Promise(function(resolve) { setTimeout(resolve, 10); });
 			}
 			if (!found) errors.push('did not find hello_test_marker in output');
 		} catch (e) {
 			errors.push('spawn error: ' + e.message);
 		} finally {
-			if (session) try { session.kill(); } catch(e) {}
+			if (session) {
+				await session.kill();
+				await session.wait();
+				await session.close();
+			}
 		}
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 	})()`, dir))
@@ -106,34 +100,21 @@ func TestSpawnShell_ExitDetection(t *testing.T) {
 	raw, err := evalJS(fmt.Sprintf(`(async function() {
 		var errors = [];
 		var session;
+		var exited = false;
 		try {
 			session = globalThis.prSplit.spawnShellSession(%q, {rows: 24, cols: 80});
-			await new Promise(function(r) { setTimeout(r, 150); }); // allow async start
+			await session._startPromise;
 
-			// Wait for shell prompt (any output).
-			var deadline = Date.now() + 5000;
-			while (Date.now() < deadline) {
-				var chunk = session.readAvailable();
-				if (chunk === null) break;
-				if (chunk) break;
-			}
-
-			session.write('exit\n');
-
-			// Poll isDone() until true or timeout.
-			deadline = Date.now() + 10000;
-			var exited = false;
-			while (Date.now() < deadline) {
-				if (session.isDone()) {
-					exited = true;
-					break;
-				}
-			}
-			if (!exited) errors.push('shell did not exit within timeout');
+			await session.write('exit\n');
+			await session.wait();
+			exited = true;
 		} catch (e) {
 			errors.push('error: ' + e.message);
 		} finally {
-			if (session) try { session.kill(); } catch(e) {}
+			if (session) {
+				if (!exited) await session.kill();
+				await session.close();
+			}
 		}
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 	})()`, dir))
@@ -159,38 +140,27 @@ func TestSpawnShell_WorktreeDir(t *testing.T) {
 		t.Fatalf("EvalSymlinks(%s): %v", dir, err)
 	}
 
-	raw, err := evalJS(fmt.Sprintf(`(function() {
-		await new Promise(function(r) { setTimeout(r, 150); }); // allow async start
+	raw, err := evalJS(fmt.Sprintf(`(async function() {
 		var errors = [];
 		var session;
 		var dir = %q;
 		try {
 			session = globalThis.prSplit.spawnShellSession(dir, {rows: 24, cols: 200});
-			await new Promise(function(r) { setTimeout(r, 200); }); // allow async start
-
-			// Wait for shell prompt (any output).
-			var output = '';
-			var deadline = Date.now() + 5000;
-			while (Date.now() < deadline) {
-				var chunk = session.readAvailable();
-				if (chunk === null) break;
-				output += chunk;
-				if (output) break;
-			}
-
-			session.write('pwd\n');
+			await session._startPromise;
+			await session.write('pwd\n');
 
 			// Poll for the temp dir path in output.
-			deadline = Date.now() + 5000;
+			var output = '';
+			var deadline = Date.now() + 5000;
 			var found = false;
 			while (Date.now() < deadline) {
 				var chunk = session.readAvailable();
-				if (chunk === null) break;
-				output += chunk;
+				if (chunk !== null) output += chunk;
 				if (output.indexOf(dir) >= 0) {
 					found = true;
 					break;
 				}
+				await new Promise(function(resolve) { setTimeout(resolve, 10); });
 			}
 			if (!found) {
 				errors.push('pwd output did not contain ' + dir + '; output: ' + output.substring(0, 200));
@@ -198,7 +168,11 @@ func TestSpawnShell_WorktreeDir(t *testing.T) {
 		} catch (e) {
 			errors.push('error: ' + e.message);
 		} finally {
-			if (session) try { session.kill(); } catch(e) {}
+			if (session) {
+				await session.kill();
+				await session.wait();
+				await session.close();
+			}
 		}
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 	})()`, resolvedDir))
@@ -223,22 +197,18 @@ func TestSpawnShell_Resize(t *testing.T) {
 		var session;
 		try {
 			session = globalThis.prSplit.spawnShellSession(%q, {rows: 24, cols: 80});
-			await new Promise(function(r) { setTimeout(r, 150); }); // allow async start
-
-			// Wait for shell to start (any output).
-			var deadline = Date.now() + 5000;
-			while (Date.now() < deadline) {
-				var chunk = session.readAvailable();
-				if (chunk === null) break;
-				if (chunk) break;
-			}
+			await session._startPromise;
 
 			// Resize — should not throw.
-			session.resize(40, 100);
+			await session.resize(40, 100);
 		} catch (e) {
 			errors.push('error: ' + e.message);
 		} finally {
-			if (session) try { session.kill(); } catch(e) {}
+			if (session) {
+				await session.kill();
+				await session.wait();
+				await session.close();
+			}
 		}
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 	})()`, dir))
@@ -258,30 +228,21 @@ func TestSpawnShell_CustomRowsCols(t *testing.T) {
 
 	dir := t.TempDir()
 
-	raw, err := evalJS(fmt.Sprintf(`(function() {
-		await new Promise(function(r) { setTimeout(r, 150); }); // allow async start
+	raw, err := evalJS(fmt.Sprintf(`(async function() {
 		var errors = [];
 		var session;
 		try {
 			session = globalThis.prSplit.spawnShellSession(%q, {rows: 30, cols: 100});
-			await new Promise(function(r) { setTimeout(r, 200); }); // allow async start
-
-			// Wait for shell to start — success means spawn worked with custom dimensions.
-			var deadline = Date.now() + 5000;
-			var started = false;
-			while (Date.now() < deadline) {
-				var chunk = session.readAvailable();
-				if (chunk === null) break;
-				if (chunk) {
-					started = true;
-					break;
-				}
-			}
-			if (!started) errors.push('shell did not start with custom rows/cols');
+			await session._startPromise;
+			if (session.pid() <= 0) errors.push('shell did not start with custom rows/cols');
 		} catch (e) {
 			errors.push('error: ' + e.message);
 		} finally {
-			if (session) try { session.kill(); } catch(e) {}
+			if (session) {
+				await session.kill();
+				await session.wait();
+				await session.close();
+			}
 		}
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 	})()`, dir))

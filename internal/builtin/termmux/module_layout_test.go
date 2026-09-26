@@ -19,20 +19,20 @@ func TestLayoutMode_JSBinding(t *testing.T) {
 		var s1 = await termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
 		var s2 = await termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
 		var s3 = await termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
-		tuiMux.splitHorizontal({ session: s1.session, target: { name: "p1" } });
-		tuiMux.splitVertical({ session: s2.session, target: { name: "p2" } });
-		tuiMux.splitHorizontal({ session: s3.session, target: { name: "p3" } });
+		await tuiMux.splitHorizontal({ session: s1.session, target: { name: "p1" } });
+		await tuiMux.splitVertical({ session: s2.session, target: { name: "p2" } });
+		await tuiMux.splitHorizontal({ session: s3.session, target: { name: "p3" } });
 
-		if (tuiMux.layoutMode() !== "vertical") {
-			throw new Error("default layout = " + tuiMux.layoutMode());
+		if ((await tuiMux.layoutMode()) !== "vertical") {
+			throw new Error("default layout = " + (await tuiMux.layoutMode()));
 		}
 
-		tuiMux.setLayoutMode("main-horizontal");
-		if (tuiMux.layoutMode() !== "main-horizontal") {
-			throw new Error("after set layout = " + tuiMux.layoutMode());
+		await tuiMux.setLayoutMode("main-horizontal");
+		if ((await tuiMux.layoutMode()) !== "main-horizontal") {
+			throw new Error("after set layout = " + (await tuiMux.layoutMode()));
 		}
 
-		var panes = tuiMux.panes();
+		var panes = await tuiMux.panes();
 		if (panes.length !== 3) {
 			throw new Error("expected 3 panes, got " + panes.length);
 		}
@@ -54,12 +54,12 @@ func TestLayoutMode_JSBinding(t *testing.T) {
 			throw new Error("pane 2 does not start after main pane");
 		}
 
-		tuiMux.setLayoutMode("main-vertical");
-		if (tuiMux.layoutMode() !== "main-vertical") {
-			throw new Error("after set layout = " + tuiMux.layoutMode());
+		await tuiMux.setLayoutMode("main-vertical");
+		if ((await tuiMux.layoutMode()) !== "main-vertical") {
+			throw new Error("after set layout = " + (await tuiMux.layoutMode()));
 		}
 
-		panes = tuiMux.panes();
+		panes = await tuiMux.panes();
 		panes.sort(function(a, b) { return Number(a.id) - Number(b.id); });
 		if (panes.length !== 3) {
 			throw new Error("expected 3 panes after vertical, got " + panes.length);
@@ -98,11 +98,8 @@ func TestLayoutMode_JSBinding_Chains(t *testing.T) {
 
 	_, err := awaitJSValue(t, runtime, `
 		var s1 = await termmux.newBoundedSession({ cmd: idleBin, rows: 24, cols: 80 });
-		tuiMux.splitHorizontal({ session: s1.session, target: { name: "p1" } });
-		var ret = tuiMux.setLayoutMode("main-horizontal");
-		if (ret !== tuiMux) {
-			throw new Error("setLayoutMode should return manager wrapper for chaining");
-		}
+		await tuiMux.splitHorizontal({ session: s1.session, target: { name: "p1" } });
+		await tuiMux.setLayoutMode("main-horizontal");
 	`)
 	if err != nil {
 		t.Fatalf("layout mode chaining: %v", err)

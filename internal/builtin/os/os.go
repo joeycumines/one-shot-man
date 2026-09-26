@@ -394,6 +394,12 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 			})
 		})
 
+		// writeFileScoped(root, relativePath, content, options?): Promise<undefined>
+		// Writes only within root and rejects symlink/junction escapes.
+		_ = exports.Set("writeFileScoped", func(call goja.FunctionCall) goja.Value {
+			return writeFileScopedBinding(ctx, adapter, vm, call)
+		})
+
 		// appendFile(path, content, options?): Promise<undefined>
 		// options: { mode?: number (default 0644), createDirs?: boolean (default false) }
 		// Automatically expands ~ to the user's home directory before appending.

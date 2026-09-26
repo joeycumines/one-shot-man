@@ -24,7 +24,8 @@
         cols: 80,
         rows: 24,
         cursor: null,
-        lastGen: 0
+        lastGen: 0,
+        pending: null
     };
 
     function liveAvailable() {
@@ -41,6 +42,18 @@
             if (typeof tuiMux.isDone === 'function' && tuiMux.isDone(live.cid)) return false;
         } catch (e) { return false; }
         return true;
+    }
+
+    function isThenable(value) {
+        return !!value && typeof value.then === 'function';
+    }
+
+    function trackPanePromise(s, operation) {
+        if (typeof prSplit._trackPaneOperation === 'function') {
+            return prSplit._trackPaneOperation(s, operation);
+        }
+        if (isThenable(operation)) operation.then(function() {}, function() {});
+        return operation;
     }
 
     function chromeEstimate() {
@@ -86,66 +99,109 @@
     function ensureAgentTermpane(cid, s) {
         if (!liveAvailable()) return false;
         if (!cid) return false;
-        if (live.pane && live.cid === cid) return true;
-        destroyAgentTermpane();
-        if (!s) {
-            s = prSplit._state || null;
-            // The pipeline may attach the provider before the TUI has
-            // delivered its first WindowSize message. Use the manager's
-            // controlling-terminal dimensions rather than the model's
-            // 80x24 defaults for that first resize.
-            if ((!s || !s.width || !s.height) &&
-                typeof tuiMux.termSize === 'function') {
-                try {
-                    var size = tuiMux.termSize();
-                    if (size && size.rows > 0 && size.cols > 0) {
-                        s = {
-                            width: size.cols,
-                            height: size.rows,
-                            splitViewRatio: 0.6
-                        };
+        if (live.pane && live.cid === cid && !live.pending) return true;
+        if (live.pending) {
+            var queuedReplacement = live.pending.then(function() {
+                return ensureAgentTermpane(cid, s);
+            });
+            return trackPanePromise(s, queuedReplacement);
+        }
+        var attachPane = function() {
+            if (!s) {
+                s = prSplit._state || null;
+                if ((!s || !s.width || !s.height) &&
+                    typeof tuiMux.termSize === 'function') {
+                    try {
+                        var size = tuiMux.termSize();
+                        if (size && size.rows > 0 && size.cols > 0) {
+                            s = {
+                                width: size.cols,
+                                height: size.rows,
+                                splitViewRatio: 0.6
+                            };
+                        }
+                    } catch (e) {
+                        log.debug('agent live terminal size read failed', { error: e.message || String(e) });
                     }
-                } catch (e) {
-                    log.debug('agent live terminal size read failed', { error: e.message || String(e) });
                 }
             }
-        }
-        var box = agentPaneBox(s);
-        try {
-            live.pane = tp.termpane({
-                manager: tuiMux,
-                sessionId: cid,
-                bounds: { x: box.x, y: box.y, width: box.width, height: box.height }
+            var box = agentPaneBox(s);
+            try {
+                live.pane = tp.termpane({
+                    manager: tuiMux,
+                    sessionId: cid,
+                    bounds: { x: box.x, y: box.y, width: box.width, height: box.height }
+                });
+            } catch (e) {
+                log.warn('agent live pane create failed', { sessionId: cid, error: e.message || String(e) });
+                live.pane = null;
+                return false;
+            }
+            live.cid = cid;
+            live.x = box.x;
+            live.y = box.y;
+            live.cols = box.width;
+            live.rows = box.height;
+            var boundsUpdate = syncAgentTermpaneBounds(s);
+            if (isThenable(boundsUpdate)) {
+                return boundsUpdate.then(function() {
+                    log.info('agent live pane attached', { sessionId: cid, width: box.width, height: box.height });
+                    return true;
+                }, function(e) {
+                    log.debug('agent live replacement resize failed', { sessionId: cid, error: e.message || String(e) });
+                    return true;
+                });
+            }
+            log.info('agent live pane attached', { sessionId: cid, width: box.width, height: box.height });
+            return true;
+        };
+        var closePromise = live.pane ? destroyAgentTermpane() : null;
+        var replacement = isThenable(closePromise)
+            ? closePromise.then(attachPane, function(e) {
+                log.debug('agent live pane replacement close failed', { error: e.message || String(e) });
+                return attachPane();
+            })
+            : attachPane();
+        if (isThenable(replacement)) {
+            live.pending = replacement;
+            replacement.then(function() {
+                if (live.pending === replacement) live.pending = null;
+            }, function() {
+                if (live.pending === replacement) live.pending = null;
             });
-        } catch (e) {
-            log.warn('agent live pane create failed', { sessionId: cid, error: e.message || String(e) });
-            live.pane = null;
-            return false;
+            trackPanePromise(s, replacement);
         }
-        live.cid = cid;
-        live.x = box.x;
-        live.y = box.y;
-        live.cols = box.width;
-        live.rows = box.height;
-        syncAgentTermpaneBounds(s);
-        log.info('agent live pane attached', { sessionId: cid, width: box.width, height: box.height });
-        return true;
+        return replacement;
     }
 
-    function destroyAgentTermpane() {
-        if (live.pane) {
-            try { live.pane.close(); } catch (e) {
-                log.debug('agent live pane close failed', { error: e.message || String(e) });
-            }
+    function destroyAgentTermpane(options) {
+        options = options || {};
+        if (live.pending) {
+            return live.pending.then(function() {
+                return destroyAgentTermpane();
+            });
         }
+        var pane = live.pane;
         live.pane = null;
         live.cid = 0;
         live.cursor = null;
         live.lastGen = 0;
+        var waitForUpdates = !options.skipWait && prSplit._waitForPaneOperations && typeof prSplit._state === 'object' ?
+            prSplit._waitForPaneOperations(prSplit._state) : Promise.resolve();
+        var closeOperation = Promise.resolve(waitForUpdates).then(function() {
+            if (!pane) return;
+            return Promise.resolve(pane.close()).catch(function(e) {
+                log.debug('agent live pane close failed', { error: e.message || String(e) });
+            });
+        }).catch(function(e) {
+            log.debug('agent live pane close failed', { error: e.message || String(e) });
+        });
+        return trackPanePromise(prSplit._state, closeOperation);
     }
 
     // Resize authority: called only from handleWindowResize plus attach paths.
-    // Never called from render. Applies the handleWindowResize inner-size
+    // Never called from render. The returned Promise represents the tracked
+    // termpane update. Applies the handleWindowResize inner-size
     // formula (paneRows = agentH - 3, paneCols = w - 4) so the PTY size
     // matches the size the screenshot path resizes interactive sessions to.
     function syncAgentTermpaneBounds(s) {
@@ -161,9 +217,11 @@
             log.debug('agent live setbounds failed', { error: e.message || String(e) });
         }
         try {
-            live.pane.update({ type: 'WindowSize', width: box.width, height: box.height });
+            var updateResult = live.pane.update({ type: 'WindowSize', width: box.width, height: box.height });
+            return isThenable(updateResult) ? Promise.resolve(updateResult) : Promise.resolve();
         } catch (e) {
             log.debug('agent live resize update failed', { error: e.message || String(e) });
+            return Promise.resolve();
         }
     }
 
@@ -234,35 +292,57 @@
     }
 
     // Key input yields Null cmd (Update KeyPress returns nil), so no batch is
-    // expected. Returns null always. Caller keeps its own tick.
+    // expected. The returned Promise settles after the tracked update; callers
+    // keep their own tick.
     function routeKeyToAgentTermpane(msg) {
-        if (!liveActive()) return null;
+        if (!liveActive()) return Promise.resolve(null);
         if (!liveSessionAlive()) {
-            destroyAgentTermpane();
-            return null;
+            try {
+                return Promise.resolve(destroyAgentTermpane()).then(function() {
+                    return null;
+                });
+            } catch (e) {
+                log.debug('agent live key route failed', { error: e.message || String(e) });
+                return Promise.resolve(null);
+            }
         }
         try {
-            live.pane.update(msg);
+            var keyUpdate = live.pane.update(msg);
+            return Promise.resolve(keyUpdate).then(function() {
+                return null;
+            }, function() {
+                return null;
+            });
         } catch (e) {
             log.debug('agent live key route failed', { error: e.message || String(e) });
-            return null;
+            return Promise.resolve(null);
         }
-        return null;
     }
 
     function routeMouseToAgentTermpane(msg) {
+        // Synchronous decline paths must stay boolean so callers can fall
+        // through to legacy child forwarding. Only an actual pane update
+        // returns a Promise.
         if (!liveActive()) return false;
         if (!liveSessionAlive()) {
-            destroyAgentTermpane();
+            try {
+                trackPanePromise(prSplit._state, destroyAgentTermpane());
+            } catch (e) {
+                log.debug('agent live mouse route failed', { error: e.message || String(e) });
+            }
             return false;
         }
         try {
-            live.pane.update(msg);
+            var mouseUpdate = live.pane.update(msg);
+            return Promise.resolve(mouseUpdate).then(function() {
+                return true;
+            }, function() {
+                return false;
+            });
         } catch (e) {
             log.debug('agent live mouse route failed', { error: e.message || String(e) });
             return false;
         }
-        return true;
     }
 
     function isPointInAgentPane(x, y) {
@@ -279,7 +359,7 @@
     }
 
     function noteAgentDetached() {
-        destroyAgentTermpane();
+        return destroyAgentTermpane();
     }
 
     prSplit._agentLiveAvailable = liveAvailable;

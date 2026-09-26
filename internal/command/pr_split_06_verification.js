@@ -17,6 +17,17 @@
     var scopedVerifyCommand = prSplit.scopedVerifyCommand;
     var exec = prSplit._modules.exec;
 
+    async function resolveVerifyCommand(command, dir) {
+        if (command) return command;
+        if (typeof prSplit.discoverVerifyCommand !== 'function') return '';
+        command = await prSplit.discoverVerifyCommand(dir);
+        if (command) {
+            prSplit.runtime = prSplit.runtime || {};
+            prSplit.runtime.verifyCommand = command;
+        }
+        return command || '';
+    }
+
     // --- verifySplit — runs verify command on a single branch ---
     //
     //  Uses a temporary git worktree so the user's CWD is never modified.
@@ -26,8 +37,8 @@
     async function verifySplit(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
-        var command = config.verifyCommand || prSplit.runtime.verifyCommand;
-        var timeoutMs = config.verifyTimeoutMs || 0;
+        var command = await resolveVerifyCommand(config.verifyCommand || prSplit.runtime.verifyCommand, dir);
+        var timeoutMs = prSplit._effectiveVerifyTimeoutMs(config.verifyTimeoutMs);
         var outputFn = config.outputFn || null;
 
         // No verify command configured — treat as pass (verification skipped).
@@ -78,7 +89,8 @@
             shellCmd = '( ' + shellCmd + ' ) & _pid=$!; ( sleep ' + timeoutSec + '; kill $_pid 2>/dev/null ) >/dev/null 2>&1 & _watch=$!; wait $_pid; _rc=$?; kill $_watch 2>/dev/null; wait $_watch 2>/dev/null; exit $_rc';
         }
         // Note: Windows timeout is an interactive command; timeout handling
-        // for Windows relies on the Go-level deadline in shellSpawnSync.
+        // for Windows relies on the Go-level deadline in shellSpawnSync via
+        // the native exec binding.
 
         var stdoutBuf = '';
         var stderrBuf = '';
@@ -95,6 +107,7 @@
         }
 
         var result = await shellSpawnSync(shellCmd, {
+            timeoutMs: timeoutMs,
             onStdout: function(chunk) {
                 stdoutBuf += chunk;
                 emitChunk(chunk);
@@ -135,7 +148,9 @@
             return { allPassed: false, results: [], error: 'verifySplits: invalid plan — missing splits array' };
         }
         var dir = resolveDir(plan.dir || '.');
-        var verifyTimeoutMs = options.verifyTimeoutMs || 0;
+        var verifyCommand = await resolveVerifyCommand(plan.verifyCommand || prSplit.runtime.verifyCommand, dir);
+        if (verifyCommand) plan.verifyCommand = verifyCommand;
+        var verifyTimeoutMs = prSplit._effectiveVerifyTimeoutMs(options.verifyTimeoutMs);
         var onBranchStart = typeof options.onBranchStart === 'function' ? options.onBranchStart : null;
         var onBranchDone = typeof options.onBranchDone === 'function' ? options.onBranchDone : null;
         var onBranchOutput = typeof options.onBranchOutput === 'function' ? options.onBranchOutput : null;
@@ -147,10 +162,10 @@
         // branch first. If it fails, split branch failures are flagged as
         // pre-existing rather than new regressions.
         var baselineFailure = null;
-        if (plan.verifyCommand && plan.sourceBranch) {
+        if (verifyCommand && plan.sourceBranch) {
             var baselineResult = await verifySplit(plan.sourceBranch, {
                 dir: dir,
-                verifyCommand: plan.verifyCommand,
+                verifyCommand: verifyCommand,
                 verifyTimeoutMs: verifyTimeoutMs,
                 outputFn: options.outputFn || null
             });
@@ -183,7 +198,7 @@
                 continue;
             }
 
-            var baseCmd = plan.verifyCommand;
+            var baseCmd = verifyCommand;
             var scopedCmd = scopedVerifyCommand(split.files, baseCmd);
 
             if (onBranchStart) { onBranchStart(split.name); }
@@ -357,7 +372,7 @@
     async function prepareVerifyWorktree(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
-        var command = config.verifyCommand || prSplit.runtime.verifyCommand;
+        var command = await resolveVerifyCommand(config.verifyCommand || prSplit.runtime.verifyCommand, dir);
 
         if (!command) {
             return { skipped: true, worktreeDir: null };
@@ -399,10 +414,10 @@
     //    { session, worktreeDir, dir, branchName, startTime }  on success
     //    { skipped: true }                                     if no verify command
     //    { error: string }                                     on failure
-    function startVerifySession(branchName, config) {
+    async function startVerifySession(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
-        var command = config.verifyCommand || prSplit.runtime.verifyCommand;
+        var command = await resolveVerifyCommand(config.verifyCommand || prSplit.runtime.verifyCommand, dir);
 
         if (!command) {
             return { skipped: true, session: null, worktreeDir: null };
@@ -422,7 +437,7 @@
         var cols = config.cols || 120;
 
         // Delegate worktree creation.
-        var wt = prepareVerifyWorktree(branchName, config);
+        var wt = await prepareVerifyWorktree(branchName, config);
         if (wt.error) {
             return { error: wt.error, session: null, worktreeDir: null };
         }
@@ -431,27 +446,41 @@
         }
         var worktreeDir = wt.worktreeDir;
 
+        var session = null;
         try {
             var captureShell = isWindows() ? 'cmd.exe' : 'sh';
             var captureArgs = isWindows() ? ['/C', command] : ['-c', command];
-            var session = termmux.newCaptureSession(captureShell, captureArgs, {
+            session = termmux.newCaptureSession(captureShell, captureArgs, {
                 dir: worktreeDir,
                 rows: rows,
                 cols: cols
             });
-            session.start();
+            var started = session.start();
+            if (started && typeof started.then === 'function') {
+                await started;
+            }
         } catch (e) {
-            // Fire-and-forget cleanup — we're already in an error path.
-            // gitExec is dual-mode: a Promise in production (async) but a
-            // plain object in tests (sync mock). Guard the .catch so a sync
-            // return value doesn't throw a masking TypeError that would
-            // clobber the original error `e`.
-            var cleanupRes = gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
-            if (cleanupRes && typeof cleanupRes.catch === 'function') {
-                cleanupRes.catch(function() {});
+            if (session && typeof session.close === 'function') {
+                try {
+                    var closeResult = session.close();
+                    if (closeResult && typeof closeResult.then === 'function') {
+                        await closeResult;
+                    }
+                } catch (closeErr) {
+                    log.debug('startVerifySession: failed to close failed session', {
+                        error: closeErr.message || String(closeErr)
+                    });
+                }
+            }
+            try {
+                await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            } catch (cleanupErr) {
+                log.debug('startVerifySession: failed to clean worktree after startup error', {
+                    error: cleanupErr.message || String(cleanupErr)
+                });
             }
             return {
-                error: 'start verify session failed: ' + e.message,
+                error: 'start verify session failed: ' + ((e && e.message) ? e.message : String(e)),
                 session: null,
                 worktreeDir: null
             };
@@ -508,13 +537,33 @@
     async function verifySplitAsync(branchName, config) {
         var gitExecAsync = prSplit._gitExecAsync;
         config = config || {};
+        var cancellationCheck = typeof config.isCancelled === 'function'
+            ? config.isCancelled
+            : function() {
+                return typeof prSplit.isCancelled === 'function' && prSplit.isCancelled();
+            };
+        var isCancelledNow = function() {
+            try {
+                return !!cancellationCheck() ||
+                    (typeof prSplit.isForceCancelled === 'function' && prSplit.isForceCancelled());
+            } catch (e) {
+                log.debug('verify cancellation check failed', { error: e.message || String(e) });
+                return false;
+            }
+        };
+        if (isCancelledNow()) {
+            return { name: branchName, passed: false, output: '', error: 'verification cancelled by user', cancelled: true };
+        }
         var dir = resolveDir(config.dir || '.');
-        var command = config.verifyCommand || prSplit.runtime.verifyCommand;
-        var timeoutMs = config.verifyTimeoutMs || 0;
+        var command = await resolveVerifyCommand(config.verifyCommand || prSplit.runtime.verifyCommand, dir);
+        var timeoutMs = prSplit._effectiveVerifyTimeoutMs(config.verifyTimeoutMs);
         var outputFn = config.outputFn || null;
 
         if (!command) {
             return { name: branchName, passed: true, output: '', error: null, skipped: true, duration: 0 };
+        }
+        if (isCancelledNow()) {
+            return { name: branchName, passed: false, output: '', error: 'verification cancelled by user', cancelled: true };
         }
 
         var worktreeDir = worktreeTmpPath('osm-verify-');
@@ -537,7 +586,9 @@
             await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
         }
 
-        var startMs = Date.now();
+        var worktreeReady = true;
+        try {
+            var startMs = Date.now();
         var shellCmd;
         if (isWindows()) {
             shellCmd = 'cd /d ' + shellQuote(worktreeDir) + ' && ' + command;
@@ -566,8 +617,44 @@
         }
 
         // Non-blocking: use platform-aware shell spawn so the event loop
-        // stays responsive during verification.
-        var child = await shellSpawnAsync(shellCmd);
+        // stays responsive during verification. The native binding enforces
+        // timeoutMs on every platform, including Windows where the shell
+        // wrapper above is intentionally omitted.
+        var child = await shellSpawnAsync(shellCmd, { timeoutMs: timeoutMs });
+        var cancelled = false;
+        var cancelTimer = null;
+        var stopCancelWatch = function() {
+            if (cancelTimer !== null) {
+                clearTimeout(cancelTimer);
+                cancelTimer = null;
+            }
+        };
+        var cancelChild = function() {
+            if (cancelled) return;
+            cancelled = true;
+            try {
+                var killResult = child.kill();
+                if (killResult && typeof killResult.catch === 'function') {
+                    killResult.catch(function(e) {
+                        log.debug('verify cancellation kill failed', { error: e.message || String(e) });
+                    });
+                }
+            } catch (e) {
+                log.debug('verify cancellation kill failed', { error: e.message || String(e) });
+            }
+        };
+        var watchCancellation = function() {
+            if (isCancelledNow()) {
+                cancelChild();
+                return;
+            }
+            cancelTimer = setTimeout(watchCancellation, 50);
+        };
+        if (isCancelledNow()) {
+            cancelChild();
+        } else {
+            watchCancellation();
+        }
 
         // Read stdout and stderr concurrently via async streams.
         async function readStream(stream, onChunk) {
@@ -600,7 +687,15 @@
         var exitCode = (exitResult && exitResult.code !== undefined) ? exitResult.code : 1;
         var elapsedMs = Date.now() - startMs;
 
-        await cleanupWorktreeAsync();
+        if (cancelled || isCancelledNow()) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                error: 'verification cancelled by user',
+                cancelled: true
+            };
+        }
 
         if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
             return {
@@ -617,6 +712,16 @@
             output: stdoutBuf,
             error: exitCode !== 0 ? 'verify failed (exit ' + exitCode + '): ' + stderrBuf : null
         };
+        } finally {
+            if (typeof stopCancelWatch === 'function') stopCancelWatch();
+            if (worktreeReady) {
+                try {
+                    await cleanupWorktreeAsync();
+                } catch (e) {
+                    log.debug('verifySplitAsync: worktree cleanup failed', { error: e.message || String(e) });
+                }
+            }
+        }
     }
 
     // verifySplitsAsync is the non-blocking version of verifySplits.
@@ -625,8 +730,27 @@
         if (!plan || !plan.splits) {
             return { allPassed: false, results: [], error: 'verifySplits: invalid plan — missing splits array' };
         }
+        var cancellationCheck = typeof options.isCancelled === 'function'
+            ? options.isCancelled
+            : function() {
+                return typeof prSplit.isCancelled === 'function' && prSplit.isCancelled();
+            };
+        var isCancelledNow = function() {
+            try {
+                return !!cancellationCheck() ||
+                    (typeof prSplit.isForceCancelled === 'function' && prSplit.isForceCancelled());
+            } catch (e) {
+                log.debug('verify cancellation check failed', { error: e.message || String(e) });
+                return false;
+            }
+        };
+        if (isCancelledNow()) {
+            return { allPassed: false, results: [], error: 'verification cancelled by user' };
+        }
         var dir = resolveDir(plan.dir || '.');
-        var verifyTimeoutMs = options.verifyTimeoutMs || 0;
+        var verifyCommand = await resolveVerifyCommand(plan.verifyCommand || prSplit.runtime.verifyCommand, dir);
+        if (verifyCommand) plan.verifyCommand = verifyCommand;
+        var verifyTimeoutMs = prSplit._effectiveVerifyTimeoutMs(options.verifyTimeoutMs);
         var onBranchStart = typeof options.onBranchStart === 'function' ? options.onBranchStart : null;
         var onBranchDone = typeof options.onBranchDone === 'function' ? options.onBranchDone : null;
         var onBranchOutput = typeof options.onBranchOutput === 'function' ? options.onBranchOutput : null;
@@ -637,20 +761,24 @@
         // Pre-existing failure detection: run verification on the source
         // branch first.
         var baselineFailure = null;
-        if (plan.verifyCommand && plan.sourceBranch) {
+        if (verifyCommand && plan.sourceBranch) {
             var baselineResult = await verifySplitAsync(plan.sourceBranch, {
                 dir: dir,
-                verifyCommand: plan.verifyCommand,
+                verifyCommand: verifyCommand,
                 verifyTimeoutMs: verifyTimeoutMs,
-                outputFn: options.outputFn || null
+                outputFn: options.outputFn || null,
+                isCancelled: isCancelledNow
             });
+            if (baselineResult.cancelled || isCancelledNow()) {
+                return { allPassed: false, results: [], error: 'verification cancelled by user' };
+            }
             if (!baselineResult.passed) {
                 baselineFailure = baselineResult;
             }
         }
 
         for (var i = 0; i < plan.splits.length; i++) {
-            if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
+            if (isCancelledNow()) {
                 return { allPassed: false, results: results, error: 'verification cancelled by user' };
             }
 
@@ -672,7 +800,7 @@
                 continue;
             }
 
-            var baseCmd = plan.verifyCommand;
+            var baseCmd = verifyCommand;
             var scopedCmd = scopedVerifyCommand(split.files, baseCmd);
 
             if (onBranchStart) { onBranchStart(split.name); }
@@ -691,8 +819,12 @@
                 dir: dir,
                 verifyCommand: scopedCmd,
                 verifyTimeoutMs: verifyTimeoutMs,
-                outputFn: branchOutputFn
+                outputFn: branchOutputFn,
+                isCancelled: isCancelledNow
             });
+            if (result.cancelled || isCancelledNow()) {
+                return { allPassed: false, results: results, error: 'verification cancelled by user' };
+            }
             if (scopedCmd !== baseCmd) {
                 result.scopedVerify = scopedCmd;
             }

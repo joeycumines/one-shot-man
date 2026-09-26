@@ -915,3 +915,36 @@ func TestChunk16a_GetFocusElements_BASELINE_FAIL(t *testing.T) {
 		t.Errorf("BASELINE_FAIL should produce same element count as CONFIG")
 	}
 }
+
+func TestChunk16a_NavCancelTracksVerifyInterrupt(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	val, err := evalJS(`(async function() {
+		var resolveInterrupt;
+		setupPlanCache();
+		var s = initState('PLAN_REVIEW');
+		var elems = prSplit._getFocusElements(s);
+		for (var i = 0; i < elems.length; i++) {
+			if (elems[i].id === 'nav-cancel') s.focusIndex = i;
+		}
+		s.activeVerifySession = {
+			interrupt: function() {
+				return new Promise(function(resolve) { resolveInterrupt = resolve; });
+			}
+		};
+		prSplit._handleFocusActivate(s);
+		if (s.paneOperations.length !== 1) return 'FAIL: nav-cancel interrupt was not tracked';
+		if (s.showConfirmCancel) return 'FAIL: nav-cancel opened confirm during verify';
+		resolveInterrupt();
+		await settlePaneOperations(s);
+		if (s.paneOperations.length !== 0) return 'FAIL: interrupt remained tracked';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "OK" {
+		t.Errorf("nav-cancel tracker: %v", val)
+	}
+}

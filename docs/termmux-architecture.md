@@ -155,8 +155,9 @@ All features are exposed via `osm:termmux`:
 ```javascript
 const termmux = require('osm:termmux');
 const mgr = termmux.newSessionManager({rows: 24, cols: 80});
-const {session, sid} = termmux.newBoundedSession({cmd: '/bin/sh'});
+const bounded = await termmux.newBoundedSession({cmd: '/bin/sh'});
+const {session, sid} = bounded;
 const forward = termmux.enableMouseForward({sessionManager: mgr, ...});
 const router = termmux.newControlRouter({keys: {'ctrl+p': 'pause'}});
-const chooser = termmux.newChooser(activeID);
+const chooser = await mgr.newChooser(activeID);
 ```

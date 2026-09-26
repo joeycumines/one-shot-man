@@ -4,11 +4,42 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"runtime"
 	"syscall"
+	"time"
 
 	uv "github.com/charmbracelet/ultraviolet"
 )
+
+// forwardJoinGrace bounds how long a caller waits for the stdin forwarder to
+// finish after cancelling it.
+//
+// Cancellation cannot always interrupt the blocking read. On the select-based
+// platforms ultraviolet routes anything that is not an *os.File, and any
+// *os.File whose descriptor is at or above FD_SETSIZE, to a fallback reader
+// whose Cancel cannot un-park the read. Waiting on such a forwarder forever
+// turns a leaked goroutine into a hang, so the join is best-effort.
+// Abandoning it is safe: the forwarder checks the cancelled context before
+// every write and every result send, so it cannot touch the caller's writer or
+// channels after the caller returns.
+const forwardJoinGrace = 250 * time.Millisecond
+
+// joinForwarder waits for the stdin forwarder to exit after cancellation,
+// giving up after forwardJoinGrace. A false return means the forwarder is
+// still blocked in an uninterruptible read and was abandoned.
+func joinForwarder(forwardDone <-chan struct{}) bool {
+	timer := time.NewTimer(forwardJoinGrace)
+	defer timer.Stop()
+	select {
+	case <-forwardDone:
+		return true
+	case <-timer.C:
+		slog.Debug("stdin forwarder did not exit after cancel",
+			"waitedMs", forwardJoinGrace.Milliseconds())
+		return false
+	}
+}
 
 // forwardConfig configures the stdin→PTY forwarding loop used by both
 // CaptureSession.Passthrough and SessionManager.Passthrough.
@@ -83,15 +114,21 @@ func newForwardReader(ctx context.Context, input io.Reader) (io.Reader, func()) 
 				}
 			}
 		case <-stopWatcher:
+			return
+		}
+		// Release the cancel reader's own descriptors (epoll fd, cancel pipe)
+		// here rather than in cleanup: this goroutine is guaranteed to run,
+		// whereas cleanup only runs when the forwarder is joined. A forwarder
+		// abandoned by joinForwarder would otherwise keep them open for the
+		// life of the process.
+		if cancelReader != nil {
+			_ = cancelReader.Close()
 		}
 	}()
 
 	cleanup := func() {
 		close(stopWatcher)
 		<-watcherDone
-		if cancelReader != nil {
-			_ = cancelReader.Close()
-		}
 	}
 	return reader, cleanup
 }

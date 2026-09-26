@@ -190,3 +190,124 @@ func TestChunk16e_StuckTeardownNeverBlocksQuit(t *testing.T) {
 		t.Errorf("stuck teardown blocks quit: %v", raw)
 	}
 }
+
+// TestChunk16e_StuckQuestionWriteDoesNotStrandPrompt covers the same bounded-wait
+// contract for the Agent question prompt. agentQuestionSendPending disables
+// both dismissal keys while a pane write is in flight; if that write never
+// settles, the user could neither dismiss nor retry the prompt.
+func TestChunk16e_StuckQuestionWriteDoesNotStrandPrompt(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('BRANCH_BUILDING');
+		s.agentQuestionDetected = true;
+		s.agentQuestionLine = 'Which module should own this?';
+		s.agentQuestionInputActive = true;
+		s.agentQuestionInputText = 'the api module';
+		s.agentQuestionSendPending = true;
+		// Stamped long enough ago that the budget is spent.
+		s.agentQuestionSendAtMs = 0;
+		// A non-dismissal key observes the diagnosis left behind.
+		var diagnosed = update({type: 'Key', key: 'a'}, s)[0];
+		if (diagnosed.agentQuestionSendPending) return 'FAIL: still pending after the budget';
+		if (diagnosed.agentQuestionInputActive) return 'FAIL: prompt still traps input';
+		if (diagnosed.agentQuestionLine.indexOf('Error sending response') < 0) {
+			return 'FAIL: no diagnosis, line=' + diagnosed.agentQuestionLine;
+		}
+		// Escape now works again and dismisses the prompt.
+		var dismissed = update({type: 'Key', key: 'esc'}, diagnosed)[0];
+		if (dismissed.agentQuestionDetected) return 'FAIL: escape did not dismiss';
+		if (dismissed.agentQuestionSendPending) return 'FAIL: pending after dismissal';
+		// A fresh prompt is fully usable again.
+		var t2 = initState('BRANCH_BUILDING');
+		t2.agentQuestionDetected = true;
+		t2.agentQuestionInputActive = true;
+		t2.agentQuestionInputText = 'x';
+		t2.agentQuestionSendPending = true;
+		t2.agentQuestionSendAtMs = Date.now();
+		var held = update({type: 'Key', key: 'esc'}, t2)[0];
+		if (!held.agentQuestionSendPending) return 'FAIL: in-flight write released too early';
+		if (!held.agentQuestionDetected) return 'FAIL: in-flight write swallowed the key';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("stuck question write strands the prompt: %v", raw)
+	}
+}
+
+// TestChunk16e_LateQuestionSettlementDoesNotClobberNewerPrompt drives a real
+// send: the pane write returns a Promise the test controls, the send budget
+// expires, a newer question arrives, and only then does the write settle. The
+// late settlement must not clear state it does not own.
+func TestChunk16e_LateQuestionSettlementDoesNotClobberNewerPrompt(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		// The budget is in wall-clock terms measured from the send stamp, so
+		// the clock must jump only AFTER the stamp is taken.
+		var realNow = Date.now;
+		var jumped = false;
+		Date.now = function() { return realNow.call(Date) + (jumped ? 60000 : 0); };
+		try {
+			var s = initState('BRANCH_BUILDING');
+			s.agentQuestionDetected = true;
+			s.agentQuestionLine = 'first question';
+			s.agentQuestionInputActive = true;
+			s.agentQuestionInputText = 'first answer';
+			s.agentConversations = [];
+
+			// A pane whose write never settles until the test says so.
+			var releaseWrite;
+			s.activeAgentSession = {
+				write: function() { return new Promise(function(resolve) { releaseWrite = resolve; }); },
+				close: function() {}
+			};
+
+			// Enter starts the send.
+			s = update({type: 'Key', key: 'enter'}, s)[0];
+			if (!s.agentQuestionSendPending) return 'FAIL: send not marked pending';
+			if (typeof releaseWrite !== 'function') return 'FAIL: write was never called';
+			if (!s.agentQuestionSendAtMs) return 'FAIL: send not stamped';
+
+			// A keypress now finds the budget spent and abandons the send.
+			jumped = true;
+			s = update({type: 'Key', key: 'a'}, s)[0];
+			if (s.agentQuestionSendPending) return 'FAIL: send still pending after the budget';
+			if (s.agentQuestionLine.indexOf('Error sending response') < 0) {
+				return 'FAIL: abandonment not surfaced, line=' + s.agentQuestionLine;
+			}
+
+			// A newer Agent question arrives while the write is still in flight.
+			s.agentQuestionDetected = true;
+			s.agentQuestionLine = 'second question';
+			s.agentQuestionInputActive = true;
+			s.agentQuestionInputText = '';
+
+			// The old write finally settles.
+			releaseWrite();
+			await new Promise(function(resolve) { setTimeout(resolve, 0); });
+
+			if (!s.agentQuestionDetected) return 'FAIL: late settlement cleared the newer question';
+			if (s.agentQuestionLine !== 'second question') {
+				return 'FAIL: late settlement rewrote the line: ' + s.agentQuestionLine;
+			}
+			if (s.agentConversations.length !== 0) {
+				return 'FAIL: abandoned send was recorded as delivered';
+			}
+			return 'OK';
+		} finally {
+			Date.now = realNow;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("late question settlement: %v", raw)
+	}
+}

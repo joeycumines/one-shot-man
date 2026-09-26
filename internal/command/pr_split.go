@@ -502,14 +502,16 @@ func (c *PrSplitCommand) setupEngineGlobalsOnLoop(ctx context.Context, engine *s
 // flagProvided reports whether a boolean flag was explicitly present in the
 // raw command arguments. A false boolean flag is meaningful and must not be
 // mistaken for the flag's zero value when config defaults are applied.
+//
+// Only the long form is matched. pflag has no single-dash multi-character
+// flags, so a "-dry-run" spelling could never reach this function through the
+// parser; matching it would only hide a malformed invocation.
 func flagProvided(args []string, name string) bool {
-	shortName := "-" + strings.TrimPrefix(name, "--")
 	for _, arg := range args {
 		if arg == "--" {
 			return false
 		}
-		if arg == name || strings.HasPrefix(arg, name+"=") ||
-			arg == shortName || strings.HasPrefix(arg, shortName+"=") {
+		if arg == name || strings.HasPrefix(arg, name+"=") {
 			return true
 		}
 	}

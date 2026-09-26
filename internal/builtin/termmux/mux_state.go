@@ -109,11 +109,21 @@ func (s *muxState) cacheEvent(event parent.Event) {
 	}
 }
 
-func (s *muxState) initializeManagerCache() {
+// maxCacheInitAttempts bounds the epoch-retry loop in initializeManagerCache.
+// Continuous session churn can keep bumping the epoch; without a bound this
+// goroutine would spin and leak. The cache is a best-effort accelerator, so
+// the bound is a liveness limit, not a correctness one: a later cacheEvent or
+// the next call republishes it.
+const maxCacheInitAttempts = 8
+
+// initializeManagerCache publishes a manager snapshot into the cache and
+// reports how many attempts it made. The attempt count is a diagnostic for the
+// retry bound; callers ignore it.
+func (s *muxState) initializeManagerCache() int {
 	if s == nil || s.mgr == nil || !managerStarted(s.mgr) {
-		return
+		return 0
 	}
-	for {
+	for attempt := 0; attempt < maxCacheInitAttempts; attempt++ {
 		epoch := s.cacheEpoch.Load()
 		activeID := uint64(s.mgr.ActiveID())
 		rows, cols := s.mgr.TermSize()
@@ -127,15 +137,33 @@ func (s *muxState) initializeManagerCache() {
 		s.activeIDCached.Store(activeID)
 		s.termRowsCached.Store(int64(rows))
 		s.termColsCached.Store(int64(cols))
+		// Reconcile against the manager's snapshot instead of only adding:
+		// a session that disappeared between the read and this publish would
+		// otherwise stay in knownSessions forever and be reported as live by
+		// cachedSessionDone.
+		live := make(map[uint64]struct{}, len(sessions))
 		for _, info := range sessions {
-			s.knownSessions.Store(uint64(info.ID), struct{}{})
+			id := uint64(info.ID)
+			live[id] = struct{}{}
+			s.knownSessions.Store(id, struct{}{})
 			if info.State == parent.SessionExited || info.State == parent.SessionClosed {
-				s.doneSessions.Store(uint64(info.ID), struct{}{})
+				s.doneSessions.Store(id, struct{}{})
 			}
 		}
+		s.knownSessions.Range(func(key, _ any) bool {
+			id, ok := key.(uint64)
+			if ok {
+				if _, still := live[id]; !still {
+					s.knownSessions.Delete(id)
+					s.doneSessions.Delete(id)
+				}
+			}
+			return true
+		})
 		s.cacheMu.Unlock()
-		return
+		return attempt + 1
 	}
+	return maxCacheInitAttempts
 }
 
 func (s *muxState) cachedActiveID() uint64 {
@@ -194,6 +222,18 @@ func (s *muxState) cacheActiveID(id uint64) {
 	if id != 0 {
 		s.doneSessions.Delete(id)
 	}
+}
+
+// cachedTermSize returns the cached terminal dimensions as a pair. It reads
+// both fields under cacheMu so a resize published between two separate atomic
+// loads cannot be observed as a torn (rows, cols) pair.
+func (s *muxState) cachedTermSize() (int, int) {
+	if s == nil {
+		return 0, 0
+	}
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	return int(s.termRowsCached.Load()), int(s.termColsCached.Load())
 }
 
 func (s *muxState) cacheTermSize(rows, cols int) {

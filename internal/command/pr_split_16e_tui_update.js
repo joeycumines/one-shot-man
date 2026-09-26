@@ -60,6 +60,7 @@
     var CHROME_ESTIMATE = prSplit._CHROME_ESTIMATE;
     var pollAgentScreenshot = prSplit._pollAgentScreenshot;
     var C = prSplit._TUI_CONSTANTS;
+    var AGENT_QUESTION_SEND_TIMEOUT_MS = C.AGENT_QUESTION_SEND_TIMEOUT_MS;
     var getInteractivePaneSession = prSplit._getInteractivePaneSession;
     var listSplitViewTabs = prSplit._listSplitViewTabs;
     var termmux = require('osm:termmux');
@@ -547,6 +548,22 @@
         if (s.agentQuestionInputActive && msg.type === 'Key' && msg.key !== 'ctrl+l') {
             var qk = msg.key;
             if (s.agentQuestionSendPending) {
+                // A pane write that never settles must not strand the prompt:
+                // both dismissal keys would stay dead forever. The wait is
+                // bounded, and on expiry the send is abandoned so the user can
+                // dismiss or retry. The write stays tracked, so a late
+                // settlement is still surfaced through its own callbacks.
+                if (Date.now() - (s.agentQuestionSendAtMs || 0) > AGENT_QUESTION_SEND_TIMEOUT_MS) {
+                    log.printf('T46: Agent write did not settle in %dms; abandoning the send',
+                        AGENT_QUESTION_SEND_TIMEOUT_MS);
+                    s.agentQuestionSendPending = false;
+                    s.agentQuestionSendAtMs = 0;
+                    s.agentQuestionInputActive = false;
+                    s.agentQuestionInputText = '';
+                    s.agentQuestionLine = 'Error sending response: the Agent session did not respond.';
+                }
+            }
+            if (s.agentQuestionSendPending) {
                 if (qk === 'enter' || qk === 'esc') return [s, null];
             }
 
@@ -580,6 +597,7 @@
                         s.agentQuestionInputText = '';
                         s.agentQuestionInputActive = false;
                         s.agentQuestionSendPending = false;
+                        s.agentQuestionSendAtMs = 0;
                         s.agentLastQuestionCheckMs = Date.now();
                     };
                     var failQuestionWrite = function(e) {
@@ -588,6 +606,7 @@
                         s.agentQuestionInputActive = false;
                         s.agentQuestionInputText = '';
                         s.agentQuestionSendPending = false;
+                        s.agentQuestionSendAtMs = 0;
                     };
 
                     // Send to Agent PTY via the pinned Agent pane proxy.
@@ -595,12 +614,33 @@
                     if (agentQuestionSession && typeof agentQuestionSession.write === 'function') {
                         try {
                             s.agentQuestionSendPending = true;
+                            s.agentQuestionSendAtMs = Date.now();
+                            // Stamp this send so a settlement that arrives after
+                            // the prompt was abandoned (or after a newer question
+                            // appeared) cannot clear state it does not own.
+                            var sentAtMs = s.agentQuestionSendAtMs;
+                            var sendIsCurrent = function() {
+                                return s.agentQuestionSendAtMs === sentAtMs;
+                            };
                             var responseWrite = agentQuestionSession.write(responseText + '\r');
                             trackPaneOutcome(s, responseWrite, function() {
+                                // A settlement that lands after this send was
+                                // abandoned, or after a newer question replaced
+                                // it, must not clear state it does not own.
+                                if (!sendIsCurrent()) {
+                                    log.debug('agent question write settled late; ignoring stale state mutation');
+                                    return;
+                                }
                                 recordQuestionResponse();
                                 log.printf('T46: sent response to Agent: %s', responseText);
                                 clearQuestionState();
-                            }, failQuestionWrite);
+                            }, function(e) {
+                                if (!sendIsCurrent()) {
+                                    log.debug('agent question write failed late; ignoring stale state mutation');
+                                    return;
+                                }
+                                failQuestionWrite(e);
+                            });
                         } catch (e) {
                             // T393: Surface error to user — keep agentQuestionDetected
                             // true so renderAgentQuestionPrompt renders the error line.

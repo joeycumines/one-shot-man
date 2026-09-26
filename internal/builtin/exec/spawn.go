@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"os"
 	osexec "os/exec"
@@ -45,28 +46,35 @@ type SpawnConfig struct {
 // Cancellation and normal child completion both release the tree; keeping
 // this behind one interface prevents platform behavior from leaking into the
 // JS binding.
-var errProcessObservationUnsupported = errors.New("pre-reap process observation is unavailable on this platform")
-
 type processTree interface {
 	attach(*osexec.Cmd) error
 	kill(*osexec.Cmd) error
 	close(*osexec.Cmd) error
 }
 
+// waitProcessBeforeReapFn is the platform probe, held in a variable so tests
+// can drive the failure path that only some platforms ever reach.
+var waitProcessBeforeReapFn = waitProcessBeforeReap
+
 func waitAndCloseProcessTree(cmd *osexec.Cmd, tree processTree) (waitErr, closeErr error) {
-	preClose, probeErr := waitProcessBeforeReap(cmd)
+	preClose, probeErr := waitProcessBeforeReapFn(cmd)
 	if probeErr != nil {
 		// The leader remains unreaped while the tree is closed, so this
 		// ordering remains safe even when the platform cannot observe exit
-		// state before reap. Unsupported observation is not a command
-		// failure; it only means the conservative close-before-wait fallback
-		// was required.
+		// state before reap.
 		closeErr = tree.close(cmd)
 		waitErr = cmd.Wait()
-		if errors.Is(probeErr, errProcessObservationUnsupported) {
-			return waitErr, closeErr
-		}
-		return waitErr, errors.Join(fmt.Errorf("observe process before reap: %w", probeErr), closeErr)
+		// The pre-reap probe is an ordering optimization, not a success
+		// criterion. Whether the platform cannot observe at all
+		// (errProcessObservationUnsupported) or the observation itself failed
+		// (ECHILD, a kqueue error), the command's outcome is decided by
+		// cmd.Wait. Folding the probe error into the returned error would
+		// report a command that exited 0 as failed, which would fail verify
+		// and test steps that actually passed. Log it so a platform that
+		// degrades to close-before-wait is still diagnosable.
+		slog.Debug("pre-reap process observation failed, closing tree before wait",
+			"error", probeErr)
+		return waitErr, closeErr
 	}
 	if preClose {
 		// On Unix the zombie leader still pins the process-group ID, so

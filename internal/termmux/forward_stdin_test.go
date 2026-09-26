@@ -70,8 +70,9 @@ func TestForwardStdin_WriteError(t *testing.T) {
 }
 
 func TestForwardStdin_ContextCancel(t *testing.T) {
-	// stdin that blocks until done is closed
-	stdin := &neverReader{done: make(chan struct{})}
+	// stdin that blocks until done is closed, and signals when the read is
+	// actually in flight so the test never depends on a sleep.
+	stdin := &neverReader{done: make(chan struct{}), reading: make(chan struct{})}
 	var written bytes.Buffer
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -87,13 +88,22 @@ func TestForwardStdin_ContextCancel(t *testing.T) {
 		})
 	}()
 
-	// Cancel context after a short delay.
-	time.AfterFunc(100*time.Millisecond, cancel)
+	// Cancel only once the forwarder is provably blocked in Read, so the
+	// assertion below is about behavior rather than about how fast this
+	// machine schedules goroutines.
+	select {
+	case <-stdin.reading:
+	case <-time.After(2 * time.Second):
+		t.Fatal("forwardStdin never entered the blocking read")
+	}
+	cancel()
 
+	// A cancelled context must not release a reader that ignores it: the
+	// forwarder stays blocked until the reader is released below.
 	select {
 	case <-done:
 		t.Fatal("forwardStdin returned before the blocking reader was released")
-	case <-time.After(200 * time.Millisecond):
+	default:
 	}
 
 	// Unblock the reader so the forwardStdin goroutine can exit.
@@ -292,10 +302,15 @@ func (w *errorWriter) Write(p []byte) (int, error) {
 
 // neverReader is an io.Reader that blocks until its done channel is closed.
 type neverReader struct {
-	done chan struct{}
+	done    chan struct{}
+	reading chan struct{}
+	once    sync.Once
 }
 
 func (r *neverReader) Read(p []byte) (int, error) {
+	if r.reading != nil {
+		r.once.Do(func() { close(r.reading) })
+	}
 	<-r.done
 	return 0, io.EOF
 }

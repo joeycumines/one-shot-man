@@ -256,7 +256,7 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 	}()
 	defer func() {
 		fwdCancel()
-		<-forwardDone
+		joinForwarder(forwardDone)
 	}()
 
 	// ── Signal forwarding (SIGINT, SIGQUIT, SIGTSTP) ────────────────

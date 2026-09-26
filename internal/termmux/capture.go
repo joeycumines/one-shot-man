@@ -861,7 +861,7 @@ drainLoop:
 	}()
 	defer func() {
 		cancel()
-		<-forwardDone
+		joinForwarder(forwardDone)
 	}()
 
 	// Signal forwarding (SIGINT, SIGQUIT, SIGTSTP).

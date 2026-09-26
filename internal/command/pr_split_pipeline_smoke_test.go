@@ -287,6 +287,11 @@ func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 		"strategy":      "directory",
 		"branchPrefix":  "seq/",
 		"verifyCommand": "true",
+		// B00-safety: pin the engine's directory to this test's temp repo.
+		// Without it, any code path that falls back to the configured dir
+		// resolves "." — the process CWD — which a sibling test using
+		// os.Chdir can point at its own temp dir or at the real repository.
+		"dir": dir,
 	}, allChunksThrough13...)
 
 	// cmd: analyze

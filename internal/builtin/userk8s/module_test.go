@@ -79,8 +79,25 @@ func newRuntime(t *testing.T, options Options) (*goja.Runtime, func(string) (goj
 
 	runAsync := func(body string) (goja.Value, error) {
 		t.Helper()
-		if _, err := vm.RunString("(async () => {" + body + "})().catch(e => __collectErr(String(e && e.code ? e.code + \": \" + e.message : e)))"); err != nil {
+		// The runtime belongs to the event loop. Submitting the script keeps
+		// every goja touch on the loop goroutine; running it from the test
+		// goroutine races the loop's own execution of pending jobs.
+		runErr := make(chan error, 1)
+		if err := loop.Submit(func() {
+			_, err := vm.RunString("(async () => {" + body + "})().catch(e => __collectErr(String(e && e.code ? e.code + \": \" + e.message : e)))")
+			runErr <- err
+		}); err != nil {
 			return goja.Undefined(), err
+		}
+		select {
+		case err := <-runErr:
+			if err != nil {
+				return goja.Undefined(), err
+			}
+		case <-time.After(10 * time.Second):
+			// A wedged loop must report like the result wait below, not hang
+			// until the package timeout.
+			return goja.Undefined(), errors.New("timeout submitting script to event loop")
 		}
 		select {
 		case val := <-resultCh:

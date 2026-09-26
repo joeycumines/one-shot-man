@@ -14,9 +14,10 @@ import (
 // that consults the SessionManager worker returns a tracked Promise.
 func registerSnapshotMethods(obj *goja.Object, s *muxState) {
 	_ = obj.Set("termSize", func() goja.Value {
+		rows, cols := s.cachedTermSize()
 		return s.runtime.ToValue(map[string]any{
-			"rows": int(s.termRowsCached.Load()),
-			"cols": int(s.termColsCached.Load()),
+			"rows": rows,
+			"cols": cols,
 		})
 	})
 

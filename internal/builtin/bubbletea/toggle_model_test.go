@@ -5,6 +5,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/joeycumines/goja"
@@ -341,7 +342,291 @@ func TestToggleReturnMsg_MsgToJS_NilResult(t *testing.T) {
 	}
 }
 
+func TestToggleModel_ToggleCmd_CallsCallbackWithUndefinedThisAndNoArguments(t *testing.T) {
+	t.Parallel()
+
+	vm := goja.New()
+	runner := newPromiseRunner(vm)
+	t.Cleanup(runner.close)
+	calls := make(chan struct {
+		thisUndefined bool
+		argumentCount int
+	}, 1)
+
+	onToggle := func(call goja.FunctionCall) goja.Value {
+		calls <- struct {
+			thisUndefined bool
+			argumentCount int
+		}{
+			thisUndefined: goja.IsUndefined(call.This),
+			argumentCount: len(call.Arguments),
+		}
+		return goja.Undefined()
+	}
+	fn, ok := goja.AssertFunction(vm.ToValue(onToggle))
+	if !ok {
+		t.Fatal("failed to create onToggle callable")
+	}
+
+	tm := &toggleModel{
+		inner:     &stubModel{},
+		toggleKey: 0x1D,
+		onToggle:  fn,
+		jsRunner:  runner,
+		ctx:       context.Background(),
+	}
+	if msg := tm.toggleCmd()(); msg == nil {
+		t.Fatal("toggleCmd returned nil")
+	}
+
+	select {
+	case call := <-calls:
+		if !call.thisUndefined {
+			t.Error("onToggle this value was not undefined")
+		}
+		if call.argumentCount != 0 {
+			t.Errorf("onToggle argument count = %d, want 0", call.argumentCount)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("onToggle callback was not invoked")
+	}
+}
+
+func TestToggleModel_ToggleCmd_WaitsForPromiseBeforeRestoringTerminal(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	tm, runner, callbacks, registered, output := newPendingToggle(t, ctx)
+	result := make(chan tea.Msg, 1)
+	go func() { result <- tm.toggleCmd()() }()
+
+	select {
+	case <-registered:
+	case <-time.After(time.Second):
+		t.Fatal("Promise then handler was not registered")
+	}
+
+	if got := output.snapshot(); len(got) != 1 || got[0] != "\x1b[?1049l" {
+		t.Fatalf("writes before settlement = %q, want only alt-screen exit", got)
+	}
+	select {
+	case msg := <-result:
+		t.Fatalf("toggleCmd returned before Promise settlement: %T", msg)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	var cb promiseCallbacks
+	select {
+	case cb = <-callbacks:
+	case <-time.After(time.Second):
+		t.Fatal("Promise callbacks were not captured")
+	}
+	if !runner.submit(func() {
+		_, _ = cb.fulfill(goja.Undefined(), runner.runtime.ToValue(map[string]any{"reason": "async"}))
+		_, _ = cb.fulfill(goja.Undefined(), runner.runtime.ToValue(map[string]any{"reason": "second"}))
+		_, _ = cb.reject(goja.Undefined(), runner.runtime.ToValue("late rejection"))
+	}) {
+		t.Fatal("Promise runner stopped before fulfillment")
+	}
+
+	var msg tea.Msg
+	select {
+	case msg = <-result:
+	case <-time.After(time.Second):
+		t.Fatal("toggleCmd did not return after Promise settlement")
+	}
+	trm, ok := msg.(toggleReturnMsg)
+	if !ok {
+		t.Fatalf("message = %T, want toggleReturnMsg", msg)
+	}
+	if trm.Result["reason"] != "async" {
+		t.Fatalf("toggle result = %#v, want first Promise result", trm.Result)
+	}
+
+	got := output.snapshot()
+	want := []string{"\x1b[?1049l", "\x1b[?1049h\x1b[2J\x1b[H"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("writes = %q, want terminal exit then restore", got)
+	}
+}
+
+func TestToggleModel_ToggleCmd_PropagatesContextAndCancelsPendingPromise(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	tm, runner, _, registered, output := newPendingToggle(t, ctx)
+	result := make(chan tea.Msg, 1)
+	go func() { result <- tm.toggleCmd()() }()
+
+	select {
+	case <-registered:
+	case <-time.After(time.Second):
+		t.Fatal("Promise then handler was not registered")
+	}
+	select {
+	case got := <-runner.contexts:
+		if got != ctx {
+			t.Errorf("RunSync context = %v, want manager context %v", got, ctx)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("RunSync was not called")
+	}
+
+	cancel()
+	select {
+	case msg := <-result:
+		if _, ok := msg.(toggleReturnMsg); !ok {
+			t.Fatalf("message = %T, want toggleReturnMsg", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("toggleCmd did not stop after context cancellation")
+	}
+	got := output.snapshot()
+	if len(got) != 2 || got[0] != "\x1b[?1049l" || got[1] != "\x1b[?1049h\x1b[2J\x1b[H" {
+		t.Fatalf("writes after cancellation = %q, want terminal restore", got)
+	}
+}
+
 // --- Helpers ---
+
+type promiseCallbacks struct {
+	fulfill goja.Callable
+	reject  goja.Callable
+}
+
+type promiseRunner struct {
+	runtime  *goja.Runtime
+	jobs     chan func()
+	contexts chan context.Context
+	stop     chan struct{}
+	stopped  chan struct{}
+	stopOnce sync.Once
+}
+
+func newPromiseRunner(runtime *goja.Runtime) *promiseRunner {
+	runner := &promiseRunner{
+		runtime:  runtime,
+		jobs:     make(chan func()),
+		contexts: make(chan context.Context, 1),
+		stop:     make(chan struct{}),
+		stopped:  make(chan struct{}),
+	}
+	go func() {
+		defer close(runner.stopped)
+		for {
+			select {
+			case job := <-runner.jobs:
+				job()
+			case <-runner.stop:
+				return
+			}
+		}
+	}()
+	return runner
+}
+
+func (r *promiseRunner) RunSync(ctx context.Context, fn func(*goja.Runtime) error) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case r.contexts <- ctx:
+	default:
+	}
+	done := make(chan error, 1)
+	select {
+	case r.jobs <- func() { done <- fn(r.runtime) }:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-r.stop:
+		return context.Canceled
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-r.stop:
+		return context.Canceled
+	}
+}
+
+func (r *promiseRunner) submit(job func()) bool {
+	select {
+	case r.jobs <- job:
+		return true
+	case <-r.stop:
+		return false
+	}
+}
+
+func (r *promiseRunner) close() {
+	r.stopOnce.Do(func() { close(r.stop) })
+	<-r.stopped
+}
+
+func newPendingToggle(t *testing.T, ctx context.Context) (*toggleModel, *promiseRunner, <-chan promiseCallbacks, <-chan struct{}, *orderedWriter) {
+	t.Helper()
+
+	vm := goja.New()
+	runner := newPromiseRunner(vm)
+	t.Cleanup(runner.close)
+	callbacks := make(chan promiseCallbacks, 1)
+	registered := make(chan struct{})
+	var registeredOnce sync.Once
+
+	onToggle := func(goja.FunctionCall) goja.Value {
+		obj := vm.NewObject()
+		then := vm.ToValue(func(call goja.FunctionCall) goja.Value {
+			fulfill, fulfillOK := goja.AssertFunction(call.Argument(0))
+			reject, rejectOK := goja.AssertFunction(call.Argument(1))
+			if !fulfillOK || !rejectOK {
+				return goja.Undefined()
+			}
+			select {
+			case callbacks <- promiseCallbacks{fulfill: fulfill, reject: reject}:
+			default:
+			}
+			registeredOnce.Do(func() { close(registered) })
+			return goja.Undefined()
+		})
+		_ = obj.Set("then", then)
+		return obj
+	}
+	fn, ok := goja.AssertFunction(vm.ToValue(onToggle))
+	if !ok {
+		t.Fatal("failed to create onToggle callable")
+	}
+
+	output := &orderedWriter{}
+	tm := &toggleModel{
+		inner:     &stubModel{},
+		toggleKey: 0x1D,
+		onToggle:  fn,
+		jsRunner:  runner,
+		ctx:       ctx,
+		output:    output,
+	}
+	return tm, runner, callbacks, registered, output
+}
+
+type orderedWriter struct {
+	mu     sync.Mutex
+	writes []string
+}
+
+func (w *orderedWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	w.writes = append(w.writes, string(p))
+	w.mu.Unlock()
+	return len(p), nil
+}
+
+func (w *orderedWriter) snapshot() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]string(nil), w.writes...)
+}
 
 // stubModel is a minimal tea.Model for testing toggleModel wrapping.
 type stubModel struct {

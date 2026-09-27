@@ -166,7 +166,7 @@ var KeyDefs = map[string]KeyDef{
 	"media play":         {Name: "KeyMediaPlay", String: "media play", Code: rune(0x110071)},
 	"media play pause":   {Name: "KeyMediaPlayPause", String: "media play pause", Code: rune(0x110073)},
 	"media prev":         {Name: "KeyMediaPrev", String: "media prev", Code: rune(0x110079)},
-	"media record":       {Name: "KeyMediaRecord", String: "media record", Code: rune(0x110079)},
+	"media record":       {Name: "KeyMediaRecord", String: "media record", Code: rune(0x11007a)},
 	"media reverse":      {Name: "KeyMediaReverse", String: "media reverse", Code: rune(0x110074)},
 	"media rewind":       {Name: "KeyMediaRewind", String: "media rewind", Code: rune(0x110077)},
 	"media stop":         {Name: "KeyMediaStop", String: "media stop", Code: rune(0x110075)},
@@ -526,7 +526,7 @@ var AllKeyCodes = []rune{
 	rune(0x110071), // KeyMediaPlay
 	rune(0x110073), // KeyMediaPlayPause
 	rune(0x110079), // KeyMediaPrev
-	rune(0x110079), // KeyMediaRecord
+	rune(0x11007a), // KeyMediaRecord
 	rune(0x110074), // KeyMediaReverse
 	rune(0x110077), // KeyMediaRewind
 	rune(0x110075), // KeyMediaStop

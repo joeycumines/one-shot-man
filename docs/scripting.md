@@ -898,6 +898,34 @@ conventions. ESM support (static `import`/`export` declarations) is tracked upst
 in goja but is not yet implemented. If ESM support is added to goja in a future
 release, `osm` will evaluate adopting it.
 
+## Node-compatible built-ins
+
+The runtime provides a limited asynchronous subset of Node's `crypto`, `fs`,
+and `net` modules. Each resolves under both its bare name and its `node:`
+alias; this is not a complete Node.js implementation.
+
+- **`crypto`** provides `randomBytes(size)`, which returns a promise for a
+  `Uint8Array`. The size must be a number; numeric fractions are truncated to
+  an integer in the range zero to `0x7FFFFFF0`. Missing and non-number sizes
+  reject with `ERR_INVALID_ARG_TYPE`; out-of-range sizes reject with
+  `ERR_OUT_OF_RANGE`.
+- **`fs`** exposes only `fs.promises`: `readFile`, `writeFile`, `unlink`,
+  `lstat`, `mkdir`, and `rmdir`. `readFile` returns bytes unless UTF-8
+  encoding is requested; other read encodings reject. `writeFile` accepts
+  strings and binary views. String encodings include `utf8`, `ascii`,
+  `latin1`/`binary`, `utf16le`/`ucs2`, `base64`, `base64url`, and `hex`;
+  unsupported encodings reject with `ERR_INVALID_ARG_VALUE`. It also accepts
+  `mode` and the `w`, `wx`, `a`, `ax`, or `r` file flags. `lstat` reports file
+  type, size, mode, and modification time. Callback and synchronous filesystem
+  APIs are not provided.
+- **`net`** provides `connect({ host, port })`, which returns a socket that
+  emits `connect`, `data`, `error`, and `close` events. `host` defaults to
+  `127.0.0.1`. Socket `write` calls preserve queue order; `end` can send final
+  data and half-close the connection, while `destroy` cancels it.
+
+These modules expose local filesystem, network, and cryptographic operations;
+see the [security model](security.md) for their execution boundary.
+
 ## Verified runtime behavior notes
 
 These details were confirmed by the JS runtime compliance suite

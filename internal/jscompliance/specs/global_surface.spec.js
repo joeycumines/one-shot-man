@@ -118,8 +118,11 @@ presentDefined('BigInt');
 test('process sandbox restricts dangerous lifecycle and system methods', function () {
 	assert.equal('process present', typeof process, 'object');
 	assert.equal('process.nextTick is function', typeof process.nextTick, 'function');
-	assert.equal('process.exit is undefined', typeof process.exit, 'undefined');
-	assert.equal('process.exitCode is undefined', typeof process.exitCode, 'undefined');
+	// Scripts may set their CLI exit status; host process control remains scrubbed.
+	assert.equal('process.exit is function', typeof process.exit, 'function');
+	process.exitCode = 0;
+	assert.equal('process.exitCode settable', process.exitCode, 0);
+	process.exitCode = undefined;
 	assert.equal('process.kill is undefined', typeof process.kill, 'undefined');
 	assert.equal('process.abort is undefined', typeof process.abort, 'undefined');
 	assert.equal('process.chdir is undefined', typeof process.chdir, 'undefined');

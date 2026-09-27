@@ -18,6 +18,11 @@ func main() {
 		if !command.IsSilent(err) {
 			_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		}
+		// A command may carry the status of a tool it supervised; preserving
+		// it is what makes the wrapper usable in a pipeline or a test.
+		if code, ok := command.ExitCode(err); ok {
+			os.Exit(code)
+		}
 		os.Exit(1)
 	}
 }

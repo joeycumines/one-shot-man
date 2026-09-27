@@ -62,7 +62,7 @@ func (c *ScriptingCommand) SetupFlags(fs *flag.FlagSet) {
 }
 
 // Execute runs the scripting command.
-func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) error {
+func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) (retErr error) {
 	// Handle "paths" subcommand: show annotated discovery paths
 	if len(args) > 0 && args[0] == "paths" {
 		if len(args) > 1 {
@@ -73,14 +73,19 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	}
 
 	// Create execution context. Use injected factory if available (for tests),
-	// otherwise use signal.NotifyContext for proper signal handling.
+	// otherwise plain cancellation with Node-style signal delivery below
+	// (interactive runs keep the blunt NotifyContext lifecycle).
 	var ctx context.Context
 	var cancel context.CancelFunc
+	var startSignals func(*scripting.Engine, context.CancelFunc) (func() int, func())
 	if c.ctxFactory != nil {
 		ctx, cancel = c.ctxFactory()
-	} else {
-		// Production: cancel on interrupt signals (SIGINT, SIGTERM)
+	} else if c.interactive {
+		// Interactive (TUI) runs keep the terminal-driven lifecycle.
 		ctx, cancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	} else {
+		ctx, cancel = context.WithCancel(context.Background())
+		startSignals = startNodeSignalDelivery
 	}
 	defer cancel()
 
@@ -107,6 +112,25 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		}
 	}
 	defer cleanup()
+
+	// Deliver SIGINT/SIGTERM to the script the way Node would (plain runs
+	// only): the first signal reaches process listeners, an unlistened signal
+	// terminates with the default status, and a second of the same kind
+	// forces. Installed BEFORE any script runs: a script that blocks in
+	// tea.run() (WaitForProgram) never reaches a later installation point,
+	// and the bubbletea binding defers SIGINT/SIGTERM to the engine — without
+	// delivery here the process would swallow them and hang.
+	var signalFallback func() int
+	var stopSignals func()
+	if startSignals != nil {
+		signalFallback, stopSignals = startSignals(engine, cancel)
+		defer func() {
+			stopSignals()
+			if code := signalFallback(); code != 0 {
+				retErr = &SilentError{Err: &ExitError{Code: code}}
+			}
+		}()
+	}
 
 	// Set global default logger
 	// Note: We access the internal logger getter. This is the "modular wiring" part -
@@ -155,6 +179,18 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 			return fmt.Errorf("failed to load script %s: %w", resolvedPath, err)
 		}
 		if err := engine.ExecuteScript(script); err != nil {
+			// An unlistened signal force-cancels the runtime, which surfaces as
+			// a context-cancellation error from the in-flight script (a running
+			// program is aborted via WaitForProgram). Node's default
+			// disposition still applies: report 128+N, not a generic failure.
+			if signalFallback != nil {
+				if code := signalFallback(); code != 0 {
+					return &SilentError{Err: &ExitError{Code: code}}
+				}
+			}
+			if scripting.IsProcessExitSignal(err) {
+				return scriptExitError(engine)
+			}
 			return fmt.Errorf("failed to evaluate script %s: %w", resolvedPath, err)
 		}
 	}
@@ -163,6 +199,14 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	if c.script != "" {
 		script := engine.LoadScriptString("command-line", c.script)
 		if err := engine.ExecuteScript(script); err != nil {
+			if signalFallback != nil {
+				if code := signalFallback(); code != 0 {
+					return &SilentError{Err: &ExitError{Code: code}}
+				}
+			}
+			if scripting.IsProcessExitSignal(err) {
+				return scriptExitError(engine)
+			}
 			return err
 		}
 	}
@@ -189,7 +233,7 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		}
 		terminal := terminalFactory(ctx, engine)
 		terminal.Run()
-		return nil
+		return scriptExitError(engine)
 	}
 
 	// If not interactive and no scripts were provided, it's an error.
@@ -202,7 +246,17 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	// This uses the WithAutoExit(true) feature of the event loop.
 	engine.Wait()
 
-	return nil
+	// An unlistened signal terminated the run: Node's default status is
+	// 128 plus the signal number.
+	if signalFallback != nil {
+		if code := signalFallback(); code != 0 {
+			return &SilentError{Err: &ExitError{Code: code}}
+		}
+	}
+	// Node exit channel: a script-settled process.exit / process.exitCode
+	// becomes this process's status, silently — Node prints nothing for a
+	// nonzero exit.
+	return scriptExitError(engine)
 }
 
 // showScriptPaths displays annotated script discovery paths with source and existence status.

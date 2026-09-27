@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -590,5 +591,131 @@ func TestRegistry_Get_ThenExecute_JSScript(t *testing.T) {
 	output := stdout.String()
 	if !strings.Contains(output, "e2e ok") {
 		t.Fatalf("expected 'e2e ok' in output, got stdout=%q stderr=%q", output, stderr.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Node exit channel and Node-style signal handling
+// ---------------------------------------------------------------------------
+
+func newExitChannelScriptCommand(t *testing.T, content string) *jsScriptCommand {
+	t.Helper()
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "exit-channel.js")
+	if err := os.WriteFile(scriptPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := newJSScriptCommand("exit-channel.js", scriptPath, nil, scriptPeekInfo{kind: scriptKindJS})
+	cmd.store = "memory"
+	cmd.session = t.Name()
+	cmd.testMode = true
+	return cmd
+}
+
+func TestJSScriptCommand_Execute_ExitCodePropagates(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime")
+	}
+
+	cmd := newExitChannelScriptCommand(t, "process.exitCode = 7;")
+	var stdout, stderr bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd.ctxFactory = func() (context.Context, context.CancelFunc) { return ctx, cancel }
+
+	err := cmd.Execute(nil, &stdout, &stderr)
+	if _, ok := errors.AsType[*SilentError](err); !ok {
+		t.Fatalf("Execute error = %v, want a SilentError wrapping the exit status\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 7 {
+		t.Fatalf("Execute error = %v, want exit status 7", err)
+	}
+}
+
+func TestJSScriptCommand_Execute_ProcessExitPropagates(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime")
+	}
+
+	cmd := newExitChannelScriptCommand(t, "process.exit(3);")
+	var stdout, stderr bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd.ctxFactory = func() (context.Context, context.CancelFunc) { return ctx, cancel }
+
+	err := cmd.Execute(nil, &stdout, &stderr)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 3 {
+		t.Fatalf("Execute error = %v, want exit status 3\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
+	}
+	if code, ok := ExitCode(err); !ok || code != 3 {
+		t.Fatalf("ExitCode(%v) = (%d, %t), want (3, true)", err, code, ok)
+	}
+}
+
+func TestJSScriptCommand_Execute_ProcessExitZeroStopsScript(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime")
+	}
+
+	cmd := newExitChannelScriptCommand(t, `process.exit(0); output.print("unreachable");`)
+	var stdout, stderr bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd.ctxFactory = func() (context.Context, context.CancelFunc) { return ctx, cancel }
+
+	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
+		t.Fatalf("Execute error = %v, want nil for process.exit(0)\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
+	}
+	if bytes.Contains(stdout.Bytes(), []byte("unreachable")) {
+		t.Fatalf("script continued after process.exit(0): stdout=%q", stdout.String())
+	}
+}
+
+func TestJSScriptCommand_Execute_ExitCodeZeroIsSuccess(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime")
+	}
+
+	cmd := newExitChannelScriptCommand(t, "process.exitCode = 0;")
+	var stdout, stderr bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd.ctxFactory = func() (context.Context, context.CancelFunc) { return ctx, cancel }
+
+	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
+		t.Fatalf("Execute error = %v, want nil for exitCode 0\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
+	}
+}
+
+func TestJSScriptCommand_Execute_ScriptGlobalsAvailable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns JS runtime")
+	}
+
+	// The scrub deletion must leave the Node process lifecycle surface in
+	// place: process.exit callable, exitCode settable, emit/on available.
+	// It must not leave the host-control or host-state surface: kill, env,
+	// chdir, cwd and pid are scrubbed by the engine's process-property
+	// security scrub.
+	cmd := newExitChannelScriptCommand(t, `
+		if (typeof process.exit !== 'function') { throw new Error('process.exit missing'); }
+		process.exitCode = 5;
+		if (process.exitCode !== 5) { throw new Error('process.exitCode assignment failed'); }
+		if (typeof process.on !== 'function') { throw new Error('process.on missing'); }
+		if (typeof process.emit !== 'function') { throw new Error('process.emit missing'); }
+		for (const name of ["kill", "env", "chdir", "cwd", "pid"]) {
+			if (typeof process[name] !== 'undefined') { throw new Error('process.' + name + ' not scrubbed'); }
+		}
+		process.exitCode = 0;
+	`)
+	var stdout, stderr bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd.ctxFactory = func() (context.Context, context.CancelFunc) { return ctx, cancel }
+
+	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
+		t.Fatalf("Execute error = %v, want nil (script globals intact)\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
 	}
 }

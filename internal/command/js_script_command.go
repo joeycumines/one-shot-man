@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -73,14 +74,20 @@ func (c *jsScriptCommand) SetupFlags(fs *flag.FlagSet) {
 // PrepareEngine creates the engine with logging, terminal I/O, and session
 // management; LoadScript loads the file; ExecuteScript evaluates it and
 // blocks on WaitForProgram if tea.run() was called.
-func (c *jsScriptCommand) Execute(args []string, stdout, stderr io.Writer) error {
-	// Create execution context with signal handling.
+func (c *jsScriptCommand) Execute(args []string, stdout, stderr io.Writer) (retErr error) {
+	// Create execution context. Interactive (terminal-driven) scripts keep the
+	// blunt NotifyContext lifecycle; plain script runs get Node-style signal
+	// handling below.
 	var ctx context.Context
 	var cancel context.CancelFunc
+	var startSignals func(*scripting.Engine, context.CancelFunc) (fallback func() int, stop func())
 	if c.ctxFactory != nil {
 		ctx, cancel = c.ctxFactory()
-	} else {
+	} else if c.interactive {
 		ctx, cancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	} else {
+		ctx, cancel = context.WithCancel(context.Background())
+		startSignals = startNodeSignalDelivery // bound to the cancel below
 	}
 	defer cancel()
 
@@ -90,6 +97,22 @@ func (c *jsScriptCommand) Execute(args []string, stdout, stderr io.Writer) error
 		return err
 	}
 	defer cleanup()
+
+	// Deliver SIGINT/SIGTERM to the script the way Node would: the first
+	// signal reaches process listeners, a second signal of the same kind
+	// forces termination, and an unlistened signal terminates with the
+	// default status.
+	var signalFallback func() int
+	var stopSignals func()
+	if startSignals != nil {
+		signalFallback, stopSignals = startSignals(engine, cancel)
+		defer func() {
+			stopSignals()
+			if code := signalFallback(); code != 0 {
+				retErr = &SilentError{Err: &ExitError{Code: code}}
+			}
+		}()
+	}
 
 	// Set global default logger.
 	slog.SetDefault(engine.Logger())
@@ -105,6 +128,18 @@ func (c *jsScriptCommand) Execute(args []string, stdout, stderr io.Writer) error
 	}
 
 	if err := engine.ExecuteScript(script); err != nil {
+		// An unlistened signal force-cancels the runtime, which surfaces as a
+		// context-cancellation error from the in-flight script (a running
+		// program is aborted via WaitForProgram). Node's default disposition
+		// still applies: report 128+N, not a generic failure.
+		if signalFallback != nil {
+			if code := signalFallback(); code != 0 {
+				return &SilentError{Err: &ExitError{Code: code}}
+			}
+		}
+		if scripting.IsProcessExitSignal(err) {
+			return scriptExitError(engine)
+		}
 		return fmt.Errorf("failed to execute script %s: %w", c.scriptPath, err)
 	}
 
@@ -112,12 +147,124 @@ func (c *jsScriptCommand) Execute(args []string, stdout, stderr io.Writer) error
 	if c.interactive {
 		terminal := c.terminalFactory(ctx, engine)
 		terminal.Run()
-		return nil
+		return scriptExitError(engine)
+	}
+
+	// An unlistened signal terminated the run: Node's default status is
+	// 128 plus the signal number (130 for SIGINT, 143 for SIGTERM), and it
+	// wins over any script-settled exit code because signal death is what
+	// Node's default disposition would have produced. Check it BEFORE the
+	// async drain: an unhandled signal terminates immediately in Node, so a
+	// pending timer must not keep the process alive after the fallback fires
+	// (observed: a probe with a 60s timer lingered for the full minute after
+	// SIGTERM even though the runtime had already been cancelled).
+	if signalFallback != nil {
+		if code := signalFallback(); code != 0 {
+			return &SilentError{Err: &ExitError{Code: code}}
+		}
 	}
 
 	// Wait for any asynchronous work (timers, fetch, etc.) to complete naturally.
 	// This uses the WithAutoExit(true) feature of the event loop.
 	engine.Wait()
 
-	return nil
+	// Re-check the fallback after the drain: a signal that arrived while Wait
+	// was blocked sets the status and force-cancels, and Wait then returns —
+	// without this the run would fall through to success (exit 0) instead of
+	// Node's 128+N for an unlistened signal.
+	if signalFallback != nil {
+		if code := signalFallback(); code != 0 {
+			return &SilentError{Err: &ExitError{Code: code}}
+		}
+	}
+	// Node exit channel: a script-settled process.exit / process.exitCode
+	// becomes this process's status, silently — Node prints nothing for a
+	// nonzero exit.
+	return scriptExitError(engine)
+}
+
+// startNodeSignalDelivery installs Node-style SIGINT/SIGTERM handling for a
+// plain script run and returns (fallback, stop). The first signal of a kind
+// is submitted to the event loop as process.emit(name); when a listener
+// handled it the script stays in charge of its own lifecycle. When no
+// listener exists — emit reported none, or the submit failed because the loop
+// was already gone — the context is cancelled, which terminates the runtime,
+// and fallback() later reports Node's default status (128 plus the signal
+// number). A second signal of the same kind cancels unconditionally: that is
+// Node's force-terminate contract. stop removes the notification and releases
+// the handler goroutine.
+func startNodeSignalDelivery(engine *scripting.Engine, forceCancel context.CancelFunc) (func() int, func()) {
+	counts := make(map[string]int)
+	var fallbackStatus atomic.Int64
+
+	signals := make(chan os.Signal, 4)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	handleSignal := func(sig os.Signal) {
+		name := signalName(sig)
+		counts[name]++
+		if counts[name] > 1 {
+			// Second signal of the same kind: force terminate.
+			fallbackStatus.CompareAndSwap(0, int64(128+signalNumber(sig)))
+			forceCancel()
+			return
+		}
+		if engine.DeliverSignal(name) {
+			// A listener received the signal; the script decides.
+			return
+		}
+		fallbackStatus.CompareAndSwap(0, int64(128+signalNumber(sig)))
+		forceCancel()
+	}
+	go func() {
+		defer close(finished)
+		for {
+			select {
+			case sig := <-signals:
+				handleSignal(sig)
+			case <-done:
+				for {
+					select {
+					case sig := <-signals:
+						handleSignal(sig)
+					default:
+						return
+					}
+				}
+			}
+		}
+	}()
+
+	return func() int { return int(fallbackStatus.Load()) },
+		func() {
+			signal.Stop(signals)
+			close(done)
+			<-finished
+		}
+}
+
+// signalName maps a delivered signal to the name Node uses for process.emit.
+func signalName(sig os.Signal) string {
+	switch sig {
+	case os.Interrupt:
+		return "SIGINT"
+	case syscall.SIGTERM:
+		return "SIGTERM"
+	default:
+		return sig.String()
+	}
+}
+
+// signalNumber returns the POSIX number of a delivered signal for the
+// 128+N default exit status.
+func signalNumber(sig os.Signal) int {
+	switch sig {
+	case os.Interrupt:
+		return int(syscall.SIGINT)
+	case syscall.SIGTERM:
+		return int(syscall.SIGTERM)
+	default:
+		return 0
+	}
 }

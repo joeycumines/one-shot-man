@@ -40,9 +40,13 @@ func newSandboxTestEngine(t *testing.T) (*scripting.Engine, *bytes.Buffer, *byte
 
 func TestSandbox_NodeBuiltinsNotAvailable(t *testing.T) {
 	t.Parallel()
+	// fs, net and crypto are NOT on this list: the Node-standard async-only
+	// versions of those three are deliberately registered as engine builtins
+	// (T3 of the launcher blueprint), and their API surface is pinned in
+	// internal/builtin/node. Every other Node builtin stays rejected.
 	nodeBuiltins := []string{
-		"os", "child_process", "fs", "path", "net", "http", "https",
-		"crypto", "stream", "events", "buffer", "vm",
+		"os", "child_process", "path", "http", "https",
+		"stream", "events", "buffer", "vm",
 		"cluster", "dgram", "dns", "tls", "zlib", "worker_threads",
 		// NOTE: "util" is intentionally excluded — goja_nodejs provides it as
 		// a standard polyfill. This is expected behavior, not a sandbox breach.
@@ -104,8 +108,8 @@ func TestSandbox_NoGoUnsafe(t *testing.T) {
 			throw new Error('SANDBOX_BREACH: Buffer global exists');
 		}
 		if (typeof process !== 'undefined') {
-			// process.nextTick is provided by goja-eventloop adapter — verify no dangerous members
-			if (typeof process.exit === 'function') throw new Error('SANDBOX_BREACH: process.exit');
+			// process.exit/exitCode are the deliberate exit channel (H0 scrub
+			// removal); the host-state surface (env, pid) stays deleted.
 			if (typeof process.env !== 'undefined') throw new Error('SANDBOX_BREACH: process.env');
 			if (typeof process.pid !== 'undefined') throw new Error('SANDBOX_BREACH: process.pid');
 		}
@@ -154,8 +158,9 @@ func TestSandbox_GojaDefaultsAreSafe(t *testing.T) {
 	engine, _, _ := newSandboxTestEngine(t)
 	script := engine.LoadScriptString("goja-defaults", `
 		if (typeof process !== 'undefined') {
-			// process.nextTick is provided by goja-eventloop adapter — verify no dangerous members
-			if (typeof process.exit === 'function') throw new Error('SANDBOX_BREACH: process.exit');
+			// process.exit/exitCode are the deliberate Node exit channel (the
+			// H0 scrub removal); the host-state surface is still deleted, so
+			// env must stay undefined.
 			if (typeof process.env !== 'undefined') throw new Error('SANDBOX_BREACH: process.env');
 		}
 		if (typeof Deno !== 'undefined') throw new Error('SANDBOX_BREACH: Deno exists');
@@ -183,12 +188,37 @@ func TestSandbox_NoOsExit(t *testing.T) {
 		if (typeof osmod.exit === 'function') throw new Error('SANDBOX_BREACH: osm:os.exit()');
 		var execmod = require('osm:exec');
 		if (typeof execmod.exit === 'function') throw new Error('SANDBOX_BREACH: osm:exec.exit()');
-		if (typeof process !== 'undefined' && typeof process.exit === 'function') {
-			throw new Error('SANDBOX_BREACH: process.exit()');
-		}
+		// process.exit is NOT a breach here: it is the deliberate Node exit
+		// channel (the H0 scrub removal) and is exercised by the scripting
+		// suite's exit-channel tests.
 	`)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("os.Exit access test failed: %v", err)
+	}
+}
+
+// TestSandbox_ProcessHostStateStillDeleted pins the scrub's host-state delete
+// list (runtime.go) — process.exit/exitCode are the deliberate exit channel,
+// but the process-control and host-state surface must stay absent even if a
+// future goja-eventloop upgrade widens what Bind installs.
+func TestSandbox_ProcessHostStateStillDeleted(t *testing.T) {
+	t.Parallel()
+	engine, _, _ := newSandboxTestEngine(t)
+	script := engine.LoadScriptString("process-host-state-deleted", `
+		var scrubbed = [
+			'kill', 'abort', 'chdir', 'cwd', 'argv', 'argv0', 'execArgv', 'execPath',
+			'env', 'pid', 'ppid', 'binding', '_rawDebug', '_fatalException', 'dlopen',
+			'umask', 'setuid', 'setgid', 'seteuid', 'setegid', 'setgroups', 'initgroups',
+			'_exiting', 'reallyExit',
+		];
+		for (var i = 0; i < scrubbed.length; i++) {
+			if (typeof process[scrubbed[i]] !== 'undefined') {
+				throw new Error('SANDBOX_BREACH: process.' + scrubbed[i] + ' is reachable');
+			}
+		}
+	`)
+	if err := engine.ExecuteScript(script); err != nil {
+		t.Fatalf("process host-state scrub test failed: %v", err)
 	}
 }
 
@@ -461,10 +491,21 @@ func TestSandbox_RequireOnlyLoadsRegisteredModules(t *testing.T) {
 	}
 
 	script2 := engine.LoadScriptString("require-forbidden", `
+		// The Node-standard modules resolve under BOTH their bare name and
+		// their node:-prefixed alias.
+		var aliased = ['fs', 'net', 'crypto', 'node:fs', 'node:net', 'node:crypto'];
+		for (var i = 0; i < aliased.length; i++) {
+			var mod = require(aliased[i]);
+			if (mod === null || mod === undefined) {
+				throw new Error('Module ' + aliased[i] + ' loaded as null/undefined');
+			}
+		}
+		// Everything else stays rejected: unknown prefixes, and node: names
+		// outside the registered fs/net/crypto set.
 		var forbidden = [
 			'go:os', 'go:runtime', 'go:reflect', 'go:unsafe',
 			'go:syscall', 'go:net', 'go:io',
-			'node:os', 'node:fs', 'node:path',
+			'node:os', 'node:path', 'node:test',
 		];
 		for (var i = 0; i < forbidden.length; i++) {
 			try {
@@ -476,7 +517,7 @@ func TestSandbox_RequireOnlyLoadsRegisteredModules(t *testing.T) {
 		}
 	`)
 	if err := engine.ExecuteScript(script2); err != nil {
-		t.Fatalf("Forbidden module rejection test failed: %v", err)
+		t.Fatalf("Node-alias loading / forbidden module rejection test failed: %v", err)
 	}
 }
 

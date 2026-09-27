@@ -66,6 +66,7 @@ outside the registered set (for example `require('node:test')`) fails too.
 | `readFile(path)` | Reads any file accessible to the user. **No path restrictions** — by design. |
 | `fileExists(path)` | Checks existence. No restrictions. |
 | `writeFile(path, content, opts?)` | Writes/creates files. Path resolved to absolute. No path restrictions. |
+| `writeFileScoped(root, relativePath, content, opts?)` | Promise-based confined write. Uses `os.Root` for traversal-resistant path resolution and rejects symlink/junction parent or target components observed during validation. Concurrent in-root parent replacement may redirect a write elsewhere within the root, but cannot escape the root. On Unix, new-file permissions are filtered by the process umask and replacing an existing file preserves its permission bits. On Windows, temporary-file ACLs follow filesystem inheritance. Writes use a same-directory temporary file before a platform replace-existing rename, avoiding truncation of hard-linked files; replacement atomicity and durability remain platform/filesystem-dependent. |
 | `appendFile(path, content, opts?)` | Appends to files. Same behavior as `writeFile`. |
 | `openEditor(path)` | Opens `$EDITOR`. Wires stdin/stdout/stderr. |
 | `clipboardCopy(text)` | Uses `pbcopy`/`clip`/`xclip` via `exec.CommandContext`. |

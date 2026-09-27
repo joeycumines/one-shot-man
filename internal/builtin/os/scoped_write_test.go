@@ -1,0 +1,185 @@
+package os
+
+import (
+	"context"
+	stdos "os"
+	"path/filepath"
+	"runtime"
+	"testing"
+)
+
+func TestWriteFileScopedWritesNestedPath(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := writeFileScoped(context.Background(), root, "nested/file.txt", "content", 0600, true); err != nil {
+		t.Fatalf("writeFileScoped: %v", err)
+	}
+	data, err := stdos.ReadFile(filepath.Join(root, "nested", "file.txt"))
+	if err != nil {
+		t.Fatalf("read written file: %v", err)
+	}
+	if string(data) != "content" {
+		t.Fatalf("content = %q, want %q", data, "content")
+	}
+}
+
+func TestWriteFileScopedBinding(t *testing.T) {
+	root := t.TempDir()
+	runtime, runJS := asyncTestEnv(t)
+	if err := runtime.Set("scopedRoot", root); err != nil {
+		t.Fatalf("set scoped root: %v", err)
+	}
+
+	result, err := runJS(`
+		const promise = os.writeFileScoped(scopedRoot, 'nested/file.txt', 'content', {
+			mode: 384,
+			createDirs: true
+		});
+		if (!(promise instanceof Promise)) throw new Error('writeFileScoped did not return a Promise');
+		promise.then(() => __collect('ok'), error => __collectErr(error.message));
+	`)
+	if err != nil {
+		t.Fatalf("writeFileScoped script: %v", err)
+	}
+	if result.String() != "ok" {
+		t.Fatalf("result = %q, want ok", result.String())
+	}
+	data, err := stdos.ReadFile(filepath.Join(root, "nested", "file.txt"))
+	if err != nil {
+		t.Fatalf("read written file: %v", err)
+	}
+	if string(data) != "content" {
+		t.Fatalf("content = %q, want content", data)
+	}
+}
+
+func TestWriteFileScopedRespectsUmask(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	probePath := filepath.Join(root, "umask-probe.txt")
+	probe, err := stdos.OpenFile(probePath, stdos.O_WRONLY|stdos.O_CREATE|stdos.O_EXCL, 0666)
+	if err != nil {
+		t.Fatalf("create umask probe: %v", err)
+	}
+	if err := probe.Close(); err != nil {
+		t.Fatalf("close umask probe: %v", err)
+	}
+	probeInfo, err := stdos.Stat(probePath)
+	if err != nil {
+		t.Fatalf("stat umask probe: %v", err)
+	}
+	if err := writeFileScoped(context.Background(), root, "mode.txt", "content", 0666, false); err != nil {
+		t.Fatalf("writeFileScoped: %v", err)
+	}
+	info, err := stdos.Stat(filepath.Join(root, "mode.txt"))
+	if err != nil {
+		t.Fatalf("stat written file: %v", err)
+	}
+	if got, want := info.Mode().Perm(), probeInfo.Mode().Perm(); got != want {
+		t.Fatalf("mode = %#o, want process-default %#o", got, want)
+	}
+}
+
+func TestWriteFileScopedPreservesExistingMode(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	target := filepath.Join(root, "existing.txt")
+	if err := stdos.WriteFile(target, []byte("before"), 0600); err != nil {
+		t.Fatalf("write existing file: %v", err)
+	}
+	if err := writeFileScoped(context.Background(), root, "existing.txt", "after", 0644, false); err != nil {
+		t.Fatalf("writeFileScoped: %v", err)
+	}
+	info, err := stdos.Stat(target)
+	if err != nil {
+		t.Fatalf("stat existing file: %v", err)
+	}
+	wantMode := stdos.FileMode(0600)
+	if runtime.GOOS == "windows" {
+		wantMode = 0666
+	}
+	if got := info.Mode().Perm(); got != wantMode {
+		t.Fatalf("mode = %#o, want %#o", got, wantMode)
+	}
+	data, err := stdos.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read existing file: %v", err)
+	}
+	if string(data) != "after" {
+		t.Fatalf("content = %q, want after", data)
+	}
+}
+
+func TestWriteFileScopedRejectsTraversal(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := writeFileScoped(context.Background(), root, filepath.Join("..", "escape.txt"), "bad", 0600, true); err == nil {
+		t.Fatal("writeFileScoped accepted traversal")
+	}
+}
+
+func TestWriteFileScopedRejectsSymlinkParent(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := stdos.Symlink(outside, filepath.Join(root, "link")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if err := writeFileScoped(context.Background(), root, filepath.Join("link", "escape.txt"), "bad", 0600, true); err == nil {
+		t.Fatal("writeFileScoped accepted symlink parent")
+	}
+	if _, err := stdos.Stat(filepath.Join(outside, "escape.txt")); !stdos.IsNotExist(err) {
+		t.Fatalf("symlink target was modified: %v", err)
+	}
+}
+
+func TestWriteFileScopedRejectsSymlinkTarget(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := stdos.WriteFile(outside, []byte("outside"), 0600); err != nil {
+		t.Fatalf("write outside fixture: %v", err)
+	}
+	if err := stdos.Symlink(outside, filepath.Join(root, "link.txt")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if err := writeFileScoped(context.Background(), root, "link.txt", "bad", 0600, false); err == nil {
+		t.Fatal("writeFileScoped accepted symlink target")
+	}
+	data, err := stdos.ReadFile(outside)
+	if err != nil {
+		t.Fatalf("read outside fixture: %v", err)
+	}
+	if string(data) != "outside" {
+		t.Fatalf("outside content = %q, want %q", data, "outside")
+	}
+}
+
+func TestWriteFileScopedDoesNotModifyHardLinkTarget(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := stdos.WriteFile(outside, []byte("outside"), 0600); err != nil {
+		t.Fatalf("write outside fixture: %v", err)
+	}
+	if err := stdos.Link(outside, filepath.Join(root, "linked.txt")); err != nil {
+		t.Skipf("hard links unavailable: %v", err)
+	}
+	if err := writeFileScoped(context.Background(), root, "linked.txt", "inside", 0600, false); err != nil {
+		t.Fatalf("writeFileScoped: %v", err)
+	}
+	outsideData, err := stdos.ReadFile(outside)
+	if err != nil {
+		t.Fatalf("read outside fixture: %v", err)
+	}
+	if string(outsideData) != "outside" {
+		t.Fatalf("hard-link target content = %q, want %q", outsideData, "outside")
+	}
+	insideData, err := stdos.ReadFile(filepath.Join(root, "linked.txt"))
+	if err != nil {
+		t.Fatalf("read scoped replacement: %v", err)
+	}
+	if string(insideData) != "inside" {
+		t.Fatalf("scoped content = %q, want %q", insideData, "inside")
+	}
+}

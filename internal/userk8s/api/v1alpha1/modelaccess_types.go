@@ -98,6 +98,19 @@ type ModelAccessSpec struct {
 	// +optional
 	Mode string `json:"mode,omitempty"`
 
+	// PreferredSurface names which served surface this access prefers when
+	// mounted or resolved. Valid values: anthropic, responses, chat.
+	// When absent, the product's standing surface preference applies.
+	// +kubebuilder:validation:Enum=anthropic;responses;chat
+	// +optional
+	PreferredSurface string `json:"preferred_surface,omitempty"`
+
+	// Surfaces explicitly lists the wire surfaces served by this access.
+	// When omitted, surfaces are derived from the keys of Endpoints.
+	// +kubebuilder:validation:items:Enum=anthropic;chat;responses
+	// +optional
+	Surfaces []string `json:"surfaces,omitempty"`
+
 	// UserAgent models the User-Agent header policy for this access.
 	// +optional
 	UserAgent *HeaderValue `json:"user_agent,omitempty"`
@@ -140,6 +153,87 @@ type ModelAccessSpec struct {
 	// LocalSecretBinding selectors match against them.
 	// +optional
 	Labels map[string]string `json:"labels,omitempty"`
+
+	// Shaper carries operational configuration for shaper-mode accesses.
+	// +optional
+	Shaper *ShaperConfig `json:"shaper,omitempty"`
+}
+
+// ShaperConfig carries the operational parameters for a shaper-mode access:
+// the upstream URL, auth and transcode behaviour, and concurrency/retry/circuit-breaker
+// tuning. All fields are optional; absent fields let the shaper binary's defaults apply.
+type ShaperConfig struct {
+	// Upstream is the real upstream URL the shaper forwards to. The
+	// spec.endpoints URLs are client-facing (naming the gateway's own
+	// address), so this field carries the actual provider endpoint.
+	// Required for shaper-mode accesses.
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	Upstream string `json:"upstream,omitempty"`
+
+	// AuthMode is the upstream auth mode: auto, none, bearer, x-api-key, api-key, header:NAME.
+	// +optional
+	AuthMode string `json:"auth_mode,omitempty"`
+
+	// Transcode is the transcode preset override: auto, none, messages-chat.
+	// +kubebuilder:validation:Enum=auto;none;messages-chat
+	// +optional
+	Transcode string `json:"transcode,omitempty"`
+
+	// Concurrency is the max concurrent limited requests (-concurrency).
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	Concurrency *int32 `json:"concurrency,omitempty"`
+
+	// LimitAll enables limiting all requests, not just matching routes (-limit-all).
+	// +optional
+	LimitAll *bool `json:"limit_all,omitempty"`
+
+	// QueueTimeout is the max time a request waits in the queue (-queue-timeout).
+	// Duration string, e.g. "30m", "30s".
+	// +optional
+	QueueTimeout string `json:"queue_timeout,omitempty"`
+
+	// Retry is the max retries for limited requests (-retry). Negative means unlimited.
+	// +optional
+	Retry *int32 `json:"retry,omitempty"`
+
+	// RetryMinDelay is the minimum delay before retrying (-retry-min-delay). Duration string.
+	// +optional
+	RetryMinDelay string `json:"retry_min_delay,omitempty"`
+
+	// RetrySkip429 skips retrying 429 responses (-retry-skip-429).
+	// +optional
+	RetrySkip429 *bool `json:"retry_skip_429,omitempty"`
+
+	// ReleaseCooldown is the delay after slot release before re-admission (-release-cooldown). Duration string.
+	// +optional
+	ReleaseCooldown string `json:"release_cooldown,omitempty"`
+
+	// CancelCooldown is the slot hold after client cancel (-cancel-cooldown). Duration string.
+	// +optional
+	CancelCooldown string `json:"cancel_cooldown,omitempty"`
+
+	// CircuitBreaker enables the circuit breaker (-circuit-breaker).
+	// +optional
+	CircuitBreaker *bool `json:"circuit_breaker,omitempty"`
+
+	// CBThreshold is failures within window to trip circuit breaker (-cb-threshold).
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	CBThreshold *int32 `json:"cb_threshold,omitempty"`
+
+	// CBWindow is the failure counting window (-cb-window). Duration string.
+	// +optional
+	CBWindow string `json:"cb_window,omitempty"`
+
+	// CBPenalty is the base phantom concurrency hold time (-cb-penalty). Duration string.
+	// +optional
+	CBPenalty string `json:"cb_penalty,omitempty"`
+
+	// CBMaxPenalty is the max phantom concurrency hold time (-cb-max-penalty). Duration string.
+	// +optional
+	CBMaxPenalty string `json:"cb_max_penalty,omitempty"`
 }
 
 // ModelAccessList is the list form of ModelAccess.

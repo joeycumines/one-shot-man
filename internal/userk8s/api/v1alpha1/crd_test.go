@@ -173,7 +173,7 @@ type crdCase struct {
 func crdCases() []crdCase {
 	return []crdCase{
 		{"one-shot-man_modelproviders.yaml", "modelproviders", "ModelProvider", "Cluster", []string{"display_name", "country", "deprecated", "labels"}},
-		{"one-shot-man_modelaccesses.yaml", "modelaccesses", "ModelAccess", "Cluster", []string{"provider", "mode", "user_agent", "anonymous", "country", "auth", "endpoints", "order", "deprecated", "labels"}},
+		{"one-shot-man_modelaccesses.yaml", "modelaccesses", "ModelAccess", "Cluster", []string{"provider", "mode", "preferred_surface", "surfaces", "user_agent", "anonymous", "country", "auth", "endpoints", "order", "deprecated", "labels", "shaper"}},
 		{"one-shot-man_models.yaml", "models", "Model", "Cluster", []string{"provider", "access", "context_window", "max_output_tokens", "can_reason", "input_modalities", "reasoning_efforts", "default", "deprecated", "equivalent_to", "labels", "toolSettings"}},
 		{"one-shot-man_localsecretbindings.yaml", "localsecretbindings", "LocalSecretBinding", "Namespaced", []string{"selector", "secretRef", "envVar", "resolvers"}},
 		{"one-shot-man_tools.yaml", "tools", "Tool", "Cluster", []string{"display_name", "surfaces", "credential_channels", "identifiers", "budget_profile"}},

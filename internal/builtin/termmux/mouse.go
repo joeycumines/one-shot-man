@@ -1,8 +1,12 @@
 package termmux
 
 import (
+	"context"
+	"fmt"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 
 	btea "github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
@@ -54,11 +58,11 @@ func jsMouseButton(runtime *goja.Runtime, obj *goja.Object) tea.MouseButton {
 // newMouseDrag returns a Goja-wrapped parent.MouseDrag state machine.
 // The returned object has a single method:
 //
-//	handle({ manager: termmuxMgr, msg: { type, x, y, button } }) -> { handled, cmd }
+//	handle({ manager: termmuxMgr, msg: { type, x, y, button } }) -> Promise<{ handled, cmd }>
 //
 // The wrapper persists across calls so the same machine can track a full
 // button-down / motion / release drag lifecycle.
-func newMouseDrag(runtime *goja.Runtime) goja.Value {
+func newMouseDrag(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime) goja.Value {
 	d := parent.NewMouseDrag()
 
 	obj := runtime.NewObject()
@@ -85,19 +89,31 @@ func newMouseDrag(runtime *goja.Runtime) goja.Value {
 		if msg == nil {
 			panic(runtime.NewTypeError("mouseDrag.handle: msg must be a mouse event"))
 		}
-
-		handled, cmd, _ := d.Handle(msg, mgr)
-		return dragResult(runtime, handled, cmd)
+		return trackMouseDrag(ctx, adapter, runtime, d, msg, mgr)
 	})
 
 	return obj
 }
 
+func trackMouseDrag(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, drag *parent.MouseDrag, msg tea.MouseMsg, mgr *parent.SessionManager) goja.Value {
+	if adapter == nil {
+		panic(runtime.NewGoError(fmt.Errorf("mouseDrag: event loop adapter is required")))
+	}
+	return adapter.TrackPromise(ctx, func(_ context.Context, settle gojaeventloop.TrackedSettlement) {
+		handled, cmd, err := drag.Handle(msg, mgr)
+		if err != nil {
+			_ = settle.Settle(true, func(owner *goja.Runtime) any { return owner.NewGoError(err) })
+			return
+		}
+		_ = settle.Settle(false, func(owner *goja.Runtime) any {
+			return dragResult(owner, handled, cmd)
+		})
+	})
+}
+
 // handleMouseDrag is a convenience one-shot wrapper around MouseDrag.Handle.
-// It takes { manager, msg } and returns { handled, cmd }. Because it creates a
-// fresh MouseDrag for each call, it is stateless and cannot track a multi-event
-// drag on its own; use the persistent mouseDrag() wrapper for that.
-func handleMouseDrag(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
+// It takes { manager, msg } and returns a Promise of { handled, cmd }.
+func handleMouseDrag(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
 		panic(runtime.NewTypeError("handleMouseDrag: options object is required"))
 	}
@@ -120,9 +136,7 @@ func handleMouseDrag(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	if msg == nil {
 		panic(runtime.NewTypeError("handleMouseDrag: msg must be a mouse event"))
 	}
-
-	handled, cmd, _ := parent.NewMouseDrag().Handle(msg, mgr)
-	return dragResult(runtime, handled, cmd)
+	return trackMouseDrag(ctx, adapter, runtime, parent.NewMouseDrag(), msg, mgr)
 }
 
 func dragResult(runtime *goja.Runtime, handled bool, cmd tea.Cmd) goja.Value {

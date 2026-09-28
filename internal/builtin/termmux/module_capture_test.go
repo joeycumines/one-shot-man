@@ -205,29 +205,16 @@ func TestCaptureSession_JSBinding_Interrupt(t *testing.T) {
 		t.Fatalf("start failed: %v", err)
 	}
 
-	// Give process a moment to start.
-	time.Sleep(50 * time.Millisecond)
-
 	// interrupt() should not error.
-	_, err = runOnEnvLoop(t, e, `cs.interrupt()`)
+	_, err = awaitJSValue(t, e.runtime, `return await cs.interrupt()`)
 	if err != nil {
 		t.Fatalf("interrupt() failed: %v", err)
 	}
 
-	// Wait should complete (signal causes exit) — await Promise.
-	_, err = runOnEnvLoop(t, e, `globalThis.__waitDone2 = false; cs.wait().then(() => { globalThis.__waitDone2 = true; }).catch(() => { globalThis.__waitDone2 = true; })`)
+	// Wait should complete (signal causes exit).
+	_, err = awaitJSValue(t, e.runtime, `return JSON.stringify(await cs.wait())`)
 	if err != nil {
 		t.Fatalf("wait() after interrupt failed: %v", err)
-	}
-	for i := range 20 {
-		time.Sleep(50 * time.Millisecond)
-		v2, _ := runOnEnvLoop(t, e, `globalThis.__waitDone2`)
-		if v2.ToBoolean() {
-			break
-		}
-		if i == 19 {
-			t.Fatalf("wait() promise did not settle after interrupt")
-		}
 	}
 
 	// isDone should be true.
@@ -260,16 +247,14 @@ func TestCaptureSession_JSBinding_Kill(t *testing.T) {
 		t.Fatalf("start failed: %v", err)
 	}
 
-	time.Sleep(50 * time.Millisecond)
-
 	// kill() should not error.
-	_, err = runOnEnvLoop(t, e, `cs.kill()`)
+	_, err = awaitJSValue(t, e.runtime, `return await cs.kill()`)
 	if err != nil {
 		t.Fatalf("kill() failed: %v", err)
 	}
 
 	// Wait should complete (SIGKILL causes immediate exit).
-	_, err = runOnEnvLoop(t, e, `cs.wait()`)
+	_, err = awaitJSValue(t, e.runtime, `return JSON.stringify(await cs.wait())`)
 	if err != nil {
 		t.Fatalf("wait() after kill failed: %v", err)
 	}
@@ -303,16 +288,14 @@ func TestCaptureSession_JSBinding_Resize(t *testing.T) {
 		t.Fatalf("start failed: %v", err)
 	}
 
-	time.Sleep(50 * time.Millisecond)
-
 	// resize() should not error.
-	_, err = runOnEnvLoop(t, e, `cs.resize(40, 100)`)
+	_, err = awaitJSValue(t, e.runtime, `return await cs.resize(40, 100)`)
 	if err != nil {
 		t.Fatalf("resize() failed: %v", err)
 	}
 
 	// Clean up.
-	_, err = awaitJSValue(t, e.runtime, `cs.kill(); await cs.wait(); await cs.close()`)
+	_, err = awaitJSValue(t, e.runtime, `await cs.kill(); await cs.wait(); await cs.close()`)
 	if err != nil {
 		t.Fatalf("cleanup failed: %v", err)
 	}
@@ -335,40 +318,23 @@ func TestCaptureSession_JSBinding_WriteAndSendEOF(t *testing.T) {
 		t.Fatalf("start failed: %v", err)
 	}
 
-	time.Sleep(50 * time.Millisecond)
-
 	// write() should not error.
-	_, err = runOnEnvLoop(t, e, `cs.write('hello from JS\n')`)
+	_, err = awaitJSValue(t, e.runtime, `return await cs.write('hello from JS\n')`)
 	if err != nil {
 		t.Fatalf("write() failed: %v", err)
 	}
 
-	time.Sleep(50 * time.Millisecond)
-
 	// sendEOF() should close stdin, causing cat to exit.
-	_, err = runOnEnvLoop(t, e, `cs.sendEOF()`)
+	_, err = awaitJSValue(t, e.runtime, `return await cs.sendEOF()`)
 	if err != nil {
 		t.Fatalf("sendEOF() failed: %v", err)
 	}
 
-	// Wait should complete (cat exits on EOF) — await Promise.
-	_, err = runOnEnvLoop(t, e, `globalThis.__waitDone3 = false; globalThis.__waitResult3 = null; cs.wait().then(r => { globalThis.__waitResult3 = JSON.stringify(r); globalThis.__waitDone3 = true; }).catch(e => { globalThis.__waitResult3 = JSON.stringify({error: e.message}); globalThis.__waitDone3 = true; })`)
+	waitVal, err := awaitJSValue(t, e.runtime, `return JSON.stringify(await cs.wait())`)
 	if err != nil {
 		t.Fatalf("wait() after sendEOF failed: %v", err)
 	}
-	waitResult3 := ""
-	for range 20 {
-		time.Sleep(50 * time.Millisecond)
-		v2, _ := runOnEnvLoop(t, e, `globalThis.__waitDone3`)
-		if v2.ToBoolean() {
-			v3, _ := runOnEnvLoop(t, e, `globalThis.__waitResult3`)
-			waitResult3 = v3.String()
-			break
-		}
-	}
-	if waitResult3 == "" {
-		t.Fatalf("wait() promise did not settle after sendEOF")
-	}
+	waitResult3 := waitVal.String()
 	if !strings.Contains(waitResult3, `"code":0`) {
 		t.Errorf("cat should exit 0, got %s", waitResult3)
 	}
@@ -413,18 +379,15 @@ func TestCaptureSession_JSBinding_PauseResume(t *testing.T) {
 
 	e := newTestEnv(t)
 
-	_, err := runOnEnvLoop(t, e, `
+	_, err := awaitJSValue(t, e.runtime, `
 		var tm = require('osm:termmux');
 		globalThis.cs = tm.newCaptureSession('sh', ['-c', 'i=0; while true; do echo "line$i"; i=$((i+1)); sleep 0.1; done']);
-		cs.start();
-		cs;
+		await cs.start();
+		return cs;
 	`)
 	if err != nil {
 		t.Fatalf("start CaptureSession: %v", err)
 	}
-
-	// Let it produce output.
-	time.Sleep(500 * time.Millisecond)
 
 	// isPaused() should be false initially.
 	v, err := runOnEnvLoop(t, e, `cs.isPaused()`)
@@ -436,7 +399,7 @@ func TestCaptureSession_JSBinding_PauseResume(t *testing.T) {
 	}
 
 	// pause() should succeed.
-	_, err = runOnEnvLoop(t, e, `cs.pause()`)
+	_, err = awaitJSValue(t, e.runtime, `return await cs.pause()`)
 	if err != nil {
 		t.Fatalf("pause: %v", err)
 	}
@@ -451,7 +414,7 @@ func TestCaptureSession_JSBinding_PauseResume(t *testing.T) {
 	}
 
 	// resume() should succeed.
-	_, err = runOnEnvLoop(t, e, `cs.resume()`)
+	_, err = awaitJSValue(t, e.runtime, `return await cs.resume()`)
 	if err != nil {
 		t.Fatalf("resume: %v", err)
 	}
@@ -466,9 +429,10 @@ func TestCaptureSession_JSBinding_PauseResume(t *testing.T) {
 	}
 
 	// Clean up.
-	_, _ = runOnEnvLoop(t, e, `cs.kill()`)
-	time.Sleep(200 * time.Millisecond)
-	_, _ = awaitJSValue(t, e.runtime, `await cs.close()`)
+	_, err = awaitJSValue(t, e.runtime, `await cs.kill(); await cs.wait(); await cs.close()`)
+	if err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
 }
 
 func TestCaptureSession_JSBinding_NewCaptureSessionError(t *testing.T) {

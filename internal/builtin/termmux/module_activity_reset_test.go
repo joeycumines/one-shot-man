@@ -16,56 +16,65 @@ func TestActivityReset_JSBinding(t *testing.T) {
 	setOnLoop(t, runtime, "idleBin", idleBin)
 
 	_, err := awaitJSValue(t, runtime, `
-		var s1 = await termmux.newBoundedSession({ cmd: idleBin });
-		var s2 = await termmux.newBoundedSession({ cmd: idleBin });
-		var mgr = s1.mgr;
-		var sid = s1.sid;
+		var s1;
+		var s2;
+		var sub;
+		try {
+			s1 = await termmux.newBoundedSession({ cmd: idleBin });
+			s2 = await termmux.newBoundedSession({ cmd: idleBin });
+			var mgr = s1.mgr;
+			var sid = s1.sid;
 
-		mgr.activate(s2.sid);
-		mgr.setMonitorConfig(sid, { activity: true, activityThreshold: 0, activityResetThreshold: 0.05 });
+			await mgr.activate(s2.sid);
+			await mgr.setMonitorConfig(sid, { activity: true, activityThreshold: 0, activityResetThreshold: 0.05 });
 
-		var sub = mgr.subscribe(1024);
+			sub = mgr.subscribe(1024);
 
-		function waitOutput(text, deadlineMs) {
-			return new Promise(function(resolve, reject) {
-				(function poll() {
-					var snap = mgr.capture(sid);
-					if (snap && snap.plain && snap.plain.indexOf(text) >= 0) return resolve();
-					if (Date.now() > deadlineMs) return reject(new Error('timeout waiting output ' + text));
-					setTimeout(poll, 10);
-				})();
-			});
-		}
-		function countActivity() {
-			var found = 0;
-			var evts = sub.pollEvents();
-			for (var j = 0; j < evts.length; j++) {
-				if (evts[j].kind === "activity" && Number(evts[j].sessionId) === Number(sid)) {
-					found++;
-				}
+			function waitOutput(text, deadlineMs) {
+				return new Promise(function(resolve, reject) {
+					(function poll() {
+						var snap = mgr.capture(sid);
+						if (snap && snap.plain && snap.plain.indexOf(text) >= 0) return resolve();
+						if (Date.now() > deadlineMs) return reject(new Error('timeout waiting output ' + text));
+						setTimeout(poll, 10);
+					})();
+				});
 			}
-			return found;
-		}
-		function waitActivity(deadlineMs) {
-			return new Promise(function(resolve, reject) {
-				(function poll() {
-					if (countActivity() >= 1) return resolve();
-					if (Date.now() > deadlineMs) return reject(new Error('timeout; activity count=0'));
-					setTimeout(poll, 10);
-				})();
-			});
-		}
+			function countActivity() {
+				var found = 0;
+				var evts = sub.pollEvents();
+				for (var j = 0; j < evts.length; j++) {
+					if (evts[j].kind === "activity" && Number(evts[j].sessionId) === Number(sid)) {
+						found++;
+					}
+				}
+				return found;
+			}
+			function waitActivity(deadlineMs) {
+				return new Promise(function(resolve, reject) {
+					(function poll() {
+						if (countActivity() >= 1) return resolve();
+						if (Date.now() > deadlineMs) return reject(new Error('timeout; activity count=0'));
+						setTimeout(poll, 10);
+					})();
+				});
+			}
 
-		s1.session.write("hello\n");
-		s1.session.write("hello2\n");
-		await waitOutput("hello2", Date.now() + 3000);
-		await waitActivity(Date.now() + 3000);
+			await s1.session.write("hello\n");
+			await s1.session.write("hello2\n");
+			await waitOutput("hello2", Date.now() + 3000);
+			await waitActivity(Date.now() + 3000);
 
-		mgr.resetActivity(sid);
-		s1.session.write("again\n");
-		s1.session.write("again2\n");
-		await waitOutput("again2", Date.now() + 3000);
-		await waitActivity(Date.now() + 3000);
+			await mgr.resetActivity(sid);
+			await s1.session.write("again\n");
+			await s1.session.write("again2\n");
+			await waitOutput("again2", Date.now() + 3000);
+			await waitActivity(Date.now() + 3000);
+		} finally {
+			if (sub) mgr.unsubscribe(sub.id);
+			if (s1) await s1.session.close();
+			if (s2) await s2.session.close();
+		}
 	`)
 	if err != nil {
 		t.Fatalf("activity reset script: %v", err)

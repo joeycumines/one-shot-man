@@ -16,13 +16,13 @@ func TestBreakPane_JSBinding_ReturnsMovedPane(t *testing.T) {
 	script := `
 		var bs1 = await termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
 		var bs2 = await termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
-		var w1 = tuiMux.newWindow("w1");
-		var p1 = tuiMux.addPaneToWindow(bs1.session, { windowId: w1 });
-		var p2 = tuiMux.addPaneToWindow(bs2.session, { windowId: w1 });
-		tuiMux.nextWindow();
-		tuiMux.activate(bs1.sid);
-		var result = tuiMux.breakPane(p1);
-		var wp = tuiMux.windowPanes();
+		var w1 = await tuiMux.newWindow("w1");
+		var p1 = await tuiMux.addPaneToWindow(bs1.session, { windowId: w1 });
+		var p2 = await tuiMux.addPaneToWindow(bs2.session, { windowId: w1 });
+		await tuiMux.nextWindow();
+		await tuiMux.activate(bs1.sid);
+		var result = await tuiMux.breakPane(p1);
+		var wp = await tuiMux.windowPanes();
 		return JSON.stringify({ result: result, windowPanes: wp });
 `
 	v, err := awaitJSValue(t, runtime, script)
@@ -114,13 +114,13 @@ func TestBreakPane_JSBinding_RefocusesSource(t *testing.T) {
 	script := `
 		var bs1 = await termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
 		var bs2 = await termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
-		var w1 = tuiMux.newWindow("w1");
-		var p1 = tuiMux.addPaneToWindow(bs1.session, { windowId: w1 });
-		var p2 = tuiMux.addPaneToWindow(bs2.session, { windowId: w1 });
-		tuiMux.nextWindow();
-		tuiMux.activate(bs1.sid);
-		tuiMux.breakPane(p1);
-		var wp = tuiMux.windowPanes();
+		var w1 = await tuiMux.newWindow("w1");
+		var p1 = await tuiMux.addPaneToWindow(bs1.session, { windowId: w1 });
+		var p2 = await tuiMux.addPaneToWindow(bs2.session, { windowId: w1 });
+		await tuiMux.nextWindow();
+		await tuiMux.activate(bs1.sid);
+		await tuiMux.breakPane(p1);
+		var wp = await tuiMux.windowPanes();
 		return JSON.stringify({ windowPanes: wp });
 `
 	v, err := awaitJSValue(t, runtime, script)
@@ -163,15 +163,15 @@ func TestJoinPane_JSBinding_MovesAndActivates(t *testing.T) {
 	script := `
 		var bs1 = await termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
 		var bs2 = await termmux.newBoundedSession({cmd: idleBin, rows: 10, cols: 40});
-		var w1 = tuiMux.newWindow("w1");
-		var w2 = tuiMux.newWindow("w2");
-		var p1 = tuiMux.addPaneToWindow(bs1.session, { windowId: w1 });
-		var p2 = tuiMux.addPaneToWindow(bs2.session, { windowId: w2 });
-		tuiMux.nextWindow();
-		tuiMux.activate(bs1.sid);
-		var result = tuiMux.joinPane(p1, w2);
-		var wp = tuiMux.windowPanes();
-		return JSON.stringify({ result: result, activeWindow: tuiMux.activeWindowID(), activePane: tuiMux.activePaneId(), windowPanes: wp });
+		var w1 = await tuiMux.newWindow("w1");
+		var w2 = await tuiMux.newWindow("w2");
+		var p1 = await tuiMux.addPaneToWindow(bs1.session, { windowId: w1 });
+		var p2 = await tuiMux.addPaneToWindow(bs2.session, { windowId: w2 });
+		await tuiMux.nextWindow();
+		await tuiMux.activate(bs1.sid);
+		var result = await tuiMux.joinPane(p1, w2);
+		var wp = await tuiMux.windowPanes();
+		return JSON.stringify({ result: result, activeWindow: await tuiMux.activeWindowID(), activePane: await tuiMux.activePaneId(), windowPanes: wp });
 `
 	v, err := awaitJSValue(t, runtime, script)
 	if err != nil {

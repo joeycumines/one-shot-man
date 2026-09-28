@@ -103,8 +103,8 @@ func setupPipeManager(t *testing.T) (*goja.Runtime, *parent.SessionManager, chan
 	<-mgr.Started()
 
 	runtime := goja.New()
-	mux := wrapTestSessionManager(t, ctx, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("mux", mux)
+	mux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "mux", mux)
 
 	feedCh := make(chan string, 16)
 	sio := &feedStringIO{feed: feedCh}
@@ -116,7 +116,7 @@ func setupPipeManager(t *testing.T) (*goja.Runtime, *parent.SessionManager, chan
 		<-errCh
 		t.Fatalf("Register: %v", err)
 	}
-	_ = runtime.Set("sid", id)
+	setOnLoop(t, runtime, "sid", id)
 
 	cleanup := func() {
 		cancel()
@@ -136,10 +136,10 @@ func TestModule_PipeCommand_Basic(t *testing.T) {
 
 	helper := writeModulePipeHelper(t)
 	outPath := filepath.Join(t.TempDir(), "output.log")
-	_ = runtime.Set("helper", helper)
-	_ = runtime.Set("outPath", outPath)
+	setOnLoop(t, runtime, "helper", helper)
+	setOnLoop(t, runtime, "outPath", outPath)
 
-	_, err := runtime.RunString(`mux.pipeCommand(sid, 'go', ['run', helper, outPath])`)
+	_, err := awaitJSValue(t, runtime, `return await mux.pipeCommand(sid, 'go', ['run', helper, outPath])`)
 	if err != nil {
 		t.Fatalf("pipeCommand: %v", err)
 	}
@@ -159,10 +159,10 @@ func TestModule_PipeCommand_Clear(t *testing.T) {
 
 	helper := writeModulePipeHelper(t)
 	outPath := filepath.Join(t.TempDir(), "output.log")
-	_ = runtime.Set("helper", helper)
-	_ = runtime.Set("outPath", outPath)
+	setOnLoop(t, runtime, "helper", helper)
+	setOnLoop(t, runtime, "outPath", outPath)
 
-	_, err := runtime.RunString(`mux.pipeCommand(sid, 'go', ['run', helper, outPath])`)
+	_, err := awaitJSValue(t, runtime, `return await mux.pipeCommand(sid, 'go', ['run', helper, outPath])`)
 	if err != nil {
 		t.Fatalf("pipeCommand: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestModule_PipeCommand_Clear(t *testing.T) {
 	readerCh <- "before clear"
 	pollFileEquals(t, outPath, "before clear", 30*time.Second)
 
-	_, err = runtime.RunString(`mux.clearPipe(sid)`)
+	_, err = awaitJSValue(t, runtime, `return await mux.clearPipe(sid)`)
 	if err != nil {
 		t.Fatalf("clearPipe: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestModule_PipeCommand_InvalidArgs(t *testing.T) {
 	runtime, _, _, cleanup := setupPipeManager(t)
 	defer cleanup()
 
-	_, err := runtime.RunString(`mux.pipeCommand(sid, '', [])`)
+	_, err := awaitJSValue(t, runtime, `return await mux.pipeCommand(sid, '', [])`)
 	if err == nil {
 		t.Fatal("expected error for empty command")
 	}
@@ -208,9 +208,9 @@ func TestModule_SetPipeFile_StillWorks(t *testing.T) {
 	defer cleanup()
 
 	outPath := filepath.Join(t.TempDir(), "file.log")
-	_ = runtime.Set("outPath", outPath)
+	setOnLoop(t, runtime, "outPath", outPath)
 
-	_, err := runtime.RunString(`mux.setPipeFile(sid, outPath)`)
+	_, err := awaitJSValue(t, runtime, `return await mux.setPipeFile(sid, outPath)`)
 	if err != nil {
 		t.Fatalf("setPipeFile: %v", err)
 	}

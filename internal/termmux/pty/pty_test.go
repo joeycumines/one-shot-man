@@ -167,6 +167,66 @@ func TestSpawn_EnvVars(t *testing.T) {
 	}
 }
 
+func TestSpawn_EnvReplace(t *testing.T) {
+	// No t.Parallel: the parent marker mutates this test's environment.
+	skipIfWindows(t)
+
+	if err := os.Setenv("OSM_ENVREPLACE_PARENT_MARKER", "parent_value_must_not_leak"); err != nil {
+		t.Fatalf("set parent marker: %v", err)
+	}
+	defer os.Unsetenv("OSM_ENVREPLACE_PARENT_MARKER")
+	prog := buildProgram(t, `package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	fmt.Println("parent=" + os.Getenv("OSM_ENVREPLACE_PARENT_MARKER"))
+	fmt.Println("child=" + os.Getenv("OSM_ENVREPLACE_CHILD_MARKER"))
+}
+`)
+	proc, err := Spawn(context.Background(), SpawnConfig{
+		Command: prog,
+		Env: map[string]string{
+			"OSM_ENVREPLACE_CHILD_MARKER": "child_value_kept",
+		},
+		EnvReplace: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+	defer proc.Close()
+
+	var output strings.Builder
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out, got: %q", output.String())
+		default:
+		}
+		data, readErr := proc.Read()
+		if len(data) > 0 {
+			output.Write(data)
+		}
+		if strings.Contains(output.String(), "child=child_value_kept") {
+			break
+		}
+		if readErr != nil {
+			break
+		}
+	}
+
+	if !strings.Contains(output.String(), "child=child_value_kept") {
+		t.Fatalf("expected configured var in child env, got %q", output.String())
+	}
+	if strings.Contains(output.String(), "parent_value_must_not_leak") {
+		t.Fatalf("parent env leaked into EnvReplace child, got %q", output.String())
+	}
+}
+
 func TestSpawn_WorkingDirectory(t *testing.T) {
 	t.Parallel()
 	skipIfWindows(t)

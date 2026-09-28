@@ -82,7 +82,7 @@ func setupTestEnv(t *testing.T) (*goja.Runtime, *termmux.SessionManager, termmux
 		t.Fatalf("Register error: %v", err)
 	}
 
-	rt := goja.New()
+	rt, adapter := newTermPaneRuntime(t)
 	mgrObj := wrapManager(rt, mgr)
 
 	rt.Set("require", func(call goja.FunctionCall) goja.Value {
@@ -91,7 +91,7 @@ func setupTestEnv(t *testing.T) (*goja.Runtime, *termmux.SessionManager, termmux
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require()(rt, mod)
+			Require(t.Context(), adapter)(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -128,7 +128,7 @@ func TestTermpane_Factory(t *testing.T) {
 		if (pane._type !== 'termui/termpane') throw new Error('expected _type termui/termpane, got ' + pane._type);
 		'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := runTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestTermpane_Factory_MissingConfig(t *testing.T) {
 	mgr, cleanup := startManager(t)
 	defer cleanup()
 
-	rt := goja.New()
+	rt, adapter := newTermPaneRuntime(t)
 	mgrObj := wrapManager(rt, mgr)
 	rt.Set("_mgr", mgrObj)
 
@@ -153,13 +153,13 @@ func TestTermpane_Factory_MissingConfig(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require()(rt, mod)
+			Require(t.Context(), adapter)(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
 	})
 
-	_, err := rt.RunString(`
+	_, err := runTermPaneScript(t, rt, `
 		const tp = require('osm:termui/termpane');
 		tp.termpane();
 	`)
@@ -174,7 +174,7 @@ func TestTermpane_Factory_MissingManager(t *testing.T) {
 	mgr, cleanup := startManager(t)
 	defer cleanup()
 
-	rt := goja.New()
+	rt, adapter := newTermPaneRuntime(t)
 	mgrObj := wrapManager(rt, mgr)
 	rt.Set("_mgr", mgrObj)
 
@@ -184,13 +184,13 @@ func TestTermpane_Factory_MissingManager(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require()(rt, mod)
+			Require(t.Context(), adapter)(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
 	})
 
-	_, err := rt.RunString(`
+	_, err := runTermPaneScript(t, rt, `
 		const tp = require('osm:termui/termpane');
 		tp.termpane({ sessionId: 1, bounds: {x:0,y:0,width:80,height:24} });
 	`)
@@ -205,7 +205,7 @@ func TestTermpane_Factory_MissingSessionId(t *testing.T) {
 	mgr, cleanup := startManager(t)
 	defer cleanup()
 
-	rt := goja.New()
+	rt, adapter := newTermPaneRuntime(t)
 	mgrObj := wrapManager(rt, mgr)
 	rt.Set("_mgr", mgrObj)
 
@@ -215,13 +215,13 @@ func TestTermpane_Factory_MissingSessionId(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require()(rt, mod)
+			Require(t.Context(), adapter)(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
 	})
 
-	_, err := rt.RunString(`
+	_, err := runTermPaneScript(t, rt, `
 		const tp = require('osm:termui/termpane');
 		tp.termpane({ manager: _mgr, bounds: {x:0,y:0,width:80,height:24} });
 	`)
@@ -236,7 +236,7 @@ func TestTermpane_Factory_MissingBounds(t *testing.T) {
 	mgr, cleanup := startManager(t)
 	defer cleanup()
 
-	rt := goja.New()
+	rt, adapter := newTermPaneRuntime(t)
 	mgrObj := wrapManager(rt, mgr)
 	rt.Set("_mgr", mgrObj)
 
@@ -246,13 +246,13 @@ func TestTermpane_Factory_MissingBounds(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require()(rt, mod)
+			Require(t.Context(), adapter)(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
 	})
 
-	_, err := rt.RunString(`
+	_, err := runTermPaneScript(t, rt, `
 		const tp = require('osm:termui/termpane');
 		tp.termpane({ manager: _mgr, sessionId: 1 });
 	`)
@@ -282,7 +282,7 @@ func TestTermpane_SessionId(t *testing.T) {
 		if (id !== _sessionID) throw new Error('sessionId mismatch: got ' + id + ', expected ' + _sessionID);
 		'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := runTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestTermpane_Bounds(t *testing.T) {
 		if (b.height !== 24) throw new Error('height should be 24, got ' + b.height);
 		'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := runTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestTermpane_BoundsWithOffset(t *testing.T) {
 		if (b.height !== 12) throw new Error('height should be 12, got ' + b.height);
 		'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := runTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
@@ -387,7 +387,7 @@ func TestTermpane_SetBounds(t *testing.T) {
 		if (b.height !== 12) throw new Error('height should be 12 after setBounds, got ' + b.height);
 		'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := runTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestTermpane_SetBounds_MissingArg(t *testing.T) {
 	rt, _, _, cleanup := setupTestEnv(t)
 	defer cleanup()
 
-	_, err := rt.RunString(`
+	_, err := runTermPaneScript(t, rt, `
 		const tp = require('osm:termui/termpane');
 		const pane = tp.termpane({
 			manager: _mgr,
@@ -435,10 +435,12 @@ func TestTermpane_Close(t *testing.T) {
 		});
 
 		// close should not throw.
-		pane.close();
-		'ok';
+		const closePromise = pane.close();
+		if (!(closePromise instanceof Promise)) throw new Error('close did not return a Promise');
+		await closePromise;
+		return 'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := awaitTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
@@ -469,7 +471,7 @@ func TestTermpane_AsBubbleteaModel(t *testing.T) {
 		if (model._type !== 'bubbleteaGoModel') throw new Error('expected _type bubbleteaGoModel, got ' + model._type);
 		'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := runTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
@@ -518,7 +520,7 @@ func TestTermpane_BoundsRectAccessors(t *testing.T) {
 		if (b._type !== 'termui/coordinate/rect') throw new Error('expected _type termui/coordinate/rect');
 		'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := runTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
@@ -550,9 +552,11 @@ func TestTermpane_Update_View(t *testing.T) {
 		if (typeof v1.content !== 'string') throw new Error('view should return string content');
 		if (typeof v1.gen !== 'number') throw new Error('view should return numeric gen');
 
-		// update() should return [pane, cmd].
-		const res = pane.update({type: 'WindowSize', width: 40, height: 12});
-		if (!Array.isArray(res)) throw new Error('update should return array');
+		// update() should resolve to [pane, cmd].
+		const updatePromise = pane.update({type: 'WindowSize', width: 40, height: 12});
+		if (!(updatePromise instanceof Promise)) throw new Error('update should return Promise');
+		const res = await updatePromise;
+		if (!Array.isArray(res)) throw new Error('update should resolve to array');
 		if (res[0] !== pane) throw new Error('update should return same pane');
 		if (res[1] !== null && typeof res[1] !== 'object') throw new Error('update cmd should be null or object');
 
@@ -562,9 +566,9 @@ func TestTermpane_Update_View(t *testing.T) {
 		if (b.width !== 40) throw new Error('width should be 40 after setBounds, got ' + b.width);
 		if (b.height !== 12) throw new Error('height should be 12 after setBounds, got ' + b.height);
 
-		'ok';
+		return 'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := awaitTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
@@ -587,7 +591,7 @@ func TestTermpane_Update_ForwardsKey(t *testing.T) {
 	}
 	sessionID, _ := mgr.Register(session, termmux.SessionTarget{Name: "test"})
 
-	rt := goja.New()
+	rt, adapter := newTermPaneRuntime(t)
 	mgrObj := wrapManager(rt, mgr)
 	rt.Set("_mgr", mgrObj)
 	rt.Set("_sessionID", uint64(sessionID))
@@ -598,7 +602,7 @@ func TestTermpane_Update_ForwardsKey(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require()(rt, mod)
+			Require(t.Context(), adapter)(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -611,10 +615,12 @@ func TestTermpane_Update_ForwardsKey(t *testing.T) {
 			sessionId: _sessionID,
 			bounds: {x: 0, y: 0, width: 80, height: 24}
 		});
-		pane.update({type: 'Key', key: 'a', text: 'a'});
-		'ok';
+		const updatePromise = pane.update({type: 'Key', key: 'a', text: 'a'});
+		if (!(updatePromise instanceof Promise)) throw new Error('update should return Promise');
+		await updatePromise;
+		return 'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := awaitTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
@@ -667,7 +673,7 @@ func TestTermpane_UnwrapSessionManager(t *testing.T) {
 	mgr, cleanup := startManager(t)
 	defer cleanup()
 
-	rt := goja.New()
+	rt, _ := newTermPaneRuntime(t)
 	obj := wrapManager(rt, mgr)
 
 	result := termmuxmod.UnwrapSessionManager(obj)
@@ -716,10 +722,10 @@ func TestTermpane_FullWorkflow(t *testing.T) {
 		if (model._type !== 'bubbleteaGoModel') throw new Error('model type mismatch');
 
 		// Close.
-		pane.close();
-		'ok';
+		await pane.close();
+		return 'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := awaitTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
@@ -744,7 +750,7 @@ func TestTermpane_EventBusSubscription(t *testing.T) {
 	}
 	sessionID, _ := mgr.Register(session, termmux.SessionTarget{Name: "test"})
 
-	rt := goja.New()
+	rt, adapter := newTermPaneRuntime(t)
 	mgrObj := wrapManager(rt, mgr)
 	rt.Set("_mgr", mgrObj)
 	rt.Set("_sessionID", uint64(sessionID))
@@ -755,7 +761,7 @@ func TestTermpane_EventBusSubscription(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require()(rt, mod)
+			Require(t.Context(), adapter)(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -770,19 +776,16 @@ func TestTermpane_EventBusSubscription(t *testing.T) {
 		});
 		// The model should have subscribed to the EventBus.
 		// We can verify by checking that close() works (it unsubscribes).
-		pane.close();
-		'ok';
+		await pane.close();
+		return 'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := awaitTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}
 	if val.Export() != "ok" {
 		t.Errorf("unexpected result: %v", val.Export())
 	}
-
-	// Give time for cleanup.
-	time.Sleep(50 * time.Millisecond)
 }
 
 // ---------------------------------------------------------------------------
@@ -792,20 +795,20 @@ func TestTermpane_EventBusSubscription(t *testing.T) {
 func TestTermpane_Factory_InvalidManager(t *testing.T) {
 	skipSlow(t)
 
-	rt := goja.New()
+	rt, adapter := newTermPaneRuntime(t)
 	rt.Set("require", func(call goja.FunctionCall) goja.Value {
 		arg := call.Argument(0).String()
 		switch arg {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require()(rt, mod)
+			Require(t.Context(), adapter)(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
 	})
 
-	_, err := rt.RunString(`
+	_, err := runTermPaneScript(t, rt, `
 		const tp = require('osm:termui/termpane');
 		tp.termpane({ manager: {}, sessionId: 1, bounds: {x:0,y:0,width:80,height:24} });
 	`)
@@ -829,7 +832,7 @@ func TestTermpane_MultiplePanes(t *testing.T) {
 	id1, _ := mgr.Register(s1, termmux.SessionTarget{Name: "a"})
 	id2, _ := mgr.Register(s2, termmux.SessionTarget{Name: "b"})
 
-	rt := goja.New()
+	rt, adapter := newTermPaneRuntime(t)
 	mgrObj := wrapManager(rt, mgr)
 	rt.Set("_mgr", mgrObj)
 	rt.Set("_id1", uint64(id1))
@@ -841,7 +844,7 @@ func TestTermpane_MultiplePanes(t *testing.T) {
 		case "osm:termui/termpane":
 			mod := rt.NewObject()
 			_ = mod.Set("exports", rt.NewObject())
-			Require()(rt, mod)
+			Require(t.Context(), adapter)(rt, mod)
 			return mod.Get("exports")
 		}
 		return goja.Undefined()
@@ -865,11 +868,11 @@ func TestTermpane_MultiplePanes(t *testing.T) {
 		if (pane1.bounds().x !== 0) throw new Error('pane1 x should be 0');
 		if (pane2.bounds().x !== 40) throw new Error('pane2 x should be 40');
 
-		pane1.close();
-		pane2.close();
-		'ok';
+		await pane1.close();
+		await pane2.close();
+		return 'ok';
 	`
-	val, err := rt.RunString(script)
+	val, err := awaitTermPaneScript(t, rt, script)
 	if err != nil {
 		t.Fatalf("script error: %v", err)
 	}

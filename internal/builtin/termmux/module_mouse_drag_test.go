@@ -37,17 +37,17 @@ func setupMouseDragMgr(t *testing.T) (*goja.Runtime, *parent.SessionManager, fun
 		}
 	}
 
-	runtime, termmux, env := testRequireCtx(t, ctx)
-	tuiMux := WrapSessionManager(ctx, env.adapter, env.loop, runtime, mgr, nil, nil, -1, "")
-	_ = runtime.Set("tm", tuiMux)
-	_ = runtime.Set("termmux", termmux)
+	runtime, termmux := testRequire(t)
+	tuiMux := WrapSessionManager(ctx, adapterForRuntime(t, runtime), loopForRuntime(t, runtime), runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tm", tuiMux)
+	setOnLoop(t, runtime, "termmux", termmux)
 
 	cleanup := func() {
 		// Stop the manager before shutting down the loop: the wrapper's event
 		// bridge is a tracked worker and loop shutdown joins tracked workers.
 		cancel()
 		<-errCh
-		env.stop()
+
 	}
 	return runtime, mgr, cleanup
 }
@@ -57,13 +57,13 @@ func TestHandleMouseDrag_JS(t *testing.T) {
 	defer cleanup()
 
 	script := `
-		var result = termmux.handleMouseDrag({
+		var result = await termmux.handleMouseDrag({
 			manager: tm,
 			msg: { type: "MouseClick", x: 5, y: 5, button: "left" }
 		});
-		result.handled;
+		return result.handled;
 	`
-	v, err := runtime.RunString(script)
+	v, err := awaitJSValue(t, runtime, script)
 	if err != nil {
 		t.Fatalf("handleMouseDrag: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestHandleMouseDrag_JS_UnknownType(t *testing.T) {
 			msg: { type: "MouseUnknown", x: 5, y: 5, button: "left" }
 		});
 	`
-	_, err := runtime.RunString(script)
+	_, err := awaitJSValue(t, runtime, script)
 	if err == nil {
 		t.Fatal("expected panic for unknown mouse event type")
 	}
@@ -94,16 +94,16 @@ func TestMouseDrag_JS_PersistentState(t *testing.T) {
 
 	script := `
 		var drag = termmux.mouseDrag();
-		var down = drag.handle({ manager: tm, msg: { type: "MouseClick", x: 5, y: 5, button: "left" } });
+		var down = await drag.handle({ manager: tm, msg: { type: "MouseClick", x: 5, y: 5, button: "left" } });
 		if (!down.handled) { throw new Error("down not handled"); }
-		var move = drag.handle({ manager: tm, msg: { type: "MouseMotion", x: 5, y: 7, button: "left" } });
+		var move = await drag.handle({ manager: tm, msg: { type: "MouseMotion", x: 5, y: 7, button: "left" } });
 		if (!move.handled) { throw new Error("move not handled"); }
-		var up = drag.handle({ manager: tm, msg: { type: "MouseRelease", x: 5, y: 7, button: "left" } });
+		var up = await drag.handle({ manager: tm, msg: { type: "MouseRelease", x: 5, y: 7, button: "left" } });
 		if (!up.handled) { throw new Error("up not handled"); }
-		var after = drag.handle({ manager: tm, msg: { type: "MouseMotion", x: 5, y: 9, button: "left" } });
-		after.handled;
+		var after = await drag.handle({ manager: tm, msg: { type: "MouseMotion", x: 5, y: 9, button: "left" } });
+		return after.handled;
 	`
-	v, err := runtime.RunString(script)
+	v, err := awaitJSValue(t, runtime, script)
 	if err != nil {
 		t.Fatalf("mouseDrag lifecycle: %v", err)
 	}
@@ -117,13 +117,13 @@ func TestHandleMouseDrag_JS_WrongButton(t *testing.T) {
 	defer cleanup()
 
 	script := `
-		var result = termmux.handleMouseDrag({
+		var result = await termmux.handleMouseDrag({
 			manager: tm,
 			msg: { type: "MouseClick", x: 5, y: 5, button: "right" }
 		});
-		result.handled;
+		return result.handled;
 	`
-	v, err := runtime.RunString(script)
+	v, err := awaitJSValue(t, runtime, script)
 	if err != nil {
 		t.Fatalf("handleMouseDrag: %v", err)
 	}

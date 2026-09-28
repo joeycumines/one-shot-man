@@ -16,7 +16,10 @@ import (
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 )
 
-var testLoops sync.Map
+var (
+	testLoops    sync.Map
+	testAdapters sync.Map
+)
 
 // testEnv bundles the runtime, event loop, adapter and module exports for a
 // single test.
@@ -38,6 +41,8 @@ func (e *testEnv) stop() {
 		e.cancel()
 	}
 	if e.loop != nil {
+		testLoops.Delete(e.runtime)
+		testAdapters.Delete(e.runtime)
 		_ = e.loop.Shutdown(context.Background())
 	}
 }
@@ -80,9 +85,11 @@ func newTestEnv(t *testing.T) *testEnv {
 		_ = loop.Run(ctx)
 	}()
 	testLoops.Store(runtime, loop)
+	testAdapters.Store(runtime, adapter)
 
 	t.Cleanup(func() {
 		testLoops.Delete(runtime)
+		testAdapters.Delete(runtime)
 		cancel()
 		_ = loop.Shutdown(context.Background())
 		<-loopDone
@@ -138,6 +145,8 @@ func newTestEnvCtx(t *testing.T, ctx context.Context) *testEnv {
 		t.Fatalf("require osm:termmux: %v", err)
 	}
 
+	testAdapters.Store(runtime, adapter)
+
 	e := &testEnv{
 		ctx:     ctx,
 		cancel:  cancel,
@@ -182,7 +191,9 @@ func wrapTestSessionManager(t *testing.T, ctx context.Context, runtime *goja.Run
 
 	wrapper := WrapSessionManager(ctx, adapter, loop, runtime, mgr, stdin, stdout, termFd, title)
 
+	testAdapters.Store(runtime, adapter)
 	t.Cleanup(func() {
+		testAdapters.Delete(runtime)
 		_ = loop.Shutdown(context.Background())
 	})
 
@@ -213,6 +224,7 @@ func wrapTestSessionManagerWithLoop(t *testing.T, ctx context.Context, runtime *
 	wrapper := WrapSessionManager(ctx, adapter, loop, runtime, mgr, stdin, stdout, termFd, title)
 
 	testLoops.Store(runtime, loop)
+	testAdapters.Store(runtime, adapter)
 	loopDone := make(chan struct{})
 	go func() {
 		defer close(loopDone)
@@ -220,6 +232,7 @@ func wrapTestSessionManagerWithLoop(t *testing.T, ctx context.Context, runtime *
 	}()
 	t.Cleanup(func() {
 		testLoops.Delete(runtime)
+		testAdapters.Delete(runtime)
 		_ = loop.Shutdown(context.Background())
 		<-loopDone
 	})
@@ -292,6 +305,15 @@ func loopForRuntime(t *testing.T, runtime *goja.Runtime) *goeventloop.Loop {
 		t.Fatalf("no event loop found for runtime")
 	}
 	return loopVal.(*goeventloop.Loop)
+}
+
+func adapterForRuntime(t *testing.T, runtime *goja.Runtime) *gojaeventloop.Adapter {
+	t.Helper()
+	adapterVal, ok := testAdapters.Load(runtime)
+	if !ok {
+		t.Fatalf("no event loop adapter found for runtime")
+	}
+	return adapterVal.(*gojaeventloop.Adapter)
 }
 
 // awaitJSValue runs an async JS snippet (may use await; its returned value is

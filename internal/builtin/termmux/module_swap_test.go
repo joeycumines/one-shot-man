@@ -22,8 +22,8 @@ func TestSwapPanes_JSBinding_ReturnsSwapped(t *testing.T) {
 		}
 		var s1 = await mkSession("one");
 		var s2 = await mkSession("two");
-		var p1 = Number(tuiMux.splitHorizontal({ session: s1.session, target: { name: "one" } }));
-		var p2 = Number(tuiMux.splitHorizontal({ session: s2.session, target: { name: "two" } }));
+		var p1 = Number(await tuiMux.splitHorizontal({ session: s1.session, target: { name: "one" } }));
+		var p2 = Number(await tuiMux.splitHorizontal({ session: s2.session, target: { name: "two" } }));
 		if (p1 === 0 || p2 === 0) {
 			throw new Error("expected valid pane ids");
 		}
@@ -32,17 +32,17 @@ func TestSwapPanes_JSBinding_ReturnsSwapped(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	res, err := sessionRun(t, runtime, `
-		var before = tuiMux.panes();
+	res, err := awaitJSValue(t, runtime, `
+		var before = await tuiMux.panes();
 		var p1 = Number(before[0].id);
 		var p2 = Number(before[1].id);
-		var result = tuiMux.swapPanes(p1, p2);
-		var after = tuiMux.panes();
-		JSON.stringify({
+		var result = await tuiMux.swapPanes(p1, p2);
+		var after = await tuiMux.panes();
+		return JSON.stringify({
 			swapped: result.swapped,
 			beforeSessions: [Number(before[0].sessionId), Number(before[1].sessionId)],
 			afterSessions: [Number(after[0].sessionId), Number(after[1].sessionId)]
-		})
+		});
 	`)
 	if err != nil {
 		t.Fatalf("swapPanes: %v", err)

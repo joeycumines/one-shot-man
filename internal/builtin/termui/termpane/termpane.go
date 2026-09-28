@@ -19,14 +19,20 @@
 //	});
 //
 //	pane.setBounds(coord.rect({x: 5, y: 5, width: 40, height: 12}));
-//	pane.close();
+//	const [updatedPane, cmd] = await pane.update({type: 'Key', key: 'a'});
+//	await pane.close();
 //
 //	const model = pane.asBubbleteaModel();
 package termpane
 
 import (
+	"context"
+	"errors"
+	"sync"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
@@ -36,7 +42,22 @@ import (
 )
 
 // Require returns a CommonJS native module under "osm:termui/termpane".
-func Require() func(runtime *goja.Runtime, module *goja.Object) {
+
+// resolveRequireArgs accepts the current Require(ctx, adapter) form or the
+// legacy Require() form so staged callers migrate independently.
+func resolveRequireArgs(args []any) (context.Context, *gojaeventloop.Adapter) {
+	if len(args) >= 2 {
+		if ctx, ok := args[0].(context.Context); ok {
+			if adapter, ok := args[1].(*gojaeventloop.Adapter); ok {
+				return ctx, adapter
+			}
+		}
+	}
+	return context.Background(), nil
+}
+
+func Require(args ...any) func(runtime *goja.Runtime, module *goja.Object) {
+	ctx, adapter := resolveRequireArgs(args)
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := runtime.NewObject()
 		_ = module.Set("exports", exports)
@@ -76,7 +97,7 @@ func Require() func(runtime *goja.Runtime, module *goja.Object) {
 
 			m := termpane.NewModel(sessionID, manager, bounds)
 
-			return createTermpaneObject(runtime, m)
+			return createTermpaneObject(runtime, m, ctx, adapter)
 		})
 	}
 }
@@ -166,11 +187,34 @@ func createRectJSObject(runtime *goja.Runtime, r *coordinate.Rect) goja.Value {
 	return obj
 }
 
+// termpaneUpdateQueue preserves the order of JavaScript update and close
+// operations while allowing each operation to run off the event-loop goroutine.
+type termpaneUpdateQueue struct {
+	mu   sync.Mutex
+	tail <-chan struct{}
+}
+
+func newTermpaneUpdateQueue() *termpaneUpdateQueue {
+	ready := make(chan struct{})
+	close(ready)
+	return &termpaneUpdateQueue{tail: ready}
+}
+
+func (q *termpaneUpdateQueue) enqueue() (<-chan struct{}, func()) {
+	q.mu.Lock()
+	previous := q.tail
+	done := make(chan struct{})
+	q.tail = done
+	q.mu.Unlock()
+	return previous, func() { close(done) }
+}
+
 // createTermpaneObject wraps a *termpane.Model as a Goja Object with
 // accessor methods. Internal Go struct fields are not exposed directly;
 // all access goes through the Model's exported methods.
-func createTermpaneObject(runtime *goja.Runtime, m *termpane.Model) goja.Value {
+func createTermpaneObject(runtime *goja.Runtime, m *termpane.Model, ctx context.Context, adapter *gojaeventloop.Adapter) goja.Value {
 	obj := runtime.NewObject()
+	updateQueue := newTermpaneUpdateQueue()
 
 	_ = obj.Set("_type", "termui/termpane")
 
@@ -195,25 +239,71 @@ func createTermpaneObject(runtime *goja.Runtime, m *termpane.Model) goja.Value {
 		return createRectJSObject(runtime, &r)
 	})
 
-	// update(msg) — converts a JS BubbleTea message object to a Go tea.Msg,
-	// dispatches it to the underlying model, and returns [pane, cmd].
-	// The returned cmd is a wrapped Go tea.Cmd that can be returned from a
-	// JavaScript BubbleTea update function.
+	// update(msg) — converts a JS BubbleTea message object on the owner loop,
+	// dispatches it to the underlying model in a tracked worker, and resolves
+	// to [pane, cmd]. The returned cmd is a wrapped Go tea.Cmd that can be
+	// returned from a JavaScript BubbleTea update function.
 	_ = obj.Set("update", func(call goja.FunctionCall) goja.Value {
-		cmd := tea.Cmd(nil)
-
-		if len(call.Arguments) >= 1 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
-			if msgObj, ok := call.Argument(0).(*goja.Object); ok && msgObj != nil {
-				if msg := bubbletea.ParseMsg(runtime, msgObj); msg != nil {
-					_, cmd = m.Update(msg)
-				}
-			}
+		if adapter == nil {
+			panic(runtime.NewGoError(errors.New("termpane: event loop adapter is required")))
 		}
 
-		return runtime.NewArray(obj, bubbletea.WrapCmd(runtime, cmd))
+		var msg tea.Msg
+		if len(call.Arguments) >= 1 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+			if msgObj, ok := call.Argument(0).(*goja.Object); ok && msgObj != nil {
+				msg = bubbletea.ParseMsg(runtime, msgObj)
+			}
+		}
+		previous, finish := updateQueue.enqueue()
+
+		return adapter.TrackPromise(ctx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+			defer finish()
+			select {
+			case <-previous:
+			case <-workerCtx.Done():
+				_ = settle.Settle(true, func(owner *goja.Runtime) any {
+					return owner.NewGoError(workerCtx.Err())
+				})
+				return
+			}
+			if err := workerCtx.Err(); err != nil {
+				_ = settle.Settle(true, func(owner *goja.Runtime) any {
+					return owner.NewGoError(err)
+				})
+				return
+			}
+
+			var cmd tea.Cmd
+			if msg != nil {
+				_, cmd = m.Update(msg)
+			}
+			_ = settle.Settle(false, func(owner *goja.Runtime) any {
+				return owner.NewArray(obj, bubbletea.WrapCmd(owner, cmd))
+			})
+		})
+	})
+
+	// waitOutput() — a wrapped tea.Cmd that resolves with a
+	// {type:'PaneOutput', sessionId} message on the next terminal event for
+	// this pane's session (output, resize, or exit), coalescing bursts. It
+	// runs on bubbletea's command goroutine, never on the JS event loop, so a
+	// JS update function can re-arm it directly.
+	_ = obj.Set("waitOutput", func(call goja.FunctionCall) goja.Value {
+		return bubbletea.WrapCmd(runtime, func() tea.Msg {
+			if !m.WaitForOutput() {
+				return nil
+			}
+			return bubbletea.ComponentMsg{
+				"type":      "PaneOutput",
+				"sessionId": uint64(m.SessionID()),
+			}
+		})
 	})
 
 	_ = obj.Set("view", func(call goja.FunctionCall) goja.Value {
+		// CaptureScreen reads the immutable snapshot index without a worker
+		// request, so refreshing here keeps passive embedders live even when
+		// their output queue is full.
 		m.RefreshSnapshot()
 		v := m.ANSIView()
 
@@ -233,12 +323,32 @@ func createTermpaneObject(runtime *goja.Runtime, m *termpane.Model) goja.Value {
 		return result
 	})
 
-	// close() — cleanup (unsubscribe from EventBus, stop bridge goroutine)
+	// close() — asynchronously unsubscribe and stop the bridge goroutine.
 	_ = obj.Set("close", func(call goja.FunctionCall) goja.Value {
-		if err := m.Close(); err != nil {
-			panic(runtime.NewGoError(err))
+		if adapter == nil {
+			panic(runtime.NewGoError(errors.New("termpane: event loop adapter is required")))
 		}
-		return goja.Undefined()
+		previous, finish := updateQueue.enqueue()
+		return adapter.TrackPromise(ctx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+			defer finish()
+			select {
+			case <-previous:
+			case <-workerCtx.Done():
+				_ = settle.Settle(true, func(owner *goja.Runtime) any {
+					return owner.NewGoError(workerCtx.Err())
+				})
+				return
+			}
+			if err := m.Close(); err != nil {
+				_ = settle.Settle(true, func(owner *goja.Runtime) any {
+					return owner.NewGoError(err)
+				})
+				return
+			}
+			_ = settle.Settle(false, func(owner *goja.Runtime) any {
+				return goja.Undefined()
+			})
+		})
 	})
 
 	// asBubbleteaModel() — returns the underlying bubbletea model for use

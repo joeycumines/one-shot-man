@@ -1,7 +1,6 @@
 package termmux
 
 import (
-	"context"
 	"testing"
 
 	"github.com/joeycumines/goja"
@@ -9,19 +8,19 @@ import (
 
 func setupMouseForwardEnv(t *testing.T) *goja.Runtime {
 	t.Helper()
-	runtime, exp, _ := testRequireCtx(t, context.Background())
-	_ = runtime.Set("exports", exp)
+	runtime, exp := testRequire(t)
+	setOnLoop(t, runtime, "exports", exp)
 	return runtime
 }
 
 func TestMouseForward_ClickInPane(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var inputCalls = [];
 		var mockMgr = {
 			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
-			input: function(data) { inputCalls.push(data); },
+			input: function(data) { inputCalls.push(data); return Promise.resolve(); },
 			mouseToSGR: exports.mouseToSGR
 		};
 		var mockComp = { hit: function(x, y) { return { hit: true, id: 'pty' }; } };
@@ -29,8 +28,8 @@ func TestMouseForward_ClickInPane(t *testing.T) {
 			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
 			paneId: 'pty', paneX: 5, paneY: 3, borderWidth: 1
 		});
-		forward({type: 'MouseClick', button: 'left', x: 10, y: 8});
-		inputCalls.length;
+		await forward({type: 'MouseClick', button: 'left', x: 10, y: 8});
+		return inputCalls.length;
 	`)
 	if err != nil {
 		t.Fatalf("click in pane: %v", err)
@@ -43,11 +42,11 @@ func TestMouseForward_ClickInPane(t *testing.T) {
 func TestMouseForward_ClickOutsidePane(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var inputCalls = [];
 		var mockMgr = {
 			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
-			input: function(data) { inputCalls.push(data); },
+			input: function(data) { inputCalls.push(data); return Promise.resolve(); },
 			mouseToSGR: exports.mouseToSGR
 		};
 		var mockComp = { hit: function(x, y) { return { hit: false, id: '' }; } };
@@ -55,8 +54,8 @@ func TestMouseForward_ClickOutsidePane(t *testing.T) {
 			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
 			paneId: 'pty', paneX: 5, paneY: 3, borderWidth: 1
 		});
-		forward({type: 'MouseClick', button: 'left', x: 1, y: 1});
-		inputCalls.length;
+		await forward({type: 'MouseClick', button: 'left', x: 1, y: 1});
+		return inputCalls.length;
 	`)
 	if err != nil {
 		t.Fatalf("click outside pane: %v", err)
@@ -69,11 +68,11 @@ func TestMouseForward_ClickOutsidePane(t *testing.T) {
 func TestMouseForward_NoTracking(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var inputCalls = [];
 		var mockMgr = {
 			capture: function(id) { return { mouseTracking: 0, mouseSGR: false, gen: 1 }; },
-			input: function(data) { inputCalls.push(data); },
+			input: function(data) { inputCalls.push(data); return Promise.resolve(); },
 			mouseToSGR: exports.mouseToSGR
 		};
 		var mockComp = { hit: function(x, y) { return { hit: true, id: 'pty' }; } };
@@ -81,8 +80,8 @@ func TestMouseForward_NoTracking(t *testing.T) {
 			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
 			paneId: 'pty', paneX: 0, paneY: 0, borderWidth: 0
 		});
-		forward({type: 'MouseClick', button: 'left', x: 5, y: 5});
-		inputCalls.length;
+		await forward({type: 'MouseClick', button: 'left', x: 5, y: 5});
+		return inputCalls.length;
 	`)
 	if err != nil {
 		t.Fatalf("no tracking: %v", err)
@@ -95,11 +94,11 @@ func TestMouseForward_NoTracking(t *testing.T) {
 func TestMouseForward_MotionEvent(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var inputCalls = [];
 		var mockMgr = {
 			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
-			input: function(data) { inputCalls.push(data); },
+			input: function(data) { inputCalls.push(data); return Promise.resolve(); },
 			mouseToSGR: exports.mouseToSGR
 		};
 		var mockComp = { hit: function(x, y) { return { hit: true, id: 'pty' }; } };
@@ -107,8 +106,8 @@ func TestMouseForward_MotionEvent(t *testing.T) {
 			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
 			paneId: 'pty', paneX: 5, paneY: 3, borderWidth: 1
 		});
-		forward({type: 'MouseMotion', button: 'left', x: 10, y: 8});
-		inputCalls.length;
+		await forward({type: 'MouseMotion', button: 'left', x: 10, y: 8});
+		return inputCalls.length;
 	`)
 	if err != nil {
 		t.Fatalf("motion: %v", err)
@@ -121,11 +120,11 @@ func TestMouseForward_MotionEvent(t *testing.T) {
 func TestMouseForward_ReleaseEvent(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var inputCalls = [];
 		var mockMgr = {
 			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
-			input: function(data) { inputCalls.push(data); },
+			input: function(data) { inputCalls.push(data); return Promise.resolve(); },
 			mouseToSGR: exports.mouseToSGR
 		};
 		var mockComp = { hit: function(x, y) { return { hit: true, id: 'pty' }; } };
@@ -133,8 +132,8 @@ func TestMouseForward_ReleaseEvent(t *testing.T) {
 			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
 			paneId: 'pty', paneX: 5, paneY: 3, borderWidth: 1
 		});
-		forward({type: 'MouseRelease', button: 'left', x: 10, y: 8});
-		inputCalls.length;
+		await forward({type: 'MouseRelease', button: 'left', x: 10, y: 8});
+		return inputCalls.length;
 	`)
 	if err != nil {
 		t.Fatalf("release: %v", err)
@@ -147,11 +146,11 @@ func TestMouseForward_ReleaseEvent(t *testing.T) {
 func TestMouseForward_WheelEvent(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var inputCalls = [];
 		var mockMgr = {
 			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
-			input: function(data) { inputCalls.push(data); },
+			input: function(data) { inputCalls.push(data); return Promise.resolve(); },
 			mouseToSGR: exports.mouseToSGR
 		};
 		var mockComp = { hit: function(x, y) { return { hit: true, id: 'pty' }; } };
@@ -159,8 +158,8 @@ func TestMouseForward_WheelEvent(t *testing.T) {
 			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
 			paneId: 'pty', paneX: 5, paneY: 3, borderWidth: 1
 		});
-		forward({type: 'MouseWheel', button: 'wheelup', x: 10, y: 8});
-		inputCalls.length;
+		await forward({type: 'MouseWheel', button: 'wheelup', x: 10, y: 8});
+		return inputCalls.length;
 	`)
 	if err != nil {
 		t.Fatalf("wheel: %v", err)
@@ -173,11 +172,11 @@ func TestMouseForward_WheelEvent(t *testing.T) {
 func TestMouseForward_NonMouseEvent(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var inputCalls = [];
 		var mockMgr = {
 			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
-			input: function(data) { inputCalls.push(data); },
+			input: function(data) { inputCalls.push(data); return Promise.resolve(); },
 			mouseToSGR: exports.mouseToSGR
 		};
 		var mockComp = { hit: function(x, y) { return { hit: true, id: 'pty' }; } };
@@ -185,8 +184,8 @@ func TestMouseForward_NonMouseEvent(t *testing.T) {
 			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
 			paneId: 'pty', paneX: 0, paneY: 0, borderWidth: 0
 		});
-		forward({type: 'Key', key: 'a'});
-		inputCalls.length;
+		await forward({type: 'Key', key: 'a'});
+		return inputCalls.length;
 	`)
 	if err != nil {
 		t.Fatalf("non-mouse: %v", err)
@@ -199,11 +198,11 @@ func TestMouseForward_NonMouseEvent(t *testing.T) {
 func TestMouseForward_CoordinateTranslation(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var inputCalls = [];
 		var mockMgr = {
 			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
-			input: function(data) { inputCalls.push(data); },
+			input: function(data) { inputCalls.push(data); return Promise.resolve(); },
 			mouseToSGR: exports.mouseToSGR
 		};
 		var mockComp = { hit: function(x, y) { return { hit: true, id: 'pty' }; } };
@@ -211,8 +210,8 @@ func TestMouseForward_CoordinateTranslation(t *testing.T) {
 			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
 			paneId: 'pty', paneX: 10, paneY: 5, borderWidth: 1
 		});
-		forward({type: 'MouseClick', button: 'left', x: 15, y: 8});
-		inputCalls.length > 0;
+		await forward({type: 'MouseClick', button: 'left', x: 15, y: 8});
+		return inputCalls.length > 0;
 	`)
 	if err != nil {
 		t.Fatalf("coord translation: %v", err)
@@ -225,11 +224,11 @@ func TestMouseForward_CoordinateTranslation(t *testing.T) {
 func TestMouseForward_WrongPaneId(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var inputCalls = [];
 		var mockMgr = {
 			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
-			input: function(data) { inputCalls.push(data); },
+			input: function(data) { inputCalls.push(data); return Promise.resolve(); },
 			mouseToSGR: exports.mouseToSGR
 		};
 		var mockComp = { hit: function(x, y) { return { hit: true, id: 'status' }; } };
@@ -237,8 +236,8 @@ func TestMouseForward_WrongPaneId(t *testing.T) {
 			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
 			paneId: 'pty', paneX: 0, paneY: 0, borderWidth: 0
 		});
-		forward({type: 'MouseClick', button: 'left', x: 5, y: 5});
-		inputCalls.length;
+		await forward({type: 'MouseClick', button: 'left', x: 5, y: 5});
+		return inputCalls.length;
 	`)
 	if err != nil {
 		t.Fatalf("wrong paneId: %v", err)
@@ -251,11 +250,11 @@ func TestMouseForward_WrongPaneId(t *testing.T) {
 func TestMouseForward_PaneXAsFunction(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var inputCalls = [];
 		var mockMgr = {
 			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
-			input: function(data) { inputCalls.push(data); },
+			input: function(data) { inputCalls.push(data); return Promise.resolve(); },
 			mouseToSGR: exports.mouseToSGR
 		};
 		var mockComp = { hit: function(x, y) { return { hit: true, id: 'pty' }; } };
@@ -265,8 +264,8 @@ func TestMouseForward_PaneXAsFunction(t *testing.T) {
 			paneId: 'pty', paneX: function() { return px; }, paneY: function() { return 5; },
 			borderWidth: 1
 		});
-		forward({type: 'MouseClick', button: 'left', x: 15, y: 8});
-		inputCalls.length > 0;
+		await forward({type: 'MouseClick', button: 'left', x: 15, y: 8});
+		return inputCalls.length > 0;
 	`)
 	if err != nil {
 		t.Fatalf("paneX function: %v", err)
@@ -279,7 +278,7 @@ func TestMouseForward_PaneXAsFunction(t *testing.T) {
 func TestMouseForward_MissingConfig(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	_, err := runtime.RunString(`exports.enableMouseForward()`)
+	_, err := awaitJSValue(t, runtime, `exports.enableMouseForward()`)
 	if err == nil {
 		t.Error("expected error for missing config")
 	}
@@ -288,23 +287,23 @@ func TestMouseForward_MissingConfig(t *testing.T) {
 func TestMouseForward_CopyModeWheel(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var inputCalls = [];
 		var scrollCalls = [];
 		var mockMgr = {
 			capture: function(id) { return { mouseTracking: 0, mouseSGR: false, gen: 1 }; },
-			input: function(data) { inputCalls.push(data); },
+			input: function(data) { inputCalls.push(data); return Promise.resolve(); },
 			mouseToSGR: exports.mouseToSGR,
-			isCopyModeActive: function(id) { return true; },
-			scrollCopyMode: function(id, delta) { scrollCalls.push(delta); },
+				isCopyModeActive: function(id) { return Promise.resolve(true); },
+				scrollCopyMode: function(id, delta) { scrollCalls.push(delta); return Promise.resolve(); },
 		};
 		var mockComp = { hit: function(x, y) { return { hit: true, id: 'pty' }; } };
 		var forward = exports.enableMouseForward({
 			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
 			paneId: 'pty', paneX: 0, paneY: 0, borderWidth: 0
 		});
-		forward({type: 'MouseWheel', button: 'wheeldown', x: 5, y: 5});
-		inputCalls.length === 0 && scrollCalls.length === 1 && scrollCalls[0] === -3;
+		await forward({type: 'MouseWheel', button: 'wheeldown', x: 5, y: 5});
+		return inputCalls.length === 0 && scrollCalls.length === 1 && scrollCalls[0] === -3;
 	`)
 	if err != nil {
 		t.Fatalf("copy-mode wheel: %v", err)
@@ -317,11 +316,11 @@ func TestMouseForward_CopyModeWheel(t *testing.T) {
 func TestMouseForward_UnknownButton(t *testing.T) {
 	runtime := setupMouseForwardEnv(t)
 
-	v, err := runtime.RunString(`
+	v, err := awaitJSValue(t, runtime, `
 		var inputCalls = [];
 		var mockMgr = {
 			capture: function(id) { return { mouseTracking: 3, mouseSGR: true, gen: 1 }; },
-			input: function(data) { inputCalls.push(data); },
+			input: function(data) { inputCalls.push(data); return Promise.resolve(); },
 			mouseToSGR: exports.mouseToSGR
 		};
 		var mockComp = { hit: function(x, y) { return { hit: true, id: 'pty' }; } };
@@ -329,8 +328,8 @@ func TestMouseForward_UnknownButton(t *testing.T) {
 			sessionManager: mockMgr, sessionId: 1, compositor: mockComp,
 			paneId: 'pty', paneX: 0, paneY: 0, borderWidth: 0
 		});
-		forward({type: 'MouseClick', button: 'somethingodd', x: 5, y: 5});
-		inputCalls.length > 0;
+		await forward({type: 'MouseClick', button: 'somethingodd', x: 5, y: 5});
+		return inputCalls.length > 0;
 	`)
 	if err != nil {
 		t.Fatalf("unknown button: %v", err)

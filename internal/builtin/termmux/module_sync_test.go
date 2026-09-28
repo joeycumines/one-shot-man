@@ -2,13 +2,15 @@ package termmux
 
 import (
 	"testing"
+
+	"github.com/joeycumines/goja"
 )
 
 func TestSynchronizePanesBinding_DefaultOff(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	v, err := sessionRun(t, runtime, `tuiMux.synchronizePanes()`)
+	v, err := awaitJSValue(t, runtime, `return await tuiMux.synchronizePanes()`)
 	if err != nil {
 		t.Fatalf("synchronizePanes(): %v", err)
 	}
@@ -21,15 +23,15 @@ func TestSynchronizePanesBinding_ToggleAndChain(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	v, err := sessionRun(t, runtime, `tuiMux.setSynchronizePanes(true)`)
+	v, err := awaitJSValue(t, runtime, `return await tuiMux.setSynchronizePanes(true)`)
 	if err != nil {
 		t.Fatalf("setSynchronizePanes(true): %v", err)
 	}
-	if v.Export() == nil {
-		t.Fatal("setSynchronizePanes(true) should return the manager wrapper")
+	if !goja.IsUndefined(v) {
+		t.Fatalf("setSynchronizePanes(true) = %v, want undefined", v)
 	}
 
-	v, err = sessionRun(t, runtime, `tuiMux.synchronizePanes()`)
+	v, err = awaitJSValue(t, runtime, `return await tuiMux.synchronizePanes()`)
 	if err != nil {
 		t.Fatalf("synchronizePanes(): %v", err)
 	}
@@ -37,12 +39,12 @@ func TestSynchronizePanesBinding_ToggleAndChain(t *testing.T) {
 		t.Error("synchronizePanes() = false, want true after set")
 	}
 
-	_, err = sessionRun(t, runtime, `tuiMux.setSynchronizePanes(false)`)
+	_, err = awaitJSValue(t, runtime, `return await tuiMux.setSynchronizePanes(false)`)
 	if err != nil {
 		t.Fatalf("setSynchronizePanes(false): %v", err)
 	}
 
-	v, err = sessionRun(t, runtime, `tuiMux.synchronizePanes()`)
+	v, err = awaitJSValue(t, runtime, `return await tuiMux.synchronizePanes()`)
 	if err != nil {
 		t.Fatalf("synchronizePanes() after disable: %v", err)
 	}
@@ -55,12 +57,12 @@ func TestSynchronizePanesBinding_ChainingReturnsWrapper(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	v, err := sessionRun(t, runtime, `tuiMux.setSynchronizePanes(true) === tuiMux`)
+	v, err := awaitJSValue(t, runtime, `return await tuiMux.setSynchronizePanes(true)`)
 	if err != nil {
-		t.Fatalf("chaining check: %v", err)
+		t.Fatalf("setSynchronizePanes: %v", err)
 	}
-	if !v.ToBoolean() {
-		t.Error("setSynchronizePanes should return the manager wrapper for chaining")
+	if !goja.IsUndefined(v) {
+		t.Errorf("setSynchronizePanes = %v, want undefined", v)
 	}
 }
 
@@ -68,33 +70,30 @@ func TestSynchronizePanesBinding_PerWindowState(t *testing.T) {
 	runtime, cleanup := setupTmuxModule(t)
 	defer cleanup()
 
-	_, err := sessionRun(t, runtime, `
-		var w1 = tuiMux.newWindow("w1");
-		var w2 = tuiMux.newWindow("w2");
+	v, err := awaitJSValue(t, runtime, `
+		var w1 = await tuiMux.newWindow("w1");
+		var w2 = await tuiMux.newWindow("w2");
 
 		// Activate window w1 before toggling sync.
-		tuiMux.nextWindow();
-		tuiMux.prevWindow();
-		tuiMux.setSynchronizePanes(true);
-		var onW1 = tuiMux.synchronizePanes();
+		await tuiMux.nextWindow();
+		await tuiMux.prevWindow();
+		await tuiMux.setSynchronizePanes(true);
+		var onW1 = await tuiMux.synchronizePanes();
 
-		tuiMux.nextWindow();
-		tuiMux.setSynchronizePanes(false);
-		var onW2 = tuiMux.synchronizePanes();
+		await tuiMux.nextWindow();
+		await tuiMux.setSynchronizePanes(false);
+		var onW2 = await tuiMux.synchronizePanes();
 
-		tuiMux.prevWindow();
-		var backOnW1 = tuiMux.synchronizePanes();
+		await tuiMux.prevWindow();
+		var backOnW1 = await tuiMux.synchronizePanes();
 
 		var ok = onW1 === true && onW2 === false && backOnW1 === true;
+        return ok;
 	`)
 	if err != nil {
 		t.Fatalf("per-window state script: %v", err)
 	}
 
-	v, err := sessionRun(t, runtime, `ok`)
-	if err != nil {
-		t.Fatalf("read ok: %v", err)
-	}
 	if !v.ToBoolean() {
 		t.Error("per-window synchronize state did not follow active window")
 	}

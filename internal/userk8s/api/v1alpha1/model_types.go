@@ -87,6 +87,27 @@ type ModelSpec struct {
 	// +optional
 	Access string `json:"access,omitempty"`
 
+	// ProviderModelID is the id the PROVIDER itself calls this model, sent
+	// upstream verbatim. Defaults to the model's registry name (the
+	// one-shot-man/registry-name annotation, or metadata.name), which is correct
+	// whenever a provider's id needs no disambiguation.
+	//
+	// It exists because those are two different facts that a single field cannot
+	// hold. The registry name is a CATALOG-WIDE unique key: the loader rejects a
+	// duplicate, and that uniqueness is load-bearing because the id is how one
+	// gateway endpoint resolves to exactly one provider. The provider's own id
+	// is not unique — two providers routinely serve the same model under the
+	// same id — and a namespace appended to disambiguate the key
+	// (`deepseek-v4-flash:verboo`) reaches the provider as part of the model
+	// name and is then a model the provider does not have, so the request fails
+	// upstream with "model not available". Set this field whenever the
+	// provider's id differs from the registry name; leave it empty when they
+	// agree.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +optional
+	ProviderModelID string `json:"provider_model_id,omitempty"`
+
 	// ContextWindow is the provider-enforced context ceiling in tokens.
 	// +kubebuilder:validation:Minimum=1
 	ContextWindow int64 `json:"context_window"`

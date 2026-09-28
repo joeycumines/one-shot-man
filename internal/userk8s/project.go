@@ -106,12 +106,17 @@ func (b *FilesBackend) projectResolved(tool *v1alpha1.Tool, model *v1alpha1.Mode
 	}
 
 	projection := Projection{
-		ProviderSlug:  providerSlug,
-		ModelSlug:     modelSlug,
-		ProviderID:    providerID,
-		ModelID:       modelID,
-		BudgetProfile: tool.Spec.BudgetProfile,
-		Settings:      modelSettings(model, tool.Name),
+		ProviderSlug: providerSlug,
+		ModelSlug:    modelSlug,
+		ProviderID:   providerID,
+		ModelID:      modelID,
+		// The provider's own id, falling back to the registry name when the
+		// model does not need one spelled separately. A gateway forwards this
+		// upstream; ModelID is the unique key a selection is made by and is not
+		// safe to send when the two differ.
+		ProviderModelID: providerModelID(model),
+		BudgetProfile:   tool.Spec.BudgetProfile,
+		Settings:        modelSettings(model, tool.Name),
 	}
 	if model.Spec.Access != "" {
 		access, err := b.Access(model.Spec.Access)
@@ -122,6 +127,15 @@ func (b *FilesBackend) projectResolved(tool *v1alpha1.Tool, model *v1alpha1.Mode
 		projection.Surfaces = servedSurfaces(access, tool)
 	}
 	return projection, nil
+}
+
+// providerModelID is the id the provider calls the model, defaulting to the
+// registry name so a model that needs no separate spelling declares nothing.
+func providerModelID(model *v1alpha1.Model) string {
+	if model.Spec.ProviderModelID != "" {
+		return model.Spec.ProviderModelID
+	}
+	return registryName(model)
 }
 
 // slugDisallowed matches every non-alphanumeric character. The live tool

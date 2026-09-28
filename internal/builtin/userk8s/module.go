@@ -430,8 +430,14 @@ type LoadedAccess struct {
 
 // LoadedModel is the JS-facing shape of a Model.
 type LoadedModel struct {
-	Name             string   `json:"name"`
-	Registry         string   `json:"registryName"`
+	Name string `json:"name"`
+	// Registry is the catalog-wide unique key a selection is made by. It is
+	// NOT the id to send a provider: that is ProviderModelID.
+	Registry string `json:"registryName"`
+	// ProviderModelID is the id the provider itself calls this model, and is
+	// what a gateway forwards upstream. Empty means "same as the registry
+	// name", which is the common case.
+	ProviderModelID  string   `json:"providerModelId,omitempty"`
 	Provider         string   `json:"provider"`
 	Access           string   `json:"access,omitempty"`
 	ContextWindow    int64    `json:"contextWindow"`
@@ -529,6 +535,7 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 		loaded.Models = append(loaded.Models, LoadedModel{
 			Name:             model.Name,
 			Registry:         registryName(model.Name, model.Annotations),
+			ProviderModelID:  model.Spec.ProviderModelID,
 			Provider:         model.Spec.Provider,
 			Access:           model.Spec.Access,
 			ContextWindow:    model.Spec.ContextWindow,

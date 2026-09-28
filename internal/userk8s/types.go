@@ -34,14 +34,19 @@ type Resolution struct {
 // Access and Surfaces name how the selection is reached, so no consumer has to
 // re-derive routing facts.
 type Projection struct {
-	ProviderSlug  string         `json:"providerSlug"`
-	ModelSlug     string         `json:"modelSlug"`
-	ProviderID    string         `json:"providerId"`
-	ModelID       string         `json:"modelId"`
-	BudgetProfile string         `json:"budgetProfile"`
-	Access        string         `json:"access,omitempty"`
-	Surfaces      []string       `json:"surfaces,omitempty"`
-	Settings      map[string]any `json:"settings"`
+	ProviderSlug string `json:"providerSlug"`
+	ModelSlug    string `json:"modelSlug"`
+	ProviderID   string `json:"providerId"`
+	ModelID      string `json:"modelId"`
+	// ProviderModelID is the id the PROVIDER calls this model. It differs from
+	// ModelID (the catalog-wide unique registry key) exactly when the key
+	// carries a disambiguating namespace the provider does not use. Empty means
+	// the two agree.
+	ProviderModelID string         `json:"providerModelId,omitempty"`
+	BudgetProfile   string         `json:"budgetProfile"`
+	Access          string         `json:"access,omitempty"`
+	Surfaces        []string       `json:"surfaces,omitempty"`
+	Settings        map[string]any `json:"settings"`
 }
 
 // BackendStatus reports what the backend loaded.

@@ -316,6 +316,26 @@ func TestModelSchema(t *testing.T) {
 	if asInt(t, access["minLength"]) != 1 {
 		t.Fatalf("access.minLength = %v, want 1", access["minLength"])
 	}
+	// provider_model_id carries the PROVIDER's id, which is a different fact
+	// from the catalog-wide unique registry key. It is optional (empty means
+	// "same as the registry name") and must stay optional: making it required
+	// would force every model to restate an id it does not need.
+	providerModelID, ok := props["provider_model_id"]
+	if !ok {
+		t.Fatal("spec.provider_model_id missing: the provider's own id has nowhere to live, so a disambiguated registry key reaches the provider as a model it does not have")
+	}
+	pmi := asMap(t, providerModelID)
+	if asString(t, pmi["type"]) != "string" {
+		t.Fatalf("provider_model_id.type = %v, want string", pmi["type"])
+	}
+	if asInt(t, pmi["minLength"]) != 1 {
+		t.Fatalf("provider_model_id.minLength = %v, want 1", pmi["minLength"])
+	}
+	for _, required := range asList(t, spec["required"]) {
+		if asString(t, required) == "provider_model_id" {
+			t.Fatal("provider_model_id must be optional: an empty value means the provider id is the registry name")
+		}
+	}
 	contextWindow := asMap(t, props["context_window"])
 	if asInt(t, contextWindow["minimum"]) != 1 || asString(t, contextWindow["format"]) != "int64" {
 		t.Fatalf("context_window must be a positive int64: %v", contextWindow)

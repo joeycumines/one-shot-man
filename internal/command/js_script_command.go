@@ -137,7 +137,7 @@ func (c *jsScriptCommand) Execute(args []string, stdout, stderr io.Writer) (retE
 				return &SilentError{Err: &ExitError{Code: code}}
 			}
 		}
-		if scripting.IsProcessExitSignal(err) {
+		if engine.IsProcessExitSignal(err) {
 			return scriptExitError(engine)
 		}
 		return fmt.Errorf("failed to execute script %s: %w", c.scriptPath, err)

@@ -121,12 +121,114 @@ spec:
                   more preferred.
                 format: int32
                 type: integer
+              preferred_surface:
+                description: |-
+                  PreferredSurface names which served surface this access prefers when
+                  mounted or resolved. Valid values: anthropic, responses, chat.
+                  When absent, the product's standing surface preference applies.
+                enum:
+                - anthropic
+                - responses
+                - chat
+                type: string
               provider:
                 description: |-
                   Provider references a ModelProvider by name. Must resolve; the
                   cross-resource check is a controller-side gap, not expressible in CEL.
                 minLength: 1
                 type: string
+              shaper:
+                description: Shaper carries operational configuration for shaper-mode
+                  accesses.
+                properties:
+                  auth_mode:
+                    description: 'AuthMode is the upstream auth mode: auto, none,
+                      bearer, x-api-key, api-key, header:NAME.'
+                    type: string
+                  cancel_cooldown:
+                    description: CancelCooldown is the slot hold after client cancel
+                      (-cancel-cooldown). Duration string.
+                    type: string
+                  cb_max_penalty:
+                    description: CBMaxPenalty is the max phantom concurrency hold
+                      time (-cb-max-penalty). Duration string.
+                    type: string
+                  cb_penalty:
+                    description: CBPenalty is the base phantom concurrency hold time
+                      (-cb-penalty). Duration string.
+                    type: string
+                  cb_threshold:
+                    description: CBThreshold is failures within window to trip circuit
+                      breaker (-cb-threshold).
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  cb_window:
+                    description: CBWindow is the failure counting window (-cb-window).
+                      Duration string.
+                    type: string
+                  circuit_breaker:
+                    description: CircuitBreaker enables the circuit breaker (-circuit-breaker).
+                    type: boolean
+                  concurrency:
+                    description: Concurrency is the max concurrent limited requests
+                      (-concurrency).
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  limit_all:
+                    description: LimitAll enables limiting all requests, not just
+                      matching routes (-limit-all).
+                    type: boolean
+                  queue_timeout:
+                    description: |-
+                      QueueTimeout is the max time a request waits in the queue (-queue-timeout).
+                      Duration string, e.g. "30m", "30s".
+                    type: string
+                  release_cooldown:
+                    description: ReleaseCooldown is the delay after slot release before
+                      re-admission (-release-cooldown). Duration string.
+                    type: string
+                  retry:
+                    description: Retry is the max retries for limited requests (-retry).
+                      Negative means unlimited.
+                    format: int32
+                    type: integer
+                  retry_min_delay:
+                    description: RetryMinDelay is the minimum delay before retrying
+                      (-retry-min-delay). Duration string.
+                    type: string
+                  retry_skip_429:
+                    description: RetrySkip429 skips retrying 429 responses (-retry-skip-429).
+                    type: boolean
+                  transcode:
+                    description: 'Transcode is the transcode preset override: auto,
+                      none, messages-chat.'
+                    enum:
+                    - auto
+                    - none
+                    - messages-chat
+                    type: string
+                  upstream:
+                    description: |-
+                      Upstream is the real upstream URL the shaper forwards to. The
+                      spec.endpoints URLs are client-facing (naming the gateway's own
+                      address), so this field carries the actual provider endpoint.
+                      Required for shaper-mode accesses.
+                    minLength: 1
+                    type: string
+                type: object
+              surfaces:
+                description: |-
+                  Surfaces explicitly lists the wire surfaces served by this access.
+                  When omitted, surfaces are derived from the keys of Endpoints.
+                items:
+                  enum:
+                  - anthropic
+                  - chat
+                  - responses
+                  type: string
+                type: array
               user_agent:
                 description: UserAgent models the User-Agent header policy for this
                   access.

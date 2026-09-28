@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"sort"
 	"strings"
 	"sync"
 
@@ -416,16 +417,39 @@ type LoadedProviders struct {
 // LoadedAccess is the JS-facing shape of a ModelAccess. It carries the auth
 // requirements but never a credential value.
 type LoadedAccess struct {
-	Name        string            `json:"name"`
-	Registry    string            `json:"registryName"`
-	Provider    string            `json:"provider"`
-	Mode        string            `json:"mode"`
-	Scheme      string            `json:"scheme,omitempty"`
-	RequiredEnv []string          `json:"requiredEnv,omitempty"`
-	Endpoints   map[string]string `json:"endpoints,omitempty"`
-	Labels      map[string]string `json:"labels,omitempty"`
-	Order       int32             `json:"order"`
-	Deprecated  bool              `json:"deprecated,omitempty"`
+	Name             string            `json:"name"`
+	Registry         string            `json:"registryName"`
+	Provider         string            `json:"provider"`
+	Mode             string            `json:"mode"`
+	Scheme           string            `json:"scheme,omitempty"`
+	RequiredEnv      []string          `json:"requiredEnv,omitempty"`
+	Endpoints        map[string]string `json:"endpoints,omitempty"`
+	Surfaces         []string          `json:"surfaces,omitempty"`
+	PreferredSurface string            `json:"preferredSurface,omitempty"`
+	Labels           map[string]string `json:"labels,omitempty"`
+	Order            int32             `json:"order"`
+	Deprecated       bool              `json:"deprecated,omitempty"`
+	Shaper           *LoadedShaper     `json:"shaper,omitempty"`
+}
+
+// LoadedShaper is the JS-facing shape of ShaperConfig.
+type LoadedShaper struct {
+	Upstream        string `json:"upstream,omitempty"`
+	AuthMode        string `json:"authMode,omitempty"`
+	Transcode       string `json:"transcode,omitempty"`
+	Concurrency     *int32 `json:"concurrency,omitempty"`
+	LimitAll        *bool  `json:"limitAll,omitempty"`
+	QueueTimeout    string `json:"queueTimeout,omitempty"`
+	Retry           *int32 `json:"retry,omitempty"`
+	RetryMinDelay   string `json:"retryMinDelay,omitempty"`
+	RetrySkip429    *bool  `json:"retrySkip429,omitempty"`
+	ReleaseCooldown string `json:"releaseCooldown,omitempty"`
+	CancelCooldown  string `json:"cancelCooldown,omitempty"`
+	CircuitBreaker  *bool  `json:"circuitBreaker,omitempty"`
+	CBThreshold     *int32 `json:"cbThreshold,omitempty"`
+	CBWindow        string `json:"cbWindow,omitempty"`
+	CBPenalty       string `json:"cbPenalty,omitempty"`
+	CBMaxPenalty    string `json:"cbMaxPenalty,omitempty"`
 }
 
 // LoadedModel is the JS-facing shape of a Model.
@@ -511,14 +535,15 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 	for i := range accesses {
 		access := &accesses[i]
 		view := LoadedAccess{
-			Name:       access.Name,
-			Registry:   registryName(access.Name, access.Annotations),
-			Provider:   access.Spec.Provider,
-			Mode:       access.Spec.Mode,
-			Endpoints:  map[string]string{},
-			Labels:     map[string]string{},
-			Order:      access.Spec.Order,
-			Deprecated: access.Spec.Deprecated,
+			Name:             access.Name,
+			Registry:         registryName(access.Name, access.Annotations),
+			Provider:         access.Spec.Provider,
+			Mode:             access.Spec.Mode,
+			Endpoints:        map[string]string{},
+			Labels:           map[string]string{},
+			Order:            access.Spec.Order,
+			Deprecated:       access.Spec.Deprecated,
+			PreferredSurface: access.Spec.PreferredSurface,
 		}
 		if access.Spec.Auth != nil {
 			view.Scheme = string(access.Spec.Auth.Scheme)
@@ -527,7 +552,38 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 		for surface, endpoint := range access.Spec.Endpoints {
 			view.Endpoints[surface] = string(endpoint)
 		}
+		if len(access.Spec.Surfaces) > 0 {
+			view.Surfaces = append([]string(nil), access.Spec.Surfaces...)
+		} else if len(access.Spec.Endpoints) > 0 {
+			surfaces := make([]string, 0, len(access.Spec.Endpoints))
+			for s := range access.Spec.Endpoints {
+				surfaces = append(surfaces, s)
+			}
+			sort.Strings(surfaces)
+			view.Surfaces = surfaces
+		}
 		maps.Copy(view.Labels, access.Labels)
+		if access.Spec.Shaper != nil {
+			s := access.Spec.Shaper
+			view.Shaper = &LoadedShaper{
+				Upstream:        s.Upstream,
+				AuthMode:        s.AuthMode,
+				Transcode:       s.Transcode,
+				Concurrency:     s.Concurrency,
+				LimitAll:        s.LimitAll,
+				QueueTimeout:    s.QueueTimeout,
+				Retry:           s.Retry,
+				RetryMinDelay:   s.RetryMinDelay,
+				RetrySkip429:    s.RetrySkip429,
+				ReleaseCooldown: s.ReleaseCooldown,
+				CancelCooldown:  s.CancelCooldown,
+				CircuitBreaker:  s.CircuitBreaker,
+				CBThreshold:     s.CBThreshold,
+				CBWindow:        s.CBWindow,
+				CBPenalty:       s.CBPenalty,
+				CBMaxPenalty:    s.CBMaxPenalty,
+			}
+		}
 		loaded.Accesses = append(loaded.Accesses, view)
 	}
 	for i := range models {

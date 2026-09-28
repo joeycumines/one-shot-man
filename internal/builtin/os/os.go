@@ -95,6 +95,13 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 			return vm.ToValue(os.Getenv(call.Argument(0).String()))
 		})
 
+		// getpid(): number
+		// The current process's pid. Package-local: a plain os.Getpid read,
+		// no shared state.
+		_ = exports.Set("getpid", func(call goja.FunctionCall) goja.Value {
+			return vm.ToValue(os.Getpid())
+		})
+
 		// readFile(path: string): Promise<{ content: string, error: bool, message: string }>
 		// Automatically expands ~ to the user's home directory before reading.
 		_ = exports.Set("readFile", func(call goja.FunctionCall) goja.Value {

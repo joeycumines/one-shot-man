@@ -100,7 +100,7 @@ var __regressionTermpane = (function() {
 		return {
 			setBounds: function(r) { updatePaneBounds(r); return this; },
 			bounds: function() { return bounds; },
-			update: function(msg) { return [this, null]; },
+			update: function(msg) { return Promise.resolve([this, null]); },
 			view: function() {
 				return {
 					content: 'mock shell pane',
@@ -108,7 +108,7 @@ var __regressionTermpane = (function() {
 					cursor: { x: 1, y: 1, shape: 'block', blink: false }
 				};
 			},
-			close: function() {},
+			close: function() { return Promise.resolve(); },
 			asBubbleteaModel: function() { return { _type: 'bubbleteaGoModel' }; }
 		};
 	}

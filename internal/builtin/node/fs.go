@@ -371,6 +371,10 @@ func nodeFSError(rt *goja.Runtime, syscallName, path string, err error) *goja.Ob
 }
 
 // errnoCode maps a Go filesystem or network error to Node's UV-style code string.
+// On Windows the Go syscall package reports raw Win32/WSA error numbers
+// (e.g. ERROR_FILE_EXISTS=80, WSAECONNREFUSED=10061) rather than the POSIX
+// constants, so Windows-native values are mapped alongside their POSIX
+// counterparts. See remove_windows.go for the platform-specific aliases.
 func errnoCode(err error) string {
 	if errno, ok := errors.AsType[syscall.Errno](err); ok {
 		switch errno {
@@ -404,6 +408,9 @@ func errnoCode(err error) string {
 			return "ENETUNREACH"
 		case syscall.EPIPE:
 			return "EPIPE"
+		}
+		if code, ok := windowsErrnoCode(errno); ok {
+			return code
 		}
 	}
 	if pathErr, ok := errors.AsType[*os.PathError](err); ok {

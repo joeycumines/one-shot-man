@@ -96,6 +96,10 @@ type Runtime struct {
 	// done is closed when the event loop returns from Run()
 	done chan struct{}
 
+	processExitCode      atomic.Int64
+	processExitCodeSet   atomic.Bool
+	processExitRequested atomic.Bool
+
 	// bootstrapDone is closed when natural auto-exit is allowed to proceed.
 	// We hold a Promisify token until this is closed to prevent premature shutdown.
 	bootstrapDone chan struct{}
@@ -222,6 +226,13 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 	_ = vm.Set("exit", goja.Undefined())
 	_ = vm.Set("quit", goja.Undefined())
 
+	if err := rt.bindProcessLifecycle(); err != nil {
+		close(rt.bootstrapDone)
+		loopCancel()
+		cancel()
+		return nil, fmt.Errorf("failed to bind process lifecycle: %w", err)
+	}
+
 	// Start the event loop in background goroutine
 	go func() {
 		defer close(rt.done)
@@ -244,6 +255,14 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 	}
 
 	return rt, nil
+}
+
+// ExitCode returns the exit status captured from process.exitCode at process exit.
+func (rt *Runtime) ExitCode() (int, bool) {
+	if rt == nil || !rt.processExitCodeSet.Load() {
+		return 0, false
+	}
+	return int(rt.processExitCode.Load()), true
 }
 
 // Close gracefully shuts down the runtime and event loop.

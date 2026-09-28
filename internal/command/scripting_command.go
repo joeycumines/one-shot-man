@@ -188,7 +188,7 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) (ret
 					return &SilentError{Err: &ExitError{Code: code}}
 				}
 			}
-			if scripting.IsProcessExitSignal(err) {
+			if engine.IsProcessExitSignal(err) {
 				return scriptExitError(engine)
 			}
 			return fmt.Errorf("failed to evaluate script %s: %w", resolvedPath, err)
@@ -204,7 +204,7 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) (ret
 					return &SilentError{Err: &ExitError{Code: code}}
 				}
 			}
-			if scripting.IsProcessExitSignal(err) {
+			if engine.IsProcessExitSignal(err) {
 				return scriptExitError(engine)
 			}
 			return err

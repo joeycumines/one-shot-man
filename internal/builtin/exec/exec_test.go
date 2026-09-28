@@ -2,11 +2,13 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -364,4 +366,267 @@ func TestRunExec_NilContext(t *testing.T) {
 		}
 	}()
 	_ = runExec(nilCtx, "echo", "hello-nil-ctx")
+}
+
+func TestExec_TimeoutOptions(t *testing.T) {
+	skipSlow(t)
+	skipIfWindows(t)
+	runtime, runJS := asyncTestEnv(t)
+
+	value, err := runJS(`
+		const execvResult = await exec.execv(["sh", "-c", "sleep 1"], {timeoutMs: 75});
+		const child = await exec.spawn("sh", ["-c", "sleep 1"], {timeoutMs: 75});
+		const spawnResult = await child.wait();
+		__collect({execv: execvResult, spawn: spawnResult});
+	`)
+	if err != nil {
+		t.Fatalf("runJS: %v", err)
+	}
+
+	var got map[string]map[string]any
+	if err := runtime.ExportTo(value, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["execv"]["error"] != true || toInt64(got["execv"]["code"]) == 0 {
+		t.Errorf("execv timeout result = %#v, want a failed result", got["execv"])
+	}
+	if toInt64(got["spawn"]["code"]) == 0 {
+		t.Errorf("spawn timeout result = %#v, want a nonzero exit code", got["spawn"])
+	}
+}
+
+func TestSpawn_EnvReplaceOption(t *testing.T) {
+	skipSlow(t)
+	skipIfWindows(t)
+	t.Setenv("OSM_TEST_INHERITED_VAR", "parent-value")
+	_, runJS := asyncTestEnv(t)
+
+	value, err := runJS(`
+		const child = await exec.spawn("sh", ["-c",
+			'printf "%s|%s\\n" "$OSM_TEST_SPAWN_VAR" "${OSM_TEST_INHERITED_VAR-unset}"'],
+			{env: {OSM_TEST_SPAWN_VAR: "spawn-value"}, envReplace: true});
+		let output = "";
+		while (true) {
+			const chunk = await child.stdout.read();
+			if (chunk.done) break;
+			output += chunk.value;
+		}
+		await child.wait();
+		__collect(output.trim());
+	`)
+	if err != nil {
+		t.Fatalf("runJS: %v", err)
+	}
+	if got, want := value.String(), "spawn-value|unset"; got != want {
+		t.Fatalf("spawn env = %q, want %q", got, want)
+	}
+}
+
+func TestSpawn_KillReturnsPromise(t *testing.T) {
+	skipSlow(t)
+	skipIfWindows(t)
+	runtime, runJS := asyncTestEnv(t)
+
+	value, err := runJS(`
+		const child = await exec.spawn("sh", ["-c", "sleep 30"]);
+		const killing = child.kill();
+		const isPromise = killing !== null && typeof killing.then === "function";
+		await killing;
+		const result = await child.wait();
+		__collect({isPromise, code: result.code, signal: result.signal});
+	`)
+	if err != nil {
+		t.Fatalf("runJS: %v", err)
+	}
+	var got map[string]any
+	if err := runtime.ExportTo(value, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["isPromise"] != true {
+		t.Errorf("kill result = %#v, want Promise-like", got)
+	}
+	if toInt64(got["code"]) == 0 {
+		t.Errorf("kill status = %#v, want a terminated child", got)
+	}
+}
+
+func TestSpawn_WaitSeparatesExitCodeFromSignal(t *testing.T) {
+	skipSlow(t)
+	skipIfWindows(t)
+	runtime, runJS := asyncTestEnv(t)
+
+	value, err := runJS(`
+		const child = await exec.spawn("sh", ["-c", "exit 7"]);
+		__collect(await child.wait());
+	`)
+	if err != nil {
+		t.Fatalf("runJS: %v", err)
+	}
+	var got map[string]any
+	if err := runtime.ExportTo(value, &got); err != nil {
+		t.Fatal(err)
+	}
+	if code := toInt64(got["code"]); code != 7 {
+		t.Errorf("exit code = %d, want 7", code)
+	}
+	if got["signal"] != nil {
+		t.Errorf("signal = %#v, want nil for a normal nonzero exit", got["signal"])
+	}
+}
+
+func TestSpawn_WaitReportsSignalTermination(t *testing.T) {
+	skipSlow(t)
+	skipIfWindows(t)
+	runtime, runJS := asyncTestEnv(t)
+
+	value, err := runJS(`
+		const child = await exec.spawn("sh", ["-c", "kill -TERM $$"]);
+		__collect(await child.wait());
+	`)
+	if err != nil {
+		t.Fatalf("runJS: %v", err)
+	}
+	var got map[string]any
+	if err := runtime.ExportTo(value, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["signal"] != "SIGTERM" {
+		t.Errorf("signal = %#v, want SIGTERM", got["signal"])
+	}
+}
+
+func TestSpawn_ChildKeepsAutoExitLoopAlive(t *testing.T) {
+	skipSlow(t)
+	skipIfWindows(t)
+
+	runtime := goja.New()
+	loop, err := goeventloop.New(goeventloop.WithAutoExit(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := gojaeventloop.New(loop, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
+
+	module := runtime.NewObject()
+	exports := runtime.NewObject()
+	_ = module.Set("exports", exports)
+	baseCtx, cancel := context.WithCancel(context.Background())
+	Require(baseCtx, adapter, loop)(runtime, module)
+	_ = runtime.Set("exec", module.Get("exports"))
+
+	resultCh := make(chan goja.Value, 1)
+	errCh := make(chan error, 1)
+	_ = runtime.Set("__collect", func(call goja.FunctionCall) goja.Value {
+		resultCh <- call.Argument(0)
+		return goja.Undefined()
+	})
+
+	loopDone := make(chan error, 1)
+	go func() {
+		loopDone <- loop.Run(baseCtx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		if err := loop.Shutdown(context.Background()); err != nil && !errors.Is(err, goeventloop.ErrLoopTerminated) {
+			t.Errorf("loop shutdown: %v", err)
+		}
+	})
+
+	// Submit before the loop can observe an empty liveness snapshot: with
+	// auto-exit enabled, a loop goroutine that wins the schedule may commit
+	// to termination before the first Submit arrives, and the submission is
+	// then rejected with ErrLoopTerminated. Retry briefly so the test pins
+	// child liveness rather than startup scheduling.
+	submitLoopTask := func(task func()) {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			if err := loop.Submit(task); err == nil {
+				return
+			} else if !errors.Is(err, goeventloop.ErrLoopTerminated) {
+				t.Fatal(err)
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("loop terminated before test task was admitted")
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	submitLoopTask(func() {
+		_, err := runtime.RunString(`(async function() {
+			await exec.spawn("sh", ["-c", "sleep 2"]);
+			__collect("spawned");
+		})();`)
+		if err != nil {
+			errCh <- err
+		}
+	})
+	select {
+	case value := <-resultCh:
+		if got := value.String(); got != "spawned" {
+			t.Fatalf("result = %q, want spawned", got)
+		}
+	case err := <-errCh:
+		t.Fatalf("runJS: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("script did not receive the spawned child handle")
+	}
+
+	select {
+	case err := <-loopDone:
+		t.Fatalf("event loop exited while the child was still running: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	select {
+	case err := <-loopDone:
+		if err != nil {
+			t.Fatalf("event loop returned: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("event loop did not auto-exit after the child completed")
+	}
+}
+
+// TestSpawn_SignalTerminatesChild proves child.signal("SIGTERM") terminates a
+// spawned child gracefully and wait() reports the signal outcome — the path
+// the gateway lifecycle uses to stop the shaper.
+func TestSpawn_SignalTerminatesChild(t *testing.T) {
+	skipIfWindows(t)
+	skipSlow(t)
+	_, runJS := asyncTestEnv(t)
+
+	// A child that traps SIGTERM and exits 0 on receiving it, then would
+	// otherwise sleep for 30s.
+	scriptPath := writeScript(t, `#!/bin/sh
+trap 'exit 0' TERM
+echo ready
+while true; do sleep 1; done
+`)
+
+	value, err := runJS(`
+		const child = await exec.spawn("/bin/sh", [` + gojaStringLit(scriptPath) + `]);
+		const line = await child.stdout.read();
+		if (!line.value.includes("ready")) { __collectErr("expected ready line, got: " + JSON.stringify(line)); return; }
+		await child.signal("SIGTERM");
+		const result = await child.wait();
+		__collect(JSON.stringify({exited: result.code === 0 || result.code === 143 || result.signal !== null, code: result.code, signal: result.signal}));
+	`)
+	if err != nil {
+		t.Fatalf("runJS: %v", err)
+	}
+	const want = `"exited":true`
+	if !strings.Contains(value.String(), want) {
+		t.Fatalf("signal result = %s, want containing %s", value.String(), want)
+	}
+}
+
+// gojaStringLit quotes a path as a JS single-quoted string literal.
+func gojaStringLit(s string) string {
+	return "'" + strings.ReplaceAll(strings.ReplaceAll(s, `\\`, `\\\\`), `'`, `\'`) + "'"
 }

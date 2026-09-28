@@ -53,11 +53,11 @@ outside the registered set (for example `require('node:test')`) fails too.
 
 | API | Security Notes |
 |---|---|
-| `execv(argv[])` | Uses `exec.CommandContext` — **no shell**. Arguments are passed directly, not interpreted. Returns a Promise. |
-| `spawn(cmd, args[], opts?)` | Returns a streaming `ChildHandle` for real-time output. Uses `exec.CommandContext`. |
+| `execv(argv[], opts?)` | Uses `exec.CommandContext` — **no shell**. Arguments are passed directly, not interpreted. Returns a Promise; `opts.timeoutMs` bounds execution. |
+| `spawn(cmd, args[], opts?)` | Uses `exec.CommandContext` — **no shell**. Returns a Promise that resolves to a streaming `ChildHandle`; `opts.timeoutMs` bounds the process tree. `opts.envReplace` prevents inheritance of the caller's environment. |
 
-- **Stdin:** Wired to `os.Stdin` (by design — the user is the operator)
-- **No shell expansion:** `execv(['echo', '$(id)'])` outputs the literal `$(id)`
+- **Stdin:** `execv` uses `os.Stdin`; `spawn` exposes a piped `ChildHandle.stdin`.
+- **No shell expansion:** `execv(['echo', '$(id)'])` outputs the literal `$(id)`; `spawn` passes arguments directly too.
 
 #### `osm:os` — File Operations
 

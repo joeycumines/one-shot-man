@@ -72,6 +72,41 @@ func TestCaptureSession_Interrupt(t *testing.T) {
 	}
 }
 
+func TestCaptureSession_Signal_NotStarted(t *testing.T) {
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "true",
+	})
+	if err := cs.Signal("SIGINT"); err == nil {
+		t.Fatal("expected an error signaling a session that was never started")
+	}
+}
+
+func TestCaptureSession_Signal_ForwardsToChild(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "sleep",
+		Args:    []string{"60"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	if err := cs.Signal("SIGINT"); err != nil {
+		t.Fatalf("Signal failed: %v", err)
+	}
+
+	select {
+	case <-cs.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for process to exit after Signal(SIGINT)")
+	}
+}
+
 func TestCaptureSession_Kill(t *testing.T) {
 	t.Parallel()
 	skipIfWindows(t)

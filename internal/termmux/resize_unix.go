@@ -18,17 +18,5 @@ func watchResize(ctx context.Context, termFd int, ts interface {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGWINCH)
 	defer signal.Stop(ch)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ch:
-			w, h, err := ts.GetSize(termFd)
-			if err != nil {
-				continue
-			}
-			fn(h, w)
-		}
-	}
+	watchResizeSignalLoop(ctx, termFd, ts, ch, fn)
 }

@@ -160,8 +160,12 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 		cmd.Dir = cfg.Dir
 	}
 
-	// Build environment: inherit parent env and replace configured keys.
+	// Build environment: inherit parent env and replace configured keys,
+	// unless EnvReplace asks for exactly the configured keys plus TERM.
 	env := os.Environ()
+	if cfg.EnvReplace {
+		env = nil
+	}
 	overrides := make(map[string]string, len(cfg.Env)+1)
 	overrides["TERM"] = cfg.Term
 	maps.Copy(overrides, cfg.Env)

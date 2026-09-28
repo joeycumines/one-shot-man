@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -69,36 +70,152 @@ func TestForwardStdin_WriteError(t *testing.T) {
 }
 
 func TestForwardStdin_ContextCancel(t *testing.T) {
-	// stdin that blocks until done is closed
-	stdin := &neverReader{done: make(chan struct{})}
+	// stdin that blocks until done is closed, and signals when the read is
+	// actually in flight so the test never depends on a sleep.
+	stdin := &neverReader{done: make(chan struct{}), reading: make(chan struct{})}
 	var written bytes.Buffer
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	resultCh := make(chan forwardResult, 1)
-	go forwardStdin(ctx, resultCh, forwardConfig{
-		Stdin:     stdin,
-		Writer:    &written,
-		ToggleKey: 0x1d,
-	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		forwardStdin(ctx, resultCh, forwardConfig{
+			Stdin:     stdin,
+			Writer:    &written,
+			ToggleKey: 0x1d,
+		})
+	}()
 
-	// Cancel context after a short delay.
-	time.AfterFunc(100*time.Millisecond, cancel)
-
-	// forwardStdin should exit silently (no result sent).
+	// Cancel only once the forwarder is provably blocked in Read, so the
+	// assertion below is about behavior rather than about how fast this
+	// machine schedules goroutines.
 	select {
-	case r := <-resultCh:
-		t.Errorf("unexpected result: %v", r)
-	case <-time.After(500 * time.Millisecond):
-		// Expected: no result sent.
+	case <-stdin.reading:
+	case <-time.After(2 * time.Second):
+		t.Fatal("forwardStdin never entered the blocking read")
+	}
+	cancel()
+
+	// A cancelled context must not release a reader that ignores it: the
+	// forwarder stays blocked until the reader is released below.
+	select {
+	case <-done:
+		t.Fatal("forwardStdin returned before the blocking reader was released")
+	default:
 	}
 
 	// Unblock the reader so the forwardStdin goroutine can exit.
-	// forwardStdin only checks ctx.Done() at the top of its loop; once
-	// Read is entered, context cancellation goes unobserved until Read
-	// returns. Closing done causes Read to return EOF, allowing the
-	// goroutine to observe the cancelled context and exit cleanly.
 	close(stdin.done)
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("forwardStdin did not exit after its reader was released")
+	}
+
+	select {
+	case r := <-resultCh:
+		t.Errorf("unexpected result: %v", r)
+	default:
+	}
+}
+
+func TestForwardStdin_ContextCancelClosesFallbackReader(t *testing.T) {
+	stdin := newBlockingReadCloser()
+	ctx, cancel := context.WithCancel(context.Background())
+	resultCh := make(chan forwardResult, 1)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		forwardStdin(ctx, resultCh, forwardConfig{
+			Stdin:     stdin,
+			Writer:    io.Discard,
+			ToggleKey: 0x1d,
+		})
+	}()
+
+	select {
+	case <-stdin.started:
+	case <-time.After(time.Second):
+		t.Fatal("forwardStdin did not enter the blocking read")
+	}
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("forwardStdin did not join after cancellation")
+	}
+	if !stdin.wasClosed() {
+		t.Fatal("fallback reader was not closed on cancellation")
+	}
+	select {
+	case r := <-resultCh:
+		t.Errorf("unexpected result: %v", r)
+	default:
+	}
+}
+
+type trackedCancelReader struct {
+	canceled   chan struct{}
+	closed     chan struct{}
+	cancelOnce sync.Once
+	closeOnce  sync.Once
+}
+
+func (r *trackedCancelReader) Read([]byte) (int, error) { return 0, io.EOF }
+
+func (r *trackedCancelReader) Cancel() bool {
+	r.cancelOnce.Do(func() { close(r.canceled) })
+	return true
+}
+
+func (r *trackedCancelReader) Close() error {
+	r.closeOnce.Do(func() { close(r.closed) })
+	return nil
+}
+
+func TestForwardReaderCleanupClosesCancelReader(t *testing.T) {
+	reader := &trackedCancelReader{
+		canceled: make(chan struct{}),
+		closed:   make(chan struct{}),
+	}
+	cleanup := watchForwardReader(context.Background(), strings.NewReader(""), reader)
+	cleanup()
+	select {
+	case <-reader.closed:
+	default:
+		t.Fatal("normal cleanup did not close the cancel reader")
+	}
+	select {
+	case <-reader.canceled:
+		t.Fatal("normal cleanup canceled the reader")
+	default:
+	}
+}
+
+func TestForwardReaderCancellationClosesCancelReader(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	reader := &trackedCancelReader{
+		canceled: make(chan struct{}),
+		closed:   make(chan struct{}),
+	}
+	cleanup := watchForwardReader(ctx, strings.NewReader(""), reader)
+	cancel()
+	select {
+	case <-reader.canceled:
+	case <-time.After(time.Second):
+		t.Fatal("context cancellation did not cancel the reader")
+	}
+	select {
+	case <-reader.closed:
+	case <-time.After(time.Second):
+		t.Fatal("context cancellation did not close the cancel reader")
+	}
+	cleanup()
 }
 
 func TestForwardStdin_PreProcess(t *testing.T) {
@@ -245,10 +362,53 @@ func (w *errorWriter) Write(p []byte) (int, error) {
 
 // neverReader is an io.Reader that blocks until its done channel is closed.
 type neverReader struct {
-	done chan struct{}
+	done    chan struct{}
+	reading chan struct{}
+	once    sync.Once
 }
 
 func (r *neverReader) Read(p []byte) (int, error) {
+	if r.reading != nil {
+		r.once.Do(func() { close(r.reading) })
+	}
 	<-r.done
 	return 0, io.EOF
+}
+
+type blockingReadCloser struct {
+	started chan struct{}
+	done    chan struct{}
+	once    sync.Once
+}
+
+func newBlockingReadCloser() *blockingReadCloser {
+	return &blockingReadCloser{
+		started: make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+}
+
+func (r *blockingReadCloser) Read([]byte) (int, error) {
+	r.once.Do(func() { close(r.started) })
+	<-r.done
+	return 0, io.EOF
+}
+
+func (r *blockingReadCloser) Close() error {
+	select {
+	case <-r.done:
+		return nil
+	default:
+		close(r.done)
+		return nil
+	}
+}
+
+func (r *blockingReadCloser) wasClosed() bool {
+	select {
+	case <-r.done:
+		return true
+	default:
+		return false
+	}
 }

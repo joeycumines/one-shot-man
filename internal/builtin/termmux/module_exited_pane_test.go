@@ -16,43 +16,41 @@ func TestWindowPanes_ExitedFlag(t *testing.T) {
 	setOnLoop(t, runtime, "exitBin", exitBin)
 
 	err := awaitJSErr(t, runtime, `
-		tuiMux.setRemainOnExit(true);
+		await tuiMux.setRemainOnExit(true);
 		var sess = termmux.newCaptureSession(exitBin);
 		await sess.start();
-		var paneId = tuiMux.splitHorizontal({ session: sess, target: { name: "exited-js", kind: "capture" } });
+		var paneId = await tuiMux.splitHorizontal({ session: sess, target: { name: "exited-js", kind: "capture" } });
 		if (paneId === 0) { throw new Error("expected valid pane id"); }
 
-		function waitExited(deadlineMs) {
-			return new Promise(function(resolve, reject) {
-				(function poll() {
-					var sessions = tuiMux.sessions();
-					for (var i = 0; i < sessions.length; i++) {
-						if (sessions[i].state === "exited") return resolve();
-					}
-					if (Date.now() > deadlineMs) return reject(new Error("timeout waiting for session exit"));
-					setTimeout(poll, 10);
-				})();
-			});
+		async function waitExited(deadlineMs) {
+			while (Date.now() <= deadlineMs) {
+				var sessions = await tuiMux.sessions();
+				for (var i = 0; i < sessions.length; i++) {
+					if (sessions[i].state === "exited") return;
+				}
+				await new Promise(function(resolve) { setTimeout(resolve, 10); });
+			}
+			throw new Error("timeout waiting for session exit");
 		}
 		await waitExited(Date.now() + 5000);
 
-		if (tuiMux.paneExited(paneId) !== true) {
-			throw new Error("expected paneExited=true before respawn, got " + tuiMux.paneExited(paneId));
+		if (await tuiMux.paneExited(paneId) !== true) {
+			throw new Error("expected paneExited=true before respawn, got " + await tuiMux.paneExited(paneId));
 		}
 
-		var panes = tuiMux.panes();
+		var panes = await tuiMux.panes();
 		if (panes.length === 0) { throw new Error("expected panes"); }
 		if (panes[0].exited !== true) {
 			throw new Error("expected panes[0].exited=true after exit, got " + panes[0].exited);
 		}
 
 		var oldSid = 1;
-		var newSid = tuiMux.respawnSession(oldSid);
+		var newSid = await tuiMux.respawnSession(oldSid);
 		if (newSid === 0 || newSid === oldSid) {
 			throw new Error("expected valid new session id, got " + newSid);
 		}
 
-		panes = tuiMux.panes();
+		panes = await tuiMux.panes();
 		if (panes[0].sessionId !== newSid) {
 			throw new Error("pane sessionId did not update after respawn: " + panes[0].sessionId);
 		}

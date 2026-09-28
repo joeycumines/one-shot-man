@@ -1283,6 +1283,11 @@ type SessionManager struct {
 	// Starts at 1 (0 is the sentinel "no session" value).
 	nextID SessionID
 
+	// configuredTermRows and configuredTermCols preserve the construction
+	// dimensions for readers that run before the worker starts.
+	configuredTermRows atomic.Int64
+	configuredTermCols atomic.Int64
+
 	// termRows and termCols are the current terminal dimensions,
 	// broadcast to all sessions on resize.
 	termRows int
@@ -1321,6 +1326,8 @@ func WithTermSize(rows, cols int) ManagerOption {
 	return func(m *SessionManager) {
 		m.termRows = rows
 		m.termCols = cols
+		m.configuredTermRows.Store(int64(rows))
+		m.configuredTermCols.Store(int64(cols))
 	}
 }
 
@@ -1386,6 +1393,8 @@ func NewSessionManager(opts ...ManagerOption) *SessionManager {
 	for _, opt := range opts {
 		opt(m)
 	}
+	m.configuredTermRows.Store(int64(m.termRows))
+	m.configuredTermCols.Store(int64(m.termCols))
 	return m
 }
 
@@ -4002,6 +4011,16 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 			m.eventBus.emit(EventSessionClosed, so.id)
 		} else if ms.state == SessionCreated {
 			m.closePipeForSession(ms)
+			// Silent child + remainOnExit: take the same retained-Exited
+			// shape as the Running path (state + event first, then keep) —
+			// returning with state still Created left watchers waiting for
+			// an 'exited' that never came (harness kept-silent case).
+			if ms.remainOnExit {
+				ms.state = SessionExited
+				m.eventBus.emit(EventSessionExited, so.id)
+				m.markSessionPaneExited(so.id)
+				return
+			}
 			if err := ms.session.Close(); err != nil {
 				slog.Warn("session close failed during immediate exit", "sessionID", so.id, "error", err)
 			}

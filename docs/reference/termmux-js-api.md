@@ -9,8 +9,8 @@ creating sessions and managers, plus event constants.
 | Export | Type | Description |
 |--------|------|-------------|
 | `newCaptureSession(cmd, args?, opts?)` | factory | Create a standalone PTY session |
-| `newSessionManager(opts?)` | factory | Create a new SessionManager |
-| `newBoundedSession(opts)` | factory | Create a CaptureSession + SessionManager in one call. Opts: `{cmd, args?, dir?, rows?, cols?, env?, name?, kind?}`. Returns `{mgr, session, id}`. |
+| `newSessionManager(opts?)` | factory | Create a new SessionManager. Options: `{rows?, cols?, requestBuffer?, outputBuffer?, title?}`. |
+| `newBoundedSession(opts)` | factory | Create a CaptureSession + SessionManager in one call. Opts: `{cmd, args?, dir?, rows?, cols?, env?, envReplace?, name?, kind?, remainOnExit?}`. Returns a Promise for `{mgr, session, sid}`. |
 | `EXIT_TOGGLE` | `"toggle"` | Passthrough ended by toggle key |
 | `EXIT_CHILD_EXIT` | `"childExit"` | Passthrough ended by child process exit |
 | `EXIT_CONTEXT` | `"context"` | Passthrough ended by context cancellation |
@@ -39,15 +39,15 @@ creating sessions and managers, plus event constants.
 | `LAYOUT_VERTICAL` | `"vertical"` | Vertical split layout mode |
 | `LAYOUT_MAIN_HORIZONTAL` | `"main-horizontal"` | Main-horizontal layout mode |
 | `LAYOUT_MAIN_VERTICAL` | `"main-vertical"` | Main-vertical layout mode |
-| `enableMouseForward()` | function | Enable mouse forward emulation |
-| `mouseDrag()` | function | Create a mouse drag object |
-| `handleMouseDrag(msg, ...)` | function | Handle mouse drag events |
+| `enableMouseForward(config)` | function | Build an async mouse forwarder; call the returned `(msg) => Promise<void>` function for each mouse event |
+| `mouseDrag()` | function | Create a stateful mouse-drag object; `.handle({manager,msg})` returns a Promise |
+| `handleMouseDrag({ manager, msg })` | function | Handle one mouse event; returns `Promise<{handled, cmd}>` |
 | `newControlRouter(opts?)` | function | Create a control router for key dispatch |
 | `newPrefixKeyHandler(opts?)` | function | Create a prefix key handler |
-| `handlePrefixKey(mgr, key)` | function | Execute prefix action on a SessionManager |
-| `keyToTermBytes(key)` | function | Convert a key to terminal byte sequence |
-| `renderMessageBar(msg, width)` | function | Render a message bar string |
-| `mouseToSGR(x, y, button, press)` | function | Convert mouse coordinates to SGR format |
+| `handlePrefixKey({ manager, key })` | function | Execute a prefix action; returns `Promise<{action, consumed, description, result, listKeys}>` |
+| `keyToTermBytes(key, appCursor?, appKeypad?)` | function | Convert a key to terminal byte sequence (`string\|null`) |
+| `renderMessageBar(text, row?, cols?)` | function | Render a one-line ANSI message bar |
+| `mouseToSGR(event, offsetRow?, offsetCol?)` | function | Convert a mouse event to SGR bytes (`string\|null`) |
 | `splitLayout(...)` | function | Split layout operation |
 
 ---
@@ -74,22 +74,22 @@ Created via `newCaptureSession(command, args?, opts?)`.
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
 | `start()` | `CaptureSession.Start()` | — | `Promise<void>` | rejects on error |
-| `interrupt()` | `CaptureSession.Interrupt()` | — | `undefined` | throws |
-| `kill()` | `CaptureSession.Kill()` | — | `undefined` | throws |
-| `pause()` | `CaptureSession.Pause()` | — | `undefined` | throws |
-| `resume()` | `CaptureSession.Resume()` | — | `undefined` | throws |
+| `interrupt()` | `CaptureSession.Interrupt()` | — | `Promise<void>` | rejects on error |
+| `kill()` | `CaptureSession.Kill()` | — | `Promise<void>` | rejects on error |
+| `pause()` | `CaptureSession.Pause()` | — | `Promise<void>` | rejects on error |
+| `resume()` | `CaptureSession.Resume()` | — | `Promise<void>` | rejects on error |
 | `isPaused()` | `CaptureSession.IsPaused()` | — | `boolean` | silent |
-| `resize(rows, cols)` | `CaptureSession.Resize()` | `number, number` | `undefined` | throws |
+| `resize(rows, cols)` | `CaptureSession.Resize()` | `number, number` | `Promise<void>` | rejects on error |
 | `wait()` | `CaptureSession.WaitContext()` | — | `Promise<{code, error?}>` | rejects on cancellation/error |
-| `sendEOF()` | `CaptureSession.SendEOF()` | — | `undefined` | throws |
+| `sendEOF()` | `CaptureSession.SendEOF()` | — | `Promise<void>` | rejects on error |
 | `close()` | `CaptureSession.Close()` | — | `Promise<void>` | rejects on error |
 | `pid()` | `CaptureSession.Pid()` | — | `number` | silent |
 | `exitCode()` | `CaptureSession.ExitCode()` | — | `number` | silent |
 | `isDone()` | channel select on `Done()` | — | `boolean` | silent |
 | `passthrough(opts?)` | `CaptureSession.Passthrough()` | `{toggleKey?}` | `Promise<{reason, error?}>` | async, error field |
-| `reader()` | `InteractiveSession.Reader()` | — | `string\|null` | blocks; null on close |
 | `readAvailable()` | drain `Reader()` channel | — | `string\|null` | non-blocking; null on close |
-| `write(data)` | `InteractiveSession.Write()` | `string` | `undefined` | throws |
+| `write(data)` | `InteractiveSession.Write()` | `string` | `Promise<void>` | rejects on error |
+| `sendKeys(...keys)` | `InteractiveSession.Write()` | `string[]` | `Promise<void>` | rejects on error |
 
 **Removed from CaptureSession in Task 56:** `target()`, `setTarget()`,
 `isRunning()` — these now live on the SessionManager `session()` wrapper
@@ -118,24 +118,24 @@ typically available as `tuiMux` in pr-split scripts.
 |--------|-------------|------------|--------|----------------|
 | `run()` | `SessionManager.Run()` | — | `undefined` | goroutine; errors ignored |
 | `started()` | `SessionManager.Started()` | — | `boolean` | non-blocking channel check |
-| `close()` | `SessionManager.Close()` | — | `undefined` | silent |
+| `close()` | `SessionManager.Close()` | — | `Promise<void>` | rejects on shutdown error |
 
 ### Session Management
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
-| `register(session, opts?)` | `SessionManager.Register()` | `InteractiveSession, {name?,kind?,id?}` | `number` (session ID) | throws |
-| `unregister(id)` | `SessionManager.Unregister()` | `number` | `undefined` | throws |
-| `activate(id)` | `SessionManager.Activate()` | `number` | `undefined` | throws |
-| `attach(handle)` | `Register() + Activate()` | `InteractiveSession\|StringIO\|map` | `number` (session ID) | throws |
-| `detach()` | `Unregister()` | — | `undefined` | silent no-op if none active |
+| `register(session, opts?)` | `SessionManager.Register()` | `InteractiveSession, {name?,kind?,id?}` | `Promise<number>` (session ID) | rejects on error |
+| `unregister(id)` | `SessionManager.Unregister()` | `number` | `Promise<void>` | rejects on error |
+| `activate(id)` | `SessionManager.Activate()` | `number` | `Promise<void>` | rejects on error |
+| `attach(handle)` | `Register() + Activate()` | `InteractiveSession\|StringIO\|map` | `Promise<number>` (session ID) | rejects on error |
+| `detach()` | `Unregister()` | — | `Promise<void>` | resolves when no active session or unregister completes |
 
 ### State Queries
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
 | `activeID()` | `SessionManager.ActiveID()` | — | `number` | silent |
-| `sessions()` | `SessionManager.Sessions()` | — | `[{id,target,state,isActive}]` | silent |
+| `sessions()` | `SessionManager.Sessions()` | — | `Promise<[{id,target,state,isActive}]>` | rejects on manager error |
 | `capture(id, opts?)` | `SessionManager.CaptureScreen()` | `number, {start?,end?,joinWrapped?}` | `{plain,ansi,fullScreen,gen,rows,cols,cursorRow,cursorCol,cursorVisible,mouseTracking,mouseSGR,locked,message,timestamp}\|null` | `null` if session missing or unpublished |
 | `lastActivityMs(id?)` | `SessionManager.Snapshot() + time.Since()` | `number?` (session ID) | `number` | `-1` if session/snapshot missing |
 | `eventsDropped()` | `SessionManager.EventsDropped()` | — | `number` | silent |
@@ -184,18 +184,34 @@ var termmux = require('osm:termmux');
 
 `writeToChild(data)` and the `session()` wrapper operate on the current active
 session via `SessionManager.ActiveID()`. They remain available for backwards
-compatibility and ad-hoc scripts, but production pr-split code should prefer
-pinned SessionID access: `capture(id)` / `lastActivityMs(id?)` for reads and
-explicit `activate(id)` + `input(data)` for writes.
+compatibility and ad-hoc scripts, but their mutating methods return Promises.
+Production pr-split code should prefer pinned SessionID access: `capture(id)` /
+`lastActivityMs(id?)` for reads and explicit `await activate(id)` +
+`await input(data)` for writes.
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
-| `input(data)` | `SessionManager.Input()` | `string` | `undefined` | throws |
-| `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `undefined` | throws |
-| `writeToChild(data)` | `SessionManager.Input()` | `string` | `number` (bytes) | throws; active-session compatibility helper |
+| `input(data)` | `SessionManager.Input()` | `string` | `Promise<void>` | rejects on error |
+| `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `Promise<void>` | rejects on error |
+| `writeToChild(data)` | `SessionManager.Input()` | `string` | `Promise<number>` (bytes) | rejects on error; active-session compatibility helper |
 | `lastActivityMs(id?)` | `time.Since(snapshot)` | `number?` (session ID) | `number` (ms, -1 if none) | silent |
 
-### Passthrough
+### Asynchronous query and interaction helpers
+
+The following helpers consult the SessionManager worker and therefore return
+Promises:
+
+- `sessions()`
+- `newChooser(activeSessionID)` → `Promise<chooser>`
+- `chooseTree(options)` → `Promise<{model, selected, visible}>`
+- `mouseDrag()` creates a stateful object whose `handle(options)` returns
+  `Promise<{handled, cmd}>`
+- `handleMouseDrag(options)` → `Promise<{handled, cmd}>`
+
+Await these calls before reading their results. The chooser object's
+`show`, `hide`, `visible`, `up`, `down`, `selected`, and `render` methods are
+in-memory operations and remain synchronous after the chooser has resolved.
+
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
@@ -241,8 +257,8 @@ Valid legacy event names for `on`: `exit`, `resize`, `focus`, `bell`,
 | Event type | `detail` fields |
 |------------|-----------------|
 | `exit` | `{ sessionId: number, pane?: string }` |
-| `resize` | `{ sessionId: number }` |
-| `focus` | `{ sessionId: number }` |
+| `resize` / `terminal-resize` | `{ sessionId: number, rows: number, cols: number }` |
+| `focus` | Not emitted by the current EventBus bridge |
 | `bell` | `{ sessionId: number, pane?: string }` |
 | `output` | `{ sessionId: number, pane?: string, chunk?: string }` |
 | `registered` | `{ sessionId: number }` |
@@ -251,15 +267,15 @@ Valid legacy event names for `on`: `exit`, `resize`, `focus`, `bell`,
 | `terminal-resize` | `{ sessionId: number, rows: number, cols: number }` |
 | `activity` | `{ sessionId: number }` |
 | `silence` | `{ sessionId: number }` |
-| `title` | `{ sessionId: number, title?: string }` |
-| `cwd` | `{ sessionId: number, path?: string }` |
+| `title` | `{ sessionId: number, data?: string }` |
+| `cwd` | `{ sessionId: number, data?: string }` |
 | `clipboard` | `{ sessionId: number, data?: string }` |
 
 Example:
 
 ```js
 var termmux = require('osm:termmux');
-var bounded = termmux.newBoundedSession({ cmd: '/bin/sh' });
+var bounded = await termmux.newBoundedSession({ cmd: '/bin/sh' });
 
 bounded.mgr.addEventListener('output', function (e) {
   output.print('output from ' + e.detail.sessionId + ': ' + e.detail.chunk);
@@ -286,13 +302,13 @@ prefer pinned SessionIDs over ActiveID-backed convenience access.
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
 | `isRunning()` | `ActiveID() != 0` | — | `boolean` | silent |
-| `isDone()` | loop `Sessions()` | — | `boolean` | silent |
-| `output()` | `CaptureScreen()` → plain | — | `string` | empty if none |
-| `screen()` | `CaptureScreen()` → ANSI | — | `string` | empty if none |
+| `isDone()` | cached active-session completion state | — | `boolean` | silent |
+| `output()` | `CaptureScreen()` → plain | — | `Promise<string>` | empty string if none |
+| `screen()` | `CaptureScreen()` → ANSI | — | `Promise<string>` | empty string if none |
 | `target()` | closure read | — | `{id, name, kind}` | silent |
 | `setTarget(t)` | closure mutation | `{name?,kind?,id?}` | `undefined` | throws TypeError |
-| `write(data)` | `SessionManager.Input()` | `string` | `undefined` | throws |
-| `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `undefined` | throws |
+| `write(data)` | `SessionManager.Input()` | `string` | `Promise<void>` | rejects on error |
+| `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `Promise<void>` | rejects on error |
 
 ---
 
@@ -308,7 +324,9 @@ Three patterns are used consistently:
    (`null`, `false`, `0`, empty string, `-1`). Used for queries
    where "not found" is a normal condition, not an error.
 
-Mutation operations (write, resize, register, start, kill, etc.)
-throw. Query operations (capture, sessions, activeID, etc.) use
-silent returns. Compound operations (passthrough, wait, switchTo)
-use error fields.
+Mutation operations (write, resize, register, start, kill, etc.) and
+worker-backed queries (such as `sessions`, `newChooser`, `chooseTree`, and
+mouse-drag handling) return Promises and reject on failure. Lock-free queries
+such as `capture`, `lastActivityMs`, `activeID`, and `isDone` use synchronous
+sentinel returns. Compound operations (passthrough, wait, switchTo) use
+Promises with error fields.

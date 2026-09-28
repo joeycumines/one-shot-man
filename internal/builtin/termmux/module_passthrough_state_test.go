@@ -69,7 +69,7 @@ func TestSwitchTo_NoChild(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	v, err := sessionRun(t, runtime, `tuiMux.switchTo()`)
+	v, err := awaitJSValue(t, runtime, `return await tuiMux.switchTo()`)
 	if err != nil {
 		t.Fatalf("switchTo(): %v", err)
 	}
@@ -108,10 +108,6 @@ func setupPassthroughState(t *testing.T) (runtime *goja.Runtime, s *muxState, st
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	if err := mgr.Activate(id); err != nil {
-		t.Fatalf("Activate: %v", err)
-	}
-
 	stdinR, stdinW := io.Pipe()
 	runtime = goja.New()
 
@@ -129,6 +125,7 @@ func setupPassthroughState(t *testing.T) (runtime *goja.Runtime, s *muxState, st
 
 	tuiMux, state := wrapSessionManager(ctx, adapter, loop, runtime, mgr, stdinR, &bytes.Buffer{}, -1, "")
 	_ = runtime.Set("tuiMux", tuiMux)
+	_ = runtime.Set("_sessionID", uint64(id))
 
 	loopDone := make(chan struct{})
 	go func() {
@@ -136,6 +133,9 @@ func setupPassthroughState(t *testing.T) (runtime *goja.Runtime, s *muxState, st
 		_ = loop.Run(ctx)
 	}()
 	testLoops.Store(runtime, loop)
+	if _, err := awaitJSValue(t, runtime, `return await tuiMux.activate(_sessionID)`); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
 
 	cleanup = func() {
 		testLoops.Delete(runtime)
@@ -252,13 +252,13 @@ func TestFromModel_OnToggleWrapsOriginal(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	v, err := sessionRun(t, runtime, `
+	v, err := awaitJSValue(t, runtime, `
 		var originalCalled = false;
 		var wrapped = tuiMux.fromModel({}, {
 			onToggle: function() { originalCalled = true; }
 		});
-		wrapped.options.onToggle();
-		originalCalled;
+		await wrapped.options.onToggle();
+		return originalCalled;
 	`)
 	if err != nil {
 		t.Fatalf("fromModel onToggle wrap: %v", err)

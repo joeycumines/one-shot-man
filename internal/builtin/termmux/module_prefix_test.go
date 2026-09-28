@@ -13,12 +13,10 @@ func TestHandlePrefixKey_NewWindow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("JS integration test skipped in short mode")
 	}
-	ctx := t.Context()
-	runtime, _, env := testRequireCtx(t, ctx)
-	defer env.stop()
+	runtime, _ := testRequire(t)
 	mgrName := newTestManager(t, runtime)
 
-	res, err := runtime.RunString(fmt.Sprintf(`require('osm:termmux').handlePrefixKey({ manager: %s, key: "c" })`, mgrName))
+	res, err := awaitJSValue(t, runtime, fmt.Sprintf(`return await require('osm:termmux').handlePrefixKey({ manager: %s, key: "c" })`, mgrName))
 	if err != nil {
 		t.Fatalf("handlePrefixKey(c): %v", err)
 	}
@@ -38,16 +36,14 @@ func TestHandlePrefixKey_ClosePane(t *testing.T) {
 	if testing.Short() {
 		t.Skip("JS integration test skipped in short mode")
 	}
-	ctx := t.Context()
-	runtime, _, env := testRequireCtx(t, ctx)
-	defer env.stop()
+	runtime, _ := testRequire(t)
 	mgrName := newTestManager(t, runtime)
 
-	if _, err := runtime.RunString(fmt.Sprintf(`require('osm:termmux').handlePrefixKey({ manager: %s, key: "c" })`, mgrName)); err != nil {
+	if _, err := awaitJSValue(t, runtime, fmt.Sprintf(`return await require('osm:termmux').handlePrefixKey({ manager: %s, key: "c" })`, mgrName)); err != nil {
 		t.Fatalf("new window: %v", err)
 	}
 
-	res, err := runtime.RunString(fmt.Sprintf(`require('osm:termmux').handlePrefixKey({ manager: %s, key: "x" })`, mgrName))
+	res, err := awaitJSValue(t, runtime, fmt.Sprintf(`return await require('osm:termmux').handlePrefixKey({ manager: %s, key: "x" })`, mgrName))
 	if err != nil {
 		t.Fatalf("handlePrefixKey(x): %v", err)
 	}
@@ -64,12 +60,10 @@ func TestHandlePrefixKey_ListKeys(t *testing.T) {
 	if testing.Short() {
 		t.Skip("JS integration test skipped in short mode")
 	}
-	ctx := t.Context()
-	runtime, _, env := testRequireCtx(t, ctx)
-	defer env.stop()
+	runtime, _ := testRequire(t)
 	mgrName := newTestManager(t, runtime)
 
-	res, err := runtime.RunString(fmt.Sprintf(`require('osm:termmux').handlePrefixKey({ manager: %s, key: "?" })`, mgrName))
+	res, err := awaitJSValue(t, runtime, fmt.Sprintf(`return await require('osm:termmux').handlePrefixKey({ manager: %s, key: "?" })`, mgrName))
 	if err != nil {
 		t.Fatalf("handlePrefixKey(?): %v", err)
 	}
@@ -96,11 +90,18 @@ func newTestManager(t *testing.T, runtime *goja.Runtime) string {
 	name := fmt.Sprintf("__mgr_%d__", rand.Int())
 	script := fmt.Sprintf(`
 		var %s = require('osm:termmux').newSessionManager({ rows: 24, cols: 80 });
+		globalThis.%s = %s;
 		%s.run();
-		var deadline = Date.now() + 2000;
-		while (!%s.started() && Date.now() < deadline) {}
-		%s`, name, name, name, name)
-	if _, err := runtime.RunString(script); err != nil {
+		await new Promise(function(resolve, reject) {
+			var deadline = Date.now() + 2000;
+			(function poll() {
+				if (%s.started()) return resolve();
+				if (Date.now() > deadline) return reject(new Error('manager start timeout'));
+				setTimeout(poll, 10);
+			})();
+		});
+		return %s`, name, name, name, name, name, name)
+	if _, err := awaitJSValue(t, runtime, script); err != nil {
 		t.Fatalf("create manager: %v", err)
 	}
 	return name

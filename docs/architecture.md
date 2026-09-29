@@ -347,7 +347,7 @@ Source: [internal/config/schema.go](../internal/config/schema.go)
 
 ### Persistence
 
-`osm config set <key> <value>` writes configuration values back to the config file using `config.SetKeyInFile()`, which performs a surgical in-place update preserving comments, ordering, and formatting. If the key doesn't exist, it's appended to the appropriate section.
+`osm config set <key> <value>` validates the key against the schema and refuses unknown keys with a non-zero status — unknown keys are never written. Known keys are written back to the config file using `config.SetKeyInFile()`, which performs a surgical in-place update preserving comments, ordering, and formatting. If the key doesn't exist, it's appended to the appropriate section.
 
 ### Environment variable overrides
 

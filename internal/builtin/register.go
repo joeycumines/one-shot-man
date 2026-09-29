@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 
@@ -59,6 +60,7 @@ import (
 	toastmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/toast"
 	tokenizermod "github.com/joeycumines/one-shot-man/internal/builtin/tokenizer"
 	unicodetextmod "github.com/joeycumines/one-shot-man/internal/builtin/unicodetext"
+	userk8smod "github.com/joeycumines/one-shot-man/internal/builtin/userk8s"
 )
 
 // TerminalOpsProvider exposes the host terminal reader and writer.
@@ -89,6 +91,39 @@ type RegisterResult struct {
 	BubblezoneManager BubblezoneManager
 }
 
+// RegisterOption customizes registration with optional module configuration.
+type RegisterOption interface {
+	applyRegisterOption(*registerOptions) error
+}
+
+type registerOptions struct {
+	userK8s userk8smod.Options
+}
+
+// UserK8sOptionsOption carries the resolved osm:userk8s configuration.
+type UserK8sOptionsOption struct {
+	options userk8smod.Options
+}
+
+func (o *UserK8sOptionsOption) applyRegisterOption(configured *registerOptions) error {
+	if o == nil {
+		return fmt.Errorf("userk8s options option is nil")
+	}
+	configured.userK8s = o.options
+	configured.userK8s.Artifacts = append([]string(nil), o.options.Artifacts...)
+	return nil
+}
+
+var _ RegisterOption = (*UserK8sOptionsOption)(nil)
+
+// WithUserK8sOptions supplies the resolved osm:userk8s configuration. Without
+// it the module registers with the schema defaults, which makes its backend
+// fail on first use rather than at registration.
+func WithUserK8sOptions(options userk8smod.Options) *UserK8sOptionsOption {
+	options.Artifacts = append([]string(nil), options.Artifacts...)
+	return &UserK8sOptionsOption{options: options}
+}
+
 // Register wires every builtin JS module into registry.
 //
 // ctx is threaded into every I/O module for cancellation propagation.
@@ -96,9 +131,19 @@ type RegisterResult struct {
 // terminalProvider is optional; if nil, bubbletea and termmux fall back to
 // os.Stdin and os.Stdout.
 // eventLoopProvider is mandatory and supplies the event loop, runtime and adapter.
-func Register(ctx context.Context, tuiSink func(string), registry *require.Registry, terminalProvider TerminalOpsProvider, eventLoopProvider EventLoopProvider) RegisterResult {
+// options add optional registrations, such as the osm:userk8s backend.
+func Register(ctx context.Context, tuiSink func(string), registry *require.Registry, terminalProvider TerminalOpsProvider, eventLoopProvider EventLoopProvider, options ...RegisterOption) RegisterResult {
 	if eventLoopProvider == nil {
 		panic("builtin.Register: eventLoopProvider is required")
+	}
+	configured := registerOptions{}
+	for _, option := range options {
+		if option == nil {
+			continue
+		}
+		if err := option.applyRegisterOption(&configured); err != nil {
+			panic(fmt.Sprintf("builtin.Register: invalid option: %v", err))
+		}
 	}
 
 	const prefix = "osm:"
@@ -136,6 +181,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"mcpcallback", mcpcallbackmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 	registry.RegisterNativeModule(prefix+"aimux", aimuxmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop(), tuiSink))
+	registry.RegisterNativeModule(prefix+"userk8s", userk8smod.Require(ctx, configured.userK8s, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"path", pathmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"ctxutil", ctxutilmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"text/template", templatemod.Require())

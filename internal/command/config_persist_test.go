@@ -142,7 +142,7 @@ func TestConfigSet_SchemaValidation_KnownDurationKey_ValidValue(t *testing.T) {
 	}
 }
 
-func TestConfigSet_SchemaValidation_UnknownKey_Warning(t *testing.T) {
+func TestConfigSet_SchemaValidation_UnknownKey_Refused(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config")
@@ -150,27 +150,19 @@ func TestConfigSet_SchemaValidation_UnknownKey_Warning(t *testing.T) {
 	cmd := NewConfigCommand(cfg, configPath)
 
 	var stdout, stderr bytes.Buffer
-	if err := cmd.Execute([]string{"my-custom-key", "myvalue"}, &stdout, &stderr); err != nil {
-		t.Fatalf("unknown key should not return error: %v", err)
+	err := cmd.Execute([]string{"my-custom-key", "myvalue"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("unknown key must return a non-zero error")
 	}
 
-	// Should warn on stderr
+	// Should refuse on stderr
 	if !strings.Contains(stderr.String(), "not a known configuration key") {
-		t.Fatalf("expected unknown key warning in stderr, got: %q", stderr.String())
+		t.Fatalf("expected unknown key refusal in stderr, got: %q", stderr.String())
 	}
 
-	// Should still set the value in memory
-	if v, ok := cfg.GetGlobalOption("my-custom-key"); !ok || v != "myvalue" {
-		t.Fatalf("expected in-memory my-custom-key=myvalue, got %q exists=%v", v, ok)
-	}
-
-	// Should still persist to disk
-	reloaded, err := config.LoadFile(configPath)
-	if err != nil {
-		t.Fatalf("failed to reload: %v", err)
-	}
-	if v, ok := reloaded.GetGlobalOption("my-custom-key"); !ok || v != "myvalue" {
-		t.Fatalf("expected disk my-custom-key=myvalue, got %q exists=%v", v, ok)
+	// Must not set the value in memory
+	if _, ok := cfg.GetGlobalOption("my-custom-key"); ok {
+		t.Fatal("refused key must not be set in memory")
 	}
 }
 
@@ -460,9 +452,9 @@ func TestConfigSet_PathListKey_AcceptsColonSeparated(t *testing.T) {
 	}
 }
 
-// --- ValidateOptionValue unit tests ---
+// --- ValidateConfigOption unit tests ---
 
-func TestValidateOptionValue_AllTypes(t *testing.T) {
+func TestValidateConfigOption_AllTypes(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -508,7 +500,7 @@ func TestValidateOptionValue_AllTypes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err := config.ValidateOptionValue(tt.optType, tt.value)
+			err := config.ValidateConfigOption(&config.ConfigOption{Type: tt.optType}, tt.value)
 			if tt.wantError && err == nil {
 				t.Fatalf("expected error for type=%s value=%q", tt.optType, tt.value)
 			}

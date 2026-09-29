@@ -1,0 +1,136 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: tools.one-shot-man
+spec:
+  group: one-shot-man
+  names:
+    kind: Tool
+    listKind: ToolList
+    plural: tools
+    singular: tool
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Tool describes one AI tool the launcher can drive: its display name, the
+          wire surfaces it speaks, the credential channels it accepts, identifier
+          grammars for provider/model slugs, and the name of the budget derivation
+          rule its adapter implements. Cluster-scoped. Tool mechanics live in adapter
+          code; this resource only models the facts the catalog needs to project a
+          selection into a tool-specific launch plan.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ToolSpec is the catalog-relevant fact sheet of one tool.
+            properties:
+              budget_profile:
+                description: |-
+                  BudgetProfile names the adapter-implemented budget derivation rule
+                  (e.g. claude-margin, sdk-limits). The configured rule lives in adapter
+                  code; the catalog only names it.
+                minLength: 1
+                type: string
+              credential_channels:
+                description: |-
+                  CredentialChannels lists how this tool can receive credentials:
+                  gateway (anonymous localhost gateway endpoints), envRef (env-var
+                  references the tool resolves), env (direct environment variables).
+                items:
+                  enum:
+                  - gateway
+                  - envRef
+                  - env
+                  type: string
+                minItems: 1
+                type: array
+                uniqueItems: true
+              display_name:
+                description: DisplayName is the human-readable tool name (e.g. "Claude
+                  Code").
+                minLength: 1
+                type: string
+              identifiers:
+                description: Identifiers holds the provider/model slug grammars.
+                properties:
+                  model_slug:
+                    description: ModelSlug is the grammar for model identifiers.
+                    properties:
+                      description:
+                        description: Description explains the grammar in operator
+                          terms.
+                        type: string
+                      pattern:
+                        description: Pattern is the RE2 regular expression a slug
+                          must match.
+                        minLength: 1
+                        type: string
+                    required:
+                    - pattern
+                    type: object
+                  provider_slug:
+                    description: ProviderSlug is the grammar for provider identifiers.
+                    properties:
+                      description:
+                        description: Description explains the grammar in operator
+                          terms.
+                        type: string
+                      pattern:
+                        description: Pattern is the RE2 regular expression a slug
+                          must match.
+                        minLength: 1
+                        type: string
+                    required:
+                    - pattern
+                    type: object
+                required:
+                - model_slug
+                - provider_slug
+                type: object
+              surfaces:
+                description: Surfaces lists the wire surfaces this tool can speak.
+                items:
+                  enum:
+                  - anthropic
+                  - chat
+                  - responses
+                  type: string
+                minItems: 1
+                type: array
+                uniqueItems: true
+            required:
+            - budget_profile
+            - credential_channels
+            - display_name
+            - identifiers
+            - surfaces
+            type: object
+        type: object
+        x-kubernetes-validations:
+        - message: metadata.name must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ — emitted
+            resource names are sanitized; the raw registry name lives in the one-shot-man/registry-name
+            annotation
+          rule: self.metadata.name.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+    served: true
+    storage: true

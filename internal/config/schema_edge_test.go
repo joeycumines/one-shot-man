@@ -16,7 +16,7 @@ func TestValidateType_IntOverflow(t *testing.T) {
 	t.Parallel()
 	// A value larger than max int64 should fail strconv.Atoi.
 	huge := "99999999999999999999"
-	err := ValidateOptionValue(TypeInt, huge)
+	err := ValidateConfigOption(&ConfigOption{Type: TypeInt}, huge)
 	if err == nil {
 		t.Fatalf("expected error for int overflow %q, got nil", huge)
 	}
@@ -27,7 +27,7 @@ func TestValidateType_IntOverflow(t *testing.T) {
 
 func TestValidateType_IntNegativeIsValid(t *testing.T) {
 	t.Parallel()
-	if err := ValidateOptionValue(TypeInt, "-1"); err != nil {
+	if err := ValidateConfigOption(&ConfigOption{Type: TypeInt}, "-1"); err != nil {
 		t.Fatalf("expected -1 to be valid int, got error: %v", err)
 	}
 }
@@ -36,7 +36,7 @@ func TestValidateType_IntMaxInt64(t *testing.T) {
 	t.Parallel()
 	// max int64 as string — strconv.Atoi handles it on 64-bit platforms.
 	maxStr := strconv.FormatInt(math.MaxInt64, 10)
-	if err := ValidateOptionValue(TypeInt, maxStr); err != nil {
+	if err := ValidateConfigOption(&ConfigOption{Type: TypeInt}, maxStr); err != nil {
 		t.Fatalf("expected max int64 to be valid, got: %v", err)
 	}
 }
@@ -44,7 +44,7 @@ func TestValidateType_IntMaxInt64(t *testing.T) {
 func TestValidateType_IntMinInt64(t *testing.T) {
 	t.Parallel()
 	minStr := strconv.FormatInt(math.MinInt64, 10)
-	if err := ValidateOptionValue(TypeInt, minStr); err != nil {
+	if err := ValidateConfigOption(&ConfigOption{Type: TypeInt}, minStr); err != nil {
 		t.Fatalf("expected min int64 to be valid, got: %v", err)
 	}
 }
@@ -52,28 +52,28 @@ func TestValidateType_IntMinInt64(t *testing.T) {
 func TestValidateType_DurationAbsurdlyLarge(t *testing.T) {
 	t.Parallel()
 	// 876000h = 100 years. time.ParseDuration should handle this.
-	if err := ValidateOptionValue(TypeDuration, "876000h"); err != nil {
+	if err := ValidateConfigOption(&ConfigOption{Type: TypeDuration}, "876000h"); err != nil {
 		t.Fatalf("expected 876000h to parse as duration, got: %v", err)
 	}
 }
 
 func TestValidateType_DurationZero(t *testing.T) {
 	t.Parallel()
-	if err := ValidateOptionValue(TypeDuration, "0s"); err != nil {
+	if err := ValidateConfigOption(&ConfigOption{Type: TypeDuration}, "0s"); err != nil {
 		t.Fatalf("expected 0s to parse as duration, got: %v", err)
 	}
 }
 
 func TestValidateType_DurationNanosecond(t *testing.T) {
 	t.Parallel()
-	if err := ValidateOptionValue(TypeDuration, "1ns"); err != nil {
+	if err := ValidateConfigOption(&ConfigOption{Type: TypeDuration}, "1ns"); err != nil {
 		t.Fatalf("expected 1ns to parse as duration, got: %v", err)
 	}
 }
 
 func TestValidateType_DurationNegative(t *testing.T) {
 	t.Parallel()
-	if err := ValidateOptionValue(TypeDuration, "-5m"); err != nil {
+	if err := ValidateConfigOption(&ConfigOption{Type: TypeDuration}, "-5m"); err != nil {
 		t.Fatalf("expected -5m to parse as duration, got: %v", err)
 	}
 }
@@ -643,10 +643,10 @@ func TestValidateType_StringAcceptsSpecialChars(t *testing.T) {
 		"a\x00b", // null byte
 	}
 	for _, v := range specialValues {
-		if err := ValidateOptionValue(TypeString, v); err != nil {
+		if err := ValidateConfigOption(&ConfigOption{Type: TypeString}, v); err != nil {
 			t.Errorf("TypeString should accept %q, got error: %v", v, err)
 		}
-		if err := ValidateOptionValue(TypePathList, v); err != nil {
+		if err := ValidateConfigOption(&ConfigOption{Type: TypePathList}, v); err != nil {
 			t.Errorf("TypePathList should accept %q, got error: %v", v, err)
 		}
 	}

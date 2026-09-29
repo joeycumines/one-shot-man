@@ -632,9 +632,9 @@ func TestValidateType_UnknownType(t *testing.T) {
 	}
 }
 
-// --- ValidateOptionValue tests (exported wrapper) ---
+// --- ValidateConfigOption tests ---
 
-func TestValidateOptionValue_Valid(t *testing.T) {
+func TestValidateConfigOption_Valid(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		typ   OptionType
@@ -647,13 +647,13 @@ func TestValidateOptionValue_Valid(t *testing.T) {
 		{TypePathList, "/a:/b"},
 	}
 	for _, tc := range tests {
-		if err := ValidateOptionValue(tc.typ, tc.value); err != nil {
-			t.Errorf("ValidateOptionValue(%q, %q): unexpected error: %v", tc.typ, tc.value, err)
+		if err := ValidateConfigOption(&ConfigOption{Type: tc.typ}, tc.value); err != nil {
+			t.Errorf("ValidateConfigOption(%q, %q): unexpected error: %v", tc.typ, tc.value, err)
 		}
 	}
 }
 
-func TestValidateOptionValue_Invalid(t *testing.T) {
+func TestValidateConfigOption_Invalid(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		typ   OptionType
@@ -665,9 +665,27 @@ func TestValidateOptionValue_Invalid(t *testing.T) {
 		{"unknowntype", "anything"},
 	}
 	for _, tc := range tests {
-		if err := ValidateOptionValue(tc.typ, tc.value); err == nil {
-			t.Errorf("ValidateOptionValue(%q, %q): expected error, got nil", tc.typ, tc.value)
+		if err := ValidateConfigOption(&ConfigOption{Type: tc.typ}, tc.value); err == nil {
+			t.Errorf("ValidateConfigOption(%q, %q): expected error, got nil", tc.typ, tc.value)
 		}
+	}
+}
+
+func TestValidateConfigOption_Enum(t *testing.T) {
+	t.Parallel()
+	opt := &ConfigOption{Key: "userk8s.source", Type: TypeEnum, Allowed: []string{"files", "cluster"}}
+	if err := ValidateConfigOption(opt, "files"); err != nil {
+		t.Errorf("expected files to be valid, got: %v", err)
+	}
+	if err := ValidateConfigOption(opt, "bogus"); err == nil {
+		t.Error("expected error for bogus enum value, got nil")
+	}
+	empty := &ConfigOption{Key: "empty.enum", Type: TypeEnum}
+	if err := ValidateConfigOption(empty, "anything"); err == nil {
+		t.Error("expected error for enum without allowed values, got nil")
+	}
+	if err := ValidateConfigOption(nil, "files"); err == nil {
+		t.Error("expected error for nil option, got nil")
 	}
 }
 

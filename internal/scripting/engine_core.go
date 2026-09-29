@@ -20,6 +20,7 @@ import (
 	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
+	userk8smod "github.com/joeycumines/one-shot-man/internal/builtin/userk8s"
 )
 
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.
@@ -200,6 +201,8 @@ type Script struct {
 // engineOptions holds optional configuration for engine creation.
 type engineOptions struct {
 	modulePaths []string
+	userK8s     userk8smod.Options
+	hasUserK8s  bool
 }
 
 // EngineOption configures optional Engine settings.
@@ -211,6 +214,17 @@ type EngineOption func(*engineOptions)
 func WithModulePaths(paths ...string) EngineOption {
 	return func(o *engineOptions) {
 		o.modulePaths = append(o.modulePaths, paths...)
+	}
+}
+
+// WithUserK8sOptions supplies the resolved osm:userk8s configuration. Without
+// it the module registers with the schema defaults, which makes its backend
+// fail on first use rather than at registration.
+func WithUserK8sOptions(options userk8smod.Options) EngineOption {
+	options.Artifacts = append([]string(nil), options.Artifacts...)
+	return func(o *engineOptions) {
+		o.userK8s = options
+		o.hasUserK8s = true
 	}
 }
 
@@ -313,7 +327,11 @@ func NewEngine(
 	// Pass 'engine' as terminalProvider so bubbletea uses the unified TerminalIO
 	// instead of defaulting to raw os.Stdin (which would violate Single Source of Truth).
 	// Pass 'engine' as eventLoopProvider so bt shares the event loop.
-	registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine)
+	registerOpts := make([]builtin.RegisterOption, 0, 1)
+	if eopts.hasUserK8s {
+		registerOpts = append(registerOpts, builtin.WithUserK8sOptions(eopts.userK8s))
+	}
+	registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine, registerOpts...)
 	engine.bubbleteaManager = registerResult.BubbleteaManager
 	engine.btBridge = registerResult.BTBridge
 	engine.bubblezoneManager = registerResult.BubblezoneManager

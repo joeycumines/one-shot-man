@@ -1,0 +1,80 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: modelproviders.one-shot-man
+spec:
+  group: one-shot-man
+  names:
+    kind: ModelProvider
+    listKind: ModelProviderList
+    plural: modelproviders
+    singular: modelprovider
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ModelProvider is the entity that serves models: a vendor API, an
+          aggregator, or a gateway. Facts only; consumer decisions live on Tool and
+          Model.toolSettings. Cluster-scoped: the registry is global by nature.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ModelProviderSpec is the fact sheet of one model provider.
+            properties:
+              country:
+                description: |-
+                  Country is the informative ISO country code of the provider's
+                  jurisdiction (e.g. "cn"). Informative only — never used for routing.
+                maxLength: 3
+                minLength: 2
+                type: string
+              deprecated:
+                default: false
+                description: |-
+                  Deprecated marks a provider no longer recommended for new tool
+                  declarations. Renderers skip deprecated providers unless pinned.
+                type: boolean
+              display_name:
+                description: DisplayName is the human-readable provider name (e.g.
+                  "Electron Hub").
+                minLength: 1
+                type: string
+              labels:
+                additionalProperties:
+                  type: string
+                description: |-
+                  Labels are Kubernetes-compatible labels, mirroring metadata.labels.
+                  Consumed by the engine's LabelSelector machinery.
+                type: object
+            required:
+            - display_name
+            type: object
+        type: object
+        x-kubernetes-validations:
+        - message: metadata.name must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ — emitted
+            resource names are sanitized; the raw registry name lives in the one-shot-man/registry-name
+            annotation
+          rule: self.metadata.name.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+    served: true
+    storage: true

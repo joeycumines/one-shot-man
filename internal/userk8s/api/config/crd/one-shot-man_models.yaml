@@ -1,0 +1,241 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: models.one-shot-man
+spec:
+  group: one-shot-man
+  names:
+    kind: Model
+    listKind: ModelList
+    plural: models
+    singular: model
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Model is one model as served via one access. Models are own resources, not
+          children of providers; the same underlying model served through two
+          accesses is two resources linked by spec.equivalent_to. Cluster-scoped.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ModelSpec is the fact sheet of one model served through one
+              access.
+            properties:
+              access:
+                description: |-
+                  Access references a ModelAccess by name. Required when the provider has
+                  multiple accesses; the cross-resource check is a controller-side gap.
+                minLength: 1
+                type: string
+              can_reason:
+                default: false
+                description: CanReason is true when the model supports reasoning/thinking.
+                type: boolean
+              context_window:
+                description: ContextWindow is the provider-enforced context ceiling
+                  in tokens.
+                format: int64
+                minimum: 1
+                type: integer
+              default:
+                default: false
+                description: |-
+                  Default marks the ordered preference for this provider: at most one
+                  model per provider may set it; the cross-resource check is a
+                  controller-side gap.
+                type: boolean
+              deprecated:
+                default: false
+                description: |-
+                  Deprecated marks a model no longer recommended; renderers skip
+                  deprecated models unless explicitly pinned.
+                type: boolean
+              equivalent_to:
+                description: |-
+                  EquivalentTo links registry models that are the same underlying model
+                  served under different constraints. The closure must be symmetric; the
+                  cross-resource check is a controller-side gap.
+                items:
+                  description: |-
+                    EquivalentModelRef references another registry model that serves the same
+                    underlying model under different constraints.
+                  properties:
+                    name:
+                      description: Name is the registry model identifier of the equivalent
+                        model.
+                      minLength: 1
+                      type: string
+                    provider:
+                      description: Provider is the registry provider name of the equivalent
+                        model.
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  - provider
+                  type: object
+                type: array
+              input_modalities:
+                default:
+                - text
+                description: InputModalities lists the input modalities the model
+                  accepts.
+                items:
+                  enum:
+                  - text
+                  - image
+                  - audio
+                  type: string
+                type: array
+                uniqueItems: true
+              labels:
+                additionalProperties:
+                  type: string
+                description: Labels are Kubernetes-compatible labels, mirroring metadata.labels.
+                type: object
+              max_output_tokens:
+                description: MaxOutputTokens is the provider-enforced maximum output
+                  budget.
+                format: int64
+                minimum: 1
+                type: integer
+              provider:
+                description: |-
+                  Provider references a ModelProvider by name. Must resolve; the
+                  cross-resource check is a controller-side gap, not expressible in CEL.
+                minLength: 1
+                type: string
+              reasoning_efforts:
+                description: |-
+                  ReasoningEfforts is the exact set of reasoning effort levels the
+                  provider accepts, present only when the provider publishes them.
+                items:
+                  enum:
+                  - none
+                  - minimal
+                  - low
+                  - medium
+                  - high
+                  - xhigh
+                  - max
+                  - ultra
+                  type: string
+                type: array
+                uniqueItems: true
+              toolSettings:
+                additionalProperties:
+                  description: |-
+                    ModelToolSettings holds sparse per-tool settings overriding the model's
+                    hard facts for one tool. A setting that exceeds a fact requires a non-empty
+                    waive reason; the compromise is then explicit and auditable.
+                  properties:
+                    auto_compact_window:
+                      description: |-
+                        AutoCompactWindow overrides how much context the tool compacts at.
+                        Exceeding the model's context_window requires a waive reason.
+                      format: int64
+                      type: integer
+                    context_window:
+                      description: |-
+                        ContextWindow overrides the context budget for this tool. Exceeding
+                        the model's context_window requires a waive reason.
+                      format: int64
+                      type: integer
+                    effort_level:
+                      description: |-
+                        EffortLevel pins the reasoning effort this tool requests. When the
+                        model publishes its accepted levels, the value must be one of them.
+                      type: string
+                    flags:
+                      additionalProperties:
+                        type: string
+                      description: Flags carries tool-specific boolean or string knobs
+                        by name.
+                      type: object
+                    max_output_tokens:
+                      description: |-
+                        MaxOutputTokens overrides the output budget for this tool. Exceeding
+                        the model's max_output_tokens requires a waive reason.
+                      format: int64
+                      type: integer
+                    waive:
+                      description: |-
+                        Waive is the reason a budget override intentionally exceeds the
+                        model's hard fact. Required for such overrides.
+                      type: string
+                  type: object
+                description: ToolSettings holds sparse per-tool overrides keyed by
+                  tool name.
+                type: object
+            required:
+            - context_window
+            - max_output_tokens
+            - provider
+            type: object
+            x-kubernetes-validations:
+            - message: spec.context_window must be positive — the provider-enforced
+                context ceiling in tokens
+              rule: self.context_window > 0
+            - message: spec.max_output_tokens must be positive — the provider-enforced
+                maximum output budget in tokens
+              rule: self.max_output_tokens > 0
+            - message: spec.input_modalities items must be one of text|image|audio
+              rule: '!has(self.input_modalities) || self.input_modalities.all(m, m
+                in [''text'', ''image'', ''audio''])'
+            - message: spec.reasoning_efforts items must be one of none|minimal|low|medium|high|xhigh|max|ultra
+              rule: '!has(self.reasoning_efforts) || self.reasoning_efforts.all(e,
+                e in [''none'', ''minimal'', ''low'', ''medium'', ''high'', ''xhigh'',
+                ''max'', ''ultra''])'
+            - message: tool settings context_window must be positive and must not
+                exceed the model context_window without a waive reason
+              rule: '!has(self.toolSettings) || self.toolSettings.all(k, v, !has(v.context_window)
+                || (v.context_window > 0 && (v.context_window <= self.context_window
+                || (has(v.waive) && v.waive.size() > 0))))'
+            - message: tool settings max_output_tokens must be positive and must not
+                exceed the model max_output_tokens without a waive reason
+              rule: '!has(self.toolSettings) || self.toolSettings.all(k, v, !has(v.max_output_tokens)
+                || (v.max_output_tokens > 0 && (v.max_output_tokens <= self.max_output_tokens
+                || (has(v.waive) && v.waive.size() > 0))))'
+            - message: tool settings auto_compact_window must be positive and must
+                not exceed the model context_window without a waive reason
+              rule: '!has(self.toolSettings) || self.toolSettings.all(k, v, !has(v.auto_compact_window)
+                || (v.auto_compact_window > 0 && (v.auto_compact_window <= self.context_window
+                || (has(v.waive) && v.waive.size() > 0))))'
+            - message: tool settings effort_level must be one of none|minimal|low|medium|high|xhigh|max|ultra
+              rule: '!has(self.toolSettings) || self.toolSettings.all(k, v, !has(v.effort_level)
+                || v.effort_level in [''none'', ''minimal'', ''low'', ''medium'',
+                ''high'', ''xhigh'', ''max'', ''ultra''])'
+            - message: tool settings effort_level must be one of the model's published
+                reasoning_efforts
+              rule: '!has(self.toolSettings) || self.toolSettings.all(k, v, !has(v.effort_level)
+                || !has(self.reasoning_efforts) || v.effort_level in self.reasoning_efforts)'
+        type: object
+        x-kubernetes-validations:
+        - message: metadata.name must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ — emitted
+            resource names are sanitized; the raw registry model id lives in the one-shot-man/registry-name
+            annotation
+          rule: self.metadata.name.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+    served: true
+    storage: true

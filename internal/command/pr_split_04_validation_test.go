@@ -370,7 +370,7 @@ func TestChunk04_ValidateResolution_ValidCommands(t *testing.T) {
 
 	vr := evalValidation(t, evalJS, `
 		JSON.stringify(globalThis.prSplit.validateResolution({
-			commands: [{ command: 'go mod tidy' }]
+			commands: ['go mod tidy']
 		}))
 	`)
 	if !vr.Valid {
@@ -493,11 +493,51 @@ func TestChunk04_ValidateResolution_BadCommand(t *testing.T) {
 
 	vr := evalValidation(t, evalJS, `
 		JSON.stringify(globalThis.prSplit.validateResolution({
-			commands: [{ command: '' }]
+			commands: ['']
 		}))
 	`)
 	if vr.Valid {
 		t.Error("expected invalid for empty command string")
+	}
+}
+
+func TestChunk04_ApplyResolutionPatchesRejectsTraversalAndAwaitsWrites(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
+
+	raw, err := evalJS(`(async function() {
+		var writes = [];
+		prSplit._modules.osmod = {
+			writeFileScoped: function(root, path, content, options) {
+				writes.push({ root: root, path: path, content: content, options: options });
+				return Promise.resolve();
+			}
+		};
+		var bad = await prSplit._applyResolutionPatches(
+			{ patches: [{ file: '../escape.go', content: 'bad' }] },
+			'/tmp/worktree'
+		);
+		if (!bad.error || writes.length !== 0) return 'FAIL: traversal patch was written';
+		var windowsTraversal = prSplit.validateResolution({
+			patches: [{ file: 'nested\\fixed\\..\\..\\outside.go', content: 'bad' }]
+		});
+		if (windowsTraversal.valid) return 'FAIL: Windows separator traversal was accepted';
+		var good = await prSplit._applyResolutionPatches(
+			{ patches: [{ file: 'nested/fixed.go', content: 'good' }] },
+			'/tmp/worktree'
+		);
+		if (good.error || writes.length !== 1) return 'FAIL: valid patch was not awaited';
+		if (writes[0].root !== '/tmp/worktree' || writes[0].path !== 'nested/fixed.go') {
+			return 'FAIL: wrong scoped patch target: ' + JSON.stringify(writes[0]);
+		}
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("resolution patch application: %v", raw)
 	}
 }
 

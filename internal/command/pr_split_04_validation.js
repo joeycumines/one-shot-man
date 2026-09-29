@@ -1,6 +1,6 @@
 'use strict';
 // pr_split_04_validation.js — Classification, Plan, SplitPlan, Resolution validation
-// Dependencies: none — all 4 validators are pure functions.
+// Dependencies: none — validators are pure; patch application is isolated below.
 // Attaches to prSplit: validateClassification, validatePlan,
 //   validateSplitPlan, validateResolution.
 
@@ -199,7 +199,7 @@
     // --- validateResolution — validates Agent conflict resolution output ---
     // A valid resolution has at least one of:
     //   - patches: non-empty array of {file, content} objects
-    //   - commands: non-empty array of {command, ...} objects
+    //   - commands: non-empty array of command strings
     //   - preExistingFailure: true
     function validateResolution(resolution) {
         var errors = [];
@@ -233,13 +233,21 @@
         }
 
         if (hasPatches) {
+            var seenPaths = Object.create(null);
             for (var i = 0; i < resolution.patches.length; i++) {
                 var patch = resolution.patches[i];
                 if (!patch || typeof patch !== 'object') {
                     errors.push('patches[' + i + '] must be an object with file and content');
                 } else {
-                    if (!patch.file || typeof patch.file !== 'string' || patch.file.trim() === '') {
-                        errors.push('patches[' + i + '] must have a non-empty file path');
+                    var pathError = validateResolutionPath(patch.file);
+                    if (pathError) {
+                        errors.push('patches[' + i + ']: ' + pathError);
+                    } else {
+                        var normalizedPath = patch.file.split(String.fromCharCode(92)).join('/');
+                        if (seenPaths[normalizedPath]) {
+                            errors.push('patches[' + i + '] duplicates file ' + normalizedPath);
+                        }
+                        seenPaths[normalizedPath] = true;
                     }
                     if (typeof patch.content !== 'string') {
                         errors.push('patches[' + i + '] must have a content string');
@@ -251,10 +259,8 @@
         if (hasCommands) {
             for (var j = 0; j < resolution.commands.length; j++) {
                 var cmd = resolution.commands[j];
-                if (!cmd || typeof cmd !== 'object') {
-                    errors.push('commands[' + j + '] must be an object');
-                } else if (!cmd.command || typeof cmd.command !== 'string' || cmd.command.trim() === '') {
-                    errors.push('commands[' + j + '] must have a non-empty command string');
+                if (typeof cmd !== 'string' || cmd.trim() === '') {
+                    errors.push('commands[' + j + '] must be a non-empty command string');
                 }
             }
         }
@@ -262,11 +268,91 @@
         return { valid: errors.length === 0, errors: errors };
     }
 
+    // validateResolutionPath accepts only a relative path inside the resolution
+    // worktree. Agent output is untrusted; rejecting traversal components here
+    // prevents a patch from escaping the temporary checkout on every platform.
+    function validateResolutionPath(file) {
+        if (typeof file !== 'string' || file.trim() === '') {
+            return 'must have a non-empty file path relative to the resolution worktree';
+        }
+        if (file.indexOf(String.fromCharCode(0)) !== -1) {
+            return 'must not contain NUL bytes';
+        }
+        var normalized = file.split(String.fromCharCode(92)).join('/');
+        if (normalized.charAt(0) === '/' || /^[A-Za-z]:\//.test(normalized) ||
+            normalized.indexOf(':') !== -1 || normalized.charAt(0) === '~') {
+            return 'must be relative to the resolution worktree';
+        }
+        var parts = normalized.split('/');
+        for (var i = 0; i < parts.length; i++) {
+            if (parts[i] === '' || parts[i] === '.' || parts[i] === '..') {
+                return 'must not contain empty, ".", or ".." path components';
+            }
+        }
+        return null;
+    }
+
+    function resolutionPath(root, file) {
+        if (typeof root !== 'string' || root.trim() === '') {
+            return { path: null, error: 'resolution worktree path is missing' };
+        }
+        var pathError = validateResolutionPath(file);
+        if (pathError) {
+            return { path: null, error: pathError };
+        }
+        var normalizedRoot = String(root || '');
+        var separator = String.fromCharCode(92);
+        while (normalizedRoot.length > 1 &&
+               (normalizedRoot.charAt(normalizedRoot.length - 1) === '/' ||
+                normalizedRoot.charAt(normalizedRoot.length - 1) === separator)) {
+            normalizedRoot = normalizedRoot.substring(0, normalizedRoot.length - 1);
+        }
+        var normalizedFile = file.split(separator).join('/');
+        return { path: normalizedRoot + '/' + normalizedFile, error: null };
+    }
+
+    // applyResolutionPatches is the single write path for Agent-provided patch
+    // content. It revalidates paths at the point of use and awaits every write;
+    // callers must not commit a partially written worktree after an error.
+    async function applyResolutionPatches(resolution, root) {
+        if (!resolution || !Array.isArray(resolution.patches) || resolution.patches.length === 0) {
+            return { error: null };
+        }
+        var osmod = prSplit._modules && prSplit._modules.osmod;
+        if (!osmod || typeof osmod.writeFileScoped !== 'function') {
+            return { error: 'osm:os scoped writer unavailable — cannot apply resolution patches' };
+        }
+        var seen = Object.create(null);
+        for (var i = 0; i < resolution.patches.length; i++) {
+            var patch = resolution.patches[i];
+            if (!patch || typeof patch !== 'object' || typeof patch.content !== 'string') {
+                return { error: 'invalid resolution patch at index ' + i };
+            }
+            var target = resolutionPath(root, patch.file);
+            if (target.error) {
+                return { error: 'patches[' + i + ']: ' + target.error };
+            }
+            var normalized = patch.file.split(String.fromCharCode(92)).join('/');
+            if (seen[normalized]) {
+                return { error: 'duplicate resolution patch for ' + normalized };
+            }
+            seen[normalized] = true;
+            try {
+                await osmod.writeFileScoped(root, patch.file, patch.content, { createDirs: true });
+            } catch (e) {
+                return { error: 'failed to write patch ' + normalized + ': ' + (e && e.message ? e.message : String(e)) };
+            }
+        }
+        return { error: null };
+    }
+
     // --- Exports ---
     prSplit.validateClassification = validateClassification;
     prSplit.validatePlan = validatePlan;
     prSplit.validateSplitPlan = validateSplitPlan;
     prSplit.validateResolution = validateResolution;
+    prSplit._validateResolutionPath = validateResolutionPath;
+    prSplit._applyResolutionPatches = applyResolutionPatches;
     // T096: Shared regex for cross-chunk branch name validation (e.g. rename dialog).
     prSplit.INVALID_BRANCH_CHARS = INVALID_BRANCH_CHARS;
 })(globalThis.prSplit);

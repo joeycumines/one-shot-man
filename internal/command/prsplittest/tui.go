@@ -185,6 +185,21 @@ function setupPlanCache() {
         ]
     };
 }
+
+// settleConfigValidation drives the Promise-based config validator used when
+// verify-command discovery is required, then drains the follow-up pipeline jobs.
+async function settleConfigValidation(s) {
+    if (s && s._cfgPromise && typeof s._cfgPromise.then === 'function') {
+        await s._cfgPromise;
+    }
+    for (var i = 0; i < 20; i++) await Promise.resolve();
+}
+
+async function settlePaneOperations(s) {
+    if (globalThis.prSplit && typeof globalThis.prSplit._waitForPaneOperations === 'function') {
+        await globalThis.prSplit._waitForPaneOperations(s);
+    }
+}
 `
 
 // NewTUIEngineE loads chunks 00–12, injects TUI mocks, then loads chunks

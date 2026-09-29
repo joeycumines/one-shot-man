@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
@@ -142,7 +141,7 @@ func TestAutoSplit_PipelineTimeout(t *testing.T) {
 		{"name": "core", "description": "Core changes", "files": []string{"b.go"}},
 	}})
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -307,7 +306,7 @@ func TestAutoSplit_SaveAndResume(t *testing.T) {
 	}
 
 	// Inject classification via mcpcallback channel.
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -513,7 +512,7 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 	}
 
 	// Inject classification via mcpcallback channel.
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -546,6 +545,7 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 	var r1 struct {
 		Error  string `json:"error"`
 		Report struct {
+			Error string `json:"error"`
 			Steps []struct {
 				Name  string `json:"name"`
 				Error string `json:"error"`
@@ -571,7 +571,13 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 		t.Error("expected Verify splits step to have an error (simulated crash)")
 	}
 
-	// Verify plan file has lastCompletedStep = 'Execute split plan'.
+	if r1.Error == "" {
+		t.Error("expected thrown verification exception to be fatal")
+	}
+	if r1.Report.Error == "" {
+		t.Error("expected fatal verification error in report")
+	}
+
 	planData, err := os.ReadFile(filepath.Join(tp.Dir, ".pr-split-plan.json"))
 	if err != nil {
 		t.Fatalf("plan file not written: %v", err)
@@ -586,15 +592,18 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 	if savedPlan.Version != 2 {
 		t.Errorf("plan version: got %d, want 2", savedPlan.Version)
 	}
-	// The lastCompletedStep should be from the post-verify checkpoint since
-	// verify ran (and crashed) — the pre-verify checkpoint wrote 'Execute split plan'.
-	// But the post-verify checkpoint also ran, overwriting with 'Verify splits'.
-	// Actually, since verify threw, savePlan after Step 7 still runs because
-	// the step() wrapper catches the throw. Let's just check it's non-empty.
-	if savedPlan.LastCompletedStep == "" {
-		t.Error("lastCompletedStep is empty — T096 checkpoint not working")
+	if savedPlan.LastCompletedStep == "Verify splits" || savedPlan.LastCompletedStep == "Verify equivalence" {
+		t.Errorf("verification exception advanced checkpoint to %q", savedPlan.LastCompletedStep)
 	}
 	t.Logf("lastCompletedStep: %q", savedPlan.LastCompletedStep)
+
+	stepNames := make([]string, len(r1.Report.Steps))
+	for i, s := range r1.Report.Steps {
+		stepNames[i] = s.Name
+	}
+	if slices.Contains(stepNames, "Verify equivalence") {
+		t.Error("equivalence ran after a fatal verification exception")
+	}
 
 	// Restore verifySplitsAsync for resume.
 	if _, err := tp.EvalJS(`verifySplitsAsync = _origVerifySplitsAsync;`); err != nil {
@@ -637,6 +646,19 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 	t.Logf("Run 2 steps: %d, error: %q", len(r2.Report.Steps), r2.Error)
 	for i, s := range r2.Report.Steps {
 		t.Logf("  Step %d: %s (error: %q)", i, s.Name, s.Error)
+	}
+	if r2.Error != "" {
+		t.Errorf("resume failed after verification recovery: %s", r2.Error)
+	}
+	resumeStepNames := make([]string, len(r2.Report.Steps))
+	for i, s := range r2.Report.Steps {
+		resumeStepNames[i] = s.Name
+	}
+	if !slices.Contains(resumeStepNames, "Verify splits") {
+		t.Error("resume did not run verification")
+	}
+	if !slices.Contains(resumeStepNames, "Verify equivalence") {
+		t.Error("resume did not run equivalence after successful verification")
 	}
 
 	// Verify Steps 1-6 were skipped.
@@ -793,7 +815,7 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 	// Set up mcpcallback injection: watch for the callback to init, then
 	// inject classification and plan data directly into the Go channels.
 	// This replaces the old file-polling approach.
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 
 	go func() {
 		h := <-watchCh
@@ -1119,7 +1141,7 @@ func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
 	}
 
 	// Inject classification via mcpcallback channel.
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -1557,7 +1579,7 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 	}
 
 	// Inject classification + plan via mcpcallback channels.
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -1707,7 +1729,7 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 	}
 
 	// Inject classification + plan via mcpcallback channels.
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -2034,7 +2056,7 @@ func TestAutoSplit_ResumeAgentResolveFails(t *testing.T) {
 	}
 
 	// Inject classification via mcpcallback channel.
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -2306,7 +2328,7 @@ func TestAutoSplit_StepTimeout(t *testing.T) {
 		{"name": "core", "description": "Core changes", "files": []string{"b.go"}},
 	}})
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -2855,7 +2877,7 @@ func TestIntegration_AutoSplitMockMCP_DoubleInvocation(t *testing.T) {
 	}`
 
 	// --- First invocation ---
-	watchCh1 := mcpcallbackmod.WatchForInit()
+	watchCh1 := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh1
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -2897,7 +2919,7 @@ func TestIntegration_AutoSplitMockMCP_DoubleInvocation(t *testing.T) {
 	_ = os.Remove(filepath.Join(tp.Dir, ".pr-split-plan.json"))
 
 	// --- Second invocation (same engine, same repo) ---
-	watchCh2 := mcpcallbackmod.WatchForInit()
+	watchCh2 := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh2
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -3003,7 +3025,7 @@ func TestIntegration_AutoSplitMockMCP_OverlappingFiles(t *testing.T) {
 		t.Fatalf("mock setup: %v", err)
 	}
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -3158,7 +3180,7 @@ func TestIntegration_AutoSplitMockMCP_VerifyFailure(t *testing.T) {
 		t.Fatalf("mock setup: %v", err)
 	}
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -3200,6 +3222,9 @@ func TestIntegration_AutoSplitMockMCP_VerifyFailure(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(resultStr), &report); err != nil {
 		t.Fatalf("parse: %v", err)
+	}
+	if report.Error == "" || report.Report.Error == "" {
+		t.Fatalf("unresolved verification failure must be reported at both result levels: %s", resultStr)
 	}
 
 	// The pipeline should have executed splits but failed verification for split/02-b.
@@ -3294,7 +3319,7 @@ func TestIntegration_AutoSplitMockMCP_CancelDuringExecution(t *testing.T) {
 
 	// Set cancel flag after receiving classification — this should abort
 	// during or after the "Generate split plan" step.
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -3428,7 +3453,7 @@ func TestIntegration_AutoSplitMockMCP_ConflictResolution(t *testing.T) {
 
 	// Goroutine: inject classification + plan immediately, wait for pipeline
 	// to reach resolution polling, then inject resolution patches.
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		// Inject classification immediately.
@@ -3641,7 +3666,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ClassificationTimeout(t *tes
 
 	// Do NOT inject reportClassification — the pipeline will time out waiting.
 	// WatchForInit is still needed to initialize the MCP callback infra.
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		<-watchCh
 		// Deliberately do nothing — no classification injected.
@@ -3754,7 +3779,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_PlanFallbackToLocal(t *testi
 		t.Fatal(err)
 	}
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		// Inject classification only — NO plan injection.
@@ -3889,7 +3914,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ExecutionFailure(t *testing.
 		t.Fatal(err)
 	}
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -4016,7 +4041,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_AllBranchesFailVerify(t *tes
 		t.Fatal(err)
 	}
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -4222,7 +4247,7 @@ func TestIntegration_MockMCP_MalformedClassification(t *testing.T) {
 	// Inject malformed classification: categories is a string, not array.
 	malformedJSON := []byte(`{"categories": "this is not an array"}`)
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", malformedJSON); err != nil {
@@ -4309,7 +4334,7 @@ func TestIntegration_MockMCP_PartialClassification(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", partialClassJSON); err != nil {
@@ -4404,7 +4429,7 @@ func TestIntegration_MockMCP_EmptyCategories(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", emptyClassJSON); err != nil {
@@ -4486,7 +4511,7 @@ func TestIntegration_MockMCP_MalformedPlan(t *testing.T) {
 	// Malformed plan: stages is a string, not an array.
 	malformedPlanJSON := []byte(`{"stages": "not an array"}`)
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -4577,7 +4602,7 @@ func TestIntegration_MockMCP_LateClassification(t *testing.T) {
 	pipelineDone := make(chan struct{})
 	var injectErr error
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		// Wait for pipeline to complete (timeout) before injecting.

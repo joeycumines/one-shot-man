@@ -1272,7 +1272,7 @@ func TestChunk16_T46_EnterSendsToAgentSession(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var sentData = [];
 		var activations = [];
 		var active = 7;
@@ -1296,6 +1296,7 @@ func TestChunk16_T46_EnterSendsToAgentSession(t *testing.T) {
 
 		var r = sendKey(s, 'enter');
 		s = r[0];
+		await settlePaneOperations(s);
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
@@ -1379,7 +1380,7 @@ func TestChunk16_T46_ConversationHistoryAccumulates(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		var __mockCID = 42;
 		prSplit._state = prSplit._state || {};
@@ -1401,6 +1402,7 @@ func TestChunk16_T46_ConversationHistoryAccumulates(t *testing.T) {
 		s.agentQuestionLine = 'Q1?';
 		var r1 = sendKey(s, 'enter');
 		s = r1[0];
+		await settlePaneOperations(s);
 
 		// Second Q&A.
 		s.agentQuestionDetected = true;
@@ -1409,6 +1411,7 @@ func TestChunk16_T46_ConversationHistoryAccumulates(t *testing.T) {
 		s.agentQuestionLine = 'Q2?';
 		var r2 = sendKey(s, 'enter');
 		s = r2[0];
+		await settlePaneOperations(s);
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
@@ -1550,7 +1553,7 @@ func TestChunk16_T46_EnterResetsThrottleTimestamp(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		var __mockCID = 42;
 		prSplit._state = prSplit._state || {};
@@ -1573,6 +1576,7 @@ func TestChunk16_T46_EnterResetsThrottleTimestamp(t *testing.T) {
 		var before = Date.now();
 		var r = sendKey(s, 'enter');
 		s = r[0];
+		await settlePaneOperations(s);
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
@@ -1724,7 +1728,7 @@ func TestChunk16_T46_ConversationHistoryCap(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		var __mockCID = 42;
 		prSplit._state = prSplit._state || {};
@@ -1750,6 +1754,7 @@ func TestChunk16_T46_ConversationHistoryCap(t *testing.T) {
 		s.agentQuestionLine = 'Q100';
 		var r = sendKey(s, 'enter');
 		s = r[0];
+		await settlePaneOperations(s);
 
 		if (s.agentConversations.length !== 100) {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
@@ -1764,6 +1769,7 @@ func TestChunk16_T46_ConversationHistoryCap(t *testing.T) {
 		s.agentQuestionLine = 'Q101';
 		r = sendKey(s, 'enter');
 		s = r[0];
+		await settlePaneOperations(s);
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
@@ -1966,7 +1972,7 @@ func TestChunk16_T393_AgentWriteErrorSurfaced(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		var activations = [];
 		var active = 7;
@@ -1990,6 +1996,7 @@ func TestChunk16_T393_AgentWriteErrorSurfaced(t *testing.T) {
 		// Send Enter to submit.
 		var r = sendKey(s, 'enter');
 		s = r[0];
+		await settlePaneOperations(s);
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;

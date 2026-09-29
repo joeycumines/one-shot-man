@@ -293,10 +293,22 @@
         var results = [];
         var progressFn = options.progressFn || null;
         var ignoredFiles = {};
+        var completedResults = Array.isArray(options.completedResults) ? options.completedResults : [];
+        var completedCount = completedResults.length;
 
         var validation = validatePlan(plan);
         if (!validation.valid) {
             return { error: 'invalid plan: ' + validation.errors.join('; '), results: [] };
+        }
+        if (completedCount > plan.splits.length) {
+            return { error: 'resume execution results exceed plan split count', results: [] };
+        }
+        for (var cr = 0; cr < completedCount; cr++) {
+            var completed = completedResults[cr];
+            if (!completed || completed.name !== plan.splits[cr].name || completed.error) {
+                return { error: 'resume execution result does not match plan prefix at index ' + cr, results: [] };
+            }
+            results.push(completed);
         }
 
         if (!plan.fileStatuses || typeof plan.fileStatuses !== 'object') {
@@ -307,6 +319,16 @@
         }
         var fileStatuses = plan.fileStatuses;
         var fileRenames = plan.fileRenames || {};
+
+        if (completedCount === plan.splits.length) {
+            var completedSkipped = [];
+            for (var completedIndex = 0; completedIndex < results.length; completedIndex++) {
+                if (results[completedIndex].skippedFiles) {
+                    completedSkipped = completedSkipped.concat(results[completedIndex].skippedFiles);
+                }
+            }
+            return { error: null, results: results, overallSkippedFiles: completedSkipped };
+        }
 
         // Pre-validate: detect git-ignored files in the plan.
         var allPlanFiles = [];
@@ -333,8 +355,13 @@
             }
         }
 
-        // Pre-flight: delete any pre-existing split branches to allow re-runs.
+        // Pre-flight: delete only branches that are not already represented by
+        // a valid checkpoint prefix. Completed branches are part of the
+        // cumulative chain and must remain available as the next split's base.
         for (var k = 0; k < plan.splits.length; k++) {
+            if (k < completedCount) {
+                continue;
+            }
             var existCheck = await gitExecAsync(dir, ['rev-parse', '--verify', 'refs/heads/' + plan.splits[k].name]);
             if (existCheck.code === 0) {
                 await gitExecAsync(dir, ['branch', '-D', plan.splits[k].name]);
@@ -366,6 +393,11 @@
             if (isCancelledHelper() || isForceCancelledHelper()) {  // T117: honor force-cancel
                 await cleanupWorktreeAsync();
                 return { error: 'cancelled by user after ' + i + ' of ' + plan.splits.length + ' branches', results: results };
+            }
+
+            if (i < completedCount) {
+                currentBase = plan.splits[i].name;
+                continue;
             }
 
             var split = plan.splits[i];

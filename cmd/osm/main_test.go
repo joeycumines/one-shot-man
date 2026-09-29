@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -549,4 +551,49 @@ func TestCommandHelpStillWorks(t *testing.T) {
 			}
 		})
 	}
+}
+
+type captureProbeCommand struct {
+	*command.BaseCommand
+	captured *flag.FlagSet
+}
+
+func (c *captureProbeCommand) CaptureProvidedFlags(fs *flag.FlagSet) {
+	c.captured = fs
+}
+
+func (c *captureProbeCommand) Execute(_ []string, _, _ io.Writer) error {
+	return nil
+}
+
+type plainProbeCommand struct {
+	*command.BaseCommand
+}
+
+func (c *plainProbeCommand) Execute(_ []string, _, _ io.Writer) error {
+	return nil
+}
+
+func TestNotifyProvidedFlagsForwardsParsedSet(t *testing.T) {
+	// The run() dispatch must hand the parsed FlagSet to commands that
+	// track explicit flags; otherwise config defaults silently override
+	// CLI flags (the providedFlags stays nil and precedence checks scan
+	// already-stripped positional args).
+	t.Parallel()
+	probe := &captureProbeCommand{BaseCommand: command.NewBaseCommand("probe", "probe", "probe")}
+	plain := &plainProbeCommand{BaseCommand: command.NewBaseCommand("plain", "plain", "plain")}
+
+	fs := flag.NewFlagSet("probe", flag.ContinueOnError)
+	fs.Bool("dry-run", false, "probe flag")
+	if err := fs.Parse([]string{"--dry-run"}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+
+	notifyProvidedFlags(probe, fs)
+	if probe.captured != fs {
+		t.Fatal("expected implementing command to receive the parsed FlagSet")
+	}
+
+	// Commands without the method must be skipped silently.
+	notifyProvidedFlags(plain, fs)
 }

@@ -457,7 +457,7 @@ func TestAgentLifecycle_WriteErrorSurfacing(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		var __mockCID = 42;
 		prSplit._state = prSplit._state || {};
@@ -487,6 +487,7 @@ func TestAgentLifecycle_WriteErrorSurfacing(t *testing.T) {
 		// 'a' is not a reserved key, so it goes through keyToTermBytes → write.
 		var r = update({ type: 'Key', key: 'a' }, s);
 		s = r[0];
+		await settlePaneOperations(s);
 
 		var errors = [];
 		if (!s.agentWriteError) {
@@ -503,6 +504,7 @@ func TestAgentLifecycle_WriteErrorSurfacing(t *testing.T) {
 		writeFails = false;
 		var r2 = update({ type: 'Key', key: 'b' }, s);
 		s = r2[0];
+		await settlePaneOperations(s);
 		if (s.agentWriteError) {
 			errors.push('successful write should clear error: ' + s.agentWriteError);
 		}

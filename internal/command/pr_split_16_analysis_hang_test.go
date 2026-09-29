@@ -61,7 +61,9 @@ func TestChunk16_AnalysisPipeline_GroupingThrow(t *testing.T) {
 		s.configFieldEditing = null;
 
 		// Trigger Enter to start analysis.
-		sendKey(s, 'enter');
+		var r = sendKey(s, 'enter');
+		s = r[0];
+		await settleConfigValidation(s);
 
 		// Drain microtask queue so runAnalysisAsync completes:
 		//  tick 1: analyzeDiffAsync promise resolves (Step 1 ← await)
@@ -156,7 +158,9 @@ func TestChunk16_AnalysisPipeline_PlanCreationThrow(t *testing.T) {
 		s.focusIndex = -1;
 		s.configFieldEditing = null;
 
-		sendKey(s, 'enter');
+		var r = sendKey(s, 'enter');
+		s = r[0];
+		await settleConfigValidation(s);
 
 		// Drain: Step 1 await, Step 2 await, Step 3 rejected-await, .then handler.
 		await Promise.resolve();

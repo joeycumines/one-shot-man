@@ -26,6 +26,90 @@
         return [s, null];
     }
 
+    // Verify-pane teardown deferral. A pending cleanup or timeout kill blocks
+    // the next action that depends on the pane being gone until the tracked
+    // operation settles.
+    //
+    // The deferral is bounded, and the bound is a property of the FLAGS, not
+    // of any one call site. A teardown whose Promise never settles (a child
+    // that ignores close, a `git worktree remove` contending on a lock, a
+    // worker that never replies) would otherwise defer forever behind a
+    // spinner with no error and no way forward. Every loop that waits on these
+    // flags routes through this helper, so once the budget is spent they all
+    // escalate instead of spinning at 100 Hz.
+    //
+    // The budget counts the time actually waited, not a guess from the attempt
+    // count, so the message a user sees matches what they experienced.
+    // Teardown operations are tracked and idempotent, so clearing the flags
+    // cannot double-close a pane.
+    var PANE_CLEANUP_TICK_MIN_MS = 10;
+    var PANE_CLEANUP_TICK_MAX_MS = 500;
+    var PANE_CLEANUP_TIMEOUT_MS = 15000;
+
+    function paneCleanupPending(s) {
+        return !!(s && (s._verifyPaneCleanupPending || s._verifyTimeoutKillPending));
+    }
+
+    // nextPaneCleanupDelay advances the deferral budget as a side effect: it
+    // names the next delay, it is not a pure read. Callers must pass the state
+    // they are polling on and must reset the budget through
+    // paneCleanupTickReset once the teardown flags clear.
+    function nextPaneCleanupDelay(s) {
+        if (!s) return PANE_CLEANUP_TICK_MIN_MS;
+        var attempts = s._paneCleanupTickAttempts || 0;
+        var delay = PANE_CLEANUP_TICK_MIN_MS;
+        for (var i = 0; i < attempts && delay < PANE_CLEANUP_TICK_MAX_MS; i++) {
+            delay = delay * 2;
+        }
+        delay = Math.min(delay, PANE_CLEANUP_TICK_MAX_MS);
+        s._paneCleanupTickAttempts = attempts + 1;
+        s._paneCleanupWaitedMs = (s._paneCleanupWaitedMs || 0) + delay;
+        return delay;
+    }
+
+    function paneCleanupTickReset(s) {
+        if (!s) return;
+        s._paneCleanupTickAttempts = 0;
+        s._paneCleanupWaitedMs = 0;
+    }
+
+    // paneCleanupExpired reports whether the deferral budget is spent, and
+    // clears the stuck flags so the caller can proceed. Clearing them is the
+    // recovery: the pane operation is already tracked, and a late settlement
+    // is a no-op on an already-closed pane.
+    function paneCleanupExpired(s) {
+        if (!paneCleanupPending(s)) {
+            paneCleanupTickReset(s);
+            return false;
+        }
+        var waited = s._paneCleanupWaitedMs || 0;
+        if (waited < PANE_CLEANUP_TIMEOUT_MS) return false;
+        log.warn('verify pane teardown did not settle; giving up on the wait', {
+            paneCleanupPending: !!s._verifyPaneCleanupPending,
+            timeoutKillPending: !!s._verifyTimeoutKillPending,
+            waitedMs: waited
+        });
+        s._verifyPaneCleanupPending = false;
+        s._verifyTimeoutKillPending = false;
+        paneCleanupTickReset(s);
+        return true;
+    }
+
+    // paneCleanupErrorDetail is the user-facing diagnosis for an expired
+    // teardown wait. It names the real budget so the message is actionable.
+    function paneCleanupErrorDetail(action) {
+        return 'Verification pane teardown did not finish within '
+            + Math.round(PANE_CLEANUP_TIMEOUT_MS / 1000) + 's. '
+            + (action || 'The step was not started.');
+    }
+
+    prSplit._nextPaneCleanupDelay = nextPaneCleanupDelay;
+    prSplit._PANE_CLEANUP_TIMEOUT_MS = PANE_CLEANUP_TIMEOUT_MS;
+    prSplit._paneCleanupPending = paneCleanupPending;
+    prSplit._paneCleanupErrorDetail = paneCleanupErrorDetail;
+    prSplit._paneCleanupTickReset = paneCleanupTickReset;
+    prSplit._paneCleanupExpired = paneCleanupExpired;
+
     // --- Report Formatting — Human-readable display for the report overlay ---
 
     function formatReportForDisplay(report) {
@@ -132,6 +216,10 @@
     // --- Async Pipeline Handlers — drive wizard state machine ---
 
     function startAnalysis(s) {
+        if (typeof prSplit._installCancellationSource === 'function') {
+            prSplit._installCancellationSource(s);
+        }
+        var configEpoch = prSplit._beginAsyncConfig(s, '_analysisConfigEpoch');
         s.isProcessing = true;
         s.analysisProgress = 0;
         s.analysisStartedAt = Date.now();  // T002: track start time for timeout
@@ -176,6 +264,9 @@
 
         // Process config validation result (shared by sync and async paths).
         function processConfigResult(configResult) {
+            if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch)) {
+                return;
+            }
             if (configResult.error) {
                 // T43: Stay on CONFIG with inline validation error.
                 s.isProcessing = false;
@@ -215,11 +306,16 @@
             };
 
             // Launch all analysis steps as an async pipeline on the event loop.
-            runAnalysisAsync(s).then(
+            runAnalysisAsync(s, configEpoch).then(
                 function() {
-                    s.analysisRunning = false;
+                    if (s._analysisConfigEpoch === configEpoch &&
+                        (!s.wizard || s.wizard.current !== 'CANCELLED')) {
+                        s.analysisRunning = false;
+                    }
                 },
                 function(err) {
+                    if (s._analysisConfigEpoch !== configEpoch ||
+                        (s.wizard && s.wizard.current === 'CANCELLED')) return;
                     s.analysisError = (err && err.message) ? err.message : String(err);
                     s.analysisRunning = false;
                 }
@@ -246,6 +342,8 @@
             dir: prSplit.runtime.dir,
             strategy: prSplit.runtime.strategy,
             verifyCommand: prSplit.runtime.verifyCommand,
+            verifyTimeoutMs: (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs > 0) ? prSplitConfig.timeoutMs : 0,
+            resumeFromPlan: (typeof prSplitConfig !== 'undefined' && prSplitConfig.resumeFromPlan) || false,
             outputFn: function(s) { log.printf('wizard: %s', s); }
         });
 
@@ -282,8 +380,9 @@
     // Steps 1-4: analyzeDiffAsync, applyStrategyAsync, createSplitPlanAsync,
     // validatePlan. Updates s.analysisSteps progress between each step so
     // the poll handler can render progress.
-    async function runAnalysisAsync(s) {
+    async function runAnalysisAsync(s, configEpoch) {
         // ── Step 0: Verify baseline (T090: non-blocking via verifySplitAsync) ──
+        if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch)) return;
         var bvc = s._baselineVerifyConfig;
         if (bvc && bvc.verifyCommand && bvc.verifyCommand !== 'true') {
             // T389: Activate Verify tab for live baseline verify output.
@@ -303,12 +402,17 @@
                     verifyCommand: bvc.verifyCommand,
                     dir: bvc.dir,
                     verifyTimeoutMs: bvc.verifyTimeoutMs,
+                    isCancelled: function() {
+                        return !prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch);
+                    },
                     outputFn: function(line) {
+                        if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch)) return;
                         log.printf('wizard: %s', line);
                         // T389: Route verify command output to Verify tab.
                         s.verifyScreen = (s.verifyScreen || '') + line + '\n';
                     }
                 });
+                if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch)) return;
                 if (!baselineResult.passed) {
                     s.verifyFallbackRunning = false;
                     s.isProcessing = false;
@@ -319,6 +423,7 @@
                     return;
                 }
             } catch (e) {
+                if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch)) return;
                 s.verifyFallbackRunning = false;
                 if (s.wizard.current === 'CANCELLED') return;
                 s.isProcessing = false;
@@ -339,13 +444,16 @@
         }
         s.analysisProgress = 0.1;
 
-        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
+        if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch) ||
+            !s.isProcessing || s.wizard.current === 'CANCELLED') return;
 
         // ── Step 1: Analyze diff (I/O-bound: git rev-parse, merge-base, diff) ──
         s.analysisSteps[1].active = true;
         var analysisStart = Date.now();
         try {
-            st.analysisCache = await prSplit.analyzeDiffAsync({ baseBranch: prSplit.runtime.baseBranch });
+            var analysisResult = await prSplit.analyzeDiffAsync({ baseBranch: prSplit.runtime.baseBranch });
+            if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch)) return;
+            st.analysisCache = analysisResult;
         } catch (e) {
             if (s.wizard.current === 'CANCELLED') return; // wizard already cancelled
             return enterErrorState(s, 'Analysis failed: ' + (e.message || String(e)));
@@ -356,7 +464,8 @@
         s.analysisProgress = 0.3;
 
         // Check for cancellation between steps.
-        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
+        if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch) ||
+            !s.isProcessing || s.wizard.current === 'CANCELLED') return;
 
         if (st.analysisCache.error) {
             return enterErrorState(s, st.analysisCache.error);
@@ -369,38 +478,46 @@
         }
 
         // ── Step 2: Group files (T092: async for dependency/auto strategies) ──
-        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
+        if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch) ||
+            !s.isProcessing || s.wizard.current === 'CANCELLED') return;
         s.analysisSteps[2].active = true;
         var groupStart = Date.now();
         try {
             // T099: When strategy is 'auto', use selectStrategyAsync to capture
             // needsConfirm and scored alternatives for TUI display.
+            var grouped;
             if (prSplit.runtime.strategy === 'auto') {
                 var autoResult = await prSplit.selectStrategyAsync(
                     st.analysisCache.files);
-                st.groupsCache = autoResult.groups;
+                if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch)) return;
+                grouped = autoResult.groups;
                 s.strategyNeedsConfirm = autoResult.needsConfirm || false;
                 s.strategyAlternatives = autoResult.scored || [];
                 s.autoStrategyName = autoResult.strategy || '';
             } else {
-                st.groupsCache = await prSplit.applyStrategyAsync(
+                grouped = await prSplit.applyStrategyAsync(
                     st.analysisCache.files, prSplit.runtime.strategy);
+                if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch)) return;
             }
+            st.groupsCache = grouped;
         } catch (e) {
-            if (s.wizard.current === 'CANCELLED') return; // T001: guard
+            if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch) ||
+                s.wizard.current === 'CANCELLED') return;
             return enterErrorState(s, 'Grouping failed: ' + (e.message || String(e)));
         }
+        if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch)) return;
         s.analysisSteps[2].done = true;
         s.analysisSteps[2].active = false;
         s.analysisSteps[2].elapsed = Date.now() - groupStart;
         s.analysisProgress = 0.55;
 
         // ── Step 3: Create plan (I/O-bound: optional git rev-parse) ──
-        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
+        if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch) ||
+            !s.isProcessing || s.wizard.current === 'CANCELLED') return;
         s.analysisSteps[3].active = true;
         var planStart = Date.now();
         try {
-            st.planCache = await prSplit.createSplitPlanAsync(st.groupsCache, {
+            var planResult = await prSplit.createSplitPlanAsync(st.groupsCache, {
                 baseBranch: prSplit.runtime.baseBranch,
                 sourceBranch: st.analysisCache.currentBranch,
                 branchPrefix: prSplit.runtime.branchPrefix,
@@ -408,23 +525,29 @@
                 fileStatuses: st.analysisCache.fileStatuses,
                 fileRenames: st.analysisCache.fileRenames
             });
+            if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch)) return;
+            st.planCache = planResult;
         } catch (e) {
-            if (s.wizard.current === 'CANCELLED') return; // T001: guard
+            if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch) ||
+                s.wizard.current === 'CANCELLED') return;
             return enterErrorState(s, 'Plan creation failed: ' + (e.message || String(e)));
         }
+        if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch)) return;
         s.analysisSteps[3].done = true;
         s.analysisSteps[3].active = false;
         s.analysisSteps[3].elapsed = Date.now() - planStart;
         s.analysisProgress = 0.8;
 
         // ── Step 4: Validate plan (pure compute, non-blocking) ──
-        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
+        if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch) ||
+            !s.isProcessing || s.wizard.current === 'CANCELLED') return;
         s.analysisSteps[4].active = true;
         var validation = prSplit.validatePlan(st.planCache);
         s.analysisSteps[4].done = true;
         s.analysisSteps[4].active = false;
         s.analysisProgress = 1.0;
 
+        if (!prSplit._asyncConfigCurrent(s, '_analysisConfigEpoch', configEpoch)) return;
         if (!validation.valid) {
             return enterErrorState(s, 'Plan validation failed: ' + validation.errors.join('; '));
         }
@@ -529,6 +652,17 @@
     // --- Execution Handlers ---
 
     function startExecution(s) {
+        if (paneCleanupExpired(s)) {
+            s._executionStartPending = false;
+            return enterErrorState(s, paneCleanupErrorDetail('Execution was not started.'));
+        }
+        if (paneCleanupPending(s)) {
+            s._executionStartPending = true;
+            return [s, tea.tick(nextPaneCleanupDelay(s), 'execution-start')];
+        }
+        paneCleanupTickReset(s);
+        s._executionStartPending = false;
+        s._verifyAdvanceAfterCleanup = false;
         if (!st.planCache || !st.planCache.splits || st.planCache.splits.length === 0) {
             s.errorDetails = 'No plan to execute.';
             return [s, null];
@@ -545,6 +679,15 @@
         prSplit._resetVerifyPhase(s);
         // Reset live verification session state.
         clearVerifyPaneSession(s, { debugPrefix: 'pipelineCleanup', keepDisplay: false });
+        if (paneCleanupExpired(s)) {
+            s._executionStartPending = false;
+            return enterErrorState(s, paneCleanupErrorDetail('Execution was not started.'));
+        }
+        if (paneCleanupPending(s)) {
+            s._executionStartPending = true;
+            return [s, tea.tick(nextPaneCleanupDelay(s), 'execution-start')];
+        }
+        paneCleanupTickReset(s);
 
         // Transition: PLAN_REVIEW → BRANCH_BUILDING.
         if (s.wizard.current === 'PLAN_REVIEW') {

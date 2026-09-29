@@ -282,7 +282,7 @@ func TestPrSplitAgentLiveRenderCursor(t *testing.T) {
 		t.Error("16d poll must skip capture overwrite while live")
 	}
 	// Quit paths destroy the pane.
-	if !strings.Contains(m, "prSplit._destroyAgentTermpane()") {
-		t.Error("16f quit paths missing pane destroy")
+	if !strings.Contains(m, "prSplit._quitAfterAgentTermpane(s)") {
+		t.Error("16f quit paths missing deferred pane close")
 	}
 }

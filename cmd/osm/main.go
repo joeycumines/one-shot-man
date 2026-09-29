@@ -162,5 +162,18 @@ func run() error {
 
 	// Execute the command with the arguments remaining after parsing
 	// (these are the non-flag args or subcommand-specific args).
+	notifyProvidedFlags(cmd, fs)
 	return cmd.Execute(fs.Args(), os.Stdout, os.Stderr)
+}
+
+// notifyProvidedFlags hands the parsed FlagSet to commands that track
+// explicitly-provided flags (see PrSplitCommand.CaptureProvidedFlags) so
+// config-file defaults cannot override explicit CLI flags. The flag
+// package consumes flags from fs.Args(), so commands cannot recover this
+// information from the positional leftovers alone. Commands without the
+// method are unaffected.
+func notifyProvidedFlags(cmd command.Command, fs *flag.FlagSet) {
+	if capturer, ok := cmd.(interface{ CaptureProvidedFlags(*flag.FlagSet) }); ok {
+		capturer.CaptureProvidedFlags(fs)
+	}
 }

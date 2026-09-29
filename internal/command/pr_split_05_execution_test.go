@@ -492,3 +492,66 @@ func TestChunk05_ExecuteSplit_NoIgnoredFiles(t *testing.T) {
 
 	gitCmd(t, dir, "checkout", "feature")
 }
+
+func TestChunk05_ExecuteSplit_ResumesCompletedPrefix(t *testing.T) {
+	t.Parallel()
+	dir, statuses := setupExecRepo(t)
+	evalJS := prsplittest.NewChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
+	statusJSON, _ := json.Marshal(statuses)
+
+	result, err := evalJS(`
+		(async function() {
+			var firstPlan = {
+				baseBranch: 'main', sourceBranch: 'feature', dir: '` + escapeJSPath(dir) + `',
+				fileStatuses: ` + string(statusJSON) + `,
+				splits: [{ name: 'split/01-mods', files: ['modify.go', 'new-file.go'], message: 'modifications' }]
+			};
+			var first = await prSplit.executeSplitAsync(firstPlan);
+			var fullPlan = {
+				baseBranch: 'main', sourceBranch: 'feature', dir: '` + escapeJSPath(dir) + `',
+				fileStatuses: ` + string(statusJSON) + `,
+				splits: [
+					{ name: 'split/01-mods', files: ['modify.go', 'new-file.go'], message: 'modifications' },
+					{ name: 'split/02-dels', files: ['delete-me.go'], message: 'deletions' }
+				]
+			};
+			var resumed = await prSplit.executeSplitAsync(fullPlan, { completedResults: first.results });
+			return JSON.stringify({ first: first, resumed: resumed });
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		First struct {
+			Error   *string `json:"error"`
+			Results []struct {
+				Name string `json:"name"`
+				SHA  string `json:"sha"`
+			} `json:"results"`
+		} `json:"first"`
+		Resumed struct {
+			Error   *string `json:"error"`
+			Results []struct {
+				Name string `json:"name"`
+				SHA  string `json:"sha"`
+			} `json:"results"`
+		} `json:"resumed"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.First.Error != nil || payload.Resumed.Error != nil {
+		t.Fatalf("resume execution failed: first=%v resumed=%v", payload.First.Error, payload.Resumed.Error)
+	}
+	if len(payload.First.Results) != 1 || len(payload.Resumed.Results) != 2 {
+		t.Fatalf("unexpected result counts: first=%d resumed=%d", len(payload.First.Results), len(payload.Resumed.Results))
+	}
+	if payload.Resumed.Results[0].SHA != payload.First.Results[0].SHA {
+		t.Errorf("completed prefix was recreated: first=%s resumed=%s", payload.First.Results[0].SHA, payload.Resumed.Results[0].SHA)
+	}
+	if payload.Resumed.Results[1].Name != "split/02-dels" || payload.Resumed.Results[1].SHA == "" {
+		t.Errorf("pending split was not executed: %+v", payload.Resumed.Results[1])
+	}
+}

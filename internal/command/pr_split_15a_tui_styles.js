@@ -271,6 +271,7 @@
         SCREENSHOT_CAPTURE_CHARS: 500,    // max chars from screenshot capture
         CONVO_HISTORY_CAP: 100,     // conversation history cap
         CONVO_HISTORY_TRIM: 80,     // trim target when cap exceeded
+        AGENT_QUESTION_SEND_TIMEOUT_MS: 10000, // pane write that never settles must not strand the prompt
         CLIPBOARD_FLASH_MS: 3000,   // clipboard copy flash duration
         AUTO_ATTACH_NOTIF_GUARD_MS: 4500, // auto-attach dismiss guard
         CLIPBOARD_FLASH_GUARD_MS: 2500,   // clipboard flash dismiss guard

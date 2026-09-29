@@ -352,6 +352,20 @@ func (c *Config) GetBool(key string) bool {
 	return b
 }
 
+// GetCommandBool returns the command option value parsed as a boolean. It
+// returns false when the option is absent or invalid.
+func (c *Config) GetCommandBool(command, key string) bool {
+	v, ok := c.GetCommandOption(command, key)
+	if !ok {
+		return false
+	}
+	b, err := parseBool(v)
+	if err != nil {
+		return false
+	}
+	return b
+}
+
 // GetInt returns the global option value for key parsed as an integer. Returns
 // 0 if the key is not set or the value cannot be parsed.
 func (c *Config) GetInt(key string) int {

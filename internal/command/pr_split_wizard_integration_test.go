@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
 )
 
 // ---------------------------------------------------------------------------
@@ -117,7 +115,7 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 		},
 	})
 
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {

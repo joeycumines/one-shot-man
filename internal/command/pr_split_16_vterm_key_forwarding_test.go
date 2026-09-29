@@ -298,7 +298,7 @@ func TestChunk16_VTerm_KeyForwarding_PrintableCharsSentToMux(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + wtcMuxSetup + `
 		try {
 		var s = initState('PLAN_REVIEW');
@@ -313,6 +313,7 @@ func TestChunk16_VTerm_KeyForwarding_PrintableCharsSentToMux(t *testing.T) {
 			var r = sendKey(s, keys[i]);
 			s = r[0];
 		}
+		await settlePaneOperations(s);
 
 		var errors = [];
 
@@ -338,7 +339,7 @@ func TestChunk16_VTerm_KeyForwarding_EnterSendsCarriageReturn(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + wtcMuxSetup + `
 		try {
 		var s = initState('PLAN_REVIEW');
@@ -348,6 +349,7 @@ func TestChunk16_VTerm_KeyForwarding_EnterSendsCarriageReturn(t *testing.T) {
 		s.agentScreen = 'mock content';
 
 		sendKey(s, 'enter');
+		await settlePaneOperations(s);
 
 		var errors = [];
 
@@ -374,7 +376,7 @@ func TestChunk16_VTerm_KeyForwarding_CtrlCForwardedToChild(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// ctrl+c is NOT in AGENT_RESERVED_KEYS — it should be forwarded as 0x03.
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + wtcMuxSetup + `
 		try {
 		var s = initState('PLAN_REVIEW');
@@ -384,6 +386,7 @@ func TestChunk16_VTerm_KeyForwarding_CtrlCForwardedToChild(t *testing.T) {
 		s.agentScreen = 'mock content';
 
 		sendKey(s, 'ctrl+c');
+		await settlePaneOperations(s);
 
 		var errors = [];
 
@@ -409,7 +412,7 @@ func TestChunk16_VTerm_KeyForwarding_CtrlACtrlEForwarded(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + wtcMuxSetup + `
 		try {
 		var s = initState('PLAN_REVIEW');
@@ -420,6 +423,7 @@ func TestChunk16_VTerm_KeyForwarding_CtrlACtrlEForwarded(t *testing.T) {
 
 		sendKey(s, 'ctrl+a');
 		sendKey(s, 'ctrl+e');
+		await settlePaneOperations(s);
 
 		var errors = [];
 
@@ -448,7 +452,7 @@ func TestChunk16_VTerm_KeyForwarding_ReservedKeysNotForwarded(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + wtcMuxSetup + `
 		try {
 		var s = initState('PLAN_REVIEW');
@@ -465,6 +469,7 @@ func TestChunk16_VTerm_KeyForwarding_ReservedKeysNotForwarded(t *testing.T) {
 			var r = sendKey(s, reservedKeys[i]);
 			s = r[0];
 		}
+		await settlePaneOperations(s);
 
 		var errors = [];
 
@@ -487,7 +492,7 @@ func TestChunk16_VTerm_KeyForwarding_ScrollKeysChangeOffsetNotForward(t *testing
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + wtcMuxSetup + `
 		try {
 		var s = initState('PLAN_REVIEW');
@@ -500,6 +505,7 @@ func TestChunk16_VTerm_KeyForwarding_ScrollKeysChangeOffsetNotForward(t *testing
 		// PgUp should scroll, not forward.
 		var r = sendKey(s, 'pgup');
 		s = r[0];
+		await settlePaneOperations(s);
 
 		var errors = [];
 
@@ -525,7 +531,7 @@ func TestChunk16_VTerm_KeyForwarding_AutoScrollOnInput(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + wtcMuxSetup + `
 		try {
 		var s = initState('PLAN_REVIEW');
@@ -538,6 +544,7 @@ func TestChunk16_VTerm_KeyForwarding_AutoScrollOnInput(t *testing.T) {
 
 		// Send printable char — should reset offset to 0 (auto-scroll to live).
 		var r = sendKey(s, 'x');
+		await settlePaneOperations(s);
 		var ns = r[0];
 
 		var errors = [];
@@ -564,7 +571,7 @@ func TestChunk16_VTerm_KeyForwarding_NoMuxSafeNoOp(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		// Remove tuiMux entirely.
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		delete globalThis.tuiMux;
@@ -578,6 +585,7 @@ func TestChunk16_VTerm_KeyForwarding_NoMuxSafeNoOp(t *testing.T) {
 		// Send key with no mux — should not crash.
 		var r = sendKey(s, 'x');
 		var ns = r[0];
+		await settlePaneOperations(ns);
 
 		var errors = [];
 
@@ -602,7 +610,7 @@ func TestChunk16_VTerm_KeyForwarding_WriteToChildThrowsSwallowed(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
@@ -620,6 +628,7 @@ func TestChunk16_VTerm_KeyForwarding_WriteToChildThrowsSwallowed(t *testing.T) {
 		// Should NOT throw — error is swallowed.
 		var r = sendKey(s, 'x');
 		var ns = r[0];
+		await settlePaneOperations(ns);
 
 		var errors = [];
 
@@ -643,7 +652,7 @@ func TestChunk16_VTerm_KeyForwarding_WizardFocusedNotForwarded(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + wtcMuxSetup + `
 		try {
 		var s = initState('PLAN_REVIEW');
@@ -655,6 +664,7 @@ func TestChunk16_VTerm_KeyForwarding_WizardFocusedNotForwarded(t *testing.T) {
 		// Send printable chars — should NOT reach writeToChild.
 		sendKey(s, 'x');
 		sendKey(s, 'y');
+		await settlePaneOperations(s);
 
 		var errors = [];
 
@@ -677,7 +687,7 @@ func TestChunk16_VTerm_KeyForwarding_OutputTabReadOnly(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + wtcMuxSetup + `
 		try {
 		var s = initState('PLAN_REVIEW');
@@ -689,6 +699,7 @@ func TestChunk16_VTerm_KeyForwarding_OutputTabReadOnly(t *testing.T) {
 		// Send printable chars — should NOT reach writeToChild.
 		sendKey(s, 'x');
 		sendKey(s, 'enter');
+		await settlePaneOperations(s);
 
 		var errors = [];
 
@@ -711,7 +722,7 @@ func TestChunk16_VTerm_KeyForwarding_CtrlLInterceptedBeforeAgent(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + wtcMuxSetup + `
 		try {
 		var s = initState('PLAN_REVIEW');
@@ -723,6 +734,7 @@ func TestChunk16_VTerm_KeyForwarding_CtrlLInterceptedBeforeAgent(t *testing.T) {
 		// Ctrl+L should toggle split-view OFF, NOT forward to child.
 		var r = sendKey(s, 'ctrl+l');
 		var ns = r[0];
+		await settlePaneOperations(ns);
 
 		var errors = [];
 
@@ -748,7 +760,7 @@ func TestChunk16_VTerm_KeyForwarding_CtrlTabInterceptedForFocus(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		` + wtcMuxSetup + `
 		try {
 		var s = initState('PLAN_REVIEW');
@@ -760,6 +772,7 @@ func TestChunk16_VTerm_KeyForwarding_CtrlTabInterceptedForFocus(t *testing.T) {
 		// Ctrl+Tab should cycle to next tab, NOT forward to child.
 		var r = sendKey(s, 'ctrl+tab');
 		var ns = r[0];
+		await settlePaneOperations(ns);
 
 		var errors = [];
 

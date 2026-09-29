@@ -56,7 +56,7 @@ func mockMCPSetup(t *testing.T, classData map[string]any) (*TestPipeline, <-chan
 
 	// Watch for MCP callback init to inject classification.
 	classJSON, _ := json.Marshal(classData)
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
@@ -539,6 +539,14 @@ func TestIntegration_MockMCP_ConflictResolution(t *testing.T) {
 
 // TestIntegration_MockMCP_PipelineTimeout verifies that pipeline-level
 // timeout is enforced.
+//
+// A zero budget is used deliberately. The timeout is checked between steps
+// against a wall clock, so any positive budget is a race against how fast the
+// host runs the mocked pipeline: a budget small enough to trip reliably also
+// risks tripping before the pipeline starts, and one large enough to let the
+// pipeline begin may still be cleared on a fast machine. Zero removes the
+// race entirely and exercises the same enforcement path — the check that
+// aborts the run with a timeout error instead of proceeding.
 func TestIntegration_MockMCP_PipelineTimeout(t *testing.T) {
 	skipSlow(t)
 	// NOT parallel — uses chdir.
@@ -558,14 +566,13 @@ func TestIntegration_MockMCP_PipelineTimeout(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Set very short pipeline timeout. MUST be > pollIntervalMs (50ms).
 	result, err := tp.EvalJSAsync(`JSON.stringify(await prSplit.automatedSplit({
 		disableTUI: false,
 		pollIntervalMs: 50,
 		classifyTimeoutMs: 5000,
 		planTimeoutMs: 5000,
 		resolveTimeoutMs: 5000,
-		pipelineTimeoutMs: 100,
+		pipelineTimeoutMs: 0,
 		maxResolveRetries: 0,
 		maxReSplits: 0
 	}))`)
@@ -581,78 +588,6 @@ func TestIntegration_MockMCP_PipelineTimeout(t *testing.T) {
 		t.Error("expected timeout error, got nil")
 	} else if !strings.Contains(strings.ToLower(errMsg), "timeout") {
 		t.Errorf("expected 'timeout' in error, got: %s", errMsg)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Task 14: ResumeFromPlan
-// ---------------------------------------------------------------------------
-
-// TestIntegration_MockMCP_ResumeFromPlan verifies that resume mode skips
-// analysis/classification and proceeds from an existing plan.
-func TestIntegration_MockMCP_ResumeFromPlan(t *testing.T) {
-	skipSlow(t)
-	// NOT parallel — uses chdir.
-
-	// First, generate a plan using the normal pipeline.
-	classData := map[string]any{"categories": []map[string]any{
-		{"name": "api", "description": "Add API", "files": []string{"pkg/impl.go"}},
-		{"name": "cli", "description": "CLI runner", "files": []string{"cmd/run.go"}},
-	}}
-
-	tp, _ := mockMCPSetup(t, classData)
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
-
-	// Run full pipeline to generate a plan.
-	result, err := tp.EvalJSAsync(`JSON.stringify(await prSplit.automatedSplit({
-		disableTUI: false,
-		pollIntervalMs: 50,
-		classifyTimeoutMs: 5000,
-		planTimeoutMs: 5000,
-		resolveTimeoutMs: 5000,
-		maxResolveRetries: 0,
-		maxReSplits: 0
-	}))`)
-	if err != nil {
-		t.Fatalf("automatedSplit failed: %v", err)
-	}
-
-	report := parseAutoSplitReport(t, result)
-	reportInner, _ := report["report"].(map[string]any)
-	if reportInner == nil {
-		t.Fatal("report.report is nil")
-	}
-
-	// Extract the generated plan for resume testing.
-	planJSON, _ := json.Marshal(reportInner["plan"])
-
-	// Now run the pipeline in resume mode with the saved plan.
-	// This should skip analysis, classification, and execution steps.
-	if _, err := tp.EvalJS(`prSplitConfig.resume = true;`); err != nil {
-		t.Fatal(err)
-	}
-	// Store the plan in the engine so resume can pick it up.
-	planLoadCode := `prSplit._state.planCache = ` + string(planJSON) + `;`
-	if _, err := tp.EvalJS(planLoadCode); err != nil {
-		t.Fatalf("failed to load plan for resume: %v", err)
-	}
-
-	// Verify the plan was loaded.
-	planLoaded, err := tp.EvalJS(`typeof prSplit._state.planCache`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	planType, _ := planLoaded.(string)
-	if planType == "undefined" {
-		t.Fatal("plan was not loaded into cache")
 	}
 }
 

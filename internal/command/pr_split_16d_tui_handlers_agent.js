@@ -242,6 +242,16 @@
     // handleAgentCheckPoll: Called every 50ms to check if the async
     // Agent check has completed.
     function handleAgentCheckPoll(s) {
+        // A cancelled wizard may still have an already-scheduled poll in
+        // flight. Never let that stale tick restart configuration or Agent
+        // resolution after cancellation.
+        if ((s.wizard && s.wizard.current === 'CANCELLED') ||
+            (s.pendingAutoAnalysis && !s.isProcessing)) {
+            s.pendingAutoAnalysis = false;
+            s.autoConfigValidating = false;
+            return [s, null];
+        }
+
         // Still running — keep polling.
         if (s.agentCheckRunning) {
             return [s, tea.tick(C.AGENT_CHECK_POLL_MS, 'agent-check-poll')];
@@ -268,7 +278,27 @@
     // The pipeline runs on the JS event loop independently. We poll for
     // completion via ticks so BubbleTea can render progress and the user
 
+    function installTuiCancellation(s) {
+        if (typeof prSplit._installCancellationSource === 'function') {
+            return prSplit._installCancellationSource(s);
+        }
+        var source = function(query) {
+            if (!s || !s.wizard) return false;
+            if (query === 'cancelled') return s.wizard.current === 'CANCELLED';
+            if (query === 'forceCancelled') return s.wizard.current === 'FORCE_CANCEL';
+            if (query === 'paused') return s.wizard.current === 'PAUSED';
+            return false;
+        };
+        s._cancelSource = source;
+        prSplit._cancelSource = source;
+        return source;
+    }
+
     function startAutoAnalysis(s) {
+        // automatedSplit is also used by the full-screen wizard. Install the
+        // wizard as the cancellation source before any async config work so
+        // Confirm Cancel reaches the running pipeline, not only REPL commands.
+        installTuiCancellation(s);
         // Defense-in-depth: if prSplitConfig is absent (test/offline),
         // fall back immediately rather than crashing on property access.
         if (typeof prSplitConfig === 'undefined') {
@@ -276,6 +306,7 @@
             return startAnalysis(s);
         }
 
+        var configEpoch = prSplit._beginAsyncConfig(s, '_autoConfigEpoch');
         s.isProcessing = true;
         s.analysisProgress = 0;
         s.analysisStartedAt = Date.now();  // T002: track start time for timeout
@@ -294,7 +325,8 @@
         var autoConfig = {
             baseBranch: prSplit.runtime.baseBranch,
             strategy: prSplit.runtime.strategy,
-            cleanupOnFailure: prSplitConfig.cleanupOnFailure
+            cleanupOnFailure: prSplitConfig.cleanupOnFailure,
+            resumeFromPlan: !!prSplitConfig.resumeFromPlan
         };
         if (prSplitConfig.timeoutMs > 0) {
             autoConfig.classifyTimeoutMs = prSplitConfig.timeoutMs;
@@ -305,6 +337,9 @@
 
         // Process config validation result: check executor, then launch pipeline.
         function processAutoConfigResult(configResult) {
+            if (!prSplit._asyncConfigCurrent(s, '_autoConfigEpoch', configEpoch)) {
+                return [s, null];
+            }
             // Config validation settled — clear the async-path gate (no-op
             // in the sync path, where the flag was never set).
             s.autoConfigValidating = false;
@@ -319,8 +354,19 @@
                 return [s, null];
             }
 
+            // Resume from the saved plan skips baseline analysis while
+            // retaining the normal executor/launch lifecycle. The validated
+            // result is authoritative: a missing checkpoint must not leave the
+            // separately-created autoConfig in resume mode.
+            autoConfig.resumeFromPlan = !!configResult.resume;
+            if (configResult.resume) {
+                autoConfig.resumePlanPath = configResult.resumePlanPath;
+            } else {
+                delete autoConfig.resumePlanPath;
+            }
+
             // T090: Stash baseline verify config for async pre-step.
-            var baselineVerifyConfig = configResult.baselineVerifyConfig || null;
+            var baselineVerifyConfig = configResult.resume ? null : (configResult.baselineVerifyConfig || null);
 
             if (s.wizard.current === 'IDLE') {
                 s.wizard.transition('CONFIG');
@@ -374,6 +420,7 @@
 
             // T090: Run async baseline verify, then launch automatedSplit.
             (async function() {
+                if (!prSplit._asyncConfigCurrent(s, '_autoConfigEpoch', configEpoch)) return null;
                 var bvc = baselineVerifyConfig;
                 if (bvc && bvc.verifyCommand && bvc.verifyCommand !== 'true') {
                     s.verifyFallbackRunning = true;
@@ -393,10 +440,12 @@
                             dir: bvc.dir,
                             verifyTimeoutMs: bvc.verifyTimeoutMs,
                             outputFn: function(line) {
+                                if (!prSplit._asyncConfigCurrent(s, '_autoConfigEpoch', configEpoch)) return;
                                 log.printf('wizard: %s', line);
                                 s.verifyScreen = (s.verifyScreen || '') + line + '\n';
                             }
                         });
+                        if (!prSplit._asyncConfigCurrent(s, '_autoConfigEpoch', configEpoch)) return null;
                         if (!baselineResult.passed) {
                             s.verifyFallbackRunning = false;
                             s.analysisSteps[0].active = false;
@@ -404,10 +453,12 @@
                                 (baselineResult.error || 'exit code non-zero'));
                         }
                     } catch (e) {
+                        if (!prSplit._asyncConfigCurrent(s, '_autoConfigEpoch', configEpoch)) return null;
                         s.verifyFallbackRunning = false;
                         s.analysisSteps[0].active = false;
                         throw e;
                     }
+                    if (!prSplit._asyncConfigCurrent(s, '_autoConfigEpoch', configEpoch)) return null;
                     s.verifyFallbackRunning = false;
                     s.analysisSteps[0].done = true;
                     s.analysisSteps[0].active = false;
@@ -418,14 +469,17 @@
                     s.analysisSteps[0].active = false;
                     s.analysisSteps[0].elapsed = 0;
                 }
+                if (!prSplit._asyncConfigCurrent(s, '_autoConfigEpoch', configEpoch)) return null;
                 s.analysisSteps[1].active = true;
                 return await prSplit.automatedSplit(autoConfig);
             })().then(
                 function(result) {
+                    if (!prSplit._asyncConfigCurrent(s, '_autoConfigEpoch', configEpoch)) return;
                     s.autoSplitResult = result;
                     s.autoSplitRunning = false;
                 },
                 function(err) {
+                    if (!prSplit._asyncConfigCurrent(s, '_autoConfigEpoch', configEpoch)) return;
                     s.autoSplitResult = { error: (err && err.message) ? err.message : String(err) };
                     s.autoSplitRunning = false;
                 }
@@ -454,6 +508,8 @@
             dir: prSplit.runtime.dir,
             strategy: prSplit.runtime.strategy,
             verifyCommand: prSplit.runtime.verifyCommand,
+            verifyTimeoutMs: prSplitConfig.timeoutMs > 0 ? prSplitConfig.timeoutMs : 0,
+            resumeFromPlan: !!prSplitConfig.resumeFromPlan,
             outputFn: function(s) { log.printf('wizard: %s', s); }
         });
 
@@ -727,14 +783,37 @@
         if (executor && executor.handle && typeof tuiMux !== 'undefined' && tuiMux &&
             typeof tuiMux.attach === 'function') {
             try {
-                var cid = tuiMux.attach(executor.handle);
-                st.agentSessionID = cid;
-                if (typeof prSplit._noteAgentAttached === 'function') {
-                    try { prSplit._noteAgentAttached(cid, s); } catch (e) {
-                        log.debug('agent restart noteAgentAttached failed', { error: e.message || String(e) });
+                var expectedExecutor = executor;
+                var noteAttached = function(cid) {
+                    if (st.agentExecutor !== expectedExecutor ||
+                        (s.wizard && s.wizard.current === 'CANCELLED')) {
+                        return null;
                     }
+                    st.agentSessionID = cid;
+                    if (typeof prSplit._noteAgentAttached === 'function') {
+                        try {
+                            var noteResult = prSplit._noteAgentAttached(cid, s);
+                            if (noteResult && typeof noteResult.then === 'function') {
+                                return noteResult.then(function() {
+                                    log.debug('agent restart re-attached', { sessionID: cid });
+                                    return cid;
+                                });
+                            }
+                        } catch (e) {
+                            log.debug('agent restart noteAgentAttached failed', { error: e.message || String(e) });
+                        }
+                    }
+                    log.debug('agent restart re-attached', { sessionID: cid });
+                    return cid;
+                };
+                var attachResult = tuiMux.attach(executor.handle);
+                if (attachResult && typeof attachResult.then === 'function') {
+                    attachResult.then(noteAttached).catch(function(e) {
+                        log.debug('agent spawn tuiMux attach failed', { error: e.message || String(e) });
+                    });
+                } else {
+                    noteAttached(attachResult);
                 }
-                log.debug('agent restart re-attached', { sessionID: cid });
             } catch (e) { log.debug('agent spawn tuiMux attach failed', { error: e.message || String(e) }); }
         }
 
@@ -764,8 +843,9 @@
 
     // --- Split-View: Key-to-Terminal-Bytes Conversion (T29) ---
 
-    // Reserved keys that should NOT be forwarded to Agent when Agent pane
-    // is focused. These stay with the wizard for pane management.
+    // Reserved keys for the legacy screenshot-backed Agent pane. These stay
+    // with the wizard when the PTY is not embedded and the pane uses the
+    // fallback viewport. The live PTY path uses INTERACTIVE_RESERVED_KEYS.
     var AGENT_RESERVED_KEYS = {
         'ctrl+tab': true,   // switch focus between panes
         'ctrl+l': true,     // close split-view

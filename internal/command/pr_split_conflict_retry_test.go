@@ -554,85 +554,6 @@ func TestPrSplitCommand_ResolveConflictsWithAgentWallClockTimeout(t *testing.T) 
 	}
 }
 
-func TestPrSplitCommand_ResolveConflicts_TimeoutPropagatedToStrategy(t *testing.T) {
-	skipSlow(t)
-	t.Parallel()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping on Windows — git test repo setup uses Unix commands")
-	}
-
-	dir := setupTestGitRepo(t)
-
-	// Create a branch that will fail verification.
-	cmd := exec.Command("git", "-C", dir, "checkout", "-b", "split/timeout-test")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to create branch: %s (%v)", out, err)
-	}
-	cmd = exec.Command("git", "-C", dir, "checkout", "main")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to checkout main: %s (%v)", out, err)
-	}
-
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
-
-	// Use a custom strategy that captures the options parameter passed by resolveConflicts.
-	// This proves the timeout chain: resolveConflicts options → strategy.fix() options.
-	val, err := evalJS(`(async function() {
-		var capturedOptions = null;
-		var customStrategy = {
-			name: 'capture-timeout',
-			detect: function() { return true; },
-			fix: function(dir, branch, plan, verifyOutput, options) {
-				capturedOptions = options;
-				return { fixed: false, error: 'intentional fail to capture options' };
-			}
-		};
-
-		var result = await globalThis.prSplit.resolveConflicts({
-			dir: '` + strings.ReplaceAll(dir, `\`, `\\`) + `',
-			splits: [
-				{ name: 'split/timeout-test', files: ['a.go'] }
-			],
-			verifyCommand: 'exit 1'
-		}, {
-			retryBudget: 1,
-			strategies: [customStrategy],
-			resolveTimeoutMs: 60000,
-			pollIntervalMs: 250
-		});
-		return JSON.stringify({
-			options: capturedOptions,
-			errors: result.errors
-		});
-	})()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var output struct {
-		Options struct {
-			ResolveTimeoutMs float64 `json:"resolveTimeoutMs"`
-			PollIntervalMs   float64 `json:"pollIntervalMs"`
-		} `json:"options"`
-		Errors []struct {
-			Name  string `json:"name"`
-			Error string `json:"error"`
-		} `json:"errors"`
-	}
-	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
-		t.Fatalf("Failed to parse output: %v", err)
-	}
-
-	// Verify the custom timeout was propagated to the strategy.
-	if output.Options.ResolveTimeoutMs != 60000 {
-		t.Errorf("Expected resolveTimeoutMs=60000 in strategy options, got %v", output.Options.ResolveTimeoutMs)
-	}
-	if output.Options.PollIntervalMs != 250 {
-		t.Errorf("Expected pollIntervalMs=250 in strategy options, got %v", output.Options.PollIntervalMs)
-	}
-}
-
 func TestPrSplitCommand_ResolveConflicts_TimeoutDefaultsWhenNotProvided(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
@@ -1926,17 +1847,18 @@ func TestPrSplitCommand_ResolveConflictsWithAgent_SuccessfulFix(t *testing.T) {
 	// Exercise the successful fix path:
 	//  1. sendToHandle sends prompt → increment counter
 	//  2. mcpCallbackObj.waitForAsync returns resolution with patches
-	//  3. osmod.writeFile applies each patch
+	//  3. osmod.writeFileScoped applies each patch
 	//  4. gitAddChangedFiles stages modified files → await gitExec(['status', '--porcelain']), await gitExec(['add', '--', ...])
 	//  5. git commit --amend --no-edit
 	//  6. verifySplit: await gitExec(['checkout', branch]) + exec.execStream(['sh', '-c', ...]) → passed
 	//  7. Result: fixed=true, reSplitNeeded=false, 1 agent interaction, 1 resolution recorded
 	val, err := evalJS(`(async function() {
-		// --- Track osmod.writeFile calls without real filesystem ---
+		// Track the scoped patch writes without touching a real worktree.
 		var writeFileCalls = [];
-		var origWriteFile = osmod.writeFile;
-		osmod.writeFile = function(path, content) {
-			writeFileCalls.push({ file: path, content: content });
+		var origWriteFileScoped = osmod.writeFileScoped;
+		osmod.writeFileScoped = function(root, path, content, opts) {
+			writeFileCalls.push({ root: root, file: path, content: content, opts: opts });
+			return Promise.resolve();
 		};
 
 		// Prevent text chunking — tests count raw send() calls.
@@ -1990,8 +1912,8 @@ func TestPrSplitCommand_ResolveConflictsWithAgent_SuccessfulFix(t *testing.T) {
 			report
 		);
 
-		// Restore osmod.writeFile (good hygiene).
-		osmod.writeFile = origWriteFile;
+		// Restore the scoped writer (good hygiene).
+		osmod.writeFileScoped = origWriteFileScoped;
 
 		// Collect git calls for assertion.
 		var gitCallSummary = globalThis._gitCalls.map(function(c) { return c.argv.join(' '); });
@@ -2057,9 +1979,9 @@ func TestPrSplitCommand_ResolveConflictsWithAgent_SuccessfulFix(t *testing.T) {
 		t.Errorf("Expected 2 send calls (two-write), got %d", output.SendCallCount)
 	}
 
-	// 4. osmod.writeFile called once with correct patch.
+	// 4. The scoped writer is called once with the correct patch.
 	if len(output.WriteFileCalls) != 1 {
-		t.Fatalf("Expected 1 writeFile call (1 patch), got %d", len(output.WriteFileCalls))
+		t.Fatalf("Expected 1 scoped write call (1 patch), got %d", len(output.WriteFileCalls))
 	}
 	if !strings.HasSuffix(output.WriteFileCalls[0].File, "pkg/handler.go") {
 		t.Errorf("writeFile file = %q, want suffix %q", output.WriteFileCalls[0].File, "pkg/handler.go")

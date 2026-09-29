@@ -10,6 +10,15 @@
 
 (function(prSplit) {
 
+    function shellExecOptions(timeoutMs) {
+        if (!(typeof timeoutMs === 'number' && timeoutMs > 0) &&
+            typeof prSplitConfig !== 'undefined' &&
+            typeof prSplitConfig.timeoutMs === 'number' && prSplitConfig.timeoutMs > 0) {
+            timeoutMs = prSplitConfig.timeoutMs;
+        }
+        return (typeof timeoutMs === 'number' && timeoutMs > 0) ? { timeoutMs: timeoutMs } : {};
+    }
+
     // fileExistsSync checks file existence using osmod (preferred) or the
     // platform shell as fallback. Avoids hardcoded 'test -f' on Windows.
     async function fileExistsSync(path) {
@@ -38,13 +47,13 @@
                 var path = (dir !== '.' ? dir + '/' : '') + 'go.mod';
                 return await fileExistsSync(path);
             },
-            fix: async function(dir) {
+            fix: async function(dir, failedBranch, plan, verifyOutput, options) {
                 var shellExecAsync = prSplit._shellExecAsync;
                 var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
                 var cdCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ';
                 var tidyResult = await shellExecAsync(
-                    cdCmd + shellQuote(dir) + ' && go mod tidy');
+                    cdCmd + shellQuote(dir) + ' && go mod tidy', shellExecOptions(options && options.verifyTimeoutMs));
                 if (tidyResult.code !== 0) {
                     return { fixed: false, error: 'go mod tidy failed: ' + tidyResult.stderr.trim() };
                 }
@@ -69,13 +78,13 @@
                 var path = (dir !== '.' ? dir + '/' : '') + 'go.sum';
                 return await fileExistsSync(path);
             },
-            fix: async function(dir) {
+            fix: async function(dir, failedBranch, plan, verifyOutput, options) {
                 var shellExecAsync = prSplit._shellExecAsync;
                 var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
                 var cdCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ';
                 var dlResult = await shellExecAsync(
-                    cdCmd + shellQuote(dir) + ' && go mod download');
+                    cdCmd + shellQuote(dir) + ' && go mod download', shellExecOptions(options && options.verifyTimeoutMs));
                 if (dlResult.code !== 0) {
                     return { fixed: false, error: 'go mod download failed: ' + dlResult.stderr.trim() };
                 }
@@ -102,7 +111,7 @@
                        verifyOutput.indexOf('imported and not used') >= 0 ||
                        verifyOutput.indexOf('could not import') >= 0;
             },
-            fix: async function(dir) {
+            fix: async function(dir, failedBranch, plan, verifyOutput, options) {
                 var shellExecAsync = prSplit._shellExecAsync;
                 var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
@@ -114,10 +123,10 @@
                     if (prSplit._isWindows && prSplit._isWindows()) {
                         // On Windows, use a recursive find equivalent.
                         result = await shellExecAsync(
-                            'cd /d ' + shellQuote(dir) + ' && for /r %f in (*.go) do goimports -w "%f"');
+                            'cd /d ' + shellQuote(dir) + ' && for /r %f in (*.go) do goimports -w "%f"', shellExecOptions(options && options.verifyTimeoutMs));
                     } else {
                         result = await shellExecAsync(
-                            'cd ' + shellQuote(dir) + ' && find . -name "*.go" -exec goimports -w {} +');
+                            'cd ' + shellQuote(dir) + ' && find . -name "*.go" -exec goimports -w {} +', shellExecOptions(options && options.verifyTimeoutMs));
                     }
                     if (result.code !== 0) {
                         return { fixed: false, error: 'goimports failed: ' + result.stderr.trim() };
@@ -143,14 +152,14 @@
                 var path = (dir !== '.' ? dir + '/' : '') + 'package.json';
                 return fileExistsSync(path);
             },
-            fix: async function(dir) {
+            fix: async function(dir, failedBranch, plan, verifyOutput, options) {
                 var shellExecAsync = prSplit._shellExecAsync;
                 var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
                 var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
                 var cdCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ';
                 var result = await shellExecAsync(
-                    cdCmd + shellQuote(dir) + ' && npm install --no-audit --no-fund 2>&1');
+                    cdCmd + shellQuote(dir) + ' && npm install --no-audit --no-fund 2>&1', shellExecOptions(options && options.verifyTimeoutMs));
                 if (result.code !== 0) {
                     return { fixed: false, error: 'npm install failed: ' + (result.stderr || result.stdout || '').trim() };
                 }
@@ -236,7 +245,7 @@
                 }
                 return false;
             },
-            fix: async function(dir) {
+            fix: async function(dir, failedBranch, plan, verifyOutput, options) {
                 var shellExecAsync = prSplit._shellExecAsync;
                 var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
@@ -259,13 +268,13 @@
                     var grepFixCmd = (prSplit._isWindows && prSplit._isWindows())
                         ? cdPrefix + 'findstr /b "generate:" Makefile'
                         : cdPrefix + 'grep -q "^generate:" Makefile 2>/dev/null';
-                    hasMakeTarget = (await shellExecAsync(grepFixCmd)).code === 0;
+                    hasMakeTarget = (await shellExecAsync(grepFixCmd, shellExecOptions(options && options.verifyTimeoutMs))).code === 0;
                 }
                 var result;
                 if (hasMakeTarget) {
-                    result = await shellExecAsync(cdPrefix + 'make generate');
+                    result = await shellExecAsync(cdPrefix + 'make generate', shellExecOptions(options && options.verifyTimeoutMs));
                 } else {
-                    result = await shellExecAsync(cdPrefix + 'go generate ./...');
+                    result = await shellExecAsync(cdPrefix + 'go generate ./...', shellExecOptions(options && options.verifyTimeoutMs));
                 }
                 if (result.code !== 0) {
                     return { fixed: false, error: 'generate failed: ' + result.stderr.trim() };
@@ -362,7 +371,6 @@
                 var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
                 var shellQuote = prSplit._shellQuote;
                 var shellExecAsync = prSplit._shellExecAsync;
-                var osmod = prSplit._modules.osmod;
                 var AUTOMATED_DEFAULTS = prSplit.AUTOMATED_DEFAULTS || {};
 
                 if (!agentExecutor || !agentExecutor.handle) {
@@ -401,20 +409,15 @@
                     log.printf('auto-split: resolution validation errors: %s', resVal.errors.join('; '));
                     return { fixed: false, error: 'invalid resolution: ' + resVal.errors.join('; ') };
                 }
-                if (resolution.patches && resolution.patches.length > 0) {
-                    for (var p = 0; p < resolution.patches.length; p++) {
-                        var patch = resolution.patches[p];
-                        if (osmod) {
-                            // Write to the worktree directory (dir), not the CWD.
-                            osmod.writeFile(dir + '/' + patch.file, patch.content);
-                        }
-                    }
+                var patchResult = await prSplit._applyResolutionPatches(resolution, dir);
+                if (patchResult.error) {
+                    return { fixed: false, error: 'failed to apply resolution patches: ' + patchResult.error };
                 }
                 if (resolution.commands && resolution.commands.length > 0) {
                     for (var c = 0; c < resolution.commands.length; c++) {
                         // Run commands in the worktree directory (async — T078: does not block event loop).
                         var cdCmd2 = (prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ';
-                        await shellExecAsync(cdCmd2 + shellQuote(dir) + ' && ' + resolution.commands[c]);
+                        await shellExecAsync(cdCmd2 + shellQuote(dir) + ' && ' + resolution.commands[c], shellExecOptions(options && options.verifyTimeoutMs));
                     }
                 }
                 var status = await gitExecAsync(dir, ['status', '--porcelain']);
@@ -455,7 +458,11 @@
         var totalRetries = 0;
         var branchRetries = {};
 
+        var verifyTimeoutMs = (typeof options.verifyTimeoutMs === 'number' && options.verifyTimeoutMs > 0)
+            ? options.verifyTimeoutMs
+            : AUTOMATED_DEFAULTS.verifyTimeoutMs;
         var strategyOptions = {
+            verifyTimeoutMs: verifyTimeoutMs,
             resolveTimeoutMs: options.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs,
             pollIntervalMs: options.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs,
             aliveCheckFn: typeof options.aliveCheckFn === 'function' ? options.aliveCheckFn : null
@@ -516,7 +523,10 @@
             }
 
             var cdCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ';
-            var verifyResult = await shellExecAsync(cdCmd + shellQuote(worktreeDir) + ' && ' + verifyCommand);
+            var verifyResult = await shellExecAsync(
+                cdCmd + shellQuote(worktreeDir) + ' && ' + verifyCommand,
+                shellExecOptions(verifyTimeoutMs)
+            );
             if (verifyResult.code === 0) {
                 await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
                 continue;
@@ -557,7 +567,10 @@
                     }
 
                     var reVerifyCd = (prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ';
-                    var reVerify = await shellExecAsync(reVerifyCd + shellQuote(worktreeDir) + ' && ' + verifyCommand);
+                    var reVerify = await shellExecAsync(
+                        reVerifyCd + shellQuote(worktreeDir) + ' && ' + verifyCommand,
+                        shellExecOptions(verifyTimeoutMs)
+                    );
                     if (reVerify.code === 0) {
                         fixed.push({ name: split.name, strategy: strategy.name });
                         resolved = true;

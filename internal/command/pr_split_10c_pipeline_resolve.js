@@ -141,23 +141,57 @@
 
         if (!runtime.dryRun) {
             var execResult = await executeSplit(plan);
+            state.executionResultCache = execResult.results || [];
             if (execResult.error) {
                 report.error = execResult.error;
-                return { error: execResult.error, report: report };
+                return { error: report.error, report: report };
             }
             report.splits = execResult.results || [];
 
-            var verifyObj = await verifySplits(plan);
-            var failures = verifyObj.results.filter(function(r) { return !r.passed; });
-            if (failures.length > 0) {
-                await resolveConflicts(plan);
+            var verifyTimeoutMs = (config && typeof config.verifyTimeoutMs === 'number' && config.verifyTimeoutMs > 0)
+                ? config.verifyTimeoutMs
+                : AUTOMATED_DEFAULTS.verifyTimeoutMs;
+            var verifyObj = await verifySplits(plan, { verifyTimeoutMs: verifyTimeoutMs });
+            if (verifyObj.error) {
+                report.error = verifyObj.error;
+            } else {
+                var failures = verifyObj.results.filter(function(r) {
+                    return !r.passed && !r.skipped && !r.preExisting;
+                });
+                if (failures.length > 0) {
+                    var resolution = await resolveConflicts(plan, { verifyTimeoutMs: verifyTimeoutMs });
+                    if (resolution && resolution.cancelledByUser) {
+                        report.error = 'conflict resolution cancelled by user';
+                    } else if (resolution && resolution.errors && resolution.errors.length > 0) {
+                        report.error = resolution.errors.map(function(item) {
+                            return item.name + ': ' + item.error;
+                        }).join('; ');
+                    } else if (resolution && resolution.reSplitNeeded) {
+                        report.error = resolution.reSplitReason || 'verification remained failed after auto-fix';
+                    } else if (resolution) {
+                        var fixedNames = {};
+                        (resolution.fixed || []).forEach(function(item) {
+                            fixedNames[item.name] = true;
+                        });
+                        var unresolved = failures.filter(function(item) {
+                            return !fixedNames[item.branch || item.name];
+                        });
+                        if (unresolved.length > 0) {
+                            report.error = 'verification remained failed for: ' + unresolved.map(function(item) {
+                                return item.branch || item.name;
+                            }).join(', ');
+                        }
+                    }
+                }
             }
 
-            var equiv = await verifyEquivalence(plan);
-            // T121: Propagate equivalence result to report.
-            report.equivalence = equiv;
-            if (!equiv.equivalent) {
-                report.error = 'tree hash mismatch after heuristic split';
+            if (!report.error) {
+                var equiv = await verifyEquivalence(plan);
+                // T121: Propagate equivalence result to report.
+                report.equivalence = equiv;
+                if (equiv.error || !equiv.equivalent) {
+                    report.error = equiv.error || 'tree hash mismatch after heuristic split';
+                }
             }
         }
 
@@ -182,7 +216,7 @@
         var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
         var shellExecAsync = prSplit._shellExecAsync;
         var shellQuote = prSplit._shellQuote;
-        var osmod = prSplit._modules.osmod;
+        var applyResolutionPatches = prSplit._applyResolutionPatches;
         var runtime = prSplit.runtime;
         var state = prSplit._state;
         var agentExec = state.agentExecutor;
@@ -191,6 +225,7 @@
 
         var reSplitNeeded = false;
         var reSplitReason = '';
+        var unresolvedFailures = [];
 
         // Wall-clock timeout: cap total elapsed time.
         var wallClockMs = (timeouts && typeof timeouts.wallClockMs === 'number')
@@ -207,10 +242,10 @@
 
         for (var i = 0; i < failures.length; i++) {
             if (Date.now() >= deadline) {
-                return { reSplitNeeded: false, reSplitReason: 'wall-clock timeout after ' + (Date.now() - deadlineStart) + 'ms (limit: ' + wallClockMs + 'ms)' };
+                return { reSplitNeeded: false, reSplitReason: 'wall-clock timeout after ' + (Date.now() - deadlineStart) + 'ms (limit: ' + wallClockMs + 'ms)', error: 'conflict resolution timed out after ' + (Date.now() - deadlineStart) + 'ms' };
             }
             if (isCancelled() || isForceCancelled()) {  // T117
-                return { reSplitNeeded: false, reSplitReason: 'cancelled by user' };
+                return { reSplitNeeded: false, reSplitReason: 'cancelled by user', error: 'conflict resolution cancelled by user' };
             }
 
             var fail = failures[i];
@@ -218,10 +253,10 @@
 
             for (var attempt = 0; attempt < maxAttemptsPerBranch && !fixed; attempt++) {
                 if (Date.now() >= deadline) {
-                    return { reSplitNeeded: false, reSplitReason: 'wall-clock timeout after ' + (Date.now() - deadlineStart) + 'ms (limit: ' + wallClockMs + 'ms)' };
+                    return { reSplitNeeded: false, reSplitReason: 'wall-clock timeout after ' + (Date.now() - deadlineStart) + 'ms (limit: ' + wallClockMs + 'ms)', error: 'conflict resolution timed out after ' + (Date.now() - deadlineStart) + 'ms' };
                 }
                 if (isCancelled() || isForceCancelled()) {  // T117
-                    return { reSplitNeeded: false, reSplitReason: 'cancelled by user' };
+                    return { reSplitNeeded: false, reSplitReason: 'cancelled by user', error: 'conflict resolution cancelled by user' };
                 }
 
                 // Exponential backoff between retry attempts (skip delay on first attempt).
@@ -232,10 +267,10 @@
                         fail.branch || fail.name, backoffMs, attempt + 1, maxAttemptsPerBranch);
                     await new Promise(function(resolve) { setTimeout(resolve, backoffMs); });
                     if (Date.now() >= deadline) {
-                        return { reSplitNeeded: false, reSplitReason: 'wall-clock timeout during backoff' };
+                        return { reSplitNeeded: false, reSplitReason: 'wall-clock timeout during backoff', error: 'conflict resolution timed out during backoff' };
                     }
                     if (isCancelled() || isForceCancelled()) {  // T117
-                        return { reSplitNeeded: false, reSplitReason: 'cancelled during backoff' };
+                        return { reSplitNeeded: false, reSplitReason: 'cancelled during backoff', error: 'conflict resolution cancelled during backoff' };
                     }
                 }
 
@@ -330,14 +365,15 @@
                     continue;
                 }
 
-                // Apply patches in worktree.
+                // Apply patches in worktree. The shared helper revalidates
+                // paths, awaits every write, and prevents partial commits.
+                var patchResult = await applyResolutionPatches(resolution, patchWorktreeDir);
+                if (patchResult.error) {
+                    log.printf('auto-split: patch application failed for %s: %s', patchBranch, patchResult.error);
+                    await gitExecAsync(dir, ['worktree', 'remove', '--force', patchWorktreeDir]);
+                    continue;
+                }
                 if (resolution.patches && resolution.patches.length > 0) {
-                    for (var p = 0; p < resolution.patches.length; p++) {
-                        var patch = resolution.patches[p];
-                        if (osmod) {
-                            osmod.writeFile(patchWorktreeDir + '/' + patch.file, patch.content);
-                        }
-                    }
                     await gitAddChangedFilesAsync(patchWorktreeDir);
                     var patchCommit = await gitExecAsync(patchWorktreeDir, ['commit', '--amend', '--no-edit']);
                     if (patchCommit.code !== 0) {
@@ -350,14 +386,11 @@
                 if (resolution.commands && resolution.commands.length > 0) {
                     var commandsAborted = false;
                     for (var c = 0; c < resolution.commands.length; c++) {
-                        var cmdTimeoutPromise = new Promise(function(resolve) {
-                            setTimeout(function() { resolve({ stdout: '', stderr: 'command timed out', code: -1, error: true, message: 'timed out after ' + commandTimeoutMs + 'ms' }); }, commandTimeoutMs);
-                        });
-                        var cmdResult = await Promise.race([
-                            shellExecAsync(((prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ') + shellQuote(patchWorktreeDir) + ' && ' + resolution.commands[c]),
-                            cmdTimeoutPromise
-                        ]);
-                        if (cmdResult.code === -1 && cmdResult.message && cmdResult.message.indexOf('timed out') !== -1) {
+                        var cmdResult = await shellExecAsync(
+                            ((prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ') + shellQuote(patchWorktreeDir) + ' && ' + resolution.commands[c],
+                            { timeoutMs: commandTimeoutMs }
+                        );
+                        if (cmdResult.message && cmdResult.message.indexOf('timed out') !== -1) {
                             log.printf('auto-split: resolution command timed out for %s after %dms: %s',
                                 patchBranch, commandTimeoutMs, resolution.commands[c]);
                             commandsAborted = true;
@@ -381,7 +414,10 @@
                 await gitExecAsync(dir, ['worktree', 'remove', '--force', patchWorktreeDir]);
 
                 // Re-verify this branch (verifySplitAsync creates its own worktree).
-                var reVerify = await verifySplitAsync(fail.branch || fail.name, { verifyCommand: runtime.verifyCommand });
+                var reVerify = await verifySplitAsync(fail.branch || fail.name, {
+                    verifyCommand: runtime.verifyCommand,
+                    verifyTimeoutMs: timeouts.verifyMs
+                });
                 if (reVerify.passed) {
                     fixed = true;
                     emitOutput('[auto-split] Fixed: ' + (fail.branch || fail.name));
@@ -389,11 +425,20 @@
             }
 
             if (!fixed && !reSplitNeeded) {
-                log.printf('auto-split: Agent resolution exhausted for %s, trying local strategies', fail.branch || fail.name);
+                log.printf('auto-split: Agent resolution exhausted for %s', fail.branch || fail.name);
+                unresolvedFailures.push(fail.branch || fail.name);
             }
         }
 
-        return { reSplitNeeded: reSplitNeeded, reSplitReason: reSplitReason };
+        var unresolvedError = unresolvedFailures.length > 0
+            ? 'verification remained failed for: ' + unresolvedFailures.join(', ')
+            : null;
+        return {
+            reSplitNeeded: reSplitNeeded,
+            reSplitReason: reSplitReason,
+            unresolvedFailures: unresolvedFailures,
+            error: unresolvedError
+        };
     }
 
     // Exports.

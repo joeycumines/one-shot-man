@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
 )
 
 // TestBenchmark_AutoSplitLargeRepo exercises automatedSplit with a 100-file,
@@ -147,7 +145,7 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 	}
 
 	// Set up MCP callback injection.
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {

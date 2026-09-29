@@ -36,7 +36,7 @@ func setupPinnedAgentSession(t testing.TB, mgr *termmux.SessionManager, evalJS f
 	if err != nil {
 		t.Fatalf("register agent session: %v", err)
 	}
-	if err := mgr.Activate(id); err != nil {
+	if _, err := evalJS(fmt.Sprintf(`await tuiMux.activate(%d)`, id)); err != nil {
 		t.Fatalf("activate agent session: %v", err)
 	}
 
@@ -97,13 +97,7 @@ func TestPinnedSessionIsolation(t *testing.T) {
 
 	// ── Send key to Agent-focused state ─────────────────────────────
 	agentState := testState(true, "agent", "agent")
-	_, err = evalJS(`
-		var __cs = ` + agentState + `;
-		__cs.agentSessionID = ` + fmt.Sprintf("%d", agentID) + `;
-		__cs.activeVerifySession = ` + fmt.Sprintf("%d", verifyID) + `;
-		var __km = { type: 'Key', key: 'a' };
-		prSplit._wizardUpdateImpl(__km, __cs);
-	`)
+	err = runTUIUpdateAndWait(evalJS, `Object.assign(`+agentState+`, { agentSessionID: `+fmt.Sprint(agentID)+`, activeVerifySession: `+fmt.Sprint(verifyID)+` })`, `{ type: 'Key', key: 'a' }`)
 	if err != nil {
 		t.Fatalf("send 'a' to agent: %v", err)
 	}
@@ -120,14 +114,7 @@ func TestPinnedSessionIsolation(t *testing.T) {
 	// ── Send key to verify-focused state ─────────────────────────────
 	// Activate verify session so mgr.Input dispatches to it.
 	verifyState := testState(true, "agent", "verify")
-	_, err = evalJS(`
-		var __vs = ` + verifyState + `;
-		__vs.agentSessionID = ` + fmt.Sprintf("%d", agentID) + `;
-		__vs.activeVerifySession = ` + fmt.Sprintf("%d", verifyID) + `;
-		__vs.verifyScreen = 'active';
-		var __vm = { type: 'Key', key: 'b' };
-		prSplit._wizardUpdateImpl(__vm, __vs);
-	`)
+	err = runTUIUpdateAndWait(evalJS, `Object.assign(`+verifyState+`, { agentSessionID: `+fmt.Sprint(agentID)+`, activeVerifySession: `+fmt.Sprint(verifyID)+`, verifyScreen: 'active' })`, `{ type: 'Key', key: 'b' }`)
 	if err != nil {
 		t.Fatalf("send 'b' to verify: %v", err)
 	}
@@ -170,11 +157,7 @@ func TestCtrlComboForwarding(t *testing.T) {
 
 	for i, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			_, err := evalJS(`
-				var __s` + fmt.Sprint(i) + ` = ` + state + `;
-				var __m` + fmt.Sprint(i) + ` = { type: 'Key', key: '` + tc.key + `' };
-				prSplit._wizardUpdateImpl(__m` + fmt.Sprint(i) + `, __s` + fmt.Sprint(i) + `);
-			`)
+			err := runTUIUpdateAndWait(evalJS, state, `{ type: 'Key', key: '`+tc.key+`' }`)
 			if err != nil {
 				t.Fatalf("wizardUpdateImpl(%s): %v", tc.key, err)
 			}
@@ -229,11 +212,7 @@ func TestReservedKeyGuard(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			before := len(agentRec.getWrites())
 
-			_, _ = evalJS(`
-				var __rk = ` + state + `;
-				var __rkm = { type: 'Key', key: '` + key + `' };
-				prSplit._wizardUpdateImpl(__rkm, __rk);
-			`)
+			_ = runTUIUpdateAndWait(evalJS, state, `{ type: 'Key', key: '`+key+`' }`)
 
 			after := len(agentRec.getWrites())
 			if after != before {
@@ -244,10 +223,7 @@ func TestReservedKeyGuard(t *testing.T) {
 	}
 
 	// Verify at least one NON-reserved key DOES forward (sanity check).
-	_, err = evalJS(`
-		var __sane = ` + state + `;
-		prSplit._wizardUpdateImpl({ type: 'Key', key: 'q' }, __sane);
-	`)
+	err = runTUIUpdateAndWait(evalJS, state, `{ type: 'Key', key: 'q' }`)
 	if err != nil {
 		t.Fatalf("sanity key 'q': %v", err)
 	}
@@ -329,18 +305,7 @@ func TestMouseEventVariety(t *testing.T) {
 
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := evalJS(`
-				var __ms` + fmt.Sprint(i) + ` = ` + state + `;
-				var __mm` + fmt.Sprint(i) + ` = {
-					type: '` + tc.msgType + `',
-					button: '` + tc.button + `',
-					x: ` + fmt.Sprint(tc.x) + `,
-					y: ` + fmt.Sprint(tc.y) + `,
-					mod: ` + tc.modifiers + `,
-					string: ''
-				};
-				prSplit._wizardUpdateImpl(__mm` + fmt.Sprint(i) + `, __ms` + fmt.Sprint(i) + `);
-			`)
+			err := runTUIUpdateAndWait(evalJS, state, `{ type: '`+tc.msgType+`', button: '`+tc.button+`', x: `+fmt.Sprint(tc.x)+`, y: `+fmt.Sprint(tc.y)+`, mod: `+tc.modifiers+`, string: '' }`)
 			if err != nil {
 				t.Fatalf("wizardUpdateImpl(%s): %v", tc.name, err)
 			}
@@ -389,13 +354,7 @@ func TestVerifyPaneRouting(t *testing.T) {
 	verifyState := testState(true, "agent", "verify")
 
 	// ── Printable key reaches verify ─────────────────────────────────
-	_, err = evalJS(`
-		var __vr1 = ` + verifyState + `;
-		__vr1.agentSessionID = ` + fmt.Sprintf("%d", agentID) + `;
-		__vr1.activeVerifySession = ` + fmt.Sprintf("%d", verifyID) + `;
-		__vr1.verifyScreen = 'active';
-		prSplit._wizardUpdateImpl({ type: 'Key', key: 'x' }, __vr1);
-	`)
+	err = runTUIUpdateAndWait(evalJS, `Object.assign(`+verifyState+`, { agentSessionID: `+fmt.Sprint(agentID)+`, activeVerifySession: `+fmt.Sprint(verifyID)+`, verifyScreen: 'active' })`, `{ type: 'Key', key: 'x' }`)
 	if err != nil {
 		t.Fatalf("send 'x' to verify: %v", err)
 	}
@@ -412,13 +371,7 @@ func TestVerifyPaneRouting(t *testing.T) {
 	// ── Arrow key reaches verify (NOT reserved in INTERACTIVE set) ───
 	// Note: 'up' and 'down' are intercepted by the global verify scroll
 	// handler at the top of handleKeyMessage, so we use 'left' instead.
-	_, err = evalJS(`
-		var __vr2 = ` + verifyState + `;
-		__vr2.agentSessionID = ` + fmt.Sprintf("%d", agentID) + `;
-		__vr2.activeVerifySession = ` + fmt.Sprintf("%d", verifyID) + `;
-		__vr2.verifyScreen = 'active';
-		prSplit._wizardUpdateImpl({ type: 'Key', key: 'left' }, __vr2);
-	`)
+	err = runTUIUpdateAndWait(evalJS, `Object.assign(`+verifyState+`, { agentSessionID: `+fmt.Sprint(agentID)+`, activeVerifySession: `+fmt.Sprint(verifyID)+`, verifyScreen: 'active' })`, `{ type: 'Key', key: 'left' }`)
 	if err != nil {
 		t.Fatalf("send 'left' to verify: %v", err)
 	}
@@ -448,13 +401,7 @@ func TestVerifyPaneRouting(t *testing.T) {
 		}
 		before := len(verifyRec.getWrites())
 
-		_, _ = evalJS(`
-			var __vrk = ` + verifyState + `;
-			__vrk.agentSessionID = ` + fmt.Sprintf("%d", agentID) + `;
-			__vrk.activeVerifySession = ` + fmt.Sprintf("%d", verifyID) + `;
-			__vrk.verifyScreen = 'active';
-			prSplit._wizardUpdateImpl({ type: 'Key', key: '` + key + `' }, __vrk);
-		`)
+		_ = runTUIUpdateAndWait(evalJS, `Object.assign(`+verifyState+`, { agentSessionID: `+fmt.Sprint(agentID)+`, activeVerifySession: `+fmt.Sprint(verifyID)+`, verifyScreen: 'active' })`, `{ type: 'Key', key: '`+key+`' }`)
 
 		after := len(verifyRec.getWrites())
 		if after != before {
@@ -493,10 +440,7 @@ func TestSpecialKeyForwarding(t *testing.T) {
 
 	for i, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			_, err := evalJS(`
-				var __sk` + fmt.Sprint(i) + ` = ` + state + `;
-				prSplit._wizardUpdateImpl({ type: 'Key', key: '` + tc.key + `' }, __sk` + fmt.Sprint(i) + `);
-			`)
+			err := runTUIUpdateAndWait(evalJS, state, `{ type: 'Key', key: '`+tc.key+`' }`)
 			if err != nil {
 				t.Fatalf("wizardUpdateImpl(%s): %v", tc.key, err)
 			}
@@ -539,13 +483,7 @@ func TestFocusChangeWriteIsolation(t *testing.T) {
 	sendKey := func(focus, tab, key string) {
 		t.Helper()
 		st := testState(true, focus, tab)
-		_, err := evalJS(`
-			var __fci = ` + st + `;
-			__fci.agentSessionID = ` + fmt.Sprintf("%d", agentID) + `;
-			__fci.activeVerifySession = ` + fmt.Sprintf("%d", verifyID) + `;
-			__fci.verifyScreen = 'active';
-			prSplit._wizardUpdateImpl({ type: 'Key', key: '` + key + `' }, __fci);
-		`)
+		err := runTUIUpdateAndWait(evalJS, `Object.assign(`+st+`, { agentSessionID: `+fmt.Sprint(agentID)+`, activeVerifySession: `+fmt.Sprint(verifyID)+`, verifyScreen: 'active' })`, `{ type: 'Key', key: '`+key+`' }`)
 		if err != nil {
 			t.Fatalf("send %q to focus=%s tab=%s: %v", key, focus, tab, err)
 		}

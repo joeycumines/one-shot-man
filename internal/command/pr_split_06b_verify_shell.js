@@ -36,9 +36,11 @@
     // termmux.newCaptureSession. Returns the CaptureSession object, or
     // throws if the session cannot be created.
     //
-    // opts: { rows, cols, env }
+    // opts: { rows, cols, env, deferStart }
     //   rows/cols default to 24/120.
     //   env is an optional object of additional environment variables.
+    //   deferStart leaves startup to the caller; the TUI uses this to await
+    //   the native start Promise and handle startup failure without blocking.
     function spawnShellSession(worktreeDir, opts) {
         // T338: Call through prSplit.canSpawnInteractiveShell so tests can
         // override the platform check without dealing with closure binding.
@@ -89,11 +91,14 @@
         }
 
         var session = termmux.newCaptureSession(shell, shellArgs, sessionOpts);
-        var started = session.start();
-        if (started && typeof started.then === 'function') {
-            started.catch(function(e) {
-                log.debug('spawnShell: async start failed', { error: (e && e.message) || String(e) });
-            });
+        if (opts.deferStart !== true) {
+            var started = session.start();
+            if (started && typeof started.then === 'function') {
+                session._startPromise = started.catch(function(e) {
+                    log.debug('spawnShell: async start failed', { error: (e && e.message) || String(e) });
+                    return null;
+                });
+            }
         }
         return session;
     }

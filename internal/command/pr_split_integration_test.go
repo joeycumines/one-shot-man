@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -32,7 +31,7 @@ func newPrSplitEvalFromFlags(t testing.TB, args ...string) (*PrSplitCommand, fun
 	if err := fs.Parse(args); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	cmd.applyConfigDefaults()
+	cmd.applyConfigDefaults(args)
 	if err := cmd.validateFlags(); err != nil {
 		t.Fatalf("validate flags: %v", err)
 	}
@@ -2213,7 +2212,7 @@ func TestIntegration_AutoSplitMockMCP_OutputObservation(t *testing.T) {
 	}
 
 	// Inject classification via mcpcallback.
-	watchCh := mcpcallbackmod.WatchForInit()
+	watchCh := tp.WatchMCPInit()
 	go func() {
 		h := <-watchCh
 		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {

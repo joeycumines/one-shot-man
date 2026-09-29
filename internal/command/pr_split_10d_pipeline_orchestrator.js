@@ -6,6 +6,42 @@
     // NOTE: automatedSplit internally late-binds ~34 dependencies from prSplit.*
     // at the START of each invocation, including cross-chunk deps from 10a/10b/10c.
 
+    async function validateResumeResults(plan, results, fallbackDir) {
+        var valid = [];
+        if (!Array.isArray(results) || !plan || !Array.isArray(plan.splits)) return valid;
+        var resolveDir = prSplit._resolveDir;
+        var gitExecAsync = prSplit._gitExecAsync;
+        var validationDir = resolveDir(plan.dir || fallbackDir || '.');
+        var limit = Math.min(results.length, plan.splits.length);
+        var previousSHA = null;
+        for (var index = 0; index < limit; index++) {
+            var result = results[index];
+            var split = plan.splits[index];
+            if (!result || result.name !== split.name || result.error ||
+                typeof result.sha !== 'string' || !/^[0-9a-f]{40}$/i.test(result.sha)) {
+                break;
+            }
+            var ref = 'refs/heads/' + split.name;
+            var branchState = await gitExecAsync(validationDir, ['rev-parse', '--verify', ref]);
+            if (branchState.code !== 0 || branchState.stdout.trim() !== result.sha) {
+                log.printf('auto-split: discarding stale resume result for %s', split.name);
+                break;
+            }
+            var ancestor = previousSHA || plan.baseBranch;
+            if (typeof ancestor !== 'string' || ancestor === '') {
+                break;
+            }
+            var ancestry = await gitExecAsync(validationDir, ['merge-base', '--is-ancestor', ancestor, result.sha]);
+            if (ancestry.code !== 0) {
+                log.printf('auto-split: discarding resume result with broken ancestry for %s', split.name);
+                break;
+            }
+            previousSHA = result.sha;
+            valid.push(result);
+        }
+        return valid;
+    }
+
     // --- automatedSplit — the main orchestrator ---
 
     // Orchestrates the full automated PR splitting pipeline.
@@ -18,6 +54,7 @@
         // Late-bind ALL cross-chunk dependencies (called at runtime, not load time).
         var runtime = prSplit.runtime;
         var gitExec = prSplit._gitExec;
+        var gitExecAsync = prSplit._gitExecAsync;
         var isCancelled = prSplit.isCancelled;
         var isForceCancelled = prSplit.isForceCancelled;  // T117
         var isPaused = prSplit.isPaused;
@@ -91,7 +128,8 @@
             classify: typeof config.classifyTimeoutMs === 'number' ? config.classifyTimeoutMs : AUTOMATED_DEFAULTS.classifyTimeoutMs,
             plan: typeof config.planTimeoutMs === 'number' ? config.planTimeoutMs : AUTOMATED_DEFAULTS.planTimeoutMs,
             resolve: typeof config.resolveTimeoutMs === 'number' ? config.resolveTimeoutMs : AUTOMATED_DEFAULTS.resolveTimeoutMs,
-            commandMs: typeof config.resolveCommandTimeoutMs === 'number' ? config.resolveCommandTimeoutMs : AUTOMATED_DEFAULTS.resolveCommandTimeoutMs
+            commandMs: typeof config.resolveCommandTimeoutMs === 'number' ? config.resolveCommandTimeoutMs : AUTOMATED_DEFAULTS.resolveCommandTimeoutMs,
+            verifyMs: typeof config.verifyTimeoutMs === 'number' ? config.verifyTimeoutMs : AUTOMATED_DEFAULTS.verifyTimeoutMs
         };
         var pollInterval = typeof config.pollIntervalMs === 'number' ? config.pollIntervalMs : AUTOMATED_DEFAULTS.pollIntervalMs;
         // Use typeof check: 0 is a valid value for retry/re-split counts (meaning "none").
@@ -402,6 +440,46 @@
 
         // Resume support: skip Steps 1-6 if resuming from a saved plan.
         var resuming = !!config.resumeFromPlan;
+        function recordAgentAttachment(cid) {
+            state.agentSessionID = cid;
+            if (typeof prSplit._noteAgentAttached === 'function') {
+                try {
+                    var noteResult = prSplit._noteAgentAttached(cid, null);
+                    if (noteResult && typeof noteResult.then === 'function') {
+                        return noteResult.then(function() {
+                            log.printf('auto-split: attached Agent (%s) handle to tuiMux, sessionID=%d',
+                                typeof sessionTypes !== 'undefined' && sessionTypes.agent ? sessionTypes.agent.name : 'agent',
+                                cid || 0);
+                            return cid;
+                        });
+                    }
+                } catch (e) {
+                    log.debug('auto-split noteAgentAttached failed', { error: e.message || String(e) });
+                }
+            }
+            log.printf('auto-split: attached Agent (%s) handle to tuiMux, sessionID=%d',
+                typeof sessionTypes !== 'undefined' && sessionTypes.agent ? sessionTypes.agent.name : 'agent',
+                cid || 0);
+            return cid;
+        }
+        function attachAgentSession(handle) {
+            var expectedExecutor = agentExecutor;
+            var recordIfCurrent = function(cid) {
+                if (expectedExecutor !== agentExecutor ||
+                    (typeof isCancelled === 'function' && isCancelled())) {
+                    return null;
+                }
+                return recordAgentAttachment(cid);
+            };
+            var result = tuiMux.attach(handle);
+            if (result && typeof result.then === 'function') {
+                return result.then(recordIfCurrent).catch(function(e) {
+                    log.printf('auto-split: tuiMux attach warning: %s', e.message || String(e));
+                    return null;
+                });
+            }
+            return recordIfCurrent(result);
+        }
         if (resuming) {
             var loadResult = await loadPlan(config.resumePlanPath);
             if (loadResult.error) {
@@ -634,28 +712,13 @@
         // Attach Agent's PTY handle to tuiMux so ctrl+] can forward.
         // The session target was pre-configured as sessionTypes.agent at
         // bootstrap (setupEngineGlobals) — no lazy assignment needed.
-        // attach() returns the pinned SessionID; store it in state so all
-        // Agent reads/writes use tuiMux.capture(cid) rather than ActiveID.
-        // SYNCHRONOUS INVARIANT: state.agentSessionID MUST be written in the
-        // same synchronous JS turn as the attach() call. pollAgentScreenshot
-        // depends on this — if a tick fires between attach and state write,
-        // the guard will treat Agent as "not yet attached".
         if (agentExecutor && agentExecutor.handle && typeof tuiMux !== 'undefined' && tuiMux) {
 	            if (typeof agentExecutor.handle.isAlive === 'function' && !agentExecutor.handle.isAlive()) {
 	                log.printf('auto-split: Agent process died between spawn and attach — ctrl+] will not work');
 	                emitOutput('[auto-split] Warning: Agent process exited unexpectedly. Toggle (Ctrl+]) unavailable.');
 	            } else {
                 try {
-                    var cid = tuiMux.attach(agentExecutor.handle);
-                    state.agentSessionID = cid;
-                    if (typeof prSplit._noteAgentAttached === 'function') {
-                        try { prSplit._noteAgentAttached(cid, null); } catch (e) {
-                            log.debug('auto-split noteAgentAttached failed', { error: e.message || String(e) });
-                        }
-                    }
-                    log.printf('auto-split: attached Agent (%s) handle to tuiMux, sessionID=%d',
-                        typeof sessionTypes !== 'undefined' && sessionTypes.agent ? sessionTypes.agent.name : 'agent',
-                        cid || 0);
+                    await attachAgentSession(agentExecutor.handle);
                 } catch (e) {
                     log.printf('auto-split: tuiMux attach warning: %s', e.message || String(e));
                 }
@@ -896,8 +959,9 @@
             var result = await executeSplit(plan, {
                 progressFn: function(msg) { updateDetail('Execute split plan', msg); }
             });
+            state.executionResultCache = result.results || [];
             if (result.error) {
-                return { error: result.error };
+                return { error: result.error, results: result.results || [] };
             }
             report.splits = result.results || [];
             updateDetail('Execute split plan', report.splits.length + ' branches created');
@@ -976,14 +1040,7 @@
                         typeof tuiMux !== 'undefined' && tuiMux &&
                         typeof tuiMux.attach === 'function') {
                         try {
-                            var resumeCid = tuiMux.attach(agentExecutor.handle);
-                            state.agentSessionID = resumeCid;
-                            if (typeof prSplit._noteAgentAttached === 'function') {
-                                try { prSplit._noteAgentAttached(resumeCid, null); } catch (e) {
-                                    log.debug('auto-split resume noteAgentAttached failed', { error: e.message || String(e) });
-                                }
-                            }
-                            log.printf('auto-split resume: attached Agent handle to tuiMux, sessionID=%d', resumeCid || 0);
+                            await attachAgentSession(agentExecutor.handle);
                         } catch (e) {
                             log.printf('auto-split resume: tuiMux attach warning: %s', e.message || String(e));
                         }
@@ -994,18 +1051,68 @@
             } else {
                 emitOutput('[auto-split] Agent unavailable — conflict resolution disabled for resume.');
             }
+
+            // A checkpoint may contain only a completed prefix of the split
+            // chain. Execute the remaining branches from that prefix instead
+            // of silently verifying branches that were never created.
+            report.plan = plan;
+            report.classification = state.groupsCache || {};
+            var resumeResults = await validateResumeResults(plan, state.executionResultCache, dir);
+            state.executionResultCache = resumeResults;
+            var resumeResultsComplete = resumeResults.length === plan.splits.length;
+            for (var resumeIndex = 0; resumeResultsComplete && resumeIndex < plan.splits.length; resumeIndex++) {
+                var resumeResult = resumeResults[resumeIndex];
+                if (!resumeResult ||
+                    resumeResult.name !== plan.splits[resumeIndex].name ||
+                    resumeResult.error) {
+                    resumeResultsComplete = false;
+                }
+            }
+            if (resumeResultsComplete) {
+                report.splits = resumeResults;
+                state.executionResultCache = resumeResults;
+                emitOutput('[auto-split] All split branches already executed; skipping execution');
+            } else {
+                var resumeExec = await step('Execute split plan', async function() {
+                    var result = await executeSplit(plan, {
+                        completedResults: resumeResults,
+                        progressFn: function(msg) { updateDetail('Execute split plan', msg); }
+                    });
+                    report.splits = result.results || [];
+                    state.executionResultCache = report.splits;
+                    if (result.error) {
+                        return { error: result.error, results: report.splits };
+                    }
+                    updateDetail('Execute split plan', report.splits.length + ' branches ready');
+                    return { error: null };
+                });
+                if (resumeExec.error) {
+                    report.error = resumeExec.error;
+                    await cleanupExecutor();
+                    return finishTUI({ error: resumeExec.error, report: report });
+                }
+            }
+            await savePlan(null, 'Execute split plan');
         }
 
         // Step 7: Verify splits.
         var verifyResult = await step('Verify splits', async function() {
             updateDetail('Verify splits', 'Running verification command on each branch...');
-            var verifyObj = await verifySplits(plan, {
-                verifyTimeoutMs: typeof config.verifyTimeoutMs === 'number' ? config.verifyTimeoutMs : AUTOMATED_DEFAULTS.verifyTimeoutMs,
-                outputFn: emitOutput,
-                onBranchStart: null,
-                onBranchDone: null,
-                onBranchOutput: null
-            });
+            var verifyObj;
+            try {
+                verifyObj = await verifySplits(plan, {
+                    verifyTimeoutMs: typeof config.verifyTimeoutMs === 'number' ? config.verifyTimeoutMs : AUTOMATED_DEFAULTS.verifyTimeoutMs,
+                    outputFn: emitOutput,
+                    onBranchStart: null,
+                    onBranchDone: null,
+                    onBranchOutput: null
+                });
+            } catch (e) {
+                return { error: e.message || String(e), fatal: true, failures: [], allPassed: false };
+            }
+            if (verifyObj.error) {
+                return { error: verifyObj.error, fatal: true, failures: [], allPassed: false };
+            }
             var realFailures = [];
             var skippedResults = [];
             var preExistingResults = [];
@@ -1051,11 +1158,18 @@
             return { error: null, failures: [], allPassed: verifyObj.allPassed };
         });
 
+        if (verifyResult.fatal) {
+            report.error = verifyResult.error;
+            await cleanupExecutor();
+            return finishTUI({ error: report.error, report: report });
+        }
+
         // Checkpoint after verify.
         await savePlan(null, 'Verify splits');
 
         // Step 8: Resolve conflicts (if any real failures).
         var reSplitCount = 0;
+        var verificationUnresolved = !!(verifyResult.failures && verifyResult.failures.length > 0);
         if (verifyResult.failures && verifyResult.failures.length > 0) {
             var resolved = await step('Resolve conflicts via Agent', async function() {
                 return await resolveConflictsWithAgent(
@@ -1064,6 +1178,15 @@
                     heartbeatTimeoutMs
                 );
             });
+            if (!resolved.error && !resolved.reSplitNeeded) {
+                verificationUnresolved = false;
+            }
+            if (resolved.error && !resolved.reSplitNeeded) {
+                report.error = resolved.error;
+            }
+            if (resolved.error && resolved.reSplitNeeded && reSplitCount >= maxReSplits) {
+                report.error = resolved.error;
+            }
 
             // Step 9: Re-split fallback if needed.
             if (resolved.reSplitNeeded && reSplitCount < maxReSplits) {
@@ -1124,7 +1247,8 @@
                     report.plan = plan;
                     var reExec = await step('Re-execute split', async function() {
                         var result = await executeSplit(plan);
-                        if (result.error) return { error: result.error };
+                        state.executionResultCache = result.results || [];
+                        if (result.error) return { error: result.error, results: result.results || [] };
                         report.splits = result.results || [];
                         return { error: null };
                     });
@@ -1155,11 +1279,16 @@
                         });
                         if (reVerifyResult.error) {
                             report.error = reVerifyResult.error;
+                        } else {
+                            verificationUnresolved = false;
                         }
                     }
                 }
             }
 
+            if (verificationUnresolved && !report.error) {
+                report.error = 'verification failures remain unresolved after the configured conflict-resolution attempts';
+            }
             // Checkpoint after resolve/re-split.
             if (!report.error) {
                 await savePlan(null, 'Resolve conflicts');
@@ -1169,8 +1298,14 @@
         // Step 10: Equivalence check and report.
         var equivResult = report.error ? { error: report.error } : await step('Verify equivalence', async function() {
             var result = await verifyEquivalence(plan);
-            return { error: result.equivalent ? null : 'tree hash mismatch', result: result };
+            return {
+                error: result.error || (result.equivalent ? null : 'tree hash mismatch'),
+                result: result
+            };
         });
+        if (!report.error && equivResult && equivResult.error) {
+            report.error = equivResult.error;
+        }
 
         // T121: Propagate equivalence result to report so the TUI can
         // transition from BRANCH_BUILDING → EQUIV_CHECK → FINALIZATION.
@@ -1222,4 +1357,5 @@
 
     // Export.
     prSplit.automatedSplit = automatedSplit;
+    prSplit._validateResumeResults = validateResumeResults;
 })(globalThis.prSplit);

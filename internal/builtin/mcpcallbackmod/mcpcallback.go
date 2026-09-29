@@ -68,23 +68,46 @@ func (h *Handle) Address() string {
 	return h.cb.address
 }
 
-var (
-	watcherMu sync.Mutex
-	watchers  []chan *Handle
-)
+// watcherRegistry routes init notifications to the watchers of the JS runtime
+// that created the callback. Scoping by runtime is the whole point: tests run
+// many engines in one process, and a process-global watcher list hands every
+// engine's handle to every registered test. A test would then inject its own
+// classification payload into a different engine, which surfaces as an
+// unrelated test failing with someone else's files.
+type watcherRegistry struct {
+	mu sync.Mutex
+	// byRuntime maps a runtime to its pending watchers.
+	byRuntime map[*goja.Runtime][]chan *Handle
+}
+
+var initWatchers watcherRegistry
 
 // WatchForInit returns a channel that receives a Handle to the next
-// mcpCallback that completes initialization (init). If a callback
-// is already initialized when this is called, the Handle is delivered
-// immediately. Used by Go integration tests to inject tool results while
-// the JS runtime is waiting on waitForAsync.
+// mcpCallback created by rt that completes initialization (init). Handles for
+// other runtimes are never delivered, so concurrent tests cannot cross-talk.
+// Used by Go integration tests to inject tool results while the JS runtime is
+// waiting on waitForAsync.
+//
+// Each registration is served at most once: the first init for rt delivers to
+// every watcher registered for rt and then clears the runtime's list. A test
+// that registers after its runtime has already initialized receives nothing,
+// so register before starting the pipeline.
+//
+// Delivery is non-blocking. notifyWatchers runs on the caller's event-loop
+// goroutine, so a watcher that is not ready to receive must never stall it.
 //
 // The caller MUST drain the returned channel to avoid goroutine leaks.
-func WatchForInit() <-chan *Handle {
+func WatchForInit(rt *goja.Runtime) <-chan *Handle {
 	ch := make(chan *Handle, 1)
-	watcherMu.Lock()
-	watchers = append(watchers, ch)
-	watcherMu.Unlock()
+	if rt == nil {
+		return ch
+	}
+	initWatchers.mu.Lock()
+	if initWatchers.byRuntime == nil {
+		initWatchers.byRuntime = make(map[*goja.Runtime][]chan *Handle)
+	}
+	initWatchers.byRuntime[rt] = append(initWatchers.byRuntime[rt], ch)
+	initWatchers.mu.Unlock()
 	return ch
 }
 
@@ -107,19 +130,25 @@ func mcpCallbackDebugf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, "[mcpcallback] "+format+"\n", args...)
 }
 
-// notifyWatchers is called after successful init. It delivers
-// a Handle to all registered watcher channels and clears the list.
-func notifyWatchers(cb *mcpCallback) {
+// notifyWatchers is called after successful init. It delivers a Handle to
+// the watchers registered for rt, then clears that runtime's watchers.
+// Sends are non-blocking: a watcher that never receives simply misses the
+// notification instead of stalling the event loop.
+func notifyWatchers(rt *goja.Runtime, cb *mcpCallback) {
+	if rt == nil {
+		return
+	}
 	h := &Handle{cb: cb}
-	watcherMu.Lock()
-	for _, ch := range watchers {
+	initWatchers.mu.Lock()
+	pending := initWatchers.byRuntime[rt]
+	delete(initWatchers.byRuntime, rt)
+	initWatchers.mu.Unlock()
+	for _, ch := range pending {
 		select {
 		case ch <- h:
 		default:
 		}
 	}
-	watchers = nil
-	watcherMu.Unlock()
 }
 
 // injectToolResult pushes data into the waiter channel for toolName.
@@ -360,7 +389,7 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 				}()
 
 				// Notify test watchers that a callback is ready for injection.
-				notifyWatchers(cb)
+				notifyWatchers(cb.runtime, cb)
 				return nil, nil
 			}(ctx)
 			if err != nil {

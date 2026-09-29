@@ -2,7 +2,7 @@ package command
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -677,7 +677,7 @@ const (
 )
 
 func medianMicros(samples []int64) int64 {
-	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
+	slices.Sort(samples)
 	return samples[len(samples)/2]
 }
 

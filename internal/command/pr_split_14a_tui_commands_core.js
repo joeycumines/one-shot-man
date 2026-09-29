@@ -312,7 +312,11 @@
                 handler: async function() {
                     if (!st.planCache) { output.print('Run "plan" first.'); return; }
                     output.print('Verifying ' + st.planCache.splits.length + ' splits...');
-                    var result = await prSplit.verifySplits(st.planCache);
+                    var verifyTimeoutMs = typeof prSplit._effectiveVerifyTimeoutMs === 'function'
+                        ? prSplit._effectiveVerifyTimeoutMs(
+                            (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0)
+                        : (prSplit.AUTOMATED_DEFAULTS || {}).verifyTimeoutMs;
+                    var result = await prSplit.verifySplits(st.planCache, { verifyTimeoutMs: verifyTimeoutMs });
                     for (var i = 0; i < result.results.length; i++) {
                         var r = result.results[i];
                         var icon = r.passed ? style.success('\u2713') :
@@ -376,7 +380,11 @@
                 handler: async function() {
                     if (!st.planCache) { output.print('No plan \u2014 run "plan" or "run" first.'); return; }
                     output.print('Checking splits for verification failures...');
-                    var result = await prSplit.resolveConflicts(st.planCache);
+                    var fixTimeoutMs = typeof prSplit._effectiveVerifyTimeoutMs === 'function'
+                        ? prSplit._effectiveVerifyTimeoutMs(
+                            (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0)
+                        : (prSplit.AUTOMATED_DEFAULTS || {}).verifyTimeoutMs;
+                    var result = await prSplit.resolveConflicts(st.planCache, { verifyTimeoutMs: fixTimeoutMs });
                     if (result.skipped) { output.print('Skipped: ' + result.skipped); return; }
                     if (result.fixed.length > 0) {
                         output.print(style.success('Fixed:'));

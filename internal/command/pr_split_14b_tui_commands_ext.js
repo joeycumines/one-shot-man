@@ -100,8 +100,9 @@
                         var autoConfig = {
                             baseBranch: runtime.baseBranch,
                             strategy: runtime.strategy,
-                            maxGroups: 0,
-                            cleanupOnFailure: prSplitConfig.cleanupOnFailure
+                             maxGroups: 0,
+                             cleanupOnFailure: prSplitConfig.cleanupOnFailure,
+                             resumeFromPlan: !!prSplitConfig.resumeFromPlan
                         };
                         if (prSplitConfig.timeoutMs > 0) {
                             autoConfig.classifyTimeoutMs = prSplitConfig.timeoutMs;
@@ -116,7 +117,7 @@
                             var argStr = typeof args === 'string' ? args : String(args);
                             resumeFlag = argStr.indexOf('--resume') >= 0;
                         }
-                        if (resumeFlag) autoConfig.resume = true;
+                        if (resumeFlag) autoConfig.resumeFromPlan = true;
 
                         // --- Wizard: CONFIG state ---
                         var wizard = new WizardState();
@@ -149,7 +150,7 @@
                             // Checkpoint resume falls through to automatedSplit with
                             // the saved plan — full BRANCH_BUILDING state entry from
                             // checkpoint is not yet implemented.
-                            autoConfig.resumePlan = configResult.checkpoint.plan;
+                            autoConfig.resumePlanPath = configResult.resumePlanPath;
                         } else {
                             // T090: Baseline verification deferred to async.
                             var bvc = configResult.baselineVerifyConfig;

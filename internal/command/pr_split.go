@@ -82,7 +82,8 @@ func loadChunkedScript(engine *scripting.Engine) error {
 type PrSplitCommand struct {
 	*BaseCommand
 	scriptCommandBase
-	interactive bool
+	interactive   bool
+	providedFlags map[string]struct{}
 
 	// Split configuration flags
 	baseBranch    string
@@ -178,6 +179,17 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 	c.RegisterFlags(fs)
 }
 
+// CaptureProvidedFlags records flags explicitly set by the parsed command line.
+func (c *PrSplitCommand) CaptureProvidedFlags(fs *flag.FlagSet) {
+	c.providedFlags = make(map[string]struct{})
+	if fs == nil {
+		return
+	}
+	fs.Visit(func(f *flag.Flag) {
+		c.providedFlags[f.Name] = struct{}{}
+	})
+}
+
 // Execute runs the pr-split command.
 func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	// Set up context with signal handling. In test mode, use a plain
@@ -193,7 +205,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	defer stop()
 
 	// Apply config-file defaults (flags take precedence) and validate.
-	c.applyConfigDefaults()
+	c.applyConfigDefaults(args)
 	if err := c.validateFlags(); err != nil {
 		return err
 	}
@@ -499,6 +511,25 @@ func (c *PrSplitCommand) setupEngineGlobalsOnLoop(ctx context.Context, engine *s
 	return termFd, tuiMgr, nil
 }
 
+// flagProvided reports whether a boolean flag was explicitly present in the
+// raw command arguments. A false boolean flag is meaningful and must not be
+// mistaken for the flag's zero value when config defaults are applied.
+//
+// Only the long form is matched. pflag has no single-dash multi-character
+// flags, so a "-dry-run" spelling could never reach this function through the
+// parser; matching it would only hide a malformed invocation.
+func flagProvided(args []string, name string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			return false
+		}
+		if arg == name || strings.HasPrefix(arg, name+"=") {
+			return true
+		}
+	}
+	return false
+}
+
 // applyConfigDefaults applies config-file values to command fields where the
 // field still holds its flag default. Flags override config values —
 // config keys are namespaced under the "pr-split" command section:
@@ -509,43 +540,57 @@ func (c *PrSplitCommand) setupEngineGlobalsOnLoop(ctx context.Context, engine *s
 //	pr-split.prefix=split/
 //	pr-split.verify=make
 //	pr-split.dry-run=true
-func (c *PrSplitCommand) applyConfigDefaults() {
+func (c *PrSplitCommand) flagWasProvided(args []string, name string) bool {
+	if c.providedFlags != nil {
+		_, ok := c.providedFlags[name]
+		return ok
+	}
+	return flagProvided(args, "--"+name)
+}
+
+func (c *PrSplitCommand) applyConfigDefaults(args []string) {
 	if c.config == nil {
 		return
 	}
 	applyStr := func(key string, target *string, flagDefault string) {
+		if c.flagWasProvided(args, key) {
+			return
+		}
 		if v, ok := c.config.GetCommandOption("pr-split", key); ok && (*target == flagDefault || *target == "") {
 			*target = v
 		}
 	}
 	applyStr("base", &c.baseBranch, "")
 	applyStr("strategy", &c.strategy, "directory")
-	if v, ok := c.config.GetCommandOption("pr-split", "max"); ok && (c.maxFiles == 10 || c.maxFiles == 0) {
+	if v, ok := c.config.GetCommandOption("pr-split", "max"); ok &&
+		!c.flagWasProvided(args, "max") && (c.maxFiles == 10 || c.maxFiles == 0) {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.maxFiles = n
 		}
 	}
 	applyStr("prefix", &c.branchPrefix, "split/")
 	applyStr("verify", &c.verifyCommand, "")
-	if v, ok := c.config.GetCommandOption("pr-split", "dry-run"); ok && !c.dryRun {
-		c.dryRun = v == "true" || v == "1" || v == "yes"
+	applyBool := func(key string, target *bool) {
+		if c.flagWasProvided(args, key) {
+			return
+		}
+		if _, ok := c.config.GetCommandOption("pr-split", key); ok {
+			*target = c.config.GetCommandBool("pr-split", key)
+		}
 	}
+	applyBool("dry-run", &c.dryRun)
 	applyStr("agent-command", &c.agentCommand, "")
-	if v, ok := c.config.GetCommandOption("pr-split", "agent-arg"); ok && len(c.agentArgs) == 0 {
+	if v, ok := c.config.GetCommandOption("pr-split", "agent-arg"); ok && !c.flagWasProvided(args, "agent-arg") && len(c.agentArgs) == 0 {
 		c.agentArgs = append(c.agentArgs, v)
 	}
 	applyStr("agent-env", &c.agentEnv, "")
-	if v, ok := c.config.GetCommandOption("pr-split", "timeout"); ok && c.timeout == 0 {
+	if v, ok := c.config.GetCommandOption("pr-split", "timeout"); ok && !c.flagWasProvided(args, "timeout") && c.timeout == 0 {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			c.timeout = d
 		}
 	}
-	if v, ok := c.config.GetCommandOption("pr-split", "resume"); ok && !c.resume {
-		c.resume = v == "true" || v == "1" || v == "yes"
-	}
-	if v, ok := c.config.GetCommandOption("pr-split", "cleanup-on-failure"); ok && !c.cleanupOnFailure {
-		c.cleanupOnFailure = v == "true" || v == "1" || v == "yes"
-	}
+	applyBool("resume", &c.resume)
+	applyBool("cleanup-on-failure", &c.cleanupOnFailure)
 }
 
 // validateFlags checks that command flags hold valid values after config

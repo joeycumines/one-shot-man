@@ -299,7 +299,122 @@ func TestChunk16f_VerifyPauseResume(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// PAUSED screen: pause-resume and pause-quit buttons
+// BRANCH_BUILDING: async verify pause/resume bindings
+// ---------------------------------------------------------------------------
+
+func TestChunk16f_VerifyPauseResumePromises(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		setupPlanCache();
+		var resolvePause, resolveResume;
+		var pauseCalled = false, resumeCalled = false;
+		var mockSession = {
+			pause: function() {
+				pauseCalled = true;
+				return new Promise(function(resolve) { resolvePause = resolve; });
+			},
+			resume: function() {
+				resumeCalled = true;
+				return new Promise(function(resolve) { resolveResume = resolve; });
+			},
+			interrupt: function() {},
+			kill: function() {}
+		};
+
+		var s = initState('BRANCH_BUILDING');
+		s.activeVerifySession = mockSession;
+		s.verifyPaused = false;
+		var restore = mockZoneHit('verify-pause');
+		try {
+			sendClick(s);
+			if (s.paneOperations.length !== 1) return 'FAIL: async pause was not tracked';
+			await Promise.resolve();
+			if (s.verifyPaused) return 'FAIL: async pause updated state before resolution';
+			if (!pauseCalled) return 'FAIL: async pause() not called';
+			resolvePause();
+			await settlePaneOperations(s);
+			if (!s.verifyPaused) return 'FAIL: async pause did not update state';
+			if (s.paneOperations.length !== 0) return 'FAIL: pause remained tracked after settlement';
+		} finally { restore(); }
+
+		s = initState('BRANCH_BUILDING');
+		s.activeVerifySession = mockSession;
+		s.verifyPaused = true;
+		restore = mockZoneHit('verify-resume');
+		try {
+			sendClick(s);
+			if (s.paneOperations.length !== 1) return 'FAIL: async resume was not tracked';
+			await Promise.resolve();
+			if (!s.verifyPaused) return 'FAIL: async resume updated state before resolution';
+			if (!resumeCalled) return 'FAIL: async resume() not called';
+			resolveResume();
+			await settlePaneOperations(s);
+			if (s.verifyPaused) return 'FAIL: async resume did not update state';
+			if (s.paneOperations.length !== 0) return 'FAIL: resume remained tracked after settlement';
+		} finally { restore(); }
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("async verify pause/resume: %v", raw)
+	}
+}
+
+func TestChunk16f_VerifyCancelTracksInterruptAndKill(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		var resolveInterrupt;
+		var resolveKill;
+		var interruptCalled = false;
+		var killCalled = false;
+		var s = initState('BRANCH_BUILDING');
+		s.activeVerifySession = {
+			interrupt: function() {
+				interruptCalled = true;
+				return new Promise(function(resolve) { resolveInterrupt = resolve; });
+			},
+			kill: function() {
+				killCalled = true;
+				return new Promise(function(resolve) { resolveKill = resolve; });
+			}
+		};
+		var restore = mockZoneHit('nav-cancel');
+		try {
+			sendClick(s);
+			if (!interruptCalled || s.paneOperations.length !== 1) {
+				return 'FAIL: interrupt was not tracked';
+			}
+			resolveInterrupt();
+			await settlePaneOperations(s);
+			if (s.paneOperations.length !== 0) return 'FAIL: interrupt remained tracked';
+			s.lastVerifyInterruptTime = Date.now();
+			sendClick(s);
+			if (!killCalled || s.paneOperations.length !== 1) {
+				return 'FAIL: kill was not tracked';
+			}
+			resolveKill();
+			await settlePaneOperations(s);
+			if (s.paneOperations.length !== 0) return 'FAIL: kill remained tracked';
+			return 'OK';
+		} finally { restore(); }
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify cancel tracking: %v", raw)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PAUSED screen: pause-quit and pause-resume buttons
 // ---------------------------------------------------------------------------
 
 func TestChunk16f_PausedScreenButtons(t *testing.T) {

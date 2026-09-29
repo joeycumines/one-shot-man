@@ -137,9 +137,19 @@
             if (activeVerifySession && !s.verifyShellExited) {
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
-                    try { activeVerifySession.kill(); } catch (e) { log.debug('quit: verifySession.kill failed: ' + (e.message || e)); }
+                    try {
+                        var killResult = activeVerifySession.kill();
+                        prSplit._trackPaneOutcome(s, killResult, null, function(e) {
+                            log.debug('quit: verifySession.kill failed: ' + (e.message || e));
+                        });
+                    } catch (e) { log.debug('quit: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
-                    try { activeVerifySession.interrupt(); } catch (e) { log.debug('quit: verifySession.interrupt failed: ' + (e.message || e)); }
+                    try {
+                        var interruptResult = activeVerifySession.interrupt();
+                        prSplit._trackPaneOutcome(s, interruptResult, null, function(e) {
+                            log.debug('quit: verifySession.interrupt failed: ' + (e.message || e));
+                        });
+                    } catch (e) { log.debug('quit: verifySession.interrupt failed: ' + (e.message || e)); }
                 }
                 s.lastVerifyInterruptTime = now;
                 return [s, null];
@@ -221,7 +231,14 @@
                 }
                 if (liveInside && typeof prSplit._routeMouseToAgentTermpane === 'function') {
                     var liveOk = false;
-                    try { liveOk = prSplit._routeMouseToAgentTermpane(msg); } catch (e) {
+                    try {
+                        liveOk = prSplit._routeMouseToAgentTermpane(msg);
+                        if (liveOk && typeof prSplit._trackPaneOutcome === 'function') {
+                            prSplit._trackPaneOutcome(s, liveOk, null, function(e) {
+                                log.debug('agent live press dispatch failed', { error: e.message || String(e) });
+                            });
+                        }
+                    } catch (e) {
                         log.debug('agent live press dispatch failed', { error: e.message || String(e) });
                     }
                     if (liveOk) return [s, null];
@@ -254,8 +271,11 @@
                 return [s, null];
             }
             if (zone.inBounds('err-discard-session', msg)) {
+                var paneClose = Promise.resolve();
                 if (typeof prSplit._noteAgentDetached === 'function') {
-                    try { prSplit._noteAgentDetached(); } catch (e) {
+                    try {
+                        paneClose = Promise.resolve(prSplit._noteAgentDetached());
+                    } catch (e) {
                         log.debug('error discard detach failed', { error: e.message || String(e) });
                     }
                 }
@@ -266,16 +286,17 @@
                 s.errorDiscardPending = true;
                 prSplit._agentEvidence = null;
                 if (stt) stt.agentEvidence = null;
-                if (typeof prSplit._destroyAgentTermpane === 'function') {
-                    try { prSplit._destroyAgentTermpane(); } catch (e) {
-                        log.debug('error discard destroy failed', { error: e.message || String(e) });
-                    }
-                }
                 try {
                     if (typeof prSplit.cleanupExecutor !== 'function') {
                         throw new Error('cleanupExecutor missing');
                     }
-                    prSplit.cleanupExecutor().then(function() {
+                    var finishDiscard = function() {
+                        s.errorDiscardPending = false;
+                        s.errorDiscardReady = true;
+                    };
+                    var discardCleanup = paneClose.then(function() {
+                        return prSplit.cleanupExecutor();
+                    }).then(function() {
                         var mcpCb = prSplit._mcpCallbackObj;
                         if (!mcpCb || typeof mcpCb.close !== 'function') return null;
                         return mcpCb.close().catch(function(e) {
@@ -285,14 +306,10 @@
                             var inner = prSplit._state;
                             if (inner) inner.mcpCallbackObj = null;
                         });
-                    }).catch(function(e) {
+                    });
+                    prSplit._trackPaneOutcome(s, discardCleanup, finishDiscard, function(e) {
                         log.debug('error discard cleanup failed', { error: e.message || String(e) });
-                    }).then(function() {
-                        s.errorDiscardPending = false;
-                        s.errorDiscardReady = true;
-                    }, function() {
-                        s.errorDiscardPending = false;
-                        s.errorDiscardReady = true;
+                        finishDiscard();
                     });
                 } catch (e) {
                     log.debug('error discard cleanup failed', { error: e.message || String(e) });
@@ -399,7 +416,13 @@
             // T059: Pause/Resume active verify session via dedicated buttons.
             if (activeVerifySession && zone.inBounds('verify-pause', msg)) {
                 if (!s.verifyPaused) {
-                    try { activeVerifySession.pause(); s.verifyPaused = true; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.PAUSED); } catch (e) {
+                    try {
+                        var pauseResult = activeVerifySession.pause();
+                        var markPaused = function() { s.verifyPaused = true; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.PAUSED); };
+                        prSplit._trackPaneOutcome(s, pauseResult, markPaused, function(e) {
+                            log.printf('verify: pause failed: %s', e.message || String(e));
+                        });
+                    } catch (e) {
                         log.printf('verify: pause failed: %s', e.message || String(e));
                     }
                 }
@@ -407,7 +430,13 @@
             }
             if (activeVerifySession && zone.inBounds('verify-resume', msg)) {
                 if (s.verifyPaused) {
-                    try { activeVerifySession.resume(); s.verifyPaused = false; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.RUNNING); } catch (e) {
+                    try {
+                        var resumeResult = activeVerifySession.resume();
+                        var markRunning = function() { s.verifyPaused = false; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.RUNNING); };
+                        prSplit._trackPaneOutcome(s, resumeResult, markRunning, function(e) {
+                            log.printf('verify: resume failed: %s', e.message || String(e));
+                        });
+                    } catch (e) {
                         log.printf('verify: resume failed: %s', e.message || String(e));
                     }
                 }
@@ -420,9 +449,19 @@
             if (activeVerifySession && !s.verifyShellExited && zone.inBounds('verify-interrupt', msg)) {
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
-                    try { activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
+                    try {
+                        var killResult = activeVerifySession.kill();
+                        prSplit._trackPaneOutcome(s, killResult, null, function(e) {
+                            log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e));
+                        });
+                    } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
-                    try { activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
+                    try {
+                        var interruptResult = activeVerifySession.interrupt();
+                        prSplit._trackPaneOutcome(s, interruptResult, null, function(e) {
+                            log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e));
+                        });
+                    } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
                 }
                 s.lastVerifyInterruptTime = now;
                 return [s, null];
@@ -618,12 +657,7 @@
             if (zone.inBounds('final-done', msg)) {
                 handleFinalizationState(s.wizard, 'done');
                 s.wizardState = 'DONE';
-                if (typeof prSplit._destroyAgentTermpane === 'function') {
-                    try { prSplit._destroyAgentTermpane(); } catch (e) {
-                        log.debug('quit pane close failed', { error: e.message || String(e) });
-                    }
-                }
-                return [s, tea.quit()];
+                return prSplit._quitAfterAgentTermpane(s);
             }
         }
 
@@ -949,6 +983,15 @@
                 editorValidationErrors: [],     // validation errors from save attempt
                 editorFileDetailExpanded: false, // show enhanced file detail panel
 
+                paneOperations: [],
+                _verifyPaneCleanupPending: false,
+                _verifyPaneCleanupPromise: null,
+                _verifyPaneCleanupToken: null,
+                _verifyAdvanceAfterCleanup: false,
+                _verifyTimeoutKill: null,
+                _verifyTimeoutKillPending: false,
+                _executionStartPending: false,
+
                 // Focus system.
                 focusIndex: 0,
                 _prevWizardState: null,
@@ -1229,7 +1272,7 @@
     // T10: Now dispatches to any focused interactive pane, not only mux.
     // Task 5: Session-specific — uses pinned SessionID via proxy passthrough
     // instead of raw tuiMux.switchTo() which targets the active session.
-    prSplit._onToggle = async function() {
+    prSplit._onToggle = async function(options) {
         var tuiState = prSplit._toggleModelState;
         var focusTab = tuiState && tuiState.splitViewTab || 'agent';
         var focusPane = tuiState && tuiState.splitViewFocus || 'wizard';
@@ -1243,9 +1286,13 @@
             : null;
 
         if (session && typeof session.passthrough === 'function' &&
-            typeof session.isRunning === 'function' && session.isRunning()) {
-            log.printf('ctrl+] toggle: dispatching to %s session passthrough', targetTab);
-            return await session.passthrough();
+            typeof session.isRunning === 'function') {
+            var running = session.isRunning();
+            if (running && typeof running.then === 'function') running = await running;
+            if (running) {
+                log.printf('ctrl+] toggle: dispatching to %s session passthrough', targetTab);
+                return await session.passthrough(options);
+            }
         }
 
         log.printf('ctrl+] toggle: no child available, skipping');

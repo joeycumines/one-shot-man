@@ -59,7 +59,7 @@ func newPrSplitEvalWithMgr(t testing.TB) (*termmux.SessionManager, func(string) 
 	if err := fs.Parse([]string{"--test", "--store=memory", "--session=" + t.Name()}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	cmd.applyConfigDefaults()
+	cmd.applyConfigDefaults([]string{"--test", "--store=memory", "--session=" + t.Name()})
 	if err := cmd.validateFlags(); err != nil {
 		t.Fatalf("validate flags: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestInlineKeystrokeReachesPTY(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register mock session: %v", err)
 	}
-	if err := mgr.Activate(id); err != nil {
+	if _, err := evalJS(fmt.Sprintf(`await tuiMux.activate(%d)`, id)); err != nil {
 		t.Fatalf("activate mock session: %v", err)
 	}
 
@@ -175,7 +175,7 @@ func TestInlineKeystrokeReachesPTY(t *testing.T) {
 		t.Fatalf("session().write type = %v, want function", v)
 	}
 
-	_, err = evalJS(`tuiMux.session().write('hello')`)
+	_, err = evalJS(`await tuiMux.session().write('hello')`)
 	if err != nil {
 		t.Fatalf("session().write('hello'): %v", err)
 	}
@@ -193,14 +193,14 @@ func TestInlineKeystrokeReachesPTY(t *testing.T) {
 		t.Fatalf("session().resize type = %v, want function", v)
 	}
 
-	_, err = evalJS(`tuiMux.session().resize(40, 120)`)
+	_, err = evalJS(`await tuiMux.session().resize(40, 120)`)
 	if err != nil {
 		t.Fatalf("session().resize(40, 120): %v", err)
 	}
 
 	// ── Verify multi-byte sequence round-trip ────────────────────────
 	// Send an ANSI escape sequence that simulates a real arrow key press.
-	_, err = evalJS(`tuiMux.session().write('\x1b[A')`)
+	_, err = evalJS(`await tuiMux.session().write('\x1b[A')`)
 	if err != nil {
 		t.Fatalf("session().write(escape): %v", err)
 	}

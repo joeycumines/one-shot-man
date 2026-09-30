@@ -427,9 +427,21 @@ type LoadedAccess struct {
 	Surfaces         []string          `json:"surfaces,omitempty"`
 	PreferredSurface string            `json:"preferredSurface,omitempty"`
 	Labels           map[string]string `json:"labels,omitempty"`
-	Order            int32             `json:"order"`
-	Deprecated       bool              `json:"deprecated,omitempty"`
-	Shaper           *LoadedShaper     `json:"shaper,omitempty"`
+	// Annotations is the access's metadata.annotations, carried verbatim.
+	//
+	// Spec carries the facts the catalog understands and the engine validates;
+	// an annotation carries a fact a CONSUMER understands and the CRD does not
+	// model, so it cannot be schema-checked. one-shot-man/registry-name is
+	// additionally folded into Registry because that key has defined meaning to
+	// the engine — it is emitted verbatim here too, so a consumer never has to
+	// know which annotations were "promoted" to a first-class field.
+	//
+	// Every value is an untrusted string. A consumer MUST validate its own
+	// annotation's shape and fail loudly rather than pass it through.
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Order       int32             `json:"order"`
+	Deprecated  bool              `json:"deprecated,omitempty"`
+	Shaper      *LoadedShaper     `json:"shaper,omitempty"`
 }
 
 // LoadedShaper is the JS-facing shape of ShaperConfig.
@@ -541,6 +553,7 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 			Mode:             access.Spec.Mode,
 			Endpoints:        map[string]string{},
 			Labels:           map[string]string{},
+			Annotations:      map[string]string{},
 			Order:            access.Spec.Order,
 			Deprecated:       access.Spec.Deprecated,
 			PreferredSurface: access.Spec.PreferredSurface,
@@ -563,6 +576,7 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 			view.Surfaces = surfaces
 		}
 		maps.Copy(view.Labels, access.Labels)
+		maps.Copy(view.Annotations, access.Annotations)
 		if access.Spec.Shaper != nil {
 			s := access.Spec.Shaper
 			view.Shaper = &LoadedShaper{

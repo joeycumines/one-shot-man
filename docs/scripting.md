@@ -960,3 +960,98 @@ document.
   with no `.catch`/`.then(_,reject)` is not surfaced to the host. Always attach
   a rejection handler. (Tracked for an observability fix; see the compliance
   suite's `TestUnhandledRejection_Observability`.)
+
+### osm:userk8s
+
+The typed model catalog the launcher and tool adapters read. Credential values
+cross into JavaScript only as the `value` field of a resolved credential;
+nothing else exposes credential material, and resolver failures are reported as
+classes (`unset`, `unreadable`, `empty`, `failed`, `timed out`, `canceled`,
+`empty argv`) rather than as error text.
+
+| Configuration key | Env var | Default | Meaning |
+| --- | --- | --- | --- |
+| `userk8s.source` | `OSM_USERK8S_SOURCE` | `files` | Catalog backend: `files` (rendered profile artifacts) or `cluster` (Kubernetes API server) |
+| `userk8s.artifacts` | `OSM_USERK8S_ARTIFACTS` | *(empty)* | Path list of rendered profile files or directories the files backend loads |
+| `userk8s.namespace` | `OSM_USERK8S_NAMESPACE` | *(empty)* | Namespace the namespaced catalog kind is read from (LocalSecretBinding); empty uses the selected kubeconfig context |
+| `userk8s.kubeconfig` | `OSM_USERK8S_KUBECONFIG` | *(empty)* | Kubeconfig for the cluster backend; empty follows `KUBECONFIG` then the default |
+| `userk8s.context` | `OSM_USERK8S_CONTEXT` | *(empty)* | Kubeconfig context for the cluster backend |
+
+An unknown `userk8s.source` value is rejected by configuration validation
+(`osm config userk8s.source bogus` fails; `osm config validate` reports it) and
+again where the value is consumed, so an `OSM_USERK8S_SOURCE` override cannot
+bypass the schema. Asking for `cluster` before a cluster backend is wired fails
+loudly at first use rather than silently serving rendered files.
+
+The `cluster` backend lists the five catalog kinds from the Kubernetes API
+server once, on its first catalog call, and then serves that cached catalog:
+there is no watch and no informer, so a long-running script sees the catalog as
+of its first call and must start again to observe a change. Namespaced
+kinds are read from `userk8s.namespace`, which falls back to the namespace of
+the selected kubeconfig context, and reading a namespaced kind without a
+namespace is an error. Switching `userk8s.source` flips the backend with no
+JavaScript-visible difference: the same functions with the same shapes, and
+`backendStatus().source` reports which backend served the call. Credential
+values are never read from Kubernetes Secrets: resolution runs the matched
+bindings' local resolver chains, so the engine itself needs no Secret read
+permission. `backendStatus().artifacts` names the rendered files a files
+backend read and is an empty list for a cluster backend, because artifacts name
+files and a cluster read has none.
+
+```js
+const userk8s = require('osm:userk8s');
+
+const loaded = userk8s.load();
+// loaded.providers[0] → { name, registryName, displayName, country? }
+// loaded.accesses[0]  → { name, registryName, provider, mode, scheme, requiredEnv, endpoints, labels, annotations, order, deprecated? }
+// loaded.models[0]    → { name, registryName, provider, access?, contextWindow, maxOutputTokens, canReason, inputModalities, reasoningEfforts, default?, deprecated? }
+// loaded.tools[0]     → { name, displayName, surfaces, credentialChannels, budgetProfile }
+// loaded.secretsPresent counts the LocalSecretBindings this machine declares.
+
+const resolution = userk8s.resolveCredential('electronhub-shaper');
+// { status: 'resolved' | 'missingCredentials' | 'unsupportedScheme',
+//   reason?, credentials: [{ envVar, value, provenance }] }
+
+const projection = userk8s.project('opencode', 'electronhub', 'glm-5.3:dev');
+// { providerSlug: 'electronhub', modelSlug: 'glm_5_3_dev', modelId: 'glm-5.3:dev',
+//   budgetProfile: 'sdk-limits', access: 'electronhub-shaper', surfaces: ['chat'], settings: {...} }
+```
+
+`modelSlug` is the identifier the tool accepts and `modelId` is the raw
+registry spelling. The raw spelling is kept whenever the tool's grammar accepts
+it; otherwise every non-alphanumeric character becomes `_`, which is how the
+live tool configurations spell such names (opencode pairs the key
+`glm_5_3_dev` with the id `glm-5.3:dev`). `budgetProfile` only names the tool's
+budget derivation rule: the derivation lives in adapter code. A tool/provider/
+model combination whose identifier cannot be expressed is an error, never a
+silent substitution.
+
+`accesses[].annotations` is the access's `metadata.annotations`, carried
+verbatim, and it is the deliberate counterpart to `spec`. `spec` holds facts the
+catalog understands, so the engine can validate them (CEL on the CRD plus the
+loader's cross-resource checks) and derive from them; an annotation holds a fact
+a **consumer** understands and the CRD does not model, so nothing checks it.
+That asymmetry is the point — the shaper's flag surface
+([github.com/joeycumines/ai-concurrency-shaper](https://github.com/joeycumines/ai-concurrency-shaper))
+is large, vendor-owned, and moves independently of this API, so modelling it
+would turn a catalog CRD into a mirror of an external binary's `--help` and
+force an API change for every flag a release happened to add.
+
+Two consequences for anyone reading one:
+
+- `one-shot-man/registry-name` is **also** still present in `annotations` even
+  though it is promoted to the first-class `registryName` field. The map is
+  verbatim, so a consumer never has to know which annotations were promoted.
+- **Every value is an untrusted string.** An annotation is
+  `map[string]string` by construction, so a structured value is JSON-encoded
+  (`one-shot-man/shaper-args` is a JSON array of strings) and the consumer must
+  validate it and fail loudly. The engine deliberately does not pre-parse: a
+  value it cannot interpret is still meaningful to a consumer that can, and
+  parsing it here would make the engine the arbiter of a vocabulary it does not
+  own.
+
+The `one-shot-man/` prefix is the API group, which is the Kubernetes convention
+for a key the API itself owns (the same reason `metadata.name` lives beside
+`one-shot-man/registry-name` rather than under a vendor namespace). A
+consumer's own facts belong under its own domain prefix, as `example.com/owner`
+does in the module tests.

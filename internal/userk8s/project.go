@@ -172,12 +172,47 @@ func deriveSlug(tool *v1alpha1.Tool, class string, grammar v1alpha1.ToolIdentifi
 	return "", fmt.Errorf("Tool %q cannot derive a %s identifier from %q: neither it nor %q matches %s", tool.Name, class, raw, derived, grammar.Pattern)
 }
 
+// accessSurfaces is the set of client surfaces one access serves.
+//
+// Spec.Surfaces is authoritative when it is declared, and Spec.Endpoints is
+// consulted only when it is not. That is the rule the CRD states on the field
+// ("Surfaces explicitly lists the wire surfaces served by this access. When
+// omitted, surfaces are derived from the keys of Endpoints"), and reading only
+// Endpoints ignored a field the API documents — so an access that declared its
+// served surfaces and carried no endpoint for one of them lost that surface
+// entirely.
+//
+// The two are not redundant, and the reason matters. Endpoints answers "which
+// base URL does a client resolve", which is a transport fact and is empty for a
+// surface reached some other way. Surfaces answers "which surfaces can a client
+// speak here", which is a capability fact. A ModelAccess that names its surfaces
+// is stating the capability, and this function must believe it.
+//
+// A declared surface is honoured whether or not Endpoints carries a base for it;
+// the consumer that needs a base URL is the one that must cope with its absence,
+// and inventing a capability check here would put the transport detail back in
+// front of the capability.
+func accessSurfaces(access *v1alpha1.ModelAccess) map[string]bool {
+	served := make(map[string]bool, len(access.Spec.Surfaces))
+	if len(access.Spec.Surfaces) > 0 {
+		for _, surface := range access.Spec.Surfaces {
+			served[surface] = true
+		}
+		return served
+	}
+	for surface := range access.Spec.Endpoints {
+		served[surface] = true
+	}
+	return served
+}
+
 // servedSurfaces is the intersection of the surfaces the tool speaks and the
 // surfaces the access serves, sorted for determinism.
 func servedSurfaces(access *v1alpha1.ModelAccess, tool *v1alpha1.Tool) []string {
+	served := accessSurfaces(access)
 	var surfaces []string
 	for _, surface := range tool.Spec.Surfaces {
-		if _, ok := access.Spec.Endpoints[surface]; ok {
+		if served[surface] {
 			surfaces = append(surfaces, surface)
 		}
 	}

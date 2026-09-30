@@ -67,6 +67,50 @@ type SurfaceEndpoint string
 // facts (endpoints per surface) and a preference order among accesses of the
 // same provider (lower is more preferred). Cluster-scoped.
 //
+// ## Spec-native configuration versus annotation-mapped configuration
+//
+// An access carries its configuration two ways, and the split is deliberate.
+//
+// A field in Spec is a fact THE CATALOG understands. The engine validates it
+// (CEL on the CRD, plus the cross-resource checks in the loader), can
+// cross-reference it against another field — auth_mode is only meaningful
+// beside auth.requiredEnv — and can derive from it. ShaperConfig is the worked
+// example: the gateway maps each field to exactly one ai-concurrency-shaper
+// flag, refuses a shaper-mode access with no upstream, and validates the auth
+// mode against the access's own credential slots. A wrong value is a registry
+// defect the toolchain names, before anything is spawned.
+//
+// An annotation is a fact a CONSUMER understands and the CRD does not model.
+// The motivating case is ai-concurrency-shaper
+// (https://github.com/joeycumines/ai-concurrency-shaper), whose flag surface
+// is large, vendor-owned, and moves independently of this API. Modelling its
+// flags here would turn a catalog CRD into a mirror of an external binary's
+// --help: every shaper release would either drift the schema or force an API
+// change for a flag the catalog never needed semantically. An annotation has no
+// schema, no CEL, and no regeneration, so adopting a new shaper flag is a data
+// edit rather than an API change.
+//
+// `one-shot-man/shaper-args` is that annotation: a JSON array of strings
+// appended, verbatim, to the ai-concurrency-shaper command line inside the
+// access's mount (provider scope). It is the escape hatch for flags the
+// product neither derives nor validates — `-opencode=true` on the opencode.ai
+// mounts, for example. It is a string because every k8s annotation is a
+// string, so the structure is encoded as JSON and MUST be validated by the
+// consumer: the CRD cannot check it and this API deliberately does not
+// pretend to.
+//
+// Every element is written in the `-flag=value` form, including booleans. A
+// bare flag is not merely untidy: the shaper consumes the token after any
+// value-taking flag written without `=`, so a bare element would swallow the
+// NEXT mount's `--provider=` marker and merge the two mounts with no error
+// reported. Requiring the `=` form makes that unrepresentable.
+//
+// The prefix is the API group, which is the Kubernetes convention for keys an
+// API owns (the same reason metadata.name lives beside
+// one-shot-man/registry-name rather than a vendor namespace): a consumer's own
+// facts would use its own domain, as `example.com/owner` does in the module
+// tests.
+//
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:validation:XValidation:rule="self.metadata.name.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="metadata.name must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ — emitted resource names are sanitized; the raw registry name lives in the one-shot-man/registry-name annotation"

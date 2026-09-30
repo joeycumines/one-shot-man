@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -485,5 +486,85 @@ func TestModuleLoadIsAsync(t *testing.T) {
 	}
 	if got["source"] != "files" {
 		t.Errorf("load() source: got %v, want files", got["source"])
+	}
+}
+
+// TestModuleExposesAccessAnnotationsAndLabels proves the JS view carries a
+// ModelAccess's metadata.annotations verbatim alongside its labels.
+//
+// An annotation is how a CONSUMER-owned fact (a vendor binary's command line,
+// for example) reaches a script without the CRD modelling a field nobody else
+// would use. That only works if the module passes the map through untouched:
+// filtering "known" keys, coercing values, or dropping all-but-registry-name
+// would silently strip the very fact a consumer came to read.
+func TestModuleExposesAccessAnnotationsAndLabels(t *testing.T) {
+	document := `apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: vendor
+spec:
+  display_name: Vendor
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  name: vendor-shaper
+  labels:
+    one-shot-man/mode: shaper
+  annotations:
+    one-shot-man/registry-name: vendor:shaper
+    one-shot-man/shaper-args: '["-opencode=true", "-native-route=chat@/v1/chat/completions"]'
+    example.com/owner: platform
+spec:
+  provider: vendor
+  mode: shaper
+  auth:
+    scheme: none
+  endpoints:
+    chat: http://127.0.0.1:11239/vendor/v1
+`
+	path := filepath.Join(t.TempDir(), "catalog.yaml")
+	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+		t.Fatalf("writing catalog: %v", err)
+	}
+
+	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{path}})
+	value, err := runAsync(`
+		const loaded = await userk8s.load();
+		const access = loaded.accesses[0];
+		__collect({
+			registryPromoted: access.registryName,
+			shaperArgs: access.annotations["one-shot-man/shaper-args"],
+			foreignKept: access.annotations["example.com/owner"],
+			registryStillVerbatim: access.annotations["one-shot-man/registry-name"],
+			labelStillSeparate: access.labels["one-shot-man/mode"],
+			argsAreAString: typeof access.annotations["one-shot-man/shaper-args"] === "string"
+		})
+	`)
+	if err != nil {
+		t.Fatalf("load(): %v", err)
+	}
+	got := value.Export().(map[string]any)
+	const wantArgs = `["-opencode=true", "-native-route=chat@/v1/chat/completions"]`
+	for _, want := range []struct {
+		key  string
+		want any
+	}{
+		// The engine-owned key keeps its dedicated first-class field...
+		{"registryPromoted", "vendor:shaper"},
+		// ...is ALSO still present verbatim, so a consumer never has to know
+		// which annotations were promoted to fields.
+		{"registryStillVerbatim", "vendor:shaper"},
+		{"shaperArgs", wantArgs},
+		{"foreignKept", "platform"},
+		{"labelStillSeparate", "shaper"},
+		// An annotation is a string by construction: k8s annotations are
+		// map[string]string. A consumer that wants structure parses it, and
+		// the module must not pre-parse on its behalf.
+		{"argsAreAString", true},
+	} {
+		if got[want.key] != want.want {
+			t.Errorf("access.%s: got %#v, want %#v", want.key, got[want.key], want.want)
+		}
 	}
 }

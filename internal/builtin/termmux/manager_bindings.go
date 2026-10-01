@@ -322,29 +322,23 @@ func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 		// synchronously on the test goroutine.
 		_ = s.initEventTarget()
 
-		// EventBus → EventTarget bridge: translate SessionManager events into
-		// CustomEvents delivered on the event loop.
-		busID, busCh := mgr.Subscribe(4096)
+		// The event bridge is LAZY: it subscribes to the manager only while
+		// JavaScript holds at least one listener, and stops when the last one
+		// is removed. See event_bridge.go and the on/off/addEventListener
+		// paths in status.go.
+		//
+		// The bridge goroutine is a prompt subscriber whose lifecycle is
+		// bounded by the wrapper context below: on teardown it is stopped
+		// and joined before the subscription is released, so a manager with
+		// no JavaScript consumer costs nothing and a torn-down wrapper can
+		// never stall the manager worker.
 		go func() {
-			defer mgr.Unsubscribe(busID)
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case evt, ok := <-busCh:
-					if !ok {
-						return
-					}
-					s.cacheEvent(evt)
-					data := buildEventData(evt)
-					if data == nil {
-						continue
-					}
-					adapter.Submit(func(_ *goja.Runtime) {
-						s.dispatchCustomEvent(data.eventType, data.detail)
-					})
-				}
+			select {
+			case <-ctx.Done():
+			case <-s.lifecycleDone:
+			case <-mgr.Done():
 			}
+			s.stopEventBridge()
 		}()
 	}
 
@@ -403,12 +397,6 @@ func buildEventData(evt parent.Event) *eventDispatchData {
 	case parent.EventBell:
 		data["pane"] = "agent"
 		return &eventDispatchData{EventBell, data}
-	case parent.EventSessionOutput:
-		data["pane"] = "agent"
-		if raw, ok := evt.Data.([]byte); ok {
-			data["chunk"] = string(raw)
-		}
-		return &eventDispatchData{EventOutput, data}
 	case parent.EventActivity:
 		return &eventDispatchData{EventActivity, data}
 	case parent.EventSilence:

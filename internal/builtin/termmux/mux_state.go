@@ -48,21 +48,40 @@ type muxState struct {
 	sb                    *statusbar.StatusBar
 	toggleKey             byte
 	statusEnabled         bool
-	resizeFn              func(rows, cols uint16) error
-	activeSessionTarget   parent.SessionTarget
-	activeIDCached        atomic.Uint64
-	knownSessions         sync.Map
-	doneSessions          sync.Map
-	cacheMu               sync.Mutex
-	cacheEpoch            atomic.Uint64
-	termRowsCached        atomic.Int64
-	termColsCached        atomic.Int64
-	swappedOnce           bool
-	persistenceMu         sync.Mutex
-	mu                    sync.RWMutex
-	inPassthrough         bool
-	onListeners           map[int]*onListener
-	nextOnID              int
+
+	// --- JavaScript event bridge (see event_bridge.go) ---
+	//
+	// bridgeMu guards all bridge fields. The bridge is a prompt subscriber:
+	// its goroutine acknowledges every bus event immediately and appends it
+	// to bridgeQueue, which the event loop drains in bounded turns.
+	bridgeMu      sync.Mutex
+	bridgeRunning bool
+	bridgeStop    chan struct{}
+	bridgeDone    chan struct{}
+	bridgeQueue   []eventDispatchData
+	// bridgeOutputWatch is the bridge's own any-output watcher. It is
+	// released in stopEventBridge after the output goroutine is joined.
+	bridgeOutputWatch *parent.OutputWatcher
+	bridgeScheduled   bool
+	// listenerCount is the number of live JavaScript listeners registered
+	// through on()/addEventListener-style paths. The bridge runs only while
+	// it is non-zero, so a manager with no JavaScript consumer costs nothing.
+	listenerCount       int
+	resizeFn            func(rows, cols uint16) error
+	activeSessionTarget parent.SessionTarget
+	activeIDCached      atomic.Uint64
+	knownSessions       sync.Map
+	doneSessions        sync.Map
+	cacheMu             sync.Mutex
+	cacheEpoch          atomic.Uint64
+	termRowsCached      atomic.Int64
+	termColsCached      atomic.Int64
+	swappedOnce         bool
+	persistenceMu       sync.Mutex
+	mu                  sync.RWMutex
+	inPassthrough       bool
+	onListeners         map[int]*onListener
+	nextOnID            int
 }
 
 func (s *muxState) cacheEvent(event parent.Event) {

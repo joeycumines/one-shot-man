@@ -250,25 +250,6 @@ func TestSessionManager_SessionsAndSnapshot(t *testing.T) {
 	}
 }
 
-// ── EventsDropped ────────────────────────────────────────
-
-func TestSessionManager_EventsDropped(t *testing.T) {
-	if testing.Short() {
-		t.Skip("slow: spawns SessionManager worker goroutine")
-	}
-
-	runtime, cleanup := setupMgr(t, false)
-	defer cleanup()
-
-	v, err := sessionRun(t, runtime, `tuiMux.eventsDropped()`)
-	if err != nil {
-		t.Fatalf("eventsDropped: %v", err)
-	}
-	if v.ToInteger() != 0 {
-		t.Fatalf("eventsDropped = %d, want 0", v.ToInteger())
-	}
-}
-
 // ── HasChild / ActiveID ──────────────────────────────────
 
 func TestSessionManager_HasChild(t *testing.T) {
@@ -561,19 +542,21 @@ func TestSessionManager_SubscribeUnsubscribe(t *testing.T) {
 	runtime, cleanup := setupMgr(t, false)
 	defer cleanup()
 
-	// subscribe() should return an object with id + pollEvents.
+	// subscribe() returns an object with pollEvents + unsubscribe. It no
+	// longer exposes an integer id: the binding owns its prompt-subscriber
+	// goroutine and the subscription is addressed by the object.
 	v, err := sessionRun(t, runtime, `
-		var sub = tuiMux.subscribe(16);
-		typeof sub.id === 'number' && typeof sub.pollEvents === 'function';
+		var sub = tuiMux.subscribe();
+		typeof sub.pollEvents === 'function' && typeof sub.unsubscribe === 'function';
 	`)
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
 	if !v.ToBoolean() {
-		t.Fatal("subscribe() should return {id, pollEvents}")
+		t.Fatal("subscribe() should return {pollEvents, unsubscribe}")
 	}
 
-	// pollEvents() on fresh subscription should return empty array.
+	// pollEvents() on a fresh subscription returns an empty array.
 	v, err = sessionRun(t, runtime, `JSON.stringify(sub.pollEvents())`)
 	if err != nil {
 		t.Fatalf("pollEvents: %v", err)
@@ -583,21 +566,21 @@ func TestSessionManager_SubscribeUnsubscribe(t *testing.T) {
 	}
 
 	// unsubscribe should succeed.
-	v, err = sessionRun(t, runtime, `tuiMux.unsubscribe(sub.id)`)
+	v, err = sessionRun(t, runtime, `tuiMux.unsubscribe(sub)`)
 	if err != nil {
 		t.Fatalf("unsubscribe: %v", err)
 	}
 	if !v.ToBoolean() {
-		t.Fatal("unsubscribe should return true for existing subscription")
+		t.Fatal("unsubscribe should return true for a live subscription")
 	}
 
 	// unsubscribe again should return false.
-	v, err = sessionRun(t, runtime, `tuiMux.unsubscribe(sub.id)`)
+	v, err = sessionRun(t, runtime, `tuiMux.unsubscribe(sub)`)
 	if err != nil {
 		t.Fatalf("unsubscribe (second): %v", err)
 	}
 	if v.ToBoolean() {
-		t.Fatal("unsubscribe should return false for already-removed subscription")
+		t.Fatal("unsubscribe should return false for an already-removed subscription")
 	}
 }
 
@@ -1021,7 +1004,7 @@ func TestSessionManager_MethodPresence(t *testing.T) {
 			'register', 'unregister', 'activate',
 			'attach', 'detach',
 			'input', 'resize',
-			'capture', 'activeID', 'isDone', 'sessions', 'eventsDropped',
+			'capture', 'activeID', 'isDone', 'sessions',
 			'hasChild',
 			'writeToChild', 'lastActivityMs',
 			'passthrough', 'switchTo',
@@ -2108,7 +2091,6 @@ func TestSnapshotMethods(t *testing.T) {
 		var aid = tuiMux.activeID();
 		var done = tuiMux.isDone(id);
 		var missingDone = tuiMux.isDone(999999);
-		var dropped = tuiMux.eventsDropped();
 		var last = tuiMux.lastActivityMs(id);
 		var ok = typeof ts === 'object' &&
 			snap !== null &&
@@ -2116,7 +2098,6 @@ func TestSnapshotMethods(t *testing.T) {
 			typeof done === 'boolean' &&
 			typeof missingDone === 'boolean' &&
 			Array.isArray(list) &&
-			typeof dropped === 'number' &&
 			typeof last === 'number';
 	`)
 	if err != nil {

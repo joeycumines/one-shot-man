@@ -42,22 +42,10 @@ import (
 )
 
 // Require returns a CommonJS native module under "osm:termui/termpane".
-
-// resolveRequireArgs accepts the current Require(ctx, adapter) form or the
-// legacy Require() form so staged callers migrate independently.
-func resolveRequireArgs(args []any) (context.Context, *gojaeventloop.Adapter) {
-	if len(args) >= 2 {
-		if ctx, ok := args[0].(context.Context); ok {
-			if adapter, ok := args[1].(*gojaeventloop.Adapter); ok {
-				return ctx, adapter
-			}
-		}
-	}
-	return context.Background(), nil
-}
-
-func Require(args ...any) func(runtime *goja.Runtime, module *goja.Object) {
-	ctx, adapter := resolveRequireArgs(args)
+// ctx is threaded into every asynchronous export and adapter supplies the
+// promise machinery; both are mandatory because update() and close() settle
+// promises and panic when the adapter is missing.
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := runtime.NewObject()
 		_ = module.Set("exports", exports)

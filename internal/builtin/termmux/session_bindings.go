@@ -3,6 +3,7 @@ package termmux
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/joeycumines/goja"
@@ -155,40 +156,112 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 		return s.closeManagerPromise()
 	})
 
+	// subscribe creates a JavaScript-owned event subscription. The old binding
+	// handed JavaScript a private buffered channel; that shape cannot exist on
+	// the shared unbuffered bus, where every subscriber must receive and
+	// acknowledge promptly. Instead the binding runs its own prompt-subscriber
+	// goroutine that acknowledges immediately and appends to a private queue,
+	// and pollEvents drains that queue. The queue is never dropped and never
+	// stalls the publisher; a JavaScript consumer that never polls only grows
+	// its own queue.
 	_ = obj.Set("subscribe", func(call goja.FunctionCall) goja.Value {
-		bufSize := 64
-		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) {
-			bufSize = int(call.Argument(0).ToInteger())
+		ch := s.mgr.SubscribeEvents()
+
+		var mu sync.Mutex
+		var queue []parent.Event
+		alive := make(chan struct{})
+		done := make(chan struct{})
+		var released sync.Once
+		release := func() {
+			// Join-before-release is unnecessary here: this goroutine IS the
+			// receiver, and it has already returned from the select, so no
+			// receive is in flight when the count drops.
+			released.Do(func() { s.mgr.UnsubscribeEvents() })
 		}
-		id, ch := s.mgr.Subscribe(bufSize)
-
-		result := s.runtime.NewObject()
-		_ = result.Set("id", id)
-
-		_ = result.Set("pollEvents", func() goja.Value {
-			evts := make([]map[string]any, 0)
+		go func() {
+			defer close(done)
 			for {
 				select {
+				case <-alive:
+					return
+				case <-s.lifecycleDone:
+					// The wrapper is going away: stop receiving and release
+					// the subscription, so a subscription object dropped by
+					// JavaScript without unsubscribe cannot leak.
+					release()
+					return
+				case <-s.mgr.Done():
+					release()
+					return
 				case evt, ok := <-ch:
 					if !ok {
-						return s.runtime.ToValue(evts)
+						return
 					}
-					evts = append(evts, map[string]any{
-						"kind":      evt.Kind.String(),
-						"sessionId": uint64(evt.SessionID),
-						"time":      evt.Time.UnixMilli(),
-					})
-				default:
-					return s.runtime.ToValue(evts)
+					s.mgr.AckEvent()
+					mu.Lock()
+					queue = append(queue, evt)
+					mu.Unlock()
 				}
 			}
+		}()
+
+		result := s.runtime.NewObject()
+		_ = result.Set("pollEvents", func() goja.Value {
+			mu.Lock()
+			evts := queue
+			queue = nil
+			mu.Unlock()
+			out := make([]map[string]any, 0, len(evts))
+			for _, evt := range evts {
+				out = append(out, map[string]any{
+					"kind":      evt.Kind.String(),
+					"sessionId": uint64(evt.SessionID),
+					"time":      evt.Time.UnixMilli(),
+				})
+			}
+			return s.runtime.ToValue(out)
+		})
+
+		_ = result.Set("unsubscribe", func() bool {
+			select {
+			case <-alive:
+				return false
+			default:
+			}
+			// Stop the goroutine first, then release the subscription: a
+			// goroutine still receiving after Unsubscribe would steal a send
+			// meant for another subscriber on the shared channel.
+			close(alive)
+			<-done
+			release()
+			return true
 		})
 
 		return result
 	})
 
-	_ = obj.Set("unsubscribe", func(id int) bool {
-		return s.mgr.Unsubscribe(id)
+	// NOTE: the signature must be func(goja.FunctionCall) goja.Value. goja only
+	// takes the FunctionCall fast path for that exact shape; with any other
+	// return type it reflects FunctionCall as an ordinary struct argument and
+	// hands the binding a zero value whose Arguments are empty.
+	_ = obj.Set("unsubscribe", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+			panic(s.runtime.NewTypeError("unsubscribe requires a subscription object from subscribe()"))
+		}
+		sub := call.Argument(0).ToObject(s.runtime)
+		fn := sub.Get("unsubscribe")
+		if fn == nil || goja.IsUndefined(fn) || goja.IsNull(fn) {
+			panic(s.runtime.NewTypeError("unsubscribe requires a subscription object from subscribe()"))
+		}
+		unsub, ok := goja.AssertFunction(fn)
+		if !ok {
+			panic(s.runtime.NewTypeError("unsubscribe requires a subscription object from subscribe()"))
+		}
+		v, err := unsub(goja.Undefined())
+		if err != nil {
+			panic(err)
+		}
+		return s.runtime.ToValue(v.ToBoolean())
 	})
 
 	_ = obj.Set("register", func(call goja.FunctionCall) goja.Value {

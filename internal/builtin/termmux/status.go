@@ -21,6 +21,45 @@ func isValidEventType(event string) bool {
 	}
 }
 
+// addBridgeListener records a JavaScript listener and starts the event bridge
+// on the first one. The bridge subscribes to the manager only while at least
+// one listener exists, so a manager with no JavaScript consumer costs nothing.
+func (s *muxState) addBridgeListener() {
+	if s == nil {
+		return
+	}
+	start := false
+	s.bridgeMu.Lock()
+	s.listenerCount++
+	if s.listenerCount == 1 {
+		start = true
+	}
+	s.bridgeMu.Unlock()
+	if start {
+		s.startEventBridge()
+	}
+}
+
+// removeBridgeListener records a listener removal and stops the event bridge
+// when the last one goes away.
+func (s *muxState) removeBridgeListener() {
+	if s == nil {
+		return
+	}
+	stop := false
+	s.bridgeMu.Lock()
+	if s.listenerCount > 0 {
+		s.listenerCount--
+		if s.listenerCount == 0 {
+			stop = true
+		}
+	}
+	s.bridgeMu.Unlock()
+	if stop {
+		s.stopEventBridge()
+	}
+}
+
 // registerStatusMethods registers status bar and event methods: setStatus,
 // setToggleKey, setStatusEnabled, setResizeFunc, setStatusColors,
 // setStatusPosition, addEventListener, removeEventListener, dispatchEvent,
@@ -120,6 +159,7 @@ func registerStatusMethods(obj *goja.Object, s *muxState) {
 			panic(s.runtime.NewTypeError("addEventListener: callback must be a function"))
 		}
 		_, _ = s.addListener(s.jsEventTarget, call.Argument(0), call.Argument(1))
+		s.addBridgeListener()
 		return goja.Undefined()
 	})
 
@@ -131,6 +171,7 @@ func registerStatusMethods(obj *goja.Object, s *muxState) {
 			panic(s.runtime.NewTypeError("removeEventListener: requires (event, callback)"))
 		}
 		_, _ = s.removeListener(s.jsEventTarget, call.Argument(0), call.Argument(1))
+		s.removeBridgeListener()
 		return goja.Undefined()
 	})
 
@@ -165,6 +206,7 @@ func registerStatusMethods(obj *goja.Object, s *muxState) {
 		s.mu.Unlock()
 
 		_, _ = s.addListener(s.jsEventTarget, call.Argument(0), cb)
+		s.addBridgeListener()
 		return s.runtime.ToValue(id)
 	})
 
@@ -183,6 +225,7 @@ func registerStatusMethods(obj *goja.Object, s *muxState) {
 			return false
 		}
 		_, _ = s.removeListener(s.jsEventTarget, s.runtime.ToValue(l.eventType), l.callback)
+		s.removeBridgeListener()
 		return true
 	})
 

@@ -266,7 +266,8 @@ NewSessionManager(opts ...ManagerOption) *SessionManager
 | `CaptureScreen(id, opts)` | Renders one representation of the published snapshot; ranged requests clone it |
 | `Screen(id)` | Returns a deep copy of the active screen (`*vt.Screen`) |
 | `Sessions()` | Returns `[]SessionInfo` with state and target metadata |
-| `Subscribe(bufSize)` | Subscribes to EventBus, returns `(id, <-chan Event)` |
+| `SubscribeEvents()` | Registers a subscriber, returns the shared broadcast channel |
+| `AckEvent()` | Acknowledges the value just received (releases the publisher) |
 | `UnsubscribeEvents()` | Removes a subscriber |
 | `Passthrough(ctx, cfg)` | Enters raw terminal mode for active session |
 | `ExportState()` / `RestoreFromState()` | Persistence: serialize/deserialize manager state |

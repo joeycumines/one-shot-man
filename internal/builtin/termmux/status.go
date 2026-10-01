@@ -24,15 +24,27 @@ func isValidEventType(event string) bool {
 // addBridgeListener records a JavaScript listener and starts the event bridge
 // on the first one. The bridge subscribes to the manager only while at least
 // one listener exists, so a manager with no JavaScript consumer costs nothing.
-func (s *muxState) addBridgeListener() {
+//
+// The underlying EventTarget dedupes an identical (eventType, callback)
+// registration, so this registry applies the same rule: a duplicate add is not
+// recorded, because the EventTarget will not hold two entries for it and a
+// single matching remove would otherwise leave the count permanently skewed.
+// Callers must pass the same callback value they gave the EventTarget.
+func (s *muxState) addBridgeListener(eventType string, callback goja.Value) {
 	if s == nil {
 		return
 	}
 	start := false
 	s.bridgeMu.Lock()
-	s.listenerCount++
-	if s.listenerCount == 1 {
-		start = true
+	if s.bridgeListeners == nil {
+		s.bridgeListeners = make(map[string][]goja.Value)
+	}
+	if !containsListener(s.bridgeListeners[eventType], callback) {
+		wasEmpty := len(s.bridgeListeners) == 0
+		s.bridgeListeners[eventType] = append(s.bridgeListeners[eventType], callback)
+		if wasEmpty {
+			start = true
+		}
 	}
 	s.bridgeMu.Unlock()
 	if start {
@@ -41,23 +53,53 @@ func (s *muxState) addBridgeListener() {
 }
 
 // removeBridgeListener records a listener removal and stops the event bridge
-// when the last one goes away.
-func (s *muxState) removeBridgeListener() {
+// when the last one goes away. Mirroring the EventTarget's dedupe rule, a
+// remove for a registration that was never recorded is a no-op rather than an
+// unmatched decrement.
+func (s *muxState) removeBridgeListener(eventType string, callback goja.Value) {
 	if s == nil {
 		return
 	}
 	stop := false
 	s.bridgeMu.Lock()
-	if s.listenerCount > 0 {
-		s.listenerCount--
-		if s.listenerCount == 0 {
-			stop = true
+	if s.bridgeListeners != nil {
+		remaining, removed := removeListener(s.bridgeListeners[eventType], callback)
+		if removed {
+			if len(remaining) == 0 {
+				delete(s.bridgeListeners, eventType)
+			} else {
+				s.bridgeListeners[eventType] = remaining
+			}
+			if len(s.bridgeListeners) == 0 {
+				stop = true
+			}
 		}
 	}
 	s.bridgeMu.Unlock()
 	if stop {
 		s.stopEventBridge()
 	}
+}
+
+// containsListener reports whether callbacks already holds an identical value.
+func containsListener(callbacks []goja.Value, callback goja.Value) bool {
+	for _, existing := range callbacks {
+		if existing.SameAs(callback) {
+			return true
+		}
+	}
+	return false
+}
+
+// removeListener drops the first identical value and reports the remaining
+// slice plus whether anything was removed.
+func removeListener(callbacks []goja.Value, callback goja.Value) ([]goja.Value, bool) {
+	for i, existing := range callbacks {
+		if existing.SameAs(callback) {
+			return append(callbacks[:i:i], callbacks[i+1:]...), true
+		}
+	}
+	return callbacks, false
 }
 
 // registerStatusMethods registers status bar and event methods: setStatus,
@@ -159,7 +201,7 @@ func registerStatusMethods(obj *goja.Object, s *muxState) {
 			panic(s.runtime.NewTypeError("addEventListener: callback must be a function"))
 		}
 		_, _ = s.addListener(s.jsEventTarget, call.Argument(0), call.Argument(1))
-		s.addBridgeListener()
+		s.addBridgeListener(call.Argument(0).String(), call.Argument(1))
 		return goja.Undefined()
 	})
 
@@ -171,7 +213,7 @@ func registerStatusMethods(obj *goja.Object, s *muxState) {
 			panic(s.runtime.NewTypeError("removeEventListener: requires (event, callback)"))
 		}
 		_, _ = s.removeListener(s.jsEventTarget, call.Argument(0), call.Argument(1))
-		s.removeBridgeListener()
+		s.removeBridgeListener(call.Argument(0).String(), call.Argument(1))
 		return goja.Undefined()
 	})
 
@@ -206,7 +248,7 @@ func registerStatusMethods(obj *goja.Object, s *muxState) {
 		s.mu.Unlock()
 
 		_, _ = s.addListener(s.jsEventTarget, call.Argument(0), cb)
-		s.addBridgeListener()
+		s.addBridgeListener(eventType, cb)
 		return s.runtime.ToValue(id)
 	})
 
@@ -225,7 +267,7 @@ func registerStatusMethods(obj *goja.Object, s *muxState) {
 			return false
 		}
 		_, _ = s.removeListener(s.jsEventTarget, s.runtime.ToValue(l.eventType), l.callback)
-		s.removeBridgeListener()
+		s.removeBridgeListener(l.eventType, l.callback)
 		return true
 	})
 

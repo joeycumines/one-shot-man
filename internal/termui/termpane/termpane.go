@@ -17,11 +17,18 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 )
 
-// outputMsg wraps a termmux.Event delivered from the EventBus subscription
-// goroutine to the bubbletea Update loop. It is an unexported type so only
-// this package can produce it — external code cannot inject fake output
-// messages.
-type outputMsg termmux.Event
+// outputMsg signals the bubbletea Update loop that the pane should refresh.
+//
+// It carries no payload by design: session output is a conflated wake-up
+// (see internal/termmux/output_watch.go), not a bus event, so the pane is told
+// only THAT there is something new and re-reads the authoritative snapshot
+// itself. It is an unexported type so only this package can produce it —
+// external code cannot inject fake output messages.
+type outputMsg struct {
+	// sessionID is the session that produced the wake-up. Retained for
+	// diagnostics and to keep the message meaningful when logged.
+	sessionID termmux.SessionID
+}
 
 // outputBurstWindow gives the SessionManager worker and the subscription
 // bridge a bounded grace period to publish the rest of an already-started
@@ -59,9 +66,10 @@ type Model struct {
 	eventCh <-chan termmux.Event
 
 	// outputCh is the channel consumed by the tea.Cmd returned from Init.
-	// The subscription goroutine writes to outputCh; the Cmd reads from it
-	// and returns the event as a tea.Msg (outputMsg).
-	outputCh chan termmux.Event
+	// The bridge and output-watch goroutines write to it; the Cmd reads from
+	// it and returns the wake-up as an outputMsg. It carries a bare signal,
+	// because a conflated wake-up has no payload to transport.
+	outputCh chan struct{}
 
 	// outputWake is the conflated output signal for this pane's session.
 	outputWake *termmux.OutputWatcher
@@ -126,7 +134,7 @@ func NewModel(sessionID termmux.SessionID, manager *termmux.SessionManager, boun
 		sessionID: sessionID,
 		manager:   manager,
 		bounds:    bounds,
-		outputCh:  make(chan termmux.Event, 64),
+		outputCh:  make(chan struct{}, 64),
 		done:      make(chan struct{}),
 		closeDone: make(chan struct{}),
 	}
@@ -188,17 +196,12 @@ func (m *Model) watchOutput() {
 	}
 }
 
-// forwardOutput delivers one synthesised output wake-up for this pane.
-// Reports false when the model is shutting down.
-//
-// The event kind is deliberately EventBell: output is a conflated wake-up, not
-// a bus payload, so any kind that reaches outputMsg would do. Bell is chosen
-// because it is a real bus kind whose only consumer effect is a refresh —
-// exactly what this wake-up wants — and because termpane never renders bells.
+// forwardOutput delivers one output wake-up for this pane. Reports false when
+// the model is shutting down. It signals rather than carrying an event: the
+// pane re-reads the snapshot, so there is nothing to transport.
 func (m *Model) forwardOutput() bool {
-	evt := termmux.Event{Kind: termmux.EventBell, SessionID: m.sessionID}
 	select {
-	case m.outputCh <- evt:
+	case m.outputCh <- struct{}{}:
 		m.RefreshSnapshot()
 		return true
 	case <-m.done:
@@ -264,7 +267,7 @@ func (m *Model) bridgeEvents() {
 				continue
 			}
 			select {
-			case m.outputCh <- evt:
+			case m.outputCh <- struct{}{}:
 				// Refresh only for events that were actually delivered. JS
 				// rendering reads this cache and never performs manager IPC.
 				m.RefreshSnapshot()
@@ -293,11 +296,11 @@ func (m *Model) Init() tea.Cmd {
 // outputMsg, or nil if the model is shutting down.
 func (m *Model) waitForOutput() tea.Msg {
 	select {
-	case evt, ok := <-m.outputCh:
+	case _, ok := <-m.outputCh:
 		if !ok {
 			return nil
 		}
-		return outputMsg(evt)
+		return outputMsg{sessionID: m.sessionID}
 	case <-m.done:
 		return nil
 	}

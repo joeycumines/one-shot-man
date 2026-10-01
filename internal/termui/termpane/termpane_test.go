@@ -514,15 +514,10 @@ func TestUpdate_OutputMsgRefreshesSnapshot(t *testing.T) {
 		}
 	}
 
-	// Simulate an outputMsg arriving via Update.
-	// Output wake-ups are synthesised locally (output is a conflated signal,
-	// not a bus event); the kind here is immaterial — Update refreshes the
-	// capture for any outputMsg.
-	evt := termmux.Event{
-		Kind:      termmux.EventBell,
-		SessionID: sid,
-	}
-	_, cmd := model.Update(outputMsg(evt))
+	// Simulate an output wake-up arriving via Update. The message carries no
+	// payload: output is a conflated signal, so Update merely refreshes the
+	// capture from the manager.
+	_, cmd := model.Update(outputMsg{sessionID: sid})
 
 	// The cmd should be waitForOutput (re-subscribe for next event).
 	if cmd == nil {

@@ -73,6 +73,12 @@ type outputSignals struct {
 	dirty    map[SessionID]struct{}
 	globals  map[*outputWatcherEntry]struct{}
 	sessions map[SessionID]map[*outputWatcherEntry]struct{}
+	// scratch holds the watcher entries to notify, reused across calls so the
+	// hottest path in the subsystem does not allocate per output chunk. It is
+	// only ever touched while mu is held, and the signalling that consumes it
+	// happens outside the lock, so the slice is captured to a local before the
+	// unlock and never read concurrently.
+	scratch []*outputWatcherEntry
 }
 
 func newOutputSignals() *outputSignals {
@@ -100,13 +106,17 @@ func (o *outputSignals) mark(id SessionID) {
 	// Collect every watcher that must be notified: the per-session ones plus
 	// the any-session ones. Each has its OWN slot, so one wake-up notifies
 	// every consumer rather than being consumed by whichever one reads first.
-	targets := make([]*outputWatcherEntry, 0, len(o.sessions[id])+len(o.globals))
+	// The collection is reused across calls (see scratch) to keep this path
+	// allocation-free; the signalling below happens after the lock is released,
+	// so a copy is taken into it rather than reading the map unlocked.
+	o.scratch = o.scratch[:0]
 	for entry := range o.sessions[id] {
-		targets = append(targets, entry)
+		o.scratch = append(o.scratch, entry)
 	}
 	for entry := range o.globals {
-		targets = append(targets, entry)
+		o.scratch = append(o.scratch, entry)
 	}
+	targets := o.scratch
 	o.mu.Unlock()
 
 	// Signal outside the lock: a concurrent Release must not be able to

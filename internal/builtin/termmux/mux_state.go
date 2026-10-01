@@ -54,8 +54,14 @@ type muxState struct {
 	// bridgeMu guards all bridge fields. The bridge is a prompt subscriber:
 	// its goroutine acknowledges every bus event immediately and appends it
 	// to bridgeQueue, which the event loop drains in bounded turns.
-	bridgeMu      sync.Mutex
-	bridgeRunning bool
+	// bridgeLifecycle serializes startEventBridge and stopEventBridge as whole
+	// operations, so subscription, field installation and goroutine launch
+	// cannot interleave with a teardown. Lock order is bridgeLifecycle ->
+	// bridgeMu, and the bridge goroutines take only bridgeMu, so no cycle is
+	// possible.
+	bridgeLifecycle sync.Mutex
+	bridgeMu        sync.Mutex
+	bridgeRunning   bool
 	bridgeStop    chan struct{}
 	bridgeDone    chan struct{}
 	bridgeQueue   []eventDispatchData
@@ -63,10 +69,13 @@ type muxState struct {
 	// released in stopEventBridge after the output goroutine is joined.
 	bridgeOutputWatch *parent.OutputWatcher
 	bridgeScheduled   bool
-	// listenerCount is the number of live JavaScript listeners registered
-	// through on()/addEventListener-style paths. The bridge runs only while
-	// it is non-zero, so a manager with no JavaScript consumer costs nothing.
-	listenerCount       int
+	// bridgeListeners mirrors the live listeners registered on jsEventTarget,
+	// keyed by event type. It is the authority for whether the bridge should
+	// run: the underlying EventTarget dedupes an identical (type, callback)
+	// registration, so counting add/remove CALLS would drift from reality and
+	// could stop the bridge while listeners remain. Entries are recorded only
+	// when the registration is genuinely new.
+	bridgeListeners map[string][]goja.Value
 	resizeFn            func(rows, cols uint16) error
 	activeSessionTarget parent.SessionTarget
 	activeIDCached      atomic.Uint64

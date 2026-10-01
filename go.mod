@@ -22,6 +22,7 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-behaviortree v1.11.0
+	github.com/joeycumines/go-bigbuff v1.21.1
 	github.com/joeycumines/go-eventloop v0.1.0
 	github.com/joeycumines/go-inprocgrpc v0.0.0-20260907140835-d1136bc1fe16
 	github.com/joeycumines/go-pabt v0.2.0
@@ -108,7 +109,6 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/joeycumines/go-bigbuff v1.21.1 // indirect
 	github.com/joeycumines/go-catrate v0.0.0-20260825080149-21d1636aba2d // indirect
 	github.com/joeycumines/goroutineid v1.1.1 // indirect
 	github.com/joeycumines/simple-command-output-filter v0.2.1 // indirect

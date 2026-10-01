@@ -1247,6 +1247,12 @@ type SessionManager struct {
 	// eventBus provides fan-out event delivery to subscribers.
 	eventBus *EventBus
 
+	// outputSignals carries conflated "this session has output" wake-ups.
+	// Output is deliberately NOT a bus event: it is the highest-volume signal
+	// and its consumers re-read the screen snapshot, so it coalesces instead
+	// of queueing. See output_watch.go.
+	outputSignals *outputSignals
+
 	// done is closed when Run returns, signaling that the worker has
 	// stopped and all resources have been released.
 	done chan struct{}
@@ -1378,6 +1384,7 @@ func NewSessionManager(opts ...ManagerOption) *SessionManager {
 		reqChan:            make(chan request, DefaultChannelBuffer),
 		mergedOutput:       make(chan sessionOutput, DefaultChannelBuffer),
 		eventBus:           NewEventBus(),
+		outputSignals:      newOutputSignals(),
 		done:               make(chan struct{}),
 		closeCh:            make(chan struct{}),
 		started:            make(chan struct{}),
@@ -1504,26 +1511,52 @@ func (m *SessionManager) signalClose() {
 	close(m.closeCh)
 }
 
-// Subscribe registers a subscriber for events produced by this manager.
-// The returned channel receives events; it is closed when Unsubscribe is
-// called or the manager shuts down. bufSize controls the channel buffer
-// (defaults to EventBusBufferSize if < 1). Events are delivered via non-blocking sends —
-// a slow subscriber's events are silently dropped.
-func (m *SessionManager) Subscribe(bufSize int) (int, <-chan Event) {
-	return m.eventBus.Subscribe(bufSize)
+// SubscribeEvents registers the caller as an event subscriber and returns the
+// shared broadcast channel. It increments the subscriber count BEFORE handing
+// back the channel, so no send can land in the gap between registration and
+// the first receive.
+//
+// The caller MUST consume the channel on a dedicated goroutine that receives,
+// calls AckEvent immediately, and only then hands the value to any downstream
+// queue — and MUST pair every SubscribeEvents with exactly one
+// UnsubscribeEvents on every exit path. A subscriber that stops consuming
+// stalls every publisher, including the manager worker. Stop receiving BEFORE
+// unsubscribing: a goroutine still parked in a receive races the unsubscribe
+// drain and can steal a send meant for another subscriber.
+func (m *SessionManager) SubscribeEvents() <-chan Event {
+	m.eventBus.Subscribe()
+	return m.eventBus.Channel()
 }
 
-// Unsubscribe removes a previously registered event subscriber and closes
-// its channel. Returns true if the subscriber existed.
-func (m *SessionManager) Unsubscribe(id int) bool {
-	return m.eventBus.Unsubscribe(id)
+// UnsubscribeEvents removes a subscriber previously registered with
+// SubscribeEvents, releasing any publisher blocked on it.
+func (m *SessionManager) UnsubscribeEvents() {
+	m.eventBus.Unsubscribe()
 }
 
-// EventsDropped returns the cumulative number of events that could not be
-// delivered to at least one subscriber because its channel buffer was full.
-// Safe to call from any goroutine.
-func (m *SessionManager) EventsDropped() int64 {
-	return m.eventBus.DroppedCount()
+// WatchAnyOutput returns a conflated wake-up for output from any session. See
+// output_watch.go for the contract: each caller gets its own watcher with its
+// own notification slot, so one consumer can never starve another.
+func (m *SessionManager) WatchAnyOutput() *OutputWatcher {
+	return newAnyOutputWatcher(m.outputSignals)
+}
+
+// TakeOutputDirty returns the sessions with output that has not yet been
+// observed, and clears the set. The caller owns the returned slice.
+func (m *SessionManager) TakeOutputDirty() []SessionID {
+	return m.outputSignals.takeDirty()
+}
+
+// AckEvent acknowledges the event the calling subscriber most recently
+// received from SubscribeEvents' channel. It MUST be called exactly once,
+// immediately after each receive, and never for a channel close.
+//
+// This is not optional bookkeeping: the broadcast channel is unbuffered, so
+// the manager worker stays blocked inside Publish until every subscriber has
+// acknowledged. A subscriber that inspects, filters, or forwards an event
+// before calling AckEvent stalls the worker.
+func (m *SessionManager) AckEvent() {
+	m.eventBus.Wait()
 }
 
 // sendRequest sends a request to the worker goroutine and blocks until the
@@ -3988,7 +4021,9 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 	// Closed (from Created — process exited without producing output).
 	if so.data == nil {
 		if ms.vterm.SynchronizedOutput() {
-			m.eventBus.emitData(EventSessionOutput, so.id, nil)
+			// Flush the conflated output signal so consumers observe the
+			// final state even though the flush chunk carried no bytes.
+			m.outputSignals.mark(so.id)
 		}
 		if ms.state.validTransition(SessionExited) {
 			ms.state = SessionExited
@@ -4094,7 +4129,12 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 	// will naturally emit the event since SynchronizedOutput() returns
 	// false after the VTerm processes the DECRST ?2026l.
 	if !scr.SynchronizedOutput {
-		m.eventBus.emitData(EventSessionOutput, so.id, so.data)
+		// Conflated wake-up rather than a bus event: consumers re-read the
+		// snapshot stored above, so coalescing loses no information while
+		// keeping the hottest path off the lossless broadcast channel.
+		// Synchronized-output mode still suppresses wake-ups to reduce
+		// flicker; the next chunk that leaves that mode signals normally.
+		m.outputSignals.mark(so.id)
 	}
 
 	// Monitoring: update LastOutputAt and check activity/silence.

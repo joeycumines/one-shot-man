@@ -202,9 +202,12 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 	}
 
 	// ── stdin→PTY forwarding with toggle key detection ──────────────
-	// Subscribe to session events so we can detect child exit.
-	subID, evtCh := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	// Subscribe to session events so we can detect child exit. This is a
+	// prompt subscriber: the wait loop below receives, acknowledges with
+	// AckEvent immediately, and only then inspects the event, so the manager
+	// worker is never stalled by passthrough.
+	evtCh := m.SubscribeEvents()
+	defer m.UnsubscribeEvents()
 
 	fwdCtx, fwdCancel := context.WithCancel(ctx)
 	resultCh := make(chan forwardResult, 1)
@@ -277,7 +280,16 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 				return ExitContext, ctx.Err()
 			}
 			return r.reason, r.err
-		case evt := <-evtCh:
+		case evt, ok := <-evtCh:
+			if !ok {
+				// Bus closed: the manager worker has exited and all sessions
+				// are gone. Must NOT acknowledge a close.
+				fwdCancel()
+				return ExitChildExit, nil
+			}
+			// Acknowledge immediately, before inspecting: the publisher is
+			// released even if we return below.
+			m.eventBus.Wait()
 			if evt.Kind == EventSessionExited && evt.SessionID == activeID {
 				fwdCancel()
 				return ExitChildExit, nil

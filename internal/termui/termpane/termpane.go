@@ -53,17 +53,18 @@ type Model struct {
 	// are offset by bounds.Position when rendering.
 	bounds coordinate.Rect
 
-	// subID is the EventBus subscription ID returned by Subscribe.
-	subID int
-
-	// eventCh receives events from the EventBus subscription goroutine.
-	// The goroutine filters by sessionID and forwards matching events.
+	// eventCh is the manager's shared broadcast channel. The bridge goroutine
+	// is a registered subscriber: it receives, acknowledges with AckEvent
+	// immediately, and only then filters by sessionID and forwards.
 	eventCh <-chan termmux.Event
 
 	// outputCh is the channel consumed by the tea.Cmd returned from Init.
 	// The subscription goroutine writes to outputCh; the Cmd reads from it
 	// and returns the event as a tea.Msg (outputMsg).
 	outputCh chan termmux.Event
+
+	// outputWake is the conflated output signal for this pane's session.
+	outputWake *termmux.OutputWatcher
 
 	// done is closed by Close to signal the subscription goroutine to exit.
 	done chan struct{}
@@ -130,8 +131,17 @@ func NewModel(sessionID termmux.SessionID, manager *termmux.SessionManager, boun
 		closeDone: make(chan struct{}),
 	}
 
-	// Subscribe to the manager's EventBus for output events.
-	m.subID, m.eventCh = manager.Subscribe(64)
+	// Subscribe to the manager's event bus for control events. The bridge
+	// goroutine is a prompt subscriber: it acknowledges every event with
+	// AckEvent before filtering, so the manager worker is never stalled by
+	// this pane.
+	m.eventCh = manager.SubscribeEvents()
+
+	// Output is not a bus event (see internal/termmux/output_watch.go): it is
+	// a conflated per-session wake-up, because a pane re-renders from the
+	// captured snapshot rather than from the bytes. Without this the pane
+	// would refresh only on control events and its content would go stale.
+	m.outputWake = manager.WatchOutput(sessionID)
 
 	// Get initial capture before the bridge starts so the two writers never
 	// race during construction.
@@ -147,7 +157,57 @@ func NewModel(sessionID termmux.SessionID, manager *termmux.SessionManager, boun
 	m.wg.Add(1)
 	go m.bridgeEvents()
 
+	m.wg.Add(1)
+	go m.watchOutput()
+
 	return m
+}
+
+// watchOutput translates conflated output wake-ups into outputMsgs so the
+// capture cache is refreshed when the session renders new content. Events are
+// synthesised locally: the bus carries no output payload, and the pane reads
+// the authoritative snapshot instead.
+func (m *Model) watchOutput() {
+	defer m.wg.Done()
+	wake := m.outputWake.C()
+	if wake == nil {
+		return
+	}
+	for {
+		select {
+		case <-m.done:
+			return
+		case _, ok := <-wake:
+			if !ok {
+				return
+			}
+			if !m.forwardOutput() {
+				return
+			}
+		}
+	}
+}
+
+// forwardOutput delivers one synthesised output wake-up for this pane.
+// Reports false when the model is shutting down.
+//
+// The event kind is deliberately EventBell: output is a conflated wake-up, not
+// a bus payload, so any kind that reaches outputMsg would do. Bell is chosen
+// because it is a real bus kind whose only consumer effect is a refresh —
+// exactly what this wake-up wants — and because termpane never renders bells.
+func (m *Model) forwardOutput() bool {
+	evt := termmux.Event{Kind: termmux.EventBell, SessionID: m.sessionID}
+	select {
+	case m.outputCh <- evt:
+		m.RefreshSnapshot()
+		return true
+	case <-m.done:
+		return false
+	default:
+		// A pane embedded as a passive view may have no consumer; the next
+		// wake-up refreshes from the current snapshot.
+		return true
+	}
 }
 
 // refreshCapture fetches the pane session's capture and stores its metadata
@@ -171,9 +231,20 @@ func (m *Model) refreshCapture() {
 	}
 }
 
-// bridgeEvents reads events from the EventBus subscription channel and
-// forwards those matching this Model's sessionID to outputCh. It exits
-// when either the subscription channel or the done channel is closed.
+// bridgeEvents is the prompt subscriber loop for this pane. The manager's
+// broadcast channel is shared and unbuffered, with one synchronous send per
+// registered subscriber, so the sequence per value is strictly:
+//
+//	receive → AckEvent → filter/forward downstream
+//
+// AckEvent must happen before any other work: the publisher is blocked until this
+// subscriber acknowledges, and a subscriber that filters or forwards first
+// would stall the manager worker. Once acknowledged, the value may be dropped
+// downstream freely — outputCh is a conflation signal, not a delivery queue.
+//
+// The loop exits on Close (done) or bus close. It never receives after
+// Unsubscribe: Close stops this goroutine before decrementing the subscriber
+// count, so it cannot steal a send intended for another subscriber.
 func (m *Model) bridgeEvents() {
 	defer m.wg.Done()
 	for {
@@ -182,9 +253,12 @@ func (m *Model) bridgeEvents() {
 			return
 		case evt, ok := <-m.eventCh:
 			if !ok {
-				// Subscription channel closed (unsubscribed or bus closed).
+				// Bus closed by the manager. Must NOT acknowledge a close.
 				return
 			}
+			// Acknowledge before doing anything else — the publisher is
+			// waiting on exactly this call.
+			m.manager.AckEvent()
 			// Filter: only forward events for this Model's sessionID.
 			if evt.SessionID != m.sessionID {
 				continue
@@ -488,13 +562,19 @@ func (m *Model) Close() error {
 		close(m.done)
 		m.mu.Unlock()
 
-		// Unsubscribe from the EventBus (closes the subscription channel).
-		m.manager.Unsubscribe(m.subID)
-
-		// Wait for the bridge goroutine to exit before closing outputCh.
-		// Without this, the goroutine could write to outputCh after it's
-		// closed, causing a "send on closed channel" panic.
+		// Join the bridge goroutine BEFORE releasing the subscription, and do
+		// not reorder these. The broadcast channel is shared and unbuffered,
+		// and the unsubscribe path drains an in-flight send on the departing
+		// subscriber's behalf; a goroutine still parked in a receive races
+		// that drain and can steal the value, which leaves the acknowledgement
+		// accounting stranded (the loser blocks forever in Wait). Waiting for
+		// the goroutine to exit first guarantees no receive is in flight.
+		//
+		// This also ensures the goroutine cannot write to outputCh after it
+		// has been closed, which would panic on a send to a closed channel.
 		m.wg.Wait()
+		m.outputWake.Release()
+		m.manager.UnsubscribeEvents()
 
 		// Close outputCh so any pending waitForOutput Cmd returns nil.
 		close(m.outputCh)

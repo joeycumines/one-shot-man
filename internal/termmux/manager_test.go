@@ -388,21 +388,20 @@ func TestEvent_Construction(t *testing.T) {
 
 	now := time.Now()
 	evt := Event{
-		Kind:      EventSessionOutput,
+		Kind:      EventTitle,
 		SessionID: SessionID(3),
-		Data:      []byte("output data"),
+		Data:      "title text",
 		Time:      now,
 	}
 
-	if evt.Kind != EventSessionOutput {
-		t.Errorf("Kind = %s, want session-output", evt.Kind)
+	if evt.Kind != EventTitle {
+		t.Errorf("Kind = %s, want title", evt.Kind)
 	}
 	if evt.SessionID != 3 {
 		t.Errorf("SessionID = %d, want 3", evt.SessionID)
 	}
-	data, ok := evt.DataAsBytes()
-	if !ok || string(data) != "output data" {
-		t.Errorf("Data = %v, want []byte(\"output data\")", evt.Data)
+	if data, ok := evt.Data.(string); !ok || data != "title text" {
+		t.Errorf("Data = %v, want \"title text\"", evt.Data)
 	}
 	if evt.Time != now {
 		t.Errorf("Time mismatch")
@@ -1069,8 +1068,7 @@ func TestSessionManager_MergedOutput_EOF(t *testing.T) {
 	m, cleanup := startManager(t)
 	defer cleanup()
 
-	subID, evtCh := m.Subscribe(64)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "test"})
 
@@ -1115,8 +1113,7 @@ func TestSessionManager_Events_Register(t *testing.T) {
 	m, cleanup := startManager(t)
 	defer cleanup()
 
-	subID, evtCh := m.Subscribe(64)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "test"})
 
@@ -1139,8 +1136,7 @@ func TestSessionManager_Events_Activate(t *testing.T) {
 	m, cleanup := startManager(t)
 	defer cleanup()
 
-	subID, evtCh := m.Subscribe(64)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "a"})
 	id2, _ := m.Register(newControllableSession(), SessionTarget{Name: "b"})
@@ -1431,8 +1427,7 @@ func TestSessionManager_MergedOutput_EOF_Created(t *testing.T) {
 	m, cleanup := startManager(t)
 	defer cleanup()
 
-	subID, evtCh := m.Subscribe(64)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session := newControllableSession()
 	_, _ = m.Register(session, SessionTarget{Name: "quick-exit"})
@@ -1522,8 +1517,7 @@ func TestSessionManager_Pipeline_EOFTransition(t *testing.T) {
 	m, cleanup := startManager(t)
 	defer cleanup()
 
-	subID, evtCh := m.Subscribe(64)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session := newControllableSession()
 	_, err := m.Register(session, SessionTarget{Name: "eof-test"})
@@ -1629,8 +1623,7 @@ func TestSessionManager_Pipeline_BellEvent(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	subID, evtCh := m.Subscribe(64)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session := newControllableSession()
 	_, err := m.Register(session, SessionTarget{Name: "bell-test"})
@@ -1668,8 +1661,7 @@ func TestSessionManager_Pipeline_OSCTitleEvent(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	subID, evtCh := m.Subscribe(64)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session := newControllableSession()
 	_, err := m.Register(session, SessionTarget{Name: "osc-test"})
@@ -1710,8 +1702,7 @@ func TestSessionManager_Pipeline_OSCWorkingDirectoryEvent(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	subID, evtCh := m.Subscribe(64)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session := newControllableSession()
 	_, err := m.Register(session, SessionTarget{Name: "osc-cwd-test"})
@@ -1752,8 +1743,7 @@ func TestSessionManager_Pipeline_OSCClipboardEvent(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	subID, evtCh := m.Subscribe(64)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session := newControllableSession()
 	_, err := m.Register(session, SessionTarget{Name: "osc-clip-test"})
@@ -1794,8 +1784,7 @@ func TestSessionManager_Pipeline_OSC2TitleEvent(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	subID, evtCh := m.Subscribe(64)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session := newControllableSession()
 	_, err := m.Register(session, SessionTarget{Name: "osc2-test"})
@@ -1836,8 +1825,7 @@ func TestSessionManager_Pipeline_OSCUnrecognizedNoEvent(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	subID, evtCh := m.Subscribe(64)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session := newControllableSession()
 	_, err := m.Register(session, SessionTarget{Name: "osc-unknown-test"})
@@ -1990,33 +1978,57 @@ func (d *delayedSession) start(ch chan []byte) {
 	d.ch = ch
 }
 
-func TestSessionManager_EventsDropped(t *testing.T) {
+func TestSessionManager_EventsAreNotDropped(t *testing.T) {
 	t.Parallel()
 
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	// Subscribe with buffer size 1 — guaranteed to overflow quickly.
-	_, _ = m.Subscribe(1)
+	// The bus is lossless: a subscriber that keeps up receives every event
+	// even while the producer fires a rapid burst. This replaces the old
+	// drop-counter assertion, which measured the old lossy bus.
+	events := subscribeTestEvents(t, m)
 
 	session := newControllableSession()
-	_, err := m.Register(session, SessionTarget{Name: "drop-test"})
-	if err != nil {
+	if _, err := m.Register(session, SessionTarget{Name: "no-drop-test"}); err != nil {
 		t.Fatalf("Register error: %v", err)
 	}
 
-	// Pump output rapidly to generate many EventSessionOutput events that
-	// overflow the subscriber's buffer-1 channel.
-	for range 20 {
+	const chunks = 20
+	for range chunks {
 		session.readerCh <- []byte("x")
 	}
 
-	// Give the worker goroutine time to process output and publish events.
-	time.Sleep(300 * time.Millisecond)
+	// Output no longer travels the bus at all (see output_watch.go): it is a
+	// conflated wake-up. Every chunk must still have been recorded as dirty,
+	// and every control event must still be delivered losslessly.
+	w := m.WatchAnyOutput()
+	defer w.Release()
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case <-w.C():
+			if len(m.TakeOutputDirty()) > 0 {
+				goto drained
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for the conflated output signal")
+		}
+	}
+drained:
 
-	dropped := m.EventsDropped()
-	if dropped == 0 {
-		t.Error("EventsDropped() = 0, want > 0 with buffer-1 subscriber and rapid output")
+	// The lifecycle events emitted by Register must all have arrived intact.
+	deadline = time.After(10 * time.Second)
+	registered := false
+	for !registered {
+		select {
+		case evt := <-events.channel():
+			if evt.Kind == EventSessionRegistered {
+				registered = true
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for the lossless registered event")
+		}
 	}
 }
 
@@ -2104,7 +2116,16 @@ func FuzzSessionRouter(f *testing.F) {
 		// Shared state: session IDs and subscriber IDs protected by mutex.
 		var mu sync.Mutex
 		var sessionIDs []SessionID
-		var subIDs []int
+		// Each entry is one live subscription: its stop channel, its
+		// goroutine-done channel, and the channel it receives from. Stopping
+		// must join the goroutine BEFORE releasing the subscription, because
+		// the broadcast channel is shared and a parked receiver would steal a
+		// send intended for another subscriber.
+		type fuzzSub struct {
+			stop chan struct{}
+			done chan struct{}
+		}
+		var subs []fuzzSub
 
 		var wg sync.WaitGroup
 		for w := range numWorkers {
@@ -2176,23 +2197,42 @@ func FuzzSessionRouter(f *testing.F) {
 						_ = mgr.Sessions()
 
 					case 8: // Subscribe to events
-						subID, ch := mgr.Subscribe(8)
+						ch := mgr.SubscribeEvents()
+						stop := make(chan struct{})
+						done := make(chan struct{})
 						mu.Lock()
-						subIDs = append(subIDs, subID)
+						subs = append(subs, fuzzSub{stop: stop, done: done})
 						mu.Unlock()
-						// Drain events in background to prevent blocking.
-						go func() {
-							for range ch {
+						// Prompt drain: acknowledge immediately so this
+						// subscriber never stalls the publisher.
+						go func(ch <-chan Event) {
+							defer close(done)
+							for {
+								select {
+								case <-stop:
+									return
+								case evt, ok := <-ch:
+									if !ok {
+										return
+									}
+									_ = evt
+									mgr.AckEvent()
+								}
 							}
-						}()
+						}(ch)
 
 					case 9: // Unsubscribe
 						mu.Lock()
-						ids := append([]int(nil), subIDs...)
-						mu.Unlock()
-						if len(ids) > 0 {
-							idx := int(b/10) % len(ids)
-							mgr.Unsubscribe(ids[idx])
+						if len(subs) > 0 {
+							idx := int(b/10) % len(subs)
+							target := subs[idx]
+							subs = append(subs[:idx], subs[idx+1:]...)
+							mu.Unlock()
+							close(target.stop)
+							<-target.done
+							mgr.UnsubscribeEvents()
+						} else {
+							mu.Unlock()
 						}
 					}
 				}
@@ -2423,8 +2463,7 @@ func TestSessionManager_Pipeline_CreatedToClosedOnEOF(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	subID, evtCh := m.Subscribe(64)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session := newControllableSession()
 	id, err := m.Register(session, SessionTarget{Name: "immediate-exit"})

@@ -46,8 +46,7 @@ func TestSessionManager_RemainOnExit_KeepsSessionAfterExit(t *testing.T) {
 
 	// Subscribe BEFORE closing readerCh to avoid a TOCTOU race where the
 	// manager processes the EOF and emits the event before subscription.
-	subID, evtCh := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session.closeReader()
 
@@ -101,8 +100,7 @@ func TestSessionManager_RemainOnExit_Off_ClosesOnExit(t *testing.T) {
 	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
 
 	// Subscribe BEFORE closing readerCh to avoid TOCTOU race.
-	subID, evtCh := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session.closeReader()
 
@@ -125,8 +123,7 @@ func TestSessionManager_RespawnSession(t *testing.T) {
 	waitForSnapshotContains(t, m, id, "ready", 2*time.Second)
 
 	// Subscribe BEFORE closing readerCh to avoid TOCTOU race.
-	subID, evtCh := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session.closeReader()
 

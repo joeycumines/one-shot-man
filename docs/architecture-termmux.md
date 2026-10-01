@@ -17,7 +17,8 @@ The subsystem is the foundation for interactive TUI workflows (code review, prom
 - **Single worker goroutine** — All state mutation for `SessionManager` flows through a single goroutine. Public methods dispatch requests via `reqChan`; the worker dispatches synchronously. This eliminates locks on session state.
 - **Separation of PTY and emulation** — `pty/` manages process and file descriptors. `vt/` emulates the terminal. `SessionManager` wires them together through `CaptureSession`.
 - **Snapshot-first rendering** — Screen content is never rendered directly during output processing. Instead, the worker computes an immutable `ScreenSnapshot` (with lazy `sync.Once` rendering) and publishes it. Consumers read snapshots, not live state.
-- **Non-blocking output fan-out** — `EventBus` uses copy-on-write subscriber maps with non-blocking channel sends. Dropped events are silently counted via `EventsDropped()`.
+- **Lossless control-event fan-out** — `EventBus` broadcasts over one shared unbuffered channel (`ChanPubSub`). Every subscriber receives every control event; there is no drop path. Subscribers acknowledge each event promptly, so an unacknowledged subscriber blocks publishers by design rather than losing events.
+- **Conflated output signal** — Session output is deliberately NOT a bus event. It is a stateful, capacity-1 wake-up that consumers resolve against the published snapshot, so a burst coalesces and a slow consumer can never be overrun or overrun the producer.
 
 ## 2. Package Structure
 
@@ -266,7 +267,7 @@ NewSessionManager(opts ...ManagerOption) *SessionManager
 | `Screen(id)` | Returns a deep copy of the active screen (`*vt.Screen`) |
 | `Sessions()` | Returns `[]SessionInfo` with state and target metadata |
 | `Subscribe(bufSize)` | Subscribes to EventBus, returns `(id, <-chan Event)` |
-| `Unsubscribe(id)` | Removes a subscriber |
+| `UnsubscribeEvents()` | Removes a subscriber |
 | `Passthrough(ctx, cfg)` | Enters raw terminal mode for active session |
 | `ExportState()` / `RestoreFromState()` | Persistence: serialize/deserialize manager state |
 
@@ -402,8 +403,8 @@ Child Process
 │  1. Write chunk → VTerm.Write(chunk)        │
 │  2. Create ScreenSnapshot (lazy rendering)   │
 │  3. Atomic store to managedSession.screen   │
-│  4. Emit EventSessionOutput to EventBus     │
-│  5. Skip event if SynchronizedOutput active │
+│  4. Signal conflated output wake-up         │
+│  5. Skip the signal if SynchronizedOutput   │
 │  6. Tee to passthroughOutput if active      │
 └─────────────────────────────────────────────┘
 ```
@@ -452,7 +453,7 @@ handleSessionOutput(so)
     │
     ├── managedSession.screen.Store(&ScreenSnapshot{...})  → atomic.Pointer
     │
-    ├── EventBus.Publish(EventSessionOutput, ...)          → non-blocking
+    ├── outputSignals.mark(sessionID)                     → non-blocking
     │
     └── (if passthroughActive) → writeSo(so) to stdout
 ```
@@ -778,70 +779,56 @@ When `outputCh` is full (the SessionManager consumer is slow), chunks are silent
 
 ### 9.1 EventBus (`eventbus.go`)
 
-High-performance, lock-free event fan-out using copy-on-write subscriber maps.
+Lossless, totally-ordered event fan-out built on
+`github.com/joeycumines/go-bigbuff.ChanPubSub`.
 
 ```
 EventBus
-├── subscribers atomic.Pointer[subscriberMap]  // Copy-on-write
-├── drops atomic.Int64                          // Dropped event count
-└── bufferSize int                              // Per-subscriber channel capacity
+├── pubsub *bigbuff.ChanPubSub[chan Event, Event]
+└── closeOnce sync.Once
 ```
 
-**Subscriber map**:
+There is ONE shared unbuffered broadcast channel — not a channel per
+subscriber — and a publish performs exactly one synchronous send per
+registered subscriber.
+
+**Contract** (violations panic; there is no error return):
+
+- `Publish` blocks until EVERY subscriber has received the value and
+  acknowledged it. There is no drop, no timeout, and no cancellation. A
+  subscriber that stops consuming stalls all publishers; a leaked subscriber
+  stalls them permanently.
+- Subscribers MUST run a dedicated goroutine on a tight
+  `receive → AckEvent → hand off downstream` cycle. All queueing, batching and
+  backpressure belong DOWNSTREAM of the acknowledgement, never before it.
+- A subscriber goroutine must NEVER publish (immediate self-deadlock).
+- The subscriber count must exactly equal the number of goroutines receiving:
+  an extra registered subscriber steals sends from real ones.
+- Stop receiving BEFORE unsubscribing. The unsubscribe path drains an
+  in-flight send on the departing subscriber's behalf, so a goroutine still
+  parked in a receive races that drain and can steal the value, stranding the
+  acknowledgement accounting.
+- `Close` must only run once no publish can occur: a send racing the channel
+  close panics and permanently breaks the instance. The manager satisfies this
+  by closing only after its worker goroutine has returned.
 
 ```go
-type subscriberMap struct {
-    nextID int
-    subs   map[int]*subscriber
-}
-type subscriber struct {
-    id   int
-    ch   chan<- Event
-}
+func (m *SessionManager) SubscribeEvents() <-chan Event  // increments, then returns the channel
+func (m *SessionManager) AckEvent()                      // acknowledge the value just received
+func (m *SessionManager) UnsubscribeEvents()             // release the subscription
+func (m *SessionManager) WatchAnyOutput() *OutputWatcher // conflated output wake-up
+func (m *SessionManager) TakeOutputDirty() []SessionID   // sessions with unobserved output
 ```
 
-**Publish** (lock-free subscriber read):
-
-```go
-func (e *EventBus) Publish(kind EventKind, sessionID SessionID, data any) {
-    sm := e.subscribers.Load()
-    sm.mu.RLock()
-    defer sm.mu.RUnlock()
-    for _, sub := range sm.subs {
-        select {
-        case sub.ch <- Event{Kind: kind, SessionID: sessionID, Data: data, Time: time.Now()}:
-        default:
-            e.drops.Add(1)  // Non-blocking: drop and count
-        }
-    }
-}
-```
-
-**Subscribe** (atomic swap on subscriber map mutation):
-
-```go
-func (e *EventBus) Subscribe(ch chan<- Event) int {
-    for {
-        sm := e.subscribers.Load()
-        newID := sm.nextID + 1
-        newMap := &subscriberMap{
-            nextID: newID,
-            subs:   make(map[int]*subscriber, len(sm.subs)+1),
-        }
-        // Copy existing subscribers
-        for id, sub := range sm.subs {
-            newMap.subs[id] = sub
-        }
-        // Add new subscriber
-        newMap.subs[newID] = &subscriber{id: newID, ch: ch}
-        // Atomic CAS
-        if e.subscribers.CompareAndSwap(sm, newMap) {
-            return newID
-        }
-        // CAS failed: retry
-    }
-}
-```
+**Session output is not a bus event.** It is the highest-volume signal and its
+consumers re-read the screen snapshot rather than the bytes, so it is modelled
+as a conflated, stateful wake-up: a per-session watcher
+(`WatchOutput`) for consumers bound to one session, and per-consumer any-session
+watchers (`WatchAnyOutput`) for consumers that watch everything. Each watcher
+owns a capacity-1 slot, so a burst coalesces instead of queueing, the producer
+can never block, and one consumer can never starve another. Watcher lifecycle
+follows `time.Ticker`: dropping the handle releases it via a finalizer, and
+`Release` exists for deterministic teardown.
 
 ### 9.2 EventKinds (`eventbus.go`, lines 14–47)
 
@@ -849,7 +836,6 @@ func (e *EventBus) Subscribe(ch chan<- Event) int {
 |---|---|---|
 | `EventSessionRegistered` | `nil` | Session was registered with the manager |
 | `EventSessionActivated` | `nil` | Session was activated (became active) |
-| `EventSessionOutput` | `[]byte` | Raw PTY output chunk |
 | `EventSessionExited` | `nil` | Child process exited |
 | `EventSessionClosed` | `nil` | Session was removed from manager |
 | `EventResize` | `[2]int{rows, cols}` | Terminal was resized |
@@ -858,12 +844,13 @@ func (e *EventBus) Subscribe(ch chan<- Event) int {
 | `EventWorkingDirectory` | `string` | Working directory (OSC 7, as URI) |
 | `EventClipboard` | `string` | Clipboard content (OSC 52, base64 payload) |
 
-### 9.3 Typed Accessors (`eventbus.go`, lines 265–286)
+### 9.3 Typed Accessors
 
 ```go
-func (e *Event) DataAsBytes() ([]byte, bool)   // For EventSessionOutput
-func (e *Event) DataAsDims() ([2]int, bool)     // For EventResize
+func (e Event) DataAsDims() ([2]int, bool)     // For EventResize
 ```
+
+There is no byte accessor: output is not carried on the bus.
 
 ## 10. JS Binding Layer
 
@@ -945,7 +932,7 @@ const mgr = termmux.newSessionManager({
 
 ### 10.5 SessionManager JS Wrapper (35+ methods)
 
-**Core session management**: `run`, `started`, `close`, `register`, `unregister`, `activate`, `input`, `resize`, `resizeSession`, `termSize`, `capture`, `activeID`, `isDone`, `sessions`, `eventsDropped`, `subscribe`, `unsubscribe`, `passthrough`
+**Core session management**: `run`, `started`, `close`, `register`, `unregister`, `activate`, `input`, `resize`, `resizeSession`, `termSize`, `capture`, `activeID`, `isDone`, `sessions`, `subscribe`, `unsubscribe`, `passthrough`
 
 **Mux-equivalent convenience**: `attach`, `detach`, `hasChild`, `switchTo`, `writeToChild`, `session`, `lastActivityMs`, `setStatus`, `setToggleKey`, `setStatusEnabled`, `setResizeFunc`, `on`, `off`, `pollEvents`, `activeSide`, `fromModel`
 
@@ -958,40 +945,46 @@ wrapper caches, and submits translated `CustomEvent`s to the event-loop
 adapter:
 
 ```go
+// The bridge is a prompt subscriber: acknowledge the event immediately, then
+// cache it and enqueue it for bounded per-turn delivery to JavaScript.
 go func() {
-    defer mgr.Unsubscribe(busID)
     for {
         select {
-        case <-ctx.Done():
+        case <-stop:
             return
         case evt, ok := <-busCh:
             if !ok {
                 return
             }
+            mgr.AckEvent() // releases the publisher; must precede all other work
             s.cacheEvent(evt)
-            data := buildEventData(evt)
-            if data != nil {
-                adapter.Submit(func(_ *goja.Runtime) {
-                    s.dispatchCustomEvent(data.eventType, data.detail)
-                })
-            }
+            s.enqueueBridgeDispatch(evt)
         }
     }
 }()
 ```
 
-The bridge handles:
+The bridge translates:
 - `EventSessionRegistered` → JS event `"registered"` with `sessionId`
 - `EventSessionActivated` → JS event `"activated"` with `sessionId`
 - `EventSessionExited` → JS event `"exit"` with `pane: "agent"`, `sessionId`
 - `EventSessionClosed` → JS event `"closed"` with `sessionId`
 - `EventResize` → JS event `"terminal-resize"` with `sessionId`, `rows`, `cols`
 - `EventBell` → JS event `"bell"` with `pane: "agent"`, `sessionId`
-- `EventSessionOutput` → JS event `"output"` with `pane: "agent"`, `sessionId`, `chunk`
 
-**Delivery**: the EventBus subscription is buffered independently; event
-translation is submitted to the JS event loop and does not block the manager
-worker. The legacy `pollEvents()` wrapper method is a compatibility no-op.
+Session output is **not** a bus event. It arrives as a conflated wake-up
+(`SessionManager.WatchAnyOutput`) resolved against the screen snapshot, and is
+surfaced as the JS event `"output"` with `pane: "agent"` and `sessionId` (no
+`chunk`: the payload is a snapshot, not a byte stream).
+
+**Delivery**: the bridge is lossless and never drops an event, but it also has
+no queue of its own. Acknowledging first means a slow, blocked, or absent
+JavaScript listener can only grow the bridge's pending queue; it can never
+stall the manager worker. Delivery runs in bounded turns of at most 128 events
+or 5ms, with the remainder rescheduled, so a backlog cannot monopolise the
+event loop. The bridge subscribes only while JavaScript holds at least one
+listener, and unsubscribes when the last is removed. The legacy `pollEvents()`
+wrapper method is a compatibility no-op.
 
 ### 10.7 JS Event Listener System
 
@@ -1002,15 +995,16 @@ addEventListener(type, callback) → undefined
 removeEventListener(type, callback) → undefined
 on(type, callback) → id
 off(id) → boolean
-subscribe(bufferSize?) → {id, pollEvents()}
-unsubscribe(id) → boolean
+subscribe() → {pollEvents(), unsubscribe()}
+unsubscribe(subscription) → boolean
 pollEvents() → 0                 // compatibility no-op
 ```
 
 The event bridge translates `SessionManager` events to `CustomEvent`s on
-the event-loop goroutine. `subscribe()` exposes a bounded, pollable event
-buffer; `pollEvents()` on the manager wrapper is retained only as a
-compatibility no-op and does not drain that buffer.
+the event-loop goroutine. `subscribe()` returns a subscription object that owns
+its own prompt-subscriber goroutine and a private, lossless event queue;
+`pollEvents()` drains that queue. `pollEvents()` on the manager wrapper itself
+remains a compatibility no-op.
 
 ### 10.8 Input Encoding Utilities
 

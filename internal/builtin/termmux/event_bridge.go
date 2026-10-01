@@ -49,23 +49,24 @@ func (s *muxState) startEventBridge() {
 	if s == nil || s.adapter == nil || s.mgr == nil {
 		return
 	}
-	// The whole start is one critical section. Registering the subscription and
-	// the output watcher, recording them, and launching the goroutines must be
-	// atomic with respect to stopEventBridge: if a stop could interleave after
-	// bridgeRunning was set but before the watcher was recorded, that stop would
-	// observe a running bridge with no watcher, and the watcher installed
-	// afterwards would never be released.
+	// Serialize the whole lifecycle against stopEventBridge. Holding one lock
+	// across subscribe + install + launch keeps the fields consistent, and the
+	// subscription itself is taken OUTSIDE bridgeMu so the manager's
+	// subscription lock is never nested inside ours (the bridge goroutines take
+	// bridgeMu, so nesting the bus lock would invert an otherwise acyclic order).
+	s.bridgeLifecycle.Lock()
+	defer s.bridgeLifecycle.Unlock()
+
 	s.bridgeMu.Lock()
 	if s.bridgeRunning {
 		s.bridgeMu.Unlock()
 		return
 	}
-	// The listener refcount is checked again inside this critical section: a
-	// concurrent removeBridgeListener may have dropped the count to zero
-	// between the caller's increment and this lock, in which case that remove
-	// already found no running bridge and could not stop one. Starting here
-	// would leave the bridge subscribed with no listeners.
-	if s.listenerCount == 0 {
+	// Re-check inside the lock: a concurrent removeBridgeListener may have
+	// dropped the last listener while this start was waiting for
+	// bridgeLifecycle. Starting now would leave the bridge subscribed with no
+	// listeners.
+	if len(s.bridgeListeners) == 0 {
 		s.bridgeMu.Unlock()
 		return
 	}
@@ -74,22 +75,23 @@ func (s *muxState) startEventBridge() {
 	s.bridgeDone = make(chan struct{})
 	stop := s.bridgeStop
 	done := s.bridgeDone
+	s.bridgeMu.Unlock()
 
-	// Subscribe first, then start receiving. The bus increments the
-	// subscriber count before returning the channel, so no send can land in
-	// the gap and be lost.
-	// The channel is handed to the receiving goroutine as a parameter rather
-	// than read back off the state, so there is no unlocked field access to
-	// race a concurrent start.
+	// Subscribe first, then start receiving: the bus increments the subscriber
+	// count before returning the channel, so no send can land in the gap and be
+	// lost. The channel is handed to the receiving goroutine as a parameter
+	// rather than read back off the state, so there is no unlocked field access.
 	busCh := s.mgr.SubscribeEvents()
 
 	// Output does not travel on the bus (see internal/termmux/output_watch.go).
 	// It is observed as a conflated wake-up and translated into the same
 	// JavaScript "output" event, so the JS contract is unchanged while the
 	// highest-volume signal stays off the lossless broadcast channel. The
-	// watcher is this bridge's own slot, so it can never be starved by
-	// another consumer reading first.
+	// watcher is this bridge's own slot, so it can never be starved by another
+	// consumer reading first.
 	outputWatch := s.mgr.WatchAnyOutput()
+
+	s.bridgeMu.Lock()
 	s.bridgeOutputWatch = outputWatch
 
 	wg := &sync.WaitGroup{}
@@ -126,6 +128,11 @@ func (s *muxState) stopEventBridge() {
 	if s == nil {
 		return
 	}
+	// Serialize against startEventBridge so a start cannot install a new
+	// session while this teardown is in progress.
+	s.bridgeLifecycle.Lock()
+	defer s.bridgeLifecycle.Unlock()
+
 	s.bridgeMu.Lock()
 	if !s.bridgeRunning {
 		s.bridgeMu.Unlock()
@@ -134,10 +141,6 @@ func (s *muxState) stopEventBridge() {
 	s.bridgeRunning = false
 	stop := s.bridgeStop
 	done := s.bridgeDone
-	// Take the watcher in this same critical section. Releasing it later from a
-	// separate lock acquisition would race a concurrent startEventBridge: the
-	// intervening start would have installed a NEW watcher, and this stop would
-	// then release that one, silently detaching the new bridge session.
 	ow := s.bridgeOutputWatch
 	s.bridgeOutputWatch = nil
 	// Drop buffered events: the consumer is going away, and the next start
@@ -146,6 +149,10 @@ func (s *muxState) stopEventBridge() {
 	s.bridgeScheduled = false
 	s.bridgeMu.Unlock()
 
+	// Join BOTH goroutines before releasing the subscription. The broadcast
+	// channel is shared and unbuffered, so a goroutine still parked in a
+	// receive while the count is decremented would consume a send intended for
+	// a different subscriber, silently starving it.
 	close(stop)
 	<-done
 

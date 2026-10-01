@@ -413,3 +413,77 @@ func TestEventBridge_TeardownUnsubscribesAndNeverStallsProducer(t *testing.T) {
 		t.Fatalf("received %d/%d events: a stale subscriber stole sends", got, published)
 	}
 }
+
+// TestEventBridge_DuplicateListenerRegistration verifies the listener registry
+// mirrors the EventTarget's dedupe rule rather than counting add/remove calls.
+//
+// addEventListener with an identical (type, callback) pair is deduped by the
+// underlying EventTarget: the second call registers nothing new, and a single
+// removeEventListener then clears that one registration. A bridge that counted
+// CALLS would still believe a listener remained after that remove and would
+// keep a subscription alive with no consumer — so the registry must collapse
+// the duplicate too. The complementary property (an unmatched remove must not
+// drive the registry negative) is covered by the same rule from the other side.
+func TestEventBridge_DuplicateListenerRegistration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	mgr, runtime, cleanup := newBridgeHarness(t)
+	defer cleanup()
+
+	// Two identical registrations collapse to one; one remove clears it. An
+	// unmatched remove afterwards must be a no-op, not a decrement.
+	//
+	// The discriminating sequence is add, add, remove (ONE remove): dedupe
+	// means only one registration ever existed, so that single remove clears
+	// it and no listener remains. A call-counting registry would sit at 1 and
+	// keep the bridge subscribed with nothing listening.
+	if _, err := runJS(t, runtime, `
+		globalThis.seen = [];
+		globalThis.fn = function(evt) { globalThis.seen.push(evt.detail.sessionId); };
+		mux.addEventListener('activated', globalThis.fn);
+		mux.addEventListener('activated', globalThis.fn);
+		mux.removeEventListener('activated', globalThis.fn);
+	`); err != nil {
+		t.Fatalf("listener choreography: %v", err)
+	}
+
+	cached, ok := managerWrapperCache.Load(wrapperCacheKey{manager: mgr, runtime: runtime})
+	if !ok {
+		t.Fatal("wrapper was not cached; cannot observe bridge state")
+	}
+	state := cached.(*wrapperCacheEntry).state
+
+	// No listener remains, so the bridge must not be subscribed.
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		state.bridgeMu.Lock()
+		running := state.bridgeRunning
+		state.bridgeMu.Unlock()
+		if !running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("bridge still subscribed after every listener was removed (registry counted calls, not registrations)")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// A later registration must bring it back.
+	if _, err := runJS(t, runtime, `mux.addEventListener('activated', globalThis.fn);`); err != nil {
+		t.Fatalf("re-attach listener: %v", err)
+	}
+
+	sio, _ := newChanStringIO()
+	sess := parent.NewStringIOSession(sio)
+	sess.Start()
+	id, err := mgr.Register(sess, parent.SessionTarget{Name: "dup-listener", Kind: "pty"})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if err := mgr.Activate(id); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+	waitForEvents(t, runtime, "seen", 1)
+}

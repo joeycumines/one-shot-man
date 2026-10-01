@@ -704,8 +704,7 @@ func TestSessionManager_Passthrough_SessionClosedEvent(t *testing.T) {
 
 	// Subscribe to events so we can verify the EventSessionClosed event
 	// was actually received.
-	subID, evtCh := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	resultCh := make(chan struct {
 		reason ExitReason

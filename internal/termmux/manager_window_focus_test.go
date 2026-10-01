@@ -157,8 +157,7 @@ func TestSessionManager_WindowSwitch_EmitsActivatedEvent(t *testing.T) {
 	s2 := newControllableSession()
 	_, _ = m.AddPaneToWindow(s2, SessionTarget{Name: "p2", Kind: SessionKindPTY}, w2, SplitRight)
 
-	subID, events := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	events := subscribeTestEvents(t, m).channel()
 
 	_ = m.NextWindow()
 

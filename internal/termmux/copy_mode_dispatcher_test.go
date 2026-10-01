@@ -161,8 +161,7 @@ func TestSessionManager_HandleCopyModeKey_SelectAndCopy(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(10, 40))
 	defer cleanup()
 
-	busID, busCh := m.Subscribe(64)
-	defer m.Unsubscribe(busID)
+	busCh := subscribeTestEvents(t, m).channel()
 
 	session := newControllableSession()
 	id, err := m.Register(session, SessionTarget{Name: "copy", Kind: SessionKindPTY})

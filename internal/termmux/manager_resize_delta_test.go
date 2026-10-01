@@ -240,8 +240,7 @@ func TestSessionManager_ResizePaneDelta_EmitsWindowUpdated(t *testing.T) {
 
 	_, p := newHalfHeightPane(t, m)
 
-	subID, events := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	events := subscribeTestEvents(t, m).channel()
 
 	if err := m.ResizePaneDelta(p, "right", 5); err != nil {
 		t.Fatalf("ResizePaneDelta: %v", err)

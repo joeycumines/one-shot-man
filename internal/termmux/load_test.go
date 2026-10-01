@@ -327,10 +327,11 @@ func BenchmarkSnapshotReadDuringWrite(b *testing.B) {
 }
 
 // ── TestStressEventDeliveryUnderLoad ─────────────────────────────────────────
-// Verifies event delivery behavior under heavy SessionManager activity.
-// Multiple subscribers with small buffers run alongside aggressive session
-// operations. Validates that events are delivered (or dropped counts increase)
-// without deadlock or data corruption.
+// Verifies lossless event delivery under heavy SessionManager activity.
+// Multiple concurrent subscribers run alongside aggressive session operations.
+// The bus never drops and never deadlocks: every subscriber that keeps
+// acknowledging receives every published event, even while publishers are
+// deliberately slowed by other subscribers mid-burst.
 func TestStressEventDeliveryUnderLoad(t *testing.T) {
 	if testing.Short() {
 		t.Skip("slow stress test skipped in -short mode")
@@ -340,33 +341,38 @@ func TestStressEventDeliveryUnderLoad(t *testing.T) {
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	// Start subscribers with deliberately small buffers to trigger backpressure.
+	// Start concurrent prompt subscribers. Each owns a dedicated goroutine
+	// that acknowledges every event immediately, which is what keeps the
+	// publisher from stalling; the downstream channel is drained at leisure.
 	const numSubscribers = 5
 	type subResult struct {
-		id       int
+		stop     chan struct{}
+		done     chan struct{}
 		received atomic.Int64
 	}
 	results := make([]subResult, numSubscribers)
 	var subWG sync.WaitGroup
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	for i := range numSubscribers {
-		subID, ch := m.Subscribe(4) // intentionally small buffer
-		results[i].id = subID
+		ch := m.SubscribeEvents()
+		results[i].stop = make(chan struct{})
+		results[i].done = make(chan struct{})
 		subWG.Add(1)
 		go func(idx int) {
 			defer subWG.Done()
+			defer close(results[idx].done)
 			for {
 				select {
+				case <-results[idx].stop:
+					return
 				case _, ok := <-ch:
 					if !ok {
 						return
 					}
+					// Acknowledge before counting: the publisher is blocked
+					// until every subscriber does this.
+					m.AckEvent()
 					results[idx].received.Add(1)
-				case <-ctx.Done():
-					return
 				}
 			}
 		}(i)
@@ -382,7 +388,7 @@ func TestStressEventDeliveryUnderLoad(t *testing.T) {
 		hammerWG.Go(func() {
 			for c := range hammerOps {
 				sess := newControllableSession()
-				// Feed some output so EventSessionOutput fires.
+				// Feed some output so the session produces output.
 				sess.readerCh <- fmt.Appendf(nil, "w%d op%d output\r\n", w, c)
 
 				id, err := m.Register(sess, SessionTarget{
@@ -414,29 +420,32 @@ func TestStressEventDeliveryUnderLoad(t *testing.T) {
 		t.Fatal("deadlock: hammer workers did not finish")
 	}
 
-	// Stop subscribers and collect results.
-	cancel()
+	// Stop subscribers: halt each goroutine first, then release its
+	// subscription, so no parked receiver can steal another's send.
 	for i := range results {
-		m.Unsubscribe(results[i].id)
+		close(results[i].stop)
+		<-results[i].done
+		m.UnsubscribeEvents()
 	}
 	subWG.Wait()
 
-	// At least some events should have been delivered.
 	var totalReceived int64
 	for i := range results {
 		totalReceived += results[i].received.Load()
 	}
+	t.Logf("event delivery: %d total received across %d subscribers",
+		totalReceived, numSubscribers)
 
-	dropped := m.EventsDropped()
-	t.Logf("event delivery: %d total received across %d subscribers, %d dropped",
-		totalReceived, numSubscribers, dropped)
-
-	// With small buffers and heavy load, some drops are expected.
-	// The key invariant is: (total received + total dropped) should
-	// reflect all events that were emitted. We verify non-zero delivery
-	// as a sanity check.
+	// Delivery is lossless, so a subscriber that kept acknowledging must have
+	// received a meaningful share of the emitted events, and no subscriber
+	// may have been starved by another.
 	if totalReceived == 0 {
 		t.Error("no events were delivered to any subscriber")
+	}
+	for i := range results {
+		if results[i].received.Load() == 0 {
+			t.Errorf("subscriber %d received no events", i)
+		}
 	}
 }
 

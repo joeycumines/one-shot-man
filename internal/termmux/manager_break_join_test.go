@@ -277,8 +277,7 @@ func TestSessionManager_BreakJoin_EmitsEvents(t *testing.T) {
 	s2 := newControllableSession()
 	p2, _ := m.AddPaneToWindow(s2, SessionTarget{Name: "p2", Kind: SessionKindPTY}, w2, SplitRight)
 
-	subID, events := m.Subscribe(32)
-	defer m.Unsubscribe(subID)
+	events := subscribeTestEvents(t, m).channel()
 
 	_, _, _, err := m.BreakPane(p1)
 	if err != nil {

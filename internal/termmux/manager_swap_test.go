@@ -169,8 +169,7 @@ func TestSessionManager_SwapPanes_EmitsWindowUpdated(t *testing.T) {
 	s2 := newControllableSession()
 	p2, _ := m.AddPaneToWindow(s2, SessionTarget{Name: "b", Kind: SessionKindPTY}, w1, SplitRight)
 
-	subID, events := m.Subscribe(32)
-	defer m.Unsubscribe(subID)
+	events := subscribeTestEvents(t, m).channel()
 
 	if err := m.SwapPanes(p1, p2); err != nil {
 		t.Fatalf("SwapPanes: %v", err)

@@ -125,8 +125,7 @@ func TestSessionManager_VisualBell_ActiveOnBell(t *testing.T) {
 		t.Fatalf("SetMonitorConfig: %v", err)
 	}
 
-	subID, evtCh := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session.readerCh <- []byte{0x07}
 	waitForEventKindCh(t, evtCh, EventBell, 2*time.Second)
@@ -154,8 +153,7 @@ func TestSessionManager_VisualBell_Expires(t *testing.T) {
 		t.Fatalf("SetMonitorConfig: %v", err)
 	}
 
-	subID, evtCh := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session.readerCh <- []byte{0x07}
 	waitForEventKindCh(t, evtCh, EventBell, 2*time.Second)
@@ -193,8 +191,7 @@ func TestSessionManager_ActivityEvent_BackgroundPane(t *testing.T) {
 
 	m.Activate(id1)
 
-	subID, evtCh := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	s2.readerCh <- []byte("hello")
 
@@ -226,8 +223,7 @@ func TestSessionManager_ActivityEvent_ResetsOnActivation(t *testing.T) {
 
 	m.Activate(id1)
 
-	subID, evtCh := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	s2.readerCh <- []byte("hello")
 
@@ -271,8 +267,7 @@ func TestSessionManager_ActivityEvent_QuiescenceReset(t *testing.T) {
 
 	m.Activate(id1)
 
-	subID, evtCh := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	s2.readerCh <- []byte("hello")
 
@@ -304,8 +299,7 @@ func TestSessionManager_ActivityEvent_NotFiredForActivePane(t *testing.T) {
 		t.Fatalf("SetMonitorConfig: %v", err)
 	}
 
-	subID, evtCh := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	session.readerCh <- []byte("hello")
 
@@ -339,8 +333,7 @@ func TestSessionManager_SilenceEvent(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	subID, evtCh := m.Subscribe(16)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	count := m.CheckSilenceMonitors()
 	if count != 1 {

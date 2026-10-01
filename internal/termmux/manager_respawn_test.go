@@ -183,8 +183,7 @@ func TestRespawnSession_EmitsEvents(t *testing.T) {
 	}
 	defer cs.Close()
 
-	subID, evtCh := m.Subscribe(32)
-	defer m.Unsubscribe(subID)
+	evtCh := subscribeTestEvents(t, m).channel()
 
 	id, err := m.Register(cs, SessionTarget{Name: "event-test", Kind: SessionKindCapture})
 	if err != nil {

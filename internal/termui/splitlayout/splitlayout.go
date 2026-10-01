@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -56,14 +57,35 @@ type SplitLayout struct {
 	comp    *compositor.Compositor
 	focus   *focus.FocusGroup
 
-	subID    int
-	eventCh  <-chan termmux.Event
-	outputCh chan termmux.Event
-	done     chan struct{}
-	wg       sync.WaitGroup
+	// eventCh is the manager's shared broadcast channel. The bridge goroutine
+	// is a registered subscriber: it receives, acknowledges with AckEvent
+	// immediately, and only then filters and forwards.
+	eventCh <-chan termmux.Event
+
+	// paneIDs is a lock-free snapshot of the session IDs this layout renders,
+	// for the bridge goroutine's filter. It MUST NOT take sl.mu: the mutex is
+	// held across blocking manager IPC elsewhere (e.g. AddPane holds it while
+	// ResizeSession waits on the worker), and the worker in turn waits on this
+	// subscriber's acknowledgement — taking the lock inside the subscriber
+	// loop closes that cycle into a deadlock. Mutations publish a fresh set.
+	paneIDs atomic.Pointer[map[termmux.SessionID]struct{}]
+
+	// outputWatch is the conflated any-session output signal owned by this
+	// layout. Output is not a bus event (see internal/termmux/output_watch.go);
+	// the layout refreshes every pane snapshot when it fires. Each consumer
+	// owns its own watcher slot, so no other consumer can starve this one.
+	outputWatch *termmux.OutputWatcher
+	outputCh    chan termmux.Event
+	done        chan struct{}
+	wg          sync.WaitGroup
 
 	closed         bool
 	outputChClosed bool
+	// subscribed reports whether Init has taken the manager event
+	// subscription. Close unsubscribes only when it has: the bus counts
+	// subscribers with a single integer and treats an unpaired decrement as
+	// misuse, so a Close without a preceding Init must not decrement.
+	subscribed bool
 }
 
 // SplitLayoutOption configures a SplitLayout.
@@ -146,6 +168,7 @@ func (sl *SplitLayout) AddPane(id termmux.SessionID) *SplitLayout {
 
 	pane := Pane{ID: id}
 	sl.panes = append(sl.panes, pane)
+	sl.publishPaneIDsLocked()
 
 	sl.recomputeLayoutLocked()
 
@@ -184,12 +207,25 @@ func (sl *SplitLayout) RemovePane(id termmux.SessionID) error {
 	}
 
 	sl.panes = append(sl.panes[:idx], sl.panes[idx+1:]...)
+	sl.publishPaneIDsLocked()
 	sl.comp.RemovePane(sessionIDStr(id))
 	sl.focus.Remove(sessionIDStr(id))
 
 	sl.recomputeLayoutLocked()
 
 	return nil
+}
+
+// publishPaneIDsLocked republishes the lock-free pane-ID snapshot for the
+// bridge goroutine. The caller must hold sl.mu. The set is replaced wholesale
+// rather than mutated, so a reader holding the old pointer always sees a
+// consistent set.
+func (sl *SplitLayout) publishPaneIDsLocked() {
+	set := make(map[termmux.SessionID]struct{}, len(sl.panes))
+	for _, p := range sl.panes {
+		set[p.ID] = struct{}{}
+	}
+	sl.paneIDs.Store(&set)
 }
 
 // Panes returns the session IDs of all panes in order.
@@ -332,26 +368,48 @@ func (sl *SplitLayout) Init() tea.Cmd {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
-	sl.subID, sl.eventCh = sl.manager.Subscribe(64)
+	// Guard against Init being called more than once: the bus counts
+	// subscribers, so a second SubscribeEvents would need a second Close to
+	// balance, and a second bridge goroutine would compete for the same
+	// subscription.
+	if sl.subscribed {
+		return sl.waitForOutput
+	}
+	sl.subscribed = true
+
+	// Publish the initial pane set before the bridge starts filtering.
+	// sl.mu is already held here (deferred unlock at Init entry).
+	sl.publishPaneIDsLocked()
+
+	// Prompt subscriber: every received event is acknowledged with AckEvent
+	// before filtering, so the manager worker is never stalled.
+	sl.eventCh = sl.manager.SubscribeEvents()
+
+	// Output arrives as a conflated wake-up rather than a bus event.
+	sl.outputWatch = sl.manager.WatchAnyOutput()
 
 	sl.wg.Add(1)
 	go sl.bridgeEvents()
 
+	sl.wg.Add(1)
+	go sl.watchOutput()
+
 	return sl.waitForOutput
 }
 
-// bridgeEvents reads events from the EventBus subscription channel and
-// forwards those matching any of our sessions to outputCh.
+// bridgeEvents is the prompt subscriber loop for this layout. The manager's
+// broadcast channel is shared and unbuffered with one synchronous send per
+// registered subscriber, so the sequence per value is strictly:
+//
+//	receive → AckEvent → filter/forward downstream
+//
+// AckEvent must precede the session-set lookup and the downstream send, because
+// the publisher is blocked until this subscriber acknowledges.
+//
+// The loop exits on Close (done) or bus close, and never receives after
+// Unsubscribe: Close stops it before decrementing the subscriber count.
 func (sl *SplitLayout) bridgeEvents() {
 	defer sl.wg.Done()
-
-	// Build set of session IDs we care about.
-	sessionIDs := make(map[termmux.SessionID]bool)
-	sl.mu.Lock()
-	for _, p := range sl.panes {
-		sessionIDs[p.ID] = true
-	}
-	sl.mu.Unlock()
 
 	for {
 		select {
@@ -359,23 +417,65 @@ func (sl *SplitLayout) bridgeEvents() {
 			return
 		case evt, ok := <-sl.eventCh:
 			if !ok {
+				// Bus closed by the manager. Must NOT acknowledge a close.
 				return
 			}
-			// Filter: only forward events for our sessions (or global events).
-			if evt.SessionID != 0 {
-				sl.mu.Lock()
-				ids := make(map[termmux.SessionID]bool)
-				for _, p := range sl.panes {
-					ids[p.ID] = true
-				}
-				sl.mu.Unlock()
+			// Acknowledge before doing anything else — the publisher is
+			// waiting on exactly this call.
+			sl.manager.AckEvent()
 
-				if !ids[evt.SessionID] {
+			// Filter: only forward events for our sessions (or global
+			// events). The set is read lock-free: taking sl.mu here would
+			// deadlock against callers that hold it across manager IPC
+			// (e.g. AddPane → ResizeSession → worker → this subscriber).
+			if evt.SessionID != 0 {
+				ids := sl.paneIDs.Load()
+				if ids == nil {
+					continue
+				}
+				if _, ok := (*ids)[evt.SessionID]; !ok {
 					continue
 				}
 			}
+			// Forward, but never at the cost of the subscriber cycle: a tea
+			// consumer that stops draining outputCh must not stall the
+			// manager worker. A dropped forward is harmless — the next
+			// delivered event re-triggers refreshPanes from the snapshots.
 			select {
 			case sl.outputCh <- evt:
+			case <-sl.done:
+				return
+			default:
+			}
+		}
+	}
+}
+
+// watchOutput forwards conflated output wake-ups into the same outputMsg path
+// the bus uses, so pane snapshots refresh on output without output travelling
+// the lossless bus. The layout refreshes every pane on any wake-up, which is
+// correct because refreshPanes re-reads each session's snapshot.
+func (sl *SplitLayout) watchOutput() {
+	defer sl.wg.Done()
+	if sl.outputWatch == nil {
+		return
+	}
+	wake := sl.outputWatch.C()
+	if wake == nil {
+		return
+	}
+	for {
+		select {
+		case <-sl.done:
+			return
+		case _, ok := <-wake:
+			if !ok {
+				return
+			}
+			// Any session's output refreshes all panes; the message's
+			// session is therefore immaterial, and 0 denotes "global".
+			select {
+			case sl.outputCh <- termmux.Event{Kind: termmux.EventBell}:
 			case <-sl.done:
 				return
 			}
@@ -658,11 +758,22 @@ func (sl *SplitLayout) Close() error {
 	}
 	sl.closed = true
 	close(sl.done)
+	subscribed := sl.subscribed
 	sl.mu.Unlock()
 
-	sl.manager.Unsubscribe(sl.subID)
-
+	// Join the bridge goroutine BEFORE releasing the subscription, and do not
+	// reorder these. The shared broadcast channel's unsubscribe path drains an
+	// in-flight send on the departing subscriber's behalf, so a goroutine still
+	// parked in a receive races that drain and can steal the value, stranding
+	// the acknowledgement accounting.
 	sl.wg.Wait()
+	if sl.outputWatch != nil {
+		sl.outputWatch.Release()
+		sl.outputWatch = nil
+	}
+	if subscribed {
+		sl.manager.UnsubscribeEvents()
+	}
 
 	sl.mu.Lock()
 	defer sl.mu.Unlock()

@@ -28,7 +28,7 @@ func TestActivityReset_JSBinding(t *testing.T) {
 			await mgr.activate(s2.sid);
 			await mgr.setMonitorConfig(sid, { activity: true, activityThreshold: 0, activityResetThreshold: 0.05 });
 
-			sub = mgr.subscribe(1024);
+			sub = mgr.subscribe();
 
 			function waitOutput(text, deadlineMs) {
 				return new Promise(function(resolve, reject) {
@@ -71,7 +71,7 @@ func TestActivityReset_JSBinding(t *testing.T) {
 			await waitOutput("again2", Date.now() + 3000);
 			await waitActivity(Date.now() + 3000);
 		} finally {
-			if (sub) mgr.unsubscribe(sub.id);
+			if (sub) mgr.unsubscribe(sub);
 			if (s1) await s1.session.close();
 			if (s2) await s2.session.close();
 		}

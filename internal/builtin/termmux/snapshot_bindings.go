@@ -116,10 +116,6 @@ func registerSnapshotMethods(obj *goja.Object, s *muxState) {
 		})
 	})
 
-	_ = obj.Set("eventsDropped", func() int64 {
-		return s.mgr.EventsDropped()
-	})
-
 	_ = obj.Set("lastActivityMs", func(call goja.FunctionCall) goja.Value {
 		hasID := len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0))
 		id := s.cachedActiveID()

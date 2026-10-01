@@ -138,7 +138,6 @@ typically available as `tuiMux` in pr-split scripts.
 | `sessions()` | `SessionManager.Sessions()` | — | `Promise<[{id,target,state,isActive}]>` | rejects on manager error |
 | `capture(id, opts?)` | `SessionManager.CaptureScreen()` | `number, {start?,end?,joinWrapped?}` | `{plain,ansi,fullScreen,gen,rows,cols,cursorRow,cursorCol,cursorVisible,mouseTracking,mouseSGR,locked,message,timestamp}\|null` | `null` if session missing or unpublished |
 | `lastActivityMs(id?)` | `SessionManager.Snapshot() + time.Since()` | `number?` (session ID) | `number` | `-1` if session/snapshot missing |
-| `eventsDropped()` | `SessionManager.EventsDropped()` | — | `number` | silent |
 
 #### capture(id, opts?)
 
@@ -244,8 +243,8 @@ underlying target. Listeners receive `CustomEvent` instances with a
 | `on(event, callback)` | legacy wrapper | `string, function` | `number` (listener ID) | throws TypeError if invalid event or callback |
 | `off(id)` | legacy wrapper | `number` | `boolean` | silent |
 | `pollEvents()` | compatibility no-op | — | `number` (always `0`) | silent |
-| `subscribe(bufSize?)` | `EventBus.Subscribe()` | `number?` | `{id, pollEvents}` | silent |
-| `unsubscribe(id)` | `EventBus.Unsubscribe()` | `number` | `boolean` | silent |
+| `subscribe()` | `SessionManager.SubscribeEvents()` | — | `{pollEvents(), unsubscribe()}` | silent |
+| `unsubscribe(subscription)` | `SessionManager.UnsubscribeEvents()` | subscription object | `boolean` | throws TypeError without a subscription object |
 
 Valid legacy event names for `on`: `exit`, `resize`, `focus`, `bell`,
 `output`, `registered`, `activated`, `closed`, `terminal-resize`,
@@ -258,9 +257,9 @@ Valid legacy event names for `on`: `exit`, `resize`, `focus`, `bell`,
 |------------|-----------------|
 | `exit` | `{ sessionId: number, pane?: string }` |
 | `resize` / `terminal-resize` | `{ sessionId: number, rows: number, cols: number }` |
-| `focus` | Not emitted by the current EventBus bridge |
+| `focus` | Emitted only by the passthrough binding, never by the event bridge |
 | `bell` | `{ sessionId: number, pane?: string }` |
-| `output` | `{ sessionId: number, pane?: string, chunk?: string }` |
+| `output` | `{ sessionId: number, pane?: string }` — a conflated wake-up; read the pane snapshot for content |
 | `registered` | `{ sessionId: number }` |
 | `activated` | `{ sessionId: number }` |
 | `closed` | `{ sessionId: number }` |
@@ -277,8 +276,11 @@ Example:
 var termmux = require('osm:termmux');
 var bounded = await termmux.newBoundedSession({ cmd: '/bin/sh' });
 
+// 'output' is a conflated wake-up: it carries no bytes. Read the pane
+// snapshot when you want the content.
 bounded.mgr.addEventListener('output', function (e) {
-  output.print('output from ' + e.detail.sessionId + ': ' + e.detail.chunk);
+  var snap = bounded.mgr.capture(e.detail.sessionId);
+  if (snap) output.print('output from ' + e.detail.sessionId + ':\n' + snap.plain);
 });
 ```
 

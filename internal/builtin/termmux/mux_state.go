@@ -62,9 +62,9 @@ type muxState struct {
 	bridgeLifecycle sync.Mutex
 	bridgeMu        sync.Mutex
 	bridgeRunning   bool
-	bridgeStop    chan struct{}
-	bridgeDone    chan struct{}
-	bridgeQueue   []eventDispatchData
+	bridgeStop      chan struct{}
+	bridgeDone      chan struct{}
+	bridgeQueue     []eventDispatchData
 	// bridgeOutputWatch is the bridge's own any-output watcher. It is
 	// released in stopEventBridge after the output goroutine is joined.
 	bridgeOutputWatch *parent.OutputWatcher
@@ -75,7 +75,7 @@ type muxState struct {
 	// registration, so counting add/remove CALLS would drift from reality and
 	// could stop the bridge while listeners remain. Entries are recorded only
 	// when the registration is genuinely new.
-	bridgeListeners map[string][]goja.Value
+	bridgeListeners     map[string][]goja.Value
 	resizeFn            func(rows, cols uint16) error
 	activeSessionTarget parent.SessionTarget
 	activeIDCached      atomic.Uint64

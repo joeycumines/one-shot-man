@@ -2000,22 +2000,21 @@ func TestSessionManager_EventsAreNotDropped(t *testing.T) {
 	}
 
 	// Output no longer travels the bus at all (see output_watch.go): it is a
-	// conflated wake-up. Every chunk must still have been recorded as dirty,
-	// and every control event must still be delivered losslessly.
-	w := m.WatchAnyOutput()
-	defer w.Release()
+	// conflated wake-up whose DURABLE state is the dirty-session set, so that
+	// is what must be asserted. A wake-up that fired before this test started
+	// watching is deliberately not replayed — conflation means "there is
+	// unobserved output", and the set still says so.
 	deadline := time.After(10 * time.Second)
 	for {
+		if len(m.TakeOutputDirty()) > 0 {
+			break
+		}
 		select {
-		case <-w.C():
-			if len(m.TakeOutputDirty()) > 0 {
-				goto drained
-			}
 		case <-deadline:
-			t.Fatal("timed out waiting for the conflated output signal")
+			t.Fatal("timed out waiting for output to be recorded as unobserved")
+		case <-time.After(time.Millisecond):
 		}
 	}
-drained:
 
 	// The lifecycle events emitted by Register must all have arrived intact.
 	deadline = time.After(10 * time.Second)

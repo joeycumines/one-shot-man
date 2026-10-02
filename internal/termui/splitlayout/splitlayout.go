@@ -26,9 +26,13 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termui/layout"
 )
 
-// outputMsg wraps a termmux.Event delivered from the EventBus subscription
-// goroutine to the bubbletea Update loop.
-type outputMsg termmux.Event
+// outputMsg signals the bubbletea Update loop that the layout should refresh.
+//
+// It carries no payload by design: both producers — a control event for one of
+// the layout's sessions, and a conflated output wake-up — mean only "re-read
+// the pane snapshots", and refreshPanes does exactly that for every pane. It is
+// an unexported type so only this package can produce it.
+type outputMsg struct{}
 
 // Pane tracks a single terminal session within the split layout.
 type Pane struct {
@@ -75,9 +79,11 @@ type SplitLayout struct {
 	// the layout refreshes every pane snapshot when it fires. Each consumer
 	// owns its own watcher slot, so no other consumer can starve this one.
 	outputWatch *termmux.OutputWatcher
-	outputCh    chan termmux.Event
-	done        chan struct{}
-	wg          sync.WaitGroup
+	// outputCh carries a bare wake-up: the layout re-reads every pane snapshot,
+	// so there is no payload to transport.
+	outputCh chan struct{}
+	done     chan struct{}
+	wg       sync.WaitGroup
 
 	closed         bool
 	outputChClosed bool
@@ -153,7 +159,7 @@ func NewSplitLayout(manager *termmux.SessionManager, bounds coordinate.Rect, opt
 		bounds:    bounds,
 		direction: cfg.direction,
 		ratios:    cfg.ratios,
-		outputCh:  make(chan termmux.Event, 64),
+		outputCh:  make(chan struct{}, 64),
 		done:      make(chan struct{}),
 	}
 
@@ -442,7 +448,7 @@ func (sl *SplitLayout) bridgeEvents() {
 			// manager worker. A dropped forward is harmless — the next
 			// delivered event re-triggers refreshPanes from the snapshots.
 			select {
-			case sl.outputCh <- evt:
+			case sl.outputCh <- struct{}{}:
 			case <-sl.done:
 				return
 			default:
@@ -472,10 +478,10 @@ func (sl *SplitLayout) watchOutput() {
 			if !ok {
 				return
 			}
-			// Any session's output refreshes all panes; the message's
-			// session is therefore immaterial, and 0 denotes "global".
+			// Any session's output refreshes every pane, so the wake-up
+			// carries nothing to identify which one produced it.
 			select {
-			case sl.outputCh <- termmux.Event{Kind: termmux.EventBell}:
+			case sl.outputCh <- struct{}{}:
 			case <-sl.done:
 				return
 			}
@@ -487,11 +493,11 @@ func (sl *SplitLayout) watchOutput() {
 // or the done channel is closed.
 func (sl *SplitLayout) waitForOutput() tea.Msg {
 	select {
-	case evt, ok := <-sl.outputCh:
+	case _, ok := <-sl.outputCh:
 		if !ok {
 			return nil
 		}
-		return outputMsg(evt)
+		return outputMsg{}
 	case <-sl.done:
 		return nil
 	}

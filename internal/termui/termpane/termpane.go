@@ -24,11 +24,7 @@ import (
 // only THAT there is something new and re-reads the authoritative snapshot
 // itself. It is an unexported type so only this package can produce it —
 // external code cannot inject fake output messages.
-type outputMsg struct {
-	// sessionID is the session that produced the wake-up. Retained for
-	// diagnostics and to keep the message meaningful when logged.
-	sessionID termmux.SessionID
-}
+type outputMsg struct{}
 
 // outputBurstWindow gives the SessionManager worker and the subscription
 // bridge a bounded grace period to publish the rest of an already-started
@@ -81,8 +77,9 @@ type Model struct {
 	// It is set by the waiter's goroutine, never held across a channel wait.
 	waiting atomic.Bool
 
-	// wg tracks the bridge goroutine. Close waits on it before closing
-	// outputCh to avoid "send on closed channel" panics.
+	// wg tracks the two subscriber goroutines (the control-event bridge and
+	// the output watcher). Close waits on it before closing outputCh and
+	// before releasing the subscription.
 	wg sync.WaitGroup
 
 	// snap holds the metadata of the most recent capture from the session
@@ -300,7 +297,7 @@ func (m *Model) waitForOutput() tea.Msg {
 		if !ok {
 			return nil
 		}
-		return outputMsg{sessionID: m.sessionID}
+		return outputMsg{}
 	case <-m.done:
 		return nil
 	}

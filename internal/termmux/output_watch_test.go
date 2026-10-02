@@ -200,3 +200,72 @@ func TestOutputWatch_AnyOutputNotifiesEveryConsumer(t *testing.T) {
 		}
 	}
 }
+
+// TestOutputWatch_ZeroSessionIDReleases covers a registration leak.
+//
+// remove() must decide where an entry lives from the entry itself, not from a
+// zero session ID. WatchOutput(0) is reachable (the JS termpane binding only
+// rejects undefined/null sessionId, so sessionId: 0 passes through), and a
+// watcher registered under sessions[0] that remove() looked for in the global
+// set could never be released — Release and the finalizer would both be no-ops.
+func TestOutputWatch_ZeroSessionIDReleases(t *testing.T) {
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	w := m.WatchOutput(0)
+	if w == nil {
+		t.Fatal("WatchOutput(0) returned nil")
+	}
+
+	m.outputSignals.mu.Lock()
+	before := len(m.outputSignals.sessions[0])
+	m.outputSignals.mu.Unlock()
+	if before != 1 {
+		t.Fatalf("sessions[0] holds %d entries after WatchOutput(0), want 1", before)
+	}
+
+	w.Release()
+
+	m.outputSignals.mu.Lock()
+	after := len(m.outputSignals.sessions[0])
+	globals := len(m.outputSignals.globals)
+	m.outputSignals.mu.Unlock()
+	if after != 0 {
+		t.Fatalf("sessions[0] still holds %d entries after Release, want 0 (registration leaked)", after)
+	}
+	if globals != 0 {
+		t.Fatalf("globals holds %d entries, want 0: a session watcher was filed as global", globals)
+	}
+
+	// Release stays idempotent for the zero-id case.
+	w.Release()
+}
+
+// TestOutputWatch_AnyWatcherReleasesFromGlobalSet is the complement: an
+// any-output watcher must be released from the global set, not looked up under
+// a session ID.
+func TestOutputWatch_AnyWatcherReleasesFromGlobalSet(t *testing.T) {
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	w := m.WatchAnyOutput()
+	m.outputSignals.mu.Lock()
+	before := len(m.outputSignals.globals)
+	m.outputSignals.mu.Unlock()
+	if before != 1 {
+		t.Fatalf("globals holds %d entries after WatchAnyOutput, want 1", before)
+	}
+
+	w.Release()
+
+	m.outputSignals.mu.Lock()
+	after := len(m.outputSignals.globals)
+	sess := len(m.outputSignals.sessions)
+	m.outputSignals.mu.Unlock()
+	if after != 0 {
+		t.Fatalf("globals still holds %d entries after Release, want 0", after)
+	}
+	if sess != 0 {
+		t.Fatalf("sessions holds %d maps, want 0: an any-output watcher was filed per session", sess)
+	}
+}

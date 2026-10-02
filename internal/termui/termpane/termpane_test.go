@@ -517,7 +517,7 @@ func TestUpdate_OutputMsgRefreshesSnapshot(t *testing.T) {
 	// Simulate an output wake-up arriving via Update. The message carries no
 	// payload: output is a conflated signal, so Update merely refreshes the
 	// capture from the manager.
-	_, cmd := model.Update(outputMsg{sessionID: sid})
+	_, cmd := model.Update(outputMsg{})
 
 	// The cmd should be waitForOutput (re-subscribe for next event).
 	if cmd == nil {

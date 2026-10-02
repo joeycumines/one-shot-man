@@ -11,6 +11,11 @@ import (
 // queueing.
 type outputWatcherEntry struct {
 	ch chan struct{}
+	// global marks an any-session watcher, which is registered in the global
+	// set rather than under a session ID. It is explicit rather than inferred
+	// from a zero id: WatchOutput(0) is reachable, and a sentinel would make
+	// that registration unremovable.
+	global bool
 }
 
 // OutputWatcher is a conflated wake-up for one session's output, or for any
@@ -73,12 +78,6 @@ type outputSignals struct {
 	dirty    map[SessionID]struct{}
 	globals  map[*outputWatcherEntry]struct{}
 	sessions map[SessionID]map[*outputWatcherEntry]struct{}
-	// scratch holds the watcher entries to notify, reused across calls so the
-	// hottest path in the subsystem does not allocate per output chunk. It is
-	// only ever touched while mu is held, and the signalling that consumes it
-	// happens outside the lock, so the slice is captured to a local before the
-	// unlock and never read concurrently.
-	scratch []*outputWatcherEntry
 }
 
 func newOutputSignals() *outputSignals {
@@ -102,32 +101,27 @@ func (o *outputSignals) mark(id SessionID) {
 		return
 	}
 	o.mu.Lock()
+	defer o.mu.Unlock()
 	o.dirty[id] = struct{}{}
-	// Collect every watcher that must be notified: the per-session ones plus
-	// the any-session ones. Each has its OWN slot, so one wake-up notifies
-	// every consumer rather than being consumed by whichever one reads first.
-	// The collection is reused across calls (see scratch) to keep this path
-	// allocation-free; the signalling below happens after the lock is released,
-	// so a copy is taken into it rather than reading the map unlocked.
-	o.scratch = o.scratch[:0]
-	for entry := range o.sessions[id] {
-		o.scratch = append(o.scratch, entry)
-	}
-	for entry := range o.globals {
-		o.scratch = append(o.scratch, entry)
-	}
-	targets := o.scratch
-	o.mu.Unlock()
-
-	// Signal outside the lock: a concurrent Release must not be able to
-	// mutate the map while it is being iterated.
-	for _, entry := range targets {
-		select {
-		case entry.ch <- struct{}{}:
-		default:
-			// Already pending: the consumer will observe the newer state.
+	// Notify every interested watcher: the per-session ones plus the
+	// any-session ones. Each has its OWN slot, so one wake-up notifies every
+	// consumer rather than being consumed by whichever one reads first.
+	//
+	// The sends happen while holding the lock. That is what keeps this path
+	// allocation-free and makes iterating the maps safe against a concurrent
+	// Release; it cannot block or re-enter, because every send is non-blocking
+	// into a capacity-1 slot.
+	signal := func(entries map[*outputWatcherEntry]struct{}) {
+		for entry := range entries {
+			select {
+			case entry.ch <- struct{}{}:
+			default:
+				// Already pending: the consumer will observe the newer state.
+			}
 		}
 	}
+	signal(o.sessions[id])
+	signal(o.globals)
 }
 
 // addGlobal registers an any-session watcher entry.
@@ -175,15 +169,16 @@ func (o *outputSignals) add(id SessionID, entry *outputWatcherEntry) {
 }
 
 // remove unregisters a watcher entry, dropping the per-session map when it
-// becomes empty so the tracker does not retain sessions forever. A watcher
-// created by WatchAnyOutput carries id 0 and is removed from the global set.
+// becomes empty so the tracker does not retain sessions forever. The entry
+// itself says whether it belongs to the global set, so this is correct for any
+// session ID including 0.
 func (o *outputSignals) remove(id SessionID, entry *outputWatcherEntry) {
 	if o == nil {
 		return
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if id == 0 {
+	if entry.global {
 		delete(o.globals, entry)
 		return
 	}
@@ -218,7 +213,7 @@ func (m *SessionManager) WatchOutput(id SessionID) *OutputWatcher {
 // Each watcher owns its own notification slot, so every consumer is notified;
 // a single shared channel would deliver each wake-up to only one of them.
 func newAnyOutputWatcher(o *outputSignals) *OutputWatcher {
-	entry := &outputWatcherEntry{ch: make(chan struct{}, 1)}
+	entry := &outputWatcherEntry{ch: make(chan struct{}, 1), global: true}
 	o.addGlobal(entry)
 	w := &OutputWatcher{owner: o, entry: entry}
 	// Mirrors WatchOutput: released explicitly via Release, or automatically

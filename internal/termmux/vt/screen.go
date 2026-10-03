@@ -321,6 +321,19 @@ func (s *Screen) ClearDirty() {
 	s.dirtyRowMax = -1
 }
 
+// eraseAttr returns the attribute a real terminal gives an ERASED cell.
+//
+// Erasing does not stamp the current pen onto the blank: per ECMA-48 an EL/ED
+// leaves the graphic rendition at default, and the only pen state that carries
+// over is the background colour (terminal "background colour erase"). Copying
+// the whole pen instead means that as soon as an application turns on
+// underline — which a TUI legitimately does for prompt markers and rules — every
+// subsequently erased cell becomes UNDERLINED. A blank row then renders as a
+// full-width rule, which is exactly the "artifacts on every line" corruption.
+func eraseAttr(a Attr) Attr {
+	return Attr{BG: a.BG}
+}
+
 func makeAttrLine(cols int, a Attr) []Cell {
 	line := make([]Cell, cols)
 	for i := range line {
@@ -719,7 +732,7 @@ func (s *Screen) scrollRegionUp(top, bot, n int) {
 	}
 	copy(s.Cells[top:], s.Cells[top+n:bot])
 	for i := bot - n; i < bot; i++ {
-		s.Cells[i] = makeAttrLine(s.Cols, s.CurAttr)
+		s.Cells[i] = makeAttrLine(s.Cols, eraseAttr(s.CurAttr))
 	}
 	// Shift RowWrapped flags with the scroll.
 	if len(s.RowWrapped) >= bot {
@@ -740,7 +753,7 @@ func (s *Screen) scrollRegionDown(top, bot, n int) {
 	}
 	copy(s.Cells[top+n:bot], s.Cells[top:])
 	for i := top; i < top+n; i++ {
-		s.Cells[i] = makeAttrLine(s.Cols, s.CurAttr)
+		s.Cells[i] = makeAttrLine(s.Cols, eraseAttr(s.CurAttr))
 	}
 	// Shift RowWrapped flags with the scroll.
 	if len(s.RowWrapped) >= bot {
@@ -1090,7 +1103,7 @@ func (s *Screen) LineFeed() {
 // EraseDisplay erases part or all of the display. Mode: 0=cursor to end,
 // 1=start to cursor, 2=entire display, 3=erase scrollback.
 func (s *Screen) EraseDisplay(mode int) {
-	blank := Cell{Ch: ' ', Attr: s.CurAttr}
+	blank := Cell{Ch: ' ', Attr: eraseAttr(s.CurAttr)}
 	switch mode {
 	case 0:
 		s.repairWideBoundary(s.CurRow, s.CurCol, s.Cols)
@@ -1098,7 +1111,7 @@ func (s *Screen) EraseDisplay(mode int) {
 			s.Cells[s.CurRow][c] = blank
 		}
 		for r := s.CurRow + 1; r < s.Rows; r++ {
-			s.Cells[r] = makeAttrLine(s.Cols, s.CurAttr)
+			s.Cells[r] = makeAttrLine(s.Cols, eraseAttr(s.CurAttr))
 		}
 		// Clear wrap flags for fully-erased rows below cursor.
 		// The current row is partially erased; its wrap status as a
@@ -1108,7 +1121,7 @@ func (s *Screen) EraseDisplay(mode int) {
 		}
 	case 1:
 		for r := 0; r < s.CurRow; r++ {
-			s.Cells[r] = makeAttrLine(s.Cols, s.CurAttr)
+			s.Cells[r] = makeAttrLine(s.Cols, eraseAttr(s.CurAttr))
 		}
 		// Clear wrap flags for fully-erased rows above cursor.
 		for r := 0; r < s.CurRow && r < len(s.RowWrapped); r++ {
@@ -1126,7 +1139,7 @@ func (s *Screen) EraseDisplay(mode int) {
 		}
 	case 2:
 		for r := 0; r < s.Rows; r++ {
-			s.Cells[r] = makeAttrLine(s.Cols, s.CurAttr)
+			s.Cells[r] = makeAttrLine(s.Cols, eraseAttr(s.CurAttr))
 		}
 		// Clear all wrap flags.
 		for i := range s.RowWrapped {
@@ -1149,7 +1162,7 @@ func (s *Screen) EraseLine(mode int) {
 	if s.CurRow < 0 || s.CurRow >= s.Rows {
 		return
 	}
-	blank := Cell{Ch: ' ', Attr: s.CurAttr}
+	blank := Cell{Ch: ' ', Attr: eraseAttr(s.CurAttr)}
 	switch mode {
 	case 0:
 		s.repairWideBoundary(s.CurRow, s.CurCol, s.Cols)
@@ -1163,7 +1176,7 @@ func (s *Screen) EraseLine(mode int) {
 			s.Cells[s.CurRow][c] = blank
 		}
 	case 2:
-		s.Cells[s.CurRow] = makeAttrLine(s.Cols, s.CurAttr)
+		s.Cells[s.CurRow] = makeAttrLine(s.Cols, eraseAttr(s.CurAttr))
 	}
 	// Clear wrap flag for current row - only clear on full-line erase (mode 2).
 	// Partial erases (modes 0, 1) do not change whether this row
@@ -1190,7 +1203,7 @@ func (s *Screen) InsertLines(n int) {
 	}
 	copy(s.Cells[s.CurRow+n:bot], s.Cells[s.CurRow:bot-n])
 	for i := s.CurRow; i < s.CurRow+n; i++ {
-		s.Cells[i] = makeAttrLine(s.Cols, s.CurAttr)
+		s.Cells[i] = makeAttrLine(s.Cols, eraseAttr(s.CurAttr))
 	}
 	// Shift RowWrapped flags with the line insert.
 	if len(s.RowWrapped) >= bot {
@@ -1214,7 +1227,7 @@ func (s *Screen) DeleteLines(n int) {
 	}
 	copy(s.Cells[s.CurRow:], s.Cells[s.CurRow+n:bot])
 	for i := bot - n; i < bot; i++ {
-		s.Cells[i] = makeAttrLine(s.Cols, s.CurAttr)
+		s.Cells[i] = makeAttrLine(s.Cols, eraseAttr(s.CurAttr))
 	}
 	// Shift RowWrapped flags with the line delete.
 	if len(s.RowWrapped) >= bot {
@@ -1242,7 +1255,7 @@ func (s *Screen) repairWideBoundary(row, start, end int) {
 		return
 	}
 	cells := s.Cells[row]
-	blank := Cell{Ch: ' ', Attr: s.CurAttr}
+	blank := Cell{Ch: ' ', Attr: eraseAttr(s.CurAttr)}
 	if start > 0 && start < s.Cols && cells[start].SecondHalf {
 		cells[start-1] = blank
 	}
@@ -1721,7 +1734,7 @@ func (s *Screen) EraseChars(n int) {
 	}
 	end := min(s.CurCol+n, s.Cols)
 	s.repairWideBoundary(s.CurRow, s.CurCol, end)
-	blank := Cell{Ch: ' ', Attr: s.CurAttr}
+	blank := Cell{Ch: ' ', Attr: eraseAttr(s.CurAttr)}
 	for i := s.CurCol; i < end; i++ {
 		s.Cells[s.CurRow][i] = blank
 	}
@@ -1736,7 +1749,7 @@ func (s *Screen) InsertChars(n int) {
 		return
 	}
 	row := s.Cells[s.CurRow]
-	blank := Cell{Ch: ' ', Attr: s.CurAttr}
+	blank := Cell{Ch: ' ', Attr: eraseAttr(s.CurAttr)}
 	if n > s.Cols-s.CurCol {
 		n = s.Cols - s.CurCol
 	}
@@ -1872,7 +1885,7 @@ func (s *Screen) DeleteChars(n int) {
 		return
 	}
 	row := s.Cells[s.CurRow]
-	blank := Cell{Ch: ' ', Attr: s.CurAttr}
+	blank := Cell{Ch: ' ', Attr: eraseAttr(s.CurAttr)}
 	if n > s.Cols-s.CurCol {
 		n = s.Cols - s.CurCol
 	}

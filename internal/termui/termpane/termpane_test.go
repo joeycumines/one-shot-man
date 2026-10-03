@@ -261,12 +261,18 @@ func TestView_CursorPosition(t *testing.T) {
 	model := NewModel(sid, mgr, bounds)
 	defer model.Close()
 
-	// Manually set a snapshot with known cursor position.
+	// Manually set a snapshot AND the matching capture text with a known
+	// cursor position. The View cache-miss path guards m.text (the capture),
+	// not the injected screen, so the text must describe the same geometry
+	// the cursor position is trusted against.
 	scr := vt.NewScreen(10, 40)
 	scr.CurRow = 2
 	scr.CurCol = 10
+	_, _, full := vt.RenderCapture(scr, 0, 0, false)
 	model.mu.Lock()
 	model.snap = termmux.NewScreenSnapshot(999, scr, 10, 40, time.Now())
+	model.snap.CursorVisible = true
+	model.text = full
 	model.cachedGen = 0 // Force re-render.
 	model.mu.Unlock()
 

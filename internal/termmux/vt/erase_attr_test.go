@@ -59,15 +59,40 @@ func TestEraseKeepsBackground(t *testing.T) {
 // TestEraseKeepsWideGraphemeSafety is a guard for the erase path when the pen
 // also carries rendition flags: erasing must not smear them onto neighbouring
 // cells either.
-func TestScrollDoesNotInheritUnderline(t *testing.T) {
+//
+// A double-width character occupies two cells. Erasing only its first half
+// orphans the placeholder second half, and repairWideBoundary blanks that
+// orphaned half so no stale glyph remains. The repair goes through
+// background-colour erase exactly like any other erase path: with the pen
+// carrying underline at repair time, the blanked cells must still carry no
+// rendition, or the boundary renders as a stray marked cell in an otherwise
+// cleared region.
+func TestEraseKeepsWideGraphemeSafety(t *testing.T) {
 	t.Parallel()
 
-	s := NewScreen(4, 10)
-	s.CurAttr = Attr{Under: true}
-	s.ScrollUp(1)
-	for c := range s.Cols {
-		if s.Cells[3][c].Attr.Under {
-			t.Fatalf("scrolled-in blank at col %d is underlined", c)
+	v := NewVTerm(4, 10)
+	// Write the wide char (occupying zero-based cols 3 and 4) with a clean
+	// pen, then turn underline on and erase exactly one cell starting at the
+	// wide char's first half. ECH repairs the orphaned second half.
+	if _, err := v.Write([]byte("\x1b[1;4H世\x1b[4m\x1b[1;4H\x1b[1X")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	scr := v.ActiveScreen()
+	for _, c := range []int{3, 4} {
+		cell := scr.Cells[0][c]
+		if cell.Ch != ' ' || cell.SecondHalf {
+			t.Errorf("repaired cell at col %d = %q (secondHalf=%v), want a blank placeholder-free cell", c, cell.Ch, cell.SecondHalf)
+		}
+		if cell.Attr.Under {
+			t.Errorf("repaired cell at col %d is underlined; an erase-repaired boundary must not inherit the pen rendition", c)
+		}
+	}
+
+	// The untouched cells on the row must be equally free of smearing.
+	for c := range 3 {
+		if scr.Cells[0][c].Attr.Under {
+			t.Errorf("col %d is underlined; the repair must not smear the pen onto neighbours", c)
 		}
 	}
 }

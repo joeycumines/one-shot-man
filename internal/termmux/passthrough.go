@@ -180,6 +180,12 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 	// already in flight would complete after the reset and re-apply
 	// `\x1b[1;Nr`, leaving the terminal with a restricted scroll region for
 	// whoever runs next — the corrupted-chrome symptom.
+	//
+	// The join is deliberately unbounded, unlike joinForwarder's 250ms grace.
+	// Returning while a callback could still write would reintroduce exactly
+	// the corruption this guards against, so correctness wins over a bounded
+	// shutdown; a callback is only as slow as a worker round-trip (which
+	// returns on m.done) plus the terminal writes it performs.
 	resizeCtx, resizeCancel := context.WithCancel(ctx)
 	resizeDone := make(chan struct{})
 	defer func() {

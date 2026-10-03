@@ -102,8 +102,7 @@ func FsRequire(ctx context.Context, adapter *gojaeventloop.Adapter) func(*goja.R
 			}
 			data, dataErr := writeFileBytes(call.Argument(1), encoding)
 			if dataErr != nil {
-				var encodingErr *writeEncodingError
-				if errors.As(dataErr, &encodingErr) {
+				if _, ok := errors.AsType[*writeEncodingError](dataErr); ok {
 					return rejectTypeErrorCode(adapter, "writeFile", "ERR_INVALID_ARG_VALUE", dataErr.Error())
 				}
 				return rejectTypeError(adapter, "writeFile", dataErr.Error())

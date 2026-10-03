@@ -71,6 +71,51 @@ func TestView_ResizeDoesNotServeStaleFrame(t *testing.T) {
 	}
 }
 
+// TestView_EveryFrameRespectsBounds is the same invariant one frame later.
+//
+// Bubble Tea calls View for every frame it renders, not once per Update, and
+// the generation does not change between those calls — the capture is only
+// refreshed when output arrives. A guard that holds only until the first render
+// is therefore no guard at all: the very next frame re-serves the stale
+// content, and because the stale frame still carries its OLD absolute CUP
+// coordinates, replaying it into the shrunken terminal is exactly the
+// misplaced-content corruption. This test fails if the guard is applied on the
+// fresh-render path only and skipped on the cache hit.
+func TestView_EveryFrameRespectsBounds(t *testing.T) {
+	mgr, session, sid, cleanup := startTestManager(t)
+	defer cleanup()
+
+	model := NewModel(sid, mgr, coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	})
+	defer func() { _ = model.Close() }()
+
+	session.readerCh <- []byte("WIDE-CONTENT-LINE")
+	deadline := time.Now().Add(3 * time.Second)
+	for model.SnapshotGen() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the initial capture")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	model.mu.Lock()
+	model.refreshCaptureLocked()
+	model.mu.Unlock()
+
+	_ = model.View() // prime the cache at the wide size
+
+	_, _ = model.Update(tea.WindowSizeMsg{Width: 40, Height: 12})
+
+	// Every subsequent frame must respect the new bounds, not just the first.
+	for frame := 1; frame <= 3; frame++ {
+		v := model.View()
+		if maxRow := maxCUPRow(v.Content); maxRow > 12 {
+			t.Fatalf("frame %d addresses row %d, want <= 12 — the bounds guard does not hold across frames", frame, maxRow)
+		}
+	}
+}
+
 // maxCUPRow returns the highest row addressed by any CUP sequence in s.
 func maxCUPRow(s string) int {
 	max := 0

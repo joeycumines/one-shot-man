@@ -493,16 +493,33 @@ func TestScreen_ScrollUp_NonDefaultRegion(t *testing.T) {
 	}
 }
 
+// TestScreen_ScrollUp_WithCurrentAttr pins what a scrolled-in blank row
+// inherits from the current pen.
+//
+// A real terminal fills the newly exposed line by background-colour erase: the
+// cell carries the current BACKGROUND and nothing else. It must NOT inherit
+// underline, bold, or the other graphics-rendition flags, because a space with
+// underline set renders as a visible rule — which is how a TUI that underlines
+// its prompt marker ends up with "artifacts on every line" once rows scroll or
+// are erased. This test previously asserted the opposite (that the whole pen
+// carried over), which is the defect it now guards.
 func TestScreen_ScrollUp_WithCurrentAttr(t *testing.T) {
 	s := NewScreen(3, 3)
 	for r := range 3 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
-	s.CurAttr = Attr{Bold: true}
+	s.CurAttr = Attr{Bold: true, Under: true, BG: color{kind: kind8, value: 4}}
 	s.ScrollUp(1)
-	// New blank row at bottom should carry CurAttr
-	if !s.Cells[2][0].Attr.Bold {
-		t.Error("new blank row should have Bold attr from CurAttr")
+
+	// Background-colour erase: the background carries, the rendition flags do not.
+	if got := s.Cells[2][0].Attr.BG; got != s.CurAttr.BG {
+		t.Errorf("new blank row BG = %+v, want %+v (background-colour erase)", got, s.CurAttr.BG)
+	}
+	if s.Cells[2][0].Attr.Bold {
+		t.Error("new blank row must not inherit Bold; erase clears the rendition")
+	}
+	if s.Cells[2][0].Attr.Under {
+		t.Error("new blank row must not inherit Under; an underlined blank renders as a visible rule")
 	}
 	if s.Cells[2][0].Ch != ' ' {
 		t.Errorf("new blank row ch = %c, want space", s.Cells[2][0].Ch)

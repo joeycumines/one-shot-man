@@ -689,5 +689,18 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 		_ = exports.Set("requestBackgroundColor", func(call goja.FunctionCall) goja.Value {
 			return createCommand("requestBackgroundColor", nil)
 		})
+
+		// requestForegroundColor queries the terminal foreground colour (v2
+		// API), the OSC 10 counterpart of the above, yielding a
+		// ForegroundColor message with { isDark, rgb }.
+		//
+		// A child TUI commonly requires BOTH halves before it will resolve a
+		// light/dark mode: opentui (opencode) gates its theme detector on
+		// having seen an OSC 10 reply AND an OSC 11 reply, and falls back to a
+		// hard-coded dark default when either is missing. An embedder that can
+		// answer only OSC 11 therefore leaves such a child permanently dark.
+		_ = exports.Set("requestForegroundColor", func(call goja.FunctionCall) goja.Value {
+			return createCommand("requestForegroundColor", nil)
+		})
 	}
 }

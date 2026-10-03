@@ -127,12 +127,19 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 		return nil, fmt.Errorf("pty: failed to open pty: %w", err)
 	}
 
-	// Clear TOSTOP on the slave so that background process group members
-	// can write to the terminal without receiving SIGTTOU. Without this,
-	// child processes that call tcsetattr (e.g., shells setting raw mode)
-	// would be stopped by the kernel since they run in their own process
-	// group (Setpgid: true below) rather than the terminal's foreground group.
-	clearTOSTOP(int(tty.Fd()))
+	// Sanitize the initial termios on the slave:
+	//   TOSTOP — background process group members may write to the terminal
+	//     (and call tcsetattr) without receiving SIGTTOU; without this,
+	//     children that run in their own process group (Setpgid: true below)
+	//     are stopped by the kernel as soon as they touch the terminal.
+	//   ECHO / ECHOCTL / ECHONL — the line discipline must not echo input
+	//     before the child configures its own terminal. The osm launcher
+	//     writes OSC 10/11 color replies into the child PTY as soon as the
+	//     outer terminal answers, which can precede the child entering raw
+	//     mode; with kernel echo enabled those bytes are reflected as visible
+	//     caret notation ("^[]10;rgb:...^G") — the mangled startup output.
+	//     A child that wants canonical echo enables it itself.
+	sanitizeInitialTermios(int(tty.Fd()))
 
 	// Set initial window size.
 	if err := creackpty.Setsize(ptmx, &creackpty.Winsize{
@@ -270,17 +277,23 @@ func (p *Process) platformClose() {}
 // platformClosePseudoConsole is a no-op on Unix (no ConPTY).
 func (p *Process) platformClosePseudoConsole() {}
 
-// clearTOSTOP clears the TOSTOP flag on the given terminal fd.
-// This prevents SIGTTOU from being sent to background process group
-// members that write to or call tcsetattr on the terminal.
-func clearTOSTOP(fd int) {
+// sanitizeInitialTermios clears the line-discipline flags a spawned TUI
+// child must not inherit: TOSTOP (background writers get SIGTTOU), ECHO and
+// ECHONL (kernel echo of input, which reflects launcher-written control
+// sequences as visible caret notation until the child sets raw mode), and
+// ECHOCTL (the flag that renders those control characters as ^X notation).
+func sanitizeInitialTermios(fd int) {
 	termios, err := unix.IoctlGetTermios(fd, tcgets)
 	if err != nil {
 		return
 	}
-	if termios.Lflag&unix.TOSTOP == 0 {
+	// Typed via the platform's own Lflag width (uint64 darwin/BSD, uint32
+	// linux); the flag constants are untyped so this compiles on both.
+	var cleared unix.Termios
+	cleared.Lflag = unix.TOSTOP | unix.ECHO | unix.ECHOCTL | unix.ECHONL
+	if termios.Lflag&cleared.Lflag == 0 {
 		return // already clear
 	}
-	termios.Lflag &^= unix.TOSTOP
+	termios.Lflag &^= cleared.Lflag
 	_ = unix.IoctlSetTermios(fd, tcsets, termios)
 }

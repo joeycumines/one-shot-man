@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
@@ -19,6 +20,64 @@ func trackSessionOperation(ctx context.Context, adapter *gojaeventloop.Adapter, 
 		panic(runtime.NewGoError(fmt.Errorf("session operation: event loop adapter is required")))
 	}
 	return adapter.TrackPromise(ctx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+		value, err := operation()
+		if err != nil {
+			_ = settle.Settle(true, func(owner *goja.Runtime) any { return owner.NewGoError(err) })
+			return
+		}
+		_ = settle.Settle(false, func(owner *goja.Runtime) any {
+			if value == nil {
+				return goja.Undefined()
+			}
+			return owner.ToValue(value)
+		})
+	})
+}
+
+// orderChain serializes the session mutations whose ORDER is observable by the
+// child, such as successive writes and the sendEOF that must follow them.
+//
+// Each binding call runs its work on a fresh goroutine via TrackPromise, so
+// without this a caller that issues writes without awaiting each one lets the
+// goroutines race and the PTY receives the bytes out of order — content split
+// across writes arrives shuffled. reserve is called on the JS thread in call
+// order, and the worker waits for its predecessor before touching the session,
+// which restores call-order delivery while keeping the async contract.
+type orderChain struct {
+	mu   sync.Mutex
+	last chan struct{}
+}
+
+func newOrderChain() *orderChain {
+	c := &orderChain{last: make(chan struct{})}
+	close(c.last) // nothing precedes the first operation
+	return c
+}
+
+// reserve claims the next slot, returning the channel to await and the channel
+// to close when this operation has run.
+func (c *orderChain) reserve() (wait <-chan struct{}, done chan struct{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	wait, done = c.last, make(chan struct{})
+	c.last = done
+	return wait, done
+}
+
+// trackOrdered is trackSessionOperation for operations whose relative order
+// must be preserved. It awaits the predecessor before running, so PTY-visible
+// mutations land in call order.
+func trackOrdered(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, chain *orderChain, operation func() (any, error)) goja.Value {
+	if adapter == nil {
+		panic(runtime.NewGoError(fmt.Errorf("session operation: event loop adapter is required")))
+	}
+	wait, done := chain.reserve()
+	return adapter.TrackPromise(ctx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+		defer close(done)
+		select {
+		case <-wait:
+		case <-workerCtx.Done():
+		}
 		value, err := operation()
 		if err != nil {
 			_ = settle.Settle(true, func(owner *goja.Runtime) any { return owner.NewGoError(err) })
@@ -330,6 +389,7 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 // pid, exitCode, passthrough).
 func wrapInteractiveSession(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, session parent.InteractiveSession, defaultKind parent.SessionKind) goja.Value {
 	obj := runtime.NewObject()
+	order := newOrderChain()
 
 	// Store the Go session for later retrieval by unwrapInteractiveSession.
 	// Non-enumerable so it doesn't appear in Object.keys().
@@ -337,13 +397,13 @@ func wrapInteractiveSession(ctx context.Context, adapter *gojaeventloop.Adapter,
 		goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
 
 	_ = obj.Set("resize", func(rows, cols int) goja.Value {
-		return trackSessionOperation(ctx, adapter, runtime, func() (any, error) {
+		return trackOrdered(ctx, adapter, runtime, order, func() (any, error) {
 			return nil, session.Resize(rows, cols)
 		})
 	})
 
 	_ = obj.Set("write", func(data string) goja.Value {
-		return trackSessionOperation(ctx, adapter, runtime, func() (any, error) {
+		return trackOrdered(ctx, adapter, runtime, order, func() (any, error) {
 			_, err := session.Write([]byte(data))
 			return nil, err
 		})
@@ -358,7 +418,7 @@ func wrapInteractiveSession(ctx context.Context, adapter *gojaeventloop.Adapter,
 			}
 			buf.WriteString(seq)
 		}
-		return trackSessionOperation(ctx, adapter, runtime, func() (any, error) {
+		return trackOrdered(ctx, adapter, runtime, order, func() (any, error) {
 			_, err := session.Write([]byte(buf.String()))
 			return nil, err
 		})

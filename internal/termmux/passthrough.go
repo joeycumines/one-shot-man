@@ -174,31 +174,46 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 	}
 
 	// ── SIGWINCH resize watcher ─────────────────────────────────────
+	// The watcher writes to the real terminal (the scroll region and the
+	// status bar), so it must be JOINED before the deferred
+	// ResetScrollRegion runs. Cancelling alone is not enough: a callback
+	// already in flight would complete after the reset and re-apply
+	// `\x1b[1;Nr`, leaving the terminal with a restricted scroll region for
+	// whoever runs next — the corrupted-chrome symptom.
 	resizeCtx, resizeCancel := context.WithCancel(ctx)
-	defer resizeCancel()
+	resizeDone := make(chan struct{})
+	defer func() {
+		resizeCancel()
+		<-resizeDone
+	}()
 	if cfg.TermFd >= 0 && cfg.TermState != nil {
-		go watchResize(resizeCtx, cfg.TermFd, cfg.TermState, func(rows, cols int) {
-			newMessageBarLines := 0
-			if cfg.StatusBar != nil && statusBarLines > 0 && m.ActiveMessage(activeID) != "" {
-				newMessageBarLines = 1
-			}
-			newChromeRows := statusBarLines + newMessageBarLines
-
-			childRows := max(rows-newChromeRows, 1)
-			_ = m.Resize(childRows, cols)
-
-			if cfg.StatusBar != nil && statusBarLines > 0 {
-				cfg.StatusBar.SetHeight(rows)
-				setChromeScrollRegion(cfg.StatusBar, newChromeRows)
-				renderChrome(cfg, m, activeID, rows, cols, newChromeRows, statusBarLines)
-			}
-
-			if cfg.ResizeFn != nil {
-				if err := cfg.ResizeFn(uint16(childRows), uint16(cols)); err != nil {
-					slog.Debug("passthrough sigwinch resize failed", "error", err)
+		go func() {
+			defer close(resizeDone)
+			watchResize(resizeCtx, cfg.TermFd, cfg.TermState, func(rows, cols int) {
+				newMessageBarLines := 0
+				if cfg.StatusBar != nil && statusBarLines > 0 && m.ActiveMessage(activeID) != "" {
+					newMessageBarLines = 1
 				}
-			}
-		})
+				newChromeRows := statusBarLines + newMessageBarLines
+
+				childRows := max(rows-newChromeRows, 1)
+				_ = m.Resize(childRows, cols)
+
+				if cfg.StatusBar != nil && statusBarLines > 0 {
+					cfg.StatusBar.SetHeight(rows)
+					setChromeScrollRegion(cfg.StatusBar, newChromeRows)
+					renderChrome(cfg, m, activeID, rows, cols, newChromeRows, statusBarLines)
+				}
+
+				if cfg.ResizeFn != nil {
+					if err := cfg.ResizeFn(uint16(childRows), uint16(cols)); err != nil {
+						slog.Debug("passthrough sigwinch resize failed", "error", err)
+					}
+				}
+			})
+		}()
+	} else {
+		close(resizeDone)
 	}
 
 	// ── stdin→PTY forwarding with toggle key detection ──────────────

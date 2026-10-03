@@ -1,10 +1,65 @@
 package termmux
 
 import (
+	"bytes"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+// buildRawEchoProgram builds a cross-platform binary that puts its terminal
+// into raw mode (as every real TUI child does) and then copies stdin to
+// stdout verbatim, byte for byte, including control bytes — no kernel
+// rendering involved. It replaces `cat -v`: a fresh PTY starts with kernel
+// echo disabled (pty.Spawn sanitizes ECHO/ECHOCTL/ECHONL so launcher-written
+// control sequences cannot leak as caret notation before the child owns its
+// termios), so a child that wants to observe input on its own output must
+// configure its own terminal. Raw mode also delivers bytes without waiting
+// for a newline, which canonical-mode cat never did.
+func buildRawEchoProgram(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	prog := `package main
+
+import (
+	"io"
+	"os"
+
+	"golang.org/x/term"
+)
+
+func main() {
+	if st, err := term.MakeRaw(int(os.Stdin.Fd())); err == nil {
+		defer func() { _ = term.Restore(int(os.Stdin.Fd()), st) }()
+	}
+	_, _ = io.Copy(os.Stdout, os.Stdin)
+}
+`
+	if err := os.WriteFile(src, []byte(prog), 0o644); err != nil {
+		t.Fatalf("write helper source: %v", err)
+	}
+
+	binName := "rawechoprogram"
+	if runtime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	bin := filepath.Join(dir, binName)
+
+	cmd := exec.Command("go", "build", "-o", bin, src)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go build helper: %v\n%s", err, stderr.String())
+	}
+	return bin
+}
 
 // TestCaptureSession_JSBinding_OSC11ReplyReachesChild guards the launcher's
 // OSC 11 background-colour handshake.
@@ -16,20 +71,21 @@ import (
 // reaches the child rather than being dropped or written elsewhere — the
 // failure mode being guarded is a handshake that silently never completes.
 //
-// The child is `cat -v`, which echoes stdin to stdout rendering non-printing
-// bytes literally: an ESC arrives back as the two characters `^[`. That makes
-// the reply observable through the ordinary capture surface, with no
-// dependency on how the child chooses to interpret it.
+// The child is a raw-mode echo program (see buildRawEchoProgram): it copies
+// every byte it receives back to stdout verbatim, so the reply is observable
+// through the ordinary capture surface with no dependency on kernel line
+// discipline or on how the child interprets the sequence.
 func TestCaptureSession_JSBinding_OSC11ReplyReachesChild(t *testing.T) {
 	t.Parallel()
 
 	e := newTestEnv(t)
 
-	_, err := awaitJSValue(t, e.runtime, `
+	child := buildRawEchoProgram(t)
+	_, err := awaitJSValue(t, e.runtime, fmt.Sprintf(`
 		var tm = require('osm:termmux');
-		globalThis.cs = tm.newCaptureSession('cat', ['-v']);
+		globalThis.cs = tm.newCaptureSession(%q, []);
 		await cs.start();
-	`)
+	`, child))
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}
@@ -40,10 +96,9 @@ func TestCaptureSession_JSBinding_OSC11ReplyReachesChild(t *testing.T) {
 		t.Fatalf("write(OSC11 reply) failed: %v", err)
 	}
 
-	// cat -v echoes asynchronously; poll the child's output channel until the
-	// reply shows up. `^[` is cat -v's literal rendering of ESC and
-	// `]11;rgb:` is the payload, so seeing both proves the whole sequence
-	// round-tripped through the child.
+	// The child echoes asynchronously; poll the child's output channel until
+	// the reply shows up. Seeing the raw ESC, payload, and BEL proves the
+	// whole sequence round-tripped through the child.
 	deadline := time.Now().Add(5 * time.Second)
 	var captured strings.Builder
 	for {
@@ -65,10 +120,10 @@ func TestCaptureSession_JSBinding_OSC11ReplyReachesChild(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	// The reply must have traversed the child intact: cat -v renders the
-	// leading ESC as `^[`, so both halves prove the full sequence arrived.
-	if !strings.Contains(captured.String(), "^[]11;rgb:0000/0000/0000") {
-		t.Errorf("output is missing the ESC-prefixed reply; got %s", captured.String())
+	// The reply must have traversed the child intact, byte for byte: the
+	// raw-mode child copies verbatim, so the full raw sequence must appear.
+	if !strings.Contains(captured.String(), reply) {
+		t.Errorf("output is missing the raw reply sequence; got %q", captured.String())
 	}
 
 	if _, err := awaitJSValue(t, e.runtime, `await cs.close()`); err != nil {

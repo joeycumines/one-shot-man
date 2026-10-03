@@ -6,6 +6,8 @@ package termpane
 
 import (
 	"log/slog"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -332,6 +334,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err := m.manager.ResizeSession(sid, rows, cols); err != nil {
 			slog.Debug("termpane resize session failed", "sessionID", sid, "error", err)
 		}
+		// Re-capture unconditionally. Resizing does not advance the session's
+		// snapshot generation, so the gen-cached view would otherwise keep
+		// serving the frame rendered at the old size until the next output
+		// arrives — the stale-frame symptom after a shrink.
+		m.mu.Lock()
+		m.refreshCaptureLocked()
+		m.cachedGen = 0
+		m.cachedView = ""
+		m.mu.Unlock()
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -429,6 +440,13 @@ func (m *Model) viewContentAndCursor(contentFunc func() string) tea.View {
 	}
 
 	content := contentFunc()
+	if !fitsBounds(content, m.bounds) {
+		// The captured frame was rendered at a different size than the pane now
+		// has. Rendering it would place absolute coordinates on the wrong rows,
+		// so show nothing until the next capture lands at the current size.
+		// Refreshing on resize means this is a one-frame guard, not a stall.
+		content = ""
+	}
 
 	cursorRow := m.snap.CursorRow + m.bounds.Position.Y
 	cursorCol := m.snap.CursorCol + m.bounds.Position.X
@@ -446,6 +464,41 @@ func (m *Model) viewContentAndCursor(contentFunc func() string) tea.View {
 
 	return v
 }
+
+// clipCUPAddressing fails a rendered frame whose absolute cursor addressing
+// runs past the pane's current rectangle.
+//
+// A FullScreen capture is a sequence of absolute CUP movements (`\x1b[<row>;<col>H`)
+// with no newlines, emitted at the size the session had when it was captured.
+// The terminal renderer below truncates by COLUMN and does not reflow, so an
+// absolute coordinate is taken literally: replaying a frame that addresses rows
+// beyond the pane's height — or columns beyond its width — places content on the
+// wrong rows, which is how a stale frame shows up as borders and rules sprayed
+// across the screen.
+//
+// Rather than rewriting coordinates (which risks corrupting SGR state), the
+// caller re-captures on resize so the frame is regenerated at the new size; this
+// guard exists to catch the case where that has not happened yet, and returns
+// false so the caller can render empty for one frame instead of misplacing
+// content.
+func fitsBounds(content string, bounds coordinate.Rect) bool {
+	width, height := bounds.Size.Width, bounds.Size.Height
+	if width <= 0 || height <= 0 || content == "" {
+		return true
+	}
+	for _, m := range cupRow.FindAllStringSubmatch(content, -1) {
+		if row, err := strconv.Atoi(m[1]); err == nil && row > height {
+			return false
+		}
+		if col, err := strconv.Atoi(m[2]); err == nil && col > width {
+			return false
+		}
+	}
+	return true
+}
+
+// cupRow matches an absolute cursor-position sequence and captures row and col.
+var cupRow = regexp.MustCompile(`\x1b\[([0-9]+);([0-9]+)H`)
 
 // View implements tea.Model. It renders the terminal session's screen
 // content into a tea.View with generation-checked caching.

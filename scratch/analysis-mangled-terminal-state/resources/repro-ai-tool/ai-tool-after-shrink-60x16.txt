@@ -1,0 +1,16 @@
+
+ ▐▛███▛█   Claude Code v2.1.287
+▝▜██████▀  auto-camel · API Usage Billing
+ ▝▝   ▝▝   ~/dev/one-shot-man-2
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────
+❯ Try "write a test for bubbletea.go"
+────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents

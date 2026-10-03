@@ -101,6 +101,14 @@ type Model struct {
 	// re-rendering.
 	cachedGen uint64
 
+	// cachedBounds and cachedFits memoize the bounds guard's verdict for the
+	// cached frame: fitsBounds is a pure function of (content, bounds), the
+	// cached content is fixed while the generation matches, and the bounds
+	// only change through SetBounds/WindowSize — so a cache hit at unchanged
+	// bounds can reuse the verdict instead of rescanning the frame per render.
+	cachedBounds coordinate.Rect
+	cachedFits   bool
+
 	// closed reports that Close has run. closeOnce guards the teardown
 	// itself; closed additionally keeps RefreshSnapshot from resurrecting the
 	// capture cache after the bridge goroutine is gone.
@@ -439,19 +447,26 @@ func (m *Model) viewContentAndCursor(contentFunc func() string) tea.View {
 		return tea.NewView("")
 	}
 
-	content := m.guardBounds(contentFunc())
+	content, fits := m.guardBounds(contentFunc())
 
-	return m.viewWithCursor(content)
+	return m.viewWithCursor(content, fits)
 }
 
-// viewWithCursor builds the view for content that has ALREADY passed the
-// bounds guard, positioning the cursor when the child left it visible inside
-// the pane.
+// viewWithCursor builds the view for content whose bounds verdict is already
+// in hand. The cursor follows the verdict: a guard-REJECTED frame is stale,
+// and the snapshot its cursor position was read from is equally stale, so the
+// view is empty and cursorless rather than empty with an orphaned cursor at
+// the old position. A genuinely blank capture (fits) keeps its cursor.
 //
-// The two callers must not differ: a frame that reaches the terminal without
-// passing through fitsBounds can land on the wrong rows, so every path that
-// produces pane content — cache hit or fresh render — goes through here.
-func (m *Model) viewWithCursor(content string) tea.View {
+// Every content-producing path — the View cache hit, the fresh render, and
+// viewContentAndCursor for compositor embedding — routes through here so none
+// of them can land a frame on the terminal without the bounds guard having
+// said its piece.
+func (m *Model) viewWithCursor(content string, fits bool) tea.View {
+	if !fits {
+		return tea.NewView("")
+	}
+
 	cursorRow := m.snap.CursorRow + m.bounds.Position.Y
 	cursorCol := m.snap.CursorCol + m.bounds.Position.X
 
@@ -487,8 +502,15 @@ func (m *Model) viewWithCursor(content string) tea.View {
 // content.
 func fitsBounds(content string, bounds coordinate.Rect) bool {
 	width, height := bounds.Size.Width, bounds.Size.Height
-	if width <= 0 || height <= 0 || content == "" {
+	if content == "" {
+		// An empty frame fits anything — there is nothing to misplace.
 		return true
+	}
+	if width <= 0 || height <= 0 {
+		// A collapsed rectangle contains no coordinate at all: every position
+		// a frame could address is outside it, so nothing but an empty frame
+		// can fit.
+		return false
 	}
 	for _, m := range cupRow.FindAllStringSubmatch(content, -1) {
 		if row, err := strconv.Atoi(m[1]); err == nil && row > height {
@@ -522,42 +544,53 @@ func (m *Model) View() tea.View {
 
 	// Generation check: skip re-render if unchanged.
 	//
-	// The cached content still goes through the bounds guard. The generation
-	// does not change when the pane's bounds do (SetBounds and a repositioning
-	// layout update the rectangle without producing terminal output), so a
-	// cached frame can be a frame captured at the old size: returning it
-	// verbatim would replay its absolute CUP coordinates onto the wrong rows.
+	// The guard's verdict is memoized against the bounds it was computed for:
+	// fitsBounds is a pure function of (content, bounds), the cached content
+	// is fixed while the generation matches, and the bounds only change
+	// through SetBounds/WindowSize — so a cache hit at unchanged bounds can
+	// reuse the recorded verdict instead of rescanning the frame per render.
+	// When the bounds differ from the memoized rectangle — SetBounds and
+	// repositioning layouts change the rectangle without producing terminal
+	// output — the cached frame may be a frame captured at the old size, and
+	// the guard must be re-applied before anything reaches the terminal.
 	if m.snap.Gen == m.cachedGen && m.cachedView != "" {
-		return m.viewWithCursor(m.guardBounds(m.cachedView))
+		if m.bounds == m.cachedBounds {
+			return m.viewWithCursor(m.cachedView, m.cachedFits)
+		}
+		content, fits := m.guardBounds(m.cachedView)
+		m.cachedBounds, m.cachedFits = m.bounds, fits
+		return m.viewWithCursor(content, fits)
 	}
 
 	// Render the cached full-screen content. No manager IPC here: refreshCapture
 	// (on outputMsg) is the sole fetcher. An empty capture renders empty;
 	// falling back to a different representation would cache ANSI content
 	// under the fullscreen generation.
-	content := m.guardBounds(m.text)
+	content, fits := m.guardBounds(m.text)
 
 	// Cache the rendered content, not the guarded result: the guard is a
-	// property of the current bounds, so it must be re-applied on every frame
-	// rather than baked into the cache.
-	v := m.viewWithCursor(content)
+	// property of the current bounds, so its verdict is recorded (bounds and
+	// fit together) and re-evaluated whenever those bounds change.
+	v := m.viewWithCursor(content, fits)
 	m.cachedView = m.text
 	m.cachedGen = m.snap.Gen
+	m.cachedBounds, m.cachedFits = m.bounds, fits
 
 	return v
 }
 
-// guardBounds returns content, or the empty string when the frame's absolute
-// cursor addressing does not fit the pane's current rectangle. See fitsBounds.
-func (m *Model) guardBounds(content string) string {
+// guardBounds applies the bounds guard and reports both the renderable content
+// and the verdict. The verdict drives the cursor decision alongside the
+// content: a rejected frame is stale all the way down.
+func (m *Model) guardBounds(content string) (string, bool) {
 	if !fitsBounds(content, m.bounds) {
 		// The captured frame was rendered at a different size than the pane now
 		// has. Rendering it would place absolute coordinates on the wrong rows,
 		// so show nothing until the next capture lands at the current size.
 		// Refreshing on resize means this is a one-frame guard, not a stall.
-		return ""
+		return "", false
 	}
-	return content
+	return content, true
 }
 
 // ANSIView returns a tea.View suitable for embedding the terminal as a

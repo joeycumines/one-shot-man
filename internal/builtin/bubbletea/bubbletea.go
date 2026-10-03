@@ -64,6 +64,7 @@
 //	tea.tick(durationMs, id);      // Timer command (returns tickMsg with id)
 //	tea.requestWindowSize();       // Query current window size
 //	tea.requestBackgroundColor();  // Query the terminal background colour
+//	tea.requestForegroundColor();  // Query the terminal foreground colour
 //
 //	// Key events — msg.type === 'Key'
 //	// msg.key    - key name ('q', 'enter', 'space', 'ctrl+c', etc.)
@@ -103,6 +104,12 @@
 //	// no colour). The view-side {backgroundColor} field is unrelated: it sets
 //	// the colour this program renders with, while this message reports what
 //	// the terminal said about itself.
+//
+//	// Foreground colour events — answer to tea.requestForegroundColor()
+//	// msg.type === 'ForegroundColor' with msg.isDark and msg.rgb, where rgb is
+//	// the OSC 10 payload form "RRRR/GGGG/BBBB" ("" when the terminal reported
+//	// no colour). Same shape as the background event; some children refuse to
+//	// pick a theme until BOTH replies have arrived.
 //
 // # View Return Value
 //

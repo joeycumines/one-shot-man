@@ -165,6 +165,31 @@ func testRequireCtx(t *testing.T, ctx context.Context) (*goja.Runtime, *goja.Obj
 	return e.runtime, e.exports, e
 }
 
+// runOnEnvLoop runs a synchronous script on the event-loop goroutine and
+// returns its value. Cross-platform: tests on every GOOS need the loop for
+// the session read/write bindings.
+func runOnEnvLoop(t *testing.T, env *testEnv, script string) (goja.Value, error) {
+	t.Helper()
+	type result struct {
+		v   goja.Value
+		err error
+	}
+	ch := make(chan result, 1)
+	if err := env.loop.Submit(func() {
+		v, err := env.runtime.RunString(script)
+		ch <- result{v: v, err: err}
+	}); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	select {
+	case r := <-ch:
+		return r.v, r.err
+	case <-time.After(5 * time.Second):
+		t.Fatalf("runOnEnvLoop timeout")
+		return nil, nil
+	}
+}
+
 // wrapTestSessionManager creates a fresh event loop, binds EventTarget/CustomEvent
 // to runtime, and wraps mgr with WrapSessionManager. The event loop is NOT
 // started: tests call runtime.RunString() directly on the test goroutine.

@@ -80,6 +80,8 @@
 //	Extended BG 48;5;N (256-color)      Supported
 //	Extended FG 38;2;R;G;B (truecolor)  Supported (semicolon and colon 38:2::R:G:B)
 //	Extended BG 48;2;R;G;B (truecolor)  Supported (semicolon and colon 48:2::R:G:B)
+//	Colon underline 4:0 (off) / 4:1-4:5 (on)  Supported (styles collapse to boolean underline)
+//	Prefixed 'm' (CSI >4;Pv m ModifyOtherKeys etc.)  Ignored (no rendition effect; not SGR)
 //
 // OSC (Operating System Command — ESC ] ... BEL/ST)
 //

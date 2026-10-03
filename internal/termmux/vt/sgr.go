@@ -231,6 +231,20 @@ func ParseSGRWithSubParams(groups [][]int, current Attr) Attr {
 				}
 			}
 		}
+		// Colon-form underline (xterm ECMA-48 extension): 4:0 turns
+		// underline OFF; 4:1..4:5 select single/double/curly/dotted/dashed
+		// styles, which this boolean model collapses to underline ON.
+		// A bare "4" group still lands in the default branch below. Flattening
+		// to the ordinary 4/24 codes keeps reset ordering ("0;4:0m",
+		// "4:1;24m") correct inside ParseSGR.
+		if subs[0] == 4 && len(subs) >= 2 {
+			if subs[1] == 0 {
+				flat = append(flat, 24)
+			} else {
+				flat = append(flat, 4)
+			}
+			continue
+		}
 		flat = append(flat, subs[0])
 	}
 	return ParseSGR(flat, current)

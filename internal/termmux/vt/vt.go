@@ -96,6 +96,9 @@ func NewVTerm(rows, cols int) *VTerm {
 		WithHasInterDollar(func() bool {
 			return v.parser.HasIntermediate('$')
 		}),
+		WithHasAnyIntermediates(func() bool {
+			return v.parser.HasAnyIntermediates()
+		}),
 		WithSubParams(func(idx int) []int {
 			return v.parser.SubParams(idx)
 		}),

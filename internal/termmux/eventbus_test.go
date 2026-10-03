@@ -212,16 +212,14 @@ func TestEventBus_ConcurrentPublishersPreserveOrderPerOrigin(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for origin := range origins {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for seq := range perOrigin {
 				bus.Publish(Event{
 					Kind:      EventSessionActivated,
 					SessionID: SessionID(origin*1000 + seq + 1),
 				})
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -262,9 +260,7 @@ func TestEventBus_SubscriberChurnDoesNotStall(t *testing.T) {
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	for range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				select {
 				case <-stop:
@@ -279,7 +275,7 @@ func TestEventBus_SubscriberChurnDoesNotStall(t *testing.T) {
 				}
 				bus.Unsubscribe()
 			}
-		}()
+		})
 	}
 
 	select {

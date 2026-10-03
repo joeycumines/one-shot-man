@@ -295,8 +295,7 @@ func TestEventBridge_TeardownUnsubscribesAndNeverStallsProducer(t *testing.T) {
 
 	// Separate contexts: the manager outlives the wrapper, so tearing the
 	// wrapper down must not be conflated with shutting the manager down.
-	mgrCtx, mgrCancel := context.WithCancel(context.Background())
-	defer mgrCancel()
+	mgrCtx := t.Context()
 	wrapperCtx, wrapperCancel := context.WithCancel(context.Background())
 	defer wrapperCancel()
 

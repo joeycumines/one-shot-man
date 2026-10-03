@@ -73,8 +73,7 @@ func TestSocketWriteQueueDoesNotBlockEnqueue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	writerDone := make(chan error, 1)
 	go func() { writerDone <- queue.run(ctx) }()
 	if err := queue.setConn(conn); err != nil {

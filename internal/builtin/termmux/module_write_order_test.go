@@ -70,7 +70,7 @@ func TestCaptureSession_JSBinding_WriteOrderPreserved(t *testing.T) {
 		t.Fatalf("reading the child's record failed: %v", err)
 	}
 	got := make([]string, 0, lines)
-	for _, line := range strings.Split(string(raw), "\n") {
+	for line := range strings.SplitSeq(string(raw), "\n") {
 		if line = strings.TrimSpace(line); strings.HasPrefix(line, "L") {
 			got = append(got, line)
 		}

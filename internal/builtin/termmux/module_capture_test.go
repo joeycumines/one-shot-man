@@ -5,32 +5,9 @@ package termmux
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/joeycumines/goja"
 )
-
-func runOnEnvLoop(t *testing.T, env *testEnv, script string) (goja.Value, error) {
-	t.Helper()
-	type result struct {
-		v   goja.Value
-		err error
-	}
-	ch := make(chan result, 1)
-	if err := env.loop.Submit(func() {
-		v, err := env.runtime.RunString(script)
-		ch <- result{v, err}
-	}); err != nil {
-		t.Fatalf("submit: %v", err)
-	}
-	select {
-	case r := <-ch:
-		return r.v, r.err
-	case <-time.After(5 * time.Second):
-		t.Fatalf("runOnEnvLoop timeout")
-		return nil, nil
-	}
-}
 
 // ---------------------------------------------------------------------------
 // T004/T056: CaptureSession JS binding completeness tests

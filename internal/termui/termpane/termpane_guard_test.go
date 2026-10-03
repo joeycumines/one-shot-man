@@ -174,3 +174,109 @@ func TestViewSetBoundsReguardsCacheHit(t *testing.T) {
 		}
 	}
 }
+
+// TestView_CollapsedBoundsRenderEmpty drives the degenerate-bounds edge
+// through the full model path, not just the fitsBounds unit: a non-empty
+// capture must render empty once the pane rectangle collapses (width or
+// height 0), because a collapsed rect contains no addressable cell and every
+// coordinate the frame carries is outside it.
+func TestView_CollapsedBoundsRenderEmpty(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+
+	mgr, session, sid, cleanup := startTestManager(t)
+	defer cleanup()
+
+	model := NewModel(sid, mgr, coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	})
+	defer model.Close()
+
+	session.readerCh <- []byte("WIDE-CONTENT-LINE")
+	deadline := time.Now().Add(3 * time.Second)
+	for model.SnapshotGen() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the initial capture")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	model.mu.Lock()
+	model.refreshCaptureLocked()
+	model.mu.Unlock()
+
+	_ = model.View() // prime the cache at the wide size
+
+	for name, bounds := range map[string]coordinate.Rect{
+		"zero width":  {Size: coordinate.Size{Width: 0, Height: 12}},
+		"zero height": {Size: coordinate.Size{Width: 40, Height: 0}},
+		"collapsed":   {},
+	} {
+		model.SetBounds(bounds)
+		v := model.View()
+		if v.Content != "" {
+			t.Errorf("%s: non-empty capture rendered into a collapsed pane (content %q); every coordinate is outside it", name, v.Content)
+		}
+	}
+}
+
+// TestViewSetBoundsRestoreMemoHit pins the reject → restore → hit cycle: a
+// frame the guard rejected at a shrunken rectangle must come back — intact —
+// when the pane regains its original bounds, including on the SECOND frame,
+// which is served by the cache-hit fast path reusing the memoized verdict.
+// A memo that re-served a previously-FAILED verdict (or one that stopped
+// re-guarding on bounds change) renders empty here or loses the frame.
+func TestViewSetBoundsRestoreMemoHit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+
+	mgr, session, sid, cleanup := startTestManager(t)
+	defer cleanup()
+
+	wide := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	}
+	narrow := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 40, Height: 12},
+	}
+
+	model := NewModel(sid, mgr, wide)
+	defer model.Close()
+
+	session.readerCh <- []byte("WIDE-CONTENT-LINE")
+	deadline := time.Now().Add(3 * time.Second)
+	for model.SnapshotGen() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the initial capture")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	model.mu.Lock()
+	model.refreshCaptureLocked()
+	model.mu.Unlock()
+
+	_ = model.View() // prime the cache at the wide size
+
+	model.SetBounds(narrow)
+	if v := model.View(); v.Content != "" {
+		t.Fatal("guard accepted the stale frame after shrink; test setup no longer reproduces the rejection")
+	}
+
+	// Restore the original rectangle WITHOUT new output: the generation is
+	// unchanged, so the first View re-guards the cached frame at the restored
+	// bounds and the second takes the memo-hit fast path.
+	model.SetBounds(wide)
+	for frame := 1; frame <= 2; frame++ {
+		v := model.View()
+		if v.Content == "" {
+			t.Fatalf("restore frame %d rendered empty; the memoized verdict did not recover with the bounds", frame)
+		}
+		if maxRow := maxCUPRow(v.Content); maxRow > 24 {
+			t.Fatalf("restore frame %d addresses row %d, want <= 24", frame, maxRow)
+		}
+	}
+}

@@ -619,11 +619,12 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 		// (immediately when none is running), rejects if it exited with an
 		// error. run() is non-blocking and reserves the program slot
 		// synchronously — call this AFTER run() from an ASYNC CHAIN when the
-		// next step must not race the dying program (the engine's own
-		// The engine may also wait after the script body settles; concurrent
-		// callers share the same completion record. Blocked work runs off the event
-		// loop via Adapter.Promisify, which also keeps the loop alive while
-		// a program it is waiting on still needs RunSync callbacks.
+		// next step must not race the dying program. The engine also waits
+		// on its own after the script body settles (ExecuteScript blocks on
+		// WaitForProgram), and concurrent callers share the same completion
+		// record. Blocked work runs off the event loop via Adapter.Promisify,
+		// which also keeps the loop alive while a program it is waiting on
+		// still needs RunSync callbacks.
 		_ = exports.Set("waitForProgram", func() goja.Value {
 			a := manager.getAdapter()
 			if a == nil {

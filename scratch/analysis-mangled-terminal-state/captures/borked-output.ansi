@@ -1,0 +1,25 @@
+[4m[48;5;255m
+  [38;5;16m/blueprint-json[39m
+  [38;5;16m/quality-check[39m
+
+[49m  [38;5;241mThought for [1m28s[0;4m[38;5;241m, read [1m2[0;4m[38;5;241m files, listed [1m1[0;4m[38;5;241m [0m
+[4m  [38;5;241mdirectory [0m
+
+[4m[38;5;65m⏺[0m [1;4mSkill[0;4m(blueprint-json)[0m
+[4m[38;5;241m  ⎿  [39mSuccessfully[0m [4mloaded[0m [4mskill[0m
+
+[4m [0m [4m[38;5;241mThought for [1m21s[0;4m[38;5;241m, read [1m1[0;4m[38;5;241m file [0m
+
+[4m[38;5;16m⏺[0m [4mThe[0m [4mreviews[0m [4mare[0m [4min[0m [4mcontext[0m [4mand[0m [4mthe[0m [4mblueprint[0m [4mis
+[0m  [4mread whole. Now the grounding[0m [4maudit[0m [4m—[0m [4mreading[0m
+[4m  every[0m [4mfile[0m [4mthe[0m [4mreviews[0m [4mreference[0m [4mbefore[0m
+[4m [0m [4mbelieving a[0m [4mword of them.[0m
+[4m [0m
+[4m[38;5;241m⏺[39m Running [1m1[0;4m shell command…[0m
+
+[4m[38;5;174m✶[0m [4m[38;5;174mE[2mb[0;4m[38;5;216mbin[38;5;174mg…[2m [38;5;241m(1m [0;4m[38;5;241m8[2ms · [0;4m[38;5;241m↓[39m [38;5;241m1.0k tokens)[0m
+
+[4m[38;5;245m──────────────────────────────────────── Takumi ─
+[38;5;241m❯ [0m
+[4m[38;5;245m─────────────────────────────────────────────────
+[0m  [4m[38;5;131m⏵⏵ bypass permissions on[38;5;241m (shift+tab to cycle)[0m

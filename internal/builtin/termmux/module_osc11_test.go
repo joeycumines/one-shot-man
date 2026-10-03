@@ -12,17 +12,25 @@ import (
 	"time"
 )
 
-// buildRawEchoProgram builds a cross-platform binary that puts its terminal
-// into raw mode (as every real TUI child does) and then copies stdin to
-// stdout verbatim, byte for byte, including control bytes — no kernel
-// rendering involved. It replaces `cat -v`: a fresh PTY starts with kernel
+// buildRawEchoProgram builds a binary that puts its terminal into raw mode
+// (as every real TUI child does) and then copies stdin to stdout verbatim,
+// byte for byte, including control bytes — no line-discipline rendering
+// involved. It replaces `cat -v` on Unix: a fresh PTY starts with kernel
 // echo disabled (pty.Spawn sanitizes ECHO/ECHOCTL/ECHONL so launcher-written
 // control sequences cannot leak as caret notation before the child owns its
-// termios), so a child that wants to observe input on its own output must
-// configure its own terminal. Raw mode also delivers bytes without waiting
-// for a newline, which canonical-mode cat never did.
-func buildRawEchoProgram(t *testing.T) string {
+// termios), so a child that wants to observe its input through its own
+// output must configure its own terminal. Raw mode also delivers bytes
+// without waiting for a newline, which canonical-mode cat never did.
+//
+// Windows keeps the old `cat -v` child: pty.Spawn does not touch ConPTY
+// (see pty_windows.go), conhost still echoes input on its own, and the
+// package's ConPTY notes warn that plain io.Copy children are unreliable
+// there (see module_pane_test.go).
+func buildRawEchoProgram(t *testing.T) (string, []string) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		return "cat", []string{"-v"}
+	}
 
 	dir := t.TempDir()
 	src := filepath.Join(dir, "main.go")
@@ -46,19 +54,14 @@ func main() {
 		t.Fatalf("write helper source: %v", err)
 	}
 
-	binName := "rawechoprogram"
-	if runtime.GOOS == "windows" {
-		binName += ".exe"
-	}
-	bin := filepath.Join(dir, binName)
-
+	bin := filepath.Join(dir, "rawechoprogram")
 	cmd := exec.Command("go", "build", "-o", bin, src)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("go build helper: %v\n%s", err, stderr.String())
 	}
-	return bin
+	return bin, nil
 }
 
 // TestCaptureSession_JSBinding_OSC11ReplyReachesChild guards the launcher's
@@ -71,21 +74,26 @@ func main() {
 // reaches the child rather than being dropped or written elsewhere — the
 // failure mode being guarded is a handshake that silently never completes.
 //
-// The child is a raw-mode echo program (see buildRawEchoProgram): it copies
-// every byte it receives back to stdout verbatim, so the reply is observable
-// through the ordinary capture surface with no dependency on kernel line
-// discipline or on how the child interprets the sequence.
+// The child copies every byte it receives back to stdout (raw-mode echo on
+// Unix, see buildRawEchoProgram; cat -v's own -v rendering on Windows), so
+// the reply is observable through the ordinary capture surface with no
+// dependency on Unix kernel line discipline or on how the child interprets
+// the sequence.
 func TestCaptureSession_JSBinding_OSC11ReplyReachesChild(t *testing.T) {
 	t.Parallel()
 
 	e := newTestEnv(t)
 
-	child := buildRawEchoProgram(t)
+	child, childArgs := buildRawEchoProgram(t)
+	argsJS := make([]string, len(childArgs))
+	for i, a := range childArgs {
+		argsJS[i] = fmt.Sprintf("%q", a)
+	}
 	_, err := awaitJSValue(t, e.runtime, fmt.Sprintf(`
 		var tm = require('osm:termmux');
-		globalThis.cs = tm.newCaptureSession(%q, []);
+		globalThis.cs = tm.newCaptureSession(%q, [%s]);
 		await cs.start();
-	`, child))
+	`, child, strings.Join(argsJS, ", ")))
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}

@@ -146,7 +146,17 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 		return map[string]any{
 			"type":   "BackgroundColor",
 			"isDark": msg.IsDark(),
-			"rgb":    backgroundRGB(msg),
+			"rgb":    colorRGB(msg.Color),
+		}
+
+	case tea.ForegroundColorMsg:
+		// The OSC 10 counterpart of the above. Exposed for the same reason: a
+		// child that requires both replies before choosing a theme cannot be
+		// satisfied by the background alone.
+		return map[string]any{
+			"type":   "ForegroundColor",
+			"isDark": msg.IsDark(),
+			"rgb":    colorRGB(msg.Color),
 		}
 
 	case tea.FocusMsg:
@@ -218,14 +228,15 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 	}
 }
 
-// backgroundRGB formats a terminal background colour as the OSC 11 reply
-// payload: four hex digits per channel, e.g. "ffff/ffff/ffff". It returns ""
-// when the terminal reported no colour; callers fall back to the isDark flag.
-func backgroundRGB(msg tea.BackgroundColorMsg) string {
-	if msg.Color == nil {
+// colorRGB formats a terminal colour as the OSC reply payload: four hex digits
+// per channel, e.g. "ffff/ffff/ffff". It returns "" when the terminal reported
+// no colour; callers fall back to the isDark flag. It serves both OSC 11
+// (background) and OSC 10 (foreground), which carry the same payload shape.
+func colorRGB(c color.Color) string {
+	if c == nil {
 		return ""
 	}
-	r, g, b, _ := msg.Color.RGBA()
+	r, g, b, _ := c.RGBA()
 	return fmt.Sprintf("%04x/%04x/%04x", r, g, b)
 }
 
@@ -599,6 +610,9 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 
 	case "requestBackgroundColor":
 		return tea.RequestBackgroundColor
+
+	case "requestForegroundColor":
+		return tea.RequestForegroundColor
 	}
 
 	return nil

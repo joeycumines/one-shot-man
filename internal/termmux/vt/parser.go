@@ -371,6 +371,13 @@ func (p *Parser) HasIntermediate(b byte) bool {
 	return slices.Contains(p.intermBuf, b)
 }
 
+// HasAnyIntermediates reports whether the dispatched sequence accumulated
+// any private-prefix ('<', '=', '>', '?') or intermediate (0x20-0x2F)
+// byte. SGR and other final bytes are undefined for such sequences.
+func (p *Parser) HasAnyIntermediates() bool {
+	return len(p.intermBuf) > 0
+}
+
 // OSCData parses the accumulated OSC buffer into a numeric code and string
 // data. The OSC format is: code;data — the code is the integer before the
 // first semicolon, and the data is everything after it. If there is no

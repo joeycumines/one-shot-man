@@ -1,6 +1,7 @@
 package vt
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -297,6 +298,98 @@ func TestSGRDiff_bright_color(t *testing.T) {
 	if got != "\x1b[0;92m" {
 		t.Errorf("SGRDiff(default, bright green) = %q, want ESC[0;92m", got)
 	}
+}
+
+// ParseSGRWithSubParams must honor the colon-form underline sub-parameters:
+// SGR 4:0 means underline OFF, while 4:1 (single), 4:2 (double), 4:3 (curly),
+// 4:4 (dotted) and 4:5 (dashed) all mean underline ON — this model stores
+// only a boolean, so the styles collapse. Before the fix every multi-value
+// group was flattened to its first value, so "4:0" was misread as "4" and
+// turned underline ON — the inverse of its meaning.
+func TestParseSGRWithSubParams_UnderlineStyles(t *testing.T) {
+	tests := []struct {
+		name   string
+		groups [][]int
+		want   bool // Under after parsing, given underline armed beforehand
+	}{
+		{"4:0 clears", [][]int{{4, 0}}, false},
+		{"4:1 single", [][]int{{4, 1}}, true},
+		{"4:2 double", [][]int{{4, 2}}, true},
+		{"4:3 curly", [][]int{{4, 3}}, true},
+		{"4:4 dotted", [][]int{{4, 4}}, true},
+		{"4:5 dashed", [][]int{{4, 5}}, true},
+		{"4:9 unknown style", [][]int{{4, 9}}, true},
+		{"bare 4", [][]int{{4}}, true},
+		{"reset then 4:0", [][]int{{0}, {4, 0}}, false},
+		{"4:0 then reset", [][]int{{4, 0}, {0}}, false},
+		{"4:1 then 24", [][]int{{4, 1}, {24}}, false},
+		{"24 then 4:1", [][]int{{24}, {4, 1}}, true},
+		{"4:1 then 4:0", [][]int{{4, 1}, {4, 0}}, false},
+		{"4:0 then 4:1", [][]int{{4, 0}, {4, 1}}, true},
+		{"4:0 off then bold", [][]int{{4, 0}, {1}}, false},
+	}
+	armed := Attr{Under: true}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseSGRWithSubParams(tt.groups, armed)
+			if got.Under != tt.want {
+				t.Errorf("ParseSGRWithSubParams(%v) Under = %v, want %v", tt.groups, got.Under, tt.want)
+			}
+		})
+	}
+	// 4:0 from a clean state must also stay clean (nothing to clear).
+	if got := ParseSGRWithSubParams([][]int{{4, 0}}, Attr{}); got.Under {
+		t.Error("ParseSGRWithSubParams([[4,0]]) set Under from a clean state")
+	}
+}
+
+// Colon-form extended colors must be unaffected by the underline handling:
+// the ITU T.416 6-element form (38:2::R:G:B), the 5-element form, and
+// 256-color colon forms keep their exact color values.
+func TestParseSGRWithSubParams_ColonColorsUnchanged(t *testing.T) {
+	tests := []struct {
+		name       string
+		groups     [][]int
+		checkColor func(Attr) string
+	}{
+		{"itu-fg", [][]int{{38, 2, 0, 255, 100, 0}}, func(a Attr) string {
+			want := uint32(255)<<16 | uint32(100)<<8 | uint32(0)
+			if a.FG.kind != kindRGB || a.FG.value != want {
+				return errFmt("FG = %+v, want kindRGB 0x%06X", a.FG, want)
+			}
+			return ""
+		}},
+		{"colon-256-fg", [][]int{{38, 5, 24}}, func(a Attr) string {
+			if a.FG.kind != kind256 || a.FG.value != 24 {
+				return errFmt("FG = %+v, want kind256 24", a.FG)
+			}
+			return ""
+		}},
+		{"colon-256-bg", [][]int{{48, 5, 200}}, func(a Attr) string {
+			if a.BG.kind != kind256 || a.BG.value != 200 {
+				return errFmt("BG = %+v, want kind256 200", a.BG)
+			}
+			return ""
+		}},
+		{"colon-truecolor-5elem", [][]int{{38, 2, 255, 100, 0}}, func(a Attr) string {
+			want := uint32(255)<<16 | uint32(100)<<8 | uint32(0)
+			if a.FG.kind != kindRGB || a.FG.value != want {
+				return errFmt("FG = %+v, want kindRGB 0x%06X", a.FG, want)
+			}
+			return ""
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if msg := tt.checkColor(ParseSGRWithSubParams(tt.groups, Attr{})); msg != "" {
+				t.Error(msg)
+			}
+		})
+	}
+}
+
+func errFmt(format string, args ...any) string {
+	return fmt.Sprintf(format, args...)
 }
 
 func TestColorSGR_kinds(t *testing.T) {

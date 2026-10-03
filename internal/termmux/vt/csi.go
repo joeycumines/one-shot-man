@@ -29,7 +29,12 @@ type csiHandlerImpl struct {
 	HasInterSp     func() bool
 	HasInterBang   func() bool
 	HasInterDollar func() bool
-	SubParamsFn    func(idx int) []int
+	// HasAnyIntermediates reports whether ANY private-prefix or
+	// intermediate byte is in the buffer. When set it supersedes the
+	// individual probes below for callers that need the whole-class
+	// answer (e.g. SGR dispatch, which is undefined for any prefix).
+	HasAnyIntermediates func() bool
+	SubParamsFn         func(idx int) []int
 }
 
 // NewCSIHandler returns a CSIHandler with the given callbacks.
@@ -73,6 +78,10 @@ func WithHasInterBang(fn func() bool) CSIHandlerOption {
 
 func WithHasInterDollar(fn func() bool) CSIHandlerOption {
 	return csiHandlerOptionFunc(func(h *csiHandlerImpl) { h.HasInterDollar = fn })
+}
+
+func WithHasAnyIntermediates(fn func() bool) CSIHandlerOption {
+	return csiHandlerOptionFunc(func(h *csiHandlerImpl) { h.HasAnyIntermediates = fn })
 }
 
 func WithSubParams(fn func(idx int) []int) CSIHandlerOption {
@@ -288,6 +297,15 @@ func (h *csiHandlerImpl) Dispatch(scr *Screen, final byte, params []int, isPriva
 			}
 		}
 	case 'm': // SGR — set graphic rendition
+		// SGR is only defined as CSI Pm m with no private prefix and no
+		// intermediate bytes. Prefixed forms carry other meanings (xterm
+		// CSI >4;Pv m is ModifyOtherKeys configuration; CSI ?Pi m has no
+		// SGR definition) and their numeric parameters must never reach
+		// ParseSGR — doing so misread ModifyOtherKeys as underline/dim,
+		// with no reset in most streams to clear it. Silently consume.
+		if isPrivate || h.hasAnyIntermediates() {
+			return
+		}
 		if h.SubParamsFn != nil {
 			var groups [][]int
 			if len(params) == 0 {
@@ -669,6 +687,19 @@ func (h *csiHandlerImpl) respond(s string) {
 	if h.ResponseWriter != nil {
 		h.ResponseWriter([]byte(s))
 	}
+}
+
+// hasAnyIntermediates reports whether the dispatched sequence carried any
+// private-prefix or intermediate byte ('<', '=', '>', '?', 0x20-0x2F).
+// Returns false when no probes are wired (a bare handler sees none).
+func (h *csiHandlerImpl) hasAnyIntermediates() bool {
+	if h.HasAnyIntermediates != nil {
+		return h.HasAnyIntermediates()
+	}
+	return (h.HasInterGt != nil && h.HasInterGt()) ||
+		(h.HasInterSp != nil && h.HasInterSp()) ||
+		(h.HasInterBang != nil && h.HasInterBang()) ||
+		(h.HasInterDollar != nil && h.HasInterDollar())
 }
 
 func itoa(n int) string {

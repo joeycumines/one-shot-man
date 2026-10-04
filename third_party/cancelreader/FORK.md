@@ -22,16 +22,34 @@ first with the test's own SIGTERM racing startup, then with ambient signal
 delivery. In production the same race can kill an `osm script` run that
 uses a bubbletea TUI.
 
-## The deviation
+## The deviations
 
-`epollCtl` in `cancelreader_linux.go` retries the call while the kernel
-reports `EINTR` — the same policy upstream already applies to `EpollWait`.
-Nothing else is changed behaviorally: the three `Close` paths also build
+Two, both in `cancelreader_linux.go`:
+
+1. `epollCtl` retries the call while the kernel reports `EINTR` — the same
+   policy upstream already applies to `EpollWait`. A caught signal
+   (SIGTERM at the wrong microsecond, or the Go runtime's SIGURG
+   preemption under load) interrupted the registration and killed
+   program startup.
+
+2. `NewReader` falls back to the non-canceling reader when the reader fd
+   answers `EPOLL_CTL_ADD` with `EPERM` — the documented error for a fd
+   with no poll backing. `/dev/null` is the common case (probed in a
+   golang:1.27.0 container: char device, `epoll_ctl` → EPERM). Upstream's
+   own dispatch falls back only for non-`File` readers, so a
+   File-backed /dev/null stdin (the shape every `go test` / pipeline /
+   container run has) could never start a program. The fallback degrades
+   to no in-flight-read cancelation, which is harmless for a source that
+   never delivers data.
+
+Behaviorally nothing else is changed: the three `Close` paths build
 their joined error with `errors.New` instead of `fmt.Errorf` (upstream's
 code trips the modern vet non-constant-format check; the repo bar is
-vet-clean on every module). Upstream's own test suite is carried and runs
-against the fork in the gates. If upstream ships the retry, delete this
-fork and the `replace` directive.
+vet-clean on every module) and the Windows path uses `syscall.SyscallN`
+instead of the deprecated `syscall.Syscall` (staticcheck SA1019).
+Upstream's own test suite is carried and runs against the fork in the
+gates. If upstream ships the EINTR retry and the EPERM fallback, delete
+this fork and the `replace` directive.
 
 ## Upstream
 

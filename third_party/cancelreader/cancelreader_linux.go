@@ -45,6 +45,18 @@ func NewReader(reader io.Reader) (CancelReader, error) {
 		Events: unix.EPOLLIN,
 		Fd:     int32(file.Fd()),
 	})
+	if errors.Is(err, unix.EPERM) {
+		// The fd does not support epoll — /dev/null is the common case (a
+		// character device with no poll table; EPOLL_CTL_ADD answers EPERM,
+		// probed). Tests and pipelines routinely run with stdin on /dev/null
+		// or another non-pollable source, and upstream's own dispatch only
+		// falls back for non-File readers, so a File-backed /dev/null stdin
+		// could never start a program. Degrade to the fallback reader — no
+		// cancelation of an in-flight read, which is harmless for a source
+		// that never delivers data.
+		_ = unix.Close(epoll)
+		return newFallbackCancelReader(reader)
+	}
 	if err != nil {
 		_ = unix.Close(epoll)
 		return nil, fmt.Errorf("add reader to epoll interest list")

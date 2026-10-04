@@ -87,7 +87,6 @@ func NewCompositor(width, height int) *Compositor {
 // Compositor for chaining.
 func (c *Compositor) AddPane(id string, content string, bounds coordinate.Rect, z int) *Compositor {
 	if pe, exists := c.panes[id]; exists {
-		pe.content = content
 		pe.x = bounds.Position.X
 		pe.y = bounds.Position.Y
 		pe.z = z

@@ -267,8 +267,20 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 
 	_, runErr := p.Run()
 	close(programFinished) // Signal that Run() returned
-	cancel(nil)            // Signal the goroutine to exit (via ctx.Done path if race, but programFinished priority)
-	wg.Wait()              // Wait for the goroutine to finish
+
+	// A teardown-cancelled run owns the outcome: when the runtime is being
+	// torn down (engine shutdown, or the engine's unhandled-signal
+	// force-cancel), a Run failure is an artifact of that teardown — a
+	// signal can even interrupt the input reader's epoll setup with EINTR
+	// during startup — and must not surface as a spurious program error
+	// ahead of the signal's own exit attribution. Check before cancel(nil),
+	// which would make ctx.Err() unconditionally non-nil.
+	if runErr != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	cancel(nil) // Signal the goroutine to exit (via ctx.Done path if race, but programFinished priority)
+	wg.Wait()   // Wait for the goroutine to finish
 
 	if runErr != nil {
 		return fmt.Errorf("failed to run program: %w", runErr)

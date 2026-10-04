@@ -256,6 +256,23 @@ type Screen struct {
 	// alternate screen). Per tmux convention, alternate screen never reflows.
 	ReflowOnResize bool
 
+	// DefaultFG, DefaultBG and CursorColor are the pane-local default
+	// colours the child set with OSC 10/11/12 (kindDefault = unset = the
+	// host terminal's own value, which the vterm cannot know). Applied to
+	// BOTH screens at set time: like xterm, these are terminal-wide state,
+	// not saved or restored across the 1049 alt-screen switch. Rendering
+	// resolves kindDefault cells against them; captures emit them so an
+	// embedded pane repaints the child's theme instead of the host default.
+	//
+	// Palette is the 256-colour table the child redefined with OSC 4 (nil =
+	// the host terminal's own palette; kind256 cells then pass through
+	// unresolved). Published per set as an immutable table so a snapshot's
+	// rendering can never shift under it.
+	DefaultFG   color
+	DefaultBG   color
+	CursorColor color
+	Palette     *Palette
+
 	// dirtyRowMin and dirtyRowMax track the range of rows that have been
 	// modified since the last ClearDirty() call. A value of -1 means the
 	// screen is clean (no rows modified). markDirty(row) expands the range
@@ -1400,6 +1417,10 @@ func (s *Screen) SnapshotIncremental(prev *Screen) *Screen {
 		Saved1049MouseSGR:           s.Saved1049MouseSGR,
 		RowWrapped:                  append([]bool(nil), s.RowWrapped...),
 		ReflowOnResize:              s.ReflowOnResize,
+		DefaultFG:                   s.DefaultFG,
+		DefaultBG:                   s.DefaultBG,
+		CursorColor:                 s.CursorColor,
+		Palette:                     s.Palette,
 		dirtyRowMin:                 -1,
 		dirtyRowMax:                 -1,
 	}
@@ -1662,6 +1683,14 @@ func (s *Screen) Clear() {
 	s.G2Charset = 0
 	s.G3Charset = 0
 	s.GL = 0
+
+	// Dynamic colours (OSC 10/11/12) and the OSC 4 palette are part of
+	// power-on state: a full reset (RIS) returns them to the host terminal's
+	// ownership, exactly as it clears every other reconfigured mode.
+	s.DefaultFG = color{}
+	s.DefaultBG = color{}
+	s.CursorColor = color{}
+	s.Palette = nil
 
 	s.Scrollback = nil
 	s.ScrollbackWrapped = nil

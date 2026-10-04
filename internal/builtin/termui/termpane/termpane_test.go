@@ -2,6 +2,7 @@ package termpane
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -878,5 +879,109 @@ func TestTermpane_MultiplePanes(t *testing.T) {
 	}
 	if val.Export() != "ok" {
 		t.Errorf("unexpected result: %v", val.Export())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// view() colour fields
+// ---------------------------------------------------------------------------
+
+// TestTermpane_ViewColorFields guards the pane-local colour exposure: before
+// any OSC set, pane.view() reports "" for bg/fg/cursorColor (the host
+// terminal's own value, which the embedder resolves from its own handshake);
+// after the child sets OSC 11, 10 and 12, the applied "#rrggbb" values come
+// back. The unset half runs first, in-process, on the harness session; the
+// set half uses its own session fed through the manager pipeline.
+func TestTermpane_ViewColorFields(t *testing.T) {
+	skipSlow(t)
+
+	rt, _, _, cleanup := setupTestEnv(t)
+	defer cleanup()
+
+	value, err := awaitTermPaneScript(t, rt, `
+		const tp = require('osm:termui/termpane');
+		const pane = tp.termpane({
+			manager: _mgr,
+			sessionId: _sessionID,
+			bounds: {x: 0, y: 0, width: 80, height: 24}
+		});
+		const v = pane.view();
+		if (typeof v.bg !== 'string' || typeof v.fg !== 'string' || typeof v.cursorColor !== 'string') {
+			throw new Error('view() colour fields must be strings');
+		}
+		if (v.bg !== '' || v.fg !== '' || v.cursorColor !== '') {
+			throw new Error('unset colours must be empty strings, got ' + JSON.stringify({bg: v.bg, fg: v.fg, cursorColor: v.cursorColor}));
+		}
+		await pane.close();
+		return 'ok';
+	`)
+	if err != nil {
+		t.Fatalf("unset-state script error: %v", err)
+	}
+	if value.Export() != "ok" {
+		t.Fatalf("unset-state result: %v", value.Export())
+	}
+}
+
+// TestTermpane_ViewColorFieldsAfterSet feeds an OSC 11/10/12 burst through
+// the manager and asserts pane.view() reports the applied colours.
+func TestTermpane_ViewColorFieldsAfterSet(t *testing.T) {
+	skipSlow(t)
+
+	mgr, mgrCleanup := startManager(t, termmux.WithTermSize(24, 80))
+	defer mgrCleanup()
+
+	session := &controllableSession{
+		doneCh:   make(chan struct{}),
+		readerCh: make(chan []byte, 256),
+	}
+	sessionID, err := mgr.Register(session, termmux.SessionTarget{Name: "colors"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+
+	rt, adapter := newTermPaneRuntime(t)
+	rt.Set("_mgr", wrapManager(rt, mgr))
+	rt.Set("_sessionID", uint64(sessionID))
+	rt.Set("require", func(call goja.FunctionCall) goja.Value {
+		if call.Argument(0).String() == "osm:termui/termpane" {
+			mod := rt.NewObject()
+			_ = mod.Set("exports", rt.NewObject())
+			Require(t.Context(), adapter)(rt, mod)
+			return mod.Get("exports")
+		}
+		return goja.Undefined()
+	})
+
+	session.readerCh <- []byte("\x1b]11;#201f26\x07\x1b]10;rgb:ffff/ffff/ffff\x07\x1b]12;#ff60ff\x07MARKER\n")
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		capture, captureErr := mgr.CaptureScreen(sessionID, termmux.CaptureOptions{Kind: termmux.CapturePlain})
+		if captureErr == nil && capture != nil && strings.Contains(capture.Text, "MARKER") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("manager snapshot did not reach marker: %v", captureErr)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	value, err := awaitTermPaneScript(t, rt, `
+		const tp = require('osm:termui/termpane');
+		const pane = tp.termpane({ manager: _mgr, sessionId: _sessionID, bounds: {x: 0, y: 0, width: 80, height: 24} });
+		const v = pane.view();
+		await pane.close();
+		return JSON.stringify({bg: v.bg, fg: v.fg, cursorColor: v.cursorColor});
+	`)
+	if err != nil {
+		t.Fatalf("set-state script error: %v", err)
+	}
+	exported, ok := value.Export().(string)
+	if !ok {
+		t.Fatalf("unexpected export type: %T", value.Export())
+	}
+	if !strings.Contains(exported, "#201f26") || !strings.Contains(exported, "#ffffff") || !strings.Contains(exported, "#ff60ff") {
+		t.Fatalf("applied colours missing: %s", exported)
 	}
 }

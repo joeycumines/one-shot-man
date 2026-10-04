@@ -5,6 +5,7 @@
 package termpane
 
 import (
+	"image/color"
 	"log/slog"
 	"regexp"
 	"strconv"
@@ -478,10 +479,31 @@ func (m *Model) viewWithCursor(content string, fits bool) tea.View {
 
 	v := tea.NewView(content)
 	if cursorVisible {
-		v.Cursor = tea.NewCursor(cursorCol, cursorRow)
+		c := tea.NewCursor(cursorCol, cursorRow)
+		// The child's OSC 12 cursor colour rides the frame: bubbletea v2
+		// emits SetCursorColor on render and ResetCursorColor on exit, so
+		// the cursor keeps the child's theme instead of the host default.
+		// Empty means unset — the host terminal's own value.
+		if col := parseHexColor(m.snap.CursorColor); col != nil {
+			c.Color = col
+		}
+		v.Cursor = c
 	}
 
 	return v
+}
+
+// parseHexColor parses a "#rrggbb" string into a color.Color, returning nil
+// for anything else (including the unset-empty case).
+func parseHexColor(s string) color.Color {
+	if len(s) != 7 || s[0] != '#' {
+		return nil
+	}
+	v, err := strconv.ParseUint(s[1:], 16, 32)
+	if err != nil {
+		return nil
+	}
+	return color.RGBA{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 0xFF}
 }
 
 // clipCUPAddressing fails a rendered frame whose absolute cursor addressing
@@ -751,4 +773,18 @@ func (m *Model) SnapshotGen() uint64 {
 		return 0
 	}
 	return m.snap.Gen
+}
+
+// PaneColors reports the child's pane-local dynamic colours (OSC 10/11/12)
+// from the current snapshot, as "#rrggbb" strings — empty means unset, i.e.
+// the host terminal's own value. An embedder painting chrome around the pane
+// reads these so its own background never shows through as a foreign stripe
+// (the transparent-background defect class). Thread-safe.
+func (m *Model) PaneColors() (bg, fg, cursorColor string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.snap == nil {
+		return "", "", ""
+	}
+	return m.snap.DefaultBG, m.snap.DefaultFG, m.snap.CursorColor
 }

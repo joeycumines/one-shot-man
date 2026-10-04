@@ -188,6 +188,16 @@ type ScreenSnapshot struct {
 	// is active. When true, LF also performs a carriage return.
 	LineFeedNewLine bool
 
+	// DefaultFG and DefaultBG are the pane-local default colours the child
+	// set with OSC 10/11, in "#rrggbb" form ("" = unset = the host
+	// terminal's own value). CursorColor is the OSC 12 cursor colour in the
+	// same form. Consumers rendering the snapshot against the host terminal
+	// (an embedded pane) use them to keep the child's theme intact; see
+	// vt/colors.go for the state model.
+	DefaultFG   string
+	DefaultBG   string
+	CursorColor string
+
 	// Message is the active display-message overlay text for this session,
 	// or empty when no message is queued or the front message has expired.
 	Message string
@@ -481,6 +491,9 @@ func (s *ScreenSnapshot) Clone() *ScreenSnapshot {
 		SynchronizedOutput: s.SynchronizedOutput,
 		AutoWrap:           s.AutoWrap,
 		LineFeedNewLine:    s.LineFeedNewLine,
+		DefaultFG:          s.DefaultFG,
+		DefaultBG:          s.DefaultBG,
+		CursorColor:        s.CursorColor,
 		Locked:             s.Locked,
 		Message:            s.Message,
 		Timestamp:          s.Timestamp,
@@ -500,6 +513,9 @@ func NewScreenSnapshot(gen uint64, scr *vt.Screen, rows, cols int, ts time.Time)
 		CursorRow:     scr.CurRow,
 		CursorCol:     scr.CurCol,
 		CursorVisible: scr.CursorVisible,
+		DefaultFG:     vt.ColorHex(scr.DefaultFG),
+		DefaultBG:     vt.ColorHex(scr.DefaultBG),
+		CursorColor:   vt.ColorHex(scr.CursorColor),
 		Timestamp:     ts,
 	}
 }
@@ -4116,6 +4132,9 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 		SynchronizedOutput: scr.SynchronizedOutput,
 		AutoWrap:           scr.AutoWrap,
 		LineFeedNewLine:    scr.LineFeedNewLine,
+		DefaultFG:          vt.ColorHex(scr.DefaultFG),
+		DefaultBG:          vt.ColorHex(scr.DefaultBG),
+		CursorColor:        vt.ColorHex(scr.CursorColor),
 		Locked:             ms.lock.IsLocked(),
 		Message:            m.activeMessageForSession(so.id, now),
 		Timestamp:          now,

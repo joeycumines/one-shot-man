@@ -11,7 +11,9 @@ package splitlayout
 
 import (
 	"fmt"
+	"image/color"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -45,6 +47,9 @@ type Pane struct {
 	cursorRow     int
 	cursorCol     int
 	cursorVisible bool
+	// cursorColor is the child's OSC 12 cursor colour ("#rrggbb"), empty
+	// when unset — View sets it on the rendered tea.Cursor.
+	cursorColor string
 }
 
 // SplitLayout is a bubbletea v2 Model that composites multiple termmux
@@ -658,17 +663,38 @@ func (sl *SplitLayout) handleMouse(msg tea.MouseMsg) tea.Cmd {
 // capturePane fetches one ANSI capture and records its content plus cursor
 // state on the pane. Content and cursor always come from the same capture,
 // so frames are never torn across generations.
+//
+// The child's pane-local colours are applied here, at the embed boundary:
+// the ANSI capture carries per-cell colours but no erase tail, and the
+// lipgloss canvas strips styled trailing spaces on render, so without an
+// explicit background fill the pane's right margin and blank rows would show
+// the host terminal's default instead of the child's theme (the embed-path
+// instance of the transparent-background defect). Inline per-cell SGR in the
+// capture overrides the style background per cell, so the style fills exactly
+// the region the inline colours cannot reach. Empty means unset — the host
+// terminal's own value — and no fill is applied, preserving passthrough.
 func (sl *SplitLayout) capturePane(i int) {
 	// Use ANSI (NOT FullScreen) — FullScreen has CUP sequences that break compositing.
 	capture, err := sl.manager.CaptureScreen(sl.panes[i].ID, termmux.CaptureOptions{Kind: termmux.CaptureANSI})
 	if err != nil {
 		return
 	}
-	sl.comp.UpdatePaneIfNew(sessionIDStr(sl.panes[i].ID), capture.Text, capture.Snapshot.Gen)
+	content := capture.Text
+	if bg := capture.Snapshot.DefaultBG; bg != "" {
+		style := lipgloss.NewStyle().Background(lipgloss.Color(bg)).
+			Width(sl.panes[i].Bounds.Size.Width).
+			Height(sl.panes[i].Bounds.Size.Height)
+		if fg := capture.Snapshot.DefaultFG; fg != "" {
+			style = style.Foreground(lipgloss.Color(fg))
+		}
+		content = style.Render(content)
+	}
+	sl.comp.UpdatePaneIfNew(sessionIDStr(sl.panes[i].ID), content, capture.Snapshot.Gen)
 	sl.panes[i].LastGen = capture.Snapshot.Gen
 	sl.panes[i].cursorRow = capture.Snapshot.CursorRow
 	sl.panes[i].cursorCol = capture.Snapshot.CursorCol
 	sl.panes[i].cursorVisible = capture.Snapshot.CursorVisible
+	sl.panes[i].cursorColor = capture.Snapshot.CursorColor
 }
 
 // refreshPanes updates all pane snapshots from the manager and pushes them
@@ -726,12 +752,14 @@ func (sl *SplitLayout) View() tea.View {
 
 	var cursorRow, cursorCol int
 	var cursorVisible bool
+	var cursorColor string
 	found := false
 	for i := range sl.panes {
 		if sl.panes[i].ID == sessionID {
 			b := sl.panes[i].Bounds
 			cursorRow = sl.panes[i].cursorRow + b.Position.Y
 			cursorCol = sl.panes[i].cursorCol + b.Position.X
+			cursorColor = sl.panes[i].cursorColor
 			// The cursor shows only when the child left it visible and its
 			// position falls within the pane's bounds.
 			cursorVisible = sl.panes[i].cursorVisible &&
@@ -748,7 +776,13 @@ func (sl *SplitLayout) View() tea.View {
 	}
 
 	if cursorVisible {
-		v.Cursor = tea.NewCursor(cursorCol, cursorRow)
+		c := tea.NewCursor(cursorCol, cursorRow)
+		// The child's OSC 12 cursor colour, mirrored from the capture (see
+		// capturePane): empty means the host terminal's own value.
+		if col := parseHexColor(cursorColor); col != nil {
+			c.Color = col
+		}
+		v.Cursor = c
 	}
 
 	return v
@@ -838,4 +872,17 @@ func paneIDFromStr(s string) termmux.SessionID {
 // borderChromeID returns the chrome layer ID for the i-th border.
 func borderChromeID(i int) string {
 	return fmt.Sprintf("border-%d", i)
+}
+
+// parseHexColor parses a "#rrggbb" string into a color.Color, returning nil
+// for anything else (including the unset-empty case).
+func parseHexColor(s string) color.Color {
+	if len(s) != 7 || s[0] != '#' {
+		return nil
+	}
+	v, err := strconv.ParseUint(s[1:], 16, 32)
+	if err != nil {
+		return nil
+	}
+	return color.RGBA{R: uint8(v >> 16), G: uint8(v >> 8), B: uint8(v), A: 0xFF}
 }

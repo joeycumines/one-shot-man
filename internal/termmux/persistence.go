@@ -225,9 +225,12 @@ func (m *SessionManager) handleRestoreState(p *restoreStatePayload) response {
 		}
 
 		snap := &ScreenSnapshot{
-			Gen:       m.snapshotGen,
-			Rows:      m.termRows,
-			Cols:      m.termCols,
+			Gen:  m.snapshotGen,
+			Rows: m.termRows,
+			Cols: m.termCols,
+			// A restored session starts from an empty vterm: the dynamic
+			// colours are unset until the child re-issues its OSC sets, and
+			// unset is the correct host-passthrough state here.
 			Timestamp: time.Now(),
 		}
 		ms.snapshot.Store(snap)

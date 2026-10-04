@@ -88,10 +88,22 @@
 //	ESC ] 0;title BEL        Window title                  Supported (via OSCHandler callback)
 //	ESC ] 1;icon title BEL   Icon title                    Supported (via callback)
 //	ESC ] 2;title BEL        Window title (alias)          Supported (via callback)
+//	ESC ] 4;N;spec BEL       Palette entry set/query       Supported (pane-local state; query answered after a set)
+//	ESC ] 10;spec BEL        Default foreground set/query  Supported (pane-local state; query answered after a set)
+//	ESC ] 11;spec BEL        Default background set/query  Supported (pane-local state; query answered after a set)
+//	ESC ] 12;spec BEL        Cursor colour set/query       Supported (pane-local state; query answered after a set)
+//	ESC ] 104/110/111/112    Colour resets                 Supported (restore host ownership)
 //	ESC ] 7;uri BEL          Working directory             Supported (via callback)
 //	ESC ] 52;c;base64 BEL    Clipboard set/query           Supported (via callback)
 //	ESC ] 8;id;uri ST        Hyperlink                     Supported (parsed; not yet rendered)
 //	Any OSC code               Supported (dispatched via callback)
+//
+// Colour specs accept xterm's rgb:/rgba: (hex, decimal and percent channels),
+// #RGB/#RRGGBB/#RRRGGGBBB/#RRRRGGGGBBBB, and RGB: aliases; an alpha channel
+// is accepted and ignored. Applied colours are pane-local: rendering resolves
+// default and palette cells against them, and captures emit them so an
+// embedded pane repaints the child's theme. Queries for a surface nobody set
+// are unanswered — that value belongs to the host terminal. See colors.go.
 //
 // Terminator: BEL (0x07) and ST (ESC \) both supported.
 // Max sequence length: 4096 bytes (truncation guard).

@@ -888,3 +888,103 @@ func TestMouseForwarding_RoutesToModelSessionEvenIfInactive(t *testing.T) {
 		t.Errorf("session 1 (active session) received %q, want empty", got)
 	}
 }
+
+// TestANSIView_CarriesAppliedBackground guards the pane-level color apply:
+// a child's OSC 11 set must reach ANSIView() content through the full
+// pipeline (vterm → snapshot → refreshCapture → WriteCapture ANSI), so an
+// embedded pane repaints the child's theme instead of the host default.
+// Fails on a pipeline that drops the color state between manager and pane.
+func TestANSIView_CarriesAppliedBackground(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	mgr, session, sid, cleanup := startTestManager(t)
+	defer cleanup()
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	}
+	model := NewModel(sid, mgr, bounds)
+	defer model.Close()
+	session.readerCh <- []byte("\x1b]11;#201f26\x07theme\r\n")
+	deadline := time.After(2 * time.Second)
+	for {
+		snap := mgr.Snapshot(sid)
+		if snap != nil && strings.Contains(snapshotPlainText(snap), "theme") {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for snapshot")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	model.mu.Lock()
+	model.refreshCapture()
+	model.mu.Unlock()
+	v := model.ANSIView()
+	if !strings.Contains(v.Content, "48;2;32;31;38m") {
+		t.Fatalf("ANSIView missing applied child background:\n%q", v.Content)
+	}
+	// The color state rides the same snapshot the pane reads.
+	bg, fg, cursorColor := model.PaneColors()
+	if bg != "#201f26" || fg != "" || cursorColor != "" {
+		t.Fatalf("PaneColors = %q/%q/%q, want #201f26/\"\"/\"\"", bg, fg, cursorColor)
+	}
+}
+
+// TestView_CarriesCursorColor guards the OSC 12 wiring: a snapshot whose
+// cursor colour is set must surface it on the rendered tea.Cursor, so the
+// real terminal draws the cursor in the child's theme (bubbletea v2 emits
+// SetCursorColor / ResetCursorColor around the frame). Fails pre-fix.
+func TestView_CarriesCursorColor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	mgr, _, sid, cleanup := startTestManager(t)
+	defer cleanup()
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	}
+	model := NewModel(sid, mgr, bounds)
+	defer model.Close()
+
+	scr := vt.NewScreen(24, 80)
+	scr.CurRow, scr.CurCol = 2, 3
+	scr.CursorVisible = true
+	scr.CursorColor = vt.RGB(0xff, 0x60, 0xff)
+	model.mu.Lock()
+	model.snap = termmux.NewScreenSnapshot(2001, scr, 24, 80, time.Now())
+	model.text = "cursor colour content"
+	model.ansiText = "cursor colour content"
+	model.cachedGen = 0
+	model.mu.Unlock()
+
+	v := model.View()
+	if v.Cursor == nil {
+		t.Fatal("View dropped the cursor")
+	}
+	r, g, b, _ := v.Cursor.Color.RGBA()
+	if r>>8 != 0xff || g>>8 != 0x60 || b>>8 != 0xff {
+		t.Fatalf("cursor colour = %02x%02x%02x, want ff60ff", r>>8, g>>8, b>>8)
+	}
+
+	// Unset colour: the cursor renders without one (host default).
+	model.mu.Lock()
+	scr2 := vt.NewScreen(24, 80)
+	scr2.CurRow, scr2.CurCol = 2, 3
+	scr2.CursorVisible = true
+	model.snap = termmux.NewScreenSnapshot(2002, scr2, 24, 80, time.Now())
+	model.text = "unset cursor colour"
+	model.ansiText = "unset cursor colour"
+	model.cachedGen = 0
+	model.mu.Unlock()
+	v = model.View()
+	if v.Cursor == nil {
+		t.Fatal("View dropped the cursor (unset colour case)")
+	}
+	if v.Cursor.Color != nil {
+		t.Fatalf("unset cursor colour leaked a colour: %v", v.Cursor.Color)
+	}
+}

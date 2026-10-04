@@ -16,6 +16,21 @@
     var resolveDir = prSplit._resolveDir;
     var runtime = prSplit.runtime;
 
+    // execFailReason renders a failed gitExec/gitExecAsync result for an
+    // error string. git's stderr is the primary evidence, but a nonzero
+    // exit can carry an EMPTY stderr — a silent failure (killed before
+    // writing, an exec resource error, a bare exit status) — and an error
+    // string of just "<command> failed: " is then undiagnosable. The exec
+    // layer's message field always holds the Go-side error; it is appended
+    // only when it adds information the stderr does not already carry.
+    var execFailReason = function(result) {
+        var stderr = result.stderr.trim();
+        if (stderr !== '' || result.message === undefined || result.message === null || result.message === '') {
+            return stderr;
+        }
+        return stderr + ' (exec: ' + result.message + ')';
+    };
+
     // analyzeDiff returns the list of changed files between the current
     // branch and the configured base branch, with per-file git status codes.
     //
@@ -45,19 +60,19 @@
 
         var branchResult = await gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
         if (branchResult.code !== 0) {
-            return createEmptyResult('failed to get current branch: ' + branchResult.stderr.trim(), '');
+            return createEmptyResult('failed to get current branch: ' + execFailReason(branchResult), '');
         }
         var currentBranch = branchResult.stdout.trim();
 
         var mergeBase = await gitExec(dir, ['merge-base', baseBranch, currentBranch]);
         if (mergeBase.code !== 0) {
-            return createEmptyResult('merge-base failed: ' + mergeBase.stderr.trim(), currentBranch);
+            return createEmptyResult('merge-base failed: ' + execFailReason(mergeBase), currentBranch);
         }
 
         // Use --name-status to capture diff status (A/M/D/R/C) per file.
         var diffResult = await gitExec(dir, ['diff', '--name-status', mergeBase.stdout.trim(), currentBranch]);
         if (diffResult.code !== 0) {
-            return createEmptyResult('git diff failed: ' + diffResult.stderr.trim(), currentBranch);
+            return createEmptyResult('git diff failed: ' + execFailReason(diffResult), currentBranch);
         }
 
         var raw = diffResult.stdout.trim();
@@ -151,18 +166,18 @@
 
         var branchResult = await gitExecAsync(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
         if (branchResult.code !== 0) {
-            return createEmptyResult('failed to get current branch: ' + branchResult.stderr.trim(), '');
+            return createEmptyResult('failed to get current branch: ' + execFailReason(branchResult), '');
         }
         var currentBranch = branchResult.stdout.trim();
 
         var mergeBase = await gitExecAsync(dir, ['merge-base', baseBranch, currentBranch]);
         if (mergeBase.code !== 0) {
-            return createEmptyResult('merge-base failed: ' + mergeBase.stderr.trim(), currentBranch);
+            return createEmptyResult('merge-base failed: ' + execFailReason(mergeBase), currentBranch);
         }
 
         var diffResult = await gitExecAsync(dir, ['diff', '--name-status', mergeBase.stdout.trim(), currentBranch]);
         if (diffResult.code !== 0) {
-            return createEmptyResult('git diff failed: ' + diffResult.stderr.trim(), currentBranch);
+            return createEmptyResult('git diff failed: ' + execFailReason(diffResult), currentBranch);
         }
 
         var raw = diffResult.stdout.trim();
@@ -245,7 +260,7 @@
         if (branchResult.code !== 0) {
             return {
                 files: [],
-                error: 'failed to get current branch: ' + branchResult.stderr.trim(),
+                error: 'failed to get current branch: ' + execFailReason(branchResult),
                 baseBranch: baseBranch,
                 currentBranch: ''
             };
@@ -256,7 +271,7 @@
         if (mergeBase.code !== 0) {
             return {
                 files: [],
-                error: 'merge-base failed: ' + mergeBase.stderr.trim(),
+                error: 'merge-base failed: ' + execFailReason(mergeBase),
                 baseBranch: baseBranch,
                 currentBranch: currentBranch
             };
@@ -266,7 +281,7 @@
         if (statResult.code !== 0) {
             return {
                 files: [],
-                error: 'git diff --numstat failed: ' + statResult.stderr.trim(),
+                error: 'git diff --numstat failed: ' + execFailReason(statResult),
                 baseBranch: baseBranch,
                 currentBranch: currentBranch
             };

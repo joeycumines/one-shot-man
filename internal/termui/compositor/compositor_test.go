@@ -57,19 +57,23 @@ func TestCompositor_AddPane_Multiple(t *testing.T) {
 	assert.Equal(t, []string{"p1", "p2"}, ids)
 }
 
-func TestCompositor_AddPane_ReplaceExisting(t *testing.T) {
+func TestCompositor_AddPane_ReAddPreservesContent(t *testing.T) {
 	skipSlow(t)
 	c := NewCompositor(80, 24)
 	bounds := coordinate.Rect{Position: coordinate.Position{X: 0, Y: 0}, Size: coordinate.Size{Width: 20, Height: 5}}
 
 	c.AddPane("p1", "original", bounds, 0)
-	c.AddPane("p1", "replaced", bounds, 1)
+	// Re-adding the same id (e.g. a relayout pass) updates geometry only:
+	// content, generation and background fill are preserved, so a bounds
+	// refresh with empty content must not blank the pane.
+	moved := coordinate.Rect{Position: coordinate.Position{X: 5, Y: 2}, Size: coordinate.Size{Width: 20, Height: 5}}
+	c.AddPane("p1", "", moved, 1)
 
 	ids := c.PaneIDs()
 	assert.Equal(t, []string{"p1"}, ids)
 
 	rendered := c.Render()
-	assert.Contains(t, rendered, "replaced")
+	assert.Contains(t, rendered, "original")
 }
 
 func TestCompositor_UpdatePane(t *testing.T) {

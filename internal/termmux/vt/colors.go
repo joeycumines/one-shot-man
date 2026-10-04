@@ -3,6 +3,7 @@ package vt
 import (
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // This file implements the pane-local dynamic-colour model: the OSC
@@ -291,46 +292,46 @@ type Palette struct {
 	entries [256]color
 }
 
+var standardPaletteOnce sync.Once
 var standardPalette *Palette
 
 // StandardPalette returns the xterm-standard 256-colour table: 16 base
 // colours, the 6×6×6 colour cube (16-231), and the grayscale ramp (232-255).
 // The table is immutable and shared; With produces derived copies.
 func StandardPalette() *Palette {
-	if standardPalette != nil {
-		return standardPalette
-	}
-	p := &Palette{}
-	// The classic xterm base 16. A real terminal may be user-themes away
-	// from these, but divergence only becomes reachable once a child sets
-	// OSC 4 — at which point the child owns palette resolution (see
-	// resolvePalette below).
-	base := [16]uint32{
-		0x000000, 0xcd0000, 0x00cd00, 0xcdcd00,
-		0x0000ee, 0xcd00cd, 0x00cdcd, 0xe5e5e5,
-		0x7f7f7f, 0xff0000, 0x00ff00, 0xffff00,
-		0x5c5cff, 0xff00ff, 0x00ffff, 0xffffff,
-	}
-	for i, c := range base {
-		p.entries[i] = color{kind: kindRGB, value: c}
-	}
-	steps := [6]uint32{0, 95, 135, 175, 215, 255}
-	i := 16
-	for r := range 6 {
-		for g := range 6 {
-			for b := range 6 {
-				p.entries[i] = color{kind: kindRGB,
-					value: steps[r]<<16 | steps[g]<<8 | steps[b]}
-				i++
+	standardPaletteOnce.Do(func() {
+		p := &Palette{}
+		// The classic xterm base 16. A real terminal may be user-themes away
+		// from these, but divergence only becomes reachable once a child sets
+		// OSC 4 — at which point the child owns palette resolution (see
+		// resolvePalette below).
+		base := [16]uint32{
+			0x000000, 0xcd0000, 0x00cd00, 0xcdcd00,
+			0x0000ee, 0xcd00cd, 0x00cdcd, 0xe5e5e5,
+			0x7f7f7f, 0xff0000, 0x00ff00, 0xffff00,
+			0x5c5cff, 0xff00ff, 0x00ffff, 0xffffff,
+		}
+		for i, c := range base {
+			p.entries[i] = color{kind: kindRGB, value: c}
+		}
+		steps := [6]uint32{0, 95, 135, 175, 215, 255}
+		i := 16
+		for r := range 6 {
+			for g := range 6 {
+				for b := range 6 {
+					p.entries[i] = color{kind: kindRGB,
+						value: steps[r]<<16 | steps[g]<<8 | steps[b]}
+					i++
+				}
 			}
 		}
-	}
-	for i := range 24 {
-		gray := uint32(8 + i*10)
-		p.entries[232+i] = color{kind: kindRGB, value: gray<<16 | gray<<8 | gray}
-	}
-	standardPalette = p
-	return p
+		for i := range 24 {
+			gray := uint32(8 + i*10)
+			p.entries[232+i] = color{kind: kindRGB, value: gray<<16 | gray<<8 | gray}
+		}
+		standardPalette = p
+	})
+	return standardPalette
 }
 
 // At returns the colour at a palette slot. Out-of-range slots resolve to

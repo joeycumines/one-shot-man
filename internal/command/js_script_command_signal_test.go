@@ -189,6 +189,13 @@ func TestJSScriptCommand_Execute_SigintListenerExitWins(t *testing.T) {
 // WaitForProgram). With no listener the engine force-cancels, the program is
 // quit through the binding's ctx.Done arm, and the run must still report
 // Node's default status (143) promptly rather than a generic failure.
+//
+// The readiness print comes from the model's Init, not the script body:
+// bubbletea initializes its input reader (an epoll interest-list add on
+// Linux) BEFORE calling Init, so a signal sent after this print cannot
+// interrupt program startup. Printing from the body raced that window — a
+// SIGTERM landing inside EpollCtl fails the reader with EINTR and the run
+// died with a generic error before the 143 attribution could be ordered.
 func TestJSScriptCommand_Execute_SigtermWithoutListenerRunningProgram(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns JS runtime and delivers real signals")
@@ -197,10 +204,12 @@ func TestJSScriptCommand_Execute_SigtermWithoutListenerRunningProgram(t *testing
 
 	cmd := newExitChannelScriptCommand(t, `
 		var tea = require("osm:bubbletea");
-		function init() { return [{ n: 0 }, tea.tick(60000, "tick")]; }
+		function init() {
+			output.print("signal-ready");
+			return [{ n: 0 }, tea.tick(60000, "tick")];
+		}
 		function update(msg, m) { return [m, tea.tick(60000, "tick")]; }
 		function view(m) { return { content: "probe " + m.n }; }
-		output.print("signal-ready");
 		setTimeout(function () { process.exit(0); }, 8000);
 		tea.run(tea.newModel({ init: init, update: update, view: view }));
 	`)

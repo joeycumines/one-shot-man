@@ -316,6 +316,10 @@ function updateCompositor() {
         id: 'pty',
         content: v.content,
         gen: v.gen,
+        // The child's OSC 11 default background: the compositor fills the
+        // pane rect with it at render time, covering trailing/blank cells
+        // the ANSI capture cannot paint. Empty = unset = host default.
+        bg: v.bg,
     });
 
     state.cursor = v.cursor || null;

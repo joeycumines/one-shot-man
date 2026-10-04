@@ -155,7 +155,10 @@ func createCompositorObject(runtime *goja.Runtime, c *compositor.Compositor) goj
 		return obj
 	})
 
-	// updatePaneIfNew({id, content, gen}) — chainable
+	// updatePaneIfNew({id, content, gen, bg?}) — chainable. bg, when a
+	// non-empty "#rrggbb" string, is the child's default background (OSC 11)
+	// the compositor fills the pane rect with at render time — the ANSI
+	// capture cannot paint trailing/blank cells itself.
 	_ = obj.Set("updatePaneIfNew", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			panic(runtime.NewTypeError("updatePaneIfNew requires an object argument {id, content, gen}"))
@@ -168,6 +171,9 @@ func createCompositorObject(runtime *goja.Runtime, c *compositor.Compositor) goj
 			gen = uint64(genVal.ToInteger())
 		}
 		c.UpdatePaneIfNew(id, content, gen)
+		if bgVal := cfg.Get("bg"); bgVal != nil && !goja.IsUndefined(bgVal) && !goja.IsNull(bgVal) {
+			c.SetPaneBackground(id, bgVal.String())
+		}
 		return obj
 	})
 

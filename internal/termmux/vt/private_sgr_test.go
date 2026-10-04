@@ -47,7 +47,7 @@ func TestSGR_PrivatePrefixIgnored(t *testing.T) {
 				t.Fatalf("Write: %v", err)
 			}
 			scr := v.ActiveScreen()
-			for col := 0; col < 2; col++ {
+			for col := range 2 {
 				a := scr.Cells[0][col].Attr
 				if a.Under {
 					t.Errorf("col %d: Under set by %q — private/intermediate prefix leaked into SGR", col, tt.seq)
@@ -102,7 +102,7 @@ func TestSGR_IncidentTraceSequence(t *testing.T) {
 	}
 
 	scr := v.ActiveScreen()
-	for col := 0; col < len("before"+"middle"+"red"+"after"); col++ {
+	for col := range len("before" + "middle" + "red" + "after") {
 		a := scr.Cells[0][col].Attr
 		if a.Under {
 			t.Errorf("col %d: Under set — ModifyOtherKeys misparsed as SGR underline", col)

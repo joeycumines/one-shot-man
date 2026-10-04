@@ -18,7 +18,7 @@ func TestVTermSGR_ColonUnderlineOff(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 	scr := v.ActiveScreen()
-	for col := 0; col < 3; col++ {
+	for col := range 3 {
 		if scr.Cells[0][col].Attr.Under {
 			t.Errorf("col %d: Under set — SGR 4:0 must clear underline", col)
 		}
@@ -48,10 +48,7 @@ func TestVTermSGR_ColonUnderlineStyles(t *testing.T) {
 			}
 			scr := v.ActiveScreen()
 			// Inspect the last written cell.
-			col := scr.CurCol - 1
-			if col < 0 {
-				col = 0
-			}
+			col := max(scr.CurCol-1, 0)
 			if got := scr.Cells[scr.CurRow][col].Attr.Under; got != tt.want {
 				t.Errorf("%q: Under = %v, want %v", tt.seq, got, tt.want)
 			}

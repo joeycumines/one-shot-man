@@ -187,12 +187,14 @@ func TestIntegration_AsyncJSLeafWithTicker(t *testing.T) {
 	<-ticker.Done()
 
 	// NewTicker reports context deadline exceeded as error (expected behavior)
-	// We just verify the counter was incremented before the timeout
+	// We just verify the counter was incremented before the timeout. The Go
+	// side seeds the counter as a plain int (line above); the JS leaf stores
+	// goja's int64, so the type identity after the first tick is incidental —
+	// the behavior under test is that the leaf ran, i.e. the count moved off
+	// the Go-side seed of 0.
+	require.NotNil(t, bb.Get("counter"), "counter should have been set by JS")
 	countVal := bb.Get("counter")
-	require.NotNil(t, countVal, "counter should have been set by JS")
-	count, ok := countVal.(int64)
-	require.True(t, ok, "counter should be int64, got %T", countVal)
-	require.Greater(t, count, int64(0), "counter should have been incremented")
+	require.Positive(t, mustInt64(t, countVal), "counter should have been incremented (value %v, type %T)", countVal, countVal)
 }
 
 // TestIntegration_Memorize demonstrates using bt.Memorize with async JS leaves
@@ -583,5 +585,20 @@ func TestIntegration_SharedModeTickerShutdown(t *testing.T) {
 		t.Log("Shared mode ticker shutdown test passed - promise settled correctly")
 	case <-time.After(10 * time.Second):
 		t.Fatal("TIMEOUT: Promise did not settle within 10 seconds - hanging promise detected!")
+	}
+}
+
+// mustInt64 converts a blackboard counter value (Go int seed or goja int64
+// after a JS write) to int64, failing the test for any other type.
+func mustInt64(t *testing.T, v any) int64 {
+	t.Helper()
+	switch n := v.(type) {
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	default:
+		t.Fatalf("counter is neither int nor int64: %v (%T)", v, v)
+		return 0
 	}
 }

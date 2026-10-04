@@ -234,8 +234,13 @@ var (
 )
 
 func flushConsoleInputBuffer(consoleInput windows.Handle) error {
-	r, _, e := syscall.Syscall(procFlushConsoleInputBuffer.Addr(), 1,
-		uintptr(consoleInput), 0, 0)
+	// SyscallN replaces the deprecated syscall.Syscall (staticcheck SA1019);
+	// the calling convention is identical for this single-pointer-argument
+	// probe. errno is only meaningful when the call reports failure, which
+	// the r == 0 check below guards — matching upstream's use of the
+	// trailing errno.
+	r, _, e := syscall.SyscallN(procFlushConsoleInputBuffer.Addr(),
+		uintptr(consoleInput))
 	if r == 0 {
 		return error(e)
 	}

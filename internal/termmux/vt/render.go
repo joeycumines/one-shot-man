@@ -32,6 +32,16 @@ func appendCUP(buf []byte, row, col int) []byte {
 // CUP + content + EL for every selected visible row using that row's 1-based
 // terminal coordinate, then the unchanged cursor-position and visibility tail.
 // When ScrollOffset > 0, visible rows include scrollback content.
+//
+// Default-colour resolution: a cell whose BG (or FG) is kindDefault is
+// rendered against the pane-local defaults the child set with OSC 11/10 —
+// see colors.go. The full-screen tail emits `ESC[0m ESC[<bg>m ESC[K` when a
+// default background is applied, so erased-to-end cells repaint in the
+// child's theme rather than the host terminal's default; with no applied
+// default it stays `ESC[0m ESC[K`, byte-identical to the host-passthrough
+// behaviour every existing consumer relies on. The same applied bg is baked
+// into kindDefault cells of the ANSI and full-screen rows, so an embedded
+// pane carries the child's theme with no per-consumer knowledge.
 func RenderCapture(scr *Screen, start, end int, joinWrapped bool) (plainText, ansi, fullScreen string) {
 	if scr == nil {
 		return "", "", ""
@@ -49,6 +59,12 @@ func RenderCapture(scr *Screen, start, end int, joinWrapped bool) (plainText, an
 	}
 	if start >= end {
 		return "", "", ""
+	}
+
+	colors := renderColors{
+		defaultFG: scr.DefaultFG,
+		defaultBG: scr.DefaultBG,
+		palette:   scr.Palette,
 	}
 
 	var pb []byte          // plain text
@@ -112,26 +128,32 @@ func RenderCapture(scr *Screen, start, end int, joinWrapped bool) (plainText, an
 
 				// ANSI (only up to last styled cell).
 				if c <= last {
-					diff := SGRDiff(ansiPrev, cell.Attr)
+					attr := colors.resolve(cell.Attr)
+					diff := SGRDiff(ansiPrev, attr)
 					if diff != "" {
 						ab.WriteString(diff)
 					}
-					ansiPrev = cell.Attr
+					ansiPrev = attr
 					ab.WriteRune(cell.Ch)
 				}
 
 				if c <= last {
-					diff := SGRDiff(fsPrev, cell.Attr)
+					attr := colors.resolve(cell.Attr)
+					diff := SGRDiff(fsPrev, attr)
 					if diff != "" {
 						fbb = append(fbb, diff...)
 					}
-					fsPrev = cell.Attr
+					fsPrev = attr
 					fbb = utf8.AppendRune(fbb, cell.Ch)
 				}
 			}
 		}
 
-		fbb = append(fbb, "\x1b[0m\x1b[K"...)
+		fbb = append(fbb, "\x1b[0m"...)
+		if bg := colors.eraseTailSGR(); bg != "" {
+			fbb = append(fbb, bg...)
+		}
+		fbb = append(fbb, "\x1b[K"...)
 		fsPrev = Attr{}
 
 		// ANSI: reset at end of non-empty row.
@@ -151,6 +173,13 @@ func RenderCapture(scr *Screen, start, end int, joinWrapped bool) (plainText, an
 		fbb = append(fbb, "\x1b[?25h"...)
 	} else {
 		fbb = append(fbb, "\x1b[?25l"...)
+	}
+	// Leave the host terminal's pen clean: the row tails above set an
+	// applied default background before ESC[K and nothing resets it after,
+	// so the patch would otherwise end with the pen still holding the
+	// child's bg colour.
+	if bgTail := colors.eraseTailSGR(); bgTail != "" {
+		fbb = append(fbb, "\x1b[0m"...)
 	}
 
 	return string(pb), ab.String(), string(fbb)

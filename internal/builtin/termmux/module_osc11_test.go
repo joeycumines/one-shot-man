@@ -145,3 +145,48 @@ func TestCaptureSession_JSBinding_OSC11ReplyReachesChild(t *testing.T) {
 		t.Fatalf("close() failed: %v", err)
 	}
 }
+
+// TestSessionManagerCapture_JSBinding_ColorFields guards the general capture
+// API's colour exposure: after a child sets OSC 11 (the pane-local apply),
+// mgr.capture(id) reports defaultBG/defaultFG/cursorColor as "#rrggbb" —
+// so JS consumers of the general capture surface can read the child's theme
+// the same way pane.view() exposes it for termpane embedders. Fails pre-fix
+// (fields absent, undefined).
+func TestSessionManagerCapture_JSBinding_ColorFields(t *testing.T) {
+	t.Parallel()
+
+	e := newTestEnv(t)
+	echo := buildRawEchoProgram(t)
+
+	_, err := awaitJSValue(t, e.runtime, fmt.Sprintf(`
+		var tm = require('osm:termmux');
+		globalThis.result = await (async function () {
+			var b = await tm.newBoundedSession({ cmd: %q });
+			await b.session.write('\x1b]11;#201f26\x07');
+			await b.session.write('\x1b]12;#ff60ff\x07');
+			for (var i = 0; i < 100; i++) {
+				var snap = b.mgr.capture(b.sid);
+				if (snap && snap.defaultBG === '#201f26') {
+					await b.session.close();
+					await b.mgr.close();
+					return JSON.stringify(snap.defaultBG + '|' + snap.defaultFG + '|' + snap.cursorColor);
+				}
+				await new Promise(function (r) { setTimeout(r, 10); });
+			}
+			await b.session.close();
+			await b.mgr.close();
+			throw new Error('capture never reported defaultBG; last=' + JSON.stringify(b.mgr.capture(b.sid)));
+		})();
+	`, echo))
+	if err != nil {
+		t.Fatalf("capture colour fields: %v", err)
+	}
+	val, err := awaitJSValue(t, e.runtime, `return globalThis.result;`)
+	if err != nil {
+		t.Fatalf("read result: %v", err)
+	}
+	// The result went through JSON.stringify, so it arrives quoted.
+	if got := val.String(); got != `"#201f26||#ff60ff"` {
+		t.Fatalf("capture colour fields = %q, want %q", got, `"#201f26||#ff60ff"`)
+	}
+}

@@ -80,6 +80,13 @@ func registerSnapshotMethods(obj *goja.Object, s *muxState) {
 		_ = result.Set("cursorRow", capture.Snapshot.CursorRow)
 		_ = result.Set("cursorCol", capture.Snapshot.CursorCol)
 		_ = result.Set("cursorVisible", capture.Snapshot.CursorVisible)
+		// The child's pane-local colours (OSC 10/11/12) as "#rrggbb" or ""
+		// ("" = unset = the host terminal's own value). Snapshot-field
+		// spelling; the termpane's pane.view() uses the shorter bg/fg/
+		// cursorColor vocabulary — the older surface predates these.
+		_ = result.Set("defaultFG", capture.Snapshot.DefaultFG)
+		_ = result.Set("defaultBG", capture.Snapshot.DefaultBG)
+		_ = result.Set("cursorColor", capture.Snapshot.CursorColor)
 		_ = result.Set("mouseTracking", capture.Snapshot.MouseTracking)
 		_ = result.Set("mouseSGR", capture.Snapshot.MouseSGR)
 		_ = result.Set("locked", capture.Snapshot.Locked)

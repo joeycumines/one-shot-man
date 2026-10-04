@@ -298,6 +298,16 @@ func createTermpaneObject(runtime *goja.Runtime, m *termpane.Model, ctx context.
 		result := runtime.NewObject()
 		_ = result.Set("content", v.Content)
 		_ = result.Set("gen", m.SnapshotGen())
+		// The child's pane-local dynamic colours (OSC 10/11/12), as
+		// "#rrggbb" or "" when unset — "" means the host terminal's own
+		// value, which the embedder resolves from its own handshake. An
+		// embedder painting chrome around the pane reads these so its own
+		// background never shows through as a foreign stripe (the
+		// transparent-background defect class).
+		bg, fg, cursorColor := m.PaneColors()
+		_ = result.Set("bg", bg)
+		_ = result.Set("fg", fg)
+		_ = result.Set("cursorColor", cursorColor)
 
 		if v.Cursor != nil {
 			cursor := runtime.NewObject()
@@ -305,6 +315,9 @@ func createTermpaneObject(runtime *goja.Runtime, m *termpane.Model, ctx context.
 			_ = cursor.Set("y", v.Cursor.Y)
 			_ = cursor.Set("shape", "block")
 			_ = cursor.Set("blink", false)
+			// The child's OSC 12 cursor colour ("#rrggbb", "" = unset);
+			// bubbletea.parseCursorProp maps cursor.color onto tea.Cursor.
+			_ = cursor.Set("color", cursorColor)
 			_ = result.Set("cursor", cursor)
 		}
 

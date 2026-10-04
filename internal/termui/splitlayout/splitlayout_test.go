@@ -783,3 +783,58 @@ func TestSplitLayout_View_PairsCursorWithContentGeneration(t *testing.T) {
 		t.Errorf("cursor = (%d,%d), want stored (%d,%d) offset by pane origin", v.Cursor.Position.X, v.Cursor.Position.Y, col, row)
 	}
 }
+
+// TestSplitLayout_AppliedBackgroundFillsPaneRect guards the embedder-side
+// colour fill: a child's OSC 11 set must paint the FULL pane rectangle in
+// the composited View — not just the text columns. The ANSI capture carries
+// per-cell colours but no erase tail, and the lipgloss canvas strips styled
+// trailing spaces on render, so without an explicit background fill the
+// pane's right margin and blank rows show the host terminal's default (the
+// remaining user-visible instance of the transparent-background defect).
+// Fails pre-fix: the composited frame carries the applied bg only where
+// text cells sit.
+func TestSplitLayout_AppliedBackgroundFillsPaneRect(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+
+	mgr, sessions, ids, cleanup := startTestManager(t, 1)
+	defer cleanup()
+
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 80, Height: 24},
+	}
+
+	sl := NewSplitLayout(mgr, bounds)
+	defer sl.Close()
+	sl.AddPane(ids[0])
+
+	// A dark-theme child: background set plus one short line of text; the
+	// rest of the pane is default cells. AddPane's ResizeSession rebuilds
+	// the grid (content is grid-local), so the marker is the colour STATE
+	// (terminal-wide, survives resize) rather than the text.
+	sessions[0].readerCh <- []byte("\x1b]11;#201f26\x07x\r\n")
+	deadline := time.After(2 * time.Second)
+	for {
+		snap := mgr.Snapshot(ids[0])
+		if snap != nil && snap.DefaultBG == "#201f26" {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for applied background")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	v := sl.View()
+	// The pane rect is 24 rows after AddPane's resize; the text occupies a
+	// handful of columns of the first row. A filled rect carries at least
+	// one applied-bg run per row; the pre-fix leak produced 0 (the canvas
+	// strips styled trailing spaces).
+	filled := strings.Count(v.Content, "48;2;32;31;38")
+	if filled < 24 {
+		t.Fatalf("composited pane not background-filled: %d applied-bg runs in %d bytes:\n%q", filled, len(v.Content), v.Content)
+	}
+}

@@ -260,7 +260,18 @@
             }
 
             var sha = await gitExec(worktreePath, ['rev-parse', 'HEAD']);
-            splitResult.sha = sha.code === 0 ? sha.stdout.trim() : '';
+            if (sha.code !== 0) {
+                // A failed rev-parse in a just-committed worktree means the
+                // split is in an unknown state — surface it rather than
+                // silently reporting an empty SHA (the commit itself is
+                // already durable, so the caller must see the problem).
+                splitResult.error = 'rev-parse HEAD after commit failed: ' + sha.stderr.trim()
+                    + (sha.message ? ' (exec: ' + sha.message + ')' : '');
+                results.push(splitResult);
+                await cleanupWorktree();
+                return { error: splitResult.error, results: results };
+            }
+            splitResult.sha = sha.stdout.trim();
 
             results.push(splitResult);
 
@@ -463,7 +474,16 @@
             }
 
             var sha = await gitExecAsync(worktreePath, ['rev-parse', 'HEAD']);
-            splitResult.sha = sha.code === 0 ? sha.stdout.trim() : '';
+            if (sha.code !== 0) {
+                // Same contract as the sync path: a failed rev-parse after a
+                // durable commit must surface, not collapse to an empty SHA.
+                splitResult.error = 'rev-parse HEAD after commit failed: ' + sha.stderr.trim()
+                    + (sha.message ? ' (exec: ' + sha.message + ')' : '');
+                results.push(splitResult);
+                await cleanupWorktree();
+                return { error: splitResult.error, results: results };
+            }
+            splitResult.sha = sha.stdout.trim();
 
             results.push(splitResult);
 

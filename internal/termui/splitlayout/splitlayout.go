@@ -177,25 +177,17 @@ func (sl *SplitLayout) AddPane(id termmux.SessionID) *SplitLayout {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
-	pane := Pane{ID: id}
-	sl.panes = append(sl.panes, pane)
+	sl.panes = append(sl.panes, Pane{ID: id})
 	sl.publishPaneIDsLocked()
 
+	// recomputeLayoutLocked computes every pane's real Bounds and pushes
+	// them to the compositor and focus group, and resizes the session to
+	// its new rect. Everything below must read sl.panes[i].Bounds — a
+	// pre-layout local carries the zero rect, and using it here once
+	// resized the freshly-laid-out session to 0x0 AFTER the correct
+	// resize, wiping its vterm grid (an empty pane frame until the next
+	// repaint at a real size).
 	sl.recomputeLayoutLocked()
-
-	// Add pane to compositor at Z=0.
-	sl.comp.AddPane(sessionIDStr(id), "", pane.Bounds, 0)
-
-	// Add to focus group.
-	sl.focus.Add(focus.Focusable{
-		ID:     sessionIDStr(id),
-		Bounds: pane.Bounds,
-	})
-
-	// Resize the session to match its pane bounds.
-	if err := sl.manager.ResizeSession(id, pane.Bounds.Size.Height, pane.Bounds.Size.Width); err != nil {
-		slog.Debug("splitlayout resize session on add failed", "sessionID", id, "error", err)
-	}
 
 	return sl
 }
@@ -292,8 +284,16 @@ func (sl *SplitLayout) recomputeLayoutLocked() {
 		// Update compositor pane position.
 		sl.comp.AddPane(sessionIDStr(p.ID), "", rects[i], 0)
 
-		// Update focus group bounds.
-		sl.focus.SetBounds(sessionIDStr(p.ID), rects[i])
+		// Register with the focus group: a new pane is Added, an existing
+		// one gets its bounds refreshed. This is the ONLY registration
+		// site — AddPane no longer pre-registers with a zero-rect local
+		// (the defect that resized freshly laid-out sessions to 0x0).
+		if !sl.focus.SetBounds(sessionIDStr(p.ID), rects[i]) {
+			sl.focus.Add(focus.Focusable{
+				ID:     sessionIDStr(p.ID),
+				Bounds: rects[i],
+			})
+		}
 
 		// Resize the session to match its new bounds.
 		if err := sl.manager.ResizeSession(p.ID, rects[i].Size.Height, rects[i].Size.Width); err != nil {
@@ -664,32 +664,21 @@ func (sl *SplitLayout) handleMouse(msg tea.MouseMsg) tea.Cmd {
 // state on the pane. Content and cursor always come from the same capture,
 // so frames are never torn across generations.
 //
-// The child's pane-local colours are applied here, at the embed boundary:
-// the ANSI capture carries per-cell colours but no erase tail, and the
-// lipgloss canvas strips styled trailing spaces on render, so without an
-// explicit background fill the pane's right margin and blank rows would show
-// the host terminal's default instead of the child's theme (the embed-path
-// instance of the transparent-background defect). Inline per-cell SGR in the
-// capture overrides the style background per cell, so the style fills exactly
-// the region the inline colours cannot reach. Empty means unset — the host
-// terminal's own value — and no fill is applied, preserving passthrough.
+// The child's pane-local colours are handed to the compositor: it fills the
+// pane rectangle with the child's OSC 11 background at render time (the ANSI
+// capture carries per-cell colours but no erase tail, and the lipgloss canvas
+// strips styled trailing spaces, so the fill is the only surface that covers
+// trailing/blank cells). Empty means unset — the host terminal's own value —
+// and no fill is applied, preserving passthrough.
 func (sl *SplitLayout) capturePane(i int) {
 	// Use ANSI (NOT FullScreen) — FullScreen has CUP sequences that break compositing.
 	capture, err := sl.manager.CaptureScreen(sl.panes[i].ID, termmux.CaptureOptions{Kind: termmux.CaptureANSI})
 	if err != nil {
 		return
 	}
-	content := capture.Text
-	if bg := capture.Snapshot.DefaultBG; bg != "" {
-		style := lipgloss.NewStyle().Background(lipgloss.Color(bg)).
-			Width(sl.panes[i].Bounds.Size.Width).
-			Height(sl.panes[i].Bounds.Size.Height)
-		if fg := capture.Snapshot.DefaultFG; fg != "" {
-			style = style.Foreground(lipgloss.Color(fg))
-		}
-		content = style.Render(content)
-	}
-	sl.comp.UpdatePaneIfNew(sessionIDStr(sl.panes[i].ID), content, capture.Snapshot.Gen)
+	id := sessionIDStr(sl.panes[i].ID)
+	sl.comp.UpdatePaneIfNew(id, capture.Text, capture.Snapshot.Gen)
+	sl.comp.SetPaneBackground(id, capture.Snapshot.DefaultBG)
 	sl.panes[i].LastGen = capture.Snapshot.Gen
 	sl.panes[i].cursorRow = capture.Snapshot.CursorRow
 	sl.panes[i].cursorCol = capture.Snapshot.CursorCol

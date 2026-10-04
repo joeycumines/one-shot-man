@@ -464,3 +464,75 @@ func TestCompositor_Render_PreservesZeroWidthANSI_Chrome(t *testing.T) {
 	assert.Contains(t, rendered, "[Kick]", "button text should be present")
 	assert.Contains(t, rendered, marker, "zero-width markers should survive chrome rendering")
 }
+
+// TestCompositor_PaneBackgroundFillsRect guards the embedder-side fill: a
+// pane with a SetPaneBackground renders its content over the full pane
+// rectangle in that colour — trailing/blank cells included — so a child
+// theme set with OSC 11 covers the pane instead of leaking the host
+// default. This is the path ai-tool's compositor uses (pane.view() content
+// pushed via updatePaneIfNew); the fill cannot live inside the ANSI capture
+// because the canvas strips styled trailing spaces. Fails pre-fix.
+func TestCompositor_PaneBackgroundFillsRect(t *testing.T) {
+	skipSlow(t)
+	c := NewCompositor(80, 24)
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 40, Height: 6},
+	}
+	c.AddPane("p", "x", bounds, 0)
+	c.SetPaneBackground("p", "#201f26")
+
+	out := c.Render()
+	// The quantized/scaled form lipgloss emits for the colour is an
+	// implementation detail; assert on the count of the applied bg ANYWHERE:
+	// a 6-row fill produces many more bg sequences than the single text cell.
+	filled := strings.Count(out, "48;2;32;31;38")
+	if filled < 6 {
+		t.Fatalf("pane not background-filled: %d runs in render:\n%q", filled, out)
+	}
+}
+
+// TestCompositor_PaneBackgroundResizeRefills pins the resize behaviour: the
+// fill is applied at render time against the pane's CURRENT bounds, so
+// changing bounds without pushing new content still fills the new rect.
+func TestCompositor_PaneBackgroundResizeRefills(t *testing.T) {
+	skipSlow(t)
+	c := NewCompositor(80, 24)
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 40, Height: 6},
+	}
+	c.AddPane("p", "x", bounds, 0)
+	c.SetPaneBackground("p", "#201f26")
+	_ = c.Render()
+
+	newBounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 60, Height: 10},
+	}
+	c.UpdatePaneBounds("p", newBounds)
+	out := c.Render()
+	filled := strings.Count(out, "48;2;32;31;38")
+	if filled < 10 {
+		t.Fatalf("resized pane not re-filled to its new rect: %d runs", filled)
+	}
+}
+
+// TestCompositor_PaneBackgroundEmptyClears pins the unset path: an empty
+// background removes the fill (host passthrough restored).
+func TestCompositor_PaneBackgroundEmptyClears(t *testing.T) {
+	skipSlow(t)
+	c := NewCompositor(80, 24)
+	bounds := coordinate.Rect{
+		Position: coordinate.Position{X: 0, Y: 0},
+		Size:     coordinate.Size{Width: 40, Height: 6},
+	}
+	c.AddPane("p", "x", bounds, 0)
+	c.SetPaneBackground("p", "#201f26")
+	_ = c.Render()
+	c.SetPaneBackground("p", "")
+	out := c.Render()
+	if strings.Contains(out, "48;2;32;31;38") {
+		t.Fatalf("cleared background still fills:\n%q", out)
+	}
+}

@@ -18,6 +18,9 @@ type paneEntry struct {
 	x, y, z int
 	width   int
 	height  int
+	// bg is the pane's background fill ("#rrggbb"), empty when the content
+	// renders against the host terminal's own default.
+	bg string
 }
 
 // chromeEntry tracks a single chrome (UI) layer.
@@ -32,6 +35,15 @@ type chromeEntry struct {
 // Compositor manages pane and chrome layers, wrapping lipgloss.Compositor
 // with canvas reuse and generation-based caching.
 //
+// Pane background: a pane may carry a SetPaneBackground colour (the child's
+// OSC 11 default, "#rrggbb"). At layer-build time the compositor renders the
+// pane content through a lipgloss style sized to the full pane rectangle, so
+// the child's theme covers trailing/blank cells the ANSI capture cannot paint
+// (the canvas strips styled trailing spaces and clears layers unstyled — the
+// embed-path instance of the transparent-background defect). Inline per-cell
+// SGR in the content overrides the style background per cell, so the fill
+// only reaches the region the inline colours do not.
+//
 // NOT concurrent-safe — only used from bubbletea's Update/View goroutines.
 type Compositor struct {
 	panes     map[string]*paneEntry
@@ -40,6 +52,20 @@ type Compositor struct {
 	canvas    *lipgloss.Canvas
 	width     int
 	height    int
+}
+
+// SetPaneBackground records the background colour a pane's content renders
+// against ("#rrggbb" form; empty clears). The fill is applied at render time
+// sized to the pane's current bounds, so a resize re-fills without a new
+// content push. Callers that capture a terminal session pass the child's
+// OSC 11 default here; panes without one render their content verbatim.
+func (c *Compositor) SetPaneBackground(id string, bg string) *Compositor {
+	pe, ok := c.panes[id]
+	if !ok {
+		return c
+	}
+	pe.bg = bg
+	return c
 }
 
 // NewCompositor creates a Compositor with a canvas at the given size.
@@ -54,11 +80,22 @@ func NewCompositor(width, height int) *Compositor {
 
 // AddPane creates a Layer for the given content and bounds, adds it to the
 // panes map and insertion order. If a pane with the same ID already exists,
-// it is replaced. Returns the Compositor for chaining.
+// its geometry is updated but its content, generation and background fill
+// are PRESERVED — relayout paths (e.g. splitlayout's recompute) re-add the
+// same pane id on every bounds change, and replacing the entry wholesale
+// would wipe a fill that was set after the last content push. Returns the
+// Compositor for chaining.
 func (c *Compositor) AddPane(id string, content string, bounds coordinate.Rect, z int) *Compositor {
-	if _, exists := c.panes[id]; !exists {
-		c.paneOrder = append(c.paneOrder, id)
+	if pe, exists := c.panes[id]; exists {
+		pe.content = content
+		pe.x = bounds.Position.X
+		pe.y = bounds.Position.Y
+		pe.z = z
+		pe.width = bounds.Size.Width
+		pe.height = bounds.Size.Height
+		return c
 	}
+	c.paneOrder = append(c.paneOrder, id)
 	c.panes[id] = &paneEntry{
 		id:      id,
 		content: content,
@@ -212,7 +249,22 @@ func (c *Compositor) buildCompositor() *lipgloss.Compositor {
 
 	for _, id := range c.paneOrder {
 		pe := c.panes[id]
-		l := lipgloss.NewLayer(pe.content).
+		content := pe.content
+		if pe.bg != "" {
+			// Fill the full pane rect with the child's background before
+			// compositing (see the type comment): the ANSI capture carries
+			// per-cell colours but no erase tail, and the canvas strips
+			// styled trailing spaces, so without the fill the pane's
+			// trailing/blank cells show the host default. Inline per-cell
+			// SGR overrides the style per cell, so the fill only reaches
+			// the region inline colours cannot.
+			content = lipgloss.NewStyle().
+				Background(lipgloss.Color(pe.bg)).
+				Width(pe.width).
+				Height(pe.height).
+				Render(content)
+		}
+		l := lipgloss.NewLayer(content).
 			X(pe.x).
 			Y(pe.y).
 			Z(pe.z).

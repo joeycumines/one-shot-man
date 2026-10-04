@@ -2,14 +2,21 @@ package termmux
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/joeycumines/goja"
+
+	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 )
 
 // buildRawEchoProgram builds a binary that puts its terminal into raw mode
@@ -146,42 +153,98 @@ func TestCaptureSession_JSBinding_OSC11ReplyReachesChild(t *testing.T) {
 	}
 }
 
+// scriptedStringIO is a StringIO test double whose Receive returns
+// test-scripted chunks: a session output feed the test owns byte for byte,
+// with no child process in the path. A PTY child cannot carry OSC sequences
+// on Windows — ConPTY's input state machine consumes OSC written to the
+// input pipe, and ConPTY re-encodes the output side (see the Windows note
+// on buildRawEchoProgram) — and the colour-fields subject does not depend
+// on the child; the vterm's feed is what the capture fields report.
+type scriptedStringIO struct {
+	chunks    chan string
+	closed    chan struct{}
+	closeOnce sync.Once
+}
+
+func newScriptedStringIO() *scriptedStringIO {
+	return &scriptedStringIO{chunks: make(chan string, 8), closed: make(chan struct{})}
+}
+
+func (s *scriptedStringIO) Send(input string) error { return nil }
+
+func (s *scriptedStringIO) Receive() (string, error) {
+	select {
+	case msg := <-s.chunks:
+		return msg, nil
+	case <-s.closed:
+		return "", io.EOF
+	}
+}
+
+func (s *scriptedStringIO) Close() error {
+	s.closeOnce.Do(func() { close(s.closed) })
+	return nil
+}
+
+// emit feeds one chunk as session output.
+func (s *scriptedStringIO) emit(chunk string) { s.chunks <- chunk }
+
 // TestSessionManagerCapture_JSBinding_ColorFields guards the general capture
 // API's colour exposure: after a child sets OSC 11 (the pane-local apply),
 // mgr.capture(id) reports defaultBG/defaultFG/cursorColor as "#rrggbb" —
 // so JS consumers of the general capture surface can read the child's theme
-// the same way pane.view() exposes it for termpane embedders. Fails pre-fix
-// (fields absent, undefined).
+// the same way pane.view() exposes it for termpane embedders.
+//
+// The session under test is a StringIOSession whose output the test scripts:
+// the OSC sequences reach the vterm byte for byte on every platform. The
+// manager-level byte-to-snapshot propagation is covered independently by
+// TestSessionManager_CrushStartup_Replay in the termmux package.
 func TestSessionManagerCapture_JSBinding_ColorFields(t *testing.T) {
-	t.Parallel()
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
 
-	e := newTestEnv(t)
-	echo := buildRawEchoProgram(t)
+	mgr := parent.NewSessionManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
 
-	_, err := awaitJSValue(t, e.runtime, fmt.Sprintf(`
-		var tm = require('osm:termmux');
+	sio := newScriptedStringIO()
+	session := parent.NewStringIOSession(sio)
+	session.Start()
+	defer func() { _ = session.Close() }()
+	id, err := mgr.Register(session, parent.SessionTarget{Name: "color-fields", Kind: "capture"})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	runtime := goja.New()
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
+	setOnLoop(t, runtime, "sessionID", uint64(id))
+
+	// The child's pane-local colour sets, fed as session output.
+	sio.emit("\x1b]11;#201f26\x07")
+	sio.emit("\x1b]12;#ff60ff\x07")
+
+	_, err = awaitJSValue(t, runtime, `
 		globalThis.result = await (async function () {
-			var b = await tm.newBoundedSession({ cmd: %q });
-			await b.session.write('\x1b]11;#201f26\x07');
-			await b.session.write('\x1b]12;#ff60ff\x07');
 			for (var i = 0; i < 100; i++) {
-				var snap = b.mgr.capture(b.sid);
+				var snap = tuiMux.capture(sessionID);
 				if (snap && snap.defaultBG === '#201f26') {
-					await b.session.close();
-					await b.mgr.close();
 					return JSON.stringify(snap.defaultBG + '|' + snap.defaultFG + '|' + snap.cursorColor);
 				}
 				await new Promise(function (r) { setTimeout(r, 10); });
 			}
-			await b.session.close();
-			await b.mgr.close();
-			throw new Error('capture never reported defaultBG; last=' + JSON.stringify(b.mgr.capture(b.sid)));
+			throw new Error('capture never reported defaultBG; last=' + JSON.stringify(tuiMux.capture(sessionID)));
 		})();
-	`, echo))
+	`)
 	if err != nil {
 		t.Fatalf("capture colour fields: %v", err)
 	}
-	val, err := awaitJSValue(t, e.runtime, `return globalThis.result;`)
+	val, err := awaitJSValue(t, runtime, `return globalThis.result;`)
 	if err != nil {
 		t.Fatalf("read result: %v", err)
 	}

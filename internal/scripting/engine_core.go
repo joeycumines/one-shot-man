@@ -16,7 +16,7 @@ import (
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/goja"
 	gojaEventloop "github.com/joeycumines/goja-eventloop"
-	_ "github.com/joeycumines/goja_nodejs/console" // init() registers "console" core module
+	gojaconsole "github.com/joeycumines/goja_nodejs/console" // init() registers "console" core module; named for RequireWithPrinter below
 	"github.com/joeycumines/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
@@ -335,6 +335,16 @@ func NewEngine(
 	engine.bubbleteaManager = registerResult.BubbleteaManager
 	engine.btBridge = registerResult.BTBridge
 	engine.bubblezoneManager = registerResult.BubblezoneManager
+
+	// Override the goja_nodejs console module's default printer before any
+	// require("console") call. The default uses log.New(os.Stdout, "",
+	// log.LstdFlags), which prepends a timestamp to every console.log line —
+	// breaking machine-readable output (--list --json, --status). Plain
+	// fmt.Fprintln preserves Node.js console.log semantics (message + newline).
+	require.RegisterCoreModule("console", gojaconsole.RequireWithPrinter(&gojaconsole.StdPrinter{
+		StdoutPrint: func(s string) { fmt.Fprintln(stdout, s) },
+		StderrPrint: func(s string) { fmt.Fprintln(stderr, s) },
+	}))
 
 	// Enable the `require` function in the runtime (must be done on event loop).
 	// Store the RequireModule so we can use it for file-based script execution,

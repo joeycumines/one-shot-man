@@ -25,11 +25,21 @@ test('clearTimeout cancels a pending callback', async function () {
 test('setInterval fires repeatedly until cleared', async function () {
 	var count = await new Promise(function (resolve) {
 		var n = 0;
+		var settled = false;
 		var id = setInterval(function () {
 			n++;
-			if (n >= 3) { clearInterval(id); resolve(n); }
+			if (n === 1) {
+				// Anchor the hang-guard on the first observed tick: under
+				// make -j container load the loop can be starved long
+				// enough that a fixed window measured from setup closed
+				// before the third tick. The spec asserts repeated
+				// firing, not scheduler speed.
+				setTimeout(function () {
+					if (!settled) { settled = true; clearInterval(id); resolve(n); }
+				}, 200);
+			}
+			if (n >= 3 && !settled) { settled = true; clearInterval(id); resolve(n); }
 		}, 5);
-		setTimeout(function () { clearInterval(id); resolve(n); }, 200);
 	});
 	assert.equal('interval fired >=3 times', count >= 3, true);
 });

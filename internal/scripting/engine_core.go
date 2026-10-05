@@ -336,16 +336,6 @@ func NewEngine(
 	engine.btBridge = registerResult.BTBridge
 	engine.bubblezoneManager = registerResult.BubblezoneManager
 
-	// Override the goja_nodejs console module's default printer before any
-	// require("console") call. The default uses log.New(os.Stdout, "",
-	// log.LstdFlags), which prepends a timestamp to every console.log line —
-	// breaking machine-readable output (--list --json, --status). Plain
-	// fmt.Fprintln preserves Node.js console.log semantics (message + newline).
-	require.RegisterCoreModule("console", gojaconsole.RequireWithPrinter(&gojaconsole.StdPrinter{
-		StdoutPrint: func(s string) { fmt.Fprintln(stdout, s) },
-		StderrPrint: func(s string) { fmt.Fprintln(stderr, s) },
-	}))
-
 	// Enable the `require` function in the runtime (must be done on event loop).
 	// Store the RequireModule so we can use it for file-based script execution,
 	// which gives scripts proper __filename, __dirname, and relative require resolution.
@@ -358,10 +348,26 @@ func NewEngine(
 		// The goja_nodejs/console module provides the standard logging methods.
 		// We load the module and copy its methods to the existing console object
 		// so both sets of methods coexist.
-		consoleModule := require.Require(r, "console").(*goja.Object)
+		//
+		// The module is built with a plain printer bound to this engine's
+		// streams: the goja_nodejs default routes console.log through
+		// log.New(os.Stdout, "", log.LstdFlags), prepending a timestamp to
+		// every line and breaking machine-readable output (--list --json,
+		// --status). The loader is invoked directly per runtime instead of
+		// re-registering the "console" core module, because RegisterCoreModule
+		// mutates a global map and is documented as unsafe to call concurrently
+		// with require — engines are created in parallel, and go test -race
+		// caught the map race.
+		consoleModule := r.NewObject()
+		consoleModule.Set("exports", r.NewObject())
+		gojaconsole.RequireWithPrinter(&gojaconsole.StdPrinter{
+			StdoutPrint: func(s string) { fmt.Fprintln(stdout, s) },
+			StderrPrint: func(s string) { fmt.Fprintln(stderr, s) },
+		})(r, consoleModule)
+		consoleExports := consoleModule.Get("exports").(*goja.Object)
 		existingConsole := r.Get("console").ToObject(r)
 		for _, method := range []string{"log", "warn", "error", "info", "debug"} {
-			existingConsole.Set(method, consoleModule.Get(method))
+			existingConsole.Set(method, consoleExports.Get(method))
 		}
 
 		// Install circular dependency detection by wrapping the require function.

@@ -87,9 +87,20 @@ func launchBouncingLogo(t *testing.T, ctx context.Context, timeout time.Duration
 	require.NoError(t, err, "Failed to create termtest console")
 
 	// Wait for the Bubble Tea dashboard to attach the nested PTY and render
-	// the mock shell banner. This is the point at which sends are safe.
+	// the mock shell banner. This is the point at which sends are safe. The
+	// budget is the caller's remaining deadline, not a fixed slice: under
+	// make -j container load the freshly built binary's first render has
+	// taken longer than 15s while remaining perfectly healthy, and a fixed
+	// budget turned that into a spurious launch failure.
 	snap := cp.Snapshot()
-	expect(t, ctx, cp, snap, "Bouncing Logo Shell", 15*time.Second)
+	deadline, ok := ctx.Deadline()
+	budget := 15 * time.Second
+	if ok {
+		if remaining := time.Until(deadline); remaining > 0 {
+			budget = remaining
+		}
+	}
+	expect(t, ctx, cp, snap, "Bouncing Logo Shell", budget)
 	time.Sleep(200 * time.Millisecond)
 
 	return cp

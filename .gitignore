@@ -45,8 +45,7 @@ go.work.sum
 
 # Test artifacts and temporary files
 test-scripts/
-/scratch/*
-!/scratch/.gitkeep
+/scratch/
 /WIP.md
 /blueprint.json
 .pr-split-plan.json

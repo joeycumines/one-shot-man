@@ -1,2 +1,0 @@
-#!/bin/sh
-exec /opt/homebrew/opt/python@3.14/bin/python3.14 /Users/joeyc/dev/one-shot-man-2/hack/record-pty.py --_pty_shim claude "$@"

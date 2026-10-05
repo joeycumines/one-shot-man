@@ -19,6 +19,7 @@ import (
 type controllableSession struct {
 	writeMu     sync.Mutex
 	writtenData []byte
+	writeSizes  []int
 	writeErr    error
 	resizeCalls []struct{ rows, cols int }
 	closeCalled bool
@@ -52,7 +53,18 @@ func (s *controllableSession) Write(data []byte) (int, error) {
 		return 0, s.writeErr
 	}
 	s.writtenData = append(s.writtenData, data...)
+	s.writeSizes = append(s.writeSizes, len(data))
 	return len(data), nil
+}
+
+// WriteSizes returns the per-Write byte counts in call order, so tests can
+// assert chunk boundaries rather than only the reassembled total.
+func (s *controllableSession) WriteSizes() []int {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	cp := make([]int, len(s.writeSizes))
+	copy(cp, s.writeSizes)
+	return cp
 }
 
 func (s *controllableSession) Resize(rows, cols int) error {

@@ -197,7 +197,16 @@ func TestChunk16_AnalysisAsync_HappyPath(t *testing.T) {
 				await s._cfgPromise;
 			}
 			if (s.isProcessing) {
-				for (var _i = 0; _i < 40; _i++) await Promise.resolve();
+				// Pump until the pipeline settles, not a fixed count: the
+				// mocked pipeline is microtask-only, but the number of hops
+				// between config completion and the wizard's terminal state
+				// varies (verify-baseline skip, step guards, error paths),
+				// and a fixed 40 under-counts under load — the poll then
+				// observes mid-flight CONFIG with no error recorded. Bounded
+				// so a wedged pipeline fails on the assertion, not here.
+				for (var _i = 0; _i < 400 && s.isProcessing; _i++) {
+					await Promise.resolve();
+				}
 			}
 
 			// Poll to finalize.
@@ -276,7 +285,16 @@ func TestChunk16_AnalysisAsync_AnalyzeDiffError(t *testing.T) {
 				await s._cfgPromise;
 			}
 			if (s.isProcessing) {
-				for (var _i = 0; _i < 40; _i++) await Promise.resolve();
+				// Pump until the pipeline settles, not a fixed count: the
+				// mocked pipeline is microtask-only, but the number of hops
+				// between config completion and the wizard's terminal state
+				// varies (verify-baseline skip, step guards, error paths),
+				// and a fixed 40 under-counts under load — the poll then
+				// observes mid-flight CONFIG with no error recorded. Bounded
+				// so a wedged pipeline fails on the assertion, not here.
+				for (var _i = 0; _i < 400 && s.isProcessing; _i++) {
+					await Promise.resolve();
+				}
 			}
 
 			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
@@ -344,7 +362,16 @@ func TestChunk16_AnalysisAsync_NoChanges(t *testing.T) {
 				await s._cfgPromise;
 			}
 			if (s.isProcessing) {
-				for (var _i = 0; _i < 40; _i++) await Promise.resolve();
+				// Pump until the pipeline settles, not a fixed count: the
+				// mocked pipeline is microtask-only, but the number of hops
+				// between config completion and the wizard's terminal state
+				// varies (verify-baseline skip, step guards, error paths),
+				// and a fixed 40 under-counts under load — the poll then
+				// observes mid-flight CONFIG with no error recorded. Bounded
+				// so a wedged pipeline fails on the assertion, not here.
+				for (var _i = 0; _i < 400 && s.isProcessing; _i++) {
+					await Promise.resolve();
+				}
 			}
 
 			r = await update({type: 'Tick', id: 'analysis-poll'}, s);
@@ -433,7 +460,16 @@ func TestChunk16_AnalysisAsync_ValidationFailure(t *testing.T) {
 				await s._cfgPromise;
 			}
 			if (s.isProcessing) {
-				for (var _i = 0; _i < 40; _i++) await Promise.resolve();
+				// Pump until the pipeline settles, not a fixed count: the
+				// mocked pipeline is microtask-only, but the number of hops
+				// between config completion and the wizard's terminal state
+				// varies (verify-baseline skip, step guards, error paths),
+				// and a fixed 40 under-counts under load — the poll then
+				// observes mid-flight CONFIG with no error recorded. Bounded
+				// so a wedged pipeline fails on the assertion, not here.
+				for (var _i = 0; _i < 400 && s.isProcessing; _i++) {
+					await Promise.resolve();
+				}
 			}
 
 			r = await update({type: 'Tick', id: 'analysis-poll'}, s);

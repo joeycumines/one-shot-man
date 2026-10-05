@@ -9,6 +9,7 @@
     var resolveDir = prSplit._resolveDir;
     var validatePlan = prSplit.validatePlan;
     var worktreeTmpPath = prSplit._worktreeTmpPath;
+    var execFailReason = prSplit._execFailReason;
 
     function isCancelledHelper() {
         if (typeof isCancelled === 'function' && isCancelled()) return true;
@@ -173,7 +174,7 @@
         var worktreePath = worktreeTmpPath('osm-worktree-');
         var wtAdd = await gitExec(dir, ['worktree', 'add', '--detach', worktreePath, plan.baseBranch]);
         if (wtAdd.code !== 0) {
-            return { error: 'create worktree failed: ' + wtAdd.stderr.trim(), results: [] };
+            return { error: 'create worktree failed: ' + execFailReason(wtAdd), results: [] };
         }
 
         async function cleanupWorktree() {
@@ -203,7 +204,7 @@
 
             var co = await gitExec(worktreePath, ['checkout', '-b', split.name, currentBase]);
             if (co.code !== 0) {
-                splitResult.error = 'create branch ' + split.name + ' from ' + currentBase + ' failed: ' + co.stderr.trim();
+                splitResult.error = 'create branch ' + split.name + ' from ' + currentBase + ' failed: ' + execFailReason(co);
                 results.push(splitResult);
                 await cleanupWorktree();
                 return { error: splitResult.error, results: results };
@@ -221,7 +222,7 @@
                 var remove = await gitExec(worktreePath,
                     ['rm', '--ignore-unmatch', '-f'].concat(actions.removeFiles));
                 if (remove.code !== 0) {
-                    splitResult.error = 'git rm ' + actions.removeFiles.join(' ') + ': ' + remove.stderr.trim();
+                    splitResult.error = 'git rm ' + actions.removeFiles.join(' ') + ': ' + execFailReason(remove);
                     results.push(splitResult);
                     await cleanupWorktree();
                     return { error: splitResult.error, results: results };
@@ -232,7 +233,7 @@
                 var checkout = await gitExec(worktreePath,
                     ['checkout', plan.sourceBranch, '--'].concat(actions.checkoutFiles));
                 if (checkout.code !== 0) {
-                    splitResult.error = 'checkout files for ' + split.name + ': ' + checkout.stderr.trim();
+                    splitResult.error = 'checkout files for ' + split.name + ': ' + execFailReason(checkout);
                     results.push(splitResult);
                     await cleanupWorktree();
                     return { error: splitResult.error, results: results };
@@ -243,7 +244,7 @@
                 var addArgs = ['add', '--'].concat(actions.addFiles);
                 var add = await gitExec(worktreePath, addArgs);
                 if (add.code !== 0) {
-                    splitResult.error = 'git add failed: ' + add.stderr.trim();
+                    splitResult.error = 'git add failed: ' + execFailReason(add);
                     results.push(splitResult);
                     await cleanupWorktree();
                     return { error: splitResult.error, results: results };
@@ -253,7 +254,7 @@
             var msg = split.message || 'split: ' + split.name;
             var commit = await gitExec(worktreePath, ['commit', '-m', msg]);
             if (commit.code !== 0) {
-                splitResult.error = 'git commit failed: ' + commit.stderr.trim();
+                splitResult.error = 'git commit failed: ' + execFailReason(commit);
                 results.push(splitResult);
                 await cleanupWorktree();
                 return { error: splitResult.error, results: results };
@@ -265,8 +266,7 @@
                 // split is in an unknown state — surface it rather than
                 // silently reporting an empty SHA (the commit itself is
                 // already durable, so the caller must see the problem).
-                splitResult.error = 'rev-parse HEAD after commit failed: ' + sha.stderr.trim()
-                    + (sha.message ? ' (exec: ' + sha.message + ')' : '');
+                splitResult.error = 'rev-parse HEAD after commit failed: ' + execFailReason(sha);
                 results.push(splitResult);
                 await cleanupWorktree();
                 return { error: splitResult.error, results: results };
@@ -384,7 +384,7 @@
         var worktreePath = worktreeTmpPath('osm-worktree-');
         var wtAdd = await gitExecAsync(dir, ['worktree', 'add', '--detach', worktreePath, plan.baseBranch]);
         if (wtAdd.code !== 0) {
-            return { error: 'create worktree failed: ' + wtAdd.stderr.trim(), results: [] };
+            return { error: 'create worktree failed: ' + execFailReason(wtAdd), results: [] };
         }
 
         async function cleanupWorktreeAsync() {
@@ -419,7 +419,7 @@
             }
             var co = await gitExecAsync(worktreePath, ['checkout', '-b', split.name, currentBase]);
             if (co.code !== 0) {
-                splitResult.error = 'create branch ' + split.name + ' from ' + currentBase + ' failed: ' + co.stderr.trim();
+                splitResult.error = 'create branch ' + split.name + ' from ' + currentBase + ' failed: ' + execFailReason(co);
                 results.push(splitResult);
                 await cleanupWorktreeAsync();
                 return { error: splitResult.error, results: results };
@@ -436,7 +436,7 @@
             if (actions.removeFiles.length > 0) {
                 var rmRes = await gitExecAsync(worktreePath, ['rm', '--ignore-unmatch', '-f'].concat(actions.removeFiles));
                 if (rmRes.code !== 0) {
-                    splitResult.error = 'git rm ' + actions.removeFiles.join(' ') + ': ' + rmRes.stderr.trim();
+                    splitResult.error = 'git rm ' + actions.removeFiles.join(' ') + ': ' + execFailReason(rmRes);
                     results.push(splitResult);
                     await cleanupWorktreeAsync();
                     return { error: splitResult.error, results: results };
@@ -446,7 +446,7 @@
             if (actions.checkoutFiles.length > 0) {
                 var checkoutRes = await gitExecAsync(worktreePath, ['checkout', plan.sourceBranch, '--'].concat(actions.checkoutFiles));
                 if (checkoutRes.code !== 0) {
-                    splitResult.error = 'checkout files failed: ' + checkoutRes.stderr.trim();
+                    splitResult.error = 'checkout files failed: ' + execFailReason(checkoutRes);
                     results.push(splitResult);
                     await cleanupWorktreeAsync();
                     return { error: splitResult.error, results: results };
@@ -457,7 +457,7 @@
                 var addArgs = ['add', '--'].concat(actions.addFiles);
                 var add = await gitExecAsync(worktreePath, addArgs);
                 if (add.code !== 0) {
-                    splitResult.error = 'git add failed: ' + add.stderr.trim();
+                    splitResult.error = 'git add failed: ' + execFailReason(add);
                     results.push(splitResult);
                     await cleanupWorktreeAsync();
                     return { error: splitResult.error, results: results };
@@ -467,7 +467,7 @@
             var msg = split.message || 'split: ' + split.name;
             var commit = await gitExecAsync(worktreePath, ['commit', '-m', msg]);
             if (commit.code !== 0) {
-                splitResult.error = 'git commit failed: ' + commit.stderr.trim();
+                splitResult.error = 'git commit failed: ' + execFailReason(commit);
                 results.push(splitResult);
                 await cleanupWorktreeAsync();
                 return { error: splitResult.error, results: results };
@@ -477,8 +477,7 @@
             if (sha.code !== 0) {
                 // Same contract as the sync path: a failed rev-parse after a
                 // durable commit must surface, not collapse to an empty SHA.
-                splitResult.error = 'rev-parse HEAD after commit failed: ' + sha.stderr.trim()
-                    + (sha.message ? ' (exec: ' + sha.message + ')' : '');
+                splitResult.error = 'rev-parse HEAD after commit failed: ' + execFailReason(sha);
                 results.push(splitResult);
                 await cleanupWorktree();
                 return { error: splitResult.error, results: results };

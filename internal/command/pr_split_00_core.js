@@ -900,11 +900,28 @@
     // Mutable runtime config.
     prSplit.runtime = runtime;
 
+    // execFailReason renders a failed gitExec/gitExecAsync result for an
+    // error string. git's stderr is the primary evidence, but a nonzero
+    // exit can carry an EMPTY stderr — a silent failure (the process died
+    // before writing, a spawn/fork resource error, a bare exit status) —
+    // and an error string of just "<command> failed: " is then
+    // undiagnosable. The exec layer's message field always holds the
+    // Go-side error; it is appended only when it adds information the
+    // stderr does not already carry.
+    var execFailReason = function(result) {
+        var stderr = result.stderr.trim();
+        if (stderr !== '' || result.message === undefined || result.message === null || result.message === '') {
+            return stderr;
+        }
+        return stderr + ' (exec: ' + result.message + ')';
+    };
+
     // Internal helpers.
     prSplit._gitExec = gitExec;
     prSplit._gitExecAsync = gitExecAsync;
     prSplit._shellExecAsync = shellExecAsync;
     prSplit._resolveDir = resolveDir;
+    prSplit._execFailReason = execFailReason;
     prSplit._shellQuote = shellQuote;
     prSplit._worktreeTmpPath = worktreeTmpPath;
     prSplit._isWindows = isWindows;

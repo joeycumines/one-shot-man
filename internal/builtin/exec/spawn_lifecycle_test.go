@@ -324,3 +324,80 @@ func TestChildLifetimeHoldsLoopUntilCleanupAfterKillError(t *testing.T) {
 		t.Fatal("event loop did not auto-exit after child cleanup completed")
 	}
 }
+
+// TestRunExec_DrainTimeoutRecoversWithoutFailingTheCommand pins the drain
+// recovery contract through the pipe factory: when the output pipes do not
+// deliver EOF after the process tree terminates, the collector closes the
+// readers at the drain timeout to recover, and the reads interrupted that
+// way surface os.ErrClosed. Those induced errors are drain-recovery noise —
+// they must not fail a command whose exit code was 0 — while the timeout
+// itself must still be reported so a wedged child stays diagnosable. The
+// pre-fix behavior failed the command with "read |0: file already closed"
+// noise joined into the result (observed as spurious "git rm: (exec: ...)"
+// failures in the pr-split gates under scheduler delay: the reader
+// goroutines had not been scheduled before the timer fired).
+func TestRunExec_DrainTimeoutRecoversWithoutFailingTheCommand(t *testing.T) {
+	skipSlow(t)
+
+	// Endpoints whose Read blocks until Close: exactly the shape of a
+	// reader goroutine scheduled after the drain timer fired.
+	stdoutReader := &blockingCommandPipe{release: make(chan struct{})}
+	stderrReader := &blockingCommandPipe{release: make(chan struct{})}
+	pipeNo := 0
+	newPipe := func() (commandPipeEndpoint, commandPipeEndpoint, error) {
+		pipeNo++
+		switch pipeNo {
+		case 1:
+			return stdoutReader, &failingCommandPipe{}, nil
+		case 2:
+			return stderrReader, &failingCommandPipe{}, nil
+		default:
+			return &failingCommandPipe{}, &failingCommandPipe{}, nil
+		}
+	}
+
+	command, args := immediateExitCommand()
+	result := runExecWithPipeFactory(context.Background(), command, args, newPipe)
+
+	code, ok := result["code"].(int)
+	if !ok || code != 0 {
+		t.Fatalf("runExec code = %v (%v), want 0 — the drain timeout must not fail a successful command", result["code"], result["message"])
+	}
+	if result["error"] != false {
+		t.Fatalf("runExec error = %v, want false", result["error"])
+	}
+	message, _ := result["message"].(string)
+	if !strings.Contains(message, "did not close after process-tree termination") {
+		t.Fatalf("runExec message = %q, want the drain-timeout diagnostic", message)
+	}
+	if strings.Contains(message, "file already closed") {
+		t.Fatalf("runExec message contains drain-recovery noise: %q", message)
+	}
+}
+
+// blockingCommandPipe blocks in Read until closed, then reports the
+// interruption exactly like an os.Pipe reader does.
+type blockingCommandPipe struct {
+	release chan struct{}
+	once    sync.Once
+}
+
+func (p *blockingCommandPipe) Read([]byte) (int, error) {
+	<-p.release
+	return 0, os.ErrClosed
+}
+
+func (p *blockingCommandPipe) Write(data []byte) (int, error) { return len(data), nil }
+
+func (p *blockingCommandPipe) Close() error {
+	p.once.Do(func() { close(p.release) })
+	return nil
+}
+
+// immediateExitCommand returns a command that exits 0 without writing.
+func immediateExitCommand() (string, []string) {
+	if runtime.GOOS == "windows" {
+		return "cmd.exe", []string{"/C", "exit 0"}
+	}
+	return "true", nil
+}

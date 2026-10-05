@@ -422,10 +422,27 @@ type commandOutputResult struct {
 	err   error
 }
 
+// drainTimeoutError reports that output collection was cut short: the
+// output pipes did not close after the process tree terminated (a
+// descendant or external holder kept the write end open) and the collector
+// closed the readers to recover what had been drained. It is diagnostic —
+// it must not flip a command's own exit status into a failure.
+type drainTimeoutError struct{}
+
+func (e *drainTimeoutError) Error() string {
+	return "command output pipes did not close after process-tree termination"
+}
+
 func readCommandOutput(index int, r io.ReadCloser, results chan<- commandOutputResult) {
 	data, err := io.ReadAll(r)
 	closeErr := r.Close()
-	if closeErr != nil {
+	if closeErr != nil && !errors.Is(err, os.ErrClosed) {
+		// A close error that FOLLOWS a read error the closer itself
+		// induced (collectCommandOutput's drain timeout closes the
+		// reader under a blocked Read, surfacing os.ErrClosed from the
+		// read) is drain-recovery noise, not a command failure; the
+		// timeout is reported by the collector. A close error on its
+		// own is real and preserved.
 		err = errors.Join(err, fmt.Errorf("close command output pipe: %w", closeErr))
 	}
 	results <- commandOutputResult{index: index, data: data, err: err}
@@ -449,9 +466,16 @@ func collectCommandOutput(results <-chan commandOutputResult, stdout, stderr io.
 			output[result.index] = result.data
 			outputErr = errors.Join(outputErr, result.err)
 		case <-timer.C:
+			// Drain recovery: the readers may be blocked on a writer
+			// this process no longer controls (a descendant holding the
+			// inherited write end). Closing the readers unblocks them —
+			// the interrupted reads surface os.ErrClosed, and the
+			// reader goroutines swallow that induced error (see
+			// readCommandOutput) because the timeout below is the real
+			// signal. What is already drained is kept.
 			_ = stdout.Close()
 			_ = stderr.Close()
-			timeoutErr := errors.New("command output pipes did not close after process-tree termination")
+			timeoutErr := &drainTimeoutError{}
 			grace := time.NewTimer(100 * time.Millisecond)
 			defer grace.Stop()
 			for received < 2 {
@@ -559,5 +583,50 @@ func runExecWithPipeFactory(ctx context.Context, cmd string, args []string, newP
 	stdoutText, stderrText, outputErr := collectCommandOutput(outputResults, stdoutReader, stderrReader)
 	stdoutData = []byte(stdoutText)
 	stderrData = []byte(stderrText)
-	return result(errors.Join(waitErr, closeErr, outputErr))
+
+	// Drain recovery must not overwrite the command's own outcome: a drain
+	// timeout means "output collection was cut short", not "the command
+	// failed". When the process tree waited clean and the command was not
+	// signal-terminated, the exit status decides the result (result() reads
+	// it from waitErr via errors.As) and the timeout rides the message as a
+	// diagnostic — a wedged child stays diagnosable without a successful
+	// command being reported as failed with exit -1. A real wait or close
+	// failure stays in runErr and dominates.
+	runErr := errors.Join(waitErr, closeErr, outputErr)
+	var drained *drainTimeoutError
+	hasDrain := errors.As(outputErr, &drained)
+	commandOwn := waitErr == nil || (isExitError(waitErr) && !signaledExit(waitErr))
+	if hasDrain && waitErr == nil && closeErr == nil && commandOwn {
+		// Strip the timeout and the drain-induced read noise under it
+		// from the failure channel; the diagnostic rides the message.
+		runErr = nil
+	}
+	m := result(runErr)
+	if hasDrain && runErr == nil {
+		if msg, _ := m["message"].(string); msg == "" {
+			m["message"] = drained.Error()
+		} else {
+			m["message"] = msg + ": " + drained.Error()
+		}
+	}
+	return m
 }
+
+// isExitError reports whether err is a process exit error — the command's
+// own outcome rather than an exec-layer failure.
+func isExitError(err error) bool {
+	var exitErr *osexec.ExitError
+	return errors.As(err, &exitErr)
+}
+
+// signaledExit reports whether the exit error terminated the process by
+// signal — that outcome is the command's real result, not drain noise, and
+// stays in the failure channel even when the drain also timed out.
+// ExitCode() returns -1 exactly when the process was signaled (portable
+// across platforms; the same predicate result() already relies on).
+func signaledExit(err error) bool {
+	var exitErr *osexec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == -1
+}
+
+

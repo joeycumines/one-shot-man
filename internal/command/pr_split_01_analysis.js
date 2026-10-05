@@ -16,20 +16,7 @@
     var resolveDir = prSplit._resolveDir;
     var runtime = prSplit.runtime;
 
-    // execFailReason renders a failed gitExec/gitExecAsync result for an
-    // error string. git's stderr is the primary evidence, but a nonzero
-    // exit can carry an EMPTY stderr — a silent failure (killed before
-    // writing, an exec resource error, a bare exit status) — and an error
-    // string of just "<command> failed: " is then undiagnosable. The exec
-    // layer's message field always holds the Go-side error; it is appended
-    // only when it adds information the stderr does not already carry.
-    var execFailReason = function(result) {
-        var stderr = result.stderr.trim();
-        if (stderr !== '' || result.message === undefined || result.message === null || result.message === '') {
-            return stderr;
-        }
-        return stderr + ' (exec: ' + result.message + ')';
-    };
+    var execFailReason = prSplit._execFailReason;
 
     // analyzeDiff returns the list of changed files between the current
     // branch and the configured base branch, with per-file git status codes.

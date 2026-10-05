@@ -33,7 +33,8 @@ type chromeEntry struct {
 }
 
 // Compositor manages pane and chrome layers, wrapping lipgloss.Compositor
-// with canvas reuse and generation-based caching.
+// with canvas reuse, generation-based caching, and a dirty-tracked render
+// cache that serves unchanged frames without rebuilding.
 //
 // Pane background: a pane may carry a SetPaneBackground colour (the child's
 // OSC 11 default, "#rrggbb"). At layer-build time the compositor renders the
@@ -52,6 +53,14 @@ type Compositor struct {
 	canvas    *lipgloss.Canvas
 	width     int
 	height    int
+
+	// Render cache: Render is called every bubbletea frame, but layer state
+	// only changes when a mutator runs. cacheValid tracks whether
+	// cachedRender still matches the current layers; every mutator that
+	// changes state clears it, so an idle frame is served in O(1) instead of
+	// rebuilding every layer and re-compositing the canvas.
+	cacheValid   bool
+	cachedRender string
 }
 
 // SetPaneBackground records the background colour a pane's content renders
@@ -65,6 +74,7 @@ func (c *Compositor) SetPaneBackground(id string, bg string) *Compositor {
 		return c
 	}
 	pe.bg = bg
+	c.invalidate()
 	return c
 }
 
@@ -92,6 +102,7 @@ func (c *Compositor) AddPane(id string, content string, bounds coordinate.Rect, 
 		pe.z = z
 		pe.width = bounds.Size.Width
 		pe.height = bounds.Size.Height
+		c.invalidate()
 		return c
 	}
 	c.paneOrder = append(c.paneOrder, id)
@@ -104,6 +115,7 @@ func (c *Compositor) AddPane(id string, content string, bounds coordinate.Rect, 
 		width:   bounds.Size.Width,
 		height:  bounds.Size.Height,
 	}
+	c.invalidate()
 	return c
 }
 
@@ -115,6 +127,7 @@ func (c *Compositor) UpdatePane(id string, content string) *Compositor {
 		return c
 	}
 	pe.content = content
+	c.invalidate()
 	return c
 }
 
@@ -129,6 +142,7 @@ func (c *Compositor) UpdatePaneBounds(id string, bounds coordinate.Rect) *Compos
 	pe.y = bounds.Position.Y
 	pe.width = bounds.Size.Width
 	pe.height = bounds.Size.Height
+	c.invalidate()
 	return c
 }
 
@@ -145,6 +159,7 @@ func (c *Compositor) UpdatePaneIfNew(id string, content string, gen uint64) *Com
 	}
 	pe.content = content
 	pe.gen = gen
+	c.invalidate()
 	return c
 }
 
@@ -161,6 +176,7 @@ func (c *Compositor) RemovePane(id string) *Compositor {
 			break
 		}
 	}
+	c.invalidate()
 	return c
 }
 
@@ -177,6 +193,7 @@ func (c *Compositor) AddChrome(id string, content string, bounds coordinate.Rect
 		width:   bounds.Size.Width,
 		height:  bounds.Size.Height,
 	}
+	c.invalidate()
 	return c
 }
 
@@ -188,6 +205,7 @@ func (c *Compositor) UpdateChrome(id string, content string) *Compositor {
 		return c
 	}
 	ce.content = content
+	c.invalidate()
 	return c
 }
 
@@ -202,13 +220,18 @@ func (c *Compositor) UpdateChromeBounds(id string, bounds coordinate.Rect) *Comp
 	ce.y = bounds.Position.Y
 	ce.width = bounds.Size.Width
 	ce.height = bounds.Size.Height
+	c.invalidate()
 	return c
 }
 
 // RemoveChrome removes a chrome entry by ID. No-op if the chrome entry does
 // not exist. Returns the Compositor for chaining.
 func (c *Compositor) RemoveChrome(id string) *Compositor {
+	if _, ok := c.chrome[id]; !ok {
+		return c
+	}
 	delete(c.chrome, id)
+	c.invalidate()
 	return c
 }
 
@@ -221,6 +244,7 @@ func (c *Compositor) Resize(width, height int) *Compositor {
 		c.canvas.Clear()
 		c.canvas.Resize(width, height)
 	}
+	c.invalidate()
 	return c
 }
 
@@ -295,16 +319,30 @@ func (c *Compositor) ensureCanvas() {
 	}
 }
 
-// Render rebuilds the Compositor from all pane and chrome layers, composites
-// onto a reused canvas, and returns the rendered string.
+// invalidate clears the render cache. Every mutator that changes layer state
+// calls it, so the next Render rebuilds instead of serving a stale frame.
+func (c *Compositor) invalidate() {
+	c.cacheValid = false
+}
+
+// Render composites all pane and chrome layers onto a reused canvas and
+// returns the rendered string. When no mutator has changed layer state since
+// the previous Render, the cached frame is returned without rebuilding — an
+// idle frame (a throttle tick with no new output) costs O(1).
 func (c *Compositor) Render() string {
+	if c.cacheValid {
+		return c.cachedRender
+	}
+
 	comp := c.buildCompositor()
 
 	c.ensureCanvas()
 	c.canvas.Clear()
 	c.canvas.Compose(comp)
 
-	return c.canvas.Render()
+	c.cachedRender = c.canvas.Render()
+	c.cacheValid = true
+	return c.cachedRender
 }
 
 // Hit performs a hit test at the given (x, y) coordinates. Returns the ID of

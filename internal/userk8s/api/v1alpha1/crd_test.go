@@ -100,10 +100,15 @@ func rules(t *testing.T, schema any) []string {
 	return out
 }
 
+func normalizeRuleWhitespace(rule string) string {
+	return strings.Join(strings.Fields(rule), " ")
+}
+
 func assertRule(t *testing.T, file string, got []string, fragment string) {
 	t.Helper()
+	want := normalizeRuleWhitespace(fragment)
 	for _, rule := range got {
-		if strings.Contains(rule, fragment) {
+		if strings.Contains(normalizeRuleWhitespace(rule), want) {
 			return
 		}
 	}

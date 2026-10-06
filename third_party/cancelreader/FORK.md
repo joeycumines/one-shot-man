@@ -57,3 +57,44 @@ Issue not yet filed upstream (checked 2026-10-05: no existing issue or PR
 mentions EINTR on EpollCtl). Filing it is a courtesy follow-up, not a
 prerequisite for carrying this fork — the defect is real, reproducible
 under signal load, and the patch is the standard EINTR-retry idiom.
+
+## Upstream open-PR triage (2026-10-06)
+
+All 9 open PRs on muesli/cancelreader were inspected at diff level and
+cross-referenced against this fork. No upstream PR overlaps our two
+functional fixes (EINTR retry, EPERM fallback).
+
+### Overlaps with this fork
+
+| PR | Overlap |
+|----|---------|
+| #26 — Don't leak cancel signal pipe fds | Direct. Upstream closes only the epoll fd on both EpollCtl error paths, leaking the pipe. This fork carries both paths unchanged AND the EPERM fallback path adds a third leak instance (closes epoll but not cancelSignalReader/cancelSignalWriter). |
+| #13 — Improve epoll error messages | Partial. Touches the same two EpollCtl error sites this fork routed through `epollCtl`; our messages are still the bare upstream string. |
+
+### Want to adopt
+
+| PR | Priority | Why |
+|----|----------|-----|
+| #26 | HIGH | Real fd leak; 3 sites in this fork. 2-line fix per site. |
+| #28 (draft) | HIGH | `readAsync` leaks a CreateEvent handle per read, swallows GetOverlappedResult errors (returns nil), and the error path skips `<-r.blockingReadSignal`, permanently occupying the signal channel. This fork's readAsync is byte-identical to upstream. |
+| #8 | HIGH | Windows dispatch guards only on `f.Fd() != os.Stdin.Fd()`, then unconditionally opens CONIN$. With piped stdin it either fails (no console) or silently reads the console instead of the pipe. The GetConsoleMode probe + fallback is the Windows analog of our Linux EPERM fix. |
+| #27 (draft) | MEDIUM | Fallback reader returns (0, ErrCanceled) after consuming bytes in a cancel race. Matters more here since the EPERM fix routes more traffic to the fallback reader. |
+| #13 | LOW | fd numbers + %w wrapping in the two error messages this fork still ships bare; early -1 fd check. Compatible with the epollCtl wrapper. |
+
+### Skip
+
+| PR | Why |
+|----|-----|
+| #21 | Behavioral change: flips ENABLE_PROCESSED_INPUT. Alters signal delivery semantics for bubbletea/ultraviolet on Windows. Design decision, not a defect fix. |
+| #24 | Renames module to github.com/abakum/cancelreader (breaks the replace directive), removes prepareConsole entirely, adds three external deps. Not mergeable. |
+| #25 | Comment typo. |
+| #19 | Dependabot x/sys → 0.9.0; this fork is on v0.47.0. |
+
+### Retraction
+
+An earlier rationale for PR #8 said "our CI/tests run on Windows with
+redirected stdin." That was imprecise: the fork's pipe/cancel test
+(cancelreader_default_test.go) is `//go:build !windows`, and
+TestReaderNonFile uses a non-File reader, so nothing in the fork
+exercises the Windows stdin path. The verified relevance of #8 is the
+CONIN$-vs-pipe dispatch gap, not existing test coverage.

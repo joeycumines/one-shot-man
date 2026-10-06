@@ -162,6 +162,8 @@ github.com/joeycumines/go-behaviortree v1.11.0 h1:hdLRVkBIw+G5qAyxzo5R0WJQJWgunc
 github.com/joeycumines/go-behaviortree v1.11.0/go.mod h1:tZmBd8C0bv4ZsuTtAbNGPbUkTXRy1lkV8epTT9Zm7ZA=
 github.com/joeycumines/go-bigbuff v1.21.1 h1:UNX65np8YFSzORxCMHSrXXVNNI7ebedmBQvqj6v/Fkk=
 github.com/joeycumines/go-bigbuff v1.21.1/go.mod h1:Ftwjd8wCDJqDk5NLsCbTibX0BrbzPv/GYiHoa3fbO9E=
+github.com/joeycumines/go-cancelreader v0.0.0-20261006054419-50bbc8357f95 h1:EIVQd6/zRl+9hw0kOGxG1fFr8FmM6Z48eTgFPHGns/Y=
+github.com/joeycumines/go-cancelreader v0.0.0-20261006054419-50bbc8357f95/go.mod h1:3XuTXfFS2VjM+HTLZY9Ak0l6eUKfijIfMUZ4EgX0QYo=
 github.com/joeycumines/go-catrate v0.0.0-20260825080149-21d1636aba2d h1:wVYUntUJLshftVmdOm9Px9cKZbEFb1cBtP4XeHV6M7Y=
 github.com/joeycumines/go-catrate v0.0.0-20260825080149-21d1636aba2d/go.mod h1:TdrX/GNWrY/JD0P+YEV5lelsdBnZaxT57XMVKppJPQs=
 github.com/joeycumines/go-eventloop v0.1.0 h1:XW4vRkjDODCNOC2jq1+nMH8WQfdEnpgVobMVAP3rb8A=

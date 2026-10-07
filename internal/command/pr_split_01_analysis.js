@@ -55,9 +55,18 @@
         if (mergeBase.code !== 0) {
             return createEmptyResult('merge-base failed: ' + execFailReason(mergeBase), currentBranch);
         }
+        var mergeBaseSha = mergeBase.stdout.trim();
+        if (mergeBaseSha === '') {
+            // Defensive: merge-base returned success but produced no SHA. This
+            // can happen when the exec output drain loses data under heavy load
+            // (a descendant or co-process holding the pipe write end). Failing
+            // here with a clear message is better than passing an empty string
+            // to git diff, which yields a confusing "ambiguous argument ''".
+            return createEmptyResult('merge-base returned no output for base ' + baseBranch, currentBranch);
+        }
 
         // Use --name-status to capture diff status (A/M/D/R/C) per file.
-        var diffResult = await gitExec(dir, ['diff', '--name-status', mergeBase.stdout.trim(), currentBranch]);
+        var diffResult = await gitExec(dir, ['diff', '--name-status', mergeBaseSha, currentBranch]);
         if (diffResult.code !== 0) {
             return createEmptyResult('git diff failed: ' + execFailReason(diffResult), currentBranch);
         }

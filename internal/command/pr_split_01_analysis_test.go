@@ -407,6 +407,9 @@ func TestChunk01_AnalyzeDiffStats_EmptyDiff(t *testing.T) {
 // analyzeDiffAsync, analyzeDiffStats) reject a successful merge-base call
 // that produced empty stdout, instead of passing an empty string to
 // git diff and getting a confusing "ambiguous argument ''" error.
+//
+// Uses GitMockSetupJS (not execMockSetupJS) because it overrides execv,
+// spawn, AND prSplit._gitExecAsync — covering all three execution paths.
 // ---------------------------------------------------------------------------
 
 func TestChunk01_AnalyzeDiff_EmptyMergeBaseOutput(t *testing.T) {
@@ -414,16 +417,14 @@ func TestChunk01_AnalyzeDiff_EmptyMergeBaseOutput(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(execMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
 	// rev-parse returns a branch; merge-base returns empty stdout with code 0.
 	if _, err := evalJS(`
-		globalThis._execResponses['git\x00rev-parse\x00--abbrev-ref\x00HEAD'] =
-			_execOk('feature-branch\n');
-		globalThis._execResponses['git\x00merge-base\x00main\x00feature-branch'] =
-			_execOk('');
+		globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature-branch');
+		globalThis._gitResponses['merge-base main feature-branch'] = _gitOk('');
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -457,17 +458,16 @@ func TestChunk01_AnalyzeDiffAsync_EmptyMergeBaseOutput(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	// Override _gitExecAsync to return controlled responses.
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// rev-parse returns a branch; merge-base returns empty stdout with code 0.
+	// GitMockSetupJS overrides exec.spawn AND prSplit._gitExecAsync, so
+	// analyzeDiffAsync's spawn-based gitExecAsync is fully intercepted.
 	if _, err := evalJS(`
-		globalThis.prSplit._gitExecAsync = function(dir, args) {
-			if (args[0] === 'rev-parse') {
-				return Promise.resolve({stdout: 'feature-branch\n', stderr: '', code: 0, error: false, message: ''});
-			}
-			if (args[0] === 'merge-base') {
-				return Promise.resolve({stdout: '', stderr: '', code: 0, error: false, message: ''});
-			}
-			return Promise.resolve({stdout: '', stderr: '', code: 0, error: false, message: ''});
-		};
+		globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature-branch');
+		globalThis._gitResponses['merge-base main feature-branch'] = _gitOk('');
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -501,16 +501,14 @@ func TestChunk01_AnalyzeDiffStats_EmptyMergeBaseOutput(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(execMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
 	// rev-parse returns a branch; merge-base returns empty stdout with code 0.
 	if _, err := evalJS(`
-		globalThis._execResponses['git\x00rev-parse\x00--abbrev-ref\x00HEAD'] =
-			_execOk('feature-branch\n');
-		globalThis._execResponses['git\x00merge-base\x00main\x00feature-branch'] =
-			_execOk('');
+		globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature-branch');
+		globalThis._gitResponses['merge-base main feature-branch'] = _gitOk('');
 	`); err != nil {
 		t.Fatal(err)
 	}

@@ -177,9 +177,15 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 	t.Logf("Sent Shift+Tab×2 + Enter to trigger Start Analysis")
 
 	// First check: see if "Processing..." appears in the nav bar.
-	// This would confirm that startAnalysis was triggered.
+	// This would confirm that startAnalysis was triggered. However, the
+	// pipeline can complete so fast that "Processing..." is never rendered,
+	// so also accept the post-analysis states as evidence of success.
 	if waitForPTYOutput(t, &outputBuf, "Processing", 5*time.Second) {
 		t.Logf("startAnalysis confirmed: 'Processing...' visible in nav bar")
+	} else if waitForPTYOutput(t, &outputBuf, "Plan Review", 2*time.Second) {
+		t.Logf("startAnalysis confirmed: pipeline completed before 'Processing...' was observed")
+	} else if waitForPTYOutput(t, &outputBuf, "Execute Plan", 2*time.Second) {
+		t.Logf("startAnalysis confirmed: pipeline completed (found 'Execute Plan')")
 	} else {
 		// Tab navigation may have failed. Dump output for diagnosis.
 		snap := outputBuf.String()

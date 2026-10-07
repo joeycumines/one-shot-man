@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	clipboardTimeout = time.Second * 10
+	clipboardTimeout = time.Second * 5
 )
 
 // expandTilde is the underlying function used for tilde expansion.

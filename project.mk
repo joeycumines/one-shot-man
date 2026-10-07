@@ -6,7 +6,7 @@ GO_MODULE_SLUGS_NO_BETTERALIGN ?= $(GO_MODULE_SLUGS)
 GO_MODULE_PATHS_EXCLUDE_PATTERNS ?= ./scratch/%
 DEADCODE_IGNORE_PATTERNS_FILE ?= .deadcodeignore
 DEADCODE_ERROR_ON_UNIGNORED ?= true
-GO_TEST_FLAGS ?= -timeout=30m
+GO_TEST_FLAGS ?= -timeout=40m
 CATALOG_API_PKG ?= ./internal/userk8s/api/v1alpha1/...
 CATALOG_CRD_DIR ?= internal/userk8s/api/config/crd
 

@@ -526,6 +526,22 @@ func TestSpawn_ChildKeepsAutoExitLoopAlive(t *testing.T) {
 		return goja.Undefined()
 	})
 
+	// Submit the task BEFORE starting the loop. With auto-exit enabled, a
+	// loop that starts with no pending work can commit to termination before
+	// any Submit is admitted, causing the submission to be rejected with
+	// ErrLoopTerminated. Submitting before Run eliminates this startup race.
+	if err := loop.Submit(func() {
+		_, err := runtime.RunString(`(async function() {
+			await exec.spawn("sh", ["-c", "sleep 2"]);
+			__collect("spawned");
+		})();`)
+		if err != nil {
+			errCh <- err
+		}
+	}); err != nil {
+		t.Fatalf("submit before loop start: %v", err)
+	}
+
 	loopDone := make(chan error, 1)
 	go func() {
 		loopDone <- loop.Run(baseCtx)
@@ -534,37 +550,6 @@ func TestSpawn_ChildKeepsAutoExitLoopAlive(t *testing.T) {
 		cancel()
 		if err := loop.Shutdown(context.Background()); err != nil && !errors.Is(err, goeventloop.ErrLoopTerminated) {
 			t.Errorf("loop shutdown: %v", err)
-		}
-	})
-
-	// Submit before the loop can observe an empty liveness snapshot: with
-	// auto-exit enabled, a loop goroutine that wins the schedule may commit
-	// to termination before the first Submit arrives, and the submission is
-	// then rejected with ErrLoopTerminated. Retry briefly so the test pins
-	// child liveness rather than startup scheduling.
-	submitLoopTask := func(task func()) {
-		t.Helper()
-		deadline := time.Now().Add(2 * time.Second)
-		for {
-			if err := loop.Submit(task); err == nil {
-				return
-			} else if !errors.Is(err, goeventloop.ErrLoopTerminated) {
-				t.Fatal(err)
-			}
-			if time.Now().After(deadline) {
-				t.Fatal("loop terminated before test task was admitted")
-			}
-			time.Sleep(time.Millisecond)
-		}
-	}
-
-	submitLoopTask(func() {
-		_, err := runtime.RunString(`(async function() {
-			await exec.spawn("sh", ["-c", "sleep 2"]);
-			__collect("spawned");
-		})();`)
-		if err != nil {
-			errCh <- err
 		}
 	})
 	select {

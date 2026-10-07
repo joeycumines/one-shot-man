@@ -62,7 +62,9 @@ func (e *Engine) routeActiveTUIOutput(msg string) bool {
 }
 
 // outputClipboardTimeout caps a clipboard subprocess (pbcopy/xclip/clip).
-const outputClipboardTimeout = 10 * time.Second
+// Kept well under the jscompliance defaultEvalTimeout (10s) so the clipboard
+// fallback fires before the eval timeout, avoiding a race at the boundary.
+const outputClipboardTimeout = 5 * time.Second
 
 // jsOutputToClipboard copies text to the system clipboard.
 //

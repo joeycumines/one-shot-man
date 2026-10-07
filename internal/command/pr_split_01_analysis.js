@@ -170,8 +170,12 @@
         if (mergeBase.code !== 0) {
             return createEmptyResult('merge-base failed: ' + execFailReason(mergeBase), currentBranch);
         }
+        var mergeBaseSha = mergeBase.stdout.trim();
+        if (mergeBaseSha === '') {
+            return createEmptyResult('merge-base returned no output for base ' + baseBranch, currentBranch);
+        }
 
-        var diffResult = await gitExecAsync(dir, ['diff', '--name-status', mergeBase.stdout.trim(), currentBranch]);
+        var diffResult = await gitExecAsync(dir, ['diff', '--name-status', mergeBaseSha, currentBranch]);
         if (diffResult.code !== 0) {
             return createEmptyResult('git diff failed: ' + execFailReason(diffResult), currentBranch);
         }
@@ -272,8 +276,17 @@
                 currentBranch: currentBranch
             };
         }
+        var mergeBaseSha = mergeBase.stdout.trim();
+        if (mergeBaseSha === '') {
+            return {
+                files: [],
+                error: 'merge-base returned no output for base ' + baseBranch,
+                baseBranch: baseBranch,
+                currentBranch: currentBranch
+            };
+        }
 
-        var statResult = await gitExec(dir, ['diff', '--numstat', mergeBase.stdout.trim(), currentBranch]);
+        var statResult = await gitExec(dir, ['diff', '--numstat', mergeBaseSha, currentBranch]);
         if (statResult.code !== 0) {
             return {
                 files: [],

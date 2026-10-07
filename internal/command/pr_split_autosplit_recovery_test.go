@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
@@ -141,13 +142,7 @@ func TestAutoSplit_PipelineTimeout(t *testing.T) {
 		{"name": "core", "description": "Core changes", "files": []string{"b.go"}},
 	}})
 
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject failed: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t, MCPInjection{ToolName: "reportClassification", Data: classJSON})
 
 	// pipelineTimeoutMs = -1 — guarantees timeout on first step check.
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
@@ -306,13 +301,7 @@ func TestAutoSplit_SaveAndResume(t *testing.T) {
 	}
 
 	// Inject classification via mcpcallback channel.
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification failed: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t, MCPInjection{ToolName: "reportClassification", Data: classJSON})
 
 	// ---- Run 1: Normal auto-split (should succeed and save plan) ----
 	result1, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
@@ -512,13 +501,7 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 	}
 
 	// Inject classification via mcpcallback channel.
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification failed: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t, MCPInjection{ToolName: "reportClassification", Data: classJSON})
 
 	// Override verifySplitsAsync to throw — simulating a crash after Step 6.
 	if _, err := tp.EvalJS(`
@@ -815,19 +798,10 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 	// Set up mcpcallback injection: watch for the callback to init, then
 	// inject classification and plan data directly into the Go channels.
 	// This replaces the old file-polling approach.
-	watchCh := tp.WatchMCPInit()
-
-	go func() {
-		h := <-watchCh
-		// Inject classification data — the pipeline will receive it via waitFor.
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification failed: %v", err)
-		}
-		// Inject split plan data.
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan failed: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: classJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: planJSON},
+	)
 
 	// Call automatedSplit with fast timeouts and TUI disabled.
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
@@ -1141,13 +1115,7 @@ func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
 	}
 
 	// Inject classification via mcpcallback channel.
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification failed: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t, MCPInjection{ToolName: "reportClassification", Data: classJSON})
 
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
 		disableTUI: true,
@@ -1579,16 +1547,10 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 	}
 
 	// Inject classification + plan via mcpcallback channels.
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification failed: %v", err)
-		}
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan failed: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: classJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: planJSON},
+	)
 
 	// Override executeSplitAsync to create one branch, then return an error.
 	// This simulates a partial execution failure where branches exist.
@@ -1729,16 +1691,10 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 	}
 
 	// Inject classification + plan via mcpcallback channels.
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification failed: %v", err)
-		}
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan failed: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: classJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: planJSON},
+	)
 
 	// Override executeSplitAsync: create first branch, then fail.
 	overrideExec := `
@@ -2056,13 +2012,7 @@ func TestAutoSplit_ResumeAgentResolveFails(t *testing.T) {
 	}
 
 	// Inject classification via mcpcallback channel.
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification failed: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t, MCPInjection{ToolName: "reportClassification", Data: classJSON})
 
 	// ---- Run 1: Normal auto-split to create a saved plan. ----
 	result1, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
@@ -2328,13 +2278,7 @@ func TestAutoSplit_StepTimeout(t *testing.T) {
 		{"name": "core", "description": "Core changes", "files": []string{"b.go"}},
 	}})
 
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject failed: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t, MCPInjection{ToolName: "reportClassification", Data: classJSON})
 
 	// stepTimeoutMs = 1 — any step taking > 1ms triggers post-step timeout.
 	// pipelineTimeoutMs left large so pipeline timeout doesn't fire first.
@@ -2877,16 +2821,10 @@ func TestIntegration_AutoSplitMockMCP_DoubleInvocation(t *testing.T) {
 	}`
 
 	// --- First invocation ---
-	watchCh1 := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh1
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification (1st): %v", err)
-		}
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan (1st): %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: classJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: planJSON},
+	)
 
 	result1, err := tp.EvalJS(fmt.Sprintf(`JSON.stringify(await prSplit.automatedSplit(%s))`, autoSplitOpts))
 	if err != nil {
@@ -2919,16 +2857,10 @@ func TestIntegration_AutoSplitMockMCP_DoubleInvocation(t *testing.T) {
 	_ = os.Remove(filepath.Join(tp.Dir, ".pr-split-plan.json"))
 
 	// --- Second invocation (same engine, same repo) ---
-	watchCh2 := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh2
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification (2nd): %v", err)
-		}
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan (2nd): %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: classJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: planJSON},
+	)
 
 	result2, err := tp.EvalJS(fmt.Sprintf(`JSON.stringify(await prSplit.automatedSplit(%s))`, autoSplitOpts))
 	if err != nil {
@@ -3025,16 +2957,10 @@ func TestIntegration_AutoSplitMockMCP_OverlappingFiles(t *testing.T) {
 		t.Fatalf("mock setup: %v", err)
 	}
 
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification: %v", err)
-		}
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: classJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: planJSON},
+	)
 
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
 		disableTUI: true,
@@ -3180,16 +3106,10 @@ func TestIntegration_AutoSplitMockMCP_VerifyFailure(t *testing.T) {
 		t.Fatalf("mock setup: %v", err)
 	}
 
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification: %v", err)
-		}
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: classJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: planJSON},
+	)
 
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
 		disableTUI: true,
@@ -3319,15 +3239,7 @@ func TestIntegration_AutoSplitMockMCP_CancelDuringExecution(t *testing.T) {
 
 	// Set cancel flag after receiving classification — this should abort
 	// during or after the "Generate split plan" step.
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification: %v", err)
-		}
-		// After injecting classification, set cancel flag.
-		// Don't inject plan — the pipeline will try to generate locally.
-	}()
+	tp.injectOnMCPInit(t, MCPInjection{ToolName: "reportClassification", Data: classJSON})
 
 	// Short classify timeout to not wait too long.
 	// Counter-based isCancelled means no setTimeout needed — deterministic.
@@ -3453,27 +3365,26 @@ func TestIntegration_AutoSplitMockMCP_ConflictResolution(t *testing.T) {
 
 	// Goroutine: inject classification + plan immediately, wait for pipeline
 	// to reach resolution polling, then inject resolution patches.
-	watchCh := tp.WatchMCPInit()
+	watchCh, cancel := mcpcallbackmod.WatchForInit(tp.Runtime)
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done); cancel() })
 	go func() {
-		h := <-watchCh
-		// Inject classification immediately.
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification: %v", err)
-		}
-		// Inject plan to skip 5-second hardcoded plan poll timeout.
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan: %v", err)
-		}
-		// Poll-inject resolution: the pipeline needs time to execute branches,
-		// run verification, detect conflicts, and register the reportResolution
-		// waiter. Instead of a fixed sleep, retry InjectToolResult until the
-		// waiter exists (typically ~500ms, timeout after 10s).
-		deadline := time.Now().Add(10 * time.Second)
-		for time.Now().Before(deadline) {
-			if err := h.InjectToolResult("reportResolution", resolutionJSON); err == nil {
-				break
+		select {
+		case h := <-watchCh:
+			if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "[mcp-init-inject] reportClassification failed: %v\n", err)
 			}
-			time.Sleep(50 * time.Millisecond)
+			if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "[mcp-init-inject] reportSplitPlan failed: %v\n", err)
+			}
+			deadline := time.Now().Add(10 * time.Second)
+			for time.Now().Before(deadline) {
+				if err := h.InjectToolResult("reportResolution", resolutionJSON); err == nil {
+					break
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		case <-done:
 		}
 	}()
 
@@ -3666,11 +3577,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ClassificationTimeout(t *tes
 
 	// Do NOT inject reportClassification — the pipeline will time out waiting.
 	// WatchForInit is still needed to initialize the MCP callback infra.
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		<-watchCh
-		// Deliberately do nothing — no classification injected.
-	}()
+	tp.injectOnMCPInit(t)
 
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
 		disableTUI: true,
@@ -3779,14 +3686,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_PlanFallbackToLocal(t *testi
 		t.Fatal(err)
 	}
 
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		// Inject classification only — NO plan injection.
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t, MCPInjection{ToolName: "reportClassification", Data: classJSON})
 
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
 		disableTUI: true,
@@ -3914,16 +3814,10 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ExecutionFailure(t *testing.
 		t.Fatal(err)
 	}
 
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification: %v", err)
-		}
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: classJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: planJSON},
+	)
 
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
 		disableTUI: true,
@@ -4041,16 +3935,10 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_AllBranchesFailVerify(t *tes
 		t.Fatal(err)
 	}
 
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification: %v", err)
-		}
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: classJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: planJSON},
+	)
 
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
 		disableTUI: true,
@@ -4247,14 +4135,7 @@ func TestIntegration_MockMCP_MalformedClassification(t *testing.T) {
 	// Inject malformed classification: categories is a string, not array.
 	malformedJSON := []byte(`{"categories": "this is not an array"}`)
 
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", malformedJSON); err != nil {
-			t.Logf("inject classification: %v", err)
-		}
-		// No plan injection — let pipeline handle local fallback.
-	}()
+	tp.injectOnMCPInit(t, MCPInjection{ToolName: "reportClassification", Data: malformedJSON})
 
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit(` + automatedSplitFastTimeouts + `))`)
 	if err != nil {
@@ -4334,16 +4215,10 @@ func TestIntegration_MockMCP_PartialClassification(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", partialClassJSON); err != nil {
-			t.Logf("inject classification: %v", err)
-		}
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: partialClassJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: planJSON},
+	)
 
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit(` + automatedSplitFastTimeouts + `))`)
 	if err != nil {
@@ -4429,14 +4304,7 @@ func TestIntegration_MockMCP_EmptyCategories(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", emptyClassJSON); err != nil {
-			t.Logf("inject classification: %v", err)
-		}
-		// No plan injection — let pipeline generate locally after fallback.
-	}()
+	tp.injectOnMCPInit(t, MCPInjection{ToolName: "reportClassification", Data: emptyClassJSON})
 
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit(` + automatedSplitFastTimeouts + `))`)
 	if err != nil {
@@ -4511,16 +4379,10 @@ func TestIntegration_MockMCP_MalformedPlan(t *testing.T) {
 	// Malformed plan: stages is a string, not an array.
 	malformedPlanJSON := []byte(`{"stages": "not an array"}`)
 
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification: %v", err)
-		}
-		if err := h.InjectToolResult("reportSplitPlan", malformedPlanJSON); err != nil {
-			t.Logf("inject plan: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: classJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: malformedPlanJSON},
+	)
 
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit(` + automatedSplitFastTimeouts + `))`)
 	if err != nil {
@@ -4602,18 +4464,20 @@ func TestIntegration_MockMCP_LateClassification(t *testing.T) {
 	pipelineDone := make(chan struct{})
 	var injectErr error
 
-	watchCh := tp.WatchMCPInit()
+	watchCh, cancel := mcpcallbackmod.WatchForInit(tp.Runtime)
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done); cancel() })
 	go func() {
-		h := <-watchCh
-		// Wait for pipeline to complete (timeout) before injecting.
-		<-pipelineDone
-		// Now inject late — this should NOT cause any issues.
-		injectErr = h.InjectToolResult("reportClassification", classJSON)
-		if injectErr != nil {
-			// Expected: the waiter may already be closed/gone.
-			t.Logf("late inject (expected failure): %v", injectErr)
-		} else {
-			t.Log("late inject succeeded (data silently absorbed into closed channel)")
+		select {
+		case h := <-watchCh:
+			<-pipelineDone
+			injectErr = h.InjectToolResult("reportClassification", classJSON)
+			if injectErr != nil {
+				fmt.Fprintf(os.Stderr, "[mcp-init-inject] late inject (expected failure): %v\n", injectErr)
+			} else {
+				fmt.Fprintf(os.Stderr, "[mcp-init-inject] late inject succeeded (data silently absorbed into closed channel)\n")
+			}
+		case <-done:
 		}
 	}()
 

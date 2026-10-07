@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
@@ -21,8 +20,8 @@ import (
 
 // mockMCPSetup is a shared helper that sets up a test pipeline with mock
 // AgentCodeExecutor, injects classification via MCP callback, and returns
-// the pipeline and injection channel.
-func mockMCPSetup(t *testing.T, classData map[string]any) (*TestPipeline, <-chan *mcpcallbackmod.Handle) {
+// the pipeline.
+func mockMCPSetup(t *testing.T, classData map[string]any) *TestPipeline {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -54,17 +53,11 @@ func mockMCPSetup(t *testing.T, classData map[string]any) (*TestPipeline, <-chan
 		t.Fatal(err)
 	}
 
-	// Watch for MCP callback init to inject classification.
+	// Inject classification via MCP callback.
 	classJSON, _ := json.Marshal(classData)
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification failed: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t, MCPInjection{ToolName: "reportClassification", Data: classJSON})
 
-	return tp, watchCh
+	return tp
 }
 
 // parseAutoSplitReport parses the JSON result of automatedSplit into a
@@ -100,7 +93,7 @@ func TestIntegration_MockMCP_ClassificationAccuracy(t *testing.T) {
 		{"name": "docs", "description": "Documentation", "files": []string{"docs/guide.md"}},
 	}}
 
-	tp, _ := mockMCPSetup(t, classData)
+	tp := mockMCPSetup(t, classData)
 
 	oldDir, err := os.Getwd()
 	if err != nil {
@@ -191,7 +184,7 @@ func TestIntegration_MockMCP_PlanGenerationFromClassification(t *testing.T) {
 		{"name": "docs", "description": "Documentation", "files": []string{"docs/guide.md"}},
 	}}
 
-	tp, _ := mockMCPSetup(t, classData)
+	tp := mockMCPSetup(t, classData)
 
 	oldDir, err := os.Getwd()
 	if err != nil {
@@ -280,7 +273,7 @@ func TestIntegration_MockMCP_ExecutionAndVerification(t *testing.T) {
 		{"name": "cli", "description": "CLI runner", "files": []string{"cmd/run.go"}},
 	}}
 
-	tp, _ := mockMCPSetup(t, classData)
+	tp := mockMCPSetup(t, classData)
 
 	oldDir, err := os.Getwd()
 	if err != nil {
@@ -359,7 +352,7 @@ func TestIntegration_MockMCP_CancellationDuringClassification(t *testing.T) {
 		{"name": "api", "description": "Add API", "files": []string{"pkg/impl.go"}},
 	}}
 
-	tp, _ := mockMCPSetup(t, classData)
+	tp := mockMCPSetup(t, classData)
 
 	oldDir, err := os.Getwd()
 	if err != nil {
@@ -418,7 +411,7 @@ func TestIntegration_MockMCP_DryRunMode(t *testing.T) {
 		{"name": "cli", "description": "CLI runner", "files": []string{"cmd/run.go"}},
 	}}
 
-	tp, _ := mockMCPSetup(t, classData)
+	tp := mockMCPSetup(t, classData)
 
 	oldDir, err := os.Getwd()
 	if err != nil {
@@ -555,7 +548,7 @@ func TestIntegration_MockMCP_PipelineTimeout(t *testing.T) {
 		{"name": "api", "description": "Add API", "files": []string{"pkg/impl.go"}},
 	}}
 
-	tp, _ := mockMCPSetup(t, classData)
+	tp := mockMCPSetup(t, classData)
 
 	oldDir, err := os.Getwd()
 	if err != nil {
@@ -605,7 +598,7 @@ func TestIntegration_MockMCP_ReSplit(t *testing.T) {
 		{"name": "api", "description": "Add API", "files": []string{"pkg/impl.go"}},
 	}}
 
-	tp, _ := mockMCPSetup(t, classData)
+	tp := mockMCPSetup(t, classData)
 
 	oldDir, err := os.Getwd()
 	if err != nil {
@@ -752,7 +745,7 @@ func TestIntegration_MockMCP_CleanupOnFailure(t *testing.T) {
 		{"name": "api", "description": "Add API", "files": []string{"pkg/impl.go"}},
 	}}
 
-	tp, _ := mockMCPSetup(t, classData)
+	tp := mockMCPSetup(t, classData)
 
 	oldDir, err := os.Getwd()
 	if err != nil {

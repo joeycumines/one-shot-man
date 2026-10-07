@@ -115,16 +115,10 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 		},
 	})
 
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification: %v", err)
-		}
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: classJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: planJSON},
+	)
 
 	// --- Step 3: dispatch override → triggers pipeline via automatedSplit ---
 	if err := tp.Dispatch("override", nil); err != nil {

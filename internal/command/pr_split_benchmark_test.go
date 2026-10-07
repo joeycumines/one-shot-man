@@ -145,16 +145,10 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 	}
 
 	// Set up MCP callback injection.
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification failed: %v", err)
-		}
-		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
-			t.Logf("inject plan failed: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t,
+		MCPInjection{ToolName: "reportClassification", Data: classJSON},
+		MCPInjection{ToolName: "reportSplitPlan", Data: planJSON},
+	)
 
 	// Run with hard timeout.
 	start := time.Now()

@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -41,13 +42,42 @@ type TestPipeline struct {
 	Runtime     *goja.Runtime                // this pipeline's JS runtime
 }
 
-// WatchMCPInit returns a channel that receives a Handle to the next
-// mcpCallback initialized by THIS pipeline's engine, so a test can inject a
-// tool result while its own JS waits. The runtime scoping is what keeps
+// MCPInjection is one tool result to inject when the pipeline's MCP callback
+// completes init.
+type MCPInjection struct {
+	ToolName string
+	Data     json.RawMessage
+}
+
+// injectOnMCPInit registers a watcher that injects the given tool results,
+// in order, when THIS pipeline's MCP callback completes init, so a test can
+// supply payloads while its own JS waits. The runtime scoping is what keeps
 // parallel tests from injecting each other's payloads; register before
-// starting the pipeline.
-func (tp *TestPipeline) WatchMCPInit() <-chan *mcpcallbackmod.Handle {
-	return mcpcallbackmod.WatchForInit(tp.Runtime)
+// starting the pipeline. The watcher goroutine is bounded by test cleanup
+// (done channel) and deregistered from the global registry (cancel), so it
+// never leaks and never logs through the testing machinery after completion.
+// Zero injections is valid: the watcher then simply drains init without
+// injecting, for tests asserting the no-injection timeout path. Injection
+// errors go to stderr because the goroutine may outlive the test.
+func (tp *TestPipeline) injectOnMCPInit(t *testing.T, injections ...MCPInjection) {
+	t.Helper()
+	watchCh, cancel := mcpcallbackmod.WatchForInit(tp.Runtime)
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		close(done)
+		cancel()
+	})
+	go func() {
+		select {
+		case h := <-watchCh:
+			for _, inj := range injections {
+				if err := h.InjectToolResult(inj.ToolName, inj.Data); err != nil {
+					fmt.Fprintf(os.Stderr, "[mcp-init-inject] %s failed: %v\n", inj.ToolName, err)
+				}
+			}
+		case <-done:
+		}
+	}()
 }
 
 // setupTestPipeline creates a test pipeline with configurable initial files,
@@ -380,7 +410,7 @@ func loadPrSplitEngine(t testing.TB, overrides map[string]any) (*bytes.Buffer, f
 
 // prSplitTestEngine bundles the handles a test needs from a loaded pr-split
 // engine. Runtime is included so tests can scope test-only injection
-// channels (see TestPipeline.WatchMCPInit) to their own engine instead of a
+// channels (see TestPipeline.injectOnMCPInit) to their own engine instead of a
 // process-global watcher list.
 type prSplitTestEngine struct {
 	Stdout      *safeBuffer

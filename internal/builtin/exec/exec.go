@@ -628,5 +628,3 @@ func signaledExit(err error) bool {
 	var exitErr *osexec.ExitError
 	return errors.As(err, &exitErr) && exitErr.ExitCode() == -1
 }
-
-

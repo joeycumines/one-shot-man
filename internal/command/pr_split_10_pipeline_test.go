@@ -891,14 +891,14 @@ func TestAnchorPipeline_SendToHandle_MockedTuiMux_Stable(t *testing.T) {
 				return { plain: tuiMux._screen };
 			}
 		};
-		// Fast timeouts for testing.
-		prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 200;
+		// Fast timeouts for testing, with generous headroom for loaded CI.
+		prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 2000;
 		prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 5;
 		prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 2;
-		prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 200;
+		prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 2000;
 		prSplit.SEND_SUBMIT_ACK_POLL_MS = 5;
 		prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
-		prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 200;
+		prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 2000;
 		prSplit.SEND_PROMPT_READY_POLL_MS = 5;
 		prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 2;
 		prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 1;

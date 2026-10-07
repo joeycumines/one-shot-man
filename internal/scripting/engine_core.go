@@ -701,6 +701,17 @@ func (e *Engine) ExecuteScript(script *Script) error {
 			}
 			return nil
 		}); cbErr != nil {
+			// The script requested process.exit (typically from a signal
+			// listener), which terminates the event loop and races this
+			// post-exit callback — whether the submit is rejected outright
+			// (ErrLoopTerminated) or the loop drains/drops the queued callback
+			// and the wait observes runtime shutdown. Any resulting failure here
+			// is an artifact of that exit, not an execution failure: the
+			// script's exit decision wins, and the exit code is recovered via
+			// ExitCode after Wait returns.
+			if e.runtime != nil && e.runtime.processExitRequested.Load() {
+				return nil
+			}
 			return cbErr
 		}
 	}

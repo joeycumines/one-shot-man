@@ -3377,12 +3377,20 @@ func TestIntegration_AutoSplitMockMCP_ConflictResolution(t *testing.T) {
 			if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
 				fmt.Fprintf(os.Stderr, "[mcp-init-inject] reportSplitPlan failed: %v\n", err)
 			}
-			deadline := time.Now().Add(10 * time.Second)
-			for time.Now().Before(deadline) {
+			deadline := time.After(10 * time.Second)
+			ticker := time.NewTicker(50 * time.Millisecond)
+			defer ticker.Stop()
+			for {
 				if err := h.InjectToolResult("reportResolution", resolutionJSON); err == nil {
-					break
+					return
 				}
-				time.Sleep(50 * time.Millisecond)
+				select {
+				case <-done:
+					return
+				case <-deadline:
+					return
+				case <-ticker.C:
+				}
 			}
 		case <-done:
 		}
@@ -4470,7 +4478,11 @@ func TestIntegration_MockMCP_LateClassification(t *testing.T) {
 	go func() {
 		select {
 		case h := <-watchCh:
-			<-pipelineDone
+			select {
+			case <-pipelineDone:
+			case <-done:
+				return
+			}
 			injectErr = h.InjectToolResult("reportClassification", classJSON)
 			if injectErr != nil {
 				fmt.Fprintf(os.Stderr, "[mcp-init-inject] late inject (expected failure): %v\n", injectErr)

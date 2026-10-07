@@ -108,7 +108,11 @@ func (e *Engine) LoadChunks(t testing.TB, names ...string) {
 // test infrastructure.
 func (e *Engine) EvalJS(t testing.TB) func(string) (any, error) {
 	t.Helper()
-	return makeEvalJS(t, e.engine, 30*time.Second)
+	// 2m rather than 30s: heavy real-git evaluations (executeSplit,
+	// cleanupBranches) can legitimately exceed 30s of wall-clock on a loaded
+	// parallel CI runner while still making progress; the package-level test
+	// timeout still bounds genuine hangs.
+	return makeEvalJS(t, e.engine, 2*time.Minute)
 }
 
 // EvalJSTimeout is like [Engine.EvalJS] but with a custom timeout.

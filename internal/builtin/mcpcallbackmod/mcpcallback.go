@@ -83,10 +83,11 @@ type watcherRegistry struct {
 var initWatchers watcherRegistry
 
 // WatchForInit returns a channel that receives a Handle to the next
-// mcpCallback created by rt that completes initialization (init). Handles for
-// other runtimes are never delivered, so concurrent tests cannot cross-talk.
-// Used by Go integration tests to inject tool results while the JS runtime is
-// waiting on waitForAsync.
+// mcpCallback created by rt that completes initialization (init), plus a
+// cancel function that deregisters the watcher. Handles for other runtimes
+// are never delivered, so concurrent tests cannot cross-talk. Used by Go
+// integration tests to inject tool results while the JS runtime is waiting
+// on waitForAsync.
 //
 // Each registration is served at most once: the first init for rt delivers to
 // every watcher registered for rt and then clears the runtime's list. A test
@@ -96,11 +97,15 @@ var initWatchers watcherRegistry
 // Delivery is non-blocking. notifyWatchers runs on the caller's event-loop
 // goroutine, so a watcher that is not ready to receive must never stall it.
 //
-// The caller MUST drain the returned channel to avoid goroutine leaks.
-func WatchForInit(rt *goja.Runtime) <-chan *Handle {
+// The cancel function removes the watcher from the registry and deletes the
+// runtime's entry when the last watcher leaves. It is idempotent and safe to
+// call after delivery. Cancel does NOT close the channel: a delivery already
+// in flight may still land in the buffer, so a receiver that must terminate
+// promptly should select on its own done channel.
+func WatchForInit(rt *goja.Runtime) (<-chan *Handle, func()) {
 	ch := make(chan *Handle, 1)
 	if rt == nil {
-		return ch
+		return ch, func() {}
 	}
 	initWatchers.mu.Lock()
 	if initWatchers.byRuntime == nil {
@@ -108,7 +113,21 @@ func WatchForInit(rt *goja.Runtime) <-chan *Handle {
 	}
 	initWatchers.byRuntime[rt] = append(initWatchers.byRuntime[rt], ch)
 	initWatchers.mu.Unlock()
-	return ch
+	cancel := func() {
+		initWatchers.mu.Lock()
+		defer initWatchers.mu.Unlock()
+		watchers := initWatchers.byRuntime[rt]
+		for i, w := range watchers {
+			if w == ch {
+				initWatchers.byRuntime[rt] = append(watchers[:i], watchers[i+1:]...)
+				break
+			}
+		}
+		if len(initWatchers.byRuntime[rt]) == 0 {
+			delete(initWatchers.byRuntime, rt)
+		}
+	}
+	return ch, cancel
 }
 
 func mcpCallbackDebugEnabled() bool {

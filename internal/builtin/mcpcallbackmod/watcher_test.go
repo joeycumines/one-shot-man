@@ -43,8 +43,10 @@ func TestWatchForInit_IsScopedToRuntime(t *testing.T) {
 	rtA := goja.New()
 	rtB := goja.New()
 
-	chA := WatchForInit(rtA)
-	chB := WatchForInit(rtB)
+	chA, cancelA := WatchForInit(rtA)
+	chB, cancelB := WatchForInit(rtB)
+	defer cancelA()
+	defer cancelB()
 
 	cbA := &mcpCallback{runtime: rtA}
 	notifyWatchers(rtA, cbA)
@@ -64,7 +66,8 @@ func TestWatchForInit_IsScopedToRuntime(t *testing.T) {
 // watcher is served one init, and a later init is not replayed to it.
 func TestWatchForInit_ClearsAfterDelivery(t *testing.T) {
 	rt := goja.New()
-	ch := WatchForInit(rt)
+	ch, cancel := WatchForInit(rt)
+	defer cancel()
 
 	first := &mcpCallback{runtime: rt}
 	notifyWatchers(rt, first)
@@ -77,11 +80,63 @@ func TestWatchForInit_ClearsAfterDelivery(t *testing.T) {
 }
 
 // TestWatchForInit_NilRuntimeIsInert documents that a nil runtime neither
-// panics on registration nor receives anything.
+// panics on registration nor receives anything, and its no-op cancel is safe.
 func TestWatchForInit_NilRuntimeIsInert(t *testing.T) {
-	ch := WatchForInit(nil)
+	ch, cancel := WatchForInit(nil)
+	cancel()
 	notifyWatchers(nil, &mcpCallback{})
 	assertNoHandle(t, ch, "nil runtime")
+}
+
+// TestWatchForInit_CancelBeforeNotify is the regression guard for the
+// goroutine-leak fix: a watcher whose test ends before init fires cancels
+// its registration, so the registry must not retain the entry (entries
+// would otherwise accumulate for the life of the process) and a later init
+// must not deliver to it.
+func TestWatchForInit_CancelBeforeNotify(t *testing.T) {
+	rt := goja.New()
+	ch, cancel := WatchForInit(rt)
+	cancel()
+
+	initWatchers.mu.Lock()
+	_, retained := initWatchers.byRuntime[rt]
+	initWatchers.mu.Unlock()
+	if retained {
+		t.Fatal("cancelled watcher left a registry entry for its runtime")
+	}
+
+	notifyWatchers(rt, &mcpCallback{runtime: rt})
+	assertNoHandle(t, ch, "cancelled watcher")
+}
+
+// TestWatchForInit_CancelIsIdempotent covers that a repeated cancel is a
+// no-op and does not disturb a sibling watcher on the same runtime.
+func TestWatchForInit_CancelIsIdempotent(t *testing.T) {
+	rt := goja.New()
+	chA, cancelA := WatchForInit(rt)
+	chB, cancelB := WatchForInit(rt)
+	defer cancelB()
+
+	cancelA()
+	cancelA()
+
+	notifyWatchers(rt, &mcpCallback{runtime: rt})
+	assertNoHandle(t, chA, "cancelled watcher")
+	h := receiveWithin(t, chB, "surviving watcher")
+	if h.cb == nil || h.cb.runtime != rt {
+		t.Error("surviving watcher received the wrong handle")
+	}
+}
+
+// TestWatchForInit_CancelAfterDelivery pins that a late cancel, after the
+// handle was already delivered (the normal cleanup path), is safe.
+func TestWatchForInit_CancelAfterDelivery(t *testing.T) {
+	rt := goja.New()
+	ch, cancel := WatchForInit(rt)
+	notifyWatchers(rt, &mcpCallback{runtime: rt})
+	receiveWithin(t, ch, "init")
+	cancel()
+	cancel()
 }
 
 // TestNotifyWatchers_ConcurrentRegistrationRace exercises the registry under
@@ -106,7 +161,8 @@ func TestNotifyWatchers_ConcurrentRegistrationRace(t *testing.T) {
 		wg.Add(1)
 		go func(rt *goja.Runtime) {
 			defer wg.Done()
-			ch := WatchForInit(rt)
+			ch, cancel := WatchForInit(rt)
+			defer cancel()
 			// Give the notifier a chance to run first for some runtimes.
 			notifyWatchers(rt, &mcpCallback{runtime: rt})
 			select {

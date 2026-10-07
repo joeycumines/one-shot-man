@@ -2212,13 +2212,7 @@ func TestIntegration_AutoSplitMockMCP_OutputObservation(t *testing.T) {
 	}
 
 	// Inject classification via mcpcallback.
-	watchCh := tp.WatchMCPInit()
-	go func() {
-		h := <-watchCh
-		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
-			t.Logf("inject classification failed: %v", err)
-		}
-	}()
+	tp.injectOnMCPInit(t, MCPInjection{ToolName: "reportClassification", Data: classJSON})
 
 	// Run pipeline.
 	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({

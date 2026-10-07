@@ -16,7 +16,7 @@ func TestIntegration_MockMCP_ResumeFromPlan(t *testing.T) {
 		{"name": "cli", "description": "CLI runner", "files": []string{"cmd/run.go"}},
 	}}
 
-	tp, _ := mockMCPSetup(t, classData)
+	tp := mockMCPSetup(t, classData)
 
 	oldDir, err := os.Getwd()
 	if err != nil {

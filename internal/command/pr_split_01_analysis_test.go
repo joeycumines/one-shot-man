@@ -399,3 +399,142 @@ func TestChunk01_AnalyzeDiffStats_EmptyDiff(t *testing.T) {
 		t.Errorf("expected 0 files for empty diff, got %d", len(result.Files))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Empty merge-base guard regression tests.
+//
+// These prove that all three analysis functions (analyzeDiff,
+// analyzeDiffAsync, analyzeDiffStats) reject a successful merge-base call
+// that produced empty stdout, instead of passing an empty string to
+// git diff and getting a confusing "ambiguous argument ''" error.
+// ---------------------------------------------------------------------------
+
+func TestChunk01_AnalyzeDiff_EmptyMergeBaseOutput(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// rev-parse returns a branch; merge-base returns empty stdout with code 0.
+	if _, err := evalJS(`
+		globalThis._execResponses['git\x00rev-parse\x00--abbrev-ref\x00HEAD'] =
+			_execOk('feature-branch\n');
+		globalThis._execResponses['git\x00merge-base\x00main\x00feature-branch'] =
+			_execOk('');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.analyzeDiff({baseBranch: 'main'}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		Files []string `json:"files"`
+		Error *string  `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Error == nil {
+		t.Fatal("expected error for empty merge-base output, got nil")
+	}
+	if !strings.Contains(*result.Error, "merge-base returned no output") {
+		t.Errorf("error should mention empty merge-base output, got: %s", *result.Error)
+	}
+	if len(result.Files) != 0 {
+		t.Errorf("expected 0 files on error, got %d", len(result.Files))
+	}
+}
+
+func TestChunk01_AnalyzeDiffAsync_EmptyMergeBaseOutput(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Override _gitExecAsync to return controlled responses.
+	if _, err := evalJS(`
+		globalThis.prSplit._gitExecAsync = function(dir, args) {
+			if (args[0] === 'rev-parse') {
+				return Promise.resolve({stdout: 'feature-branch\n', stderr: '', code: 0, error: false, message: ''});
+			}
+			if (args[0] === 'merge-base') {
+				return Promise.resolve({stdout: '', stderr: '', code: 0, error: false, message: ''});
+			}
+			return Promise.resolve({stdout: '', stderr: '', code: 0, error: false, message: ''});
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.analyzeDiffAsync({baseBranch: 'main'}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		Files []string `json:"files"`
+		Error *string  `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Error == nil {
+		t.Fatal("expected error for empty merge-base output, got nil")
+	}
+	if !strings.Contains(*result.Error, "merge-base returned no output") {
+		t.Errorf("error should mention empty merge-base output, got: %s", *result.Error)
+	}
+	if len(result.Files) != 0 {
+		t.Errorf("expected 0 files on error, got %d", len(result.Files))
+	}
+}
+
+func TestChunk01_AnalyzeDiffStats_EmptyMergeBaseOutput(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// rev-parse returns a branch; merge-base returns empty stdout with code 0.
+	if _, err := evalJS(`
+		globalThis._execResponses['git\x00rev-parse\x00--abbrev-ref\x00HEAD'] =
+			_execOk('feature-branch\n');
+		globalThis._execResponses['git\x00merge-base\x00main\x00feature-branch'] =
+			_execOk('');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.analyzeDiffStats({baseBranch: 'main'}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		Files []any   `json:"files"`
+		Error *string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Error == nil {
+		t.Fatal("expected error for empty merge-base output, got nil")
+	}
+	if !strings.Contains(*result.Error, "merge-base returned no output") {
+		t.Errorf("error should mention empty merge-base output, got: %s", *result.Error)
+	}
+	if len(result.Files) != 0 {
+		t.Errorf("expected 0 files on error, got %d", len(result.Files))
+	}
+}

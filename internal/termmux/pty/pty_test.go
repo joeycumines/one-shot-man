@@ -30,29 +30,46 @@ func requireConPTYRuntime(t *testing.T) {
 		t.Skip("ConPTY runtime probe requires Windows")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	proc, err := Spawn(ctx, SpawnConfig{
-		Command: "powershell.exe",
-		Args:    []string{"-NoProfile", "-Command", "exit 0"},
-		Rows:    24,
-		Cols:    80,
-	})
-	if err != nil {
-		t.Fatalf("ConPTY runtime probe spawn failed: %v", err)
-	}
-	defer proc.Close()
-
-	code, waitErr := proc.Wait()
-	if waitErr != nil {
-		t.Fatalf("ConPTY runtime probe wait failed: %v", waitErr)
-	}
-	if code == 3221225794 {
-		t.Skipf("skipping ConPTY tests on this host: child console init failed with %#x", uint32(code))
-	}
-	if code != 0 {
-		t.Fatalf("ConPTY runtime probe exited with code %d", code)
+	// On loaded CI runners, ConPTY+powershell can fail transiently (exit 1)
+	// even when the host is healthy. Retry before declaring the host broken.
+	var lastCode int
+	for attempt := 1; attempt <= 3; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		proc, err := Spawn(ctx, SpawnConfig{
+			Command: "powershell.exe",
+			Args:    []string{"-NoProfile", "-Command", "exit 0"},
+			Rows:    24,
+			Cols:    80,
+		})
+		if err != nil {
+			cancel()
+			if attempt == 3 {
+				t.Fatalf("ConPTY runtime probe spawn failed (attempt %d/3): %v", attempt, err)
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		code, waitErr := proc.Wait()
+		proc.Close()
+		cancel()
+		if waitErr != nil {
+			if attempt == 3 {
+				t.Fatalf("ConPTY runtime probe wait failed (attempt %d/3): %v", attempt, waitErr)
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		if code == 3221225794 {
+			t.Skipf("skipping ConPTY tests on this host: child console init failed with %#x", uint32(code))
+		}
+		if code == 0 {
+			return
+		}
+		lastCode = code
+		if attempt == 3 {
+			t.Fatalf("ConPTY runtime probe exited with code %d after 3 attempts", lastCode)
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 

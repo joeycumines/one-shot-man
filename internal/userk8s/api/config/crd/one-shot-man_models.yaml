@@ -54,8 +54,9 @@ spec:
                 description: CanReason is true when the model supports reasoning/thinking.
                 type: boolean
               context_window:
-                description: ContextWindow is the provider-enforced context ceiling
-                  in tokens.
+                description: |-
+                  ContextWindow is the context budget exposed to clients. It may be lower
+                  than the provider-enforced ceiling to preserve tokenizer safety margin.
                 format: int64
                 minimum: 1
                 type: integer
@@ -116,8 +117,9 @@ spec:
                 description: Labels are Kubernetes-compatible labels, mirroring metadata.labels.
                 type: object
               max_output_tokens:
-                description: MaxOutputTokens is the provider-enforced maximum output
-                  budget.
+                description: |-
+                  MaxOutputTokens is the output budget exposed to clients. It may be lower
+                  than the provider-enforced maximum to preserve room for conversation history.
                 format: int64
                 minimum: 1
                 type: integer

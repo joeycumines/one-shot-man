@@ -108,11 +108,13 @@ type ModelSpec struct {
 	// +optional
 	ProviderModelID string `json:"provider_model_id,omitempty"`
 
-	// ContextWindow is the provider-enforced context ceiling in tokens.
+	// ContextWindow is the context budget exposed to clients. It may be lower
+	// than the provider-enforced ceiling to preserve tokenizer safety margin.
 	// +kubebuilder:validation:Minimum=1
 	ContextWindow int64 `json:"context_window"`
 
-	// MaxOutputTokens is the provider-enforced maximum output budget.
+	// MaxOutputTokens is the output budget exposed to clients. It may be lower
+	// than the provider-enforced maximum to preserve room for conversation history.
 	// +kubebuilder:validation:Minimum=1
 	MaxOutputTokens int64 `json:"max_output_tokens"`
 

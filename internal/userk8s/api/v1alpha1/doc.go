@@ -1,6 +1,7 @@
-// Package v1alpha1 contains the one-shot-man model catalog API: the five
-// custom resources (ModelProvider, ModelAccess, Model, LocalSecretBinding,
-// Tool) that osm reads to resolve providers, models, and credentials.
+// Package v1alpha1 contains the one-shot-man model catalog API: the eight
+// custom resources (ModelProvider, ModelAccess, Model, ModelServing,
+// ModelSelection, ModelRoute, LocalSecretBinding, Tool) that osm reads to
+// resolve providers, models, routes, and credentials.
 //
 // The Go types are the canonical definition; the committed CRD manifests
 // under internal/userk8s/api/config/crd are generated from them by

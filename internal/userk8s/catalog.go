@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
-	"k8s.io/apimachinery/pkg/labels"
 )
 
 // Catalog is the read-only view of the model catalog every backend
@@ -20,7 +18,17 @@ type Catalog interface {
 	ListProviders(ctx context.Context) ([]v1alpha1.ModelProvider, error)
 	ListAccesses(ctx context.Context) ([]v1alpha1.ModelAccess, error)
 	ListModels(ctx context.Context) ([]v1alpha1.Model, error)
+	ListServings(ctx context.Context) ([]v1alpha1.ModelServing, error)
+	ListSelections(ctx context.Context) ([]v1alpha1.ModelSelection, error)
+	ListRoutes(ctx context.Context) ([]v1alpha1.ModelRoute, error)
 	ListTools(ctx context.Context) ([]v1alpha1.Tool, error)
+	ListBindings(ctx context.Context) ([]v1alpha1.LocalSecretBinding, error)
+
+	// EffectiveModel applies one serving's narrowings to its Model.
+	EffectiveModel(ctx context.Context, servingRef string) (EffectiveModel, error)
+
+	// RouteOffers resolves one route's effective offering inventory.
+	RouteOffers(ctx context.Context, routeRef string) ([]ResolvedOffer, error)
 
 	// ResolveCredential resolves one access's credential requirements.
 	ResolveCredential(ctx context.Context, accessRef string) (Resolution, error)
@@ -144,6 +152,56 @@ func (b *FilesBackend) ListModels(context.Context) ([]v1alpha1.Model, error) {
 	return models, nil
 }
 
+// ListServings returns every provider offering, ordered by name.
+func (b *FilesBackend) ListServings(context.Context) ([]v1alpha1.ModelServing, error) {
+	servings := append([]v1alpha1.ModelServing(nil), b.objects.Servings...)
+	sort.Slice(servings, func(i, j int) bool { return servings[i].Name < servings[j].Name })
+	return servings, nil
+}
+
+// ListSelections returns every fallback selection, ordered by name.
+func (b *FilesBackend) ListSelections(context.Context) ([]v1alpha1.ModelSelection, error) {
+	selections := append([]v1alpha1.ModelSelection(nil), b.objects.Selections...)
+	sort.Slice(selections, func(i, j int) bool { return selections[i].Name < selections[j].Name })
+	return selections, nil
+}
+
+// EffectiveModel resolves one serving to its effective capabilities.
+func (b *FilesBackend) EffectiveModel(_ context.Context, servingRef string) (EffectiveModel, error) {
+	serving, ok := b.objects.lookupServing(servingRef)
+	if !ok {
+		return EffectiveModel{}, fmt.Errorf("unknown ModelServing %q", servingRef)
+	}
+	model, ok := b.objects.lookupModel(serving.Spec.Model)
+	if !ok {
+		return EffectiveModel{}, fmt.Errorf("ModelServing %q references undeclared Model %q", serving.Name, serving.Spec.Model)
+	}
+	return effectiveModel(model, serving)
+}
+
+// RouteOffers resolves one route's effective offering inventory.
+func (b *FilesBackend) RouteOffers(_ context.Context, routeRef string) ([]ResolvedOffer, error) {
+	route, ok := b.objects.lookupRoute(routeRef)
+	if !ok {
+		return nil, fmt.Errorf("unknown ModelRoute %q", routeRef)
+	}
+	return b.objects.routeOffers(route)
+}
+
+// ListBindings returns every credential binding, ordered by name.
+func (b *FilesBackend) ListBindings(context.Context) ([]v1alpha1.LocalSecretBinding, error) {
+	bindings := append([]v1alpha1.LocalSecretBinding(nil), b.objects.Bindings...)
+	sort.Slice(bindings, func(i, j int) bool { return bindings[i].Name < bindings[j].Name })
+	return bindings, nil
+}
+
+// ListRoutes returns every route, ordered by name.
+func (b *FilesBackend) ListRoutes(context.Context) ([]v1alpha1.ModelRoute, error) {
+	routes := append([]v1alpha1.ModelRoute(nil), b.objects.Routes...)
+	sort.Slice(routes, func(i, j int) bool { return routes[i].Name < routes[j].Name })
+	return routes, nil
+}
+
 // ListTools returns every tool, ordered by name.
 func (b *FilesBackend) ListTools(context.Context) ([]v1alpha1.Tool, error) {
 	tools := append([]v1alpha1.Tool(nil), b.objects.Tools...)
@@ -165,6 +223,7 @@ func (b *FilesBackend) Status(context.Context) (BackendStatus, error) {
 		Providers: len(b.objects.Providers),
 		Accesses:  len(b.objects.Accesses),
 		Models:    len(b.objects.Models),
+		Routes:    len(b.objects.Routes),
 		Tools:     len(b.objects.Tools),
 		Bindings:  len(b.objects.Bindings),
 	}, nil
@@ -190,6 +249,16 @@ func (b *FilesBackend) Model(name string) (*v1alpha1.Model, error) {
 	return model, nil
 }
 
+// Route returns one route by name, accepting either the metadata name or the
+// raw registry name.
+func (b *FilesBackend) Route(name string) (*v1alpha1.ModelRoute, error) {
+	route, ok := b.objects.lookupRoute(name)
+	if !ok {
+		return nil, fmt.Errorf("unknown ModelRoute %q", name)
+	}
+	return route, nil
+}
+
 // Tool returns one tool by name.
 func (b *FilesBackend) Tool(name string) (*v1alpha1.Tool, error) {
 	tool, ok := b.objects.toolByName[name]
@@ -209,77 +278,41 @@ func (b *FilesBackend) Provider(name string) (*v1alpha1.ModelProvider, error) {
 	return provider, nil
 }
 
-// ResolveCredential implements the resolution protocol: bindings whose
-// selector matches the access and whose envVar is named by auth.requiredEnv
-// are executed in order, first success wins; the access is resolved only when
-// every required name is covered.
-func (b *FilesBackend) ResolveCredential(ctx context.Context, accessRef string) (Resolution, error) {
+// ResolveCredential resolves one entity-held credential binding. It is a
+// binding lookup, not an access lookup: credentials belong to the entity and
+// are named by a ModelRoute, never attached to a Model or a ModelAccess.
+func (b *FilesBackend) ResolveCredential(ctx context.Context, bindingRef string) (Resolution, error) {
 	if err := ctx.Err(); err != nil {
 		return Resolution{}, err
 	}
-	access, err := b.Access(accessRef)
-	if err != nil {
-		return Resolution{}, err
+	binding, ok := b.objects.lookupBinding(bindingRef)
+	if !ok {
+		return Resolution{}, fmt.Errorf("unknown LocalSecretBinding %q", bindingRef)
 	}
-	if access.Spec.Auth == nil {
-		return Resolution{}, fmt.Errorf("ModelAccess %q declares no spec.auth", accessRef)
-	}
-
-	switch access.Spec.Auth.Scheme {
-	case v1alpha1.AuthSchemeNone:
-		return Resolution{Status: StatusResolved, Reason: "auth scheme none requires no credentials"}, nil
-	case v1alpha1.AuthSchemeBearer:
-		// Resolved below.
-	case v1alpha1.AuthSchemeAWSSigV4, v1alpha1.AuthSchemeToolManaged:
+	switch binding.Spec.Scheme {
+	case "", v1alpha1.CredentialNone:
+		return Resolution{Status: StatusResolved, Reason: "credential scheme none requires no value"}, nil
+	case v1alpha1.CredentialBearer, v1alpha1.CredentialAPIKey, v1alpha1.CredentialXAPIKey:
+		credential, resolved, failures := resolveBinding(ctx, *binding, b.runner)
+		if resolved {
+			return Resolution{Status: StatusResolved, Credentials: []Credential{credential}}, nil
+		}
+		reason := "LocalSecretBinding " + binding.Name + " did not resolve"
+		if summary := attemptSummary(failures); summary != "" {
+			reason += " (attempts: " + summary + ")"
+		}
+		return Resolution{Status: StatusMissingCredentials, Reason: reason}, nil
+	case v1alpha1.CredentialAWSSigV4:
 		return Resolution{
 			Status: StatusUnsupportedScheme,
-			Reason: fmt.Sprintf("auth scheme %s is modeled but not launchable in this version", access.Spec.Auth.Scheme),
+			Reason: fmt.Sprintf("credential scheme %s is modeled but not launchable in this version", binding.Spec.Scheme),
 		}, nil
 	default:
 		return Resolution{
 			Status: StatusUnsupportedScheme,
-			Reason: fmt.Sprintf("auth scheme %q is not recognized", access.Spec.Auth.Scheme),
+			Reason: fmt.Sprintf("credential scheme %q is not recognized", binding.Spec.Scheme),
 		}, nil
 	}
-
-	set := labelSet(access)
-	resolution := Resolution{Status: StatusResolved}
-	var missing []string
-	var notes []string
-	for _, slot := range access.Spec.Auth.RequiredEnv {
-		matched, err := bindingsForSlot(b.objects.Bindings, set, slot)
-		if err != nil {
-			return Resolution{}, err
-		}
-		resolved := false
-		for _, binding := range matched {
-			credential, ok, failures := resolveBinding(ctx, binding, b.runner)
-			if ok {
-				resolution.Credentials = append(resolution.Credentials, credential)
-				resolved = true
-				break
-			}
-			// A failing resolver is a non-fatal miss: the next step or binding
-			// may still cover the slot. Only the failure class is retained —
-			// never resolver error text, which could embed a credential.
-			for _, failure := range failures {
-				notes = append(notes, binding.Name+" "+failure)
-			}
-		}
-		if !resolved {
-			missing = append(missing, slot)
-		}
-	}
-
-	if len(missing) > 0 {
-		resolution.Status = StatusMissingCredentials
-		reason := fmt.Sprintf("no selector-matched LocalSecretBinding resolved %s", joinQuoted(missing))
-		if summary := attemptSummary(notes); summary != "" {
-			reason += " (attempts: " + summary + ")"
-		}
-		resolution.Reason = reason
-	}
-	return resolution, nil
 }
 
 // maxAttemptNotes bounds how many resolver misses are reported, so a large
@@ -304,24 +337,4 @@ func attemptSummary(notes []string) string {
 		summary += fmt.Sprintf("; and %d more", truncated)
 	}
 	return summary
-}
-
-// labelSet is the label set a LocalSecretBinding selector matches against:
-// metadata labels merged with the mirroring spec labels.
-func labelSet(access *v1alpha1.ModelAccess) labels.Set {
-	set := labels.Set{}
-	maps.Copy(set, access.Spec.Labels)
-	maps.Copy(set, access.Labels)
-	return set
-}
-
-// joinQuoted renders a sorted, quoted, comma-separated list for messages.
-func joinQuoted(values []string) string {
-	sorted := append([]string(nil), values...)
-	sort.Strings(sorted)
-	quoted := make([]string, 0, len(sorted))
-	for _, value := range sorted {
-		quoted = append(quoted, fmt.Sprintf("%q", value))
-	}
-	return strings.Join(quoted, ", ")
 }

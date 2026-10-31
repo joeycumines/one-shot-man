@@ -42,6 +42,15 @@ func seededClusterWithRunner(t *testing.T, namespace string, objects *Objects, r
 	for i := range objects.Models {
 		seeded = append(seeded, toUnstructured(t, &objects.Models[i])...)
 	}
+	for i := range objects.Servings {
+		seeded = append(seeded, toUnstructured(t, &objects.Servings[i])...)
+	}
+	for i := range objects.Selections {
+		seeded = append(seeded, toUnstructured(t, &objects.Selections[i])...)
+	}
+	for i := range objects.Routes {
+		seeded = append(seeded, toUnstructured(t, &objects.Routes[i])...)
+	}
 	for i := range objects.Tools {
 		seeded = append(seeded, toUnstructured(t, &objects.Tools[i])...)
 	}
@@ -59,12 +68,16 @@ func TestClusterResourceNamesMatchCommittedCRDs(t *testing.T) {
 	tests := []struct {
 		resource schema.GroupVersionResource
 		want     string
+		scope    string
 	}{
-		{clusterProviders, "modelproviders"},
-		{clusterAccesses, "modelaccesses"},
-		{clusterModels, "models"},
-		{clusterTools, "tools"},
-		{clusterBindings, "localsecretbindings"},
+		{clusterProviders, "modelproviders", "Cluster"},
+		{clusterAccesses, "modelaccesses", "Cluster"},
+		{clusterModels, "models", "Cluster"},
+		{clusterServings, "modelservings", "Cluster"},
+		{clusterSelections, "modelselections", "Namespaced"},
+		{clusterRoutes, "modelroutes", "Namespaced"},
+		{clusterTools, "tools", "Cluster"},
+		{clusterBindings, "localsecretbindings", "Namespaced"},
 	}
 	for _, test := range tests {
 		if test.resource.Resource != test.want {
@@ -94,12 +107,8 @@ func TestClusterResourceNamesMatchCommittedCRDs(t *testing.T) {
 		if crd.Spec.Names.Plural != test.resource.Resource {
 			t.Errorf("CRD %s declares plural %q but the backend lists %q", path, crd.Spec.Names.Plural, test.resource.Resource)
 		}
-		wantScope := "Cluster"
-		if test.resource == clusterBindings {
-			wantScope = "Namespaced"
-		}
-		if crd.Spec.Scope != wantScope {
-			t.Errorf("CRD %s declares scope %q, want %q", path, crd.Spec.Scope, wantScope)
+		if crd.Spec.Scope != test.scope {
+			t.Errorf("CRD %s declares scope %q, want %q", path, crd.Spec.Scope, test.scope)
 		}
 	}
 }
@@ -172,6 +181,36 @@ func TestClusterBackendListAndResolutionParity(t *testing.T) {
 	}
 	compare("models", filesModels, clusterModelsList)
 
+	filesServings, err := files.ListServings(ctx)
+	if err != nil {
+		t.Fatalf("files ListServings: %v", err)
+	}
+	clusterServingsList, err := cluster.ListServings(ctx)
+	if err != nil {
+		t.Fatalf("cluster ListServings: %v", err)
+	}
+	compare("servings", filesServings, clusterServingsList)
+
+	filesSelections, err := files.ListSelections(ctx)
+	if err != nil {
+		t.Fatalf("files ListSelections: %v", err)
+	}
+	clusterSelectionsList, err := cluster.ListSelections(ctx)
+	if err != nil {
+		t.Fatalf("cluster ListSelections: %v", err)
+	}
+	compare("selections", filesSelections, clusterSelectionsList)
+
+	filesRoutes, err := files.ListRoutes(ctx)
+	if err != nil {
+		t.Fatalf("files ListRoutes: %v", err)
+	}
+	clusterRoutesList, err := cluster.ListRoutes(ctx)
+	if err != nil {
+		t.Fatalf("cluster ListRoutes: %v", err)
+	}
+	compare("routes", filesRoutes, clusterRoutesList)
+
 	filesTools, err := files.ListTools(ctx)
 	if err != nil {
 		t.Fatalf("files ListTools: %v", err)
@@ -182,19 +221,19 @@ func TestClusterBackendListAndResolutionParity(t *testing.T) {
 	}
 	compare("tools", filesTools, clusterToolsList)
 
-	for i := range filesAccesses {
-		access := filesAccesses[i].Name
-		filesResolution, err := files.ResolveCredential(ctx, access)
+	for i := range objects.Bindings {
+		binding := objects.Bindings[i].Name
+		filesResolution, err := files.ResolveCredential(ctx, binding)
 		if err != nil {
-			t.Fatalf("files ResolveCredential(%s): %v", access, err)
+			t.Fatalf("files ResolveCredential(%s): %v", binding, err)
 		}
-		clusterResolution, err := cluster.ResolveCredential(ctx, access)
+		clusterResolution, err := cluster.ResolveCredential(ctx, binding)
 		if err != nil {
-			t.Fatalf("cluster ResolveCredential(%s): %v", access, err)
+			t.Fatalf("cluster ResolveCredential(%s): %v", binding, err)
 		}
-		compare("resolution "+access, filesResolution, clusterResolution)
+		compare("resolution "+binding, filesResolution, clusterResolution)
 	}
-	resolved, err := files.ResolveCredential(ctx, "alpha-direct")
+	resolved, err := files.ResolveCredential(ctx, "bind-alpha")
 	if err != nil {
 		t.Fatalf("files ResolveCredential: %v", err)
 	}
@@ -207,18 +246,18 @@ func TestClusterBackendListAndResolutionParity(t *testing.T) {
 
 	projected := 0
 	for i := range clusterToolsList {
-		for j := range clusterModelsList {
-			model := &clusterModelsList[j]
-			filesProjection, filesErr := files.Project(ctx, clusterToolsList[i].Name, model.Spec.Provider, model.Name)
-			clusterProjection, clusterErr := cluster.Project(ctx, clusterToolsList[i].Name, model.Spec.Provider, model.Name)
+		for j := range clusterServingsList {
+			serving := &clusterServingsList[j]
+			filesProjection, filesErr := files.Project(ctx, clusterToolsList[i].Name, serving.Spec.Provider, serving.Name)
+			clusterProjection, clusterErr := cluster.Project(ctx, clusterToolsList[i].Name, serving.Spec.Provider, serving.Name)
 			if (filesErr == nil) != (clusterErr == nil) {
-				t.Fatalf("Project(%s,%s): files err=%v cluster err=%v", clusterToolsList[i].Name, model.Name, filesErr, clusterErr)
+				t.Fatalf("Project(%s,%s): files err=%v cluster err=%v", clusterToolsList[i].Name, serving.Name, filesErr, clusterErr)
 			}
 			if filesErr != nil {
 				continue
 			}
 			projected++
-			compare("projection "+clusterToolsList[i].Name+"/"+model.Name, filesProjection, clusterProjection)
+			compare("projection "+clusterToolsList[i].Name+"/"+serving.Name, filesProjection, clusterProjection)
 		}
 	}
 	if projected == 0 {
@@ -242,7 +281,7 @@ func TestClusterBackendReadsTheCatalogOnce(t *testing.T) {
 	added := &v1alpha1.Model{
 		APIVersion: v1alpha1.GroupVersion.String(), Kind: "Model",
 		Name: "added-after-the-first-read",
-		Spec: v1alpha1.ModelSpec{Provider: objects.Providers[0].Name, ContextWindow: 1000, MaxOutputTokens: 10},
+		Spec: v1alpha1.ModelSpec{CanonicalID: "test/added", DisplayName: "Added", ContextWindow: 1000, MaxOutputTokens: 10},
 	}
 	content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(added)
 	if err != nil {
@@ -312,7 +351,16 @@ func modelPage(provider, name, continueToken string) *unstructured.UnstructuredL
 		"apiVersion": v1alpha1.GroupVersion.String(),
 		"kind":       "Model",
 		"metadata":   map[string]any{"name": name},
-		"spec":       map[string]any{"provider": provider, "context_window": int64(1000), "max_output_tokens": int64(10)},
+		"spec": map[string]any{
+			"canonical_id":      "test/" + name,
+			"display_name":      name,
+			"context_window":    int64(1000000),
+			"max_output_tokens": int64(1000000),
+			"input_modalities":  []any{"text", "image"},
+			"output_modalities": []any{"text"},
+			"reasoning":         map[string]any{"supported": true, "efforts": []any{"low", "high"}},
+			"tool_call":         true,
+		},
 	}}
 	list := &unstructured.UnstructuredList{
 		Object: map[string]any{"apiVersion": v1alpha1.GroupVersion.String(), "kind": "ModelList"},
@@ -334,7 +382,7 @@ func TestClusterBackendFollowsPagination(t *testing.T) {
 	paged := &pagedClient{
 		Interface: client,
 		resource:  clusterModels,
-		pages:     []*unstructured.UnstructuredList{modelPage(provider, "paged-one", "page-two"), modelPage(provider, "paged-two", "")},
+		pages:     []*unstructured.UnstructuredList{modelPage(provider, "alpha-model", "page-two"), modelPage(provider, "beta-model", "")},
 	}
 	cluster := NewClusterBackendFromDynamic(paged, "model-access-test", &fakeRunner{})
 
@@ -348,7 +396,7 @@ func TestClusterBackendFollowsPagination(t *testing.T) {
 	if len(paged.options) != 2 || paged.options[0].Continue != "" || paged.options[1].Continue != "page-two" {
 		t.Fatalf("list options: got %+v, want the server's continuation token propagated", paged.options)
 	}
-	if len(models) != 2 || models[0].Name != "paged-one" || models[1].Name != "paged-two" {
+	if len(models) != 2 || models[0].Name != "alpha-model" || models[1].Name != "beta-model" {
 		t.Fatalf("models: got %+v, want one model from each page", models)
 	}
 }

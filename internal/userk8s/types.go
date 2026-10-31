@@ -44,8 +44,6 @@ type Projection struct {
 	// the two agree.
 	ProviderModelID string         `json:"providerModelId,omitempty"`
 	BudgetProfile   string         `json:"budgetProfile"`
-	Access          string         `json:"access,omitempty"`
-	Surfaces        []string       `json:"surfaces,omitempty"`
 	Settings        map[string]any `json:"settings"`
 }
 
@@ -56,6 +54,7 @@ type BackendStatus struct {
 	Providers int      `json:"providers"`
 	Accesses  int      `json:"accesses"`
 	Models    int      `json:"models"`
+	Routes    int      `json:"routes"`
 	Tools     int      `json:"tools"`
 	Bindings  int      `json:"bindings"`
 }

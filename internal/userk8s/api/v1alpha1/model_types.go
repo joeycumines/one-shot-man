@@ -4,9 +4,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Model is one model as served via one access. Models are own resources, not
-// children of providers; the same underlying model served through two
-// accesses is two resources linked by spec.equivalent_to. Cluster-scoped.
+// Model is a provider-independent definition of a model's configuration and
+// capabilities. It carries no provider, access, credential, or wire id: those
+// are facts of a ModelServing (a provider's offer) and a ModelRoute (an
+// entity's exposure). A canonical Model is the equivalence class; offerings
+// that narrow its capabilities reference it instead of duplicating it.
+// Cluster-scoped.
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
@@ -16,18 +19,6 @@ type Model struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec ModelSpec `json:"spec,omitempty"`
-}
-
-// EquivalentModelRef references another registry model that serves the same
-// underlying model under different constraints.
-type EquivalentModelRef struct {
-	// Provider is the registry provider name of the equivalent model.
-	// +kubebuilder:validation:MinLength=1
-	Provider string `json:"provider"`
-
-	// Name is the registry model identifier of the equivalent model.
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
 }
 
 // ModelToolSettings holds sparse per-tool settings overriding the model's
@@ -64,64 +55,114 @@ type ModelToolSettings struct {
 	Waive string `json:"waive,omitempty"`
 }
 
-// ModelSpec is the fact sheet of one model served through one access.
+// ModelReasoning is the reasoning capability fact sheet of one model. It
+// replaces the previous flat can_reason/reasoning_efforts pair, which could
+// express only one mode and silently lost the others:
+//
+//   - Supported records that the model reasons at all, including always-on
+//     reasoning with no client-selectable mode.
+//   - Toggle records an explicit on/off mode. The catalog exposes it as the
+//     "none" (off) and "thinking" (on) variants.
+//   - Efforts is the exact, ordered set of effort tiers the provider accepts.
+//   - Budget is the Anthropic-style token-budget range, when the provider
+//     accepts one.
+//
+// A client derives its variants from these facts; the catalog never invents a
+// mode the model does not have.
+//
+// +kubebuilder:validation:XValidation:rule="self.supported || (!self.toggle && !has(self.efforts) && !has(self.budget))",message="a reasoning mode requires supported: true"
+// +kubebuilder:validation:XValidation:rule="!has(self.efforts) || self.efforts.all(e, e in ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])",message="reasoning.efforts items must be one of none|minimal|low|medium|high|xhigh|max|ultra"
+type ModelReasoning struct {
+	// Supported is true when the model supports reasoning/thinking at all.
+	// +kubebuilder:default=false
+	// +optional
+	Supported bool `json:"supported,omitempty"`
+
+	// Toggle is true when the provider accepts an explicit on/off choice.
+	// +kubebuilder:default=false
+	// +optional
+	Toggle bool `json:"toggle,omitempty"`
+
+	// Efforts is the exact set of reasoning effort levels the provider
+	// accepts, in the provider's declared order.
+	// +kubebuilder:validation:UniqueItems=true
+	// +kubebuilder:validation:items:Enum=none;minimal;low;medium;high;xhigh;max;ultra
+	// +optional
+	Efforts []string `json:"efforts,omitempty"`
+
+	// Budget is the accepted token-budget range when the provider exposes
+	// Anthropic-style thinking budgets.
+	// +optional
+	Budget *ModelReasoningBudget `json:"budget,omitempty"`
+}
+
+// ModelReasoningBudget is the accepted thinking-token budget range. Both
+// bounds are optional because the provider may publish only a ceiling.
+//
+// +kubebuilder:validation:XValidation:rule="!has(self.min) || self.min >= 0",message="reasoning.budget.min must be non-negative"
+// +kubebuilder:validation:XValidation:rule="!has(self.max) || self.max > 0",message="reasoning.budget.max must be positive"
+// +kubebuilder:validation:XValidation:rule="!has(self.min) || !has(self.max) || self.min <= self.max",message="reasoning.budget.min must not exceed reasoning.budget.max"
+type ModelReasoningBudget struct {
+	// Min is the smallest budget the provider accepts, in tokens.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	Min *int64 `json:"min,omitempty"`
+
+	// Max is the largest budget the provider accepts, in tokens.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	Max *int64 `json:"max,omitempty"`
+}
+
+// ModelSpec is the fact sheet of one model a provider offers.
 //
 // +kubebuilder:validation:XValidation:rule="self.context_window > 0",message="spec.context_window must be positive — the provider-enforced context ceiling in tokens"
 // +kubebuilder:validation:XValidation:rule="self.max_output_tokens > 0",message="spec.max_output_tokens must be positive — the provider-enforced maximum output budget in tokens"
 // +kubebuilder:validation:XValidation:rule="!has(self.input_modalities) || self.input_modalities.all(m, m in ['text', 'image', 'audio'])",message="spec.input_modalities items must be one of text|image|audio"
-// +kubebuilder:validation:XValidation:rule="!has(self.reasoning_efforts) || self.reasoning_efforts.all(e, e in ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])",message="spec.reasoning_efforts items must be one of none|minimal|low|medium|high|xhigh|max|ultra"
+// +kubebuilder:validation:XValidation:rule="!has(self.reasoning) || !has(self.reasoning.efforts) || self.reasoning.efforts.all(e, e in ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])",message="spec.reasoning.efforts items must be one of none|minimal|low|medium|high|xhigh|max|ultra"
+// +kubebuilder:validation:XValidation:rule="!has(self.output_modalities) || self.output_modalities.all(m, m in ['text', 'image', 'audio'])",message="spec.output_modalities items must be one of text|image|audio"
 // +kubebuilder:validation:XValidation:rule="!has(self.toolSettings) || self.toolSettings.all(k, v, !has(v.context_window) || (v.context_window > 0 && (v.context_window <= self.context_window || (has(v.waive) && v.waive.size() > 0))))",message="tool settings context_window must be positive and must not exceed the model context_window without a waive reason"
 // +kubebuilder:validation:XValidation:rule="!has(self.toolSettings) || self.toolSettings.all(k, v, !has(v.max_output_tokens) || (v.max_output_tokens > 0 && (v.max_output_tokens <= self.max_output_tokens || (has(v.waive) && v.waive.size() > 0))))",message="tool settings max_output_tokens must be positive and must not exceed the model max_output_tokens without a waive reason"
 // +kubebuilder:validation:XValidation:rule="!has(self.toolSettings) || self.toolSettings.all(k, v, !has(v.auto_compact_window) || (v.auto_compact_window > 0 && (v.auto_compact_window <= self.context_window || (has(v.waive) && v.waive.size() > 0))))",message="tool settings auto_compact_window must be positive and must not exceed the model context_window without a waive reason"
 // +kubebuilder:validation:XValidation:rule="!has(self.toolSettings) || self.toolSettings.all(k, v, !has(v.effort_level) || v.effort_level in ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])",message="tool settings effort_level must be one of none|minimal|low|medium|high|xhigh|max|ultra"
-// +kubebuilder:validation:XValidation:rule="!has(self.toolSettings) || self.toolSettings.all(k, v, !has(v.effort_level) || !has(self.reasoning_efforts) || v.effort_level in self.reasoning_efforts)",message="tool settings effort_level must be one of the model's published reasoning_efforts"
+// +kubebuilder:validation:XValidation:rule="!has(self.toolSettings) || self.toolSettings.all(k, v, !has(v.effort_level) || !has(self.reasoning) || !has(self.reasoning.efforts) || v.effort_level in self.reasoning.efforts)",message="tool settings effort_level must be one of the model's published reasoning.efforts"
 type ModelSpec struct {
-	// Provider references a ModelProvider by name. Must resolve; the
-	// cross-resource check is a controller-side gap, not expressible in CEL.
-	// +kubebuilder:validation:MinLength=1
-	Provider string `json:"provider"`
-
-	// Access references a ModelAccess by name. Required when the provider has
-	// multiple accesses; the cross-resource check is a controller-side gap.
-	// +kubebuilder:validation:MinLength=1
-	// +optional
-	Access string `json:"access,omitempty"`
-
-	// ProviderModelID is the id the PROVIDER itself calls this model, sent
-	// upstream verbatim. Defaults to the model's registry name (the
-	// one-shot-man/registry-name annotation, or metadata.name), which is correct
-	// whenever a provider's id needs no disambiguation.
-	//
-	// It exists because those are two different facts that a single field cannot
-	// hold. The registry name is a CATALOG-WIDE unique key: the loader rejects a
-	// duplicate, and that uniqueness is load-bearing because the id is how one
-	// gateway endpoint resolves to exactly one provider. The provider's own id
-	// is not unique — two providers routinely serve the same model under the
-	// same id — and a namespace appended to disambiguate the key
-	// (`deepseek-v4-flash:verboo`) reaches the provider as part of the model
-	// name and is then a model the provider does not have, so the request fails
-	// upstream with "model not available". Set this field whenever the
-	// provider's id differs from the registry name; leave it empty when they
-	// agree.
+	// CanonicalID is the provider-independent identity of the model, e.g.
+	// "zhipuai/glm-5.3". It is the grouping key across providers and the value
+	// a canonical-naming route can expose. It is NOT the wire id.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
-	// +optional
-	ProviderModelID string `json:"provider_model_id,omitempty"`
+	CanonicalID string `json:"canonical_id"`
 
-	// ContextWindow is the context budget exposed to clients. It may be lower
-	// than the provider-enforced ceiling to preserve tokenizer safety margin.
+	// Family is the model family/line (e.g. "glm"), when the catalog publishes
+	// one.
+	// +optional
+	Family string `json:"family,omitempty"`
+
+	// DisplayName is the human-readable model name (e.g. "GLM-5.3").
+	// +kubebuilder:validation:MinLength=1
+	DisplayName string `json:"display_name"`
+
+	// Aliases are additional selection aliases for this Model (raw ids,
+	// old spellings, provider-neutral names). Aliases are a naming aid, not a
+	// second identity.
+	// +optional
+	Aliases []string `json:"aliases,omitempty"`
+
+	// ContextWindow is the canonical context budget in tokens. A ModelServing
+	// may narrow it, never widen it.
 	// +kubebuilder:validation:Minimum=1
 	ContextWindow int64 `json:"context_window"`
 
-	// MaxOutputTokens is the output budget exposed to clients. It may be lower
-	// than the provider-enforced maximum to preserve room for conversation history.
+	// MaxOutputTokens is the canonical maximum output budget in tokens. A
+	// ModelServing may narrow it, never widen it.
 	// +kubebuilder:validation:Minimum=1
 	MaxOutputTokens int64 `json:"max_output_tokens"`
 
-	// CanReason is true when the model supports reasoning/thinking.
-	// +kubebuilder:default=false
+	// Reasoning is the model's reasoning capability: whether it reasons, the
+	// selectable modes, exact effort tiers, and token-budget range.
 	// +optional
-	CanReason bool `json:"can_reason,omitempty"`
+	Reasoning *ModelReasoning `json:"reasoning,omitempty"`
 
 	// InputModalities lists the input modalities the model accepts.
 	// +kubebuilder:validation:UniqueItems=true
@@ -130,31 +171,29 @@ type ModelSpec struct {
 	// +optional
 	InputModalities []string `json:"input_modalities,omitempty"`
 
-	// ReasoningEfforts is the exact set of reasoning effort levels the
-	// provider accepts, present only when the provider publishes them.
+	// OutputModalities lists the output modalities the model produces.
 	// +kubebuilder:validation:UniqueItems=true
-	// +kubebuilder:validation:items:Enum=none;minimal;low;medium;high;xhigh;max;ultra
+	// +kubebuilder:validation:items:Enum=text;image;audio
+	// +kubebuilder:default={text}
 	// +optional
-	ReasoningEfforts []string `json:"reasoning_efforts,omitempty"`
+	OutputModalities []string `json:"output_modalities,omitempty"`
 
-	// Default marks the ordered preference for this provider: at most one
-	// model per provider may set it; the cross-resource check is a
-	// controller-side gap.
+	// ToolCall is true when the model accepts tool/function calls.
+	// +kubebuilder:default=true
+	// +optional
+	ToolCall bool `json:"tool_call,omitempty"`
+
+	// StructuredOutput is true when the model accepts structured output
+	// constraints.
 	// +kubebuilder:default=false
 	// +optional
-	Default bool `json:"default,omitempty"`
+	StructuredOutput bool `json:"structured_output,omitempty"`
 
-	// Deprecated marks a model no longer recommended; renderers skip
-	// deprecated models unless explicitly pinned.
+	// Deprecated marks the model itself as no longer recommended. A deprecated
+	// Model hides every serving unless one is explicitly pinned.
 	// +kubebuilder:default=false
 	// +optional
 	Deprecated bool `json:"deprecated,omitempty"`
-
-	// EquivalentTo links registry models that are the same underlying model
-	// served under different constraints. The closure must be symmetric; the
-	// cross-resource check is a controller-side gap.
-	// +optional
-	EquivalentTo []EquivalentModelRef `json:"equivalent_to,omitempty"`
 
 	// Labels are Kubernetes-compatible labels, mirroring metadata.labels.
 	// +optional

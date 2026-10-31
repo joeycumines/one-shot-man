@@ -272,7 +272,7 @@ func (c *Compositor) buildCompositor() *lipgloss.Compositor {
 
 	for _, id := range c.paneOrder {
 		pe := c.panes[id]
-		content := pe.content
+		content := encodeZoneMarkers(pe.content)
 		if pe.bg != "" {
 			// Fill the full pane rect with the child's background before
 			// compositing (see the type comment): the ANSI capture carries
@@ -296,7 +296,7 @@ func (c *Compositor) buildCompositor() *lipgloss.Compositor {
 	}
 
 	for _, ce := range c.chrome {
-		l := lipgloss.NewLayer(ce.content).
+		l := lipgloss.NewLayer(encodeZoneMarkers(ce.content)).
 			X(ce.x).
 			Y(ce.y).
 			Z(ce.z).
@@ -340,7 +340,7 @@ func (c *Compositor) Render() string {
 	c.canvas.Clear()
 	c.canvas.Compose(comp)
 
-	c.cachedRender = c.canvas.Render()
+	c.cachedRender = decodeZoneMarkers(c.canvas.Render())
 	c.cacheValid = true
 	return c.cachedRender
 }

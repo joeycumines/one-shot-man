@@ -1,0 +1,125 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.23.0
+  name: modelselections.one-shot-man
+spec:
+  group: one-shot-man
+  names:
+    kind: ModelSelection
+    listKind: ModelSelectionList
+    plural: modelselections
+    singular: modelselection
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ModelSelection is an optional, entity-scoped fallback chain over any
+          selectables. It is model-agnostic: a candidate may be a concrete serving, a
+          canonical Model (expanded to its offerings), another selection, or a
+          specific route offer — so a fallback is not limited to one model.
+
+          The launcher resolves a selection against live routes and the tool's
+          surfaces before composing, and configures the tool with the chosen concrete
+          served id. A route may expose the selection id itself for a future dynamic
+          gateway; the current suite has no cross-route runtime fallback.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ModelSelectionSpec is an ordered/priority fallback chain.
+            properties:
+              candidates:
+                description: |-
+                  Candidates are the fallback chain, in preference order for ordered
+                  selection.
+                items:
+                  description: |-
+                    ModelSelectionCandidate is one fallback candidate. Exactly one of the
+                    reference fields is set.
+                  properties:
+                    model:
+                      description: |-
+                        Model names a Model. Its offerings (ModelServing resources) are expanded
+                        in priority order, then their live routes.
+                      type: string
+                    offer:
+                      description: |-
+                        Offer names one route offer, pinning both the access item and the
+                        served id.
+                      properties:
+                        id:
+                          description: ID is the served id the route exposes.
+                          minLength: 1
+                          type: string
+                        route:
+                          description: Route is the ModelRoute metadata name.
+                          minLength: 1
+                          type: string
+                      required:
+                      - id
+                      - route
+                      type: object
+                    selection:
+                      description: Selection names another ModelSelection (cycle-checked).
+                      type: string
+                    serving:
+                      description: |-
+                        Serving names a concrete ModelServing. Every live route exposing it is
+                        a candidate.
+                      type: string
+                  type: object
+                  x-kubernetes-validations:
+                  - message: a candidate must set exactly one of serving, model, selection,
+                      or offer
+                    rule: '(has(self.serving) ? 1 : 0) + (has(self.model) ? 1 : 0)
+                      + (has(self.selection) ? 1 : 0) + (has(self.offer) ? 1 : 0)
+                      == 1'
+                minItems: 1
+                type: array
+              display_name:
+                description: DisplayName is the human-readable name of the selection.
+                minLength: 1
+                type: string
+              strategy:
+                default: ordered
+                description: |-
+                  Strategy is ordered or priority today; dynamic is reserved for a future
+                  request-aware gateway router.
+                enum:
+                - ordered
+                - priority
+                - dynamic
+                type: string
+            required:
+            - candidates
+            - display_name
+            type: object
+            x-kubernetes-validations:
+            - message: spec.candidates must name at least one candidate
+              rule: self.candidates.size() > 0
+        type: object
+        x-kubernetes-validations:
+        - message: metadata.name must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+          rule: self.metadata.name.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+    served: true
+    storage: true

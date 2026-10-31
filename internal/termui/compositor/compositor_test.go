@@ -556,7 +556,7 @@ func TestCompositor_RenderCache_ServesIdleFrames(t *testing.T) {
 	if !c.cacheValid {
 		t.Fatal("cache not primed after first Render")
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		got := c.Render()
 		if !c.cacheValid {
 			t.Fatalf("idle Render %d invalidated the cache", i)

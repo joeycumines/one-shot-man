@@ -2,7 +2,6 @@ package userk8s
 
 import (
 	"context"
-	"strings"
 	"testing"
 )
 
@@ -18,43 +17,36 @@ func TestAdapterRequestedSelectionsProject(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name         string
-		tool         string
-		provider     string
-		model        string
-		wantSlug     string
-		wantID       string
-		wantSurfaces []string
+		name     string
+		tool     string
+		provider string
+		model    string
+		wantSlug string
+		wantID   string
 	}{
 		{
-			name:         "claude keeps the electronhub registry id verbatim",
-			tool:         "claude",
-			provider:     "electronhub",
-			model:        "glm-5.3:dev",
-			wantSlug:     "glm-5.3:dev",
-			wantID:       "glm-5.3:dev",
-			wantSurfaces: []string{"anthropic"},
+			name:     "claude keeps the electronhub registry id verbatim",
+			tool:     "claude",
+			provider: "electronhub",
+			model:    "glm-5.3:dev:electronhub",
+			wantSlug: "glm-5.3:dev:electronhub",
+			wantID:   "glm-5.3:dev:electronhub",
 		},
 		{
-			name:         "opencode derives the key its configuration uses",
-			tool:         "opencode",
-			provider:     "electronhub",
-			model:        "glm-5.3:dev",
-			wantSlug:     "glm_5_3_dev",
-			wantID:       "glm-5.3:dev",
-			wantSurfaces: []string{"anthropic", "chat", "responses"},
+			name:     "opencode derives the key its configuration uses",
+			tool:     "opencode",
+			provider: "electronhub",
+			model:    "glm-5.3:dev:electronhub",
+			wantSlug: "glm_5_3_dev_electronhub",
+			wantID:   "glm-5.3:dev:electronhub",
 		},
 		{
-			// The umans access declares chat alongside anthropic since the
-			// registry gained the chat/responses endpoints (T7): crush, which
-			// speaks chat, now has a served surface for umans.
-			name:         "crush resolves the umans metadata name to the raw registry id",
-			tool:         "crush",
-			provider:     "umans",
-			model:        "umans-glm-5-3",
-			wantSlug:     "umans-glm-5.3",
-			wantID:       "umans-glm-5.3",
-			wantSurfaces: []string{"anthropic", "chat"},
+			name:     "crush keeps the electronhub registry id verbatim",
+			tool:     "crush",
+			provider: "electronhub",
+			model:    "glm-5.3:dev:electronhub",
+			wantSlug: "glm-5.3:dev:electronhub",
+			wantID:   "glm-5.3:dev:electronhub",
 		},
 		// The former codex case "~openai/gpt-latest" was removed with the model
 		// itself (2026-09-23): its wire id is not expressible in the shaper's
@@ -85,29 +77,7 @@ func TestAdapterRequestedSelectionsProject(t *testing.T) {
 			if _, ok := projection.Settings["context_window"].(int64); !ok {
 				t.Errorf("settings.context_window: got %T", projection.Settings["context_window"])
 			}
-			if strings.Join(projection.Surfaces, ",") != strings.Join(test.wantSurfaces, ",") {
-				t.Errorf("surfaces: got %v, want %v", projection.Surfaces, test.wantSurfaces)
-			}
 		})
-	}
-}
-
-// TestUmansShaperServesChatAndAnthropic records the registry change that gave
-// the umans access chat/responses endpoints alongside anthropic: the shaper
-// forwards chat to the umans upstream, so a chat-speaking tool (crush) now has
-// a served surface instead of the empty set that forced the anthropic-only
-// declaration before.
-func TestUmansShaperServesChatAndAnthropic(t *testing.T) {
-	backend, err := NewFilesBackend(FilesBackendOptions{Paths: []string{renderedPersonalProfile}})
-	if err != nil {
-		t.Fatalf("NewFilesBackend: %v", err)
-	}
-	projection, err := backend.Project(context.Background(), "crush", "umans", "umans-glm-5.3")
-	if err != nil {
-		t.Fatalf("Project: %v", err)
-	}
-	if len(projection.Surfaces) != 2 || projection.Surfaces[0] != "anthropic" || projection.Surfaces[1] != "chat" {
-		t.Fatalf("surfaces: got %v, want [anthropic chat]", projection.Surfaces)
 	}
 }
 
@@ -124,13 +94,31 @@ spec:
   display_name: Alpha Beta
 `,
 		`apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  name: alpha
+spec:
+  provider: alpha+beta
+  protocol: chat
+`,
+		`apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
   name: alpha-model
 spec:
-  provider: alpha+beta
+  canonical_id: alpha/alpha-model
+  display_name: Alpha Model
   context_window: 1000
   max_output_tokens: 10
+`,
+		`apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  name: alpha-model-alpha
+spec:
+  provider: alpha+beta
+  model: alpha-model
+  provider_model_id: alpha-model
 `,
 		`apiVersion: one-shot-man/v1alpha1
 kind: Tool
@@ -150,7 +138,7 @@ spec:
   budget_profile: claude-margin
 `)
 	backend := mustBackend(t, objects, &fakeRunner{})
-	projection, err := backend.Project(context.Background(), "claude", "alpha+beta", "alpha-model")
+	projection, err := backend.Project(context.Background(), "claude", "alpha+beta", "alpha-model-alpha")
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}

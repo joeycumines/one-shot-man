@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestLoadResolvesRegistryNames(t *testing.T) {
+func TestLoadResolvesServingRegistryNames(t *testing.T) {
 	provider := func(name string) string {
 		return `apiVersion: one-shot-man/v1alpha1
 kind: ModelProvider
@@ -15,15 +15,27 @@ spec:
   display_name: ` + name + `
 `
 	}
-	model := func(registryName, metadataName, providerName string, equivalents ...string) string {
-		document := `apiVersion: one-shot-man/v1alpha1
+	model := func(name string) string {
+		return `apiVersion: one-shot-man/v1alpha1
 kind: Model
+metadata:
+  name: ` + name + `
+spec:
+  canonical_id: vendor/` + name + `
+  display_name: ` + name + `
+  context_window: 1000
+  max_output_tokens: 10
+`
+	}
+	serving := func(metadataName, registryName, providerName, modelName string, isDefault bool) string {
+		document := `apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
 metadata:
   name: ` + metadataName + `
 `
 		if registryName != "" {
 			document = `apiVersion: one-shot-man/v1alpha1
-kind: Model
+kind: ModelServing
 metadata:
   annotations:
     one-shot-man/registry-name: ` + registryName + `
@@ -32,87 +44,82 @@ metadata:
 		}
 		document += `spec:
   provider: ` + providerName + `
-  context_window: 1000
-  max_output_tokens: 10
+  model: ` + modelName + `
+  provider_model_id: ` + registryName + `
 `
-		if len(equivalents) > 0 {
-			document += "  equivalent_to:\n"
-			for _, equivalent := range equivalents {
-				parts := strings.SplitN(equivalent, "/", 2)
-				document += "  - provider: " + parts[0] + "\n    name: " + parts[1] + "\n"
-			}
+		if isDefault {
+			document += "  default: true\n"
 		}
 		return document
 	}
 
-	t.Run("a sanitized name is referenced by its registry name", func(t *testing.T) {
+	t.Run("a serving resolves by metadata name and registry key", func(t *testing.T) {
 		objects := documents(t,
 			provider("alpha"),
-			model("", "alpha-model", "alpha", "alpha/alpha-model:dev"),
-			model("alpha-model:dev", "alpha-model-dev", "alpha", "alpha/alpha-model"),
+			model("alpha-model"),
+			serving("alpha-model-alpha", "alpha-model:alpha", "alpha", "alpha-model", false),
 		)
-		if len(objects.Models) != 2 {
-			t.Fatalf("models: got %d, want 2", len(objects.Models))
+		if len(objects.Servings) != 1 {
+			t.Fatalf("servings: got %d, want 1", len(objects.Servings))
+		}
+		if got, ok := objects.lookupServing("alpha-model-alpha"); !ok || got.Name != "alpha-model-alpha" {
+			t.Fatal("lookupServing by metadata name failed")
+		}
+		if got, ok := objects.lookupServing("alpha-model:alpha"); !ok || got.Name != "alpha-model-alpha" {
+			t.Fatal("lookupServing by registry key failed")
 		}
 	})
 
-	t.Run("a metadata name colliding with another registry name resolves to the registry name", func(t *testing.T) {
-		objects := documents(t,
-			provider("wafer"),
-			provider("deepseek"),
-			model("DeepSeek-V4-Pro", "deepseek-v4-pro", "wafer", "deepseek/deepseek-v4-pro"),
-			model("deepseek-v4-pro", "deepseek-v4-pro-2", "deepseek", "wafer/DeepSeek-V4-Pro"),
+	t.Run("defaults are unique per provider", func(t *testing.T) {
+		_, err := loadDocuments(
+			[]byte(provider("alpha")),
+			[]byte(model("alpha-model")),
+			[]byte(serving("alpha-one", "alpha-model:alpha", "alpha", "alpha-model", true)),
+			[]byte(serving("alpha-two", "alpha-model-2:alpha", "alpha", "alpha-model", true)),
 		)
-		if len(objects.Models) != 2 {
-			t.Fatalf("models: got %d, want 2", len(objects.Models))
-		}
-		wafer, ok := objects.lookupModel("DeepSeek-V4-Pro")
-		if !ok {
-			t.Fatal("lookupModel(DeepSeek-V4-Pro): not found")
-		}
-		if wafer.Spec.Provider != "wafer" {
-			t.Fatalf("lookupModel(DeepSeek-V4-Pro): provider %q, want wafer", wafer.Spec.Provider)
-		}
-		deepseek, ok := objects.lookupModel("deepseek-v4-pro")
-		if !ok {
-			t.Fatal("lookupModel(deepseek-v4-pro): not found")
-		}
-		if deepseek.Spec.Provider != "deepseek" {
-			t.Fatalf("lookupModel(deepseek-v4-pro): provider %q, want deepseek", deepseek.Spec.Provider)
-		}
-	})
-
-	t.Run("equivalent references that disagree on provider are rejected", func(t *testing.T) {
-		_, err := loadDocuments([]byte(provider("alpha")), []byte(provider("beta")), []byte(
-			model("", "alpha-model", "alpha", "beta/alpha-model")), []byte(
-			model("", "alpha-model-peer", "beta", "alpha/alpha-model")))
-		if err == nil {
-			t.Fatal("loadDocuments: want an error for a provider disagreement")
-		}
-		if !strings.Contains(err.Error(), "declares provider") {
-			t.Fatalf("error: got %v", err)
-		}
-	})
-
-	t.Run("defaults are unique per provider across registry spellings", func(t *testing.T) {
-		defaultModel := func(name string) string {
-			return `apiVersion: one-shot-man/v1alpha1
-kind: Model
-metadata:
-  name: ` + name + `
-spec:
-  provider: alpha
-  context_window: 1000
-  max_output_tokens: 10
-  default: true
-`
-		}
-		_, err := loadDocuments([]byte(provider("alpha")), []byte(defaultModel("alpha-one")), []byte(defaultModel("alpha-two")))
 		if err == nil {
 			t.Fatal("loadDocuments: want an error for two defaults under one provider")
 		}
 		if !strings.Contains(err.Error(), "both declare default") {
 			t.Fatalf("error: got %v", err)
+		}
+	})
+
+	t.Run("a serving whose provider disagrees with its access is rejected at route validation", func(t *testing.T) {
+		_, err := loadDocuments(
+			[]byte(provider("alpha")),
+			[]byte(provider("beta")),
+			[]byte(`apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  name: alpha-chat
+spec:
+  provider: alpha
+  protocol: chat
+`),
+			[]byte(model("alpha-model")),
+			[]byte(serving("alpha-model-alpha", "alpha-model:alpha", "alpha", "alpha-model", false)),
+			[]byte(serving("beta-model-beta", "alpha-model:beta", "beta", "alpha-model", false)),
+			[]byte(`apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-local
+  namespace: test
+spec:
+  access: alpha-chat
+  surfaces: [chat]
+  endpoints:
+    chat: http://127.0.0.1:1/alpha/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`),
+		)
+		// The route defaults to all servings of the access's provider, so the beta
+		// serving is not selected; but an explicit beta offer must be refused.
+		if err != nil {
+			t.Fatalf("loadDocuments without explicit beta offer: %v", err)
 		}
 	})
 }

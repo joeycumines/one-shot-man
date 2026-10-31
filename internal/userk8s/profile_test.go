@@ -4,11 +4,13 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
 )
 
 // renderedPersonalProfile is a byte-exact copy of the personal profile that
 // `gmake render-model-profiles` produces in the joeyc-ai repository, refreshed
-// 2026-09-23. It exercises the real registry vocabulary: sanitized
+// 2026-10-31. It exercises the real registry vocabulary: sanitized
 // metadata names carrying one-shot-man/registry-name annotations,
 // equivalent_to references written in raw registry spelling, cluster-scoped
 // catalog kinds alongside the Namespace and Secret, and 15 selector-matched
@@ -26,11 +28,14 @@ func TestLoadRealRenderedProfile(t *testing.T) {
 		got  int
 		want int
 	}{
-		{"providers", len(objects.Providers), 13},
-		{"accesses", len(objects.Accesses), 15},
-		{"models", len(objects.Models), 156},
+		{"providers", len(objects.Providers), 14},
+		{"accesses", len(objects.Accesses), 14},
+		{"models", len(objects.Models), 112},
+		{"servings", len(objects.Servings), 152},
+		{"selections", len(objects.Selections), 1},
+		{"routes", len(objects.Routes), 13},
 		{"tools", len(objects.Tools), 9},
-		{"bindings", len(objects.Bindings), 15},
+		{"bindings", len(objects.Bindings), 12},
 		{"skipped", objects.Skipped, 2},
 	} {
 		if want.got != want.want {
@@ -62,24 +67,26 @@ func TestRealRenderedProfileResolvesWithoutError(t *testing.T) {
 		}
 	}
 
-	for _, access := range objects.Accesses {
-		resolution, err := backend.ResolveCredential(ctx, access.Name)
+	for i := range objects.Bindings {
+		binding := &objects.Bindings[i]
+		resolution, err := backend.ResolveCredential(ctx, binding.Name)
 		if err != nil {
-			t.Fatalf("ResolveCredential(%s): %v", access.Name, err)
+			t.Fatalf("ResolveCredential(%s): %v", binding.Name, err)
+		}
+		if binding.Spec.Scheme == "" || binding.Spec.Scheme == v1alpha1.CredentialNone {
+			if resolution.Status != StatusResolved {
+				t.Fatalf("ResolveCredential(%s): status %q, want resolved for a credential-less binding", binding.Name, resolution.Status)
+			}
+			continue
 		}
 		if resolution.Status != StatusMissingCredentials {
-			t.Fatalf("ResolveCredential(%s): status %q, want %q with no configured source (reason %q)", access.Name, resolution.Status, StatusMissingCredentials, resolution.Reason)
+			t.Fatalf("ResolveCredential(%s): status %q, want %q with no configured source (reason %q)", binding.Name, resolution.Status, StatusMissingCredentials, resolution.Reason)
 		}
 		if len(resolution.Credentials) != 0 {
-			t.Fatalf("ResolveCredential(%s): resolved credentials without any configured source: %+v", access.Name, resolution.Credentials)
+			t.Fatalf("ResolveCredential(%s): resolved credentials without any configured source: %+v", binding.Name, resolution.Credentials)
 		}
-		for _, slot := range access.Spec.Auth.RequiredEnv {
-			if !strings.Contains(resolution.Reason, `"`+slot+`"`) {
-				t.Fatalf("ResolveCredential(%s): reason %q does not name the uncovered slot %q", access.Name, resolution.Reason, slot)
-			}
-		}
-		if !strings.Contains(resolution.Reason, "attempts:") {
-			t.Fatalf("ResolveCredential(%s): reason %q carries no resolver failure classes", access.Name, resolution.Reason)
+		if !strings.Contains(resolution.Reason, "did not resolve") {
+			t.Fatalf("ResolveCredential(%s): reason %q does not report the failed binding", binding.Name, resolution.Reason)
 		}
 	}
 }
@@ -96,8 +103,8 @@ func TestRealRenderedProfileProjectsEveryToolSelection(t *testing.T) {
 	grammarRejections := 0
 	attempted := 0
 	nonDeprecated := 0
-	for _, model := range objects.Models {
-		if !model.Spec.Deprecated {
+	for i := range objects.Servings {
+		if !objects.Servings[i].Spec.Deprecated {
 			nonDeprecated++
 		}
 	}
@@ -105,13 +112,13 @@ func TestRealRenderedProfileProjectsEveryToolSelection(t *testing.T) {
 		if tool.Spec.BudgetProfile == "" {
 			t.Fatalf("Tool %q declares no budget profile", tool.Name)
 		}
-		for i := range objects.Models {
-			model := &objects.Models[i]
-			if model.Spec.Deprecated {
+		for i := range objects.Servings {
+			serving := &objects.Servings[i]
+			if serving.Spec.Deprecated {
 				continue
 			}
 			attempted++
-			projection, err := backend.ProjectModel(ctx, tool.Name, model)
+			projection, err := backend.ProjectServing(ctx, tool.Name, serving)
 			if err != nil {
 				// A registry slug that a tool's grammar cannot express is a
 				// legitimate incompatibility; anything else is a defect. (The
@@ -124,18 +131,18 @@ func TestRealRenderedProfileProjectsEveryToolSelection(t *testing.T) {
 					grammarRejections++
 					continue
 				}
-				t.Fatalf("Project(%s,%s,%s): %v", tool.Name, model.Spec.Provider, model.Name, err)
+				t.Fatalf("Project(%s,%s,%s): %v", tool.Name, serving.Spec.Provider, serving.Name, err)
 			}
 			projected++
 			if projection.BudgetProfile != tool.Spec.BudgetProfile {
-				t.Fatalf("Project(%s,%s,%s): budget profile %q, want %q", tool.Name, model.Spec.Provider, model.Name, projection.BudgetProfile, tool.Spec.BudgetProfile)
+				t.Fatalf("Project(%s,%s,%s): budget profile %q, want %q", tool.Name, serving.Spec.Provider, serving.Name, projection.BudgetProfile, tool.Spec.BudgetProfile)
 			}
 			if projection.ProviderSlug == "" || projection.ModelSlug == "" {
-				t.Fatalf("Project(%s,%s,%s): empty slug in %+v", tool.Name, model.Spec.Provider, model.Name, projection)
+				t.Fatalf("Project(%s,%s,%s): empty slug in %+v", tool.Name, serving.Spec.Provider, serving.Name, projection)
 			}
 			contextWindow, ok := projection.Settings["context_window"].(int64)
 			if !ok || contextWindow <= 0 {
-				t.Fatalf("Project(%s,%s,%s): settings.context_window missing or non-positive: %v", tool.Name, model.Spec.Provider, model.Name, projection.Settings["context_window"])
+				t.Fatalf("Project(%s,%s,%s): settings.context_window missing or non-positive: %v", tool.Name, serving.Spec.Provider, serving.Name, projection.Settings["context_window"])
 			}
 		}
 	}
@@ -143,7 +150,7 @@ func TestRealRenderedProfileProjectsEveryToolSelection(t *testing.T) {
 		t.Fatal("Project: no tool/selection pair projected successfully")
 	}
 	if attempted != len(objects.Tools)*nonDeprecated {
-		t.Fatalf("Project: sweep attempted %d pairs, want every tool x non-deprecated model (%d x %d); the sweep is not exercising the real catalog", attempted, len(objects.Tools), nonDeprecated)
+		t.Fatalf("Project: sweep attempted %d pairs, want every tool x non-deprecated serving (%d x %d); the sweep is not exercising the real catalog", attempted, len(objects.Tools), nonDeprecated)
 	}
 	if projected+grammarRejections != attempted {
 		t.Fatalf("Project: %d projected + %d grammar rejections != %d attempted", projected, grammarRejections, attempted)

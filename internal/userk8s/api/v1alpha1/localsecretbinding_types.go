@@ -4,12 +4,29 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// LocalSecretBinding is the local bridge between a Kubernetes Secret
-// reference and the environment variable slots an access requires.
-// Selector-matched to ModelAccess labels, it names the Secret key that holds
-// the value in-cluster and the ordered resolver chain that produces the value
-// locally (environment lookup, file read, or command execution — for example
-// the 1Password CLI). Namespaced: credential material is machine- or
+// CredentialScheme names how a resolved credential is presented upstream.
+type CredentialScheme string
+
+const (
+	// CredentialNone means no credential is presented.
+	CredentialNone CredentialScheme = "none"
+	// CredentialBearer is an Authorization: Bearer credential.
+	CredentialBearer CredentialScheme = "bearer"
+	// CredentialAPIKey is an api-key header credential.
+	CredentialAPIKey CredentialScheme = "api-key"
+	// CredentialXAPIKey is an x-api-key header credential.
+	CredentialXAPIKey CredentialScheme = "x-api-key"
+	// CredentialAWSSigV4 is an AWS SigV4 credential set.
+	CredentialAWSSigV4 CredentialScheme = "awsSigV4"
+)
+
+// LocalSecretBinding is one credential an ENTITY holds for a provider. It is
+// deliberately not attached to a Model, a ModelServing, or a ModelAccess: a
+// ModelRoute names the binding it uses as its access item's credential.
+// Selector-matched to the provider/access labels, it names the Secret key that
+// holds the value in-cluster and the ordered resolver chain that produces the
+// value locally (environment lookup, file read, or command execution — for
+// example the 1Password CLI). Namespaced: credential material is machine- or
 // tenant-local.
 //
 // +kubebuilder:object:root=true
@@ -88,8 +105,15 @@ type LocalSecretBindingSpec struct {
 	// SecretRef names the in-cluster source of the value.
 	SecretRef SecretKeyRef `json:"secretRef"`
 
-	// EnvVar is the environment variable slot this binding covers; an access
-	// is resolvable only when every requiredEnv name has a matched binding.
+	// Scheme is how the resolved value is presented upstream. It belongs to
+	// the credential, not to the logical access.
+	// +kubebuilder:validation:Enum=none;bearer;api-key;x-api-key;awsSigV4
+	// +kubebuilder:default=bearer
+	// +optional
+	Scheme CredentialScheme `json:"scheme,omitempty"`
+
+	// EnvVar is the environment variable name the shaper receives the value
+	// in. It is the credential's slot name, not an access requirement.
 	// +kubebuilder:validation:Pattern=`^[A-Za-z_][A-Za-z0-9_]*$`
 	EnvVar string `json:"envVar"`
 

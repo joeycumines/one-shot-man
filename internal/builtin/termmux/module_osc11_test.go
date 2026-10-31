@@ -2,7 +2,6 @@ package termmux
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -205,8 +204,7 @@ func TestSessionManagerCapture_JSBinding_ColorFields(t *testing.T) {
 	}
 
 	mgr := parent.NewSessionManager()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	errCh := make(chan error, 1)
 	go func() { errCh <- mgr.Run(ctx) }()
 	<-mgr.Started()

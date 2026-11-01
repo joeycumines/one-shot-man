@@ -7,9 +7,6 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
 )
 
-//go:fix inline
-func int64Ptr(value int64) *int64 { return new(value) }
-
 func reasoningModel(spec *v1alpha1.ModelReasoning) *v1alpha1.Model {
 	return &v1alpha1.Model{
 		Spec: v1alpha1.ModelSpec{

@@ -509,18 +509,14 @@ kind: ModelAccess
 metadata:
   name: vendor-shaper
   labels:
-    one-shot-man/mode: shaper
+    one-shot-man/provider: vendor
   annotations:
     one-shot-man/registry-name: vendor:shaper
     one-shot-man/shaper-args: '["-opencode=true", "-native-route=chat@/v1/chat/completions"]'
     example.com/owner: platform
 spec:
   provider: vendor
-  mode: shaper
-  auth:
-    scheme: none
-  endpoints:
-    chat: http://127.0.0.1:11239/vendor/v1
+  protocol: chat
 `
 	path := filepath.Join(t.TempDir(), "catalog.yaml")
 	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
@@ -536,7 +532,7 @@ spec:
 			shaperArgs: access.annotations["one-shot-man/shaper-args"],
 			foreignKept: access.annotations["example.com/owner"],
 			registryStillVerbatim: access.annotations["one-shot-man/registry-name"],
-			labelStillSeparate: access.labels["one-shot-man/mode"],
+			labelStillSeparate: access.labels["one-shot-man/provider"],
 			argsAreAString: typeof access.annotations["one-shot-man/shaper-args"] === "string"
 		})
 	`)
@@ -556,7 +552,7 @@ spec:
 		{"registryStillVerbatim", "vendor:shaper"},
 		{"shaperArgs", wantArgs},
 		{"foreignKept", "platform"},
-		{"labelStillSeparate", "shaper"},
+		{"labelStillSeparate", "vendor"},
 		// An annotation is a string by construction: k8s annotations are
 		// map[string]string. A consumer that wants structure parses it, and
 		// the module must not pre-parse on its behalf.

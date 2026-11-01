@@ -357,7 +357,7 @@ func TestModelRouteSchema(t *testing.T) {
 	assertRule(t, "modelroutes", got, "self.endpoints.size() == self.surfaces.size()")
 	assertRule(t, "modelroutes", got, "self.transport.kind != 'shaper' || self.naming == 'served'")
 	assertRule(t, "modelroutes", got, "self.transport.kind != 'direct' || self.naming == 'wire'")
-	assertRule(t, "modelroutes", got, "self.transport.kind == 'shaper' || self.transport.kind == 'direct' || self.offers.size() > 0")
+	assertRule(t, "modelroutes", got, "self.transport.kind == 'shaper' || self.transport.kind == 'direct' || (has(self.offers) && self.offers.size() > 0)")
 }
 
 func TestModelSchema(t *testing.T) {

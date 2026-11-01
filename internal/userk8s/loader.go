@@ -188,8 +188,136 @@ func (o *Objects) addDocument(node *ast.MappingNode, source string) error {
 	if err := yaml.NodeToValue(node, target, yaml.UseJSONUnmarshaler()); err != nil {
 		return fmt.Errorf("catalog %q: decoding %s: %w", source, meta.Kind, err)
 	}
+	// The API server applies every +kubebuilder:default before an object reaches
+	// a backend. Nothing applies them to a file, so the files backend does it
+	// here: a document decoded from disk must be indistinguishable from the same
+	// object read from a cluster, or the two backends resolve credentials and
+	// report capabilities differently.
+	defaults, err := decodeDefaults(node)
+	if err != nil {
+		return fmt.Errorf("catalog %q: reading %s defaults: %w", source, meta.Kind, err)
+	}
+	if err := applyDefaults(meta.Kind, target, defaults); err != nil {
+		return fmt.Errorf("catalog %q: defaulting %s: %w", source, meta.Kind, err)
+	}
 	o.append(meta.Kind, target)
 	return nil
+}
+
+// decodeDefaults returns the document's spec as a generic map, which is how the
+// defaulting pass knows which fields the author actually wrote: an absent field
+// takes its CRD default while an explicit zero value does not. A document with
+// no spec yields an empty map.
+func decodeDefaults(node *ast.MappingNode) (map[string]any, error) {
+	var document map[string]any
+	if err := yaml.NodeToValue(node, &document); err != nil {
+		return nil, err
+	}
+	spec, ok := document["spec"].(map[string]any)
+	if !ok {
+		return map[string]any{}, nil
+	}
+	return spec, nil
+}
+
+// applyDefaults fills the CRD defaults of one catalog kind. Every default here
+// is one the API server would apply to the same object; a field the author wrote
+// (including an explicit zero) is left alone. Keeping this list beside the type
+// markers it mirrors is deliberate: a default added to a type without an entry
+// here is the divergence this function exists to prevent, and the parity test in
+// userk8s fails when the two disagree.
+func applyDefaults(kind string, target any, spec map[string]any) error {
+	switch typed := target.(type) {
+	case *v1alpha1.Model:
+		applyModelDefaults(&typed.Spec, spec)
+	case *v1alpha1.ModelServing:
+		applyServingDefaults(&typed.Spec, spec)
+	case *v1alpha1.ModelRoute:
+		applyRouteDefaults(&typed.Spec, spec)
+	case *v1alpha1.LocalSecretBinding:
+		applyBindingDefaults(&typed.Spec, spec)
+	case *v1alpha1.ModelSelection:
+		applySelectionDefaults(&typed.Spec, spec)
+	case *v1alpha1.ModelProvider, *v1alpha1.ModelAccess, *v1alpha1.Tool:
+		// Their defaults are all zero values, which decoding already produced.
+	default:
+		return fmt.Errorf("kind %T has no defaulting rule; add one or classify it as default-free", target)
+	}
+	return nil
+}
+
+// present reports whether the author wrote a key into the document.
+func present(spec map[string]any, key string) bool {
+	_, ok := spec[key]
+	return ok
+}
+
+// applyModelDefaults applies ModelSpec's CRD defaults: tool_call is true and the
+// modalities default to text. All three are +kubebuilder:default markers on the
+// type; see applyDefaults.
+func applyModelDefaults(spec *v1alpha1.ModelSpec, document map[string]any) {
+	if !present(document, "tool_call") {
+		spec.ToolCall = true
+	}
+	if !present(document, "input_modalities") {
+		spec.InputModalities = []string{"text"}
+	}
+	if !present(document, "output_modalities") {
+		spec.OutputModalities = []string{"text"}
+	}
+}
+
+// applyServingDefaults applies ModelServingSpec's priority default.
+func applyServingDefaults(spec *v1alpha1.ModelServingSpec, document map[string]any) {
+	if !present(document, "priority") {
+		spec.Priority = 100
+	}
+}
+
+// applyRouteDefaults applies ModelRouteSpec's order default.
+func applyRouteDefaults(spec *v1alpha1.ModelRouteSpec, document map[string]any) {
+	if !present(document, "order") {
+		spec.Order = 100
+	}
+}
+
+// applyBindingDefaults applies LocalSecretBindingSpec's defaults: the scheme, and
+// the per-resolver command timeout. A credentialless binding says so explicitly
+// (scheme: none); omitting the scheme means the value is presented as a bearer
+// credential, exactly as it would be from a cluster. The timeout default keeps a
+// binding decoded from disk identical to one the API server defaulted, so the
+// assembled object never depends on which backend produced it.
+func applyBindingDefaults(spec *v1alpha1.LocalSecretBindingSpec, document map[string]any) {
+	if !present(document, "scheme") {
+		spec.Scheme = v1alpha1.CredentialBearer
+	}
+	steps, _ := document["resolvers"].([]any)
+	for i := range spec.Resolvers {
+		command := spec.Resolvers[i].Command
+		if command == nil || command.Timeout != nil {
+			continue
+		}
+		// Only default a step whose document entry omitted the timeout; an
+		// explicit "0s" is the author's own value.
+		if i < len(steps) {
+			if entry, ok := steps[i].(map[string]any); ok {
+				if commandDoc, ok := entry["command"].(map[string]any); ok {
+					if present(commandDoc, "timeout") {
+						continue
+					}
+				}
+			}
+		}
+		timeout := metav1.Duration{Duration: defaultCommandTimeout}
+		command.Timeout = &timeout
+	}
+}
+
+// applySelectionDefaults applies ModelSelectionSpec's strategy default.
+func applySelectionDefaults(spec *v1alpha1.ModelSelectionSpec, document map[string]any) {
+	if !present(document, "strategy") {
+		spec.Strategy = v1alpha1.SelectionOrdered
+	}
 }
 
 // newTarget returns the address of a fresh value of one kind, or an error when
@@ -405,6 +533,12 @@ func (o *Objects) validate() error {
 		}
 	}
 
+	if err := o.validateAccesses(); err != nil {
+		return err
+	}
+	if err := o.validateModels(); err != nil {
+		return err
+	}
 	if err := o.validateServings(); err != nil {
 		return err
 	}

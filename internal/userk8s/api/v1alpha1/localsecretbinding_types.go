@@ -124,6 +124,17 @@ type LocalSecretBindingSpec struct {
 	Resolvers []LocalSecretResolver `json:"resolvers,omitempty"`
 }
 
+// EffectiveScheme returns the scheme with the CRD default applied. The API
+// server defaults an omitted scheme to bearer; a value read from a files
+// artifact without the defaulting pass would otherwise be "", so every consumer
+// must read the scheme through this method.
+func (spec LocalSecretBindingSpec) EffectiveScheme() CredentialScheme {
+	if spec.Scheme == "" {
+		return CredentialBearer
+	}
+	return spec.Scheme
+}
+
 // LocalSecretBindingList is the list form of LocalSecretBinding.
 //
 // +kubebuilder:object:root=true

@@ -40,8 +40,9 @@ var _ Catalog = (*ClusterBackend)(nil)
 
 // ClusterBackendOptions configures a ClusterBackend.
 type ClusterBackendOptions struct {
-	// Namespace scopes the namespaced kinds (LocalSecretBinding). Empty uses
-	// the namespace of the selected kubeconfig context.
+	// Namespace scopes the namespaced kinds (ModelSelection, ModelRoute,
+	// LocalSecretBinding). Empty uses the namespace of the selected kubeconfig
+	// context.
 	Namespace string
 
 	// Kubeconfig is an explicit kubeconfig path; empty follows KUBECONFIG and
@@ -97,9 +98,10 @@ func NewClusterBackendFromDynamic(client dynamic.Interface, namespace string, ru
 // GroupVersion identifies the catalog API the cluster backend reads.
 var clusterGroupVersion = schema.GroupVersion{Group: v1alpha1.Group, Version: v1alpha1.Version}
 
-// ClusterBackend reads six kinds; the resources are the lowercase plurals of
-// the kind names. Routes and bindings are namespaced; the rest are the shared
-// cluster-scoped catalog.
+// ClusterBackend reads all eight catalog kinds; the resources are the lowercase
+// plurals of the kind names. ModelSelection, ModelRoute, and
+// LocalSecretBinding are namespaced; the rest are the shared cluster-scoped
+// catalog.
 var (
 	clusterProviders  = clusterGroupVersion.WithResource("modelproviders")
 	clusterAccesses   = clusterGroupVersion.WithResource("modelaccesses")
@@ -345,6 +347,16 @@ func (c *ClusterBackend) EffectiveModel(ctx context.Context, servingRef string) 
 	return inner.EffectiveModel(ctx, servingRef)
 }
 
+// EffectiveModelForServing delegates to the shared resolution for an
+// already-resolved serving.
+func (c *ClusterBackend) EffectiveModelForServing(ctx context.Context, serving *v1alpha1.ModelServing) (EffectiveModel, error) {
+	inner, err := c.catalog(ctx)
+	if err != nil {
+		return EffectiveModel{}, err
+	}
+	return inner.EffectiveModelForServing(ctx, serving)
+}
+
 // RouteOffers delegates to the shared resolution.
 func (c *ClusterBackend) RouteOffers(ctx context.Context, routeRef string) ([]ResolvedOffer, error) {
 	inner, err := c.catalog(ctx)
@@ -352,6 +364,16 @@ func (c *ClusterBackend) RouteOffers(ctx context.Context, routeRef string) ([]Re
 		return nil, err
 	}
 	return inner.RouteOffers(ctx, routeRef)
+}
+
+// RouteOffersForRoute delegates to the shared resolution for an
+// already-resolved route.
+func (c *ClusterBackend) RouteOffersForRoute(ctx context.Context, route *v1alpha1.ModelRoute) ([]ResolvedOffer, error) {
+	inner, err := c.catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return inner.RouteOffersForRoute(ctx, route)
 }
 
 // ListRoutes returns every route in the configured namespace, ordered by name.
@@ -373,21 +395,21 @@ func (c *ClusterBackend) ListTools(ctx context.Context) ([]v1alpha1.Tool, error)
 }
 
 // ResolveCredential reuses the shared resolution protocol.
-func (c *ClusterBackend) ResolveCredential(ctx context.Context, accessRef string) (Resolution, error) {
+func (c *ClusterBackend) ResolveCredential(ctx context.Context, bindingRef string) (Resolution, error) {
 	inner, err := c.catalog(ctx)
 	if err != nil {
 		return Resolution{}, err
 	}
-	return inner.ResolveCredential(ctx, accessRef)
+	return inner.ResolveCredential(ctx, bindingRef)
 }
 
 // Project reuses the shared projection.
-func (c *ClusterBackend) Project(ctx context.Context, tool, provider, model string) (Projection, error) {
+func (c *ClusterBackend) Project(ctx context.Context, tool, provider, serving string) (Projection, error) {
 	inner, err := c.catalog(ctx)
 	if err != nil {
 		return Projection{}, err
 	}
-	return inner.Project(ctx, tool, provider, model)
+	return inner.Project(ctx, tool, provider, serving)
 }
 
 // ProjectServing reuses the shared projection for an already-resolved serving.

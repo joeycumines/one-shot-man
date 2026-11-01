@@ -6,13 +6,14 @@
 // adapter launches with.
 //
 // The async contract: load() returns Promise<Snapshot>, resolveCredential
-// (accessRef, signal?) returns Promise<Resolution> honoring an optional
-// AbortSignal, and project(tool, provider, model) and backendStatus() return
+// (bindingRef, signal?) returns Promise<Resolution> honoring an optional
+// AbortSignal, and project(tool, provider, serving) and backendStatus() return
 // promises because their first call may load the catalog. Rejections carry
-// typed .code values (catalog-not-found, credential-unresolved,
-// resolver-failure-class, and the ABORT_ERR abort); resolver failures surface
-// only as their class, never raw error text, and credential values cross into
-// JS only as the value field of a resolved credential.
+// typed .code values (catalog-not-found, binding-not-found,
+// credential-unresolved, resolver-failure-class, and the ABORT_ERR abort);
+// resolver failures surface only as their class, never raw error text, and
+// credential values cross into JS only as the value field of a resolved
+// credential.
 //
 // Credential values cross into JS only as the value field of a resolved
 // credential; nothing else in the surface exposes credential material, and
@@ -124,9 +125,9 @@ func Require(ctx context.Context, options Options, adapter *gojaeventloop.Adapte
 // first call can load files or query a cluster. Blocking work settles through
 // Adapter.TrackPromise, and an optional AbortSignal aborts resolveCredential
 // with the standard AbortError.
-// Rejections carry typed .code values: catalog-not-found,
-// access-not-found, credential-unresolved, resolver-failure-class — and
-// resolver failures are always reported as classes, never raw error text.
+// Rejections carry typed .code values: catalog-not-found, binding-not-found,
+// credential-unresolved, and resolver-failure-class — and resolver failures are
+// always reported as classes, never raw error text.
 func RequireWithProvider(ctx context.Context, options Options, build Provider, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
@@ -153,16 +154,16 @@ func RequireWithProvider(ctx context.Context, options Options, build Provider, a
 			})
 		})
 
-		// resolveCredential(accessRef, signal?) -> Promise<Resolution>
+		// resolveCredential(bindingRef, signal?) -> Promise<Resolution>
 		_ = exports.Set("resolveCredential", func(call goja.FunctionCall) goja.Value {
 			if adapter == nil {
 				panic(runtime.NewTypeError("osm:userk8s: resolveCredential requires the async runtime wiring"))
 			}
-			accessRef, ok := stringArg(call, 0)
+			bindingRef, ok := stringArg(call, 0)
 			if !ok {
 				promise, settler := adapter.NewPromise()
 				_ = settler.Reject(func(rt *goja.Runtime) any {
-					return rt.NewTypeError("osm:userk8s: resolveCredential requires an access reference")
+					return rt.NewTypeError("osm:userk8s: resolveCredential requires a LocalSecretBinding reference")
 				})
 				return promise
 			}
@@ -198,7 +199,7 @@ func RequireWithProvider(ctx context.Context, options Options, build Provider, a
 					_ = settle.Settle(true, func(rt *goja.Runtime) any { return abortError(rt) })
 					return
 				}
-				resolution, err := catalog.ResolveCredential(trackCtx, accessRef)
+				resolution, err := catalog.ResolveCredential(trackCtx, bindingRef)
 				if err != nil {
 					// An abort that landed mid-resolution wins over every
 					// classification: the resolver's context cancellation IS
@@ -225,18 +226,18 @@ func RequireWithProvider(ctx context.Context, options Options, build Provider, a
 			})
 		})
 
-		// project(toolName, providerName, modelName) -> Promise<Projection>
+		// project(toolName, providerName, servingName) -> Promise<Projection>
 		_ = exports.Set("project", func(call goja.FunctionCall) goja.Value {
 			if adapter == nil {
 				panic(runtime.NewTypeError("osm:userk8s: project requires the async runtime wiring"))
 			}
 			toolName, toolOK := stringArg(call, 0)
 			providerName, providerOK := stringArg(call, 1)
-			modelName, modelOK := stringArg(call, 2)
-			if !toolOK || !providerOK || !modelOK {
+			servingName, servingOK := stringArg(call, 2)
+			if !toolOK || !providerOK || !servingOK {
 				return adapter.TrackPromise(ctx, func(_ context.Context, settle gojaeventloop.TrackedSettlement) {
 					_ = settle.Settle(true, func(rt *goja.Runtime) any {
-						return rt.NewTypeError("osm:userk8s: project requires a tool, a provider, and a model")
+						return rt.NewTypeError("osm:userk8s: project requires a tool, a provider, and a serving")
 					})
 				})
 			}
@@ -246,7 +247,7 @@ func RequireWithProvider(ctx context.Context, options Options, build Provider, a
 					_ = settle.Settle(true, func(rt *goja.Runtime) any { return catalogError(rt, "catalog-not-found", err) })
 					return
 				}
-				projection, err := catalog.Project(trackCtx, toolName, providerName, modelName)
+				projection, err := catalog.Project(trackCtx, toolName, providerName, servingName)
 				if err != nil {
 					_ = settle.Settle(true, func(rt *goja.Runtime) any {
 						return rt.NewTypeError(err.Error())
@@ -286,7 +287,7 @@ var errResolverClass = errors.New("credential resolver failed")
 // catalogError builds a rejected reason with a typed code. The
 // resolver-failure-class code never carries the underlying error: resolver
 // stdout, stderr, exit status, and environment detail stay in Go. The other
-// codes (catalog-not-found, access-not-found) keep the underlying message —
+// codes (catalog-not-found, binding-not-found) keep the underlying message —
 // those errors name catalog objects and configuration, not resolver output.
 func catalogError(rt *goja.Runtime, code string, err error) *goja.Object {
 	if code == "resolver-failure-class" {
@@ -475,19 +476,33 @@ type LoadedEffective struct {
 	StructuredOutput bool                     `json:"structuredOutput"`
 }
 
+// LoadedOverrides is the JS-facing shape of one serving's capability
+// narrowings. It mirrors the CRD struct but uses camelCase keys, so the served
+// payload has one vocabulary: the snake_case CRD spelling would sit beside
+// camelCase effective values and force every script to know both.
+type LoadedOverrides struct {
+	ContextWindow    *int64                   `json:"contextWindow,omitempty"`
+	MaxOutputTokens  *int64                   `json:"maxOutputTokens,omitempty"`
+	InputModalities  []string                 `json:"inputModalities,omitempty"`
+	OutputModalities []string                 `json:"outputModalities,omitempty"`
+	Reasoning        *v1alpha1.ModelReasoning `json:"reasoning,omitempty"`
+	ToolCall         *bool                    `json:"toolCall,omitempty"`
+	StructuredOutput *bool                    `json:"structuredOutput,omitempty"`
+}
+
 // LoadedServing is the JS-facing shape of one provider offering.
 type LoadedServing struct {
-	Name            string                          `json:"name"`
-	Registry        string                          `json:"registryName"`
-	Provider        string                          `json:"provider"`
-	Model           string                          `json:"model"`
-	ProviderModelID string                          `json:"providerModelId"`
-	Priority        int32                           `json:"priority"`
-	Default         bool                            `json:"default,omitempty"`
-	Deprecated      bool                            `json:"deprecated,omitempty"`
-	DisplayName     string                          `json:"displayName"`
-	Effective       LoadedEffective                 `json:"effective"`
-	Overrides       *v1alpha1.ModelServingOverrides `json:"overrides,omitempty"`
+	Name            string           `json:"name"`
+	Registry        string           `json:"registryName"`
+	Provider        string           `json:"provider"`
+	Model           string           `json:"model"`
+	ProviderModelID string           `json:"providerModelId"`
+	Priority        int32            `json:"priority"`
+	Default         bool             `json:"default,omitempty"`
+	Deprecated      bool             `json:"deprecated,omitempty"`
+	DisplayName     string           `json:"displayName"`
+	Effective       LoadedEffective  `json:"effective"`
+	Overrides       *LoadedOverrides `json:"overrides,omitempty"`
 }
 
 // LoadedBinding is the JS-facing shape of a credential binding. It carries no
@@ -638,10 +653,24 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 		maps.Copy(view.Annotations, access.Annotations)
 		loaded.Accesses = append(loaded.Accesses, view)
 	}
-	modelByName := make(map[string]*v1alpha1.Model, len(models))
+	// Index by both the metadata name and the raw registry name, with registry
+	// precedence matching the engine's lookup: serving.Spec.Model is authored in
+	// registry vocabulary, so a metadata-name-only index silently misses the
+	// model's display name and deprecation flag. Registry names are written
+	// second, so on the collision the engine resolves the same way they win here
+	// too.
+	modelByName := make(map[string]*v1alpha1.Model, len(models)*2)
+	for i := range models {
+		modelByName[models[i].Name] = &models[i]
+	}
 	for i := range models {
 		model := &models[i]
-		modelByName[model.Name] = model
+		if registry := registryName(model.Name, model.Annotations); registry != model.Name {
+			modelByName[registry] = model
+		}
+	}
+	for i := range models {
+		model := &models[i]
 		loaded.Models = append(loaded.Models, LoadedModel{
 			Name:             model.Name,
 			Registry:         registryName(model.Name, model.Annotations),
@@ -661,7 +690,11 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 	}
 	for i := range servings {
 		serving := &servings[i]
-		effective, err := catalog.EffectiveModel(ctx, serving.Name)
+		// Resolve through the object, not through a name: a registry name and a
+		// metadata name may collide, and re-resolving a metadata name that
+		// another object also uses as its registry name could pick the wrong
+		// model.
+		effective, err := effectiveModelFor(catalog, ctx, serving)
 		if err != nil {
 			return Loaded{}, err
 		}
@@ -691,7 +724,7 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 				ToolCall:         effective.ToolCall,
 				StructuredOutput: effective.StructuredOutput,
 			},
-			Overrides: serving.Spec.Overrides,
+			Overrides: loadOverrides(serving.Spec.Overrides),
 		})
 	}
 	for i := range bindings {
@@ -699,7 +732,7 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 		view := LoadedBinding{
 			Name:        binding.Name,
 			Namespace:   binding.Namespace,
-			Scheme:      string(binding.Spec.Scheme),
+			Scheme:      string(binding.Spec.EffectiveScheme()),
 			EnvVar:      binding.Spec.EnvVar,
 			Labels:      map[string]string{},
 			Annotations: map[string]string{},
@@ -725,7 +758,7 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 	}
 	for i := range routes {
 		route := &routes[i]
-		offers, err := catalog.RouteOffers(ctx, route.Name)
+		offers, err := routeOffersFor(catalog, ctx, route)
 		if err != nil {
 			return Loaded{}, err
 		}
@@ -764,6 +797,47 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 		})
 	}
 	return loaded, nil
+}
+
+// loadOverrides maps a serving's narrowings onto the camelCase JS shape.
+func loadOverrides(overrides *v1alpha1.ModelServingOverrides) *LoadedOverrides {
+	if overrides == nil {
+		return nil
+	}
+	return &LoadedOverrides{
+		ContextWindow:    overrides.ContextWindow,
+		MaxOutputTokens:  overrides.MaxOutputTokens,
+		InputModalities:  append([]string(nil), overrides.InputModalities...),
+		OutputModalities: append([]string(nil), overrides.OutputModalities...),
+		Reasoning:        overrides.Reasoning,
+		ToolCall:         overrides.ToolCall,
+		StructuredOutput: overrides.StructuredOutput,
+	}
+}
+
+// effectiveModelFor resolves a serving's effective capabilities from the object
+// the caller already holds. The Catalog interface accepts a reference because an
+// external caller has only a name; this module iterates the objects themselves,
+// so it uses the identity it already has rather than a name that may also be
+// another object's registry name.
+func effectiveModelFor(catalog userk8s.Catalog, ctx context.Context, serving *v1alpha1.ModelServing) (userk8s.EffectiveModel, error) {
+	if resolver, ok := catalog.(interface {
+		EffectiveModelForServing(context.Context, *v1alpha1.ModelServing) (userk8s.EffectiveModel, error)
+	}); ok {
+		return resolver.EffectiveModelForServing(ctx, serving)
+	}
+	return catalog.EffectiveModel(ctx, serving.Name)
+}
+
+// routeOffersFor resolves a route's offers from the object the caller holds,
+// for the same reason as effectiveModelFor.
+func routeOffersFor(catalog userk8s.Catalog, ctx context.Context, route *v1alpha1.ModelRoute) ([]userk8s.ResolvedOffer, error) {
+	if resolver, ok := catalog.(interface {
+		RouteOffersForRoute(context.Context, *v1alpha1.ModelRoute) ([]userk8s.ResolvedOffer, error)
+	}); ok {
+		return resolver.RouteOffersForRoute(ctx, route)
+	}
+	return catalog.RouteOffers(ctx, route.Name)
 }
 
 // registryName returns the raw registry identifier an object declares, else

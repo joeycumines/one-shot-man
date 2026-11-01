@@ -30,13 +30,13 @@ type Catalog interface {
 	// RouteOffers resolves one route's effective offering inventory.
 	RouteOffers(ctx context.Context, routeRef string) ([]ResolvedOffer, error)
 
-	// ResolveCredential resolves one access's credential requirements.
-	ResolveCredential(ctx context.Context, accessRef string) (Resolution, error)
+	// ResolveCredential resolves one LocalSecretBinding's credential.
+	ResolveCredential(ctx context.Context, bindingRef string) (Resolution, error)
 
-	// Project derives the tool-facing slug pair and settings for one
-	// selection. Budget derivation is adapter code; the catalog only names
-	// the tool's budget profile.
-	Project(ctx context.Context, tool, provider, model string) (Projection, error)
+	// Project derives the tool-facing slug pair and settings for one serving.
+	// Budget derivation is adapter code; the catalog only names the tool's
+	// budget profile.
+	Project(ctx context.Context, tool, provider, serving string) (Projection, error)
 
 	Status(ctx context.Context) (BackendStatus, error)
 }
@@ -167,10 +167,20 @@ func (b *FilesBackend) ListSelections(context.Context) ([]v1alpha1.ModelSelectio
 }
 
 // EffectiveModel resolves one serving to its effective capabilities.
-func (b *FilesBackend) EffectiveModel(_ context.Context, servingRef string) (EffectiveModel, error) {
+func (b *FilesBackend) EffectiveModel(ctx context.Context, servingRef string) (EffectiveModel, error) {
 	serving, ok := b.objects.lookupServing(servingRef)
 	if !ok {
 		return EffectiveModel{}, fmt.Errorf("unknown ModelServing %q", servingRef)
+	}
+	return b.EffectiveModelForServing(ctx, serving)
+}
+
+// EffectiveModelForServing resolves an already-resolved serving, so an in-process
+// caller that holds the object never has to disambiguate a name (a metadata name
+// can equal another object's registry name).
+func (b *FilesBackend) EffectiveModelForServing(_ context.Context, serving *v1alpha1.ModelServing) (EffectiveModel, error) {
+	if serving == nil {
+		return EffectiveModel{}, errors.New("userk8s: EffectiveModelForServing requires a serving")
 	}
 	model, ok := b.objects.lookupModel(serving.Spec.Model)
 	if !ok {
@@ -180,10 +190,19 @@ func (b *FilesBackend) EffectiveModel(_ context.Context, servingRef string) (Eff
 }
 
 // RouteOffers resolves one route's effective offering inventory.
-func (b *FilesBackend) RouteOffers(_ context.Context, routeRef string) ([]ResolvedOffer, error) {
+func (b *FilesBackend) RouteOffers(ctx context.Context, routeRef string) ([]ResolvedOffer, error) {
 	route, ok := b.objects.lookupRoute(routeRef)
 	if !ok {
 		return nil, fmt.Errorf("unknown ModelRoute %q", routeRef)
+	}
+	return b.RouteOffersForRoute(ctx, route)
+}
+
+// RouteOffersForRoute resolves an already-resolved route, for the same reason as
+// EffectiveModelForServing.
+func (b *FilesBackend) RouteOffersForRoute(_ context.Context, route *v1alpha1.ModelRoute) ([]ResolvedOffer, error) {
+	if route == nil {
+		return nil, errors.New("userk8s: RouteOffersForRoute requires a route")
 	}
 	return b.objects.routeOffers(route)
 }
@@ -289,8 +308,12 @@ func (b *FilesBackend) ResolveCredential(ctx context.Context, bindingRef string)
 	if !ok {
 		return Resolution{}, fmt.Errorf("unknown LocalSecretBinding %q", bindingRef)
 	}
-	switch binding.Spec.Scheme {
-	case "", v1alpha1.CredentialNone:
+	// The scheme is read through EffectiveScheme so a binding whose scheme was
+	// omitted resolves exactly as it does from a cluster, where the API server
+	// defaults it to bearer. An omitted scheme is NOT credential-less: only an
+	// explicit "none" is.
+	switch scheme := binding.Spec.EffectiveScheme(); scheme {
+	case v1alpha1.CredentialNone:
 		return Resolution{Status: StatusResolved, Reason: "credential scheme none requires no value"}, nil
 	case v1alpha1.CredentialBearer, v1alpha1.CredentialAPIKey, v1alpha1.CredentialXAPIKey:
 		credential, resolved, failures := resolveBinding(ctx, *binding, b.runner)
@@ -305,12 +328,12 @@ func (b *FilesBackend) ResolveCredential(ctx context.Context, bindingRef string)
 	case v1alpha1.CredentialAWSSigV4:
 		return Resolution{
 			Status: StatusUnsupportedScheme,
-			Reason: fmt.Sprintf("credential scheme %s is modeled but not launchable in this version", binding.Spec.Scheme),
+			Reason: fmt.Sprintf("credential scheme %s is modeled but not launchable in this version", scheme),
 		}, nil
 	default:
 		return Resolution{
 			Status: StatusUnsupportedScheme,
-			Reason: fmt.Sprintf("credential scheme %q is not recognized", binding.Spec.Scheme),
+			Reason: fmt.Sprintf("credential scheme %q is not recognized", scheme),
 		}, nil
 	}
 }

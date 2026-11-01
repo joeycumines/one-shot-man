@@ -64,15 +64,26 @@ spec:
 		`apiVersion: one-shot-man/v1alpha1
 kind: ModelAccess
 metadata:
-  name: alpha-direct
+  name: alpha-chat
 spec:
   provider: alpha
-  auth:
-    scheme: bearer
-    requiredEnv:
-      - ALPHA_API_KEY
+  protocol: chat
+`,
+		`apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-alpha
+spec:
+  selector:
+    matchLabels:
+      one-shot-man/provider: alpha
+  scheme: bearer
+  secretRef:
+    name: creds
+    key: ALPHA_API_KEY
+  envVar: ALPHA_API_KEY
 `)
-	if _, err := mustBackend(t, objects, &fakeRunner{}).ResolveCredential(ctx, "alpha-direct"); !errors.Is(err, context.Canceled) {
+	if _, err := mustBackend(t, objects, &fakeRunner{}).ResolveCredential(ctx, "bind-alpha"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("ResolveCredential: got %v, want context.Canceled", err)
 	}
 

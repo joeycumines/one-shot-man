@@ -50,6 +50,7 @@ spec:
                 description: |-
                   Access names the logical ModelAccess this route dials. Required for
                   shaper and direct transports; absent for a remote inventory.
+                minLength: 1
                 type: string
               credential:
                 description: |-
@@ -97,14 +98,16 @@ spec:
                   type: object
                   x-kubernetes-validations:
                   - message: offer.id must be an RFC-1123 name when set
-                    rule: self.id == ” || self.id.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+                    rule: '!has(self.id) || size(self.id) == 0 || self.id.matches(''^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'')'
                 type: array
               order:
                 default: 100
                 description: |-
                   Order is the preference among routes that expose the same offering;
-                  lower is more preferred.
+                  lower is more preferred. Zero is the unset value and is rejected when
+                  declared explicitly: the default replaces it with 100.
                 format: int32
+                minimum: 1
                 type: integer
               surfaces:
                 description: Surfaces lists the client wire surfaces this route publishes.
@@ -135,6 +138,7 @@ spec:
                         description: |-
                           AuthMode is the upstream auth mode: auto, none, bearer, x-api-key,
                           api-key, header:NAME.
+                        minLength: 1
                         type: string
                       cancel_cooldown:
                         description: CancelCooldown is the slot hold after client
@@ -194,6 +198,7 @@ spec:
                   upstream:
                     description: Upstream is the provider endpoint a shaper transport
                       dials.
+                    minLength: 1
                     type: string
                 required:
                 - kind
@@ -228,7 +233,7 @@ spec:
               rule: self.transport.kind == 'shaper' || !has(self.transport.shaper)
             - message: a remote route must declare its offers inventory
               rule: self.transport.kind == 'shaper' || self.transport.kind == 'direct'
-                || self.offers.size() > 0
+                || (has(self.offers) && self.offers.size() > 0)
         type: object
         x-kubernetes-validations:
         - message: metadata.name must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$

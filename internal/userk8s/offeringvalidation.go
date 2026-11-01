@@ -37,6 +37,11 @@ func (o *Objects) validateServings() error {
 		if serving.Spec.ProviderModelID == "" {
 			return fmt.Errorf("ModelServing %q declares no provider_model_id", serving.Name)
 		}
+		// Priority defaults to 100; zero is the unset zero value and is rejected
+		// when declared explicitly, matching the CRD's Minimum=1.
+		if serving.Spec.Priority == 0 {
+			return fmt.Errorf("ModelServing %q declares priority 0; it must be at least 1 (omit it to take the default 100)", serving.Name)
+		}
 		if serving.Spec.Default {
 			key := registryName(provider)
 			if existing, ok := defaults[key]; ok {
@@ -44,7 +49,15 @@ func (o *Objects) validateServings() error {
 			}
 			defaults[key] = serving.Name
 		}
-		if _, err := effectiveModel(model, serving); err != nil {
+		effective, err := effectiveModel(model, serving)
+		if err != nil {
+			return err
+		}
+		// A tool setting is authored against the canonical Model, but a
+		// projection runs on the serving's narrowed capabilities. Checking the
+		// pair here means a contradiction fails the catalog instead of producing
+		// a launch plan that silently exceeds what the provider offers.
+		if err := validateToolSettingsAgainstEffective(model, serving, effective); err != nil {
 			return err
 		}
 	}
@@ -55,11 +68,36 @@ func (o *Objects) validateServings() error {
 func (o *Objects) validateSelections() error {
 	for i := range o.Selections {
 		selection := &o.Selections[i]
+		if selection.Spec.DisplayName == "" {
+			return fmt.Errorf("ModelSelection %q declares no display_name", selection.Name)
+		}
+		switch selection.Spec.Strategy {
+		case "", v1alpha1.SelectionOrdered, v1alpha1.SelectionPriority, v1alpha1.SelectionDynamic:
+		default:
+			return fmt.Errorf("ModelSelection %q declares unknown strategy %q; it must be ordered, priority, or dynamic", selection.Name, selection.Spec.Strategy)
+		}
 		if len(selection.Spec.Candidates) == 0 {
 			return fmt.Errorf("ModelSelection %q declares no candidates", selection.Name)
 		}
 		for j := range selection.Spec.Candidates {
 			candidate := &selection.Spec.Candidates[j]
+			// The CRD requires exactly one reference. A switch would silently
+			// honour the first field and ignore the rest, letting a files
+			// artifact carry a candidate the cluster would reject.
+			references := 0
+			for _, set := range []bool{
+				candidate.Serving != "",
+				candidate.Model != "",
+				candidate.Selection != "",
+				candidate.Offer != nil,
+			} {
+				if set {
+					references++
+				}
+			}
+			if references != 1 {
+				return fmt.Errorf("ModelSelection %q candidate %d sets %d references; exactly one of serving, model, selection, or offer is required", selection.Name, j, references)
+			}
 			switch {
 			case candidate.Serving != "":
 				if _, ok := o.lookupServing(candidate.Serving); !ok {
@@ -129,10 +167,17 @@ func (o *Objects) validateSelectionCycle(selection *v1alpha1.ModelSelection, pat
 // routeOffers resolves the effective inventory of one route. An empty Offers
 // list on a shaper/direct route means every non-deprecated serving of the
 // access's provider; a remote route must declare its inventory.
+//
+// Deprecation filters the INVENTORY, not an explicit declaration. A deprecated
+// Model "hides every serving unless one is explicitly pinned" (Model.Spec), so a
+// serving the route author listed by name is honoured and only the defaulted
+// inventory is filtered. Every structural check still runs on both kinds, so a
+// misconfigured deprecated entry is reported rather than silently skipped.
 func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, error) {
 	spec := &route.Spec
+	explicit := len(spec.Offers) > 0
 	declared := make([]v1alpha1.RouteOffer, 0, len(spec.Offers))
-	if len(spec.Offers) > 0 {
+	if explicit {
 		declared = append(declared, spec.Offers...)
 	} else {
 		if spec.Transport.Kind == v1alpha1.TransportRemote {
@@ -145,16 +190,30 @@ func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, erro
 		if !ok {
 			return nil, fmt.Errorf("ModelRoute %q references undeclared ModelAccess %q", route.Name, spec.Access)
 		}
+		accessProvider, ok := o.lookupProvider(access.Spec.Provider)
+		if !ok {
+			return nil, fmt.Errorf("ModelAccess %q references undeclared ModelProvider %q", access.Name, access.Spec.Provider)
+		}
 		for i := range o.Servings {
 			serving := &o.Servings[i]
-			if serving.Spec.Provider == access.Spec.Provider && !serving.Spec.Deprecated {
-				declared = append(declared, v1alpha1.RouteOffer{Serving: serving.Name})
+			provider, ok := o.lookupProvider(serving.Spec.Provider)
+			if !ok || provider != accessProvider || serving.Spec.Deprecated {
+				continue
 			}
+			declared = append(declared, v1alpha1.RouteOffer{Serving: serving.Name})
 		}
 		sort.Slice(declared, func(i, j int) bool { return declared[i].Serving < declared[j].Serving })
 	}
 	out := make([]ResolvedOffer, 0, len(declared))
 	seen := map[string]bool{}
+	var access *v1alpha1.ModelAccess
+	if spec.Access != "" {
+		var ok bool
+		access, ok = o.lookupAccess(spec.Access)
+		if !ok {
+			return nil, fmt.Errorf("ModelRoute %q references undeclared ModelAccess %q", route.Name, spec.Access)
+		}
+	}
 	for _, entry := range declared {
 		serving, ok := o.lookupServing(entry.Serving)
 		if !ok {
@@ -164,21 +223,21 @@ func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, erro
 		if !ok {
 			return nil, fmt.Errorf("ModelServing %q references undeclared Model %q", serving.Name, serving.Spec.Model)
 		}
-		if serving.Spec.Deprecated || model.Spec.Deprecated {
-			continue
-		}
-		if spec.Access != "" {
-			access, ok := o.lookupAccess(spec.Access)
+		// Providers are compared as resolved objects, not as raw strings: a
+		// reference may be written with the provider's registry name, which is a
+		// different spelling of the same object.
+		if access != nil {
+			accessProvider, ok := o.lookupProvider(access.Spec.Provider)
 			if !ok {
-				return nil, fmt.Errorf("ModelRoute %q references undeclared ModelAccess %q", route.Name, spec.Access)
+				return nil, fmt.Errorf("ModelAccess %q references undeclared ModelProvider %q", access.Name, access.Spec.Provider)
 			}
-			if serving.Spec.Provider != access.Spec.Provider {
+			servingProvider, ok := o.lookupProvider(serving.Spec.Provider)
+			if !ok {
+				return nil, fmt.Errorf("ModelServing %q references undeclared ModelProvider %q", serving.Name, serving.Spec.Provider)
+			}
+			if servingProvider != accessProvider {
 				return nil, fmt.Errorf("ModelRoute %q access %q serves provider %q but offering %q belongs to provider %q", route.Name, access.Name, access.Spec.Provider, serving.Name, serving.Spec.Provider)
 			}
-		}
-		effective, err := effectiveModel(model, serving)
-		if err != nil {
-			return nil, err
 		}
 		id := entry.ID
 		if id == "" {
@@ -188,6 +247,14 @@ func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, erro
 			return nil, fmt.Errorf("ModelRoute %q exposes served id %q more than once", route.Name, id)
 		}
 		seen[id] = true
+		// Only a defaulted inventory is filtered: an explicit offer is a pin.
+		if !explicit && (serving.Spec.Deprecated || model.Spec.Deprecated) {
+			continue
+		}
+		effective, err := effectiveModel(model, serving)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, ResolvedOffer{ID: id, Serving: serving, Model: model, Effective: effective})
 	}
 	return out, nil
@@ -196,23 +263,77 @@ func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, erro
 // validateRoutes performs the structural and cross-resource checks a files
 // artifact never has an API server evaluate.
 func (o *Objects) validateRoutes() error {
-	shaperAccesses := map[string]string{}
+	// Two shaper routes may share one ModelAccess: the route is the access item
+	// (an account, a region, a protocol), and ModelRoute.metadata.name is the
+	// shaper section identity, so a suite legitimately carries several routes
+	// over the same logical access. What two shaper sections cannot share is the
+	// same local mount prefix — the shaper would claim one listener path twice
+	// and serve whichever route bound it first.
+	mounts := map[string]string{}
 	for i := range o.Routes {
 		route := &o.Routes[i]
-		if err := o.validateRoute(route, shaperAccesses); err != nil {
+		if err := o.validateRoute(route); err != nil {
 			return err
 		}
+		if route.Spec.Transport.Kind != v1alpha1.TransportShaper {
+			continue
+		}
+		// A route whose whole inventory is retired is a catalog statement, not a
+		// section that will run: the gateway filters deprecated offers and never
+		// spawns it, so it must not claim a mount path and block a live route.
+		offers, err := o.routeOffers(route)
+		if err != nil {
+			return err
+		}
+		if len(offers) == 0 {
+			continue
+		}
+		prefix, err := shaperMountPrefix(route)
+		if err != nil {
+			return err
+		}
+		if previous, ok := mounts[prefix]; ok {
+			return fmt.Errorf("ModelRoutes %q and %q both mount the shaper at prefix %q; two shaper sections cannot claim the same local path", previous, route.Name, prefix)
+		}
+		mounts[prefix] = route.Name
 	}
 	return nil
 }
 
-func (o *Objects) validateRoute(route *v1alpha1.ModelRoute, shaperAccesses map[string]string) error {
+// shaperMountPrefix returns the single mount prefix a shaper route already
+// validated by validateShaperMount publishes.
+func shaperMountPrefix(route *v1alpha1.ModelRoute) (string, error) {
+	var prefix string
+	for i, surface := range route.Spec.Surfaces {
+		path, err := endpointPath(string(route.Spec.Endpoints[surface]))
+		if err != nil {
+			return "", fmt.Errorf("ModelRoute %q endpoint for %q: %w", route.Name, surface, err)
+		}
+		trimmed := strings.TrimSuffix(strings.TrimRight(path, "/"), "/v1")
+		if i == 0 {
+			prefix = trimmed
+			continue
+		}
+		if trimmed != prefix {
+			return "", fmt.Errorf("ModelRoute %q endpoints disagree on the mount prefix (%q vs %q)", route.Name, prefix, trimmed)
+		}
+	}
+	return prefix, nil
+}
+
+func (o *Objects) validateRoute(route *v1alpha1.ModelRoute) error {
 	name := route.Name
 	if name == "" {
 		return fmt.Errorf("ModelRoute with empty metadata.name")
 	}
 	spec := &route.Spec
 	if err := validateRouteShape(name, spec); err != nil {
+		return err
+	}
+	if err := validateRouteOffers(name, spec.Offers); err != nil {
+		return err
+	}
+	if err := validateRouteTransport(name, spec); err != nil {
 		return err
 	}
 	var access *v1alpha1.ModelAccess
@@ -260,7 +381,7 @@ func (o *Objects) validateRoute(route *v1alpha1.ModelRoute, shaperAccesses map[s
 	// an upstream that rejects it or fail at its first request. Refuse the
 	// catalog instead of starting a mount that cannot honour its declaration.
 	if spec.Transport.Kind == v1alpha1.TransportShaper && spec.Transport.Shaper != nil {
-		credentialless := spec.Credential == "" || (binding != nil && binding.Spec.Scheme == v1alpha1.CredentialNone)
+		credentialless := spec.Credential == "" || (binding != nil && binding.Spec.EffectiveScheme() == v1alpha1.CredentialNone)
 		if mode := strings.TrimSpace(spec.Transport.Shaper.AuthMode); credentialless && credentialMode(mode) {
 			return fmt.Errorf("ModelRoute %q declares shaper auth mode %q but names no credential; a credential mode needs a LocalSecretBinding", name, mode)
 		}
@@ -272,20 +393,19 @@ func (o *Objects) validateRoute(route *v1alpha1.ModelRoute, shaperAccesses map[s
 	if len(offers) == 0 {
 		// A route whose whole inventory is retired is a catalog statement, not
 		// a defect: the gateway filters deprecated offers and never spawns a
-		// section for it. It must not claim the access and block a live route
-		// for the same access.
+		// section for it.
 		return nil
-	}
-	if spec.Transport.Kind == v1alpha1.TransportShaper {
-		if previous, ok := shaperAccesses[access.Name]; ok {
-			return fmt.Errorf("ModelRoutes %q and %q both mount access %q with a shaper; a shaper suite serves one section per route, so one access may be materialized by only one route", previous, name, access.Name)
-		}
-		shaperAccesses[access.Name] = name
 	}
 	return nil
 }
 
 func validateRouteShape(name string, spec *v1alpha1.ModelRouteSpec) error {
+	// Order defaults to 100; zero is the unset zero value and is rejected when
+	// declared explicitly, so the normalization is total rather than silently
+	// rewriting an author's choice (the CRD states the same with Minimum=1).
+	if spec.Order == 0 {
+		return fmt.Errorf("ModelRoute %q declares order 0; it must be at least 1 (omit it to take the default 100)", name)
+	}
 	switch spec.Naming {
 	case v1alpha1.RouteNamingServed, v1alpha1.RouteNamingWire, v1alpha1.RouteNamingRegistry, v1alpha1.RouteNamingCanonical:
 	default:
@@ -399,17 +519,25 @@ func validateSurfaceSupport(name string, protocol v1alpha1.WireProtocol, spec *v
 }
 
 // validateShaperMount requires every endpoint of a shaper route to resolve to
-// one mount prefix. The shaper strips the prefix before dispatch, so endpoints
-// that disagree would make some declared surface unreachable.
+// one non-empty mount prefix. The shaper strips the prefix before dispatch, so
+// an endpoint without one is unreachable and endpoints that disagree would make
+// some declared surface unreachable.
+//
+// The prefix is taken from the first surface and compared thereafter; a surface
+// whose own path trims to nothing is rejected on the spot, because such a
+// surface contributes no prefix and must not be mistaken for "not seen yet".
 func validateShaperMount(name string, spec *v1alpha1.ModelRouteSpec) error {
 	var prefix string
-	for _, surface := range spec.Surfaces {
+	for i, surface := range spec.Surfaces {
 		path, err := endpointPath(string(spec.Endpoints[surface]))
 		if err != nil {
 			return fmt.Errorf("ModelRoute %q endpoint for %q: %w", name, surface, err)
 		}
 		trimmed := strings.TrimSuffix(strings.TrimRight(path, "/"), "/v1")
-		if prefix == "" {
+		if trimmed == "" || trimmed == "/" {
+			return fmt.Errorf("ModelRoute %q shaper endpoint for surface %q carries no mount prefix (path %q)", name, surface, path)
+		}
+		if i == 0 {
 			prefix = trimmed
 			continue
 		}
@@ -417,7 +545,7 @@ func validateShaperMount(name string, spec *v1alpha1.ModelRouteSpec) error {
 			return fmt.Errorf("ModelRoute %q endpoints disagree on the mount prefix (%q vs %q)", name, prefix, trimmed)
 		}
 	}
-	if prefix == "" || prefix == "/" {
+	if prefix == "" {
 		return fmt.Errorf("ModelRoute %q shaper endpoints carry no mount prefix", name)
 	}
 	return nil

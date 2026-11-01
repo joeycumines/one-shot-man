@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"regexp"
+	"slices"
 
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -214,4 +215,45 @@ func modelSettings(model *v1alpha1.Model, serving *v1alpha1.ModelServing, effect
 		settings["waive"] = override.Waive
 	}
 	return settings
+}
+
+// validateToolSettingsAgainstEffective enforces the narrowing rule at the level
+// a projection actually uses. Model.Spec.ToolSettings is authored against the
+// canonical Model, but a projection runs on the SERVING's narrowed capabilities:
+// an override that fits the Model can still exceed the serving, and an effort
+// level the Model publishes can be one the serving removed. Such an override is a
+// contradiction between two catalog statements, so it is refused unless the
+// override carries a waive reason (the same escape the model-level rule allows).
+func validateToolSettingsAgainstEffective(model *v1alpha1.Model, serving *v1alpha1.ModelServing, effective EffectiveModel) error {
+	tools := make([]string, 0, len(model.Spec.ToolSettings))
+	for tool := range model.Spec.ToolSettings {
+		tools = append(tools, tool)
+	}
+	slices.Sort(tools)
+	for _, tool := range tools {
+		settings := model.Spec.ToolSettings[tool]
+		for _, bound := range []struct {
+			field string
+			value *int64
+			limit int64
+		}{
+			{"context_window", settings.ContextWindow, effective.ContextWindow},
+			{"max_output_tokens", settings.MaxOutputTokens, effective.MaxOutputTokens},
+			{"auto_compact_window", settings.AutoCompactWindow, effective.ContextWindow},
+		} {
+			if bound.value == nil || settings.Waive != "" {
+				continue
+			}
+			if *bound.value > bound.limit {
+				return fmt.Errorf("ModelServing %q narrows Model %q below toolSettings[%q].%s (%d > %d); add a waive reason to the tool setting to record the compromise", serving.Name, model.Name, tool, bound.field, *bound.value, bound.limit)
+			}
+		}
+		if settings.EffortLevel == nil || settings.Waive != "" {
+			continue
+		}
+		if effective.Reasoning != nil && len(effective.Reasoning.Efforts) > 0 && !slices.Contains(effective.Reasoning.Efforts, *settings.EffortLevel) {
+			return fmt.Errorf("ModelServing %q removed reasoning effort %q, which Model %q toolSettings[%q] still requests; add a waive reason to record the compromise", serving.Name, *settings.EffortLevel, model.Name, tool)
+		}
+	}
+	return nil
 }

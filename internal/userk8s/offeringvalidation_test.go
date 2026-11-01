@@ -177,16 +177,125 @@ spec:
 	}
 }
 
-func TestRouteValidationRefusesTwoShaperRoutesForOneAccess(t *testing.T) {
+// TestRouteValidationAllowsTwoShaperRoutesForOneAccess pins the documented
+// multi-account design: ModelRoute.metadata.name is the shaper section identity,
+// so several routes (accounts, regions, protocols) may dial the same logical
+// ModelAccess. Each route here has a distinct mount prefix, which is what the
+// shaper actually needs to keep them apart.
+func TestRouteValidationAllowsTwoShaperRoutesForOneAccess(t *testing.T) {
 	_, err := loadDocuments(routeValidationDocuments(
 		routeValidationRoute("alpha-one", "alpha-chat", "", ""),
 		routeValidationRoute("alpha-two", "alpha-chat", "", ""),
 	)...)
+	if err != nil {
+		t.Fatalf("two routes over one access with distinct mounts must load: %v", err)
+	}
+}
+
+// TestRouteValidationRefusesTwoShaperRoutesOnOneMount is the hazard the
+// per-access ban was standing in for: two shaper sections claiming the same
+// local path would serve whichever route bound it first.
+func TestRouteValidationRefusesTwoShaperRoutesOnOneMount(t *testing.T) {
+	first := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-one
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - chat
+  endpoints:
+    chat: http://127.0.0.1:11239/shared/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	second := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-two
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - chat
+  endpoints:
+    chat: http://127.0.0.1:11239/shared/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	_, err := loadDocuments(routeValidationDocuments(first, second)...)
 	if err == nil ||
-		!strings.Contains(err.Error(), "both mount access") ||
+		!strings.Contains(err.Error(), "both mount the shaper at prefix") ||
 		!strings.Contains(err.Error(), "alpha-one") ||
 		!strings.Contains(err.Error(), "alpha-two") {
-		t.Fatalf("error: got %v", err)
+		t.Fatalf("error: got %v, want both routes and the shared prefix named", err)
+	}
+}
+
+// TestRouteValidationRefusesSurfaceWithoutMountPrefix covers the sentinel bug:
+// a surface whose endpoint is just /v1 (or /) contributes no mount prefix, and
+// a later surface must not be allowed to define one on its behalf.
+func TestRouteValidationRefusesSurfaceWithoutMountPrefix(t *testing.T) {
+	noPrefix := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-one
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - anthropic
+  endpoints:
+    anthropic: http://127.0.0.1:11239/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	_, err := loadDocuments(routeValidationDocuments(noPrefix)...)
+	if err == nil || !strings.Contains(err.Error(), "carries no mount prefix") {
+		t.Fatalf("error: got %v, want a refusal naming the prefixless surface", err)
+	}
+}
+
+// TestRouteValidationRefusesMismatchedMountPrefix catches the exact bypass the
+// sentinel allowed: the first surface trims to nothing, so a later surface's
+// different prefix used to be accepted without ever being compared.
+func TestRouteValidationRefusesMismatchedMountPrefix(t *testing.T) {
+	mismatched := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-one
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - chat
+  - responses
+  endpoints:
+    chat: http://127.0.0.1:11239/v1
+    responses: http://127.0.0.1:11239/mount/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	_, err := loadDocuments(routeValidationDocuments(mismatched)...)
+	if err == nil || !strings.Contains(err.Error(), "carries no mount prefix") {
+		t.Fatalf("error: got %v, want the prefixless surface refused rather than silently compared", err)
 	}
 }
 

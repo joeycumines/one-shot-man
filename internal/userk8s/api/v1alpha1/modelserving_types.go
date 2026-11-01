@@ -92,8 +92,10 @@ type ModelServingSpec struct {
 	ProviderModelID string `json:"provider_model_id"`
 
 	// Priority orders offerings of the same Model when a selection expands
-	// them; lower is preferred.
+	// them; lower is preferred. Zero is the unset value and is rejected when
+	// declared explicitly: the default replaces it with 100.
 	// +kubebuilder:default=100
+	// +kubebuilder:validation:Minimum=1
 	// +optional
 	Priority int32 `json:"priority,omitempty"`
 

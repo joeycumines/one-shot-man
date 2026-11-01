@@ -70,7 +70,7 @@ func effectiveModel(model *v1alpha1.Model, serving *v1alpha1.ModelServing) (Effe
 		if err := narrowReasoning(model, serving, overrides.Reasoning); err != nil {
 			return EffectiveModel{}, err
 		}
-		effective.Reasoning = cloneReasoning(overrides.Reasoning)
+		effective.Reasoning = mergeReasoning(model.Spec.Reasoning, overrides.Reasoning)
 	}
 	if overrides.ToolCall != nil {
 		if *overrides.ToolCall && !model.Spec.ToolCall {
@@ -112,15 +112,62 @@ func narrowReasoning(model *v1alpha1.Model, serving *v1alpha1.ModelServing, narr
 			return fmt.Errorf("ModelServing %q reasoning effort %q is not part of Model %q's %v", serving.Name, effort, model.Name, canonical.Efforts)
 		}
 	}
+	// A budget bound the provider does not publish is not a bound the serving
+	// may narrow: a model that publishes only a ceiling says nothing about its
+	// floor, and a serving that states one is describing its own range. A model
+	// that publishes no budget at all supports no budget-based reasoning, so a
+	// serving may not invent one.
 	if narrowed.Budget != nil {
-		if narrowed.Budget.Min != nil && (canonical.Budget == nil || canonical.Budget.Min == nil || *narrowed.Budget.Min < *canonical.Budget.Min) {
+		if canonical.Budget == nil {
+			return fmt.Errorf("ModelServing %q declares a reasoning budget on a Model %q with no budget range", serving.Name, model.Name)
+		}
+		if narrowed.Budget.Min != nil && canonical.Budget.Min != nil && *narrowed.Budget.Min < *canonical.Budget.Min {
 			return fmt.Errorf("ModelServing %q reasoning budget minimum widens Model %q", serving.Name, model.Name)
 		}
-		if narrowed.Budget.Max != nil && (canonical.Budget == nil || canonical.Budget.Max == nil || *narrowed.Budget.Max > *canonical.Budget.Max) {
+		if narrowed.Budget.Max != nil && (canonical.Budget.Max == nil || *narrowed.Budget.Max > *canonical.Budget.Max) {
 			return fmt.Errorf("ModelServing %q reasoning budget maximum widens Model %q", serving.Name, model.Name)
+		}
+		if err := validateReasoningBudget(model.Name, narrowed.Budget); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// mergeReasoning composes a serving's reasoning override with its Model's fact
+// sheet. The override replaces the fact sheet's EFFORTS with an explicit
+// narrower set (a serving that publishes a different list is stating the levels
+// its provider accepts).
+//
+// The budget follows the narrowing rule in two distinct ways, and confusing them
+// silently widens the catalog:
+//
+//   - An ABSENT override budget means the serving exposes no budget-based
+//     reasoning at all. Removing a capability is a narrowing, so it stays absent;
+//     inheriting the Model's range here would claim the serving still offers it.
+//   - A DECLARED override budget keeps the Model's bounds for whatever it omits,
+//     because "no floor published" cannot mean "no floor" when the Model
+//     publishes one — that would widen the accepted range.
+//
+// The result is a deep copy: no pointer from the input catalogs is shared with
+// the caller.
+func mergeReasoning(canonical, override *v1alpha1.ModelReasoning) *v1alpha1.ModelReasoning {
+	if override == nil {
+		return cloneReasoning(canonical)
+	}
+	merged := cloneReasoning(override)
+	if canonical == nil || canonical.Budget == nil || merged.Budget == nil {
+		return merged
+	}
+	if merged.Budget.Min == nil && canonical.Budget.Min != nil {
+		minimum := *canonical.Budget.Min
+		merged.Budget.Min = &minimum
+	}
+	if merged.Budget.Max == nil && canonical.Budget.Max != nil {
+		maximum := *canonical.Budget.Max
+		merged.Budget.Max = &maximum
+	}
+	return merged
 }
 
 func cloneReasoning(in *v1alpha1.ModelReasoning) *v1alpha1.ModelReasoning {

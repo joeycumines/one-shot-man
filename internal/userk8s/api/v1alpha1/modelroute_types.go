@@ -48,7 +48,7 @@ const (
 
 // RouteOffer binds one ModelServing to the id this route exposes it under.
 //
-// +kubebuilder:validation:XValidation:rule="self.id == ” || self.id.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="offer.id must be an RFC-1123 name when set"
+// +kubebuilder:validation:XValidation:rule="!has(self.id) || size(self.id) == 0 || self.id.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="offer.id must be an RFC-1123 name when set"
 type RouteOffer struct {
 	// Serving is a ModelServing reference (metadata name or registry key).
 	// +kubebuilder:validation:MinLength=1
@@ -89,11 +89,12 @@ type ModelRoute struct {
 // +kubebuilder:validation:XValidation:rule="self.transport.kind != 'direct' || self.naming == 'wire'",message="direct transport requires naming wire"
 // +kubebuilder:validation:XValidation:rule="self.transport.kind != 'shaper' || has(self.transport.upstream)",message="shaper transport requires spec.transport.upstream"
 // +kubebuilder:validation:XValidation:rule="self.transport.kind == 'shaper' || !has(self.transport.shaper)",message="spec.transport.shaper is only valid for shaper transport"
-// +kubebuilder:validation:XValidation:rule="self.transport.kind == 'shaper' || self.transport.kind == 'direct' || self.offers.size() > 0",message="a remote route must declare its offers inventory"
+// +kubebuilder:validation:XValidation:rule="self.transport.kind == 'shaper' || self.transport.kind == 'direct' || (has(self.offers) && self.offers.size() > 0)",message="a remote route must declare its offers inventory"
 type ModelRouteSpec struct {
 	// Access names the logical ModelAccess this route dials. Required for
 	// shaper and direct transports; absent for a remote inventory.
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	Access string `json:"access,omitempty"`
 
 	// Credential names the LocalSecretBinding (same namespace) that supplies
@@ -121,8 +122,10 @@ type ModelRouteSpec struct {
 	Naming ModelRouteNaming `json:"naming"`
 
 	// Order is the preference among routes that expose the same offering;
-	// lower is more preferred.
+	// lower is more preferred. Zero is the unset value and is rejected when
+	// declared explicitly: the default replaces it with 100.
 	// +kubebuilder:default=100
+	// +kubebuilder:validation:Minimum=1
 	// +optional
 	Order int32 `json:"order,omitempty"`
 
@@ -148,6 +151,7 @@ type ModelRouteTransport struct {
 
 	// Upstream is the provider endpoint a shaper transport dials.
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	Upstream string `json:"upstream,omitempty"`
 
 	// Shaper carries the operating envelope for a shaper transport.
@@ -162,6 +166,7 @@ type ShaperTransportConfig struct {
 	// AuthMode is the upstream auth mode: auto, none, bearer, x-api-key,
 	// api-key, header:NAME.
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	AuthMode string `json:"auth_mode,omitempty"`
 
 	// Concurrency is the max concurrent limited requests (-concurrency).

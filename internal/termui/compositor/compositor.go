@@ -5,6 +5,8 @@
 package compositor
 
 import (
+	"strings"
+
 	"charm.land/lipgloss/v2"
 
 	"github.com/joeycumines/one-shot-man/internal/termui/coordinate"
@@ -307,6 +309,67 @@ func (c *Compositor) buildCompositor() *lipgloss.Compositor {
 	return lipgloss.NewCompositor(layers...)
 }
 
+// buildGeometryCompositor builds the same layer stack without rendering content.
+//
+// A hit test only needs each layer's id, position, and size, but a layer's
+// bounds are derived from the width and height of the content string it is
+// given. Re-encoding zone markers and rendering a background fill across every
+// pane on each mouse move is pure waste, so this variant measures the content
+// instead of rendering it and reproduces the bounds the full path would produce:
+//
+//   - a pane with a background fill is rendered through Style.Width/Height, so
+//     its bounds are exactly the stored pane rectangle;
+//   - otherwise bounds are the measured content size, which is what the filler
+//     and the marker transcoder leave unchanged (both are zero-width).
+func (c *Compositor) buildGeometryCompositor() *lipgloss.Compositor {
+	layers := make([]*lipgloss.Layer, 0, len(c.panes)+len(c.chrome))
+
+	for _, id := range c.paneOrder {
+		pe := c.panes[id]
+		content := geometryPlaceholder(pe.content, pe.width, pe.height, pe.bg != "")
+		l := lipgloss.NewLayer(content).
+			X(pe.x).
+			Y(pe.y).
+			Z(pe.z).
+			ID(pe.id)
+		layers = append(layers, l)
+	}
+
+	for _, ce := range c.chrome {
+		content := geometryPlaceholder(ce.content, ce.width, ce.height, false)
+		l := lipgloss.NewLayer(content).
+			X(ce.x).
+			Y(ce.y).
+			Z(ce.z).
+			ID(ce.id)
+		layers = append(layers, l)
+	}
+
+	return lipgloss.NewCompositor(layers...)
+}
+
+// geometryPlaceholder returns a blank block whose measured size equals the size
+// the real content contributes to a layer's bounds. filled reports the
+// background-fill case, where the style forces the pane rectangle.
+//
+// An escape sequence is zero-width, so encoding zone markers never changes a
+// measurement and the raw content is measured directly.
+func geometryPlaceholder(content string, width, height int, filled bool) string {
+	measuredWidth, measuredHeight := lipgloss.Width(content), lipgloss.Height(content)
+	if filled {
+		measuredWidth, measuredHeight = width, height
+	}
+	if measuredWidth <= 0 || measuredHeight <= 0 {
+		return ""
+	}
+	row := strings.Repeat(" ", measuredWidth)
+	rows := make([]string, measuredHeight)
+	for i := range rows {
+		rows[i] = row
+	}
+	return strings.Join(rows, "\n")
+}
+
 // ensureCanvas lazily creates the canvas if it hasn't been created yet or
 // needs recreation due to dimension mismatch.
 func (c *Compositor) ensureCanvas() {
@@ -347,8 +410,12 @@ func (c *Compositor) Render() string {
 
 // Hit performs a hit test at the given (x, y) coordinates. Returns the ID of
 // the topmost layer at that point and true, or ("", false) if no layer is hit.
+//
+// The hit test runs on the geometry-only layer stack: a mouse move must not
+// re-encode zone markers or re-render every pane's background fill, and only the
+// layer rectangles, z-order, and ids take part in a hit.
 func (c *Compositor) Hit(x, y int) (string, bool) {
-	comp := c.buildCompositor()
+	comp := c.buildGeometryCompositor()
 	hit := comp.Hit(x, y)
 	if hit.Empty() {
 		return "", false

@@ -264,6 +264,126 @@ spec:
 	}
 }
 
+func TestFilesDefaultingMatchesAPIServerDefaultingForExplicitNulls(t *testing.T) {
+	tests := []struct {
+		kind     string
+		document string
+	}{
+		{
+			kind: "Model",
+			document: `apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: alpha-model-nulls
+spec:
+  canonical_id: alpha/alpha-model-nulls
+  display_name: Alpha Model Nulls
+  context_window: 1000
+  max_output_tokens: 10
+  tool_call: null
+  input_modalities: null
+  output_modalities: null
+`,
+		},
+		{
+			kind: "ModelServing",
+			document: `apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  name: alpha-serving-nulls
+spec:
+  provider: alpha
+  model: prereq-model
+  provider_model_id: alpha-wire
+  priority: null
+`,
+		},
+		{
+			kind: "ModelRoute",
+			document: `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-route-nulls
+  namespace: test
+spec:
+  access: alpha-chat
+  offers: []
+  surfaces:
+    - chat
+  endpoints:
+    chat: http://127.0.0.1:1/alpha/v1
+  naming: served
+  order: null
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`,
+		},
+		{
+			kind: "ModelSelection",
+			document: `apiVersion: one-shot-man/v1alpha1
+kind: ModelSelection
+metadata:
+  name: alpha-selection-nulls
+  namespace: test
+spec:
+  display_name: Alpha selection nulls
+  strategy: null
+  candidates:
+    - serving: prereq-serving
+`,
+		},
+		{
+			kind: "LocalSecretBinding",
+			document: `apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-alpha-nulls
+  namespace: test
+spec:
+  selector:
+    matchLabels:
+      one-shot-man/provider: alpha
+  secretRef:
+    name: creds
+    key: ALPHA_API_KEY
+  envVar: ALPHA_API_KEY
+  scheme: null
+  resolvers:
+    - command:
+        argv:
+          - fake-op
+        timeout: null
+`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.kind, func(t *testing.T) {
+			source := catalogSupport + "---\n" + test.document
+			objects, err := loadDocuments([]byte(source))
+			if err != nil {
+				t.Fatalf("loadDocuments: %v", err)
+			}
+			loaded := onlyObject(t, objects, test.kind, test.document)
+
+			oracle := defaultedByAPIServer(t, test.kind, test.document)
+
+			loadedJSON, err := json.Marshal(loaded)
+			if err != nil {
+				t.Fatalf("marshalling the loaded object: %v", err)
+			}
+			oracleJSON, err := json.Marshal(oracle)
+			if err != nil {
+				t.Fatalf("marshalling the API-server-defaulted object: %v", err)
+			}
+			if string(loadedJSON) != string(oracleJSON) {
+				t.Fatalf("files defaulting diverged from the API server for %s with explicit nulls:\n files: %s\noracle: %s", test.kind, loadedJSON, oracleJSON)
+			}
+		})
+	}
+}
+
 // onlyObject returns the object of one kind whose name matches the document
 // under test, so a prerequisite of the same kind is not mistaken for it.
 func onlyObject(t *testing.T, objects *Objects, kind, document string) any {

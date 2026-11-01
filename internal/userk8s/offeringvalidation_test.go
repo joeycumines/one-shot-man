@@ -269,6 +269,31 @@ spec:
 	}
 }
 
+func TestRouteValidationRefusesSurfaceWithMultipleSlashesBeforeV1(t *testing.T) {
+	multiSlash := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-one
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - anthropic
+  endpoints:
+    anthropic: http://127.0.0.1:11239///v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	_, err := loadDocuments(routeValidationDocuments(multiSlash)...)
+	if err == nil || !strings.Contains(err.Error(), "carries no mount prefix") {
+		t.Fatalf("error: got %v, want a refusal naming the prefixless surface", err)
+	}
+}
+
 // TestRouteValidationRefusesMismatchedMountPrefix catches the exact bypass the
 // sentinel allowed: the first surface trims to nothing, so a later surface's
 // different prefix used to be accepted without ever being compared.

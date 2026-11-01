@@ -336,6 +336,9 @@ func (c *Compositor) buildGeometryCompositor() *lipgloss.Compositor {
 	}
 
 	for _, ce := range c.chrome {
+		// Chrome layers never carry a background fill (chromeEntry has no bg
+		// field and buildCompositor renders chrome content unstyled), so filled
+		// is unconditionally false here.
 		content := geometryPlaceholder(ce.content, ce.width, ce.height, false)
 		l := lipgloss.NewLayer(content).
 			X(ce.x).
@@ -353,11 +356,14 @@ func (c *Compositor) buildGeometryCompositor() *lipgloss.Compositor {
 // background-fill case, where the style forces the pane rectangle.
 //
 // An escape sequence is zero-width, so encoding zone markers never changes a
-// measurement and the raw content is measured directly.
+// measurement and the raw content is measured directly. When filled is true,
+// content measurement is skipped entirely since style width/height governs.
 func geometryPlaceholder(content string, width, height int, filled bool) string {
-	measuredWidth, measuredHeight := lipgloss.Width(content), lipgloss.Height(content)
+	var measuredWidth, measuredHeight int
 	if filled {
 		measuredWidth, measuredHeight = width, height
+	} else {
+		measuredWidth, measuredHeight = lipgloss.Width(content), lipgloss.Height(content)
 	}
 	if measuredWidth <= 0 || measuredHeight <= 0 {
 		return ""

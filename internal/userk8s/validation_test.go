@@ -180,6 +180,11 @@ spec:
 			wantErr: "unknown strategy \"random\"",
 		},
 		{
+			name:    "selection with explicit empty strategy",
+			docs:    []string{provider, strings.Replace(selectionDocument(), "  strategy: ordered", "  strategy: \"\"", 1)},
+			wantErr: "unknown strategy \"\"",
+		},
+		{
 			name:    "route offer with a malformed id",
 			docs:    []string{provider, model(""), serving("alpha", "alpha-serving"), route(shaperTransport, "  offers:\n  - serving: alpha-serving\n    id: Not_An_ID\n")},
 			wantErr: "must be an RFC-1123 name",

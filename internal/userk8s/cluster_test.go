@@ -81,6 +81,9 @@ func seededCluster(t *testing.T, namespace string, objects *Objects) *ClusterBac
 	for i := range objects.Selections {
 		seeded = append(seeded, toUnstructured(t, &objects.Selections[i])...)
 	}
+	for i := range objects.Routes {
+		seeded = append(seeded, toUnstructured(t, &objects.Routes[i])...)
+	}
 	for i := range objects.Tools {
 		seeded = append(seeded, toUnstructured(t, &objects.Tools[i])...)
 	}
@@ -121,6 +124,9 @@ func TestClusterBackendParityWithFilesBackend(t *testing.T) {
 		{"providers", filesStatus.Providers, clusterStatus.Providers},
 		{"accesses", filesStatus.Accesses, clusterStatus.Accesses},
 		{"models", filesStatus.Models, clusterStatus.Models},
+		{"servings", filesStatus.Servings, clusterStatus.Servings},
+		{"selections", filesStatus.Selections, clusterStatus.Selections},
+		{"routes", filesStatus.Routes, clusterStatus.Routes},
 		{"tools", filesStatus.Tools, clusterStatus.Tools},
 		{"bindings", filesStatus.Bindings, clusterStatus.Bindings},
 	} {

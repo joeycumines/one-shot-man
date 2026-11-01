@@ -1,6 +1,7 @@
 package userk8s
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
@@ -47,35 +48,47 @@ func TestReasoningBudgetNarrowing(t *testing.T) {
 	}{
 		{
 			name:      "lowering the ceiling narrows",
-			canonical: &v1alpha1.ModelReasoningBudget{Min: int64Ptr(1024), Max: int64Ptr(32000)},
-			override:  &v1alpha1.ModelReasoningBudget{Max: int64Ptr(16000)},
+			canonical: &v1alpha1.ModelReasoningBudget{Min: new(int64(1024)), Max: new(int64(32000))},
+			override:  &v1alpha1.ModelReasoningBudget{Max: new(int64(16000))},
 		},
 		{
 			name:      "adding a floor to a ceiling-only model is allowed",
-			canonical: &v1alpha1.ModelReasoningBudget{Max: int64Ptr(32000)},
-			override:  &v1alpha1.ModelReasoningBudget{Min: int64Ptr(1024)},
+			canonical: &v1alpha1.ModelReasoningBudget{Max: new(int64(32000))},
+			override:  &v1alpha1.ModelReasoningBudget{Min: new(int64(1024))},
 		},
 		{
 			name:      "lowering the floor widens",
-			canonical: &v1alpha1.ModelReasoningBudget{Min: int64Ptr(1024)},
-			override:  &v1alpha1.ModelReasoningBudget{Min: int64Ptr(512)},
+			canonical: &v1alpha1.ModelReasoningBudget{Min: new(int64(1024))},
+			override:  &v1alpha1.ModelReasoningBudget{Min: new(int64(512))},
 			wantErr:   true,
 		},
 		{
 			name:      "raising the ceiling widens",
-			canonical: &v1alpha1.ModelReasoningBudget{Max: int64Ptr(32000)},
-			override:  &v1alpha1.ModelReasoningBudget{Max: int64Ptr(64000)},
+			canonical: &v1alpha1.ModelReasoningBudget{Max: new(int64(32000))},
+			override:  &v1alpha1.ModelReasoningBudget{Max: new(int64(64000))},
 			wantErr:   true,
 		},
 		{
 			name:     "inventing a budget on a model with none",
-			override: &v1alpha1.ModelReasoningBudget{Max: int64Ptr(1000)},
+			override: &v1alpha1.ModelReasoningBudget{Max: new(int64(1000))},
 			wantErr:  true,
 		},
 		{
 			name:      "inverted override bounds",
-			canonical: &v1alpha1.ModelReasoningBudget{Max: int64Ptr(32000)},
-			override:  &v1alpha1.ModelReasoningBudget{Min: int64Ptr(2000), Max: int64Ptr(1000)},
+			canonical: &v1alpha1.ModelReasoningBudget{Max: new(int64(32000))},
+			override:  &v1alpha1.ModelReasoningBudget{Min: new(int64(2000)), Max: new(int64(1000))},
+			wantErr:   true,
+		},
+		{
+			name:      "override ceiling below canonical floor inverts after merge",
+			canonical: &v1alpha1.ModelReasoningBudget{Min: new(int64(2000)), Max: new(int64(32000))},
+			override:  &v1alpha1.ModelReasoningBudget{Max: new(int64(1000))},
+			wantErr:   true,
+		},
+		{
+			name:      "override floor above canonical ceiling inverts after merge",
+			canonical: &v1alpha1.ModelReasoningBudget{Min: new(int64(1024)), Max: new(int64(10000))},
+			override:  &v1alpha1.ModelReasoningBudget{Min: new(int64(20000))},
 			wantErr:   true,
 		},
 	}
@@ -99,6 +112,27 @@ func TestReasoningBudgetNarrowing(t *testing.T) {
 	}
 }
 
+func TestReasoningBudgetOverrideErrorAttribution(t *testing.T) {
+	model := reasoningModel(&v1alpha1.ModelReasoning{
+		Supported: true,
+		Budget:    &v1alpha1.ModelReasoningBudget{Min: new(int64(1024)), Max: new(int64(32000))},
+	})
+	serving := reasoningServing(&v1alpha1.ModelServingOverrides{
+		Reasoning: &v1alpha1.ModelReasoning{
+			Supported: true,
+			Budget:    &v1alpha1.ModelReasoningBudget{Min: new(int64(2000)), Max: new(int64(1000))},
+		},
+	})
+	_, err := effectiveModel(model, serving)
+	if err == nil {
+		t.Fatal("expected error for inverted override bounds, got nil")
+	}
+	want := "ModelServing \"alpha-serving\""
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("error message %q should name the ModelServing %q", err.Error(), want)
+	}
+}
+
 // TestEffectiveReasoningMergesBudgetBounds proves the merged effective reasoning
 // keeps a canonical floor the serving did not mention. Replacing the budget
 // wholesale would erase it and widen the range — the defect the merge fixes.
@@ -107,13 +141,13 @@ func TestEffectiveReasoningMergesBudgetBounds(t *testing.T) {
 		Supported: true,
 		Toggle:    true,
 		Efforts:   []string{"low", "high"},
-		Budget:    &v1alpha1.ModelReasoningBudget{Min: int64Ptr(1024), Max: int64Ptr(32000)},
+		Budget:    &v1alpha1.ModelReasoningBudget{Min: new(int64(1024)), Max: new(int64(32000))},
 	})
 	serving := reasoningServing(&v1alpha1.ModelServingOverrides{
 		Reasoning: &v1alpha1.ModelReasoning{
 			Supported: true,
 			Toggle:    true,
-			Budget:    &v1alpha1.ModelReasoningBudget{Max: int64Ptr(16000)},
+			Budget:    &v1alpha1.ModelReasoningBudget{Max: new(int64(16000))},
 		},
 	})
 
@@ -162,7 +196,7 @@ func TestEffectiveReasoningDoesNotAliasCatalogState(t *testing.T) {
 	model := reasoningModel(&v1alpha1.ModelReasoning{
 		Supported: true,
 		Efforts:   []string{"low", "high"},
-		Budget:    &v1alpha1.ModelReasoningBudget{Min: int64Ptr(1024), Max: int64Ptr(32000)},
+		Budget:    &v1alpha1.ModelReasoningBudget{Min: new(int64(1024)), Max: new(int64(32000))},
 	})
 	serving := reasoningServing(&v1alpha1.ModelServingOverrides{
 		Reasoning: &v1alpha1.ModelReasoning{
@@ -170,7 +204,7 @@ func TestEffectiveReasoningDoesNotAliasCatalogState(t *testing.T) {
 			Efforts:   []string{"low"},
 			// The override declares a budget so the inherited floor is part of
 			// the merged result; the assertions below then prove the copy.
-			Budget: &v1alpha1.ModelReasoningBudget{Max: int64Ptr(16000)},
+			Budget: &v1alpha1.ModelReasoningBudget{Max: new(int64(16000))},
 		},
 	})
 
@@ -201,7 +235,7 @@ func TestEffectiveReasoningDoesNotAliasCatalogState(t *testing.T) {
 func TestReasoningOverrideOmittingBudgetNarrows(t *testing.T) {
 	model := reasoningModel(&v1alpha1.ModelReasoning{
 		Supported: true,
-		Budget:    &v1alpha1.ModelReasoningBudget{Min: int64Ptr(1024), Max: int64Ptr(32000)},
+		Budget:    &v1alpha1.ModelReasoningBudget{Min: new(int64(1024)), Max: new(int64(32000))},
 	})
 	serving := reasoningServing(&v1alpha1.ModelServingOverrides{
 		Reasoning: &v1alpha1.ModelReasoning{Supported: true},

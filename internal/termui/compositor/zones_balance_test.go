@@ -258,7 +258,7 @@ func TestGeometryHitPathMatchesContentPath(t *testing.T) {
 // not for the cache marker, so the test also asserts the cached frame is returned.
 func TestHitDoesNotRerenderContent(t *testing.T) {
 	c := NewCompositor(40, 8)
-	c.AddPane("p", "\x1b[1001z"[0:0]+"marked", coordinate.Rect{
+	c.AddPane("p", "\x1b[1001zmarked\x1b[1001z", coordinate.Rect{
 		Position: coordinate.Position{X: 0, Y: 0},
 		Size:     coordinate.Size{Width: 20, Height: 3},
 	}, 0)
@@ -276,5 +276,20 @@ func TestHitDoesNotRerenderContent(t *testing.T) {
 	}
 	if second := c.Render(); second != first {
 		t.Fatal("a hit test changed the rendered frame")
+	}
+}
+
+func TestGeometryPlaceholderSkipsMeasurementWhenFilled(t *testing.T) {
+	// A filled placeholder returns exact width x height spaces regardless of content.
+	got := geometryPlaceholder("long content that would take multiple cells", 5, 2, true)
+	want := "     \n     "
+	if got != want {
+		t.Fatalf("geometryPlaceholder filled: got %q, want %q", got, want)
+	}
+	// An unfilled placeholder measures content bounds.
+	gotUnfilled := geometryPlaceholder("abc\nde", 10, 5, false)
+	wantUnfilled := "   \n   "
+	if gotUnfilled != wantUnfilled {
+		t.Fatalf("geometryPlaceholder unfilled: got %q, want %q", gotUnfilled, wantUnfilled)
 	}
 }

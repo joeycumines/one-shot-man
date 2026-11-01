@@ -256,7 +256,7 @@ func TestModuleBackendStatus(t *testing.T) {
 		__collect(({
 			isPromise: isPromise,
 			source: status.source,
-			ok: status.providers === 14 && status.models === 112 && status.bindings === 12 && status.artifacts.length === 1
+			ok: status.providers === 14 && status.models === 112 && status.servings === 152 && status.selections === 1 && status.bindings === 12 && status.artifacts.length === 1
 		}))
 	`)
 	if err != nil {

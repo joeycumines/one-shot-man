@@ -99,23 +99,23 @@ func validateReasoningFactSheet(modelName string, reasoning *v1alpha1.ModelReaso
 		}
 		seen[effort] = true
 	}
-	return validateReasoningBudget(modelName, reasoning.Budget)
+	return validateReasoningBudget("Model", modelName, reasoning.Budget)
 }
 
 // validateReasoningBudget enforces the budget range on its own, so a serving's
 // override can share it.
-func validateReasoningBudget(modelName string, budget *v1alpha1.ModelReasoningBudget) error {
+func validateReasoningBudget(kind, name string, budget *v1alpha1.ModelReasoningBudget) error {
 	if budget == nil {
 		return nil
 	}
 	if budget.Min != nil && *budget.Min < 0 {
-		return fmt.Errorf("Model %q declares reasoning budget min %d; it must be non-negative", modelName, *budget.Min)
+		return fmt.Errorf("%s %q declares reasoning budget min %d; it must be non-negative", kind, name, *budget.Min)
 	}
 	if budget.Max != nil && *budget.Max <= 0 {
-		return fmt.Errorf("Model %q declares reasoning budget max %d; it must be positive", modelName, *budget.Max)
+		return fmt.Errorf("%s %q declares reasoning budget max %d; it must be positive", kind, name, *budget.Max)
 	}
 	if budget.Min != nil && budget.Max != nil && *budget.Min > *budget.Max {
-		return fmt.Errorf("Model %q declares reasoning budget min %d above its max %d", modelName, *budget.Min, *budget.Max)
+		return fmt.Errorf("%s %q declares reasoning budget min %d above its max %d", kind, name, *budget.Min, *budget.Max)
 	}
 	return nil
 }

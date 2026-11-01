@@ -251,8 +251,10 @@ func validateToolSettingsAgainstEffective(model *v1alpha1.Model, serving *v1alph
 		if settings.EffortLevel == nil || settings.Waive != "" {
 			continue
 		}
-		if effective.Reasoning != nil && len(effective.Reasoning.Efforts) > 0 && !slices.Contains(effective.Reasoning.Efforts, *settings.EffortLevel) {
-			return fmt.Errorf("ModelServing %q removed reasoning effort %q, which Model %q toolSettings[%q] still requests; add a waive reason to record the compromise", serving.Name, *settings.EffortLevel, model.Name, tool)
+		if model.Spec.Reasoning != nil && slices.Contains(model.Spec.Reasoning.Efforts, *settings.EffortLevel) {
+			if effective.Reasoning == nil || !effective.Reasoning.Supported || !slices.Contains(effective.Reasoning.Efforts, *settings.EffortLevel) {
+				return fmt.Errorf("ModelServing %q removed reasoning effort %q, which Model %q toolSettings[%q] still requests; add a waive reason to record the compromise", serving.Name, *settings.EffortLevel, model.Name, tool)
+			}
 		}
 	}
 	return nil

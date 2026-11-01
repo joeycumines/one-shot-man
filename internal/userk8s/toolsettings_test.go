@@ -172,3 +172,86 @@ spec:
 		t.Fatalf("settings.effort_level: got %v, want the waived high", got)
 	}
 }
+
+func TestToolSettingsEffortRemovedByDisablingOrEmptyingIsRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		overrides string
+	}{
+		{
+			name: "serving disables reasoning",
+			overrides: `  overrides:
+    reasoning:
+      supported: false
+`,
+		},
+		{
+			name: "serving narrows efforts to empty",
+			overrides: `  overrides:
+    reasoning:
+      supported: true
+      efforts: []
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			docs := []string{
+				`apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: alpha
+spec:
+  display_name: Alpha
+`,
+				`apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: alpha-model
+spec:
+  canonical_id: alpha/alpha-model
+  display_name: Alpha Model
+  context_window: 100000
+  max_output_tokens: 10000
+  reasoning:
+    supported: true
+    efforts:
+    - low
+    - high
+  toolSettings:
+    claude:
+      effort_level: high
+`,
+				`apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  name: alpha-serving
+spec:
+  provider: alpha
+  model: alpha-model
+  provider_model_id: alpha-wire
+` + tc.overrides,
+				`apiVersion: one-shot-man/v1alpha1
+kind: Tool
+metadata:
+  name: claude
+spec:
+  display_name: Claude Code
+  surfaces:
+  - anthropic
+  credential_channels:
+  - gateway
+  identifiers:
+    provider_slug:
+      pattern: ^[a-z0-9][a-z0-9-]*$
+    model_slug:
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]*$
+  budget_profile: claude-margin
+`,
+			}
+			_, err := loadDocuments(toBytes(docs)...)
+			if err == nil || !strings.Contains(err.Error(), "removed reasoning effort") {
+				t.Fatalf("expected error containing 'removed reasoning effort', got: %v", err)
+			}
+		})
+	}
+}

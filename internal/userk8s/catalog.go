@@ -238,13 +238,15 @@ func (b *FilesBackend) Status(context.Context) (BackendStatus, error) {
 		Source: source,
 		// Non-nil so an absent artifact list encodes as [] rather than null;
 		// every backend must expose the same shape.
-		Artifacts: append([]string{}, b.objects.Artifacts...),
-		Providers: len(b.objects.Providers),
-		Accesses:  len(b.objects.Accesses),
-		Models:    len(b.objects.Models),
-		Routes:    len(b.objects.Routes),
-		Tools:     len(b.objects.Tools),
-		Bindings:  len(b.objects.Bindings),
+		Artifacts:  append([]string{}, b.objects.Artifacts...),
+		Providers:  len(b.objects.Providers),
+		Accesses:   len(b.objects.Accesses),
+		Models:     len(b.objects.Models),
+		Servings:   len(b.objects.Servings),
+		Selections: len(b.objects.Selections),
+		Routes:     len(b.objects.Routes),
+		Tools:      len(b.objects.Tools),
+		Bindings:   len(b.objects.Bindings),
 	}, nil
 }
 

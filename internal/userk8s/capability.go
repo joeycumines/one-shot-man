@@ -71,6 +71,11 @@ func effectiveModel(model *v1alpha1.Model, serving *v1alpha1.ModelServing) (Effe
 			return EffectiveModel{}, err
 		}
 		effective.Reasoning = mergeReasoning(model.Spec.Reasoning, overrides.Reasoning)
+		if effective.Reasoning != nil && effective.Reasoning.Budget != nil {
+			if err := validateReasoningBudget("ModelServing", serving.Name, effective.Reasoning.Budget); err != nil {
+				return EffectiveModel{}, err
+			}
+		}
 	}
 	if overrides.ToolCall != nil {
 		if *overrides.ToolCall && !model.Spec.ToolCall {
@@ -127,7 +132,13 @@ func narrowReasoning(model *v1alpha1.Model, serving *v1alpha1.ModelServing, narr
 		if narrowed.Budget.Max != nil && (canonical.Budget.Max == nil || *narrowed.Budget.Max > *canonical.Budget.Max) {
 			return fmt.Errorf("ModelServing %q reasoning budget maximum widens Model %q", serving.Name, model.Name)
 		}
-		if err := validateReasoningBudget(model.Name, narrowed.Budget); err != nil {
+		if narrowed.Budget.Min != nil && canonical.Budget.Max != nil && *narrowed.Budget.Min > *canonical.Budget.Max {
+			return fmt.Errorf("ModelServing %q reasoning budget minimum %d exceeds Model %q maximum %d", serving.Name, *narrowed.Budget.Min, model.Name, *canonical.Budget.Max)
+		}
+		if narrowed.Budget.Max != nil && canonical.Budget.Min != nil && *narrowed.Budget.Max < *canonical.Budget.Min {
+			return fmt.Errorf("ModelServing %q reasoning budget maximum %d is below Model %q minimum %d", serving.Name, *narrowed.Budget.Max, model.Name, *canonical.Budget.Min)
+		}
+		if err := validateReasoningBudget("ModelServing", serving.Name, narrowed.Budget); err != nil {
 			return err
 		}
 	}

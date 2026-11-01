@@ -1037,7 +1037,7 @@ const projection = await userk8s.project('opencode', 'electronhub', 'glm-5.3:dev
 //   providerModelId?, budgetProfile: 'sdk-limits', settings: { contextWindow, ... } }
 
 const status = await userk8s.backendStatus();
-// { source: 'files' | 'cluster', artifacts: [...], providers, accesses, models, routes, tools, bindings }
+// { source: 'files' | 'cluster', artifacts: [...], providers, accesses, models, servings, selections, routes, tools, bindings }
 ```
 
 `serving.effective` is the serving's capabilities after its Model's facts and

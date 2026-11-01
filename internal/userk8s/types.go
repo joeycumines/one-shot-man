@@ -46,14 +46,16 @@ type Projection struct {
 	Settings        map[string]any `json:"settings"`
 }
 
-// BackendStatus reports what the backend loaded.
+// BackendStatus reports what the backend loaded across all eight catalog kinds.
 type BackendStatus struct {
-	Source    string   `json:"source"`
-	Artifacts []string `json:"artifacts"`
-	Providers int      `json:"providers"`
-	Accesses  int      `json:"accesses"`
-	Models    int      `json:"models"`
-	Routes    int      `json:"routes"`
-	Tools     int      `json:"tools"`
-	Bindings  int      `json:"bindings"`
+	Source     string   `json:"source"`
+	Artifacts  []string `json:"artifacts"`
+	Providers  int      `json:"providers"`
+	Accesses   int      `json:"accesses"`
+	Models     int      `json:"models"`
+	Servings   int      `json:"servings"`
+	Selections int      `json:"selections"`
+	Routes     int      `json:"routes"`
+	Tools      int      `json:"tools"`
+	Bindings   int      `json:"bindings"`
 }

@@ -268,3 +268,43 @@ spec:
 		t.Fatalf("a route with no live offering must not block a live route on the same mount: %v", err)
 	}
 }
+
+func TestRouteOffersDefaultedInventoryPreservesServingPointer(t *testing.T) {
+	providerBeta := `apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: beta
+spec:
+  display_name: Beta
+`
+	servingA := `apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  name: serving-a
+spec:
+  provider: alpha
+  model: alpha-model
+  provider_model_id: wire-a
+`
+	// servingB has registry name "serving-a", colliding with servingA's metadata name.
+	servingB := `apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  name: serving-b
+  annotations:
+    one-shot-man/registry-name: serving-a
+spec:
+  provider: beta
+  model: alpha-model
+  provider_model_id: wire-b
+`
+	objects := documents(t, offerProvider, providerBeta, offerModel, offerAccess, servingA, servingB, offerRoute("route-defaulted", ""))
+	route := lookupRouteOrFail(t, objects, "route-defaulted")
+	offers, err := objects.routeOffers(route)
+	if err != nil {
+		t.Fatalf("routeOffers failed: %v", err)
+	}
+	if len(offers) != 1 || offers[0].Serving.Name != "serving-a" {
+		t.Fatalf("expected offers to contain serving-a, got %+v", offers)
+	}
+}

@@ -39,8 +39,8 @@ func (o *Objects) validateServings() error {
 		}
 		// Priority defaults to 100; zero is the unset zero value and is rejected
 		// when declared explicitly, matching the CRD's Minimum=1.
-		if serving.Spec.Priority == 0 {
-			return fmt.Errorf("ModelServing %q declares priority 0; it must be at least 1 (omit it to take the default 100)", serving.Name)
+		if serving.Spec.Priority <= 0 {
+			return fmt.Errorf("ModelServing %q declares priority %d; it must be at least 1 (omit it to take the default 100)", serving.Name, serving.Spec.Priority)
 		}
 		if serving.Spec.Default {
 			key := registryName(provider)
@@ -72,7 +72,7 @@ func (o *Objects) validateSelections() error {
 			return fmt.Errorf("ModelSelection %q declares no display_name", selection.Name)
 		}
 		switch selection.Spec.Strategy {
-		case "", v1alpha1.SelectionOrdered, v1alpha1.SelectionPriority, v1alpha1.SelectionDynamic:
+		case v1alpha1.SelectionOrdered, v1alpha1.SelectionPriority, v1alpha1.SelectionDynamic:
 		default:
 			return fmt.Errorf("ModelSelection %q declares unknown strategy %q; it must be ordered, priority, or dynamic", selection.Name, selection.Spec.Strategy)
 		}
@@ -176,9 +176,16 @@ func (o *Objects) validateSelectionCycle(selection *v1alpha1.ModelSelection, pat
 func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, error) {
 	spec := &route.Spec
 	explicit := len(spec.Offers) > 0
-	declared := make([]v1alpha1.RouteOffer, 0, len(spec.Offers))
+	type routeCandidate struct {
+		offer   v1alpha1.RouteOffer
+		serving *v1alpha1.ModelServing
+	}
+	var candidates []routeCandidate
 	if explicit {
-		declared = append(declared, spec.Offers...)
+		candidates = make([]routeCandidate, 0, len(spec.Offers))
+		for _, offer := range spec.Offers {
+			candidates = append(candidates, routeCandidate{offer: offer})
+		}
 	} else {
 		if spec.Transport.Kind == v1alpha1.TransportRemote {
 			return nil, fmt.Errorf("remote ModelRoute %q must declare its offers inventory", route.Name)
@@ -194,17 +201,21 @@ func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, erro
 		if !ok {
 			return nil, fmt.Errorf("ModelAccess %q references undeclared ModelProvider %q", access.Name, access.Spec.Provider)
 		}
+		candidates = make([]routeCandidate, 0, len(o.Servings))
 		for i := range o.Servings {
 			serving := &o.Servings[i]
 			provider, ok := o.lookupProvider(serving.Spec.Provider)
 			if !ok || provider != accessProvider || serving.Spec.Deprecated {
 				continue
 			}
-			declared = append(declared, v1alpha1.RouteOffer{Serving: serving.Name})
+			candidates = append(candidates, routeCandidate{
+				offer:   v1alpha1.RouteOffer{Serving: serving.Name},
+				serving: serving,
+			})
 		}
-		sort.Slice(declared, func(i, j int) bool { return declared[i].Serving < declared[j].Serving })
+		sort.Slice(candidates, func(i, j int) bool { return candidates[i].offer.Serving < candidates[j].offer.Serving })
 	}
-	out := make([]ResolvedOffer, 0, len(declared))
+	out := make([]ResolvedOffer, 0, len(candidates))
 	seen := map[string]bool{}
 	var access *v1alpha1.ModelAccess
 	if spec.Access != "" {
@@ -214,10 +225,14 @@ func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, erro
 			return nil, fmt.Errorf("ModelRoute %q references undeclared ModelAccess %q", route.Name, spec.Access)
 		}
 	}
-	for _, entry := range declared {
-		serving, ok := o.lookupServing(entry.Serving)
-		if !ok {
-			return nil, fmt.Errorf("ModelRoute %q references undeclared ModelServing %q", route.Name, entry.Serving)
+	for _, entry := range candidates {
+		serving := entry.serving
+		if serving == nil {
+			var ok bool
+			serving, ok = o.lookupServing(entry.offer.Serving)
+			if !ok {
+				return nil, fmt.Errorf("ModelRoute %q references undeclared ModelServing %q", route.Name, entry.offer.Serving)
+			}
 		}
 		model, ok := o.lookupModel(serving.Spec.Model)
 		if !ok {
@@ -239,7 +254,7 @@ func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, erro
 				return nil, fmt.Errorf("ModelRoute %q access %q serves provider %q but offering %q belongs to provider %q", route.Name, access.Name, access.Spec.Provider, serving.Name, serving.Spec.Provider)
 			}
 		}
-		id := entry.ID
+		id := entry.offer.ID
 		if id == "" {
 			id = serving.Name
 		}
@@ -288,7 +303,7 @@ func (o *Objects) validateRoutes() error {
 		if len(offers) == 0 {
 			continue
 		}
-		prefix, err := shaperMountPrefix(route)
+		prefix, err := shaperMountPrefix(route.Name, &route.Spec)
 		if err != nil {
 			return err
 		}
@@ -300,23 +315,31 @@ func (o *Objects) validateRoutes() error {
 	return nil
 }
 
-// shaperMountPrefix returns the single mount prefix a shaper route already
-// validated by validateShaperMount publishes.
-func shaperMountPrefix(route *v1alpha1.ModelRoute) (string, error) {
+// shaperMountPrefix returns the single mount prefix a shaper route publishes,
+// validating that every endpoint resolves to one non-empty mount prefix.
+// The shaper strips the prefix before dispatch, so an endpoint without one is
+// unreachable and endpoints that disagree would make some declared surface unreachable.
+func shaperMountPrefix(name string, spec *v1alpha1.ModelRouteSpec) (string, error) {
 	var prefix string
-	for i, surface := range route.Spec.Surfaces {
-		path, err := endpointPath(string(route.Spec.Endpoints[surface]))
+	for i, surface := range spec.Surfaces {
+		path, err := endpointPath(string(spec.Endpoints[surface]))
 		if err != nil {
-			return "", fmt.Errorf("ModelRoute %q endpoint for %q: %w", route.Name, surface, err)
+			return "", fmt.Errorf("ModelRoute %q endpoint for %q: %w", name, surface, err)
 		}
-		trimmed := strings.TrimSuffix(strings.TrimRight(path, "/"), "/v1")
+		trimmed := strings.TrimRight(strings.TrimSuffix(strings.TrimRight(path, "/"), "/v1"), "/")
+		if trimmed == "" {
+			return "", fmt.Errorf("ModelRoute %q shaper endpoint for surface %q carries no mount prefix (path %q)", name, surface, path)
+		}
 		if i == 0 {
 			prefix = trimmed
 			continue
 		}
 		if trimmed != prefix {
-			return "", fmt.Errorf("ModelRoute %q endpoints disagree on the mount prefix (%q vs %q)", route.Name, prefix, trimmed)
+			return "", fmt.Errorf("ModelRoute %q endpoints disagree on the mount prefix (%q vs %q)", name, prefix, trimmed)
 		}
+	}
+	if prefix == "" {
+		return "", fmt.Errorf("ModelRoute %q shaper endpoints carry no mount prefix", name)
 	}
 	return prefix, nil
 }
@@ -403,8 +426,8 @@ func validateRouteShape(name string, spec *v1alpha1.ModelRouteSpec) error {
 	// Order defaults to 100; zero is the unset zero value and is rejected when
 	// declared explicitly, so the normalization is total rather than silently
 	// rewriting an author's choice (the CRD states the same with Minimum=1).
-	if spec.Order == 0 {
-		return fmt.Errorf("ModelRoute %q declares order 0; it must be at least 1 (omit it to take the default 100)", name)
+	if spec.Order <= 0 {
+		return fmt.Errorf("ModelRoute %q declares order %d; it must be at least 1 (omit it to take the default 100)", name, spec.Order)
 	}
 	switch spec.Naming {
 	case v1alpha1.RouteNamingServed, v1alpha1.RouteNamingWire, v1alpha1.RouteNamingRegistry, v1alpha1.RouteNamingCanonical:
@@ -522,33 +545,9 @@ func validateSurfaceSupport(name string, protocol v1alpha1.WireProtocol, spec *v
 // one non-empty mount prefix. The shaper strips the prefix before dispatch, so
 // an endpoint without one is unreachable and endpoints that disagree would make
 // some declared surface unreachable.
-//
-// The prefix is taken from the first surface and compared thereafter; a surface
-// whose own path trims to nothing is rejected on the spot, because such a
-// surface contributes no prefix and must not be mistaken for "not seen yet".
 func validateShaperMount(name string, spec *v1alpha1.ModelRouteSpec) error {
-	var prefix string
-	for i, surface := range spec.Surfaces {
-		path, err := endpointPath(string(spec.Endpoints[surface]))
-		if err != nil {
-			return fmt.Errorf("ModelRoute %q endpoint for %q: %w", name, surface, err)
-		}
-		trimmed := strings.TrimSuffix(strings.TrimRight(path, "/"), "/v1")
-		if trimmed == "" || trimmed == "/" {
-			return fmt.Errorf("ModelRoute %q shaper endpoint for surface %q carries no mount prefix (path %q)", name, surface, path)
-		}
-		if i == 0 {
-			prefix = trimmed
-			continue
-		}
-		if trimmed != prefix {
-			return fmt.Errorf("ModelRoute %q endpoints disagree on the mount prefix (%q vs %q)", name, prefix, trimmed)
-		}
-	}
-	if prefix == "" {
-		return fmt.Errorf("ModelRoute %q shaper endpoints carry no mount prefix", name)
-	}
-	return nil
+	_, err := shaperMountPrefix(name, spec)
+	return err
 }
 
 func endpointPath(endpoint string) (string, error) {

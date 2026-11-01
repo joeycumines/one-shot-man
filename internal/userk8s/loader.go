@@ -246,10 +246,12 @@ func applyDefaults(kind string, target any, spec map[string]any) error {
 	return nil
 }
 
-// present reports whether the author wrote a key into the document.
+// present reports whether the author wrote a non-nil value for a key into the document.
+// In Kubernetes OpenAPI structural defaulting, a field whose value is null in the
+// unstructured map is defaulted identically to an omitted field.
 func present(spec map[string]any, key string) bool {
-	_, ok := spec[key]
-	return ok
+	v, ok := spec[key]
+	return ok && v != nil
 }
 
 // applyModelDefaults applies ModelSpec's CRD defaults: tool_call is true and the

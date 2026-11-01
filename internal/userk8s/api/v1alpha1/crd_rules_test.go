@@ -148,7 +148,9 @@ func TestShippedCRDRulesCompile(t *testing.T) {
 			}
 			compiled++
 			sample := sampleObject(structural)
-			errs, _ := validator.Validate(context.Background(), field.NewPath(""), structural, sample, nil, validationLimit)
+			// Pass sample as both obj and oldObj so transition rules referencing oldSelf
+			// are compiled and checked alongside standard validation rules.
+			errs, _ := validator.Validate(context.Background(), field.NewPath(""), structural, sample, sample, validationLimit)
 			for _, entry := range errs {
 				if strings.Contains(entry.Detail, "rule compile error") {
 					t.Errorf("%s: %v", file, entry)

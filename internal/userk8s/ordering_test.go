@@ -74,10 +74,22 @@ spec:
 			t.Fatalf("error: got %v, want priority 0 refused", err)
 		}
 	})
+	t.Run("explicit negative priority", func(t *testing.T) {
+		_, err := loadDocuments(toBytes([]string{provider, model, serving("  priority: -1\n")})...)
+		if err == nil || !strings.Contains(err.Error(), "must be at least 1") {
+			t.Fatalf("error: got %v, want negative priority refused", err)
+		}
+	})
 	t.Run("explicit order 0", func(t *testing.T) {
 		_, err := loadDocuments(toBytes([]string{provider, model, access, serving(""), route("  order: 0\n")})...)
 		if err == nil || !strings.Contains(err.Error(), "declares order 0") {
 			t.Fatalf("error: got %v, want order 0 refused", err)
+		}
+	})
+	t.Run("explicit negative order", func(t *testing.T) {
+		_, err := loadDocuments(toBytes([]string{provider, model, access, serving(""), route("  order: -1\n")})...)
+		if err == nil || !strings.Contains(err.Error(), "must be at least 1") {
+			t.Fatalf("error: got %v, want negative order refused", err)
 		}
 	})
 	t.Run("omitted order and priority take the default 100", func(t *testing.T) {

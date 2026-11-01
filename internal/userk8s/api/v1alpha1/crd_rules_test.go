@@ -334,13 +334,45 @@ func TestCRDTypeSourcesAreFormatterStable(t *testing.T) {
 			t.Fatalf("%s does not parse: %v", name, err)
 		}
 		checked++
-		if !bytes.Equal(formatted, source) {
+		// Compare on canonical LF bytes. gofmt always emits LF, but a Windows
+		// checkout (actions/checkout defaults to core.autocrlf=true) materializes
+		// CRLF in the working tree; a raw bytes.Equal would then report every file
+		// as unstable for the line-ending difference alone, masking the real
+		// defect this guard exists to catch. Normalizing both sides to LF makes
+		// the comparison measure semantic formatting changes only.
+		if !bytes.Equal(normalizeLF(formatted), normalizeLF(source)) {
 			t.Errorf("%s is not formatter-stable: running gofmt would change it. "+
 				"A doc comment containing '' is rewritten to U+201D, which corrupts a CEL rule.", name)
 		}
 	}
 	if checked == 0 {
 		t.Fatal("no sources were checked, so this guard proves nothing")
+	}
+}
+
+// normalizeLF collapses CRLF (and a lone CR) to LF, so a formatter-stability
+// comparison is not defeated by the line-ending difference between a Windows
+// checkout (core.autocrlf=true materializes CRLF) and gofmt's LF output.
+func normalizeLF(b []byte) []byte {
+	return bytes.ReplaceAll(bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n")), []byte("\r"), []byte("\n"))
+}
+
+// TestNormalizeLFHandlesCRLF proves the line-ending normalization that
+// TestCRDTypeSourcesAreFormatterStable relies on: a CRLF-laden source and its
+// LF counterpart compare equal after normalization, while a genuine content
+// difference still surfaces. This is the reproducing case for the Windows CI
+// failure where core.autocrlf=true made every source file appear unstable.
+func TestNormalizeLFHandlesCRLF(t *testing.T) {
+	lf := []byte("package v1alpha1\n\n// Model is a provider-independent definition.\ntype Model struct{}\n")
+	crlf := bytes.ReplaceAll(lf, []byte("\n"), []byte("\r\n"))
+	if !bytes.Equal(normalizeLF(crlf), normalizeLF(lf)) {
+		t.Fatal("CRLF and LF sources must compare equal after normalization")
+	}
+	// A real content change (the apostrophe-pair this guard exists to catch) is
+	// still detected: it survives normalization on both sides.
+	changed := bytes.ReplaceAll(lf, []byte("definition."), []byte("definition.\n// extra '' pair."))
+	if bytes.Equal(normalizeLF(changed), normalizeLF(lf)) {
+		t.Fatal("a genuine content difference must not be hidden by normalization")
 	}
 }
 

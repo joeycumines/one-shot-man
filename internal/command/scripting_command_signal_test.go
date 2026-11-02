@@ -36,7 +36,7 @@ func TestScriptingCommand_Execute_SigtermWithoutListenerRunningProgram(t *testin
 		function update(msg, m) { return [m, tea.tick(60000, "tick")]; }
 		function view(m) { return { content: "probe " + m.n }; }
 		output.print("signal-ready");
-		setTimeout(function () { process.exit(0); }, 8000);
+		setTimeout(function () { process.exit(0); }, 60000);
 		tea.run(tea.newModel({ init: init, update: update, view: view }));
 	`
 	if err := os.WriteFile(scriptPath, []byte(content), 0o644); err != nil {
@@ -52,7 +52,7 @@ func TestScriptingCommand_Execute_SigtermWithoutListenerRunningProgram(t *testin
 	if !errors.As(err, &exitErr) || exitErr.Code != 143 {
 		t.Fatalf("Execute error = %v, want exit status 143 for unlistened SIGTERM with a running program\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
 	}
-	if elapsed > 5*time.Second {
+	if elapsed > signalTestPromptlyBound {
 		t.Fatalf("SIGTERM with a running program took %v; the program was not quit promptly", elapsed)
 	}
 }

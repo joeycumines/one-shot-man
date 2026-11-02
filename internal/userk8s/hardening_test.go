@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 )
 
@@ -22,11 +20,11 @@ func TestProjectClaudeMarginWorkedExample(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFilesBackend: %v", err)
 	}
-	projection, err := backend.Project(context.Background(), "claude", "electronhub", "glm-5.3:dev")
+	projection, err := backend.Project(context.Background(), "claude", "electronhub", "glm-5.3:dev:electronhub")
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}
-	if projection.ProviderSlug != "electronhub" || projection.ModelSlug != "glm-5.3:dev" {
+	if projection.ProviderSlug != "electronhub" || projection.ModelSlug != "glm-5.3:dev:electronhub" {
 		t.Fatalf("slugs: got %q/%q", projection.ProviderSlug, projection.ModelSlug)
 	}
 	if projection.BudgetProfile != "claude-margin" {
@@ -36,11 +34,11 @@ func TestProjectClaudeMarginWorkedExample(t *testing.T) {
 	if !ok {
 		t.Fatalf("settings.context_window: got %T", projection.Settings["context_window"])
 	}
-	if contextWindow != 262000 {
-		t.Fatalf("settings.context_window: got %d, want the registry fact 262000", contextWindow)
+	if contextWindow != 260000 {
+		t.Fatalf("settings.context_window: got %d, want the serving's effective fact 260000", contextWindow)
 	}
-	if applied := contextWindow - 2000; applied != 260000 {
-		t.Fatalf("claude-margin derivation: got %d, want the documented 260000", applied)
+	if applied := contextWindow - 2000; applied != 258000 {
+		t.Fatalf("claude-margin derivation: got %d, want 258000", applied)
 	}
 	if got := projection.Settings["max_output_tokens"]; got != int64(16384) {
 		t.Fatalf("settings.max_output_tokens: got %v, want 16384", got)
@@ -54,25 +52,25 @@ func TestProjectSDKLimitsWorkedExample(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFilesBackend: %v", err)
 	}
-	projection, err := backend.Project(context.Background(), "codex", "wafer", "GLM-5.1")
+	projection, err := backend.Project(context.Background(), "codex", "zhipu", "glm-5-1-zhipu")
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}
 	if projection.BudgetProfile != "sdk-limits" {
 		t.Fatalf("budget profile: got %q, want sdk-limits", projection.BudgetProfile)
 	}
-	if projection.ModelSlug != "GLM-5.1" {
-		t.Fatalf("model slug: got %q, want the registry spelling GLM-5.1", projection.ModelSlug)
+	if projection.ModelSlug != "glm_5_1_zhipu" {
+		t.Fatalf("model slug: got %q, want the derived glm_5_1_zhipu", projection.ModelSlug)
 	}
 	if got := projection.Settings["max_output_tokens"]; got != int64(32768) {
 		t.Fatalf("settings.max_output_tokens: got %v, want the enforced cap 32768", got)
 	}
-	if got := projection.Settings["context_window"]; got != int64(203000) {
-		t.Fatalf("settings.context_window: got %v, want 203000", got)
+	if got := projection.Settings["context_window"]; got != int64(200000) {
+		t.Fatalf("settings.context_window: got %v, want 200000", got)
 	}
 }
 
-func TestProjectResolvesRegistrySpelling(t *testing.T) {
+func TestProjectResolvesServingRegistrySpelling(t *testing.T) {
 	objects := documents(t,
 		`apiVersion: one-shot-man/v1alpha1
 kind: ModelProvider
@@ -84,25 +82,23 @@ spec:
 		`apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
-  annotations:
-    one-shot-man/registry-name: alpha-model:dev
-  name: alpha-model-dev
+  name: alpha-model
 spec:
-  provider: alpha
-  access: alpha-direct
-  context_window: 262000
-  max_output_tokens: 16384
+  canonical_id: alpha/alpha-model
+  display_name: Alpha Model
+  context_window: 1000
+  max_output_tokens: 10
 `,
 		`apiVersion: one-shot-man/v1alpha1
-kind: ModelAccess
+kind: ModelServing
 metadata:
-  name: alpha-direct
+  name: alpha-model-alpha
+  annotations:
+    one-shot-man/registry-name: alpha-model:dev
 spec:
   provider: alpha
-  auth:
-    scheme: none
-  endpoints:
-    chat: http://127.0.0.1:9/alpha/v1
+  model: alpha-model
+  provider_model_id: alpha-model:dev
 `,
 		`apiVersion: one-shot-man/v1alpha1
 kind: Tool
@@ -130,24 +126,12 @@ spec:
 	if byRegistry.ModelSlug != "alpha-model:dev" {
 		t.Fatalf("model slug: got %q, want the registry spelling", byRegistry.ModelSlug)
 	}
-	byMetadata, err := backend.Project(context.Background(), "claude", "alpha", "alpha-model-dev")
+	byMetadata, err := backend.Project(context.Background(), "claude", "alpha", "alpha-model-alpha")
 	if err != nil {
 		t.Fatalf("Project(metadata spelling): %v", err)
 	}
 	if byMetadata.ModelSlug != "alpha-model:dev" {
 		t.Fatalf("model slug: got %q, want the registry spelling", byMetadata.ModelSlug)
-	}
-
-	registry, err := backend.Model("alpha-model:dev")
-	if err != nil {
-		t.Fatalf("Model(registry spelling): %v", err)
-	}
-	metadata, err := backend.Model("alpha-model-dev")
-	if err != nil {
-		t.Fatalf("Model(metadata spelling): %v", err)
-	}
-	if registry != metadata {
-		t.Fatal("Model: both spellings must resolve to the same object")
 	}
 }
 
@@ -164,23 +148,21 @@ func TestSelectorMatchingRejectsNilSelector(t *testing.T) {
 func TestResolveCredentialUnknownScheme(t *testing.T) {
 	objects := documents(t,
 		`apiVersion: one-shot-man/v1alpha1
-kind: ModelProvider
+kind: LocalSecretBinding
 metadata:
-  name: alpha
+  name: bind-mystery
 spec:
-  display_name: Alpha
-`,
-		`apiVersion: one-shot-man/v1alpha1
-kind: ModelAccess
-metadata:
-  name: alpha-mystery
-spec:
-  provider: alpha
-  auth:
-    scheme: mystery
+  selector:
+    matchLabels:
+      one-shot-man/provider: alpha
+  scheme: mystery
+  secretRef:
+    name: creds
+    key: ALPHA_API_KEY
+  envVar: ALPHA_API_KEY
 `)
 	backend := mustBackend(t, objects, &fakeRunner{})
-	resolution, err := backend.ResolveCredential(context.Background(), "alpha-mystery")
+	resolution, err := backend.ResolveCredential(context.Background(), "bind-mystery")
 	if err != nil {
 		t.Fatalf("ResolveCredential: %v", err)
 	}
@@ -205,36 +187,17 @@ func (r *recordingRunner) Run(_ context.Context, argv []string, _ time.Duration)
 	return "", errors.New("recording runner: no value")
 }
 
-func TestBindingSelectionIsOrderedByName(t *testing.T) {
-	objects := documents(t,
-		`apiVersion: one-shot-man/v1alpha1
-kind: ModelProvider
-metadata:
-  name: alpha
-spec:
-  display_name: Alpha
-`,
-		`apiVersion: one-shot-man/v1alpha1
-kind: ModelAccess
-metadata:
-  name: alpha-direct
-  labels:
-    one-shot-man/provider: alpha
-spec:
-  provider: alpha
-  auth:
-    scheme: bearer
-    requiredEnv:
-      - ALPHA_API_KEY
-`,
-		`apiVersion: one-shot-man/v1alpha1
+func TestBindingsResolveIndependentlyByName(t *testing.T) {
+	binding := func(name, cmd string) string {
+		return `apiVersion: one-shot-man/v1alpha1
 kind: LocalSecretBinding
 metadata:
-  name: bind-b
+  name: ` + name + `
 spec:
   selector:
     matchLabels:
       one-shot-man/provider: alpha
+  scheme: bearer
   secretRef:
     name: creds
     key: ALPHA_API_KEY
@@ -242,38 +205,27 @@ spec:
   resolvers:
     - command:
         argv:
-          - cmd-b
-`,
-		`apiVersion: one-shot-man/v1alpha1
-kind: LocalSecretBinding
-metadata:
-  name: bind-a
-spec:
-  selector:
-    matchLabels:
-      one-shot-man/provider: alpha
-  secretRef:
-    name: creds
-    key: ALPHA_API_KEY
-  envVar: ALPHA_API_KEY
-  resolvers:
-    - command:
-        argv:
-          - cmd-a
-`)
-	runner := &recordingRunner{values: map[string]string{"cmd-b": "from-b"}}
-	resolution, err := mustBackend(t, objects, runner).ResolveCredential(context.Background(), "alpha-direct")
-	if err != nil {
-		t.Fatalf("ResolveCredential: %v", err)
+          - ` + cmd + `
+`
 	}
-	if resolution.Status != StatusResolved {
-		t.Fatalf("status: got %q (%s), want resolved", resolution.Status, resolution.Reason)
-	}
-	if got := resolution.Credentials[0].Value; got != "from-b" {
-		t.Fatalf("value: got %q, want the value from bind-b", got)
+	objects := documents(t, binding("bind-a", "cmd-a"), binding("bind-b", "cmd-b"))
+	runner := &recordingRunner{values: map[string]string{"cmd-a": "from-a", "cmd-b": "from-b"}}
+	backend := mustBackend(t, objects, runner)
+
+	for _, test := range []struct{ name, want string }{{"bind-a", "from-a"}, {"bind-b", "from-b"}} {
+		resolution, err := backend.ResolveCredential(context.Background(), test.name)
+		if err != nil {
+			t.Fatalf("ResolveCredential(%s): %v", test.name, err)
+		}
+		if resolution.Status != StatusResolved {
+			t.Fatalf("ResolveCredential(%s): status %q (%s)", test.name, resolution.Status, resolution.Reason)
+		}
+		if got := resolution.Credentials[0].Value; got != test.want {
+			t.Fatalf("ResolveCredential(%s): value %q, want %q", test.name, got, test.want)
+		}
 	}
 	if len(runner.calls) != 2 || runner.calls[0] != "cmd-a" || runner.calls[1] != "cmd-b" {
-		t.Fatalf("calls: got %v, want bind-a before bind-b regardless of document order", runner.calls)
+		t.Fatalf("calls: got %v, want each binding resolved once in call order", runner.calls)
 	}
 }
 
@@ -287,19 +239,6 @@ spec:
   display_name: Alpha
 `,
 		`apiVersion: one-shot-man/v1alpha1
-kind: ModelAccess
-metadata:
-  name: alpha-direct
-  labels:
-    one-shot-man/provider: alpha
-spec:
-  provider: alpha
-  auth:
-    scheme: bearer
-    requiredEnv:
-      - ALPHA_API_KEY
-`,
-		`apiVersion: one-shot-man/v1alpha1
 kind: LocalSecretBinding
 metadata:
   name: bind-alpha
@@ -307,6 +246,7 @@ spec:
   selector:
     matchLabels:
       one-shot-man/provider: alpha
+  scheme: bearer
   secretRef:
     name: creds
     key: ALPHA_API_KEY
@@ -315,7 +255,7 @@ spec:
     - command:
         argv: []
 `)
-	resolution, err := mustBackend(t, objects, &fakeRunner{}).ResolveCredential(context.Background(), "alpha-direct")
+	resolution, err := mustBackend(t, objects, &fakeRunner{}).ResolveCredential(context.Background(), "bind-alpha")
 	if err != nil {
 		t.Fatalf("ResolveCredential: %v", err)
 	}
@@ -352,52 +292,28 @@ func TestNewFilesBackendFromObjectsRejectsNil(t *testing.T) {
 	}
 }
 
-func TestServedSurfacesIntersectsToolAndAccess(t *testing.T) {
-	access := &v1alpha1.ModelAccess{Spec: v1alpha1.ModelAccessSpec{
-		Provider:  "alpha",
-		Endpoints: map[string]v1alpha1.SurfaceEndpoint{"chat": "http://127.0.0.1:9/chat", "anthropic": "http://127.0.0.1:9/anthropic"},
-	}}
-	tool := &v1alpha1.Tool{Spec: v1alpha1.ToolSpec{
-		DisplayName:        "OpenCode",
-		Surfaces:           []string{"anthropic", "chat", "responses"},
-		CredentialChannels: []string{"gateway"},
-		Identifiers: v1alpha1.ToolIdentifiers{
-			ProviderSlug: v1alpha1.ToolIdentifierGrammar{Pattern: `^[a-z]+$`},
-			ModelSlug:    v1alpha1.ToolIdentifierGrammar{Pattern: `^[a-z]+$`},
-		},
-		BudgetProfile: "sdk-limits",
-	}}
-	got := servedSurfaces(access, tool)
-	if len(got) != 2 || got[0] != "anthropic" || got[1] != "chat" {
-		t.Fatalf("servedSurfaces: got %v, want the sorted intersection [anthropic chat]", got)
-	}
-	if _, err := selectorMatches(&metav1.LabelSelector{}, labels.Set{}); err != nil {
-		t.Fatalf("selectorMatches(empty selector): %v", err)
-	}
-}
-
 func TestProjectDerivesToolIdentifiers(t *testing.T) {
 	backend, err := NewFilesBackend(FilesBackendOptions{Paths: []string{renderedPersonalProfile}})
 	if err != nil {
 		t.Fatalf("NewFilesBackend: %v", err)
 	}
 
-	opencode, err := backend.Project(context.Background(), "opencode", "electronhub", "glm-5.3:dev")
+	opencode, err := backend.Project(context.Background(), "opencode", "electronhub", "glm-5.3:dev:electronhub")
 	if err != nil {
 		t.Fatalf("Project(opencode): %v", err)
 	}
-	if opencode.ModelSlug != "glm_5_3_dev" {
-		t.Fatalf("opencode model slug: got %q, want the derived key glm_5_3_dev", opencode.ModelSlug)
+	if opencode.ModelSlug != "glm_5_3_dev_electronhub" {
+		t.Fatalf("opencode model slug: got %q, want the derived key glm_5_3_dev_electronhub", opencode.ModelSlug)
 	}
-	if opencode.ModelID != "glm-5.3:dev" {
+	if opencode.ModelID != "glm-5.3:dev:electronhub" {
 		t.Fatalf("opencode model id: got %q, want the raw registry spelling", opencode.ModelID)
 	}
 
-	claude, err := backend.Project(context.Background(), "claude", "electronhub", "glm-5.3:dev")
+	claude, err := backend.Project(context.Background(), "claude", "electronhub", "glm-5.3:dev:electronhub")
 	if err != nil {
 		t.Fatalf("Project(claude): %v", err)
 	}
-	if claude.ModelSlug != "glm-5.3:dev" || claude.ModelID != "glm-5.3:dev" {
+	if claude.ModelSlug != "glm-5.3:dev:electronhub" || claude.ModelID != "glm-5.3:dev:electronhub" {
 		t.Fatalf("claude identifiers: got slug %q id %q, want the raw spelling kept verbatim", claude.ModelSlug, claude.ModelID)
 	}
 }

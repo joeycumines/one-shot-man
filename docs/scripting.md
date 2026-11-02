@@ -973,7 +973,7 @@ classes (`unset`, `unreadable`, `empty`, `failed`, `timed out`, `canceled`,
 | --- | --- | --- | --- |
 | `userk8s.source` | `OSM_USERK8S_SOURCE` | `files` | Catalog backend: `files` (rendered profile artifacts) or `cluster` (Kubernetes API server) |
 | `userk8s.artifacts` | `OSM_USERK8S_ARTIFACTS` | *(empty)* | Path list of rendered profile files or directories the files backend loads |
-| `userk8s.namespace` | `OSM_USERK8S_NAMESPACE` | *(empty)* | Namespace the namespaced catalog kind is read from (LocalSecretBinding); empty uses the selected kubeconfig context |
+| `userk8s.namespace` | `OSM_USERK8S_NAMESPACE` | *(empty)* | Namespace the namespaced catalog kinds are read from (ModelSelection, ModelRoute, LocalSecretBinding); empty uses the selected kubeconfig context |
 | `userk8s.kubeconfig` | `OSM_USERK8S_KUBECONFIG` | *(empty)* | Kubeconfig for the cluster backend; empty follows `KUBECONFIG` then the default |
 | `userk8s.context` | `OSM_USERK8S_CONTEXT` | *(empty)* | Kubeconfig context for the cluster backend |
 
@@ -983,11 +983,14 @@ again where the value is consumed, so an `OSM_USERK8S_SOURCE` override cannot
 bypass the schema. Asking for `cluster` before a cluster backend is wired fails
 loudly at first use rather than silently serving rendered files.
 
-The `cluster` backend lists the five catalog kinds from the Kubernetes API
+The `cluster` backend lists all eight catalog kinds — ModelProvider,
+ModelAccess, Model, ModelServing, ModelSelection, ModelRoute, Tool, and
+LocalSecretBinding — from the Kubernetes API
 server once, on its first catalog call, and then serves that cached catalog:
 there is no watch and no informer, so a long-running script sees the catalog as
-of its first call and must start again to observe a change. Namespaced
-kinds are read from `userk8s.namespace`, which falls back to the namespace of
+of its first call and must start again to observe a change. ModelSelection,
+ModelRoute, and LocalSecretBinding are namespaced and are read from
+`userk8s.namespace`, which falls back to the namespace of
 the selected kubeconfig context, and reading a namespaced kind without a
 namespace is an error. Switching `userk8s.source` flips the backend with no
 JavaScript-visible difference: the same functions with the same shapes, and
@@ -998,33 +1001,59 @@ permission. `backendStatus().artifacts` names the rendered files a files
 backend read and is an empty list for a cluster backend, because artifacts name
 files and a cluster read has none.
 
+The two backends resolve the same artifacts to the same objects: the files
+backend applies the CRD defaults itself (an omitted `scheme` is `bearer`, an
+omitted `tool_call` is `true`, omitted modalities are `["text"]`, an omitted
+`order`/`priority` is `100`, an omitted `strategy` is `ordered`), so a rendered
+file and the equivalent cluster object expose identical facts.
+
+Every catalog operation returns a promise, because the first call may load files
+or query a cluster. Await them.
+
 ```js
 const userk8s = require('osm:userk8s');
 
-const loaded = userk8s.load();
+const loaded = await userk8s.load();
 // loaded.providers[0] → { name, registryName, displayName, country? }
-// loaded.accesses[0]  → { name, registryName, provider, mode, scheme, requiredEnv, endpoints, labels, annotations, order, deprecated? }
-// loaded.models[0]    → { name, registryName, provider, access?, contextWindow, maxOutputTokens, canReason, inputModalities, reasoningEfforts, default?, deprecated? }
+// loaded.accesses[0]  → { name, registryName, provider, protocol, labels, annotations, deprecated? }
+// loaded.models[0]    → { name, registryName, canonicalId, family?, displayName, aliases?,
+//                         contextWindow, maxOutputTokens, inputModalities, outputModalities,
+//                         reasoning?, toolCall, structuredOutput, deprecated? }
+// loaded.servings[0]  → { name, registryName, provider, model, providerModelId, priority,
+//                         default?, deprecated?, displayName, effective, overrides? }
+// loaded.routes[0]    → { name, registryName, namespace?, access?, credential?, offers,
+//                         surfaces, endpoints, naming, order, transport, annotations? }
+// loaded.selections[0]→ { name, registryName, namespace?, displayName, strategy, candidates }
+// loaded.bindings[0]  → { name, namespace?, scheme, envVar, labels, annotations? }
 // loaded.tools[0]     → { name, displayName, surfaces, credentialChannels, budgetProfile }
 // loaded.secretsPresent counts the LocalSecretBindings this machine declares.
 
-const resolution = userk8s.resolveCredential('electronhub-shaper');
+const resolution = await userk8s.resolveCredential('bind-electronhub');
 // { status: 'resolved' | 'missingCredentials' | 'unsupportedScheme',
 //   reason?, credentials: [{ envVar, value, provenance }] }
 
-const projection = userk8s.project('opencode', 'electronhub', 'glm-5.3:dev');
-// { providerSlug: 'electronhub', modelSlug: 'glm_5_3_dev', modelId: 'glm-5.3:dev',
-//   budgetProfile: 'sdk-limits', access: 'electronhub-shaper', surfaces: ['chat'], settings: {...} }
+const projection = await userk8s.project('opencode', 'electronhub', 'glm-5.3:dev:electronhub');
+// { providerSlug: 'electronhub', modelSlug: 'glm_5_3_dev_electronhub', modelId: 'glm-5.3:dev:electronhub',
+//   providerModelId?, budgetProfile: 'sdk-limits', settings: { contextWindow, ... } }
+
+const status = await userk8s.backendStatus();
+// { source: 'files' | 'cluster', artifacts: [...], providers, accesses, models, servings, selections, routes, tools, bindings }
 ```
+
+`serving.effective` is the serving's capabilities after its Model's facts and
+the serving's narrowings are combined; `serving.overrides` is the raw narrowing
+set in the same camelCase vocabulary. Consumers should read `effective` rather
+than merging the two themselves.
+
 
 `modelSlug` is the identifier the tool accepts and `modelId` is the raw
 registry spelling. The raw spelling is kept whenever the tool's grammar accepts
 it; otherwise every non-alphanumeric character becomes `_`, which is how the
 live tool configurations spell such names (opencode pairs the key
-`glm_5_3_dev` with the id `glm-5.3:dev`). `budgetProfile` only names the tool's
-budget derivation rule: the derivation lives in adapter code. A tool/provider/
-model combination whose identifier cannot be expressed is an error, never a
-silent substitution.
+`glm_5_3_dev_electronhub` with the id `glm-5.3:dev:electronhub`). `budgetProfile`
+only names the tool's budget derivation rule: the derivation lives in adapter
+code. A tool/provider/serving combination whose identifier cannot be expressed is
+an error, never a silent substitution.
 
 `accesses[].annotations` is the access's `metadata.annotations`, carried
 verbatim, and it is the deliberate counterpart to `spec`. `spec` holds facts the

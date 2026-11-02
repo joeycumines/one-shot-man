@@ -234,7 +234,12 @@ func BuildPickAndPlaceTestBinary(t *testing.T) string {
 	projectDir := filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
 
 	binaryPath := filepath.Join(t.TempDir(), "osm-pickplace-test")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	// The bound is scheduling headroom, not expected cost: a cold `go build
+	// ./cmd/osm` under make -j (other package binaries compiling alongside)
+	// exceeded the former 3-minute bound on ubuntu CI and the context killed
+	// the compiler ("signal: killed" at 180s). 10 minutes stays finite so a
+	// genuinely stuck build still fails the test.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/osm")
 	cmd.Dir = projectDir // Critical: set working directory to project root

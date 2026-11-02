@@ -1,0 +1,230 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.23.0
+  name: modelservings.one-shot-man
+spec:
+  group: one-shot-man
+  names:
+    kind: ModelServing
+    listKind: ModelServingList
+    plural: modelservings
+    singular: modelserving
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ModelServing is one provider's concrete offer of a Model: the wire id that
+          provider calls it, the provider-specific capability narrowings, and the
+          offering's preference/deprecation. It is credential-agnostic and
+          access-agnostic: a ModelAccess is a logical channel and a ModelRoute binds
+          an entity's credential/transport to this offering.
+
+          metadata.name is the DEFAULT served id (the intermediary model id a tool may
+          send). A route may expose the serving under a different id when the same
+          offering is reachable through more than one access item.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ModelServingSpec is one provider's offer of a Model.
+            properties:
+              default:
+                default: false
+                description: Default marks at most one offering per provider as its
+                  preferred one.
+                type: boolean
+              deprecated:
+                default: false
+                description: |-
+                  Deprecated marks this provider offer as no longer recommended; the same
+                  Model may still be offered by another provider.
+                type: boolean
+              labels:
+                additionalProperties:
+                  type: string
+                description: Labels are Kubernetes-compatible labels, mirroring metadata.labels.
+                type: object
+              model:
+                description: Model references the provider-independent Model definition.
+                minLength: 1
+                type: string
+              overrides:
+                description: Overrides narrow the Model's capabilities for this provider.
+                properties:
+                  context_window:
+                    description: |-
+                      ContextWindow is this provider's context ceiling; must not exceed the
+                      Model's context_window.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  input_modalities:
+                    description: |-
+                      InputModalities is this provider's accepted input modalities; must be a
+                      subset of the Model's.
+                    items:
+                      enum:
+                      - text
+                      - image
+                      - audio
+                      type: string
+                    type: array
+                    uniqueItems: true
+                  max_output_tokens:
+                    description: |-
+                      MaxOutputTokens is this provider's output ceiling; must not exceed the
+                      Model's max_output_tokens.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  output_modalities:
+                    description: |-
+                      OutputModalities is this provider's produced output modalities; must be a
+                      subset of the Model's.
+                    items:
+                      enum:
+                      - text
+                      - image
+                      - audio
+                      type: string
+                    type: array
+                    uniqueItems: true
+                  reasoning:
+                    description: |-
+                      Reasoning replaces the Model's reasoning fact sheet for this provider.
+                      It may only narrow it (no new modes, efforts, or budget headroom).
+                    properties:
+                      budget:
+                        description: |-
+                          Budget is the accepted token-budget range when the provider exposes
+                          Anthropic-style thinking budgets.
+                        properties:
+                          max:
+                            description: Max is the largest budget the provider accepts,
+                              in tokens.
+                            format: int64
+                            minimum: 1
+                            type: integer
+                          min:
+                            description: Min is the smallest budget the provider accepts,
+                              in tokens.
+                            format: int64
+                            minimum: 0
+                            type: integer
+                        type: object
+                        x-kubernetes-validations:
+                        - message: reasoning.budget.min must be non-negative
+                          rule: '!has(self.min) || self.min >= 0'
+                        - message: reasoning.budget.max must be positive
+                          rule: '!has(self.max) || self.max > 0'
+                        - message: reasoning.budget.min must not exceed reasoning.budget.max
+                          rule: '!has(self.min) || !has(self.max) || self.min <= self.max'
+                      efforts:
+                        description: |-
+                          Efforts is the exact set of reasoning effort levels the provider
+                          accepts, in the provider's declared order.
+                        items:
+                          enum:
+                          - none
+                          - minimal
+                          - low
+                          - medium
+                          - high
+                          - xhigh
+                          - max
+                          - ultra
+                          type: string
+                        type: array
+                        uniqueItems: true
+                      supported:
+                        default: false
+                        description: Supported is true when the model supports reasoning/thinking
+                          at all.
+                        type: boolean
+                      toggle:
+                        default: false
+                        description: Toggle is true when the provider accepts an explicit
+                          on/off choice.
+                        type: boolean
+                    type: object
+                    x-kubernetes-validations:
+                    - message: 'a reasoning mode requires supported: true'
+                      rule: self.supported || (!self.toggle && !has(self.efforts)
+                        && !has(self.budget))
+                    - message: reasoning.efforts items must be one of none|minimal|low|medium|high|xhigh|max|ultra
+                      rule: '!has(self.efforts) || self.efforts.all(e, e in [''none'',
+                        ''minimal'', ''low'', ''medium'', ''high'', ''xhigh'', ''max'',
+                        ''ultra''])'
+                  structured_output:
+                    description: |-
+                      StructuredOutput may turn structured output off; it cannot turn on a
+                      capability the Model does not have.
+                    type: boolean
+                  tool_call:
+                    description: |-
+                      ToolCall may turn tool calling off; it cannot turn on a capability the
+                      Model does not have.
+                    type: boolean
+                type: object
+              priority:
+                default: 100
+                description: |-
+                  Priority orders offerings of the same Model when a selection expands
+                  them; lower is preferred. Zero is the unset value and is rejected when
+                  declared explicitly: the default replaces it with 100.
+                format: int32
+                minimum: 1
+                type: integer
+              provider:
+                description: |-
+                  Provider references the ModelProvider that offers this model. Must
+                  resolve; the cross-resource check is a loader/controller-side gap.
+                minLength: 1
+                type: string
+              provider_model_id:
+                description: |-
+                  ProviderModelID is the id the PROVIDER calls this model, sent upstream
+                  verbatim. It is never exposed as a model id on a served route.
+                maxLength: 256
+                minLength: 1
+                type: string
+            required:
+            - model
+            - provider
+            - provider_model_id
+            type: object
+            x-kubernetes-validations:
+            - message: overrides.context_window must be positive
+              rule: '!has(self.overrides) || !has(self.overrides.context_window) ||
+                self.overrides.context_window > 0'
+            - message: overrides.max_output_tokens must be positive
+              rule: '!has(self.overrides) || !has(self.overrides.max_output_tokens)
+                || self.overrides.max_output_tokens > 0'
+        type: object
+        x-kubernetes-validations:
+        - message: metadata.name must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ — the
+            served id is an RFC-1123 name; the catalog registry key lives in the one-shot-man/registry-name
+            annotation
+          rule: self.metadata.name.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+    served: true
+    storage: true

@@ -1,14 +1,15 @@
 package userk8s
 
-// ResolutionStatus describes how completely an access's credentials resolved.
+// ResolutionStatus describes how completely a binding's credentials resolved.
 type ResolutionStatus string
 
 const (
 	// StatusResolved means every required environment slot was covered.
 	StatusResolved ResolutionStatus = "resolved"
-	// StatusMissingCredentials means at least one required slot had no value.
+	// StatusMissingCredentials means the binding's resolver chain produced no
+	// value.
 	StatusMissingCredentials ResolutionStatus = "missingCredentials"
-	// StatusUnsupportedScheme means the access's scheme is modeled but not
+	// StatusUnsupportedScheme means the binding's scheme is modeled but not
 	// launchable yet; the reason names the scheme.
 	StatusUnsupportedScheme ResolutionStatus = "unsupportedScheme"
 )
@@ -22,7 +23,7 @@ type Credential struct {
 	Provenance string `json:"provenance"`
 }
 
-// Resolution is the credential state of one access.
+// Resolution is the credential state of one LocalSecretBinding.
 type Resolution struct {
 	Status      ResolutionStatus `json:"status"`
 	Reason      string           `json:"reason,omitempty"`
@@ -30,9 +31,7 @@ type Resolution struct {
 }
 
 // Projection is what a tool adapter receives for one selection. BudgetProfile
-// is the tool's named derivation rule (derivation itself is adapter code);
-// Access and Surfaces name how the selection is reached, so no consumer has to
-// re-derive routing facts.
+// is the tool's named derivation rule (derivation itself is adapter code).
 type Projection struct {
 	ProviderSlug string `json:"providerSlug"`
 	ModelSlug    string `json:"modelSlug"`
@@ -44,18 +43,19 @@ type Projection struct {
 	// the two agree.
 	ProviderModelID string         `json:"providerModelId,omitempty"`
 	BudgetProfile   string         `json:"budgetProfile"`
-	Access          string         `json:"access,omitempty"`
-	Surfaces        []string       `json:"surfaces,omitempty"`
 	Settings        map[string]any `json:"settings"`
 }
 
-// BackendStatus reports what the backend loaded.
+// BackendStatus reports what the backend loaded across all eight catalog kinds.
 type BackendStatus struct {
-	Source    string   `json:"source"`
-	Artifacts []string `json:"artifacts"`
-	Providers int      `json:"providers"`
-	Accesses  int      `json:"accesses"`
-	Models    int      `json:"models"`
-	Tools     int      `json:"tools"`
-	Bindings  int      `json:"bindings"`
+	Source     string   `json:"source"`
+	Artifacts  []string `json:"artifacts"`
+	Providers  int      `json:"providers"`
+	Accesses   int      `json:"accesses"`
+	Models     int      `json:"models"`
+	Servings   int      `json:"servings"`
+	Selections int      `json:"selections"`
+	Routes     int      `json:"routes"`
+	Tools      int      `json:"tools"`
+	Bindings   int      `json:"bindings"`
 }

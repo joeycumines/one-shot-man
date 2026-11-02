@@ -16,42 +16,22 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: ModelAccess
 metadata:
-  name: alpha-direct
+  name: alpha-chat
   labels:
     one-shot-man/provider: alpha
-    one-shot-man/mode: direct
-    one-shot-man/surface-chat: "true"
 spec:
   provider: alpha
-  mode: direct
-  auth:
-    scheme: bearer
-    requiredEnv:
-      - ALPHA_API_KEY
-  endpoints:
-    chat: http://127.0.0.1:9/alpha/v1
-  order: 10
+  protocol: chat
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelAccess
 metadata:
-  name: beta-shaper
+  name: beta-chat
   labels:
     one-shot-man/provider: beta
-    one-shot-man/mode: shaper
-    one-shot-man/surface-chat: "true"
-    one-shot-man/surface-responses: "true"
 spec:
   provider: beta
-  mode: shaper
-  auth:
-    scheme: bearer
-    requiredEnv:
-      - BETA_API_KEY
-  endpoints:
-    chat: http://127.0.0.1:11239/beta/v1
-    responses: http://127.0.0.1:11239/beta/v1
-  order: 5
+  protocol: chat
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: Model
@@ -60,31 +40,69 @@ metadata:
   annotations:
     one-shot-man/registry-name: alpha-model
 spec:
-  provider: alpha
-  access: alpha-direct
+  canonical_id: alpha/alpha-model
+  display_name: Alpha Model
   context_window: 100000
   max_output_tokens: 1000
-  can_reason: true
+  reasoning:
+    supported: true
+    efforts:
+      - low
+      - high
   input_modalities:
     - text
     - image
-  reasoning_efforts:
-    - low
-    - high
-  default: true
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
   name: beta-model
 spec:
-  provider: beta
-  access: beta-shaper
+  canonical_id: beta/beta-model
+  display_name: Beta Model
   context_window: 200000
   max_output_tokens: 2000
-  can_reason: false
   input_modalities:
     - text
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  name: alpha-model-alpha
+spec:
+  provider: alpha
+  model: alpha-model
+  provider_model_id: alpha-model
+  default: true
+  overrides:
+    context_window: 100000
+    max_output_tokens: 1000
+    input_modalities:
+      - text
+      - image
+    reasoning:
+      supported: true
+      efforts:
+        - low
+        - high
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  name: beta-model-beta
+  annotations:
+    one-shot-man/registry-name: beta-model:beta
+spec:
+  provider: beta
+  model: beta-model
+  provider_model_id: beta-model
+  overrides:
+    context_window: 200000
+    max_output_tokens: 2000
+    input_modalities:
+      - text
+    reasoning:
+      supported: false
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: LocalSecretBinding
@@ -95,6 +113,7 @@ spec:
   selector:
     matchLabels:
       one-shot-man/provider: alpha
+  scheme: bearer
   secretRef:
     name: creds
     key: ALPHA_API_KEY
@@ -119,6 +138,7 @@ spec:
   selector:
     matchLabels:
       one-shot-man/provider: beta
+  scheme: bearer
   secretRef:
     name: creds
     key: BETA_API_KEY
@@ -164,3 +184,32 @@ spec:
     model_slug:
       pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
   budget_profile: sdk-limits
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelSelection
+metadata:
+  name: alpha-selection
+  namespace: model-access-test
+spec:
+  display_name: Alpha selection
+  strategy: ordered
+  candidates:
+    - serving: alpha-model-alpha
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-local
+  namespace: model-access-test
+spec:
+  access: alpha-chat
+  credential: bind-alpha
+  surfaces:
+    - chat
+  endpoints:
+    chat: http://127.0.0.1:11239/alpha/v1
+  naming: served
+  order: 10
+  transport:
+    kind: shaper
+    upstream: https://alpha.example

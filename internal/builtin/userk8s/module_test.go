@@ -118,14 +118,17 @@ func TestModuleLoadsCatalogFromArtifacts(t *testing.T) {
 		const loaded = await userk8s.load();
 		__collect(({
 			source: loaded.source,
-			countsOk: loaded.providers.length === 13 && loaded.models.length === 156
-				&& loaded.accesses.length === 15 && loaded.tools.length === 9 && loaded.secretsPresent === 15,
+			countsOk: loaded.providers.length === 14 && loaded.models.length === 112
+				&& loaded.servings.length === 152 && loaded.accesses.length === 14
+				&& loaded.routes.length === 13 && loaded.selections.length === 1
+				&& loaded.tools.length === 9 && loaded.secretsPresent === 12,
 			namesOk: loaded.providers[0].name.length > 0 && loaded.providers[0].displayName.length > 0
 				&& loaded.tools[0].name.length > 0 && loaded.tools[0].budgetProfile.length > 0,
 			schemesOk: loaded.accesses.every(function (access) {
-				return typeof access.scheme === "string" && access.scheme.length > 0 && access.requiredEnv.length > 0;
+				return typeof access.protocol === "string" && access.protocol.length > 0
+					&& access.scheme === undefined && access.requiredEnv === undefined;
 			}),
-			registryOk: loaded.models.some(function (model) { return model.registryName === "glm-5.3:dev"; }),
+			registryOk: loaded.servings.some(function (serving) { return serving.registryName === "glm-5.3:dev:electronhub"; }),
 			noSecretMaterial: loaded.accesses.every(function (access) {
 				return access.value === undefined && access.credentials === undefined;
 			})
@@ -155,7 +158,7 @@ func TestModuleLoadsCatalogFromArtifacts(t *testing.T) {
 func TestModuleProjectsSelection(t *testing.T) {
 	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
 	value, err := runAsync(`
-		const pending = userk8s.project("claude", "electronhub", "glm-5.3:dev");
+		const pending = userk8s.project("claude", "electronhub", "glm-5-3-electronhub-dev");
 		const isPromise = typeof pending.then === "function";
 		const projection = await pending;
 		__collect(({
@@ -163,11 +166,9 @@ func TestModuleProjectsSelection(t *testing.T) {
 			providerSlug: projection.providerSlug,
 			modelSlug: projection.modelSlug,
 			budgetProfile: projection.budgetProfile,
-			access: projection.access,
-			surfacesOk: projection.surfaces.length > 0,
-			numbersOk: projection.settings.context_window === 262000
+			numbersOk: projection.settings.context_window === 260000
 				&& projection.settings.max_output_tokens === 16384
-				&& projection.settings.can_reason === true
+				&& projection.settings.reasoning.supported === true
 		}))
 	`)
 	if err != nil {
@@ -180,10 +181,8 @@ func TestModuleProjectsSelection(t *testing.T) {
 	}{
 		{"isPromise", true},
 		{"providerSlug", "electronhub"},
-		{"modelSlug", "glm-5.3:dev"},
+		{"modelSlug", "glm-5.3:dev:electronhub"},
 		{"budgetProfile", "claude-margin"},
-		{"access", "electronhub-shaper"},
-		{"surfacesOk", true},
 		{"numbersOk", true},
 	} {
 		if got[want.key] != want.want {
@@ -200,7 +199,7 @@ func TestModuleResolveCredentialRejectsTypedCode(t *testing.T) {
 	// the async contract rejects with the typed code and preserves the
 	// documented status and slot-naming reason — never resolver output.
 	_, err := runAsync(`
-		await userk8s.resolveCredential("electronhub-shaper");
+		await userk8s.resolveCredential("bind-electronhub");
 		__collect("UNEXPECTED-RESOLVE");
 	`)
 	if err == nil {
@@ -234,7 +233,7 @@ func TestModuleResolveCredentialRedactsResolverFailure(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}, Runner: failingOnceRunner{}})
 	_, err := runAsync(`
-		await userk8s.resolveCredential("electronhub-shaper");
+		await userk8s.resolveCredential("bind-electronhub");
 		__collect("UNEXPECTED-RESOLVE");
 	`)
 	if err == nil {
@@ -257,7 +256,7 @@ func TestModuleBackendStatus(t *testing.T) {
 		__collect(({
 			isPromise: isPromise,
 			source: status.source,
-			ok: status.providers === 13 && status.models === 156 && status.bindings === 15 && status.artifacts.length === 1
+			ok: status.providers === 14 && status.models === 112 && status.servings === 152 && status.selections === 1 && status.bindings === 12 && status.artifacts.length === 1
 		}))
 	`)
 	if err != nil {
@@ -287,11 +286,11 @@ func TestModuleResolveCredentialRequiresReference(t *testing.T) {
 			if (!(e instanceof TypeError)) { __collectErr("empty model: want TypeError, got " + e); return; }
 		}
 		try {
-			await userk8s.resolveCredential("no-such-access");
+			await userk8s.resolveCredential("no-such-binding");
 			__collectErr("unknown access resolved unexpectedly");
 			return;
 		} catch (e) {
-			if (!e.code || (e.code !== "access-not-found" && e.code !== "credential-unresolved")) {
+			if (!e.code || (e.code !== "binding-not-found" && e.code !== "credential-unresolved")) {
 				__collectErr("unknown access: want a typed code, got " + (e.code || e));
 				return;
 			}
@@ -310,13 +309,13 @@ func TestMain(m *testing.M) {
 func TestModuleProjectsReconciledSlug(t *testing.T) {
 	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
 	value, err := runAsync(`
-		const projection = await userk8s.project("opencode", "electronhub", "glm-5.3:dev");
+		const projection = await userk8s.project("opencode", "electronhub", "glm-5-3-electronhub-dev");
 		__collect(({
 			providerSlug: projection.providerSlug,
 			modelSlug: projection.modelSlug,
 			modelId: projection.modelId,
 			budgetProfile: projection.budgetProfile,
-			settingsOk: projection.settings.context_window === 262000 && projection.settings.max_output_tokens === 16384
+			settingsOk: projection.settings.context_window === 260000 && projection.settings.max_output_tokens === 16384
 		}))
 	`)
 	if err != nil {
@@ -328,8 +327,8 @@ func TestModuleProjectsReconciledSlug(t *testing.T) {
 		want any
 	}{
 		{"providerSlug", "electronhub"},
-		{"modelSlug", "glm_5_3_dev"},
-		{"modelId", "glm-5.3:dev"},
+		{"modelSlug", "glm_5_3_dev_electronhub"},
+		{"modelId", "glm-5.3:dev:electronhub"},
 		{"budgetProfile", "sdk-limits"},
 		{"settingsOk", true},
 	} {
@@ -350,7 +349,7 @@ func TestModuleResolvesBearerCredentialThroughJS(t *testing.T) {
 	vm, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}, Runner: resolvingRunner{}})
 	_ = vm
 	value, err := runAsync(`
-		const resolution = await userk8s.resolveCredential("electronhub-shaper");
+		const resolution = await userk8s.resolveCredential("bind-electronhub");
 		const credential = (resolution.credentials || [])[0];
 		__collect(({
 			status: resolution.status,
@@ -444,7 +443,7 @@ func TestModuleResolveCredentialAbortsOnSignal(t *testing.T) {
 	start := time.Now()
 	_, err := runAsync(`
 		const controller = new AbortController();
-		const pending = userk8s.resolveCredential("electronhub-shaper", controller.signal);
+		const pending = userk8s.resolveCredential("bind-electronhub", controller.signal);
 		controller.abort();
 		try {
 			await pending;
@@ -510,18 +509,14 @@ kind: ModelAccess
 metadata:
   name: vendor-shaper
   labels:
-    one-shot-man/mode: shaper
+    one-shot-man/provider: vendor
   annotations:
     one-shot-man/registry-name: vendor:shaper
     one-shot-man/shaper-args: '["-opencode=true", "-native-route=chat@/v1/chat/completions"]'
     example.com/owner: platform
 spec:
   provider: vendor
-  mode: shaper
-  auth:
-    scheme: none
-  endpoints:
-    chat: http://127.0.0.1:11239/vendor/v1
+  protocol: chat
 `
 	path := filepath.Join(t.TempDir(), "catalog.yaml")
 	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
@@ -537,7 +532,7 @@ spec:
 			shaperArgs: access.annotations["one-shot-man/shaper-args"],
 			foreignKept: access.annotations["example.com/owner"],
 			registryStillVerbatim: access.annotations["one-shot-man/registry-name"],
-			labelStillSeparate: access.labels["one-shot-man/mode"],
+			labelStillSeparate: access.labels["one-shot-man/provider"],
 			argsAreAString: typeof access.annotations["one-shot-man/shaper-args"] === "string"
 		})
 	`)
@@ -557,7 +552,7 @@ spec:
 		{"registryStillVerbatim", "vendor:shaper"},
 		{"shaperArgs", wantArgs},
 		{"foreignKept", "platform"},
-		{"labelStillSeparate", "shaper"},
+		{"labelStillSeparate", "vendor"},
 		// An annotation is a string by construction: k8s annotations are
 		// map[string]string. A consumer that wants structure parses it, and
 		// the module must not pre-parse on its behalf.

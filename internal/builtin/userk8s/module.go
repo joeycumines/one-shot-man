@@ -6,13 +6,14 @@
 // adapter launches with.
 //
 // The async contract: load() returns Promise<Snapshot>, resolveCredential
-// (accessRef, signal?) returns Promise<Resolution> honoring an optional
-// AbortSignal, and project(tool, provider, model) and backendStatus() return
+// (bindingRef, signal?) returns Promise<Resolution> honoring an optional
+// AbortSignal, and project(tool, provider, serving) and backendStatus() return
 // promises because their first call may load the catalog. Rejections carry
-// typed .code values (catalog-not-found, credential-unresolved,
-// resolver-failure-class, and the ABORT_ERR abort); resolver failures surface
-// only as their class, never raw error text, and credential values cross into
-// JS only as the value field of a resolved credential.
+// typed .code values (catalog-not-found, binding-not-found,
+// credential-unresolved, resolver-failure-class, and the ABORT_ERR abort);
+// resolver failures surface only as their class, never raw error text, and
+// credential values cross into JS only as the value field of a resolved
+// credential.
 //
 // Credential values cross into JS only as the value field of a resolved
 // credential; nothing else in the surface exposes credential material, and
@@ -25,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"sort"
 	"strings"
 	"sync"
 
@@ -125,9 +125,9 @@ func Require(ctx context.Context, options Options, adapter *gojaeventloop.Adapte
 // first call can load files or query a cluster. Blocking work settles through
 // Adapter.TrackPromise, and an optional AbortSignal aborts resolveCredential
 // with the standard AbortError.
-// Rejections carry typed .code values: catalog-not-found,
-// access-not-found, credential-unresolved, resolver-failure-class — and
-// resolver failures are always reported as classes, never raw error text.
+// Rejections carry typed .code values: catalog-not-found, binding-not-found,
+// credential-unresolved, and resolver-failure-class — and resolver failures are
+// always reported as classes, never raw error text.
 func RequireWithProvider(ctx context.Context, options Options, build Provider, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
@@ -154,16 +154,16 @@ func RequireWithProvider(ctx context.Context, options Options, build Provider, a
 			})
 		})
 
-		// resolveCredential(accessRef, signal?) -> Promise<Resolution>
+		// resolveCredential(bindingRef, signal?) -> Promise<Resolution>
 		_ = exports.Set("resolveCredential", func(call goja.FunctionCall) goja.Value {
 			if adapter == nil {
 				panic(runtime.NewTypeError("osm:userk8s: resolveCredential requires the async runtime wiring"))
 			}
-			accessRef, ok := stringArg(call, 0)
+			bindingRef, ok := stringArg(call, 0)
 			if !ok {
 				promise, settler := adapter.NewPromise()
 				_ = settler.Reject(func(rt *goja.Runtime) any {
-					return rt.NewTypeError("osm:userk8s: resolveCredential requires an access reference")
+					return rt.NewTypeError("osm:userk8s: resolveCredential requires a LocalSecretBinding reference")
 				})
 				return promise
 			}
@@ -199,7 +199,7 @@ func RequireWithProvider(ctx context.Context, options Options, build Provider, a
 					_ = settle.Settle(true, func(rt *goja.Runtime) any { return abortError(rt) })
 					return
 				}
-				resolution, err := catalog.ResolveCredential(trackCtx, accessRef)
+				resolution, err := catalog.ResolveCredential(trackCtx, bindingRef)
 				if err != nil {
 					// An abort that landed mid-resolution wins over every
 					// classification: the resolver's context cancellation IS
@@ -212,8 +212,8 @@ func RequireWithProvider(ctx context.Context, options Options, build Provider, a
 					// other error is a resolver failure reported as the class
 					// alone — never raw resolver output.
 					code := "resolver-failure-class"
-					if strings.Contains(err.Error(), "unknown ModelAccess") {
-						code = "access-not-found"
+					if strings.Contains(err.Error(), "unknown LocalSecretBinding") {
+						code = "binding-not-found"
 					}
 					_ = settle.Settle(true, func(rt *goja.Runtime) any { return catalogError(rt, code, err) })
 					return
@@ -226,18 +226,18 @@ func RequireWithProvider(ctx context.Context, options Options, build Provider, a
 			})
 		})
 
-		// project(toolName, providerName, modelName) -> Promise<Projection>
+		// project(toolName, providerName, servingName) -> Promise<Projection>
 		_ = exports.Set("project", func(call goja.FunctionCall) goja.Value {
 			if adapter == nil {
 				panic(runtime.NewTypeError("osm:userk8s: project requires the async runtime wiring"))
 			}
 			toolName, toolOK := stringArg(call, 0)
 			providerName, providerOK := stringArg(call, 1)
-			modelName, modelOK := stringArg(call, 2)
-			if !toolOK || !providerOK || !modelOK {
+			servingName, servingOK := stringArg(call, 2)
+			if !toolOK || !providerOK || !servingOK {
 				return adapter.TrackPromise(ctx, func(_ context.Context, settle gojaeventloop.TrackedSettlement) {
 					_ = settle.Settle(true, func(rt *goja.Runtime) any {
-						return rt.NewTypeError("osm:userk8s: project requires a tool, a provider, and a model")
+						return rt.NewTypeError("osm:userk8s: project requires a tool, a provider, and a serving")
 					})
 				})
 			}
@@ -247,7 +247,7 @@ func RequireWithProvider(ctx context.Context, options Options, build Provider, a
 					_ = settle.Settle(true, func(rt *goja.Runtime) any { return catalogError(rt, "catalog-not-found", err) })
 					return
 				}
-				projection, err := catalog.Project(trackCtx, toolName, providerName, modelName)
+				projection, err := catalog.Project(trackCtx, toolName, providerName, servingName)
 				if err != nil {
 					_ = settle.Settle(true, func(rt *goja.Runtime) any {
 						return rt.NewTypeError(err.Error())
@@ -287,7 +287,7 @@ var errResolverClass = errors.New("credential resolver failed")
 // catalogError builds a rejected reason with a typed code. The
 // resolver-failure-class code never carries the underlying error: resolver
 // stdout, stderr, exit status, and environment detail stay in Go. The other
-// codes (catalog-not-found, access-not-found) keep the underlying message —
+// codes (catalog-not-found, binding-not-found) keep the underlying message —
 // those errors name catalog objects and configuration, not resolver output.
 func catalogError(rt *goja.Runtime, code string, err error) *goja.Object {
 	if code == "resolver-failure-class" {
@@ -414,41 +414,22 @@ type LoadedProviders struct {
 	Country     string `json:"country,omitempty"`
 }
 
-// LoadedAccess is the JS-facing shape of a ModelAccess. It carries the auth
-// requirements but never a credential value.
+// LoadedAccess is the JS-facing shape of a ModelAccess. It carries only the
+// logical provider/protocol channel; credentials and transports live on entity
+// bindings and routes.
 type LoadedAccess struct {
-	Name             string            `json:"name"`
-	Registry         string            `json:"registryName"`
-	Provider         string            `json:"provider"`
-	Mode             string            `json:"mode"`
-	Scheme           string            `json:"scheme,omitempty"`
-	RequiredEnv      []string          `json:"requiredEnv,omitempty"`
-	Endpoints        map[string]string `json:"endpoints,omitempty"`
-	Surfaces         []string          `json:"surfaces,omitempty"`
-	PreferredSurface string            `json:"preferredSurface,omitempty"`
-	Labels           map[string]string `json:"labels,omitempty"`
-	// Annotations is the access's metadata.annotations, carried verbatim.
-	//
-	// Spec carries the facts the catalog understands and the engine validates;
-	// an annotation carries a fact a CONSUMER understands and the CRD does not
-	// model, so it cannot be schema-checked. one-shot-man/registry-name is
-	// additionally folded into Registry because that key has defined meaning to
-	// the engine — it is emitted verbatim here too, so a consumer never has to
-	// know which annotations were "promoted" to a first-class field.
-	//
-	// Every value is an untrusted string. A consumer MUST validate its own
-	// annotation's shape and fail loudly rather than pass it through.
+	Name        string            `json:"name"`
+	Registry    string            `json:"registryName"`
+	Provider    string            `json:"provider"`
+	Protocol    string            `json:"protocol"`
+	Labels      map[string]string `json:"labels,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty"`
-	Order       int32             `json:"order"`
 	Deprecated  bool              `json:"deprecated,omitempty"`
-	Shaper      *LoadedShaper     `json:"shaper,omitempty"`
 }
 
-// LoadedShaper is the JS-facing shape of ShaperConfig.
+// LoadedShaper is the JS-facing shape of ShaperTransportConfig.
 type LoadedShaper struct {
-	Upstream        string `json:"upstream,omitempty"`
 	AuthMode        string `json:"authMode,omitempty"`
-	Transcode       string `json:"transcode,omitempty"`
 	Concurrency     *int32 `json:"concurrency,omitempty"`
 	LimitAll        *bool  `json:"limitAll,omitempty"`
 	QueueTimeout    string `json:"queueTimeout,omitempty"`
@@ -464,25 +445,114 @@ type LoadedShaper struct {
 	CBMaxPenalty    string `json:"cbMaxPenalty,omitempty"`
 }
 
-// LoadedModel is the JS-facing shape of a Model.
+// LoadedModel is the JS-facing shape of a provider-independent Model.
 type LoadedModel struct {
-	Name string `json:"name"`
-	// Registry is the catalog-wide unique key a selection is made by. It is
-	// NOT the id to send a provider: that is ProviderModelID.
-	Registry string `json:"registryName"`
-	// ProviderModelID is the id the provider itself calls this model, and is
-	// what a gateway forwards upstream. Empty means "same as the registry
-	// name", which is the common case.
-	ProviderModelID  string   `json:"providerModelId,omitempty"`
-	Provider         string   `json:"provider"`
-	Access           string   `json:"access,omitempty"`
-	ContextWindow    int64    `json:"contextWindow"`
-	MaxOutputTokens  int64    `json:"maxOutputTokens"`
-	CanReason        bool     `json:"canReason"`
-	InputModalities  []string `json:"inputModalities,omitempty"`
-	ReasoningEfforts []string `json:"reasoningEfforts,omitempty"`
-	Default          bool     `json:"default,omitempty"`
-	Deprecated       bool     `json:"deprecated,omitempty"`
+	Name             string                   `json:"name"`
+	Registry         string                   `json:"registryName"`
+	CanonicalID      string                   `json:"canonicalId"`
+	Family           string                   `json:"family,omitempty"`
+	DisplayName      string                   `json:"displayName"`
+	Aliases          []string                 `json:"aliases,omitempty"`
+	ContextWindow    int64                    `json:"contextWindow"`
+	MaxOutputTokens  int64                    `json:"maxOutputTokens"`
+	InputModalities  []string                 `json:"inputModalities,omitempty"`
+	OutputModalities []string                 `json:"outputModalities,omitempty"`
+	Reasoning        *v1alpha1.ModelReasoning `json:"reasoning,omitempty"`
+	ToolCall         bool                     `json:"toolCall"`
+	StructuredOutput bool                     `json:"structuredOutput"`
+	Deprecated       bool                     `json:"deprecated,omitempty"`
+}
+
+// LoadedEffective is the effective capability set of one serving (Model plus
+// its provider narrowing overrides). Consumers must not merge the two
+// themselves.
+type LoadedEffective struct {
+	ContextWindow    int64                    `json:"contextWindow"`
+	MaxOutputTokens  int64                    `json:"maxOutputTokens"`
+	InputModalities  []string                 `json:"inputModalities,omitempty"`
+	OutputModalities []string                 `json:"outputModalities,omitempty"`
+	Reasoning        *v1alpha1.ModelReasoning `json:"reasoning,omitempty"`
+	ToolCall         bool                     `json:"toolCall"`
+	StructuredOutput bool                     `json:"structuredOutput"`
+}
+
+// LoadedOverrides is the JS-facing shape of one serving's capability
+// narrowings. It mirrors the CRD struct but uses camelCase keys, so the served
+// payload has one vocabulary: the snake_case CRD spelling would sit beside
+// camelCase effective values and force every script to know both.
+type LoadedOverrides struct {
+	ContextWindow    *int64                   `json:"contextWindow,omitempty"`
+	MaxOutputTokens  *int64                   `json:"maxOutputTokens,omitempty"`
+	InputModalities  []string                 `json:"inputModalities,omitempty"`
+	OutputModalities []string                 `json:"outputModalities,omitempty"`
+	Reasoning        *v1alpha1.ModelReasoning `json:"reasoning,omitempty"`
+	ToolCall         *bool                    `json:"toolCall,omitempty"`
+	StructuredOutput *bool                    `json:"structuredOutput,omitempty"`
+}
+
+// LoadedServing is the JS-facing shape of one provider offering.
+type LoadedServing struct {
+	Name            string           `json:"name"`
+	Registry        string           `json:"registryName"`
+	Provider        string           `json:"provider"`
+	Model           string           `json:"model"`
+	ProviderModelID string           `json:"providerModelId"`
+	Priority        int32            `json:"priority"`
+	Default         bool             `json:"default,omitempty"`
+	Deprecated      bool             `json:"deprecated,omitempty"`
+	DisplayName     string           `json:"displayName"`
+	Effective       LoadedEffective  `json:"effective"`
+	Overrides       *LoadedOverrides `json:"overrides,omitempty"`
+}
+
+// LoadedBinding is the JS-facing shape of a credential binding. It carries no
+// value, only the slot name and scheme a route needs to resolve it.
+type LoadedBinding struct {
+	Name        string            `json:"name"`
+	Namespace   string            `json:"namespace,omitempty"`
+	Scheme      string            `json:"scheme,omitempty"`
+	EnvVar      string            `json:"envVar"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// LoadedRouteOffer is one served id a route exposes.
+type LoadedRouteOffer struct {
+	ID      string `json:"id"`
+	Serving string `json:"serving"`
+}
+
+// LoadedRoute is the JS-facing shape of one entity access item.
+type LoadedRoute struct {
+	Name        string             `json:"name"`
+	Registry    string             `json:"registryName"`
+	Namespace   string             `json:"namespace,omitempty"`
+	Access      string             `json:"access,omitempty"`
+	Credential  string             `json:"credential,omitempty"`
+	Offers      []LoadedRouteOffer `json:"offers"`
+	Surfaces    []string           `json:"surfaces"`
+	Endpoints   map[string]string  `json:"endpoints"`
+	Naming      string             `json:"naming"`
+	Order       int32              `json:"order"`
+	Transport   LoadedTransport    `json:"transport"`
+	Annotations map[string]string  `json:"annotations,omitempty"`
+}
+
+// LoadedTransport is the JS-facing shape of ModelRouteTransport.
+type LoadedTransport struct {
+	Kind     string        `json:"kind"`
+	Upstream string        `json:"upstream,omitempty"`
+	Shaper   *LoadedShaper `json:"shaper,omitempty"`
+}
+
+// LoadedSelection is the JS-facing shape of one fallback selection.
+type LoadedSelection struct {
+	Name        string                             `json:"name"`
+	Registry    string                             `json:"registryName"`
+	Namespace   string                             `json:"namespace,omitempty"`
+	DisplayName string                             `json:"displayName"`
+	Strategy    string                             `json:"strategy"`
+	Candidates  []v1alpha1.ModelSelectionCandidate `json:"candidates"`
 }
 
 // LoadedTool is the JS-facing shape of a Tool.
@@ -499,7 +569,11 @@ type Loaded struct {
 	Source         string            `json:"source"`
 	Providers      []LoadedProviders `json:"providers"`
 	Models         []LoadedModel     `json:"models"`
+	Servings       []LoadedServing   `json:"servings"`
 	Accesses       []LoadedAccess    `json:"accesses"`
+	Bindings       []LoadedBinding   `json:"bindings"`
+	Selections     []LoadedSelection `json:"selections"`
+	Routes         []LoadedRoute     `json:"routes"`
 	Tools          []LoadedTool      `json:"tools"`
 	SecretsPresent int               `json:"secretsPresent"`
 }
@@ -523,7 +597,23 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 	if err != nil {
 		return Loaded{}, err
 	}
+	servings, err := catalog.ListServings(ctx)
+	if err != nil {
+		return Loaded{}, err
+	}
+	selections, err := catalog.ListSelections(ctx)
+	if err != nil {
+		return Loaded{}, err
+	}
+	routes, err := catalog.ListRoutes(ctx)
+	if err != nil {
+		return Loaded{}, err
+	}
 	tools, err := catalog.ListTools(ctx)
+	if err != nil {
+		return Loaded{}, err
+	}
+	bindings, err := catalog.ListBindings(ctx)
 	if err != nil {
 		return Loaded{}, err
 	}
@@ -532,7 +622,11 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 		Source:         status.Source,
 		Providers:      make([]LoadedProviders, 0, len(providers)),
 		Models:         make([]LoadedModel, 0, len(models)),
+		Servings:       make([]LoadedServing, 0, len(servings)),
 		Accesses:       make([]LoadedAccess, 0, len(accesses)),
+		Bindings:       make([]LoadedBinding, 0, len(bindings)),
+		Selections:     make([]LoadedSelection, 0, len(selections)),
+		Routes:         make([]LoadedRoute, 0, len(routes)),
 		Tools:          make([]LoadedTool, 0, len(tools)),
 		SecretsPresent: status.Bindings,
 	}
@@ -547,75 +641,150 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 	for i := range accesses {
 		access := &accesses[i]
 		view := LoadedAccess{
-			Name:             access.Name,
-			Registry:         registryName(access.Name, access.Annotations),
-			Provider:         access.Spec.Provider,
-			Mode:             access.Spec.Mode,
-			Endpoints:        map[string]string{},
-			Labels:           map[string]string{},
-			Annotations:      map[string]string{},
-			Order:            access.Spec.Order,
-			Deprecated:       access.Spec.Deprecated,
-			PreferredSurface: access.Spec.PreferredSurface,
-		}
-		if access.Spec.Auth != nil {
-			view.Scheme = string(access.Spec.Auth.Scheme)
-			view.RequiredEnv = append([]string(nil), access.Spec.Auth.RequiredEnv...)
-		}
-		for surface, endpoint := range access.Spec.Endpoints {
-			view.Endpoints[surface] = string(endpoint)
-		}
-		if len(access.Spec.Surfaces) > 0 {
-			view.Surfaces = append([]string(nil), access.Spec.Surfaces...)
-		} else if len(access.Spec.Endpoints) > 0 {
-			surfaces := make([]string, 0, len(access.Spec.Endpoints))
-			for s := range access.Spec.Endpoints {
-				surfaces = append(surfaces, s)
-			}
-			sort.Strings(surfaces)
-			view.Surfaces = surfaces
+			Name:        access.Name,
+			Registry:    registryName(access.Name, access.Annotations),
+			Provider:    access.Spec.Provider,
+			Protocol:    string(access.Spec.Protocol),
+			Labels:      map[string]string{},
+			Annotations: map[string]string{},
+			Deprecated:  access.Spec.Deprecated,
 		}
 		maps.Copy(view.Labels, access.Labels)
 		maps.Copy(view.Annotations, access.Annotations)
-		if access.Spec.Shaper != nil {
-			s := access.Spec.Shaper
-			view.Shaper = &LoadedShaper{
-				Upstream:        s.Upstream,
-				AuthMode:        s.AuthMode,
-				Transcode:       s.Transcode,
-				Concurrency:     s.Concurrency,
-				LimitAll:        s.LimitAll,
-				QueueTimeout:    s.QueueTimeout,
-				Retry:           s.Retry,
-				RetryMinDelay:   s.RetryMinDelay,
-				RetrySkip429:    s.RetrySkip429,
-				ReleaseCooldown: s.ReleaseCooldown,
-				CancelCooldown:  s.CancelCooldown,
-				CircuitBreaker:  s.CircuitBreaker,
-				CBThreshold:     s.CBThreshold,
-				CBWindow:        s.CBWindow,
-				CBPenalty:       s.CBPenalty,
-				CBMaxPenalty:    s.CBMaxPenalty,
-			}
-		}
 		loaded.Accesses = append(loaded.Accesses, view)
+	}
+	// Index by both the metadata name and the raw registry name, with registry
+	// precedence matching the engine's lookup: serving.Spec.Model is authored in
+	// registry vocabulary, so a metadata-name-only index silently misses the
+	// model's display name and deprecation flag. Registry names are written
+	// second, so on the collision the engine resolves the same way they win here
+	// too.
+	modelByName := make(map[string]*v1alpha1.Model, len(models)*2)
+	for i := range models {
+		modelByName[models[i].Name] = &models[i]
+	}
+	for i := range models {
+		model := &models[i]
+		if registry := registryName(model.Name, model.Annotations); registry != model.Name {
+			modelByName[registry] = model
+		}
 	}
 	for i := range models {
 		model := &models[i]
 		loaded.Models = append(loaded.Models, LoadedModel{
 			Name:             model.Name,
 			Registry:         registryName(model.Name, model.Annotations),
-			ProviderModelID:  model.Spec.ProviderModelID,
-			Provider:         model.Spec.Provider,
-			Access:           model.Spec.Access,
+			CanonicalID:      model.Spec.CanonicalID,
+			Family:           model.Spec.Family,
+			DisplayName:      model.Spec.DisplayName,
+			Aliases:          append([]string(nil), model.Spec.Aliases...),
 			ContextWindow:    model.Spec.ContextWindow,
 			MaxOutputTokens:  model.Spec.MaxOutputTokens,
-			CanReason:        model.Spec.CanReason,
 			InputModalities:  append([]string(nil), model.Spec.InputModalities...),
-			ReasoningEfforts: append([]string(nil), model.Spec.ReasoningEfforts...),
-			Default:          model.Spec.Default,
+			OutputModalities: append([]string(nil), model.Spec.OutputModalities...),
+			Reasoning:        model.Spec.Reasoning,
+			ToolCall:         model.Spec.ToolCall,
+			StructuredOutput: model.Spec.StructuredOutput,
 			Deprecated:       model.Spec.Deprecated,
 		})
+	}
+	for i := range servings {
+		serving := &servings[i]
+		// Resolve through the object, not through a name: a registry name and a
+		// metadata name may collide, and re-resolving a metadata name that
+		// another object also uses as its registry name could pick the wrong
+		// model.
+		effective, err := effectiveModelFor(catalog, ctx, serving)
+		if err != nil {
+			return Loaded{}, err
+		}
+		model := modelByName[serving.Spec.Model]
+		display := serving.Name
+		modelDeprecated := false
+		if model != nil {
+			display = model.Spec.DisplayName
+			modelDeprecated = model.Spec.Deprecated
+		}
+		loaded.Servings = append(loaded.Servings, LoadedServing{
+			Name:            serving.Name,
+			Registry:        registryName(serving.Name, serving.Annotations),
+			Provider:        serving.Spec.Provider,
+			Model:           serving.Spec.Model,
+			ProviderModelID: serving.Spec.ProviderModelID,
+			Priority:        serving.Spec.EffectivePriority(),
+			Default:         serving.Spec.Default,
+			Deprecated:      serving.Spec.Deprecated || modelDeprecated,
+			DisplayName:     display,
+			Effective: LoadedEffective{
+				ContextWindow:    effective.ContextWindow,
+				MaxOutputTokens:  effective.MaxOutputTokens,
+				InputModalities:  append([]string(nil), effective.InputModalities...),
+				OutputModalities: append([]string(nil), effective.OutputModalities...),
+				Reasoning:        effective.Reasoning,
+				ToolCall:         effective.ToolCall,
+				StructuredOutput: effective.StructuredOutput,
+			},
+			Overrides: loadOverrides(serving.Spec.Overrides),
+		})
+	}
+	for i := range bindings {
+		binding := &bindings[i]
+		view := LoadedBinding{
+			Name:        binding.Name,
+			Namespace:   binding.Namespace,
+			Scheme:      string(binding.Spec.EffectiveScheme()),
+			EnvVar:      binding.Spec.EnvVar,
+			Labels:      map[string]string{},
+			Annotations: map[string]string{},
+		}
+		maps.Copy(view.Labels, binding.Labels)
+		maps.Copy(view.Annotations, binding.Annotations)
+		loaded.Bindings = append(loaded.Bindings, view)
+	}
+	for i := range selections {
+		selection := &selections[i]
+		view := LoadedSelection{
+			Name:        selection.Name,
+			Registry:    registryName(selection.Name, selection.Annotations),
+			Namespace:   selection.Namespace,
+			DisplayName: selection.Spec.DisplayName,
+			Strategy:    string(selection.Spec.Strategy),
+			Candidates:  append([]v1alpha1.ModelSelectionCandidate(nil), selection.Spec.Candidates...),
+		}
+		if view.Strategy == "" {
+			view.Strategy = string(v1alpha1.SelectionOrdered)
+		}
+		loaded.Selections = append(loaded.Selections, view)
+	}
+	for i := range routes {
+		route := &routes[i]
+		offers, err := routeOffersFor(catalog, ctx, route)
+		if err != nil {
+			return Loaded{}, err
+		}
+		view := LoadedRoute{
+			Name:       route.Name,
+			Registry:   registryName(route.Name, route.Annotations),
+			Namespace:  route.Namespace,
+			Access:     route.Spec.Access,
+			Credential: route.Spec.Credential,
+			Offers:     make([]LoadedRouteOffer, 0, len(offers)),
+			Surfaces:   append([]string(nil), route.Spec.Surfaces...),
+			Endpoints:  routeEndpoints(route),
+			Naming:     string(route.Spec.Naming),
+			Order:      route.Spec.EffectiveOrder(),
+			Transport: LoadedTransport{
+				Kind:     string(route.Spec.Transport.Kind),
+				Upstream: route.Spec.Transport.Upstream,
+				Shaper:   loadShaper(route.Spec.Transport.Shaper),
+			},
+			Annotations: map[string]string{},
+		}
+		maps.Copy(view.Annotations, route.Annotations)
+		for _, offer := range offers {
+			view.Offers = append(view.Offers, LoadedRouteOffer{ID: offer.ID, Serving: offer.Serving.Name})
+		}
+		loaded.Routes = append(loaded.Routes, view)
 	}
 	for i := range tools {
 		tool := &tools[i]
@@ -630,6 +799,47 @@ func loadCatalog(ctx context.Context, catalog userk8s.Catalog) (Loaded, error) {
 	return loaded, nil
 }
 
+// loadOverrides maps a serving's narrowings onto the camelCase JS shape.
+func loadOverrides(overrides *v1alpha1.ModelServingOverrides) *LoadedOverrides {
+	if overrides == nil {
+		return nil
+	}
+	return &LoadedOverrides{
+		ContextWindow:    overrides.ContextWindow,
+		MaxOutputTokens:  overrides.MaxOutputTokens,
+		InputModalities:  append([]string(nil), overrides.InputModalities...),
+		OutputModalities: append([]string(nil), overrides.OutputModalities...),
+		Reasoning:        overrides.Reasoning,
+		ToolCall:         overrides.ToolCall,
+		StructuredOutput: overrides.StructuredOutput,
+	}
+}
+
+// effectiveModelFor resolves a serving's effective capabilities from the object
+// the caller already holds. The Catalog interface accepts a reference because an
+// external caller has only a name; this module iterates the objects themselves,
+// so it uses the identity it already has rather than a name that may also be
+// another object's registry name.
+func effectiveModelFor(catalog userk8s.Catalog, ctx context.Context, serving *v1alpha1.ModelServing) (userk8s.EffectiveModel, error) {
+	if resolver, ok := catalog.(interface {
+		EffectiveModelForServing(context.Context, *v1alpha1.ModelServing) (userk8s.EffectiveModel, error)
+	}); ok {
+		return resolver.EffectiveModelForServing(ctx, serving)
+	}
+	return catalog.EffectiveModel(ctx, serving.Name)
+}
+
+// routeOffersFor resolves a route's offers from the object the caller holds,
+// for the same reason as effectiveModelFor.
+func routeOffersFor(catalog userk8s.Catalog, ctx context.Context, route *v1alpha1.ModelRoute) ([]userk8s.ResolvedOffer, error) {
+	if resolver, ok := catalog.(interface {
+		RouteOffersForRoute(context.Context, *v1alpha1.ModelRoute) ([]userk8s.ResolvedOffer, error)
+	}); ok {
+		return resolver.RouteOffersForRoute(ctx, route)
+	}
+	return catalog.RouteOffers(ctx, route.Name)
+}
+
 // registryName returns the raw registry identifier an object declares, else
 // its metadata name.
 func registryName(name string, annotations map[string]string) string {
@@ -637,4 +847,36 @@ func registryName(name string, annotations map[string]string) string {
 		return registry
 	}
 	return name
+}
+
+// routeEndpoints copies the route's client bases into the JS-facing map.
+func routeEndpoints(route *v1alpha1.ModelRoute) map[string]string {
+	endpoints := make(map[string]string, len(route.Spec.Endpoints))
+	for surface, endpoint := range route.Spec.Endpoints {
+		endpoints[surface] = string(endpoint)
+	}
+	return endpoints
+}
+
+// loadShaper maps a shaper transport's typed tuning onto the JS-facing shape.
+func loadShaper(shaper *v1alpha1.ShaperTransportConfig) *LoadedShaper {
+	if shaper == nil {
+		return nil
+	}
+	return &LoadedShaper{
+		AuthMode:        shaper.AuthMode,
+		Concurrency:     shaper.Concurrency,
+		LimitAll:        shaper.LimitAll,
+		QueueTimeout:    shaper.QueueTimeout,
+		Retry:           shaper.Retry,
+		RetryMinDelay:   shaper.RetryMinDelay,
+		RetrySkip429:    shaper.RetrySkip429,
+		ReleaseCooldown: shaper.ReleaseCooldown,
+		CancelCooldown:  shaper.CancelCooldown,
+		CircuitBreaker:  shaper.CircuitBreaker,
+		CBThreshold:     shaper.CBThreshold,
+		CBWindow:        shaper.CBWindow,
+		CBPenalty:       shaper.CBPenalty,
+		CBMaxPenalty:    shaper.CBMaxPenalty,
+	}
 }

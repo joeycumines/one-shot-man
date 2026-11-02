@@ -8,13 +8,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
 	builtinexec "github.com/joeycumines/one-shot-man/internal/builtin/exec"
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
-	"k8s.io/apimachinery/pkg/labels"
 )
 
 // defaultCommandTimeout bounds one resolver command when the step omits a
@@ -266,25 +264,4 @@ func resolveBinding(ctx context.Context, binding v1alpha1.LocalSecretBinding, ru
 		}
 	}
 	return Credential{}, false, failures
-}
-
-// bindingsForSlot returns every local binding whose selector matches the
-// access labels and whose envVar equals slot, ordered by object name so the
-// first-success rule does not depend on document order.
-func bindingsForSlot(bindings []v1alpha1.LocalSecretBinding, set labels.Set, slot string) ([]v1alpha1.LocalSecretBinding, error) {
-	var matched []v1alpha1.LocalSecretBinding
-	for _, binding := range bindings {
-		if binding.Spec.EnvVar != slot {
-			continue
-		}
-		ok, err := selectorMatches(&binding.Spec.Selector, set)
-		if err != nil {
-			return nil, fmt.Errorf("binding %q: %w", binding.Name, err)
-		}
-		if ok {
-			matched = append(matched, binding)
-		}
-	}
-	sort.Slice(matched, func(i, j int) bool { return matched[i].Name < matched[j].Name })
-	return matched, nil
 }

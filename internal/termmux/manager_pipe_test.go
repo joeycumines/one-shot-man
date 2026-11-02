@@ -33,16 +33,15 @@ func main() {
 }
 `
 
-// writePipeHelper writes the helper program into t.TempDir() and returns
-// its full path.
-func writePipeHelper(t *testing.T) string {
+// buildPipeHelper compiles the pipe-helper program into a test-owned binary
+// and returns its path. Precompiling once (via buildProgram, which serializes
+// compiler invocations) replaces a per-test "go run" cold compile: on Windows
+// CI under make -j load that compile could exceed the 30s output deadline
+// before the helper ever started reading stdin, leaving the output file empty.
+// Running the binary directly makes the pipe delivery deterministic.
+func buildPipeHelper(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "pipehelper.go")
-	if err := os.WriteFile(path, []byte(pipeHelperSource), 0o644); err != nil {
-		t.Fatalf("write helper: %v", err)
-	}
-	return path
+	return buildProgram(t, pipeHelperSource)
 }
 
 // readPipeOutput polls the output file until it contains the expected
@@ -77,10 +76,10 @@ func TestSessionManager_PipePaneCommand(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	helper := writePipeHelper(t)
+	helper := buildPipeHelper(t)
 	outPath := filepath.Join(t.TempDir(), "output.log")
 
-	if err := m.PipePaneCommand(id, "go", []string{"run", helper, outPath}); err != nil {
+	if err := m.PipePaneCommand(id, helper, []string{outPath}); err != nil {
 		t.Fatalf("PipePaneCommand: %v", err)
 	}
 
@@ -98,10 +97,10 @@ func TestSessionManager_PipePaneCommand_ClearTerminatesProcess(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	helper := writePipeHelper(t)
+	helper := buildPipeHelper(t)
 	outPath := filepath.Join(t.TempDir(), "output.log")
 
-	if err := m.PipePaneCommand(id, "go", []string{"run", helper, outPath}); err != nil {
+	if err := m.PipePaneCommand(id, helper, []string{outPath}); err != nil {
 		t.Fatalf("PipePaneCommand: %v", err)
 	}
 
@@ -132,10 +131,10 @@ func TestSessionManager_PipePaneCommand_PaneExitTerminatesProcess(t *testing.T) 
 		t.Fatalf("Register: %v", err)
 	}
 
-	helper := writePipeHelper(t)
+	helper := buildPipeHelper(t)
 	outPath := filepath.Join(t.TempDir(), "output.log")
 
-	if err := m.PipePaneCommand(id, "go", []string{"run", helper, outPath}); err != nil {
+	if err := m.PipePaneCommand(id, helper, []string{outPath}); err != nil {
 		t.Fatalf("PipePaneCommand: %v", err)
 	}
 
@@ -200,13 +199,13 @@ func TestSessionManager_PipePaneCommand_ReplacesFilePipe(t *testing.T) {
 
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "file.log")
-	helper := writePipeHelper(t)
+	helper := buildPipeHelper(t)
 	outPath := filepath.Join(dir, "cmd.log")
 
 	if err := m.SetPipeFile(id, filePath); err != nil {
 		t.Fatalf("SetPipeFile: %v", err)
 	}
-	if err := m.PipePaneCommand(id, "go", []string{"run", helper, outPath}); err != nil {
+	if err := m.PipePaneCommand(id, helper, []string{outPath}); err != nil {
 		t.Fatalf("PipePaneCommand: %v", err)
 	}
 
@@ -233,12 +232,12 @@ func TestSessionManager_PipePaneCommand_StdinIsPipe(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	// Use os/exec's own echo-ish helper: "go" with "env" prints environment to
-	// stdout, but we need something that reads stdin. pipeHelperSource does that.
-	helper := writePipeHelper(t)
+	// Send a large chunk through the precompiled pipe helper to exercise the
+	// pipe path end to end.
+	helper := buildPipeHelper(t)
 	outPath := filepath.Join(t.TempDir(), "output.log")
 
-	if err := m.PipePaneCommand(id, "go", []string{"run", helper, outPath}); err != nil {
+	if err := m.PipePaneCommand(id, helper, []string{outPath}); err != nil {
 		t.Fatalf("PipePaneCommand: %v", err)
 	}
 
@@ -261,19 +260,15 @@ func TestSessionManager_ClearPipe_KillsSlowProcess(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	// "sleep" keeps running even after stdin closes. Use a tiny Go program for
-	// cross-platform compatibility.
-	slowSource := `package main
+	// "sleep" keeps running even after stdin closes. Precompile it so the
+	// spawned process is the sleep itself, not a "go run" compile that has
+	// not reached the sleep yet when ClearPipe fires.
+	slowBin := buildProgram(t, `package main
 import "time"
 func main() { time.Sleep(30 * time.Second) }
-`
-	dir := t.TempDir()
-	slowPath := filepath.Join(dir, "slow.go")
-	if err := os.WriteFile(slowPath, []byte(slowSource), 0o644); err != nil {
-		t.Fatalf("write helper: %v", err)
-	}
+`)
 
-	if err := m.PipePaneCommand(id, "go", []string{"run", slowPath}); err != nil {
+	if err := m.PipePaneCommand(id, slowBin, nil); err != nil {
 		t.Fatalf("PipePaneCommand: %v", err)
 	}
 
@@ -320,10 +315,10 @@ func TestSessionManager_PipePaneCommand_DefaultsToGoLookPath(t *testing.T) {
 	}
 	_ = goPath
 
-	helper := writePipeHelper(t)
+	helper := buildPipeHelper(t)
 	outPath := filepath.Join(t.TempDir(), "output.log")
 
-	if err := m.PipePaneCommand(id, "go", []string{"run", helper, outPath}); err != nil {
+	if err := m.PipePaneCommand(id, helper, []string{outPath}); err != nil {
 		t.Fatalf("PipePaneCommand: %v", err)
 	}
 

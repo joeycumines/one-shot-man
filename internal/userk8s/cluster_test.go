@@ -19,11 +19,14 @@ import (
 // dynamic fake requires in order to answer List calls.
 func clusterListKinds() map[schema.GroupVersionResource]string {
 	return map[schema.GroupVersionResource]string{
-		clusterProviders: "ModelProviderList",
-		clusterAccesses:  "ModelAccessList",
-		clusterModels:    "ModelList",
-		clusterTools:     "ToolList",
-		clusterBindings:  "LocalSecretBindingList",
+		clusterProviders:  "ModelProviderList",
+		clusterAccesses:   "ModelAccessList",
+		clusterModels:     "ModelList",
+		clusterServings:   "ModelServingList",
+		clusterSelections: "ModelSelectionList",
+		clusterRoutes:     "ModelRouteList",
+		clusterTools:      "ToolList",
+		clusterBindings:   "LocalSecretBindingList",
 	}
 }
 
@@ -38,6 +41,12 @@ func toUnstructured(t *testing.T, objects ...any) []runtime.Object {
 			typed.SetGroupVersionKind(v1alpha1.GroupVersion.WithKind("ModelAccess"))
 		case *v1alpha1.Model:
 			typed.SetGroupVersionKind(v1alpha1.GroupVersion.WithKind("Model"))
+		case *v1alpha1.ModelServing:
+			typed.SetGroupVersionKind(v1alpha1.GroupVersion.WithKind("ModelServing"))
+		case *v1alpha1.ModelSelection:
+			typed.SetGroupVersionKind(v1alpha1.GroupVersion.WithKind("ModelSelection"))
+		case *v1alpha1.ModelRoute:
+			typed.SetGroupVersionKind(v1alpha1.GroupVersion.WithKind("ModelRoute"))
 		case *v1alpha1.Tool:
 			typed.SetGroupVersionKind(v1alpha1.GroupVersion.WithKind("Tool"))
 		case *v1alpha1.LocalSecretBinding:
@@ -65,6 +74,15 @@ func seededCluster(t *testing.T, namespace string, objects *Objects) *ClusterBac
 	}
 	for i := range objects.Models {
 		seeded = append(seeded, toUnstructured(t, &objects.Models[i])...)
+	}
+	for i := range objects.Servings {
+		seeded = append(seeded, toUnstructured(t, &objects.Servings[i])...)
+	}
+	for i := range objects.Selections {
+		seeded = append(seeded, toUnstructured(t, &objects.Selections[i])...)
+	}
+	for i := range objects.Routes {
+		seeded = append(seeded, toUnstructured(t, &objects.Routes[i])...)
 	}
 	for i := range objects.Tools {
 		seeded = append(seeded, toUnstructured(t, &objects.Tools[i])...)
@@ -106,6 +124,9 @@ func TestClusterBackendParityWithFilesBackend(t *testing.T) {
 		{"providers", filesStatus.Providers, clusterStatus.Providers},
 		{"accesses", filesStatus.Accesses, clusterStatus.Accesses},
 		{"models", filesStatus.Models, clusterStatus.Models},
+		{"servings", filesStatus.Servings, clusterStatus.Servings},
+		{"selections", filesStatus.Selections, clusterStatus.Selections},
+		{"routes", filesStatus.Routes, clusterStatus.Routes},
 		{"tools", filesStatus.Tools, clusterStatus.Tools},
 		{"bindings", filesStatus.Bindings, clusterStatus.Bindings},
 	} {
@@ -118,21 +139,17 @@ func TestClusterBackendParityWithFilesBackend(t *testing.T) {
 	}
 
 	t.Setenv("HOME", t.TempDir())
-	accesses, err := files.ListAccesses(ctx)
-	if err != nil {
-		t.Fatalf("files ListAccesses: %v", err)
-	}
-	for i := range accesses {
-		filesResolution, err := files.ResolveCredential(ctx, accesses[i].Name)
+	for i := range objects.Bindings {
+		filesResolution, err := files.ResolveCredential(ctx, objects.Bindings[i].Name)
 		if err != nil {
-			t.Fatalf("files ResolveCredential(%s): %v", accesses[i].Name, err)
+			t.Fatalf("files ResolveCredential(%s): %v", objects.Bindings[i].Name, err)
 		}
-		clusterResolution, err := cluster.ResolveCredential(ctx, accesses[i].Name)
+		clusterResolution, err := cluster.ResolveCredential(ctx, objects.Bindings[i].Name)
 		if err != nil {
-			t.Fatalf("cluster ResolveCredential(%s): %v", accesses[i].Name, err)
+			t.Fatalf("cluster ResolveCredential(%s): %v", objects.Bindings[i].Name, err)
 		}
 		if filesResolution.Status != clusterResolution.Status || filesResolution.Reason != clusterResolution.Reason {
-			t.Errorf("ResolveCredential(%s): files=%v/%q cluster=%v/%q", accesses[i].Name, filesResolution.Status, filesResolution.Reason, clusterResolution.Status, clusterResolution.Reason)
+			t.Errorf("ResolveCredential(%s): files=%v/%q cluster=%v/%q", objects.Bindings[i].Name, filesResolution.Status, filesResolution.Reason, clusterResolution.Status, clusterResolution.Reason)
 		}
 	}
 
@@ -142,12 +159,12 @@ func TestClusterBackendParityWithFilesBackend(t *testing.T) {
 	}
 	projected := 0
 	for i := range tools {
-		for j := range objects.Models {
-			model := &objects.Models[j]
-			filesProjection, filesErr := files.ProjectModel(ctx, tools[i].Name, model)
-			clusterProjection, clusterErr := cluster.ProjectModel(ctx, tools[i].Name, model)
+		for j := range objects.Servings {
+			serving := &objects.Servings[j]
+			filesProjection, filesErr := files.ProjectServing(ctx, tools[i].Name, serving)
+			clusterProjection, clusterErr := cluster.ProjectServing(ctx, tools[i].Name, serving)
 			if (filesErr == nil) != (clusterErr == nil) {
-				t.Fatalf("Project(%s,%s): files err=%v cluster err=%v", tools[i].Name, model.Name, filesErr, clusterErr)
+				t.Fatalf("Project(%s,%s): files err=%v cluster err=%v", tools[i].Name, serving.Name, filesErr, clusterErr)
 			}
 			if filesErr != nil {
 				continue
@@ -156,7 +173,7 @@ func TestClusterBackendParityWithFilesBackend(t *testing.T) {
 			filesJSON, _ := json.Marshal(filesProjection)
 			clusterJSON, _ := json.Marshal(clusterProjection)
 			if string(filesJSON) != string(clusterJSON) {
-				t.Fatalf("Project(%s,%s): files=%s cluster=%s", tools[i].Name, model.Name, filesJSON, clusterJSON)
+				t.Fatalf("Project(%s,%s): files=%s cluster=%s", tools[i].Name, serving.Name, filesJSON, clusterJSON)
 			}
 		}
 	}
@@ -189,12 +206,8 @@ func TestClusterBackendNamespaceScoping(t *testing.T) {
 	if otherStatus.Bindings != 0 {
 		t.Fatalf("bindings outside the fixture namespace: got %d, want none", otherStatus.Bindings)
 	}
-	resolution, err := elsewhere.ResolveCredential(ctx, "alpha-direct")
-	if err != nil {
-		t.Fatalf("ResolveCredential: %v", err)
-	}
-	if resolution.Status != StatusMissingCredentials {
-		t.Fatalf("resolution without a binding in scope: got %q, want %q", resolution.Status, StatusMissingCredentials)
+	if _, err := elsewhere.ResolveCredential(ctx, "bind-alpha"); err == nil {
+		t.Fatal("ResolveCredential: a binding outside the backend namespace must not resolve")
 	}
 }
 

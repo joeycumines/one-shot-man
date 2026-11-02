@@ -140,7 +140,7 @@ func TestUpdate_PasteChunkedAbovePTYWriteSize(t *testing.T) {
 	// 10000 bytes > 2x the 4096 chunk size, with a pattern that would expose
 	// any dropped, repeated, or reordered chunk.
 	var b strings.Builder
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		b.WriteString("0123456789")
 	}
 	content := b.String()
@@ -291,8 +291,7 @@ func TestUpdate_PasteRealPTYRoundTrip(t *testing.T) {
 		Rows:    pasteBounds.Size.Height,
 		Cols:    pasteBounds.Size.Width,
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	if err := cs.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -343,16 +342,10 @@ func TestUpdate_PasteRealPTYRoundTrip(t *testing.T) {
 // byte slices differ, for failure messages.
 func firstDivergence(got, want []byte) string {
 	n := min(len(got), len(want))
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if got[i] != want[i] {
-			start := i - 8
-			if start < 0 {
-				start = 0
-			}
-			end := i + 8
-			if end > n {
-				end = n
-			}
+			start := max(i-8, 0)
+			end := min(i+8, n)
 			return string(got[start:end])
 		}
 	}

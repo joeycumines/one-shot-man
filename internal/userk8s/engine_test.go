@@ -195,46 +195,38 @@ metadata:
 			bodies: []string{`apiVersion: one-shot-man/v1alpha1
 kind: ModelAccess
 metadata:
-  name: ghost-direct
+  name: ghost-chat
 spec:
   provider: ghost
-  auth:
-    scheme: bearer
-    requiredEnv:
-      - GHOST_API_KEY
+  protocol: chat
 `},
 			wantErr: "references undeclared ModelProvider \"ghost\"",
 		},
 		{
-			name: "model whose access belongs to another provider",
+			name: "serving widens its model",
 			bodies: []string{provider,
-				`apiVersion: one-shot-man/v1alpha1
-kind: ModelProvider
-metadata:
-  name: beta
-spec:
-  display_name: Beta
-`,
-				`apiVersion: one-shot-man/v1alpha1
-kind: ModelAccess
-metadata:
-  name: alpha-direct
-spec:
-  provider: alpha
-  auth:
-    scheme: none
-`,
 				`apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
   name: alpha-model
 spec:
-  provider: beta
-  access: alpha-direct
-  context_window: 1000
+  canonical_id: alpha/alpha-model
+  display_name: Alpha Model
+  context_window: 100
   max_output_tokens: 10
+`,
+				`apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  name: alpha-model-alpha
+spec:
+  provider: alpha
+  model: alpha-model
+  provider_model_id: alpha-model
+  overrides:
+    context_window: 200
 `},
-			wantErr: "belongs to provider \"alpha\"",
+			wantErr: "exceeds Model",
 		},
 		{
 			name: "duplicate default per provider",
@@ -242,50 +234,67 @@ spec:
 				`apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
-  name: alpha-one
+  name: alpha-model
 spec:
-  provider: alpha
+  canonical_id: alpha/alpha-model
+  display_name: Alpha Model
   context_window: 1000
   max_output_tokens: 10
-  default: true
 `,
 				`apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
+  name: alpha-model-2
+spec:
+  canonical_id: alpha/alpha-model-2
+  display_name: Alpha Model 2
+  context_window: 1000
+  max_output_tokens: 10
+`,
+				`apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  name: alpha-one
+spec:
+  provider: alpha
+  model: alpha-model
+  provider_model_id: alpha-one
+  default: true
+`,
+				`apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
   name: alpha-two
 spec:
   provider: alpha
-  context_window: 1000
-  max_output_tokens: 10
+  model: alpha-model-2
+  provider_model_id: alpha-two
   default: true
 `},
 			wantErr: "both declare default",
 		},
 		{
-			name: "asymmetric equivalence",
-			bodies: []string{provider,
+			name: "selection cycle",
+			bodies: []string{
 				`apiVersion: one-shot-man/v1alpha1
-kind: Model
+kind: ModelSelection
 metadata:
-  name: alpha-one
+  name: one
 spec:
-  provider: alpha
-  context_window: 1000
-  max_output_tokens: 10
-  equivalent_to:
-    - provider: alpha
-      name: alpha-two
+  display_name: One
+  candidates:
+    - selection: two
 `,
 				`apiVersion: one-shot-man/v1alpha1
-kind: Model
+kind: ModelSelection
 metadata:
-  name: alpha-two
+  name: two
 spec:
-  provider: alpha
-  context_window: 1000
-  max_output_tokens: 10
+  display_name: Two
+  candidates:
+    - selection: one
 `},
-			wantErr: "must be symmetric",
+			wantErr: "cycle",
 		},
 		{
 			name: "empty binding selector",
@@ -470,7 +479,7 @@ func TestFilesBackendResolvesCredentials(t *testing.T) {
 	t.Run("env resolver wins", func(t *testing.T) {
 		t.Setenv("SHELL_AI_ALPHA_API_KEY", "alpha-env-value")
 		backend.runner = &fakeRunner{}
-		resolution, err := backend.ResolveCredential(ctx, "alpha-direct")
+		resolution, err := backend.ResolveCredential(ctx, "bind-alpha")
 		if err != nil {
 			t.Fatalf("ResolveCredential: %v", err)
 		}
@@ -496,7 +505,7 @@ func TestFilesBackendResolvesCredentials(t *testing.T) {
 			stdout: "alpha-command-value\ntrailing\n",
 		}}}
 		backend.runner = runner
-		resolution, err := backend.ResolveCredential(ctx, "alpha-direct")
+		resolution, err := backend.ResolveCredential(ctx, "bind-alpha")
 		if err != nil {
 			t.Fatalf("ResolveCredential: %v", err)
 		}
@@ -533,19 +542,6 @@ spec:
   display_name: Beta
 `,
 			`apiVersion: one-shot-man/v1alpha1
-kind: ModelAccess
-metadata:
-  name: beta-direct
-  labels:
-    one-shot-man/provider: beta
-spec:
-  provider: beta
-  auth:
-    scheme: bearer
-    requiredEnv:
-      - BETA_API_KEY
-`,
-			`apiVersion: one-shot-man/v1alpha1
 kind: LocalSecretBinding
 metadata:
   name: bind-beta
@@ -553,6 +549,7 @@ spec:
   selector:
     matchLabels:
       one-shot-man/provider: beta
+  scheme: bearer
   secretRef:
     name: creds
     key: BETA_API_KEY
@@ -562,7 +559,7 @@ spec:
         path: `+path+`
 `)
 		local := mustBackend(t, objects, &fakeRunner{})
-		resolution, err := local.ResolveCredential(ctx, "beta-direct")
+		resolution, err := local.ResolveCredential(ctx, "bind-beta")
 		if err != nil {
 			t.Fatalf("ResolveCredential: %v", err)
 		}
@@ -576,15 +573,15 @@ spec:
 
 	t.Run("missing binding reports every uncovered slot", func(t *testing.T) {
 		backend.runner = &fakeRunner{}
-		resolution, err := backend.ResolveCredential(ctx, "beta-shaper")
+		resolution, err := backend.ResolveCredential(ctx, "bind-beta")
 		if err != nil {
 			t.Fatalf("ResolveCredential: %v", err)
 		}
 		if resolution.Status != StatusMissingCredentials {
 			t.Fatalf("status: got %q, want %q", resolution.Status, StatusMissingCredentials)
 		}
-		if !strings.Contains(resolution.Reason, `"BETA_API_KEY"`) {
-			t.Fatalf("reason: got %q, want it to name the uncovered slot", resolution.Reason)
+		if !strings.Contains(resolution.Reason, "bind-beta") {
+			t.Fatalf("reason: got %q, want it to name the unresolved binding", resolution.Reason)
 		}
 		if len(resolution.Credentials) != 0 {
 			t.Fatalf("credentials: got %+v, want none", resolution.Credentials)
@@ -601,16 +598,21 @@ spec:
   display_name: Alpha
 `,
 			`apiVersion: one-shot-man/v1alpha1
-kind: ModelAccess
+kind: LocalSecretBinding
 metadata:
-  name: alpha-loopback
+  name: bind-loopback
 spec:
-  provider: alpha
-  auth:
-    scheme: none
+  selector:
+    matchLabels:
+      one-shot-man/provider: alpha
+  scheme: none
+  secretRef:
+    name: creds
+    key: UNUSED
+  envVar: UNUSED
 `)
 		local := mustBackend(t, objects, &fakeRunner{})
-		resolution, err := local.ResolveCredential(ctx, "alpha-loopback")
+		resolution, err := local.ResolveCredential(ctx, "bind-loopback")
 		if err != nil {
 			t.Fatalf("ResolveCredential: %v", err)
 		}
@@ -620,43 +622,31 @@ spec:
 	})
 
 	t.Run("launch-gated schemes report precise reasons", func(t *testing.T) {
-		tests := []struct {
-			scheme      string
-			requiredEnv string
-		}{
-			{scheme: "awsSigV4", requiredEnv: "    requiredEnv:\n      - AWS_ACCESS_KEY_ID\n      - AWS_SECRET_ACCESS_KEY\n"},
-			{scheme: "toolManaged"},
+		objects := documents(t,
+			`apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
+  name: bind-aws
+spec:
+  selector:
+    matchLabels:
+      one-shot-man/provider: alpha
+  scheme: awsSigV4
+  secretRef:
+    name: creds
+    key: AWS_ACCESS_KEY_ID
+  envVar: AWS_ACCESS_KEY_ID
+`)
+		local := mustBackend(t, objects, &fakeRunner{})
+		resolution, err := local.ResolveCredential(ctx, "bind-aws")
+		if err != nil {
+			t.Fatalf("ResolveCredential: %v", err)
 		}
-		for _, test := range tests {
-			scheme := test.scheme
-			objects := documents(t,
-				`apiVersion: one-shot-man/v1alpha1
-kind: ModelProvider
-metadata:
-  name: alpha
-spec:
-  display_name: Alpha
-`,
-				`apiVersion: one-shot-man/v1alpha1
-kind: ModelAccess
-metadata:
-  name: alpha-`+scheme+`
-spec:
-  provider: alpha
-  auth:
-    scheme: `+scheme+`
-`+test.requiredEnv)
-			local := mustBackend(t, objects, &fakeRunner{})
-			resolution, err := local.ResolveCredential(ctx, "alpha-"+scheme)
-			if err != nil {
-				t.Fatalf("ResolveCredential(%s): %v", scheme, err)
-			}
-			if resolution.Status != StatusUnsupportedScheme {
-				t.Fatalf("%s status: got %q, want %q", scheme, resolution.Status, StatusUnsupportedScheme)
-			}
-			if !strings.Contains(resolution.Reason, scheme) {
-				t.Fatalf("%s reason: got %q, want it to name the scheme", scheme, resolution.Reason)
-			}
+		if resolution.Status != StatusUnsupportedScheme {
+			t.Fatalf("awsSigV4 status: got %q, want %q", resolution.Status, StatusUnsupportedScheme)
+		}
+		if !strings.Contains(resolution.Reason, "awsSigV4") {
+			t.Fatalf("awsSigV4 reason: got %q, want it to name the scheme", resolution.Reason)
 		}
 	})
 }
@@ -677,19 +667,6 @@ spec:
   display_name: Alpha
 `,
 		`apiVersion: one-shot-man/v1alpha1
-kind: ModelAccess
-metadata:
-  name: alpha-direct
-  labels:
-    one-shot-man/provider: alpha
-spec:
-  provider: alpha
-  auth:
-    scheme: bearer
-    requiredEnv:
-      - ALPHA_API_KEY
-`,
-		`apiVersion: one-shot-man/v1alpha1
 kind: LocalSecretBinding
 metadata:
   name: bind-alpha
@@ -697,6 +674,7 @@ spec:
   selector:
     matchLabels:
       one-shot-man/provider: alpha
+  scheme: bearer
   secretRef:
     name: creds
     key: ALPHA_API_KEY
@@ -710,7 +688,7 @@ spec:
           - alpha
 `)
 	backend := mustBackend(t, objects, runner)
-	resolution, err := backend.ResolveCredential(context.Background(), "alpha-direct")
+	resolution, err := backend.ResolveCredential(context.Background(), "bind-alpha")
 	if err != nil {
 		t.Fatalf("ResolveCredential: %v", err)
 	}
@@ -730,11 +708,11 @@ func TestProjectWorkedExamples(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("claude-margin row projects registry facts for the adapter to derive", func(t *testing.T) {
-		projection, err := backend.Project(ctx, "claude", "alpha", "alpha-model")
+		projection, err := backend.Project(ctx, "claude", "alpha", "alpha-model-alpha")
 		if err != nil {
 			t.Fatalf("Project: %v", err)
 		}
-		if projection.ProviderSlug != "alpha" || projection.ModelSlug != "alpha-model" {
+		if projection.ProviderSlug != "alpha" || projection.ModelSlug != "alpha-model-alpha" {
 			t.Fatalf("slugs: got %q/%q", projection.ProviderSlug, projection.ModelSlug)
 		}
 		if projection.BudgetProfile != "claude-margin" {
@@ -750,7 +728,7 @@ func TestProjectWorkedExamples(t *testing.T) {
 	})
 
 	t.Run("sdk-limits row carries the enforced output cap", func(t *testing.T) {
-		projection, err := backend.Project(ctx, "opencode", "beta", "beta-model")
+		projection, err := backend.Project(ctx, "opencode", "beta", "beta-model-beta")
 		if err != nil {
 			t.Fatalf("Project: %v", err)
 		}
@@ -784,7 +762,7 @@ func TestProjectWorkedExamples(t *testing.T) {
 		}
 		backend := mustBackend(t, objects, &fakeRunner{})
 
-		projection, err := backend.Project(ctx, "claude", "alpha", "alpha-model")
+		projection, err := backend.Project(ctx, "claude", "alpha", "alpha-model-alpha")
 		if err != nil {
 			t.Fatalf("Project: %v", err)
 		}
@@ -805,7 +783,7 @@ func TestProjectWorkedExamples(t *testing.T) {
 			t.Fatalf("settings.flags: got %v", projection.Settings["flags"])
 		}
 
-		unmodified, err := backend.Project(ctx, "opencode", "alpha", "alpha-model")
+		unmodified, err := backend.Project(ctx, "opencode", "alpha", "alpha-model-alpha")
 		if err != nil {
 			t.Fatalf("Project(opencode): %v", err)
 		}
@@ -818,7 +796,7 @@ func TestProjectWorkedExamples(t *testing.T) {
 	})
 
 	t.Run("provider mismatch is rejected", func(t *testing.T) {
-		_, err := backend.Project(ctx, "claude", "beta", "alpha-model")
+		_, err := backend.Project(ctx, "claude", "beta", "alpha-model-alpha")
 		if err == nil {
 			t.Fatal("Project: want an error for a mismatched provider")
 		}
@@ -828,7 +806,7 @@ func TestProjectWorkedExamples(t *testing.T) {
 	})
 
 	t.Run("unknown tool is rejected", func(t *testing.T) {
-		if _, err := backend.Project(ctx, "ghost", "alpha", "alpha-model"); err == nil {
+		if _, err := backend.Project(ctx, "ghost", "alpha", "alpha-model-alpha"); err == nil {
 			t.Fatal("Project: want an error for an unknown tool")
 		}
 	})

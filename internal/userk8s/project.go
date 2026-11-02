@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"regexp"
-	"sort"
+	"slices"
 
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,33 +25,26 @@ func registryName(object metav1.Object) string {
 	return object.GetName()
 }
 
-// Project derives the tool-facing projection for one selection. Slugs come
-// from the registry names of the provider and model, validated against the
-// tool's declared identifier grammars; settings are the model's hard facts
-// with the model's sparse per-tool overrides applied. The tool's budget
-// profile is named, never derived: derivation is adapter code.
-// Project derives the tool-facing projection for one string-identified
-// selection. Names are read in registry vocabulary (the raw registry
-// identifier wins over a sanitized metadata name, because the two can
-// collide); in-process callers that already hold a model should prefer
-// ProjectModel, which cannot be ambiguous.
-func (b *FilesBackend) Project(ctx context.Context, toolName, providerName, modelName string) (Projection, error) {
-	tool, model, err := b.resolveSelection(toolName, providerName, modelName)
+// Project derives the tool-facing projection for one selected serving. Names
+// are read in registry vocabulary (the raw registry identifier wins over a
+// sanitized metadata name, because the two can collide); in-process callers
+// that already hold a serving should prefer ProjectServing.
+func (b *FilesBackend) Project(ctx context.Context, toolName, providerName, servingName string) (Projection, error) {
+	tool, serving, err := b.resolveSelection(toolName, providerName, servingName)
 	if err != nil {
 		return Projection{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return Projection{}, err
 	}
-	return b.projectResolved(tool, model)
+	return b.projectResolved(tool, serving)
 }
 
-// ProjectModel derives the projection for an already-resolved model, so a
-// caller iterating the catalog never has to disambiguate between a metadata
-// name and another object's registry name.
-func (b *FilesBackend) ProjectModel(ctx context.Context, toolName string, model *v1alpha1.Model) (Projection, error) {
-	if model == nil {
-		return Projection{}, errors.New("userk8s: ProjectModel requires a model")
+// ProjectServing derives the projection for an already-resolved serving, so a
+// caller iterating the catalog never has to disambiguate a name.
+func (b *FilesBackend) ProjectServing(ctx context.Context, toolName string, serving *v1alpha1.ModelServing) (Projection, error) {
+	if serving == nil {
+		return Projection{}, errors.New("userk8s: ProjectServing requires a serving")
 	}
 	if err := ctx.Err(); err != nil {
 		return Projection{}, err
@@ -60,42 +53,50 @@ func (b *FilesBackend) ProjectModel(ctx context.Context, toolName string, model 
 	if err != nil {
 		return Projection{}, err
 	}
-	return b.projectResolved(tool, model)
+	return b.projectResolved(tool, serving)
 }
 
-func (b *FilesBackend) resolveSelection(toolName, providerName, modelName string) (*v1alpha1.Tool, *v1alpha1.Model, error) {
+func (b *FilesBackend) resolveSelection(toolName, providerName, servingName string) (*v1alpha1.Tool, *v1alpha1.ModelServing, error) {
 	tool, err := b.Tool(toolName)
 	if err != nil {
 		return nil, nil, err
 	}
-	model, err := b.Model(modelName)
-	if err != nil {
-		return nil, nil, err
+	serving, ok := b.objects.lookupServing(servingName)
+	if !ok {
+		return nil, nil, fmt.Errorf("unknown ModelServing %q", servingName)
 	}
 	provider, err := b.Provider(providerName)
 	if err != nil {
 		return nil, nil, err
 	}
-	modelProvider, ok := b.objects.lookupProvider(model.Spec.Provider)
-	if !ok || modelProvider != provider {
-		return nil, nil, fmt.Errorf("Model %q belongs to provider %q, not %q", modelName, model.Spec.Provider, providerName)
+	servingProvider, ok := b.objects.lookupProvider(serving.Spec.Provider)
+	if !ok || servingProvider != provider {
+		return nil, nil, fmt.Errorf("ModelServing %q belongs to provider %q, not %q", servingName, serving.Spec.Provider, providerName)
 	}
-	return tool, model, nil
+	return tool, serving, nil
 }
 
-// projectResolved builds the projection for one resolved tool and model. Slugs
-// are the registry names, validated against the tool's declared identifier
-// grammars; settings are the model's hard facts with its sparse per-tool
-// overrides applied. The tool's budget profile is named, never derived:
-// derivation is adapter code.
-func (b *FilesBackend) projectResolved(tool *v1alpha1.Tool, model *v1alpha1.Model) (Projection, error) {
-	provider, ok := b.objects.lookupProvider(model.Spec.Provider)
+// projectResolved builds the projection for one resolved tool and serving.
+// Slugs are the registry names, validated against the tool's declared
+// identifier grammars; settings are the effective capabilities (Model plus
+// serving narrowings) with the Model's sparse per-tool overrides applied. The
+// tool's budget profile is named, never derived: derivation is adapter code.
+func (b *FilesBackend) projectResolved(tool *v1alpha1.Tool, serving *v1alpha1.ModelServing) (Projection, error) {
+	provider, ok := b.objects.lookupProvider(serving.Spec.Provider)
 	if !ok {
-		return Projection{}, fmt.Errorf("Model %q references undeclared ModelProvider %q", model.Name, model.Spec.Provider)
+		return Projection{}, fmt.Errorf("ModelServing %q references undeclared ModelProvider %q", serving.Name, serving.Spec.Provider)
+	}
+	model, ok := b.objects.lookupModel(serving.Spec.Model)
+	if !ok {
+		return Projection{}, fmt.Errorf("ModelServing %q references undeclared Model %q", serving.Name, serving.Spec.Model)
+	}
+	effective, err := effectiveModel(model, serving)
+	if err != nil {
+		return Projection{}, err
 	}
 
 	providerID := registryName(provider)
-	modelID := registryName(model)
+	modelID := registryName(serving)
 	providerSlug, err := deriveSlug(tool, "provider", tool.Spec.Identifiers.ProviderSlug, providerID)
 	if err != nil {
 		return Projection{}, err
@@ -105,37 +106,15 @@ func (b *FilesBackend) projectResolved(tool *v1alpha1.Tool, model *v1alpha1.Mode
 		return Projection{}, err
 	}
 
-	projection := Projection{
-		ProviderSlug: providerSlug,
-		ModelSlug:    modelSlug,
-		ProviderID:   providerID,
-		ModelID:      modelID,
-		// The provider's own id, falling back to the registry name when the
-		// model does not need one spelled separately. A gateway forwards this
-		// upstream; ModelID is the unique key a selection is made by and is not
-		// safe to send when the two differ.
-		ProviderModelID: providerModelID(model),
+	return Projection{
+		ProviderSlug:    providerSlug,
+		ModelSlug:       modelSlug,
+		ProviderID:      providerID,
+		ModelID:         modelID,
+		ProviderModelID: serving.Spec.ProviderModelID,
 		BudgetProfile:   tool.Spec.BudgetProfile,
-		Settings:        modelSettings(model, tool.Name),
-	}
-	if model.Spec.Access != "" {
-		access, err := b.Access(model.Spec.Access)
-		if err != nil {
-			return Projection{}, fmt.Errorf("Model %q: %w", model.Name, err)
-		}
-		projection.Access = access.Name
-		projection.Surfaces = servedSurfaces(access, tool)
-	}
-	return projection, nil
-}
-
-// providerModelID is the id the provider calls the model, defaulting to the
-// registry name so a model that needs no separate spelling declares nothing.
-func providerModelID(model *v1alpha1.Model) string {
-	if model.Spec.ProviderModelID != "" {
-		return model.Spec.ProviderModelID
-	}
-	return registryName(model)
+		Settings:        modelSettings(model, serving, effective, tool.Name),
+	}, nil
 }
 
 // slugDisallowed matches every non-alphanumeric character. The live tool
@@ -172,70 +151,42 @@ func deriveSlug(tool *v1alpha1.Tool, class string, grammar v1alpha1.ToolIdentifi
 	return "", fmt.Errorf("Tool %q cannot derive a %s identifier from %q: neither it nor %q matches %s", tool.Name, class, raw, derived, grammar.Pattern)
 }
 
-// accessSurfaces is the set of client surfaces one access serves.
-//
-// Spec.Surfaces is authoritative when it is declared, and Spec.Endpoints is
-// consulted only when it is not. That is the rule the CRD states on the field
-// ("Surfaces explicitly lists the wire surfaces served by this access. When
-// omitted, surfaces are derived from the keys of Endpoints"), and reading only
-// Endpoints ignored a field the API documents — so an access that declared its
-// served surfaces and carried no endpoint for one of them lost that surface
-// entirely.
-//
-// The two are not redundant, and the reason matters. Endpoints answers "which
-// base URL does a client resolve", which is a transport fact and is empty for a
-// surface reached some other way. Surfaces answers "which surfaces can a client
-// speak here", which is a capability fact. A ModelAccess that names its surfaces
-// is stating the capability, and this function must believe it.
-//
-// A declared surface is honoured whether or not Endpoints carries a base for it;
-// the consumer that needs a base URL is the one that must cope with its absence,
-// and inventing a capability check here would put the transport detail back in
-// front of the capability.
-func accessSurfaces(access *v1alpha1.ModelAccess) map[string]bool {
-	served := make(map[string]bool, len(access.Spec.Surfaces))
-	if len(access.Spec.Surfaces) > 0 {
-		for _, surface := range access.Spec.Surfaces {
-			served[surface] = true
-		}
-		return served
-	}
-	for surface := range access.Spec.Endpoints {
-		served[surface] = true
-	}
-	return served
-}
-
-// servedSurfaces is the intersection of the surfaces the tool speaks and the
-// surfaces the access serves, sorted for determinism.
-func servedSurfaces(access *v1alpha1.ModelAccess, tool *v1alpha1.Tool) []string {
-	served := accessSurfaces(access)
-	var surfaces []string
-	for _, surface := range tool.Spec.Surfaces {
-		if served[surface] {
-			surfaces = append(surfaces, surface)
-		}
-	}
-	sort.Strings(surfaces)
-	return surfaces
-}
-
 // modelSettings is the model's fact sheet with sparse per-tool overrides
 // applied. Only facts and overrides are emitted; nothing is derived.
-func modelSettings(model *v1alpha1.Model, tool string) map[string]any {
+func modelSettings(model *v1alpha1.Model, serving *v1alpha1.ModelServing, effective EffectiveModel, tool string) map[string]any {
 	settings := map[string]any{
-		"context_window":    model.Spec.ContextWindow,
-		"max_output_tokens": model.Spec.MaxOutputTokens,
-		"can_reason":        model.Spec.CanReason,
-		"input_modalities":  append([]string(nil), model.Spec.InputModalities...),
+		"context_window":    effective.ContextWindow,
+		"max_output_tokens": effective.MaxOutputTokens,
+		"input_modalities":  append([]string(nil), effective.InputModalities...),
+		"output_modalities": append([]string(nil), effective.OutputModalities...),
+		"tool_call":         effective.ToolCall,
+		"structured_output": effective.StructuredOutput,
 	}
-	if len(model.Spec.ReasoningEfforts) > 0 {
-		settings["reasoning_efforts"] = append([]string(nil), model.Spec.ReasoningEfforts...)
+	if reasoning := effective.Reasoning; reasoning != nil {
+		rendered := map[string]any{"supported": reasoning.Supported}
+		if reasoning.Toggle {
+			rendered["toggle"] = true
+		}
+		if len(reasoning.Efforts) > 0 {
+			rendered["efforts"] = append([]string(nil), reasoning.Efforts...)
+		}
+		if reasoning.Budget != nil {
+			budget := map[string]any{}
+			if reasoning.Budget.Min != nil {
+				budget["min"] = *reasoning.Budget.Min
+			}
+			if reasoning.Budget.Max != nil {
+				budget["max"] = *reasoning.Budget.Max
+			}
+			rendered["budget"] = budget
+		}
+		settings["reasoning"] = rendered
 	}
-	if model.Spec.Default {
+	settings["priority"] = serving.Spec.EffectivePriority()
+	if serving.Spec.Default {
 		settings["default"] = true
 	}
-	if model.Spec.Deprecated {
+	if model.Spec.Deprecated || serving.Spec.Deprecated {
 		settings["deprecated"] = true
 	}
 
@@ -264,4 +215,47 @@ func modelSettings(model *v1alpha1.Model, tool string) map[string]any {
 		settings["waive"] = override.Waive
 	}
 	return settings
+}
+
+// validateToolSettingsAgainstEffective enforces the narrowing rule at the level
+// a projection actually uses. Model.Spec.ToolSettings is authored against the
+// canonical Model, but a projection runs on the SERVING's narrowed capabilities:
+// an override that fits the Model can still exceed the serving, and an effort
+// level the Model publishes can be one the serving removed. Such an override is a
+// contradiction between two catalog statements, so it is refused unless the
+// override carries a waive reason (the same escape the model-level rule allows).
+func validateToolSettingsAgainstEffective(model *v1alpha1.Model, serving *v1alpha1.ModelServing, effective EffectiveModel) error {
+	tools := make([]string, 0, len(model.Spec.ToolSettings))
+	for tool := range model.Spec.ToolSettings {
+		tools = append(tools, tool)
+	}
+	slices.Sort(tools)
+	for _, tool := range tools {
+		settings := model.Spec.ToolSettings[tool]
+		for _, bound := range []struct {
+			field string
+			value *int64
+			limit int64
+		}{
+			{"context_window", settings.ContextWindow, effective.ContextWindow},
+			{"max_output_tokens", settings.MaxOutputTokens, effective.MaxOutputTokens},
+			{"auto_compact_window", settings.AutoCompactWindow, effective.ContextWindow},
+		} {
+			if bound.value == nil || settings.Waive != "" {
+				continue
+			}
+			if *bound.value > bound.limit {
+				return fmt.Errorf("ModelServing %q narrows Model %q below toolSettings[%q].%s (%d > %d); add a waive reason to the tool setting to record the compromise", serving.Name, model.Name, tool, bound.field, *bound.value, bound.limit)
+			}
+		}
+		if settings.EffortLevel == nil || settings.Waive != "" {
+			continue
+		}
+		if model.Spec.Reasoning != nil && slices.Contains(model.Spec.Reasoning.Efforts, *settings.EffortLevel) {
+			if effective.Reasoning == nil || !effective.Reasoning.Supported || !slices.Contains(effective.Reasoning.Efforts, *settings.EffortLevel) {
+				return fmt.Errorf("ModelServing %q removed reasoning effort %q, which Model %q toolSettings[%q] still requests; add a waive reason to record the compromise", serving.Name, *settings.EffortLevel, model.Name, tool)
+			}
+		}
+	}
+	return nil
 }

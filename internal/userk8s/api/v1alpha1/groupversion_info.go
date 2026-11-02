@@ -13,10 +13,10 @@ const (
 	// resources whose metadata.name was sanitized to the strict grammar name
 	// enforced by every kind's root validation rule.
 	RegistryNameAnnotation = Group + "/registry-name"
-	// ShaperArgsAnnotation carries, on a shaper-mode ModelAccess, a JSON array
-	// of strings appended verbatim to the ai-concurrency-shaper command line
-	// for that access's mount (provider scope). See the ModelAccess doc comment
-	// for why this is an annotation and not a spec field.
+	// ShaperArgsAnnotation carries, on a ModelRoute whose transport kind is
+	// shaper, a JSON array of strings appended verbatim to the
+	// ai-concurrency-shaper command line for that route. See
+	// ShaperTransportConfig for why this is an annotation and not a spec field.
 	//
 	// The value is unvalidated by construction: an annotation is a string, so
 	// the array is JSON-encoded and only the CONSUMER can check it. Declare it

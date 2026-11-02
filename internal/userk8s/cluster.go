@@ -40,8 +40,9 @@ var _ Catalog = (*ClusterBackend)(nil)
 
 // ClusterBackendOptions configures a ClusterBackend.
 type ClusterBackendOptions struct {
-	// Namespace scopes the namespaced kinds (LocalSecretBinding). Empty uses
-	// the namespace of the selected kubeconfig context.
+	// Namespace scopes the namespaced kinds (ModelSelection, ModelRoute,
+	// LocalSecretBinding). Empty uses the namespace of the selected kubeconfig
+	// context.
 	Namespace string
 
 	// Kubeconfig is an explicit kubeconfig path; empty follows KUBECONFIG and
@@ -97,14 +98,19 @@ func NewClusterBackendFromDynamic(client dynamic.Interface, namespace string, ru
 // GroupVersion identifies the catalog API the cluster backend reads.
 var clusterGroupVersion = schema.GroupVersion{Group: v1alpha1.Group, Version: v1alpha1.Version}
 
-// ClusterBackend reads five kinds; the resources are the lowercase plurals of
-// the kind names.
+// ClusterBackend reads all eight catalog kinds; the resources are the lowercase
+// plurals of the kind names. ModelSelection, ModelRoute, and
+// LocalSecretBinding are namespaced; the rest are the shared cluster-scoped
+// catalog.
 var (
-	clusterProviders = clusterGroupVersion.WithResource("modelproviders")
-	clusterAccesses  = clusterGroupVersion.WithResource("modelaccesses")
-	clusterModels    = clusterGroupVersion.WithResource("models")
-	clusterTools     = clusterGroupVersion.WithResource("tools")
-	clusterBindings  = clusterGroupVersion.WithResource("localsecretbindings")
+	clusterProviders  = clusterGroupVersion.WithResource("modelproviders")
+	clusterAccesses   = clusterGroupVersion.WithResource("modelaccesses")
+	clusterModels     = clusterGroupVersion.WithResource("models")
+	clusterServings   = clusterGroupVersion.WithResource("modelservings")
+	clusterSelections = clusterGroupVersion.WithResource("modelselections")
+	clusterRoutes     = clusterGroupVersion.WithResource("modelroutes")
+	clusterTools      = clusterGroupVersion.WithResource("tools")
+	clusterBindings   = clusterGroupVersion.WithResource("localsecretbindings")
 )
 
 // catalog lists the catalog kinds once and reuses the shared catalog logic.
@@ -146,6 +152,30 @@ func (c *ClusterBackend) catalog(ctx context.Context) (*FilesBackend, error) {
 				return err
 			}
 			objects.Models = append(objects.Models, model)
+			return nil
+		}},
+		{clusterServings, false, func(u unstructured.Unstructured) error {
+			var serving v1alpha1.ModelServing
+			if err := fromUnstructured(&u, &serving); err != nil {
+				return err
+			}
+			objects.Servings = append(objects.Servings, serving)
+			return nil
+		}},
+		{clusterSelections, true, func(u unstructured.Unstructured) error {
+			var selection v1alpha1.ModelSelection
+			if err := fromUnstructured(&u, &selection); err != nil {
+				return err
+			}
+			objects.Selections = append(objects.Selections, selection)
+			return nil
+		}},
+		{clusterRoutes, true, func(u unstructured.Unstructured) error {
+			var route v1alpha1.ModelRoute
+			if err := fromUnstructured(&u, &route); err != nil {
+				return err
+			}
+			objects.Routes = append(objects.Routes, route)
 			return nil
 		}},
 		{clusterTools, false, func(u unstructured.Unstructured) error {
@@ -281,6 +311,80 @@ func (c *ClusterBackend) ListModels(ctx context.Context) ([]v1alpha1.Model, erro
 	return inner.ListModels(ctx)
 }
 
+// ListBindings returns every credential binding in the configured namespace.
+func (c *ClusterBackend) ListBindings(ctx context.Context) ([]v1alpha1.LocalSecretBinding, error) {
+	inner, err := c.catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return inner.ListBindings(ctx)
+}
+
+// ListServings returns every serving, ordered by name.
+func (c *ClusterBackend) ListServings(ctx context.Context) ([]v1alpha1.ModelServing, error) {
+	inner, err := c.catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return inner.ListServings(ctx)
+}
+
+// ListSelections returns every selection, ordered by name.
+func (c *ClusterBackend) ListSelections(ctx context.Context) ([]v1alpha1.ModelSelection, error) {
+	inner, err := c.catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return inner.ListSelections(ctx)
+}
+
+// EffectiveModel delegates to the shared resolution.
+func (c *ClusterBackend) EffectiveModel(ctx context.Context, servingRef string) (EffectiveModel, error) {
+	inner, err := c.catalog(ctx)
+	if err != nil {
+		return EffectiveModel{}, err
+	}
+	return inner.EffectiveModel(ctx, servingRef)
+}
+
+// EffectiveModelForServing delegates to the shared resolution for an
+// already-resolved serving.
+func (c *ClusterBackend) EffectiveModelForServing(ctx context.Context, serving *v1alpha1.ModelServing) (EffectiveModel, error) {
+	inner, err := c.catalog(ctx)
+	if err != nil {
+		return EffectiveModel{}, err
+	}
+	return inner.EffectiveModelForServing(ctx, serving)
+}
+
+// RouteOffers delegates to the shared resolution.
+func (c *ClusterBackend) RouteOffers(ctx context.Context, routeRef string) ([]ResolvedOffer, error) {
+	inner, err := c.catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return inner.RouteOffers(ctx, routeRef)
+}
+
+// RouteOffersForRoute delegates to the shared resolution for an
+// already-resolved route.
+func (c *ClusterBackend) RouteOffersForRoute(ctx context.Context, route *v1alpha1.ModelRoute) ([]ResolvedOffer, error) {
+	inner, err := c.catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return inner.RouteOffersForRoute(ctx, route)
+}
+
+// ListRoutes returns every route in the configured namespace, ordered by name.
+func (c *ClusterBackend) ListRoutes(ctx context.Context) ([]v1alpha1.ModelRoute, error) {
+	inner, err := c.catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return inner.ListRoutes(ctx)
+}
+
 // ListTools returns every tool, ordered by name.
 func (c *ClusterBackend) ListTools(ctx context.Context) ([]v1alpha1.Tool, error) {
 	inner, err := c.catalog(ctx)
@@ -291,30 +395,30 @@ func (c *ClusterBackend) ListTools(ctx context.Context) ([]v1alpha1.Tool, error)
 }
 
 // ResolveCredential reuses the shared resolution protocol.
-func (c *ClusterBackend) ResolveCredential(ctx context.Context, accessRef string) (Resolution, error) {
+func (c *ClusterBackend) ResolveCredential(ctx context.Context, bindingRef string) (Resolution, error) {
 	inner, err := c.catalog(ctx)
 	if err != nil {
 		return Resolution{}, err
 	}
-	return inner.ResolveCredential(ctx, accessRef)
+	return inner.ResolveCredential(ctx, bindingRef)
 }
 
 // Project reuses the shared projection.
-func (c *ClusterBackend) Project(ctx context.Context, tool, provider, model string) (Projection, error) {
+func (c *ClusterBackend) Project(ctx context.Context, tool, provider, serving string) (Projection, error) {
 	inner, err := c.catalog(ctx)
 	if err != nil {
 		return Projection{}, err
 	}
-	return inner.Project(ctx, tool, provider, model)
+	return inner.Project(ctx, tool, provider, serving)
 }
 
-// ProjectModel reuses the shared projection for an already-resolved model.
-func (c *ClusterBackend) ProjectModel(ctx context.Context, tool string, model *v1alpha1.Model) (Projection, error) {
+// ProjectServing reuses the shared projection for an already-resolved serving.
+func (c *ClusterBackend) ProjectServing(ctx context.Context, tool string, serving *v1alpha1.ModelServing) (Projection, error) {
 	inner, err := c.catalog(ctx)
 	if err != nil {
 		return Projection{}, err
 	}
-	return inner.ProjectModel(ctx, tool, model)
+	return inner.ProjectServing(ctx, tool, serving)
 }
 
 // Status reports what the cluster read.

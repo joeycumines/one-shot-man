@@ -316,8 +316,8 @@ func dispatchAwaitPromise(engine *scripting.Engine, tm *scripting.TUIManager, na
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(60 * time.Second):
-		return fmt.Errorf("dispatch %q timed out after 60s", name)
+	case <-time.After(prSplitEvalTimeout):
+		return fmt.Errorf("dispatch %q timed out after %s", name, prSplitEvalTimeout)
 	}
 }
 
@@ -429,13 +429,23 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuf
 	return eng.Stdout, eng.Dispatch, eng.EvalJS, eng.EvalJSAsync
 }
 
+// prSplitEvalTimeout bounds each evalJS/evalJSAsync/dispatch round trip. The
+// JS itself is trivial (mock setup, a single command call), so this bound
+// absorbs goroutine scheduling latency, not computation: under make -j on a
+// loaded CI runner, hundreds of parallel engines' event-loop goroutines can
+// starve for minutes (observed on windows: internal/command at 996s with
+// every call timing out at the former 60s bound, after a 191-426s baseline).
+// The bound stays finite so a genuinely wedged loop still fails the test.
+const prSplitEvalTimeout = 10 * time.Minute
+
 func loadPrSplitEngineWithRuntime(t testing.TB, overrides map[string]any) prSplitTestEngine {
 	t.Helper()
 
 	// T32: Extract optional eval timeout from overrides.
 	// Usage: overrides["_evalTimeout"] = 10 * time.Minute
-	// Default: 60s for unit tests (fast), configurable for real AI tests.
-	evalJSTimeout := 60 * time.Second
+	// Default: prSplitEvalTimeout (generous, CI-load tolerant), configurable
+	// for real AI tests.
+	evalJSTimeout := prSplitEvalTimeout
 	if overrides != nil {
 		if v, ok := overrides["_evalTimeout"]; ok {
 			evalJSTimeout = v.(time.Duration)

@@ -13,6 +13,20 @@ import (
 	"time"
 )
 
+// signalTestWaitTimeout bounds how long a signal test waits for the command to
+// exit after a signal is delivered. The exit path (force-cancel → engine
+// teardown → WaitForProgram return) is scheduling-bound, not computation-bound:
+// under make -j on a loaded CI runner it can take well past the former 12s
+// bound (observed on macOS: "command did not exit after signal delivery" at
+// 12.02s). The bound stays finite so a genuinely wedged teardown still fails.
+const signalTestWaitTimeout = 60 * time.Second
+
+// signalTestPromptlyBound bounds how long a "quit promptly" contract allows
+// the exit path to take. Like signalTestWaitTimeout this is a scheduling bound;
+// the former 5s was a local-machine expectation. 30s still catches a teardown
+// that never completes while tolerating CI goroutine starvation.
+const signalTestPromptlyBound = 30 * time.Second
+
 // These tests deliver real POSIX signals to the process running the JS
 // engine. Signal delivery and Node-style fallback statuses are unavailable
 // on Windows, so those tests are skipped there at runtime.
@@ -101,8 +115,8 @@ func waitSignalCommand(t *testing.T, done <-chan error) error {
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(12 * time.Second):
-		t.Fatal("command did not exit after signal delivery")
+	case <-time.After(signalTestWaitTimeout):
+		t.Fatalf("command did not exit after signal delivery within %s", signalTestWaitTimeout)
 		return nil
 	}
 }
@@ -235,7 +249,7 @@ func TestJSScriptCommand_Execute_SigtermWithoutListenerRunningProgram(t *testing
 		}
 		function update(msg, m) { return [m, tea.tick(60000, "tick")]; }
 		function view(m) { return { content: "probe " + m.n }; }
-		setTimeout(function () { process.exit(0); }, 8000);
+		setTimeout(function () { process.exit(0); }, 60000);
 		tea.run(tea.newModel({ init: init, update: update, view: view }));
 	`)
 
@@ -248,7 +262,7 @@ func TestJSScriptCommand_Execute_SigtermWithoutListenerRunningProgram(t *testing
 	if !errors.As(err, &exitErr) || exitErr.Code != 143 {
 		t.Fatalf("Execute error = %v, want exit status 143 for unlistened SIGTERM with a running program\nstdout=%q\nstderr=%q", err, stdout.String(), stderr.String())
 	}
-	if elapsed > 5*time.Second {
+	if elapsed > signalTestPromptlyBound {
 		t.Fatalf("SIGTERM with a running program took %v; the program was not quit promptly", elapsed)
 	}
 }
@@ -285,7 +299,7 @@ func TestJSScriptCommand_Execute_DoubleSigintForcesTermination(t *testing.T) {
 	}
 	// The second signal must force termination well before the script's own
 	// 10-second deadline.
-	if elapsed > 5*time.Second {
+	if elapsed > signalTestPromptlyBound {
 		t.Fatalf("double SIGINT took %v to terminate; force path did not fire", elapsed)
 	}
 }

@@ -82,15 +82,15 @@ func (e *Engine) DeliverSignal(name string) bool {
 	err := e.executeOnLoop(func(rt *goja.Runtime) error {
 		procVal := rt.Get("process")
 		if procVal == nil || goja.IsUndefined(procVal) || goja.IsNull(procVal) {
-			return nil
+			return errors.New("process global is unavailable")
 		}
 		procObj, ok := procVal.(*goja.Object)
 		if !ok {
-			return nil
+			return fmt.Errorf("process global is %T, not an object", procVal)
 		}
 		emit, ok := goja.AssertFunction(procObj.Get("emit"))
 		if !ok {
-			return nil
+			return errors.New("process.emit is not callable")
 		}
 		result, err := emit(procObj, rt.ToValue(name))
 		if err != nil {
@@ -105,6 +105,15 @@ func (e *Engine) DeliverSignal(name string) bool {
 	})
 	if err != nil {
 		e.Logger().Error("signal delivery failed", "signal", name, "error", err)
+		// The engine logger captures records in an in-memory ring buffer that
+		// neither a CI log nor a plain script run surfaces, so an undelivered
+		// signal would otherwise be silent: the caller cannot distinguish
+		// "no listener" from "delivery infrastructure failed", and post-mortem
+		// diagnosis (the exit-130 signal-test flake) has nothing to go on.
+		// Mirror the failure to stderr, where command runs and tests report it.
+		if e.stderr != nil {
+			_, _ = fmt.Fprintf(e.stderr, "signal %s could not be delivered to the script: %v\n", name, err)
+		}
 		return false
 	}
 	return delivered

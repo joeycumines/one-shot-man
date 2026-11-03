@@ -14,9 +14,11 @@ import (
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
-// renderedProfile is the engine package's frozen copy of a real rendered
-// personal profile; the module tests load it through the scripting surface
-// rather than restating catalog facts.
+// renderedProfile is the fixture the userk8s package owns: the module tests
+// load the same rendered personal profile through the scripting surface rather
+// than restating catalog facts. The count assertions below mirror its contents,
+// so a fixture refresh must update this file too — see TestLoadRealRenderedProfile
+// in internal/userk8s, which asserts the same totals.
 const renderedProfile = "../../userk8s/testdata/rendered-personal-profile.yaml"
 
 type failingRunner struct{}
@@ -118,10 +120,10 @@ func TestModuleLoadsCatalogFromArtifacts(t *testing.T) {
 		const loaded = await userk8s.load();
 		__collect(({
 			source: loaded.source,
-			countsOk: loaded.providers.length === 14 && loaded.models.length === 112
-				&& loaded.servings.length === 152 && loaded.accesses.length === 14
-				&& loaded.routes.length === 13 && loaded.selections.length === 1
-				&& loaded.tools.length === 9 && loaded.secretsPresent === 12,
+			countsOk: loaded.providers.length === 16 && loaded.models.length === 172
+				&& loaded.servings.length === 239 && loaded.accesses.length === 15
+				&& loaded.routes.length === 14 && loaded.selections.length === 1
+				&& loaded.tools.length === 9 && loaded.secretsPresent === 13,
 			namesOk: loaded.providers[0].name.length > 0 && loaded.providers[0].displayName.length > 0
 				&& loaded.tools[0].name.length > 0 && loaded.tools[0].budgetProfile.length > 0,
 			schemesOk: loaded.accesses.every(function (access) {
@@ -256,7 +258,7 @@ func TestModuleBackendStatus(t *testing.T) {
 		__collect(({
 			isPromise: isPromise,
 			source: status.source,
-			ok: status.providers === 14 && status.models === 112 && status.servings === 152 && status.selections === 1 && status.bindings === 12 && status.artifacts.length === 1
+			ok: status.providers === 16 && status.models === 172 && status.servings === 239 && status.selections === 1 && status.bindings === 13 && status.artifacts.length === 1
 		}))
 	`)
 	if err != nil {

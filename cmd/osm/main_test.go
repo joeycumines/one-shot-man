@@ -84,11 +84,11 @@ func TestRunVersionCommand(t *testing.T) {
 		t.Fatalf("run returned error: %v", err)
 	}
 
-	if !strings.Contains(stdout, "osm version") {
-		t.Fatalf("expected version output, got %q", stdout)
-	}
-	if !strings.Contains(stdout, cliVersion()) {
-		t.Fatalf("version output %q does not report build version %q", stdout, cliVersion())
+	// Compare the whole line: a substring check against cliVersion() is
+	// satisfied by the "osm version" prefix alone, so it could not detect a
+	// version token that went missing or was replaced by a bare "osm".
+	if want, got := "osm version "+cliVersion(), strings.TrimSpace(stdout); got != want {
+		t.Fatalf("version output = %q, want %q", got, want)
 	}
 
 	if stderr != "" {
@@ -103,7 +103,16 @@ func TestVersionFromBuildInfo(t *testing.T) {
 		want string
 	}{
 		{name: "tagged release", info: &debug.BuildInfo{Main: debug.Module{Version: "v0.7.0"}}, want: "0.7.0"},
+		{name: "unprefixed version", info: &debug.BuildInfo{Main: debug.Module{Version: "0.7.0"}}, want: "0.7.0"},
+		{name: "dirty checkout", info: &debug.BuildInfo{Main: debug.Module{Version: "v0.7.0+dirty"}}, want: "0.7.0+dirty"},
+		{
+			name: "vcs pseudo-version",
+			info: &debug.BuildInfo{Main: debug.Module{Version: "v0.7.1-0.20261103030639-abcdef123456"}},
+			want: "0.7.1-0.20261103030639-abcdef123456",
+		},
 		{name: "development build", info: &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, want: "devel"},
+		{name: "empty version", info: &debug.BuildInfo{Main: debug.Module{Version: ""}}, want: "devel"},
+		{name: "bare v", info: &debug.BuildInfo{Main: debug.Module{Version: "v"}}, want: "devel"},
 		{name: "missing info", want: "devel"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -324,8 +333,8 @@ func TestVersionCommandVariations(t *testing.T) {
 				if err != nil {
 					t.Fatalf("version command returned error: %v", err)
 				}
-				if !strings.Contains(stdout, "osm version") {
-					t.Fatalf("expected version output, got stdout=%q stderr=%q", stdout, stderr)
+				if want, got := "osm version "+cliVersion(), strings.TrimSpace(stdout); got != want {
+					t.Fatalf("version output = %q, want %q (stderr=%q)", got, want, stderr)
 				}
 			}
 

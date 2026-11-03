@@ -192,6 +192,80 @@ func TestRouteValidationAllowsTwoShaperRoutesForOneAccess(t *testing.T) {
 	}
 }
 
+func TestRouteValidationNormalizesSurfaceAPIPathsToOneMount(t *testing.T) {
+	route := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-local
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - anthropic
+  - chat
+  - responses
+  endpoints:
+    anthropic: http://127.0.0.1:11239/alpha/anthropic
+    chat: http://127.0.0.1:11239/alpha/openai/v1
+    responses: http://127.0.0.1:11239/alpha/openai/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	_, err := loadDocuments(routeValidationDocuments(route)...)
+	if err != nil {
+		t.Fatalf("surface API paths should resolve to the shared /alpha mount: %v", err)
+	}
+}
+
+func TestRouteValidationDetectsDuplicateMountWithSurfaceAPIPaths(t *testing.T) {
+	first := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-api-paths
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - anthropic
+  - chat
+  endpoints:
+    anthropic: http://127.0.0.1:11239/shared/anthropic
+    chat: http://127.0.0.1:11239/shared/openai/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	second := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-legacy-path
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - chat
+  endpoints:
+    chat: http://127.0.0.1:11239/shared/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	_, err := loadDocuments(routeValidationDocuments(first, second)...)
+	if err == nil || !strings.Contains(err.Error(), "both mount the shaper at prefix \"/shared\"") {
+		t.Fatalf("error: got %v, want the normalized /shared mount collision", err)
+	}
+}
+
 // TestRouteValidationRefusesTwoShaperRoutesOnOneMount is the hazard the
 // per-access ban was standing in for: two shaper sections claiming the same
 // local path would serve whichever route bound it first.
@@ -266,6 +340,31 @@ spec:
 	_, err := loadDocuments(routeValidationDocuments(noPrefix)...)
 	if err == nil || !strings.Contains(err.Error(), "carries no mount prefix") {
 		t.Fatalf("error: got %v, want a refusal naming the prefixless surface", err)
+	}
+}
+
+func TestRouteValidationRefusesAPIPathWithoutMountPrefix(t *testing.T) {
+	noPrefix := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-one
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - chat
+  endpoints:
+    chat: http://127.0.0.1:11239/openai/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	_, err := loadDocuments(routeValidationDocuments(noPrefix)...)
+	if err == nil || !strings.Contains(err.Error(), "carries no mount prefix") {
+		t.Fatalf("error: got %v, want an API-only path refused", err)
 	}
 }
 

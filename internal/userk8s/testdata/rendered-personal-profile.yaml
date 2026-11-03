@@ -145,6 +145,26 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: LocalSecretBinding
 metadata:
+  name: bind-opencode-console
+  namespace: model-access-personal
+spec:
+  envVar: OPENCODE_API_KEY
+  resolvers:
+  - command:
+      argv:
+      - opencode_api_key
+      timeout: 60s
+  scheme: bearer
+  secretRef:
+    key: OPENCODE_API_KEY
+    name: personal-model-credentials
+  selector:
+    matchLabels:
+      one-shot-man/provider: opencode-console
+---
+apiVersion: one-shot-man/v1alpha1
+kind: LocalSecretBinding
+metadata:
   name: bind-opencode-go
   namespace: model-access-personal
 spec:
@@ -317,6 +337,24 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
+  name: big-pickle
+spec:
+  canonical_id: big-pickle
+  context_window: 200000
+  display_name: Big Pickle
+  input_modalities:
+  - text
+  max_output_tokens: 32000
+  output_modalities:
+  - text
+  reasoning:
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
   name: cat-jam-free
 spec:
   aliases:
@@ -341,6 +379,95 @@ spec:
     - max
     supported: true
   structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-3-5-haiku-20241022
+spec:
+  canonical_id: anthropic/claude-3-5-haiku-20241022
+  context_window: 200000
+  deprecated: true
+  display_name: Claude Haiku 3.5
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 8192
+  output_modalities:
+  - text
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-fable-5
+spec:
+  canonical_id: anthropic/claude-fable-5
+  context_window: 1000000
+  display_name: Claude Fable 5
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-fable-5-1
+spec:
+  canonical_id: anthropic/claude-fable-5-1
+  context_window: 1000000
+  display_name: Claude Fable 5.1
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-haiku-4-5
+spec:
+  canonical_id: anthropic/claude-haiku-4-5
+  context_window: 200000
+  display_name: Claude Haiku 4.5
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 64000
+  output_modalities:
+  - text
+  reasoning:
+    budget:
+      min: 1024
+    supported: true
+  structured_output: false
   tool_call: true
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -371,6 +498,298 @@ spec:
     supported: true
     toggle: true
   structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-4-1
+spec:
+  canonical_id: anthropic/claude-opus-4-1
+  context_window: 200000
+  deprecated: true
+  display_name: Claude Opus 4.1
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 32000
+  output_modalities:
+  - text
+  reasoning:
+    budget:
+      min: 1024
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-4-5
+spec:
+  canonical_id: anthropic/claude-opus-4-5
+  context_window: 200000
+  display_name: Claude Opus 4.5
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 64000
+  output_modalities:
+  - text
+  reasoning:
+    budget:
+      min: 1024
+    efforts:
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-4-6
+spec:
+  canonical_id: anthropic/claude-opus-4-6
+  context_window: 1000000
+  display_name: Claude Opus 4.6
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    budget:
+      min: 1024
+    efforts:
+    - low
+    - medium
+    - high
+    - max
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-4-7
+spec:
+  canonical_id: anthropic/claude-opus-4-7
+  context_window: 1000000
+  display_name: Claude Opus 4.7
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-4-8
+spec:
+  canonical_id: anthropic/claude-opus-4-8
+  context_window: 1000000
+  display_name: Claude Opus 4.8
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-5
+spec:
+  canonical_id: anthropic/claude-opus-5
+  context_window: 1000000
+  display_name: Claude Opus 5
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-opus-5-5
+spec:
+  canonical_id: anthropic/claude-opus-5-5
+  context_window: 1000000
+  display_name: Claude Opus 5.5
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-sonnet-4-0
+spec:
+  canonical_id: anthropic/claude-sonnet-4-0
+  context_window: 1000000
+  deprecated: true
+  display_name: Claude Sonnet 4
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 64000
+  output_modalities:
+  - text
+  reasoning:
+    budget:
+      min: 1024
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-sonnet-4-5
+spec:
+  canonical_id: anthropic/claude-sonnet-4-5
+  context_window: 1000000
+  display_name: Claude Sonnet 4.5
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 64000
+  output_modalities:
+  - text
+  reasoning:
+    budget:
+      min: 1024
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-sonnet-4-6
+spec:
+  canonical_id: anthropic/claude-sonnet-4-6
+  context_window: 1000000
+  display_name: Claude Sonnet 4.6
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 64000
+  output_modalities:
+  - text
+  reasoning:
+    budget:
+      min: 1024
+    efforts:
+    - low
+    - medium
+    - high
+    - max
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-sonnet-5
+spec:
+  canonical_id: anthropic/claude-sonnet-5
+  context_window: 1000000
+  display_name: Claude Sonnet 5
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: claude-sonnet-5-5
+spec:
+  canonical_id: anthropic/claude-sonnet-5-5
+  context_window: 1000000
+  display_name: Claude Sonnet 5.5
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: false
   tool_call: true
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -494,6 +913,32 @@ spec:
     - xhigh
     - max
     supported: true
+    toggle: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: deepseek-v4-flash-vision-exp
+spec:
+  canonical_id: deepseek/deepseek-v4-flash-vision-exp
+  context_window: 1000000
+  deprecated: true
+  display_name: DeepSeek V4 Flash Vision Exp
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 384000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - high
+    - max
+    supported: true
+    toggle: true
   structured_output: true
   tool_call: true
 ---
@@ -520,6 +965,7 @@ spec:
     - high
     - max
     supported: true
+    toggle: true
   structured_output: true
   tool_call: true
 ---
@@ -632,6 +1078,202 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
+  name: gemini-3-1-pro-preview
+spec:
+  canonical_id: google/gemini-3.1-pro-preview
+  context_window: 1048576
+  display_name: Gemini 3.1 Pro Preview
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gemini-3-5-flash
+spec:
+  canonical_id: google/gemini-3.5-flash
+  context_window: 1048576
+  display_name: Gemini 3.5 Flash
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - minimal
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gemini-3-5-flash-lite
+spec:
+  canonical_id: google/gemini-3.5-flash-lite
+  context_window: 1048576
+  display_name: Gemini 3.5 Flash Lite
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - minimal
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gemini-3-6-flash
+spec:
+  canonical_id: google/gemini-3.6-flash
+  context_window: 1048576
+  display_name: Gemini 3.6 Flash
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - minimal
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gemini-3-7-flash
+spec:
+  canonical_id: google/gemini-3.7-flash
+  context_window: 1048576
+  display_name: Gemini 3.7 Flash
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gemini-3-8-flash
+spec:
+  canonical_id: google/gemini-3.8-flash
+  context_window: 1048576
+  display_name: Gemini 3.8 Flash
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gemini-3-flash-preview
+spec:
+  canonical_id: google/gemini-3-flash-preview
+  context_window: 1048576
+  display_name: Gemini 3 Flash
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - minimal
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gemini-3-pro-preview
+spec:
+  canonical_id: google/gemini-3-pro-preview
+  context_window: 1048576
+  deprecated: true
+  display_name: Gemini 3 Pro
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 65536
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
   name: gemini-4-argon
 spec:
   aliases:
@@ -711,6 +1353,26 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
+  name: glm-4-6
+spec:
+  canonical_id: zhipuai/glm-4.6
+  context_window: 204800
+  deprecated: true
+  display_name: GLM-4.6
+  input_modalities:
+  - text
+  max_output_tokens: 131072
+  output_modalities:
+  - text
+  reasoning:
+    supported: true
+    toggle: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
   name: glm-4-7
 spec:
   aliases:
@@ -765,16 +1427,17 @@ spec:
   - glm-5.1
   - zhipuai/glm-5.1
   canonical_id: zhipuai/glm-5.1
-  context_window: 200000
+  context_window: 204800
   display_name: GLM-5.1
   input_modalities:
   - text
   - image
-  max_output_tokens: 32768
+  max_output_tokens: 131072
   output_modalities:
   - text
   reasoning:
     supported: true
+    toggle: true
   structured_output: false
   tool_call: true
 ---
@@ -903,6 +1566,367 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
+  name: gpt-5
+spec:
+  canonical_id: openai/gpt-5
+  context_window: 400000
+  display_name: GPT-5
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - minimal
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-1
+spec:
+  canonical_id: openai/gpt-5.1
+  context_window: 400000
+  display_name: GPT-5.1
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - none
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-1-codex
+spec:
+  canonical_id: openai/gpt-5.1-codex
+  context_window: 400000
+  display_name: GPT-5.1 Codex
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-1-codex-max
+spec:
+  canonical_id: openai/gpt-5.1-codex-max
+  context_window: 400000
+  display_name: GPT-5.1 Codex Max
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-1-codex-mini
+spec:
+  canonical_id: openai/gpt-5.1-codex-mini
+  context_window: 400000
+  display_name: GPT-5.1 Codex Mini
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-2
+spec:
+  canonical_id: openai/gpt-5.2
+  context_window: 400000
+  display_name: GPT-5.2
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - none
+    - low
+    - medium
+    - high
+    - xhigh
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-2-codex
+spec:
+  canonical_id: openai/gpt-5.2-codex
+  context_window: 400000
+  display_name: GPT-5.2 Codex
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-3-codex
+spec:
+  canonical_id: openai/gpt-5.3-codex
+  context_window: 400000
+  display_name: GPT-5.3 Codex
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - none
+    - low
+    - medium
+    - high
+    - xhigh
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-3-codex-spark
+spec:
+  canonical_id: openai/gpt-5.3-codex-spark
+  context_window: 128000
+  display_name: GPT-5.3 Codex Spark
+  input_modalities:
+  - text
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-4
+spec:
+  canonical_id: openai/gpt-5.4
+  context_window: 1050000
+  display_name: GPT-5.4
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - none
+    - low
+    - medium
+    - high
+    - xhigh
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-4-mini
+spec:
+  canonical_id: openai/gpt-5.4-mini
+  context_window: 400000
+  display_name: GPT-5.4 Mini
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - none
+    - low
+    - medium
+    - high
+    - xhigh
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-4-nano
+spec:
+  canonical_id: openai/gpt-5.4-nano
+  context_window: 400000
+  display_name: GPT-5.4 Nano
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - none
+    - low
+    - medium
+    - high
+    - xhigh
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-4-pro
+spec:
+  canonical_id: openai/gpt-5.4-pro
+  context_window: 1050000
+  display_name: GPT-5.4 Pro
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - medium
+    - high
+    - xhigh
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-5
+spec:
+  canonical_id: openai/gpt-5.5
+  context_window: 1050000
+  display_name: GPT-5.5
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - none
+    - low
+    - medium
+    - high
+    - xhigh
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-5-pro
+spec:
+  canonical_id: openai/gpt-5.5-pro
+  context_window: 1050000
+  display_name: GPT-5.5 Pro
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - medium
+    - high
+    - xhigh
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
   name: gpt-5-6-luna
 spec:
   aliases:
@@ -934,6 +1958,155 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
+  name: gpt-5-6-sol
+spec:
+  canonical_id: openai/gpt-5.6-sol
+  context_window: 1050000
+  display_name: GPT-5.6 Sol
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - none
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-6-terra
+spec:
+  canonical_id: openai/gpt-5.6-terra
+  context_window: 1050000
+  display_name: GPT-5.6 Terra
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - none
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-codex
+spec:
+  canonical_id: openai/gpt-5-codex
+  context_window: 400000
+  display_name: GPT-5 Codex
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-5-nano
+spec:
+  canonical_id: openai/gpt-5-nano
+  context_window: 400000
+  display_name: GPT-5 Nano
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - minimal
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-6-1-sol
+spec:
+  canonical_id: openai/gpt-6.1-sol
+  context_window: 1050000
+  display_name: GPT-6.1 Sol
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-6-astra
+spec:
+  canonical_id: openai/gpt-6-astra
+  context_window: 1050000
+  display_name: GPT-6 Astra
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
   name: gpt-6-luna
 spec:
   aliases:
@@ -943,6 +2116,32 @@ spec:
   canonical_id: openai/gpt-6-luna
   context_window: 1050000
   display_name: GPT-6 Luna
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 128000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - none
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: gpt-6-sol
+spec:
+  canonical_id: openai/gpt-6-sol
+  context_window: 1050000
+  display_name: GPT-6 Sol
   input_modalities:
   - text
   - image
@@ -992,6 +2191,53 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
+  name: grok-4-5
+spec:
+  canonical_id: xai/grok-4.5
+  context_window: 500000
+  display_name: Grok 4.5
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 500000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: grok-4-6
+spec:
+  canonical_id: xai/grok-4.6
+  context_window: 500000
+  display_name: Grok 4.6
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 500000
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - medium
+    - high
+    - xhigh
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
   name: grok-4-7
 spec:
   aliases:
@@ -1016,6 +2262,44 @@ spec:
     - xhigh
     supported: true
   structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: grok-build-0-1
+spec:
+  canonical_id: xai/grok-build-0.1
+  context_window: 256000
+  display_name: Grok Build 0.1
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 256000
+  output_modalities:
+  - text
+  reasoning:
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: grok-code-fast-1
+spec:
+  canonical_id: xai/grok-code-fast-1
+  context_window: 256000
+  deprecated: true
+  display_name: Grok Code Fast 1
+  input_modalities:
+  - text
+  max_output_tokens: 256000
+  output_modalities:
+  - text
+  reasoning:
+    supported: true
+  structured_output: false
   tool_call: true
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -1177,6 +2461,23 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
+  name: kimi-k2-0905
+spec:
+  canonical_id: moonshotai/kimi-k2-0905
+  context_window: 262144
+  deprecated: true
+  display_name: Kimi K2
+  input_modalities:
+  - text
+  max_output_tokens: 262144
+  output_modalities:
+  - text
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
   name: kimi-k2-5
 spec:
   aliases:
@@ -1191,6 +2492,26 @@ spec:
   - text
   - image
   max_output_tokens: 262144
+  output_modalities:
+  - text
+  reasoning:
+    supported: true
+    toggle: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: kimi-k2-6
+spec:
+  canonical_id: moonshotai/kimi-k2.6
+  context_window: 262144
+  display_name: Kimi K2.6
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 65536
   output_modalities:
   - text
   reasoning:
@@ -1226,6 +2547,25 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
+  name: kimi-k2-thinking
+spec:
+  canonical_id: moonshotai/kimi-k2-thinking
+  context_window: 262144
+  deprecated: true
+  display_name: Kimi K2 Thinking
+  input_modalities:
+  - text
+  max_output_tokens: 262144
+  output_modalities:
+  - text
+  reasoning:
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
   name: kimi-k3
 spec:
   aliases:
@@ -1243,8 +2583,11 @@ spec:
   - text
   reasoning:
     efforts:
+    - low
+    - high
     - max
     supported: true
+    toggle: true
   structured_output: true
   tool_call: true
 ---
@@ -2001,6 +3344,28 @@ spec:
 apiVersion: one-shot-man/v1alpha1
 kind: Model
 metadata:
+  name: mistral-large-4
+spec:
+  canonical_id: mistral/mistral-large-4
+  context_window: 524288
+  display_name: Mistral Large 4
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 262144
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - none
+    - high
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
   name: mistral-large-4-1t-a52b
 spec:
   aliases:
@@ -2118,6 +3483,33 @@ spec:
     - medium
     - high
     - xhigh
+    supported: true
+  structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: muse-wonder-1-0
+spec:
+  canonical_id: meta/muse-wonder-1.0
+  context_window: 1048576
+  display_name: Muse Wonder
+  input_modalities:
+  - text
+  - image
+  - audio
+  max_output_tokens: 131072
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - minimal
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
     supported: true
   structured_output: true
   tool_call: true
@@ -2387,6 +3779,29 @@ spec:
     efforts:
     - none
     - high
+    supported: true
+  structured_output: false
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: pulse-alpha-free
+spec:
+  canonical_id: pulse-alpha-free
+  context_window: 1048576
+  display_name: Pulse Alpha Free
+  input_modalities:
+  - text
+  - image
+  max_output_tokens: 131072
+  output_modalities:
+  - text
+  reasoning:
+    efforts:
+    - low
+    - high
+    - max
     supported: true
   structured_output: false
   tool_call: true
@@ -2718,6 +4133,7 @@ spec:
   - text
   reasoning:
     supported: true
+    toggle: true
   structured_output: false
   tool_call: true
 ---
@@ -2893,6 +4309,23 @@ spec:
     supported: true
     toggle: true
   structured_output: true
+  tool_call: true
+---
+apiVersion: one-shot-man/v1alpha1
+kind: Model
+metadata:
+  name: qwen3-coder-480b-a35b-instruct
+spec:
+  canonical_id: alibaba/qwen3-coder-480b-a35b-instruct
+  context_window: 262144
+  deprecated: true
+  display_name: Qwen3 Coder
+  input_modalities:
+  - text
+  max_output_tokens: 65536
+  output_modalities:
+  - text
+  structured_output: false
   tool_call: true
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -3239,6 +4672,16 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelAccess
 metadata:
   labels:
+    one-shot-man/provider: opencode-console
+  name: opencode-console
+spec:
+  protocol: chat
+  provider: opencode-console
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  labels:
     one-shot-man/provider: opencode-go
   name: opencode-go
 spec:
@@ -3358,6 +4801,20 @@ metadata:
   name: nvidia
 spec:
   display_name: NVIDIA
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: opencode-console
+spec:
+  display_name: OpenCode Console
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelProvider
+metadata:
+  name: opencode-console-free
+spec:
+  display_name: OpenCode Console Free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelProvider
@@ -3616,16 +5073,45 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelRoute
 metadata:
   annotations:
-    one-shot-man/shaper-args: '["-opencode=true","-opencode-client=cli","-transport=sesame"]'
+    one-shot-man/shaper-args: '["-transport=sesame"]'
+  name: opencode-console-local
+  namespace: model-access-personal
+spec:
+  access: opencode-console
+  credential: bind-opencode-console
+  endpoints:
+    anthropic: http://127.0.0.1:11239/opencode-console/anthropic
+    chat: http://127.0.0.1:11239/opencode-console/openai/v1
+    responses: http://127.0.0.1:11239/opencode-console/openai/v1
+  naming: served
+  offers: []
+  order: 10
+  surfaces:
+  - anthropic
+  - chat
+  - responses
+  transport:
+    kind: shaper
+    shaper:
+      concurrency: 100
+      limit_all: false
+      queue_timeout: 30m
+    upstream: https://opencode.ai/inference
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  annotations:
+    one-shot-man/shaper-args: '["-transport=sesame"]'
   name: opencode-go-local
   namespace: model-access-personal
 spec:
   access: opencode-go
   credential: bind-opencode-go
   endpoints:
-    anthropic: http://127.0.0.1:11239/opencode-go
-    chat: http://127.0.0.1:11239/opencode-go/v1
-    responses: http://127.0.0.1:11239/opencode-go/v1
+    anthropic: http://127.0.0.1:11239/opencode-go/anthropic
+    chat: http://127.0.0.1:11239/opencode-go/openai/v1
+    responses: http://127.0.0.1:11239/opencode-go/openai/v1
   naming: served
   offers: []
   order: 10
@@ -3882,6 +5368,36 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: reflection/beam-1.0-501b-a23b
+    one-shot-man/display-name: Beam Free
+    one-shot-man/registry-name: beam-free:opencode-console-free
+  name: beam-1-0-501b-a23b-opencode-console-free-free
+spec:
+  model: beam-1-0-501b-a23b
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: beam-free
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: beam-free:opencode-go
   name: beam-1-0-501b-a23b-opencode-go-free
 spec:
@@ -3910,10 +5426,35 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: beam-free:zen
-  name: beam-1-0-501b-a23b-zen-free
+    one-shot-man/display-name: Big Pickle
+    one-shot-man/registry-name: big-pickle:opencode-console-free
+  name: big-pickle-opencode-console-free
 spec:
-  model: beam-1-0-501b-a23b
+  model: big-pickle
+  overrides:
+    context_window: 200000
+    input_modalities:
+    - text
+    max_output_tokens: 32000
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: big-pickle
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/display-name: Cat Jam Free
+    one-shot-man/registry-name: cat-jam-free:opencode-console-free
+  name: cat-jam-free-opencode-console-free
+spec:
+  deprecated: true
+  model: cat-jam-free
   overrides:
     context_window: 1048576
     input_modalities:
@@ -3931,8 +5472,8 @@ spec:
       supported: true
     structured_output: true
     tool_call: true
-  provider: zen
-  provider_model_id: beam-free
+  provider: opencode-console-free
+  provider_model_id: cat-jam-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -3967,16 +5508,44 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: cat-jam-free:zen
-  name: cat-jam-free-zen
+    one-shot-man/canonical-id: anthropic/claude-3-5-haiku-20241022
+    one-shot-man/display-name: Claude Haiku 3.5
+    one-shot-man/registry-name: claude-3-5-haiku:opencode-console
+  name: claude-3-5-haiku-20241022-opencode-console
 spec:
   deprecated: true
-  model: cat-jam-free
+  model: claude-3-5-haiku-20241022
   overrides:
-    context_window: 1048576
+    context_window: 200000
     input_modalities:
     - text
-    max_output_tokens: 131072
+    - image
+    max_output_tokens: 8192
+    output_modalities:
+    - text
+    reasoning:
+      supported: false
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-3-5-haiku
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-fable-5-1
+    one-shot-man/display-name: Claude Fable 5.1
+    one-shot-man/registry-name: claude-fable-5-1:opencode-console
+  name: claude-fable-5-1-opencode-console
+spec:
+  model: claude-fable-5-1
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
     output_modalities:
     - text
     reasoning:
@@ -3987,10 +5556,100 @@ spec:
       - xhigh
       - max
       supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-fable-5-1
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-fable-5
+    one-shot-man/display-name: Claude Fable 5
+    one-shot-man/registry-name: claude-fable-5:opencode-console
+  name: claude-fable-5-opencode-console
+spec:
+  model: claude-fable-5
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-fable-5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-haiku-4-5
+    one-shot-man/display-name: Claude Haiku 4.5
+    one-shot-man/registry-name: claude-haiku-4-5:opencode-console
+  name: claude-haiku-4-5-opencode-console
+spec:
+  model: claude-haiku-4-5
+  overrides:
+    context_window: 200000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 64000
+    output_modalities:
+    - text
+    reasoning:
+      budget:
+        min: 1024
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-haiku-4-5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-haiku-5-5
+    one-shot-man/display-name: Claude Haiku 5.5
+    one-shot-man/registry-name: claude-haiku-5-5:opencode-console
+  name: claude-haiku-5-5-opencode-console
+spec:
+  model: claude-haiku-5-5
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+      toggle: true
     structured_output: true
     tool_call: true
-  provider: zen
-  provider_model_id: cat-jam-free
+  provider: opencode-console
+  provider_model_id: claude-haiku-5-5
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -4021,6 +5680,370 @@ spec:
     tool_call: true
   provider: opencode-go
   provider_model_id: claude-haiku-5-5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-opus-4-1
+    one-shot-man/display-name: Claude Opus 4.1
+    one-shot-man/registry-name: claude-opus-4-1:opencode-console
+  name: claude-opus-4-1-opencode-console
+spec:
+  deprecated: true
+  model: claude-opus-4-1
+  overrides:
+    context_window: 200000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 32000
+    output_modalities:
+    - text
+    reasoning:
+      budget:
+        min: 1024
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-opus-4-1
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-opus-4-5
+    one-shot-man/display-name: Claude Opus 4.5
+    one-shot-man/registry-name: claude-opus-4-5:opencode-console
+  name: claude-opus-4-5-opencode-console
+spec:
+  model: claude-opus-4-5
+  overrides:
+    context_window: 200000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 64000
+    output_modalities:
+    - text
+    reasoning:
+      budget:
+        min: 1024
+      efforts:
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-opus-4-5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-opus-4-6
+    one-shot-man/display-name: Claude Opus 4.6
+    one-shot-man/registry-name: claude-opus-4-6:opencode-console
+  name: claude-opus-4-6-opencode-console
+spec:
+  model: claude-opus-4-6
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      budget:
+        min: 1024
+      efforts:
+      - low
+      - medium
+      - high
+      - max
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-opus-4-6
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-opus-4-7
+    one-shot-man/display-name: Claude Opus 4.7
+    one-shot-man/registry-name: claude-opus-4-7:opencode-console
+  name: claude-opus-4-7-opencode-console
+spec:
+  model: claude-opus-4-7
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-opus-4-7
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-opus-4-8
+    one-shot-man/display-name: Claude Opus 4.8
+    one-shot-man/registry-name: claude-opus-4-8:opencode-console
+  name: claude-opus-4-8-opencode-console
+spec:
+  model: claude-opus-4-8
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-opus-4-8
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-opus-5-5
+    one-shot-man/display-name: Claude Opus 5.5
+    one-shot-man/registry-name: claude-opus-5-5:opencode-console
+  name: claude-opus-5-5-opencode-console
+spec:
+  model: claude-opus-5-5
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-opus-5-5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-opus-5
+    one-shot-man/display-name: Claude Opus 5
+    one-shot-man/registry-name: claude-opus-5:opencode-console
+  name: claude-opus-5-opencode-console
+spec:
+  model: claude-opus-5
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-opus-5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-sonnet-4-0
+    one-shot-man/display-name: Claude Sonnet 4
+    one-shot-man/registry-name: claude-sonnet-4:opencode-console
+  name: claude-sonnet-4-0-opencode-console
+spec:
+  deprecated: true
+  model: claude-sonnet-4-0
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 64000
+    output_modalities:
+    - text
+    reasoning:
+      budget:
+        min: 1024
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-sonnet-4
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-sonnet-4-5
+    one-shot-man/display-name: Claude Sonnet 4.5
+    one-shot-man/registry-name: claude-sonnet-4-5:opencode-console
+  name: claude-sonnet-4-5-opencode-console
+spec:
+  model: claude-sonnet-4-5
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 64000
+    output_modalities:
+    - text
+    reasoning:
+      budget:
+        min: 1024
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-sonnet-4-5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-sonnet-4-6
+    one-shot-man/display-name: Claude Sonnet 4.6
+    one-shot-man/registry-name: claude-sonnet-4-6:opencode-console
+  name: claude-sonnet-4-6-opencode-console
+spec:
+  model: claude-sonnet-4-6
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 64000
+    output_modalities:
+    - text
+    reasoning:
+      budget:
+        min: 1024
+      efforts:
+      - low
+      - medium
+      - high
+      - max
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-sonnet-4-6
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-sonnet-5-5
+    one-shot-man/display-name: Claude Sonnet 5.5
+    one-shot-man/registry-name: claude-sonnet-5-5:opencode-console
+  name: claude-sonnet-5-5-opencode-console
+spec:
+  model: claude-sonnet-5-5
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-sonnet-5-5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: anthropic/claude-sonnet-5
+    one-shot-man/display-name: Claude Sonnet 5
+    one-shot-man/registry-name: claude-sonnet-5:opencode-console
+  name: claude-sonnet-5-opencode-console
+spec:
+  model: claude-sonnet-5
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: claude-sonnet-5
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -4134,6 +6157,66 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: deepseek/deepseek-v4.1-flash
+    one-shot-man/display-name: DeepSeek V4.1 Flash
+    one-shot-man/registry-name: deepseek-v4.1-flash:opencode-console
+  name: deepseek-v4-1-flash-opencode-console
+spec:
+  model: deepseek-v4-1-flash
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 384000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - high
+      - max
+      supported: true
+      toggle: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: deepseek-v4.1-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: deepseek/deepseek-v4.1-flash
+    one-shot-man/display-name: DeepSeek V4.1 Flash Free
+    one-shot-man/registry-name: deepseek-v4.1-flash-free:opencode-console-free
+  name: deepseek-v4-1-flash-opencode-console-free-free
+spec:
+  model: deepseek-v4-1-flash
+  overrides:
+    context_window: 200000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 32000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - high
+      - max
+      supported: true
+      toggle: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: deepseek-v4.1-flash-free
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: deepseek-v4.1-flash:opencode-go
   name: deepseek-v4-1-flash-opencode-go
 spec:
@@ -4189,16 +6272,18 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: deepseek-v4.1-flash-free:zen
-  name: deepseek-v4-1-flash-zen-free
+    one-shot-man/canonical-id: deepseek/deepseek-v4-flash-0731
+    one-shot-man/display-name: DeepSeek V4 Flash
+    one-shot-man/registry-name: deepseek-v4-flash:opencode-console
+  name: deepseek-v4-flash-0731-opencode-console
 spec:
-  model: deepseek-v4-1-flash
+  deprecated: true
+  model: deepseek-v4-flash-0731
   overrides:
-    context_window: 200000
+    context_window: 1000000
     input_modalities:
     - text
-    - image
-    max_output_tokens: 32000
+    max_output_tokens: 384000
     output_modalities:
     - text
     reasoning:
@@ -4210,8 +6295,37 @@ spec:
       toggle: true
     structured_output: true
     tool_call: true
-  provider: zen
-  provider_model_id: deepseek-v4.1-flash-free
+  provider: opencode-console
+  provider_model_id: deepseek-v4-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: deepseek/deepseek-v4-flash-0731
+    one-shot-man/display-name: DeepSeek V4 Flash Free
+    one-shot-man/registry-name: deepseek-v4-flash-free:opencode-console-free
+  name: deepseek-v4-flash-0731-opencode-console-free-free
+spec:
+  deprecated: true
+  model: deepseek-v4-flash-0731
+  overrides:
+    context_window: 200000
+    input_modalities:
+    - text
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - high
+      - max
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: deepseek-v4-flash-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -4270,16 +6384,19 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: deepseek-v4-flash-free:zen
-  name: deepseek-v4-flash-0731-zen-free
+    one-shot-man/canonical-id: deepseek/deepseek-v4-flash-vision-exp
+    one-shot-man/display-name: DeepSeek V4 Flash Vision Exp
+    one-shot-man/registry-name: deepseek-v4-flash-vision-exp:opencode-console
+  name: deepseek-v4-flash-vision-exp-opencode-console
 spec:
   deprecated: true
-  model: deepseek-v4-flash-0731
+  model: deepseek-v4-flash-vision-exp
   overrides:
-    context_window: 200000
+    context_window: 1000000
     input_modalities:
     - text
-    max_output_tokens: 128000
+    - image
+    max_output_tokens: 384000
     output_modalities:
     - text
     reasoning:
@@ -4288,10 +6405,11 @@ spec:
       - high
       - max
       supported: true
+      toggle: true
     structured_output: true
     tool_call: true
-  provider: zen
-  provider_model_id: deepseek-v4-flash-free
+  provider: opencode-console
+  provider_model_id: deepseek-v4-flash-vision-exp
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -4317,6 +6435,34 @@ spec:
     structured_output: false
     tool_call: true
   provider: deepseek
+  provider_model_id: deepseek-v4-pro
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: deepseek/deepseek-v4-pro
+    one-shot-man/display-name: DeepSeek V4 Pro
+    one-shot-man/registry-name: deepseek-v4-pro:opencode-console
+  name: deepseek-v4-pro-opencode-console
+spec:
+  model: deepseek-v4-pro
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    max_output_tokens: 384000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - high
+      - max
+      supported: true
+      toggle: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
   provider_model_id: deepseek-v4-pro
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -4376,8 +6522,9 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: exo-free:zen
-  name: exo-free-zen
+    one-shot-man/display-name: Exo Free
+    one-shot-man/registry-name: exo-free:opencode-console-free
+  name: exo-free-opencode-console-free
 spec:
   deprecated: true
   model: exo-free
@@ -4395,15 +6542,16 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: exo-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: fledge-alpha-free:zen
-  name: fledge-alpha-free-zen
+    one-shot-man/display-name: Fledge Alpha Free
+    one-shot-man/registry-name: fledge-alpha-free:opencode-console-free
+  name: fledge-alpha-free-opencode-console-free
 spec:
   deprecated: true
   model: fledge-alpha-free
@@ -4423,15 +6571,17 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: fledge-alpha-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: flint-40b-free:zen
-  name: flint-zen-free
+    one-shot-man/canonical-id: recursive/flint
+    one-shot-man/display-name: Flint 40B Free
+    one-shot-man/registry-name: flint-40b-free:opencode-console-free
+  name: flint-opencode-console-free-free
 spec:
   model: flint
   overrides:
@@ -4451,8 +6601,282 @@ spec:
       supported: true
     structured_output: true
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: flint-40b-free
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: google/gemini-3.1-pro-preview
+    one-shot-man/display-name: Gemini 3.1 Pro Preview
+    one-shot-man/registry-name: gemini-3.1-pro:opencode-console
+  name: gemini-3-1-pro-preview-opencode-console
+spec:
+  model: gemini-3-1-pro-preview
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gemini-3.1-pro
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: google/gemini-3.5-flash-lite
+    one-shot-man/display-name: Gemini 3.5 Flash Lite
+    one-shot-man/registry-name: gemini-3.5-flash-lite:opencode-console
+  name: gemini-3-5-flash-lite-opencode-console
+spec:
+  model: gemini-3-5-flash-lite
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - minimal
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gemini-3.5-flash-lite
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: google/gemini-3.5-flash
+    one-shot-man/display-name: Gemini 3.5 Flash
+    one-shot-man/registry-name: gemini-3.5-flash:opencode-console
+  name: gemini-3-5-flash-opencode-console
+spec:
+  model: gemini-3-5-flash
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - minimal
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gemini-3.5-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: google/gemini-3.6-flash
+    one-shot-man/display-name: Gemini 3.6 Flash
+    one-shot-man/registry-name: gemini-3.6-flash:opencode-console
+  name: gemini-3-6-flash-opencode-console
+spec:
+  model: gemini-3-6-flash
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - minimal
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gemini-3.6-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: google/gemini-3.7-flash
+    one-shot-man/display-name: Gemini 3.7 Flash
+    one-shot-man/registry-name: gemini-3.7-flash:opencode-console
+  name: gemini-3-7-flash-opencode-console
+spec:
+  model: gemini-3-7-flash
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gemini-3.7-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: google/gemini-3.8-flash
+    one-shot-man/display-name: Gemini 3.8 Flash
+    one-shot-man/registry-name: gemini-3.8-flash:opencode-console
+  name: gemini-3-8-flash-opencode-console
+spec:
+  model: gemini-3-8-flash
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gemini-3.8-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: google/gemini-3-flash-preview
+    one-shot-man/display-name: Gemini 3 Flash
+    one-shot-man/registry-name: gemini-3-flash:opencode-console
+  name: gemini-3-flash-preview-opencode-console
+spec:
+  model: gemini-3-flash-preview
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - minimal
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gemini-3-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: google/gemini-3-pro-preview
+    one-shot-man/display-name: Gemini 3 Pro
+    one-shot-man/registry-name: gemini-3-pro:opencode-console
+  name: gemini-3-pro-preview-opencode-console
+spec:
+  deprecated: true
+  model: gemini-3-pro-preview
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gemini-3-pro
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: google/gemini-4-argon
+    one-shot-man/display-name: Gemini 4 Argon
+    one-shot-man/registry-name: gemini-4-argon:opencode-console
+  name: gemini-4-argon-opencode-console
+spec:
+  model: gemini-4-argon
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gemini-4-argon
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -4566,8 +6990,36 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: glm-4.7-free:zen
-  name: glm-4-7-zen-free
+    one-shot-man/canonical-id: zhipuai/glm-4.6
+    one-shot-man/display-name: GLM-4.6
+    one-shot-man/registry-name: glm-4.6:opencode-console
+  name: glm-4-6-opencode-console
+spec:
+  deprecated: true
+  model: glm-4-6
+  overrides:
+    context_window: 204800
+    input_modalities:
+    - text
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+      toggle: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: glm-4.6
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: zhipuai/glm-4.7
+    one-shot-man/display-name: GLM-4.7
+    one-shot-man/registry-name: glm-4.7:opencode-console
+  name: glm-4-7-opencode-console
 spec:
   deprecated: true
   model: glm-4-7
@@ -4583,7 +7035,33 @@ spec:
       toggle: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console
+  provider_model_id: glm-4.7
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: zhipuai/glm-4.7
+    one-shot-man/display-name: GLM-4.7 Free
+    one-shot-man/registry-name: glm-4.7-free:opencode-console-free
+  name: glm-4-7-opencode-console-free-free
+spec:
+  deprecated: true
+  model: glm-4-7
+  overrides:
+    context_window: 204800
+    input_modalities:
+    - text
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+      toggle: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console-free
   provider_model_id: glm-4.7-free
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -4613,6 +7091,31 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: zhipuai/glm-5.1
+    one-shot-man/display-name: GLM-5.1
+    one-shot-man/registry-name: glm-5.1:opencode-console
+  name: glm-5-1-opencode-console
+spec:
+  model: glm-5-1
+  overrides:
+    context_window: 204800
+    input_modalities:
+    - text
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+      toggle: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: glm-5.1
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: glm-5.1:zhipu
   name: glm-5-1-zhipu
 spec:
@@ -4631,6 +7134,33 @@ spec:
     tool_call: true
   provider: zhipu
   provider_model_id: glm-5.1
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: zhipuai/glm-5.2
+    one-shot-man/display-name: GLM-5.2
+    one-shot-man/registry-name: glm-5.2:opencode-console
+  name: glm-5-2-opencode-console
+spec:
+  model: glm-5-2
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - high
+      - max
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: glm-5.2
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -4742,6 +7272,64 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: zhipuai/glm-5.3-flash
+    one-shot-man/display-name: GLM-5.3-Flash
+    one-shot-man/registry-name: glm-5.3-flash:opencode-console
+  name: glm-5-3-flash-opencode-console
+spec:
+  model: glm-5-3-flash
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - high
+      - max
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: glm-5.3-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: zhipuai/glm-5.3-flash
+    one-shot-man/display-name: GLM-5.3-Flash Free
+    one-shot-man/registry-name: glm-5.3-flash-free:opencode-console-free
+  name: glm-5-3-flash-opencode-console-free-free
+spec:
+  model: glm-5-3-flash
+  overrides:
+    context_window: 200000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 32000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - high
+      - max
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: glm-5.3-flash-free
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: glm-5.3-flash:opencode-go
   name: glm-5-3-flash-opencode-go
 spec:
@@ -4798,16 +7386,17 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: glm-5.3-flash-free:zen
-  name: glm-5-3-flash-zen-free
+    one-shot-man/canonical-id: zhipuai/glm-5.3
+    one-shot-man/display-name: GLM-5.3
+    one-shot-man/registry-name: glm-5.3:opencode-console
+  name: glm-5-3-opencode-console
 spec:
-  model: glm-5-3-flash
+  model: glm-5-3
   overrides:
-    context_window: 200000
+    context_window: 1000000
     input_modalities:
     - text
-    - image
-    max_output_tokens: 32000
+    max_output_tokens: 131072
     output_modalities:
     - text
     reasoning:
@@ -4818,8 +7407,8 @@ spec:
       supported: true
     structured_output: true
     tool_call: true
-  provider: zen
-  provider_model_id: glm-5.3-flash-free
+  provider: opencode-console
+  provider_model_id: glm-5.3
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -4851,8 +7440,35 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: glm-5-free:zen
-  name: glm-5-zen-free
+    one-shot-man/canonical-id: zhipuai/glm-5
+    one-shot-man/display-name: GLM-5
+    one-shot-man/registry-name: glm-5:opencode-console
+  name: glm-5-opencode-console
+spec:
+  model: glm-5
+  overrides:
+    context_window: 204800
+    input_modalities:
+    - text
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+      toggle: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: glm-5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: zhipuai/glm-5
+    one-shot-man/display-name: GLM-5 Free
+    one-shot-man/registry-name: glm-5-free:opencode-console-free
+  name: glm-5-opencode-console-free-free
 spec:
   deprecated: true
   model: glm-5
@@ -4868,8 +7484,461 @@ spec:
       toggle: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: glm-5-free
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.1-codex-max
+    one-shot-man/display-name: GPT-5.1 Codex Max
+    one-shot-man/registry-name: gpt-5.1-codex-max:opencode-console
+  name: gpt-5-1-codex-max-opencode-console
+spec:
+  model: gpt-5-1-codex-max
+  overrides:
+    context_window: 400000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.1-codex-max
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.1-codex-mini
+    one-shot-man/display-name: GPT-5.1 Codex Mini
+    one-shot-man/registry-name: gpt-5.1-codex-mini:opencode-console
+  name: gpt-5-1-codex-mini-opencode-console
+spec:
+  model: gpt-5-1-codex-mini
+  overrides:
+    context_window: 400000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.1-codex-mini
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.1-codex
+    one-shot-man/display-name: GPT-5.1 Codex
+    one-shot-man/registry-name: gpt-5.1-codex:opencode-console
+  name: gpt-5-1-codex-opencode-console
+spec:
+  model: gpt-5-1-codex
+  overrides:
+    context_window: 400000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.1-codex
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.1
+    one-shot-man/display-name: GPT-5.1
+    one-shot-man/registry-name: gpt-5.1:opencode-console
+  name: gpt-5-1-opencode-console
+spec:
+  model: gpt-5-1
+  overrides:
+    context_window: 400000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.1
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.2-codex
+    one-shot-man/display-name: GPT-5.2 Codex
+    one-shot-man/registry-name: gpt-5.2-codex:opencode-console
+  name: gpt-5-2-codex-opencode-console
+spec:
+  model: gpt-5-2-codex
+  overrides:
+    context_window: 400000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.2-codex
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.2
+    one-shot-man/display-name: GPT-5.2
+    one-shot-man/registry-name: gpt-5.2:opencode-console
+  name: gpt-5-2-opencode-console
+spec:
+  model: gpt-5-2
+  overrides:
+    context_window: 400000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.2
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.3-codex
+    one-shot-man/display-name: GPT-5.3 Codex
+    one-shot-man/registry-name: gpt-5.3-codex:opencode-console
+  name: gpt-5-3-codex-opencode-console
+spec:
+  model: gpt-5-3-codex
+  overrides:
+    context_window: 400000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.3-codex
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.3-codex-spark
+    one-shot-man/display-name: GPT-5.3 Codex Spark
+    one-shot-man/registry-name: gpt-5.3-codex-spark:opencode-console
+  name: gpt-5-3-codex-spark-opencode-console
+spec:
+  model: gpt-5-3-codex-spark
+  overrides:
+    context_window: 128000
+    input_modalities:
+    - text
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.3-codex-spark
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.4-mini
+    one-shot-man/display-name: GPT-5.4 Mini
+    one-shot-man/registry-name: gpt-5.4-mini:opencode-console
+  name: gpt-5-4-mini-opencode-console
+spec:
+  model: gpt-5-4-mini
+  overrides:
+    context_window: 400000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.4-mini
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.4-nano
+    one-shot-man/display-name: GPT-5.4 Nano
+    one-shot-man/registry-name: gpt-5.4-nano:opencode-console
+  name: gpt-5-4-nano-opencode-console
+spec:
+  model: gpt-5-4-nano
+  overrides:
+    context_window: 400000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.4-nano
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.4
+    one-shot-man/display-name: GPT-5.4
+    one-shot-man/registry-name: gpt-5.4:opencode-console
+  name: gpt-5-4-opencode-console
+spec:
+  model: gpt-5-4
+  overrides:
+    context_window: 1050000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.4
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.4-pro
+    one-shot-man/display-name: GPT-5.4 Pro
+    one-shot-man/registry-name: gpt-5.4-pro:opencode-console
+  name: gpt-5-4-pro-opencode-console
+spec:
+  model: gpt-5-4-pro
+  overrides:
+    context_window: 1050000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.4-pro
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.5
+    one-shot-man/display-name: GPT-5.5
+    one-shot-man/registry-name: gpt-5.5:opencode-console
+  name: gpt-5-5-opencode-console
+spec:
+  model: gpt-5-5
+  overrides:
+    context_window: 1050000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.5-pro
+    one-shot-man/display-name: GPT-5.5 Pro
+    one-shot-man/registry-name: gpt-5.5-pro:opencode-console
+  name: gpt-5-5-pro-opencode-console
+spec:
+  model: gpt-5-5-pro
+  overrides:
+    context_window: 1050000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.5-pro
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.6-luna
+    one-shot-man/display-name: GPT-5.6 Luna
+    one-shot-man/registry-name: gpt-5.6-luna:opencode-console
+  name: gpt-5-6-luna-opencode-console
+spec:
+  model: gpt-5-6-luna
+  overrides:
+    context_window: 1050000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.6-luna
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -4905,6 +7974,253 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: openai/gpt-5.6-sol
+    one-shot-man/display-name: GPT-5.6 Sol
+    one-shot-man/registry-name: gpt-5.6-sol:opencode-console
+  name: gpt-5-6-sol-opencode-console
+spec:
+  model: gpt-5-6-sol
+  overrides:
+    context_window: 1050000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.6-sol
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5.6-terra
+    one-shot-man/display-name: GPT-5.6 Terra
+    one-shot-man/registry-name: gpt-5.6-terra:opencode-console
+  name: gpt-5-6-terra-opencode-console
+spec:
+  model: gpt-5-6-terra
+  overrides:
+    context_window: 1050000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5.6-terra
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5-codex
+    one-shot-man/display-name: GPT-5 Codex
+    one-shot-man/registry-name: gpt-5-codex:opencode-console
+  name: gpt-5-codex-opencode-console
+spec:
+  model: gpt-5-codex
+  overrides:
+    context_window: 400000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5-codex
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5-nano
+    one-shot-man/display-name: GPT-5 Nano
+    one-shot-man/registry-name: gpt-5-nano:opencode-console
+  name: gpt-5-nano-opencode-console
+spec:
+  model: gpt-5-nano
+  overrides:
+    context_window: 400000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - minimal
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5-nano
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-5
+    one-shot-man/display-name: GPT-5
+    one-shot-man/registry-name: gpt-5:opencode-console
+  name: gpt-5-opencode-console
+spec:
+  model: gpt-5
+  overrides:
+    context_window: 400000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - minimal
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-6.1-sol
+    one-shot-man/display-name: GPT-6.1 Sol
+    one-shot-man/registry-name: gpt-6.1-sol:opencode-console
+  name: gpt-6-1-sol-opencode-console
+spec:
+  model: gpt-6-1-sol
+  overrides:
+    context_window: 1050000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-6.1-sol
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-6-astra
+    one-shot-man/display-name: GPT-6 Astra
+    one-shot-man/registry-name: gpt-6-astra:opencode-console
+  name: gpt-6-astra-opencode-console
+spec:
+  model: gpt-6-astra
+  overrides:
+    context_window: 1050000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-6-astra
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-6-luna
+    one-shot-man/display-name: GPT-6 Luna
+    one-shot-man/registry-name: gpt-6-luna:opencode-console
+  name: gpt-6-luna-opencode-console
+spec:
+  model: gpt-6-luna
+  overrides:
+    context_window: 1050000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-6-luna
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: gpt-6-luna:opencode-go
   name: gpt-6-luna-opencode-go
 spec:
@@ -4930,6 +8246,38 @@ spec:
     tool_call: true
   provider: opencode-go
   provider_model_id: gpt-6-luna
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: openai/gpt-6-sol
+    one-shot-man/display-name: GPT-6 Sol
+    one-shot-man/registry-name: gpt-6-sol:opencode-console
+  name: gpt-6-sol-opencode-console
+spec:
+  model: gpt-6-sol
+  overrides:
+    context_window: 1050000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 128000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: gpt-6-sol
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -4963,6 +8311,95 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: xai/grok-4.5
+    one-shot-man/display-name: Grok 4.5
+    one-shot-man/registry-name: grok-4.5:opencode-console
+  name: grok-4-5-opencode-console
+spec:
+  model: grok-4-5
+  overrides:
+    context_window: 500000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 500000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: grok-4.5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: xai/grok-4.6
+    one-shot-man/display-name: Grok 4.6
+    one-shot-man/registry-name: grok-4.6:opencode-console
+  name: grok-4-6-opencode-console
+spec:
+  model: grok-4-6
+  overrides:
+    context_window: 500000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 500000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: grok-4.6
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: xai/grok-4.7
+    one-shot-man/display-name: Grok 4.7
+    one-shot-man/registry-name: grok-4.7:opencode-console
+  name: grok-4-7-opencode-console
+spec:
+  model: grok-4-7
+  overrides:
+    context_window: 500000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 500000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: grok-4.7
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: grok-4.7:opencode-go
   name: grok-4-7-opencode-go
 spec:
@@ -4986,6 +8423,86 @@ spec:
     tool_call: true
   provider: opencode-go
   provider_model_id: grok-4.7
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: xai/grok-build-0.1
+    one-shot-man/display-name: Grok Build 0.1
+    one-shot-man/registry-name: grok-build-0.1:opencode-console
+  name: grok-build-0-1-opencode-console
+spec:
+  model: grok-build-0-1
+  overrides:
+    context_window: 256000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 256000
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: grok-build-0.1
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: xai/grok-code-fast-1
+    one-shot-man/display-name: Grok Code Fast 1
+    one-shot-man/registry-name: grok-code:opencode-console-free
+  name: grok-code-fast-1-opencode-console-free
+spec:
+  deprecated: true
+  model: grok-code-fast-1
+  overrides:
+    context_window: 256000
+    input_modalities:
+    - text
+    max_output_tokens: 256000
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: grok-code
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: tencent/hy3
+    one-shot-man/display-name: Hy3 Free
+    one-shot-man/registry-name: hy3-free:opencode-console-free
+  name: hy3-opencode-console-free-free
+spec:
+  deprecated: true
+  model: hy3
+  overrides:
+    context_window: 190000
+    input_modalities:
+    - text
+    max_output_tokens: 64000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      supported: true
+      toggle: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: hy3-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -5017,8 +8534,10 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: hy3-preview-free:zen
-  name: hy3-preview-zen-free
+    one-shot-man/canonical-id: tencent/hy3-preview
+    one-shot-man/display-name: Hy3 preview Free
+    one-shot-man/registry-name: hy3-preview-free:opencode-console-free
+  name: hy3-preview-opencode-console-free-free
 spec:
   deprecated: true
   model: hy3-preview
@@ -5033,36 +8552,8 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: hy3-preview-free
----
-apiVersion: one-shot-man/v1alpha1
-kind: ModelServing
-metadata:
-  annotations:
-    one-shot-man/registry-name: hy3-free:zen
-  name: hy3-zen-free
-spec:
-  deprecated: true
-  model: hy3
-  overrides:
-    context_window: 190000
-    input_modalities:
-    - text
-    max_output_tokens: 64000
-    output_modalities:
-    - text
-    reasoning:
-      efforts:
-      - low
-      - medium
-      - high
-      supported: true
-      toggle: true
-    structured_output: true
-    tool_call: true
-  provider: zen
-  provider_model_id: hy3-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -5171,8 +8662,61 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: kimi-k2.5-free:zen
-  name: kimi-k2-5-zen-free
+    one-shot-man/canonical-id: moonshotai/kimi-k2-0905
+    one-shot-man/display-name: Kimi K2
+    one-shot-man/registry-name: kimi-k2:opencode-console
+  name: kimi-k2-0905-opencode-console
+spec:
+  deprecated: true
+  model: kimi-k2-0905
+  overrides:
+    context_window: 262144
+    input_modalities:
+    - text
+    max_output_tokens: 262144
+    output_modalities:
+    - text
+    reasoning:
+      supported: false
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: kimi-k2
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: moonshotai/kimi-k2.5
+    one-shot-man/display-name: Kimi K2.5
+    one-shot-man/registry-name: kimi-k2.5:opencode-console
+  name: kimi-k2-5-opencode-console
+spec:
+  model: kimi-k2-5
+  overrides:
+    context_window: 262144
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+      toggle: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: kimi-k2.5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: moonshotai/kimi-k2.5
+    one-shot-man/display-name: Kimi K2.5 Free
+    one-shot-man/registry-name: kimi-k2.5-free:opencode-console-free
+  name: kimi-k2-5-opencode-console-free-free
 spec:
   deprecated: true
   model: kimi-k2-5
@@ -5189,8 +8733,59 @@ spec:
       toggle: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: kimi-k2.5-free
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: moonshotai/kimi-k2.6
+    one-shot-man/display-name: Kimi K2.6
+    one-shot-man/registry-name: kimi-k2.6:opencode-console
+  name: kimi-k2-6-opencode-console
+spec:
+  model: kimi-k2-6
+  overrides:
+    context_window: 262144
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+      toggle: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: kimi-k2.6
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: moonshotai/kimi-k2.7-code
+    one-shot-man/display-name: Kimi K2.7 Code
+    one-shot-man/registry-name: kimi-k2.7-code:opencode-console
+  name: kimi-k2-7-code-opencode-console
+spec:
+  model: kimi-k2-7-code
+  overrides:
+    context_window: 262144
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 262144
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: kimi-k2.7-code
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -5214,6 +8809,31 @@ spec:
     tool_call: true
   provider: opencode-go
   provider_model_id: kimi-k2.7-code
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: moonshotai/kimi-k2-thinking
+    one-shot-man/display-name: Kimi K2 Thinking
+    one-shot-man/registry-name: kimi-k2-thinking:opencode-console
+  name: kimi-k2-thinking-opencode-console
+spec:
+  deprecated: true
+  model: kimi-k2-thinking
+  overrides:
+    context_window: 262144
+    input_modalities:
+    - text
+    max_output_tokens: 262144
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: kimi-k2-thinking
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -5246,6 +8866,36 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: moonshotai/kimi-k3
+    one-shot-man/display-name: Kimi K3
+    one-shot-man/registry-name: kimi-k3:opencode-console
+  name: kimi-k3-opencode-console
+spec:
+  model: kimi-k3
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - high
+      - max
+      supported: true
+      toggle: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: kimi-k3
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: kimi-k3:opencode-go
   name: kimi-k3-opencode-go
 spec:
@@ -5271,8 +8921,10 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: laguna-s-2.1-free:zen
-  name: laguna-s-2-1-zen-free
+    one-shot-man/canonical-id: poolside/laguna-s-2.1
+    one-shot-man/display-name: Laguna S 2.1 Free
+    one-shot-man/registry-name: laguna-s-2.1-free:opencode-console-free
+  name: laguna-s-2-1-opencode-console-free-free
 spec:
   deprecated: true
   model: laguna-s-2-1
@@ -5291,7 +8943,7 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: laguna-s-2.1-free
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -5326,8 +8978,9 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: ling-2.6-flash-free:zen
-  name: ling-2-6-flash-free-zen
+    one-shot-man/display-name: Ling 2.6 Flash Free
+    one-shot-man/registry-name: ling-2.6-flash-free:opencode-console-free
+  name: ling-2-6-flash-free-opencode-console-free
 spec:
   deprecated: true
   model: ling-2-6-flash-free
@@ -5342,15 +8995,17 @@ spec:
       supported: false
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: ling-2.6-flash-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: ling-3.0-flash-fin-free:zen
-  name: ling-3-0-flash-fin-zen-free
+    one-shot-man/canonical-id: inclusionai/ling-3.0-flash-fin
+    one-shot-man/display-name: Ling 3.0 Flash Fin Free
+    one-shot-man/registry-name: ling-3.0-flash-fin-free:opencode-console-free
+  name: ling-3-0-flash-fin-opencode-console-free-free
 spec:
   deprecated: true
   model: ling-3-0-flash-fin
@@ -5366,15 +9021,17 @@ spec:
       toggle: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: ling-3.0-flash-fin-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: ling-3.0-flash-free:zen
-  name: ling-3-0-flash-zen-free
+    one-shot-man/canonical-id: inclusionai/ling-3.0-flash
+    one-shot-man/display-name: Ling-3.0-flash Free
+    one-shot-man/registry-name: ling-3.0-flash-free:opencode-console-free
+  name: ling-3-0-flash-opencode-console-free-free
 spec:
   deprecated: true
   model: ling-3-0-flash
@@ -5393,15 +9050,16 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: ling-3.0-flash-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: ling-3.0-tiny-free:zen
-  name: ling-3-0-tiny-free-zen
+    one-shot-man/display-name: Ling-3.0-tiny Free
+    one-shot-man/registry-name: ling-3.0-tiny-free:opencode-console-free
+  name: ling-3-0-tiny-free-opencode-console-free
 spec:
   deprecated: true
   model: ling-3-0-tiny-free
@@ -5416,15 +9074,17 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: ling-3.0-tiny-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: ling-3.1-flash-free:zen
-  name: ling-3-1-flash-zen-free
+    one-shot-man/canonical-id: inclusionai/ling-3.1-flash
+    one-shot-man/display-name: Ling 3.1 Flash Free
+    one-shot-man/registry-name: ling-3.1-flash-free:opencode-console-free
+  name: ling-3-1-flash-opencode-console-free-free
 spec:
   deprecated: true
   model: ling-3-1-flash
@@ -5440,15 +9100,16 @@ spec:
       toggle: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: ling-3.1-flash-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: ll-alpha-free:zen
-  name: ll-alpha-free-zen
+    one-shot-man/display-name: LL Alpha Free
+    one-shot-man/registry-name: ll-alpha-free:opencode-console-free
+  name: ll-alpha-free-opencode-console-free
 spec:
   deprecated: true
   model: ll-alpha-free
@@ -5469,7 +9130,7 @@ spec:
       supported: true
     structured_output: true
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: ll-alpha-free
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -5588,6 +9249,32 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: meituan/longcat-2.0
+    one-shot-man/display-name: LongCat-2.0 Free
+    one-shot-man/registry-name: longcat-2.0-free:opencode-console-free
+  name: longcat-2-0-opencode-console-free-free
+spec:
+  deprecated: true
+  model: longcat-2-0
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+      toggle: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: longcat-2.0-free
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: longcat-2.0:opencode-go
   name: longcat-2-0-opencode-go
 spec:
@@ -5611,15 +9298,18 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: longcat-2.0-free:zen
-  name: longcat-2-0-zen-free
+    one-shot-man/canonical-id: meituan/longcat-2.5-preview
+    one-shot-man/display-name: LongCat 2.5 Preview Free
+    one-shot-man/registry-name: longcat-2.5-preview-free:opencode-console-free
+  name: longcat-2-5-preview-opencode-console-free-free
 spec:
   deprecated: true
-  model: longcat-2-0
+  model: longcat-2-5-preview
   overrides:
     context_window: 1000000
     input_modalities:
     - text
+    - image
     max_output_tokens: 131072
     output_modalities:
     - text
@@ -5628,8 +9318,8 @@ spec:
       toggle: true
     structured_output: false
     tool_call: true
-  provider: zen
-  provider_model_id: longcat-2.0-free
+  provider: opencode-console-free
+  provider_model_id: longcat-2.5-preview-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -5654,31 +9344,6 @@ spec:
     structured_output: false
     tool_call: true
   provider: opencode-go
-  provider_model_id: longcat-2.5-preview-free
----
-apiVersion: one-shot-man/v1alpha1
-kind: ModelServing
-metadata:
-  annotations:
-    one-shot-man/registry-name: longcat-2.5-preview-free:zen
-  name: longcat-2-5-preview-zen-free
-spec:
-  deprecated: true
-  model: longcat-2-5-preview
-  overrides:
-    context_window: 1000000
-    input_modalities:
-    - text
-    - image
-    max_output_tokens: 131072
-    output_modalities:
-    - text
-    reasoning:
-      supported: true
-      toggle: true
-    structured_output: false
-    tool_call: true
-  provider: zen
   provider_model_id: longcat-2.5-preview-free
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -5724,6 +9389,33 @@ spec:
     tool_call: true
   provider: dialagram
   provider_model_id: meta-muse-spark-1.3
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: xiaomi/mimo-v2.5
+    one-shot-man/display-name: MiMo V2.5 Free
+    one-shot-man/registry-name: mimo-v2.5-free:opencode-console-free
+  name: mimo-v2-5-opencode-console-free-free
+spec:
+  deprecated: true
+  model: mimo-v2-5
+  overrides:
+    context_window: 200000
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 32000
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: mimo-v2.5-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -5798,31 +9490,6 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: mimo-v2.5-free:zen
-  name: mimo-v2-5-zen-free
-spec:
-  deprecated: true
-  model: mimo-v2-5
-  overrides:
-    context_window: 200000
-    input_modalities:
-    - text
-    - image
-    - audio
-    max_output_tokens: 32000
-    output_modalities:
-    - text
-    reasoning:
-      supported: true
-    structured_output: false
-    tool_call: true
-  provider: zen
-  provider_model_id: mimo-v2.5-free
----
-apiVersion: one-shot-man/v1alpha1
-kind: ModelServing
-metadata:
-  annotations:
     one-shot-man/registry-name: mimo-v2.6-flash:dev:electronhub
   name: mimo-v2-6-flash-electronhub-dev
 spec:
@@ -5841,6 +9508,32 @@ spec:
     tool_call: true
   provider: electronhub
   provider_model_id: mimo-v2.6-flash:dev
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: xiaomi/mimo-v2.6-flash
+    one-shot-man/display-name: MiMo-V2.6-Flash Free
+    one-shot-man/registry-name: mimo-v2.6-flash-free:opencode-console-free
+  name: mimo-v2-6-flash-opencode-console-free-free
+spec:
+  model: mimo-v2-6-flash
+  overrides:
+    context_window: 200000
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 32000
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: mimo-v2.6-flash-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -5870,30 +9563,6 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: mimo-v2.6-flash-free:zen
-  name: mimo-v2-6-flash-zen-free
-spec:
-  model: mimo-v2-6-flash
-  overrides:
-    context_window: 200000
-    input_modalities:
-    - text
-    - image
-    - audio
-    max_output_tokens: 32000
-    output_modalities:
-    - text
-    reasoning:
-      supported: true
-    structured_output: false
-    tool_call: true
-  provider: zen
-  provider_model_id: mimo-v2.6-flash-free
----
-apiVersion: one-shot-man/v1alpha1
-kind: ModelServing
-metadata:
-  annotations:
     one-shot-man/registry-name: mimo-v2.6-pro:opencode-go
   name: mimo-v2-6-pro-opencode-go
 spec:
@@ -5918,8 +9587,10 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: mimo-v2-flash-free:zen
-  name: mimo-v2-flash-zen-free
+    one-shot-man/canonical-id: xiaomi/mimo-v2-flash
+    one-shot-man/display-name: MiMo V2 Flash Free
+    one-shot-man/registry-name: mimo-v2-flash-free:opencode-console-free
+  name: mimo-v2-flash-opencode-console-free-free
 spec:
   deprecated: true
   model: mimo-v2-flash
@@ -5934,15 +9605,17 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: mimo-v2-flash-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: mimo-v2-omni-free:zen
-  name: mimo-v2-omni-zen-free
+    one-shot-man/canonical-id: xiaomi/mimo-v2-omni
+    one-shot-man/display-name: MiMo V2 Omni Free
+    one-shot-man/registry-name: mimo-v2-omni-free:opencode-console-free
+  name: mimo-v2-omni-opencode-console-free-free
 spec:
   deprecated: true
   model: mimo-v2-omni
@@ -5959,15 +9632,17 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: mimo-v2-omni-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: mimo-v2-pro-free:zen
-  name: mimo-v2-pro-zen-free
+    one-shot-man/canonical-id: xiaomi/mimo-v2-pro
+    one-shot-man/display-name: MiMo V2 Pro Free
+    one-shot-man/registry-name: mimo-v2-pro-free:opencode-console-free
+  name: mimo-v2-pro-opencode-console-free-free
 spec:
   deprecated: true
   model: mimo-v2-pro
@@ -5982,15 +9657,17 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: mimo-v2-pro-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: minimax-m2.1-free:zen
-  name: minimax-m2-1-zen-free
+    one-shot-man/canonical-id: minimax/MiniMax-M2.1
+    one-shot-man/display-name: MiniMax-M2.1
+    one-shot-man/registry-name: minimax-m2.1:opencode-console
+  name: minimax-m2-1-opencode-console
 spec:
   deprecated: true
   model: minimax-m2-1
@@ -6005,15 +9682,66 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console
+  provider_model_id: minimax-m2.1
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: minimax/MiniMax-M2.1
+    one-shot-man/display-name: MiniMax-M2.1 Free
+    one-shot-man/registry-name: minimax-m2.1-free:opencode-console-free
+  name: minimax-m2-1-opencode-console-free-free
+spec:
+  deprecated: true
+  model: minimax-m2-1
+  overrides:
+    context_window: 204800
+    input_modalities:
+    - text
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console-free
   provider_model_id: minimax-m2.1-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: minimax-m2.5-free:zen
-  name: minimax-m2-5-zen-free
+    one-shot-man/canonical-id: minimax/MiniMax-M2.5
+    one-shot-man/display-name: MiniMax-M2.5
+    one-shot-man/registry-name: minimax-m2.5:opencode-console
+  name: minimax-m2-5-opencode-console
+spec:
+  model: minimax-m2-5
+  overrides:
+    context_window: 204800
+    input_modalities:
+    - text
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: minimax-m2.5
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: minimax/MiniMax-M2.5
+    one-shot-man/display-name: MiniMax-M2.5 Free
+    one-shot-man/registry-name: minimax-m2.5-free:opencode-console-free
+  name: minimax-m2-5-opencode-console-free-free
 spec:
   deprecated: true
   model: minimax-m2-5
@@ -6028,7 +9756,7 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: minimax-m2.5-free
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -6082,6 +9810,30 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: minimax/MiniMax-M2.7
+    one-shot-man/display-name: MiniMax-M2.7
+    one-shot-man/registry-name: minimax-m2.7:opencode-console
+  name: minimax-m2-7-opencode-console
+spec:
+  model: minimax-m2-7
+  overrides:
+    context_window: 204800
+    input_modalities:
+    - text
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: minimax-m2.7
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: minimax-m2.7:opencode-go
   name: minimax-m2-7-opencode-go
 spec:
@@ -6128,6 +9880,38 @@ spec:
     tool_call: true
   provider: nvidia
   provider_model_id: minimaxai/minimax-m3.1-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: minimax/MiniMax-M3.1-Flash
+    one-shot-man/display-name: MiniMax M3.1 Flash Free
+    one-shot-man/registry-name: minimax-m3.1-flash-free:opencode-console-free
+  name: minimax-m3-1-flash-opencode-console-free-free
+spec:
+  deprecated: true
+  model: minimax-m3-1-flash
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 512000
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      - xhigh
+      - max
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: minimax-m3.1-flash-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -6192,31 +9976,54 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: minimax-m3.1-flash-free:zen
-  name: minimax-m3-1-flash-zen-free
+    one-shot-man/canonical-id: minimax/MiniMax-M3
+    one-shot-man/display-name: MiniMax-M3
+    one-shot-man/registry-name: minimax-m3:opencode-console
+  name: minimax-m3-opencode-console
 spec:
-  deprecated: true
-  model: minimax-m3-1-flash
+  model: minimax-m3
   overrides:
-    context_window: 1000000
+    context_window: 512000
     input_modalities:
     - text
     - image
-    max_output_tokens: 512000
+    max_output_tokens: 128000
     output_modalities:
     - text
     reasoning:
-      efforts:
-      - low
-      - medium
-      - high
-      - xhigh
-      - max
       supported: true
+      toggle: true
     structured_output: false
     tool_call: true
-  provider: zen
-  provider_model_id: minimax-m3.1-flash-free
+  provider: opencode-console
+  provider_model_id: minimax-m3
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: minimax/MiniMax-M3
+    one-shot-man/display-name: MiniMax-M3 Free
+    one-shot-man/registry-name: minimax-m3-free:opencode-console-free
+  name: minimax-m3-opencode-console-free-free
+spec:
+  deprecated: true
+  model: minimax-m3
+  overrides:
+    context_window: 200000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 32000
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+      toggle: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: minimax-m3-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -6241,31 +10048,6 @@ spec:
     tool_call: true
   provider: opencode-go
   provider_model_id: minimax-m3
----
-apiVersion: one-shot-man/v1alpha1
-kind: ModelServing
-metadata:
-  annotations:
-    one-shot-man/registry-name: minimax-m3-free:zen
-  name: minimax-m3-zen-free
-spec:
-  deprecated: true
-  model: minimax-m3
-  overrides:
-    context_window: 200000
-    input_modalities:
-    - text
-    - image
-    max_output_tokens: 32000
-    output_modalities:
-    - text
-    reasoning:
-      supported: true
-      toggle: true
-    structured_output: false
-    tool_call: true
-  provider: zen
-  provider_model_id: minimax-m3-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -6299,6 +10081,34 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: mistral/mistral-large-4
+    one-shot-man/display-name: Mistral Large 4
+    one-shot-man/registry-name: mistral-large-4:opencode-console
+  name: mistral-large-4-opencode-console
+spec:
+  model: mistral-large-4
+  overrides:
+    context_window: 524288
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 262144
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - none
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: mistral-large-4
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: meta/muse-glimmer-30b:nvidia
   name: muse-glimmer-30b-nvidia
 spec:
@@ -6322,6 +10132,71 @@ spec:
     tool_call: true
   provider: nvidia
   provider_model_id: meta/muse-glimmer-30b
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: meta/muse-spark-1.2
+    one-shot-man/display-name: Muse Spark 1.2
+    one-shot-man/registry-name: muse-spark-1.2:opencode-console
+  name: muse-spark-1-2-opencode-console
+spec:
+  model: muse-spark-1-2
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - minimal
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: muse-spark-1.2
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: meta/muse-spark-1.2
+    one-shot-man/display-name: Muse Spark 1.2 Free
+    one-shot-man/registry-name: muse-spark-1.2-contributor-free:opencode-console-free
+  name: muse-spark-1-2-opencode-console-free-free
+spec:
+  deprecated: true
+  model: muse-spark-1-2
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - minimal
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: muse-spark-1.2-contributor-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -6357,11 +10232,12 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: muse-spark-1.2-contributor-free:zen
-  name: muse-spark-1-2-zen-free
+    one-shot-man/canonical-id: meta/muse-spark-1.3
+    one-shot-man/display-name: Muse Spark 1.3
+    one-shot-man/registry-name: muse-spark-1.3:opencode-console
+  name: muse-spark-1-3-opencode-console
 spec:
-  deprecated: true
-  model: muse-spark-1-2
+  model: muse-spark-1-3
   overrides:
     context_window: 1048576
     input_modalities:
@@ -6381,8 +10257,41 @@ spec:
       supported: true
     structured_output: true
     tool_call: true
-  provider: zen
-  provider_model_id: muse-spark-1.2-contributor-free
+  provider: opencode-console
+  provider_model_id: muse-spark-1.3
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: meta/muse-spark-1.3
+    one-shot-man/display-name: Muse Spark 1.3 Free
+    one-shot-man/registry-name: muse-spark-1.3-contributor-free:opencode-console-free
+  name: muse-spark-1-3-opencode-console-free-free
+spec:
+  deprecated: true
+  model: muse-spark-1-3
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    - audio
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - minimal
+      - low
+      - medium
+      - high
+      - xhigh
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: muse-spark-1.3-contributor-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -6418,11 +10327,12 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: muse-spark-1.3-contributor-free:zen
-  name: muse-spark-1-3-zen-free
+    one-shot-man/canonical-id: meta/muse-wonder-1.0
+    one-shot-man/display-name: Muse Wonder
+    one-shot-man/registry-name: muse-wonder-1.0:opencode-console
+  name: muse-wonder-1-0-opencode-console
 spec:
-  deprecated: true
-  model: muse-spark-1-3
+  model: muse-wonder-1-0
   overrides:
     context_window: 1048576
     input_modalities:
@@ -6439,11 +10349,12 @@ spec:
       - medium
       - high
       - xhigh
+      - max
       supported: true
     structured_output: true
     tool_call: true
-  provider: zen
-  provider_model_id: muse-spark-1.3-contributor-free
+  provider: opencode-console
+  provider_model_id: muse-wonder-1.0
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -6533,8 +10444,10 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: nemotron-3.5-lightning-free:zen
-  name: nemotron-3-5-lightning-zen-free
+    one-shot-man/canonical-id: nvidia/nemotron-3.5-lightning
+    one-shot-man/display-name: Nemotron 3.5 Lightning Free
+    one-shot-man/registry-name: nemotron-3.5-lightning-free:opencode-console-free
+  name: nemotron-3-5-lightning-opencode-console-free-free
 spec:
   model: nemotron-3-5-lightning
   overrides:
@@ -6548,7 +10461,7 @@ spec:
       supported: true
     structured_output: true
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: nemotron-3.5-lightning-free
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -6583,8 +10496,10 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: nemotron-3.5-super-vl-free:zen
-  name: nemotron-3-5-super-vl-120b-a12b-zen-free
+    one-shot-man/canonical-id: nvidia/nemotron-3.5-super-vl-120b-a12b
+    one-shot-man/display-name: Nemotron 3.5 Super VL Free
+    one-shot-man/registry-name: nemotron-3.5-super-vl-free:opencode-console-free
+  name: nemotron-3-5-super-vl-120b-a12b-opencode-console-free-free
 spec:
   model: nemotron-3-5-super-vl-120b-a12b
   overrides:
@@ -6606,7 +10521,7 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: nemotron-3.5-super-vl-free
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -6641,8 +10556,10 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: nemotron-3-super-free:zen
-  name: nemotron-3-super-120b-a12b-zen-free
+    one-shot-man/canonical-id: nvidia/nemotron-3-super-120b-a12b
+    one-shot-man/display-name: Nemotron 3 Super Free
+    one-shot-man/registry-name: nemotron-3-super-free:opencode-console-free
+  name: nemotron-3-super-120b-a12b-opencode-console-free-free
 spec:
   deprecated: true
   model: nemotron-3-super-120b-a12b
@@ -6657,7 +10574,7 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: nemotron-3-super-free
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -6692,8 +10609,10 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: nemotron-3-ultra-free:zen
-  name: nemotron-3-ultra-550b-a55b-zen-free
+    one-shot-man/canonical-id: nvidia/nemotron-3-ultra-550b-a55b
+    one-shot-man/display-name: Nemotron 3 Ultra Free
+    one-shot-man/registry-name: nemotron-3-ultra-free:opencode-console-free
+  name: nemotron-3-ultra-550b-a55b-opencode-console-free-free
 spec:
   deprecated: true
   model: nemotron-3-ultra-550b-a55b
@@ -6708,7 +10627,7 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: nemotron-3-ultra-free
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -6739,8 +10658,10 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: north-mini-code-free:zen
-  name: north-mini-code-1-0-zen-free
+    one-shot-man/canonical-id: cohere/north-mini-code-1-0
+    one-shot-man/display-name: North Mini Code Free
+    one-shot-man/registry-name: north-mini-code-free:opencode-console-free
+  name: north-mini-code-1-0-opencode-console-free-free
 spec:
   deprecated: true
   model: north-mini-code-1-0
@@ -6758,8 +10679,36 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: north-mini-code-free
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/display-name: Pulse Alpha Free
+    one-shot-man/registry-name: pulse-alpha-free:opencode-console-free
+  name: pulse-alpha-free-opencode-console-free
+spec:
+  model: pulse-alpha-free
+  overrides:
+    context_window: 1048576
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - high
+      - max
+      supported: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: pulse-alpha-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -7102,6 +11051,32 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: alibaba/qwen3.5-plus
+    one-shot-man/display-name: Qwen3.5 Plus
+    one-shot-man/registry-name: qwen3.5-plus:opencode-console
+  name: qwen3-5-plus-opencode-console
+spec:
+  model: qwen3-5-plus
+  overrides:
+    context_window: 262144
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+      toggle: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: qwen3.5-plus
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: qwen3.5-plus:qwenchat
   name: qwen3-5-plus-qwenchat
 spec:
@@ -7125,6 +11100,59 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: alibaba/qwen3.6-plus
+    one-shot-man/display-name: Qwen3.6 Plus
+    one-shot-man/registry-name: qwen3.6-plus:opencode-console
+  name: qwen3-6-plus-opencode-console
+spec:
+  model: qwen3-6-plus
+  overrides:
+    context_window: 262144
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+      toggle: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: qwen3.6-plus
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: alibaba/qwen3.6-plus
+    one-shot-man/display-name: Qwen3.6 Plus Free
+    one-shot-man/registry-name: qwen3.6-plus-free:opencode-console-free
+  name: qwen3-6-plus-opencode-console-free-free
+spec:
+  deprecated: true
+  model: qwen3-6-plus
+  overrides:
+    context_window: 262144
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      supported: true
+      toggle: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: qwen3.6-plus-free
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: qwen3.6-plus:qwenchat
   name: qwen3-6-plus-qwenchat
 spec:
@@ -7143,31 +11171,6 @@ spec:
     tool_call: true
   provider: qwenchat
   provider_model_id: qwen3.6-plus
----
-apiVersion: one-shot-man/v1alpha1
-kind: ModelServing
-metadata:
-  annotations:
-    one-shot-man/registry-name: qwen3.6-plus-free:zen
-  name: qwen3-6-plus-zen-free
-spec:
-  deprecated: true
-  model: qwen3-6-plus
-  overrides:
-    context_window: 262144
-    input_modalities:
-    - text
-    - image
-    max_output_tokens: 65536
-    output_modalities:
-    - text
-    reasoning:
-      supported: true
-      toggle: true
-    structured_output: false
-    tool_call: true
-  provider: zen
-  provider_model_id: qwen3.6-plus-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -7320,6 +11323,36 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: alibaba/qwen3.8-flash
+    one-shot-man/display-name: Qwen3.8 Flash
+    one-shot-man/registry-name: qwen3.8-flash:opencode-console
+  name: qwen3-8-flash-opencode-console
+spec:
+  model: qwen3-8-flash
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - xhigh
+      supported: true
+      toggle: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: qwen3.8-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: qwen3.8-flash:opencode-go
   name: qwen3-8-flash-opencode-go
 spec:
@@ -7343,6 +11376,38 @@ spec:
     tool_call: true
   provider: opencode-go
   provider_model_id: qwen3.8-flash
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
+    one-shot-man/canonical-id: alibaba/qwen3.8-max
+    one-shot-man/display-name: Qwen3.8 Max
+    one-shot-man/registry-name: qwen3.8-max:opencode-console
+  name: qwen3-8-max-opencode-console
+spec:
+  model: qwen3-8-max
+  overrides:
+    context_window: 262144
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 131072
+    output_modalities:
+    - text
+    reasoning:
+      budget:
+        min: 1024
+      efforts:
+      - low
+      - medium
+      - xhigh
+      supported: true
+      toggle: true
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: qwen3.8-max
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
@@ -7405,6 +11470,31 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: alibaba/qwen3-coder-480b-a35b-instruct
+    one-shot-man/display-name: Qwen3 Coder
+    one-shot-man/registry-name: qwen3-coder:opencode-console
+  name: qwen3-coder-480b-a35b-instruct-opencode-console
+spec:
+  deprecated: true
+  model: qwen3-coder-480b-a35b-instruct
+  overrides:
+    context_window: 262144
+    input_modalities:
+    - text
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      supported: false
+    structured_output: false
+    tool_call: true
+  provider: opencode-console
+  provider_model_id: qwen3-coder
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: qwen3-coder-plus:qwenchat
   name: qwen3-coder-plus-qwenchat
 spec:
@@ -7428,8 +11518,9 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: ring-2.6-1t-free:zen
-  name: ring-2-6-1t-free-zen
+    one-shot-man/display-name: Ring 2.6 1T Free
+    one-shot-man/registry-name: ring-2.6-1t-free:opencode-console-free
+  name: ring-2-6-1t-free-opencode-console-free
 spec:
   deprecated: true
   model: ring-2-6-1t-free
@@ -7444,7 +11535,7 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: ring-2.6-1t-free
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -7508,8 +11599,9 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: space-bunny-free:zen
-  name: space-bunny-free-zen
+    one-shot-man/display-name: Space Bunny Free
+    one-shot-man/registry-name: space-bunny-free:opencode-console-free
+  name: space-bunny-free-opencode-console-free
 spec:
   deprecated: true
   model: space-bunny-free
@@ -7531,7 +11623,7 @@ spec:
       supported: true
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: space-bunny-free
 ---
 apiVersion: one-shot-man/v1alpha1
@@ -7596,6 +11688,36 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
+    one-shot-man/canonical-id: stepfun/step-5-preview
+    one-shot-man/display-name: Step 5 Preview Free
+    one-shot-man/registry-name: step-5-preview-free:opencode-console-free
+  name: step-5-preview-opencode-console-free-free
+spec:
+  deprecated: true
+  model: step-5-preview
+  overrides:
+    context_window: 1000000
+    input_modalities:
+    - text
+    - image
+    max_output_tokens: 65536
+    output_modalities:
+    - text
+    reasoning:
+      efforts:
+      - low
+      - medium
+      - high
+      supported: true
+    structured_output: true
+    tool_call: true
+  provider: opencode-console-free
+  provider_model_id: step-5-preview-free
+---
+apiVersion: one-shot-man/v1alpha1
+kind: ModelServing
+metadata:
+  annotations:
     one-shot-man/registry-name: step-5-preview:opencode-go
   name: step-5-preview-opencode-go
 spec:
@@ -7651,36 +11773,10 @@ apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: step-5-preview-free:zen
-  name: step-5-preview-zen-free
-spec:
-  deprecated: true
-  model: step-5-preview
-  overrides:
-    context_window: 1000000
-    input_modalities:
-    - text
-    - image
-    max_output_tokens: 65536
-    output_modalities:
-    - text
-    reasoning:
-      efforts:
-      - low
-      - medium
-      - high
-      supported: true
-    structured_output: true
-    tool_call: true
-  provider: zen
-  provider_model_id: step-5-preview-free
----
-apiVersion: one-shot-man/v1alpha1
-kind: ModelServing
-metadata:
-  annotations:
-    one-shot-man/registry-name: trinity-large-preview-free:zen
-  name: trinity-large-preview-zen-free
+    one-shot-man/canonical-id: arcee-ai/trinity-large-preview
+    one-shot-man/display-name: Trinity Large Preview
+    one-shot-man/registry-name: trinity-large-preview-free:opencode-console-free
+  name: trinity-large-preview-opencode-console-free-free
 spec:
   deprecated: true
   model: trinity-large-preview
@@ -7695,15 +11791,16 @@ spec:
       supported: false
     structured_output: false
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: trinity-large-preview-free
 ---
 apiVersion: one-shot-man/v1alpha1
 kind: ModelServing
 metadata:
   annotations:
-    one-shot-man/registry-name: x-preview-f-free:zen
-  name: x-preview-f-free-zen
+    one-shot-man/display-name: Ox Alpha Free (Unlimited)
+    one-shot-man/registry-name: x-preview-f-free:opencode-console-free
+  name: x-preview-f-free-opencode-console-free
 spec:
   deprecated: true
   model: x-preview-f-free
@@ -7723,7 +11820,7 @@ spec:
       supported: true
     structured_output: true
     tool_call: true
-  provider: zen
+  provider: opencode-console-free
   provider_model_id: x-preview-f-free
 ---
 apiVersion: one-shot-man/v1alpha1

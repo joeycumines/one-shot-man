@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -86,9 +87,30 @@ func TestRunVersionCommand(t *testing.T) {
 	if !strings.Contains(stdout, "osm version") {
 		t.Fatalf("expected version output, got %q", stdout)
 	}
+	if !strings.Contains(stdout, cliVersion()) {
+		t.Fatalf("version output %q does not report build version %q", stdout, cliVersion())
+	}
 
 	if stderr != "" {
 		t.Fatalf("expected no stderr output, got %q", stderr)
+	}
+}
+
+func TestVersionFromBuildInfo(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		info *debug.BuildInfo
+		want string
+	}{
+		{name: "tagged release", info: &debug.BuildInfo{Main: debug.Module{Version: "v0.7.0"}}, want: "0.7.0"},
+		{name: "development build", info: &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, want: "devel"},
+		{name: "missing info", want: "devel"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := versionFromBuildInfo(test.info); got != test.want {
+				t.Fatalf("versionFromBuildInfo() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 

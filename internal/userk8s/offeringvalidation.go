@@ -317,8 +317,9 @@ func (o *Objects) validateRoutes() error {
 
 // shaperMountPrefix returns the single mount prefix a shaper route publishes,
 // validating that every endpoint resolves to one non-empty mount prefix.
-// The shaper strips the prefix before dispatch, so an endpoint without one is
-// unreachable and endpoints that disagree would make some declared surface unreachable.
+// Surface-specific API path suffixes are not part of the mount. The shaper
+// strips the prefix before dispatch, so endpoints that disagree make a surface
+// unreachable.
 func shaperMountPrefix(name string, spec *v1alpha1.ModelRouteSpec) (string, error) {
 	var prefix string
 	for i, surface := range spec.Surfaces {
@@ -326,7 +327,15 @@ func shaperMountPrefix(name string, spec *v1alpha1.ModelRouteSpec) (string, erro
 		if err != nil {
 			return "", fmt.Errorf("ModelRoute %q endpoint for %q: %w", name, surface, err)
 		}
-		trimmed := strings.TrimRight(strings.TrimSuffix(strings.TrimRight(path, "/"), "/v1"), "/")
+		trimmed := strings.TrimRight(path, "/")
+		trimmed = strings.TrimSuffix(trimmed, "/v1")
+		switch surface {
+		case "chat", "responses":
+			trimmed = strings.TrimSuffix(trimmed, "/openai")
+		case "anthropic":
+			trimmed = strings.TrimSuffix(trimmed, "/anthropic")
+		}
+		trimmed = strings.TrimRight(trimmed, "/")
 		if trimmed == "" {
 			return "", fmt.Errorf("ModelRoute %q shaper endpoint for surface %q carries no mount prefix (path %q)", name, surface, path)
 		}

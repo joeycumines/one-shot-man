@@ -9,11 +9,11 @@ import (
 )
 
 // renderedPersonalProfile is a byte-exact copy of the personal profile that
-// `gmake render-model-profiles` produces in the joeyc-ai repository, refreshed
-// 2026-10-31. It exercises the real registry vocabulary: sanitized
+// `gmake render-model-profiles` produces in the joeyc-ai repository. It
+// exercises the real registry vocabulary: sanitized
 // metadata names carrying one-shot-man/registry-name annotations,
 // equivalent_to references written in raw registry spelling, cluster-scoped
-// catalog kinds alongside the Namespace and Secret, and 15 selector-matched
+// catalog kinds alongside the Namespace and Secret, and 13 selector-matched
 // bindings whose local chains are command (1Password, optional) + env only —
 // no file resolvers, per the local no-secret-files policy.
 const renderedPersonalProfile = "testdata/rendered-personal-profile.yaml"
@@ -28,14 +28,14 @@ func TestLoadRealRenderedProfile(t *testing.T) {
 		got  int
 		want int
 	}{
-		{"providers", len(objects.Providers), 14},
-		{"accesses", len(objects.Accesses), 14},
-		{"models", len(objects.Models), 112},
-		{"servings", len(objects.Servings), 152},
+		{"providers", len(objects.Providers), 16},
+		{"accesses", len(objects.Accesses), 15},
+		{"models", len(objects.Models), 172},
+		{"servings", len(objects.Servings), 239},
 		{"selections", len(objects.Selections), 1},
-		{"routes", len(objects.Routes), 13},
+		{"routes", len(objects.Routes), 14},
 		{"tools", len(objects.Tools), 9},
-		{"bindings", len(objects.Bindings), 12},
+		{"bindings", len(objects.Bindings), 13},
 		{"skipped", objects.Skipped, 2},
 	} {
 		if want.got != want.want {

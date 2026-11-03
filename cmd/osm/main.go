@@ -6,12 +6,31 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
+	"strings"
 
 	"github.com/joeycumines/one-shot-man/internal/command"
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
-const version = "0.1.0"
+func cliVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if ok {
+		return versionFromBuildInfo(info)
+	}
+	return "devel"
+}
+
+func versionFromBuildInfo(info *debug.BuildInfo) string {
+	if info == nil {
+		return "devel"
+	}
+	version := strings.TrimPrefix(info.Main.Version, "v")
+	if version == "" || version == "(devel)" {
+		return "devel"
+	}
+	return version
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -58,7 +77,7 @@ func run() error {
 	// Register built-in commands
 	helpCmd := command.NewHelpCommand(registry)
 	registry.Register(helpCmd)
-	registry.Register(command.NewVersionCommand(version))
+	registry.Register(command.NewVersionCommand(cliVersion()))
 	registry.Register(command.NewConfigCommand(cfg, configPath))
 	registry.Register(command.NewInitCommand())
 	registry.Register(command.NewScriptingCommand(cfg))

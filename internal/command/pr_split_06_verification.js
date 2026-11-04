@@ -656,12 +656,18 @@
             watchCancellation();
         }
 
-        // Read stdout and stderr concurrently via async streams.
+        // Read stdout and stderr concurrently via async streams. A stream the
+        // exec layer cut before EOF ends with truncated: true — the output is a
+        // prefix, so it cannot decide the verdict.
+        var streamsTruncated = false;
         async function readStream(stream, onChunk) {
             var buf = '';
             while (true) {
                 var chunk = await stream.read();
-                if (chunk.done) break;
+                if (chunk.done) {
+                    if (chunk.truncated === true) streamsTruncated = true;
+                    break;
+                }
                 if (chunk.value !== undefined && chunk.value !== null) {
                     var text = String(chunk.value);
                     buf += text;
@@ -694,6 +700,15 @@
                 output: stdoutBuf,
                 error: 'verification cancelled by user',
                 cancelled: true
+            };
+        }
+
+        if (streamsTruncated) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                error: 'verification output capture was cut short before EOF: the verdict is unknown'
             };
         }
 

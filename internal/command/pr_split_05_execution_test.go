@@ -543,7 +543,7 @@ func TestChunk05_ExecuteSplit_ResumesCompletedPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	if payload.First.Error != nil || payload.Resumed.Error != nil {
-		t.Fatalf("resume execution failed: first=%v resumed=%v", payload.First.Error, payload.Resumed.Error)
+		t.Fatalf("resume execution failed: first=%v resumed=%v (executeSplitAsync returned: %s)", payload.First.Error, payload.Resumed.Error, result)
 	}
 	if len(payload.First.Results) != 1 || len(payload.Resumed.Results) != 2 {
 		t.Fatalf("unexpected result counts: first=%d resumed=%d", len(payload.First.Results), len(payload.Resumed.Results))

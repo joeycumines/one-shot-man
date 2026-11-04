@@ -40,26 +40,16 @@
     // runAsync runs a command via osm:exec spawn and returns buffered output.
     async function runAsync(exec, argv) {
         var child = await exec.spawn(argv[0], argv.slice(1));
-        async function readAll(stream) {
-            var buf = '';
-            while (true) {
-                var chunk = await stream.read();
-                if (chunk.done) break;
-                if (chunk.value !== undefined && chunk.value !== null) {
-                    buf += String(chunk.value);
-                }
-            }
-            return buf;
-        }
-        var results = await Promise.all([
-            readAll(child.stdout),
-            readAll(child.stderr),
-            child.wait()
-        ]);
+        var collected = await prSplit._collectSpawnOutput(child, null);
+        // A cut capture arrives with code -1 and error true, the same exec-layer
+        // failure shape as execv, so a caller that checks the code cannot accept
+        // a prefix of the output as this command's result.
         return {
-            stdout: results[0],
-            stderr: results[1],
-            code: (results[2] && results[2].code !== undefined) ? results[2].code : 0
+            stdout: collected.stdout,
+            stderr: collected.stderr,
+            code: collected.code,
+            error: collected.error,
+            message: collected.message
         };
     }
 

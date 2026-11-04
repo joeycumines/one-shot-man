@@ -263,6 +263,8 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 	_ = obj.Set("stderr", wrapReadableStream(baseCtx, rt, adapter, loop, child.ReadStderr))
 
 	// child.wait(): Promise<{code: number, signal: string|null}>
+	// It resolves when the process is reaped and does not wait for the output
+	// streams; read() reports a stream that ended before EOF with truncated.
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
 		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 			code, waitErr := child.Wait()
@@ -322,11 +324,23 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 
 // wrapReadableStream creates a JS object with a read() method that returns
 // Promises, following the ReadableStream protocol: {value: string, done: bool}.
+// A stream the exec layer had to cut before EOF ends with done and
+// truncated: true, so a consumer can tell a prefix from the whole stream.
 func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, readFn func() (string, bool, error)) goja.Value {
 	streamObj := rt.NewObject()
 	_ = streamObj.Set("read", func(call goja.FunctionCall) goja.Value {
 		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 			data, done, err := readFn()
+			if errors.Is(err, errOutputStreamCutShort) {
+				// The stream ended because the exec layer closed it, not
+				// because the writer reached EOF: report the flag rather than a
+				// rejection so a streaming consumer can still drain what
+				// arrived, and so no consumer can mistake this for a clean end.
+				handleSettleErr(settle.Settle(false, func(rt *goja.Runtime) any {
+					return map[string]any{"value": nil, "done": true, "truncated": true}
+				}))
+				return
+			}
 			if err != nil {
 				handleSettleErr(settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) }))
 				return

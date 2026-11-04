@@ -301,40 +301,13 @@
         if (outputFn) outputFn('\u276f gh ' + args.join(' '));
 
         var child = await exec.spawn('gh', args);
-
-        async function readAll(stream, streamOutputFn) {
-            var buf = '';
-            while (true) {
-                var chunk = await stream.read();
-                if (chunk.done) break;
-                if (chunk.value !== undefined && chunk.value !== null) {
-                    var chunkStr = String(chunk.value);
-                    buf += chunkStr;
-                    if (streamOutputFn) {
-                        var lines = chunkStr.split('\n');
-                        for (var cl = 0; cl < lines.length; cl++) {
-                            var line = lines[cl];
-                            if (cl === lines.length - 1 && line === '') continue;
-                            streamOutputFn(line);
-                        }
-                    }
-                }
-            }
-            return buf;
-        }
-
-        var results = await Promise.all([
-            readAll(child.stdout, outputFn),
-            readAll(child.stderr, outputFn),
-            child.wait()
-        ]);
-        var code = (results[2] && results[2].code !== undefined) ? results[2].code : 0;
+        var collected = await prSplit._collectSpawnOutput(child, outputFn);
         return {
-            stdout: results[0],
-            stderr: results[1],
-            code: code,
-            error: code !== 0,
-            message: code !== 0 ? 'exit status ' + code : ''
+            stdout: collected.stdout,
+            stderr: collected.stderr,
+            code: collected.code,
+            error: collected.error,
+            message: collected.message
         };
     }
 

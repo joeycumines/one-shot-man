@@ -1,6 +1,7 @@
 package command
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -590,6 +591,131 @@ func TestChunk00_ResolveDir_NeverReturnsEmpty(t *testing.T) {
 			}
 			if s == "" {
 				t.Errorf("resolveDir returned empty string for input %q — must return at least '.'", tt.expr)
+			}
+		})
+	}
+}
+
+// TestChunk00_CollectSpawnOutputReportsTruncatedCapture pins the shared spawned-
+// command collector: a stream the exec layer cut before EOF must be reported as
+// truncated, with the prefix it received preserved, so no caller can turn a
+// partial capture into a successful result. A clean stream reports truncated
+// false and must not gain the flag.
+func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		stdoutChunks  string
+		stderrChunks  string
+		waitResult    string
+		wantStdout    string
+		wantStderr    string
+		wantCode      float64
+		wantError     bool
+		wantMessage   string
+		wantTruncated bool
+	}{
+		{
+			name:          "cut before EOF",
+			stdoutChunks:  `[{done: false, value: 'parent-done\n'}, {done: true, truncated: true}]`,
+			stderrChunks:  `[{done: true}]`,
+			waitResult:    `{code: 0, signal: null}`,
+			wantStdout:    "parent-done\n",
+			wantCode:      -1,
+			wantError:     true,
+			wantMessage:   "command output capture was cut short before EOF: the output is incomplete",
+			wantTruncated: true,
+		},
+		{
+			name:          "cut reported only on the stream",
+			stdoutChunks:  `[{done: false, value: 'partial'}, {done: true, truncated: true}]`,
+			stderrChunks:  `[{done: true}]`,
+			waitResult:    `{code: 0, signal: null}`,
+			wantStdout:    "partial",
+			wantCode:      -1,
+			wantError:     true,
+			wantMessage:   "command output capture was cut short before EOF: the output is incomplete",
+			wantTruncated: true,
+		},
+		{
+			name:         "clean",
+			stdoutChunks: `[{done: false, value: 'all of it\n'}, {done: true}]`,
+			stderrChunks: `[{done: false, value: 'warning\n'}, {done: true}]`,
+			waitResult:   `{code: 0, signal: null}`,
+			wantStdout:   "all of it\n",
+			wantStderr:   "warning\n",
+			wantCode:     0,
+		},
+		{
+			name:         "clean with a failing exit status",
+			stdoutChunks: `[{done: true}]`,
+			stderrChunks: `[{done: false, value: 'boom\n'}, {done: true}]`,
+			waitResult:   `{code: 3, signal: null}`,
+			wantStderr:   "boom\n",
+			wantCode:     3,
+			wantError:    true,
+			wantMessage:  "exit status 3",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
+
+			result, err := evalJS(`
+				(function() {
+					function stream(chunks) {
+						var queue = chunks.slice();
+						return {
+							read: async function() {
+								return queue.length > 0 ? queue.shift() : {done: true};
+							}
+						};
+					}
+					var child = {
+						stdout: stream(` + test.stdoutChunks + `),
+						stderr: stream(` + test.stderrChunks + `),
+						wait: async function() { return ` + test.waitResult + `; }
+					};
+					return prSplit._collectSpawnOutput(child, null).then(function(collected) {
+						return JSON.stringify(collected);
+					});
+				})()
+			`)
+			if err != nil {
+				t.Fatalf("collectSpawnOutput: %v", err)
+			}
+
+			var collected struct {
+				Stdout    string  `json:"stdout"`
+				Stderr    string  `json:"stderr"`
+				Code      float64 `json:"code"`
+				Error     bool    `json:"error"`
+				Message   string  `json:"message"`
+				Truncated bool    `json:"truncated"`
+			}
+			if err := json.Unmarshal([]byte(result.(string)), &collected); err != nil {
+				t.Fatalf("unmarshal %v: %v", result, err)
+			}
+			if collected.Stdout != test.wantStdout {
+				t.Errorf("stdout = %q, want %q", collected.Stdout, test.wantStdout)
+			}
+			if collected.Stderr != test.wantStderr {
+				t.Errorf("stderr = %q, want %q", collected.Stderr, test.wantStderr)
+			}
+			if collected.Code != test.wantCode {
+				t.Errorf("code = %v, want %v", collected.Code, test.wantCode)
+			}
+			if collected.Error != test.wantError {
+				t.Errorf("error = %v, want %v", collected.Error, test.wantError)
+			}
+			if collected.Message != test.wantMessage {
+				t.Errorf("message = %q, want %q", collected.Message, test.wantMessage)
+			}
+			if collected.Truncated != test.wantTruncated {
+				t.Errorf("truncated = %v, want %v", collected.Truncated, test.wantTruncated)
 			}
 		})
 	}

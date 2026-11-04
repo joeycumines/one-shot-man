@@ -131,11 +131,17 @@ func (e *processTreeCloseError) Unwrap() error {
 	return e.err
 }
 
+// errOutputStreamCutShort reports that an output stream ended because the exec
+// layer closed its pipe instead of the writer closing it: the consumer has a
+// prefix of the command's output, not all of it.
+var errOutputStreamCutShort = errors.New("command output stream was cut short before EOF: output is incomplete")
+
 type pipeQueue struct {
-	mu     sync.Mutex
-	items  []readChunk
-	notify chan struct{}
-	closed bool
+	mu        sync.Mutex
+	items     []readChunk
+	notify    chan struct{}
+	closed    bool
+	truncated bool
 }
 
 func newPipeQueue() pipeQueue {
@@ -170,6 +176,30 @@ func (q *pipeQueue) close() {
 	q.signal()
 }
 
+// closeTruncated closes the queue and records that the stream stopped before
+// EOF, so a consumer that drains it learns its output is a prefix rather than
+// the whole stream. It reports whether the queue was still open; a stream that
+// had already ended on its own is left untouched.
+func (q *pipeQueue) closeTruncated() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed {
+		return false
+	}
+	q.closed = true
+	q.truncated = true
+	q.signal()
+	return true
+}
+
+// cutShort reports whether the stream ended by the exec layer closing it rather
+// than by the writer reaching EOF.
+func (q *pipeQueue) cutShort() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.truncated
+}
+
 func (q *pipeQueue) pop() (readChunk, bool, bool, <-chan struct{}) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -195,6 +225,9 @@ func (c *ChildProcess) readPipe(q *pipeQueue) (string, bool, error) {
 			return string(chunk.data), false, nil
 		}
 		if closed {
+			if q.cutShort() {
+				return "", true, errOutputStreamCutShort
+			}
 			return "", true, nil
 		}
 		<-wait
@@ -374,49 +407,93 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 			pumpWg.Wait()
 			close(pumpDone)
 		}()
-		select {
-		case <-pumpDone:
-		case <-time.After(time.Second):
-			_ = stdoutPipe.Close()
-			_ = stderrPipe.Close()
-			pumpWg.Wait()
-		}
+		// wait() reports the process, not the drain: it must resolve as soon as
+		// the child is reaped, even when a writer the platform could not kill
+		// still holds a pipe. The streams stay readable until they reach EOF or
+		// are cut, and a pending read is itself what keeps them observable.
 		close(child.done)
+		child.settlePumps(outputEOFCeiling, pumpDone, stdoutPipe, stderrPipe)
 	}()
 
 	return child, nil
 }
 
-// pumpPipe reads from r in chunks and sends to ch. Closes ch on EOF or error.
+// settlePumps waits for the output pumps to finish. The process tree has been
+// closed, so every writer that stayed in it is dead and EOF arrives as soon as
+// the pumps are scheduled; the wait is therefore bounded only by ceiling, which
+// covers a writer that left the process group (setsid, shell job control).
+//
+// The child's own context is deliberately NOT a bound here: the exec binding
+// cancels it once the process is reaped, so treating it as an abandoned child
+// would cut every stream of every command that exits.
+//
+// A pump that cannot finish is cut: its stream is marked truncated, so a
+// consumer draining it receives a prefix flagged as incomplete rather than a
+// silent EOF.
+func (c *ChildProcess) settlePumps(ceiling time.Duration, pumpDone <-chan struct{}, stdoutPipe, stderrPipe io.Closer) {
+	timer := time.NewTimer(ceiling)
+	defer timer.Stop()
+	select {
+	case <-pumpDone:
+		return
+	case <-timer.C:
+	}
+
+	// Mark before closing: the pumps report their own truncation when a read
+	// ends without EOF, but their scheduling must not decide whether a consumer
+	// can tell. Only streams still open are marked.
+	c.stdout.closeTruncated()
+	c.stderr.closeTruncated()
+	_ = stdoutPipe.Close()
+	_ = stderrPipe.Close()
+	grace := time.NewTimer(outputAbortGrace)
+	defer grace.Stop()
+	select {
+	case <-pumpDone:
+	case <-grace.C:
+		// A pump that ignored Close must not keep the handle from settling; its
+		// queue is already closed, so any later push is dropped.
+	}
+}
+
+// pumpPipe reads from r in chunks and sends to q. Closes q on EOF, or records
+// the stream as truncated when the read ends without EOF.
 func (c *ChildProcess) pumpPipe(r io.ReadCloser, q *pipeQueue) {
-	defer q.close()
 	defer r.Close()
 	buf := make([]byte, DefaultBufSize)
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
-			// Copy the data — buf will be reused.
+			// Copy the data: buf will be reused.
 			data := make([]byte, n)
 			copy(data, buf[:n])
 			q.push(readChunk{data: data})
 		}
 		if err != nil {
-			// Treat all pipe-termination errors as EOF. When cmd.Wait()
-			// runs before the pump goroutine drains the pipe, the read
-			// returns "file already closed" or io.ErrClosedPipe — both
-			// are valid end-of-stream signals, not real errors.
+			if errors.Is(err, io.EOF) {
+				q.close()
+				return
+			}
+			// The writer never reached EOF: the collector closed the pipe, or
+			// the read failed. Either way the consumer has a prefix of the
+			// stream, and reporting that as a clean EOF is how truncated output
+			// used to pass for complete output.
+			q.closeTruncated()
 			return
 		}
 	}
 }
 
 // ReadStdout reads the next chunk from stdout. Returns (data, done, err).
-// When done is true, no more data will arrive.
+// done with errOutputStreamCutShort means the stream ended before EOF, so the
+// data read so far is a prefix of the command's output.
 func (c *ChildProcess) ReadStdout() (string, bool, error) {
 	return c.readPipe(&c.stdout)
 }
 
 // ReadStderr reads the next chunk from stderr. Returns (data, done, err).
+// done with errOutputStreamCutShort means the stream ended before EOF, so the
+// data read so far is a prefix of the command's output.
 func (c *ChildProcess) ReadStderr() (string, bool, error) {
 	return c.readPipe(&c.stderr)
 }
@@ -482,6 +559,10 @@ func (c *ChildProcess) CloseStdinContext(ctx context.Context) error {
 // END_STDIN
 
 // Wait blocks until the process exits. Returns (exitCode, error).
+//
+// It does not wait for the output streams to drain: a writer that escaped the
+// process group can hold a pipe open, and a handle must not hang on it. Streams
+// remain readable until they reach EOF or are cut, which they report.
 func (c *ChildProcess) Wait() (int, error) {
 	<-c.done
 	c.mu.Lock()

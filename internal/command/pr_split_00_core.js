@@ -363,6 +363,68 @@
         return await exec.execv(cmd);
     }
 
+    // collectSpawnOutput drains a spawned child's stdout and stderr while
+    // waiting for its exit status. A stream the exec layer had to cut before EOF
+    // ends with truncated: true (a writer outside the process group still held
+    // the pipe); that is reported, never hidden, because a prefix of the output
+    // is not the command's result.
+    //
+    // Returns {stdout, stderr, code, signal, truncated}. code falls back to 0
+    // when the handle reported no status, matching execv's contract.
+    async function collectSpawnOutput(child, outputFn) {
+        var truncated = false;
+
+        async function readAll(stream, streamOutputFn) {
+            var buf = '';
+            while (true) {
+                var chunk = await stream.read();
+                if (chunk.done) {
+                    if (chunk.truncated === true) truncated = true;
+                    break;
+                }
+                if (chunk.value !== undefined && chunk.value !== null) {
+                    var chunkStr = String(chunk.value);
+                    buf += chunkStr;
+                    // T44: Stream each chunk line-by-line to the output callback.
+                    if (streamOutputFn) {
+                        var chunkLines = chunkStr.split('\n');
+                        for (var cl = 0; cl < chunkLines.length; cl++) {
+                            var line = chunkLines[cl];
+                            // Skip trailing empty line from split (last \n produces empty string).
+                            if (cl === chunkLines.length - 1 && line === '') continue;
+                            streamOutputFn(line);
+                        }
+                    }
+                }
+            }
+            return buf;
+        }
+
+        // Collect stdout and stderr in parallel to avoid deadlock
+        // (the command may fill stderr while we drain stdout).
+        var results = await Promise.all([
+            readAll(child.stdout, outputFn),
+            readAll(child.stderr, outputFn),
+            child.wait()
+        ]);
+        var waitResult = results[2] || {};
+        var code = (waitResult.code !== undefined) ? waitResult.code : 0;
+        // A cut capture is an exec-layer failure, exactly as execv reports it:
+        // the caller gets the prefix it received plus a status it cannot mistake
+        // for the command's own.
+        return {
+            stdout: results[0],
+            stderr: results[1],
+            code: truncated ? -1 : code,
+            signal: waitResult.signal || null,
+            truncated: truncated,
+            error: truncated || code !== 0,
+            message: truncated
+                ? 'command output capture was cut short before EOF: the output is incomplete'
+                : (code !== 0 ? 'exit status ' + code : '')
+        };
+    }
+
     // gitExecAsync runs a git command asynchronously using exec.spawn().
     // Returns a Promise<{stdout: string, stderr: string, code: number, error: boolean, message: string}>.
     // Unlike gitExec (blocking), this does NOT freeze the event loop during execution,
@@ -396,49 +458,13 @@
         }
 
         var child = await exec.spawn('git', gitArgs);
-
-        // Collect stdout and stderr in parallel to avoid deadlock
-        // (process may fill stderr buffer before we finish reading stdout).
-        async function readAll(stream, streamOutputFn) {
-            var buf = '';
-            while (true) {
-                var chunk = await stream.read();
-                if (chunk.done) break;
-                if (chunk.value !== undefined && chunk.value !== null) {
-                    var chunkStr = String(chunk.value);
-                    buf += chunkStr;
-                    // T44: Stream each chunk line-by-line to the output callback.
-                    if (streamOutputFn) {
-                        var chunkLines = chunkStr.split('\n');
-                        for (var cl = 0; cl < chunkLines.length; cl++) {
-                            var line = chunkLines[cl];
-                            // Skip trailing empty line from split (last \n produces empty string).
-                            if (cl === chunkLines.length - 1 && line === '') continue;
-                            streamOutputFn(line);
-                        }
-                    }
-                }
-            }
-            return buf;
-        }
-
-        var results = await Promise.all([
-            readAll(child.stdout, outputFn),
-            readAll(child.stderr, outputFn),
-            child.wait()
-        ]);
-
-        var stdout = results[0];
-        var stderr = results[1];
-        var waitResult = results[2];
-        var code = (waitResult && waitResult.code !== undefined) ? waitResult.code : 0;
-
+        var collected = await collectSpawnOutput(child, outputFn);
         return {
-            stdout: stdout,
-            stderr: stderr,
-            code: code,
-            error: code !== 0,
-            message: code !== 0 ? 'exit status ' + code : ''
+            stdout: collected.stdout,
+            stderr: collected.stderr,
+            code: collected.code,
+            error: collected.error,
+            message: collected.message
         };
     }
 
@@ -476,53 +502,27 @@
             timeoutMs: (typeof options.timeoutMs === 'number' && options.timeoutMs > 0) ? options.timeoutMs : 0
         });
 
-        // Collect stdout and stderr in parallel (same readAll pattern as gitExecAsync).
-        async function readAll(stream, streamOutputFn) {
-            var buf = '';
-            while (true) {
-                var chunk = await stream.read();
-                if (chunk.done) break;
-                if (chunk.value !== undefined && chunk.value !== null) {
-                    var chunkStr = String(chunk.value);
-                    buf += chunkStr;
-                    if (streamOutputFn) {
-                        var chunkLines = chunkStr.split('\n');
-                        for (var cl = 0; cl < chunkLines.length; cl++) {
-                            var line = chunkLines[cl];
-                            if (cl === chunkLines.length - 1 && line === '') continue;
-                            streamOutputFn(line);
-                        }
-                    }
-                }
+        var collected = await collectSpawnOutput(child, outputFn);
+        var message = collected.message;
+        var timedOut = false;
+        if (!collected.truncated) {
+            // A cut capture already has its own message: the command's own
+            // signal or timeout must not disguise it.
+            var elapsedMs = Date.now() - startedAt;
+            if (collected.signal) {
+                message = String(collected.signal);
             }
-            return buf;
-        }
-
-        var results = await Promise.all([
-            readAll(child.stdout, outputFn),
-            readAll(child.stderr, outputFn),
-            child.wait()
-        ]);
-
-        var stdout = results[0];
-        var stderr = results[1];
-        var waitResult = results[2];
-        var code = (waitResult && waitResult.code !== undefined) ? waitResult.code : 0;
-        var elapsedMs = Date.now() - startedAt;
-        var message = code !== 0 ? 'exit status ' + code : '';
-        if (waitResult && waitResult.signal) {
-            message = String(waitResult.signal);
-        }
-        var timedOut = timeoutMs > 0 && elapsedMs >= timeoutMs;
-        if (timedOut) {
-            message = 'timed out after ' + timeoutMs + 'ms';
+            timedOut = timeoutMs > 0 && elapsedMs >= timeoutMs;
+            if (timedOut) {
+                message = 'timed out after ' + timeoutMs + 'ms';
+            }
         }
 
         return {
-            stdout: stdout,
-            stderr: stderr,
-            code: code,
-            error: code !== 0 || timedOut,
+            stdout: collected.stdout,
+            stderr: collected.stderr,
+            code: collected.code,
+            error: collected.error || timedOut,
             message: message
         };
     }
@@ -917,6 +917,7 @@
     };
 
     // Internal helpers.
+    prSplit._collectSpawnOutput = collectSpawnOutput;
     prSplit._gitExec = gitExec;
     prSplit._gitExecAsync = gitExecAsync;
     prSplit._shellExecAsync = shellExecAsync;

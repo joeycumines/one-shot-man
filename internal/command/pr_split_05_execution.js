@@ -479,7 +479,7 @@
                 // durable commit must surface, not collapse to an empty SHA.
                 splitResult.error = 'rev-parse HEAD after commit failed: ' + execFailReason(sha);
                 results.push(splitResult);
-                await cleanupWorktree();
+                await cleanupWorktreeAsync();
                 return { error: splitResult.error, results: results };
             }
             splitResult.sha = sha.stdout.trim();

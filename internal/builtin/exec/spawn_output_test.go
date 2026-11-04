@@ -341,11 +341,14 @@ func TestReadPipeUnblocksOnContext(t *testing.T) {
 }
 
 // newJSTestRuntime builds a bound goja runtime and event loop for JS-surface
-// tests. The loop runs until test cleanup.
+// tests. Auto-exit is OFF: with it on, the loop may commit to termination
+// before the first Submit lands (observed on loaded CI runners:
+// "submit: eventloop: loop has been terminated"), so the loop runs until
+// test cleanup, which already cancels, shuts down, and drains it.
 func newJSTestRuntime(t *testing.T) (*goja.Runtime, *gojaeventloop.Adapter, *goeventloop.Loop) {
 	t.Helper()
 	runtime := goja.New()
-	loop, err := goeventloop.New(goeventloop.WithAutoExit(true))
+	loop, err := goeventloop.New()
 	if err != nil {
 		t.Fatalf("event loop: %v", err)
 	}

@@ -2,7 +2,6 @@ package command
 
 import (
 	"encoding/json"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -563,7 +562,7 @@ func TestChunk05_ExecuteSplit_ResumesCompletedPrefix(t *testing.T) {
 // SHA, not a swallowed failure) and the worktree must be cleaned up.
 func TestChunk05_ExecuteSplitAsync_RevParseFailureSurfaces(t *testing.T) {
 	skipSlow(t)
-	// No t.Parallel: t.Setenv(PATH) mutates process env and forbids parallel.
+	t.Parallel()
 	dir, statuses := setupExecRepo(t)
 
 	evalJS := prsplittest.NewChunkEngine(t, nil,
@@ -571,21 +570,22 @@ func TestChunk05_ExecuteSplitAsync_RevParseFailureSurfaces(t *testing.T) {
 
 	statusJSON, _ := json.Marshal(statuses)
 
-	// Wrap the real git to fail only `rev-parse HEAD` run against the
-	// temporary worktree (argv contains "-C <worktree> rev-parse HEAD"),
-	// simulating a broken worktree HEAD after the commit. All other git
-	// calls pass through unchanged.
-	realGit, lookErr := exec.LookPath("git")
-	if lookErr != nil {
-		t.Skipf("git not found: %v", lookErr)
-	}
-	wrapper := filepath.Join(dir, "git-wrapper.sh")
-	writeFile(t, wrapper, "#!/bin/sh\nprev=\"\"\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-C\" ]; then wt=\"$a\"; fi\n  prev=\"$a\"\ndone\nif [ \"$1\" = \"-C\" ] && [ \"$3\" = \"rev-parse\" ] && [ \"$4\" = \"HEAD\" ]; then\n  case \"$2\" in\n    "+dir+") : ;;\n    *) echo \"fatal: bad revision\" >&2; exit 128 ;;\n  esac\nfi\nexec \""+realGit+"\" \"$@\"\n")
-	if err := os.Chmod(wrapper, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	if err := os.Symlink(wrapper, filepath.Join(dir, "git")); err != nil {
+	// Intercept the async git path so that `rev-parse HEAD` inside the
+	// temporary worktree fails after the commit, simulating a broken
+	// worktree HEAD. Everything else passes through to the real git binary.
+	// (Mocking _gitExecAsync keeps this cross-platform — no PATH shim.)
+	if _, err := evalJS(`
+		(function() {
+			var prSplit = globalThis.prSplit;
+			var orig = prSplit._gitExecAsync;
+			prSplit._gitExecAsync = async function(d, args) {
+				if (args && args[0] === 'rev-parse' && args[1] === 'HEAD' && d && d !== '` + escapeJSPath(dir) + `') {
+					return {stdout: '', stderr: 'fatal: bad revision\n', code: 128, error: true, message: 'exit status 128'};
+				}
+				return orig(d, args);
+			};
+		})()
+	`); err != nil {
 		t.Fatal(err)
 	}
 

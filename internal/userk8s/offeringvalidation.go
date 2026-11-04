@@ -319,24 +319,22 @@ func (o *Objects) validateRoutes() error {
 // shaperMountPrefix returns the single mount prefix a shaper route publishes,
 // validating that every endpoint resolves to one non-empty mount prefix.
 //
-// The renderer's layouts are <mount>/v1 for a legacy-protocol chat or responses
-// surface, <mount>/openai/v1 for an OpenAI-family one, and <mount> for a legacy
-// anthropic surface or <mount>/anthropic for an OpenAI-family one, so the
-// surface API path is not part of the mount. The shaper strips the prefix before
+// Declared endpoint paths carry the surface's API suffix — /v1 for chat and
+// responses, /v1 plus /openai or /anthropic on some providers — and that
+// suffix is not part of the mount. The shaper strips the prefix before
 // dispatch, so endpoints that disagree make a surface unreachable, and an
 // endpoint that is nothing but an API path (no mount at all) is refused rather
 // than silently accepted under the API segment's name.
 //
 // A mount whose last segment is one the surface strips ("/openai", "/anthropic",
-// "/v1") cannot be expressed by the bare layout, because that segment is what
-// gets removed; such a mount repeats it (<mount>/openai/openai/v1,
-// <mount>/v1/v1), which leaves the mount intact.
+// "/v1") must spell that segment twice in the endpoint (<mount>/openai/openai/v1,
+// <mount>/v1/v1), because the first occurrence is the one stripped.
 //
 // Repeated slashes and "." / ".." segments are resolved by cleanEndpointPath
-// first: they are never emitted by the renderer, and either spelled route
-// would otherwise survive the suffix strips ("/openai//v1" as the phantom mount
-// "/openai", "/a/./v1" as "/a/.") and defeat both the empty-prefix check and
-// duplicate-mount detection.
+// first, mirroring the shaper router's traversal resolution: either spelled
+// route would otherwise survive the suffix strips ("/openai//v1" as the phantom
+// mount "/openai", "/a/./v1" as "/a/.") and defeat both the empty-prefix check
+// and duplicate-mount detection.
 func shaperMountPrefix(name string, spec *v1alpha1.ModelRouteSpec) (string, error) {
 	var prefix string
 	for i, surface := range spec.Surfaces {
@@ -352,16 +350,16 @@ func shaperMountPrefix(name string, spec *v1alpha1.ModelRouteSpec) (string, erro
 			// keeps that segment as part of its mount. An endpoint that is the
 			// bare API segment carries no mount at all: the segment the surface
 			// owns cannot also name the mount (a real mount called "/openai" is
-			// expressed doubled).
+			// spelled doubled in the endpoint).
 			if rest, ok := strings.CutSuffix(trimmed, "/v1"); ok {
 				trimmed = strings.TrimSuffix(rest, "/openai")
 			} else if trimmed == "/openai" {
 				trimmed = ""
 			}
 		case "anthropic":
-			// A legacy access publishes a bare <mount>; an OpenAI-family access
-			// publishes <mount>/anthropic. A trailing /v1 is stripped too, so
-			// either spelling resolves to the mount.
+			// Both a bare <mount> and <mount>/anthropic spellings resolve to the
+			// mount. A trailing /v1 is stripped too, so either spelling of the
+			// API suffix resolves to the same mount.
 			trimmed = strings.TrimSuffix(trimmed, "/v1")
 			trimmed = strings.TrimSuffix(trimmed, "/anthropic")
 		}
@@ -593,9 +591,9 @@ func validateSurfaceSupport(name string, protocol v1alpha1.WireProtocol, spec *v
 
 // validateShaperMount requires every endpoint of a shaper route to resolve to
 // one non-empty mount prefix, with the surface API suffix removed (see
-// shaperMountPrefix for the renderer's layouts). The shaper strips the prefix
-// before dispatch, so an endpoint that is only an API path is unreachable and
-// endpoints that disagree would make some declared surface unreachable.
+// shaperMountPrefix). The shaper strips the prefix before dispatch, so an
+// endpoint that is only an API path is unreachable and endpoints that disagree
+// would make some declared surface unreachable.
 func validateShaperMount(name string, spec *v1alpha1.ModelRouteSpec) error {
 	_, err := shaperMountPrefix(name, spec)
 	return err

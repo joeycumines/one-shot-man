@@ -396,11 +396,11 @@ spec:
 }
 
 // TestShaperMountPrefixNormalization pins the endpoint->mount derivation for
-// every shape the renderer emits and every repeated-slash shape it does not.
-// The guard the function exists for is that no surface may reduce to an empty
-// prefix: repeated slashes between a surface API suffix and "/v1" used to leave
-// the suffix in place, so "/openai//v1" survived as the phantom mount "/openai"
-// and accepted an API-only path.
+// every accepted endpoint shape and every repeated-slash shape that is
+// normalized away. The guard the function exists for is that no surface may
+// reduce to an empty prefix: repeated slashes between a surface API suffix and
+// "/v1" used to leave the suffix in place, so "/openai//v1" survived as the
+// phantom mount "/openai" and accepted an API-only path.
 func TestShaperMountPrefixNormalization(t *testing.T) {
 	route := func(surface, endpoint string) *v1alpha1.ModelRouteSpec {
 		return &v1alpha1.ModelRouteSpec{
@@ -415,9 +415,9 @@ func TestShaperMountPrefixNormalization(t *testing.T) {
 		want     string
 		wantErr  string
 	}{
-		{name: "legacy chat", surface: "chat", endpoint: "http://127.0.0.1:11239/alpha/v1", want: "/alpha"},
-		{name: "legacy responses", surface: "responses", endpoint: "http://127.0.0.1:11239/alpha/v1", want: "/alpha"},
-		{name: "legacy anthropic mount", surface: "anthropic", endpoint: "http://127.0.0.1:11239/alpha", want: "/alpha"},
+		{name: "bare v1 chat", surface: "chat", endpoint: "http://127.0.0.1:11239/alpha/v1", want: "/alpha"},
+		{name: "bare v1 responses", surface: "responses", endpoint: "http://127.0.0.1:11239/alpha/v1", want: "/alpha"},
+		{name: "bare anthropic mount", surface: "anthropic", endpoint: "http://127.0.0.1:11239/alpha", want: "/alpha"},
 		{name: "anthropic api suffix", surface: "anthropic", endpoint: "http://127.0.0.1:11239/alpha/anthropic", want: "/alpha"},
 		{name: "anthropic api suffix and v1", surface: "anthropic", endpoint: "http://127.0.0.1:11239/alpha/anthropic/v1", want: "/alpha"},
 		{name: "trailing slash", surface: "chat", endpoint: "http://127.0.0.1:11239/alpha/v1/", want: "/alpha"},
@@ -450,7 +450,7 @@ func TestShaperMountPrefixNormalization(t *testing.T) {
 		// A chat/responses endpoint that is the bare API segment carries no
 		// mount either. Accepting it would name the mount after the segment the
 		// surface owns, and would collide with a real mount called "/openai"
-		// (which is expressed doubled). This is the check the gated strip must
+		// (which is spelled doubled). This is the check the gated strip must
 		// not weaken.
 		{name: "bare api segment", surface: "chat", endpoint: "http://127.0.0.1:11239/openai", wantErr: "carries no mount prefix"},
 		{name: "bare api segment trailing slash", surface: "chat", endpoint: "http://127.0.0.1:11239/openai/", wantErr: "carries no mount prefix"},
@@ -477,17 +477,16 @@ func TestShaperMountPrefixNormalization(t *testing.T) {
 	}
 }
 
-// TestRouteValidationAllowsMixedSurfaceLayouts pins the renderer's real
-// convention: a legacy-protocol access publishes <mount>/v1 for chat while the
-// same route publishes a bare <mount> for anthropic, and an openai-family
-// access publishes <mount>/openai/v1 and <mount>/anthropic. Both are one mount.
+// TestRouteValidationAllowsMixedSurfaceLayouts pins the accepted convention:
+// a route may publish a bare <mount> for anthropic with <mount>/v1 for chat,
+// or <mount>/anthropic with <mount>/openai/v1. Both spellings are one mount.
 func TestRouteValidationAllowsMixedSurfaceLayouts(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		endpoint map[string]string
 	}{
 		{
-			name: "legacy protocol",
+			name: "bare mount layouts",
 			endpoint: map[string]string{
 				"anthropic": "http://127.0.0.1:11239/alpha",
 				"chat":      "http://127.0.0.1:11239/alpha/v1",
@@ -495,17 +494,17 @@ func TestRouteValidationAllowsMixedSurfaceLayouts(t *testing.T) {
 			},
 		},
 		{
-			name: "openai family",
+			name: "api-suffix layouts",
 			endpoint: map[string]string{
 				"anthropic": "http://127.0.0.1:11239/alpha/anthropic",
 				"chat":      "http://127.0.0.1:11239/alpha/openai/v1",
 				"responses": "http://127.0.0.1:11239/alpha/openai/v1",
 			},
 		},
-		// The renderer emits both layouts for one mount depending on the
-		// access protocol, so a route may legitimately mix them.
+		// Both layouts may appear on one mount, so a route may legitimately
+		// mix them.
 		{
-			name: "legacy chat with openai anthropic",
+			name: "v1 chat with anthropic suffix",
 			endpoint: map[string]string{
 				"anthropic": "http://127.0.0.1:11239/alpha/anthropic",
 				"chat":      "http://127.0.0.1:11239/alpha/v1",

@@ -121,6 +121,22 @@
 
         await cleanupWorktree();
 
+        // An aborted capture is an exec-layer failure whose stderr may be
+        // empty: the verdict is unknown, so it can neither pass nor count as
+        // a deterministic failure (and must never be forgiven as pre-existing).
+        var captureCutShort = result.error === true && /cut short|aborted before EOF|incomplete/.test(String(result.message || ''));
+
+        if (captureCutShort) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                truncated: true,
+                error: 'verify failed: ' + (result.message || 'output capture was cut short before EOF') +
+                    (stderrBuf.trim() !== '' ? ': ' + stderrBuf.trim() : '')
+            };
+        }
+
         if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
@@ -134,7 +150,9 @@
             name: branchName,
             passed: result.code === 0,
             output: stdoutBuf,
-            error: result.code !== 0 ? 'verify failed (exit ' + result.code + '): ' + stderrBuf : null
+            error: result.code !== 0
+                ? 'verify failed (exit ' + result.code + '): ' + (stderrBuf.trim() !== '' ? stderrBuf : (result.message || ''))
+                : null
         };
     }
 
@@ -160,8 +178,11 @@
 
         // Pre-existing failure detection: run verification on the source
         // branch first. If it fails, split branch failures are flagged as
-        // pre-existing rather than new regressions.
+        // pre-existing rather than new regressions. A baseline whose verdict is
+        // UNKNOWN (truncated capture, cancelled) is not a baseline failure:
+        // it disables pre-existing detection rather than forgiving anything.
         var baselineFailure = null;
+        var baselineUnknown = false;
         if (verifyCommand && plan.sourceBranch) {
             var baselineResult = await verifySplit(plan.sourceBranch, {
                 dir: dir,
@@ -169,7 +190,9 @@
                 verifyTimeoutMs: verifyTimeoutMs,
                 outputFn: options.outputFn || null
             });
-            if (!baselineResult.passed) {
+            if (baselineResult.truncated) {
+                baselineUnknown = true;
+            } else if (!baselineResult.passed) {
                 baselineFailure = baselineResult;
             }
         }
@@ -223,10 +246,14 @@
                 result.scopedVerify = scopedCmd;
             }
 
-            // Mark pre-existing failures.
-            if (!result.passed && baselineFailure) {
+            // Mark pre-existing failures. A truncated (unknown-verdict) branch
+            // is NEVER pre-existing: its capture was cut short, so it cannot be
+            // attributed to the source branch and counts as a failure.
+            if (!result.passed && !result.truncated && baselineFailure) {
                 result.preExisting = true;
                 result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
+            } else if (!result.passed && result.truncated && baselineUnknown) {
+                result.error = (result.error || 'verification failed') + ' (baseline verdict unknown: capture was cut short)';
             }
 
             var branchElapsedMs = Date.now() - branchStartTime;
@@ -708,6 +735,7 @@
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
+                truncated: true,
                 error: 'verification output capture was cut short before EOF: the verdict is unknown'
             };
         }
@@ -725,7 +753,7 @@
             name: branchName,
             passed: exitCode === 0,
             output: stdoutBuf,
-            error: exitCode !== 0 ? 'verify failed (exit ' + exitCode + '): ' + stderrBuf : null
+            error: exitCode !== 0 ? 'verify failed (exit ' + exitCode + '): ' + (stderrBuf.trim() !== '' ? stderrBuf : '') : null
         };
         } finally {
             if (typeof stopCancelWatch === 'function') stopCancelWatch();
@@ -774,8 +802,11 @@
         var failedBranches = {};
 
         // Pre-existing failure detection: run verification on the source
-        // branch first.
+        // branch first. A baseline whose verdict is UNKNOWN (truncated capture)
+        // is not a baseline failure: it disables pre-existing detection rather
+        // than forgiving failing branches.
         var baselineFailure = null;
+        var baselineUnknown = false;
         if (verifyCommand && plan.sourceBranch) {
             var baselineResult = await verifySplitAsync(plan.sourceBranch, {
                 dir: dir,
@@ -787,7 +818,9 @@
             if (baselineResult.cancelled || isCancelledNow()) {
                 return { allPassed: false, results: [], error: 'verification cancelled by user' };
             }
-            if (!baselineResult.passed) {
+            if (baselineResult.truncated) {
+                baselineUnknown = true;
+            } else if (!baselineResult.passed) {
                 baselineFailure = baselineResult;
             }
         }
@@ -844,9 +877,14 @@
                 result.scopedVerify = scopedCmd;
             }
 
-            if (!result.passed && baselineFailure) {
+            // A truncated (unknown-verdict) branch is NEVER pre-existing: its
+            // capture was cut short, so it cannot be attributed to the source
+            // branch and counts as a failure.
+            if (!result.passed && !result.truncated && baselineFailure) {
                 result.preExisting = true;
                 result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
+            } else if (!result.passed && result.truncated && baselineUnknown) {
+                result.error = (result.error || 'verification failed') + ' (baseline verdict unknown: capture was cut short)';
             }
 
             var branchElapsedMs = Date.now() - branchStartTime;

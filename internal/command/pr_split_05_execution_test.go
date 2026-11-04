@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -553,5 +554,90 @@ func TestChunk05_ExecuteSplit_ResumesCompletedPrefix(t *testing.T) {
 	}
 	if payload.Resumed.Results[1].Name != "split/02-dels" || payload.Resumed.Results[1].SHA == "" {
 		t.Errorf("pending split was not executed: %+v", payload.Resumed.Results[1])
+	}
+}
+
+// TestChunk05_ExecuteSplitAsync_RevParseFailureSurfaces pins the async
+// execution contract: when rev-parse HEAD fails inside the just-committed
+// worktree, the error must surface with the exec-layer reason (not an empty
+// SHA, not a swallowed failure) and the worktree must be cleaned up.
+func TestChunk05_ExecuteSplitAsync_RevParseFailureSurfaces(t *testing.T) {
+	skipSlow(t)
+	// No t.Parallel: t.Setenv(PATH) mutates process env and forbids parallel.
+	dir, statuses := setupExecRepo(t)
+
+	evalJS := prsplittest.NewChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
+
+	statusJSON, _ := json.Marshal(statuses)
+
+	// Wrap the real git to fail only `rev-parse HEAD` run against the
+	// temporary worktree (argv contains "-C <worktree> rev-parse HEAD"),
+	// simulating a broken worktree HEAD after the commit. All other git
+	// calls pass through unchanged.
+	realGit, lookErr := exec.LookPath("git")
+	if lookErr != nil {
+		t.Skipf("git not found: %v", lookErr)
+	}
+	wrapper := filepath.Join(dir, "git-wrapper.sh")
+	writeFile(t, wrapper, "#!/bin/sh\nprev=\"\"\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-C\" ]; then wt=\"$a\"; fi\n  prev=\"$a\"\ndone\nif [ \"$1\" = \"-C\" ] && [ \"$3\" = \"rev-parse\" ] && [ \"$4\" = \"HEAD\" ]; then\n  case \"$2\" in\n    "+dir+") : ;;\n    *) echo \"fatal: bad revision\" >&2; exit 128 ;;\n  esac\nfi\nexec \""+realGit+"\" \"$@\"\n")
+	if err := os.Chmod(wrapper, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if err := os.Symlink(wrapper, filepath.Join(dir, "git")); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := evalJS(`
+		(function() {
+			var prSplit = globalThis.prSplit;
+			var plan = {
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				dir: '` + escapeJSPath(dir) + `',
+				fileStatuses: ` + string(statusJSON) + `,
+				splits: [
+					{ name: 'split/01-mods', files: ['modify.go', 'new-file.go'], message: 'modifications' }
+				]
+			};
+			var r = await prSplit.executeSplitAsync(plan);
+			return JSON.stringify(r);
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var execResult struct {
+		Error   *string `json:"error"`
+		Results []struct {
+			Name  string  `json:"name"`
+			SHA   string  `json:"sha"`
+			Error *string `json:"error"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &execResult); err != nil {
+		t.Fatal(err)
+	}
+
+	if execResult.Error == nil {
+		t.Fatal("expected top-level error for rev-parse failure")
+	}
+	if !strings.Contains(*execResult.Error, "rev-parse HEAD after commit failed") {
+		t.Errorf("error should name the rev-parse failure, got %q", *execResult.Error)
+	}
+	// The exec-layer reason must survive: stderr content and/or exec message.
+	if !strings.Contains(*execResult.Error, "bad revision") && !strings.Contains(*execResult.Error, "exit status") {
+		t.Errorf("error should carry the exec-layer reason, got %q", *execResult.Error)
+	}
+	if len(execResult.Results) != 1 || execResult.Results[0].SHA != "" {
+		t.Errorf("failed split must not carry a SHA, got %+v", execResult.Results)
+	}
+
+	// The worktree for the failed split must be gone.
+	wtList := gitCmd(t, dir, "worktree", "list", "--porcelain")
+	if strings.Contains(wtList, "split/01-mods") {
+		t.Error("worktree for failed split should have been cleaned up")
 	}
 }

@@ -111,6 +111,11 @@ type ChildProcess struct {
 	done     chan struct{} // closed when process exits
 	exitCode int
 	exitErr  error
+	// abort is closed to cut the output pump drain promptly (Kill, caller
+	// timeout, base-context cancellation, or a failed tree close) instead of
+	// waiting out the EOF ceiling on a writer the platform could not kill.
+	abort     chan struct{}
+	abortOnce sync.Once
 
 	// Pipe management (nil when not piped).
 	stdinPipe io.WriteCloser
@@ -200,6 +205,13 @@ func (q *pipeQueue) cutShort() bool {
 	return q.truncated
 }
 
+// isClosed reports whether the queue has reached a terminal state.
+func (q *pipeQueue) isClosed() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.closed
+}
+
 func (q *pipeQueue) pop() (readChunk, bool, bool, <-chan struct{}) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -215,7 +227,9 @@ func (q *pipeQueue) pop() (readChunk, bool, bool, <-chan struct{}) {
 // readPipe captures the current notification channel while holding the same
 // lock used by producers. If a producer signals after this check, it closes
 // this captured channel, guaranteeing that the wait wakes and re-checks.
-func (c *ChildProcess) readPipe(q *pipeQueue) (string, bool, error) {
+// ctx bounds the wait so a consumer blocked in ReadStdout/ReadStderr returns
+// when the caller's context is cancelled (e.g. loop shutdown).
+func (c *ChildProcess) readPipe(ctx context.Context, q *pipeQueue) (string, bool, error) {
 	for {
 		chunk, ok, closed, wait := q.pop()
 		if ok {
@@ -230,7 +244,27 @@ func (c *ChildProcess) readPipe(q *pipeQueue) (string, bool, error) {
 			}
 			return "", true, nil
 		}
-		<-wait
+		// A background context never cancels: the read waits only on the queue.
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			// Re-check under the lock: the producer may have closed the queue
+			// concurrently with the cancellation.
+			chunk, ok, closed, _ := q.pop()
+			if ok {
+				if chunk.err != nil {
+					return "", true, chunk.err
+				}
+				return string(chunk.data), false, nil
+			}
+			if closed {
+				if q.cutShort() {
+					return "", true, errOutputStreamCutShort
+				}
+				return "", true, nil
+			}
+			return "", false, ctx.Err()
+		}
 	}
 }
 
@@ -361,6 +395,7 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 		cmd:       cmd,
 		tree:      tree,
 		done:      make(chan struct{}),
+		abort:     make(chan struct{}),
 		stdinPipe: stdinPipe,
 		stdout:    newPipeQueue(),
 		stderr:    newPipeQueue(),
@@ -399,6 +434,10 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 		}
 		if closeErr != nil {
 			child.exitErr = errors.Join(child.exitErr, &processTreeCloseError{err: closeErr})
+			// A tree close that failed cannot vouch for the pipe writers, so
+			// the drain is aborted immediately rather than bounded by the
+			// ceiling (mirrors runExecCommand's captureAbort).
+			child.AbortDrain()
 		}
 		child.mu.Unlock()
 
@@ -412,38 +451,54 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 		// still holds a pipe. The streams stay readable until they reach EOF or
 		// are cut, and a pending read is itself what keeps them observable.
 		close(child.done)
-		child.settlePumps(outputEOFCeiling, pumpDone, stdoutPipe, stderrPipe)
+		child.settlePumps(ctx, outputEOFCeiling, child.abort, pumpDone, stdoutPipe, stderrPipe)
 	}()
 
 	return child, nil
 }
 
+// AbortDrain cuts the output pump drain promptly instead of waiting out the
+// EOF ceiling. Kill, caller timeout, base-context cancellation, and a failed
+// process-tree close all trigger it; a normal reap does not. Safe on a
+// zero-value ChildProcess (no abort channel): the drain abort is best-effort.
+func (c *ChildProcess) AbortDrain() {
+	if c.abort == nil {
+		return
+	}
+	c.abortOnce.Do(func() { close(c.abort) })
+}
+
 // settlePumps waits for the output pumps to finish. The process tree has been
 // closed, so every writer that stayed in it is dead and EOF arrives as soon as
 // the pumps are scheduled; the wait is therefore bounded only by ceiling, which
-// covers a writer that left the process group (setsid, shell job control).
+// covers a writer that left the process group (setsid, shell job control), and
+// by abort (Kill, caller timeout, base-context cancellation, failed tree
+// close).
 //
 // The child's own context is deliberately NOT a bound here: the exec binding
 // cancels it once the process is reaped, so treating it as an abandoned child
-// would cut every stream of every command that exits.
+// would cut every stream of every command that exits. The spawn base ctx IS
+// passed in so a blocked consumer can observe cancellation through readPipe.
 //
-// A pump that cannot finish is cut: its stream is marked truncated, so a
-// consumer draining it receives a prefix flagged as incomplete rather than a
-// silent EOF.
-func (c *ChildProcess) settlePumps(ceiling time.Duration, pumpDone <-chan struct{}, stdoutPipe, stderrPipe io.Closer) {
+// When the bound fires, the pipes are closed FIRST: that unblocks an in-flight
+// pump read with os.ErrClosed, letting the pump push its final chunk and mark
+// the queue itself, so no data is dropped and a stream that reached a clean
+// io.EOF is not falsely marked. Only after the pumps have settled (or the grace
+// elapsed) are the still-open queues marked truncated, so a consumer draining
+// them receives a prefix flagged as incomplete rather than a silent EOF.
+func (c *ChildProcess) settlePumps(ctx context.Context, ceiling time.Duration, abort <-chan struct{}, pumpDone <-chan struct{}, stdoutPipe, stderrPipe io.Closer) {
 	timer := time.NewTimer(ceiling)
 	defer timer.Stop()
 	select {
 	case <-pumpDone:
 		return
+	case <-abort:
 	case <-timer.C:
 	}
 
-	// Mark before closing: the pumps report their own truncation when a read
-	// ends without EOF, but their scheduling must not decide whether a consumer
-	// can tell. Only streams still open are marked.
-	c.stdout.closeTruncated()
-	c.stderr.closeTruncated()
+	// Close the pipes first so a racing pump delivers its last chunk and
+	// reports its own outcome; only queues still open after the pumps settle
+	// are marked truncated.
 	_ = stdoutPipe.Close()
 	_ = stderrPipe.Close()
 	grace := time.NewTimer(outputAbortGrace)
@@ -452,14 +507,25 @@ func (c *ChildProcess) settlePumps(ceiling time.Duration, pumpDone <-chan struct
 	case <-pumpDone:
 	case <-grace.C:
 		// A pump that ignored Close must not keep the handle from settling; its
-		// queue is already closed, so any later push is dropped.
+		// queue is marked below, so any later push is dropped.
 	}
+	c.stdout.closeTruncated()
+	c.stderr.closeTruncated()
 }
 
 // pumpPipe reads from r in chunks and sends to q. Closes q on EOF, or records
 // the stream as truncated when the read ends without EOF.
 func (c *ChildProcess) pumpPipe(r io.ReadCloser, q *pipeQueue) {
 	defer r.Close()
+	// Safety net: whatever happens (panic, or a future exit path that misses
+	// the explicit branches), the queue must end so a consumer can never block
+	// forever. The explicit branches close with the precise terminal state;
+	// this defer only acts if they did not.
+	defer func() {
+		if !q.isClosed() {
+			q.closeTruncated()
+		}
+	}()
 	buf := make([]byte, DefaultBufSize)
 	for {
 		n, err := r.Read(buf)
@@ -484,18 +550,20 @@ func (c *ChildProcess) pumpPipe(r io.ReadCloser, q *pipeQueue) {
 	}
 }
 
-// ReadStdout reads the next chunk from stdout. Returns (data, done, err).
+// ReadStdoutContext reads the next chunk from stdout. Returns (data, done, err).
 // done with errOutputStreamCutShort means the stream ended before EOF, so the
-// data read so far is a prefix of the command's output.
-func (c *ChildProcess) ReadStdout() (string, bool, error) {
-	return c.readPipe(&c.stdout)
+// data read so far is a prefix of the command's output. ctx bounds a blocked
+// read so callers can unblock on cancellation (e.g. loop shutdown).
+func (c *ChildProcess) ReadStdoutContext(ctx context.Context) (string, bool, error) {
+	return c.readPipe(ctx, &c.stdout)
 }
 
-// ReadStderr reads the next chunk from stderr. Returns (data, done, err).
+// ReadStderrContext reads the next chunk from stderr. Returns (data, done, err).
 // done with errOutputStreamCutShort means the stream ended before EOF, so the
-// data read so far is a prefix of the command's output.
-func (c *ChildProcess) ReadStderr() (string, bool, error) {
-	return c.readPipe(&c.stderr)
+// data read so far is a prefix of the command's output. ctx bounds a blocked
+// read so callers can unblock on cancellation (e.g. loop shutdown).
+func (c *ChildProcess) ReadStderrContext(ctx context.Context) (string, bool, error) {
+	return c.readPipe(ctx, &c.stderr)
 }
 
 // WriteStdinContext writes data while observing ctx cancellation.
@@ -570,10 +638,13 @@ func (c *ChildProcess) Wait() (int, error) {
 	return c.exitCode, c.exitErr
 }
 
-// Kill terminates the process and its platform-owned descendants.
+// Kill terminates the process and its platform-owned descendants. It also
+// aborts the output pump drain so a writer the platform could not kill does
+// not stall the streams for the full EOF ceiling.
 func (c *ChildProcess) Kill() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.AbortDrain()
 	if c.closed {
 		return nil
 	}

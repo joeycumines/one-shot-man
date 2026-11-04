@@ -8,6 +8,8 @@
     // captured at load time. This enables test mocking since createPRs
     // involves external calls (push, gh CLI) that must be mockable.
     var padIndex = prSplit._padIndex;
+    // Late-bound so test mocks of _execFailReason are honored.
+    var execFailReason = function(result) { return prSplit._execFailReason(result); };
 
     // --- formatPRTitle — formats PR title following Commit-Loom conventions ---
     function formatPRTitle(plan, splitIndex) {
@@ -197,9 +199,9 @@
                     name: split.name,
                     pushed: false,
                     prUrl: '',
-                    error: 'push failed: ' + pushResult.stderr.trim()
+                    error: 'push failed: ' + execFailReason(pushResult)
                 });
-                return { error: 'push failed for ' + split.name + ': ' + pushResult.stderr.trim(), results: results };
+                return { error: 'push failed for ' + split.name + ': ' + execFailReason(pushResult), results: results };
             }
             results.push({
                 name: split.name,
@@ -245,7 +247,7 @@
 
             var ghResult = await exec.execv(ghArgs);
             if (ghResult.code !== 0) {
-                results[pi].error = 'gh pr create failed: ' + ghResult.stderr.trim();
+                results[pi].error = 'gh pr create failed: ' + execFailReason(ghResult);
             } else {
                 results[pi].prUrl = ghResult.stdout.trim();
             }
@@ -262,7 +264,7 @@
                 ];
                 var mergeResult = await exec.execv(mergeArgs);
                 if (mergeResult.code !== 0) {
-                    results[k].mergeError = 'auto-merge failed: ' + mergeResult.stderr.trim();
+                    results[k].mergeError = 'auto-merge failed: ' + execFailReason(mergeResult);
                 } else {
                     results[k].autoMerge = true;
                 }
@@ -390,9 +392,9 @@
                     name: split.name,
                     pushed: false,
                     prUrl: '',
-                    error: 'push failed: ' + pushResult.stderr.trim()
+                    error: 'push failed: ' + execFailReason(pushResult)
                 });
-                return { error: 'push failed for ' + split.name + ': ' + pushResult.stderr.trim(), results: results };
+                return { error: 'push failed for ' + split.name + ': ' + execFailReason(pushResult), results: results };
             }
             results.push({
                 name: split.name,
@@ -438,7 +440,7 @@
 
             var ghResult = await ghExecAsync(ghArgs);
             if (ghResult.code !== 0) {
-                results[pi].error = 'gh pr create failed: ' + ghResult.stderr.trim();
+                results[pi].error = 'gh pr create failed: ' + execFailReason(ghResult);
             } else {
                 results[pi].prUrl = ghResult.stdout.trim();
             }
@@ -457,7 +459,7 @@
                 ];
                 var mergeResult = await ghExecAsync(mergeArgs);
                 if (mergeResult.code !== 0) {
-                    results[k].mergeError = 'auto-merge failed: ' + mergeResult.stderr.trim();
+                    results[k].mergeError = 'auto-merge failed: ' + execFailReason(mergeResult);
                 } else {
                     results[k].autoMerge = true;
                 }

@@ -153,20 +153,40 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 		return adapter.TrackPromise(baseCtx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
 			childCtx := workerCtx
 			var cancel context.CancelFunc
+			// abortCtx carries the caller's timeout and the base context but is
+			// NOT cancelled when the child is reaped: a normal exit must not cut
+			// its own streams. It only fires the drain abort on timeout, base
+			// cancellation, or (via AbortDrain) Kill / failed tree close.
+			abortCtx := workerCtx
+			var abortCancel context.CancelFunc
 			if timeout > 0 {
 				childCtx, cancel = context.WithTimeout(workerCtx, timeout)
+				abortCtx, abortCancel = context.WithTimeout(workerCtx, timeout)
 			} else {
 				childCtx, cancel = context.WithCancel(workerCtx)
+				abortCtx, abortCancel = context.WithCancel(workerCtx)
 			}
 
 			child, err := SpawnChild(childCtx, cfg)
 			if err != nil {
 				cancel()
+				abortCancel()
 				handleSettleErr(settle.Settle(true, func(owner *goja.Runtime) any {
 					return owner.NewGoError(fmt.Errorf("spawn failed: %w", err))
 				}))
 				return
 			}
+
+			// Abort the pump drain on timeout or base-context cancellation; a
+			// plain reap releases the abort context without aborting, so an
+			// exiting command's streams are never cut by their own exit.
+			go func() {
+				select {
+				case <-abortCtx.Done():
+					child.AbortDrain()
+				case <-child.done:
+				}
+			}()
 
 			// Release a timeout context once the child has been reaped. Without
 			// this, a long timeout retains its timer until the deadline even when
@@ -174,6 +194,7 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			go func() {
 				<-child.done
 				cancel()
+				abortCancel()
 			}()
 
 			if err := settle.Settle(false, func(owner *goja.Runtime) any {
@@ -182,6 +203,8 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			}); err != nil {
 				handleSettleErr(err)
 				cancel()
+				abortCancel()
+				child.AbortDrain()
 			}
 		})
 	}
@@ -256,11 +279,11 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 	})
 	_ = obj.Set("stdin", stdinObj)
 
-	// child.stdout — {read(): Promise<{value: string, done: boolean}>}
-	_ = obj.Set("stdout", wrapReadableStream(baseCtx, rt, adapter, loop, child.ReadStdout))
+	// child.stdout — {read(): Promise<{value: string, done: boolean, truncated?}>}
+	_ = obj.Set("stdout", wrapReadableStream(baseCtx, rt, adapter, loop, child.ReadStdoutContext))
 
-	// child.stderr — {read(): Promise<{value: string, done: boolean}>}
-	_ = obj.Set("stderr", wrapReadableStream(baseCtx, rt, adapter, loop, child.ReadStderr))
+	// child.stderr — {read(): Promise<{value: string, done: boolean, truncated?}>}
+	_ = obj.Set("stderr", wrapReadableStream(baseCtx, rt, adapter, loop, child.ReadStderrContext))
 
 	// child.wait(): Promise<{code: number, signal: string|null}>
 	// It resolves when the process is reaped and does not wait for the output
@@ -326,11 +349,13 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 // Promises, following the ReadableStream protocol: {value: string, done: bool}.
 // A stream the exec layer had to cut before EOF ends with done and
 // truncated: true, so a consumer can tell a prefix from the whole stream.
-func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, readFn func() (string, bool, error)) goja.Value {
+// readFn takes the TrackPromise worker context so a blocked read also unblocks
+// on caller cancellation (e.g. loop shutdown).
+func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, readFn func(ctx context.Context) (string, bool, error)) goja.Value {
 	streamObj := rt.NewObject()
 	_ = streamObj.Set("read", func(call goja.FunctionCall) goja.Value {
 		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-			data, done, err := readFn()
+			data, done, err := readFn(ctx)
 			if errors.Is(err, errOutputStreamCutShort) {
 				// The stream ended because the exec layer closed it, not
 				// because the writer reached EOF: report the flag rather than a

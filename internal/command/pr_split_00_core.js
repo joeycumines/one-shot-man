@@ -411,7 +411,9 @@
         var code = (waitResult.code !== undefined) ? waitResult.code : 0;
         // A cut capture is an exec-layer failure, exactly as execv reports it:
         // the caller gets the prefix it received plus a status it cannot mistake
-        // for the command's own.
+        // for the command's own. (execv may instead surface the process's own
+        // non-zero exit code alongside error true — both shapes are failures;
+        // no consumer may treat either as success.)
         return {
             stdout: results[0],
             stderr: results[1],
@@ -624,7 +626,9 @@
     // lookupBinary checks whether a named binary exists on PATH, or whether an
     // explicit absolute command path exists on disk.
     // Returns {found: bool, path: string} using 'where.exe' on Windows,
-    // 'which' on Unix for PATH lookups.
+    // 'which' on Unix for PATH lookups. found requires a non-empty resolved
+    // path, so a lookup whose output was cut short can never report a prefix
+    // as a binary.
     async function lookupBinary(name) {
         if (absolutePath(name)) {
             var exists = await fileExistsSync(name);
@@ -636,14 +640,18 @@
         var cmd = isWindows() ? 'where.exe' : 'which';
         var e = (typeof prSplit !== 'undefined' && prSplit._modules && prSplit._modules.exec) || exec;
         var result = await e.execv([cmd, name]);
+        var path = (result.stdout || '').split('\n')[0].trim();
         return {
-            found: result.code === 0,
-            path: (result.stdout || '').split('\n')[0].trim()
+            found: result.code === 0 && !result.error && path !== '',
+            path: path
         };
     }
 
     // lookupBinaryAsync is the non-blocking version of lookupBinary.
-    // Returns a Promise<{found: bool, path: string}>.
+    // Returns a Promise<{found: bool, path: string}>. The spawned lookup drains
+    // through the shared collectSpawnOutput, so a stream the exec layer had to
+    // cut before EOF is an exec-layer failure (code -1, error true), never a
+    // {found: true, path: '<prefix>'}.
     async function lookupBinaryAsync(name) {
         if (absolutePath(name)) {
             var exists = await fileExistsSync(name);
@@ -657,18 +665,11 @@
         // that reassign the global 'exec' are visible here.
         var e = (typeof prSplit !== 'undefined' && prSplit._modules && prSplit._modules.exec) || exec;
         var child = await e.spawn(cmd, [name]);
-        var stdout = '';
-        while (true) {
-            var chunk = await child.stdout.read();
-            if (chunk.done) break;
-            if (chunk.value !== undefined && chunk.value !== null) {
-                stdout += String(chunk.value);
-            }
-        }
-        var waitResult = await child.wait();
+        var collected = await collectSpawnOutput(child, null);
+        var path = (collected.stdout || '').split('\n')[0].trim();
         return {
-            found: waitResult && waitResult.code === 0,
-            path: stdout.split('\n')[0].trim()
+            found: !collected.truncated && collected.code === 0 && path !== '',
+            path: path
         };
     }
 
@@ -906,14 +907,16 @@
     // before writing, a spawn/fork resource error, a bare exit status) —
     // and an error string of just "<command> failed: " is then
     // undiagnosable. The exec layer's message field always holds the
-    // Go-side error; it is appended only when it adds information the
+    // Go-side error (including an aborted-capture diagnostic when output
+    // was cut short); it is appended whenever it adds information the
     // stderr does not already carry.
     var execFailReason = function(result) {
-        var stderr = result.stderr.trim();
-        if (stderr !== '' || result.message === undefined || result.message === null || result.message === '') {
+        var stderr = (result.stderr || '').trim();
+        var message = (result.message === undefined || result.message === null) ? '' : String(result.message);
+        if (message === '' || stderr.indexOf(message) >= 0) {
             return stderr;
         }
-        return stderr + ' (exec: ' + result.message + ')';
+        return stderr === '' ? message : stderr + ' (exec: ' + message + ')';
     };
 
     // Internal helpers.

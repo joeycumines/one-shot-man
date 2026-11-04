@@ -98,7 +98,7 @@ func TestChunk05_ExecuteSplit_BasicExecution(t *testing.T) {
 	// Both branches should have a SHA.
 	for i, r := range execResult.Results {
 		if r.SHA == "" {
-			t.Errorf("result %d (%s) has empty SHA", i, r.Name)
+			t.Errorf("result %d (%s) has empty SHA (executeSplit returned: %s)", i, r.Name, result)
 		}
 		if r.Error != nil {
 			t.Errorf("result %d (%s) has error: %s", i, r.Name, *r.Error)
@@ -413,7 +413,7 @@ func TestChunk05_ExecuteSplit_GitIgnoredFilesSkipped(t *testing.T) {
 
 	r := execResult.Results[0]
 	if r.SHA == "" {
-		t.Error("expected non-empty SHA")
+		t.Error("expected non-empty SHA (executeSplit returned: " + result.(string) + ")")
 	}
 	if r.Error != nil {
 		t.Errorf("unexpected error: %s", *r.Error)

@@ -127,7 +127,7 @@ func TestRunExecWriterCloseFailurePreservesCleanupErrors(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	command, args := hangingCommand()
-	result := runExecWithPipeFactory(ctx, command, args, newPipe)
+	result := runExecCommand(ctx, command, args, newPipe, outputEOFCeiling)
 	if result["error"] != true {
 		t.Fatalf("runExec result = %#v, want error", result)
 	}
@@ -325,54 +325,211 @@ func TestChildLifetimeHoldsLoopUntilCleanupAfterKillError(t *testing.T) {
 	}
 }
 
-// TestRunExec_DrainTimeoutRecoversWithoutFailingTheCommand pins the drain
-// recovery contract through the pipe factory: when the output pipes do not
-// deliver EOF after the process tree terminates, the collector closes the
-// readers at the drain timeout to recover, and the reads interrupted that
-// way surface os.ErrClosed. Those induced errors are drain-recovery noise —
-// they must not fail a command whose exit code was 0 — while the timeout
-// itself must still be reported so a wedged child stays diagnosable. The
-// pre-fix behavior failed the command with "read |0: file already closed"
-// noise joined into the result (observed as spurious "git rm: (exec: ...)"
-// failures in the pr-split gates under scheduler delay: the reader
-// goroutines had not been scheduled before the timer fired).
-func TestRunExec_DrainTimeoutRecoversWithoutFailingTheCommand(t *testing.T) {
+// TestRunExec_CapturesOutputAfterASchedulingDelay pins the capture contract a
+// wall-clock drain deadline used to break: the reader goroutines may be
+// scheduled arbitrarily late relative to the command's exit (plain scheduler
+// delay under load, no wedged child involved), and the captured streams must
+// still be complete.
+//
+// The regression it reproduces, from the 2026-11-03 macOS CI gate: the
+// collector abandoned the readers 250ms after the process tree closed, closing
+// them before they had run at all, so a successful `git rev-parse HEAD`
+// reported code 0, error false and stdout "". pr-split read that as an empty
+// SHA and TestChunk05_ExecuteSplit_GitIgnoredFilesSkipped failed on "expected
+// non-empty SHA". A deadline over goroutine scheduling is not a failure
+// detector: it publishes a truncated stream as if it were the command's
+// output.
+func TestRunExec_CapturesOutputAfterASchedulingDelay(t *testing.T) {
 	skipSlow(t)
 
-	// Endpoints whose Read blocks until Close: exactly the shape of a
-	// reader goroutine scheduled after the drain timer fired.
-	stdoutReader := &blockingCommandPipe{release: make(chan struct{})}
-	stderrReader := &blockingCommandPipe{release: make(chan struct{})}
+	const payload = "3f786850e387550fdab836ed7e6dc881de23001b\n"
+	// Comfortably past the 250ms drain deadline this path used to race.
+	stdoutReader := newDelayedCommandPipe(t, payload, 350*time.Millisecond)
 	pipeNo := 0
 	newPipe := func() (commandPipeEndpoint, commandPipeEndpoint, error) {
 		pipeNo++
-		switch pipeNo {
-		case 1:
+		if pipeNo == 1 {
 			return stdoutReader, &failingCommandPipe{}, nil
-		case 2:
-			return stderrReader, &failingCommandPipe{}, nil
-		default:
-			return &failingCommandPipe{}, &failingCommandPipe{}, nil
 		}
+		return &failingCommandPipe{}, &failingCommandPipe{}, nil
 	}
 
 	command, args := immediateExitCommand()
-	result := runExecWithPipeFactory(context.Background(), command, args, newPipe)
+	result := runExecCommand(context.Background(), command, args, newPipe, outputEOFCeiling)
 
-	code, ok := result["code"].(int)
-	if !ok || code != 0 {
-		t.Fatalf("runExec code = %v (%v), want 0 — the drain timeout must not fail a successful command", result["code"], result["message"])
-	}
 	if result["error"] != false {
-		t.Fatalf("runExec error = %v, want false", result["error"])
+		t.Fatalf("runExec error = %v (%v), want false", result["error"], result["message"])
+	}
+	if code, ok := result["code"].(int); !ok || code != 0 {
+		t.Fatalf("runExec code = %v (%v), want 0", result["code"], result["message"])
+	}
+	if stdout, _ := result["stdout"].(string); stdout != payload {
+		t.Fatalf("runExec stdout = %q, want %q — a late reader must delay collection, not truncate it", stdout, payload)
+	}
+}
+
+// TestRunExec_AbortedCaptureIsAnExecFailure pins the other half of the
+// contract: capture is cut short only for a real reason (cancellation, or a
+// process-tree close that could not prove the writers were gone), and when it
+// is, the result must report an exec-layer failure. A partial or empty stream
+// may never be presented as the output of a command that "succeeded".
+func TestRunExec_AbortedCaptureIsAnExecFailure(t *testing.T) {
+	skipSlow(t)
+
+	// Read blocks until the collector closes it, so the cancellation is what
+	// ends the capture.
+	stdoutReader := &blockingCommandPipe{release: make(chan struct{})}
+	pipeNo := 0
+	newPipe := func() (commandPipeEndpoint, commandPipeEndpoint, error) {
+		pipeNo++
+		if pipeNo == 1 {
+			return stdoutReader, &failingCommandPipe{}, nil
+		}
+		return &failingCommandPipe{}, &failingCommandPipe{}, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	command, args := immediateExitCommand()
+	result := runExecCommand(ctx, command, args, newPipe, outputEOFCeiling)
+
+	if result["error"] != true {
+		t.Fatalf("runExec error = %v, want true — an aborted capture is an exec-layer failure, not an empty output", result["error"])
+	}
+	if code, ok := result["code"].(int); !ok || code != -1 {
+		t.Fatalf("runExec code = %v, want -1 — the exec layer failed even though the command exited 0", result["code"])
 	}
 	message, _ := result["message"].(string)
-	if !strings.Contains(message, "did not close after process-tree termination") {
-		t.Fatalf("runExec message = %q, want the drain-timeout diagnostic", message)
+	if !strings.Contains(message, "output capture") {
+		t.Fatalf("runExec message = %q, want an incomplete-capture diagnostic", message)
+	}
+	if !strings.Contains(message, "context canceled") {
+		t.Fatalf("runExec message = %q, want the cancellation cause", message)
 	}
 	if strings.Contains(message, "file already closed") {
-		t.Fatalf("runExec message contains drain-recovery noise: %q", message)
+		t.Fatalf("runExec message contains close noise: %q", message)
 	}
+}
+
+// TestRunExec_CeilingBoundsAWriterTheGroupKillCannotReach covers the one writer
+// the process-tree close cannot reach: a process that left the command's
+// process group while holding an inherited write end. Shell job control
+// (`sh -c 'set -m; sleep 30 & echo parent-done'`) and setsid/daemon(3) both do
+// this, and the reproduced effect on a deadline-free collector is that runExec
+// never returns — the readers block on a write end no group signal can close.
+//
+// The endpoint here is the same shape from the collector's point of view: it
+// serves the leader's output, then blocks without ever reporting EOF. The EOF
+// ceiling must fire, keep the bytes the leader had already written, and report
+// the abandoned capture as an exec-layer failure instead of a hang or a silent
+// truncation.
+func TestRunExec_CeilingBoundsAWriterTheGroupKillCannotReach(t *testing.T) {
+	skipSlow(t)
+
+	// Generous enough that a late reader cannot decide the outcome: the
+	// deadline-free implementation this guards against never returns at all,
+	// while 2s gives the reader 20x the delay that produced the original CI
+	// flake.
+	stdoutReader := newCommandPipeWithoutEOF(t, "parent-done\n")
+	pipeNo := 0
+	newPipe := func() (commandPipeEndpoint, commandPipeEndpoint, error) {
+		pipeNo++
+		if pipeNo == 1 {
+			return stdoutReader, &failingCommandPipe{}, nil
+		}
+		return &failingCommandPipe{}, &failingCommandPipe{}, nil
+	}
+
+	command, args := immediateExitCommand()
+	start := time.Now()
+	result := runExecCommand(context.Background(), command, args, newPipe, 2*time.Second)
+	elapsed := time.Since(start)
+
+	if elapsed > 5*time.Second {
+		t.Fatalf("runExecCommand took %s: the EOF ceiling did not bound the wait", elapsed)
+	}
+	if result["error"] != true {
+		t.Fatalf("runExec error = %v (%v), want true — an abandoned capture is an exec-layer failure", result["error"], result["message"])
+	}
+	message, _ := result["message"].(string)
+	if !strings.Contains(message, "output capture aborted") {
+		t.Fatalf("runExec message = %q, want the incomplete-capture diagnostic", message)
+	}
+	if !strings.Contains(message, "process group") {
+		t.Fatalf("runExec message = %q, want the escaped-writer cause", message)
+	}
+	if stdout, _ := result["stdout"].(string); stdout != "parent-done\n" {
+		t.Fatalf("runExec stdout = %q, want the leader's output preserved", stdout)
+	}
+}
+
+// delayedCommandPipe serves payload after delay and then either reports EOF or
+// keeps blocking until closed. The blocking shape is a pipe whose write end is
+// held by a process still alive; the EOF shape is a reader goroutine that
+// reaches the pipe long after the command wrote and exited.
+type delayedCommandPipe struct {
+	payload   []byte
+	ready     chan struct{}
+	closed    chan struct{}
+	block     bool
+	closeOnce sync.Once
+}
+
+func newDelayedCommandPipe(t *testing.T, payload string, delay time.Duration) *delayedCommandPipe {
+	return newTestOutputPipe(t, payload, delay, false)
+}
+
+// newCommandPipeWithoutEOF serves payload and then blocks until Close, never
+// reporting EOF — a write end held elsewhere, which no process-group signal
+// reached.
+func newCommandPipeWithoutEOF(t *testing.T, payload string) *delayedCommandPipe {
+	return newTestOutputPipe(t, payload, 0, true)
+}
+
+func newTestOutputPipe(t *testing.T, payload string, delay time.Duration, block bool) *delayedCommandPipe {
+	t.Helper()
+	pipe := &delayedCommandPipe{
+		payload: []byte(payload),
+		ready:   make(chan struct{}),
+		closed:  make(chan struct{}),
+		block:   block,
+	}
+	timer := time.AfterFunc(delay, func() { close(pipe.ready) })
+	t.Cleanup(func() {
+		timer.Stop()
+		_ = pipe.Close()
+	})
+	return pipe
+}
+
+func (p *delayedCommandPipe) Read(buffer []byte) (int, error) {
+	select {
+	case <-p.ready:
+	case <-p.closed:
+		return 0, os.ErrClosed
+	}
+	if len(p.payload) > 0 {
+		read := copy(buffer, p.payload)
+		p.payload = p.payload[read:]
+		return read, nil
+	}
+	if p.block {
+		<-p.closed
+		return 0, os.ErrClosed
+	}
+	return 0, io.EOF
+}
+
+func (p *delayedCommandPipe) Write(data []byte) (int, error) { return len(data), nil }
+
+func (p *delayedCommandPipe) Close() error {
+	p.closeOnce.Do(func() { close(p.closed) })
+	return nil
 }
 
 // blockingCommandPipe blocks in Read until closed, then reports the

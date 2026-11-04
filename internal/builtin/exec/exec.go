@@ -53,6 +53,9 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 
 		if adapter != nil {
 			// execv(argv: string[], opts?: {timeoutMs?: number}): Promise<{stdout, stderr, code, error, message}>
+			// error is true when the command could not be run, or when its
+			// output could not be captured completely; while it is false,
+			// stdout and stderr are the command's complete output.
 			_ = exports.Set("execv", func(call goja.FunctionCall) goja.Value {
 				if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
 					promise, settler := adapter.NewPromise()
@@ -342,7 +345,31 @@ func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *goja
 	return streamObj
 }
 
-const outputDrainTimeout = 250 * time.Millisecond
+// outputAbortGrace bounds only the delivery of results whose reads the
+// collector has just interrupted, and only on a path that already reports
+// outputCaptureAbortedError. It cannot turn truncation into a success: a reader
+// that misses the grace leaves the capture marked incomplete and failed.
+const outputAbortGrace = 100 * time.Millisecond
+
+// outputEOFCeiling bounds how long runExec waits for its output readers to
+// reach EOF after the command's process tree has been closed and its leader
+// reaped.
+//
+// It is scheduling headroom, not an expected cost: the tree is closed before
+// capture starts, which kills the command's process group — every holder of a
+// pipe write end that stayed in it — so the readers reach EOF as soon as they
+// are scheduled. The one writer that kill cannot reach is a process that left
+// the group (setsid, shell job control) while holding an inherited write end;
+// waiting on it unconditionally would hang the command forever, so the ceiling
+// turns it into outputCaptureAbortedError instead of a hang or a silent
+// truncation. A caller that needs a tighter bound passes opts.timeoutMs or
+// cancels its context.
+//
+// The ceiling must stay far above any plausible goroutine-scheduling delay: a
+// reader that is merely late must never be abandoned. The 250ms capture
+// deadline this replaces did exactly that, and published truncated output (an
+// empty `git rev-parse HEAD` SHA) as a successful command's result.
+const outputEOFCeiling = 30 * time.Second
 
 type commandPipeEndpoint interface {
 	io.Reader
@@ -422,27 +449,37 @@ type commandOutputResult struct {
 	err   error
 }
 
-// drainTimeoutError reports that output collection was cut short: the
-// output pipes did not close after the process tree terminated (a
-// descendant or external holder kept the write end open) and the collector
-// closed the readers to recover what had been drained. It is diagnostic —
-// it must not flip a command's own exit status into a failure.
-type drainTimeoutError struct{}
-
-func (e *drainTimeoutError) Error() string {
-	return "command output pipes did not close after process-tree termination"
+// outputCaptureAbortedError reports that command output capture stopped before
+// EOF, so the captured streams are only a prefix of what the command wrote. It
+// is an exec-layer failure: an incomplete stream presented as a successful
+// command's output is indistinguishable from real output — a truncated
+// `git rev-parse HEAD` empty SHA is how that surfaces — and must never be
+// silent.
+type outputCaptureAbortedError struct {
+	cause error
 }
+
+func (e *outputCaptureAbortedError) Error() string {
+	const message = "command output capture aborted before EOF: captured output is incomplete"
+	if e.cause == nil {
+		return message
+	}
+	return message + ": " + e.cause.Error()
+}
+
+func (e *outputCaptureAbortedError) Unwrap() error { return e.cause }
 
 func readCommandOutput(index int, r io.ReadCloser, results chan<- commandOutputResult) {
 	data, err := io.ReadAll(r)
-	closeErr := r.Close()
-	if closeErr != nil && !errors.Is(err, os.ErrClosed) {
-		// A close error that FOLLOWS a read error the closer itself
-		// induced (collectCommandOutput's drain timeout closes the
-		// reader under a blocked Read, surfacing os.ErrClosed from the
-		// read) is drain-recovery noise, not a command failure; the
-		// timeout is reported by the collector. A close error on its
-		// own is real and preserved.
+	if errors.Is(err, os.ErrClosed) {
+		// The collector closed the reader to abort capture. The abort itself
+		// is reported by collectCommandOutput; letting the induced read noise
+		// through would misattribute it to the command.
+		err = nil
+	}
+	if closeErr := r.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+		// ErrClosed here only means the collector closed the reader first;
+		// any other close error is real and preserved.
 		err = errors.Join(err, fmt.Errorf("close command output pipe: %w", closeErr))
 	}
 	results <- commandOutputResult{index: index, data: data, err: err}
@@ -455,50 +492,83 @@ func startCommandOutputReaders(stdout, stderr io.ReadCloser) <-chan commandOutpu
 	return results
 }
 
-func collectCommandOutput(results <-chan commandOutputResult, stdout, stderr io.ReadCloser) (string, string, error) {
-	var output [2][]byte
+// collectCommandOutput returns the command's stdout and stderr along with the
+// readers' errors.
+//
+// It waits for both readers and applies no per-read deadline: buffered output
+// must never be abandoned because a goroutine was scheduled late. The wait is
+// bounded only by eofCeiling (see outputEOFCeiling), which covers a writer that
+// escaped the command's process group, and by ctx for cancellation. Either
+// bound keeps whatever the readers had captured, closes them, and reports
+// outputCaptureAbortedError, so an incomplete capture is never mistaken for an
+// empty output.
+//
+// abort closes the readers when the caller cannot vouch for the writers at all
+// (the process-tree close failed).
+func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <-chan struct{}, results <-chan commandOutputResult, stdout, stderr io.ReadCloser) (string, string, error) {
+	var output [2]string
 	var outputErr error
-	timer := time.NewTimer(outputDrainTimeout)
-	defer timer.Stop()
-	for received := 0; received < 2; received++ {
+	received := 0
+
+	store := func(result commandOutputResult) {
+		output[result.index] = string(result.data)
+		outputErr = errors.Join(outputErr, result.err)
+		received++
+	}
+
+	abortCapture := func(cause error) (string, string, error) {
+		// Closing a reader unblocks its in-flight Read (the io.ReadCloser
+		// contract, and what os.Pipe does through Go's poller), so both
+		// readers still report what they had read before the interruption.
+		_ = stdout.Close()
+		_ = stderr.Close()
+		timer := time.NewTimer(outputAbortGrace)
+		defer timer.Stop()
+		for received < 2 {
+			select {
+			case result := <-results:
+				store(result)
+			case <-timer.C:
+				// A reader that ignored Close would otherwise hold the
+				// command here. The abort is already an error, so returning
+				// without its bytes cannot turn a lie into a success.
+				return output[0], output[1], errors.Join(outputErr, &outputCaptureAbortedError{cause: cause})
+			}
+		}
+		return output[0], output[1], errors.Join(outputErr, &outputCaptureAbortedError{cause: cause})
+	}
+
+	ceiling := time.NewTimer(eofCeiling)
+	defer ceiling.Stop()
+	for received < 2 {
+		// Prefer output that is already buffered: a cancellation or ceiling
+		// that becomes ready at the same instant must not preempt a result the
+		// readers have already delivered.
 		select {
 		case result := <-results:
-			output[result.index] = result.data
-			outputErr = errors.Join(outputErr, result.err)
-		case <-timer.C:
-			// Drain recovery: the readers may be blocked on a writer
-			// this process no longer controls (a descendant holding the
-			// inherited write end). Closing the readers unblocks them —
-			// the interrupted reads surface os.ErrClosed, and the
-			// reader goroutines swallow that induced error (see
-			// readCommandOutput) because the timeout below is the real
-			// signal. What is already drained is kept.
-			_ = stdout.Close()
-			_ = stderr.Close()
-			timeoutErr := &drainTimeoutError{}
-			grace := time.NewTimer(100 * time.Millisecond)
-			defer grace.Stop()
-			for received < 2 {
-				select {
-				case result := <-results:
-					output[result.index] = result.data
-					outputErr = errors.Join(outputErr, result.err)
-					received++
-				case <-grace.C:
-					return string(output[0]), string(output[1]), errors.Join(outputErr, timeoutErr)
-				}
-			}
-			return string(output[0]), string(output[1]), errors.Join(outputErr, timeoutErr)
+			store(result)
+			continue
+		default:
+		}
+		select {
+		case result := <-results:
+			store(result)
+		case <-abort:
+			return abortCapture(nil)
+		case <-ctx.Done():
+			return abortCapture(ctx.Err())
+		case <-ceiling.C:
+			return abortCapture(fmt.Errorf("no EOF within %s of process-tree teardown: a writer outside the command's process group may still hold the output pipe", eofCeiling))
 		}
 	}
-	return string(output[0]), string(output[1]), outputErr
+	return output[0], output[1], outputErr
 }
 
 func runExec(ctx context.Context, cmd string, args ...string) map[string]any {
-	return runExecWithPipeFactory(ctx, cmd, args, newCommandPipe)
+	return runExecCommand(ctx, cmd, args, newCommandPipe, outputEOFCeiling)
 }
 
-func runExecWithPipeFactory(ctx context.Context, cmd string, args []string, newPipe commandPipeFactory) map[string]any {
+func runExecCommand(ctx context.Context, cmd string, args []string, newPipe commandPipeFactory, eofCeiling time.Duration) map[string]any {
 	if ctx == nil {
 		panic("exec: nil context requires baseCtx threading")
 	}
@@ -580,51 +650,21 @@ func runExecWithPipeFactory(ctx context.Context, cmd string, args []string, newP
 
 	outputResults := startCommandOutputReaders(stdoutReader, stderrReader)
 	waitErr, closeErr := waitAndCloseProcessTree(c, tree)
-	stdoutText, stderrText, outputErr := collectCommandOutput(outputResults, stdoutReader, stderrReader)
+
+	// The process tree is closed, so the command's whole process group is dead
+	// and the readers reach EOF on their own. collectCommandOutput bounds that
+	// wait by eofCeiling, which covers a writer that escaped the group, and by
+	// ctx. Only a failed close leaves a writer we cannot claim to have killed
+	// at all, so capture is aborted immediately there: the close error already
+	// fails the command, and the abort makes the incomplete output explicit.
+	var captureAbort chan struct{}
+	if closeErr != nil {
+		captureAbort = make(chan struct{})
+		close(captureAbort)
+	}
+	stdoutText, stderrText, outputErr := collectCommandOutput(ctx, eofCeiling, captureAbort, outputResults, stdoutReader, stderrReader)
 	stdoutData = []byte(stdoutText)
 	stderrData = []byte(stderrText)
 
-	// Drain recovery must not overwrite the command's own outcome: a drain
-	// timeout means "output collection was cut short", not "the command
-	// failed". When the process tree waited clean and the command was not
-	// signal-terminated, the exit status decides the result (result() reads
-	// it from waitErr via errors.As) and the timeout rides the message as a
-	// diagnostic — a wedged child stays diagnosable without a successful
-	// command being reported as failed with exit -1. A real wait or close
-	// failure stays in runErr and dominates.
-	runErr := errors.Join(waitErr, closeErr, outputErr)
-	var drained *drainTimeoutError
-	hasDrain := errors.As(outputErr, &drained)
-	commandOwn := waitErr == nil || (isExitError(waitErr) && !signaledExit(waitErr))
-	if hasDrain && waitErr == nil && closeErr == nil && commandOwn {
-		// Strip the timeout and the drain-induced read noise under it
-		// from the failure channel; the diagnostic rides the message.
-		runErr = nil
-	}
-	m := result(runErr)
-	if hasDrain && runErr == nil {
-		if msg, _ := m["message"].(string); msg == "" {
-			m["message"] = drained.Error()
-		} else {
-			m["message"] = msg + ": " + drained.Error()
-		}
-	}
-	return m
-}
-
-// isExitError reports whether err is a process exit error — the command's
-// own outcome rather than an exec-layer failure.
-func isExitError(err error) bool {
-	var exitErr *osexec.ExitError
-	return errors.As(err, &exitErr)
-}
-
-// signaledExit reports whether the exit error terminated the process by
-// signal — that outcome is the command's real result, not drain noise, and
-// stays in the failure channel even when the drain also timed out.
-// ExitCode() returns -1 exactly when the process was signaled (portable
-// across platforms; the same predicate result() already relies on).
-func signaledExit(err error) bool {
-	var exitErr *osexec.ExitError
-	return errors.As(err, &exitErr) && exitErr.ExitCode() == -1
+	return result(errors.Join(waitErr, closeErr, outputErr))
 }

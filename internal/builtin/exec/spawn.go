@@ -76,8 +76,11 @@ func waitAndCloseProcessTree(cmd *osexec.Cmd, tree processTree) (waitErr, closeE
 	}
 	if preClose {
 		// The exited, unreaped leader pins its process ID until descendants
-		// are closed, and closing inherited pipes before Wait avoids a drain
-		// timeout when descendants still hold them.
+		// are closed, and closing the tree before Wait kills the command's
+		// process group — every holder of the output pipes' write ends that
+		// stayed in it. That is what lets runExec's readers reach EOF without
+		// waiting on a deadline; a writer that left the group is bounded by
+		// runExec's own outputEOFCeiling.
 		closeErr = tree.close(cmd)
 		waitErr = cmd.Wait()
 		if errors.Is(closeErr, syscall.EPERM) {

@@ -369,10 +369,11 @@ func TestRunExec_CapturesOutputAfterASchedulingDelay(t *testing.T) {
 }
 
 // TestRunExec_AbortedCaptureIsAnExecFailure pins the other half of the
-// contract: capture is cut short only for a real reason (cancellation, or a
-// process-tree close that could not prove the writers were gone), and when it
-// is, the result must report an exec-layer failure. A partial or empty stream
-// may never be presented as the output of a command that "succeeded".
+// contract: capture is cut short only for a real reason (cancellation, an EOF
+// ceiling reached, or a process-tree close that could not prove the writers
+// were gone), and when it is, the result must report an exec-layer failure. A
+// partial or empty stream may never be presented as the output of a command
+// that "succeeded".
 func TestRunExec_AbortedCaptureIsAnExecFailure(t *testing.T) {
 	skipSlow(t)
 
@@ -401,8 +402,11 @@ func TestRunExec_AbortedCaptureIsAnExecFailure(t *testing.T) {
 	if result["error"] != true {
 		t.Fatalf("runExec error = %v, want true — an aborted capture is an exec-layer failure, not an empty output", result["error"])
 	}
-	if code, ok := result["code"].(int); !ok || code != -1 {
-		t.Fatalf("runExec code = %v, want -1 — the exec layer failed even though the command exited 0", result["code"])
+	// The status is the command's own, so it is platform-dependent: cancellation
+	// is SIGKILL (code -1) on Unix and job termination, exit 1, on Windows. What
+	// must hold everywhere is that an abandoned capture never looks like success.
+	if code, ok := result["code"].(int); !ok || code == 0 {
+		t.Fatalf("runExec code = %v, want a non-zero status — an aborted capture must not look like success", result["code"])
 	}
 	message, _ := result["message"].(string)
 	if !strings.Contains(message, "output capture") {

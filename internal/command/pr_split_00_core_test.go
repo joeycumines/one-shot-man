@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -609,6 +610,7 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 		stdoutChunks  string
 		stderrChunks  string
 		waitResult    string
+		waitMessage   string
 		wantStdout    string
 		wantStderr    string
 		wantCode      float64
@@ -680,6 +682,18 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 			wantError:    true,
 			wantMessage:  "exit status 3",
 		},
+		{
+			name:          "wait rejection becomes an exec-layer failure",
+			stdoutChunks:  `[{done: false, value: 'partial\n'}, {done: true}]`,
+			stderrChunks:  `[{done: true}]`,
+			waitResult:    `REJECT`,
+			waitMessage:   "process tree close failed: permission denied",
+			wantStdout:    "partial\n",
+			wantCode:      -1,
+			wantError:     true,
+			wantMessage:   "process tree close failed: permission denied",
+			wantTruncated: false,
+		},
 	}
 
 	for _, test := range tests {
@@ -700,7 +714,12 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 					var child = {
 						stdout: stream(` + test.stdoutChunks + `),
 						stderr: stream(` + test.stderrChunks + `),
-						wait: async function() { return ` + test.waitResult + `; }
+						wait: ` + func() string {
+							if test.waitResult == "REJECT" {
+								return `async function() { throw new Error(` + strconv.Quote(test.waitMessage) + `); }`
+							}
+							return `async function() { return ` + test.waitResult + `; }`
+						}() + `
 					};
 					return prSplit._collectSpawnOutput(child, null).then(function(collected) {
 						return JSON.stringify(collected);
@@ -857,6 +876,70 @@ func TestChunk00_LookupBinaryAsyncRefusesTruncatedCapture(t *testing.T) {
 				t.Errorf("lookupBinaryAsync = (%v, %q), want (%v, %q)", got.Found, got.Path, test.wantFound, test.wantPath)
 			}
 		})
+	}
+}
+
+// TestChunk00_ShellExecAsyncReportsTimeoutBeforeTruncation pins the precedence:
+// when a configured timeoutMs has elapsed, the result is a TIMEOUT (message
+// 'timed out after Nms', error true), not a cut-short capture — even when the
+// killed process's streams were also marked truncated.
+func TestChunk00_ShellExecAsyncReportsTimeoutBeforeTruncation(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
+
+	if _, err := evalJS(`
+		globalThis.__origSpawn2 = globalThis.prSplit._modules.exec.spawn;
+		globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
+			function delayedStream(chunks, delayMs) {
+				var queue = chunks.slice();
+				return { read: function() {
+					return new Promise(function(resolve) {
+						setTimeout(function() {
+							resolve(queue.length > 0 ? queue.shift() : {done: true});
+						}, delayMs);
+					});
+				} };
+			}
+			return {
+				// The stream ends truncated (the timeout kill cut the capture)
+				// but only AFTER the timeout window has elapsed.
+				stdout: delayedStream([{done: false, value: 'partial\n'}, {done: true, truncated: true}], 40),
+				stderr: delayedStream([{done: true}], 40),
+				wait: function() { return new Promise(function(resolve) { setTimeout(function() { resolve({code: -1, signal: 'SIGKILL'}); }, 40); }); },
+				kill: function() {},
+				close: function() {}
+			};
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := evalJS(`globalThis.prSplit._modules.exec.spawn = globalThis.__origSpawn2; globalThis.__origSpawn2 = undefined;`); err != nil {
+			t.Errorf("restore spawn: %v", err)
+		}
+	})
+
+	result, err := evalJS(`JSON.stringify(await globalThis.prSplit._shellExecAsync('sleep 30', {timeoutMs: 10}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Stdout  string `json:"stdout"`
+		Code    float64 `json:"code"`
+		Error   bool   `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &got); err != nil {
+		t.Fatalf("unmarshal %v: %v", result, err)
+	}
+	if !got.Error {
+		t.Errorf("error = false, want true (a timeout is a failure)")
+	}
+	if got.Message != "timed out after 10ms" {
+		t.Errorf("message = %q, want %q — the timeout must win over the truncation message", got.Message, "timed out after 10ms")
+	}
+	if got.Stdout != "partial\n" {
+		t.Errorf("stdout = %q, want the drained prefix %q", got.Stdout, "partial\n")
 	}
 }
 

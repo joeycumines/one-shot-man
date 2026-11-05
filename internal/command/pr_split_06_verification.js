@@ -16,6 +16,10 @@
     var isWindows = prSplit._isWindows;
     var scopedVerifyCommand = prSplit.scopedVerifyCommand;
     var exec = prSplit._modules.exec;
+    // Late-bound so test mocks of _execFailReason are honored (same pattern as
+    // chunk 07): an aborted capture carries its diagnostic in result.message,
+    // not stderr, so failure strings must go through execFailReason.
+    var execFailReason = function(result) { return prSplit._execFailReason(result); };
 
     async function resolveVerifyCommand(command, dir) {
         if (command) return command;
@@ -61,7 +65,7 @@
                     name: branchName,
                     passed: false,
                     output: '',
-                    error: 'create worktree failed: ' + wtAdd.stderr.trim()
+                    error: 'create worktree failed: ' + execFailReason(wtAdd)
                 };
             }
         }
@@ -106,25 +110,43 @@
             }
         }
 
-        var result = await shellSpawnSync(shellCmd, {
-            timeoutMs: timeoutMs,
-            onStdout: function(chunk) {
-                stdoutBuf += chunk;
-                emitChunk(chunk);
-            },
-            onStderr: function(chunk) {
-                stderrBuf += chunk;
-                emitChunk(chunk);
-            }
-        });
+        var result;
+        try {
+            result = await shellSpawnSync(shellCmd, {
+                timeoutMs: timeoutMs,
+                onStdout: function(chunk) {
+                    stdoutBuf += chunk;
+                    emitChunk(chunk);
+                },
+                onStderr: function(chunk) {
+                    stderrBuf += chunk;
+                    emitChunk(chunk);
+                }
+            });
+        } finally {
+            // The worktree must be removed even if the spawn throws.
+            await cleanupWorktree();
+        }
         var elapsedMs = Date.now() - startMs;
-
-        await cleanupWorktree();
 
         // An aborted capture is an exec-layer failure whose stderr may be
         // empty: the verdict is unknown, so it can neither pass nor count as
         // a deterministic failure (and must never be forgiven as pre-existing).
         var captureCutShort = result.error === true && /cut short|aborted before EOF|incomplete/.test(String(result.message || ''));
+
+        // A configured timeout that elapsed is a deterministic timeout failure,
+        // not an unknown-verdict truncation: evaluate it BEFORE the truncation
+        // gate so a native timeoutMs expiry is reported as a timeout even when
+        // the killed process's streams were also cut.
+        if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                exitCode: result.code,
+                error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
+            };
+        }
 
         if (captureCutShort) {
             return {
@@ -132,17 +154,9 @@
                 passed: false,
                 output: stdoutBuf,
                 truncated: true,
+                exitCode: result.code,
                 error: 'verify failed: ' + (result.message || 'output capture was cut short before EOF') +
                     (stderrBuf.trim() !== '' ? ': ' + stderrBuf.trim() : '')
-            };
-        }
-
-        if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
-            return {
-                name: branchName,
-                passed: false,
-                output: stdoutBuf,
-                error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
             };
         }
 
@@ -150,8 +164,9 @@
             name: branchName,
             passed: result.code === 0,
             output: stdoutBuf,
+            exitCode: result.code,
             error: result.code !== 0
-                ? 'verify failed (exit ' + result.code + '): ' + (stderrBuf.trim() !== '' ? stderrBuf : (result.message || ''))
+                ? 'verify failed (exit ' + result.code + '): ' + execFailReason(result)
                 : null
         };
     }
@@ -248,11 +263,14 @@
 
             // Mark pre-existing failures. A truncated (unknown-verdict) branch
             // is NEVER pre-existing: its capture was cut short, so it cannot be
-            // attributed to the source branch and counts as a failure.
+            // attributed to the source branch and counts as a failure. With an
+            // unknown baseline, pre-existing detection is disabled, but a
+            // deterministically-failed branch is still annotated so the user
+            // knows attribution was impossible.
             if (!result.passed && !result.truncated && baselineFailure) {
                 result.preExisting = true;
                 result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
-            } else if (!result.passed && result.truncated && baselineUnknown) {
+            } else if (!result.passed && baselineUnknown) {
                 result.error = (result.error || 'verification failed') + ' (baseline verdict unknown: capture was cut short)';
             }
 
@@ -302,7 +320,7 @@
                 equivalent: false,
                 splitTree: '',
                 sourceTree: '',
-                error: 'failed to get split tree: ' + splitTreeResult.stderr.trim()
+                error: 'failed to get split tree: ' + execFailReason(splitTreeResult)
             };
         }
         var splitTree = splitTreeResult.stdout.trim();
@@ -313,7 +331,7 @@
                 equivalent: false,
                 splitTree: splitTree,
                 sourceTree: '',
-                error: 'failed to get source tree: ' + sourceTreeResult.stderr.trim()
+                error: 'failed to get source tree: ' + execFailReason(sourceTreeResult)
             };
         }
         var sourceTree = sourceTreeResult.stdout.trim();
@@ -342,7 +360,14 @@
 
         var lastSplit = plan.splits[plan.splits.length - 1].name;
         var diffResult = await gitExec(dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
-        base.diffSummary = diffResult.code === 0 ? diffResult.stdout.trim() : '';
+        if (diffResult.code === 0) {
+            base.diffSummary = diffResult.stdout.trim();
+        } else {
+            // A failed diff cannot list the differing files; the reason must
+            // still reach the caller (an aborted capture carries it in
+            // message, not stderr).
+            base.diffError = execFailReason(diffResult);
+        }
 
         var diffNamesResult = await gitExec(dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
         if (diffNamesResult.code === 0 && diffNamesResult.stdout.trim() !== '') {
@@ -351,6 +376,9 @@
             });
         } else {
             base.diffFiles = [];
+            if (diffNamesResult.code !== 0 && !base.diffError) {
+                base.diffError = execFailReason(diffNamesResult);
+            }
         }
 
         return base;
@@ -378,7 +406,7 @@
             if (result.code === 0) {
                 deleted.push(name);
             } else {
-                errors.push(name + ': ' + result.stderr.trim());
+                errors.push(name + ': ' + execFailReason(result));
             }
         }
 
@@ -417,7 +445,7 @@
             wtAdd = await gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
             if (wtAdd.code !== 0) {
                 return {
-                    error: 'create worktree failed: ' + wtAdd.stderr.trim(),
+                    error: 'create worktree failed: ' + execFailReason(wtAdd),
                     worktreeDir: null
                 };
             }
@@ -604,7 +632,7 @@
                     name: branchName,
                     passed: false,
                     output: '',
-                    error: 'create worktree failed: ' + wtAdd.stderr.trim()
+                    error: 'create worktree failed: ' + execFailReason(wtAdd)
                 };
             }
         }
@@ -725,8 +753,23 @@
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
+                exitCode: exitCode,
                 error: 'verification cancelled by user',
                 cancelled: true
+            };
+        }
+
+        // A configured timeout that elapsed is a deterministic timeout failure,
+        // not an unknown-verdict truncation: evaluate it BEFORE the truncation
+        // gate so a native timeoutMs expiry is reported as a timeout even when
+        // the killed process's streams were also cut.
+        if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                exitCode: exitCode,
+                error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
             };
         }
 
@@ -736,16 +779,8 @@
                 passed: false,
                 output: stdoutBuf,
                 truncated: true,
+                exitCode: exitCode,
                 error: 'verification output capture was cut short before EOF: the verdict is unknown'
-            };
-        }
-
-        if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
-            return {
-                name: branchName,
-                passed: false,
-                output: stdoutBuf,
-                error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
             };
         }
 
@@ -753,6 +788,7 @@
             name: branchName,
             passed: exitCode === 0,
             output: stdoutBuf,
+            exitCode: exitCode,
             error: exitCode !== 0 ? 'verify failed (exit ' + exitCode + '): ' + (stderrBuf.trim() !== '' ? stderrBuf : '') : null
         };
         } finally {
@@ -879,11 +915,14 @@
 
             // A truncated (unknown-verdict) branch is NEVER pre-existing: its
             // capture was cut short, so it cannot be attributed to the source
-            // branch and counts as a failure.
+            // branch and counts as a failure. With an unknown baseline,
+            // pre-existing detection is disabled, but a deterministically-failed
+            // branch is still annotated so the user knows attribution was
+            // impossible.
             if (!result.passed && !result.truncated && baselineFailure) {
                 result.preExisting = true;
                 result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
-            } else if (!result.passed && result.truncated && baselineUnknown) {
+            } else if (!result.passed && baselineUnknown) {
                 result.error = (result.error || 'verification failed') + ' (baseline verdict unknown: capture was cut short)';
             }
 
@@ -922,7 +961,7 @@
                 equivalent: false,
                 splitTree: '',
                 sourceTree: '',
-                error: 'failed to get split tree: ' + splitTreeResult.stderr.trim()
+                error: 'failed to get split tree: ' + execFailReason(splitTreeResult)
             };
         }
         var splitTree = splitTreeResult.stdout.trim();
@@ -933,7 +972,7 @@
                 equivalent: false,
                 splitTree: splitTree,
                 sourceTree: '',
-                error: 'failed to get source tree: ' + sourceTreeResult.stderr.trim()
+                error: 'failed to get source tree: ' + execFailReason(sourceTreeResult)
             };
         }
         var sourceTree = sourceTreeResult.stdout.trim();
@@ -964,6 +1003,8 @@
         var diffStatResult = await gitExecAsync(dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
         if (diffStatResult.code === 0) {
             base.diffSummary = diffStatResult.stdout.trim();
+        } else {
+            base.diffError = execFailReason(diffStatResult);
         }
 
         var diffNamesResult = await gitExecAsync(dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
@@ -971,6 +1012,8 @@
             base.diffFiles = diffNamesResult.stdout.trim().split('\n').filter(function(f) {
                 return f !== '';
             });
+        } else if (diffNamesResult.code !== 0 && !base.diffError) {
+            base.diffError = execFailReason(diffNamesResult);
         }
 
         return base;
@@ -997,7 +1040,7 @@
             if (result.code === 0) {
                 deleted.push(name);
             } else {
-                errors.push(name + ': ' + result.stderr.trim());
+                errors.push(name + ': ' + execFailReason(result));
             }
         }
 

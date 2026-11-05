@@ -401,29 +401,39 @@
         }
 
         // Collect stdout and stderr in parallel to avoid deadlock
-        // (the command may fill stderr while we drain stdout).
+        // (the command may fill stderr while we drain stdout). wait() is
+        // guarded: a failed process-tree close rejects it, and that rejection
+        // is an exec-layer failure of the command, not an unhandled rejection
+        // of the whole collection.
+        var waitResult = {};
+        var waitError = null;
         var results = await Promise.all([
             readAll(child.stdout, outputFn),
             readAll(child.stderr, outputFn),
-            child.wait()
+            child.wait().then(function (r) { waitResult = r || {}; }, function (err) { waitError = err; })
         ]);
-        var waitResult = results[2] || {};
         var code = (waitResult.code !== undefined) ? waitResult.code : 0;
+        if (waitError) {
+            code = -1;
+        }
         // A cut capture is an exec-layer failure, exactly as execv reports it:
         // the caller gets the prefix it received plus a status it cannot mistake
         // for the command's own. (execv may instead surface the process's own
         // non-zero exit code alongside error true — both shapes are failures;
         // no consumer may treat either as success.)
+        var waitMessage = waitError ? String((waitError && waitError.message) || waitError) : '';
         return {
             stdout: results[0],
             stderr: results[1],
-            code: truncated ? -1 : code,
+            code: truncated || waitError ? -1 : code,
             signal: waitResult.signal || null,
             truncated: truncated,
-            error: truncated || code !== 0,
+            error: truncated || waitError || code !== 0 ? true : false,
             message: truncated
                 ? 'command output capture was cut short before EOF: the output is incomplete'
-                : (code !== 0 ? 'exit status ' + code : '')
+                : (waitError
+                    ? waitMessage
+                    : (code !== 0 ? 'exit status ' + code : ''))
         };
     }
 
@@ -506,18 +516,16 @@
 
         var collected = await collectSpawnOutput(child, outputFn);
         var message = collected.message;
-        var timedOut = false;
-        if (!collected.truncated) {
-            // A cut capture already has its own message: the command's own
-            // signal or timeout must not disguise it.
-            var elapsedMs = Date.now() - startedAt;
-            if (collected.signal) {
-                message = String(collected.signal);
-            }
-            timedOut = timeoutMs > 0 && elapsedMs >= timeoutMs;
-            if (timedOut) {
-                message = 'timed out after ' + timeoutMs + 'ms';
-            }
+        // A configured timeout that elapsed is a deterministic timeout failure,
+        // not an unknown-verdict truncation: evaluate it BEFORE the truncated
+        // gate so a native timeoutMs expiry is reported as a timeout even when
+        // the killed process's streams were also cut.
+        var elapsedMs = Date.now() - startedAt;
+        var timedOut = timeoutMs > 0 && elapsedMs >= timeoutMs;
+        if (timedOut) {
+            message = 'timed out after ' + timeoutMs + 'ms';
+        } else if (!collected.truncated && collected.signal) {
+            message = String(collected.signal);
         }
 
         return {

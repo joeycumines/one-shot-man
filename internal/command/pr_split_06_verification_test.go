@@ -561,4 +561,120 @@ func TestVerifySplitsAsync_TruncatedCaptures(t *testing.T) {
 			t.Error("result should not be truncated")
 		}
 	})
+
+	t.Run("truncated_baseline_deterministic_branch_failure_is_annotated_not_preexisting", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Baseline capture truncated (error:true → truncated stream);
+		// the branch fails DETERMINISTICALLY (error:false, exit 1).
+		if _, err := evalJS(`
+			globalThis._shCallCount = 0;
+			_gitResponses['!sh'] = function(argv) {
+				globalThis._shCallCount++;
+				if (globalThis._shCallCount === 1) return {code: -1, stdout: '', stderr: '', error: true, message: 'command output capture was cut short before EOF: the output is incomplete'};
+				return {code: 1, stdout: '', stderr: 'FAIL: new breakage', error: false, message: ''};
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+		r := runVerify(t)
+		if r.AllPassed {
+			t.Error("allPassed must be false: a deterministic branch failure is a failure")
+		}
+		if len(r.Results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(r.Results))
+		}
+		if r.Results[0].Truncated {
+			t.Error("branch result should not be truncated (it failed deterministically)")
+		}
+		if r.Results[0].PreExisting {
+			t.Error("with an unknown baseline, a failed branch must NEVER be marked preExisting")
+		}
+		if r.Results[0].Error == nil || !strings.Contains(*r.Results[0].Error, "baseline verdict unknown") {
+			t.Errorf("error should annotate the unknown baseline, got %v", r.Results[0].Error)
+		}
+	})
+}
+
+// TestVerifySplitAsync_TimeoutPrecedesTruncation pins the precedence in
+// verifySplitAsync: when the configured verifyTimeoutMs has elapsed, the
+// result reports a verify TIMEOUT (not a cut-short capture), and carries the
+// real exit code for onBranchDone.
+func TestVerifySplitAsync_TimeoutPrecedesTruncation(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+	// The verify shell command's streams end truncated (the kill cut them) but
+	// only after a delay past the tiny timeout, so elapsedMs >= timeoutMs.
+	if _, err := evalJS(`
+		globalThis.__origSpawn06b = globalThis.prSplit._modules.exec.spawn;
+		globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
+			var execMod = globalThis.prSplit._modules.exec;
+			var fullArgv = [cmd].concat(args || []);
+			var r = execMod.execv(fullArgv);
+			function delayedStream(chunks, delayMs) {
+				var queue = chunks.slice();
+				return { read: function() {
+					return new Promise(function(resolve) {
+						setTimeout(function() { resolve(queue.length > 0 ? queue.shift() : {done: true, truncated: true}); }, delayMs);
+					});
+				} };
+			}
+			return {
+				stdout: delayedStream(r.stdout ? [{done: false, value: r.stdout}] : [], 60),
+				stderr: delayedStream(r.stderr ? [{done: false, value: r.stderr}] : [], 60),
+				wait: function() { return new Promise(function(resolve) { setTimeout(function() { resolve({code: r.code, signal: 'SIGKILL'}); }, 60); }); },
+				kill: function() {},
+				isAlive: function() { return false; },
+				close: function() {}
+			};
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := evalJS(`globalThis.prSplit._modules.exec.spawn = globalThis.__origSpawn06b; globalThis.__origSpawn06b = undefined;`); err != nil {
+			t.Logf("restore spawn mock: %v", err)
+		}
+	})
+	if _, err := evalJS(resetGitMockJS); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(`_gitResponses['!sh'] = {code: -1, stdout: 'partial', stderr: '', error: true, message: 'command output capture was cut short before EOF'};`); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifySplitAsync('split/01', {
+		dir: '/tmp/repo',
+		verifyCommand: 'make test',
+		verifyTimeoutMs: 10
+	}))`)
+	if err != nil {
+		t.Fatalf("evalJS failed: %v", err)
+	}
+	var result struct {
+		Passed    bool    `json:"passed"`
+		Truncated bool    `json:"truncated"`
+		ExitCode  float64 `json:"exitCode"`
+		Error     *string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("unmarshal %v: %v", raw, err)
+	}
+	if result.Passed {
+		t.Error("passed must be false on a timeout")
+	}
+	if result.Error == nil || !strings.Contains(*result.Error, "verify timeout after") {
+		t.Errorf("error = %v, want a verify-timeout message, not a cut-short capture", result.Error)
+	}
+	if strings.Contains(*result.Error, "cut short") {
+		t.Errorf("error = %v, must not report the truncation when the timeout elapsed", *result.Error)
+	}
+	if result.ExitCode != -1 {
+		t.Errorf("exitCode = %v, want -1 propagated to onBranchDone", result.ExitCode)
+	}
 }

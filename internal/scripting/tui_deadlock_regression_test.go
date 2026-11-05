@@ -43,7 +43,14 @@ func (tm *TUIManager) scheduleWrite(fn func() error) {
 // scheduleWrite/scheduleWriteAndWait. The writer goroutine is the only place that holds
 // tm.mu.Lock() for JS-originated mutations.
 func TestTUIExitFromJSCommandNoDeadlock(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// The ctx is the deadlock-detection bound, not a performance budget: a real
+	// deadlock still fails at ctx.Done(). It must be generous enough for
+	// NewEngine's full builtin.Register (including the bt bridge's event-loop
+	// RunSync init) to be admitted on a loaded CI runner — under `make -j` on
+	// windows-latest, with internal/command's git-spawn tests running in
+	// parallel, a 5s bound expired before the Submit was admitted and the bt
+	// bridge panicked with "context deadline exceeded" (CI run 42093004864).
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	var output bytes.Buffer

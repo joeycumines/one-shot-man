@@ -129,6 +129,21 @@ type processTreeCloseError struct {
 	err error
 }
 
+// SpawnContextError reports that SpawnChild was called with an
+// already-cancelled context: no process was started. It wraps the context
+// error so errors.Is/As still reach context.Canceled / context.DeadlineExceeded.
+type SpawnContextError struct {
+	Err error
+}
+
+func (e *SpawnContextError) Error() string {
+	return fmt.Sprintf("spawn context: %v", e.Err)
+}
+
+func (e *SpawnContextError) Unwrap() error {
+	return e.Err
+}
+
 func (e *processTreeCloseError) Error() string {
 	return fmt.Sprintf("close process tree: %v", e.err)
 }
@@ -276,7 +291,17 @@ func (c *ChildProcess) readPipe(ctx context.Context, q *pipeQueue) (string, bool
 
 // SpawnChild starts a child process with piped stdin/stdout/stderr.
 // The returned ChildProcess must be cleaned up via Wait() or Kill().
+//
+// An already-expired ctx is reported by SpawnChild itself: os/exec's Start
+// would otherwise return the raw ctx.Err() (e.g. "context deadline exceeded"),
+// which is indistinguishable from a genuine start failure and reads like a
+// bug in the caller. Surface it as an explicit, typed error so callers and
+// tests can tell "the deadline fired before the process started" apart from
+// "the process could not be started".
 func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("spawn %s: %w", cfg.Command, &SpawnContextError{Err: err})
+	}
 	cmd := osexec.CommandContext(ctx, cfg.Command, cfg.Args...)
 
 	if cfg.Cwd != "" {

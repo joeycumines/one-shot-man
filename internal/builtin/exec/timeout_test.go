@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"strings"
 	"testing"
@@ -40,13 +41,26 @@ func TestSpawnChild_ContextDeadline(t *testing.T) {
 		t.Skip("skipping process timeout test in short mode")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Millisecond)
+	// The deadline must be generous enough that process startup itself
+	// (process creation, job assignment, pipe setup) is not racing the clock:
+	// on a loaded CI runner, CreateProcess can take longer than 75ms, and
+	// os/exec's Start then returns the raw ctx error, which used to fail this
+	// test with "SpawnChild: context deadline exceeded". The contract under
+	// test is that the deadline terminates the process TREE promptly once the
+	// child is running, so the budget covers startup and the Wait bound below
+	// covers the kill.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	command, args := hangingCommand()
 	child, err := SpawnChild(ctx, SpawnConfig{Command: command, Args: args})
 	if err != nil {
 		t.Fatalf("SpawnChild: %v", err)
 	}
+
+	// Cut the deadline well below the process's own runtime (5s) so the
+	// tree kill — not the command finishing on its own — is what ends Wait.
+	deadline := time.AfterFunc(250*time.Millisecond, cancel)
+	defer deadline.Stop()
 
 	done := make(chan struct{})
 	go func() {
@@ -55,8 +69,36 @@ func TestSpawnChild_ContextDeadline(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("SpawnChild did not terminate its process tree at the deadline")
+	}
+}
+
+// TestSpawnChild_AlreadyExpiredContext pins the explicit error contract:
+// SpawnChild with an already-cancelled context reports a *SpawnContextError
+// wrapping the context error (no process is started), so callers can tell a
+// pre-expired deadline apart from a genuine start failure. This is the exact
+// signature the windows CI runner produced when a 75ms deadline expired
+// during CreateProcess on a loaded machine — the raw "context deadline
+// exceeded" from os/exec.Start read like a SpawnChild bug.
+func TestSpawnChild_AlreadyExpiredContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	command, args := hangingCommand()
+	child, err := SpawnChild(ctx, SpawnConfig{Command: command, Args: args})
+	if err == nil {
+		_ = child.Kill()
+		_, _ = child.Wait()
+		t.Fatal("SpawnChild with an expired context succeeded, want an error")
+	}
+	var spawnCtxErr *SpawnContextError
+	if !errors.As(err, &spawnCtxErr) {
+		t.Fatalf("SpawnChild error = %v (%T), want a *SpawnContextError", err, err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("SpawnChild error = %v, want it to wrap context.Canceled", err)
 	}
 }
 

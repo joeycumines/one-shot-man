@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
@@ -717,8 +718,15 @@ func TestChunk05_ExecuteSplitAsync_EmptyShaGuard(t *testing.T) {
 	t.Parallel()
 	dir, statuses := setupExecRepo(t)
 
-	evalJS := prsplittest.NewChunkEngine(t, nil,
-		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
+	// This test runs ~10 real git spawns (worktree add/remove, branch, rm,
+	// checkout, add, commit, rev-parse) through the async spawn path; on a
+	// loaded CI runner each spawn's scheduling + process startup can stretch,
+	// so give the eval a wider budget than the default 2m (observed timing out
+	// at exactly 2m0s on windows-latest). The package test timeout still
+	// bounds a genuine hang.
+	engine := prsplittest.NewEngine(t, nil)
+	engine.LoadChunks(t, "00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
+	evalJS := engine.EvalJSTimeout(t, 5*time.Minute)
 
 	statusJSON, _ := json.Marshal(statuses)
 

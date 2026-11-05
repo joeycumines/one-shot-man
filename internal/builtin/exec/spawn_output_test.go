@@ -421,14 +421,24 @@ func TestSpawnedChildSettlesPumpsPromptlyAfterKill(t *testing.T) {
 
 	child, err := SpawnChild(context.Background(), SpawnConfig{
 		Command: "sh",
-		Args:    []string{"-c", "set -m; echo parent-done; sleep 30 &"},
+		// The descendant escapes into its own session via the test binary
+		// re-executed as a setsid helper (see spawn_escaper_unix_test.go) —
+		// the `setsid` binary is not available on every POSIX platform
+		// (macOS), and shell job control (`set -m; ... &`) does not work in
+		// dash without a tty. The leader waits for a readiness file the helper
+		// writes only AFTER setsid() returned, so the reaper's pre-reap group
+		// kill can never land before the escape: without that wait the
+		// descendant may still be in the group when the kill lands (it dies,
+		// the pipe reaches a clean EOF, and the stream is never truncated —
+		// the observed ubuntu CI flake).
+		Args: []string{"-c", escaperScript(t.TempDir() + "/ready")},
 	})
 	if err != nil {
 		t.Fatalf("SpawnChild: %v", err)
 	}
 
-	// The leader exits immediately; `sleep 30` left the process group and
-	// keeps the stdout write end open, so the pumps cannot reach EOF.
+	// The leader exits only after the escaped descendant has left the process
+	// group and keeps the stdout write end open, so the pumps cannot reach EOF.
 	if _, err := child.Wait(); err != nil {
 		t.Fatalf("Wait: %v", err)
 	}

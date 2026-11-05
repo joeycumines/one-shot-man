@@ -271,6 +271,18 @@ func TestChildLifetimeHoldsLoopUntilCleanupAfterKillError(t *testing.T) {
 		done: childDone,
 	}
 	loopDone := make(chan error, 1)
+
+	// Submit the lifetime task BEFORE starting the loop. With auto-exit
+	// enabled, a loop that starts with no pending work can commit to
+	// termination before any Submit is admitted (the startup race that
+	// TestSpawn_ChildKeepsAutoExitLoopAlive documents); submitting before
+	// Run eliminates it, so the retry loop below is a safety net only.
+	submitErr := loop.Submit(func() {
+		trackChildProcessLifetime(baseCtx, runtime, adapter, child)
+	})
+	if submitErr != nil {
+		t.Fatalf("submit before loop start: %v", submitErr)
+	}
 	go func() { loopDone <- loop.Run(loopCtx) }()
 	t.Cleanup(func() {
 		finishChild()
@@ -281,27 +293,6 @@ func TestChildLifetimeHoldsLoopUntilCleanupAfterKillError(t *testing.T) {
 		}
 	})
 
-	// The lifetime token is registered by the submitted task, so retry the
-	// admission briefly: with auto-exit enabled the loop may commit to
-	// termination before the first Submit arrives.
-	submitLifetimeTask := func() {
-		t.Helper()
-		deadline := time.Now().Add(2 * time.Second)
-		for {
-			if err := loop.Submit(func() {
-				trackChildProcessLifetime(baseCtx, runtime, adapter, child)
-			}); err == nil {
-				return
-			} else if !errors.Is(err, goeventloop.ErrLoopTerminated) {
-				t.Fatal(err)
-			}
-			if time.Now().After(deadline) {
-				t.Fatal("loop terminated before lifetime task was admitted")
-			}
-			time.Sleep(time.Millisecond)
-		}
-	}
-	submitLifetimeTask()
 	baseCancel()
 	select {
 	case <-tree.killStarted:

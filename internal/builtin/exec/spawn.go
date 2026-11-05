@@ -109,6 +109,7 @@ type ChildProcess struct {
 	tree     processTree
 	closed   bool
 	done     chan struct{} // closed when process exits
+	settled  chan struct{} // closed when the output pump drain has settled
 	exitCode int
 	exitErr  error
 	// abort is closed to cut the output pump drain promptly (Kill, caller
@@ -230,6 +231,9 @@ func (q *pipeQueue) pop() (readChunk, bool, bool, <-chan struct{}) {
 // ctx bounds the wait so a consumer blocked in ReadStdout/ReadStderr returns
 // when the caller's context is cancelled (e.g. loop shutdown).
 func (c *ChildProcess) readPipe(ctx context.Context, q *pipeQueue) (string, bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	for {
 		chunk, ok, closed, wait := q.pop()
 		if ok {
@@ -391,15 +395,16 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 	stdoutPipe := io.ReadCloser(stdoutReader)
 	stderrPipe := io.ReadCloser(stderrReader)
 
-	child := &ChildProcess{
-		cmd:       cmd,
-		tree:      tree,
-		done:      make(chan struct{}),
-		abort:     make(chan struct{}),
-		stdinPipe: stdinPipe,
-		stdout:    newPipeQueue(),
-		stderr:    newPipeQueue(),
-	}
+		child := &ChildProcess{
+			cmd:       cmd,
+			tree:      tree,
+			done:      make(chan struct{}),
+			settled:   make(chan struct{}),
+			abort:     make(chan struct{}),
+			stdinPipe: stdinPipe,
+			stdout:    newPipeQueue(),
+			stderr:    newPipeQueue(),
+		}
 
 	// Start pump goroutines for stdout and stderr.
 	var pumpWg sync.WaitGroup
@@ -451,7 +456,12 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 		// still holds a pipe. The streams stay readable until they reach EOF or
 		// are cut, and a pending read is itself what keeps them observable.
 		close(child.done)
-		child.settlePumps(ctx, outputEOFCeiling, child.abort, pumpDone, stdoutPipe, stderrPipe)
+		child.settlePumps(outputEOFCeiling, child.abort, pumpDone, stdoutPipe, stderrPipe)
+		// The drain has settled: only now is it safe for watchers to stop
+		// observing abortCtx — a normal reap must never be mistaken for an
+		// abort, and a post-reap timeout/cancellation must still reach the
+		// drain while it is running.
+		close(child.settled)
 	}()
 
 	return child, nil
@@ -477,8 +487,9 @@ func (c *ChildProcess) AbortDrain() {
 //
 // The child's own context is deliberately NOT a bound here: the exec binding
 // cancels it once the process is reaped, so treating it as an abandoned child
-// would cut every stream of every command that exits. The spawn base ctx IS
-// passed in so a blocked consumer can observe cancellation through readPipe.
+// would cut every stream of every command that exits. Cancellation reaches
+// blocked consumers through readPipe's ctx (wrapReadableStream's TrackPromise
+// context), not through settlePumps.
 //
 // When the bound fires, the pipes are closed FIRST: that unblocks an in-flight
 // pump read with os.ErrClosed, letting the pump push its final chunk and mark
@@ -486,13 +497,35 @@ func (c *ChildProcess) AbortDrain() {
 // io.EOF is not falsely marked. Only after the pumps have settled (or the grace
 // elapsed) are the still-open queues marked truncated, so a consumer draining
 // them receives a prefix flagged as incomplete rather than a silent EOF.
-func (c *ChildProcess) settlePumps(ctx context.Context, ceiling time.Duration, abort <-chan struct{}, pumpDone <-chan struct{}, stdoutPipe, stderrPipe io.Closer) {
+func (c *ChildProcess) settlePumps(ceiling time.Duration, abort <-chan struct{}, pumpDone <-chan struct{}, stdoutPipe, stderrPipe io.Closer) {
+	// Prefer a drain that has already finished: an abort that becomes ready at
+	// the same instant must not preempt pumps that reached EOF on their own.
+	select {
+	case <-pumpDone:
+		return
+	default:
+	}
+
 	timer := time.NewTimer(ceiling)
 	defer timer.Stop()
 	select {
 	case <-pumpDone:
 		return
 	case <-abort:
+		// The abort fired while the pumps were still running. The process tree
+		// has just been closed, so every writer that stayed in the group is
+		// dead and natural EOF is only a scheduling matter away; give the pumps
+		// a brief grace to deliver it before force-closing the read ends, so a
+		// timeout or kill does not cut buffered output that a dead writer
+		// already wrote. Only a writer that escaped the group stays open past
+		// the grace.
+		drainGrace := time.NewTimer(outputAbortGrace)
+		select {
+		case <-pumpDone:
+			drainGrace.Stop()
+			return
+		case <-drainGrace.C:
+		}
 	case <-timer.C:
 	}
 
@@ -640,14 +673,16 @@ func (c *ChildProcess) Wait() (int, error) {
 
 // Kill terminates the process and its platform-owned descendants. It also
 // aborts the output pump drain so a writer the platform could not kill does
-// not stall the streams for the full EOF ceiling.
+// not stall the streams for the full EOF ceiling. Killing an already-reaped
+// child is a no-op: its drain is either finished or legitimately waiting on a
+// writer that escaped the group, and aborting it would cut buffered output.
 func (c *ChildProcess) Kill() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.AbortDrain()
 	if c.closed {
 		return nil
 	}
+	c.AbortDrain()
 	if c.cmd.Process == nil {
 		c.closed = true
 		return nil

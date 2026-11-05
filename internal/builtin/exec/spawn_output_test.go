@@ -74,7 +74,7 @@ func TestSettlePumpsMarksStreamsItCut(t *testing.T) {
 
 	settled := make(chan struct{})
 	go func() {
-		child.settlePumps(context.Background(), 5*time.Millisecond, nil, pumpDone, stdoutPipe, stderrPipe)
+		child.settlePumps(5*time.Millisecond, nil, pumpDone, stdoutPipe, stderrPipe)
 		close(settled)
 	}()
 
@@ -141,7 +141,7 @@ func TestSettlePumpsKeepsInFlightPumpChunk(t *testing.T) {
 
 	// Give the stderr pump a moment to finish cleanly, then cut stdout via a
 	// ceiling that fires while its pump is still blocked.
-	child.settlePumps(context.Background(), 50*time.Millisecond, nil, pumpDone, stdoutPipe, stderrPipe)
+	child.settlePumps(50*time.Millisecond, nil, pumpDone, stdoutPipe, stderrPipe)
 
 	if data, done, err := child.ReadStdoutContext(context.Background()); err != nil || done || data != "parent-done\n" {
 		t.Fatalf("first stdout read = (%q, %v, %v), want the in-flight chunk", data, done, err)
@@ -169,7 +169,7 @@ func TestSettlePumpsAbortsPromptly(t *testing.T) {
 	settled := make(chan struct{})
 	start := time.Now()
 	go func() {
-		child.settlePumps(context.Background(), outputEOFCeiling, abort, pumpDone, stdoutPipe, stderrPipe)
+		child.settlePumps(outputEOFCeiling, abort, pumpDone, stdoutPipe, stderrPipe)
 		close(settled)
 	}()
 	// Simulate Kill()/baseCtx cancellation firing long before the ceiling.
@@ -202,7 +202,7 @@ func TestSettlePumpsLeavesFinishedPumpsAlone(t *testing.T) {
 	close(pumpDone)
 	pipe := &trackingReadCloser{closed: make(chan struct{})}
 
-	child.settlePumps(context.Background(), 5*time.Millisecond, nil, pumpDone, pipe, pipe)
+	child.settlePumps(5*time.Millisecond, nil, pumpDone, pipe, pipe)
 
 	if _, done, err := child.ReadStdoutContext(context.Background()); err != nil || !done {
 		t.Fatalf("terminal read = (%v, %v), want a clean end", done, err)
@@ -211,6 +211,197 @@ func TestSettlePumpsLeavesFinishedPumpsAlone(t *testing.T) {
 	case <-pipe.closed:
 		t.Fatal("settlePumps closed the pipe of a stream that had finished")
 	default:
+	}
+}
+
+// TestSettlePumpsPrefersFinishedPumpsOverAbort pins the ready-check: when the
+// pumps have already finished AND the abort channel is closed at the same
+// instant, settlePumps must take the pumpDone path deterministically and leave
+// the pipes alone, instead of letting the select pick abort at random and cut
+// streams that reached EOF.
+func TestSettlePumpsPrefersFinishedPumpsOverAbort(t *testing.T) {
+	t.Parallel()
+
+	for i := 0; i < 50; i++ {
+		child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
+		child.stdout.close()
+		child.stderr.close()
+		pumpDone := make(chan struct{})
+		close(pumpDone)
+		abort := make(chan struct{})
+		close(abort)
+		pipe := &trackingReadCloser{closed: make(chan struct{})}
+
+		child.settlePumps(time.Hour, abort, pumpDone, pipe, pipe)
+
+		if _, done, err := child.ReadStdoutContext(context.Background()); err != nil || !done {
+			t.Fatalf("iteration %d: terminal read = (%v, %v), want a clean end", i, done, err)
+		}
+		select {
+		case <-pipe.closed:
+			t.Fatalf("iteration %d: settlePumps closed the pipe despite pumpDone being ready", i)
+		default:
+		}
+	}
+}
+
+// TestSettlePumpsAbortGraceLetsPumpsReachEOF pins the timeout grace: when abort
+// fires while a pump is mid-drain, settlePumps first gives the pump a grace
+// window to hit natural EOF (the process-group writers are dead by then), and
+// only force-closes the pipe if the pump is still stuck. A pump that reaches
+// EOF inside the grace must end clean, not truncated.
+func TestSettlePumpsAbortGraceLetsPumpsReachEOF(t *testing.T) {
+	t.Parallel()
+
+	child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
+	// stdout pump serves one chunk, then reaches a clean EOF shortly after
+	// abort fires (simulating a dead in-group writer whose buffered output the
+	// pump has not read yet).
+	stdoutPipe := newDelayedEOFPipe("final-chunk\n", 30*time.Millisecond)
+	stderrPipe := &eofReadCloser{}
+
+	var pumpWg sync.WaitGroup
+	pumpWg.Add(2)
+	pumpDone := make(chan struct{})
+	go func() {
+		defer pumpWg.Done()
+		child.pumpPipe(stdoutPipe, &child.stdout)
+	}()
+	go func() {
+		defer pumpWg.Done()
+		child.pumpPipe(stderrPipe, &child.stderr)
+	}()
+	go func() {
+		pumpWg.Wait()
+		close(pumpDone)
+	}()
+
+	abort := make(chan struct{})
+	close(abort) // abort fires before the pumps have delivered anything
+	child.settlePumps(time.Hour, abort, pumpDone, stdoutPipe, stderrPipe)
+
+	if data, done, err := child.ReadStdoutContext(context.Background()); err != nil || done || data != "final-chunk\n" {
+		t.Fatalf("first stdout read = (%q, %v, %v), want the final chunk", data, done, err)
+	}
+	if _, done, err := child.ReadStdoutContext(context.Background()); err != nil || !done {
+		t.Fatalf("terminal stdout read = (%v, %v), want a clean EOF within the abort grace, not a truncation", done, err)
+	}
+}
+
+// TestSettlePumpsAbortStillCutsEscapedWriter makes sure the abort grace does not
+// become unbounded: a pump whose writer escaped the process group stays blocked
+// past the grace, so settlePumps closes the pipe and marks the stream truncated.
+func TestSettlePumpsAbortStillCutsEscapedWriter(t *testing.T) {
+	t.Parallel()
+
+	child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
+	child.stdout.push(readChunk{data: []byte("parent-done\n")})
+	pumpDone := make(chan struct{}) // never closes: the escaped writer holds the pipe
+	stdoutPipe := &trackingReadCloser{closed: make(chan struct{})}
+	stderrPipe := &trackingReadCloser{closed: make(chan struct{})}
+	abort := make(chan struct{})
+	close(abort)
+
+	settled := make(chan struct{})
+	start := time.Now()
+	go func() {
+		child.settlePumps(time.Hour, abort, pumpDone, stdoutPipe, stderrPipe)
+		close(settled)
+	}()
+	select {
+	case <-settled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("settlePumps did not cut the escaped writer within the abort grace")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("settlePumps took %s after abort with an escaped writer, want ~grace", elapsed)
+	}
+	if data, done, err := child.ReadStdoutContext(context.Background()); err != nil || done || data != "parent-done\n" {
+		t.Fatalf("first stdout read = (%q, %v, %v), want the queued chunk", data, done, err)
+	}
+	if _, done, err := child.ReadStdoutContext(context.Background()); !errors.Is(err, errOutputStreamCutShort) || !done {
+		t.Fatalf("terminal stdout read = (%v, %v), want (errOutputStreamCutShort, true)", done, err)
+	}
+}
+
+// TestKillAfterReapDoesNotAbortDrain pins the Kill ordering: killing an
+// already-reaped child is a no-op that must NOT abort its pump drain — the
+// streams may still be legitimately draining buffered output from a writer that
+// escaped the process group.
+func TestKillAfterReapDoesNotAbortDrain(t *testing.T) {
+	t.Parallel()
+
+	child := &ChildProcess{
+		done:    make(chan struct{}),
+		settled: make(chan struct{}),
+		abort:   make(chan struct{}),
+	}
+	close(child.done)
+	child.mu.Lock()
+	child.closed = true
+	child.mu.Unlock()
+
+	if err := child.Kill(); err != nil {
+		t.Fatalf("Kill after reap = %v, want nil", err)
+	}
+	select {
+	case <-child.abort:
+		t.Fatal("Kill on a reaped child aborted its drain")
+	default:
+	}
+}
+
+// delayedEOFPipe serves payload, then after delay returns a clean io.EOF —
+// modeling a pipe whose in-group writer died and whose kernel buffer the pump
+// drains slightly after the abort fired.
+type delayedEOFPipe struct {
+	payload []byte
+	delay   time.Duration
+	once    sync.Once
+	closed  chan struct{}
+}
+
+func newDelayedEOFPipe(payload string, delay time.Duration) *delayedEOFPipe {
+	return &delayedEOFPipe{payload: []byte(payload), delay: delay, closed: make(chan struct{})}
+}
+
+func (p *delayedEOFPipe) Read(buf []byte) (int, error) {
+	if len(p.payload) > 0 {
+		n := copy(buf, p.payload)
+		p.payload = p.payload[n:]
+		return n, nil
+	}
+	timer := time.NewTimer(p.delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return 0, io.EOF
+	case <-p.closed:
+		return 0, os.ErrClosed
+	}
+}
+
+func (p *delayedEOFPipe) Close() error {
+	p.once.Do(func() { close(p.closed) })
+	return nil
+}
+
+// TestReadPipeNilContextDoesNotPanic pins the nil-ctx guard shared with
+// WriteStdinContext/CloseStdinContext: ReadStdoutContext(nil) must behave like a
+// background context, not panic on ctx.Done().
+func TestReadPipeNilContextDoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	child := &ChildProcess{stdout: newPipeQueue()}
+	child.stdout.push(readChunk{data: []byte("data")})
+	child.stdout.close()
+
+	data, done, err := child.ReadStdoutContext(nil) //nolint:staticcheck // nil ctx is the contract under test
+	if err != nil || done || data != "data" {
+		t.Fatalf("first read = (%q, %v, %v), want the queued data", data, done, err)
+	}
+	if _, done, err := child.ReadStdoutContext(nil); err != nil || !done { //nolint:staticcheck
+		t.Fatalf("terminal read = (%v, %v), want a clean end", done, err)
 	}
 }
 

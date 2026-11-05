@@ -178,14 +178,25 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			}
 
 			// Abort the pump drain on timeout or base-context cancellation; a
-			// plain reap releases the abort context without aborting, so an
+			// plain reap releases the child context without aborting, so an
 			// exiting command's streams are never cut by their own exit.
+			//
+			// The abort watcher keys on child.settled (the drain finishing),
+			// not child.done (the process exiting): once the leader is reaped
+			// an escaped descendant may still hold a pipe, and a timeoutMs or
+			// base-context cancellation that lands in that window must still
+			// cut the drain promptly. A single goroutine owns both the select
+			// and abortCancel, so a normal reap can never race abortCancel
+			// into closing abortCtx while this select is still evaluating —
+			// which would pick <-abortCtx.Done() at random and falsely abort
+			// the drain of a cleanly exited command.
 			go func() {
 				select {
 				case <-abortCtx.Done():
 					child.AbortDrain()
-				case <-child.done:
+				case <-child.settled:
 				}
+				abortCancel()
 			}()
 
 			// Release a timeout context once the child has been reaped. Without
@@ -194,7 +205,6 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			go func() {
 				<-child.done
 				cancel()
-				abortCancel()
 			}()
 
 			if err := settle.Settle(false, func(owner *goja.Runtime) any {
@@ -510,12 +520,11 @@ func (e *outputCaptureAbortedError) Unwrap() error { return e.cause }
 
 func readCommandOutput(index int, r io.ReadCloser, results chan<- commandOutputResult) {
 	data, err := io.ReadAll(r)
-	if errors.Is(err, os.ErrClosed) {
-		// The collector closed the reader to abort capture. The abort itself
-		// is reported by collectCommandOutput; letting the induced read noise
-		// through would misattribute it to the command.
-		err = nil
-	}
+	// The read error is preserved as-is: an os.ErrClosed here is only benign
+	// when the collector itself closed the reader to abort capture, and only
+	// the collector knows that — it clears the induced error in abortCapture.
+	// An unexpected pipe closure therefore surfaces as a real error instead
+	// of being silently converted into a clean io.EOF.
 	if closeErr := r.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
 		// ErrClosed here only means the collector closed the reader first;
 		// any other close error is real and preserved.
@@ -555,22 +564,54 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 		received++
 	}
 
+	// abortCapture ends the capture as an explicit exec-layer failure. Before
+	// force-closing the readers it gives them a brief grace to deliver natural
+	// EOF: when the bound fired because ctx killed the command, the process
+	// tree is already closed and every in-group writer is dead, so the readers
+	// reach EOF as soon as they are scheduled and the captured output is
+	// complete. Only a writer that escaped the process group stays open past
+	// the grace; closing the readers then unblocks their in-flight reads (the
+	// io.ReadCloser contract) so both readers still report what they had read.
 	abortCapture := func(cause error) (string, string, error) {
-		// Closing a reader unblocks its in-flight Read (the io.ReadCloser
-		// contract, and what os.Pipe does through Go's poller), so both
-		// readers still report what they had read before the interruption.
-		_ = stdout.Close()
-		_ = stderr.Close()
-		timer := time.NewTimer(outputAbortGrace)
-		defer timer.Stop()
+		// induced marks results whose os.ErrClosed was caused by THIS abort
+		// closing the readers (below); only those are cleared. A read error
+		// delivered before the close is real and preserved.
+		induced := false
+		clearInduced := func(result commandOutputResult) commandOutputResult {
+			if induced && errors.Is(result.err, os.ErrClosed) {
+				result.err = nil
+			}
+			return result
+		}
+		grace := time.NewTimer(outputAbortGrace)
+		defer grace.Stop()
 		for received < 2 {
 			select {
 			case result := <-results:
-				store(result)
-			case <-timer.C:
-				// A reader that ignored Close would otherwise hold the
-				// command here. The abort is already an error, so returning
-				// without its bytes cannot turn a lie into a success.
+				store(clearInduced(result))
+			case <-grace.C:
+				// Closing a reader unblocks its in-flight Read (the
+				// io.ReadCloser contract, and what os.Pipe does through Go's
+				// poller), so both readers still report what they had read
+				// before the interruption.
+				induced = true
+				_ = stdout.Close()
+				_ = stderr.Close()
+				timer := time.NewTimer(outputAbortGrace)
+				for received < 2 {
+					select {
+					case result := <-results:
+						store(clearInduced(result))
+					case <-timer.C:
+						// A reader that ignored Close would otherwise hold the
+						// command here. The abort is already an error, so
+						// returning without its bytes cannot turn a lie into a
+						// success.
+						timer.Stop()
+						return output[0], output[1], errors.Join(outputErr, &outputCaptureAbortedError{cause: cause})
+					}
+				}
+				timer.Stop()
 				return output[0], output[1], errors.Join(outputErr, &outputCaptureAbortedError{cause: cause})
 			}
 		}

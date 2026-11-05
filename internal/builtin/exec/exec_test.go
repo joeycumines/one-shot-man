@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -614,4 +615,86 @@ while true; do sleep 1; done
 // gojaStringLit quotes a path as a JS single-quoted string literal.
 func gojaStringLit(s string) string {
 	return "'" + strings.ReplaceAll(strings.ReplaceAll(s, `\\`, `\\\\`), `'`, `\'`) + "'"
+}
+
+// TestSpawnNormalExitNeverTruncatesStream is the jsSpawn-level regression for
+// the abort-watcher race: when a command exits cleanly, the reap releases the
+// child context, and that must never race the abort watcher into closing the
+// drain while the pumps are still delivering buffered output. Every iteration
+// must observe the full line and a clean (non-truncated) end.
+func TestSpawnNormalExitNeverTruncatesStream(t *testing.T) {
+	skipIfWindows(t)
+	skipSlow(t)
+	_, runJS := asyncTestEnv(t)
+
+	value, err := runJS(`
+		const failures = [];
+		for (let i = 0; i < 50; i++) {
+			const child = await exec.spawn("sh", ["-c", "printf 'line-%d\\n' " + i]);
+			let out = "";
+			let truncated = false;
+			while (true) {
+				const chunk = await child.stdout.read();
+				if (chunk.done) { truncated = !!chunk.truncated; break; }
+				out += chunk.value;
+			}
+			const waitResult = await child.wait();
+			if (out !== "line-" + i + "\n" || truncated || waitResult.code !== 0) {
+				failures.push({i, out, truncated, code: waitResult.code});
+			}
+		}
+		__collect(JSON.stringify(failures));
+	`)
+	if err != nil {
+		t.Fatalf("runJS: %v", err)
+	}
+	if value.String() != "[]" {
+		t.Fatalf("clean-exit spawns were truncated or misread: %s", value.String())
+	}
+}
+
+// TestSpawnPostReapTimeoutCutsDrain is the jsSpawn-level regression for the
+// post-reap stall: the leader exits immediately while an escaped descendant
+// (set -m; sleep 30 &) keeps the stdout write end open. The timeoutMs deadline
+// fires AFTER the reap, and nothing but the abort watcher keyed on
+// child.settled can cut the drain — the terminal read must arrive promptly
+// (well under the 30s EOF ceiling), not stall.
+func TestSpawnPostReapTimeoutCutsDrain(t *testing.T) {
+	skipIfWindows(t)
+	skipSlow(t)
+	_, runJS := asyncTestEnv(t)
+
+	value, err := runJS(`
+		const startedAt = Date.now();
+		const child = await exec.spawn("sh", ["-c", "set -m; echo parent-done; sleep 30 &"], {timeoutMs: 600});
+		let out = "";
+		let truncated = false;
+		while (true) {
+			const chunk = await child.stdout.read();
+			if (chunk.done) { truncated = !!chunk.truncated; break; }
+			out += chunk.value;
+		}
+		const waitResult = await child.wait();
+		__collect(JSON.stringify({out, truncated, code: waitResult.code, elapsedMs: Date.now() - startedAt}));
+	`)
+	if err != nil {
+		t.Fatalf("runJS: %v", err)
+	}
+	got := value.String()
+	if !strings.Contains(got, `"out":"parent-done\n"`) {
+		t.Fatalf("stdout = %s, want the pre-timeout output retained", got)
+	}
+	if !strings.Contains(got, `"truncated":true`) {
+		t.Fatalf("stream was not marked truncated after the post-reap timeout: %s", got)
+	}
+	// Extract elapsedMs and assert it is far below the 30s ceiling.
+	var result struct {
+		ElapsedMs int64 `json:"elapsedMs"`
+	}
+	if err := json.Unmarshal([]byte(got), &result); err != nil {
+		t.Fatalf("unmarshal %s: %v", got, err)
+	}
+	if result.ElapsedMs > 10_000 {
+		t.Fatalf("post-reap timeout took %dms to cut the drain, want well under the 30s ceiling", result.ElapsedMs)
+	}
 }

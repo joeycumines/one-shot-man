@@ -53,8 +53,9 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 
 		if adapter != nil {
 			// execv(argv: string[], opts?: {timeoutMs?: number}): Promise<{stdout, stderr, code, error, message}>
-			// error is true when the command could not be run, or when its
-			// output could not be captured completely; while it is false,
+			// error is true when the command failed (non-zero exit, signal,
+			// could not be started), or when its output could not be captured
+			// completely; while it is false, the command exited 0 and
 			// stdout and stderr are the command's complete output.
 			_ = exports.Set("execv", func(call goja.FunctionCall) goja.Value {
 				if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {

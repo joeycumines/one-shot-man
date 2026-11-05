@@ -593,7 +593,11 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 				// Closing a reader unblocks its in-flight Read (the
 				// io.ReadCloser contract, and what os.Pipe does through Go's
 				// poller), so both readers still report what they had read
-				// before the interruption.
+				// before the interruption. A reader that has not been
+				// scheduled yet is the same shape: Close makes its first
+				// Read return os.ErrClosed, and the data the dead writer had
+				// already put in the kernel buffer is lost with it. That loss
+				// is exactly what must be visible, so the abort error stays.
 				induced = true
 				_ = stdout.Close()
 				_ = stderr.Close()
@@ -615,7 +619,10 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 				return output[0], output[1], errors.Join(outputErr, &outputCaptureAbortedError{cause: cause})
 			}
 		}
-		return output[0], output[1], errors.Join(outputErr, &outputCaptureAbortedError{cause: cause})
+		// Both readers reached EOF on their own within the grace: the capture
+		// is complete, so the abort cause must not taint it. The command was
+		// still killed, which waitErr already reports.
+		return output[0], output[1], outputErr
 	}
 
 	ceiling := time.NewTimer(eofCeiling)

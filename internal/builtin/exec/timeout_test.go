@@ -95,3 +95,93 @@ func TestTimeoutFromMilliseconds(t *testing.T) {
 		t.Fatalf("timeout = %s, want 125ms", got)
 	}
 }
+
+// TestRunExec_TimeoutKeepsInGroupWritersOutput pins the abort grace on the
+// execv timeout path: when ctx kills the command, the process-group close has
+// already reaped every in-group writer, so the readers' natural EOF — and the
+// output the command had already written — must be collected within the
+// abort grace instead of the capture being force-closed at 0ms and reported
+// as a cut stream. The command itself was killed, so the result is still an
+// error (non-zero status), but stdout/stderr must be COMPLETE, not a prefix
+// with the capture-aborted diagnostic.
+func TestRunExec_TimeoutKeepsInGroupWritersOutput(t *testing.T) {
+	skipSlow(t)
+
+	const payload = "timeout-path-complete-output\n"
+	// The reader reaches the pipe only after the ctx deadline (120ms > 100ms
+	// grace): with the group kill done, this is pure scheduling delay past the
+	// abort, and only a second grace AFTER force-closing can still deliver it.
+	// A no-grace abort closes the reader at the deadline and loses the payload.
+	stdoutReader := newDelayedCommandPipe(t, payload, 120*time.Millisecond)
+	pipeNo := 0
+	newPipe := func() (commandPipeEndpoint, commandPipeEndpoint, error) {
+		pipeNo++
+		if pipeNo == 1 {
+			return stdoutReader, &failingCommandPipe{}, nil
+		}
+		return &failingCommandPipe{}, &failingCommandPipe{}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	command, args := hangingCommand()
+	start := time.Now()
+	result := runExecCommand(ctx, command, args, newPipe, outputEOFCeiling)
+	elapsed := time.Since(start)
+
+	if elapsed > 5*time.Second {
+		t.Fatalf("runExecCommand took %s after the deadline — the abort grace did not bound the wait", elapsed)
+	}
+	if code, ok := result["code"].(int); !ok || code == 0 {
+		t.Fatalf("timed-out command result code = %v, want non-zero (result: %#v)", result["code"], result)
+	}
+	if stdout, _ := result["stdout"].(string); stdout != payload {
+		t.Fatalf("runExec stdout = %q, want the complete %q — the timeout must not cut in-group output (result: %#v)", stdout, payload, result)
+	}
+	message, _ := result["message"].(string)
+	// The command was killed, so the message carries the kill; the capture
+	// itself must NOT add the aborted diagnostic — the payload was delivered
+	// within the post-close grace even though the reader arrived after the
+	// deadline.
+	if strings.Contains(message, "output capture aborted") {
+		t.Fatalf("runExec message = %q — the capture was aborted although the only writer died with the group and its output arrived within the grace", message)
+	}
+	if !strings.Contains(message, "signal: killed") && !strings.Contains(message, "deadline exceeded") && !strings.Contains(message, "TerminateJobObject") && !strings.Contains(message, "exit status") {
+		t.Fatalf("runExec message = %q, want the kill/deadline cause for the timed-out command", message)
+	}
+}
+
+// TestSpawn_TimeoutDeliversBufferedOutputClean pins the same grace on the
+// spawn path: a child that writes output and then hangs is killed by timeoutMs;
+// because the group kill reaps the only writer, the pumps reach natural EOF
+// within the abort grace, so the stream ends CLEAN (done, not truncated) with
+// the full output — the timeout is reported by elapsedMs/wait, not by a cut
+// stream.
+func TestSpawn_TimeoutDeliversBufferedOutputClean(t *testing.T) {
+	skipIfWindows(t)
+	skipSlow(t)
+	_, runJS := asyncTestEnv(t)
+
+	value, err := runJS(`
+		const child = await exec.spawn("sh", ["-c", "printf 'all-written\\n'; sleep 30"], {timeoutMs: 400});
+		let out = "";
+		let truncated = false;
+		while (true) {
+			const chunk = await child.stdout.read();
+			if (chunk.done) { truncated = !!chunk.truncated; break; }
+			out += chunk.value;
+		}
+		const waitResult = await child.wait();
+		__collect(JSON.stringify({out, truncated, code: waitResult.code}));
+	`)
+	if err != nil {
+		t.Fatalf("runJS: %v", err)
+	}
+	got := value.String()
+	if !strings.Contains(got, `"out":"all-written\n"`) {
+		t.Fatalf("stdout = %s, want the complete pre-timeout output", got)
+	}
+	if strings.Contains(got, `"truncated":true`) {
+		t.Fatalf("stream was cut by the timeout kill although the only writer died with the group: %s", got)
+	}
+}

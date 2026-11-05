@@ -144,7 +144,13 @@
             // would silently skip them.
             var checkArgs = ['check-ignore', '--no-index'].concat(allPlanFiles);
             var checkResult = await gitExec(dir, checkArgs);
-            // exit 0 = at least one file is ignored; exit 1 = none ignored
+            // exit 0 = at least one file is ignored; exit 1 = none ignored.
+            // Any other status (128 fatal, -1 aborted capture) means the
+            // ignore list is UNKNOWN — proceeding would silently un-skip
+            // ignored files, so it is a top-level error.
+            if (checkResult.code !== 0 && checkResult.code !== 1) {
+                return { error: 'git check-ignore failed: ' + execFailReason(checkResult), results: [] };
+            }
             if (checkResult.code === 0 && checkResult.stdout.trim()) {
                 var ignoreLines = checkResult.stdout.trim().split('\n');
                 for (var il = 0; il < ignoreLines.length; il++) {
@@ -261,9 +267,9 @@
             }
 
             var sha = await gitExec(worktreePath, ['rev-parse', 'HEAD']);
-            if (sha.code !== 0) {
-                // A failed rev-parse in a just-committed worktree means the
-                // split is in an unknown state — surface it rather than
+            if (sha.code !== 0 || sha.error || sha.stdout.trim() === '') {
+                // A failed or empty rev-parse in a just-committed worktree means
+                // the split is in an unknown state — surface it rather than
                 // silently reporting an empty SHA (the commit itself is
                 // already durable, so the caller must see the problem).
                 splitResult.error = 'rev-parse HEAD after commit failed: ' + execFailReason(sha);
@@ -351,6 +357,13 @@
         if (allPlanFiles.length > 0) {
             var checkArgs = ['check-ignore', '--no-index'].concat(allPlanFiles);
             var checkResult = await gitExecAsync(dir, checkArgs);
+            // exit 0 = at least one file is ignored; exit 1 = none ignored.
+            // Any other status (128 fatal, -1 aborted capture) means the
+            // ignore list is UNKNOWN — proceeding would silently un-skip
+            // ignored files, so it is a top-level error.
+            if (checkResult.code !== 0 && checkResult.code !== 1) {
+                return { error: 'git check-ignore failed: ' + execFailReason(checkResult), results: [] };
+            }
             if (checkResult.code === 0 && checkResult.stdout.trim()) {
                 var ignoreLines = checkResult.stdout.trim().split('\n');
                 for (var il = 0; il < ignoreLines.length; il++) {
@@ -474,9 +487,10 @@
             }
 
             var sha = await gitExecAsync(worktreePath, ['rev-parse', 'HEAD']);
-            if (sha.code !== 0) {
-                // Same contract as the sync path: a failed rev-parse after a
-                // durable commit must surface, not collapse to an empty SHA.
+            if (sha.code !== 0 || sha.error || sha.stdout.trim() === '') {
+                // Same contract as the sync path: a failed or empty rev-parse
+                // after a durable commit must surface, not collapse to an
+                // empty SHA.
                 splitResult.error = 'rev-parse HEAD after commit failed: ' + execFailReason(sha);
                 results.push(splitResult);
                 await cleanupWorktreeAsync();

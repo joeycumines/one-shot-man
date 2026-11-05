@@ -9,6 +9,7 @@ package command
 //   - close() stops the event loop and nulls out all enhancement fields
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -352,5 +353,112 @@ func TestAgentEventStream_WaitForPromptReady_FallbackWithoutStateMachine(t *test
 	result, _ := val.(string)
 	if strings.Contains(result, `"error":"`) {
 		t.Errorf("sendToHandle failed without stateMachine: %s", result)
+	}
+}
+
+// TestChunk09_LookupFallbackWindowsAndError pins the fallback lookupBinary /
+// lookupSync contract in stripped builds (prSplit._lookupBinary(Async) absent):
+// on Windows it must use where.exe (not which), and an exec-layer failure
+// (error true) must NOT be reported as found.
+func TestChunk09_LookupFallbackWindowsAndError(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	evalJS := prsplittest.NewFullEngine(t, nil)
+
+	result, err := evalJS(`
+		(async function() {
+			var prSplit = globalThis.prSplit;
+			// Strip the chunk-00 helpers to force the chunk-09 fallback.
+			var savedAsync = prSplit._lookupBinaryAsync;
+			var savedSync = prSplit._lookupBinary;
+			delete prSplit._lookupBinaryAsync;
+			delete prSplit._lookupBinary;
+			var calls = [];
+			var execMod = prSplit._modules.exec;
+			var origExecv = execMod.execv;
+			var origSpawn = execMod.spawn;
+			var isWin = false;
+			execMod.execv = function(argv) {
+				calls.push(['execv', argv[0]]);
+				if (argv[0] === 'which' || argv[0] === 'where.exe') {
+					if (isWin) return { code: -1, stdout: '', stderr: '', error: true, message: 'command output capture was cut short before EOF' };
+					return { code: 0, stdout: '/usr/bin/agent\n', stderr: '', error: false, message: '' };
+				}
+				return origExecv(argv);
+			};
+			execMod.spawn = function(cmd, args) {
+				calls.push(['spawn', cmd, args[0]]);
+				function stream(chunks) {
+					var q = chunks.slice();
+					return { read: function() { return Promise.resolve(q.length > 0 ? q.shift() : {done: true}); } };
+				}
+				var stdoutChunks = isWin
+					? [{done: false, value: ''}, {done: true, truncated: true}]
+					: [{done: false, value: 'C:\\agent.exe\n'}, {done: true}];
+				return {
+					stdout: stream(stdoutChunks),
+					stderr: stream([{done: true}]),
+					wait: function() { return Promise.resolve({code: isWin ? -1 : 0, signal: null}); },
+					kill: function() {},
+					close: function() {}
+				};
+			};
+
+			// Unix: async fallback finds via which.
+			var ce = new prSplit.AgentCodeExecutor({ agentCommand: 'agent' });
+			var r1 = await ce.resolveAsync();
+			// Windows: sync fallback must use where.exe and treat error:true as not found.
+			isWin = true;
+			prSplit._isWindows = function() { return true; };
+			var r2 = await ce.resolve();
+			// Windows async fallback: truncated capture must not be found.
+			var r3 = await ce.resolveAsync();
+
+			execMod.execv = origExecv;
+			execMod.spawn = origSpawn;
+			prSplit._lookupBinaryAsync = savedAsync;
+			prSplit._lookupBinary = savedSync;
+
+			return JSON.stringify({
+				r1Error: r1.error || null,
+				r2Error: r2.error || null,
+				r3Error: r3.error || null,
+				calls: calls
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		R1Error *string `json:"r1Error"`
+		R2Error *string `json:"r2Error"`
+		R3Error *string `json:"r3Error"`
+		Calls   [][]any `json:"calls"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &got); err != nil {
+		t.Fatalf("unmarshal %v: %v", result, err)
+	}
+	if got.R1Error != nil {
+		t.Errorf("unix async fallback: error = %q, want nil (which succeeds)", *got.R1Error)
+	}
+	if got.R2Error == nil || !strings.Contains(*got.R2Error, "not found") {
+		t.Errorf("windows sync fallback with error:true: error = %v, want a not-found error, not a silent accept", got.R2Error)
+	}
+	if got.R3Error == nil || !strings.Contains(*got.R3Error, "not found") {
+		t.Errorf("windows async fallback with truncated capture: error = %v, want a not-found error", got.R3Error)
+	}
+	// The Windows sync fallback must have used where.exe, never which.
+	usedWhere := false
+	for _, c := range got.Calls {
+		if len(c) >= 2 {
+			if s, ok := c[1].(string); ok && s == "where.exe" {
+				usedWhere = true
+			}
+		}
+	}
+	if !usedWhere {
+		t.Errorf("windows fallback never called where.exe, calls = %v", got.Calls)
 	}
 }

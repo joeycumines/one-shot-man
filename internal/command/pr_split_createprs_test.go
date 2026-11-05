@@ -100,8 +100,12 @@ func execMockSetupJS() string {
             }
             if (isDiffQuiet) {
                 var r = globalThis._execResponses['git:diff:quiet'];
-                // Default: branches DIFFER (exit code 1 = has diff).
-                return r || fail('');
+                // Default: branches DIFFER (exit code 1 = has diff). error is
+                // true because the exit code is non-zero, but message stays
+                // empty: a real exit-1 diff is a complete capture, so the
+                // spawn mock must not flag it as truncated (code would
+                // otherwise collapse to -1 and trip the diff --quiet guard).
+                return r || {stdout: '', stderr: '', code: 1, error: true, message: ''};
             }
             // Default git success.
             return ok('');

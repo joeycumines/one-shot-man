@@ -180,7 +180,17 @@
         // hit "Base sha can't be blank" from the GitHub GraphQL API.
         if (!pushOnly) {
             var remoteCheck = await gitExec(dir, ['ls-remote', '--heads', remote, plan.baseBranch]);
-            if (remoteCheck.code !== 0 || remoteCheck.stdout.trim() === '') {
+            // ls-remote exits 0 with empty output when the ref is absent, and
+            // 2 on transport/auth errors; an exec-layer failure (error true,
+            // e.g. an aborted capture, code -1) is neither — it must be
+            // reported as an ls-remote failure, not as a missing branch.
+            if (remoteCheck.error === true || (remoteCheck.code !== 0 && remoteCheck.code !== 2)) {
+                return {
+                    error: 'ls-remote failed for remote "' + remote + '": ' + execFailReason(remoteCheck),
+                    results: []
+                };
+            }
+            if (remoteCheck.stdout.trim() === '') {
                 return {
                     error: 'base branch "' + plan.baseBranch + '" not found on remote "' + remote + '" — push it first or check the branch name',
                     results: []
@@ -237,11 +247,18 @@
             // base and head" / "Head sha can't be blank" which occurs when
             // execute-split fell back to --allow-empty.
             var diffCheck = await gitExec(dir, ['diff', '--quiet', base, prSplit2.name]);
+            // Exit 0 = no diff (skip PR); exit 1 = there is a diff (create
+            // the PR); anything else (128 git error, -1 aborted capture) is an
+            // unknown state — record the failure and do NOT create a PR.
             if (diffCheck.code === 0) {
                 // Exit code 0 means no diff — skip PR creation.
                 results[pi].error = null;
                 results[pi].skipped = true;
                 results[pi].skipReason = 'no changes between "' + base + '" and "' + prSplit2.name + '" — skipping PR creation';
+                continue;
+            }
+            if (diffCheck.code !== 1) {
+                results[pi].error = 'git diff --quiet failed: ' + execFailReason(diffCheck);
                 continue;
             }
 
@@ -257,7 +274,9 @@
         if (autoMerge) {
             for (var k = 0; k < plan.splits.length; k++) {
                 var splitForMerge = plan.splits[k];
-                if (results[k].error) continue;
+                // A skipped PR (no diff) has no PR to merge; only merge
+                // successfully created ones.
+                if (results[k].error || results[k].skipped) continue;
                 var mergeArgs = ['gh', 'pr', 'merge', splitForMerge.name,
                     '--' + mergeMethod,
                     '--auto'
@@ -364,7 +383,17 @@
         if (!pushOnly) {
             if (progressFn) progressFn('Verifying base branch "' + plan.baseBranch + '" on remote\u2026');
             var remoteCheck = await gitExecAsync(dir, ['ls-remote', '--heads', remote, plan.baseBranch]);
-            if (remoteCheck.code !== 0 || remoteCheck.stdout.trim() === '') {
+            // ls-remote exits 0 with empty output when the ref is absent, and
+            // 2 on transport/auth errors; an exec-layer failure (error true,
+            // e.g. an aborted capture, code -1) is neither \u2014 it must be
+            // reported as an ls-remote failure, not as a missing branch.
+            if (remoteCheck.error === true || (remoteCheck.code !== 0 && remoteCheck.code !== 2)) {
+                return {
+                    error: 'ls-remote failed for remote "' + remote + '": ' + execFailReason(remoteCheck),
+                    results: []
+                };
+            }
+            if (remoteCheck.stdout.trim() === '') {
                 return {
                     error: 'base branch "' + plan.baseBranch + '" not found on remote "' + remote + '" \u2014 push it first or check the branch name',
                     results: []
@@ -420,11 +449,18 @@
             // Pre-check: verify the head branch has actual changes from
             // the base. Avoids GraphQL error "No commits between base and head".
             var diffCheck = await gitExecAsync(dir, ['diff', '--quiet', base, prSplit2.name]);
+            // Exit 0 = no diff (skip PR); exit 1 = there is a diff (create
+            // the PR); anything else (128 git error, -1 aborted capture) is an
+            // unknown state — record the failure and do NOT create a PR.
             if (diffCheck.code === 0) {
                 // Exit code 0 means no diff — skip PR creation.
                 results[pi].error = null;
                 results[pi].skipped = true;
                 results[pi].skipReason = 'no changes between "' + base + '" and "' + prSplit2.name + '" \u2014 skipping PR creation';
+                continue;
+            }
+            if (diffCheck.code !== 1) {
+                results[pi].error = 'git diff --quiet failed: ' + execFailReason(diffCheck);
                 continue;
             }
 

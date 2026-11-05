@@ -59,13 +59,15 @@
         if (typeof prSplit._lookupBinaryAsync === 'function') {
             return await prSplit._lookupBinaryAsync(cmd);
         }
-        var isWin = typeof osmod !== 'undefined' && osmod &&
-            typeof osmod.getenv === 'function' &&
-            (osmod.getenv('OS') || osmod.getenv('GOOS') || '').indexOf('windows') !== -1;
+        // Fallback path (stripped test builds only): use the shared platform
+        // helper, never an undeclared osmod global or a case-mismatched
+        // getenv('OS') check ('Windows_NT' does not contain lowercase
+        // 'windows'). An exec-layer failure (error true) is not "not found".
+        var isWin = (typeof prSplit._isWindows === 'function') && prSplit._isWindows();
         var argv = isWin ? ['where.exe', cmd] : ['which', cmd];
         var result = await runAsync(exec, argv);
         var path = (result.stdout || '').split('\n')[0].trim();
-        return { found: result.code === 0 && path !== '', path: path };
+        return { found: !result.error && result.code === 0 && path !== '', path: path };
     }
 
     // resolveAsync determines the provider binary, non-blocking.
@@ -99,9 +101,12 @@
             if (typeof prSplit._lookupBinary === 'function') {
                 return await prSplit._lookupBinary(cmd);
             }
-            var result = await exec.execv(['which', cmd]);
+            // Fallback: where.exe on Windows, which elsewhere; an exec-layer
+            // failure (error true) is not "not found".
+            var isWin = (typeof prSplit._isWindows === 'function') && prSplit._isWindows();
+            var result = await exec.execv(isWin ? ['where.exe', cmd] : ['which', cmd]);
             var path = (result.stdout || '').split('\n')[0].trim();
-            return { found: result.code === 0 && path !== '', path: path };
+            return { found: !result.error && result.code === 0 && path !== '', path: path };
         }
 
         if (self.command) {

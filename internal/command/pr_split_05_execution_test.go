@@ -641,3 +641,140 @@ func TestChunk05_ExecuteSplitAsync_RevParseFailureSurfaces(t *testing.T) {
 		t.Error("worktree for failed split should have been cleaned up")
 	}
 }
+
+// TestChunk05_ExecuteSplit_CheckIgnoreErrorIsFatal pins that a git
+// check-ignore failure other than 0 (ignored) / 1 (none ignored) — e.g. exit
+// 128 or an aborted capture (error true, code -1) — aborts executeSplit with
+// the exec reason instead of silently proceeding with an empty ignore list.
+func TestChunk05_ExecuteSplit_CheckIgnoreErrorIsFatal(t *testing.T) {
+	t.Parallel()
+	dir := initGitRepo(t)
+	writeFile(t, filepath.Join(dir, "main.go"), "package main")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "base")
+	gitCmd(t, dir, "checkout", "-b", "feature")
+	writeFile(t, filepath.Join(dir, "feature.go"), "package feature")
+	gitCmd(t, dir, "add", "feature.go")
+	gitCmd(t, dir, "commit", "-m", "feature")
+
+	evalJS := prsplittest.NewChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
+
+	statuses := map[string]string{"feature.go": "A"}
+	statusJSON, _ := json.Marshal(statuses)
+
+	result, err := evalJS(`
+		(async function() {
+			var prSplit = globalThis.prSplit;
+			// Chunk 05 captures gitExec (which calls exec.execv) in a closure at
+			// load time, so patch the exec binding underneath.
+			var execMod = prSplit._modules.exec;
+			var origExecv = execMod.execv;
+			execMod.execv = function(argv) {
+				if (argv && argv.indexOf('check-ignore') >= 0) {
+					return { stdout: '', stderr: 'fatal: unable to access', code: 128, error: true, message: 'fatal: unable to access' };
+				}
+				return origExecv(argv);
+			};
+			var plan = {
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				dir: '` + escapeJSPath(dir) + `',
+				fileStatuses: ` + string(statusJSON) + `,
+				splits: [{ name: 'split/01-a', files: ['feature.go'], message: 'part 1' }]
+			};
+			var r = await prSplit.executeSplit(plan);
+			execMod.execv = origExecv;
+			return JSON.stringify({ error: r.error || '', resultCount: r.results.length });
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data struct {
+		Error       string `json:"error"`
+		ResultCount int    `json:"resultCount"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(data.Error, "git check-ignore failed") {
+		t.Errorf("error = %q, want a check-ignore failure", data.Error)
+	}
+	if !strings.Contains(data.Error, "unable to access") {
+		t.Errorf("error = %q, want the exec-layer reason carried through", data.Error)
+	}
+	if data.ResultCount != 0 {
+		t.Errorf("no split should have been executed, got %d results", data.ResultCount)
+	}
+}
+
+// TestChunk05_ExecuteSplitAsync_EmptyShaGuard pins that a rev-parse HEAD that
+// exits 0 with error true and empty stdout (an exec-layer anomaly) fails the
+// split instead of publishing an empty SHA.
+func TestChunk05_ExecuteSplitAsync_EmptyShaGuard(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+	dir, statuses := setupExecRepo(t)
+
+	evalJS := prsplittest.NewChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
+
+	statusJSON, _ := json.Marshal(statuses)
+
+	if _, err := evalJS(`
+		(function() {
+			var prSplit = globalThis.prSplit;
+			var orig = prSplit._gitExecAsync;
+			prSplit._gitExecAsync = async function(d, args) {
+				if (args && args[0] === 'rev-parse' && args[1] === 'HEAD' && d && d !== '` + escapeJSPath(dir) + `') {
+					return { stdout: '', stderr: '', code: 0, error: true, message: 'command output capture was cut short before EOF' };
+				}
+				return orig(d, args);
+			};
+		})()
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := evalJS(`
+		(function() {
+			var prSplit = globalThis.prSplit;
+			var plan = {
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				dir: '` + escapeJSPath(dir) + `',
+				fileStatuses: ` + string(statusJSON) + `,
+				splits: [
+					{ name: 'split/01-mods', files: ['modify.go', 'new-file.go'], message: 'modifications' }
+				]
+			};
+			var r = await prSplit.executeSplitAsync(plan);
+			return JSON.stringify(r);
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var execResult struct {
+		Error   *string `json:"error"`
+		Results []struct {
+			Name string  `json:"name"`
+			SHA  string  `json:"sha"`
+			Error *string `json:"error"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &execResult); err != nil {
+		t.Fatal(err)
+	}
+	if execResult.Error == nil || !strings.Contains(*execResult.Error, "rev-parse HEAD after commit failed") {
+		t.Fatalf("error = %v, want the rev-parse guard to fire", execResult.Error)
+	}
+	if !strings.Contains(*execResult.Error, "cut short") {
+		t.Errorf("error = %q, want the exec-layer reason carried through", *execResult.Error)
+	}
+	if len(execResult.Results) != 1 || execResult.Results[0].SHA != "" {
+		t.Errorf("failed split must not carry a SHA, got %+v", execResult.Results)
+	}
+}

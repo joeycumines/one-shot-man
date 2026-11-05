@@ -395,16 +395,16 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 	stdoutPipe := io.ReadCloser(stdoutReader)
 	stderrPipe := io.ReadCloser(stderrReader)
 
-		child := &ChildProcess{
-			cmd:       cmd,
-			tree:      tree,
-			done:      make(chan struct{}),
-			settled:   make(chan struct{}),
-			abort:     make(chan struct{}),
-			stdinPipe: stdinPipe,
-			stdout:    newPipeQueue(),
-			stderr:    newPipeQueue(),
-		}
+	child := &ChildProcess{
+		cmd:       cmd,
+		tree:      tree,
+		done:      make(chan struct{}),
+		settled:   make(chan struct{}),
+		abort:     make(chan struct{}),
+		stdinPipe: stdinPipe,
+		stdout:    newPipeQueue(),
+		stderr:    newPipeQueue(),
+	}
 
 	// Start pump goroutines for stdout and stderr.
 	var pumpWg sync.WaitGroup

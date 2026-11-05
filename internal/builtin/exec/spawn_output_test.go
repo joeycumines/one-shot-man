@@ -396,11 +396,12 @@ func TestReadPipeNilContextDoesNotPanic(t *testing.T) {
 	child.stdout.push(readChunk{data: []byte("data")})
 	child.stdout.close()
 
-	data, done, err := child.ReadStdoutContext(nil) //nolint:staticcheck // nil ctx is the contract under test
+	data, done, err := child.ReadStdoutContext(nil) //lint:ignore SA1012 nil ctx is the contract under test
 	if err != nil || done || data != "data" {
 		t.Fatalf("first read = (%q, %v, %v), want the queued data", data, done, err)
 	}
-	if _, done, err := child.ReadStdoutContext(nil); err != nil || !done { //nolint:staticcheck
+	//lint:ignore SA1012 nil ctx is the contract under test
+	if _, done, err := child.ReadStdoutContext(nil); err != nil || !done {
 		t.Fatalf("terminal read = (%v, %v), want a clean end", done, err)
 	}
 }

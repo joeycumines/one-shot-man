@@ -760,8 +760,8 @@ func TestChunk05_ExecuteSplitAsync_EmptyShaGuard(t *testing.T) {
 	var execResult struct {
 		Error   *string `json:"error"`
 		Results []struct {
-			Name string  `json:"name"`
-			SHA  string  `json:"sha"`
+			Name  string  `json:"name"`
+			SHA   string  `json:"sha"`
 			Error *string `json:"error"`
 		} `json:"results"`
 	}

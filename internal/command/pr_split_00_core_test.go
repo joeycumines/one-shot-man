@@ -715,11 +715,11 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 						stdout: stream(` + test.stdoutChunks + `),
 						stderr: stream(` + test.stderrChunks + `),
 						wait: ` + func() string {
-							if test.waitResult == "REJECT" {
-								return `async function() { throw new Error(` + strconv.Quote(test.waitMessage) + `); }`
-							}
-							return `async function() { return ` + test.waitResult + `; }`
-						}() + `
+				if test.waitResult == "REJECT" {
+					return `async function() { throw new Error(` + strconv.Quote(test.waitMessage) + `); }`
+				}
+				return `async function() { return ` + test.waitResult + `; }`
+			}() + `
 					};
 					return prSplit._collectSpawnOutput(child, null).then(function(collected) {
 						return JSON.stringify(collected);
@@ -924,10 +924,10 @@ func TestChunk00_ShellExecAsyncReportsTimeoutBeforeTruncation(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got struct {
-		Stdout  string `json:"stdout"`
+		Stdout  string  `json:"stdout"`
 		Code    float64 `json:"code"`
-		Error   bool   `json:"error"`
-		Message string `json:"message"`
+		Error   bool    `json:"error"`
+		Message string  `json:"message"`
 	}
 	if err := json.Unmarshal([]byte(result.(string)), &got); err != nil {
 		t.Fatalf("unmarshal %v: %v", result, err)

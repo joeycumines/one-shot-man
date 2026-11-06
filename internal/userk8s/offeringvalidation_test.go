@@ -3,6 +3,8 @@ package userk8s
 import (
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
 )
 
 const routeValidationProvider = `apiVersion: one-shot-man/v1alpha1
@@ -177,11 +179,7 @@ spec:
 	}
 }
 
-// TestRouteValidationAllowsTwoShaperRoutesForOneAccess pins the documented
-// multi-account design: ModelRoute.metadata.name is the shaper section identity,
-// so several routes (accounts, regions, protocols) may dial the same logical
-// ModelAccess. Each route here has a distinct mount prefix, which is what the
-// shaper actually needs to keep them apart.
+// TestRouteValidationAllowsTwoShaperRoutesForOneAccess checks multi-route access.
 func TestRouteValidationAllowsTwoShaperRoutesForOneAccess(t *testing.T) {
 	_, err := loadDocuments(routeValidationDocuments(
 		routeValidationRoute("alpha-one", "alpha-chat", "", ""),
@@ -192,9 +190,81 @@ func TestRouteValidationAllowsTwoShaperRoutesForOneAccess(t *testing.T) {
 	}
 }
 
-// TestRouteValidationRefusesTwoShaperRoutesOnOneMount is the hazard the
-// per-access ban was standing in for: two shaper sections claiming the same
-// local path would serve whichever route bound it first.
+func TestRouteValidationNormalizesSurfaceAPIPathsToOneMount(t *testing.T) {
+	route := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-local
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - anthropic
+  - chat
+  - responses
+  endpoints:
+    anthropic: http://127.0.0.1:11239/alpha/anthropic
+    chat: http://127.0.0.1:11239/alpha/openai/v1
+    responses: http://127.0.0.1:11239/alpha/openai/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	_, err := loadDocuments(routeValidationDocuments(route)...)
+	if err != nil {
+		t.Fatalf("surface API paths should resolve to the shared /alpha mount: %v", err)
+	}
+}
+
+func TestRouteValidationDetectsDuplicateMountWithSurfaceAPIPaths(t *testing.T) {
+	first := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-api-paths
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - anthropic
+  - chat
+  endpoints:
+    anthropic: http://127.0.0.1:11239/shared/anthropic
+    chat: http://127.0.0.1:11239/shared/openai/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	second := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-legacy-path
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - chat
+  endpoints:
+    chat: http://127.0.0.1:11239/shared/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	_, err := loadDocuments(routeValidationDocuments(first, second)...)
+	if err == nil || !strings.Contains(err.Error(), "both mount the shaper at prefix \"/shared\"") {
+		t.Fatalf("error: got %v, want the normalized /shared mount collision", err)
+	}
+}
+
+// TestRouteValidationRefusesTwoShaperRoutesOnOneMount checks duplicate mount.
 func TestRouteValidationRefusesTwoShaperRoutesOnOneMount(t *testing.T) {
 	first := `apiVersion: one-shot-man/v1alpha1
 kind: ModelRoute
@@ -241,9 +311,7 @@ spec:
 	}
 }
 
-// TestRouteValidationRefusesSurfaceWithoutMountPrefix covers the sentinel bug:
-// a surface whose endpoint is just /v1 (or /) contributes no mount prefix, and
-// a later surface must not be allowed to define one on its behalf.
+// TestRouteValidationRefusesSurfaceWithoutMountPrefix checks no-mount surface.
 func TestRouteValidationRefusesSurfaceWithoutMountPrefix(t *testing.T) {
 	noPrefix := `apiVersion: one-shot-man/v1alpha1
 kind: ModelRoute
@@ -269,6 +337,31 @@ spec:
 	}
 }
 
+func TestRouteValidationRefusesAPIPathWithoutMountPrefix(t *testing.T) {
+	noPrefix := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-one
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - chat
+  endpoints:
+    chat: http://127.0.0.1:11239/openai/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	_, err := loadDocuments(routeValidationDocuments(noPrefix)...)
+	if err == nil || !strings.Contains(err.Error(), "carries no mount prefix") {
+		t.Fatalf("error: got %v, want an API-only path refused", err)
+	}
+}
+
 func TestRouteValidationRefusesSurfaceWithMultipleSlashesBeforeV1(t *testing.T) {
 	multiSlash := `apiVersion: one-shot-man/v1alpha1
 kind: ModelRoute
@@ -291,6 +384,164 @@ spec:
 	_, err := loadDocuments(routeValidationDocuments(multiSlash)...)
 	if err == nil || !strings.Contains(err.Error(), "carries no mount prefix") {
 		t.Fatalf("error: got %v, want a refusal naming the prefixless surface", err)
+	}
+}
+
+// TestShaperMountPrefixNormalization checks endpoint->mount derivation.
+func TestShaperMountPrefixNormalization(t *testing.T) {
+	route := func(surface, endpoint string) *v1alpha1.ModelRouteSpec {
+		return &v1alpha1.ModelRouteSpec{
+			Surfaces:  []string{surface},
+			Endpoints: map[string]v1alpha1.SurfaceEndpoint{surface: v1alpha1.SurfaceEndpoint(endpoint)},
+		}
+	}
+	for _, test := range []struct {
+		name     string
+		surface  string
+		endpoint string
+		want     string
+		wantErr  string
+	}{
+		{name: "bare v1 chat", surface: "chat", endpoint: "http://127.0.0.1:11239/alpha/v1", want: "/alpha"},
+		{name: "bare v1 responses", surface: "responses", endpoint: "http://127.0.0.1:11239/alpha/v1", want: "/alpha"},
+		{name: "bare anthropic mount", surface: "anthropic", endpoint: "http://127.0.0.1:11239/alpha", want: "/alpha"},
+		{name: "anthropic api suffix", surface: "anthropic", endpoint: "http://127.0.0.1:11239/alpha/anthropic", want: "/alpha"},
+		{name: "anthropic api suffix and v1", surface: "anthropic", endpoint: "http://127.0.0.1:11239/alpha/anthropic/v1", want: "/alpha"},
+		{name: "trailing slash", surface: "chat", endpoint: "http://127.0.0.1:11239/alpha/v1/", want: "/alpha"},
+		{name: "openai path", surface: "chat", endpoint: "http://127.0.0.1:11239/alpha/openai/v1", want: "/alpha"},
+		{name: "openai path responses", surface: "responses", endpoint: "http://127.0.0.1:11239/alpha/openai/v1", want: "/alpha"},
+		{name: "doubled api segment", surface: "chat", endpoint: "http://127.0.0.1:11239/openai/openai/v1", want: "/openai"},
+		{name: "doubled api segment anthropic", surface: "anthropic", endpoint: "http://127.0.0.1:11239/anthropic/anthropic", want: "/anthropic"},
+		// A mount whose last segment is one the surface strips (/v1 included)
+		// is expressed by repeating it.
+		{name: "doubled v1 mount chat", surface: "chat", endpoint: "http://127.0.0.1:11239/api/v1/v1", want: "/api/v1"},
+		{name: "doubled v1 mount anthropic", surface: "anthropic", endpoint: "http://127.0.0.1:11239/api/v1/v1", want: "/api/v1"},
+		{name: "openai mount on anthropic surface", surface: "anthropic", endpoint: "http://127.0.0.1:11239/openai", want: "/openai"},
+		{name: "chat without v1 keeps the final segment", surface: "chat", endpoint: "http://127.0.0.1:11239/alpha/openai", want: "/alpha/openai"},
+		// Repeated slashes may not manufacture a mount, and must normalize to
+		// the same mount as their canonical spelling.
+		{name: "repeat slash after openai", surface: "chat", endpoint: "http://127.0.0.1:11239/openai//v1", wantErr: "carries no mount prefix"},
+		{name: "repeat slash after anthropic", surface: "anthropic", endpoint: "http://127.0.0.1:11239/anthropic//v1", wantErr: "carries no mount prefix"},
+		{name: "repeat slash before v1", surface: "anthropic", endpoint: "http://127.0.0.1:11239///v1", wantErr: "carries no mount prefix"},
+		{name: "repeat slash inside a mount", surface: "chat", endpoint: "http://127.0.0.1:11239/alpha/openai//v1", want: "/alpha"},
+		{name: "repeat slash inside an anthropic mount", surface: "anthropic", endpoint: "http://127.0.0.1:11239/alpha/anthropic//v1", want: "/alpha"},
+		// Dot segments are resolved the same way a router resolves them, so a
+		// path cannot spell one mount two ways.
+		{name: "current directory segment", surface: "chat", endpoint: "http://127.0.0.1:11239/alpha/./openai/v1", want: "/alpha"},
+		{name: "parent directory segment", surface: "chat", endpoint: "http://127.0.0.1:11239/beta/../alpha/openai/v1", want: "/alpha"},
+		{name: "trailing current directory", surface: "chat", endpoint: "http://127.0.0.1:11239/alpha/.", want: "/alpha"},
+		{name: "dot only", surface: "chat", endpoint: "http://127.0.0.1:11239/.", wantErr: "carries no mount prefix"},
+		{name: "parent above root", surface: "anthropic", endpoint: "http://127.0.0.1:11239/../v1", wantErr: "carries no mount prefix"},
+		{name: "api only path", surface: "chat", endpoint: "http://127.0.0.1:11239/openai/v1", wantErr: "carries no mount prefix"},
+		{name: "api only path responses", surface: "responses", endpoint: "http://127.0.0.1:11239/openai/v1", wantErr: "carries no mount prefix"},
+		// A chat/responses endpoint that is the bare API segment carries no
+		// mount either. Accepting it would name the mount after the segment the
+		// surface owns, and would collide with a real mount called "/openai"
+		// (which is spelled doubled). This is the check the gated strip must
+		// not weaken.
+		{name: "bare api segment", surface: "chat", endpoint: "http://127.0.0.1:11239/openai", wantErr: "carries no mount prefix"},
+		{name: "bare api segment trailing slash", surface: "chat", endpoint: "http://127.0.0.1:11239/openai/", wantErr: "carries no mount prefix"},
+		{name: "bare api segment repeated slash", surface: "responses", endpoint: "http://127.0.0.1:11239//openai", wantErr: "carries no mount prefix"},
+		{name: "api only path anthropic", surface: "anthropic", endpoint: "http://127.0.0.1:11239/anthropic", wantErr: "carries no mount prefix"},
+		{name: "api only path anthropic and v1", surface: "anthropic", endpoint: "http://127.0.0.1:11239/anthropic/v1", wantErr: "carries no mount prefix"},
+		{name: "root only", surface: "chat", endpoint: "http://127.0.0.1:11239/", wantErr: "carries no mount prefix"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := shaperMountPrefix("alpha-local", route(test.surface, test.endpoint))
+			if test.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("shaperMountPrefix(%q) error: got %v (mount %q), want %q", test.endpoint, err, got, test.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("shaperMountPrefix(%q): %v", test.endpoint, err)
+			}
+			if got != test.want {
+				t.Fatalf("shaperMountPrefix(%q) = %q, want %q", test.endpoint, got, test.want)
+			}
+		})
+	}
+}
+
+// TestRouteValidationAllowsMixedSurfaceLayouts pins the accepted convention:
+// a route may publish a bare <mount> for anthropic with <mount>/v1 for chat,
+// or <mount>/anthropic with <mount>/openai/v1. Both spellings are one mount.
+func TestRouteValidationAllowsMixedSurfaceLayouts(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		endpoint map[string]string
+	}{
+		{
+			name: "bare mount layouts",
+			endpoint: map[string]string{
+				"anthropic": "http://127.0.0.1:11239/alpha",
+				"chat":      "http://127.0.0.1:11239/alpha/v1",
+				"responses": "http://127.0.0.1:11239/alpha/v1",
+			},
+		},
+		{
+			name: "api-suffix layouts",
+			endpoint: map[string]string{
+				"anthropic": "http://127.0.0.1:11239/alpha/anthropic",
+				"chat":      "http://127.0.0.1:11239/alpha/openai/v1",
+				"responses": "http://127.0.0.1:11239/alpha/openai/v1",
+			},
+		},
+		// Both layouts may appear on one mount, so a route may legitimately
+		// mix them.
+		{
+			name: "v1 chat with anthropic suffix",
+			endpoint: map[string]string{
+				"anthropic": "http://127.0.0.1:11239/alpha/anthropic",
+				"chat":      "http://127.0.0.1:11239/alpha/v1",
+				"responses": "http://127.0.0.1:11239/alpha/v1",
+			},
+		},
+		{
+			name: "openai chat with bare anthropic",
+			endpoint: map[string]string{
+				"anthropic": "http://127.0.0.1:11239/alpha",
+				"chat":      "http://127.0.0.1:11239/alpha/openai/v1",
+				"responses": "http://127.0.0.1:11239/alpha/openai/v1",
+			},
+		},
+		{
+			name: "openai chat with anthropic v1",
+			endpoint: map[string]string{
+				"anthropic": "http://127.0.0.1:11239/alpha/anthropic/v1",
+				"chat":      "http://127.0.0.1:11239/alpha/openai/v1",
+				"responses": "http://127.0.0.1:11239/alpha/openai/v1",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			route := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-local
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - anthropic
+  - chat
+  - responses
+  endpoints:
+    anthropic: ` + test.endpoint["anthropic"] + `
+    chat: ` + test.endpoint["chat"] + `
+    responses: ` + test.endpoint["responses"] + `
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+			if _, err := loadDocuments(routeValidationDocuments(route)...); err != nil {
+				t.Fatalf("mixed surface layouts share one mount and must load: %v", err)
+			}
+		})
 	}
 }
 
@@ -321,6 +572,86 @@ spec:
 	_, err := loadDocuments(routeValidationDocuments(mismatched)...)
 	if err == nil || !strings.Contains(err.Error(), "carries no mount prefix") {
 		t.Fatalf("error: got %v, want the prefixless surface refused rather than silently compared", err)
+	}
+}
+
+// TestRouteValidationRefusesEndpointsThatDisagreeOnTheMount is the comparison
+// the previous test cannot reach: both endpoints carry a real mount, so the
+// only thing wrong is that they name different ones.
+func TestRouteValidationRefusesEndpointsThatDisagreeOnTheMount(t *testing.T) {
+	disagreeing := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-one
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - chat
+  - responses
+  endpoints:
+    chat: http://127.0.0.1:11239/alpha/openai/v1
+    responses: http://127.0.0.1:11239/beta/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	_, err := loadDocuments(routeValidationDocuments(disagreeing)...)
+	if err == nil ||
+		!strings.Contains(err.Error(), "endpoints disagree on the mount prefix") ||
+		!strings.Contains(err.Error(), `"/alpha"`) ||
+		!strings.Contains(err.Error(), `"/beta"`) {
+		t.Fatalf("error: got %v, want both competing mount prefixes named", err)
+	}
+}
+
+// TestRouteValidationDetectsRepeatedSlashMountCollision pins that repeated
+// slashes cannot hide a duplicate mount: the canonical and the repeated-slash
+// spelling of one mount are the same local path, so two shaper sections must
+// still collide.
+func TestRouteValidationDetectsRepeatedSlashMountCollision(t *testing.T) {
+	canonical := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-canonical
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - chat
+  endpoints:
+    chat: http://127.0.0.1:11239/alpha/openai/v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	repeated := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-repeated
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - chat
+  endpoints:
+    chat: http://127.0.0.1:11239/alpha//openai//v1
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+	_, err := loadDocuments(routeValidationDocuments(canonical, repeated)...)
+	if err == nil || !strings.Contains(err.Error(), `both mount the shaper at prefix "/alpha"`) {
+		t.Fatalf("error: got %v, want the repeated-slash spelling to collide on /alpha", err)
 	}
 }
 

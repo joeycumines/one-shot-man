@@ -1,15 +1,5 @@
 'use strict';
-// pr_split_09_agent.js — Agent Code Executor & prompt system
-// Dependencies: chunks 00, 02 must be loaded first
-// Late-binds: exec (00), template (00), detectGoModulePath (02), fileExtension (00), runtime (00)
-//
-// Exports: AgentCodeExecutor, renderPrompt, renderClassificationPrompt,
-//          renderSplitPlanPrompt, renderConflictPrompt, detectLanguage,
-//          CLASSIFICATION_PROMPT_TEMPLATE, SPLIT_PLAN_PROMPT_TEMPLATE,
-//          CONFLICT_RESOLUTION_PROMPT_TEMPLATE
-//
-// Implementation uses osm:aimux (generic agent/process multiplexer),
-// provider-agnostic and not tied to any specific LLM CLI.
+// pr_split_09_agent.js — Agent Code Executor & prompt system.
 
 (function(prSplit) {
 
@@ -25,11 +15,7 @@
         this.provider = '';
         this.handle = null;
         this.sessionId = null;
-        // Optional TUIStateMachine integration for event-driven state tracking.
-        // These are created in initEventTracking() after spawn succeeds.
-        // If aimux does not provide the constructors (e.g. stripped test
-        // builds), all remain null and the existing screenshot-based
-        // detection and isAlive() polling continue to work unchanged.
+        // Optional TUIStateMachine (created in initEventTracking).
         this.stateMachine = null;
         this.eventStream = null;
         this.healthMonitor = null;
@@ -40,26 +26,14 @@
     // runAsync runs a command via osm:exec spawn and returns buffered output.
     async function runAsync(exec, argv) {
         var child = await exec.spawn(argv[0], argv.slice(1));
-        async function readAll(stream) {
-            var buf = '';
-            while (true) {
-                var chunk = await stream.read();
-                if (chunk.done) break;
-                if (chunk.value !== undefined && chunk.value !== null) {
-                    buf += String(chunk.value);
-                }
-            }
-            return buf;
-        }
-        var results = await Promise.all([
-            readAll(child.stdout),
-            readAll(child.stderr),
-            child.wait()
-        ]);
+        var collected = await prSplit._collectSpawnOutput(child, null);
+        // Cut capture: code -1, error true.
         return {
-            stdout: results[0],
-            stderr: results[1],
-            code: (results[2] && results[2].code !== undefined) ? results[2].code : 0
+            stdout: collected.stdout,
+            stderr: collected.stderr,
+            code: collected.code,
+            error: collected.error,
+            message: collected.message
         };
     }
 
@@ -69,13 +43,15 @@
         if (typeof prSplit._lookupBinaryAsync === 'function') {
             return await prSplit._lookupBinaryAsync(cmd);
         }
-        var isWin = typeof osmod !== 'undefined' && osmod &&
-            typeof osmod.getenv === 'function' &&
-            (osmod.getenv('OS') || osmod.getenv('GOOS') || '').indexOf('windows') !== -1;
+        // Fallback path (stripped test builds only): use the shared platform
+        // helper, never an undeclared osmod global or a case-mismatched
+        // getenv('OS') check ('Windows_NT' does not contain lowercase
+        // 'windows'). An exec-layer failure (error true) is not "not found".
+        var isWin = (typeof prSplit._isWindows === 'function') && prSplit._isWindows();
         var argv = isWin ? ['where.exe', cmd] : ['which', cmd];
         var result = await runAsync(exec, argv);
         var path = (result.stdout || '').split('\n')[0].trim();
-        return { found: result.code === 0 && path !== '', path: path };
+        return { found: !result.error && result.code === 0 && path !== '', path: path };
     }
 
     // resolveAsync determines the provider binary, non-blocking.
@@ -109,9 +85,12 @@
             if (typeof prSplit._lookupBinary === 'function') {
                 return await prSplit._lookupBinary(cmd);
             }
-            var result = await exec.execv(['which', cmd]);
+            // Fallback: where.exe on Windows, which elsewhere; an exec-layer
+            // failure (error true) is not "not found".
+            var isWin = (typeof prSplit._isWindows === 'function') && prSplit._isWindows();
+            var result = await exec.execv(isWin ? ['where.exe', cmd] : ['which', cmd]);
             var path = (result.stdout || '').split('\n')[0].trim();
-            return { found: result.code === 0 && path !== '', path: path };
+            return { found: !result.error && result.code === 0 && path !== '', path: path };
         }
 
         if (self.command) {
@@ -128,15 +107,7 @@
         };
     };
 
-    // buildAgentArgv is the single source for the agent argv. userArgs come
-    // first, then exactly one --mcp-config pair. defaultArgs is empty by
-    // construction so provider concatenation (defaultArgs plus opts.Args at
-    // provider_process.go:57) cannot duplicate the flag.
-    // Matches both --mcp-config forms: bare ('--mcp-config', value in the
-    // next argv element) and attached ('--mcp-config=/path'). Exact-element
-    // counting alone would miss the attached form, letting a user-supplied
-    // --mcp-config=x slip past the exactly-one assertion and produce a
-    // duplicate MCP config pair at spawn.
+    // buildAgentArgv builds the agent argv.
     function isMcpConfigArg(arg) {
         return arg === '--mcp-config' || (typeof arg === 'string' && arg.indexOf('--mcp-config=') === 0);
     }
@@ -323,8 +294,7 @@
             cmdDesc += ' ' + baseArgs.join(' ');
         }
 
-        // Generic providers receive one managed --mcp-config pair. Opencode
-        // receives the same callback through OPENCODE_CONFIG_CONTENT instead.
+        // Generic providers get one --mcp-config pair.
         if (invocation.provider === 'generic' && countMcpConfig(baseArgs) !== 1) {
             return { error: 'agent argv must contain exactly one --mcp-config at provider boundary' };
         }
@@ -375,12 +345,7 @@
         return { error: null, sessionId: this.sessionId, argv: baseArgs };
     };
 
-    // initEventTracking creates the optional TUIStateMachine, EventStream,
-    // and HealthMonitor after a successful spawn. Each is created
-    // independently — if one fails, the others are still attempted.
-    // All are optional: if aimux does not expose the constructor or the
-    // handle lacks the required methods, the field stays null and the
-    // existing screenshot-based detection and isAlive() polling continue.
+    // initEventTracking creates optional monitors.
     AgentCodeExecutor.prototype.initEventTracking = function() {
         try {
             if (typeof aimux.newTUIStateMachine === 'function') {
@@ -412,13 +377,7 @@
         this.startEventLoop();
     };
 
-    // startEventLoop reads output lines from the handle via
-    // receiveEventAsync and feeds each line to the state machine's
-    // processOutput method. The loop is Promise-based and non-blocking:
-    // each iteration awaits a single line, then schedules the next via
-    // setTimeout(0) to yield to the JS event loop. The loop stops when
-    // stopEventLoop is called, the handle dies, or receiveEventAsync
-    // resolves null (EOF / unsupported).
+    // startEventLoop reads output lines into the state machine.
     AgentCodeExecutor.prototype.startEventLoop = function() {
         if (this._eventLoopRunning) return;
         if (!this.stateMachine || !this.handle) return;

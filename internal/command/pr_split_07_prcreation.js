@@ -4,10 +4,10 @@
 // Attaches to prSplit: createPRs.
 
 (function(prSplit) {
-    // Note: gitExec and exec are read at call time (late-bound) rather than
-    // captured at load time. This enables test mocking since createPRs
-    // involves external calls (push, gh CLI) that must be mockable.
+    // gitExec/exec are late-bound for test mocking.
     var padIndex = prSplit._padIndex;
+    // Late-bound so test mocks of _execFailReason are honored.
+    var execFailReason = function(result) { return prSplit._execFailReason(result); };
 
     // --- formatPRTitle — formats PR title following Commit-Loom conventions ---
     function formatPRTitle(plan, splitIndex) {
@@ -121,13 +121,7 @@
         return lines.join('\n');
     }
 
-    // --- createPRs — pushes branches and creates stacked GitHub PRs ---
-    // Options:
-    //   draft:       bool   - Create as draft PRs (default: true)
-    //   remote:      string - Git remote to push to (default: 'origin')
-    //   pushOnly:    bool   - Push branches but don't create PRs
-    //   autoMerge:   bool   - Enable auto-merge via merge queue
-    //   mergeMethod: string - Merge method: squash, merge, rebase
+    // --- createPRs — pushes branches and creates stacked PRs ---
     async function createPRs(plan, options) {
         options = options || {};
         var resolveDir = prSplit._resolveDir;
@@ -143,7 +137,7 @@
             return { error: 'no splits in plan — run "plan" or "run" to generate splits first', results: [] };
         }
 
-        // T077: Dry-run mode — simulate all operations, no real git/gh calls.
+        // T077: dry-run mode.
         if (dryRun) {
             var dryResults = [];
             for (var d = 0; d < plan.splits.length; d++) {
@@ -174,11 +168,17 @@
             }
         }
 
-        // Pre-flight: verify baseBranch exists on the remote so we don't
-        // hit "Base sha can't be blank" from the GitHub GraphQL API.
+        // Pre-flight: verify baseBranch on remote.
         if (!pushOnly) {
             var remoteCheck = await gitExec(dir, ['ls-remote', '--heads', remote, plan.baseBranch]);
-            if (remoteCheck.code !== 0 || remoteCheck.stdout.trim() === '') {
+            // ls-remote: 0 empty = absent; 2 = transport error; error true = failure.
+            if (remoteCheck.error === true || (remoteCheck.code !== 0 && remoteCheck.code !== 2)) {
+                return {
+                    error: 'ls-remote failed for remote "' + remote + '": ' + execFailReason(remoteCheck),
+                    results: []
+                };
+            }
+            if (remoteCheck.stdout.trim() === '') {
                 return {
                     error: 'base branch "' + plan.baseBranch + '" not found on remote "' + remote + '" — push it first or check the branch name',
                     results: []
@@ -197,9 +197,9 @@
                     name: split.name,
                     pushed: false,
                     prUrl: '',
-                    error: 'push failed: ' + pushResult.stderr.trim()
+                    error: 'push failed: ' + execFailReason(pushResult)
                 });
-                return { error: 'push failed for ' + split.name + ': ' + pushResult.stderr.trim(), results: results };
+                return { error: 'push failed for ' + split.name + ': ' + execFailReason(pushResult), results: results };
             }
             results.push({
                 name: split.name,
@@ -230,22 +230,24 @@
                 ghArgs.push('--draft');
             }
 
-            // Pre-check: verify the head branch has actual changes from
-            // the base. This avoids the GraphQL error "No commits between
-            // base and head" / "Head sha can't be blank" which occurs when
-            // execute-split fell back to --allow-empty.
+            // Pre-check: head has changes from base.
             var diffCheck = await gitExec(dir, ['diff', '--quiet', base, prSplit2.name]);
+            // Exit 0 = no diff (skip); 1 = diff (create); else = error.
             if (diffCheck.code === 0) {
-                // Exit code 0 means no diff — skip PR creation.
+                // No diff — skip.
                 results[pi].error = null;
                 results[pi].skipped = true;
                 results[pi].skipReason = 'no changes between "' + base + '" and "' + prSplit2.name + '" — skipping PR creation';
                 continue;
             }
+            if (diffCheck.code !== 1) {
+                results[pi].error = 'git diff --quiet failed: ' + execFailReason(diffCheck);
+                continue;
+            }
 
             var ghResult = await exec.execv(ghArgs);
             if (ghResult.code !== 0) {
-                results[pi].error = 'gh pr create failed: ' + ghResult.stderr.trim();
+                results[pi].error = 'gh pr create failed: ' + execFailReason(ghResult);
             } else {
                 results[pi].prUrl = ghResult.stdout.trim();
             }
@@ -255,14 +257,16 @@
         if (autoMerge) {
             for (var k = 0; k < plan.splits.length; k++) {
                 var splitForMerge = plan.splits[k];
-                if (results[k].error) continue;
+                // A skipped PR (no diff) has no PR to merge; only merge
+                // successfully created ones.
+                if (results[k].error || results[k].skipped) continue;
                 var mergeArgs = ['gh', 'pr', 'merge', splitForMerge.name,
                     '--' + mergeMethod,
                     '--auto'
                 ];
                 var mergeResult = await exec.execv(mergeArgs);
                 if (mergeResult.code !== 0) {
-                    results[k].mergeError = 'auto-merge failed: ' + mergeResult.stderr.trim();
+                    results[k].mergeError = 'auto-merge failed: ' + execFailReason(mergeResult);
                 } else {
                     results[k].autoMerge = true;
                 }
@@ -277,21 +281,9 @@
     prSplit.formatPRBody = formatPRBody;
     prSplit.createPRs = createPRs;
 
-    // --- createPRsAsync — non-blocking variant for TUI use (T076) ---
-    // Identical logic to createPRs but uses exec.spawn via _gitExecAsync
-    // and a local ghExecAsync helper instead of blocking exec.execv.
-    // This keeps the Goja event loop free so BubbleTea can continue
-    // rendering and processing events during push/PR/merge operations.
-    //
-    // Additional options over createPRs:
-    //   progressFn(msg)  — callback for per-step progress updates
-    //
-    // The synchronous createPRs is preserved for REPL / CLI / test usage.
+    // --- createPRsAsync — non-blocking variant (T076) ---
 
-    // ghExecAsync — spawn 'gh' with args array, collect stdout+stderr,
-    // return {stdout, stderr, code, error, message}.
-    // Uses exec.spawn directly (not shell) to avoid quoting issues
-    // with PR titles/bodies that contain special characters.
+    // ghExecAsync: spawn gh, collect output.
     async function ghExecAsync(args, options) {
         var exec = prSplit._modules.exec;
         var outputFn = (options && typeof options.outputFn === 'function') ? options.outputFn : null;
@@ -301,40 +293,13 @@
         if (outputFn) outputFn('\u276f gh ' + args.join(' '));
 
         var child = await exec.spawn('gh', args);
-
-        async function readAll(stream, streamOutputFn) {
-            var buf = '';
-            while (true) {
-                var chunk = await stream.read();
-                if (chunk.done) break;
-                if (chunk.value !== undefined && chunk.value !== null) {
-                    var chunkStr = String(chunk.value);
-                    buf += chunkStr;
-                    if (streamOutputFn) {
-                        var lines = chunkStr.split('\n');
-                        for (var cl = 0; cl < lines.length; cl++) {
-                            var line = lines[cl];
-                            if (cl === lines.length - 1 && line === '') continue;
-                            streamOutputFn(line);
-                        }
-                    }
-                }
-            }
-            return buf;
-        }
-
-        var results = await Promise.all([
-            readAll(child.stdout, outputFn),
-            readAll(child.stderr, outputFn),
-            child.wait()
-        ]);
-        var code = (results[2] && results[2].code !== undefined) ? results[2].code : 0;
+        var collected = await prSplit._collectSpawnOutput(child, outputFn);
         return {
-            stdout: results[0],
-            stderr: results[1],
-            code: code,
-            error: code !== 0,
-            message: code !== 0 ? 'exit status ' + code : ''
+            stdout: collected.stdout,
+            stderr: collected.stderr,
+            code: collected.code,
+            error: collected.error,
+            message: collected.message
         };
     }
 
@@ -354,7 +319,7 @@
             return { error: 'no splits in plan \u2014 run "plan" or "run" to generate splits first', results: [] };
         }
 
-        // T077: Dry-run mode — simulate all operations, no real git/gh calls.
+        // T077: dry-run mode.
         if (dryRun) {
             var dryResults = [];
             for (var d = 0; d < plan.splits.length; d++) {
@@ -376,7 +341,7 @@
 
         var gitExecAsync = prSplit._gitExecAsync;
 
-        // Pre-flight: verify gh CLI is available.
+        // Pre-flight: gh CLI available.
         if (!pushOnly) {
             if (progressFn) progressFn('Checking gh CLI availability\u2026');
             var ghCheck = await ghExecAsync(['--version']);
@@ -385,11 +350,18 @@
             }
         }
 
-        // Pre-flight: verify baseBranch exists on the remote.
+        // Pre-flight: baseBranch on remote.
         if (!pushOnly) {
             if (progressFn) progressFn('Verifying base branch "' + plan.baseBranch + '" on remote\u2026');
             var remoteCheck = await gitExecAsync(dir, ['ls-remote', '--heads', remote, plan.baseBranch]);
-            if (remoteCheck.code !== 0 || remoteCheck.stdout.trim() === '') {
+            // ls-remote: 0 empty = absent; 2 = transport; error true = failure.
+            if (remoteCheck.error === true || (remoteCheck.code !== 0 && remoteCheck.code !== 2)) {
+                return {
+                    error: 'ls-remote failed for remote "' + remote + '": ' + execFailReason(remoteCheck),
+                    results: []
+                };
+            }
+            if (remoteCheck.stdout.trim() === '') {
                 return {
                     error: 'base branch "' + plan.baseBranch + '" not found on remote "' + remote + '" \u2014 push it first or check the branch name',
                     results: []
@@ -397,7 +369,7 @@
             }
         }
 
-        // Cancellation check helper.
+        // Cancellation check.
         function cancelled() {
             return (typeof prSplit.isCancelled === 'function' && prSplit.isCancelled()) ||
                 (typeof prSplit.isForceCancelled === 'function' && prSplit.isForceCancelled());  // T117: honor force-cancel
@@ -417,9 +389,9 @@
                     name: split.name,
                     pushed: false,
                     prUrl: '',
-                    error: 'push failed: ' + pushResult.stderr.trim()
+                    error: 'push failed: ' + execFailReason(pushResult)
                 });
-                return { error: 'push failed for ' + split.name + ': ' + pushResult.stderr.trim(), results: results };
+                return { error: 'push failed for ' + split.name + ': ' + execFailReason(pushResult), results: results };
             }
             results.push({
                 name: split.name,
@@ -442,14 +414,18 @@
             var title = formatPRTitle(plan, pi);
             var body = formatPRBody(plan, pi);
 
-            // Pre-check: verify the head branch has actual changes from
-            // the base. Avoids GraphQL error "No commits between base and head".
+            // Pre-check: head has changes.
             var diffCheck = await gitExecAsync(dir, ['diff', '--quiet', base, prSplit2.name]);
+            // Exit 0 = no diff (skip); 1 = diff (create); else = error.
             if (diffCheck.code === 0) {
-                // Exit code 0 means no diff — skip PR creation.
+                // No diff — skip.
                 results[pi].error = null;
                 results[pi].skipped = true;
                 results[pi].skipReason = 'no changes between "' + base + '" and "' + prSplit2.name + '" \u2014 skipping PR creation';
+                continue;
+            }
+            if (diffCheck.code !== 1) {
+                results[pi].error = 'git diff --quiet failed: ' + execFailReason(diffCheck);
                 continue;
             }
 
@@ -465,7 +441,7 @@
 
             var ghResult = await ghExecAsync(ghArgs);
             if (ghResult.code !== 0) {
-                results[pi].error = 'gh pr create failed: ' + ghResult.stderr.trim();
+                results[pi].error = 'gh pr create failed: ' + execFailReason(ghResult);
             } else {
                 results[pi].prUrl = ghResult.stdout.trim();
             }
@@ -484,7 +460,7 @@
                 ];
                 var mergeResult = await ghExecAsync(mergeArgs);
                 if (mergeResult.code !== 0) {
-                    results[k].mergeError = 'auto-merge failed: ' + mergeResult.stderr.trim();
+                    results[k].mergeError = 'auto-merge failed: ' + execFailReason(mergeResult);
                 } else {
                     results[k].autoMerge = true;
                 }

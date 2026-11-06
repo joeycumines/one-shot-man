@@ -8,28 +8,9 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
-// T034: createPRs mock execution flow tests
-//
-// These tests exercise the createPRs function by intercepting the exec module
-// at the JS level. Because Goja caches `require()` results, mutating the
-// properties of the cached `osm:exec` object affects all consumers —
-// including the `var exec = require('osm:exec')` captured at script load.
-// ---------------------------------------------------------------------------
+// T034: createPRs mock execution flow tests.
 
-// execMockSetupJS returns JS code that installs an exec mock with
-// configurable per-command responses. The mock records every call and
-// returns an appropriate response based on the command prefix.
-//
-// Mock state globals:
-//
-//	_execCalls       — array of {argv:[...]} records
-//	_execResponses   — map of command-key → response override
-//
-// Matching priority (first match wins):
-//  1. Exact match on full argv joined with "\x00" separator
-//  2. Prefix match on "cmd subcmd1 subcmd2" (e.g. "gh pr create")
-//  3. Fallback: success with empty stdout/stderr
+// execMockSetupJS installs an exec mock with configurable responses.
 func execMockSetupJS() string {
 	return `(function() {
     var execMod = require('osm:exec');
@@ -100,8 +81,12 @@ func execMockSetupJS() string {
             }
             if (isDiffQuiet) {
                 var r = globalThis._execResponses['git:diff:quiet'];
-                // Default: branches DIFFER (exit code 1 = has diff).
-                return r || fail('');
+                // Default: branches DIFFER (exit code 1 = has diff). error is
+                // true because the exit code is non-zero, but message stays
+                // empty: a real exit-1 diff is a complete capture, so the
+                // spawn mock must not flag it as truncated (code would
+                // otherwise collapse to -1 and trip the diff --quiet guard).
+                return r || {stdout: '', stderr: '', code: 1, error: true, message: ''};
             }
             // Default git success.
             return ok('');
@@ -1279,5 +1264,142 @@ func TestCreatePRs_WidePadding_12Splits(t *testing.T) {
 		if !strings.Contains(dryMsg, expectedBranch) {
 			t.Errorf("result[%d] expected dryRunMsg to contain '%s', got %q", i, expectedBranch, dryMsg)
 		}
+	}
+}
+
+// spawnExecMockJS installs an exec.spawn mock on prSplit._modules.exec that
+// routes through the execv mock (so _execResponses keys keep working) and
+// serves the result's stdout/stderr as stream chunks followed by a clean
+// {done: true}. Used to exercise the async spawn paths (ghExecAsync,
+// _gitExecAsync) with the execMockSetupJS responses.
+const spawnExecMockJS = `
+	globalThis.__origSpawn07 = globalThis.prSplit._modules.exec.spawn;
+	globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
+		var execMod = globalThis.prSplit._modules.exec;
+		var r = execMod.execv([cmd].concat(args || []));
+		// A result the exec layer flagged as an error with a diagnostic message
+		// is what an aborted/cut capture looks like: surface it as a truncated
+		// stream end so collectSpawnOutput reports code -1 + the cut message.
+		var truncated = !!(r && r.error === true && r.message);
+		var stdoutRead = false, stderrRead = false;
+		return {
+			stdout: {
+				read: function() {
+					if (!stdoutRead) {
+						stdoutRead = true;
+						if (r.stdout) return Promise.resolve({done: false, value: r.stdout});
+					}
+					return Promise.resolve(truncated ? {done: true, truncated: true} : {done: true});
+				}
+			},
+			stderr: {
+				read: function() {
+					if (!stderrRead) {
+						stderrRead = true;
+						if (r.stderr) return Promise.resolve({done: false, value: r.stderr});
+					}
+					return Promise.resolve(truncated ? {done: true, truncated: true} : {done: true});
+				}
+			},
+			wait: function() { return Promise.resolve({code: r.code, signal: null}); },
+			kill: function() {},
+			isAlive: function() { return false; },
+			close: function() {}
+		};
+	};
+`
+
+const restoreSpawn07JS = `
+	globalThis.prSplit._modules.exec.spawn = globalThis.__origSpawn07;
+	globalThis.__origSpawn07 = undefined;
+`
+
+// TestCreatePRsAsync_GhFailureKeepsExecMessage pins that a gh pr create
+// failure whose stderr is empty still surfaces the exec-layer message (e.g.
+// an aborted-capture diagnostic) instead of collapsing to an empty reason.
+func TestCreatePRsAsync_GhFailureKeepsExecMessage(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(spawnExecMockJS); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { evalJS(restoreSpawn07JS) })
+
+	// gh pr create fails with empty stderr but a diagnostic message.
+	if _, err := evalJS(`globalThis._execResponses['gh:pr:create'] = {stdout: '', stderr: '', code: 1, error: true, message: 'command output capture aborted before EOF: captured output is incomplete'}`); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := testPlanJS("main", ".")
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRsAsync(` + plan + `))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := parseCreatePRsResult(t, val)
+
+	if r.Error != nil {
+		t.Fatalf("expected nil top-level error (individual failures), got: %s", *r.Error)
+	}
+	if len(r.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(r.Results))
+	}
+	for i := range r.Results {
+		if r.Results[i].Error == nil {
+			t.Errorf("result[%d] should have an error from gh pr create failure", i)
+			continue
+		}
+		if !strings.Contains(*r.Results[i].Error, "gh pr create failed") {
+			t.Errorf("result[%d] error should mention 'gh pr create failed', got %q", i, *r.Results[i].Error)
+		}
+		if !strings.Contains(*r.Results[i].Error, "cut short before EOF") {
+			t.Errorf("result[%d] error should carry the exec-layer message, got %q", i, *r.Results[i].Error)
+		}
+	}
+}
+
+// TestCreatePRsAsync_PushFailureKeepsExecMessage pins the same contract for
+// the git push path: stderr with content plus a distinct exec message must
+// both appear.
+func TestCreatePRsAsync_PushFailureKeepsExecMessage(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(spawnExecMockJS); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { evalJS(restoreSpawn07JS) })
+
+	if _, err := evalJS(`globalThis._execResponses['git:push'] = {stdout: '', stderr: 'remote: rejected', code: 1, error: true, message: 'process killed before EOF'}`); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := testPlanJS("main", ".")
+	val, err := evalJS(`JSON.stringify(await globalThis.prSplit.createPRsAsync(` + plan + `))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := parseCreatePRsResult(t, val)
+
+	// First push failure aborts immediately with a top-level error.
+	if r.Error == nil {
+		t.Fatal("expected top-level error from first push failure")
+	}
+	if !strings.Contains(*r.Error, "push failed") {
+		t.Errorf("error should mention 'push failed', got %q", *r.Error)
+	}
+	if !strings.Contains(*r.Error, "remote: rejected") {
+		t.Errorf("error should keep stderr content, got %q", *r.Error)
+	}
+	if !strings.Contains(*r.Error, "cut short before EOF") {
+		t.Errorf("error should keep the exec-layer cut-short message, got %q", *r.Error)
 	}
 }

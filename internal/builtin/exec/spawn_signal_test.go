@@ -39,7 +39,7 @@ func readSignalHelperLine(ctx context.Context, child *ChildProcess) (string, err
 	go func() {
 		var line strings.Builder
 		for {
-			chunk, done, err := child.ReadStdout()
+			chunk, done, err := child.ReadStdoutContext(context.Background())
 			if err != nil {
 				resultCh <- result{err: err}
 				return
@@ -209,7 +209,7 @@ func TestSpawnChild_CloseKillsDescendants(t *testing.T) {
 
 	var output strings.Builder
 	for {
-		chunk, done, readErr := child.ReadStdout()
+		chunk, done, readErr := child.ReadStdoutContext(context.Background())
 		if readErr != nil {
 			t.Fatalf("ReadStdout: %v", readErr)
 		}

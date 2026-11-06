@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -83,12 +84,42 @@ func TestRunVersionCommand(t *testing.T) {
 		t.Fatalf("run returned error: %v", err)
 	}
 
-	if !strings.Contains(stdout, "osm version") {
-		t.Fatalf("expected version output, got %q", stdout)
+	// Compare the whole line: a substring check against cliVersion() is
+	// satisfied by the "osm version" prefix alone, so it could not detect a
+	// version token that went missing or was replaced by a bare "osm".
+	if want, got := "osm version "+cliVersion(), strings.TrimSpace(stdout); got != want {
+		t.Fatalf("version output = %q, want %q", got, want)
 	}
 
 	if stderr != "" {
 		t.Fatalf("expected no stderr output, got %q", stderr)
+	}
+}
+
+func TestVersionFromBuildInfo(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		info *debug.BuildInfo
+		want string
+	}{
+		{name: "tagged release", info: &debug.BuildInfo{Main: debug.Module{Version: "v0.7.0"}}, want: "0.7.0"},
+		{name: "unprefixed version", info: &debug.BuildInfo{Main: debug.Module{Version: "0.7.0"}}, want: "0.7.0"},
+		{name: "dirty checkout", info: &debug.BuildInfo{Main: debug.Module{Version: "v0.7.0+dirty"}}, want: "0.7.0+dirty"},
+		{
+			name: "vcs pseudo-version",
+			info: &debug.BuildInfo{Main: debug.Module{Version: "v0.7.1-0.20261103030639-abcdef123456"}},
+			want: "0.7.1-0.20261103030639-abcdef123456",
+		},
+		{name: "development build", info: &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, want: "devel"},
+		{name: "empty version", info: &debug.BuildInfo{Main: debug.Module{Version: ""}}, want: "devel"},
+		{name: "bare v", info: &debug.BuildInfo{Main: debug.Module{Version: "v"}}, want: "devel"},
+		{name: "missing info", want: "devel"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := versionFromBuildInfo(test.info); got != test.want {
+				t.Fatalf("versionFromBuildInfo() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 
@@ -302,8 +333,8 @@ func TestVersionCommandVariations(t *testing.T) {
 				if err != nil {
 					t.Fatalf("version command returned error: %v", err)
 				}
-				if !strings.Contains(stdout, "osm version") {
-					t.Fatalf("expected version output, got stdout=%q stderr=%q", stdout, stderr)
+				if want, got := "osm version "+cliVersion(), strings.TrimSpace(stdout); got != want {
+					t.Fatalf("version output = %q, want %q (stderr=%q)", got, want, stderr)
 				}
 			}
 
@@ -320,12 +351,8 @@ func TestVersionCommandVariations(t *testing.T) {
 	}
 }
 
-// runWithCapturedIO invokes run() with the given os.Args, capturing stdout
-// and stderr to temporary files. It returns the captured output and the error.
-//
-// WARNING: This function mutates process-global state (os.Args, os.Stdout,
-// os.Stderr). Tests that call this function MUST NOT use t.Parallel().
-// Adding t.Parallel() to any caller will cause data races under -race.
+// runWithCapturedIO runs run() with given args, capturing stdout/stderr.
+// Mutates process-global state; callers must not use t.Parallel().
 func runWithCapturedIO(t *testing.T, args []string) (string, string, error) {
 	t.Helper()
 
@@ -439,12 +466,7 @@ func TestMainInvokesRun(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// T392: Clean flag-parse error output tests
-//
-// Validates that parse errors show a concise 1-line error + hint to use
-// --help, instead of dumping the full flag listing.
-// ---------------------------------------------------------------------------
+// T392: clean flag-parse error output tests.
 
 func TestFlagParseError_CleanOutput(t *testing.T) {
 	testCases := []struct {
@@ -514,8 +536,7 @@ func TestFlagParseError_CleanOutput(t *testing.T) {
 	}
 }
 
-// TestCommandHelpStillWorks verifies that --help on a command still
-// produces the full usage output (regression check for T392).
+// TestCommandHelpStillWorks checks --help output.
 func TestCommandHelpStillWorks(t *testing.T) {
 	testCases := []struct {
 		name string
